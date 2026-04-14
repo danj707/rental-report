@@ -162,7 +162,7 @@ app.get("/api/pdf", async (req, res) => {
       headerTemplate: "<span></span>",
       footerTemplate: `
         <div style="font-size:9px; width:100%; padding:0 0.4in; display:flex; justify-content:space-between; color:#888;">
-          <span>${ORG_NAME}</span>
+          <span>rec.us — Rental Schedule</span>
           <span>Page <span class="pageNumber"></span> of <span class="totalPages"></span></span>
         </div>
       `,
