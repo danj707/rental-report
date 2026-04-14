@@ -20,22 +20,52 @@
       line-height: 1.35;
     }
 
-    /* ── Toolbar (hidden in print & PDF mode) ── */
+    /* ── Toolbar (hidden in print and PDF mode) ── */
     .toolbar {
       position: sticky;
       top: 0;
       z-index: 100;
       display: flex;
       align-items: center;
-      gap: 12px;
-      padding: 10px 24px;
+      gap: 10px;
+      padding: 8px 20px;
       background: #2c2c2c;
       color: #eee;
       font-size: 13px;
+      flex-wrap: wrap;
     }
-    .toolbar-title { font-weight: 600; flex: 1; }
+    .toolbar-title { font-weight: 600; margin-right: 8px; }
+    .toolbar-spacer { flex: 1; }
+
+    .toolbar label {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #aaa;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .toolbar input[type="date"] {
+      padding: 4px 8px;
+      border: 1px solid rgba(255,255,255,.2);
+      border-radius: 4px;
+      background: rgba(255,255,255,.1);
+      color: #fff;
+      font-size: 12px;
+      font-family: inherit;
+      outline: none;
+    }
+    .toolbar input[type="date"]:focus {
+      border-color: #3b82f6;
+    }
+    .toolbar input[type="date"]::-webkit-calendar-picker-indicator {
+      filter: invert(1);
+      cursor: pointer;
+    }
+
     .toolbar button {
-      padding: 6px 16px;
+      padding: 6px 14px;
       border: 1px solid rgba(255,255,255,.25);
       border-radius: 4px;
       background: rgba(255,255,255,.08);
@@ -46,12 +76,33 @@
       transition: background .15s;
     }
     .toolbar button:hover { background: rgba(255,255,255,.18); }
+    .toolbar .btn-run {
+      background: #16a34a;
+      border-color: #16a34a;
+      font-weight: 600;
+    }
+    .toolbar .btn-run:hover { background: #15803d; }
+    .toolbar .btn-run:disabled { opacity: .5; cursor: not-allowed; }
     .toolbar .btn-pdf {
       background: #3b82f6;
       border-color: #3b82f6;
       font-weight: 600;
     }
     .toolbar .btn-pdf:hover { background: #2563eb; }
+    .toolbar .btn-pdf:disabled { opacity: .5; cursor: not-allowed; }
+
+    .toolbar .row-count {
+      font-size: 11px;
+      color: #aaa;
+      margin-left: 4px;
+    }
+
+    .toolbar .divider {
+      width: 1px;
+      height: 28px;
+      background: rgba(255,255,255,.15);
+      margin: 0 4px;
+    }
 
     /* ── Report page ── */
     .page {
@@ -212,7 +263,7 @@
 <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
 
 <script type="text/babel">
-const { useState, useEffect, useMemo } = React;
+const { useState, useEffect, useMemo, useCallback } = React;
 
 // ── Read query params ───────────────────────────────────────────────
 function getParams() {
@@ -226,22 +277,40 @@ function getParams() {
   };
 }
 
+// ── Default to current month ────────────────────────────────────────
+function getCurrentMonthRange() {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = now.getMonth();
+  const first = new Date(y, m, 1);
+  const last = new Date(y, m + 1, 0);
+  return { start: toISO(first), end: toISO(last) };
+}
+
+function toISO(d) {
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+
+function formatDisplayDate(isoStr) {
+  if (!isoStr) return '';
+  const d = new Date(isoStr + 'T12:00:00');
+  const months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  return `${months[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
+}
+
 // ── Helpers ──────────────────────────────────────────────────────────
 function formatTime(t) {
   if (!t) return '';
-  // Handle both "17:30:00" and "5:30pm" formats
   const parts = t.match(/^(\d{1,2}):(\d{2})/);
   if (!parts) return t;
   const [, hStr, mStr] = parts;
   const h = parseInt(hStr, 10);
-  const m = mStr;
   const ampm = h >= 12 ? 'pm' : 'am';
   const hr = h % 12 || 12;
-  return `${hr}:${m}${ampm}`;
+  return `${hr}:${mStr}${ampm}`;
 }
 
 function formatDateHeader(dateStr) {
-  // dateStr could be "2025-06-02" or "2025-06-02T00:00:00"
   const d = new Date(dateStr + (dateStr.includes('T') ? '' : 'T12:00:00'));
   const days = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
   const months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
@@ -256,8 +325,6 @@ function formatMoney(v) {
 }
 
 // ── Normalize row keys from Metabase ────────────────────────────────
-// Metabase JSON returns keys matching your SQL aliases.
-// This maps them to consistent internal keys.
 function normalizeRow(raw) {
   return {
     date:        raw['Date'] || raw['date'] || '',
@@ -281,23 +348,34 @@ function normalizeRow(raw) {
 // ── Main App ────────────────────────────────────────────────────────
 function App() {
   const params = useMemo(() => getParams(), []);
+  const defaults = useMemo(() => getCurrentMonthRange(), []);
+
+  const [startDate, setStartDate] = useState(params.start_date || defaults.start);
+  const [endDate, setEndDate] = useState(params.end_date || defaults.end);
+
   const [rows, setRows] = useState(null);
   const [meta, setMeta] = useState({});
   const [error, setError] = useState(null);
+  const [loading, setLoading] = useState(false);
   const [pdfLoading, setPdfLoading] = useState(false);
 
-  // Enable print mode if Puppeteer is rendering
+  const [loadedStart, setLoadedStart] = useState(null);
+  const [loadedEnd, setLoadedEnd] = useState(null);
+
   useEffect(() => {
     if (params._print === '1') {
       document.body.classList.add('print-mode');
     }
   }, [params._print]);
 
-  // Fetch data from our proxy
-  useEffect(() => {
+  // ── Fetch data ────────────────────────────────────────────────────
+  const fetchData = useCallback((sd, ed) => {
+    setLoading(true);
+    setError(null);
+
     const qs = new URLSearchParams();
-    if (params.start_date) qs.set('start_date', params.start_date);
-    if (params.end_date) qs.set('end_date', params.end_date);
+    if (sd) qs.set('start_date', sd);
+    if (ed) qs.set('end_date', ed);
     if (params.location_name) qs.set('location_name', params.location_name);
     if (params.site_type) qs.set('site_type', params.site_type);
 
@@ -309,11 +387,21 @@ function App() {
       .then(json => {
         setRows(json.rows.map(normalizeRow));
         setMeta(json.meta || {});
+        setLoadedStart(sd);
+        setLoadedEnd(ed);
       })
-      .catch(err => setError(err.message));
-  }, []);
+      .catch(err => setError(err.message))
+      .finally(() => setLoading(false));
+  }, [params.location_name, params.site_type]);
 
-  // Group by date → location
+  // Initial load
+  useEffect(() => { fetchData(startDate, endDate); }, []);
+
+  function handleRunReport() { fetchData(startDate, endDate); }
+
+  const datesChanged = startDate !== loadedStart || endDate !== loadedEnd;
+
+  // Group by date then location
   const grouped = useMemo(() => {
     if (!rows) return null;
     const byDate = {};
@@ -324,7 +412,6 @@ function App() {
       if (!byDate[dk].locations[lk]) byDate[dk].locations[lk] = [];
       byDate[dk].locations[lk].push(row);
     });
-    // Sort rows within each location group by start time
     Object.values(byDate).forEach(dg => {
       Object.values(dg.locations).forEach(locRows => {
         locRows.sort((a, b) => (a.start || '').localeCompare(b.start || ''));
@@ -335,23 +422,30 @@ function App() {
 
   const sortedDates = grouped ? Object.keys(grouped).sort() : [];
 
+  // ── Quick month buttons ───────────────────────────────────────────
+  function setMonth(offset) {
+    const now = new Date();
+    const target = new Date(now.getFullYear(), now.getMonth() + offset, 1);
+    const last = new Date(target.getFullYear(), target.getMonth() + 1, 0);
+    setStartDate(toISO(target));
+    setEndDate(toISO(last));
+  }
+
   // ── PDF download ──────────────────────────────────────────────────
   function downloadPdf() {
     setPdfLoading(true);
     const qs = new URLSearchParams();
-    if (params.start_date) qs.set('start_date', params.start_date);
-    if (params.end_date) qs.set('end_date', params.end_date);
+    if (loadedStart) qs.set('start_date', loadedStart);
+    if (loadedEnd) qs.set('end_date', loadedEnd);
     if (params.location_name) qs.set('location_name', params.location_name);
     if (params.site_type) qs.set('site_type', params.site_type);
 
-    // Open in new tab or download
-    const url = `/api/pdf?${qs.toString()}`;
-    fetch(url)
+    fetch(`/api/pdf?${qs.toString()}`)
       .then(r => r.blob())
       .then(blob => {
         const a = document.createElement('a');
         a.href = URL.createObjectURL(blob);
-        a.download = `rental-schedule-${params.start_date || 'report'}.pdf`;
+        a.download = `rental-schedule-${loadedStart || 'report'}.pdf`;
         a.click();
         URL.revokeObjectURL(a.href);
       })
@@ -359,13 +453,65 @@ function App() {
       .finally(() => setPdfLoading(false));
   }
 
-  // ── Render states ─────────────────────────────────────────────────
-  if (error) {
+  const isPrint = params._print === '1';
+
+  // ── Toolbar ───────────────────────────────────────────────────────
+  function renderToolbar() {
+    if (isPrint) return null;
+    return (
+      <div className="toolbar">
+        <span className="toolbar-title">Rental Schedule</span>
+
+        <label>
+          Start
+          <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} />
+        </label>
+
+        <label>
+          End
+          <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} />
+        </label>
+
+        <button onClick={() => setMonth(-1)} style={{fontSize:11, padding:'4px 8px'}}>Last Month</button>
+        <button onClick={() => setMonth(0)} style={{fontSize:11, padding:'4px 8px'}}>This Month</button>
+        <button onClick={() => setMonth(1)} style={{fontSize:11, padding:'4px 8px'}}>Next Month</button>
+
+        <button
+          className="btn-run"
+          onClick={handleRunReport}
+          disabled={loading}
+          style={datesChanged && !loading ? {boxShadow: '0 0 0 2px #4ade80'} : {}}
+        >
+          {loading ? 'Loading…' : '▶ Run Report'}
+        </button>
+
+        <div className="toolbar-spacer" />
+
+        {rows && (
+          <span className="row-count">
+            {rows.length} rental{rows.length !== 1 ? 's' : ''}
+          </span>
+        )}
+
+        <div className="divider" />
+
+        <button onClick={() => window.print()}>🖨️ Print</button>
+        <button
+          className="btn-pdf"
+          onClick={downloadPdf}
+          disabled={pdfLoading || !rows || rows.length === 0}
+        >
+          {pdfLoading ? 'Generating…' : '📄 PDF'}
+        </button>
+      </div>
+    );
+  }
+
+  // ── Error ─────────────────────────────────────────────────────────
+  if (error && !rows) {
     return (
       <div>
-        <div className="toolbar">
-          <span className="toolbar-title">Weekly Rental Schedule</span>
-        </div>
+        {renderToolbar()}
         <div className="page">
           <div className="error">
             <p><strong>Failed to load report data</strong></p>
@@ -379,16 +525,15 @@ function App() {
     );
   }
 
+  // ── Initial loading ───────────────────────────────────────────────
   if (!rows) {
     return (
       <div>
-        <div className="toolbar">
-          <span className="toolbar-title">Weekly Rental Schedule</span>
-        </div>
+        {renderToolbar()}
         <div className="page">
           <div className="loading">
             <div className="spinner" />
-            <div>Loading report data from Metabase…</div>
+            <div>Loading report data…</div>
           </div>
         </div>
       </div>
@@ -398,36 +543,23 @@ function App() {
   const now = new Date();
   const runDate = `${(now.getMonth()+1).toString().padStart(2,'0')}/${now.getDate().toString().padStart(2,'0')}/${now.getFullYear()} @ ${now.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',hour12:true}).toLowerCase()}`;
 
-  const dateRangeLabel = [params.start_date, params.end_date].filter(Boolean).join(' – ') || 'Current Month';
-
-  const isPrint = params._print === '1';
+  const dateRangeLabel = [
+    loadedStart ? formatDisplayDate(loadedStart) : null,
+    loadedEnd ? formatDisplayDate(loadedEnd) : null,
+  ].filter(Boolean).join(' – ') || 'Current Month';
 
   return (
     <div>
-      {/* Toolbar — hidden in print/PDF */}
-      {!isPrint && (
-        <div className="toolbar">
-          <span className="toolbar-title">Weekly Rental Schedule</span>
-          <span style={{fontSize: 11, color: '#aaa'}}>
-            {rows.length} reservation{rows.length !== 1 ? 's' : ''}
-          </span>
-          <button onClick={() => window.print()}>🖨️ Print</button>
-          <button className="btn-pdf" onClick={downloadPdf} disabled={pdfLoading}>
-            {pdfLoading ? 'Generating…' : '📄 Download PDF'}
-          </button>
-        </div>
-      )}
+      {renderToolbar()}
 
-      <div className="page">
+      <div className="page" style={loading ? {opacity: 0.5, pointerEvents: 'none'} : {}}>
         {/* Report header */}
         <div className="report-header">
           <div>
             <div className="org-label">{meta.org_name || 'rec.us'}</div>
             <div className="title">Weekly Rental Schedule</div>
           </div>
-          <div className="date-range">
-            {dateRangeLabel}
-          </div>
+          <div className="date-range">{dateRangeLabel}</div>
         </div>
 
         {/* Column headers */}
@@ -447,7 +579,6 @@ function App() {
         {sortedDates.map(dateKey => {
           const dateGroup = grouped[dateKey];
           const sortedLocs = Object.keys(dateGroup.locations).sort();
-
           return (
             <div key={dateKey}>
               {sortedLocs.map(locName => {
@@ -458,7 +589,6 @@ function App() {
                       <span className="date-label">{formatDateHeader(dateKey)}</span>
                       <span className="loc-label">Location: {locName}</span>
                     </div>
-
                     {locRows.map((r, i) => (
                       <div key={i}>
                         <div className="data-row">
@@ -489,7 +619,7 @@ function App() {
 
         {rows.length === 0 && (
           <div style={{textAlign:'center', padding:'40px 0', color:'#888'}}>
-            No rentals found for the selected filters.
+            No rentals found for the selected date range.
           </div>
         )}
 
@@ -499,7 +629,7 @@ function App() {
           <span>Run Date/Time: {runDate}</span>
         </div>
 
-        {/* Hidden marker for Puppeteer to know the page is ready */}
+        {/* Puppeteer ready marker */}
         <div id="report-ready" style={{display:'none'}} />
       </div>
     </div>
