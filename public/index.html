@@ -300,13 +300,22 @@ function formatDisplayDate(isoStr) {
 // ── Helpers ──────────────────────────────────────────────────────────
 function formatTime(t) {
   if (!t) return '';
-  const parts = t.match(/^(\d{1,2}):(\d{2})/);
+  const s = t.trim().toLowerCase();
+
+  // Already formatted with am/pm from Metabase (e.g. "08:00pm", "09:00am")
+  const ampmMatch = s.match(/^(\d{1,2}):(\d{2})\s*(am|pm)$/);
+  if (ampmMatch) {
+    const hr = parseInt(ampmMatch[1], 10);
+    return `${hr}:${ampmMatch[2]}${ampmMatch[3]}`;
+  }
+
+  // 24-hour format (e.g. "17:30:00") — convert to 12-hour
+  const parts = s.match(/^(\d{1,2}):(\d{2})/);
   if (!parts) return t;
-  const [, hStr, mStr] = parts;
-  const h = parseInt(hStr, 10);
+  const h = parseInt(parts[1], 10);
   const ampm = h >= 12 ? 'pm' : 'am';
   const hr = h % 12 || 12;
-  return `${hr}:${mStr}${ampm}`;
+  return `${hr}:${parts[2]}${ampm}`;
 }
 
 function formatDateHeader(dateStr) {
