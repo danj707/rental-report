@@ -130,28 +130,34 @@ app.get("/api/pdf", async (req, res) => {
   try {
     const puppeteer = require("puppeteer");
 
-    // Build the report URL with the same query params
+    // Build the report URL — use localhost since Puppeteer runs inside the same container
     const qs = new URLSearchParams(req.query).toString();
-    const reportUrl = `${BASE_URL}/?${qs}&_print=1`;
+    const reportUrl = `http://localhost:${PORT}/?${qs}&_print=1`;
 
     console.log(`[pdf] Rendering: ${reportUrl}`);
 
     browser = await puppeteer.launch({
       headless: true,
-      args: ["--no-sandbox", "--disable-setuid-sandbox"],
+      executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
+      args: [
+        "--no-sandbox",
+        "--disable-setuid-sandbox",
+        "--disable-dev-shm-usage",
+        "--disable-gpu",
+      ],
     });
 
     const page = await browser.newPage();
-    await page.goto(reportUrl, { waitUntil: "networkidle0", timeout: 30000 });
+    await page.goto(reportUrl, { waitUntil: "networkidle0", timeout: 60000 });
 
     // Wait for the report to signal it's done loading
-    await page.waitForSelector("#report-ready", { timeout: 15000 });
+    await page.waitForSelector("#report-ready", { timeout: 30000 });
 
     const pdf = await page.pdf({
       format: "Letter",
       landscape: true,
       printBackground: true,
-      margin: { top: "0.4in", bottom: "0.4in", left: "0.4in", right: "0.4in" },
+      margin: { top: "0.4in", bottom: "0.5in", left: "0.4in", right: "0.4in" },
       displayHeaderFooter: true,
       headerTemplate: "<span></span>",
       footerTemplate: `
@@ -190,3 +196,4 @@ app.listen(PORT, () => {
   console.log(`  ├─ PDF API:    ${BASE_URL}/api/pdf`);
   console.log(`  └─ Metabase:   ${METABASE_URL}/api/public/card/${METABASE_PUBLIC_UUID}\n`);
 });
+
