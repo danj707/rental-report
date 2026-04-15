@@ -1,0 +1,600 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GL Code Rollup</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'IBM Plex Sans', 'Segoe UI', system-ui, sans-serif;
+      font-size: 12px;
+      color: #1a1a1a;
+      background: #f5f4f1;
+      line-height: 1.35;
+    }
+
+    /* ── Toolbar ── */
+    .toolbar {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 20px;
+      background: #2c2c2c;
+      color: #eee;
+      font-size: 13px;
+      flex-wrap: wrap;
+    }
+    .toolbar-title { font-weight: 600; margin-right: 4px; }
+    .toolbar-spacer { flex: 1; }
+    .toolbar label {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #aaa;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .toolbar input[type="date"] {
+      padding: 4px 8px;
+      border: 1px solid rgba(255,255,255,.2);
+      border-radius: 4px;
+      background: rgba(255,255,255,.1);
+      color: #fff;
+      font-size: 12px;
+      font-family: inherit;
+      outline: none;
+    }
+    .toolbar input[type="date"]:focus { border-color: #3b82f6; }
+    .toolbar input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(1); cursor: pointer; }
+    .toolbar button {
+      padding: 6px 14px;
+      border: 1px solid rgba(255,255,255,.25);
+      border-radius: 4px;
+      background: rgba(255,255,255,.08);
+      color: #fff;
+      font-size: 12px;
+      font-family: inherit;
+      cursor: pointer;
+      transition: background .15s;
+      white-space: nowrap;
+    }
+    .toolbar button:hover { background: rgba(255,255,255,.18); }
+    .toolbar .btn-run { background: #16a34a; border-color: #16a34a; font-weight: 600; }
+    .toolbar .btn-run:hover { background: #15803d; }
+    .toolbar .btn-run:disabled { opacity: .5; cursor: not-allowed; }
+    .toolbar .btn-pdf { background: #3b82f6; border-color: #3b82f6; font-weight: 600; }
+    .toolbar .btn-pdf:hover { background: #2563eb; }
+    .toolbar .btn-pdf:disabled { opacity: .5; cursor: not-allowed; }
+    .toolbar .row-count { font-size: 11px; color: #aaa; }
+    .toolbar .divider { width: 1px; height: 28px; background: rgba(255,255,255,.15); margin: 0 2px; }
+
+    /* ── Page ── */
+    .page {
+      max-width: 1050px;
+      margin: 16px auto;
+      padding: 24px 28px;
+      background: #fff;
+      box-shadow: 0 1px 4px rgba(0,0,0,.08);
+    }
+
+    /* ── Header ── */
+    .report-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 2.5px solid #111;
+      padding-bottom: 10px;
+      margin-bottom: 18px;
+      gap: 16px;
+    }
+    .report-header-left { display: flex; align-items: center; gap: 14px; }
+    .report-header-logo { height: 42px; max-width: 140px; object-fit: contain; object-position: left center; }
+    .report-header .org-label { font-size: 10px; letter-spacing: 1.6px; text-transform: uppercase; color: #777; font-weight: 600; }
+    .report-header .title { font-size: 17px; font-weight: 700; margin-top: 1px; }
+    .report-header-right { text-align: right; }
+    .report-header .date-range { font-size: 11px; color: #666; }
+
+    /* ── GL Table ── */
+    .gl-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 11.5px;
+    }
+
+    .gl-table thead tr {
+      background: #e4e4e4;
+      border-top: 1px solid #bbb;
+      border-bottom: 1px solid #bbb;
+    }
+    .gl-table thead th {
+      padding: 6px 8px;
+      text-align: right;
+      font-weight: 600;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      color: #333;
+      white-space: nowrap;
+    }
+    .gl-table thead th:first-child,
+    .gl-table thead th:nth-child(2) { text-align: left; }
+
+    .gl-table tbody tr { border-bottom: 1px solid #eee; }
+    .gl-table tbody tr:nth-child(even) { background: #fafaf8; }
+    .gl-table tbody tr:hover { background: #f0eeea; }
+
+    .gl-table tbody td {
+      padding: 5px 8px;
+      text-align: right;
+      vertical-align: middle;
+    }
+    .gl-table tbody td:first-child { text-align: left; font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 500; }
+    .gl-table tbody td:nth-child(2) { text-align: left; color: #444; }
+
+    /* Zero values — muted */
+    .gl-table tbody td.zero { color: #ccc; }
+
+    /* Positive money values */
+    .gl-table tbody td.money { font-variant-numeric: tabular-nums; }
+
+    /* Net amount column — highlighted */
+    .gl-table tbody td.col-net { font-weight: 600; }
+    .gl-table tbody td.col-net.positive { color: #15803d; }
+    .gl-table tbody td.col-net.negative { color: #b91c1c; }
+
+    /* ── Totals row ── */
+    .gl-table tfoot tr {
+      border-top: 2px solid #111;
+      border-bottom: 2px solid #111;
+      background: #edeae4;
+    }
+    .gl-table tfoot td {
+      padding: 6px 8px;
+      text-align: right;
+      font-weight: 700;
+      font-size: 11.5px;
+      font-variant-numeric: tabular-nums;
+    }
+    .gl-table tfoot td:first-child { text-align: left; font-family: inherit; font-size: 11px; letter-spacing: 0.4px; text-transform: uppercase; color: #555; }
+    .gl-table tfoot td:nth-child(2) { text-align: left; }
+    .gl-table tfoot td.col-net { color: #15803d; }
+    .gl-table tfoot td.col-net.negative { color: #b91c1c; }
+
+    /* ── Summary cards (above table) ── */
+    .summary-cards {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 18px;
+      flex-wrap: wrap;
+    }
+    .summary-card {
+      flex: 1;
+      min-width: 130px;
+      background: #f5f4f1;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      padding: 10px 14px;
+    }
+    .summary-card .card-label {
+      font-size: 9.5px;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: #888;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+    .summary-card .card-value {
+      font-size: 18px;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      color: #111;
+    }
+    .summary-card .card-value.green { color: #15803d; }
+    .summary-card .card-value.red { color: #b91c1c; }
+    .summary-card .card-sub {
+      font-size: 10px;
+      color: #999;
+      margin-top: 2px;
+    }
+
+    /* ── Footer ── */
+    .report-footer {
+      display: flex;
+      justify-content: space-between;
+      border-top: 2.5px solid #111;
+      margin-top: 16px;
+      padding-top: 6px;
+      font-size: 10px;
+      color: #777;
+    }
+
+    /* ── Loading / Error ── */
+    .loading { text-align: center; padding: 80px 20px; color: #888; font-size: 14px; }
+    .loading .spinner {
+      display: inline-block; width: 28px; height: 28px;
+      border: 3px solid #ddd; border-top-color: #3b82f6;
+      border-radius: 50%; animation: spin .7s linear infinite; margin-bottom: 12px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .error { text-align: center; padding: 60px 20px; color: #b91c1c; font-size: 14px; }
+
+    /* ── Print / PDF ── */
+    @media print {
+      body { background: #fff; }
+      .toolbar { display: none !important; }
+      .page { box-shadow: none; margin: 0; padding: 12px 16px; max-width: 100%; }
+      .summary-cards { page-break-inside: avoid; }
+    }
+    body.print-mode .toolbar { display: none !important; }
+    body.print-mode { background: #fff; }
+    body.print-mode .page { box-shadow: none; margin: 0; padding: 12px 16px; max-width: 100%; }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+
+<script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
+
+<script type="text/babel">
+const { useState, useEffect, useMemo, useCallback } = React;
+
+function getOrgAndBase() {
+  const parts = window.location.pathname.split('/').filter(Boolean);
+  return { orgSlug: parts[0] || 'unknown', basePath: `/${parts[0]}/${parts[1]}` };
+}
+
+function getParams() {
+  const p = new URLSearchParams(window.location.search);
+  return {
+    start_date: p.get('start_date'),
+    end_date:   p.get('end_date'),
+    _print:     p.get('_print'),
+  };
+}
+
+function getCurrentMonthRange() {
+  const now = new Date();
+  const y = now.getFullYear(), m = now.getMonth();
+  return { start: toISO(new Date(y, m, 1)), end: toISO(new Date(y, m + 1, 0)) };
+}
+
+function toISO(d) {
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+
+function formatDisplayDate(isoStr) {
+  if (!isoStr) return '';
+  const d = new Date(isoStr + 'T12:00:00');
+  const months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  return `${months[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
+}
+
+function fmtMoney(v) {
+  if (v == null || v === '') return '$0.00';
+  const n = typeof v === 'string' ? parseFloat(v) : v;
+  if (isNaN(n)) return '$0.00';
+  return (n < 0 ? '-$' : '$') + Math.abs(n).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+}
+
+function isZero(v) {
+  const n = typeof v === 'string' ? parseFloat(v) : (v ?? 0);
+  return isNaN(n) || n === 0;
+}
+
+function toNum(v) {
+  const n = typeof v === 'string' ? parseFloat(v) : (v ?? 0);
+  return isNaN(n) ? 0 : n;
+}
+
+function normalizeRow(raw) {
+  return {
+    glCode:        raw['GL Code']                       || raw['gl_code']                   || '',
+    glDesc:        raw['GL Code Description']           || raw['gl_description']             || 'none',
+    creditCard:    raw['Credit Card Payments']          || raw['credit_card_payments']       || 0,
+    cash:          raw['Cash Payments']                 || raw['cash_payments']              || 0,
+    check:         raw['Check Payments']                || raw['check_payments']             || 0,
+    free:          raw['Free Payments']                 || raw['free_payments']              || 0,
+    orgCredit:     raw['Organization Credit Payments']  || raw['org_credit_payments']        || 0,
+    totalPayments: raw['Total Payments']                || raw['total_payments']             || 0,
+    numPayments:   raw['Number of Payments']            || raw['number_of_payments']         || 0,
+    totalRefunds:  raw['Total Refunds']                 || raw['total_refunds']              || 0,
+    numRefunds:    raw['Number of Refunds']             || raw['number_of_refunds']          || 0,
+    netAmount:     raw['Net Amount']                    || raw['net_amount']                 || 0,
+  };
+}
+
+// ── App ──────────────────────────────────────────────────────────────
+function App() {
+  const { orgSlug, basePath } = useMemo(() => getOrgAndBase(), []);
+  const params   = useMemo(() => getParams(), []);
+  const defaults = useMemo(() => getCurrentMonthRange(), []);
+
+  const [startDate, setStartDate] = useState(params.start_date || defaults.start);
+  const [endDate,   setEndDate]   = useState(params.end_date   || defaults.end);
+
+  const [rows,        setRows]        = useState(null);
+  const [meta,        setMeta]        = useState({});
+  const [error,       setError]       = useState(null);
+  const [loading,     setLoading]     = useState(false);
+  const [pdfLoading,  setPdfLoading]  = useState(false);
+  const [loadedStart, setLoadedStart] = useState(null);
+  const [loadedEnd,   setLoadedEnd]   = useState(null);
+
+  useEffect(() => {
+    if (params._print === '1') document.body.classList.add('print-mode');
+  }, []);
+
+  const fetchData = useCallback((sd, ed) => {
+    setLoading(true);
+    setError(null);
+    const qs = new URLSearchParams();
+    if (sd) qs.set('start_date', sd);
+    if (ed) qs.set('end_date', ed);
+
+    fetch(`${basePath}/api/data?${qs}`)
+      .then(r => { if (!r.ok) throw new Error(`Server returned ${r.status}`); return r.json(); })
+      .then(json => {
+        setRows(json.rows.map(normalizeRow));
+        setMeta(json.meta || {});
+        setLoadedStart(sd);
+        setLoadedEnd(ed);
+      })
+      .catch(err => setError(err.message))
+      .finally(() => setLoading(false));
+  }, [basePath]);
+
+  useEffect(() => { fetchData(startDate, endDate); }, []);
+
+  function setMonth(offset) {
+    const now = new Date();
+    const t = new Date(now.getFullYear(), now.getMonth() + offset, 1);
+    setStartDate(toISO(t));
+    setEndDate(toISO(new Date(t.getFullYear(), t.getMonth() + 1, 0)));
+  }
+
+  function downloadPdf() {
+    setPdfLoading(true);
+    const qs = new URLSearchParams();
+    if (loadedStart) qs.set('start_date', loadedStart);
+    if (loadedEnd)   qs.set('end_date',   loadedEnd);
+
+    fetch(`${basePath}/api/pdf?${qs}`)
+      .then(r => r.blob())
+      .then(blob => {
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `gl-rollup-${loadedStart || 'report'}.pdf`;
+        a.click();
+        URL.revokeObjectURL(a.href);
+      })
+      .catch(err => alert('PDF failed: ' + err.message))
+      .finally(() => setPdfLoading(false));
+  }
+
+  const isPrint      = params._print === '1';
+  const datesChanged = startDate !== loadedStart || endDate !== loadedEnd;
+
+  // ── Totals row ────────────────────────────────────────────────────
+  const totals = useMemo(() => {
+    if (!rows) return null;
+    return rows.reduce((acc, r) => {
+      acc.creditCard    += toNum(r.creditCard);
+      acc.cash          += toNum(r.cash);
+      acc.check         += toNum(r.check);
+      acc.free          += toNum(r.free);
+      acc.orgCredit     += toNum(r.orgCredit);
+      acc.totalPayments += toNum(r.totalPayments);
+      acc.numPayments   += toNum(r.numPayments);
+      acc.totalRefunds  += toNum(r.totalRefunds);
+      acc.numRefunds    += toNum(r.numRefunds);
+      acc.netAmount     += toNum(r.netAmount);
+      return acc;
+    }, { creditCard:0, cash:0, check:0, free:0, orgCredit:0, totalPayments:0, numPayments:0, totalRefunds:0, numRefunds:0, netAmount:0 });
+  }, [rows]);
+
+  // ── Toolbar ───────────────────────────────────────────────────────
+  function renderToolbar() {
+    if (isPrint) return null;
+    return (
+      <div className="toolbar">
+        <span className="toolbar-title">GL Code Rollup</span>
+        <div className="divider" />
+        <label>Start<input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} /></label>
+        <label>End<input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} /></label>
+        <button onClick={() => setMonth(-1)} style={{fontSize:11,padding:'4px 8px'}}>Last Month</button>
+        <button onClick={() => setMonth(0)}  style={{fontSize:11,padding:'4px 8px'}}>This Month</button>
+        <button onClick={() => setMonth(1)}  style={{fontSize:11,padding:'4px 8px'}}>Next Month</button>
+        <button
+          className="btn-run"
+          onClick={() => fetchData(startDate, endDate)}
+          disabled={loading}
+          style={datesChanged && !loading ? {boxShadow:'0 0 0 2px #4ade80'} : {}}
+        >
+          {loading ? 'Loading…' : '▶ Run Report'}
+        </button>
+        <div className="toolbar-spacer" />
+        {rows && <span className="row-count">{rows.length} GL code{rows.length !== 1 ? 's' : ''}</span>}
+        <div className="divider" />
+        <button onClick={() => window.print()}>🖨️ Print</button>
+        <button
+          className="btn-pdf"
+          onClick={downloadPdf}
+          disabled={pdfLoading || !rows || rows.length === 0}
+        >
+          {pdfLoading ? 'Generating…' : '📄 PDF'}
+        </button>
+      </div>
+    );
+  }
+
+  // ── States ────────────────────────────────────────────────────────
+  if (error && !rows) return (
+    <div>{renderToolbar()}
+      <div className="page"><div className="error">
+        <p><strong>Failed to load GL data</strong></p>
+        <p>{error}</p>
+        <p style={{marginTop:12,color:'#666',fontSize:12}}>Check that Metabase public sharing is enabled and the GL UUID is correct.</p>
+      </div></div>
+    </div>
+  );
+
+  if (!rows) return (
+    <div>{renderToolbar()}
+      <div className="page"><div className="loading">
+        <div className="spinner" /><div>Loading GL data…</div>
+      </div></div>
+    </div>
+  );
+
+  const now = new Date();
+  const runDate = `${String(now.getMonth()+1).padStart(2,'0')}/${String(now.getDate()).padStart(2,'0')}/${now.getFullYear()} @ ${now.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',hour12:true}).toLowerCase()}`;
+  const orgName = (meta.org_name) ? meta.org_name : 'rec.us';
+  const logoUrl = meta.logo_url || null;
+  const dateRangeLabel = [loadedStart && formatDisplayDate(loadedStart), loadedEnd && formatDisplayDate(loadedEnd)].filter(Boolean).join(' – ') || 'Current Month';
+
+  const netIsNeg = totals && totals.netAmount < 0;
+
+  return (
+    <div>
+      {renderToolbar()}
+      <div className="page" style={loading ? {opacity:0.5,pointerEvents:'none'} : {}}>
+
+        {/* Header */}
+        <div className="report-header">
+          <div className="report-header-left">
+            {logoUrl && <img src={logoUrl} alt="" className="report-header-logo" onError={e => e.target.style.display='none'} />}
+            <div>
+              <div className="org-label">{orgName}</div>
+              <div className="title">GL Code Rollup</div>
+            </div>
+          </div>
+          <div className="report-header-right">
+            <div className="date-range">{dateRangeLabel}</div>
+          </div>
+        </div>
+
+        {/* Summary cards */}
+        {totals && (
+          <div className="summary-cards">
+            <div className="summary-card">
+              <div className="card-label">Total Payments</div>
+              <div className="card-value green">{fmtMoney(totals.totalPayments)}</div>
+              <div className="card-sub">{totals.numPayments.toLocaleString()} transactions</div>
+            </div>
+            <div className="summary-card">
+              <div className="card-label">Total Refunds</div>
+              <div className="card-value red">{fmtMoney(totals.totalRefunds)}</div>
+              <div className="card-sub">{totals.numRefunds.toLocaleString()} refunds</div>
+            </div>
+            <div className="summary-card">
+              <div className="card-label">Net Amount</div>
+              <div className={`card-value ${netIsNeg ? 'red' : 'green'}`}>{fmtMoney(totals.netAmount)}</div>
+              <div className="card-sub">payments minus refunds</div>
+            </div>
+            <div className="summary-card">
+              <div className="card-label">Credit Card</div>
+              <div className="card-value">{fmtMoney(totals.creditCard)}</div>
+              <div className="card-sub">card-online + card-present</div>
+            </div>
+            <div className="summary-card">
+              <div className="card-label">Cash</div>
+              <div className="card-value">{fmtMoney(totals.cash)}</div>
+              <div className="card-sub">&nbsp;</div>
+            </div>
+            <div className="summary-card">
+              <div className="card-label">Check</div>
+              <div className="card-value">{fmtMoney(totals.check)}</div>
+              <div className="card-sub">&nbsp;</div>
+            </div>
+          </div>
+        )}
+
+        {/* GL Table */}
+        {rows.length === 0 ? (
+          <div style={{textAlign:'center',padding:'40px 0',color:'#888'}}>No GL data found for the selected date range.</div>
+        ) : (
+          <table className="gl-table">
+            <thead>
+              <tr>
+                <th style={{width:'110px'}}>GL Code</th>
+                <th style={{minWidth:'160px'}}>Description</th>
+                <th style={{width:'110px'}}>Credit Card</th>
+                <th style={{width:'90px'}}>Cash</th>
+                <th style={{width:'90px'}}>Check</th>
+                <th style={{width:'70px'}}>Free</th>
+                <th style={{width:'110px'}}>Org Credit</th>
+                <th style={{width:'110px'}}>Total Pmts</th>
+                <th style={{width:'70px'}}># Pmts</th>
+                <th style={{width:'100px'}}>Total Refunds</th>
+                <th style={{width:'60px'}}># Rfds</th>
+                <th style={{width:'110px'}}>Net Amount</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r, i) => {
+                const net = toNum(r.netAmount);
+                return (
+                  <tr key={i}>
+                    <td>{r.glCode || <span style={{color:'#bbb'}}>—</span>}</td>
+                    <td style={{color: r.glDesc === 'none' ? '#bbb' : '#444', fontStyle: r.glDesc === 'none' ? 'italic' : 'normal'}}>{r.glDesc}</td>
+                    <td className={`money ${isZero(r.creditCard) ? 'zero' : ''}`}>{fmtMoney(r.creditCard)}</td>
+                    <td className={`money ${isZero(r.cash) ? 'zero' : ''}`}>{fmtMoney(r.cash)}</td>
+                    <td className={`money ${isZero(r.check) ? 'zero' : ''}`}>{fmtMoney(r.check)}</td>
+                    <td className={`money ${isZero(r.free) ? 'zero' : ''}`}>{fmtMoney(r.free)}</td>
+                    <td className={`money ${isZero(r.orgCredit) ? 'zero' : ''}`}>{fmtMoney(r.orgCredit)}</td>
+                    <td className="money" style={{fontWeight:500}}>{fmtMoney(r.totalPayments)}</td>
+                    <td style={{color:'#666'}}>{toNum(r.numPayments).toLocaleString()}</td>
+                    <td className={`money ${isZero(r.totalRefunds) ? 'zero' : 'red'}`} style={{color: isZero(r.totalRefunds) ? '' : '#b91c1c'}}>{fmtMoney(r.totalRefunds)}</td>
+                    <td style={{color: isZero(r.numRefunds) ? '#ccc' : '#b91c1c'}}>{toNum(r.numRefunds).toLocaleString()}</td>
+                    <td className={`money col-net ${net < 0 ? 'negative' : net > 0 ? 'positive' : ''}`}>{fmtMoney(net)}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+            <tfoot>
+              <tr>
+                <td colSpan={2}>Totals — {rows.length} GL code{rows.length !== 1 ? 's' : ''}</td>
+                <td className="money">{fmtMoney(totals.creditCard)}</td>
+                <td className="money">{fmtMoney(totals.cash)}</td>
+                <td className="money">{fmtMoney(totals.check)}</td>
+                <td className="money">{fmtMoney(totals.free)}</td>
+                <td className="money">{fmtMoney(totals.orgCredit)}</td>
+                <td className="money">{fmtMoney(totals.totalPayments)}</td>
+                <td>{totals.numPayments.toLocaleString()}</td>
+                <td className="money">{fmtMoney(totals.totalRefunds)}</td>
+                <td>{totals.numRefunds.toLocaleString()}</td>
+                <td className={`money col-net ${netIsNeg ? 'negative' : ''}`}>{fmtMoney(totals.netAmount)}</td>
+              </tr>
+            </tfoot>
+          </table>
+        )}
+
+        {/* Footer */}
+        <div className="report-footer">
+          <span>{orgName} — GL Code Rollup</span>
+          <span>Run Date/Time: {runDate}</span>
+        </div>
+
+        <div id="report-ready" style={{display:'none'}} />
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
