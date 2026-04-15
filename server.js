@@ -33,12 +33,6 @@ const ORGS = {
     facility: { mbUuid: "21e74d52-f49a-46d6-bc2d-f9348027854f" },
     gl:       { mbUuid: "c6daa914-9ea0-449f-956b-373aa0ac2a8a" },
   },
-    norman: {
-    orgId:   "574923bd-9e7b-43e0-9e5f-7ce256189cbf",
-    logoUrl: "https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2Forganization-574923bd-9e7b-43e0-9e5f-7ce256189cbf%2FfullLogo.png%3F1763816879340&w=1920&q=75",
-    facility: { mbUuid: "81c43b6d-1776-4a13-9fec-cb6f9e9895bb" },
-    gl:       { mbUuid: "cf65d706-0656-4d17-85fa-e3b96b0c2161" },
-  },
   // windham: {
   //   orgId:   "REPLACE_WITH_ORG_UUID",
   //   logoUrl: "https://...",
