@@ -20,15 +20,27 @@ const PORT = process.env.PORT || 3100;
 const BASE_URL = process.env.BASE_URL || `http://localhost:${PORT}`;
 
 // ── Org config ───────────────────────────────────────────────────────
-// Each org slug maps to Metabase public question UUIDs and a logo URL.
+// Each org slug maps to:
+//   orgId   — rec.us organization UUID (passed to Metabase as {{org_id}})
+//   logoUrl — displayed in report header
+//   facility/gl mbUuid — Metabase public question UUID for each report type
+//
 // The org *name* comes from the data ("Org Name" column), not from here.
 const ORGS = {
   clarksville: {
+    orgId:   "460566d3-3a51-4387-a7a0-0b010923e40d",
     logoUrl: "https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2Forganization-460566d3-3a51-4387-a7a0-0b010923e40d%2FfullLogo.png%3F1742511257248&w=256&q=75",
     facility: { mbUuid: "21e74d52-f49a-46d6-bc2d-f9348027854f" },
     gl:       { mbUuid: "c6daa914-9ea0-449f-956b-373aa0ac2a8a" },
   },
+    norman: {
+    orgId:   "574923bd-9e7b-43e0-9e5f-7ce256189cbf",
+    logoUrl: "https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2Forganization-574923bd-9e7b-43e0-9e5f-7ce256189cbf%2FfullLogo.png%3F1763816879340&w=1920&q=75",
+    facility: { mbUuid: "81c43b6d-1776-4a13-9fec-cb6f9e9895bb" },
+    gl:       { mbUuid: "46b7e83b-f8ac-4d84-8c5c-4c72ca57cea4" },
+  },
   // windham: {
+  //   orgId:   "REPLACE_WITH_ORG_UUID",
   //   logoUrl: "https://...",
   //   facility: { mbUuid: "REPLACE_ME" },
   //   gl:       { mbUuid: "REPLACE_ME" },
@@ -56,8 +68,19 @@ function parseToISO(dateStr) {
 }
 
 // ── Build Metabase parameters array ─────────────────────────────────
-function buildMetabaseParams(query, reportType) {
+function buildMetabaseParams(query, reportType, orgId) {
   const params = [];
+
+  // Pass org ID so parameterized Metabase questions can filter by org.
+  // Requires {{org_id}} template variable in the SQL. Safe to include even
+  // for questions with org_id hardcoded — Metabase ignores unknown params.
+  if (orgId) {
+    params.push({
+      type: 'category',
+      target: ['variable', ['template-tag', 'org_id']],
+      value: orgId,
+    });
+  }
 
   if (query.start_date) {
     params.push({
@@ -116,7 +139,7 @@ app.get("/:org/:report/api/data", resolveOrg, async (req, res) => {
   try {
     const { orgConfig, orgSlug, reportType } = req;
     const mbUuid = orgConfig[reportType].mbUuid;
-    const params = buildMetabaseParams(req.query, reportType);
+    const params = buildMetabaseParams(req.query, reportType, orgConfig.orgId);
 
     const paramStr = params.length > 0
       ? `?parameters=${encodeURIComponent(JSON.stringify(params))}`
