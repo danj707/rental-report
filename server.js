@@ -1,38 +1,49 @@
 /**
- * Rental Report Server
+ * Rental Report Server — Multi-Org
  *
  * Routes:
- *   GET /                → serves the report UI (public/index.html)
- *   GET /api/data        → proxies Metabase public card API (solves CORS)
- *   GET /api/pdf         → renders the report with Puppeteer, returns PDF
+ *   GET /:org/facility          → serves facility report UI
+ *   GET /:org/gl                → serves GL rollup report UI
+ *   GET /:org/facility/api/data → proxies Metabase facility card
+ *   GET /:org/gl/api/data       → proxies Metabase GL card
+ *   GET /:org/facility/api/pdf  → Puppeteer PDF of facility report
+ *   GET /:org/gl/api/pdf        → Puppeteer PDF of GL report
  *
- * Query params accepted on all routes (passed through to Metabase):
- *   start_date, end_date, location_name, site_type
+ * Add new orgs to the ORGS map below.
  */
 
 const express = require("express");
 const path = require("path");
 
-// ── Config (use env vars or defaults) ───────────────────────────────
-const METABASE_URL = process.env.METABASE_URL || "https://your-metabase.com";
-const METABASE_PUBLIC_UUID = process.env.METABASE_PUBLIC_UUID || "REPLACE_ME";
+const METABASE_URL = process.env.METABASE_URL || "https://rec.metabaseapp.com";
 const PORT = process.env.PORT || 3100;
 const BASE_URL = process.env.BASE_URL || `http://localhost:${PORT}`;
-const ORG_NAME = process.env.ORG_NAME || "Clarksville Parks and Recreation";
+
+// ── Org config ───────────────────────────────────────────────────────
+// Each org slug maps to Metabase public question UUIDs and a logo URL.
+// The org *name* comes from the data ("Org Name" column), not from here.
+const ORGS = {
+  clarksville: {
+    logoUrl: "https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2Forganization-460566d3-3a51-4387-a7a0-0b010923e40d%2FfullLogo.png%3F1742511257248&w=256&q=75",
+    facility: { mbUuid: "21e74d52-f49a-46d6-bc2d-f9348027854f" },
+    gl:       { mbUuid: "c6daa914-9ea0-449f-956b-373aa0ac2a8a" },
+  },
+  // windham: {
+  //   logoUrl: "https://...",
+  //   facility: { mbUuid: "REPLACE_ME" },
+  //   gl:       { mbUuid: "REPLACE_ME" },
+  // },
+};
+
+const REPORT_TYPES = ["facility", "gl"];
 
 const app = express();
-app.use(express.static(path.join(__dirname, "public")));
 
 // ── Parse dates flexibly ─────────────────────────────────────────────
-// Handles: "March 1, 2026", "2026-03-01", "03/01/2026", "Mar 1, 2026"
 function parseToISO(dateStr) {
   if (!dateStr) return null;
   const s = dateStr.trim();
-
-  // Already ISO? (2026-03-01)
   if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
-
-  // Try native Date parse — works for "March 1, 2026", "Mar 1, 2026", etc.
   const d = new Date(s);
   if (!isNaN(d.getTime())) {
     const y = d.getFullYear();
@@ -40,14 +51,12 @@ function parseToISO(dateStr) {
     const day = String(d.getDate()).padStart(2, "0");
     return `${y}-${m}-${day}`;
   }
-
-  // Fallback: return as-is and let Metabase try
   console.warn(`[date] Could not parse "${dateStr}", passing through raw`);
   return s;
 }
 
-// ── Build Metabase parameters array from query string ───────────────
-function buildMetabaseParams(query) {
+// ── Build Metabase parameters array ─────────────────────────────────
+function buildMetabaseParams(query, reportType) {
   const params = [];
 
   if (query.start_date) {
@@ -64,38 +73,57 @@ function buildMetabaseParams(query) {
       value: parseToISO(query.end_date),
     });
   }
-  if (query.location_name) {
-    // Supports comma-separated values for multi-select
-    const locations = query.location_name.split(",").map((s) => s.trim());
-    params.push({
-      type: "category",
-      target: ["variable", ["template-tag", "location_name"]],
-      value: locations.length === 1 ? locations[0] : locations,
-    });
-  }
-  if (query.site_type) {
-    params.push({
-      type: "category",
-      target: ["variable", ["template-tag", "site_type"]],
-      value: query.site_type,
-    });
+
+  // Facility-only filters
+  if (reportType === "facility") {
+    if (query.location_name) {
+      const locations = query.location_name.split(",").map((s) => s.trim());
+      params.push({
+        type: "category",
+        target: ["variable", ["template-tag", "location_name"]],
+        value: locations.length === 1 ? locations[0] : locations,
+      });
+    }
+    if (query.site_type) {
+      params.push({
+        type: "category",
+        target: ["variable", ["template-tag", "site_type"]],
+        value: query.site_type,
+      });
+    }
   }
 
   return params;
 }
 
-// ── GET /api/data — proxy to Metabase public API ────────────────────
-app.get("/api/data", async (req, res) => {
+// ── Validate org + report middleware ────────────────────────────────
+function resolveOrg(req, res, next) {
+  const { org, report } = req.params;
+  if (!ORGS[org]) {
+    return res.status(404).send(`Unknown org: "${org}". Valid orgs: ${Object.keys(ORGS).join(", ")}`);
+  }
+  if (!REPORT_TYPES.includes(report)) {
+    return res.status(404).send(`Unknown report type: "${report}". Valid types: ${REPORT_TYPES.join(", ")}`);
+  }
+  req.orgConfig = ORGS[org];
+  req.orgSlug = org;
+  req.reportType = report;
+  next();
+}
+
+// ── GET /:org/:report/api/data ───────────────────────────────────────
+app.get("/:org/:report/api/data", resolveOrg, async (req, res) => {
   try {
-    const params = buildMetabaseParams(req.query);
-    const paramStr =
-      params.length > 0
-        ? `?parameters=${encodeURIComponent(JSON.stringify(params))}`
-        : "";
+    const { orgConfig, orgSlug, reportType } = req;
+    const mbUuid = orgConfig[reportType].mbUuid;
+    const params = buildMetabaseParams(req.query, reportType);
 
-    const url = `${METABASE_URL}/api/public/card/${METABASE_PUBLIC_UUID}/query/json${paramStr}`;
+    const paramStr = params.length > 0
+      ? `?parameters=${encodeURIComponent(JSON.stringify(params))}`
+      : "";
 
-    console.log(`[proxy] Fetching: ${url}`);
+    const url = `${METABASE_URL}/api/public/card/${mbUuid}/query/json${paramStr}`;
+    console.log(`[proxy] ${orgSlug}/${reportType} → ${url}`);
 
     const response = await fetch(url);
     if (!response.ok) {
@@ -106,11 +134,12 @@ app.get("/api/data", async (req, res) => {
 
     const data = await response.json();
 
-    // Also pass along the org name and filter context
     res.json({
       rows: data,
       meta: {
-        org_name: ORG_NAME,
+        org_slug: orgSlug,
+        logo_url: orgConfig.logoUrl,
+        report_type: reportType,
         start_date: req.query.start_date || null,
         end_date: req.query.end_date || null,
         location_name: req.query.location_name || null,
@@ -124,15 +153,15 @@ app.get("/api/data", async (req, res) => {
   }
 });
 
-// ── GET /api/pdf — render report with Puppeteer, return PDF ─────────
-app.get("/api/pdf", async (req, res) => {
+// ── GET /:org/:report/api/pdf ────────────────────────────────────────
+app.get("/:org/:report/api/pdf", resolveOrg, async (req, res) => {
   let browser;
   try {
     const puppeteer = require("puppeteer");
+    const { orgSlug, reportType } = req;
 
-    // Build the report URL — use localhost since Puppeteer runs inside the same container
     const qs = new URLSearchParams(req.query).toString();
-    const reportUrl = `http://localhost:${PORT}/?${qs}&_print=1`;
+    const reportUrl = `http://localhost:${PORT}/${orgSlug}/${reportType}?${qs}&_print=1`;
 
     console.log(`[pdf] Rendering: ${reportUrl}`);
 
@@ -149,30 +178,29 @@ app.get("/api/pdf", async (req, res) => {
 
     const page = await browser.newPage();
     await page.goto(reportUrl, { waitUntil: "networkidle0", timeout: 60000 });
-
-    // Wait for the report to signal it's done loading
     await page.waitForSelector("#report-ready", { timeout: 30000 });
+
+    const isGL = reportType === "gl";
 
     const pdf = await page.pdf({
       format: "Letter",
-      landscape: true,
+      landscape: !isGL,   // GL report fits nicely in portrait; facility needs landscape
       printBackground: true,
       margin: { top: "0.4in", bottom: "0.5in", left: "0.4in", right: "0.4in" },
       displayHeaderFooter: true,
       headerTemplate: "<span></span>",
       footerTemplate: `
-        <div style="font-size:9px; width:100%; padding:0 0.4in; display:flex; justify-content:space-between; color:#888;">
-          <span>rec.us — Rental Schedule</span>
+        <div style="font-size:9px; width:100%; padding:0 0.4in; display:flex; justify-content:space-between; color:#888; font-family:sans-serif;">
+          <span>rec.us — ${reportType === "gl" ? "GL Code Rollup" : "Facility Rental Schedule"}</span>
           <span>Page <span class="pageNumber"></span> of <span class="totalPages"></span></span>
         </div>
       `,
     });
 
+    const filename = `${reportType}-report-${req.query.start_date || "report"}.pdf`;
     res.set({
       "Content-Type": "application/pdf",
-      "Content-Disposition": `inline; filename="rental-schedule-${
-        req.query.start_date || "report"
-      }.pdf"`,
+      "Content-Disposition": `inline; filename="${filename}"`,
       "Content-Length": pdf.length,
     });
     res.send(pdf);
@@ -184,16 +212,43 @@ app.get("/api/pdf", async (req, res) => {
   }
 });
 
-// ── Serve index.html for the root and any unmatched routes ──────────
-app.get("*", (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "index.html"));
+// ── Serve report HTML files ──────────────────────────────────────────
+app.get("/:org/facility", (req, res) => {
+  if (!ORGS[req.params.org]) return res.status(404).send("Unknown org");
+  res.sendFile(path.join(__dirname, "public", "facility.html"));
 });
+
+app.get("/:org/gl", (req, res) => {
+  if (!ORGS[req.params.org]) return res.status(404).send("Unknown org");
+  res.sendFile(path.join(__dirname, "public", "gl.html"));
+});
+
+// ── Root redirect ────────────────────────────────────────────────────
+app.get("/", (req, res) => {
+  const orgs = Object.keys(ORGS);
+  res.send(`
+    <html><body style="font-family:sans-serif;padding:40px">
+    <h2>rec.us Report Server</h2>
+    <ul>
+      ${orgs.map(o => `
+        <li style="margin:8px 0"><strong>${o}</strong>
+          — <a href="/${o}/facility">Facility Report</a>
+          | <a href="/${o}/gl">GL Rollup</a>
+        </li>`).join("")}
+    </ul>
+    </body></html>
+  `);
+});
+
+// ── Static assets ────────────────────────────────────────────────────
+app.use(express.static(path.join(__dirname, "public")));
 
 app.listen(PORT, () => {
-  console.log(`\n  🏛️  Rental Report Server`);
-  console.log(`  ├─ Report UI:  ${BASE_URL}/`);
-  console.log(`  ├─ Data API:   ${BASE_URL}/api/data`);
-  console.log(`  ├─ PDF API:    ${BASE_URL}/api/pdf`);
-  console.log(`  └─ Metabase:   ${METABASE_URL}/api/public/card/${METABASE_PUBLIC_UUID}\n`);
+  console.log(`\n  🏛️  rec.us Report Server`);
+  console.log(`  ├─ Base URL: ${BASE_URL}`);
+  Object.keys(ORGS).forEach(slug => {
+    console.log(`  ├─ ${slug}/facility  →  ${BASE_URL}/${slug}/facility`);
+    console.log(`  ├─ ${slug}/gl        →  ${BASE_URL}/${slug}/gl`);
+  });
+  console.log(`  └─ Metabase: ${METABASE_URL}\n`);
 });
-
