@@ -388,12 +388,16 @@ app.delete("/:org/admin/subscribe", (req, res) => {
 });
 
 // POST /:org/admin/test-send  { email, report, schedule }
+// Responds immediately and runs PDF generation + send in background
 app.post("/:org/admin/test-send", async (req, res) => {
   if (!ORGS[req.params.org]) return res.status(404).json({ error: "Unknown org" });
   const { email, report, schedule } = req.body;
   if (!email || !report || !schedule) return res.status(400).json({ error: "email, report, and schedule required" });
-  const result = await sendReportEmail(req.params.org, email, report, schedule);
-  res.json(result);
+  // Respond immediately so the browser doesn't time out
+  res.json({ ok: true, message: "Sending in background — check the log in a moment" });
+  // Fire and forget
+  sendReportEmail(req.params.org, email, report, schedule)
+    .catch(err => console.error('[test-send] Error:', err));
 });
 
 // ── Serve HTML pages ─────────────────────────────────────────────────
