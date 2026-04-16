@@ -1,0 +1,16 @@
+{
+  "name": "rental-report",
+  "version": "1.0.0",
+  "description": "Pretty rental schedule report powered by Metabase data",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^9.4.3",
+    "express": "^4.18.2",
+    "node-cron": "^3.0.3",
+    "nodemailer": "^6.9.13",
+    "puppeteer": "^22.0.0"
+  }
+}
