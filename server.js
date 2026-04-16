@@ -17,8 +17,8 @@
 
 const express    = require("express");
 const path       = require("path");
+const fs         = require("fs");
 const cron       = require("node-cron");
-// Storage: JSON file-based (no native deps)
 const { Resend } = require("resend");
 
 // Catch anything that slips through
