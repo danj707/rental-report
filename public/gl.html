@@ -313,6 +313,8 @@ function normalizeRow(raw) {
     totalRefunds:  raw['Total Refunds']                 || raw['total_refunds']              || 0,
     numRefunds:    raw['Number of Refunds']             || raw['number_of_refunds']          || 0,
     netAmount:     raw['Net Amount']                    || raw['net_amount']                 || 0,
+    locations:     'Locations'      in raw ? (raw['Locations']       || '') : null,
+    accountNumber: 'Account Number' in raw ? (raw['Account Number']  || '') : null,
   };
 }
 
@@ -390,7 +392,9 @@ function App() {
   // ── Totals row ────────────────────────────────────────────────────
   const totals = useMemo(() => {
     if (!rows) return null;
-    return rows.reduce((acc, r) => {
+    const hasLocations     = rows.length > 0 && rows[0].locations     !== null;
+    const hasAccountNumber = rows.length > 0 && rows[0].accountNumber !== null;
+    const sums = rows.reduce((acc, r) => {
       acc.creditCard    += toNum(r.creditCard);
       acc.cash          += toNum(r.cash);
       acc.check         += toNum(r.check);
@@ -403,6 +407,7 @@ function App() {
       acc.netAmount     += toNum(r.netAmount);
       return acc;
     }, { creditCard:0, cash:0, check:0, free:0, orgCredit:0, totalPayments:0, numPayments:0, totalRefunds:0, numRefunds:0, netAmount:0 });
+    return { ...sums, hasLocations, hasAccountNumber };
   }, [rows]);
 
   // ── Toolbar ───────────────────────────────────────────────────────
@@ -461,7 +466,10 @@ function App() {
 
   const now = new Date();
   const runDate = `${String(now.getMonth()+1).padStart(2,'0')}/${String(now.getDate()).padStart(2,'0')}/${now.getFullYear()} @ ${now.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',hour12:true}).toLowerCase()}`;
-  const orgName = (meta.org_name) ? meta.org_name : 'rec.us';
+  // org_name comes from data rows for facility report; GL queries may not include it.
+  // Fall back to a capitalised version of the org slug.
+  const slugLabel = (meta.org_slug || 'rec.us').replace(/w/g, c => c.toUpperCase());
+  const orgName = meta.org_name || slugLabel;
   const logoUrl = meta.logo_url || null;
   const dateRangeLabel = [loadedStart && formatDisplayDate(loadedStart), loadedEnd && formatDisplayDate(loadedEnd)].filter(Boolean).join(' – ') || 'Current Month';
 
@@ -531,6 +539,8 @@ function App() {
               <tr>
                 <th style={{width:'110px'}}>GL Code</th>
                 <th style={{minWidth:'160px'}}>Description</th>
+                {totals.hasAccountNumber && <th style={{width:'110px'}}>Account #</th>}
+                {totals.hasLocations && <th style={{minWidth:'120px'}}>Locations</th>}
                 <th style={{width:'110px'}}>Credit Card</th>
                 <th style={{width:'90px'}}>Cash</th>
                 <th style={{width:'90px'}}>Check</th>
@@ -550,6 +560,8 @@ function App() {
                   <tr key={i}>
                     <td>{r.glCode || <span style={{color:'#bbb'}}>—</span>}</td>
                     <td style={{color: r.glDesc === 'none' ? '#bbb' : '#444', fontStyle: r.glDesc === 'none' ? 'italic' : 'normal'}}>{r.glDesc}</td>
+                    {totals.hasAccountNumber && <td style={{color:'#888',fontSize:'10.5px',fontFamily:"'IBM Plex Mono',monospace"}}>{r.accountNumber}</td>}
+                    {totals.hasLocations && <td style={{color:'#666',fontSize:'10.5px'}}>{r.locations}</td>}
                     <td className={`money ${isZero(r.creditCard) ? 'zero' : ''}`}>{fmtMoney(r.creditCard)}</td>
                     <td className={`money ${isZero(r.cash) ? 'zero' : ''}`}>{fmtMoney(r.cash)}</td>
                     <td className={`money ${isZero(r.check) ? 'zero' : ''}`}>{fmtMoney(r.check)}</td>
@@ -566,7 +578,7 @@ function App() {
             </tbody>
             <tfoot>
               <tr>
-                <td colSpan={2}>Totals — {rows.length} GL code{rows.length !== 1 ? 's' : ''}</td>
+                <td colSpan={2 + (totals.hasAccountNumber ? 1 : 0) + (totals.hasLocations ? 1 : 0)}>Totals — {rows.length} GL code{rows.length !== 1 ? 's' : ''}</td>
                 <td className="money">{fmtMoney(totals.creditCard)}</td>
                 <td className="money">{fmtMoney(totals.cash)}</td>
                 <td className="money">{fmtMoney(totals.check)}</td>
