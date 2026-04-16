@@ -35,7 +35,6 @@
     }
     .toolbar-title { font-weight: 600; margin-right: 4px; font-size: 13px; }
     .toolbar-spacer { flex: 1; }
-
     .toolbar label {
       font-size: 10px;
       text-transform: uppercase;
@@ -57,7 +56,6 @@
     }
     .toolbar input[type="date"]:focus { border-color: #3b82f6; }
     .toolbar input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(1); cursor: pointer; }
-
     .toolbar button {
       padding: 6px 14px;
       border: 1px solid rgba(255,255,255,.25);
@@ -82,21 +80,21 @@
 
     /* ── Report page ── */
     .page {
-      max-width: 1200px;
+      max-width: 1100px;
       margin: 16px auto;
       padding: 24px 28px;
       background: #fff;
       box-shadow: 0 1px 4px rgba(0,0,0,.08);
     }
 
-    /* ── Header ── */
+    /* ── Report header ── */
     .report-header {
       display: flex;
       justify-content: space-between;
       align-items: center;
       border-bottom: 2.5px solid #111;
       padding-bottom: 10px;
-      margin-bottom: 14px;
+      margin-bottom: 18px;
       gap: 16px;
     }
     .report-header-left { display: flex; align-items: center; gap: 14px; }
@@ -117,52 +115,72 @@
     .report-header-right { text-align: right; }
     .report-header .date-range { font-size: 11px; color: #666; }
 
-    /* ── Column headers ── */
-    .col-header-row {
-      display: flex;
-      gap: 6px;
-      padding: 5px 8px;
-      background: #e4e4e4;
-      border-top: 1px solid #bbb;
+    /* ── Date group ── */
+    .date-group { margin-bottom: 20px; }
+
+    .date-heading {
+      font-size: 13px;
+      font-weight: 700;
+      padding: 6px 0 4px;
+      border-bottom: 2px solid #333;
+      margin-bottom: 0;
+    }
+
+    /* ── Per-group table ── */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 11.5px;
+      margin-bottom: 0;
+    }
+
+    thead tr {
+      background: #e8e8e8;
+      border-top: none;
       border-bottom: 1px solid #bbb;
-      font-weight: 600;
+    }
+
+    th {
       font-size: 10px;
+      font-weight: 600;
       text-transform: uppercase;
       letter-spacing: 0.4px;
-      color: #333;
+      color: #444;
+      padding: 5px 8px;
+      text-align: left;
+      white-space: nowrap;
     }
 
-    /* ── Section header: date only ── */
-    .section-header {
-      display: flex;
-      align-items: baseline;
-      gap: 10px;
-      padding: 7px 8px 4px;
-      margin-top: 8px;
-      background: #edeae4;
-      border-bottom: 1px solid #ccc;
-    }
-    .section-header .date-label { font-weight: 700; font-size: 12.5px; }
-
-    /* ── Data rows ── */
-    .data-row {
-      display: flex;
-      gap: 6px;
-      padding: 4px 8px;
+    td {
+      padding: 5px 8px;
+      vertical-align: top;
       border-bottom: 1px solid #eee;
-      align-items: baseline;
-      font-size: 11.5px;
     }
-    .data-row:nth-child(even) { background: #fafaf8; }
-    .data-row .cell { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .alcohol-yes { color: #b91c1c; font-weight: 700; }
+    tr:last-child td { border-bottom: none; }
+    tr:nth-child(even) td { background: #fafaf8; }
 
-    /* ── Sub-row for notes/add-ons ── */
-    .sub-row {
-      padding: 0 8px 3px 14px;
+    /* ── Column widths ── */
+    .col-location  { width: 14%; }
+    .col-datetime  { width: 14%; white-space: nowrap; }
+    .col-title     { width: 13%; }
+    .col-invoice   { width: 7%;  font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; }
+    .col-renter    { width: 10%; }
+    .col-phone     { width: 9%;  white-space: nowrap; }
+    .col-email     { width: 14%; font-size: 10.5px; word-break: break-all; }
+    .col-alcohol   { width: 5%;  text-align: center; }
+    .col-hcnt      { width: 4%;  text-align: center; }
+    .col-total     { width: 6%;  text-align: right; white-space: nowrap; }
+
+    .alcohol-yes { color: #b91c1c; font-weight: 600; }
+    .muted       { color: #ccc; }
+
+    /* ── Notes sub-row ── */
+    .notes-row td {
+      padding: 1px 8px 4px;
       font-size: 10px;
       color: #888;
       font-family: 'IBM Plex Mono', monospace;
+      border-bottom: 1px solid #eee;
     }
 
     /* ── Footer ── */
@@ -170,7 +188,7 @@
       display: flex;
       justify-content: space-between;
       border-top: 2.5px solid #111;
-      margin-top: 14px;
+      margin-top: 16px;
       padding-top: 6px;
       font-size: 10px;
       color: #777;
@@ -186,23 +204,12 @@
     @keyframes spin { to { transform: rotate(360deg); } }
     .error { text-align: center; padding: 60px 20px; color: #b91c1c; font-size: 14px; }
 
-    /* ── Column widths ── */
-    .col-locfac    { width: 160px; flex-shrink: 0; font-weight: 500; white-space: normal; line-height: 1.3; }
-    .col-datetime  { width: 148px; flex-shrink: 0; white-space: nowrap; }
-    .col-title     { width: 130px; flex-shrink: 0; }
-    .col-invoice   { width: 68px;  flex-shrink: 0; font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; }
-    .col-renter    { width: 120px; flex-shrink: 0; }
-    .col-phone     { width: 100px; flex-shrink: 0; }
-    .col-email     { width: 160px; flex-shrink: 0; font-size: 10.5px; }
-    .col-alcohol   { width: 42px;  flex-shrink: 0; text-align: center; }
-    .col-hcnt      { width: 38px;  flex-shrink: 0; text-align: center; }
-    .col-total     { width: 62px;  flex-shrink: 0; text-align: right; }
-
     /* ── Print / PDF ── */
     @media print {
       body { background: #fff; }
       .toolbar { display: none !important; }
       .page { box-shadow: none; margin: 0; padding: 12px 16px; max-width: 100%; }
+      .date-group { page-break-inside: avoid; }
     }
     body.print-mode .toolbar { display: none !important; }
     body.print-mode { background: #fff; }
@@ -221,46 +228,37 @@ const { useState, useEffect, useMemo, useCallback } = React;
 
 function getOrgAndBase() {
   const parts = window.location.pathname.split('/').filter(Boolean);
-  const orgSlug  = parts[0] || 'unknown';
-  const basePath = `/${parts[0]}/${parts[1]}`;
-  return { orgSlug, basePath };
+  return { orgSlug: parts[0] || 'unknown', basePath: `/${parts[0]}/${parts[1]}` };
 }
 
 function getParams() {
   const p = new URLSearchParams(window.location.search);
-  return {
-    start_date: p.get('start_date'),
-    end_date:   p.get('end_date'),
-    site_type:  p.get('site_type'),
-    _print:     p.get('_print'),
-  };
+  return { start_date: p.get('start_date'), end_date: p.get('end_date'), site_type: p.get('site_type'), _print: p.get('_print') };
 }
 
 function getCurrentMonthRange() {
-  const now = new Date();
-  const y = now.getFullYear(), m = now.getMonth();
-  return {
-    start: toISO(new Date(y, m, 1)),
-    end:   toISO(new Date(y, m + 1, 0)),
-  };
+  const now = new Date(), y = now.getFullYear(), m = now.getMonth();
+  return { start: toISO(new Date(y, m, 1)), end: toISO(new Date(y, m + 1, 0)) };
 }
 
 function toISO(d) {
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 }
 
-function formatDisplayDate(isoStr) {
-  if (!isoStr) return '';
-  const d = new Date(isoStr + 'T12:00:00');
+function formatDisplayDate(iso) {
+  if (!iso) return '';
+  const d = new Date(iso + 'T12:00:00');
   const months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
   return `${months[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
 }
 
-function formatDateHeader(dateStr) {
-  const d = new Date((dateStr || '').includes('T') ? dateStr : dateStr + 'T12:00:00');
-  const days   = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+function formatDateHeading(dateStr) {
+  const d = new Date(dateStr + (dateStr.includes('T') ? '' : 'T12:00:00'));
+  const days   = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
   const months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
-  return `${days[d.getDay()]}, ${months[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
+  const day = d.getDate();
+  const suffix = [,'st','nd','rd'][day % 10 > 3 || Math.floor(day/10) === 1 ? 0 : day % 10] || 'th';
+  return `${days[d.getDay()]} ${months[d.getMonth()]} ${day}${suffix}, ${d.getFullYear()}`;
 }
 
 function formatMoney(v) {
@@ -272,32 +270,47 @@ function formatMoney(v) {
 
 function normalizeRow(raw) {
   return {
-    orgName:       raw['Org Name']          || '',
-    date:          raw['Date']              || '',
-    locationFac:   raw['Location/Facility'] || '',
-    rentalDT:      raw['Rental Date/Time']  || '',
-    eventTitle:    raw['Event Title']       || '',
-    invoiceNum:    raw['Invoice #']         || '',
-    renter:        raw['Renter']            || '',
-    phone:         raw['Phone']             || '',
-    email:         raw['Email']             || '',
-    alcohol:       raw['Alcohol']           || '',
-    headCount:     raw['Head Cnt']          || '',
-    notes:         raw['Notes']             || '',
-    addOns:        raw['Add Ons']           || '',
-    total:         raw['Total']             ?? null,
+    orgName:          raw['Org Name']          || raw['org_name']          || '',
+    date:             raw['Date']              || raw['date']               || '',
+    locationFacility: raw['Location/Facility'] || raw['location_facility'] || '',
+    rentalDateTime:   raw['Rental Date/Time']  || raw['rental_date_time']  || '',
+    eventTitle:       raw['Event Title']       || raw['event_title']       || '',
+    invoiceNum:       raw['Invoice #']         || raw['invoice_num']       || '',
+    renter:           raw['Renter']            || raw['renter']            || '',
+    phone:            raw['Phone']             || raw['phone']             || '',
+    email:            raw['Email']             || raw['email']             || '',
+    headCnt:          raw['Head Cnt']          || raw['head_cnt']          || '',
+    alcohol:          raw['Alcohol']           || raw['alcohol']           || '',
+    notes:            raw['Notes']             || raw['notes']             || '',
+    addOns:           raw['Add Ons']           || raw['add_ons']           || '',
+    total:            raw['Total']             ?? raw['total']             ?? null,
   };
 }
 
-// ── App ──────────────────────────────────────────────────────────────
+const COL_HEADERS = () => (
+  <thead>
+    <tr>
+      <th className="col-location">Location/Facility</th>
+      <th className="col-datetime">Rental Date/Time</th>
+      <th className="col-title">Event Title</th>
+      <th className="col-invoice">Invoice #</th>
+      <th className="col-renter">Renter</th>
+      <th className="col-phone">Phone</th>
+      <th className="col-email">Email</th>
+      <th className="col-alcohol">Alc.</th>
+      <th className="col-hcnt">Cnt</th>
+      <th className="col-total">Total</th>
+    </tr>
+  </thead>
+);
+
 function App() {
   const { orgSlug, basePath } = useMemo(() => getOrgAndBase(), []);
   const params   = useMemo(() => getParams(), []);
   const defaults = useMemo(() => getCurrentMonthRange(), []);
 
-  const [startDate, setStartDate] = useState(params.start_date || defaults.start);
-  const [endDate,   setEndDate]   = useState(params.end_date   || defaults.end);
-
+  const [startDate,   setStartDate]   = useState(params.start_date || defaults.start);
+  const [endDate,     setEndDate]     = useState(params.end_date   || defaults.end);
   const [rows,        setRows]        = useState(null);
   const [meta,        setMeta]        = useState({});
   const [error,       setError]       = useState(null);
@@ -311,17 +324,15 @@ function App() {
   }, []);
 
   const fetchData = useCallback((sd, ed) => {
-    setLoading(true);
-    setError(null);
+    setLoading(true); setError(null);
     const qs = new URLSearchParams();
     if (sd) qs.set('start_date', sd);
-    if (ed) qs.set('end_date', ed);
+    if (ed) qs.set('end_date',   ed);
     if (params.site_type) qs.set('site_type', params.site_type);
-
     fetch(`${basePath}/api/data?${qs}`)
       .then(r => { if (!r.ok) throw new Error(`Server returned ${r.status}`); return r.json(); })
       .then(json => {
-        setRows(json.rows.map(normalizeRow));
+        setRows((json.rows || []).map(normalizeRow));
         setMeta(json.meta || {});
         setLoadedStart(sd);
         setLoadedEnd(ed);
@@ -345,7 +356,6 @@ function App() {
     if (loadedStart) qs.set('start_date', loadedStart);
     if (loadedEnd)   qs.set('end_date',   loadedEnd);
     if (params.site_type) qs.set('site_type', params.site_type);
-
     fetch(`${basePath}/api/pdf?${qs}`)
       .then(r => r.blob())
       .then(blob => {
@@ -362,12 +372,11 @@ function App() {
   const isPrint      = params._print === '1';
   const datesChanged = startDate !== loadedStart || endDate !== loadedEnd;
 
-  // Group by date only (location is already baked into Location/Facility column)
   const grouped = useMemo(() => {
     if (!rows) return null;
     const byDate = {};
     rows.forEach(row => {
-      const dk = (row.date || '').split('T')[0] || row.date || '';
+      const dk = (row.date || '').split('T')[0] || '';
       if (!byDate[dk]) byDate[dk] = [];
       byDate[dk].push(row);
     });
@@ -376,12 +385,11 @@ function App() {
 
   const sortedDates = grouped ? Object.keys(grouped).sort() : [];
 
-  // ── Toolbar ───────────────────────────────────────────────────────
   function renderToolbar() {
     if (isPrint) return null;
     return (
       <div className="toolbar">
-        <span className="toolbar-title">Historic Buildings Schedule</span>
+        <span className="toolbar-title">Historic Schedule</span>
         <div className="divider" />
         <label>Start<input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} /></label>
         <label>End<input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} /></label>
@@ -400,23 +408,17 @@ function App() {
         {rows && <span className="row-count">{rows.length} rental{rows.length !== 1 ? 's' : ''}</span>}
         <div className="divider" />
         <button onClick={() => window.print()}>🖨️ Print</button>
-        <button
-          className="btn-pdf"
-          onClick={downloadPdf}
-          disabled={pdfLoading || !rows || rows.length === 0}
-        >
+        <button className="btn-pdf" onClick={downloadPdf} disabled={pdfLoading || !rows || rows.length === 0}>
           {pdfLoading ? 'Generating…' : '📄 PDF'}
         </button>
       </div>
     );
   }
 
-  // ── States ────────────────────────────────────────────────────────
   if (error && !rows) return (
     <div>{renderToolbar()}
       <div className="page"><div className="error">
-        <p><strong>Failed to load report data</strong></p>
-        <p>{error}</p>
+        <p><strong>Failed to load report data</strong></p><p>{error}</p>
         <p style={{marginTop:12,color:'#666',fontSize:12}}>Check that Metabase public sharing is enabled and the UUID is correct.</p>
       </div></div>
     </div>
@@ -430,10 +432,10 @@ function App() {
     </div>
   );
 
-  const now = new Date();
+  const now     = new Date();
   const runDate = `${String(now.getMonth()+1).padStart(2,'0')}/${String(now.getDate()).padStart(2,'0')}/${now.getFullYear()} @ ${now.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',hour12:true}).toLowerCase()}`;
-  const orgName  = (rows.length > 0 && rows[0].orgName) ? rows[0].orgName : (meta.org_name || 'rec.us');
-  const logoUrl  = meta.logo_url || null;
+  const orgName = (rows.length > 0 && rows[0].orgName) ? rows[0].orgName : (meta.org_name || 'rec.us');
+  const logoUrl = meta.logo_url || null;
   const dateRangeLabel = [loadedStart && formatDisplayDate(loadedStart), loadedEnd && formatDisplayDate(loadedEnd)].filter(Boolean).join(' – ') || 'Current Month';
 
   return (
@@ -441,11 +443,10 @@ function App() {
       {renderToolbar()}
       <div className="page" style={loading ? {opacity:0.5,pointerEvents:'none'} : {}}>
 
-        {/* Header */}
         <div className="report-header">
           <div className="report-header-left">
             {logoUrl && <img src={logoUrl} alt="" className="report-header-logo" onError={e => e.target.style.display='none'} />}
-            <div className="report-header-text">
+            <div>
               <div className="org-label">{orgName}</div>
               <div className="title">Facility Reservations by Date</div>
             </div>
@@ -455,48 +456,37 @@ function App() {
           </div>
         </div>
 
-        {/* Column headers */}
-        <div className="col-header-row">
-          <span className="col-locfac">Location / Facility</span>
-          <span className="col-datetime">Rental Date / Time</span>
-          <span className="col-title">Event Title</span>
-          <span className="col-invoice">Invoice #</span>
-          <span className="col-renter">Renter</span>
-          <span className="col-phone">Phone</span>
-          <span className="col-email">Email</span>
-          <span className="col-alcohol">Alc.</span>
-          <span className="col-hcnt">Cnt</span>
-          <span className="col-total">Total</span>
-        </div>
-
-        {/* Rows grouped by date */}
         {sortedDates.map(dateKey => (
-          <div key={dateKey}>
-            <div className="section-header">
-              <span className="date-label">{formatDateHeader(dateKey)}</span>
-            </div>
-            {grouped[dateKey].map((r, i) => (
-              <div key={i}>
-                <div className="data-row">
-                  <span className="cell col-locfac">{r.locationFac || '—'}</span>
-                  <span className="cell col-datetime">{r.rentalDT || '—'}</span>
-                  <span className="cell col-title">{r.eventTitle || <em style={{color:'#aaa'}}>N/A</em>}</span>
-                  <span className="cell col-invoice">{r.invoiceNum || '—'}</span>
-                  <span className="cell col-renter">{r.renter || '—'}</span>
-                  <span className="cell col-phone">{r.phone || '—'}</span>
-                  <span className="cell col-email">{r.email || '—'}</span>
-                  <span className={`cell col-alcohol${r.alcohol === 'Yes' ? ' alcohol-yes' : ''}`}>{r.alcohol || '—'}</span>
-                  <span className="cell col-hcnt">{r.headCount || '—'}</span>
-                  <span className="cell col-total">{formatMoney(r.total) || '—'}</span>
-                </div>
-                {(r.notes || r.addOns) && (
-                  <div className="sub-row">
-                    {r.notes || ''}
-                    {r.addOns ? ` | Add-ons: ${r.addOns}` : ''}
-                  </div>
-                )}
-              </div>
-            ))}
+          <div key={dateKey} className="date-group">
+            <div className="date-heading">{formatDateHeading(dateKey)}</div>
+            <table>
+              <COL_HEADERS />
+              <tbody>
+                {grouped[dateKey].map((r, i) => (
+                  <React.Fragment key={i}>
+                    <tr>
+                      <td className="col-location">{r.locationFacility || <span className="muted">—</span>}</td>
+                      <td className="col-datetime">{r.rentalDateTime   || <span className="muted">—</span>}</td>
+                      <td className="col-title">{r.eventTitle          || <span className="muted">N/A</span>}</td>
+                      <td className="col-invoice">{r.invoiceNum        || <span className="muted">—</span>}</td>
+                      <td className="col-renter">{r.renter             || <span className="muted">—</span>}</td>
+                      <td className="col-phone">{r.phone               || ''}</td>
+                      <td className="col-email">{r.email               || ''}</td>
+                      <td className={`col-alcohol${r.alcohol === 'Yes' ? ' alcohol-yes' : ''}`}>{r.alcohol || '—'}</td>
+                      <td className="col-hcnt">{r.headCnt              || ''}</td>
+                      <td className="col-total">{formatMoney(r.total)}</td>
+                    </tr>
+                    {(r.notes || r.addOns) && (
+                      <tr className="notes-row">
+                        <td colSpan={10}>
+                          {r.notes || ''}{r.addOns ? ` | Add-ons: ${r.addOns}` : ''}
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
+                ))}
+              </tbody>
+            </table>
           </div>
         ))}
 
@@ -506,7 +496,6 @@ function App() {
           </div>
         )}
 
-        {/* Footer */}
         <div className="report-footer">
           <span>{orgName} — Facility Reservations by Date</span>
           <span>Run Date/Time: {runDate}</span>
