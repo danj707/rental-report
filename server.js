@@ -19,17 +19,14 @@ const express    = require("express");
 const path       = require("path");
 const cron       = require("node-cron");
 const Database   = require("better-sqlite3");
-const nodemailer = require("nodemailer");
+const { Resend } = require("resend");
 
 const METABASE_URL  = process.env.METABASE_URL  || "https://rec.metabaseapp.com";
 const PORT          = process.env.PORT          || 3100;
 const BASE_URL      = process.env.BASE_URL      || `http://localhost:${PORT}`;
-const SMTP_HOST     = process.env.SMTP_HOST     || "";
-const SMTP_PORT     = parseInt(process.env.SMTP_PORT || "587");
-const SMTP_USER     = process.env.SMTP_USER     || "";
-const SMTP_PASS     = process.env.SMTP_PASS     || "";
-const FROM_EMAIL    = process.env.FROM_EMAIL    || "reports@rec.us";
-const FROM_NAME     = process.env.FROM_NAME     || "rec.us Reports";
+const RESEND_API_KEY = process.env.RESEND_API_KEY || "";
+const FROM_EMAIL     = process.env.FROM_EMAIL    || "reports@rec.us";
+const FROM_NAME      = process.env.FROM_NAME     || "rec.us Reports";
 
 // ── Org config ───────────────────────────────────────────────────────
 const ORGS = {
@@ -85,18 +82,13 @@ db.exec(`
   );
 `);
 
-// ── Mailer setup ─────────────────────────────────────────────────────
-function createTransport() {
-  if (!SMTP_HOST) {
-    console.warn("[mail] No SMTP_HOST configured — emails will be logged but not sent");
+// ── Resend client ─────────────────────────────────────────────────────
+function getResendClient() {
+  if (!RESEND_API_KEY) {
+    console.warn("[mail] No RESEND_API_KEY configured — emails will be logged but not sent");
     return null;
   }
-  return nodemailer.createTransport({
-    host: SMTP_HOST,
-    port: SMTP_PORT,
-    secure: SMTP_PORT === 465,
-    auth: { user: SMTP_USER, pass: SMTP_PASS },
-  });
+  return new Resend(RESEND_API_KEY);
 }
 
 // ── Date helpers ─────────────────────────────────────────────────────
@@ -177,17 +169,17 @@ async function sendReportEmail(orgSlug, email, reportType, schedule) {
     return { ok: false, error: message };
   }
 
-  const transport = createTransport();
-  if (!transport) {
+  const resend = getResendClient();
+  if (!resend) {
     console.log(`[mail] STUB — would send "${reportLabel}" (${label}) to ${email}`);
     db.prepare("INSERT INTO send_log (org,email,report,schedule,status,message) VALUES (?,?,?,?,?,?)")
-      .run(orgSlug, email, reportType, schedule, "sent", "SMTP not configured — stub send");
+      .run(orgSlug, email, reportType, schedule, "sent", "RESEND_API_KEY not configured — stub send");
     return { ok: true, stub: true };
   }
 
   try {
-    await transport.sendMail({
-      from: `"${FROM_NAME}" <${FROM_EMAIL}>`,
+    const { error } = await resend.emails.send({
+      from: `${FROM_NAME} <${FROM_EMAIL}>`,
       to: email,
       subject: `${reportLabel} — ${label}`,
       html: `
@@ -206,6 +198,7 @@ async function sendReportEmail(orgSlug, email, reportType, schedule) {
         </div>`,
       attachments: [{ filename, content: pdfBuffer, contentType: "application/pdf" }],
     });
+    if (error) throw new Error(error.message);
     status = "sent"; message = null;
     console.log(`[mail] Sent "${reportLabel}" to ${email}`);
   } catch (err) {
