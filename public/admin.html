@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Report Subscriptions — Admin</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'IBM Plex Sans', system-ui, sans-serif;
+      font-size: 13px;
+      color: #1a1a1a;
+      background: #f5f4f1;
+      line-height: 1.4;
+    }
+
+    /* ── Topbar ── */
+    .topbar {
+      background: #2c2c2c;
+      color: #eee;
+      padding: 10px 24px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    .topbar-title { font-weight: 700; font-size: 14px; }
+    .topbar-org   { font-size: 11px; color: #aaa; }
+    .topbar-links { margin-left: auto; display: flex; gap: 12px; }
+    .topbar-links a { color: #aaa; text-decoration: none; font-size: 12px; }
+    .topbar-links a:hover { color: #fff; }
+
+    /* ── Layout ── */
+    .container {
+      max-width: 900px;
+      margin: 24px auto;
+      padding: 0 16px;
+      display: grid;
+      grid-template-columns: 380px 1fr;
+      gap: 20px;
+      align-items: start;
+    }
+
+    /* ── Card ── */
+    .card {
+      background: #fff;
+      border-radius: 8px;
+      box-shadow: 0 1px 4px rgba(0,0,0,.08);
+      overflow: hidden;
+    }
+    .card-header {
+      padding: 14px 18px;
+      border-bottom: 1px solid #eee;
+      font-weight: 700;
+      font-size: 13px;
+      background: #fafaf8;
+    }
+    .card-body { padding: 18px; }
+
+    /* ── Form ── */
+    .form-group { margin-bottom: 14px; }
+    .form-group label {
+      display: block;
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      color: #777;
+      margin-bottom: 5px;
+    }
+    .form-group input[type="email"] {
+      width: 100%;
+      padding: 8px 10px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      font-size: 13px;
+      font-family: inherit;
+      outline: none;
+      transition: border-color .15s;
+    }
+    .form-group input[type="email"]:focus { border-color: #3b82f6; }
+
+    .checkboxes { display: flex; flex-direction: column; gap: 7px; }
+    .checkbox-label {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+      font-size: 13px;
+    }
+    .checkbox-label input { width: 15px; height: 15px; cursor: pointer; accent-color: #16a34a; }
+
+    .radio-group { display: flex; gap: 8px; flex-wrap: wrap; }
+    .radio-btn {
+      padding: 6px 14px;
+      border: 1.5px solid #ddd;
+      border-radius: 20px;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 500;
+      color: #555;
+      transition: all .15s;
+      user-select: none;
+    }
+    .radio-btn:hover { border-color: #16a34a; color: #16a34a; }
+    .radio-btn.selected { background: #16a34a; border-color: #16a34a; color: #fff; }
+
+    .btn {
+      padding: 9px 18px;
+      border: none;
+      border-radius: 4px;
+      font-size: 13px;
+      font-family: inherit;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background .15s;
+    }
+    .btn-primary { background: #16a34a; color: #fff; width: 100%; }
+    .btn-primary:hover { background: #15803d; }
+    .btn-primary:disabled { opacity: .5; cursor: not-allowed; }
+    .btn-danger  { background: #fee2e2; color: #b91c1c; padding: 4px 10px; font-size: 11px; font-weight: 600; border-radius: 3px; }
+    .btn-danger:hover { background: #fecaca; }
+    .btn-test    { background: #eff6ff; color: #2563eb; padding: 4px 10px; font-size: 11px; font-weight: 600; border-radius: 3px; }
+    .btn-test:hover { background: #dbeafe; }
+    .btn-test:disabled { opacity: .5; cursor: not-allowed; }
+
+    /* ── Alert ── */
+    .alert {
+      padding: 10px 12px;
+      border-radius: 4px;
+      font-size: 12px;
+      margin-top: 12px;
+      display: none;
+    }
+    .alert.show { display: block; }
+    .alert-success { background: #dcfce7; color: #15803d; border: 1px solid #bbf7d0; }
+    .alert-error   { background: #fee2e2; color: #b91c1c; border: 1px solid #fecaca; }
+
+    /* ── Subscribers table ── */
+    .sub-table { width: 100%; border-collapse: collapse; }
+    .sub-table th {
+      text-align: left;
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      color: #888;
+      padding: 6px 8px;
+      border-bottom: 1px solid #eee;
+    }
+    .sub-table td { padding: 8px 8px; border-bottom: 1px solid #f0f0f0; vertical-align: middle; }
+    .sub-table tr:last-child td { border-bottom: none; }
+    .sub-table tr:hover td { background: #fafaf8; }
+
+    .badge {
+      display: inline-block;
+      padding: 2px 7px;
+      border-radius: 10px;
+      font-size: 10px;
+      font-weight: 600;
+      margin-right: 3px;
+    }
+    .badge-facility { background: #eff6ff; color: #2563eb; }
+    .badge-gl       { background: #f0fdf4; color: #15803d; }
+    .badge-daily    { background: #fefce8; color: #a16207; }
+    .badge-weekly   { background: #fff7ed; color: #c2410c; }
+    .badge-monthly  { background: #faf5ff; color: #7c3aed; }
+
+    .email-cell { font-family: 'IBM Plex Mono', monospace; font-size: 11px; }
+
+    .empty-state { text-align: center; padding: 30px; color: #aaa; font-size: 13px; }
+
+    .actions-cell { display: flex; gap: 6px; align-items: center; }
+
+    /* ── Send log ── */
+    .log-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+    .log-table th { text-align: left; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; color: #aaa; padding: 4px 6px; border-bottom: 1px solid #f0f0f0; }
+    .log-table td { padding: 5px 6px; border-bottom: 1px solid #f5f5f5; color: #555; font-family: 'IBM Plex Mono', monospace; }
+    .log-table tr:last-child td { border-bottom: none; }
+    .log-sent  { color: #15803d; font-weight: 600; }
+    .log-error { color: #b91c1c; font-weight: 600; }
+
+    /* ── Section divider ── */
+    .section-title {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: #aaa;
+      padding: 10px 18px 6px;
+      border-top: 1px solid #eee;
+      margin-top: 4px;
+    }
+
+    .spinner-inline {
+      display: inline-block;
+      width: 12px; height: 12px;
+      border: 2px solid rgba(255,255,255,.4);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin .6s linear infinite;
+      vertical-align: middle;
+      margin-right: 4px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+
+<div class="topbar">
+  <div>
+    <div class="topbar-title">📧 Report Subscriptions</div>
+    <div class="topbar-org" id="org-label">Loading…</div>
+  </div>
+  <div class="topbar-links" id="report-links"></div>
+</div>
+
+<div class="container">
+
+  <!-- Left: Add subscriber form -->
+  <div class="card">
+    <div class="card-header">Add / Update Subscriber</div>
+    <div class="card-body">
+
+      <div class="form-group">
+        <label>Email Address</label>
+        <input type="email" id="email-input" placeholder="name@example.com" />
+      </div>
+
+      <div class="form-group">
+        <label>Reports</label>
+        <div class="checkboxes">
+          <label class="checkbox-label">
+            <input type="checkbox" id="chk-facility" value="facility" checked />
+            Facility Rental Schedule
+          </label>
+          <label class="checkbox-label">
+            <input type="checkbox" id="chk-gl" value="gl" checked />
+            GL Code Rollup
+          </label>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>Schedule</label>
+        <div class="radio-group" id="schedule-group">
+          <div class="radio-btn" data-value="daily">Daily</div>
+          <div class="radio-btn selected" data-value="weekly">Weekly</div>
+          <div class="radio-btn" data-value="monthly">Monthly</div>
+        </div>
+      </div>
+
+      <button class="btn btn-primary" id="subscribe-btn" onclick="subscribe()">
+        Add Subscriber
+      </button>
+
+      <div class="alert" id="form-alert"></div>
+
+      <div style="margin-top:14px;font-size:11px;color:#aaa;line-height:1.6">
+        <strong>Daily</strong> — sent every morning at 7am (yesterday's data)<br>
+        <strong>Weekly</strong> — sent every Monday at 7am (last 7 days)<br>
+        <strong>Monthly</strong> — sent on the 1st at 7am (last complete month)
+      </div>
+    </div>
+  </div>
+
+  <!-- Right: Subscriber list + log -->
+  <div>
+    <div class="card" id="subscribers-card">
+      <div class="card-header" style="display:flex;justify-content:space-between;align-items:center">
+        <span>Active Subscribers</span>
+        <span id="sub-count" style="font-size:11px;color:#aaa;font-weight:400"></span>
+      </div>
+      <div id="subscribers-body">
+        <div class="empty-state">Loading…</div>
+      </div>
+
+      <div class="section-title">Recent Send Log</div>
+      <div id="log-body" style="padding:0 0 8px">
+        <div class="empty-state">No sends yet</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ── Derive org slug from URL ──────────────────────────────────────────
+const orgSlug = window.location.pathname.split('/').filter(Boolean)[0];
+document.getElementById('org-label').textContent = orgSlug.charAt(0).toUpperCase() + orgSlug.slice(1);
+document.getElementById('report-links').innerHTML = `
+  <a href="/${orgSlug}/facility">Facility Report</a>
+  <a href="/${orgSlug}/gl">GL Rollup</a>
+`;
+
+// ── Schedule radio buttons ────────────────────────────────────────────
+let selectedSchedule = 'weekly';
+document.querySelectorAll('.radio-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.radio-btn').forEach(b => b.classList.remove('selected'));
+    btn.classList.add('selected');
+    selectedSchedule = btn.dataset.value;
+  });
+});
+
+// ── Load subscribers ──────────────────────────────────────────────────
+async function loadSubscribers() {
+  const res  = await fetch(`/${orgSlug}/admin/subscribers`);
+  const data = await res.json();
+  renderSubscribers(data.subscribers || []);
+  renderLog(data.log || []);
+}
+
+function renderSubscribers(subs) {
+  document.getElementById('sub-count').textContent = `${subs.length} subscriber${subs.length !== 1 ? 's' : ''}`;
+  const body = document.getElementById('subscribers-body');
+  if (!subs.length) {
+    body.innerHTML = '<div class="empty-state">No subscribers yet</div>';
+    return;
+  }
+  body.innerHTML = `
+    <table class="sub-table">
+      <thead><tr>
+        <th>Email</th>
+        <th>Reports</th>
+        <th>Schedule</th>
+        <th></th>
+      </tr></thead>
+      <tbody>
+        ${subs.map(s => `
+          <tr>
+            <td class="email-cell">${s.email}</td>
+            <td>${s.reports.map(r => `<span class="badge badge-${r}">${r === 'gl' ? 'GL' : 'Facility'}</span>`).join('')}</td>
+            <td><span class="badge badge-${s.schedule}">${s.schedule}</span></td>
+            <td class="actions-cell">
+              <button class="btn btn-test" onclick="testSend('${s.email}', ${JSON.stringify(s.reports)}, '${s.schedule}')" id="test-${btoa(s.email)}">
+                Test
+              </button>
+              <button class="btn btn-danger" onclick="removeSubscriber('${s.email}')">Remove</button>
+            </td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>`;
+}
+
+function renderLog(log) {
+  const body = document.getElementById('log-body');
+  if (!log.length) {
+    body.innerHTML = '<div class="empty-state" style="padding:16px">No sends yet</div>';
+    return;
+  }
+  body.innerHTML = `
+    <table class="log-table" style="margin:0 0 4px">
+      <thead><tr><th>Time</th><th>Email</th><th>Report</th><th>Schedule</th><th>Status</th></tr></thead>
+      <tbody>
+        ${log.slice(0, 20).map(l => `
+          <tr>
+            <td>${l.sent_at.replace('T',' ').slice(0,16)}</td>
+            <td>${l.email}</td>
+            <td>${l.report}</td>
+            <td>${l.schedule}</td>
+            <td class="${l.status === 'sent' ? 'log-sent' : 'log-error'}">${l.status}${l.message ? ` — ${l.message.slice(0,40)}` : ''}</td>
+          </tr>`).join('')}
+      </tbody>
+    </table>`;
+}
+
+// ── Subscribe ─────────────────────────────────────────────────────────
+async function subscribe() {
+  const email    = document.getElementById('email-input').value.trim();
+  const facility = document.getElementById('chk-facility').checked;
+  const gl       = document.getElementById('chk-gl').checked;
+  const reports  = [facility && 'facility', gl && 'gl'].filter(Boolean);
+  const alert    = document.getElementById('form-alert');
+
+  if (!email) return showAlert(alert, 'error', 'Please enter an email address.');
+  if (!reports.length) return showAlert(alert, 'error', 'Select at least one report.');
+
+  const btn = document.getElementById('subscribe-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-inline"></span> Saving…';
+
+  const res  = await fetch(`/${orgSlug}/admin/subscribe`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, reports, schedule: selectedSchedule }),
+  });
+  const data = await res.json();
+
+  btn.disabled = false;
+  btn.textContent = 'Add Subscriber';
+
+  if (data.ok) {
+    showAlert(alert, 'success', `✓ ${email} subscribed to ${reports.join(' + ')} (${selectedSchedule})`);
+    document.getElementById('email-input').value = '';
+    loadSubscribers();
+  } else {
+    showAlert(alert, 'error', data.error || 'Something went wrong.');
+  }
+}
+
+// ── Remove ────────────────────────────────────────────────────────────
+async function removeSubscriber(email) {
+  if (!confirm(`Remove ${email} from all subscriptions?`)) return;
+  await fetch(`/${orgSlug}/admin/subscribe`, {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email }),
+  });
+  loadSubscribers();
+}
+
+// ── Test send ─────────────────────────────────────────────────────────
+async function testSend(email, reports, schedule) {
+  const key = `test-${btoa(email)}`;
+  const btn = document.getElementById(key);
+  if (btn) { btn.disabled = true; btn.textContent = '…'; }
+
+  // Send all reports for this subscriber sequentially
+  let allOk = true;
+  for (const report of reports) {
+    const res  = await fetch(`/${orgSlug}/admin/test-send`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, report, schedule }),
+    });
+    const data = await res.json();
+    if (!data.ok) allOk = false;
+  }
+
+  if (btn) { btn.disabled = false; btn.textContent = allOk ? '✓ Sent' : '✗ Error'; }
+  setTimeout(() => { if (btn) btn.textContent = 'Test'; }, 3000);
+  loadSubscribers(); // refresh log
+}
+
+// ── Alert helper ──────────────────────────────────────────────────────
+function showAlert(el, type, msg) {
+  el.className = `alert show alert-${type}`;
+  el.textContent = msg;
+  if (type === 'success') setTimeout(() => el.classList.remove('show'), 4000);
+}
+
+// ── Init ──────────────────────────────────────────────────────────────
+loadSubscribers();
+setInterval(loadSubscribers, 30000); // auto-refresh every 30s
+</script>
+</body>
+</html>
