@@ -21,6 +21,10 @@ const cron       = require("node-cron");
 // Storage: JSON file-based (no native deps)
 const { Resend } = require("resend");
 
+// Catch anything that slips through
+process.on("uncaughtException", err => console.error("[uncaught]", err));
+process.on("unhandledRejection", err => console.error("[unhandled]", err));
+
 const METABASE_URL  = process.env.METABASE_URL  || "https://rec.metabaseapp.com";
 const PORT          = process.env.PORT          || 3100;
 const BASE_URL      = process.env.BASE_URL      || `http://localhost:${PORT}`;
@@ -53,7 +57,6 @@ const ORGS = {
 const REPORT_TYPES = ["facility", "gl"];
 
 // ── JSON file storage (no native deps) ──────────────────────────────
-const fs = require("fs");
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "data");
 fs.mkdirSync(DATA_DIR, { recursive: true });
 
