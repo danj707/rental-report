@@ -387,6 +387,29 @@ app.delete("/:org/admin/subscribe", (req, res) => {
   res.json({ ok: true });
 });
 
+// POST /:org/admin/test-email — test Resend without PDF
+app.post('/:org/admin/test-email', async (req, res) => {
+  if (!ORGS[req.params.org]) return res.status(404).json({ error: 'Unknown org' });
+  const { email } = req.body;
+  if (!email) return res.status(400).json({ error: 'email required' });
+  const resend = getResendClient();
+  if (!resend) return res.json({ ok: false, error: 'RESEND_API_KEY not configured' });
+  try {
+    const { data, error } = await resend.emails.send({
+      from: `${FROM_NAME} <${FROM_EMAIL}>`,
+      to: email,
+      subject: 'rec.us Report Server — Test Email',
+      html: '<p>This is a test email from the rec.us report server. Resend is working!</p>',
+    });
+    if (error) throw new Error(JSON.stringify(error));
+    console.log('[test-email] Sent to', email, data);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[test-email] Error:', err.message);
+    res.json({ ok: false, error: err.message });
+  }
+});
+
 // POST /:org/admin/test-send  { email, report, schedule }
 // Responds immediately and runs PDF generation + send in background
 app.post("/:org/admin/test-send", async (req, res) => {
