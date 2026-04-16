@@ -335,7 +335,7 @@ function renderSubscribers(subs) {
             <td>${s.reports.map(r => `<span class="badge badge-${r}">${r === 'gl' ? 'GL' : 'Facility'}</span>`).join('')}</td>
             <td><span class="badge badge-${s.schedule}">${s.schedule}</span></td>
             <td class="actions-cell">
-              <button class="btn btn-test" onclick="testSend('${s.email}', ${JSON.stringify(s.reports)}, '${s.schedule}')" id="test-${btoa(s.email)}">
+              <button class="btn btn-test" onclick="testSend('${s.email}', ${JSON.stringify(s.reports)}, '${s.schedule}')" id="test-${btoa(s.email).replace(/[=+/]/g, '_')}">
                 Test
               </button>
               <button class="btn btn-danger" onclick="removeSubscriber('${s.email}')">Remove</button>
@@ -415,7 +415,7 @@ async function removeSubscriber(email) {
 
 // ── Test send ─────────────────────────────────────────────────────────
 async function testSend(email, reports, schedule) {
-  const key = `test-${btoa(email)}`;
+  const key = `test-${btoa(email).replace(/[=+/]/g, '_')}`;
   const btn = document.getElementById(key);
   if (btn) { btn.disabled = true; btn.textContent = '…'; }
 
