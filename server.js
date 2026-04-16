@@ -432,5 +432,5 @@ app.listen(PORT, () => {
     console.log(`  ├─ ${slug}/admin     →  ${BASE_URL}/${slug}/admin`);
   });
   console.log(`  └─ Metabase: ${METABASE_URL}\n`);
-  console.log(`  📧 SMTP: ${SMTP_HOST ? SMTP_HOST : "NOT CONFIGURED (stub mode)"}\n`);
+  console.log(`  📧 Resend: ${RESEND_API_KEY ? "configured" : "NOT CONFIGURED (stub mode)"}\n`);
 });
