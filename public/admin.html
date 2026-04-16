@@ -194,6 +194,29 @@
       margin-top: 4px;
     }
 
+    /* ── Toast ── */
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%) translateY(20px);
+      background: #1a1a1a;
+      color: #fff;
+      padding: 12px 20px;
+      border-radius: 6px;
+      font-size: 13px;
+      box-shadow: 0 4px 12px rgba(0,0,0,.3);
+      opacity: 0;
+      transition: all .3s ease;
+      pointer-events: none;
+      white-space: nowrap;
+      z-index: 999;
+    }
+    .toast.show {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+
     .spinner-inline {
       display: inline-block;
       width: 12px; height: 12px;
@@ -417,23 +440,27 @@ async function removeSubscriber(email) {
 async function testSend(email, reports, schedule) {
   const key = `test-${btoa(email).replace(/[=+/]/g, '_')}`;
   const btn = document.getElementById(key);
-  if (btn) { btn.disabled = true; btn.textContent = '…'; }
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner-inline"></span>Sending…'; }
 
-  // Send all reports for this subscriber sequentially
-  let allOk = true;
+  // Fire all reports — server responds immediately, sends in background
   for (const report of reports) {
-    const res  = await fetch(`/${orgSlug}/admin/test-send`, {
+    await fetch(`/${orgSlug}/admin/test-send`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, report, schedule }),
     });
-    const data = await res.json();
-    if (!data.ok) allOk = false;
   }
 
-  if (btn) { btn.disabled = false; btn.textContent = allOk ? '✓ Sent' : '✗ Error'; }
-  setTimeout(() => { if (btn) btn.textContent = 'Test'; }, 3000);
-  loadSubscribers(); // refresh log
+  if (btn) { btn.innerHTML = '📬 Queued!'; }
+
+  // Show a toast
+  showToast(`Sending ${reports.length > 1 ? reports.length + ' reports' : reports[0]} to ${email} — check the log below in ~30s`);
+
+  // Refresh log a few times to catch the result
+  setTimeout(loadSubscribers, 10000);
+  setTimeout(loadSubscribers, 20000);
+  setTimeout(loadSubscribers, 35000);
+  setTimeout(() => { if (btn) { btn.disabled = false; btn.textContent = 'Test'; } }, 40000);
 }
 
 // ── Alert helper ──────────────────────────────────────────────────────
@@ -446,6 +473,16 @@ function showAlert(el, type, msg) {
 // ── Init ──────────────────────────────────────────────────────────────
 loadSubscribers();
 setInterval(loadSubscribers, 30000); // auto-refresh every 30s
+</script>
+<div class="toast" id="toast"></div>
+
+<script>
+function showToast(msg, duration = 5000) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), duration);
+}
 </script>
 </body>
 </html>
