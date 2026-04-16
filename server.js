@@ -4,11 +4,14 @@
  * Routes:
  *   GET /:org/facility          → serves facility report UI
  *   GET /:org/gl                → serves GL rollup report UI
+ *   GET /:org/historic          → serves historic reservations report UI
  *   GET /:org/admin             → serves subscription admin UI
  *   GET /:org/facility/api/data → proxies Metabase facility card
  *   GET /:org/gl/api/data       → proxies Metabase GL card
+ *   GET /:org/historic/api/data → proxies Metabase historic card
  *   GET /:org/facility/api/pdf  → Puppeteer PDF of facility report
  *   GET /:org/gl/api/pdf        → Puppeteer PDF of GL report
+ *   GET /:org/historic/api/pdf  → Puppeteer PDF of historic report
  *   POST /:org/admin/subscribe  → add/update email subscription
  *   DELETE /:org/admin/subscribe → remove subscription
  *   GET /:org/admin/subscribers → list all subscribers for org
@@ -46,6 +49,13 @@ const ORGS = {
     facility: { mbUuid: "81c43b6d-1776-4a13-9fec-cb6f9e9895bb" },
     gl:       { mbUuid: "46b7e83b-f8ac-4d84-8c5c-4c72ca57cea4" },
   },
+  smyrna: {
+    orgId:   "efc0724c-8f32-481a-bab3-fc19c724f3a7",
+    logoUrl: "https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2Forganization-efc0724c-8f32-481a-bab3-fc19c724f3a7%2FfullLogo.png%3F1771265790459&w=1920&q=75",
+    facility: { mbUuid: null },
+    historic: { mbUuid: "af3c5388-7deb-4a05-a102-cc31f6c4b9f7" },
+    gl:       { mbUuid: null },
+  },
   // windham: {
   //   orgId:   "REPLACE_WITH_ORG_UUID",
   //   logoUrl: "https://...",
@@ -54,7 +64,7 @@ const ORGS = {
   // },
 };
 
-const REPORT_TYPES = ["facility", "gl"];
+const REPORT_TYPES = ["facility", "gl", "historic"];
 
 // ── JSON file storage (no native deps) ──────────────────────────────
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "data");
@@ -144,6 +154,12 @@ async function generatePdf(orgSlug, reportType, startDate, endDate) {
   const url = `http://localhost:${PORT}/${orgSlug}/${reportType}?${qs}`;
   console.log(`[pdf] Generating for ${orgSlug}/${reportType}: ${url}`);
 
+  const reportLabel = reportType === "gl"
+    ? "GL Code Rollup"
+    : reportType === "historic"
+      ? "Facility Reservations by Date"
+      : "Facility Rental Schedule";
+
   const browser = await puppeteer.launch({
     headless: true,
     executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
@@ -163,7 +179,7 @@ async function generatePdf(orgSlug, reportType, startDate, endDate) {
       headerTemplate: "<span></span>",
       footerTemplate: `
         <div style="font-size:9px;width:100%;padding:0 0.4in;display:flex;justify-content:space-between;color:#888;font-family:sans-serif;">
-          <span>rec.us — ${reportType === "gl" ? "GL Code Rollup" : "Facility Rental Schedule"}</span>
+          <span>rec.us — ${reportLabel}</span>
           <span>Page <span class="pageNumber"></span> of <span class="totalPages"></span></span>
         </div>`,
     });
@@ -176,7 +192,11 @@ async function generatePdf(orgSlug, reportType, startDate, endDate) {
 async function sendReportEmail(orgSlug, email, reportType, schedule) {
   const { start, end, label } = getDateRange(schedule);
   const orgConfig = ORGS[orgSlug];
-  const reportLabel = reportType === "gl" ? "GL Code Rollup" : "Facility Rental Schedule";
+  const reportLabel = reportType === "gl"
+    ? "GL Code Rollup"
+    : reportType === "historic"
+      ? "Facility Reservations by Date"
+      : "Facility Rental Schedule";
   const filename = `${reportType}-${start}.pdf`;
 
   let pdfBuffer, status, message;
@@ -280,7 +300,7 @@ function buildMetabaseParams(query, reportType) {
   if (query.end_date) {
     params.push({ type:"date/single", target:["variable",["template-tag","end_date"]], value:parseToISO(query.end_date) });
   }
-  if (reportType === "facility") {
+  if (reportType === "facility" || reportType === "historic") {
     if (query.location_name) {
       const locations = query.location_name.split(",").map(s => s.trim());
       params.push({ type:"category", target:["variable",["template-tag","location_name"]], value:locations.length===1?locations[0]:locations });
@@ -307,7 +327,8 @@ function resolveOrg(req, res, next) {
 app.get("/:org/:report/api/data", resolveOrg, async (req, res) => {
   try {
     const { orgConfig, orgSlug, reportType } = req;
-    const mbUuid = orgConfig[reportType].mbUuid;
+    const mbUuid = orgConfig[reportType]?.mbUuid;
+    if (!mbUuid) return res.status(404).json({ error: `No Metabase question configured for ${orgSlug}/${reportType}` });
     const params = buildMetabaseParams(req.query, reportType);
     const paramStr = params.length > 0 ? `?parameters=${encodeURIComponent(JSON.stringify(params))}` : "";
     const url = `${METABASE_URL}/api/public/card/${mbUuid}/query/json${paramStr}`;
@@ -342,7 +363,6 @@ app.get("/:org/:report/api/data", resolveOrg, async (req, res) => {
 app.get("/:org/:report/api/pdf", resolveOrg, async (req, res) => {
   try {
     const { orgSlug, reportType } = req;
-    const qs = new URLSearchParams(req.query).toString();
     const pdf = await generatePdf(orgSlug, reportType,
       req.query.start_date, req.query.end_date);
     const filename = `${reportType}-report-${req.query.start_date || "report"}.pdf`;
@@ -364,7 +384,7 @@ app.get("/:org/admin/subscribers", (req, res) => {
   res.json({ subscribers: rows, log });
 });
 
-// POST /:org/admin/subscribe  { email, reports: ["facility","gl"], schedule: "monthly" }
+// POST /:org/admin/subscribe  { email, reports: ["facility","gl","historic"], schedule: "monthly" }
 app.post("/:org/admin/subscribe", (req, res) => {
   if (!ORGS[req.params.org]) return res.status(404).json({ error: "Unknown org" });
   const { email, reports, schedule } = req.body;
@@ -434,6 +454,11 @@ app.get("/:org/gl", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "gl.html"));
 });
 
+app.get("/:org/historic", (req, res) => {
+  if (!ORGS[req.params.org]) return res.status(404).send("Unknown org");
+  res.sendFile(path.join(__dirname, "public", "historic.html"));
+});
+
 app.get("/:org/admin", (req, res) => {
   if (!ORGS[req.params.org]) return res.status(404).send("Unknown org");
   res.sendFile(path.join(__dirname, "public", "admin.html"));
@@ -446,12 +471,15 @@ app.get("/", (req, res) => {
     <html><body style="font-family:sans-serif;padding:40px">
     <h2>rec.us Report Server</h2>
     <ul>
-      ${orgs.map(o => `
-        <li style="margin:8px 0"><strong>${o}</strong>
-          — <a href="/${o}/facility">Facility</a>
-          | <a href="/${o}/gl">GL Rollup</a>
-          | <a href="/${o}/admin">Admin</a>
-        </li>`).join("")}
+      ${orgs.map(o => {
+        const org = ORGS[o];
+        const links = [];
+        if (org.facility?.mbUuid) links.push(`<a href="/${o}/facility">Facility</a>`);
+        if (org.historic?.mbUuid) links.push(`<a href="/${o}/historic">Historic</a>`);
+        if (org.gl?.mbUuid)       links.push(`<a href="/${o}/gl">GL Rollup</a>`);
+        links.push(`<a href="/${o}/admin">Admin</a>`);
+        return `<li style="margin:8px 0"><strong>${o}</strong> — ${links.join(" | ")}</li>`;
+      }).join("")}
     </ul>
     </body></html>
   `);
@@ -463,8 +491,10 @@ app.listen(PORT, () => {
   console.log(`\n  🏛️  rec.us Report Server`);
   console.log(`  ├─ Base URL: ${BASE_URL}`);
   Object.keys(ORGS).forEach(slug => {
-    console.log(`  ├─ ${slug}/facility  →  ${BASE_URL}/${slug}/facility`);
-    console.log(`  ├─ ${slug}/gl        →  ${BASE_URL}/${slug}/gl`);
+    const org = ORGS[slug];
+    if (org.facility?.mbUuid) console.log(`  ├─ ${slug}/facility  →  ${BASE_URL}/${slug}/facility`);
+    if (org.historic?.mbUuid) console.log(`  ├─ ${slug}/historic  →  ${BASE_URL}/${slug}/historic`);
+    if (org.gl?.mbUuid)       console.log(`  ├─ ${slug}/gl        →  ${BASE_URL}/${slug}/gl`);
     console.log(`  ├─ ${slug}/admin     →  ${BASE_URL}/${slug}/admin`);
   });
   console.log(`  └─ Metabase: ${METABASE_URL}\n`);
