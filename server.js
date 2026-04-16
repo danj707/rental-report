@@ -18,7 +18,7 @@
 const express    = require("express");
 const path       = require("path");
 const cron       = require("node-cron");
-const Database   = require("better-sqlite3");
+// Storage: JSON file-based (no native deps)
 const { Resend } = require("resend");
 
 const METABASE_URL  = process.env.METABASE_URL  || "https://rec.metabaseapp.com";
@@ -52,35 +52,53 @@ const ORGS = {
 
 const REPORT_TYPES = ["facility", "gl"];
 
-// ── SQLite setup ─────────────────────────────────────────────────────
-const DB_PATH = process.env.DB_PATH || path.join(__dirname, "data", "subscriptions.db");
+// ── JSON file storage (no native deps) ──────────────────────────────
 const fs = require("fs");
-fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
+const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "data");
+fs.mkdirSync(DATA_DIR, { recursive: true });
 
-const db = new Database(DB_PATH);
-db.exec(`
-  CREATE TABLE IF NOT EXISTS subscriptions (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    org         TEXT    NOT NULL,
-    email       TEXT    NOT NULL,
-    reports     TEXT    NOT NULL,  -- JSON array e.g. ["facility","gl"]
-    schedule    TEXT    NOT NULL,  -- "daily" | "weekly" | "monthly"
-    active      INTEGER NOT NULL DEFAULT 1,
-    created_at  TEXT    NOT NULL DEFAULT (datetime('now')),
-    updated_at  TEXT    NOT NULL DEFAULT (datetime('now')),
-    UNIQUE(org, email)
-  );
-  CREATE TABLE IF NOT EXISTS send_log (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    org         TEXT NOT NULL,
-    email       TEXT NOT NULL,
-    report      TEXT NOT NULL,
-    schedule    TEXT NOT NULL,
-    status      TEXT NOT NULL,  -- "sent" | "error"
-    message     TEXT,
-    sent_at     TEXT NOT NULL DEFAULT (datetime('now'))
-  );
-`);
+const SUBS_FILE = path.join(DATA_DIR, "subscriptions.json");
+const LOG_FILE  = path.join(DATA_DIR, "send_log.json");
+
+function readJSON(file, def) {
+  try { return JSON.parse(fs.readFileSync(file, "utf8")); } catch { return def; }
+}
+function writeJSON(file, data) {
+  fs.writeFileSync(file, JSON.stringify(data, null, 2));
+}
+
+// db shim — mimics the sqlite API used below
+const db = {
+  getSubscriptions(org) {
+    return readJSON(SUBS_FILE, []).filter(s => s.org === org && s.active);
+  },
+  getAllBySchedule(schedule) {
+    return readJSON(SUBS_FILE, []).filter(s => s.active && s.schedule === schedule);
+  },
+  upsertSubscription(org, email, reports, schedule) {
+    const subs = readJSON(SUBS_FILE, []);
+    const idx  = subs.findIndex(s => s.org === org && s.email === email);
+    const now  = new Date().toISOString();
+    if (idx >= 0) {
+      subs[idx] = { ...subs[idx], reports, schedule, active: 1, updated_at: now };
+    } else {
+      subs.push({ id: Date.now(), org, email, reports, schedule, active: 1, created_at: now, updated_at: now });
+    }
+    writeJSON(SUBS_FILE, subs);
+  },
+  deleteSubscription(org, email) {
+    const subs = readJSON(SUBS_FILE, []).filter(s => !(s.org === org && s.email === email));
+    writeJSON(SUBS_FILE, subs);
+  },
+  appendLog(org, email, report, schedule, status, message) {
+    const log = readJSON(LOG_FILE, []);
+    log.unshift({ id: Date.now(), org, email, report, schedule, status, message: message || null, sent_at: new Date().toISOString() });
+    writeJSON(LOG_FILE, log.slice(0, 200)); // keep last 200 entries
+  },
+  getLog(org) {
+    return readJSON(LOG_FILE, []).filter(l => l.org === org).slice(0, 50);
+  },
+};
 
 // ── Resend client ─────────────────────────────────────────────────────
 function getResendClient() {
@@ -164,16 +182,14 @@ async function sendReportEmail(orgSlug, email, reportType, schedule) {
   } catch (err) {
     status = "error"; message = `PDF generation failed: ${err.message}`;
     console.error(`[mail] ${message}`);
-    db.prepare("INSERT INTO send_log (org,email,report,schedule,status,message) VALUES (?,?,?,?,?,?)")
-      .run(orgSlug, email, reportType, schedule, status, message);
+    db.appendLog(orgSlug, email, reportType, schedule, status, message);
     return { ok: false, error: message };
   }
 
   const resend = getResendClient();
   if (!resend) {
     console.log(`[mail] STUB — would send "${reportLabel}" (${label}) to ${email}`);
-    db.prepare("INSERT INTO send_log (org,email,report,schedule,status,message) VALUES (?,?,?,?,?,?)")
-      .run(orgSlug, email, reportType, schedule, "sent", "RESEND_API_KEY not configured — stub send");
+    db.appendLog(orgSlug, email, reportType, schedule, "sent", "RESEND_API_KEY not configured — stub send");
     return { ok: true, stub: true };
   }
 
@@ -206,17 +222,14 @@ async function sendReportEmail(orgSlug, email, reportType, schedule) {
     console.error(`[mail] Failed to send to ${email}: ${err.message}`);
   }
 
-  db.prepare("INSERT INTO send_log (org,email,report,schedule,status,message) VALUES (?,?,?,?,?,?)")
-    .run(orgSlug, email, reportType, schedule, status, message);
+  db.appendLog(orgSlug, email, reportType, schedule, status, message);
   return { ok: status === "sent", error: message };
 }
 
 // ── Run scheduled sends ──────────────────────────────────────────────
 async function runSchedule(scheduleType) {
   console.log(`[cron] Running ${scheduleType} sends...`);
-  const subs = db.prepare(
-    "SELECT * FROM subscriptions WHERE active=1 AND schedule=?"
-  ).all(scheduleType);
+  const subs = db.getAllBySchedule(scheduleType);
 
   for (const sub of subs) {
     const reports = JSON.parse(sub.reports);
@@ -343,9 +356,9 @@ app.get("/:org/:report/api/pdf", resolveOrg, async (req, res) => {
 // GET /:org/admin/subscribers
 app.get("/:org/admin/subscribers", (req, res) => {
   if (!ORGS[req.params.org]) return res.status(404).json({ error: "Unknown org" });
-  const rows = db.prepare("SELECT * FROM subscriptions WHERE org=? ORDER BY created_at DESC").all(req.params.org);
-  const log  = db.prepare("SELECT * FROM send_log WHERE org=? ORDER BY sent_at DESC LIMIT 50").all(req.params.org);
-  res.json({ subscribers: rows.map(r => ({ ...r, reports: JSON.parse(r.reports) })), log });
+  const rows = db.getSubscriptions(req.params.org);
+  const log  = db.getLog(req.params.org);
+  res.json({ subscribers: rows, log });
 });
 
 // POST /:org/admin/subscribe  { email, reports: ["facility","gl"], schedule: "monthly" }
@@ -357,13 +370,7 @@ app.post("/:org/admin/subscribe", (req, res) => {
   const validReports = reports.filter(r => REPORT_TYPES.includes(r));
   if (!validReports.length) return res.status(400).json({ error: "No valid report types" });
 
-  db.prepare(`
-    INSERT INTO subscriptions (org, email, reports, schedule, active, updated_at)
-    VALUES (?, ?, ?, ?, 1, datetime('now'))
-    ON CONFLICT(org, email) DO UPDATE SET
-      reports=excluded.reports, schedule=excluded.schedule,
-      active=1, updated_at=datetime('now')
-  `).run(req.params.org, email.toLowerCase().trim(), JSON.stringify(validReports), schedule);
+  db.upsertSubscription(req.params.org, email.toLowerCase().trim(), validReports, schedule);
 
   res.json({ ok: true });
 });
@@ -373,8 +380,7 @@ app.delete("/:org/admin/subscribe", (req, res) => {
   if (!ORGS[req.params.org]) return res.status(404).json({ error: "Unknown org" });
   const { email } = req.body;
   if (!email) return res.status(400).json({ error: "email required" });
-  db.prepare("DELETE FROM subscriptions WHERE org=? AND email=?")
-    .run(req.params.org, email.toLowerCase().trim());
+  db.deleteSubscription(req.params.org, email.toLowerCase().trim());
   res.json({ ok: true });
 });
 
