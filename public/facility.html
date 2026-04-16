@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -37,7 +36,7 @@
     .toolbar-title { font-weight: 600; margin-right: 4px; font-size: 13px; }
     .toolbar-spacer { flex: 1; }
 
-    .toolbar label {
+    .toolbar label.date-label {
       font-size: 10px;
       text-transform: uppercase;
       letter-spacing: 0.5px;
@@ -81,6 +80,37 @@
     .toolbar .row-count { font-size: 11px; color: #aaa; }
     .toolbar .divider { width: 1px; height: 28px; background: rgba(255,255,255,.15); margin: 0 2px; }
 
+    /* ── Column toggle checkboxes ── */
+    .col-toggles {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .col-toggles-label {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #888;
+      white-space: nowrap;
+    }
+    .col-toggle {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      cursor: pointer;
+      font-size: 11px;
+      color: #ccc;
+      user-select: none;
+      white-space: nowrap;
+    }
+    .col-toggle input[type="checkbox"] {
+      width: 13px;
+      height: 13px;
+      accent-color: #3b82f6;
+      cursor: pointer;
+    }
+    .col-toggle:hover { color: #fff; }
+
     /* ── Report page ── */
     .page {
       max-width: 1100px;
@@ -107,7 +137,6 @@
       object-fit: contain;
       object-position: left center;
     }
-    .report-header-text {}
     .report-header .org-label {
       font-size: 10px;
       letter-spacing: 1.6px;
@@ -220,11 +249,23 @@
 <script type="text/babel">
 const { useState, useEffect, useMemo, useCallback } = React;
 
+const LS_KEY = 'facility-col-prefs';
+
+function loadColPrefs() {
+  try {
+    const saved = localStorage.getItem(LS_KEY);
+    if (saved) return JSON.parse(saved);
+  } catch {}
+  return { showHcnt: true, showTotal: true, showNotes: true };
+}
+
+function saveColPrefs(prefs) {
+  try { localStorage.setItem(LS_KEY, JSON.stringify(prefs)); } catch {}
+}
+
 // ── Derive org slug and base path from URL ──────────────────────────
-// URL is /:org/facility[?params]
 function getOrgAndBase() {
   const parts = window.location.pathname.split('/').filter(Boolean);
-  // parts[0] = org slug, parts[1] = 'facility'
   const orgSlug = parts[0] || 'unknown';
   const basePath = `/${parts[0]}/${parts[1]}`;
   return { orgSlug, basePath };
@@ -324,8 +365,21 @@ function App() {
   const [loadedStart, setLoadedStart] = useState(null);
   const [loadedEnd,   setLoadedEnd]   = useState(null);
 
+  // Column visibility — persisted in localStorage
+  const [colPrefs, setColPrefs] = useState(loadColPrefs);
+
+  function toggleCol(key) {
+    setColPrefs(prev => {
+      const next = { ...prev, [key]: !prev[key] };
+      saveColPrefs(next);
+      return next;
+    });
+  }
+
+  const isPrint = params._print === '1';
+
   useEffect(() => {
-    if (params._print === '1') document.body.classList.add('print-mode');
+    if (isPrint) document.body.classList.add('print-mode');
   }, []);
 
   const fetchData = useCallback((sd, ed) => {
@@ -379,8 +433,7 @@ function App() {
       .finally(() => setPdfLoading(false));
   }
 
-  const isPrint       = params._print === '1';
-  const datesChanged  = startDate !== loadedStart || endDate !== loadedEnd;
+  const datesChanged = startDate !== loadedStart || endDate !== loadedEnd;
 
   const grouped = useMemo(() => {
     if (!rows) return null;
@@ -409,8 +462,8 @@ function App() {
       <div className="toolbar">
         <span className="toolbar-title">Facility Schedule</span>
         <div className="divider" />
-        <label>Start<input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} /></label>
-        <label>End<input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} /></label>
+        <label className="date-label">Start<input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} /></label>
+        <label className="date-label">End<input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} /></label>
         <button onClick={() => setMonth(-1)} style={{fontSize:11,padding:'4px 8px'}}>Last Month</button>
         <button onClick={() => setMonth(0)}  style={{fontSize:11,padding:'4px 8px'}}>This Month</button>
         <button onClick={() => setMonth(1)}  style={{fontSize:11,padding:'4px 8px'}}>Next Month</button>
@@ -422,6 +475,26 @@ function App() {
         >
           {loading ? 'Loading…' : '▶ Run Report'}
         </button>
+
+        <div className="divider" />
+
+        {/* Column toggles */}
+        <div className="col-toggles">
+          <span className="col-toggles-label">Show:</span>
+          <label className="col-toggle">
+            <input type="checkbox" checked={colPrefs.showHcnt} onChange={() => toggleCol('showHcnt')} />
+            Head Cnt
+          </label>
+          <label className="col-toggle">
+            <input type="checkbox" checked={colPrefs.showTotal} onChange={() => toggleCol('showTotal')} />
+            Total
+          </label>
+          <label className="col-toggle">
+            <input type="checkbox" checked={colPrefs.showNotes} onChange={() => toggleCol('showNotes')} />
+            Notes
+          </label>
+        </div>
+
         <div className="toolbar-spacer" />
         {rows && <span className="row-count">{rows.length} rental{rows.length !== 1 ? 's' : ''}</span>}
         <div className="divider" />
@@ -462,6 +535,8 @@ function App() {
   const logoUrl = meta.logo_url || null;
   const dateRangeLabel = [loadedStart && formatDisplayDate(loadedStart), loadedEnd && formatDisplayDate(loadedEnd)].filter(Boolean).join(' – ') || 'Current Month';
 
+  const { showHcnt, showTotal, showNotes } = colPrefs;
+
   return (
     <div>
       {renderToolbar()}
@@ -490,8 +565,8 @@ function App() {
           <span className="col-phone">Phone #</span>
           <span className="col-email">Email</span>
           <span className="col-purpose">Purpose</span>
-          <span className="col-hcnt">Cnt</span>
-          <span className="col-total">Total</span>
+          {showHcnt  && <span className="col-hcnt">Cnt</span>}
+          {showTotal && <span className="col-total">Total</span>}
         </div>
 
         {/* Rows grouped by date → location */}
@@ -517,10 +592,10 @@ function App() {
                           <span className="cell col-phone">{r.phone}</span>
                           <span className="cell col-email">{r.email}</span>
                           <span className="cell col-purpose">{r.resName}</span>
-                          <span className="cell col-hcnt">{r.headCount}</span>
-                          <span className="cell col-total">{formatMoney(r.total)}</span>
+                          {showHcnt  && <span className="cell col-hcnt">{r.headCount}</span>}
+                          {showTotal && <span className="cell col-total">{formatMoney(r.total)}</span>}
                         </div>
-                        {(r.notes || r.addons) && (
+                        {showNotes && (r.notes || r.addons) && (
                           <div className="sub-row">
                             {r.notes || ''}
                             {r.addons ? ` | Add-ons: ${r.addons}` : ''}
