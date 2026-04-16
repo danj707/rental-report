@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Facility Reservations by Date</title>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Georgia', serif;
+    font-size: 13px;
+    color: #111;
+    background: #fff;
+    padding: 0;
+  }
+
+  /* ── Toolbar ── */
+  #toolbar {
+    background: #f5f5f3;
+    border-bottom: 1px solid #ddd;
+    padding: 10px 20px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    font-family: sans-serif;
+    font-size: 13px;
+  }
+  #toolbar label { color: #555; font-size: 12px; }
+  #toolbar input[type="date"] {
+    border: 1px solid #ccc;
+    border-radius: 3px;
+    padding: 4px 8px;
+    font-size: 12px;
+    font-family: sans-serif;
+  }
+  .toolbar-btn {
+    background: #fff;
+    border: 1px solid #ccc;
+    border-radius: 3px;
+    padding: 4px 12px;
+    font-size: 12px;
+    cursor: pointer;
+    font-family: sans-serif;
+  }
+  .toolbar-btn:hover { background: #e8e8e8; }
+  .toolbar-btn.primary { background: #1a6e3c; color: #fff; border-color: #1a6e3c; }
+  .toolbar-btn.primary:hover { background: #155c31; }
+  .toolbar-sep { width: 1px; height: 24px; background: #ddd; }
+
+  /* ── Report page ── */
+  #report {
+    padding: 24px 32px;
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+
+  .report-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 20px;
+    padding-bottom: 12px;
+    border-bottom: 2px solid #333;
+  }
+  .report-header-left h1 {
+    font-size: 22px;
+    font-weight: bold;
+    font-family: sans-serif;
+    margin-bottom: 2px;
+  }
+  .report-header-left .report-subtitle {
+    font-size: 14px;
+    font-family: sans-serif;
+    color: #555;
+    margin-top: 4px;
+  }
+  .report-header-right {
+    font-family: sans-serif;
+    font-size: 12px;
+    color: #444;
+    text-align: right;
+    line-height: 1.8;
+  }
+  .report-header-right strong { color: #111; }
+
+  /* ── Date groups ── */
+  .date-group { margin-bottom: 24px; }
+  .date-heading {
+    font-family: sans-serif;
+    font-size: 14px;
+    font-weight: bold;
+    padding: 5px 0;
+    border-bottom: 2px solid #333;
+    margin-bottom: 0;
+  }
+
+  /* ── Table ── */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+  }
+  thead tr {
+    background: #eee;
+    border-bottom: 1px solid #bbb;
+  }
+  th {
+    font-family: sans-serif;
+    font-size: 11px;
+    font-weight: bold;
+    text-align: left;
+    padding: 5px 6px;
+    white-space: nowrap;
+    border-right: 1px solid #ddd;
+  }
+  th:last-child { border-right: none; }
+  td {
+    padding: 5px 6px;
+    vertical-align: top;
+    border-bottom: 1px solid #e8e8e8;
+    border-right: 1px solid #eee;
+  }
+  td:last-child { border-right: none; }
+  tr:last-child td { border-bottom: none; }
+  tr:nth-child(even) td { background: #fafaf8; }
+
+  .alcohol-yes { color: #b91c1c; font-weight: bold; }
+  .total-val   { font-family: sans-serif; text-align: right; white-space: nowrap; }
+  .muted       { color: #888; font-style: italic; }
+  a.user-link  { color: #1a6e3c; text-decoration: none; }
+  a.user-link:hover { text-decoration: underline; }
+
+  /* ── Loading / error ── */
+  .status-msg {
+    font-family: sans-serif;
+    font-size: 14px;
+    color: #666;
+    padding: 40px;
+    text-align: center;
+  }
+
+  /* ── Print mode ── */
+  body.print-mode #toolbar { display: none; }
+  body.print-mode #report  { padding: 16px; max-width: 100%; }
+  @media print {
+    #toolbar { display: none !important; }
+    #report  { padding: 12px; }
+    .date-group { page-break-inside: avoid; }
+  }
+</style>
+</head>
+<body>
+
+<div id="toolbar">
+  <label>From</label>
+  <input type="date" id="startDate" />
+  <label>To</label>
+  <input type="date" id="endDate" />
+  <div class="toolbar-sep"></div>
+  <button class="toolbar-btn" onclick="setRange('last')">Last Month</button>
+  <button class="toolbar-btn" onclick="setRange('this')">This Month</button>
+  <button class="toolbar-btn" onclick="setRange('next')">Next Month</button>
+  <div class="toolbar-sep"></div>
+  <button class="toolbar-btn primary" onclick="runReport()">Run Report</button>
+  <div class="toolbar-sep"></div>
+  <button class="toolbar-btn" onclick="window.print()">Print</button>
+  <button class="toolbar-btn" id="pdfBtn" onclick="downloadPdf()">Download PDF</button>
+</div>
+
+<div id="root"></div>
+<div id="report-ready" style="display:none"></div>
+
+<script type="text/babel">
+const { useState, useEffect, useCallback } = React;
+
+// ── Helpers ──────────────────────────────────────────────────────────
+function getOrgSlug() {
+  return location.pathname.split('/')[1] || 'smyrna';
+}
+
+function getParams() {
+  return new URLSearchParams(location.search);
+}
+
+function formatDate(iso) {
+  if (!iso) return '';
+  const [y, m, d] = iso.split('-');
+  const dt = new Date(parseInt(y), parseInt(m)-1, parseInt(d));
+  const days = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+  const months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  const suffixes = {1:'st',2:'nd',3:'rd'};
+  const day = dt.getDate();
+  const suffix = suffixes[day] || (suffixes[day % 10] && day < 10 ? suffixes[day % 10] : 'th');
+  return `${days[dt.getDay()]} ${months[dt.getMonth()]} ${day}${suffix}, ${y}`;
+}
+
+function normalizeRow(raw) {
+  const k = key => raw[key] ?? raw[Object.keys(raw).find(k2 => k2.toLowerCase() === key.toLowerCase())] ?? null;
+  return {
+    orgName:      k('Org Name'),
+    date:         k('Date'),
+    day:          k('Day'),
+    locationFacility: k('Location/Facility'),
+    rentalDateTime:   k('Rental Date/Time'),
+    eventTitle:   k('Event Title'),
+    invoiceNum:   k('Invoice #'),
+    renter:       k('Renter'),
+    phone:        k('Phone'),
+    email:        k('Email'),
+    headCnt:      k('Head Cnt'),
+    alcohol:      k('Alcohol'),
+    notes:        k('Notes'),
+    addOns:       k('Add Ons'),
+    total:        k('Total'),
+  };
+}
+
+// ── App ──────────────────────────────────────────────────────────────
+function App() {
+  const [rows, setRows]       = useState([]);
+  const [meta, setMeta]       = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError]     = useState(null);
+  const [ranOnce, setRanOnce] = useState(false);
+
+  const loadData = useCallback(async (start, end) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const orgSlug = getOrgSlug();
+      const qs = new URLSearchParams();
+      if (start) qs.set('start_date', start);
+      if (end)   qs.set('end_date', end);
+      const res = await fetch(`/${orgSlug}/historic/api/data?${qs}`);
+      if (!res.ok) throw new Error(`Server error ${res.status}`);
+      const data = await res.json();
+      setRows((data.rows || []).map(normalizeRow));
+      setMeta(data.meta || {});
+      setRanOnce(true);
+      setTimeout(() => {
+        const el = document.getElementById('report-ready');
+        if (el) el.style.display = 'block';
+      }, 100);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    const p = getParams();
+    if (p.get('_print') === '1') {
+      document.body.classList.add('print-mode');
+    }
+    const start = p.get('start_date');
+    const end   = p.get('end_date');
+    loadData(start, end);
+  }, []);
+
+  // Group rows by date
+  const byDate = {};
+  rows.forEach(r => {
+    const d = r.date?.split('T')[0] || r.date || '';
+    if (!byDate[d]) byDate[d] = [];
+    byDate[d].push(r);
+  });
+  const sortedDates = Object.keys(byDate).sort();
+
+  const orgName  = meta?.org_slug ? (rows[0]?.orgName || meta.org_slug) : '';
+  const runAt    = meta?.generated_at ? new Date(meta.generated_at).toLocaleString('en-US', {month:'2-digit',day:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}) : '';
+  const fromDate = meta?.start_date || '';
+  const toDate   = meta?.end_date   || '';
+
+  if (loading) return <div className="status-msg">Loading report…</div>;
+  if (error)   return <div className="status-msg" style={{color:'#b91c1c'}}>Error: {error}</div>;
+  if (!ranOnce) return <div className="status-msg">Select a date range and click Run Report.</div>;
+  if (!rows.length) return <div className="status-msg">No reservations found for this period.</div>;
+
+  return (
+    <div id="report">
+      <div className="report-header">
+        <div className="report-header-left">
+          {meta?.logo_url && <img src={meta.logo_url} style={{height:48,marginBottom:8,display:'block'}} alt="" />}
+          <h1>{orgName}</h1>
+          <div className="report-subtitle">Facility Reservations by Date</div>
+        </div>
+        <div className="report-header-right">
+          <div>Run On <strong>{runAt}</strong></div>
+          {fromDate && <div>From <strong>{fromDate}</strong></div>}
+          {toDate   && <div>To <strong>{toDate}</strong></div>}
+        </div>
+      </div>
+
+      {sortedDates.map(date => (
+        <div key={date} className="date-group">
+          <div className="date-heading">{formatDate(date)}</div>
+          <table>
+            <thead>
+              <tr>
+                <th style={{width:'14%'}}>Location/Facility</th>
+                <th style={{width:'14%'}}>Rental Date/Time</th>
+                <th style={{width:'13%'}}>Event Title</th>
+                <th style={{width:'7%'}}>Invoice #</th>
+                <th style={{width:'9%'}}>Renter</th>
+                <th style={{width:'9%'}}>Phone</th>
+                <th style={{width:'13%'}}>Email</th>
+                <th style={{width:'4%'}}>Alc.</th>
+                <th style={{width:'4%'}}>Cnt</th>
+                <th style={{width:'8%'}}>Notes</th>
+                <th style={{width:'5%',textAlign:'right'}}>Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {byDate[date].map((r, i) => (
+                <tr key={i}>
+                  <td>{r.locationFacility || <span className="muted">—</span>}</td>
+                  <td style={{whiteSpace:'nowrap'}}>{r.rentalDateTime || <span className="muted">—</span>}</td>
+                  <td>{r.eventTitle || <span className="muted">N/A</span>}</td>
+                  <td style={{fontFamily:'monospace',fontSize:11}}>{r.invoiceNum || <span className="muted">—</span>}</td>
+                  <td>{r.renter || <span className="muted">—</span>}</td>
+                  <td style={{whiteSpace:'nowrap'}}>{r.phone || <span className="muted">—</span>}</td>
+                  <td style={{wordBreak:'break-all',fontSize:11}}>{r.email || <span className="muted">—</span>}</td>
+                  <td className={r.alcohol === 'Yes' ? 'alcohol-yes' : ''}>{r.alcohol || <span className="muted">—</span>}</td>
+                  <td style={{textAlign:'center'}}>{r.headCnt ?? <span className="muted">—</span>}</td>
+                  <td style={{fontSize:11,color:'#555'}}>{r.notes || ''}</td>
+                  <td className="total-val">{r.total != null ? `$${parseFloat(r.total).toFixed(2)}` : <span className="muted">—</span>}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+
+<script>
+// ── Toolbar helpers (plain JS, outside React) ─────────────────────
+function pad(n) { return String(n).padStart(2,'0'); }
+function toISO(d) { return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`; }
+
+function setRange(which) {
+  const now = new Date();
+  const y = now.getFullYear(), m = now.getMonth();
+  let s, e;
+  if (which === 'last')  { s = new Date(y, m-1, 1); e = new Date(y, m, 0); }
+  if (which === 'this')  { s = new Date(y, m, 1);   e = new Date(y, m+1, 0); }
+  if (which === 'next')  { s = new Date(y, m+1, 1); e = new Date(y, m+2, 0); }
+  document.getElementById('startDate').value = toISO(s);
+  document.getElementById('endDate').value   = toISO(e);
+}
+
+function runReport() {
+  const start = document.getElementById('startDate').value;
+  const end   = document.getElementById('endDate').value;
+  const qs = new URLSearchParams();
+  if (start) qs.set('start_date', start);
+  if (end)   qs.set('end_date', end);
+  location.search = qs.toString();
+}
+
+async function downloadPdf() {
+  const btn = document.getElementById('pdfBtn');
+  btn.textContent = 'Generating…';
+  btn.disabled = true;
+  const qs = location.search;
+  const orgSlug = location.pathname.split('/')[1];
+  try {
+    const res = await fetch(`/${orgSlug}/historic/api/pdf${qs}`);
+    if (!res.ok) throw new Error(await res.text());
+    const blob = await res.blob();
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href = url; a.download = 'historic-reservations.pdf'; a.click();
+    URL.revokeObjectURL(url);
+  } catch (e) { alert('PDF failed: ' + e.message); }
+  btn.textContent = 'Download PDF';
+  btn.disabled = false;
+}
+
+// Pre-fill dates from URL on load
+(function() {
+  const p = new URLSearchParams(location.search);
+  if (p.get('start_date')) document.getElementById('startDate').value = p.get('start_date');
+  if (p.get('end_date'))   document.getElementById('endDate').value   = p.get('end_date');
+})();
+</script>
+</body>
+</html>
