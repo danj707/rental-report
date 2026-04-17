@@ -327,6 +327,14 @@ function formatMoney(v) {
   return '$' + n.toFixed(2);
 }
 
+function formatPhone(p) {
+  if (!p) return '';
+  const digits = p.replace(/\D/g, '');
+  if (digits.length === 10) return `(${digits.slice(0,3)})${digits.slice(3,6)}-${digits.slice(6)}`;
+  if (digits.length === 11 && digits[0] === '1') return `(${digits.slice(1,4)})${digits.slice(4,7)}-${digits.slice(7)}`;
+  return p;
+}
+
 function normalizeRow(raw) {
   return {
     orgName:   raw['Org Name']   || raw['org_name']        || '',
@@ -589,8 +597,8 @@ function App() {
                           <span className="cell col-end">{formatTime(r.end)}</span>
                           <span className="cell col-site">{r.site}</span>
                           <span className="cell col-reservee">{r.reservee}</span>
-                          <span className="cell col-phone">{r.phone}</span>
-                          <span className="cell col-email">{r.email}</span>
+                          <span className="cell col-phone">{formatPhone(r.phone)}</span>
+                          <span className="cell col-email">{r.email ? <a href={`mailto:${r.email}`} style={{color:'inherit',textDecoration:'none'}}>{r.email}</a> : ''}</span>
                           <span className="cell col-purpose">{r.resName}</span>
                           {showHcnt  && <span className="cell col-hcnt">{r.headCount}</span>}
                           {showTotal && <span className="cell col-total">{formatMoney(r.total)}</span>}
