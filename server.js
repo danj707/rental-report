@@ -28,12 +28,12 @@ const { Resend } = require("resend");
 process.on("uncaughtException", err => console.error("[uncaught]", err));
 process.on("unhandledRejection", err => console.error("[unhandled]", err));
 
-const METABASE_URL  = process.env.METABASE_URL  || "https://rec.metabaseapp.com";
-const PORT          = process.env.PORT          || 3100;
-const BASE_URL      = process.env.BASE_URL      || `http://localhost:${PORT}`;
+const METABASE_URL   = process.env.METABASE_URL   || "https://rec.metabaseapp.com";
+const PORT           = process.env.PORT           || 3100;
+const BASE_URL       = process.env.BASE_URL       || `http://localhost:${PORT}`;
 const RESEND_API_KEY = process.env.RESEND_API_KEY || "";
-const FROM_EMAIL     = process.env.FROM_EMAIL    || "reports@rec.us";
-const FROM_NAME      = process.env.FROM_NAME     || "rec.us Reports";
+const FROM_EMAIL     = process.env.FROM_EMAIL     || "reports@rec.us";
+const FROM_NAME      = process.env.FROM_NAME      || "rec.us Reports";
 
 // ── Org config ───────────────────────────────────────────────────────
 const ORGS = {
@@ -57,11 +57,11 @@ const ORGS = {
     gl:       { mbUuid: "45e050fd-10d7-4010-b616-6a2ec6e5f7ed" },
   },
   watertown: {
-  orgId:   "d781690b-c5a0-43c5-8443-9ae43899528c",
-  logoUrl: "https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2Forganization-d781690b-c5a0-43c5-8443-9ae43899528c%2FfullLogo.png%3F1750270261391&w=1920&q=75",
-  facility: { mbUuid: "4b64af10-d57f-41af-aad8-b16d12a8f7b8" },
-  gl:       { mbUuid: null },
-},
+    orgId:   "d781690b-c5a0-43c5-8443-9ae43899528c",
+    logoUrl: "https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2Forganization-d781690b-c5a0-43c5-8443-9ae43899528c%2FfullLogo.png%3F1750270261391&w=1920&q=75",
+    facility: { mbUuid: "4b64af10-d57f-41af-aad8-b16d12a8f7b8" },
+    gl:       { mbUuid: null },
+  },
   // windham: {
   //   orgId:   "REPLACE_WITH_ORG_UUID",
   //   logoUrl: "https://...",
@@ -137,12 +137,10 @@ function getDateRange(schedule) {
   const now = new Date();
   const y = now.getFullYear(), m = now.getMonth();
   if (schedule === "daily") {
-    // Yesterday
     const d = new Date(now); d.setDate(d.getDate() - 1);
     return { start: toISO(d), end: toISO(d), label: `Daily — ${toISO(d)}` };
   }
   if (schedule === "weekly") {
-    // Last 7 days
     const end = new Date(now); end.setDate(end.getDate() - 1);
     const start = new Date(now); start.setDate(start.getDate() - 7);
     return { start: toISO(start), end: toISO(end), label: `Weekly — ${toISO(start)} to ${toISO(end)}` };
@@ -273,9 +271,9 @@ async function runSchedule(scheduleType) {
 // Daily   — 7am every day
 // Weekly  — 7am every Monday
 // Monthly — 7am on the 1st of each month
-cron.schedule("0 7 * * *",   () => runSchedule("daily"));
-cron.schedule("0 7 * * 1",   () => runSchedule("weekly"));
-cron.schedule("0 7 1 * *",   () => runSchedule("monthly"));
+cron.schedule("0 7 * * *", () => runSchedule("daily"));
+cron.schedule("0 7 * * 1", () => runSchedule("weekly"));
+cron.schedule("0 7 1 * *", () => runSchedule("monthly"));
 
 // ── Express setup ────────────────────────────────────────────────────
 const app = express();
@@ -301,18 +299,18 @@ function parseToISO(dateStr) {
 function buildMetabaseParams(query, reportType) {
   const params = [];
   if (query.start_date) {
-    params.push({ type:"date/single", target:["variable",["template-tag","start_date"]], value:parseToISO(query.start_date) });
+    params.push({ type: "date/single", target: ["variable", ["template-tag", "start_date"]], value: parseToISO(query.start_date) });
   }
   if (query.end_date) {
-    params.push({ type:"date/single", target:["variable",["template-tag","end_date"]], value:parseToISO(query.end_date) });
+    params.push({ type: "date/single", target: ["variable", ["template-tag", "end_date"]], value: parseToISO(query.end_date) });
   }
   if (reportType === "facility" || reportType === "historic") {
     if (query.location_name) {
       const locations = query.location_name.split(",").map(s => s.trim());
-      params.push({ type:"category", target:["variable",["template-tag","location_name"]], value:locations.length===1?locations[0]:locations });
+      params.push({ type: "category", target: ["variable", ["template-tag", "location_name"]], value: locations.length === 1 ? locations[0] : locations });
     }
     if (query.site_type) {
-      params.push({ type:"category", target:["variable",["template-tag","site_type"]], value:query.site_type });
+      params.push({ type: "category", target: ["variable", ["template-tag", "site_type"]], value: query.site_type });
     }
   }
   return params;
@@ -369,10 +367,9 @@ app.get("/:org/:report/api/data", resolveOrg, async (req, res) => {
 app.get("/:org/:report/api/pdf", resolveOrg, async (req, res) => {
   try {
     const { orgSlug, reportType } = req;
-    const pdf = await generatePdf(orgSlug, reportType,
-      req.query.start_date, req.query.end_date);
+    const pdf = await generatePdf(orgSlug, reportType, req.query.start_date, req.query.end_date);
     const filename = `${reportType}-report-${req.query.start_date || "report"}.pdf`;
-    res.set({ "Content-Type":"application/pdf", "Content-Disposition":`inline; filename="${filename}"`, "Content-Length":pdf.length });
+    res.set({ "Content-Type": "application/pdf", "Content-Disposition": `inline; filename="${filename}"`, "Content-Length": pdf.length });
     res.send(pdf);
   } catch (err) {
     console.error("[pdf] Error:", err);
@@ -398,9 +395,7 @@ app.post("/:org/admin/subscribe", (req, res) => {
   if (!["daily","weekly","monthly"].includes(schedule)) return res.status(400).json({ error: "schedule must be daily, weekly, or monthly" });
   const validReports = reports.filter(r => REPORT_TYPES.includes(r));
   if (!validReports.length) return res.status(400).json({ error: "No valid report types" });
-
   db.upsertSubscription(req.params.org, email.toLowerCase().trim(), validReports, schedule);
-
   res.json({ ok: true });
 });
 
@@ -414,24 +409,24 @@ app.delete("/:org/admin/subscribe", (req, res) => {
 });
 
 // POST /:org/admin/test-email — test Resend without PDF
-app.post('/:org/admin/test-email', async (req, res) => {
-  if (!ORGS[req.params.org]) return res.status(404).json({ error: 'Unknown org' });
+app.post("/:org/admin/test-email", async (req, res) => {
+  if (!ORGS[req.params.org]) return res.status(404).json({ error: "Unknown org" });
   const { email } = req.body;
-  if (!email) return res.status(400).json({ error: 'email required' });
+  if (!email) return res.status(400).json({ error: "email required" });
   const resend = getResendClient();
-  if (!resend) return res.json({ ok: false, error: 'RESEND_API_KEY not configured' });
+  if (!resend) return res.json({ ok: false, error: "RESEND_API_KEY not configured" });
   try {
     const { data, error } = await resend.emails.send({
       from: `${FROM_NAME} <${FROM_EMAIL}>`,
       to: email,
-      subject: 'rec.us Report Server — Test Email',
-      html: '<p>This is a test email from the rec.us report server. Resend is working!</p>',
+      subject: "rec.us Report Server — Test Email",
+      html: "<p>This is a test email from the rec.us report server. Resend is working!</p>",
     });
     if (error) throw new Error(JSON.stringify(error));
-    console.log('[test-email] Sent to', email, data);
+    console.log("[test-email] Sent to", email, data);
     res.json({ ok: true });
   } catch (err) {
-    console.error('[test-email] Error:', err.message);
+    console.error("[test-email] Error:", err.message);
     res.json({ ok: false, error: err.message });
   }
 });
@@ -446,7 +441,7 @@ app.post("/:org/admin/test-send", async (req, res) => {
   res.json({ ok: true, message: "Sending in background — check the log in a moment" });
   // Fire and forget
   sendReportEmail(req.params.org, email, report, schedule)
-    .catch(err => console.error('[test-send] Error:', err));
+    .catch(err => console.error("[test-send] Error:", err));
 });
 
 // ── Serve HTML pages ─────────────────────────────────────────────────
