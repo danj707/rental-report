@@ -54,7 +54,7 @@ const ORGS = {
     logoUrl: "https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2Forganization-efc0724c-8f32-481a-bab3-fc19c724f3a7%2FfullLogo.png%3F1771265790459&w=1920&q=75",
     facility: { mbUuid: null },
     historic: { mbUuid: "af3c5388-7deb-4a05-a102-cc31f6c4b9f7" },
-    gl:       { mbUuid: null },
+    gl:       { mbUuid: "45e050fd-10d7-4010-b616-6a2ec6e5f7ed" },
   },
   watertown: {
   orgId:   "d781690b-c5a0-43c5-8443-9ae43899528c",
