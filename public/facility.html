@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Facility Rental Schedule</title>
+  <title>Weekly Rental Schedule</title>
 
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
@@ -33,10 +33,10 @@
       font-size: 13px;
       flex-wrap: wrap;
     }
-    .toolbar-title { font-weight: 600; margin-right: 4px; font-size: 13px; }
+    .toolbar-title { font-weight: 600; margin-right: 8px; }
     .toolbar-spacer { flex: 1; }
 
-    .toolbar label.date-label {
+    .toolbar label {
       font-size: 10px;
       text-transform: uppercase;
       letter-spacing: 0.5px;
@@ -56,7 +56,10 @@
       outline: none;
     }
     .toolbar input[type="date"]:focus { border-color: #3b82f6; }
-    .toolbar input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(1); cursor: pointer; }
+    .toolbar input[type="date"]::-webkit-calendar-picker-indicator {
+      filter: invert(1);
+      cursor: pointer;
+    }
 
     .toolbar button {
       padding: 6px 14px;
@@ -68,48 +71,177 @@
       font-family: inherit;
       cursor: pointer;
       transition: background .15s;
-      white-space: nowrap;
     }
     .toolbar button:hover { background: rgba(255,255,255,.18); }
-    .toolbar .btn-run { background: #16a34a; border-color: #16a34a; font-weight: 600; }
+    .toolbar .btn-run {
+      background: #16a34a;
+      border-color: #16a34a;
+      font-weight: 600;
+    }
     .toolbar .btn-run:hover { background: #15803d; }
     .toolbar .btn-run:disabled { opacity: .5; cursor: not-allowed; }
-    .toolbar .btn-pdf { background: #3b82f6; border-color: #3b82f6; font-weight: 600; }
+    .toolbar .btn-pdf {
+      background: #3b82f6;
+      border-color: #3b82f6;
+      font-weight: 600;
+    }
     .toolbar .btn-pdf:hover { background: #2563eb; }
     .toolbar .btn-pdf:disabled { opacity: .5; cursor: not-allowed; }
-    .toolbar .row-count { font-size: 11px; color: #aaa; }
-    .toolbar .divider { width: 1px; height: 28px; background: rgba(255,255,255,.15); margin: 0 2px; }
 
-    /* ── Column toggle checkboxes ── */
-    .col-toggles {
+    .toolbar .row-count {
+      font-size: 11px;
+      color: #aaa;
+      margin-left: 4px;
+    }
+
+    .toolbar .divider {
+      width: 1px;
+      height: 28px;
+      background: rgba(255,255,255,.15);
+      margin: 0 4px;
+    }
+
+    /* ── Location filter dropdown ── */
+    .loc-filter-wrap {
+      position: relative;
+    }
+
+    .btn-loc-filter {
       display: flex;
       align-items: center;
-      gap: 12px;
+      gap: 6px;
+      white-space: nowrap;
     }
-    .col-toggles-label {
+
+    .btn-loc-filter .badge {
+      background: #f59e0b;
+      color: #1a1a1a;
+      border-radius: 10px;
+      font-size: 10px;
+      font-weight: 700;
+      padding: 1px 6px;
+      line-height: 1.4;
+    }
+
+    .loc-dropdown {
+      position: absolute;
+      top: calc(100% + 6px);
+      left: 0;
+      z-index: 200;
+      background: #1e1e1e;
+      border: 1px solid rgba(255,255,255,.15);
+      border-radius: 6px;
+      min-width: 220px;
+      max-height: 320px;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 8px 24px rgba(0,0,0,.5);
+    }
+
+    .loc-dropdown-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 12px;
+      border-bottom: 1px solid rgba(255,255,255,.1);
       font-size: 10px;
       text-transform: uppercase;
       letter-spacing: 0.5px;
-      color: #888;
-      white-space: nowrap;
+      color: #aaa;
+      flex-shrink: 0;
     }
-    .col-toggle {
+
+    .loc-dropdown-header-actions {
+      display: flex;
+      gap: 8px;
+    }
+
+    .loc-dropdown-header button {
+      padding: 2px 6px;
+      font-size: 10px;
+      border-color: rgba(255,255,255,.15);
+      background: rgba(255,255,255,.06);
+    }
+
+    .loc-dropdown-search {
+      padding: 6px 10px;
+      border-bottom: 1px solid rgba(255,255,255,.08);
+      flex-shrink: 0;
+    }
+
+    .loc-dropdown-search input {
+      width: 100%;
+      padding: 4px 8px;
+      background: rgba(255,255,255,.08);
+      border: 1px solid rgba(255,255,255,.15);
+      border-radius: 4px;
+      color: #fff;
+      font-size: 11px;
+      font-family: inherit;
+      outline: none;
+    }
+    .loc-dropdown-search input::placeholder { color: #777; }
+    .loc-dropdown-search input:focus { border-color: #3b82f6; }
+
+    .loc-dropdown-list {
+      overflow-y: auto;
+      flex: 1;
+      padding: 4px 0;
+    }
+
+    .loc-dropdown-list::-webkit-scrollbar { width: 4px; }
+    .loc-dropdown-list::-webkit-scrollbar-track { background: transparent; }
+    .loc-dropdown-list::-webkit-scrollbar-thumb { background: rgba(255,255,255,.2); border-radius: 2px; }
+
+    .loc-item {
       display: flex;
       align-items: center;
-      gap: 5px;
+      gap: 8px;
+      padding: 5px 12px;
       cursor: pointer;
-      font-size: 11px;
-      color: #ccc;
-      user-select: none;
-      white-space: nowrap;
+      transition: background .1s;
+      font-size: 12px;
+      color: #ddd;
     }
-    .col-toggle input[type="checkbox"] {
+    .loc-item:hover { background: rgba(255,255,255,.07); }
+
+    .loc-item input[type="checkbox"] {
+      accent-color: #3b82f6;
       width: 13px;
       height: 13px;
+      flex-shrink: 0;
+      cursor: pointer;
+    }
+
+    .loc-item span {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    /* ── Column visibility checkboxes ── */
+    .col-toggles {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 11px;
+      color: #ccc;
+    }
+    .col-toggles label {
+      display: flex;
+      flex-direction: row;
+      align-items: center;
+      gap: 4px;
+      cursor: pointer;
+      font-size: 11px;
+      text-transform: none;
+      letter-spacing: 0;
+      color: #ccc;
+    }
+    .col-toggles input[type="checkbox"] {
       accent-color: #3b82f6;
       cursor: pointer;
     }
-    .col-toggle:hover { color: #fff; }
 
     /* ── Report page ── */
     .page {
@@ -124,31 +256,30 @@
     .report-header {
       display: flex;
       justify-content: space-between;
-      align-items: center;
+      align-items: flex-end;
       border-bottom: 2.5px solid #111;
-      padding-bottom: 10px;
+      padding-bottom: 8px;
       margin-bottom: 14px;
-      gap: 16px;
-    }
-    .report-header-left { display: flex; align-items: center; gap: 14px; }
-    .report-header-logo {
-      height: 42px;
-      max-width: 140px;
-      object-fit: contain;
-      object-position: left center;
     }
     .report-header .org-label {
-      font-size: 10px;
+      font-size: 10.5px;
       letter-spacing: 1.6px;
       text-transform: uppercase;
       color: #777;
       font-weight: 600;
     }
-    .report-header .title { font-size: 17px; font-weight: 700; margin-top: 1px; }
-    .report-header-right { text-align: right; }
-    .report-header .date-range { font-size: 11px; color: #666; }
+    .report-header .title {
+      font-size: 17px;
+      font-weight: 700;
+      margin-top: 1px;
+    }
+    .report-header .date-range {
+      font-size: 11px;
+      color: #666;
+      text-align: right;
+    }
 
-    /* ── Column headers ── */
+    /* ── Column header row ── */
     .col-header-row {
       display: flex;
       gap: 6px;
@@ -163,7 +294,7 @@
       color: #333;
     }
 
-    /* ── Section header: date + location ── */
+    /* ── Date + Location section header ── */
     .section-header {
       display: flex;
       align-items: baseline;
@@ -186,14 +317,20 @@
       font-size: 11.5px;
     }
     .data-row:nth-child(even) { background: #fafaf8; }
-    .data-row .cell { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    .data-row .cell {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
 
     /* ── Sub-row for notes/add-ons ── */
     .sub-row {
-      padding: 0 8px 3px 160px;
+      padding: 0 8px 3px;
       font-size: 10px;
       color: #888;
       font-family: 'IBM Plex Mono', monospace;
+      padding-left: 160px;
     }
 
     /* ── Footer ── */
@@ -208,27 +345,43 @@
     }
 
     /* ── Loading / Error ── */
-    .loading { text-align: center; padding: 80px 20px; color: #888; font-size: 14px; }
+    .loading {
+      text-align: center;
+      padding: 80px 20px;
+      color: #888;
+      font-size: 14px;
+    }
     .loading .spinner {
-      display: inline-block; width: 28px; height: 28px;
-      border: 3px solid #ddd; border-top-color: #3b82f6;
-      border-radius: 50%; animation: spin .7s linear infinite; margin-bottom: 12px;
+      display: inline-block;
+      width: 28px; height: 28px;
+      border: 3px solid #ddd;
+      border-top-color: #3b82f6;
+      border-radius: 50%;
+      animation: spin .7s linear infinite;
+      margin-bottom: 12px;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
-    .error { text-align: center; padding: 60px 20px; color: #b91c1c; font-size: 14px; }
+
+    .error {
+      text-align: center;
+      padding: 60px 20px;
+      color: #b91c1c;
+      font-size: 14px;
+    }
 
     /* ── Column widths ── */
-    .col-start    { width: 68px; flex-shrink: 0; }
-    .col-end      { width: 68px; flex-shrink: 0; }
-    .col-site     { width: 170px; flex-shrink: 0; font-weight: 500; white-space: normal; line-height: 1.3; }
-    .col-reservee { width: 150px; flex-shrink: 0; }
-    .col-phone    { width: 110px; flex-shrink: 0; }
-    .col-email    { width: 175px; flex-shrink: 0; font-size: 10.5px; }
-    .col-purpose  { width: 120px; flex-shrink: 0; }
-    .col-hcnt     { width: 42px; flex-shrink: 0; text-align: center; }
-    .col-total    { width: 62px; flex-shrink: 0; text-align: right; }
+    .col-start   { width: 68px; }
+    .col-end     { width: 68px; }
+    .col-site    { width: 170px; font-weight: 500; white-space: normal; line-height: 1.3; }
+    .col-name    { flex: 1; }
+    .col-hcnt    { width: 46px; text-align: center; }
+    .col-reservee{ width: 150px; }
+    .col-phone   { width: 110px; }
+    .col-email   { width: 175px; font-size: 10.5px; }
+    .col-purpose { width: 120px; }
+    .col-total   { width: 62px; text-align: right; }
 
-    /* ── Print / PDF ── */
+    /* ── Print / PDF mode ── */
     @media print {
       body { background: #fff; }
       .toolbar { display: none !important; }
@@ -240,6 +393,7 @@
   </style>
 </head>
 <body>
+
 <div id="root"></div>
 
 <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
@@ -247,30 +401,9 @@
 <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
 
 <script type="text/babel">
-const { useState, useEffect, useMemo, useCallback } = React;
+const { useState, useEffect, useMemo, useCallback, useRef } = React;
 
-const LS_KEY = 'facility-col-prefs';
-
-function loadColPrefs() {
-  try {
-    const saved = localStorage.getItem(LS_KEY);
-    if (saved) return JSON.parse(saved);
-  } catch {}
-  return { showHcnt: true, showTotal: true, showNotes: true };
-}
-
-function saveColPrefs(prefs) {
-  try { localStorage.setItem(LS_KEY, JSON.stringify(prefs)); } catch {}
-}
-
-// ── Derive org slug and base path from URL ──────────────────────────
-function getOrgAndBase() {
-  const parts = window.location.pathname.split('/').filter(Boolean);
-  const orgSlug = parts[0] || 'unknown';
-  const basePath = `/${parts[0]}/${parts[1]}`;
-  return { orgSlug, basePath };
-}
-
+// ── Read query params ────────────────────────────────────────────────
 function getParams() {
   const p = new URLSearchParams(window.location.search);
   return {
@@ -285,10 +418,7 @@ function getParams() {
 function getCurrentMonthRange() {
   const now = new Date();
   const y = now.getFullYear(), m = now.getMonth();
-  return {
-    start: toISO(new Date(y, m, 1)),
-    end:   toISO(new Date(y, m + 1, 0)),
-  };
+  return { start: toISO(new Date(y, m, 1)), end: toISO(new Date(y, m + 1, 0)) };
 }
 
 function toISO(d) {
@@ -306,11 +436,16 @@ function formatTime(t) {
   if (!t) return '';
   const s = t.trim().toLowerCase();
   const ampmMatch = s.match(/^(\d{1,2}):(\d{2})\s*(am|pm)$/);
-  if (ampmMatch) return `${parseInt(ampmMatch[1], 10)}:${ampmMatch[2]}${ampmMatch[3]}`;
+  if (ampmMatch) {
+    const hr = parseInt(ampmMatch[1], 10);
+    return `${hr}:${ampmMatch[2]}${ampmMatch[3]}`;
+  }
   const parts = s.match(/^(\d{1,2}):(\d{2})/);
   if (!parts) return t;
   const h = parseInt(parts[1], 10);
-  return `${h % 12 || 12}:${parts[2]}${h >= 12 ? 'pm' : 'am'}`;
+  const ampm = h >= 12 ? 'pm' : 'am';
+  const hr = h % 12 || 12;
+  return `${hr}:${parts[2]}${ampm}`;
 }
 
 function formatDateHeader(dateStr) {
@@ -329,7 +464,7 @@ function formatMoney(v) {
 
 function formatPhone(p) {
   if (!p) return '';
-  const digits = p.replace(/\D/g, '');
+  const digits = String(p).replace(/\D/g, '');
   if (digits.length === 10) return `(${digits.slice(0,3)})${digits.slice(3,6)}-${digits.slice(6)}`;
   if (digits.length === 11 && digits[0] === '1') return `(${digits.slice(1,4)})${digits.slice(4,7)}-${digits.slice(7)}`;
   return p;
@@ -337,28 +472,116 @@ function formatPhone(p) {
 
 function normalizeRow(raw) {
   return {
-    orgName:   raw['Org Name']   || raw['org_name']        || '',
-    date:      raw['Date']       || raw['date']             || '',
-    day:       raw['Day']        || raw['day']              || '',
-    start:     raw['Begin']      || raw['Start']            || raw['start'] || '',
-    end:       raw['End']        || raw['end']              || '',
-    location:  raw['Location']   || raw['location']         || '',
-    site:      raw['Facility']   || raw['Site']             || raw['site']  || '',
-    siteType:  raw['Site Type']  || raw['site_type']        || '',
-    resName:   raw['Purpose']    || raw['Res Name']         || raw['res_name'] || '',
-    headCount: raw['Head Cnt']   || raw["H'Cnt"]            || raw['attendee_count'] || '',
-    reservee:  raw['Reservee']   || raw['reservee']         || '',
-    email:     raw['Email']      || raw['email']            || '',
-    phone:     raw['Phone']      || raw['phone']            || '',
-    notes:     raw['Notes']      || raw['notes']            || '',
-    addons:    raw['Add Ons']    || raw['addons']           || '',
-    total:     raw['Total']      || raw['total']            || null,
+    orgName:   raw['Org Name']  || raw['org_name']  || '',
+    date:      raw['Date']      || raw['date']       || '',
+    day:       raw['Day']       || raw['day']        || '',
+    start:     raw['Start']     || raw['start']      || raw['Begin'] || '',
+    end:       raw['End']       || raw['end']        || '',
+    location:  raw['Location']  || raw['location']   || '',
+    site:      raw['Site']      || raw['site']       || raw['Facility'] || '',
+    siteType:  raw['Site Type'] || raw['site_type']  || '',
+    resName:   raw['Res Name']  || raw['res_name']   || raw['Purpose'] || '',
+    headCount: raw["H'Cnt"]     || raw['Head Cnt']   || raw['headcount'] || raw['attendee_count'] || '',
+    reservee:  raw['Reservee']  || raw['reservee']   || '',
+    email:     raw['Email']     || raw['email']      || '',
+    phone:     raw['Phone']     || raw['phone']      || '',
+    notes:     raw['Notes']     || raw['notes']      || '',
+    addons:    raw['Add Ons']   || raw['addons']     || '',
+    total:     raw['Total']     || raw['total']      || null,
   };
 }
 
-// ── App ──────────────────────────────────────────────────────────────
+// ── Location Filter Dropdown component ──────────────────────────────
+function LocationFilter({ allLocations, selectedLocations, onChange }) {
+  const [open, setOpen]         = useState(false);
+  const [search, setSearch]     = useState('');
+  const wrapRef                 = useRef(null);
+
+  // Close on outside click
+  useEffect(() => {
+    function handleClick(e) {
+      if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false);
+    }
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, []);
+
+  const filtered = allLocations.filter(l =>
+    l.toLowerCase().includes(search.toLowerCase())
+  );
+
+  const allSelected  = selectedLocations.size === allLocations.length;
+  const noneSelected = selectedLocations.size === 0;
+
+  function toggle(loc) {
+    const next = new Set(selectedLocations);
+    next.has(loc) ? next.delete(loc) : next.add(loc);
+    onChange(next);
+  }
+
+  function selectAll()  { onChange(new Set(allLocations)); }
+  function clearAll()   { onChange(new Set()); }
+
+  const badgeCount = allSelected ? null : selectedLocations.size;
+
+  return (
+    <div className="loc-filter-wrap" ref={wrapRef}>
+      <button
+        className="btn-loc-filter"
+        onClick={() => setOpen(o => !o)}
+        style={!allSelected ? { borderColor: '#f59e0b', color: '#fde68a' } : {}}
+      >
+        📍 Locations
+        {badgeCount !== null && (
+          <span className="badge">{badgeCount}/{allLocations.length}</span>
+        )}
+      </button>
+
+      {open && (
+        <div className="loc-dropdown">
+          <div className="loc-dropdown-header">
+            <span>Filter Locations</span>
+            <div className="loc-dropdown-header-actions">
+              <button onClick={selectAll} disabled={allSelected}>All</button>
+              <button onClick={clearAll}  disabled={noneSelected}>None</button>
+            </div>
+          </div>
+
+          {allLocations.length > 5 && (
+            <div className="loc-dropdown-search">
+              <input
+                type="text"
+                placeholder="Search locations…"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                autoFocus
+              />
+            </div>
+          )}
+
+          <div className="loc-dropdown-list">
+            {filtered.length === 0 && (
+              <div style={{padding:'10px 12px', color:'#666', fontSize:11}}>No matches</div>
+            )}
+            {filtered.map(loc => (
+              <label key={loc} className="loc-item">
+                <input
+                  type="checkbox"
+                  checked={selectedLocations.has(loc)}
+                  onChange={() => toggle(loc)}
+                />
+                <span title={loc}>{loc}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Main App ─────────────────────────────────────────────────────────
 function App() {
-  const { orgSlug, basePath } = useMemo(() => getOrgAndBase(), []);
   const params   = useMemo(() => getParams(), []);
   const defaults = useMemo(() => getCurrentMonthRange(), []);
 
@@ -370,56 +593,132 @@ function App() {
   const [error,      setError]      = useState(null);
   const [loading,    setLoading]    = useState(false);
   const [pdfLoading, setPdfLoading] = useState(false);
+
   const [loadedStart, setLoadedStart] = useState(null);
   const [loadedEnd,   setLoadedEnd]   = useState(null);
 
-  // Column visibility — persisted in localStorage
-  const [colPrefs, setColPrefs] = useState(loadColPrefs);
+  // ── Column visibility (persisted) ───────────────────────────────
+  const [showHeadCount, setShowHeadCount] = useState(() => {
+    try { return localStorage.getItem('col_headcount') !== 'false'; } catch { return true; }
+  });
+  const [showTotal, setShowTotal] = useState(() => {
+    try { return localStorage.getItem('col_total') !== 'false'; } catch { return true; }
+  });
+  const [showNotes, setShowNotes] = useState(() => {
+    try { return localStorage.getItem('col_notes') !== 'false'; } catch { return true; }
+  });
 
-  function toggleCol(key) {
-    setColPrefs(prev => {
-      const next = { ...prev, [key]: !prev[key] };
-      saveColPrefs(next);
-      return next;
-    });
-  }
+  useEffect(() => { try { localStorage.setItem('col_headcount', showHeadCount); } catch {} }, [showHeadCount]);
+  useEffect(() => { try { localStorage.setItem('col_total',     showTotal);     } catch {} }, [showTotal]);
+  useEffect(() => { try { localStorage.setItem('col_notes',     showNotes);     } catch {} }, [showNotes]);
 
-  const isPrint = params._print === '1';
+  // ── Location filter state ────────────────────────────────────────
+  // null = not yet initialized (first load); Set = initialized
+  const [selectedLocations, setSelectedLocations] = useState(null);
 
   useEffect(() => {
-    if (isPrint) document.body.classList.add('print-mode');
-  }, []);
+    if (params._print === '1') document.body.classList.add('print-mode');
+  }, [params._print]);
 
+  // ── Fetch ────────────────────────────────────────────────────────
   const fetchData = useCallback((sd, ed) => {
     setLoading(true);
     setError(null);
+
     const qs = new URLSearchParams();
     if (sd) qs.set('start_date', sd);
-    if (ed) qs.set('end_date', ed);
+    if (ed) qs.set('end_date',   ed);
     if (params.location_name) qs.set('location_name', params.location_name);
     if (params.site_type)     qs.set('site_type',     params.site_type);
 
-    fetch(`${basePath}/api/data?${qs}`)
-      .then(r => { if (!r.ok) throw new Error(`Server returned ${r.status}`); return r.json(); })
+    // Derive the API path from the current URL (handles /:org/facility routing)
+    const pathParts = window.location.pathname.replace(/\/$/, '').split('/');
+    const apiBase = pathParts.length >= 3
+      ? `/${pathParts[1]}/${pathParts[2]}/api/data`
+      : '/api/data';
+
+    fetch(`${apiBase}?${qs.toString()}`)
+      .then(r => {
+        if (!r.ok) throw new Error(`Server returned ${r.status}`);
+        return r.json();
+      })
       .then(json => {
-        setRows(json.rows.map(normalizeRow));
+        const normalized = json.rows.map(normalizeRow);
+        setRows(normalized);
         setMeta(json.meta || {});
         setLoadedStart(sd);
         setLoadedEnd(ed);
+
+        // Initialize location filter on first load only
+        setSelectedLocations(prev => {
+          if (prev === null) {
+            // First load — select all
+            const locs = [...new Set(normalized.map(r => r.location).filter(Boolean))].sort();
+            return new Set(locs);
+          }
+          // Subsequent loads (date change etc.) — keep existing selection,
+          // but add any newly appearing locations as selected
+          const locs = [...new Set(normalized.map(r => r.location).filter(Boolean))].sort();
+          const next = new Set(prev);
+          locs.forEach(l => { if (!next.has(l)) next.add(l); });
+          return next;
+        });
       })
       .catch(err => setError(err.message))
       .finally(() => setLoading(false));
-  }, [basePath, params.location_name, params.site_type]);
+  }, [params.location_name, params.site_type]);
 
+  // Initial load
   useEffect(() => { fetchData(startDate, endDate); }, []);
 
+  function handleRunReport() { fetchData(startDate, endDate); }
+
+  const datesChanged = startDate !== loadedStart || endDate !== loadedEnd;
+
+  // ── All unique locations from current rows ───────────────────────
+  const allLocations = useMemo(() => {
+    if (!rows) return [];
+    return [...new Set(rows.map(r => r.location).filter(Boolean))].sort();
+  }, [rows]);
+
+  // ── Filtered rows → grouped ──────────────────────────────────────
+  const filteredRows = useMemo(() => {
+    if (!rows) return null;
+    if (!selectedLocations) return rows;
+    if (selectedLocations.size === allLocations.length) return rows; // all selected — no filter
+    return rows.filter(r => selectedLocations.has(r.location));
+  }, [rows, selectedLocations, allLocations]);
+
+  const grouped = useMemo(() => {
+    if (!filteredRows) return null;
+    const byDate = {};
+    filteredRows.forEach(row => {
+      const dk = row.date;
+      if (!byDate[dk]) byDate[dk] = { locations: {} };
+      const lk = row.location || 'Unknown';
+      if (!byDate[dk].locations[lk]) byDate[dk].locations[lk] = [];
+      byDate[dk].locations[lk].push(row);
+    });
+    Object.values(byDate).forEach(dg => {
+      Object.values(dg.locations).forEach(locRows => {
+        locRows.sort((a, b) => (a.start || '').localeCompare(b.start || ''));
+      });
+    });
+    return byDate;
+  }, [filteredRows]);
+
+  const sortedDates = grouped ? Object.keys(grouped).sort() : [];
+
+  // ── Month buttons ────────────────────────────────────────────────
   function setMonth(offset) {
     const now = new Date();
-    const t = new Date(now.getFullYear(), now.getMonth() + offset, 1);
-    setStartDate(toISO(t));
-    setEndDate(toISO(new Date(t.getFullYear(), t.getMonth() + 1, 0)));
+    const target = new Date(now.getFullYear(), now.getMonth() + offset, 1);
+    const last   = new Date(target.getFullYear(), target.getMonth() + 1, 0);
+    setStartDate(toISO(target));
+    setEndDate(toISO(last));
   }
 
+  // ── PDF download ─────────────────────────────────────────────────
   function downloadPdf() {
     setPdfLoading(true);
     const qs = new URLSearchParams();
@@ -428,89 +727,101 @@ function App() {
     if (params.location_name) qs.set('location_name', params.location_name);
     if (params.site_type)     qs.set('site_type',     params.site_type);
 
-    fetch(`${basePath}/api/pdf?${qs}`)
+    const pathParts = window.location.pathname.replace(/\/$/, '').split('/');
+    const pdfBase = pathParts.length >= 3
+      ? `/${pathParts[1]}/${pathParts[2]}/api/pdf`
+      : '/api/pdf';
+
+    fetch(`${pdfBase}?${qs.toString()}`)
       .then(r => r.blob())
       .then(blob => {
         const a = document.createElement('a');
         a.href = URL.createObjectURL(blob);
-        a.download = `facility-schedule-${loadedStart || 'report'}.pdf`;
+        a.download = `rental-schedule-${loadedStart || 'report'}.pdf`;
         a.click();
         URL.revokeObjectURL(a.href);
       })
-      .catch(err => alert('PDF failed: ' + err.message))
+      .catch(err => alert('PDF generation failed: ' + err.message))
       .finally(() => setPdfLoading(false));
   }
 
-  const datesChanged = startDate !== loadedStart || endDate !== loadedEnd;
+  const isPrint = params._print === '1';
 
-  const grouped = useMemo(() => {
-    if (!rows) return null;
-    const byDate = {};
-    rows.forEach(row => {
-      const dk = row.date;
-      if (!byDate[dk]) byDate[dk] = { locations: {} };
-      const lk = row.location || 'Unknown';
-      if (!byDate[dk].locations[lk]) byDate[dk].locations[lk] = [];
-      byDate[dk].locations[lk].push(row);
-    });
-    Object.values(byDate).forEach(dg =>
-      Object.values(dg.locations).forEach(locRows =>
-        locRows.sort((a, b) => (a.start || '').localeCompare(b.start || ''))
-      )
-    );
-    return byDate;
-  }, [rows]);
-
-  const sortedDates = grouped ? Object.keys(grouped).sort() : [];
-
-  // ── Toolbar ───────────────────────────────────────────────────────
+  // ── Toolbar ──────────────────────────────────────────────────────
   function renderToolbar() {
     if (isPrint) return null;
     return (
       <div className="toolbar">
-        <span className="toolbar-title">Facility Schedule</span>
-        <div className="divider" />
-        <label className="date-label">Start<input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} /></label>
-        <label className="date-label">End<input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} /></label>
+        <span className="toolbar-title">Rental Schedule</span>
+
+        <label>
+          Start
+          <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} />
+        </label>
+        <label>
+          End
+          <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} />
+        </label>
+
         <button onClick={() => setMonth(-1)} style={{fontSize:11,padding:'4px 8px'}}>Last Month</button>
         <button onClick={() => setMonth(0)}  style={{fontSize:11,padding:'4px 8px'}}>This Month</button>
         <button onClick={() => setMonth(1)}  style={{fontSize:11,padding:'4px 8px'}}>Next Month</button>
+
         <button
           className="btn-run"
-          onClick={() => fetchData(startDate, endDate)}
+          onClick={handleRunReport}
           disabled={loading}
           style={datesChanged && !loading ? {boxShadow:'0 0 0 2px #4ade80'} : {}}
         >
           {loading ? 'Loading…' : '▶ Run Report'}
         </button>
 
+        {allLocations.length > 1 && selectedLocations && (
+          <>
+            <div className="divider" />
+            <LocationFilter
+              allLocations={allLocations}
+              selectedLocations={selectedLocations}
+              onChange={setSelectedLocations}
+            />
+          </>
+        )}
+
+        <div className="toolbar-spacer" />
+
+        {filteredRows && (
+          <span className="row-count">
+            {filteredRows.length} rental{filteredRows.length !== 1 ? 's' : ''}
+            {rows && filteredRows.length !== rows.length && (
+              <span style={{color:'#f59e0b'}}> ({rows.length} total)</span>
+            )}
+          </span>
+        )}
+
         <div className="divider" />
 
-        {/* Column toggles */}
         <div className="col-toggles">
-          <span className="col-toggles-label">Show:</span>
-          <label className="col-toggle">
-            <input type="checkbox" checked={colPrefs.showHcnt} onChange={() => toggleCol('showHcnt')} />
+          <label>
+            <input type="checkbox" checked={showHeadCount} onChange={e => setShowHeadCount(e.target.checked)} />
             Head Cnt
           </label>
-          <label className="col-toggle">
-            <input type="checkbox" checked={colPrefs.showTotal} onChange={() => toggleCol('showTotal')} />
+          <label>
+            <input type="checkbox" checked={showTotal} onChange={e => setShowTotal(e.target.checked)} />
             Total
           </label>
-          <label className="col-toggle">
-            <input type="checkbox" checked={colPrefs.showNotes} onChange={() => toggleCol('showNotes')} />
+          <label>
+            <input type="checkbox" checked={showNotes} onChange={e => setShowNotes(e.target.checked)} />
             Notes
           </label>
         </div>
 
-        <div className="toolbar-spacer" />
-        {rows && <span className="row-count">{rows.length} rental{rows.length !== 1 ? 's' : ''}</span>}
         <div className="divider" />
+
         <button onClick={() => window.print()}>🖨️ Print</button>
         <button
           className="btn-pdf"
           onClick={downloadPdf}
-          disabled={pdfLoading || !rows || rows.length === 0}
+          disabled={pdfLoading || !filteredRows || filteredRows.length === 0}
         >
           {pdfLoading ? 'Generating…' : '📄 PDF'}
         </button>
@@ -518,50 +829,61 @@ function App() {
     );
   }
 
-  // ── States ────────────────────────────────────────────────────────
-  if (error && !rows) return (
-    <div>{renderToolbar()}
-      <div className="page"><div className="error">
-        <p><strong>Failed to load report data</strong></p>
-        <p>{error}</p>
-        <p style={{marginTop:12,color:'#666',fontSize:12}}>Check that Metabase public sharing is enabled and the UUID is correct.</p>
-      </div></div>
-    </div>
-  );
+  // ── Error ────────────────────────────────────────────────────────
+  if (error && !rows) {
+    return (
+      <div>
+        {renderToolbar()}
+        <div className="page">
+          <div className="error">
+            <p><strong>Failed to load report data</strong></p>
+            <p>{error}</p>
+            <p style={{marginTop:12,color:'#666',fontSize:12}}>
+              Check that Metabase public sharing is enabled and the UUID is correct.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
-  if (!rows) return (
-    <div>{renderToolbar()}
-      <div className="page"><div className="loading">
-        <div className="spinner" /><div>Loading report data…</div>
-      </div></div>
-    </div>
-  );
+  // ── Initial loading ──────────────────────────────────────────────
+  if (!rows) {
+    return (
+      <div>
+        {renderToolbar()}
+        <div className="page">
+          <div className="loading">
+            <div className="spinner" />
+            <div>Loading report data…</div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const now = new Date();
-  const runDate = `${String(now.getMonth()+1).padStart(2,'0')}/${String(now.getDate()).padStart(2,'0')}/${now.getFullYear()} @ ${now.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',hour12:true}).toLowerCase()}`;
-  const orgName = (rows.length > 0 && rows[0].orgName) ? rows[0].orgName : (meta.org_name || 'rec.us');
-  const logoUrl = meta.logo_url || null;
-  const dateRangeLabel = [loadedStart && formatDisplayDate(loadedStart), loadedEnd && formatDisplayDate(loadedEnd)].filter(Boolean).join(' – ') || 'Current Month';
+  const runDate = `${(now.getMonth()+1).toString().padStart(2,'0')}/${now.getDate().toString().padStart(2,'0')}/${now.getFullYear()} @ ${now.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',hour12:true}).toLowerCase()}`;
 
-  const { showHcnt, showTotal, showNotes } = colPrefs;
+  const orgName = (rows.length > 0 && rows[0].orgName) ? rows[0].orgName : (meta.org_name || 'rec.us');
+
+  const dateRangeLabel = [
+    loadedStart ? formatDisplayDate(loadedStart) : null,
+    loadedEnd   ? formatDisplayDate(loadedEnd)   : null,
+  ].filter(Boolean).join(' – ') || 'Current Month';
 
   return (
     <div>
       {renderToolbar()}
-      <div className="page" style={loading ? {opacity:0.5,pointerEvents:'none'} : {}}>
 
-        {/* Header */}
+      <div className="page" style={loading ? {opacity:0.5,pointerEvents:'none'} : {}}>
+        {/* Report header */}
         <div className="report-header">
-          <div className="report-header-left">
-            {logoUrl && <img src={logoUrl} alt="" className="report-header-logo" onError={e => e.target.style.display='none'} />}
-            <div className="report-header-text">
-              <div className="org-label">{orgName}</div>
-              <div className="title">Facility Rental Schedule</div>
-            </div>
+          <div>
+            <div className="org-label">{orgName}</div>
+            <div className="title">Weekly Rental Schedule</div>
           </div>
-          <div className="report-header-right">
-            <div className="date-range">{dateRangeLabel}</div>
-          </div>
+          <div className="date-range">{dateRangeLabel}</div>
         </div>
 
         {/* Column headers */}
@@ -573,22 +895,23 @@ function App() {
           <span className="col-phone">Phone #</span>
           <span className="col-email">Email</span>
           <span className="col-purpose">Purpose</span>
-          {showHcnt  && <span className="col-hcnt">Cnt</span>}
-          {showTotal && <span className="col-total">Total</span>}
+          {showHeadCount && <span className="col-hcnt">Cnt</span>}
+          {showTotal     && <span className="col-total">Total</span>}
         </div>
 
-        {/* Rows grouped by date → location */}
+        {/* Grouped rows */}
         {sortedDates.map(dateKey => {
-          const sortedLocs = Object.keys(grouped[dateKey].locations).sort();
+          const dateGroup = grouped[dateKey];
+          const sortedLocs = Object.keys(dateGroup.locations).sort();
           return (
             <div key={dateKey}>
               {sortedLocs.map(locName => {
-                const locRows = grouped[dateKey].locations[locName];
+                const locRows = dateGroup.locations[locName];
                 return (
                   <div key={locName}>
                     <div className="section-header">
                       <span className="date-label">{formatDateHeader(dateKey)}</span>
-                      <span className="loc-label">— {locName}</span>
+                      <span className="loc-label">—  {locName}</span>
                     </div>
                     {locRows.map((r, i) => (
                       <div key={i}>
@@ -598,10 +921,14 @@ function App() {
                           <span className="cell col-site">{r.site}</span>
                           <span className="cell col-reservee">{r.reservee}</span>
                           <span className="cell col-phone">{formatPhone(r.phone)}</span>
-                          <span className="cell col-email">{r.email ? <a href={`mailto:${r.email}`} style={{color:'inherit',textDecoration:'none'}}>{r.email}</a> : ''}</span>
+                          <span className="cell col-email">
+                            {r.email
+                              ? <a href={`mailto:${r.email}`} style={{color:'inherit',textDecoration:'none'}}>{r.email}</a>
+                              : ''}
+                          </span>
                           <span className="cell col-purpose">{r.resName}</span>
-                          {showHcnt  && <span className="cell col-hcnt">{r.headCount}</span>}
-                          {showTotal && <span className="cell col-total">{formatMoney(r.total)}</span>}
+                          {showHeadCount && <span className="cell col-hcnt">{r.headCount}</span>}
+                          {showTotal     && <span className="cell col-total">{formatMoney(r.total)}</span>}
                         </div>
                         {showNotes && (r.notes || r.addons) && (
                           <div className="sub-row">
@@ -618,15 +945,17 @@ function App() {
           );
         })}
 
-        {rows.length === 0 && (
+        {filteredRows && filteredRows.length === 0 && (
           <div style={{textAlign:'center',padding:'40px 0',color:'#888'}}>
-            No rentals found for the selected date range.
+            {rows.length > 0
+              ? 'No rentals match the current location filter.'
+              : 'No rentals found for the selected date range.'}
           </div>
         )}
 
         {/* Footer */}
         <div className="report-footer">
-          <span>{orgName} — Facility Rental Schedule</span>
+          <span>{orgName}</span>
           <span>Run Date/Time: {runDate}</span>
         </div>
 
