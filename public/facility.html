@@ -87,6 +87,13 @@
     }
     .toolbar .btn-pdf:hover { background: #2563eb; }
     .toolbar .btn-pdf:disabled { opacity: .5; cursor: not-allowed; }
+    .toolbar .btn-excel {
+      background: #16803c;
+      border-color: #16803c;
+      font-weight: 600;
+    }
+    .toolbar .btn-excel:hover { background: #15692f; }
+    .toolbar .btn-excel:disabled { opacity: .5; cursor: not-allowed; }
 
     .toolbar .row-count {
       font-size: 11px;
@@ -399,6 +406,7 @@
 <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 
 <script type="text/babel">
 const { useState, useEffect, useMemo, useCallback, useRef } = React;
@@ -745,6 +753,86 @@ function App() {
       .finally(() => setPdfLoading(false));
   }
 
+  // ── Excel export ─────────────────────────────────────────────────
+  function downloadExcel() {
+    if (!filteredRows || filteredRows.length === 0) return;
+
+    // Build header row — mirrors visible columns
+    const headers = [
+      'Org Name', 'Date', 'Day', 'Location', 'Facility/Site',
+      'Begin', 'End', 'Purpose', 'Reservee', 'Phone', 'Email',
+    ];
+    if (showHeadCount) headers.push('Head Cnt');
+    if (showTotal)     headers.push('Total');
+    if (showNotes)     headers.push('Notes', 'Add-ons');
+
+    // Build data rows
+    const dataRows = filteredRows.map(r => {
+      const row = [
+        r.orgName,
+        r.date,
+        (r.day || '').trim(),
+        r.location,
+        r.site,
+        formatTime(r.start),
+        formatTime(r.end),
+        r.resName,
+        r.reservee,
+        formatPhone(r.phone),
+        r.email,
+      ];
+      if (showHeadCount) row.push(r.headCount !== '' ? Number(r.headCount) || r.headCount : '');
+      if (showTotal) {
+        const n = parseFloat(r.total);
+        row.push(!isNaN(n) && n !== 0 ? n : '');
+      }
+      if (showNotes) {
+        row.push(r.notes || '');
+        row.push(r.addons || '');
+      }
+      return row;
+    });
+
+    const wsData = [headers, ...dataRows];
+    const ws = XLSX.utils.aoa_to_sheet(wsData);
+
+    // Column widths
+    ws['!cols'] = [
+      { wch: 28 }, // Org Name
+      { wch: 12 }, // Date
+      { wch: 10 }, // Day
+      { wch: 22 }, // Location
+      { wch: 22 }, // Facility/Site
+      { wch: 9  }, // Begin
+      { wch: 9  }, // End
+      { wch: 20 }, // Purpose
+      { wch: 20 }, // Reservee
+      { wch: 14 }, // Phone
+      { wch: 28 }, // Email
+      ...(showHeadCount ? [{ wch: 8  }] : []),
+      ...(showTotal     ? [{ wch: 10 }] : []),
+      ...(showNotes     ? [{ wch: 30 }, { wch: 30 }] : []),
+    ];
+
+    // Format Total column as currency if present
+    if (showTotal) {
+      const totalColIdx = headers.indexOf('Total');
+      for (let rowIdx = 1; rowIdx <= dataRows.length; rowIdx++) {
+        const cellAddr = XLSX.utils.encode_cell({ r: rowIdx, c: totalColIdx });
+        if (ws[cellAddr] && typeof ws[cellAddr].v === 'number') {
+          ws[cellAddr].z = '"$"#,##0.00';
+        }
+      }
+    }
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Rental Schedule');
+
+    const orgSlug = (filteredRows[0]?.orgName || 'report').replace(/\s+/g, '-').toLowerCase();
+    const filename = `rental-schedule-${orgSlug}-${loadedStart || 'report'}.xlsx`;
+    XLSX.writeFile(wb, filename);
+  }
+
   const isPrint = params._print === '1';
 
   // ── Toolbar ──────────────────────────────────────────────────────
@@ -824,6 +912,13 @@ function App() {
           disabled={pdfLoading || !filteredRows || filteredRows.length === 0}
         >
           {pdfLoading ? 'Generating…' : '📄 PDF'}
+        </button>
+        <button
+          className="btn-excel"
+          onClick={downloadExcel}
+          disabled={!filteredRows || filteredRows.length === 0}
+        >
+          📊 Excel
         </button>
       </div>
     );
