@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -76,6 +75,9 @@
     .toolbar .btn-pdf { background: #3b82f6; border-color: #3b82f6; font-weight: 600; }
     .toolbar .btn-pdf:hover { background: #2563eb; }
     .toolbar .btn-pdf:disabled { opacity: .5; cursor: not-allowed; }
+    .toolbar .btn-excel { background: #16803c; border-color: #16803c; font-weight: 600; }
+    .toolbar .btn-excel:hover { background: #15692f; }
+    .toolbar .btn-excel:disabled { opacity: .5; cursor: not-allowed; }
     .toolbar .row-count { font-size: 11px; color: #aaa; }
     .toolbar .divider { width: 1px; height: 28px; background: rgba(255,255,255,.15); margin: 0 2px; }
 
@@ -142,13 +144,8 @@
     .gl-table tbody td:first-child { text-align: left; font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 500; }
     .gl-table tbody td:nth-child(2) { text-align: left; color: #444; }
 
-    /* Zero values — muted */
     .gl-table tbody td.zero { color: #ccc; }
-
-    /* Positive money values */
     .gl-table tbody td.money { font-variant-numeric: tabular-nums; }
-
-    /* Net amount column — highlighted */
     .gl-table tbody td.col-net { font-weight: 600; }
     .gl-table tbody td.col-net.positive { color: #15803d; }
     .gl-table tbody td.col-net.negative { color: #b91c1c; }
@@ -171,7 +168,7 @@
     .gl-table tfoot td.col-net { color: #15803d; }
     .gl-table tfoot td.col-net.negative { color: #b91c1c; }
 
-    /* ── Summary cards (above table) ── */
+    /* ── Summary cards ── */
     .summary-cards {
       display: flex;
       gap: 12px;
@@ -202,11 +199,7 @@
     }
     .summary-card .card-value.green { color: #15803d; }
     .summary-card .card-value.red { color: #b91c1c; }
-    .summary-card .card-sub {
-      font-size: 10px;
-      color: #999;
-      margin-top: 2px;
-    }
+    .summary-card .card-sub { font-size: 10px; color: #999; margin-top: 2px; }
 
     /* ── Footer ── */
     .report-footer {
@@ -247,6 +240,7 @@
 <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 
 <script type="text/babel">
 const { useState, useEffect, useMemo, useCallback } = React;
@@ -386,10 +380,109 @@ function App() {
       .finally(() => setPdfLoading(false));
   }
 
+  // ── Excel export ──────────────────────────────────────────────────
+  function downloadExcel() {
+    if (!rows || rows.length === 0) return;
+
+    const hasLocations     = totals && totals.hasLocations;
+    const hasAccountNumber = totals && totals.hasAccountNumber;
+
+    // Header row
+    const headers = ['GL Code', 'Description'];
+    if (hasAccountNumber) headers.push('Account Number');
+    if (hasLocations)     headers.push('Locations');
+    headers.push(
+      'Credit Card', 'Cash', 'Check', 'Free', 'Org Credit',
+      'Total Payments', '# Payments', 'Total Refunds', '# Refunds', 'Net Amount'
+    );
+
+    // Data rows
+    const dataRows = rows.map(r => {
+      const row = [r.glCode, r.glDesc === 'none' ? '' : r.glDesc];
+      if (hasAccountNumber) row.push(r.accountNumber || '');
+      if (hasLocations)     row.push(r.locations     || '');
+      row.push(
+        toNum(r.creditCard),
+        toNum(r.cash),
+        toNum(r.check),
+        toNum(r.free),
+        toNum(r.orgCredit),
+        toNum(r.totalPayments),
+        toNum(r.numPayments),
+        toNum(r.totalRefunds),
+        toNum(r.numRefunds),
+        toNum(r.netAmount),
+      );
+      return row;
+    });
+
+    // Totals row
+    const totalsRow = ['TOTALS', ''];
+    if (hasAccountNumber) totalsRow.push('');
+    if (hasLocations)     totalsRow.push('');
+    totalsRow.push(
+      totals.creditCard,
+      totals.cash,
+      totals.check,
+      totals.free,
+      totals.orgCredit,
+      totals.totalPayments,
+      totals.numPayments,
+      totals.totalRefunds,
+      totals.numRefunds,
+      totals.netAmount,
+    );
+
+    const wsData = [headers, ...dataRows, totalsRow];
+    const ws = XLSX.utils.aoa_to_sheet(wsData);
+
+    // Column widths
+    const baseCols = [
+      { wch: 14 }, // GL Code
+      { wch: 30 }, // Description
+    ];
+    if (hasAccountNumber) baseCols.push({ wch: 14 });
+    if (hasLocations)     baseCols.push({ wch: 22 });
+    ws['!cols'] = [
+      ...baseCols,
+      { wch: 12 }, // Credit Card
+      { wch: 10 }, // Cash
+      { wch: 10 }, // Check
+      { wch: 10 }, // Free
+      { wch: 12 }, // Org Credit
+      { wch: 14 }, // Total Payments
+      { wch: 10 }, // # Payments
+      { wch: 14 }, // Total Refunds
+      { wch: 10 }, // # Refunds
+      { wch: 14 }, // Net Amount
+    ];
+
+    // Format money columns as currency
+    const moneyColStartIdx = 2 + (hasAccountNumber ? 1 : 0) + (hasLocations ? 1 : 0);
+    const moneyCols = [0,1,2,3,4,5,7,9,11]; // offsets from moneyColStartIdx for currency cols
+    const range = XLSX.utils.decode_range(ws['!ref']);
+    for (let rowIdx = 1; rowIdx <= dataRows.length + 1; rowIdx++) { // +1 for totals row
+      moneyCols.forEach(offset => {
+        const c = moneyColStartIdx + offset;
+        const cellAddr = XLSX.utils.encode_cell({ r: rowIdx, c });
+        if (ws[cellAddr] && typeof ws[cellAddr].v === 'number') {
+          ws[cellAddr].z = '"$"#,##0.00';
+        }
+      });
+    }
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'GL Code Rollup');
+
+    const orgLabel = (meta.org_slug || 'report').replace(/\s+/g, '-').toLowerCase();
+    const filename = `gl-rollup-${orgLabel}-${loadedStart || 'report'}.xlsx`;
+    XLSX.writeFile(wb, filename);
+  }
+
   const isPrint      = params._print === '1';
   const datesChanged = startDate !== loadedStart || endDate !== loadedEnd;
 
-  // ── Totals row ────────────────────────────────────────────────────
+  // ── Totals ────────────────────────────────────────────────────────
   const totals = useMemo(() => {
     if (!rows) return null;
     const hasLocations     = rows.length > 0 && rows[0].locations     !== null;
@@ -441,6 +534,13 @@ function App() {
         >
           {pdfLoading ? 'Generating…' : '📄 PDF'}
         </button>
+        <button
+          className="btn-excel"
+          onClick={downloadExcel}
+          disabled={!rows || rows.length === 0}
+        >
+          📊 Excel
+        </button>
       </div>
     );
   }
@@ -466,9 +566,7 @@ function App() {
 
   const now = new Date();
   const runDate = `${String(now.getMonth()+1).padStart(2,'0')}/${String(now.getDate()).padStart(2,'0')}/${now.getFullYear()} @ ${now.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',hour12:true}).toLowerCase()}`;
-  // org_name comes from data rows for facility report; GL queries may not include it.
-  // Fall back to a capitalised version of the org slug.
-  const slugLabel = (meta.org_slug || 'rec.us').replace(/w/g, c => c.toUpperCase());
+  const slugLabel = (meta.org_slug || 'rec.us').replace(/\w/g, c => c.toUpperCase());
   const orgName = meta.org_name || slugLabel;
   const logoUrl = meta.logo_url || null;
   const dateRangeLabel = [loadedStart && formatDisplayDate(loadedStart), loadedEnd && formatDisplayDate(loadedEnd)].filter(Boolean).join(' – ') || 'Current Month';
