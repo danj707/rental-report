@@ -78,12 +78,20 @@
     .toolbar .btn-excel { background: #16803c; border-color: #16803c; font-weight: 600; }
     .toolbar .btn-excel:hover { background: #15692f; }
     .toolbar .btn-excel:disabled { opacity: .5; cursor: not-allowed; }
+    /* Active/on state for toggle buttons */
+    .toolbar .btn-toggle-on {
+      background: rgba(251,191,36,.18);
+      border-color: #fbbf24;
+      color: #fbbf24;
+      font-weight: 600;
+    }
+    .toolbar .btn-toggle-on:hover { background: rgba(251,191,36,.28); }
     .toolbar .row-count { font-size: 11px; color: #aaa; }
     .toolbar .divider { width: 1px; height: 28px; background: rgba(255,255,255,.15); margin: 0 2px; }
 
     /* ── Page ── */
     .page {
-      max-width: 1300px;
+      max-width: 1400px;
       margin: 16px auto;
       padding: 24px 28px;
       background: #fff;
@@ -132,6 +140,24 @@
     .gl-table thead th:first-child,
     .gl-table thead th:nth-child(2) { text-align: left; }
 
+    /* Refund breakdown column group header */
+    .gl-table thead th.refund-group-header {
+      background: #f5e6e6;
+      border-left: 2px solid #e8b4b4;
+      border-right: 2px solid #e8b4b4;
+      color: #b91c1c;
+      text-align: center;
+      font-size: 9px;
+      letter-spacing: 0.8px;
+    }
+    .gl-table thead th.refund-col {
+      background: #fdf4f4;
+      border-left: 1px solid #f0c8c8;
+      color: #c53030;
+    }
+    .gl-table thead th.refund-col-first { border-left: 2px solid #e8b4b4; }
+    .gl-table thead th.refund-col-last  { border-right: 2px solid #e8b4b4; }
+
     .gl-table tbody tr { border-bottom: 1px solid #eee; }
     .gl-table tbody tr:nth-child(even) { background: #fafaf8; }
     .gl-table tbody tr:hover { background: #f0eeea; }
@@ -150,6 +176,17 @@
     .gl-table tbody td.col-net.positive { color: #15803d; }
     .gl-table tbody td.col-net.negative { color: #b91c1c; }
 
+    /* Refund breakdown cells */
+    .gl-table tbody td.refund-col {
+      background: #fffafa;
+      border-left: 1px solid #f5e0e0;
+      color: #c53030;
+    }
+    .gl-table tbody td.refund-col.zero { color: #e8c8c8; background: #fffafa; }
+    .gl-table tbody td.refund-col-first { border-left: 2px solid #e8b4b4; }
+    .gl-table tbody td.refund-col-last  { border-right: 2px solid #e8b4b4; }
+    .gl-table tbody tr:nth-child(even) td.refund-col { background: #fff5f5; }
+
     /* ── Totals row ── */
     .gl-table tfoot tr {
       border-top: 2px solid #111;
@@ -167,6 +204,9 @@
     .gl-table tfoot td:nth-child(2) { text-align: left; }
     .gl-table tfoot td.col-net { color: #15803d; }
     .gl-table tfoot td.col-net.negative { color: #b91c1c; }
+    .gl-table tfoot td.refund-col { background: #f5e8e8; border-left: 1px solid #e8b4b4; color: #b91c1c; }
+    .gl-table tfoot td.refund-col-first { border-left: 2px solid #e8b4b4; }
+    .gl-table tfoot td.refund-col-last  { border-right: 2px solid #e8b4b4; }
 
     /* ── Summary cards ── */
     .summary-cards {
@@ -245,6 +285,8 @@
 <script type="text/babel">
 const { useState, useEffect, useMemo, useCallback } = React;
 
+const LS_REFUND_BREAKDOWN = 'gl_refund_breakdown';
+
 function getOrgAndBase() {
   const parts = window.location.pathname.split('/').filter(Boolean);
   return { orgSlug: parts[0] || 'unknown', basePath: `/${parts[0]}/${parts[1]}` };
@@ -295,22 +337,38 @@ function toNum(v) {
 
 function normalizeRow(raw) {
   return {
-    glCode:        raw['GL Code']                       || raw['gl_code']                   || '',
-    glDesc:        raw['GL Code Description']           || raw['gl_description']             || 'none',
-    creditCard:    raw['Credit Card Payments']          || raw['credit_card_payments']       || 0,
-    cash:          raw['Cash Payments']                 || raw['cash_payments']              || 0,
-    check:         raw['Check Payments']                || raw['check_payments']             || 0,
-    free:          raw['Free Payments']                 || raw['free_payments']              || 0,
-    orgCredit:     raw['Organization Credit Payments']  || raw['org_credit_payments']        || 0,
-    totalPayments: raw['Total Payments']                || raw['total_payments']             || 0,
-    numPayments:   raw['Number of Payments']            || raw['number_of_payments']         || 0,
-    totalRefunds:  raw['Total Refunds']                 || raw['total_refunds']              || 0,
-    numRefunds:    raw['Number of Refunds']             || raw['number_of_refunds']          || 0,
-    netAmount:     raw['Net Amount']                    || raw['net_amount']                 || 0,
-    locations:     'Locations'      in raw ? (raw['Locations']       || '') : null,
-    accountNumber: 'Account Number' in raw ? (raw['Account Number']  || '') : null,
+    glCode:          raw['GL Code']                       || raw['gl_code']                   || '',
+    glDesc:          raw['GL Code Description']           || raw['gl_description']             || 'none',
+    creditCard:      raw['Credit Card Payments']          || raw['credit_card_payments']       || 0,
+    cash:            raw['Cash Payments']                 || raw['cash_payments']              || 0,
+    check:           raw['Check Payments']                || raw['check_payments']             || 0,
+    free:            raw['Free Payments']                 || raw['free_payments']              || 0,
+    orgCredit:       raw['Organization Credit Payments']  || raw['org_credit_payments']        || 0,
+    totalPayments:   raw['Total Payments']                || raw['total_payments']             || 0,
+    numPayments:     raw['Number of Payments']            || raw['number_of_payments']         || 0,
+    // Refund breakdown (new columns from updated SQL)
+    ccRefunds:       raw['CC Refunds']                    || raw['cc_refunds']                 || 0,
+    cashRefunds:     raw['Cash Refunds']                  || raw['cash_refunds']               || 0,
+    checkRefunds:    raw['Check Refunds']                 || raw['check_refunds']              || 0,
+    orgCreditRefunds:raw['Org Credit Refunds']            || raw['org_credit_refunds']         || 0,
+    otherRefunds:    raw['Other Refunds']                 || raw['other_refunds']              || 0,
+    // Summary total (always present — either from old SQL or new)
+    totalRefunds:    raw['Total Refunds']                 || raw['total_refunds']              || 0,
+    numRefunds:      raw['Number of Refunds']             || raw['number_of_refunds']          || 0,
+    netAmount:       raw['Net Amount']                    || raw['net_amount']                 || 0,
+    locations:       'Locations'      in raw ? (raw['Locations']       || '') : null,
+    accountNumber:   'Account Number' in raw ? (raw['Account Number']  || '') : null,
   };
 }
+
+// ── Refund columns definition (order matters for rendering) ──────────
+const REFUND_BREAKDOWN_COLS = [
+  { key: 'ccRefunds',        label: 'CC',         header: 'CC Refunds'         },
+  { key: 'cashRefunds',      label: 'Cash',        header: 'Cash Refunds'       },
+  { key: 'checkRefunds',     label: 'Check',       header: 'Check Refunds'      },
+  { key: 'orgCreditRefunds', label: 'Org Credit',  header: 'Org Credit Refunds' },
+  { key: 'otherRefunds',     label: 'Other',       header: 'Other Refunds'      },
+];
 
 // ── App ──────────────────────────────────────────────────────────────
 function App() {
@@ -328,6 +386,30 @@ function App() {
   const [pdfLoading,  setPdfLoading]  = useState(false);
   const [loadedStart, setLoadedStart] = useState(null);
   const [loadedEnd,   setLoadedEnd]   = useState(null);
+
+  // Refund breakdown toggle — persisted in localStorage
+  const [showRefundBreakdown, setShowRefundBreakdown] = useState(() => {
+    try { return localStorage.getItem(LS_REFUND_BREAKDOWN) === 'true'; }
+    catch { return false; }
+  });
+
+  function toggleRefundBreakdown() {
+    setShowRefundBreakdown(prev => {
+      const next = !prev;
+      try { localStorage.setItem(LS_REFUND_BREAKDOWN, String(next)); } catch {}
+      return next;
+    });
+  }
+
+  // Check whether the data actually has breakdown columns
+  // (gracefully handles old SQL that only has Total Refunds)
+  const hasBreakdownData = useMemo(() => {
+    if (!rows || rows.length === 0) return false;
+    return REFUND_BREAKDOWN_COLS.some(col => rows.some(r => toNum(r[col.key]) !== 0));
+  }, [rows]);
+
+  // Effective mode: breakdown only if toggled AND data supports it
+  const breakdownActive = showRefundBreakdown && hasBreakdownData;
 
   useEffect(() => {
     if (params._print === '1') document.body.classList.add('print-mode');
@@ -380,6 +462,36 @@ function App() {
       .finally(() => setPdfLoading(false));
   }
 
+  // ── Totals ────────────────────────────────────────────────────────
+  const totals = useMemo(() => {
+    if (!rows) return null;
+    const hasLocations     = rows.length > 0 && rows[0].locations     !== null;
+    const hasAccountNumber = rows.length > 0 && rows[0].accountNumber !== null;
+    const sums = rows.reduce((acc, r) => {
+      acc.creditCard        += toNum(r.creditCard);
+      acc.cash              += toNum(r.cash);
+      acc.check             += toNum(r.check);
+      acc.free              += toNum(r.free);
+      acc.orgCredit         += toNum(r.orgCredit);
+      acc.totalPayments     += toNum(r.totalPayments);
+      acc.numPayments       += toNum(r.numPayments);
+      acc.ccRefunds         += toNum(r.ccRefunds);
+      acc.cashRefunds       += toNum(r.cashRefunds);
+      acc.checkRefunds      += toNum(r.checkRefunds);
+      acc.orgCreditRefunds  += toNum(r.orgCreditRefunds);
+      acc.otherRefunds      += toNum(r.otherRefunds);
+      acc.totalRefunds      += toNum(r.totalRefunds);
+      acc.numRefunds        += toNum(r.numRefunds);
+      acc.netAmount         += toNum(r.netAmount);
+      return acc;
+    }, {
+      creditCard:0, cash:0, check:0, free:0, orgCredit:0, totalPayments:0, numPayments:0,
+      ccRefunds:0, cashRefunds:0, checkRefunds:0, orgCreditRefunds:0, otherRefunds:0,
+      totalRefunds:0, numRefunds:0, netAmount:0,
+    });
+    return { ...sums, hasLocations, hasAccountNumber };
+  }, [rows]);
+
   // ── Excel export ──────────────────────────────────────────────────
   function downloadExcel() {
     if (!rows || rows.length === 0) return;
@@ -387,84 +499,80 @@ function App() {
     const hasLocations     = totals && totals.hasLocations;
     const hasAccountNumber = totals && totals.hasAccountNumber;
 
-    // Header row
     const headers = ['GL Code', 'Description'];
     if (hasAccountNumber) headers.push('Account Number');
     if (hasLocations)     headers.push('Locations');
-    headers.push(
-      'Credit Card', 'Cash', 'Check', 'Free', 'Org Credit',
-      'Total Payments', '# Payments', 'Total Refunds', '# Refunds', 'Net Amount'
-    );
+    headers.push('Credit Card', 'Cash', 'Check', 'Free', 'Org Credit', 'Total Payments', '# Payments');
 
-    // Data rows
+    if (breakdownActive) {
+      headers.push('CC Refunds', 'Cash Refunds', 'Check Refunds', 'Org Credit Refunds', 'Other Refunds');
+    }
+    headers.push('Total Refunds', '# Refunds', 'Net Amount');
+
     const dataRows = rows.map(r => {
       const row = [r.glCode, r.glDesc === 'none' ? '' : r.glDesc];
       if (hasAccountNumber) row.push(r.accountNumber || '');
       if (hasLocations)     row.push(r.locations     || '');
       row.push(
-        toNum(r.creditCard),
-        toNum(r.cash),
-        toNum(r.check),
-        toNum(r.free),
-        toNum(r.orgCredit),
-        toNum(r.totalPayments),
-        toNum(r.numPayments),
-        toNum(r.totalRefunds),
-        toNum(r.numRefunds),
-        toNum(r.netAmount),
+        toNum(r.creditCard), toNum(r.cash), toNum(r.check),
+        toNum(r.free), toNum(r.orgCredit),
+        toNum(r.totalPayments), toNum(r.numPayments),
       );
+      if (breakdownActive) {
+        row.push(
+          toNum(r.ccRefunds), toNum(r.cashRefunds), toNum(r.checkRefunds),
+          toNum(r.orgCreditRefunds), toNum(r.otherRefunds),
+        );
+      }
+      row.push(toNum(r.totalRefunds), toNum(r.numRefunds), toNum(r.netAmount));
       return row;
     });
 
-    // Totals row
     const totalsRow = ['TOTALS', ''];
     if (hasAccountNumber) totalsRow.push('');
     if (hasLocations)     totalsRow.push('');
     totalsRow.push(
-      totals.creditCard,
-      totals.cash,
-      totals.check,
-      totals.free,
-      totals.orgCredit,
-      totals.totalPayments,
-      totals.numPayments,
-      totals.totalRefunds,
-      totals.numRefunds,
-      totals.netAmount,
+      totals.creditCard, totals.cash, totals.check,
+      totals.free, totals.orgCredit,
+      totals.totalPayments, totals.numPayments,
     );
+    if (breakdownActive) {
+      totalsRow.push(
+        totals.ccRefunds, totals.cashRefunds, totals.checkRefunds,
+        totals.orgCreditRefunds, totals.otherRefunds,
+      );
+    }
+    totalsRow.push(totals.totalRefunds, totals.numRefunds, totals.netAmount);
 
     const wsData = [headers, ...dataRows, totalsRow];
     const ws = XLSX.utils.aoa_to_sheet(wsData);
 
-    // Column widths
-    const baseCols = [
-      { wch: 14 }, // GL Code
-      { wch: 30 }, // Description
-    ];
-    if (hasAccountNumber) baseCols.push({ wch: 14 });
-    if (hasLocations)     baseCols.push({ wch: 22 });
-    ws['!cols'] = [
-      ...baseCols,
-      { wch: 12 }, // Credit Card
-      { wch: 10 }, // Cash
-      { wch: 10 }, // Check
-      { wch: 10 }, // Free
-      { wch: 12 }, // Org Credit
-      { wch: 14 }, // Total Payments
-      { wch: 10 }, // # Payments
-      { wch: 14 }, // Total Refunds
-      { wch: 10 }, // # Refunds
-      { wch: 14 }, // Net Amount
-    ];
+    const colWidths = [{ wch: 14 }, { wch: 30 }];
+    if (hasAccountNumber) colWidths.push({ wch: 14 });
+    if (hasLocations)     colWidths.push({ wch: 22 });
+    colWidths.push(
+      { wch: 12 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 12 },
+      { wch: 14 }, { wch: 10 },
+    );
+    if (breakdownActive) {
+      colWidths.push({ wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 14 }, { wch: 10 });
+    }
+    colWidths.push({ wch: 14 }, { wch: 10 }, { wch: 14 });
+    ws['!cols'] = colWidths;
 
-    // Format money columns as currency
-    const moneyColStartIdx = 2 + (hasAccountNumber ? 1 : 0) + (hasLocations ? 1 : 0);
-    const moneyCols = [0,1,2,3,4,5,7,9,11]; // offsets from moneyColStartIdx for currency cols
-    const range = XLSX.utils.decode_range(ws['!ref']);
-    for (let rowIdx = 1; rowIdx <= dataRows.length + 1; rowIdx++) { // +1 for totals row
-      moneyCols.forEach(offset => {
-        const c = moneyColStartIdx + offset;
-        const cellAddr = XLSX.utils.encode_cell({ r: rowIdx, c });
+    // Currency format for money columns
+    const fixedColCount = 2 + (hasAccountNumber ? 1 : 0) + (hasLocations ? 1 : 0);
+    // Indices within the data portion that are money (0-based offset from fixedColCount)
+    const moneyOffsets = [0,1,2,3,4,5,7]; // CC,cash,check,free,orgCredit,totalPmts,totalRefunds(skip #pmts at 6)
+    // Adjust for breakdown cols
+    const refundBreakdownOffsets = breakdownActive ? [8,9,10,11,12] : [];
+    const totalRefundsOffset     = breakdownActive ? 13 : 8;
+    const netAmountOffset        = breakdownActive ? 15 : 10;
+    const allMoneyOffsets = [...moneyOffsets, ...refundBreakdownOffsets, totalRefundsOffset, netAmountOffset];
+
+    for (let rowIdx = 1; rowIdx <= dataRows.length + 1; rowIdx++) {
+      allMoneyOffsets.forEach(offset => {
+        const cellAddr = XLSX.utils.encode_cell({ r: rowIdx, c: fixedColCount + offset });
         if (ws[cellAddr] && typeof ws[cellAddr].v === 'number') {
           ws[cellAddr].z = '"$"#,##0.00';
         }
@@ -473,35 +581,12 @@ function App() {
 
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'GL Code Rollup');
-
     const orgLabel = (meta.org_slug || 'report').replace(/\s+/g, '-').toLowerCase();
-    const filename = `gl-rollup-${orgLabel}-${loadedStart || 'report'}.xlsx`;
-    XLSX.writeFile(wb, filename);
+    XLSX.writeFile(wb, `gl-rollup-${orgLabel}-${loadedStart || 'report'}.xlsx`);
   }
 
   const isPrint      = params._print === '1';
   const datesChanged = startDate !== loadedStart || endDate !== loadedEnd;
-
-  // ── Totals ────────────────────────────────────────────────────────
-  const totals = useMemo(() => {
-    if (!rows) return null;
-    const hasLocations     = rows.length > 0 && rows[0].locations     !== null;
-    const hasAccountNumber = rows.length > 0 && rows[0].accountNumber !== null;
-    const sums = rows.reduce((acc, r) => {
-      acc.creditCard    += toNum(r.creditCard);
-      acc.cash          += toNum(r.cash);
-      acc.check         += toNum(r.check);
-      acc.free          += toNum(r.free);
-      acc.orgCredit     += toNum(r.orgCredit);
-      acc.totalPayments += toNum(r.totalPayments);
-      acc.numPayments   += toNum(r.numPayments);
-      acc.totalRefunds  += toNum(r.totalRefunds);
-      acc.numRefunds    += toNum(r.numRefunds);
-      acc.netAmount     += toNum(r.netAmount);
-      return acc;
-    }, { creditCard:0, cash:0, check:0, free:0, orgCredit:0, totalPayments:0, numPayments:0, totalRefunds:0, numRefunds:0, netAmount:0 });
-    return { ...sums, hasLocations, hasAccountNumber };
-  }, [rows]);
 
   // ── Toolbar ───────────────────────────────────────────────────────
   function renderToolbar() {
@@ -522,6 +607,17 @@ function App() {
           style={datesChanged && !loading ? {boxShadow:'0 0 0 2px #4ade80'} : {}}
         >
           {loading ? 'Loading…' : '▶ Run Report'}
+        </button>
+        <div className="divider" />
+        {/* Refund breakdown toggle */}
+        <button
+          className={showRefundBreakdown ? 'btn-toggle-on' : ''}
+          onClick={toggleRefundBreakdown}
+          title={hasBreakdownData ? (showRefundBreakdown ? 'Switch to summarized refunds' : 'Switch to refund breakdown by type') : 'Refund breakdown requires updated SQL'}
+          style={{ fontSize: 11, padding: '4px 10px' }}
+        >
+          {showRefundBreakdown ? '↙ Refunds: Breakdown' : '↗ Refunds: Summary'}
+          {showRefundBreakdown && !hasBreakdownData && <span style={{marginLeft:4,opacity:0.6,fontSize:10}}>(no data)</span>}
         </button>
         <div className="toolbar-spacer" />
         {rows && <span className="row-count">{rows.length} GL code{rows.length !== 1 ? 's' : ''}</span>}
@@ -566,12 +662,13 @@ function App() {
 
   const now = new Date();
   const runDate = `${String(now.getMonth()+1).padStart(2,'0')}/${String(now.getDate()).padStart(2,'0')}/${now.getFullYear()} @ ${now.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',hour12:true}).toLowerCase()}`;
-  const slugLabel = (meta.org_slug || 'rec.us').replace(/\w/g, c => c.toUpperCase());
-  const orgName = meta.org_name || slugLabel;
+  const orgName = meta.org_name || (meta.org_slug || 'rec.us');
   const logoUrl = meta.logo_url || null;
   const dateRangeLabel = [loadedStart && formatDisplayDate(loadedStart), loadedEnd && formatDisplayDate(loadedEnd)].filter(Boolean).join(' – ') || 'Current Month';
-
   const netIsNeg = totals && totals.netAmount < 0;
+
+  // Convenience: number of leading fixed cols (GL Code + Desc + optional Account# + optional Locations)
+  const fixedColSpan = 2 + (totals && totals.hasAccountNumber ? 1 : 0) + (totals && totals.hasLocations ? 1 : 0);
 
   return (
     <div>
@@ -589,6 +686,11 @@ function App() {
           </div>
           <div className="report-header-right">
             <div className="date-range">{dateRangeLabel}</div>
+            {breakdownActive && (
+              <div style={{fontSize:10,color:'#b91c1c',marginTop:3,fontWeight:600,letterSpacing:'0.4px'}}>
+                REFUNDS SHOWN BY TYPE
+              </div>
+            )}
           </div>
         </div>
 
@@ -634,6 +736,19 @@ function App() {
         ) : (
           <table className="gl-table">
             <thead>
+              {/* Breakdown mode: add a group header row above the refund columns */}
+              {breakdownActive && (
+                <tr>
+                  <th colSpan={fixedColSpan + 7} style={{background:'transparent',border:'none'}} />
+                  <th
+                    colSpan={REFUND_BREAKDOWN_COLS.length}
+                    className="refund-group-header"
+                  >
+                    Refunds by Type
+                  </th>
+                  <th colSpan={3} style={{background:'transparent',border:'none'}} />
+                </tr>
+              )}
               <tr>
                 <th style={{width:'80px'}}>GL Code</th>
                 <th style={{minWidth:'130px'}}>Description</th>
@@ -646,7 +761,19 @@ function App() {
                 <th style={{width:'80px'}}>Org Credit</th>
                 <th style={{width:'90px'}}>Total Pmts</th>
                 <th style={{width:'55px'}}># Pmts</th>
-                <th style={{width:'90px'}}>Total Refunds</th>
+                {breakdownActive
+                  ? REFUND_BREAKDOWN_COLS.map((col, i) => (
+                      <th
+                        key={col.key}
+                        style={{width:'75px'}}
+                        className={`refund-col ${i === 0 ? 'refund-col-first' : ''} ${i === REFUND_BREAKDOWN_COLS.length - 1 ? 'refund-col-last' : ''}`}
+                      >
+                        {col.label}
+                      </th>
+                    ))
+                  : null
+                }
+                <th style={{width:'90px'}}>Total Rfds</th>
                 <th style={{width:'50px'}}># Rfds</th>
                 <th style={{width:'90px'}}>Net Amount</th>
               </tr>
@@ -667,7 +794,18 @@ function App() {
                     <td className={`money ${isZero(r.orgCredit) ? 'zero' : ''}`}>{fmtMoney(r.orgCredit)}</td>
                     <td className="money" style={{fontWeight:500}}>{fmtMoney(r.totalPayments)}</td>
                     <td style={{color:'#666'}}>{toNum(r.numPayments).toLocaleString()}</td>
-                    <td className={`money ${isZero(r.totalRefunds) ? 'zero' : 'red'}`} style={{color: isZero(r.totalRefunds) ? '' : '#b91c1c'}}>{fmtMoney(r.totalRefunds)}</td>
+                    {breakdownActive
+                      ? REFUND_BREAKDOWN_COLS.map((col, ci) => (
+                          <td
+                            key={col.key}
+                            className={`money refund-col ${isZero(r[col.key]) ? 'zero' : ''} ${ci === 0 ? 'refund-col-first' : ''} ${ci === REFUND_BREAKDOWN_COLS.length - 1 ? 'refund-col-last' : ''}`}
+                          >
+                            {fmtMoney(r[col.key])}
+                          </td>
+                        ))
+                      : null
+                    }
+                    <td className={`money ${isZero(r.totalRefunds) ? 'zero' : ''}`} style={{color: isZero(r.totalRefunds) ? '' : '#b91c1c'}}>{fmtMoney(r.totalRefunds)}</td>
                     <td style={{color: isZero(r.numRefunds) ? '#ccc' : '#b91c1c'}}>{toNum(r.numRefunds).toLocaleString()}</td>
                     <td className={`money col-net ${net < 0 ? 'negative' : net > 0 ? 'positive' : ''}`}>{fmtMoney(net)}</td>
                   </tr>
@@ -676,7 +814,7 @@ function App() {
             </tbody>
             <tfoot>
               <tr>
-                <td colSpan={2 + (totals.hasAccountNumber ? 1 : 0) + (totals.hasLocations ? 1 : 0)}>Totals — {rows.length} GL code{rows.length !== 1 ? 's' : ''}</td>
+                <td colSpan={fixedColSpan}>Totals — {rows.length} GL code{rows.length !== 1 ? 's' : ''}</td>
                 <td className="money">{fmtMoney(totals.creditCard)}</td>
                 <td className="money">{fmtMoney(totals.cash)}</td>
                 <td className="money">{fmtMoney(totals.check)}</td>
@@ -684,6 +822,17 @@ function App() {
                 <td className="money">{fmtMoney(totals.orgCredit)}</td>
                 <td className="money">{fmtMoney(totals.totalPayments)}</td>
                 <td>{totals.numPayments.toLocaleString()}</td>
+                {breakdownActive
+                  ? REFUND_BREAKDOWN_COLS.map((col, ci) => (
+                      <td
+                        key={col.key}
+                        className={`money refund-col ${ci === 0 ? 'refund-col-first' : ''} ${ci === REFUND_BREAKDOWN_COLS.length - 1 ? 'refund-col-last' : ''}`}
+                      >
+                        {fmtMoney(totals[col.key])}
+                      </td>
+                    ))
+                  : null
+                }
                 <td className="money">{fmtMoney(totals.totalRefunds)}</td>
                 <td>{totals.numRefunds.toLocaleString()}</td>
                 <td className={`money col-net ${netIsNeg ? 'negative' : ''}`}>{fmtMoney(totals.netAmount)}</td>
@@ -694,7 +843,7 @@ function App() {
 
         {/* Footer */}
         <div className="report-footer">
-          <span>{orgName} — GL Code Rollup</span>
+          <span>{orgName} — GL Code Rollup{breakdownActive ? ' (Refunds by Type)' : ''}</span>
           <span>Run Date/Time: {runDate}</span>
         </div>
 
