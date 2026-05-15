@@ -88,6 +88,33 @@
     .toolbar .row-count { font-size: 11px; color: #aaa; }
     .toolbar .divider { width: 1px; height: 28px; background: rgba(255,255,255,.15); margin: 0 2px; }
 
+    /* ── View toggle segmented control ── */
+    .view-toggle {
+      display: flex;
+      border: 1px solid rgba(255,255,255,.2);
+      border-radius: 4px;
+      overflow: hidden;
+    }
+    .view-toggle button {
+      padding: 4px 11px;
+      font-size: 11px;
+      border: none;
+      border-radius: 0;
+      border-right: 1px solid rgba(255,255,255,.15);
+      background: rgba(255,255,255,.06);
+      color: #aaa;
+      font-weight: 400;
+      cursor: pointer;
+      transition: background .12s, color .12s;
+    }
+    .view-toggle button:last-child { border-right: none; }
+    .view-toggle button:hover { background: rgba(255,255,255,.14); color: #eee; }
+    .view-toggle button.active {
+      background: rgba(59,130,246,.45);
+      color: #fff;
+      font-weight: 600;
+    }
+
     /* ── Page ── */
     .page {
       max-width: 1400px;
@@ -241,6 +268,20 @@
     .summary-card .card-value.red { color: #b91c1c; }
     .summary-card .card-sub { font-size: 10px; color: #999; margin-top: 2px; }
 
+    /* ── Chart container ── */
+    .chart-container {
+      padding: 8px 0 24px;
+    }
+    .chart-canvas-wrap {
+      position: relative;
+    }
+    .chart-note {
+      text-align: center;
+      font-size: 10px;
+      color: #999;
+      margin-top: 10px;
+    }
+
     /* ── Footer ── */
     .report-footer {
       display: flex;
@@ -281,11 +322,13 @@
 <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
 
 <script type="text/babel">
-const { useState, useEffect, useMemo, useCallback } = React;
+const { useState, useEffect, useMemo, useCallback, useRef } = React;
 
 const LS_REFUND_BREAKDOWN = 'gl_refund_breakdown';
+const LS_VIEW_MODE        = 'gl_view_mode';
 
 function getOrgAndBase() {
   const parts = window.location.pathname.split('/').filter(Boolean);
@@ -323,6 +366,16 @@ function fmtMoney(v) {
   const n = typeof v === 'string' ? parseFloat(v) : v;
   if (isNaN(n)) return '$0.00';
   return (n < 0 ? '-$' : '$') + Math.abs(n).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+}
+
+function fmtMoneyCompact(v) {
+  const n = typeof v === 'string' ? parseFloat(v) : (v ?? 0);
+  if (isNaN(n)) return '$0';
+  const abs = Math.abs(n);
+  const sign = n < 0 ? '-' : '';
+  if (abs >= 1000000) return `${sign}$${(abs/1000000).toFixed(1)}M`;
+  if (abs >= 1000)    return `${sign}$${(abs/1000).toFixed(1)}k`;
+  return `${sign}$${abs.toFixed(0)}`;
 }
 
 function isZero(v) {
@@ -368,6 +421,151 @@ const REFUND_BREAKDOWN_COLS = [
   { key: 'otherRefunds',     label: 'Other',      header: 'Other Refunds'      },
 ];
 
+// Chart color palette
+const CHART_PALETTE = [
+  '#3b82f6','#16a34a','#f59e0b','#8b5cf6','#06b6d4',
+  '#f97316','#ec4899','#84cc16','#14b8a6','#6366f1',
+  '#ef4444','#a3e635','#2dd4bf','#fb923c','#f43f5e',
+  '#60a5fa','#4ade80','#fbbf24','#a78bfa','#34d399',
+];
+
+// ── GL Chart component ───────────────────────────────────────────────
+// key prop forces remount on viewMode/date change — Chart.js gets a clean canvas each time
+function GLChart({ rows, viewMode }) {
+  const canvasRef = useRef(null);
+
+  useEffect(() => {
+    if (!canvasRef.current || !rows || rows.length === 0) return;
+    const ctx = canvasRef.current.getContext('2d');
+
+    let chart;
+
+    if (viewMode === 'bar') {
+      // Horizontal bar: Net Amount by GL code
+      const labels = rows.map(r => r.glCode || '—');
+      const values = rows.map(r => toNum(r.netAmount));
+      const bgColors     = values.map(v => v >= 0 ? 'rgba(21,128,61,0.75)' : 'rgba(185,28,28,0.75)');
+      const borderColors = values.map(v => v >= 0 ? '#15803d' : '#b91c1c');
+
+      chart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels,
+          datasets: [{
+            label: 'Net Amount',
+            data: values,
+            backgroundColor: bgColors,
+            borderColor: borderColors,
+            borderWidth: 1,
+            borderRadius: 3,
+          }]
+        },
+        options: {
+          indexAxis: 'y',
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              callbacks: {
+                label: ctx => '  ' + fmtMoney(ctx.parsed.x),
+              }
+            }
+          },
+          scales: {
+            x: {
+              grid: { color: 'rgba(0,0,0,.06)' },
+              ticks: {
+                font: { size: 10 },
+                callback: v => fmtMoneyCompact(v),
+              },
+              border: { color: '#ccc' },
+            },
+            y: {
+              ticks: {
+                font: { family: "'IBM Plex Mono', monospace", size: 10 },
+              },
+              grid: { display: false },
+              border: { color: '#ccc' },
+            }
+          }
+        }
+      });
+    }
+
+    if (viewMode === 'pie') {
+      // Pie: Total Payments by GL code (positive rows only)
+      const positiveRows = rows.filter(r => toNum(r.totalPayments) > 0);
+      const labels = positiveRows.map(r => r.glCode || '—');
+      const values = positiveRows.map(r => toNum(r.totalPayments));
+      const total  = values.reduce((a, b) => a + b, 0);
+      const colors = labels.map((_, i) => CHART_PALETTE[i % CHART_PALETTE.length]);
+
+      chart = new Chart(ctx, {
+        type: 'pie',
+        data: {
+          labels,
+          datasets: [{
+            data: values,
+            backgroundColor: colors,
+            borderColor: '#fff',
+            borderWidth: 2,
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: {
+              position: 'right',
+              labels: {
+                font: { size: 11, family: "'IBM Plex Sans', sans-serif" },
+                padding: 14,
+                usePointStyle: true,
+                pointStyleWidth: 10,
+              }
+            },
+            tooltip: {
+              callbacks: {
+                label: ctx => {
+                  const pct = total > 0 ? ((ctx.parsed / total) * 100).toFixed(1) : '0.0';
+                  return `  ${ctx.label}: ${fmtMoney(ctx.parsed)} (${pct}%)`;
+                }
+              }
+            }
+          }
+        }
+      });
+    }
+
+    return () => { if (chart) chart.destroy(); };
+  }, []); // empty deps — key prop triggers remount
+
+  const excludedCount = viewMode === 'pie'
+    ? rows.filter(r => toNum(r.totalPayments) <= 0).length
+    : 0;
+
+  const barHeight = Math.max(320, rows.length * 32);
+  const containerHeight = viewMode === 'bar' ? barHeight : 420;
+
+  return (
+    <div className="chart-container">
+      <div className="chart-canvas-wrap" style={{ height: containerHeight + 'px' }}>
+        <canvas ref={canvasRef} />
+      </div>
+      {viewMode === 'pie' && excludedCount > 0 && (
+        <div className="chart-note">
+          {excludedCount} GL code{excludedCount !== 1 ? 's' : ''} excluded (zero or negative payments not shown in pie)
+        </div>
+      )}
+      {viewMode === 'bar' && (
+        <div className="chart-note">Net Amount = Total Payments minus Total Refunds</div>
+      )}
+    </div>
+  );
+}
+
+// ── Main App ─────────────────────────────────────────────────────────
 function App() {
   const { orgSlug, basePath } = useMemo(() => getOrgAndBase(), []);
   const params   = useMemo(() => getParams(), []);
@@ -389,12 +587,22 @@ function App() {
     catch { return false; }
   });
 
+  const [viewMode, setViewMode] = useState(() => {
+    try { return localStorage.getItem(LS_VIEW_MODE) || 'table'; }
+    catch { return 'table'; }
+  });
+
   function toggleRefundBreakdown() {
     setShowRefundBreakdown(prev => {
       const next = !prev;
       try { localStorage.setItem(LS_REFUND_BREAKDOWN, String(next)); } catch {}
       return next;
     });
+  }
+
+  function handleViewMode(mode) {
+    setViewMode(mode);
+    try { localStorage.setItem(LS_VIEW_MODE, mode); } catch {}
   }
 
   const hasBreakdownData = useMemo(() => {
@@ -619,6 +827,18 @@ function App() {
           {showRefundBreakdown ? '↙ Refunds: Breakdown' : '↗ Refunds: Summary'}
           {showRefundBreakdown && !hasBreakdownData && <span style={{marginLeft:4,opacity:0.6,fontSize:10}}>(no data)</span>}
         </button>
+        <div className="divider" />
+        <div className="view-toggle">
+          {[['table','⊞ Table'],['bar','▦ Bar'],['pie','◑ Pie']].map(([mode, label]) => (
+            <button
+              key={mode}
+              className={viewMode === mode ? 'active' : ''}
+              onClick={() => handleViewMode(mode)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
         <div className="toolbar-spacer" />
         {rows && <span className="row-count">{rows.length} GL code{rows.length !== 1 ? 's' : ''}</span>}
         <div className="divider" />
@@ -672,6 +892,12 @@ function App() {
     + (totals && totals.hasAccountNumber ? 1 : 0)
     + (totals && totals.hasLocations     ? 1 : 0);
 
+  const chartModeLabel = viewMode === 'bar'
+    ? 'NET AMOUNT BY GL CODE'
+    : viewMode === 'pie'
+    ? 'TOTAL PAYMENTS BY GL CODE'
+    : null;
+
   return (
     <div>
       {renderToolbar()}
@@ -688,7 +914,12 @@ function App() {
           </div>
           <div className="report-header-right">
             <div className="date-range">{dateRangeLabel}</div>
-            {breakdownActive && (
+            {chartModeLabel && (
+              <div style={{fontSize:10,color:'#3b82f6',marginTop:3,fontWeight:600,letterSpacing:'0.4px'}}>
+                {chartModeLabel}
+              </div>
+            )}
+            {!chartModeLabel && breakdownActive && (
               <div style={{fontSize:10,color:'#b91c1c',marginTop:3,fontWeight:600,letterSpacing:'0.4px'}}>
                 REFUNDS SHOWN BY TYPE
               </div>
@@ -696,7 +927,7 @@ function App() {
           </div>
         </div>
 
-        {/* Summary cards */}
+        {/* Summary cards — always visible */}
         {totals && (
           <div className="summary-cards">
             <div className="summary-card">
@@ -732,9 +963,15 @@ function App() {
           </div>
         )}
 
-        {/* GL Table */}
+        {/* Main content: table or chart */}
         {rows.length === 0 ? (
           <div style={{textAlign:'center',padding:'40px 0',color:'#888'}}>No GL data found for the selected date range.</div>
+        ) : viewMode !== 'table' ? (
+          <GLChart
+            key={`${viewMode}-${loadedStart}-${loadedEnd}`}
+            rows={rows}
+            viewMode={viewMode}
+          />
         ) : (
           <table className="gl-table">
             <thead>
@@ -840,7 +1077,10 @@ function App() {
 
         {/* Footer */}
         <div className="report-footer">
-          <span>{orgName} — GL Code Rollup{breakdownActive ? ' (Refunds by Type)' : ''}</span>
+          <span>
+            {orgName} — GL Code Rollup
+            {viewMode === 'bar' ? ' (Bar Chart)' : viewMode === 'pie' ? ' (Pie Chart)' : breakdownActive ? ' (Refunds by Type)' : ''}
+          </span>
           <span>Run Date/Time: {runDate}</span>
         </div>
 
