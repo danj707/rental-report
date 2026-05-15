@@ -201,17 +201,9 @@ async function sendReportEmail(orgSlug, email, reportType, schedule) {
     : reportType === "historic"
       ? "Facility Reservations by Date"
       : "Facility Rental Schedule";
-  const filename = `${reportType}-${start}.pdf`;
 
-  let pdfBuffer, status, message;
-  try {
-    pdfBuffer = await generatePdf(orgSlug, reportType, start, end);
-  } catch (err) {
-    status = "error"; message = `PDF generation failed: ${err.message}`;
-    console.error(`[mail] ${message}`);
-    db.appendLog(orgSlug, email, reportType, schedule, status, message);
-    return { ok: false, error: message };
-  }
+  // Build a pre-loaded report URL with the date range baked in
+  const reportUrl = `${BASE_URL}/${orgSlug}/${reportType}?start_date=${start}&end_date=${end}`;
 
   const resend = getResendClient();
   if (!resend) {
@@ -220,30 +212,39 @@ async function sendReportEmail(orgSlug, email, reportType, schedule) {
     return { ok: true, stub: true };
   }
 
+  let status, message;
   try {
     const { error } = await resend.emails.send({
       from: `${FROM_NAME} <${FROM_EMAIL}>`,
       to: email,
       subject: `${reportLabel} — ${label}`,
       html: `
-        <div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:24px">
-          <img src="${orgConfig.logoUrl}" style="height:40px;margin-bottom:16px" />
-          <h2 style="margin:0 0 8px;font-size:18px">${reportLabel}</h2>
-          <p style="color:#666;margin:0 0 16px">${label}</p>
-          <p style="color:#333">Your scheduled report is attached as a PDF.</p>
-          <p style="margin-top:24px">
-            <a href="${BASE_URL}/${orgSlug}/${reportType}" style="background:#16a34a;color:#fff;padding:10px 18px;border-radius:4px;text-decoration:none;font-weight:600">View Live Report</a>
+        <div style="font-family:sans-serif;max-width:500px;margin:0 auto;padding:32px 24px">
+          <img src="${orgConfig.logoUrl}" style="height:40px;margin-bottom:20px;display:block" />
+          <h2 style="margin:0 0 6px;font-size:20px;color:#111">${reportLabel}</h2>
+          <p style="color:#888;margin:0 0 24px;font-size:14px">${label}</p>
+          <p style="color:#333;margin:0 0 24px;font-size:14px;line-height:1.5">
+            Your scheduled report is ready. Click below to open it — the date range is pre-loaded.
           </p>
-          <p style="margin-top:32px;font-size:11px;color:#aaa">
-            You're receiving this because you subscribed at ${BASE_URL}/${orgSlug}/admin.<br>
+          <a href="${reportUrl}"
+             style="display:inline-block;background:#16a34a;color:#fff;padding:12px 22px;border-radius:5px;text-decoration:none;font-weight:600;font-size:14px">
+            View ${reportLabel} →
+          </a>
+          <p style="margin-top:16px;font-size:12px;color:#aaa">
+            Or copy this link:<br>
+            <a href="${reportUrl}" style="color:#3b82f6;word-break:break-all">${reportUrl}</a>
+          </p>
+          <hr style="border:none;border-top:1px solid #eee;margin:32px 0" />
+          <p style="font-size:11px;color:#bbb;margin:0">
+            You're receiving this because you subscribed at
+            <a href="${BASE_URL}/${orgSlug}/admin" style="color:#bbb">${BASE_URL}/${orgSlug}/admin</a>.<br>
             To unsubscribe, visit that page and remove your email.
           </p>
         </div>`,
-      attachments: [{ filename, content: pdfBuffer, contentType: "application/pdf" }],
     });
     if (error) throw new Error(error.message);
     status = "sent"; message = null;
-    console.log(`[mail] Sent "${reportLabel}" to ${email}`);
+    console.log(`[mail] Sent "${reportLabel}" (${label}) to ${email}`);
   } catch (err) {
     status = "error"; message = err.message;
     console.error(`[mail] Failed to send to ${email}: ${err.message}`);
