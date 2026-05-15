@@ -439,7 +439,13 @@ function GLChart({ rows, viewMode }) {
     if (!canvasRef.current || !rows || rows.length === 0) return;
     const ChartJS = window.Chart;
     if (!ChartJS) { console.error('Chart.js not loaded'); return; }
-    const ctx = canvasRef.current.getContext('2d');
+
+    // Force canvas to explicit pixel dimensions so Chart.js doesn't see 0x0
+    const canvas = canvasRef.current;
+    const parent = canvas.parentElement;
+    canvas.width  = (parent && parent.clientWidth)  || 800;
+    canvas.height = (parent && parent.clientHeight) || 420;
+    const ctx = canvas.getContext('2d');
 
     let chart;
 
@@ -518,8 +524,7 @@ function GLChart({ rows, viewMode }) {
           }]
         },
         options: {
-          responsive: true,
-          maintainAspectRatio: false,
+          responsive: false,
           plugins: {
             legend: {
               position: 'right',
