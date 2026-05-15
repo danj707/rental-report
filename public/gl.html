@@ -322,7 +322,7 @@
 <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 
 <script type="text/babel">
 const { useState, useEffect, useMemo, useCallback, useRef } = React;
@@ -436,9 +436,13 @@ function GLChart({ rows, viewMode }) {
 
   useEffect(() => {
     if (!canvasRef.current || !rows || rows.length === 0) return;
+    const ChartJS = window.Chart;
+    if (!ChartJS) { console.error('Chart.js not loaded'); return; }
     const ctx = canvasRef.current.getContext('2d');
 
     let chart;
+
+    try {
 
     if (viewMode === 'bar') {
       // Horizontal bar: Net Amount by GL code
@@ -447,7 +451,7 @@ function GLChart({ rows, viewMode }) {
       const bgColors     = values.map(v => v >= 0 ? 'rgba(21,128,61,0.75)' : 'rgba(185,28,28,0.75)');
       const borderColors = values.map(v => v >= 0 ? '#15803d' : '#b91c1c');
 
-      chart = new Chart(ctx, {
+      chart = new ChartJS(ctx, {
         type: 'bar',
         data: {
           labels,
@@ -501,7 +505,7 @@ function GLChart({ rows, viewMode }) {
       const total  = values.reduce((a, b) => a + b, 0);
       const colors = labels.map((_, i) => CHART_PALETTE[i % CHART_PALETTE.length]);
 
-      chart = new Chart(ctx, {
+      chart = new ChartJS(ctx, {
         type: 'pie',
         data: {
           labels,
@@ -537,6 +541,8 @@ function GLChart({ rows, viewMode }) {
         }
       });
     }
+
+    } catch(err) { console.error('Chart render error:', err); }
 
     return () => { if (chart) chart.destroy(); };
   }, []); // empty deps — key prop triggers remount
