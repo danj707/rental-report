@@ -411,6 +411,14 @@ function App() {
         <button className="btn-pdf" onClick={downloadPdf} disabled={pdfLoading || !rows || rows.length === 0}>
           {pdfLoading ? 'Generating…' : '📄 PDF'}
         </button>
+        {orgSlug && (
+          <>
+            <div className="divider" />
+            <a href={`/${orgSlug}/admin`} style={{color:'#aaa',fontSize:11,textDecoration:'none',padding:'4px 8px',border:'1px solid rgba(255,255,255,.18)',borderRadius:4,whiteSpace:'nowrap'}}>
+              📧 Subscriptions
+            </a>
+          </>
+        )}
       </div>
     );
   }

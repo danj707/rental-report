@@ -593,6 +593,11 @@ function App() {
   const params   = useMemo(() => getParams(), []);
   const defaults = useMemo(() => getCurrentMonthRange(), []);
 
+  const orgSlug = useMemo(() => {
+    const parts = window.location.pathname.split('/').filter(Boolean);
+    return parts[0] || '';
+  }, []);
+
   const [startDate, setStartDate] = useState(params.start_date || defaults.start);
   const [endDate,   setEndDate]   = useState(params.end_date   || defaults.end);
 
@@ -920,6 +925,14 @@ function App() {
         >
           📊 Excel
         </button>
+        {orgSlug && (
+          <>
+            <div className="divider" />
+            <a href={`/${orgSlug}/admin`} style={{color:'#aaa',fontSize:11,textDecoration:'none',padding:'4px 8px',border:'1px solid rgba(255,255,255,.18)',borderRadius:4,whiteSpace:'nowrap'}}>
+              📧 Subscriptions
+            </a>
+          </>
+        )}
       </div>
     );
   }
