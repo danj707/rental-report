@@ -492,6 +492,108 @@ app.get("/:org/admin", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "admin.html"));
 });
 
+
+// ── GET /:org — org landing page ─────────────────────────────────────
+app.get("/:org", (req, res) => {
+  const slug = req.params.org;
+  const org  = ORGS[slug];
+  if (!org) return res.status(404).send("Unknown org");
+
+  const reportMeta = {
+    facility: { label: "Facility Rental Schedule", icon: "📅", desc: "Reservations grouped by date and location" },
+    gl:       { label: "GL Code Rollup",            icon: "📊", desc: "Payment and refund summary by GL code" },
+    programs: { label: "Program Revenue",           icon: "🎯", desc: "Enrollment and revenue by program and section" },
+    historic: { label: "Historic Buildings",        icon: "🏛️",  desc: "Reservations for historic building sites" },
+  };
+
+  const available = REPORT_TYPES.filter(r => org[r]?.mbUuid);
+
+  const cards = available.map(r => {
+    const m = reportMeta[r] || { label: r, icon: "📄", desc: "" };
+    return `
+      <a href="/${slug}/${r}" class="card">
+        <div class="card-icon">${m.icon}</div>
+        <div class="card-body">
+          <div class="card-label">${m.label}</div>
+          <div class="card-desc">${m.desc}</div>
+        </div>
+        <div class="card-arrow">→</div>
+      </a>`;
+  }).join("");
+
+  res.send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>${slug.charAt(0).toUpperCase() + slug.slice(1)} Reports</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'IBM Plex Sans', system-ui, sans-serif;
+      background: #f5f4f1; color: #1a1a1a;
+      min-height: 100vh; display: flex; flex-direction: column;
+    }
+    .topbar {
+      background: #2c2c2c; color: #eee;
+      padding: 12px 32px; display: flex; align-items: center; gap: 16px;
+    }
+    .topbar img { height: 36px; object-fit: contain; }
+    .topbar-name { font-weight: 700; font-size: 15px; }
+    .topbar-sub  { font-size: 11px; color: #aaa; text-transform: uppercase; letter-spacing: 1px; margin-top: 1px; }
+    .main { flex: 1; max-width: 700px; margin: 48px auto; padding: 0 24px; width: 100%; }
+    .section-label {
+      font-size: 10px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 1.2px; color: #888; margin-bottom: 12px;
+    }
+    .cards { display: flex; flex-direction: column; gap: 10px; margin-bottom: 32px; }
+    .card {
+      display: flex; align-items: center; gap: 16px;
+      background: #fff; border: 1px solid #e0ddd8; border-radius: 8px;
+      padding: 16px 20px; text-decoration: none; color: inherit;
+      transition: box-shadow .15s, border-color .15s;
+    }
+    .card:hover { box-shadow: 0 2px 12px rgba(0,0,0,.1); border-color: #bbb; }
+    .card-icon  { font-size: 24px; flex-shrink: 0; width: 36px; text-align: center; }
+    .card-body  { flex: 1; }
+    .card-label { font-weight: 600; font-size: 14px; margin-bottom: 2px; }
+    .card-desc  { font-size: 12px; color: #888; }
+    .card-arrow { font-size: 18px; color: #ccc; flex-shrink: 0; }
+    .card:hover .card-arrow { color: #16a34a; }
+    .admin-link {
+      display: flex; align-items: center; gap: 12px;
+      color: #555; text-decoration: none; font-size: 13px;
+      padding: 10px 0; border-top: 1px solid #ddd;
+    }
+    .admin-link:hover { color: #111; }
+    .admin-link span  { font-size: 18px; }
+    footer {
+      text-align: center; padding: 24px; font-size: 11px; color: #bbb;
+    }
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    ${org.logoUrl ? `<img src="${org.logoUrl}" alt="" onerror="this.style.display='none'" />` : ""}
+    <div>
+      <div class="topbar-name">${slug.charAt(0).toUpperCase() + slug.slice(1)} Parks &amp; Recreation</div>
+      <div class="topbar-sub">rec.us Reports</div>
+    </div>
+  </div>
+  <div class="main">
+    <div class="section-label">Reports</div>
+    <div class="cards">${cards}</div>
+    <a href="/${slug}/admin" class="admin-link">
+      <span>📧</span> Manage Email Subscriptions
+    </a>
+  </div>
+  <footer>rec.us · ${slug}</footer>
+</body>
+</html>`);
+});
+
 // ── Root index ───────────────────────────────────────────────────────
 app.get("/", (req, res) => {
   const orgs = Object.keys(ORGS);
