@@ -1,0 +1,661 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Program Revenue</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'IBM Plex Sans', system-ui, sans-serif;
+      font-size: 12px;
+      color: #1a1a1a;
+      background: #f5f4f1;
+      line-height: 1.35;
+    }
+
+    /* ── Toolbar ── */
+    .toolbar {
+      position: sticky; top: 0; z-index: 100;
+      display: flex; align-items: center; gap: 10px;
+      padding: 8px 20px;
+      background: #2c2c2c; color: #eee;
+      font-size: 13px; flex-wrap: wrap;
+    }
+    .toolbar-title { font-weight: 600; margin-right: 4px; }
+    .toolbar-spacer { flex: 1; }
+    .toolbar label {
+      font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px;
+      color: #aaa; display: flex; flex-direction: column; gap: 2px;
+    }
+    .toolbar input[type="date"] {
+      padding: 4px 8px; border: 1px solid rgba(255,255,255,.2); border-radius: 4px;
+      background: rgba(255,255,255,.1); color: #fff; font-size: 12px;
+      font-family: inherit; outline: none;
+    }
+    .toolbar input[type="date"]:focus { border-color: #3b82f6; }
+    .toolbar input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(1); cursor: pointer; }
+    .toolbar button {
+      padding: 6px 14px; border: 1px solid rgba(255,255,255,.25); border-radius: 4px;
+      background: rgba(255,255,255,.08); color: #fff; font-size: 12px;
+      font-family: inherit; cursor: pointer; transition: background .15s; white-space: nowrap;
+    }
+    .toolbar button:hover { background: rgba(255,255,255,.18); }
+    .toolbar .btn-run { background: #16a34a; border-color: #16a34a; font-weight: 600; }
+    .toolbar .btn-run:hover { background: #15803d; }
+    .toolbar .btn-run:disabled { opacity: .5; cursor: not-allowed; }
+    .toolbar .btn-pdf { background: #3b82f6; border-color: #3b82f6; font-weight: 600; }
+    .toolbar .btn-pdf:hover { background: #2563eb; }
+    .toolbar .btn-pdf:disabled { opacity: .5; cursor: not-allowed; }
+    .toolbar .btn-excel { background: #16803c; border-color: #16803c; font-weight: 600; }
+    .toolbar .btn-excel:hover { background: #15692f; }
+    .toolbar .btn-excel:disabled { opacity: .5; cursor: not-allowed; }
+    .toolbar .btn-toggle-on {
+      background: rgba(251,191,36,.18); border-color: #fbbf24; color: #fbbf24; font-weight: 600;
+    }
+    .toolbar .btn-toggle-on:hover { background: rgba(251,191,36,.28); }
+    .toolbar .row-count { font-size: 11px; color: #aaa; }
+    .toolbar .divider { width: 1px; height: 28px; background: rgba(255,255,255,.15); margin: 0 2px; }
+
+    /* ── Page ── */
+    .page {
+      max-width: 1300px; margin: 16px auto; padding: 24px 28px;
+      background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.08);
+    }
+
+    /* ── Header ── */
+    .report-header {
+      display: flex; justify-content: space-between; align-items: center;
+      border-bottom: 2.5px solid #111; padding-bottom: 10px; margin-bottom: 18px; gap: 16px;
+    }
+    .report-header-left { display: flex; align-items: center; gap: 14px; }
+    .report-header-logo { height: 42px; max-width: 140px; object-fit: contain; object-position: left center; }
+    .report-header .org-label { font-size: 10px; letter-spacing: 1.6px; text-transform: uppercase; color: #777; font-weight: 600; }
+    .report-header .title { font-size: 17px; font-weight: 700; margin-top: 1px; }
+    .report-header-right { text-align: right; }
+    .report-header .date-range { font-size: 11px; color: #666; }
+
+    /* ── Summary cards ── */
+    .summary-cards { display: flex; gap: 12px; margin-bottom: 18px; flex-wrap: wrap; }
+    .summary-card {
+      flex: 1; min-width: 120px; background: #f5f4f1;
+      border: 1px solid #ddd; border-radius: 6px; padding: 10px 14px;
+    }
+    .summary-card .card-label { font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.8px; color: #888; font-weight: 600; margin-bottom: 4px; }
+    .summary-card .card-value { font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums; color: #111; }
+    .summary-card .card-value.green { color: #15803d; }
+    .summary-card .card-value.red   { color: #b91c1c; }
+    .summary-card .card-value.blue  { color: #2563eb; }
+    .summary-card .card-sub { font-size: 10px; color: #999; margin-top: 2px; }
+
+    /* ── Table ── */
+    .prog-table { width: 100%; border-collapse: collapse; font-size: 11.5px; }
+
+    /* Column headers */
+    .prog-table thead tr {
+      background: #e4e4e4; border-top: 1px solid #bbb; border-bottom: 1px solid #bbb;
+    }
+    .prog-table thead th {
+      padding: 6px 8px; font-weight: 600; font-size: 10px;
+      text-transform: uppercase; letter-spacing: 0.4px; color: #333;
+      white-space: nowrap; text-align: right;
+    }
+    .prog-table thead th.left { text-align: left; }
+
+    /* Program header rows */
+    .prog-table tr.prog-header td {
+      background: #2c2c2c; color: #fff;
+      padding: 7px 8px; font-weight: 600; font-size: 11.5px;
+      border-top: 3px solid #111;
+    }
+    .prog-table tr.prog-header td.prog-name {
+      font-size: 12px; letter-spacing: 0.2px;
+    }
+    .prog-table tr.prog-header td { text-align: right; }
+    .prog-table tr.prog-header td.prog-name { text-align: left; }
+
+    /* Data rows */
+    .prog-table tbody tr.data-row { border-bottom: 1px solid #eee; }
+    .prog-table tbody tr.data-row:nth-child(even) { background: #fafaf8; }
+    .prog-table tbody tr.data-row:hover { background: #f0eeea; }
+    .prog-table tbody tr.data-row td {
+      padding: 5px 8px; text-align: right; vertical-align: middle;
+    }
+    .prog-table tbody tr.data-row td.left { text-align: left; }
+    .prog-table tbody tr.data-row td.mono {
+      font-family: 'IBM Plex Mono', monospace; font-size: 10.5px;
+    }
+    .prog-table tbody tr.data-row td.muted { color: #aaa; }
+    .prog-table .money { font-variant-numeric: tabular-nums; }
+    .prog-table .zero  { color: #ccc; }
+
+    /* Program subtotal rows */
+    .prog-table tr.prog-subtotal td {
+      background: #edeae4; padding: 5px 8px; text-align: right;
+      font-weight: 700; font-size: 11px; font-variant-numeric: tabular-nums;
+      border-top: 1px solid #ccc; border-bottom: 2px solid #bbb;
+      color: #444;
+    }
+    .prog-table tr.prog-subtotal td.left { text-align: left; font-style: italic; color: #888; }
+
+    /* Grand total row */
+    .prog-table tfoot tr td {
+      background: #2c2c2c; color: #fff; padding: 7px 8px;
+      font-weight: 700; font-size: 11.5px; text-align: right;
+      font-variant-numeric: tabular-nums;
+      border-top: 3px solid #111;
+    }
+    .prog-table tfoot tr td.left { text-align: left; font-size: 10.5px; letter-spacing: 0.4px; text-transform: uppercase; }
+
+    /* Fill % badge */
+    .fill-high { color: #15803d; font-weight: 600; }
+    .fill-mid  { color: #b45309; }
+    .fill-low  { color: #b91c1c; }
+
+    /* ── Footer ── */
+    .report-footer {
+      display: flex; justify-content: space-between;
+      border-top: 2.5px solid #111; margin-top: 16px; padding-top: 6px;
+      font-size: 10px; color: #777;
+    }
+
+    /* ── Loading / Error ── */
+    .loading { text-align: center; padding: 80px 20px; color: #888; font-size: 14px; }
+    .loading .spinner {
+      display: inline-block; width: 28px; height: 28px;
+      border: 3px solid #ddd; border-top-color: #3b82f6;
+      border-radius: 50%; animation: spin .7s linear infinite; margin-bottom: 12px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .error { text-align: center; padding: 60px 20px; color: #b91c1c; font-size: 14px; }
+
+    /* ── Print / PDF ── */
+    @media print {
+      body { background: #fff; }
+      .toolbar { display: none !important; }
+      .page { box-shadow: none; margin: 0; padding: 12px 16px; max-width: 100%; }
+    }
+    body.print-mode .toolbar { display: none !important; }
+    body.print-mode { background: #fff; }
+    body.print-mode .page { box-shadow: none; margin: 0; padding: 12px 16px; max-width: 100%; }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+
+<script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
+<script type="text/babel">
+const { useState, useEffect, useMemo, useCallback } = React;
+
+const LS_SHOW_DETAILS = 'prog_show_details';
+
+function getOrgAndBase() {
+  const parts = window.location.pathname.split('/').filter(Boolean);
+  return { orgSlug: parts[0] || 'unknown', basePath: `/${parts[0]}/${parts[1]}` };
+}
+
+function getParams() {
+  const p = new URLSearchParams(window.location.search);
+  return { start_date: p.get('start_date'), end_date: p.get('end_date'), _print: p.get('_print') };
+}
+
+function getCurrentMonthRange() {
+  const now = new Date(), y = now.getFullYear(), m = now.getMonth();
+  return { start: toISO(new Date(y, m, 1)), end: toISO(new Date(y, m + 1, 0)) };
+}
+
+function toISO(d) {
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+
+function formatDisplayDate(iso) {
+  if (!iso) return '';
+  const d = new Date(iso + 'T12:00:00');
+  const months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  return `${months[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
+}
+
+function fmtMoney(v) {
+  if (v == null || v === '') return '$0.00';
+  const n = parseFloat(v);
+  if (isNaN(n)) return '$0.00';
+  return (n < 0 ? '-$' : '$') + Math.abs(n).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+}
+
+function fmtNum(v) {
+  const n = parseFloat(v);
+  return isNaN(n) ? 0 : n;
+}
+
+function fillClass(v) {
+  if (v == null || v === '') return '';
+  const n = parseFloat(v);
+  if (isNaN(n)) return '';
+  if (n >= 90) return 'fill-high';
+  if (n >= 70) return 'fill-mid';
+  return 'fill-low';
+}
+
+function normalizeRow(raw) {
+  return {
+    programName:        raw['Program']                     || '',
+    sectionName:        raw['Section']                     || '',
+    season:             raw['Season']                      || '',
+    startDate:          raw['Start Date']                  || '',
+    endDate:            raw['End Date']                    || '',
+    revenue:            raw['Revenue']                     ?? 0,
+    enrollmentsSection: raw['Section Enrollments (opt)']   ?? 0,
+    revenueSection:     raw['Section Revenue (opt)']       ?? 0,
+    enrollmentsSession: raw['Session Enrollments (opt)']   ?? 0,
+    revenueSession:     raw['Session Revenue (opt)']       ?? 0,
+    enrollments:        raw['Enrollments']                 ?? 0,
+    enrolledCapacity:   raw['Enrolled / Capacity']         || '',
+    fillPct:            raw['Fill %']                      ?? null,
+    waitlist:           raw['Waitlist']                    ?? 0,
+    refunds:            raw['Refunds']                     ?? 0,
+    netRevenue:         raw['Net Revenue']                 ?? 0,
+  };
+}
+
+function App() {
+  const { orgSlug, basePath } = useMemo(() => getOrgAndBase(), []);
+  const params   = useMemo(() => getParams(), []);
+  const defaults = useMemo(() => getCurrentMonthRange(), []);
+
+  const [startDate,   setStartDate]   = useState(params.start_date || defaults.start);
+  const [endDate,     setEndDate]     = useState(params.end_date   || defaults.end);
+  const [rows,        setRows]        = useState(null);
+  const [meta,        setMeta]        = useState({});
+  const [error,       setError]       = useState(null);
+  const [loading,     setLoading]     = useState(false);
+  const [pdfLoading,  setPdfLoading]  = useState(false);
+  const [loadedStart, setLoadedStart] = useState(null);
+  const [loadedEnd,   setLoadedEnd]   = useState(null);
+
+  const [showDetails, setShowDetails] = useState(() => {
+    try { return localStorage.getItem(LS_SHOW_DETAILS) === 'true'; } catch { return false; }
+  });
+
+  function toggleDetails() {
+    setShowDetails(prev => {
+      const next = !prev;
+      try { localStorage.setItem(LS_SHOW_DETAILS, String(next)); } catch {}
+      return next;
+    });
+  }
+
+  useEffect(() => {
+    if (params._print === '1') document.body.classList.add('print-mode');
+  }, []);
+
+  const fetchData = useCallback((sd, ed) => {
+    setLoading(true); setError(null);
+    const qs = new URLSearchParams();
+    if (sd) qs.set('start_date', sd);
+    if (ed) qs.set('end_date',   ed);
+    fetch(`${basePath}/api/data?${qs}`)
+      .then(r => { if (!r.ok) throw new Error(`Server returned ${r.status}`); return r.json(); })
+      .then(json => {
+        setRows((json.rows || []).map(normalizeRow));
+        setMeta(json.meta || {});
+        setLoadedStart(sd);
+        setLoadedEnd(ed);
+      })
+      .catch(err => setError(err.message))
+      .finally(() => setLoading(false));
+  }, [basePath]);
+
+  useEffect(() => { fetchData(startDate, endDate); }, []);
+
+  function setMonth(offset) {
+    const now = new Date();
+    const t = new Date(now.getFullYear(), now.getMonth() + offset, 1);
+    setStartDate(toISO(t));
+    setEndDate(toISO(new Date(t.getFullYear(), t.getMonth() + 1, 0)));
+  }
+
+  function setYear() {
+    const y = new Date().getFullYear();
+    setStartDate(`${y}-01-01`);
+    setEndDate(`${y}-12-31`);
+  }
+
+  function downloadPdf() {
+    setPdfLoading(true);
+    const qs = new URLSearchParams();
+    if (loadedStart) qs.set('start_date', loadedStart);
+    if (loadedEnd)   qs.set('end_date',   loadedEnd);
+    fetch(`${basePath}/api/pdf?${qs}`)
+      .then(r => r.blob())
+      .then(blob => {
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `program-revenue-${loadedStart || 'report'}.pdf`;
+        a.click();
+        URL.revokeObjectURL(a.href);
+      })
+      .catch(err => alert('PDF failed: ' + err.message))
+      .finally(() => setPdfLoading(false));
+  }
+
+  function downloadExcel() {
+    if (!rows || rows.length === 0) return;
+    const headers = [
+      'Program','Section','Season','Start Date','End Date','Revenue',
+      ...(showDetails ? ['Section Enrollments','Section Revenue','Session Enrollments','Session Revenue'] : []),
+      'Enrollments','Enrolled / Capacity','Fill %','Waitlist','Refunds','Net Revenue'
+    ];
+    const data = rows.map(r => [
+      r.programName, r.sectionName, r.season, r.startDate, r.endDate,
+      fmtNum(r.revenue),
+      ...(showDetails ? [fmtNum(r.enrollmentsSection), fmtNum(r.revenueSection), fmtNum(r.enrollmentsSession), fmtNum(r.revenueSession)] : []),
+      fmtNum(r.enrollments), r.enrolledCapacity,
+      r.fillPct != null ? fmtNum(r.fillPct) : '',
+      fmtNum(r.waitlist), fmtNum(r.refunds), fmtNum(r.netRevenue),
+    ]);
+    const ws = XLSX.utils.aoa_to_sheet([headers, ...data]);
+    ws['!cols'] = [
+      {wch:30},{wch:30},{wch:14},{wch:12},{wch:12},{wch:12},
+      ...(showDetails ? [{wch:14},{wch:14},{wch:14},{wch:14}] : []),
+      {wch:12},{wch:16},{wch:8},{wch:10},{wch:12},{wch:12},
+    ];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Program Revenue');
+    XLSX.writeFile(wb, `program-revenue-${orgSlug}-${loadedStart || 'report'}.xlsx`);
+  }
+
+  // ── Computed values ────────────────────────────────────────────────
+  const grouped = useMemo(() => {
+    if (!rows) return null;
+    const map = {};
+    rows.forEach(r => {
+      if (!map[r.programName]) map[r.programName] = [];
+      map[r.programName].push(r);
+    });
+    return map;
+  }, [rows]);
+
+  const totals = useMemo(() => {
+    if (!rows || rows.length === 0) return null;
+    return rows.reduce((acc, r) => ({
+      revenue:            acc.revenue            + fmtNum(r.revenue),
+      refunds:            acc.refunds            + fmtNum(r.refunds),
+      netRevenue:         acc.netRevenue         + fmtNum(r.netRevenue),
+      enrollments:        acc.enrollments        + fmtNum(r.enrollments),
+      enrollmentsSection: acc.enrollmentsSection + fmtNum(r.enrollmentsSection),
+      enrollmentsSession: acc.enrollmentsSession + fmtNum(r.enrollmentsSession),
+      revenueSection:     acc.revenueSection     + fmtNum(r.revenueSection),
+      revenueSession:     acc.revenueSession     + fmtNum(r.revenueSession),
+      waitlist:           acc.waitlist           + fmtNum(r.waitlist),
+    }), { revenue:0, refunds:0, netRevenue:0, enrollments:0, enrollmentsSection:0, enrollmentsSession:0, revenueSection:0, revenueSession:0, waitlist:0 });
+  }, [rows]);
+
+  const programCount = grouped ? Object.keys(grouped).length : 0;
+  const isPrint = params._print === '1';
+  const datesChanged = startDate !== loadedStart || endDate !== loadedEnd;
+
+  // ── Toolbar ────────────────────────────────────────────────────────
+  function renderToolbar() {
+    if (isPrint) return null;
+    return (
+      <div className="toolbar">
+        <span className="toolbar-title">Program Revenue</span>
+        <div className="divider" />
+        <label>Start<input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} /></label>
+        <label>End<input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} /></label>
+        <button onClick={() => setMonth(-1)} style={{fontSize:11,padding:'4px 8px'}}>Last Month</button>
+        <button onClick={() => setMonth(0)}  style={{fontSize:11,padding:'4px 8px'}}>This Month</button>
+        <button onClick={() => setMonth(1)}  style={{fontSize:11,padding:'4px 8px'}}>Next Month</button>
+        <button onClick={setYear}            style={{fontSize:11,padding:'4px 8px'}}>This Year</button>
+        <button
+          className="btn-run"
+          onClick={() => fetchData(startDate, endDate)}
+          disabled={loading}
+          style={datesChanged && !loading ? {boxShadow:'0 0 0 2px #4ade80'} : {}}
+        >
+          {loading ? 'Loading…' : '▶ Run Report'}
+        </button>
+        <div className="divider" />
+        <button
+          className={showDetails ? 'btn-toggle-on' : ''}
+          onClick={toggleDetails}
+          style={{fontSize:11, padding:'4px 10px'}}
+          title="Show section/session enrollment and revenue breakdown"
+        >
+          {showDetails ? '▾ Details: On' : '▸ Details: Off'}
+        </button>
+        <div className="toolbar-spacer" />
+        {rows && (
+          <span className="row-count">
+            {rows.length} section{rows.length !== 1 ? 's' : ''} · {programCount} program{programCount !== 1 ? 's' : ''}
+          </span>
+        )}
+        <div className="divider" />
+        <button onClick={() => window.print()}>🖨️ Print</button>
+        <button className="btn-pdf" onClick={downloadPdf} disabled={pdfLoading || !rows || rows.length === 0}>
+          {pdfLoading ? 'Generating…' : '📄 PDF'}
+        </button>
+        <button className="btn-excel" onClick={downloadExcel} disabled={!rows || rows.length === 0}>
+          📊 Excel
+        </button>
+        {orgSlug && (
+          <>
+            <div className="divider" />
+            <a href={`/${orgSlug}/admin`} style={{color:'#aaa',fontSize:11,textDecoration:'none',padding:'4px 8px',border:'1px solid rgba(255,255,255,.18)',borderRadius:4,whiteSpace:'nowrap'}}>
+              📧 Subscriptions
+            </a>
+          </>
+        )}
+      </div>
+    );
+  }
+
+  // ── Error / Loading ────────────────────────────────────────────────
+  if (error && !rows) return (
+    <div>{renderToolbar()}
+      <div className="page"><div className="error">
+        <p><strong>Failed to load report data</strong></p><p>{error}</p>
+      </div></div>
+    </div>
+  );
+
+  if (!rows) return (
+    <div>{renderToolbar()}
+      <div className="page"><div className="loading">
+        <div className="spinner" /><div>Loading program data…</div>
+      </div></div>
+    </div>
+  );
+
+  const now = new Date();
+  const runDate = `${String(now.getMonth()+1).padStart(2,'0')}/${String(now.getDate()).padStart(2,'0')}/${now.getFullYear()} @ ${now.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',hour12:true}).toLowerCase()}`;
+  const orgName = meta.org_name || (meta.org_slug ? meta.org_slug.charAt(0).toUpperCase() + meta.org_slug.slice(1) : 'rec.us');
+  const logoUrl = meta.logo_url || null;
+  const dateRangeLabel = [loadedStart && formatDisplayDate(loadedStart), loadedEnd && formatDisplayDate(loadedEnd)].filter(Boolean).join(' – ') || 'All Dates';
+
+  // Column span helpers
+  const detailCols = showDetails ? 4 : 0;
+  const totalCols  = 6 + detailCols + 6; // section+season+start+end + rev + [details] + enroll+cap+fill+wait+refunds+net
+
+  return (
+    <div>
+      {renderToolbar()}
+      <div className="page" style={loading ? {opacity:0.5,pointerEvents:'none'} : {}}>
+
+        {/* Header */}
+        <div className="report-header">
+          <div className="report-header-left">
+            {logoUrl && <img src={logoUrl} alt="" className="report-header-logo" onError={e => e.target.style.display='none'} />}
+            <div>
+              <div className="org-label">{orgName}</div>
+              <div className="title">Program Revenue</div>
+            </div>
+          </div>
+          <div className="report-header-right">
+            <div className="date-range">{dateRangeLabel}</div>
+          </div>
+        </div>
+
+        {/* Summary cards */}
+        {totals && (
+          <div className="summary-cards">
+            <div className="summary-card">
+              <div className="card-label">Revenue</div>
+              <div className="card-value green">{fmtMoney(totals.revenue)}</div>
+              <div className="card-sub">{totals.enrollments.toLocaleString()} enrollments</div>
+            </div>
+            <div className="summary-card">
+              <div className="card-label">Refunds</div>
+              <div className="card-value red">{fmtMoney(totals.refunds)}</div>
+              <div className="card-sub">&nbsp;</div>
+            </div>
+            <div className="summary-card">
+              <div className="card-label">Net Revenue</div>
+              <div className={`card-value ${totals.netRevenue < 0 ? 'red' : 'green'}`}>{fmtMoney(totals.netRevenue)}</div>
+              <div className="card-sub">revenue minus refunds</div>
+            </div>
+            <div className="summary-card">
+              <div className="card-label">Enrollments</div>
+              <div className="card-value blue">{totals.enrollments.toLocaleString()}</div>
+              <div className="card-sub">{totals.waitlist > 0 ? `${totals.waitlist} on waitlist` : 'no waitlist'}</div>
+            </div>
+            <div className="summary-card">
+              <div className="card-label">Programs</div>
+              <div className="card-value">{programCount}</div>
+              <div className="card-sub">{rows.length} section{rows.length !== 1 ? 's' : ''}</div>
+            </div>
+          </div>
+        )}
+
+        {/* Table */}
+        {rows.length === 0 ? (
+          <div style={{textAlign:'center',padding:'40px 0',color:'#888'}}>No program data found for the selected date range.</div>
+        ) : (
+          <table className="prog-table">
+            <thead>
+              <tr>
+                <th className="left" style={{minWidth:180}}>Section</th>
+                <th className="left" style={{minWidth:100}}>Season</th>
+                <th className="left" style={{width:88}}>Start</th>
+                <th className="left" style={{width:88}}>End</th>
+                <th style={{width:90}}>Revenue</th>
+                {showDetails && <>
+                  <th style={{width:76}}>Sec Enroll</th>
+                  <th style={{width:82}}>Sec Rev</th>
+                  <th style={{width:76}}>Sess Enroll</th>
+                  <th style={{width:82}}>Sess Rev</th>
+                </>}
+                <th style={{width:76}}>Enroll</th>
+                <th style={{width:96}}>Enrolled / Cap</th>
+                <th style={{width:60}}>Fill %</th>
+                <th style={{width:64}}>Waitlist</th>
+                <th style={{width:90}}>Refunds</th>
+                <th style={{width:90}}>Net Rev</th>
+              </tr>
+            </thead>
+            <tbody>
+              {Object.entries(grouped).map(([progName, sections]) => {
+                const sub = sections.reduce((acc, r) => ({
+                  revenue:            acc.revenue            + fmtNum(r.revenue),
+                  refunds:            acc.refunds            + fmtNum(r.refunds),
+                  netRevenue:         acc.netRevenue         + fmtNum(r.netRevenue),
+                  enrollments:        acc.enrollments        + fmtNum(r.enrollments),
+                  enrollmentsSection: acc.enrollmentsSection + fmtNum(r.enrollmentsSection),
+                  enrollmentsSession: acc.enrollmentsSession + fmtNum(r.enrollmentsSession),
+                  revenueSection:     acc.revenueSection     + fmtNum(r.revenueSection),
+                  revenueSession:     acc.revenueSession     + fmtNum(r.revenueSession),
+                  waitlist:           acc.waitlist           + fmtNum(r.waitlist),
+                }), {revenue:0,refunds:0,netRevenue:0,enrollments:0,enrollmentsSection:0,enrollmentsSession:0,revenueSection:0,revenueSession:0,waitlist:0});
+
+                return (
+                  <React.Fragment key={progName}>
+                    {/* Program header */}
+                    <tr className="prog-header">
+                      <td className="prog-name" colSpan={4}>{progName}</td>
+                      <td className="money">{fmtMoney(sub.revenue)}</td>
+                      {showDetails && <>
+                        <td>{sub.enrollmentsSection || ''}</td>
+                        <td className="money">{fmtMoney(sub.revenueSection)}</td>
+                        <td>{sub.enrollmentsSession || ''}</td>
+                        <td className="money">{fmtMoney(sub.revenueSession)}</td>
+                      </>}
+                      <td>{sub.enrollments}</td>
+                      <td>—</td>
+                      <td>—</td>
+                      <td>{sub.waitlist > 0 ? sub.waitlist : '—'}</td>
+                      <td className="money">{fmtMoney(sub.refunds)}</td>
+                      <td className="money">{fmtMoney(sub.netRevenue)}</td>
+                    </tr>
+
+                    {/* Section rows */}
+                    {sections.map((r, i) => (
+                      <tr key={i} className="data-row">
+                        <td className="left" style={{paddingLeft:16}}>{r.sectionName}</td>
+                        <td className="left mono">{r.season}</td>
+                        <td className="left mono">{r.startDate}</td>
+                        <td className="left mono">{r.endDate}</td>
+                        <td className={`money ${fmtNum(r.revenue) === 0 ? 'zero' : ''}`}>{fmtMoney(r.revenue)}</td>
+                        {showDetails && <>
+                          <td className={fmtNum(r.enrollmentsSection) === 0 ? 'zero' : ''}>{fmtNum(r.enrollmentsSection) || '—'}</td>
+                          <td className={`money ${fmtNum(r.revenueSection) === 0 ? 'zero' : ''}`}>{fmtMoney(r.revenueSection)}</td>
+                          <td className={fmtNum(r.enrollmentsSession) === 0 ? 'zero' : ''}>{fmtNum(r.enrollmentsSession) || '—'}</td>
+                          <td className={`money ${fmtNum(r.revenueSession) === 0 ? 'zero' : ''}`}>{fmtMoney(r.revenueSession)}</td>
+                        </>}
+                        <td>{fmtNum(r.enrollments) || '—'}</td>
+                        <td className="mono">{r.enrolledCapacity || '—'}</td>
+                        <td className={fillClass(r.fillPct)}>{r.fillPct != null ? `${fmtNum(r.fillPct)}%` : '—'}</td>
+                        <td className={fmtNum(r.waitlist) === 0 ? 'muted' : ''}>{fmtNum(r.waitlist) || '—'}</td>
+                        <td className={`money ${fmtNum(r.refunds) === 0 ? 'zero' : ''}`}>{fmtMoney(r.refunds)}</td>
+                        <td className={`money ${fmtNum(r.netRevenue) < 0 ? '' : ''}`} style={fmtNum(r.netRevenue) < 0 ? {color:'#b91c1c'} : {}}>{fmtMoney(r.netRevenue)}</td>
+                      </tr>
+                    ))}
+                  </React.Fragment>
+                );
+              })}
+            </tbody>
+
+            {/* Grand totals */}
+            {totals && (
+              <tfoot>
+                <tr>
+                  <td className="left" colSpan={4}>Grand Total — {rows.length} section{rows.length !== 1 ? 's' : ''} across {programCount} program{programCount !== 1 ? 's' : ''}</td>
+                  <td>{fmtMoney(totals.revenue)}</td>
+                  {showDetails && <>
+                    <td>{totals.enrollmentsSection}</td>
+                    <td>{fmtMoney(totals.revenueSection)}</td>
+                    <td>{totals.enrollmentsSession}</td>
+                    <td>{fmtMoney(totals.revenueSession)}</td>
+                  </>}
+                  <td>{totals.enrollments.toLocaleString()}</td>
+                  <td>—</td>
+                  <td>—</td>
+                  <td>{totals.waitlist > 0 ? totals.waitlist : '—'}</td>
+                  <td>{fmtMoney(totals.refunds)}</td>
+                  <td>{fmtMoney(totals.netRevenue)}</td>
+                </tr>
+              </tfoot>
+            )}
+          </table>
+        )}
+
+        <div className="report-footer">
+          <span>{orgName} — Program Revenue</span>
+          <span>Run Date/Time: {runDate}</span>
+        </div>
+
+        <div id="report-ready" style={{display:'none'}} />
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>

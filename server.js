@@ -61,6 +61,7 @@ const ORGS = {
     logoUrl: "https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2Forganization-d781690b-c5a0-43c5-8443-9ae43899528c%2FfullLogo.png%3F1750270261391&w=1920&q=75",
     facility: { mbUuid: "4b64af10-d57f-41af-aad8-b16d12a8f7b8" },
     gl:       { mbUuid: "e0043550-0ab8-429f-bbb0-35911c1190f6" },
+    programs: { mbUuid: "d3a3554f-1232-4803-9cc7-5b0f611360b0" },
   },
   // windham: {
   //   orgId:   "REPLACE_WITH_ORG_UUID",
@@ -70,7 +71,7 @@ const ORGS = {
   // },
 };
 
-const REPORT_TYPES = ["facility", "gl", "historic"];
+const REPORT_TYPES = ["facility", "gl", "historic", "programs"];
 
 // ── JSON file storage (no native deps) ──────────────────────────────
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "data");
@@ -162,7 +163,9 @@ async function generatePdf(orgSlug, reportType, startDate, endDate) {
     ? "GL Code Rollup"
     : reportType === "historic"
       ? "Facility Reservations by Date"
-      : "Facility Rental Schedule";
+      : reportType === "programs"
+        ? "Program Revenue"
+        : "Facility Rental Schedule";
 
   const browser = await puppeteer.launch({
     headless: true,
@@ -200,7 +203,9 @@ async function sendReportEmail(orgSlug, email, reportType, schedule) {
     ? "GL Code Rollup"
     : reportType === "historic"
       ? "Facility Reservations by Date"
-      : "Facility Rental Schedule";
+      : reportType === "programs"
+        ? "Program Revenue"
+        : "Facility Rental Schedule";
 
   // Build a pre-loaded report URL with the date range baked in
   const reportUrl = `${BASE_URL}/${orgSlug}/${reportType}?start_date=${start}&end_date=${end}`;
@@ -459,6 +464,11 @@ app.get("/:org/gl", (req, res) => {
 app.get("/:org/historic", (req, res) => {
   if (!ORGS[req.params.org]) return res.status(404).send("Unknown org");
   res.sendFile(path.join(__dirname, "public", "historic.html"));
+});
+
+app.get("/:org/programs", (req, res) => {
+  if (!ORGS[req.params.org]) return res.status(404).send("Unknown org");
+  res.sendFile(path.join(__dirname, "public", "programs.html"));
 });
 
 app.get("/:org/admin", (req, res) => {
