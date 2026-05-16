@@ -385,6 +385,22 @@ app.get("/:org/:report/api/pdf", resolveOrg, async (req, res) => {
 
 // ── Subscription API ─────────────────────────────────────────────────
 
+// GET /:org/admin/reports — returns enabled report types for the org
+app.get("/:org/admin/reports", (req, res) => {
+  const org = ORGS[req.params.org];
+  if (!org) return res.status(404).json({ error: "Unknown org" });
+  const reportLabels = {
+    facility: "Facility Rental Schedule",
+    gl:       "GL Code Rollup",
+    historic: "Historic Buildings",
+    programs: "Program Revenue",
+  };
+  const available = REPORT_TYPES
+    .filter(r => org[r]?.mbUuid)
+    .map(r => ({ key: r, label: reportLabels[r] || r }));
+  res.json({ reports: available });
+});
+
 // GET /:org/admin/subscribers
 app.get("/:org/admin/subscribers", (req, res) => {
   if (!ORGS[req.params.org]) return res.status(404).json({ error: "Unknown org" });

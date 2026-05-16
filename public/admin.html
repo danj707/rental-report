@@ -254,15 +254,8 @@
 
       <div class="form-group">
         <label>Reports</label>
-        <div class="checkboxes">
-          <label class="checkbox-label">
-            <input type="checkbox" id="chk-facility" value="facility" checked />
-            Facility Rental Schedule
-          </label>
-          <label class="checkbox-label">
-            <input type="checkbox" id="chk-gl" value="gl" checked />
-            GL Code Rollup
-          </label>
+        <div class="checkboxes" id="report-checkboxes">
+          <div style="color:#aaa;font-size:11px">Loading…</div>
         </div>
       </div>
 
@@ -327,6 +320,23 @@ document.querySelectorAll('.radio-btn').forEach(btn => {
     selectedSchedule = btn.dataset.value;
   });
 });
+
+// ── Load available reports ────────────────────────────────────────────
+async function loadReports() {
+  const res  = await fetch(`/${orgSlug}/admin/reports`);
+  const data = await res.json();
+  const box  = document.getElementById('report-checkboxes');
+  if (!data.reports || data.reports.length === 0) {
+    box.innerHTML = '<div style="color:#aaa;font-size:11px">No reports configured</div>';
+    return;
+  }
+  box.innerHTML = data.reports.map(r => `
+    <label class="checkbox-label">
+      <input type="checkbox" value="${r.key}" checked />
+      ${r.label}
+    </label>
+  `).join('');
+}
 
 // ── Load subscribers ──────────────────────────────────────────────────
 async function loadSubscribers() {
@@ -394,9 +404,9 @@ function renderLog(log) {
 // ── Subscribe ─────────────────────────────────────────────────────────
 async function subscribe() {
   const email    = document.getElementById('email-input').value.trim();
-  const facility = document.getElementById('chk-facility').checked;
-  const gl       = document.getElementById('chk-gl').checked;
-  const reports  = [facility && 'facility', gl && 'gl'].filter(Boolean);
+  const reports = Array.from(
+    document.querySelectorAll('#report-checkboxes input[type="checkbox"]:checked')
+  ).map(el => el.value);
   const alert    = document.getElementById('form-alert');
 
   if (!email) return showAlert(alert, 'error', 'Please enter an email address.');
@@ -471,6 +481,7 @@ function showAlert(el, type, msg) {
 }
 
 // ── Init ──────────────────────────────────────────────────────────────
+loadReports();
 loadSubscribers();
 setInterval(loadSubscribers, 30000); // auto-refresh every 30s
 </script>
