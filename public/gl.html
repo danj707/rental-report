@@ -178,6 +178,19 @@
       border-bottom: 2px solid #aaa;
       color: #444;
     }
+    thead th.group.refund-group {
+      background: #fca5a5;
+      border-bottom: 2px solid #f87171;
+      color: #7f1d1d;
+    }
+    thead th.refund-col {
+      background: #fee2e2;
+      color: #7f1d1d;
+    }
+    tbody td.refund-col { background: #fff5f5; }
+    tbody tr:nth-child(even) td.refund-col { background: #fef2f2; }
+    tbody tr:hover td.refund-col { background: #fee2e2; }
+    tfoot td.refund-col { background: #fecaca; }
 
     tbody td {
       border: 1px solid #e8e8e4;
@@ -719,6 +732,11 @@ function App() {
           onClick={exportExcel}
           disabled={!rows || rows.length === 0}
         >📥 Excel</button>
+        <div className="divider" />
+        <button
+          onClick={() => window.open(`/${orgSlug}/admin`, '_blank')}
+          style={{fontSize:11, padding:'4px 10px'}}
+        >📧 Subscriptions</button>
       </div>
     );
   }
@@ -773,7 +791,7 @@ function App() {
               <th className="group" colSpan={1}>Check</th>
               {showRefunds && <th className="group" colSpan={2}>Other Pmts</th>}
               <th className="group" colSpan={1}>Total Pmts</th>
-              <th className="group" colSpan={refundCols}>{showRefunds ? 'Refunds' : 'Total Refunds'}</th>
+              <th className={`group${showRefunds ? ' refund-group' : ''}`} colSpan={refundCols}>{showRefunds ? 'Refunds' : 'Total Refunds'}</th>
               <th className="group" colSpan={1}>Net</th>
             </tr>
 
@@ -801,8 +819,8 @@ function App() {
 
               {showRefunds
                 ? hasCCSplit
-                  ? <><th>CC Online</th><th>CC In-Prn</th><th>Cash</th><th>Check</th><th>Org Crd</th><th>Other</th></>
-                  : <><th>CC</th><th>Cash</th><th>Check</th><th>Org Crd</th><th>Other</th></>
+                  ? <><th className="refund-col">CC Online</th><th className="refund-col">CC In-Prn</th><th className="refund-col">Cash</th><th className="refund-col">Check</th><th className="refund-col">Org Crd</th><th className="refund-col">Other</th></>
+                  : <><th className="refund-col">CC</th><th className="refund-col">Cash</th><th className="refund-col">Check</th><th className="refund-col">Org Crd</th><th className="refund-col">Other</th></>
                 : <th>Total Rfnds</th>
               }
 
@@ -841,19 +859,19 @@ function App() {
                 {showRefunds
                   ? hasCCSplit
                     ? <>
-                        <td><MoneyCell v={r.ccOnlineRefunds}    /></td>
-                        <td><MoneyCell v={r.ccInPersonRefunds}  /></td>
-                        <td><MoneyCell v={r.cashRefunds}        /></td>
-                        <td><MoneyCell v={r.checkRefunds}       /></td>
-                        <td><MoneyCell v={r.orgCreditRefunds}   /></td>
-                        <td><MoneyCell v={r.otherRefunds}       /></td>
+                        <td className="refund-col"><MoneyCell v={r.ccOnlineRefunds}    /></td>
+                        <td className="refund-col"><MoneyCell v={r.ccInPersonRefunds}  /></td>
+                        <td className="refund-col"><MoneyCell v={r.cashRefunds}        /></td>
+                        <td className="refund-col"><MoneyCell v={r.checkRefunds}       /></td>
+                        <td className="refund-col"><MoneyCell v={r.orgCreditRefunds}   /></td>
+                        <td className="refund-col"><MoneyCell v={r.otherRefunds}       /></td>
                       </>
                     : <>
-                        <td><MoneyCell v={r.ccRefunds}          /></td>
-                        <td><MoneyCell v={r.cashRefunds}        /></td>
-                        <td><MoneyCell v={r.checkRefunds}       /></td>
-                        <td><MoneyCell v={r.orgCreditRefunds}   /></td>
-                        <td><MoneyCell v={r.otherRefunds}       /></td>
+                        <td className="refund-col"><MoneyCell v={r.ccRefunds}          /></td>
+                        <td className="refund-col"><MoneyCell v={r.cashRefunds}        /></td>
+                        <td className="refund-col"><MoneyCell v={r.checkRefunds}       /></td>
+                        <td className="refund-col"><MoneyCell v={r.orgCreditRefunds}   /></td>
+                        <td className="refund-col"><MoneyCell v={r.otherRefunds}       /></td>
                       </>
                   : <td style={{fontWeight:600}}><MoneyCell v={r.totalRefunds} /></td>
                 }
@@ -895,19 +913,19 @@ function App() {
               {showRefunds
                 ? hasCCSplit
                   ? <>
-                      <td>{fmtMoneyStr(sumField(rows,'ccOnlineRefunds'))}</td>
-                      <td>{fmtMoneyStr(sumField(rows,'ccInPersonRefunds'))}</td>
-                      <td>{fmtMoneyStr(sumField(rows,'cashRefunds'))}</td>
-                      <td>{fmtMoneyStr(sumField(rows,'checkRefunds'))}</td>
-                      <td>{fmtMoneyStr(sumField(rows,'orgCreditRefunds'))}</td>
-                      <td>{fmtMoneyStr(sumField(rows,'otherRefunds'))}</td>
+                      <td className="refund-col">{fmtMoneyStr(sumField(rows,'ccOnlineRefunds'))}</td>
+                      <td className="refund-col">{fmtMoneyStr(sumField(rows,'ccInPersonRefunds'))}</td>
+                      <td className="refund-col">{fmtMoneyStr(sumField(rows,'cashRefunds'))}</td>
+                      <td className="refund-col">{fmtMoneyStr(sumField(rows,'checkRefunds'))}</td>
+                      <td className="refund-col">{fmtMoneyStr(sumField(rows,'orgCreditRefunds'))}</td>
+                      <td className="refund-col">{fmtMoneyStr(sumField(rows,'otherRefunds'))}</td>
                     </>
                   : <>
-                      <td>{fmtMoneyStr(sumField(rows,'ccRefunds'))}</td>
-                      <td>{fmtMoneyStr(sumField(rows,'cashRefunds'))}</td>
-                      <td>{fmtMoneyStr(sumField(rows,'checkRefunds'))}</td>
-                      <td>{fmtMoneyStr(sumField(rows,'orgCreditRefunds'))}</td>
-                      <td>{fmtMoneyStr(sumField(rows,'otherRefunds'))}</td>
+                      <td className="refund-col">{fmtMoneyStr(sumField(rows,'ccRefunds'))}</td>
+                      <td className="refund-col">{fmtMoneyStr(sumField(rows,'cashRefunds'))}</td>
+                      <td className="refund-col">{fmtMoneyStr(sumField(rows,'checkRefunds'))}</td>
+                      <td className="refund-col">{fmtMoneyStr(sumField(rows,'orgCreditRefunds'))}</td>
+                      <td className="refund-col">{fmtMoneyStr(sumField(rows,'otherRefunds'))}</td>
                     </>
                 : <td>{fmtMoneyStr(totals.totalRefunds)}</td>
               }
