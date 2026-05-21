@@ -483,11 +483,9 @@ function GlChart({ rows, viewMode, hasCCSplit }) {
 function App() {
   const params   = useMemo(() => getParams(), []);
   const defaults = useMemo(() => getCurrentMonthRange(), []);
-  // Derive org slug from URL path: /smyrna/gl → 'smyrna'
-  const orgSlug  = useMemo(
-    () => window.location.pathname.split('/').filter(Boolean)[0] || '',
-    []
-  );
+  // Derive org/report from URL path: /smyrna/gl → 'smyrna', 'gl'
+  const orgSlug    = useMemo(() => window.location.pathname.split('/').filter(Boolean)[0] || '', []);
+  const reportType = useMemo(() => window.location.pathname.split('/').filter(Boolean)[1] || 'gl', []);
 
   const [startDate, setStartDate] = useState(params.start_date || defaults.start);
   const [endDate,   setEndDate]   = useState(params.end_date   || defaults.end);
@@ -518,7 +516,7 @@ function App() {
     const qs = new URLSearchParams();
     if (sd) qs.set('start_date', sd);
     if (ed) qs.set('end_date', ed);
-    fetch(`/${orgSlug}/api/data?${qs}`)
+    fetch(`/${orgSlug}/${reportType}/api/data?${qs}`)
       .then(r => { if (!r.ok) throw new Error(`Server returned ${r.status}`); return r.json(); })
       .then(json => {
         setRows(json.rows.map(normalizeRow));
