@@ -91,13 +91,23 @@ checkin_metrics AS (
   GROUP BY COALESCE(l_sess.id, l_desk.id)
 ),
 
-store_summary AS (
+-- Combined CTE: membership + pass + store items in one pass.
+-- All three are org-wide (no reliable per-location attribution).
+-- membership: recurring/seasonal memberships (YFAC, WFAC season passes, After School, etc.)
+-- pass: punch-pass admissions
+-- product: POS/concession store items
+org_revenue_summary AS (
   SELECT
-    COUNT(pp.id) AS store_transactions,
-    COALESCE(SUM(pp.quantity), 0) AS items_sold,
-    COALESCE(SUM((oi.applied_pricing->'result'->>'finalCents')::numeric)/100.0, 0) AS store_revenue
+    COALESCE(SUM((oi.applied_pricing->'result'->>'finalCents')::numeric)
+      FILTER (WHERE p.type = 'membership') / 100.0, 0) AS membership_revenue,
+    COALESCE(SUM((oi.applied_pricing->'result'->>'finalCents')::numeric)
+      FILTER (WHERE p.type = 'pass') / 100.0, 0)       AS pass_revenue,
+    COALESCE(SUM((oi.applied_pricing->'result'->>'finalCents')::numeric)
+      FILTER (WHERE p.type = 'product') / 100.0, 0)    AS store_revenue,
+    COALESCE(SUM(pp.quantity) FILTER (WHERE p.type = 'product'), 0) AS items_sold
   FROM product_purchase pp
-  JOIN product p ON p.id = pp.product_id AND p.deleted_at IS NULL AND p.type = 'product'
+  JOIN product p ON p.id = pp.product_id AND p.deleted_at IS NULL
+    AND p.type IN ('membership', 'pass', 'product')
   LEFT JOIN order_item oi
     ON oi.product_purchase_id = pp.id AND oi.deleted_at IS NULL
     AND oi.parent_order_item_id IS NULL
@@ -126,13 +136,15 @@ SELECT
   COALESCE(rm.rental_revenue, 0) + COALESCE(cm.class_revenue, 0)        AS "Total Revenue",
   COALESCE(ci.checkin_count,     0)                                     AS "Check-ins",
   ms.active_memberships                                                 AS "Active Memberships",
-  ss.items_sold                                                         AS "Items Sold",
-  ss.store_revenue                                                      AS "Store Revenue"
+  ors.items_sold                                                        AS "Items Sold",
+  ors.store_revenue                                                     AS "Store Revenue",
+  ors.membership_revenue                                                AS "Membership Revenue",
+  ors.pass_revenue                                                      AS "Pass Revenue"
 FROM location l
 LEFT JOIN rental_metrics  rm ON rm.location_id = l.id
 LEFT JOIN class_metrics   cm ON cm.location_id = l.id
 LEFT JOIN checkin_metrics ci ON ci.location_id = l.id
-CROSS JOIN store_summary      ss
+CROSS JOIN org_revenue_summary ors
 CROSS JOIN membership_summary ms
 WHERE l.organization_id = '574923bd-9e7b-43e0-9e5f-7ce256189cbf'
   AND l.deleted_at IS NULL
@@ -166,3 +178,20 @@ This eliminates the fan-out entirely while correctly preserving date-range scopi
 | YFAC | $131,919 | $68,549 | 1.9× |
 
 Total class revenue: **$1,259,764 → $245,372** (5.1× reduction)
+
+---
+
+## Revenue notes
+
+| Stream | Field used | Location-level? | Notes |
+|--------|-----------|-----------------|-------|
+| Facility/park rentals | `order_item.applied_pricing->'result'->>'finalCents'` where `oi.reservation_id` is set | ✅ Per location | Includes park shelter fees (no `facility_rental` record) |
+| Programs/classes | Same, via `oi.booking_id` | ✅ Per location | Sections with no sessions in period excluded |
+| Memberships | Same, via `pp` where `p.type='membership'` | ❌ Org-wide only | No location FK on `product_purchase` for memberships |
+| Passes | Same, via `pp` where `p.type='pass'` | ❌ Org-wide only | Same |
+| Store/POS items | Same, via `pp` where `p.type='product'` | ❌ Org-wide only | `product_desk_location` multi-location assignment prevents attribution |
+| Deposits | Captured in `site-reservation` order_items | ✅ Per location | May include refundable deposits |
+| Transaction fees | Captured in `site-reservation` order_items | ✅ Per location | Platform processing fees |
+
+All revenue is **gross billed** — refunds (~$25K YTD) are not deducted.
+Canceled order_items on soft-deleted orders are correctly excluded via `oi.deleted_at IS NULL`.
