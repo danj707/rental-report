@@ -636,11 +636,28 @@ app.get('/api/hotdog', async (req, res) => {
       + (params.length ? `?parameters=${encodeURIComponent(JSON.stringify(params))}` : '');
 
     const mbRes = await fetch(mbUrl);
-    const json  = await mbRes.json();
-    if (json.error) return res.status(502).json({ error: json.error });
+    const raw   = await mbRes.json();
 
-    const cols = (json.data?.cols || []).map(c => c.display_name || c.name);
-    const rows = (json.data?.rows || []).map(row =>
+    // Log the Metabase response shape for debugging
+    const topKeys = Object.keys(raw || {}).join(', ');
+    const dataKeys = Object.keys(raw?.data || {}).join(', ');
+    console.log(`[hotdog] status=${raw.status} top_keys=[${topKeys}] data_keys=[${dataKeys}] rows=${raw.data?.rows?.length ?? 'n/a'}`);
+
+    if (raw.error) return res.status(502).json({ error: raw.error });
+
+    // Handle both Metabase response shapes:
+    //   new: { data: { rows: [[...]], cols: [...] } }
+    //   old: { rows: [[...]], columns: ['col1', ...] }
+    const dataBlock = raw.data ?? raw;
+    const rawCols   = dataBlock.cols || [];
+    const rawRows   = dataBlock.rows || [];
+
+    if (rawCols.length === 0 && rawRows.length === 0) {
+      console.warn('[hotdog] Empty response from Metabase. raw=', JSON.stringify(raw).slice(0, 300));
+    }
+
+    const cols = rawCols.map(c => c.display_name || c.name);
+    const rows = rawRows.map(row =>
       Object.fromEntries(cols.map((c, i) => [c, row[i]]))
     );
     res.json({ rows, meta: { cols } });
