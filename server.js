@@ -51,7 +51,7 @@ const ORGS = {
     facility: { mbUuid: "81c43b6d-1776-4a13-9fec-cb6f9e9895bb" },
     gl:       { mbUuid: "46b7e83b-f8ac-4d84-8c5c-4c72ca57cea4" },
     roster:   { mbUuid: "b4fb3c1b-b096-4865-8c32-3dc2635d1264" },
-    overview: { mbUuid: null }, // TODO: add Metabase UUID after creating the question
+    overview: { mbUuid: 'b9b9c665-689a-4158-88ea-1f4512497f58' },
   },
   smyrna: {
     orgId:   "efc0724c-8f32-481a-bab3-fc19c724f3a7",
@@ -592,6 +592,12 @@ app.get("/:org/roster", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "roster.html"));
 });
 
+app.get("/:org/overview", (req, res) => {
+  if (!ORGS[req.params.org]) return res.status(404).send("Unknown org");
+  logEvent(req.params.org, "overview", "view", req.ip);
+  res.sendFile(path.join(__dirname, "public", "overview.html"));
+});
+
 app.get("/:org/admin", (req, res) => {
   if (!ORGS[req.params.org]) return res.status(404).send("Unknown org");
   res.sendFile(path.join(__dirname, "public", "admin.html"));
@@ -614,6 +620,7 @@ app.get("/:org", (req, res) => {
     programs: { label: "Program Revenue",           icon: "🎯", desc: "Enrollment and revenue by program and section" },
     historic: { label: "Historic Buildings",        icon: "🏛️",  desc: "Reservations for historic building sites" },
     roster:   { label: "Class Roster",              icon: "📋", desc: "Enrolled and cancelled participants by section" },
+    overview: { label: "Facility Overview",         icon: "📈", desc: "Revenue and activity summary by location" },
   };
 
   const available = REPORT_TYPES.filter(r => org[r]?.mbUuid);
@@ -693,6 +700,7 @@ app.get("/", (req, res) => {
     programs: { label: "Program Revenue",           icon: "🎯", desc: "Enrollment and revenue by program",       color: "#7c3aed" },
     historic: { label: "Historic Buildings",        icon: "🏛️",  desc: "Reservations for historic building sites", color: "#d97706" },
     roster:   { label: "Class Roster",              icon: "📋", desc: "Enrolled and cancelled participants by section", color: "#0891b2" },
+    overview: { label: "Facility Overview",         icon: "📈", desc: "Revenue and activity summary by location",        color: "#059669" },
   };
 
   const orgSections = Object.entries(ORGS).map(([slug, org]) => {
