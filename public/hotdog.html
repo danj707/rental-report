@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>🌭 Hot Dog Counter — rec.us</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@700;800&display=swap" rel="stylesheet">
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #08090b;
+      --surface:   #0f1115;
+      --raised:    #161a1f;
+      --border:    #1e2228;
+      --border2:   #262c34;
+      --txt:       #dde4ee;
+      --muted:     #606878;
+      --accent:    #ff6b2b;
+      --accent2:   #ffb347;
+      --gold:      #ffd700;
+      --silver:    #c0c8d4;
+      --bronze:    #cd7f32;
+      --blue:      #3b82f6;
+    }
+
+    html, body { height: 100%; }
+
+    body {
+      background: var(--bg);
+      color: var(--txt);
+      font-family: 'DM Mono', monospace;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* Subtle grid texture */
+    body::before {
+      content: '';
+      position: fixed; inset: 0; pointer-events: none; z-index: 0;
+      background-image:
+        linear-gradient(var(--border) 1px, transparent 1px),
+        linear-gradient(90deg, var(--border) 1px, transparent 1px);
+      background-size: 40px 40px;
+      opacity: 0.35;
+    }
+
+    #root { position: relative; z-index: 1; }
+
+    input[type="date"], input[type="text"] {
+      background: var(--surface);
+      border: 1px solid var(--border2);
+      border-radius: 6px;
+      padding: 8px 12px;
+      color: var(--txt);
+      font-family: 'DM Mono', monospace;
+      font-size: 13px;
+      outline: none;
+      transition: border-color .15s;
+    }
+    input:focus { border-color: var(--accent); }
+    input::placeholder { color: var(--muted); }
+
+    /* Custom date input calendar icon color */
+    input[type="date"]::-webkit-calendar-picker-indicator {
+      filter: invert(0.5);
+      cursor: pointer;
+    }
+
+    button {
+      cursor: pointer;
+      border: none;
+      font-family: 'DM Mono', monospace;
+      font-weight: 500;
+    }
+
+    @keyframes fillBar {
+      from { width: 0; }
+      to   { width: var(--target-w); }
+    }
+
+    @keyframes fadeSlideIn {
+      from { opacity: 0; transform: translateY(6px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.4; }
+    }
+
+    .row-enter {
+      animation: fadeSlideIn 0.4s ease both;
+    }
+
+    .bar-fill {
+      animation: fillBar 0.9s cubic-bezier(0.22, 1, 0.36, 1) both;
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useMemo, useEffect, useCallback } = React;
+
+    // ── Twemoji image URL from emoji char ──────────────────────────
+    function emojiUrl(emoji) {
+      try {
+        const cp = [...emoji]
+          .filter(c => c.codePointAt(0) !== 0xFE0F)
+          .map(c => c.codePointAt(0).toString(16))
+          .join('-');
+        return `https://cdn.jsdelivr.net/npm/twemoji@14.0.2/assets/72x72/${cp}.png`;
+      } catch { return null; }
+    }
+
+    // ── Product name → emoji ───────────────────────────────────────
+    function getEmoji(name = '') {
+      const n = name.toLowerCase();
+      if (/hot.?dog|corn.?dog/.test(n))                                         return '🌭';
+      if (/\bfries\b|french.?fry/.test(n))                                      return '🍟';
+      if (/cheeseburger/.test(n))                                               return '🍔';
+      if (/\bburger\b|hamburger/.test(n))                                       return '🍔';
+      if (/\bpizza\b/.test(n))                                                  return '🍕';
+      if (/nacho|queso/.test(n))                                                return '🌮';
+      if (/popcorn/.test(n))                                                    return '🍿';
+      if (/slush|icee|slurpee|freeze.?pop|bomb.?pop/.test(n))                  return '🧊';
+      if (/ice.?cream|soft.?serve|dippin.?dot/.test(n))                        return '🍦';
+      if (/chicken|nugget|tender|wing/.test(n))                                return '🍗';
+      if (/soda|cola|sprite|pepsi|coke|dr\.?.pepper|mountain.?dew|mt\.?.dew|starry|barq|root.?beer|fanta/.test(n)) return '🥤';
+      if (/monster|energy/.test(n))                                             return '⚡';
+      if (/gatorade|powerade|sports/.test(n))                                  return '⚡';
+      if (/\bwater\b/.test(n))                                                  return '💧';
+      if (/juice/.test(n))                                                      return '🧃';
+      if (/lemonade/.test(n))                                                   return '🍋';
+      if (/\bbeer\b/.test(n))                                                   return '🍺';
+      if (/coffee/.test(n))                                                     return '☕';
+      if (/\bmilk\b/.test(n))                                                   return '🥛';
+      if (/chip|cheeto|dorito|frito|lays|tater/.test(n))                       return '🥔';
+      if (/pretzel/.test(n))                                                    return '🥨';
+      if (/pickle/.test(n))                                                     return '🥒';
+      if (/chocolate|snicker|twix|kit.?kat|reese|hershey|m.?&.?m/.test(n))    return '🍫';
+      if (/airhead|skittle|starburst|candy|ring.?pop|tootsie|sour/.test(n))    return '🍬';
+      if (/cotton.?candy/.test(n))                                              return '🍭';
+      if (/fruit.?snack|gummy/.test(n))                                        return '🍎';
+      if (/sandwich|uncrustable/.test(n))                                      return '🥪';
+      if (/\bcheese\b/.test(n))                                                 return '🧀';
+      if (/chili|jalap|pepper/.test(n))                                        return '🌶️';
+      if (/bread|bosco/.test(n))                                               return '🥖';
+      if (/smores|s.?more/.test(n))                                            return '🍫';
+      if (/\bdrink\b/.test(n))                                                  return '🥤';
+      if (/concession|cafe|catering/.test(n))                                  return '🍽️';
+      return '🍽️';
+    }
+
+    function fmt(n) {
+      return Number(n || 0).toLocaleString('en-US');
+    }
+    function fmtMoney(n) {
+      if (!n && n !== 0) return '—';
+      return '$' + Number(n).toLocaleString('en-US', { maximumFractionDigits: 0 });
+    }
+
+    // ── Emoji image with text fallback ────────────────────────────
+    function EmojiImg({ emoji, size = 36 }) {
+      const [failed, setFailed] = useState(false);
+      const url = emojiUrl(emoji);
+      if (failed || !url) return <span style={{ fontSize: size * 0.85, lineHeight: 1 }}>{emoji}</span>;
+      return (
+        <img src={url} alt={emoji} width={size} height={size}
+          style={{ imageRendering: 'crisp-edges', display: 'block' }}
+          onError={() => setFailed(true)} />
+      );
+    }
+
+    // ── Main App ──────────────────────────────────────────────────
+    function App() {
+      const [rows,      setRows]      = useState([]);
+      const [loading,   setLoading]   = useState(false);
+      const [error,     setError]     = useState(null);
+      const [startDate, setStartDate] = useState('');
+      const [endDate,   setEndDate]   = useState('');
+      const [orgFilter, setOrgFilter] = useState('');
+      const [hasRun,    setHasRun]    = useState(false);
+      const [animated,  setAnimated]  = useState(false);
+
+      const runReport = useCallback(async () => {
+        setLoading(true);
+        setError(null);
+        setAnimated(false);
+        try {
+          const p = new URLSearchParams();
+          if (startDate) p.set('start_date', startDate);
+          if (endDate)   p.set('end_date',   endDate);
+          if (orgFilter) p.set('org_filter', orgFilter);
+          const res  = await fetch('/api/hotdog?' + p.toString());
+          const data = await res.json();
+          if (data.error) throw new Error(data.error);
+          setRows(data.rows || []);
+          setHasRun(true);
+          // Tiny delay so DOM paints before animation starts
+          requestAnimationFrame(() => requestAnimationFrame(() => setAnimated(true)));
+        } catch (e) {
+          setError(e.message);
+        } finally {
+          setLoading(false);
+        }
+      }, [startDate, endDate, orgFilter]);
+
+      // Aggregate by product across orgs
+      const board = useMemo(() => {
+        const map = {};
+        for (const row of rows) {
+          const key = row['Product'] || '(unknown)';
+          if (!map[key]) map[key] = { product: key, units: 0, revenue: 0, orgs: [] };
+          map[key].units   += Number(row['Units Sold'])  || 0;
+          map[key].revenue += Number(row['Revenue ($)']) || 0;
+          const org = row['Org'];
+          if (org && !map[key].orgs.includes(org)) map[key].orgs.push(org);
+        }
+        return Object.values(map).sort((a, b) => b.units - a.units);
+      }, [rows]);
+
+      const maxUnits   = board[0]?.units || 1;
+      const totalUnits = board.reduce((s, r) => s + r.units,   0);
+      const totalRev   = board.reduce((s, r) => s + r.revenue, 0);
+      const orgCount   = new Set(rows.map(r => r['Org']).filter(Boolean)).size;
+
+      const MEDALS = ['🥇', '🥈', '🥉'];
+
+      function barGradient(i) {
+        if (i === 0) return 'linear-gradient(90deg, #ffd700 0%, #ff9500 100%)';
+        if (i === 1) return 'linear-gradient(90deg, #a0aec0 0%, #718096 100%)';
+        if (i === 2) return 'linear-gradient(90deg, #cd7f32 0%, #9c5c1a 100%)';
+        // Fade from accent to slightly dimmer for lower ranks
+        const opacity = Math.max(0.55, 1 - i * 0.025);
+        return `linear-gradient(90deg, rgba(255,107,43,${opacity}) 0%, rgba(234,88,12,${opacity}) 100%)`;
+      }
+
+      return (
+        <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
+
+          {/* ── Header ── */}
+          <header style={{
+            padding: '28px 40px 24px',
+            borderBottom: '1px solid var(--border)',
+            display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 24,
+            flexWrap: 'wrap',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+              <span style={{ fontSize: 48, lineHeight: 1 }}>🌭</span>
+              <div>
+                <div style={{ fontFamily: 'Syne, sans-serif', fontSize: 28, fontWeight: 800, letterSpacing: '-0.03em', color: '#fff' }}>
+                  Hot Dog Counter
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 3, letterSpacing: '0.12em', textTransform: 'uppercase' }}>
+                  Food &amp; Concession Sales — All Organizations
+                </div>
+              </div>
+            </div>
+            <a href="/" style={{ fontSize: 12, color: 'var(--muted)', textDecoration: 'none', letterSpacing: '0.06em' }}>
+              ← Reports Home
+            </a>
+          </header>
+
+          {/* ── Filters ── */}
+          <div style={{
+            padding: '20px 40px',
+            borderBottom: '1px solid var(--border)',
+            display: 'flex', gap: 16, alignItems: 'flex-end', flexWrap: 'wrap',
+            background: 'var(--surface)',
+          }}>
+            <Field label="Start Date">
+              <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} />
+            </Field>
+            <Field label="End Date">
+              <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} />
+            </Field>
+            <Field label="Filter by Org">
+              <input type="text" value={orgFilter}
+                onChange={e => setOrgFilter(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && runReport()}
+                placeholder="e.g. Norman, Clarksville…"
+                style={{ width: 220 }} />
+            </Field>
+            <button onClick={runReport} disabled={loading} style={{
+              background: loading ? 'var(--raised)' : 'var(--accent)',
+              color: loading ? 'var(--muted)' : '#fff',
+              padding: '9px 22px',
+              borderRadius: 6,
+              fontSize: 13,
+              fontFamily: 'DM Mono, monospace',
+              fontWeight: 500,
+              letterSpacing: '0.04em',
+              transition: 'background .15s, opacity .15s',
+              opacity: loading ? 0.7 : 1,
+            }}>
+              {loading ? '⏳ loading…' : '▶ run report'}
+            </button>
+          </div>
+
+          {/* ── Stats bar ── */}
+          {hasRun && !loading && board.length > 0 && (
+            <div style={{
+              padding: '16px 40px',
+              borderBottom: '1px solid var(--border)',
+              display: 'flex', gap: 40, flexWrap: 'wrap',
+              background: 'var(--surface)',
+            }}>
+              <Stat n={fmt(totalUnits)} label="total units sold" accent />
+              <Stat n={fmtMoney(totalRev)} label="total revenue" />
+              <Stat n={board.length} label="unique items" />
+              <Stat n={orgCount} label={orgCount === 1 ? 'org' : 'orgs'} />
+            </div>
+          )}
+
+          {/* ── Empty / loading states ── */}
+          {loading && (
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16, padding: 60 }}>
+              <span style={{ fontSize: 56, animation: 'pulse 1.2s ease-in-out infinite' }}>🌭</span>
+              <span style={{ color: 'var(--muted)', fontSize: 13, letterSpacing: '0.1em', textTransform: 'uppercase' }}>counting hot dogs…</span>
+            </div>
+          )}
+
+          {!hasRun && !loading && (
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, padding: 60 }}>
+              <span style={{ fontSize: 64 }}>🏁</span>
+              <span style={{ fontFamily: 'Syne, sans-serif', fontSize: 20, fontWeight: 700, color: '#fff' }}>Ready to race</span>
+              <span style={{ color: 'var(--muted)', fontSize: 13 }}>Set filters above and click run report.</span>
+            </div>
+          )}
+
+          {hasRun && !loading && board.length === 0 && !error && (
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, padding: 60 }}>
+              <span style={{ fontSize: 48 }}>🍽️</span>
+              <span style={{ color: 'var(--muted)', fontSize: 14 }}>No items found for the selected filters.</span>
+            </div>
+          )}
+
+          {error && (
+            <div style={{ margin: '24px 40px', padding: '14px 18px', background: '#1a0a0a', border: '1px solid #7f1d1d', borderRadius: 8, color: '#f87171', fontSize: 13 }}>
+              ⚠️ {error}
+            </div>
+          )}
+
+          {/* ── Leaderboard ── */}
+          {hasRun && !loading && board.length > 0 && (
+            <div style={{ padding: '28px 40px', flex: 1 }}>
+
+              {/* Column headers */}
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: '48px 220px 1fr 56px 100px 90px',
+                gap: '0 20px',
+                padding: '0 12px 10px',
+                borderBottom: '1px solid var(--border)',
+                marginBottom: 4,
+              }}>
+                {['rank','item','units sold','','count','revenue'].map((h, i) => (
+                  <span key={i} style={{
+                    fontSize: 10, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.1em',
+                    textAlign: i >= 4 ? 'right' : 'left',
+                  }}>{h}</span>
+                ))}
+              </div>
+
+              {board.map((item, i) => {
+                const pct  = (item.units / maxUnits) * 100;
+                const emoji = getEmoji(item.product);
+                const delay = `${i * 35}ms`;
+
+                return (
+                  <div
+                    key={item.product}
+                    className="row-enter"
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: '48px 220px 1fr 56px 100px 90px',
+                      gap: '0 20px',
+                      alignItems: 'center',
+                      padding: '11px 12px',
+                      borderRadius: 8,
+                      transition: 'background .12s',
+                      animationDelay: delay,
+                      cursor: 'default',
+                    }}
+                    onMouseEnter={e => e.currentTarget.style.background = 'var(--raised)'}
+                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                  >
+                    {/* Rank */}
+                    <div style={{ textAlign: 'center', fontSize: i < 3 ? 20 : 13, fontWeight: 700, color: i < 3 ? 'inherit' : 'var(--muted)' }}>
+                      {i < 3 ? MEDALS[i] : i + 1}
+                    </div>
+
+                    {/* Product name + org hint */}
+                    <div style={{ overflow: 'hidden' }}>
+                      <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--txt)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {item.product}
+                      </div>
+                      {item.orgs.length > 0 && (
+                        <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {item.orgs.length === 1 ? item.orgs[0] : `${item.orgs.length} orgs`}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Bar track + fill */}
+                    <div style={{ height: 26, background: 'var(--raised)', borderRadius: 4, overflow: 'hidden', position: 'relative' }}>
+                      {animated && (
+                        <div
+                          className="bar-fill"
+                          style={{
+                            '--target-w': `${pct}%`,
+                            height: '100%',
+                            width:  `${pct}%`,
+                            background: barGradient(i),
+                            borderRadius: 4,
+                            animationDelay: delay,
+                          }}
+                        />
+                      )}
+                    </div>
+
+                    {/* Emoji image (right of bar) */}
+                    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+                      <EmojiImg emoji={emoji} size={34} />
+                    </div>
+
+                    {/* Units count */}
+                    <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 15, fontWeight: 500, color: i < 3 ? '#fff' : 'var(--txt)', textAlign: 'right', letterSpacing: '-0.02em' }}>
+                      {fmt(item.units)}
+                    </div>
+
+                    {/* Revenue */}
+                    <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, color: 'var(--muted)', textAlign: 'right' }}>
+                      {fmtMoney(item.revenue)}
+                    </div>
+
+                  </div>
+                );
+              })}
+
+              <div style={{ height: 48 }} />
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    function Field({ label, children }) {
+      return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+          <label style={{ fontSize: 10, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>{label}</label>
+          {children}
+        </div>
+      );
+    }
+
+    function Stat({ n, label, accent }) {
+      return (
+        <div>
+          <div style={{ fontFamily: 'Syne, sans-serif', fontSize: 22, fontWeight: 800, color: accent ? 'var(--accent2)' : '#fff', letterSpacing: '-0.02em' }}>{n}</div>
+          <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2, letterSpacing: '0.06em', textTransform: 'uppercase' }}>{label}</div>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>
