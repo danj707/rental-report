@@ -53,6 +53,9 @@
     .toolbar .btn-run  { background: #16a34a; border-color: #16a34a; font-weight: 600; font-size: 12px; padding: 5px 14px; }
     .toolbar .btn-run:hover { background: #15803d; }
     .toolbar .btn-run:disabled { opacity: .5; cursor: not-allowed; }
+    .toolbar .btn-pdf { background: #3b82f6; border-color: #3b82f6; font-weight: 600; }
+    .toolbar .btn-pdf:hover { background: #2563eb; }
+    .toolbar .btn-pdf:disabled { opacity: .5; cursor: not-allowed; }
     .toolbar .btn-excel { background: #0e7c45; border-color: #0e7c45; }
     .toolbar .btn-excel:hover { background: #0a6236; }
     .toolbar .row-count { font-size: 11px; color: #aaa; }
@@ -86,6 +89,7 @@
     }
 
     /* ── Report header ── */
+    .report-header-logo { height: 42px; max-width: 140px; object-fit: contain; object-position: left center; }
     .report-header {
       display: flex; justify-content: space-between; align-items: flex-end;
       border-bottom: 2.5px solid #111; padding-bottom: 8px; margin-bottom: 16px;
@@ -327,6 +331,8 @@ function App() {
 
   const [rows, setRows]       = useState(null);
   const [orgName, setOrgName] = useState('');
+  const [logoUrl,  setLogoUrl]  = useState(null);
+  const [pdfLoading, setPdfLoading] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError]     = useState(null);
   const [loadedStart, setLoadedStart]     = useState(null);
@@ -354,6 +360,7 @@ function App() {
       .then(json => {
         setRows(json.rows.map(normalizeRow));
         if (json.rows.length > 0 && json.rows[0]['Org Name']) setOrgName(json.rows[0]['Org Name']);
+        setLogoUrl(json.meta?.logo_url || null);
         setLoadedStart(sd); setLoadedEnd(ed); setLoadedSection(sec || '');
       })
       .catch(err => setError(err.message))
@@ -475,6 +482,24 @@ function App() {
   const runDate = `${(now.getMonth()+1).toString().padStart(2,'0')}/${now.getDate().toString().padStart(2,'0')}/${now.getFullYear()} @ ${now.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',hour12:true}).toLowerCase()}`;
   const dateRangeLabel = [loadedStart && formatDisplayDate(loadedStart), loadedEnd && formatDisplayDate(loadedEnd)].filter(Boolean).join(' – ') || 'Current Month';
 
+  function downloadPdf() {
+    setPdfLoading(true);
+    const parts = window.location.pathname.split('/').filter(Boolean);
+    const pdfUrl = parts.length >= 2
+      ? `/${parts[0]}/${parts[1]}/api/pdf?${new URLSearchParams({start_date: loadedStart||'', end_date: loadedEnd||''})}`
+      : '/api/pdf';
+    fetch(pdfUrl)
+      .then(r => r.blob())
+      .then(blob => {
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `report-${loadedStart || 'export'}.pdf`;
+        a.click(); URL.revokeObjectURL(a.href);
+      })
+      .catch(err => alert('PDF generation failed: ' + err.message))
+      .finally(() => setPdfLoading(false));
+  }
+
   function renderToolbar() {
     if (isPrint) return null;
     return (
@@ -529,10 +554,15 @@ function App() {
         <div className="toolbar-spacer" />
         {rows && <span className="row-count">{displayRows.length} of {counts.all}</span>}
         <div className="toolbar-divider" />
-        <a href={`/${orgSlug}/admin`} style={{color:'#aaa',textDecoration:'none',fontSize:12,padding:'4px 10px',border:'1px solid rgba(255,255,255,.15)',borderRadius:4,whiteSpace:'nowrap'}} title="Manage email subscriptions">📧 Subscribe</a>
-        <div className="toolbar-divider" />
         <button onClick={() => window.print()}>🖨️ Print</button>
         <button className="btn-excel" onClick={exportExcel} disabled={!rows || !rows.length}>📊 Excel</button>
+        <button
+          className="btn-pdf"
+          onClick={downloadPdf}
+          disabled={pdfLoading || !rows || !rows.length}
+        >
+          {pdfLoading ? 'Generating…' : '📄 PDF'}
+        </button>
       </div>
     );
   }
@@ -623,6 +653,7 @@ function App() {
 
         <div className="report-header">
           <div>
+            {logoUrl && <img src={logoUrl} alt="" className="report-header-logo" onError={e => e.target.style.display='none'} />}
             <div className="org-label">{orgName || orgSlug}</div>
             <div className="title">Class Roster</div>
           </div>
