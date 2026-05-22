@@ -76,7 +76,7 @@ const ORGS = {
   // },
 };
 
-const REPORT_TYPES = ["facility", "gl", "historic", "programs"];
+const REPORT_TYPES = ["facility", "gl", "historic", "programs", "roster"];
 
 // ── JSON file storage (no native deps) ──────────────────────────────
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "data");
@@ -317,6 +317,9 @@ function buildMetabaseParams(query, reportType) {
       params.push({ type: "category", target: ["variable", ["template-tag", "site_type"]], value: query.site_type });
     }
   }
+  if (reportType === "roster" && query.section_name) {
+    params.push({ type: "text", target: ["variable", ["template-tag", "section_name"]], value: query.section_name });
+  }
   return params;
 }
 
@@ -475,6 +478,11 @@ app.get("/:org/programs", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "programs.html"));
 });
 
+app.get("/:org/roster", (req, res) => {
+  if (!ORGS[req.params.org]) return res.status(404).send("Unknown org");
+  res.sendFile(path.join(__dirname, "public", "roster.html"));
+});
+
 app.get("/:org/admin", (req, res) => {
   if (!ORGS[req.params.org]) return res.status(404).send("Unknown org");
   res.sendFile(path.join(__dirname, "public", "admin.html"));
@@ -491,6 +499,7 @@ app.get("/:org", (req, res) => {
     gl:       { label: "GL Code Rollup",            icon: "📊", desc: "Payment and refund summary by GL code" },
     programs: { label: "Program Revenue",           icon: "🎯", desc: "Enrollment and revenue by program and section" },
     historic: { label: "Historic Buildings",        icon: "🏛️",  desc: "Reservations for historic building sites" },
+    roster:   { label: "Class Roster",              icon: "📋", desc: "Enrolled and cancelled participants by section" },
   };
 
   const available = REPORT_TYPES.filter(r => org[r]?.mbUuid);
