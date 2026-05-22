@@ -5,13 +5,14 @@
  *   GET /:org/facility          → serves facility report UI
  *   GET /:org/gl                → serves GL rollup report UI
  *   GET /:org/historic          → serves historic reservations report UI
+ *   GET /:org/programs          → serves program revenue report UI
+ *   GET /:org/roster            → serves class roster report UI
  *   GET /:org/admin             → serves subscription admin UI
- *   GET /:org/facility/api/data → proxies Metabase facility card
- *   GET /:org/gl/api/data       → proxies Metabase GL card
- *   GET /:org/historic/api/data → proxies Metabase historic card
- *   GET /:org/facility/api/pdf  → Puppeteer PDF of facility report
- *   GET /:org/gl/api/pdf        → Puppeteer PDF of GL report
- *   GET /:org/historic/api/pdf  → Puppeteer PDF of historic report
+ *   GET /:org/metrics           → serves usage metrics dashboard
+ *   GET /:org/:report/api/data  → proxies Metabase card
+ *   GET /:org/:report/api/pdf   → Puppeteer PDF of report
+ *   POST /:org/:report/api/log  → log client-side events (excel, print)
+ *   GET /:org/metrics/api/data  → usage metrics JSON
  *   POST /:org/admin/subscribe  → add/update email subscription
  *   DELETE /:org/admin/subscribe → remove subscription
  *   GET /:org/admin/subscribers → list all subscribers for org
@@ -68,22 +69,17 @@ const ORGS = {
     logoUrl: "https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2Forganization-2d147f38-068c-409e-890d-a8acc88d8079%2FfullLogo.jpeg%3F1764460109546&w=2048&q=75",
     roster:  { mbUuid: "09707fab-067c-4297-98c1-3c1c39804333" },
   },
-  // windham: {
-  //   orgId:   "REPLACE_WITH_ORG_UUID",
-  //   logoUrl: "https://...",
-  //   facility: { mbUuid: "REPLACE_ME" },
-  //   gl:       { mbUuid: "REPLACE_ME" },
-  // },
 };
 
 const REPORT_TYPES = ["facility", "gl", "historic", "programs", "roster"];
 
-// ── JSON file storage (no native deps) ──────────────────────────────
+// ── File storage ─────────────────────────────────────────────────────
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "data");
 fs.mkdirSync(DATA_DIR, { recursive: true });
 
-const SUBS_FILE = path.join(DATA_DIR, "subscriptions.json");
-const LOG_FILE  = path.join(DATA_DIR, "send_log.json");
+const SUBS_FILE   = path.join(DATA_DIR, "subscriptions.json");
+const LOG_FILE    = path.join(DATA_DIR, "send_log.json");
+const EVENTS_FILE = path.join(DATA_DIR, "events.jsonl");
 
 function readJSON(file, def) {
   try { return JSON.parse(fs.readFileSync(file, "utf8")); } catch { return def; }
@@ -92,6 +88,71 @@ function writeJSON(file, data) {
   fs.writeFileSync(file, JSON.stringify(data, null, 2));
 }
 
+// ── Analytics: append-only JSONL, no extra dependencies ─────────────
+// Schema: { ts, org, report, event, ip }
+// event values: "view" | "fetch" | "pdf" | "excel" | "print"
+function logEvent(org, report, event, ip) {
+  try {
+    const line = JSON.stringify({
+      ts:     new Date().toISOString(),
+      org,
+      report,
+      event,
+      ip:     ip || null,
+    }) + "\n";
+    fs.appendFileSync(EVENTS_FILE, line);
+  } catch (err) {
+    console.warn("[analytics] Failed to log event:", err.message);
+  }
+}
+
+// Read events file, optionally filtered to last N days
+function readEvents(daysBack) {
+  try {
+    const raw = fs.readFileSync(EVENTS_FILE, "utf8");
+    const cutoff = daysBack
+      ? new Date(Date.now() - daysBack * 86400000).toISOString()
+      : null;
+    return raw.trim().split("\n")
+      .filter(Boolean)
+      .map(line => { try { return JSON.parse(line); } catch { return null; } })
+      .filter(e => e && (!cutoff || e.ts >= cutoff));
+  } catch {
+    return [];
+  }
+}
+
+// Aggregate events into metrics for one org
+function buildMetrics(org, daysBack) {
+  const events = readEvents(daysBack).filter(e => e.org === org);
+
+  // Summary: { report: { view, fetch, pdf, excel, print } }
+  const summary = {};
+  events.forEach(e => {
+    if (!summary[e.report]) summary[e.report] = { view: 0, fetch: 0, pdf: 0, excel: 0, print: 0 };
+    summary[e.report][e.event] = (summary[e.report][e.event] || 0) + 1;
+  });
+
+  // Daily view counts for sparklines: { "YYYY-MM-DD": { report: count } }
+  const daily = {};
+  events.filter(e => e.event === "view").forEach(e => {
+    const day = e.ts.substring(0, 10);
+    if (!daily[day]) daily[day] = {};
+    daily[day][e.report] = (daily[day][e.report] || 0) + 1;
+  });
+
+  // Subscription counts per report
+  const allSubs = readJSON(SUBS_FILE, []).filter(s => s.org === org && s.active);
+  const subCounts = {};
+  allSubs.forEach(s => {
+    const rpts = JSON.parse(s.reports);
+    rpts.forEach(r => { subCounts[r] = (subCounts[r] || 0) + 1; });
+  });
+
+  return { summary, daily, subCounts, totalSubscribers: allSubs.length };
+}
+
+// ── Subscriptions DB helpers ─────────────────────────────────────────
 const db = {
   getSubscriptions(org) {
     return readJSON(SUBS_FILE, []).filter(s => s.org === org && s.active);
@@ -168,7 +229,9 @@ async function generatePdf(orgSlug, reportType, startDate, endDate) {
       ? "Facility Reservations by Date"
       : reportType === "programs"
         ? "Program Revenue"
-        : "Facility Rental Schedule";
+        : reportType === "roster"
+          ? "Class Roster"
+          : "Facility Rental Schedule";
 
   const browser = await puppeteer.launch({
     headless: true,
@@ -208,7 +271,9 @@ async function sendReportEmail(orgSlug, email, reportType, schedule) {
       ? "Facility Reservations by Date"
       : reportType === "programs"
         ? "Program Revenue"
-        : "Facility Rental Schedule";
+        : reportType === "roster"
+          ? "Class Roster"
+          : "Facility Rental Schedule";
 
   const reportUrl = `${BASE_URL}/${orgSlug}/${reportType}?start_date=${start}&end_date=${end}`;
 
@@ -334,12 +399,26 @@ function resolveOrg(req, res, next) {
   next();
 }
 
+// ── POST /:org/:report/api/log — log client-side events ──────────────
+// Called by report HTML pages for events the server can't see:
+// excel (SheetJS export) and print (window.print())
+app.post("/:org/:report/api/log", resolveOrg, (req, res) => {
+  const { orgSlug, reportType } = req;
+  const { event } = req.query;
+  const ALLOWED = ["excel", "print"];
+  if (!ALLOWED.includes(event)) return res.status(400).json({ ok: false, error: "Unknown event" });
+  logEvent(orgSlug, reportType, event, req.ip);
+  res.json({ ok: true });
+});
+
 // ── GET /:org/:report/api/data — proxy to Metabase ───────────────────
 app.get("/:org/:report/api/data", resolveOrg, async (req, res) => {
   try {
     const { orgConfig, orgSlug, reportType } = req;
     const mbUuid = orgConfig[reportType]?.mbUuid;
     if (!mbUuid) return res.status(404).json({ error: `No Metabase question configured for ${orgSlug}/${reportType}` });
+
+    logEvent(orgSlug, reportType, "fetch", req.ip);
 
     const params = buildMetabaseParams(req.query, reportType);
     const paramStr = params.length > 0 ? `?parameters=${encodeURIComponent(JSON.stringify(params))}` : "";
@@ -373,6 +452,7 @@ app.get("/:org/:report/api/data", resolveOrg, async (req, res) => {
 app.get("/:org/:report/api/pdf", resolveOrg, async (req, res) => {
   try {
     const { orgSlug, reportType } = req;
+    logEvent(orgSlug, reportType, "pdf", req.ip);
     const pdf = await generatePdf(orgSlug, reportType, req.query.start_date, req.query.end_date);
     const filename = `${reportType}-report-${req.query.start_date || "report"}.pdf`;
     res.set({ "Content-Type": "application/pdf", "Content-Disposition": `inline; filename="${filename}"`, "Content-Length": pdf.length });
@@ -383,8 +463,25 @@ app.get("/:org/:report/api/pdf", resolveOrg, async (req, res) => {
   }
 });
 
-// ── Subscription API ─────────────────────────────────────────────────
+// ── GET /:org/metrics/api/data — usage metrics JSON ──────────────────
+app.get("/:org/metrics/api/data", (req, res) => {
+  const { org } = req.params;
+  if (!ORGS[org]) return res.status(404).json({ error: "Unknown org" });
+  const days = parseInt(req.query.days) || 30;
+  res.json(buildMetrics(org, days));
+});
 
+// ── GET /metrics/api/data — cross-org summary ────────────────────────
+app.get("/metrics/api/data", (req, res) => {
+  const days = parseInt(req.query.days) || 30;
+  const result = {};
+  Object.keys(ORGS).forEach(org => {
+    result[org] = buildMetrics(org, days);
+  });
+  res.json(result);
+});
+
+// ── Subscription API ─────────────────────────────────────────────────
 app.get("/:org/admin/reports", (req, res) => {
   const org = ORGS[req.params.org];
   if (!org) return res.status(404).json({ error: "Unknown org" });
@@ -393,6 +490,7 @@ app.get("/:org/admin/reports", (req, res) => {
     gl:       "GL Code Rollup",
     historic: "Historic Buildings",
     programs: "Program Revenue",
+    roster:   "Class Roster",
   };
   const available = REPORT_TYPES
     .filter(r => org[r]?.mbUuid)
@@ -460,32 +558,42 @@ app.post("/:org/admin/test-send", async (req, res) => {
 // ── Serve HTML report pages ──────────────────────────────────────────
 app.get("/:org/facility", (req, res) => {
   if (!ORGS[req.params.org]) return res.status(404).send("Unknown org");
+  logEvent(req.params.org, "facility", "view", req.ip);
   res.sendFile(path.join(__dirname, "public", "facility.html"));
 });
 
 app.get("/:org/gl", (req, res) => {
   if (!ORGS[req.params.org]) return res.status(404).send("Unknown org");
+  logEvent(req.params.org, "gl", "view", req.ip);
   res.sendFile(path.join(__dirname, "public", "gl.html"));
 });
 
 app.get("/:org/historic", (req, res) => {
   if (!ORGS[req.params.org]) return res.status(404).send("Unknown org");
+  logEvent(req.params.org, "historic", "view", req.ip);
   res.sendFile(path.join(__dirname, "public", "historic.html"));
 });
 
 app.get("/:org/programs", (req, res) => {
   if (!ORGS[req.params.org]) return res.status(404).send("Unknown org");
+  logEvent(req.params.org, "programs", "view", req.ip);
   res.sendFile(path.join(__dirname, "public", "programs.html"));
 });
 
 app.get("/:org/roster", (req, res) => {
   if (!ORGS[req.params.org]) return res.status(404).send("Unknown org");
+  logEvent(req.params.org, "roster", "view", req.ip);
   res.sendFile(path.join(__dirname, "public", "roster.html"));
 });
 
 app.get("/:org/admin", (req, res) => {
   if (!ORGS[req.params.org]) return res.status(404).send("Unknown org");
   res.sendFile(path.join(__dirname, "public", "admin.html"));
+});
+
+app.get("/:org/metrics", (req, res) => {
+  if (!ORGS[req.params.org]) return res.status(404).send("Unknown org");
+  res.sendFile(path.join(__dirname, "public", "metrics.html"));
 });
 
 // ── GET /:org — org landing page ─────────────────────────────────────
@@ -527,30 +635,15 @@ app.get("/:org", (req, res) => {
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      font-family: 'IBM Plex Sans', system-ui, sans-serif;
-      background: #f5f4f1; color: #1a1a1a;
-      min-height: 100vh; display: flex; flex-direction: column;
-    }
-    .topbar {
-      background: #2c2c2c; color: #eee;
-      padding: 12px 32px; display: flex; align-items: center; gap: 16px;
-    }
+    body { font-family: 'IBM Plex Sans', system-ui, sans-serif; background: #f5f4f1; color: #1a1a1a; min-height: 100vh; display: flex; flex-direction: column; }
+    .topbar { background: #2c2c2c; color: #eee; padding: 12px 32px; display: flex; align-items: center; gap: 16px; }
     .topbar img { height: 36px; object-fit: contain; }
     .topbar-name { font-weight: 700; font-size: 15px; }
     .topbar-sub  { font-size: 11px; color: #aaa; text-transform: uppercase; letter-spacing: 1px; margin-top: 1px; }
     .main { flex: 1; max-width: 700px; margin: 48px auto; padding: 0 24px; width: 100%; }
-    .section-label {
-      font-size: 10px; font-weight: 700; text-transform: uppercase;
-      letter-spacing: 1.2px; color: #888; margin-bottom: 12px;
-    }
+    .section-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.2px; color: #888; margin-bottom: 12px; }
     .cards { display: flex; flex-direction: column; gap: 10px; margin-bottom: 32px; }
-    .card {
-      display: flex; align-items: center; gap: 16px;
-      background: #fff; border: 1px solid #e0ddd8; border-radius: 8px;
-      padding: 16px 20px; text-decoration: none; color: inherit;
-      transition: box-shadow .15s, border-color .15s;
-    }
+    .card { display: flex; align-items: center; gap: 16px; background: #fff; border: 1px solid #e0ddd8; border-radius: 8px; padding: 16px 20px; text-decoration: none; color: inherit; transition: box-shadow .15s, border-color .15s; }
     .card:hover { box-shadow: 0 2px 12px rgba(0,0,0,.1); border-color: #bbb; }
     .card-icon  { font-size: 24px; flex-shrink: 0; width: 36px; text-align: center; }
     .card-body  { flex: 1; }
@@ -558,16 +651,11 @@ app.get("/:org", (req, res) => {
     .card-desc  { font-size: 12px; color: #888; }
     .card-arrow { font-size: 18px; color: #ccc; flex-shrink: 0; }
     .card:hover .card-arrow { color: #16a34a; }
-    .admin-link {
-      display: flex; align-items: center; gap: 12px;
-      color: #555; text-decoration: none; font-size: 13px;
-      padding: 10px 0; border-top: 1px solid #ddd;
-    }
+    .admin-links { border-top: 1px solid #ddd; padding-top: 16px; display: flex; flex-direction: column; gap: 8px; }
+    .admin-link { display: flex; align-items: center; gap: 12px; color: #555; text-decoration: none; font-size: 13px; padding: 8px 0; }
     .admin-link:hover { color: #111; }
-    .admin-link span  { font-size: 18px; }
-    footer {
-      text-align: center; padding: 24px; font-size: 11px; color: #bbb;
-    }
+    .admin-link span { font-size: 18px; }
+    footer { text-align: center; padding: 24px; font-size: 11px; color: #bbb; }
   </style>
 </head>
 <body>
@@ -581,9 +669,10 @@ app.get("/:org", (req, res) => {
   <div class="main">
     <div class="section-label">Reports</div>
     <div class="cards">${cards}</div>
-    <a href="/${slug}/admin" class="admin-link">
-      <span>📧</span> Manage Email Subscriptions
-    </a>
+    <div class="admin-links">
+      <a href="/${slug}/metrics" class="admin-link"><span>📈</span> Usage Metrics</a>
+      <a href="/${slug}/admin"   class="admin-link"><span>📧</span> Manage Email Subscriptions</a>
+    </div>
   </div>
   <footer>rec.us · ${slug}</footer>
 </body>
@@ -625,7 +714,10 @@ app.get("/", (req, res) => {
             <div class="org-name">${displayName} Parks &amp; Recreation</div>
             <div class="org-slug">${slug}</div>
           </div>
-          <a href="/${slug}/admin" class="org-admin-link" title="Email subscriptions">📧 Admin</a>
+          <div class="org-header-actions">
+            <a href="/${slug}/metrics" class="org-action-link" title="Usage metrics">📈 Metrics</a>
+            <a href="/${slug}/admin"   class="org-action-link" title="Email subscriptions">📧 Admin</a>
+          </div>
         </div>
         <div class="report-cards">${cards}</div>
       </div>`;
@@ -641,85 +733,32 @@ app.get("/", (req, res) => {
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      font-family: 'IBM Plex Sans', system-ui, sans-serif;
-      background: #f5f4f1; color: #1a1a1a;
-      min-height: 100vh; display: flex; flex-direction: column;
-    }
-    .topbar {
-      background: #2c2c2c; color: #eee;
-      padding: 14px 32px; display: flex; align-items: center; gap: 12px;
-    }
-    .topbar-logo {
-      font-size: 18px; font-weight: 800; letter-spacing: -0.5px; color: #fff;
-    }
+    body { font-family: 'IBM Plex Sans', system-ui, sans-serif; background: #f5f4f1; color: #1a1a1a; min-height: 100vh; display: flex; flex-direction: column; }
+    .topbar { background: #2c2c2c; color: #eee; padding: 14px 32px; display: flex; align-items: center; gap: 12px; }
+    .topbar-logo { font-size: 18px; font-weight: 800; letter-spacing: -0.5px; color: #fff; }
     .topbar-logo span { color: #4ade80; }
     .topbar-divider { width: 1px; height: 20px; background: rgba(255,255,255,.2); }
     .topbar-sub { font-size: 12px; color: #aaa; text-transform: uppercase; letter-spacing: 1px; }
-
     .main { flex: 1; max-width: 860px; margin: 0 auto; padding: 40px 24px; width: 100%; }
-
-    .page-title {
-      font-size: 13px; font-weight: 700; text-transform: uppercase;
-      letter-spacing: 1.2px; color: #888; margin-bottom: 24px;
-    }
-
-    .org-section {
-      background: #fff;
-      border: 1px solid #e0ddd8;
-      border-radius: 10px;
-      margin-bottom: 20px;
-      overflow: hidden;
-    }
-
-    .org-header {
-      display: flex; align-items: center; gap: 14px;
-      padding: 16px 20px;
-      background: #f9f8f6;
-      border-bottom: 1px solid #e8e5df;
-    }
-    .org-logo {
-      height: 32px; width: auto; object-fit: contain; flex-shrink: 0;
-    }
+    .page-title { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.2px; color: #888; margin-bottom: 24px; }
+    .org-section { background: #fff; border: 1px solid #e0ddd8; border-radius: 10px; margin-bottom: 20px; overflow: hidden; }
+    .org-header { display: flex; align-items: center; gap: 14px; padding: 16px 20px; background: #f9f8f6; border-bottom: 1px solid #e8e5df; }
+    .org-logo { height: 32px; width: auto; object-fit: contain; flex-shrink: 0; }
     .org-header-text { flex: 1; }
     .org-name { font-weight: 700; font-size: 14px; }
     .org-slug { font-size: 11px; color: #999; margin-top: 1px; }
-
-    .org-admin-link {
-      font-size: 12px; color: #888; text-decoration: none;
-      padding: 5px 10px; border: 1px solid #ddd; border-radius: 5px;
-      white-space: nowrap; flex-shrink: 0;
-      transition: background .15s, color .15s;
-    }
-    .org-admin-link:hover { background: #f0f0f0; color: #333; }
-
-    .report-cards {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-      gap: 1px;
-      background: #e8e5df;
-    }
-
-    .report-card {
-      display: flex; align-items: center; gap: 12px;
-      padding: 14px 18px;
-      background: #fff;
-      text-decoration: none; color: inherit;
-      transition: background .15s;
-      border-left: 3px solid transparent;
-    }
-    .report-card:hover {
-      background: #fafaf8;
-      border-left-color: var(--accent, #888);
-    }
+    .org-header-actions { display: flex; gap: 6px; flex-shrink: 0; }
+    .org-action-link { font-size: 12px; color: #888; text-decoration: none; padding: 5px 10px; border: 1px solid #ddd; border-radius: 5px; white-space: nowrap; transition: background .15s, color .15s; }
+    .org-action-link:hover { background: #f0f0f0; color: #333; }
+    .report-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 1px; background: #e8e5df; }
+    .report-card { display: flex; align-items: center; gap: 12px; padding: 14px 18px; background: #fff; text-decoration: none; color: inherit; transition: background .15s; border-left: 3px solid transparent; }
+    .report-card:hover { background: #fafaf8; border-left-color: var(--accent, #888); }
     .report-icon { font-size: 20px; flex-shrink: 0; width: 28px; text-align: center; }
     .report-body { flex: 1; min-width: 0; }
     .report-label { font-weight: 600; font-size: 13px; }
-    .report-desc  { font-size: 11px; color: #999; margin-top: 2px;
-                    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .report-desc  { font-size: 11px; color: #999; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .report-arrow { font-size: 14px; color: #ccc; flex-shrink: 0; }
     .report-card:hover .report-arrow { color: var(--accent, #888); }
-
     footer { text-align: center; padding: 24px; font-size: 11px; color: #bbb; }
   </style>
 </head>
@@ -729,12 +768,10 @@ app.get("/", (req, res) => {
     <div class="topbar-divider"></div>
     <div class="topbar-sub">Report Server</div>
   </div>
-
   <div class="main">
     <div class="page-title">Organizations</div>
     ${orgSections}
   </div>
-
   <footer>rec.us · ${Object.keys(ORGS).length} organizations</footer>
 </body>
 </html>`);
@@ -747,11 +784,13 @@ app.listen(PORT, () => {
   console.log(`  ├─ Base URL: ${BASE_URL}`);
   Object.keys(ORGS).forEach(slug => {
     const org = ORGS[slug];
-    if (org.facility?.mbUuid) console.log(`  ├─ ${slug}/facility  →  ${BASE_URL}/${slug}/facility`);
-    if (org.historic?.mbUuid) console.log(`  ├─ ${slug}/historic  →  ${BASE_URL}/${slug}/historic`);
-    if (org.gl?.mbUuid)       console.log(`  ├─ ${slug}/gl        →  ${BASE_URL}/${slug}/gl`);
-    console.log(`  ├─ ${slug}/admin     →  ${BASE_URL}/${slug}/admin`);
+    REPORT_TYPES.forEach(r => {
+      if (org[r]?.mbUuid) console.log(`  ├─ ${slug}/${r}  →  ${BASE_URL}/${slug}/${r}`);
+    });
+    console.log(`  ├─ ${slug}/metrics  →  ${BASE_URL}/${slug}/metrics`);
+    console.log(`  ├─ ${slug}/admin    →  ${BASE_URL}/${slug}/admin`);
   });
   console.log(`  └─ Metabase: ${METABASE_URL}\n`);
   console.log(`  📧 Resend: ${RESEND_API_KEY ? "configured" : "NOT CONFIGURED (stub mode)"}\n`);
+  console.log(`  📊 Analytics: ${EVENTS_FILE}\n`);
 });
