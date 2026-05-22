@@ -372,23 +372,33 @@ function App() {
   }
 
   const paramsChanged = loadedSection !== null && (
-    startDate !== loadedStart || endDate !== loadedEnd || (sectionFilter || '') !== loadedSection
+    startDate !== loadedStart || endDate !== loadedEnd
   );
 
+  const sectionFilteredRows = useMemo(() => {
+    if (!rows) return [];
+    const secLower = sectionFilter.trim().toLowerCase();
+    return !secLower ? rows : rows.filter(r => r.section.toLowerCase().includes(secLower));
+  }, [rows, sectionFilter]);
+
   const counts = useMemo(() => ({
-    all:       rows ? rows.length : 0,
-    enrolled:  rows ? rows.filter(r => r.status === 'Enrolled').length : 0,
-    cancelled: rows ? rows.filter(r => r.status === 'Cancelled').length : 0,
-  }), [rows]);
+    all:       sectionFilteredRows.length,
+    enrolled:  sectionFilteredRows.filter(r => r.status === 'Enrolled').length,
+    cancelled: sectionFilteredRows.filter(r => r.status === 'Cancelled').length,
+  }), [sectionFilteredRows]);
 
   const displayRows = useMemo(() => {
     if (!rows) return [];
-    return rows.filter(r =>
-      statusFilter === 'all' ||
-      (statusFilter === 'enrolled'  && r.status === 'Enrolled') ||
-      (statusFilter === 'cancelled' && r.status === 'Cancelled')
-    );
-  }, [rows, statusFilter]);
+    const secLower = sectionFilter.trim().toLowerCase();
+    return rows.filter(r => {
+      const statusOk =
+        statusFilter === 'all' ||
+        (statusFilter === 'enrolled'  && r.status === 'Enrolled') ||
+        (statusFilter === 'cancelled' && r.status === 'Cancelled');
+      const sectionOk = !secLower || r.section.toLowerCase().includes(secLower);
+      return statusOk && sectionOk;
+    });
+  }, [rows, statusFilter, sectionFilter]);
 
   const grouped = useMemo(() => {
     const bySec = {};
@@ -464,9 +474,9 @@ function App() {
         <div className="toolbar-divider" />
 
         <label>
-          Section{loadedSection !== null && (sectionFilter || '') !== loadedSection ? <span style={{color:'#f59e0b',marginLeft:4,fontSize:9}}>↻ re-run</span> : ''}
+          Section
           <input type="text" value={sectionFilter} onChange={e => setSectionFilter(e.target.value)}
-            placeholder="All sections" style={{width:160}} onKeyDown={e => e.key === 'Enter' && handleRun()} />
+            placeholder="Filter sections…" style={{width:160}} onKeyDown={e => e.key === 'Enter' && handleRun()} />
         </label>
 
         <label>Start<input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} /></label>
