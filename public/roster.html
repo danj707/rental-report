@@ -529,6 +529,8 @@ function App() {
         <div className="toolbar-spacer" />
         {rows && <span className="row-count">{displayRows.length} of {counts.all}</span>}
         <div className="toolbar-divider" />
+        <a href={`/${orgSlug}/admin`} style={{color:'#aaa',textDecoration:'none',fontSize:12,padding:'4px 10px',border:'1px solid rgba(255,255,255,.15)',borderRadius:4,whiteSpace:'nowrap'}} title="Manage email subscriptions">📧 Subscribe</a>
+        <div className="toolbar-divider" />
         <button onClick={() => window.print()}>🖨️ Print</button>
         <button className="btn-excel" onClick={exportExcel} disabled={!rows || !rows.length}>📊 Excel</button>
       </div>
