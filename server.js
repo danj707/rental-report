@@ -676,10 +676,11 @@ app.get('/api/hotdog', async (req, res) => {
       return res.status(502).json({ error: raw?.error || 'Unexpected response from Metabase' });
     }
 
-    console.log(`[hotdog] ${raw.length} rows returned`);
-    const rows = raw.map(row =>
-      Object.fromEntries(HOTDOG_COLS.map((col, i) => [col, row[i]]))
-    );
+    console.log(`[hotdog] ${raw.length} rows, format=${Array.isArray(raw[0]) ? 'array-of-arrays' : 'array-of-objects'}`);
+    // Metabase /query/json returns array-of-arrays when no params, array-of-objects when params sent
+    const rows = (raw.length > 0 && Array.isArray(raw[0]))
+      ? raw.map(row => Object.fromEntries(HOTDOG_COLS.map((col, i) => [col, row[i]])))
+      : raw;  // already named objects
     res.json({ rows, meta: { cols: HOTDOG_COLS } });
   } catch (err) {
     console.error('[/api/hotdog]', err.message);
