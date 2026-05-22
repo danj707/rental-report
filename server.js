@@ -628,9 +628,9 @@ app.get('/api/hotdog', async (req, res) => {
   try {
     const { start_date = '', end_date = '', org_filter = '' } = req.query;
     const params = [];
-    if (start_date) params.push({ type: 'category', target: ['variable', ['template-tag', 'start_date']], value: start_date });
-    if (end_date)   params.push({ type: 'category', target: ['variable', ['template-tag', 'end_date']],   value: end_date   });
-    if (org_filter) params.push({ type: 'category', target: ['variable', ['template-tag', 'org_filter']], value: org_filter });
+    if (start_date) params.push({ type: 'date/single', target: ['variable', ['template-tag', 'start_date']], value: parseToISO(start_date) });
+    if (end_date)   params.push({ type: 'date/single', target: ['variable', ['template-tag', 'end_date']],   value: parseToISO(end_date)   });
+    if (org_filter) params.push({ type: 'category',    target: ['variable', ['template-tag', 'org_filter']], value: org_filter              });
 
     const mbUrl = `${METABASE_URL}/api/public/card/${HOTDOG_MB_UUID}/query/json`
       + (params.length ? `?parameters=${encodeURIComponent(JSON.stringify(params))}` : '');
