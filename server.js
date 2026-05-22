@@ -630,24 +630,25 @@ app.get('/hotdog', (_req, res) => {
 // ── Debug: raw Metabase response (remove before prod) ────────────────
 app.get('/api/hotdog/debug', async (req, res) => {
   try {
-    const mbUrl = `${METABASE_URL}/api/public/card/${HOTDOG_MB_UUID}/query/json`;
+    const { start_date = '', end_date = '', org_filter = '' } = req.query;
+    const params = [];
+    if (start_date) params.push({ type: 'category', target: ['variable', ['template-tag', 'start_date']], value: parseToISO(start_date) });
+    if (end_date)   params.push({ type: 'category', target: ['variable', ['template-tag', 'end_date']],   value: parseToISO(end_date)   });
+    if (org_filter) params.push({ type: 'category', target: ['variable', ['template-tag', 'org_filter']], value: org_filter              });
+    const mbUrl = `${METABASE_URL}/api/public/card/${HOTDOG_MB_UUID}/query/json`
+      + (params.length ? `?parameters=${encodeURIComponent(JSON.stringify(params))}` : '');
     const mbRes = await fetch(mbUrl);
     const raw   = await mbRes.json();
-    // Return just the structural summary + first 2 rows
-    const topKeys  = Object.keys(raw || {});
-    const dataKeys = Object.keys(raw?.data || {});
-    const sample   = raw?.data?.rows?.slice(0, 2) || raw?.rows?.slice(0, 2) || [];
-    const cols     = raw?.data?.cols?.map(c => c.display_name || c.name) || raw?.columns || [];
+    const isArray = Array.isArray(raw);
     res.json({
       http_status:  mbRes.status,
-      top_keys:     topKeys,
-      data_keys:    dataKeys,
-      status:       raw?.status,
+      params_sent:  params,
+      is_array:     isArray,
+      row_count:    isArray ? raw.length : (raw?.data?.rows?.length ?? 'n/a'),
+      sample_rows:  isArray ? raw.slice(0, 3) : (raw?.data?.rows?.slice(0, 3) || []),
+      raw_keys:     isArray ? ['(array)'] : Object.keys(raw || {}),
       error:        raw?.error || null,
-      row_count:    raw?.data?.rows?.length ?? raw?.rows?.length ?? 'n/a',
-      col_count:    raw?.data?.cols?.length ?? raw?.columns?.length ?? 'n/a',
-      col_names:    cols,
-      sample_rows:  sample,
+      status:       raw?.status || null,
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -658,8 +659,8 @@ app.get('/api/hotdog', async (req, res) => {
   try {
     const { start_date = '', end_date = '', org_filter = '' } = req.query;
     const params = [];
-    if (start_date) params.push({ type: 'date/single', target: ['variable', ['template-tag', 'start_date']], value: parseToISO(start_date) });
-    if (end_date)   params.push({ type: 'date/single', target: ['variable', ['template-tag', 'end_date']],   value: parseToISO(end_date)   });
+    if (start_date) params.push({ type: 'category', target: ['variable', ['template-tag', 'start_date']], value: parseToISO(start_date) });
+    if (end_date)   params.push({ type: 'category', target: ['variable', ['template-tag', 'end_date']],   value: parseToISO(end_date)   });
     if (org_filter) params.push({ type: 'category',    target: ['variable', ['template-tag', 'org_filter']], value: org_filter              });
 
     const mbUrl = `${METABASE_URL}/api/public/card/${HOTDOG_MB_UUID}/query/json`
