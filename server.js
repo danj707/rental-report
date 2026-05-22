@@ -149,7 +149,8 @@ function buildMetrics(org, daysBack) {
     rpts.forEach(r => { subCounts[r] = (subCounts[r] || 0) + 1; });
   });
 
-  return { summary, daily, subCounts, totalSubscribers: allSubs.length };
+  const configuredReports = REPORT_TYPES.filter(r => ORGS[org]?.[r]?.mbUuid);
+  return { summary, daily, subCounts, totalSubscribers: allSubs.length, configuredReports };
 }
 
 // ── Subscriptions DB helpers ─────────────────────────────────────────
