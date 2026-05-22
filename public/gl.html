@@ -664,6 +664,16 @@ function App() {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'GL Rollup');
     XLSX.writeFile(wb, `gl-report-${loadedStart || 'export'}.xlsx`);
+    logClientEvent('excel');
+  }
+
+
+  // Fire-and-forget log to server for client-side events (excel, print)
+  function logClientEvent(event) {
+    try {
+      const parts = window.location.pathname.split('/').filter(Boolean);
+      if (parts.length >= 2) fetch(`/${parts[0]}/${parts[1]}/api/log?event=${event}`, { method: 'POST' }).catch(() => {});
+    } catch {}
   }
 
   const isPrint = params._print === '1';
