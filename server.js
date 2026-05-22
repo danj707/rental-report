@@ -334,39 +334,33 @@ function resolveOrg(req, res, next) {
 }
 
 // ── GET /:org/:report/api/data ───────────────────────────────────────
-app.get("/:org/:report/api/data", resolveOrg, async (req, res) => {
+// ── GET /:org — org landing page ─────────────────────────────────────
+app.get("/:org", (req, res) => {
+  const slug = req.params.org;
+  const org  = ORGS[slug];
+  if (!org) return res.status(404).send("Unknown org");
+
+  const available = REPORT_TYPES.filter(r => org[r]?.mbUuid);
+  const config = {
+    slug,
+    displayName: slug.charAt(0).toUpperCase() + slug.slice(1),
+    logoUrl:     org.logoUrl || '',
+    reports:     available,
+  };
+
+  const templatePath = path.join(__dirname, "public", "org.html");
+  let html;
   try {
-    const { orgConfig, orgSlug, reportType } = req;
-    const mbUuid = orgConfig[reportType]?.mbUuid;
-    if (!mbUuid) return res.status(404).json({ error: `No Metabase question configured for ${orgSlug}/${reportType}` });
-    const params = buildMetabaseParams(req.query, reportType);
-    const paramStr = params.length > 0 ? `?parameters=${encodeURIComponent(JSON.stringify(params))}` : "";
-    const url = `${METABASE_URL}/api/public/card/${mbUuid}/query/json${paramStr}`;
-    console.log(`[proxy] ${orgSlug}/${reportType} → ${url}`);
-    const response = await fetch(url);
-    if (!response.ok) {
-      const body = await response.text();
-      console.error(`[proxy] Metabase returned ${response.status}: ${body}`);
-      return res.status(response.status).json({ error: body });
-    }
-    const data = await response.json();
-    res.json({
-      rows: data,
-      meta: {
-        org_slug: orgSlug,
-        logo_url: orgConfig.logoUrl,
-        report_type: reportType,
-        start_date: req.query.start_date || null,
-        end_date: req.query.end_date || null,
-        location_name: req.query.location_name || null,
-        site_type: req.query.site_type || null,
-        generated_at: new Date().toISOString(),
-      },
-    });
-  } catch (err) {
-    console.error("[proxy] Error:", err);
-    res.status(500).json({ error: err.message });
+    html = fs.readFileSync(templatePath, "utf8");
+  } catch (e) {
+    return res.status(500).send("org.html template not found");
   }
+
+  const injected = html.replace(
+    "</head>",
+    `<script>window.ORG_CONFIG = ${JSON.stringify(config)};<\/script>\n</head>`
+  );
+  res.send(injected);
 });
 
 // ── GET /:org/:report/api/pdf ────────────────────────────────────────
