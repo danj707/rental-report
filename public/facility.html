@@ -260,6 +260,7 @@
     }
 
     /* ── Header ── */
+    .report-header-logo { height: 42px; max-width: 140px; object-fit: contain; object-position: left center; }
     .report-header {
       display: flex;
       justify-content: space-between;
@@ -984,6 +985,7 @@ function App() {
   const runDate = `${(now.getMonth()+1).toString().padStart(2,'0')}/${now.getDate().toString().padStart(2,'0')}/${now.getFullYear()} @ ${now.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',hour12:true}).toLowerCase()}`;
 
   const orgName = (rows.length > 0 && rows[0].orgName) ? rows[0].orgName : (meta.org_name || 'rec.us');
+  const logoUrl = meta.logo_url || null;
 
   const dateRangeLabel = [
     loadedStart ? formatDisplayDate(loadedStart) : null,
@@ -998,6 +1000,7 @@ function App() {
         {/* Report header */}
         <div className="report-header">
           <div>
+            {logoUrl && <img src={logoUrl} alt="" className="report-header-logo" onError={e => e.target.style.display='none'} />}
             <div className="org-label">{orgName}</div>
             <div className="title">Weekly Rental Schedule</div>
           </div>
