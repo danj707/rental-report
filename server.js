@@ -619,6 +619,9 @@ app.get("/:org/metrics", (req, res) => {
 // Hot Dog Counter — global concession leaderboard
 // ────────────────────────────────────────────────────────────
 const HOTDOG_MB_UUID = 'f3ec6929-49a8-4a00-8b72-c4685b6e9f35';
+// Column order must match the SELECT list in the Metabase question SQL.
+// Metabase /query/json returns a plain array of row-arrays with no header row.
+const HOTDOG_COLS = ['Org', 'Product', 'Units Sold', 'Revenue ($)', 'Avg Unit Price ($)'];
 
 app.get('/hotdog', (_req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'hotdog.html'));
@@ -665,29 +668,18 @@ app.get('/api/hotdog', async (req, res) => {
     const mbRes = await fetch(mbUrl);
     const raw   = await mbRes.json();
 
-    // Log the Metabase response shape for debugging
-    const topKeys = Object.keys(raw || {}).join(', ');
-    const dataKeys = Object.keys(raw?.data || {}).join(', ');
-    console.log(`[hotdog] status=${raw.status} top_keys=[${topKeys}] data_keys=[${dataKeys}] rows=${raw.data?.rows?.length ?? 'n/a'}`);
-
-    if (raw.error) return res.status(502).json({ error: raw.error });
-
-    // Handle both Metabase response shapes:
-    //   new: { data: { rows: [[...]], cols: [...] } }
-    //   old: { rows: [[...]], columns: ['col1', ...] }
-    const dataBlock = raw.data ?? raw;
-    const rawCols   = dataBlock.cols || [];
-    const rawRows   = dataBlock.rows || [];
-
-    if (rawCols.length === 0 && rawRows.length === 0) {
-      console.warn('[hotdog] Empty response from Metabase. raw=', JSON.stringify(raw).slice(0, 300));
+    // Metabase /query/json returns a plain JSON array of row-arrays — no header row.
+    // HOTDOG_COLS maps positions to names based on the SQL SELECT order.
+    if (!Array.isArray(raw)) {
+      console.error('[hotdog] Unexpected format:', JSON.stringify(raw).slice(0, 300));
+      return res.status(502).json({ error: raw?.error || 'Unexpected response from Metabase' });
     }
 
-    const cols = rawCols.map(c => c.display_name || c.name);
-    const rows = rawRows.map(row =>
-      Object.fromEntries(cols.map((c, i) => [c, row[i]]))
+    console.log(`[hotdog] ${raw.length} rows returned`);
+    const rows = raw.map(row =>
+      Object.fromEntries(HOTDOG_COLS.map((col, i) => [col, row[i]]))
     );
-    res.json({ rows, meta: { cols } });
+    res.json({ rows, meta: { cols: HOTDOG_COLS } });
   } catch (err) {
     console.error('[/api/hotdog]', err.message);
     res.status(500).json({ error: err.message });
