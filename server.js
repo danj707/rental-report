@@ -74,6 +74,12 @@ const ORGS = {
     logoUrl: "https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2Forganization-2d147f38-068c-409e-890d-a8acc88d8079%2FfullLogo.jpeg%3F1764460109546&w=2048&q=75",
     roster:  { mbUuid: "09707fab-067c-4297-98c1-3c1c39804333" },
   },
+  rec: {
+    orgId:       null,
+    logoUrl:     null,
+    displayName: 'rec.us',
+    hotdog: { href: '/hotdog' },
+  },
 };
 
 const REPORT_TYPES = ["facility", "gl", "historic", "programs", "roster", "overview"];
@@ -704,9 +710,11 @@ app.get("/", (req, res) => {
   };
 
   const orgSections = Object.entries(ORGS).map(([slug, org]) => {
-    const available = REPORT_TYPES.filter(r => org[r]?.mbUuid);
-    const displayName = slug.charAt(0).toUpperCase() + slug.slice(1);
+    const available    = REPORT_TYPES.filter(r => org[r]?.mbUuid);
+    const slugTitle    = slug.charAt(0).toUpperCase() + slug.slice(1);
+    const displayName  = org.displayName || `${slugTitle} Parks &amp; Recreation`;
 
+    // Standard Metabase-backed report cards
     const cards = available.map(r => {
       const m = reportMeta[r] || { label: r, icon: "📄", desc: "", color: "#888" };
       return `
@@ -718,22 +726,37 @@ app.get("/", (req, res) => {
           </div>
           <span class="report-arrow">→</span>
         </a>`;
-    }).join("");
+    });
+
+    // Custom direct-link cards (not org-scoped)
+    if (org.hotdog) cards.push(`
+        <a href="${org.hotdog.href}" class="report-card" style="--accent:#f97316">
+          <span class="report-icon">🌭</span>
+          <div class="report-body">
+            <div class="report-label">Hot Dog Counter</div>
+            <div class="report-desc">Food &amp; concession sales leaderboard</div>
+          </div>
+          <span class="report-arrow">→</span>
+        </a>`);
+
+    // Metrics / Admin links only for orgs with a real orgId
+    const headerActions = org.orgId ? `
+          <div class="org-header-actions">
+            <a href="/${slug}/metrics" class="org-action-link" title="Usage metrics">📈 Metrics</a>
+            <a href="/${slug}/admin"   class="org-action-link" title="Email subscriptions">📧 Admin</a>
+          </div>` : "";
 
     return `
       <div class="org-section">
         <div class="org-header">
           ${org.logoUrl ? `<img src="${org.logoUrl}" class="org-logo" alt="" onerror="this.style.display='none'" />` : ""}
           <div class="org-header-text">
-            <div class="org-name">${displayName} Parks &amp; Recreation</div>
+            <div class="org-name">${displayName}</div>
             <div class="org-slug">${slug}</div>
           </div>
-          <div class="org-header-actions">
-            <a href="/${slug}/metrics" class="org-action-link" title="Usage metrics">📈 Metrics</a>
-            <a href="/${slug}/admin"   class="org-action-link" title="Email subscriptions">📧 Admin</a>
-          </div>
+          ${headerActions}
         </div>
-        <div class="report-cards">${cards}</div>
+        <div class="report-cards">${cards.join("")}</div>
       </div>`;
   }).join("");
 
