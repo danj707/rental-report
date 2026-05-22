@@ -340,10 +340,17 @@ function App() {
   // ── Filter + group ──
   const displayRows = useMemo(() => {
     if (!rows) return [];
-    return rows.filter(r =>
-      (statusFilter === 'all' || (statusFilter === 'enrolled' && r.status === 'Enrolled') || (statusFilter === 'cancelled' && r.status === 'Cancelled'))
-    );
-  }, [rows, statusFilter]);
+    const secQ = sectionFilter.trim().toLowerCase();
+    return rows.filter(r => {
+      const statusOk = statusFilter === 'all' ||
+        (statusFilter === 'enrolled' && r.status === 'Enrolled') ||
+        (statusFilter === 'cancelled' && r.status === 'Cancelled');
+      const sectionOk = !secQ ||
+        (r.section || '').toLowerCase().includes(secQ) ||
+        (r.className || '').toLowerCase().includes(secQ);
+      return statusOk && sectionOk;
+    });
+  }, [rows, statusFilter, sectionFilter]);
 
   const grouped = useMemo(() => {
     const bySec = {};
