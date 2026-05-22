@@ -179,14 +179,15 @@
 
     // ── Main App ──────────────────────────────────────────────────
     function App() {
-      const [rows,      setRows]      = useState([]);
-      const [loading,   setLoading]   = useState(false);
-      const [error,     setError]     = useState(null);
-      const [startDate, setStartDate] = useState('');
-      const [endDate,   setEndDate]   = useState('');
-      const [orgFilter, setOrgFilter] = useState('');
-      const [hasRun,    setHasRun]    = useState(false);
-      const [animated,  setAnimated]  = useState(false);
+      const [rows,       setRows]       = useState([]);
+      const [loading,    setLoading]    = useState(false);
+      const [error,      setError]      = useState(null);
+      const [startDate,  setStartDate]  = useState('');
+      const [endDate,    setEndDate]    = useState('');
+      const [orgFilter,  setOrgFilter]  = useState('');
+      const [hasRun,     setHasRun]     = useState(false);
+      const [animated,   setAnimated]   = useState(false);
+      const [orgOptions, setOrgOptions] = useState([]);
 
       const runReport = useCallback(async () => {
         setLoading(true);
@@ -200,8 +201,14 @@
           const res  = await fetch('/api/hotdog?' + p.toString());
           const data = await res.json();
           if (data.error) throw new Error(data.error);
-          setRows(data.rows || []);
+          const newRows = data.rows || [];
+          setRows(newRows);
           setHasRun(true);
+          // Populate org autocomplete from unfiltered (all-org) runs
+          if (!orgFilter && !startDate && !endDate) {
+            const names = [...new Set(newRows.map(r => r['Org']).filter(Boolean))].sort();
+            if (names.length) setOrgOptions(names);
+          }
           // Tiny delay so DOM paints before animation starts
           requestAnimationFrame(() => requestAnimationFrame(() => setAnimated(true)));
         } catch (e) {
@@ -286,7 +293,12 @@
                 onChange={e => setOrgFilter(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && runReport()}
                 placeholder="e.g. Norman, Clarksville…"
-                style={{ width: 220 }} />
+                list="org-options"
+                autoComplete="off"
+                style={{ width: 240 }} />
+              <datalist id="org-options">
+                {orgOptions.map(org => <option key={org} value={org} />)}
+              </datalist>
             </Field>
             <button onClick={runReport} disabled={loading} style={{
               background: loading ? 'var(--raised)' : 'var(--accent)',
