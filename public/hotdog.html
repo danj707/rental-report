@@ -182,8 +182,11 @@
       const [rows,      setRows]      = useState([]);
       const [loading,   setLoading]   = useState(false);
       const [error,     setError]     = useState(null);
-      const [startDate, setStartDate] = useState('');
-      const [endDate,   setEndDate]   = useState('');
+      const [startDate, setStartDate] = useState(() => {
+        const t = new Date();
+        return new Date(t.getFullYear(), t.getMonth(), 1).toISOString().slice(0, 10);
+      });
+      const [endDate,   setEndDate]   = useState(() => new Date().toISOString().slice(0, 10));
       const [orgFilter, setOrgFilter] = useState('');
       const [hasRun,    setHasRun]    = useState(false);
       const [animated,  setAnimated]  = useState(false);
@@ -210,6 +213,9 @@
           setLoading(false);
         }
       }, [startDate, endDate, orgFilter]);
+
+      // Auto-run on first load
+      useEffect(() => { runReport(); }, []);  // eslint-disable-line react-hooks/exhaustive-deps
 
       // Aggregate by product across orgs
       const board = useMemo(() => {
