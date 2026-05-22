@@ -26,7 +26,6 @@
       background: #2c2c2c; color: #eee;
       font-size: 12px; flex-wrap: wrap;
     }
-    .toolbar-logo { height: 28px; object-fit: contain; }
     .toolbar-title { font-weight: 700; font-size: 13px; margin-right: 4px; white-space: nowrap; }
     .toolbar-divider { width: 1px; height: 24px; background: rgba(255,255,255,.18); margin: 0 2px; }
     .toolbar-spacer { flex: 1; }
@@ -82,7 +81,7 @@
 
     /* ── Page ── */
     .page {
-      max-width: 1200px; margin: 16px auto; padding: 24px 28px;
+      max-width: 1300px; margin: 16px auto; padding: 24px 28px;
       background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.08);
     }
 
@@ -150,21 +149,38 @@
     .status-enrolled  { background: #dcfce7; color: #166534; }
     .status-cancelled { background: #fee2e2; color: #991b1b; }
 
+    /* ── Form responses sub-row ── */
+    .form-responses-row {
+      padding: 6px 8px 8px 8px;
+      border-bottom: 1px solid #e8e4de;
+      background: #f0f4ff;
+      font-size: 10.5px;
+    }
+    .form-responses-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 4px 16px;
+    }
+    .form-qa-pair { display: flex; flex-direction: column; gap: 1px; }
+    .form-q { color: #555; font-size: 10px; font-weight: 600; }
+    .form-a { color: #111; font-size: 11px; }
+
     /* ── Column widths ── */
-    .col-fname     { width: 120px; font-weight: 500; }
-    .col-lname     { width: 120px; font-weight: 500; }
-    .col-recid     { width: 80px; font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; }
-    .col-dob       { width: 85px; }
-    .col-age       { width: 40px; text-align: center; }
-    .col-grade     { width: 52px; text-align: center; }
-    .col-phone     { width: 110px; }
-    .col-email     { width: 165px; font-size: 10.5px; }
-    .col-owner     { width: 140px; }
-    .col-ownerph   { width: 110px; }
-    .col-ownerem   { width: 160px; font-size: 10.5px; }
-    .col-times     { width: 140px; }
-    .col-status    { width: 78px; }
-    .col-reg       { width: 85px; }
+    .col-fname     { width: 110px; font-weight: 500; }
+    .col-lname     { width: 110px; font-weight: 500; }
+    .col-recid     { width: 72px; font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; }
+    .col-dob       { width: 82px; }
+    .col-age       { width: 36px; text-align: center; }
+    .col-grade     { width: 50px; text-align: center; }
+    .col-gender    { width: 56px; }
+    .col-phone     { width: 108px; }
+    .col-email     { width: 160px; font-size: 10.5px; }
+    .col-owner     { width: 130px; }
+    .col-ownerph   { width: 108px; }
+    .col-ownerem   { width: 155px; font-size: 10.5px; }
+    .col-times     { width: 138px; }
+    .col-status    { width: 76px; }
+    .col-reg       { width: 82px; }
 
     /* ── Footer ── */
     .report-footer {
@@ -192,24 +208,6 @@
     body.print-mode .toolbar { display: none !important; }
     body.print-mode { background: #fff; }
     body.print-mode .page { box-shadow: none; margin: 0; padding: 12px 16px; max-width: 100%; }
-
-    /* ── Form responses sub-row ── */
-    .form-responses-row {
-      padding: 4px 10px 7px 20px;
-      background: #f0f4ff;
-      border-bottom: 1px solid #dde5ff;
-      font-size: 10.5px;
-      display: flex;
-      flex-wrap: wrap;
-      gap: 10px 20px;
-    }
-    .form-qa-pair {
-      display: flex;
-      gap: 5px;
-      max-width: 400px;
-    }
-    .form-q { color: #6b7280; font-weight: 500; flex-shrink: 0; max-width: 220px; }
-    .form-a { color: #111; font-weight: 600; }
   </style>
 </head>
 <body>
@@ -221,10 +219,10 @@
 <script type="text/babel">
 const { useState, useEffect, useMemo, useCallback } = React;
 
-const LS_COLS = 'roster_cols_v1';
+const LS_COLS = 'roster_cols_v2';
 
 const COL_DEFAULTS = {
-  recId: false, dob: false, age: true, grade: true,
+  recId: false, dob: false, age: true, grade: true, gender: false,
   contact: true, owner: true, ownerContact: false,
   times: true, registered: false, responses: false,
 };
@@ -267,35 +265,56 @@ function formatDOB(dob) {
 }
 
 function normalizeRow(raw) {
+  // Decode form responses from form_submission schema + submission
+  const formResponses = (() => {
+    try {
+      const fd = typeof raw['Form Responses'] === 'string'
+        ? JSON.parse(raw['Form Responses'])
+        : raw['Form Responses'];
+      if (!fd || !fd.schema || !fd.submission) return null;
+      return fd.schema
+        .filter(el => el.name && el.title)
+        .map(el => {
+          const rawAns = fd.submission[el.name];
+          let answer = '';
+          if (Array.isArray(rawAns)) {
+            const choiceMap = {};
+            (el.choices || []).forEach(c => { choiceMap[c.value] = c.text; });
+            answer = rawAns.map(v => choiceMap[v] || v).join(', ');
+          } else if (rawAns !== null && rawAns !== undefined) {
+            answer = String(rawAns);
+          }
+          return { q: el.title, a: answer };
+        })
+        .filter(qa => qa.a !== '');
+    } catch { return null; }
+  })();
+
   return {
-    recId:        raw['Rec ID']         || '',
-    firstName:    raw['First Name']     || '',
-    lastName:     raw['Last Name']      || '',
-    dob:          raw['Date of Birth']  || '',
+    recId:        raw['Rec ID']          || '',
+    firstName:    raw['First Name']      || '',
+    lastName:     raw['Last Name']       || '',
+    dob:          raw['Date of Birth']   || '',
     age:          raw['Age'] != null ? raw['Age'] : '',
-    grade:        raw['Grade']          || '',
-    phone:        raw['Phone']          || '',
-    email:        raw['Email']          || '',
-    owner:        raw['Household Owner']|| '',
-    ownerEmail:   raw['Owner Email']    || '',
-    ownerPhone:   raw['Owner Phone']    || '',
-    className:    raw['Class']          || '',
-    section:      raw['Section']        || '',
-    sessionDate:  raw['Session Date']   || '',
-    sessionStart: raw['Session Start']  || '',
-    sessionEnd:   raw['Session End']    || '',
-    status:       raw['Status']         || 'Enrolled',
-    registered:   raw['Registered']     || '',
-    formResponses: (() => {
-      const v = raw['Form Responses'];
-      if (!v) return null;
-      if (Array.isArray(v)) return v;
-      try { return JSON.parse(v); } catch(e) { return null; }
-    })(),
+    grade:        raw['Grade']           || '',
+    gender:       raw['Gender']          || '',
+    phone:        raw['Phone']           || '',
+    email:        raw['Email']           || '',
+    owner:        raw['Household Owner'] || '',
+    ownerEmail:   raw['Owner Email']     || '',
+    ownerPhone:   raw['Owner Phone']     || '',
+    className:    raw['Class']           || '',
+    section:      raw['Section']         || '',
+    sessionDate:  raw['Session Date']    || '',
+    sessionStart: raw['Session Start']   || '',
+    sessionEnd:   raw['Session End']     || '',
+    status:       raw['Status']          || 'Enrolled',
+    registered:   raw['Registered']      || '',
+    formResponses,
   };
 }
 
-// ── App ────────────────────────────────────────────────────────────────
+// ── App ──────────────────────────────────────────────────────────────────────
 function App() {
   const p = useMemo(() => new URLSearchParams(window.location.search), []);
   const isPrint = p.get('_print') === '1';
@@ -314,7 +333,6 @@ function App() {
   const [loadedEnd, setLoadedEnd]     = useState(null);
 
   const [cols, setCols] = useState(loadCols);
-
   const toggleCol = useCallback(key => {
     setCols(prev => { const next = { ...prev, [key]: !prev[key] }; saveCols(next); return next; });
   }, []);
@@ -334,7 +352,7 @@ function App() {
       .then(r => { if (!r.ok) throw new Error(`Server returned ${r.status}`); return r.json(); })
       .then(json => {
         setRows(json.rows.map(normalizeRow));
-        if (json.meta?.org_slug) setOrgName(json.meta.org_slug);
+        if (json.rows.length > 0 && json.rows[0]['Org Name']) setOrgName(json.rows[0]['Org Name']);
         setLoadedStart(sd); setLoadedEnd(ed);
       })
       .catch(err => setError(err.message))
@@ -354,34 +372,28 @@ function App() {
 
   const datesChanged = startDate !== loadedStart || endDate !== loadedEnd;
 
-  // ── Counts ──
   const counts = useMemo(() => ({
     all:       rows ? rows.length : 0,
     enrolled:  rows ? rows.filter(r => r.status === 'Enrolled').length : 0,
     cancelled: rows ? rows.filter(r => r.status === 'Cancelled').length : 0,
   }), [rows]);
 
-  // ── Filter + group ──
   const displayRows = useMemo(() => {
     if (!rows) return [];
-    const secQ = sectionFilter.trim().toLowerCase();
-    return rows.filter(r => {
-      const statusOk = statusFilter === 'all' ||
-        (statusFilter === 'enrolled' && r.status === 'Enrolled') ||
-        (statusFilter === 'cancelled' && r.status === 'Cancelled');
-      const sectionOk = !secQ ||
-        (r.section || '').toLowerCase().includes(secQ) ||
-        (r.className || '').toLowerCase().includes(secQ);
-      return statusOk && sectionOk;
-    });
-  }, [rows, statusFilter, sectionFilter]);
+    return rows.filter(r =>
+      statusFilter === 'all' ||
+      (statusFilter === 'enrolled'  && r.status === 'Enrolled') ||
+      (statusFilter === 'cancelled' && r.status === 'Cancelled')
+    );
+  }, [rows, statusFilter]);
 
   const grouped = useMemo(() => {
     const bySec = {};
     displayRows.forEach(r => {
       if (!bySec[r.section]) bySec[r.section] = { className: r.className, sessions: {} };
       const dk = r.sessionDate || '(No Date)';
-      if (!bySec[r.section].sessions[dk]) bySec[r.section].sessions[dk] = { start: r.sessionStart, end: r.sessionEnd, rows: [] };
+      if (!bySec[r.section].sessions[dk])
+        bySec[r.section].sessions[dk] = { start: r.sessionStart, end: r.sessionEnd, rows: [] };
       bySec[r.section].sessions[dk].rows.push(r);
     });
     Object.values(bySec).forEach(sec =>
@@ -398,27 +410,31 @@ function App() {
   function exportExcel() {
     if (!rows || !rows.length) return;
     const headers = [
-      'Section','Class','Session Date',
-      ...(cols.times ? ['Start','End'] : []),
-      'Last Name','First Name',
-      ...(cols.recId ? ['Rec ID'] : []),
-      ...(cols.dob   ? ['DOB'] : []),
-      ...(cols.age   ? ['Age','Grade'] : []),
-      ...(cols.contact ? ['Phone','Email'] : []),
-      ...(cols.owner   ? ['Household Owner'] : []),
-      ...(cols.ownerContact ? ['Owner Phone','Owner Email'] : []),
+      'Section', 'Class', 'Session Date',
+      ...(cols.times    ? ['Start', 'End'] : []),
+      'Last Name', 'First Name',
+      ...(cols.recId    ? ['Rec ID'] : []),
+      ...(cols.dob      ? ['DOB'] : []),
+      ...(cols.age      ? ['Age'] : []),
+      ...(cols.grade    ? ['Grade'] : []),
+      ...(cols.gender   ? ['Gender'] : []),
+      ...(cols.contact  ? ['Phone', 'Email'] : []),
+      ...(cols.owner    ? ['Household Owner'] : []),
+      ...(cols.ownerContact ? ['Owner Phone', 'Owner Email'] : []),
       'Status',
       ...(cols.registered ? ['Registered'] : []),
     ];
     const dataRows = displayRows.map(r => [
       r.section, r.className, r.sessionDate,
-      ...(cols.times ? [r.sessionStart, r.sessionEnd] : []),
+      ...(cols.times    ? [r.sessionStart, r.sessionEnd] : []),
       r.lastName, r.firstName,
-      ...(cols.recId ? [r.recId] : []),
-      ...(cols.dob   ? [formatDOB(r.dob)] : []),
-      ...(cols.age   ? [r.age, r.grade] : []),
-      ...(cols.contact ? [formatPhone(r.phone), r.email] : []),
-      ...(cols.owner   ? [r.owner] : []),
+      ...(cols.recId    ? [r.recId] : []),
+      ...(cols.dob      ? [formatDOB(r.dob)] : []),
+      ...(cols.age      ? [r.age] : []),
+      ...(cols.grade    ? [r.grade] : []),
+      ...(cols.gender   ? [r.gender] : []),
+      ...(cols.contact  ? [formatPhone(r.phone), r.email] : []),
+      ...(cols.owner    ? [r.owner] : []),
       ...(cols.ownerContact ? [formatPhone(r.ownerPhone), r.ownerEmail] : []),
       r.status,
       ...(cols.registered ? [r.registered] : []),
@@ -429,7 +445,6 @@ function App() {
     XLSX.writeFile(wb, `class-roster-${loadedStart || 'report'}.xlsx`);
   }
 
-  // ── Column toggle buttons ──
   function ColToggle({ k, label }) {
     return <button className={`col-toggle${cols[k] ? ' on' : ''}`} onClick={() => toggleCol(k)}>{label}</button>;
   }
@@ -438,7 +453,6 @@ function App() {
   const runDate = `${(now.getMonth()+1).toString().padStart(2,'0')}/${now.getDate().toString().padStart(2,'0')}/${now.getFullYear()} @ ${now.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',hour12:true}).toLowerCase()}`;
   const dateRangeLabel = [loadedStart && formatDisplayDate(loadedStart), loadedEnd && formatDisplayDate(loadedEnd)].filter(Boolean).join(' – ') || 'Current Month';
 
-  // ── Toolbar ──
   function renderToolbar() {
     if (isPrint) return null;
     return (
@@ -452,14 +466,8 @@ function App() {
             placeholder="All sections" style={{width:160}} onKeyDown={e => e.key === 'Enter' && handleRun()} />
         </label>
 
-        <label>
-          Start
-          <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} />
-        </label>
-        <label>
-          End
-          <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} />
-        </label>
+        <label>Start<input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} /></label>
+        <label>End<input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} /></label>
         <button onClick={() => setMonth(-1)} style={{fontSize:10,padding:'3px 7px'}}>Last Mo.</button>
         <button onClick={() => setMonth(0)}  style={{fontSize:10,padding:'3px 7px'}}>This Mo.</button>
         <button onClick={() => setMonth(1)}  style={{fontSize:10,padding:'3px 7px'}}>Next Mo.</button>
@@ -486,7 +494,9 @@ function App() {
 
         <ColToggle k="recId"        label="Rec ID" />
         <ColToggle k="dob"          label="DOB" />
-        <ColToggle k="age"          label="Age/Grade" />
+        <ColToggle k="age"          label="Age" />
+        <ColToggle k="grade"        label="Grade" />
+        <ColToggle k="gender"       label="Gender" />
         <ColToggle k="contact"      label="Contact" />
         <ColToggle k="owner"        label="Owner" />
         <ColToggle k="ownerContact" label="Owner Contact" />
@@ -515,72 +525,69 @@ function App() {
     </div>
   );
 
-  // ── Column header helper ──
   function ColHdrs() {
     return (
       <div className="col-header-row">
         {cols.recId && <span className="cell col-recid">Rec ID</span>}
         <span className="cell col-fname">First Name</span>
         <span className="cell col-lname">Last Name</span>
-        {cols.dob   && <span className="cell col-dob">DOB</span>}
-        {cols.age   && <><span className="cell col-age">Age</span><span className="cell col-grade">Grade</span></>}
-        {cols.contact && <><span className="cell col-phone">Phone</span><span className="cell col-email">Email</span></>}
-        {cols.owner   && <span className="cell col-owner">Household Owner</span>}
+        {cols.dob      && <span className="cell col-dob">DOB</span>}
+        {cols.age      && <span className="cell col-age">Age</span>}
+        {cols.grade    && <span className="cell col-grade">Grade</span>}
+        {cols.gender   && <span className="cell col-gender">Gender</span>}
+        {cols.contact  && <><span className="cell col-phone">Phone</span><span className="cell col-email">Email</span></>}
+        {cols.owner    && <span className="cell col-owner">Household Owner</span>}
         {cols.ownerContact && <><span className="cell col-ownerph">Owner Phone</span><span className="cell col-ownerem">Owner Email</span></>}
-        {cols.times && <span className="cell col-times">Start – End</span>}
+        {cols.times    && <span className="cell col-times">Start – End</span>}
         <span className="cell col-status">Status</span>
         {cols.registered && <span className="cell col-reg">Registered</span>}
       </div>
     );
   }
 
-  // ── Data row ──
   function DataRow({ r }) {
     const isCancelled = r.status === 'Cancelled';
-    const qaItems = cols.responses && Array.isArray(r.formResponses) ? r.formResponses : [];
     return (
       <>
-      <div className={`data-row${isCancelled ? ' is-cancelled' : ''}`}>
-        {cols.recId && <span className="cell col-recid">{r.recId}</span>}
-        <span className="cell col-fname">{r.firstName}</span>
-        <span className="cell col-lname">{r.lastName}</span>
-        {cols.dob   && <span className="cell col-dob">{formatDOB(r.dob)}</span>}
-        {cols.age   && <><span className="cell col-age">{r.age}</span><span className="cell col-grade">{r.grade}</span></>}
-        {cols.contact && <>
-          <span className="cell col-phone">{formatPhone(r.phone)}</span>
-          <span className="cell col-email">
-            {r.email ? <a href={`mailto:${r.email}`} style={{color:'#3b82f6',textDecoration:'none'}}>{r.email}</a> : ''}
+        <div className={`data-row${isCancelled ? ' is-cancelled' : ''}`}>
+          {cols.recId && <span className="cell col-recid">{r.recId}</span>}
+          <span className="cell col-fname">{r.firstName}</span>
+          <span className="cell col-lname">{r.lastName}</span>
+          {cols.dob      && <span className="cell col-dob">{formatDOB(r.dob)}</span>}
+          {cols.age      && <span className="cell col-age">{r.age}</span>}
+          {cols.grade    && <span className="cell col-grade">{r.grade}</span>}
+          {cols.gender   && <span className="cell col-gender">{r.gender}</span>}
+          {cols.contact  && <>
+            <span className="cell col-phone">{formatPhone(r.phone)}</span>
+            <span className="cell col-email">
+              {r.email ? <a href={`mailto:${r.email}`} style={{color:'#3b82f6',textDecoration:'none'}}>{r.email}</a> : ''}
+            </span>
+          </>}
+          {cols.owner && <span className="cell col-owner">{r.owner}</span>}
+          {cols.ownerContact && <>
+            <span className="cell col-ownerph">{formatPhone(r.ownerPhone)}</span>
+            <span className="cell col-ownerem">{r.ownerEmail}</span>
+          </>}
+          {cols.times && <span className="cell col-times" style={{fontSize:'10.5px'}}>
+            {r.sessionStart && r.sessionEnd ? `${r.sessionStart} – ${r.sessionEnd}` : r.sessionStart || ''}
+          </span>}
+          <span className="cell col-status">
+            <span className={`status-badge status-${isCancelled ? 'cancelled' : 'enrolled'}`}>{r.status}</span>
           </span>
-        </>}
-        {cols.owner && <span className="cell col-owner">{r.owner}</span>}
-        {cols.ownerContact && <>
-          <span className="cell col-ownerph">{formatPhone(r.ownerPhone)}</span>
-          <span className="cell col-ownerem" style={{fontSize:'10.5px'}}>{r.ownerEmail}</span>
-        </>}
-        {cols.times && <span className="cell col-times" style={{fontSize:'10.5px'}}>
-          {r.sessionStart && r.sessionEnd ? `${r.sessionStart} – ${r.sessionEnd}` : r.sessionStart || ''}
-        </span>}
-        <span className="cell col-status">
-          <span className={`status-badge status-${isCancelled ? 'cancelled' : 'enrolled'}`}>
-            {r.status}
-          </span>
-        </span>
-        {cols.registered && <span className="cell col-reg">{r.registered}</span>}
-      </div>
-      {qaItems.length > 0 && (
-        <div className="form-responses-row">
-          {qaItems.map((qa, qi) => {
-            let ans = qa.a == null ? '' : String(qa.a);
-            try { const p = JSON.parse(ans); if (Array.isArray(p)) ans = p.join(', '); } catch(e) {}
-            return (
-              <span key={qi} className="form-qa-pair">
-                <span className="form-q">{qa.q}:</span>
-                <span className="form-a">{ans || '—'}</span>
-              </span>
-            );
-          })}
+          {cols.registered && <span className="cell col-reg">{r.registered}</span>}
         </div>
-      )}
+        {cols.responses && r.formResponses && r.formResponses.length > 0 && (
+          <div className="form-responses-row">
+            <div className="form-responses-grid">
+              {r.formResponses.map((qa, i) => (
+                <div className="form-qa-pair" key={i}>
+                  <span className="form-q">{qa.q}</span>
+                  <span className="form-a">{qa.a}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </>
     );
   }
