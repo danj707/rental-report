@@ -399,6 +399,24 @@ function resolveOrg(req, res, next) {
   next();
 }
 
+// ── GET /:org/metrics/api/data — usage metrics JSON ──────────────────
+app.get("/:org/metrics/api/data", (req, res) => {
+  const { org } = req.params;
+  if (!ORGS[org]) return res.status(404).json({ error: "Unknown org" });
+  const days = parseInt(req.query.days) || 30;
+  res.json(buildMetrics(org, days));
+});
+
+// ── GET /metrics/api/data — cross-org summary ────────────────────────
+app.get("/metrics/api/data", (req, res) => {
+  const days = parseInt(req.query.days) || 30;
+  const result = {};
+  Object.keys(ORGS).forEach(org => {
+    result[org] = buildMetrics(org, days);
+  });
+  res.json(result);
+});
+
 // ── POST /:org/:report/api/log — log client-side events ──────────────
 // Called by report HTML pages for events the server can't see:
 // excel (SheetJS export) and print (window.print())
@@ -461,24 +479,6 @@ app.get("/:org/:report/api/pdf", resolveOrg, async (req, res) => {
     console.error("[pdf] Error:", err);
     res.status(500).json({ error: err.message });
   }
-});
-
-// ── GET /:org/metrics/api/data — usage metrics JSON ──────────────────
-app.get("/:org/metrics/api/data", (req, res) => {
-  const { org } = req.params;
-  if (!ORGS[org]) return res.status(404).json({ error: "Unknown org" });
-  const days = parseInt(req.query.days) || 30;
-  res.json(buildMetrics(org, days));
-});
-
-// ── GET /metrics/api/data — cross-org summary ────────────────────────
-app.get("/metrics/api/data", (req, res) => {
-  const days = parseInt(req.query.days) || 30;
-  const result = {};
-  Object.keys(ORGS).forEach(org => {
-    result[org] = buildMetrics(org, days);
-  });
-  res.json(result);
 });
 
 // ── Subscription API ─────────────────────────────────────────────────
