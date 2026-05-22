@@ -211,6 +211,9 @@ function normalizeRow(r) {
     classRevenue:      parseFloat(r['Class Revenue']) || 0,
     totalRevenue:      parseFloat(r['Total Revenue']) || 0,
     activeMemberships: Number(r['Active Memberships'])|| 0,
+    checkins:           Number(r['Check-ins'])          || 0,
+    itemsSold:          parseFloat(r['Items Sold'])      || 0,
+    storeRevenue:       parseFloat(r['Store Revenue'])   || 0,
   };
 }
 
@@ -361,9 +364,12 @@ function App() {
     enrollments:   acc.enrollments   + r.enrollments,
     classRevenue:  acc.classRevenue  + r.classRevenue,
     totalRevenue:  acc.totalRevenue  + r.totalRevenue,
-  }), { reservations:0, rentals:0, rentalRevenue:0, classes:0, sections:0, enrollments:0, classRevenue:0, totalRevenue:0 }), [visible]);
+    checkins:      acc.checkins      + r.checkins,
+  }), { reservations:0, rentals:0, rentalRevenue:0, classes:0, sections:0, enrollments:0, classRevenue:0, totalRevenue:0, checkins:0 }), [visible]);
 
   const activeMemberships = rows && rows.length > 0 ? rows[0].activeMemberships : 0;
+  const orgItemsSold    = rows && rows.length > 0 ? rows[0].itemsSold    : 0;
+  const orgStoreRevenue = rows && rows.length > 0 ? rows[0].storeRevenue : 0;
   const orgName   = meta.org_name   || '';
   const logoUrl   = meta.logo_url   || null;
 
@@ -461,6 +467,21 @@ function App() {
             <div className="stat-value amber">{fmtNum(activeMemberships)}</div>
             <div className="stat-sub">org-wide</div>
           </div>
+          <div className="stat-card">
+            <div className="stat-label">Check-ins</div>
+            <div className="stat-value slate">{fmtNum(totals.checkins)}</div>
+            <div className="stat-sub">in period</div>
+          </div>
+          <div className="stat-card">
+            <div className="stat-label">Items Sold</div>
+            <div className="stat-value slate">{fmtNum(Math.round(orgItemsSold))}</div>
+            <div className="stat-sub">store &amp; POS, org-wide</div>
+          </div>
+          <div className="stat-card">
+            <div className="stat-label">Store Revenue</div>
+            <div className="stat-value green">{fmtCurrency(orgStoreRevenue)}</div>
+            <div className="stat-sub">org-wide</div>
+          </div>
         </div>
       )}
 
@@ -549,6 +570,7 @@ function App() {
               <div className="loc-stats">
                 <CardStat label="Rentals" val={fmtNum(r.rentals)} sub={fmtCurrency(r.rentalRevenue)} />
                 <CardStat label="Enrollments" val={fmtNum(r.enrollments)} sub={fmtCurrency(r.classRevenue)} />
+                {r.checkins > 0 && <CardStat label="Check-ins" val={fmtNum(r.checkins)} sub="in period" />}
                 {r.classes > 0 && <CardStat label="Classes" val={r.classes} sub={`${r.sections} sections`} />}
                 {r.reservations > 0 && <CardStat label="Reservations" val={fmtNum(r.reservations)} sub="total slots" />}
               </div>
@@ -572,6 +594,7 @@ function App() {
                   ['sections','Sections'],
                   ['enrollments','Enrollments'],
                   ['classRevenue','Program Rev'],
+                  ['checkins','Check-ins'],
                   ['totalRevenue','Total Rev'],
                 ].map(([col, label]) => (
                   <th key={col} className={tblSort.col===col ? 'sorted':''} onClick={() => toggleTblSort(col)}>
@@ -591,6 +614,7 @@ function App() {
                   <td className={`num${!r.sections?' zero':''}`}>{r.sections || '—'}</td>
                   <td className={`num${!r.enrollments?' zero':''}`}>{fmtNum(r.enrollments)}</td>
                   <td className={`rev rev-class${!r.classRevenue?' zero':''}`}>{r.classRevenue ? fmtCurrency(r.classRevenue) : '—'}</td>
+                  <td className={`num${!r.checkins?' zero':''}`}>{fmtNum(r.checkins)}</td>
                   <td className={`rev rev-total${!r.totalRevenue?' zero':''}`}>{r.totalRevenue ? fmtCurrency(r.totalRevenue) : '—'}</td>
                 </tr>
               ))}
@@ -604,6 +628,7 @@ function App() {
                   <td className="num">{totals.sections || '—'}</td>
                   <td className="num">{fmtNum(totals.enrollments)}</td>
                   <td className="rev rev-class">{fmtCurrency(totals.classRevenue)}</td>
+                  <td className="num">{fmtNum(totals.checkins)}</td>
                   <td className="rev rev-total">{fmtCurrency(totals.totalRevenue)}</td>
                 </tr>
               )}
