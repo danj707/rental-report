@@ -576,25 +576,153 @@ app.get("/:org", (req, res) => {
 </html>`);
 });
 
-// ── Root index ───────────────────────────────────────────────────────
+// ── Root index — all orgs dashboard ─────────────────────────────────
 app.get("/", (req, res) => {
-  const orgs = Object.keys(ORGS);
-  res.send(`
-    <html><body style="font-family:sans-serif;padding:40px">
-    <h2>rec.us Report Server</h2>
-    <ul>
-      ${orgs.map(o => {
-        const org = ORGS[o];
-        const links = [];
-        if (org.facility?.mbUuid) links.push(`<a href="/${o}/facility">Facility</a>`);
-        if (org.historic?.mbUuid) links.push(`<a href="/${o}/historic">Historic</a>`);
-        if (org.gl?.mbUuid)       links.push(`<a href="/${o}/gl">GL Rollup</a>`);
-        links.push(`<a href="/${o}/admin">Admin</a>`);
-        return `<li style="margin:8px 0"><strong>${o}</strong> — ${links.join(" | ")}</li>`;
-      }).join("")}
-    </ul>
-    </body></html>
-  `);
+  const reportMeta = {
+    facility: { label: "Facility Rental Schedule", icon: "📅", desc: "Reservations grouped by date and location", color: "#16a34a" },
+    gl:       { label: "GL Code Rollup",            icon: "📊", desc: "Payment and refund summary by GL code",   color: "#3b82f6" },
+    programs: { label: "Program Revenue",           icon: "🎯", desc: "Enrollment and revenue by program",       color: "#7c3aed" },
+    historic: { label: "Historic Buildings",        icon: "🏛️",  desc: "Reservations for historic building sites", color: "#d97706" },
+  };
+
+  const orgSections = Object.entries(ORGS).map(([slug, org]) => {
+    const available = REPORT_TYPES.filter(r => org[r]?.mbUuid);
+    const displayName = slug.charAt(0).toUpperCase() + slug.slice(1);
+
+    const cards = available.map(r => {
+      const m = reportMeta[r] || { label: r, icon: "📄", desc: "", color: "#888" };
+      return `
+        <a href="/${slug}/${r}" class="report-card" style="--accent:${m.color}">
+          <span class="report-icon">${m.icon}</span>
+          <div class="report-body">
+            <div class="report-label">${m.label}</div>
+            <div class="report-desc">${m.desc}</div>
+          </div>
+          <span class="report-arrow">→</span>
+        </a>`;
+    }).join("");
+
+    return `
+      <div class="org-section">
+        <div class="org-header">
+          ${org.logoUrl ? `<img src="${org.logoUrl}" class="org-logo" alt="" onerror="this.style.display='none'" />` : ""}
+          <div class="org-header-text">
+            <div class="org-name">${displayName} Parks &amp; Recreation</div>
+            <div class="org-slug">${slug}</div>
+          </div>
+          <a href="/${slug}/admin" class="org-admin-link" title="Email subscriptions">📧 Admin</a>
+        </div>
+        <div class="report-cards">${cards}</div>
+      </div>`;
+  }).join("");
+
+  res.send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>rec.us Reports</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'IBM Plex Sans', system-ui, sans-serif;
+      background: #f5f4f1; color: #1a1a1a;
+      min-height: 100vh; display: flex; flex-direction: column;
+    }
+    .topbar {
+      background: #2c2c2c; color: #eee;
+      padding: 14px 32px; display: flex; align-items: center; gap: 12px;
+    }
+    .topbar-logo {
+      font-size: 18px; font-weight: 800; letter-spacing: -0.5px; color: #fff;
+    }
+    .topbar-logo span { color: #4ade80; }
+    .topbar-divider { width: 1px; height: 20px; background: rgba(255,255,255,.2); }
+    .topbar-sub { font-size: 12px; color: #aaa; text-transform: uppercase; letter-spacing: 1px; }
+
+    .main { flex: 1; max-width: 860px; margin: 0 auto; padding: 40px 24px; width: 100%; }
+
+    .page-title {
+      font-size: 13px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 1.2px; color: #888; margin-bottom: 24px;
+    }
+
+    .org-section {
+      background: #fff;
+      border: 1px solid #e0ddd8;
+      border-radius: 10px;
+      margin-bottom: 20px;
+      overflow: hidden;
+    }
+
+    .org-header {
+      display: flex; align-items: center; gap: 14px;
+      padding: 16px 20px;
+      background: #f9f8f6;
+      border-bottom: 1px solid #e8e5df;
+    }
+    .org-logo {
+      height: 32px; width: auto; object-fit: contain; flex-shrink: 0;
+    }
+    .org-header-text { flex: 1; }
+    .org-name { font-weight: 700; font-size: 14px; }
+    .org-slug { font-size: 11px; color: #999; margin-top: 1px; }
+
+    .org-admin-link {
+      font-size: 12px; color: #888; text-decoration: none;
+      padding: 5px 10px; border: 1px solid #ddd; border-radius: 5px;
+      white-space: nowrap; flex-shrink: 0;
+      transition: background .15s, color .15s;
+    }
+    .org-admin-link:hover { background: #f0f0f0; color: #333; }
+
+    .report-cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 1px;
+      background: #e8e5df;
+    }
+
+    .report-card {
+      display: flex; align-items: center; gap: 12px;
+      padding: 14px 18px;
+      background: #fff;
+      text-decoration: none; color: inherit;
+      transition: background .15s;
+      border-left: 3px solid transparent;
+    }
+    .report-card:hover {
+      background: #fafaf8;
+      border-left-color: var(--accent, #888);
+    }
+    .report-icon { font-size: 20px; flex-shrink: 0; width: 28px; text-align: center; }
+    .report-body { flex: 1; min-width: 0; }
+    .report-label { font-weight: 600; font-size: 13px; }
+    .report-desc  { font-size: 11px; color: #999; margin-top: 2px;
+                    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .report-arrow { font-size: 14px; color: #ccc; flex-shrink: 0; }
+    .report-card:hover .report-arrow { color: var(--accent, #888); }
+
+    footer { text-align: center; padding: 24px; font-size: 11px; color: #bbb; }
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <div class="topbar-logo">rec<span>.</span>us</div>
+    <div class="topbar-divider"></div>
+    <div class="topbar-sub">Report Server</div>
+  </div>
+
+  <div class="main">
+    <div class="page-title">Organizations</div>
+    ${orgSections}
+  </div>
+
+  <footer>rec.us · ${Object.keys(ORGS).length} organizations</footer>
+</body>
+</html>`);
 });
 
 app.use(express.static(path.join(__dirname, "public")));
