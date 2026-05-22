@@ -43,12 +43,14 @@ const ORGS = {
     logoUrl: "https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2Forganization-460566d3-3a51-4387-a7a0-0b010923e40d%2FfullLogo.png%3F1742511257248&w=256&q=75",
     facility: { mbUuid: "21e74d52-f49a-46d6-bc2d-f9348027854f" },
     gl:       { mbUuid: "c6daa914-9ea0-449f-956b-373aa0ac2a8a" },
+    roster:   { mbUuid: "ce13ffa2-2bc5-4764-992d-957b4c3a35f9" },
   },
   norman: {
     orgId:   "574923bd-9e7b-43e0-9e5f-7ce256189cbf",
     logoUrl: "https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2Forganization-574923bd-9e7b-43e0-9e5f-7ce256189cbf%2FfullLogo.png%3F1763816879340&w=256&q=75",
     facility: { mbUuid: "81c43b6d-1776-4a13-9fec-cb6f9e9895bb" },
     gl:       { mbUuid: "46b7e83b-f8ac-4d84-8c5c-4c72ca57cea4" },
+    roster:   { mbUuid: "b4fb3c1b-b096-4865-8c32-3dc2635d1264" },
   },
   smyrna: {
     orgId:   "efc0724c-8f32-481a-bab3-fc19c724f3a7",
@@ -56,6 +58,7 @@ const ORGS = {
     facility: { mbUuid: "d541c91e-bb92-4103-abc5-940b3edb61b9" },
     historic: { mbUuid: "af3c5388-7deb-4a05-a102-cc31f6c4b9f7" },
     gl:       { mbUuid: "45e050fd-10d7-4010-b616-6a2ec6e5f7ed" },
+    roster:   { mbUuid: "462000f0-6be1-4e73-b983-0375668c1a1f" },
   },
   watertown: {
     orgId:   "d781690b-c5a0-43c5-8443-9ae43899528c",
@@ -63,6 +66,7 @@ const ORGS = {
     facility: { mbUuid: "4b64af10-d57f-41af-aad8-b16d12a8f7b8" },
     gl:       { mbUuid: "e0043550-0ab8-429f-bbb0-35911c1190f6" },
     programs: { mbUuid: "d3a3554f-1232-4803-9cc7-5b0f611360b0" },
+    roster:   { mbUuid: "4f9861ef-e8ac-4447-bf88-3648c1e54a8b" },
   },
   theranch: {
     orgId:   "2d147f38-068c-409e-890d-a8acc88d8079",
