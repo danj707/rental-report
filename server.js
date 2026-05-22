@@ -36,6 +36,30 @@ const RESEND_API_KEY = process.env.RESEND_API_KEY || "";
 const FROM_EMAIL     = process.env.FROM_EMAIL     || "reports@rec.us";
 const FROM_NAME      = process.env.FROM_NAME      || "rec.us Reports";
 
+
+// ── Dashboard authentication ─────────────────────────────────────────
+// Set DASHBOARD_PASSWORD in Railway env vars.
+// /hotdog and /api/hotdog are public (no auth required).
+const DASHBOARD_PASSWORD = process.env.DASHBOARD_PASSWORD || '';
+
+function dashboardAuth(req, res, next) {
+  // Public routes — no auth
+  if (req.path === '/hotdog' || req.path.startsWith('/api/hotdog')) return next();
+
+  // No password configured → open access (dev/staging fallback)
+  if (!DASHBOARD_PASSWORD) return next();
+
+  const auth = req.headers['authorization'] || '';
+  if (auth.startsWith('Basic ')) {
+    const decoded  = Buffer.from(auth.slice(6), 'base64').toString('utf-8');
+    const password = decoded.includes(':') ? decoded.split(':').slice(1).join(':') : decoded;
+    if (password === DASHBOARD_PASSWORD) return next();
+  }
+
+  res.set('WWW-Authenticate', 'Basic realm="Rec Reports", charset="UTF-8"');
+  return res.status(401).send('Password required');
+}
+
 // ── Org config ───────────────────────────────────────────────────────
 const ORGS = {
   clarksville: {
@@ -358,6 +382,7 @@ cron.schedule("0 7 1 * *", () => runSchedule("monthly"));
 
 // ── Express setup ────────────────────────────────────────────────────
 const app = express();
+app.use(dashboardAuth);
 app.use(express.json());
 
 // ── Parse dates flexibly ─────────────────────────────────────────────
