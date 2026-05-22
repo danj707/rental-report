@@ -214,6 +214,8 @@ function normalizeRow(r) {
     checkins:           Number(r['Check-ins'])          || 0,
     itemsSold:          parseFloat(r['Items Sold'])      || 0,
     storeRevenue:       parseFloat(r['Store Revenue'])   || 0,
+    membershipRevenue:  parseFloat(r['Membership Revenue']) || 0,
+    passRevenue:        parseFloat(r['Pass Revenue'])       || 0,
   };
 }
 
@@ -368,8 +370,10 @@ function App() {
   }), { reservations:0, rentals:0, rentalRevenue:0, classes:0, sections:0, enrollments:0, classRevenue:0, totalRevenue:0, checkins:0 }), [visible]);
 
   const activeMemberships = rows && rows.length > 0 ? rows[0].activeMemberships : 0;
-  const orgItemsSold    = rows && rows.length > 0 ? rows[0].itemsSold    : 0;
-  const orgStoreRevenue = rows && rows.length > 0 ? rows[0].storeRevenue : 0;
+  const orgItemsSold         = rows && rows.length > 0 ? rows[0].itemsSold         : 0;
+  const orgStoreRevenue      = rows && rows.length > 0 ? rows[0].storeRevenue      : 0;
+  const orgMembershipRevenue = rows && rows.length > 0 ? rows[0].membershipRevenue : 0;
+  const orgPassRevenue       = rows && rows.length > 0 ? rows[0].passRevenue       : 0;
   const orgName   = meta.org_name   || '';
   const logoUrl   = meta.logo_url   || null;
 
@@ -482,6 +486,18 @@ function App() {
             <div className="stat-value green">{fmtCurrency(orgStoreRevenue)}</div>
             <div className="stat-sub">org-wide</div>
           </div>
+          <div className="stat-card">
+            <div className="stat-label">Membership Revenue</div>
+            <div className="stat-value green">{fmtCurrency(orgMembershipRevenue)}</div>
+            <div className="stat-sub">org-wide</div>
+          </div>
+          {orgPassRevenue > 0 && (
+          <div className="stat-card">
+            <div className="stat-label">Pass Revenue</div>
+            <div className="stat-value green">{fmtCurrency(orgPassRevenue)}</div>
+            <div className="stat-sub">org-wide</div>
+          </div>
+          )}
         </div>
       )}
 
