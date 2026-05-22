@@ -624,6 +624,33 @@ app.get('/hotdog', (_req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'hotdog.html'));
 });
 
+// ── Debug: raw Metabase response (remove before prod) ────────────────
+app.get('/api/hotdog/debug', async (req, res) => {
+  try {
+    const mbUrl = `${METABASE_URL}/api/public/card/${HOTDOG_MB_UUID}/query/json`;
+    const mbRes = await fetch(mbUrl);
+    const raw   = await mbRes.json();
+    // Return just the structural summary + first 2 rows
+    const topKeys  = Object.keys(raw || {});
+    const dataKeys = Object.keys(raw?.data || {});
+    const sample   = raw?.data?.rows?.slice(0, 2) || raw?.rows?.slice(0, 2) || [];
+    const cols     = raw?.data?.cols?.map(c => c.display_name || c.name) || raw?.columns || [];
+    res.json({
+      http_status:  mbRes.status,
+      top_keys:     topKeys,
+      data_keys:    dataKeys,
+      status:       raw?.status,
+      error:        raw?.error || null,
+      row_count:    raw?.data?.rows?.length ?? raw?.rows?.length ?? 'n/a',
+      col_count:    raw?.data?.cols?.length ?? raw?.columns?.length ?? 'n/a',
+      col_names:    cols,
+      sample_rows:  sample,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get('/api/hotdog', async (req, res) => {
   try {
     const { start_date = '', end_date = '', org_filter = '' } = req.query;
