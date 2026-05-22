@@ -145,7 +145,7 @@ function buildMetrics(org, daysBack) {
   const allSubs = readJSON(SUBS_FILE, []).filter(s => s.org === org && s.active);
   const subCounts = {};
   allSubs.forEach(s => {
-    const rpts = JSON.parse(s.reports);
+    const rpts = Array.isArray(s.reports) ? s.reports : JSON.parse(s.reports);
     rpts.forEach(r => { subCounts[r] = (subCounts[r] || 0) + 1; });
   });
 
@@ -332,7 +332,7 @@ async function runSchedule(scheduleType) {
   console.log(`[cron] Running ${scheduleType} sends...`);
   const subs = db.getAllBySchedule(scheduleType);
   for (const sub of subs) {
-    const reports = JSON.parse(sub.reports);
+    const reports = Array.isArray(sub.reports) ? sub.reports : JSON.parse(sub.reports);
     for (const report of reports) {
       await sendReportEmail(sub.org, sub.email, report, scheduleType);
     }
