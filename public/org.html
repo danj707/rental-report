@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Reports</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'IBM Plex Sans', system-ui, sans-serif;
+      background: #f5f4f1;
+      color: #1a1a1a;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── Top bar ── */
+    .topbar {
+      background: #2c2c2c;
+      color: #eee;
+      padding: 10px 28px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      flex-shrink: 0;
+    }
+    .topbar-logo {
+      height: 34px;
+      max-width: 130px;
+      object-fit: contain;
+      object-position: left center;
+      display: block;
+    }
+    .topbar-text { line-height: 1.3; }
+    .topbar-name { font-size: 14px; font-weight: 600; }
+    .topbar-sub  { font-size: 10px; color: #888; text-transform: uppercase; letter-spacing: 0.8px; margin-top: 1px; }
+
+    /* ── Main layout ── */
+    .main {
+      flex: 1;
+      max-width: 680px;
+      width: 100%;
+      margin: 0 auto;
+      padding: 44px 24px 64px;
+    }
+
+    /* ── Section label ── */
+    .section-label {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1.4px;
+      color: #aaa;
+      margin-bottom: 12px;
+    }
+
+    /* ── Report cards ── */
+    .cards {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-bottom: 28px;
+    }
+
+    .card {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      background: #fff;
+      border: 1px solid #e2dfd9;
+      border-left: 4px solid var(--accent, #ccc);
+      border-radius: 6px;
+      padding: 18px 20px;
+      text-decoration: none;
+      color: inherit;
+      transition: box-shadow 0.15s, transform 0.12s;
+    }
+    .card:hover {
+      box-shadow: 0 3px 16px rgba(0,0,0,0.10);
+      transform: translateY(-1px);
+    }
+
+    .card-icon {
+      font-size: 22px;
+      width: 34px;
+      text-align: center;
+      flex-shrink: 0;
+      line-height: 1;
+    }
+
+    .card-body { flex: 1; min-width: 0; }
+
+    .card-name {
+      font-size: 14px;
+      font-weight: 600;
+      color: #111;
+      margin-bottom: 3px;
+    }
+
+    .card-desc {
+      font-size: 12px;
+      color: #999;
+      line-height: 1.4;
+    }
+
+    .card-arrow {
+      font-size: 17px;
+      color: #ddd;
+      flex-shrink: 0;
+      transition: color 0.15s, transform 0.15s;
+      font-family: 'IBM Plex Mono', monospace;
+    }
+    .card:hover .card-arrow {
+      color: var(--accent, #16a34a);
+      transform: translateX(4px);
+    }
+
+    /* ── Divider ── */
+    .divider {
+      border: none;
+      border-top: 1px solid #e2dfd9;
+      margin: 4px 0 16px;
+    }
+
+    /* ── Admin link ── */
+    .admin-link {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: #888;
+      text-decoration: none;
+      font-size: 13px;
+      padding: 8px 4px;
+      border-radius: 4px;
+      transition: color 0.15s;
+    }
+    .admin-link:hover { color: #333; }
+    .admin-icon { font-size: 15px; }
+
+    /* ── Footer ── */
+    footer {
+      text-align: center;
+      padding: 18px 24px;
+      font-size: 11px;
+      color: #ccc;
+      font-family: 'IBM Plex Mono', monospace;
+      flex-shrink: 0;
+    }
+
+    /* ── Empty state ── */
+    .empty {
+      text-align: center;
+      padding: 48px 0;
+      color: #bbb;
+      font-size: 13px;
+    }
+  </style>
+</head>
+<body>
+
+<header class="topbar" id="topbar"></header>
+
+<main class="main">
+  <div class="section-label">Available Reports</div>
+  <div class="cards" id="cards">
+    <div class="empty">No reports configured.</div>
+  </div>
+  <hr class="divider" />
+  <a class="admin-link" id="admin-link" href="#">
+    <span class="admin-icon">📧</span>
+    Manage Email Subscriptions
+  </a>
+</main>
+
+<footer id="footer">rec.us</footer>
+
+<script>
+  const cfg = window.ORG_CONFIG || {};
+  const slug = cfg.slug || '';
+
+  const REPORT_META = {
+    facility: {
+      label: 'Facility Rental Schedule',
+      icon:  '📅',
+      color: '#16a34a',
+      desc:  'Reservations grouped by date and location',
+    },
+    gl: {
+      label: 'GL Code Rollup',
+      icon:  '📊',
+      color: '#3b82f6',
+      desc:  'Payment and refund summary by GL code',
+    },
+    programs: {
+      label: 'Program Revenue',
+      icon:  '🎯',
+      color: '#7c3aed',
+      desc:  'Enrollment and revenue by program and section',
+    },
+    historic: {
+      label: 'Historic Buildings',
+      icon:  '🏛️',
+      color: '#d97706',
+      desc:  'Reservations for historic building sites',
+    },
+  };
+
+  // Page title
+  if (cfg.displayName) {
+    document.title = cfg.displayName + ' — Reports';
+  }
+
+  // Top bar
+  document.getElementById('topbar').innerHTML = [
+    cfg.logoUrl
+      ? `<img src="${cfg.logoUrl}" alt="" class="topbar-logo" onerror="this.style.display='none'" />`
+      : '',
+    `<div class="topbar-text">
+       <div class="topbar-name">${cfg.displayName || 'Reports'}</div>
+       <div class="topbar-sub">rec.us Reports</div>
+     </div>`,
+  ].join('');
+
+  // Cards
+  const reports = cfg.reports || [];
+  if (reports.length > 0) {
+    document.getElementById('cards').innerHTML = reports.map(r => {
+      const m = REPORT_META[r] || { label: r, icon: '📄', color: '#888', desc: '' };
+      return `<a href="/${slug}/${r}" class="card" style="--accent:${m.color}">
+        <div class="card-icon">${m.icon}</div>
+        <div class="card-body">
+          <div class="card-name">${m.label}</div>
+          <div class="card-desc">${m.desc}</div>
+        </div>
+        <div class="card-arrow">→</div>
+      </a>`;
+    }).join('');
+  }
+
+  // Admin link + footer
+  document.getElementById('admin-link').href = `/${slug}/admin`;
+  document.getElementById('footer').textContent = `rec.us · ${slug}`;
+</script>
+</body>
+</html>
