@@ -329,8 +329,9 @@ function App() {
   const [orgName, setOrgName] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError]     = useState(null);
-  const [loadedStart, setLoadedStart] = useState(null);
-  const [loadedEnd, setLoadedEnd]     = useState(null);
+  const [loadedStart, setLoadedStart]     = useState(null);
+  const [loadedEnd, setLoadedEnd]         = useState(null);
+  const [loadedSection, setLoadedSection] = useState(null);
 
   const [cols, setCols] = useState(loadCols);
   const toggleCol = useCallback(key => {
@@ -353,7 +354,7 @@ function App() {
       .then(json => {
         setRows(json.rows.map(normalizeRow));
         if (json.rows.length > 0 && json.rows[0]['Org Name']) setOrgName(json.rows[0]['Org Name']);
-        setLoadedStart(sd); setLoadedEnd(ed);
+        setLoadedStart(sd); setLoadedEnd(ed); setLoadedSection(sec || '');
       })
       .catch(err => setError(err.message))
       .finally(() => setLoading(false));
@@ -370,7 +371,9 @@ function App() {
     setStartDate(toISO(target)); setEndDate(toISO(last));
   }
 
-  const datesChanged = startDate !== loadedStart || endDate !== loadedEnd;
+  const paramsChanged = loadedSection !== null && (
+    startDate !== loadedStart || endDate !== loadedEnd || (sectionFilter || '') !== loadedSection
+  );
 
   const counts = useMemo(() => ({
     all:       rows ? rows.length : 0,
@@ -461,7 +464,7 @@ function App() {
         <div className="toolbar-divider" />
 
         <label>
-          Section
+          Section{loadedSection !== null && (sectionFilter || '') !== loadedSection ? <span style={{color:'#f59e0b',marginLeft:4,fontSize:9}}>↻ re-run</span> : ''}
           <input type="text" value={sectionFilter} onChange={e => setSectionFilter(e.target.value)}
             placeholder="All sections" style={{width:160}} onKeyDown={e => e.key === 'Enter' && handleRun()} />
         </label>
@@ -472,7 +475,7 @@ function App() {
         <button onClick={() => setMonth(0)}  style={{fontSize:10,padding:'3px 7px'}}>This Mo.</button>
         <button onClick={() => setMonth(1)}  style={{fontSize:10,padding:'3px 7px'}}>Next Mo.</button>
         <button className="btn-run" onClick={handleRun} disabled={loading}
-          style={datesChanged && !loading ? {boxShadow:'0 0 0 2px #4ade80'} : {}}>
+          style={paramsChanged && !loading ? {boxShadow:'0 0 0 2px #4ade80'} : {}}>
           {loading ? 'Loading…' : '▶ Run Report'}
         </button>
 
