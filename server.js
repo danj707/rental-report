@@ -52,7 +52,7 @@ const ORGS = {
   smyrna: {
     orgId:   "efc0724c-8f32-481a-bab3-fc19c724f3a7",
     logoUrl: "https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2Forganization-efc0724c-8f32-481a-bab3-fc19c724f3a7%2FfullLogo.png%3F1771265790459&w=1920&q=75",
-    facility: { mbUuid: "d541c91e-bb92-4103-abc5-940b3edb61b9" },  // ← add this
+    facility: { mbUuid: "d541c91e-bb92-4103-abc5-940b3edb61b9" },
     historic: { mbUuid: "af3c5388-7deb-4a05-a102-cc31f6c4b9f7" },
     gl:       { mbUuid: "45e050fd-10d7-4010-b616-6a2ec6e5f7ed" },
   },
@@ -87,7 +87,6 @@ function writeJSON(file, data) {
   fs.writeFileSync(file, JSON.stringify(data, null, 2));
 }
 
-// db shim — mimics the sqlite API used below
 const db = {
   getSubscriptions(org) {
     return readJSON(SUBS_FILE, []).filter(s => s.org === org && s.active);
@@ -113,7 +112,7 @@ const db = {
   appendLog(org, email, report, schedule, status, message) {
     const log = readJSON(LOG_FILE, []);
     log.unshift({ id: Date.now(), org, email, report, schedule, status, message: message || null, sent_at: new Date().toISOString() });
-    writeJSON(LOG_FILE, log.slice(0, 200)); // keep last 200 entries
+    writeJSON(LOG_FILE, log.slice(0, 200));
   },
   getLog(org) {
     return readJSON(LOG_FILE, []).filter(l => l.org === org).slice(0, 50);
@@ -146,7 +145,6 @@ function getDateRange(schedule) {
     const start = new Date(now); start.setDate(start.getDate() - 7);
     return { start: toISO(start), end: toISO(end), label: `Weekly — ${toISO(start)} to ${toISO(end)}` };
   }
-  // monthly — last complete month
   const start = new Date(y, m - 1, 1);
   const end   = new Date(y, m, 0);
   return { start: toISO(start), end: toISO(end), label: `Monthly — ${start.toLocaleString("default",{month:"long",year:"numeric"})}` };
@@ -207,7 +205,6 @@ async function sendReportEmail(orgSlug, email, reportType, schedule) {
         ? "Program Revenue"
         : "Facility Rental Schedule";
 
-  // Build a pre-loaded report URL with the date range baked in
   const reportUrl = `${BASE_URL}/${orgSlug}/${reportType}?start_date=${start}&end_date=${end}`;
 
   const resend = getResendClient();
@@ -263,7 +260,6 @@ async function sendReportEmail(orgSlug, email, reportType, schedule) {
 async function runSchedule(scheduleType) {
   console.log(`[cron] Running ${scheduleType} sends...`);
   const subs = db.getAllBySchedule(scheduleType);
-
   for (const sub of subs) {
     const reports = JSON.parse(sub.reports);
     for (const report of reports) {
@@ -274,9 +270,6 @@ async function runSchedule(scheduleType) {
 }
 
 // ── Cron jobs ────────────────────────────────────────────────────────
-// Daily   — 7am every day
-// Weekly  — 7am every Monday
-// Monthly — 7am on the 1st of each month
 cron.schedule("0 7 * * *", () => runSchedule("daily"));
 cron.schedule("0 7 * * 1", () => runSchedule("weekly"));
 cron.schedule("0 7 1 * *", () => runSchedule("monthly"));
@@ -322,7 +315,7 @@ function buildMetabaseParams(query, reportType) {
   return params;
 }
 
-// ── Middleware: validate org ─────────────────────────────────────────
+// ── Middleware: validate org + report ────────────────────────────────
 function resolveOrg(req, res, next) {
   const { org, report } = req.params;
   if (!ORGS[org]) return res.status(404).send(`Unknown org: "${org}"`);
@@ -333,37 +326,42 @@ function resolveOrg(req, res, next) {
   next();
 }
 
-// ── GET /:org/:report/api/data ───────────────────────────────────────
-// ── GET /:org — org landing page ─────────────────────────────────────
-app.get("/:org", (req, res) => {
-  const slug = req.params.org;
-  const org  = ORGS[slug];
-  if (!org) return res.status(404).send("Unknown org");
-
-  const available = REPORT_TYPES.filter(r => org[r]?.mbUuid);
-  const config = {
-    slug,
-    displayName: slug.charAt(0).toUpperCase() + slug.slice(1),
-    logoUrl:     org.logoUrl || '',
-    reports:     available,
-  };
-
-  const templatePath = path.join(__dirname, "public", "org.html");
-  let html;
+// ── GET /:org/:report/api/data — proxy to Metabase ───────────────────
+app.get("/:org/:report/api/data", resolveOrg, async (req, res) => {
   try {
-    html = fs.readFileSync(templatePath, "utf8");
-  } catch (e) {
-    return res.status(500).send("org.html template not found");
-  }
+    const { orgConfig, orgSlug, reportType } = req;
+    const mbUuid = orgConfig[reportType]?.mbUuid;
+    if (!mbUuid) return res.status(404).json({ error: `No Metabase question configured for ${orgSlug}/${reportType}` });
 
-  const injected = html.replace(
-    "</head>",
-    `<script>window.ORG_CONFIG = ${JSON.stringify(config)};<\/script>\n</head>`
-  );
-  res.send(injected);
+    const params = buildMetabaseParams(req.query, reportType);
+    const paramStr = params.length > 0 ? `?parameters=${encodeURIComponent(JSON.stringify(params))}` : "";
+    const url = `${METABASE_URL}/api/public/card/${mbUuid}/query/json${paramStr}`;
+    console.log(`[proxy] ${orgSlug}/${reportType} → ${url}`);
+
+    const response = await fetch(url);
+    if (!response.ok) {
+      const body = await response.text();
+      console.error(`[proxy] Metabase returned ${response.status}: ${body}`);
+      return res.status(response.status).json({ error: body });
+    }
+
+    const data = await response.json();
+    res.json({
+      rows: data,
+      meta: {
+        org_slug: orgSlug,
+        logo_url: orgConfig.logoUrl,
+        report_type: reportType,
+        generated_at: new Date().toISOString(),
+      },
+    });
+  } catch (err) {
+    console.error("[proxy] Error:", err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
-// ── GET /:org/:report/api/pdf ────────────────────────────────────────
+// ── GET /:org/:report/api/pdf — Puppeteer PDF ────────────────────────
 app.get("/:org/:report/api/pdf", resolveOrg, async (req, res) => {
   try {
     const { orgSlug, reportType } = req;
@@ -379,7 +377,6 @@ app.get("/:org/:report/api/pdf", resolveOrg, async (req, res) => {
 
 // ── Subscription API ─────────────────────────────────────────────────
 
-// GET /:org/admin/reports — returns enabled report types for the org
 app.get("/:org/admin/reports", (req, res) => {
   const org = ORGS[req.params.org];
   if (!org) return res.status(404).json({ error: "Unknown org" });
@@ -395,7 +392,6 @@ app.get("/:org/admin/reports", (req, res) => {
   res.json({ reports: available });
 });
 
-// GET /:org/admin/subscribers
 app.get("/:org/admin/subscribers", (req, res) => {
   if (!ORGS[req.params.org]) return res.status(404).json({ error: "Unknown org" });
   const rows = db.getSubscriptions(req.params.org);
@@ -403,7 +399,6 @@ app.get("/:org/admin/subscribers", (req, res) => {
   res.json({ subscribers: rows, log });
 });
 
-// POST /:org/admin/subscribe  { email, reports: ["facility","gl","historic"], schedule: "monthly" }
 app.post("/:org/admin/subscribe", (req, res) => {
   if (!ORGS[req.params.org]) return res.status(404).json({ error: "Unknown org" });
   const { email, reports, schedule } = req.body;
@@ -415,7 +410,6 @@ app.post("/:org/admin/subscribe", (req, res) => {
   res.json({ ok: true });
 });
 
-// DELETE /:org/admin/subscribe  { email }
 app.delete("/:org/admin/subscribe", (req, res) => {
   if (!ORGS[req.params.org]) return res.status(404).json({ error: "Unknown org" });
   const { email } = req.body;
@@ -424,7 +418,6 @@ app.delete("/:org/admin/subscribe", (req, res) => {
   res.json({ ok: true });
 });
 
-// POST /:org/admin/test-email — test Resend without PDF
 app.post("/:org/admin/test-email", async (req, res) => {
   if (!ORGS[req.params.org]) return res.status(404).json({ error: "Unknown org" });
   const { email } = req.body;
@@ -447,20 +440,16 @@ app.post("/:org/admin/test-email", async (req, res) => {
   }
 });
 
-// POST /:org/admin/test-send  { email, report, schedule }
-// Responds immediately and runs PDF generation + send in background
 app.post("/:org/admin/test-send", async (req, res) => {
   if (!ORGS[req.params.org]) return res.status(404).json({ error: "Unknown org" });
   const { email, report, schedule } = req.body;
   if (!email || !report || !schedule) return res.status(400).json({ error: "email, report, and schedule required" });
-  // Respond immediately so the browser doesn't time out
   res.json({ ok: true, message: "Sending in background — check the log in a moment" });
-  // Fire and forget
   sendReportEmail(req.params.org, email, report, schedule)
     .catch(err => console.error("[test-send] Error:", err));
 });
 
-// ── Serve HTML pages ─────────────────────────────────────────────────
+// ── Serve HTML report pages ──────────────────────────────────────────
 app.get("/:org/facility", (req, res) => {
   if (!ORGS[req.params.org]) return res.status(404).send("Unknown org");
   res.sendFile(path.join(__dirname, "public", "facility.html"));
@@ -485,7 +474,6 @@ app.get("/:org/admin", (req, res) => {
   if (!ORGS[req.params.org]) return res.status(404).send("Unknown org");
   res.sendFile(path.join(__dirname, "public", "admin.html"));
 });
-
 
 // ── GET /:org — org landing page ─────────────────────────────────────
 app.get("/:org", (req, res) => {
