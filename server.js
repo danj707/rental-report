@@ -51,6 +51,7 @@ const ORGS = {
     facility: { mbUuid: "81c43b6d-1776-4a13-9fec-cb6f9e9895bb" },
     gl:       { mbUuid: "46b7e83b-f8ac-4d84-8c5c-4c72ca57cea4" },
     roster:   { mbUuid: "b4fb3c1b-b096-4865-8c32-3dc2635d1264" },
+    overview: { mbUuid: null }, // TODO: add Metabase UUID after creating the question
   },
   smyrna: {
     orgId:   "efc0724c-8f32-481a-bab3-fc19c724f3a7",
@@ -75,7 +76,7 @@ const ORGS = {
   },
 };
 
-const REPORT_TYPES = ["facility", "gl", "historic", "programs", "roster"];
+const REPORT_TYPES = ["facility", "gl", "historic", "programs", "roster", "overview"];
 
 // ── File storage ─────────────────────────────────────────────────────
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "data");
