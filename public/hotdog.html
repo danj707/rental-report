@@ -182,11 +182,8 @@
       const [rows,      setRows]      = useState([]);
       const [loading,   setLoading]   = useState(false);
       const [error,     setError]     = useState(null);
-      const [startDate, setStartDate] = useState(() => {
-        const t = new Date();
-        return new Date(t.getFullYear(), t.getMonth(), 1).toISOString().slice(0, 10);
-      });
-      const [endDate,   setEndDate]   = useState(() => new Date().toISOString().slice(0, 10));
+      const [startDate, setStartDate] = useState('');
+      const [endDate,   setEndDate]   = useState('');
       const [orgFilter, setOrgFilter] = useState('');
       const [hasRun,    setHasRun]    = useState(false);
       const [animated,  setAnimated]  = useState(false);
@@ -268,9 +265,7 @@
                 </div>
               </div>
             </div>
-            <a href="/" style={{ fontSize: 12, color: 'var(--muted)', textDecoration: 'none', letterSpacing: '0.06em' }}>
-              ← Reports Home
-            </a>
+
           </header>
 
           {/* ── Filters ── */}
