@@ -615,6 +615,41 @@ app.get("/:org/metrics", (req, res) => {
 });
 
 // ── GET /:org — org landing page ─────────────────────────────────────
+// ────────────────────────────────────────────────────────────
+// Hot Dog Counter — global concession leaderboard
+// ────────────────────────────────────────────────────────────
+const HOTDOG_MB_UUID = 'f3ec6929-49a8-4a00-8b72-c4685b6e9f35';
+
+app.get('/hotdog', (_req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'hotdog.html'));
+});
+
+app.get('/api/hotdog', async (req, res) => {
+  try {
+    const { start_date = '', end_date = '', org_filter = '' } = req.query;
+    const params = [];
+    if (start_date) params.push({ type: 'category', target: ['variable', ['template-tag', 'start_date']], value: start_date });
+    if (end_date)   params.push({ type: 'category', target: ['variable', ['template-tag', 'end_date']],   value: end_date   });
+    if (org_filter) params.push({ type: 'category', target: ['variable', ['template-tag', 'org_filter']], value: org_filter });
+
+    const mbUrl = `${METABASE_URL}/api/public/card/${HOTDOG_MB_UUID}/query/json`
+      + (params.length ? `?parameters=${encodeURIComponent(JSON.stringify(params))}` : '');
+
+    const mbRes = await fetch(mbUrl);
+    const json  = await mbRes.json();
+    if (json.error) return res.status(502).json({ error: json.error });
+
+    const cols = (json.data?.cols || []).map(c => c.display_name || c.name);
+    const rows = (json.data?.rows || []).map(row =>
+      Object.fromEntries(cols.map((c, i) => [c, row[i]]))
+    );
+    res.json({ rows, meta: { cols } });
+  } catch (err) {
+    console.error('[/api/hotdog]', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get("/:org", (req, res) => {
   const slug = req.params.org;
   const org  = ORGS[slug];
@@ -815,41 +850,6 @@ app.get("/", (req, res) => {
 });
 
 app.use(express.static(path.join(__dirname, "public")));
-
-// ────────────────────────────────────────────────────────────
-// Hot Dog Counter — global concession leaderboard
-// ────────────────────────────────────────────────────────────
-const HOTDOG_MB_UUID = 'f3ec6929-49a8-4a00-8b72-c4685b6e9f35';
-
-app.get('/hotdog', (_req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'hotdog.html'));
-});
-
-app.get('/api/hotdog', async (req, res) => {
-  try {
-    const { start_date = '', end_date = '', org_filter = '' } = req.query;
-    const params = [];
-    if (start_date) params.push({ type: 'category', target: ['variable', ['template-tag', 'start_date']], value: start_date });
-    if (end_date)   params.push({ type: 'category', target: ['variable', ['template-tag', 'end_date']],   value: end_date   });
-    if (org_filter) params.push({ type: 'category', target: ['variable', ['template-tag', 'org_filter']], value: org_filter });
-
-    const mbUrl = `${METABASE_URL}/api/public/card/${HOTDOG_MB_UUID}/query/json`
-      + (params.length ? `?parameters=${encodeURIComponent(JSON.stringify(params))}` : '');
-
-    const mbRes = await fetch(mbUrl);
-    const json  = await mbRes.json();
-    if (json.error) return res.status(502).json({ error: json.error });
-
-    const cols = (json.data?.cols || []).map(c => c.display_name || c.name);
-    const rows = (json.data?.rows || []).map(row =>
-      Object.fromEntries(cols.map((c, i) => [c, row[i]]))
-    );
-    res.json({ rows, meta: { cols } });
-  } catch (err) {
-    console.error('[/api/hotdog]', err.message);
-    res.status(500).json({ error: err.message });
-  }
-});
 
 app.listen(PORT, () => {
   console.log(`\n  🏛️  rec.us Report Server`);
