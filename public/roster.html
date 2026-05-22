@@ -192,6 +192,24 @@
     body.print-mode .toolbar { display: none !important; }
     body.print-mode { background: #fff; }
     body.print-mode .page { box-shadow: none; margin: 0; padding: 12px 16px; max-width: 100%; }
+
+    /* ── Form responses sub-row ── */
+    .form-responses-row {
+      padding: 4px 10px 7px 20px;
+      background: #f0f4ff;
+      border-bottom: 1px solid #dde5ff;
+      font-size: 10.5px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px 20px;
+    }
+    .form-qa-pair {
+      display: flex;
+      gap: 5px;
+      max-width: 400px;
+    }
+    .form-q { color: #6b7280; font-weight: 500; flex-shrink: 0; max-width: 220px; }
+    .form-a { color: #111; font-weight: 600; }
   </style>
 </head>
 <body>
@@ -208,7 +226,7 @@ const LS_COLS = 'roster_cols_v1';
 const COL_DEFAULTS = {
   recId: false, dob: false, age: true, grade: true,
   contact: true, owner: true, ownerContact: false,
-  times: true, registered: false,
+  times: true, registered: false, responses: false,
 };
 
 function loadCols() {
@@ -268,6 +286,12 @@ function normalizeRow(raw) {
     sessionEnd:   raw['Session End']    || '',
     status:       raw['Status']         || 'Enrolled',
     registered:   raw['Registered']     || '',
+    formResponses: (() => {
+      const v = raw['Form Responses'];
+      if (!v) return null;
+      if (Array.isArray(v)) return v;
+      try { return JSON.parse(v); } catch(e) { return null; }
+    })(),
   };
 }
 
@@ -468,6 +492,7 @@ function App() {
         <ColToggle k="ownerContact" label="Owner Contact" />
         <ColToggle k="times"        label="Times" />
         <ColToggle k="registered"   label="Registered" />
+        <ColToggle k="responses"    label="Form Responses" />
 
         <div className="toolbar-spacer" />
         {rows && <span className="row-count">{displayRows.length} of {counts.all}</span>}
@@ -512,7 +537,9 @@ function App() {
   // ── Data row ──
   function DataRow({ r }) {
     const isCancelled = r.status === 'Cancelled';
+    const qaItems = cols.responses && Array.isArray(r.formResponses) ? r.formResponses : [];
     return (
+      <>
       <div className={`data-row${isCancelled ? ' is-cancelled' : ''}`}>
         {cols.recId && <span className="cell col-recid">{r.recId}</span>}
         <span className="cell col-fname">{r.firstName}</span>
@@ -540,6 +567,21 @@ function App() {
         </span>
         {cols.registered && <span className="cell col-reg">{r.registered}</span>}
       </div>
+      {qaItems.length > 0 && (
+        <div className="form-responses-row">
+          {qaItems.map((qa, qi) => {
+            let ans = qa.a == null ? '' : String(qa.a);
+            try { const p = JSON.parse(ans); if (Array.isArray(p)) ans = p.join(', '); } catch(e) {}
+            return (
+              <span key={qi} className="form-qa-pair">
+                <span className="form-q">{qa.q}:</span>
+                <span className="form-a">{ans || '—'}</span>
+              </span>
+            );
+          })}
+        </div>
+      )}
+      </>
     );
   }
 
