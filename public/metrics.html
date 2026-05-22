@@ -211,8 +211,11 @@ function App() {
   // Compute report keys present in data
   const reports = useMemo(() => {
     if (!data) return [];
-    const keys = Object.keys(data.summary || {});
-    return ['facility','gl','historic','programs','roster'].filter(r => keys.includes(r));
+    // Show all configured reports for this org (zeros if no events yet)
+    const configured = data.configuredReports || [];
+    const fromSummary = Object.keys(data.summary || {});
+    const allReports = [...new Set([...configured, ...fromSummary])];
+    return ['facility','gl','historic','programs','roster'].filter(r => allReports.includes(r));
   }, [data]);
 
   // Summary totals across all reports
