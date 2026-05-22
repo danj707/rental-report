@@ -836,6 +836,16 @@ function App() {
     const orgSlug = (filteredRows[0]?.orgName || 'report').replace(/\s+/g, '-').toLowerCase();
     const filename = `rental-schedule-${orgSlug}-${loadedStart || 'report'}.xlsx`;
     XLSX.writeFile(wb, filename);
+    logClientEvent('excel');
+  }
+
+
+  // Fire-and-forget log to server for client-side events (excel, print)
+  function logClientEvent(event) {
+    try {
+      const parts = window.location.pathname.split('/').filter(Boolean);
+      if (parts.length >= 2) fetch(`/${parts[0]}/${parts[1]}/api/log?event=${event}`, { method: 'POST' }).catch(() => {});
+    } catch {}
   }
 
   const isPrint = params._print === '1';
