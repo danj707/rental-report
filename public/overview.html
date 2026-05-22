@@ -1,0 +1,621 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Facility Overview</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, -apple-system, sans-serif; background: #f4f5f7; color: #1a1a2e; }
+
+    /* ── Toolbar ── */
+    .toolbar {
+      position: sticky; top: 0; z-index: 100;
+      background: #1a1a2e; padding: 10px 16px;
+      display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    }
+    .toolbar-divider { width: 1px; height: 24px; background: rgba(255,255,255,.2); }
+    .toolbar label { color: #aaa; font-size: 11px; }
+    .toolbar input[type="date"] {
+      background: rgba(255,255,255,.1); border: 1px solid rgba(255,255,255,.2);
+      color: #fff; border-radius: 5px; padding: 5px 8px; font-size: 13px; cursor: pointer;
+    }
+    .toolbar input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(1); opacity:.6; }
+    .btn {
+      padding: 6px 13px; border-radius: 5px; border: 1px solid rgba(255,255,255,.25);
+      background: transparent; color: #ddd; font-size: 12px; cursor: pointer; white-space: nowrap;
+      transition: background .15s;
+    }
+    .btn:hover { background: rgba(255,255,255,.1); }
+    .btn-run {
+      background: #16a34a; border-color: #16a34a; color: #fff; font-weight: 700; font-size: 13px;
+      padding: 7px 18px;
+    }
+    .btn-run:hover { background: #15803d; }
+    .btn-run:disabled { opacity: .5; cursor: not-allowed; }
+    .btn-excel { background: #166534; border-color: #166534; color: #fff; font-weight: 600; }
+    .btn-excel:hover { background: #14532d; }
+    .btn-pdf { background: #3b82f6; border-color: #3b82f6; font-weight: 600; color: #fff; }
+    .btn-pdf:hover { background: #2563eb; }
+    .btn-pdf:disabled { opacity: .5; cursor: not-allowed; }
+    .report-header-logo { height: 32px; max-width: 120px; object-fit: contain; object-position: left center; }
+
+    /* ── Stats band ── */
+    .stats-band {
+      background: #fff; border-bottom: 1px solid #e5e7eb;
+      display: flex; gap: 0; overflow-x: auto;
+    }
+    .stat-card {
+      flex: 1 1 150px; padding: 18px 20px; border-right: 1px solid #f0f0f4;
+      text-align: center; min-width: 130px;
+    }
+    .stat-card:last-child { border-right: none; }
+    .stat-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: 1px; color: #888; font-weight: 600; margin-bottom: 4px; }
+    .stat-value { font-size: 22px; font-weight: 800; letter-spacing: -.5px; }
+    .stat-value.blue   { color: #2563eb; }
+    .stat-value.indigo { color: #6366f1; }
+    .stat-value.green  { color: #16a34a; }
+    .stat-value.amber  { color: #d97706; }
+    .stat-value.slate  { color: #475569; }
+    .stat-sub { font-size: 11px; color: #aaa; margin-top: 2px; }
+
+    /* ── Controls bar ── */
+    .controls-bar {
+      padding: 12px 20px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+      background: #f4f5f7; border-bottom: 1px solid #e5e7eb;
+    }
+    .controls-bar input[type="text"] {
+      padding: 6px 12px; border: 1px solid #d1d5db; border-radius: 6px;
+      font-size: 13px; background: #fff; width: 220px;
+    }
+    .controls-bar select {
+      padding: 6px 10px; border: 1px solid #d1d5db; border-radius: 6px;
+      font-size: 13px; background: #fff; cursor: pointer;
+    }
+    .view-toggle { display: flex; gap: 0; border: 1px solid #d1d5db; border-radius: 6px; overflow: hidden; }
+    .view-btn {
+      padding: 6px 14px; font-size: 12px; cursor: pointer; background: #fff;
+      border: none; color: #555; transition: background .15s;
+    }
+    .view-btn.active { background: #1a1a2e; color: #fff; }
+    .controls-right { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+    .results-count { font-size: 12px; color: #888; }
+
+    /* ── Cards grid ── */
+    .cards-grid {
+      padding: 20px; display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(310px, 1fr));
+      gap: 16px;
+    }
+    .loc-card {
+      background: #fff; border-radius: 10px; border: 1px solid #e5e7eb;
+      padding: 18px; box-shadow: 0 1px 3px rgba(0,0,0,.06);
+      transition: box-shadow .15s, transform .1s;
+      display: flex; flex-direction: column; gap: 12px;
+    }
+    .loc-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,.1); transform: translateY(-1px); }
+    .loc-card-name { font-size: 14px; font-weight: 700; color: #1a1a2e; line-height: 1.3; }
+    .loc-card-revenue { font-size: 28px; font-weight: 800; color: #2563eb; letter-spacing: -.5px; }
+    .loc-card-revenue-sub { font-size: 11px; color: #888; margin-top: 1px; }
+
+    /* Revenue split bar */
+    .rev-split-bar { height: 6px; border-radius: 3px; background: #f0f0f4; overflow: hidden; display: flex; }
+    .rev-split-bar .rental-seg { background: #6366f1; }
+    .rev-split-bar .class-seg  { background: #16a34a; }
+    .rev-split-legend { display: flex; gap: 12px; font-size: 11px; color: #888; margin-top: 4px; }
+    .rev-split-legend span { display: flex; align-items: center; gap: 4px; }
+    .rev-split-legend .dot { width: 8px; height: 8px; border-radius: 50%; }
+    .dot-rental { background: #6366f1; }
+    .dot-class  { background: #16a34a; }
+
+    .loc-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .loc-stat { background: #f8f9fb; border-radius: 6px; padding: 8px 10px; }
+    .loc-stat-label { font-size: 10px; color: #888; text-transform: uppercase; letter-spacing: .8px; font-weight: 600; margin-bottom: 2px; }
+    .loc-stat-val { font-size: 15px; font-weight: 700; color: #1a1a2e; }
+    .loc-stat-sub { font-size: 10.5px; color: #aaa; }
+
+    .loc-card-footer {
+      display: flex; gap: 12px; padding-top: 8px; border-top: 1px solid #f0f0f4;
+      font-size: 11px; color: #aaa;
+    }
+    .loc-card-footer span { display: flex; align-items: center; gap: 3px; }
+
+    /* ── Table ── */
+    .table-wrap { padding: 20px; overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 10px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,.06); font-size: 13px; }
+    thead { background: #1a1a2e; }
+    th {
+      padding: 12px 14px; color: #aaa; font-size: 11px; font-weight: 600;
+      text-transform: uppercase; letter-spacing: .8px; white-space: nowrap;
+      cursor: pointer; user-select: none; text-align: right;
+    }
+    th:first-child { text-align: left; }
+    th:hover { color: #fff; }
+    th.sorted { color: #60a5fa; }
+    th .sort-icon { margin-left: 4px; opacity: .7; }
+    td { padding: 11px 14px; border-bottom: 1px solid #f0f0f4; vertical-align: middle; }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: #f8f9ff; }
+    td.loc-name { font-weight: 600; color: #1a1a2e; font-size: 13.5px; }
+    td.num { text-align: right; color: #444; }
+    td.rev { text-align: right; font-weight: 600; }
+    td.rev-rental { color: #6366f1; }
+    td.rev-class  { color: #16a34a; }
+    td.rev-total  { color: #2563eb; font-size: 14px; }
+    td.zero { color: #ccc; }
+    .total-row td { background: #f0f4ff; font-weight: 700; border-top: 2px solid #2563eb; }
+    .total-row .loc-name { color: #2563eb; }
+
+    /* ── Empty / loading / error ── */
+    .state-center {
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      min-height: 280px; gap: 12px; color: #888;
+    }
+    .state-center .icon { font-size: 40px; }
+    .state-center .msg  { font-size: 15px; font-weight: 600; }
+    .state-center .sub  { font-size: 13px; color: #aaa; }
+    .spinner {
+      width: 32px; height: 32px; border: 3px solid #e5e7eb; border-top-color: #2563eb;
+      border-radius: 50%; animation: spin .7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Report header (print area) ── */
+    .report-area { padding: 24px 28px 0; max-width: 1400px; margin: 0 auto; }
+    .report-header { display: flex; justify-content: space-between; align-items: flex-end; padding-bottom: 14px; border-bottom: 2px solid #1a1a2e; margin-bottom: 20px; }
+    .report-header .left { display: flex; flex-direction: column; gap: 4px; }
+    .report-header .org-label { font-size: 10px; letter-spacing: 1.6px; text-transform: uppercase; color: #777; font-weight: 600; }
+    .report-header .title { font-size: 20px; font-weight: 800; }
+    .report-header .date-range { font-size: 11px; color: #666; text-align: right; }
+
+    /* ── Print ── */
+    @media print {
+      .toolbar, .controls-bar, .stats-band { display: none !important; }
+      .cards-grid { grid-template-columns: repeat(3, 1fr); }
+      .loc-card:hover { box-shadow: none; transform: none; }
+      body { background: #fff; }
+    }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useMemo, useCallback } = React;
+
+/* ── Formatters ──────────────────────────────────────────────────── */
+function fmtCurrency(n) {
+  if (!n && n !== 0) return '—';
+  if (Math.abs(n) >= 1000000) return '$' + (n / 1000000).toFixed(2) + 'M';
+  if (Math.abs(n) >= 1000)    return '$' + n.toLocaleString('en-US', { maximumFractionDigits: 0 });
+  return '$' + n.toFixed(2);
+}
+function fmtNum(n) { return (n || 0).toLocaleString('en-US'); }
+function toISO(s) {
+  if (!s) return '';
+  const d = new Date(s + 'T00:00:00');
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+function normalizeRow(r) {
+  return {
+    location:          r['Location'] || '',
+    reservations:      Number(r['Reservations'])     || 0,
+    rentals:           Number(r['Rentals'])           || 0,
+    rentalRevenue:     parseFloat(r['Rental Revenue'])|| 0,
+    classes:           Number(r['Classes'])           || 0,
+    sections:          Number(r['Sections'])          || 0,
+    enrollments:       Number(r['Enrollments'])       || 0,
+    classRevenue:      parseFloat(r['Class Revenue']) || 0,
+    totalRevenue:      parseFloat(r['Total Revenue']) || 0,
+    activeMemberships: Number(r['Active Memberships'])|| 0,
+  };
+}
+
+/* ── Sort helpers ───────────────────────────────────────────────── */
+const SORT_OPTIONS = [
+  { value: 'totalRevenue',  label: 'Total Revenue'   },
+  { value: 'rentalRevenue', label: 'Rental Revenue'  },
+  { value: 'classRevenue',  label: 'Class Revenue'   },
+  { value: 'enrollments',   label: 'Enrollments'     },
+  { value: 'rentals',       label: 'Rentals'         },
+  { value: 'reservations',  label: 'Reservations'    },
+  { value: 'location',      label: 'Location (A→Z)'  },
+];
+
+/* ── Inline revenue split bar ───────────────────────────────────── */
+function RevSplitBar({ rental, klass, total }) {
+  if (!total) return <div className="rev-split-bar" />;
+  const rPct = Math.round((rental / total) * 100);
+  const cPct = 100 - rPct;
+  return (
+    <div>
+      <div className="rev-split-bar">
+        <div className="rental-seg" style={{ width: rPct + '%' }} />
+        <div className="class-seg"  style={{ width: cPct + '%' }} />
+      </div>
+      <div className="rev-split-legend">
+        <span><span className="dot dot-rental" /> Rental {rPct}%</span>
+        <span><span className="dot dot-class"  /> Programs {cPct}%</span>
+      </div>
+    </div>
+  );
+}
+
+/* ── Main App ────────────────────────────────────────────────────── */
+function App() {
+  const today  = new Date().toISOString().slice(0, 10);
+  const ytdStart = today.slice(0, 4) + '-01-01';
+
+  const [rows,        setRows]        = useState(null);
+  const [meta,        setMeta]        = useState({});
+  const [loading,     setLoading]     = useState(false);
+  const [error,       setError]       = useState(null);
+  const [view,        setView]        = useState('cards');
+  const [sortBy,      setSortBy]      = useState('totalRevenue');
+  const [filterText,  setFilterText]  = useState('');
+  const [pdfLoading,  setPdfLoading]  = useState(false);
+  const [loadedStart, setLoadedStart] = useState('');
+  const [loadedEnd,   setLoadedEnd]   = useState('');
+  const [startDate,   setStartDate]   = useState(ytdStart);
+  const [endDate,     setEndDate]     = useState(today);
+
+  const pathParts = window.location.pathname.split('/').filter(Boolean);
+  const orgSlug   = pathParts[0] || 'org';
+
+  /* ── Date presets ─────────────────────────────────────────────── */
+  function setPreset(preset) {
+    const now = new Date();
+    const y = now.getFullYear(), m = now.getMonth(), d = now.getDate();
+    const pad = n => String(n).padStart(2, '0');
+    const fmt = (yr, mo, da) => `${yr}-${pad(mo + 1)}-${pad(da)}`;
+    if (preset === 'month') {
+      setStartDate(fmt(y, m, 1));
+      setEndDate(fmt(y, m, new Date(y, m + 1, 0).getDate()));
+    } else if (preset === 'lastmonth') {
+      const lm = new Date(y, m, 0);
+      setStartDate(fmt(lm.getFullYear(), lm.getMonth(), 1));
+      setEndDate(fmt(lm.getFullYear(), lm.getMonth(), lm.getDate()));
+    } else if (preset === 'ytd') {
+      setStartDate(`${y}-01-01`); setEndDate(fmt(y, m, d));
+    } else if (preset === 'year') {
+      setStartDate(`${y}-01-01`); setEndDate(`${y}-12-31`);
+    }
+  }
+
+  /* ── Fetch ────────────────────────────────────────────────────── */
+  async function runReport() {
+    setLoading(true); setError(null);
+    try {
+      const params = new URLSearchParams({ start_date: startDate, end_date: endDate });
+      const res = await fetch(`/${orgSlug}/overview/api/data?${params}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const json = await res.json();
+      setRows((json.rows || []).map(normalizeRow));
+      setMeta(json.meta || {});
+      setLoadedStart(startDate); setLoadedEnd(endDate);
+    } catch (e) { setError(e.message); }
+    finally { setLoading(false); }
+  }
+
+  /* ── PDF ──────────────────────────────────────────────────────── */
+  function downloadPdf() {
+    setPdfLoading(true);
+    const params = new URLSearchParams({ start_date: loadedStart, end_date: loadedEnd });
+    fetch(`/${orgSlug}/overview/api/pdf?${params}`)
+      .then(r => r.blob())
+      .then(blob => {
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `facility-overview-${loadedStart}.pdf`;
+        a.click(); URL.revokeObjectURL(a.href);
+      })
+      .catch(e => alert('PDF failed: ' + e.message))
+      .finally(() => setPdfLoading(false));
+  }
+
+  /* ── Excel export ─────────────────────────────────────────────── */
+  function exportExcel() {
+    if (!visible.length) return;
+    const headers = ['Location','Reservations','Rentals','Rental Revenue','Classes','Sections','Enrollments','Class Revenue','Total Revenue'];
+    const data = visible.map(r => [
+      r.location, r.reservations, r.rentals, r.rentalRevenue,
+      r.classes, r.sections, r.enrollments, r.classRevenue, r.totalRevenue,
+    ]);
+    const ws = XLSX.utils.aoa_to_sheet([headers, ...data]);
+    ws['!cols'] = [20,14,10,16,10,10,14,16,16].map(w => ({ wch: w }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Facility Overview');
+    XLSX.writeFile(wb, `facility-overview-${loadedStart || 'export'}.xlsx`);
+    logClientEvent('excel');
+  }
+
+  function logClientEvent(event) {
+    fetch(`/${orgSlug}/overview/api/log`, { method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ event }) }).catch(() => {});
+  }
+
+  /* ── Derived data ─────────────────────────────────────────────── */
+  const visible = useMemo(() => {
+    if (!rows) return [];
+    let r = rows;
+    if (filterText) {
+      const q = filterText.toLowerCase();
+      r = r.filter(row => row.location.toLowerCase().includes(q));
+    }
+    return [...r].sort((a, b) => {
+      if (sortBy === 'location') return a.location.localeCompare(b.location);
+      return b[sortBy] - a[sortBy];
+    });
+  }, [rows, filterText, sortBy]);
+
+  const totals = useMemo(() => visible.reduce((acc, r) => ({
+    reservations:  acc.reservations  + r.reservations,
+    rentals:       acc.rentals       + r.rentals,
+    rentalRevenue: acc.rentalRevenue + r.rentalRevenue,
+    classes:       acc.classes       + r.classes,
+    sections:      acc.sections      + r.sections,
+    enrollments:   acc.enrollments   + r.enrollments,
+    classRevenue:  acc.classRevenue  + r.classRevenue,
+    totalRevenue:  acc.totalRevenue  + r.totalRevenue,
+  }), { reservations:0, rentals:0, rentalRevenue:0, classes:0, sections:0, enrollments:0, classRevenue:0, totalRevenue:0 }), [visible]);
+
+  const activeMemberships = rows && rows.length > 0 ? rows[0].activeMemberships : 0;
+  const orgName   = meta.org_name   || '';
+  const logoUrl   = meta.logo_url   || null;
+
+  /* ── Table column sort ────────────────────────────────────────── */
+  const [tblSort, setTblSort] = useState({ col: 'totalRevenue', dir: 'desc' });
+  const tblRows = useMemo(() => {
+    const r = [...visible];
+    r.sort((a, b) => {
+      const dir = tblSort.dir === 'asc' ? 1 : -1;
+      if (tblSort.col === 'location') return dir * a.location.localeCompare(b.location);
+      return dir * (a[tblSort.col] - b[tblSort.col]);
+    });
+    return r;
+  }, [visible, tblSort]);
+
+  function toggleTblSort(col) {
+    setTblSort(prev => prev.col === col
+      ? { col, dir: prev.dir === 'desc' ? 'asc' : 'desc' }
+      : { col, dir: 'desc' });
+  }
+  function sortIcon(col) {
+    if (tblSort.col !== col) return <span className="sort-icon">↕</span>;
+    return <span className="sort-icon">{tblSort.dir === 'asc' ? '↑' : '↓'}</span>;
+  }
+
+  /* ── Card value cell ─────────────────────────────────────────── */
+  function CardStat({ label, val, sub }) {
+    return (
+      <div className="loc-stat">
+        <div className="loc-stat-label">{label}</div>
+        <div className="loc-stat-val">{val}</div>
+        {sub && <div className="loc-stat-sub">{sub}</div>}
+      </div>
+    );
+  }
+
+  /* ── Render ──────────────────────────────────────────────────── */
+  return (
+    <div>
+      {/* ── Toolbar ── */}
+      <div className="toolbar">
+        {logoUrl && <img src={logoUrl} alt="" className="report-header-logo" onError={e => e.target.style.display='none'} />}
+        <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} />
+        <input type="date" value={endDate}   onChange={e => setEndDate(e.target.value)} />
+        <button className="btn" onClick={() => setPreset('month')}>This Month</button>
+        <button className="btn" onClick={() => setPreset('lastmonth')}>Last Month</button>
+        <button className="btn" onClick={() => setPreset('ytd')}>YTD</button>
+        <button className="btn" onClick={() => setPreset('year')}>This Year</button>
+        <button className="btn btn-run" onClick={runReport} disabled={loading}>
+          {loading ? 'Loading…' : '▶ Run Report'}
+        </button>
+        <div className="toolbar-divider" />
+        <button className="btn btn-excel" onClick={exportExcel} disabled={!rows || !visible.length}>📊 Excel</button>
+        <button className="btn" onClick={() => { logClientEvent('print'); window.print(); }}>🖨️ Print</button>
+        <button className="btn btn-pdf" onClick={downloadPdf} disabled={pdfLoading || !rows}>
+          {pdfLoading ? 'Generating…' : '📄 PDF'}
+        </button>
+        {rows && (
+          <span style={{color:'#666',fontSize:11,marginLeft:4}}>
+            {visible.length} location{visible.length !== 1 ? 's' : ''}
+          </span>
+        )}
+      </div>
+
+      {/* ── Stats band ── */}
+      {rows && (
+        <div className="stats-band">
+          <div className="stat-card">
+            <div className="stat-label">Total Revenue</div>
+            <div className="stat-value blue">{fmtCurrency(totals.totalRevenue)}</div>
+            <div className="stat-sub">{loadedStart && `${toISO(loadedStart)} – ${toISO(loadedEnd)}`}</div>
+          </div>
+          <div className="stat-card">
+            <div className="stat-label">Rental Revenue</div>
+            <div className="stat-value indigo">{fmtCurrency(totals.rentalRevenue)}</div>
+            <div className="stat-sub">{totals.rentals} rentals</div>
+          </div>
+          <div className="stat-card">
+            <div className="stat-label">Program Revenue</div>
+            <div className="stat-value green">{fmtCurrency(totals.classRevenue)}</div>
+            <div className="stat-sub">{fmtNum(totals.classes)} classes</div>
+          </div>
+          <div className="stat-card">
+            <div className="stat-label">Reservations</div>
+            <div className="stat-value slate">{fmtNum(totals.reservations)}</div>
+            <div className="stat-sub">{totals.rentals} with rental</div>
+          </div>
+          <div className="stat-card">
+            <div className="stat-label">Enrollments</div>
+            <div className="stat-value green">{fmtNum(totals.enrollments)}</div>
+            <div className="stat-sub">{fmtNum(totals.sections)} sections</div>
+          </div>
+          <div className="stat-card">
+            <div className="stat-label">Active Members</div>
+            <div className="stat-value amber">{fmtNum(activeMemberships)}</div>
+            <div className="stat-sub">org-wide</div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Report header (print) ── */}
+      {rows && (
+        <div className="report-area">
+          <div className="report-header">
+            <div className="left">
+              {logoUrl && <img src={logoUrl} alt="" className="report-header-logo" onError={e=>e.target.style.display='none'} style={{marginBottom:4}} />}
+              <div className="org-label">{orgName}</div>
+              <div className="title">Comprehensive Facility Overview</div>
+            </div>
+            <div className="date-range">
+              {toISO(loadedStart)} – {toISO(loadedEnd)}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── State: loading / error / empty ── */}
+      {loading && (
+        <div className="state-center">
+          <div className="spinner" />
+          <div className="msg">Loading facility data…</div>
+        </div>
+      )}
+      {error && !loading && (
+        <div className="state-center">
+          <div className="icon">⚠️</div>
+          <div className="msg">Error loading report</div>
+          <div className="sub">{error}</div>
+        </div>
+      )}
+      {!loading && !error && !rows && (
+        <div className="state-center">
+          <div className="icon">🏛️</div>
+          <div className="msg">Select a date range and run the report</div>
+          <div className="sub">Facility rentals, classes, enrollments &amp; revenue by location</div>
+        </div>
+      )}
+
+      {/* ── Controls bar ── */}
+      {rows && !loading && (
+        <div className="controls-bar">
+          <input
+            type="text"
+            placeholder="🔍 Filter locations…"
+            value={filterText}
+            onChange={e => setFilterText(e.target.value)}
+          />
+          <div className="view-toggle">
+            <button className={`view-btn${view==='cards'?' active':''}`} onClick={() => setView('cards')}>⊞ Cards</button>
+            <button className={`view-btn${view==='table'?' active':''}`} onClick={() => setView('table')}>☰ Table</button>
+          </div>
+          {view === 'cards' && (
+            <>
+              <label style={{fontSize:12,color:'#666'}}>Sort:</label>
+              <select value={sortBy} onChange={e => setSortBy(e.target.value)}>
+                {SORT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+            </>
+          )}
+          <span className="controls-right results-count">
+            {visible.length} location{visible.length !== 1 ? 's' : ''}
+            {filterText && ` matching "${filterText}"`}
+          </span>
+        </div>
+      )}
+
+      {/* ── Cards view ── */}
+      {rows && !loading && view === 'cards' && (
+        <div className="cards-grid">
+          {visible.map(r => (
+            <div key={r.location} className="loc-card">
+              <div className="loc-card-name">{r.location}</div>
+
+              <div>
+                <div className="loc-card-revenue">{fmtCurrency(r.totalRevenue)}</div>
+                <div className="loc-card-revenue-sub">total revenue</div>
+              </div>
+
+              {r.totalRevenue > 0 && (
+                <RevSplitBar rental={r.rentalRevenue} klass={r.classRevenue} total={r.totalRevenue} />
+              )}
+
+              <div className="loc-stats">
+                <CardStat label="Rentals" val={fmtNum(r.rentals)} sub={fmtCurrency(r.rentalRevenue)} />
+                <CardStat label="Enrollments" val={fmtNum(r.enrollments)} sub={fmtCurrency(r.classRevenue)} />
+                {r.classes > 0 && <CardStat label="Classes" val={r.classes} sub={`${r.sections} sections`} />}
+                {r.reservations > 0 && <CardStat label="Reservations" val={fmtNum(r.reservations)} sub="total slots" />}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ── Table view ── */}
+      {rows && !loading && view === 'table' && (
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                {[
+                  ['location','Location'],
+                  ['reservations','Reservations'],
+                  ['rentals','Rentals'],
+                  ['rentalRevenue','Rental Rev'],
+                  ['classes','Classes'],
+                  ['sections','Sections'],
+                  ['enrollments','Enrollments'],
+                  ['classRevenue','Program Rev'],
+                  ['totalRevenue','Total Rev'],
+                ].map(([col, label]) => (
+                  <th key={col} className={tblSort.col===col ? 'sorted':''} onClick={() => toggleTblSort(col)}>
+                    {label}{sortIcon(col)}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {tblRows.map(r => (
+                <tr key={r.location}>
+                  <td className="loc-name">{r.location}</td>
+                  <td className={`num${!r.reservations?' zero':''}`}>{fmtNum(r.reservations)}</td>
+                  <td className={`num${!r.rentals?' zero':''}`}>{fmtNum(r.rentals)}</td>
+                  <td className={`rev rev-rental${!r.rentalRevenue?' zero':''}`}>{r.rentalRevenue ? fmtCurrency(r.rentalRevenue) : '—'}</td>
+                  <td className={`num${!r.classes?' zero':''}`}>{r.classes || '—'}</td>
+                  <td className={`num${!r.sections?' zero':''}`}>{r.sections || '—'}</td>
+                  <td className={`num${!r.enrollments?' zero':''}`}>{fmtNum(r.enrollments)}</td>
+                  <td className={`rev rev-class${!r.classRevenue?' zero':''}`}>{r.classRevenue ? fmtCurrency(r.classRevenue) : '—'}</td>
+                  <td className={`rev rev-total${!r.totalRevenue?' zero':''}`}>{r.totalRevenue ? fmtCurrency(r.totalRevenue) : '—'}</td>
+                </tr>
+              ))}
+              {visible.length > 1 && (
+                <tr className="total-row">
+                  <td className="loc-name">TOTAL ({visible.length} locations)</td>
+                  <td className="num">{fmtNum(totals.reservations)}</td>
+                  <td className="num">{fmtNum(totals.rentals)}</td>
+                  <td className="rev rev-rental">{fmtCurrency(totals.rentalRevenue)}</td>
+                  <td className="num">{totals.classes || '—'}</td>
+                  <td className="num">{totals.sections || '—'}</td>
+                  <td className="num">{fmtNum(totals.enrollments)}</td>
+                  <td className="rev rev-class">{fmtCurrency(totals.classRevenue)}</td>
+                  <td className="rev rev-total">{fmtCurrency(totals.totalRevenue)}</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
