@@ -96,7 +96,7 @@ const ORGS = {
   apex: {
     orgId:   "aeba47d0-c97f-49cb-a0e9-93c5af3a68fa",
     logoUrl: "https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2Forganization-aeba47d0-c97f-49cb-a0e9-93c5af3a68fa%2FfullLogo.png%3F1765923560125&w=1920&q=75",
-    facility: { mbUuid: "c876b1d7-df79-48c5-abf5-62917dee3534" },
+    facility: { mbUuid: "c876b1d7-df79-48c5-abf5-62917dee3534", defaultDateRange: 7 },
   },
   theranch: {
     orgId:   "2d147f38-068c-409e-890d-a8acc88d8079",
@@ -600,9 +600,13 @@ app.post("/:org/admin/test-send", async (req, res) => {
 
 // ── Serve HTML report pages ──────────────────────────────────────────
 app.get("/:org/facility", (req, res) => {
-  if (!ORGS[req.params.org]) return res.status(404).send("Unknown org");
-  logEvent(req.params.org, "facility", "view", req.ip);
-  res.sendFile(path.join(__dirname, "public", "facility.html"));
+  const slug = req.params.org;
+  const org  = ORGS[slug];
+  if (!org) return res.status(404).send("Unknown org");
+  logEvent(slug, "facility", "view", req.ip);
+  const orgConfig = { defaultDateRange: org.facility?.defaultDateRange || "month" };
+  const html = require("fs").readFileSync(path.join(__dirname, "public", "facility.html"), "utf8");
+  res.send(html.replace("<head>", `<head><script>window.ORG_CONFIG=${JSON.stringify(orgConfig)};</script>`));
 });
 
 app.get("/:org/gl", (req, res) => {
