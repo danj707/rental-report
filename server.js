@@ -111,7 +111,7 @@ const ORGS = {
   },
 };
 
-const REPORT_TYPES = ["facility", "gl", "historic", "programs", "roster", "overview"];
+const REPORT_TYPES = ["facility", "gl", "historic", "programs", "roster", "overview", "products"];
 
 // ── Dynamic orgs (added via dashboard UI) ────────────────────────────
 // Loaded at startup and merged into ORGS; also updated at runtime.
@@ -660,6 +660,15 @@ app.get("/:org/overview", (req, res) => {
   if (!ORGS[req.params.org]) return res.status(404).send("Unknown org");
   logEvent(req.params.org, "overview", "view", req.ip);
   res.sendFile(path.join(__dirname, "public", "overview.html"));
+});
+
+app.get("/:org/products", (req, res) => {
+  const slug = req.params.org;
+  const org  = ORGS[slug];
+  if (!org) return res.status(404).send("Unknown org");
+  if (!org.products?.mbUuid) return res.status(404).send("Products report not configured for this org.");
+  logEvent(slug, "products", "view", req.ip);
+  res.sendFile(path.join(__dirname, "public", "products.html"));
 });
 
 app.get("/:org/admin", (req, res) => {
