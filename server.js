@@ -43,8 +43,8 @@ const FROM_NAME      = process.env.FROM_NAME      || "rec.us Reports";
 const DASHBOARD_PASSWORD = process.env.DASHBOARD_PASSWORD || '';
 
 function dashboardAuth(req, res, next) {
-  // Public routes — no auth
-  if (req.path === '/hotdog' || req.path.startsWith('/api/hotdog')) return next();
+  // Only protect the root dashboard; all org routes and /hotdog are public
+  if (req.path !== '/') return next();
 
   // No password configured → open access (dev/staging fallback)
   if (!DASHBOARD_PASSWORD) return next();
