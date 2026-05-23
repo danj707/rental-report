@@ -113,13 +113,23 @@ const ORGS = {
 
 const REPORT_TYPES = ["facility", "gl", "historic", "programs", "roster", "overview"];
 
+// ── Dynamic orgs (added via dashboard UI) ────────────────────────────
+// Loaded at startup and merged into ORGS; also updated at runtime.
 // ── File storage ─────────────────────────────────────────────────────
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "data");
 fs.mkdirSync(DATA_DIR, { recursive: true });
 
+const ORGS_FILE   = path.join(DATA_DIR, "orgs.json");
 const SUBS_FILE   = path.join(DATA_DIR, "subscriptions.json");
 const LOG_FILE    = path.join(DATA_DIR, "send_log.json");
 const EVENTS_FILE = path.join(DATA_DIR, "events.jsonl");
+
+// Merge any dynamically-added orgs from data/orgs.json into ORGS
+try {
+  const dynamic = JSON.parse(fs.readFileSync(ORGS_FILE, "utf8"));
+  Object.assign(ORGS, dynamic);
+  console.log(`[orgs] Loaded ${Object.keys(dynamic).length} dynamic org(s) from orgs.json`);
+} catch { /* no dynamic orgs yet */ }
 
 function readJSON(file, def) {
   try { return JSON.parse(fs.readFileSync(file, "utf8")); } catch { return def; }
@@ -815,6 +825,40 @@ app.get("/:org", (req, res) => {
 </html>`);
 });
 
+// ── POST /api/admin/new-org — create a new org dynamically ──────────
+app.post("/api/admin/new-org", dashboardAuth, (req, res) => {
+  const { slug, displayName, orgId, logoUrl, reports } = req.body;
+
+  // Validate slug
+  if (!slug || !/^[a-z0-9_-]+$/.test(slug))
+    return res.status(400).json({ error: "Slug must be lowercase letters, numbers, hyphens, or underscores" });
+  if (ORGS[slug])
+    return res.status(400).json({ error: `Org "${slug}" already exists` });
+  if (!orgId || !logoUrl)
+    return res.status(400).json({ error: "orgId and logoUrl are required" });
+  if (!reports || !Object.keys(reports).length)
+    return res.status(400).json({ error: "At least one report is required" });
+
+  // Build the new org entry
+  const orgEntry = { orgId, logoUrl, displayName: displayName || null };
+  for (const [reportType, mbUuid] of Object.entries(reports)) {
+    if (REPORT_TYPES.includes(reportType) && mbUuid) {
+      orgEntry[reportType] = { mbUuid };
+    }
+  }
+
+  // Update in-memory ORGS
+  ORGS[slug] = orgEntry;
+
+  // Persist to data/orgs.json
+  const dynamic = readJSON(ORGS_FILE, {});
+  dynamic[slug] = orgEntry;
+  writeJSON(ORGS_FILE, dynamic);
+
+  console.log(`[new-org] Created org: ${slug} with reports: ${Object.keys(reports).join(", ")}`);
+  res.json({ ok: true, slug, reports: Object.keys(reports) });
+});
+
 // ── Root index — all orgs dashboard ─────────────────────────────────
 app.get("/", (req, res) => {
   const reportMeta = {
@@ -964,6 +1008,66 @@ app.get("/", (req, res) => {
     <div class="topbar-logo">rec<span>.</span>us</div>
     <div class="topbar-divider"></div>
     <div class="topbar-sub">Report Server</div>
+    <div style="flex:1"></div>
+    <button onclick="openAddOrg()" style="font-size:12px;padding:6px 14px;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.2);border-radius:5px;color:#eee;cursor:pointer;transition:background .15s" onmouseover="this.style.background='rgba(255,255,255,.22)'" onmouseout="this.style.background='rgba(255,255,255,.12)'">➕ Add Org</button>
+  </div>
+  <!-- ── Add Org Modal ── -->
+  <div id="add-org-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:1000;overflow-y:auto;padding:40px 16px">
+    <div id="add-org-modal" style="background:#fff;border-radius:10px;max-width:560px;margin:0 auto;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.3)">
+      <div style="padding:20px 24px;background:#2c2c2c;color:#fff;display:flex;align-items:center;justify-content:space-between">
+        <div>
+          <div style="font-weight:700;font-size:15px" id="modal-title">Add New Organization</div>
+          <div style="font-size:11px;color:#aaa;margin-top:2px" id="modal-sub">Step 1 of 2 — Org details</div>
+        </div>
+        <button onclick="closeAddOrg()" style="background:none;border:none;color:#aaa;font-size:20px;cursor:pointer;padding:4px">✕</button>
+      </div>
+      <!-- Step 1: Org Details -->
+      <div id="step1" style="padding:24px">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+          <div>
+            <label style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:#888;display:block;margin-bottom:6px">Org Slug *</label>
+            <input id="f-slug" type="text" placeholder="e.g. springfield" style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:5px;font-size:13px" oninput="this.value=this.value.toLowerCase().replace(/[^a-z0-9_-]/g,'')" />
+            <div style="font-size:11px;color:#aaa;margin-top:4px">URL path — lowercase only</div>
+          </div>
+          <div>
+            <label style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:#888;display:block;margin-bottom:6px">Display Name</label>
+            <input id="f-name" type="text" placeholder="e.g. Springfield Parks & Rec" style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:5px;font-size:13px" />
+          </div>
+          <div>
+            <label style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:#888;display:block;margin-bottom:6px">Org UUID *</label>
+            <input id="f-orgid" type="text" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:5px;font-size:13px;font-family:monospace" />
+          </div>
+          <div>
+            <label style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:#888;display:block;margin-bottom:6px">Logo URL *</label>
+            <input id="f-logo" type="text" placeholder="https://..." style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:5px;font-size:13px" />
+          </div>
+        </div>
+        <div style="margin-top:20px">
+          <label style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:#888;display:block;margin-bottom:10px">Reports to Enable *</label>
+          <div id="report-checkboxes" style="display:flex;flex-wrap:wrap;gap:8px"></div>
+        </div>
+        <div id="metabase-inputs" style="margin-top:20px;display:flex;flex-direction:column;gap:12px"></div>
+        <div id="step1-error" style="margin-top:12px;color:#e55;font-size:12px;display:none"></div>
+        <div style="margin-top:24px;display:flex;justify-content:flex-end">
+          <button onclick="step1Next()" style="padding:9px 20px;background:#16a34a;color:#fff;border:none;border-radius:5px;font-size:13px;font-weight:600;cursor:pointer">Review →</button>
+        </div>
+      </div>
+      <!-- Step 2: Confirmation -->
+      <div id="step2" style="padding:24px;display:none">
+        <div style="background:#f5f4f1;border-radius:6px;padding:16px 18px;margin-bottom:20px">
+          <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#888;margin-bottom:10px">New Org Summary</div>
+          <div id="confirm-summary" style="font-size:13px;line-height:1.8;color:#333"></div>
+        </div>
+        <div style="font-size:12px;color:#e55;background:#fff3f3;border:1px solid #fcc;border-radius:5px;padding:10px 14px;margin-bottom:20px">
+          ⚠️ This will immediately add the org to the live server. Reports will be accessible at their URLs right away.
+        </div>
+        <div id="step2-error" style="margin-bottom:12px;color:#e55;font-size:12px;display:none"></div>
+        <div style="display:flex;justify-content:space-between">
+          <button onclick="backToStep1()" style="padding:9px 16px;background:none;border:1px solid #ddd;border-radius:5px;font-size:13px;cursor:pointer">← Back</button>
+          <button id="confirm-btn" onclick="confirmCreate()" style="padding:9px 22px;background:#16a34a;color:#fff;border:none;border-radius:5px;font-size:13px;font-weight:600;cursor:pointer">✓ Confirm &amp; Create</button>
+        </div>
+      </div>
+    </div>
   </div>
   <div class="main">
     <div class="page-title">Organizations</div>
@@ -996,6 +1100,135 @@ app.get("/", (req, res) => {
     }
     const REPORT_COLORS = { facility:'#16a34a', gl:'#3b82f6', programs:'#7c3aed', historic:'#d97706', roster:'#0891b2', overview:'#059669' };
     const chartInstances = {};
+    // ── Add Org modal ────────────────────────────────────────────────
+    const REPORT_META = ${JSON.stringify(Object.fromEntries(Object.entries({
+      facility: { label: "Facility Rental Schedule", icon: "📅" },
+      gl:       { label: "GL Code Rollup",            icon: "📊" },
+      programs: { label: "Program Revenue",           icon: "🎯" },
+      historic: { label: "Historic Buildings",        icon: "🏛️" },
+      roster:   { label: "Class Roster",              icon: "📋" },
+      overview: { label: "Facility Overview",         icon: "📈" },
+    })))};
+
+    function openAddOrg() {
+      document.getElementById('add-org-overlay').style.display = 'block';
+      document.body.style.overflow = 'hidden';
+      buildReportCheckboxes();
+    }
+    function closeAddOrg() {
+      document.getElementById('add-org-overlay').style.display = 'none';
+      document.body.style.overflow = '';
+      // Reset
+      ['f-slug','f-name','f-orgid','f-logo'].forEach(id => document.getElementById(id).value = '');
+      document.getElementById('step1').style.display = 'block';
+      document.getElementById('step2').style.display = 'none';
+      document.getElementById('step1-error').style.display = 'none';
+      document.getElementById('step2-error').style.display = 'none';
+      document.getElementById('modal-sub').textContent = 'Step 1 of 2 — Org details';
+      buildReportCheckboxes();
+    }
+    document.getElementById('add-org-overlay').addEventListener('click', e => {
+      if (e.target === document.getElementById('add-org-overlay')) closeAddOrg();
+    });
+
+    function buildReportCheckboxes() {
+      const box = document.getElementById('report-checkboxes');
+      box.innerHTML = Object.entries(REPORT_META).map(([key, m]) => \`
+        <label style="display:flex;align-items:center;gap:6px;padding:7px 12px;border:1px solid #ddd;border-radius:5px;cursor:pointer;font-size:13px;user-select:none">
+          <input type="checkbox" value="\${key}" onchange="updateMetabaseInputs()" style="cursor:pointer;accent-color:#16a34a" />
+          \${m.icon} \${m.label}
+        </label>\`).join('');
+      updateMetabaseInputs();
+    }
+
+    function updateMetabaseInputs() {
+      const checked = [...document.querySelectorAll('#report-checkboxes input:checked')].map(i => i.value);
+      const wrap = document.getElementById('metabase-inputs');
+      wrap.innerHTML = checked.length ? \`
+        <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:#888;margin-bottom:4px">Metabase Public Links</div>
+        \${checked.map(r => \`
+          <div>
+            <label style="font-size:12px;color:#555;display:block;margin-bottom:4px">\${REPORT_META[r].icon} \${REPORT_META[r].label}</label>
+            <input type="text" id="mb-\${r}" placeholder="https://rec.metabaseapp.com/public/question/..." style="width:100%;padding:7px 10px;border:1px solid #ddd;border-radius:5px;font-size:12px;font-family:monospace" />
+          </div>\`).join('')}\` : '';
+    }
+
+    function extractMbUuid(url) {
+      if (!url) return null;
+      const m = url.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
+      return m ? m[0] : null;
+    }
+
+    function step1Next() {
+      const err = document.getElementById('step1-error');
+      err.style.display = 'none';
+      const slug    = document.getElementById('f-slug').value.trim();
+      const orgId   = document.getElementById('f-orgid').value.trim();
+      const logoUrl = document.getElementById('f-logo').value.trim();
+      const checked = [...document.querySelectorAll('#report-checkboxes input:checked')].map(i => i.value);
+      if (!slug)    return showErr(err, 'Org slug is required');
+      if (!orgId)   return showErr(err, 'Org UUID is required');
+      if (!logoUrl) return showErr(err, 'Logo URL is required');
+      if (!checked.length) return showErr(err, 'Select at least one report');
+      const reports = {};
+      for (const r of checked) {
+        const uuid = extractMbUuid(document.getElementById(\`mb-\${r}\`)?.value || '');
+        if (!uuid) return showErr(err, \`Metabase link required for \${REPORT_META[r].label}\`);
+        reports[r] = uuid;
+      }
+      // Build confirmation summary
+      const displayName = document.getElementById('f-name').value.trim() || \`\${slug.charAt(0).toUpperCase()+slug.slice(1)} Parks & Recreation\`;
+      const rows = [
+        \`<div><strong>Slug:</strong> \${slug}</div>\`,
+        \`<div><strong>Display Name:</strong> \${displayName}</div>\`,
+        \`<div><strong>Org UUID:</strong> <code style="font-size:11px">\${orgId}</code></div>\`,
+        \`<div><strong>Logo:</strong> <img src="\${logoUrl}" style="height:24px;vertical-align:middle;margin-left:6px" onerror="this.style.display='none'" /></div>\`,
+        \`<div style="margin-top:6px"><strong>Reports:</strong></div>\`,
+        ...Object.entries(reports).map(([r, uuid]) =>
+          \`<div style="margin-left:12px;font-size:12px">\${REPORT_META[r].icon} \${REPORT_META[r].label} — <code style="font-size:11px">\${uuid}</code></div>\`)
+      ];
+      document.getElementById('confirm-summary').innerHTML = rows.join('');
+      document.getElementById('step1').style.display = 'none';
+      document.getElementById('step2').style.display = 'block';
+      document.getElementById('modal-sub').textContent = 'Step 2 of 2 — Confirm';
+    }
+
+    function backToStep1() {
+      document.getElementById('step1').style.display = 'block';
+      document.getElementById('step2').style.display = 'none';
+      document.getElementById('modal-sub').textContent = 'Step 1 of 2 — Org details';
+    }
+
+    function showErr(el, msg) { el.textContent = msg; el.style.display = 'block'; }
+
+    async function confirmCreate() {
+      const btn = document.getElementById('confirm-btn');
+      const err = document.getElementById('step2-error');
+      btn.disabled = true; btn.textContent = 'Creating…';
+      err.style.display = 'none';
+      const slug      = document.getElementById('f-slug').value.trim();
+      const displayName = document.getElementById('f-name').value.trim() || null;
+      const orgId     = document.getElementById('f-orgid').value.trim();
+      const logoUrl   = document.getElementById('f-logo').value.trim();
+      const checked   = [...document.querySelectorAll('#report-checkboxes input:checked')].map(i => i.value);
+      const reports   = {};
+      checked.forEach(r => { reports[r] = extractMbUuid(document.getElementById(\`mb-\${r}\`)?.value || ''); });
+      try {
+        const res  = await fetch('/api/admin/new-org', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ slug, displayName, orgId, logoUrl, reports }),
+        });
+        const data = await res.json();
+        if (!res.ok || !data.ok) throw new Error(data.error || 'Unknown error');
+        closeAddOrg();
+        window.location.reload();
+      } catch(e) {
+        showErr(err, 'Error: ' + e.message);
+        btn.disabled = false; btn.textContent = '✓ Confirm & Create';
+      }
+    }
+
     function renderMetrics(panel, data) {
       const { summary, daily, totalSubscribers, configuredReports } = data;
       const totalViews   = configuredReports.reduce((n, r) => n + (summary[r]?.view  || 0), 0);
