@@ -189,6 +189,57 @@
       const [animated,   setAnimated]   = useState(false);
       const [orgOptions, setOrgOptions] = useState([]);
 
+      // ── Claim state ──────────────────────────────────────────────
+      const [claims,          setClaims]          = useState({});   // { product: [{name, icon}] }
+      const [myClaimedProduct,setMyClaimedProduct] = useState(null); // which product this user claimed
+      const [claimModal,      setClaimModal]       = useState(null); // product string being claimed
+      const [claimName,       setClaimName]        = useState('');
+      const [claimIcon,       setClaimIcon]        = useState('⭐');
+      const [claimError,      setClaimError]       = useState('');
+      const [claimSubmitting, setClaimSubmitting]  = useState(false);
+
+      const CLAIM_ICONS = ['⭐','🏆','🎯','🔥','💪','👑','🚀','⚡','🎉','🌟','🍀','💥'];
+      const CLAIM_ID_KEY = 'hotdog_claim_id';
+      const CLAIM_PROD_KEY = 'hotdog_claimed_product';
+
+      // Get or create a persistent claimId in localStorage
+      function getClaimId() {
+        let id = localStorage.getItem(CLAIM_ID_KEY);
+        if (!id) { id = crypto.randomUUID(); localStorage.setItem(CLAIM_ID_KEY, id); }
+        return id;
+      }
+
+      // Load claims on mount
+      useEffect(() => {
+        fetch('/api/hotdog/claims').then(r => r.json()).then(data => setClaims(data)).catch(() => {});
+        setMyClaimedProduct(localStorage.getItem(CLAIM_PROD_KEY));
+      }, []);
+
+      async function submitClaim() {
+        if (!claimName.trim()) { setClaimError('Please enter your name'); return; }
+        setClaimSubmitting(true); setClaimError('');
+        try {
+          const res = await fetch('/api/hotdog/claim', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ claimId: getClaimId(), name: claimName.trim(), icon: claimIcon, product: claimModal }),
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || 'Failed');
+          localStorage.setItem(CLAIM_PROD_KEY, claimModal);
+          setMyClaimedProduct(claimModal);
+          setClaims(prev => {
+            const next = { ...prev };
+            if (!next[claimModal]) next[claimModal] = [];
+            next[claimModal] = [...next[claimModal], { name: claimName.trim(), icon: claimIcon }];
+            return next;
+          });
+          setClaimModal(null); setClaimName(''); setClaimIcon('⭐');
+        } catch (e) {
+          setClaimError(e.message === 'already_claimed' ? 'You already claimed an item!' : e.message);
+        } finally { setClaimSubmitting(false); }
+      }
+
       const runReport = useCallback(async () => {
         setLoading(true);
         setError(null);
@@ -409,14 +460,40 @@
                       {i < 3 ? MEDALS[i] : i + 1}
                     </div>
 
-                    {/* Product name + org hint */}
+                    {/* Product name + org hint + claim badges */}
                     <div style={{ overflow: 'hidden' }}>
-                      <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--txt)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--txt)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'flex', alignItems: 'center', gap: 6 }}>
                         {item.product}
+                        {/* Claim button — only if user hasn't claimed anything */}
+                        {!myClaimedProduct && (
+                          <button
+                            onClick={() => { setClaimModal(item.product); setClaimError(''); }}
+                            title="Claim this item"
+                            style={{ background: 'none', border: '1px solid var(--border2)', borderRadius: 4, color: 'var(--muted)', fontSize: 10, padding: '1px 6px', cursor: 'pointer', fontFamily: 'DM Mono, monospace', flexShrink: 0, transition: 'border-color .12s, color .12s' }}
+                            onMouseEnter={e => { e.target.style.borderColor = 'var(--accent)'; e.target.style.color = 'var(--accent)'; }}
+                            onMouseLeave={e => { e.target.style.borderColor = 'var(--border2)'; e.target.style.color = 'var(--muted)'; }}
+                          >+ claim</button>
+                        )}
                       </div>
                       {item.orgs.length > 0 && (
                         <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                           {item.orgs.length === 1 ? item.orgs[0] : `${item.orgs.length} orgs`}
+                        </div>
+                      )}
+                      {/* Claim badges */}
+                      {(claims[item.product] || []).length > 0 && (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 5 }}>
+                          {(claims[item.product] || []).map((c, ci) => (
+                            <span key={ci} style={{
+                              display: 'inline-flex', alignItems: 'center', gap: 3,
+                              background: myClaimedProduct === item.product && c.name === claimName ? 'rgba(255,107,43,.15)' : 'var(--raised)',
+                              border: `1px solid ${myClaimedProduct === item.product ? 'var(--accent)' : 'var(--border2)'}`,
+                              borderRadius: 4, padding: '2px 7px', fontSize: 11, color: 'var(--txt)',
+                            }}>
+                              <span style={{ fontSize: 13 }}>{c.icon}</span>
+                              <span style={{ fontFamily: 'DM Mono, monospace', letterSpacing: '-0.02em' }}>{c.name}</span>
+                            </span>
+                          ))}
                         </div>
                       )}
                     </div>
@@ -461,6 +538,98 @@
             </div>
           )}
         </div>
+
+        {/* ── Claim Modal ── */}
+        {claimModal && (
+          <div style={{
+            position: 'fixed', inset: 0, background: 'rgba(0,0,0,.75)', zIndex: 100,
+            display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24,
+          }} onClick={e => e.target === e.currentTarget && setClaimModal(null)}>
+            <div style={{
+              background: 'var(--surface)', border: '1px solid var(--border2)',
+              borderRadius: 12, width: '100%', maxWidth: 420, overflow: 'hidden',
+              boxShadow: '0 24px 64px rgba(0,0,0,.6)',
+            }}>
+              {/* Modal header */}
+              <div style={{ padding: '20px 24px 16px', borderBottom: '1px solid var(--border)' }}>
+                <div style={{ fontFamily: 'Syne, sans-serif', fontSize: 17, fontWeight: 800, color: '#fff', marginBottom: 4 }}>
+                  Claim your item
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--muted)' }}>
+                  Once you claim <strong style={{ color: 'var(--txt)' }}>{claimModal}</strong>, it's locked in — no changes.
+                </div>
+              </div>
+
+              {/* Modal body */}
+              <div style={{ padding: '20px 24px' }}>
+                {/* Name input */}
+                <div style={{ marginBottom: 18 }}>
+                  <label style={{ fontSize: 10, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.1em', display: 'block', marginBottom: 6 }}>Your Name</label>
+                  <input
+                    autoFocus
+                    type="text"
+                    value={claimName}
+                    onChange={e => setClaimName(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && submitClaim()}
+                    placeholder="e.g. Jordan Smith"
+                    style={{
+                      width: '100%', padding: '9px 12px',
+                      background: 'var(--raised)', border: '1px solid var(--border2)',
+                      borderRadius: 6, color: 'var(--txt)', fontSize: 13,
+                      fontFamily: 'DM Mono, monospace', outline: 'none',
+                    }}
+                  />
+                </div>
+
+                {/* Icon picker */}
+                <div style={{ marginBottom: 20 }}>
+                  <label style={{ fontSize: 10, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.1em', display: 'block', marginBottom: 8 }}>Pick an Icon</label>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                    {CLAIM_ICONS.map(ic => (
+                      <button key={ic} onClick={() => setClaimIcon(ic)} style={{
+                        width: 42, height: 42, borderRadius: 8, fontSize: 22,
+                        background: claimIcon === ic ? 'rgba(255,107,43,.2)' : 'var(--raised)',
+                        border: `2px solid ${claimIcon === ic ? 'var(--accent)' : 'var(--border2)'}`,
+                        cursor: 'pointer', transition: 'border-color .1s, background .1s',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      }}>{ic}</button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Preview */}
+                <div style={{ marginBottom: 20, padding: '10px 14px', background: 'var(--raised)', borderRadius: 6, border: '1px solid var(--border2)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 10, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Preview:</span>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: 'rgba(255,107,43,.1)', border: '1px solid var(--accent)', borderRadius: 4, padding: '2px 8px', fontSize: 12, color: 'var(--txt)' }}>
+                    <span style={{ fontSize: 14 }}>{claimIcon}</span>
+                    <span style={{ fontFamily: 'DM Mono, monospace' }}>{claimName || 'Your Name'}</span>
+                  </span>
+                </div>
+
+                {claimError && (
+                  <div style={{ marginBottom: 14, fontSize: 12, color: '#f87171' }}>⚠️ {claimError}</div>
+                )}
+
+                {/* Buttons */}
+                <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+                  <button onClick={() => setClaimModal(null)} style={{
+                    padding: '8px 16px', background: 'none', border: '1px solid var(--border2)',
+                    borderRadius: 6, color: 'var(--muted)', fontSize: 13, cursor: 'pointer',
+                    fontFamily: 'DM Mono, monospace',
+                  }}>cancel</button>
+                  <button onClick={submitClaim} disabled={claimSubmitting} style={{
+                    padding: '8px 20px', background: claimSubmitting ? 'var(--raised)' : 'var(--accent)',
+                    border: 'none', borderRadius: 6, color: '#fff', fontSize: 13, fontWeight: 500,
+                    cursor: claimSubmitting ? 'not-allowed' : 'pointer', fontFamily: 'DM Mono, monospace',
+                    transition: 'background .15s',
+                  }}>
+                    {claimSubmitting ? 'saving…' : '🔒 lock it in'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       );
     }
 
