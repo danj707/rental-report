@@ -677,7 +677,16 @@ function SiteFilter({ allSites, selectedSites, onChange }) {
 // ── Main App ─────────────────────────────────────────────────────────
 function App() {
   const params   = useMemo(() => getParams(), []);
-  const defaults = useMemo(() => getCurrentMonthRange(), []);
+  const defaults = useMemo(() => {
+    const range = window.ORG_CONFIG?.defaultDateRange;
+    if (typeof range === 'number') {
+      const today = new Date();
+      const end   = new Date(today);
+      end.setDate(today.getDate() + range - 1);
+      return { start: toISO(today), end: toISO(end) };
+    }
+    return getCurrentMonthRange();
+  }, []);
 
   const orgSlug = useMemo(() => {
     const parts = window.location.pathname.split('/').filter(Boolean);
