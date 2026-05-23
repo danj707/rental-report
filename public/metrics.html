@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Usage Metrics</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -96,6 +97,8 @@
     .badge-roster   { background: #cffafe; color: #155e75; }
 
     /* ── Sparkline section ── */
+    .chart-card { background: #fff; border: 1px solid #e0ddd8; border-radius: 7px; padding: 16px 18px; margin-bottom: 24px; }
+    .chart-wrap  { position: relative; height: 220px; }
     .sparkline-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; margin-bottom: 24px; }
     .sparkline-card {
       background: #fff; border: 1px solid #e8e5df; border-radius: 8px; padding: 14px 16px;
@@ -297,9 +300,55 @@ function App() {
     );
   }
 
+  function renderActivityChart() {
+    const daily = data?.daily || {};
+    const labels = [];
+    for (let i = days === 9999 ? 89 : days - 1; i >= 0; i--) {
+      const d = new Date(); d.setDate(d.getDate() - i);
+      labels.push(d.toISOString().slice(0, 10));
+    }
+    const COLORS = { facility:'#16a34a', gl:'#3b82f6', programs:'#7c3aed', historic:'#d97706', roster:'#0891b2', overview:'#059669' };
+    const datasets = reports.map(r => ({
+      label: r,
+      data: labels.map(d => daily[d]?.[r] || 0),
+      borderColor: COLORS[r] || '#888',
+      backgroundColor: (COLORS[r] || '#888') + '22',
+      borderWidth: 2, pointRadius: 2, tension: 0.3, fill: true,
+    }));
+    const chartId = 'activity-chart-' + days;
+    return (
+      <div className="chart-card">
+        <div className="section-title" style={{marginBottom:12}}>Activity Over Time</div>
+        <div className="chart-wrap">
+          <canvas id={chartId} ref={el => {
+            if (!el) return;
+            const existing = Chart.getChart(el);
+            if (existing) existing.destroy();
+            new Chart(el.getContext('2d'), {
+              type: 'line',
+              data: { labels: labels.map(d => d.slice(5)), datasets },
+              options: {
+                responsive: true, maintainAspectRatio: false,
+                plugins: {
+                  legend: { position: 'top', labels: { font: { size: 11 }, boxWidth: 12, padding: 12 } },
+                  tooltip: { mode: 'index', intersect: false },
+                },
+                scales: {
+                  x: { grid: { display: false }, ticks: { font: { size: 10 }, maxTicksLimit: 12 } },
+                  y: { beginAtZero: true, ticks: { font: { size: 10 }, precision: 0 }, grid: { color: '#f5f4f1' } },
+                },
+              },
+            });
+          }} />
+        </div>
+      </div>
+    );
+  }
+
   function renderSubscriptions() {
-    const counts = data?.subCounts || {};
-    const total  = data?.totalSubscribers || 0;
+    const counts   = data?.subCounts   || {};
+    const cadence  = data?.subByCadence || {};
+    const total    = data?.totalSubscribers || 0;
     if (!total && !reports.length) return null;
     return (
       <>
@@ -310,6 +359,13 @@ function App() {
             <div className="sub-value">{total}</div>
             <div className="sub-type">subscribers</div>
           </div>
+          {['daily','weekly','monthly'].map(c => cadence[c] > 0 && (
+            <div className="sub-card" key={c}>
+              <div className="sub-label">{c}</div>
+              <div className="sub-value">{cadence[c]}</div>
+              <div className="sub-type">cadence</div>
+            </div>
+          ))}
           {reports.map(r => {
             const n = counts[r] || 0;
             if (!n) return null;
@@ -386,11 +442,24 @@ function App() {
                 <div className="sc-value">{totals.excel || 0}</div>
                 <div className="sc-sub">spreadsheets downloaded</div>
               </div>
+              <div className="summary-card accent-teal">
+                <div className="sc-label">Prints</div>
+                <div className="sc-value">{totals.print || 0}</div>
+                <div className="sc-sub">print actions</div>
+              </div>
+              <div className="summary-card" style={{borderLeft:'3px solid #7c3aed'}}>
+                <div className="sc-label">Subscribers</div>
+                <div className="sc-value">{data.totalSubscribers || 0}</div>
+                <div className="sc-sub">{data.subByCadence?.daily||0}d · {data.subByCadence?.weekly||0}w · {data.subByCadence?.monthly||0}m</div>
+              </div>
             </div>
 
             {/* Breakdown table */}
             <div className="section-title">By Report Type</div>
             {renderBreakdownTable()}
+
+            {/* Activity timeline chart */}
+            {renderActivityChart()}
 
             {/* Sparklines */}
             {renderSparklines()}
