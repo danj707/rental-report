@@ -191,16 +191,18 @@ function buildMetrics(org, daysBack) {
     daily[day][e.report] = (daily[day][e.report] || 0) + 1;
   });
 
-  // Subscription counts per report
+  // Subscription counts per report + cadence breakdown
   const allSubs = readJSON(SUBS_FILE, []).filter(s => s.org === org && s.active);
   const subCounts = {};
+  const subByCadence = { daily: 0, weekly: 0, monthly: 0 };
   allSubs.forEach(s => {
     const rpts = Array.isArray(s.reports) ? s.reports : JSON.parse(s.reports);
     rpts.forEach(r => { subCounts[r] = (subCounts[r] || 0) + 1; });
+    if (subByCadence[s.schedule] !== undefined) subByCadence[s.schedule]++;
   });
 
   const configuredReports = REPORT_TYPES.filter(r => ORGS[org]?.[r]?.mbUuid);
-  return { summary, daily, subCounts, totalSubscribers: allSubs.length, configuredReports };
+  return { summary, daily, subCounts, subByCadence, totalSubscribers: allSubs.length, configuredReports };
 }
 
 // ── Subscriptions DB helpers ─────────────────────────────────────────
