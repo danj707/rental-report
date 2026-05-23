@@ -3,443 +3,802 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Products — Month over Month</title>
+  <title>Product Sales — Month over Month</title>
+
   <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: 'Inter', sans-serif; background: #f1f5f9; color: #0f172a; -webkit-font-smoothing: antialiased; }
-    input, button, select { font-family: inherit; }
-    ::-webkit-scrollbar { height: 6px; width: 6px; }
-    ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+
+    body {
+      font-family: 'IBM Plex Sans', 'Segoe UI', system-ui, sans-serif;
+      font-size: 12px;
+      color: #1a1a1a;
+      background: #f5f4f1;
+      line-height: 1.35;
+    }
+
+    /* ── Toolbar ── */
+    .toolbar {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 20px;
+      background: #2c2c2c;
+      color: #eee;
+      font-size: 13px;
+      flex-wrap: wrap;
+    }
+    .toolbar-title { font-weight: 600; margin-right: 8px; }
+    .toolbar-spacer { flex: 1; }
+    .toolbar label {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #aaa;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .toolbar input[type="date"],
+    .toolbar input[type="text"] {
+      padding: 4px 8px;
+      border: 1px solid rgba(255,255,255,.2);
+      border-radius: 4px;
+      background: rgba(255,255,255,.1);
+      color: #fff;
+      font-size: 12px;
+      font-family: inherit;
+      outline: none;
+    }
+    .toolbar input[type="date"]:focus,
+    .toolbar input[type="text"]:focus { border-color: #3b82f6; }
+    .toolbar input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(1); cursor: pointer; }
+    .toolbar input[type="text"]::placeholder { color: #666; }
+    .toolbar button {
+      padding: 6px 14px;
+      border: 1px solid rgba(255,255,255,.25);
+      border-radius: 4px;
+      background: rgba(255,255,255,.08);
+      color: #fff;
+      font-size: 12px;
+      font-family: inherit;
+      cursor: pointer;
+      transition: background .15s;
+    }
+    .toolbar button:hover { background: rgba(255,255,255,.18); }
+    .toolbar button.active {
+      background: rgba(255,255,255,.22);
+      border-color: rgba(255,255,255,.55);
+    }
+    .toolbar .btn-run { background: #16a34a; border-color: #16a34a; font-weight: 600; }
+    .toolbar .btn-run:hover { background: #15803d; }
+    .toolbar .btn-run:disabled { opacity: .5; cursor: not-allowed; }
+    .toolbar .btn-excel { background: #166534; border-color: #166534; font-weight: 600; }
+    .toolbar .btn-excel:hover { background: #14532d; }
+    .toolbar .btn-excel:disabled { opacity: .5; cursor: not-allowed; }
+    .toolbar .divider { width: 1px; height: 28px; background: rgba(255,255,255,.15); margin: 0 4px; }
+    .toolbar .row-count { font-size: 11px; color: #aaa; }
+
+    /* ── Page ── */
+    .page {
+      max-width: 1320px;
+      margin: 16px auto;
+      padding: 24px 28px;
+      background: #fff;
+      box-shadow: 0 1px 4px rgba(0,0,0,.08);
+    }
+
+    /* ── Report header ── */
+    .report-header-logo { height: 42px; max-width: 140px; object-fit: contain; object-position: left center; }
+    .report-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      border-bottom: 2.5px solid #111;
+      padding-bottom: 8px;
+      margin-bottom: 16px;
+    }
+    .report-header .org-label {
+      font-size: 10.5px;
+      letter-spacing: 1.6px;
+      text-transform: uppercase;
+      color: #777;
+      font-weight: 600;
+    }
+    .report-header .title { font-size: 17px; font-weight: 700; margin-top: 1px; }
+    .report-header .date-range { font-size: 11px; color: #666; text-align: right; }
+
+    /* ── Summary cards ── */
+    .summary-cards {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 20px;
+      flex-wrap: wrap;
+    }
+    .summary-card {
+      flex: 1;
+      min-width: 110px;
+      padding: 10px 12px;
+      border-radius: 5px;
+      background: #f8f8f6;
+      border: 1px solid #e4e4e0;
+      border-left: 3px solid #ccc;
+    }
+    .summary-card .card-label {
+      font-size: 9.5px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #888;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+    .summary-card .card-value {
+      font-size: 15px;
+      font-weight: 700;
+      font-family: 'IBM Plex Mono', monospace;
+      white-space: nowrap;
+    }
+    .summary-card.green  { border-left-color: #16a34a; }
+    .summary-card.green  .card-value { color: #15803d; }
+    .summary-card.blue   { border-left-color: #3b82f6; }
+    .summary-card.blue   .card-value { color: #2563eb; }
+    .summary-card.violet { border-left-color: #7c3aed; }
+    .summary-card.violet .card-value { color: #6d28d9; }
+    .summary-card.amber  { border-left-color: #d97706; }
+    .summary-card.amber  .card-value { color: #b45309; }
+    .summary-card.slate  { border-left-color: #475569; }
+    .summary-card.slate  .card-value { color: #334155; }
+
+    /* ── Table ── */
+    .table-wrapper { overflow-x: auto; }
+    table { border-collapse: collapse; width: 100%; font-size: 11.5px; }
+
+    thead th {
+      background: #e4e4e0;
+      border: 1px solid #ccc;
+      padding: 5px 8px;
+      text-align: right;
+      font-weight: 600;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+      color: #333;
+      white-space: nowrap;
+    }
+    thead th.left { text-align: left; }
+    thead th.group {
+      text-align: center;
+      background: #d0d0cc;
+      font-size: 9px;
+      border-bottom: 2px solid #aaa;
+      color: #444;
+    }
+    thead th.group.total-group {
+      background: #c4c4c0;
+    }
+    thead th.total-col {
+      background: #d8d8d4;
+    }
+
+    tbody td {
+      border: 1px solid #e8e8e4;
+      padding: 4px 8px;
+      text-align: right;
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 11px;
+      white-space: nowrap;
+    }
+    tbody td.left {
+      text-align: left;
+      font-family: 'IBM Plex Sans', sans-serif;
+      white-space: normal;
+      max-width: 220px;
+    }
+    tbody td.total-col { background: #f4f4f0; }
+    tbody tr:nth-child(even) td.total-col { background: #efefe9; }
+    tbody tr:hover td.total-col { background: #e8e8e2; }
+    tbody tr:nth-child(even) { background: #fafaf8; }
+    tbody tr:hover { background: #f0f0ec; }
+
+    tfoot td {
+      border: 1px solid #ccc;
+      border-top: 2px solid #444;
+      padding: 5px 8px;
+      text-align: right;
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 11px;
+      font-weight: 700;
+      background: #ececea;
+      white-space: nowrap;
+    }
+    tfoot td.left {
+      text-align: left;
+      font-family: 'IBM Plex Sans', sans-serif;
+      font-weight: 700;
+    }
+    tfoot td.total-col { background: #e4e4e0; }
+
+    .cell-zero { color: #c8c8c4; }
+    .mom-up   { font-size: 9px; color: #16a34a; margin-left: 3px; font-family: 'IBM Plex Mono', monospace; }
+    .mom-down { font-size: 9px; color: #dc2626; margin-left: 3px; font-family: 'IBM Plex Mono', monospace; }
+
+    /* ── Chart ── */
+    .chart-wrap { margin-top: 4px; position: relative; }
+    .chart-wrap canvas { max-width: 100%; }
+
+    /* ── Footer ── */
+    .report-footer {
+      display: flex;
+      justify-content: space-between;
+      border-top: 2.5px solid #111;
+      margin-top: 16px;
+      padding-top: 6px;
+      font-size: 10px;
+      color: #777;
+    }
+
+    /* ── Loading / Error ── */
+    .loading { text-align: center; padding: 80px 20px; color: #888; font-size: 14px; }
+    .loading .spinner {
+      display: inline-block;
+      width: 28px; height: 28px;
+      border: 3px solid #ddd;
+      border-top-color: #3b82f6;
+      border-radius: 50%;
+      animation: spin .7s linear infinite;
+      margin-bottom: 12px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .error { text-align: center; padding: 60px 20px; color: #b91c1c; font-size: 14px; }
+
+    /* ── Print ── */
+    @media print {
+      body { background: #fff; }
+      .toolbar { display: none !important; }
+      .page { box-shadow: none; margin: 0; padding: 12px 16px; max-width: 100%; }
+    }
+    body.print-mode .toolbar { display: none !important; }
+    body.print-mode .page { box-shadow: none; margin: 0; padding: 12px 16px; max-width: 100%; }
   </style>
 </head>
 <body>
 <div id="root"></div>
+
+<script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
 <script type="text/babel">
-const { useState, useMemo, useEffect, useCallback, useRef } = React;
+const { useState, useEffect, useMemo, useCallback, useRef } = React;
 
-const fmt$ = v => v == null ? '—' : '$' + Number(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const fmtN = v => v == null ? '—' : Number(v).toLocaleString();
-const fmtMonth = m => { if (!m) return ''; const d = new Date(m + 'T12:00:00Z'); return d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', timeZone: 'UTC' }); };
-const PALETTE = ['#2563eb','#16a34a','#dc2626','#d97706','#7c3aed','#0891b2','#be185d','#65a30d','#c2410c','#1d4ed8','#15803d','#b91c1c'];
+const LS_VIEW = 'products_view_mode_v1';
 
+// ── Helpers ───────────────────────────────────────────────────────────
+function toISO(d) {
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+function getDefaultRange() {
+  const now = new Date();
+  return { start: toISO(new Date(now.getFullYear(), 0, 1)), end: toISO(now) };
+}
+function formatDisplayDate(iso) {
+  if (!iso) return '';
+  const d = new Date(iso + 'T12:00:00');
+  const M = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  return `${M[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
+}
+function fmtMonthShort(iso) {
+  if (!iso) return '';
+  const d = new Date(iso + 'T12:00:00');
+  const mo = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return `${mo[d.getMonth()]} '${String(d.getFullYear()).slice(2)}`;
+}
+function fmtMonthFull(iso) {
+  if (!iso) return '';
+  const d = new Date(iso + 'T12:00:00');
+  const M = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  return `${M[d.getMonth()]} ${d.getFullYear()}`;
+}
+function pf(v) { const n = parseFloat(v); return isNaN(n) ? 0 : n; }
+function fmtMoney(v) {
+  const n = pf(v);
+  const abs = Math.abs(n).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  return (n < 0 ? '-$' : '$') + abs;
+}
+function fmtNum(v) {
+  const n = pf(v);
+  return n === 0 ? '0' : n.toLocaleString();
+}
+
+// ── Summary card ──────────────────────────────────────────────────────
+function SummaryCard({ label, value, color = 'blue', mono = false }) {
+  return (
+    <div className={`summary-card ${color}`}>
+      <div className="card-label">{label}</div>
+      <div className="card-value" style={mono ? {} : { fontFamily: "'IBM Plex Sans', sans-serif", fontSize: 13 }}>{value}</div>
+    </div>
+  );
+}
+
+// ── App ───────────────────────────────────────────────────────────────
 function App() {
-  const [rows,          setRows]          = useState([]);
-  const [loading,       setLoading]       = useState(false);
-  const [error,         setError]         = useState(null);
-  const [hasRun,        setHasRun]        = useState(false);
-  const [startDate,     setStartDate]     = useState('');
-  const [endDate,       setEndDate]       = useState('');
-  const [locationInput, setLocationInput] = useState('');
-  const [viewMode,      setViewMode]      = useState('revenue'); // revenue | qty | both
-  const [showChart,     setShowChart]     = useState(false);
-  const [groupByLoc,    setGroupByLoc]    = useState(false);
-  const chartRef      = useRef(null);
-  const chartInstance = useRef(null);
-  const orgSlug       = window.location.pathname.split('/')[1];
+  const defaults = useMemo(() => getDefaultRange(), []);
+  const orgSlug  = useMemo(() => window.location.pathname.split('/').filter(Boolean)[0] || '', []);
+  const params   = useMemo(() => new URLSearchParams(window.location.search), []);
 
-  const runReport = useCallback(async () => {
+  const [startDate,    setStartDate]    = useState(params.get('start_date') || defaults.start);
+  const [endDate,      setEndDate]      = useState(params.get('end_date')   || defaults.end);
+  const [locationInput,setLocationInput]= useState('');
+  const [viewMode,     setViewMode]     = useState(() => localStorage.getItem(LS_VIEW) || 'revenue');
+
+  const [rows,      setRows]      = useState(null);
+  const [orgName,   setOrgName]   = useState('');
+  const [logoUrl,   setLogoUrl]   = useState(null);
+  const [loading,   setLoading]   = useState(false);
+  const [error,     setError]     = useState(null);
+  const [showChart, setShowChart] = useState(false);
+  const [loadedStart, setLoadedStart] = useState(null);
+  const [loadedEnd,   setLoadedEnd]   = useState(null);
+
+  const chartRef  = useRef(null);
+  const chartInst = useRef(null);
+
+  useEffect(() => { localStorage.setItem(LS_VIEW, viewMode); }, [viewMode]);
+  useEffect(() => { if (params.get('_print') === '1') document.body.classList.add('print-mode'); }, []);
+
+  // ── Fetch ────────────────────────────────────────────────────────────
+  const fetchData = useCallback((sd, ed, loc) => {
     setLoading(true); setError(null);
-    try {
-      const p = new URLSearchParams();
-      if (startDate)     p.set('start_date',     startDate);
-      if (endDate)       p.set('end_date',        endDate);
-      if (locationInput) p.set('desk_location',   locationInput);
-      const res  = await fetch(`/${orgSlug}/products/api/data?${p}`);
-      const data = await res.json();
-      if (data.error) throw new Error(data.error);
-      setRows(data.rows || []);
-      setHasRun(true);
-    } catch(e) { setError(e.message); }
-    finally { setLoading(false); }
-  }, [startDate, endDate, locationInput, orgSlug]);
+    const qs = new URLSearchParams();
+    if (sd)  qs.set('start_date',    sd);
+    if (ed)  qs.set('end_date',      ed);
+    if (loc) qs.set('desk_location', loc);
+    fetch(`/${orgSlug}/products/api/data?${qs}`)
+      .then(r => { if (!r.ok) throw new Error(`Server returned ${r.status}`); return r.json(); })
+      .then(json => {
+        setRows(json.rows || []);
+        setOrgName(json.meta?.org_name || '');
+        setLogoUrl(json.meta?.logo_url || null);
+        setLoadedStart(sd); setLoadedEnd(ed);
+      })
+      .catch(e => setError(e.message))
+      .finally(() => setLoading(false));
+  }, [orgSlug]);
 
-  // ── Pivot ──────────────────────────────────────────────────────────────────
-  const { months, rowKeys, matrix, rowTotals, monthTotals, grand, locations } = useMemo(() => {
-    const matrix     = {};
-    const monthSet   = new Set();
-    const locationSet = new Set();
+  useEffect(() => { fetchData(startDate, endDate, locationInput); }, []);
+
+  function handleRun() { fetchData(startDate, endDate, locationInput); }
+
+  function setYear(offset) {
+    const now = new Date();
+    const y = now.getFullYear() + offset;
+    setStartDate(toISO(new Date(y, 0, 1)));
+    setEndDate(toISO(new Date(y, 11, 31)));
+  }
+  function setRolling12() {
+    const now = new Date();
+    const start = new Date(now.getFullYear() - 1, now.getMonth() + 1, 1);
+    setStartDate(toISO(start));
+    setEndDate(toISO(now));
+  }
+
+  const datesChanged = startDate !== loadedStart || endDate !== loadedEnd;
+
+  // ── Pivot ────────────────────────────────────────────────────────────
+  const { months, products, matrix, rowTotals, monthTotals, grand } = useMemo(() => {
+    if (!rows || rows.length === 0)
+      return { months: [], products: [], matrix: {}, rowTotals: {}, monthTotals: {}, grand: { qty: 0, revenue: 0 } };
+
+    const matrix = {};
+    const monthSet = new Set();
+    const productSet = new Set();
 
     rows.forEach(r => {
-      const product  = r['Product Name']   || '(unknown)';
-      const loc      = r['Desk Location']  || '(no location)';
-      const month    = r['Month'];
-      const qty      = Number(r['Qty Sold'])        || 0;
-      const revenue  = Number(r['Revenue ($)'])     || 0;
-
+      const product = r['Product Name'] || '(unknown)';
+      const month   = r['Month'];
+      const qty     = pf(r['Qty Sold']);
+      const revenue = pf(r['Revenue ($)']);
       if (month) monthSet.add(month);
-      if (loc !== '(no location)') locationSet.add(loc);
-
-      const key = groupByLoc ? `${product} — ${loc}` : product;
-      if (!matrix[key]) matrix[key] = {};
-      if (!matrix[key][month]) matrix[key][month] = { qty: 0, revenue: 0 };
-      matrix[key][month].qty     += qty;
-      matrix[key][month].revenue += revenue;
+      productSet.add(product);
+      if (!matrix[product]) matrix[product] = {};
+      if (!matrix[product][month]) matrix[product][month] = { qty: 0, revenue: 0 };
+      matrix[product][month].qty     += qty;
+      matrix[product][month].revenue += revenue;
     });
 
-    const months  = [...monthSet].sort();
-    const rowKeys = Object.keys(matrix).sort((a, b) => {
+    const months = [...monthSet].sort();
+    const products = [...productSet].sort((a, b) => {
       const rA = months.reduce((s, m) => s + (matrix[a]?.[m]?.revenue || 0), 0);
       const rB = months.reduce((s, m) => s + (matrix[b]?.[m]?.revenue || 0), 0);
       return rB - rA;
     });
 
-    const rowTotals   = {};
-    const monthTotals = {};
-    rowKeys.forEach(k => {
-      rowTotals[k] = { qty: 0, revenue: 0 };
-      months.forEach(m => {
-        rowTotals[k].qty     += matrix[k]?.[m]?.qty     || 0;
-        rowTotals[k].revenue += matrix[k]?.[m]?.revenue || 0;
-      });
+    const rowTotals = {};
+    products.forEach(p => {
+      rowTotals[p] = {
+        qty:     months.reduce((s, m) => s + (matrix[p]?.[m]?.qty     || 0), 0),
+        revenue: months.reduce((s, m) => s + (matrix[p]?.[m]?.revenue || 0), 0),
+      };
     });
+    const monthTotals = {};
     months.forEach(m => {
-      monthTotals[m] = { qty: 0, revenue: 0 };
-      rowKeys.forEach(k => {
-        monthTotals[m].qty     += matrix[k]?.[m]?.qty     || 0;
-        monthTotals[m].revenue += matrix[k]?.[m]?.revenue || 0;
-      });
+      monthTotals[m] = {
+        qty:     products.reduce((s, p) => s + (matrix[p]?.[m]?.qty     || 0), 0),
+        revenue: products.reduce((s, p) => s + (matrix[p]?.[m]?.revenue || 0), 0),
+      };
     });
     const grand = {
-      qty:     rowKeys.reduce((s, k) => s + rowTotals[k].qty,     0),
-      revenue: rowKeys.reduce((s, k) => s + rowTotals[k].revenue, 0),
+      qty:     products.reduce((s, p) => s + rowTotals[p].qty,     0),
+      revenue: products.reduce((s, p) => s + rowTotals[p].revenue, 0),
     };
 
-    return { months, rowKeys, matrix, rowTotals, monthTotals, grand, locations: [...locationSet].sort() };
-  }, [rows, groupByLoc]);
+    return { months, products, matrix, rowTotals, monthTotals, grand };
+  }, [rows]);
 
-  // ── Excel export ───────────────────────────────────────────────────────────
-  function exportExcel() {
-    const hdr = ['Product', ...months.map(fmtMonth), 'Total'];
-    if (viewMode === 'both') {
-      const hdr2 = ['', ...months.flatMap(m => [fmtMonth(m) + ' Rev', fmtMonth(m) + ' Qty']), 'Total Rev', 'Total Qty'];
-      const rows2 = rowKeys.map(k => [k, ...months.flatMap(m => [matrix[k]?.[m]?.revenue || 0, matrix[k]?.[m]?.qty || 0]), rowTotals[k].revenue, rowTotals[k].qty]);
-      const tot2  = ['TOTAL', ...months.flatMap(m => [monthTotals[m]?.revenue || 0, monthTotals[m]?.qty || 0]), grand.revenue, grand.qty];
-      const ws = XLSX.utils.aoa_to_sheet([hdr2, ...rows2, tot2]);
-      const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Products MoM');
-      return XLSX.writeFile(wb, `products-mom-${new Date().toISOString().slice(0,7)}.xlsx`);
-    }
-    const field  = viewMode === 'qty' ? 'qty' : 'revenue';
-    const fmtVal = viewMode === 'qty' ? (v => v) : (v => v);
-    const data   = [hdr, ...rowKeys.map(k => [k, ...months.map(m => matrix[k]?.[m]?.[field] || 0), rowTotals[k][field]]),
-                    ['TOTAL', ...months.map(m => monthTotals[m]?.[field] || 0), grand[field]]];
-    const ws = XLSX.utils.aoa_to_sheet(data);
-    const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Products MoM');
-    XLSX.writeFile(wb, `products-mom-${new Date().toISOString().slice(0,7)}.xlsx`);
+  // ── MoM change ───────────────────────────────────────────────────────
+  function getMoM(product, mi) {
+    if (mi === 0) return null;
+    const field = viewMode === 'qty' ? 'qty' : 'revenue';
+    const curr  = matrix[product]?.[months[mi]]?.[field]     || 0;
+    const prev  = matrix[product]?.[months[mi - 1]]?.[field] || 0;
+    if (prev === 0 || curr === 0) return null;
+    const pct = (curr - prev) / prev * 100;
+    return Math.abs(pct) < 0.5 ? null : pct;
   }
 
-  // ── Chart ──────────────────────────────────────────────────────────────────
+  // ── Excel export ─────────────────────────────────────────────────────
+  function exportExcel() {
+    if (!rows || rows.length === 0) return;
+    const field = viewMode === 'qty' ? 'qty' : 'revenue';
+    const hdr = ['Product', ...months.map(fmtMonthShort), 'Total'];
+    if (viewMode === 'both') {
+      const hdr2 = ['Product', ...months.flatMap(m => [fmtMonthShort(m) + ' Rev', fmtMonthShort(m) + ' Qty']), 'Total Rev', 'Total Qty'];
+      const body = products.map(p => [p, ...months.flatMap(m => [matrix[p]?.[m]?.revenue || 0, matrix[p]?.[m]?.qty || 0]), rowTotals[p].revenue, rowTotals[p].qty]);
+      const foot = ['TOTAL', ...months.flatMap(m => [monthTotals[m]?.revenue || 0, monthTotals[m]?.qty || 0]), grand.revenue, grand.qty];
+      const ws = XLSX.utils.aoa_to_sheet([hdr2, ...body, foot]);
+      const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Products MoM');
+      XLSX.writeFile(wb, `products-mom-${loadedStart || 'export'}.xlsx`);
+    } else {
+      const body = products.map(p => [p, ...months.map(m => matrix[p]?.[m]?.[field] || 0), rowTotals[p][field]]);
+      const foot = ['TOTAL', ...months.map(m => monthTotals[m]?.[field] || 0), grand[field]];
+      const ws = XLSX.utils.aoa_to_sheet([hdr, ...body, foot]);
+      const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Products MoM');
+      XLSX.writeFile(wb, `products-mom-${loadedStart || 'export'}.xlsx`);
+    }
+    logClientEvent('excel');
+  }
+
+  function logClientEvent(event) {
+    try {
+      const parts = window.location.pathname.split('/').filter(Boolean);
+      if (parts.length >= 2) fetch(`/${parts[0]}/${parts[1]}/api/log?event=${event}`, { method: 'POST' }).catch(() => {});
+    } catch {}
+  }
+
+  // ── Chart ────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!showChart || !chartRef.current || months.length === 0) return;
-    if (chartInstance.current) chartInstance.current.destroy();
-    const field = viewMode === 'qty' ? 'qty' : 'revenue';
-    chartInstance.current = new Chart(chartRef.current, {
+    if (chartInst.current) { chartInst.current.destroy(); chartInst.current = null; }
+    const field  = viewMode === 'qty' ? 'qty' : 'revenue';
+    const colors = ['#4f46e5','#16a34a','#d97706','#dc2626','#0891b2','#7c3aed','#be185d','#475569','#c2410c','#15803d'];
+    chartInst.current = new Chart(chartRef.current.getContext('2d'), {
       type: 'bar',
       data: {
-        labels: months.map(fmtMonth),
-        datasets: rowKeys.slice(0, 10).map((k, i) => ({
-          label: k,
-          data: months.map(m => matrix[k]?.[m]?.[field] || 0),
-          backgroundColor: PALETTE[i % PALETTE.length] + 'cc',
-          borderColor:     PALETTE[i % PALETTE.length],
-          borderWidth: 1,
-          borderRadius: 3,
+        labels: months.map(fmtMonthShort),
+        datasets: products.slice(0, 10).map((p, i) => ({
+          label: p,
+          data: months.map(m => matrix[p]?.[m]?.[field] || 0),
+          backgroundColor: colors[i % colors.length],
+          borderWidth: 0,
+          borderRadius: 2,
         })),
       },
       options: {
         responsive: true, maintainAspectRatio: false,
-        plugins: {
-          legend: { position: 'right', labels: { boxWidth: 12, font: { size: 11 } } },
-          tooltip: { callbacks: { label: ctx => ` ${ctx.dataset.label}: ${field === 'qty' ? fmtN(ctx.raw) : fmt$(ctx.raw)}` } },
-        },
+        plugins: { legend: { position: 'top', labels: { boxWidth: 10, font: { size: 10, family: "'IBM Plex Sans'" } } } },
         scales: {
-          x: { stacked: false, ticks: { font: { size: 11 } } },
-          y: { ticks: { callback: v => field === 'qty' ? fmtN(v) : fmt$(v), font: { size: 11 } } },
+          y: { ticks: { callback: v => field === 'qty' ? fmtNum(v) : '$' + Number(v).toLocaleString(), font: { size: 10 } } },
+          x: { ticks: { maxRotation: 40, font: { size: 10 } } },
         },
       },
     });
-    return () => chartInstance.current?.destroy();
-  }, [showChart, months, rowKeys, matrix, viewMode]);
+    return () => chartInst.current?.destroy();
+  }, [showChart, months, products, matrix, viewMode]);
 
-  // ── MoM badge ─────────────────────────────────────────────────────────────
-  function MoM({ key: k, mi }) {
-    if (mi === 0) return null;
-    const field = viewMode === 'qty' ? 'qty' : 'revenue';
-    const curr  = matrix[k]?.[months[mi]]?.[field]     || 0;
-    const prev  = matrix[k]?.[months[mi - 1]]?.[field] || 0;
-    if (prev === 0 || curr === 0) return null;
-    const pct = (curr - prev) / prev * 100;
-    if (Math.abs(pct) < 0.5) return null;
-    const up = pct > 0;
+  // ── Toolbar ───────────────────────────────────────────────────────────
+  const isPrint = params.get('_print') === '1';
+
+  function renderToolbar() {
+    if (isPrint) return null;
     return (
-      <span style={{ fontSize: 9, fontWeight: 600, marginLeft: 4, fontFamily: 'DM Mono, monospace',
-        color: up ? '#16a34a' : '#dc2626', letterSpacing: '-0.01em' }}>
-        {up ? '▲' : '▼'}{Math.abs(pct).toFixed(0)}%
-      </span>
+      <div className="toolbar">
+        <span className="toolbar-title">Product Sales MoM</span>
+
+        <label>
+          Start
+          <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} />
+        </label>
+        <label>
+          End
+          <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} />
+        </label>
+        <label>
+          Location
+          <input type="text" value={locationInput} onChange={e => setLocationInput(e.target.value)}
+            placeholder="All" style={{ width: 100 }} onKeyDown={e => e.key === 'Enter' && handleRun()} />
+        </label>
+
+        <button onClick={() => setYear(0)}   style={{ fontSize: 11, padding: '4px 8px' }}>This Year</button>
+        <button onClick={() => setYear(-1)}  style={{ fontSize: 11, padding: '4px 8px' }}>Last Year</button>
+        <button onClick={setRolling12}       style={{ fontSize: 11, padding: '4px 8px' }}>Rolling 12</button>
+
+        <button
+          className="btn-run"
+          onClick={handleRun}
+          disabled={loading}
+          style={datesChanged && !loading ? { boxShadow: '0 0 0 2px #4ade80' } : {}}
+        >
+          {loading ? 'Loading…' : '▶ Run Report'}
+        </button>
+
+        <div className="divider" />
+
+        {['revenue', 'qty', 'both'].map(mode => (
+          <button
+            key={mode}
+            className={viewMode === mode ? 'active' : ''}
+            style={{ fontSize: 11, padding: '4px 10px' }}
+            onClick={() => setViewMode(mode)}
+          >
+            {mode === 'revenue' ? '$ Revenue' : mode === 'qty' ? '# Qty' : '☰ Both'}
+          </button>
+        ))}
+
+        <div className="divider" />
+
+        <button
+          className={showChart ? 'active' : ''}
+          style={{ fontSize: 11, padding: '4px 10px' }}
+          onClick={() => setShowChart(v => !v)}
+        >▐ Chart</button>
+
+        <div className="toolbar-spacer" />
+
+        {rows && <span className="row-count">{products.length} product{products.length !== 1 ? 's' : ''} · {months.length} month{months.length !== 1 ? 's' : ''}</span>}
+
+        <div className="divider" />
+
+        <button onClick={() => { logClientEvent('print'); window.print(); }}>🖨 Print</button>
+        <button
+          className="btn-excel"
+          onClick={exportExcel}
+          disabled={!rows || rows.length === 0}
+        >📥 Excel</button>
+      </div>
     );
   }
 
-  const bestProduct = rowKeys[0];
-  const bestMonth   = months.reduce((b, m) => !b || (monthTotals[m]?.revenue || 0) > (monthTotals[b]?.revenue || 0) ? m : b, null);
-
-  // ── Toolbar ────────────────────────────────────────────────────────────────
-  const TB = { fontSize: 11, color: '#64748b', display: 'block', marginBottom: 5, fontWeight: 500, letterSpacing: '0.04em', textTransform: 'uppercase' };
-  const IN = { border: '1px solid #cbd5e1', borderRadius: 6, padding: '8px 10px', fontSize: 13, color: '#0f172a', outline: 'none', width: '100%' };
-
-  return (
-    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
-
-      {/* Header */}
-      <header style={{ background: '#1e293b', color: '#fff', padding: '20px 32px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div>
-          <div style={{ fontSize: 11, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 4 }}>
-            {window.ORG_CONFIG?.orgName || 'Product Sales'}
-          </div>
-          <div style={{ fontSize: 20, fontWeight: 700, letterSpacing: '-0.02em' }}>Month-over-Month Report</div>
-        </div>
-        {hasRun && grand.revenue > 0 && (
-          <div style={{ textAlign: 'right' }}>
-            <div style={{ fontSize: 10, color: '#64748b', marginBottom: 2 }}>Period Revenue</div>
-            <div style={{ fontSize: 24, fontWeight: 700, color: '#34d399', fontFamily: 'DM Mono, monospace' }}>{fmt$(grand.revenue)}</div>
-          </div>
+  // ── Summary cards ────────────────────────────────────────────────────
+  function renderSummaryCards() {
+    if (!rows || rows.length === 0) return null;
+    const bestProduct = products[0];
+    const bestMonth   = months.reduce((b, m) => !b || (monthTotals[m]?.revenue || 0) > (monthTotals[b]?.revenue || 0) ? m : b, null);
+    return (
+      <div className="summary-cards">
+        <SummaryCard label="Total Revenue"    value={fmtMoney(grand.revenue)} color="green"  />
+        <SummaryCard label="Total Units Sold" value={fmtNum(grand.qty)}       color="blue"   />
+        <SummaryCard label="Months"           value={months.length}            color="slate"  />
+        <SummaryCard label="Products"         value={products.length}          color="violet" />
+        {bestProduct && (
+          <SummaryCard label="Top Product" value={bestProduct} color="amber" mono={false} />
         )}
-      </header>
-
-      {/* Toolbar */}
-      <div style={{ background: '#fff', borderBottom: '1px solid #e2e8f0', padding: '16px 32px', display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'flex-end' }}>
-        <div style={{ flex: '0 0 140px' }}>
-          <label style={TB}>Start Date</label>
-          <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} style={IN} />
-        </div>
-        <div style={{ flex: '0 0 140px' }}>
-          <label style={TB}>End Date</label>
-          <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} style={IN} />
-        </div>
-        <div style={{ flex: '0 0 180px' }}>
-          <label style={TB}>Desk Location</label>
-          <input type="text" value={locationInput} onChange={e => setLocationInput(e.target.value)}
-            placeholder="All locations" onKeyDown={e => e.key === 'Enter' && runReport()} style={IN} />
-        </div>
-        <div>
-          <label style={{ ...TB, opacity: 0 }}>.</label>
-          <button onClick={runReport} disabled={loading} style={{
-            background: loading ? '#94a3b8' : '#2563eb', color: '#fff', border: 'none',
-            borderRadius: 6, padding: '9px 22px', fontSize: 13, fontWeight: 500, cursor: loading ? 'not-allowed' : 'pointer',
-            transition: 'background .15s',
-          }}>
-            {loading ? '⏳ loading…' : '▶ Run Report'}
-          </button>
-        </div>
-        {hasRun && !loading && (
-          <>
-            {/* View toggle */}
-            <div style={{ display: 'flex', border: '1px solid #e2e8f0', borderRadius: 6, overflow: 'hidden', alignSelf: 'flex-end' }}>
-              {[['revenue','$ Revenue'],['qty','# Qty'],['both','Both']].map(([v, l]) => (
-                <button key={v} onClick={() => setViewMode(v)} style={{
-                  padding: '8px 14px', fontSize: 12, fontWeight: 500, border: 'none', cursor: 'pointer',
-                  background: viewMode === v ? '#2563eb' : '#f8fafc', color: viewMode === v ? '#fff' : '#64748b',
-                }}>{l}</button>
-              ))}
-            </div>
-            {/* Group by location */}
-            {locations.length > 1 && (
-              <button onClick={() => setGroupByLoc(g => !g)} style={{
-                alignSelf: 'flex-end', padding: '8px 14px', fontSize: 12, fontWeight: 500,
-                background: groupByLoc ? '#eff6ff' : '#f8fafc', border: `1px solid ${groupByLoc ? '#2563eb' : '#e2e8f0'}`,
-                color: groupByLoc ? '#2563eb' : '#64748b', borderRadius: 6, cursor: 'pointer',
-              }}>⊞ By Location</button>
-            )}
-            {/* Chart toggle */}
-            <button onClick={() => setShowChart(s => !s)} style={{
-              alignSelf: 'flex-end', padding: '8px 14px', fontSize: 12, fontWeight: 500,
-              background: showChart ? '#f0fdf4' : '#f8fafc', border: `1px solid ${showChart ? '#16a34a' : '#e2e8f0'}`,
-              color: showChart ? '#16a34a' : '#64748b', borderRadius: 6, cursor: 'pointer',
-            }}>📊 Chart</button>
-            {/* Excel */}
-            <button onClick={exportExcel} style={{
-              alignSelf: 'flex-end', padding: '8px 14px', fontSize: 12, fontWeight: 500,
-              background: '#f8fafc', border: '1px solid #e2e8f0', color: '#64748b', borderRadius: 6, cursor: 'pointer',
-            }}>⬇ Excel</button>
-          </>
+        {bestMonth && (
+          <div className="summary-card slate">
+            <div className="card-label">Best Month</div>
+            <div className="card-value" style={{ fontFamily: "'IBM Plex Sans'", fontSize: 13 }}>{fmtMonthFull(bestMonth)}</div>
+            <div style={{ fontSize: 10, color: '#888', marginTop: 3 }}>{fmtMoney(monthTotals[bestMonth]?.revenue)}</div>
+          </div>
         )}
       </div>
+    );
+  }
 
-      {error && (
-        <div style={{ padding: '14px 32px', background: '#fef2f2', borderBottom: '1px solid #fecaca', color: '#dc2626', fontSize: 13 }}>
-          ⚠ {error}
-        </div>
-      )}
+  // ── Table ────────────────────────────────────────────────────────────
+  function renderTable() {
+    if (!rows || rows.length === 0) {
+      return <div style={{ textAlign: 'center', padding: '40px 0', color: '#888' }}>No data found for the selected date range.</div>;
+    }
 
-      {/* Summary cards */}
-      {hasRun && !loading && grand.revenue > 0 && (
-        <div style={{ padding: '20px 32px 4px', display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-          <StatCard label="Total Revenue"    value={fmt$(grand.revenue)} />
-          <StatCard label="Total Units Sold" value={fmtN(grand.qty)} />
-          <StatCard label="Months"           value={months.length} />
-          <StatCard label="Products"         value={rowKeys.length} />
-          {bestProduct && <StatCard label="Top Product" value={bestProduct.length > 22 ? bestProduct.slice(0, 20) + '…' : bestProduct} sub={fmt$(rowTotals[bestProduct]?.revenue)} />}
-          {bestMonth   && <StatCard label="Best Month"  value={fmtMonth(bestMonth)} sub={fmt$(monthTotals[bestMonth]?.revenue)} />}
-        </div>
-      )}
+    const isBoth = viewMode === 'both';
+    const field  = viewMode === 'qty' ? 'qty' : 'revenue';
+    const fmt    = viewMode === 'qty' ? fmtNum : fmtMoney;
 
-      {/* Not run / empty */}
-      {!hasRun && !loading && (
-        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', fontSize: 14 }}>
-          Set filters above and click Run Report.
-        </div>
-      )}
-      {hasRun && !loading && rows.length === 0 && (
-        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', fontSize: 14 }}>
-          No data found for the selected filters.
-        </div>
-      )}
-
-      {/* Pivot table */}
-      {hasRun && !loading && months.length > 0 && (
-        <div style={{ padding: '16px 32px', overflowX: 'auto', flex: 1 }}>
-          <table style={{ borderCollapse: 'collapse', fontSize: 13, background: '#fff', boxShadow: '0 1px 3px rgba(0,0,0,.08)', borderRadius: 8, overflow: 'hidden', minWidth: '100%' }}>
-            <thead>
-              <tr style={{ background: '#1e293b', color: '#fff' }}>
-                <th style={{ textAlign: 'left', padding: '12px 16px', fontWeight: 600, position: 'sticky', left: 0, background: '#1e293b', zIndex: 2, whiteSpace: 'nowrap', minWidth: 180 }}>
-                  Product {groupByLoc && <span style={{ fontSize: 10, color: '#64748b', fontWeight: 400 }}>— Location</span>}
-                </th>
-                {months.map(m => (
-                  <th key={m} style={{ textAlign: 'right', padding: '12px 14px', fontWeight: 600, whiteSpace: 'nowrap', minWidth: viewMode === 'both' ? 160 : 110 }}>
-                    {fmtMonth(m)}
-                  </th>
-                ))}
-                <th style={{ textAlign: 'right', padding: '12px 14px', fontWeight: 600, whiteSpace: 'nowrap', background: '#0f172a', minWidth: viewMode === 'both' ? 160 : 110 }}>
-                  Total
-                </th>
-              </tr>
-              {/* Both-mode subheader */}
-              {viewMode === 'both' && (
-                <tr style={{ background: '#334155', color: '#94a3b8', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-                  <th style={{ position: 'sticky', left: 0, background: '#334155' }}></th>
-                  {months.map(m => (
-                    <th key={m} style={{ padding: '5px 14px', textAlign: 'right' }}>
-                      <span style={{ display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
-                        <span>Rev</span><span>Qty</span>
-                      </span>
-                    </th>
-                  ))}
-                  <th style={{ padding: '5px 14px', textAlign: 'right' }}>
-                    <span style={{ display: 'flex', justifyContent: 'flex-end', gap: 12 }}><span>Rev</span><span>Qty</span></span>
-                  </th>
-                </tr>
-              )}
-            </thead>
-            <tbody>
-              {rowKeys.map((k, pi) => (
-                <tr key={k} style={{ background: pi % 2 === 0 ? '#fff' : '#f8fafc', borderBottom: '1px solid #f1f5f9' }}
-                  onMouseEnter={e => e.currentTarget.style.background = '#eff6ff'}
-                  onMouseLeave={e => e.currentTarget.style.background = pi % 2 === 0 ? '#fff' : '#f8fafc'}>
-
-                  {/* Product name */}
-                  <td style={{ padding: '9px 16px', fontWeight: 500, position: 'sticky', left: 0, background: 'inherit', zIndex: 1,
-                    whiteSpace: 'nowrap', maxWidth: 240, overflow: 'hidden', textOverflow: 'ellipsis', borderRight: '1px solid #e2e8f0' }}>
-                    {k}
-                  </td>
-
-                  {/* Month cells */}
-                  {months.map((m, mi) => {
-                    const cell = matrix[k]?.[m] || { qty: 0, revenue: 0 };
-                    const empty = cell.revenue === 0 && cell.qty === 0;
-                    return (
-                      <td key={m} style={{ textAlign: 'right', padding: '9px 14px', fontVariantNumeric: 'tabular-nums',
-                        fontFamily: 'DM Mono, monospace', color: empty ? '#cbd5e1' : '#0f172a', fontSize: 12 }}>
-                        {viewMode === 'revenue' && (
-                          <span style={{ display: 'inline-flex', alignItems: 'baseline' }}>
-                            {empty ? '—' : fmt$(cell.revenue)}
-                            {!empty && <MoM key={k} mi={mi} />}
-                          </span>
-                        )}
-                        {viewMode === 'qty' && (
-                          <span style={{ display: 'inline-flex', alignItems: 'baseline' }}>
-                            {empty ? '—' : fmtN(cell.qty)}
-                            {!empty && <MoM key={k} mi={mi} />}
-                          </span>
-                        )}
-                        {viewMode === 'both' && (
-                          <span style={{ display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
-                            <span>{empty ? '—' : fmt$(cell.revenue)}</span>
-                            <span style={{ color: '#64748b' }}>{empty ? '—' : fmtN(cell.qty)}</span>
-                          </span>
-                        )}
-                      </td>
-                    );
-                  })}
-
-                  {/* Row total */}
-                  <td style={{ textAlign: 'right', padding: '9px 14px', fontWeight: 600, background: '#f1f5f9',
-                    fontVariantNumeric: 'tabular-nums', fontFamily: 'DM Mono, monospace', fontSize: 12 }}>
-                    {viewMode === 'revenue' && fmt$(rowTotals[k].revenue)}
-                    {viewMode === 'qty'     && fmtN(rowTotals[k].qty)}
-                    {viewMode === 'both'    && (
-                      <span style={{ display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
-                        <span>{fmt$(rowTotals[k].revenue)}</span>
-                        <span style={{ color: '#64748b' }}>{fmtN(rowTotals[k].qty)}</span>
-                      </span>
-                    )}
-                  </td>
-                </tr>
+    return (
+      <div className="table-wrapper">
+        <table>
+          <thead>
+            {/* Group header row — month names */}
+            <tr>
+              <th className="group left">Product</th>
+              {months.map(m => (
+                <th key={m} className="group" colSpan={isBoth ? 2 : 1}>{fmtMonthShort(m)}</th>
               ))}
-            </tbody>
-            <tfoot>
-              <tr style={{ background: '#1e293b', color: '#fff', fontWeight: 700, fontSize: 13 }}>
-                <td style={{ padding: '12px 16px', position: 'sticky', left: 0, background: '#1e293b' }}>TOTAL</td>
-                {months.map(m => (
-                  <td key={m} style={{ textAlign: 'right', padding: '12px 14px', fontVariantNumeric: 'tabular-nums', fontFamily: 'DM Mono, monospace' }}>
-                    {viewMode === 'revenue' && fmt$(monthTotals[m]?.revenue || 0)}
-                    {viewMode === 'qty'     && fmtN(monthTotals[m]?.qty     || 0)}
-                    {viewMode === 'both'    && (
-                      <span style={{ display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
-                        <span>{fmt$(monthTotals[m]?.revenue || 0)}</span>
-                        <span style={{ opacity: .7 }}>{fmtN(monthTotals[m]?.qty || 0)}</span>
-                      </span>
-                    )}
-                  </td>
-                ))}
-                <td style={{ textAlign: 'right', padding: '12px 14px', fontVariantNumeric: 'tabular-nums', fontFamily: 'DM Mono, monospace' }}>
-                  {viewMode === 'revenue' && fmt$(grand.revenue)}
-                  {viewMode === 'qty'     && fmtN(grand.qty)}
-                  {viewMode === 'both'    && (
-                    <span style={{ display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
-                      <span>{fmt$(grand.revenue)}</span>
-                      <span style={{ opacity: .7 }}>{fmtN(grand.qty)}</span>
-                    </span>
-                  )}
-                </td>
-              </tr>
-            </tfoot>
-          </table>
-        </div>
-      )}
+              <th className="group total-group" colSpan={isBoth ? 2 : 1}>Total</th>
+            </tr>
 
-      {/* Chart */}
-      {showChart && hasRun && months.length > 0 && (
-        <div style={{ padding: '0 32px 32px' }}>
-          <div style={{ background: '#fff', borderRadius: 8, padding: '20px 24px', boxShadow: '0 1px 3px rgba(0,0,0,.08)', height: 360 }}>
-            <canvas ref={chartRef} />
+            {/* Column header row — sub-columns in both mode, labels in single mode */}
+            {isBoth && (
+              <tr>
+                <th className="left"></th>
+                {months.map(m => (
+                  <React.Fragment key={m}>
+                    <th>Revenue</th>
+                    <th>Qty</th>
+                  </React.Fragment>
+                ))}
+                <th className="total-col">Revenue</th>
+                <th className="total-col">Qty</th>
+              </tr>
+            )}
+          </thead>
+
+          <tbody>
+            {products.map((p, pi) => (
+              <tr key={p}>
+                <td className="left">{p}</td>
+
+                {months.map((m, mi) => {
+                  const cell  = matrix[p]?.[m] || { qty: 0, revenue: 0 };
+                  const mom   = getMoM(p, mi);
+                  const empty = cell.revenue === 0 && cell.qty === 0;
+
+                  if (isBoth) {
+                    return (
+                      <React.Fragment key={m}>
+                        <td>{cell.revenue === 0 ? <span className="cell-zero">—</span> : fmtMoney(cell.revenue)}</td>
+                        <td>{cell.qty === 0 ? <span className="cell-zero">—</span> : fmtNum(cell.qty)}</td>
+                      </React.Fragment>
+                    );
+                  }
+                  return (
+                    <td key={m}>
+                      {empty
+                        ? <span className="cell-zero">—</span>
+                        : <>
+                            {fmt(cell[field])}
+                            {mom !== null && (
+                              <span className={mom > 0 ? 'mom-up' : 'mom-down'}>
+                                {mom > 0 ? '▲' : '▼'}{Math.abs(mom).toFixed(0)}%
+                              </span>
+                            )}
+                          </>
+                      }
+                    </td>
+                  );
+                })}
+
+                {isBoth ? (
+                  <>
+                    <td className="total-col">{fmtMoney(rowTotals[p].revenue)}</td>
+                    <td className="total-col">{fmtNum(rowTotals[p].qty)}</td>
+                  </>
+                ) : (
+                  <td className="total-col">{fmt(rowTotals[p][field])}</td>
+                )}
+              </tr>
+            ))}
+          </tbody>
+
+          <tfoot>
+            <tr>
+              <td className="left">TOTAL</td>
+              {months.map(m => {
+                const mt = monthTotals[m] || { qty: 0, revenue: 0 };
+                if (isBoth) return (
+                  <React.Fragment key={m}>
+                    <td>{fmtMoney(mt.revenue)}</td>
+                    <td>{fmtNum(mt.qty)}</td>
+                  </React.Fragment>
+                );
+                return <td key={m}>{fmt(mt[field])}</td>;
+              })}
+              {isBoth ? (
+                <>
+                  <td className="total-col">{fmtMoney(grand.revenue)}</td>
+                  <td className="total-col">{fmtNum(grand.qty)}</td>
+                </>
+              ) : (
+                <td className="total-col">{fmt(grand[field])}</td>
+              )}
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    );
+  }
+
+  // ── Error / Loading ───────────────────────────────────────────────────
+  if (error && !rows) {
+    return (
+      <div>
+        {renderToolbar()}
+        <div className="page">
+          <div className="error">
+            <p><strong>Failed to load report data</strong></p>
+            <p style={{ marginTop: 8 }}>{error}</p>
           </div>
         </div>
-      )}
-    </div>
-  );
-}
+      </div>
+    );
+  }
 
-function StatCard({ label, value, sub }) {
+  if (!rows) {
+    return (
+      <div>
+        {renderToolbar()}
+        <div className="page">
+          <div className="loading">
+            <div className="spinner" />
+            <div>Loading report data…</div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Run meta ──────────────────────────────────────────────────────────
+  const now = new Date();
+  const runDate = `${(now.getMonth()+1).toString().padStart(2,'0')}/${now.getDate().toString().padStart(2,'0')}/${now.getFullYear()} @ ${now.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',hour12:true}).toLowerCase()}`;
+  const displayOrg = orgName || 'rec.us';
+  const dateRangeLabel = [
+    loadedStart ? formatDisplayDate(loadedStart) : null,
+    loadedEnd   ? formatDisplayDate(loadedEnd)   : null,
+  ].filter(Boolean).join(' – ') || 'All Dates';
+
   return (
-    <div style={{ background: '#fff', borderRadius: 8, padding: '14px 18px', boxShadow: '0 1px 3px rgba(0,0,0,.06)', minWidth: 130 }}>
-      <div style={{ fontSize: 10, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 5, fontWeight: 500 }}>{label}</div>
-      <div style={{ fontSize: 18, fontWeight: 700, color: '#0f172a', fontFamily: 'DM Mono, monospace', letterSpacing: '-0.02em' }}>{value}</div>
-      {sub && <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>{sub}</div>}
+    <div>
+      {renderToolbar()}
+
+      <div className="page" style={loading ? { opacity: 0.5, pointerEvents: 'none' } : {}}>
+
+        {/* Report header */}
+        <div className="report-header">
+          <div>
+            {logoUrl && <img src={logoUrl} alt="" className="report-header-logo" onError={e => e.target.style.display='none'} />}
+            <div className="org-label">{displayOrg}</div>
+            <div className="title">Product Sales — Month over Month</div>
+          </div>
+          <div className="date-range">{dateRangeLabel}</div>
+        </div>
+
+        {/* Summary cards */}
+        {renderSummaryCards()}
+
+        {/* Table */}
+        {renderTable()}
+
+        {/* Chart */}
+        {showChart && months.length > 0 && (
+          <div className="chart-wrap" style={{ height: 320, marginTop: 20 }}>
+            <canvas ref={chartRef} />
+          </div>
+        )}
+
+        {/* Footer */}
+        <div className="report-footer">
+          <span>{displayOrg}</span>
+          <span>Run Date/Time: {runDate}</span>
+        </div>
+
+        <div id="report-ready" style={{ display: 'none' }} />
+      </div>
     </div>
   );
 }
