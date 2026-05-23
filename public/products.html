@@ -141,7 +141,8 @@
       font-size: 15px;
       font-weight: 700;
       font-family: 'IBM Plex Mono', monospace;
-      white-space: nowrap;
+      white-space: normal;
+      word-break: break-word;
     }
     .summary-card.green  { border-left-color: #16a34a; }
     .summary-card.green  .card-value { color: #15803d; }
@@ -197,7 +198,9 @@
       text-align: left;
       font-family: 'IBM Plex Sans', sans-serif;
       white-space: normal;
+      word-break: break-word;
       min-width: 180px;
+      max-width: 260px;
     }
     tbody td.total-col { background: #f4f4f0; }
     tbody tr:nth-child(even) td.total-col { background: #efefe9; }
