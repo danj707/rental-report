@@ -760,14 +760,14 @@ function App() {
 
         // Initialize location filter on first load only
         setSelectedLocations(prev => {
+          const locs = [...new Set(normalized.map(r => r.location).filter(Boolean))].sort();
           if (prev === null) {
-            // First load — select all
-            const locs = [...new Set(normalized.map(r => r.location).filter(Boolean))].sort();
+            // First load — respect ORG_CONFIG.defaultLocationFilter if set
+            const defaultLoc = window.ORG_CONFIG?.defaultLocationFilter;
+            if (defaultLoc && locs.includes(defaultLoc)) return new Set([defaultLoc]);
             return new Set(locs);
           }
-          // Subsequent loads (date change etc.) — keep existing selection,
-          // but add any newly appearing locations as selected
-          const locs = [...new Set(normalized.map(r => r.location).filter(Boolean))].sort();
+          // Subsequent loads — keep existing selection, add any new locations
           const next = new Set(prev);
           locs.forEach(l => { if (!next.has(l)) next.add(l); });
           return next;
