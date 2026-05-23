@@ -240,15 +240,24 @@ function toISO(d) {
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
 }
 
-function getDateRange(schedule, rollingDays) {
+function getDateRange(schedule, forward) {
   const now = new Date();
   const y = now.getFullYear(), m = now.getMonth();
-  // Rolling forward window (e.g. Apex facility: today + N days)
-  if (typeof rollingDays === "number") {
-    const start = new Date(now);
-    const end   = new Date(now); end.setDate(end.getDate() + rollingDays - 1);
-    return { start: toISO(start), end: toISO(end), label: `${toISO(start)} to ${toISO(end)}` };
+  if (forward) {
+    // Forward-looking: facility/roster/programs etc. — you want upcoming data
+    if (schedule === "daily") {
+      return { start: toISO(now), end: toISO(now), label: `Today — ${toISO(now)}` };
+    }
+    if (schedule === "weekly") {
+      const end = new Date(now); end.setDate(end.getDate() + 6);
+      return { start: toISO(now), end: toISO(end), label: `Next 7 Days — ${toISO(now)} to ${toISO(end)}` };
+    }
+    // Monthly: next full calendar month
+    const start = new Date(y, m + 1, 1);
+    const end   = new Date(y, m + 2, 0);
+    return { start: toISO(start), end: toISO(end), label: `Next Month — ${start.toLocaleString("default",{month:"long",year:"numeric"})}` };
   }
+  // Backward-looking: GL and financial reports — you want completed period data
   if (schedule === "daily") {
     const d = new Date(now); d.setDate(d.getDate() - 1);
     return { start: toISO(d), end: toISO(d), label: `Daily — ${toISO(d)}` };
@@ -310,8 +319,8 @@ async function generatePdf(orgSlug, reportType, startDate, endDate) {
 
 // ── Send report email ────────────────────────────────────────────────
 async function sendReportEmail(orgSlug, email, reportType, schedule, locationFilter) {
-  const rollingDays = reportType === "facility" ? ORGS[orgSlug]?.facility?.defaultDateRange : undefined;
-  const { start, end, label } = getDateRange(schedule, typeof rollingDays === "number" ? rollingDays : undefined);
+  const forward = reportType !== "gl";
+  const { start, end, label } = getDateRange(schedule, forward);
   const orgConfig = ORGS[orgSlug];
   const reportLabel = reportType === "gl"
     ? "GL Code Rollup"
