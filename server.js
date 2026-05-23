@@ -787,8 +787,7 @@ app.get("/:org", (req, res) => {
     <div class="section-label">Reports</div>
     <div class="cards">${cards}</div>
     <div class="admin-links">
-      <a href="/${slug}/metrics" class="admin-link"><span>📈</span> Usage Metrics</a>
-      <a href="/${slug}/admin"   class="admin-link"><span>📧</span> Manage Email Subscriptions</a>
+      <a href="/${slug}/admin" class="admin-link"><span>📧</span> Manage Email Subscriptions</a>
     </div>
   </div>
   <footer>rec.us · ${slug}</footer>
