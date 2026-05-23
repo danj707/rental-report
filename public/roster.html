@@ -281,12 +281,12 @@ function normalizeRow(raw) {
         .map(el => {
           const rawAns = fd.submission[el.name];
           let answer = '';
+          const choiceMap = {};
+          (el.choices || []).forEach(c => { choiceMap[c.value] = c.text; });
           if (Array.isArray(rawAns)) {
-            const choiceMap = {};
-            (el.choices || []).forEach(c => { choiceMap[c.value] = c.text; });
             answer = rawAns.map(v => choiceMap[v] || v).join(', ');
           } else if (rawAns !== null && rawAns !== undefined) {
-            answer = String(rawAns);
+            answer = choiceMap[String(rawAns)] || String(rawAns);
           }
           return { q: el.title, a: answer };
         })
