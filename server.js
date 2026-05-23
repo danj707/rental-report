@@ -792,6 +792,7 @@ app.get("/:org", (req, res) => {
     historic: { label: "Historic Buildings",        icon: "🏛️",  desc: "Reservations for historic building sites" },
     roster:   { label: "Class Roster",              icon: "📋", desc: "Enrolled and cancelled participants by section" },
     overview: { label: "Facility Overview",         icon: "📈", desc: "Revenue and activity summary by location" },
+    products: { label: "Product Sales MoM",          icon: "🛒", desc: "Month-over-month revenue and quantity by product" },
   };
 
   const available = REPORT_TYPES.filter(r => org[r]?.mbUuid);
