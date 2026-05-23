@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Report Subscriptions — Admin</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -228,6 +229,18 @@
       margin-right: 4px;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Metrics section ── */
+    .metrics-section { max-width: 900px; margin: 28px auto 0; padding: 0 24px; }
+    .metrics-section-title { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.2px; color: #888; margin-bottom: 12px; }
+    .metrics-stats { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
+    .metrics-stat { background: #fff; border: 1px solid #e0ddd8; border-radius: 7px; padding: 12px 18px; min-width: 120px; flex: 1; }
+    .metrics-stat-label { font-size: 10px; text-transform: uppercase; letter-spacing: .5px; color: #999; margin-bottom: 4px; }
+    .metrics-stat-value { font-size: 24px; font-weight: 700; color: #1a1a1a; }
+    .metrics-stat-sub { font-size: 11px; color: #aaa; margin-top: 2px; }
+    .metrics-chart-card { background: #fff; border: 1px solid #e0ddd8; border-radius: 7px; padding: 16px 18px; }
+    .metrics-chart-wrap { position: relative; height: 200px; }
+    .metrics-loading { color: #aaa; font-size: 12px; text-align: center; padding: 40px; }
   </style>
 </head>
 <body>
@@ -238,6 +251,24 @@
     <div class="topbar-org" id="org-label">Loading…</div>
   </div>
   <div class="topbar-links" id="report-links"></div>
+</div>
+
+<div class="metrics-section">
+  <div class="metrics-section-title">Usage — Last 30 Days</div>
+  <div class="metrics-stats" id="metrics-stats">
+    <div class="metrics-stat"><div class="metrics-stat-label">Views</div><div class="metrics-stat-value" id="m-views">—</div><div class="metrics-stat-sub">report opens</div></div>
+    <div class="metrics-stat"><div class="metrics-stat-label">Data Fetches</div><div class="metrics-stat-value" id="m-fetches">—</div><div class="metrics-stat-sub">run report clicks</div></div>
+    <div class="metrics-stat"><div class="metrics-stat-label">PDF Exports</div><div class="metrics-stat-value" id="m-pdf">—</div><div class="metrics-stat-sub">downloads</div></div>
+    <div class="metrics-stat"><div class="metrics-stat-label">Excel Exports</div><div class="metrics-stat-value" id="m-excel">—</div><div class="metrics-stat-sub">downloads</div></div>
+    <div class="metrics-stat"><div class="metrics-stat-label">Prints</div><div class="metrics-stat-value" id="m-print">—</div><div class="metrics-stat-sub">print actions</div></div>
+    <div class="metrics-stat"><div class="metrics-stat-label">Subscribers</div><div class="metrics-stat-value" id="m-subs">—</div><div class="metrics-stat-sub">active email subs</div></div>
+  </div>
+  <div class="metrics-chart-card">
+    <div class="metrics-loading" id="metrics-chart-loading">Loading usage data…</div>
+    <div class="metrics-chart-wrap" id="metrics-chart-wrap" style="display:none">
+      <canvas id="metrics-chart"></canvas>
+    </div>
+  </div>
 </div>
 
 <div class="container">
@@ -354,6 +385,67 @@ document.querySelectorAll('#daterange-group .radio-btn').forEach(btn => {
     selectedDateRange = btn.dataset.value;
   });
 });
+
+// ── Load metrics ─────────────────────────────────────────────────────
+const REPORT_COLORS = { facility:'#16a34a', gl:'#3b82f6', programs:'#7c3aed', historic:'#d97706', roster:'#0891b2', overview:'#059669' };
+
+async function loadMetrics() {
+  try {
+    const data = await fetch(`/${orgSlug}/metrics/api/data?days=30`).then(r => r.json());
+    const { summary, daily, totalSubscribers, configuredReports } = data;
+
+    // Summary stats
+    const sum = (field) => configuredReports.reduce((n, r) => n + (summary[r]?.[field] || 0), 0);
+    document.getElementById('m-views').textContent   = sum('view');
+    document.getElementById('m-fetches').textContent = sum('fetch');
+    document.getElementById('m-pdf').textContent     = sum('pdf');
+    document.getElementById('m-excel').textContent   = sum('excel');
+    document.getElementById('m-print').textContent   = sum('print');
+    document.getElementById('m-subs').textContent    = totalSubscribers;
+
+    // Build 30-day labels
+    const labels = [];
+    for (let i = 29; i >= 0; i--) {
+      const d = new Date(); d.setDate(d.getDate() - i);
+      labels.push(d.toISOString().slice(0, 10));
+    }
+
+    const datasets = configuredReports.map(r => ({
+      label: r,
+      data: labels.map(d => daily[d]?.[r] || 0),
+      borderColor: REPORT_COLORS[r] || '#888',
+      backgroundColor: (REPORT_COLORS[r] || '#888') + '22',
+      borderWidth: 2,
+      pointRadius: 3,
+      tension: 0.3,
+      fill: true,
+    }));
+
+    document.getElementById('metrics-chart-loading').style.display = 'none';
+    document.getElementById('metrics-chart-wrap').style.display = 'block';
+
+    new Chart(document.getElementById('metrics-chart').getContext('2d'), {
+      type: 'line',
+      data: { labels: labels.map(d => d.slice(5)), datasets },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: {
+          legend: { position: 'top', labels: { font: { size: 11 }, boxWidth: 12, padding: 12 } },
+          tooltip: { mode: 'index', intersect: false,
+            callbacks: { title: (items) => 'Date: ' + labels[items[0].dataIndex] }
+          },
+        },
+        scales: {
+          x: { grid: { display: false }, ticks: { font: { size: 10 }, maxTicksLimit: 10 } },
+          y: { beginAtZero: true, ticks: { font: { size: 10 }, precision: 0 }, grid: { color: '#f5f4f1' } },
+        },
+      },
+    });
+  } catch(e) {
+    document.getElementById('metrics-chart-loading').textContent = 'Failed to load metrics';
+    console.error('Metrics error:', e);
+  }
+}
 
 // ── Load available reports ────────────────────────────────────────────
 async function loadReports() {
@@ -525,6 +617,7 @@ function showAlert(el, type, msg) {
 
 // ── Init ──────────────────────────────────────────────────────────────
 loadReports();
+loadMetrics();
 loadSubscribers();
 setInterval(loadSubscribers, 30000); // auto-refresh every 30s
 </script>
