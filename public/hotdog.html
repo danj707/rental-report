@@ -189,6 +189,31 @@
       const [animated,   setAnimated]   = useState(false);
       const [orgOptions, setOrgOptions] = useState([]);
 
+      // ── Auto-refresh ─────────────────────────────────────────────
+      const refreshTimerRef = useRef(null);
+      const [nextRefreshAt, setNextRefreshAt] = useState(null);
+      const [tickNow,       setTickNow]       = useState(() => Date.now());
+
+      // 1-second tick so the countdown display updates live
+      useEffect(() => {
+        const id = setInterval(() => setTickNow(Date.now()), 1000);
+        return () => clearInterval(id);
+      }, []);
+
+      // Cleanup on unmount
+      useEffect(() => () => clearTimeout(refreshTimerRef.current), []);
+
+      const REFRESH_MS = 15 * 60 * 1000; // 15 minutes
+
+      const countdownLabel = (() => {
+        if (!nextRefreshAt) return null;
+        const ms = nextRefreshAt - tickNow;
+        if (ms <= 0) return '↻ …';
+        const m = Math.floor(ms / 60000);
+        const s = Math.floor((ms % 60000) / 1000);
+        return `↻ ${m}:${String(s).padStart(2, '0')}`;
+      })();
+
       // ── Claim state ──────────────────────────────────────────────
       const [claims,          setClaims]          = useState({});   // { product: [{name, icon}] }
       const [myClaimedProduct,setMyClaimedProduct] = useState(null); // which product this user claimed
@@ -255,6 +280,11 @@
           const newRows = data.rows || [];
           setRows(newRows);
           setHasRun(true);
+          // Schedule auto-refresh 15 minutes from now, preserving current filters
+          clearTimeout(refreshTimerRef.current);
+          const at = Date.now() + REFRESH_MS;
+          refreshTimerRef.current = setTimeout(() => runReport(), REFRESH_MS);
+          setNextRefreshAt(at);
           // Populate org autocomplete from unfiltered (all-org) runs
           if (!orgFilter && !startDate && !endDate) {
             const names = [...new Set(newRows.map(r => r['Org']).filter(Boolean))].sort();
@@ -382,6 +412,15 @@
             }}>
               {loading ? '⏳ loading…' : '▶ run report'}
             </button>
+            {countdownLabel && !loading && (
+              <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                <span style={{
+                  fontSize: 11, color: 'var(--muted)', fontFamily: 'DM Mono, monospace',
+                  letterSpacing: '0.04em', userSelect: 'none',
+                }}>{countdownLabel}</span>
+                <span style={{ fontSize: 9, color: 'var(--border2)', letterSpacing: '0.06em', textTransform: 'uppercase', marginTop: 1 }}>auto-refresh</span>
+              </div>
+            )}
           </div>
 
           {/* ── Stats bar ── */}
