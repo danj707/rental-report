@@ -286,6 +286,22 @@
         return Object.values(map).sort((a, b) => b.units - a.units);
       }, [rows]);
 
+      // ── Staff leaderboard — cross-reference claims with live board data ──
+      const staffBoard = useMemo(() => {
+        const entries = [];
+        Object.entries(claims).forEach(([product, claimants]) => {
+          const item = board.find(b => b.product === product);
+          const units   = item?.units   || 0;
+          const revenue = item?.revenue || 0;
+          claimants.forEach(c => {
+            entries.push({ name: c.name, icon: c.icon, product, units, revenue });
+          });
+        });
+        return entries.sort((a, b) => b.units - a.units);
+      }, [claims, board]);
+
+      const maxStaffUnits = staffBoard[0]?.units || 1;
+
       const maxUnits   = board[0]?.units || 1;
       const totalUnits = board.reduce((s, r) => s + r.units,   0);
       const totalRev   = board.reduce((s, r) => s + r.revenue, 0);
@@ -409,6 +425,109 @@
           {error && (
             <div style={{ margin: '24px 40px', padding: '14px 18px', background: '#1a0a0a', border: '1px solid #7f1d1d', borderRadius: 8, color: '#f87171', fontSize: 13 }}>
               ⚠️ {error}
+            </div>
+          )}
+
+          {/* ── Staff Picks Leaderboard ── */}
+          {hasRun && !loading && staffBoard.length > 0 && (
+            <div style={{ padding: '24px 40px 0' }}>
+
+              {/* Section header */}
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 16 }}>
+                <span style={{ fontFamily: 'Syne, sans-serif', fontSize: 15, fontWeight: 800, color: 'var(--accent2)', letterSpacing: '-0.01em' }}>
+                  🏅 Staff Picks
+                </span>
+                <span style={{ fontSize: 11, color: 'var(--muted)', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+                  {staffBoard.length} {staffBoard.length === 1 ? 'rep' : 'reps'} · selected period
+                </span>
+              </div>
+
+              {/* Staff column headers */}
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: '40px 200px 160px 1fr 100px',
+                gap: '0 16px',
+                padding: '0 12px 8px',
+                borderBottom: '1px solid var(--border)',
+                marginBottom: 4,
+              }}>
+                {['', 'staff', 'item', 'units', 'count'].map((h, i) => (
+                  <span key={i} style={{
+                    fontSize: 10, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.1em',
+                    textAlign: i === 4 ? 'right' : 'left',
+                  }}>{h}</span>
+                ))}
+              </div>
+
+              {/* Staff rows */}
+              {staffBoard.map((s, i) => {
+                const pct = (s.units / maxStaffUnits) * 100;
+                return (
+                  <div key={`${s.name}-${s.product}`} style={{
+                    display: 'grid',
+                    gridTemplateColumns: '40px 200px 160px 1fr 100px',
+                    gap: '0 16px',
+                    alignItems: 'center',
+                    padding: '9px 12px',
+                    borderRadius: 8,
+                    transition: 'background .12s',
+                  }}
+                    onMouseEnter={e => e.currentTarget.style.background = 'var(--raised)'}
+                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                  >
+                    {/* Rank */}
+                    <div style={{ textAlign: 'center', fontSize: i < 3 ? 18 : 12, fontWeight: 700, color: i < 3 ? 'inherit' : 'var(--muted)' }}>
+                      {i < 3 ? ['🥇','🥈','🥉'][i] : i + 1}
+                    </div>
+
+                    {/* Icon + name */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, overflow: 'hidden' }}>
+                      <span style={{ fontSize: 20, flexShrink: 0 }}>{s.icon}</span>
+                      <div style={{ overflow: 'hidden' }}>
+                        <div style={{ fontSize: 14, fontWeight: 600, color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {s.name}
+                        </div>
+                        {myClaimedProduct === s.product && s.name === claimName && (
+                          <div style={{ fontSize: 9, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.08em', marginTop: 1 }}>you</div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Product name */}
+                    <div style={{ fontSize: 12, color: 'var(--muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {s.product}
+                    </div>
+
+                    {/* Bar */}
+                    <div style={{ height: 20, background: 'var(--raised)', borderRadius: 3, overflow: 'hidden', position: 'relative' }}>
+                      <div style={{
+                        height: '100%',
+                        width: `${pct}%`,
+                        background: i === 0
+                          ? 'linear-gradient(90deg, #f97316, #fb923c)'
+                          : i === 1
+                          ? 'linear-gradient(90deg, #a78bfa, #c4b5fd)'
+                          : i === 2
+                          ? 'linear-gradient(90deg, #fb923c, #fbbf24)'
+                          : 'linear-gradient(90deg, #4b5563, #6b7280)',
+                        borderRadius: 3,
+                        transition: 'width .6s cubic-bezier(.4,0,.2,1)',
+                      }} />
+                    </div>
+
+                    {/* Units */}
+                    <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 14, fontWeight: 500, color: i < 3 ? '#fff' : 'var(--txt)', textAlign: 'right', letterSpacing: '-0.02em' }}>
+                      {fmt(s.units)}
+                      {s.units === 0 && <span style={{ fontSize: 10, color: 'var(--muted)', marginLeft: 4 }}>—</span>}
+                    </div>
+                  </div>
+                );
+              })}
+
+              <div style={{ height: 8 }} />
+
+              {/* Divider */}
+              <div style={{ borderTop: '1px solid var(--border)', margin: '4px 0 0' }} />
             </div>
           )}
 
