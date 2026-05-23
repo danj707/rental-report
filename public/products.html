@@ -197,7 +197,7 @@
       text-align: left;
       font-family: 'IBM Plex Sans', sans-serif;
       white-space: normal;
-      max-width: 220px;
+      min-width: 180px;
     }
     tbody td.total-col { background: #f4f4f0; }
     tbody tr:nth-child(even) td.total-col { background: #efefe9; }
@@ -660,9 +660,17 @@ function App() {
                   const empty = cell.revenue === 0 && cell.qty === 0;
 
                   if (isBoth) {
+                    const momBoth = getMoM(p, mi);
                     return (
                       <React.Fragment key={m}>
-                        <td>{cell.revenue === 0 ? <span className="cell-zero">—</span> : fmtMoney(cell.revenue)}</td>
+                        <td>
+                          {cell.revenue === 0 ? <span className="cell-zero">—</span> : fmtMoney(cell.revenue)}
+                          {cell.revenue !== 0 && momBoth !== null && (
+                            <span className={momBoth > 0 ? 'mom-up' : 'mom-down'}>
+                              {momBoth > 0 ? '▲' : '▼'}{Math.abs(momBoth).toFixed(0)}%
+                            </span>
+                          )}
+                        </td>
                         <td>{cell.qty === 0 ? <span className="cell-zero">—</span> : fmtNum(cell.qty)}</td>
                       </React.Fragment>
                     );
