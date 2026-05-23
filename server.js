@@ -837,24 +837,34 @@ app.get("/", (req, res) => {
           <span class="report-arrow">→</span>
         </a>`);
 
-    // Metrics / Admin links only for orgs with a real orgId
-    const headerActions = org.orgId ? `
-          <div class="org-header-actions">
-            <a href="/${slug}/metrics" class="org-action-link" title="Usage metrics">📈 Metrics</a>
-            <a href="/${slug}/admin"   class="org-action-link" title="Email subscriptions">📧 Admin</a>
-          </div>` : "";
+    // Admin link only for orgs with a real orgId
+    const adminLink = org.orgId ? `<a href="/${slug}/admin" class="org-action-link" title="Email subscriptions">📧 Admin</a>` : "";
+    const headerActions = adminLink ? `<div class="org-header-actions">${adminLink}</div>` : "";
+
+    // Inline metrics toggle (only for orgs with orgId)
+    const metricsToggle = org.orgId ? `
+        <div class="metrics-toggle-row">
+          <button class="metrics-toggle-btn" onclick="toggleMetrics('${slug}', this)">▸ 📈 Metrics</button>
+          <a href="/${slug}/metrics" class="metrics-full-link">View full metrics →</a>
+        </div>
+        <div class="metrics-panel" id="metrics-${slug}" style="display:none"></div>` : "";
+
+    const orgNameHtml = org.orgId
+      ? `<a href="/${slug}" class="org-name-link">${displayName}</a>`
+      : `<span>${displayName}</span>`;
 
     return `
       <div class="org-section">
         <div class="org-header">
           ${org.logoUrl ? `<img src="${org.logoUrl}" class="org-logo" alt="" onerror="this.style.display='none'" />` : ""}
           <div class="org-header-text">
-            <div class="org-name">${displayName}</div>
+            ${orgNameHtml}
             <div class="org-slug">${slug}</div>
           </div>
           ${headerActions}
         </div>
         <div class="report-cards">${cards.join("")}</div>
+        ${metricsToggle}
       </div>`;
   }).join("");
 
@@ -894,6 +904,23 @@ app.get("/", (req, res) => {
     .report-desc  { font-size: 11px; color: #999; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .report-arrow { font-size: 14px; color: #ccc; flex-shrink: 0; }
     .report-card:hover .report-arrow { color: var(--accent, #888); }
+    .org-name-link { font-weight: 700; font-size: 14px; color: inherit; text-decoration: none; }
+    .org-name-link:hover { color: #16a34a; text-decoration: underline; }
+    .metrics-toggle-row { display: flex; align-items: center; gap: 10px; padding: 8px 16px; border-top: 1px solid #e8e5df; background: #fafaf8; }
+    .metrics-toggle-btn { font-size: 12px; color: #666; background: none; border: 1px solid #ddd; border-radius: 4px; padding: 4px 10px; cursor: pointer; transition: background .15s, color .15s; }
+    .metrics-toggle-btn:hover { background: #f0f0f0; color: #111; }
+    .metrics-toggle-btn.open { color: #16a34a; border-color: #16a34a; }
+    .metrics-full-link { font-size: 11px; color: #aaa; text-decoration: none; margin-left: auto; }
+    .metrics-full-link:hover { color: #555; text-decoration: underline; }
+    .metrics-panel { padding: 14px 18px; background: #f5f4f1; border-top: 1px solid #e8e5df; }
+    .metrics-grid { display: flex; flex-wrap: wrap; gap: 8px; }
+    .metrics-stat { background: #fff; border: 1px solid #e0ddd8; border-radius: 6px; padding: 10px 14px; min-width: 110px; }
+    .metrics-stat-label { font-size: 10px; text-transform: uppercase; letter-spacing: .5px; color: #999; margin-bottom: 3px; }
+    .metrics-stat-value { font-size: 20px; font-weight: 700; color: #1a1a1a; }
+    .metrics-reports { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 6px; }
+    .metrics-report-chip { font-size: 11px; background: #fff; border: 1px solid #e0ddd8; border-radius: 4px; padding: 4px 10px; color: #555; }
+    .metrics-report-chip strong { color: #16a34a; }
+    .metrics-loading { font-size: 12px; color: #aaa; padding: 4px 0; }
     footer { text-align: center; padding: 24px; font-size: 11px; color: #bbb; }
   </style>
 </head>
@@ -908,6 +935,48 @@ app.get("/", (req, res) => {
     ${orgSections}
   </div>
   <footer>rec.us · ${Object.keys(ORGS).length} organizations</footer>
+  <script>
+    const metricsCache = {};
+    async function toggleMetrics(slug, btn) {
+      const panel = document.getElementById('metrics-' + slug);
+      const open  = panel.style.display !== 'none';
+      if (open) {
+        panel.style.display = 'none';
+        btn.textContent = '▸ 📈 Metrics';
+        btn.classList.remove('open');
+        return;
+      }
+      panel.style.display = 'block';
+      btn.textContent = '▾ 📈 Metrics';
+      btn.classList.add('open');
+      if (metricsCache[slug]) { renderMetrics(panel, metricsCache[slug]); return; }
+      panel.innerHTML = '<div class="metrics-loading">Loading…</div>';
+      try {
+        const data = await fetch('/' + slug + '/metrics/api/data?days=30').then(r => r.json());
+        metricsCache[slug] = data;
+        renderMetrics(panel, data);
+      } catch(e) {
+        panel.innerHTML = '<div class="metrics-loading" style="color:#e55">Failed to load metrics</div>';
+      }
+    }
+    function renderMetrics(panel, data) {
+      const { summary, totalSubscribers, configuredReports } = data;
+      const totalViews  = configuredReports.reduce((n, r) => n + (summary[r]?.view  || 0), 0);
+      const totalExports = configuredReports.reduce((n, r) => n + (summary[r]?.excel || 0) + (summary[r]?.pdf || 0), 0);
+      const chips = configuredReports.map(r => {
+        const s = summary[r] || {};
+        const views = s.view || 0;
+        return \`<div class="metrics-report-chip">\${r} · <strong>\${views}</strong> view\${views!==1?'s':''}</div>\`;
+      }).join('');
+      panel.innerHTML = \`
+        <div class="metrics-grid">
+          <div class="metrics-stat"><div class="metrics-stat-label">Views (30d)</div><div class="metrics-stat-value">\${totalViews}</div></div>
+          <div class="metrics-stat"><div class="metrics-stat-label">Exports (30d)</div><div class="metrics-stat-value">\${totalExports}</div></div>
+          <div class="metrics-stat"><div class="metrics-stat-label">Subscribers</div><div class="metrics-stat-value">\${totalSubscribers}</div></div>
+        </div>
+        <div class="metrics-reports">\${chips}</div>\`;
+    }
+  </script>
 </body>
 </html>`);
 });
