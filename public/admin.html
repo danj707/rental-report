@@ -259,6 +259,16 @@
         </div>
       </div>
 
+      <div class="form-group" id="location-filter-group" style="display:none">
+        <label>Location Filter <span style="font-weight:400;color:#aaa">(facility only)</span></label>
+        <input type="text" id="location-filter-input"
+          placeholder="e.g. Apex Center — leave blank for all locations"
+          style="width:100%;padding:7px 10px;border:1px solid #ddd;border-radius:5px;font-size:13px" />
+        <div style="font-size:11px;color:#aaa;margin-top:5px">
+          Daily emails will only include reservations for this location.
+        </div>
+      </div>
+
       <div class="form-group">
         <label>Schedule</label>
         <div class="radio-group" id="schedule-group">
@@ -313,6 +323,11 @@ document.getElementById('report-links').innerHTML = `
 
 // ── Schedule radio buttons ────────────────────────────────────────────
 let selectedSchedule = 'weekly';
+
+function updateLocationVisibility() {
+  const hasFacility = !!document.querySelector('#report-checkboxes input[value="facility"]:checked');
+  document.getElementById('location-filter-group').style.display = hasFacility ? '' : 'none';
+}
 document.querySelectorAll('.radio-btn').forEach(btn => {
   btn.addEventListener('click', () => {
     document.querySelectorAll('.radio-btn').forEach(b => b.classList.remove('selected'));
@@ -332,7 +347,7 @@ async function loadReports() {
   }
   box.innerHTML = data.reports.map(r => `
     <label class="checkbox-label">
-      <input type="checkbox" value="${r.key}" checked />
+      <input type="checkbox" value="${r.key}" checked onchange="updateLocationVisibility()" />
       ${r.label}
     </label>
   `).join('');
@@ -365,7 +380,7 @@ function renderSubscribers(subs) {
         ${subs.map(s => `
           <tr>
             <td class="email-cell">${s.email}</td>
-            <td>${s.reports.map(r => `<span class="badge badge-${r}">${r === 'gl' ? 'GL' : 'Facility'}</span>`).join('')}</td>
+            <td>${s.reports.map(r => `<span class="badge badge-${r}">${r === 'gl' ? 'GL' : 'Facility'}</span>`).join('')}${s.locationFilter ? `<br><span style="font-size:10px;color:#888">📍 ${s.locationFilter}</span>` : ''}</td>
             <td><span class="badge badge-${s.schedule}">${s.schedule}</span></td>
             <td class="actions-cell">
               <button class="btn btn-test" onclick="testSend('${s.email}', ${JSON.stringify(s.reports).replace(/"/g, '&quot;')}, '${s.schedule}')" id="test-${btoa(s.email).replace(/[=+/]/g, '_')}">
@@ -419,7 +434,12 @@ async function subscribe() {
   const res  = await fetch(`/${orgSlug}/admin/subscribe`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, reports, schedule: selectedSchedule }),
+    body: JSON.stringify({
+      email,
+      reports,
+      schedule: selectedSchedule,
+      locationFilter: document.getElementById('location-filter-input')?.value.trim() || null,
+    }),
   });
   const data = await res.json();
 
