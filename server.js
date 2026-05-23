@@ -856,8 +856,21 @@ app.get("/", (req, res) => {
           <span class="report-arrow">→</span>
         </a>`);
 
-    // Admin link only for orgs with a real orgId
-    const adminLink = org.orgId ? `<a href="/${slug}/admin" class="org-action-link" title="Email subscriptions">📧 Admin</a>` : "";
+    // Admin link with subscriber summary
+    let adminLink = "";
+    if (org.orgId) {
+      const subs = db.getSubscriptions(slug);
+      const byCadence = { daily: 0, weekly: 0, monthly: 0 };
+      subs.forEach(s => { if (byCadence[s.schedule] !== undefined) byCadence[s.schedule]++; });
+      const total = subs.length;
+      const parts = [
+        byCadence.daily   ? `${byCadence.daily}d`   : '',
+        byCadence.weekly  ? `${byCadence.weekly}w`  : '',
+        byCadence.monthly ? `${byCadence.monthly}m` : '',
+      ].filter(Boolean).join(' ');
+      const badge = parts ? `<span class="sub-badge">${parts}</span>` : '';
+      adminLink = `<a href="/${slug}/admin" class="org-action-link" title="${total} subscriber${total!==1?'s':''}">📧 Admin${badge}</a>`;
+    }
     const headerActions = adminLink ? `<div class="org-header-actions">${adminLink}</div>` : "";
 
     // Inline metrics toggle (only for orgs with orgId)
@@ -915,6 +928,7 @@ app.get("/", (req, res) => {
     .org-header-actions { display: flex; gap: 6px; flex-shrink: 0; }
     .org-action-link { font-size: 12px; color: #888; text-decoration: none; padding: 5px 10px; border: 1px solid #ddd; border-radius: 5px; white-space: nowrap; transition: background .15s, color .15s; }
     .org-action-link:hover { background: #f0f0f0; color: #333; }
+    .sub-badge { display: inline-block; margin-left: 6px; font-size: 10px; background: #16a34a; color: #fff; border-radius: 3px; padding: 1px 5px; font-weight: 600; letter-spacing: 0.3px; }
     .report-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 1px; background: #e8e5df; }
     .report-card { display: flex; align-items: center; gap: 12px; padding: 14px 18px; background: #fff; text-decoration: none; color: inherit; transition: background .15s; border-left: 3px solid transparent; }
     .report-card:hover { background: #fafaf8; border-left-color: var(--accent, #888); }
