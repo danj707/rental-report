@@ -901,6 +901,7 @@ app.get("/", (req, res) => {
   <title>rec.us Reports</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: 'IBM Plex Sans', system-ui, sans-serif; background: #f5f4f1; color: #1a1a1a; min-height: 100vh; display: flex; flex-direction: column; }
@@ -946,6 +947,7 @@ app.get("/", (req, res) => {
     .metrics-report-chip { font-size: 11px; background: #fff; border: 1px solid #e0ddd8; border-radius: 4px; padding: 4px 10px; color: #555; }
     .metrics-report-chip strong { color: #16a34a; }
     .metrics-loading { font-size: 12px; color: #aaa; padding: 4px 0; }
+    .metrics-chart-wrap { position: relative; height: 160px; margin-top: 12px; }
     footer { text-align: center; padding: 24px; font-size: 11px; color: #bbb; }
   </style>
 </head>
@@ -984,22 +986,59 @@ app.get("/", (req, res) => {
         panel.innerHTML = '<div class="metrics-loading" style="color:#e55">Failed to load metrics</div>';
       }
     }
+    const REPORT_COLORS = { facility:'#16a34a', gl:'#3b82f6', programs:'#7c3aed', historic:'#d97706', roster:'#0891b2', overview:'#059669' };
+    const chartInstances = {};
     function renderMetrics(panel, data) {
-      const { summary, totalSubscribers, configuredReports } = data;
-      const totalViews  = configuredReports.reduce((n, r) => n + (summary[r]?.view  || 0), 0);
+      const { summary, daily, totalSubscribers, configuredReports } = data;
+      const totalViews   = configuredReports.reduce((n, r) => n + (summary[r]?.view  || 0), 0);
       const totalExports = configuredReports.reduce((n, r) => n + (summary[r]?.excel || 0) + (summary[r]?.pdf || 0), 0);
-      const chips = configuredReports.map(r => {
-        const s = summary[r] || {};
-        const views = s.view || 0;
-        return \`<div class="metrics-report-chip">\${r} · <strong>\${views}</strong> view\${views!==1?'s':''}</div>\`;
-      }).join('');
+      const slug = panel.id.replace('metrics-', '');
+
+      // Build 30-day label array
+      const labels = [];
+      for (let i = 29; i >= 0; i--) {
+        const d = new Date(); d.setDate(d.getDate() - i);
+        labels.push(d.toISOString().slice(0, 10));
+      }
+
+      const datasets = configuredReports
+        .filter(r => labels.some(d => daily[d]?.[r]))
+        .map(r => ({
+          label: r,
+          data: labels.map(d => daily[d]?.[r] || 0),
+          borderColor: REPORT_COLORS[r] || '#888',
+          backgroundColor: (REPORT_COLORS[r] || '#888') + '22',
+          borderWidth: 2,
+          pointRadius: 3,
+          tension: 0.3,
+          fill: true,
+        }));
+
       panel.innerHTML = \`
         <div class="metrics-grid">
           <div class="metrics-stat"><div class="metrics-stat-label">Views (30d)</div><div class="metrics-stat-value">\${totalViews}</div></div>
           <div class="metrics-stat"><div class="metrics-stat-label">Exports (30d)</div><div class="metrics-stat-value">\${totalExports}</div></div>
           <div class="metrics-stat"><div class="metrics-stat-label">Subscribers</div><div class="metrics-stat-value">\${totalSubscribers}</div></div>
         </div>
-        <div class="metrics-reports">\${chips}</div>\`;
+        <div class="metrics-chart-wrap"><canvas id="chart-\${slug}"></canvas></div>\`;
+
+      if (chartInstances[slug]) { chartInstances[slug].destroy(); }
+      const ctx = document.getElementById(\`chart-\${slug}\`).getContext('2d');
+      chartInstances[slug] = new Chart(ctx, {
+        type: 'line',
+        data: { labels: labels.map(d => d.slice(5)), datasets },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: {
+            legend: { position: 'top', labels: { font: { size: 11 }, boxWidth: 12, padding: 10 } },
+            tooltip: { mode: 'index', intersect: false },
+          },
+          scales: {
+            x: { grid: { display: false }, ticks: { font: { size: 10 }, maxTicksLimit: 10 } },
+            y: { beginAtZero: true, ticks: { font: { size: 10 }, precision: 0 }, grid: { color: '#f0f0f0' } },
+          },
+        },
+      });
     }
   </script>
 </body>
