@@ -270,11 +270,22 @@
       </div>
 
       <div class="form-group">
-        <label>Schedule</label>
+        <label>Cadence <span style="font-weight:400;color:#aaa">(when to send)</span></label>
         <div class="radio-group" id="schedule-group">
           <div class="radio-btn" data-value="daily">Daily</div>
           <div class="radio-btn selected" data-value="weekly">Weekly</div>
           <div class="radio-btn" data-value="monthly">Monthly</div>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>Date Range <span style="font-weight:400;color:#aaa">(what the link shows)</span></label>
+        <div class="radio-group" id="daterange-group">
+          <div class="radio-btn" data-value="today">Today</div>
+          <div class="radio-btn selected" data-value="next7">Next 7 days</div>
+          <div class="radio-btn" data-value="next30">Next 30 days</div>
+          <div class="radio-btn" data-value="last7">Last 7 days</div>
+          <div class="radio-btn" data-value="lastMonth">Last month</div>
         </div>
       </div>
 
@@ -285,9 +296,9 @@
       <div class="alert" id="form-alert"></div>
 
       <div style="margin-top:14px;font-size:11px;color:#aaa;line-height:1.6">
-        <strong>Daily</strong> — sent every morning at 7am (yesterday's data)<br>
-        <strong>Weekly</strong> — sent every Monday at 7am (last 7 days)<br>
-        <strong>Monthly</strong> — sent on the 1st at 7am (last complete month)
+        <strong>Daily</strong> — sent every morning at 7am<br>
+        <strong>Weekly</strong> — sent every Monday at 7am<br>
+        <strong>Monthly</strong> — sent on the 1st at 7am
       </div>
     </div>
   </div>
@@ -323,16 +334,24 @@ document.getElementById('report-links').innerHTML = `
 
 // ── Schedule radio buttons ────────────────────────────────────────────
 let selectedSchedule = 'weekly';
+let selectedDateRange = 'next7';
 
 function updateLocationVisibility() {
   const hasFacility = !!document.querySelector('#report-checkboxes input[value="facility"]:checked');
   document.getElementById('location-filter-group').style.display = hasFacility ? '' : 'none';
 }
-document.querySelectorAll('.radio-btn').forEach(btn => {
+document.querySelectorAll('#schedule-group .radio-btn').forEach(btn => {
   btn.addEventListener('click', () => {
-    document.querySelectorAll('.radio-btn').forEach(b => b.classList.remove('selected'));
+    document.querySelectorAll('#schedule-group .radio-btn').forEach(b => b.classList.remove('selected'));
     btn.classList.add('selected');
     selectedSchedule = btn.dataset.value;
+  });
+});
+document.querySelectorAll('#daterange-group .radio-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('#daterange-group .radio-btn').forEach(b => b.classList.remove('selected'));
+    btn.classList.add('selected');
+    selectedDateRange = btn.dataset.value;
   });
 });
 
@@ -381,7 +400,10 @@ function renderSubscribers(subs) {
           <tr>
             <td class="email-cell">${s.email}</td>
             <td>${s.reports.map(r => `<span class="badge badge-${r}">${r === 'gl' ? 'GL' : 'Facility'}</span>`).join('')}${s.locationFilter ? `<br><span style="font-size:10px;color:#888">📍 ${s.locationFilter}</span>` : ''}</td>
-            <td><span class="badge badge-${s.schedule}">${s.schedule}</span></td>
+            <td>
+              <span class="badge badge-${s.schedule}">${s.schedule}</span>
+              ${s.dateRange ? `<span class="badge" style="background:#f0f0f0;color:#555;border:1px solid #ddd">${s.dateRange}</span>` : ''}
+            </td>
             <td class="actions-cell">
               <button class="btn btn-test" onclick="testSend('${s.email}', ${JSON.stringify(s.reports).replace(/"/g, '&quot;')}, '${s.schedule}')" id="test-${btoa(s.email).replace(/[=+/]/g, '_')}">
                 Test
@@ -438,6 +460,7 @@ async function subscribe() {
       email,
       reports,
       schedule: selectedSchedule,
+      dateRange: selectedDateRange,
       locationFilter: document.getElementById('location-filter-input')?.value.trim() || null,
     }),
   });
