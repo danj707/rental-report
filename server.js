@@ -240,9 +240,15 @@ function toISO(d) {
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
 }
 
-function getDateRange(schedule) {
+function getDateRange(schedule, rollingDays) {
   const now = new Date();
   const y = now.getFullYear(), m = now.getMonth();
+  // Rolling forward window (e.g. Apex facility: today + N days)
+  if (typeof rollingDays === "number") {
+    const start = new Date(now);
+    const end   = new Date(now); end.setDate(end.getDate() + rollingDays - 1);
+    return { start: toISO(start), end: toISO(end), label: `${toISO(start)} to ${toISO(end)}` };
+  }
   if (schedule === "daily") {
     const d = new Date(now); d.setDate(d.getDate() - 1);
     return { start: toISO(d), end: toISO(d), label: `Daily — ${toISO(d)}` };
@@ -304,7 +310,8 @@ async function generatePdf(orgSlug, reportType, startDate, endDate) {
 
 // ── Send report email ────────────────────────────────────────────────
 async function sendReportEmail(orgSlug, email, reportType, schedule, locationFilter) {
-  const { start, end, label } = getDateRange(schedule);
+  const rollingDays = reportType === "facility" ? ORGS[orgSlug]?.facility?.defaultDateRange : undefined;
+  const { start, end, label } = getDateRange(schedule, typeof rollingDays === "number" ? rollingDays : undefined);
   const orgConfig = ORGS[orgSlug];
   const reportLabel = reportType === "gl"
     ? "GL Code Rollup"
