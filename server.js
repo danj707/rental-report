@@ -119,7 +119,8 @@ const REPORT_TYPES = ["facility", "gl", "historic", "programs", "roster", "overv
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "data");
 fs.mkdirSync(DATA_DIR, { recursive: true });
 
-const ORGS_FILE   = path.join(DATA_DIR, "orgs.json");
+const ORGS_FILE          = path.join(DATA_DIR, "orgs.json");
+const HOTDOG_CLAIMS_FILE = path.join(DATA_DIR, "hotdog_claims.json");
 const SUBS_FILE   = path.join(DATA_DIR, "subscriptions.json");
 const LOG_FILE    = path.join(DATA_DIR, "send_log.json");
 const EVENTS_FILE = path.join(DATA_DIR, "events.jsonl");
@@ -679,6 +680,30 @@ const HOTDOG_MB_UUID = 'f3ec6929-49a8-4a00-8b72-c4685b6e9f35';
 // Column order must match the SELECT list in the Metabase question SQL.
 // Metabase /query/json returns a plain array of row-arrays with no header row.
 const HOTDOG_COLS = ['Org', 'Product', 'Units Sold', 'Revenue ($)', 'Avg Unit Price ($)'];
+
+// ── GET /api/hotdog/claims — return all current claims ───────────────
+app.get('/api/hotdog/claims', (req, res) => {
+  const claims = readJSON(HOTDOG_CLAIMS_FILE, {});
+  // Return as { product: [{ name, icon, claimedAt }] }
+  const byProduct = {};
+  Object.values(claims).forEach(c => {
+    if (!byProduct[c.product]) byProduct[c.product] = [];
+    byProduct[c.product].push({ name: c.name, icon: c.icon, claimedAt: c.claimedAt });
+  });
+  res.json(byProduct);
+});
+
+// ── POST /api/hotdog/claim — lock in a staff member's item pick ───────
+app.post('/api/hotdog/claim', (req, res) => {
+  const { claimId, name, icon, product } = req.body;
+  if (!claimId || !name?.trim() || !product) return res.status(400).json({ error: 'claimId, name, and product are required' });
+  const claims = readJSON(HOTDOG_CLAIMS_FILE, {});
+  if (claims[claimId]) return res.status(409).json({ error: 'already_claimed', product: claims[claimId].product });
+  claims[claimId] = { name: name.trim(), icon: icon || '🌭', product, claimedAt: new Date().toISOString() };
+  writeJSON(HOTDOG_CLAIMS_FILE, claims);
+  console.log(`[hotdog] ${name.trim()} claimed "${product}" with ${icon}`);
+  res.json({ ok: true });
+});
 
 app.get('/hotdog', (_req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'hotdog.html'));
