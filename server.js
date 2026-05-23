@@ -201,14 +201,14 @@ const db = {
   getAllBySchedule(schedule) {
     return readJSON(SUBS_FILE, []).filter(s => s.active && s.schedule === schedule);
   },
-  upsertSubscription(org, email, reports, schedule, locationFilter) {
+  upsertSubscription(org, email, reports, schedule, locationFilter, dateRange) {
     const subs = readJSON(SUBS_FILE, []);
     const idx  = subs.findIndex(s => s.org === org && s.email === email);
     const now  = new Date().toISOString();
     if (idx >= 0) {
-      subs[idx] = { ...subs[idx], reports, schedule, locationFilter: locationFilter || null, active: 1, updated_at: now };
+      subs[idx] = { ...subs[idx], reports, schedule, locationFilter: locationFilter || null, dateRange: dateRange || null, active: 1, updated_at: now };
     } else {
-      subs.push({ id: Date.now(), org, email, reports, schedule, locationFilter: locationFilter || null, active: 1, created_at: now, updated_at: now });
+      subs.push({ id: Date.now(), org, email, reports, schedule, locationFilter: locationFilter || null, dateRange: dateRange || null, active: 1, created_at: now, updated_at: now });
     }
     writeJSON(SUBS_FILE, subs);
   },
@@ -240,36 +240,29 @@ function toISO(d) {
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
 }
 
-function getDateRange(schedule, forward) {
+function getDateRange(dateRange) {
   const now = new Date();
   const y = now.getFullYear(), m = now.getMonth();
-  if (forward) {
-    // Forward-looking: facility/roster/programs etc. — you want upcoming data
-    if (schedule === "daily") {
-      return { start: toISO(now), end: toISO(now), label: `Today — ${toISO(now)}` };
-    }
-    if (schedule === "weekly") {
-      const end = new Date(now); end.setDate(end.getDate() + 6);
-      return { start: toISO(now), end: toISO(end), label: `Next 7 Days — ${toISO(now)} to ${toISO(end)}` };
-    }
-    // Monthly: next full calendar month
-    const start = new Date(y, m + 1, 1);
-    const end   = new Date(y, m + 2, 0);
-    return { start: toISO(start), end: toISO(end), label: `Next Month — ${start.toLocaleString("default",{month:"long",year:"numeric"})}` };
+  if (dateRange === "today") {
+    return { start: toISO(now), end: toISO(now), label: `Today — ${toISO(now)}` };
   }
-  // Backward-looking: GL and financial reports — you want completed period data
-  if (schedule === "daily") {
-    const d = new Date(now); d.setDate(d.getDate() - 1);
-    return { start: toISO(d), end: toISO(d), label: `Daily — ${toISO(d)}` };
+  if (dateRange === "next7") {
+    const end = new Date(now); end.setDate(end.getDate() + 6);
+    return { start: toISO(now), end: toISO(end), label: `${toISO(now)} to ${toISO(end)}` };
   }
-  if (schedule === "weekly") {
-    const end = new Date(now); end.setDate(end.getDate() - 1);
+  if (dateRange === "next30") {
+    const end = new Date(now); end.setDate(end.getDate() + 29);
+    return { start: toISO(now), end: toISO(end), label: `${toISO(now)} to ${toISO(end)}` };
+  }
+  if (dateRange === "last7") {
     const start = new Date(now); start.setDate(start.getDate() - 7);
-    return { start: toISO(start), end: toISO(end), label: `Weekly — ${toISO(start)} to ${toISO(end)}` };
+    const end   = new Date(now); end.setDate(end.getDate() - 1);
+    return { start: toISO(start), end: toISO(end), label: `${toISO(start)} to ${toISO(end)}` };
   }
+  // lastMonth (default for GL)
   const start = new Date(y, m - 1, 1);
   const end   = new Date(y, m, 0);
-  return { start: toISO(start), end: toISO(end), label: `Monthly — ${start.toLocaleString("default",{month:"long",year:"numeric"})}` };
+  return { start: toISO(start), end: toISO(end), label: start.toLocaleString("default",{month:"long",year:"numeric"}) };
 }
 
 // ── PDF generation ───────────────────────────────────────────────────
@@ -318,14 +311,14 @@ async function generatePdf(orgSlug, reportType, startDate, endDate) {
 }
 
 // ── Send report email ────────────────────────────────────────────────
-async function sendReportEmail(orgSlug, email, reportType, schedule, locationFilter) {
-  const forward = reportType !== "gl";
-  const { start, end, label } = getDateRange(schedule, forward);
+async function sendReportEmail(orgSlug, email, reportType, schedule, locationFilter, dateRange) {
+  const resolvedDateRange = dateRange || (reportType === "gl" ? "lastMonth" : "next7");
+  const { start, end, label } = getDateRange(resolvedDateRange);
   const orgConfig = ORGS[orgSlug];
   const reportLabel = reportType === "gl"
     ? "GL Code Rollup"
     : reportType === "historic"
-      ? "Facility Reservations by Date"
+      ? "Historic Buildings Schedule"
       : reportType === "programs"
         ? "Program Revenue"
         : reportType === "roster"
@@ -391,7 +384,7 @@ async function runSchedule(scheduleType) {
   for (const sub of subs) {
     const reports = Array.isArray(sub.reports) ? sub.reports : JSON.parse(sub.reports);
     for (const report of reports) {
-      await sendReportEmail(sub.org, sub.email, report, scheduleType, sub.locationFilter);
+      await sendReportEmail(sub.org, sub.email, report, scheduleType, sub.locationFilter, sub.dateRange);
     }
   }
   console.log(`[cron] ${scheduleType} sends complete — ${subs.length} subscribers`);
@@ -566,12 +559,13 @@ app.get("/:org/admin/subscribers", (req, res) => {
 
 app.post("/:org/admin/subscribe", (req, res) => {
   if (!ORGS[req.params.org]) return res.status(404).json({ error: "Unknown org" });
-  const { email, reports, schedule, locationFilter } = req.body;
+  const { email, reports, schedule, locationFilter, dateRange } = req.body;
   if (!email || !reports?.length || !schedule) return res.status(400).json({ error: "email, reports, and schedule are required" });
   if (!["daily","weekly","monthly"].includes(schedule)) return res.status(400).json({ error: "schedule must be daily, weekly, or monthly" });
   const validReports = reports.filter(r => REPORT_TYPES.includes(r));
   if (!validReports.length) return res.status(400).json({ error: "No valid report types" });
-  db.upsertSubscription(req.params.org, email.toLowerCase().trim(), validReports, schedule, locationFilter || null);
+  const validDateRanges = ["today","next7","next30","last7","lastMonth"];
+  db.upsertSubscription(req.params.org, email.toLowerCase().trim(), validReports, schedule, locationFilter || null, validDateRanges.includes(dateRange) ? dateRange : null);
   res.json({ ok: true });
 });
 
