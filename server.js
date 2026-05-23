@@ -96,7 +96,7 @@ const ORGS = {
   apex: {
     orgId:   "aeba47d0-c97f-49cb-a0e9-93c5af3a68fa",
     logoUrl: "https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2Forganization-aeba47d0-c97f-49cb-a0e9-93c5af3a68fa%2FfullLogo.png%3F1765923560125&w=1920&q=75",
-    facility: { mbUuid: "c876b1d7-df79-48c5-abf5-62917dee3534", defaultDateRange: 7 },
+    facility: { mbUuid: "c876b1d7-df79-48c5-abf5-62917dee3534", defaultDateRange: 8 },
   },
   theranch: {
     orgId:   "2d147f38-068c-409e-890d-a8acc88d8079",
