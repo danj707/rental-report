@@ -93,6 +93,11 @@ const ORGS = {
     programs: { mbUuid: "d3a3554f-1232-4803-9cc7-5b0f611360b0" },
     roster:   { mbUuid: "4f9861ef-e8ac-4447-bf88-3648c1e54a8b" },
   },
+  apex: {
+    orgId:   "aeba47d0-c97f-49cb-a0e9-93c5af3a68fa",
+    logoUrl: "https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2Forganization-aeba47d0-c97f-49cb-a0e9-93c5af3a68fa%2FfullLogo.png%3F1765923560125&w=1920&q=75",
+    facility: { mbUuid: "c876b1d7-df79-48c5-abf5-62917dee3534" },
+  },
   theranch: {
     orgId:   "2d147f38-068c-409e-890d-a8acc88d8079",
     logoUrl: "https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2Forganization-2d147f38-068c-409e-890d-a8acc88d8079%2FfullLogo.jpeg%3F1764460109546&w=2048&q=75",
@@ -196,14 +201,14 @@ const db = {
   getAllBySchedule(schedule) {
     return readJSON(SUBS_FILE, []).filter(s => s.active && s.schedule === schedule);
   },
-  upsertSubscription(org, email, reports, schedule) {
+  upsertSubscription(org, email, reports, schedule, locationFilter) {
     const subs = readJSON(SUBS_FILE, []);
     const idx  = subs.findIndex(s => s.org === org && s.email === email);
     const now  = new Date().toISOString();
     if (idx >= 0) {
-      subs[idx] = { ...subs[idx], reports, schedule, active: 1, updated_at: now };
+      subs[idx] = { ...subs[idx], reports, schedule, locationFilter: locationFilter || null, active: 1, updated_at: now };
     } else {
-      subs.push({ id: Date.now(), org, email, reports, schedule, active: 1, created_at: now, updated_at: now });
+      subs.push({ id: Date.now(), org, email, reports, schedule, locationFilter: locationFilter || null, active: 1, created_at: now, updated_at: now });
     }
     writeJSON(SUBS_FILE, subs);
   },
@@ -298,7 +303,7 @@ async function generatePdf(orgSlug, reportType, startDate, endDate) {
 }
 
 // ── Send report email ────────────────────────────────────────────────
-async function sendReportEmail(orgSlug, email, reportType, schedule) {
+async function sendReportEmail(orgSlug, email, reportType, schedule, locationFilter) {
   const { start, end, label } = getDateRange(schedule);
   const orgConfig = ORGS[orgSlug];
   const reportLabel = reportType === "gl"
@@ -311,7 +316,8 @@ async function sendReportEmail(orgSlug, email, reportType, schedule) {
           ? "Class Roster"
           : "Facility Rental Schedule";
 
-  const reportUrl = `${BASE_URL}/${orgSlug}/${reportType}?start_date=${start}&end_date=${end}`;
+  const locationParam = (reportType === "facility" && locationFilter) ? `&location_name=${encodeURIComponent(locationFilter)}` : "";
+  const reportUrl = `${BASE_URL}/${orgSlug}/${reportType}?start_date=${start}&end_date=${end}${locationParam}`;
 
   const resend = getResendClient();
   if (!resend) {
@@ -369,7 +375,7 @@ async function runSchedule(scheduleType) {
   for (const sub of subs) {
     const reports = Array.isArray(sub.reports) ? sub.reports : JSON.parse(sub.reports);
     for (const report of reports) {
-      await sendReportEmail(sub.org, sub.email, report, scheduleType);
+      await sendReportEmail(sub.org, sub.email, report, scheduleType, sub.locationFilter);
     }
   }
   console.log(`[cron] ${scheduleType} sends complete — ${subs.length} subscribers`);
@@ -544,12 +550,12 @@ app.get("/:org/admin/subscribers", (req, res) => {
 
 app.post("/:org/admin/subscribe", (req, res) => {
   if (!ORGS[req.params.org]) return res.status(404).json({ error: "Unknown org" });
-  const { email, reports, schedule } = req.body;
+  const { email, reports, schedule, locationFilter } = req.body;
   if (!email || !reports?.length || !schedule) return res.status(400).json({ error: "email, reports, and schedule are required" });
   if (!["daily","weekly","monthly"].includes(schedule)) return res.status(400).json({ error: "schedule must be daily, weekly, or monthly" });
   const validReports = reports.filter(r => REPORT_TYPES.includes(r));
   if (!validReports.length) return res.status(400).json({ error: "No valid report types" });
-  db.upsertSubscription(req.params.org, email.toLowerCase().trim(), validReports, schedule);
+  db.upsertSubscription(req.params.org, email.toLowerCase().trim(), validReports, schedule, locationFilter || null);
   res.json({ ok: true });
 });
 
