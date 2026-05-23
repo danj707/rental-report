@@ -589,6 +589,91 @@ function LocationFilter({ allLocations, selectedLocations, onChange }) {
   );
 }
 
+// ── Site Filter Dropdown component ───────────────────────────────────
+function SiteFilter({ allSites, selectedSites, onChange }) {
+  const [open, setOpen]     = useState(false);
+  const [search, setSearch] = useState('');
+  const wrapRef             = useRef(null);
+
+  useEffect(() => {
+    function handleClick(e) {
+      if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false);
+    }
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, []);
+
+  const filtered    = allSites.filter(s => s.toLowerCase().includes(search.toLowerCase()));
+  const allSelected = selectedSites.size === allSites.length;
+  const noneSelected = selectedSites.size === 0;
+
+  function toggle(site) {
+    const next = new Set(selectedSites);
+    next.has(site) ? next.delete(site) : next.add(site);
+    onChange(next);
+  }
+
+  function selectAll() { onChange(new Set(allSites)); }
+  function clearAll()  { onChange(new Set()); }
+
+  const badgeCount = allSelected ? null : selectedSites.size;
+
+  return (
+    <div className="loc-filter-wrap" ref={wrapRef}>
+      <button
+        className="btn-loc-filter"
+        onClick={() => setOpen(o => !o)}
+        style={!allSelected ? { borderColor: '#f59e0b', color: '#fde68a' } : {}}
+      >
+        🏢 Sites
+        {badgeCount !== null && (
+          <span className="badge">{badgeCount}/{allSites.length}</span>
+        )}
+      </button>
+
+      {open && (
+        <div className="loc-dropdown">
+          <div className="loc-dropdown-header">
+            <span>Filter Sites</span>
+            <div className="loc-dropdown-header-actions">
+              <button onClick={selectAll} disabled={allSelected}>All</button>
+              <button onClick={clearAll}  disabled={noneSelected}>None</button>
+            </div>
+          </div>
+
+          {allSites.length > 5 && (
+            <div className="loc-dropdown-search">
+              <input
+                type="text"
+                placeholder="Search sites…"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                autoFocus
+              />
+            </div>
+          )}
+
+          <div className="loc-dropdown-list">
+            {filtered.length === 0 && (
+              <div style={{padding:'10px 12px', color:'#666', fontSize:11}}>No matches</div>
+            )}
+            {filtered.map(site => (
+              <label key={site} className="loc-item">
+                <input
+                  type="checkbox"
+                  checked={selectedSites.has(site)}
+                  onChange={() => toggle(site)}
+                />
+                <span title={site}>{site}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Main App ─────────────────────────────────────────────────────────
 function App() {
   const params   = useMemo(() => getParams(), []);
@@ -629,6 +714,7 @@ function App() {
   // ── Location filter state ────────────────────────────────────────
   // null = not yet initialized (first load); Set = initialized
   const [selectedLocations, setSelectedLocations] = useState(null);
+  const [selectedSites,     setSelectedSites]     = useState(null);
 
   useEffect(() => {
     if (params._print === '1') document.body.classList.add('print-mode');
@@ -677,6 +763,18 @@ function App() {
           locs.forEach(l => { if (!next.has(l)) next.add(l); });
           return next;
         });
+
+        // Initialize site filter on first load only
+        setSelectedSites(prev => {
+          if (prev === null) {
+            const sites = [...new Set(normalized.map(r => r.site).filter(Boolean))].sort();
+            return new Set(sites);
+          }
+          const sites = [...new Set(normalized.map(r => r.site).filter(Boolean))].sort();
+          const next = new Set(prev);
+          sites.forEach(s => { if (!next.has(s)) next.add(s); });
+          return next;
+        });
       })
       .catch(err => setError(err.message))
       .finally(() => setLoading(false));
@@ -695,13 +793,24 @@ function App() {
     return [...new Set(rows.map(r => r.location).filter(Boolean))].sort();
   }, [rows]);
 
+  // ── All unique sites from current rows ───────────────────────────
+  const allSites = useMemo(() => {
+    if (!rows) return [];
+    return [...new Set(rows.map(r => r.site).filter(Boolean))].sort();
+  }, [rows]);
+
   // ── Filtered rows → grouped ──────────────────────────────────────
   const filteredRows = useMemo(() => {
     if (!rows) return null;
-    if (!selectedLocations) return rows;
-    if (selectedLocations.size === allLocations.length) return rows; // all selected — no filter
-    return rows.filter(r => selectedLocations.has(r.location));
-  }, [rows, selectedLocations, allLocations]);
+    let result = rows;
+    if (selectedLocations && selectedLocations.size < allLocations.length) {
+      result = result.filter(r => selectedLocations.has(r.location));
+    }
+    if (selectedSites && selectedSites.size < allSites.length) {
+      result = result.filter(r => selectedSites.has(r.site));
+    }
+    return result;
+  }, [rows, selectedLocations, allLocations, selectedSites, allSites]);
 
   const grouped = useMemo(() => {
     if (!filteredRows) return null;
@@ -889,6 +998,17 @@ function App() {
               onChange={setSelectedLocations}
             />
           </>
+        )}
+
+        {allSites.length > 1 && selectedSites && (
+          <>
+            <div className="divider" />
+            <SiteFilter
+              allSites={allSites}
+              selectedSites={selectedSites}
+              onChange={setSelectedSites}
+            />
+          </> 
         )}
 
         <div className="toolbar-spacer" />
