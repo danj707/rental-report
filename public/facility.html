@@ -95,6 +95,28 @@
     .toolbar .btn-excel:hover { background: #15692f; }
     .toolbar .btn-excel:disabled { opacity: .5; cursor: not-allowed; }
 
+    /* ── View toggle ── */
+    .view-toggle {
+      display: flex;
+      border: 1px solid rgba(255,255,255,.25);
+      border-radius: 4px;
+      overflow: hidden;
+    }
+    .view-toggle button {
+      border: none;
+      border-radius: 0;
+      padding: 5px 12px;
+      font-size: 11px;
+      font-weight: 500;
+    }
+    .view-toggle button + button {
+      border-left: 1px solid rgba(255,255,255,.2);
+    }
+    .view-toggle button.active {
+      background: #3b82f6;
+      border-color: #3b82f6;
+    }
+
     .toolbar .row-count {
       font-size: 11px;
       color: #aaa;
@@ -139,7 +161,7 @@
       border: 1px solid rgba(255,255,255,.15);
       border-radius: 6px;
       min-width: 220px;
-      max-height: 320px;
+      max-height: 360px;
       display: flex;
       flex-direction: column;
       box-shadow: 0 8px 24px rgba(0,0,0,.5);
@@ -224,6 +246,66 @@
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
+      flex: 1;
+    }
+
+    /* ── Color swatch for location items ── */
+    .loc-color-swatch {
+      width: 12px;
+      height: 12px;
+      border-radius: 3px;
+      flex-shrink: 0;
+      cursor: pointer;
+      border: 1px solid rgba(255,255,255,.25);
+      position: relative;
+    }
+    .loc-color-swatch:hover {
+      transform: scale(1.2);
+      border-color: rgba(255,255,255,.6);
+    }
+    .loc-color-picker-pop {
+      position: absolute;
+      top: calc(100% + 4px);
+      left: 0;
+      z-index: 300;
+      background: #1e1e1e;
+      border: 1px solid rgba(255,255,255,.2);
+      border-radius: 6px;
+      padding: 8px;
+      box-shadow: 0 8px 24px rgba(0,0,0,.6);
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .loc-color-picker-pop .swatch-grid {
+      display: grid;
+      grid-template-columns: repeat(6, 18px);
+      gap: 4px;
+    }
+    .loc-color-picker-pop .swatch-opt {
+      width: 18px;
+      height: 18px;
+      border-radius: 3px;
+      cursor: pointer;
+      border: 2px solid transparent;
+      transition: transform .1s;
+    }
+    .loc-color-picker-pop .swatch-opt:hover { transform: scale(1.15); border-color: rgba(255,255,255,.5); }
+    .loc-color-picker-pop .swatch-opt.selected { border-color: #fff; }
+    .loc-color-picker-pop .custom-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 10px;
+      color: #aaa;
+    }
+    .loc-color-picker-pop input[type="color"] {
+      width: 24px;
+      height: 20px;
+      padding: 0;
+      border: none;
+      background: none;
+      cursor: pointer;
     }
 
     /* ── Column visibility checkboxes ── */
@@ -389,6 +471,204 @@
     .col-purpose { width: 120px; }
     .col-total   { width: 62px; text-align: right; }
 
+    /* ═══════════════════════════════════════════════════════════════
+       CALENDAR VIEW
+    ═══════════════════════════════════════════════════════════════ */
+
+    .cal-wrapper {
+      padding: 0;
+    }
+
+    /* Month nav bar */
+    .cal-month-nav {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+    .cal-month-nav .cal-month-label {
+      font-size: 18px;
+      font-weight: 700;
+      min-width: 200px;
+      text-align: center;
+    }
+    .cal-nav-btn {
+      background: none;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      padding: 5px 12px;
+      font-size: 16px;
+      cursor: pointer;
+      color: #333;
+      line-height: 1;
+      transition: background .12s;
+    }
+    .cal-nav-btn:hover { background: #f0f0f0; }
+    .cal-nav-btn:disabled { opacity: .3; cursor: default; }
+
+    /* Day-of-week header */
+    .cal-dow-row {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      gap: 2px;
+      margin-bottom: 2px;
+    }
+    .cal-dow-cell {
+      text-align: center;
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      color: #888;
+      padding: 4px 0;
+    }
+
+    /* Calendar grid */
+    .cal-grid {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      gap: 2px;
+    }
+
+    .cal-day {
+      min-height: 100px;
+      border: 1px solid #e0deda;
+      border-radius: 4px;
+      background: #fff;
+      padding: 4px;
+      vertical-align: top;
+      overflow: hidden;
+      position: relative;
+    }
+    .cal-day.other-month {
+      background: #faf9f7;
+      opacity: 0.5;
+    }
+    .cal-day.today {
+      border-color: #3b82f6;
+      border-width: 2px;
+    }
+    .cal-day.has-events {
+      background: #fff;
+    }
+
+    .cal-day-num {
+      font-size: 11px;
+      font-weight: 700;
+      color: #555;
+      margin-bottom: 3px;
+      line-height: 1;
+    }
+    .cal-day.today .cal-day-num {
+      color: #3b82f6;
+    }
+
+    /* Reservation chip */
+    .cal-chip {
+      display: block;
+      border-radius: 3px;
+      padding: 2px 5px;
+      margin-bottom: 2px;
+      font-size: 10px;
+      font-weight: 500;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      cursor: pointer;
+      line-height: 1.4;
+      color: #fff;
+      position: relative;
+      transition: filter .1s, transform .1s;
+    }
+    .cal-chip:hover {
+      filter: brightness(1.1);
+      transform: translateY(-1px);
+      z-index: 2;
+    }
+
+    .cal-more {
+      font-size: 9px;
+      color: #999;
+      padding: 1px 3px;
+      cursor: pointer;
+    }
+    .cal-more:hover { color: #3b82f6; }
+
+    /* ── Hover card ── */
+    .cal-hover-card {
+      position: fixed;
+      z-index: 9999;
+      background: #fff;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      box-shadow: 0 8px 32px rgba(0,0,0,.18);
+      padding: 12px 14px;
+      min-width: 220px;
+      max-width: 300px;
+      pointer-events: none;
+    }
+    .cal-hover-card .hc-loc {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.7px;
+      margin-bottom: 4px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .cal-hover-card .hc-loc-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .cal-hover-card .hc-site {
+      font-size: 13px;
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+    .cal-hover-card .hc-time {
+      font-size: 12px;
+      color: #444;
+      margin-bottom: 6px;
+    }
+    .cal-hover-card .hc-divider {
+      border: none;
+      border-top: 1px solid #eee;
+      margin: 6px 0;
+    }
+    .cal-hover-card .hc-row {
+      display: flex;
+      gap: 6px;
+      font-size: 11px;
+      margin-bottom: 3px;
+      align-items: baseline;
+    }
+    .cal-hover-card .hc-label {
+      color: #999;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      width: 62px;
+      flex-shrink: 0;
+    }
+    .cal-hover-card .hc-val {
+      color: #222;
+      flex: 1;
+      word-break: break-word;
+    }
+    .cal-hover-card .hc-notes {
+      margin-top: 5px;
+      padding: 5px 7px;
+      background: #f9f9f7;
+      border-radius: 4px;
+      font-size: 10px;
+      color: #666;
+      font-family: 'IBM Plex Mono', monospace;
+    }
+
     /* ── Print / PDF mode ── */
     @media print {
       body { background: #fff; }
@@ -411,6 +691,13 @@
 
 <script type="text/babel">
 const { useState, useEffect, useMemo, useCallback, useRef } = React;
+
+// ── Default location color palette ──────────────────────────────────
+const DEFAULT_PALETTE = [
+  '#e63946','#457b9d','#2a9d8f','#e9c46a','#f4a261','#a8dadc',
+  '#6a4c93','#f77f00','#4cc9f0','#80b918','#e07a5f','#3d405b',
+  '#81b29a','#9b5de5','#f15bb5','#00bbf9','#00f5d4','#fee440',
+];
 
 // ── Read query params ────────────────────────────────────────────────
 function getParams() {
@@ -500,16 +787,43 @@ function normalizeRow(raw) {
   };
 }
 
+// ── Location color helpers ───────────────────────────────────────────
+function loadLocationColors(orgSlug) {
+  try {
+    const stored = localStorage.getItem(`locationColors_${orgSlug}`);
+    return stored ? JSON.parse(stored) : {};
+  } catch { return {}; }
+}
+function saveLocationColors(orgSlug, colors) {
+  try { localStorage.setItem(`locationColors_${orgSlug}`, JSON.stringify(colors)); } catch {}
+}
+function assignColors(locations, existing) {
+  const result = { ...existing };
+  let paletteIdx = Object.keys(result).length;
+  locations.forEach(loc => {
+    if (!result[loc]) {
+      result[loc] = DEFAULT_PALETTE[paletteIdx % DEFAULT_PALETTE.length];
+      paletteIdx++;
+    }
+  });
+  return result;
+}
+
 // ── Location Filter Dropdown component ──────────────────────────────
-function LocationFilter({ allLocations, selectedLocations, onChange }) {
+function LocationFilter({ allLocations, selectedLocations, onChange, locationColors, onColorChange }) {
   const [open, setOpen]         = useState(false);
   const [search, setSearch]     = useState('');
+  const [pickerFor, setPickerFor] = useState(null); // loc name that has picker open
   const wrapRef                 = useRef(null);
+  const pickerRef               = useRef(null);
 
   // Close on outside click
   useEffect(() => {
     function handleClick(e) {
-      if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false);
+      if (wrapRef.current && !wrapRef.current.contains(e.target)) {
+        setOpen(false);
+        setPickerFor(null);
+      }
     }
     document.addEventListener('mousedown', handleClick);
     return () => document.removeEventListener('mousedown', handleClick);
@@ -537,7 +851,7 @@ function LocationFilter({ allLocations, selectedLocations, onChange }) {
     <div className="loc-filter-wrap" ref={wrapRef}>
       <button
         className="btn-loc-filter"
-        onClick={() => setOpen(o => !o)}
+        onClick={() => { setOpen(o => !o); setPickerFor(null); }}
         style={!allSelected ? { borderColor: '#f59e0b', color: '#fde68a' } : {}}
       >
         📍 Locations
@@ -573,12 +887,50 @@ function LocationFilter({ allLocations, selectedLocations, onChange }) {
               <div style={{padding:'10px 12px', color:'#666', fontSize:11}}>No matches</div>
             )}
             {filtered.map(loc => (
-              <label key={loc} className="loc-item">
+              <label key={loc} className="loc-item" onClick={e => {
+                // Don't toggle checkbox if clicking the swatch
+                if (e.target.closest('.loc-color-swatch')) e.preventDefault();
+              }}>
                 <input
                   type="checkbox"
                   checked={selectedLocations.has(loc)}
                   onChange={() => toggle(loc)}
                 />
+                {/* Color swatch */}
+                <div style={{position:'relative', flexShrink:0}}>
+                  <div
+                    className="loc-color-swatch"
+                    style={{background: locationColors[loc] || '#888'}}
+                    onClick={e => {
+                      e.stopPropagation();
+                      e.preventDefault();
+                      setPickerFor(pickerFor === loc ? null : loc);
+                    }}
+                    title="Change color"
+                  />
+                  {pickerFor === loc && (
+                    <div className="loc-color-picker-pop" ref={pickerRef} onClick={e => e.stopPropagation()}>
+                      <div className="swatch-grid">
+                        {DEFAULT_PALETTE.map(c => (
+                          <div
+                            key={c}
+                            className={`swatch-opt${locationColors[loc] === c ? ' selected' : ''}`}
+                            style={{background: c}}
+                            onClick={() => { onColorChange(loc, c); setPickerFor(null); }}
+                          />
+                        ))}
+                      </div>
+                      <div className="custom-row">
+                        <span>Custom:</span>
+                        <input
+                          type="color"
+                          value={locationColors[loc] || '#888888'}
+                          onChange={e => onColorChange(loc, e.target.value)}
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
                 <span title={loc}>{loc}</span>
               </label>
             ))}
@@ -674,6 +1026,262 @@ function SiteFilter({ allSites, selectedSites, onChange }) {
   );
 }
 
+// ── Hover Card component ─────────────────────────────────────────────
+function HoverCard({ reservation, position, locationColors }) {
+  const cardRef = useRef(null);
+  const [pos, setPos] = useState(position);
+
+  useEffect(() => {
+    if (!cardRef.current) return;
+    const card = cardRef.current;
+    const rect = card.getBoundingClientRect();
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    let { x, y } = position;
+    if (x + rect.width + 16 > vw) x = x - rect.width - 16;
+    if (y + rect.height + 16 > vh) y = vh - rect.height - 16;
+    if (x < 8) x = 8;
+    if (y < 8) y = 8;
+    setPos({ x, y });
+  }, [position, reservation]);
+
+  if (!reservation) return null;
+  const r = reservation;
+  const color = locationColors[r.location] || '#888';
+
+  return (
+    <div
+      className="cal-hover-card"
+      ref={cardRef}
+      style={{ left: pos.x + 12, top: pos.y }}
+    >
+      <div className="hc-loc">
+        <div className="hc-loc-dot" style={{background: color}} />
+        {r.location}
+      </div>
+      <div className="hc-site">{r.site}</div>
+      <div className="hc-time">{formatTime(r.start)} – {formatTime(r.end)}</div>
+      <hr className="hc-divider" />
+      {r.reservee && (
+        <div className="hc-row">
+          <span className="hc-label">Reservee</span>
+          <span className="hc-val">{r.reservee}</span>
+        </div>
+      )}
+      {r.resName && (
+        <div className="hc-row">
+          <span className="hc-label">Purpose</span>
+          <span className="hc-val">{r.resName}</span>
+        </div>
+      )}
+      {r.headCount !== '' && r.headCount != null && (
+        <div className="hc-row">
+          <span className="hc-label">Head Cnt</span>
+          <span className="hc-val">{r.headCount}</span>
+        </div>
+      )}
+      {r.phone && (
+        <div className="hc-row">
+          <span className="hc-label">Phone</span>
+          <span className="hc-val">{formatPhone(r.phone)}</span>
+        </div>
+      )}
+      {r.email && (
+        <div className="hc-row">
+          <span className="hc-label">Email</span>
+          <span className="hc-val" style={{fontSize:10}}>{r.email}</span>
+        </div>
+      )}
+      {r.total != null && r.total !== '' && parseFloat(r.total) !== 0 && (
+        <div className="hc-row">
+          <span className="hc-label">Total</span>
+          <span className="hc-val">{formatMoney(r.total)}</span>
+        </div>
+      )}
+      {(r.notes || r.addons) && (
+        <div className="hc-notes">
+          {r.notes}
+          {r.addons ? ` | ${r.addons}` : ''}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Calendar View component ──────────────────────────────────────────
+function CalendarView({ filteredRows, locationColors, loadedStart, loadedEnd }) {
+  const [calMonth, setCalMonth] = useState(() => {
+    // Start at first month of loaded range
+    if (loadedStart) {
+      const d = new Date(loadedStart + 'T12:00:00');
+      return { year: d.getFullYear(), month: d.getMonth() };
+    }
+    const now = new Date();
+    return { year: now.getFullYear(), month: now.getMonth() };
+  });
+
+  const [hoverRes, setHoverRes]     = useState(null);
+  const [hoverPos, setHoverPos]     = useState({ x: 0, y: 0 });
+
+  // Derived: min/max months from loaded range
+  const minMonth = useMemo(() => {
+    if (!loadedStart) return null;
+    const d = new Date(loadedStart + 'T12:00:00');
+    return { year: d.getFullYear(), month: d.getMonth() };
+  }, [loadedStart]);
+
+  const maxMonth = useMemo(() => {
+    if (!loadedEnd) return null;
+    const d = new Date(loadedEnd + 'T12:00:00');
+    return { year: d.getFullYear(), month: d.getMonth() };
+  }, [loadedEnd]);
+
+  const canPrev = useMemo(() => {
+    if (!minMonth) return false;
+    if (calMonth.year > minMonth.year) return true;
+    return calMonth.month > minMonth.month;
+  }, [calMonth, minMonth]);
+
+  const canNext = useMemo(() => {
+    if (!maxMonth) return false;
+    if (calMonth.year < maxMonth.year) return true;
+    return calMonth.month < maxMonth.month;
+  }, [calMonth, maxMonth]);
+
+  function prevMonth() {
+    setCalMonth(cm => {
+      if (cm.month === 0) return { year: cm.year - 1, month: 11 };
+      return { year: cm.year, month: cm.month - 1 };
+    });
+  }
+  function nextMonth() {
+    setCalMonth(cm => {
+      if (cm.month === 11) return { year: cm.year + 1, month: 0 };
+      return { year: cm.year, month: cm.month + 1 };
+    });
+  }
+
+  // Build a map: isoDate → [rows]
+  const byDate = useMemo(() => {
+    const map = {};
+    filteredRows.forEach(r => {
+      if (!map[r.date]) map[r.date] = [];
+      map[r.date].push(r);
+    });
+    // Sort each day by start time
+    Object.values(map).forEach(arr => arr.sort((a,b) => (a.start||'').localeCompare(b.start||'')));
+    return map;
+  }, [filteredRows]);
+
+  // Build calendar grid for current calMonth
+  const calDays = useMemo(() => {
+    const { year, month } = calMonth;
+    const firstDay = new Date(year, month, 1);
+    const lastDay  = new Date(year, month + 1, 0);
+    const startDow = firstDay.getDay(); // 0=Sun
+    const days = [];
+
+    // Pad start with prev month days
+    for (let i = 0; i < startDow; i++) {
+      const d = new Date(year, month, -startDow + i + 1);
+      days.push({ iso: toISO(d), inMonth: false, dayNum: d.getDate() });
+    }
+    // Current month
+    for (let d = 1; d <= lastDay.getDate(); d++) {
+      days.push({ iso: toISO(new Date(year, month, d)), inMonth: true, dayNum: d });
+    }
+    // Pad end
+    const remaining = 42 - days.length;
+    for (let i = 1; i <= remaining; i++) {
+      const d = new Date(year, month + 1, i);
+      days.push({ iso: toISO(d), inMonth: false, dayNum: d.getDate() });
+    }
+    return days;
+  }, [calMonth]);
+
+  const todayISO = toISO(new Date());
+
+  const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  const DOW = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+
+  const MAX_CHIPS = 3; // show at most this many chips before "+N more"
+
+  return (
+    <div className="cal-wrapper">
+      {/* Month navigation */}
+      <div className="cal-month-nav">
+        <button className="cal-nav-btn" onClick={prevMonth} disabled={!canPrev}>‹</button>
+        <div className="cal-month-label">
+          {MONTH_NAMES[calMonth.month]} {calMonth.year}
+        </div>
+        <button className="cal-nav-btn" onClick={nextMonth} disabled={!canNext}>›</button>
+      </div>
+
+      {/* Day-of-week headers */}
+      <div className="cal-dow-row">
+        {DOW.map(d => <div key={d} className="cal-dow-cell">{d}</div>)}
+      </div>
+
+      {/* Grid */}
+      <div className="cal-grid">
+        {calDays.map(({ iso, inMonth, dayNum }) => {
+          const dayRows = byDate[iso] || [];
+          const isToday = iso === todayISO;
+          const visible = dayRows.slice(0, MAX_CHIPS);
+          const overflow = dayRows.length - MAX_CHIPS;
+
+          return (
+            <div
+              key={iso}
+              className={[
+                'cal-day',
+                !inMonth ? 'other-month' : '',
+                isToday ? 'today' : '',
+                dayRows.length > 0 ? 'has-events' : '',
+              ].filter(Boolean).join(' ')}
+            >
+              <div className="cal-day-num">{dayNum}</div>
+
+              {visible.map((r, i) => {
+                const color = locationColors[r.location] || '#888';
+                return (
+                  <div
+                    key={i}
+                    className="cal-chip"
+                    style={{ background: color }}
+                    onMouseEnter={e => {
+                      setHoverRes(r);
+                      setHoverPos({ x: e.clientX, y: e.clientY });
+                    }}
+                    onMouseMove={e => setHoverPos({ x: e.clientX, y: e.clientY })}
+                    onMouseLeave={() => setHoverRes(null)}
+                    title={`${r.site} ${formatTime(r.start)}`}
+                  >
+                    {formatTime(r.start)} {r.site || r.location}
+                  </div>
+                );
+              })}
+
+              {overflow > 0 && (
+                <div className="cal-more">+{overflow} more</div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Hover card */}
+      {hoverRes && (
+        <HoverCard
+          reservation={hoverRes}
+          position={hoverPos}
+          locationColors={locationColors}
+        />
+      )}
+    </div>
+  );
+}
+
 // ── Main App ─────────────────────────────────────────────────────────
 function App() {
   const params   = useMemo(() => getParams(), []);
@@ -705,6 +1313,25 @@ function App() {
   const [loadedStart, setLoadedStart] = useState(null);
   const [loadedEnd,   setLoadedEnd]   = useState(null);
 
+  // ── View mode: 'table' | 'calendar' ─────────────────────────────
+  const [viewMode, setViewMode] = useState(() => {
+    try { return localStorage.getItem('facilityViewMode') || 'table'; } catch { return 'table'; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem('facilityViewMode', viewMode); } catch {}
+  }, [viewMode]);
+
+  // ── Location colors ──────────────────────────────────────────────
+  const [locationColors, setLocationColors] = useState(() => loadLocationColors(orgSlug));
+
+  function handleColorChange(loc, color) {
+    setLocationColors(prev => {
+      const next = { ...prev, [loc]: color };
+      saveLocationColors(orgSlug, next);
+      return next;
+    });
+  }
+
   // ── Column visibility (persisted) ───────────────────────────────
   const [showHeadCount, setShowHeadCount] = useState(() => {
     try { return localStorage.getItem('col_headcount') !== 'false'; } catch { return true; }
@@ -721,7 +1348,6 @@ function App() {
   useEffect(() => { try { localStorage.setItem('col_notes',     showNotes);     } catch {} }, [showNotes]);
 
   // ── Location filter state ────────────────────────────────────────
-  // null = not yet initialized (first load); Set = initialized
   const [selectedLocations, setSelectedLocations] = useState(null);
   const [selectedSites,     setSelectedSites]     = useState(null);
 
@@ -740,7 +1366,6 @@ function App() {
     if (params.location_name) qs.set('location_name', params.location_name);
     if (params.site_type)     qs.set('site_type',     params.site_type);
 
-    // Derive the API path from the current URL (handles /:org/facility routing)
     const pathParts = window.location.pathname.replace(/\/$/, '').split('/');
     const apiBase = pathParts.length >= 3
       ? `/${pathParts[1]}/${pathParts[2]}/api/data`
@@ -758,22 +1383,25 @@ function App() {
         setLoadedStart(sd);
         setLoadedEnd(ed);
 
-        // Initialize location filter on first load only
+        // Assign colors to any new locations
+        const locs = [...new Set(normalized.map(r => r.location).filter(Boolean))].sort();
+        setLocationColors(prev => {
+          const next = assignColors(locs, prev);
+          saveLocationColors(orgSlug, next);
+          return next;
+        });
+
         setSelectedLocations(prev => {
-          const locs = [...new Set(normalized.map(r => r.location).filter(Boolean))].sort();
           if (prev === null) {
-            // First load — respect ORG_CONFIG.defaultLocationFilter if set
             const defaultLoc = window.ORG_CONFIG?.defaultLocationFilter;
             if (defaultLoc && locs.includes(defaultLoc)) return new Set([defaultLoc]);
             return new Set(locs);
           }
-          // Subsequent loads — keep existing selection, add any new locations
           const next = new Set(prev);
           locs.forEach(l => { if (!next.has(l)) next.add(l); });
           return next;
         });
 
-        // Initialize site filter on first load only
         setSelectedSites(prev => {
           if (prev === null) {
             const sites = [...new Set(normalized.map(r => r.site).filter(Boolean))].sort();
@@ -787,28 +1415,24 @@ function App() {
       })
       .catch(err => setError(err.message))
       .finally(() => setLoading(false));
-  }, [params.location_name, params.site_type]);
+  }, [params.location_name, params.site_type, orgSlug]);
 
-  // Initial load
   useEffect(() => { fetchData(startDate, endDate); }, []);
 
   function handleRunReport() { fetchData(startDate, endDate); }
 
   const datesChanged = startDate !== loadedStart || endDate !== loadedEnd;
 
-  // ── All unique locations from current rows ───────────────────────
   const allLocations = useMemo(() => {
     if (!rows) return [];
     return [...new Set(rows.map(r => r.location).filter(Boolean))].sort();
   }, [rows]);
 
-  // ── All unique sites from current rows ───────────────────────────
   const allSites = useMemo(() => {
     if (!rows) return [];
     return [...new Set(rows.map(r => r.site).filter(Boolean))].sort();
   }, [rows]);
 
-  // ── Filtered rows → grouped ──────────────────────────────────────
   const filteredRows = useMemo(() => {
     if (!rows) return null;
     let result = rows;
@@ -841,7 +1465,6 @@ function App() {
 
   const sortedDates = grouped ? Object.keys(grouped).sort() : [];
 
-  // ── Month buttons ────────────────────────────────────────────────
   function setMonth(offset) {
     const now = new Date();
     const target = new Date(now.getFullYear(), now.getMonth() + offset, 1);
@@ -850,7 +1473,6 @@ function App() {
     setEndDate(toISO(last));
   }
 
-  // ── PDF download ─────────────────────────────────────────────────
   function downloadPdf() {
     setPdfLoading(true);
     const qs = new URLSearchParams();
@@ -877,11 +1499,8 @@ function App() {
       .finally(() => setPdfLoading(false));
   }
 
-  // ── Excel export ─────────────────────────────────────────────────
   function downloadExcel() {
     if (!filteredRows || filteredRows.length === 0) return;
-
-    // Build header row — mirrors visible columns
     const headers = [
       'Org Name', 'Date', 'Day', 'Location', 'Facility/Site',
       'Begin', 'End', 'Purpose', 'Reservee', 'Phone', 'Email',
@@ -890,76 +1509,41 @@ function App() {
     if (showTotal)     headers.push('Total');
     if (showNotes)     headers.push('Notes', 'Add-ons');
 
-    // Build data rows
     const dataRows = filteredRows.map(r => {
       const row = [
-        r.orgName,
-        r.date,
-        (r.day || '').trim(),
-        r.location,
-        r.site,
-        formatTime(r.start),
-        formatTime(r.end),
-        r.resName,
-        r.reservee,
-        formatPhone(r.phone),
-        r.email,
+        r.orgName, r.date, (r.day || '').trim(), r.location, r.site,
+        formatTime(r.start), formatTime(r.end), r.resName, r.reservee,
+        formatPhone(r.phone), r.email,
       ];
       if (showHeadCount) row.push(r.headCount !== '' ? Number(r.headCount) || r.headCount : '');
-      if (showTotal) {
-        const n = parseFloat(r.total);
-        row.push(!isNaN(n) && n !== 0 ? n : '');
-      }
-      if (showNotes) {
-        row.push(r.notes || '');
-        row.push(r.addons || '');
-      }
+      if (showTotal) { const n = parseFloat(r.total); row.push(!isNaN(n) && n !== 0 ? n : ''); }
+      if (showNotes) { row.push(r.notes || ''); row.push(r.addons || ''); }
       return row;
     });
 
     const wsData = [headers, ...dataRows];
     const ws = XLSX.utils.aoa_to_sheet(wsData);
-
-    // Column widths
     ws['!cols'] = [
-      { wch: 28 }, // Org Name
-      { wch: 12 }, // Date
-      { wch: 10 }, // Day
-      { wch: 22 }, // Location
-      { wch: 22 }, // Facility/Site
-      { wch: 9  }, // Begin
-      { wch: 9  }, // End
-      { wch: 20 }, // Purpose
-      { wch: 20 }, // Reservee
-      { wch: 14 }, // Phone
-      { wch: 28 }, // Email
-      ...(showHeadCount ? [{ wch: 8  }] : []),
-      ...(showTotal     ? [{ wch: 10 }] : []),
-      ...(showNotes     ? [{ wch: 30 }, { wch: 30 }] : []),
+      {wch:28},{wch:12},{wch:10},{wch:22},{wch:22},{wch:9},{wch:9},
+      {wch:20},{wch:20},{wch:14},{wch:28},
+      ...(showHeadCount?[{wch:8}]:[]),
+      ...(showTotal?[{wch:10}]:[]),
+      ...(showNotes?[{wch:30},{wch:30}]:[]),
     ];
-
-    // Format Total column as currency if present
     if (showTotal) {
       const totalColIdx = headers.indexOf('Total');
       for (let rowIdx = 1; rowIdx <= dataRows.length; rowIdx++) {
         const cellAddr = XLSX.utils.encode_cell({ r: rowIdx, c: totalColIdx });
-        if (ws[cellAddr] && typeof ws[cellAddr].v === 'number') {
-          ws[cellAddr].z = '"$"#,##0.00';
-        }
+        if (ws[cellAddr] && typeof ws[cellAddr].v === 'number') ws[cellAddr].z = '"$"#,##0.00';
       }
     }
-
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Rental Schedule');
-
-    const orgSlug = (filteredRows[0]?.orgName || 'report').replace(/\s+/g, '-').toLowerCase();
-    const filename = `rental-schedule-${orgSlug}-${loadedStart || 'report'}.xlsx`;
-    XLSX.writeFile(wb, filename);
+    const slug = (filteredRows[0]?.orgName || 'report').replace(/\s+/g, '-').toLowerCase();
+    XLSX.writeFile(wb, `rental-schedule-${slug}-${loadedStart || 'report'}.xlsx`);
     logClientEvent('excel');
   }
 
-
-  // Fire-and-forget log to server for client-side events (excel, print)
   function logClientEvent(event) {
     try {
       const parts = window.location.pathname.split('/').filter(Boolean);
@@ -1005,6 +1589,8 @@ function App() {
               allLocations={allLocations}
               selectedLocations={selectedLocations}
               onChange={setSelectedLocations}
+              locationColors={locationColors}
+              onColorChange={handleColorChange}
             />
           </>
         )}
@@ -1017,7 +1603,7 @@ function App() {
               selectedSites={selectedSites}
               onChange={setSelectedSites}
             />
-          </> 
+          </>
         )}
 
         <div className="toolbar-spacer" />
@@ -1033,20 +1619,37 @@ function App() {
 
         <div className="divider" />
 
-        <div className="col-toggles">
-          <label>
-            <input type="checkbox" checked={showHeadCount} onChange={e => setShowHeadCount(e.target.checked)} />
-            Head Cnt
-          </label>
-          <label>
-            <input type="checkbox" checked={showTotal} onChange={e => setShowTotal(e.target.checked)} />
-            Total
-          </label>
-          <label>
-            <input type="checkbox" checked={showNotes} onChange={e => setShowNotes(e.target.checked)} />
-            Notes
-          </label>
+        {/* View toggle */}
+        <div className="view-toggle">
+          <button
+            className={viewMode === 'table' ? 'active' : ''}
+            onClick={() => setViewMode('table')}
+          >☰ Table</button>
+          <button
+            className={viewMode === 'calendar' ? 'active' : ''}
+            onClick={() => setViewMode('calendar')}
+          >🗓 Calendar</button>
         </div>
+
+        {viewMode === 'table' && (
+          <>
+            <div className="divider" />
+            <div className="col-toggles">
+              <label>
+                <input type="checkbox" checked={showHeadCount} onChange={e => setShowHeadCount(e.target.checked)} />
+                Head Cnt
+              </label>
+              <label>
+                <input type="checkbox" checked={showTotal} onChange={e => setShowTotal(e.target.checked)} />
+                Total
+              </label>
+              <label>
+                <input type="checkbox" checked={showNotes} onChange={e => setShowNotes(e.target.checked)} />
+                Notes
+              </label>
+            </div>
+          </>
+        )}
 
         <div className="divider" />
 
@@ -1095,7 +1698,6 @@ function App() {
     );
   }
 
-  // ── Initial loading ──────────────────────────────────────────────
   if (!rows) {
     return (
       <div>
@@ -1136,71 +1738,84 @@ function App() {
           <div className="date-range">{dateRangeLabel}</div>
         </div>
 
-        {/* Column headers */}
-        <div className="col-header-row">
-          <span className="col-start">Begin</span>
-          <span className="col-end">End</span>
-          <span className="col-site">Facility / Site</span>
-          <span className="col-reservee">Reservee</span>
-          <span className="col-phone">Phone #</span>
-          <span className="col-email">Email</span>
-          <span className="col-purpose">Purpose</span>
-          {showHeadCount && <span className="col-hcnt">Cnt</span>}
-          {showTotal     && <span className="col-total">Total</span>}
-        </div>
+        {/* ── Calendar View ── */}
+        {viewMode === 'calendar' && filteredRows && (
+          <CalendarView
+            filteredRows={filteredRows}
+            locationColors={locationColors}
+            loadedStart={loadedStart}
+            loadedEnd={loadedEnd}
+          />
+        )}
 
-        {/* Grouped rows */}
-        {sortedDates.map(dateKey => {
-          const dateGroup = grouped[dateKey];
-          const sortedLocs = Object.keys(dateGroup.locations).sort();
-          return (
-            <div key={dateKey}>
-              {sortedLocs.map(locName => {
-                const locRows = dateGroup.locations[locName];
-                return (
-                  <div key={locName}>
-                    <div className="section-header">
-                      <span className="date-label">{formatDateHeader(dateKey)}</span>
-                      <span className="loc-label">—  {locName}</span>
-                    </div>
-                    {locRows.map((r, i) => (
-                      <div key={i}>
-                        <div className="data-row">
-                          <span className="cell col-start">{formatTime(r.start)}</span>
-                          <span className="cell col-end">{formatTime(r.end)}</span>
-                          <span className="cell col-site">{r.site}</span>
-                          <span className="cell col-reservee">{r.reservee}</span>
-                          <span className="cell col-phone">{formatPhone(r.phone)}</span>
-                          <span className="cell col-email">
-                            {r.email
-                              ? <a href={`mailto:${r.email}`} style={{color:'inherit',textDecoration:'none'}}>{r.email}</a>
-                              : ''}
-                          </span>
-                          <span className="cell col-purpose">{r.resName}</span>
-                          {showHeadCount && <span className="cell col-hcnt">{r.headCount}</span>}
-                          {showTotal     && <span className="cell col-total">{formatMoney(r.total)}</span>}
-                        </div>
-                        {showNotes && (r.notes || r.addons) && (
-                          <div className="sub-row">
-                            {r.notes || ''}
-                            {r.addons ? ` | Add-ons: ${r.addons}` : ''}
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                );
-              })}
+        {/* ── Table View ── */}
+        {viewMode === 'table' && (
+          <>
+            <div className="col-header-row">
+              <span className="col-start">Begin</span>
+              <span className="col-end">End</span>
+              <span className="col-site">Facility / Site</span>
+              <span className="col-reservee">Reservee</span>
+              <span className="col-phone">Phone #</span>
+              <span className="col-email">Email</span>
+              <span className="col-purpose">Purpose</span>
+              {showHeadCount && <span className="col-hcnt">Cnt</span>}
+              {showTotal     && <span className="col-total">Total</span>}
             </div>
-          );
-        })}
 
-        {filteredRows && filteredRows.length === 0 && (
-          <div style={{textAlign:'center',padding:'40px 0',color:'#888'}}>
-            {rows.length > 0
-              ? 'No rentals match the current location filter.'
-              : 'No rentals found for the selected date range.'}
-          </div>
+            {sortedDates.map(dateKey => {
+              const dateGroup = grouped[dateKey];
+              const sortedLocs = Object.keys(dateGroup.locations).sort();
+              return (
+                <div key={dateKey}>
+                  {sortedLocs.map(locName => {
+                    const locRows = dateGroup.locations[locName];
+                    return (
+                      <div key={locName}>
+                        <div className="section-header">
+                          <span className="date-label">{formatDateHeader(dateKey)}</span>
+                          <span className="loc-label">—  {locName}</span>
+                        </div>
+                        {locRows.map((r, i) => (
+                          <div key={i}>
+                            <div className="data-row">
+                              <span className="cell col-start">{formatTime(r.start)}</span>
+                              <span className="cell col-end">{formatTime(r.end)}</span>
+                              <span className="cell col-site">{r.site}</span>
+                              <span className="cell col-reservee">{r.reservee}</span>
+                              <span className="cell col-phone">{formatPhone(r.phone)}</span>
+                              <span className="cell col-email">
+                                {r.email
+                                  ? <a href={`mailto:${r.email}`} style={{color:'inherit',textDecoration:'none'}}>{r.email}</a>
+                                  : ''}
+                              </span>
+                              <span className="cell col-purpose">{r.resName}</span>
+                              {showHeadCount && <span className="cell col-hcnt">{r.headCount}</span>}
+                              {showTotal     && <span className="cell col-total">{formatMoney(r.total)}</span>}
+                            </div>
+                            {showNotes && (r.notes || r.addons) && (
+                              <div className="sub-row">
+                                {r.notes || ''}
+                                {r.addons ? ` | Add-ons: ${r.addons}` : ''}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })}
+
+            {filteredRows && filteredRows.length === 0 && (
+              <div style={{textAlign:'center',padding:'40px 0',color:'#888'}}>
+                {rows.length > 0
+                  ? 'No rentals match the current location filter.'
+                  : 'No rentals found for the selected date range.'}
+              </div>
+            )}
+          </>
         )}
 
         {/* Footer */}
