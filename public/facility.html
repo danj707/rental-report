@@ -669,6 +669,101 @@
       font-family: 'IBM Plex Mono', monospace;
     }
 
+
+    /* ── Email share popover ── */
+    .share-wrap { position: relative; }
+    .share-popover {
+      position: absolute;
+      top: calc(100% + 8px);
+      right: 0;
+      z-index: 300;
+      background: #1e1e1e;
+      border: 1px solid rgba(255,255,255,.2);
+      border-radius: 8px;
+      padding: 14px;
+      width: 280px;
+      box-shadow: 0 8px 28px rgba(0,0,0,.55);
+    }
+    .share-popover .sp-title {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      color: #aaa;
+      margin-bottom: 8px;
+      font-weight: 600;
+    }
+    .share-popover input[type="email"] {
+      width: 100%;
+      padding: 7px 10px;
+      background: rgba(255,255,255,.08);
+      border: 1px solid rgba(255,255,255,.18);
+      border-radius: 4px;
+      color: #fff;
+      font-size: 12px;
+      font-family: inherit;
+      outline: none;
+      margin-bottom: 8px;
+    }
+    .share-popover input[type="email"]:focus { border-color: #3b82f6; }
+    .share-popover input[type="email"]::placeholder { color: #666; }
+    .share-popover .sp-url {
+      font-size: 10px;
+      color: #555;
+      word-break: break-all;
+      margin-bottom: 10px;
+      line-height: 1.4;
+    }
+    .share-popover .sp-row { display: flex; gap: 6px; }
+    .share-popover .sp-send {
+      flex: 1;
+      background: #16a34a;
+      border-color: #16a34a;
+      font-weight: 600;
+      font-size: 12px;
+    }
+    .share-popover .sp-send:disabled { opacity: .5; cursor: not-allowed; }
+    .share-popover .sp-cancel { font-size: 12px; padding: 6px 10px; }
+    .share-popover .sp-feedback { margin-top: 8px; font-size: 11px; text-align: center; }
+    .share-popover .sp-feedback.ok  { color: #4ade80; }
+    .share-popover .sp-feedback.err { color: #f87171; }
+
+    /* ── Heatmap strip ── */
+    .heatmap-strip {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 12px 0;
+      display: flex;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+    .heatmap-panel {
+      flex: 1;
+      min-width: 320px;
+      background: #fff;
+      border: 1px solid #e8e6e0;
+      border-radius: 6px;
+      padding: 12px 14px;
+      box-shadow: 0 1px 3px rgba(0,0,0,.05);
+    }
+    .heatmap-panel .hm-title {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.7px;
+      color: #888;
+      margin-bottom: 10px;
+    }
+    .hm-legend {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 8px;
+      font-size: 9px;
+      color: #aaa;
+    }
+    .hm-legend-bar { display: flex; gap: 1px; flex: 1; }
+    .hm-legend-cell { height: 6px; flex: 1; border-radius: 1px; }
+
     /* ── Print / PDF mode ── */
     @media print {
       body { background: #fff; }
@@ -708,6 +803,8 @@ function getParams() {
     location_name: p.get('location_name'),
     site_type:     p.get('site_type'),
     _print:        p.get('_print'),
+    locations:     p.get('locations'),  // comma-separated, from share URL
+    sites:         p.get('sites'),      // comma-separated, from share URL
   };
 }
 
@@ -1282,6 +1379,231 @@ function CalendarView({ filteredRows, locationColors, loadedStart, loadedEnd }) 
   );
 }
 
+
+// ── Share Button ────────────────────────────────────────────────────
+function ShareButton({ filteredRows, loadedStart, loadedEnd, selectedLocations, selectedSites, orgSlug }) {
+  const [open, setOpen]         = useState(false);
+  const [email, setEmail]       = useState('');
+  const [sending, setSending]   = useState(false);
+  const [feedback, setFeedback] = useState(null);
+  const wrapRef = useRef(null);
+
+  useEffect(() => {
+    function h(e) { if (wrapRef.current && !wrapRef.current.contains(e.target)) { setOpen(false); setFeedback(null); } }
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
+  }, []);
+
+  const shareUrl = useMemo(() => {
+    if (!loadedStart || !loadedEnd) return '';
+    const base = `${window.location.origin}/${orgSlug}/facility`;
+    const qs = new URLSearchParams();
+    qs.set('start_date', loadedStart);
+    qs.set('end_date', loadedEnd);
+    if (selectedLocations) { const a = [...selectedLocations]; if (a.length) qs.set('locations', a.join(',')); }
+    if (selectedSites)     { const a = [...selectedSites];     if (a.length) qs.set('sites',     a.join(',')); }
+    return `${base}?${qs.toString()}`;
+  }, [loadedStart, loadedEnd, selectedLocations, selectedSites, orgSlug]);
+
+  const dateLabel = useMemo(() => {
+    if (!loadedStart || !loadedEnd) return '';
+    const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+    const s = new Date(loadedStart + 'T12:00:00');
+    const e = new Date(loadedEnd   + 'T12:00:00');
+    if (s.getMonth() === e.getMonth() && s.getFullYear() === e.getFullYear())
+      return `${MONTHS[s.getMonth()]} ${s.getFullYear()}`;
+    return `${MONTHS[s.getMonth()]} ${s.getDate()} - ${MONTHS[e.getMonth()]} ${e.getDate()}, ${e.getFullYear()}`;
+  }, [loadedStart, loadedEnd]);
+
+  async function handleSend() {
+    if (!email || !shareUrl) return;
+    setSending(true); setFeedback(null);
+    try {
+      const parts = window.location.pathname.replace(/\/$/, '').split('/');
+      const apiBase = parts.length >= 3 ? `/${parts[1]}/${parts[2]}/api/share` : '/api/share';
+      const r = await fetch(apiBase, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, url: shareUrl, dateLabel }),
+      });
+      const data = await r.json();
+      if (data.ok) { setFeedback({ ok: true, msg: `Sent to ${email}` }); setEmail(''); }
+      else          { setFeedback({ ok: false, msg: data.error || 'Send failed' }); }
+    } catch (err) {
+      setFeedback({ ok: false, msg: err.message });
+    } finally { setSending(false); }
+  }
+
+  const disabled = !filteredRows || filteredRows.length === 0 || !loadedStart;
+
+  return (
+    <div className="share-wrap" ref={wrapRef}>
+      <button onClick={() => { setOpen(o => !o); setFeedback(null); }} disabled={disabled} title="Email this report">
+        Email
+      </button>
+      {open && (
+        <div className="share-popover">
+          <div className="sp-title">Share This View</div>
+          <input type="email" placeholder="recipient@example.com" value={email}
+            onChange={e => setEmail(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && handleSend()}
+            autoFocus />
+          <div className="sp-url">{shareUrl}</div>
+          <div className="sp-row">
+            <button className="sp-send" onClick={handleSend} disabled={sending || !email}>
+              {sending ? 'Sending...' : 'Send Link'}
+            </button>
+            <button className="sp-cancel" onClick={() => setOpen(false)}>Cancel</button>
+          </div>
+          {feedback && <div className={`sp-feedback ${feedback.ok ? 'ok' : 'err'}`}>{feedback.ok ? '\u2713 ' : ''}{feedback.msg}</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Heatmap helpers ──────────────────────────────────────────────────
+function heatColor(val, max) {
+  if (max === 0 || val === 0) return '#f0ede8';
+  const t = Math.min(val / max, 1);
+  if (t < 0.5) {
+    const g = Math.round(235 - (235 - 160) * (t * 2));
+    const b = Math.round(220 - 220 * (t * 2));
+    return `rgb(255,${g},${b})`;
+  }
+  const t2 = (t - 0.5) * 2;
+  return `rgb(${Math.round(255 - 30*t2)},${Math.round(160 - 100*t2)},0)`;
+}
+
+function parseHour(timeStr) {
+  if (!timeStr) return null;
+  const s = timeStr.trim().toLowerCase();
+  const m = s.match(/^(\d{1,2}):(\d{2})\s*(am|pm)$/);
+  if (m) { let h = parseInt(m[1]); if (m[3]==='pm'&&h!==12) h+=12; if (m[3]==='am'&&h===12) h=0; return h; }
+  const p = s.match(/^(\d{1,2}):\d{2}/);
+  return p ? parseInt(p[1]) : null;
+}
+
+// ── HeatmapStrip ──────────────────────────────────────────────────────
+function HeatmapStrip({ filteredRows, locationColors }) {
+  const HOURS = Array.from({length:15}, (_,i) => i+7);
+  const HOUR_LABELS = HOURS.map(h => h<=12 ? `${h}${h===12?'p':'a'}` : `${h-12}p`);
+  const DAYS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  const CELL_H = 14;
+  const LEGEND_STEPS = 5;
+
+  const dowHourGrid = useMemo(() => {
+    const grid = Array.from({length:7}, () => new Array(HOURS.length).fill(0));
+    filteredRows.forEach(r => {
+      if (!r.date || !r.start) return;
+      const dow = new Date(r.date + 'T12:00:00').getDay();
+      const h = parseHour(r.start);
+      const hi = h != null ? HOURS.indexOf(h) : -1;
+      if (hi >= 0) grid[dow][hi]++;
+    });
+    return grid;
+  }, [filteredRows]);
+
+  const dowHourMax = useMemo(() => Math.max(1, ...dowHourGrid.flat()), [dowHourGrid]);
+
+  const datLocData = useMemo(() => {
+    const locations = [...new Set(filteredRows.map(r => r.location).filter(Boolean))].sort();
+    const dates = [...new Set(filteredRows.map(r => r.date).filter(Boolean))].sort().slice(-31);
+    const grid = {};
+    filteredRows.forEach(r => {
+      if (!dates.includes(r.date) || !r.location) return;
+      if (!grid[r.date]) grid[r.date] = {};
+      grid[r.date][r.location] = (grid[r.date][r.location] || 0) + 1;
+    });
+    return { locations, dates, grid };
+  }, [filteredRows]);
+
+  const datLocMax = useMemo(() => {
+    let max = 1;
+    Object.values(datLocData.grid).forEach(row => Object.values(row).forEach(v => { if (v > max) max = v; }));
+    return max;
+  }, [datLocData]);
+
+  if (!filteredRows || filteredRows.length === 0) return null;
+
+  return (
+    <div className="heatmap-strip">
+
+      {/* Panel 1: Day of week x Hour */}
+      <div className="heatmap-panel">
+        <div className="hm-title">Busiest Times — Day of Week x Hour</div>
+        <div style={{display:'grid', gridTemplateColumns:`32px repeat(${HOURS.length},1fr)`, gap:'2px', marginBottom:'2px'}}>
+          <div/>
+          {HOUR_LABELS.map(l => <div key={l} style={{fontSize:8,color:'#bbb',textAlign:'center',lineHeight:1}}>{l}</div>)}
+        </div>
+        {DAYS.map((day, dow) => (
+          <div key={day} style={{display:'grid', gridTemplateColumns:`32px repeat(${HOURS.length},1fr)`, gap:'2px', marginBottom:'2px'}}>
+            <div style={{fontSize:9,color:'#999',display:'flex',alignItems:'center',justifyContent:'flex-end',paddingRight:4}}>{day}</div>
+            {HOURS.map((h, hi) => {
+              const count = dowHourGrid[dow][hi];
+              return <div key={h} style={{height:CELL_H, background:heatColor(count,dowHourMax), borderRadius:2}}
+                title={count > 0 ? `${day} ${HOUR_LABELS[hi]}: ${count} rental${count!==1?'s':''}` : ''} />;
+            })}
+          </div>
+        ))}
+        <div className="hm-legend">
+          <span>0</span>
+          <div className="hm-legend-bar">
+            {Array.from({length:LEGEND_STEPS},(_,i) => <div key={i} className="hm-legend-cell" style={{background:heatColor(i+1,LEGEND_STEPS)}} />)}
+          </div>
+          <span>{dowHourMax}</span>
+        </div>
+      </div>
+
+      {/* Panel 2: Date x Location */}
+      {datLocData.locations.length > 0 && datLocData.dates.length > 0 && (
+        <div className="heatmap-panel">
+          <div className="hm-title">Bookings by Date x Location</div>
+          {(() => {
+            const step = Math.max(1, Math.ceil(datLocData.dates.length / 8));
+            return (
+              <div style={{display:'grid', gridTemplateColumns:`80px repeat(${datLocData.dates.length},1fr)`, gap:'2px', marginBottom:'2px'}}>
+                <div/>
+                {datLocData.dates.map((d,i) => {
+                  const dt = new Date(d + 'T12:00:00');
+                  return <div key={d} style={{fontSize:7,color:'#bbb',textAlign:'center',lineHeight:1,overflow:'hidden'}}>
+                    {i % step === 0 ? `${dt.getMonth()+1}/${dt.getDate()}` : ''}
+                  </div>;
+                })}
+              </div>
+            );
+          })()}
+          {datLocData.locations.map(loc => (
+            <div key={loc} style={{display:'grid', gridTemplateColumns:`80px repeat(${datLocData.dates.length},1fr)`, gap:'2px', marginBottom:'2px'}}>
+              <div style={{fontSize:9,color:'#666',display:'flex',alignItems:'center',overflow:'hidden',paddingRight:4}}>
+                <div style={{width:6,height:6,borderRadius:1,background:locationColors[loc]||'#888',flexShrink:0,marginRight:4}} />
+                <span style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{loc}</span>
+              </div>
+              {datLocData.dates.map(d => {
+                const count = (datLocData.grid[d] && datLocData.grid[d][loc]) || 0;
+                return <div key={d} style={{
+                  height: CELL_H,
+                  background: count > 0 ? (locationColors[loc] || '#888') : '#f0ede8',
+                  borderRadius: 2,
+                  opacity: count > 0 ? Math.max(0.18, count / datLocMax) : 1,
+                }} title={count > 0 ? `${loc} ${d}: ${count} rental${count!==1?'s':''}` : ''} />;
+              })}
+            </div>
+          ))}
+          <div className="hm-legend">
+            <span>0</span>
+            <div className="hm-legend-bar">
+              {Array.from({length:LEGEND_STEPS},(_,i) => <div key={i} className="hm-legend-cell" style={{background:'#457b9d',opacity:(i+1)/LEGEND_STEPS}} />)}
+            </div>
+            <span>{datLocMax}</span>
+          </div>
+        </div>
+      )}
+
+    </div>
+  );
+}
+
 // ── Main App ─────────────────────────────────────────────────────────
 function App() {
   const params   = useMemo(() => getParams(), []);
@@ -1393,6 +1715,11 @@ function App() {
 
         setSelectedLocations(prev => {
           if (prev === null) {
+            // Respect shared URL locations param
+            if (params.locations) {
+              const shared = params.locations.split(',').map(l => l.trim()).filter(l => locs.includes(l));
+              if (shared.length > 0) return new Set(shared);
+            }
             const defaultLoc = window.ORG_CONFIG?.defaultLocationFilter;
             if (defaultLoc && locs.includes(defaultLoc)) return new Set([defaultLoc]);
             return new Set(locs);
@@ -1405,6 +1732,11 @@ function App() {
         setSelectedSites(prev => {
           if (prev === null) {
             const sites = [...new Set(normalized.map(r => r.site).filter(Boolean))].sort();
+            // Respect shared URL sites param
+            if (params.sites) {
+              const shared = params.sites.split(',').map(s => s.trim()).filter(s => sites.includes(s));
+              if (shared.length > 0) return new Set(shared);
+            }
             return new Set(sites);
           }
           const sites = [...new Set(normalized.map(r => r.site).filter(Boolean))].sort();
@@ -1668,6 +2000,18 @@ function App() {
         >
           📊 Excel
         </button>
+
+        <div className="divider" />
+
+        <ShareButton
+          filteredRows={filteredRows}
+          loadedStart={loadedStart}
+          loadedEnd={loadedEnd}
+          selectedLocations={selectedLocations}
+          selectedSites={selectedSites}
+          orgSlug={orgSlug}
+        />
+
         {orgSlug && (
           <>
             <div className="divider" />
@@ -1726,6 +2070,10 @@ function App() {
   return (
     <div>
       {renderToolbar()}
+
+      {filteredRows && filteredRows.length > 0 && !isPrint && (
+        <HeatmapStrip filteredRows={filteredRows} locationColors={locationColors} />
+      )}
 
       <div className="page" style={loading ? {opacity:0.5,pointerEvents:'none'} : {}}>
         {/* Report header */}
@@ -1834,3 +2182,4 @@ ReactDOM.createRoot(document.getElementById('root')).render(<App />);
 </script>
 </body>
 </html>
+
