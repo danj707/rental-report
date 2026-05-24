@@ -230,20 +230,23 @@ function toISO(s) {
 
 /* ── Data normalization (maps Metabase column names → internal keys) ── */
 function normalizeRow(r) {
+  const loc = r['Location'] || '';
+  const isNoLoc = loc === 'No Location';
   return {
-    location:          r['Location']           || '',
-    reservations:      Number(r['Reservations'])       || 0,
-    rentals:           Number(r['Rentals'])             || 0,
-    rentalRevenue:     parseFloat(r['Rental Revenue'])  || 0,
-    checkins:          Number(r['Check-ins'])           || 0,
-    // org-wide (same value on every row — read from rows[0])
-    programRevenue:    parseFloat(r['Program Revenue'])    || 0,
-    enrollments:       Number(r['Enrollments'])            || 0,
-    membershipRevenue: parseFloat(r['Membership Revenue']) || 0,
-    activeMemberships: Number(r['Active Memberships'])     || 0,
-    passRevenue:       parseFloat(r['Pass Revenue'])       || 0,
-    storeRevenue:      parseFloat(r['Store Revenue'])      || 0,
-    itemsSold:         Number(r['Items Sold'])             || 0,
+    location:          loc,
+    isNoLoc,
+    reservations:      r['Reservations'] != null ? Number(r['Reservations']) : null,
+    rentals:           r['Rentals']      != null ? Number(r['Rentals'])      : null,
+    rentalRevenue:     r['Rental Revenue']    != null ? parseFloat(r['Rental Revenue'])    : null,
+    checkins:          r['Check-ins']         != null ? Number(r['Check-ins'])             : null,
+    membershipRevenue: r['Membership Revenue'] != null ? parseFloat(r['Membership Revenue']) : null,
+    activeMemberships: r['Active Memberships'] != null ? Number(r['Active Memberships'])     : null,
+    passRevenue:       r['Pass Revenue']       != null ? parseFloat(r['Pass Revenue'])       : null,
+    // Only present on the No Location row
+    programRevenue:    r['Program Revenue']    != null ? parseFloat(r['Program Revenue'])    : null,
+    enrollments:       r['Enrollments']        != null ? Number(r['Enrollments'])            : null,
+    storeRevenue:      r['Store Revenue']      != null ? parseFloat(r['Store Revenue'])      : null,
+    itemsSold:         r['Items Sold']         != null ? Number(r['Items Sold'])             : null,
   };
 }
 
@@ -382,7 +385,6 @@ function App() {
       const json = await res.json();
       const normalized = (json.rows || []).map(normalizeRow);
       setRows(normalized);
-      setSelectedLocs(new Set(normalized.map(r => r.location)));
     } catch (e) {
       setError(e.message);
     } finally {
@@ -423,15 +425,14 @@ function App() {
   }
 
   /* ── Location list (all locations from data) ── */
-  const allLocations = useMemo(() => {
-    if (!rows) return [];
-    return rows.map(r => r.location).filter(Boolean);
-  }, [rows]);
+  const noLocRow   = useMemo(() => rows?.find(r => r.isNoLoc) || null, [rows]);
+  const locRows    = useMemo(() => rows?.filter(r => !r.isNoLoc) || [], [rows]);
+  const allLocations = useMemo(() => locRows.map(r => r.location), [locRows]);
 
   /* ── Visible rows (filtered by selectedLocs, then sorted) ── */
   const visible = useMemo(() => {
-    if (!rows) return [];
-    let r = rows.filter(row => selectedLocs.has(row.location));
+    if (!locRows.length) return [];
+    let r = locRows.filter(row => selectedLocs.has(row.location));
     r = [...r].sort((a, b) => {
       if (sortBy === 'location') return a.location.localeCompare(b.location);
       return (b[sortBy] || 0) - (a[sortBy] || 0);
@@ -441,14 +442,21 @@ function App() {
 
   /* ── Per-location totals (affected by location filter) ── */
   const totals = useMemo(() => visible.reduce((acc, r) => ({
-    reservations:  acc.reservations  + r.reservations,
-    rentals:       acc.rentals       + r.rentals,
-    rentalRevenue: acc.rentalRevenue + r.rentalRevenue,
-    checkins:      acc.checkins      + r.checkins,
-  }), { reservations:0, rentals:0, rentalRevenue:0, checkins:0 }), [visible]);
+    reservations:  acc.reservations  + (r.reservations  || 0),
+    rentals:       acc.rentals       + (r.rentals       || 0),
+    rentalRevenue: acc.rentalRevenue + (r.rentalRevenue || 0),
+    checkins:      acc.checkins      + (r.checkins      || 0),
+    membershipRevenue: acc.membershipRevenue + (r.membershipRevenue || 0),
+    passRevenue:   acc.passRevenue   + (r.passRevenue   || 0),
+    activeMemberships: acc.activeMemberships + (r.activeMemberships || 0),
+  }), { reservations:0, rentals:0, rentalRevenue:0, checkins:0, membershipRevenue:0, passRevenue:0, activeMemberships:0 }), [visible]);
 
-  /* ── Org-wide metrics (always from rows[0], never filtered by location) ── */
-  const org = rows?.[0] ?? {};
+  /* ── selectedLocs init when rows load ── */
+  useEffect(() => {
+    if (rows && rows.length > 0) {
+      setSelectedLocs(new Set(rows.filter(r => !r.isNoLoc).map(r => r.location)));
+    }
+  }, [rows]);
 
   /* ── Table sort ── */
   const toggleTblSort = col => setTblSort(s =>
@@ -474,7 +482,7 @@ function App() {
     <div>
       {/* ── Toolbar ── */}
       <div className="toolbar">
-        {rows?.[0] && (
+        {rows && rows.length > 0 && (
           <img
             className="report-header-logo"
             src={`/${orgSlug}/logo`}
@@ -511,9 +519,24 @@ function App() {
             <div className="stat-sub">{fmtNum(totals.rentals)} rentals{!allSelected ? ' (filtered)' : ''}</div>
           </div>
           <div className="stat-card">
+            <div className="stat-label">Membership Revenue</div>
+            <div className="stat-value blue">{fmtCurrency(totals.membershipRevenue + (noLocRow?.membershipRevenue || 0))}</div>
+            <div className="stat-sub">{fmtNum(totals.activeMemberships + (noLocRow?.activeMemberships || 0))} active</div>
+          </div>
+          <div className="stat-card">
+            <div className="stat-label">Pass Revenue</div>
+            <div className="stat-value purple">{fmtCurrency(totals.passRevenue + (noLocRow?.passRevenue || 0))}</div>
+          </div>
+          <div className="stat-card">
             <div className="stat-label">Program Revenue</div>
-            <div className="stat-value green">{fmtCurrency(org.programRevenue)}</div>
-            <div className="stat-sub">{fmtNum(org.enrollments)} enrollments</div>
+            <div className="stat-value green">{fmtCurrency(noLocRow?.programRevenue)}</div>
+            <div className="stat-sub">{fmtNum(noLocRow?.enrollments)} enrollments</div>
+            <div className="stat-org-wide">org-wide</div>
+          </div>
+          <div className="stat-card">
+            <div className="stat-label">Store Revenue</div>
+            <div className="stat-value slate">{fmtCurrency(noLocRow?.storeRevenue)}</div>
+            <div className="stat-sub">{fmtNum(noLocRow?.itemsSold)} items</div>
             <div className="stat-org-wide">org-wide</div>
           </div>
           <div className="stat-card">
@@ -522,35 +545,9 @@ function App() {
             <div className="stat-sub">{fmtNum(totals.rentals)} with rental</div>
           </div>
           <div className="stat-card">
-            <div className="stat-label">Active Members</div>
-            <div className="stat-value amber">{fmtNum(org.activeMemberships)}</div>
-            <div className="stat-org-wide">org-wide</div>
-          </div>
-          <div className="stat-card">
             <div className="stat-label">Check-ins</div>
             <div className="stat-value slate">{fmtNum(totals.checkins)}</div>
             <div className="stat-sub">in period</div>
-          </div>
-          <div className="stat-card">
-            <div className="stat-label">Items Sold</div>
-            <div className="stat-value slate">{fmtNum(org.itemsSold)}</div>
-            <div className="stat-sub">store & POS</div>
-            <div className="stat-org-wide">org-wide</div>
-          </div>
-          <div className="stat-card">
-            <div className="stat-label">Store Revenue</div>
-            <div className="stat-value slate">{fmtCurrency(org.storeRevenue)}</div>
-            <div className="stat-org-wide">org-wide</div>
-          </div>
-          <div className="stat-card">
-            <div className="stat-label">Membership Revenue</div>
-            <div className="stat-value blue">{fmtCurrency(org.membershipRevenue)}</div>
-            <div className="stat-org-wide">org-wide</div>
-          </div>
-          <div className="stat-card">
-            <div className="stat-label">Pass Revenue</div>
-            <div className="stat-value purple">{fmtCurrency(org.passRevenue)}</div>
-            <div className="stat-org-wide">org-wide</div>
           </div>
         </div>
       )}
@@ -621,16 +618,34 @@ function App() {
             <div key={r.location} className="loc-card">
               <div className="loc-card-name">{r.location}</div>
               <div>
-                <div className="loc-card-revenue">{fmtCurrency(r.rentalRevenue)}</div>
-                <div className="loc-card-revenue-sub">rental revenue</div>
+                <div className="loc-card-revenue">{fmtCurrency((r.rentalRevenue||0) + (r.membershipRevenue||0) + (r.passRevenue||0))}</div>
+                <div className="loc-card-revenue-sub">
+                  {[r.rentalRevenue && `rental ${fmtCurrency(r.rentalRevenue)}`, r.membershipRevenue && `membership ${fmtCurrency(r.membershipRevenue)}`, r.passRevenue && `passes ${fmtCurrency(r.passRevenue)}`].filter(Boolean).join(' · ')}
+                </div>
               </div>
               <div className="loc-stats">
                 <CardStat label="Rentals"      val={fmtNum(r.rentals)}      sub={fmtCurrency(r.rentalRevenue)} />
-                <CardStat label="Reservations" val={fmtNum(r.reservations)} />
+                {r.membershipRevenue > 0 && <CardStat label="Membership Rev" val={fmtCurrency(r.membershipRevenue)} sub={`${fmtNum(r.activeMemberships)} active`} />}
+                {r.passRevenue > 0 && <CardStat label="Pass Rev" val={fmtCurrency(r.passRevenue)} />}
                 {r.checkins > 0 && <CardStat label="Check-ins" val={fmtNum(r.checkins)} sub="in period" />}
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* ── No Location card (always shown when data present) ── */}
+      {rows && !loading && view === 'cards' && noLocRow && (
+        <div style={{padding:'0 20px 20px'}}>
+          <div className="loc-card" style={{borderStyle:'dashed',background:'#fafafa'}}>
+            <div className="loc-card-name" style={{color:'#888'}}>📦 No Location — Org-Wide</div>
+            <div className="loc-stats">
+              {noLocRow.programRevenue  != null && <CardStat label="Program Revenue"    val={fmtCurrency(noLocRow.programRevenue)}    sub={`${fmtNum(noLocRow.enrollments)} enrollments`} />}
+              {noLocRow.membershipRevenue > 0   && <CardStat label="Membership Revenue" val={fmtCurrency(noLocRow.membershipRevenue)} sub={`${fmtNum(noLocRow.activeMemberships)} active`} />}
+              {noLocRow.passRevenue > 0         && <CardStat label="Pass Revenue"       val={fmtCurrency(noLocRow.passRevenue)} />}
+              {noLocRow.storeRevenue    != null && <CardStat label="Store Revenue"      val={fmtCurrency(noLocRow.storeRevenue)}      sub={`${fmtNum(noLocRow.itemsSold)} items`} />}
+            </div>
+          </div>
         </div>
       )}
 
@@ -642,9 +657,10 @@ function App() {
               <tr>
                 {[
                   ['location','Location'],
-                  ['reservations','Reservations'],
                   ['rentals','Rentals'],
                   ['rentalRevenue','Rental Rev'],
+                  ['membershipRevenue','Membership Rev'],
+                  ['passRevenue','Pass Rev'],
                   ['checkins','Check-ins'],
                 ].map(([col, label]) => (
                   <th key={col} className={tblSort.col===col ? 'sorted':''} onClick={() => toggleTblSort(col)}>
@@ -657,19 +673,31 @@ function App() {
               {tblRows.map(r => (
                 <tr key={r.location}>
                   <td className="loc-name">{r.location}</td>
-                  <td className={`num${!r.reservations?' zero':''}`}>{fmtNum(r.reservations)}</td>
-                  <td className={`num${!r.rentals?' zero':''}`}>{fmtNum(r.rentals)}</td>
+                  <td className={`num${!r.rentals?' zero':''}`}>{r.rentals ?? '—'}</td>
                   <td className={`rev rev-rental${!r.rentalRevenue?' zero':''}`}>{r.rentalRevenue ? fmtCurrency(r.rentalRevenue) : '—'}</td>
-                  <td className={`num${!r.checkins?' zero':''}`}>{r.checkins || '—'}</td>
+                  <td className={`rev${!r.membershipRevenue?' zero':''}`} style={{textAlign:'right',color:'#2563eb',fontWeight:600}}>{r.membershipRevenue ? fmtCurrency(r.membershipRevenue) : '—'}</td>
+                  <td className={`rev${!r.passRevenue?' zero':''}`} style={{textAlign:'right',color:'#7c3aed',fontWeight:600}}>{r.passRevenue ? fmtCurrency(r.passRevenue) : '—'}</td>
+                  <td className={`num${!r.checkins?' zero':''}`}>{r.checkins ?? '—'}</td>
                 </tr>
               ))}
               {visible.length > 1 && (
                 <tr className="total-row">
                   <td className="loc-name">TOTAL ({visible.length} locations)</td>
-                  <td className="num">{fmtNum(totals.reservations)}</td>
                   <td className="num">{fmtNum(totals.rentals)}</td>
                   <td className="rev rev-rental">{fmtCurrency(totals.rentalRevenue)}</td>
+                  <td className="rev" style={{textAlign:'right',color:'#2563eb',fontWeight:700}}>{fmtCurrency(totals.membershipRevenue)}</td>
+                  <td className="rev" style={{textAlign:'right',color:'#7c3aed',fontWeight:700}}>{fmtCurrency(totals.passRevenue)}</td>
                   <td className="num">{fmtNum(totals.checkins)}</td>
+                </tr>
+              )}
+              {noLocRow && (
+                <tr style={{background:'#f9fafb',color:'#666'}}>
+                  <td className="loc-name" style={{color:'#888',fontStyle:'italic'}}>No Location (org-wide)</td>
+                  <td className="zero">—</td>
+                  <td className="zero">—</td>
+                  <td className="rev" style={{textAlign:'right',color:'#2563eb'}}>{noLocRow.membershipRevenue ? fmtCurrency(noLocRow.membershipRevenue) : '—'}</td>
+                  <td className="rev" style={{textAlign:'right',color:'#7c3aed'}}>{noLocRow.passRevenue ? fmtCurrency(noLocRow.passRevenue) : '—'}</td>
+                  <td className="zero">—</td>
                 </tr>
               )}
             </tbody>
