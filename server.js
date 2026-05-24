@@ -495,6 +495,63 @@ app.post("/:org/:report/api/log", resolveOrg, (req, res) => {
   res.json({ ok: true });
 });
 
+
+// ── POST /:org/:report/api/share — email a report link ───────────────
+app.post("/:org/:report/api/share", resolveOrg, async (req, res) => {
+  const { orgSlug, reportType } = req;
+  const { email, url, dateLabel } = req.body;
+
+  if (!email || !url) return res.status(400).json({ ok: false, error: "Missing email or url" });
+
+  const orgConfig = ORGS[orgSlug];
+  if (!orgConfig) return res.status(404).json({ ok: false, error: "Unknown org" });
+
+  const reportLabel = reportType === "gl"
+    ? "GL Code Rollup"
+    : reportType === "historic"
+      ? "Historic Buildings Schedule"
+      : reportType === "programs"
+        ? "Program Revenue"
+        : "Facility Rental Schedule";
+
+  const resend = getResendClient();
+  if (!resend) {
+    console.log(`[share] STUB — would share ${reportLabel} (${orgSlug}) to ${email}: ${url}`);
+    return res.json({ ok: true, stub: true });
+  }
+
+  try {
+    const { error } = await resend.emails.send({
+      from: `${FROM_NAME} <${FROM_EMAIL}>`,
+      to: email,
+      subject: `${reportLabel}${dateLabel ? " — " + dateLabel : ""}`,
+      html: `
+        <div style="font-family:sans-serif;max-width:500px;margin:0 auto;padding:32px 24px">
+          ${orgConfig.logoUrl ? `<img src="${orgConfig.logoUrl}" style="height:40px;margin-bottom:20px;display:block" />` : ""}
+          <h2 style="margin:0 0 6px;font-size:20px;color:#111">${reportLabel}</h2>
+          ${dateLabel ? `<p style="color:#888;margin:0 0 24px;font-size:14px">${dateLabel}</p>` : ""}
+          <p style="color:#333;margin:0 0 24px;font-size:14px;line-height:1.5">
+            A report has been shared with you. Click below to open it — your current filters and date range are pre-loaded.
+          </p>
+          <a href="${url}"
+             style="display:inline-block;background:#16a34a;color:#fff;padding:12px 22px;border-radius:5px;text-decoration:none;font-weight:600;font-size:14px">
+            View ${reportLabel} →
+          </a>
+          <p style="margin-top:16px;font-size:12px;color:#aaa">
+            Or copy this link:<br>
+            <a href="${url}" style="color:#3b82f6;word-break:break-all">${url}</a>
+          </p>
+        </div>`,
+    });
+    if (error) throw new Error(error.message);
+    console.log(`[share] Sent ${reportLabel} link to ${email}`);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error(`[share] Failed: ${err.message}`);
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
 // ── GET /:org/:report/api/data — proxy to Metabase ───────────────────
 app.get("/:org/:report/api/data", resolveOrg, async (req, res) => {
   try {
@@ -1342,3 +1399,4 @@ app.listen(PORT, () => {
   console.log(`  📧 Resend: ${RESEND_API_KEY ? "configured" : "NOT CONFIGURED (stub mode)"}\n`);
   console.log(`  📊 Analytics: ${EVENTS_FILE}\n`);
 });
+
