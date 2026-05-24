@@ -50,27 +50,25 @@
       display: flex; gap: 0; overflow-x: auto;
     }
     .stat-card {
-      flex: 1 1 150px; padding: 18px 20px; border-right: 1px solid #f0f0f4;
-      text-align: center; min-width: 130px;
+      flex: 1 1 140px; padding: 14px 18px; border-right: 1px solid #f0f0f4;
+      text-align: center; min-width: 120px;
     }
     .stat-card:last-child { border-right: none; }
-    .stat-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: 1px; color: #888; font-weight: 600; margin-bottom: 4px; }
-    .stat-value { font-size: 22px; font-weight: 800; letter-spacing: -.5px; }
+    .stat-label { font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: #888; font-weight: 600; margin-bottom: 3px; }
+    .stat-value { font-size: 20px; font-weight: 800; letter-spacing: -.5px; }
     .stat-value.blue   { color: #2563eb; }
     .stat-value.indigo { color: #6366f1; }
     .stat-value.green  { color: #16a34a; }
     .stat-value.amber  { color: #d97706; }
     .stat-value.slate  { color: #475569; }
-    .stat-sub { font-size: 11px; color: #aaa; margin-top: 2px; }
+    .stat-value.purple { color: #7c3aed; }
+    .stat-sub { font-size: 10px; color: #aaa; margin-top: 2px; }
+    .stat-org-wide { font-size: 9px; color: #bbb; letter-spacing: .5px; margin-top: 1px; }
 
     /* ── Controls bar ── */
     .controls-bar {
-      padding: 12px 20px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+      padding: 12px 20px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
       background: #f4f5f7; border-bottom: 1px solid #e5e7eb;
-    }
-    .controls-bar input[type="text"] {
-      padding: 6px 12px; border: 1px solid #d1d5db; border-radius: 6px;
-      font-size: 13px; background: #fff; width: 220px;
     }
     .controls-bar select {
       padding: 6px 10px; border: 1px solid #d1d5db; border-radius: 6px;
@@ -85,6 +83,53 @@
     .controls-right { margin-left: auto; display: flex; align-items: center; gap: 8px; }
     .results-count { font-size: 12px; color: #888; }
 
+    /* ── Location filter dropdown ── */
+    .loc-filter-wrap { position: relative; }
+    .btn-loc-filter {
+      display: flex; align-items: center; gap: 6px; white-space: nowrap;
+      padding: 6px 13px; border-radius: 5px; border: 1px solid #d1d5db;
+      background: #fff; color: #444; font-size: 12px; cursor: pointer;
+    }
+    .btn-loc-filter .badge {
+      background: #f59e0b; color: #1a1a1a; border-radius: 10px;
+      font-size: 10px; font-weight: 700; padding: 1px 6px; line-height: 1.4;
+    }
+    .loc-dropdown {
+      position: absolute; top: calc(100% + 6px); left: 0; z-index: 200;
+      background: #1e1e1e; border: 1px solid rgba(255,255,255,.15); border-radius: 6px;
+      min-width: 240px; max-height: 340px; display: flex; flex-direction: column;
+      box-shadow: 0 8px 24px rgba(0,0,0,.5);
+    }
+    .loc-dropdown-header {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 8px 12px; border-bottom: 1px solid rgba(255,255,255,.1);
+      font-size: 10px; text-transform: uppercase; letter-spacing: .5px; color: #aaa; flex-shrink: 0;
+    }
+    .loc-dropdown-header-actions { display: flex; gap: 8px; }
+    .loc-dropdown-header button {
+      padding: 2px 6px; font-size: 10px;
+      border: 1px solid rgba(255,255,255,.15); border-radius: 3px;
+      background: rgba(255,255,255,.06); color: #ccc; cursor: pointer;
+    }
+    .loc-dropdown-header button:hover { background: rgba(255,255,255,.12); }
+    .loc-dropdown-search { padding: 6px 10px; border-bottom: 1px solid rgba(255,255,255,.08); flex-shrink: 0; }
+    .loc-dropdown-search input {
+      width: 100%; padding: 4px 8px;
+      background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.15);
+      border-radius: 4px; color: #fff; font-size: 11px; font-family: inherit; outline: none;
+    }
+    .loc-dropdown-search input::placeholder { color: #777; }
+    .loc-dropdown-search input:focus { border-color: #3b82f6; }
+    .loc-dropdown-list { overflow-y: auto; flex: 1; padding: 4px 0; }
+    .loc-dropdown-list::-webkit-scrollbar { width: 4px; }
+    .loc-dropdown-list::-webkit-scrollbar-thumb { background: rgba(255,255,255,.2); border-radius: 2px; }
+    .loc-item {
+      display: flex; align-items: center; gap: 8px;
+      padding: 5px 12px; cursor: pointer; font-size: 12px; color: #ddd;
+    }
+    .loc-item:hover { background: rgba(255,255,255,.07); }
+    .loc-item input[type="checkbox"] { accent-color: #3b82f6; width: 13px; height: 13px; flex-shrink: 0; }
+
     /* ── Cards grid ── */
     .cards-grid {
       padding: 20px; display: grid;
@@ -98,31 +143,15 @@
       display: flex; flex-direction: column; gap: 12px;
     }
     .loc-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,.1); transform: translateY(-1px); }
-    .loc-card-name { font-size: 14px; font-weight: 700; color: #1a1a2e; line-height: 1.3; }
+    .loc-card-name { font-size: 14px; font-weight: 700; color: #1a1a2e; }
     .loc-card-revenue { font-size: 28px; font-weight: 800; color: #2563eb; letter-spacing: -.5px; }
     .loc-card-revenue-sub { font-size: 11px; color: #888; margin-top: 1px; }
-
-    /* Revenue split bar */
-    .rev-split-bar { height: 6px; border-radius: 3px; background: #f0f0f4; overflow: hidden; display: flex; }
-    .rev-split-bar .rental-seg { background: #6366f1; }
-    .rev-split-bar .class-seg  { background: #16a34a; }
-    .rev-split-legend { display: flex; gap: 12px; font-size: 11px; color: #888; margin-top: 4px; }
-    .rev-split-legend span { display: flex; align-items: center; gap: 4px; }
-    .rev-split-legend .dot { width: 8px; height: 8px; border-radius: 50%; }
-    .dot-rental { background: #6366f1; }
-    .dot-class  { background: #16a34a; }
 
     .loc-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
     .loc-stat { background: #f8f9fb; border-radius: 6px; padding: 8px 10px; }
     .loc-stat-label { font-size: 10px; color: #888; text-transform: uppercase; letter-spacing: .8px; font-weight: 600; margin-bottom: 2px; }
     .loc-stat-val { font-size: 15px; font-weight: 700; color: #1a1a2e; }
     .loc-stat-sub { font-size: 10.5px; color: #aaa; }
-
-    .loc-card-footer {
-      display: flex; gap: 12px; padding-top: 8px; border-top: 1px solid #f0f0f4;
-      font-size: 11px; color: #aaa;
-    }
-    .loc-card-footer span { display: flex; align-items: center; gap: 3px; }
 
     /* ── Table ── */
     .table-wrap { padding: 20px; overflow-x: auto; }
@@ -144,7 +173,6 @@
     td.num { text-align: right; color: #444; }
     td.rev { text-align: right; font-weight: 600; }
     td.rev-rental { color: #6366f1; }
-    td.rev-class  { color: #16a34a; }
     td.rev-total  { color: #2563eb; font-size: 14px; }
     td.zero { color: #ccc; }
     .total-row td { background: #f0f4ff; font-weight: 700; border-top: 2px solid #2563eb; }
@@ -184,7 +212,7 @@
 <body>
 <div id="root"></div>
 <script type="text/babel">
-const { useState, useMemo, useCallback } = React;
+const { useState, useMemo, useCallback, useEffect, useRef } = React;
 
 /* ── Formatters ──────────────────────────────────────────────────── */
 function fmtCurrency(n) {
@@ -199,277 +227,304 @@ function toISO(s) {
   const d = new Date(s + 'T00:00:00');
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
+
+/* ── Data normalization (maps Metabase column names → internal keys) ── */
 function normalizeRow(r) {
   return {
-    location:          r['Location'] || '',
-    reservations:      Number(r['Reservations'])     || 0,
-    rentals:           Number(r['Rentals'])           || 0,
-    rentalRevenue:     parseFloat(r['Rental Revenue'])|| 0,
-    classes:           Number(r['Classes'])           || 0,
-    sections:          Number(r['Sections'])          || 0,
-    enrollments:       Number(r['Enrollments'])       || 0,
-    classRevenue:      parseFloat(r['Class Revenue']) || 0,
-    totalRevenue:      parseFloat(r['Total Revenue']) || 0,
-    activeMemberships: Number(r['Active Memberships'])|| 0,
-    checkins:           Number(r['Check-ins'])          || 0,
-    itemsSold:          parseFloat(r['Items Sold'])      || 0,
-    storeRevenue:       parseFloat(r['Store Revenue'])   || 0,
-    membershipRevenue:  parseFloat(r['Membership Revenue']) || 0,
-    passRevenue:        parseFloat(r['Pass Revenue'])       || 0,
+    location:          r['Location']           || '',
+    reservations:      Number(r['Reservations'])       || 0,
+    rentals:           Number(r['Rentals'])             || 0,
+    rentalRevenue:     parseFloat(r['Rental Revenue'])  || 0,
+    checkins:          Number(r['Check-ins'])           || 0,
+    // org-wide (same value on every row — read from rows[0])
+    programRevenue:    parseFloat(r['Program Revenue'])    || 0,
+    enrollments:       Number(r['Enrollments'])            || 0,
+    membershipRevenue: parseFloat(r['Membership Revenue']) || 0,
+    activeMemberships: Number(r['Active Memberships'])     || 0,
+    passRevenue:       parseFloat(r['Pass Revenue'])       || 0,
+    storeRevenue:      parseFloat(r['Store Revenue'])      || 0,
+    itemsSold:         Number(r['Items Sold'])             || 0,
   };
 }
 
-/* ── Sort helpers ───────────────────────────────────────────────── */
+/* ── Sort options ────────────────────────────────────────────────── */
 const SORT_OPTIONS = [
-  { value: 'totalRevenue',  label: 'Total Revenue'   },
   { value: 'rentalRevenue', label: 'Rental Revenue'  },
-  { value: 'classRevenue',  label: 'Class Revenue'   },
-  { value: 'enrollments',   label: 'Enrollments'     },
   { value: 'rentals',       label: 'Rentals'         },
   { value: 'reservations',  label: 'Reservations'    },
+  { value: 'checkins',      label: 'Check-ins'       },
   { value: 'location',      label: 'Location (A→Z)'  },
 ];
 
-/* ── Inline revenue split bar ───────────────────────────────────── */
-function RevSplitBar({ rental, klass, total }) {
-  if (!total) return <div className="rev-split-bar" />;
-  const rPct = Math.round((rental / total) * 100);
-  const cPct = 100 - rPct;
+/* ── Location filter dropdown ─────────────────────────────────────── */
+function LocFilter({ allLocations, selectedLocs, onChange }) {
+  const [open, setOpen]     = useState(false);
+  const [search, setSearch] = useState('');
+  const wrapRef             = useRef(null);
+
+  useEffect(() => {
+    function handleClick(e) {
+      if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false);
+    }
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, []);
+
+  const filtered    = allLocations.filter(l => l.toLowerCase().includes(search.toLowerCase()));
+  const allSelected = selectedLocs.size === allLocations.length;
+  const badgeCount  = allSelected ? null : selectedLocs.size;
+
+  function toggle(loc) {
+    const next = new Set(selectedLocs);
+    next.has(loc) ? next.delete(loc) : next.add(loc);
+    onChange(next);
+  }
+  function selectAll() { onChange(new Set(allLocations)); }
+  function clearAll()  { onChange(new Set()); }
+
   return (
-    <div>
-      <div className="rev-split-bar">
-        <div className="rental-seg" style={{ width: rPct + '%' }} />
-        <div className="class-seg"  style={{ width: cPct + '%' }} />
-      </div>
-      <div className="rev-split-legend">
-        <span><span className="dot dot-rental" /> Rental {rPct}%</span>
-        <span><span className="dot dot-class"  /> Programs {cPct}%</span>
-      </div>
+    <div className="loc-filter-wrap" ref={wrapRef}>
+      <button
+        className="btn-loc-filter"
+        onClick={() => setOpen(o => !o)}
+        style={!allSelected ? { borderColor: '#f59e0b', color: '#b45309' } : {}}
+      >
+        📍 Locations
+        {badgeCount !== null && (
+          <span className="badge">{badgeCount}/{allLocations.length}</span>
+        )}
+      </button>
+
+      {open && (
+        <div className="loc-dropdown">
+          <div className="loc-dropdown-header">
+            <span>Filter Locations</span>
+            <div className="loc-dropdown-header-actions">
+              <button onClick={selectAll} disabled={allSelected}>All</button>
+              <button onClick={clearAll}  disabled={selectedLocs.size === 0}>None</button>
+            </div>
+          </div>
+
+          {allLocations.length > 6 && (
+            <div className="loc-dropdown-search">
+              <input
+                type="text"
+                placeholder="Search locations…"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                autoFocus
+              />
+            </div>
+          )}
+
+          <div className="loc-dropdown-list">
+            {filtered.length === 0 && (
+              <div style={{padding:'10px 12px', color:'#666', fontSize:11}}>No matches</div>
+            )}
+            {filtered.map(loc => (
+              <label key={loc} className="loc-item">
+                <input
+                  type="checkbox"
+                  checked={selectedLocs.has(loc)}
+                  onChange={() => toggle(loc)}
+                />
+                <span title={loc}>{loc}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-/* ── Main App ────────────────────────────────────────────────────── */
+/* ── Inline revenue bar (rental vs programs - org level) ─────────── */
+function StatDivider() {
+  return <div style={{width:1, background:'#f0f0f4', alignSelf:'stretch', margin:'8px 0'}} />;
+}
+
+/* ── Card stat cell ──────────────────────────────────────────────── */
+function CardStat({ label, val, sub }) {
+  return (
+    <div className="loc-stat">
+      <div className="loc-stat-label">{label}</div>
+      <div className="loc-stat-val">{val}</div>
+      {sub && <div className="loc-stat-sub">{sub}</div>}
+    </div>
+  );
+}
+
+/* ── Main App ─────────────────────────────────────────────────────── */
 function App() {
-  const today  = new Date().toISOString().slice(0, 10);
+  const today = new Date().toISOString().slice(0, 10);
   const ytdStart = today.slice(0, 4) + '-01-01';
+  const [startDate, setStartDate] = useState(ytdStart);
+  const [endDate,   setEndDate]   = useState(today);
+  const [rows,      setRows]      = useState(null);
+  const [loading,   setLoading]   = useState(false);
+  const [error,     setError]     = useState(null);
+  const [view,      setView]      = useState(() => localStorage.getItem('overview_view') || 'cards');
+  const [sortBy,    setSortBy]    = useState('rentalRevenue');
+  const [selectedLocs, setSelectedLocs] = useState(new Set());
+  const [tblSort,   setTblSort]   = useState({ col: 'rentalRevenue', dir: 'desc' });
 
-  const [rows,        setRows]        = useState(null);
-  const [meta,        setMeta]        = useState({});
-  const [loading,     setLoading]     = useState(false);
-  const [error,       setError]       = useState(null);
-  const [view,        setView]        = useState('cards');
-  const [sortBy,      setSortBy]      = useState('totalRevenue');
-  const [filterText,  setFilterText]  = useState('');
-  const [pdfLoading,  setPdfLoading]  = useState(false);
-  const [loadedStart, setLoadedStart] = useState('');
-  const [loadedEnd,   setLoadedEnd]   = useState('');
-  const [startDate,   setStartDate]   = useState(ytdStart);
-  const [endDate,     setEndDate]     = useState(today);
+  useEffect(() => { localStorage.setItem('overview_view', view); }, [view]);
 
-  const pathParts = window.location.pathname.split('/').filter(Boolean);
+  const pathParts = window.location.pathname.replace(/^\//, '').split('/');
   const orgSlug   = pathParts[0] || 'org';
 
-  /* ── Date presets ─────────────────────────────────────────────── */
-  function setPreset(preset) {
-    const now = new Date();
-    const y = now.getFullYear(), m = now.getMonth(), d = now.getDate();
-    const pad = n => String(n).padStart(2, '0');
-    const fmt = (yr, mo, da) => `${yr}-${pad(mo + 1)}-${pad(da)}`;
-    if (preset === 'month') {
-      setStartDate(fmt(y, m, 1));
-      setEndDate(fmt(y, m, new Date(y, m + 1, 0).getDate()));
-    } else if (preset === 'lastmonth') {
-      const lm = new Date(y, m, 0);
-      setStartDate(fmt(lm.getFullYear(), lm.getMonth(), 1));
-      setEndDate(fmt(lm.getFullYear(), lm.getMonth(), lm.getDate()));
-    } else if (preset === 'ytd') {
-      setStartDate(`${y}-01-01`); setEndDate(fmt(y, m, d));
-    } else if (preset === 'year') {
-      setStartDate(`${y}-01-01`); setEndDate(`${y}-12-31`);
-    }
-  }
-
-  /* ── Fetch ────────────────────────────────────────────────────── */
   async function runReport() {
     setLoading(true); setError(null);
     try {
-      const params = new URLSearchParams({ start_date: startDate, end_date: endDate });
+      const params = new URLSearchParams({ start: startDate, end: endDate });
       const res = await fetch(`/${orgSlug}/overview/api/data?${params}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
-      setRows((json.rows || []).map(normalizeRow));
-      setMeta(json.meta || {});
-      setLoadedStart(startDate); setLoadedEnd(endDate);
-    } catch (e) { setError(e.message); }
-    finally { setLoading(false); }
+      const normalized = (json.rows || []).map(normalizeRow);
+      setRows(normalized);
+      setSelectedLocs(new Set(normalized.map(r => r.location)));
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
   }
 
-  /* ── PDF ──────────────────────────────────────────────────────── */
-  function downloadPdf() {
-    setPdfLoading(true);
-    const params = new URLSearchParams({ start_date: loadedStart, end_date: loadedEnd });
-    fetch(`/${orgSlug}/overview/api/pdf?${params}`)
-      .then(r => r.blob())
-      .then(blob => {
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        a.download = `facility-overview-${loadedStart}.pdf`;
-        a.click(); URL.revokeObjectURL(a.href);
-      })
-      .catch(e => alert('PDF failed: ' + e.message))
-      .finally(() => setPdfLoading(false));
+  function setRange(type) {
+    const now = new Date();
+    const y = now.getFullYear(), m = now.getMonth();
+    if (type === 'thisMonth') {
+      setStartDate(`${y}-${String(m+1).padStart(2,'0')}-01`);
+      setEndDate(now.toISOString().slice(0,10));
+    } else if (type === 'lastMonth') {
+      const first = new Date(y, m-1, 1), last = new Date(y, m, 0);
+      setStartDate(first.toISOString().slice(0,10));
+      setEndDate(last.toISOString().slice(0,10));
+    } else if (type === 'ytd') {
+      setStartDate(`${y}-01-01`);
+      setEndDate(now.toISOString().slice(0,10));
+    } else if (type === 'thisYear') {
+      setStartDate(`${y}-01-01`);
+      setEndDate(`${y}-12-31`);
+    }
   }
 
-  /* ── Excel export ─────────────────────────────────────────────── */
+  /* ── Excel export ── */
   function exportExcel() {
-    if (!visible.length) return;
-    const headers = ['Location','Reservations','Rentals','Rental Revenue','Classes','Sections','Enrollments','Class Revenue','Total Revenue'];
+    if (!rows || !visible.length) return;
+    const headers = ['Location','Reservations','Rentals','Rental Revenue','Check-ins'];
     const data = visible.map(r => [
-      r.location, r.reservations, r.rentals, r.rentalRevenue,
-      r.classes, r.sections, r.enrollments, r.classRevenue, r.totalRevenue,
+      r.location, r.reservations, r.rentals, r.rentalRevenue, r.checkins,
     ]);
     const ws = XLSX.utils.aoa_to_sheet([headers, ...data]);
-    ws['!cols'] = [20,14,10,16,10,10,14,16,16].map(w => ({ wch: w }));
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Facility Overview');
-    XLSX.writeFile(wb, `facility-overview-${loadedStart || 'export'}.xlsx`);
-    logClientEvent('excel');
+    XLSX.utils.book_append_sheet(wb, ws, 'Overview');
+    XLSX.writeFile(wb, `facility-overview-${startDate}-${endDate}.xlsx`);
   }
 
-  function logClientEvent(event) {
-    fetch(`/${orgSlug}/overview/api/log`, { method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ event }) }).catch(() => {});
-  }
+  /* ── Location list (all locations from data) ── */
+  const allLocations = useMemo(() => {
+    if (!rows) return [];
+    return rows.map(r => r.location).filter(Boolean);
+  }, [rows]);
 
-  /* ── Derived data ─────────────────────────────────────────────── */
+  /* ── Visible rows (filtered by selectedLocs, then sorted) ── */
   const visible = useMemo(() => {
     if (!rows) return [];
-    let r = rows;
-    if (filterText) {
-      const q = filterText.toLowerCase();
-      r = r.filter(row => row.location.toLowerCase().includes(q));
-    }
-    return [...r].sort((a, b) => {
+    let r = rows.filter(row => selectedLocs.has(row.location));
+    r = [...r].sort((a, b) => {
       if (sortBy === 'location') return a.location.localeCompare(b.location);
-      return b[sortBy] - a[sortBy];
+      return (b[sortBy] || 0) - (a[sortBy] || 0);
     });
-  }, [rows, filterText, sortBy]);
+    return r;
+  }, [rows, selectedLocs, sortBy]);
 
+  /* ── Per-location totals (affected by location filter) ── */
   const totals = useMemo(() => visible.reduce((acc, r) => ({
     reservations:  acc.reservations  + r.reservations,
     rentals:       acc.rentals       + r.rentals,
     rentalRevenue: acc.rentalRevenue + r.rentalRevenue,
-    classes:       acc.classes       + r.classes,
-    sections:      acc.sections      + r.sections,
-    enrollments:   acc.enrollments   + r.enrollments,
-    classRevenue:  acc.classRevenue  + r.classRevenue,
-    totalRevenue:  acc.totalRevenue  + r.totalRevenue,
     checkins:      acc.checkins      + r.checkins,
-  }), { reservations:0, rentals:0, rentalRevenue:0, classes:0, sections:0, enrollments:0, classRevenue:0, totalRevenue:0, checkins:0 }), [visible]);
+  }), { reservations:0, rentals:0, rentalRevenue:0, checkins:0 }), [visible]);
 
-  const activeMemberships = rows && rows.length > 0 ? rows[0].activeMemberships : 0;
-  const orgItemsSold         = rows && rows.length > 0 ? rows[0].itemsSold         : 0;
-  const orgStoreRevenue      = rows && rows.length > 0 ? rows[0].storeRevenue      : 0;
-  const orgMembershipRevenue = rows && rows.length > 0 ? rows[0].membershipRevenue : 0;
-  const orgPassRevenue       = rows && rows.length > 0 ? rows[0].passRevenue       : 0;
-  const orgName   = meta.org_name   || '';
-  const logoUrl   = meta.logo_url   || null;
+  /* ── Org-wide metrics (always from rows[0], never filtered by location) ── */
+  const org = rows?.[0] ?? {};
 
-  /* ── Table column sort ────────────────────────────────────────── */
-  const [tblSort, setTblSort] = useState({ col: 'totalRevenue', dir: 'desc' });
+  /* ── Table sort ── */
+  const toggleTblSort = col => setTblSort(s =>
+    s.col === col ? { col, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { col, dir: 'desc' }
+  );
+  const sortIcon = col => tblSort.col === col
+    ? <span className="sort-icon">{tblSort.dir === 'asc' ? '↑' : '↓'}</span>
+    : <span className="sort-icon" style={{opacity:.25}}>↕</span>;
   const tblRows = useMemo(() => {
     const r = [...visible];
     r.sort((a, b) => {
-      const dir = tblSort.dir === 'asc' ? 1 : -1;
-      if (tblSort.col === 'location') return dir * a.location.localeCompare(b.location);
-      return dir * (a[tblSort.col] - b[tblSort.col]);
+      const av = a[tblSort.col], bv = b[tblSort.col];
+      if (typeof av === 'string') return tblSort.dir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av);
+      return tblSort.dir === 'asc' ? (av||0)-(bv||0) : (bv||0)-(av||0);
     });
     return r;
   }, [visible, tblSort]);
 
-  function toggleTblSort(col) {
-    setTblSort(prev => prev.col === col
-      ? { col, dir: prev.dir === 'desc' ? 'asc' : 'desc' }
-      : { col, dir: 'desc' });
-  }
-  function sortIcon(col) {
-    if (tblSort.col !== col) return <span className="sort-icon">↕</span>;
-    return <span className="sort-icon">{tblSort.dir === 'asc' ? '↑' : '↓'}</span>;
-  }
+  const allSelected = selectedLocs.size === allLocations.length;
+  const dateLabel = `${toISO(startDate)} – ${toISO(endDate)}`;
 
-  /* ── Card value cell ─────────────────────────────────────────── */
-  function CardStat({ label, val, sub }) {
-    return (
-      <div className="loc-stat">
-        <div className="loc-stat-label">{label}</div>
-        <div className="loc-stat-val">{val}</div>
-        {sub && <div className="loc-stat-sub">{sub}</div>}
-      </div>
-    );
-  }
-
-  /* ── Render ──────────────────────────────────────────────────── */
   return (
     <div>
       {/* ── Toolbar ── */}
       <div className="toolbar">
-        {logoUrl && <img src={logoUrl} alt="" className="report-header-logo" onError={e => e.target.style.display='none'} />}
-        <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} />
-        <input type="date" value={endDate}   onChange={e => setEndDate(e.target.value)} />
-        <button className="btn" onClick={() => setPreset('month')}>This Month</button>
-        <button className="btn" onClick={() => setPreset('lastmonth')}>Last Month</button>
-        <button className="btn" onClick={() => setPreset('ytd')}>YTD</button>
-        <button className="btn" onClick={() => setPreset('year')}>This Year</button>
-        <button className="btn btn-run" onClick={runReport} disabled={loading}>
-          {loading ? 'Loading…' : '▶ Run Report'}
-        </button>
+        {rows?.[0] && (
+          <img
+            className="report-header-logo"
+            src={`/${orgSlug}/logo`}
+            onError={e => e.target.style.display='none'}
+            alt=""
+          />
+        )}
         <div className="toolbar-divider" />
-        <button className="btn btn-excel" onClick={exportExcel} disabled={!rows || !visible.length}>📊 Excel</button>
-        <button className="btn" onClick={() => { logClientEvent('print'); window.print(); }}>🖨️ Print</button>
-        <button className="btn btn-pdf" onClick={downloadPdf} disabled={pdfLoading || !rows}>
-          {pdfLoading ? 'Generating…' : '📄 PDF'}
+        <label>From</label>
+        <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} />
+        <label>To</label>
+        <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} />
+        <button className="btn" onClick={() => setRange('thisMonth')}>This Month</button>
+        <button className="btn" onClick={() => setRange('lastMonth')}>Last Month</button>
+        <button className="btn" onClick={() => setRange('ytd')}>YTD</button>
+        <button className="btn" onClick={() => setRange('thisYear')}>This Year</button>
+        <button className="btn btn-run" onClick={runReport} disabled={loading}>
+          {loading ? '⏳ Loading…' : '▶ Run Report'}
         </button>
         {rows && (
-          <span style={{color:'#666',fontSize:11,marginLeft:4}}>
-            {visible.length} location{visible.length !== 1 ? 's' : ''}
-          </span>
+          <>
+            <div className="toolbar-divider" />
+            <button className="btn btn-excel" onClick={exportExcel} disabled={!visible.length}>📊 Excel</button>
+          </>
         )}
       </div>
 
       {/* ── Stats band ── */}
-      {rows && (
+      {rows && !loading && (
         <div className="stats-band">
-          <div className="stat-card">
-            <div className="stat-label">Total Revenue</div>
-            <div className="stat-value blue">{fmtCurrency(totals.totalRevenue)}</div>
-            <div className="stat-sub">{loadedStart && `${toISO(loadedStart)} – ${toISO(loadedEnd)}`}</div>
-          </div>
           <div className="stat-card">
             <div className="stat-label">Rental Revenue</div>
             <div className="stat-value indigo">{fmtCurrency(totals.rentalRevenue)}</div>
-            <div className="stat-sub">{totals.rentals} rentals</div>
+            <div className="stat-sub">{fmtNum(totals.rentals)} rentals{!allSelected ? ' (filtered)' : ''}</div>
           </div>
           <div className="stat-card">
             <div className="stat-label">Program Revenue</div>
-            <div className="stat-value green">{fmtCurrency(totals.classRevenue)}</div>
-            <div className="stat-sub">{fmtNum(totals.classes)} classes</div>
+            <div className="stat-value green">{fmtCurrency(org.programRevenue)}</div>
+            <div className="stat-sub">{fmtNum(org.enrollments)} enrollments</div>
+            <div className="stat-org-wide">org-wide</div>
           </div>
           <div className="stat-card">
             <div className="stat-label">Reservations</div>
             <div className="stat-value slate">{fmtNum(totals.reservations)}</div>
-            <div className="stat-sub">{totals.rentals} with rental</div>
-          </div>
-          <div className="stat-card">
-            <div className="stat-label">Enrollments</div>
-            <div className="stat-value green">{fmtNum(totals.enrollments)}</div>
-            <div className="stat-sub">{fmtNum(totals.sections)} sections</div>
+            <div className="stat-sub">{fmtNum(totals.rentals)} with rental</div>
           </div>
           <div className="stat-card">
             <div className="stat-label">Active Members</div>
-            <div className="stat-value amber">{fmtNum(activeMemberships)}</div>
-            <div className="stat-sub">org-wide</div>
+            <div className="stat-value amber">{fmtNum(org.activeMemberships)}</div>
+            <div className="stat-org-wide">org-wide</div>
           </div>
           <div className="stat-card">
             <div className="stat-label">Check-ins</div>
@@ -478,75 +533,67 @@ function App() {
           </div>
           <div className="stat-card">
             <div className="stat-label">Items Sold</div>
-            <div className="stat-value slate">{fmtNum(Math.round(orgItemsSold))}</div>
-            <div className="stat-sub">store &amp; POS, org-wide</div>
+            <div className="stat-value slate">{fmtNum(org.itemsSold)}</div>
+            <div className="stat-sub">store & POS</div>
+            <div className="stat-org-wide">org-wide</div>
           </div>
           <div className="stat-card">
             <div className="stat-label">Store Revenue</div>
-            <div className="stat-value green">{fmtCurrency(orgStoreRevenue)}</div>
-            <div className="stat-sub">org-wide</div>
+            <div className="stat-value slate">{fmtCurrency(org.storeRevenue)}</div>
+            <div className="stat-org-wide">org-wide</div>
           </div>
           <div className="stat-card">
             <div className="stat-label">Membership Revenue</div>
-            <div className="stat-value green">{fmtCurrency(orgMembershipRevenue)}</div>
-            <div className="stat-sub">org-wide</div>
+            <div className="stat-value blue">{fmtCurrency(org.membershipRevenue)}</div>
+            <div className="stat-org-wide">org-wide</div>
           </div>
-          {orgPassRevenue > 0 && (
           <div className="stat-card">
             <div className="stat-label">Pass Revenue</div>
-            <div className="stat-value green">{fmtCurrency(orgPassRevenue)}</div>
-            <div className="stat-sub">org-wide</div>
-          </div>
-          )}
-        </div>
-      )}
-
-      {/* ── Report header (print) ── */}
-      {rows && (
-        <div className="report-area">
-          <div className="report-header">
-            <div className="left">
-              {logoUrl && <img src={logoUrl} alt="" className="report-header-logo" onError={e=>e.target.style.display='none'} style={{marginBottom:4}} />}
-              <div className="org-label">{orgName}</div>
-              <div className="title">Comprehensive Facility Overview</div>
-            </div>
-            <div className="date-range">
-              {toISO(loadedStart)} – {toISO(loadedEnd)}
-            </div>
+            <div className="stat-value purple">{fmtCurrency(org.passRevenue)}</div>
+            <div className="stat-org-wide">org-wide</div>
           </div>
         </div>
       )}
 
-      {/* ── State: loading / error / empty ── */}
+      {/* ── Loading / error / empty ── */}
       {loading && (
-        <div className="state-center">
-          <div className="spinner" />
-          <div className="msg">Loading facility data…</div>
-        </div>
+        <div className="state-center"><div className="spinner" /></div>
       )}
-      {error && !loading && (
+      {error && (
         <div className="state-center">
           <div className="icon">⚠️</div>
-          <div className="msg">Error loading report</div>
+          <div className="msg">Error loading data</div>
           <div className="sub">{error}</div>
         </div>
       )}
-      {!loading && !error && !rows && (
+      {!loading && !error && rows && rows.length === 0 && (
         <div className="state-center">
-          <div className="icon">🏛️</div>
-          <div className="msg">Select a date range and run the report</div>
-          <div className="sub">Facility rentals, classes, enrollments &amp; revenue by location</div>
+          <div className="icon">📭</div>
+          <div className="msg">No data found</div>
+          <div className="sub">Try a different date range</div>
+        </div>
+      )}
+
+      {/* ── Report header ── */}
+      {rows && rows.length > 0 && !loading && (
+        <div className="report-area">
+          <div className="report-header">
+            <div className="left">
+              <div className="org-label">Norman Parks & Recreation</div>
+              <div className="title">Comprehensive Facility Overview</div>
+            </div>
+            <div className="date-range">{dateLabel}</div>
+          </div>
         </div>
       )}
 
       {/* ── Controls bar ── */}
       {rows && !loading && (
         <div className="controls-bar">
-          <input
-            type="text"
-            placeholder="🔍 Filter locations…"
-            value={filterText}
-            onChange={e => setFilterText(e.target.value)}
+          <LocFilter
+            allLocations={allLocations}
+            selectedLocs={selectedLocs}
+            onChange={setSelectedLocs}
           />
           <div className="view-toggle">
             <button className={`view-btn${view==='cards'?' active':''}`} onClick={() => setView('cards')}>⊞ Cards</button>
@@ -562,7 +609,7 @@ function App() {
           )}
           <span className="controls-right results-count">
             {visible.length} location{visible.length !== 1 ? 's' : ''}
-            {filterText && ` matching "${filterText}"`}
+            {!allSelected && ` of ${allLocations.length}`}
           </span>
         </div>
       )}
@@ -573,22 +620,14 @@ function App() {
           {visible.map(r => (
             <div key={r.location} className="loc-card">
               <div className="loc-card-name">{r.location}</div>
-
               <div>
-                <div className="loc-card-revenue">{fmtCurrency(r.totalRevenue)}</div>
-                <div className="loc-card-revenue-sub">total revenue</div>
+                <div className="loc-card-revenue">{fmtCurrency(r.rentalRevenue)}</div>
+                <div className="loc-card-revenue-sub">rental revenue</div>
               </div>
-
-              {r.totalRevenue > 0 && (
-                <RevSplitBar rental={r.rentalRevenue} klass={r.classRevenue} total={r.totalRevenue} />
-              )}
-
               <div className="loc-stats">
-                <CardStat label="Rentals" val={fmtNum(r.rentals)} sub={fmtCurrency(r.rentalRevenue)} />
-                <CardStat label="Enrollments" val={fmtNum(r.enrollments)} sub={fmtCurrency(r.classRevenue)} />
+                <CardStat label="Rentals"      val={fmtNum(r.rentals)}      sub={fmtCurrency(r.rentalRevenue)} />
+                <CardStat label="Reservations" val={fmtNum(r.reservations)} />
                 {r.checkins > 0 && <CardStat label="Check-ins" val={fmtNum(r.checkins)} sub="in period" />}
-                {r.classes > 0 && <CardStat label="Classes" val={r.classes} sub={`${r.sections} sections`} />}
-                {r.reservations > 0 && <CardStat label="Reservations" val={fmtNum(r.reservations)} sub="total slots" />}
               </div>
             </div>
           ))}
@@ -606,12 +645,7 @@ function App() {
                   ['reservations','Reservations'],
                   ['rentals','Rentals'],
                   ['rentalRevenue','Rental Rev'],
-                  ['classes','Classes'],
-                  ['sections','Sections'],
-                  ['enrollments','Enrollments'],
-                  ['classRevenue','Program Rev'],
                   ['checkins','Check-ins'],
-                  ['totalRevenue','Total Rev'],
                 ].map(([col, label]) => (
                   <th key={col} className={tblSort.col===col ? 'sorted':''} onClick={() => toggleTblSort(col)}>
                     {label}{sortIcon(col)}
@@ -626,12 +660,7 @@ function App() {
                   <td className={`num${!r.reservations?' zero':''}`}>{fmtNum(r.reservations)}</td>
                   <td className={`num${!r.rentals?' zero':''}`}>{fmtNum(r.rentals)}</td>
                   <td className={`rev rev-rental${!r.rentalRevenue?' zero':''}`}>{r.rentalRevenue ? fmtCurrency(r.rentalRevenue) : '—'}</td>
-                  <td className={`num${!r.classes?' zero':''}`}>{r.classes || '—'}</td>
-                  <td className={`num${!r.sections?' zero':''}`}>{r.sections || '—'}</td>
-                  <td className={`num${!r.enrollments?' zero':''}`}>{fmtNum(r.enrollments)}</td>
-                  <td className={`rev rev-class${!r.classRevenue?' zero':''}`}>{r.classRevenue ? fmtCurrency(r.classRevenue) : '—'}</td>
-                  <td className={`num${!r.checkins?' zero':''}`}>{fmtNum(r.checkins)}</td>
-                  <td className={`rev rev-total${!r.totalRevenue?' zero':''}`}>{r.totalRevenue ? fmtCurrency(r.totalRevenue) : '—'}</td>
+                  <td className={`num${!r.checkins?' zero':''}`}>{r.checkins || '—'}</td>
                 </tr>
               ))}
               {visible.length > 1 && (
@@ -640,12 +669,7 @@ function App() {
                   <td className="num">{fmtNum(totals.reservations)}</td>
                   <td className="num">{fmtNum(totals.rentals)}</td>
                   <td className="rev rev-rental">{fmtCurrency(totals.rentalRevenue)}</td>
-                  <td className="num">{totals.classes || '—'}</td>
-                  <td className="num">{totals.sections || '—'}</td>
-                  <td className="num">{fmtNum(totals.enrollments)}</td>
-                  <td className="rev rev-class">{fmtCurrency(totals.classRevenue)}</td>
                   <td className="num">{fmtNum(totals.checkins)}</td>
-                  <td className="rev rev-total">{fmtCurrency(totals.totalRevenue)}</td>
                 </tr>
               )}
             </tbody>
