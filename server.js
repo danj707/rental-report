@@ -75,7 +75,7 @@ const ORGS = {
     facility: { mbUuid: "81c43b6d-1776-4a13-9fec-cb6f9e9895bb" },
     gl:       { mbUuid: "46b7e83b-f8ac-4d84-8c5c-4c72ca57cea4" },
     roster:   { mbUuid: "b4fb3c1b-b096-4865-8c32-3dc2635d1264" },
-    overview: { mbUuid: 'b9b9c665-689a-4158-88ea-1f4512497f58' },
+    overview: { mbUuid: null },
     products: { mbUuid: 'c52acc75-a0a6-4892-9b56-f72dbc1a7019' },
   },
   smyrna: {
