@@ -906,6 +906,7 @@ app.get("/", (req, res) => {
     historic: { label: "Historic Buildings",        icon: "🏛️",  desc: "Reservations for historic building sites", color: "#d97706" },
     roster:   { label: "Class Roster",              icon: "📋", desc: "Enrolled and cancelled participants by section", color: "#0891b2" },
     overview: { label: "Facility Overview",         icon: "📈", desc: "Revenue and activity summary by location",        color: "#059669" },
+    products: { label: "Product Sales MoM",          icon: "🛒", desc: "Month-over-month revenue and quantity by product",  color: "#0891b2" },
   };
 
   const orgSections = Object.entries(ORGS).map(([slug, org]) => {
