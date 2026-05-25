@@ -1448,7 +1448,6 @@ function ShareButton({ filteredRows, loadedStart, loadedEnd, selectedLocations, 
             onChange={e => setEmail(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && handleSend()}
             autoFocus />
-          <div className="sp-url">{shareUrl}</div>
           <div className="sp-row">
             <button className="sp-send" onClick={handleSend} disabled={sending || !email}>
               {sending ? 'Sending...' : 'Send Link'}
@@ -2182,4 +2181,5 @@ ReactDOM.createRoot(document.getElementById('root')).render(<App />);
 </script>
 </body>
 </html>
+
 
