@@ -1804,6 +1804,16 @@ function App() {
     setEndDate(toISO(last));
   }
 
+  function setWeek(offsetWeeks) {
+    const now = new Date();
+    const start = new Date(now);
+    start.setDate(now.getDate() + (offsetWeeks * 7));
+    const end = new Date(start);
+    end.setDate(start.getDate() + 6);
+    setStartDate(toISO(start));
+    setEndDate(toISO(end));
+  }
+
   function downloadPdf() {
     setPdfLoading(true);
     const qs = new URLSearchParams();
@@ -1903,6 +1913,8 @@ function App() {
         <button onClick={() => setMonth(-1)} style={{fontSize:11,padding:'4px 8px'}}>Last Month</button>
         <button onClick={() => setMonth(0)}  style={{fontSize:11,padding:'4px 8px'}}>This Month</button>
         <button onClick={() => setMonth(1)}  style={{fontSize:11,padding:'4px 8px'}}>Next Month</button>
+        <button onClick={() => setWeek(0)}   style={{fontSize:11,padding:'4px 8px'}}>This Week</button>
+        <button onClick={() => setWeek(1)}   style={{fontSize:11,padding:'4px 8px'}}>Next Week</button>
 
         <button
           className="btn-run"
@@ -2181,5 +2193,6 @@ ReactDOM.createRoot(document.getElementById('root')).render(<App />);
 </script>
 </body>
 </html>
+
 
 
