@@ -673,10 +673,9 @@
     /* ── Email share popover ── */
     .share-wrap { position: relative; }
     .share-popover {
-      position: absolute;
-      top: calc(100% + 8px);
-      right: 0;
-      z-index: 300;
+      position: fixed;
+      top: auto;
+      z-index: 9000;
       background: #1e1e1e;
       border: 1px solid rgba(255,255,255,.2);
       border-radius: 8px;
@@ -1386,13 +1385,27 @@ function ShareButton({ filteredRows, loadedStart, loadedEnd, selectedLocations, 
   const [email, setEmail]       = useState('');
   const [sending, setSending]   = useState(false);
   const [feedback, setFeedback] = useState(null);
-  const wrapRef = useRef(null);
+  const wrapRef  = useRef(null);
+  const btnRef   = useRef(null);
+  const [popPos, setPopPos] = useState({ top: 0, left: 0 });
 
   useEffect(() => {
     function h(e) { if (wrapRef.current && !wrapRef.current.contains(e.target)) { setOpen(false); setFeedback(null); } }
     document.addEventListener('mousedown', h);
     return () => document.removeEventListener('mousedown', h);
   }, []);
+
+  function openPopover() {
+    if (btnRef.current) {
+      const rect = btnRef.current.getBoundingClientRect();
+      const popW = 280;
+      let left = rect.right - popW;
+      if (left < 8) left = 8;
+      setPopPos({ top: rect.bottom + 6, left });
+    }
+    setOpen(o => !o);
+    setFeedback(null);
+  }
 
   const shareUrl = useMemo(() => {
     if (!loadedStart || !loadedEnd) return '';
@@ -1438,11 +1451,11 @@ function ShareButton({ filteredRows, loadedStart, loadedEnd, selectedLocations, 
 
   return (
     <div className="share-wrap" ref={wrapRef}>
-      <button onClick={() => { setOpen(o => !o); setFeedback(null); }} disabled={disabled} title="Email this report">
+      <button ref={btnRef} onClick={openPopover} disabled={disabled} title="Email this report">
         Email
       </button>
       {open && (
-        <div className="share-popover">
+        <div className="share-popover" style={{top: popPos.top, left: popPos.left}}>
           <div className="sp-title">Share This View</div>
           <input type="email" placeholder="recipient@example.com" value={email}
             onChange={e => setEmail(e.target.value)}
@@ -2193,6 +2206,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(<App />);
 </script>
 </body>
 </html>
+
 
 
 
