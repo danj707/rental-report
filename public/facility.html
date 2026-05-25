@@ -1627,7 +1627,11 @@ function App() {
       end.setDate(today.getDate() + range - 1);
       return { start: toISO(today), end: toISO(end) };
     }
-    return getCurrentMonthRange();
+    // Default to this week (today + 6 days)
+    const today = new Date();
+    const end   = new Date(today);
+    end.setDate(today.getDate() + 6);
+    return { start: toISO(today), end: toISO(end) };
   }, []);
 
   const orgSlug = useMemo(() => {
@@ -1646,6 +1650,7 @@ function App() {
 
   const [loadedStart, setLoadedStart] = useState(null);
   const [loadedEnd,   setLoadedEnd]   = useState(null);
+  const [activeRange, setActiveRange] = useState('this-week'); // tracks which quick button is active
 
   // ── View mode: 'table' | 'calendar' ─────────────────────────────
   const [viewMode, setViewMode] = useState(() => {
@@ -1815,6 +1820,7 @@ function App() {
     const last   = new Date(target.getFullYear(), target.getMonth() + 1, 0);
     setStartDate(toISO(target));
     setEndDate(toISO(last));
+    setActiveRange(offset === -1 ? 'last-month' : offset === 0 ? 'this-month' : 'next-month');
   }
 
   function setWeek(offsetWeeks) {
@@ -1825,6 +1831,7 @@ function App() {
     end.setDate(start.getDate() + 6);
     setStartDate(toISO(start));
     setEndDate(toISO(end));
+    setActiveRange(offsetWeeks === 0 ? 'this-week' : 'next-week');
   }
 
   function downloadPdf() {
@@ -1916,18 +1923,34 @@ function App() {
 
         <label>
           Start
-          <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} />
+          <input type="date" value={startDate} onChange={e => { setStartDate(e.target.value); setActiveRange(null); }} />
         </label>
         <label>
           End
-          <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} />
+          <input type="date" value={endDate} onChange={e => { setEndDate(e.target.value); setActiveRange(null); }} />
         </label>
 
-        <button onClick={() => setMonth(-1)} style={{fontSize:11,padding:'4px 8px'}}>Last Month</button>
-        <button onClick={() => setMonth(0)}  style={{fontSize:11,padding:'4px 8px'}}>This Month</button>
-        <button onClick={() => setMonth(1)}  style={{fontSize:11,padding:'4px 8px'}}>Next Month</button>
-        <button onClick={() => setWeek(0)}   style={{fontSize:11,padding:'4px 8px'}}>This Week</button>
-        <button onClick={() => setWeek(1)}   style={{fontSize:11,padding:'4px 8px'}}>Next Week</button>
+        {[
+          { key:'last-month',  label:'Last Month',  action:() => setMonth(-1) },
+          { key:'this-month',  label:'This Month',  action:() => setMonth(0)  },
+          { key:'next-month',  label:'Next Month',  action:() => setMonth(1)  },
+          { key:'this-week',   label:'This Week',   action:() => setWeek(0)   },
+          { key:'next-week',   label:'Next Week',   action:() => setWeek(1)   },
+        ].map(({ key, label, action }) => (
+          <button
+            key={key}
+            onClick={action}
+            style={{
+              fontSize:11, padding:'4px 8px',
+              ...(activeRange === key ? {
+                background: '#f59e0b',
+                borderColor: '#f59e0b',
+                color: '#1a1a1a',
+                fontWeight: 600,
+              } : {}),
+            }}
+          >{label}</button>
+        ))}
 
         <button
           className="btn-run"
@@ -2206,6 +2229,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(<App />);
 </script>
 </body>
 </html>
+
 
 
 
