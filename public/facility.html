@@ -763,6 +763,132 @@
     .hm-legend-bar { display: flex; gap: 1px; flex: 1; }
     .hm-legend-cell { height: 6px; flex: 1; border-radius: 1px; }
 
+
+    /* ── Day detail popover ── */
+    .day-popover-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 8000;
+      background: rgba(0,0,0,.25);
+    }
+    .day-popover {
+      position: fixed;
+      z-index: 8001;
+      background: #fff;
+      border: 1px solid #ddd;
+      border-radius: 10px;
+      box-shadow: 0 12px 40px rgba(0,0,0,.2);
+      width: 340px;
+      max-height: 520px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .day-popover-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 16px 10px;
+      border-bottom: 1px solid #eee;
+      flex-shrink: 0;
+    }
+    .day-popover-header .dp-date {
+      font-size: 14px;
+      font-weight: 700;
+      color: #111;
+    }
+    .day-popover-header .dp-count {
+      font-size: 11px;
+      color: #999;
+      margin-top: 1px;
+    }
+    .day-popover-close {
+      background: none;
+      border: 1px solid #e0e0e0;
+      border-radius: 4px;
+      padding: 3px 8px;
+      font-size: 13px;
+      cursor: pointer;
+      color: #666;
+      line-height: 1;
+    }
+    .day-popover-close:hover { background: #f5f5f5; }
+    .day-popover-list {
+      overflow-y: auto;
+      flex: 1;
+      padding: 6px 0;
+    }
+    .day-popover-list::-webkit-scrollbar { width: 4px; }
+    .day-popover-list::-webkit-scrollbar-track { background: transparent; }
+    .day-popover-list::-webkit-scrollbar-thumb { background: #ddd; border-radius: 2px; }
+    .dp-item {
+      display: flex;
+      gap: 10px;
+      padding: 7px 16px;
+      border-bottom: 1px solid #f5f5f5;
+      align-items: flex-start;
+    }
+    .dp-item:last-child { border-bottom: none; }
+    .dp-color-bar {
+      width: 4px;
+      border-radius: 2px;
+      flex-shrink: 0;
+      align-self: stretch;
+      min-height: 36px;
+    }
+    .dp-item-body { flex: 1; min-width: 0; }
+    .dp-item-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 6px;
+      margin-bottom: 2px;
+    }
+    .dp-item-site {
+      font-size: 12px;
+      font-weight: 600;
+      color: #111;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .dp-item-time {
+      font-size: 11px;
+      color: #888;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .dp-item-loc {
+      font-size: 10px;
+      color: #aaa;
+      margin-bottom: 2px;
+    }
+    .dp-item-meta {
+      font-size: 11px;
+      color: #555;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .dp-item-notes {
+      font-size: 10px;
+      color: #aaa;
+      font-family: 'IBM Plex Mono', monospace;
+      margin-top: 2px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    /* Make calendar day cells look clickable */
+    .cal-day.has-events {
+      cursor: pointer;
+    }
+    .cal-day.has-events:hover {
+      border-color: #3b82f6;
+      background: #fafeff;
+    }
+
     /* ── Print / PDF mode ── */
     @media print {
       body { background: #fff; }
@@ -1204,6 +1330,89 @@ function HoverCard({ reservation, position, locationColors }) {
   );
 }
 
+
+// ── DayPopover component ─────────────────────────────────────────────
+function DayPopover({ date, reservations, locationColors, onClose }) {
+  const popRef = useRef(null);
+  const [pos, setPos]   = useState({ top: 80, left: '50%', transform: 'translateX(-50%)' });
+
+  // Center on screen
+  useEffect(() => {
+    if (!popRef.current) return;
+    const rect = popRef.current.getBoundingClientRect();
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const top  = Math.max(16, Math.min((vh - rect.height) / 2, vh - rect.height - 16));
+    const left = Math.max(16, Math.min((vw - rect.width)  / 2, vw - rect.width  - 16));
+    setPos({ top, left, transform: 'none' });
+  }, [date]);
+
+  const sorted = useMemo(() =>
+    [...reservations].sort((a,b) => (a.start||'').localeCompare(b.start||'')),
+  [reservations]);
+
+  const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  const DAYS   = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+  const d      = new Date(date + 'T12:00:00');
+  const dateLabel = `${DAYS[d.getDay()]}, ${MONTHS[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
+
+  return (
+    <>
+      {/* Backdrop */}
+      <div className="day-popover-overlay" onClick={onClose} />
+
+      {/* Popover */}
+      <div className="day-popover" ref={popRef} style={pos}>
+        <div className="day-popover-header">
+          <div>
+            <div className="dp-date">{dateLabel}</div>
+            <div className="dp-count">{sorted.length} reservation{sorted.length !== 1 ? 's' : ''}</div>
+          </div>
+          <button className="day-popover-close" onClick={onClose}>✕</button>
+        </div>
+
+        <div className="day-popover-list">
+          {sorted.map((r, i) => {
+            const color = locationColors[r.location] || '#888';
+            return (
+              <div key={i} className="dp-item">
+                <div className="dp-color-bar" style={{background: color}} />
+                <div className="dp-item-body">
+                  <div className="dp-item-top">
+                    <span className="dp-item-site">{r.site || r.location}</span>
+                    <span className="dp-item-time">{formatTime(r.start)}{r.end ? ` – ${formatTime(r.end)}` : ''}</span>
+                  </div>
+                  {r.location && r.site && (
+                    <div className="dp-item-loc">{r.location}</div>
+                  )}
+                  {(r.reservee || r.resName) && (
+                    <div className="dp-item-meta">
+                      {r.reservee && <span>{r.reservee}</span>}
+                      {r.reservee && r.resName && <span style={{color:'#ccc'}}> · </span>}
+                      {r.resName  && <span style={{color:'#777'}}>{r.resName}</span>}
+                    </div>
+                  )}
+                  {r.headCount != null && r.headCount !== '' && (
+                    <div className="dp-item-meta" style={{color:'#888'}}>
+                      {r.headCount} attendees
+                      {r.total && parseFloat(r.total) > 0 ? ` · ${formatMoney(r.total)}` : ''}
+                    </div>
+                  )}
+                  {(r.notes || r.addons) && (
+                    <div className="dp-item-notes">
+                      {r.notes}{r.addons ? ` | ${r.addons}` : ''}
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </>
+  );
+}
+
 // ── Calendar View component ──────────────────────────────────────────
 function CalendarView({ filteredRows, locationColors, loadedStart, loadedEnd }) {
   const [calMonth, setCalMonth] = useState(() => {
@@ -1218,6 +1427,7 @@ function CalendarView({ filteredRows, locationColors, loadedStart, loadedEnd }) 
 
   const [hoverRes, setHoverRes]     = useState(null);
   const [hoverPos, setHoverPos]     = useState({ x: 0, y: 0 });
+  const [selectedDay, setSelectedDay] = useState(null); // ISO date string
 
   // Derived: min/max months from loaded range
   const minMonth = useMemo(() => {
@@ -1300,7 +1510,7 @@ function CalendarView({ filteredRows, locationColors, loadedStart, loadedEnd }) 
   const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
   const DOW = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 
-  const MAX_CHIPS = 3; // show at most this many chips before "+N more"
+  const MAX_CHIPS = 2; // show at most this many chips before "+N more"
 
   return (
     <div className="cal-wrapper">
@@ -1335,6 +1545,7 @@ function CalendarView({ filteredRows, locationColors, loadedStart, loadedEnd }) 
                 isToday ? 'today' : '',
                 dayRows.length > 0 ? 'has-events' : '',
               ].filter(Boolean).join(' ')}
+              onClick={() => dayRows.length > 0 && setSelectedDay(iso)}
             >
               <div className="cal-day-num">{dayNum}</div>
 
@@ -1351,6 +1562,7 @@ function CalendarView({ filteredRows, locationColors, loadedStart, loadedEnd }) 
                     }}
                     onMouseMove={e => setHoverPos({ x: e.clientX, y: e.clientY })}
                     onMouseLeave={() => setHoverRes(null)}
+                    onClick={e => { e.stopPropagation(); setSelectedDay(iso); }}
                     title={`${r.site} ${formatTime(r.start)}`}
                   >
                     {formatTime(r.start)} {r.site || r.location}
@@ -1359,7 +1571,12 @@ function CalendarView({ filteredRows, locationColors, loadedStart, loadedEnd }) 
               })}
 
               {overflow > 0 && (
-                <div className="cal-more">+{overflow} more</div>
+                <div
+                  className="cal-more"
+                  onClick={e => { e.stopPropagation(); setSelectedDay(iso); }}
+                >
+                  +{overflow} more — click to expand
+                </div>
               )}
             </div>
           );
@@ -1367,11 +1584,21 @@ function CalendarView({ filteredRows, locationColors, loadedStart, loadedEnd }) 
       </div>
 
       {/* Hover card */}
-      {hoverRes && (
+      {hoverRes && !selectedDay && (
         <HoverCard
           reservation={hoverRes}
           position={hoverPos}
           locationColors={locationColors}
+        />
+      )}
+
+      {/* Day detail popover */}
+      {selectedDay && (
+        <DayPopover
+          date={selectedDay}
+          reservations={byDate[selectedDay] || []}
+          locationColors={locationColors}
+          onClose={() => setSelectedDay(null)}
         />
       )}
     </div>
@@ -2229,6 +2456,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(<App />);
 </script>
 </body>
 </html>
+
 
 
 
