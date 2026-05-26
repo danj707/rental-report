@@ -1401,7 +1401,7 @@ function DayPopover({ date, reservations, locationColors, onClose }) {
 
   function handlePdf() {
     setPdfLoading(true);
-    const parts = window.location.pathname.replace(/\/g, '').replace(/\/$/, '').split('/');
+    const parts = window.location.pathname.replace(/\/$/, '').split('/');
     const pdfBase = parts.length >= 3 ? `/${parts[1]}/${parts[2]}/api/pdf` : '/api/pdf';
     const qs = new URLSearchParams({ start_date: date, end_date: date });
     fetch(`${pdfBase}?${qs}`)
@@ -2537,6 +2537,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(<App />);
 </script>
 </body>
 </html>
+
 
 
 
