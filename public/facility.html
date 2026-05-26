@@ -789,8 +789,9 @@
       align-items: center;
       justify-content: space-between;
       padding: 12px 16px 10px;
-      border-bottom: 1px solid #eee;
+      border-bottom: 1px solid #e8e8e8;
       flex-shrink: 0;
+      gap: 8px;
     }
     .day-popover-header .dp-date {
       font-size: 14px;
@@ -1347,9 +1348,74 @@ function DayPopover({ date, reservations, locationColors, onClose }) {
     setPos({ top, left, transform: 'none' });
   }, [date]);
 
+  const [pdfLoading, setPdfLoading] = useState(false);
+
   const sorted = useMemo(() =>
     [...reservations].sort((a,b) => (a.start||'').localeCompare(b.start||'')),
   [reservations]);
+
+  function handlePrint() {
+    // Build a minimal print window with just this day's reservations
+    const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+    const DAYS   = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+    const d      = new Date(date + 'T12:00:00');
+    const dateStr = `${DAYS[d.getDay()]}, ${MONTHS[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
+
+    const rows = sorted.map(r => `
+      <tr>
+        <td style="padding:5px 8px;border-bottom:1px solid #eee;white-space:nowrap">${formatTime(r.start)}${r.end ? ' – ' + formatTime(r.end) : ''}</td>
+        <td style="padding:5px 8px;border-bottom:1px solid #eee;font-weight:600">${r.site || ''}</td>
+        <td style="padding:5px 8px;border-bottom:1px solid #eee;color:#666">${r.location || ''}</td>
+        <td style="padding:5px 8px;border-bottom:1px solid #eee">${r.reservee || ''}</td>
+        <td style="padding:5px 8px;border-bottom:1px solid #eee;color:#777">${r.resName || ''}</td>
+        <td style="padding:5px 8px;border-bottom:1px solid #eee;text-align:center">${r.headCount || ''}</td>
+      </tr>`).join('');
+
+    const win = window.open('', '_blank');
+    win.document.write(`<!DOCTYPE html><html><head>
+      <title>Rental Schedule — ${dateStr}</title>
+      <style>
+        body { font-family: sans-serif; font-size: 12px; margin: 24px; color: #111; }
+        h2   { margin: 0 0 4px; font-size: 16px; }
+        p    { margin: 0 0 16px; color: #777; font-size: 11px; }
+        table { width: 100%; border-collapse: collapse; }
+        th   { text-align: left; padding: 5px 8px; background: #f0f0f0; font-size: 10px;
+               text-transform: uppercase; letter-spacing: 0.4px; border-bottom: 2px solid #ccc; }
+        @media print { @page { size: Letter landscape; margin: 0.5in; } }
+      </style>
+    </head><body>
+      <h2>${dateStr}</h2>
+      <p>${sorted.length} reservation${sorted.length !== 1 ? 's' : ''}</p>
+      <table>
+        <thead><tr>
+          <th>Time</th><th>Facility/Site</th><th>Location</th>
+          <th>Reservee</th><th>Purpose</th><th>Head Cnt</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </body></html>`);
+    win.document.close();
+    win.focus();
+    setTimeout(() => { win.print(); }, 400);
+  }
+
+  function handlePdf() {
+    setPdfLoading(true);
+    const parts = window.location.pathname.replace(/\/g, '').replace(/\/$/, '').split('/');
+    const pdfBase = parts.length >= 3 ? `/${parts[1]}/${parts[2]}/api/pdf` : '/api/pdf';
+    const qs = new URLSearchParams({ start_date: date, end_date: date });
+    fetch(`${pdfBase}?${qs}`)
+      .then(r => r.blob())
+      .then(blob => {
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `rental-schedule-${date}.pdf`;
+        a.click();
+        URL.revokeObjectURL(a.href);
+      })
+      .catch(err => alert('PDF failed: ' + err.message))
+      .finally(() => setPdfLoading(false));
+  }
 
   const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
   const DAYS   = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
@@ -1368,7 +1434,22 @@ function DayPopover({ date, reservations, locationColors, onClose }) {
             <div className="dp-date">{dateLabel}</div>
             <div className="dp-count">{sorted.length} reservation{sorted.length !== 1 ? 's' : ''}</div>
           </div>
-          <button className="day-popover-close" onClick={onClose}>✕</button>
+          <div style={{display:'flex',gap:6,alignItems:'center'}}>
+            <button
+              className="day-popover-close"
+              onClick={handlePrint}
+              title="Print this day"
+              style={{fontSize:11,padding:'3px 9px'}}
+            >🖨️ Print</button>
+            <button
+              className="day-popover-close"
+              onClick={handlePdf}
+              disabled={pdfLoading}
+              title="Download PDF for this day"
+              style={{fontSize:11,padding:'3px 9px',background: pdfLoading ? '#f5f5f5' : undefined}}
+            >{pdfLoading ? '…' : '📄 PDF'}</button>
+            <button className="day-popover-close" onClick={onClose}>✕</button>
+          </div>
         </div>
 
         <div className="day-popover-list">
@@ -2456,6 +2537,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(<App />);
 </script>
 </body>
 </html>
+
 
 
 
