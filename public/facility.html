@@ -264,10 +264,8 @@
       border-color: rgba(255,255,255,.6);
     }
     .loc-color-picker-pop {
-      position: absolute;
-      top: calc(100% + 4px);
-      left: 0;
-      z-index: 300;
+      position: fixed;
+      z-index: 9500;
       background: #1e1e1e;
       border: 1px solid rgba(255,255,255,.2);
       border-radius: 6px;
@@ -1037,6 +1035,7 @@ function LocationFilter({ allLocations, selectedLocations, onChange, locationCol
   const [open, setOpen]         = useState(false);
   const [search, setSearch]     = useState('');
   const [pickerFor, setPickerFor] = useState(null); // loc name that has picker open
+  const [pickerPos, setPickerPos] = useState({ top: 0, left: 0 });
   const wrapRef                 = useRef(null);
   const pickerRef               = useRef(null);
 
@@ -1127,12 +1126,20 @@ function LocationFilter({ allLocations, selectedLocations, onChange, locationCol
                     onClick={e => {
                       e.stopPropagation();
                       e.preventDefault();
-                      setPickerFor(pickerFor === loc ? null : loc);
+                      if (pickerFor === loc) { setPickerFor(null); return; }
+                      const rect = e.currentTarget.getBoundingClientRect();
+                      const popW = 140; // approx picker width
+                      let left = rect.right + 6;
+                      if (left + popW > window.innerWidth - 8) left = rect.left - popW - 6;
+                      setPickerPos({ top: rect.top, left });
+                      setPickerFor(loc);
                     }}
                     title="Change color"
                   />
                   {pickerFor === loc && (
-                    <div className="loc-color-picker-pop" ref={pickerRef} onClick={e => e.stopPropagation()}>
+                    <div className="loc-color-picker-pop" ref={pickerRef}
+                      style={{top: pickerPos.top, left: pickerPos.left}}
+                      onClick={e => e.stopPropagation()}>
                       <div className="swatch-grid">
                         {DEFAULT_PALETTE.map(c => (
                           <div
@@ -2537,6 +2544,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(<App />);
 </script>
 </body>
 </html>
+
 
 
 
