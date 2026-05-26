@@ -265,6 +265,26 @@
     @keyframes spin { to { transform: rotate(360deg); } }
     .error { text-align: center; padding: 60px 20px; color: #b91c1c; font-size: 14px; }
 
+    /* ── GL Locations cell ── */
+    .gl-locations {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 3px;
+      margin-top: 3px;
+    }
+    .gl-loc-tag {
+      display: inline-block;
+      font-size: 9px;
+      font-family: 'IBM Plex Sans', sans-serif;
+      background: #f0ede8;
+      border: 1px solid #ddd;
+      border-radius: 3px;
+      padding: 1px 5px;
+      color: #555;
+      white-space: nowrap;
+      line-height: 1.5;
+    }
+
     /* ── Print ── */
     @media print {
       body { background: #fff; }
@@ -289,6 +309,7 @@ const { useState, useEffect, useMemo, useCallback, useRef } = React;
 
 const LS_REFUND   = 'gl_refund_breakdown_v2';
 const LS_VIEW     = 'gl_view_mode_v2';
+const LS_LOCS     = 'gl_show_locations_v1';
 
 // ── Params / date helpers ────────────────────────────────────────────
 function getParams() {
@@ -517,16 +538,20 @@ function App() {
   const [loadedStart, setLoadedStart] = useState(null);
   const [loadedEnd,   setLoadedEnd]   = useState(null);
 
-  const [showRefunds, setShowRefunds] = useState(
+  const [showRefunds,   setShowRefunds]   = useState(
     () => localStorage.getItem(LS_REFUND) === 'true'
+  );
+  const [showLocations, setShowLocations] = useState(
+    () => localStorage.getItem(LS_LOCS) !== 'false'  // default ON
   );
   const [viewMode, setViewMode] = useState(
     () => localStorage.getItem(LS_VIEW) || 'table'
   );
 
   useEffect(() => { if (params._print === '1') document.body.classList.add('print-mode'); }, []);
-  useEffect(() => { localStorage.setItem(LS_REFUND, showRefunds); }, [showRefunds]);
-  useEffect(() => { localStorage.setItem(LS_VIEW, viewMode); }, [viewMode]);
+  useEffect(() => { localStorage.setItem(LS_REFUND,   showRefunds);   }, [showRefunds]);
+  useEffect(() => { localStorage.setItem(LS_VIEW,     viewMode);      }, [viewMode]);
+  useEffect(() => { localStorage.setItem(LS_LOCS,     showLocations); }, [showLocations]);
 
   // ── Fetch ───────────────────────────────────────────────────────────
   const fetchData = useCallback((sd, ed) => {
@@ -742,6 +767,14 @@ function App() {
           {showRefunds ? '▾' : '▸'} Refund Detail
         </button>
 
+        <button
+          className={showLocations ? 'active' : ''}
+          style={{fontSize:11, padding:'4px 10px'}}
+          onClick={() => setShowLocations(v => !v)}
+        >
+          {showLocations ? '▾' : '▸'} Locations
+        </button>
+
         <div className="divider" />
 
         {['table','bar','pie'].map(mode => (
@@ -806,9 +839,10 @@ function App() {
 
     const hasAcctName = rows.some(r => r.accountName);
     const hasAcctNum  = rows.some(r => r.accountNumber);
+    const hasLocs     = showLocations && rows.some(r => r.locations && r.locations.trim());
 
     // colspan helpers
-    const idCols       = 1 + (hasAcctName ? 1 : 0) + (hasAcctNum ? 1 : 0);
+    const idCols       = 1 + (hasAcctName ? 1 : 0) + (hasLocs ? 1 : 0) + (hasAcctNum ? 1 : 0);
     const ccCols       = hasCCSplit ? 2 : 1;
     const otherPmtCols = showRefunds ? 2 : 0;   // free + org credit
     const ccRfndCols   = hasCCSplit ? 2 : 1;
@@ -834,6 +868,7 @@ function App() {
             <tr>
               <th className="left">GL Code</th>
               {hasAcctName && <th className="left">Account Name</th>}
+              {hasLocs     && <th className="left">Locations</th>}
               {hasAcctNum  && <th className="left">Acct #</th>}
 
               {hasCCSplit ? (
@@ -868,6 +903,17 @@ function App() {
               <tr key={i}>
                 <td className="left gl-code">{r.glCode}</td>
                 {hasAcctName && <td className="left">{r.accountName}</td>}
+                {hasLocs && (
+                  <td className="left" style={{minWidth:120, maxWidth:200}}>
+                    {r.locations && r.locations.trim() ? (
+                      <div className="gl-locations">
+                        {r.locations.split(',').map(l => l.trim()).filter(Boolean).map((l, i) => (
+                          <span key={i} className="gl-loc-tag">{l}</span>
+                        ))}
+                      </div>
+                    ) : null}
+                  </td>
+                )}
                 {hasAcctNum  && <td className="left" style={{fontFamily:'IBM Plex Mono,monospace',fontSize:10}}>{r.accountNumber}</td>}
 
                 {hasCCSplit ? (
@@ -922,6 +968,7 @@ function App() {
             <tr>
               <td className="left">TOTALS</td>
               {hasAcctName && <td></td>}
+              {hasLocs     && <td></td>}
               {hasAcctNum  && <td></td>}
 
               {hasCCSplit ? (
@@ -1056,3 +1103,4 @@ ReactDOM.createRoot(document.getElementById('root')).render(<App />);
 </script>
 </body>
 </html>
+
