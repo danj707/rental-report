@@ -897,7 +897,7 @@ app.get("/:org", (req, res) => {
     .admin-link { display: flex; align-items: center; gap: 12px; color: #555; text-decoration: none; font-size: 13px; padding: 8px 0; }
     .admin-link:hover { color: #111; }
     .admin-link span { font-size: 18px; }
-    .how-chevron { font-size: 11px; color: #aaa; transition: transform .2s; flex-shrink: 0; }
+        .how-chevron { font-size: 11px; color: #aaa; transition: transform .2s; flex-shrink: 0; }
     .how-chevron.open { transform: rotate(90deg); }
     .how-body { display: none; padding: 18px 20px; font-size: 12.5px; color: #333; line-height: 1.65; }
     .how-body.open { display: block; }
@@ -911,7 +911,7 @@ app.get("/:org", (req, res) => {
     .how-arch { display: flex; align-items: center; gap: 6px; font-size: 11.5px; margin-bottom: 6px; font-family: monospace; color: #444; flex-wrap: wrap; }
     .how-arch-box { background: #f5f4f1; border: 1px solid #ddd; border-radius: 4px; padding: 3px 8px; font-size: 11px; white-space: nowrap; }
     .how-arch-arrow { color: #bbb; }
-        footer { text-align: center; padding: 24px; font-size: 11px; color: #bbb; }
+    footer { text-align: center; padding: 24px; font-size: 11px; color: #bbb; }
   </style>
 </head>
 <body>
