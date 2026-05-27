@@ -397,7 +397,7 @@ function App() {
   // ── Pivot ────────────────────────────────────────────────────────────
   const { months, products, matrix, rowTotals, monthTotals, grand, allDeskLocs } = useMemo(() => {
     if (!rows || rows.length === 0)
-      return { months: [], products: [], matrix: {}, rowTotals: {}, monthTotals: {}, grand: { qty: 0, revenue: 0 } };
+      return { months: [], products: [], matrix: {}, rowTotals: {}, monthTotals: {}, grand: { qty: 0, revenue: 0, refunds: 0, net: 0 }, allDeskLocs: [] };
 
     const matrix = {};
     const monthSet = new Set();
