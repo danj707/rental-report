@@ -1378,8 +1378,14 @@ app.get("/", (req, res) => {
       });
     }
   </script>
+  <script>
+    function toggleHow(header) {
+      header.querySelector('.how-chevron').classList.toggle('open');
+      header.nextElementSibling.classList.toggle('open');
+    }
+  </script>
 </body>
-</html>`);
+</html>\`);
 });
 
 app.use(express.static(path.join(__dirname, "public")));
@@ -1399,4 +1405,5 @@ app.listen(PORT, () => {
   console.log(`  📧 Resend: ${RESEND_API_KEY ? "configured" : "NOT CONFIGURED (stub mode)"}\n`);
   console.log(`  📊 Analytics: ${EVENTS_FILE}\n`);
 });
+
 
