@@ -120,7 +120,7 @@ const ORGS = {
     orgId:   "a6aef5df-f742-41a2-9088-1fb6d48c3cb1",
     logoUrl: "https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2Forganization-a6aef5df-f742-41a2-9088-1fb6d48c3cb1%2FfullLogo.png%3F1748866523048&w=1920&q=75",
     displayName: "Town of Danvers",
-    gl      : { mbUuid: "18f83663-5b85-4305-a987-86f15e512396" },
+    gl      : { mbUuid: "f82f6e95-6c18-4c57-a8dc-4fb833537f2c" },
   },
 };
 
