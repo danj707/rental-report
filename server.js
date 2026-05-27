@@ -897,14 +897,12 @@ app.get("/:org", (req, res) => {
     .admin-link { display: flex; align-items: center; gap: 12px; color: #555; text-decoration: none; font-size: 13px; padding: 8px 0; }
     .admin-link:hover { color: #111; }
     .admin-link span { font-size: 18px; }
-    .how-section { max-width: 860px; margin: 0 auto 32px; padding: 0 24px; }
-    .how-card { background: #fff; border: 1px solid #e0ddd8; border-radius: 10px; overflow: hidden; }
-    .how-header { display: flex; align-items: center; justify-content: space-between; padding: 14px 20px; background: #f9f8f6; border-bottom: 1px solid #e8e5df; cursor: pointer; user-select: none; }
-    .how-header:hover { background: #f5f4f1; }
-    .how-header-title { font-weight: 700; font-size: 13px; display: flex; align-items: center; gap: 8px; }
+    .how-toggle-row { display: flex; align-items: center; justify-content: space-between; padding: 14px 20px; cursor: pointer; user-select: none; }
+    .how-toggle-row:hover { background: #f5f4f1; }
+    .how-toggle-title { font-weight: 700; font-size: 13px; }
     .how-chevron { font-size: 11px; color: #aaa; transition: transform .2s; }
     .how-chevron.open { transform: rotate(90deg); }
-    .how-body { display: none; padding: 20px 24px; font-size: 12.5px; color: #333; line-height: 1.65; }
+    .how-body { display: none; padding: 18px 20px; font-size: 12.5px; color: #333; line-height: 1.65; border-top: 1px solid #e8e5df; }
     .how-body.open { display: block; }
     .how-body h4 { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .7px; color: #888; margin: 16px 0 6px; }
     .how-body h4:first-child { margin-top: 0; }
@@ -1187,11 +1185,9 @@ app.get("/", (req, res) => {
   <div class="main">
     <div class="page-title">Organizations</div>
     ${orgSections}
-  </div>
-  <div class="how-section">
-    <div class="how-card">
-      <div class="how-header" onclick="toggleHow(this)">
-        <div class="how-header-title">&#9881;&#65039; How This Works</div>
+    <div class="org-section">
+      <div class="how-toggle-row" onclick="toggleHow(this)">
+        <div class="how-toggle-title">&#9881;&#65039; How This Works</div>
         <span class="how-chevron">&#9658;</span>
       </div>
       <div class="how-body">
@@ -1242,8 +1238,7 @@ app.get("/", (req, res) => {
       </div>
     </div>
   </div>
-
-    <footer>rec.us · ${Object.keys(ORGS).length} organizations</footer>
+  <footer>rec.us · ${Object.keys(ORGS).length} organizations</footer>
   <script>
     const metricsCache = {};
     async function toggleMetrics(slug, btn) {
@@ -1453,9 +1448,9 @@ app.get("/", (req, res) => {
     }
   </script>
   <script>
-    function toggleHow(header) {
-      header.querySelector('.how-chevron').classList.toggle('open');
-      header.nextElementSibling.classList.toggle('open');
+    function toggleHow(row) {
+      row.querySelector('.how-chevron').classList.toggle('open');
+      row.nextElementSibling.classList.toggle('open');
     }
   </script>
 </body>
