@@ -395,7 +395,7 @@ function App() {
   const datesChanged = startDate !== loadedStart || endDate !== loadedEnd;
 
   // ── Pivot ────────────────────────────────────────────────────────────
-  const { months, products, matrix, rowTotals, monthTotals, grand } = useMemo(() => {
+  const { months, products, matrix, rowTotals, monthTotals, grand, allDeskLocs } = useMemo(() => {
     if (!rows || rows.length === 0)
       return { months: [], products: [], matrix: {}, rowTotals: {}, monthTotals: {}, grand: { qty: 0, revenue: 0 } };
 
@@ -448,7 +448,7 @@ function App() {
   // ── MoM change ───────────────────────────────────────────────────────
   function getMoM(product, mi) {
     if (mi === 0) return null;
-    const field = viewMode === 'qty' ? 'qty' : 'revenue';
+    const field = viewMode === 'qty' ? 'qty' : showNetOnly ? 'net' : 'revenue';
     const curr  = matrix[product]?.[months[mi]]?.[field]     || 0;
     const prev  = matrix[product]?.[months[mi - 1]]?.[field] || 0;
     if (prev === 0 || curr === 0) return null;
@@ -532,11 +532,68 @@ function App() {
           End
           <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} />
         </label>
-        <label>
-          Location
-          <input type="text" value={locationInput} onChange={e => setLocationInput(e.target.value)}
-            placeholder="All" style={{ width: 100 }} onKeyDown={e => e.key === 'Enter' && handleRun()} />
-        </label>
+        {/* ── Desk Location multi-select ── */}
+        {allDeskLocs.length > 0 && (
+          <div ref={locPickerRef} style={{ position: 'relative' }}>
+            <button
+              onClick={() => setLocPickerOpen(v => !v)}
+              style={{
+                fontSize: 11, padding: '5px 10px',
+                background: selectedLocs.size > 0 && selectedLocs.size < allDeskLocs.length
+                  ? 'rgba(217,119,6,.25)' : 'rgba(255,255,255,.08)',
+                border: selectedLocs.size > 0 && selectedLocs.size < allDeskLocs.length
+                  ? '1px solid #d97706' : '1px solid rgba(255,255,255,.25)',
+                borderRadius: 4, color: '#fff', cursor: 'pointer'
+              }}
+            >
+              📍 {selectedLocs.size === 0 ? 'All Locations' : selectedLocs.size === allDeskLocs.length ? 'All Locations' : `${selectedLocs.size} Location${selectedLocs.size > 1 ? 's' : ''}`}
+            </button>
+            {locPickerOpen && (
+              <div style={{
+                position: 'absolute', top: '110%', left: 0, zIndex: 999,
+                background: '#2c2c2c', border: '1px solid #444', borderRadius: 6,
+                padding: '8px 0', minWidth: 220, maxHeight: 280, overflowY: 'auto',
+                boxShadow: '0 4px 16px rgba(0,0,0,.4)'
+              }}>
+                <div style={{ padding: '4px 12px 8px', borderBottom: '1px solid #444', display: 'flex', gap: 8 }}>
+                  <button onClick={() => setSelectedLocs(new Set())}
+                    style={{ fontSize: 10, padding: '2px 8px', background: '#444', border: 'none', borderRadius: 3, color: '#ccc', cursor: 'pointer' }}>
+                    All
+                  </button>
+                  <button onClick={() => setSelectedLocs(new Set(allDeskLocs))}
+                    style={{ fontSize: 10, padding: '2px 8px', background: '#444', border: 'none', borderRadius: 3, color: '#ccc', cursor: 'pointer' }}>
+                    None
+                  </button>
+                  <button onClick={() => {
+                    const online = new Set(['']);
+                    setSelectedLocs(online);
+                  }}
+                    style={{ fontSize: 10, padding: '2px 8px', background: '#444', border: 'none', borderRadius: 3, color: '#ccc', cursor: 'pointer' }}>
+                    Online only
+                  </button>
+                </div>
+                {allDeskLocs.map(loc => (
+                  <label key={loc} style={{
+                    display: 'flex', alignItems: 'center', gap: 8,
+                    padding: '5px 12px', cursor: 'pointer', fontSize: 11.5, color: '#ddd',
+                    background: selectedLocs.has(loc) ? 'rgba(59,130,246,.2)' : 'transparent'
+                  }}>
+                    <input type="checkbox"
+                      checked={selectedLocs.size === 0 || selectedLocs.has(loc)}
+                      onChange={e => {
+                        const next = new Set(selectedLocs.size === 0 ? allDeskLocs : selectedLocs);
+                        if (e.target.checked) next.add(loc); else next.delete(loc);
+                        if (next.size === allDeskLocs.length) setSelectedLocs(new Set());
+                        else setSelectedLocs(next);
+                      }}
+                    />
+                    {loc}
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         <button onClick={() => setYear(0)}   style={{ fontSize: 11, padding: '4px 8px' }}>This Year</button>
         <button onClick={() => setYear(-1)}  style={{ fontSize: 11, padding: '4px 8px' }}>Last Year</button>
@@ -567,6 +624,22 @@ function App() {
         <div className="divider" />
 
         <button
+          onClick={() => setShowNetOnly(v => !v)}
+          className={showNetOnly ? 'active' : ''}
+          style={{ fontSize: 11, padding: '4px 10px' }}
+          title="Show Net Revenue (gross minus refunds) instead of gross"
+        >Net Revenue</button>
+
+        <button
+          onClick={() => setHideZeroRev(v => !v)}
+          className={hideZeroRev ? 'active' : ''}
+          style={{ fontSize: 11, padding: '4px 10px' }}
+          title="Hide products with $0 gross revenue"
+        >Hide $0</button>
+
+        <div className="divider" />
+
+        <button
           className={showChart ? 'active' : ''}
           style={{ fontSize: 11, padding: '4px 10px' }}
           onClick={() => setShowChart(v => !v)}
@@ -574,7 +647,14 @@ function App() {
 
         <div className="toolbar-spacer" />
 
-        {rows && <span className="row-count">{products.length} product{products.length !== 1 ? 's' : ''} · {months.length} month{months.length !== 1 ? 's' : ''}</span>}
+        {rows && (
+          <span className="row-count">
+            {products.length} product{products.length !== 1 ? 's' : ''} · {months.length} month{months.length !== 1 ? 's' : ''}
+            {selectedLocs.size > 0 && selectedLocs.size < allDeskLocs.length && (
+              <> · {selectedLocs.size} location{selectedLocs.size > 1 ? 's' : ''}</>
+            )}
+          </span>
+        )}
 
         <div className="divider" />
 
@@ -592,21 +672,20 @@ function App() {
   function renderSummaryCards() {
     if (!rows || rows.length === 0) return null;
     const bestProduct = products[0];
-    const bestMonth   = months.reduce((b, m) => !b || (monthTotals[m]?.revenue || 0) > (monthTotals[b]?.revenue || 0) ? m : b, null);
+    const bestMonth   = months.reduce((b, m) => !b || (monthTotals[m]?.net || 0) > (monthTotals[b]?.net || 0) ? m : b, null);
+    const hasRefunds  = grand.refunds > 0;
     return (
       <div className="summary-cards">
-        <SummaryCard label="Total Revenue"    value={fmtMoney(grand.revenue)} color="green"  />
-        <SummaryCard label="Total Units Sold" value={fmtNum(grand.qty)}       color="blue"   />
-        <SummaryCard label="Months"           value={months.length}            color="slate"  />
-        <SummaryCard label="Products"         value={products.length}          color="violet" />
-        {bestProduct && (
-          <SummaryCard label="Top Product" value={bestProduct} color="amber" mono={false} />
-        )}
+        <SummaryCard label="Gross Revenue"   value={fmtMoney(grand.revenue)} color="green"  />
+        {hasRefunds && <SummaryCard label="Refunds"       value={fmtMoney(grand.refunds)} color="amber"  />}
+        <SummaryCard label="Net Revenue"     value={fmtMoney(grand.net)}     color={grand.net >= 0 ? 'blue' : 'amber'}   />
+        <SummaryCard label="Total Units Sold" value={fmtNum(grand.qty)}      color="slate"  />
+        <SummaryCard label="Products"        value={products.length}          color="violet" />
         {bestMonth && (
           <div className="summary-card slate">
-            <div className="card-label">Best Month</div>
+            <div className="card-label">Best Month (Net)</div>
             <div className="card-value" style={{ fontFamily: "'IBM Plex Sans'", fontSize: 13 }}>{fmtMonthFull(bestMonth)}</div>
-            <div style={{ fontSize: 10, color: '#888', marginTop: 3 }}>{fmtMoney(monthTotals[bestMonth]?.revenue)}</div>
+            <div style={{ fontSize: 10, color: '#888', marginTop: 3 }}>{fmtMoney(monthTotals[bestMonth]?.net)}</div>
           </div>
         )}
       </div>
@@ -620,7 +699,7 @@ function App() {
     }
 
     const isBoth = viewMode === 'both';
-    const field  = viewMode === 'qty' ? 'qty' : 'revenue';
+    const field  = viewMode === 'qty' ? 'qty' : showNetOnly ? 'net' : 'revenue';
     const fmt    = viewMode === 'qty' ? fmtNum : fmtMoney;
 
     return (
@@ -818,3 +897,4 @@ ReactDOM.createRoot(document.getElementById('root')).render(<App />);
 </script>
 </body>
 </html>
+
