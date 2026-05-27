@@ -539,8 +539,46 @@ function showToast(msg, duration = 5000) {
   setTimeout(() => t.classList.remove('show'), duration);
 }
 </script>
+  <div class="container" style="margin-top: 32px;">
+    <div class="card">
+      <div class="card-header" style="display:flex;justify-content:space-between;align-items:center">
+        <span>⚙️ Claude Skills</span>
+        <a href="https://github.com/danj707/rental-report/tree/main/docs/skills"
+           target="_blank"
+           style="font-size:11px;color:#888;text-decoration:none">
+          View on GitHub ↗
+        </a>
+      </div>
+      <div class="card-body">
+        <p style="font-size:12.5px;color:#555;margin:0 0 14px">
+          Skills are instructions Claude uses when you ask it to perform tasks in this project.
+          Edit them directly on GitHub — changes take effect the next time Claude reads the file.
+        </p>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <div style="display:flex;align-items:center;justify-content:space-between;
+                      padding:10px 14px;background:#f9f8f6;border:1px solid #e8e5df;
+                      border-radius:6px">
+            <div>
+              <div style="font-size:13px;font-weight:600;color:#222">Add New Org</div>
+              <div style="font-size:11px;color:#888;margin-top:2px">
+                Onboard a new organization to the rental report platform
+              </div>
+            </div>
+            <a href="https://github.com/danj707/rental-report/blob/main/docs/skills/add-rec-report-org.md"
+               target="_blank"
+               style="font-size:11px;padding:5px 12px;background:#fff;border:1px solid #ddd;
+                      border-radius:4px;color:#444;text-decoration:none;white-space:nowrap">
+              Edit skill ↗
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
 </body>
 </html>
+
 
 
 
