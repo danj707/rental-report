@@ -74,6 +74,7 @@ const ORGS = {
     logoUrl: "https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2Forganization-574923bd-9e7b-43e0-9e5f-7ce256189cbf%2FfullLogo.png%3F1763816879340&w=256&q=75",
     facility: { mbUuid: "81c43b6d-1776-4a13-9fec-cb6f9e9895bb" },
     gl:       { mbUuid: "46b7e83b-f8ac-4d84-8c5c-4c72ca57cea4" },
+    programs: { mbUuid: "73af7196-84c3-4aad-959e-571c39dc23b9" },
     roster:   { mbUuid: "b4fb3c1b-b096-4865-8c32-3dc2635d1264" },
     overview: { mbUuid: null },
     products: { mbUuid: 'c52acc75-a0a6-4892-9b56-f72dbc1a7019' },
