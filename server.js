@@ -897,7 +897,26 @@ app.get("/:org", (req, res) => {
     .admin-link { display: flex; align-items: center; gap: 12px; color: #555; text-decoration: none; font-size: 13px; padding: 8px 0; }
     .admin-link:hover { color: #111; }
     .admin-link span { font-size: 18px; }
-    footer { text-align: center; padding: 24px; font-size: 11px; color: #bbb; }
+    .how-section { max-width: 860px; margin: 0 auto 32px; padding: 0 24px; }
+    .how-card { background: #fff; border: 1px solid #e0ddd8; border-radius: 10px; overflow: hidden; }
+    .how-header { display: flex; align-items: center; justify-content: space-between; padding: 14px 20px; background: #f9f8f6; border-bottom: 1px solid #e8e5df; cursor: pointer; user-select: none; }
+    .how-header:hover { background: #f5f4f1; }
+    .how-header-title { font-weight: 700; font-size: 13px; display: flex; align-items: center; gap: 8px; }
+    .how-chevron { font-size: 11px; color: #aaa; transition: transform .2s; }
+    .how-chevron.open { transform: rotate(90deg); }
+    .how-body { display: none; padding: 20px 24px; font-size: 12.5px; color: #333; line-height: 1.65; }
+    .how-body.open { display: block; }
+    .how-body h4 { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .7px; color: #888; margin: 16px 0 6px; }
+    .how-body h4:first-child { margin-top: 0; }
+    .how-body p { margin-bottom: 10px; }
+    .how-body p:last-child { margin-bottom: 0; }
+    .how-body code { font-family: monospace; font-size: 11px; background: #f0ede8; padding: 1px 5px; border-radius: 3px; color: #333; }
+    .how-body ul { padding-left: 18px; margin-bottom: 10px; }
+    .how-body li { margin-bottom: 4px; }
+    .how-arch { display: flex; align-items: center; gap: 6px; font-size: 11.5px; margin-bottom: 6px; font-family: monospace; color: #444; flex-wrap: wrap; }
+    .how-arch-box { background: #f5f4f1; border: 1px solid #ddd; border-radius: 4px; padding: 3px 8px; font-size: 11px; white-space: nowrap; }
+    .how-arch-arrow { color: #bbb; }
+        footer { text-align: center; padding: 24px; font-size: 11px; color: #bbb; }
   </style>
 </head>
 <body>
@@ -1169,7 +1188,62 @@ app.get("/", (req, res) => {
     <div class="page-title">Organizations</div>
     ${orgSections}
   </div>
-  <footer>rec.us · ${Object.keys(ORGS).length} organizations</footer>
+  <div class="how-section">
+    <div class="how-card">
+      <div class="how-header" onclick="toggleHow(this)">
+        <div class="how-header-title">&#9881;&#65039; How This Works</div>
+        <span class="how-chevron">&#9658;</span>
+      </div>
+      <div class="how-body">
+        <h4>Architecture</h4>
+        <p>This is a lightweight Node.js/Express app deployed on Railway. It sits between your rec.us Metabase instance and your staff, turning flat SQL query results into grouped, printable, interactive reports.</p>
+        <div class="how-arch">
+          <span class="how-arch-box">Staff browser</span>
+          <span class="how-arch-arrow">&#8594;</span>
+          <span class="how-arch-box">Railway (this app)</span>
+          <span class="how-arch-arrow">&#8594;</span>
+          <span class="how-arch-box">Metabase public API</span>
+          <span class="how-arch-arrow">&#8594;</span>
+          <span class="how-arch-box">rec.us PostgreSQL</span>
+        </div>
+        <p style="margin-top:8px">The server proxies all Metabase requests server-side &#8212; this avoids CORS issues since Metabase doesn&#39;t send browser-friendly headers. Staff never interact with Metabase directly.</p>
+
+        <h4>Reports</h4>
+        <p>Each report type is a self-contained HTML file served from <code>public/</code>. Reports are React apps loaded via CDN &#8212; no build step required. Data is fetched from <code>/:org/:report/api/data</code>, which proxies to a Metabase public question UUID configured per org.</p>
+        <ul>
+          <li><strong>Facility Rental</strong> &#8212; reservations grouped by date and location, with table and calendar views, heatmap summary, and location color coding.</li>
+          <li><strong>GL Code Rollup</strong> &#8212; payment method breakdown by GL code, with bar/pie chart views, refund detail toggle, and GL location tags.</li>
+          <li><strong>Class Roster</strong> &#8212; enrolled and cancelled participants by program section, with status filters and Excel/PDF export.</li>
+          <li><strong>Historic Buildings</strong> &#8212; filtered facility view for historic venue locations (Smyrna only).</li>
+          <li><strong>Programs</strong> &#8212; enrollment and revenue by program and section (Watertown only).</li>
+        </ul>
+
+        <h4>PDF Export</h4>
+        <p>PDF generation uses Puppeteer with system Chromium inside the Railway Docker container. The server launches a headless browser, navigates to the report with <code>?_print=1</code> (hides the toolbar), waits for the <code>#report-ready</code> DOM marker, then renders a Letter-landscape PDF. The PDF always reflects exactly what the browser renders.</p>
+
+        <h4>Email Subscriptions</h4>
+        <p>Subscriber data is stored in <code>data/subscriptions.json</code> on the Railway volume. Three cron jobs run on the server &#8212; daily at 7am, weekly on Monday at 7am, and monthly on the 1st at 7am. Each job filters to matching cadences and sends report links via the Resend API. The Email button in reports uses the same integration for one-off share links.</p>
+
+        <h4>Adding a New Org</h4>
+        <p>Click <strong>&#10133; Add Org</strong> above, or manually add an entry to the <code>ORGS</code> map in <code>server.js</code> with a Metabase public question UUID per report type. No new HTML files needed &#8212; all report templates are shared across orgs.</p>
+
+        <h4>Environment Variables</h4>
+        <ul>
+          <li><code>METABASE_URL</code> &#8212; base URL for your Metabase instance</li>
+          <li><code>BASE_URL</code> &#8212; public URL of this Railway deployment</li>
+          <li><code>RESEND_API_KEY</code> &#8212; API key for email delivery via Resend</li>
+          <li><code>FROM_EMAIL</code> / <code>FROM_NAME</code> &#8212; sender identity for outbound emails</li>
+          <li><code>DATA_DIR</code> &#8212; path to persistent storage for subscriptions.json</li>
+          <li><code>PORT</code> &#8212; server port (Railway sets this automatically)</li>
+        </ul>
+
+        <h4>Deployment</h4>
+        <p>Auto-deploys from the <code>main</code> branch of <code>danj707/rental-report</code> on GitHub. Every push triggers a Railway redeploy &#8212; typically live in 60&#8211;90 seconds. Uses <code>node:20-slim</code> with system Chromium for Puppeteer.</p>
+      </div>
+    </div>
+  </div>
+
+    <footer>rec.us · ${Object.keys(ORGS).length} organizations</footer>
   <script>
     const metricsCache = {};
     async function toggleMetrics(slug, btn) {
