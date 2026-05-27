@@ -415,35 +415,53 @@ function App() {
     if (!rows || rows.length === 0)
       return { months: [], products: [], matrix: {}, rowTotals: {}, monthTotals: {}, grand: { qty: 0, revenue: 0, refunds: 0, net: 0 }, allDeskLocs: [] };
 
+    const deskLocSet = new Set();
+    rows.forEach(r => { if (r['Desk Location']) deskLocSet.add(r['Desk Location']); });
+    const allDeskLocs = [...deskLocSet].sort();
+
+    const activeRows = selectedLocs.size === 0
+      ? rows
+      : rows.filter(r => selectedLocs.has(r['Desk Location'] || ''));
+
     const matrix = {};
     const monthSet = new Set();
     const productSet = new Set();
 
-    rows.forEach(r => {
+    activeRows.forEach(r => {
       const product = r['Product Name'] || '(unknown)';
       const month   = r['Month'];
       const qty     = pf(r['Qty Sold']);
       const revenue = pf(r['Revenue ($)']);
+      const refunds = pf(r['Refunds ($)']);
+      const net     = pf(r['Net Revenue ($)']);
       if (month) monthSet.add(month);
       productSet.add(product);
       if (!matrix[product]) matrix[product] = {};
-      if (!matrix[product][month]) matrix[product][month] = { qty: 0, revenue: 0 };
+      if (!matrix[product][month]) matrix[product][month] = { qty: 0, revenue: 0, refunds: 0, net: 0 };
       matrix[product][month].qty     += qty;
       matrix[product][month].revenue += revenue;
+      matrix[product][month].refunds += refunds;
+      matrix[product][month].net     += net;
     });
 
     const months = [...monthSet].sort();
-    const products = [...productSet].sort((a, b) => {
-      const rA = months.reduce((s, m) => s + (matrix[a]?.[m]?.revenue || 0), 0);
-      const rB = months.reduce((s, m) => s + (matrix[b]?.[m]?.revenue || 0), 0);
+    let products = [...productSet].sort((a, b) => {
+      const rA = months.reduce((s, m) => s + (matrix[a]?.[m]?.net || 0), 0);
+      const rB = months.reduce((s, m) => s + (matrix[b]?.[m]?.net || 0), 0);
       return rB - rA;
     });
+
+    if (hideZeroRev) {
+      products = products.filter(p => months.some(m => (matrix[p]?.[m]?.revenue || 0) !== 0));
+    }
 
     const rowTotals = {};
     products.forEach(p => {
       rowTotals[p] = {
         qty:     months.reduce((s, m) => s + (matrix[p]?.[m]?.qty     || 0), 0),
         revenue: months.reduce((s, m) => s + (matrix[p]?.[m]?.revenue || 0), 0),
+        refunds: months.reduce((s, m) => s + (matrix[p]?.[m]?.refunds || 0), 0),
+        net:     months.reduce((s, m) => s + (matrix[p]?.[m]?.net     || 0), 0),
       };
     });
     const monthTotals = {};
@@ -451,15 +469,19 @@ function App() {
       monthTotals[m] = {
         qty:     products.reduce((s, p) => s + (matrix[p]?.[m]?.qty     || 0), 0),
         revenue: products.reduce((s, p) => s + (matrix[p]?.[m]?.revenue || 0), 0),
+        refunds: products.reduce((s, p) => s + (matrix[p]?.[m]?.refunds || 0), 0),
+        net:     products.reduce((s, p) => s + (matrix[p]?.[m]?.net     || 0), 0),
       };
     });
     const grand = {
       qty:     products.reduce((s, p) => s + rowTotals[p].qty,     0),
       revenue: products.reduce((s, p) => s + rowTotals[p].revenue, 0),
+      refunds: products.reduce((s, p) => s + rowTotals[p].refunds, 0),
+      net:     products.reduce((s, p) => s + rowTotals[p].net,     0),
     };
 
-    return { months, products, matrix, rowTotals, monthTotals, grand };
-  }, [rows]);
+    return { months, products, matrix, rowTotals, monthTotals, grand, allDeskLocs };
+  }, [rows, selectedLocs, hideZeroRev]);
 
   // ── MoM change ───────────────────────────────────────────────────────
   function getMoM(product, mi) {
