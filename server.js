@@ -140,6 +140,122 @@ function writeJSON(file, data) {
   fs.writeFileSync(file, JSON.stringify(data, null, 2));
 }
 
+// ── GitHub push: write new orgs to server.js so they live in code ────
+// When the admin dashboard adds a new org, we push the entry to
+// danj707/rental-report on GitHub. Railway auto-deploys on push, so
+// the org goes from "dynamic" (lives in data/orgs.json) → "in code"
+// (lives in server.js) without any manual step.
+//
+// Requires env var GITHUB_TOKEN with a PAT that has Contents:read/write
+// on the repo. Falls back to orgs.json if the push fails.
+const GITHUB_REPO = "danj707/rental-report";
+const GITHUB_API  = `https://api.github.com/repos/${GITHUB_REPO}/contents/server.js`;
+
+// Serialize one ORGS map entry as JS source matching the existing style.
+function buildOrgEntrySource(slug, orgEntry) {
+  const lines = [`  ${slug}: {`];
+  if (orgEntry.orgId)       lines.push(`    orgId:   ${JSON.stringify(orgEntry.orgId)},`);
+  if (orgEntry.logoUrl)     lines.push(`    logoUrl: ${JSON.stringify(orgEntry.logoUrl)},`);
+  if (orgEntry.displayName) lines.push(`    displayName: ${JSON.stringify(orgEntry.displayName)},`);
+  for (const reportType of REPORT_TYPES) {
+    if (orgEntry[reportType] && orgEntry[reportType].mbUuid) {
+      const padded = reportType.padEnd(8);
+      lines.push(`    ${padded}: { mbUuid: ${JSON.stringify(orgEntry[reportType].mbUuid)} },`);
+    }
+  }
+  lines.push(`  },`);
+  return lines.join("\n") + "\n";
+}
+
+// Fetch server.js from GitHub, insert one or more org entries before the
+// ORGS map's closing `};`, and PUT the result back. Returns commit info.
+async function pushOrgsToGitHub(entries, commitMessage) {
+  const token = process.env.GITHUB_TOKEN;
+  if (!token) throw new Error("GITHUB_TOKEN not configured");
+  if (!entries.length) throw new Error("No entries to push");
+
+  const headers = {
+    Authorization: `token ${token}`,
+    Accept: "application/vnd.github.v3+json",
+  };
+
+  // 1. Fetch current server.js + SHA
+  const getRes = await fetch(GITHUB_API, { headers });
+  if (!getRes.ok) throw new Error(`GitHub GET ${getRes.status}: ${await getRes.text()}`);
+  const getData = await getRes.json();
+  let content = Buffer.from(getData.content, "base64").toString("utf8");
+  const sha = getData.sha;
+
+  // 2. Skip entries already present in server.js
+  const toInsert = entries.filter(({ slug }) => {
+    const re = new RegExp(`^\\s+${slug}:\\s*\\{`, "m");
+    return !re.test(content);
+  });
+  if (!toInsert.length) {
+    return { skipped: true, reason: "All entries already in server.js" };
+  }
+
+  // 3. Build combined source and insert before ORGS closing `};`
+  const insertText = toInsert.map(({ slug, orgEntry }) => buildOrgEntrySource(slug, orgEntry)).join("");
+  const closeRe = /\n\};\s*\n+const REPORT_TYPES/;
+  const match = content.match(closeRe);
+  if (!match) throw new Error("Could not locate ORGS map closing in server.js");
+  const insertPos = match.index + 1; // position of `};`
+  content = content.slice(0, insertPos) + insertText + content.slice(insertPos);
+
+  // 4. PUT back
+  const putRes = await fetch(GITHUB_API, {
+    method: "PUT",
+    headers: { ...headers, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      message: commitMessage,
+      content: Buffer.from(content).toString("base64"),
+      sha,
+    }),
+  });
+  if (!putRes.ok) throw new Error(`GitHub PUT ${putRes.status}: ${await putRes.text()}`);
+  const putData = await putRes.json();
+  return {
+    skipped: false,
+    pushedSlugs: toInsert.map(e => e.slug),
+    commitUrl: putData.commit.html_url,
+    commitSha: putData.commit.sha,
+  };
+}
+
+// Promote any dynamic orgs (from data/orgs.json) into server.js on startup.
+// After a successful push, clear the migrated entries from orgs.json so the
+// new server.js becomes the source of truth (after Railway redeploys).
+async function migrateDynamicOrgs() {
+  if (!process.env.GITHUB_TOKEN) return;
+  let dynamic;
+  try { dynamic = JSON.parse(fs.readFileSync(ORGS_FILE, "utf8")); }
+  catch { return; }
+  const slugs = Object.keys(dynamic || {});
+  if (!slugs.length) return;
+
+  const entries = slugs.map(slug => ({ slug, orgEntry: dynamic[slug] }));
+  try {
+    const result = await pushOrgsToGitHub(
+      entries,
+      `Migrate dynamic orgs to server.js (${slugs.join(", ")})`,
+    );
+    if (result.skipped) {
+      console.log(`[migrate] All dynamic orgs already in server.js; clearing orgs.json`);
+      writeJSON(ORGS_FILE, {});
+      return;
+    }
+    console.log(`[migrate] Pushed ${result.pushedSlugs.length} org(s) to GitHub: ${result.commitUrl}`);
+    // Clear migrated entries from orgs.json (others stay for retry)
+    const remaining = { ...dynamic };
+    result.pushedSlugs.forEach(slug => delete remaining[slug]);
+    writeJSON(ORGS_FILE, remaining);
+    console.log(`[migrate] Cleared ${result.pushedSlugs.length} org(s) from orgs.json`);
+  } catch (err) {
+    console.error(`[migrate] Failed:`, err.message);
+  }
+}
+
 // ── Analytics: append-only JSONL, no extra dependencies ─────────────
 // Schema: { ts, org, report, event, ip }
 // event values: "view" | "fetch" | "pdf" | "excel" | "print"
@@ -921,7 +1037,10 @@ app.get("/:org", (req, res) => {
 });
 
 // ── POST /api/admin/new-org — create a new org dynamically ──────────
-app.post("/api/admin/new-org", dashboardAuth, (req, res) => {
+// Pushes the new entry to server.js on GitHub (so it lives in code).
+// Falls back to data/orgs.json if the GitHub push fails, so the org
+// still works until the next deploy or until you can fix the push.
+app.post("/api/admin/new-org", dashboardAuth, async (req, res) => {
   const { slug, displayName, orgId, logoUrl, reports } = req.body;
 
   // Validate slug
@@ -942,16 +1061,31 @@ app.post("/api/admin/new-org", dashboardAuth, (req, res) => {
     }
   }
 
-  // Update in-memory ORGS
+  // Update in-memory ORGS immediately so the org works right away
   ORGS[slug] = orgEntry;
 
-  // Persist to data/orgs.json
-  const dynamic = readJSON(ORGS_FILE, {});
-  dynamic[slug] = orgEntry;
-  writeJSON(ORGS_FILE, dynamic);
+  // Try to push to GitHub (preferred path — entry lives in code)
+  let github = { pushed: false, commitUrl: null, error: null };
+  try {
+    const result = await pushOrgsToGitHub(
+      [{ slug, orgEntry }],
+      `Add ${slug} org via admin dashboard`,
+    );
+    github.pushed = true;
+    github.commitUrl = result.commitUrl;
+    console.log(`[new-org] Pushed ${slug} to GitHub: ${result.commitUrl}`);
+  } catch (err) {
+    github.error = err.message;
+    console.warn(`[new-org] GitHub push failed for ${slug}: ${err.message}`);
+    // Fall back to orgs.json so the org survives container restart
+    const dynamic = readJSON(ORGS_FILE, {});
+    dynamic[slug] = orgEntry;
+    writeJSON(ORGS_FILE, dynamic);
+    console.log(`[new-org] Saved ${slug} to orgs.json as fallback`);
+  }
 
   console.log(`[new-org] Created org: ${slug} with reports: ${Object.keys(reports).join(", ")}`);
-  res.json({ ok: true, slug, reports: Object.keys(reports) });
+  res.json({ ok: true, slug, reports: Object.keys(reports), github });
 });
 
 // ── Root index — all orgs dashboard ─────────────────────────────────
@@ -1385,8 +1519,14 @@ app.get("/", (req, res) => {
         });
         const data = await res.json();
         if (!res.ok || !data.ok) throw new Error(data.error || 'Unknown error');
-        closeAddOrg();
-        window.location.reload();
+        if (data.github?.pushed) {
+          btn.textContent = '✓ Created & deployed';
+          console.log('GitHub commit:', data.github.commitUrl);
+        } else {
+          btn.textContent = '✓ Created (GitHub push failed)';
+          if (data.github?.error) console.warn('GitHub error:', data.github.error);
+        }
+        setTimeout(() => { closeAddOrg(); window.location.reload(); }, 1500);
       } catch(e) {
         showErr(err, 'Error: ' + e.message);
         btn.disabled = false; btn.textContent = '✓ Confirm & Create';
@@ -1472,6 +1612,11 @@ app.listen(PORT, () => {
   console.log(`  └─ Metabase: ${METABASE_URL}\n`);
   console.log(`  📧 Resend: ${RESEND_API_KEY ? "configured" : "NOT CONFIGURED (stub mode)"}\n`);
   console.log(`  📊 Analytics: ${EVENTS_FILE}\n`);
+
+  // Promote any orgs from data/orgs.json into server.js on GitHub.
+  // Runs after listen() so startup isn't blocked by GitHub latency.
+  migrateDynamicOrgs();
 });
+
 
 
