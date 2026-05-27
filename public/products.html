@@ -374,12 +374,11 @@ function App() {
   useEffect(() => { if (params.get('_print') === '1') document.body.classList.add('print-mode'); }, []);
 
   // ── Fetch ────────────────────────────────────────────────────────────
-  const fetchData = useCallback((sd, ed, loc) => {
+  const fetchData = useCallback((sd, ed) => {
     setLoading(true); setError(null);
     const qs = new URLSearchParams();
     if (sd)  qs.set('start_date',    sd);
     if (ed)  qs.set('end_date',      ed);
-    if (loc) qs.set('desk_location', loc);
     fetch(`/${orgSlug}/products/api/data?${qs}`)
       .then(r => { if (!r.ok) throw new Error(`Server returned ${r.status}`); return r.json(); })
       .then(json => {
@@ -392,9 +391,9 @@ function App() {
       .finally(() => setLoading(false));
   }, [orgSlug]);
 
-  useEffect(() => { fetchData(startDate, endDate, locationInput); }, []);
+  useEffect(() => { fetchData(startDate, endDate); }, []);
 
-  function handleRun() { fetchData(startDate, endDate, locationInput); }
+  function handleRun() { fetchData(startDate, endDate); }
 
   function setYear(offset) {
     const now = new Date();
