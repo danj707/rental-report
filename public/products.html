@@ -419,9 +419,11 @@ function App() {
     rows.forEach(r => { if (r['Desk Location']) deskLocSet.add(r['Desk Location']); });
     const allDeskLocs = [...deskLocSet].sort();
 
-    const activeRows = selectedLocs.size === 0
-      ? rows
-      : rows.filter(r => selectedLocs.has(r['Desk Location'] || ''));
+    const activeRows = selectedLocs.has('__none__')
+      ? []
+      : selectedLocs.size === 0
+        ? rows
+        : rows.filter(r => selectedLocs.has(r['Desk Location'] || ''));
 
     const matrix = {};
     const monthSet = new Set();
@@ -598,7 +600,7 @@ function App() {
                     style={{ fontSize: 10, padding: '2px 8px', background: '#444', border: 'none', borderRadius: 3, color: '#ccc', cursor: 'pointer' }}>
                     All
                   </button>
-                  <button onClick={() => setSelectedLocs(new Set(allDeskLocs))}
+                  <button onClick={() => setSelectedLocs(new Set(['__none__']))}
                     style={{ fontSize: 10, padding: '2px 8px', background: '#444', border: 'none', borderRadius: 3, color: '#ccc', cursor: 'pointer' }}>
                     None
                   </button>
@@ -617,7 +619,7 @@ function App() {
                     background: selectedLocs.has(loc) ? 'rgba(59,130,246,.2)' : 'transparent'
                   }}>
                     <input type="checkbox"
-                      checked={selectedLocs.size === 0 || selectedLocs.has(loc)}
+                      checked={selectedLocs.size === 0 && !selectedLocs.has('__none__') || selectedLocs.has(loc)}
                       onChange={e => {
                         const next = new Set(selectedLocs.size === 0 ? allDeskLocs : selectedLocs);
                         if (e.target.checked) next.add(loc); else next.delete(loc);
