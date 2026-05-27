@@ -897,12 +897,9 @@ app.get("/:org", (req, res) => {
     .admin-link { display: flex; align-items: center; gap: 12px; color: #555; text-decoration: none; font-size: 13px; padding: 8px 0; }
     .admin-link:hover { color: #111; }
     .admin-link span { font-size: 18px; }
-    .how-toggle-row { display: flex; align-items: center; justify-content: space-between; padding: 14px 20px; cursor: pointer; user-select: none; }
-    .how-toggle-row:hover { background: #f5f4f1; }
-    .how-toggle-title { font-weight: 700; font-size: 13px; }
-    .how-chevron { font-size: 11px; color: #aaa; transition: transform .2s; }
+    .how-chevron { font-size: 11px; color: #aaa; transition: transform .2s; flex-shrink: 0; }
     .how-chevron.open { transform: rotate(90deg); }
-    .how-body { display: none; padding: 18px 20px; font-size: 12.5px; color: #333; line-height: 1.65; border-top: 1px solid #e8e5df; }
+    .how-body { display: none; padding: 18px 20px; font-size: 12.5px; color: #333; line-height: 1.65; }
     .how-body.open { display: block; }
     .how-body h4 { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .7px; color: #888; margin: 16px 0 6px; }
     .how-body h4:first-child { margin-top: 0; }
@@ -1186,8 +1183,10 @@ app.get("/", (req, res) => {
     <div class="page-title">Organizations</div>
     ${orgSections}
     <div class="org-section">
-      <div class="how-toggle-row" onclick="toggleHow(this)">
-        <div class="how-toggle-title">&#9881;&#65039; How This Works</div>
+      <div class="org-header" onclick="toggleHow(this)" style="cursor:pointer;user-select:none">
+        <div class="org-header-text">
+          <div class="org-name">&#9881;&#65039; How This Works</div>
+        </div>
         <span class="how-chevron">&#9658;</span>
       </div>
       <div class="how-body">
