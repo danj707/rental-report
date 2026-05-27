@@ -1385,7 +1385,7 @@ app.get("/", (req, res) => {
     }
   </script>
 </body>
-</html>\`);
+</html>`);
 });
 
 app.use(express.static(path.join(__dirname, "public")));
