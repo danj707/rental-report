@@ -897,20 +897,6 @@ app.get("/:org", (req, res) => {
     .admin-link { display: flex; align-items: center; gap: 12px; color: #555; text-decoration: none; font-size: 13px; padding: 8px 0; }
     .admin-link:hover { color: #111; }
     .admin-link span { font-size: 18px; }
-        .how-chevron { font-size: 11px; color: #aaa; transition: transform .2s; flex-shrink: 0; }
-    .how-chevron.open { transform: rotate(90deg); }
-    .how-body { display: none; padding: 18px 20px; font-size: 12.5px; color: #333; line-height: 1.65; }
-    .how-body.open { display: block; }
-    .how-body h4 { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .7px; color: #888; margin: 16px 0 6px; }
-    .how-body h4:first-child { margin-top: 0; }
-    .how-body p { margin-bottom: 10px; }
-    .how-body p:last-child { margin-bottom: 0; }
-    .how-body code { font-family: monospace; font-size: 11px; background: #f0ede8; padding: 1px 5px; border-radius: 3px; color: #333; }
-    .how-body ul { padding-left: 18px; margin-bottom: 10px; }
-    .how-body li { margin-bottom: 4px; }
-    .how-arch { display: flex; align-items: center; gap: 6px; font-size: 11.5px; margin-bottom: 6px; font-family: monospace; color: #444; flex-wrap: wrap; }
-    .how-arch-box { background: #f5f4f1; border: 1px solid #ddd; border-radius: 4px; padding: 3px 8px; font-size: 11px; white-space: nowrap; }
-    .how-arch-arrow { color: #bbb; }
     footer { text-align: center; padding: 24px; font-size: 11px; color: #bbb; }
   </style>
 </head>
@@ -1110,6 +1096,20 @@ app.get("/", (req, res) => {
     .metrics-report-chip strong { color: #16a34a; }
     .metrics-loading { font-size: 12px; color: #aaa; padding: 4px 0; }
     .metrics-chart-wrap { position: relative; height: 160px; margin-top: 12px; }
+    .how-chevron { font-size: 11px; color: #aaa; transition: transform .2s; flex-shrink: 0; }
+    .how-chevron.open { transform: rotate(90deg); }
+    .how-body { display: none; padding: 18px 20px; font-size: 12.5px; color: #333; line-height: 1.65; }
+    .how-body.open { display: block; }
+    .how-body h4 { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .7px; color: #888; margin: 16px 0 6px; }
+    .how-body h4:first-child { margin-top: 0; }
+    .how-body p { margin-bottom: 10px; }
+    .how-body p:last-child { margin-bottom: 0; }
+    .how-body code { font-family: monospace; font-size: 11px; background: #f0ede8; padding: 1px 5px; border-radius: 3px; color: #333; }
+    .how-body ul { padding-left: 18px; margin-bottom: 10px; }
+    .how-body li { margin-bottom: 4px; }
+    .how-arch { display: flex; align-items: center; gap: 6px; font-size: 11.5px; margin-bottom: 6px; font-family: monospace; color: #444; flex-wrap: wrap; }
+    .how-arch-box { background: #f5f4f1; border: 1px solid #ddd; border-radius: 4px; padding: 3px 8px; font-size: 11px; white-space: nowrap; }
+    .how-arch-arrow { color: #bbb; }
     footer { text-align: center; padding: 24px; font-size: 11px; color: #bbb; }
   </style>
 </head>
