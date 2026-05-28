@@ -445,7 +445,11 @@
           }
         };
       }, [type, JSON.stringify(data), JSON.stringify(options)]);
-      return <canvas ref={ref} height={height} />;
+      return (
+        <div style={{ position: 'relative', height: `${height}px`, width: '100%' }}>
+          <canvas ref={ref} />
+        </div>
+      );
     }
 
     // ── Sort helpers ──
@@ -727,7 +731,7 @@
             <h3>Memberships by Type ({entries.length} types, {filtered.length} total)</h3>
             <ChartView
               type="bar"
-              height={Math.max(320, entries.length * 24)}
+              height={Math.min(900, Math.max(320, entries.length * 32))}
               data={{
                 labels: entries.map(e => e[0]),
                 datasets: [{
@@ -848,7 +852,7 @@
             <h3>Revenue by Membership Type (stacked by status)</h3>
             <ChartView
               type="bar"
-              height={Math.max(320, entries.length * 26)}
+              height={Math.min(900, Math.max(320, entries.length * 34))}
               data={{
                 labels: entries.map(e => e.key),
                 datasets: [
