@@ -455,14 +455,18 @@ async function generatePdf(orgSlug, reportType, startDate, endDate) {
   });
   try {
     const page = await browser.newPage();
+    const isGL = reportType === "gl";
+    // GL table is very wide — render at 1600px so layout is natural, then scale to fit Letter landscape.
+    if (isGL) {
+      await page.setViewport({ width: 1600, height: 900, deviceScaleFactor: 2 });
+    }
     await page.goto(url, { waitUntil: "networkidle0", timeout: 60000 });
     await page.waitForSelector("#report-ready", { timeout: 30000 });
-    const isGL = reportType === "gl";
     return await page.pdf({
       format: "Letter",
       landscape: true,
       printBackground: true,
-      scale: isGL ? 0.7 : 1.0,
+      scale: isGL ? 0.6 : 1.0,
       margin: { top: "0.4in", bottom: "0.5in", left: "0.4in", right: "0.4in" },
       displayHeaderFooter: true,
       headerTemplate: "<span></span>",
