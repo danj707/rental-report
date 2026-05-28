@@ -166,8 +166,20 @@
       gap: 4px 16px;
     }
     .form-qa-pair { display: flex; flex-direction: column; gap: 1px; }
-    .form-q { color: #555; font-size: 10px; font-weight: 600; }
+    .form-q {
+      color: #555; font-size: 10px; font-weight: 600;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      cursor: help;
+    }
+    .form-q:hover { -webkit-line-clamp: unset; overflow: visible; }
     .form-a { color: #111; font-size: 11px; }
+    /* Print/PDF: show the full question text */
+    @media print { .form-q { -webkit-line-clamp: unset; overflow: visible; cursor: auto; } }
+    body.print-mode .form-q { -webkit-line-clamp: unset; overflow: visible; cursor: auto; }
 
     /* ── Column widths ── */
     .col-fname     { width: 110px; font-weight: 500; }
@@ -822,7 +834,7 @@ function App() {
             <div className="form-responses-grid">
               {r.formResponses.map((qa, i) => (
                 <div className="form-qa-pair" key={i}>
-                  <span className="form-q">{qa.q}</span>
+                  <span className="form-q" title={qa.q}>{qa.q}</span>
                   <span className="form-a">{qa.a}</span>
                 </div>
               ))}
