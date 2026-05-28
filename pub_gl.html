@@ -1094,8 +1094,10 @@ function App() {
               <th className="group" colSpan={1}>Check</th>
               {!showRefunds && <th className="group" colSpan={1}>Acct Credit</th>}
               {showRefunds && <th className="group" colSpan={2}>Other Pmts</th>}
-              <th className="group" colSpan={2}>Total Pmts</th>
-              <th className={`group${showRefunds ? ' refund-group' : ''}`} colSpan={refundCols + 1}>{showRefunds ? 'Refunds' : 'Total Refunds'}</th>
+              <th className="group" colSpan={1}>Total Pmts</th>
+              <th className="group" colSpan={1}></th>
+              <th className={`group${showRefunds ? ' refund-group' : ''}`} colSpan={refundCols}>{showRefunds ? 'Refunds' : 'Total Refunds'}</th>
+              <th className="group" colSpan={1}></th>
               <th className="group" colSpan={1}>Net</th>
             </tr>
 
