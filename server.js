@@ -460,8 +460,9 @@ async function generatePdf(orgSlug, reportType, startDate, endDate) {
     const isGL = reportType === "gl";
     return await page.pdf({
       format: "Letter",
-      landscape: !isGL,
+      landscape: true,
       printBackground: true,
+      scale: isGL ? 0.7 : 1.0,
       margin: { top: "0.4in", bottom: "0.5in", left: "0.4in", right: "0.4in" },
       displayHeaderFooter: true,
       headerTemplate: "<span></span>",
