@@ -157,6 +157,8 @@
     .summary-card.amber  .card-value { color: #b45309; }
     .summary-card.slate  { border-left-color: #475569; }
     .summary-card.slate  .card-value { color: #334155; }
+    .summary-card.teal   { border-left-color: #0d9488; }
+    .summary-card.teal   .card-value { color: #0f766e; }
 
     /* ── Table ── */
     .table-wrapper { overflow-x: auto; }
@@ -603,6 +605,7 @@ function App() {
       ccInPersonPayments: sumField(rows, 'ccInPersonPayments'),
       cashPayments:       sumField(rows, 'cashPayments'),
       checkPayments:      sumField(rows, 'checkPayments'),
+      orgCreditPayments:  sumField(rows, 'orgCreditPayments'),
     };
   }, [rows]);
 
@@ -827,6 +830,7 @@ function App() {
         )}
         <SummaryCard label="Cash"  value={totals.cashPayments}  color="amber" />
         <SummaryCard label="Check" value={totals.checkPayments} color="slate" />
+        <SummaryCard label="Acct Credit" value={totals.orgCreditPayments} color="teal" />
       </div>
     );
   }
@@ -858,6 +862,7 @@ function App() {
               <th className="group" colSpan={ccCols}>Credit Card</th>
               <th className="group" colSpan={1}>Cash</th>
               <th className="group" colSpan={1}>Check</th>
+              {!showRefunds && <th className="group" colSpan={1}>Acct Credit</th>}
               {showRefunds && <th className="group" colSpan={2}>Other Pmts</th>}
               <th className="group" colSpan={1}>Total Pmts</th>
               <th className={`group${showRefunds ? ' refund-group' : ''}`} colSpan={refundCols}>{showRefunds ? 'Refunds' : 'Total Refunds'}</th>
@@ -883,6 +888,7 @@ function App() {
               <th>Cash</th>
               <th>Check</th>
 
+              {!showRefunds && <th>Acct Credit</th>}
               {showRefunds && <><th>Free</th><th>Org Credit</th></>}
 
               <th>Total Pmts</th>
@@ -928,6 +934,7 @@ function App() {
                 <td><MoneyCell v={r.cashPayments}  /></td>
                 <td><MoneyCell v={r.checkPayments} /></td>
 
+                {!showRefunds && <td><MoneyCell v={r.orgCreditPayments} /></td>}
                 {showRefunds && (
                   <>
                     <td><MoneyCell v={r.freePayments}      /></td>
@@ -983,6 +990,7 @@ function App() {
               <td>{fmtMoneyStr(totals.cashPayments)}</td>
               <td>{fmtMoneyStr(totals.checkPayments)}</td>
 
+              {!showRefunds && <td>{fmtMoneyStr(totals.orgCreditPayments)}</td>}
               {showRefunds && (
                 <>
                   <td>{fmtMoneyStr(sumField(rows, 'freePayments'))}</td>
