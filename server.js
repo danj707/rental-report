@@ -6,6 +6,7 @@
  *   GET /:org/gl                → serves GL rollup report UI
  *   GET /:org/historic          → serves historic reservations report UI
  *   GET /:org/programs          → serves program revenue report UI
+ *   GET /:org/memberships       → serves memberships report UI
  *   GET /:org/roster            → serves class roster report UI
  *   GET /:org/admin             → serves subscription admin UI
  *   GET /:org/metrics           → serves usage metrics dashboard
@@ -72,12 +73,13 @@ const ORGS = {
   norman: {
     orgId:   "574923bd-9e7b-43e0-9e5f-7ce256189cbf",
     logoUrl: "https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2Forganization-574923bd-9e7b-43e0-9e5f-7ce256189cbf%2FfullLogo.png%3F1763816879340&w=256&q=75",
-    facility: { mbUuid: "81c43b6d-1776-4a13-9fec-cb6f9e9895bb" },
-    gl:       { mbUuid: "46b7e83b-f8ac-4d84-8c5c-4c72ca57cea4" },
-    programs: { mbUuid: "73af7196-84c3-4aad-959e-571c39dc23b9" },
-    roster:   { mbUuid: "b4fb3c1b-b096-4865-8c32-3dc2635d1264" },
-    overview: { mbUuid: null },
-    products: { mbUuid: 'c52acc75-a0a6-4892-9b56-f72dbc1a7019' },
+    facility:    { mbUuid: "81c43b6d-1776-4a13-9fec-cb6f9e9895bb" },
+    gl:          { mbUuid: "46b7e83b-f8ac-4d84-8c5c-4c72ca57cea4" },
+    programs:    { mbUuid: "73af7196-84c3-4aad-959e-571c39dc23b9" },
+    roster:      { mbUuid: "b4fb3c1b-b096-4865-8c32-3dc2635d1264" },
+    overview:    { mbUuid: null },
+    products:    { mbUuid: 'c52acc75-a0a6-4892-9b56-f72dbc1a7019' },
+    memberships: { mbUuid: 'c0579813-d8f0-4b0c-8248-ff975129fd31' },
   },
   smyrna: {
     orgId:   "efc0724c-8f32-481a-bab3-fc19c724f3a7",
@@ -125,7 +127,7 @@ const ORGS = {
   },
 };
 
-const REPORT_TYPES = ["facility", "gl", "historic", "programs", "roster", "overview", "products"];
+const REPORT_TYPES = ["facility", "gl", "historic", "programs", "roster", "overview", "products", "memberships"];
 
 // ── Dynamic orgs (added via dashboard UI) ────────────────────────────
 // Loaded at startup and merged into ORGS; also updated at runtime.
@@ -858,6 +860,15 @@ app.get("/:org/products", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "products.html"));
 });
 
+app.get("/:org/memberships", (req, res) => {
+  const slug = req.params.org;
+  const org  = ORGS[slug];
+  if (!org) return res.status(404).send("Unknown org");
+  if (!org.memberships?.mbUuid) return res.status(404).send("Memberships report not configured for this org.");
+  logEvent(slug, "memberships", "view", req.ip);
+  res.sendFile(path.join(__dirname, "public", "memberships.html"));
+});
+
 app.get("/:org/admin", (req, res) => {
   if (!ORGS[req.params.org]) return res.status(404).send("Unknown org");
   res.sendFile(path.join(__dirname, "public", "admin.html"));
@@ -977,8 +988,9 @@ app.get("/:org", (req, res) => {
     programs: { label: "Program Revenue",           icon: "🎯", desc: "Enrollment and revenue by program and section" },
     historic: { label: "Historic Buildings",        icon: "🏛️",  desc: "Reservations for historic building sites" },
     roster:   { label: "Class Roster",              icon: "📋", desc: "Enrolled and cancelled participants by section" },
-    overview: { label: "Facility Overview",         icon: "📈", desc: "Revenue and activity summary by location" },
-    products: { label: "Product Sales MoM",          icon: "🛒", desc: "Month-over-month revenue and quantity by product" },
+    overview:    { label: "Facility Overview",         icon: "📈", desc: "Revenue and activity summary by location" },
+    products:    { label: "Product Sales MoM",          icon: "🛒", desc: "Month-over-month revenue and quantity by product" },
+    memberships: { label: "Memberships",                icon: "🎫", desc: "Active and lapsed memberships with renewal tracking" },
   };
 
   const available = REPORT_TYPES.filter(r => org[r]?.mbUuid);
@@ -1109,8 +1121,9 @@ app.get("/", (req, res) => {
     programs: { label: "Program Revenue",           icon: "🎯", desc: "Enrollment and revenue by program",       color: "#7c3aed" },
     historic: { label: "Historic Buildings",        icon: "🏛️",  desc: "Reservations for historic building sites", color: "#d97706" },
     roster:   { label: "Class Roster",              icon: "📋", desc: "Enrolled and cancelled participants by section", color: "#0891b2" },
-    overview: { label: "Facility Overview",         icon: "📈", desc: "Revenue and activity summary by location",        color: "#059669" },
-    products: { label: "Product Sales MoM",          icon: "🛒", desc: "Month-over-month revenue and quantity by product",  color: "#0891b2" },
+    overview:    { label: "Facility Overview",         icon: "📈", desc: "Revenue and activity summary by location",                 color: "#059669" },
+    products:    { label: "Product Sales MoM",          icon: "🛒", desc: "Month-over-month revenue and quantity by product",           color: "#0891b2" },
+    memberships: { label: "Memberships",                icon: "🎫", desc: "Active and lapsed memberships with renewal tracking",       color: "#db2777" },
   };
 
   const orgSections = Object.entries(ORGS).map(([slug, org]) => {
@@ -1358,6 +1371,7 @@ app.get("/", (req, res) => {
           <li><strong>Class Roster</strong> &#8212; enrolled and cancelled participants by program section, with status filters and Excel/PDF export.</li>
           <li><strong>Historic Buildings</strong> &#8212; filtered facility view for historic venue locations (Smyrna only).</li>
           <li><strong>Programs</strong> &#8212; enrollment and revenue by program and section (Watertown only).</li>
+          <li><strong>Memberships</strong> &#8212; active and lapsed memberships with auto-renew tracking, MRR estimate, and stale-usage detection (Norman only).</li>
         </ul>
 
         <h4>PDF Export</h4>
@@ -1419,6 +1433,8 @@ app.get("/", (req, res) => {
       historic: { label: "Historic Buildings",        icon: "🏛️" },
       roster:   { label: "Class Roster",              icon: "📋" },
       overview: { label: "Facility Overview",         icon: "📈" },
+      products: { label: "Product Sales MoM",         icon: "🛒" },
+      memberships: { label: "Memberships",            icon: "🎫" },
     })))};
 
     function openAddOrg() {
