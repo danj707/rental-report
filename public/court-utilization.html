@@ -1,0 +1,591 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Court Utilization</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'IBM Plex Sans', 'Segoe UI', system-ui, sans-serif;
+      font-size: 12px;
+      color: #1a1a1a;
+      background: #f5f4f1;
+      line-height: 1.35;
+    }
+
+    /* ── Toolbar ── */
+    .toolbar {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 20px;
+      background: #1a1a1a;
+      color: #fff;
+      border-bottom: 1px solid #2a2a2a;
+      flex-wrap: wrap;
+    }
+    .toolbar-title { font-weight: 600; margin-right: 8px; }
+    .toolbar-spacer { flex: 1; }
+    .toolbar label {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #aaa;
+      margin-right: 4px;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .toolbar input[type="date"],
+    .toolbar input[type="text"] {
+      background: #2a2a2a;
+      border: 1px solid #3a3a3a;
+      color: #fff;
+      padding: 5px 8px;
+      border-radius: 4px;
+      font-size: 12px;
+      font-family: inherit;
+    }
+    .toolbar input[type="text"] { min-width: 180px; }
+    .toolbar input:focus { outline: none; border-color: #3b82f6; }
+    .toolbar input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(1); cursor: pointer; }
+    .toolbar button {
+      background: rgba(255,255,255,.08);
+      border: 1px solid rgba(255,255,255,.15);
+      color: #fff;
+      padding: 6px 12px;
+      border-radius: 4px;
+      font-size: 12px;
+      cursor: pointer;
+      font-family: inherit;
+      transition: background .12s;
+    }
+    .toolbar button:hover:not(:disabled) { background: rgba(255,255,255,.18); }
+    .toolbar button:disabled { opacity: .5; cursor: not-allowed; }
+    .toolbar .btn-run   { background: #16a34a; border-color: #16a34a; font-weight: 600; }
+    .toolbar .btn-run:hover:not(:disabled)   { background: #15803d; }
+    .toolbar .btn-pdf   { background: #3b82f6; border-color: #3b82f6; font-weight: 600; }
+    .toolbar .btn-pdf:hover:not(:disabled)   { background: #2563eb; }
+    .toolbar .btn-excel { background: #166534; border-color: #166534; font-weight: 600; }
+    .toolbar .btn-excel:hover:not(:disabled) { background: #14532d; }
+    .toolbar .divider { width: 1px; height: 28px; background: rgba(255,255,255,.15); margin: 0 4px; }
+    .toolbar .row-count { font-size: 11px; color: #aaa; }
+
+    /* ── Page body ── */
+    .page {
+      max-width: 1280px;
+      margin: 18px auto;
+      padding: 22px 26px;
+      background: #fff;
+      border-radius: 6px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    }
+
+    /* ── Report header ── */
+    .report-header-logo { height: 42px; max-width: 140px; object-fit: contain; object-position: left center; }
+    .report-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      border-bottom: 2.5px solid #111;
+      padding-bottom: 8px;
+      margin-bottom: 16px;
+    }
+    .report-header .org-label {
+      font-size: 10.5px;
+      letter-spacing: 1.6px;
+      text-transform: uppercase;
+      color: #777;
+      font-weight: 600;
+    }
+    .report-header .title { font-size: 17px; font-weight: 700; margin-top: 1px; }
+    .report-header .date-range { font-size: 11px; color: #666; text-align: right; }
+
+    /* ── Stats row ── */
+    .summary-cards {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 16px;
+      flex-wrap: wrap;
+    }
+    .summary-card {
+      flex: 1;
+      min-width: 140px;
+      padding: 10px 12px;
+      border-radius: 5px;
+      background: #f8f8f6;
+      border: 1px solid #e4e4e0;
+      border-left: 3px solid #2563eb;
+    }
+    .summary-card.green   { border-left-color: #16a34a; }
+    .summary-card.gray    { border-left-color: #9ca3af; }
+    .summary-card .card-label {
+      font-size: 9.5px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #666;
+      font-weight: 600;
+    }
+    .summary-card .card-value {
+      font-size: 19px;
+      font-weight: 700;
+      margin-top: 2px;
+      font-family: 'IBM Plex Mono', monospace;
+    }
+
+    /* ── Toggle row ── */
+    .toggle-row {
+      display: flex;
+      gap: 18px;
+      align-items: center;
+      flex-wrap: wrap;
+      padding: 10px 12px;
+      background: #fafaf8;
+      border: 1px solid #eee;
+      border-radius: 4px;
+      margin-bottom: 14px;
+    }
+    .toggle-row label {
+      font-size: 12px;
+      display: flex;
+      gap: 6px;
+      align-items: center;
+      cursor: pointer;
+      user-select: none;
+    }
+    .toggle-row .filter-text {
+      margin-left: auto;
+      display: flex;
+      gap: 6px;
+      align-items: center;
+    }
+    .toggle-row .filter-text input {
+      padding: 4px 8px;
+      border: 1px solid #d1d5db;
+      border-radius: 4px;
+      font-size: 12px;
+      min-width: 180px;
+      font-family: inherit;
+    }
+    .toggle-row .filter-text input:focus { outline: none; border-color: #3b82f6; }
+
+    /* ── Chart wrap ── */
+    .chart-wrap {
+      position: relative;
+      height: 620px;
+      margin-top: 4px;
+    }
+    .empty, .loading {
+      color: #9ca3af;
+      text-align: center;
+      padding: 80px 16px;
+      font-size: 13px;
+    }
+    .error {
+      color: #b91c1c;
+      background: #fef2f2;
+      border: 1px solid #fecaca;
+      padding: 10px 14px;
+      border-radius: 5px;
+      font-size: 12px;
+      margin-bottom: 12px;
+    }
+
+    /* ── Footer ── */
+    .report-footer {
+      display: flex;
+      justify-content: space-between;
+      margin-top: 18px;
+      padding-top: 10px;
+      border-top: 1px solid #e4e4e0;
+      font-size: 10.5px;
+      color: #777;
+    }
+
+    /* Print mode */
+    @media print {
+      .toolbar { display: none !important; }
+      body { background: #fff; }
+    }
+    body.print-mode .toolbar { display: none !important; }
+    body.print-mode .page { box-shadow: none; margin: 0; padding: 12px 16px; max-width: 100%; }
+  </style>
+  <script>
+    // ── Token auth (injected) ────────────────────────────────────────
+    const URL_TOKEN = new URLSearchParams(window.location.search).get('token') || '';
+    const TOKEN_QS  = URL_TOKEN ? '?token=' + encodeURIComponent(URL_TOKEN) : '';
+    function withToken(url) {
+      if (!URL_TOKEN) return url;
+      return url + (url.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(URL_TOKEN);
+    }
+    // Print mode: when loaded by Puppeteer with ?_print=1, hide chrome
+    if (new URLSearchParams(window.location.search).get('_print') === '1') {
+      document.addEventListener('DOMContentLoaded', () => document.body.classList.add('print-mode'));
+    }
+  </script>
+</head>
+<body>
+<div id="root"></div>
+
+<script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
+<script type="text/babel">
+const { useState, useEffect, useMemo, useRef, useCallback } = React;
+
+// ── Helpers ─────────────────────────────────────────────────────────
+function startOfMonth(d){ const x = new Date(d); x.setDate(1); return x; }
+function endOfMonth(d)  { const x = new Date(d); x.setMonth(x.getMonth()+1, 0); return x; }
+function isoDate(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth()+1).padStart(2,'0');
+  const dd = String(d.getDate()).padStart(2,'0');
+  return `${y}-${m}-${dd}`;
+}
+function formatDisplayDate(iso) {
+  if (!iso) return '';
+  const [y, m, d] = iso.split('-').map(Number);
+  const names = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return `${names[m-1]} ${d}, ${y}`;
+}
+
+// Normalize Metabase row shapes — accept snake_case and Title Case.
+function normalize(rows) {
+  return (rows || [])
+    .map(r => ({
+      courtName:        r.court_name        || r['Court Name']        || '',
+      locationName:     r.location_name     || r['Location Name']     || '',
+      facilityRentalId: r.facility_rental_id|| r['Facility Rental Id']|| '',
+      usageCategory:    r.usage_category    || r['Usage Category']    || 'Customer Booking',
+      bookingSource:    r.booking_source    || r['Booking Source']    || '',
+      purpose:          r.purpose           || '',
+      localDate:        r.local_date        || '',
+      durationHours:    Number(r.duration_hours || 0),
+    }))
+    .filter(r => r.courtName);
+}
+
+// ── Main app ────────────────────────────────────────────────────────
+function App() {
+  const orgSlug    = useMemo(() => window.location.pathname.split('/').filter(Boolean)[0] || '', []);
+  const reportType = useMemo(() => window.location.pathname.split('/').filter(Boolean)[1] || 'court-utilization', []);
+
+  const today = new Date();
+  const [startDate, setStartDate] = useState(isoDate(startOfMonth(today)));
+  const [endDate,   setEndDate]   = useState(isoDate(endOfMonth(today)));
+  const [locationFilter, setLocationFilter] = useState('');
+  const [includePrograms, setIncludePrograms] = useState(true);
+  const [includeClosures, setIncludeClosures] = useState(false);
+
+  const [rows, setRows]       = useState([]);
+  const [logoUrl, setLogoUrl] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError]     = useState(null);
+  const [loadedStart, setLoadedStart] = useState(null);
+  const [loadedEnd,   setLoadedEnd]   = useState(null);
+  const [pdfLoading, setPdfLoading]   = useState(false);
+
+  const runReport = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const params = new URLSearchParams({ start_date: startDate, end_date: endDate });
+      // NOTE: location_name is filtered client-side per platform convention,
+      // not forwarded to Metabase.
+      const url = `/${orgSlug}/${reportType}/api/data?${params.toString()}`;
+      const res = await fetch(withToken(url));
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`${res.status} ${res.statusText}: ${text.slice(0, 200)}`);
+      }
+      const json = await res.json();
+      const dataRows = Array.isArray(json) ? json : (json.rows || json.data || []);
+      setRows(dataRows);
+      setLogoUrl(json.meta?.logo_url || null);
+      setLoadedStart(startDate);
+      setLoadedEnd(endDate);
+    } catch (e) {
+      setError(String(e.message || e));
+      setRows([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [orgSlug, reportType, startDate, endDate]);
+
+  // Initial fetch
+  useEffect(() => { runReport(); /* eslint-disable-line */ }, []);
+
+  // ── Derived data ──────────────────────────────────────────────────
+  const normalized = useMemo(() => normalize(rows), [rows]);
+
+  const filtered = useMemo(() => {
+    const needle = locationFilter.trim().toLowerCase();
+    return normalized.filter(r => {
+      if (!includePrograms && r.usageCategory === 'Program / League') return false;
+      if (!includeClosures && r.usageCategory === 'Closure / Block')  return false;
+      if (needle && !r.locationName.toLowerCase().includes(needle))   return false;
+      return true;
+    });
+  }, [normalized, includePrograms, includeClosures, locationFilter]);
+
+  const grouped = useMemo(() => {
+    const byCourt = new Map();
+    for (const r of filtered) {
+      const label = `${r.locationName} — ${r.courtName}`;
+      if (!byCourt.has(label)) {
+        byCourt.set(label, {
+          label, location: r.locationName, court: r.courtName,
+          customer: new Set(), program: new Set(), closure: new Set(),
+        });
+      }
+      const e = byCourt.get(label);
+      if (r.usageCategory === 'Program / League')     e.program.add(r.facilityRentalId);
+      else if (r.usageCategory === 'Closure / Block') e.closure.add(r.facilityRentalId);
+      else                                             e.customer.add(r.facilityRentalId);
+    }
+    const arr = Array.from(byCourt.values()).map(e => ({
+      ...e,
+      customer: e.customer.size,
+      program:  e.program.size,
+      closure:  e.closure.size,
+      total:    e.customer.size + e.program.size + e.closure.size,
+    }));
+    arr.sort((a,b) => b.total - a.total);
+    return arr;
+  }, [filtered]);
+
+  const stats = useMemo(() => {
+    const fr = new Set(filtered.map(r => r.facilityRentalId).filter(Boolean));
+    const courts = new Set(filtered.map(r => `${r.locationName}|${r.courtName}`));
+    const hours = filtered.reduce((s, r) => s + (r.durationHours || 0), 0);
+    return {
+      distinctFr: fr.size,
+      distinctCourts: courts.size,
+      reservationRows: filtered.length,
+      totalHours: hours,
+    };
+  }, [filtered]);
+
+  // ── Chart ─────────────────────────────────────────────────────────
+  const canvasRef = useRef(null);
+  const chartRef  = useRef(null);
+
+  useEffect(() => {
+    if (!canvasRef.current || typeof Chart === 'undefined') return;
+    if (chartRef.current) { chartRef.current.destroy(); chartRef.current = null; }
+    if (grouped.length === 0) return;
+
+    const labels = grouped.map(g => g.label);
+    const datasets = [
+      { label: 'Customer Bookings', data: grouped.map(g => g.customer), backgroundColor: '#16a34a', borderWidth: 0 },
+    ];
+    if (includePrograms) datasets.push({ label: 'Programs / Leagues', data: grouped.map(g => g.program), backgroundColor: '#2563eb', borderWidth: 0 });
+    if (includeClosures) datasets.push({ label: 'Closures / Blocks',  data: grouped.map(g => g.closure), backgroundColor: '#9ca3af', borderWidth: 0 });
+
+    chartRef.current = new Chart(canvasRef.current, {
+      type: 'bar',
+      data: { labels, datasets },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: { position: 'top', labels: { boxWidth: 14, font: { size: 12 } } },
+          tooltip: {
+            callbacks: {
+              footer: (items) => {
+                const total = items.reduce((s, it) => s + (it.parsed?.y || 0), 0);
+                return `Total: ${total}`;
+              },
+            },
+          },
+        },
+        scales: {
+          x: { stacked: true, ticks: { autoSkip: false, maxRotation: 60, minRotation: 45, font: { size: 10 } } },
+          y: { stacked: true, beginAtZero: true, title: { display: true, text: '# of Bookings (distinct facility rentals)' }, ticks: { precision: 0 } },
+        },
+      },
+    });
+
+    return () => { if (chartRef.current) { chartRef.current.destroy(); chartRef.current = null; } };
+  }, [grouped, includePrograms, includeClosures]);
+
+  // ── Export: Excel ─────────────────────────────────────────────────
+  const exportExcel = useCallback(() => {
+    if (grouped.length === 0) return;
+    const rows = grouped.map(g => ({
+      Location: g.location,
+      Court: g.court,
+      'Customer Bookings': g.customer,
+      'Programs / Leagues': g.program,
+      'Closures / Blocks': g.closure,
+      Total: g.total,
+    }));
+    rows.push({}); // spacer
+    rows.push({
+      Location: 'TOTALS',
+      Court: '',
+      'Customer Bookings': grouped.reduce((s,g) => s + g.customer, 0),
+      'Programs / Leagues': grouped.reduce((s,g) => s + g.program, 0),
+      'Closures / Blocks': grouped.reduce((s,g) => s + g.closure, 0),
+      Total: grouped.reduce((s,g) => s + g.total, 0),
+    });
+    const ws = XLSX.utils.json_to_sheet(rows);
+    ws['!cols'] = [{wch:24},{wch:24},{wch:18},{wch:18},{wch:18},{wch:10}];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Court Utilization');
+    const fname = `court-utilization_${orgSlug}_${loadedStart || startDate}_${loadedEnd || endDate}.xlsx`;
+    XLSX.writeFile(wb, fname);
+  }, [grouped, orgSlug, loadedStart, loadedEnd, startDate, endDate]);
+
+  // ── Export: PDF (via /api/pdf server route) ───────────────────────
+  const exportPdf = useCallback(async () => {
+    setPdfLoading(true);
+    try {
+      const params = new URLSearchParams({ start_date: loadedStart || startDate, end_date: loadedEnd || endDate });
+      const url = withToken(`/${orgSlug}/${reportType}/api/pdf?${params.toString()}`);
+      window.open(url, '_blank');
+    } finally {
+      setTimeout(() => setPdfLoading(false), 1500);
+    }
+  }, [orgSlug, reportType, loadedStart, loadedEnd, startDate, endDate]);
+
+  // ── Date preset helpers ───────────────────────────────────────────
+  const setMonth = (offset) => {
+    const t = new Date();
+    t.setMonth(t.getMonth() + offset, 1);
+    setStartDate(isoDate(startOfMonth(t)));
+    setEndDate(isoDate(endOfMonth(t)));
+  };
+
+  // ── Run date/time ─────────────────────────────────────────────────
+  const now = new Date();
+  const runDate = `${(now.getMonth()+1).toString().padStart(2,'0')}/${now.getDate().toString().padStart(2,'0')}/${now.getFullYear()} @ ${now.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',hour12:true}).toLowerCase()}`;
+
+  const dateRangeLabel = [
+    loadedStart ? formatDisplayDate(loadedStart) : null,
+    loadedEnd   ? formatDisplayDate(loadedEnd)   : null,
+  ].filter(Boolean).join(' – ') || 'Current Month';
+
+  const displayOrg = 'rec.us';
+
+  return (
+    <div>
+      {/* Toolbar */}
+      <div className="toolbar">
+        <span className="toolbar-title">Court Utilization</span>
+        <label>Start
+          <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} />
+        </label>
+        <label>End
+          <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} />
+        </label>
+        <button onClick={() => setMonth(-1)}>Last Month</button>
+        <button onClick={() => setMonth(0)}>This Month</button>
+        <button onClick={() => setMonth(1)}>Next Month</button>
+        <button className="btn-run" onClick={runReport} disabled={loading}>
+          {loading ? 'Loading…' : '▶ Run Report'}
+        </button>
+        <div className="toolbar-spacer" />
+        <span className="row-count">{rows.length.toLocaleString()} rows</span>
+        <div className="divider" />
+        <button onClick={() => window.print()}>🖨 Print</button>
+        <button className="btn-pdf"   onClick={exportPdf}    disabled={pdfLoading || grouped.length === 0}>
+          {pdfLoading ? '…' : '📄 PDF'}
+        </button>
+        <button className="btn-excel" onClick={exportExcel} disabled={grouped.length === 0}>📊 Excel</button>
+      </div>
+
+      {/* Page */}
+      <div className="page" style={loading ? { opacity: 0.5, pointerEvents: 'none' } : {}}>
+
+        {/* Header */}
+        <div className="report-header">
+          <div>
+            {logoUrl && <img src={logoUrl} alt="" className="report-header-logo" onError={e => e.target.style.display='none'} />}
+            <div className="org-label">{displayOrg}</div>
+            <div className="title">Court Utilization</div>
+          </div>
+          <div className="date-range">{dateRangeLabel}</div>
+        </div>
+
+        {/* Summary cards */}
+        <div className="summary-cards">
+          <div className="summary-card green">
+            <div className="card-label">Courts with Activity</div>
+            <div className="card-value">{stats.distinctCourts.toLocaleString()}</div>
+          </div>
+          <div className="summary-card">
+            <div className="card-label">Distinct Bookings</div>
+            <div className="card-value">{stats.distinctFr.toLocaleString()}</div>
+          </div>
+          <div className="summary-card gray">
+            <div className="card-label">Reservation Rows</div>
+            <div className="card-value">{stats.reservationRows.toLocaleString()}</div>
+          </div>
+          <div className="summary-card">
+            <div className="card-label">Total Hours</div>
+            <div className="card-value">{stats.totalHours.toLocaleString(undefined,{maximumFractionDigits:1})}</div>
+          </div>
+        </div>
+
+        {/* Toggle row */}
+        <div className="toggle-row">
+          <label>
+            <input type="checkbox" checked={includePrograms} onChange={e => setIncludePrograms(e.target.checked)} />
+            Include programs / leagues
+          </label>
+          <label>
+            <input type="checkbox" checked={includeClosures} onChange={e => setIncludeClosures(e.target.checked)} />
+            Include closures / blocks
+          </label>
+          <div className="filter-text">
+            <label htmlFor="loc-filter" style={{fontSize:'11px',color:'#666',fontWeight:600,textTransform:'uppercase',letterSpacing:'0.5px'}}>Location contains</label>
+            <input id="loc-filter" type="text" placeholder="e.g. Tennis, Ice"
+              value={locationFilter}
+              onChange={e => setLocationFilter(e.target.value)} />
+          </div>
+        </div>
+
+        {/* Chart */}
+        {error && <div className="error"><strong>Error:</strong> {error}</div>}
+        {loading && <div className="loading">Loading data…</div>}
+        {!loading && !error && grouped.length === 0 && (
+          <div className="empty">No bookings match the current filters.</div>
+        )}
+        {!loading && grouped.length > 0 && (
+          <div className="chart-wrap">
+            <canvas ref={canvasRef}></canvas>
+          </div>
+        )}
+
+        {/* Footer */}
+        <div className="report-footer">
+          <span>{displayOrg}</span>
+          <span>Run Date/Time: {runDate}</span>
+        </div>
+
+        {/* Puppeteer marker */}
+        <div id="report-ready" style={{display:'none'}} />
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+    <script src="/feedback-widget.js" defer></script>
+  </body>
+</html>
