@@ -805,7 +805,9 @@ function App() {
     if (!displayRows) return {};
     return {
       totalPayments:      sumField(displayRows, 'totalPayments'),
+      numPayments:        sumField(displayRows, 'numPayments'),
       totalRefunds:       sumField(displayRows, 'totalRefunds'),
+      numRefunds:         sumField(displayRows, 'numRefunds'),
       netAmount:          sumField(displayRows, 'netAmount'),
       ccPayments:         sumField(displayRows, 'ccPayments'),
       ccOnlinePayments:   sumField(displayRows, 'ccOnlinePayments'),
@@ -839,6 +841,7 @@ function App() {
       row['Free Payments']         = r.freePayments;
       row['Org Credit Pmts']       = r.orgCreditPayments;
       row['Total Payments']        = r.totalPayments;
+      row['# Payments']            = r.numPayments;
       if (hasCCSplit) {
         row['CC Online Refunds']    = r.ccOnlineRefunds;
         row['CC In-Person Refunds'] = r.ccInPersonRefunds;
@@ -850,6 +853,7 @@ function App() {
       row['Org Credit Refunds']    = r.orgCreditRefunds;
       row['Other Refunds']         = r.otherRefunds;
       row['Total Refunds']         = r.totalRefunds;
+      row['# Refunds']             = r.numRefunds;
       row['Net Amount']            = r.netAmount;
       return row;
     };
@@ -871,6 +875,7 @@ function App() {
     totalsRow['Free Payments']       = sumField(displayRows, 'freePayments');
     totalsRow['Org Credit Pmts']     = sumField(displayRows, 'orgCreditPayments');
     totalsRow['Total Payments']      = totals.totalPayments;
+    totalsRow['# Payments']          = totals.numPayments;
     if (hasCCSplit) {
       totalsRow['CC Online Refunds']    = sumField(displayRows, 'ccOnlineRefunds');
       totalsRow['CC In-Person Refunds'] = sumField(displayRows, 'ccInPersonRefunds');
@@ -882,6 +887,7 @@ function App() {
     totalsRow['Org Credit Refunds']  = sumField(displayRows, 'orgCreditRefunds');
     totalsRow['Other Refunds']       = sumField(displayRows, 'otherRefunds');
     totalsRow['Total Refunds']       = totals.totalRefunds;
+    totalsRow['# Refunds']           = totals.numRefunds;
     totalsRow['Net Amount']          = totals.netAmount;
     data.push(totalsRow);
 
@@ -889,7 +895,7 @@ function App() {
 
     // Currency format on money columns
     const headers = Object.keys(data[0]);
-    const moneyHeaders = headers.filter(h => !['GL Code','Account Name','Locations','Account #'].includes(h));
+    const moneyHeaders = headers.filter(h => !['GL Code','Account Name','Locations','Account #','# Payments','# Refunds'].includes(h));
     const range = XLSX.utils.decode_range(ws['!ref']);
     for (let R = 1; R <= range.e.r; R++) {
       moneyHeaders.forEach(h => {
@@ -1088,8 +1094,8 @@ function App() {
               <th className="group" colSpan={1}>Check</th>
               {!showRefunds && <th className="group" colSpan={1}>Acct Credit</th>}
               {showRefunds && <th className="group" colSpan={2}>Other Pmts</th>}
-              <th className="group" colSpan={1}>Total Pmts</th>
-              <th className={`group${showRefunds ? ' refund-group' : ''}`} colSpan={refundCols}>{showRefunds ? 'Refunds' : 'Total Refunds'}</th>
+              <th className="group" colSpan={2}>Total Pmts</th>
+              <th className={`group${showRefunds ? ' refund-group' : ''}`} colSpan={refundCols + 1}>{showRefunds ? 'Refunds' : 'Total Refunds'}</th>
               <th className="group" colSpan={1}>Net</th>
             </tr>
 
@@ -1116,6 +1122,7 @@ function App() {
               {showRefunds && <><th>Free</th><th>Org Credit</th></>}
 
               <th>Total Pmts</th>
+              <th># Pmts</th>
 
               {showRefunds
                 ? hasCCSplit
@@ -1124,6 +1131,7 @@ function App() {
                 : <th>Total Rfnds</th>
               }
 
+              <th># Rfnds</th>
               <th>Net Amount</th>
             </tr>
           </thead>
@@ -1167,6 +1175,7 @@ function App() {
                 )}
 
                 <td style={{fontWeight:600}}><MoneyCell v={r.totalPayments} /></td>
+                <td>{r.numPayments ? r.numPayments : <span className="cell-zero">—</span>}</td>
 
                 {showRefunds
                   ? hasCCSplit
@@ -1187,6 +1196,8 @@ function App() {
                       </>
                   : <td style={{fontWeight:600}}><MoneyCell v={r.totalRefunds} /></td>
                 }
+
+                <td>{r.numRefunds ? r.numRefunds : <span className="cell-zero">—</span>}</td>
 
                 <td style={{fontWeight:600, color: r.netAmount < 0 ? '#dc2626' : 'inherit'}}>
                   {fmtMoneyStr(r.netAmount)}
@@ -1223,6 +1234,7 @@ function App() {
               )}
 
               <td>{fmtMoneyStr(totals.totalPayments)}</td>
+              <td>{totals.numPayments || 0}</td>
 
               {showRefunds
                 ? hasCCSplit
@@ -1243,6 +1255,8 @@ function App() {
                     </>
                 : <td>{fmtMoneyStr(totals.totalRefunds)}</td>
               }
+
+              <td>{totals.numRefunds || 0}</td>
 
               <td style={{color: totals.netAmount < 0 ? '#dc2626' : 'inherit'}}>
                 {fmtMoneyStr(totals.netAmount)}
