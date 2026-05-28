@@ -106,6 +106,7 @@ const ORGS = {
     orgId:   "aeba47d0-c97f-49cb-a0e9-93c5af3a68fa",
     logoUrl: "https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2Forganization-aeba47d0-c97f-49cb-a0e9-93c5af3a68fa%2FfullLogo.png%3F1765923560125&w=1920&q=75",
     facility: { mbUuid: "c876b1d7-df79-48c5-abf5-62917dee3534", defaultDateRange: 8, defaultLocationFilter: "Apex Center" },
+    "court-utilization": { mbUuid: "82d14a94-78ad-48d6-9531-11e72f53e285" },
   },
   theranch: {
     token:   "mXI0BgPPazLu61jl",
@@ -129,7 +130,7 @@ const ORGS = {
   },
 };
 
-const REPORT_TYPES = ["facility", "gl", "historic", "programs", "roster", "overview", "products", "memberships"];
+const REPORT_TYPES = ["facility", "gl", "historic", "programs", "roster", "overview", "products", "memberships", "court-utilization"];
 
 // ── Dynamic orgs (added via dashboard UI) ────────────────────────────
 // Loaded at startup and merged into ORGS; also updated at runtime.
@@ -981,6 +982,15 @@ app.get("/:org/memberships", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "memberships.html"));
 });
 
+app.get("/:org/court-utilization", (req, res) => {
+  const slug = req.params.org;
+  const org  = ORGS[slug];
+  if (!org) return res.status(404).send("Unknown org");
+  if (!org["court-utilization"]?.mbUuid) return res.status(404).send("Court Utilization report not configured for this org.");
+  logEvent(slug, "court-utilization", "view", req.ip);
+  res.sendFile(path.join(__dirname, "public", "court-utilization.html"));
+});
+
 app.get("/:org/admin", (req, res) => {
   if (!ORGS[req.params.org]) return res.status(404).send("Unknown org");
   res.sendFile(path.join(__dirname, "public", "admin.html"));
@@ -1171,6 +1181,7 @@ app.get("/:org", (req, res, next) => {
     overview:    { label: "Facility Overview",         icon: "📈", desc: "Revenue and activity summary by location" },
     products:    { label: "Product Sales MoM",          icon: "🛒", desc: "Month-over-month revenue and quantity by product" },
     memberships: { label: "Memberships",                icon: "🎫", desc: "Active and lapsed memberships with renewal tracking" },
+    "court-utilization": { label: "Court Utilization",  icon: "🎾", desc: "Booking counts by court across customer, program, and closure usage" },
   };
 
   const tokenQS = org.token ? `?token=${encodeURIComponent(org.token)}` : "";
@@ -1305,6 +1316,7 @@ app.get("/", (req, res) => {
     overview:    { label: "Facility Overview",         icon: "📈", desc: "Revenue and activity summary by location",                 color: "#059669" },
     products:    { label: "Product Sales MoM",          icon: "🛒", desc: "Month-over-month revenue and quantity by product",           color: "#0891b2" },
     memberships: { label: "Memberships",                icon: "🎫", desc: "Active and lapsed memberships with renewal tracking",       color: "#db2777" },
+    "court-utilization": { label: "Court Utilization",  icon: "🎾", desc: "Booking counts by court across customer, program, and closure usage", color: "#0d9488" },
   };
 
   const orgSections = Object.entries(ORGS).map(([slug, org]) => {
