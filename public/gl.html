@@ -812,6 +812,11 @@ function App() {
 
         <button onClick={() => window.print()}>🖨️ Print</button>
         <button
+          className="btn-pdf"
+          onClick={downloadPdf}
+          disabled={pdfLoading || !rows || rows.length === 0}
+        >{pdfLoading ? 'Generating…' : '📄 PDF'}</button>
+        <button
           className="btn-excel"
           onClick={exportExcel}
           disabled={!rows || rows.length === 0}
