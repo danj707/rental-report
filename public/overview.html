@@ -208,6 +208,15 @@
       body { background: #fff; }
     }
   </style>
+  <script>
+    // ── Token auth (injected) ────────────────────────────────────────
+    const URL_TOKEN = new URLSearchParams(window.location.search).get('token') || '';
+    const TOKEN_QS  = URL_TOKEN ? '?token=' + encodeURIComponent(URL_TOKEN) : '';
+    function withToken(url) {
+      if (!URL_TOKEN) return url;
+      return url + (url.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(URL_TOKEN);
+    }
+  </script>
 </head>
 <body>
 <div id="root"></div>
@@ -380,7 +389,7 @@ function App() {
     setLoading(true); setError(null);
     try {
       const params = new URLSearchParams({ start: startDate, end: endDate });
-      const res = await fetch(`/${orgSlug}/overview/api/data?${params}`);
+      const res = await fetch(withToken(`/${orgSlug}/overview/api/data?${params}`));
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
       const normalized = (json.rows || []).map(normalizeRow);
@@ -485,7 +494,7 @@ function App() {
         {rows && rows.length > 0 && (
           <img
             className="report-header-logo"
-            src={`/${orgSlug}/logo`}
+            src={withToken(`/${orgSlug}/logo`)}
             onError={e => e.target.style.display='none'}
             alt=""
           />

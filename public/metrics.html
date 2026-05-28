@@ -127,6 +127,15 @@
     @keyframes spin { to { transform: rotate(360deg); } }
     .empty { text-align: center; padding: 40px; color: #bbb; font-size: 13px; }
   </style>
+  <script>
+    // ── Token auth (injected) ────────────────────────────────────────
+    const URL_TOKEN = new URLSearchParams(window.location.search).get('token') || '';
+    const TOKEN_QS  = URL_TOKEN ? '?token=' + encodeURIComponent(URL_TOKEN) : '';
+    function withToken(url) {
+      if (!URL_TOKEN) return url;
+      return url + (url.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(URL_TOKEN);
+    }
+  </script>
 </head>
 <body>
 <div id="root"></div>
@@ -205,7 +214,7 @@ function App() {
 
   useEffect(() => {
     setLoading(true); setError(null);
-    fetch(`/${orgSlug}/metrics/api/data?days=${days}`)
+    fetch(withToken(`/${orgSlug}/metrics/api/data?days=${days}`))
       .then(r => { if (!r.ok) throw new Error(`Server returned ${r.status}`); return r.json(); })
       .then(json => { setData(json); setLoading(false); })
       .catch(err => { setError(err.message); setLoading(false); });
@@ -396,8 +405,8 @@ function App() {
         ))}
         <button className={`range-btn${days === 9999 ? ' active' : ''}`} onClick={() => setDays(9999)}>All</button>
         <div className="toolbar-spacer" />
-        <a href={`/${orgSlug}`}     className="nav-link">← Back</a>
-        <a href={`/${orgSlug}/admin`} className="nav-link">📧 Subscriptions</a>
+        <a href={withToken(`/${orgSlug}`)}     className="nav-link">← Back</a>
+        <a href={withToken(`/${orgSlug}/admin`)} className="nav-link">📧 Subscriptions</a>
       </div>
 
       <div className="page">

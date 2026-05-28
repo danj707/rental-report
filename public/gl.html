@@ -296,6 +296,15 @@
     body.print-mode .toolbar { display: none !important; }
     body.print-mode .page { box-shadow: none; margin: 0; padding: 12px 16px; max-width: 100%; }
   </style>
+  <script>
+    // ── Token auth (injected) ────────────────────────────────────────
+    const URL_TOKEN = new URLSearchParams(window.location.search).get('token') || '';
+    const TOKEN_QS  = URL_TOKEN ? '?token=' + encodeURIComponent(URL_TOKEN) : '';
+    function withToken(url) {
+      if (!URL_TOKEN) return url;
+      return url + (url.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(URL_TOKEN);
+    }
+  </script>
 </head>
 <body>
 <div id="root"></div>
@@ -562,7 +571,7 @@ function App() {
     const qs = new URLSearchParams();
     if (sd) qs.set('start_date', sd);
     if (ed) qs.set('end_date', ed);
-    fetch(`/${orgSlug}/${reportType}/api/data?${qs}`)
+    fetch(withToken(`/${orgSlug}/${reportType}/api/data?${qs}`))
       .then(r => { if (!r.ok) throw new Error(`Server returned ${r.status}`); return r.json(); })
       .then(json => {
         setRows(json.rows.map(normalizeRow));
@@ -707,7 +716,7 @@ function App() {
   function logClientEvent(event) {
     try {
       const parts = window.location.pathname.split('/').filter(Boolean);
-      if (parts.length >= 2) fetch(`/${parts[0]}/${parts[1]}/api/log?event=${event}`, { method: 'POST' }).catch(() => {});
+      if (parts.length >= 2) fetch(withToken(`/${parts[0]}/${parts[1]}/api/log?event=${event}`), { method: 'POST' }).catch(() => {});
     } catch {}
   }
 
@@ -719,7 +728,7 @@ function App() {
     const pdfUrl = parts.length >= 2
       ? `/${parts[0]}/${parts[1]}/api/pdf?${new URLSearchParams({start_date: loadedStart||'', end_date: loadedEnd||''})}`
       : '/api/pdf';
-    fetch(pdfUrl)
+    fetch(withToken(pdfUrl))
       .then(r => r.blob())
       .then(blob => {
         const a = document.createElement('a');
@@ -805,7 +814,7 @@ function App() {
         >📥 Excel</button>
         <div className="divider" />
         <button
-          onClick={() => window.open(`/${orgSlug}/admin`, '_blank')}
+          onClick={() => window.open(withToken(`/${orgSlug}/admin`), '_blank')}
           style={{fontSize:11, padding:'4px 10px'}}
         >📧 Subscriptions</button>
       </div>

@@ -230,6 +230,15 @@
     @keyframes spin { to { transform: rotate(360deg); } }
 
   </style>
+  <script>
+    // ── Token auth (injected) ────────────────────────────────────────
+    const URL_TOKEN = new URLSearchParams(window.location.search).get('token') || '';
+    const TOKEN_QS  = URL_TOKEN ? '?token=' + encodeURIComponent(URL_TOKEN) : '';
+    function withToken(url) {
+      if (!URL_TOKEN) return url;
+      return url + (url.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(URL_TOKEN);
+    }
+  </script>
 </head>
 <body>
 
@@ -329,8 +338,8 @@
 const orgSlug = window.location.pathname.split('/').filter(Boolean)[0];
 document.getElementById('org-label').textContent = orgSlug.charAt(0).toUpperCase() + orgSlug.slice(1);
 document.getElementById('report-links').innerHTML = `
-  <a href="/${orgSlug}/facility">Facility Report</a>
-  <a href="/${orgSlug}/gl">GL Rollup</a>
+  <a href="/${orgSlug}/facility${TOKEN_QS}">Facility Report</a>
+  <a href="/${orgSlug}/gl${TOKEN_QS}">GL Rollup</a>
 `;
 
 // ── Schedule radio buttons ────────────────────────────────────────────
@@ -358,7 +367,7 @@ document.querySelectorAll('#daterange-group .radio-btn').forEach(btn => {
 
 // ── Load available reports ────────────────────────────────────────────
 async function loadReports() {
-  const res  = await fetch(`/${orgSlug}/admin/reports`);
+  const res  = await fetch(withToken(`/${orgSlug}/admin/reports`));
   const data = await res.json();
   const box  = document.getElementById('report-checkboxes');
   if (!data.reports || data.reports.length === 0) {
@@ -375,7 +384,7 @@ async function loadReports() {
 
 // ── Load subscribers ──────────────────────────────────────────────────
 async function loadSubscribers() {
-  const res  = await fetch(`/${orgSlug}/admin/subscribers`);
+  const res  = await fetch(withToken(`/${orgSlug}/admin/subscribers`));
   const data = await res.json();
   renderSubscribers(data.subscribers || []);
   renderLog(data.log || []);
@@ -454,7 +463,7 @@ async function subscribe() {
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner-inline"></span> Saving…';
 
-  const res  = await fetch(`/${orgSlug}/admin/subscribe`, {
+  const res  = await fetch(withToken(`/${orgSlug}/admin/subscribe`), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -482,7 +491,7 @@ async function subscribe() {
 // ── Remove ────────────────────────────────────────────────────────────
 async function removeSubscriber(email) {
   if (!confirm(`Remove ${email} from all subscriptions?`)) return;
-  await fetch(`/${orgSlug}/admin/subscribe`, {
+  await fetch(withToken(`/${orgSlug}/admin/subscribe`), {
     method: 'DELETE',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email }),
@@ -498,7 +507,7 @@ async function testSend(email, reports, schedule) {
 
   // Fire all reports — server responds immediately, sends in background
   for (const report of reports) {
-    await fetch(`/${orgSlug}/admin/test-send`, {
+    await fetch(withToken(`/${orgSlug}/admin/test-send`), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, report, schedule }),

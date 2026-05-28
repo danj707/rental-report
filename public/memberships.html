@@ -278,6 +278,15 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script>
+    // ── Token auth (injected) ────────────────────────────────────────
+    const URL_TOKEN = new URLSearchParams(window.location.search).get('token') || '';
+    const TOKEN_QS  = URL_TOKEN ? '?token=' + encodeURIComponent(URL_TOKEN) : '';
+    function withToken(url) {
+      if (!URL_TOKEN) return url;
+      return url + (url.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(URL_TOKEN);
+    }
+  </script>
 </head>
 <body>
   <div id="root"></div>
@@ -505,7 +514,7 @@
       useEffect(() => {
         setLoading(true);
         setError(null);
-        fetch(`/${orgSlug}/${reportType}/api/data`)
+        fetch(withToken(`/${orgSlug}/${reportType}/api/data`))
           .then(r => {
             if (!r.ok) throw new Error(`Server returned ${r.status}`);
             return r.json();
@@ -647,7 +656,7 @@
         const fname = `${orgSlug}-memberships-${new Date().toISOString().slice(0,10)}.xlsx`;
         XLSX.writeFile(wb, fname);
         // log
-        fetch(`/${orgSlug}/${reportType}/api/log`, {
+        fetch(withToken(`/${orgSlug}/${reportType}/api/log`), {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
           body: JSON.stringify({ action: 'excel' })
@@ -655,7 +664,7 @@
       };
 
       const printPage = () => {
-        fetch(`/${orgSlug}/${reportType}/api/log`, {
+        fetch(withToken(`/${orgSlug}/${reportType}/api/log`), {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
           body: JSON.stringify({ action: 'print' })
@@ -1056,7 +1065,7 @@
               <button onClick={printPage} title="Print">🖨️ Print</button>
               <button onClick={exportExcel} title="Excel">📊 Excel</button>
               <button
-                onClick={() => window.open(`/${orgSlug}/admin`, '_blank')}
+                onClick={() => window.open(withToken(`/${orgSlug}/admin`), '_blank')}
                 title="Email Subscriptions"
               >
                 ✉️ Subscriptions

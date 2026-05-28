@@ -215,6 +215,15 @@
     body.print-mode { background: #fff; }
     body.print-mode .page { box-shadow: none; margin: 0; padding: 12px 16px; max-width: 100%; }
   </style>
+  <script>
+    // ── Token auth (injected) ────────────────────────────────────────
+    const URL_TOKEN = new URLSearchParams(window.location.search).get('token') || '';
+    const TOKEN_QS  = URL_TOKEN ? '?token=' + encodeURIComponent(URL_TOKEN) : '';
+    function withToken(url) {
+      if (!URL_TOKEN) return url;
+      return url + (url.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(URL_TOKEN);
+    }
+  </script>
 </head>
 <body>
 <div id="root"></div>
@@ -329,7 +338,7 @@ function App() {
     if (sd) qs.set('start_date', sd);
     if (ed) qs.set('end_date',   ed);
     if (params.site_type) qs.set('site_type', params.site_type);
-    fetch(`${basePath}/api/data?${qs}`)
+    fetch(withToken(`${basePath}/api/data?${qs}`))
       .then(r => { if (!r.ok) throw new Error(`Server returned ${r.status}`); return r.json(); })
       .then(json => {
         setRows((json.rows || []).map(normalizeRow));
@@ -356,7 +365,7 @@ function App() {
     if (loadedStart) qs.set('start_date', loadedStart);
     if (loadedEnd)   qs.set('end_date',   loadedEnd);
     if (params.site_type) qs.set('site_type', params.site_type);
-    fetch(`${basePath}/api/pdf?${qs}`)
+    fetch(withToken(`${basePath}/api/pdf?${qs}`))
       .then(r => r.blob())
       .then(blob => {
         const a = document.createElement('a');
@@ -414,7 +423,7 @@ function App() {
         {orgSlug && (
           <>
             <div className="divider" />
-            <a href={`/${orgSlug}/admin`} style={{color:'#aaa',fontSize:11,textDecoration:'none',padding:'4px 8px',border:'1px solid rgba(255,255,255,.18)',borderRadius:4,whiteSpace:'nowrap'}}>
+            <a href={withToken(`/${orgSlug}/admin`)} style={{color:'#aaa',fontSize:11,textDecoration:'none',padding:'4px 8px',border:'1px solid rgba(255,255,255,.18)',borderRadius:4,whiteSpace:'nowrap'}}>
               📧 Subscriptions
             </a>
           </>
