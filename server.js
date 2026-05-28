@@ -349,20 +349,35 @@ const db = {
   getAllBySchedule(schedule) {
     return readJSON(SUBS_FILE, []).filter(s => s.active && s.schedule === schedule);
   },
-  upsertSubscription(org, email, reports, schedule, locationFilter, dateRange) {
+  upsertSubscription(org, email, reports, schedule, locationFilter, dateRange, reportParams) {
     const subs = readJSON(SUBS_FILE, []);
-    const idx  = subs.findIndex(s => s.org === org && s.email === email);
     const now  = new Date().toISOString();
+    const params = (reportParams && typeof reportParams === "object" && !Array.isArray(reportParams)) ? reportParams : {};
+    const sortedReports = [...reports].sort();
+    const paramsKey = JSON.stringify(params);
+    // Composite dedup: only treat a row as a match if reports, schedule, AND saved params line up.
+    // Lets one email have a "general" digest AND any number of saved-view subscriptions.
+    const idx = subs.findIndex(s => {
+      if (s.org !== org || s.email !== email || s.schedule !== schedule) return false;
+      const sr = Array.isArray(s.reports) ? s.reports : (() => { try { return JSON.parse(s.reports); } catch { return []; } })();
+      if (JSON.stringify([...sr].sort()) !== JSON.stringify(sortedReports)) return false;
+      const sp = (s.reportParams && typeof s.reportParams === "object") ? s.reportParams : {};
+      return JSON.stringify(sp) === paramsKey;
+    });
     if (idx >= 0) {
-      subs[idx] = { ...subs[idx], reports, schedule, locationFilter: locationFilter || null, dateRange: dateRange || null, active: 1, updated_at: now };
+      subs[idx] = { ...subs[idx], reports, schedule, locationFilter: locationFilter || null, dateRange: dateRange || null, reportParams: params, active: 1, updated_at: now };
     } else {
-      subs.push({ id: Date.now(), org, email, reports, schedule, locationFilter: locationFilter || null, dateRange: dateRange || null, active: 1, created_at: now, updated_at: now });
+      subs.push({ id: Date.now() + Math.floor(Math.random() * 1000), org, email, reports, schedule, locationFilter: locationFilter || null, dateRange: dateRange || null, reportParams: params, active: 1, created_at: now, updated_at: now });
     }
     writeJSON(SUBS_FILE, subs);
   },
-  deleteSubscription(org, email) {
-    const subs = readJSON(SUBS_FILE, []).filter(s => !(s.org === org && s.email === email));
-    writeJSON(SUBS_FILE, subs);
+  deleteSubscription(org, email, id) {
+    // If id is provided, delete only that specific row; otherwise delete all rows for (org, email).
+    const subs = readJSON(SUBS_FILE, []);
+    const filtered = id
+      ? subs.filter(s => !(s.org === org && s.email === email && String(s.id) === String(id)))
+      : subs.filter(s => !(s.org === org && s.email === email));
+    writeJSON(SUBS_FILE, filtered);
   },
   appendLog(org, email, report, schedule, status, message) {
     const log = readJSON(LOG_FILE, []);
@@ -462,9 +477,7 @@ async function generatePdf(orgSlug, reportType, startDate, endDate) {
 }
 
 // ── Send report email ────────────────────────────────────────────────
-async function sendReportEmail(orgSlug, email, reportType, schedule, locationFilter, dateRange) {
-  const resolvedDateRange = dateRange || (reportType === "gl" ? "lastMonth" : "next7");
-  const { start, end, label } = getDateRange(resolvedDateRange);
+async function sendReportEmail(orgSlug, email, reportType, schedule, locationFilter, dateRange, savedParams) {
   const orgConfig = ORGS[orgSlug];
   const reportLabel = reportType === "gl"
     ? "GL Code Rollup"
@@ -474,11 +487,43 @@ async function sendReportEmail(orgSlug, email, reportType, schedule, locationFil
         ? "Program Revenue"
         : reportType === "roster"
           ? "Class Roster"
-          : "Facility Rental Schedule";
+          : reportType === "products"
+            ? "Product Sales"
+            : reportType === "memberships"
+              ? "Memberships"
+              : "Facility Rental Schedule";
 
-  const locationParam = (reportType === "facility" && locationFilter) ? `&location_name=${encodeURIComponent(locationFilter)}` : "";
-  const tokenParam = orgConfig.token ? `&token=${encodeURIComponent(orgConfig.token)}` : "";
-  const reportUrl = `${BASE_URL}/${orgSlug}/${reportType}?start_date=${start}&end_date=${end}${locationParam}${tokenParam}`;
+  // Build the URL. If a saved view was captured, use those params verbatim
+  // (after stripping token/_print which we re-add). Otherwise fall back to the
+  // legacy cadence-preset behavior.
+  let reportUrl;
+  let label;
+  let viewSuffix = "";
+  if (savedParams && typeof savedParams === "string" && savedParams.length) {
+    const cleaned = new URLSearchParams(savedParams);
+    cleaned.delete("token");
+    cleaned.delete("_print");
+    if (orgConfig.token) cleaned.set("token", orgConfig.token);
+    const qs = cleaned.toString();
+    reportUrl = `${BASE_URL}/${orgSlug}/${reportType}${qs ? `?${qs}` : ""}`;
+    const sd = cleaned.get("start_date");
+    const ed = cleaned.get("end_date");
+    if (sd && ed) {
+      label = (sd === ed) ? sd : `${sd} to ${ed}`;
+    } else {
+      label = "Saved view";
+    }
+    // Count non-date/token filter params for a tiny indicator in the email
+    const filterCount = [...cleaned.keys()].filter(k => !["start_date","end_date","token"].includes(k)).length;
+    if (filterCount > 0) viewSuffix = ` (${filterCount} filter${filterCount === 1 ? "" : "s"})`;
+  } else {
+    const resolvedDateRange = dateRange || (reportType === "gl" ? "lastMonth" : "next7");
+    const r = getDateRange(resolvedDateRange);
+    label = r.label;
+    const locationParam = (reportType === "facility" && locationFilter) ? `&location_name=${encodeURIComponent(locationFilter)}` : "";
+    const tokenParam = orgConfig.token ? `&token=${encodeURIComponent(orgConfig.token)}` : "";
+    reportUrl = `${BASE_URL}/${orgSlug}/${reportType}?start_date=${r.start}&end_date=${r.end}${locationParam}${tokenParam}`;
+  }
 
   const resend = getResendClient();
   if (!resend) {
@@ -492,7 +537,7 @@ async function sendReportEmail(orgSlug, email, reportType, schedule, locationFil
     const { error } = await resend.emails.send({
       from: `${FROM_NAME} <${FROM_EMAIL}>`,
       to: email,
-      subject: `${reportLabel} — ${label}`,
+      subject: `${reportLabel} — ${label}${viewSuffix}`,
       html: `
         <div style="font-family:sans-serif;max-width:500px;margin:0 auto;padding:32px 24px">
           <img src="${orgConfig.logoUrl}" style="height:40px;margin-bottom:20px;display:block" />
@@ -536,7 +581,8 @@ async function runSchedule(scheduleType) {
   for (const sub of subs) {
     const reports = Array.isArray(sub.reports) ? sub.reports : JSON.parse(sub.reports);
     for (const report of reports) {
-      await sendReportEmail(sub.org, sub.email, report, scheduleType, sub.locationFilter, sub.dateRange);
+      const savedParams = (sub.reportParams && typeof sub.reportParams === "object") ? (sub.reportParams[report] || null) : null;
+      await sendReportEmail(sub.org, sub.email, report, scheduleType, sub.locationFilter, sub.dateRange, savedParams);
     }
   }
   console.log(`[cron] ${scheduleType} sends complete — ${subs.length} subscribers`);
@@ -794,21 +840,49 @@ app.get("/:org/admin/subscribers", (req, res) => {
 
 app.post("/:org/admin/subscribe", (req, res) => {
   if (!ORGS[req.params.org]) return res.status(404).json({ error: "Unknown org" });
-  const { email, reports, schedule, locationFilter, dateRange } = req.body;
+  const { email, reports, schedule, locationFilter, dateRange, reportParams } = req.body;
   if (!email || !reports?.length || !schedule) return res.status(400).json({ error: "email, reports, and schedule are required" });
   if (!["daily","weekly","monthly"].includes(schedule)) return res.status(400).json({ error: "schedule must be daily, weekly, or monthly" });
   const validReports = reports.filter(r => REPORT_TYPES.includes(r));
   if (!validReports.length) return res.status(400).json({ error: "No valid report types" });
   const validDateRanges = ["today","next7","next30","last7","lastMonth"];
-  db.upsertSubscription(req.params.org, email.toLowerCase().trim(), validReports, schedule, locationFilter || null, validDateRanges.includes(dateRange) ? dateRange : null);
+
+  // Validate + sanitize reportParams (optional object keyed by report type → URL query string)
+  const cleanReportParams = {};
+  if (reportParams && typeof reportParams === "object" && !Array.isArray(reportParams)) {
+    for (const [key, val] of Object.entries(reportParams)) {
+      if (!REPORT_TYPES.includes(key)) continue;
+      if (typeof val !== "string") continue;
+      const p = new URLSearchParams(val);
+      p.delete("token");
+      p.delete("_print");
+      const filtered = new URLSearchParams();
+      for (const [k, v] of p) {
+        if (v === "" || v === "null" || v === "undefined") continue;
+        filtered.set(k, v);
+      }
+      const out = filtered.toString();
+      if (out.length) cleanReportParams[key] = out;
+    }
+  }
+
+  db.upsertSubscription(
+    req.params.org,
+    email.toLowerCase().trim(),
+    validReports,
+    schedule,
+    locationFilter || null,
+    validDateRanges.includes(dateRange) ? dateRange : null,
+    cleanReportParams,
+  );
   res.json({ ok: true });
 });
 
 app.delete("/:org/admin/subscribe", (req, res) => {
   if (!ORGS[req.params.org]) return res.status(404).json({ error: "Unknown org" });
-  const { email } = req.body;
+  const { email, id } = req.body;
   if (!email) return res.status(400).json({ error: "email required" });
-  db.deleteSubscription(req.params.org, email.toLowerCase().trim());
+  db.deleteSubscription(req.params.org, email.toLowerCase().trim(), id || null);
   res.json({ ok: true });
 });
 
