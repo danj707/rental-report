@@ -162,22 +162,6 @@
       cursor: pointer;
       user-select: none;
     }
-    .toggle-row .filter-text {
-      margin-left: auto;
-      display: flex;
-      gap: 6px;
-      align-items: center;
-    }
-    .toggle-row .filter-text input {
-      padding: 4px 8px;
-      border: 1px solid #d1d5db;
-      border-radius: 4px;
-      font-size: 12px;
-      min-width: 180px;
-      font-family: inherit;
-    }
-    .toggle-row .filter-text input:focus { outline: none; border-color: #3b82f6; }
-
     /* ── Chart wrap ── */
     .chart-wrap {
       position: relative;
@@ -277,6 +261,77 @@ function normalize(rows) {
     .filter(r => r.courtName);
 }
 
+// ── Location multi-select (mirrors the facility.html location filter) ─
+function LocationFilter({ all, selected, onChange }) {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState('');
+  const ref = useRef(null);
+
+  useEffect(() => {
+    function onDown(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false); }
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, []);
+
+  const sel = new Set(selected);
+  const partial = selected.length > 0 && selected.length < all.length;
+  let label;
+  if (all.length === 0) label = 'No locations';
+  else if (selected.length === 0) label = 'No locations';
+  else if (selected.length === all.length) label = 'All locations';
+  else if (selected.length === 1) label = selected[0];
+  else label = `${selected.length} of ${all.length}`;
+
+  const shown = q ? all.filter(l => l.toLowerCase().includes(q.toLowerCase())) : all;
+
+  function toggle(loc) {
+    const next = new Set(sel);
+    if (next.has(loc)) next.delete(loc); else next.add(loc);
+    onChange(all.filter(l => next.has(l))); // preserve sorted order
+  }
+
+  return (
+    <div ref={ref} style={{position:'relative', display:'inline-block'}}>
+      <button type="button" onClick={() => setOpen(o => !o)}
+        style={{display:'flex', alignItems:'center', gap:'8px', padding:'6px 10px',
+          border:'1px solid #d1d5db', borderRadius:'6px', background:'#fff',
+          fontSize:'13px', cursor:'pointer', minWidth:'160px', justifyContent:'space-between'}}>
+        <span style={{display:'flex', alignItems:'center', gap:'6px'}}>
+          <span style={{fontSize:'11px', color:'#666', fontWeight:600, textTransform:'uppercase', letterSpacing:'0.5px'}}>Locations</span>
+          <span>{label}</span>
+          {partial && <span style={{background:'#f59e0b', color:'#fff', borderRadius:'10px', padding:'0 6px', fontSize:'10px', fontWeight:700}}>{selected.length}</span>}
+        </span>
+        <span style={{color:'#9ca3af', fontSize:'10px'}}>▾</span>
+      </button>
+      {open && (
+        <div style={{position:'absolute', top:'calc(100% + 4px)', right:0, width:'260px', zIndex:200,
+          background:'#fff', border:'1px solid #d1d5db', borderRadius:'8px',
+          boxShadow:'0 8px 24px rgba(0,0,0,0.12)', padding:'8px'}}>
+          <input type="text" placeholder="Search locations…" value={q}
+            onChange={e => setQ(e.target.value)} autoFocus
+            style={{width:'100%', boxSizing:'border-box', padding:'6px 8px', marginBottom:'6px',
+              border:'1px solid #d1d5db', borderRadius:'6px', fontSize:'13px'}} />
+          <div style={{display:'flex', gap:'8px', marginBottom:'6px'}}>
+            <button type="button" onClick={() => onChange(all.slice())}
+              style={{flex:1, padding:'4px', fontSize:'12px', border:'1px solid #d1d5db', borderRadius:'6px', background:'#f9fafb', cursor:'pointer'}}>Select all</button>
+            <button type="button" onClick={() => onChange([])}
+              style={{flex:1, padding:'4px', fontSize:'12px', border:'1px solid #d1d5db', borderRadius:'6px', background:'#f9fafb', cursor:'pointer'}}>None</button>
+          </div>
+          <div style={{maxHeight:'220px', overflowY:'auto'}}>
+            {shown.length === 0 && <div style={{padding:'8px', fontSize:'13px', color:'#9ca3af'}}>No matches</div>}
+            {shown.map(loc => (
+              <label key={loc} style={{display:'flex', alignItems:'center', gap:'8px', padding:'4px 4px', fontSize:'13px', cursor:'pointer'}}>
+                <input type="checkbox" checked={sel.has(loc)} onChange={() => toggle(loc)} />
+                <span>{loc}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Main app ────────────────────────────────────────────────────────
 function App() {
   const orgSlug    = useMemo(() => window.location.pathname.split('/').filter(Boolean)[0] || '', []);
@@ -285,9 +340,10 @@ function App() {
   const today = new Date();
   const [startDate, setStartDate] = useState(isoDate(startOfMonth(today)));
   const [endDate,   setEndDate]   = useState(isoDate(endOfMonth(today)));
-  const [locationFilter, setLocationFilter] = useState('');
+  const [selectedLocations, setSelectedLocations] = useState([]); // explicit list of locations to show
   const [includePrograms, setIncludePrograms] = useState(true);
   const [includeClosures, setIncludeClosures] = useState(false);
+  const [hrsPerDay, setHrsPerDay] = useState(16); // assumed open hrs/day per court — interim utilization denominator until real per-court hours are wired in (item #4)
 
   const [rows, setRows]       = useState([]);
   const [logoUrl, setLogoUrl] = useState(null);
@@ -330,15 +386,32 @@ function App() {
   // ── Derived data ──────────────────────────────────────────────────
   const normalized = useMemo(() => normalize(rows), [rows]);
 
+  // Distinct locations present in the loaded data (for the location filter).
+  const allLocations = useMemo(
+    () => Array.from(new Set(normalized.map(r => r.locationName).filter(Boolean))).sort(),
+    [normalized]
+  );
+
+  // When new data loads, default the location filter to "all present locations".
+  useEffect(() => { setSelectedLocations(allLocations); }, [allLocations]);
+
+  // Calendar days in the loaded range (inclusive) — used for the utilization denominator.
+  const daysInRange = useMemo(() => {
+    const s = loadedStart || startDate, e = loadedEnd || endDate;
+    if (!s || !e) return 1;
+    const ms = new Date(e + 'T00:00:00') - new Date(s + 'T00:00:00');
+    return Math.max(1, Math.round(ms / 86400000) + 1);
+  }, [loadedStart, loadedEnd, startDate, endDate]);
+
   const filtered = useMemo(() => {
-    const needle = locationFilter.trim().toLowerCase();
+    const locSet = new Set(selectedLocations);
     return normalized.filter(r => {
       if (!includePrograms && r.usageCategory === 'Program / League') return false;
       if (!includeClosures && r.usageCategory === 'Closure / Block')  return false;
-      if (needle && !r.locationName.toLowerCase().includes(needle))   return false;
+      if (!locSet.has(r.locationName))                                return false;
       return true;
     });
-  }, [normalized, includePrograms, includeClosures, locationFilter]);
+  }, [normalized, includePrograms, includeClosures, selectedLocations]);
 
   const grouped = useMemo(() => {
     const byCourt = new Map();
@@ -348,23 +421,40 @@ function App() {
         byCourt.set(label, {
           label, location: r.locationName, court: r.courtName,
           customer: new Set(), program: new Set(), closure: new Set(),
+          customerHrs: 0, programHrs: 0, closureHrs: 0,
         });
       }
       const e = byCourt.get(label);
-      if (r.usageCategory === 'Program / League')     e.program.add(r.facilityRentalId);
-      else if (r.usageCategory === 'Closure / Block') e.closure.add(r.facilityRentalId);
-      else                                             e.customer.add(r.facilityRentalId);
+      const hrs = r.durationHours || 0;
+      if (r.usageCategory === 'Program / League')     { e.program.add(r.facilityRentalId);  e.programHrs  += hrs; }
+      else if (r.usageCategory === 'Closure / Block') { e.closure.add(r.facilityRentalId);  e.closureHrs  += hrs; }
+      else                                             { e.customer.add(r.facilityRentalId); e.customerHrs += hrs; }
     }
-    const arr = Array.from(byCourt.values()).map(e => ({
-      ...e,
-      customer: e.customer.size,
-      program:  e.program.size,
-      closure:  e.closure.size,
-      total:    e.customer.size + e.program.size + e.closure.size,
-    }));
+    const availPerCourt = (Number(hrsPerDay) || 0) * daysInRange;
+    const arr = Array.from(byCourt.values()).map(e => {
+      const usedHrs = e.customerHrs + e.programHrs; // closures are unavailability, not utilization
+      return {
+        ...e,
+        customer: e.customer.size,
+        program:  e.program.size,
+        closure:  e.closure.size,
+        total:    e.customer.size + e.program.size + e.closure.size,
+        usedHrs,
+        availHrs: availPerCourt,
+        utilPct:  availPerCourt > 0 ? (usedHrs / availPerCourt) * 100 : null,
+      };
+    });
     arr.sort((a,b) => b.total - a.total);
     return arr;
-  }, [filtered]);
+  }, [filtered, hrsPerDay, daysInRange]);
+
+  // Overall utilization across the courts currently shown.
+  const overallUtil = useMemo(() => {
+    if (!grouped.length) return null;
+    const used  = grouped.reduce((s,g) => s + g.usedHrs, 0);
+    const avail = grouped.reduce((s,g) => s + g.availHrs, 0);
+    return avail > 0 ? (used / avail) * 100 : null;
+  }, [grouped]);
 
   const stats = useMemo(() => {
     const fr = new Set(filtered.map(r => r.facilityRentalId).filter(Boolean));
@@ -394,9 +484,36 @@ function App() {
     if (includePrograms) datasets.push({ label: 'Programs / Leagues', data: grouped.map(g => g.program), backgroundColor: '#2563eb', borderWidth: 0 });
     if (includeClosures) datasets.push({ label: 'Closures / Blocks',  data: grouped.map(g => g.closure), backgroundColor: '#9ca3af', borderWidth: 0 });
 
+    // Draw each court's utilization % just above its stacked bar.
+    const utilLabelPlugin = {
+      id: 'utilLabels',
+      afterDatasetsDraw(chart) {
+        const { ctx } = chart;
+        const metas = chart.data.datasets.map((_, i) => chart.getDatasetMeta(i)).filter(m => !m.hidden);
+        ctx.save();
+        ctx.font = '600 10px "IBM Plex Mono", monospace';
+        ctx.fillStyle = '#111';
+        ctx.textAlign = 'center';
+        grouped.forEach((g, i) => {
+          if (g.utilPct == null) return;
+          let topY = null, x = null;
+          metas.forEach(m => {
+            const bar = m.data && m.data[i];
+            if (!bar) return;
+            x = bar.x;
+            if (topY === null || bar.y < topY) topY = bar.y;
+          });
+          if (topY == null || x == null) return;
+          ctx.fillText(Math.round(g.utilPct) + '%', x, topY - 4);
+        });
+        ctx.restore();
+      },
+    };
+
     chartRef.current = new Chart(canvasRef.current, {
       type: 'bar',
       data: { labels, datasets },
+      plugins: [utilLabelPlugin],
       options: {
         responsive: true,
         maintainAspectRatio: false,
@@ -407,7 +524,13 @@ function App() {
             callbacks: {
               footer: (items) => {
                 const total = items.reduce((s, it) => s + (it.parsed?.y || 0), 0);
-                return `Total: ${total}`;
+                const idx = items[0]?.dataIndex;
+                const g = (idx != null) ? grouped[idx] : null;
+                const out = [`Total bookings: ${total}`];
+                if (g && g.utilPct != null) {
+                  out.push(`Utilization: ${g.utilPct.toFixed(0)}% (${g.usedHrs.toFixed(1)} of ${g.availHrs.toFixed(0)}h)`);
+                }
+                return out;
               },
             },
           },
@@ -432,7 +555,12 @@ function App() {
       'Programs / Leagues': g.program,
       'Closures / Blocks': g.closure,
       Total: g.total,
+      'Used Hours': Number(g.usedHrs.toFixed(2)),
+      'Avail Hours': Number(g.availHrs.toFixed(1)),
+      'Utilization %': g.utilPct == null ? '' : Number(g.utilPct.toFixed(1)),
     }));
+    const tUsed  = grouped.reduce((s,g) => s + g.usedHrs, 0);
+    const tAvail = grouped.reduce((s,g) => s + g.availHrs, 0);
     rows.push({}); // spacer
     rows.push({
       Location: 'TOTALS',
@@ -441,9 +569,12 @@ function App() {
       'Programs / Leagues': grouped.reduce((s,g) => s + g.program, 0),
       'Closures / Blocks': grouped.reduce((s,g) => s + g.closure, 0),
       Total: grouped.reduce((s,g) => s + g.total, 0),
+      'Used Hours': Number(tUsed.toFixed(2)),
+      'Avail Hours': Number(tAvail.toFixed(1)),
+      'Utilization %': tAvail > 0 ? Number(((tUsed / tAvail) * 100).toFixed(1)) : '',
     });
     const ws = XLSX.utils.json_to_sheet(rows);
-    ws['!cols'] = [{wch:24},{wch:24},{wch:18},{wch:18},{wch:18},{wch:10}];
+    ws['!cols'] = [{wch:24},{wch:24},{wch:18},{wch:18},{wch:18},{wch:10},{wch:12},{wch:12},{wch:14}];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Court Utilization');
     const fname = `court-utilization_${orgSlug}_${loadedStart || startDate}_${loadedEnd || endDate}.xlsx`;
@@ -523,6 +654,10 @@ function App() {
 
         {/* Summary cards */}
         <div className="summary-cards">
+          <div className="summary-card" style={{borderLeftColor:'#7c3aed'}}>
+            <div className="card-label">Court Utilization</div>
+            <div className="card-value">{overallUtil == null ? '—' : overallUtil.toFixed(0) + '%'}</div>
+          </div>
           <div className="summary-card green">
             <div className="card-label">Courts with Activity</div>
             <div className="card-value">{stats.distinctCourts.toLocaleString()}</div>
@@ -551,11 +686,15 @@ function App() {
             <input type="checkbox" checked={includeClosures} onChange={e => setIncludeClosures(e.target.checked)} />
             Include closures / blocks
           </label>
-          <div className="filter-text">
-            <label htmlFor="loc-filter" style={{fontSize:'11px',color:'#666',fontWeight:600,textTransform:'uppercase',letterSpacing:'0.5px'}}>Location contains</label>
-            <input id="loc-filter" type="text" placeholder="e.g. Tennis, Ice"
-              value={locationFilter}
-              onChange={e => setLocationFilter(e.target.value)} />
+          <label title="Assumed hours each court is open per day. Used as the interim denominator for utilization % until real per-court operating hours are wired in.">
+            Open hrs/day
+            <input type="number" min="1" max="24" step="0.5"
+              value={hrsPerDay}
+              onChange={e => setHrsPerDay(e.target.value)}
+              style={{width:'58px',marginLeft:'6px'}} />
+          </label>
+          <div style={{marginLeft:'auto'}}>
+            <LocationFilter all={allLocations} selected={selectedLocations} onChange={setSelectedLocations} />
           </div>
         </div>
 
