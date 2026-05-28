@@ -1200,7 +1200,7 @@ app.get("/", (req, res) => {
     // Inline metrics toggle (only for orgs with orgId)
     const metricsToggle = org.orgId ? `
         <div class="metrics-toggle-row">
-          <button class="metrics-toggle-btn" onclick="toggleMetrics('${slug}', this)">▸ 📈 Metrics</button>
+          <button class="metrics-toggle-btn" onclick="toggleMetrics('${slug}', this, '${org.token || ""}')">▸ 📈 Metrics</button>
           <a href="/${slug}/metrics${tokenQS}" class="metrics-full-link">View full metrics →</a>
         </div>
         <div class="metrics-panel" id="metrics-${slug}" style="display:none"></div>` : "";
@@ -1471,7 +1471,7 @@ app.get("/", (req, res) => {
       }).catch(() => { prompt('Copy this URL:', url); });
     }
 
-    async function toggleMetrics(slug, btn) {
+    async function toggleMetrics(slug, btn, token) {
       const panel = document.getElementById('metrics-' + slug);
       const open  = panel.style.display !== 'none';
       if (open) {
@@ -1486,7 +1486,8 @@ app.get("/", (req, res) => {
       if (metricsCache[slug]) { renderMetrics(panel, metricsCache[slug]); return; }
       panel.innerHTML = '<div class="metrics-loading">Loading…</div>';
       try {
-        const data = await fetch('/' + slug + '/metrics/api/data?days=30').then(r => r.json());
+        const tokenQS = token ? '&token=' + encodeURIComponent(token) : '';
+        const data = await fetch('/' + slug + '/metrics/api/data?days=30' + tokenQS).then(r => r.json());
         metricsCache[slug] = data;
         renderMetrics(panel, data);
       } catch(e) {
