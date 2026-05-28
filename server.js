@@ -1155,10 +1155,12 @@ app.get('/api/hotdog', async (req, res) => {
   }
 });
 
-app.get("/:org", (req, res) => {
+app.get("/:org", (req, res, next) => {
   const slug = req.params.org;
   const org  = ORGS[slug];
-  if (!org) return res.status(404).send("Unknown org");
+  // Fall through to express.static so static assets like /feedback-widget.js
+  // can be served. If nothing else matches, Express returns its default 404.
+  if (!org) return next();
 
   const reportMeta = {
     facility: { label: "Facility Rental Schedule", icon: "📅", desc: "Reservations grouped by date and location" },
