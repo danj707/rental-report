@@ -391,7 +391,7 @@ function normalizeRow(raw) {
 
 
 // ── SubscribeButton ─────────────────────────────────────────────────────────
-function SubscribeButton({ orgSlug, reportType, reportLabel, currentParams }) {
+function SubscribeButton({ orgSlug, reportType, reportLabel, filters }) {
   const [open, setOpen]       = useState(false);
   const [email, setEmail]     = useState('');
   const [schedule, setSched]  = useState('weekly');
@@ -399,14 +399,26 @@ function SubscribeButton({ orgSlug, reportType, reportLabel, currentParams }) {
   const [error, setError]     = useState(null);
   const [success, setSuccess] = useState(null);
 
-  // Build a clean URLSearchParams from currentParams: strip token + _print + empties.
+  // Build a clean URLSearchParams from the live filters object — skip empty values.
+  // We don't read window.location.search because date pickers / inputs update React
+  // state without touching the URL.
   const cleanQS = useMemo(() => {
-    const p = new URLSearchParams(currentParams || '');
-    p.delete('token'); p.delete('_print');
-    // strip empty values
-    Array.from(p.keys()).forEach(k => { if (!p.get(k)) p.delete(k); });
+    const p = new URLSearchParams();
+    Object.entries(filters || {}).forEach(([k, v]) => {
+      if (v !== null && v !== undefined && String(v).trim() !== '') p.set(k, String(v));
+    });
     return p;
-  }, [currentParams]);
+  }, [filters]);
+
+  const LABELS = {
+    start_date:   'Start date',
+    end_date:     'End date',
+    section_name: 'Section filter',
+    location_name: 'Location',
+    site_type:    'Site type',
+    program_name: 'Program',
+    status:       'Status',
+  };
 
   const summaryItems = useMemo(() => {
     const items = [];
@@ -417,7 +429,8 @@ function SubscribeButton({ orgSlug, reportType, reportLabel, currentParams }) {
     else if (ed)  items.push({ label: 'End date',   value: ed });
     cleanQS.forEach((v, k) => {
       if (k === 'start_date' || k === 'end_date') return;
-      items.push({ label: k.replace(/_/g, ' '), value: v });
+      const label = LABELS[k] || k.replace(/_/g, ' ');
+      items.push({ label, value: v });
     });
     return items;
   }, [cleanQS]);
@@ -757,7 +770,7 @@ function App() {
         >
           {pdfLoading ? 'Generating…' : '📄 PDF'}
         </button>
-        <SubscribeButton orgSlug={orgSlug} reportType="roster" reportLabel="Class Roster" currentParams={window.location.search} />
+        <SubscribeButton orgSlug={orgSlug} reportType="roster" reportLabel="Class Roster" filters={{ start_date: startDate, end_date: endDate, section_name: sectionFilter }} />
         <div className="toolbar-divider" />
         <a href={withToken(`/${orgSlug}/admin`)} style={{color:'#aaa',fontSize:11,textDecoration:'none',padding:'4px 8px',border:'1px solid rgba(255,255,255,.18)',borderRadius:4,whiteSpace:'nowrap'}}>
           📧 Subscriptions
