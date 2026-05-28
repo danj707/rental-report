@@ -1397,6 +1397,27 @@ app.get("/", (req, res) => {
         <p>Auto-deploys from the <code>main</code> branch of <code>danj707/rental-report</code> on GitHub. Every push triggers a Railway redeploy &#8212; typically live in 60&#8211;90 seconds. Uses <code>node:20-slim</code> with system Chromium for Puppeteer.</p>
       </div>
     </div>
+
+    <div class="org-section">
+      <div class="org-header">
+        <div class="org-header-text">
+          <div class="org-name">&#9881;&#65039; Claude Skills</div>
+          <div class="org-slug">Instructions Claude uses to perform tasks in this project</div>
+        </div>
+        <div class="org-header-actions">
+          <a href="https://github.com/danj707/rental-report/tree/main/docs/skills" target="_blank" class="org-action-link">View on GitHub &#8599;</a>
+        </div>
+      </div>
+      <div style="padding:14px 20px;display:flex;flex-direction:column;gap:8px">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:#f9f8f6;border:1px solid #e8e5df;border-radius:6px">
+          <div>
+            <div style="font-size:13px;font-weight:600;color:#222">Add New Org</div>
+            <div style="font-size:11.5px;color:#888;margin-top:2px">Onboard a new organization to the rental report platform</div>
+          </div>
+          <a href="https://github.com/danj707/rental-report/blob/main/docs/skills/add-rec-report-org.md" target="_blank" style="font-size:11px;padding:5px 12px;background:#fff;border:1px solid #ddd;border-radius:4px;color:#444;text-decoration:none;white-space:nowrap">Edit skill &#8599;</a>
+        </div>
+      </div>
+    </div>
   </div>
   <footer>rec.us · ${Object.keys(ORGS).length} organizations</footer>
   <script>
