@@ -1,0 +1,723 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Facility Overview</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, -apple-system, sans-serif; background: #f4f5f7; color: #1a1a2e; }
+
+    /* ── Toolbar ── */
+    .toolbar {
+      position: sticky; top: 0; z-index: 100;
+      background: #1a1a2e; padding: 10px 16px;
+      display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    }
+    .toolbar-divider { width: 1px; height: 24px; background: rgba(255,255,255,.2); }
+    .toolbar label { color: #aaa; font-size: 11px; }
+    .toolbar input[type="date"] {
+      background: rgba(255,255,255,.1); border: 1px solid rgba(255,255,255,.2);
+      color: #fff; border-radius: 5px; padding: 5px 8px; font-size: 13px; cursor: pointer;
+    }
+    .toolbar input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(1); opacity:.6; }
+    .btn {
+      padding: 6px 13px; border-radius: 5px; border: 1px solid rgba(255,255,255,.25);
+      background: transparent; color: #ddd; font-size: 12px; cursor: pointer; white-space: nowrap;
+      transition: background .15s;
+    }
+    .btn:hover { background: rgba(255,255,255,.1); }
+    .btn-run {
+      background: #16a34a; border-color: #16a34a; color: #fff; font-weight: 700; font-size: 13px;
+      padding: 7px 18px;
+    }
+    .btn-run:hover { background: #15803d; }
+    .btn-run:disabled { opacity: .5; cursor: not-allowed; }
+    .btn-excel { background: #166534; border-color: #166534; color: #fff; font-weight: 600; }
+    .btn-excel:hover { background: #14532d; }
+    .btn-pdf { background: #3b82f6; border-color: #3b82f6; font-weight: 600; color: #fff; }
+    .btn-pdf:hover { background: #2563eb; }
+    .btn-pdf:disabled { opacity: .5; cursor: not-allowed; }
+    .report-header-logo { height: 32px; max-width: 120px; object-fit: contain; object-position: left center; }
+
+    /* ── Stats band ── */
+    .stats-band {
+      background: #fff; border-bottom: 1px solid #e5e7eb;
+      display: flex; gap: 0; overflow-x: auto;
+    }
+    .stat-card {
+      flex: 1 1 140px; padding: 14px 18px; border-right: 1px solid #f0f0f4;
+      text-align: center; min-width: 120px;
+    }
+    .stat-card:last-child { border-right: none; }
+    .stat-label { font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: #888; font-weight: 600; margin-bottom: 3px; }
+    .stat-value { font-size: 20px; font-weight: 800; letter-spacing: -.5px; }
+    .stat-value.blue   { color: #2563eb; }
+    .stat-value.indigo { color: #6366f1; }
+    .stat-value.green  { color: #16a34a; }
+    .stat-value.amber  { color: #d97706; }
+    .stat-value.slate  { color: #475569; }
+    .stat-value.purple { color: #7c3aed; }
+    .stat-sub { font-size: 10px; color: #aaa; margin-top: 2px; }
+    .stat-org-wide { font-size: 9px; color: #bbb; letter-spacing: .5px; margin-top: 1px; }
+
+    /* ── Controls bar ── */
+    .controls-bar {
+      padding: 12px 20px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+      background: #f4f5f7; border-bottom: 1px solid #e5e7eb;
+    }
+    .controls-bar select {
+      padding: 6px 10px; border: 1px solid #d1d5db; border-radius: 6px;
+      font-size: 13px; background: #fff; cursor: pointer;
+    }
+    .view-toggle { display: flex; gap: 0; border: 1px solid #d1d5db; border-radius: 6px; overflow: hidden; }
+    .view-btn {
+      padding: 6px 14px; font-size: 12px; cursor: pointer; background: #fff;
+      border: none; color: #555; transition: background .15s;
+    }
+    .view-btn.active { background: #1a1a2e; color: #fff; }
+    .controls-right { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+    .results-count { font-size: 12px; color: #888; }
+
+    /* ── Location filter dropdown ── */
+    .loc-filter-wrap { position: relative; }
+    .btn-loc-filter {
+      display: flex; align-items: center; gap: 6px; white-space: nowrap;
+      padding: 6px 13px; border-radius: 5px; border: 1px solid #d1d5db;
+      background: #fff; color: #444; font-size: 12px; cursor: pointer;
+    }
+    .btn-loc-filter .badge {
+      background: #f59e0b; color: #1a1a1a; border-radius: 10px;
+      font-size: 10px; font-weight: 700; padding: 1px 6px; line-height: 1.4;
+    }
+    .loc-dropdown {
+      position: absolute; top: calc(100% + 6px); left: 0; z-index: 200;
+      background: #1e1e1e; border: 1px solid rgba(255,255,255,.15); border-radius: 6px;
+      min-width: 240px; max-height: 340px; display: flex; flex-direction: column;
+      box-shadow: 0 8px 24px rgba(0,0,0,.5);
+    }
+    .loc-dropdown-header {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 8px 12px; border-bottom: 1px solid rgba(255,255,255,.1);
+      font-size: 10px; text-transform: uppercase; letter-spacing: .5px; color: #aaa; flex-shrink: 0;
+    }
+    .loc-dropdown-header-actions { display: flex; gap: 8px; }
+    .loc-dropdown-header button {
+      padding: 2px 6px; font-size: 10px;
+      border: 1px solid rgba(255,255,255,.15); border-radius: 3px;
+      background: rgba(255,255,255,.06); color: #ccc; cursor: pointer;
+    }
+    .loc-dropdown-header button:hover { background: rgba(255,255,255,.12); }
+    .loc-dropdown-search { padding: 6px 10px; border-bottom: 1px solid rgba(255,255,255,.08); flex-shrink: 0; }
+    .loc-dropdown-search input {
+      width: 100%; padding: 4px 8px;
+      background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.15);
+      border-radius: 4px; color: #fff; font-size: 11px; font-family: inherit; outline: none;
+    }
+    .loc-dropdown-search input::placeholder { color: #777; }
+    .loc-dropdown-search input:focus { border-color: #3b82f6; }
+    .loc-dropdown-list { overflow-y: auto; flex: 1; padding: 4px 0; }
+    .loc-dropdown-list::-webkit-scrollbar { width: 4px; }
+    .loc-dropdown-list::-webkit-scrollbar-thumb { background: rgba(255,255,255,.2); border-radius: 2px; }
+    .loc-item {
+      display: flex; align-items: center; gap: 8px;
+      padding: 5px 12px; cursor: pointer; font-size: 12px; color: #ddd;
+    }
+    .loc-item:hover { background: rgba(255,255,255,.07); }
+    .loc-item input[type="checkbox"] { accent-color: #3b82f6; width: 13px; height: 13px; flex-shrink: 0; }
+
+    /* ── Cards grid ── */
+    .cards-grid {
+      padding: 20px; display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(310px, 1fr));
+      gap: 16px;
+    }
+    .loc-card {
+      background: #fff; border-radius: 10px; border: 1px solid #e5e7eb;
+      padding: 18px; box-shadow: 0 1px 3px rgba(0,0,0,.06);
+      transition: box-shadow .15s, transform .1s;
+      display: flex; flex-direction: column; gap: 12px;
+    }
+    .loc-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,.1); transform: translateY(-1px); }
+    .loc-card-name { font-size: 14px; font-weight: 700; color: #1a1a2e; }
+    .loc-card-revenue { font-size: 28px; font-weight: 800; color: #2563eb; letter-spacing: -.5px; }
+    .loc-card-revenue-sub { font-size: 11px; color: #888; margin-top: 1px; }
+
+    .loc-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .loc-stat { background: #f8f9fb; border-radius: 6px; padding: 8px 10px; }
+    .loc-stat-label { font-size: 10px; color: #888; text-transform: uppercase; letter-spacing: .8px; font-weight: 600; margin-bottom: 2px; }
+    .loc-stat-val { font-size: 15px; font-weight: 700; color: #1a1a2e; }
+    .loc-stat-sub { font-size: 10.5px; color: #aaa; }
+
+    /* ── Table ── */
+    .table-wrap { padding: 20px; overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 10px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,.06); font-size: 13px; }
+    thead { background: #1a1a2e; }
+    th {
+      padding: 12px 14px; color: #aaa; font-size: 11px; font-weight: 600;
+      text-transform: uppercase; letter-spacing: .8px; white-space: nowrap;
+      cursor: pointer; user-select: none; text-align: right;
+    }
+    th:first-child { text-align: left; }
+    th:hover { color: #fff; }
+    th.sorted { color: #60a5fa; }
+    th .sort-icon { margin-left: 4px; opacity: .7; }
+    td { padding: 11px 14px; border-bottom: 1px solid #f0f0f4; vertical-align: middle; }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: #f8f9ff; }
+    td.loc-name { font-weight: 600; color: #1a1a2e; font-size: 13.5px; }
+    td.num { text-align: right; color: #444; }
+    td.rev { text-align: right; font-weight: 600; }
+    td.rev-rental { color: #6366f1; }
+    td.rev-total  { color: #2563eb; font-size: 14px; }
+    td.zero { color: #ccc; }
+    .total-row td { background: #f0f4ff; font-weight: 700; border-top: 2px solid #2563eb; }
+    .total-row .loc-name { color: #2563eb; }
+
+    /* ── Empty / loading / error ── */
+    .state-center {
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      min-height: 280px; gap: 12px; color: #888;
+    }
+    .state-center .icon { font-size: 40px; }
+    .state-center .msg  { font-size: 15px; font-weight: 600; }
+    .state-center .sub  { font-size: 13px; color: #aaa; }
+    .spinner {
+      width: 32px; height: 32px; border: 3px solid #e5e7eb; border-top-color: #2563eb;
+      border-radius: 50%; animation: spin .7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Report header (print area) ── */
+    .report-area { padding: 24px 28px 0; max-width: 1400px; margin: 0 auto; }
+    .report-header { display: flex; justify-content: space-between; align-items: flex-end; padding-bottom: 14px; border-bottom: 2px solid #1a1a2e; margin-bottom: 20px; }
+    .report-header .left { display: flex; flex-direction: column; gap: 4px; }
+    .report-header .org-label { font-size: 10px; letter-spacing: 1.6px; text-transform: uppercase; color: #777; font-weight: 600; }
+    .report-header .title { font-size: 20px; font-weight: 800; }
+    .report-header .date-range { font-size: 11px; color: #666; text-align: right; }
+
+    /* ── Print ── */
+    @media print {
+      .toolbar, .controls-bar, .stats-band { display: none !important; }
+      .cards-grid { grid-template-columns: repeat(3, 1fr); }
+      .loc-card:hover { box-shadow: none; transform: none; }
+      body { background: #fff; }
+    }
+  </style>
+  <script>
+    // ── Token auth (injected) ────────────────────────────────────────
+    const URL_TOKEN = new URLSearchParams(window.location.search).get('token') || '';
+    const TOKEN_QS  = URL_TOKEN ? '?token=' + encodeURIComponent(URL_TOKEN) : '';
+    function withToken(url) {
+      if (!URL_TOKEN) return url;
+      return url + (url.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(URL_TOKEN);
+    }
+  </script>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useMemo, useCallback, useEffect, useRef } = React;
+
+/* ── Formatters ──────────────────────────────────────────────────── */
+function fmtCurrency(n) {
+  if (!n && n !== 0) return '—';
+  if (Math.abs(n) >= 1000000) return '$' + (n / 1000000).toFixed(2) + 'M';
+  if (Math.abs(n) >= 1000)    return '$' + n.toLocaleString('en-US', { maximumFractionDigits: 0 });
+  return '$' + n.toFixed(2);
+}
+function fmtNum(n) { return (n || 0).toLocaleString('en-US'); }
+function toISO(s) {
+  if (!s) return '';
+  const d = new Date(s + 'T00:00:00');
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+/* ── Data normalization (maps Metabase column names → internal keys) ── */
+function normalizeRow(r) {
+  const loc = r['Location'] || '';
+  const isNoLoc = loc === 'No Location';
+  return {
+    location:          loc,
+    isNoLoc,
+    reservations:      r['Reservations'] != null ? Number(r['Reservations']) : null,
+    rentals:           r['Rentals']      != null ? Number(r['Rentals'])      : null,
+    rentalRevenue:     r['Rental Revenue']    != null ? parseFloat(r['Rental Revenue'])    : null,
+    checkins:          r['Check-ins']         != null ? Number(r['Check-ins'])             : null,
+    membershipRevenue: r['Membership Revenue'] != null ? parseFloat(r['Membership Revenue']) : null,
+    activeMemberships: r['Active Memberships'] != null ? Number(r['Active Memberships'])     : null,
+    passRevenue:       r['Pass Revenue']       != null ? parseFloat(r['Pass Revenue'])       : null,
+    // Only present on the No Location row
+    programRevenue:    r['Program Revenue']    != null ? parseFloat(r['Program Revenue'])    : null,
+    enrollments:       r['Enrollments']        != null ? Number(r['Enrollments'])            : null,
+    storeRevenue:      r['Store Revenue']      != null ? parseFloat(r['Store Revenue'])      : null,
+    itemsSold:         r['Items Sold']         != null ? Number(r['Items Sold'])             : null,
+  };
+}
+
+/* ── Sort options ────────────────────────────────────────────────── */
+const SORT_OPTIONS = [
+  { value: 'rentalRevenue', label: 'Rental Revenue'  },
+  { value: 'rentals',       label: 'Rentals'         },
+  { value: 'reservations',  label: 'Reservations'    },
+  { value: 'checkins',      label: 'Check-ins'       },
+  { value: 'location',      label: 'Location (A→Z)'  },
+];
+
+/* ── Location filter dropdown ─────────────────────────────────────── */
+function LocFilter({ allLocations, selectedLocs, onChange }) {
+  const [open, setOpen]     = useState(false);
+  const [search, setSearch] = useState('');
+  const wrapRef             = useRef(null);
+
+  useEffect(() => {
+    function handleClick(e) {
+      if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false);
+    }
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, []);
+
+  const filtered    = allLocations.filter(l => l.toLowerCase().includes(search.toLowerCase()));
+  const allSelected = selectedLocs.size === allLocations.length;
+  const badgeCount  = allSelected ? null : selectedLocs.size;
+
+  function toggle(loc) {
+    const next = new Set(selectedLocs);
+    next.has(loc) ? next.delete(loc) : next.add(loc);
+    onChange(next);
+  }
+  function selectAll() { onChange(new Set(allLocations)); }
+  function clearAll()  { onChange(new Set()); }
+
+  return (
+    <div className="loc-filter-wrap" ref={wrapRef}>
+      <button
+        className="btn-loc-filter"
+        onClick={() => setOpen(o => !o)}
+        style={!allSelected ? { borderColor: '#f59e0b', color: '#b45309' } : {}}
+      >
+        📍 Locations
+        {badgeCount !== null && (
+          <span className="badge">{badgeCount}/{allLocations.length}</span>
+        )}
+      </button>
+
+      {open && (
+        <div className="loc-dropdown">
+          <div className="loc-dropdown-header">
+            <span>Filter Locations</span>
+            <div className="loc-dropdown-header-actions">
+              <button onClick={selectAll} disabled={allSelected}>All</button>
+              <button onClick={clearAll}  disabled={selectedLocs.size === 0}>None</button>
+            </div>
+          </div>
+
+          {allLocations.length > 6 && (
+            <div className="loc-dropdown-search">
+              <input
+                type="text"
+                placeholder="Search locations…"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                autoFocus
+              />
+            </div>
+          )}
+
+          <div className="loc-dropdown-list">
+            {filtered.length === 0 && (
+              <div style={{padding:'10px 12px', color:'#666', fontSize:11}}>No matches</div>
+            )}
+            {filtered.map(loc => (
+              <label key={loc} className="loc-item">
+                <input
+                  type="checkbox"
+                  checked={selectedLocs.has(loc)}
+                  onChange={() => toggle(loc)}
+                />
+                <span title={loc}>{loc}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── Inline revenue bar (rental vs programs - org level) ─────────── */
+function StatDivider() {
+  return <div style={{width:1, background:'#f0f0f4', alignSelf:'stretch', margin:'8px 0'}} />;
+}
+
+/* ── Card stat cell ──────────────────────────────────────────────── */
+function CardStat({ label, val, sub }) {
+  return (
+    <div className="loc-stat">
+      <div className="loc-stat-label">{label}</div>
+      <div className="loc-stat-val">{val}</div>
+      {sub && <div className="loc-stat-sub">{sub}</div>}
+    </div>
+  );
+}
+
+/* ── Main App ─────────────────────────────────────────────────────── */
+function App() {
+  const today = new Date().toISOString().slice(0, 10);
+  const ytdStart = today.slice(0, 4) + '-01-01';
+  const [startDate, setStartDate] = useState(ytdStart);
+  const [endDate,   setEndDate]   = useState(today);
+  const [rows,      setRows]      = useState(null);
+  const [loading,   setLoading]   = useState(false);
+  const [error,     setError]     = useState(null);
+  const [view,      setView]      = useState(() => localStorage.getItem('overview_view') || 'cards');
+  const [sortBy,    setSortBy]    = useState('rentalRevenue');
+  const [selectedLocs, setSelectedLocs] = useState(new Set());
+  const [tblSort,   setTblSort]   = useState({ col: 'rentalRevenue', dir: 'desc' });
+
+  useEffect(() => { localStorage.setItem('overview_view', view); }, [view]);
+
+  const pathParts = window.location.pathname.replace(/^\//, '').split('/');
+  const orgSlug   = pathParts[0] || 'org';
+
+  async function runReport() {
+    setLoading(true); setError(null);
+    try {
+      const params = new URLSearchParams({ start: startDate, end: endDate });
+      const res = await fetch(withToken(`/${orgSlug}/overview/api/data?${params}`));
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const json = await res.json();
+      const normalized = (json.rows || []).map(normalizeRow);
+      setRows(normalized);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function setRange(type) {
+    const now = new Date();
+    const y = now.getFullYear(), m = now.getMonth();
+    if (type === 'thisMonth') {
+      setStartDate(`${y}-${String(m+1).padStart(2,'0')}-01`);
+      setEndDate(now.toISOString().slice(0,10));
+    } else if (type === 'lastMonth') {
+      const first = new Date(y, m-1, 1), last = new Date(y, m, 0);
+      setStartDate(first.toISOString().slice(0,10));
+      setEndDate(last.toISOString().slice(0,10));
+    } else if (type === 'ytd') {
+      setStartDate(`${y}-01-01`);
+      setEndDate(now.toISOString().slice(0,10));
+    } else if (type === 'thisYear') {
+      setStartDate(`${y}-01-01`);
+      setEndDate(`${y}-12-31`);
+    }
+  }
+
+  /* ── Excel export ── */
+  function exportExcel() {
+    if (!rows || !visible.length) return;
+    const headers = ['Location','Reservations','Rentals','Rental Revenue','Check-ins'];
+    const data = visible.map(r => [
+      r.location, r.reservations, r.rentals, r.rentalRevenue, r.checkins,
+    ]);
+    const ws = XLSX.utils.aoa_to_sheet([headers, ...data]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Overview');
+    XLSX.writeFile(wb, `facility-overview-${startDate}-${endDate}.xlsx`);
+  }
+
+  /* ── Location list (all locations from data) ── */
+  const noLocRow   = useMemo(() => rows?.find(r => r.isNoLoc) || null, [rows]);
+  const locRows    = useMemo(() => rows?.filter(r => !r.isNoLoc) || [], [rows]);
+  const allLocations = useMemo(() => locRows.map(r => r.location), [locRows]);
+
+  /* ── Visible rows (filtered by selectedLocs, then sorted) ── */
+  const visible = useMemo(() => {
+    if (!locRows.length) return [];
+    let r = locRows.filter(row => selectedLocs.has(row.location));
+    r = [...r].sort((a, b) => {
+      if (sortBy === 'location') return a.location.localeCompare(b.location);
+      return (b[sortBy] || 0) - (a[sortBy] || 0);
+    });
+    return r;
+  }, [rows, selectedLocs, sortBy]);
+
+  /* ── Per-location totals (affected by location filter) ── */
+  const totals = useMemo(() => visible.reduce((acc, r) => ({
+    reservations:  acc.reservations  + (r.reservations  || 0),
+    rentals:       acc.rentals       + (r.rentals       || 0),
+    rentalRevenue: acc.rentalRevenue + (r.rentalRevenue || 0),
+    checkins:      acc.checkins      + (r.checkins      || 0),
+    membershipRevenue: acc.membershipRevenue + (r.membershipRevenue || 0),
+    passRevenue:   acc.passRevenue   + (r.passRevenue   || 0),
+    activeMemberships: acc.activeMemberships + (r.activeMemberships || 0),
+  }), { reservations:0, rentals:0, rentalRevenue:0, checkins:0, membershipRevenue:0, passRevenue:0, activeMemberships:0 }), [visible]);
+
+  /* ── selectedLocs init when rows load ── */
+  useEffect(() => {
+    if (rows && rows.length > 0) {
+      setSelectedLocs(new Set(rows.filter(r => !r.isNoLoc).map(r => r.location)));
+    }
+  }, [rows]);
+
+  /* ── Table sort ── */
+  const toggleTblSort = col => setTblSort(s =>
+    s.col === col ? { col, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { col, dir: 'desc' }
+  );
+  const sortIcon = col => tblSort.col === col
+    ? <span className="sort-icon">{tblSort.dir === 'asc' ? '↑' : '↓'}</span>
+    : <span className="sort-icon" style={{opacity:.25}}>↕</span>;
+  const tblRows = useMemo(() => {
+    const r = [...visible];
+    r.sort((a, b) => {
+      const av = a[tblSort.col], bv = b[tblSort.col];
+      if (typeof av === 'string') return tblSort.dir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av);
+      return tblSort.dir === 'asc' ? (av||0)-(bv||0) : (bv||0)-(av||0);
+    });
+    return r;
+  }, [visible, tblSort]);
+
+  const allSelected = selectedLocs.size === allLocations.length;
+  const dateLabel = `${toISO(startDate)} – ${toISO(endDate)}`;
+
+  return (
+    <div>
+      {/* ── Toolbar ── */}
+      <div className="toolbar">
+        {rows && rows.length > 0 && (
+          <img
+            className="report-header-logo"
+            src={withToken(`/${orgSlug}/logo`)}
+            onError={e => e.target.style.display='none'}
+            alt=""
+          />
+        )}
+        <div className="toolbar-divider" />
+        <label>From</label>
+        <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} />
+        <label>To</label>
+        <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} />
+        <button className="btn" onClick={() => setRange('thisMonth')}>This Month</button>
+        <button className="btn" onClick={() => setRange('lastMonth')}>Last Month</button>
+        <button className="btn" onClick={() => setRange('ytd')}>YTD</button>
+        <button className="btn" onClick={() => setRange('thisYear')}>This Year</button>
+        <button className="btn btn-run" onClick={runReport} disabled={loading}>
+          {loading ? '⏳ Loading…' : '▶ Run Report'}
+        </button>
+        {rows && (
+          <>
+            <div className="toolbar-divider" />
+            <button className="btn btn-excel" onClick={exportExcel} disabled={!visible.length}>📊 Excel</button>
+          </>
+        )}
+      </div>
+
+      {/* ── Stats band ── */}
+      {rows && !loading && (
+        <div className="stats-band">
+          <div className="stat-card">
+            <div className="stat-label">Rental Revenue</div>
+            <div className="stat-value indigo">{fmtCurrency(totals.rentalRevenue)}</div>
+            <div className="stat-sub">{fmtNum(totals.rentals)} rentals{!allSelected ? ' (filtered)' : ''}</div>
+          </div>
+          <div className="stat-card">
+            <div className="stat-label">Membership Revenue</div>
+            <div className="stat-value blue">{fmtCurrency(totals.membershipRevenue + (noLocRow?.membershipRevenue || 0))}</div>
+            <div className="stat-sub">{fmtNum(totals.activeMemberships + (noLocRow?.activeMemberships || 0))} active</div>
+          </div>
+          <div className="stat-card">
+            <div className="stat-label">Pass Revenue</div>
+            <div className="stat-value purple">{fmtCurrency(totals.passRevenue + (noLocRow?.passRevenue || 0))}</div>
+          </div>
+          <div className="stat-card">
+            <div className="stat-label">Program Revenue</div>
+            <div className="stat-value green">{fmtCurrency(noLocRow?.programRevenue)}</div>
+            <div className="stat-sub">{fmtNum(noLocRow?.enrollments)} enrollments</div>
+            <div className="stat-org-wide">org-wide</div>
+          </div>
+          <div className="stat-card">
+            <div className="stat-label">Store Revenue</div>
+            <div className="stat-value slate">{fmtCurrency(noLocRow?.storeRevenue)}</div>
+            <div className="stat-sub">{fmtNum(noLocRow?.itemsSold)} items</div>
+            <div className="stat-org-wide">org-wide</div>
+          </div>
+          <div className="stat-card">
+            <div className="stat-label">Reservations</div>
+            <div className="stat-value slate">{fmtNum(totals.reservations)}</div>
+            <div className="stat-sub">{fmtNum(totals.rentals)} with rental</div>
+          </div>
+          <div className="stat-card">
+            <div className="stat-label">Check-ins</div>
+            <div className="stat-value slate">{fmtNum(totals.checkins)}</div>
+            <div className="stat-sub">in period</div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Loading / error / empty ── */}
+      {loading && (
+        <div className="state-center"><div className="spinner" /></div>
+      )}
+      {error && (
+        <div className="state-center">
+          <div className="icon">⚠️</div>
+          <div className="msg">Error loading data</div>
+          <div className="sub">{error}</div>
+        </div>
+      )}
+      {!loading && !error && rows && rows.length === 0 && (
+        <div className="state-center">
+          <div className="icon">📭</div>
+          <div className="msg">No data found</div>
+          <div className="sub">Try a different date range</div>
+        </div>
+      )}
+
+      {/* ── Report header ── */}
+      {rows && rows.length > 0 && !loading && (
+        <div className="report-area">
+          <div className="report-header">
+            <div className="left">
+              <div className="org-label">Norman Parks & Recreation</div>
+              <div className="title">Comprehensive Facility Overview</div>
+            </div>
+            <div className="date-range">{dateLabel}</div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Controls bar ── */}
+      {rows && !loading && (
+        <div className="controls-bar">
+          <LocFilter
+            allLocations={allLocations}
+            selectedLocs={selectedLocs}
+            onChange={setSelectedLocs}
+          />
+          <div className="view-toggle">
+            <button className={`view-btn${view==='cards'?' active':''}`} onClick={() => setView('cards')}>⊞ Cards</button>
+            <button className={`view-btn${view==='table'?' active':''}`} onClick={() => setView('table')}>☰ Table</button>
+          </div>
+          {view === 'cards' && (
+            <>
+              <label style={{fontSize:12,color:'#666'}}>Sort:</label>
+              <select value={sortBy} onChange={e => setSortBy(e.target.value)}>
+                {SORT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+            </>
+          )}
+          <span className="controls-right results-count">
+            {visible.length} location{visible.length !== 1 ? 's' : ''}
+            {!allSelected && ` of ${allLocations.length}`}
+          </span>
+        </div>
+      )}
+
+      {/* ── Cards view ── */}
+      {rows && !loading && view === 'cards' && (
+        <div className="cards-grid">
+          {visible.map(r => (
+            <div key={r.location} className="loc-card">
+              <div className="loc-card-name">{r.location}</div>
+              <div>
+                <div className="loc-card-revenue">{fmtCurrency((r.rentalRevenue||0) + (r.membershipRevenue||0) + (r.passRevenue||0))}</div>
+                <div className="loc-card-revenue-sub">
+                  {[r.rentalRevenue && `rental ${fmtCurrency(r.rentalRevenue)}`, r.membershipRevenue && `membership ${fmtCurrency(r.membershipRevenue)}`, r.passRevenue && `passes ${fmtCurrency(r.passRevenue)}`].filter(Boolean).join(' · ')}
+                </div>
+              </div>
+              <div className="loc-stats">
+                <CardStat label="Rentals"      val={fmtNum(r.rentals)}      sub={fmtCurrency(r.rentalRevenue)} />
+                {r.membershipRevenue > 0 && <CardStat label="Membership Rev" val={fmtCurrency(r.membershipRevenue)} sub={`${fmtNum(r.activeMemberships)} active`} />}
+                {r.passRevenue > 0 && <CardStat label="Pass Rev" val={fmtCurrency(r.passRevenue)} />}
+                {r.checkins > 0 && <CardStat label="Check-ins" val={fmtNum(r.checkins)} sub="in period" />}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ── No Location card (always shown when data present) ── */}
+      {rows && !loading && view === 'cards' && noLocRow && (
+        <div style={{padding:'0 20px 20px'}}>
+          <div className="loc-card" style={{borderStyle:'dashed',background:'#fafafa'}}>
+            <div className="loc-card-name" style={{color:'#888'}}>📦 No Location — Org-Wide</div>
+            <div className="loc-stats">
+              {noLocRow.programRevenue  != null && <CardStat label="Program Revenue"    val={fmtCurrency(noLocRow.programRevenue)}    sub={`${fmtNum(noLocRow.enrollments)} enrollments`} />}
+              {noLocRow.membershipRevenue > 0   && <CardStat label="Membership Revenue" val={fmtCurrency(noLocRow.membershipRevenue)} sub={`${fmtNum(noLocRow.activeMemberships)} active`} />}
+              {noLocRow.passRevenue > 0         && <CardStat label="Pass Revenue"       val={fmtCurrency(noLocRow.passRevenue)} />}
+              {noLocRow.storeRevenue    != null && <CardStat label="Store Revenue"      val={fmtCurrency(noLocRow.storeRevenue)}      sub={`${fmtNum(noLocRow.itemsSold)} items`} />}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Table view ── */}
+      {rows && !loading && view === 'table' && (
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                {[
+                  ['location','Location'],
+                  ['rentals','Rentals'],
+                  ['rentalRevenue','Rental Rev'],
+                  ['membershipRevenue','Membership Rev'],
+                  ['passRevenue','Pass Rev'],
+                  ['checkins','Check-ins'],
+                ].map(([col, label]) => (
+                  <th key={col} className={tblSort.col===col ? 'sorted':''} onClick={() => toggleTblSort(col)}>
+                    {label}{sortIcon(col)}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {tblRows.map(r => (
+                <tr key={r.location}>
+                  <td className="loc-name">{r.location}</td>
+                  <td className={`num${!r.rentals?' zero':''}`}>{r.rentals ?? '—'}</td>
+                  <td className={`rev rev-rental${!r.rentalRevenue?' zero':''}`}>{r.rentalRevenue ? fmtCurrency(r.rentalRevenue) : '—'}</td>
+                  <td className={`rev${!r.membershipRevenue?' zero':''}`} style={{textAlign:'right',color:'#2563eb',fontWeight:600}}>{r.membershipRevenue ? fmtCurrency(r.membershipRevenue) : '—'}</td>
+                  <td className={`rev${!r.passRevenue?' zero':''}`} style={{textAlign:'right',color:'#7c3aed',fontWeight:600}}>{r.passRevenue ? fmtCurrency(r.passRevenue) : '—'}</td>
+                  <td className={`num${!r.checkins?' zero':''}`}>{r.checkins ?? '—'}</td>
+                </tr>
+              ))}
+              {visible.length > 1 && (
+                <tr className="total-row">
+                  <td className="loc-name">TOTAL ({visible.length} locations)</td>
+                  <td className="num">{fmtNum(totals.rentals)}</td>
+                  <td className="rev rev-rental">{fmtCurrency(totals.rentalRevenue)}</td>
+                  <td className="rev" style={{textAlign:'right',color:'#2563eb',fontWeight:700}}>{fmtCurrency(totals.membershipRevenue)}</td>
+                  <td className="rev" style={{textAlign:'right',color:'#7c3aed',fontWeight:700}}>{fmtCurrency(totals.passRevenue)}</td>
+                  <td className="num">{fmtNum(totals.checkins)}</td>
+                </tr>
+              )}
+              {noLocRow && (
+                <tr style={{background:'#f9fafb',color:'#666'}}>
+                  <td className="loc-name" style={{color:'#888',fontStyle:'italic'}}>No Location (org-wide)</td>
+                  <td className="zero">—</td>
+                  <td className="zero">—</td>
+                  <td className="rev" style={{textAlign:'right',color:'#2563eb'}}>{noLocRow.membershipRevenue ? fmtCurrency(noLocRow.membershipRevenue) : '—'}</td>
+                  <td className="rev" style={{textAlign:'right',color:'#7c3aed'}}>{noLocRow.passRevenue ? fmtCurrency(noLocRow.passRevenue) : '—'}</td>
+                  <td className="zero">—</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>

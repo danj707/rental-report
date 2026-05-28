@@ -64,6 +64,7 @@ function dashboardAuth(req, res, next) {
 // ── Org config ───────────────────────────────────────────────────────
 const ORGS = {
   clarksville: {
+    token:   "6JmoTcHxMOV3ugyO",
     orgId:   "460566d3-3a51-4387-a7a0-0b010923e40d",
     logoUrl: "https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2Forganization-460566d3-3a51-4387-a7a0-0b010923e40d%2FfullLogo.png%3F1742511257248&w=256&q=75",
     facility: { mbUuid: "21e74d52-f49a-46d6-bc2d-f9348027854f" },
@@ -71,6 +72,7 @@ const ORGS = {
     roster:   { mbUuid: "ce13ffa2-2bc5-4764-992d-957b4c3a35f9" },
   },
   norman: {
+    token:   "RfuFOIz6KrFnSxBK",
     orgId:   "574923bd-9e7b-43e0-9e5f-7ce256189cbf",
     logoUrl: "https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2Forganization-574923bd-9e7b-43e0-9e5f-7ce256189cbf%2FfullLogo.png%3F1763816879340&w=256&q=75",
     facility:    { mbUuid: "81c43b6d-1776-4a13-9fec-cb6f9e9895bb" },
@@ -82,6 +84,7 @@ const ORGS = {
     memberships: { mbUuid: 'c0579813-d8f0-4b0c-8248-ff975129fd31' },
   },
   smyrna: {
+    token:   "PeNSGslScErlGLyY",
     orgId:   "efc0724c-8f32-481a-bab3-fc19c724f3a7",
     logoUrl: "https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2Forganization-efc0724c-8f32-481a-bab3-fc19c724f3a7%2FfullLogo.png%3F1771265790459&w=1920&q=75",
     facility: { mbUuid: "d541c91e-bb92-4103-abc5-940b3edb61b9" },
@@ -90,6 +93,7 @@ const ORGS = {
     roster:   { mbUuid: "462000f0-6be1-4e73-b983-0375668c1a1f" },
   },
   watertown: {
+    token:   "7qNNXDFo4HGpOh5B",
     orgId:   "d781690b-c5a0-43c5-8443-9ae43899528c",
     logoUrl: "https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2Forganization-d781690b-c5a0-43c5-8443-9ae43899528c%2FfullLogo.png%3F1750270261391&w=1920&q=75",
     facility: { mbUuid: "4b64af10-d57f-41af-aad8-b16d12a8f7b8" },
@@ -98,28 +102,33 @@ const ORGS = {
     roster:   { mbUuid: "4f9861ef-e8ac-4447-bf88-3648c1e54a8b" },
   },
   apex: {
+    token:   "pcj5Qf0Wts7Wzc7P",
     orgId:   "aeba47d0-c97f-49cb-a0e9-93c5af3a68fa",
     logoUrl: "https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2Forganization-aeba47d0-c97f-49cb-a0e9-93c5af3a68fa%2FfullLogo.png%3F1765923560125&w=1920&q=75",
     facility: { mbUuid: "c876b1d7-df79-48c5-abf5-62917dee3534", defaultDateRange: 8, defaultLocationFilter: "Apex Center" },
   },
   theranch: {
+    token:   "mXI0BgPPazLu61jl",
     orgId:   "2d147f38-068c-409e-890d-a8acc88d8079",
     logoUrl: "https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2Forganization-2d147f38-068c-409e-890d-a8acc88d8079%2FfullLogo.jpeg%3F1764460109546&w=2048&q=75",
     roster:  { mbUuid: "09707fab-067c-4297-98c1-3c1c39804333" },
   },
   rec: {
+    token:   "jkeP1W6WyJQYRGRn",
     orgId:       null,
     logoUrl:     null,
     displayName: 'rec.us',
     hotdog: { href: '/hotdog' },
   },
   littleton: {
+    token:   "reaFHptbqztp_1YB",
     orgId:   "992ee322-4927-4558-827d-7f8768580b85",
     logoUrl: "https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2Forganization-992ee322-4927-4558-827d-7f8768580b85%2FfullLogo.jpeg%3F1776960415666&w=1920&q=75",
     displayName: "Littleton PRCE",
     gl      : { mbUuid: "050d06f6-4c0f-4fce-a643-16352f095636" },
   },
   danvers: {
+    token:   "9h_PGT17witUK73g",
     orgId:   "a6aef5df-f742-41a2-9088-1fb6d48c3cb1",
     logoUrl: "https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2Forganization-a6aef5df-f742-41a2-9088-1fb6d48c3cb1%2FfullLogo.png%3F1748866523048&w=1920&q=75",
     displayName: "Town of Danvers",
@@ -169,6 +178,7 @@ const GITHUB_API  = `https://api.github.com/repos/${GITHUB_REPO}/contents/server
 // Serialize one ORGS map entry as JS source matching the existing style.
 function buildOrgEntrySource(slug, orgEntry) {
   const lines = [`  ${slug}: {`];
+  if (orgEntry.token)       lines.push(`    token:   ${JSON.stringify(orgEntry.token)},`);
   if (orgEntry.orgId)       lines.push(`    orgId:   ${JSON.stringify(orgEntry.orgId)},`);
   if (orgEntry.logoUrl)     lines.push(`    logoUrl: ${JSON.stringify(orgEntry.logoUrl)},`);
   if (orgEntry.displayName) lines.push(`    displayName: ${JSON.stringify(orgEntry.displayName)},`);
@@ -413,7 +423,10 @@ function getDateRange(dateRange) {
 // ── PDF generation ───────────────────────────────────────────────────
 async function generatePdf(orgSlug, reportType, startDate, endDate) {
   const puppeteer = require("puppeteer");
-  const qs = new URLSearchParams({ start_date: startDate, end_date: endDate, _print: "1" });
+  const orgTok = ORGS[orgSlug]?.token || "";
+  const qsObj = { start_date: startDate, end_date: endDate, _print: "1" };
+  if (orgTok) qsObj.token = orgTok;
+  const qs = new URLSearchParams(qsObj);
   const url = `http://localhost:${PORT}/${orgSlug}/${reportType}?${qs}`;
   console.log(`[pdf] Generating for ${orgSlug}/${reportType}: ${url}`);
 
@@ -471,7 +484,8 @@ async function sendReportEmail(orgSlug, email, reportType, schedule, locationFil
           : "Facility Rental Schedule";
 
   const locationParam = (reportType === "facility" && locationFilter) ? `&location_name=${encodeURIComponent(locationFilter)}` : "";
-  const reportUrl = `${BASE_URL}/${orgSlug}/${reportType}?start_date=${start}&end_date=${end}${locationParam}`;
+  const tokenParam = orgConfig.token ? `&token=${encodeURIComponent(orgConfig.token)}` : "";
+  const reportUrl = `${BASE_URL}/${orgSlug}/${reportType}?start_date=${start}&end_date=${end}${locationParam}${tokenParam}`;
 
   const resend = getResendClient();
   if (!resend) {
@@ -505,7 +519,7 @@ async function sendReportEmail(orgSlug, email, reportType, schedule, locationFil
           <hr style="border:none;border-top:1px solid #eee;margin:32px 0" />
           <p style="font-size:11px;color:#bbb;margin:0">
             You're receiving this because you subscribed at
-            <a href="${BASE_URL}/${orgSlug}/admin" style="color:#bbb">${BASE_URL}/${orgSlug}/admin</a>.<br>
+            <a href="${BASE_URL}/${orgSlug}/admin${tokenParam ? `?${tokenParam.slice(1)}` : ""}" style="color:#bbb">${BASE_URL}/${orgSlug}/admin</a>.<br>
             To unsubscribe, visit that page and remove your email.
           </p>
         </div>`,
@@ -544,6 +558,32 @@ cron.schedule("0 7 1 * *", () => runSchedule("monthly"));
 const app = express();
 app.use(dashboardAuth);
 app.use(express.json());
+
+// ── Token gate: every `/:org/*` route requires `?token=` matching ORGS[org].token ──
+// Returns generic 404 on mismatch (no enumeration). Non-org paths fall through.
+// Whitelist: `/`, `/api/*` (admin), `/metrics*` (cross-org), `/hotdog*`, static files.
+app.use((req, res, next) => {
+  // Skip whitelisted paths
+  if (req.path === "/" || req.path === "" ) return next();
+  if (req.path.startsWith("/api/")) return next();   // /api/admin/* etc.
+  if (req.path === "/metrics" || req.path.startsWith("/metrics/")) return next();
+  if (req.path === "/hotdog" || req.path.startsWith("/hotdog")) return next();
+
+  // Extract first path segment
+  const seg = req.path.split("/").filter(Boolean)[0];
+  if (!seg) return next();
+  const org = ORGS[seg];
+  if (!org) return next();                          // not an org slug — let routing handle (will 404 normally)
+  if (!org.token) return next();                    // org has no token yet — open access
+
+  const supplied = req.query.token || "";
+  if (supplied !== org.token) {
+    // Generic 404 — do not leak existence of the org
+    return res.status(404).type("text/plain").send("Not found");
+  }
+  next();
+});
+
 
 // ── Parse dates flexibly ─────────────────────────────────────────────
 function parseToISO(dateStr) {
@@ -993,12 +1033,13 @@ app.get("/:org", (req, res) => {
     memberships: { label: "Memberships",                icon: "🎫", desc: "Active and lapsed memberships with renewal tracking" },
   };
 
+  const tokenQS = org.token ? `?token=${encodeURIComponent(org.token)}` : "";
   const available = REPORT_TYPES.filter(r => org[r]?.mbUuid);
 
   const cards = available.map(r => {
     const m = reportMeta[r] || { label: r, icon: "📄", desc: "" };
     return `
-      <a href="/${slug}/${r}" class="card">
+      <a href="/${slug}/${r}${tokenQS}" class="card">
         <div class="card-icon">${m.icon}</div>
         <div class="card-body">
           <div class="card-label">${m.label}</div>
@@ -1053,7 +1094,7 @@ app.get("/:org", (req, res) => {
     <div class="section-label">Reports</div>
     <div class="cards">${cards}</div>
     <div class="admin-links">
-      <a href="/${slug}/admin" class="admin-link"><span>📧</span> Manage Email Subscriptions</a>
+      <a href="/${slug}/admin${tokenQS}" class="admin-link"><span>📧</span> Manage Email Subscriptions</a>
     </div>
   </div>
   <footer>rec.us · ${slug}</footer>
@@ -1130,12 +1171,13 @@ app.get("/", (req, res) => {
     const available    = REPORT_TYPES.filter(r => org[r]?.mbUuid);
     const slugTitle    = slug.charAt(0).toUpperCase() + slug.slice(1);
     const displayName  = org.displayName || `${slugTitle} Parks &amp; Recreation`;
+    const tokenQS      = org.token ? `?token=${encodeURIComponent(org.token)}` : "";
 
     // Standard Metabase-backed report cards
     const cards = available.map(r => {
       const m = reportMeta[r] || { label: r, icon: "📄", desc: "", color: "#888" };
       return `
-        <a href="/${slug}/${r}" class="report-card" style="--accent:${m.color}">
+        <a href="/${slug}/${r}${tokenQS}" class="report-card" style="--accent:${m.color}">
           <span class="report-icon">${m.icon}</span>
           <div class="report-body">
             <div class="report-label">${m.label}</div>
@@ -1169,7 +1211,7 @@ app.get("/", (req, res) => {
         byCadence.monthly ? `${byCadence.monthly}m` : '',
       ].filter(Boolean).join(' ');
       const badge = parts ? `<span class="sub-badge">${parts}</span>` : '';
-      adminLink = `<a href="/${slug}/admin" class="org-action-link" title="${total} subscriber${total!==1?'s':''}">📧 Admin${badge}</a>`;
+      adminLink = `<a href="/${slug}/admin${tokenQS}" class="org-action-link" title="${total} subscriber${total!==1?'s':''}">📧 Admin${badge}</a>`;
     }
     const headerActions = adminLink ? `<div class="org-header-actions">${adminLink}</div>` : "";
 
@@ -1177,13 +1219,20 @@ app.get("/", (req, res) => {
     const metricsToggle = org.orgId ? `
         <div class="metrics-toggle-row">
           <button class="metrics-toggle-btn" onclick="toggleMetrics('${slug}', this)">▸ 📈 Metrics</button>
-          <a href="/${slug}/metrics" class="metrics-full-link">View full metrics →</a>
+          <a href="/${slug}/metrics${tokenQS}" class="metrics-full-link">View full metrics →</a>
         </div>
         <div class="metrics-panel" id="metrics-${slug}" style="display:none"></div>` : "";
 
     const orgNameHtml = org.orgId
-      ? `<a href="/${slug}" class="org-name-link">${displayName}</a>`
+      ? `<a href="/${slug}${tokenQS}" class="org-name-link">${displayName}</a>`
       : `<span>${displayName}</span>`;
+
+    const tokenRow = org.token ? `
+        <div class="token-row">
+          <span class="token-label">🔑 Access token</span>
+          <code class="token-value">${org.token}</code>
+          <button class="token-copy-btn" onclick="copyTokenURL('${slug}', this)" data-base="/${slug}?token=${encodeURIComponent(org.token)}">Copy landing URL</button>
+        </div>` : "";
 
     return `
       <div class="org-section">
@@ -1196,6 +1245,7 @@ app.get("/", (req, res) => {
           ${headerActions}
         </div>
         <div class="report-cards">${cards.join("")}</div>
+        ${tokenRow}
         ${metricsToggle}
       </div>`;
   }).join("");
@@ -1228,6 +1278,12 @@ app.get("/", (req, res) => {
     .org-header-actions { display: flex; gap: 6px; flex-shrink: 0; }
     .org-action-link { font-size: 12px; color: #888; text-decoration: none; padding: 5px 10px; border: 1px solid #ddd; border-radius: 5px; white-space: nowrap; transition: background .15s, color .15s; }
     .org-action-link:hover { background: #f0f0f0; color: #333; }
+    .token-row { display: flex; align-items: center; gap: 10px; padding: 10px 16px; border-top: 1px solid #f0ede8; background: #fafaf8; font-size: 11px; flex-wrap: wrap; }
+    .token-label { color: #888; font-weight: 600; text-transform: uppercase; letter-spacing: .8px; flex-shrink: 0; }
+    .token-value { font-family: 'SF Mono', Menlo, monospace; font-size: 12px; background: #fff; border: 1px solid #e0ddd8; padding: 3px 8px; border-radius: 4px; color: #1a1a1a; letter-spacing: 0; user-select: all; }
+    .token-copy-btn { margin-left: auto; background: #fff; border: 1px solid #d0cdc8; color: #555; padding: 4px 12px; border-radius: 5px; cursor: pointer; font-size: 11px; font-weight: 600; transition: background .15s, border-color .15s; }
+    .token-copy-btn:hover { background: #f0ede8; border-color: #999; }
+    .token-copy-btn.copied { background: #16a34a; color: #fff; border-color: #16a34a; }
     .sub-badge { display: inline-block; margin-left: 6px; font-size: 10px; background: #16a34a; color: #fff; border-radius: 3px; padding: 1px 5px; font-weight: 600; letter-spacing: 0.3px; }
     .report-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 1px; background: #e8e5df; }
     .report-card { display: flex; align-items: center; gap: 12px; padding: 14px 18px; background: #fff; text-decoration: none; color: inherit; transition: background .15s; border-left: 3px solid transparent; }
@@ -1422,6 +1478,17 @@ app.get("/", (req, res) => {
   <footer>rec.us · ${Object.keys(ORGS).length} organizations</footer>
   <script>
     const metricsCache = {};
+    function copyTokenURL(slug, btn) {
+      const base = btn.dataset.base || '';
+      const url  = window.location.origin + base;
+      navigator.clipboard.writeText(url).then(() => {
+        const original = btn.textContent;
+        btn.textContent = '✓ Copied';
+        btn.classList.add('copied');
+        setTimeout(() => { btn.textContent = original; btn.classList.remove('copied'); }, 1400);
+      }).catch(() => { prompt('Copy this URL:', url); });
+    }
+
     async function toggleMetrics(slug, btn) {
       const panel = document.getElementById('metrics-' + slug);
       const open  = panel.style.display !== 'none';
