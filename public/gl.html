@@ -622,10 +622,13 @@ function App() {
   function exportExcel() {
     if (!rows || rows.length === 0) return;
 
+    const includeLocs = showLocations && rows.some(x => x.locations && x.locations.trim());
+
     const makeDataRow = r => {
       const row = {};
       row['GL Code']      = r.glCode;
       row['Account Name'] = r.accountName;
+      if (includeLocs) row['Locations'] = r.locations || '';
       if (rows.some(x => x.accountNumber)) row['Account #'] = r.accountNumber;
       if (hasCCSplit) {
         row['CC Online Pmts']    = r.ccOnlinePayments;
@@ -657,6 +660,7 @@ function App() {
 
     // Totals row
     const totalsRow = { 'GL Code': 'TOTALS', 'Account Name': '' };
+    if (includeLocs) totalsRow['Locations'] = '';
     if (rows.some(x => x.accountNumber)) totalsRow['Account #'] = '';
     if (hasCCSplit) {
       totalsRow['CC Online Pmts']    = totals.ccOnlinePayments;
@@ -687,7 +691,7 @@ function App() {
 
     // Currency format on money columns
     const headers = Object.keys(data[0]);
-    const moneyHeaders = headers.filter(h => !['GL Code','Account Name','Account #'].includes(h));
+    const moneyHeaders = headers.filter(h => !['GL Code','Account Name','Locations','Account #'].includes(h));
     const range = XLSX.utils.decode_range(ws['!ref']);
     for (let R = 1; R <= range.e.r; R++) {
       moneyHeaders.forEach(h => {
@@ -852,7 +856,7 @@ function App() {
 
     const hasAcctName = rows.some(r => r.accountName);
     const hasAcctNum  = rows.some(r => r.accountNumber);
-    const hasLocs     = showLocations && rows.some(r => r.locations && r.locations.trim());
+    const hasLocs     = (showLocations || isPrint) && rows.some(r => r.locations && r.locations.trim());
 
     // colspan helpers
     const idCols       = 1 + (hasAcctName ? 1 : 0) + (hasLocs ? 1 : 0) + (hasAcctNum ? 1 : 0);
