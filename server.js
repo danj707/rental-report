@@ -1028,6 +1028,72 @@ app.get('/hotdog', (_req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'hotdog.html'));
 });
 
+// ── POST /api/feedback — user feedback → dan@rec.us ─────────────────
+// Whitelisted by the org token gate (all /api/* paths pass through).
+// Body: { message: string, email?: string, page?: string, userAgent?: string }
+function escFeedback(s) {
+  return String(s == null ? "" : s)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+app.post("/api/feedback", async (req, res) => {
+  try {
+    const body = req.body || {};
+    const message = typeof body.message === "string" ? body.message.trim() : "";
+    const email   = typeof body.email   === "string" ? body.email.trim()   : "";
+    const page    = typeof body.page    === "string" ? body.page.slice(0, 500)    : "";
+    const userAgent = typeof body.userAgent === "string" ? body.userAgent.slice(0, 300) : "";
+
+    if (!message)                return res.status(400).json({ error: "Message is required" });
+    if (message.length > 5000)   return res.status(400).json({ error: "Message too long (max 5000 chars)" });
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return res.status(400).json({ error: "Invalid email" });
+    }
+
+    // Infer org slug from the page path for the subject line
+    let orgGuess = "";
+    if (page) {
+      const m = page.match(/^\/([a-z0-9_-]+)\b/i);
+      if (m && ORGS[m[1]]) orgGuess = m[1];
+    }
+
+    const subject = `rec.us feedback${orgGuess ? ` — ${orgGuess}` : ""}${page ? ` (${page.split("?")[0]})` : ""}`;
+    const html = `
+      <div style="font-family:system-ui,-apple-system,sans-serif;max-width:600px;color:#111827;">
+        <h2 style="margin:0 0 12px;color:#111827;font-size:18px;">New feedback from rec.us</h2>
+        <div style="white-space:pre-wrap;background:#f9fafb;padding:16px;border-radius:8px;border-left:4px solid #3b82f6;font-size:14px;line-height:1.5;color:#1f2937;">${escFeedback(message)}</div>
+        <h3 style="color:#374151;font-size:13px;margin:24px 0 8px;text-transform:uppercase;letter-spacing:0.04em;">Context</h3>
+        <table style="font-size:13px;color:#4b5563;border-collapse:collapse;">
+          ${email     ? `<tr><td style="padding:2px 12px 2px 0;color:#6b7280;"><strong>From:</strong></td><td style="padding:2px 0;">${escFeedback(email)}</td></tr>` : `<tr><td style="padding:2px 12px 2px 0;color:#6b7280;"><strong>From:</strong></td><td style="padding:2px 0;color:#9ca3af;">(anonymous)</td></tr>`}
+          ${orgGuess  ? `<tr><td style="padding:2px 12px 2px 0;color:#6b7280;"><strong>Org:</strong></td><td style="padding:2px 0;">${escFeedback(orgGuess)}</td></tr>` : ""}
+          ${page      ? `<tr><td style="padding:2px 12px 2px 0;color:#6b7280;"><strong>Page:</strong></td><td style="padding:2px 0;font-family:monospace;font-size:12px;">${escFeedback(page)}</td></tr>` : ""}
+          ${userAgent ? `<tr><td style="padding:2px 12px 2px 0;color:#6b7280;vertical-align:top;"><strong>Browser:</strong></td><td style="padding:2px 0;font-family:monospace;font-size:12px;">${escFeedback(userAgent)}</td></tr>` : ""}
+          <tr><td style="padding:2px 12px 2px 0;color:#6b7280;"><strong>Time:</strong></td><td style="padding:2px 0;">${new Date().toISOString()}</td></tr>
+        </table>
+      </div>
+    `;
+
+    const resend = getResend();
+    if (!resend) {
+      console.log("[feedback] RESEND_API_KEY not configured — stub log:", { message, email, page });
+      return res.json({ ok: true, stub: true });
+    }
+    const emailPayload = {
+      from: `${FROM_NAME} <${FROM_EMAIL}>`,
+      to: ["dan@rec.us"],
+      subject,
+      html,
+    };
+    if (email) emailPayload.replyTo = email;
+    await resend.emails.send(emailPayload);
+    console.log(`[feedback] sent to dan@rec.us (${orgGuess || "unknown"}, ${message.length} chars)`);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error("[feedback] send failed:", e);
+    res.status(500).json({ error: "Failed to send feedback" });
+  }
+});
+
 // ── Debug: raw Metabase response (remove before prod) ────────────────
 app.get('/api/hotdog/debug', async (req, res) => {
   try {
