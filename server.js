@@ -113,13 +113,6 @@ const ORGS = {
     logoUrl: "https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2Forganization-2d147f38-068c-409e-890d-a8acc88d8079%2FfullLogo.jpeg%3F1764460109546&w=2048&q=75",
     roster:  { mbUuid: "09707fab-067c-4297-98c1-3c1c39804333" },
   },
-  rec: {
-    token:   "jkeP1W6WyJQYRGRn",
-    orgId:       null,
-    logoUrl:     null,
-    displayName: 'rec.us',
-    hotdog: { href: '/hotdog' },
-  },
   littleton: {
     token:   "reaFHptbqztp_1YB",
     orgId:   "992ee322-4927-4558-827d-7f8768580b85",
@@ -1186,17 +1179,6 @@ app.get("/", (req, res) => {
           <span class="report-arrow">→</span>
         </a>`;
     });
-
-    // Custom direct-link cards (not org-scoped)
-    if (org.hotdog) cards.push(`
-        <a href="${org.hotdog.href}" class="report-card" style="--accent:#f97316">
-          <span class="report-icon">🌭</span>
-          <div class="report-body">
-            <div class="report-label">Hot Dog Counter</div>
-            <div class="report-desc">Food &amp; concession sales leaderboard</div>
-          </div>
-          <span class="report-arrow">→</span>
-        </a>`);
 
     // Admin link with subscriber summary
     let adminLink = "";
