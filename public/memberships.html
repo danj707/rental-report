@@ -1,0 +1,1115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Memberships</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'IBM Plex Sans', 'Segoe UI', system-ui, sans-serif;
+      font-size: 12px;
+      color: #1a1a1a;
+      background: #f5f4f1;
+      line-height: 1.35;
+    }
+
+    /* ── Toolbar ── */
+    .toolbar {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 20px;
+      background: #2c2c2c;
+      color: #eee;
+      font-size: 13px;
+      flex-wrap: wrap;
+    }
+    .toolbar-title { font-weight: 600; margin-right: 8px; }
+    .toolbar-spacer { flex: 1; }
+    .toolbar input[type="text"], .toolbar input[type="search"] {
+      padding: 5px 10px;
+      border: 1px solid rgba(255,255,255,.25);
+      border-radius: 4px;
+      background: rgba(255,255,255,.08);
+      color: #fff;
+      font-size: 12px;
+      font-family: inherit;
+      outline: none;
+      min-width: 200px;
+    }
+    .toolbar input[type="text"]:focus, .toolbar input[type="search"]:focus { border-color: #db2777; }
+    .toolbar input::placeholder { color: rgba(255,255,255,.5); }
+    .toolbar button {
+      padding: 6px 14px;
+      border: 1px solid rgba(255,255,255,.25);
+      border-radius: 4px;
+      background: rgba(255,255,255,.08);
+      color: #fff;
+      font-size: 12px;
+      font-family: inherit;
+      cursor: pointer;
+      transition: background .15s;
+    }
+    .toolbar button:hover { background: rgba(255,255,255,.18); }
+    .toolbar button.active { background: rgba(255,255,255,.22); border-color: rgba(255,255,255,.55); }
+    .toolbar .btn-pdf { background: #3b82f6; border-color: #3b82f6; font-weight: 600; }
+    .toolbar .btn-pdf:hover { background: #2563eb; }
+
+    .view-group { display: flex; gap: 0; }
+    .view-group button {
+      border-radius: 0;
+      border-right: none;
+    }
+    .view-group button:first-child { border-radius: 4px 0 0 4px; }
+    .view-group button:last-child  { border-radius: 0 4px 4px 0; border-right: 1px solid rgba(255,255,255,.25); }
+    .view-group button.active { background: #db2777; border-color: #db2777; }
+
+    /* multi-select dropdown */
+    .ms-wrap { position: relative; }
+    .ms-trigger {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 6px 12px;
+      border: 1px solid rgba(255,255,255,.25);
+      border-radius: 4px;
+      background: rgba(255,255,255,.08);
+      color: #fff;
+      font-size: 12px;
+      cursor: pointer;
+    }
+    .ms-trigger:hover { background: rgba(255,255,255,.18); }
+    .ms-trigger .ms-badge {
+      background: #f59e0b; color: #1a1a1a; font-weight: 600;
+      padding: 1px 6px; border-radius: 8px; font-size: 11px;
+    }
+    .ms-trigger .ms-badge.all { background: rgba(255,255,255,.2); color: #fff; }
+    .ms-panel {
+      position: absolute; top: calc(100% + 4px); left: 0;
+      background: #fff; color: #1a1a1a;
+      border: 1px solid #ddd; border-radius: 6px;
+      box-shadow: 0 4px 12px rgba(0,0,0,.15);
+      min-width: 280px; max-width: 360px;
+      z-index: 200;
+      padding: 8px;
+    }
+    .ms-search {
+      width: 100%; padding: 6px 10px;
+      border: 1px solid #ddd; border-radius: 4px;
+      font-size: 12px; font-family: inherit;
+      margin-bottom: 6px;
+    }
+    .ms-actions {
+      display: flex; gap: 6px; padding: 4px 0;
+      border-bottom: 1px solid #eee; margin-bottom: 4px;
+    }
+    .ms-actions button {
+      padding: 3px 8px; font-size: 11px;
+      border: 1px solid #ddd; border-radius: 3px;
+      background: #f7f7f7; color: #333;
+      cursor: pointer;
+    }
+    .ms-actions button:hover { background: #ebebeb; }
+    .ms-list { max-height: 280px; overflow-y: auto; }
+    .ms-item {
+      display: flex; align-items: center; gap: 8px;
+      padding: 5px 6px;
+      font-size: 12px;
+      cursor: pointer;
+      border-radius: 3px;
+    }
+    .ms-item:hover { background: #f5f4f1; }
+    .ms-item input { cursor: pointer; }
+
+    /* ── Summary Cards ── */
+    .summary-cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 10px;
+      padding: 14px 20px 4px 20px;
+    }
+    .scard {
+      background: #fff;
+      border: 1px solid #e5e5e5;
+      border-radius: 6px;
+      padding: 12px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      border-left: 3px solid #999;
+    }
+    .scard .scard-label {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: .6px;
+      color: #777;
+      font-weight: 600;
+    }
+    .scard .scard-value {
+      font-size: 20px;
+      font-weight: 700;
+      color: #1a1a1a;
+      font-variant-numeric: tabular-nums;
+    }
+    .scard .scard-sub {
+      font-size: 11px;
+      color: #666;
+    }
+    .scard.active   { border-left-color: #16a34a; }
+    .scard.canceled { border-left-color: #ef4444; }
+    .scard.expired  { border-left-color: #f59e0b; }
+    .scard.inactive { border-left-color: #94a3b8; }
+    .scard.renew    { border-left-color: #db2777; }
+    .scard.revenue  { border-left-color: #3b82f6; }
+    .scard.stale    { border-left-color: #7c3aed; }
+
+    /* ── Content area ── */
+    .content { padding: 14px 20px 28px; }
+
+    /* ── Table ── */
+    table.report {
+      width: 100%;
+      border-collapse: collapse;
+      background: #fff;
+      border: 1px solid #e5e5e5;
+      font-size: 11px;
+    }
+    table.report th, table.report td {
+      padding: 6px 10px;
+      text-align: left;
+      border-bottom: 1px solid #eee;
+      vertical-align: middle;
+    }
+    table.report th {
+      background: #2c2c2c;
+      color: #fff;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .4px;
+      font-size: 10px;
+      position: sticky;
+      top: 52px;
+      z-index: 50;
+      cursor: pointer;
+      user-select: none;
+    }
+    table.report th:hover { background: #404040; }
+    table.report th.sorted-asc::after  { content: ' ▲'; opacity: .7; }
+    table.report th.sorted-desc::after { content: ' ▼'; opacity: .7; }
+    table.report td.num, table.report th.num { text-align: right; font-variant-numeric: tabular-nums; }
+    table.report tr:hover { background: #fafaf7; }
+
+    .status-pill {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .3px;
+    }
+    .status-pill.active   { background: #dcfce7; color: #166534; }
+    .status-pill.canceled { background: #fee2e2; color: #991b1b; }
+    .status-pill.expired  { background: #fef3c7; color: #92400e; }
+    .status-pill.inactive { background: #e2e8f0; color: #475569; }
+
+    .renewal-pill {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-size: 10px;
+      font-weight: 600;
+    }
+    .renewal-pill.auto    { background: #fce7f3; color: #9d174d; }
+    .renewal-pill.onetime { background: #f1f5f9; color: #475569; }
+
+    .empty-state {
+      text-align: center;
+      padding: 80px 40px;
+      color: #999;
+      background: #fff;
+      border: 1px dashed #ddd;
+      border-radius: 6px;
+    }
+    .error-state { color: #b91c1c; }
+    .loading { padding: 40px; text-align: center; color: #666; font-size: 13px; }
+
+    /* ── Chart container ── */
+    .chart-card {
+      background: #fff;
+      border: 1px solid #e5e5e5;
+      border-radius: 6px;
+      padding: 18px 22px;
+    }
+    .chart-card h3 {
+      font-size: 13px;
+      font-weight: 600;
+      color: #1a1a1a;
+      margin-bottom: 12px;
+    }
+    .chart-card canvas { max-width: 100%; }
+    .chart-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 14px;
+    }
+
+    @media (min-width: 1000px) {
+      .chart-grid.two-col { grid-template-columns: 1fr 1fr; }
+    }
+
+    /* ── Print ── */
+    @media print {
+      .toolbar { display: none; }
+      body { background: #fff; }
+      .content { padding: 0; }
+      .summary-cards { padding: 0 0 8px 0; }
+      .scard { break-inside: avoid; }
+      .chart-card { break-inside: avoid; }
+    }
+  </style>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <script type="text/babel" data-presets="env,react">
+
+    const { useState, useEffect, useMemo, useRef, useCallback } = React;
+
+    // ── Localstorage keys ──
+    const LS_VIEW         = 'memberships.viewMode';
+    const LS_STATUS       = 'memberships.statusFilter';
+    const LS_RENEWAL      = 'memberships.renewalFilter';
+    const LS_TYPES        = 'memberships.typeFilter';
+    const LS_PRICEMIN     = 'memberships.priceMin';
+    const LS_PRICEMAX     = 'memberships.priceMax';
+    const LS_DATEFIELD    = 'memberships.dateField';
+    const LS_SORTKEY      = 'memberships.sortKey';
+    const LS_SORTDIR      = 'memberships.sortDir';
+
+    // ── Helpers ──
+    const safeNum = (v) => {
+      const n = parseFloat(v);
+      return Number.isFinite(n) ? n : 0;
+    };
+    const money = (v) => safeNum(v).toLocaleString('en-US', { style: 'currency', currency: 'USD' });
+    const dateOnly = (s) => {
+      if (!s) return '';
+      const d = new Date(s);
+      if (Number.isNaN(d.getTime())) return s;
+      return d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+    };
+    const monthKey = (s) => {
+      if (!s) return '';
+      const d = new Date(s);
+      if (Number.isNaN(d.getTime())) return '';
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    };
+    const daysSince = (s) => {
+      if (!s) return null;
+      const d = new Date(s);
+      if (Number.isNaN(d.getTime())) return null;
+      return Math.floor((Date.now() - d.getTime()) / 86400000);
+    };
+    const daysUntil = (s) => {
+      if (!s) return null;
+      const d = new Date(s);
+      if (Number.isNaN(d.getTime())) return null;
+      return Math.floor((d.getTime() - Date.now()) / 86400000);
+    };
+
+    function normalizeRow(raw) {
+      return {
+        userId:        raw['User ID'] || '',
+        firstName:     raw['First Name'] || '',
+        lastName:      raw['Last Name'] || '',
+        email:         raw['Email'] || '',
+        membershipId:  raw['Membership ID'] || '',
+        type:          raw['Membership Type'] || '',
+        group:         raw['Group / Plan'] || '',
+        status:        (raw['Status'] || '').toLowerCase(),
+        renewalType:   raw['Renewal Type'] || '',
+        price:         safeNum(raw['Price']),
+        startDate:     raw['Start Date'] || '',
+        endDate:       raw['End Date'] || '',
+        nextRenewal:   raw['Next Renewal'] || '',
+        canceledAt:    raw['Canceled At'] || '',
+        createdAt:     raw['Created At'] || '',
+        lastUsed:      raw['Last Used'] || '',
+        usageCount:    safeNum(raw['Usage Count']),
+        attendanceCount: safeNum(raw['Attendance Count']),
+      };
+    }
+
+    // ── MultiSelect component (mirrors GL Locations pattern) ──
+    function MultiSelect({ label, options, selected, onChange, allowAll = true }) {
+      const [open, setOpen] = useState(false);
+      const [search, setSearch] = useState('');
+      const ref = useRef(null);
+
+      useEffect(() => {
+        function onDoc(e) {
+          if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+        }
+        document.addEventListener('mousedown', onDoc);
+        return () => document.removeEventListener('mousedown', onDoc);
+      }, []);
+
+      const filtered = useMemo(() => {
+        const q = search.trim().toLowerCase();
+        if (!q) return options;
+        return options.filter(o => o.toLowerCase().includes(q));
+      }, [options, search]);
+
+      const allSelected = selected.length === options.length && options.length > 0;
+      const noneSelected = selected.length === 0;
+      const partial = !allSelected && !noneSelected;
+
+      const toggle = (val) => {
+        if (selected.includes(val)) onChange(selected.filter(v => v !== val));
+        else onChange([...selected, val]);
+      };
+
+      const badge = allSelected
+        ? <span className="ms-badge all">All ({options.length})</span>
+        : noneSelected
+          ? <span className="ms-badge" style={{background:'#94a3b8'}}>None</span>
+          : <span className="ms-badge">{selected.length} / {options.length}</span>;
+
+      return (
+        <div className="ms-wrap" ref={ref}>
+          <button className="ms-trigger" onClick={() => setOpen(!open)} type="button">
+            <span>{label}</span>
+            {badge}
+            <span style={{opacity:.6}}>{open ? '▾' : '▸'}</span>
+          </button>
+          {open && (
+            <div className="ms-panel">
+              <input
+                className="ms-search"
+                type="search"
+                placeholder={`Search ${label.toLowerCase()}…`}
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+              />
+              <div className="ms-actions">
+                <button onClick={() => onChange([...options])} type="button">Select All</button>
+                <button onClick={() => onChange([])} type="button">Select None</button>
+                {partial && <span style={{fontSize:11,color:'#777',padding:'3px 4px'}}>{selected.length} selected</span>}
+              </div>
+              <div className="ms-list">
+                {filtered.map(opt => (
+                  <label key={opt} className="ms-item">
+                    <input
+                      type="checkbox"
+                      checked={selected.includes(opt)}
+                      onChange={() => toggle(opt)}
+                    />
+                    <span>{opt}</span>
+                  </label>
+                ))}
+                {filtered.length === 0 && <div style={{padding:'8px',color:'#999',fontSize:11}}>No matches</div>}
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // ── Chart wrapper ──
+    function ChartView({ type, data, options, height = 320 }) {
+      const ref = useRef(null);
+      const instRef = useRef(null);
+      useEffect(() => {
+        if (!ref.current) return;
+        if (instRef.current) instRef.current.destroy();
+        instRef.current = new Chart(ref.current, { type, data, options });
+        return () => {
+          if (instRef.current) {
+            instRef.current.destroy();
+            instRef.current = null;
+          }
+        };
+      }, [type, JSON.stringify(data), JSON.stringify(options)]);
+      return <canvas ref={ref} height={height} />;
+    }
+
+    // ── Sort helpers ──
+    function sortRows(rows, key, dir) {
+      if (!key) return rows;
+      const mult = dir === 'desc' ? -1 : 1;
+      const get = (r) => r[key];
+      return [...rows].sort((a, b) => {
+        const av = get(a), bv = get(b);
+        if (typeof av === 'number' && typeof bv === 'number') return (av - bv) * mult;
+        return String(av || '').localeCompare(String(bv || '')) * mult;
+      });
+    }
+
+    function App() {
+      const orgSlug    = useMemo(() => window.location.pathname.split('/').filter(Boolean)[0] || '', []);
+      const reportType = 'memberships';
+      const isPrint    = useMemo(() => new URLSearchParams(window.location.search).get('_print') === '1', []);
+
+      const [data, setData]       = useState([]);
+      const [loading, setLoading] = useState(true);
+      const [error, setError]     = useState(null);
+
+      // ── Filters ──
+      const [viewMode, setViewMode] = useState(() => localStorage.getItem(LS_VIEW) || 'table');
+      const [statusFilter, setStatusFilter] = useState(() => {
+        try { return JSON.parse(localStorage.getItem(LS_STATUS)) || ['active']; }
+        catch { return ['active']; }
+      });
+      const [renewalFilter, setRenewalFilter] = useState(() => {
+        try { return JSON.parse(localStorage.getItem(LS_RENEWAL)) || ['Auto-renew', 'One-time']; }
+        catch { return ['Auto-renew', 'One-time']; }
+      });
+      const [typeFilter, setTypeFilter] = useState(null);   // null = all (initialized from data)
+      const [priceMin, setPriceMin] = useState(() => localStorage.getItem(LS_PRICEMIN) || '');
+      const [priceMax, setPriceMax] = useState(() => localStorage.getItem(LS_PRICEMAX) || '');
+      const [dateField, setDateField] = useState(() => localStorage.getItem(LS_DATEFIELD) || 'createdAt');
+      const [search, setSearch] = useState('');
+      const [sortKey, setSortKey] = useState(() => localStorage.getItem(LS_SORTKEY) || 'lastName');
+      const [sortDir, setSortDir] = useState(() => localStorage.getItem(LS_SORTDIR) || 'asc');
+
+      // persist
+      useEffect(() => { localStorage.setItem(LS_VIEW,      viewMode); }, [viewMode]);
+      useEffect(() => { localStorage.setItem(LS_STATUS,    JSON.stringify(statusFilter)); }, [statusFilter]);
+      useEffect(() => { localStorage.setItem(LS_RENEWAL,   JSON.stringify(renewalFilter)); }, [renewalFilter]);
+      useEffect(() => { localStorage.setItem(LS_PRICEMIN,  priceMin); }, [priceMin]);
+      useEffect(() => { localStorage.setItem(LS_PRICEMAX,  priceMax); }, [priceMax]);
+      useEffect(() => { localStorage.setItem(LS_DATEFIELD, dateField); }, [dateField]);
+      useEffect(() => { localStorage.setItem(LS_SORTKEY,   sortKey); }, [sortKey]);
+      useEffect(() => { localStorage.setItem(LS_SORTDIR,   sortDir); }, [sortDir]);
+
+      // ── Fetch ──
+      useEffect(() => {
+        setLoading(true);
+        setError(null);
+        fetch(`/${orgSlug}/${reportType}/api/data`)
+          .then(r => {
+            if (!r.ok) throw new Error(`Server returned ${r.status}`);
+            return r.json();
+          })
+          .then(payload => {
+            const rows = (payload.rows || payload.data || payload || []).map(normalizeRow);
+            setData(rows);
+            setLoading(false);
+          })
+          .catch(err => {
+            console.error(err);
+            setError(err.message || 'Failed to load report data');
+            setLoading(false);
+          });
+      }, [orgSlug]);
+
+      // ── Derived option lists ──
+      const allTypes = useMemo(
+        () => [...new Set(data.map(d => d.type).filter(Boolean))].sort(),
+        [data]
+      );
+      const allStatuses = useMemo(
+        () => [...new Set(data.map(d => d.status).filter(Boolean))].sort(),
+        [data]
+      );
+
+      // initialize typeFilter once we know all types
+      useEffect(() => {
+        if (typeFilter === null && allTypes.length > 0) {
+          setTypeFilter([...allTypes]);
+        }
+      }, [allTypes, typeFilter]);
+
+      // ── Apply filters ──
+      const filtered = useMemo(() => {
+        const q = search.trim().toLowerCase();
+        const pMin = priceMin === '' ? null : parseFloat(priceMin);
+        const pMax = priceMax === '' ? null : parseFloat(priceMax);
+        return data.filter(r => {
+          if (statusFilter.length > 0 && !statusFilter.includes(r.status)) return false;
+          if (renewalFilter.length > 0 && !renewalFilter.includes(r.renewalType)) return false;
+          if (typeFilter && typeFilter.length > 0 && !typeFilter.includes(r.type)) return false;
+          if (pMin !== null && r.price < pMin) return false;
+          if (pMax !== null && r.price > pMax) return false;
+          if (q) {
+            const blob = `${r.firstName} ${r.lastName} ${r.email} ${r.type} ${r.group}`.toLowerCase();
+            if (!blob.includes(q)) return false;
+          }
+          return true;
+        });
+      }, [data, statusFilter, renewalFilter, typeFilter, priceMin, priceMax, search]);
+
+      // ── Summary metrics ──
+      const summary = useMemo(() => {
+        const all = filtered;
+        const byStatus = { active:0, canceled:0, expired:0, inactive:0 };
+        let autoRenewCount = 0, mrrEstimate = 0;
+        let totalRevenue = 0;
+        let stale = 0;
+        for (const r of all) {
+          byStatus[r.status] = (byStatus[r.status] || 0) + 1;
+          totalRevenue += r.price;
+          if (r.status === 'active' && r.renewalType === 'Auto-renew') {
+            autoRenewCount++;
+            mrrEstimate += r.price;
+          }
+          if (r.status === 'active') {
+            const d = daysSince(r.lastUsed);
+            if (d === null || d >= 60) stale++;
+          }
+        }
+        return {
+          total: all.length,
+          ...byStatus,
+          autoRenewCount,
+          mrrEstimate,
+          totalRevenue,
+          stale,
+        };
+      }, [filtered]);
+
+      // ── Sorted rows for table ──
+      const sortedRows = useMemo(
+        () => sortRows(filtered, sortKey, sortDir),
+        [filtered, sortKey, sortDir]
+      );
+
+      const onSort = (k) => {
+        if (sortKey === k) setSortDir(sortDir === 'asc' ? 'desc' : 'asc');
+        else { setSortKey(k); setSortDir('asc'); }
+      };
+
+      // ── Excel export ──
+      const exportExcel = () => {
+        const rows = sortedRows.map(r => ({
+          'User ID':        r.userId,
+          'First Name':     r.firstName,
+          'Last Name':      r.lastName,
+          'Email':          r.email,
+          'Membership ID':  r.membershipId,
+          'Membership Type': r.type,
+          'Group / Plan':   r.group,
+          'Status':         r.status,
+          'Renewal Type':   r.renewalType,
+          'Price':          r.price,
+          'Start Date':     r.startDate,
+          'End Date':       r.endDate,
+          'Next Renewal':   r.nextRenewal,
+          'Canceled At':    r.canceledAt,
+          'Created At':     r.createdAt,
+          'Last Used':      r.lastUsed,
+          'Usage Count':    r.usageCount,
+          'Attendance Count': r.attendanceCount,
+        }));
+        // totals row
+        rows.push({
+          'User ID': '',
+          'First Name': '',
+          'Last Name': 'TOTAL',
+          'Email': '',
+          'Membership ID': '',
+          'Membership Type': '',
+          'Group / Plan': '',
+          'Status': '',
+          'Renewal Type': '',
+          'Price': rows.reduce((s, x) => s + safeNum(x.Price), 0),
+          'Start Date': '',
+          'End Date': '',
+          'Next Renewal': '',
+          'Canceled At': '',
+          'Created At': '',
+          'Last Used': '',
+          'Usage Count': rows.reduce((s, x) => s + safeNum(x['Usage Count']), 0),
+          'Attendance Count': rows.reduce((s, x) => s + safeNum(x['Attendance Count']), 0),
+        });
+        const ws = XLSX.utils.json_to_sheet(rows);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, 'Memberships');
+        const fname = `${orgSlug}-memberships-${new Date().toISOString().slice(0,10)}.xlsx`;
+        XLSX.writeFile(wb, fname);
+        // log
+        fetch(`/${orgSlug}/${reportType}/api/log`, {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ action: 'excel' })
+        }).catch(()=>{});
+      };
+
+      const printPage = () => {
+        fetch(`/${orgSlug}/${reportType}/api/log`, {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ action: 'print' })
+        }).catch(()=>{});
+        window.print();
+      };
+
+      // ── Status pill ──
+      const StatusPill = ({ status }) => (
+        <span className={`status-pill ${status}`}>{status}</span>
+      );
+      const RenewalPill = ({ type }) => (
+        <span className={`renewal-pill ${type === 'Auto-renew' ? 'auto' : 'onetime'}`}>{type}</span>
+      );
+
+      // ── Render content ──
+      function renderTable() {
+        const cols = [
+          { key: 'lastName',    label: 'Name' },
+          { key: 'email',       label: 'Email' },
+          { key: 'type',        label: 'Membership Type' },
+          { key: 'status',      label: 'Status' },
+          { key: 'renewalType', label: 'Renewal' },
+          { key: 'price',       label: 'Price', num: true },
+          { key: 'startDate',   label: 'Start' },
+          { key: 'nextRenewal', label: 'Next Renewal' },
+          { key: 'lastUsed',    label: 'Last Used' },
+          { key: 'usageCount',  label: 'Uses', num: true },
+        ];
+        return (
+          <table className="report">
+            <thead>
+              <tr>
+                {cols.map(c => (
+                  <th
+                    key={c.key}
+                    className={`${c.num ? 'num' : ''} ${sortKey === c.key ? 'sorted-' + sortDir : ''}`}
+                    onClick={() => onSort(c.key)}
+                  >
+                    {c.label}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {sortedRows.map((r, i) => (
+                <tr key={r.membershipId + '-' + i}>
+                  <td><strong>{r.lastName}{r.firstName ? ', ' + r.firstName : ''}</strong></td>
+                  <td style={{color:'#666'}}>{r.email}</td>
+                  <td>{r.type}</td>
+                  <td><StatusPill status={r.status} /></td>
+                  <td><RenewalPill type={r.renewalType} /></td>
+                  <td className="num">{money(r.price)}</td>
+                  <td>{dateOnly(r.startDate)}</td>
+                  <td>{dateOnly(r.nextRenewal)}</td>
+                  <td>{r.lastUsed ? dateOnly(r.lastUsed) : <span style={{color:'#ccc'}}>—</span>}</td>
+                  <td className="num">{r.usageCount}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        );
+      }
+
+      function renderByType() {
+        const counts = {};
+        for (const r of filtered) {
+          counts[r.type] = (counts[r.type] || 0) + 1;
+        }
+        const entries = Object.entries(counts).sort((a,b) => b[1] - a[1]);
+        return (
+          <div className="chart-card">
+            <h3>Memberships by Type ({entries.length} types, {filtered.length} total)</h3>
+            <ChartView
+              type="bar"
+              height={Math.max(320, entries.length * 24)}
+              data={{
+                labels: entries.map(e => e[0]),
+                datasets: [{
+                  label: 'Count',
+                  data: entries.map(e => e[1]),
+                  backgroundColor: '#db2777',
+                  borderRadius: 3,
+                }]
+              }}
+              options={{
+                indexAxis: 'y',
+                plugins: { legend: { display: false } },
+                scales: { x: { beginAtZero: true, ticks: { stepSize: 1 } } },
+                maintainAspectRatio: false,
+              }}
+            />
+          </div>
+        );
+      }
+
+      function renderByStatus() {
+        const counts = { active:0, canceled:0, expired:0, inactive:0 };
+        for (const r of filtered) {
+          counts[r.status] = (counts[r.status] || 0) + 1;
+        }
+        const labels = Object.keys(counts).filter(k => counts[k] > 0);
+        const colors = { active:'#16a34a', canceled:'#ef4444', expired:'#f59e0b', inactive:'#94a3b8' };
+        return (
+          <div className="chart-card" style={{maxWidth:560, margin:'0 auto'}}>
+            <h3>Memberships by Status</h3>
+            <ChartView
+              type="doughnut"
+              height={320}
+              data={{
+                labels: labels.map(l => `${l} (${counts[l]})`),
+                datasets: [{
+                  data: labels.map(l => counts[l]),
+                  backgroundColor: labels.map(l => colors[l]),
+                  borderWidth: 2,
+                  borderColor: '#fff',
+                }]
+              }}
+              options={{
+                plugins: { legend: { position: 'right' } },
+                maintainAspectRatio: false,
+              }}
+            />
+          </div>
+        );
+      }
+
+      function renderRenewalMix() {
+        let auto = 0, one = 0, autoRev = 0, oneRev = 0;
+        for (const r of filtered) {
+          if (r.renewalType === 'Auto-renew') { auto++; autoRev += r.price; }
+          else { one++; oneRev += r.price; }
+        }
+        return (
+          <div className="chart-grid two-col">
+            <div className="chart-card">
+              <h3>Renewal Mix — Count</h3>
+              <ChartView
+                type="doughnut"
+                height={300}
+                data={{
+                  labels: [`Auto-renew (${auto})`, `One-time (${one})`],
+                  datasets: [{
+                    data: [auto, one],
+                    backgroundColor: ['#db2777', '#94a3b8'],
+                    borderWidth: 2,
+                    borderColor: '#fff',
+                  }]
+                }}
+                options={{
+                  plugins: { legend: { position: 'right' } },
+                  maintainAspectRatio: false,
+                }}
+              />
+            </div>
+            <div className="chart-card">
+              <h3>Renewal Mix — Revenue</h3>
+              <ChartView
+                type="doughnut"
+                height={300}
+                data={{
+                  labels: [`Auto-renew (${money(autoRev)})`, `One-time (${money(oneRev)})`],
+                  datasets: [{
+                    data: [autoRev, oneRev],
+                    backgroundColor: ['#db2777', '#94a3b8'],
+                    borderWidth: 2,
+                    borderColor: '#fff',
+                  }]
+                }}
+                options={{
+                  plugins: {
+                    legend: { position: 'right' },
+                    tooltip: { callbacks: { label: (c) => `${c.label}: ${money(c.parsed)}` } },
+                  },
+                  maintainAspectRatio: false,
+                }}
+              />
+            </div>
+          </div>
+        );
+      }
+
+      function renderRevenueByType() {
+        const byType = {};
+        for (const r of filtered) {
+          if (!byType[r.type]) byType[r.type] = { active:0, canceled:0, expired:0, inactive:0 };
+          byType[r.type][r.status] = (byType[r.type][r.status] || 0) + r.price;
+        }
+        const entries = Object.entries(byType)
+          .map(([k, v]) => ({ key: k, total: v.active + v.canceled + v.expired + v.inactive, ...v }))
+          .sort((a,b) => b.total - a.total);
+        return (
+          <div className="chart-card">
+            <h3>Revenue by Membership Type (stacked by status)</h3>
+            <ChartView
+              type="bar"
+              height={Math.max(320, entries.length * 26)}
+              data={{
+                labels: entries.map(e => e.key),
+                datasets: [
+                  { label: 'Active',   data: entries.map(e => e.active),   backgroundColor: '#16a34a' },
+                  { label: 'Canceled', data: entries.map(e => e.canceled), backgroundColor: '#ef4444' },
+                  { label: 'Expired',  data: entries.map(e => e.expired),  backgroundColor: '#f59e0b' },
+                  { label: 'Inactive', data: entries.map(e => e.inactive), backgroundColor: '#94a3b8' },
+                ]
+              }}
+              options={{
+                indexAxis: 'y',
+                plugins: {
+                  legend: { position: 'top' },
+                  tooltip: { callbacks: { label: (c) => `${c.dataset.label}: ${money(c.parsed.x)}` } },
+                },
+                scales: {
+                  x: { stacked: true, beginAtZero: true, ticks: { callback: (v) => '$' + v.toLocaleString() } },
+                  y: { stacked: true },
+                },
+                maintainAspectRatio: false,
+              }}
+            />
+          </div>
+        );
+      }
+
+      function renderMonthlyRevenue() {
+        const byMonth = {};
+        for (const r of filtered) {
+          const m = monthKey(r.createdAt);
+          if (!m) continue;
+          byMonth[m] = (byMonth[m] || 0) + r.price;
+        }
+        const sortedKeys = Object.keys(byMonth).sort();
+        const labels = sortedKeys.map(k => {
+          const [y,mo] = k.split('-');
+          return new Date(parseInt(y), parseInt(mo)-1, 1)
+            .toLocaleDateString('en-US', { year: 'numeric', month: 'short' });
+        });
+        return (
+          <div className="chart-card">
+            <h3>Revenue by Month (based on Created Date)</h3>
+            <ChartView
+              type="bar"
+              height={340}
+              data={{
+                labels,
+                datasets: [{
+                  label: 'Revenue',
+                  data: sortedKeys.map(k => byMonth[k]),
+                  backgroundColor: '#3b82f6',
+                  borderRadius: 3,
+                }]
+              }}
+              options={{
+                plugins: {
+                  legend: { display: false },
+                  tooltip: { callbacks: { label: (c) => money(c.parsed.y) } },
+                },
+                scales: {
+                  y: { beginAtZero: true, ticks: { callback: (v) => '$' + v.toLocaleString() } },
+                },
+                maintainAspectRatio: false,
+              }}
+            />
+          </div>
+        );
+      }
+
+      function renderUpcomingRenewals() {
+        const buckets = { '7':0, '30':0, '60':0, '90':0, 'beyond':0 };
+        const bucketRev = { '7':0, '30':0, '60':0, '90':0, 'beyond':0 };
+        for (const r of filtered) {
+          if (r.renewalType !== 'Auto-renew' || r.status !== 'active') continue;
+          const d = daysUntil(r.nextRenewal);
+          if (d === null || d < 0) continue;
+          let key;
+          if (d <= 7) key = '7';
+          else if (d <= 30) key = '30';
+          else if (d <= 60) key = '60';
+          else if (d <= 90) key = '90';
+          else key = 'beyond';
+          buckets[key]++;
+          bucketRev[key] += r.price;
+        }
+        const labels = ['Next 7 days', '8–30 days', '31–60 days', '61–90 days', 'Beyond 90 days'];
+        const keys = ['7','30','60','90','beyond'];
+        return (
+          <div className="chart-card">
+            <h3>Upcoming Auto-Renewals (active only)</h3>
+            <ChartView
+              type="bar"
+              height={300}
+              data={{
+                labels,
+                datasets: [{
+                  label: 'Count',
+                  data: keys.map(k => buckets[k]),
+                  backgroundColor: '#db2777',
+                  borderRadius: 3,
+                }]
+              }}
+              options={{
+                plugins: {
+                  legend: { display: false },
+                  tooltip: {
+                    callbacks: {
+                      label: (c) => {
+                        const k = keys[c.dataIndex];
+                        return `${c.parsed.y} memberships · ${money(bucketRev[k])} renewal value`;
+                      }
+                    }
+                  }
+                },
+                scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } },
+                maintainAspectRatio: false,
+              }}
+            />
+          </div>
+        );
+      }
+
+      function renderView() {
+        if (loading) return <div className="loading">Loading membership data…</div>;
+        if (error)   return <div className="empty-state error-state">Failed to load report data<br/><span style={{fontSize:11}}>{error}</span></div>;
+        if (filtered.length === 0) return <div className="empty-state">No memberships match the current filters.</div>;
+
+        switch (viewMode) {
+          case 'byType':           return renderByType();
+          case 'byStatus':         return renderByStatus();
+          case 'renewalMix':       return renderRenewalMix();
+          case 'revenueByType':    return renderRevenueByType();
+          case 'monthlyRevenue':   return renderMonthlyRevenue();
+          case 'upcomingRenewals': return renderUpcomingRenewals();
+          case 'table':
+          default:                 return renderTable();
+        }
+      }
+
+      // ── View definitions ──
+      const VIEWS = [
+        { key: 'table',            label: 'Table' },
+        { key: 'byType',           label: 'By Type' },
+        { key: 'byStatus',         label: 'By Status' },
+        { key: 'renewalMix',       label: 'Renewal Mix' },
+        { key: 'revenueByType',    label: 'Revenue' },
+        { key: 'monthlyRevenue',   label: 'Monthly' },
+        { key: 'upcomingRenewals', label: 'Upcoming' },
+      ];
+
+      return (
+        <React.Fragment>
+          {!isPrint && (
+            <div className="toolbar">
+              <span className="toolbar-title">🎫 Memberships</span>
+
+              <MultiSelect
+                label="Status"
+                options={['active','canceled','expired','inactive']}
+                selected={statusFilter}
+                onChange={setStatusFilter}
+              />
+
+              <MultiSelect
+                label="Renewal"
+                options={['Auto-renew', 'One-time']}
+                selected={renewalFilter}
+                onChange={setRenewalFilter}
+              />
+
+              {allTypes.length > 0 && (
+                <MultiSelect
+                  label="Type"
+                  options={allTypes}
+                  selected={typeFilter || []}
+                  onChange={setTypeFilter}
+                />
+              )}
+
+              <input
+                type="search"
+                placeholder="Search name, email, or type…"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+              />
+
+              <span className="toolbar-spacer" />
+
+              <div className="view-group">
+                {VIEWS.map(v => (
+                  <button
+                    key={v.key}
+                    className={viewMode === v.key ? 'active' : ''}
+                    onClick={() => setViewMode(v.key)}
+                  >
+                    {v.label}
+                  </button>
+                ))}
+              </div>
+
+              <button onClick={printPage} title="Print">🖨️ Print</button>
+              <button onClick={exportExcel} title="Excel">📊 Excel</button>
+              <button
+                onClick={() => window.open(`/${orgSlug}/admin`, '_blank')}
+                title="Email Subscriptions"
+              >
+                ✉️ Subscriptions
+              </button>
+            </div>
+          )}
+
+          <div className="summary-cards">
+            <div className="scard">
+              <div className="scard-label">Total Memberships</div>
+              <div className="scard-value">{summary.total.toLocaleString()}</div>
+              <div className="scard-sub">After filters applied</div>
+            </div>
+            <div className="scard active">
+              <div className="scard-label">Active</div>
+              <div className="scard-value">{summary.active.toLocaleString()}</div>
+            </div>
+            <div className="scard canceled">
+              <div className="scard-label">Canceled</div>
+              <div className="scard-value">{summary.canceled.toLocaleString()}</div>
+            </div>
+            <div className="scard expired">
+              <div className="scard-label">Expired</div>
+              <div className="scard-value">{summary.expired.toLocaleString()}</div>
+            </div>
+            <div className="scard inactive">
+              <div className="scard-label">Inactive</div>
+              <div className="scard-value">{summary.inactive.toLocaleString()}</div>
+            </div>
+            <div className="scard renew">
+              <div className="scard-label">Auto-Renew</div>
+              <div className="scard-value">{summary.autoRenewCount.toLocaleString()}</div>
+              <div className="scard-sub">≈ {money(summary.mrrEstimate)} renewal value</div>
+            </div>
+            <div className="scard revenue">
+              <div className="scard-label">Total Revenue</div>
+              <div className="scard-value">{money(summary.totalRevenue)}</div>
+              <div className="scard-sub">Lifetime, after filters</div>
+            </div>
+            <div className="scard stale">
+              <div className="scard-label">Stale (Active)</div>
+              <div className="scard-value">{summary.stale.toLocaleString()}</div>
+              <div className="scard-sub">No usage in 60+ days</div>
+            </div>
+          </div>
+
+          <div className="content">
+            {renderView()}
+          </div>
+
+          {!loading && !error && <div id="report-ready" style={{display:'none'}} />}
+        </React.Fragment>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
