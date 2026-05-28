@@ -1073,7 +1073,7 @@ app.post("/api/feedback", async (req, res) => {
       </div>
     `;
 
-    const resend = getResend();
+    const resend = getResendClient();
     if (!resend) {
       console.log("[feedback] RESEND_API_KEY not configured — stub log:", { message, email, page });
       return res.json({ ok: true, stub: true });
