@@ -1401,30 +1401,43 @@ app.get("/", (req, res) => {
         </div>
         <p style="margin-top:8px">The server proxies all Metabase requests server-side &#8212; this avoids CORS issues since Metabase doesn&#39;t send browser-friendly headers. Staff never interact with Metabase directly.</p>
 
-        <h4>Reports</h4>
-        <p>Each report type is a self-contained HTML file served from <code>public/</code>. Reports are React apps loaded via CDN &#8212; no build step required. Data is fetched from <code>/:org/:report/api/data</code>, which proxies to a Metabase public question UUID configured per org.</p>
+        <h4>Access &amp; Security</h4>
+        <p>Two layers of access control protect this deployment:</p>
         <ul>
-          <li><strong>Facility Rental</strong> &#8212; reservations grouped by date and location, with table and calendar views, heatmap summary, and location color coding.</li>
-          <li><strong>GL Code Rollup</strong> &#8212; payment method breakdown by GL code, with bar/pie chart views, refund detail toggle, and GL location tags.</li>
-          <li><strong>Class Roster</strong> &#8212; enrolled and cancelled participants by program section, with status filters and Excel/PDF export.</li>
+          <li><strong>Admin dashboard</strong> (this page, at <code>/</code>) is gated by HTTP Basic auth using the <code>DASHBOARD_PASSWORD</code> env var. Only authorized staff see the full org list, subscriber counts, and access tokens.</li>
+          <li><strong>Per-org reports</strong> are protected by 16-character access tokens. Every <code>/:org/*</code> URL requires <code>?token=...</code> matching the org&#39;s configured token; a mismatch returns a generic 404 (no info leak about which orgs exist). Tokens are embedded in the URLs each org receives, so staff can bookmark and share without re-authenticating.</li>
+        </ul>
+        <p>Tokens are visible in the &#129312; <strong>Access Token</strong> row on each org card &#8212; click <strong>Copy landing URL</strong> to grab a tokenized link ready to share. The <code>/api/*</code> admin endpoints, the cross-org <code>/metrics</code> view, and the public <code>/hotdog</code> page are whitelisted from the token gate.</p>
+
+        <h4>Reports</h4>
+        <p>Each report type is a self-contained HTML file served from <code>public/</code>. Reports are React apps loaded via CDN &#8212; no build step required. Data is fetched from <code>/:org/:report/api/data?token=...</code>, which proxies to a Metabase public question UUID configured per org.</p>
+        <ul>
+          <li><strong>Facility Rental</strong> &#8212; reservations grouped by date and location, with table and calendar views, heatmap summary, and location color coding. Used by Clarksville, Norman, Smyrna, Watertown, Apex.</li>
+          <li><strong>GL Code Rollup</strong> &#8212; payment method breakdown by GL code, with bar/pie chart views, refund detail toggle, GL location tags, and a dedicated <strong>ACCT CREDIT</strong> column for organization-credit payments. Used by Clarksville, Norman, Smyrna, Watertown, Littleton, Danvers.</li>
+          <li><strong>Class Roster</strong> &#8212; enrolled and cancelled participants by program section, with status filters and Excel/PDF export. Used by Clarksville, Norman, Smyrna, Watertown, The Ranch.</li>
+          <li><strong>Programs</strong> &#8212; enrollment and revenue by program and section (Norman and Watertown).</li>
           <li><strong>Historic Buildings</strong> &#8212; filtered facility view for historic venue locations (Smyrna only).</li>
-          <li><strong>Programs</strong> &#8212; enrollment and revenue by program and section (Watertown only).</li>
           <li><strong>Memberships</strong> &#8212; active and lapsed memberships with auto-renew tracking, MRR estimate, and stale-usage detection (Norman only).</li>
+          <li><strong>Product Sales MoM</strong> &#8212; month-over-month revenue and quantity by product (Norman only).</li>
         </ul>
 
+        <h4>Inline Metrics</h4>
+        <p>Each org card on this dashboard has a &#9656; <strong>&#128200; Metrics</strong> toggle that expands inline to show that org&#39;s usage over the last 30 days &#8212; report opens by type, daily activity sparkline, and top viewers. Data comes from a lightweight in-process counter (no Metabase round-trip). The <strong>View full metrics &rarr;</strong> link opens a deeper dashboard at <code>/:org/metrics</code>.</p>
+
         <h4>PDF Export</h4>
-        <p>PDF generation uses Puppeteer with system Chromium inside the Railway Docker container. The server launches a headless browser, navigates to the report with <code>?_print=1</code> (hides the toolbar), waits for the <code>#report-ready</code> DOM marker, then renders a Letter-landscape PDF. The PDF always reflects exactly what the browser renders.</p>
+        <p>PDF generation uses Puppeteer with system Chromium inside the Railway Docker container. The server launches a headless browser, navigates to the report with <code>?_print=1</code> (hides the toolbar) and the org&#39;s access token, waits for the <code>#report-ready</code> DOM marker, then renders a Letter-landscape PDF. The PDF always reflects exactly what the browser renders.</p>
 
         <h4>Email Subscriptions</h4>
-        <p>Subscriber data is stored in <code>data/subscriptions.json</code> on the Railway volume. Three cron jobs run on the server &#8212; daily at 7am, weekly on Monday at 7am, and monthly on the 1st at 7am. Each job filters to matching cadences and sends report links via the Resend API. The Email button in reports uses the same integration for one-off share links.</p>
+        <p>Subscriber data is stored in <code>data/subscriptions.json</code> on the Railway volume. Three cron jobs run on the server &#8212; daily at 7am, weekly on Monday at 7am, and monthly on the 1st at 7am. Each job filters to matching cadences and sends tokenized report links via the Resend API; the unsubscribe link in each email also carries the token. The Email button in reports uses the same integration for one-off share links.</p>
 
         <h4>Adding a New Org</h4>
-        <p>Click <strong>&#10133; Add Org</strong> above, or manually add an entry to the <code>ORGS</code> map in <code>server.js</code> with a Metabase public question UUID per report type. No new HTML files needed &#8212; all report templates are shared across orgs.</p>
+        <p>Click <strong>&#10133; Add Org</strong> above to launch the two-step wizard (org details &rarr; Metabase UUID per report), or manually add an entry to the <code>ORGS</code> map in <code>server.js</code> with a token and Metabase public question UUID per report type. No new HTML files needed &#8212; all report templates are shared across orgs.</p>
 
         <h4>Environment Variables</h4>
         <ul>
           <li><code>METABASE_URL</code> &#8212; base URL for your Metabase instance</li>
           <li><code>BASE_URL</code> &#8212; public URL of this Railway deployment</li>
+          <li><code>DASHBOARD_PASSWORD</code> &#8212; Basic-auth password for the admin dashboard at <code>/</code></li>
           <li><code>RESEND_API_KEY</code> &#8212; API key for email delivery via Resend</li>
           <li><code>FROM_EMAIL</code> / <code>FROM_NAME</code> &#8212; sender identity for outbound emails</li>
           <li><code>DATA_DIR</code> &#8212; path to persistent storage for subscriptions.json</li>
