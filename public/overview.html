@@ -187,10 +187,20 @@
     .state-center .msg  { font-size: 15px; font-weight: 600; }
     .state-center .sub  { font-size: 13px; color: #aaa; }
     .spinner {
-      width: 32px; height: 32px; border: 3px solid #e5e7eb; border-top-color: #2563eb;
-      border-radius: 50%; animation: spin .7s linear infinite;
+      display: inline-block;
+      font-size: 34px; line-height: 1;
+      margin-bottom: 12px;
+      transform-origin: 50% 85%;
+      animation: banana-dance .6s ease-in-out infinite;
     }
-    @keyframes spin { to { transform: rotate(360deg); } }
+    .spinner::after { content: '🍌'; }
+    @keyframes banana-dance {
+      0%   { transform: rotate(-20deg) translateY(0)    scale(1);    }
+      25%  { transform: rotate(13deg)  translateY(-7px) scale(1.06); }
+      50%  { transform: rotate(-12deg) translateY(0)    scale(1);    }
+      75%  { transform: rotate(16deg)  translateY(-5px) scale(1.06); }
+      100% { transform: rotate(-20deg) translateY(0)    scale(1);    }
+    }
 
     /* ── Report header (print area) ── */
     .report-area { padding: 24px 28px 0; max-width: 1400px; margin: 0 auto; }
