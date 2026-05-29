@@ -106,6 +106,7 @@ const ORGS = {
     orgId:   "aeba47d0-c97f-49cb-a0e9-93c5af3a68fa",
     logoUrl: "https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2Forganization-aeba47d0-c97f-49cb-a0e9-93c5af3a68fa%2FfullLogo.png%3F1765923560125&w=1920&q=75",
     facility: { mbUuid: "c876b1d7-df79-48c5-abf5-62917dee3534", defaultDateRange: 8, defaultLocationFilter: "Apex Center" },
+    programs: { mbUuid: "bf520bbd-4d8d-42ab-9538-37ad630bf58e" },
     "court-utilization": { mbUuid: "82d14a94-78ad-48d6-9531-11e72f53e285" },
   },
   theranch: {
@@ -1574,7 +1575,7 @@ app.get("/", (req, res) => {
           <li><strong>Facility Rental</strong> &#8212; reservations grouped by date and location, with table and calendar views, heatmap summary, and location color coding. Used by Clarksville, Norman, Smyrna, Watertown, Apex.</li>
           <li><strong>GL Code Rollup</strong> &#8212; payment method breakdown by GL code, with bar/pie chart views, refund detail toggle, GL location tags, and a dedicated <strong>ACCT CREDIT</strong> column for organization-credit payments. Used by Clarksville, Norman, Smyrna, Watertown, Littleton, Danvers.</li>
           <li><strong>Class Roster</strong> &#8212; enrolled and cancelled participants by program section, with status filters and Excel/PDF export. Used by Clarksville, Norman, Smyrna, Watertown, The Ranch.</li>
-          <li><strong>Programs</strong> &#8212; enrollment and revenue by program and section (Norman and Watertown).</li>
+          <li><strong>Programs</strong> &#8212; enrollment and revenue by program and section (Norman, Watertown, and Apex).</li>
           <li><strong>Historic Buildings</strong> &#8212; filtered facility view for historic venue locations (Smyrna only).</li>
           <li><strong>Memberships</strong> &#8212; active and lapsed memberships with auto-renew tracking, MRR estimate, and stale-usage detection (Norman only).</li>
           <li><strong>Product Sales MoM</strong> &#8212; month-over-month revenue and quantity by product (Norman only).</li>
