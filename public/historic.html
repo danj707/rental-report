@@ -197,11 +197,20 @@
     /* ── Loading / Error ── */
     .loading { text-align: center; padding: 80px 20px; color: #888; font-size: 14px; }
     .loading .spinner {
-      display: inline-block; width: 28px; height: 28px;
-      border: 3px solid #ddd; border-top-color: #3b82f6;
-      border-radius: 50%; animation: spin .7s linear infinite; margin-bottom: 12px;
+      display: inline-block;
+      font-size: 34px; line-height: 1;
+      margin-bottom: 12px;
+      transform-origin: 50% 85%;
+      animation: banana-dance .6s ease-in-out infinite;
     }
-    @keyframes spin { to { transform: rotate(360deg); } }
+    .loading .spinner::after { content: '🍌'; }
+    @keyframes banana-dance {
+      0%   { transform: rotate(-20deg) translateY(0)    scale(1);    }
+      25%  { transform: rotate(13deg)  translateY(-7px) scale(1.06); }
+      50%  { transform: rotate(-12deg) translateY(0)    scale(1);    }
+      75%  { transform: rotate(16deg)  translateY(-5px) scale(1.06); }
+      100% { transform: rotate(-20deg) translateY(0)    scale(1);    }
+    }
     .error { text-align: center; padding: 60px 20px; color: #b91c1c; font-size: 14px; }
 
     /* ── Print / PDF ── */
