@@ -133,7 +133,7 @@ const ORGS = {
     orgId:   "8a8a4fb1-c184-4196-a878-75c775ce6252",
     logoUrl: "https://www.midlandtexas.gov/ImageRepository/Document?documentID=10068",
     displayName: "Midland",
-    gl      : { mbUuid: "aeef1344-0a73-456f-bb67-5069f1a35414" },
+    gl      : { mbUuid: "e0e0d020-f22c-4a79-9cc6-760c6afb9f46" },
   },
 };
 
