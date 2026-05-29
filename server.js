@@ -925,6 +925,15 @@ app.post("/:org/admin/test-send", async (req, res) => {
 });
 
 // ── Serve HTML report pages ──────────────────────────────────────────
+// Report HTML pages must always revalidate so a fresh deploy is picked up
+// immediately instead of a heuristically-cached stale copy. ETag/Last-Modified
+// still yield cheap 304s when the file is unchanged. (Scoped here: sits below
+// the API/PDF routes, above the page handlers, so only HTML pages are affected.)
+app.use((req, res, next) => {
+  res.set("Cache-Control", "no-cache");
+  next();
+});
+
 app.get("/:org/facility", (req, res) => {
   const slug = req.params.org;
   const org  = ORGS[slug];
