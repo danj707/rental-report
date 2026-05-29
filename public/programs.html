@@ -61,9 +61,10 @@
 
     /* ── Page ── */
     .page {
-      max-width: 1300px; margin: 16px auto; padding: 24px 28px;
+      max-width: 1400px; margin: 16px auto; padding: 24px 28px;
       background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.08);
     }
+    .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 
     /* ── Header ── */
     .report-header {
@@ -180,6 +181,7 @@
     body.print-mode .toolbar { display: none !important; }
     body.print-mode { background: #fff; }
     body.print-mode .page { box-shadow: none; margin: 0; padding: 12px 16px; max-width: 100%; }
+    body.print-mode .table-scroll { overflow: visible; }
   </style>
   <script>
     // ── Token auth (injected) ────────────────────────────────────────
@@ -408,9 +410,12 @@ function App() {
     return filtered;
   }, [rows, search]);
 
+  // Rows remaining after the program search filter — drives summary cards + grand total
+  const filteredRows = useMemo(() => (grouped ? Object.values(grouped).flat() : []), [grouped]);
+
   const totals = useMemo(() => {
-    if (!rows || rows.length === 0) return null;
-    return rows.reduce((acc, r) => ({
+    if (!filteredRows || filteredRows.length === 0) return null;
+    return filteredRows.reduce((acc, r) => ({
       revenue:            acc.revenue            + fmtNum(r.revenue),
       refunds:            acc.refunds            + fmtNum(r.refunds),
       netRevenue:         acc.netRevenue         + fmtNum(r.netRevenue),
@@ -421,7 +426,7 @@ function App() {
       revenueSession:     acc.revenueSession     + fmtNum(r.revenueSession),
       waitlist:           acc.waitlist           + fmtNum(r.waitlist),
     }), { revenue:0, refunds:0, netRevenue:0, enrollments:0, enrollmentsSection:0, enrollmentsSession:0, revenueSection:0, revenueSession:0, waitlist:0 });
-  }, [rows]);
+  }, [filteredRows]);
 
   const programCount = grouped ? Object.keys(grouped).length : 0;
   const isPrint = params._print === '1';
@@ -581,7 +586,7 @@ function App() {
             <div className="summary-card">
               <div className="card-label">Programs</div>
               <div className="card-value">{programCount}</div>
-              <div className="card-sub">{rows.length} section{rows.length !== 1 ? 's' : ''}</div>
+              <div className="card-sub">{filteredRows.length} section{filteredRows.length !== 1 ? 's' : ''}</div>
             </div>
           </div>
         )}
@@ -590,6 +595,7 @@ function App() {
         {rows.length === 0 ? (
           <div style={{textAlign:'center',padding:'40px 0',color:'#888'}}>No program data found for the selected date range.</div>
         ) : (
+          <div className="table-scroll">
           <table className="prog-table">
             <thead>
               <tr>
@@ -677,7 +683,7 @@ function App() {
             {totals && (
               <tfoot>
                 <tr>
-                  <td className="left" colSpan={4}>Grand Total — {rows.length} section{rows.length !== 1 ? 's' : ''} across {programCount} program{programCount !== 1 ? 's' : ''}</td>
+                  <td className="left" colSpan={4}>Grand Total — {filteredRows.length} section{filteredRows.length !== 1 ? 's' : ''} across {programCount} program{programCount !== 1 ? 's' : ''}</td>
                   <td>{fmtMoney(totals.revenue)}</td>
                   {showDetails && <>
                     <td>{totals.enrollmentsSection}</td>
@@ -695,6 +701,7 @@ function App() {
               </tfoot>
             )}
           </table>
+          </div>
         )}
 
         <div className="report-footer">
