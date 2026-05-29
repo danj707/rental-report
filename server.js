@@ -249,6 +249,92 @@ async function pushOrgsToGitHub(entries, commitMessage) {
   };
 }
 
+// ── Update an existing report's Metabase UUID (admin link editor) ─────
+// Powers the password-protected "Metabase Links" section of the admin
+// dashboard. Performs an anchored, single-occurrence replace of one
+// report's mbUuid inside one org block, then pushes to GitHub (Railway
+// auto-redeploys). The running instance's ORGS map is also updated.
+const STRICT_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+function escapeRegExp(s) {
+  return String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+// Pull a UUID from a full Metabase public URL, a bare UUID, or a messy paste.
+function extractMbUuidFromInput(input) {
+  if (!input) return null;
+  const m = String(input).trim().toLowerCase()
+    .match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/);
+  return m ? m[0] : null;
+}
+
+// Anchored, single-occurrence replace of one report's mbUuid in source text.
+// Returns { content, oldUuid }. Throws on any ambiguity (org/report missing).
+function patchReportUuid(content, slug, reportType, newUuid) {
+  if (!STRICT_UUID.test(newUuid)) throw new Error("Invalid UUID format");
+  // Isolate the org block: from "\n  <slug>: {" to its closing "\n  },".
+  const blockRe = new RegExp(`\\n  ${escapeRegExp(slug)}:\\s*\\{[\\s\\S]*?\\n  \\},`);
+  const bm = content.match(blockRe);
+  if (!bm) throw new Error(`Org "${slug}" not found in server.js`);
+  const block = bm[0];
+  // Match the report key (bare or quoted) up to its mbUuid value (uuid|null).
+  const keyPat = `(?:"${escapeRegExp(reportType)}"|${escapeRegExp(reportType)})`;
+  const reportRe = new RegExp(`(${keyPat}\\s*:\\s*\\{[^{}]*?mbUuid:\\s*)("?)(?:[0-9a-f-]{36}|null)("?)`);
+  const rm = block.match(reportRe);
+  if (!rm) throw new Error(`Report "${reportType}" not found in "${slug}"`);
+  const oldUuid = (rm[0].match(/mbUuid:\s*"?([0-9a-f-]{36}|null)/) || [])[1] || null;
+  const newBlock = block.replace(reportRe, `$1"${newUuid}"`);
+  if (newBlock === block) throw new Error("No change made (UUID may already be set)");
+  // Function replacement avoids `$` interpretation in the replacement string.
+  const newContent = content.replace(block, () => newBlock);
+  return { content: newContent, oldUuid };
+}
+
+// GET server.js (+sha) from GitHub, patch one report's uuid, PUT it back.
+async function updateReportUuidOnGitHub(slug, reportType, newUuid, commitMessage) {
+  const token = process.env.GITHUB_TOKEN;
+  if (!token) throw new Error("GITHUB_TOKEN not configured");
+  const headers = {
+    Authorization: `token ${token}`,
+    Accept: "application/vnd.github.v3+json",
+  };
+  const getRes = await fetch(GITHUB_API, { headers });
+  if (!getRes.ok) throw new Error(`GitHub GET ${getRes.status}: ${await getRes.text()}`);
+  const getData = await getRes.json();
+  const content = Buffer.from(getData.content, "base64").toString("utf8");
+  const sha = getData.sha;
+
+  const { content: patched, oldUuid } = patchReportUuid(content, slug, reportType, newUuid);
+  if (patched === content) throw new Error("Patch produced no change");
+
+  const putRes = await fetch(GITHUB_API, {
+    method: "PUT",
+    headers: { ...headers, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      message: commitMessage,
+      content: Buffer.from(patched).toString("base64"),
+      sha,
+    }),
+  });
+  if (!putRes.ok) throw new Error(`GitHub PUT ${putRes.status}: ${await putRes.text()}`);
+  const putData = await putRes.json();
+  return { oldUuid, commitUrl: putData.commit.html_url, commitSha: putData.commit.sha };
+}
+
+// Validate the dashboard password from a POST body. Returns true if it already
+// ended the response (caller should `return`), false to proceed.
+function dashboardPasswordBlocked(req, res) {
+  if (!DASHBOARD_PASSWORD) {
+    res.status(503).json({ error: "Set DASHBOARD_PASSWORD in Railway to enable link editing" });
+    return true;
+  }
+  if ((req.body && req.body.password) !== DASHBOARD_PASSWORD) {
+    res.status(401).json({ error: "Incorrect password" });
+    return true;
+  }
+  return false;
+}
+
 // Promote any dynamic orgs (from data/orgs.json) into server.js on startup.
 // After a successful push, clear the migrated entries from orgs.json so the
 // new server.js becomes the source of truth (after Railway redeploys).
@@ -937,6 +1023,82 @@ app.post("/:org/admin/test-send", async (req, res) => {
   res.json({ ok: true, message: "Sending in background — check the log in a moment" });
   sendReportEmail(req.params.org, email, report, schedule)
     .catch(err => console.error("[test-send] Error:", err));
+});
+
+// ── Metabase link editor (password-protected; admin dashboard only) ──
+// List one org's reports with their current public links. Password travels
+// in the POST body so it never lands in a URL or access log.
+app.post("/:org/admin/links", (req, res) => {
+  const org = ORGS[req.params.org];
+  if (!org) return res.status(404).json({ error: "Unknown org" });
+  if (dashboardPasswordBlocked(req, res)) return;
+  const reportLabels = {
+    facility: "Facility Rental Schedule",
+    gl:       "GL Code Rollup",
+    historic: "Historic Buildings",
+    programs: "Program Revenue",
+    roster:   "Class Roster",
+    overview: "Overview",
+    products: "Product Revenue",
+    memberships: "Membership Revenue",
+    "court-utilization": "Court Utilization",
+  };
+  const reports = REPORT_TYPES
+    .filter(r => org[r] && org[r].mbUuid)
+    .map(r => ({
+      key: r,
+      label: reportLabels[r] || r,
+      mbUuid: org[r].mbUuid,
+      publicUrl: `${METABASE_URL}/public/question/${org[r].mbUuid}`,
+    }));
+  res.json({ ok: true, reports });
+});
+
+// Update one report's Metabase public link → writes server.js on GitHub
+// (Railway auto-redeploys) and updates the in-memory ORGS map immediately.
+app.post("/:org/admin/update-link", async (req, res) => {
+  const slug = req.params.org;
+  const org  = ORGS[slug];
+  if (!org) return res.status(404).json({ error: "Unknown org" });
+  if (dashboardPasswordBlocked(req, res)) return;
+
+  const { report, link } = req.body || {};
+  if (!report || !REPORT_TYPES.includes(report)) {
+    return res.status(400).json({ error: "Valid report type required" });
+  }
+  if (!org[report] || !org[report].mbUuid) {
+    return res.status(400).json({ error: `Org "${slug}" has no "${report}" report to update` });
+  }
+  const newUuid = extractMbUuidFromInput(link);
+  if (!newUuid || !STRICT_UUID.test(newUuid)) {
+    return res.status(400).json({ error: "Could not find a valid Metabase UUID in that link" });
+  }
+  if (newUuid === org[report].mbUuid) {
+    return res.status(400).json({ error: "That's already the current link for this report" });
+  }
+  if (!process.env.GITHUB_TOKEN) {
+    return res.status(503).json({ error: "GITHUB_TOKEN not configured on the server" });
+  }
+
+  try {
+    const result = await updateReportUuidOnGitHub(
+      slug, report, newUuid,
+      `Update ${slug}/${report} Metabase link -> ${newUuid}`,
+    );
+    // Reflect the change in the running instance right away.
+    ORGS[slug][report] = { ...ORGS[slug][report], mbUuid: newUuid };
+    console.log(`[update-link] ${slug}/${report}: ${result.oldUuid} -> ${newUuid}`);
+    res.json({
+      ok: true,
+      oldUuid: result.oldUuid,
+      newUuid,
+      commitUrl: result.commitUrl,
+      publicUrl: `${METABASE_URL}/public/question/${newUuid}`,
+    });
+  } catch (err) {
+    console.error("[update-link] Error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // ── Serve HTML report pages ──────────────────────────────────────────
