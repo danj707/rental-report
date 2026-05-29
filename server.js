@@ -129,6 +129,12 @@ const ORGS = {
     displayName: "Town of Danvers",
     gl      : { mbUuid: "f82f6e95-6c18-4c57-a8dc-4fb833537f2c" },
   },
+  midland: {
+    orgId:   "8a8a4fb1-c184-4196-a878-75c775ce6252",
+    logoUrl: "https://www.midlandtexas.gov/ImageRepository/Document?documentID=10068",
+    displayName: "Midland",
+    gl      : { mbUuid: "aeef1344-0a73-456f-bb67-5069f1a35414" },
+  },
 };
 
 const REPORT_TYPES = ["facility", "gl", "historic", "programs", "roster", "overview", "products", "memberships", "court-utilization"];
