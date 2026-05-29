@@ -1025,82 +1025,6 @@ app.post("/:org/admin/test-send", async (req, res) => {
     .catch(err => console.error("[test-send] Error:", err));
 });
 
-// ── Metabase link editor (password-protected; admin dashboard only) ──
-// List one org's reports with their current public links. Password travels
-// in the POST body so it never lands in a URL or access log.
-app.post("/:org/admin/links", (req, res) => {
-  const org = ORGS[req.params.org];
-  if (!org) return res.status(404).json({ error: "Unknown org" });
-  if (dashboardPasswordBlocked(req, res)) return;
-  const reportLabels = {
-    facility: "Facility Rental Schedule",
-    gl:       "GL Code Rollup",
-    historic: "Historic Buildings",
-    programs: "Program Revenue",
-    roster:   "Class Roster",
-    overview: "Overview",
-    products: "Product Revenue",
-    memberships: "Membership Revenue",
-    "court-utilization": "Court Utilization",
-  };
-  const reports = REPORT_TYPES
-    .filter(r => org[r] && org[r].mbUuid)
-    .map(r => ({
-      key: r,
-      label: reportLabels[r] || r,
-      mbUuid: org[r].mbUuid,
-      publicUrl: `${METABASE_URL}/public/question/${org[r].mbUuid}`,
-    }));
-  res.json({ ok: true, reports });
-});
-
-// Update one report's Metabase public link → writes server.js on GitHub
-// (Railway auto-redeploys) and updates the in-memory ORGS map immediately.
-app.post("/:org/admin/update-link", async (req, res) => {
-  const slug = req.params.org;
-  const org  = ORGS[slug];
-  if (!org) return res.status(404).json({ error: "Unknown org" });
-  if (dashboardPasswordBlocked(req, res)) return;
-
-  const { report, link } = req.body || {};
-  if (!report || !REPORT_TYPES.includes(report)) {
-    return res.status(400).json({ error: "Valid report type required" });
-  }
-  if (!org[report] || !org[report].mbUuid) {
-    return res.status(400).json({ error: `Org "${slug}" has no "${report}" report to update` });
-  }
-  const newUuid = extractMbUuidFromInput(link);
-  if (!newUuid || !STRICT_UUID.test(newUuid)) {
-    return res.status(400).json({ error: "Could not find a valid Metabase UUID in that link" });
-  }
-  if (newUuid === org[report].mbUuid) {
-    return res.status(400).json({ error: "That's already the current link for this report" });
-  }
-  if (!process.env.GITHUB_TOKEN) {
-    return res.status(503).json({ error: "GITHUB_TOKEN not configured on the server" });
-  }
-
-  try {
-    const result = await updateReportUuidOnGitHub(
-      slug, report, newUuid,
-      `Update ${slug}/${report} Metabase link -> ${newUuid}`,
-    );
-    // Reflect the change in the running instance right away.
-    ORGS[slug][report] = { ...ORGS[slug][report], mbUuid: newUuid };
-    console.log(`[update-link] ${slug}/${report}: ${result.oldUuid} -> ${newUuid}`);
-    res.json({
-      ok: true,
-      oldUuid: result.oldUuid,
-      newUuid,
-      commitUrl: result.commitUrl,
-      publicUrl: `${METABASE_URL}/public/question/${newUuid}`,
-    });
-  } catch (err) {
-    console.error("[update-link] Error:", err.message);
-    res.status(500).json({ error: err.message });
-  }
-});
-
 // ── Serve HTML report pages ──────────────────────────────────────────
 // Report HTML pages must always revalidate so a fresh deploy is picked up
 // immediately instead of a heuristically-cached stale copy. ETag/Last-Modified
@@ -1440,6 +1364,82 @@ app.get("/:org", (req, res, next) => {
 </html>`);
 });
 
+// ── POST /api/admin/links — list every org's reports + current links ──
+// Dashboard-level Metabase link editor (all orgs). Whitelisted from the
+// per-org token gate via the /api/ prefix; password travels in the body.
+app.post("/api/admin/links", (req, res) => {
+  if (dashboardPasswordBlocked(req, res)) return;
+  const reportLabels = {
+    facility: "Facility Rental Schedule",
+    gl:       "GL Code Rollup",
+    historic: "Historic Buildings",
+    programs: "Program Revenue",
+    roster:   "Class Roster",
+    overview: "Overview",
+    products: "Product Revenue",
+    memberships: "Membership Revenue",
+    "court-utilization": "Court Utilization",
+  };
+  const orgs = Object.entries(ORGS).map(([slug, org]) => {
+    const slugTitle   = slug.charAt(0).toUpperCase() + slug.slice(1);
+    const displayName = org.displayName || `${slugTitle} Parks & Recreation`;
+    const reports = REPORT_TYPES
+      .filter(r => org[r] && org[r].mbUuid)
+      .map(r => ({
+        key: r,
+        label: reportLabels[r] || r,
+        mbUuid: org[r].mbUuid,
+        publicUrl: `${METABASE_URL}/public/question/${org[r].mbUuid}`,
+      }));
+    return { slug, displayName, reports };
+  }).filter(o => o.reports.length);
+  res.json({ ok: true, orgs });
+});
+
+// ── POST /api/admin/update-link — change one report's Metabase link ──
+// Writes server.js on GitHub (Railway auto-redeploys) and updates the
+// in-memory ORGS map immediately. Body: { password, org, report, link }.
+app.post("/api/admin/update-link", async (req, res) => {
+  if (dashboardPasswordBlocked(req, res)) return;
+  const { org: slug, report, link } = req.body || {};
+  const org = ORGS[slug];
+  if (!org) return res.status(404).json({ error: "Unknown org" });
+  if (!report || !REPORT_TYPES.includes(report)) {
+    return res.status(400).json({ error: "Valid report type required" });
+  }
+  if (!org[report] || !org[report].mbUuid) {
+    return res.status(400).json({ error: `Org "${slug}" has no "${report}" report to update` });
+  }
+  const newUuid = extractMbUuidFromInput(link);
+  if (!newUuid || !STRICT_UUID.test(newUuid)) {
+    return res.status(400).json({ error: "Could not find a valid Metabase UUID in that link" });
+  }
+  if (newUuid === org[report].mbUuid) {
+    return res.status(400).json({ error: "That's already the current link for this report" });
+  }
+  if (!process.env.GITHUB_TOKEN) {
+    return res.status(503).json({ error: "GITHUB_TOKEN not configured on the server" });
+  }
+  try {
+    const result = await updateReportUuidOnGitHub(
+      slug, report, newUuid,
+      `Update ${slug}/${report} Metabase link -> ${newUuid}`,
+    );
+    ORGS[slug][report] = { ...ORGS[slug][report], mbUuid: newUuid };
+    console.log(`[update-link] ${slug}/${report}: ${result.oldUuid} -> ${newUuid}`);
+    res.json({
+      ok: true,
+      oldUuid: result.oldUuid,
+      newUuid,
+      commitUrl: result.commitUrl,
+      publicUrl: `${METABASE_URL}/public/question/${newUuid}`,
+    });
+  } catch (err) {
+    console.error("[update-link] Error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── POST /api/admin/new-org — create a new org dynamically ──────────
 // Pushes the new entry to server.js on GitHub (so it lives in code).
 // Falls back to data/orgs.json if the GitHub push fails, so the org
@@ -1654,6 +1654,18 @@ app.get("/", (req, res) => {
     .how-arch { display: flex; align-items: center; gap: 6px; font-size: 11.5px; margin-bottom: 6px; font-family: monospace; color: #444; flex-wrap: wrap; }
     .how-arch-box { background: #f5f4f1; border: 1px solid #ddd; border-radius: 4px; padding: 3px 8px; font-size: 11px; white-space: nowrap; }
     .how-arch-arrow { color: #bbb; }
+    .mb-org { border-top: 1px solid #f0ede8; }
+    .mb-org:first-child { border-top: none; }
+    .mb-org-name { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .6px; color: #16a34a; padding: 12px 20px 6px; }
+    .mb-row { display: flex; align-items: center; gap: 12px; padding: 9px 20px; border-top: 1px solid #f6f4f1; }
+    .mb-row:hover { background: #fafaf8; }
+    .mb-row-info { flex: 1; min-width: 0; }
+    .mb-row-label { font-size: 13px; font-weight: 600; color: #222; }
+    .mb-row-uuid { font-size: 11px; color: #999; font-family: monospace; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .mb-edit-btn { flex-shrink: 0; font-size: 12px; padding: 5px 12px; background: #fff; border: 1px solid #d0cdc8; border-radius: 5px; color: #555; cursor: pointer; font-weight: 600; transition: background .15s, border-color .15s; }
+    .mb-edit-btn:hover { background: #f0ede8; border-color: #999; }
+    .mb-toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: #16a34a; color: #fff; padding: 12px 22px; border-radius: 8px; font-size: 13px; font-weight: 600; box-shadow: 0 8px 24px rgba(0,0,0,.2); z-index: 2000; opacity: 0; transition: opacity .25s, transform .25s; pointer-events: none; }
+    .mb-toast.show { opacity: 1; transform: translateX(-50%) translateY(-4px); }
     footer { text-align: center; padding: 24px; font-size: 11px; color: #bbb; }
   </style>
 </head>
@@ -1726,6 +1738,51 @@ app.get("/", (req, res) => {
   <div class="main">
     <div class="page-title">Organizations</div>
     ${orgSections}
+    <!-- ── Metabase Links editor (all orgs; dashboard-level) ── -->
+    <div class="org-section" id="mb-links-section">
+      <div class="org-header">
+        <div class="org-header-text">
+          <div class="org-name">&#128279; Metabase Links</div>
+          <div class="org-slug">Update the public Metabase link for any report, on any org</div>
+        </div>
+      </div>
+      <div id="mb-locked" style="padding:16px 20px">
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+          <input id="mb-pwd" type="password" placeholder="Admin password" onkeydown="if(event.key==='Enter')mbUnlock()" style="flex:1;min-width:220px;padding:9px 12px;border:1px solid #ddd;border-radius:6px;font-size:13px" />
+          <button id="mb-unlock-btn" onclick="mbUnlock()" style="padding:9px 22px;background:#16a34a;color:#fff;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer">Unlock</button>
+        </div>
+        <div id="mb-locked-err" style="margin-top:10px;color:#dc2626;font-size:12px;display:none"></div>
+        <div style="margin-top:10px;font-size:11.5px;color:#999;line-height:1.5">Update the public Metabase link for any report. Saving commits the change to <code style="font-family:monospace;background:#f0ede8;padding:1px 5px;border-radius:3px">server.js</code> and the Railway app redeploys automatically (~1&ndash;2 min).</div>
+      </div>
+      <div id="mb-unlocked" style="display:none">
+        <div id="mb-links-list"></div>
+      </div>
+    </div>
+
+    <!-- ── Metabase Link edit modal ── -->
+    <div id="mb-modal-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:1000;overflow-y:auto;padding:40px 16px">
+      <div style="background:#fff;border-radius:10px;max-width:520px;margin:0 auto;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.3)">
+        <div style="padding:18px 22px;background:#2c2c2c;color:#fff;display:flex;align-items:center;justify-content:space-between">
+          <div>
+            <div style="font-weight:700;font-size:15px" id="mb-modal-title">Update Metabase Link</div>
+            <div style="font-size:11px;color:#aaa;margin-top:2px" id="mb-modal-sub"></div>
+          </div>
+          <button onclick="mbCloseModal()" style="background:none;border:none;color:#aaa;font-size:20px;cursor:pointer;padding:4px">&#10005;</button>
+        </div>
+        <div style="padding:22px">
+          <label style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:#888;display:block;margin-bottom:6px">Current public link</label>
+          <input id="mb-modal-current" type="text" readonly style="width:100%;padding:8px 10px;border:1px solid #eee;background:#f7f7f5;border-radius:5px;font-size:12px;font-family:monospace;color:#666;margin-bottom:16px;box-sizing:border-box" />
+          <label style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:#888;display:block;margin-bottom:6px">New public link or UUID</label>
+          <input id="mb-modal-input" type="text" placeholder="https://rec.metabaseapp.com/public/question/..." style="width:100%;padding:9px 11px;border:1px solid #ddd;border-radius:5px;font-size:12px;font-family:monospace;box-sizing:border-box" />
+          <div id="mb-modal-err" style="margin-top:10px;color:#dc2626;font-size:12px;display:none"></div>
+        </div>
+        <div style="padding:0 22px 22px;display:flex;justify-content:flex-end;gap:10px">
+          <button onclick="mbCloseModal()" style="padding:9px 16px;background:none;border:1px solid #ddd;border-radius:5px;font-size:13px;cursor:pointer">Cancel</button>
+          <button id="mb-modal-save" onclick="mbSaveLink()" style="padding:9px 22px;background:#16a34a;color:#fff;border:none;border-radius:5px;font-size:13px;font-weight:600;cursor:pointer">Save &amp; Deploy</button>
+        </div>
+      </div>
+    </div>
+
     <div class="org-section">
       <div class="org-header" onclick="toggleHow(this)" style="cursor:pointer;user-select:none">
         <div class="org-header-text">
@@ -2050,6 +2107,121 @@ app.get("/", (req, res) => {
       row.querySelector('.how-chevron').classList.toggle('open');
       row.nextElementSibling.classList.toggle('open');
     }
+
+    // ── Metabase Links editor (all orgs) ─────────────────────────────
+    let mbPwd = '';
+    let mbData = [];
+    let mbEditing = null;
+
+    async function mbUnlock() {
+      const err = document.getElementById('mb-locked-err');
+      const btn = document.getElementById('mb-unlock-btn');
+      const pwd = document.getElementById('mb-pwd').value;
+      err.style.display = 'none';
+      if (!pwd) { err.textContent = 'Enter the admin password'; err.style.display = 'block'; return; }
+      btn.disabled = true; btn.textContent = 'Unlocking…';
+      try {
+        const res = await fetch('/api/admin/links', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ password: pwd }),
+        });
+        const data = await res.json();
+        if (!res.ok || !data.ok) throw new Error(data.error || 'Unlock failed');
+        mbPwd = pwd;
+        mbData = data.orgs || [];
+        document.getElementById('mb-locked').style.display = 'none';
+        document.getElementById('mb-unlocked').style.display = 'block';
+        mbRenderList();
+      } catch(e) {
+        err.textContent = e.message;
+        err.style.display = 'block';
+      } finally {
+        btn.disabled = false; btn.textContent = 'Unlock';
+      }
+    }
+
+    function mbRenderList() {
+      const wrap = document.getElementById('mb-links-list');
+      if (!mbData.length) { wrap.innerHTML = '<div style="padding:16px 20px;font-size:12px;color:#999">No reports with Metabase links found.</div>'; return; }
+      wrap.innerHTML = mbData.map(org => \`
+        <div class="mb-org">
+          <div class="mb-org-name">\${org.displayName} · \${org.slug}</div>
+          \${org.reports.map(rep => \`
+            <div class="mb-row">
+              <div class="mb-row-info">
+                <div class="mb-row-label">\${rep.label}</div>
+                <div class="mb-row-uuid">\${rep.mbUuid}</div>
+              </div>
+              <button class="mb-edit-btn" onclick="mbOpenModal('\${org.slug}','\${rep.key}')">Update Link</button>
+            </div>\`).join('')}
+        </div>\`).join('');
+    }
+
+    function mbOpenModal(slug, reportKey) {
+      const org = mbData.find(o => o.slug === slug);
+      const rep = org && org.reports.find(r => r.key === reportKey);
+      if (!rep) return;
+      mbEditing = { org: slug, report: reportKey };
+      document.getElementById('mb-modal-title').textContent = rep.label;
+      document.getElementById('mb-modal-sub').textContent = org.displayName + ' · ' + slug;
+      document.getElementById('mb-modal-current').value = rep.publicUrl;
+      document.getElementById('mb-modal-input').value = '';
+      document.getElementById('mb-modal-err').style.display = 'none';
+      document.getElementById('mb-modal-overlay').style.display = 'block';
+      document.body.style.overflow = 'hidden';
+      setTimeout(() => document.getElementById('mb-modal-input').focus(), 50);
+    }
+
+    function mbCloseModal() {
+      document.getElementById('mb-modal-overlay').style.display = 'none';
+      document.body.style.overflow = '';
+      mbEditing = null;
+    }
+
+    async function mbSaveLink() {
+      if (!mbEditing) return;
+      const err  = document.getElementById('mb-modal-err');
+      const btn  = document.getElementById('mb-modal-save');
+      const link = document.getElementById('mb-modal-input').value.trim();
+      err.style.display = 'none';
+      if (!link) { err.textContent = 'Paste a Metabase public link or UUID'; err.style.display = 'block'; return; }
+      btn.disabled = true; btn.textContent = 'Saving…';
+      try {
+        const res = await fetch('/api/admin/update-link', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ password: mbPwd, org: mbEditing.org, report: mbEditing.report, link }),
+        });
+        const data = await res.json();
+        if (!res.ok || !data.ok) throw new Error(data.error || 'Update failed');
+        const org = mbData.find(o => o.slug === mbEditing.org);
+        const rep = org && org.reports.find(r => r.key === mbEditing.report);
+        if (rep) { rep.mbUuid = data.newUuid; rep.publicUrl = data.publicUrl; }
+        mbRenderList();
+        mbCloseModal();
+        mbToast('Saved — Railway is redeploying (~1–2 min)');
+      } catch(e) {
+        err.textContent = e.message;
+        err.style.display = 'block';
+      } finally {
+        btn.disabled = false; btn.textContent = 'Save & Deploy';
+      }
+    }
+
+    function mbToast(msg) {
+      let t = document.getElementById('mb-toast');
+      if (!t) { t = document.createElement('div'); t.id = 'mb-toast'; t.className = 'mb-toast'; document.body.appendChild(t); }
+      t.textContent = msg;
+      t.classList.add('show');
+      setTimeout(() => t.classList.remove('show'), 3200);
+    }
+
+    (function(){
+      const ov = document.getElementById('mb-modal-overlay');
+      if (ov) ov.addEventListener('click', e => { if (e.target === ov) mbCloseModal(); });
+    })();
+
   </script>
 </body>
 </html>`);
