@@ -431,10 +431,19 @@ function getDateRange(dateRange) {
 }
 
 // ── PDF generation ───────────────────────────────────────────────────
-async function generatePdf(orgSlug, reportType, startDate, endDate) {
+async function generatePdf(orgSlug, reportType, startDate, endDate, filters = {}) {
   const puppeteer = require("puppeteer");
   const orgTok = ORGS[orgSlug]?.token || "";
   const qsObj = { start_date: startDate, end_date: endDate, _print: "1" };
+  // Forward client-side filter selections so the PDF matches the on-screen
+  // filtered view. `locations`/`sites` are comma-separated selections from the
+  // interactive filter dropdowns; `location_name`/`site_type` are legacy
+  // server-side Metabase filters. The print page initializes its filter state
+  // from these params before emitting #report-ready, so Puppeteer captures the
+  // filtered render rather than the full dataset.
+  ["locations", "sites", "location_name", "site_type"].forEach(k => {
+    if (filters[k]) qsObj[k] = filters[k];
+  });
   if (orgTok) qsObj.token = orgTok;
   const qs = new URLSearchParams(qsObj);
   const url = `http://localhost:${PORT}/${orgSlug}/${reportType}?${qs}`;
@@ -811,7 +820,7 @@ app.get("/:org/:report/api/pdf", resolveOrg, async (req, res) => {
   try {
     const { orgSlug, reportType } = req;
     logEvent(orgSlug, reportType, "pdf", req.ip);
-    const pdf = await generatePdf(orgSlug, reportType, req.query.start_date, req.query.end_date);
+    const pdf = await generatePdf(orgSlug, reportType, req.query.start_date, req.query.end_date, req.query);
     const filename = `${reportType}-report-${req.query.start_date || "report"}.pdf`;
     res.set({ "Content-Type": "application/pdf", "Content-Disposition": `inline; filename="${filename}"`, "Content-Length": pdf.length });
     res.send(pdf);

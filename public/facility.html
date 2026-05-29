@@ -1349,7 +1349,7 @@ function HoverCard({ reservation, position, locationColors }) {
 
 
 // ── DayPopover component ─────────────────────────────────────────────
-function DayPopover({ date, reservations, locationColors, onClose }) {
+function DayPopover({ date, reservations, locationColors, onClose, selectedLocations, selectedSites }) {
   const popRef = useRef(null);
   const [pos, setPos]   = useState({ top: 80, left: '50%', transform: 'translateX(-50%)' });
 
@@ -1420,6 +1420,8 @@ function DayPopover({ date, reservations, locationColors, onClose }) {
     const parts = window.location.pathname.replace(/\/$/, '').split('/');
     const pdfBase = parts.length >= 3 ? `/${parts[1]}/${parts[2]}/api/pdf` : '/api/pdf';
     const qs = new URLSearchParams({ start_date: date, end_date: date });
+    if (selectedLocations) { const a = [...selectedLocations]; if (a.length) qs.set('locations', a.join(',')); }
+    if (selectedSites)     { const a = [...selectedSites];     if (a.length) qs.set('sites',     a.join(',')); }
     fetch(withToken(`${pdfBase}?${qs}`))
       .then(r => r.blob())
       .then(blob => {
@@ -1511,7 +1513,7 @@ function DayPopover({ date, reservations, locationColors, onClose }) {
 }
 
 // ── Calendar View component ──────────────────────────────────────────
-function CalendarView({ filteredRows, locationColors, loadedStart, loadedEnd }) {
+function CalendarView({ filteredRows, locationColors, loadedStart, loadedEnd, selectedLocations, selectedSites }) {
   const [calMonth, setCalMonth] = useState(() => {
     // Start at first month of loaded range
     if (loadedStart) {
@@ -1696,6 +1698,8 @@ function CalendarView({ filteredRows, locationColors, loadedStart, loadedEnd }) 
           reservations={byDate[selectedDay] || []}
           locationColors={locationColors}
           onClose={() => setSelectedDay(null)}
+          selectedLocations={selectedLocations}
+          selectedSites={selectedSites}
         />
       )}
     </div>
@@ -2165,6 +2169,11 @@ function App() {
     if (loadedEnd)   qs.set('end_date',   loadedEnd);
     if (params.location_name) qs.set('location_name', params.location_name);
     if (params.site_type)     qs.set('site_type',     params.site_type);
+    // Respect the current on-screen filter selections so the PDF matches exactly
+    // what's shown. Mirrors the share-URL serialization; the print page reads
+    // these back into selectedLocations/selectedSites on load.
+    if (selectedLocations) { const a = [...selectedLocations]; if (a.length) qs.set('locations', a.join(',')); }
+    if (selectedSites)     { const a = [...selectedSites];     if (a.length) qs.set('sites',     a.join(',')); }
 
     const pathParts = window.location.pathname.replace(/\/$/, '').split('/');
     const pdfBase = pathParts.length >= 3
@@ -2464,6 +2473,8 @@ function App() {
             locationColors={locationColors}
             loadedStart={loadedStart}
             loadedEnd={loadedEnd}
+            selectedLocations={selectedLocations}
+            selectedSites={selectedSites}
           />
         )}
 
