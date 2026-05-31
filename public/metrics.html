@@ -461,6 +461,11 @@ function App() {
                 <div className="sc-value">{data.totalSubscribers || 0}</div>
                 <div className="sc-sub">{data.subByCadence?.daily||0}d · {data.subByCadence?.weekly||0}w · {data.subByCadence?.monthly||0}m</div>
               </div>
+              <div className="summary-card" style={{borderLeft:'3px solid #10b981'}}>
+                <div className="sc-label">AI Insights</div>
+                <div className="sc-value">{data.insights?.calls || 0}</div>
+                <div className="sc-sub">{(() => { const c = data.insights?.costUsd || 0; return '$' + c.toFixed(c >= 1 ? 2 : 4); })()} est. spend</div>
+              </div>
             </div>
 
             {/* Breakdown table */}

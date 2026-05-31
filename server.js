@@ -372,15 +372,17 @@ async function migrateDynamicOrgs() {
 // ── Analytics: append-only JSONL, no extra dependencies ─────────────
 // Schema: { ts, org, report, event, ip }
 // event values: "view" | "fetch" | "pdf" | "excel" | "print"
-function logEvent(org, report, event, ip) {
+function logEvent(org, report, event, ip, extra) {
   try {
-    const line = JSON.stringify({
+    const rec = {
       ts:     new Date().toISOString(),
       org,
       report,
       event,
       ip:     ip || null,
-    }) + "\n";
+    };
+    if (extra && typeof extra === "object") Object.assign(rec, extra);
+    const line = JSON.stringify(rec) + "\n";
     fs.appendFileSync(EVENTS_FILE, line);
   } catch (err) {
     console.warn("[analytics] Failed to log event:", err.message);
@@ -432,8 +434,17 @@ function buildMetrics(org, daysBack) {
     if (subByCadence[s.schedule] !== undefined) subByCadence[s.schedule]++;
   });
 
+  // AI insights usage + cost (from events that carry token/cost fields)
+  const insights = { calls: 0, inTok: 0, outTok: 0, costUsd: 0 };
+  events.filter(e => e.event === "insights").forEach(e => {
+    insights.calls  += 1;
+    insights.inTok  += e.inTok   || 0;
+    insights.outTok += e.outTok  || 0;
+    insights.costUsd += e.costUsd || 0;
+  });
+
   const configuredReports = REPORT_TYPES.filter(r => ORGS[org]?.[r]?.mbUuid);
-  return { summary, daily, subCounts, subByCadence, totalSubscribers: allSubs.length, configuredReports };
+  return { summary, daily, subCounts, subByCadence, totalSubscribers: allSubs.length, insights, configuredReports };
 }
 
 // ── Subscriptions DB helpers ─────────────────────────────────────────
@@ -874,6 +885,21 @@ app.post("/:org/:report/api/share", resolveOrg, async (req, res) => {
 // ── POST /:org/:report/api/insights — AI insights via Claude ─────────
 const INSIGHTS_MODEL = process.env.INSIGHTS_MODEL || "claude-haiku-4-5";
 
+// USD per 1M tokens. Used to estimate AI-insights spend for the metrics page.
+const MODEL_PRICING = {
+  "claude-haiku-4-5":  { in: 1.0,  out: 5.0  },
+  "claude-sonnet-4-6": { in: 3.0,  out: 15.0 },
+  "claude-opus-4-7":   { in: 5.0,  out: 25.0 },
+};
+function insightsCostUsd(model, inTok, outTok) {
+  const envIn  = parseFloat(process.env.INSIGHTS_PRICE_IN);
+  const envOut = parseFloat(process.env.INSIGHTS_PRICE_OUT);
+  const p = MODEL_PRICING[model] || { in: 1.0, out: 5.0 };
+  const priceIn  = Number.isFinite(envIn)  ? envIn  : p.in;
+  const priceOut = Number.isFinite(envOut) ? envOut : p.out;
+  return (inTok / 1e6) * priceIn + (outTok / 1e6) * priceOut;
+}
+
 const INSIGHTS_SYS_PROMPT = `You are a facilities operations analyst for US municipal parks & recreation departments. You are given aggregate court-utilization statistics for a single reporting period (counts, percentages, and hours — already computed for you; never recompute or do arithmetic the data doesn't support).
 
 Return EXACTLY 4 insights as a JSON array and nothing else — no prose, no preamble, no markdown code fences. Each element is an object with exactly these keys:
@@ -998,7 +1024,11 @@ app.post("/:org/:report/api/insights", resolveOrg, async (req, res) => {
     }
     _insightsCache.set(key, { ts: Date.now(), insights });
 
-    logEvent(orgSlug, reportType, "insights", req.ip);
+    const usage  = data.usage || {};
+    const inTok  = usage.input_tokens  || 0;
+    const outTok = usage.output_tokens || 0;
+    const costUsd = insightsCostUsd(INSIGHTS_MODEL, inTok, outTok);
+    logEvent(orgSlug, reportType, "insights", req.ip, { inTok, outTok, costUsd });
     res.json({ ok: true, insights, cached: false });
   } catch (err) {
     console.error("[insights] Error:", err);
@@ -1532,6 +1562,47 @@ app.post("/api/admin/links", (req, res) => {
   res.json({ ok: true, orgs });
 });
 
+// ── POST /api/admin/restart — redeploy the latest build on Railway ───
+// Password-protected (same gate as link editing). Uses Railway's GraphQL
+// API to redeploy the current service instance (effectively a restart).
+// Requires RAILWAY_API_TOKEN to be set; RAILWAY_SERVICE_ID and
+// RAILWAY_ENVIRONMENT_ID are auto-injected by Railway at runtime.
+app.post("/api/admin/restart", async (req, res) => {
+  if (dashboardPasswordBlocked(req, res)) return;
+  const token = process.env.RAILWAY_API_TOKEN;
+  if (!token) {
+    return res.status(503).json({ error: "Set RAILWAY_API_TOKEN in Railway to enable restarts" });
+  }
+  const serviceId     = process.env.RAILWAY_SERVICE_ID;
+  const environmentId = process.env.RAILWAY_ENVIRONMENT_ID;
+  if (!serviceId || !environmentId) {
+    return res.status(503).json({ error: "RAILWAY_SERVICE_ID / RAILWAY_ENVIRONMENT_ID not available in this environment" });
+  }
+  const query = `mutation Redeploy($environmentId: String!, $serviceId: String!) {
+    serviceInstanceRedeploy(environmentId: $environmentId, serviceId: $serviceId)
+  }`;
+  try {
+    const resp = await fetch("https://backboard.railway.com/graphql/v2", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${token}`,
+      },
+      body: JSON.stringify({ query, variables: { environmentId, serviceId } }),
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (resp.ok && !data.errors) {
+      return res.json({ ok: true });
+    }
+    const msg = (data.errors && data.errors[0] && data.errors[0].message) || `Railway API returned ${resp.status}`;
+    console.error("[restart] Railway API error:", msg);
+    return res.status(502).json({ error: msg });
+  } catch (err) {
+    console.error("[restart] Failed to reach Railway API:", err.message);
+    return res.status(502).json({ error: "Failed to reach Railway API" });
+  }
+});
+
 // ── POST /api/admin/update-link — change one report's Metabase link ──
 // Writes server.js on GitHub (Railway auto-redeploys) and updates the
 // in-memory ORGS map immediately. Body: { password, org, report, link }.
@@ -1771,6 +1842,7 @@ app.get("/", (req, res) => {
     .metrics-stat { background: #fff; border: 1px solid #e0ddd8; border-radius: 6px; padding: 10px 14px; min-width: 110px; }
     .metrics-stat-label { font-size: 10px; text-transform: uppercase; letter-spacing: .5px; color: #999; margin-bottom: 3px; }
     .metrics-stat-value { font-size: 20px; font-weight: 700; color: #1a1a1a; }
+    .metrics-stat-sub { font-size: 11px; color: #16a34a; font-weight: 600; margin-top: 2px; }
     .metrics-reports { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 6px; }
     .metrics-report-chip { font-size: 11px; background: #fff; border: 1px solid #e0ddd8; border-radius: 4px; padding: 4px 10px; color: #555; }
     .metrics-report-chip strong { color: #16a34a; }
@@ -1925,6 +1997,26 @@ app.get("/", (req, res) => {
           <button onclick="mbCloseModal()" style="padding:9px 16px;background:none;border:1px solid #ddd;border-radius:5px;font-size:13px;cursor:pointer">Cancel</button>
           <button id="mb-modal-save" onclick="mbSaveLink()" style="padding:9px 22px;background:#16a34a;color:#fff;border:none;border-radius:5px;font-size:13px;font-weight:600;cursor:pointer">Save &amp; Deploy</button>
         </div>
+      </div>
+    </div>
+
+    <div class="org-section" id="app-control-section">
+      <div class="org-header" style="cursor:default">
+        <div class="org-header-text">
+          <div class="org-name">&#9851;&#65039; App Control</div>
+          <div style="font-size:12px;color:#999;margin-top:2px">Redeploy the latest build on Railway</div>
+        </div>
+      </div>
+      <div style="padding:14px 18px;background:#f5f4f1;border-top:1px solid #e8e5df">
+        <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
+          <input type="password" id="restart-pwd" placeholder="Dashboard password"
+                 onkeydown="if(event.key==='Enter')doRestart()"
+                 style="padding:8px 12px;border:1px solid #d8d4cc;border-radius:5px;font-size:13px;min-width:200px" />
+          <button id="restart-btn" onclick="doRestart()"
+                  style="padding:8px 18px;background:#dc2626;color:#fff;border:none;border-radius:5px;font-size:13px;font-weight:600;cursor:pointer">Restart app</button>
+          <span id="restart-status" style="font-size:13px;font-weight:600"></span>
+        </div>
+        <div style="font-size:11px;color:#999;margin-top:8px">Redeploys the current build (no new code). Requires <code>RAILWAY_API_TOKEN</code> set in Railway. The app will briefly drop connections while it restarts.</div>
       </div>
     </div>
 
@@ -2207,10 +2299,12 @@ app.get("/", (req, res) => {
     }
 
     function renderMetrics(panel, data) {
-      const { summary, daily, totalSubscribers, configuredReports } = data;
+      const { summary, daily, totalSubscribers, insights, configuredReports } = data;
       const totalViews   = configuredReports.reduce((n, r) => n + (summary[r]?.view  || 0), 0);
       const totalExports = configuredReports.reduce((n, r) => n + (summary[r]?.excel || 0) + (summary[r]?.pdf || 0), 0);
       const slug = panel.id.replace('metrics-', '');
+      const ins = insights || { calls: 0, costUsd: 0 };
+      const costStr = '$' + (ins.costUsd || 0).toFixed(ins.costUsd >= 1 ? 2 : 4);
 
       // Build 30-day label array
       const labels = [];
@@ -2237,6 +2331,7 @@ app.get("/", (req, res) => {
           <div class="metrics-stat"><div class="metrics-stat-label">Views (30d)</div><div class="metrics-stat-value">\${totalViews}</div></div>
           <div class="metrics-stat"><div class="metrics-stat-label">Exports (30d)</div><div class="metrics-stat-value">\${totalExports}</div></div>
           <div class="metrics-stat"><div class="metrics-stat-label">Subscribers</div><div class="metrics-stat-value">\${totalSubscribers}</div></div>
+          <div class="metrics-stat"><div class="metrics-stat-label">AI insights (30d)</div><div class="metrics-stat-value">\${ins.calls}</div><div class="metrics-stat-sub">\${costStr}</div></div>
         </div>
         <div class="metrics-chart-wrap"><canvas id="chart-\${slug}"></canvas></div>\`;
 
@@ -2263,6 +2358,37 @@ app.get("/", (req, res) => {
     function toggleHow(row) {
       row.querySelector('.how-chevron').classList.toggle('open');
       row.nextElementSibling.classList.toggle('open');
+    }
+
+    // ── App restart (Railway redeploy) ───────────────────────────────
+    function showRestart(msg, color) {
+      const el = document.getElementById('restart-status');
+      if (el) { el.textContent = msg; el.style.color = color; }
+    }
+    async function doRestart() {
+      const pwd = (document.getElementById('restart-pwd') || {}).value || '';
+      if (!pwd) { showRestart('Enter the dashboard password first', '#dc2626'); return; }
+      if (!confirm('Restart the app now? It will briefly drop connections while it redeploys.')) return;
+      const btn = document.getElementById('restart-btn');
+      if (btn) { btn.disabled = true; btn.style.opacity = '0.6'; btn.style.cursor = 'default'; }
+      showRestart('Sending restart\u2026', '#999');
+      try {
+        const r = await fetch('/api/admin/restart', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ password: pwd }),
+        });
+        const d = await r.json().catch(() => ({}));
+        if (r.ok && d.ok) {
+          showRestart('\u2713 Restart triggered \u2014 back in ~1\u20132 min', '#16a34a');
+        } else {
+          showRestart('\u2717 ' + (d.error || ('Failed (' + r.status + ')')), '#dc2626');
+          if (btn) { btn.disabled = false; btn.style.opacity = '1'; btn.style.cursor = 'pointer'; }
+        }
+      } catch (err) {
+        // The redeploy can kill our own connection before the response lands.
+        showRestart('Request sent \u2014 the app may drop this connection; refresh in ~1\u20132 min', '#999');
+      }
     }
 
     // ── Metabase Links editor (all orgs) ─────────────────────────────
@@ -2378,6 +2504,11 @@ app.get("/", (req, res) => {
     // Newest first. Add a new entry at the TOP for every change we ship.
     // History below back-filled from the GitHub commit log.
     const UPDATES = [
+      { date: '2026-05-31', title: 'Dashboard: app restart + AI-insights metric', items: [
+        'New App Control card on the dashboard \u2014 password-protected button to redeploy the latest build on Railway (a clean restart, no new code)',
+        'Metrics now track AI-insights usage: each org\u2019s panel shows insight calls and estimated spend over the last 30 days, and the per-org metrics page gets a matching summary card',
+        'Insight cost is computed from actual token usage at the active model\u2019s pricing (Haiku by default; overridable via env)',
+      ]},
       { date: '2026-05-31', title: 'AI insights on Court Utilization', items: [
         '\\u201CGet insights\\u201D button on the Court Utilization report (Apex) \\u2014 AI-generated analysis cards (opportunity / risk / signal) with a concrete next step each',
         'Reads the on-screen filtered view, so insights honor the active location / programs / closures filters',
