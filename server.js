@@ -71,6 +71,7 @@ const ORGS = {
     facility: { mbUuid: "21e74d52-f49a-46d6-bc2d-f9348027854f" },
     gl:       { mbUuid: "c6daa914-9ea0-449f-956b-373aa0ac2a8a" },
     roster:   { mbUuid: "ce13ffa2-2bc5-4764-992d-957b4c3a35f9" },
+    products: { mbUuid: "b9cae7d1-ea23-4dca-8854-d8689bc2b247" },
   },
   norman: {
     token:   "RfuFOIz6KrFnSxBK",
