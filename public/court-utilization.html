@@ -351,15 +351,27 @@ function LocationFilter({ all, selected, onChange }) {
 function App() {
   const orgSlug    = useMemo(() => window.location.pathname.split('/').filter(Boolean)[0] || '', []);
   const reportType = useMemo(() => window.location.pathname.split('/').filter(Boolean)[1] || 'court-utilization', []);
+  // Active view state can be seeded from the URL (used by the PDF/print render
+  // and by share links) so the output matches the on-screen filtered view.
+  const urlParams = useMemo(() => new URLSearchParams(window.location.search), []);
+  const urlLocs   = useMemo(() => {
+    const v = urlParams.get('locations');
+    return v ? v.split(',').map(s => s.trim()).filter(Boolean) : null;
+  }, [urlParams]);
 
   const today = new Date();
   const [startDate, setStartDate] = useState(isoDate(startOfMonth(today)));
   const [endDate,   setEndDate]   = useState(isoDate(endOfMonth(today)));
   const [selectedLocations, setSelectedLocations] = useState([]); // explicit list of locations to show
-  const [includePrograms, setIncludePrograms] = useState(true);
-  const [includeClosures, setIncludeClosures] = useState(false);
-  const [hrsPerDay, setHrsPerDay] = useState(16); // assumed open hrs/day per court — interim utilization denominator until real per-court hours are wired in (item #4)
+  const [includePrograms, setIncludePrograms] = useState(urlParams.get('programs') !== '0');
+  const [includeClosures, setIncludeClosures] = useState(urlParams.get('closures') === '1');
+  const [hrsPerDay, setHrsPerDay] = useState(() => {           // assumed open hrs/day per court — interim utilization denominator until real per-court hours are wired in (item #4)
+    const h = parseFloat(urlParams.get('hrs'));
+    return Number.isFinite(h) && h > 0 ? h : 16;
+  });
   const [metric, setMetric] = useState(() => {    // bar chart metric: 'util' (default) | 'hours'
+    const m = urlParams.get('metric');
+    if (m === 'util' || m === 'hours') return m;  // URL wins (print/share) over saved pref
     try { return localStorage.getItem('cu_metric') || 'util'; } catch (e) { return 'util'; }
   });
   useEffect(() => { try { localStorage.setItem('cu_metric', metric); } catch (e) {} }, [metric]);
@@ -411,8 +423,16 @@ function App() {
     [normalized]
   );
 
-  // When new data loads, default the location filter to "all present locations".
-  useEffect(() => { setSelectedLocations(allLocations); }, [allLocations]);
+  // When new data loads, default the location filter to "all present locations"
+  // — unless the URL pins a subset (PDF/print/share), in which case keep those.
+  useEffect(() => {
+    if (urlLocs) {
+      const keep = allLocations.filter(l => urlLocs.includes(l));
+      setSelectedLocations(keep.length ? keep : allLocations);
+    } else {
+      setSelectedLocations(allLocations);
+    }
+  }, [allLocations]);
 
   // Calendar days in the loaded range (inclusive) — used for the utilization denominator.
   const daysInRange = useMemo(() => {
@@ -630,12 +650,21 @@ function App() {
     setPdfLoading(true);
     try {
       const params = new URLSearchParams({ start_date: loadedStart || startDate, end_date: loadedEnd || endDate });
+      // Forward the active view so the PDF matches what's on screen.
+      params.set('metric', metric);
+      params.set('programs', includePrograms ? '1' : '0');
+      params.set('closures', includeClosures ? '1' : '0');
+      params.set('hrs', String(hrsPerDay));
+      // Locations: only when a subset is selected (omit ⇒ "all", keeps URL short).
+      if (selectedLocations.length && selectedLocations.length < allLocations.length) {
+        params.set('locations', selectedLocations.join(','));
+      }
       const url = withToken(`/${orgSlug}/${reportType}/api/pdf?${params.toString()}`);
       window.open(url, '_blank');
     } finally {
       setTimeout(() => setPdfLoading(false), 1500);
     }
-  }, [orgSlug, reportType, loadedStart, loadedEnd, startDate, endDate]);
+  }, [orgSlug, reportType, loadedStart, loadedEnd, startDate, endDate, metric, includePrograms, includeClosures, hrsPerDay, selectedLocations, allLocations]);
 
   // ── Date preset helpers ───────────────────────────────────────────
   const setMonth = (offset) => {
