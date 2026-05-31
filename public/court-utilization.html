@@ -510,7 +510,9 @@ function App() {
     // Closures are unavailability, not utilization — only meaningful in the hours view.
     if (includeClosures && !isUtil) datasets.push({ label: 'Closures / Blocks', data: grouped.map(g => g.closureHrs), backgroundColor: '#9ca3af', borderWidth: 0 });
 
-    // Draw each court's utilization % just above its stacked bar.
+    // Draw each court's headline metric just above its stacked bar:
+    //   util  → utilization %        hours → total reserved hours (matching the visible stack)
+    const fmtHrs = h => (h >= 10 ? Math.round(h) : Math.round(h * 10) / 10).toString();
     const utilLabelPlugin = {
       id: 'utilLabels',
       afterDatasetsDraw(chart) {
@@ -521,7 +523,15 @@ function App() {
         ctx.fillStyle = '#111';
         ctx.textAlign = 'center';
         grouped.forEach((g, i) => {
-          if (g.utilPct == null) return;
+          let text;
+          if (isUtil) {
+            if (g.utilPct == null) return;
+            text = Math.round(g.utilPct) + '%';
+          } else {
+            const h = g.customerHrs + (includePrograms ? g.programHrs : 0) + (includeClosures ? g.closureHrs : 0);
+            if (h <= 0) return;
+            text = fmtHrs(h) + 'h';
+          }
           let topY = null, x = null;
           metas.forEach(m => {
             const bar = m.data && m.data[i];
@@ -530,7 +540,7 @@ function App() {
             if (topY === null || bar.y < topY) topY = bar.y;
           });
           if (topY == null || x == null) return;
-          ctx.fillText(Math.round(g.utilPct) + '%', x, topY - 4);
+          ctx.fillText(text, x, topY - 4);
         });
         ctx.restore();
       },
