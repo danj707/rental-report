@@ -1292,7 +1292,7 @@ app.get("/:org", (req, res, next) => {
     overview:    { label: "Facility Overview",         icon: "📈", desc: "Revenue and activity summary by location" },
     products:    { label: "Product Sales",          icon: "🛒", desc: "Daily revenue, refunds, and net by product" },
     memberships: { label: "Memberships",                icon: "🎫", desc: "Active and lapsed memberships with renewal tracking" },
-    "court-utilization": { label: "Court Utilization",  icon: "🎾", desc: "Booking counts by court across customer, program, and closure usage" },
+    "court-utilization": { label: "Court Utilization",  icon: "🎾", desc: "Court utilization % or reserved hours by court, split by customer, program, and closure usage" },
   };
 
   const tokenQS = org.token ? `?token=${encodeURIComponent(org.token)}` : "";
@@ -1503,7 +1503,7 @@ app.get("/", (req, res) => {
     overview:    { label: "Facility Overview",         icon: "📈", desc: "Revenue and activity summary by location",                 color: "#059669" },
     products:    { label: "Product Sales",          icon: "🛒", desc: "Daily revenue, refunds, and net by product",           color: "#0891b2" },
     memberships: { label: "Memberships",                icon: "🎫", desc: "Active and lapsed memberships with renewal tracking",       color: "#db2777" },
-    "court-utilization": { label: "Court Utilization",  icon: "🎾", desc: "Booking counts by court across customer, program, and closure usage", color: "#0d9488" },
+    "court-utilization": { label: "Court Utilization",  icon: "🎾", desc: "Court utilization % or reserved hours by court, split by customer, program, and closure usage", color: "#0d9488" },
   };
 
   const orgSections = Object.entries(ORGS).map(([slug, org]) => {

@@ -359,6 +359,10 @@ function App() {
   const [includePrograms, setIncludePrograms] = useState(true);
   const [includeClosures, setIncludeClosures] = useState(false);
   const [hrsPerDay, setHrsPerDay] = useState(16); // assumed open hrs/day per court — interim utilization denominator until real per-court hours are wired in (item #4)
+  const [metric, setMetric] = useState(() => {    // bar chart metric: 'util' (default) | 'hours'
+    try { return localStorage.getItem('cu_metric') || 'util'; } catch (e) { return 'util'; }
+  });
+  useEffect(() => { try { localStorage.setItem('cu_metric', metric); } catch (e) {} }, [metric]);
 
   const [rows, setRows]       = useState([]);
   const [logoUrl, setLogoUrl] = useState(null);
@@ -493,11 +497,18 @@ function App() {
     if (grouped.length === 0) return;
 
     const labels = grouped.map(g => g.label);
+    const isUtil = metric === 'util';
+    // Per-court value for each usage category, in the active metric's unit.
+    //   util  → category's share of that court's available hours (segments sum to the court's total utilization %)
+    //   hours → raw reserved hours for the category
+    const valCustomer = g => isUtil ? (g.availHrs > 0 ? (g.customerHrs / g.availHrs) * 100 : 0) : g.customerHrs;
+    const valProgram  = g => isUtil ? (g.availHrs > 0 ? (g.programHrs  / g.availHrs) * 100 : 0) : g.programHrs;
     const datasets = [
-      { label: 'Customer Bookings', data: grouped.map(g => g.customer), backgroundColor: '#16a34a', borderWidth: 0 },
+      { label: 'Customer Bookings', data: grouped.map(valCustomer), backgroundColor: '#16a34a', borderWidth: 0 },
     ];
-    if (includePrograms) datasets.push({ label: 'Programs / Leagues', data: grouped.map(g => g.program), backgroundColor: '#2563eb', borderWidth: 0 });
-    if (includeClosures) datasets.push({ label: 'Closures / Blocks',  data: grouped.map(g => g.closure), backgroundColor: '#9ca3af', borderWidth: 0 });
+    if (includePrograms) datasets.push({ label: 'Programs / Leagues', data: grouped.map(valProgram), backgroundColor: '#2563eb', borderWidth: 0 });
+    // Closures are unavailability, not utilization — only meaningful in the hours view.
+    if (includeClosures && !isUtil) datasets.push({ label: 'Closures / Blocks', data: grouped.map(g => g.closureHrs), backgroundColor: '#9ca3af', borderWidth: 0 });
 
     // Draw each court's utilization % just above its stacked bar.
     const utilLabelPlugin = {
@@ -537,12 +548,16 @@ function App() {
           legend: { position: 'top', labels: { boxWidth: 14, font: { size: 12 } } },
           tooltip: {
             callbacks: {
+              label: (it) => {
+                const v = it.parsed?.y ?? 0;
+                return isUtil ? `${it.dataset.label}: ${v.toFixed(0)}%` : `${it.dataset.label}: ${v.toFixed(1)}h`;
+              },
               footer: (items) => {
-                const total = items.reduce((s, it) => s + (it.parsed?.y || 0), 0);
                 const idx = items[0]?.dataIndex;
                 const g = (idx != null) ? grouped[idx] : null;
-                const out = [`Total bookings: ${total}`];
-                if (g && g.utilPct != null) {
+                if (!g) return '';
+                const out = [`Total bookings: ${g.total}`];
+                if (g.utilPct != null) {
                   out.push(`Utilization: ${g.utilPct.toFixed(0)}% (${g.usedHrs.toFixed(1)} of ${g.availHrs.toFixed(0)}h)`);
                 }
                 return out;
@@ -552,13 +567,17 @@ function App() {
         },
         scales: {
           x: { stacked: true, ticks: { autoSkip: false, maxRotation: 60, minRotation: 45, font: { size: 10 } } },
-          y: { stacked: true, beginAtZero: true, title: { display: true, text: '# of Bookings (distinct facility rentals)' }, ticks: { precision: 0 } },
+          y: {
+            stacked: true, beginAtZero: true,
+            title: { display: true, text: isUtil ? 'Court Utilization %' : 'Hours Reserved' },
+            ticks: { precision: 0, callback: (v) => isUtil ? v + '%' : v },
+          },
         },
       },
     });
 
     return () => { if (chartRef.current) { chartRef.current.destroy(); chartRef.current = null; } };
-  }, [grouped, includePrograms, includeClosures]);
+  }, [grouped, includePrograms, includeClosures, metric]);
 
   // ── Export: Excel ─────────────────────────────────────────────────
   const exportExcel = useCallback(() => {
@@ -693,6 +712,20 @@ function App() {
 
         {/* Toggle row */}
         <div className="toggle-row">
+          <div style={{display:'flex', alignItems:'center', gap:'8px'}}>
+            <span style={{fontSize:'11px', color:'#666', fontWeight:600, textTransform:'uppercase', letterSpacing:'0.5px'}}>View</span>
+            <div style={{display:'inline-flex', border:'1px solid #d1d5db', borderRadius:'6px', overflow:'hidden'}}>
+              {[['util','Utilization %'],['hours','Hours reserved']].map(([val, lbl]) => (
+                <button key={val} type="button" onClick={() => setMetric(val)}
+                  style={{padding:'5px 12px', fontSize:'12px', border:'none', cursor:'pointer', fontFamily:'inherit',
+                    background: metric === val ? '#2563eb' : '#fff',
+                    color: metric === val ? '#fff' : '#374151',
+                    fontWeight: metric === val ? 600 : 400}}>
+                  {lbl}
+                </button>
+              ))}
+            </div>
+          </div>
           <label>
             <input type="checkbox" checked={includePrograms} onChange={e => setIncludePrograms(e.target.checked)} />
             Include programs / leagues
