@@ -258,7 +258,10 @@
 <script type="text/babel">
 const { useState, useEffect, useMemo, useCallback } = React;
 
-const LS_SHOW_DETAILS = 'prog_show_details';
+const LS_SHOW_DETAILS  = 'prog_show_details';
+const LS_SHOW_REGMODE  = 'prog_show_regmode';
+const LS_SHOW_WAITLIST = 'prog_show_waitlist';
+const LS_SHOW_CANCELS  = 'prog_show_cancels';
 
 function getOrgAndBase() {
   const parts = window.location.pathname.split('/').filter(Boolean);
@@ -383,6 +386,9 @@ function App() {
     try { return localStorage.getItem(LS_SHOW_DETAILS) === 'true'; } catch { return false; }
   });
   const [colPresence, setColPresence] = useState({ regMode: false, breakdown: false, cancellations: false });
+  const [showRegMode,  setShowRegMode]  = useState(() => { try { return localStorage.getItem(LS_SHOW_REGMODE)  !== 'false'; } catch { return true; } });
+  const [showWaitlist, setShowWaitlist] = useState(() => { try { return localStorage.getItem(LS_SHOW_WAITLIST) !== 'false'; } catch { return true; } });
+  const [showCancels,  setShowCancels]  = useState(() => { try { return localStorage.getItem(LS_SHOW_CANCELS)  !== 'false'; } catch { return true; } });
 
   function toggleDetails() {
     setShowDetails(prev => {
@@ -456,11 +462,12 @@ function App() {
     if (!rows || rows.length === 0) return;
     const headers = [
       'Program','Section','Season',
-      ...(colPresence.regMode ? ['Reg Mode'] : []),
+      ...(showRegModeCol ? ['Reg Mode'] : []),
       'Start Date','End Date','Revenue',
-      ...(showDetails && colPresence.breakdown ? ['Section Enrollments','Section Revenue','Session Enrollments','Session Revenue'] : []),
-      'Enrollments','Enrolled / Capacity','Fill %','Waitlist',
-      ...(colPresence.cancellations ? ['Cancellations','Cancellation %'] : []),
+      ...(showBreak ? ['Section Enrollments','Section Revenue','Session Enrollments','Session Revenue'] : []),
+      'Enrollments','Enrolled / Capacity','Fill %',
+      ...(showWaitlist ? ['Waitlist'] : []),
+      ...(showCancelsCol ? ['Cancellations','Cancellation %'] : []),
       'Refunds','Net Revenue'
     ];
     const data = rows.map(r => {
@@ -468,10 +475,10 @@ function App() {
       const cp  = cancelPct(r.cancellations, r.enrollments);
       return [
         r.programName, r.sectionName, r.season,
-        ...(colPresence.regMode ? [regModeLabel(r.regMode)] : []),
+        ...(showRegModeCol ? [regModeLabel(r.regMode)] : []),
         r.startDate, r.endDate,
         fmtNum(r.revenue),
-        ...(showDetails && colPresence.breakdown ? [
+        ...(showBreak ? [
           vis.sec  ? fmtNum(r.enrollmentsSection) : '',
           vis.sec  ? fmtNum(r.revenueSection)     : '',
           vis.sess ? fmtNum(r.enrollmentsSession) : '',
@@ -479,19 +486,20 @@ function App() {
         ] : []),
         fmtNum(r.enrollments), r.enrolledCapacity,
         r.fillPct != null ? fmtNum(r.fillPct) : '',
-        fmtNum(r.waitlist),
-        ...(colPresence.cancellations ? [fmtNum(r.cancellations), cp != null ? `${Math.round(cp)}%` : ''] : []),
+        ...(showWaitlist ? [fmtNum(r.waitlist)] : []),
+        ...(showCancelsCol ? [fmtNum(r.cancellations), cp != null ? `${Math.round(cp)}%` : ''] : []),
         fmtNum(r.refunds), fmtNum(r.netRevenue),
       ];
     });
     const ws = XLSX.utils.aoa_to_sheet([headers, ...data]);
     ws['!cols'] = [
       {wch:30},{wch:30},{wch:14},
-      ...(colPresence.regMode ? [{wch:14}] : []),
+      ...(showRegModeCol ? [{wch:14}] : []),
       {wch:12},{wch:12},{wch:12},
-      ...(showDetails && colPresence.breakdown ? [{wch:14},{wch:14},{wch:14},{wch:14}] : []),
-      {wch:12},{wch:16},{wch:8},{wch:10},
-      ...(colPresence.cancellations ? [{wch:13},{wch:12}] : []),
+      ...(showBreak ? [{wch:14},{wch:14},{wch:14},{wch:14}] : []),
+      {wch:12},{wch:16},{wch:8},
+      ...(showWaitlist ? [{wch:10}] : []),
+      ...(showCancelsCol ? [{wch:13},{wch:12}] : []),
       {wch:12},{wch:12},
     ];
     const wb = XLSX.utils.book_new();
@@ -548,8 +556,10 @@ function App() {
   const programCount = grouped ? Object.keys(grouped).length : 0;
   const hasRegMode       = colPresence.regMode;
   const hasCancellations = colPresence.cancellations;
+  const showRegModeCol   = hasRegMode && showRegMode;
+  const showCancelsCol   = hasCancellations && showCancels;
   const showBreak        = showDetails && colPresence.breakdown;
-  const leftCols         = 4 + (hasRegMode ? 1 : 0);
+  const leftCols         = 4 + (showRegModeCol ? 1 : 0);
   const isPrint = params._print === '1';
   const datesChanged = startDate !== loadedStart || endDate !== loadedEnd;
 
@@ -585,6 +595,26 @@ function App() {
             {showDetails ? '▾ Details: On' : '▸ Details: Off'}
           </button>
         </>}
+        <div className="divider" />
+        <div style={{display:'flex',alignItems:'center',gap:8,fontSize:11}}>
+          <span style={{color:'#999',fontSize:10,textTransform:'uppercase',letterSpacing:'0.05em'}}>Cols</span>
+          {hasRegMode && (
+            <label style={{display:'flex',alignItems:'center',gap:4,cursor:'pointer',color:'#ccc',userSelect:'none'}}>
+              <input type="checkbox" checked={showRegMode} onChange={e => { const v=e.target.checked; setShowRegMode(v); try{localStorage.setItem(LS_SHOW_REGMODE,String(v))}catch{} }} />
+              Reg Mode
+            </label>
+          )}
+          <label style={{display:'flex',alignItems:'center',gap:4,cursor:'pointer',color:'#ccc',userSelect:'none'}}>
+            <input type="checkbox" checked={showWaitlist} onChange={e => { const v=e.target.checked; setShowWaitlist(v); try{localStorage.setItem(LS_SHOW_WAITLIST,String(v))}catch{} }} />
+            Waitlist
+          </label>
+          {hasCancellations && (
+            <label style={{display:'flex',alignItems:'center',gap:4,cursor:'pointer',color:'#ccc',userSelect:'none'}}>
+              <input type="checkbox" checked={showCancels} onChange={e => { const v=e.target.checked; setShowCancels(v); try{localStorage.setItem(LS_SHOW_CANCELS,String(v))}catch{} }} />
+              Cancels
+            </label>
+          )}
+        </div>
         <div className="divider" />
         <div style={{position:'relative',display:'flex',alignItems:'center'}}>
           <span style={{position:'absolute',left:8,color:'#666',fontSize:12,pointerEvents:'none'}}>🔍</span>
@@ -724,7 +754,7 @@ function App() {
               <tr>
                 <th className="left" style={{minWidth:180}}>Section</th>
                 <th className="left" style={{minWidth:100}}>Season</th>
-                {hasRegMode && <th className="left" style={{width:100}}>Reg Mode</th>}
+                {showRegModeCol && <th className="left" style={{width:100}}>Reg Mode</th>}
                 <th className="left" style={{width:88}}>Start</th>
                 <th className="left" style={{width:88}}>End</th>
                 <th style={{width:90}}>Revenue</th>
@@ -737,8 +767,8 @@ function App() {
                 <th style={{width:76}}>Enroll</th>
                 <th style={{width:96}}>Enrolled / Cap</th>
                 <th style={{width:60}}>Fill %</th>
-                <th style={{width:64}}>Waitlist</th>
-                {hasCancellations && <>
+                {showWaitlist && <th style={{width:64}}>Waitlist</th>}
+                {showCancelsCol && <>
                   <th style={{width:84}}>Cancels</th>
                   <th style={{width:72}}>Cancel %</th>
                 </>}
@@ -776,8 +806,8 @@ function App() {
                       <td>{sub.enrollments}</td>
                       <td>—</td>
                       <td>—</td>
-                      <td>{sub.waitlist > 0 ? sub.waitlist : '—'}</td>
-                      {hasCancellations && <>
+                      {showWaitlist && <td>{sub.waitlist > 0 ? sub.waitlist : '—'}</td>}
+                      {showCancelsCol && <>
                         <td className="muted">{sub.cancellations > 0 ? sub.cancellations : '—'}</td>
                         <td className="muted">{cancelPct(sub.cancellations, sub.enrollments) != null ? `${Math.round(cancelPct(sub.cancellations, sub.enrollments))}%` : '—'}</td>
                       </>}
@@ -793,7 +823,7 @@ function App() {
                       <tr key={i} className="data-row">
                         <td className="left" style={{paddingLeft:16}}>{r.sectionName}</td>
                         <td className="left mono">{r.season}</td>
-                        {hasRegMode && <td className="left">{regModeLabel(r.regMode)}</td>}
+                        {showRegModeCol && <td className="left">{regModeLabel(r.regMode)}</td>}
                         <td className="left mono">{r.startDate}</td>
                         <td className="left mono">{r.endDate}</td>
                         <td className={`money ${fmtNum(r.revenue) === 0 ? 'zero' : ''}`}>{fmtMoney(r.revenue)}</td>
@@ -806,8 +836,8 @@ function App() {
                         <td>{fmtNum(r.enrollments) || '—'}</td>
                         <td className="mono">{r.enrolledCapacity || '—'}</td>
                         <td className={fillClass(r.fillPct)}>{r.fillPct != null ? `${fmtNum(r.fillPct)}%` : '—'}</td>
-                        <td className={fmtNum(r.waitlist) === 0 ? 'muted' : ''}>{fmtNum(r.waitlist) || '—'}</td>
-                        {hasCancellations && <>
+                        {showWaitlist && <td className={fmtNum(r.waitlist) === 0 ? 'muted' : ''}>{fmtNum(r.waitlist) || '—'}</td>}
+                        {showCancelsCol && <>
                           <td className={fmtNum(r.cancellations) === 0 ? 'muted' : ''}>{fmtNum(r.cancellations) || '—'}</td>
                           <td className={cp == null ? 'muted' : ''}>{cp != null ? `${Math.round(cp)}%` : '—'}</td>
                         </>}
@@ -836,8 +866,8 @@ function App() {
                   <td>{totals.enrollments.toLocaleString()}</td>
                   <td>—</td>
                   <td>—</td>
-                  <td>{totals.waitlist > 0 ? totals.waitlist : '—'}</td>
-                  {hasCancellations && <>
+                  {showWaitlist && <td>{totals.waitlist > 0 ? totals.waitlist : '—'}</td>}
+                  {showCancelsCol && <>
                     <td>{totals.cancellations > 0 ? totals.cancellations : '—'}</td>
                     <td>{cancelPct(totals.cancellations, totals.enrollments) != null ? `${Math.round(cancelPct(totals.cancellations, totals.enrollments))}%` : '—'}</td>
                   </>}
