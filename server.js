@@ -72,6 +72,7 @@ const ORGS = {
     gl:       { mbUuid: "c6daa914-9ea0-449f-956b-373aa0ac2a8a" },
     roster:   { mbUuid: "ce13ffa2-2bc5-4764-992d-957b4c3a35f9" },
     products: { mbUuid: "b9cae7d1-ea23-4dca-8854-d8689bc2b247" },
+    programs: { mbUuid: "776bb123-3109-48d6-b50b-7f1fd161285f" },
   },
   norman: {
     token:   "RfuFOIz6KrFnSxBK",
