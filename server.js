@@ -2504,6 +2504,13 @@ app.get("/", (req, res) => {
     // Newest first. Add a new entry at the TOP for every change we ship.
     // History below back-filled from the GitHub commit log.
     const UPDATES = [
+      { date: '2026-05-31', title: 'Program Revenue: Reg Mode + Cancellations columns', items: [
+        'Added Reg Mode column (Section-based / Session-based) — gated on data presence, auto-hides for orgs whose SQL hasn\\u2019t been updated',
+        'Added Cancellations and Cancellation % columns after Waitlist — gated on data presence',
+        'Section/session breakdown is now mode-aware per row: section-based rows show only Sec Enroll/Rev, session-based rows show only Sess Enroll/Rev (non-matching cells are blank)',
+        'Details toggle is now hidden when breakdown data is absent, so un-updated orgs (e.g. Apex) see no empty columns or orphaned toggle',
+        'Excel export mirrors all new columns and mode-aware suppression',
+      ]},
       { date: '2026-05-31', title: 'Juice loader polish', items: [
         'Smoothed the juice-glass loading animation \\u2014 the glass now sloshes gently instead of fully draining, with calmer rising bubbles and a cleaner glass outline',
         'Loading text is now centered directly under the glass and cycles through playful messages (Squeezing the oranges, Juicing!, Adding the pulp, Chilling the glass, Pouring it out)',
