@@ -480,7 +480,7 @@ function App() {
         fmtNum(r.enrollments), r.enrolledCapacity,
         r.fillPct != null ? fmtNum(r.fillPct) : '',
         fmtNum(r.waitlist),
-        ...(colPresence.cancellations ? [fmtNum(r.cancellations), cp != null ? `${fmtNum(cp)}%` : ''] : []),
+        ...(colPresence.cancellations ? [fmtNum(r.cancellations), cp != null ? `${Math.round(cp)}%` : ''] : []),
         fmtNum(r.refunds), fmtNum(r.netRevenue),
       ];
     });
@@ -779,7 +779,7 @@ function App() {
                       <td>{sub.waitlist > 0 ? sub.waitlist : '—'}</td>
                       {hasCancellations && <>
                         <td className="muted">{sub.cancellations > 0 ? sub.cancellations : '—'}</td>
-                        <td className="muted">{cancelPct(sub.cancellations, sub.enrollments) != null ? `${fmtNum(cancelPct(sub.cancellations, sub.enrollments))}%` : '—'}</td>
+                        <td className="muted">{cancelPct(sub.cancellations, sub.enrollments) != null ? `${Math.round(cancelPct(sub.cancellations, sub.enrollments))}%` : '—'}</td>
                       </>}
                       <td className="money">{fmtMoney(sub.refunds)}</td>
                       <td className="money">{fmtMoney(sub.netRevenue)}</td>
@@ -809,7 +809,7 @@ function App() {
                         <td className={fmtNum(r.waitlist) === 0 ? 'muted' : ''}>{fmtNum(r.waitlist) || '—'}</td>
                         {hasCancellations && <>
                           <td className={fmtNum(r.cancellations) === 0 ? 'muted' : ''}>{fmtNum(r.cancellations) || '—'}</td>
-                          <td className={cp == null ? 'muted' : ''}>{cp != null ? `${fmtNum(cp)}%` : '—'}</td>
+                          <td className={cp == null ? 'muted' : ''}>{cp != null ? `${Math.round(cp)}%` : '—'}</td>
                         </>}
                         <td className={`money ${fmtNum(r.refunds) === 0 ? 'zero' : ''}`}>{fmtMoney(r.refunds)}</td>
                         <td className={`money ${fmtNum(r.netRevenue) < 0 ? '' : ''}`} style={fmtNum(r.netRevenue) < 0 ? {color:'#b91c1c'} : {}}>{fmtMoney(r.netRevenue)}</td>
@@ -839,7 +839,7 @@ function App() {
                   <td>{totals.waitlist > 0 ? totals.waitlist : '—'}</td>
                   {hasCancellations && <>
                     <td>{totals.cancellations > 0 ? totals.cancellations : '—'}</td>
-                    <td>{cancelPct(totals.cancellations, totals.enrollments) != null ? `${fmtNum(cancelPct(totals.cancellations, totals.enrollments))}%` : '—'}</td>
+                    <td>{cancelPct(totals.cancellations, totals.enrollments) != null ? `${Math.round(cancelPct(totals.cancellations, totals.enrollments))}%` : '—'}</td>
                   </>}
                   <td>{fmtMoney(totals.refunds)}</td>
                   <td>{fmtMoney(totals.netRevenue)}</td>
