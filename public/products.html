@@ -297,8 +297,10 @@ const { useState, useEffect, useMemo, useCallback, useRef } = React;
 
 const LS_HIDE_ZERO = 'products_daily_hide_zero_v1';
 const LS_SHOW_NET  = 'products_daily_show_net_v1';
+const LS_BY_DESK   = 'products_daily_by_desk_v1';
 
-const isPrint = new URLSearchParams(window.location.search).get('_print') === '1';
+const SP = new URLSearchParams(window.location.search);
+const isPrint = SP.get('_print') === '1';
 
 /* ── date helpers ── */
 function toISO(d) {
@@ -315,9 +317,9 @@ function parseDateFlexible(v) {
   if (v == null) return null;
   if (v instanceof Date) return isNaN(v) ? null : v;
   const s = String(v).trim();
-  let m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);            // ISO "2026-05-30"
+  let m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
   if (m) return new Date(+m[1], +m[2] - 1, +m[3]);
-  const d = new Date(s);                                  // "May 30, 2026" etc.
+  const d = new Date(s);
   return isNaN(d) ? null : d;
 }
 function formatDisplayDate(v) {
@@ -338,9 +340,7 @@ function fmtMoney(v) {
   const s = '$' + Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   return n < 0 ? '-' + s : s;
 }
-function fmtInt(v) {
-  return Math.round(pf(v)).toLocaleString('en-US');
-}
+function fmtInt(v) { return Math.round(pf(v)).toLocaleString('en-US'); }
 
 /* ── row normalization: keyed object OR positional array ── */
 function normalizeRow(r) {
@@ -384,10 +384,11 @@ function App() {
   const orgSlug = window.location.pathname.split('/').filter(Boolean)[0] || '';
   const def = getDefaultRange();
 
-  const [startDate, setStartDate] = useState(def.start);
-  const [endDate, setEndDate]     = useState(def.end);
-  const [loadedStart, setLoadedStart] = useState(def.start);
-  const [loadedEnd, setLoadedEnd]     = useState(def.end);
+  /* initial state — URL params win, else localStorage, else defaults */
+  const [startDate, setStartDate] = useState(SP.get('start_date') || def.start);
+  const [endDate, setEndDate]     = useState(SP.get('end_date') || def.end);
+  const [loadedStart, setLoadedStart] = useState(SP.get('start_date') || def.start);
+  const [loadedEnd, setLoadedEnd]     = useState(SP.get('end_date') || def.end);
 
   const [rows, setRows]       = useState([]);
   const [loading, setLoading] = useState(true);
@@ -395,11 +396,19 @@ function App() {
   const [orgName, setOrgName] = useState('');
   const [logoUrl, setLogoUrl] = useState('');
 
-  const [hideZero, setHideZero] = useState(() => localStorage.getItem(LS_HIDE_ZERO) === '1');
-  const [showNet, setShowNet]   = useState(() => localStorage.getItem(LS_SHOW_NET) !== '0');
+  const [hideZero, setHideZero] = useState(() =>
+    SP.has('hide_zero') ? SP.get('hide_zero') === '1' : localStorage.getItem(LS_HIDE_ZERO) === '1');
+  const [showNet, setShowNet] = useState(() =>
+    SP.has('chart_net') ? SP.get('chart_net') === '1' : localStorage.getItem(LS_SHOW_NET) !== '0');
+  const [byDesk, setByDesk] = useState(() =>
+    SP.has('by_desk') ? SP.get('by_desk') === '1' : localStorage.getItem(LS_BY_DESK) === '1');
 
-  const [selectedDesks, setSelectedDesks] = useState(() => new Set());
+  const [selectedDesks, setSelectedDesks] = useState(() => {
+    const d = SP.get('desks');
+    return d ? new Set(d.split(',').map(s => s.trim()).filter(Boolean)) : new Set();
+  });
   const [deskPickerOpen, setDeskPickerOpen] = useState(false);
+  const [expanded, setExpanded] = useState(() => new Set());
 
   const chartRef = useRef(null);
   const chartInst = useRef(null);
@@ -408,6 +417,7 @@ function App() {
   useEffect(() => { if (isPrint) document.body.classList.add('print-mode'); }, []);
   useEffect(() => { localStorage.setItem(LS_HIDE_ZERO, hideZero ? '1' : '0'); }, [hideZero]);
   useEffect(() => { localStorage.setItem(LS_SHOW_NET, showNet ? '1' : '0'); }, [showNet]);
+  useEffect(() => { localStorage.setItem(LS_BY_DESK, byDesk ? '1' : '0'); }, [byDesk]);
 
   useEffect(() => {
     function onDocClick(e) {
@@ -424,7 +434,7 @@ function App() {
     }
   }
 
-  const fetchData = useCallback((sd, ed) => {
+  const fetchData = useCallback((sd, ed, preserveDesks) => {
     setLoading(true);
     setError(null);
     const qs = new URLSearchParams();
@@ -440,34 +450,34 @@ function App() {
           if (json.meta.logo_url) setLogoUrl(json.meta.logo_url);
         }
         setLoadedStart(sd); setLoadedEnd(ed);
-        setSelectedDesks(new Set());
+        if (!preserveDesks) setSelectedDesks(new Set());
         setLoading(false);
       })
       .catch(err => { setError(err.message || String(err)); setLoading(false); });
   }, [orgSlug]);
 
-  useEffect(() => { fetchData(def.start, def.end); /* eslint-disable-next-line */ }, []);
+  /* initial load preserves any desks passed via URL */
+  useEffect(() => { fetchData(loadedStart, loadedEnd, true); /* eslint-disable-next-line */ }, []);
 
   const datesChanged = startDate !== loadedStart || endDate !== loadedEnd;
 
-  function handleRun() { logClientEvent('run'); fetchData(startDate, endDate); }
+  function handleRun() { logClientEvent('run'); fetchData(startDate, endDate, false); }
   function setThisYear() {
     const now = new Date();
     const s = toISO(new Date(now.getFullYear(), 0, 1)), e = toISO(now);
-    setStartDate(s); setEndDate(e); fetchData(s, e);
+    setStartDate(s); setEndDate(e); fetchData(s, e, false);
   }
   function setLastYear() {
     const y = new Date().getFullYear() - 1;
     const s = toISO(new Date(y, 0, 1)), e = toISO(new Date(y, 11, 31));
-    setStartDate(s); setEndDate(e); fetchData(s, e);
+    setStartDate(s); setEndDate(e); fetchData(s, e, false);
   }
   function setRolling12() {
     const now = new Date();
     const s = toISO(new Date(now.getFullYear(), now.getMonth() - 11, 1)), e = toISO(now);
-    setStartDate(s); setEndDate(e); fetchData(s, e);
+    setStartDate(s); setEndDate(e); fetchData(s, e, false);
   }
 
-  /* distinct desks across all loaded rows */
   const allDesks = useMemo(() => {
     const set = new Set();
     rows.forEach(r => set.add(r.desk));
@@ -482,19 +492,29 @@ function App() {
     });
   }
 
-  /* client-side filtering */
-  const filtered = useMemo(() => {
-    return rows.filter(r => {
-      if (selectedDesks.size > 0 && !selectedDesks.has(r.desk)) return false;
-      if (hideZero && r.revenue === 0 && r.refunds === 0) return false;
-      return true;
-    });
-  }, [rows, selectedDesks, hideZero]);
+  /* desk filter + hide-zero (applies in both grains) */
+  const filtered = useMemo(() => rows.filter(r => {
+    if (selectedDesks.size > 0 && !selectedDesks.has(r.desk)) return false;
+    if (hideZero && r.revenue === 0 && r.refunds === 0) return false;
+    return true;
+  }), [rows, selectedDesks, hideZero]);
 
-  /* group by date DESC, rows within group by net DESC */
+  /* grain: aggregate to date×product by default; date×product×desk when byDesk */
+  const displayRows = useMemo(() => {
+    if (byDesk) return filtered;
+    const m = new Map();
+    filtered.forEach(r => {
+      const k = r.dateISO + '|' + r.product;
+      if (!m.has(k)) m.set(k, { dateISO: r.dateISO, dateLabel: r.dateLabel, dateMs: r.dateMs, product: r.product, desk: null, qty: 0, revenue: 0, refunds: 0, net: 0 });
+      const a = m.get(k); a.qty += r.qty; a.revenue += r.revenue; a.refunds += r.refunds; a.net += r.net;
+    });
+    return Array.from(m.values());
+  }, [filtered, byDesk]);
+
+  /* group by date DESC, rows within by net DESC, subtotal per date */
   const groups = useMemo(() => {
     const map = new Map();
-    filtered.forEach(r => {
+    displayRows.forEach(r => {
       if (!map.has(r.dateISO)) map.set(r.dateISO, { dateISO: r.dateISO, dateLabel: r.dateLabel, dateMs: r.dateMs, rows: [] });
       map.get(r.dateISO).rows.push(r);
     });
@@ -502,33 +522,40 @@ function App() {
     arr.sort((a, b) => b.dateMs - a.dateMs);
     arr.forEach(g => {
       g.rows.sort((a, b) => b.net - a.net);
-      g.sub = g.rows.reduce((acc, r) => {
-        acc.qty += r.qty; acc.revenue += r.revenue; acc.refunds += r.refunds; acc.net += r.net; return acc;
-      }, { qty: 0, revenue: 0, refunds: 0, net: 0 });
+      g.sub = g.rows.reduce((acc, r) => { acc.qty += r.qty; acc.revenue += r.revenue; acc.refunds += r.refunds; acc.net += r.net; return acc; }, { qty: 0, revenue: 0, refunds: 0, net: 0 });
     });
     return arr;
-  }, [filtered]);
+  }, [displayRows]);
 
-  /* totals + summary */
-  const totals = useMemo(() => filtered.reduce((acc, r) => {
-    acc.qty += r.qty; acc.revenue += r.revenue; acc.refunds += r.refunds; acc.net += r.net; return acc;
-  }, { qty: 0, revenue: 0, refunds: 0, net: 0 }), [filtered]);
-
+  const totals = useMemo(() => filtered.reduce((acc, r) => { acc.qty += r.qty; acc.revenue += r.revenue; acc.refunds += r.refunds; acc.net += r.net; return acc; }, { qty: 0, revenue: 0, refunds: 0, net: 0 }), [filtered]);
   const productCount = useMemo(() => new Set(filtered.map(r => r.product)).size, [filtered]);
-
   const bestDay = useMemo(() => {
     let best = null;
     groups.forEach(g => { if (!best || g.sub.net > best.net) best = { label: g.dateLabel, net: g.sub.net }; });
     return best;
   }, [groups]);
 
-  /* chart: net (or gross) by day, chronological asc */
+  /* keep the browser URL in sync with active filters so PDF/email/subscribe honor them */
+  useEffect(() => {
+    if (isPrint) return;
+    const p = new URLSearchParams();
+    if (URL_TOKEN) p.set('token', URL_TOKEN);
+    if (loadedStart) p.set('start_date', loadedStart);
+    if (loadedEnd) p.set('end_date', loadedEnd);
+    if (byDesk) p.set('by_desk', '1');
+    if (hideZero) p.set('hide_zero', '1');
+    p.set('chart_net', showNet ? '1' : '0');
+    if (selectedDesks.size > 0) p.set('desks', Array.from(selectedDesks).join(','));
+    window.history.replaceState(null, '', window.location.pathname + '?' + p.toString());
+  }, [loadedStart, loadedEnd, byDesk, hideZero, showNet, selectedDesks]);
+
+  /* chart: net or gross by day, chronological asc */
   useEffect(() => {
     if (!chartRef.current || typeof Chart === 'undefined') return;
     const asc = [...groups].sort((a, b) => a.dateMs - b.dateMs);
     const labels = asc.map(g => { const d = parseDateFlexible(g.dateISO); return d ? `${MONTHS[d.getMonth()]} ${d.getDate()}` : g.dateISO; });
     const data = asc.map(g => showNet ? g.sub.net : g.sub.revenue);
-    if (chartInst.current) chartInst.current.destroy();
+    if (chartInst.current) { chartInst.current.destroy(); chartInst.current = null; }
     chartInst.current = new Chart(chartRef.current, {
       type: 'bar',
       data: { labels, datasets: [{
@@ -539,8 +566,11 @@ function App() {
       }] },
       options: {
         responsive: true, maintainAspectRatio: false,
-        plugins: { legend: { display: false },
-          tooltip: { callbacks: { label: c => fmtMoney(c.parsed.y) } } },
+        plugins: {
+          legend: { display: false },
+          title: { display: true, text: (showNet ? 'Net' : 'Gross') + ' Revenue by Day', font: { size: 12, weight: '600' }, color: '#333' },
+          tooltip: { callbacks: { label: c => fmtMoney(c.parsed.y) } },
+        },
         scales: {
           x: { ticks: { font: { size: 9 }, maxRotation: 90, minRotation: 0 }, grid: { display: false } },
           y: { ticks: { font: { size: 9 }, callback: v => '$' + Number(v).toLocaleString() }, grid: { color: '#eee' } },
@@ -550,15 +580,34 @@ function App() {
     return () => { if (chartInst.current) { chartInst.current.destroy(); chartInst.current = null; } };
   }, [groups, showNet]);
 
+  const nCols = byDesk ? 7 : 6;
+  const isOpen = (iso) => isPrint || expanded.has(iso);
+  function toggleDate(iso) {
+    setExpanded(prev => { const n = new Set(prev); if (n.has(iso)) n.delete(iso); else n.add(iso); return n; });
+  }
+  function expandAll() { setExpanded(new Set(groups.map(g => g.dateISO))); }
+  function collapseAll() { setExpanded(new Set()); }
+
   function exportExcel() {
     logClientEvent('excel');
-    const aoa = [['Date', 'Product Name', 'Desk Location', 'Qty Sold', 'Revenue ($)', 'Refunds ($)', 'Net Revenue ($)']];
+    const header = byDesk
+      ? ['Date', 'Product Name', 'Desk Location', 'Qty Sold', 'Revenue ($)', 'Refunds ($)', 'Net Revenue ($)']
+      : ['Date', 'Product Name', 'Qty Sold', 'Revenue ($)', 'Refunds ($)', 'Net Revenue ($)'];
+    const aoa = [header];
     groups.forEach(g => {
-      g.rows.forEach(r => aoa.push([r.dateISO, r.product, r.desk, r.qty, r.revenue, r.refunds, r.net]));
+      g.rows.forEach(r => {
+        aoa.push(byDesk
+          ? [r.dateISO, r.product, r.desk, r.qty, r.revenue, r.refunds, r.net]
+          : [r.dateISO, r.product, r.qty, r.revenue, r.refunds, r.net]);
+      });
     });
-    aoa.push(['TOTAL', '', '', totals.qty, totals.revenue, totals.refunds, totals.net]);
+    aoa.push(byDesk
+      ? ['TOTAL', '', '', totals.qty, totals.revenue, totals.refunds, totals.net]
+      : ['TOTAL', '', totals.qty, totals.revenue, totals.refunds, totals.net]);
     const ws = XLSX.utils.aoa_to_sheet(aoa);
-    ws['!cols'] = [{ wch: 12 }, { wch: 34 }, { wch: 22 }, { wch: 9 }, { wch: 13 }, { wch: 13 }, { wch: 15 }];
+    ws['!cols'] = byDesk
+      ? [{ wch: 12 }, { wch: 34 }, { wch: 22 }, { wch: 9 }, { wch: 13 }, { wch: 13 }, { wch: 15 }]
+      : [{ wch: 12 }, { wch: 34 }, { wch: 9 }, { wch: 13 }, { wch: 13 }, { wch: 15 }];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Daily Products');
     XLSX.writeFile(wb, `products-daily-${loadedStart || 'all'}_${loadedEnd || 'all'}.xlsx`);
@@ -592,9 +641,8 @@ function App() {
               <div style={{ position: 'absolute', top: '110%', right: 0, zIndex: 50, background: '#fff',
                 border: '1px solid #ccc', borderRadius: 6, padding: 8, minWidth: 220, maxHeight: 300,
                 overflowY: 'auto', boxShadow: '0 6px 24px rgba(0,0,0,0.15)' }}>
-                <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
-                  <button onClick={() => setSelectedDesks(new Set())}>All</button>
-                  <button onClick={() => setSelectedDesks(new Set(allDesks))}>None match→clear</button>
+                <div style={{ marginBottom: 6 }}>
+                  <button onClick={() => setSelectedDesks(new Set())}>Clear (all)</button>
                 </div>
                 {allDesks.map(d => (
                   <label key={d} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '3px 2px',
@@ -607,10 +655,15 @@ function App() {
             )}
           </div>
 
+          <button className={byDesk ? 'active' : ''} onClick={() => setByDesk(v => !v)}>By Desk Location</button>
           <button className={hideZero ? 'active' : ''} onClick={() => setHideZero(z => !z)}>Hide $0</button>
-          <button className={showNet ? 'active' : ''} onClick={() => setShowNet(s => !s)}>
-            {showNet ? 'Chart: Net' : 'Chart: Gross'}
-          </button>
+          <span className="divider" />
+          <span style={{ fontSize: 11, color: '#666' }}>Chart:</span>
+          <button className={showNet ? 'active' : ''} onClick={() => setShowNet(true)}>Net</button>
+          <button className={!showNet ? 'active' : ''} onClick={() => setShowNet(false)}>Gross</button>
+          <span className="divider" />
+          <button onClick={expandAll}>Expand all</button>
+          <button onClick={collapseAll}>Collapse all</button>
           <span className="divider" />
           <button className="btn-excel" onClick={exportExcel} disabled={loading || filtered.length === 0}>Excel</button>
           <button onClick={() => { logClientEvent('print'); window.print(); }}>Print</button>
@@ -623,16 +676,12 @@ function App() {
           <div>
             <div className="org-label">{displayOrg}</div>
             <div className="title">Product Sales — Daily Detail</div>
-            <div className="date-range">{rangeLabel}</div>
+            <div className="date-range">{rangeLabel}{byDesk ? ' · by desk location' : ''}</div>
           </div>
         </div>
 
-        {loading && (
-          <div className="loading"><div className="spinner" />Loading product sales…</div>
-        )}
-        {error && !loading && (
-          <div className="error">Couldn’t load report: {error}</div>
-        )}
+        {loading && <div className="loading"><div className="spinner" />Loading product sales…</div>}
+        {error && !loading && <div className="error">Couldn’t load report: {error}</div>}
 
         {!loading && !error && (
           <>
@@ -646,9 +695,7 @@ function App() {
             </div>
 
             {groups.length > 0 && (
-              <div className="chart-wrap" style={{ height: 240 }}>
-                <canvas ref={chartRef} />
-              </div>
+              <div className="chart-wrap" style={{ height: 240 }}><canvas ref={chartRef} /></div>
             )}
 
             <div className="table-wrapper" style={{ marginTop: 14 }}>
@@ -657,7 +704,7 @@ function App() {
                   <tr>
                     <th className="left">Date</th>
                     <th className="left">Product Name</th>
-                    <th className="left">Desk Location</th>
+                    {byDesk && <th className="left">Desk Location</th>}
                     <th>Qty Sold</th>
                     <th>Revenue</th>
                     <th>Refunds</th>
@@ -666,39 +713,48 @@ function App() {
                 </thead>
                 <tbody>
                   {groups.length === 0 && (
-                    <tr><td className="left" colSpan={7} style={{ textAlign: 'center', padding: 24, color: '#888' }}>
+                    <tr><td className="left" colSpan={nCols} style={{ textAlign: 'center', padding: 24, color: '#888' }}>
                       No product sales in this range.
                     </td></tr>
                   )}
-                  {groups.map(g => (
-                    <React.Fragment key={g.dateISO}>
-                      {g.rows.map((r, i) => (
-                        <tr key={g.dateISO + '|' + r.product + '|' + r.desk + '|' + i}>
-                          <td className="left">{i === 0 ? g.dateLabel : ''}</td>
-                          <td className="left">{r.product}</td>
-                          <td className="left">{r.desk}</td>
-                          <td>{r.qty === 0 ? <span className="cell-zero">—</span> : fmtInt(r.qty)}</td>
-                          <td>{r.revenue === 0 ? <span className="cell-zero">—</span> : fmtMoney(r.revenue)}</td>
-                          <td>{r.refunds === 0 ? <span className="cell-zero">—</span> : <span style={{ color: '#b45309' }}>{fmtMoney(r.refunds)}</span>}</td>
-                          <td style={{ color: r.net < 0 ? '#dc2626' : 'inherit', fontWeight: 600 }}>{fmtMoney(r.net)}</td>
+                  {groups.map(g => {
+                    const open = isOpen(g.dateISO);
+                    return (
+                      <React.Fragment key={g.dateISO}>
+                        {/* date summary row (always visible, click to expand) */}
+                        <tr style={{ background: '#eceae4', cursor: isPrint ? 'default' : 'pointer' }}
+                            onClick={isPrint ? undefined : () => toggleDate(g.dateISO)}>
+                          <td className="left" style={{ fontWeight: 700 }}>
+                            {!isPrint && <span style={{ display: 'inline-block', width: 14, color: '#666' }}>{open ? '▾' : '▸'}</span>}
+                            {g.dateLabel}
+                          </td>
+                          <td className="left" colSpan={byDesk ? 2 : 1} style={{ fontStyle: 'italic', color: '#666' }}>
+                            {g.rows.length} {byDesk ? 'line' : 'product'}{g.rows.length > 1 ? 's' : ''}
+                          </td>
+                          <td style={{ fontWeight: 700 }}>{fmtInt(g.sub.qty)}</td>
+                          <td style={{ fontWeight: 700 }}>{fmtMoney(g.sub.revenue)}</td>
+                          <td style={{ fontWeight: 700, color: g.sub.refunds > 0 ? '#b45309' : 'inherit' }}>{g.sub.refunds === 0 ? '—' : fmtMoney(g.sub.refunds)}</td>
+                          <td style={{ fontWeight: 700, color: g.sub.net < 0 ? '#dc2626' : 'inherit' }}>{fmtMoney(g.sub.net)}</td>
                         </tr>
-                      ))}
-                      <tr style={{ background: '#f3f3ef' }}>
-                        <td className="left" style={{ fontWeight: 700 }}></td>
-                        <td className="left" style={{ fontWeight: 700, fontStyle: 'italic', color: '#555' }} colSpan={2}>
-                          {g.dateLabel} subtotal · {g.rows.length} line{g.rows.length > 1 ? 's' : ''}
-                        </td>
-                        <td style={{ fontWeight: 700 }}>{fmtInt(g.sub.qty)}</td>
-                        <td style={{ fontWeight: 700 }}>{fmtMoney(g.sub.revenue)}</td>
-                        <td style={{ fontWeight: 700, color: g.sub.refunds > 0 ? '#b45309' : 'inherit' }}>{g.sub.refunds === 0 ? '—' : fmtMoney(g.sub.refunds)}</td>
-                        <td style={{ fontWeight: 700, color: g.sub.net < 0 ? '#dc2626' : 'inherit' }}>{fmtMoney(g.sub.net)}</td>
-                      </tr>
-                    </React.Fragment>
-                  ))}
+                        {/* detail rows when expanded */}
+                        {open && g.rows.map((r, i) => (
+                          <tr key={g.dateISO + '|' + r.product + '|' + (r.desk || '') + '|' + i}>
+                            <td className="left"></td>
+                            <td className="left">{r.product}</td>
+                            {byDesk && <td className="left">{r.desk}</td>}
+                            <td>{r.qty === 0 ? <span className="cell-zero">—</span> : fmtInt(r.qty)}</td>
+                            <td>{r.revenue === 0 ? <span className="cell-zero">—</span> : fmtMoney(r.revenue)}</td>
+                            <td>{r.refunds === 0 ? <span className="cell-zero">—</span> : <span style={{ color: '#b45309' }}>{fmtMoney(r.refunds)}</span>}</td>
+                            <td style={{ color: r.net < 0 ? '#dc2626' : 'inherit', fontWeight: 600 }}>{fmtMoney(r.net)}</td>
+                          </tr>
+                        ))}
+                      </React.Fragment>
+                    );
+                  })}
                 </tbody>
                 <tfoot>
                   <tr>
-                    <td className="left" colSpan={3}>TOTAL · {filtered.length} lines · {groups.length} days</td>
+                    <td className="left" colSpan={byDesk ? 3 : 2}>TOTAL · {groups.length} days · {filtered.length} rows</td>
                     <td>{fmtInt(totals.qty)}</td>
                     <td>{fmtMoney(totals.revenue)}</td>
                     <td style={{ color: totals.refunds > 0 ? '#b45309' : 'inherit' }}>{fmtMoney(totals.refunds)}</td>
