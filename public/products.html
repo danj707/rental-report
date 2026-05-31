@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Product Sales — Month over Month</title>
+  <title>Product Sales — Daily Detail</title>
 
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
@@ -295,651 +295,425 @@
 <script type="text/babel">
 const { useState, useEffect, useMemo, useCallback, useRef } = React;
 
-const LS_VIEW      = 'products_view_mode_v1';
-const LS_HIDE_ZERO = 'products_hide_zero_v1';
-const LS_SHOW_NET  = 'products_show_net_v1';
+const LS_HIDE_ZERO = 'products_daily_hide_zero_v1';
+const LS_SHOW_NET  = 'products_daily_show_net_v1';
 
-// ── Helpers ───────────────────────────────────────────────────────────
+const isPrint = new URLSearchParams(window.location.search).get('_print') === '1';
+
+/* ── date helpers ── */
 function toISO(d) {
-  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  const y = d.getFullYear(), m = String(d.getMonth() + 1).padStart(2, '0'), day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
 }
 function getDefaultRange() {
   const now = new Date();
   return { start: toISO(new Date(now.getFullYear(), 0, 1)), end: toISO(now) };
 }
-function formatDisplayDate(iso) {
-  if (!iso) return '';
-  const d = new Date(iso + 'T12:00:00');
-  const M = ['January','February','March','April','May','June','July','August','September','October','November','December'];
-  return `${M[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
+const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const WK = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+function parseDateFlexible(v) {
+  if (v == null) return null;
+  if (v instanceof Date) return isNaN(v) ? null : v;
+  const s = String(v).trim();
+  let m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);            // ISO "2026-05-30"
+  if (m) return new Date(+m[1], +m[2] - 1, +m[3]);
+  const d = new Date(s);                                  // "May 30, 2026" etc.
+  return isNaN(d) ? null : d;
 }
-function fmtMonthShort(iso) {
-  if (!iso) return '';
-  const d = new Date(iso + 'T12:00:00');
-  const mo = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  return `${mo[d.getMonth()]} '${String(d.getFullYear()).slice(2)}`;
-}
-function fmtMonthFull(iso) {
-  if (!iso) return '';
-  const d = new Date(iso + 'T12:00:00');
-  const M = ['January','February','March','April','May','June','July','August','September','October','November','December'];
-  return `${M[d.getMonth()]} ${d.getFullYear()}`;
-}
-function pf(v) { const n = parseFloat(v); return isNaN(n) ? 0 : n; }
-function fmtMoney(v) {
-  const n = pf(v);
-  const abs = Math.abs(n).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-  return (n < 0 ? '-$' : '$') + abs;
-}
-function fmtNum(v) {
-  const n = pf(v);
-  return n === 0 ? '0' : n.toLocaleString();
+function formatDisplayDate(v) {
+  const d = parseDateFlexible(v);
+  if (!d) return String(v ?? '');
+  return `${WK[d.getDay()]}, ${MONTHS[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
 }
 
-// ── Summary card ──────────────────────────────────────────────────────
-function SummaryCard({ label, value, color = 'blue', mono = false }) {
+/* ── number helpers ── */
+function pf(v) {
+  if (v == null) return 0;
+  if (typeof v === 'number') return isFinite(v) ? v : 0;
+  const n = parseFloat(String(v).replace(/[$,]/g, ''));
+  return isFinite(n) ? n : 0;
+}
+function fmtMoney(v) {
+  const n = pf(v);
+  const s = '$' + Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return n < 0 ? '-' + s : s;
+}
+function fmtInt(v) {
+  return Math.round(pf(v)).toLocaleString('en-US');
+}
+
+/* ── row normalization: keyed object OR positional array ── */
+function normalizeRow(r) {
+  let dateRaw, product, desk, qty, revenue, refunds, net;
+  if (Array.isArray(r)) {
+    [dateRaw, product, desk, qty, revenue, refunds, net] = r;
+  } else {
+    dateRaw  = r['Date'];
+    product  = r['Product Name'] ?? r['Product'];
+    desk     = r['Desk Location'];
+    qty      = r['Qty Sold'] ?? r['Qty'];
+    revenue  = r['Revenue ($)'] ?? r['Revenue'];
+    refunds  = r['Refunds ($)'] ?? r['Refunds'];
+    net      = r['Net Revenue ($)'] ?? r['Net Revenue'] ?? r['Net'];
+  }
+  const d = parseDateFlexible(dateRaw);
+  return {
+    dateISO:  d ? toISO(d) : String(dateRaw ?? ''),
+    dateLabel: formatDisplayDate(dateRaw),
+    dateMs:   d ? d.getTime() : 0,
+    product:  product != null && String(product).trim() !== '' ? String(product) : '(unnamed product)',
+    desk:     desk != null && String(desk).trim() !== '' ? String(desk) : '(No desk location)',
+    qty:      Math.round(pf(qty)),
+    revenue:  pf(revenue),
+    refunds:  pf(refunds),
+    net:      net == null ? pf(revenue) - pf(refunds) : pf(net),
+  };
+}
+
+function SummaryCard({ color, label, value, sub }) {
   return (
     <div className={`summary-card ${color}`}>
       <div className="card-label">{label}</div>
-      <div className="card-value" style={mono ? {} : { fontFamily: "'IBM Plex Sans', sans-serif", fontSize: 13 }}>{value}</div>
+      <div className="card-value">{value}</div>
+      {sub ? <div className="card-label" style={{ marginTop: 2 }}>{sub}</div> : null}
     </div>
   );
 }
 
-// ── App ───────────────────────────────────────────────────────────────
 function App() {
-  const defaults = useMemo(() => getDefaultRange(), []);
-  const orgSlug  = useMemo(() => window.location.pathname.split('/').filter(Boolean)[0] || '', []);
-  const params   = useMemo(() => new URLSearchParams(window.location.search), []);
+  const orgSlug = window.location.pathname.split('/').filter(Boolean)[0] || '';
+  const def = getDefaultRange();
 
-  const [startDate,    setStartDate]    = useState(params.get('start_date') || defaults.start);
-  const [endDate,      setEndDate]      = useState(params.get('end_date')   || defaults.end);
-  const [viewMode,     setViewMode]     = useState(() => localStorage.getItem(LS_VIEW) || 'revenue');
-  const [hideZeroRev,  setHideZeroRev]  = useState(() => localStorage.getItem(LS_HIDE_ZERO) === 'true');
-  const [showNetOnly,  setShowNetOnly]  = useState(() => localStorage.getItem(LS_SHOW_NET)  === 'true');
-  const [selectedLocs, setSelectedLocs] = useState(() => new Set());
-  const [locPickerOpen,setLocPickerOpen]= useState(false);
-  const locPickerRef = useRef(null);
+  const [startDate, setStartDate] = useState(def.start);
+  const [endDate, setEndDate]     = useState(def.end);
+  const [loadedStart, setLoadedStart] = useState(def.start);
+  const [loadedEnd, setLoadedEnd]     = useState(def.end);
 
-  const [rows,      setRows]      = useState(null);
-  const [orgName,   setOrgName]   = useState('');
-  const [logoUrl,   setLogoUrl]   = useState(null);
-  const [loading,   setLoading]   = useState(false);
-  const [error,     setError]     = useState(null);
-  const [showChart, setShowChart] = useState(false);
-  const [loadedStart, setLoadedStart] = useState(null);
-  const [loadedEnd,   setLoadedEnd]   = useState(null);
+  const [rows, setRows]       = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError]     = useState(null);
+  const [orgName, setOrgName] = useState('');
+  const [logoUrl, setLogoUrl] = useState('');
 
-  const chartRef  = useRef(null);
+  const [hideZero, setHideZero] = useState(() => localStorage.getItem(LS_HIDE_ZERO) === '1');
+  const [showNet, setShowNet]   = useState(() => localStorage.getItem(LS_SHOW_NET) !== '0');
+
+  const [selectedDesks, setSelectedDesks] = useState(() => new Set());
+  const [deskPickerOpen, setDeskPickerOpen] = useState(false);
+
+  const chartRef = useRef(null);
   const chartInst = useRef(null);
+  const deskBoxRef = useRef(null);
 
-  useEffect(() => { localStorage.setItem(LS_VIEW,      viewMode);               }, [viewMode]);
-  useEffect(() => { localStorage.setItem(LS_HIDE_ZERO, String(hideZeroRev));   }, [hideZeroRev]);
-  useEffect(() => { localStorage.setItem(LS_SHOW_NET,  String(showNetOnly));   }, [showNetOnly]);
+  useEffect(() => { if (isPrint) document.body.classList.add('print-mode'); }, []);
+  useEffect(() => { localStorage.setItem(LS_HIDE_ZERO, hideZero ? '1' : '0'); }, [hideZero]);
+  useEffect(() => { localStorage.setItem(LS_SHOW_NET, showNet ? '1' : '0'); }, [showNet]);
 
-  // Close loc picker on outside click
   useEffect(() => {
-    function handleClick(e) {
-      if (locPickerRef.current && !locPickerRef.current.contains(e.target)) setLocPickerOpen(false);
+    function onDocClick(e) {
+      if (deskBoxRef.current && !deskBoxRef.current.contains(e.target)) setDeskPickerOpen(false);
     }
-    document.addEventListener('mousedown', handleClick);
-    return () => document.removeEventListener('mousedown', handleClick);
+    document.addEventListener('mousedown', onDocClick);
+    return () => document.removeEventListener('mousedown', onDocClick);
   }, []);
-  useEffect(() => { if (params.get('_print') === '1') document.body.classList.add('print-mode'); }, []);
 
-  // ── Fetch ────────────────────────────────────────────────────────────
+  function logClientEvent(event) {
+    const parts = window.location.pathname.split('/').filter(Boolean);
+    if (parts.length >= 2) {
+      fetch(withToken(`/${parts[0]}/${parts[1]}/api/log?event=${event}`), { method: 'POST' }).catch(() => {});
+    }
+  }
+
   const fetchData = useCallback((sd, ed) => {
-    setLoading(true); setError(null);
+    setLoading(true);
+    setError(null);
     const qs = new URLSearchParams();
-    if (sd)  qs.set('start_date',    sd);
-    if (ed)  qs.set('end_date',      ed);
-    fetch(withToken(`/${orgSlug}/products/api/data?${qs}`))
-      .then(r => { if (!r.ok) throw new Error(`Server returned ${r.status}`); return r.json(); })
+    if (sd) qs.set('start_date', sd);
+    if (ed) qs.set('end_date', ed);
+    fetch(withToken(`/${orgSlug}/products/api/data?${qs.toString()}`))
+      .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
       .then(json => {
-        setRows(json.rows || []);
-        setOrgName(json.meta?.org_name || '');
-        setLogoUrl(json.meta?.logo_url || null);
+        const raw = Array.isArray(json) ? json : (json.rows || []);
+        setRows(raw.map(normalizeRow));
+        if (json && json.meta) {
+          if (json.meta.org_name) setOrgName(json.meta.org_name);
+          if (json.meta.logo_url) setLogoUrl(json.meta.logo_url);
+        }
         setLoadedStart(sd); setLoadedEnd(ed);
+        setSelectedDesks(new Set());
+        setLoading(false);
       })
-      .catch(e => setError(e.message))
-      .finally(() => setLoading(false));
+      .catch(err => { setError(err.message || String(err)); setLoading(false); });
   }, [orgSlug]);
 
-  useEffect(() => { fetchData(startDate, endDate); }, []);
-
-  function handleRun() { fetchData(startDate, endDate); }
-
-  function setYear(offset) {
-    const now = new Date();
-    const y = now.getFullYear() + offset;
-    setStartDate(toISO(new Date(y, 0, 1)));
-    setEndDate(toISO(new Date(y, 11, 31)));
-  }
-  function setRolling12() {
-    const now = new Date();
-    const start = new Date(now.getFullYear() - 1, now.getMonth() + 1, 1);
-    setStartDate(toISO(start));
-    setEndDate(toISO(now));
-  }
+  useEffect(() => { fetchData(def.start, def.end); /* eslint-disable-next-line */ }, []);
 
   const datesChanged = startDate !== loadedStart || endDate !== loadedEnd;
 
-  // ── Pivot ────────────────────────────────────────────────────────────
-  const { months, products, matrix, rowTotals, monthTotals, grand, allDeskLocs } = useMemo(() => {
-    if (!rows || rows.length === 0)
-      return { months: [], products: [], matrix: {}, rowTotals: {}, monthTotals: {}, grand: { qty: 0, revenue: 0, refunds: 0, net: 0 }, allDeskLocs: [] };
-
-    const deskLocSet = new Set();
-    rows.forEach(r => { if (r['Desk Location']) deskLocSet.add(r['Desk Location']); });
-    const allDeskLocs = [...deskLocSet].sort();
-
-    const activeRows = selectedLocs.has('__none__')
-      ? []
-      : selectedLocs.size === 0
-        ? rows
-        : rows.filter(r => selectedLocs.has(r['Desk Location'] || ''));
-
-    const matrix = {};
-    const monthSet = new Set();
-    const productSet = new Set();
-
-    activeRows.forEach(r => {
-      const product = r['Product Name'] || '(unknown)';
-      const month   = r['Month'];
-      const qty     = pf(r['Qty Sold']);
-      const revenue = pf(r['Revenue ($)']);
-      const refunds = pf(r['Refunds ($)']);
-      const net     = pf(r['Net Revenue ($)']);
-      if (month) monthSet.add(month);
-      productSet.add(product);
-      if (!matrix[product]) matrix[product] = {};
-      if (!matrix[product][month]) matrix[product][month] = { qty: 0, revenue: 0, refunds: 0, net: 0 };
-      matrix[product][month].qty     += qty;
-      matrix[product][month].revenue += revenue;
-      matrix[product][month].refunds += refunds;
-      matrix[product][month].net     += net;
-    });
-
-    const months = [...monthSet].sort();
-    let products = [...productSet].sort((a, b) => {
-      const rA = months.reduce((s, m) => s + (matrix[a]?.[m]?.net || 0), 0);
-      const rB = months.reduce((s, m) => s + (matrix[b]?.[m]?.net || 0), 0);
-      return rB - rA;
-    });
-
-    if (hideZeroRev) {
-      products = products.filter(p => months.some(m => (matrix[p]?.[m]?.revenue || 0) !== 0));
-    }
-
-    const rowTotals = {};
-    products.forEach(p => {
-      rowTotals[p] = {
-        qty:     months.reduce((s, m) => s + (matrix[p]?.[m]?.qty     || 0), 0),
-        revenue: months.reduce((s, m) => s + (matrix[p]?.[m]?.revenue || 0), 0),
-        refunds: months.reduce((s, m) => s + (matrix[p]?.[m]?.refunds || 0), 0),
-        net:     months.reduce((s, m) => s + (matrix[p]?.[m]?.net     || 0), 0),
-      };
-    });
-    const monthTotals = {};
-    months.forEach(m => {
-      monthTotals[m] = {
-        qty:     products.reduce((s, p) => s + (matrix[p]?.[m]?.qty     || 0), 0),
-        revenue: products.reduce((s, p) => s + (matrix[p]?.[m]?.revenue || 0), 0),
-        refunds: products.reduce((s, p) => s + (matrix[p]?.[m]?.refunds || 0), 0),
-        net:     products.reduce((s, p) => s + (matrix[p]?.[m]?.net     || 0), 0),
-      };
-    });
-    const grand = {
-      qty:     products.reduce((s, p) => s + rowTotals[p].qty,     0),
-      revenue: products.reduce((s, p) => s + rowTotals[p].revenue, 0),
-      refunds: products.reduce((s, p) => s + rowTotals[p].refunds, 0),
-      net:     products.reduce((s, p) => s + rowTotals[p].net,     0),
-    };
-
-    return { months, products, matrix, rowTotals, monthTotals, grand, allDeskLocs };
-  }, [rows, selectedLocs, hideZeroRev]);
-
-  // ── MoM change ───────────────────────────────────────────────────────
-  function getMoM(product, mi) {
-    if (mi === 0) return null;
-    const field = viewMode === 'qty' ? 'qty' : showNetOnly ? 'net' : 'revenue';
-    const curr  = matrix[product]?.[months[mi]]?.[field]     || 0;
-    const prev  = matrix[product]?.[months[mi - 1]]?.[field] || 0;
-    if (prev === 0 || curr === 0) return null;
-    const pct = (curr - prev) / prev * 100;
-    return Math.abs(pct) < 0.5 ? null : pct;
+  function handleRun() { logClientEvent('run'); fetchData(startDate, endDate); }
+  function setThisYear() {
+    const now = new Date();
+    const s = toISO(new Date(now.getFullYear(), 0, 1)), e = toISO(now);
+    setStartDate(s); setEndDate(e); fetchData(s, e);
+  }
+  function setLastYear() {
+    const y = new Date().getFullYear() - 1;
+    const s = toISO(new Date(y, 0, 1)), e = toISO(new Date(y, 11, 31));
+    setStartDate(s); setEndDate(e); fetchData(s, e);
+  }
+  function setRolling12() {
+    const now = new Date();
+    const s = toISO(new Date(now.getFullYear(), now.getMonth() - 11, 1)), e = toISO(now);
+    setStartDate(s); setEndDate(e); fetchData(s, e);
   }
 
-  // ── Excel export ─────────────────────────────────────────────────────
-  function exportExcel() {
-    if (!rows || rows.length === 0) return;
-    const field = viewMode === 'qty' ? 'qty' : 'revenue';
-    const hdr = ['Product', ...months.map(fmtMonthShort), 'Total'];
-    if (viewMode === 'both') {
-      const hdr2 = ['Product', ...months.flatMap(m => [fmtMonthShort(m) + ' Rev', fmtMonthShort(m) + ' Qty']), 'Total Rev', 'Total Qty'];
-      const body = products.map(p => [p, ...months.flatMap(m => [matrix[p]?.[m]?.revenue || 0, matrix[p]?.[m]?.qty || 0]), rowTotals[p].revenue, rowTotals[p].qty]);
-      const foot = ['TOTAL', ...months.flatMap(m => [monthTotals[m]?.revenue || 0, monthTotals[m]?.qty || 0]), grand.revenue, grand.qty];
-      const ws = XLSX.utils.aoa_to_sheet([hdr2, ...body, foot]);
-      const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Products MoM');
-      XLSX.writeFile(wb, `products-mom-${loadedStart || 'export'}.xlsx`);
-    } else {
-      const body = products.map(p => [p, ...months.map(m => matrix[p]?.[m]?.[field] || 0), rowTotals[p][field]]);
-      const foot = ['TOTAL', ...months.map(m => monthTotals[m]?.[field] || 0), grand[field]];
-      const ws = XLSX.utils.aoa_to_sheet([hdr, ...body, foot]);
-      const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Products MoM');
-      XLSX.writeFile(wb, `products-mom-${loadedStart || 'export'}.xlsx`);
-    }
-    logClientEvent('excel');
+  /* distinct desks across all loaded rows */
+  const allDesks = useMemo(() => {
+    const set = new Set();
+    rows.forEach(r => set.add(r.desk));
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [rows]);
+
+  function toggleDesk(d) {
+    setSelectedDesks(prev => {
+      const next = new Set(prev);
+      if (next.has(d)) next.delete(d); else next.add(d);
+      return next;
+    });
   }
 
-  function logClientEvent(event) {
-    try {
-      const parts = window.location.pathname.split('/').filter(Boolean);
-      if (parts.length >= 2) fetch(withToken(`/${parts[0]}/${parts[1]}/api/log?event=${event}`), { method: 'POST' }).catch(() => {});
-    } catch {}
-  }
+  /* client-side filtering */
+  const filtered = useMemo(() => {
+    return rows.filter(r => {
+      if (selectedDesks.size > 0 && !selectedDesks.has(r.desk)) return false;
+      if (hideZero && r.revenue === 0 && r.refunds === 0) return false;
+      return true;
+    });
+  }, [rows, selectedDesks, hideZero]);
 
-  // ── Chart ────────────────────────────────────────────────────────────
+  /* group by date DESC, rows within group by net DESC */
+  const groups = useMemo(() => {
+    const map = new Map();
+    filtered.forEach(r => {
+      if (!map.has(r.dateISO)) map.set(r.dateISO, { dateISO: r.dateISO, dateLabel: r.dateLabel, dateMs: r.dateMs, rows: [] });
+      map.get(r.dateISO).rows.push(r);
+    });
+    const arr = Array.from(map.values());
+    arr.sort((a, b) => b.dateMs - a.dateMs);
+    arr.forEach(g => {
+      g.rows.sort((a, b) => b.net - a.net);
+      g.sub = g.rows.reduce((acc, r) => {
+        acc.qty += r.qty; acc.revenue += r.revenue; acc.refunds += r.refunds; acc.net += r.net; return acc;
+      }, { qty: 0, revenue: 0, refunds: 0, net: 0 });
+    });
+    return arr;
+  }, [filtered]);
+
+  /* totals + summary */
+  const totals = useMemo(() => filtered.reduce((acc, r) => {
+    acc.qty += r.qty; acc.revenue += r.revenue; acc.refunds += r.refunds; acc.net += r.net; return acc;
+  }, { qty: 0, revenue: 0, refunds: 0, net: 0 }), [filtered]);
+
+  const productCount = useMemo(() => new Set(filtered.map(r => r.product)).size, [filtered]);
+
+  const bestDay = useMemo(() => {
+    let best = null;
+    groups.forEach(g => { if (!best || g.sub.net > best.net) best = { label: g.dateLabel, net: g.sub.net }; });
+    return best;
+  }, [groups]);
+
+  /* chart: net (or gross) by day, chronological asc */
   useEffect(() => {
-    if (!showChart || !chartRef.current || months.length === 0) return;
-    if (chartInst.current) { chartInst.current.destroy(); chartInst.current = null; }
-    const field  = viewMode === 'qty' ? 'qty' : 'revenue';
-    const colors = ['#4f46e5','#16a34a','#d97706','#dc2626','#0891b2','#7c3aed','#be185d','#475569','#c2410c','#15803d'];
-    chartInst.current = new Chart(chartRef.current.getContext('2d'), {
+    if (!chartRef.current || typeof Chart === 'undefined') return;
+    const asc = [...groups].sort((a, b) => a.dateMs - b.dateMs);
+    const labels = asc.map(g => { const d = parseDateFlexible(g.dateISO); return d ? `${MONTHS[d.getMonth()]} ${d.getDate()}` : g.dateISO; });
+    const data = asc.map(g => showNet ? g.sub.net : g.sub.revenue);
+    if (chartInst.current) chartInst.current.destroy();
+    chartInst.current = new Chart(chartRef.current, {
       type: 'bar',
-      data: {
-        labels: months.map(fmtMonthShort),
-        datasets: products.slice(0, 10).map((p, i) => ({
-          label: p,
-          data: months.map(m => matrix[p]?.[m]?.[field] || 0),
-          backgroundColor: colors[i % colors.length],
-          borderWidth: 0,
-          borderRadius: 2,
-        })),
-      },
+      data: { labels, datasets: [{
+        label: showNet ? 'Net Revenue' : 'Gross Revenue',
+        data,
+        backgroundColor: data.map(v => v < 0 ? '#dc2626' : (showNet ? '#2563eb' : '#16a34a')),
+        borderRadius: 2,
+      }] },
       options: {
         responsive: true, maintainAspectRatio: false,
-        plugins: { legend: { position: 'top', labels: { boxWidth: 10, font: { size: 10, family: "'IBM Plex Sans'" } } } },
+        plugins: { legend: { display: false },
+          tooltip: { callbacks: { label: c => fmtMoney(c.parsed.y) } } },
         scales: {
-          y: { ticks: { callback: v => field === 'qty' ? fmtNum(v) : '$' + Number(v).toLocaleString(), font: { size: 10 } } },
-          x: { ticks: { maxRotation: 40, font: { size: 10 } } },
+          x: { ticks: { font: { size: 9 }, maxRotation: 90, minRotation: 0 }, grid: { display: false } },
+          y: { ticks: { font: { size: 9 }, callback: v => '$' + Number(v).toLocaleString() }, grid: { color: '#eee' } },
         },
       },
     });
-    return () => chartInst.current?.destroy();
-  }, [showChart, months, products, matrix, viewMode]);
+    return () => { if (chartInst.current) { chartInst.current.destroy(); chartInst.current = null; } };
+  }, [groups, showNet]);
 
-  // ── Toolbar ───────────────────────────────────────────────────────────
-  const isPrint = params.get('_print') === '1';
+  function exportExcel() {
+    logClientEvent('excel');
+    const aoa = [['Date', 'Product Name', 'Desk Location', 'Qty Sold', 'Revenue ($)', 'Refunds ($)', 'Net Revenue ($)']];
+    groups.forEach(g => {
+      g.rows.forEach(r => aoa.push([r.dateISO, r.product, r.desk, r.qty, r.revenue, r.refunds, r.net]));
+    });
+    aoa.push(['TOTAL', '', '', totals.qty, totals.revenue, totals.refunds, totals.net]);
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    ws['!cols'] = [{ wch: 12 }, { wch: 34 }, { wch: 22 }, { wch: 9 }, { wch: 13 }, { wch: 13 }, { wch: 15 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Daily Products');
+    XLSX.writeFile(wb, `products-daily-${loadedStart || 'all'}_${loadedEnd || 'all'}.xlsx`);
+  }
 
-  function renderToolbar() {
-    if (isPrint) return null;
-    return (
-      <div className="toolbar">
-        <span className="toolbar-title">Product Sales MoM</span>
+  const displayOrg = orgName || 'rec.us';
+  const rangeLabel = `${formatDisplayDate(loadedStart)} — ${formatDisplayDate(loadedEnd)}`;
+  const deskBtnLabel = selectedDesks.size === 0 ? 'All desks' : `${selectedDesks.size} desk${selectedDesks.size > 1 ? 's' : ''}`;
 
-        <label>
-          Start
-          <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} />
-        </label>
-        <label>
-          End
-          <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} />
-        </label>
-        {/* ── Desk Location multi-select ── */}
-        {allDeskLocs.length > 0 && (
-          <div ref={locPickerRef} style={{ position: 'relative' }}>
-            <button
-              onClick={() => setLocPickerOpen(v => !v)}
-              style={{
-                fontSize: 11, padding: '5px 10px',
-                background: selectedLocs.size > 0 && selectedLocs.size < allDeskLocs.length
-                  ? 'rgba(217,119,6,.25)' : 'rgba(255,255,255,.08)',
-                border: selectedLocs.size > 0 && selectedLocs.size < allDeskLocs.length
-                  ? '1px solid #d97706' : '1px solid rgba(255,255,255,.25)',
-                borderRadius: 4, color: '#fff', cursor: 'pointer'
-              }}
-            >
-              📍 {selectedLocs.size === 0 ? 'All Locations' : selectedLocs.size === allDeskLocs.length ? 'All Locations' : `${selectedLocs.size} Location${selectedLocs.size > 1 ? 's' : ''}`}
+  return (
+    <div>
+      {!isPrint && (
+        <div className="toolbar">
+          <span className="toolbar-title">Product Sales — Daily</span>
+          <span className="toolbar-spacer" />
+          <label>From <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} /></label>
+          <label>To <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} /></label>
+          <button onClick={setThisYear}>This Year</button>
+          <button onClick={setLastYear}>Last Year</button>
+          <button onClick={setRolling12}>Rolling 12</button>
+          <button className="btn-run" onClick={handleRun} disabled={loading || !datesChanged}>
+            {loading ? 'Loading…' : 'Run'}
+          </button>
+          <span className="divider" />
+
+          <div ref={deskBoxRef} style={{ position: 'relative' }}>
+            <button className={selectedDesks.size > 0 ? 'active' : ''} onClick={() => setDeskPickerOpen(o => !o)}>
+              {deskBtnLabel} ▾
             </button>
-            {locPickerOpen && (
-              <div style={{
-                position: 'absolute', top: '110%', left: 0, zIndex: 999,
-                background: '#2c2c2c', border: '1px solid #444', borderRadius: 6,
-                padding: '8px 0', minWidth: 220, maxHeight: 280, overflowY: 'auto',
-                boxShadow: '0 4px 16px rgba(0,0,0,.4)'
-              }}>
-                <div style={{ padding: '4px 12px 8px', borderBottom: '1px solid #444', display: 'flex', gap: 8 }}>
-                  <button onClick={() => setSelectedLocs(new Set())}
-                    style={{ fontSize: 10, padding: '2px 8px', background: '#444', border: 'none', borderRadius: 3, color: '#ccc', cursor: 'pointer' }}>
-                    All
-                  </button>
-                  <button onClick={() => setSelectedLocs(new Set(['__none__']))}
-                    style={{ fontSize: 10, padding: '2px 8px', background: '#444', border: 'none', borderRadius: 3, color: '#ccc', cursor: 'pointer' }}>
-                    None
-                  </button>
-                  <button onClick={() => {
-                    const online = new Set(['']);
-                    setSelectedLocs(online);
-                  }}
-                    style={{ fontSize: 10, padding: '2px 8px', background: '#444', border: 'none', borderRadius: 3, color: '#ccc', cursor: 'pointer' }}>
-                    Online only
-                  </button>
+            {deskPickerOpen && (
+              <div style={{ position: 'absolute', top: '110%', right: 0, zIndex: 50, background: '#fff',
+                border: '1px solid #ccc', borderRadius: 6, padding: 8, minWidth: 220, maxHeight: 300,
+                overflowY: 'auto', boxShadow: '0 6px 24px rgba(0,0,0,0.15)' }}>
+                <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
+                  <button onClick={() => setSelectedDesks(new Set())}>All</button>
+                  <button onClick={() => setSelectedDesks(new Set(allDesks))}>None match→clear</button>
                 </div>
-                {allDeskLocs.map(loc => (
-                  <label key={loc} style={{
-                    display: 'flex', alignItems: 'center', gap: 8,
-                    padding: '5px 12px', cursor: 'pointer', fontSize: 11.5, color: '#ddd',
-                    background: selectedLocs.has(loc) ? 'rgba(59,130,246,.2)' : 'transparent'
-                  }}>
-                    <input type="checkbox"
-                      checked={selectedLocs.size === 0 && !selectedLocs.has('__none__') || selectedLocs.has(loc)}
-                      onChange={e => {
-                        const next = new Set(selectedLocs.size === 0 ? allDeskLocs : selectedLocs);
-                        if (e.target.checked) next.add(loc); else next.delete(loc);
-                        if (next.size === allDeskLocs.length) setSelectedLocs(new Set());
-                        else setSelectedLocs(next);
-                      }}
-                    />
-                    {loc}
+                {allDesks.map(d => (
+                  <label key={d} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '3px 2px',
+                    fontSize: 12, textTransform: 'none', letterSpacing: 0, cursor: 'pointer' }}>
+                    <input type="checkbox" checked={selectedDesks.has(d)} onChange={() => toggleDesk(d)} />
+                    {d}
                   </label>
                 ))}
               </div>
             )}
           </div>
-        )}
 
-        <button onClick={() => setYear(0)}   style={{ fontSize: 11, padding: '4px 8px' }}>This Year</button>
-        <button onClick={() => setYear(-1)}  style={{ fontSize: 11, padding: '4px 8px' }}>Last Year</button>
-        <button onClick={setRolling12}       style={{ fontSize: 11, padding: '4px 8px' }}>Rolling 12</button>
-
-        <button
-          className="btn-run"
-          onClick={handleRun}
-          disabled={loading}
-          style={datesChanged && !loading ? { boxShadow: '0 0 0 2px #4ade80' } : {}}
-        >
-          {loading ? 'Loading…' : '▶ Run Report'}
-        </button>
-
-        <div className="divider" />
-
-        {['revenue', 'qty', 'both'].map(mode => (
-          <button
-            key={mode}
-            className={viewMode === mode ? 'active' : ''}
-            style={{ fontSize: 11, padding: '4px 10px' }}
-            onClick={() => setViewMode(mode)}
-          >
-            {mode === 'revenue' ? '$ Revenue' : mode === 'qty' ? '# Qty' : '☰ Both'}
+          <button className={hideZero ? 'active' : ''} onClick={() => setHideZero(z => !z)}>Hide $0</button>
+          <button className={showNet ? 'active' : ''} onClick={() => setShowNet(s => !s)}>
+            {showNet ? 'Chart: Net' : 'Chart: Gross'}
           </button>
-        ))}
-
-        <div className="divider" />
-
-        <button
-          onClick={() => setShowNetOnly(v => !v)}
-          className={showNetOnly ? 'active' : ''}
-          style={{ fontSize: 11, padding: '4px 10px' }}
-          title="Show Net Revenue (gross minus refunds) instead of gross"
-        >Net Revenue</button>
-
-        <button
-          onClick={() => setHideZeroRev(v => !v)}
-          className={hideZeroRev ? 'active' : ''}
-          style={{ fontSize: 11, padding: '4px 10px' }}
-          title="Hide products with $0 gross revenue"
-        >Hide $0</button>
-
-        <div className="divider" />
-
-        <button
-          className={showChart ? 'active' : ''}
-          style={{ fontSize: 11, padding: '4px 10px' }}
-          onClick={() => setShowChart(v => !v)}
-        >▐ Chart</button>
-
-        <div className="toolbar-spacer" />
-
-        {rows && (
-          <span className="row-count">
-            {products.length} product{products.length !== 1 ? 's' : ''} · {months.length} month{months.length !== 1 ? 's' : ''}
-            {selectedLocs.size > 0 && selectedLocs.size < allDeskLocs.length && (
-              <> · {selectedLocs.size} location{selectedLocs.size > 1 ? 's' : ''}</>
-            )}
-          </span>
-        )}
-
-        <div className="divider" />
-
-        <button onClick={() => { logClientEvent('print'); window.print(); }}>🖨 Print</button>
-        <button
-          className="btn-excel"
-          onClick={exportExcel}
-          disabled={!rows || rows.length === 0}
-        >📥 Excel</button>
-      </div>
-    );
-  }
-
-  // ── Summary cards ────────────────────────────────────────────────────
-  function renderSummaryCards() {
-    if (!rows || rows.length === 0) return null;
-    const bestProduct = products[0];
-    const bestMonth   = months.reduce((b, m) => !b || (monthTotals[m]?.net || 0) > (monthTotals[b]?.net || 0) ? m : b, null);
-    const hasRefunds  = grand.refunds > 0;
-    return (
-      <div className="summary-cards">
-        <SummaryCard label="Gross Revenue"   value={fmtMoney(grand.revenue)} color="green"  />
-        {hasRefunds && <SummaryCard label="Refunds"       value={fmtMoney(grand.refunds)} color="amber"  />}
-        <SummaryCard label="Net Revenue"     value={fmtMoney(grand.net)}     color={grand.net >= 0 ? 'blue' : 'amber'}   />
-        <SummaryCard label="Total Units Sold" value={fmtNum(grand.qty)}      color="slate"  />
-        <SummaryCard label="Products"        value={products.length}          color="violet" />
-        {bestMonth && (
-          <div className="summary-card slate">
-            <div className="card-label">Best Month (Net)</div>
-            <div className="card-value" style={{ fontFamily: "'IBM Plex Sans'", fontSize: 13 }}>{fmtMonthFull(bestMonth)}</div>
-            <div style={{ fontSize: 10, color: '#888', marginTop: 3 }}>{fmtMoney(monthTotals[bestMonth]?.net)}</div>
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  // ── Table ────────────────────────────────────────────────────────────
-  function renderTable() {
-    if (!rows || rows.length === 0) {
-      return <div style={{ textAlign: 'center', padding: '40px 0', color: '#888' }}>No data found for the selected date range.</div>;
-    }
-
-    const isBoth = viewMode === 'both';
-    const field  = viewMode === 'qty' ? 'qty' : showNetOnly ? 'net' : 'revenue';
-    const fmt    = viewMode === 'qty' ? fmtNum : fmtMoney;
-
-    return (
-      <div className="table-wrapper">
-        <table>
-          <thead>
-            {/* Group header row — month names */}
-            <tr>
-              <th className="group left">Product</th>
-              {months.map(m => (
-                <th key={m} className="group" colSpan={isBoth ? 2 : 1}>{fmtMonthShort(m)}</th>
-              ))}
-              <th className="group total-group" colSpan={isBoth ? 2 : 1}>Total</th>
-            </tr>
-
-            {/* Column header row — sub-columns in both mode, labels in single mode */}
-            {isBoth && (
-              <tr>
-                <th className="left"></th>
-                {months.map(m => (
-                  <React.Fragment key={m}>
-                    <th>Revenue</th>
-                    <th>Qty</th>
-                  </React.Fragment>
-                ))}
-                <th className="total-col">Revenue</th>
-                <th className="total-col">Qty</th>
-              </tr>
-            )}
-          </thead>
-
-          <tbody>
-            {products.map((p, pi) => (
-              <tr key={p}>
-                <td className="left">{p}</td>
-
-                {months.map((m, mi) => {
-                  const cell  = matrix[p]?.[m] || { qty: 0, revenue: 0 };
-                  const mom   = getMoM(p, mi);
-                  const empty = cell.revenue === 0 && cell.qty === 0;
-
-                  if (isBoth) {
-                    const momBoth = getMoM(p, mi);
-                    return (
-                      <React.Fragment key={m}>
-                        <td>
-                          {cell.revenue === 0 ? <span className="cell-zero">—</span> : fmtMoney(cell.revenue)}
-                          {cell.revenue !== 0 && momBoth !== null && (
-                            <span className={momBoth > 0 ? 'mom-up' : 'mom-down'}>
-                              {momBoth > 0 ? '▲' : '▼'}{Math.abs(momBoth).toFixed(0)}%
-                            </span>
-                          )}
-                        </td>
-                        <td>{cell.qty === 0 ? <span className="cell-zero">—</span> : fmtNum(cell.qty)}</td>
-                      </React.Fragment>
-                    );
-                  }
-                  return (
-                    <td key={m}>
-                      {empty
-                        ? <span className="cell-zero">—</span>
-                        : <>
-                            {fmt(cell[field])}
-                            {mom !== null && (
-                              <span className={mom > 0 ? 'mom-up' : 'mom-down'}>
-                                {mom > 0 ? '▲' : '▼'}{Math.abs(mom).toFixed(0)}%
-                              </span>
-                            )}
-                          </>
-                      }
-                    </td>
-                  );
-                })}
-
-                {isBoth ? (
-                  <>
-                    <td className="total-col">{fmtMoney(rowTotals[p].revenue)}</td>
-                    <td className="total-col">{fmtNum(rowTotals[p].qty)}</td>
-                  </>
-                ) : (
-                  <td className="total-col">{fmt(rowTotals[p][field])}</td>
-                )}
-              </tr>
-            ))}
-          </tbody>
-
-          <tfoot>
-            <tr>
-              <td className="left">TOTAL</td>
-              {months.map(m => {
-                const mt = monthTotals[m] || { qty: 0, revenue: 0 };
-                if (isBoth) return (
-                  <React.Fragment key={m}>
-                    <td>{fmtMoney(mt.revenue)}</td>
-                    <td>{fmtNum(mt.qty)}</td>
-                  </React.Fragment>
-                );
-                return <td key={m}>{fmt(mt[field])}</td>;
-              })}
-              {isBoth ? (
-                <>
-                  <td className="total-col">{fmtMoney(grand.revenue)}</td>
-                  <td className="total-col">{fmtNum(grand.qty)}</td>
-                </>
-              ) : (
-                <td className="total-col">{fmt(grand[field])}</td>
-              )}
-            </tr>
-          </tfoot>
-        </table>
-      </div>
-    );
-  }
-
-  // ── Error / Loading ───────────────────────────────────────────────────
-  if (error && !rows) {
-    return (
-      <div>
-        {renderToolbar()}
-        <div className="page">
-          <div className="error">
-            <p><strong>Failed to load report data</strong></p>
-            <p style={{ marginTop: 8 }}>{error}</p>
-          </div>
+          <span className="divider" />
+          <button className="btn-excel" onClick={exportExcel} disabled={loading || filtered.length === 0}>Excel</button>
+          <button onClick={() => { logClientEvent('print'); window.print(); }}>Print</button>
         </div>
-      </div>
-    );
-  }
+      )}
 
-  if (!rows) {
-    return (
-      <div>
-        {renderToolbar()}
-        <div className="page">
-          <div className="loading">
-            <div className="spinner" />
-            <div>Loading report data…</div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // ── Run meta ──────────────────────────────────────────────────────────
-  const now = new Date();
-  const runDate = `${(now.getMonth()+1).toString().padStart(2,'0')}/${now.getDate().toString().padStart(2,'0')}/${now.getFullYear()} @ ${now.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',hour12:true}).toLowerCase()}`;
-  const displayOrg = orgName || 'rec.us';
-  const dateRangeLabel = [
-    loadedStart ? formatDisplayDate(loadedStart) : null,
-    loadedEnd   ? formatDisplayDate(loadedEnd)   : null,
-  ].filter(Boolean).join(' – ') || 'All Dates';
-
-  return (
-    <div>
-      {renderToolbar()}
-
-      <div className="page" style={loading ? { opacity: 0.5, pointerEvents: 'none' } : {}}>
-
-        {/* Report header */}
+      <div className="page">
         <div className="report-header">
+          {logoUrl ? <img className="report-header-logo" src={logoUrl} alt="" /> : null}
           <div>
-            {logoUrl && <img src={logoUrl} alt="" className="report-header-logo" onError={e => e.target.style.display='none'} />}
             <div className="org-label">{displayOrg}</div>
-            <div className="title">Product Sales — Month over Month</div>
+            <div className="title">Product Sales — Daily Detail</div>
+            <div className="date-range">{rangeLabel}</div>
           </div>
-          <div className="date-range">{dateRangeLabel}</div>
         </div>
 
-        {/* Summary cards */}
-        {renderSummaryCards()}
-
-        {/* Table */}
-        {renderTable()}
-
-        {/* Chart */}
-        {showChart && months.length > 0 && (
-          <div className="chart-wrap" style={{ height: 320, marginTop: 20 }}>
-            <canvas ref={chartRef} />
-          </div>
+        {loading && (
+          <div className="loading"><div className="spinner" />Loading product sales…</div>
+        )}
+        {error && !loading && (
+          <div className="error">Couldn’t load report: {error}</div>
         )}
 
-        {/* Footer */}
-        <div className="report-footer">
-          <span>{displayOrg}</span>
-          <span>Run Date/Time: {runDate}</span>
-        </div>
+        {!loading && !error && (
+          <>
+            <div className="summary-cards">
+              <SummaryCard color="green" label="Gross Revenue" value={fmtMoney(totals.revenue)} />
+              {totals.refunds > 0 && <SummaryCard color="amber" label="Refunds" value={fmtMoney(totals.refunds)} />}
+              <SummaryCard color={totals.net < 0 ? 'amber' : 'blue'} label="Net Revenue" value={fmtMoney(totals.net)} />
+              <SummaryCard color="slate" label="Total Units" value={fmtInt(totals.qty)} />
+              <SummaryCard color="violet" label="Products" value={fmtInt(productCount)} />
+              {bestDay && <SummaryCard color="slate" label="Best Day (net)" value={fmtMoney(bestDay.net)} sub={bestDay.label} />}
+            </div>
+
+            {groups.length > 0 && (
+              <div className="chart-wrap" style={{ height: 240 }}>
+                <canvas ref={chartRef} />
+              </div>
+            )}
+
+            <div className="table-wrapper" style={{ marginTop: 14 }}>
+              <table>
+                <thead>
+                  <tr>
+                    <th className="left">Date</th>
+                    <th className="left">Product Name</th>
+                    <th className="left">Desk Location</th>
+                    <th>Qty Sold</th>
+                    <th>Revenue</th>
+                    <th>Refunds</th>
+                    <th>Net</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {groups.length === 0 && (
+                    <tr><td className="left" colSpan={7} style={{ textAlign: 'center', padding: 24, color: '#888' }}>
+                      No product sales in this range.
+                    </td></tr>
+                  )}
+                  {groups.map(g => (
+                    <React.Fragment key={g.dateISO}>
+                      {g.rows.map((r, i) => (
+                        <tr key={g.dateISO + '|' + r.product + '|' + r.desk + '|' + i}>
+                          <td className="left">{i === 0 ? g.dateLabel : ''}</td>
+                          <td className="left">{r.product}</td>
+                          <td className="left">{r.desk}</td>
+                          <td>{r.qty === 0 ? <span className="cell-zero">—</span> : fmtInt(r.qty)}</td>
+                          <td>{r.revenue === 0 ? <span className="cell-zero">—</span> : fmtMoney(r.revenue)}</td>
+                          <td>{r.refunds === 0 ? <span className="cell-zero">—</span> : <span style={{ color: '#b45309' }}>{fmtMoney(r.refunds)}</span>}</td>
+                          <td style={{ color: r.net < 0 ? '#dc2626' : 'inherit', fontWeight: 600 }}>{fmtMoney(r.net)}</td>
+                        </tr>
+                      ))}
+                      <tr style={{ background: '#f3f3ef' }}>
+                        <td className="left" style={{ fontWeight: 700 }}></td>
+                        <td className="left" style={{ fontWeight: 700, fontStyle: 'italic', color: '#555' }} colSpan={2}>
+                          {g.dateLabel} subtotal · {g.rows.length} line{g.rows.length > 1 ? 's' : ''}
+                        </td>
+                        <td style={{ fontWeight: 700 }}>{fmtInt(g.sub.qty)}</td>
+                        <td style={{ fontWeight: 700 }}>{fmtMoney(g.sub.revenue)}</td>
+                        <td style={{ fontWeight: 700, color: g.sub.refunds > 0 ? '#b45309' : 'inherit' }}>{g.sub.refunds === 0 ? '—' : fmtMoney(g.sub.refunds)}</td>
+                        <td style={{ fontWeight: 700, color: g.sub.net < 0 ? '#dc2626' : 'inherit' }}>{fmtMoney(g.sub.net)}</td>
+                      </tr>
+                    </React.Fragment>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr>
+                    <td className="left" colSpan={3}>TOTAL · {filtered.length} lines · {groups.length} days</td>
+                    <td>{fmtInt(totals.qty)}</td>
+                    <td>{fmtMoney(totals.revenue)}</td>
+                    <td style={{ color: totals.refunds > 0 ? '#b45309' : 'inherit' }}>{fmtMoney(totals.refunds)}</td>
+                    <td style={{ color: totals.net < 0 ? '#dc2626' : 'inherit' }}>{fmtMoney(totals.net)}</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+
+            <div className="report-footer">
+              <span>{displayOrg}</span>
+              <span>Generated {new Date().toLocaleString('en-US')}</span>
+            </div>
+          </>
+        )}
 
         <div id="report-ready" style={{ display: 'none' }} />
       </div>
@@ -952,4 +726,3 @@ ReactDOM.createRoot(document.getElementById('root')).render(<App />);
     <script src="/feedback-widget.js" defer></script>
   </body>
 </html>
-

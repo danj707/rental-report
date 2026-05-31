@@ -80,7 +80,7 @@ const ORGS = {
     programs:    { mbUuid: "73af7196-84c3-4aad-959e-571c39dc23b9" },
     roster:      { mbUuid: "b4fb3c1b-b096-4865-8c32-3dc2635d1264" },
     overview:    { mbUuid: null },
-    products:    { mbUuid: 'c52acc75-a0a6-4892-9b56-f72dbc1a7019' },
+    products:    { mbUuid: '3d0da465-12d7-4009-8cf1-cbf49e166bd2' },
     memberships: { mbUuid: 'c0579813-d8f0-4b0c-8248-ff975129fd31' },
   },
   smyrna: {
