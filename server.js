@@ -1458,7 +1458,7 @@ app.get("/:org", (req, res, next) => {
     overview:    { label: "Facility Overview",         icon: "📈", desc: "Revenue and activity summary by location" },
     products:    { label: "Product Sales",          icon: "🛒", desc: "Daily revenue, refunds, and net by product" },
     memberships: { label: "Memberships",                icon: "🎫", desc: "Active and lapsed memberships with renewal tracking" },
-    "court-utilization": { label: "Court Utilization",  icon: "🎾", desc: "Court utilization % or reserved hours by court, split by customer, program, and closure usage" },
+    "court-utilization": { label: "Court Utilization",  icon: "🎾", desc: "Court utilization % or reserved hours by court, split by customer, program, and closure usage", ai: true },
   };
 
   const tokenQS = org.token ? `?token=${encodeURIComponent(org.token)}` : "";
@@ -1472,6 +1472,7 @@ app.get("/:org", (req, res, next) => {
         <div class="card-body">
           <div class="card-label">${m.label}</div>
           <div class="card-desc">${m.desc}</div>
+          ${m.ai ? '<span class="ai-pill">✦ AI enhanced</span>' : ''}
         </div>
         <div class="card-arrow">→</div>
       </a>`;
@@ -1501,6 +1502,7 @@ app.get("/:org", (req, res, next) => {
     .card-body  { flex: 1; }
     .card-label { font-weight: 600; font-size: 14px; margin-bottom: 2px; }
     .card-desc  { font-size: 12px; color: #888; }
+    .ai-pill { display: inline-flex; align-items: center; gap: 3px; font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; padding: 2px 7px; border-radius: 20px; background: linear-gradient(90deg, #6d28d9, #0d9488); color: #fff; margin-top: 5px; }
     .card-arrow { font-size: 18px; color: #ccc; flex-shrink: 0; }
     .card:hover .card-arrow { color: #16a34a; }
     .admin-links { border-top: 1px solid #ddd; padding-top: 16px; display: flex; flex-direction: column; gap: 8px; }
