@@ -916,6 +916,24 @@ Rules:
 - Prefer non-obvious observations. Name specific courts and locations rather than speaking generally.
 - Be terse. No filler. Vary the "type" across the four insights where the data supports it.`;
 
+const PROGRAMS_SYS_PROMPT = `You are a parks & recreation program analyst for US municipal departments. You are given aggregate program revenue and enrollment data for a single reporting period — revenue totals, enrollment counts, fill percentages, cancellation rates, and waitlist counts, all pre-computed.
+
+Return EXACTLY 4 insights as a JSON array and nothing else — no prose, no preamble, no markdown code fences. Each element is an object with exactly these keys:
+{
+  "type": "opportunity" | "risk" | "signal",
+  "title": short label, 7 words or fewer,
+  "detail": one sentence, 22 words or fewer, citing specific numbers or program names from the data,
+  "action": one concrete next step, 12 words or fewer
+}
+
+Rules:
+- Ground EVERY figure in the data provided. Never invent numbers or program names.
+- Focus on fill rates, cancellation patterns, revenue concentration, enrollment demand (waitlists), and program-level outliers.
+- Name specific programs when making observations rather than speaking generally.
+- Be terse. No filler. Vary the "type" across the four insights where the data supports it.`;
+
+const SYS_PROMPTS = { programs: PROGRAMS_SYS_PROMPT };
+
 // Extract up to 4 valid insight objects from a model text response.
 function salvageInsights(text) {
   if (!text) return [];
@@ -995,7 +1013,7 @@ app.post("/:org/:report/api/insights", resolveOrg, async (req, res) => {
       body: JSON.stringify({
         model: INSIGHTS_MODEL,
         max_tokens: 700,
-        system: INSIGHTS_SYS_PROMPT,
+        system: SYS_PROMPTS[reportType] || INSIGHTS_SYS_PROMPT,
         messages: [{ role: "user", content: JSON.stringify(blob) }],
       }),
     });
@@ -1452,7 +1470,7 @@ app.get("/:org", (req, res, next) => {
   const reportMeta = {
     facility: { label: "Facility Rental Schedule", icon: "📅", desc: "Reservations grouped by date and location" },
     gl:       { label: "GL Code Rollup",            icon: "📊", desc: "Payment and refund summary by GL code" },
-    programs: { label: "Program Revenue",           icon: "🎯", desc: "Enrollment and revenue by program and section" },
+    programs: { label: "Program Revenue",           icon: "🎯", desc: "Enrollment and revenue by program and section", ai: true },
     historic: { label: "Historic Buildings",        icon: "🏛️",  desc: "Reservations for historic building sites" },
     roster:   { label: "Class Roster",              icon: "📋", desc: "Enrolled and cancelled participants by section" },
     overview:    { label: "Facility Overview",         icon: "📈", desc: "Revenue and activity summary by location" },
@@ -1706,7 +1724,7 @@ app.get("/", (req, res) => {
   const reportMeta = {
     facility: { label: "Facility Rental Schedule", icon: "📅", desc: "Reservations grouped by date and location", color: "#16a34a" },
     gl:       { label: "GL Code Rollup",            icon: "📊", desc: "Payment and refund summary by GL code",   color: "#3b82f6" },
-    programs: { label: "Program Revenue",           icon: "🎯", desc: "Enrollment and revenue by program",       color: "#7c3aed" },
+    programs: { label: "Program Revenue",           icon: "🎯", desc: "Enrollment and revenue by program",       color: "#7c3aed", ai: true },
     historic: { label: "Historic Buildings",        icon: "🏛️",  desc: "Reservations for historic building sites", color: "#d97706" },
     roster:   { label: "Class Roster",              icon: "📋", desc: "Enrolled and cancelled participants by section", color: "#0891b2" },
     overview:    { label: "Facility Overview",         icon: "📈", desc: "Revenue and activity summary by location",                 color: "#059669" },
