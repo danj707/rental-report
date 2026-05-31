@@ -607,6 +607,7 @@ async function sendReportEmail(orgSlug, email, reportType, schedule, locationFil
   let reportUrl;
   let label;
   let viewSuffix = "";
+  const tokenParam = orgConfig.token ? `&token=${encodeURIComponent(orgConfig.token)}` : "";
   if (savedParams && typeof savedParams === "string" && savedParams.length) {
     const cleaned = new URLSearchParams(savedParams);
     cleaned.delete("token");
@@ -629,7 +630,6 @@ async function sendReportEmail(orgSlug, email, reportType, schedule, locationFil
     const r = getDateRange(resolvedDateRange);
     label = r.label;
     const locationParam = (reportType === "facility" && locationFilter) ? `&location_name=${encodeURIComponent(locationFilter)}` : "";
-    const tokenParam = orgConfig.token ? `&token=${encodeURIComponent(orgConfig.token)}` : "";
     reportUrl = `${BASE_URL}/${orgSlug}/${reportType}?start_date=${r.start}&end_date=${r.end}${locationParam}${tokenParam}`;
   }
 
