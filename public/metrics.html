@@ -95,6 +95,10 @@
     .badge-historic { background: #fef3c7; color: #92400e; }
     .badge-programs { background: #f3e8ff; color: #6b21a8; }
     .badge-roster   { background: #cffafe; color: #155e75; }
+    .badge-overview    { background: #d1fae5; color: #065f46; }
+    .badge-products    { background: #fce7f3; color: #9d174d; }
+    .badge-memberships { background: #ffedd5; color: #9a3412; }
+    .badge-court-utilization { background: #ccfbf1; color: #115e59; }
 
     /* ── Sparkline section ── */
     .chart-card { background: #fff; border: 1px solid #e0ddd8; border-radius: 7px; padding: 16px 18px; margin-bottom: 24px; }
@@ -148,11 +152,25 @@
 const { useState, useEffect, useMemo } = React;
 
 const REPORT_META = {
-  facility: { label: "Facility Rental Schedule", badgeClass: "badge-facility" },
-  gl:       { label: "GL Code Rollup",            badgeClass: "badge-gl" },
-  historic: { label: "Historic Buildings",        badgeClass: "badge-historic" },
-  programs: { label: "Program Revenue",           badgeClass: "badge-programs" },
-  roster:   { label: "Class Roster",              badgeClass: "badge-roster" },
+  facility:    { label: "Facility Rental Schedule", badgeClass: "badge-facility" },
+  gl:          { label: "GL Code Rollup",            badgeClass: "badge-gl" },
+  historic:    { label: "Historic Buildings",        badgeClass: "badge-historic" },
+  programs:    { label: "Program Revenue",           badgeClass: "badge-programs" },
+  roster:      { label: "Class Roster",              badgeClass: "badge-roster" },
+  overview:    { label: "Facility Overview",         badgeClass: "badge-overview" },
+  products:    { label: "Product Sales",             badgeClass: "badge-products" },
+  memberships: { label: "Memberships",               badgeClass: "badge-memberships" },
+  "court-utilization": { label: "Court Utilization", badgeClass: "badge-court-utilization" },
+};
+
+// Canonical display order for report rows/charts (matches server REPORT_TYPES).
+const REPORT_ORDER = ['facility','gl','historic','programs','roster','overview','products','memberships','court-utilization'];
+
+// Shared per-report colors (sparklines + activity chart).
+const REPORT_COLORS = {
+  facility:'#16a34a', gl:'#3b82f6', historic:'#d97706', programs:'#7c3aed',
+  roster:'#0891b2', overview:'#059669', products:'#db2777',
+  memberships:'#ea580c', 'court-utilization':'#0d9488',
 };
 
 const EVENT_LABELS = {
@@ -227,7 +245,9 @@ function App() {
     const configured = data.configuredReports || [];
     const fromSummary = Object.keys(data.summary || {});
     const allReports = [...new Set([...configured, ...fromSummary])];
-    return ['facility','gl','historic','programs','roster'].filter(r => allReports.includes(r));
+    const ordered = REPORT_ORDER.filter(r => allReports.includes(r));
+    const extras  = allReports.filter(r => !REPORT_ORDER.includes(r));
+    return [...ordered, ...extras];
   }, [data]);
 
   // Summary totals across all reports
@@ -293,7 +313,7 @@ function App() {
             const total = bars.reduce((s, b) => s + b.count, 0);
             if (!total && days !== 9999) return null;
             const meta = REPORT_META[r] || { label: r };
-            const colors = { facility:'#16a34a', gl:'#3b82f6', historic:'#d97706', programs:'#7c3aed', roster:'#0891b2' };
+            const colors = REPORT_COLORS;
             return (
               <div className="sparkline-card" key={r}>
                 <div className="sk-header">
@@ -316,7 +336,7 @@ function App() {
       const d = new Date(); d.setDate(d.getDate() - i);
       labels.push(d.toISOString().slice(0, 10));
     }
-    const COLORS = { facility:'#16a34a', gl:'#3b82f6', programs:'#7c3aed', historic:'#d97706', roster:'#0891b2', overview:'#059669' };
+    const COLORS = REPORT_COLORS;
     const datasets = reports.map(r => ({
       label: r,
       data: labels.map(d => daily[d]?.[r] || 0),

@@ -2504,6 +2504,11 @@ app.get("/", (req, res) => {
     // Newest first. Add a new entry at the TOP for every change we ship.
     // History below back-filled from the GitHub commit log.
     const UPDATES = [
+      { date: '2026-05-31', title: 'More Juice! \\uD83E\\uDDC3 + complete metrics breakdown', items: [
+        'New loading animation across every report page \\u2014 a glass filling with fresh juice (bubbles and all), retiring the dancing banana',
+        'Usage Metrics now lists every report an org actually has configured \\u2014 Product Sales, Memberships, Facility Overview and Court Utilization were previously missing from the By Report Type table, sparklines, and activity chart',
+        'Each report type gets its own badge color and chart color so the breakdown reads at a glance',
+      ]},
       { date: '2026-05-31', title: 'Dashboard: app restart + AI-insights metric', items: [
         'New App Control card on the dashboard \u2014 password-protected button to redeploy the latest build on Railway (a clean restart, no new code)',
         'Metrics now track AI-insights usage: each org\u2019s panel shows insight calls and estimated spend over the last 30 days, and the per-org metrics page gets a matching summary card',
