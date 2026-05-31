@@ -1290,7 +1290,7 @@ app.get("/:org", (req, res, next) => {
     historic: { label: "Historic Buildings",        icon: "🏛️",  desc: "Reservations for historic building sites" },
     roster:   { label: "Class Roster",              icon: "📋", desc: "Enrolled and cancelled participants by section" },
     overview:    { label: "Facility Overview",         icon: "📈", desc: "Revenue and activity summary by location" },
-    products:    { label: "Product Sales MoM",          icon: "🛒", desc: "Month-over-month revenue and quantity by product" },
+    products:    { label: "Product Sales",          icon: "🛒", desc: "Daily revenue, refunds, and net by product" },
     memberships: { label: "Memberships",                icon: "🎫", desc: "Active and lapsed memberships with renewal tracking" },
     "court-utilization": { label: "Court Utilization",  icon: "🎾", desc: "Booking counts by court across customer, program, and closure usage" },
   };
@@ -1501,7 +1501,7 @@ app.get("/", (req, res) => {
     historic: { label: "Historic Buildings",        icon: "🏛️",  desc: "Reservations for historic building sites", color: "#d97706" },
     roster:   { label: "Class Roster",              icon: "📋", desc: "Enrolled and cancelled participants by section", color: "#0891b2" },
     overview:    { label: "Facility Overview",         icon: "📈", desc: "Revenue and activity summary by location",                 color: "#059669" },
-    products:    { label: "Product Sales MoM",          icon: "🛒", desc: "Month-over-month revenue and quantity by product",           color: "#0891b2" },
+    products:    { label: "Product Sales",          icon: "🛒", desc: "Daily revenue, refunds, and net by product",           color: "#0891b2" },
     memberships: { label: "Memberships",                icon: "🎫", desc: "Active and lapsed memberships with renewal tracking",       color: "#db2777" },
     "court-utilization": { label: "Court Utilization",  icon: "🎾", desc: "Booking counts by court across customer, program, and closure usage", color: "#0d9488" },
   };
@@ -1821,7 +1821,7 @@ app.get("/", (req, res) => {
           <li><strong>Programs</strong> &#8212; enrollment and revenue by program and section (Norman, Watertown, and Apex).</li>
           <li><strong>Historic Buildings</strong> &#8212; filtered facility view for historic venue locations (Smyrna only).</li>
           <li><strong>Memberships</strong> &#8212; active and lapsed memberships with auto-renew tracking, MRR estimate, and stale-usage detection (Norman only).</li>
-          <li><strong>Product Sales MoM</strong> &#8212; month-over-month revenue and quantity by product (Norman only).</li>
+          <li><strong>Product Sales</strong> &#8212; daily revenue, refunds, and net by product, with optional desk-location breakdown (Norman only).</li>
         </ul>
 
         <h4>Inline Metrics</h4>
@@ -1920,7 +1920,7 @@ app.get("/", (req, res) => {
       historic: { label: "Historic Buildings",        icon: "🏛️" },
       roster:   { label: "Class Roster",              icon: "📋" },
       overview: { label: "Facility Overview",         icon: "📈" },
-      products: { label: "Product Sales MoM",         icon: "🛒" },
+      products: { label: "Product Sales",         icon: "🛒" },
       memberships: { label: "Memberships",            icon: "🎫" },
     })))};
 
