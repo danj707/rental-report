@@ -307,11 +307,44 @@ function fillClass(v) {
   return 'fill-low';
 }
 
+// ── Reg-mode helpers (section-based vs session-based) ────────────────
+function regModeVis(regMode) {
+  const m = (regMode || '').toLowerCase();
+  if (m.includes('section')) return { sec: true,  sess: false };
+  if (m.includes('session')) return { sec: false, sess: true  };
+  return { sec: true, sess: true }; // unknown → show both (back-compat)
+}
+function regModeLabel(regMode) {
+  const m = (regMode || '').toLowerCase();
+  if (m.includes('section')) return 'Section';
+  if (m.includes('session')) return 'Session';
+  return regMode || '';
+}
+// Dominant mode across a program's sections; '' when mixed/unknown.
+function progMode(sections) {
+  let sec = false, sess = false;
+  sections.forEach(r => {
+    const m = (r.regMode || '').toLowerCase();
+    if (m.includes('section')) sec = true;
+    else if (m.includes('session')) sess = true;
+  });
+  if (sec && !sess) return 'Section-based';
+  if (sess && !sec) return 'Session-based';
+  return '';
+}
+// Cancellation rate = cancellations ÷ enrollments (null when no enrollments).
+function cancelPct(cancellations, enrollments) {
+  const c = parseFloat(cancellations), e = parseFloat(enrollments);
+  if (!isFinite(e) || e <= 0 || !isFinite(c)) return null;
+  return (c / e) * 100;
+}
+
 function normalizeRow(raw) {
   return {
     programName:        raw['Program']                     || '',
     sectionName:        raw['Section']                     || '',
     season:             raw['Season']                      || '',
+    regMode:            raw['Reg Mode']                    || '',
     startDate:          raw['Start Date']                  || '',
     endDate:            raw['End Date']                    || '',
     revenue:            raw['Revenue']                     ?? 0,
@@ -323,6 +356,7 @@ function normalizeRow(raw) {
     enrolledCapacity:   raw['Enrolled / Capacity']         || '',
     fillPct:            raw['Fill %']                      ?? null,
     waitlist:           raw['Waitlist']                    ?? 0,
+    cancellations:      raw['Cancellations']               ?? 0,
     refunds:            raw['Refunds']                     ?? 0,
     netRevenue:         raw['Net Revenue']                 ?? 0,
   };
@@ -348,6 +382,7 @@ function App() {
   const [showDetails, setShowDetails] = useState(() => {
     try { return localStorage.getItem(LS_SHOW_DETAILS) === 'true'; } catch { return false; }
   });
+  const [colPresence, setColPresence] = useState({ regMode: false, breakdown: false, cancellations: false });
 
   function toggleDetails() {
     setShowDetails(prev => {
@@ -369,10 +404,16 @@ function App() {
     fetch(withToken(`${basePath}/api/data?${qs}`))
       .then(r => { if (!r.ok) throw new Error(`Server returned ${r.status}`); return r.json(); })
       .then(json => {
-        setRows((json.rows || []).map(normalizeRow));
+        const raw = json.rows || [];
+        setRows(raw.map(normalizeRow));
         setMeta(json.meta || {});
         setLoadedStart(sd);
         setLoadedEnd(ed);
+        setColPresence({
+          regMode:       raw.some(r => r['Reg Mode'] != null && r['Reg Mode'] !== ''),
+          breakdown:     raw.some(r => r['Section Enrollments (opt)'] != null || r['Session Enrollments (opt)'] != null),
+          cancellations: raw.some(r => r['Cancellations'] != null),
+        });
       })
       .catch(err => setError(err.message))
       .finally(() => setLoading(false));
@@ -414,23 +455,44 @@ function App() {
   function downloadExcel() {
     if (!rows || rows.length === 0) return;
     const headers = [
-      'Program','Section','Season','Start Date','End Date','Revenue',
-      ...(showDetails ? ['Section Enrollments','Section Revenue','Session Enrollments','Session Revenue'] : []),
-      'Enrollments','Enrolled / Capacity','Fill %','Waitlist','Refunds','Net Revenue'
+      'Program','Section','Season',
+      ...(colPresence.regMode ? ['Reg Mode'] : []),
+      'Start Date','End Date','Revenue',
+      ...(showDetails && colPresence.breakdown ? ['Section Enrollments','Section Revenue','Session Enrollments','Session Revenue'] : []),
+      'Enrollments','Enrolled / Capacity','Fill %','Waitlist',
+      ...(colPresence.cancellations ? ['Cancellations','Cancellation %'] : []),
+      'Refunds','Net Revenue'
     ];
-    const data = rows.map(r => [
-      r.programName, r.sectionName, r.season, r.startDate, r.endDate,
-      fmtNum(r.revenue),
-      ...(showDetails ? [fmtNum(r.enrollmentsSection), fmtNum(r.revenueSection), fmtNum(r.enrollmentsSession), fmtNum(r.revenueSession)] : []),
-      fmtNum(r.enrollments), r.enrolledCapacity,
-      r.fillPct != null ? fmtNum(r.fillPct) : '',
-      fmtNum(r.waitlist), fmtNum(r.refunds), fmtNum(r.netRevenue),
-    ]);
+    const data = rows.map(r => {
+      const vis = regModeVis(r.regMode);
+      const cp  = cancelPct(r.cancellations, r.enrollments);
+      return [
+        r.programName, r.sectionName, r.season,
+        ...(colPresence.regMode ? [regModeLabel(r.regMode)] : []),
+        r.startDate, r.endDate,
+        fmtNum(r.revenue),
+        ...(showDetails && colPresence.breakdown ? [
+          vis.sec  ? fmtNum(r.enrollmentsSection) : '',
+          vis.sec  ? fmtNum(r.revenueSection)     : '',
+          vis.sess ? fmtNum(r.enrollmentsSession) : '',
+          vis.sess ? fmtNum(r.revenueSession)     : '',
+        ] : []),
+        fmtNum(r.enrollments), r.enrolledCapacity,
+        r.fillPct != null ? fmtNum(r.fillPct) : '',
+        fmtNum(r.waitlist),
+        ...(colPresence.cancellations ? [fmtNum(r.cancellations), cp != null ? `${fmtNum(cp)}%` : ''] : []),
+        fmtNum(r.refunds), fmtNum(r.netRevenue),
+      ];
+    });
     const ws = XLSX.utils.aoa_to_sheet([headers, ...data]);
     ws['!cols'] = [
-      {wch:30},{wch:30},{wch:14},{wch:12},{wch:12},{wch:12},
-      ...(showDetails ? [{wch:14},{wch:14},{wch:14},{wch:14}] : []),
-      {wch:12},{wch:16},{wch:8},{wch:10},{wch:12},{wch:12},
+      {wch:30},{wch:30},{wch:14},
+      ...(colPresence.regMode ? [{wch:14}] : []),
+      {wch:12},{wch:12},{wch:12},
+      ...(showDetails && colPresence.breakdown ? [{wch:14},{wch:14},{wch:14},{wch:14}] : []),
+      {wch:12},{wch:16},{wch:8},{wch:10},
+      ...(colPresence.cancellations ? [{wch:13},{wch:12}] : []),
+      {wch:12},{wch:12},
     ];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Program Revenue');
@@ -479,10 +541,15 @@ function App() {
       revenueSection:     acc.revenueSection     + fmtNum(r.revenueSection),
       revenueSession:     acc.revenueSession     + fmtNum(r.revenueSession),
       waitlist:           acc.waitlist           + fmtNum(r.waitlist),
-    }), { revenue:0, refunds:0, netRevenue:0, enrollments:0, enrollmentsSection:0, enrollmentsSession:0, revenueSection:0, revenueSession:0, waitlist:0 });
+      cancellations:      acc.cancellations      + fmtNum(r.cancellations),
+    }), { revenue:0, refunds:0, netRevenue:0, enrollments:0, enrollmentsSection:0, enrollmentsSession:0, revenueSection:0, revenueSession:0, waitlist:0, cancellations:0 });
   }, [filteredRows]);
 
   const programCount = grouped ? Object.keys(grouped).length : 0;
+  const hasRegMode       = colPresence.regMode;
+  const hasCancellations = colPresence.cancellations;
+  const showBreak        = showDetails && colPresence.breakdown;
+  const leftCols         = 4 + (hasRegMode ? 1 : 0);
   const isPrint = params._print === '1';
   const datesChanged = startDate !== loadedStart || endDate !== loadedEnd;
 
@@ -507,15 +574,17 @@ function App() {
         >
           {loading ? 'Loading…' : '▶ Run Report'}
         </button>
-        <div className="divider" />
-        <button
-          className={showDetails ? 'btn-toggle-on' : ''}
-          onClick={toggleDetails}
-          style={{fontSize:11, padding:'4px 10px'}}
-          title="Show section/session enrollment and revenue breakdown"
-        >
-          {showDetails ? '▾ Details: On' : '▸ Details: Off'}
-        </button>
+        {colPresence.breakdown && <>
+          <div className="divider" />
+          <button
+            className={showDetails ? 'btn-toggle-on' : ''}
+            onClick={toggleDetails}
+            style={{fontSize:11, padding:'4px 10px'}}
+            title="Show section/session enrollment and revenue breakdown"
+          >
+            {showDetails ? '▾ Details: On' : '▸ Details: Off'}
+          </button>
+        </>}
         <div className="divider" />
         <div style={{position:'relative',display:'flex',alignItems:'center'}}>
           <span style={{position:'absolute',left:8,color:'#666',fontSize:12,pointerEvents:'none'}}>🔍</span>
@@ -655,10 +724,11 @@ function App() {
               <tr>
                 <th className="left" style={{minWidth:180}}>Section</th>
                 <th className="left" style={{minWidth:100}}>Season</th>
+                {hasRegMode && <th className="left" style={{width:100}}>Reg Mode</th>}
                 <th className="left" style={{width:88}}>Start</th>
                 <th className="left" style={{width:88}}>End</th>
                 <th style={{width:90}}>Revenue</th>
-                {showDetails && <>
+                {showBreak && <>
                   <th style={{width:76}}>Sec Enroll</th>
                   <th style={{width:82}}>Sec Rev</th>
                   <th style={{width:76}}>Sess Enroll</th>
@@ -668,6 +738,10 @@ function App() {
                 <th style={{width:96}}>Enrolled / Cap</th>
                 <th style={{width:60}}>Fill %</th>
                 <th style={{width:64}}>Waitlist</th>
+                {hasCancellations && <>
+                  <th style={{width:84}}>Cancels</th>
+                  <th style={{width:72}}>Cancel %</th>
+                </>}
                 <th style={{width:90}}>Refunds</th>
                 <th style={{width:90}}>Net Rev</th>
               </tr>
@@ -684,15 +758,16 @@ function App() {
                   revenueSection:     acc.revenueSection     + fmtNum(r.revenueSection),
                   revenueSession:     acc.revenueSession     + fmtNum(r.revenueSession),
                   waitlist:           acc.waitlist           + fmtNum(r.waitlist),
-                }), {revenue:0,refunds:0,netRevenue:0,enrollments:0,enrollmentsSection:0,enrollmentsSession:0,revenueSection:0,revenueSession:0,waitlist:0});
+                  cancellations:      acc.cancellations      + fmtNum(r.cancellations),
+                }), {revenue:0,refunds:0,netRevenue:0,enrollments:0,enrollmentsSection:0,enrollmentsSession:0,revenueSection:0,revenueSession:0,waitlist:0,cancellations:0});
 
                 return (
                   <React.Fragment key={progName}>
                     {/* Program header */}
                     <tr className="prog-header">
-                      <td className="prog-name" colSpan={4}>{progName}</td>
+                      <td className="prog-name" colSpan={leftCols}>{progName}</td>
                       <td className="money">{fmtMoney(sub.revenue)}</td>
-                      {showDetails && <>
+                      {showBreak && <>
                         <td>{sub.enrollmentsSection || ''}</td>
                         <td className="money">{fmtMoney(sub.revenueSection)}</td>
                         <td>{sub.enrollmentsSession || ''}</td>
@@ -702,32 +777,45 @@ function App() {
                       <td>—</td>
                       <td>—</td>
                       <td>{sub.waitlist > 0 ? sub.waitlist : '—'}</td>
+                      {hasCancellations && <>
+                        <td className="muted">{sub.cancellations > 0 ? sub.cancellations : '—'}</td>
+                        <td className="muted">{cancelPct(sub.cancellations, sub.enrollments) != null ? `${fmtNum(cancelPct(sub.cancellations, sub.enrollments))}%` : '—'}</td>
+                      </>}
                       <td className="money">{fmtMoney(sub.refunds)}</td>
                       <td className="money">{fmtMoney(sub.netRevenue)}</td>
                     </tr>
 
                     {/* Section rows */}
-                    {sections.map((r, i) => (
+                    {sections.map((r, i) => {
+                      const vis = regModeVis(r.regMode);
+                      const cp  = cancelPct(r.cancellations, r.enrollments);
+                      return (
                       <tr key={i} className="data-row">
                         <td className="left" style={{paddingLeft:16}}>{r.sectionName}</td>
                         <td className="left mono">{r.season}</td>
+                        {hasRegMode && <td className="left">{regModeLabel(r.regMode)}</td>}
                         <td className="left mono">{r.startDate}</td>
                         <td className="left mono">{r.endDate}</td>
                         <td className={`money ${fmtNum(r.revenue) === 0 ? 'zero' : ''}`}>{fmtMoney(r.revenue)}</td>
-                        {showDetails && <>
-                          <td className={fmtNum(r.enrollmentsSection) === 0 ? 'zero' : ''}>{fmtNum(r.enrollmentsSection) || '—'}</td>
-                          <td className={`money ${fmtNum(r.revenueSection) === 0 ? 'zero' : ''}`}>{fmtMoney(r.revenueSection)}</td>
-                          <td className={fmtNum(r.enrollmentsSession) === 0 ? 'zero' : ''}>{fmtNum(r.enrollmentsSession) || '—'}</td>
-                          <td className={`money ${fmtNum(r.revenueSession) === 0 ? 'zero' : ''}`}>{fmtMoney(r.revenueSession)}</td>
+                        {showBreak && <>
+                          <td className={!vis.sec ? 'muted' : fmtNum(r.enrollmentsSection) === 0 ? 'zero' : ''}>{vis.sec ? (fmtNum(r.enrollmentsSection) || '—') : ''}</td>
+                          <td className={`money ${!vis.sec ? 'muted' : fmtNum(r.revenueSection) === 0 ? 'zero' : ''}`}>{vis.sec ? fmtMoney(r.revenueSection) : ''}</td>
+                          <td className={!vis.sess ? 'muted' : fmtNum(r.enrollmentsSession) === 0 ? 'zero' : ''}>{vis.sess ? (fmtNum(r.enrollmentsSession) || '—') : ''}</td>
+                          <td className={`money ${!vis.sess ? 'muted' : fmtNum(r.revenueSession) === 0 ? 'zero' : ''}`}>{vis.sess ? fmtMoney(r.revenueSession) : ''}</td>
                         </>}
                         <td>{fmtNum(r.enrollments) || '—'}</td>
                         <td className="mono">{r.enrolledCapacity || '—'}</td>
                         <td className={fillClass(r.fillPct)}>{r.fillPct != null ? `${fmtNum(r.fillPct)}%` : '—'}</td>
                         <td className={fmtNum(r.waitlist) === 0 ? 'muted' : ''}>{fmtNum(r.waitlist) || '—'}</td>
+                        {hasCancellations && <>
+                          <td className={fmtNum(r.cancellations) === 0 ? 'muted' : ''}>{fmtNum(r.cancellations) || '—'}</td>
+                          <td className={cp == null ? 'muted' : ''}>{cp != null ? `${fmtNum(cp)}%` : '—'}</td>
+                        </>}
                         <td className={`money ${fmtNum(r.refunds) === 0 ? 'zero' : ''}`}>{fmtMoney(r.refunds)}</td>
                         <td className={`money ${fmtNum(r.netRevenue) < 0 ? '' : ''}`} style={fmtNum(r.netRevenue) < 0 ? {color:'#b91c1c'} : {}}>{fmtMoney(r.netRevenue)}</td>
                       </tr>
-                    ))}
+                      );
+                    })}
                   </React.Fragment>
                 );
               })}
@@ -737,9 +825,9 @@ function App() {
             {totals && (
               <tfoot>
                 <tr>
-                  <td className="left" colSpan={4}>Grand Total — {filteredRows.length} section{filteredRows.length !== 1 ? 's' : ''} across {programCount} program{programCount !== 1 ? 's' : ''}</td>
+                  <td className="left" colSpan={leftCols}>Grand Total — {filteredRows.length} section{filteredRows.length !== 1 ? 's' : ''} across {programCount} program{programCount !== 1 ? 's' : ''}</td>
                   <td>{fmtMoney(totals.revenue)}</td>
-                  {showDetails && <>
+                  {showBreak && <>
                     <td>{totals.enrollmentsSection}</td>
                     <td>{fmtMoney(totals.revenueSection)}</td>
                     <td>{totals.enrollmentsSession}</td>
@@ -749,6 +837,10 @@ function App() {
                   <td>—</td>
                   <td>—</td>
                   <td>{totals.waitlist > 0 ? totals.waitlist : '—'}</td>
+                  {hasCancellations && <>
+                    <td>{totals.cancellations > 0 ? totals.cancellations : '—'}</td>
+                    <td>{cancelPct(totals.cancellations, totals.enrollments) != null ? `${fmtNum(cancelPct(totals.cancellations, totals.enrollments))}%` : '—'}</td>
+                  </>}
                   <td>{fmtMoney(totals.refunds)}</td>
                   <td>{fmtMoney(totals.netRevenue)}</td>
                 </tr>
