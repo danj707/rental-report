@@ -81,6 +81,9 @@
     .toolbar .btn-excel { background: #166534; border-color: #166534; font-weight: 600; }
     .toolbar .btn-excel:hover { background: #14532d; }
     .toolbar .btn-excel:disabled { opacity: .5; cursor: not-allowed; }
+    .toolbar .btn-pdf { background: #3b82f6; border-color: #3b82f6; font-weight: 600; }
+    .toolbar .btn-pdf:hover { background: #2563eb; }
+    .toolbar .btn-pdf:disabled { opacity: .5; cursor: not-allowed; }
     .toolbar .divider { width: 1px; height: 28px; background: rgba(255,255,255,.15); margin: 0 4px; }
     .toolbar .row-count { font-size: 11px; color: #aaa; }
 
@@ -408,6 +411,7 @@ function App() {
     return d ? new Set(d.split(',').map(s => s.trim()).filter(Boolean)) : new Set();
   });
   const [deskPickerOpen, setDeskPickerOpen] = useState(false);
+  const [pdfLoading, setPdfLoading] = useState(false);
   const [expanded, setExpanded] = useState(() => new Set());
 
   const chartRef = useRef(null);
@@ -588,6 +592,28 @@ function App() {
   function expandAll() { setExpanded(new Set(groups.map(g => g.dateISO))); }
   function collapseAll() { setExpanded(new Set()); }
 
+  function downloadPdf() {
+    setPdfLoading(true);
+    logClientEvent('pdf');
+    const p = new URLSearchParams();
+    if (loadedStart) p.set('start_date', loadedStart);
+    if (loadedEnd) p.set('end_date', loadedEnd);
+    if (byDesk) p.set('by_desk', '1');
+    if (hideZero) p.set('hide_zero', '1');
+    p.set('chart_net', showNet ? '1' : '0');
+    if (selectedDesks.size > 0) p.set('desks', Array.from(selectedDesks).join(','));
+    fetch(withToken(`/${orgSlug}/products/api/pdf?${p.toString()}`))
+      .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.blob(); })
+      .then(blob => {
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = `products-daily-${loadedStart || 'export'}_${loadedEnd || ''}.pdf`;
+        link.click(); URL.revokeObjectURL(link.href);
+      })
+      .catch(err => alert('PDF generation failed: ' + err.message))
+      .finally(() => setPdfLoading(false));
+  }
+
   function exportExcel() {
     logClientEvent('excel');
     const header = byDesk
@@ -667,6 +693,7 @@ function App() {
           <span className="divider" />
           <button className="btn-excel" onClick={exportExcel} disabled={loading || filtered.length === 0}>Excel</button>
           <button onClick={() => { logClientEvent('print'); window.print(); }}>Print</button>
+          <button className="btn-pdf" onClick={downloadPdf} disabled={pdfLoading || filtered.length === 0}>{pdfLoading ? 'Generating…' : '📄 PDF'}</button>
         </div>
       )}
 
