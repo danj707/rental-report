@@ -1710,7 +1710,7 @@ app.get("/", (req, res) => {
     overview:    { label: "Facility Overview",         icon: "📈", desc: "Revenue and activity summary by location",                 color: "#059669" },
     products:    { label: "Product Sales",          icon: "🛒", desc: "Daily revenue, refunds, and net by product",           color: "#0891b2" },
     memberships: { label: "Memberships",                icon: "🎫", desc: "Active and lapsed memberships with renewal tracking",       color: "#db2777" },
-    "court-utilization": { label: "Court Utilization",  icon: "🎾", desc: "Court utilization % or reserved hours by court, split by customer, program, and closure usage", color: "#0d9488" },
+    "court-utilization": { label: "Court Utilization",  icon: "🎾", desc: "Court utilization % or reserved hours by court, split by customer, program, and closure usage", color: "#0d9488", ai: true },
   };
 
   const orgSections = Object.entries(ORGS).map(([slug, org]) => {
@@ -1728,6 +1728,7 @@ app.get("/", (req, res) => {
           <div class="report-body">
             <div class="report-label">${m.label}</div>
             <div class="report-desc">${m.desc}</div>
+            ${m.ai ? '<span class="ai-pill">✦ AI enhanced</span>' : ''}
           </div>
           <span class="report-arrow">→</span>
         </a>`;
@@ -1827,6 +1828,7 @@ app.get("/", (req, res) => {
     .report-body { flex: 1; min-width: 0; }
     .report-label { font-weight: 600; font-size: 13px; }
     .report-desc  { font-size: 11px; color: #999; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .ai-pill { display: inline-flex; align-items: center; gap: 3px; font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; padding: 2px 7px; border-radius: 20px; background: linear-gradient(90deg, #6d28d9, #0d9488); color: #fff; margin-top: 5px; }
     .report-arrow { font-size: 14px; color: #ccc; flex-shrink: 0; }
     .report-card:hover .report-arrow { color: var(--accent, #888); }
     .org-name-link { font-weight: 700; font-size: 14px; color: inherit; text-decoration: none; }
