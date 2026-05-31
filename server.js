@@ -2378,6 +2378,11 @@ app.get("/", (req, res) => {
     // Newest first. Add a new entry at the TOP for every change we ship.
     // History below back-filled from the GitHub commit log.
     const UPDATES = [
+      { date: '2026-05-31', title: 'AI insights on Court Utilization', items: [
+        '\\u201CGet insights\\u201D button on the Court Utilization report (Apex) \\u2014 AI-generated analysis cards (opportunity / risk / signal) with a concrete next step each',
+        'Reads the on-screen filtered view, so insights honor the active location / programs / closures filters',
+        'Backed by Claude Haiku; results cached server-side per filtered view; only court/location aggregates leave \\u2014 no PII, no revenue data',
+      ]},
       { date: '2026-05-31', title: 'Updates log + Norman product sales', items: [
         'Added this expandable Updates log to the dashboard (history back-filled from git)',
         'Norman: new daily POS product report on its own Metabase question \u2014 aggregate-by-name default, By Desk toggle, Net/Gross buttons, collapsible dates, filter-honoring Excel/PDF exports',
