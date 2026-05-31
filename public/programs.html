@@ -386,9 +386,9 @@ function App() {
     try { return localStorage.getItem(LS_SHOW_DETAILS) === 'true'; } catch { return false; }
   });
   const [colPresence, setColPresence] = useState({ regMode: false, breakdown: false, cancellations: false });
-  const [showRegMode,  setShowRegMode]  = useState(() => { try { return localStorage.getItem(LS_SHOW_REGMODE)  !== 'false'; } catch { return true; } });
-  const [showWaitlist, setShowWaitlist] = useState(() => { try { return localStorage.getItem(LS_SHOW_WAITLIST) !== 'false'; } catch { return true; } });
-  const [showCancels,  setShowCancels]  = useState(() => { try { return localStorage.getItem(LS_SHOW_CANCELS)  !== 'false'; } catch { return true; } });
+  const [showRegMode,  setShowRegMode]  = useState(() => { try { return localStorage.getItem(LS_SHOW_REGMODE)  === 'true'; } catch { return false; } });
+  const [showWaitlist, setShowWaitlist] = useState(() => { try { return localStorage.getItem(LS_SHOW_WAITLIST) === 'true'; } catch { return false; } });
+  const [showCancels,  setShowCancels]  = useState(() => { try { return localStorage.getItem(LS_SHOW_CANCELS)  === 'true'; } catch { return false; } });
 
   function toggleDetails() {
     setShowDetails(prev => {
