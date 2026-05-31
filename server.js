@@ -25,6 +25,7 @@ const path       = require("path");
 const fs         = require("fs");
 const cron       = require("node-cron");
 const { Resend } = require("resend");
+const crypto     = require("crypto");
 
 // Catch anything that slips through
 process.on("uncaughtException", err => console.error("[uncaught]", err));
@@ -867,6 +868,141 @@ app.post("/:org/:report/api/share", resolveOrg, async (req, res) => {
   } catch (err) {
     console.error(`[share] Failed: ${err.message}`);
     res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// ── POST /:org/:report/api/insights — AI insights via Claude ─────────
+const INSIGHTS_MODEL = process.env.INSIGHTS_MODEL || "claude-haiku-4-5";
+
+const INSIGHTS_SYS_PROMPT = `You are a facilities operations analyst for US municipal parks & recreation departments. You are given aggregate court-utilization statistics for a single reporting period (counts, percentages, and hours — already computed for you; never recompute or do arithmetic the data doesn't support).
+
+Return EXACTLY 4 insights as a JSON array and nothing else — no prose, no preamble, no markdown code fences. Each element is an object with exactly these keys:
+{
+  "type": "opportunity" | "risk" | "signal",
+  "title": short label, 7 words or fewer,
+  "detail": one sentence, 22 words or fewer, citing specific numbers, courts, or locations drawn from the data,
+  "action": one concrete next step, 12 words or fewer
+}
+
+Rules:
+- Ground EVERY figure in the data provided. Never invent numbers, courts, or locations.
+- NEVER mention revenue, dollars, money, pricing, or fees — that data is not present and is out of scope.
+- Prefer non-obvious observations. Name specific courts and locations rather than speaking generally.
+- Be terse. No filler. Vary the "type" across the four insights where the data supports it.`;
+
+// Extract up to 4 valid insight objects from a model text response.
+function salvageInsights(text) {
+  if (!text) return [];
+  let s = String(text).trim();
+  // strip ```json ... ``` or ``` ... ``` fences
+  s = s.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
+
+  // fast path: whole thing parses
+  try {
+    const whole = JSON.parse(s);
+    const arr = Array.isArray(whole) ? whole : (Array.isArray(whole?.insights) ? whole.insights : null);
+    if (arr) return arr.filter(o => o && o.type && o.title).slice(0, 4);
+  } catch (_) { /* fall through to brace salvage */ }
+
+  // salvage: brace-count balanced top-level {...} objects
+  const out = [];
+  let depth = 0, start = -1, inStr = false, esc = false;
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (inStr) {
+      if (esc) esc = false;
+      else if (ch === "\\") esc = true;
+      else if (ch === '"') inStr = false;
+      continue;
+    }
+    if (ch === '"') { inStr = true; continue; }
+    if (ch === "{") { if (depth === 0) start = i; depth++; }
+    else if (ch === "}") {
+      depth--;
+      if (depth === 0 && start !== -1) {
+        const chunk = s.slice(start, i + 1);
+        try {
+          const obj = JSON.parse(chunk);
+          if (obj && obj.type && obj.title) out.push(obj);
+        } catch (_) { /* skip malformed chunk */ }
+        start = -1;
+        if (out.length >= 4) break;
+      }
+    }
+  }
+  return out.slice(0, 4);
+}
+
+// tiny in-memory cache: sha256(org+report+blob) → { ts, insights }
+const _insightsCache = new Map();
+const INSIGHTS_TTL_MS = 10 * 60 * 1000;
+const INSIGHTS_CACHE_MAX = 200;
+
+app.post("/:org/:report/api/insights", resolveOrg, async (req, res) => {
+  const { orgSlug, reportType } = req;
+  const blob = req.body;
+
+  if (!blob || typeof blob !== "object" || Array.isArray(blob)) {
+    return res.status(400).json({ ok: false, error: "Missing or invalid stats payload" });
+  }
+  if (!process.env.ANTHROPIC_API_KEY) {
+    return res.status(503).json({ ok: false, error: "AI insights not configured" });
+  }
+
+  const key = crypto.createHash("sha256")
+    .update(orgSlug + "|" + reportType + "|" + JSON.stringify(blob))
+    .digest("hex");
+
+  const hit = _insightsCache.get(key);
+  if (hit && Date.now() - hit.ts < INSIGHTS_TTL_MS) {
+    return res.json({ ok: true, insights: hit.insights, cached: true });
+  }
+
+  try {
+    const resp = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "x-api-key": process.env.ANTHROPIC_API_KEY,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        model: INSIGHTS_MODEL,
+        max_tokens: 700,
+        system: INSIGHTS_SYS_PROMPT,
+        messages: [{ role: "user", content: JSON.stringify(blob) }],
+      }),
+    });
+
+    if (!resp.ok) {
+      const errBody = await resp.text();
+      console.error(`[insights] Anthropic ${resp.status}: ${errBody}`);
+      return res.status(502).json({ ok: false, error: "Upstream AI request failed" });
+    }
+
+    const data = await resp.json();
+    const text = (data.content || [])
+      .filter(c => c.type === "text")
+      .map(c => c.text)
+      .join("");
+
+    const insights = salvageInsights(text);
+    if (!insights.length) {
+      console.error(`[insights] Could not parse insights from model output: ${text.slice(0, 300)}`);
+      return res.status(502).json({ ok: false, error: "Could not parse AI response" });
+    }
+
+    if (_insightsCache.size >= INSIGHTS_CACHE_MAX) {
+      const oldest = _insightsCache.keys().next().value;
+      _insightsCache.delete(oldest);
+    }
+    _insightsCache.set(key, { ts: Date.now(), insights });
+
+    logEvent(orgSlug, reportType, "insights", req.ip);
+    res.json({ ok: true, insights, cached: false });
+  } catch (err) {
+    console.error("[insights] Error:", err);
+    res.status(502).json({ ok: false, error: "Upstream AI request failed" });
   }
 });
 
