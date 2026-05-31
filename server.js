@@ -141,6 +141,9 @@ const ORGS = {
 };
 
 const REPORT_TYPES = ["facility", "gl", "historic", "programs", "roster", "overview", "products", "memberships", "court-utilization"];
+// Report types that are valid system-wide but should NOT be offered in the
+// dashboard "+ Add report" flow (e.g. not yet ready for self-serve onboarding).
+const NON_ADDABLE_REPORTS = new Set(["overview"]);
 
 // ── Dynamic orgs (added via dashboard UI) ────────────────────────────
 // Loaded at startup and merged into ORGS; also updated at runtime.
@@ -1746,6 +1749,9 @@ app.post("/api/admin/add-report", async (req, res) => {
   if (!report || !REPORT_TYPES.includes(report)) {
     return res.status(400).json({ error: "Valid report type required" });
   }
+  if (NON_ADDABLE_REPORTS.has(report)) {
+    return res.status(400).json({ error: `Report type "${report}" can't be added from the dashboard` });
+  }
   if (org[report] && org[report].mbUuid) {
     return res.status(400).json({ error: `Org "${slug}" already has a "${report}" report \u2014 use the link editor to change it` });
   }
@@ -1864,7 +1870,7 @@ app.get("/", (req, res) => {
     });
 
     // Append a dashed "add report" tile for any report types this org lacks.
-    const missing = REPORT_TYPES.filter(r => !(org[r] && org[r].mbUuid));
+    const missing = REPORT_TYPES.filter(r => !NON_ADDABLE_REPORTS.has(r) && !(org[r] && org[r].mbUuid));
     if (missing.length) {
       cards.push(`
         <button type="button" class="report-card add-report-card" onclick="openAddReport('${slug}')" title="Add a report to this org">
@@ -1936,7 +1942,7 @@ app.get("/", (req, res) => {
     Object.entries(ORGS).map(([slug, org]) => {
       const slugTitle = slug.charAt(0).toUpperCase() + slug.slice(1);
       const displayName = org.displayName || `${slugTitle} Parks & Recreation`;
-      const missing = REPORT_TYPES.filter(r => !(org[r] && org[r].mbUuid));
+      const missing = REPORT_TYPES.filter(r => !NON_ADDABLE_REPORTS.has(r) && !(org[r] && org[r].mbUuid));
       return [slug, { displayName, missing }];
     })
   );
@@ -2764,6 +2770,10 @@ app.get("/", (req, res) => {
     // Newest first. Add a new entry at the TOP for every change we ship.
     // History below back-filled from the GitHub commit log.
     const UPDATES = [
+      { date: '2026-05-31', title: 'Facility Overview removed from the Add-report list', items: [
+        'The \u201c\uFF0B Add report\u201d modal no longer offers Facility Overview as an addable report type',
+        'Facility Overview remains a valid report system-wide; it is simply excluded from the self-serve add flow via a NON_ADDABLE_REPORTS guard (enforced in the UI count, the modal, and the /api/admin/add-report endpoint)',
+      ]},
       { date: '2026-05-31', title: 'Add reports to existing orgs from the dashboard', items: [
         'Each org card now shows a dashed \u201c\uFF0B Add report\u201d tile for any report types that org is missing',
         'Clicking it opens a modal to paste the Metabase public link (or UUID) for one or more missing reports at once',
