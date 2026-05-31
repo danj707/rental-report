@@ -1667,6 +1667,15 @@ app.get("/", (req, res) => {
     .mb-toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: #16a34a; color: #fff; padding: 12px 22px; border-radius: 8px; font-size: 13px; font-weight: 600; box-shadow: 0 8px 24px rgba(0,0,0,.2); z-index: 2000; opacity: 0; transition: opacity .25s, transform .25s; pointer-events: none; }
     .mb-toast.show { opacity: 1; transform: translateX(-50%) translateY(-4px); }
     footer { text-align: center; padding: 24px; font-size: 11px; color: #bbb; }
+    /* Updates log */
+    .updates-count { font-size: 11px; font-weight: 600; color: #888; background: #f0ede8; border-radius: 10px; padding: 1px 8px; margin-left: 6px; }
+    .how-body .update-entry { display: flex; gap: 14px; padding: 12px 0; border-bottom: 1px solid #f3f3f3; }
+    .how-body .update-entry:first-child { padding-top: 0; }
+    .how-body .update-entry:last-child { border-bottom: none; padding-bottom: 0; }
+    .how-body .update-date { flex: 0 0 84px; font-family: monospace; font-size: 11px; color: #999; padding-top: 1px; }
+    .how-body .update-title { font-weight: 600; font-size: 12.5px; margin-bottom: 4px; color: #222; }
+    .how-body .update-items { margin: 0; padding-left: 16px; }
+    .how-body .update-items li { font-size: 12px; color: #555; margin: 2px 0; line-height: 1.45; }
   </style>
 </head>
 <body>
@@ -1780,6 +1789,18 @@ app.get("/", (req, res) => {
           <button onclick="mbCloseModal()" style="padding:9px 16px;background:none;border:1px solid #ddd;border-radius:5px;font-size:13px;cursor:pointer">Cancel</button>
           <button id="mb-modal-save" onclick="mbSaveLink()" style="padding:9px 22px;background:#16a34a;color:#fff;border:none;border-radius:5px;font-size:13px;font-weight:600;cursor:pointer">Save &amp; Deploy</button>
         </div>
+      </div>
+    </div>
+
+    <div class="org-section">
+      <div class="org-header" onclick="toggleHow(this)" style="cursor:pointer;user-select:none">
+        <div class="org-header-text">
+          <div class="org-name">&#128203; Updates <span class="updates-count" id="updates-count"></span></div>
+        </div>
+        <span class="how-chevron">&#9658;</span>
+      </div>
+      <div class="how-body">
+        <div class="updates-list" id="updates-list"></div>
       </div>
     </div>
 
@@ -2216,6 +2237,94 @@ app.get("/", (req, res) => {
       t.classList.add('show');
       setTimeout(() => t.classList.remove('show'), 3200);
     }
+
+    // ── Updates log ───────────────────────────────────────────────────────
+    // Newest first. Add a new entry at the TOP for every change we ship.
+    // History below back-filled from the GitHub commit log.
+    const UPDATES = [
+      { date: '2026-05-31', title: 'Updates log + Norman product sales', items: [
+        'Added this expandable Updates log to the dashboard (history back-filled from git)',
+        'Norman: new daily POS product report on its own Metabase question \u2014 aggregate-by-name default, By Desk toggle, Net/Gross buttons, collapsible dates, filter-honoring Excel/PDF exports',
+        'Renamed Norman\u2019s \u201CProduct Sales MoM\u201D card to \u201CProduct Sales\u201D',
+      ]},
+      { date: '2026-05-29', title: 'Metabase link editor, Midland, polish', items: [
+        'All-org Metabase Links editor (password-protected) added to the root dashboard',
+        'Onboarded Midland',
+        'PDF exports now respect the active location/site filters',
+        'No-cache headers on report pages so deploys aren\u2019t masked by stale browser cache',
+        'Removed the unused pub_*.html root mirrors \u2014 server serves public/*.html only',
+        'Dancing banana loading animation across every report page \uD83C\uDF4C',
+      ]},
+      { date: '2026-05-28', title: 'Token auth, Memberships, Court Utilization, feedback', items: [
+        'Per-org token auth across all /:org/* routes',
+        'New Memberships report (Norman)',
+        'New Court Utilization report (Apex) with per-court and overall utilization %',
+        'GL report: Account Credit card/column, # Pmts / # Rfnds count columns, desk-location filter (Clarksville)',
+        '\u201CGot Feedback?\u201D widget on every report',
+        'Saved-view subscriptions \u2014 subscribe to a specific filtered view',
+      ]},
+      { date: '2026-05-27', title: 'Self-service orgs, product filters, How This Works', items: [
+        'Admin dashboard can now create new orgs (writes to server.js via GitHub) \u2014 onboarded Littleton and Danvers',
+        'Program Revenue report added to Norman',
+        'Products report: desk-location picker, refund/net toggles, hide-zero rows',
+        'Collapsible \u201CHow This Works\u201D card on the dashboard',
+        'New add-rec-report-org Claude skill',
+      ]},
+      { date: '2026-05-24', title: 'Facility calendar + sharing', items: [
+        'Calendar view on the facility report (location colors, hover cards, heatmap strip)',
+        'This Week / Next Week quick ranges; click-to-expand day detail with Print/PDF',
+        'Email share button + share route',
+        'Overview report: location filter, per-location membership/pass attribution',
+      ]},
+      { date: '2026-05-23', title: 'Apex, dashboard metrics, Hot Dog Counter', items: [
+        'Onboarded Apex (location filter, rolling default date range)',
+        'Dashboard metrics: 30-day Chart.js timeline; cadence decoupled from date range; add-org modal',
+        'Site filter on facility report; clickable org names on the dashboard',
+        'Hot Dog Counter: staff claims, leaderboard, 15-min auto-refresh \uD83C\uDF2D',
+      ]},
+      { date: '2026-05-22', title: 'Roster, Overview, analytics, org pages', items: [
+        'Class Roster report with form-response sub-rows (all four orgs + The Ranch)',
+        'Facility Overview report',
+        'Analytics tracking + metrics dashboard',
+        'Org landing page at /:org; org logos in report headers',
+        'Hot Dog Counter launched',
+      ]},
+      { date: '2026-05-16', title: 'Subscriptions + Program Revenue', items: [
+        'Program Revenue report (Watertown) with program-name search',
+        'Subscriptions link in every report toolbar; report checkboxes load dynamically in admin',
+        'Subscription emails send report links instead of PDF attachments',
+      ]},
+      { date: '2026-05-15', title: 'GL charts', items: [
+        'Table / Bar / Pie chart toggle on the GL report',
+      ]},
+      { date: '2026-05-11', title: 'Watertown GL', items: [
+        'Enabled the GL Code Rollup report for Watertown',
+      ]},
+      { date: '2026-04-13', title: 'Initial build', items: [
+        'Express proxy + Puppeteer PDF rendering',
+        'Facility Rental Schedule, GL Code Rollup, and Historic Buildings reports',
+        'Admin subscriptions page',
+        'Onboarded Clarksville, Norman, and Smyrna',
+      ]},
+    ];
+
+    function renderUpdates() {
+      const countEl = document.getElementById('updates-count');
+      const listEl  = document.getElementById('updates-list');
+      if (!listEl) return;
+      if (countEl) countEl.textContent = UPDATES.length;
+      const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      listEl.innerHTML = UPDATES.map(u => \`
+        <div class="update-entry">
+          <div class="update-date">\${esc(u.date)}</div>
+          <div class="update-body">
+            <div class="update-title">\${esc(u.title)}</div>
+            <ul class="update-items">\${u.items.map(i => \`<li>\${esc(i)}</li>\`).join('')}</ul>
+          </div>
+        </div>
+      \`).join('');
+    }
+    renderUpdates();
 
     (function(){
       const ov = document.getElementById('mb-modal-overlay');
