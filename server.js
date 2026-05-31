@@ -322,6 +322,71 @@ async function updateReportUuidOnGitHub(slug, reportType, newUuid, commitMessage
   return { oldUuid, commitUrl: putData.commit.html_url, commitSha: putData.commit.sha };
 }
 
+// Insert-or-replace one report's mbUuid inside an org block. Unlike
+// patchReportUuid (which requires the report to already exist), this also
+// handles adding a report line that isn't there yet, or replacing a null
+// placeholder. Returns { content, mode: "inserted"|"replaced", oldUuid }.
+function setReportUuidInSource(content, slug, reportType, newUuid) {
+  if (!STRICT_UUID.test(newUuid)) throw new Error("Invalid UUID format");
+  const blockRe = new RegExp(`\\n  ${escapeRegExp(slug)}:\\s*\\{[\\s\\S]*?\\n  \\},`);
+  const bm = content.match(blockRe);
+  if (!bm) throw new Error(`Org "${slug}" not found in server.js`);
+  const block = bm[0];
+
+  const keyPat = `(?:"${escapeRegExp(reportType)}"|${escapeRegExp(reportType)})`;
+  const reportRe = new RegExp(`(${keyPat}\\s*:\\s*\\{[^{}]*?mbUuid:\\s*)("?)(?:[0-9a-f-]{36}|null)("?)`);
+  const rm = block.match(reportRe);
+
+  let newBlock, mode, oldUuid = null;
+  if (rm) {
+    // Report key already present (possibly a null placeholder) — replace it.
+    oldUuid = (rm[0].match(/mbUuid:\s*"?([0-9a-f-]{36}|null)/) || [])[1] || null;
+    if (oldUuid === newUuid) throw new Error("No change made (UUID already set)");
+    newBlock = block.replace(reportRe, `$1"${newUuid}"`);
+    mode = "replaced";
+  } else {
+    // Report key absent — insert a new line before the block's closing "},".
+    const keyToken = /^[a-z]+$/.test(reportType) ? reportType.padEnd(8) : `"${reportType}"`;
+    const line = `    ${keyToken}: { mbUuid: ${JSON.stringify(newUuid)} },`;
+    newBlock = block.replace(/\n  \},$/, `\n${line}\n  },`);
+    mode = "inserted";
+  }
+  if (newBlock === block) throw new Error("Patch produced no change");
+  const newContent = content.replace(block, () => newBlock);
+  return { content: newContent, mode, oldUuid };
+}
+
+// GET server.js (+sha), insert-or-replace one report's uuid, PUT it back.
+async function addReportUuidOnGitHub(slug, reportType, newUuid, commitMessage) {
+  const token = process.env.GITHUB_TOKEN;
+  if (!token) throw new Error("GITHUB_TOKEN not configured");
+  const headers = {
+    Authorization: `token ${token}`,
+    Accept: "application/vnd.github.v3+json",
+  };
+  const getRes = await fetch(GITHUB_API, { headers });
+  if (!getRes.ok) throw new Error(`GitHub GET ${getRes.status}: ${await getRes.text()}`);
+  const getData = await getRes.json();
+  const content = Buffer.from(getData.content, "base64").toString("utf8");
+  const sha = getData.sha;
+
+  const { content: patched, mode, oldUuid } = setReportUuidInSource(content, slug, reportType, newUuid);
+  if (patched === content) throw new Error("Patch produced no change");
+
+  const putRes = await fetch(GITHUB_API, {
+    method: "PUT",
+    headers: { ...headers, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      message: commitMessage,
+      content: Buffer.from(patched).toString("base64"),
+      sha,
+    }),
+  });
+  if (!putRes.ok) throw new Error(`GitHub PUT ${putRes.status}: ${await putRes.text()}`);
+  const putData = await putRes.json();
+  return { mode, oldUuid, commitUrl: putData.commit.html_url, commitSha: putData.commit.sha };
+}
+
 // Validate the dashboard password from a POST body. Returns true if it already
 // ended the response (caller should `return`), false to proceed.
 function dashboardPasswordBlocked(req, res) {
@@ -1667,6 +1732,48 @@ app.post("/api/admin/update-link", async (req, res) => {
   }
 });
 
+// \u2500\u2500 POST /api/admin/add-report \u2014 add a report type to an existing org \u2500
+// Inserts the report's mbUuid into the org's block in server.js on GitHub
+// (Railway auto-redeploys) and updates the in-memory ORGS map. Use this to
+// ADD a report an org is missing; use /update-link to change an existing one.
+app.post("/api/admin/add-report", async (req, res) => {
+  if (dashboardPasswordBlocked(req, res)) return;
+  const { org: slug, report, link } = req.body || {};
+  const org = ORGS[slug];
+  if (!org) return res.status(404).json({ error: "Unknown org" });
+  if (!report || !REPORT_TYPES.includes(report)) {
+    return res.status(400).json({ error: "Valid report type required" });
+  }
+  if (org[report] && org[report].mbUuid) {
+    return res.status(400).json({ error: `Org "${slug}" already has a "${report}" report \u2014 use the link editor to change it` });
+  }
+  const newUuid = extractMbUuidFromInput(link);
+  if (!newUuid || !STRICT_UUID.test(newUuid)) {
+    return res.status(400).json({ error: "Could not find a valid Metabase UUID in that link" });
+  }
+  if (!process.env.GITHUB_TOKEN) {
+    return res.status(503).json({ error: "GITHUB_TOKEN not configured on the server" });
+  }
+  try {
+    const result = await addReportUuidOnGitHub(
+      slug, report, newUuid,
+      `Add ${slug}/${report} report -> ${newUuid}`,
+    );
+    ORGS[slug][report] = { ...(ORGS[slug][report] || {}), mbUuid: newUuid };
+    console.log(`[add-report] ${slug}/${report}: ${result.mode} -> ${newUuid}`);
+    res.json({
+      ok: true,
+      newUuid,
+      mode: result.mode,
+      commitUrl: result.commitUrl,
+      publicUrl: `${METABASE_URL}/public/question/${newUuid}`,
+    });
+  } catch (err) {
+    console.error("[add-report] Error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── POST /api/admin/new-org — create a new org dynamically ──────────
 // Pushes the new entry to server.js on GitHub (so it lives in code).
 // Falls back to data/orgs.json if the GitHub push fails, so the org
@@ -1754,6 +1861,19 @@ app.get("/", (req, res) => {
         </a>`;
     });
 
+    // Append a dashed "add report" tile for any report types this org lacks.
+    const missing = REPORT_TYPES.filter(r => !(org[r] && org[r].mbUuid));
+    if (missing.length) {
+      cards.push(`
+        <button type="button" class="report-card add-report-card" onclick="openAddReport('${slug}')" title="Add a report to this org">
+          <span class="report-icon">＋</span>
+          <div class="report-body">
+            <div class="report-label">Add report</div>
+            <div class="report-desc">${missing.length} more report${missing.length !== 1 ? 's' : ''} available</div>
+          </div>
+        </button>`);
+    }
+
     // Admin link with subscriber summary
     let adminLink = "";
     if (org.orgId) {
@@ -1806,6 +1926,19 @@ app.get("/", (req, res) => {
       </div>`;
   }).join("");
 
+  // Data for the "Add reports" modal: per-org missing report types + labels.
+  const addReportMeta = Object.fromEntries(
+    Object.entries(reportMeta).map(([k, m]) => [k, { label: m.label, icon: m.icon }])
+  );
+  const addReportOrgs = Object.fromEntries(
+    Object.entries(ORGS).map(([slug, org]) => {
+      const slugTitle = slug.charAt(0).toUpperCase() + slug.slice(1);
+      const displayName = org.displayName || `${slugTitle} Parks & Recreation`;
+      const missing = REPORT_TYPES.filter(r => !(org[r] && org[r].mbUuid));
+      return [slug, { displayName, missing }];
+    })
+  );
+
   res.send(`<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -1851,6 +1984,10 @@ app.get("/", (req, res) => {
     .ai-pill { display: inline-flex; align-items: center; gap: 3px; font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; padding: 2px 7px; border-radius: 20px; background: linear-gradient(90deg, #6d28d9, #0d9488); color: #fff; margin-top: 5px; }
     .report-arrow { font-size: 14px; color: #ccc; flex-shrink: 0; }
     .report-card:hover .report-arrow { color: var(--accent, #888); }
+    .add-report-card { border: none; border-left: 3px dashed #cbd5c0; background: #fbfbf9; cursor: pointer; font: inherit; text-align: left; width: 100%; }
+    .add-report-card:hover { background: #f3f6ef; border-left-color: #16a34a; }
+    .add-report-card .report-icon { color: #16a34a; font-weight: 700; }
+    .add-report-card .report-label { color: #16a34a; }
     .org-name-link { font-weight: 700; font-size: 14px; color: inherit; text-decoration: none; }
     .org-name-link:hover { color: #16a34a; text-decoration: underline; }
     .metrics-toggle-row { display: flex; align-items: center; gap: 10px; padding: 8px 16px; border-top: 1px solid #e8e5df; background: #fafaf8; }
@@ -2018,6 +2155,29 @@ app.get("/", (req, res) => {
         <div style="padding:0 22px 22px;display:flex;justify-content:flex-end;gap:10px">
           <button onclick="mbCloseModal()" style="padding:9px 16px;background:none;border:1px solid #ddd;border-radius:5px;font-size:13px;cursor:pointer">Cancel</button>
           <button id="mb-modal-save" onclick="mbSaveLink()" style="padding:9px 22px;background:#16a34a;color:#fff;border:none;border-radius:5px;font-size:13px;font-weight:600;cursor:pointer">Save &amp; Deploy</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="add-report-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:1000;overflow-y:auto;padding:40px 16px">
+      <div style="background:#fff;border-radius:10px;max-width:560px;margin:0 auto;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.3)">
+        <div style="padding:18px 22px;background:#16a34a;color:#fff;display:flex;align-items:center;justify-content:space-between">
+          <div>
+            <div style="font-weight:700;font-size:15px">Add reports</div>
+            <div style="font-size:11px;color:#dcfce7;margin-top:2px" id="add-report-sub"></div>
+          </div>
+          <button onclick="closeAddReport()" style="background:none;border:none;color:#dcfce7;font-size:20px;cursor:pointer;padding:4px">&#10005;</button>
+        </div>
+        <div style="padding:22px">
+          <p style="font-size:12px;color:#666;margin:0 0 16px">Paste the Metabase <strong>public link</strong> (or UUID) for each report you want to add. Leave a field blank to skip it. Existing report links aren&rsquo;t changed.</p>
+          <div id="add-report-fields"></div>
+          <label style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:#888;display:block;margin:4px 0 6px">Dashboard password</label>
+          <input id="add-report-pwd" type="password" placeholder="Dashboard password" style="width:100%;padding:9px 11px;border:1px solid #ddd;border-radius:5px;font-size:13px;box-sizing:border-box" />
+          <div id="add-report-err" style="margin-top:10px;color:#dc2626;font-size:12px;display:none"></div>
+        </div>
+        <div style="padding:0 22px 22px;display:flex;justify-content:flex-end;gap:10px">
+          <button onclick="closeAddReport()" style="padding:9px 16px;background:none;border:1px solid #ddd;border-radius:5px;font-size:13px;cursor:pointer">Cancel</button>
+          <button id="add-report-save" onclick="submitAddReports()" style="padding:9px 22px;background:#16a34a;color:#fff;border:none;border-radius:5px;font-size:13px;font-weight:600;cursor:pointer">Add &amp; Deploy</button>
         </div>
       </div>
     </div>
@@ -2377,6 +2537,82 @@ app.get("/", (req, res) => {
     }
   </script>
   <script>
+    // ── Add reports to an existing org ─────────────────
+    const ADD_REPORT_ORGS = ${JSON.stringify(addReportOrgs)};
+    const ADD_REPORT_META = ${JSON.stringify(addReportMeta)};
+    let addReportSlug = null;
+
+    function openAddReport(slug) {
+      const info = ADD_REPORT_ORGS[slug];
+      if (!info || !info.missing || !info.missing.length) return;
+      addReportSlug = slug;
+      document.getElementById('add-report-sub').textContent = info.displayName + ' · ' + slug;
+      document.getElementById('add-report-fields').innerHTML = info.missing.map(function(r) {
+        const m = ADD_REPORT_META[r] || { label: r, icon: '📄' };
+        return '<div style="margin-bottom:14px">'
+          + '<label style="font-size:12px;font-weight:600;color:#333;display:block;margin-bottom:6px">'
+          +   (m.icon || '📄') + ' ' + m.label
+          +   ' <span style="font-weight:400;color:#aaa">(' + r + ')</span></label>'
+          + '<input data-report="' + r + '" class="add-report-input" type="text" '
+          +   'placeholder="Metabase public link or UUID" '
+          +   'style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:5px;font-size:12px;font-family:monospace;box-sizing:border-box" />'
+          + '</div>';
+      }).join('');
+      const pwd = document.getElementById('add-report-pwd');
+      if (mbPwd) pwd.value = mbPwd;
+      document.getElementById('add-report-err').style.display = 'none';
+      document.getElementById('add-report-overlay').style.display = 'block';
+      document.body.style.overflow = 'hidden';
+    }
+
+    function closeAddReport() {
+      document.getElementById('add-report-overlay').style.display = 'none';
+      document.body.style.overflow = '';
+      addReportSlug = null;
+    }
+
+    async function submitAddReports() {
+      if (!addReportSlug) return;
+      const err = document.getElementById('add-report-err');
+      const btn = document.getElementById('add-report-save');
+      const pwd = document.getElementById('add-report-pwd').value.trim();
+      err.style.display = 'none';
+      if (!pwd) { err.textContent = 'Enter the dashboard password'; err.style.display = 'block'; return; }
+      const inputs = Array.prototype.slice.call(document.querySelectorAll('#add-report-fields .add-report-input'));
+      const jobs = [];
+      for (const inp of inputs) {
+        const link = inp.value.trim();
+        if (!link) continue;
+        const mm = link.toLowerCase().match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/);
+        if (!mm) { err.textContent = 'Could not find a valid UUID for ' + inp.dataset.report; err.style.display = 'block'; return; }
+        jobs.push({ report: inp.dataset.report, link: link });
+      }
+      if (!jobs.length) { err.textContent = 'Paste at least one Metabase link'; err.style.display = 'block'; return; }
+      mbPwd = pwd;
+      btn.disabled = true; btn.textContent = 'Adding…';
+      try {
+        const added = [];
+        for (const job of jobs) {
+          const res = await fetch('/api/admin/add-report', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ password: pwd, org: addReportSlug, report: job.report, link: job.link }),
+          });
+          const data = await res.json().catch(function(){ return {}; });
+          if (!res.ok || !data.ok) throw new Error(job.report + ': ' + (data.error || ('Failed (' + res.status + ')')));
+          added.push(job.report);
+        }
+        closeAddReport();
+        mbToast('Added ' + added.join(', ') + ' — Railway is redeploying (~1–2 min)');
+        setTimeout(function(){ location.reload(); }, 1500);
+      } catch (e) {
+        err.textContent = e.message;
+        err.style.display = 'block';
+      } finally {
+        btn.disabled = false; btn.textContent = 'Add & Deploy';
+      }
+    }
+
     function toggleHow(row) {
       row.querySelector('.how-chevron').classList.toggle('open');
       row.nextElementSibling.classList.toggle('open');
@@ -2526,6 +2762,11 @@ app.get("/", (req, res) => {
     // Newest first. Add a new entry at the TOP for every change we ship.
     // History below back-filled from the GitHub commit log.
     const UPDATES = [
+      { date: '2026-05-31', title: 'Add reports to existing orgs from the dashboard', items: [
+        'Each org card now shows a dashed \u201c\uFF0B Add report\u201d tile for any report types that org is missing',
+        'Clicking it opens a modal to paste the Metabase public link (or UUID) for one or more missing reports at once',
+        'New POST /api/admin/add-report inserts the report into the org\u2019s block in server.js (auto-deploys via Railway) and updates the running config \u2014 existing report links are never touched',
+      ]},
       { date: '2026-05-31', title: 'Program Revenue: Reg Mode + Cancellations columns', items: [
         'Added Reg Mode column (Section-based / Session-based) — gated on data presence, auto-hides for orgs whose SQL hasn\\u2019t been updated',
         'Added Cancellations and Cancellation % columns after Waitlist — gated on data presence',
