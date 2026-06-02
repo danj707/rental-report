@@ -1,79 +1,110 @@
 ---
 name: add-rec-report-org
-description: "Add a new organization to the rec.us rental report platform by updating server.js and pushing to GitHub (which auto-deploys to Railway). Use this skill whenever the user wants to onboard a new org or client, add a new city/department to the rental reports, says anything like 'add [org] to the reports', 'new client', 'onboard [city]', 'set up reports for [org]', or wants to add a new entry to the ORGS map in server.js. Handles the full workflow: collecting org details interactively, patching server.js, and pushing to GitHub."
+description: "Add a new organization to the rec.us rental report platform by updating server.js and pushing to GitHub (which auto-deploys to Railway). Use this skill whenever the user wants to onboard a new org or client, add a new city/department to the rental reports, says anything like 'add [org] to the reports', 'new client', 'onboard [city]', 'set up reports for [org]', or wants to add a new entry to the ORGS map in server.js. Handles the full workflow: collecting org details interactively, generating an access token, patching server.js, logging the change, and pushing to GitHub."
 ---
 
 # Add New Org to Rental Report Server
 
 ## Overview
 
-This skill adds a new organization to the `ORGS` map in `server.js` and pushes the change to GitHub, triggering an automatic Railway redeploy.
+This skill adds a new organization to the `ORGS` map in `server.js`, generates its
+access token, logs the change in the dashboard Updates feed, and pushes to GitHub —
+which triggers an automatic Railway redeploy.
 
-**Repo:** `danj707/rental-report`  
-**File to update:** `server.js`  
+**Repo:** `danj707/rental-report`
+**File to update:** `server.js`
 **Deploy:** Railway auto-deploys on push to `main`
+
+> **CRITICAL — every org MUST have a `token`.** The per-org auth gate in `server.js`
+> fails **open**: `if (!org.token) return next();` grants *unauthenticated* access
+> to any org whose entry has no token. An org left tokenless is a publicly exposed
+> dashboard. Never finish onboarding an org without a `token` field. (See Step 2.5.)
+
+> **Note — there is also a self-serve path.** The dashboard has an "Add org" UI that
+> writes to `data/orgs.json` (merged into `ORGS` at startup). This skill is the
+> *code* path: editing `server.js` directly and pushing. Use the code path when the
+> user asks you to add the org, or when you need report types the UI doesn't offer.
 
 ---
 
 ## Step 1 — Collect Info Interactively
 
-Use `ask_user_input_v0` to gather everything needed. Ask in **two rounds** to keep it manageable.
+Use `ask_user_input_v0` to gather everything needed. Ask in **two rounds**.
 
 ### Round 1 — Org identity
 
-Ask these three together:
-- **Org slug** — lowercase, no spaces, used in URLs (e.g. `windham`, `clarksville`). Will be the key in the ORGS map.
+Ask these together:
+- **Org slug** — lowercase, no spaces, used in URLs (e.g. `windham`, `clarksville`). The key in the ORGS map.
 - **Org UUID** — the rec.us organization UUID (looks like `460566d3-3a51-4387-a7a0-0b010923e40d`)
 - **Logo URL** — the full image URL from the rec.us CDN
+- **Display name** (optional) — overrides the name shown in the UI when it differs from the slug (e.g. `Littleton PRCE`, `Town of Danvers`, `Windham Parks and Recreation`). Omit if the auto-generated `"{Slug} Parks & Recreation"` name is fine.
 
 ### Round 2 — Report types
 
-For each of the three report types, ask whether it's enabled and (if yes) what the Metabase public question UUID is. Present as a multi-step or sequential ask. Use `null` for any report that isn't being enabled yet.
+For each report type, ask whether it's enabled and (if yes) the Metabase public question UUID. Use `null` (or just omit the line) for any report not being enabled yet.
 
-Report types:
-- **facility** — Weekly Rental Schedule (most orgs have this)
-- **gl** — GL Code Rollup
-- **historic** — Historic Buildings / special venue report (Smyrna only so far)
+Current report types (from `REPORT_TYPES` in `server.js`):
 
-**Tip:** It's fine to enable some and leave others as `null` — the index page and startup log only show non-null reports.
+| key | report |
+|---|---|
+| `facility` | Weekly Rental Schedule (most orgs have this) |
+| `gl` | GL Code Rollup |
+| `historic` | Historic Buildings / special venue report |
+| `programs` | Program enrollments |
+| `roster` | Program/section roster |
+| `products` | Product / merchandise sales |
+| `memberships` | Membership report |
+| `court-utilization` | Court utilization (stacked bar) |
+| `overview` | **Internal/aggregate — do NOT offer for self-serve onboarding** (it's in `NON_ADDABLE_REPORTS`). Only add if the user explicitly asks. |
+
+**Tip:** Enable whatever the org has and omit the rest — the landing page and startup log only show report keys with a non-null `mbUuid`.
 
 ---
 
 ## Step 2 — Build the ORGS Entry
 
-Construct the JS object string to insert. Template:
+Construct the JS object to insert. Field order matches existing entries: `token`
+first, then `orgId`, `logoUrl`, optional `displayName`, then one line per enabled
+report. Template:
 
 ```js
   {SLUG}: {
+    token:   "{GENERATED_TOKEN}",
     orgId:   "{ORG_UUID}",
     logoUrl: "{LOGO_URL}",
-    facility: { mbUuid: {FACILITY_MBUUID} },
-    gl:       { mbUuid: {GL_MBUUID} },
-    {HISTORIC_LINE}
+    displayName: "{DISPLAY_NAME}",   // omit this line entirely if no custom name
+    facility: { mbUuid: "{FACILITY_MBUUID}" },
+    gl:       { mbUuid: "{GL_MBUUID}" },
+    // ...one line per enabled report...
   },
 ```
 
 Rules:
-- UUID values are quoted strings: `"21e74d52-f49a-46d6-bc2d-f9348027854f"`
-- Null values are bare: `null` (not quoted)
-- Only include the `historic:` line if it has a non-null UUID (to keep things clean — though leaving it as `null` is also fine)
-- Use the same indentation/style as existing entries (2-space indent for the key, 4-space for properties)
+- `token` is **required** (see Step 2.5). Quoted string.
+- UUID values are quoted strings; an unset report is `{ mbUuid: null }` or simply omitted.
+- Only include `displayName` if the user gave one (bare omit it otherwise).
+- Match existing indentation: 2-space indent for the slug key, 4-space for properties.
 
-Example output for a new org "windham" with facility + gl but no historic:
-```js
-  windham: {
-    orgId:   "REPLACE_WITH_ORG_UUID",
-    logoUrl: "https://...",
-    facility: { mbUuid: "REPLACE_ME" },
-    gl:       { mbUuid: "REPLACE_ME" },
-  },
+---
+
+## Step 2.5 — Generate the Access Token
+
+Every org needs a unique 16-character base62 token (matches the style of existing
+tokens like `6JmoTcHxMOV3ugyO`). Generate one with Node's crypto:
+
+```bash
+node -e "const c=require('crypto');const a='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';let s='';for(let i=0;i<16;i++)s+=a[c.randomInt(a.length)];console.log(s)"
 ```
+
+Use the output as the `token` value in the entry. **Surface the token to the user**
+in your final message — they need it to build the shareable `?token=` URLs and it is
+not recoverable from anywhere else without reading `server.js`.
 
 ---
 
 ## Step 3 — Fetch Current server.js from GitHub
 
-Use `bash_tool` to call the GitHub Contents API and get the current file + its SHA (required for the PUT).
+Get the current file + its blob SHA (the SHA is required for the PUT in Step 7).
 
 ```bash
 curl -s \
@@ -82,68 +113,91 @@ curl -s \
   "https://api.github.com/repos/danj707/rental-report/contents/server.js"
 ```
 
-**If `GITHUB_TOKEN` is not set:** Ask the user to provide a GitHub Personal Access Token with `repo` scope. They can create one at https://github.com/settings/tokens. Store it in the shell session: `export GITHUB_TOKEN=ghp_...`
+**If `GITHUB_TOKEN` is not set:** use the project PAT, or ask the user for a GitHub
+PAT with `repo` (or Contents read/write) scope and `export GITHUB_TOKEN=ghp_...`.
+A classic PAT with `repo` scope avoids fine-grained permission issues.
 
-The API response is JSON with:
-- `content`: base64-encoded file content
-- `sha`: the blob SHA (needed for the PUT)
+The response JSON has `content` (base64) and `sha` (the blob SHA). Decode:
 
-Decode the content:
 ```bash
 echo "${CONTENT_BASE64}" | base64 -d > /tmp/server.js.current
 ```
+
+> Alternatively, clone over HTTPS — `github.com` works even when `api.github.com`
+> is blocked on some networks:
+> `git clone --depth 1 https://x-access-token:${GITHUB_TOKEN}@github.com/danj707/rental-report.git`
+> If you clone, get the SHA with `git rev-parse HEAD:server.js`.
 
 ---
 
 ## Step 4 — Patch the ORGS Map
 
-Find the insertion point in the file. The new entry goes **before the closing comment block** at the end of the ORGS map. Look for the commented-out `windham` example entry:
+> **The old `// windham:` comment marker no longer exists** — `windham` is now a real
+> org entry. Insert the new entry at the **end of the ORGS map**, immediately before
+> its closing `};` (which sits right before `const REPORT_TYPES`).
 
-```js
-  // windham: {
-  //   orgId:   "REPLACE_WITH_ORG_UUID",
-```
-
-Insert the new org entry **just before** that comment block (or before the `};` closing the ORGS map if there's no comment block). Keep the windham comment in place as a template for future additions.
-
-Use Python for safe string insertion (avoids shell escaping issues with JS content):
+Use Python for safe insertion (avoids shell escaping issues with JS content):
 
 ```bash
 python3 << 'PYEOF'
 with open('/tmp/server.js.current', 'r') as f:
     content = f.read()
 
-new_entry = """  {SLUG}: {{
+new_entry = """  {SLUG}: {
+    token:   "{TOKEN}",
     orgId:   "{ORG_UUID}",
     logoUrl: "{LOGO_URL}",
-    facility: {{ mbUuid: {FACILITY} }},
-    gl:       {{ mbUuid: {GL} }},
+    facility: {{ mbUuid: "{FACILITY}" }},
+    gl:       {{ mbUuid: "{GL}" }},
   }},
-"""
+"""  # build this string from the entry you assembled in Step 2
 
-# Insert before the windham comment (or before closing }; of ORGS)
-marker = "  // windham:"
-if marker in content:
-    content = content.replace(marker, new_entry + marker, 1)
-else:
-    # Fallback: insert before the closing }; of the ORGS block
-    marker2 = "};\n\nconst REPORT_TYPES"
-    content = content.replace(marker2, new_entry + "};\n\nconst REPORT_TYPES", 1)
+# Primary marker: the ORGS closing }; immediately before REPORT_TYPES.
+import re
+m = re.search(r'\n\};\n\nconst REPORT_TYPES', content)
+if not m:
+    raise SystemExit("Could not find ORGS closing boundary — inspect server.js manually.")
+idx = m.start() + 1            # position of the closing }
+content = content[:idx] + new_entry + content[idx:]
 
 with open('/tmp/server.js.patched', 'w') as f:
     f.write(content)
-
-print("Patch applied successfully")
+print("Patch applied — new entry inserted before ORGS closing };")
 PYEOF
 ```
 
-After patching, **show the user the new entry** that was inserted and ask for confirmation before pushing.
+After patching, **show the user the exact entry that was inserted** and ask for
+confirmation before pushing. Sanity-check with `node --check /tmp/server.js.patched`.
+
+> **You do NOT need to touch `reportMeta` / `REPORT_META`.** Those are keyed by
+> report *type*, not by org, so adding an org requires no reportMeta edits. (Those
+> three-place edits only apply when adding a brand-new report *type*.)
 
 ---
 
-## Step 5 — Show the Dancing Banana
+## Step 5 — Log the Change in the Updates Feed
 
-Before pushing, call `show_widget` with the dancing banana animation so the user knows something is happening. Use this exact widget:
+Per the standing workflow, add an entry to the top of the `UPDATES` array in
+`server.js` (find it with `grep -n "const UPDATES" server.js`). Keep it short and
+client-appropriate — this feed is visible on dashboards.
+
+```js
+{
+  date: "{TODAY_ISO}",
+  title: "Welcome, {Display Name}!",
+  items: ["{Org} is now live on the reporting platform."],
+},
+```
+
+Apply this edit to the **same** `/tmp/server.js.patched` (or in the clone) so it ships
+in one commit with the ORGS change. Insert it as the first element of the array.
+
+---
+
+## Step 6 — Show the Dancing Banana
+
+Before pushing, call `show_widget` with the dancing banana so the user knows
+something is happening. Use this exact widget:
 
 ```html
 <style>
@@ -189,22 +243,19 @@ Before pushing, call `show_widget` with the dancing banana animation so the user
 </div>
 ```
 
-Call it with `loading_messages: ["Warming up the banana", "Choreographing the moves"]` and `title: "dancing_banana_deploy"`. Then immediately proceed to the push — don't wait for user input.
+Call it with `loading_messages: ["Warming up the banana", "Choreographing the moves"]`
+and `title: "dancing_banana_deploy"`. Then immediately proceed to the push — don't
+wait for user input.
 
 ---
 
-## Step 6 — Push to GitHub
+## Step 7 — Push to GitHub
 
 Base64-encode the patched file and PUT it via the GitHub Contents API:
 
 ```bash
-# Get the SHA from Step 3
-SHA="<sha from API response>"
-
-# Encode the patched file
+SHA="<sha from Step 3>"
 ENCODED=$(base64 -w 0 /tmp/server.js.patched)
-
-# Build the request body
 REQUEST_BODY=$(python3 -c "
 import json
 print(json.dumps({
@@ -213,8 +264,6 @@ print(json.dumps({
     'sha': '${SHA}'
 }))
 ")
-
-# Push
 curl -s -X PUT \
   -H "Authorization: token ${GITHUB_TOKEN}" \
   -H "Accept: application/vnd.github.v3+json" \
@@ -223,27 +272,35 @@ curl -s -X PUT \
   "https://api.github.com/repos/danj707/rental-report/contents/server.js"
 ```
 
-A successful response includes a `commit` object with the new SHA. Parse and confirm.
+A successful response includes a `commit` object with the new SHA. (If you cloned in
+Step 3, you can instead `git add server.js && git commit && git push` over the HTTPS
+token remote.)
 
 ---
 
-## Step 7 — Confirm Deployment
+## Step 8 — Confirm Deployment
 
 After a successful push:
 
-1. **Report the commit URL** — extract `commit.html_url` from the API response and show it to the user
-2. **Remind about Railway** — Railway auto-deploys on push to `main`, typically takes 1-2 minutes
-3. **Share the new report URLs** — tell the user their new reports will be live at:
-   - `https://rental-report-production-a046.up.railway.app/{SLUG}/facility` (if facility enabled)
-   - `https://rental-report-production-a046.up.railway.app/{SLUG}/gl` (if gl enabled)
-   - `https://rental-report-production-a046.up.railway.app/{SLUG}/historic` (if historic enabled)
+1. **Report the commit URL** — extract `commit.html_url` and show it.
+2. **Hand over the token** — restate the generated `token`; the user needs it for every URL.
+3. **Remind about Railway** — auto-deploys on push to `main`, ~1–2 minutes.
+4. **Share the tokenized report URLs** (token is required on all `/:org/*` routes):
+   - `https://rental-report-production-a046.up.railway.app/{SLUG}?token={TOKEN}` (landing page)
+   - `…/{SLUG}/facility?token={TOKEN}` (if enabled)
+   - `…/{SLUG}/gl?token={TOKEN}` (if enabled)
+   - …one per enabled report.
 
 ---
 
 ## Notes & Edge Cases
 
-- **Slug already exists:** Before patching, check if the slug already exists in the ORGS map. If it does, warn the user and confirm they want to overwrite.
-- **Metabase UUID format:** UUIDs should match the pattern `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`. Warn if format looks wrong.
-- **Logo URL:** Often a rec.us CDN URL from `prod-rec-tech-img-bucket-*.s3.us-west-1.amazonaws.com`. Can be retrieved from the rec.us admin or from the existing org's `logoUrl` pattern.
-- **Don't modify REPORT_TYPES** — adding `historic` for a new org doesn't require changing that array since it already includes it.
+- **Token is mandatory** — see the CRITICAL warning. A missing token = open dashboard.
+- **Slug already exists:** check the ORGS map before patching; if the slug is present, warn and confirm before overwriting.
+- **Metabase UUID format:** `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`. Warn if it looks wrong.
+- **Logo URL:** usually a rec.us CDN URL (`prod-rec-tech-img-bucket-*.s3.us-west-1.amazonaws.com`), often wrapped in `https://www.rec.us/_next/image?url=…`. Copy the pattern from an existing org.
+- **`displayName`:** add it when the friendly name differs from `"{Slug} Parks & Recreation"` (the auto-generated default).
+- **`overview` is non-addable** (`NON_ADDABLE_REPORTS`) — don't offer it in the self-serve flow unless explicitly requested.
+- **Don't modify `REPORT_TYPES`** — every report key above is already in it. You only edit `REPORT_TYPES` when inventing a brand-new report type.
+- **No reportMeta edits for org adds** — `reportMeta`/`REPORT_META` are keyed by report type, not org.
 - **Railway env vars** — no changes needed; the ORGS map is code, not config.
