@@ -2770,6 +2770,11 @@ app.get("/", (req, res) => {
     // Newest first. Add a new entry at the TOP for every change we ship.
     // History below back-filled from the GitHub commit log.
     const UPDATES = [
+      { date: '2026-06-01', title: 'Share Link on every report', items: [
+        'Every report page now has a floating Share Link button (bottom-right, just above Got Feedback) that opens a modal to copy a shareable link',
+        'The link keeps the access token and strips the print flag, so recipients open the report directly with no login',
+        'Reports can publish a window.recShareLink hook to bake the live date range into the link; otherwise it copies the current view',
+      ]},
       { date: '2026-05-31', title: 'Facility Overview removed from the Add-report list', items: [
         'The \u201c\uFF0B Add report\u201d modal no longer offers Facility Overview as an addable report type',
         'Facility Overview remains a valid report system-wide; it is simply excluded from the self-serve add flow via a NON_ADDABLE_REPORTS guard (enforced in the UI count, the modal, and the /api/admin/add-report endpoint)',
