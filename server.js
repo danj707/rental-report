@@ -147,7 +147,7 @@ const ORGS = {
     roster  : { mbUuid: "ff78b207-c015-4bac-80a1-86213cfbad04" },
   },
   joplin: {
-    orgId:   "c04aa52-d629-435f-84af-0fc95e152e7b",
+    orgId:   "ac04aa52-d629-435f-84af-0fc95e152e7b",
     logoUrl: "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSiZe2Rt3BvXmkRLhW9EzhogtTSXY3SkiaVzA&s",
     displayName: "Joplin",
     gl      : { mbUuid: "01c4658c-cf33-4511-91d8-318ea6fc6f2f" },
