@@ -150,7 +150,7 @@ const ORGS = {
     orgId:   "c04aa52-d629-435f-84af-0fc95e152e7b",
     logoUrl: "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSiZe2Rt3BvXmkRLhW9EzhogtTSXY3SkiaVzA&s",
     displayName: "Joplin",
-    gl      : { mbUuid: "c6daa914-9ea0-449f-956b-373aa0ac2a8a" },
+    gl      : { mbUuid: "01c4658c-cf33-4511-91d8-318ea6fc6f2f" },
   },
 };
 
