@@ -82,6 +82,31 @@
     }
     .col-toggle.on { background: rgba(59,130,246,.25); color: #93c5fd; border-color: rgba(59,130,246,.4); }
 
+    /* ── Form-response question multiselect ── */
+    .qfilter { position: relative; display: inline-block; }
+    .qfilter-backdrop { position: fixed; inset: 0; z-index: 40; }
+    .qfilter-panel {
+      position: absolute; top: calc(100% + 4px); left: 0; z-index: 50;
+      width: 330px; max-height: 340px; overflow-y: auto;
+      background: #1f2430; border: 1px solid rgba(255,255,255,.18); border-radius: 6px;
+      box-shadow: 0 8px 26px rgba(0,0,0,.4); padding: 6px;
+    }
+    .qfilter-head {
+      display: flex; gap: 6px; align-items: center;
+      padding: 2px 4px 6px; margin-bottom: 4px;
+      border-bottom: 1px solid rgba(255,255,255,.12);
+    }
+    .qfilter-head .qf-title { flex: 1; font-size: 9.5px; color: #888; text-transform: uppercase; letter-spacing: .05em; }
+    .qfilter-head button { padding: 2px 8px; font-size: 10px; }
+    .qfilter-item {
+      display: flex; gap: 7px; align-items: flex-start;
+      padding: 4px 5px; border-radius: 4px;
+      font-size: 11px; color: #ddd; line-height: 1.3; cursor: pointer;
+    }
+    .qfilter-item:hover { background: rgba(255,255,255,.06); }
+    .qfilter-item input { margin: 1px 0 0; cursor: pointer; flex-shrink: 0; }
+    .qfilter-item .qf-idx { color: #93c5fd; font-weight: 600; }
+
     /* ── Page ── */
     .page {
       max-width: 1300px; margin: 16px auto; padding: 24px 28px;
@@ -620,6 +645,38 @@ function App() {
     setCols(prev => { const next = { ...prev, [key]: !prev[key] }; saveCols(next); return next; });
   }, []);
 
+  // ── Form-response question multiselect ──
+  // selectedQs: null = show all questions; array = explicit list of question titles to show.
+  const [selectedQs, setSelectedQs] = useState(null);
+  const [qPanelOpen, setQPanelOpen] = useState(false);
+
+  const availableQuestions = useMemo(() => {
+    if (!rows) return [];
+    const seen = [], seenSet = new Set();
+    rows.forEach(r => (r.formResponses || []).forEach(qa => {
+      if (!seenSet.has(qa.q)) { seenSet.add(qa.q); seen.push(qa.q); }
+    }));
+    return seen.map((q, i) => ({ q, idx: i + 1 }));
+  }, [rows]);
+
+  // Reconcile selection when the available question set changes (new report / different form).
+  useEffect(() => {
+    setSelectedQs(prev => {
+      if (prev === null) return null;
+      const avail = new Set(availableQuestions.map(a => a.q));
+      const kept = prev.filter(q => avail.has(q));
+      return kept.length ? kept : null;            // nothing matches → fall back to "all"
+    });
+  }, [availableQuestions]);
+
+  const toggleQ = useCallback((q) => {
+    setSelectedQs(prev => {
+      const all = availableQuestions.map(a => a.q);
+      const base = prev === null ? all : prev;
+      return base.includes(q) ? base.filter(x => x !== q) : [...base, q];
+    });
+  }, [availableQuestions]);
+
   const orgSlug = useMemo(() => window.location.pathname.split('/').filter(Boolean)[0] || '', []);
 
   useEffect(() => { if (isPrint) document.body.classList.add('print-mode'); }, [isPrint]);
@@ -826,6 +883,38 @@ function App() {
         <ColToggle k="times"        label="Times" />
         <ColToggle k="registered"   label="Registered" />
         <ColToggle k="responses"    label="Form Responses" />
+        {cols.responses && availableQuestions.length > 0 && (() => {
+          const total = availableQuestions.length;
+          const selCount = selectedQs === null ? total : selectedQs.length;
+          const trunc = (str, n = 42) => str.length > n ? str.slice(0, n).trimEnd() + '\u2026' : str;
+          return (
+            <div className="qfilter">
+              <button className={`col-toggle${selCount < total ? ' on' : ''}`}
+                onClick={() => setQPanelOpen(o => !o)}>
+                Questions: {selCount === total ? 'All' : `${selCount}/${total}`} {'\u25be'}
+              </button>
+              {qPanelOpen && <>
+                <div className="qfilter-backdrop" onClick={() => setQPanelOpen(false)} />
+                <div className="qfilter-panel">
+                  <div className="qfilter-head">
+                    <span className="qf-title">Show questions</span>
+                    <button onClick={() => setSelectedQs(null)}>All</button>
+                    <button onClick={() => setSelectedQs([])}>None</button>
+                  </div>
+                  {availableQuestions.map(({ q, idx }) => {
+                    const checked = selectedQs === null || selectedQs.includes(q);
+                    return (
+                      <label className="qfilter-item" key={q} title={q}>
+                        <input type="checkbox" checked={checked} onChange={() => toggleQ(q)} />
+                        <span><span className="qf-idx">Q{idx}:</span> {trunc(q)}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </>}
+            </div>
+          );
+        })()}
 
         <div className="toolbar-spacer" />
         {rows && <span className="row-count">{displayRows.length} of {counts.all}</span>}
@@ -882,6 +971,8 @@ function App() {
 
   function DataRow({ r }) {
     const isCancelled = r.status === 'Cancelled';
+    const fr = r.formResponses || [];
+    const qaList = selectedQs === null ? fr : fr.filter(qa => selectedQs.includes(qa.q));
     return (
       <>
         <div className={`data-row${isCancelled ? ' is-cancelled' : ''}`}>
@@ -911,10 +1002,10 @@ function App() {
           </span>
           {cols.registered && <span className="cell col-reg">{r.registered}</span>}
         </div>
-        {cols.responses && r.formResponses && r.formResponses.length > 0 && (
+        {cols.responses && qaList.length > 0 && (
           <div className="form-responses-row">
             <div className="form-responses-grid">
-              {r.formResponses.map((qa, i) => (
+              {qaList.map((qa, i) => (
                 <div className="form-qa-pair" key={i}>
                   <span className="form-q" title={qa.q}>{qa.q}</span>
                   <span className="form-a">{qa.a}</span>
