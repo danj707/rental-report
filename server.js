@@ -138,6 +138,12 @@ const ORGS = {
     displayName: "Midland",
     gl      : { mbUuid: "e0e0d020-f22c-4a79-9cc6-760c6afb9f46" },
   },
+  windham: {
+    orgId:   "1c80a358-74c2-477d-aa0b-87bb2d0514b3",
+    logoUrl: "https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2Forganization-1c80a358-74c2-477d-aa0b-87bb2d0514b3%2FfullLogo.png%3F1755282265506&w=1920&q=75",
+    displayName: "Windham Parks and Recreation",
+    roster  : { mbUuid: "ff78b207-c015-4bac-80a1-86213cfbad04" },
+  },
 };
 
 const REPORT_TYPES = ["facility", "gl", "historic", "programs", "roster", "overview", "products", "memberships", "court-utilization"];
