@@ -811,7 +811,9 @@ app.use((req, res, next) => {
   if (!seg) return next();
   const org = ORGS[seg];
   if (!org) return next();                          // not an org slug — let routing handle (will 404 normally)
-  if (!org.token) return next();                    // org has no token yet — open access
+  if (!org.token) {                                 // fail closed: tokenless org must not be public
+    return res.status(404).type("text/plain").send("Not found");
+  }
 
   const supplied = req.query.token || "";
   if (supplied !== org.token) {
@@ -2778,6 +2780,10 @@ app.get("/", (req, res) => {
     // Newest first. Add a new entry at the TOP for every change we ship.
     // History below back-filled from the GitHub commit log.
     const UPDATES = [
+      { date: '2026-06-02', title: 'Per-org token gate now fails closed', items: [
+        'An org with no access token is now treated as not found instead of being served publicly',
+        'Hardens the gate so a future tokenless org can never be exposed by accident',
+      ]},
       { date: '2026-06-02', title: 'Token auth on Windham and Midland', items: [
         'Windham and Midland dashboards were reachable without an access token \\u2014 both now require ?token= like every other org',
         'Closes a fail-open gap in the per-org gate where a missing token granted open access',
