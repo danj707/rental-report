@@ -133,12 +133,14 @@ const ORGS = {
     gl      : { mbUuid: "f82f6e95-6c18-4c57-a8dc-4fb833537f2c" },
   },
   midland: {
+    token:   "2TiwFAhbgFqcnbbT",
     orgId:   "8a8a4fb1-c184-4196-a878-75c775ce6252",
     logoUrl: "https://www.midlandtexas.gov/ImageRepository/Document?documentID=10068",
     displayName: "Midland",
     gl      : { mbUuid: "e0e0d020-f22c-4a79-9cc6-760c6afb9f46" },
   },
   windham: {
+    token:   "nbwKKe68jACdPOLE",
     orgId:   "1c80a358-74c2-477d-aa0b-87bb2d0514b3",
     logoUrl: "https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2Forganization-1c80a358-74c2-477d-aa0b-87bb2d0514b3%2FfullLogo.png%3F1755282265506&w=1920&q=75",
     displayName: "Windham Parks and Recreation",
@@ -2776,6 +2778,10 @@ app.get("/", (req, res) => {
     // Newest first. Add a new entry at the TOP for every change we ship.
     // History below back-filled from the GitHub commit log.
     const UPDATES = [
+      { date: '2026-06-02', title: 'Token auth on Windham and Midland', items: [
+        'Windham and Midland dashboards were reachable without an access token \\u2014 both now require ?token= like every other org',
+        'Closes a fail-open gap in the per-org gate where a missing token granted open access',
+      ]},
       { date: '2026-06-01', title: 'Share Link now captures the live report state', items: [
         'The Share Link button copies a URL that reproduces what you\\u2019re currently looking at \\u2014 the applied date range and filters \\u2014 the same way the PDF export does',
         'Wired per report: GL, Historic (incl. site type), Program Revenue, Roster (incl. section), Facility (locations + sites), Court Utilization (metric, programs/closures, open hours, locations), and Overview (date range, auto-runs on open)',
