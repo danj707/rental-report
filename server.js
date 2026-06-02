@@ -147,6 +147,7 @@ const ORGS = {
     roster  : { mbUuid: "ff78b207-c015-4bac-80a1-86213cfbad04" },
   },
   joplin: {
+    token:   "mJpBoV84IRlCoXPM",
     orgId:   "ac04aa52-d629-435f-84af-0fc95e152e7b",
     logoUrl: "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSiZe2Rt3BvXmkRLhW9EzhogtTSXY3SkiaVzA&s",
     displayName: "Joplin",
@@ -2786,6 +2787,10 @@ app.get("/", (req, res) => {
     // Newest first. Add a new entry at the TOP for every change we ship.
     // History below back-filled from the GitHub commit log.
     const UPDATES = [
+      { date: '2026-06-02', title: 'Joplin is live on the platform', items: [
+        'Joplin reports were returning Not Found: the org had no access token, and the per-org gate now fails closed, so every Joplin route was blocked',
+        'Added a token for Joplin so its dashboard and GL report load normally',
+      ]},
       { date: '2026-06-02', title: 'Class Roster: pick which form-response questions show', items: [
         'Form Responses can be long (camp forms carry 20+ questions per registrant); a new Questions dropdown next to the Form Responses toggle lets you check only the questions you want to see',
         'Each option is labeled by position (Q1, Q2, ...) and truncated, with the full question on hover; All / None buttons are included and the button shows a count like 3/24 when a subset is active',
