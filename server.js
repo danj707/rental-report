@@ -146,6 +146,12 @@ const ORGS = {
     displayName: "Windham Parks and Recreation",
     roster  : { mbUuid: "ff78b207-c015-4bac-80a1-86213cfbad04" },
   },
+  joplin: {
+    orgId:   "c04aa52-d629-435f-84af-0fc95e152e7b",
+    logoUrl: "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSiZe2Rt3BvXmkRLhW9EzhogtTSXY3SkiaVzA&s",
+    displayName: "Joplin",
+    gl      : { mbUuid: "c6daa914-9ea0-449f-956b-373aa0ac2a8a" },
+  },
 };
 
 const REPORT_TYPES = ["facility", "gl", "historic", "programs", "roster", "overview", "products", "memberships", "court-utilization"];
