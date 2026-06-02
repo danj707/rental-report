@@ -448,8 +448,8 @@ function App() {
   }, [urlParams]);
 
   const today = new Date();
-  const [startDate, setStartDate] = useState(isoDate(startOfMonth(today)));
-  const [endDate,   setEndDate]   = useState(isoDate(endOfMonth(today)));
+  const [startDate, setStartDate] = useState(urlParams.get('start_date') || isoDate(startOfMonth(today)));
+  const [endDate,   setEndDate]   = useState(urlParams.get('end_date')   || isoDate(endOfMonth(today)));
   const [selectedLocations, setSelectedLocations] = useState([]); // explicit list of locations to show
   const [includePrograms, setIncludePrograms] = useState(urlParams.get('programs') !== '0');
   const [includeClosures, setIncludeClosures] = useState(urlParams.get('closures') === '1');
@@ -524,6 +524,26 @@ function App() {
       setSelectedLocations(allLocations);
     }
   }, [allLocations]);
+
+  // Share Link: expose the live applied filter state so the floating Share
+  // widget copies a URL that reproduces the on-screen view (mirrors the PDF).
+  useEffect(() => {
+    window.recShareLink = () => {
+      const qs = new URLSearchParams();
+      qs.set('start_date', loadedStart || startDate);
+      qs.set('end_date',   loadedEnd   || endDate);
+      qs.set('metric',   metric);
+      qs.set('programs', includePrograms ? '1' : '0');
+      qs.set('closures', includeClosures ? '1' : '0');
+      qs.set('hrs',      String(hrsPerDay));
+      if (selectedLocations.length && selectedLocations.length < allLocations.length) {
+        qs.set('locations', selectedLocations.join(','));
+      }
+      if (URL_TOKEN) qs.set('token', URL_TOKEN);
+      return `${window.location.pathname}?${qs.toString()}`;
+    };
+    return () => { try { delete window.recShareLink; } catch (e) { window.recShareLink = undefined; } };
+  }, [loadedStart, loadedEnd, startDate, endDate, metric, includePrograms, includeClosures, hrsPerDay, selectedLocations, allLocations]);
 
   // Calendar days in the loaded range (inclusive) — used for the utilization denominator.
   const daysInRange = useMemo(() => {

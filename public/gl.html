@@ -760,6 +760,19 @@ function App() {
   const [loadedStart, setLoadedStart] = useState(null);
   const [loadedEnd,   setLoadedEnd]   = useState(null);
 
+  // Share Link: expose the live applied filter state so the floating Share
+  // widget copies a URL that reproduces the on-screen view (mirrors the PDF).
+  useEffect(() => {
+    window.recShareLink = () => {
+      const qs = new URLSearchParams();
+      qs.set('start_date', loadedStart || startDate);
+      qs.set('end_date',   loadedEnd   || endDate);
+      if (URL_TOKEN) qs.set('token', URL_TOKEN);
+      return `${window.location.pathname}?${qs.toString()}`;
+    };
+    return () => { try { delete window.recShareLink; } catch (e) { window.recShareLink = undefined; } };
+  }, [loadedStart, loadedEnd, startDate, endDate]);
+
   const [showRefunds,   setShowRefunds]   = useState(
     () => localStorage.getItem(LS_REFUND) === 'true'
   );

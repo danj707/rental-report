@@ -382,6 +382,20 @@ function App() {
   const [loadedStart, setLoadedStart] = useState(null);
   const [loadedEnd,   setLoadedEnd]   = useState(null);
 
+  // Share Link: expose the live applied filter state so the floating Share
+  // widget copies a URL that reproduces the on-screen view (mirrors the PDF).
+  useEffect(() => {
+    window.recShareLink = () => {
+      const qs = new URLSearchParams();
+      qs.set('start_date', loadedStart || startDate);
+      qs.set('end_date',   loadedEnd   || endDate);
+      if (params.site_type) qs.set('site_type', params.site_type);
+      if (URL_TOKEN) qs.set('token', URL_TOKEN);
+      return `${window.location.pathname}?${qs.toString()}`;
+    };
+    return () => { try { delete window.recShareLink; } catch (e) { window.recShareLink = undefined; } };
+  }, [loadedStart, loadedEnd, startDate, endDate, params.site_type]);
+
   useEffect(() => {
     if (params._print === '1') document.body.classList.add('print-mode');
   }, []);

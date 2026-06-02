@@ -425,14 +425,34 @@ function CardStat({ label, val, sub }) {
 function App() {
   const today = new Date().toISOString().slice(0, 10);
   const ytdStart = today.slice(0, 4) + '-01-01';
-  const [startDate, setStartDate] = useState(ytdStart);
-  const [endDate,   setEndDate]   = useState(today);
+  const shareParams = new URLSearchParams(window.location.search);
+  const [startDate, setStartDate] = useState(shareParams.get('start_date') || ytdStart);
+  const [endDate,   setEndDate]   = useState(shareParams.get('end_date')   || today);
   const [rows,      setRows]      = useState(null);
   const [loading,   setLoading]   = useState(false);
   const [error,     setError]     = useState(null);
   const [view,      setView]      = useState(() => localStorage.getItem('overview_view') || 'cards');
   const [sortBy,    setSortBy]    = useState('rentalRevenue');
   const [selectedLocs, setSelectedLocs] = useState(new Set());
+
+  // Share Link: expose the live date range so the floating Share widget
+  // copies a URL that reproduces the on-screen view (mirrors the PDF).
+  useEffect(() => {
+    window.recShareLink = () => {
+      const qs = new URLSearchParams();
+      qs.set('start_date', startDate);
+      qs.set('end_date',   endDate);
+      if (URL_TOKEN) qs.set('token', URL_TOKEN);
+      return `${window.location.pathname}?${qs.toString()}`;
+    };
+    return () => { try { delete window.recShareLink; } catch (e) { window.recShareLink = undefined; } };
+  }, [startDate, endDate]);
+
+  // If opened via a share link (dates in URL), auto-run once so the recipient
+  // sees the same data without clicking Run.
+  useEffect(() => {
+    if (shareParams.get('start_date') || shareParams.get('end_date')) runReport();
+  }, []);
   const [tblSort,   setTblSort]   = useState({ col: 'rentalRevenue', dir: 'desc' });
 
   useEffect(() => { localStorage.setItem('overview_view', view); }, [view]);

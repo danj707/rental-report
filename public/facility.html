@@ -2068,6 +2068,22 @@ function App() {
   const [selectedLocations, setSelectedLocations] = useState(null);
   const [selectedSites,     setSelectedSites]     = useState(null);
 
+  // Share Link: expose the live applied filter state so the floating Share
+  // widget copies a URL that reproduces the on-screen view (mirrors the PDF
+  // and the built-in email ShareButton).
+  useEffect(() => {
+    window.recShareLink = () => {
+      const qs = new URLSearchParams();
+      qs.set('start_date', loadedStart || startDate);
+      qs.set('end_date',   loadedEnd   || endDate);
+      if (selectedLocations) { const a = [...selectedLocations]; if (a.length) qs.set('locations', a.join(',')); }
+      if (selectedSites)     { const a = [...selectedSites];     if (a.length) qs.set('sites',     a.join(',')); }
+      if (URL_TOKEN) qs.set('token', URL_TOKEN);
+      return `${window.location.pathname}?${qs.toString()}`;
+    };
+    return () => { try { delete window.recShareLink; } catch (e) { window.recShareLink = undefined; } };
+  }, [loadedStart, loadedEnd, startDate, endDate, selectedLocations, selectedSites]);
+
   useEffect(() => {
     if (params._print === '1') document.body.classList.add('print-mode');
   }, [params._print]);

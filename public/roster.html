@@ -600,6 +600,21 @@ function App() {
   const [loadedEnd, setLoadedEnd]         = useState(null);
   const [loadedSection, setLoadedSection] = useState(null);
 
+  // Share Link: expose the live applied filter state so the floating Share
+  // widget copies a URL that reproduces the on-screen view (mirrors the PDF).
+  useEffect(() => {
+    window.recShareLink = () => {
+      const qs = new URLSearchParams();
+      qs.set('start_date', loadedStart || startDate);
+      qs.set('end_date',   loadedEnd   || endDate);
+      const sec = (loadedSection != null ? loadedSection : sectionFilter);
+      if (sec) qs.set('section_name', sec);
+      if (URL_TOKEN) qs.set('token', URL_TOKEN);
+      return `${window.location.pathname}?${qs.toString()}`;
+    };
+    return () => { try { delete window.recShareLink; } catch (e) { window.recShareLink = undefined; } };
+  }, [loadedStart, loadedEnd, loadedSection, startDate, endDate, sectionFilter]);
+
   const [cols, setCols] = useState(loadCols);
   const toggleCol = useCallback(key => {
     setCols(prev => { const next = { ...prev, [key]: !prev[key] }; saveCols(next); return next; });

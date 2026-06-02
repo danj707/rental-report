@@ -2770,6 +2770,11 @@ app.get("/", (req, res) => {
     // Newest first. Add a new entry at the TOP for every change we ship.
     // History below back-filled from the GitHub commit log.
     const UPDATES = [
+      { date: '2026-06-01', title: 'Share Link now captures the live report state', items: [
+        'The Share Link button copies a URL that reproduces what you\\u2019re currently looking at \\u2014 the applied date range and filters \\u2014 the same way the PDF export does',
+        'Wired per report: GL, Historic (incl. site type), Program Revenue, Roster (incl. section), Facility (locations + sites), Court Utilization (metric, programs/closures, open hours, locations), and Overview (date range, auto-runs on open)',
+        'Products already syncs its filters to the URL, so its share link was already accurate; Memberships (snapshot) and Admin (config) share their plain page link',
+      ]},
       { date: '2026-06-01', title: 'Share Link on every report', items: [
         'Every report page now has a floating Share Link button (bottom-right, just above Got Feedback) that opens a modal to copy a shareable link',
         'The link keeps the access token and strips the print flag, so recipients open the report directly with no login',
