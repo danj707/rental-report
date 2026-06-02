@@ -2780,6 +2780,11 @@ app.get("/", (req, res) => {
     // Newest first. Add a new entry at the TOP for every change we ship.
     // History below back-filled from the GitHub commit log.
     const UPDATES = [
+      { date: '2026-06-02', title: 'Class Roster: pick which form-response questions show', items: [
+        'Form Responses can be long (camp forms carry 20+ questions per registrant); a new Questions dropdown next to the Form Responses toggle lets you check only the questions you want to see',
+        'Each option is labeled by position (Q1, Q2, ...) and truncated, with the full question on hover; All / None buttons are included and the button shows a count like 3/24 when a subset is active',
+        'Affects the on-screen roster only; the selection falls back to all questions when a roster with a different form is loaded',
+      ]},
       { date: '2026-06-02', title: 'Per-org token gate now fails closed', items: [
         'An org with no access token is now treated as not found instead of being served publicly',
         'Hardens the gate so a future tokenless org can never be exposed by accident',
