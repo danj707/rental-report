@@ -16,9 +16,10 @@ which triggers an automatic Railway redeploy.
 **Deploy:** Railway auto-deploys on push to `main`
 
 > **CRITICAL — every org MUST have a `token`.** The per-org auth gate in `server.js`
-> fails **open**: `if (!org.token) return next();` grants *unauthenticated* access
-> to any org whose entry has no token. An org left tokenless is a publicly exposed
-> dashboard. Never finish onboarding an org without a `token` field. (See Step 2.5.)
+> fails **closed**: `if (!org.token) return res.status(404)…` — a tokenless org
+> returns a generic 404 on *every* `/:org/*` route, so the org is completely
+> unreachable (not exposed — just broken) until it has a token. Never finish
+> onboarding an org without a `token` field. (See Step 2.5.)
 
 > **Note — there is also a self-serve path.** The dashboard has an "Add org" UI that
 > writes to `data/orgs.json` (merged into `ORGS` at startup). This skill is the
@@ -33,11 +34,30 @@ Use `ask_user_input_v0` to gather everything needed. Ask in **two rounds**.
 
 ### Round 1 — Org identity
 
-Ask these together:
-- **Org slug** — lowercase, no spaces, used in URLs (e.g. `windham`, `clarksville`). The key in the ORGS map.
-- **Org UUID** — the rec.us organization UUID (looks like `460566d3-3a51-4387-a7a0-0b010923e40d`)
+**First, look up the org UUID from Rec — don't ask the user to paste it.** A pasted
+UUID can be perfectly well-formed yet *wrong* (e.g. a facility UUID, or another org's
+UUID); that sails through any format check and silently scopes the report to the wrong
+or empty org. Sourcing the UUID from Rec eliminates that whole class of error.
+
+1. Ask the user for the org's **name** (plus city/state if useful to disambiguate).
+2. Call `Rec MCP:search_organizations` with that query. It returns published orgs as
+   `{ id, slug, name, displayName }`.
+3. **One clear match** → use its `id` as the **Org UUID**, and its `displayName` as a
+   sensible default for the Display name field below. (Do *not* reuse Rec's `slug` as
+   the ORGS slug — Rec slugs are long-form like `city-of-norman`; keep the ORGS slug
+   short, see below.)
+4. **Multiple matches** → present them (name + state) and let the user choose.
+5. **No match** (org not yet published in Rec search) → fall back to asking for the
+   UUID directly, and validate its format before accepting it:
+   ```bash
+   node -e "process.exit(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(process.argv[1])?0:1)" "$ORG_UUID" \
+     && echo "valid UUID" || echo "INVALID — do not use"
+   ```
+
+Then ask for the remaining identity fields together:
+- **Org slug** — lowercase, no spaces, used in URLs (e.g. `windham`, `clarksville`). The key in the ORGS map. Keep it short — this is *your* slug, not Rec's long-form one.
 - **Logo URL** — the full image URL from the rec.us CDN
-- **Display name** (optional) — overrides the name shown in the UI when it differs from the slug (e.g. `Littleton PRCE`, `Town of Danvers`, `Windham Parks and Recreation`). Omit if the auto-generated `"{Slug} Parks & Recreation"` name is fine.
+- **Display name** (optional) — overrides the name shown in the UI when it differs from the slug (e.g. `Littleton PRCE`, `Town of Danvers`, `Windham Parks and Recreation`). The Rec `displayName` from the lookup is usually a good fit. Omit if the auto-generated `"{Slug} Parks & Recreation"` name is fine.
 
 ### Round 2 — Report types
 
@@ -295,7 +315,7 @@ After a successful push:
 
 ## Notes & Edge Cases
 
-- **Token is mandatory** — see the CRITICAL warning. A missing token = open dashboard.
+- **Token is mandatory** — see the CRITICAL warning. A missing token = the org 404s on every route (the gate fails closed).
 - **Slug already exists:** check the ORGS map before patching; if the slug is present, warn and confirm before overwriting.
 - **Metabase UUID format:** `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`. Warn if it looks wrong.
 - **Logo URL:** usually a rec.us CDN URL (`prod-rec-tech-img-bucket-*.s3.us-west-1.amazonaws.com`), often wrapped in `https://www.rec.us/_next/image?url=…`. Copy the pattern from an existing org.
