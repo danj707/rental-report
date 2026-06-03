@@ -1803,6 +1803,14 @@ app.post("/api/admin/add-report", async (req, res) => {
 // Pushes the new entry to server.js on GitHub (so it lives in code).
 // Falls back to data/orgs.json if the GitHub push fails, so the org
 // still works until the next deploy or until you can fix the push.
+// Generate a 16-char base62 access token (matches existing org token style).
+function genToken() {
+  const a = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+  let s = "";
+  for (let i = 0; i < 16; i++) s += a[crypto.randomInt(a.length)];
+  return s;
+}
+
 app.post("/api/admin/new-org", dashboardAuth, async (req, res) => {
   const { slug, displayName, orgId, logoUrl, reports } = req.body;
 
@@ -1813,11 +1821,15 @@ app.post("/api/admin/new-org", dashboardAuth, async (req, res) => {
     return res.status(400).json({ error: `Org "${slug}" already exists` });
   if (!orgId || !logoUrl)
     return res.status(400).json({ error: "orgId and logoUrl are required" });
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(orgId))
+    return res.status(400).json({ error: "orgId must be a valid UUID (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)" });
   if (!reports || !Object.keys(reports).length)
     return res.status(400).json({ error: "At least one report is required" });
 
-  // Build the new org entry
-  const orgEntry = { orgId, logoUrl, displayName: displayName || null };
+  // Build the new org entry. Every org MUST have a token: the per-org gate
+  // fails closed, so a tokenless org would 404 on all its routes. Generate one
+  // here so self-serve orgs are never born tokenless.
+  const orgEntry = { token: genToken(), orgId, logoUrl, displayName: displayName || null };
   for (const [reportType, mbUuid] of Object.entries(reports)) {
     if (REPORT_TYPES.includes(reportType) && mbUuid) {
       orgEntry[reportType] = { mbUuid };
@@ -2787,6 +2799,10 @@ app.get("/", (req, res) => {
     // Newest first. Add a new entry at the TOP for every change we ship.
     // History below back-filled from the GitHub commit log.
     const UPDATES = [
+      { date: '2026-06-02', title: 'Self-serve org creation now generates an access token', items: [
+        'Adding an org through the dashboard now auto-generates its access token and validates the org UUID format, so a new org can no longer be created without one',
+        'Previously a dashboard-created org had no token; with the per-org gate failing closed, every one of its routes returned Not Found until a token was added by hand',
+      ]},
       { date: '2026-06-02', title: 'Joplin is live on the platform', items: [
         'Joplin reports were returning Not Found: the org had no access token, and the per-org gate now fails closed, so every Joplin route was blocked',
         'Added a token for Joplin so its dashboard and GL report load normally',
