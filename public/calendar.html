@@ -76,13 +76,13 @@
 
   /* ---- session popup ---- */
   .pop-overlay{position:fixed;inset:0;background:rgba(0,0,0,.38);z-index:1000;display:flex;align-items:center;justify-content:center}
-  .pop{background:var(--card);border-radius:16px;box-shadow:0 8px 32px rgba(0,0,0,.22);width:320px;max-width:90vw;overflow:hidden}
+  .pop{background:var(--card);border-radius:16px;box-shadow:0 8px 32px rgba(0,0,0,.22);width:380px;max-width:92vw;overflow:hidden}
   .pop-head{display:flex;align-items:flex-start;justify-content:space-between;padding:16px 16px 12px;border-bottom:1px solid var(--line)}
   .pop-act{font-weight:700;font-size:15px;color:var(--text)}
   .pop-time{font-size:13px;color:var(--muted);margin-top:3px}
   .pop-x{border:1px solid var(--line);background:none;border-radius:50%;width:28px;height:28px;font-size:18px;line-height:1;cursor:pointer;color:var(--muted);flex-shrink:0}
   .pop-body{padding:12px 16px 16px}
-  .pop-row{display:flex;gap:8px;align-items:baseline;font-size:13px;color:var(--text);margin-bottom:7px}
+  .pop-row{display:flex;gap:8px;align-items:flex-start;font-size:13px;color:var(--text);margin-bottom:7px;word-break:break-word}
   .pop-lbl{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.05em;min-width:64px}
   .pop-chips{margin-top:4px}
   .pop-link{display:inline-block;margin-top:10px;font-size:13px;color:#6366f1;text-decoration:none;font-weight:600}
@@ -317,24 +317,24 @@ function ListView({events,onEv}){
 function PopoverCard({ev,onClose}){
   if(!ev) return null;
   const loc=[ev.location,ev.facility].filter(Boolean).join(' · ');
-  const prog=[ev.program,ev.section].filter(Boolean).join(' – ');
+  const desc=[ev.program,ev.section].filter(Boolean).join(' – ');
   const price=ev.total!==''&&ev.total!=null?(typeof ev.total==='number'?('$'+ev.total.toFixed(2)):String(ev.total)):null;
   return (
     <div className="pop-overlay" onClick={onClose}>
       <div className="pop" onClick={e=>e.stopPropagation()}>
         <div className="pop-head">
           <div style={{flex:1,marginRight:10}}>
-            <div className="pop-act" style={{background:colorFor(ev.activity),WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent',display:'inline'}}>{ev.activity}</div>
+            <div className="pop-act" style={{color:colorFor(ev.activity)}}>{ev.activity}</div>
             <div className="pop-time">{ev.begin}{ev.end?' – '+ev.end:''}</div>
           </div>
           <button className="pop-x" onClick={onClose}>×</button>
         </div>
         <div className="pop-body">
           {loc && <div className="pop-row"><span className="pop-lbl">Location</span><span>{loc}</span></div>}
-          {prog && <div className="pop-row"><span className="pop-lbl">Program</span><span>{prog}</span></div>}
+          {desc && <div className="pop-row"><span className="pop-lbl">Description</span><span style={{whiteSpace:'normal',overflowWrap:'anywhere'}}>{desc}</span></div>}
           {price && <div className="pop-row"><span className="pop-lbl">Price</span><span>{price}</span></div>}
           {(ev.full||ev.waitlist) && <div className="pop-row pop-chips"><StatusChips ev={ev}/></div>}
-          {ev.url && <a className="pop-link" href={ev.url} target="_blank" rel="noopener">View on rec.us →</a>}
+          {ev.url && <a className="pop-link" href={ev.url} target="_blank" rel="noopener">View Session →</a>}
         </div>
       </div>
     </div>
