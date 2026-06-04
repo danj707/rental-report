@@ -83,7 +83,7 @@
   .pop-x{border:1px solid var(--line);background:none;border-radius:50%;width:28px;height:28px;font-size:18px;line-height:1;cursor:pointer;color:var(--muted);flex-shrink:0}
   .pop-body{padding:12px 16px 16px}
   .pop-row{display:flex;gap:8px;align-items:flex-start;font-size:13px;color:var(--text);margin-bottom:7px;word-break:break-word}
-  .pop-lbl{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.05em;min-width:64px}
+  .pop-lbl{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.05em;min-width:76px;white-space:nowrap}
   .pop-chips{margin-top:4px}
   .pop-link{display:inline-block;margin-top:10px;font-size:13px;color:#6366f1;text-decoration:none;font-weight:600}
   .filter-sel{border:1px solid var(--line);border-radius:8px;padding:4px 10px;font-size:13px;background:var(--card);color:var(--text);cursor:pointer;height:32px;max-width:160px}
@@ -318,7 +318,7 @@ function PopoverCard({ev,onClose}){
   if(!ev) return null;
   const loc=[ev.location,ev.facility].filter(Boolean).join(' · ');
   const desc=[ev.program,ev.section].filter(Boolean).join(' – ');
-  const price=ev.total!==''&&ev.total!=null?(typeof ev.total==='number'?('$'+ev.total.toFixed(2)):String(ev.total)):null;
+  const price=ev.total!==''&&ev.total!=null&&ev.total!==0?(typeof ev.total==='number'?('$'+ev.total.toFixed(2)):String(ev.total)):'Free';
   return (
     <div className="pop-overlay" onClick={onClose}>
       <div className="pop" onClick={e=>e.stopPropagation()}>
@@ -332,7 +332,7 @@ function PopoverCard({ev,onClose}){
         <div className="pop-body">
           {loc && <div className="pop-row"><span className="pop-lbl">Location</span><span>{loc}</span></div>}
           {desc && <div className="pop-row"><span className="pop-lbl">Description</span><span style={{whiteSpace:'normal',overflowWrap:'anywhere'}}>{desc}</span></div>}
-          {price && <div className="pop-row"><span className="pop-lbl">Price</span><span>{price}</span></div>}
+          <div className="pop-row"><span className="pop-lbl">Price</span><span>{price}</span></div>
           {(ev.full||ev.waitlist) && <div className="pop-row pop-chips"><StatusChips ev={ev}/></div>}
           {ev.url && <a className="pop-link" href={ev.url} target="_blank" rel="noopener">View Session →</a>}
         </div>
