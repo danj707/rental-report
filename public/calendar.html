@@ -149,7 +149,7 @@ function normalizeRow(r){
     url: pick(r,['Section URL','Url','url','sectionUrl']),
     full: status.indexOf('full')>=0 || status.indexOf('capacity')>=0,
     waitlist: status.indexOf('wait')>=0,
-    total: pick(r,['Total','total']),
+    total: pick(r,['price','Price','Total','total']),
   };
 }
 function parseDateISO(v){
@@ -318,7 +318,7 @@ function PopoverCard({ev,onClose}){
   if(!ev) return null;
   const loc=[ev.location,ev.facility].filter(Boolean).join(' · ');
   const desc=[ev.program,ev.section].filter(Boolean).join(' – ');
-  const price=ev.total!==''&&ev.total!=null&&ev.total!==0?(typeof ev.total==='number'?('$'+ev.total.toFixed(2)):String(ev.total)):'Free';
+  const price=ev.total!==''&&ev.total!=null&&ev.total!==0?(typeof ev.total==='number'?('$'+ev.total.toFixed(2)):String(ev.total)):'N/A';
   return (
     <div className="pop-overlay" onClick={onClose}>
       <div className="pop" onClick={e=>e.stopPropagation()}>
