@@ -1,0 +1,358 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Calendar</title>
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+  :root{
+    --bg:#f5f6f8; --card:#fff; --ink:#1f2430; --muted:#6b7280; --line:#e5e7eb;
+    --accent:#2563eb; --shadow:0 1px 3px rgba(16,24,40,.08),0 1px 2px rgba(16,24,40,.06);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  .wrap{max-width:1280px;margin:0 auto;padding:20px}
+  .toolbar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;background:var(--card);
+    border:1px solid var(--line);border-radius:12px;padding:12px 14px;box-shadow:var(--shadow);margin-bottom:16px}
+  .toolbar .grow{flex:1}
+  button,select,input[type=date]{font:inherit;border:1px solid var(--line);background:#fff;color:var(--ink);
+    border-radius:8px;padding:7px 11px;cursor:pointer}
+  button:hover{border-color:#cbd5e1}
+  button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+  button.primary:hover{filter:brightness(.95)}
+  .seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+  .seg button{border:none;border-radius:0;background:#fff}
+  .seg button.on{background:var(--accent);color:#fff}
+  .hdr{display:flex;align-items:baseline;justify-content:space-between;margin:4px 2px 14px}
+  .hdr h1{font-size:20px;margin:0}
+  .hdr .org{color:var(--muted)}
+  .range{font-weight:600}
+  /* week grid */
+  .week{display:grid;grid-template-columns:56px repeat(7,1fr);background:var(--card);
+    border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);overflow:hidden}
+  .week .dayhead{padding:8px 6px;text-align:center;border-bottom:1px solid var(--line);border-left:1px solid var(--line);font-weight:600}
+  .week .dayhead small{display:block;color:var(--muted);font-weight:500}
+  .week .corner{border-bottom:1px solid var(--line)}
+  .allday{display:grid;grid-template-columns:56px repeat(7,1fr);border-bottom:1px solid var(--line)}
+  .allday .lbl{font-size:11px;color:var(--muted);padding:4px 6px;text-align:right}
+  .allday .cell{border-left:1px solid var(--line);padding:3px;display:flex;flex-direction:column;gap:3px}
+  .grid{display:grid;grid-template-columns:56px repeat(7,1fr);position:relative}
+  .axis{position:relative}
+  .axis .tick{position:absolute;right:6px;font-size:11px;color:var(--muted);transform:translateY(-6px)}
+  .col{position:relative;border-left:1px solid var(--line)}
+  .col .hline{position:absolute;left:0;right:0;border-top:1px solid #f1f3f5}
+  .ev{position:absolute;left:3px;right:3px;border-radius:6px;padding:3px 5px;color:#fff;overflow:hidden;
+    font-size:11px;line-height:1.25;cursor:default;box-shadow:0 1px 1px rgba(0,0,0,.12)}
+  .ev a{color:#fff;text-decoration:none}
+  .ev .t{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .ev .s{opacity:.92;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .chip{display:inline-block;border-radius:999px;padding:0 6px;font-size:10px;font-weight:700;background:rgba(255,255,255,.28)}
+  .chip.full{background:#111827;color:#fff}
+  .chip.wait{background:#f59e0b;color:#111827}
+  /* list */
+  .list .day{margin-bottom:18px}
+  .list .dlabel{font-weight:700;margin:0 2px 8px;padding-bottom:6px;border-bottom:2px solid var(--line)}
+  .list .loc{font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin:10px 2px 6px}
+  .row{display:flex;gap:12px;align-items:flex-start;background:var(--card);border:1px solid var(--line);
+    border-radius:10px;padding:9px 11px;margin-bottom:7px;box-shadow:var(--shadow)}
+  .row .bar{width:4px;align-self:stretch;border-radius:4px;flex:0 0 auto}
+  .row .when{width:140px;flex:0 0 auto;color:var(--muted);font-variant-numeric:tabular-nums}
+  .row .main{flex:1;min-width:0}
+  .row .main .ti{font-weight:600}
+  .row .main .su{color:var(--muted);font-size:13px}
+  .row .right{text-align:right;flex:0 0 auto;display:flex;flex-direction:column;gap:4px;align-items:flex-end}
+  .empty{background:var(--card);border:1px dashed var(--line);border-radius:12px;padding:40px;text-align:center;color:var(--muted)}
+  .note{color:var(--muted);font-size:12px;margin:8px 2px}
+  @media print{
+    body{background:#fff}
+    .toolbar{display:none}
+    .week,.row{box-shadow:none}
+    .wrap{max-width:none;padding:0}
+  }
+  body.print-mode .toolbar{display:none}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const {useState,useEffect,useMemo,useCallback} = React;
+
+/* ---------- helpers ---------- */
+const PALETTE = ['#2563eb','#0d9488','#db2777','#d97706','#7c3aed','#dc2626','#0891b2','#65a30d','#c026d3','#475569'];
+function colorFor(key){
+  const s = String(key||'').toLowerCase();
+  let h=0; for(let i=0;i<s.length;i++) h=(h*31+s.charCodeAt(i))>>>0;
+  return PALETTE[h % PALETTE.length];
+}
+function pad(n){return n<10?'0'+n:''+n;}
+function fmtISO(d){return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());}
+function startOfWeek(d){const x=new Date(d);const wd=x.getDay();x.setDate(x.getDate()-wd);x.setHours(0,0,0,0);return x;}
+function addDays(d,n){const x=new Date(d);x.setDate(x.getDate()+n);return x;}
+const DOW=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+const MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+// parse "08:00pm", "8:00 AM", "20:00", "2026-03-01T20:00" -> minutes from midnight
+function toMin(v){
+  if(v==null) return null;
+  let s=String(v).trim();
+  if(!s) return null;
+  if(s.indexOf('T')>=0) s=s.split('T')[1]||s;
+  const m=s.match(/(\d{1,2}):(\d{2})\s*([ap]\.?m\.?)?/i);
+  if(!m) return null;
+  let h=+m[1], mm=+m[2];
+  const ap=(m[3]||'').toLowerCase().replace(/\./g,'');
+  if(ap==='pm'&&h<12) h+=12;
+  if(ap==='am'&&h===12) h=0;
+  return h*60+mm;
+}
+function minToLabel(min){
+  let h=Math.floor(min/60), m=min%60; const ap=h>=12?'pm':'am';
+  let hh=h%12; if(hh===0) hh=12;
+  return hh+':'+pad(m)+ap;
+}
+// normalize one Metabase row to internal keys (tolerant of alt aliases)
+function pick(r,keys){ for(const k of keys){ if(r[k]!=null&&r[k]!=='') return r[k]; } return ''; }
+function normalizeRow(r){
+  const begin=pick(r,['Begin','Start','Start Time','begin','start']);
+  const end=pick(r,['End','End Time','end']);
+  const status=String(pick(r,['Status','status'])).toLowerCase();
+  return {
+    orgName: pick(r,['Org Name','Organization','orgName']),
+    dateISO: parseDateISO(pick(r,['Date','Begin Sort','date','starts_at','Starts At'])),
+    begin, end,
+    beginMin: toMin(pick(r,['Begin Sort','Begin','Start','start','starts_at'])),
+    endMin: toMin(end),
+    location: pick(r,['Location','location','Facility Location'])||'Unassigned',
+    facility: pick(r,['Facility','Court','facility']),
+    activity: pick(r,['Activity','Site Type','Purpose','activity'])||'Reservation',
+    program: pick(r,['Program','program']),
+    section: pick(r,['Section','section','Purpose','Reservee']),
+    url: pick(r,['Section URL','Url','url','sectionUrl']),
+    full: status.indexOf('full')>=0 || status.indexOf('capacity')>=0,
+    waitlist: status.indexOf('wait')>=0,
+    total: pick(r,['Total','total']),
+  };
+}
+function parseDateISO(v){
+  if(!v) return '';
+  let s=String(v);
+  if(s.indexOf('T')>=0) s=s.split('T')[0];
+  if(/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  const d=new Date(s);
+  if(!isNaN(d)) return fmtISO(d);
+  return s;
+}
+
+/* ---------- sample fallback ---------- */
+const TEMPLATE = (()=>{
+  const base=startOfWeek(new Date());
+  const mk=(off,b,e,act,loc,fac,prog,sec,status)=>({
+    "Org Name":"Apex Parks & Rec","Date":fmtISO(addDays(base,off)),
+    "Begin":b,"End":e,"Activity":act,"Location":loc,"Facility":fac,
+    "Program":prog,"Section":sec,"Status":status||"",
+    "Section URL":"https://rec.us/apex"
+  });
+  return [
+    mk(1,"09:00am","10:00am","Youth Soccer","North Fields","Field 2","Spring Soccer","U8 Mon/Wed","full"),
+    mk(1,"04:00pm","05:30pm","Adult Yoga","Community Center","Studio A","Wellness","Evening Flow","waitlist"),
+    mk(2,"06:00pm","07:30pm","Basketball","Rec Center","Court 1","Open Gym","Drop-in",""),
+    mk(3,"08:00am","03:00pm","Day Camp","Community Center","Hall","Summer Camp","Week 1","full"),
+    mk(4,"10:00am","11:00am","Pickleball","North Fields","Court 3","Open Play","Morning",""),
+    mk(5,"05:00pm","06:00pm","Adult Yoga","Community Center","Studio A","Wellness","Sunset Flow",""),
+    mk(6,"09:00am","12:00pm","Swim Lessons","Aquatics","Pool","Learn to Swim","Level 2","waitlist"),
+  ];
+})();
+
+/* ---------- data fetch ---------- */
+function ctx(){
+  const parts=window.location.pathname.split('/').filter(Boolean);
+  // /{org}/calendar  -> org=parts[0]; standalone /calendar.html -> none
+  const org=(parts.length>=2 && parts[1].indexOf('calendar')===0)?parts[0]:null;
+  const q=new URLSearchParams(window.location.search);
+  return {org, token:q.get('token')||'', print:q.get('_print')==='1'};
+}
+const MB_FALLBACK_UUID="8a3dac9b-6c34-45e1-a7d0-3a177477fe17";
+
+async function fetchData(from,to){
+  const {org,token}=ctx();
+  if(org){
+    try{
+      const u=new URL('/'+org+'/calendar/api/data',window.location.origin);
+      u.searchParams.set('start_date',from); u.searchParams.set('end_date',to);
+      if(token) u.searchParams.set('token',token);
+      const res=await fetch(u.toString());
+      if(res.ok){ const j=await res.json(); const rows=j.rows||j.data||j||[]; if(rows.length) return {rows,src:'live'}; }
+    }catch(e){}
+  }
+  return {rows:TEMPLATE,src:'sample'};
+}
+
+/* ---------- views ---------- */
+function StatusChips({ev}){
+  return (<React.Fragment>
+    {ev.full && <span className="chip full">Full</span>}
+    {ev.waitlist && <span className="chip wait">Waitlist</span>}
+  </React.Fragment>);
+}
+
+function WeekView({weekStart,events}){
+  const days=useMemo(()=>Array.from({length:7},(_,i)=>fmtISO(addDays(weekStart,i))),[weekStart]);
+  const timed=events.filter(e=>e.beginMin!=null && e.endMin!=null && (e.endMin-e.beginMin)<7*60);
+  const allday=events.filter(e=>!(e.beginMin!=null && e.endMin!=null) || (e.endMin-e.beginMin)>=7*60);
+  let lo=6*60, hi=22*60;
+  timed.forEach(e=>{ lo=Math.min(lo,e.beginMin); hi=Math.max(hi,e.endMin); });
+  lo=Math.floor(lo/60)*60; hi=Math.ceil(hi/60)*60;
+  const PX=0.9, H=(hi-lo)*PX;
+  const hours=[]; for(let m=lo;m<=hi;m+=60) hours.push(m);
+  const byDay=d=>timed.filter(e=>e.dateISO===d).sort((a,b)=>a.beginMin-b.beginMin);
+  const allByDay=d=>allday.filter(e=>e.dateISO===d);
+  return (
+    <div className="week">
+      <div className="corner"></div>
+      {days.map((d,i)=>{const dt=addDays(weekStart,i);
+        return <div className="dayhead" key={d}>{DOW[i]}<small>{MON[dt.getMonth()]} {dt.getDate()}</small></div>;})}
+
+      <div className="allday" style={{gridColumn:'1 / -1'}}>
+        <div className="lbl">all-day</div>
+        {days.map(d=>(
+          <div className="cell" key={'a'+d}>
+            {allByDay(d).map((e,j)=>(
+              <div className="ev" key={j} style={{position:'static',background:colorFor(e.activity)}} title={e.activity+' — '+e.section}>
+                <div className="t">{e.activity} <StatusChips ev={e}/></div>
+                <div className="s">{e.facility||e.section}</div>
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+
+      <div className="grid" style={{gridColumn:'1 / -1'}}>
+        <div className="axis" style={{height:H}}>
+          {hours.map(m=>(<div className="tick" key={m} style={{top:(m-lo)*PX}}>{minToLabel(m).replace(':00','')}</div>))}
+        </div>
+        {days.map(d=>(
+          <div className="col" key={'c'+d} style={{height:H}}>
+            {hours.map(m=>(<div className="hline" key={m} style={{top:(m-lo)*PX}}></div>))}
+            {byDay(d).map((e,j)=>{
+              const top=(e.beginMin-lo)*PX, ht=Math.max((e.endMin-e.beginMin)*PX,22);
+              const inner=(<React.Fragment>
+                <div className="t">{minToLabel(e.beginMin)} {e.activity}</div>
+                <div className="s">{e.facility||e.section} <StatusChips ev={e}/></div>
+              </React.Fragment>);
+              return (
+                <div className="ev" key={j} style={{top,height:ht,background:colorFor(e.activity)}}
+                     title={e.activity+' '+e.begin+'–'+e.end+(e.section?(' · '+e.section):'')}>
+                  {e.url? <a href={e.url} target="_blank" rel="noopener">{inner}</a> : inner}
+                </div>
+              );
+            })}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ListView({events}){
+  const byDate=useMemo(()=>{
+    const m={};
+    events.slice().sort((a,b)=>(a.dateISO+ (a.beginMin!=null?pad(Math.floor(a.beginMin/60))+pad(a.beginMin%60):'9999'))
+                              .localeCompare(b.dateISO+(b.beginMin!=null?pad(Math.floor(b.beginMin/60))+pad(b.beginMin%60):'9999')))
+      .forEach(e=>{(m[e.dateISO]=m[e.dateISO]||[]).push(e);});
+    return m;
+  },[events]);
+  const dates=Object.keys(byDate).sort();
+  if(!dates.length) return <div className="empty">No scheduled sessions in this range.</div>;
+  return (
+    <div className="list">
+      {dates.map(d=>{
+        const dt=new Date(d+'T00:00:00');
+        const locs={}; byDate[d].forEach(e=>{(locs[e.location]=locs[e.location]||[]).push(e);});
+        return (
+          <div className="day" key={d}>
+            <div className="dlabel">{DOW[dt.getDay()]}, {MON[dt.getMonth()]} {dt.getDate()}, {dt.getFullYear()}</div>
+            {Object.keys(locs).sort().map(loc=>(
+              <div key={loc}>
+                <div className="loc">{loc}</div>
+                {locs[loc].map((e,j)=>(
+                  <div className="row" key={j}>
+                    <div className="bar" style={{background:colorFor(e.activity)}}></div>
+                    <div className="when">{e.beginMin!=null?(minToLabel(e.beginMin)+' – '+(e.endMin!=null?minToLabel(e.endMin):'')):'All day'}</div>
+                    <div className="main">
+                      <div className="ti">{e.url? <a href={e.url} target="_blank" rel="noopener" style={{color:'inherit'}}>{e.activity}</a> : e.activity}</div>
+                      <div className="su">{[e.program,e.section,e.facility].filter(Boolean).join(' · ')}</div>
+                    </div>
+                    <div className="right">
+                      <StatusChips ev={e}/>
+                      {e.total!=='' && e.total!=null && <div className="su">{typeof e.total==='number'?('$'+e.total.toFixed(2)):e.total}</div>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ---------- app ---------- */
+function App(){
+  const c=ctx();
+  const [weekStart,setWeekStart]=useState(()=>startOfWeek(new Date()));
+  const [view,setView]=useState('week');
+  const [rows,setRows]=useState([]);
+  const [src,setSrc]=useState('');
+  const [loading,setLoading]=useState(true);
+
+  const load=useCallback(async(ws)=>{
+    setLoading(true);
+    const from=fmtISO(ws), to=fmtISO(addDays(ws,6));
+    const {rows,src}=await fetchData(from,to);
+    setRows(rows.map(normalizeRow)); setSrc(src); setLoading(false);
+  },[]);
+
+  useEffect(()=>{ if(c.print) document.body.classList.add('print-mode'); },[]);
+  useEffect(()=>{ load(weekStart); },[weekStart,load]);
+
+  const ws=weekStart, we=addDays(weekStart,6);
+  const orgName=rows.length?rows[0].orgName:'';
+  const rangeLabel=MON[ws.getMonth()]+' '+ws.getDate()+' – '+MON[we.getMonth()]+' '+we.getDate()+', '+we.getFullYear();
+
+  return (
+    <div className="wrap">
+      <div className="toolbar">
+        <div className="seg">
+          <button className={view==='week'?'on':''} onClick={()=>setView('week')}>Week</button>
+          <button className={view==='list'?'on':''} onClick={()=>setView('list')}>List</button>
+        </div>
+        <button onClick={()=>setWeekStart(startOfWeek(new Date()))}>This Week</button>
+        <button onClick={()=>setWeekStart(addDays(weekStart,-7))}>‹ Prev</button>
+        <button onClick={()=>setWeekStart(addDays(weekStart,7))}>Next ›</button>
+        <span className="range">{rangeLabel}</span>
+        <span className="grow"></span>
+        <button onClick={()=>window.print()}>Print</button>
+      </div>
+
+      <div className="hdr">
+        <h1>Calendar {orgName && <span className="org">· {orgName}</span>}</h1>
+        <span className="range">{rangeLabel}</span>
+      </div>
+
+      {loading ? <div className="empty">Loading…</div>
+        : view==='week' ? <WeekView weekStart={weekStart} events={rows}/>
+        : <ListView events={rows}/>}
+
+      {src==='sample' && <div className="note">Showing sample data (no live source reachable). Wire <code>/{'{org}'}/calendar/api/data</code> to go live.</div>}
+      {!loading && <div id="report-ready" style={{display:'none'}}>ready</div>}
+    </div>
+  );
+}
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>
