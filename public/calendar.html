@@ -86,6 +86,9 @@
   .pop-lbl{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.05em;min-width:64px}
   .pop-chips{margin-top:4px}
   .pop-link{display:inline-block;margin-top:10px;font-size:13px;color:#6366f1;text-decoration:none;font-weight:600}
+  .filter-sel{border:1px solid var(--line);border-radius:8px;padding:4px 10px;font-size:13px;background:var(--card);color:var(--text);cursor:pointer;height:32px}
+  .filter-sel:focus{outline:none;border-color:var(--accent)}
+  .filter-clear{font-size:11px;color:var(--accent);cursor:pointer;text-decoration:underline;white-space:nowrap}
 </style>
 </head>
 <body>
@@ -346,6 +349,8 @@ function App(){
   const [src,setSrc]=useState('');
   const [loading,setLoading]=useState(true);
   const [popoverEv,setPopoverEv]=useState(null);
+  const [actFilter,setActFilter]=useState('');
+  const [locFilter,setLocFilter]=useState('');
 
   const load=useCallback(async(ws)=>{
     setLoading(true);
@@ -360,6 +365,9 @@ function App(){
   const ws=weekStart, we=addDays(weekStart,6);
   const orgName=rows.length?rows[0].orgName:'';
   const rangeLabel=MON[ws.getMonth()]+' '+ws.getDate()+' – '+MON[we.getMonth()]+' '+we.getDate()+', '+we.getFullYear();
+  const activities=useMemo(()=>[...new Set(rows.map(e=>e.activity).filter(Boolean))].sort(),[rows]);
+  const locations=useMemo(()=>[...new Set(rows.map(e=>e.location).filter(Boolean))].sort(),[rows]);
+  const filtered=useMemo(()=>rows.filter(e=>(!actFilter||e.activity===actFilter)&&(!locFilter||e.location===locFilter)),[rows,actFilter,locFilter]);
 
   return (
     <div className="wrap">
@@ -374,6 +382,15 @@ function App(){
         <span className="range">{rangeLabel}</span>
         <span className="grow"></span>
         <button onClick={()=>window.print()}>Print</button>
+        <select className="filter-sel" value={actFilter} onChange={e=>setActFilter(e.target.value)}>
+          <option value="">All Activities</option>
+          {activities.map(a=><option key={a} value={a}>{a}</option>)}
+        </select>
+        <select className="filter-sel" value={locFilter} onChange={e=>setLocFilter(e.target.value)}>
+          <option value="">All Locations</option>
+          {locations.map(l=><option key={l} value={l}>{l}</option>)}
+        </select>
+        {(actFilter||locFilter)&&<span className="filter-clear" onClick={()=>{setActFilter('');setLocFilter('');}}>✕ Clear</span>}
       </div>
 
       <div className="hdr">
@@ -382,8 +399,8 @@ function App(){
       </div>
 
       {loading ? <div className="empty">Loading…</div>
-        : view==='week' ? <WeekView weekStart={weekStart} events={rows} onEv={setPopoverEv}/>
-        : <ListView events={rows} onEv={setPopoverEv}/>}
+        : view==='week' ? <WeekView weekStart={weekStart} events={filtered} onEv={setPopoverEv}/>
+        : <ListView events={filtered} onEv={setPopoverEv}/>}
 
       <PopoverCard ev={popoverEv} onClose={()=>setPopoverEv(null)}/>
       {src==='sample' && <div className="note">Showing sample data (no live source reachable). Wire <code>/{'{org}'}/calendar/api/data</code> to go live.</div>}
