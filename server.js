@@ -2825,6 +2825,9 @@ app.get("/", (req, res) => {
     // Newest first. Add a new entry at the TOP for every change we ship.
     // History below back-filled from the GitHub commit log.
     const UPDATES = [
+      { date: '2026-06-04', title: 'Calendar: single-row events', items: [
+        'Week view now renders every reservation as one compact row regardless of session length (long all-day bookings no longer stretch into tall blocks)',
+      ] },
       { date: '2026-06-04', title: 'Public Calendar view for Apex', items: [
         'Apex now has a public Calendar report \u2014 a week and list view of the upcoming class and rental schedule, color-coded by activity, with Full and Waitlist badges and cards that link through to the rec.us section page',
         'The calendar is public-safe: reservee names, emails, phone numbers and notes are stripped from the data before it reaches the page',
