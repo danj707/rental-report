@@ -222,7 +222,6 @@ function WeekView({weekStart,events}){
             {allByDay(d).map((e,j)=>(
               <div className="ev" key={j} style={{position:'static',background:colorFor(e.activity)}} title={e.activity+' — '+e.section}>
                 <div className="t">{e.activity} <StatusChips ev={e}/></div>
-                <div className="s">{e.facility||e.section}</div>
               </div>
             ))}
           </div>
@@ -237,11 +236,8 @@ function WeekView({weekStart,events}){
           <div className="col" key={'c'+d} style={{height:H}}>
             {hours.map(m=>(<div className="hline" key={m} style={{top:(m-lo)*PX}}></div>))}
             {byDay(d).map((e,j)=>{
-              const top=(e.beginMin-lo)*PX, ht=Math.max((e.endMin-e.beginMin)*PX,22);
-              const inner=(<React.Fragment>
-                <div className="t">{minToLabel(e.beginMin)} {e.activity}</div>
-                <div className="s">{e.facility||e.section} <StatusChips ev={e}/></div>
-              </React.Fragment>);
+              const top=(e.beginMin-lo)*PX, ht=20;
+              const inner=(<div className="t">{minToLabel(e.beginMin)} {e.activity} <StatusChips ev={e}/></div>);
               return (
                 <div className="ev" key={j} style={{top,height:ht,background:colorFor(e.activity)}}
                      title={e.activity+' '+e.begin+'–'+e.end+(e.section?(' · '+e.section):'')}>
