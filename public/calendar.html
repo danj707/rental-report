@@ -73,6 +73,19 @@
     .wrap{max-width:none;padding:0}
   }
   body.print-mode .toolbar{display:none}
+
+  /* ---- session popup ---- */
+  .pop-overlay{position:fixed;inset:0;background:rgba(0,0,0,.38);z-index:1000;display:flex;align-items:center;justify-content:center}
+  .pop{background:var(--card);border-radius:16px;box-shadow:0 8px 32px rgba(0,0,0,.22);width:320px;max-width:90vw;overflow:hidden}
+  .pop-head{display:flex;align-items:flex-start;justify-content:space-between;padding:16px 16px 12px;border-bottom:1px solid var(--line)}
+  .pop-act{font-weight:700;font-size:15px;color:var(--text)}
+  .pop-time{font-size:13px;color:var(--muted);margin-top:3px}
+  .pop-x{border:1px solid var(--line);background:none;border-radius:50%;width:28px;height:28px;font-size:18px;line-height:1;cursor:pointer;color:var(--muted);flex-shrink:0}
+  .pop-body{padding:12px 16px 16px}
+  .pop-row{display:flex;gap:8px;align-items:baseline;font-size:13px;color:var(--text);margin-bottom:7px}
+  .pop-lbl{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.05em;min-width:64px}
+  .pop-chips{margin-top:4px}
+  .pop-link{display:inline-block;margin-top:10px;font-size:13px;color:#6366f1;text-decoration:none;font-weight:600}
 </style>
 </head>
 <body>
@@ -198,7 +211,7 @@ function StatusChips({ev}){
   </React.Fragment>);
 }
 
-function WeekView({weekStart,events}){
+function WeekView({weekStart,events,onEv}){
   const days=useMemo(()=>Array.from({length:7},(_,i)=>fmtISO(addDays(weekStart,i))),[weekStart]);
   const timed=events.filter(e=>e.beginMin!=null && e.endMin!=null && (e.endMin-e.beginMin)<7*60);
   const allday=events.filter(e=>!(e.beginMin!=null && e.endMin!=null) || (e.endMin-e.beginMin)>=7*60);
@@ -220,7 +233,7 @@ function WeekView({weekStart,events}){
         {days.map(d=>(
           <div className="cell" key={'a'+d}>
             {allByDay(d).map((e,j)=>(
-              <div className="ev" key={j} style={{position:'static',background:colorFor(e.activity)}} title={e.activity+' — '+e.section}>
+              <div className="ev" key={j} style={{position:'static',background:colorFor(e.activity),cursor:'pointer'}} title={e.activity+' — '+e.section} onClick={()=>onEv&&onEv(e)}>
                 <div className="t">{e.activity} <StatusChips ev={e}/></div>
               </div>
             ))}
@@ -239,7 +252,7 @@ function WeekView({weekStart,events}){
               const top=(e.beginMin-lo)*PX, ht=20;
               const inner=(<div className="t">{minToLabel(e.beginMin)} {e.activity} <StatusChips ev={e}/></div>);
               return (
-                <div className="ev" key={j} style={{top,height:ht,background:colorFor(e.activity)}}
+                <div className="ev" key={j} style={{top,height:ht,background:colorFor(e.activity),cursor:'pointer'}} onClick={()=>onEv&&onEv(e)}
                      title={e.activity+' '+e.begin+'–'+e.end+(e.section?(' · '+e.section):'')}>
                   {e.url? <a href={e.url} target="_blank" rel="noopener">{inner}</a> : inner}
                 </div>
@@ -252,7 +265,7 @@ function WeekView({weekStart,events}){
   );
 }
 
-function ListView({events}){
+function ListView({events,onEv}){
   const byDate=useMemo(()=>{
     const m={};
     events.slice().sort((a,b)=>(a.dateISO+ (a.beginMin!=null?pad(Math.floor(a.beginMin/60))+pad(a.beginMin%60):'9999'))
@@ -274,7 +287,7 @@ function ListView({events}){
               <div key={loc}>
                 <div className="loc">{loc}</div>
                 {locs[loc].map((e,j)=>(
-                  <div className="row" key={j}>
+                  <div className="row" key={j} style={{cursor:"pointer"}} onClick={()=>onEv&&onEv(e)}>
                     <div className="bar" style={{background:colorFor(e.activity)}}></div>
                     <div className="when">{e.beginMin!=null?(minToLabel(e.beginMin)+' – '+(e.endMin!=null?minToLabel(e.endMin):'')):'All day'}</div>
                     <div className="main">
@@ -297,6 +310,34 @@ function ListView({events}){
 }
 
 /* ---------- app ---------- */
+
+function PopoverCard({ev,onClose}){
+  if(!ev) return null;
+  const loc=[ev.location,ev.facility].filter(Boolean).join(' · ');
+  const prog=[ev.program,ev.section].filter(Boolean).join(' – ');
+  const price=ev.total!==''&&ev.total!=null?(typeof ev.total==='number'?('$'+ev.total.toFixed(2)):String(ev.total)):null;
+  return (
+    <div className="pop-overlay" onClick={onClose}>
+      <div className="pop" onClick={e=>e.stopPropagation()}>
+        <div className="pop-head">
+          <div style={{flex:1,marginRight:10}}>
+            <div className="pop-act" style={{background:colorFor(ev.activity),WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent',display:'inline'}}>{ev.activity}</div>
+            <div className="pop-time">{ev.begin}{ev.end?' – '+ev.end:''}</div>
+          </div>
+          <button className="pop-x" onClick={onClose}>×</button>
+        </div>
+        <div className="pop-body">
+          {loc && <div className="pop-row"><span className="pop-lbl">Location</span><span>{loc}</span></div>}
+          {prog && <div className="pop-row"><span className="pop-lbl">Program</span><span>{prog}</span></div>}
+          {price && <div className="pop-row"><span className="pop-lbl">Price</span><span>{price}</span></div>}
+          {(ev.full||ev.waitlist) && <div className="pop-row pop-chips"><StatusChips ev={ev}/></div>}
+          {ev.url && <a className="pop-link" href={ev.url} target="_blank" rel="noopener">View on rec.us →</a>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function App(){
   const c=ctx();
   const [weekStart,setWeekStart]=useState(()=>startOfWeek(new Date()));
@@ -304,6 +345,7 @@ function App(){
   const [rows,setRows]=useState([]);
   const [src,setSrc]=useState('');
   const [loading,setLoading]=useState(true);
+  const [popoverEv,setPopoverEv]=useState(null);
 
   const load=useCallback(async(ws)=>{
     setLoading(true);
@@ -340,9 +382,10 @@ function App(){
       </div>
 
       {loading ? <div className="empty">Loading…</div>
-        : view==='week' ? <WeekView weekStart={weekStart} events={rows}/>
-        : <ListView events={rows}/>}
+        : view==='week' ? <WeekView weekStart={weekStart} events={rows} onEv={setPopoverEv}/>
+        : <ListView events={rows} onEv={setPopoverEv}/>}
 
+      <PopoverCard ev={popoverEv} onClose={()=>setPopoverEv(null)}/>
       {src==='sample' && <div className="note">Showing sample data (no live source reachable). Wire <code>/{'{org}'}/calendar/api/data</code> to go live.</div>}
       {!loading && <div id="report-ready" style={{display:'none'}}>ready</div>}
     </div>
