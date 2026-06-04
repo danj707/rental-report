@@ -257,7 +257,7 @@ function WeekView({weekStart,events,onEv}){
               return (
                 <div className="ev" key={j} style={{top,height:ht,background:colorFor(e.activity),cursor:'pointer'}} onClick={()=>onEv&&onEv(e)}
                      title={e.activity+' '+e.begin+'–'+e.end+(e.section?(' · '+e.section):'')}>
-                  {e.url? <a href={e.url} target="_blank" rel="noopener">{inner}</a> : inner}
+                  {inner}
                 </div>
               );
             })}
@@ -294,7 +294,7 @@ function ListView({events,onEv}){
                     <div className="bar" style={{background:colorFor(e.activity)}}></div>
                     <div className="when">{e.beginMin!=null?(minToLabel(e.beginMin)+' – '+(e.endMin!=null?minToLabel(e.endMin):'')):'All day'}</div>
                     <div className="main">
-                      <div className="ti">{e.url? <a href={e.url} target="_blank" rel="noopener" style={{color:'inherit'}}>{e.activity}</a> : e.activity}</div>
+                      <div className="ti">{e.activity}</div>
                       <div className="su">{[e.program,e.section,e.facility].filter(Boolean).join(' · ')}</div>
                     </div>
                     <div className="right">
