@@ -111,6 +111,7 @@ const ORGS = {
     facility: { mbUuid: "c876b1d7-df79-48c5-abf5-62917dee3534", defaultDateRange: 8, defaultLocationFilter: "Apex Center" },
     programs: { mbUuid: "bf520bbd-4d8d-42ab-9538-37ad630bf58e" },
     "court-utilization": { mbUuid: "82d14a94-78ad-48d6-9531-11e72f53e285" },
+    calendar: { mbUuid: "8a3dac9b-6c34-45e1-a7d0-3a177477fe17" },
   },
   theranch: {
     token:   "mXI0BgPPazLu61jl",
@@ -155,10 +156,10 @@ const ORGS = {
   },
 };
 
-const REPORT_TYPES = ["facility", "gl", "historic", "programs", "roster", "overview", "products", "memberships", "court-utilization"];
+const REPORT_TYPES = ["facility", "gl", "historic", "programs", "roster", "overview", "products", "memberships", "court-utilization", "calendar"];
 // Report types that are valid system-wide but should NOT be offered in the
 // dashboard "+ Add report" flow (e.g. not yet ready for self-serve onboarding).
-const NON_ADDABLE_REPORTS = new Set(["overview"]);
+const NON_ADDABLE_REPORTS = new Set(["overview", "calendar"]);
 
 // ── Dynamic orgs (added via dashboard UI) ────────────────────────────
 // Loaded at startup and merged into ORGS; also updated at runtime.
@@ -1163,6 +1164,19 @@ app.get("/:org/:report/api/data", resolveOrg, async (req, res) => {
     }
 
     const data = await response.json();
+
+    // Calendar is a public view — defensively strip any PII columns the
+    // Metabase question might surface before returning rows to the browser.
+    if (reportType === "calendar" && Array.isArray(data)) {
+      const PII = new Set(["reservee","reservee name","customer","customer name","booked by","booker","contact","contact name","notes","note","address","first name","last name","name"]);
+      const isPII = (k) => { const t = String(k).toLowerCase().trim(); return PII.has(t) || t.includes("email") || t.includes("phone"); };
+      for (const row of data) {
+        if (row && typeof row === "object" && !Array.isArray(row)) {
+          for (const k of Object.keys(row)) { if (isPII(k)) delete row[k]; }
+        }
+      }
+    }
+
     res.json({
       rows: data,
       meta: {
@@ -1383,6 +1397,15 @@ app.get("/:org/metrics", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "metrics.html"));
 });
 
+app.get("/:org/calendar", (req, res) => {
+  const slug = req.params.org;
+  const org  = ORGS[slug];
+  if (!org) return res.status(404).send("Unknown org");
+  if (!org.calendar?.mbUuid) return res.status(404).send("Calendar report not configured for this org.");
+  logEvent(slug, "calendar", "view", req.ip);
+  res.sendFile(path.join(__dirname, "public", "calendar.html"));
+});
+
 // ── GET /:org — org landing page ─────────────────────────────────────
 // ────────────────────────────────────────────────────────────
 // Hot Dog Counter — global concession leaderboard
@@ -1564,6 +1587,7 @@ app.get("/:org", (req, res, next) => {
     products:    { label: "Product Sales",          icon: "🛒", desc: "Daily revenue, refunds, and net by product" },
     memberships: { label: "Memberships",                icon: "🎫", desc: "Active and lapsed memberships with renewal tracking" },
     "court-utilization": { label: "Court Utilization",  icon: "🎾", desc: "Court utilization % or reserved hours by court, split by customer, program, and closure usage", ai: true },
+    calendar:    { label: "Calendar",               icon: "🗓️", desc: "Public class & rental schedule (week / list view)" },
   };
 
   const tokenQS = org.token ? `?token=${encodeURIComponent(org.token)}` : "";
@@ -1875,6 +1899,7 @@ app.get("/", (req, res) => {
     products:    { label: "Product Sales",          icon: "🛒", desc: "Daily revenue, refunds, and net by product",           color: "#0891b2" },
     memberships: { label: "Memberships",                icon: "🎫", desc: "Active and lapsed memberships with renewal tracking",       color: "#db2777" },
     "court-utilization": { label: "Court Utilization",  icon: "🎾", desc: "Court utilization % or reserved hours by court, split by customer, program, and closure usage", color: "#0d9488", ai: true },
+    calendar:    { label: "Calendar",               icon: "🗓️", desc: "Public class & rental schedule (week / list view)", color: "#ea580c" },
   };
 
   const orgSections = Object.entries(ORGS).map(([slug, org]) => {
@@ -2290,6 +2315,7 @@ app.get("/", (req, res) => {
           <li><strong>Historic Buildings</strong> &#8212; filtered facility view for historic venue locations (Smyrna only).</li>
           <li><strong>Memberships</strong> &#8212; active and lapsed memberships with auto-renew tracking, MRR estimate, and stale-usage detection (Norman only).</li>
           <li><strong>Product Sales</strong> &#8212; daily revenue, refunds, and net by product, with optional desk-location breakdown (Norman only).</li>
+          <li><strong>Calendar</strong> &#8212; public week / list view of the upcoming class and rental schedule, color-coded by activity, with cards that link through to the rec.us section page (Apex only).</li>
         </ul>
 
         <h4>Inline Metrics</h4>
@@ -2799,6 +2825,10 @@ app.get("/", (req, res) => {
     // Newest first. Add a new entry at the TOP for every change we ship.
     // History below back-filled from the GitHub commit log.
     const UPDATES = [
+      { date: '2026-06-04', title: 'Public Calendar view for Apex', items: [
+        'Apex now has a public Calendar report \u2014 a week and list view of the upcoming class and rental schedule, color-coded by activity, with Full and Waitlist badges and cards that link through to the rec.us section page',
+        'The calendar is public-safe: reservee names, emails, phone numbers and notes are stripped from the data before it reaches the page',
+      ]},
       { date: '2026-06-02', title: 'Self-serve org creation now generates an access token', items: [
         'Adding an org through the dashboard now auto-generates its access token and validates the org UUID format, so a new org can no longer be created without one',
         'Previously a dashboard-created org had no token; with the per-org gate failing closed, every one of its routes returned Not Found until a token was added by hand',
