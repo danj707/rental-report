@@ -613,7 +613,7 @@ function App() {
   const [startDate, setStartDate] = useState(p.get('start_date') || defaults.start);
   const [endDate, setEndDate]     = useState(p.get('end_date')   || defaults.end);
   const [sectionFilter, setSectionFilter] = useState(p.get('section_name') || '');
-  const [statusFilter, setStatusFilter]   = useState('all');
+  const [statusFilter, setStatusFilter]   = useState(p.get('status') || 'all');
 
   const [rows, setRows]       = useState(null);
   const [orgName, setOrgName] = useState('');
@@ -640,14 +640,24 @@ function App() {
     return () => { try { delete window.recShareLink; } catch (e) { window.recShareLink = undefined; } };
   }, [loadedStart, loadedEnd, loadedSection, startDate, endDate, sectionFilter]);
 
-  const [cols, setCols] = useState(loadCols);
+  // In print/PDF mode the columns travel on the URL (Puppeteer starts with empty
+  // localStorage); otherwise fall back to the saved/default columns.
+  const [cols, setCols] = useState(() => {
+    const cp = p.get('cols');
+    if (cp) { try { return { ...COL_DEFAULTS, ...JSON.parse(cp) }; } catch {} }
+    return loadCols();
+  });
   const toggleCol = useCallback(key => {
     setCols(prev => { const next = { ...prev, [key]: !prev[key] }; saveCols(next); return next; });
   }, []);
 
   // ── Form-response question multiselect ──
   // selectedQs: null = show all questions; array = explicit list of question titles to show.
-  const [selectedQs, setSelectedQs] = useState(null);
+  const [selectedQs, setSelectedQs] = useState(() => {
+    const qp = p.get('questions');
+    if (qp) { try { const arr = JSON.parse(qp); if (Array.isArray(arr)) return arr; } catch {} }
+    return null;
+  });
   const [qPanelOpen, setQPanelOpen] = useState(false);
 
   const availableQuestions = useMemo(() => {
@@ -818,8 +828,14 @@ function App() {
   function downloadPdf() {
     setPdfLoading(true);
     const parts = window.location.pathname.split('/').filter(Boolean);
+    const pdfParams = new URLSearchParams({ start_date: loadedStart||'', end_date: loadedEnd||'' });
+    const sec = (loadedSection != null ? loadedSection : sectionFilter);
+    if (sec) pdfParams.set('section_name', sec);
+    if (statusFilter && statusFilter !== 'all') pdfParams.set('status', statusFilter);
+    if (selectedQs !== null) pdfParams.set('questions', JSON.stringify(selectedQs));
+    pdfParams.set('cols', JSON.stringify(cols));
     const pdfUrl = parts.length >= 2
-      ? `/${parts[0]}/${parts[1]}/api/pdf?${new URLSearchParams({start_date: loadedStart||'', end_date: loadedEnd||''})}`
+      ? `/${parts[0]}/${parts[1]}/api/pdf?${pdfParams}`
       : '/api/pdf';
     fetch(withToken(pdfUrl))
       .then(r => r.blob())
