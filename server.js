@@ -631,7 +631,7 @@ async function generatePdf(orgSlug, reportType, startDate, endDate, filters = {}
   // server-side Metabase filters. The print page initializes its filter state
   // from these params before emitting #report-ready, so Puppeteer captures the
   // filtered render rather than the full dataset.
-  ["locations", "sites", "location_name", "site_type", "desks", "by_desk", "hide_zero", "chart_net", "metric", "programs", "closures", "hrs"].forEach(k => {
+  ["locations", "sites", "location_name", "site_type", "desks", "by_desk", "hide_zero", "chart_net", "metric", "programs", "closures", "hrs", "section_name", "status", "questions", "cols"].forEach(k => {
     if (filters[k]) qsObj[k] = filters[k];
   });
   if (orgTok) qsObj.token = orgTok;
@@ -2825,6 +2825,10 @@ app.get("/", (req, res) => {
     // Newest first. Add a new entry at the TOP for every change we ship.
     // History below back-filled from the GitHub commit log.
     const UPDATES = [
+      { date: '2026-06-05', title: 'Class Roster: PDF matches the filtered view', items: [
+        'Exporting a roster to PDF now captures exactly what is on screen — the section filter, the enrolled/cancelled status pills, the chosen form-response questions, and which columns you have shown or hidden all carry through to the PDF',
+        'Previously the PDF ignored those filters and printed the full roster with the default columns regardless of what you had set up in the browser',
+      ] },
       { date: '2026-06-04', title: 'Calendar: single-row events', items: [
         'Week view now renders every reservation as one compact row regardless of session length (long all-day bookings no longer stretch into tall blocks)',
       ] },
