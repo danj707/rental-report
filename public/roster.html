@@ -1097,7 +1097,7 @@ function App() {
           <span>{orgName || orgSlug}</span>
           <span>Run Date/Time: {runDate}</span>
         </div>
-        <div id="report-ready" style={{display:'none'}} />
+        {rows && !loading && <div id="report-ready" style={{display:'none'}} />}
       </div>
     </div>
   );
