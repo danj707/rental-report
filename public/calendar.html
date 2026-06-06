@@ -158,6 +158,7 @@ function minToLabel(min){
 }
 // normalize one Metabase row to internal keys (tolerant of alt aliases)
 function pick(r,keys){ for(const k of keys){ if(r[k]!=null&&r[k]!=='') return r[k]; } return ''; }
+function stripHtml(s){ if(!s) return ''; return String(s).replace(/<[^>]*>/g,' ').replace(/&nbsp;/g,' ').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&#?\w+;/g,' ').replace(/\s+/g,' ').trim(); }
 function normalizeRow(r){
   const begin=pick(r,['Begin','Start','Start Time','begin','start']);
   const end=pick(r,['End','End Time','end']);
@@ -177,7 +178,7 @@ function normalizeRow(r){
     full: status.indexOf('full')>=0 || status.indexOf('capacity')>=0,
     waitlist: status.indexOf('wait')>=0,
     total: pick(r,['price','Price','Total','total']),
-    description: pick(r,['Description','description']),
+    description: stripHtml(pick(r,['Description','description'])),
   };
 }
 function parseDateISO(v){
