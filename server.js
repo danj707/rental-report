@@ -110,7 +110,7 @@ const ORGS = {
     orgId:   "aeba47d0-c97f-49cb-a0e9-93c5af3a68fa",
     logoUrl: "https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2Forganization-aeba47d0-c97f-49cb-a0e9-93c5af3a68fa%2FfullLogo.png%3F1765923560125&w=1920&q=75",
     facility: { mbUuid: "c876b1d7-df79-48c5-abf5-62917dee3534", defaultDateRange: 8, defaultLocationFilter: "Apex Center" },
-    programs: { mbUuid: "dee5b922-303f-47d9-abe3-75597410ad67" },
+    programs: { mbUuid: "bf520bbd-4d8d-42ab-9538-37ad630bf58e" },
     "court-utilization": { mbUuid: "82d14a94-78ad-48d6-9531-11e72f53e285" },
     calendar: { mbUuid: "8a3dac9b-6c34-45e1-a7d0-3a177477fe17" },
   },
@@ -1750,6 +1750,58 @@ app.post("/api/admin/restart", async (req, res) => {
   }
 });
 
+// ── GET /api/admin/railway-status — latest deployment info ───────────
+// Returns the most recent deployment's status, timestamp, and service URL.
+app.get("/api/admin/railway-status", async (req, res) => {
+  const token = process.env.RAILWAY_API_TOKEN;
+  if (!token) return res.json({ ok: false, error: "No RAILWAY_API_TOKEN" });
+  const serviceId     = process.env.RAILWAY_SERVICE_ID;
+  const environmentId = process.env.RAILWAY_ENVIRONMENT_ID;
+  if (!serviceId || !environmentId) return res.json({ ok: false, error: "Missing Railway env vars" });
+  const query = `query LatestDeploy($serviceId: String!, $environmentId: String!) {
+    deployments(first: 1, input: { serviceId: $serviceId, environmentId: $environmentId }) {
+      edges {
+        node {
+          id
+          status
+          createdAt
+          updatedAt
+          staticUrl
+          meta
+        }
+      }
+    }
+  }`;
+  try {
+    const resp = await fetch("https://backboard.railway.com/graphql/v2", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+      body: JSON.stringify({ query, variables: { serviceId, environmentId } }),
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (data.errors) return res.json({ ok: false, error: data.errors[0]?.message || "Railway API error" });
+    const node = data?.data?.deployments?.edges?.[0]?.node;
+    if (!node) return res.json({ ok: false, error: "No deployments found" });
+    const uptime = process.uptime();
+    const uptimeStr = uptime > 86400
+      ? `${Math.floor(uptime/86400)}d ${Math.floor((uptime%86400)/3600)}h`
+      : uptime > 3600
+        ? `${Math.floor(uptime/3600)}h ${Math.floor((uptime%3600)/60)}m`
+        : `${Math.floor(uptime/60)}m`;
+    res.json({
+      ok: true,
+      status: node.status,
+      createdAt: node.createdAt,
+      updatedAt: node.updatedAt,
+      deployId: node.id?.slice(0,8),
+      uptime: uptimeStr,
+      memMB: Math.round(process.memoryUsage().rss / 1024 / 1024),
+    });
+  } catch (err) {
+    res.json({ ok: false, error: err.message });
+  }
+});
+
 // ── POST /api/admin/update-link — change one report's Metabase link ──
 // Writes server.js on GitHub (Railway auto-redeploys) and updates the
 // in-memory ORGS map immediately. Body: { password, org, report, link }.
@@ -2131,6 +2183,40 @@ app.get("/", (req, res) => {
     <div style="flex:1"></div>
     <button onclick="openAddOrg()" style="font-size:12px;padding:6px 14px;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.2);border-radius:5px;color:#eee;cursor:pointer;transition:background .15s" onmouseover="this.style.background='rgba(255,255,255,.22)'" onmouseout="this.style.background='rgba(255,255,255,.12)'">➕ Add Org</button>
   </div>
+  <!-- Railway Status Bar -->
+  <div id="railway-bar" style="background:#1e1e1e;border-bottom:1px solid #333;padding:6px 20px;display:flex;align-items:center;gap:16px;font-size:11px;color:#999;min-height:28px">
+    <span style="color:#666;font-weight:600;text-transform:uppercase;letter-spacing:.06em;font-size:10px">Railway</span>
+    <span id="rw-dot" style="width:8px;height:8px;border-radius:50%;background:#555;flex-shrink:0"></span>
+    <span id="rw-status">Loading…</span>
+    <span id="rw-deploy" style="color:#666"></span>
+    <span id="rw-uptime" style="color:#666"></span>
+    <span id="rw-mem" style="color:#666"></span>
+    <span style="flex:1"></span>
+    <span id="rw-error" style="color:#e55;font-size:10px"></span>
+  </div>
+  <script>
+  (function fetchRailwayStatus(){
+    fetch('/api/admin/railway-status')
+      .then(r=>r.json()).then(d=>{
+        const dot=document.getElementById('rw-dot'),st=document.getElementById('rw-status'),
+              dep=document.getElementById('rw-deploy'),up=document.getElementById('rw-uptime'),
+              mem=document.getElementById('rw-mem'),err=document.getElementById('rw-error');
+        if(!d.ok){err.textContent=d.error||'Error';st.textContent='Unknown';return;}
+        const colors={SUCCESS:'#22c55e',BUILDING:'#f59e0b',DEPLOYING:'#3b82f6',
+                      FAILED:'#ef4444',CRASHED:'#ef4444',REMOVED:'#6b7280'};
+        dot.style.background=colors[d.status]||'#6b7280';
+        st.textContent=d.status;st.style.color=colors[d.status]||'#999';
+        if(d.createdAt){
+          const ago=Math.round((Date.now()-new Date(d.createdAt).getTime())/60000);
+          const agoStr=ago<60?ago+'m ago':Math.round(ago/60)+'h ago';
+          dep.textContent='Deploy '+d.deployId+' · '+agoStr;
+        }
+        if(d.uptime) up.textContent='Up '+d.uptime;
+        if(d.memMB) mem.textContent=d.memMB+' MB';
+      }).catch(()=>{document.getElementById('rw-status').textContent='Failed to reach API';});
+    setTimeout(fetchRailwayStatus,60000);
+  })();
+  </script>
   <!-- ── Add Org Modal ── -->
   <div id="add-org-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:1000;overflow-y:auto;padding:40px 16px">
     <div id="add-org-modal" style="background:#fff;border-radius:10px;max-width:560px;margin:0 auto;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.3)">
