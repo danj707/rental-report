@@ -866,9 +866,9 @@ function buildMetabaseParams(query, reportType) {
       params.push({ type: "category", target: ["variable", ["template-tag", "site_type"]], value: query.site_type });
     }
   }
-  if (reportType === "roster" && query.section_name) {
-    params.push({ type: "text", target: ["variable", ["template-tag", "section_name"]], value: query.section_name });
-  }
+  // NOTE: roster section filtering is client-side (substring match in the page),
+  // not a Metabase template tag. Passing section_name here would make Metabase
+  // reject the query (unknown parameter), so it is intentionally not forwarded.
   return params;
 }
 
