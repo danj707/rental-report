@@ -2927,6 +2927,29 @@ app.get("/", (req, res) => {
     // Newest first. Add a new entry at the TOP for every change we ship.
     // History below back-filled from the GitHub commit log.
     const UPDATES = [
+      { date: '2026-06-06', title: 'Admin dashboard: Railway status bar', items: [
+        'The admin page now shows a live Railway status bar below the header \u2014 deploy status with colored dot (green/yellow/red), deploy ID and age, server uptime, and memory usage',
+        'Auto-refreshes every 60 seconds; requires RAILWAY_API_TOKEN env var',
+      ] },
+      { date: '2026-06-06', title: 'Program Revenue: program-level redesign', items: [
+        'Report is now program-level (one row per program) instead of section-level with grouped sub-rows',
+        'New columns: Sections (count), Utilization (enrolled / capacity), Charged, Received, Outstanding',
+        'Replaces the old Revenue column and Section/Session enrollment breakdown',
+        'Summary cards now show Charged, Received, Outstanding, Refunds, Net Revenue, Enrollments, and Programs \u2014 each with a short description of what it measures',
+        'AI Insights blob updated to send per-program charged/received/outstanding data',
+        'Excel export updated to match new columns',
+      ] },
+      { date: '2026-06-06', title: 'Calendar: Present mode, shareable links, org branding', items: [
+        'Present mode \u2014 add ?present=1 to any calendar URL for an auto-scrolling kiosk/TV view. Toolbar hidden, larger fonts for readability, loops continuously, auto-refreshes data every 5 min. Press Esc to exit. Present \u25B6 button in toolbar opens it in a new tab',
+        'Shareable filtered links \u2014 filter dropdowns now sync to the URL via replaceState (?activity=Tennis&location=Apex+Tennis+Center). Copy the URL and the recipient gets the same filtered view',
+        'Filter dropdowns populated from a 6-month lookahead so all activities and locations appear regardless of current week',
+        'Org banner with logo and display name at the top of the calendar, injected server-side',
+        'Event card borders (semi-transparent white) so adjacent same-color events don\u2019t blend',
+        '\u201CFrom\u201D pricing prefix added to list view (was already on the popover)',
+        'Doubled hour height in week and day views for better readability',
+        'High-contrast white pill for +N more chips inside colored event blocks',
+        'Close button (x) centered with flexbox',
+      ] },
       { date: '2026-06-06', title: 'Calendar: public access, addable from dashboard, collapsed hours', items: [
         'Calendar is now public \u2014 no token required. Direct links like /apex/calendar and /watertown/calendar are shareable without auth',
         'Calendar report type is now available in the \u201CAdd reports\u201D modal for all orgs',
