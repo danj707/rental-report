@@ -1409,7 +1409,17 @@ app.get("/:org/calendar", (req, res) => {
   if (!org) return res.status(404).send("Unknown org");
   if (!org.calendar?.mbUuid) return res.status(404).send("Calendar report not configured for this org.");
   logEvent(slug, "calendar", "view", req.ip);
-  res.sendFile(path.join(__dirname, "public", "calendar.html"));
+  // Inject org metadata so the frontend can show logo + name
+  const slugTitle = slug.charAt(0).toUpperCase() + slug.slice(1);
+  const meta = {
+    slug,
+    displayName: org.displayName || `${slugTitle} Parks & Recreation`,
+    logoUrl: org.logoUrl || '',
+  };
+  const fs = require("fs");
+  const html = fs.readFileSync(path.join(__dirname, "public", "calendar.html"), "utf-8");
+  const inject = `<script>window.__ORG__=${JSON.stringify(meta)};</script>`;
+  res.type("html").send(html.replace("</head>", inject + "</head>"));
 });
 
 // ── GET /:org — org landing page ─────────────────────────────────────
