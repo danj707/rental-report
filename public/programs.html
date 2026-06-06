@@ -373,22 +373,20 @@ function cancelPct(cancellations, enrollments) {
 function normalizeRow(raw) {
   return {
     programName:        raw['Program']                     || '',
-    sectionName:        raw['Section']                     || '',
     season:             raw['Season']                      || '',
     regMode:            raw['Reg Mode']                    || '',
     startDate:          raw['Start Date']                  || '',
     endDate:            raw['End Date']                    || '',
-    revenue:            raw['Revenue']                     ?? 0,
-    enrollmentsSection: raw['Section Enrollments (opt)']   ?? 0,
-    revenueSection:     raw['Section Revenue (opt)']       ?? 0,
-    enrollmentsSession: raw['Session Enrollments (opt)']   ?? 0,
-    revenueSession:     raw['Session Revenue (opt)']       ?? 0,
+    sections:           raw['Sections']                    ?? 0,
     enrollments:        raw['Enrollments']                 ?? 0,
-    enrolledCapacity:   raw['Enrolled / Capacity']         || '',
+    utilization:        raw['Utilization']                 || '',
     fillPct:            raw['Fill %']                      ?? null,
     waitlist:           raw['Waitlist']                    ?? 0,
     cancellations:      raw['Cancellations']               ?? 0,
     refunds:            raw['Refunds']                     ?? 0,
+    charged:            raw['Charged']                     ?? 0,
+    received:           raw['Received']                    ?? 0,
+    outstanding:        raw['Outstanding']                 ?? 0,
     netRevenue:         raw['Net Revenue']                 ?? 0,
   };
 }
@@ -423,24 +421,13 @@ function App() {
 
   const [search, setSearch] = useState(() => new URLSearchParams(window.location.search).get('search') || '');
 
-  const [showDetails, setShowDetails] = useState(() => {
-    try { return localStorage.getItem(LS_SHOW_DETAILS) === 'true'; } catch { return false; }
-  });
-  const [colPresence, setColPresence] = useState({ regMode: false, breakdown: false, cancellations: false });
+  const [colPresence, setColPresence] = useState({ regMode: false, cancellations: false });
   const [insights,        setInsights]        = useState(null);
   const [insightsLoading, setInsightsLoading] = useState(false);
   const [insightsError,   setInsightsError]   = useState(null);
   const [showRegMode,  setShowRegMode]  = useState(() => { try { return localStorage.getItem(LS_SHOW_REGMODE)  === 'true'; } catch { return false; } });
   const [showWaitlist, setShowWaitlist] = useState(() => { try { return localStorage.getItem(LS_SHOW_WAITLIST) === 'true'; } catch { return false; } });
   const [showCancels,  setShowCancels]  = useState(() => { try { return localStorage.getItem(LS_SHOW_CANCELS)  === 'true'; } catch { return false; } });
-
-  function toggleDetails() {
-    setShowDetails(prev => {
-      const next = !prev;
-      try { localStorage.setItem(LS_SHOW_DETAILS, String(next)); } catch {}
-      return next;
-    });
-  }
 
   useEffect(() => {
     if (params._print === '1') document.body.classList.add('print-mode');
@@ -461,7 +448,6 @@ function App() {
         setLoadedEnd(ed);
         setColPresence({
           regMode:       raw.some(r => r['Reg Mode'] != null && r['Reg Mode'] !== ''),
-          breakdown:     raw.some(r => r['Section Enrollments (opt)'] != null || r['Session Enrollments (opt)'] != null),
           cancellations: raw.some(r => r['Cancellations'] != null),
         });
       })
@@ -506,46 +492,35 @@ function App() {
   function downloadExcel() {
     if (!rows || rows.length === 0) return;
     const headers = [
-      'Program','Section','Season',
+      'Program','Season',
       ...(showRegModeCol ? ['Reg Mode'] : []),
-      'Start Date','End Date','Revenue',
-      ...(showBreak ? ['Section Enrollments','Section Revenue','Session Enrollments','Session Revenue'] : []),
-      'Enrollments','Enrolled / Capacity','Fill %',
+      'Start Date','End Date','Sections','Enrollments','Utilization','Fill %',
       ...(showWaitlist ? ['Waitlist'] : []),
       ...(showCancelsCol ? ['Cancellations','Cancellation %'] : []),
-      'Refunds','Net Revenue'
+      'Charged','Received','Outstanding','Refunds','Net Revenue'
     ];
     const data = rows.map(r => {
-      const vis = regModeVis(r.regMode);
       const cp  = cancelPct(r.cancellations, r.enrollments);
       return [
-        r.programName, r.sectionName, r.season,
+        r.programName, r.season,
         ...(showRegModeCol ? [regModeLabel(r.regMode)] : []),
         r.startDate, r.endDate,
-        fmtNum(r.revenue),
-        ...(showBreak ? [
-          vis.sec  ? fmtNum(r.enrollmentsSection) : '',
-          vis.sec  ? fmtNum(r.revenueSection)     : '',
-          vis.sess ? fmtNum(r.enrollmentsSession) : '',
-          vis.sess ? fmtNum(r.revenueSession)     : '',
-        ] : []),
-        fmtNum(r.enrollments), r.enrolledCapacity,
+        fmtNum(r.sections), fmtNum(r.enrollments), r.utilization,
         r.fillPct != null ? fmtNum(r.fillPct) : '',
         ...(showWaitlist ? [fmtNum(r.waitlist)] : []),
         ...(showCancelsCol ? [fmtNum(r.cancellations), cp != null ? `${Math.round(cp)}%` : ''] : []),
+        fmtNum(r.charged), fmtNum(r.received), fmtNum(r.outstanding),
         fmtNum(r.refunds), fmtNum(r.netRevenue),
       ];
     });
     const ws = XLSX.utils.aoa_to_sheet([headers, ...data]);
     ws['!cols'] = [
-      {wch:30},{wch:30},{wch:14},
+      {wch:30},{wch:14},
       ...(showRegModeCol ? [{wch:14}] : []),
-      {wch:12},{wch:12},{wch:12},
-      ...(showBreak ? [{wch:14},{wch:14},{wch:14},{wch:14}] : []),
-      {wch:12},{wch:16},{wch:8},
+      {wch:12},{wch:12},{wch:10},{wch:12},{wch:16},{wch:8},
       ...(showWaitlist ? [{wch:10}] : []),
       ...(showCancelsCol ? [{wch:13},{wch:12}] : []),
-      {wch:12},{wch:12},
+      {wch:12},{wch:12},{wch:12},{wch:12},{wch:12},
     ];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Program Revenue');
@@ -566,41 +541,32 @@ function App() {
   const buildInsightsBlob = useCallback(() => {
     if (!filteredRows || filteredRows.length === 0) return {};
     const r2 = n => Math.round(n * 100) / 100;
-    const programMap = {};
-    filteredRows.forEach(r => {
-      if (!programMap[r.programName]) programMap[r.programName] = {
-        name: r.programName, sections: 0, revenue: 0, enrollments: 0,
-        waitlist: 0, cancellations: 0, refunds: 0, netRevenue: 0, fillPcts: [],
-      };
-      const p = programMap[r.programName];
-      p.sections++;
-      p.revenue      += fmtNum(r.revenue);
-      p.enrollments  += fmtNum(r.enrollments);
-      p.waitlist     += fmtNum(r.waitlist);
-      p.cancellations += fmtNum(r.cancellations);
-      p.refunds      += fmtNum(r.refunds);
-      p.netRevenue   += fmtNum(r.netRevenue);
-      if (r.fillPct != null) p.fillPcts.push(fmtNum(r.fillPct));
-    });
-    const programs = Object.values(programMap)
-      .sort((a, b) => b.revenue - a.revenue)
+    const programs = filteredRows
+      .slice()
+      .sort((a, b) => fmtNum(b.charged) - fmtNum(a.charged))
       .slice(0, 30)
-      .map(p => ({
-        name: p.name,
-        sections: p.sections,
-        revenue: r2(p.revenue),
-        enrollments: p.enrollments,
-        avgFillPct: p.fillPcts.length ? Math.round(p.fillPcts.reduce((a,b)=>a+b,0)/p.fillPcts.length) : null,
-        waitlist: p.waitlist || 0,
-        cancellations: p.cancellations || 0,
-        cancellationRate: p.enrollments > 0 ? Math.round((p.cancellations/p.enrollments)*100) : null,
+      .map(r => ({
+        name: r.programName,
+        sections: fmtNum(r.sections),
+        charged: r2(fmtNum(r.charged)),
+        received: r2(fmtNum(r.received)),
+        outstanding: r2(fmtNum(r.outstanding)),
+        enrollments: fmtNum(r.enrollments),
+        fillPct: r.fillPct != null ? fmtNum(r.fillPct) : null,
+        waitlist: fmtNum(r.waitlist) || 0,
+        cancellations: fmtNum(r.cancellations) || 0,
+        cancellationRate: fmtNum(r.enrollments) > 0 ? Math.round((fmtNum(r.cancellations)/fmtNum(r.enrollments))*100) : null,
+        refunds: r2(fmtNum(r.refunds)),
+        netRevenue: r2(fmtNum(r.netRevenue)),
       }));
     return {
       period: { start: loadedStart, end: loadedEnd },
       summary: {
         programCount,
-        sectionCount: filteredRows.length,
-        totalRevenue: r2(totals.revenue),
+        totalSections: totals.sections,
+        totalCharged: r2(totals.charged),
+        totalReceived: r2(totals.received),
+        totalOutstanding: r2(totals.outstanding),
         totalEnrollments: totals.enrollments,
         totalWaitlist: totals.waitlist,
         totalCancellations: totals.cancellations || 0,
@@ -657,17 +623,16 @@ function App() {
   const totals = useMemo(() => {
     if (!filteredRows || filteredRows.length === 0) return null;
     return filteredRows.reduce((acc, r) => ({
-      revenue:            acc.revenue            + fmtNum(r.revenue),
+      charged:            acc.charged            + fmtNum(r.charged),
+      received:           acc.received           + fmtNum(r.received),
+      outstanding:        acc.outstanding        + fmtNum(r.outstanding),
       refunds:            acc.refunds            + fmtNum(r.refunds),
       netRevenue:         acc.netRevenue         + fmtNum(r.netRevenue),
       enrollments:        acc.enrollments        + fmtNum(r.enrollments),
-      enrollmentsSection: acc.enrollmentsSection + fmtNum(r.enrollmentsSection),
-      enrollmentsSession: acc.enrollmentsSession + fmtNum(r.enrollmentsSession),
-      revenueSection:     acc.revenueSection     + fmtNum(r.revenueSection),
-      revenueSession:     acc.revenueSession     + fmtNum(r.revenueSession),
+      sections:           acc.sections           + fmtNum(r.sections),
       waitlist:           acc.waitlist           + fmtNum(r.waitlist),
       cancellations:      acc.cancellations      + fmtNum(r.cancellations),
-    }), { revenue:0, refunds:0, netRevenue:0, enrollments:0, enrollmentsSection:0, enrollmentsSession:0, revenueSection:0, revenueSession:0, waitlist:0, cancellations:0 });
+    }), { charged:0, received:0, outstanding:0, refunds:0, netRevenue:0, enrollments:0, sections:0, waitlist:0, cancellations:0 });
   }, [filteredRows]);
 
   const programCount = grouped ? Object.keys(grouped).length : 0;
@@ -675,7 +640,6 @@ function App() {
   const hasCancellations = colPresence.cancellations;
   const showRegModeCol   = hasRegMode && showRegMode;
   const showCancelsCol   = hasCancellations && showCancels;
-  const showBreak        = showDetails && colPresence.breakdown;
   const leftCols         = 4 + (showRegModeCol ? 1 : 0);
   const isPrint = params._print === '1';
   const datesChanged = startDate !== loadedStart || endDate !== loadedEnd;
@@ -701,17 +665,6 @@ function App() {
         >
           {loading ? 'Loading…' : '▶ Run Report'}
         </button>
-        {colPresence.breakdown && <>
-          <div className="divider" />
-          <button
-            className={showDetails ? 'btn-toggle-on' : ''}
-            onClick={toggleDetails}
-            style={{fontSize:11, padding:'4px 10px'}}
-            title="Show section/session enrollment and revenue breakdown"
-          >
-            {showDetails ? '▾ Details: On' : '▸ Details: Off'}
-          </button>
-        </>}
         <div className="divider" />
         <div style={{display:'flex',alignItems:'center',gap:8,fontSize:11}}>
           <span style={{color:'#999',fontSize:10,textTransform:'uppercase',letterSpacing:'0.05em'}}>Cols</span>
@@ -808,8 +761,7 @@ function App() {
   const dateRangeLabel = [loadedStart && formatDisplayDate(loadedStart), loadedEnd && formatDisplayDate(loadedEnd)].filter(Boolean).join(' – ') || 'All Dates';
 
   // Column span helpers
-  const detailCols = showDetails ? 4 : 0;
-  const totalCols  = 6 + detailCols + 6; // section+season+start+end + rev + [details] + enroll+cap+fill+wait+refunds+net
+  const totalCols  = 13 + (showRegModeCol ? 1 : 0) + (showWaitlist ? 1 : 0) + (showCancelsCol ? 2 : 0);
 
   return (
     <div>
@@ -834,29 +786,39 @@ function App() {
         {totals && (
           <div className="summary-cards">
             <div className="summary-card">
-              <div className="card-label">Revenue</div>
-              <div className="card-value green">{fmtMoney(totals.revenue)}</div>
-              <div className="card-sub">{totals.enrollments.toLocaleString()} enrollments</div>
+              <div className="card-label">Charged</div>
+              <div className="card-value green">{fmtMoney(totals.charged)}</div>
+              <div className="card-sub">Total amount billed to registrants</div>
+            </div>
+            <div className="summary-card">
+              <div className="card-label">Received</div>
+              <div className="card-value green">{fmtMoney(totals.received)}</div>
+              <div className="card-sub">Payments collected to date</div>
+            </div>
+            <div className="summary-card">
+              <div className="card-label">Outstanding</div>
+              <div className={`card-value ${fmtNum(totals.outstanding) > 0 ? 'red' : ''}`}>{fmtMoney(totals.outstanding)}</div>
+              <div className="card-sub">Charged minus received — unpaid balance</div>
             </div>
             <div className="summary-card">
               <div className="card-label">Refunds</div>
               <div className="card-value red">{fmtMoney(totals.refunds)}</div>
-              <div className="card-sub">&nbsp;</div>
+              <div className="card-sub">Total refunded back to registrants</div>
             </div>
             <div className="summary-card">
               <div className="card-label">Net Revenue</div>
               <div className={`card-value ${totals.netRevenue < 0 ? 'red' : 'green'}`}>{fmtMoney(totals.netRevenue)}</div>
-              <div className="card-sub">revenue minus refunds</div>
+              <div className="card-sub">Received minus refunds</div>
             </div>
             <div className="summary-card">
               <div className="card-label">Enrollments</div>
               <div className="card-value blue">{totals.enrollments.toLocaleString()}</div>
-              <div className="card-sub">{totals.waitlist > 0 ? `${totals.waitlist} on waitlist` : 'no waitlist'}</div>
+              <div className="card-sub">{totals.waitlist > 0 ? `${totals.waitlist} on waitlist` : 'Active confirmed registrations'}</div>
             </div>
             <div className="summary-card">
               <div className="card-label">Programs</div>
               <div className="card-value">{programCount}</div>
-              <div className="card-sub">{filteredRows.length} section{filteredRows.length !== 1 ? 's' : ''}</div>
+              <div className="card-sub">{totals.sections} total sections across all programs</div>
             </div>
           </div>
         )}
@@ -869,7 +831,7 @@ function App() {
                 {insightsLoading ? 'Analyzing…' : (insights ? '↻ Refresh insights' : '✨ Get insights')}
               </button>
               {insights && !insightsLoading && (
-                <span className="insights-sub">Generated from {filteredRows.length} section{filteredRows.length !== 1 ? 's' : ''} across {programCount} program{programCount !== 1 ? 's' : ''}</span>
+                <span className="insights-sub">Generated from {programCount} program{programCount !== 1 ? 's' : ''}</span>
               )}
             </div>
             {insightsLoading && (
@@ -901,101 +863,52 @@ function App() {
           <table className="prog-table">
             <thead>
               <tr>
-                <th className="left" style={{minWidth:180}}>Section</th>
+                <th className="left" style={{minWidth:200}}>Program</th>
                 <th className="left" style={{minWidth:100}}>Season</th>
                 {showRegModeCol && <th className="left" style={{width:100}}>Reg Mode</th>}
                 <th className="left" style={{width:88}}>Start</th>
                 <th className="left" style={{width:88}}>End</th>
-                <th style={{width:90}}>Revenue</th>
-                {showBreak && <>
-                  <th style={{width:76}}>Sec Enroll</th>
-                  <th style={{width:82}}>Sec Rev</th>
-                  <th style={{width:76}}>Sess Enroll</th>
-                  <th style={{width:82}}>Sess Rev</th>
-                </>}
+                <th style={{width:64}}>Sections</th>
                 <th style={{width:76}}>Enroll</th>
-                <th style={{width:96}}>Enrolled / Cap</th>
+                <th style={{width:96}}>Utilization</th>
                 <th style={{width:60}}>Fill %</th>
                 {showWaitlist && <th style={{width:64}}>Waitlist</th>}
                 {showCancelsCol && <>
                   <th style={{width:84}}>Cancels</th>
                   <th style={{width:72}}>Cancel %</th>
                 </>}
+                <th style={{width:90}}>Charged</th>
+                <th style={{width:90}}>Received</th>
+                <th style={{width:90}}>Outstanding</th>
                 <th style={{width:90}}>Refunds</th>
                 <th style={{width:90}}>Net Rev</th>
               </tr>
             </thead>
             <tbody>
-              {Object.entries(grouped).map(([progName, sections]) => {
-                const sub = sections.reduce((acc, r) => ({
-                  revenue:            acc.revenue            + fmtNum(r.revenue),
-                  refunds:            acc.refunds            + fmtNum(r.refunds),
-                  netRevenue:         acc.netRevenue         + fmtNum(r.netRevenue),
-                  enrollments:        acc.enrollments        + fmtNum(r.enrollments),
-                  enrollmentsSection: acc.enrollmentsSection + fmtNum(r.enrollmentsSection),
-                  enrollmentsSession: acc.enrollmentsSession + fmtNum(r.enrollmentsSession),
-                  revenueSection:     acc.revenueSection     + fmtNum(r.revenueSection),
-                  revenueSession:     acc.revenueSession     + fmtNum(r.revenueSession),
-                  waitlist:           acc.waitlist           + fmtNum(r.waitlist),
-                  cancellations:      acc.cancellations      + fmtNum(r.cancellations),
-                }), {revenue:0,refunds:0,netRevenue:0,enrollments:0,enrollmentsSection:0,enrollmentsSession:0,revenueSection:0,revenueSession:0,waitlist:0,cancellations:0});
-
+              {filteredRows.map((r, i) => {
+                const cp = cancelPct(r.cancellations, r.enrollments);
                 return (
-                  <React.Fragment key={progName}>
-                    {/* Program header */}
-                    <tr className="prog-header">
-                      <td className="prog-name" colSpan={leftCols}>{progName}</td>
-                      <td className="money">{fmtMoney(sub.revenue)}</td>
-                      {showBreak && <>
-                        <td>{sub.enrollmentsSection || ''}</td>
-                        <td className="money">{fmtMoney(sub.revenueSection)}</td>
-                        <td>{sub.enrollmentsSession || ''}</td>
-                        <td className="money">{fmtMoney(sub.revenueSession)}</td>
-                      </>}
-                      <td>{sub.enrollments}</td>
-                      <td>—</td>
-                      <td>—</td>
-                      {showWaitlist && <td>{sub.waitlist > 0 ? sub.waitlist : '—'}</td>}
-                      {showCancelsCol && <>
-                        <td className="muted">{sub.cancellations > 0 ? sub.cancellations : '—'}</td>
-                        <td className="muted">{cancelPct(sub.cancellations, sub.enrollments) != null ? `${Math.round(cancelPct(sub.cancellations, sub.enrollments))}%` : '—'}</td>
-                      </>}
-                      <td className="money">{fmtMoney(sub.refunds)}</td>
-                      <td className="money">{fmtMoney(sub.netRevenue)}</td>
-                    </tr>
-
-                    {/* Section rows */}
-                    {sections.map((r, i) => {
-                      const vis = regModeVis(r.regMode);
-                      const cp  = cancelPct(r.cancellations, r.enrollments);
-                      return (
-                      <tr key={i} className="data-row">
-                        <td className="left" style={{paddingLeft:16}}>{r.sectionName}</td>
-                        <td className="left mono">{r.season}</td>
-                        {showRegModeCol && <td className="left">{regModeLabel(r.regMode)}</td>}
-                        <td className="left mono">{r.startDate}</td>
-                        <td className="left mono">{r.endDate}</td>
-                        <td className={`money ${fmtNum(r.revenue) === 0 ? 'zero' : ''}`}>{fmtMoney(r.revenue)}</td>
-                        {showBreak && <>
-                          <td className={!vis.sec ? 'muted' : fmtNum(r.enrollmentsSection) === 0 ? 'zero' : ''}>{vis.sec ? (fmtNum(r.enrollmentsSection) || '—') : ''}</td>
-                          <td className={`money ${!vis.sec ? 'muted' : fmtNum(r.revenueSection) === 0 ? 'zero' : ''}`}>{vis.sec ? fmtMoney(r.revenueSection) : ''}</td>
-                          <td className={!vis.sess ? 'muted' : fmtNum(r.enrollmentsSession) === 0 ? 'zero' : ''}>{vis.sess ? (fmtNum(r.enrollmentsSession) || '—') : ''}</td>
-                          <td className={`money ${!vis.sess ? 'muted' : fmtNum(r.revenueSession) === 0 ? 'zero' : ''}`}>{vis.sess ? fmtMoney(r.revenueSession) : ''}</td>
-                        </>}
-                        <td>{fmtNum(r.enrollments) || '—'}</td>
-                        <td className="mono">{r.enrolledCapacity || '—'}</td>
-                        <td className={fillClass(r.fillPct)}>{r.fillPct != null ? `${fmtNum(r.fillPct)}%` : '—'}</td>
-                        {showWaitlist && <td className={fmtNum(r.waitlist) === 0 ? 'muted' : ''}>{fmtNum(r.waitlist) || '—'}</td>}
-                        {showCancelsCol && <>
-                          <td className={fmtNum(r.cancellations) === 0 ? 'muted' : ''}>{fmtNum(r.cancellations) || '—'}</td>
-                          <td className={cp == null ? 'muted' : ''}>{cp != null ? `${Math.round(cp)}%` : '—'}</td>
-                        </>}
-                        <td className={`money ${fmtNum(r.refunds) === 0 ? 'zero' : ''}`}>{fmtMoney(r.refunds)}</td>
-                        <td className={`money ${fmtNum(r.netRevenue) < 0 ? '' : ''}`} style={fmtNum(r.netRevenue) < 0 ? {color:'#b91c1c'} : {}}>{fmtMoney(r.netRevenue)}</td>
-                      </tr>
-                      );
-                    })}
-                  </React.Fragment>
+                  <tr key={i} className="data-row">
+                    <td className="left" style={{fontWeight:600}}>{r.programName}</td>
+                    <td className="left mono">{r.season}</td>
+                    {showRegModeCol && <td className="left">{regModeLabel(r.regMode)}</td>}
+                    <td className="left mono">{r.startDate}</td>
+                    <td className="left mono">{r.endDate}</td>
+                    <td>{fmtNum(r.sections) || '—'}</td>
+                    <td>{fmtNum(r.enrollments) || '—'}</td>
+                    <td className="mono">{r.utilization || '—'}</td>
+                    <td className={fillClass(r.fillPct)}>{r.fillPct != null ? `${fmtNum(r.fillPct)}%` : '—'}</td>
+                    {showWaitlist && <td className={fmtNum(r.waitlist) === 0 ? 'muted' : ''}>{fmtNum(r.waitlist) || '—'}</td>}
+                    {showCancelsCol && <>
+                      <td className={fmtNum(r.cancellations) === 0 ? 'muted' : ''}>{fmtNum(r.cancellations) || '—'}</td>
+                      <td className={cp == null ? 'muted' : ''}>{cp != null ? `${Math.round(cp)}%` : '—'}</td>
+                    </>}
+                    <td className={`money ${fmtNum(r.charged) === 0 ? 'zero' : ''}`}>{fmtMoney(r.charged)}</td>
+                    <td className={`money ${fmtNum(r.received) === 0 ? 'zero' : ''}`}>{fmtMoney(r.received)}</td>
+                    <td className={`money ${fmtNum(r.outstanding) === 0 ? 'zero' : ''}`}>{fmtMoney(r.outstanding)}</td>
+                    <td className={`money ${fmtNum(r.refunds) === 0 ? 'zero' : ''}`}>{fmtMoney(r.refunds)}</td>
+                    <td className="money" style={fmtNum(r.netRevenue) < 0 ? {color:'#b91c1c'} : {}}>{fmtMoney(r.netRevenue)}</td>
+                  </tr>
                 );
               })}
             </tbody>
@@ -1004,14 +917,8 @@ function App() {
             {totals && (
               <tfoot>
                 <tr>
-                  <td className="left" colSpan={leftCols}>Grand Total — {filteredRows.length} section{filteredRows.length !== 1 ? 's' : ''} across {programCount} program{programCount !== 1 ? 's' : ''}</td>
-                  <td>{fmtMoney(totals.revenue)}</td>
-                  {showBreak && <>
-                    <td>{totals.enrollmentsSection}</td>
-                    <td>{fmtMoney(totals.revenueSection)}</td>
-                    <td>{totals.enrollmentsSession}</td>
-                    <td>{fmtMoney(totals.revenueSession)}</td>
-                  </>}
+                  <td className="left" colSpan={leftCols}>Grand Total — {programCount} program{programCount !== 1 ? 's' : ''}</td>
+                  <td>{totals.sections}</td>
                   <td>{totals.enrollments.toLocaleString()}</td>
                   <td>—</td>
                   <td>—</td>
@@ -1020,6 +927,9 @@ function App() {
                     <td>{totals.cancellations > 0 ? totals.cancellations : '—'}</td>
                     <td>{cancelPct(totals.cancellations, totals.enrollments) != null ? `${Math.round(cancelPct(totals.cancellations, totals.enrollments))}%` : '—'}</td>
                   </>}
+                  <td>{fmtMoney(totals.charged)}</td>
+                  <td>{fmtMoney(totals.received)}</td>
+                  <td>{fmtMoney(totals.outstanding)}</td>
                   <td>{fmtMoney(totals.refunds)}</td>
                   <td>{fmtMoney(totals.netRevenue)}</td>
                 </tr>
