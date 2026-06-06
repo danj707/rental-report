@@ -160,7 +160,7 @@ const ORGS = {
 const REPORT_TYPES = ["facility", "gl", "historic", "programs", "roster", "overview", "products", "memberships", "court-utilization", "calendar"];
 // Report types that are valid system-wide but should NOT be offered in the
 // dashboard "+ Add report" flow (e.g. not yet ready for self-serve onboarding).
-const NON_ADDABLE_REPORTS = new Set(["overview", "calendar"]);
+const NON_ADDABLE_REPORTS = new Set(["overview"]);
 
 // ── Dynamic orgs (added via dashboard UI) ────────────────────────────
 // Loaded at startup and merged into ORGS; also updated at runtime.
@@ -2831,6 +2831,11 @@ app.get("/", (req, res) => {
     // Newest first. Add a new entry at the TOP for every change we ship.
     // History below back-filled from the GitHub commit log.
     const UPDATES = [
+      { date: '2026-06-06', title: 'Calendar: public access, addable from dashboard, collapsed hours', items: [
+        'Calendar is now public \u2014 no token required. Direct links like /apex/calendar and /watertown/calendar are shareable without auth',
+        'Calendar report type is now available in the \u201CAdd reports\u201D modal for all orgs',
+        'Empty hour blocks are collapsed \u2014 the time grid snaps to 1 hour of padding around actual events instead of showing a fixed 6am\u201310pm range',
+      ] },
       { date: '2026-06-05', title: 'Calendar: overlap handling, Day view, descriptions, Watertown', items: [
         'Week view now groups sessions that start within 15 minutes of each other \u2014 the first session renders at its time slot and a \u201C+N more\u201D chip expands to show the rest, keeping dense days readable',
         'New Day view toggle gives full-width detail for a single day with side-by-side columns for overlapping sessions',
