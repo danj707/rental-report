@@ -78,6 +78,16 @@
     .report-header-right { text-align: right; }
     .report-header .date-range { font-size: 11px; color: #666; }
 
+    /* ── Info blurb ── */
+    .report-blurb {
+      background: #f0f4f8; border-left: 3px solid #6b7280; padding: 10px 14px;
+      margin-bottom: 16px; font-size: 12.5px; line-height: 1.55; color: #374151;
+      border-radius: 4px;
+    }
+    .report-blurb strong { color: #111827; }
+    .report-blurb em { font-style: normal; font-weight: 600; }
+    @media print { .report-blurb { background: #f5f5f5; -webkit-print-color-adjust: exact; } }
+
     /* ── Summary cards ── */
     .summary-cards { display: flex; gap: 12px; margin-bottom: 18px; flex-wrap: wrap; }
     .summary-card {
@@ -806,6 +816,11 @@ function App() {
           <div className="report-header-right">
             <div className="date-range">{dateRangeLabel}</div>
           </div>
+        </div>
+
+        {/* Info blurb */}
+        <div className="report-blurb">
+          <strong>How revenue is calculated:</strong> This report uses transaction-based revenue — only succeeded payments are counted. For payment plans, only collected installments appear under Received; future installments are not included until they are paid. <em>Charged</em> reflects the invoiced amount after any discounts. <em>Received</em> is actual cash collected. <em>Outstanding</em> is the unpaid balance (Charged minus Received minus Refunds). Fill rate compares enrollment (or session bookings for session-based programs) against capacity.
         </div>
 
         {/* Summary cards */}
