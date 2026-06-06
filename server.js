@@ -103,6 +103,7 @@ const ORGS = {
     gl:       { mbUuid: "e0043550-0ab8-429f-bbb0-35911c1190f6" },
     programs: { mbUuid: "d3a3554f-1232-4803-9cc7-5b0f611360b0" },
     roster:   { mbUuid: "4f9861ef-e8ac-4447-bf88-3648c1e54a8b" },
+    calendar: { mbUuid: "70717c4f-9395-4c50-95ac-0622d95567f6" },
   },
   apex: {
     token:   "pcj5Qf0Wts7Wzc7P",
@@ -2825,6 +2826,12 @@ app.get("/", (req, res) => {
     // Newest first. Add a new entry at the TOP for every change we ship.
     // History below back-filled from the GitHub commit log.
     const UPDATES = [
+      { date: '2026-06-05', title: 'Calendar: overlap handling, Day view, descriptions, Watertown', items: [
+        'Week view now groups sessions that start within 15 minutes of each other \u2014 the first session renders at its time slot and a \u201C+N more\u201D chip expands to show the rest, keeping dense days readable',
+        'New Day view toggle gives full-width detail for a single day with side-by-side columns for overlapping sessions',
+        'Session popover now shows the section description (HTML-stripped) and prefixes price with \u201CFrom\u201D since pricing varies by group',
+        'Calendar report is now live for Watertown',
+      ] },
       { date: '2026-06-05', title: 'Class Roster: PDF matches the filtered view', items: [
         'Exporting a roster to PDF now captures exactly what is on screen — the section filter, the enrolled/cancelled status pills, the chosen form-response questions, and which columns you have shown or hidden all carry through to the PDF',
         'Previously the PDF ignored those filters and printed the full roster with the default columns regardless of what you had set up in the browser',
