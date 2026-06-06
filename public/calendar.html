@@ -535,14 +535,31 @@ function App(){
   const [src,setSrc]=useState('');
   const [loading,setLoading]=useState(true);
   const [popoverEv,setPopoverEv]=useState(null);
-  const [actFilter,setActFilter]=useState('');
-  const [locFilter,setLocFilter]=useState('');
+  // Read initial filter from URL params
+  const urlParams=useMemo(()=>new URLSearchParams(window.location.search),[]);
+  const [actFilter,setActFilter]=useState(()=>urlParams.get('activity')||'');
+  const [locFilter,setLocFilter]=useState(()=>urlParams.get('location')||'');
+  // All-time filter options (populated from a wide fetch)
+  const [allActivities,setAllActivities]=useState([]);
+  const [allLocations,setAllLocations]=useState([]);
 
   const load=useCallback(async(ws)=>{
     setLoading(true);
     const from=fmtISO(ws), to=fmtISO(addDays(ws,6));
     const {rows,src}=await fetchData(from,to);
     setRows(rows.map(normalizeRow)); setSrc(src); setLoading(false);
+  },[]);
+
+  // One-time wide fetch to populate all filter options (today → +180 days)
+  useEffect(()=>{
+    (async()=>{
+      const from=fmtISO(new Date());
+      const to=fmtISO(addDays(new Date(),180));
+      const {rows:wideRows}=await fetchData(from,to);
+      const norm=wideRows.map(normalizeRow);
+      setAllActivities([...new Set(norm.map(e=>e.activity).filter(Boolean))].sort());
+      setAllLocations([...new Set(norm.map(e=>e.location).filter(Boolean))].sort());
+    })();
   },[]);
 
   useEffect(()=>{ if(c.print) document.body.classList.add('print-mode'); },[]);
@@ -563,8 +580,9 @@ function App(){
   const rangeLabel=view==='day'
     ? (()=>{const dt=new Date(selectedDate+'T00:00:00'); return DOWL[dt.getDay()]+', '+MON[dt.getMonth()]+' '+dt.getDate()+', '+dt.getFullYear();})()
     : MON[ws.getMonth()]+' '+ws.getDate()+' – '+MON[we.getMonth()]+' '+we.getDate()+', '+we.getFullYear();
-  const activities=useMemo(()=>[...new Set(rows.map(e=>e.activity).filter(Boolean))].sort(),[rows]);
-  const locations=useMemo(()=>[...new Set(rows.map(e=>e.location).filter(Boolean))].sort(),[rows]);
+  // Use wide-range options for dropdowns, fall back to current week if wide hasn't loaded yet
+  const activities=allActivities.length>0?allActivities:[...new Set(rows.map(e=>e.activity).filter(Boolean))].sort();
+  const locations=allLocations.length>0?allLocations:[...new Set(rows.map(e=>e.location).filter(Boolean))].sort();
   const filtered=useMemo(()=>rows.filter(e=>(!actFilter||e.activity===actFilter)&&(!locFilter||e.location===locFilter)),[rows,actFilter,locFilter]);
 
   return (
