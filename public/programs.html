@@ -421,7 +421,7 @@ function App() {
     return () => { try { delete window.recShareLink; } catch (e) { window.recShareLink = undefined; } };
   }, [loadedStart, loadedEnd, startDate, endDate]);
 
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = useState(() => new URLSearchParams(window.location.search).get('search') || '');
 
   const [showDetails, setShowDetails] = useState(() => {
     try { return localStorage.getItem(LS_SHOW_DETAILS) === 'true'; } catch { return false; }
@@ -489,6 +489,7 @@ function App() {
     const qs = new URLSearchParams();
     if (loadedStart) qs.set('start_date', loadedStart);
     if (loadedEnd)   qs.set('end_date',   loadedEnd);
+    if (search && search.trim()) qs.set('search', search.trim());
     fetch(withToken(`${basePath}/api/pdf?${qs}`))
       .then(r => r.blob())
       .then(blob => {

@@ -848,10 +848,23 @@ function App() {
   // Only worth showing the filter when the data actually splits across >1 desk.
   const hasDesk = useMemo(() => allDesks.length > 1, [allDesks]);
 
-  // Reset desk selection to "all" whenever a fresh dataset loads.
+  // Reset desk selection to "all" whenever a fresh dataset loads — except on the
+  // first load, where a `desks` URL param (PDF/print, share link) pins a subset.
+  const urlDesksApplied = useRef(false);
   useEffect(() => {
-    if (rows && hasDesk) setSelectedDesks(new Set(allDesks));
-    else setSelectedDesks(null);
+    if (rows && hasDesk) {
+      const urlDesks = new URLSearchParams(window.location.search).get('desks');
+      if (!urlDesksApplied.current && urlDesks) {
+        urlDesksApplied.current = true;
+        const want = new Set(urlDesks.split(',').map(s => s.trim()).filter(Boolean));
+        const valid = allDesks.filter(d => want.has(d));
+        setSelectedDesks(new Set(valid.length ? valid : allDesks));
+      } else {
+        setSelectedDesks(new Set(allDesks));
+      }
+    } else {
+      setSelectedDesks(null);
+    }
   }, [rows, hasDesk, allDesks]);
 
   // Rows actually rendered: desk-filtered then re-collapsed to one row per GL code.
@@ -996,8 +1009,14 @@ function App() {
   function downloadPdf() {
     setPdfLoading(true);
     const parts = window.location.pathname.split('/').filter(Boolean);
+    const qs = new URLSearchParams({ start_date: loadedStart||'', end_date: loadedEnd||'' });
+    // Respect the on-screen desk filter so the PDF matches the displayed rollup.
+    // Only send when a subset is selected (omit ⇒ "all", keeps URL short).
+    if (hasDesk && selectedDesks && selectedDesks.size < allDesks.length) {
+      qs.set('desks', [...selectedDesks].join(','));
+    }
     const pdfUrl = parts.length >= 2
-      ? `/${parts[0]}/${parts[1]}/api/pdf?${new URLSearchParams({start_date: loadedStart||'', end_date: loadedEnd||''})}`
+      ? `/${parts[0]}/${parts[1]}/api/pdf?${qs}`
       : '/api/pdf';
     fetch(withToken(pdfUrl))
       .then(r => r.blob())
