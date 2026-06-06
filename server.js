@@ -1729,7 +1729,7 @@ app.post("/api/admin/restart", async (req, res) => {
     serviceInstanceRedeploy(environmentId: $environmentId, serviceId: $serviceId)
   }`;
   try {
-    const resp = await fetch("https://backboard.railway.com/graphql/v2", {
+    const resp = await fetch("https://backboard.railway.app/graphql/v2", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -1773,7 +1773,7 @@ app.get("/api/admin/railway-status", async (req, res) => {
     }
   }`;
   try {
-    const resp = await fetch("https://backboard.railway.com/graphql/v2", {
+    const resp = await fetch("https://backboard.railway.app/graphql/v2", {
       method: "POST",
       headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
       body: JSON.stringify({ query, variables: { serviceId, environmentId } }),
