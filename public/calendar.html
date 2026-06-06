@@ -15,7 +15,7 @@
   *{box-sizing:border-box}
   body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
   .wrap{max-width:1280px;margin:0 auto;padding:20px}
-  .toolbar{display:flex;gap:10px;align-items:center;background:var(--card);
+  .toolbar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;background:var(--card);
     border:1px solid var(--line);border-radius:12px;padding:12px 14px;box-shadow:var(--shadow);margin-bottom:16px}
   .toolbar .grow{flex:1}
   button,select,input[type=date]{font:inherit;border:1px solid var(--line);background:#fff;color:var(--ink);
@@ -33,25 +33,51 @@
   /* week grid */
   .week{display:grid;grid-template-columns:56px repeat(7,1fr);background:var(--card);
     border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);overflow:hidden}
-  .week .dayhead{padding:8px 6px;text-align:center;border-bottom:1px solid var(--line);border-left:1px solid var(--line);font-weight:600}
+  .week .dayhead{padding:8px 6px;text-align:center;border-bottom:1px solid var(--line);border-left:1px solid var(--line);font-weight:600;cursor:pointer}
+  .week .dayhead:hover{background:#f0f4ff}
   .week .dayhead small{display:block;color:var(--muted);font-weight:500}
   .week .corner{border-bottom:1px solid var(--line)}
   .allday{display:grid;grid-template-columns:56px repeat(7,1fr);border-bottom:1px solid var(--line)}
   .allday .lbl{font-size:11px;color:var(--muted);padding:4px 6px;text-align:right}
   .allday .cell{border-left:1px solid var(--line);padding:3px;display:flex;flex-direction:column;gap:3px}
+  /* day grid */
+  .day-grid{display:grid;grid-template-columns:56px 1fr;background:var(--card);
+    border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);overflow:hidden}
+  .day-grid .dayhead{padding:8px 12px;text-align:center;border-bottom:1px solid var(--line);border-left:1px solid var(--line);font-weight:600}
+  .day-grid .dayhead small{display:block;color:var(--muted);font-weight:500}
+  .day-grid .corner{border-bottom:1px solid var(--line)}
+  .day-allday{display:grid;grid-template-columns:56px 1fr;border-bottom:1px solid var(--line)}
+  .day-allday .lbl{font-size:11px;color:var(--muted);padding:4px 6px;text-align:right}
+  .day-allday .cell{border-left:1px solid var(--line);padding:3px;display:flex;flex-wrap:wrap;gap:4px}
+  .day-body{display:grid;grid-template-columns:56px 1fr;position:relative}
   .grid{display:grid;grid-template-columns:56px repeat(7,1fr);position:relative}
   .axis{position:relative}
   .axis .tick{position:absolute;right:6px;font-size:11px;color:var(--muted);transform:translateY(-6px)}
   .col{position:relative;border-left:1px solid var(--line)}
   .col .hline{position:absolute;left:0;right:0;border-top:1px solid #f1f3f5}
   .ev{position:absolute;left:3px;right:3px;border-radius:6px;padding:3px 5px;color:#fff;overflow:hidden;
-    font-size:11px;line-height:1.25;cursor:default;box-shadow:0 1px 1px rgba(0,0,0,.12)}
+    font-size:11px;line-height:1.25;cursor:pointer;box-shadow:0 1px 1px rgba(0,0,0,.12)}
   .ev a{color:#fff;text-decoration:none}
   .ev .t{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .ev .s{opacity:.92;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .chip{display:inline-block;border-radius:999px;padding:0 6px;font-size:10px;font-weight:700;background:rgba(255,255,255,.28)}
   .chip.full{background:#111827;color:#fff}
   .chip.wait{background:#f59e0b;color:#111827}
+  /* +N more chip */
+  .more-chip{position:absolute;left:3px;right:3px;border-radius:6px;padding:2px 6px;
+    font-size:10px;font-weight:600;color:var(--accent);background:rgba(37,99,235,.08);
+    cursor:pointer;text-align:center;z-index:2;border:1px dashed rgba(37,99,235,.3)}
+  .more-chip:hover{background:rgba(37,99,235,.15)}
+  /* more popover (time-slot expansion) */
+  .slot-pop{position:fixed;z-index:900;background:var(--card);border:1px solid var(--line);
+    border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,.18);padding:10px;min-width:260px;max-width:340px;max-height:400px;overflow-y:auto}
+  .slot-pop .sp-title{font-weight:700;font-size:12px;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:.03em}
+  .slot-pop .sp-item{display:flex;gap:8px;align-items:center;padding:6px 8px;border-radius:8px;cursor:pointer;margin-bottom:2px}
+  .slot-pop .sp-item:hover{background:var(--bg)}
+  .slot-pop .sp-dot{width:8px;height:8px;border-radius:50%;flex:0 0 auto}
+  .slot-pop .sp-info{flex:1;min-width:0}
+  .slot-pop .sp-act{font-weight:600;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .slot-pop .sp-sub{font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   /* list */
   .list .day{margin-bottom:18px}
   .list .dlabel{font-weight:700;margin:0 2px 8px;padding-bottom:6px;border-bottom:2px solid var(--line)}
@@ -69,7 +95,7 @@
   @media print{
     body{background:#fff}
     .toolbar{display:none}
-    .week,.row{box-shadow:none}
+    .week,.day-grid,.row{box-shadow:none}
     .wrap{max-width:none;padding:0}
   }
   body.print-mode .toolbar{display:none}
@@ -94,7 +120,7 @@
 <body>
 <div id="root"></div>
 <script type="text/babel">
-const {useState,useEffect,useMemo,useCallback} = React;
+const {useState,useEffect,useMemo,useCallback,useRef} = React;
 
 /* ---------- helpers ---------- */
 const PALETTE = ['#2563eb','#0d9488','#db2777','#d97706','#7c3aed','#dc2626','#0891b2','#65a30d','#c026d3','#475569'];
@@ -108,6 +134,7 @@ function fmtISO(d){return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getD
 function startOfWeek(d){const x=new Date(d);const wd=x.getDay();x.setDate(x.getDate()-wd);x.setHours(0,0,0,0);return x;}
 function addDays(d,n){const x=new Date(d);x.setDate(x.getDate()+n);return x;}
 const DOW=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+const DOWL=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
 const MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
 // parse "08:00pm", "8:00 AM", "20:00", "2026-03-01T20:00" -> minutes from midnight
@@ -162,6 +189,24 @@ function parseDateISO(v){
   return s;
 }
 
+/* ---------- overlap grouping ---------- */
+// Groups sorted events into overlap clusters.
+// Returns [{start,end,events:[...]}]
+function groupOverlaps(events){
+  const groups=[];
+  let cur=null;
+  for(const e of events){
+    if(!cur || e.beginMin>=cur.end){
+      cur={start:e.beginMin, end:e.endMin||e.beginMin+30, events:[e]};
+      groups.push(cur);
+    } else {
+      cur.events.push(e);
+      cur.end=Math.max(cur.end, e.endMin||e.beginMin+30);
+    }
+  }
+  return groups;
+}
+
 /* ---------- sample fallback ---------- */
 const TEMPLATE = (()=>{
   const base=startOfWeek(new Date());
@@ -173,6 +218,8 @@ const TEMPLATE = (()=>{
   });
   return [
     mk(1,"09:00am","10:00am","Youth Soccer","North Fields","Field 2","Spring Soccer","U8 Mon/Wed","full"),
+    mk(1,"09:30am","10:30am","Gymnastics","Rec Center","Studio B","Tumbling","Beginner",""),
+    mk(1,"09:45am","11:00am","Art Camp","Community Center","Room 3","Summer Art","Mixed Media","waitlist"),
     mk(1,"04:00pm","05:30pm","Adult Yoga","Community Center","Studio A","Wellness","Evening Flow","waitlist"),
     mk(2,"06:00pm","07:30pm","Basketball","Rec Center","Court 1","Open Gym","Drop-in",""),
     mk(3,"08:00am","03:00pm","Day Camp","Community Center","Hall","Summer Camp","Week 1","full"),
@@ -214,7 +261,41 @@ function StatusChips({ev}){
   </React.Fragment>);
 }
 
-function WeekView({weekStart,events,onEv}){
+/* --- Slot popover ("+N more" expansion) --- */
+function SlotPopover({group,anchorRect,onSelect,onClose}){
+  const ref=useRef();
+  useEffect(()=>{
+    const handler=(e)=>{if(ref.current && !ref.current.contains(e.target)) onClose();};
+    document.addEventListener('mousedown',handler);
+    return ()=>document.removeEventListener('mousedown',handler);
+  },[onClose]);
+  if(!group||!anchorRect) return null;
+  // position below the anchor, clamped to viewport
+  let top=anchorRect.bottom+4, left=anchorRect.left;
+  if(top+300>window.innerHeight) top=anchorRect.top-300;
+  if(left+300>window.innerWidth) left=window.innerWidth-320;
+  if(left<8) left=8;
+  const timeRange=minToLabel(group.start)+' – '+minToLabel(group.end);
+  return (
+    <div className="slot-pop" ref={ref} style={{top,left,position:'fixed'}}>
+      <div className="sp-title">{timeRange} · {group.events.length} sessions</div>
+      {group.events.map((e,i)=>(
+        <div className="sp-item" key={i} onClick={()=>onSelect(e)}>
+          <div className="sp-dot" style={{background:colorFor(e.activity)}}></div>
+          <div className="sp-info">
+            <div className="sp-act">{e.activity}</div>
+            <div className="sp-sub">{minToLabel(e.beginMin)}{e.endMin!=null?' – '+minToLabel(e.endMin):''} · {e.facility||e.location}</div>
+          </div>
+          <StatusChips ev={e}/>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function WeekView({weekStart,events,onEv,onDayClick}){
+  const [slotGroup,setSlotGroup]=useState(null);
+  const [slotRect,setSlotRect]=useState(null);
   const days=useMemo(()=>Array.from({length:7},(_,i)=>fmtISO(addDays(weekStart,i))),[weekStart]);
   const timed=events.filter(e=>e.beginMin!=null && e.endMin!=null && (e.endMin-e.beginMin)<7*60);
   const allday=events.filter(e=>!(e.beginMin!=null && e.endMin!=null) || (e.endMin-e.beginMin)>=7*60);
@@ -223,13 +304,23 @@ function WeekView({weekStart,events,onEv}){
   lo=Math.floor(lo/60)*60; hi=Math.ceil(hi/60)*60;
   const PX=0.9, H=(hi-lo)*PX;
   const hours=[]; for(let m=lo;m<=hi;m+=60) hours.push(m);
-  const byDay=d=>timed.filter(e=>e.dateISO===d).sort((a,b)=>a.beginMin-b.beginMin);
+  const byDay=(d)=>{
+    const sorted=timed.filter(e=>e.dateISO===d).sort((a,b)=>a.beginMin-b.beginMin);
+    return groupOverlaps(sorted);
+  };
   const allByDay=d=>allday.filter(e=>e.dateISO===d);
+
+  const handleMore=(grp,evt)=>{
+    const rect=evt.currentTarget.getBoundingClientRect();
+    setSlotGroup(grp); setSlotRect(rect);
+  };
+
   return (
+    <React.Fragment>
     <div className="week">
       <div className="corner"></div>
       {days.map((d,i)=>{const dt=addDays(weekStart,i);
-        return <div className="dayhead" key={d}>{DOW[i]}<small>{MON[dt.getMonth()]} {dt.getDate()}</small></div>;})}
+        return <div className="dayhead" key={d} onClick={()=>onDayClick&&onDayClick(d)}>{DOW[i]}<small>{MON[dt.getMonth()]} {dt.getDate()}</small></div>;})}
 
       <div className="allday" style={{gridColumn:'1 / -1'}}>
         <div className="lbl">all-day</div>
@@ -251,18 +342,102 @@ function WeekView({weekStart,events,onEv}){
         {days.map(d=>(
           <div className="col" key={'c'+d} style={{height:H}}>
             {hours.map(m=>(<div className="hline" key={m} style={{top:(m-lo)*PX}}></div>))}
-            {byDay(d).map((e,j)=>{
-              const top=(e.beginMin-lo)*PX, ht=20;
-              const inner=(<div className="t">{minToLabel(e.beginMin)} {e.activity} <StatusChips ev={e}/></div>);
-              return (
-                <div className="ev" key={j} style={{top,height:ht,background:colorFor(e.activity),cursor:'pointer'}} onClick={()=>onEv&&onEv(e)}
-                     title={e.activity+' '+e.begin+'–'+e.end+(e.section?(' · '+e.section):'')}>
-                  {inner}
+            {byDay(d).map((grp,gi)=>{
+              const first=grp.events[0];
+              const top=(first.beginMin-lo)*PX;
+              const ht=Math.max((first.endMin-first.beginMin)*PX,20);
+              const extra=grp.events.length-1;
+              return (<React.Fragment key={gi}>
+                <div className="ev" style={{top,height:ht,background:colorFor(first.activity),cursor:'pointer'}}
+                     onClick={()=>onEv&&onEv(first)}
+                     title={first.activity+' '+first.begin+'–'+first.end+(first.section?(' · '+first.section):'')}>
+                  <div className="t">{minToLabel(first.beginMin)} {first.activity} <StatusChips ev={first}/></div>
+                  {ht>32 && <div className="s">{first.facility||first.section}</div>}
                 </div>
-              );
+                {extra>0 && (
+                  <div className="more-chip" style={{top:top+ht+1}} onClick={(evt)=>handleMore(grp,evt)}>
+                    +{extra} more
+                  </div>
+                )}
+              </React.Fragment>);
             })}
           </div>
         ))}
+      </div>
+    </div>
+    <SlotPopover group={slotGroup} anchorRect={slotRect} onSelect={(e)=>{setSlotGroup(null);onEv&&onEv(e);}} onClose={()=>setSlotGroup(null)}/>
+    </React.Fragment>
+  );
+}
+
+function DayView({dateISO,events,onEv}){
+  const dt=new Date(dateISO+'T00:00:00');
+  const timed=events.filter(e=>e.dateISO===dateISO && e.beginMin!=null && e.endMin!=null && (e.endMin-e.beginMin)<7*60);
+  const allday=events.filter(e=>e.dateISO===dateISO && (!(e.beginMin!=null && e.endMin!=null) || (e.endMin-e.beginMin)>=7*60));
+  let lo=6*60, hi=22*60;
+  timed.forEach(e=>{ lo=Math.min(lo,e.beginMin); hi=Math.max(hi,e.endMin); });
+  lo=Math.floor(lo/60)*60; hi=Math.ceil(hi/60)*60;
+  const PX=1.2, H=(hi-lo)*PX;
+  const hours=[]; for(let m=lo;m<=hi;m+=60) hours.push(m);
+
+  // layout overlapping events into columns
+  const sorted=timed.slice().sort((a,b)=>a.beginMin-b.beginMin||(a.endMin-a.beginMin)-(b.endMin-b.beginMin));
+  const cols=[]; // each col is an array of events
+  const evCols=new Map(); // event -> {col, totalCols}
+  for(const e of sorted){
+    let placed=false;
+    for(let c=0;c<cols.length;c++){
+      const last=cols[c][cols[c].length-1];
+      if(e.beginMin>=last.endMin){ cols[c].push(e); evCols.set(e,{col:c}); placed=true; break; }
+    }
+    if(!placed){ evCols.set(e,{col:cols.length}); cols.push([e]); }
+  }
+  const totalCols=cols.length||1;
+  for(const [e,info] of evCols) info.totalCols=totalCols;
+
+  return (
+    <div className="day-grid">
+      <div className="corner"></div>
+      <div className="dayhead">{DOWL[dt.getDay()]}<small>{MON[dt.getMonth()]} {dt.getDate()}, {dt.getFullYear()}</small></div>
+
+      {allday.length>0 && (
+        <div className="day-allday" style={{gridColumn:'1 / -1'}}>
+          <div className="lbl">all-day</div>
+          <div className="cell">
+            {allday.map((e,j)=>(
+              <div className="ev" key={j} style={{position:'static',background:colorFor(e.activity),cursor:'pointer',maxWidth:300}} onClick={()=>onEv&&onEv(e)}>
+                <div className="t">{e.activity} <StatusChips ev={e}/></div>
+                <div className="s">{e.facility||e.section}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="day-body" style={{gridColumn:'1 / -1'}}>
+        <div className="axis" style={{height:H}}>
+          {hours.map(m=>(<div className="tick" key={m} style={{top:(m-lo)*PX}}>{minToLabel(m).replace(':00','')}</div>))}
+        </div>
+        <div className="col" style={{height:H}}>
+          {hours.map(m=>(<div className="hline" key={m} style={{top:(m-lo)*PX}}></div>))}
+          {sorted.map((e,j)=>{
+            const info=evCols.get(e);
+            const top=(e.beginMin-lo)*PX;
+            const ht=Math.max((e.endMin-e.beginMin)*PX,26);
+            const colW=100/info.totalCols;
+            const left=info.col*colW+'%';
+            const width=colW+'%';
+            return (
+              <div className="ev" key={j} style={{top,height:ht,background:colorFor(e.activity),cursor:'pointer',left,width,right:'auto',paddingRight:4}}
+                   onClick={()=>onEv&&onEv(e)}
+                   title={e.activity+' '+e.begin+'–'+e.end+(e.section?(' · '+e.section):'')}>
+                <div className="t">{minToLabel(e.beginMin)} {e.activity} <StatusChips ev={e}/></div>
+                {ht>36 && <div className="s">{[e.facility,e.section].filter(Boolean).join(' · ')}</div>}
+                {ht>52 && <div className="s">{e.location}</div>}
+              </div>
+            );
+          })}
+        </div>
       </div>
     </div>
   );
@@ -345,6 +520,7 @@ function App(){
   const c=ctx();
   const [weekStart,setWeekStart]=useState(()=>startOfWeek(new Date()));
   const [view,setView]=useState('week');
+  const [selectedDate,setSelectedDate]=useState(()=>fmtISO(new Date()));
   const [rows,setRows]=useState([]);
   const [src,setSrc]=useState('');
   const [loading,setLoading]=useState(true);
@@ -362,9 +538,21 @@ function App(){
   useEffect(()=>{ if(c.print) document.body.classList.add('print-mode'); },[]);
   useEffect(()=>{ load(weekStart); },[weekStart,load]);
 
+  const goToDay=(dateISO)=>{ setSelectedDate(dateISO); setView('day'); };
+  const goDay=(offset)=>{
+    const next=addDays(new Date(selectedDate+'T00:00:00'),offset);
+    const nextISO=fmtISO(next);
+    // if navigating outside current week, shift week too
+    const ws=startOfWeek(next);
+    if(fmtISO(ws)!==fmtISO(weekStart)) setWeekStart(ws);
+    setSelectedDate(nextISO);
+  };
+
   const ws=weekStart, we=addDays(weekStart,6);
   const orgName=rows.length?rows[0].orgName:'';
-  const rangeLabel=MON[ws.getMonth()]+' '+ws.getDate()+' – '+MON[we.getMonth()]+' '+we.getDate()+', '+we.getFullYear();
+  const rangeLabel=view==='day'
+    ? (()=>{const dt=new Date(selectedDate+'T00:00:00'); return DOWL[dt.getDay()]+', '+MON[dt.getMonth()]+' '+dt.getDate()+', '+dt.getFullYear();})()
+    : MON[ws.getMonth()]+' '+ws.getDate()+' – '+MON[we.getMonth()]+' '+we.getDate()+', '+we.getFullYear();
   const activities=useMemo(()=>[...new Set(rows.map(e=>e.activity).filter(Boolean))].sort(),[rows]);
   const locations=useMemo(()=>[...new Set(rows.map(e=>e.location).filter(Boolean))].sort(),[rows]);
   const filtered=useMemo(()=>rows.filter(e=>(!actFilter||e.activity===actFilter)&&(!locFilter||e.location===locFilter)),[rows,actFilter,locFilter]);
@@ -374,11 +562,22 @@ function App(){
       <div className="toolbar">
         <div className="seg">
           <button className={view==='week'?'on':''} onClick={()=>setView('week')}>Week</button>
+          <button className={view==='day'?'on':''} onClick={()=>{setView('day')}}>Day</button>
           <button className={view==='list'?'on':''} onClick={()=>setView('list')}>List</button>
         </div>
-        <button onClick={()=>setWeekStart(startOfWeek(new Date()))}>This Week</button>
-        <button onClick={()=>setWeekStart(addDays(weekStart,-7))}>‹ Prev</button>
-        <button onClick={()=>setWeekStart(addDays(weekStart,7))}>Next ›</button>
+        {view==='day' ? (
+          <React.Fragment>
+            <button onClick={()=>{const t=new Date();setSelectedDate(fmtISO(t));const ws2=startOfWeek(t);if(fmtISO(ws2)!==fmtISO(weekStart))setWeekStart(ws2);}}>Today</button>
+            <button onClick={()=>goDay(-1)}>‹ Prev</button>
+            <button onClick={()=>goDay(1)}>Next ›</button>
+          </React.Fragment>
+        ) : (
+          <React.Fragment>
+            <button onClick={()=>setWeekStart(startOfWeek(new Date()))}>This Week</button>
+            <button onClick={()=>setWeekStart(addDays(weekStart,-7))}>‹ Prev</button>
+            <button onClick={()=>setWeekStart(addDays(weekStart,7))}>Next ›</button>
+          </React.Fragment>
+        )}
         <span className="range">{rangeLabel}</span>
         <span className="grow"></span>
         <button onClick={()=>window.print()}>Print</button>
@@ -399,7 +598,8 @@ function App(){
       </div>
 
       {loading ? <div className="empty">Loading…</div>
-        : view==='week' ? <WeekView weekStart={weekStart} events={filtered} onEv={setPopoverEv}/>
+        : view==='week' ? <WeekView weekStart={weekStart} events={filtered} onEv={setPopoverEv} onDayClick={goToDay}/>
+        : view==='day' ? <DayView dateISO={selectedDate} events={filtered} onEv={setPopoverEv}/>
         : <ListView events={filtered} onEv={setPopoverEv}/>}
 
       <PopoverCard ev={popoverEv} onClose={()=>setPopoverEv(null)}/>
