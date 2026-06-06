@@ -121,6 +121,23 @@
   .filter-sel{border:1px solid var(--line);border-radius:8px;padding:4px 10px;font-size:13px;background:var(--card);color:var(--text);cursor:pointer;height:32px;max-width:160px}
   .filter-sel:focus{outline:none;border-color:var(--accent)}
   .filter-clear{font-size:11px;color:var(--accent);cursor:pointer;text-decoration:underline;white-space:nowrap}
+  /* present / kiosk mode */
+  body.present-mode{background:#fff}
+  body.present-mode .toolbar{display:none}
+  body.present-mode .wrap{max-width:none;padding:24px 40px}
+  body.present-mode .org-banner img{height:56px;max-width:220px}
+  body.present-mode .org-banner .org-name{font-size:22px}
+  body.present-mode .org-banner .org-sub{font-size:15px}
+  body.present-mode .hdr .range{font-size:16px}
+  body.present-mode .list .dlabel{font-size:17px}
+  body.present-mode .list .loc{font-size:14px}
+  body.present-mode .row{padding:12px 14px;font-size:16px}
+  body.present-mode .row .when{font-size:15px;width:170px}
+  body.present-mode .row .main .ti{font-size:16px}
+  body.present-mode .row .main .su{font-size:14px}
+  body.present-mode .row .right{font-size:14px}
+  body.present-mode .chip{font-size:12px;padding:1px 8px}
+  body.present-mode .present-status{position:fixed;bottom:12px;right:16px;font-size:11px;color:var(--muted);opacity:.5;z-index:10}
 </style>
 </head>
 <body>
@@ -548,6 +565,10 @@ function App(){
   // All-time filter options (populated from a wide fetch)
   const [allActivities,setAllActivities]=useState([]);
   const [allLocations,setAllLocations]=useState([]);
+  // Present mode
+  const isPresent=urlParams.get('present')==='1';
+  const scrollRef=useRef(null);
+  const pauseRef=useRef(false);
 
   const load=useCallback(async(ws)=>{
     setLoading(true);
@@ -570,6 +591,50 @@ function App(){
 
   useEffect(()=>{ if(c.print) document.body.classList.add('print-mode'); },[]);
   useEffect(()=>{ load(weekStart); },[weekStart,load]);
+
+  // Present mode: force list view, add body class, auto-scroll, auto-refresh
+  useEffect(()=>{
+    if(!isPresent) return;
+    document.body.classList.add('present-mode');
+    // Force list view
+    setView('list');
+    // Auto-refresh data every 5 minutes
+    const refreshId=setInterval(()=>{ load(weekStart); },5*60*1000);
+    // Auto-scroll
+    const SPEED=0.6; // px per frame
+    const PAUSE_AT_BOTTOM=4000; // ms pause at bottom before looping
+    const PAUSE_AT_TOP=3000; // ms pause at top after reset
+    let rafId;
+    let paused=false;
+    const tick=()=>{
+      if(!paused){
+        const maxScroll=document.documentElement.scrollHeight-window.innerHeight;
+        if(window.scrollY>=maxScroll-2){
+          // Reached bottom — pause then reset
+          paused=true;
+          setTimeout(()=>{
+            window.scrollTo({top:0,behavior:'auto'});
+            setTimeout(()=>{ paused=false; },PAUSE_AT_TOP);
+          },PAUSE_AT_BOTTOM);
+        } else {
+          window.scrollBy(0,SPEED);
+        }
+      }
+      rafId=requestAnimationFrame(tick);
+    };
+    // Start scrolling after a brief delay for content to render
+    const startId=setTimeout(()=>{ rafId=requestAnimationFrame(tick); },2000);
+    // Esc key exits present mode
+    const onKey=(e)=>{ if(e.key==='Escape'){const u=new URL(window.location.href);u.searchParams.delete('present');window.location.href=u.toString();}};
+    window.addEventListener('keydown',onKey);
+    return ()=>{
+      clearInterval(refreshId);
+      clearTimeout(startId);
+      if(rafId) cancelAnimationFrame(rafId);
+      window.removeEventListener('keydown',onKey);
+      document.body.classList.remove('present-mode');
+    };
+  },[isPresent,weekStart]);
 
   const goToDay=(dateISO)=>{ setSelectedDate(dateISO); setView('day'); };
   const goDay=(offset)=>{
@@ -615,6 +680,7 @@ function App(){
         <span className="range">{rangeLabel}</span>
         <span className="grow"></span>
         <button onClick={()=>window.print()}>Print</button>
+        <button onClick={()=>{const u=new URL(window.location.href);u.searchParams.set('present','1');if(actFilter)u.searchParams.set('activity',actFilter);if(locFilter)u.searchParams.set('location',locFilter);window.open(u.toString(),'_blank');}}>Present ▶</button>
         <select className="filter-sel" value={actFilter} onChange={e=>setActFilter(e.target.value)}>
           <option value="">All Activities</option>
           {activities.map(a=><option key={a} value={a}>{a}</option>)}
@@ -648,6 +714,7 @@ function App(){
       <PopoverCard ev={popoverEv} onClose={()=>setPopoverEv(null)}/>
       {src==='sample' && <div className="note">Showing sample data (no live source reachable). Wire <code>/{'{org}'}/calendar/api/data</code> to go live.</div>}
       {!loading && <div id="report-ready" style={{display:'none'}}>ready</div>}
+      {isPresent && <div className="present-status">Auto-refreshes every 5 min · Press Esc to exit</div>}
     </div>
   );
 }
