@@ -829,7 +829,10 @@ function App() {
     setPdfLoading(true);
     const parts = window.location.pathname.split('/').filter(Boolean);
     const pdfParams = new URLSearchParams({ start_date: loadedStart||'', end_date: loadedEnd||'' });
-    const sec = (loadedSection != null ? loadedSection : sectionFilter);
+    // Use the LIVE section filter — typing in the box narrows the on-screen
+    // rows client-side without re-fetching, so loadedSection is stale (usually
+    // empty). The visible view is driven by sectionFilter, so the PDF must be too.
+    const sec = (sectionFilter && sectionFilter.trim()) ? sectionFilter.trim() : (loadedSection || '');
     if (sec) pdfParams.set('section_name', sec);
     if (statusFilter && statusFilter !== 'all') pdfParams.set('status', statusFilter);
     if (selectedQs !== null) pdfParams.set('questions', JSON.stringify(selectedQs));
