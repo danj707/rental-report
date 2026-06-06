@@ -29,6 +29,12 @@
   .hdr{display:flex;align-items:baseline;justify-content:space-between;margin:4px 2px 14px}
   .hdr h1{font-size:20px;margin:0}
   .hdr .org{color:var(--muted)}
+  /* org banner */
+  .org-banner{display:flex;align-items:center;gap:14px;margin-bottom:16px;padding:14px 18px;
+    background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow)}
+  .org-banner img{height:44px;max-width:180px;object-fit:contain}
+  .org-banner .org-name{font-size:18px;font-weight:700;color:var(--ink)}
+  .org-banner .org-sub{font-size:13px;color:var(--muted);margin-top:2px}
   .range{font-weight:600}
   /* week grid */
   .week{display:grid;grid-template-columns:56px repeat(7,1fr);background:var(--card);
@@ -621,7 +627,16 @@ function App(){
       </div>
 
       <div className="hdr">
-        <h1>Calendar {orgName && <span className="org">· {orgName}</span>}</h1>
+        {window.__ORG__ && (
+          <div className="org-banner" style={{marginBottom:0,border:'none',boxShadow:'none',padding:'0 2px'}}>
+            {window.__ORG__.logoUrl && <img src={window.__ORG__.logoUrl} alt=""/>}
+            <div>
+              <div className="org-name">{window.__ORG__.displayName}</div>
+              <div className="org-sub">Session Schedule</div>
+            </div>
+          </div>
+        )}
+        {!window.__ORG__ && <h1>Calendar {orgName && <span className="org">· {orgName}</span>}</h1>}
         <span className="range">{rangeLabel}</span>
       </div>
 
