@@ -117,6 +117,7 @@ const ORGS = {
   theranch: {
     token:   "mXI0BgPPazLu61jl",
     orgId:   "2d147f38-068c-409e-890d-a8acc88d8079",
+    displayName: "The Ranch Parks and Recreation",
     logoUrl: "https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2Forganization-2d147f38-068c-409e-890d-a8acc88d8079%2FfullLogo.jpeg%3F1764460109546&w=2048&q=75",
     roster:  { mbUuid: "09707fab-067c-4297-98c1-3c1c39804333" },
   },
