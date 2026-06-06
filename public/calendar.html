@@ -63,11 +63,11 @@
   .chip{display:inline-block;border-radius:999px;padding:0 6px;font-size:10px;font-weight:700;background:rgba(255,255,255,.28)}
   .chip.full{background:#111827;color:#fff}
   .chip.wait{background:#f59e0b;color:#111827}
-  /* +N more chip */
-  .more-chip{position:absolute;left:3px;right:3px;border-radius:6px;padding:2px 6px;
-    font-size:10px;font-weight:600;color:var(--accent);background:rgba(37,99,235,.08);
-    cursor:pointer;text-align:center;z-index:2;border:1px dashed rgba(37,99,235,.3)}
-  .more-chip:hover{background:rgba(37,99,235,.15)}
+  /* +N more chip (inline inside event) */
+  .more-chip{display:inline-block;border-radius:999px;padding:0 6px;margin-top:1px;
+    font-size:10px;font-weight:600;color:rgba(255,255,255,.95);background:rgba(0,0,0,.22);
+    cursor:pointer;white-space:nowrap}
+  .more-chip:hover{background:rgba(0,0,0,.35)}
   /* more popover (time-slot expansion) */
   .slot-pop{position:fixed;z-index:900;background:var(--card);border:1px solid var(--line);
     border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,.18);padding:10px;min-width:260px;max-width:340px;max-height:400px;overflow-y:auto}
@@ -189,14 +189,16 @@ function parseDateISO(v){
   return s;
 }
 
-/* ---------- overlap grouping ---------- */
-// Groups sorted events into overlap clusters.
+/* ---------- start-time grouping ---------- */
+// Groups sorted events by start-time proximity (within THRESHOLD minutes).
+// Avoids cascading merges where an 8am–10am event swallows all 10am events.
 // Returns [{start,end,events:[...]}]
+const START_GROUP_THRESHOLD=15; // minutes
 function groupOverlaps(events){
   const groups=[];
   let cur=null;
   for(const e of events){
-    if(!cur || e.beginMin>=cur.end){
+    if(!cur || e.beginMin-cur.start>START_GROUP_THRESHOLD){
       cur={start:e.beginMin, end:e.endMin||e.beginMin+30, events:[e]};
       groups.push(cur);
     } else {
@@ -345,21 +347,18 @@ function WeekView({weekStart,events,onEv,onDayClick}){
             {byDay(d).map((grp,gi)=>{
               const first=grp.events[0];
               const top=(first.beginMin-lo)*PX;
-              const ht=Math.max((first.endMin-first.beginMin)*PX,20);
               const extra=grp.events.length-1;
-              return (<React.Fragment key={gi}>
-                <div className="ev" style={{top,height:ht,background:colorFor(first.activity),cursor:'pointer'}}
+              const minHt=extra>0?34:20;
+              const ht=Math.max((first.endMin-first.beginMin)*PX,minHt);
+              return (
+                <div className="ev" key={gi} style={{top,height:ht,background:colorFor(first.activity),cursor:'pointer'}}
                      onClick={()=>onEv&&onEv(first)}
                      title={first.activity+' '+first.begin+'–'+first.end+(first.section?(' · '+first.section):'')}>
                   <div className="t">{minToLabel(first.beginMin)} {first.activity} <StatusChips ev={first}/></div>
-                  {ht>32 && <div className="s">{first.facility||first.section}</div>}
+                  {ht>32 && !extra && <div className="s">{first.facility||first.section}</div>}
+                  {extra>0 && <div className="s"><span className="more-chip" onClick={(evt)=>{evt.stopPropagation();handleMore(grp,evt);}}>+{extra} more</span></div>}
                 </div>
-                {extra>0 && (
-                  <div className="more-chip" style={{top:top+ht+1}} onClick={(evt)=>handleMore(grp,evt)}>
-                    +{extra} more
-                  </div>
-                )}
-              </React.Fragment>);
+              );
             })}
           </div>
         ))}
