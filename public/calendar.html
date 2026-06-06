@@ -483,7 +483,7 @@ function ListView({events,onEv}){
                     </div>
                     <div className="right">
                       <StatusChips ev={e}/>
-                      {e.total!=='' && e.total!=null && <div className="su">{typeof e.total==='number'?('$'+e.total.toFixed(2)):e.total}</div>}
+                      {e.total!=='' && e.total!=null && <div className="su">{'From '+(typeof e.total==='number'?('$'+e.total.toFixed(2)):e.total)}</div>}
                     </div>
                   </div>
                 ))}
