@@ -592,6 +592,14 @@ function App(){
   useEffect(()=>{ if(c.print) document.body.classList.add('print-mode'); },[]);
   useEffect(()=>{ load(weekStart); },[weekStart,load]);
 
+  // Sync filter state → URL so the address bar is always a shareable link
+  useEffect(()=>{
+    const u=new URL(window.location.href);
+    if(actFilter) u.searchParams.set('activity',actFilter); else u.searchParams.delete('activity');
+    if(locFilter) u.searchParams.set('location',locFilter); else u.searchParams.delete('location');
+    window.history.replaceState(null,'',u.toString());
+  },[actFilter,locFilter]);
+
   // Present mode: force list view, add body class, auto-scroll, auto-refresh
   useEffect(()=>{
     if(!isPresent) return;
