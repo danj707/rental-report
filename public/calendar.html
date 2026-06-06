@@ -177,6 +177,7 @@ function normalizeRow(r){
     full: status.indexOf('full')>=0 || status.indexOf('capacity')>=0,
     waitlist: status.indexOf('wait')>=0,
     total: pick(r,['price','Price','Total','total']),
+    description: pick(r,['Description','description']),
   };
 }
 function parseDateISO(v){
@@ -505,7 +506,8 @@ function PopoverCard({ev,onClose}){
         </div>
         <div className="pop-body">
           {loc && <div className="pop-row"><span className="pop-lbl">Location</span><span>{loc}</span></div>}
-          {desc && <div className="pop-row"><span className="pop-lbl">Description</span><span style={{whiteSpace:'normal',overflowWrap:'anywhere'}}>{desc}</span></div>}
+          {desc && <div className="pop-row"><span className="pop-lbl">Section</span><span style={{whiteSpace:'normal',overflowWrap:'anywhere'}}>{desc}</span></div>}
+          {ev.description && <div className="pop-row"><span className="pop-lbl">Description</span><span style={{whiteSpace:'normal',overflowWrap:'anywhere',display:'-webkit-box',WebkitLineClamp:4,WebkitBoxOrient:'vertical',overflow:'hidden',fontSize:12,lineHeight:'1.45',color:'var(--ink)'}}>{ev.description}</span></div>}
           <div className="pop-row"><span className="pop-lbl">Price</span><span>{price}</span></div>
           {(ev.full||ev.waitlist) && <div className="pop-row pop-chips"><StatusChips ev={ev}/></div>}
           {ev.url && <a className="pop-link" href={ev.url} target="_blank" rel="noopener">View Session →</a>}
