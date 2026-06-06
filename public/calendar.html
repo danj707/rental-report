@@ -304,7 +304,7 @@ function WeekView({weekStart,events,onEv,onDayClick}){
   let lo=6*60, hi=22*60;
   timed.forEach(e=>{ lo=Math.min(lo,e.beginMin); hi=Math.max(hi,e.endMin); });
   lo=Math.floor(lo/60)*60; hi=Math.ceil(hi/60)*60;
-  const PX=0.9, H=(hi-lo)*PX;
+  const PX=1.8, H=(hi-lo)*PX;
   const hours=[]; for(let m=lo;m<=hi;m+=60) hours.push(m);
   const byDay=(d)=>{
     const sorted=timed.filter(e=>e.dateISO===d).sort((a,b)=>a.beginMin-b.beginMin);
@@ -376,7 +376,7 @@ function DayView({dateISO,events,onEv}){
   let lo=6*60, hi=22*60;
   timed.forEach(e=>{ lo=Math.min(lo,e.beginMin); hi=Math.max(hi,e.endMin); });
   lo=Math.floor(lo/60)*60; hi=Math.ceil(hi/60)*60;
-  const PX=1.2, H=(hi-lo)*PX;
+  const PX=2.4, H=(hi-lo)*PX;
   const hours=[]; for(let m=lo;m<=hi;m+=60) hours.push(m);
 
   // layout overlapping events into columns
