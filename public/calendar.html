@@ -64,10 +64,10 @@
   .chip.full{background:#111827;color:#fff}
   .chip.wait{background:#f59e0b;color:#111827}
   /* +N more chip (inline inside event) */
-  .more-chip{display:inline-block;border-radius:999px;padding:0 6px;margin-top:1px;
-    font-size:10px;font-weight:600;color:rgba(255,255,255,.95);background:rgba(0,0,0,.22);
-    cursor:pointer;white-space:nowrap}
-  .more-chip:hover{background:rgba(0,0,0,.35)}
+  .more-chip{display:inline-block;border-radius:999px;padding:1px 7px;margin-top:1px;
+    font-size:10px;font-weight:700;color:#1f2430;background:rgba(255,255,255,.88);
+    cursor:pointer;white-space:nowrap;text-shadow:none}
+  .more-chip:hover{background:#fff}
   /* more popover (time-slot expansion) */
   .slot-pop{position:fixed;z-index:900;background:var(--card);border:1px solid var(--line);
     border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,.18);padding:10px;min-width:260px;max-width:340px;max-height:400px;overflow-y:auto}
@@ -106,7 +106,7 @@
   .pop-head{display:flex;align-items:flex-start;justify-content:space-between;padding:16px 16px 12px;border-bottom:1px solid var(--line)}
   .pop-act{font-weight:700;font-size:15px;color:var(--text)}
   .pop-time{font-size:13px;color:var(--muted);margin-top:3px}
-  .pop-x{border:1px solid var(--line);background:none;border-radius:50%;width:28px;height:28px;font-size:18px;line-height:1;cursor:pointer;color:var(--muted);flex-shrink:0}
+  .pop-x{border:1px solid var(--line);background:none;border-radius:50%;width:28px;height:28px;font-size:18px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--muted);flex-shrink:0;padding:0}
   .pop-body{padding:12px 16px 16px}
   .pop-row{display:flex;gap:8px;align-items:flex-start;font-size:13px;color:var(--text);margin-bottom:7px;word-break:break-word}
   .pop-lbl{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.05em;min-width:76px;white-space:nowrap}
