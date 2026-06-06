@@ -303,9 +303,13 @@ function WeekView({weekStart,events,onEv,onDayClick}){
   const days=useMemo(()=>Array.from({length:7},(_,i)=>fmtISO(addDays(weekStart,i))),[weekStart]);
   const timed=events.filter(e=>e.beginMin!=null && e.endMin!=null && (e.endMin-e.beginMin)<7*60);
   const allday=events.filter(e=>!(e.beginMin!=null && e.endMin!=null) || (e.endMin-e.beginMin)>=7*60);
-  let lo=6*60, hi=22*60;
-  timed.forEach(e=>{ lo=Math.min(lo,e.beginMin); hi=Math.max(hi,e.endMin); });
-  lo=Math.floor(lo/60)*60; hi=Math.ceil(hi/60)*60;
+  let lo,hi;
+  if(timed.length>0){
+    lo=Infinity; hi=-Infinity;
+    timed.forEach(e=>{ lo=Math.min(lo,e.beginMin); hi=Math.max(hi,e.endMin); });
+    lo=Math.floor(lo/60)*60-60; hi=Math.ceil(hi/60)*60+60;
+    lo=Math.max(lo,0); hi=Math.min(hi,24*60);
+  } else { lo=8*60; hi=17*60; }
   const PX=1.8, H=(hi-lo)*PX;
   const hours=[]; for(let m=lo;m<=hi;m+=60) hours.push(m);
   const byDay=(d)=>{
@@ -375,9 +379,13 @@ function DayView({dateISO,events,onEv}){
   const dt=new Date(dateISO+'T00:00:00');
   const timed=events.filter(e=>e.dateISO===dateISO && e.beginMin!=null && e.endMin!=null && (e.endMin-e.beginMin)<7*60);
   const allday=events.filter(e=>e.dateISO===dateISO && (!(e.beginMin!=null && e.endMin!=null) || (e.endMin-e.beginMin)>=7*60));
-  let lo=6*60, hi=22*60;
-  timed.forEach(e=>{ lo=Math.min(lo,e.beginMin); hi=Math.max(hi,e.endMin); });
-  lo=Math.floor(lo/60)*60; hi=Math.ceil(hi/60)*60;
+  let lo,hi;
+  if(timed.length>0){
+    lo=Infinity; hi=-Infinity;
+    timed.forEach(e=>{ lo=Math.min(lo,e.beginMin); hi=Math.max(hi,e.endMin); });
+    lo=Math.floor(lo/60)*60-60; hi=Math.ceil(hi/60)*60+60;
+    lo=Math.max(lo,0); hi=Math.min(hi,24*60);
+  } else { lo=8*60; hi=17*60; }
   const PX=2.4, H=(hi-lo)*PX;
   const hours=[]; for(let m=lo;m<=hi;m+=60) hours.push(m);
 
