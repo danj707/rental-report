@@ -264,6 +264,30 @@
     body.print-mode { background: #fff; }
     body.print-mode .page { box-shadow: none; margin: 0; padding: 12px 16px; max-width: 100%; }
     body.print-mode .table-scroll { overflow: visible; }
+    /* Charts */
+    .chart-section { margin: 20px 0; }
+    .chart-toggle { display: inline-flex; border: 1px solid #e0ddd8; border-radius: 6px; overflow: hidden; margin-bottom: 14px; }
+    .chart-toggle button { border: none; background: #fff; padding: 6px 14px; font-size: 12px; font-weight: 600; cursor: pointer; color: #888; transition: all .15s; }
+    .chart-toggle button.active { background: #2c2c2c; color: #fff; }
+    .chart-container { background: #fff; border: 1px solid #e0ddd8; border-radius: 10px; padding: 16px 20px; }
+    .chart-row { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+    .chart-label { width: 200px; flex-shrink: 0; font-size: 12px; font-weight: 500; color: #333; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: right; }
+    .chart-bar-wrap { flex: 1; height: 24px; background: #f5f4f1; border-radius: 4px; position: relative; overflow: hidden; }
+    .chart-bar { height: 100%; border-radius: 4px; transition: width .4s ease; min-width: 2px; position: absolute; left: 0; top: 0; }
+    .chart-bar.charged { background: #d1d5db; z-index: 1; }
+    .chart-bar.received { background: #22c55e; z-index: 2; }
+    .chart-bar.outstanding { background: #f59e0b; z-index: 2; }
+    .chart-bar.fill-high { background: #22c55e; }
+    .chart-bar.fill-mid { background: #f59e0b; }
+    .chart-bar.fill-low { background: #ef4444; }
+    .chart-val { width: 80px; flex-shrink: 0; font-size: 12px; font-weight: 600; color: #333; font-variant-numeric: tabular-nums; }
+    .chart-val-sub { font-weight: 400; color: #999; font-size: 11px; }
+    .chart-legend { display: flex; gap: 16px; margin-top: 10px; padding-top: 8px; border-top: 1px solid #f0eeeb; }
+    .chart-legend-item { display: flex; align-items: center; gap: 5px; font-size: 11px; color: #666; }
+    .chart-legend-dot { width: 10px; height: 10px; border-radius: 2px; }
+    .chart-expand { background: none; border: 1px dashed #d0cdc8; border-radius: 6px; padding: 6px 16px; font-size: 11px; color: #888; cursor: pointer; margin-top: 8px; width: 100%; }
+    .chart-expand:hover { background: #fafaf8; border-color: #aaa; }
+    @media print { .chart-section { page-break-inside: avoid; } }
   </style>
   <script>
     // ── Token auth (injected) ────────────────────────────────────────
@@ -428,6 +452,8 @@ function App() {
   const [showRegMode,  setShowRegMode]  = useState(() => { try { return localStorage.getItem(LS_SHOW_REGMODE)  === 'true'; } catch { return false; } });
   const [showWaitlist, setShowWaitlist] = useState(() => { try { return localStorage.getItem(LS_SHOW_WAITLIST) === 'true'; } catch { return false; } });
   const [showCancels,  setShowCancels]  = useState(() => { try { return localStorage.getItem(LS_SHOW_CANCELS)  === 'true'; } catch { return false; } });
+  const [chartView, setChartView] = useState('revenue');
+  const [chartExpanded, setChartExpanded] = useState(false);
 
   useEffect(() => {
     if (params._print === '1') document.body.classList.add('print-mode');
@@ -822,6 +848,82 @@ function App() {
             </div>
           </div>
         )}
+
+        {/* Charts */}
+        {!loading && filteredRows.length > 0 && (() => {
+          const MAX_DEFAULT = 15;
+          const revSorted = filteredRows.slice().sort((a,b) => fmtNum(b.charged) - fmtNum(a.charged));
+          const fillSorted = filteredRows.slice().sort((a,b) => fmtNum(b.fillPct) - fmtNum(a.fillPct));
+          const source = chartView === 'revenue' ? revSorted : fillSorted;
+          const visible = chartExpanded || source.length <= MAX_DEFAULT ? source : source.slice(0, MAX_DEFAULT);
+          const remaining = source.length - MAX_DEFAULT;
+          const maxCharged = Math.max(...revSorted.map(r => fmtNum(r.charged)), 1);
+
+          return (
+            <div className="chart-section no-print">
+              <div className="chart-toggle">
+                <button className={chartView==='revenue'?'active':''} onClick={()=>{setChartView('revenue');setChartExpanded(false);}}>Revenue</button>
+                <button className={chartView==='fill'?'active':''} onClick={()=>{setChartView('fill');setChartExpanded(false);}}>Fill Rate</button>
+              </div>
+              <div className="chart-container">
+                {visible.map((r, i) => {
+                  if (chartView === 'revenue') {
+                    const charged = fmtNum(r.charged);
+                    const received = fmtNum(r.received);
+                    const outstanding = fmtNum(r.outstanding);
+                    const chargedPct = (charged / maxCharged) * 100;
+                    const receivedPct = (received / maxCharged) * 100;
+                    return (
+                      <div className="chart-row" key={i}>
+                        <div className="chart-label" title={r.programName}>{r.programName}</div>
+                        <div className="chart-bar-wrap">
+                          <div className="chart-bar charged" style={{width: chargedPct + '%'}} />
+                          <div className="chart-bar received" style={{width: receivedPct + '%'}} />
+                        </div>
+                        <div className="chart-val">
+                          {fmtMoney(charged)}
+                          {outstanding > 0 && <div className="chart-val-sub">{fmtMoney(outstanding)} due</div>}
+                        </div>
+                      </div>
+                    );
+                  } else {
+                    const fill = fmtNum(r.fillPct);
+                    const fc = fill >= 75 ? 'fill-high' : fill >= 25 ? 'fill-mid' : 'fill-low';
+                    return (
+                      <div className="chart-row" key={i}>
+                        <div className="chart-label" title={r.programName}>{r.programName}</div>
+                        <div className="chart-bar-wrap">
+                          <div className={`chart-bar ${fc}`} style={{width: Math.min(fill || 0, 100) + '%'}} />
+                        </div>
+                        <div className="chart-val">
+                          {fill != null ? fill + '%' : '\u2014'}
+                          <div className="chart-val-sub">{r.utilization || ''}</div>
+                        </div>
+                      </div>
+                    );
+                  }
+                })}
+                {!chartExpanded && remaining > 0 && (
+                  <button className="chart-expand" onClick={() => setChartExpanded(true)}>Show {remaining} more program{remaining !== 1 ? 's' : ''}</button>
+                )}
+                {chartExpanded && source.length > MAX_DEFAULT && (
+                  <button className="chart-expand" onClick={() => setChartExpanded(false)}>Show top {MAX_DEFAULT} only</button>
+                )}
+                <div className="chart-legend">
+                  {chartView === 'revenue' ? (<>
+                    <div className="chart-legend-item"><div className="chart-legend-dot" style={{background:'#22c55e'}} />Received</div>
+                    <div className="chart-legend-item"><div className="chart-legend-dot" style={{background:'#d1d5db'}} />Charged (full bar)</div>
+                    <div className="chart-legend-item"><div className="chart-legend-dot" style={{background:'#f59e0b'}} />Outstanding noted in value</div>
+                  </>) : (<>
+                    <div className="chart-legend-item"><div className="chart-legend-dot" style={{background:'#22c55e'}} />{'\u2265'}75% filled</div>
+                    <div className="chart-legend-item"><div className="chart-legend-dot" style={{background:'#f59e0b'}} />25\u201374% filled</div>
+                    <div className="chart-legend-item"><div className="chart-legend-dot" style={{background:'#ef4444'}} />&lt;25% filled</div>
+                  </>)}
+                </div>
+              </div>
+            </div>
+          );
+        })()}
 
         {/* AI Insights */}
         {!loading && rows.length > 0 && (
