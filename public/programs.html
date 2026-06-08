@@ -164,6 +164,14 @@
     .fill-high { color: #15803d; font-weight: 600; }
     .fill-mid  { color: #b45309; }
     .fill-low  { color: #b91c1c; }
+    .prog-table .chev { display:inline-block; margin-right:6px; font-size:9px; color:#16a34a; transition:transform .12s ease; }
+    .prog-table .chev.open { transform:rotate(90deg); }
+    .prog-table tr.prog-clickable { cursor:pointer; }
+    .prog-table tr.prog-clickable:hover td { background:#eef4ee; }
+    .prog-table tr.section-row td { background:#fbfbf9; border-bottom:1px solid #f1efea; font-size:11px; color:#3f3f3f; padding:6px 8px; }
+    .prog-table tr.section-row:hover td { background:#f4f3ef; }
+    .prog-table tr.section-row td.left { text-align:left; padding-left:26px; }
+    .prog-table tr.section-row .sec-status { font-size:9px; color:#9a9a9a; margin-left:8px; text-transform:uppercase; letter-spacing:.04em; }
 
     /* ── Footer ── */
     .report-footer {
@@ -404,25 +412,82 @@ function cancelPct(cancellations, enrollments) {
   return (c / e) * 100;
 }
 
+// Reads BOTH the program-grain feed (legacy, Title-Case aggregate columns) and
+// the section-grain feed (one row per section, with a 'Section' column). When a
+// 'Section' is present the row is flagged isSection and rolled up below.
 function normalizeRow(raw) {
+  const pick = (...keys) => { for (const k of keys) { if (raw[k] != null && raw[k] !== '') return raw[k]; } return null; };
+  const sectionName = raw['Section'] ?? raw['section'] ?? '';
+  const isSection   = (sectionName !== '') || raw['Section Id'] != null || raw['section_id'] != null;
   return {
-    programName:        raw['Program']                     || '',
-    season:             raw['Season']                      || '',
-    regMode:            raw['Reg Mode']                    || '',
-    startDate:          raw['Start Date']                  || '',
-    endDate:            raw['End Date']                    || '',
-    sections:           raw['Sections']                    ?? 0,
-    enrollments:        raw['Enrollments']                 ?? 0,
-    utilization:        raw['Utilization']                 || '',
-    fillPct:            raw['Fill %']                      ?? null,
-    waitlist:           raw['Waitlist']                    ?? 0,
-    cancellations:      raw['Cancellations']               ?? 0,
-    refunds:            raw['Refunds']                     ?? 0,
-    charged:            raw['Charged']                     ?? 0,
-    received:           raw['Received']                    ?? 0,
-    outstanding:        raw['Outstanding']                 ?? 0,
-    netRevenue:         raw['Net Revenue']                 ?? 0,
+    isSection,
+    programName:   raw['Program'] ?? raw['program'] ?? '',
+    programId:     raw['Program Id'] ?? raw['program_id'] ?? raw['Program'] ?? raw['program'] ?? '',
+    sectionName,
+    sectionId:     raw['Section Id'] ?? raw['section_id'] ?? sectionName,
+    status:        raw['Status'] ?? raw['Section Status'] ?? raw['section_status'] ?? '',
+    season:        raw['Season'] ?? raw['program_season'] ?? '',
+    regMode:       raw['Reg Mode'] ?? raw['registration_mode'] ?? '',
+    startDate:     raw['Start Date'] ?? raw['start_date'] ?? '',
+    endDate:       raw['End Date'] ?? raw['end_date'] ?? '',
+    sections:      raw['Sections'] ?? (isSection ? 1 : 0),
+    enrollments:   raw['Enrollments'] ?? raw['Enrolled'] ?? raw['enrolled'] ?? 0,
+    utilized:      pick('Utilized','utilized'),
+    capacity:      pick('Capacity','capacity'),
+    utilization:   raw['Utilization'] ?? '',
+    fillPct:       raw['Fill %'] ?? raw['fill_pct'] ?? null,
+    waitlist:      raw['Waitlist'] ?? 0,
+    cancellations: raw['Cancellations'] ?? 0,
+    refunds:       raw['Refunds'] ?? raw['refunds'] ?? 0,
+    charged:       raw['Charged'] ?? raw['charged'] ?? 0,
+    received:      raw['Received'] ?? raw['received'] ?? 0,
+    outstanding:   raw['Outstanding'] ?? raw['outstanding'] ?? 0,
+    netRevenue:    raw['Net Revenue'] ?? raw['Net Total'] ?? raw['net_total'] ?? 0,
   };
+}
+
+// Section-grain → one row per PROGRAM (sum of its sections), each carrying its
+// section rows in _sections for the expand/breakout. Program totals are the sum
+// of their sections by construction, so parent always reconciles to children.
+function rollupToPrograms(secRows) {
+  const map = new Map();
+  for (const r of secRows) {
+    const key = r.programId || r.programName;
+    if (!map.has(key)) map.set(key, {
+      isSection:false, programId:key, programName:r.programName, season:r.season,
+      regMode:'', startDate:null, endDate:null, sections:0, enrollments:0,
+      _util:0, _cap:0, waitlist:0, cancellations:0,
+      charged:0, received:0, outstanding:0, refunds:0, netRevenue:0, _sections:[],
+    });
+    const g = map.get(key);
+    g._sections.push(r);
+    g.sections     += 1;
+    g.enrollments  += fmtNum(r.enrollments);
+    g._util        += fmtNum(r.utilized);
+    g._cap         += (r.capacity == null ? 0 : fmtNum(r.capacity));
+    g.waitlist     += fmtNum(r.waitlist);
+    g.cancellations+= fmtNum(r.cancellations);
+    g.charged      += fmtNum(r.charged);
+    g.received     += fmtNum(r.received);
+    g.outstanding  += fmtNum(r.outstanding);
+    g.refunds      += fmtNum(r.refunds);
+    g.netRevenue   += fmtNum(r.netRevenue);
+    if (r.startDate && (!g.startDate || r.startDate < g.startDate)) g.startDate = r.startDate;
+    if (r.endDate   && (!g.endDate   || r.endDate   > g.endDate))   g.endDate   = r.endDate;
+  }
+  const out = [];
+  for (const g of map.values()) {
+    g.regMode     = progMode(g._sections);
+    g.utilization = `${fmtNum(g._util).toLocaleString()} / ${fmtNum(g._cap).toLocaleString()}`;
+    g.fillPct     = g._cap > 0 ? Math.round((g._util / g._cap) * 1000) / 10 : null;
+    g._sections.forEach(sx => {
+      sx.utilization = `${fmtNum(sx.utilized).toLocaleString()} / ${(sx.capacity == null ? '\u221E' : fmtNum(sx.capacity).toLocaleString())}`;
+      sx.fillPct     = (sx.capacity != null && fmtNum(sx.capacity) > 0) ? Math.round((fmtNum(sx.utilized) / fmtNum(sx.capacity)) * 1000) / 10 : null;
+    });
+    out.push(g);
+  }
+  out.sort((a, b) => a.programName.localeCompare(b.programName));
+  return out;
 }
 
 function App() {
@@ -433,6 +498,8 @@ function App() {
   const [startDate,   setStartDate]   = useState(params.start_date || defaults.start);
   const [endDate,     setEndDate]     = useState(params.end_date   || defaults.end);
   const [rows,        setRows]        = useState(null);
+  const [sectionGrain, setSectionGrain] = useState(false);
+  const [open,        setOpen]        = useState(() => new Set());
   const [meta,        setMeta]        = useState({});
   const [error,       setError]       = useState(null);
   const [loading,     setLoading]     = useState(false);
@@ -478,13 +545,16 @@ function App() {
       .then(r => { if (!r.ok) throw new Error(`Server returned ${r.status}`); return r.json(); })
       .then(json => {
         const raw = json.rows || [];
-        setRows(raw.map(normalizeRow));
+        const normalized = raw.map(normalizeRow);
+        const isSecGrain = normalized.some(r => r.isSection);
+        setSectionGrain(isSecGrain);
+        setRows(isSecGrain ? rollupToPrograms(normalized) : normalized);
         setMeta(json.meta || {});
         setLoadedStart(sd);
         setLoadedEnd(ed);
         setColPresence({
-          regMode:       raw.some(r => r['Reg Mode'] != null && r['Reg Mode'] !== ''),
-          cancellations: raw.some(r => r['Cancellations'] != null),
+          regMode:       isSecGrain ? normalized.some(r => r.regMode) : raw.some(r => r['Reg Mode'] != null && r['Reg Mode'] !== ''),
+          cancellations: raw.some(r => (r['Cancellations'] != null) || (r['cancellations'] != null)),
         });
       })
       .catch(err => setError(err.message))
@@ -672,6 +742,9 @@ function App() {
   }, [filteredRows]);
 
   const programCount = grouped ? Object.keys(grouped).length : 0;
+  const allOpen  = sectionGrain && rows && rows.length > 0 && rows.every(r => open.has(r.programId));
+  const toggle   = (id) => setOpen(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const toggleAll = () => setOpen(allOpen ? new Set() : new Set((rows || []).map(r => r.programId)));
   const hasRegMode       = colPresence.regMode;
   const hasCancellations = colPresence.cancellations;
   const showRegModeCol   = hasRegMode && showRegMode;
@@ -721,6 +794,15 @@ function App() {
             </label>
           )}
         </div>
+        {sectionGrain && (
+          <>
+            <div className="divider" />
+            <label style={{display:'flex',alignItems:'center',gap:6,cursor:'pointer',color:'#fff',userSelect:'none',fontWeight:600,fontSize:12}}>
+              <input type="checkbox" checked={allOpen} onChange={toggleAll} />
+              Breakout sections
+            </label>
+          </>
+        )}
         <div className="divider" />
         <div style={{position:'relative',display:'flex',alignItems:'center'}}>
           <span style={{position:'absolute',left:8,color:'#666',fontSize:12,pointerEvents:'none'}}>🔍</span>
@@ -749,7 +831,7 @@ function App() {
           <span className="row-count">
             {search.trim()
               ? `${programCount} of ${new Set(rows.map(r => r.programName)).size} programs`
-              : `${rows.length} section${rows.length !== 1 ? 's' : ''} · ${programCount} program${programCount !== 1 ? 's' : ''}`
+              : `${totals ? totals.sections : rows.length} section${(totals ? totals.sections : rows.length) !== 1 ? 's' : ''} \u00b7 ${programCount} program${programCount !== 1 ? 's' : ''}`
             }
           </span>
         )}
@@ -1004,9 +1086,12 @@ function App() {
             <tbody>
               {filteredRows.map((r, i) => {
                 const cp = cancelPct(r.cancellations, r.enrollments);
+                const hasSecs = Array.isArray(r._sections) && r._sections.length > 0;
+                const isOpen  = hasSecs && open.has(r.programId);
                 return (
-                  <tr key={i} className="data-row">
-                    <td className="left" style={{fontWeight:600}}>{r.programName}</td>
+                  <React.Fragment key={i}>
+                  <tr className={"data-row" + (hasSecs ? " prog-clickable" : "")} onClick={hasSecs ? () => toggle(r.programId) : undefined}>
+                    <td className="left" style={{fontWeight:600}}>{hasSecs && <span className={"chev" + (isOpen ? " open" : "")}>{"\u25B6"}</span>}{r.programName}</td>
                     <td className="left mono">{r.season}</td>
                     {showRegModeCol && <td className="left">{regModeLabel(r.regMode)}</td>}
                     <td className="left mono">{r.startDate}</td>
@@ -1026,6 +1111,33 @@ function App() {
                     <td className={`money ${fmtNum(r.refunds) === 0 ? 'zero' : ''}`}>{fmtMoney(r.refunds)}</td>
                     <td className="money" style={fmtNum(r.netRevenue) < 0 ? {color:'#b91c1c'} : {}}>{fmtMoney(r.netRevenue)}</td>
                   </tr>
+                  {isOpen && r._sections.map((sx, j) => {
+                    const scp = cancelPct(sx.cancellations, sx.enrollments);
+                    return (
+                      <tr key={i + '-' + j} className="section-row">
+                        <td className="left">{sx.sectionName}{sx.status && <span className="sec-status">{sx.status}</span>}</td>
+                        <td className="left mono">{sx.season}</td>
+                        {showRegModeCol && <td className="left">{regModeLabel(sx.regMode)}</td>}
+                        <td className="left mono">{sx.startDate}</td>
+                        <td className="left mono">{sx.endDate}</td>
+                        <td className="muted">—</td>
+                        <td>{fmtNum(sx.enrollments) || '—'}</td>
+                        <td className="mono">{sx.utilization || '—'}</td>
+                        <td className={fillClass(sx.fillPct)}>{sx.fillPct != null ? `${fmtNum(sx.fillPct)}%` : '—'}</td>
+                        {showWaitlist && <td className={fmtNum(sx.waitlist) === 0 ? 'muted' : ''}>{fmtNum(sx.waitlist) || '—'}</td>}
+                        {showCancelsCol && <>
+                          <td className={fmtNum(sx.cancellations) === 0 ? 'muted' : ''}>{fmtNum(sx.cancellations) || '—'}</td>
+                          <td className={scp == null ? 'muted' : ''}>{scp != null ? `${Math.round(scp)}%` : '—'}</td>
+                        </>}
+                        <td className={`money ${fmtNum(sx.charged) === 0 ? 'zero' : ''}`}>{fmtMoney(sx.charged)}</td>
+                        <td className={`money ${fmtNum(sx.received) === 0 ? 'zero' : ''}`}>{fmtMoney(sx.received)}</td>
+                        <td className={`money ${fmtNum(sx.outstanding) === 0 ? 'zero' : ''}`}>{fmtMoney(sx.outstanding)}</td>
+                        <td className={`money ${fmtNum(sx.refunds) === 0 ? 'zero' : ''}`}>{fmtMoney(sx.refunds)}</td>
+                        <td className="money" style={fmtNum(sx.netRevenue) < 0 ? {color:'#b91c1c'} : {}}>{fmtMoney(sx.netRevenue)}</td>
+                      </tr>
+                    );
+                  })}
+                  </React.Fragment>
                 );
               })}
             </tbody>
