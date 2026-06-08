@@ -346,6 +346,7 @@ const { useState, useEffect, useMemo, useCallback, useRef } = React;
 const LS_HIDE_ZERO = 'products_daily_hide_zero_v1';
 const LS_SHOW_NET  = 'products_daily_show_net_v1';
 const LS_BY_DESK   = 'products_daily_by_desk_v1';
+const LS_BY_ITEM   = 'products_daily_by_item_v1';
 
 const SP = new URLSearchParams(window.location.search);
 const isPrint = SP.get('_print') === '1';
@@ -450,6 +451,8 @@ function App() {
     SP.has('chart_net') ? SP.get('chart_net') === '1' : localStorage.getItem(LS_SHOW_NET) !== '0');
   const [byDesk, setByDesk] = useState(() =>
     SP.has('by_desk') ? SP.get('by_desk') === '1' : localStorage.getItem(LS_BY_DESK) === '1');
+  const [byItem, setByItem] = useState(() =>
+    SP.has('by_item') ? SP.get('by_item') === '1' : localStorage.getItem(LS_BY_ITEM) === '1');
 
   const [selectedDesks, setSelectedDesks] = useState(() => {
     const d = SP.get('desks');
@@ -467,6 +470,7 @@ function App() {
   useEffect(() => { localStorage.setItem(LS_HIDE_ZERO, hideZero ? '1' : '0'); }, [hideZero]);
   useEffect(() => { localStorage.setItem(LS_SHOW_NET, showNet ? '1' : '0'); }, [showNet]);
   useEffect(() => { localStorage.setItem(LS_BY_DESK, byDesk ? '1' : '0'); }, [byDesk]);
+  useEffect(() => { localStorage.setItem(LS_BY_ITEM, byItem ? '1' : '0'); }, [byItem]);
 
   useEffect(() => {
     function onDocClick(e) {
@@ -560,6 +564,18 @@ function App() {
     return Array.from(m.values());
   }, [filtered, byDesk]);
 
+  /* "Total by Item" view: aggregate across all dates by product (+ desk if byDesk) */
+  const itemSummary = useMemo(() => {
+    if (!byItem) return [];
+    const m = new Map();
+    filtered.forEach(r => {
+      const k = r.product + (byDesk ? '|' + r.desk : '');
+      if (!m.has(k)) m.set(k, { product: r.product, desk: r.desk, qty: 0, revenue: 0, refunds: 0, net: 0 });
+      const a = m.get(k); a.qty += r.qty; a.revenue += r.revenue; a.refunds += r.refunds; a.net += r.net;
+    });
+    return Array.from(m.values()).sort((a, b) => b.net - a.net);
+  }, [filtered, byItem, byDesk]);
+
   /* group by date DESC, rows within by net DESC, subtotal per date */
   const groups = useMemo(() => {
     const map = new Map();
@@ -592,19 +608,33 @@ function App() {
     if (loadedStart) p.set('start_date', loadedStart);
     if (loadedEnd) p.set('end_date', loadedEnd);
     if (byDesk) p.set('by_desk', '1');
+    if (byItem) p.set('by_item', '1');
     if (hideZero) p.set('hide_zero', '1');
     p.set('chart_net', showNet ? '1' : '0');
     if (selectedDesks.size > 0) p.set('desks', Array.from(selectedDesks).join(','));
     window.history.replaceState(null, '', window.location.pathname + '?' + p.toString());
-  }, [loadedStart, loadedEnd, byDesk, hideZero, showNet, selectedDesks]);
+  }, [loadedStart, loadedEnd, byDesk, byItem, hideZero, showNet, selectedDesks]);
 
-  /* chart: net or gross by day, chronological asc */
+  /* chart: daily bars (default) or top-products bars (byItem) */
   useEffect(() => {
     if (!chartRef.current || typeof Chart === 'undefined') return;
-    const asc = [...groups].sort((a, b) => a.dateMs - b.dateMs);
-    const labels = asc.map(g => { const d = parseDateFlexible(g.dateISO); return d ? `${MONTHS[d.getMonth()]} ${d.getDate()}` : g.dateISO; });
-    const data = asc.map(g => showNet ? g.sub.net : g.sub.revenue);
     if (chartInst.current) { chartInst.current.destroy(); chartInst.current = null; }
+
+    let labels, data, titleText;
+    if (byItem) {
+      /* top N products by net or gross */
+      const sorted = [...itemSummary].sort((a, b) => showNet ? b.net - a.net : b.revenue - a.revenue);
+      const top = sorted.slice(0, 25);
+      labels = top.map(r => byDesk ? `${r.product} · ${r.desk}` : r.product);
+      data = top.map(r => showNet ? r.net : r.revenue);
+      titleText = `Top Products by ${showNet ? 'Net' : 'Gross'} Revenue`;
+    } else {
+      const asc = [...groups].sort((a, b) => a.dateMs - b.dateMs);
+      labels = asc.map(g => { const d = parseDateFlexible(g.dateISO); return d ? `${MONTHS[d.getMonth()]} ${d.getDate()}` : g.dateISO; });
+      data = asc.map(g => showNet ? g.sub.net : g.sub.revenue);
+      titleText = (showNet ? 'Net' : 'Gross') + ' Revenue by Day';
+    }
+
     chartInst.current = new Chart(chartRef.current, {
       type: 'bar',
       data: { labels, datasets: [{
@@ -615,21 +645,25 @@ function App() {
       }] },
       options: {
         responsive: true, maintainAspectRatio: false,
+        indexAxis: byItem ? 'y' : 'x',
         plugins: {
           legend: { display: false },
-          title: { display: true, text: (showNet ? 'Net' : 'Gross') + ' Revenue by Day', font: { size: 12, weight: '600' }, color: '#333' },
-          tooltip: { callbacks: { label: c => fmtMoney(c.parsed.y) } },
+          title: { display: true, text: titleText, font: { size: 12, weight: '600' }, color: '#333' },
+          tooltip: { callbacks: { label: c => fmtMoney(c.parsed[byItem ? 'x' : 'y']) } },
         },
-        scales: {
+        scales: byItem ? {
+          x: { ticks: { font: { size: 9 }, callback: v => '$' + Number(v).toLocaleString() }, grid: { color: '#eee' } },
+          y: { ticks: { font: { size: 9 } }, grid: { display: false } },
+        } : {
           x: { ticks: { font: { size: 9 }, maxRotation: 90, minRotation: 0 }, grid: { display: false } },
           y: { ticks: { font: { size: 9 }, callback: v => '$' + Number(v).toLocaleString() }, grid: { color: '#eee' } },
         },
       },
     });
     return () => { if (chartInst.current) { chartInst.current.destroy(); chartInst.current = null; } };
-  }, [groups, showNet]);
+  }, [groups, itemSummary, showNet, byItem, byDesk]);
 
-  const nCols = byDesk ? 7 : 6;
+  const nCols = byItem ? (byDesk ? 6 : 5) : (byDesk ? 7 : 6);
   const isOpen = (iso) => isPrint || expanded.has(iso);
   function toggleDate(iso) {
     setExpanded(prev => { const n = new Set(prev); if (n.has(iso)) n.delete(iso); else n.add(iso); return n; });
@@ -644,6 +678,7 @@ function App() {
     if (loadedStart) p.set('start_date', loadedStart);
     if (loadedEnd) p.set('end_date', loadedEnd);
     if (byDesk) p.set('by_desk', '1');
+    if (byItem) p.set('by_item', '1');
     if (hideZero) p.set('hide_zero', '1');
     p.set('chart_net', showNet ? '1' : '0');
     if (selectedDesks.size > 0) p.set('desks', Array.from(selectedDesks).join(','));
@@ -661,6 +696,28 @@ function App() {
 
   function exportExcel() {
     logClientEvent('excel');
+    if (byItem) {
+      const header = byDesk
+        ? ['Product Name', 'Desk Location', 'Qty Sold', 'Revenue ($)', 'Refunds ($)', 'Net Revenue ($)']
+        : ['Product Name', 'Qty Sold', 'Revenue ($)', 'Refunds ($)', 'Net Revenue ($)'];
+      const aoa = [header];
+      itemSummary.forEach(r => {
+        aoa.push(byDesk
+          ? [r.product, r.desk, r.qty, r.revenue, r.refunds, r.net]
+          : [r.product, r.qty, r.revenue, r.refunds, r.net]);
+      });
+      aoa.push(byDesk
+        ? ['TOTAL', '', totals.qty, totals.revenue, totals.refunds, totals.net]
+        : ['TOTAL', totals.qty, totals.revenue, totals.refunds, totals.net]);
+      const ws = XLSX.utils.aoa_to_sheet(aoa);
+      ws['!cols'] = byDesk
+        ? [{ wch: 34 }, { wch: 22 }, { wch: 9 }, { wch: 13 }, { wch: 13 }, { wch: 15 }]
+        : [{ wch: 34 }, { wch: 9 }, { wch: 13 }, { wch: 13 }, { wch: 15 }];
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Product Totals');
+      XLSX.writeFile(wb, `products-by-item-${loadedStart || 'all'}_${loadedEnd || 'all'}.xlsx`);
+      return;
+    }
     const header = byDesk
       ? ['Date', 'Product Name', 'Desk Location', 'Qty Sold', 'Revenue ($)', 'Refunds ($)', 'Net Revenue ($)']
       : ['Date', 'Product Name', 'Qty Sold', 'Revenue ($)', 'Refunds ($)', 'Net Revenue ($)'];
@@ -727,14 +784,15 @@ function App() {
           </div>
 
           <button className={byDesk ? 'active' : ''} onClick={() => setByDesk(v => !v)}>By Desk Location</button>
+          <button className={byItem ? 'active' : ''} onClick={() => setByItem(v => !v)}>Total by Item</button>
           <button className={hideZero ? 'active' : ''} onClick={() => setHideZero(z => !z)}>Hide $0</button>
           <span className="divider" />
           <span style={{ fontSize: 11, color: '#666' }}>Chart:</span>
           <button className={showNet ? 'active' : ''} onClick={() => setShowNet(true)}>Net</button>
           <button className={!showNet ? 'active' : ''} onClick={() => setShowNet(false)}>Gross</button>
           <span className="divider" />
-          <button onClick={expandAll}>Expand all</button>
-          <button onClick={collapseAll}>Collapse all</button>
+          <button onClick={expandAll} disabled={byItem}>Expand all</button>
+          <button onClick={collapseAll} disabled={byItem}>Collapse all</button>
           <span className="divider" />
           <button className="btn-excel" onClick={exportExcel} disabled={loading || filtered.length === 0}>Excel</button>
           <button onClick={() => { logClientEvent('print'); window.print(); }}>Print</button>
@@ -747,8 +805,8 @@ function App() {
           {logoUrl ? <img className="report-header-logo" src={logoUrl} alt="" /> : null}
           <div>
             <div className="org-label">{displayOrg}</div>
-            <div className="title">Product Sales — Daily Detail</div>
-            <div className="date-range">{rangeLabel}{byDesk ? ' · by desk location' : ''}</div>
+            <div className="title">{byItem ? 'Product Sales — Total by Item' : 'Product Sales — Daily Detail'}</div>
+            <div className="date-range">{rangeLabel}{byDesk ? ' · by desk location' : ''}{byItem ? ' · aggregated' : ''}</div>
           </div>
         </div>
 
@@ -766,15 +824,15 @@ function App() {
               {bestDay && <SummaryCard color="slate" label="Best Day (net)" value={fmtMoney(bestDay.net)} sub={bestDay.label} />}
             </div>
 
-            {groups.length > 0 && (
-              <div className="chart-wrap" style={{ height: 240 }}><canvas ref={chartRef} /></div>
+            {(byItem ? itemSummary.length > 0 : groups.length > 0) && (
+              <div className="chart-wrap" style={{ height: byItem ? Math.max(240, Math.min(itemSummary.length, 25) * 28 + 60) : 240 }}><canvas ref={chartRef} /></div>
             )}
 
             <div className="table-wrapper" style={{ marginTop: 14 }}>
               <table>
                 <thead>
                   <tr>
-                    <th className="left">Date</th>
+                    {!byItem && <th className="left">Date</th>}
                     <th className="left">Product Name</th>
                     {byDesk && <th className="left">Desk Location</th>}
                     <th>Qty Sold</th>
@@ -784,6 +842,25 @@ function App() {
                   </tr>
                 </thead>
                 <tbody>
+                  {byItem ? (
+                    /* ── Total by Item view ── */
+                    itemSummary.length === 0 ? (
+                      <tr><td className="left" colSpan={nCols} style={{ textAlign: 'center', padding: 24, color: '#888' }}>
+                        No product sales in this range.
+                      </td></tr>
+                    ) : itemSummary.map((r, i) => (
+                      <tr key={r.product + '|' + (r.desk || '') + '|' + i}>
+                        <td className="left">{r.product}</td>
+                        {byDesk && <td className="left">{r.desk}</td>}
+                        <td>{r.qty === 0 ? <span className="cell-zero">—</span> : fmtInt(r.qty)}</td>
+                        <td>{r.revenue === 0 ? <span className="cell-zero">—</span> : fmtMoney(r.revenue)}</td>
+                        <td>{r.refunds === 0 ? <span className="cell-zero">—</span> : <span style={{ color: '#b45309' }}>{fmtMoney(r.refunds)}</span>}</td>
+                        <td style={{ color: r.net < 0 ? '#dc2626' : 'inherit', fontWeight: 600 }}>{fmtMoney(r.net)}</td>
+                      </tr>
+                    ))
+                  ) : (
+                    /* ── Daily Detail view ── */
+                    <>
                   {groups.length === 0 && (
                     <tr><td className="left" colSpan={nCols} style={{ textAlign: 'center', padding: 24, color: '#888' }}>
                       No product sales in this range.
@@ -823,10 +900,14 @@ function App() {
                       </React.Fragment>
                     );
                   })}
+                    </>
+                  )}
                 </tbody>
                 <tfoot>
                   <tr>
-                    <td className="left" colSpan={byDesk ? 3 : 2}>TOTAL · {groups.length} days · {filtered.length} rows</td>
+                    <td className="left" colSpan={byItem ? (byDesk ? 3 : 2) : (byDesk ? 3 : 2)}>
+                      TOTAL · {byItem ? `${itemSummary.length} item${itemSummary.length !== 1 ? 's' : ''}` : `${groups.length} days · ${filtered.length} rows`}
+                    </td>
                     <td>{fmtInt(totals.qty)}</td>
                     <td>{fmtMoney(totals.revenue)}</td>
                     <td style={{ color: totals.refunds > 0 ? '#b45309' : 'inherit' }}>{fmtMoney(totals.refunds)}</td>

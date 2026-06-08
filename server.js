@@ -633,7 +633,7 @@ async function generatePdf(orgSlug, reportType, startDate, endDate, filters = {}
   // server-side Metabase filters. The print page initializes its filter state
   // from these params before emitting #report-ready, so Puppeteer captures the
   // filtered render rather than the full dataset.
-  ["locations", "sites", "location_name", "site_type", "desks", "by_desk", "hide_zero", "chart_net", "metric", "programs", "closures", "hrs", "section_name", "status", "questions", "cols", "search"].forEach(k => {
+  ["locations", "sites", "location_name", "site_type", "desks", "by_desk", "by_item", "hide_zero", "chart_net", "metric", "programs", "closures", "hrs", "section_name", "status", "questions", "cols", "search"].forEach(k => {
     if (filters[k]) qsObj[k] = filters[k];
   });
   if (orgTok) qsObj.token = orgTok;
@@ -2928,6 +2928,11 @@ app.get("/", (req, res) => {
     // Newest first. Add a new entry at the TOP for every change we ship.
     // History below back-filled from the GitHub commit log.
     const UPDATES = [
+      { date: '2026-06-08', title: 'Product Sales: Total by Item view', items: [
+        'New "Total by Item" toggle aggregates all sales by product across the selected date range, with optional desk-location breakdown',
+        'Chart switches to a horizontal bar chart of top products by revenue when in item view',
+        'Excel and PDF exports respect the item-summary view',
+      ] },
       { date: '2026-06-06', title: 'Admin dashboard: Railway status bar', items: [
         'The admin page now shows a live Railway status bar below the header \u2014 deploy status with colored dot (green/yellow/red), deploy ID and age, server uptime, and memory usage',
         'Auto-refreshes every 60 seconds; requires RAILWAY_API_TOKEN env var',
