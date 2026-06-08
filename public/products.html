@@ -905,7 +905,7 @@ function App() {
                 </tbody>
                 <tfoot>
                   <tr>
-                    <td className="left" colSpan={byItem ? (byDesk ? 3 : 2) : (byDesk ? 3 : 2)}>
+                    <td className="left" colSpan={byItem ? (byDesk ? 2 : 1) : (byDesk ? 3 : 2)}>
                       TOTAL · {byItem ? `${itemSummary.length} item${itemSummary.length !== 1 ? 's' : ''}` : `${groups.length} days · ${filtered.length} rows`}
                     </td>
                     <td>{fmtInt(totals.qty)}</td>
