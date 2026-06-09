@@ -554,7 +554,11 @@ function PopoverCard({ev,onClose}){
 
 function App(){
   const c=ctx();
-  const [weekStart,setWeekStart]=useState(()=>startOfWeek(new Date()));
+  const [weekStart,setWeekStart]=useState(()=>{
+    const w=new URLSearchParams(window.location.search).get('week');
+    const d=w?new Date(w+'T00:00:00'):new Date();
+    return startOfWeek(isNaN(d)?new Date():d);
+  });
   const [view,setView]=useState('week');
   const [selectedDate,setSelectedDate]=useState(()=>fmtISO(new Date()));
   const [rows,setRows]=useState([]);
@@ -600,8 +604,9 @@ function App(){
     const u=new URL(window.location.href);
     if(actFilter) u.searchParams.set('activity',actFilter); else u.searchParams.delete('activity');
     if(locFilter) u.searchParams.set('location',locFilter); else u.searchParams.delete('location');
+    u.searchParams.set('week',fmtISO(weekStart));
     window.history.replaceState(null,'',u.toString());
-  },[actFilter,locFilter]);
+  },[actFilter,locFilter,weekStart]);
 
   // Present mode: force list view, add body class, auto-scroll, auto-refresh
   useEffect(()=>{
@@ -691,7 +696,7 @@ function App(){
         <span className="range">{rangeLabel}</span>
         <span className="grow"></span>
         <button onClick={()=>window.print()}>Print</button>
-        <button onClick={()=>{const u=new URL(window.location.href);u.searchParams.set('present','1');if(actFilter)u.searchParams.set('activity',actFilter);if(locFilter)u.searchParams.set('location',locFilter);window.open(u.toString(),'_blank');}}>Present ▶</button>
+        <button onClick={()=>{const u=new URL(window.location.href);u.searchParams.set('present','1');if(actFilter)u.searchParams.set('activity',actFilter);if(locFilter)u.searchParams.set('location',locFilter);u.searchParams.set('week',fmtISO(weekStart));window.open(u.toString(),'_blank');}}>Present ▶</button>
         <select className="filter-sel" value={actFilter} onChange={e=>setActFilter(e.target.value)}>
           <option value="">All Activities</option>
           {activities.map(a=><option key={a} value={a}>{a}</option>)}
