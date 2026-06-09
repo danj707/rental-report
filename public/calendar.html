@@ -200,6 +200,7 @@ function normalizeRow(r){
     activity: pick(r,['Activity','Site Type','Purpose','activity'])||'Reservation',
     program: pick(r,['Program','program']),
     section: pick(r,['Section','section','Purpose','Reservee']),
+    label: pick(r,['Section','section','Purpose','Reservee']) || pick(r,['Program','program']) || pick(r,['Activity','Site Type','Purpose','activity']) || 'Reservation',
     url: pick(r,['Section URL','Url','url','sectionUrl']),
     full: status.indexOf('full')>=0 || status.indexOf('capacity')>=0,
     waitlist: status.indexOf('wait')>=0,
@@ -313,7 +314,7 @@ function SlotPopover({group,anchorRect,onSelect,onClose}){
         <div className="sp-item" key={i} onClick={()=>onSelect(e)}>
           <div className="sp-dot" style={{background:colorFor(e.activity)}}></div>
           <div className="sp-info">
-            <div className="sp-act">{e.activity}</div>
+            <div className="sp-act">{e.label}</div>
             <div className="sp-sub">{minToLabel(e.beginMin)}{e.endMin!=null?' – '+minToLabel(e.endMin):''} · {e.facility||e.location}</div>
           </div>
           <StatusChips ev={e}/>
@@ -361,8 +362,8 @@ function WeekView({weekStart,events,onEv,onDayClick}){
         {days.map(d=>(
           <div className="cell" key={'a'+d}>
             {allByDay(d).map((e,j)=>(
-              <div className="ev" key={j} style={{position:'static',background:colorFor(e.activity),cursor:'pointer'}} title={e.activity+' — '+e.section} onClick={()=>onEv&&onEv(e)}>
-                <div className="t">{e.activity} <StatusChips ev={e}/></div>
+              <div className="ev" key={j} style={{position:'static',background:colorFor(e.activity),cursor:'pointer'}} title={e.label} onClick={()=>onEv&&onEv(e)}>
+                <div className="t">{e.label} <StatusChips ev={e}/></div>
               </div>
             ))}
           </div>
@@ -385,9 +386,9 @@ function WeekView({weekStart,events,onEv,onDayClick}){
               return (
                 <div className="ev" key={gi} style={{top,height:ht,background:colorFor(first.activity),cursor:'pointer'}}
                      onClick={()=>onEv&&onEv(first)}
-                     title={first.activity+' '+first.begin+'–'+first.end+(first.section?(' · '+first.section):'')}>
-                  <div className="t">{minToLabel(first.beginMin)} {first.activity} <StatusChips ev={first}/></div>
-                  {ht>32 && !extra && <div className="s">{first.facility||first.section}</div>}
+                     title={first.label+' '+first.begin+'–'+first.end}>
+                  <div className="t">{minToLabel(first.beginMin)} {first.label} <StatusChips ev={first}/></div>
+                  {ht>32 && !extra && <div className="s">{first.facility||first.activity}</div>}
                   {extra>0 && <div className="s"><span className="more-chip" onClick={(evt)=>{evt.stopPropagation();handleMore(grp,evt);}}>+{extra} more</span></div>}
                 </div>
               );
@@ -441,8 +442,8 @@ function DayView({dateISO,events,onEv}){
           <div className="cell">
             {allday.map((e,j)=>(
               <div className="ev" key={j} style={{position:'static',background:colorFor(e.activity),cursor:'pointer',maxWidth:300}} onClick={()=>onEv&&onEv(e)}>
-                <div className="t">{e.activity} <StatusChips ev={e}/></div>
-                <div className="s">{e.facility||e.section}</div>
+                <div className="t">{e.label} <StatusChips ev={e}/></div>
+                <div className="s">{e.facility||e.activity}</div>
               </div>
             ))}
           </div>
@@ -465,9 +466,9 @@ function DayView({dateISO,events,onEv}){
             return (
               <div className="ev" key={j} style={{top,height:ht,background:colorFor(e.activity),cursor:'pointer',left,width,right:'auto',paddingRight:4}}
                    onClick={()=>onEv&&onEv(e)}
-                   title={e.activity+' '+e.begin+'–'+e.end+(e.section?(' · '+e.section):'')}>
-                <div className="t">{minToLabel(e.beginMin)} {e.activity} <StatusChips ev={e}/></div>
-                {ht>36 && <div className="s">{[e.facility,e.section].filter(Boolean).join(' · ')}</div>}
+                   title={e.label+' '+e.begin+'–'+e.end}>
+                <div className="t">{minToLabel(e.beginMin)} {e.label} <StatusChips ev={e}/></div>
+                {ht>36 && <div className="s">{[e.activity,e.facility].filter(Boolean).join(' · ')}</div>}
                 {ht>52 && <div className="s">{e.location}</div>}
               </div>
             );
@@ -504,8 +505,8 @@ function ListView({events,onEv}){
                     <div className="bar" style={{background:colorFor(e.activity)}}></div>
                     <div className="when">{e.beginMin!=null?(minToLabel(e.beginMin)+' – '+(e.endMin!=null?minToLabel(e.endMin):'')):'All day'}</div>
                     <div className="main">
-                      <div className="ti">{e.activity}</div>
-                      <div className="su">{[e.program,e.section,e.facility].filter(Boolean).join(' · ')}</div>
+                      <div className="ti">{e.label}</div>
+                      <div className="su">{[e.activity,e.facility].filter(Boolean).join(' · ')}</div>
                     </div>
                     <div className="right">
                       <StatusChips ev={e}/>
@@ -534,14 +535,14 @@ function PopoverCard({ev,onClose}){
       <div className="pop" onClick={e=>e.stopPropagation()}>
         <div className="pop-head">
           <div style={{flex:1,marginRight:10}}>
-            <div className="pop-act" style={{color:colorFor(ev.activity)}}>{ev.activity}</div>
+            <div className="pop-act" style={{color:colorFor(ev.activity)}}>{ev.label}</div>
             <div className="pop-time">{ev.begin}{ev.end?' – '+ev.end:''}</div>
           </div>
           <button className="pop-x" onClick={onClose}>×</button>
         </div>
         <div className="pop-body">
           {loc && <div className="pop-row"><span className="pop-lbl">Location</span><span>{loc}</span></div>}
-          {desc && <div className="pop-row"><span className="pop-lbl">Section</span><span style={{whiteSpace:'normal',overflowWrap:'anywhere'}}>{desc}</span></div>}
+          {ev.activity && <div className="pop-row"><span className="pop-lbl">Activity</span><span style={{whiteSpace:'normal',overflowWrap:'anywhere'}}>{ev.activity}</span></div>}
           {ev.description && <div className="pop-row"><span className="pop-lbl">Description</span><span style={{whiteSpace:'normal',overflowWrap:'anywhere',display:'-webkit-box',WebkitLineClamp:4,WebkitBoxOrient:'vertical',overflow:'hidden',fontSize:12,lineHeight:'1.45',color:'var(--ink)'}}>{ev.description}</span></div>}
           <div className="pop-row"><span className="pop-lbl">Price</span><span>{price}</span></div>
           {(ev.full||ev.waitlist) && <div className="pop-row pop-chips"><StatusChips ev={ev}/></div>}
