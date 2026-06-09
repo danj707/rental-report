@@ -182,6 +182,9 @@ function minToLabel(min){
 // normalize one Metabase row to internal keys (tolerant of alt aliases)
 function pick(r,keys){ for(const k of keys){ if(r[k]!=null&&r[k]!=='') return r[k]; } return ''; }
 function stripHtml(s){ if(!s) return ''; return String(s).replace(/<[^>]*>/g,' ').replace(/&nbsp;/g,' ').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&#?\w+;/g,' ').replace(/\s+/g,' ').trim(); }
+// Activities hidden from the public calendar (e.g. uncategorized private lessons).
+const HIDDEN_ACTIVITIES = ['uncategorized'];
+const isHiddenActivity = e => HIDDEN_ACTIVITIES.includes(String((e && e.activity) || '').trim().toLowerCase());
 function normalizeRow(r){
   const begin=pick(r,['Begin','Start','Start Time','begin','start']);
   const end=pick(r,['End','End Time','end']);
@@ -574,7 +577,7 @@ function App(){
     setLoading(true);
     const from=fmtISO(ws), to=fmtISO(addDays(ws,6));
     const {rows,src}=await fetchData(from,to);
-    setRows(rows.map(normalizeRow)); setSrc(src); setLoading(false);
+    setRows(rows.map(normalizeRow).filter(e=>!isHiddenActivity(e))); setSrc(src); setLoading(false);
   },[]);
 
   // One-time wide fetch to populate all filter options (today → +180 days)
@@ -583,7 +586,7 @@ function App(){
       const from=fmtISO(new Date());
       const to=fmtISO(addDays(new Date(),180));
       const {rows:wideRows}=await fetchData(from,to);
-      const norm=wideRows.map(normalizeRow);
+      const norm=wideRows.map(normalizeRow).filter(e=>!isHiddenActivity(e));
       setAllActivities([...new Set(norm.map(e=>e.activity).filter(Boolean))].sort());
       setAllLocations([...new Set(norm.map(e=>e.location).filter(Boolean))].sort());
     })();
