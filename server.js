@@ -94,6 +94,7 @@ const ORGS = {
     historic: { mbUuid: "af3c5388-7deb-4a05-a102-cc31f6c4b9f7" },
     gl:       { mbUuid: "45e050fd-10d7-4010-b616-6a2ec6e5f7ed" },
     roster:   { mbUuid: "462000f0-6be1-4e73-b983-0375668c1a1f" },
+    programs: { mbUuid: "ebe20297-455d-4603-aa22-b5560bd5c502" },
   },
   watertown: {
     token:   "7qNNXDFo4HGpOh5B",
