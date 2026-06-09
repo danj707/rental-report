@@ -546,6 +546,7 @@ function App() {
 
   const fetchData = useCallback((sd, ed) => {
     setLoading(true); setError(null);
+    setInsights(null); setInsightsMeta(null); setInsightsError(null);
     const qs = new URLSearchParams();
     if (sd) qs.set('start_date', sd);
     if (ed) qs.set('end_date',   ed);
@@ -840,7 +841,7 @@ function App() {
             type="text"
             placeholder="Filter programs…"
             value={search}
-            onChange={e => setSearch(e.target.value)}
+            onChange={e => { setSearch(e.target.value); setInsights(null); setInsightsMeta(null); }}
             style={{
               paddingLeft:26, paddingRight: search ? 24 : 8,
               paddingTop:4, paddingBottom:4,
@@ -851,7 +852,7 @@ function App() {
           />
           {search && (
             <button
-              onClick={() => setSearch('')}
+              onClick={() => { setSearch(''); setInsights(null); setInsightsMeta(null); }}
               style={{position:'absolute',right:4,background:'none',border:'none',color:'#aaa',fontSize:14,padding:'0 2px',cursor:'pointer',lineHeight:1}}
             >×</button>
           )}
