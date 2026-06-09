@@ -64,7 +64,9 @@
   .ev{position:absolute;left:3px;right:3px;border-radius:6px;padding:3px 5px;color:#fff;overflow:hidden;
     font-size:11px;line-height:1.25;cursor:pointer;box-shadow:0 1px 1px rgba(0,0,0,.12);border:1.5px solid rgba(255,255,255,.45)}
   .ev a{color:#fff;text-decoration:none}
-  .ev .t{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .ev .t{font-weight:600;display:flex;align-items:center;gap:4px;min-width:0;overflow:hidden}
+  .ev .t .evtitle{flex:1 1 auto;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+  .ev .t .evtime,.ev .t .chip{flex:none}
   .ev .s{opacity:.92;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .chip{display:inline-block;border-radius:999px;padding:0 6px;font-size:10px;font-weight:700;background:rgba(255,255,255,.28)}
   .chip.full{background:#111827;color:#fff}
@@ -363,7 +365,7 @@ function WeekView({weekStart,events,onEv,onDayClick}){
           <div className="cell" key={'a'+d}>
             {allByDay(d).map((e,j)=>(
               <div className="ev" key={j} style={{position:'static',background:colorFor(e.activity),cursor:'pointer'}} title={e.label} onClick={()=>onEv&&onEv(e)}>
-                <div className="t">{e.label} <StatusChips ev={e}/></div>
+                <div className="t"><span className="evtitle">{e.label}</span><StatusChips ev={e}/></div>
               </div>
             ))}
           </div>
@@ -387,7 +389,7 @@ function WeekView({weekStart,events,onEv,onDayClick}){
                 <div className="ev" key={gi} style={{top,height:ht,background:colorFor(first.activity),cursor:'pointer'}}
                      onClick={()=>onEv&&onEv(first)}
                      title={first.label+' '+first.begin+'–'+first.end}>
-                  <div className="t">{minToLabel(first.beginMin)} {first.label} <StatusChips ev={first}/></div>
+                  <div className="t"><span className="evtime">{minToLabel(first.beginMin)}</span><span className="evtitle">{first.label}</span><StatusChips ev={first}/></div>
                   {ht>32 && !extra && <div className="s">{first.facility||first.activity}</div>}
                   {extra>0 && <div className="s"><span className="more-chip" onClick={(evt)=>{evt.stopPropagation();handleMore(grp,evt);}}>+{extra} more</span></div>}
                 </div>
@@ -442,7 +444,7 @@ function DayView({dateISO,events,onEv}){
           <div className="cell">
             {allday.map((e,j)=>(
               <div className="ev" key={j} style={{position:'static',background:colorFor(e.activity),cursor:'pointer',maxWidth:300}} onClick={()=>onEv&&onEv(e)}>
-                <div className="t">{e.label} <StatusChips ev={e}/></div>
+                <div className="t"><span className="evtitle">{e.label}</span><StatusChips ev={e}/></div>
                 <div className="s">{e.facility||e.activity}</div>
               </div>
             ))}
@@ -467,7 +469,7 @@ function DayView({dateISO,events,onEv}){
               <div className="ev" key={j} style={{top,height:ht,background:colorFor(e.activity),cursor:'pointer',left,width,right:'auto',paddingRight:4}}
                    onClick={()=>onEv&&onEv(e)}
                    title={e.label+' '+e.begin+'–'+e.end}>
-                <div className="t">{minToLabel(e.beginMin)} {e.label} <StatusChips ev={e}/></div>
+                <div className="t"><span className="evtime">{minToLabel(e.beginMin)}</span><span className="evtitle">{e.label}</span><StatusChips ev={e}/></div>
                 {ht>36 && <div className="s">{[e.activity,e.facility].filter(Boolean).join(' · ')}</div>}
                 {ht>52 && <div className="s">{e.location}</div>}
               </div>
@@ -570,6 +572,7 @@ function App(){
   const urlParams=useMemo(()=>new URLSearchParams(window.location.search),[]);
   const [actFilter,setActFilter]=useState(()=>urlParams.get('activity')||'');
   const [locFilter,setLocFilter]=useState(()=>urlParams.get('location')||'');
+  const [availFilter,setAvailFilter]=useState(()=>urlParams.get('avail')||'');
   // All-time filter options (populated from a wide fetch)
   const [allActivities,setAllActivities]=useState([]);
   const [allLocations,setAllLocations]=useState([]);
@@ -605,9 +608,10 @@ function App(){
     const u=new URL(window.location.href);
     if(actFilter) u.searchParams.set('activity',actFilter); else u.searchParams.delete('activity');
     if(locFilter) u.searchParams.set('location',locFilter); else u.searchParams.delete('location');
+    if(availFilter) u.searchParams.set('avail',availFilter); else u.searchParams.delete('avail');
     u.searchParams.set('week',fmtISO(weekStart));
     window.history.replaceState(null,'',u.toString());
-  },[actFilter,locFilter,weekStart]);
+  },[actFilter,locFilter,availFilter,weekStart]);
 
   // Present mode: force list view, add body class, auto-scroll, auto-refresh
   useEffect(()=>{
@@ -671,7 +675,7 @@ function App(){
   // Use wide-range options for dropdowns, fall back to current week if wide hasn't loaded yet
   const activities=allActivities.length>0?allActivities:[...new Set(rows.map(e=>e.activity).filter(Boolean))].sort();
   const locations=allLocations.length>0?allLocations:[...new Set(rows.map(e=>e.location).filter(Boolean))].sort();
-  const filtered=useMemo(()=>rows.filter(e=>(!actFilter||e.activity===actFilter)&&(!locFilter||e.location===locFilter)),[rows,actFilter,locFilter]);
+  const filtered=useMemo(()=>rows.filter(e=>(!actFilter||e.activity===actFilter)&&(!locFilter||e.location===locFilter)&&(availFilter!=='open'||!e.full)&&(availFilter!=='waitlist'||e.waitlist)),[rows,actFilter,locFilter,availFilter]);
 
   return (
     <div className="wrap">
@@ -697,7 +701,7 @@ function App(){
         <span className="range">{rangeLabel}</span>
         <span className="grow"></span>
         <button onClick={()=>window.print()}>Print</button>
-        <button onClick={()=>{const u=new URL(window.location.href);u.searchParams.set('present','1');if(actFilter)u.searchParams.set('activity',actFilter);if(locFilter)u.searchParams.set('location',locFilter);u.searchParams.set('week',fmtISO(weekStart));window.open(u.toString(),'_blank');}}>Present ▶</button>
+        <button onClick={()=>{const u=new URL(window.location.href);u.searchParams.set('present','1');if(actFilter)u.searchParams.set('activity',actFilter);if(locFilter)u.searchParams.set('location',locFilter);if(availFilter)u.searchParams.set('avail',availFilter);u.searchParams.set('week',fmtISO(weekStart));window.open(u.toString(),'_blank');}}>Present ▶</button>
         <select className="filter-sel" value={actFilter} onChange={e=>setActFilter(e.target.value)}>
           <option value="">All Activities</option>
           {activities.map(a=><option key={a} value={a}>{a}</option>)}
@@ -706,7 +710,12 @@ function App(){
           <option value="">All Locations</option>
           {locations.map(l=><option key={l} value={l}>{l}</option>)}
         </select>
-        {(actFilter||locFilter)&&<span className="filter-clear" onClick={()=>{setActFilter('');setLocFilter('');}}>✕ Clear</span>}
+        <select className="filter-sel" value={availFilter} onChange={e=>setAvailFilter(e.target.value)}>
+          <option value="">All Availability</option>
+          <option value="open">Open Availability</option>
+          <option value="waitlist">Waitlist Available</option>
+        </select>
+        {(actFilter||locFilter||availFilter)&&<span className="filter-clear" onClick={()=>{setActFilter('');setLocFilter('');setAvailFilter('');}}>✕ Clear</span>}
       </div>
 
       <div className="hdr">
