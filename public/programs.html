@@ -530,6 +530,7 @@ function App() {
 
   const [colPresence, setColPresence] = useState({ regMode: false, cancellations: false });
   const [insights,        setInsights]        = useState(null);
+  const [insightsMeta,    setInsightsMeta]    = useState(null); // { programCount, names }
   const [insightsLoading, setInsightsLoading] = useState(false);
   const [insightsError,   setInsightsError]   = useState(null);
   const [showRegMode,  setShowRegMode]  = useState(() => { try { return localStorage.getItem(LS_SHOW_REGMODE)  === 'true'; } catch { return false; } });
@@ -674,6 +675,7 @@ function App() {
       }));
     return {
       period: { start: loadedStart, end: loadedEnd },
+      programNames: programs.map(p => p.name),
       summary: {
         programCount,
         totalSections: totals.sections,
@@ -696,6 +698,7 @@ function App() {
     setInsightsLoading(true);
     setInsightsError(null);
     setInsights(null);
+    setInsightsMeta(null);
     try {
       const blob = buildInsightsBlob();
       const resp = await fetch(withToken(`${basePath}/api/insights`), {
@@ -706,16 +709,13 @@ function App() {
       const json = await resp.json().catch(() => ({}));
       if (!resp.ok || !json.ok) throw new Error(json.error || `Request failed (${resp.status})`);
       setInsights(json.insights || []);
+      setInsightsMeta({ programCount, names: (grouped ? Object.keys(grouped) : []) });
     } catch (err) {
       setInsightsError(err.message || 'Could not generate insights');
     } finally {
       setInsightsLoading(false);
     }
-  }, [buildInsightsBlob, basePath]);
-
-  // Invalidate insights whenever the program filter or loaded data window changes,
-  // so the cards never describe programs outside the current filtered view.
-  useEffect(() => { setInsights(null); setInsightsError(null); }, [search, loadedStart, loadedEnd]);
+  }, [buildInsightsBlob, basePath, programCount, grouped]);
 
   // ── Computed values ────────────────────────────────────────────────
   const grouped = useMemo(() => {
@@ -753,6 +753,17 @@ function App() {
   }, [filteredRows]);
 
   const programCount = grouped ? Object.keys(grouped).length : 0;
+
+  // Stable fingerprint of the visible program set — drives insights invalidation.
+  const filteredProgramKey = useMemo(() => {
+    if (!grouped) return '';
+    return Object.keys(grouped).slice().sort().join('|');
+  }, [grouped]);
+
+  // Invalidate insights whenever the visible program set changes — catches search filter,
+  // date-range reloads, and any other cause of the filtered view changing.
+  useEffect(() => { setInsights(null); setInsightsMeta(null); setInsightsError(null); }, [filteredProgramKey]);
+
   const allOpen  = sectionGrain && rows && rows.length > 0 && rows.every(r => open.has(r.programId));
   const toggle   = (id) => setOpen(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
   const toggleAll = () => setOpen(allOpen ? new Set() : new Set((rows || []).map(r => r.programId)));
@@ -1064,7 +1075,7 @@ function App() {
                 {insightsLoading ? 'Analyzing…' : (insights ? '↻ Refresh insights' : '✨ Get insights')}
               </button>
               {insights && !insightsLoading && (
-                <span className="insights-sub">Generated from {programCount} program{programCount !== 1 ? 's' : ''}</span>
+                <span className="insights-sub">Generated from {insightsMeta ? insightsMeta.programCount : programCount} program{(insightsMeta ? insightsMeta.programCount : programCount) !== 1 ? 's' : ''}</span>
               )}
             </div>
             {insightsLoading && (

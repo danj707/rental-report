@@ -1015,6 +1015,8 @@ Rules:
 
 const PROGRAMS_SYS_PROMPT = `You are a parks & recreation program analyst for US municipal departments. You are given aggregate program revenue and enrollment data for a single reporting period — revenue totals, enrollment counts, fill percentages, cancellation rates, and waitlist counts, all pre-computed.
 
+The data contains a "programNames" array listing EVERY program in this dataset. You may ONLY reference program names that appear in that array — no others exist. If the dataset has only 1-3 programs, all 4 insights MUST be about those programs (different angles: revenue, fill rate, refunds, enrollment trends, etc.).
+
 Return EXACTLY 4 insights as a JSON array and nothing else — no prose, no preamble, no markdown code fences. Each element is an object with exactly these keys:
 {
   "type": "opportunity" | "risk" | "signal",
@@ -1025,6 +1027,7 @@ Return EXACTLY 4 insights as a JSON array and nothing else — no prose, no prea
 
 Rules:
 - Ground EVERY figure in the data provided. Never invent numbers or program names.
+- ONLY reference programs listed in "programNames". If a program name is not in that array, do not mention it.
 - Focus on fill rates, cancellation patterns, revenue concentration, enrollment demand (waitlists), and program-level outliers.
 - Name specific programs when making observations rather than speaking generally.
 - Be terse. No filler. Vary the "type" across the four insights where the data supports it.`;
