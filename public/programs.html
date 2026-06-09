@@ -713,6 +713,10 @@ function App() {
     }
   }, [buildInsightsBlob, basePath]);
 
+  // Invalidate insights whenever the program filter or loaded data window changes,
+  // so the cards never describe programs outside the current filtered view.
+  useEffect(() => { setInsights(null); setInsightsError(null); }, [search, loadedStart, loadedEnd]);
+
   // ── Computed values ────────────────────────────────────────────────
   const grouped = useMemo(() => {
     if (!rows) return null;
