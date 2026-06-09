@@ -2929,6 +2929,17 @@ app.get("/", (req, res) => {
     // Newest first. Add a new entry at the TOP for every change we ship.
     // History below back-filled from the GitHub commit log.
     const UPDATES = [
+      { date: '2026-06-09', title: 'Program Revenue: clearer chart + filter-aware insights', items: [
+        'Chart program names now wrap to two lines instead of being cut off, so similarly-named programs are easy to tell apart',
+        'Hovering a bar shows a tooltip with the full breakdown \u2014 Charged, Received, Outstanding, Waived/adj., Refunds, and Net Revenue',
+        'Bars now note any "waived/adj." amount \u2014 money charged but neither collected nor still collectible (e.g. waived installments, or balances on canceled registrations) \u2014 alongside the existing amount due',
+        'AI Insights now scope to the active program filter: insights clear when you change the program filter or date range, so they always describe exactly what is on the page',
+      ] },
+      { date: '2026-06-09', title: 'Calendar: cleaner events + shareable week links', items: [
+        'Uncategorized events (such as private lessons) are now hidden from the public calendar and from its activity filter',
+        'The selected week is now part of the page link, so a shared link opens on the week you were viewing',
+        'Present mode now opens on the week and filters you are currently viewing, instead of defaulting to the current week',
+      ] },
       { date: '2026-06-08', title: 'Program Revenue: section breakout + corrected balances', items: [
         'Program Revenue now expands each program into its sections \u2014 click a program row, or use the "Breakout sections" toggle, to drill into per-section figures',
         'Received corrected: reversed or retried card charges that a successful payment already covers are no longer double-counted',
