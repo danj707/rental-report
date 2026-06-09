@@ -652,7 +652,45 @@ function App() {
     } catch {}
   }
 
-  // ── AI Insights ────────────────────────────────────────────────────
+  // ── Computed values ────────────────────────────────────────────────
+  const grouped = useMemo(() => {
+    if (!rows) return null;
+    const map = {};
+    rows.forEach(r => {
+      if (!map[r.programName]) map[r.programName] = [];
+      map[r.programName].push(r);
+    });
+    if (!search.trim()) return map;
+    const q = search.trim().toLowerCase();
+    const filtered = {};
+    Object.entries(map).forEach(([prog, sections]) => {
+      if (prog.toLowerCase().includes(q)) filtered[prog] = sections;
+    });
+    return filtered;
+  }, [rows, search]);
+
+  // Rows remaining after the program search filter — drives summary cards + grand total
+  const filteredRows = useMemo(() => (grouped ? Object.values(grouped).flat() : []), [grouped]);
+
+  const totals = useMemo(() => {
+    if (!filteredRows || filteredRows.length === 0) return null;
+    return filteredRows.reduce((acc, r) => ({
+      charged:            acc.charged            + fmtNum(r.charged),
+      received:           acc.received           + fmtNum(r.received),
+      outstanding:        acc.outstanding        + fmtNum(r.outstanding),
+      refunds:            acc.refunds            + fmtNum(r.refunds),
+      netRevenue:         acc.netRevenue         + fmtNum(r.netRevenue),
+      enrollments:        acc.enrollments        + fmtNum(r.enrollments),
+      sections:           acc.sections           + fmtNum(r.sections),
+      waitlist:           acc.waitlist           + fmtNum(r.waitlist),
+      cancellations:      acc.cancellations      + fmtNum(r.cancellations),
+    }), { charged:0, received:0, outstanding:0, refunds:0, netRevenue:0, enrollments:0, sections:0, waitlist:0, cancellations:0 });
+  }, [filteredRows]);
+
+  const programCount = grouped ? Object.keys(grouped).length : 0;
+
+  // ── AI Insights (MUST be after computed values — Babel compiles const→var,
+  //    so earlier useCallback deps would always see undefined) ─────────────
   const buildInsightsBlob = useCallback(() => {
     if (!filteredRows || filteredRows.length === 0) return {};
     const r2 = n => Math.round(n * 100) / 100;
@@ -717,43 +755,6 @@ function App() {
       setInsightsLoading(false);
     }
   }, [buildInsightsBlob, basePath, programCount, grouped]);
-
-  // ── Computed values ────────────────────────────────────────────────
-  const grouped = useMemo(() => {
-    if (!rows) return null;
-    const map = {};
-    rows.forEach(r => {
-      if (!map[r.programName]) map[r.programName] = [];
-      map[r.programName].push(r);
-    });
-    if (!search.trim()) return map;
-    const q = search.trim().toLowerCase();
-    const filtered = {};
-    Object.entries(map).forEach(([prog, sections]) => {
-      if (prog.toLowerCase().includes(q)) filtered[prog] = sections;
-    });
-    return filtered;
-  }, [rows, search]);
-
-  // Rows remaining after the program search filter — drives summary cards + grand total
-  const filteredRows = useMemo(() => (grouped ? Object.values(grouped).flat() : []), [grouped]);
-
-  const totals = useMemo(() => {
-    if (!filteredRows || filteredRows.length === 0) return null;
-    return filteredRows.reduce((acc, r) => ({
-      charged:            acc.charged            + fmtNum(r.charged),
-      received:           acc.received           + fmtNum(r.received),
-      outstanding:        acc.outstanding        + fmtNum(r.outstanding),
-      refunds:            acc.refunds            + fmtNum(r.refunds),
-      netRevenue:         acc.netRevenue         + fmtNum(r.netRevenue),
-      enrollments:        acc.enrollments        + fmtNum(r.enrollments),
-      sections:           acc.sections           + fmtNum(r.sections),
-      waitlist:           acc.waitlist           + fmtNum(r.waitlist),
-      cancellations:      acc.cancellations      + fmtNum(r.cancellations),
-    }), { charged:0, received:0, outstanding:0, refunds:0, netRevenue:0, enrollments:0, sections:0, waitlist:0, cancellations:0 });
-  }, [filteredRows]);
-
-  const programCount = grouped ? Object.keys(grouped).length : 0;
 
   // Stable fingerprint of the visible program set — drives insights invalidation.
   const filteredProgramKey = useMemo(() => {
