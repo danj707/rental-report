@@ -764,6 +764,14 @@ function App() {
   // date-range reloads, and any other cause of the filtered view changing.
   useEffect(() => { setInsights(null); setInsightsMeta(null); setInsightsError(null); }, [filteredProgramKey]);
 
+  // Belt-and-suspenders: even if the useEffect hasn't flushed yet, never RENDER stale
+  // insights.  Compare the stored program-name set against the live filtered set.
+  const activeInsights = useMemo(() => {
+    if (!insights || !insightsMeta) return insights;          // nothing stored
+    if (insightsMeta.names.slice().sort().join('|') !== filteredProgramKey) return null;
+    return insights;
+  }, [insights, insightsMeta, filteredProgramKey]);
+
   const allOpen  = sectionGrain && rows && rows.length > 0 && rows.every(r => open.has(r.programId));
   const toggle   = (id) => setOpen(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
   const toggleAll = () => setOpen(allOpen ? new Set() : new Set((rows || []).map(r => r.programId)));
@@ -1072,9 +1080,9 @@ function App() {
           <div className="insights-section no-print">
             <div className="insights-head">
               <button type="button" className="insights-btn" onClick={getInsights} disabled={insightsLoading}>
-                {insightsLoading ? 'Analyzing…' : (insights ? '↻ Refresh insights' : '✨ Get insights')}
+                {insightsLoading ? 'Analyzing…' : (activeInsights ? '↻ Refresh insights' : '✨ Get insights')}
               </button>
-              {insights && !insightsLoading && (
+              {activeInsights && !insightsLoading && (
                 <span className="insights-sub">Generated from {insightsMeta ? insightsMeta.programCount : programCount} program{(insightsMeta ? insightsMeta.programCount : programCount) !== 1 ? 's' : ''}</span>
               )}
             </div>
@@ -1084,9 +1092,9 @@ function App() {
             {insightsError && !insightsLoading && (
               <div className="error"><strong>Insights unavailable:</strong> {insightsError}</div>
             )}
-            {insights && !insightsLoading && (
+            {activeInsights && !insightsLoading && (
               <div className="insights-grid">
-                {insights.map((ins, i) => (
+                {activeInsights.map((ins, i) => (
                   <div key={i} className={`insight-card insight-${ins.type || 'signal'}`}>
                     <div className="insight-type">{ins.type || 'signal'}</div>
                     <div className="insight-title">{ins.title}</div>
