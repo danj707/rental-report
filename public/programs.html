@@ -902,7 +902,7 @@ function App() {
 
         {/* Info blurb */}
         <div className="report-blurb">
-          <strong>How revenue is calculated:</strong> This report uses transaction-based revenue — only succeeded payments are counted. For payment plans, only collected installments appear under Received; future installments are not included until they are paid. <em>Charged</em> reflects the invoiced amount after any discounts. <em>Received</em> is actual cash collected. <em>Outstanding</em> is the unpaid balance (Charged minus Received minus Refunds). Fill rate compares enrollment (or session bookings for session-based programs) against capacity.
+          <strong>How revenue is calculated:</strong> Revenue is transaction-based. <em>Received</em> is cash actually collected — succeeded payments plus any canceled-status payment that is the sole or partial collection on an item (reversed or retried charges already covered by a successful payment are excluded, so nothing is double-counted); for payment plans, only paid installments count. <em>Charged</em> is the invoiced amount after discounts. <em>Outstanding</em> is the balance still collectible — unpaid, un-waived installments for payment-plan registrations, or the uncollected balance otherwise; waived installments and canceled registrations are excluded. <em>Net Rev</em> = Received minus Refunds. <em>Fill %</em> compares filled seats to capacity (a section registration counts across all of its sessions; session-based programs sum each session's bookings).
         </div>
 
         {/* Summary cards */}
