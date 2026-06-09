@@ -2929,6 +2929,12 @@ app.get("/", (req, res) => {
     // Newest first. Add a new entry at the TOP for every change we ship.
     // History below back-filled from the GitHub commit log.
     const UPDATES = [
+      { date: '2026-06-08', title: 'Program Revenue: section breakout + corrected balances', items: [
+        'Program Revenue now expands each program into its sections \u2014 click a program row, or use the "Breakout sections" toggle, to drill into per-section figures',
+        'Received corrected: reversed or retried card charges that a successful payment already covers are no longer double-counted',
+        'Outstanding now reflects the balance still collectible \u2014 unpaid, un-waived installments (or the uncollected balance for pay-in-full); waived installments and canceled registrations are excluded',
+        'Reconciled to the verified Program Revenue Summary by Section report',
+      ] },
       { date: '2026-06-08', title: 'Product Sales: Total by Item view', items: [
         'New "Total by Item" toggle aggregates all sales by product across the selected date range, with optional desk-location breakdown',
         'Chart switches to a horizontal bar chart of top products by revenue when in item view',
