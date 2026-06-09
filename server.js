@@ -2936,10 +2936,14 @@ app.get("/", (req, res) => {
         'Bars now note any "waived/adj." amount \u2014 money charged but neither collected nor still collectible (e.g. waived installments, or balances on canceled registrations) \u2014 alongside the existing amount due',
         'AI Insights now scope to the active program filter: insights clear when you change the program filter or date range, so they always describe exactly what is on the page',
       ] },
-      { date: '2026-06-09', title: 'Calendar: cleaner events + shareable week links', items: [
-        'Uncategorized events (such as private lessons) are now hidden from the public calendar and from its activity filter',
-        'The selected week is now part of the page link, so a shared link opens on the week you were viewing',
-        'Present mode now opens on the week and filters you are currently viewing, instead of defaulting to the current week',
+      { date: '2026-06-09', title: 'Calendar: schedule titles, availability at a glance, correct local times', items: [
+        'Events now show the session / section title as the headline (the activity type moves to a secondary line), so each item is identifiable at a glance',
+        'Full and Waitlist pills now appear directly on the day, week, and list views \u2014 not only in the event details',
+        'New Availability filter \u2014 show only Open Availability, or only Waitlist Available, alongside the Activities and Locations filters',
+        'Session-based programs now reflect Full / Waitlist correctly, using the individual session capacity rather than the section',
+        'Event times now display in the local timezone of the venue',
+        'Uncategorized events (such as private lessons) are hidden from the calendar and from its activity filter',
+        'The selected week is part of the page link, and Present mode opens on the week and filters currently in view',
       ] },
       { date: '2026-06-08', title: 'Program Revenue: section breakout + corrected balances', items: [
         'Program Revenue now expands each program into its sections \u2014 click a program row, or use the "Breakout sections" toggle, to drill into per-section figures',
