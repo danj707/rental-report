@@ -454,6 +454,8 @@ function App() {
   const [byItem, setByItem] = useState(() =>
     SP.has('by_item') ? SP.get('by_item') === '1' : localStorage.getItem(LS_BY_ITEM) === '1');
 
+  const [searchTerm, setSearchTerm] = useState(SP.get('search') || '');
+
   const [selectedDesks, setSelectedDesks] = useState(() => {
     const d = SP.get('desks');
     return d ? new Set(d.split(',').map(s => s.trim()).filter(Boolean)) : new Set();
@@ -552,29 +554,35 @@ function App() {
     return true;
   }), [rows, selectedDesks, hideZero]);
 
+  const searchFiltered = useMemo(() => {
+    const q = searchTerm.trim().toLowerCase();
+    if (!q) return filtered;
+    return filtered.filter(r => r.product.toLowerCase().includes(q));
+  }, [filtered, searchTerm]);
+
   /* grain: aggregate to date×product by default; date×product×desk when byDesk */
   const displayRows = useMemo(() => {
-    if (byDesk) return filtered;
+    if (byDesk) return searchFiltered;
     const m = new Map();
-    filtered.forEach(r => {
+    searchFiltered.forEach(r => {
       const k = r.dateISO + '|' + r.product;
       if (!m.has(k)) m.set(k, { dateISO: r.dateISO, dateLabel: r.dateLabel, dateMs: r.dateMs, product: r.product, desk: null, qty: 0, revenue: 0, refunds: 0, net: 0 });
       const a = m.get(k); a.qty += r.qty; a.revenue += r.revenue; a.refunds += r.refunds; a.net += r.net;
     });
     return Array.from(m.values());
-  }, [filtered, byDesk]);
+  }, [searchFiltered, byDesk]);
 
   /* "Total by Item" view: aggregate across all dates by product (+ desk if byDesk) */
   const itemSummary = useMemo(() => {
     if (!byItem) return [];
     const m = new Map();
-    filtered.forEach(r => {
+    searchFiltered.forEach(r => {
       const k = r.product + (byDesk ? '|' + r.desk : '');
       if (!m.has(k)) m.set(k, { product: r.product, desk: r.desk, qty: 0, revenue: 0, refunds: 0, net: 0 });
       const a = m.get(k); a.qty += r.qty; a.revenue += r.revenue; a.refunds += r.refunds; a.net += r.net;
     });
     return Array.from(m.values()).sort((a, b) => b.net - a.net);
-  }, [filtered, byItem, byDesk]);
+  }, [searchFiltered, byItem, byDesk]);
 
   /* group by date DESC, rows within by net DESC, subtotal per date */
   const groups = useMemo(() => {
@@ -592,8 +600,8 @@ function App() {
     return arr;
   }, [displayRows]);
 
-  const totals = useMemo(() => filtered.reduce((acc, r) => { acc.qty += r.qty; acc.revenue += r.revenue; acc.refunds += r.refunds; acc.net += r.net; return acc; }, { qty: 0, revenue: 0, refunds: 0, net: 0 }), [filtered]);
-  const productCount = useMemo(() => new Set(filtered.map(r => r.product)).size, [filtered]);
+  const totals = useMemo(() => searchFiltered.reduce((acc, r) => { acc.qty += r.qty; acc.revenue += r.revenue; acc.refunds += r.refunds; acc.net += r.net; return acc; }, { qty: 0, revenue: 0, refunds: 0, net: 0 }), [searchFiltered]);
+  const productCount = useMemo(() => new Set(searchFiltered.map(r => r.product)).size, [searchFiltered]);
   const bestDay = useMemo(() => {
     let best = null;
     groups.forEach(g => { if (!best || g.sub.net > best.net) best = { label: g.dateLabel, net: g.sub.net }; });
@@ -612,8 +620,9 @@ function App() {
     if (hideZero) p.set('hide_zero', '1');
     p.set('chart_net', showNet ? '1' : '0');
     if (selectedDesks.size > 0) p.set('desks', Array.from(selectedDesks).join(','));
+    if (searchTerm.trim()) p.set('search', searchTerm.trim());
     window.history.replaceState(null, '', window.location.pathname + '?' + p.toString());
-  }, [loadedStart, loadedEnd, byDesk, byItem, hideZero, showNet, selectedDesks]);
+  }, [loadedStart, loadedEnd, byDesk, byItem, hideZero, showNet, selectedDesks, searchTerm]);
 
   /* chart: daily bars (default) or top-products bars (byItem) */
   useEffect(() => {
@@ -682,6 +691,7 @@ function App() {
     if (hideZero) p.set('hide_zero', '1');
     p.set('chart_net', showNet ? '1' : '0');
     if (selectedDesks.size > 0) p.set('desks', Array.from(selectedDesks).join(','));
+    if (searchTerm.trim()) p.set('search', searchTerm.trim());
     fetch(withToken(`/${orgSlug}/products/api/pdf?${p.toString()}`))
       .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.blob(); })
       .then(blob => {
@@ -787,6 +797,10 @@ function App() {
           <button className={byItem ? 'active' : ''} onClick={() => setByItem(v => !v)}>Total by Item</button>
           <button className={hideZero ? 'active' : ''} onClick={() => setHideZero(z => !z)}>Hide $0</button>
           <span className="divider" />
+          <input type="text" placeholder="Search products…" value={searchTerm}
+            onChange={e => setSearchTerm(e.target.value)}
+            style={{ width: 160 }} />
+          <span className="divider" />
           <span style={{ fontSize: 11, color: '#666' }}>Chart:</span>
           <button className={showNet ? 'active' : ''} onClick={() => setShowNet(true)}>Net</button>
           <button className={!showNet ? 'active' : ''} onClick={() => setShowNet(false)}>Gross</button>
@@ -794,9 +808,9 @@ function App() {
           <button onClick={expandAll} disabled={byItem}>Expand all</button>
           <button onClick={collapseAll} disabled={byItem}>Collapse all</button>
           <span className="divider" />
-          <button className="btn-excel" onClick={exportExcel} disabled={loading || filtered.length === 0}>Excel</button>
+          <button className="btn-excel" onClick={exportExcel} disabled={loading || searchFiltered.length === 0}>Excel</button>
           <button onClick={() => { logClientEvent('print'); window.print(); }}>Print</button>
-          <button className="btn-pdf" onClick={downloadPdf} disabled={pdfLoading || filtered.length === 0}>{pdfLoading ? 'Generating…' : '📄 PDF'}</button>
+          <button className="btn-pdf" onClick={downloadPdf} disabled={pdfLoading || searchFiltered.length === 0}>{pdfLoading ? 'Generating…' : '📄 PDF'}</button>
         </div>
       )}
 
@@ -806,7 +820,7 @@ function App() {
           <div>
             <div className="org-label">{displayOrg}</div>
             <div className="title">{byItem ? 'Product Sales — Total by Item' : 'Product Sales — Daily Detail'}</div>
-            <div className="date-range">{rangeLabel}{byDesk ? ' · by desk location' : ''}{byItem ? ' · aggregated' : ''}</div>
+            <div className="date-range">{rangeLabel}{byDesk ? ' · by desk location' : ''}{byItem ? ' · aggregated' : ''}{searchTerm.trim() ? ` · search: "${searchTerm.trim()}"` : ''}</div>
           </div>
         </div>
 
@@ -906,7 +920,7 @@ function App() {
                 <tfoot>
                   <tr>
                     <td className="left" colSpan={byItem ? (byDesk ? 2 : 1) : (byDesk ? 3 : 2)}>
-                      TOTAL · {byItem ? `${itemSummary.length} item${itemSummary.length !== 1 ? 's' : ''}` : `${groups.length} days · ${filtered.length} rows`}
+                      TOTAL · {byItem ? `${itemSummary.length} item${itemSummary.length !== 1 ? 's' : ''}` : `${groups.length} days · ${searchFiltered.length} rows`}
                     </td>
                     <td>{fmtInt(totals.qty)}</td>
                     <td>{fmtMoney(totals.revenue)}</td>
