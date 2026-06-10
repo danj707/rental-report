@@ -157,6 +157,7 @@ const ORGS = {
     logoUrl: "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSiZe2Rt3BvXmkRLhW9EzhogtTSXY3SkiaVzA&s",
     displayName: "Joplin",
     gl      : { mbUuid: "01c4658c-cf33-4511-91d8-318ea6fc6f2f" },
+    products: { mbUuid: "2a38a516-a618-40ad-8b30-a26081548389" },
   },
 };
 
