@@ -778,6 +778,7 @@ function App() {
   }
 
   // ── Excel export ──
+  function toXlDate(s) { if (!s) return ''; const p = String(s).split('T')[0].split('-'); return p.length === 3 ? new Date(+p[0], +p[1]-1, +p[2]) : s; }
   function exportExcel() {
     if (!rows || !rows.length) return;
     const headers = [
@@ -796,7 +797,7 @@ function App() {
       ...(cols.registered ? ['Registered'] : []),
     ];
     const dataRows = displayRows.map(r => [
-      r.section, r.className, r.sessionDate,
+      r.section, r.className, toXlDate(r.sessionDate),
       ...(cols.times    ? [r.sessionStart, r.sessionEnd] : []),
       r.lastName, r.firstName,
       ...(cols.recId    ? [r.recId] : []),
@@ -808,9 +809,19 @@ function App() {
       ...(cols.owner    ? [r.owner] : []),
       ...(cols.ownerContact ? [formatPhone(r.ownerPhone), r.ownerEmail] : []),
       r.status,
-      ...(cols.registered ? [r.registered] : []),
+      ...(cols.registered ? [toXlDate(r.registered)] : []),
     ]);
-    const ws = XLSX.utils.aoa_to_sheet([headers, ...dataRows]);
+    const ws = XLSX.utils.aoa_to_sheet([headers, ...dataRows], { cellDates: true });
+    // Format date columns
+    const sesIdx = 2;
+    const regIdx = cols.registered ? headers.indexOf('Registered') : -1;
+    for (let ri = 1; ri <= dataRows.length; ri++) {
+      [sesIdx, regIdx].forEach(ci => {
+        if (ci < 0) return;
+        const addr = XLSX.utils.encode_cell({ r: ri, c: ci });
+        if (ws[addr] && ws[addr].t === 'd') ws[addr].z = 'MM/DD/YY';
+      });
+    }
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Roster');
     XLSX.writeFile(wb, `class-roster-${loadedStart || 'report'}.xlsx`);

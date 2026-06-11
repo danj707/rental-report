@@ -734,15 +734,21 @@ function App() {
     const aoa = [header];
     groups.forEach(g => {
       g.rows.forEach(r => {
+        const dp = (r.dateISO || '').split('-');
+        const dv = dp.length === 3 ? new Date(+dp[0], +dp[1]-1, +dp[2]) : r.dateISO;
         aoa.push(byDesk
-          ? [r.dateISO, r.product, r.desk, r.qty, r.revenue, r.refunds, r.net]
-          : [r.dateISO, r.product, r.qty, r.revenue, r.refunds, r.net]);
+          ? [dv, r.product, r.desk, r.qty, r.revenue, r.refunds, r.net]
+          : [dv, r.product, r.qty, r.revenue, r.refunds, r.net]);
       });
     });
     aoa.push(byDesk
       ? ['TOTAL', '', '', totals.qty, totals.revenue, totals.refunds, totals.net]
       : ['TOTAL', '', totals.qty, totals.revenue, totals.refunds, totals.net]);
-    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    const ws = XLSX.utils.aoa_to_sheet(aoa, { cellDates: true });
+    for (let ri = 1; ri < aoa.length; ri++) {
+      const addr = XLSX.utils.encode_cell({ r: ri, c: 0 });
+      if (ws[addr] && ws[addr].t === 'd') ws[addr].z = 'MM/DD/YY';
+    }
     ws['!cols'] = byDesk
       ? [{ wch: 12 }, { wch: 34 }, { wch: 22 }, { wch: 9 }, { wch: 13 }, { wch: 13 }, { wch: 15 }]
       : [{ wch: 12 }, { wch: 34 }, { wch: 9 }, { wch: 13 }, { wch: 13 }, { wch: 15 }];

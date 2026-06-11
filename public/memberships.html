@@ -608,6 +608,7 @@
       };
 
       // ── Excel export ──
+      function toXlDate(s) { if (!s) return ''; const p = String(s).split('T')[0].split('-'); return p.length === 3 ? new Date(+p[0], +p[1]-1, +p[2]) : s; }
       const exportExcel = () => {
         const rows = sortedRows.map(r => ({
           'User ID':        r.userId,
@@ -620,12 +621,12 @@
           'Status':         r.status,
           'Renewal Type':   r.renewalType,
           'Price':          r.price,
-          'Start Date':     r.startDate,
-          'End Date':       r.endDate,
-          'Next Renewal':   r.nextRenewal,
-          'Canceled At':    r.canceledAt,
-          'Created At':     r.createdAt,
-          'Last Used':      r.lastUsed,
+          'Start Date':     toXlDate(r.startDate),
+          'End Date':       toXlDate(r.endDate),
+          'Next Renewal':   toXlDate(r.nextRenewal),
+          'Canceled At':    toXlDate(r.canceledAt),
+          'Created At':     toXlDate(r.createdAt),
+          'Last Used':      toXlDate(r.lastUsed),
           'Usage Count':    r.usageCount,
           'Attendance Count': r.attendanceCount,
         }));
@@ -650,7 +651,17 @@
           'Usage Count': rows.reduce((s, x) => s + safeNum(x['Usage Count']), 0),
           'Attendance Count': rows.reduce((s, x) => s + safeNum(x['Attendance Count']), 0),
         });
-        const ws = XLSX.utils.json_to_sheet(rows);
+        const ws = XLSX.utils.json_to_sheet(rows, { cellDates: true });
+        const dateCols = ['Start Date','End Date','Next Renewal','Canceled At','Created At','Last Used'];
+        const hdr = Object.keys(rows[0] || {});
+        const range = XLSX.utils.decode_range(ws['!ref'] || 'A1');
+        for (let ri = 1; ri <= range.e.r; ri++) {
+          dateCols.forEach(dc => {
+            const ci = hdr.indexOf(dc); if (ci < 0) return;
+            const addr = XLSX.utils.encode_cell({ r: ri, c: ci });
+            if (ws[addr] && ws[addr].t === 'd') ws[addr].z = 'MM/DD/YY';
+          });
+        }
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, 'Memberships');
         const fname = `${orgSlug}-memberships-${new Date().toISOString().slice(0,10)}.xlsx`;

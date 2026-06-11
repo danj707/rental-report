@@ -604,6 +604,7 @@ function App() {
       .finally(() => setPdfLoading(false));
   }
 
+  function toXlDate(s) { if (!s) return ''; const p = String(s).split('T')[0].split('-'); return p.length === 3 ? new Date(+p[0], +p[1]-1, +p[2]) : s; }
   function downloadExcel() {
     if (!rows || rows.length === 0) return;
     const headers = [
@@ -619,7 +620,7 @@ function App() {
       return [
         r.programName, r.season,
         ...(showRegModeCol ? [regModeLabel(r.regMode)] : []),
-        r.startDate, r.endDate,
+        toXlDate(r.startDate), toXlDate(r.endDate),
         fmtNum(r.sections), fmtNum(r.enrollments), r.utilization,
         r.fillPct != null ? fmtNum(r.fillPct) : '',
         ...(showWaitlist ? [fmtNum(r.waitlist)] : []),
@@ -628,7 +629,16 @@ function App() {
         fmtNum(r.refunds), fmtNum(r.netRevenue),
       ];
     });
-    const ws = XLSX.utils.aoa_to_sheet([headers, ...data]);
+    const ws = XLSX.utils.aoa_to_sheet([headers, ...data], { cellDates: true });
+    const sdIdx = headers.indexOf('Start Date');
+    const edIdx = headers.indexOf('End Date');
+    for (let ri = 1; ri <= data.length; ri++) {
+      [sdIdx, edIdx].forEach(ci => {
+        if (ci < 0) return;
+        const addr = XLSX.utils.encode_cell({ r: ri, c: ci });
+        if (ws[addr] && ws[addr].t === 'd') ws[addr].z = 'MM/DD/YY';
+      });
+    }
     ws['!cols'] = [
       {wch:30},{wch:14},
       ...(showRegModeCol ? [{wch:14}] : []),
