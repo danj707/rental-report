@@ -99,6 +99,10 @@
   .row .main .su{color:var(--muted);font-size:13px}
   .row .right{text-align:right;flex:0 0 auto;display:flex;flex-direction:column;gap:4px;align-items:flex-end}
   .empty{background:var(--card);border:1px dashed var(--line);border-radius:12px;padding:40px;text-align:center;color:var(--muted)}
+  .empty-week{background:var(--card);border:1px dashed var(--line);border-radius:12px;padding:60px 40px;text-align:center;margin:20px 0}
+  .empty-week-icon{font-size:48px;margin-bottom:12px}
+  .empty-week-msg{font-size:20px;font-weight:600;color:var(--fg);margin-bottom:6px}
+  .empty-week-hint{font-size:14px;color:var(--muted)}
   .note{color:var(--muted);font-size:12px;margin:8px 2px}
   @media print{
     body{background:#fff}
@@ -747,6 +751,7 @@ function App(){
       </div>
 
       {loading ? <div className="empty">Loading…</div>
+        : src==='live' && filtered.length===0 ? <div className="empty-week"><div className="empty-week-icon">📅</div><div className="empty-week-msg">No sessions scheduled</div><div className="empty-week-hint">{view==='day' ? 'Try another day or browse the week view.' : view==='week' ? 'Try the next week or check a different date range.' : 'No upcoming sessions found with current filters.'}</div></div>
         : view==='week' ? <WeekView weekStart={weekStart} events={filtered} onEv={setPopoverEv} onDayClick={goToDay}/>
         : view==='day' ? <DayView dateISO={selectedDate} events={filtered} onEv={setPopoverEv}/>
         : <ListView events={filtered} onEv={setPopoverEv}/>}
