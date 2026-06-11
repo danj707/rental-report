@@ -2937,6 +2937,9 @@ app.get("/", (req, res) => {
     // Newest first. Add a new entry at the TOP for every change we ship.
     // History below back-filled from the GitHub commit log.
     const UPDATES = [
+      { date: '2026-06-11', title: 'Products: Net/Gross toggle fix', items: [
+        'The Net/Gross toggle now controls the entire page \u2014 table sort order, column emphasis, summary cards, and Best Day all switch between net and gross revenue',
+      ] },
       { date: '2026-06-09', title: 'Program Revenue: clearer chart + filter-aware insights', items: [
         'Chart program names now wrap to two lines instead of being cut off, so similarly-named programs are easy to tell apart',
         'Hovering a bar shows a tooltip with the full breakdown \u2014 Charged, Received, Outstanding, Waived/adj., Refunds, and Net Revenue',
