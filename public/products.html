@@ -581,8 +581,8 @@ function App() {
       if (!m.has(k)) m.set(k, { product: r.product, desk: r.desk, qty: 0, revenue: 0, refunds: 0, net: 0 });
       const a = m.get(k); a.qty += r.qty; a.revenue += r.revenue; a.refunds += r.refunds; a.net += r.net;
     });
-    return Array.from(m.values()).sort((a, b) => b.net - a.net);
-  }, [searchFiltered, byItem, byDesk]);
+    return Array.from(m.values()).sort((a, b) => showNet ? (b.net - a.net) : (b.revenue - a.revenue));
+  }, [searchFiltered, byItem, byDesk, showNet]);
 
   /* group by date DESC, rows within by net DESC, subtotal per date */
   const groups = useMemo(() => {
@@ -594,19 +594,19 @@ function App() {
     const arr = Array.from(map.values());
     arr.sort((a, b) => b.dateMs - a.dateMs);
     arr.forEach(g => {
-      g.rows.sort((a, b) => b.net - a.net);
+      g.rows.sort((a, b) => showNet ? (b.net - a.net) : (b.revenue - a.revenue));
       g.sub = g.rows.reduce((acc, r) => { acc.qty += r.qty; acc.revenue += r.revenue; acc.refunds += r.refunds; acc.net += r.net; return acc; }, { qty: 0, revenue: 0, refunds: 0, net: 0 });
     });
     return arr;
-  }, [displayRows]);
+  }, [displayRows, showNet]);
 
   const totals = useMemo(() => searchFiltered.reduce((acc, r) => { acc.qty += r.qty; acc.revenue += r.revenue; acc.refunds += r.refunds; acc.net += r.net; return acc; }, { qty: 0, revenue: 0, refunds: 0, net: 0 }), [searchFiltered]);
   const productCount = useMemo(() => new Set(searchFiltered.map(r => r.product)).size, [searchFiltered]);
   const bestDay = useMemo(() => {
     let best = null;
-    groups.forEach(g => { if (!best || g.sub.net > best.net) best = { label: g.dateLabel, net: g.sub.net }; });
+    groups.forEach(g => { const v = showNet ? g.sub.net : g.sub.revenue; if (!best || v > best.val) best = { label: g.dateLabel, val: v }; });
     return best;
-  }, [groups]);
+  }, [groups, showNet]);
 
   /* keep the browser URL in sync with active filters so PDF/email/subscribe honor them */
   useEffect(() => {
@@ -836,12 +836,16 @@ function App() {
         {!loading && !error && (
           <>
             <div className="summary-cards">
-              <SummaryCard color="green" label="Gross Revenue" value={fmtMoney(totals.revenue)} />
+              {showNet
+                ? <SummaryCard color={totals.net < 0 ? 'amber' : 'blue'} label="Net Revenue" value={fmtMoney(totals.net)} />
+                : <SummaryCard color="green" label="Gross Revenue" value={fmtMoney(totals.revenue)} />}
               {totals.refunds > 0 && <SummaryCard color="amber" label="Refunds" value={fmtMoney(totals.refunds)} />}
-              <SummaryCard color={totals.net < 0 ? 'amber' : 'blue'} label="Net Revenue" value={fmtMoney(totals.net)} />
+              {showNet
+                ? <SummaryCard color="green" label="Gross Revenue" value={fmtMoney(totals.revenue)} sub="(detail)" />
+                : <SummaryCard color={totals.net < 0 ? 'amber' : 'blue'} label="Net Revenue" value={fmtMoney(totals.net)} sub="(detail)" />}
               <SummaryCard color="slate" label="Total Units" value={fmtInt(totals.qty)} />
               <SummaryCard color="violet" label="Products" value={fmtInt(productCount)} />
-              {bestDay && <SummaryCard color="slate" label="Best Day (net)" value={fmtMoney(bestDay.net)} sub={bestDay.label} />}
+              {bestDay && <SummaryCard color="slate" label={'Best Day (' + (showNet ? 'net' : 'gross') + ')'} value={fmtMoney(bestDay.val)} sub={bestDay.label} />}
             </div>
 
             {(byItem ? itemSummary.length > 0 : groups.length > 0) && (
@@ -856,9 +860,9 @@ function App() {
                     <th className="left">Product Name</th>
                     {byDesk && <th className="left">Desk Location</th>}
                     <th>Qty Sold</th>
-                    <th>Revenue</th>
+                    <th style={!showNet ? {color:'#16a34a',fontWeight:800} : {}}>Revenue</th>
                     <th>Refunds</th>
-                    <th>Net</th>
+                    <th style={showNet ? {color:'#2563eb',fontWeight:800} : {}}>Net</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -873,9 +877,9 @@ function App() {
                         <td className="left">{r.product}</td>
                         {byDesk && <td className="left">{r.desk}</td>}
                         <td>{r.qty === 0 ? <span className="cell-zero">—</span> : fmtInt(r.qty)}</td>
-                        <td>{r.revenue === 0 ? <span className="cell-zero">—</span> : fmtMoney(r.revenue)}</td>
+                        <td style={!showNet ? {fontWeight:600,color:'#16a34a'} : {}}>{r.revenue === 0 ? <span className="cell-zero">—</span> : fmtMoney(r.revenue)}</td>
                         <td>{r.refunds === 0 ? <span className="cell-zero">—</span> : <span style={{ color: '#b45309' }}>{fmtMoney(r.refunds)}</span>}</td>
-                        <td style={{ color: r.net < 0 ? '#dc2626' : 'inherit', fontWeight: 600 }}>{fmtMoney(r.net)}</td>
+                        <td style={{ color: r.net < 0 ? '#dc2626' : (showNet ? '#2563eb' : 'inherit'), fontWeight: showNet ? 600 : 'normal' }}>{fmtMoney(r.net)}</td>
                       </tr>
                     ))
                   ) : (
@@ -901,9 +905,9 @@ function App() {
                             {g.rows.length} {byDesk ? 'line' : 'product'}{g.rows.length > 1 ? 's' : ''}
                           </td>
                           <td style={{ fontWeight: 700 }}>{fmtInt(g.sub.qty)}</td>
-                          <td style={{ fontWeight: 700 }}>{fmtMoney(g.sub.revenue)}</td>
+                          <td style={{ fontWeight: 700, color: !showNet ? '#16a34a' : 'inherit' }}>{fmtMoney(g.sub.revenue)}</td>
                           <td style={{ fontWeight: 700, color: g.sub.refunds > 0 ? '#b45309' : 'inherit' }}>{g.sub.refunds === 0 ? '—' : fmtMoney(g.sub.refunds)}</td>
-                          <td style={{ fontWeight: 700, color: g.sub.net < 0 ? '#dc2626' : 'inherit' }}>{fmtMoney(g.sub.net)}</td>
+                          <td style={{ fontWeight: 700, color: g.sub.net < 0 ? '#dc2626' : (showNet ? '#2563eb' : 'inherit') }}>{fmtMoney(g.sub.net)}</td>
                         </tr>
                         {/* detail rows when expanded */}
                         {open && g.rows.map((r, i) => (
@@ -912,9 +916,9 @@ function App() {
                             <td className="left">{r.product}</td>
                             {byDesk && <td className="left">{r.desk}</td>}
                             <td>{r.qty === 0 ? <span className="cell-zero">—</span> : fmtInt(r.qty)}</td>
-                            <td>{r.revenue === 0 ? <span className="cell-zero">—</span> : fmtMoney(r.revenue)}</td>
+                            <td style={!showNet ? {fontWeight:600,color:'#16a34a'} : {}}>{r.revenue === 0 ? <span className="cell-zero">—</span> : fmtMoney(r.revenue)}</td>
                             <td>{r.refunds === 0 ? <span className="cell-zero">—</span> : <span style={{ color: '#b45309' }}>{fmtMoney(r.refunds)}</span>}</td>
-                            <td style={{ color: r.net < 0 ? '#dc2626' : 'inherit', fontWeight: 600 }}>{fmtMoney(r.net)}</td>
+                            <td style={{ color: r.net < 0 ? '#dc2626' : (showNet ? '#2563eb' : 'inherit'), fontWeight: showNet ? 600 : 'normal' }}>{fmtMoney(r.net)}</td>
                           </tr>
                         ))}
                       </React.Fragment>
@@ -929,9 +933,9 @@ function App() {
                       TOTAL · {byItem ? `${itemSummary.length} item${itemSummary.length !== 1 ? 's' : ''}` : `${groups.length} days · ${searchFiltered.length} rows`}
                     </td>
                     <td>{fmtInt(totals.qty)}</td>
-                    <td>{fmtMoney(totals.revenue)}</td>
+                    <td style={!showNet ? {color:'#16a34a',fontWeight:700} : {}}>{fmtMoney(totals.revenue)}</td>
                     <td style={{ color: totals.refunds > 0 ? '#b45309' : 'inherit' }}>{fmtMoney(totals.refunds)}</td>
-                    <td style={{ color: totals.net < 0 ? '#dc2626' : 'inherit' }}>{fmtMoney(totals.net)}</td>
+                    <td style={{ color: totals.net < 0 ? '#dc2626' : (showNet ? '#2563eb' : 'inherit'), fontWeight: showNet ? 700 : 'normal' }}>{fmtMoney(totals.net)}</td>
                   </tr>
                 </tfoot>
               </table>
