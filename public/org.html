@@ -22,30 +22,30 @@
     .topbar {
       background: #2c2c2c;
       color: #eee;
-      padding: 10px 28px;
+      padding: 12px 32px;
       display: flex;
       align-items: center;
-      gap: 14px;
+      gap: 16px;
       flex-shrink: 0;
     }
     .topbar-logo {
-      height: 34px;
+      height: 36px;
       max-width: 130px;
       object-fit: contain;
       object-position: left center;
       display: block;
     }
     .topbar-text { line-height: 1.3; }
-    .topbar-name { font-size: 14px; font-weight: 600; }
-    .topbar-sub  { font-size: 10px; color: #888; text-transform: uppercase; letter-spacing: 0.8px; margin-top: 1px; }
+    .topbar-name { font-size: 15px; font-weight: 700; }
+    .topbar-sub  { font-size: 11px; color: #aaa; text-transform: uppercase; letter-spacing: 1px; margin-top: 1px; }
 
     /* ── Main layout ── */
     .main {
       flex: 1;
-      max-width: 680px;
+      max-width: 700px;
       width: 100%;
       margin: 0 auto;
-      padding: 44px 24px 64px;
+      padding: 48px 24px 64px;
     }
 
     /* ── Section label ── */
@@ -62,8 +62,8 @@
     .cards {
       display: flex;
       flex-direction: column;
-      gap: 8px;
-      margin-bottom: 28px;
+      gap: 10px;
+      margin-bottom: 32px;
     }
 
     .card {
@@ -71,22 +71,25 @@
       align-items: center;
       gap: 16px;
       background: #fff;
-      border: 1px solid #e2dfd9;
-      border-left: 4px solid var(--accent, #ccc);
-      border-radius: 6px;
-      padding: 18px 20px;
+      border: 1px solid #e0ddd8;
+      border-radius: 8px;
+      padding: 16px 20px;
       text-decoration: none;
       color: inherit;
-      transition: box-shadow 0.15s, transform 0.12s;
+      transition: box-shadow 0.15s, border-color 0.15s;
+      position: relative;
     }
     .card:hover {
-      box-shadow: 0 3px 16px rgba(0,0,0,0.10);
-      transform: translateY(-1px);
+      box-shadow: 0 2px 12px rgba(0,0,0,0.10);
+      border-color: #bbb;
+    }
+    .card.pinned {
+      border-left: 4px solid #d97706;
     }
 
     .card-icon {
-      font-size: 22px;
-      width: 34px;
+      font-size: 24px;
+      width: 36px;
       text-align: center;
       flex-shrink: 0;
       line-height: 1;
@@ -94,60 +97,110 @@
 
     .card-body { flex: 1; min-width: 0; }
 
-    .card-name {
+    .card-label {
       font-size: 14px;
       font-weight: 600;
       color: #111;
-      margin-bottom: 3px;
+      margin-bottom: 2px;
     }
 
     .card-desc {
       font-size: 12px;
-      color: #999;
+      color: #888;
       line-height: 1.4;
     }
     .ai-pill { display: inline-flex; align-items: center; gap: 3px; font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; padding: 2px 7px; border-radius: 20px; background: linear-gradient(90deg, #6d28d9, #0d9488); color: #fff; margin-top: 5px; }
 
-    .card-arrow {
-      font-size: 17px;
-      color: #ddd;
+    .card-right {
+      display: flex;
+      align-items: center;
+      gap: 6px;
       flex-shrink: 0;
-      transition: color 0.15s, transform 0.15s;
+    }
+
+    .card-arrow {
+      font-size: 18px;
+      color: #ccc;
       font-family: 'IBM Plex Mono', monospace;
+      transition: color 0.15s, transform 0.15s;
     }
     .card:hover .card-arrow {
-      color: var(--accent, #16a34a);
-      transform: translateX(4px);
+      color: #16a34a;
+      transform: translateX(3px);
+    }
+
+    /* ── Pin button ── */
+    .pin-btn {
+      background: none;
+      border: none;
+      cursor: pointer;
+      font-size: 14px;
+      padding: 4px 6px;
+      border-radius: 4px;
+      opacity: 0;
+      transition: opacity 0.15s, background 0.12s;
+      color: #ccc;
+      line-height: 1;
+    }
+    .card:hover .pin-btn,
+    .card.pinned .pin-btn {
+      opacity: 1;
+    }
+    .card.pinned .pin-btn {
+      color: #d97706;
+    }
+    .pin-btn:hover {
+      background: #f5f4f1;
+      color: #d97706;
     }
 
     /* ── Divider ── */
-    .divider {
-      border: none;
-      border-top: 1px solid #e2dfd9;
-      margin: 4px 0 16px;
+    .section-divider {
+      font-size: 9px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1.2px;
+      color: #ccc;
+      margin: 16px 0 8px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .section-divider::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: #e2dfd9;
     }
 
     /* ── Admin link ── */
+    .admin-links {
+      border-top: 1px solid #ddd;
+      padding-top: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
     .admin-link {
       display: flex;
       align-items: center;
-      gap: 10px;
-      color: #888;
+      gap: 12px;
+      color: #555;
       text-decoration: none;
       font-size: 13px;
-      padding: 8px 4px;
+      padding: 8px 0;
       border-radius: 4px;
       transition: color 0.15s;
     }
-    .admin-link:hover { color: #333; }
-    .admin-icon { font-size: 15px; }
+    .admin-link:hover { color: #111; }
+    .admin-icon { font-size: 18px; }
 
     /* ── Footer ── */
     footer {
       text-align: center;
-      padding: 18px 24px;
+      padding: 24px;
       font-size: 11px;
-      color: #ccc;
+      color: #bbb;
       font-family: 'IBM Plex Mono', monospace;
       flex-shrink: 0;
     }
@@ -159,6 +212,12 @@
       color: #bbb;
       font-size: 13px;
     }
+
+    @media (max-width: 480px) {
+      .topbar { padding: 10px 16px; gap: 12px; }
+      .main { padding: 32px 16px 48px; }
+      .pin-btn { opacity: 1; }
+    }
   </style>
 </head>
 <body>
@@ -166,100 +225,129 @@
 <header class="topbar" id="topbar"></header>
 
 <main class="main">
-  <div class="section-label">Available Reports</div>
+  <div class="section-label">Reports</div>
   <div class="cards" id="cards">
     <div class="empty">No reports configured.</div>
   </div>
-  <hr class="divider" />
-  <a class="admin-link" id="admin-link" href="#">
-    <span class="admin-icon">📧</span>
-    Manage Email Subscriptions
-  </a>
+  <div class="admin-links">
+    <a class="admin-link" id="admin-link" href="#">
+      <span class="admin-icon">📧</span>
+      Manage Email Subscriptions
+    </a>
+  </div>
 </main>
 
 <footer id="footer">rec.us</footer>
 
 <script>
-  const cfg = window.ORG_CONFIG || {};
-  const slug = cfg.slug || '';
+  var cfg = window.ORG_CONFIG || {};
+  var slug = cfg.slug || '';
+  var tokenQS = cfg.token ? '?token=' + encodeURIComponent(cfg.token) : '';
 
-  const REPORT_META = {
-    facility: {
-      label: 'Facility Rental Schedule',
-      icon:  '📅',
-      color: '#16a34a',
-      desc:  'Reservations grouped by date and location',
-    },
-    gl: {
-      label: 'GL Code Rollup',
-      icon:  '📊',
-      color: '#3b82f6',
-      desc:  'Payment and refund summary by GL code',
-    },
-    programs: {
-      label: 'Program Revenue',
-      icon:  '🎯',
-      color: '#7c3aed',
-      desc:  'Enrollment and revenue by program and section',
-      ai:    true,
-    },
-    historic: {
-      label: 'Historic Buildings',
-      icon:  '🏛️',
-      color: '#d97706',
-      desc:  'Reservations for historic building sites',
-    },
-    'court-utilization': {
-      label: 'Court Utilization',
-      icon:  '🎾',
-      color: '#0d9488',
-      desc:  'Court utilization and reserved hours by court',
-      ai:    true,
-    },
-    calendar: {
-      label: 'Calendar',
-      icon:  '🗓️',
-      color: '#ea580c',
-      desc:  'Public class & rental schedule',
-    },
+  var REPORT_META = {
+    facility:  { label: 'Facility Rental Schedule', icon: '📅',  desc: 'Reservations grouped by date and location' },
+    gl:        { label: 'GL Code Rollup',           icon: '📊',  desc: 'Payment and refund summary by GL code' },
+    programs:  { label: 'Program Revenue',          icon: '🎯',  desc: 'Enrollment and revenue by program and section', ai: true },
+    historic:  { label: 'Historic Buildings',       icon: '🏛️',  desc: 'Reservations for historic building sites' },
+    roster:    { label: 'Class Roster',             icon: '📋',  desc: 'Enrolled and cancelled participants by section' },
+    overview:  { label: 'Facility Overview',        icon: '📈',  desc: 'Revenue and activity summary by location' },
+    products:  { label: 'Product Sales',            icon: '🛒',  desc: 'Daily revenue, refunds, and net by product' },
+    memberships: { label: 'Memberships',            icon: '🎫',  desc: 'Active and lapsed memberships with renewal tracking' },
+    'court-utilization': { label: 'Court Utilization', icon: '🎾', desc: 'Court utilization and reserved hours by court', ai: true },
+    calendar:  { label: 'Calendar',                 icon: '🗓️',  desc: 'Public class & rental schedule' },
   };
 
-  // Page title
+  /* ── Pin storage ── */
+  var LS_KEY = 'rec_pinned_' + slug;
+
+  function getPins() {
+    try { return JSON.parse(localStorage.getItem(LS_KEY)) || []; }
+    catch(e) { return []; }
+  }
+  function savePins(arr) {
+    localStorage.setItem(LS_KEY, JSON.stringify(arr));
+  }
+  function togglePin(reportType) {
+    var pins = getPins();
+    var idx = pins.indexOf(reportType);
+    if (idx > -1) pins.splice(idx, 1);
+    else pins.push(reportType);
+    savePins(pins);
+    render();
+  }
+
+  /* ── Page title ── */
   if (cfg.displayName) {
     document.title = cfg.displayName + ' — Reports';
   }
 
-  // Top bar
+  /* ── Top bar ── */
   document.getElementById('topbar').innerHTML = [
     cfg.logoUrl
-      ? `<img src="${cfg.logoUrl}" alt="" class="topbar-logo" onerror="this.style.display='none'" />`
+      ? '<img src="' + cfg.logoUrl + '" alt="" class="topbar-logo" onerror="this.style.display=\'none\'" />'
       : '',
-    `<div class="topbar-text">
-       <div class="topbar-name">${cfg.displayName || 'Reports'}</div>
-       <div class="topbar-sub">rec.us Reports</div>
-     </div>`,
+    '<div class="topbar-text">',
+      '<div class="topbar-name">' + (cfg.displayName || 'Reports') + '</div>',
+      '<div class="topbar-sub">rec.us Reports</div>',
+    '</div>',
   ].join('');
 
-  // Cards
-  const reports = cfg.reports || [];
-  if (reports.length > 0) {
-    document.getElementById('cards').innerHTML = reports.map(r => {
-      const m = REPORT_META[r] || { label: r, icon: '📄', color: '#888', desc: '' };
-      return `<a href="/${slug}/${r}" class="card" style="--accent:${m.color}">
-        <div class="card-icon">${m.icon}</div>
-        <div class="card-body">
-          <div class="card-name">${m.label}</div>
-          <div class="card-desc">${m.desc}</div>
-          ${m.ai ? '<span class="ai-pill">✦ AI enhanced</span>' : ''}
-        </div>
-        <div class="card-arrow">→</div>
-      </a>`;
-    }).join('');
+  /* ── Render cards ── */
+  function render() {
+    var reports = cfg.reports || [];
+    if (reports.length === 0) return;
+
+    var pins = getPins();
+    // Split into pinned (preserve pin order) and unpinned (preserve original order)
+    var pinned = pins.filter(function(r) { return reports.indexOf(r) > -1; });
+    var unpinned = reports.filter(function(r) { return pinned.indexOf(r) === -1; });
+
+    var html = '';
+
+    if (pinned.length > 0) {
+      html += '<div class="section-divider">Pinned</div>';
+      pinned.forEach(function(r) { html += cardHTML(r, true); });
+      if (unpinned.length > 0) {
+        html += '<div class="section-divider">All reports</div>';
+      }
+    }
+    unpinned.forEach(function(r) { html += cardHTML(r, false); });
+
+    document.getElementById('cards').innerHTML = html;
+
+    // Bind pin buttons (event delegation would also work, but explicit is fine for ≤12 cards)
+    document.querySelectorAll('.pin-btn').forEach(function(btn) {
+      btn.addEventListener('click', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        togglePin(btn.getAttribute('data-report'));
+      });
+    });
   }
 
-  // Admin link + footer
-  document.getElementById('admin-link').href = `/${slug}/admin`;
-  document.getElementById('footer').textContent = `rec.us · ${slug}`;
+  function cardHTML(r, isPinned) {
+    var m = REPORT_META[r] || { label: r, icon: '📄', desc: '' };
+    return '<a href="/' + slug + '/' + r + tokenQS + '" class="card' + (isPinned ? ' pinned' : '') + '">'
+      + '<div class="card-icon">' + m.icon + '</div>'
+      + '<div class="card-body">'
+        + '<div class="card-label">' + m.label + '</div>'
+        + '<div class="card-desc">' + m.desc + '</div>'
+        + (m.ai ? '<span class="ai-pill">✦ AI enhanced</span>' : '')
+      + '</div>'
+      + '<div class="card-right">'
+        + '<button class="pin-btn" data-report="' + r + '" title="' + (isPinned ? 'Unpin' : 'Pin to top') + '">'
+          + (isPinned ? '📌' : '📌')
+        + '</button>'
+        + '<div class="card-arrow">→</div>'
+      + '</div>'
+    + '</a>';
+  }
+
+  render();
+
+  /* ── Admin link + footer ── */
+  document.getElementById('admin-link').href = '/' + slug + '/admin' + tokenQS;
+  document.getElementById('footer').textContent = 'rec.us · ' + slug;
 </script>
 </body>
 </html>
