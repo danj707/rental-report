@@ -1452,6 +1452,15 @@ app.get("/:org/calendar", (req, res) => {
   res.type("html").send(html.replace("</head>", inject + "</head>"));
 });
 
+app.get("/:org/fasttrack", (req, res) => {
+  const slug = req.params.org;
+  const org  = ORGS[slug];
+  if (!org) return res.status(404).send("Unknown org");
+  if (!org.fasttrack?.mbUuid) return res.status(404).send("Fast Track report not configured for this org.");
+  logEvent(slug, "fasttrack", "view", req.ip);
+  res.sendFile(path.join(__dirname, "public", "fasttrack.html"));
+});
+
 // ── GET /:org — org landing page ─────────────────────────────────────
 // ────────────────────────────────────────────────────────────
 // Hot Dog Counter — global concession leaderboard
