@@ -289,9 +289,8 @@ async function fetchData(from,to){
       const j=await res.json();
       const rows=j.rows||j.data||j||[];
       console.log('[calendar] got',rows.length,'rows, keys:',rows.length?Object.keys(rows[0]).join(', '):'(empty)');
-      if(rows.length) return {rows,src:'live'};
-      console.warn('[calendar] 0 rows returned from server');
-      return {rows:TEMPLATE,src:'sample',error:'Query returned 0 rows'};
+      // 0 rows is a valid result (empty week) — return live, not sample
+      return {rows,src:'live'};
     }catch(e){
       console.error('[calendar] fetch error',e);
       return {rows:TEMPLATE,src:'sample',error:e.message};
