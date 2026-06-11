@@ -279,9 +279,23 @@ async function fetchData(from,to){
       const u=new URL('/'+org+'/calendar/api/data',window.location.origin);
       u.searchParams.set('start_date',from); u.searchParams.set('end_date',to);
       if(token) u.searchParams.set('token',token);
+      console.log('[calendar] fetching',u.toString());
       const res=await fetch(u.toString());
-      if(res.ok){ const j=await res.json(); const rows=j.rows||j.data||j||[]; if(rows.length) return {rows,src:'live'}; }
-    }catch(e){}
+      if(!res.ok){
+        const body=await res.text().catch(()=>'');
+        console.error('[calendar] fetch failed',res.status,body);
+        return {rows:TEMPLATE,src:'sample',error:'Server returned '+res.status};
+      }
+      const j=await res.json();
+      const rows=j.rows||j.data||j||[];
+      console.log('[calendar] got',rows.length,'rows, keys:',rows.length?Object.keys(rows[0]).join(', '):'(empty)');
+      if(rows.length) return {rows,src:'live'};
+      console.warn('[calendar] 0 rows returned from server');
+      return {rows:TEMPLATE,src:'sample',error:'Query returned 0 rows'};
+    }catch(e){
+      console.error('[calendar] fetch error',e);
+      return {rows:TEMPLATE,src:'sample',error:e.message};
+    }
   }
   return {rows:TEMPLATE,src:'sample'};
 }
@@ -566,6 +580,7 @@ function App(){
   const [selectedDate,setSelectedDate]=useState(()=>fmtISO(new Date()));
   const [rows,setRows]=useState([]);
   const [src,setSrc]=useState('');
+  const [fetchError,setFetchError]=useState('');
   const [loading,setLoading]=useState(true);
   const [popoverEv,setPopoverEv]=useState(null);
   // Read initial filter from URL params
@@ -584,8 +599,8 @@ function App(){
   const load=useCallback(async(ws)=>{
     setLoading(true);
     const from=fmtISO(ws), to=fmtISO(addDays(ws,6));
-    const {rows,src}=await fetchData(from,to);
-    setRows(rows.map(normalizeRow).filter(e=>!isHiddenActivity(e))); setSrc(src); setLoading(false);
+    const {rows,src,error}=await fetchData(from,to);
+    setRows(rows.map(normalizeRow).filter(e=>!isHiddenActivity(e))); setSrc(src); setFetchError(error||''); setLoading(false);
   },[]);
 
   // One-time wide fetch to populate all filter options (today → +180 days)
@@ -738,7 +753,7 @@ function App(){
         : <ListView events={filtered} onEv={setPopoverEv}/>}
 
       <PopoverCard ev={popoverEv} onClose={()=>setPopoverEv(null)}/>
-      {src==='sample' && <div className="note">Showing sample data (no live source reachable). Wire <code>/{'{org}'}/calendar/api/data</code> to go live.</div>}
+      {src==='sample' && <div className="note">Showing sample data.{fetchError ? ' Reason: '+fetchError+'.' : ''} Check browser console for details. Wire <code>/{'{org}'}/calendar/api/data</code> to go live.</div>}
       {!loading && <div id="report-ready" style={{display:'none'}}>ready</div>}
       {isPresent && <div className="present-status">Auto-refreshes every 5 min · Press Esc to exit</div>}
     </div>
