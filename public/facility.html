@@ -2270,8 +2270,10 @@ function App() {
     if (showNotes)     headers.push('Notes', 'Add-ons');
 
     const dataRows = filteredRows.map(r => {
+      const dp = (r.date || '').split('T')[0].split('-');
+      const dateVal = dp.length === 3 ? new Date(+dp[0], +dp[1]-1, +dp[2]) : r.date;
       const row = [
-        r.orgName, r.date, (r.day || '').trim(), r.location, r.site,
+        r.orgName, dateVal, (r.day || '').trim(), r.location, r.site,
         formatTime(r.start), formatTime(r.end), r.resName, r.reservee,
         formatPhone(r.phone), r.email,
       ];
@@ -2282,7 +2284,12 @@ function App() {
     });
 
     const wsData = [headers, ...dataRows];
-    const ws = XLSX.utils.aoa_to_sheet(wsData);
+    const ws = XLSX.utils.aoa_to_sheet(wsData, { cellDates: true });
+    // Format date column as MM/DD/YY
+    for (let rowIdx = 1; rowIdx <= dataRows.length; rowIdx++) {
+      const cellAddr = XLSX.utils.encode_cell({ r: rowIdx, c: 1 });
+      if (ws[cellAddr] && ws[cellAddr].t === 'd') ws[cellAddr].z = 'MM/DD/YY';
+    }
     ws['!cols'] = [
       {wch:28},{wch:12},{wch:10},{wch:22},{wch:22},{wch:9},{wch:9},
       {wch:20},{wch:20},{wch:14},{wch:28},
