@@ -115,6 +115,7 @@ const ORGS = {
     programs: { mbUuid: "dee5b922-303f-47d9-abe3-75597410ad67" },
     "court-utilization": { mbUuid: "82d14a94-78ad-48d6-9531-11e72f53e285" },
     calendar: { mbUuid: "8a3dac9b-6c34-45e1-a7d0-3a177477fe17" },
+    products: { mbUuid: "b7d1ed06-6df2-4d74-aea2-68d4e2428aec" },
   },
   theranch: {
     token:   "mXI0BgPPazLu61jl",
