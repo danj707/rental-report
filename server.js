@@ -117,6 +117,7 @@ const ORGS = {
     calendar: { mbUuid: "8a3dac9b-6c34-45e1-a7d0-3a177477fe17" },
     products: { mbUuid: "b7d1ed06-6df2-4d74-aea2-68d4e2428aec" },
     memberships: { mbUuid: "1e539837-b437-4a12-b1bb-11498b12808b" },
+    fasttrack: { mbUuid: "10e8dcdd-2913-4880-b093-d407fc357d76" },
   },
   theranch: {
     token:   "mXI0BgPPazLu61jl",
@@ -164,7 +165,7 @@ const ORGS = {
   },
 };
 
-const REPORT_TYPES = ["facility", "gl", "historic", "programs", "roster", "overview", "products", "memberships", "court-utilization", "calendar"];
+const REPORT_TYPES = ["facility", "gl", "historic", "programs", "roster", "overview", "products", "memberships", "court-utilization", "calendar", "fasttrack"];
 // Report types that are valid system-wide but should NOT be offered in the
 // dashboard "+ Add report" flow (e.g. not yet ready for self-serve onboarding).
 const NON_ADDABLE_REPORTS = new Set(["overview"]);
@@ -1036,7 +1037,26 @@ Rules:
 - Name specific programs when making observations rather than speaking generally.
 - Be terse. No filler. Vary the "type" across the four insights where the data supports it.`;
 
-const SYS_PROMPTS = { programs: PROGRAMS_SYS_PROMPT };
+const FASTTRACK_SYS_PROMPT = `You are a parks & recreation demand analyst for US municipal departments. You are given Fast Track (pre-registration wishlist) data — FT signups, conversion rates, pending counts, enrollment, capacity, fill rates, and demand ratios, all pre-computed.
+
+The data contains a "programNames" array listing EVERY program in this dataset. You may ONLY reference program names that appear in that array — no others exist.
+
+Return EXACTLY 4 insights as a JSON array and nothing else — no prose, no preamble, no markdown code fences. Each element is an object with exactly these keys:
+{
+  "type": "opportunity" | "risk" | "signal",
+  "title": short label, 7 words or fewer,
+  "detail": one sentence, 22 words or fewer, citing specific numbers or program names from the data,
+  "action": one concrete next step, 12 words or fewer
+}
+
+Rules:
+- Ground EVERY figure in the data provided. Never invent numbers or program names.
+- ONLY reference programs listed in "programNames". If a program name is not in that array, do not mention it.
+- Focus on: conversion rate outliers, high-demand/low-capacity mismatches, programs with many pending signups (opportunity to convert), programs with high drop-off, and demand signals that suggest adding capacity or sessions.
+- Name specific programs when making observations rather than speaking generally.
+- Be terse. No filler. Vary the "type" across the four insights where the data supports it.`;
+
+const SYS_PROMPTS = { programs: PROGRAMS_SYS_PROMPT, fasttrack: FASTTRACK_SYS_PROMPT };
 
 // Extract up to 4 valid insight objects from a model text response.
 function salvageInsights(text) {
@@ -1908,6 +1928,7 @@ app.get("/", (req, res) => {
     memberships: { label: "Memberships",                icon: "🎫", desc: "Active and lapsed memberships with renewal tracking",       color: "#db2777" },
     "court-utilization": { label: "Court Utilization",  icon: "🎾", desc: "Court utilization % or reserved hours by court, split by customer, program, and closure usage", color: "#0d9488", ai: true },
     calendar:    { label: "Calendar",               icon: "🗓️", desc: "Public class & rental schedule (week / list view)", color: "#ea580c" },
+    fasttrack:   { label: "Fast Track",             icon: "⚡", desc: "Pre-registration demand signal with conversion tracking", color: "#6366f1", ai: true },
   };
 
   const orgSections = Object.entries(ORGS).map(([slug, org]) => {
@@ -2867,9 +2888,10 @@ app.get("/", (req, res) => {
     // Newest first. Add a new entry at the TOP for every change we ship.
     // History below back-filled from the GitHub commit log.
     const UPDATES = [
-      { date: '2026-06-11', title: 'Products: Net/Gross toggle fix + Pinnable reports', items: [
+      { date: '2026-06-11', title: 'Products: Net/Gross toggle fix + Pinnable reports + Fast Track report', items: [
         'The Net/Gross toggle now controls the entire page \u2014 table sort order, column emphasis, summary cards, and Best Day all switch between net and gross revenue',
         'Org dashboard pages now support pinnable reports \u2014 click the pin icon on any report card to keep it at the top of your list (saved per browser)',
+        'New report: Fast Track \u2014 pre-registration wishlist demand with true conversion tracking (FT signup \u2192 confirmed enrollment), program/section drill-down, season filter, demand vs capacity ratios, and AI-powered Rec Insights',
       ] },
       { date: '2026-06-09', title: 'Program Revenue: clearer chart + filter-aware insights', items: [
         'Chart program names now wrap to two lines instead of being cut off, so similarly-named programs are easy to tell apart',

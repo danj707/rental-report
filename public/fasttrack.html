@@ -1,0 +1,639 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Fast Track Report</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'IBM Plex Sans', system-ui, sans-serif; font-size: 12px; color: #1a1a1a; background: #f5f4f1; line-height: 1.35; }
+
+    /* ── Toolbar ── */
+    .toolbar { position: sticky; top: 0; z-index: 100; display: flex; align-items: center; gap: 10px; padding: 8px 20px; background: #2c2c2c; color: #eee; font-size: 13px; flex-wrap: wrap; }
+    .toolbar-title { font-weight: 600; margin-right: 4px; }
+    .toolbar-spacer { flex: 1; }
+    .toolbar label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: #aaa; display: flex; flex-direction: column; gap: 2px; }
+    .toolbar select { padding: 4px 8px; border: 1px solid rgba(255,255,255,.2); border-radius: 4px; background: rgba(255,255,255,.1); color: #fff; font-size: 12px; font-family: inherit; outline: none; max-width: 220px; }
+    .toolbar select option { background: #2c2c2c; color: #fff; }
+    .toolbar input[type="text"] { padding: 4px 8px; border: 1px solid rgba(255,255,255,.2); border-radius: 4px; background: rgba(255,255,255,.1); color: #fff; font-size: 12px; font-family: inherit; outline: none; width: 160px; }
+    .toolbar input:focus, .toolbar select:focus { border-color: #3b82f6; }
+    .toolbar button { padding: 6px 14px; border: 1px solid rgba(255,255,255,.25); border-radius: 4px; background: rgba(255,255,255,.08); color: #fff; font-size: 12px; font-family: inherit; cursor: pointer; transition: background .15s; white-space: nowrap; }
+    .toolbar button:hover { background: rgba(255,255,255,.18); }
+    .toolbar .btn-pdf { background: #3b82f6; border-color: #3b82f6; font-weight: 600; }
+    .toolbar .btn-pdf:hover { background: #2563eb; }
+
+    /* ── Print ── */
+    .print-mode .toolbar, .print-mode .no-print { display: none !important; }
+    .print-mode .report { padding: 12px 16px; }
+    @media print { .toolbar, .no-print { display: none !important; } }
+
+    /* ── Report body ── */
+    .report { max-width: 1200px; margin: 0 auto; padding: 24px 28px 48px; }
+    .report-header { display: flex; align-items: center; gap: 18px; margin-bottom: 24px; }
+    .report-header-logo { max-height: 48px; max-width: 120px; object-fit: contain; }
+    .org-label { font-size: 14px; font-weight: 700; color: #333; }
+    .title { font-size: 19px; font-weight: 700; color: #111; margin-top: 2px; }
+    .subtitle { font-size: 12px; color: #888; margin-top: 3px; }
+
+    /* ── Loading / Error ── */
+    .loading { display: flex; flex-direction: column; align-items: center; padding: 48px 0; gap: 14px; }
+    .spinner { width: 30px; height: 30px; border: 3px solid #ddd; border-top-color: #3b82f6; border-radius: 50%; animation: spin .7s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .juice-msg { font-size: 12px; color: #999; }
+    .juice-msg span { display: none; }
+    .juice-msg span:first-child { display: inline; }
+    .error { padding: 20px; color: #dc2626; font-size: 13px; text-align: center; }
+
+    /* ── Summary cards ── */
+    .summary-cards { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 20px; }
+    .summary-card { flex: 1; min-width: 130px; border: 1px solid #e0ddd8; border-radius: 8px; padding: 14px 16px; background: #fff; }
+    .summary-card .sc-label { font-size: 10px; text-transform: uppercase; letter-spacing: .8px; color: #888; margin-bottom: 4px; font-weight: 600; }
+    .summary-card .sc-value { font-size: 22px; font-weight: 700; }
+    .summary-card .sc-sub { font-size: 11px; color: #888; margin-top: 2px; }
+
+    /* ── Explainer ── */
+    .explainer { background: #fff; border: 1px solid #e0ddd8; border-radius: 8px; padding: 14px 18px; margin-bottom: 20px; font-size: 12px; color: #555; line-height: 1.6; }
+    .explainer strong { color: #333; }
+    .explainer-toggle { background: none; border: none; cursor: pointer; font-size: 12px; font-weight: 600; color: #3b82f6; padding: 0; font-family: inherit; }
+    .explainer ul { margin: 8px 0 0 16px; }
+    .explainer li { margin-bottom: 3px; }
+
+    /* ── Chart ── */
+    .chart-section { margin: 20px 0; }
+    .chart-container { background: #fff; border: 1px solid #e0ddd8; border-radius: 10px; padding: 16px 20px; }
+    .chart-row { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+    .chart-label { width: 240px; flex-shrink: 0; font-size: 12px; font-weight: 500; color: #333; text-align: right; line-height: 1.25; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; word-break: break-word; }
+    .chart-bar-wrap { flex: 1; height: 24px; background: #f5f4f1; border-radius: 4px; position: relative; overflow: hidden; }
+    .chart-bar { height: 100%; border-radius: 4px; transition: width .4s ease; min-width: 2px; position: absolute; left: 0; top: 0; }
+    .chart-bar.ft-total { background: #d1d5db; z-index: 1; }
+    .chart-bar.ft-conv { background: #22c55e; z-index: 2; }
+    .chart-bar.ft-pend { background: #f59e0b; z-index: 2; left: auto; }
+    .chart-val { font-size: 11px; font-weight: 600; color: #555; width: 56px; text-align: right; flex-shrink: 0; }
+    .chart-tooltip { position: fixed; z-index: 60; pointer-events: none; background: #1f2937; color: #fff; border-radius: 8px; padding: 9px 11px; font-size: 11px; line-height: 1.5; box-shadow: 0 8px 28px rgba(0,0,0,.28); width: 220px; }
+    .chart-tooltip .tt-name { font-weight: 700; margin-bottom: 5px; font-size: 11.5px; }
+
+    /* ── AI Insights ── */
+    .insights-section { margin: 4px 0 18px; }
+    .insights-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+    .insights-btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 18px; border: 1px solid #e5e7eb; border-radius: 8px; background: #1f2937; color: #fff; font-size: 13px; font-weight: 600; font-family: inherit; cursor: pointer; transition: background .15s; }
+    .insights-btn:hover:not(:disabled) { background: #374151; }
+    .insights-btn:disabled { opacity: .6; cursor: default; }
+    .insights-sub { font-size: 11.5px; color: #9ca3af; }
+    .insights-section .loading { padding: 36px 16px; }
+    .insights-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; }
+    .insight-card { border: 1px solid #e5e7eb; border-left-width: 4px; border-radius: 8px; padding: 14px 16px; background: #fff; }
+    .insight-type { font-size: 10px; font-weight: 700; letter-spacing: .6px; text-transform: uppercase; margin-bottom: 6px; }
+    .insight-title { font-size: 14px; font-weight: 700; color: #111827; margin-bottom: 5px; line-height: 1.3; }
+    .insight-detail { font-size: 12.5px; color: #374151; line-height: 1.45; }
+    .insight-action { font-size: 12px; color: #6b7280; margin-top: 8px; font-weight: 500; }
+    .insight-opportunity { border-left-color: #10b981; }
+    .insight-opportunity .insight-type { color: #059669; }
+    .insight-risk { border-left-color: #f59e0b; }
+    .insight-risk .insight-type { color: #d97706; }
+    .insight-signal { border-left-color: #6366f1; }
+    .insight-signal .insight-type { color: #4f46e5; }
+
+    /* ── Table ── */
+    .table-scroll { overflow-x: auto; }
+    .ft-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    .ft-table th { background: #2c2c2c; color: #fff; padding: 8px 10px; font-size: 10px; text-transform: uppercase; letter-spacing: .6px; font-weight: 700; position: sticky; top: 0; z-index: 10; white-space: nowrap; }
+    .ft-table th.left { text-align: left; }
+    .ft-table td { padding: 7px 10px; border-bottom: 1px solid #e8e5e0; text-align: right; white-space: nowrap; }
+    .ft-table td.left { text-align: left; }
+
+    .prog-row { background: #f0eeea; cursor: pointer; }
+    .prog-row:hover { background: #e8e5df; }
+    .prog-row td { font-weight: 700; }
+    .sec-row td { font-weight: 400; color: #444; }
+    .sec-row td:first-child { padding-left: 32px; }
+    .totals-row { background: #2c2c2c; color: #fff; }
+    .totals-row td { font-weight: 700; border: none; }
+
+    .cell-zero { color: #ccc; }
+    .pct-bar { display: inline-flex; align-items: center; gap: 6px; }
+    .pct-fill { height: 6px; border-radius: 3px; display: inline-block; }
+
+    /* ── Footer ── */
+    .report-footer { text-align: center; padding: 24px 0; font-size: 11px; color: #ccc; font-family: 'IBM Plex Mono', monospace; }
+
+    @media (max-width: 640px) {
+      .toolbar { padding: 8px 12px; gap: 6px; }
+      .report { padding: 16px 12px 32px; }
+      .chart-label { width: 140px; font-size: 11px; }
+      .summary-card { min-width: 100px; }
+    }
+  </style>
+</head>
+<body>
+
+<div id="root"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/react@18/umd/react.production.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@babel/standalone/babel.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
+<script type="text/babel">
+const { useState, useEffect, useMemo, useCallback, useRef } = React;
+
+/* ── Helpers ── */
+const SP = new URLSearchParams(window.location.search);
+const URL_TOKEN = SP.get('token') || '';
+function withToken(url) { if (!URL_TOKEN) return url; const sep = url.includes('?') ? '&' : '?'; return url + sep + 'token=' + encodeURIComponent(URL_TOKEN); }
+
+const parts = window.location.pathname.split('/').filter(Boolean);
+const orgSlug = parts[0] || '';
+const basePath = '/' + parts.slice(0, 2).join('/');
+
+function fmtN(v) { const n = Number(v); return isNaN(n) ? 0 : n; }
+function fmtInt(v) { return fmtN(v).toLocaleString(); }
+function fmtPct(v) { const n = fmtN(v); return n === 0 ? '—' : n.toFixed(1) + '%'; }
+
+function normalizeRow(raw) {
+  return {
+    season:        raw['Season'] ?? '',
+    program:       raw['Program'] ?? '',
+    section:       raw['Section'] ?? '',
+    regMode:       raw['Reg Mode'] ?? '',
+    ftSignups:     fmtN(raw['FT Signups']),
+    ftConverted:   fmtN(raw['FT Converted']),
+    ftPending:     fmtN(raw['FT Pending']),
+    ftDropped:     fmtN(raw['FT Dropped']),
+    convPct:       raw['Conversion %'] != null ? fmtN(raw['Conversion %']) : null,
+    directEnrolled:fmtN(raw['Direct Enrolled']),
+    totalEnrolled: fmtN(raw['Total Enrolled']),
+    capacity:      fmtN(raw['Capacity']),
+    sessions:      fmtN(raw['Sessions']),
+    fillPct:       raw['Fill %'] != null ? fmtN(raw['Fill %']) : null,
+    demandPct:     raw['Demand %'] != null ? fmtN(raw['Demand %']) : null,
+    waitlisted:    fmtN(raw['Waitlisted']),
+    firstFt:       raw['First FT Signup'] ?? '',
+    lastFt:        raw['Last FT Signup'] ?? '',
+  };
+}
+
+/* Roll up sections into program-level aggregates */
+function rollupToPrograms(rows) {
+  var map = new Map();
+  rows.forEach(function(r) {
+    var key = r.program;
+    if (!map.has(key)) map.set(key, {
+      program: key, season: r.season, sections: [],
+      ftSignups: 0, ftConverted: 0, ftPending: 0, ftDropped: 0,
+      directEnrolled: 0, totalEnrolled: 0, capacity: 0, waitlisted: 0,
+    });
+    var g = map.get(key);
+    g.sections.push(r);
+    g.ftSignups      += r.ftSignups;
+    g.ftConverted    += r.ftConverted;
+    g.ftPending      += r.ftPending;
+    g.ftDropped      += r.ftDropped;
+    g.directEnrolled += r.directEnrolled;
+    g.totalEnrolled  += r.totalEnrolled;
+    g.capacity       += r.capacity;
+    g.waitlisted     += r.waitlisted;
+  });
+  var out = [];
+  map.forEach(function(g) {
+    g.convPct   = g.ftSignups > 0 ? Math.round(1000 * g.ftConverted / g.ftSignups) / 10 : null;
+    g.fillPct   = g.capacity > 0  ? Math.round(1000 * g.totalEnrolled / g.capacity) / 10 : null;
+    g.demandPct = g.capacity > 0  ? Math.round(1000 * g.ftSignups / g.capacity) / 10 : null;
+    out.push(g);
+  });
+  return out.sort(function(a, b) { return b.ftSignups - a.ftSignups; });
+}
+
+/* ── App ── */
+function App() {
+  var isPrint = SP.get('_print') === '1';
+
+  var [rows, setRows]       = useState([]);
+  var [loading, setLoading] = useState(true);
+  var [error, setError]     = useState(null);
+  var [orgName, setOrgName] = useState('');
+  var [logoUrl, setLogoUrl] = useState('');
+
+  var [seasonFilter, setSeasonFilter] = useState(SP.get('season') || '');
+  var [searchTerm, setSearchTerm]     = useState(SP.get('search') || '');
+  var [open, setOpen]                 = useState(function() { return new Set(); });
+  var [pdfLoading, setPdfLoading]     = useState(false);
+  var [showExplainer, setShowExplainer] = useState(false);
+  var [tooltip, setTooltip]           = useState(null);
+
+  /* Insights state */
+  var [insights, setInsights]               = useState(null);
+  var [insightsLoading, setInsightsLoading] = useState(false);
+  var [insightsError, setInsightsError]     = useState(null);
+  var [insightsMeta, setInsightsMeta]       = useState(null);
+
+  useEffect(function() { if (isPrint) document.body.classList.add('print-mode'); }, []);
+
+  /* Fetch data */
+  useEffect(function() {
+    fetch(withToken(basePath + '/api/data'))
+      .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .then(function(json) {
+        var raw = Array.isArray(json) ? json : (json.rows || []);
+        setRows(raw.map(normalizeRow));
+        if (json && json.meta) {
+          if (json.meta.org_name) setOrgName(json.meta.org_name);
+          if (json.meta.logo_url) setLogoUrl(json.meta.logo_url);
+        }
+        setLoading(false);
+      })
+      .catch(function(err) { setError(err.message || String(err)); setLoading(false); });
+  }, []);
+
+  /* Derived data */
+  var seasons = useMemo(function() {
+    var s = new Set();
+    rows.forEach(function(r) { if (r.season) s.add(r.season); });
+    return Array.from(s).sort();
+  }, [rows]);
+
+  var filtered = useMemo(function() {
+    return rows.filter(function(r) {
+      if (seasonFilter && r.season !== seasonFilter) return false;
+      if (searchTerm.trim()) {
+        var q = searchTerm.trim().toLowerCase();
+        if (r.program.toLowerCase().indexOf(q) === -1 && r.section.toLowerCase().indexOf(q) === -1) return false;
+      }
+      return true;
+    });
+  }, [rows, seasonFilter, searchTerm]);
+
+  var programs = useMemo(function() { return rollupToPrograms(filtered); }, [filtered]);
+
+  var totals = useMemo(function() {
+    return programs.reduce(function(acc, p) {
+      acc.ftSignups      += p.ftSignups;
+      acc.ftConverted    += p.ftConverted;
+      acc.ftPending      += p.ftPending;
+      acc.ftDropped      += p.ftDropped;
+      acc.directEnrolled += p.directEnrolled;
+      acc.totalEnrolled  += p.totalEnrolled;
+      acc.capacity       += p.capacity;
+      acc.waitlisted     += p.waitlisted;
+      return acc;
+    }, { ftSignups:0, ftConverted:0, ftPending:0, ftDropped:0, directEnrolled:0, totalEnrolled:0, capacity:0, waitlisted:0 });
+  }, [programs]);
+
+  var overallConvPct = totals.ftSignups > 0 ? Math.round(1000 * totals.ftConverted / totals.ftSignups) / 10 : null;
+  var overallFillPct = totals.capacity > 0  ? Math.round(1000 * totals.totalEnrolled / totals.capacity) / 10 : null;
+
+  /* Expand / collapse */
+  var allOpen = programs.length > 0 && programs.every(function(p) { return open.has(p.program); });
+  function toggle(name) { setOpen(function(prev) { var n = new Set(prev); n.has(name) ? n.delete(name) : n.add(name); return n; }); }
+  function toggleAll() { setOpen(allOpen ? new Set() : new Set(programs.map(function(p) { return p.program; }))); }
+
+  /* Share link */
+  useEffect(function() {
+    if (isPrint) return;
+    var p = new URLSearchParams();
+    if (URL_TOKEN) p.set('token', URL_TOKEN);
+    if (seasonFilter) p.set('season', seasonFilter);
+    if (searchTerm.trim()) p.set('search', searchTerm.trim());
+    window.history.replaceState(null, '', window.location.pathname + '?' + p.toString());
+  }, [seasonFilter, searchTerm]);
+
+  window.recShareLink = function() {
+    var p = new URLSearchParams();
+    if (URL_TOKEN) p.set('token', URL_TOKEN);
+    if (seasonFilter) p.set('season', seasonFilter);
+    if (searchTerm.trim()) p.set('search', searchTerm.trim());
+    return window.location.origin + window.location.pathname + '?' + p.toString();
+  };
+
+  /* PDF */
+  function handlePdf() {
+    setPdfLoading(true);
+    var p = new URLSearchParams();
+    if (seasonFilter) p.set('season', seasonFilter);
+    if (searchTerm.trim()) p.set('search', searchTerm.trim());
+    fetch(withToken(basePath + '/api/pdf?' + p.toString()))
+      .then(function(r) { if (!r.ok) throw new Error('PDF generation failed'); return r.blob(); })
+      .then(function(blob) { var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'fast-track-report.pdf'; a.click(); })
+      .catch(function(e) { alert(e.message); })
+      .finally(function() { setPdfLoading(false); });
+  }
+
+  /* Excel */
+  function handleExcel() {
+    if (typeof XLSX === 'undefined') return;
+    var header = ['Program','Section','Season','Reg Mode','FT Signups','FT Converted','FT Pending','FT Dropped','Conversion %','Direct Enrolled','Total Enrolled','Capacity','Fill %','Demand %','Waitlisted'];
+    var data = [header];
+    programs.forEach(function(p) {
+      p.sections.forEach(function(s) {
+        data.push([s.program, s.section, s.season, s.regMode, s.ftSignups, s.ftConverted, s.ftPending, s.ftDropped,
+          s.convPct, s.directEnrolled, s.totalEnrolled, s.capacity, s.fillPct, s.demandPct, s.waitlisted]);
+      });
+    });
+    data.push(['TOTAL','','','', totals.ftSignups, totals.ftConverted, totals.ftPending, totals.ftDropped,
+      overallConvPct, totals.directEnrolled, totals.totalEnrolled, totals.capacity, overallFillPct, '', totals.waitlisted]);
+    var ws = XLSX.utils.aoa_to_sheet(data);
+    var wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Fast Track');
+    XLSX.writeFile(wb, 'fast-track-report.xlsx');
+  }
+
+  /* Insights */
+  var buildInsightsBlob = useCallback(function() {
+    return {
+      totals: { ...totals, convPct: overallConvPct, fillPct: overallFillPct },
+      programCount: programs.length,
+      programNames: programs.map(function(p) { return p.program; }),
+      programs: programs.slice(0, 40).map(function(p) {
+        return { name: p.program, ftSignups: p.ftSignups, ftConverted: p.ftConverted, ftPending: p.ftPending, ftDropped: p.ftDropped,
+          convPct: p.convPct, directEnrolled: p.directEnrolled, totalEnrolled: p.totalEnrolled, capacity: p.capacity,
+          fillPct: p.fillPct, demandPct: p.demandPct, waitlisted: p.waitlisted, sectionCount: p.sections.length };
+      }),
+    };
+  }, [programs, totals, overallConvPct, overallFillPct]);
+
+  var getInsights = useCallback(function() {
+    setInsightsLoading(true);
+    setInsightsError(null);
+    setInsights(null);
+    setInsightsMeta(null);
+    var blob = buildInsightsBlob();
+    fetch(withToken(basePath + '/api/insights'), {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(blob),
+    })
+      .then(function(r) { return r.json().catch(function() { return {}; }).then(function(j) { if (!r.ok || !j.ok) throw new Error(j.error || 'Request failed (' + r.status + ')'); return j; }); })
+      .then(function(json) {
+        setInsights(json.insights || []);
+        setInsightsMeta({ programCount: programs.length, names: programs.map(function(p) { return p.program; }) });
+      })
+      .catch(function(err) { setInsightsError(err.message || 'Could not generate insights'); })
+      .finally(function() { setInsightsLoading(false); });
+  }, [buildInsightsBlob, basePath, programs]);
+
+  var filteredProgramKey = useMemo(function() { return programs.map(function(p) { return p.program; }).sort().join('|'); }, [programs]);
+  useEffect(function() { setInsights(null); setInsightsMeta(null); setInsightsError(null); }, [filteredProgramKey]);
+
+  var activeInsights = useMemo(function() {
+    if (!insights || !insightsMeta) return insights;
+    if (insightsMeta.names.slice().sort().join('|') !== filteredProgramKey) return null;
+    return insights;
+  }, [insights, insightsMeta, filteredProgramKey]);
+
+  /* Chart data: top 20 programs by FT signups */
+  var chartPrograms = useMemo(function() { return programs.slice(0, 20); }, [programs]);
+  var chartMax = useMemo(function() { return chartPrograms.reduce(function(m, p) { return Math.max(m, p.ftSignups); }, 0) || 1; }, [chartPrograms]);
+
+  function pctBar(val, max, color) {
+    if (max === 0 || val == null) return null;
+    var w = Math.min(100, Math.max(0, (val / max) * 100));
+    var c = color === 'green' ? '#22c55e' : color === 'amber' ? '#f59e0b' : color === 'red' ? '#ef4444' : '#3b82f6';
+    return React.createElement('span', { className: 'pct-fill', style: { width: Math.max(2, w * 0.6) + 'px', background: c } });
+  }
+
+  var displayOrg = orgName || orgSlug;
+
+  /* ── Render ── */
+  return React.createElement('div', null,
+    /* Toolbar */
+    !isPrint && React.createElement('div', { className: 'toolbar' },
+      React.createElement('span', { className: 'toolbar-title' }, '⚡ Fast Track'),
+      React.createElement('label', null, 'Season',
+        React.createElement('select', { value: seasonFilter, onChange: function(e) { setSeasonFilter(e.target.value); } },
+          React.createElement('option', { value: '' }, 'All Seasons'),
+          seasons.map(function(s) { return React.createElement('option', { key: s, value: s }, s); })
+        )
+      ),
+      React.createElement('label', null, 'Search',
+        React.createElement('input', { type: 'text', placeholder: 'Program or section…', value: searchTerm, onChange: function(e) { setSearchTerm(e.target.value); } })
+      ),
+      programs.length > 0 && React.createElement('button', { onClick: toggleAll }, allOpen ? '⊟ Collapse' : '⊞ Expand'),
+      React.createElement('div', { className: 'toolbar-spacer' }),
+      React.createElement('button', { onClick: handleExcel }, '📊 Excel'),
+      React.createElement('button', { className: 'btn-pdf', onClick: handlePdf, disabled: pdfLoading }, pdfLoading ? 'Generating…' : '📄 PDF')
+    ),
+
+    React.createElement('div', { className: 'report' },
+      /* Header */
+      React.createElement('div', { className: 'report-header' },
+        logoUrl ? React.createElement('img', { className: 'report-header-logo', src: logoUrl, alt: '' }) : null,
+        React.createElement('div', null,
+          React.createElement('div', { className: 'org-label' }, displayOrg),
+          React.createElement('div', { className: 'title' }, 'Fast Track Report'),
+          React.createElement('div', { className: 'subtitle' },
+            seasonFilter ? 'Season: ' + seasonFilter : 'All Seasons',
+            searchTerm.trim() ? ' · search: "' + searchTerm.trim() + '"' : '',
+            ' · ', programs.length, ' program', programs.length !== 1 ? 's' : '', ' · ', filtered.length, ' section', filtered.length !== 1 ? 's' : ''
+          )
+        )
+      ),
+
+      loading && React.createElement('div', { className: 'loading' },
+        React.createElement('div', { className: 'spinner' }),
+        React.createElement('div', { className: 'juice-msg' }, React.createElement('span', null, 'Loading Fast Track data…'))
+      ),
+      error && !loading && React.createElement('div', { className: 'error' }, 'Could not load report: ', error),
+
+      !loading && !error && React.createElement(React.Fragment, null,
+        /* Summary cards */
+        React.createElement('div', { className: 'summary-cards' },
+          React.createElement(SummaryCard, { label: 'FT Signups', value: fmtInt(totals.ftSignups), color: '#6366f1' }),
+          React.createElement(SummaryCard, { label: 'Converted', value: fmtInt(totals.ftConverted), sub: overallConvPct != null ? overallConvPct + '% conversion' : null, color: '#22c55e' }),
+          React.createElement(SummaryCard, { label: 'Pending', value: fmtInt(totals.ftPending), color: '#f59e0b' }),
+          React.createElement(SummaryCard, { label: 'Total Enrolled', value: fmtInt(totals.totalEnrolled), sub: overallFillPct != null ? overallFillPct + '% fill rate' : null, color: '#3b82f6' }),
+          totals.waitlisted > 0 && React.createElement(SummaryCard, { label: 'Waitlisted', value: fmtInt(totals.waitlisted), color: '#d97706' })
+        ),
+
+        /* Explainer */
+        React.createElement('div', { className: 'explainer' },
+          React.createElement('button', { className: 'explainer-toggle', onClick: function() { setShowExplainer(function(v) { return !v; }) } },
+            showExplainer ? '▾ Hide column guide' : '▸ What do these columns mean?'
+          ),
+          showExplainer && React.createElement('ul', null,
+            React.createElement('li', null, React.createElement('strong', null, 'FT Signups'), ' — Total Fast Track wishlist entries (pre-registrations before registration opens)'),
+            React.createElement('li', null, React.createElement('strong', null, 'Converted'), ' — FT signups that completed actual registration'),
+            React.createElement('li', null, React.createElement('strong', null, 'Pending'), ' — FT signups still waiting (haven\'t registered yet)'),
+            React.createElement('li', null, React.createElement('strong', null, 'Dropped'), ' — FT signups that were canceled before converting'),
+            React.createElement('li', null, React.createElement('strong', null, 'Conversion %'), ' — Converted ÷ Total FT Signups'),
+            React.createElement('li', null, React.createElement('strong', null, 'Direct Enrolled'), ' — Registrations that didn\'t go through Fast Track'),
+            React.createElement('li', null, React.createElement('strong', null, 'Total Enrolled'), ' — Converted + Direct (all confirmed registrations)'),
+            React.createElement('li', null, React.createElement('strong', null, 'Capacity'), ' — Total available spots (section cap for section-reg, sum of session caps for per-session)'),
+            React.createElement('li', null, React.createElement('strong', null, 'Fill %'), ' — Total Enrolled ÷ Capacity'),
+            React.createElement('li', null, React.createElement('strong', null, 'Demand %'), ' — FT Signups ÷ Capacity (interest level relative to supply)')
+          )
+        ),
+
+        /* Chart */
+        chartPrograms.length > 0 && React.createElement('div', { className: 'chart-section' },
+          React.createElement('div', { className: 'chart-container' },
+            React.createElement('div', { style: { fontSize: 12, fontWeight: 600, color: '#555', marginBottom: 12 } },
+              'Top Programs by Fast Track Signups',
+              React.createElement('span', { style: { fontWeight: 400, marginLeft: 12, fontSize: 11 } },
+                React.createElement('span', { style: { display: 'inline-block', width: 10, height: 10, background: '#22c55e', borderRadius: 2, marginRight: 4, verticalAlign: 'middle' } }), 'Converted ',
+                React.createElement('span', { style: { display: 'inline-block', width: 10, height: 10, background: '#f59e0b', borderRadius: 2, marginRight: 4, marginLeft: 8, verticalAlign: 'middle' } }), 'Pending ',
+                React.createElement('span', { style: { display: 'inline-block', width: 10, height: 10, background: '#d1d5db', borderRadius: 2, marginRight: 4, marginLeft: 8, verticalAlign: 'middle' } }), 'Dropped'
+              )
+            ),
+            chartPrograms.map(function(p) {
+              var convW = (p.ftConverted / chartMax * 100);
+              var pendW = (p.ftPending / chartMax * 100);
+              var dropW = ((p.ftDropped) / chartMax * 100);
+              var totalW = ((p.ftConverted + p.ftPending + p.ftDropped) / chartMax * 100);
+              return React.createElement('div', { key: p.program, className: 'chart-row',
+                onMouseEnter: function(e) { setTooltip({ x: e.clientX, y: e.clientY, p: p }); },
+                onMouseMove: function(e) { setTooltip(function(t) { return t ? { ...t, x: e.clientX, y: e.clientY } : null; }); },
+                onMouseLeave: function() { setTooltip(null); },
+              },
+                React.createElement('div', { className: 'chart-label' }, p.program),
+                React.createElement('div', { className: 'chart-bar-wrap' },
+                  React.createElement('div', { className: 'chart-bar ft-total', style: { width: totalW + '%' } }),
+                  React.createElement('div', { className: 'chart-bar ft-conv', style: { width: convW + '%' } })
+                ),
+                React.createElement('div', { className: 'chart-val' }, fmtInt(p.ftSignups))
+              );
+            })
+          )
+        ),
+
+        /* Tooltip */
+        tooltip && React.createElement('div', { className: 'chart-tooltip', style: { left: tooltip.x + 12, top: tooltip.y - 10 } },
+          React.createElement('div', { className: 'tt-name' }, tooltip.p.program),
+          'FT Signups: ', fmtInt(tooltip.p.ftSignups), React.createElement('br'),
+          'Converted: ', fmtInt(tooltip.p.ftConverted), ' (', tooltip.p.convPct != null ? tooltip.p.convPct + '%' : '—', ')', React.createElement('br'),
+          'Pending: ', fmtInt(tooltip.p.ftPending), React.createElement('br'),
+          'Dropped: ', fmtInt(tooltip.p.ftDropped), React.createElement('br'),
+          'Total Enrolled: ', fmtInt(tooltip.p.totalEnrolled),
+          tooltip.p.fillPct != null ? ' (' + tooltip.p.fillPct + '% fill)' : ''
+        ),
+
+        /* Insights */
+        !loading && programs.length > 0 && React.createElement('div', { className: 'insights-section no-print' },
+          React.createElement('div', { className: 'insights-head' },
+            React.createElement('button', { type: 'button', className: 'insights-btn', onClick: getInsights, disabled: insightsLoading },
+              insightsLoading ? 'Analyzing…' : (activeInsights ? '↻ Refresh insights' : '✨ Rec Insights')
+            ),
+            activeInsights && !insightsLoading && React.createElement('span', { className: 'insights-sub' },
+              'Generated from ', programs.length, ' program', programs.length !== 1 ? 's' : ''
+            )
+          ),
+          insightsLoading && React.createElement('div', { className: 'loading' },
+            React.createElement('div', { className: 'spinner' }),
+            React.createElement('div', { className: 'juice-msg' }, React.createElement('span', null, 'Analyzing Fast Track patterns…'))
+          ),
+          insightsError && !insightsLoading && React.createElement('div', { className: 'error' }, React.createElement('strong', null, 'Insights unavailable: '), insightsError),
+          activeInsights && !insightsLoading && React.createElement('div', { className: 'insights-grid' },
+            activeInsights.map(function(ins, i) {
+              return React.createElement('div', { key: i, className: 'insight-card insight-' + (ins.type || 'signal') },
+                React.createElement('div', { className: 'insight-type' }, ins.type || 'signal'),
+                React.createElement('div', { className: 'insight-title' }, ins.title),
+                React.createElement('div', { className: 'insight-detail' }, ins.detail),
+                ins.action && React.createElement('div', { className: 'insight-action' }, '→ ', ins.action)
+              );
+            })
+          )
+        ),
+
+        /* Table */
+        programs.length === 0
+          ? React.createElement('div', { style: { textAlign: 'center', padding: '40px 0', color: '#888' } }, 'No Fast Track data found.')
+          : React.createElement('div', { className: 'table-scroll' },
+              React.createElement('table', { className: 'ft-table' },
+                React.createElement('thead', null,
+                  React.createElement('tr', null,
+                    React.createElement('th', { className: 'left', style: { minWidth: 220 } }, 'Program / Section'),
+                    React.createElement('th', null, 'FT Signups'),
+                    React.createElement('th', null, 'Converted'),
+                    React.createElement('th', null, 'Pending'),
+                    React.createElement('th', null, 'Dropped'),
+                    React.createElement('th', null, 'Conv %'),
+                    React.createElement('th', null, 'Direct'),
+                    React.createElement('th', null, 'Enrolled'),
+                    React.createElement('th', null, 'Capacity'),
+                    React.createElement('th', null, 'Fill %'),
+                    React.createElement('th', null, 'Demand %'),
+                    React.createElement('th', null, 'Waitlist')
+                  )
+                ),
+                React.createElement('tbody', null,
+                  programs.map(function(p) {
+                    var isOpen = isPrint || open.has(p.program);
+                    return React.createElement(React.Fragment, { key: p.program },
+                      React.createElement('tr', { className: 'prog-row', onClick: function() { toggle(p.program); } },
+                        React.createElement('td', { className: 'left' },
+                          !isPrint && React.createElement('span', { style: { display: 'inline-block', width: 14, color: '#888' } }, isOpen ? '▾' : '▸'),
+                          p.program,
+                          React.createElement('span', { style: { color: '#999', fontWeight: 400, marginLeft: 6, fontSize: 11 } },
+                            p.sections.length, ' section', p.sections.length !== 1 ? 's' : '')
+                        ),
+                        React.createElement('td', null, fmtInt(p.ftSignups)),
+                        React.createElement('td', { style: { color: '#16a34a' } }, fmtInt(p.ftConverted)),
+                        React.createElement('td', { style: { color: '#d97706' } }, fmtInt(p.ftPending)),
+                        React.createElement('td', { style: { color: '#999' } }, p.ftDropped === 0 ? React.createElement('span', { className: 'cell-zero' }, '—') : fmtInt(p.ftDropped)),
+                        React.createElement('td', null, fmtPct(p.convPct)),
+                        React.createElement('td', null, fmtInt(p.directEnrolled)),
+                        React.createElement('td', null, fmtInt(p.totalEnrolled)),
+                        React.createElement('td', null, p.capacity === 0 ? '—' : fmtInt(p.capacity)),
+                        React.createElement('td', null, fmtPct(p.fillPct)),
+                        React.createElement('td', null, fmtPct(p.demandPct)),
+                        React.createElement('td', null, p.waitlisted === 0 ? React.createElement('span', { className: 'cell-zero' }, '—') : fmtInt(p.waitlisted))
+                      ),
+                      isOpen && p.sections.map(function(s, i) {
+                        return React.createElement('tr', { key: p.program + '|' + i, className: 'sec-row' },
+                          React.createElement('td', { className: 'left' }, s.section,
+                            React.createElement('span', { style: { color: '#bbb', marginLeft: 6, fontSize: 10 } }, s.regMode === 'per-session' ? 'per-session' : 'section')
+                          ),
+                          React.createElement('td', null, fmtInt(s.ftSignups)),
+                          React.createElement('td', { style: { color: '#16a34a' } }, fmtInt(s.ftConverted)),
+                          React.createElement('td', { style: { color: '#d97706' } }, fmtInt(s.ftPending)),
+                          React.createElement('td', { style: { color: '#999' } }, s.ftDropped === 0 ? React.createElement('span', { className: 'cell-zero' }, '—') : fmtInt(s.ftDropped)),
+                          React.createElement('td', null, fmtPct(s.convPct)),
+                          React.createElement('td', null, fmtInt(s.directEnrolled)),
+                          React.createElement('td', null, fmtInt(s.totalEnrolled)),
+                          React.createElement('td', null, s.capacity === 0 ? '—' : fmtInt(s.capacity)),
+                          React.createElement('td', null, fmtPct(s.fillPct)),
+                          React.createElement('td', null, fmtPct(s.demandPct)),
+                          React.createElement('td', null, s.waitlisted === 0 ? React.createElement('span', { className: 'cell-zero' }, '—') : fmtInt(s.waitlisted))
+                        );
+                      })
+                    );
+                  }),
+                  /* Totals row */
+                  React.createElement('tr', { className: 'totals-row' },
+                    React.createElement('td', { className: 'left' }, 'TOTAL · ', programs.length, ' programs'),
+                    React.createElement('td', null, fmtInt(totals.ftSignups)),
+                    React.createElement('td', null, fmtInt(totals.ftConverted)),
+                    React.createElement('td', null, fmtInt(totals.ftPending)),
+                    React.createElement('td', null, fmtInt(totals.ftDropped)),
+                    React.createElement('td', null, fmtPct(overallConvPct)),
+                    React.createElement('td', null, fmtInt(totals.directEnrolled)),
+                    React.createElement('td', null, fmtInt(totals.totalEnrolled)),
+                    React.createElement('td', null, totals.capacity === 0 ? '—' : fmtInt(totals.capacity)),
+                    React.createElement('td', null, fmtPct(overallFillPct)),
+                    React.createElement('td', null, ''),
+                    React.createElement('td', null, fmtInt(totals.waitlisted))
+                  )
+                )
+              )
+            ),
+
+        /* Footer */
+        React.createElement('div', { className: 'report-footer' }, 'rec.us · ', orgSlug)
+      ),
+
+      /* Print-ready sentinel */
+      !loading && React.createElement('div', { id: 'report-ready', style: { display: 'none' } })
+    )
+  );
+}
+
+function SummaryCard(props) {
+  return React.createElement('div', { className: 'summary-card', style: { borderTop: '3px solid ' + (props.color || '#888') } },
+    React.createElement('div', { className: 'sc-label' }, props.label),
+    React.createElement('div', { className: 'sc-value', style: { color: props.color || '#111' } }, props.value),
+    props.sub && React.createElement('div', { className: 'sc-sub' }, props.sub)
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(App));
+</script>
+</body>
+</html>
