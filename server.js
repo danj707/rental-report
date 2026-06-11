@@ -160,7 +160,7 @@ const ORGS = {
     displayName: "Joplin",
     gl      : { mbUuid: "01c4658c-cf33-4511-91d8-318ea6fc6f2f" },
     products: { mbUuid: "2a38a516-a618-40ad-8b30-a26081548389" },
-    calendar: { mbUuid: "2a38a516-a618-40ad-8b30-a26081548389" },
+    calendar: { mbUuid: "2b6e6819-2fe5-420e-af6f-4cb39b5736cc" },
   },
 };
 
