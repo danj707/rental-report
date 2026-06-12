@@ -2136,6 +2136,22 @@ app.get("/", (req, res) => {
     footer { text-align: center; padding: 24px; font-size: 11px; color: #bbb; }
     /* Updates log */
     .updates-count { font-size: 11px; font-weight: 600; color: #888; background: #f0ede8; border-radius: 10px; padding: 1px 8px; margin-left: 6px; }
+    /* ── Updates heat map ── */
+    .updates-heatmap { background: #fff; border: 1px solid #e8e6e0; border-radius: 6px; padding: 14px 16px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,.05); }
+    .updates-heatmap .uhm-title { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.7px; color: #888; margin-bottom: 10px; }
+    .updates-heatmap .uhm-grid { display: flex; gap: 0; overflow-x: auto; }
+    .updates-heatmap .uhm-day-labels { display: flex; flex-direction: column; gap: 2px; margin-right: 4px; }
+    .updates-heatmap .uhm-day-label { height: 13px; font-size: 9px; color: #999; display: flex; align-items: center; justify-content: flex-end; padding-right: 2px; }
+    .updates-heatmap .uhm-weeks { display: flex; gap: 2px; }
+    .updates-heatmap .uhm-week { display: flex; flex-direction: column; gap: 2px; }
+    .updates-heatmap .uhm-cell { width: 13px; height: 13px; border-radius: 2px; }
+    .updates-heatmap .uhm-months { display: flex; gap: 2px; margin-left: 22px; margin-bottom: 4px; }
+    .updates-heatmap .uhm-month { font-size: 9px; color: #999; }
+    .updates-heatmap .uhm-legend { display: flex; align-items: center; gap: 6px; margin-top: 10px; font-size: 9px; color: #aaa; }
+    .updates-heatmap .uhm-legend-cells { display: flex; gap: 2px; }
+    .updates-heatmap .uhm-legend-cell { width: 13px; height: 13px; border-radius: 2px; }
+    .updates-heatmap .uhm-stats { display: flex; gap: 16px; margin-top: 10px; font-size: 11px; color: #666; flex-wrap: wrap; }
+    .updates-heatmap .uhm-stat-val { font-weight: 700; color: #222; }
     .how-body .update-entry { display: flex; gap: 14px; padding: 12px 0; border-bottom: 1px solid #f3f3f3; }
     .how-body .update-entry:first-child { padding-top: 0; }
     .how-body .update-entry:last-child { border-bottom: none; padding-bottom: 0; }
@@ -3112,7 +3128,110 @@ app.get("/", (req, res) => {
       if (!listEl) return;
       if (countEl) countEl.textContent = UPDATES.length;
       const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-      listEl.innerHTML = UPDATES.map(u => \`
+
+      // ── Build heat map data ──
+      const counts = {};
+      let totalItems = 0;
+      UPDATES.forEach(u => {
+        counts[u.date] = (counts[u.date] || 0) + 1;
+        totalItems += u.items.length;
+      });
+      const allDates = Object.keys(counts).sort();
+      const firstDate = new Date(allDates[0] + 'T12:00:00');
+      const today = new Date(); today.setHours(12,0,0,0);
+
+      // Start on the Monday of the week containing firstDate
+      const start = new Date(firstDate);
+      const dow = start.getDay();
+      start.setDate(start.getDate() - ((dow + 6) % 7));
+
+      // End on Sunday of current week
+      const end = new Date(today);
+      const edow = end.getDay();
+      end.setDate(end.getDate() + (edow === 0 ? 0 : 7 - edow));
+
+      // Build weeks array
+      const weeks = [];
+      const cursor = new Date(start);
+      let currentWeek = [];
+      while (cursor <= end) {
+        const iso = cursor.toISOString().slice(0, 10);
+        currentWeek.push({ date: iso, count: counts[iso] || 0, future: cursor > today });
+        if (currentWeek.length === 7) { weeks.push(currentWeek); currentWeek = []; }
+        cursor.setDate(cursor.getDate() + 1);
+      }
+      if (currentWeek.length) weeks.push(currentWeek);
+
+      const maxCount = Math.max(1, ...Object.values(counts));
+
+      // Month labels
+      const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+      let monthLabels = '';
+      let lastMonth = -1;
+      weeks.forEach((w, wi) => {
+        const m = new Date(w[0].date + 'T12:00:00').getMonth();
+        if (m !== lastMonth) {
+          const span = weeks.slice(wi).filter(wk => new Date(wk[0].date + 'T12:00:00').getMonth() === m).length;
+          monthLabels += '<span class="uhm-month" style="width:' + (span * 15 - 2) + 'px">' + monthNames[m] + '</span>';
+          lastMonth = m;
+        }
+      });
+
+      // Color function
+      function hc(count, future) {
+        if (future) return '#f9f8f6';
+        if (count === 0) return '#f0ede8';
+        var t = count / maxCount;
+        if (t <= 0.25) return '#c6e48b';
+        if (t <= 0.5)  return '#7bc96f';
+        if (t <= 0.75) return '#239a3b';
+        return '#196127';
+      }
+
+      // Stats
+      const activeDays = allDates.length;
+      const uniqueDates = allDates.slice().sort();
+      let maxStreak = 0, streak = 0;
+      for (let i = 0; i < uniqueDates.length; i++) {
+        if (i === 0) { streak = 1; }
+        else {
+          const prev = new Date(uniqueDates[i-1] + 'T12:00:00');
+          const cur  = new Date(uniqueDates[i] + 'T12:00:00');
+          streak = ((cur - prev) === 86400000) ? streak + 1 : 1;
+        }
+        if (streak > maxStreak) maxStreak = streak;
+      }
+
+      const dayLabels = ['Mon','','Wed','','Fri','',''];
+      var dayLabelHtml = dayLabels.map(function(l) { return '<div class="uhm-day-label">' + l + '</div>'; }).join('');
+
+      var weeksHtml = weeks.map(function(w) {
+        return '<div class="uhm-week">' + w.map(function(d) {
+          var tip = d.future ? '' : d.date + ': ' + d.count + ' update' + (d.count !== 1 ? 's' : '');
+          return '<div class="uhm-cell" style="background:' + hc(d.count, d.future) + '" title="' + tip + '"></div>';
+        }).join('') + '</div>';
+      }).join('');
+
+      var legendSteps = [0, 1, Math.ceil(maxCount * 0.5), maxCount];
+      var legendHtml = legendSteps.map(function(n) { return '<div class="uhm-legend-cell" style="background:' + hc(n, false) + '"></div>'; }).join('');
+
+      var heatmapHtml = '<div class="updates-heatmap">'
+        + '<div class="uhm-title">Shipping Activity</div>'
+        + '<div class="uhm-months">' + monthLabels + '</div>'
+        + '<div class="uhm-grid">'
+        + '<div class="uhm-day-labels">' + dayLabelHtml + '</div>'
+        + '<div class="uhm-weeks">' + weeksHtml + '</div>'
+        + '</div>'
+        + '<div style="display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:8px">'
+        + '<div class="uhm-legend"><span>Less</span><div class="uhm-legend-cells">' + legendHtml + '</div><span>More</span></div>'
+        + '<div class="uhm-stats">'
+        + '<span><span class="uhm-stat-val">' + UPDATES.length + '</span> updates</span>'
+        + '<span><span class="uhm-stat-val">' + totalItems + '</span> changes</span>'
+        + '<span><span class="uhm-stat-val">' + activeDays + '</span> active days</span>'
+        + '<span><span class="uhm-stat-val">' + maxStreak + '</span> day streak</span>'
+        + '</div></div></div>';
+
+      listEl.innerHTML = heatmapHtml + UPDATES.map(u => \`
         <div class="update-entry">
           <div class="update-date">\${esc(u.date)}</div>
           <div class="update-body">
