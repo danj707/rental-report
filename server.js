@@ -2897,10 +2897,11 @@ app.get("/", (req, res) => {
     // Newest first. Add a new entry at the TOP for every change we ship.
     // History below back-filled from the GitHub commit log.
     const UPDATES = [
-      { date: '2026-06-11', title: 'Products: Net/Gross toggle fix + Pinnable reports + Fast Track report', items: [
-        'The Net/Gross toggle now controls the entire page \u2014 table sort order, column emphasis, summary cards, and Best Day all switch between net and gross revenue',
-        'Org dashboard pages now support pinnable reports \u2014 click the pin icon on any report card to keep it at the top of your list (saved per browser)',
-        'New report: Fast Track \u2014 pre-registration wishlist demand with true conversion tracking (FT signup \u2192 confirmed enrollment), program/section drill-down, season filter, demand vs capacity ratios, and AI-powered Rec Insights',
+      { date: '2026-06-11', title: 'Fast Track report, pinnable dashboards, and fixes', items: [
+        'New report: Fast Track \u2014 pre-registration wishlist demand with true conversion tracking. FT bookings promote in-place (planned \u2192 confirmed with is_fast_track intact), enabling accurate conversion %, demand %, and fill % by program and section. Includes season and program filters, collapsible program \u2192 section drill-down, horizontal bar chart with per-segment tooltips (converted / pending / dropped), and Rec Insights AI analysis',
+        'Org dashboard pages now support pinnable reports \u2014 click the \ud83d\udccc icon on any report card to keep it at the top of your list (saved per browser)',
+        'Products: Net/Gross toggle now controls the entire page \u2014 table sort order, column emphasis (green for gross, blue for net), summary card order, and Best Day card all switch with the toggle',
+        'AI insights button renamed from \u201CGet Insights\u201D to \u201CRec Insights\u201D across all reports (Court Utilization, Program Revenue, Fast Track)',
       ] },
       { date: '2026-06-09', title: 'Program Revenue: clearer chart + filter-aware insights', items: [
         'Chart program names now wrap to two lines instead of being cut off, so similarly-named programs are easy to tell apart',

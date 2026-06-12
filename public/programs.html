@@ -1092,7 +1092,7 @@ function App() {
           <div className="insights-section no-print">
             <div className="insights-head">
               <button type="button" className="insights-btn" onClick={getInsights} disabled={insightsLoading}>
-                {insightsLoading ? 'Analyzing…' : (activeInsights ? '↻ Refresh insights' : '✨ Get insights')}
+                {insightsLoading ? 'Analyzing…' : (activeInsights ? '↻ Refresh insights' : '✨ Rec Insights')}
               </button>
               {activeInsights && !insightsLoading && (
                 <span className="insights-sub">Generated from {insightsMeta ? insightsMeta.programCount : programCount} program{(insightsMeta ? insightsMeta.programCount : programCount) !== 1 ? 's' : ''}</span>

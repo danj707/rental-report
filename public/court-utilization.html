@@ -1022,7 +1022,7 @@ function App() {
           <div className="insights-section no-print">
             <div className="insights-head">
               <button type="button" className="insights-btn" onClick={getInsights} disabled={insightsLoading}>
-                {insightsLoading ? 'Analyzing…' : (insights ? '↻ Refresh insights' : '✨ Get insights')}
+                {insightsLoading ? 'Analyzing…' : (insights ? '↻ Refresh insights' : '✨ Rec Insights')}
               </button>
               {insights && !insightsLoading && (
                 <span className="insights-sub">Generated from the {selectedLocations.length} location{selectedLocations.length === 1 ? '' : 's'} currently shown</span>
