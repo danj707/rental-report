@@ -991,6 +991,38 @@
       margin-right: 4px;
       vertical-align: middle;
     }
+    .res-bar-row { position: relative; }
+    .res-bar-tip {
+      display: none;
+      position: absolute;
+      left: 100px;
+      top: 100%;
+      margin-top: 2px;
+      z-index: 10;
+      background: #1e293b;
+      color: #f1f5f9;
+      border-radius: 6px;
+      padding: 8px 12px;
+      font-size: 11px;
+      line-height: 1.6;
+      white-space: nowrap;
+      box-shadow: 0 4px 12px rgba(0,0,0,.25);
+      pointer-events: none;
+    }
+    .res-bar-tip::before {
+      content: '';
+      position: absolute;
+      bottom: 100%;
+      left: 20px;
+      border: 5px solid transparent;
+      border-bottom-color: #1e293b;
+    }
+    .res-bar-row:hover .res-bar-tip { display: block; }
+    .res-bar-tip .tip-row { display: flex; align-items: center; gap: 6px; }
+    .res-bar-tip .tip-dot { width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0; }
+    .res-bar-tip .tip-label { min-width: 70px; }
+    .res-bar-tip .tip-val { font-weight: 600; font-variant-numeric: tabular-nums; min-width: 70px; text-align: right; }
+    .res-bar-tip .tip-pct { color: #94a3b8; min-width: 40px; text-align: right; }
     body.print-mode .residency-toggle-btn { display: none; }
 
     /* ── Booking Type Analysis Panel ── */
@@ -2210,7 +2242,22 @@ function BookingTypeAnalysis({ filteredRows }) {
                 wInst > 0 && React.createElement('div', { className: 'res-bar-seg seg-instant', style: { width: wInst + '%' }, title: 'Instant: ' + fmtM(d.instant) }),
                 wAdm > 0 && React.createElement('div', { className: 'res-bar-seg seg-admin', style: { width: wAdm + '%' }, title: 'Managed: ' + fmtM(d.admin) })
               ),
-              React.createElement('div', { className: 'res-bar-amt' }, fmtM(lt))
+              React.createElement('div', { className: 'res-bar-amt' }, fmtM(lt)),
+              React.createElement('div', { className: 'res-bar-tip' },
+                React.createElement('div', { className: 'tip-row' },
+                  React.createElement('span', { className: 'tip-dot', style: { background: '#3b82f6' } }),
+                  React.createElement('span', { className: 'tip-label' }, 'Instant'),
+                  React.createElement('span', { className: 'tip-val' }, fmtM(d.instant)),
+                  React.createElement('span', { className: 'tip-pct' }, lt > 0 ? ((d.instant/lt)*100).toFixed(1)+'%' : '—')
+                ),
+                React.createElement('div', { className: 'tip-row' },
+                  React.createElement('span', { className: 'tip-dot', style: { background: '#64748b' } }),
+                  React.createElement('span', { className: 'tip-label' }, 'Managed'),
+                  React.createElement('span', { className: 'tip-val' }, fmtM(d.admin)),
+                  React.createElement('span', { className: 'tip-pct' }, lt > 0 ? ((d.admin/lt)*100).toFixed(1)+'%' : '—')
+                ),
+                React.createElement('div', { style: { borderTop: '1px solid #334155', marginTop: 4, paddingTop: 4, fontWeight: 600, textAlign: 'right' } }, fmtM(lt))
+              )
             );
           }),
           React.createElement('div', { className: 'res-legend' },
@@ -2366,6 +2413,29 @@ function ResidencyAnalysis({ filteredRows }) {
                       {wUnk > 0 && <div className="res-bar-seg seg-unk" style={{width: wUnk + '%'}} title={'Unknown: ' + fmtM(d.unk)} />}
                     </div>
                     <div className="res-bar-amt">{fmtM(lt)}</div>
+                    <div className="res-bar-tip">
+                      <div className="tip-row">
+                        <span className="tip-dot" style={{background:'#10b981'}} />
+                        <span className="tip-label">Resident</span>
+                        <span className="tip-val">{fmtM(d.res)}</span>
+                        <span className="tip-pct">{lt > 0 ? ((d.res/lt)*100).toFixed(1)+'%' : '—'}</span>
+                      </div>
+                      <div className="tip-row">
+                        <span className="tip-dot" style={{background:'#f59e0b'}} />
+                        <span className="tip-label">Non-Resident</span>
+                        <span className="tip-val">{fmtM(d.nonRes)}</span>
+                        <span className="tip-pct">{lt > 0 ? ((d.nonRes/lt)*100).toFixed(1)+'%' : '—'}</span>
+                      </div>
+                      {t.unkCnt > 0 && (
+                        <div className="tip-row">
+                          <span className="tip-dot" style={{background:'#d1d5db'}} />
+                          <span className="tip-label">Unknown</span>
+                          <span className="tip-val">{fmtM(d.unk)}</span>
+                          <span className="tip-pct">{lt > 0 ? ((d.unk/lt)*100).toFixed(1)+'%' : '—'}</span>
+                        </div>
+                      )}
+                      <div style={{borderTop:'1px solid #334155',marginTop:4,paddingTop:4,fontWeight:600,textAlign:'right'}}>{fmtM(lt)}</div>
+                    </div>
                   </div>
                 );
               })}
