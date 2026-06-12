@@ -812,6 +812,186 @@
     .hm-legend-bar { display: flex; gap: 1px; flex: 1; }
     .hm-legend-cell { height: 6px; flex: 1; border-radius: 1px; }
 
+    /* ── Residency Analysis Panel ── */
+    .residency-strip {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 0 0 12px;
+    }
+    .residency-toggle-btn {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: none;
+      border: 1px solid #e0ddd6;
+      border-radius: 6px;
+      padding: 6px 14px;
+      font-size: 11px;
+      font-weight: 600;
+      color: #666;
+      cursor: pointer;
+      letter-spacing: 0.3px;
+    }
+    .residency-toggle-btn:hover { background: #f9f8f6; }
+    .residency-toggle-btn .arrow { font-size: 9px; transition: transform .15s; }
+    .residency-toggle-btn .arrow.open { transform: rotate(90deg); }
+    .residency-cards {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 16px;
+    }
+    .res-card {
+      flex: 1;
+      min-width: 140px;
+      background: #fff;
+      border: 1px solid #e8e6e0;
+      border-radius: 6px;
+      padding: 14px 16px;
+      box-shadow: 0 1px 3px rgba(0,0,0,.05);
+    }
+    .res-card .rc-label {
+      font-size: 9.5px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.7px;
+      color: #999;
+      margin-bottom: 4px;
+    }
+    .res-card .rc-value {
+      font-size: 22px;
+      font-weight: 700;
+      color: #222;
+      line-height: 1.1;
+    }
+    .res-card .rc-sub {
+      font-size: 10px;
+      color: #888;
+      margin-top: 3px;
+    }
+    .res-card.resident   { border-left: 3px solid #10b981; }
+    .res-card.nonresident { border-left: 3px solid #f59e0b; }
+    .res-card.total-card  { border-left: 3px solid #3b82f6; }
+    .res-card.pct-card    { border-left: 3px solid #8b5cf6; }
+    .residency-breakdown {
+      display: flex;
+      gap: 16px;
+      flex-wrap: wrap;
+      align-items: flex-start;
+    }
+    .res-table-wrap {
+      flex: 3;
+      min-width: 400px;
+      background: #fff;
+      border: 1px solid #e8e6e0;
+      border-radius: 6px;
+      padding: 14px;
+      box-shadow: 0 1px 3px rgba(0,0,0,.05);
+    }
+    .res-chart-wrap {
+      flex: 2;
+      min-width: 280px;
+      background: #fff;
+      border: 1px solid #e8e6e0;
+      border-radius: 6px;
+      padding: 14px;
+      box-shadow: 0 1px 3px rgba(0,0,0,.05);
+    }
+    .res-table-wrap .hm-title,
+    .res-chart-wrap .hm-title {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.7px;
+      color: #888;
+      margin-bottom: 10px;
+    }
+    .res-tbl {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 11px;
+    }
+    .res-tbl th {
+      text-align: left;
+      font-size: 9px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #999;
+      font-weight: 700;
+      padding: 4px 8px;
+      border-bottom: 2px solid #e0ddd6;
+    }
+    .res-tbl th.num { text-align: right; }
+    .res-tbl td {
+      padding: 5px 8px;
+      border-bottom: 1px solid #f0ede8;
+      color: #333;
+    }
+    .res-tbl td.num { text-align: right; font-variant-numeric: tabular-nums; }
+    .res-tbl tr:last-child td { border-bottom: none; }
+    .res-tbl .totals-row td {
+      font-weight: 700;
+      border-top: 2px solid #ccc;
+      border-bottom: none;
+      padding-top: 7px;
+    }
+    .res-bar-row {
+      display: flex;
+      align-items: center;
+      margin-bottom: 6px;
+      gap: 8px;
+    }
+    .res-bar-label {
+      width: 90px;
+      font-size: 10px;
+      color: #555;
+      text-align: right;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      flex-shrink: 0;
+    }
+    .res-bar-track {
+      flex: 1;
+      height: 18px;
+      background: #f3f2ef;
+      border-radius: 3px;
+      display: flex;
+      overflow: hidden;
+    }
+    .res-bar-seg {
+      height: 100%;
+      transition: width .3s ease;
+      min-width: 0;
+    }
+    .res-bar-seg.seg-res   { background: #10b981; }
+    .res-bar-seg.seg-nonres { background: #f59e0b; }
+    .res-bar-seg.seg-unk   { background: #d1d5db; }
+    .res-bar-amt {
+      width: 60px;
+      font-size: 10px;
+      color: #888;
+      text-align: right;
+      flex-shrink: 0;
+      font-variant-numeric: tabular-nums;
+    }
+    .res-legend {
+      display: flex;
+      gap: 14px;
+      margin-top: 10px;
+      font-size: 10px;
+      color: #777;
+    }
+    .res-legend-dot {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 2px;
+      margin-right: 4px;
+      vertical-align: middle;
+    }
+    body.print-mode .residency-toggle-btn { display: none; }
+
 
     /* ── Day detail popover ── */
     .day-popover-overlay {
@@ -1877,6 +2057,165 @@ function parseHour(timeStr) {
 }
 
 // ── HeatmapStrip ──────────────────────────────────────────────────────
+function ResidencyAnalysis({ filteredRows }) {
+  const [open, setOpen] = useState(() => {
+    try { return localStorage.getItem('residency_panel') !== 'false'; } catch { return true; }
+  });
+  useEffect(() => { try { localStorage.setItem('residency_panel', open); } catch {} }, [open]);
+
+  const stats = useMemo(() => {
+    if (!filteredRows || filteredRows.length === 0) return null;
+
+    // Check if any row has resident data
+    var hasData = filteredRows.some(r => r.resident && r.resident.trim() !== '');
+    if (!hasData) return null;
+
+    var byLoc = {};
+    var totals = { res: 0, nonRes: 0, unk: 0, resCnt: 0, nonResCnt: 0, unkCnt: 0 };
+
+    filteredRows.forEach(r => {
+      var loc = r.location || 'Unknown';
+      if (!byLoc[loc]) byLoc[loc] = { res: 0, nonRes: 0, unk: 0, resCnt: 0, nonResCnt: 0, unkCnt: 0 };
+      var amt = parseFloat(r.total) || 0;
+      var val = (r.resident || '').trim().toLowerCase();
+      if (val === 'yes' || val === 'y' || val === 'true') {
+        byLoc[loc].res += amt; byLoc[loc].resCnt++; totals.res += amt; totals.resCnt++;
+      } else if (val === 'no' || val === 'n' || val === 'false') {
+        byLoc[loc].nonRes += amt; byLoc[loc].nonResCnt++; totals.nonRes += amt; totals.nonResCnt++;
+      } else {
+        byLoc[loc].unk += amt; byLoc[loc].unkCnt++; totals.unk += amt; totals.unkCnt++;
+      }
+    });
+
+    var locations = Object.keys(byLoc).sort((a, b) => {
+      var ta = byLoc[a].res + byLoc[a].nonRes + byLoc[a].unk;
+      var tb = byLoc[b].res + byLoc[b].nonRes + byLoc[b].unk;
+      return tb - ta;
+    });
+
+    var maxLocTotal = Math.max(1, ...locations.map(l => byLoc[l].res + byLoc[l].nonRes + byLoc[l].unk));
+
+    return { byLoc, totals, locations, maxLocTotal };
+  }, [filteredRows]);
+
+  if (!stats) return null;
+
+  var t = stats.totals;
+  var grandTotal = t.res + t.nonRes + t.unk;
+  var resPct = grandTotal > 0 ? ((t.res / grandTotal) * 100).toFixed(1) : '0.0';
+  var totalBookings = t.resCnt + t.nonResCnt + t.unkCnt;
+
+  function fmtM(v) { return '$' + v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+
+  return (
+    <div className="residency-strip">
+      <button className="residency-toggle-btn" onClick={() => setOpen(!open)}>
+        <span className={'arrow' + (open ? ' open' : '')}>▶</span>
+        Residency Revenue Analysis
+      </button>
+
+      {open && (
+        <div style={{marginTop: 12}}>
+          {/* Summary cards */}
+          <div className="residency-cards">
+            <div className="res-card total-card">
+              <div className="rc-label">Total Revenue</div>
+              <div className="rc-value">{fmtM(grandTotal)}</div>
+              <div className="rc-sub">{totalBookings} booking{totalBookings !== 1 ? 's' : ''}</div>
+            </div>
+            <div className="res-card resident">
+              <div className="rc-label">Resident Revenue</div>
+              <div className="rc-value">{fmtM(t.res)}</div>
+              <div className="rc-sub">{t.resCnt} booking{t.resCnt !== 1 ? 's' : ''}</div>
+            </div>
+            <div className="res-card nonresident">
+              <div className="rc-label">Non-Resident Revenue</div>
+              <div className="rc-value">{fmtM(t.nonRes)}</div>
+              <div className="rc-sub">{t.nonResCnt} booking{t.nonResCnt !== 1 ? 's' : ''}</div>
+            </div>
+            <div className="res-card pct-card">
+              <div className="rc-label">Resident Share</div>
+              <div className="rc-value">{resPct}%</div>
+              <div className="rc-sub">of total revenue</div>
+            </div>
+          </div>
+
+          {/* Table + Chart side by side */}
+          <div className="residency-breakdown">
+            <div className="res-table-wrap">
+              <div className="hm-title">Revenue by Location</div>
+              <table className="res-tbl">
+                <thead>
+                  <tr>
+                    <th>Location</th>
+                    <th className="num">Resident</th>
+                    <th className="num">Non-Res</th>
+                    {t.unkCnt > 0 && <th className="num">Unknown</th>}
+                    <th className="num">Total</th>
+                    <th className="num">Res %</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {stats.locations.map(loc => {
+                    var d = stats.byLoc[loc];
+                    var lt = d.res + d.nonRes + d.unk;
+                    var lp = lt > 0 ? ((d.res / lt) * 100).toFixed(1) : '—';
+                    return (
+                      <tr key={loc}>
+                        <td>{loc}</td>
+                        <td className="num">{fmtM(d.res)}</td>
+                        <td className="num">{fmtM(d.nonRes)}</td>
+                        {t.unkCnt > 0 && <td className="num">{fmtM(d.unk)}</td>}
+                        <td className="num" style={{fontWeight:600}}>{fmtM(lt)}</td>
+                        <td className="num">{lp}{lp !== '\u2014' ? '%' : ''}</td>
+                      </tr>
+                    );
+                  })}
+                  <tr className="totals-row">
+                    <td>Total</td>
+                    <td className="num">{fmtM(t.res)}</td>
+                    <td className="num">{fmtM(t.nonRes)}</td>
+                    {t.unkCnt > 0 && <td className="num">{fmtM(t.unk)}</td>}
+                    <td className="num">{fmtM(grandTotal)}</td>
+                    <td className="num">{resPct}%</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div className="res-chart-wrap">
+              <div className="hm-title">Revenue Split by Location</div>
+              {stats.locations.map(loc => {
+                var d = stats.byLoc[loc];
+                var lt = d.res + d.nonRes + d.unk;
+                var wRes = lt > 0 ? (d.res / stats.maxLocTotal) * 100 : 0;
+                var wNon = lt > 0 ? (d.nonRes / stats.maxLocTotal) * 100 : 0;
+                var wUnk = lt > 0 ? (d.unk / stats.maxLocTotal) * 100 : 0;
+                return (
+                  <div className="res-bar-row" key={loc}>
+                    <div className="res-bar-label" title={loc}>{loc}</div>
+                    <div className="res-bar-track">
+                      {wRes > 0 && <div className="res-bar-seg seg-res" style={{width: wRes + '%'}} title={'Resident: ' + fmtM(d.res)} />}
+                      {wNon > 0 && <div className="res-bar-seg seg-nonres" style={{width: wNon + '%'}} title={'Non-Resident: ' + fmtM(d.nonRes)} />}
+                      {wUnk > 0 && <div className="res-bar-seg seg-unk" style={{width: wUnk + '%'}} title={'Unknown: ' + fmtM(d.unk)} />}
+                    </div>
+                    <div className="res-bar-amt">{fmtM(lt)}</div>
+                  </div>
+                );
+              })}
+              <div className="res-legend">
+                <span><span className="res-legend-dot" style={{background:'#10b981'}} />Resident</span>
+                <span><span className="res-legend-dot" style={{background:'#f59e0b'}} />Non-Resident</span>
+                {t.unkCnt > 0 && <span><span className="res-legend-dot" style={{background:'#d1d5db'}} />Unknown</span>}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function HeatmapStrip({ filteredRows, locationColors }) {
   const HOURS = Array.from({length:15}, (_,i) => i+7);
   const HOUR_LABELS = HOURS.map(h => h<=12 ? `${h}${h===12?'p':'a'}` : `${h-12}p`);
@@ -2539,6 +2878,10 @@ function App() {
 
       {filteredRows && filteredRows.length > 0 && !isPrint && (
         <HeatmapStrip filteredRows={filteredRows} locationColors={locationColors} />
+      )}
+
+      {filteredRows && filteredRows.length > 0 && (
+        <ResidencyAnalysis filteredRows={filteredRows} />
       )}
 
       <div className="page" style={loading ? {opacity:0.5,pointerEvents:'none'} : {}}>
