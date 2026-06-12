@@ -518,6 +518,7 @@
     .col-email   { width: 175px; font-size: 10.5px; }
     .col-purpose { width: 120px; }
     .col-resident{ width: 72px; text-align: center; }
+    .col-booktype{ width: 72px; text-align: center; font-size: 10px; }
     .col-total   { width: 62px; text-align: right; }
 
     /* ═══════════════════════════════════════════════════════════════
@@ -992,6 +993,32 @@
     }
     body.print-mode .residency-toggle-btn { display: none; }
 
+    /* ── Booking Type Analysis Panel ── */
+    .res-card.instant   { border-left: 3px solid #3b82f6; }
+    .res-card.admin-card { border-left: 3px solid #64748b; }
+    .res-card.pct-instant { border-left: 3px solid #06b6d4; }
+    .res-bar-seg.seg-instant { background: #3b82f6; }
+    .res-bar-seg.seg-admin   { background: #64748b; }
+    body.print-mode .bookingtype-toggle-btn { display: none; }
+    .bookingtype-toggle-btn {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: none;
+      border: 1px solid #e0ddd6;
+      border-radius: 6px;
+      padding: 6px 14px;
+      font-size: 11px;
+      font-weight: 600;
+      color: #666;
+      cursor: pointer;
+      letter-spacing: 0.3px;
+      margin-top: 8px;
+    }
+    .bookingtype-toggle-btn:hover { background: #f9f8f6; }
+    .bookingtype-toggle-btn .arrow { font-size: 9px; transition: transform .15s; }
+    .bookingtype-toggle-btn .arrow.open { transform: rotate(90deg); }
+
 
     /* ── Day detail popover ── */
     .day-popover-overlay {
@@ -1245,6 +1272,7 @@ function normalizeRow(raw) {
     notes:     raw['Notes']     || raw['notes']      || '',
     addons:    raw['Add Ons?']  || raw['Add Ons']   || raw['addons']     || '',
     resident:  raw['Resident?'] || raw['Resident']  || raw['resident']   || '',
+    bookingType: raw['Booking Type'] || raw['booking_type'] || raw['bookingType'] || '',
     total:     raw['Total']     || raw['total']      || null,
   };
 }
@@ -2057,6 +2085,144 @@ function parseHour(timeStr) {
 }
 
 // ── HeatmapStrip ──────────────────────────────────────────────────────
+function BookingTypeAnalysis({ filteredRows }) {
+  var { useState, useEffect, useMemo } = React;
+  var [open, setOpen] = useState(function() {
+    try { return localStorage.getItem('bookingtype_panel') !== 'false'; } catch(e) { return true; }
+  });
+  useEffect(function() { try { localStorage.setItem('bookingtype_panel', open); } catch(e) {} }, [open]);
+
+  var stats = useMemo(function() {
+    if (!filteredRows || filteredRows.length === 0) return null;
+
+    var hasData = filteredRows.some(function(r) { return r.bookingType && r.bookingType.trim() !== ''; });
+    if (!hasData) return null;
+
+    var byLoc = {};
+    var totals = { instant: 0, admin: 0, instantCnt: 0, adminCnt: 0 };
+
+    filteredRows.forEach(function(r) {
+      var loc = r.location || 'Unknown';
+      if (!byLoc[loc]) byLoc[loc] = { instant: 0, admin: 0, instantCnt: 0, adminCnt: 0 };
+      var amt = parseFloat(r.total) || 0;
+      var val = (r.bookingType || '').trim().toLowerCase();
+      if (val === 'instant') {
+        byLoc[loc].instant += amt; byLoc[loc].instantCnt++; totals.instant += amt; totals.instantCnt++;
+      } else {
+        byLoc[loc].admin += amt; byLoc[loc].adminCnt++; totals.admin += amt; totals.adminCnt++;
+      }
+    });
+
+    var locations = Object.keys(byLoc).sort(function(a, b) {
+      return (byLoc[b].instant + byLoc[b].admin) - (byLoc[a].instant + byLoc[a].admin);
+    });
+
+    var maxLocTotal = Math.max(1, Math.max.apply(null, locations.map(function(l) { return byLoc[l].instant + byLoc[l].admin; })));
+
+    return { byLoc: byLoc, totals: totals, locations: locations, maxLocTotal: maxLocTotal };
+  }, [filteredRows]);
+
+  if (!stats) return null;
+
+  var t = stats.totals;
+  var grandTotal = t.instant + t.admin;
+  var instantPct = grandTotal > 0 ? ((t.instant / grandTotal) * 100).toFixed(1) : '0.0';
+  var totalBookings = t.instantCnt + t.adminCnt;
+  var avgInstant = t.instantCnt > 0 ? (t.instant / t.instantCnt) : 0;
+  var avgAdmin = t.adminCnt > 0 ? (t.admin / t.adminCnt) : 0;
+
+  function fmtM(v) { return '$' + v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+
+  return React.createElement('div', { className: 'residency-strip' },
+    React.createElement('button', { className: 'bookingtype-toggle-btn', onClick: function() { setOpen(!open); } },
+      React.createElement('span', { className: 'arrow' + (open ? ' open' : '') }, '\u25B6'),
+      ' Booking Type Revenue Analysis'
+    ),
+    open && React.createElement('div', { style: { marginTop: 12 } },
+      React.createElement('div', { className: 'residency-cards' },
+        React.createElement('div', { className: 'res-card total-card' },
+          React.createElement('div', { className: 'rc-label' }, 'Total Revenue'),
+          React.createElement('div', { className: 'rc-value' }, fmtM(grandTotal)),
+          React.createElement('div', { className: 'rc-sub' }, totalBookings + ' booking' + (totalBookings !== 1 ? 's' : ''))
+        ),
+        React.createElement('div', { className: 'res-card instant' },
+          React.createElement('div', { className: 'rc-label' }, 'Instant Book Revenue'),
+          React.createElement('div', { className: 'rc-value' }, fmtM(t.instant)),
+          React.createElement('div', { className: 'rc-sub' }, t.instantCnt + ' booking' + (t.instantCnt !== 1 ? 's' : '') + ' \u00B7 ' + fmtM(avgInstant) + ' avg')
+        ),
+        React.createElement('div', { className: 'res-card admin-card' },
+          React.createElement('div', { className: 'rc-label' }, 'Admin Initiated Revenue'),
+          React.createElement('div', { className: 'rc-value' }, fmtM(t.admin)),
+          React.createElement('div', { className: 'rc-sub' }, t.adminCnt + ' booking' + (t.adminCnt !== 1 ? 's' : '') + ' \u00B7 ' + fmtM(avgAdmin) + ' avg')
+        ),
+        React.createElement('div', { className: 'res-card pct-instant' },
+          React.createElement('div', { className: 'rc-label' }, 'Instant Book Share'),
+          React.createElement('div', { className: 'rc-value' }, instantPct + '%'),
+          React.createElement('div', { className: 'rc-sub' }, 'of total revenue')
+        )
+      ),
+      React.createElement('div', { className: 'residency-breakdown' },
+        React.createElement('div', { className: 'res-table-wrap' },
+          React.createElement('div', { className: 'hm-title' }, 'Revenue by Location'),
+          React.createElement('table', { className: 'res-tbl' },
+            React.createElement('thead', null,
+              React.createElement('tr', null,
+                React.createElement('th', null, 'Location'),
+                React.createElement('th', { className: 'num' }, 'Instant'),
+                React.createElement('th', { className: 'num' }, 'Admin'),
+                React.createElement('th', { className: 'num' }, 'Total'),
+                React.createElement('th', { className: 'num' }, 'Instant %')
+              )
+            ),
+            React.createElement('tbody', null,
+              stats.locations.map(function(loc) {
+                var d = stats.byLoc[loc];
+                var lt = d.instant + d.admin;
+                var lp = lt > 0 ? ((d.instant / lt) * 100).toFixed(1) : '\u2014';
+                return React.createElement('tr', { key: loc },
+                  React.createElement('td', null, loc),
+                  React.createElement('td', { className: 'num' }, fmtM(d.instant)),
+                  React.createElement('td', { className: 'num' }, fmtM(d.admin)),
+                  React.createElement('td', { className: 'num', style: { fontWeight: 600 } }, fmtM(lt)),
+                  React.createElement('td', { className: 'num' }, lp + (lp !== '\u2014' ? '%' : ''))
+                );
+              }),
+              React.createElement('tr', { className: 'totals-row' },
+                React.createElement('td', null, 'Total'),
+                React.createElement('td', { className: 'num' }, fmtM(t.instant)),
+                React.createElement('td', { className: 'num' }, fmtM(t.admin)),
+                React.createElement('td', { className: 'num' }, fmtM(grandTotal)),
+                React.createElement('td', { className: 'num' }, instantPct + '%')
+              )
+            )
+          )
+        ),
+        React.createElement('div', { className: 'res-chart-wrap' },
+          React.createElement('div', { className: 'hm-title' }, 'Revenue Split by Location'),
+          stats.locations.map(function(loc) {
+            var d = stats.byLoc[loc];
+            var lt = d.instant + d.admin;
+            var wInst = lt > 0 ? (d.instant / stats.maxLocTotal) * 100 : 0;
+            var wAdm = lt > 0 ? (d.admin / stats.maxLocTotal) * 100 : 0;
+            return React.createElement('div', { className: 'res-bar-row', key: loc },
+              React.createElement('div', { className: 'res-bar-label', title: loc }, loc),
+              React.createElement('div', { className: 'res-bar-track' },
+                wInst > 0 && React.createElement('div', { className: 'res-bar-seg seg-instant', style: { width: wInst + '%' }, title: 'Instant: ' + fmtM(d.instant) }),
+                wAdm > 0 && React.createElement('div', { className: 'res-bar-seg seg-admin', style: { width: wAdm + '%' }, title: 'Admin: ' + fmtM(d.admin) })
+              ),
+              React.createElement('div', { className: 'res-bar-amt' }, fmtM(lt))
+            );
+          }),
+          React.createElement('div', { className: 'res-legend' },
+            React.createElement('span', null, React.createElement('span', { className: 'res-legend-dot', style: { background: '#3b82f6' } }), 'Instant Book'),
+            React.createElement('span', null, React.createElement('span', { className: 'res-legend-dot', style: { background: '#64748b' } }), 'Admin Initiated')
+          )
+        )
+      )
+    )
+  );
+}
+
 function ResidencyAnalysis({ filteredRows }) {
   const [open, setOpen] = useState(() => {
     try { return localStorage.getItem('residency_panel') !== 'false'; } catch { return true; }
@@ -2403,11 +2569,15 @@ function App() {
   const [showResident, setShowResident] = useState(() => {
     try { return localStorage.getItem('col_resident') !== 'false'; } catch { return true; }
   });
+  const [showBookType, setShowBookType] = useState(() => {
+    try { return localStorage.getItem('col_booktype') !== 'false'; } catch { return true; }
+  });
 
   useEffect(() => { try { localStorage.setItem('col_headcount', showHeadCount); } catch {} }, [showHeadCount]);
   useEffect(() => { try { localStorage.setItem('col_total',     showTotal);     } catch {} }, [showTotal]);
   useEffect(() => { try { localStorage.setItem('col_notes',     showNotes);     } catch {} }, [showNotes]);
   useEffect(() => { try { localStorage.setItem('col_resident',  showResident);  } catch {} }, [showResident]);
+  useEffect(() => { try { localStorage.setItem('col_booktype',  showBookType);  } catch {} }, [showBookType]);
 
   // ── Location filter state ────────────────────────────────────────
   const [selectedLocations, setSelectedLocations] = useState(null);
@@ -2614,6 +2784,7 @@ function App() {
     if (showTotal)     headers.push('Total');
     if (showNotes)     headers.push('Notes', 'Add-ons');
     if (showResident)  headers.push('Resident?');
+    if (showBookType)  headers.push('Booking Type');
 
     const dataRows = filteredRows.map(r => {
       const dp = (r.date || '').split('T')[0].split('-');
@@ -2627,6 +2798,7 @@ function App() {
       if (showTotal) { const n = parseFloat(r.total); row.push(!isNaN(n) && n !== 0 ? n : ''); }
       if (showNotes) { row.push(r.notes || ''); row.push(r.addons || ''); }
       if (showResident) row.push(r.resident || '');
+      if (showBookType) row.push(r.bookingType || '');
       return row;
     });
 
@@ -2644,6 +2816,7 @@ function App() {
       ...(showTotal?[{wch:10}]:[]),
       ...(showNotes?[{wch:30},{wch:30}]:[]),
       ...(showResident?[{wch:10}]:[]),
+      ...(showBookType?[{wch:14}]:[]),
     ];
     if (showTotal) {
       const totalColIdx = headers.indexOf('Total');
@@ -2784,6 +2957,10 @@ function App() {
                 <input type="checkbox" checked={showResident} onChange={e => setShowResident(e.target.checked)} />
                 Resident?
               </label>
+              <label>
+                <input type="checkbox" checked={showBookType} onChange={e => setShowBookType(e.target.checked)} />
+                Book Type
+              </label>
             </div>
           </>
         )}
@@ -2884,6 +3061,10 @@ function App() {
         <ResidencyAnalysis filteredRows={filteredRows} />
       )}
 
+      {filteredRows && filteredRows.length > 0 && (
+        <BookingTypeAnalysis filteredRows={filteredRows} />
+      )}
+
       <div className="page" style={loading ? {opacity:0.5,pointerEvents:'none'} : {}}>
         {/* Report header */}
         <div className="report-header">
@@ -2919,6 +3100,7 @@ function App() {
               <span className="col-email">Email</span>
               <span className="col-purpose">Purpose</span>
               {showResident  && <span className="col-resident">Resident?</span>}
+              {showBookType  && <span className="col-booktype">Book Type</span>}
               {showHeadCount && <span className="col-hcnt">Cnt</span>}
               {showTotal     && <span className="col-total">Total</span>}
             </div>
@@ -2951,6 +3133,7 @@ function App() {
                               </span>
                               <span className="cell col-purpose">{r.resName}</span>
                               {showResident  && <span className="cell col-resident">{r.resident}</span>}
+                              {showBookType  && <span className="cell col-booktype">{r.bookingType}</span>}
                               {showHeadCount && <span className="cell col-hcnt">{r.headCount}</span>}
                               {showTotal     && <span className="cell col-total">{formatMoney(r.total)}</span>}
                             </div>
