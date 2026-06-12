@@ -66,10 +66,11 @@
     .chart-row { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
     .chart-label { width: 240px; flex-shrink: 0; font-size: 12px; font-weight: 500; color: #333; text-align: right; line-height: 1.25; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; word-break: break-word; }
     .chart-bar-wrap { flex: 1; height: 24px; background: #f5f4f1; border-radius: 4px; position: relative; overflow: hidden; }
-    .chart-bar { height: 100%; border-radius: 4px; transition: width .4s ease; min-width: 2px; position: absolute; left: 0; top: 0; }
-    .chart-bar.ft-total { background: #d1d5db; z-index: 1; }
-    .chart-bar.ft-conv { background: #22c55e; z-index: 2; }
-    .chart-bar.ft-pend { background: #f59e0b; z-index: 2; left: auto; }
+    .chart-bar { height: 100%; border-radius: 4px; transition: width .4s ease; min-width: 0; position: absolute; top: 0; cursor: pointer; }
+    .chart-bar.ft-total { background: #d1d5db; z-index: 1; left: 0; }
+    .chart-bar.ft-conv { background: #22c55e; z-index: 3; left: 0; }
+    .chart-bar.ft-pend { background: #f59e0b; z-index: 2; }
+    .chart-bar:hover { filter: brightness(1.1); }
     .chart-val { font-size: 11px; font-weight: 600; color: #555; width: 56px; text-align: right; flex-shrink: 0; }
     .chart-tooltip { position: fixed; z-index: 60; pointer-events: none; background: #1f2937; color: #fff; border-radius: 8px; padding: 9px 11px; font-size: 11px; line-height: 1.5; box-shadow: 0 8px 28px rgba(0,0,0,.28); width: 220px; }
     .chart-tooltip .tt-name { font-weight: 700; margin-bottom: 5px; font-size: 11.5px; }
@@ -476,17 +477,22 @@ function App() {
             chartPrograms.map(function(p) {
               var convW = (p.ftConverted / chartMax * 100);
               var pendW = (p.ftPending / chartMax * 100);
-              var dropW = ((p.ftDropped) / chartMax * 100);
-              var totalW = ((p.ftConverted + p.ftPending + p.ftDropped) / chartMax * 100);
-              return React.createElement('div', { key: p.program, className: 'chart-row',
-                onMouseEnter: function(e) { setTooltip({ x: e.clientX, y: e.clientY, p: p }); },
-                onMouseMove: function(e) { setTooltip(function(t) { return t ? { ...t, x: e.clientX, y: e.clientY } : null; }); },
-                onMouseLeave: function() { setTooltip(null); },
-              },
+              var dropW = (p.ftDropped / chartMax * 100);
+              function segEnter(seg) { return function(e) { setTooltip({ x: e.clientX, y: e.clientY, p: p, seg: seg }); }; }
+              function segMove(e) { setTooltip(function(t) { return t ? { ...t, x: e.clientX, y: e.clientY } : null; }); }
+              function segLeave() { setTooltip(null); }
+              return React.createElement('div', { key: p.program, className: 'chart-row' },
                 React.createElement('div', { className: 'chart-label' }, p.program),
                 React.createElement('div', { className: 'chart-bar-wrap' },
-                  React.createElement('div', { className: 'chart-bar ft-total', style: { width: totalW + '%' } }),
-                  React.createElement('div', { className: 'chart-bar ft-conv', style: { width: convW + '%' } })
+                  dropW > 0 && React.createElement('div', { className: 'chart-bar ft-total',
+                    style: { width: (convW + pendW + dropW) + '%', left: 0 },
+                    onMouseEnter: segEnter('dropped'), onMouseMove: segMove, onMouseLeave: segLeave }),
+                  pendW > 0 && React.createElement('div', { className: 'chart-bar ft-pend',
+                    style: { width: pendW + '%', left: convW + '%', right: 'auto' },
+                    onMouseEnter: segEnter('pending'), onMouseMove: segMove, onMouseLeave: segLeave }),
+                  convW > 0 && React.createElement('div', { className: 'chart-bar ft-conv',
+                    style: { width: convW + '%' },
+                    onMouseEnter: segEnter('converted'), onMouseMove: segMove, onMouseLeave: segLeave })
                 ),
                 React.createElement('div', { className: 'chart-val' }, fmtInt(p.ftSignups))
               );
@@ -497,12 +503,25 @@ function App() {
         /* Tooltip */
         tooltip && React.createElement('div', { className: 'chart-tooltip', style: { left: tooltip.x + 12, top: tooltip.y - 10 } },
           React.createElement('div', { className: 'tt-name' }, tooltip.p.program),
-          'FT Signups: ', fmtInt(tooltip.p.ftSignups), React.createElement('br'),
-          'Converted: ', fmtInt(tooltip.p.ftConverted), ' (', tooltip.p.convPct != null ? tooltip.p.convPct + '%' : '—', ')', React.createElement('br'),
-          'Pending: ', fmtInt(tooltip.p.ftPending), React.createElement('br'),
-          'Dropped: ', fmtInt(tooltip.p.ftDropped), React.createElement('br'),
-          'Total Enrolled: ', fmtInt(tooltip.p.totalEnrolled),
-          tooltip.p.fillPct != null ? ' (' + tooltip.p.fillPct + '% fill)' : ''
+          tooltip.seg === 'converted' && React.createElement(React.Fragment, null,
+            React.createElement('span', { style: { color: '#4ade80' } }, '● Converted: ', fmtInt(tooltip.p.ftConverted)),
+            tooltip.p.convPct != null ? ' (' + tooltip.p.convPct + '% of FT)' : '',
+            React.createElement('br'),
+            'Total Enrolled: ', fmtInt(tooltip.p.totalEnrolled),
+            tooltip.p.fillPct != null ? ' · ' + tooltip.p.fillPct + '% fill' : ''
+          ),
+          tooltip.seg === 'pending' && React.createElement(React.Fragment, null,
+            React.createElement('span', { style: { color: '#fbbf24' } }, '● Pending: ', fmtInt(tooltip.p.ftPending)),
+            React.createElement('br'),
+            'Still waiting to register',
+            React.createElement('br'),
+            tooltip.p.capacity > 0 ? (fmtInt(tooltip.p.capacity - tooltip.p.totalEnrolled) + ' spots remaining') : ''
+          ),
+          tooltip.seg === 'dropped' && React.createElement(React.Fragment, null,
+            React.createElement('span', { style: { color: '#9ca3af' } }, '● Dropped: ', fmtInt(tooltip.p.ftDropped)),
+            React.createElement('br'),
+            'Canceled before converting'
+          )
         ),
 
         /* Insights */
