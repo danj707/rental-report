@@ -353,6 +353,23 @@
     }
     .toolbar .btn-subscribe:hover { background: #6d28d9; }
 
+
+    /* ── Button loading spinner ── */
+    @keyframes btn-spin { to { transform: rotate(360deg); } }
+    .btn-spinner {
+      display: inline-block;
+      width: 12px;
+      height: 12px;
+      border: 2px solid rgba(0,0,0,.15);
+      border-top-color: #333;
+      border-radius: 50%;
+      animation: btn-spin .6s linear infinite;
+      vertical-align: middle;
+      margin-right: 5px;
+    }
+    .toolbar button:disabled .btn-spinner {
+      border-top-color: #888;
+    }
   </style>
   <script>
     // ── Token auth (injected) ────────────────────────────────────────
@@ -883,7 +900,7 @@ function App() {
         <button onClick={() => setMonth(1)}  style={{fontSize:10,padding:'3px 7px'}}>Next Mo.</button>
         <button className="btn-run" onClick={handleRun} disabled={loading}
           style={paramsChanged && !loading ? {boxShadow:'0 0 0 2px #4ade80'} : {}}>
-          {loading ? 'Loading…' : '▶ Run Report'}
+          {loading ? <><span className="btn-spinner" />Loading…</> : '▶ Run Report'}
         </button>
 
         <div className="toolbar-divider" />

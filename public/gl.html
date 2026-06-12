@@ -388,6 +388,23 @@
     .loc-item:hover { background: rgba(255,255,255,.07); }
     .loc-item input[type="checkbox"] { accent-color: #3b82f6; width: 13px; height: 13px; flex-shrink: 0; cursor: pointer; }
     .loc-item span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+
+    /* ── Button loading spinner ── */
+    @keyframes btn-spin { to { transform: rotate(360deg); } }
+    .btn-spinner {
+      display: inline-block;
+      width: 12px;
+      height: 12px;
+      border: 2px solid rgba(0,0,0,.15);
+      border-top-color: #333;
+      border-radius: 50%;
+      animation: btn-spin .6s linear infinite;
+      vertical-align: middle;
+      margin-right: 5px;
+    }
+    .toolbar button:disabled .btn-spinner {
+      border-top-color: #888;
+    }
   </style>
   <script>
     // ── Token auth (injected) ────────────────────────────────────────
@@ -1056,7 +1073,7 @@ function App() {
           disabled={loading}
           style={datesChanged && !loading ? { boxShadow: '0 0 0 2px #4ade80' } : {}}
         >
-          {loading ? 'Loading…' : '▶ Run Report'}
+          {loading ? <><span className="btn-spinner" />Loading…</> : '▶ Run Report'}
         </button>
 
         <div className="divider" />
