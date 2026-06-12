@@ -2136,7 +2136,7 @@ function BookingTypeAnalysis({ filteredRows }) {
   return React.createElement('div', { className: 'residency-strip' },
     React.createElement('button', { className: 'bookingtype-toggle-btn', onClick: function() { setOpen(!open); } },
       React.createElement('span', { className: 'arrow' + (open ? ' open' : '') }, '\u25B6'),
-      ' Booking Type Revenue Analysis'
+      ' Booking Channel Analysis'
     ),
     open && React.createElement('div', { style: { marginTop: 12 } },
       React.createElement('div', { className: 'residency-cards' },
@@ -2151,7 +2151,7 @@ function BookingTypeAnalysis({ filteredRows }) {
           React.createElement('div', { className: 'rc-sub' }, t.instantCnt + ' booking' + (t.instantCnt !== 1 ? 's' : '') + ' \u00B7 ' + fmtM(avgInstant) + ' avg')
         ),
         React.createElement('div', { className: 'res-card admin-card' },
-          React.createElement('div', { className: 'rc-label' }, 'Admin Initiated Revenue'),
+          React.createElement('div', { className: 'rc-label' }, 'Managed Revenue'),
           React.createElement('div', { className: 'rc-value' }, fmtM(t.admin)),
           React.createElement('div', { className: 'rc-sub' }, t.adminCnt + ' booking' + (t.adminCnt !== 1 ? 's' : '') + ' \u00B7 ' + fmtM(avgAdmin) + ' avg')
         ),
@@ -2169,7 +2169,7 @@ function BookingTypeAnalysis({ filteredRows }) {
               React.createElement('tr', null,
                 React.createElement('th', null, 'Location'),
                 React.createElement('th', { className: 'num' }, 'Instant'),
-                React.createElement('th', { className: 'num' }, 'Admin'),
+                React.createElement('th', { className: 'num' }, 'Managed'),
                 React.createElement('th', { className: 'num' }, 'Total'),
                 React.createElement('th', { className: 'num' }, 'Instant %')
               )
@@ -2208,14 +2208,14 @@ function BookingTypeAnalysis({ filteredRows }) {
               React.createElement('div', { className: 'res-bar-label', title: loc }, loc),
               React.createElement('div', { className: 'res-bar-track' },
                 wInst > 0 && React.createElement('div', { className: 'res-bar-seg seg-instant', style: { width: wInst + '%' }, title: 'Instant: ' + fmtM(d.instant) }),
-                wAdm > 0 && React.createElement('div', { className: 'res-bar-seg seg-admin', style: { width: wAdm + '%' }, title: 'Admin: ' + fmtM(d.admin) })
+                wAdm > 0 && React.createElement('div', { className: 'res-bar-seg seg-admin', style: { width: wAdm + '%' }, title: 'Managed: ' + fmtM(d.admin) })
               ),
               React.createElement('div', { className: 'res-bar-amt' }, fmtM(lt))
             );
           }),
           React.createElement('div', { className: 'res-legend' },
             React.createElement('span', null, React.createElement('span', { className: 'res-legend-dot', style: { background: '#3b82f6' } }), 'Instant Book'),
-            React.createElement('span', null, React.createElement('span', { className: 'res-legend-dot', style: { background: '#64748b' } }), 'Admin Initiated')
+            React.createElement('span', null, React.createElement('span', { className: 'res-legend-dot', style: { background: '#64748b' } }), 'Managed')
           )
         )
       )
