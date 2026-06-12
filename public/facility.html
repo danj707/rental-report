@@ -517,6 +517,7 @@
     .col-phone   { width: 110px; }
     .col-email   { width: 175px; font-size: 10.5px; }
     .col-purpose { width: 120px; }
+    .col-resident{ width: 72px; text-align: center; }
     .col-total   { width: 62px; text-align: right; }
 
     /* ═══════════════════════════════════════════════════════════════
@@ -1063,6 +1064,7 @@ function normalizeRow(raw) {
     phone:     raw['Phone']     || raw['phone']      || '',
     notes:     raw['Notes']     || raw['notes']      || '',
     addons:    raw['Add Ons?']  || raw['Add Ons']   || raw['addons']     || '',
+    resident:  raw['Resident?'] || raw['Resident']  || raw['resident']   || '',
     total:     raw['Total']     || raw['total']      || null,
   };
 }
@@ -2059,10 +2061,14 @@ function App() {
   const [showNotes, setShowNotes] = useState(() => {
     try { return localStorage.getItem('col_notes') !== 'false'; } catch { return true; }
   });
+  const [showResident, setShowResident] = useState(() => {
+    try { return localStorage.getItem('col_resident') !== 'false'; } catch { return true; }
+  });
 
   useEffect(() => { try { localStorage.setItem('col_headcount', showHeadCount); } catch {} }, [showHeadCount]);
   useEffect(() => { try { localStorage.setItem('col_total',     showTotal);     } catch {} }, [showTotal]);
   useEffect(() => { try { localStorage.setItem('col_notes',     showNotes);     } catch {} }, [showNotes]);
+  useEffect(() => { try { localStorage.setItem('col_resident',  showResident);  } catch {} }, [showResident]);
 
   // ── Location filter state ────────────────────────────────────────
   const [selectedLocations, setSelectedLocations] = useState(null);
@@ -2268,6 +2274,7 @@ function App() {
     if (showHeadCount) headers.push('Head Cnt');
     if (showTotal)     headers.push('Total');
     if (showNotes)     headers.push('Notes', 'Add-ons');
+    if (showResident)  headers.push('Resident?');
 
     const dataRows = filteredRows.map(r => {
       const dp = (r.date || '').split('T')[0].split('-');
@@ -2280,6 +2287,7 @@ function App() {
       if (showHeadCount) row.push(r.headCount !== '' ? Number(r.headCount) || r.headCount : '');
       if (showTotal) { const n = parseFloat(r.total); row.push(!isNaN(n) && n !== 0 ? n : ''); }
       if (showNotes) { row.push(r.notes || ''); row.push(r.addons || ''); }
+      if (showResident) row.push(r.resident || '');
       return row;
     });
 
@@ -2296,6 +2304,7 @@ function App() {
       ...(showHeadCount?[{wch:8}]:[]),
       ...(showTotal?[{wch:10}]:[]),
       ...(showNotes?[{wch:30},{wch:30}]:[]),
+      ...(showResident?[{wch:10}]:[]),
     ];
     if (showTotal) {
       const totalColIdx = headers.indexOf('Total');
@@ -2432,6 +2441,10 @@ function App() {
                 <input type="checkbox" checked={showNotes} onChange={e => setShowNotes(e.target.checked)} />
                 Notes
               </label>
+              <label>
+                <input type="checkbox" checked={showResident} onChange={e => setShowResident(e.target.checked)} />
+                Resident?
+              </label>
             </div>
           </>
         )}
@@ -2562,6 +2575,7 @@ function App() {
               <span className="col-phone">Phone #</span>
               <span className="col-email">Email</span>
               <span className="col-purpose">Purpose</span>
+              {showResident  && <span className="col-resident">Resident?</span>}
               {showHeadCount && <span className="col-hcnt">Cnt</span>}
               {showTotal     && <span className="col-total">Total</span>}
             </div>
@@ -2593,6 +2607,7 @@ function App() {
                                   : ''}
                               </span>
                               <span className="cell col-purpose">{r.resName}</span>
+                              {showResident  && <span className="cell col-resident">{r.resident}</span>}
                               {showHeadCount && <span className="cell col-hcnt">{r.headCount}</span>}
                               {showTotal     && <span className="cell col-total">{formatMoney(r.total)}</span>}
                             </div>
