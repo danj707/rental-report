@@ -1245,6 +1245,204 @@ app.post("/:org/:report/api/insights", resolveOrg, async (req, res) => {
   }
 });
 
+// ── Rec AI Chat — conversational data assistant ──────────────────────
+const CHAT_MODEL   = process.env.CHAT_MODEL || "claude-sonnet-4-6";
+const CHAT_MAX_TOK = 2500;
+
+// Data cache: orgSlug → { ts, data }
+const _chatDataCache = new Map();
+const CHAT_DATA_TTL  = 15 * 60 * 1000; // 15 min
+const CHAT_DATA_MAX  = 30;
+
+// Report type human labels for context
+const CHAT_REPORT_LABELS = {
+  facility: "Facility Rental Schedule", gl: "GL Code Rollup",
+  programs: "Program Revenue & Enrollment", products: "Product Sales",
+  memberships: "Memberships", "court-utilization": "Court Utilization",
+  roster: "Class Roster", fasttrack: "Fast Track Demand",
+  historic: "Historic Buildings", calendar: "Calendar",
+};
+
+async function fetchOrgChatData(orgSlug, orgConfig) {
+  const hit = _chatDataCache.get(orgSlug);
+  if (hit && Date.now() - hit.ts < CHAT_DATA_TTL) return hit.data;
+
+  const reports = REPORT_TYPES.filter(r => orgConfig[r]?.mbUuid);
+  const results = {};
+
+  await Promise.allSettled(reports.map(async (rt) => {
+    try {
+      const uuid = orgConfig[rt].mbUuid;
+      const url = `${METABASE_URL}/api/public/card/${uuid}/query/json`;
+      const resp = await fetch(url, { signal: AbortSignal.timeout(12000) });
+      if (!resp.ok) return;
+      const rows = await resp.json();
+      if (!Array.isArray(rows) || !rows.length) return;
+
+      // Calendar: strip PII before including in chat context
+      if (rt === "calendar") {
+        const PII = new Set(["reservee","reservee name","customer","customer name","booked by","booker","contact","contact name","notes","note","address","first name","last name","name"]);
+        const isPII = (k) => { const t = String(k).toLowerCase().trim(); return PII.has(t) || t.includes("email") || t.includes("phone"); };
+        for (const row of rows) {
+          if (row && typeof row === "object") {
+            for (const k of Object.keys(row)) { if (isPII(k)) delete row[k]; }
+          }
+        }
+      }
+
+      // Limit rows to keep context manageable
+      const limited = rows.slice(0, 150);
+      const cols = Object.keys(limited[0]);
+      results[rt] = { label: CHAT_REPORT_LABELS[rt] || rt, cols, rows: limited, totalRows: rows.length };
+    } catch (e) {
+      console.error(`[chat] Failed to fetch ${orgSlug}/${rt}: ${e.message}`);
+    }
+  }));
+
+  if (_chatDataCache.size >= CHAT_DATA_MAX) {
+    const oldest = _chatDataCache.keys().next().value;
+    _chatDataCache.delete(oldest);
+  }
+  _chatDataCache.set(orgSlug, { ts: Date.now(), data: results });
+  return results;
+}
+
+function buildChatSystemPrompt(orgName, data) {
+  const sections = Object.entries(data).map(([rt, d]) => {
+    const header = `## ${d.label} (${d.totalRows} total rows, showing first ${d.rows.length})`;
+    const colLine = `Columns: ${d.cols.join(", ")}`;
+    // Compact JSON rows
+    const rowLines = d.rows.map(r => JSON.stringify(r)).join("\n");
+    return `${header}\n${colLine}\n${rowLines}`;
+  });
+
+  return `You are Rec AI, an intelligent data assistant for ${orgName}, a parks and recreation department. You have access to their live operational data across multiple report types.
+
+YOUR DATA:
+${sections.join("\n\n")}
+
+RULES:
+- Ground every claim in the data above. Never invent numbers, names, or facilities.
+- Be concise and specific — name facilities, programs, GL codes, products by name.
+- Format currency as $X,XXX.XX, percentages as X.X%.
+- Use markdown tables, bold, and lists when they help readability.
+- If asked about data you don't have, say so clearly and suggest which report type might help.
+- When asked for trends or comparisons, cite the specific numbers.
+- Keep responses focused — 2-4 paragraphs unless a longer answer is clearly needed.
+- Never expose PII (emails, phone numbers, names of individual reservees/customers).`;
+}
+
+app.post("/:org/chat/api/message", async (req, res) => {
+  const slug = req.params.org;
+  const org  = ORGS[slug];
+  if (!org) return res.status(404).json({ error: "Unknown org" });
+  if (!org.token) return res.status(404).json({ error: "Unauthorized" });
+
+  // Token check
+  const qToken = req.query.token || req.headers["x-token"];
+  if (qToken !== org.token) return res.status(403).json({ error: "Invalid token" });
+
+  if (!process.env.ANTHROPIC_API_KEY) {
+    return res.status(503).json({ error: "AI not configured" });
+  }
+
+  const { messages } = req.body || {};
+  if (!Array.isArray(messages) || !messages.length) {
+    return res.status(400).json({ error: "Messages array required" });
+  }
+
+  // Set up SSE
+  res.writeHead(200, {
+    "Content-Type": "text/event-stream",
+    "Cache-Control": "no-cache",
+    "Connection": "keep-alive",
+    "X-Accel-Buffering": "no",
+  });
+
+  try {
+    // Signal data loading
+    res.write("data: [DATA_LOADING]\n\n");
+
+    const orgSlugTitle = slug.charAt(0).toUpperCase() + slug.slice(1);
+    const orgName = org.displayName || `${orgSlugTitle} Parks & Recreation`;
+    const data = await fetchOrgChatData(slug, org);
+
+    res.write("data: [DATA_READY]\n\n");
+
+    const systemPrompt = buildChatSystemPrompt(orgName, data);
+
+    // Clean messages — only role + content
+    const cleanMsgs = messages.map(m => ({ role: m.role, content: m.content }));
+
+    const anthropicResp = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "x-api-key": process.env.ANTHROPIC_API_KEY,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        model: CHAT_MODEL,
+        max_tokens: CHAT_MAX_TOK,
+        stream: true,
+        system: systemPrompt,
+        messages: cleanMsgs,
+      }),
+    });
+
+    if (!anthropicResp.ok) {
+      const errBody = await anthropicResp.text();
+      console.error(`[chat] Anthropic ${anthropicResp.status}: ${errBody}`);
+      res.write(`data: [ERROR] AI service error (${anthropicResp.status})\n\n`);
+      res.write("data: [DONE]\n\n");
+      res.end();
+      return;
+    }
+
+    // Stream the response — read Anthropic SSE and forward text deltas
+    const reader = anthropicResp.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let inputTokens = 0, outputTokens = 0;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() || "";
+
+      for (const line of lines) {
+        if (!line.startsWith("data: ") || line === "data: [DONE]") continue;
+        try {
+          const evt = JSON.parse(line.slice(6));
+          if (evt.type === "content_block_delta" && evt.delta?.text) {
+            res.write(`data: ${JSON.stringify({ t: evt.delta.text })}\n\n`);
+          } else if (evt.type === "message_delta" && evt.usage) {
+            outputTokens = evt.usage.output_tokens || 0;
+          } else if (evt.type === "message_start" && evt.message?.usage) {
+            inputTokens = evt.message.usage.input_tokens || 0;
+          }
+        } catch (_) { /* skip */ }
+      }
+    }
+
+    const costUsd = insightsCostUsd(CHAT_MODEL, inputTokens, outputTokens);
+    logEvent(slug, "chat", "message", req.ip, { inTok: inputTokens, outTok: outputTokens, costUsd });
+
+    res.write("data: [DONE]\n\n");
+    res.end();
+  } catch (err) {
+    console.error("[chat] Error:", err);
+    try {
+      res.write(`data: [ERROR] ${err.message}\n\n`);
+      res.write("data: [DONE]\n\n");
+      res.end();
+    } catch (_) { /* response may already be closed */ }
+  }
+});
+
+
 // ── GET /:org/:report/api/data — proxy to Metabase ───────────────────
 app.get("/:org/:report/api/data", resolveOrg, async (req, res) => {
   try {
@@ -1543,6 +1741,26 @@ app.get("/:org/fasttrack", (req, res) => {
   logEvent(slug, "fasttrack", "view", req.ip);
   res.sendFile(path.join(__dirname, "public", "fasttrack.html"));
 });
+
+app.get("/:org/chat", (req, res) => {
+  const slug = req.params.org;
+  const org  = ORGS[slug];
+  if (!org) return res.status(404).send("Unknown org");
+  logEvent(slug, "chat", "view", req.ip);
+  const available = REPORT_TYPES.filter(r => org[r]?.mbUuid);
+  const slugTitle = slug.charAt(0).toUpperCase() + slug.slice(1);
+  const orgConfig = {
+    slug,
+    displayName: org.displayName || `${slugTitle} Parks & Recreation`,
+    logoUrl: org.logoUrl || "",
+    reports: available,
+    token: org.token || "",
+  };
+  const html = require("fs").readFileSync(path.join(__dirname, "public", "chat.html"), "utf8");
+  const inject = `<script>window.ORG_CONFIG=${JSON.stringify(orgConfig)};</script>`;
+  res.type("html").send(html.replace("</head>", inject + "</head>"));
+});
+
 
 // ── GET /:org — org landing page ─────────────────────────────────────
 // ────────────────────────────────────────────────────────────
@@ -2043,6 +2261,20 @@ app.get("/", (req, res) => {
           <span class="report-arrow">→</span>
         </a>`;
     });
+
+    // Rec AI Chat card — always shown if org has at least one report
+    if (available.length > 0) {
+      cards.push(`
+        <a href="/${slug}/chat${tokenQS}" class="report-card" style="border-left:3px solid #6366f1;background:linear-gradient(135deg,#f5f3ff 0%,#eef2ff 100%)">
+          <span class="report-icon">✦</span>
+          <div class="report-body">
+            <div class="report-label" style="color:#312e81">Rec AI Chat</div>
+            <div class="report-desc">Ask anything about your data across all reports</div>
+            <span class="ai-pill">✦ AI powered</span>
+          </div>
+          <span class="report-arrow">→</span>
+        </a>`);
+    }
 
     // Append a dashed "add report" tile for any report types this org lacks.
     const missing = REPORT_TYPES.filter(r => !NON_ADDABLE_REPORTS.has(r) && !(org[r] && org[r].mbUuid));
@@ -2996,6 +3228,11 @@ app.get("/", (req, res) => {
     // Newest first. Add a new entry at the TOP for every change we ship.
     // History below back-filled from the GitHub commit log.
     const UPDATES = [
+      { date: '2026-06-12', title: 'Rec AI Chat — ask anything about your data', items: [
+        'New: Rec AI Chat — a conversational AI assistant that can answer questions across all of an org\u2019s reports. Pulls live data from every configured Metabase report, streams responses in real time, and supports follow-up questions with full conversation context',
+        'Suggested questions adapt to each org\u2019s available reports (facility schedules, GL codes, programs, products, memberships, court utilization, Fast Track)',
+        'Available from the org landing page and the root dashboard; requires org token',
+      ] },
       { date: '2026-06-11', title: 'Fast Track report, pinnable dashboards, and fixes', items: [
         'New report: Fast Track \u2014 pre-registration wishlist demand with true conversion tracking. FT bookings promote in-place (planned \u2192 confirmed with is_fast_track intact), enabling accurate conversion %, demand %, and fill % by program and section. Includes season and program filters, collapsible program \u2192 section drill-down, horizontal bar chart with per-segment tooltips (converted / pending / dropped), and Rec Insights AI analysis',
         'Org dashboard pages now support pinnable reports \u2014 click the \ud83d\udccc icon on any report card to keep it at the top of your list (saved per browser)',

@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Rec AI — Ask Your Data</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.1/marked.min.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; overflow: hidden; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: #f7f7f8;
+    color: #1a1a1a;
+  }
+  #root { height: 100%; display: flex; flex-direction: column; }
+
+  /* ── Header ─────────────────────────────────────────── */
+  .chat-header {
+    flex-shrink: 0;
+    background: linear-gradient(135deg, #1e1b4b 0%, #312e81 100%);
+    color: #fff;
+    padding: 14px 20px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    box-shadow: 0 2px 12px rgba(0,0,0,.15);
+    z-index: 10;
+  }
+  .header-logo { height: 36px; border-radius: 6px; background: #fff; padding: 2px; }
+  .header-text { flex: 1; min-width: 0; }
+  .header-org { font-size: 14px; opacity: .8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .header-title { font-size: 18px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+  .header-badge {
+    font-size: 10px; font-weight: 600; letter-spacing: .5px;
+    background: rgba(255,255,255,.18); padding: 2px 8px; border-radius: 10px;
+    text-transform: uppercase;
+  }
+  .header-back {
+    color: rgba(255,255,255,.7); text-decoration: none; font-size: 13px;
+    display: flex; align-items: center; gap: 4px; transition: color .15s;
+  }
+  .header-back:hover { color: #fff; }
+
+  /* ── Messages ───────────────────────────────────────── */
+  .messages-wrap {
+    flex: 1; overflow-y: auto; padding: 20px 0;
+    scroll-behavior: smooth;
+  }
+  .messages-inner { max-width: 780px; margin: 0 auto; padding: 0 16px; }
+
+  .msg { display: flex; gap: 10px; margin-bottom: 20px; animation: msgIn .25s ease-out; }
+  .msg-user { flex-direction: row-reverse; }
+  @keyframes msgIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+
+  .msg-avatar {
+    flex-shrink: 0; width: 32px; height: 32px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px; font-weight: 700;
+  }
+  .msg-user .msg-avatar { background: #e0e7ff; color: #4338ca; }
+  .msg-ai .msg-avatar { background: #312e81; color: #fff; }
+
+  .msg-bubble {
+    max-width: 85%; padding: 12px 16px; border-radius: 16px;
+    line-height: 1.55; font-size: 14.5px;
+  }
+  .msg-user .msg-bubble {
+    background: #4338ca; color: #fff; border-bottom-right-radius: 4px;
+  }
+  .msg-ai .msg-bubble {
+    background: #fff; color: #1a1a1a; border-bottom-left-radius: 4px;
+    box-shadow: 0 1px 3px rgba(0,0,0,.06);
+  }
+
+  /* Markdown inside AI bubbles */
+  .msg-ai .msg-bubble p { margin-bottom: 8px; }
+  .msg-ai .msg-bubble p:last-child { margin-bottom: 0; }
+  .msg-ai .msg-bubble ul, .msg-ai .msg-bubble ol { margin: 6px 0 8px 18px; }
+  .msg-ai .msg-bubble li { margin-bottom: 3px; }
+  .msg-ai .msg-bubble strong { font-weight: 600; }
+  .msg-ai .msg-bubble code {
+    background: #f1f1f4; padding: 1px 5px; border-radius: 4px; font-size: 13px;
+  }
+  .msg-ai .msg-bubble pre {
+    background: #f4f4f7; padding: 10px 12px; border-radius: 8px;
+    overflow-x: auto; margin: 8px 0; font-size: 13px;
+  }
+  .msg-ai .msg-bubble pre code { background: none; padding: 0; }
+  .msg-ai .msg-bubble table {
+    border-collapse: collapse; width: 100%; margin: 8px 0; font-size: 13px;
+  }
+  .msg-ai .msg-bubble th, .msg-ai .msg-bubble td {
+    border: 1px solid #e2e2e8; padding: 5px 8px; text-align: left;
+  }
+  .msg-ai .msg-bubble th { background: #f7f7fa; font-weight: 600; }
+
+  /* Typing indicator */
+  .typing-dots { display: flex; gap: 4px; padding: 4px 0; }
+  .typing-dots span {
+    width: 7px; height: 7px; border-radius: 50%; background: #a5a5b5;
+    animation: blink 1.2s infinite;
+  }
+  .typing-dots span:nth-child(2) { animation-delay: .2s; }
+  .typing-dots span:nth-child(3) { animation-delay: .4s; }
+  @keyframes blink { 0%,80%,100% { opacity:.3; } 40% { opacity:1; } }
+
+  /* ── Welcome / Suggested questions ─────────────────── */
+  .welcome { text-align: center; padding: 48px 16px 24px; animation: msgIn .4s ease-out; }
+  .welcome-icon { font-size: 42px; margin-bottom: 12px; }
+  .welcome-title { font-size: 22px; font-weight: 700; color: #312e81; margin-bottom: 6px; }
+  .welcome-sub { font-size: 14px; color: #6b6b80; margin-bottom: 28px; max-width: 440px; margin-left: auto; margin-right: auto; line-height: 1.5; }
+
+  .suggestions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; max-width: 560px; margin: 0 auto; }
+  @media (max-width: 520px) { .suggestions { grid-template-columns: 1fr; } }
+  .suggestion-card {
+    background: #fff; border: 1px solid #e5e5ec; border-radius: 12px;
+    padding: 14px 16px; text-align: left; cursor: pointer;
+    transition: all .15s; font-size: 13.5px; color: #333; line-height: 1.4;
+  }
+  .suggestion-card:hover {
+    border-color: #4338ca; background: #f5f3ff; transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(67,56,202,.1);
+  }
+  .suggestion-icon { font-size: 18px; margin-bottom: 6px; display: block; }
+  .suggestion-label { font-weight: 600; color: #1a1a1a; margin-bottom: 2px; }
+
+  /* ── Input bar ──────────────────────────────────────── */
+  .input-bar {
+    flex-shrink: 0; padding: 12px 16px 16px; background: #f7f7f8;
+    border-top: 1px solid #e8e8ee;
+  }
+  .input-inner {
+    max-width: 780px; margin: 0 auto; display: flex; gap: 8px; align-items: flex-end;
+  }
+  .input-field {
+    flex: 1; resize: none; border: 1px solid #d4d4dc; border-radius: 14px;
+    padding: 11px 16px; font-size: 14.5px; font-family: inherit;
+    line-height: 1.45; outline: none; transition: border-color .15s;
+    max-height: 120px; overflow-y: auto; background: #fff;
+  }
+  .input-field:focus { border-color: #4338ca; box-shadow: 0 0 0 2px rgba(67,56,202,.12); }
+  .input-field::placeholder { color: #a0a0b0; }
+  .send-btn {
+    flex-shrink: 0; width: 42px; height: 42px; border-radius: 50%;
+    border: none; cursor: pointer; display: flex; align-items: center;
+    justify-content: center; transition: all .15s;
+    background: #4338ca; color: #fff;
+  }
+  .send-btn:disabled { background: #c7c7d4; cursor: default; }
+  .send-btn:not(:disabled):hover { background: #3730a3; transform: scale(1.04); }
+  .send-btn svg { width: 18px; height: 18px; }
+
+  .input-hint {
+    text-align: center; font-size: 11px; color: #999; margin-top: 6px;
+    max-width: 780px; margin-left: auto; margin-right: auto;
+  }
+
+  /* ── Error / status ─────────────────────────────────── */
+  .error-banner {
+    background: #fef2f2; border: 1px solid #fecaca; color: #991b1b;
+    padding: 10px 16px; border-radius: 10px; font-size: 13px;
+    margin-bottom: 16px; text-align: center;
+  }
+
+  /* ── Data loading overlay ───────────────────────────── */
+  .data-loading {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 14px; border-radius: 10px;
+    background: #eef2ff; color: #4338ca; font-size: 12px; font-weight: 500;
+    margin-bottom: 16px; justify-content: center;
+  }
+  .data-loading .spinner {
+    width: 14px; height: 14px; border: 2px solid #c7d2fe;
+    border-top-color: #4338ca; border-radius: 50%;
+    animation: spin .7s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel">
+const { useState, useRef, useEffect, useCallback } = React;
+
+/* ── Config from server injection ── */
+var CFG = window.ORG_CONFIG || {};
+var slug     = CFG.slug || window.location.pathname.split('/')[1] || '';
+var token    = CFG.token || new URLSearchParams(window.location.search).get('token') || '';
+var orgName  = CFG.displayName || slug.charAt(0).toUpperCase() + slug.slice(1);
+var logoUrl  = CFG.logoUrl || '';
+var reports  = CFG.reports || [];
+var tokenQS  = token ? '?token=' + encodeURIComponent(token) : '';
+
+/* ── Suggested questions based on available reports ── */
+function buildSuggestions() {
+  var s = [];
+  if (reports.includes('facility'))
+    s.push({ icon: '📅', label: 'Busiest facilities', text: 'What are our busiest facilities this month, and what times see the most demand?' });
+  if (reports.includes('gl'))
+    s.push({ icon: '📊', label: 'Revenue breakdown', text: 'Summarize our payments vs refunds by GL code. Are there any codes with unusually high refund rates?' });
+  if (reports.includes('programs'))
+    s.push({ icon: '🎯', label: 'Program performance', text: 'Which programs have the highest enrollment and revenue? Are any programs underperforming?' });
+  if (reports.includes('products'))
+    s.push({ icon: '🛒', label: 'Top products', text: 'What are our top-selling products by net revenue, and are there any products with a lot of refunds?' });
+  if (reports.includes('memberships'))
+    s.push({ icon: '🎫', label: 'Membership health', text: 'How is our membership retention? How many active vs lapsed memberships do we have?' });
+  if (reports.includes('court-utilization'))
+    s.push({ icon: '🎾', label: 'Court usage', text: 'Which courts are most and least utilized? Where do we have room to book more?' });
+  if (reports.includes('fasttrack'))
+    s.push({ icon: '⚡', label: 'Demand signals', text: 'Which programs have the most Fast Track signups? What are our conversion rates?' });
+
+  // Always add a general one
+  s.push({ icon: '💡', label: 'Key trends', text: 'What are the most important trends and insights across all of our data right now?' });
+
+  return s.slice(0, 6);
+}
+
+var SUGGESTIONS = buildSuggestions();
+
+/* ── Markdown renderer setup ── */
+if (window.marked) {
+  marked.setOptions({ breaks: true, gfm: true });
+}
+function renderMd(text) {
+  if (!text) return '';
+  try { return marked.parse(text); }
+  catch(e) { return text.replace(/\n/g, '<br>'); }
+}
+
+/* ── Send icon SVG ── */
+function SendIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="22" y1="2" x2="11" y2="13" />
+      <polygon points="22 2 15 22 11 13 2 9 22 2" />
+    </svg>
+  );
+}
+
+/* ── Main App ── */
+function ChatApp() {
+  var msgRef     = useRef(null);
+  var inputRef   = useRef(null);
+  var [messages, setMessages]     = useState([]);
+  var [input, setInput]           = useState('');
+  var [streaming, setStreaming]   = useState(false);
+  var [dataStatus, setDataStatus] = useState('idle'); // idle | loading | ready | error
+  var [error, setError]           = useState('');
+
+  /* Auto-scroll to bottom */
+  useEffect(function() {
+    if (msgRef.current) {
+      msgRef.current.scrollTop = msgRef.current.scrollHeight;
+    }
+  }, [messages, streaming]);
+
+  /* Focus input on mount */
+  useEffect(function() {
+    if (inputRef.current) inputRef.current.focus();
+  }, []);
+
+  /* ── Send message ── */
+  var sendMessage = useCallback(function(text) {
+    if (!text.trim() || streaming) return;
+    setError('');
+    var userMsg = { role: 'user', content: text.trim() };
+    var newMessages = messages.concat([userMsg]);
+    setMessages(newMessages);
+    setInput('');
+    setStreaming(true);
+
+    // Build history for API (just role + content)
+    var history = newMessages.map(function(m) { return { role: m.role, content: m.content }; });
+
+    // Create placeholder for assistant message
+    setMessages(function(prev) { return prev.concat([{ role: 'assistant', content: '', streaming: true }]); });
+
+    fetch('/' + slug + '/chat/api/message' + tokenQS, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messages: history }),
+    }).then(function(resp) {
+      if (!resp.ok) throw new Error('Server error: ' + resp.status);
+      if (!resp.body) throw new Error('Streaming not supported');
+      var reader = resp.body.getReader();
+      var decoder = new TextDecoder();
+      var fullText = '';
+      var buffer = '';
+
+      function pump() {
+        return reader.read().then(function(result) {
+          if (result.done) {
+            // Process any remaining buffer
+            if (buffer.trim()) processBuffer();
+            setMessages(function(prev) {
+              var copy = prev.slice();
+              copy[copy.length - 1] = { role: 'assistant', content: fullText };
+              return copy;
+            });
+            setStreaming(false);
+            if (dataStatus === 'idle') setDataStatus('ready');
+            return;
+          }
+
+          buffer += decoder.decode(result.value, { stream: true });
+          processBuffer();
+          return pump();
+        });
+      }
+
+      function processBuffer() {
+        var lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+        lines.forEach(function(line) {
+          if (line.startsWith('data: ')) {
+            var payload = line.slice(6);
+            if (payload === '[DONE]') return;
+            if (payload === '[DATA_LOADING]') { setDataStatus('loading'); return; }
+            if (payload === '[DATA_READY]') { setDataStatus('ready'); return; }
+            if (payload.startsWith('[ERROR]')) {
+              setError(payload.slice(7).trim());
+              return;
+            }
+            try {
+              var parsed = JSON.parse(payload);
+              if (parsed.t) {
+                fullText += parsed.t;
+                setMessages(function(prev) {
+                  var copy = prev.slice();
+                  copy[copy.length - 1] = { role: 'assistant', content: fullText, streaming: true };
+                  return copy;
+                });
+              }
+            } catch(e) { /* skip malformed */ }
+          }
+        });
+      }
+
+      return pump();
+    }).catch(function(err) {
+      setError(err.message || 'Failed to get response');
+      setMessages(function(prev) {
+        // Remove the empty streaming message
+        if (prev.length && prev[prev.length - 1].streaming && !prev[prev.length - 1].content) {
+          return prev.slice(0, -1);
+        }
+        return prev;
+      });
+      setStreaming(false);
+    });
+  }, [messages, streaming, slug, tokenQS, dataStatus]);
+
+  /* ── Keyboard handling ── */
+  function handleKeyDown(e) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendMessage(input);
+    }
+  }
+
+  /* ── Textarea auto-resize ── */
+  function handleInput(e) {
+    setInput(e.target.value);
+    var el = e.target;
+    el.style.height = 'auto';
+    el.style.height = Math.min(el.scrollHeight, 120) + 'px';
+  }
+
+  var showWelcome = messages.length === 0;
+
+  return (
+    <React.Fragment>
+      {/* Header */}
+      <div className="chat-header">
+        {logoUrl && <img src={logoUrl} alt="" className="header-logo" onError={function(e){e.target.style.display='none'}} />}
+        <div className="header-text">
+          <div className="header-org">{orgName}</div>
+          <div className="header-title">
+            Rec AI
+            <span className="header-badge">✦ Beta</span>
+          </div>
+        </div>
+        <a href={'/' + slug + tokenQS} className="header-back">
+          ← Reports
+        </a>
+      </div>
+
+      {/* Messages area */}
+      <div className="messages-wrap" ref={msgRef}>
+        <div className="messages-inner">
+          {dataStatus === 'loading' && (
+            <div className="data-loading">
+              <div className="spinner" />
+              Loading your data from {reports.length} report{reports.length !== 1 ? 's' : ''}…
+            </div>
+          )}
+
+          {error && <div className="error-banner">{error}</div>}
+
+          {showWelcome ? (
+            <div className="welcome">
+              <div className="welcome-icon">✦</div>
+              <div className="welcome-title">Ask anything about your data</div>
+              <div className="welcome-sub">
+                Rec AI has access to your {reports.length > 0 ? reports.length + ' report' + (reports.length !== 1 ? 's' : '') : 'reports'} — facility schedules, revenue, programs, and more. Ask a question or try one of these.
+              </div>
+              <div className="suggestions">
+                {SUGGESTIONS.map(function(s, i) {
+                  return (
+                    <div key={i} className="suggestion-card" onClick={function() { sendMessage(s.text); }}>
+                      <span className="suggestion-icon">{s.icon}</span>
+                      <div className="suggestion-label">{s.label}</div>
+                      <div>{s.text.length > 60 ? s.text.slice(0, 57) + '…' : s.text}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ) : (
+            messages.map(function(m, i) {
+              var isUser = m.role === 'user';
+              var isStreaming = m.streaming && i === messages.length - 1;
+              return (
+                <div key={i} className={'msg ' + (isUser ? 'msg-user' : 'msg-ai')}>
+                  <div className="msg-avatar">{isUser ? 'You' : '✦'}</div>
+                  <div className="msg-bubble">
+                    {isUser
+                      ? m.content
+                      : m.content
+                        ? <div dangerouslySetInnerHTML={{ __html: renderMd(m.content) }} />
+                        : <div className="typing-dots"><span /><span /><span /></div>
+                    }
+                    {isStreaming && m.content && <span style={{opacity:.5}}>▌</span>}
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+      </div>
+
+      {/* Input */}
+      <div className="input-bar">
+        <div className="input-inner">
+          <textarea
+            ref={inputRef}
+            className="input-field"
+            rows="1"
+            placeholder="Ask about your data…"
+            value={input}
+            onChange={handleInput}
+            onKeyDown={handleKeyDown}
+            disabled={streaming}
+          />
+          <button className="send-btn" disabled={!input.trim() || streaming} onClick={function() { sendMessage(input); }}>
+            <SendIcon />
+          </button>
+        </div>
+        <div className="input-hint">Rec AI can make mistakes. Verify important figures against your reports.</div>
+      </div>
+    </React.Fragment>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<ChatApp />);
+</script>
+</body>
+</html>

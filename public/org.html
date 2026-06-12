@@ -346,6 +346,22 @@
 
   render();
 
+  /* ── Rec AI Chat card (always shown, after reports) ── */
+  if (cfg.reports && cfg.reports.length > 0) {
+    var chatCard = document.createElement('a');
+    chatCard.href = '/' + slug + '/chat' + tokenQS;
+    chatCard.className = 'card';
+    chatCard.style.cssText = 'border:1.5px solid #e0e7ff;background:linear-gradient(135deg,#f5f3ff 0%,#eef2ff 100%)';
+    chatCard.innerHTML = '<div class="card-icon">✦</div>'
+      + '<div class="card-body">'
+        + '<div class="card-label" style="color:#312e81">Rec AI Chat</div>'
+        + '<div class="card-desc">Ask anything about your data across all reports</div>'
+        + '<span class="ai-pill">✦ AI powered</span>'
+      + '</div>'
+      + '<div class="card-right"><div class="card-arrow">→</div></div>';
+    document.getElementById('cards').appendChild(chatCard);
+  }
+
   /* ── Admin link + footer ── */
   document.getElementById('admin-link').href = '/' + slug + '/admin' + tokenQS;
   document.getElementById('footer').textContent = 'rec.us · ' + slug;
