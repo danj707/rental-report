@@ -39,6 +39,29 @@ const FROM_EMAIL     = process.env.FROM_EMAIL     || "reports@rec.us";
 const FROM_NAME      = process.env.FROM_NAME      || "rec.us Reports";
 
 
+// ── Metabase response cache ───────────────────────────────────────────
+const CACHE_TTL = 5 * 60 * 1000;  // 5 minutes
+const dataCache = new Map();
+
+function getCached(key) {
+  const entry = dataCache.get(key);
+  if (!entry) return null;
+  if (Date.now() - entry.ts > CACHE_TTL) { dataCache.delete(key); return null; }
+  return entry.data;
+}
+
+function setCache(key, data) {
+  dataCache.set(key, { data, ts: Date.now() });
+}
+
+// Prune expired entries every 10 minutes to prevent memory creep
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, v] of dataCache) {
+    if (now - v.ts > CACHE_TTL) dataCache.delete(k);
+  }
+}, 10 * 60 * 1000);
+
 // ── Dashboard authentication ─────────────────────────────────────────
 // Set DASHBOARD_PASSWORD in Railway env vars.
 // /hotdog and /api/hotdog are public (no auth required).
@@ -1189,6 +1212,17 @@ app.get("/:org/:report/api/data", resolveOrg, async (req, res) => {
 
     const params = buildMetabaseParams(req.query, reportType);
     const paramStr = params.length > 0 ? `?parameters=${encodeURIComponent(JSON.stringify(params))}` : "";
+
+    // ── Cache check (skip with _nocache=1) ──
+    const cacheKey = `${orgSlug}:${reportType}:${paramStr}`;
+    if (req.query._nocache !== "1") {
+      const cached = getCached(cacheKey);
+      if (cached) {
+        console.log(`[cache] HIT ${orgSlug}/${reportType} (${dataCache.size} entries)`);
+        return res.json(cached);
+      }
+    }
+
     const url = `${METABASE_URL}/api/public/card/${mbUuid}/query/json${paramStr}`;
     console.log(`[proxy] ${orgSlug}/${reportType} → ${url}`);
 
@@ -1213,7 +1247,7 @@ app.get("/:org/:report/api/data", resolveOrg, async (req, res) => {
       }
     }
 
-    res.json({
+    const result = {
       rows: data,
       meta: {
         org_slug: orgSlug,
@@ -1221,7 +1255,12 @@ app.get("/:org/:report/api/data", resolveOrg, async (req, res) => {
         report_type: reportType,
         generated_at: new Date().toISOString(),
       },
-    });
+    };
+
+    setCache(cacheKey, result);
+    console.log(`[cache] STORE ${orgSlug}/${reportType} (${data.length} rows, ${dataCache.size} entries)`);
+
+    res.json(result);
   } catch (err) {
     console.error("[proxy] Error:", err);
     res.status(500).json({ error: err.message });
