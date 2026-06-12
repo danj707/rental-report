@@ -62,6 +62,50 @@ setInterval(() => {
   }
 }, 10 * 60 * 1000);
 
+// ── Cache pre-warm on startup ─────────────────────────────────────────
+async function prewarmCache() {
+  console.log(`[cache] Pre-warming default reports…`);
+  let warmed = 0;
+  for (const slug of Object.keys(ORGS)) {
+    const org = ORGS[slug];
+    if (!org.token) continue;
+    for (const rt of REPORT_TYPES) {
+      const mbUuid = org[rt]?.mbUuid;
+      if (!mbUuid) continue;
+      // Only pre-warm reports with no required params (default = current month)
+      const cacheKey = `${slug}:${rt}:`;
+      if (getCached(cacheKey)) continue; // already warm
+      try {
+        const url = `${METABASE_URL}/api/public/card/${mbUuid}/query/json`;
+        const resp = await fetch(url);
+        if (resp.ok) {
+          let data = await resp.json();
+          // Strip PII for calendar
+          if (rt === "calendar" && Array.isArray(data)) {
+            const PII = new Set(["reservee","reservee name","customer","customer name","booked by","booker","contact","contact name","notes","note","address","first name","last name","name"]);
+            const isPII = (k) => { const t = String(k).toLowerCase().trim(); return PII.has(t) || t.includes("email") || t.includes("phone"); };
+            for (const row of data) {
+              if (row && typeof row === "object" && !Array.isArray(row)) {
+                for (const k of Object.keys(row)) { if (isPII(k)) delete row[k]; }
+              }
+            }
+          }
+          const result = {
+            rows: data,
+            meta: { org_slug: slug, logo_url: org.logoUrl, report_type: rt, generated_at: new Date().toISOString() },
+          };
+          setCache(cacheKey, result);
+          warmed++;
+          console.log(`[cache] Warmed ${slug}/${rt} (${data.length} rows)`);
+        }
+      } catch (e) {
+        console.warn(`[cache] Pre-warm failed for ${slug}/${rt}: ${e.message}`);
+      }
+    }
+  }
+  console.log(`[cache] Pre-warm complete: ${warmed} reports cached`);
+}
+
 // ── Dashboard authentication ─────────────────────────────────────────
 // Set DASHBOARD_PASSWORD in Railway env vars.
 // /hotdog and /api/hotdog are public (no auth required).
@@ -3308,6 +3352,12 @@ app.listen(PORT, () => {
   console.log(`  └─ Metabase: ${METABASE_URL}\n`);
   console.log(`  📧 Resend: ${RESEND_API_KEY ? "configured" : "NOT CONFIGURED (stub mode)"}\n`);
   console.log(`  📊 Analytics: ${EVENTS_FILE}\n`);
+
+  // Pre-warm cache after a brief delay to let startup complete
+  setTimeout(prewarmCache, 3000);
+
+  // Re-warm every 4 minutes to keep cache perpetually hot
+  setInterval(prewarmCache, 4 * 60 * 1000);
 
   // Promote any orgs from data/orgs.json into server.js on GitHub.
   // Runs after listen() so startup isn't blocked by GitHub latency.
