@@ -230,6 +230,17 @@ const ORGS = {
     products: { mbUuid: "2a38a516-a618-40ad-8b30-a26081548389" },
     calendar: { mbUuid: "2b6e6819-2fe5-420e-af6f-4cb39b5736cc" },
   },
+  shrewsbury: {
+    token:   "17hO58KgKgNVauE5",
+    orgId:   "0a9c47af-b4c3-4601-ab0f-d2f401bb787a",
+    logoUrl: "admin",
+    displayName: "Shrewsbury",
+    facility: { mbUuid: "9a027e73-cd3b-49ff-8b02-49e09a6ceeeb" },
+    gl      : { mbUuid: "85295b39-f00b-4f7f-9007-b3dafa8051a4" },
+    programs: { mbUuid: "f7863975-f44c-4143-abe8-2ca8c6cdfa07" },
+    roster  : { mbUuid: "f79ce808-e7ab-48dc-b2b9-56491f3b01fc" },
+    calendar: { mbUuid: "f4e55dd3-f16d-4da7-9112-de0515980ae4" },
+  },
 };
 
 const REPORT_TYPES = ["facility", "gl", "historic", "programs", "roster", "overview", "products", "memberships", "court-utilization", "calendar", "fasttrack"];
