@@ -2453,9 +2453,7 @@ app.get("/", (req, res) => {
     .showcase-gallery {
       display: flex; gap: 12px; overflow-x: auto; padding: 0 40px 0;
       scroll-snap-type: x mandatory; -webkit-overflow-scrolling: touch;
-      scrollbar-width: none; -ms-overflow-style: none;
     }
-    .showcase-gallery::-webkit-scrollbar { display: none; }
     .showcase-gallery:empty { display: none; }
     .showcase-gallery .sg-item {
       flex: 0 0 auto; width: 320px; scroll-snap-align: start;
@@ -3791,34 +3789,6 @@ app.get("/", (req, res) => {
       e.preventDefault(); sc.style.outline = '';
       if (e.dataTransfer.files.length) handleShowcaseUpload(e.dataTransfer.files);
     });
-  }
-
-  // Auto-scroll gallery
-  var gallery = document.getElementById('showcase-gallery');
-  if (gallery && gallery.children.length > 1) {
-    var scrollPaused = false;
-    var SCROLL_SPEED = 0.7;
-    var PAUSE_END = 2500;
-
-    gallery.addEventListener('mouseenter', function() { scrollPaused = true; });
-    gallery.addEventListener('mouseleave', function() { scrollPaused = false; });
-
-    var atEnd = false;
-    function scrollTick() {
-      if (!scrollPaused && !atEnd) {
-        gallery.scrollLeft += SCROLL_SPEED;
-        var maxScroll = gallery.scrollWidth - gallery.clientWidth;
-        if (gallery.scrollLeft >= maxScroll - 1) {
-          atEnd = true;
-          setTimeout(function() {
-            gallery.scrollTo({ left: 0, behavior: 'smooth' });
-            setTimeout(function() { atEnd = false; }, PAUSE_END);
-          }, PAUSE_END);
-        }
-      }
-      requestAnimationFrame(scrollTick);
-    }
-    requestAnimationFrame(scrollTick);
   }
 </script>
 </body>
