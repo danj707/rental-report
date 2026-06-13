@@ -890,7 +890,7 @@ cron.schedule("0 7 1 * *", () => runSchedule("monthly"));
 // ── Express setup ────────────────────────────────────────────────────
 const app = express();
 app.use(dashboardAuth);
-app.use(express.json());
+app.use(express.json({ limit: "50mb" }));
 
 // ── Token gate: every `/:org/*` route requires `?token=` matching ORGS[org].token ──
 // Returns generic 404 on mismatch (no enumeration). Non-org paths fall through.
