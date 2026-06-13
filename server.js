@@ -2393,7 +2393,81 @@ app.get("/", (req, res) => {
     .topbar-sub { font-size: 12px; color: #aaa; text-transform: uppercase; letter-spacing: 1px; }
     .main { flex: 1; max-width: 860px; margin: 0 auto; padding: 40px 24px; width: 100%; }
     .page-title { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.2px; color: #888; margin-bottom: 24px; }
-    .org-section { background: #fff; border: 1px solid #e0ddd8; border-radius: 10px; margin-bottom: 20px; overflow: hidden; }
+    /* ── Showcase hero card ── */
+    .showcase-card {
+      background: linear-gradient(135deg, #1e1b4b 0%, #312e81 40%, #4338ca 100%);
+      border-radius: 14px; margin-bottom: 24px; overflow: hidden;
+      box-shadow: 0 4px 24px rgba(30,27,75,.25);
+    }
+    .showcase-top { padding: 36px 40px 28px; }
+    .showcase-badge {
+      display: inline-block; font-size: 11px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: .08em; color: #a5b4fc; background: rgba(165,180,252,.12);
+      padding: 4px 12px; border-radius: 20px; margin-bottom: 14px;
+    }
+    .showcase-title {
+      font-size: 30px; font-weight: 800; color: #fff; line-height: 1.2; margin: 0 0 14px;
+    }
+    .showcase-desc {
+      font-size: 14.5px; color: #c7d2fe; line-height: 1.65; max-width: 640px; margin: 0 0 24px;
+    }
+    .showcase-stats {
+      display: flex; gap: 28px; flex-wrap: wrap;
+    }
+    .showcase-stat { text-align: center; }
+    .showcase-stat-num {
+      font-size: 22px; font-weight: 800; color: #fff;
+    }
+    .showcase-stat-label {
+      font-size: 11px; color: #a5b4fc; text-transform: uppercase; letter-spacing: .04em; margin-top: 2px;
+    }
+    /* Gallery */
+    .showcase-gallery {
+      display: flex; gap: 12px; overflow-x: auto; padding: 0 40px 0;
+      scroll-snap-type: x mandatory; -webkit-overflow-scrolling: touch;
+    }
+    .showcase-gallery:empty { display: none; }
+    .showcase-gallery .sg-item {
+      flex: 0 0 auto; width: 320px; scroll-snap-align: start;
+      border-radius: 10px; overflow: hidden; background: #000;
+      position: relative; cursor: pointer; transition: transform .15s;
+    }
+    .showcase-gallery .sg-item:hover { transform: scale(1.02); }
+    .showcase-gallery .sg-item img {
+      width: 100%; display: block; object-fit: cover; max-height: 200px;
+    }
+    .showcase-gallery .sg-caption {
+      position: absolute; bottom: 0; left: 0; right: 0;
+      background: linear-gradient(transparent, rgba(0,0,0,.7));
+      color: #fff; font-size: 12px; font-weight: 600; padding: 20px 12px 10px;
+    }
+    .showcase-gallery .sg-remove {
+      position: absolute; top: 6px; right: 6px; width: 22px; height: 22px;
+      border-radius: 50%; background: rgba(0,0,0,.5); color: #fff;
+      border: none; font-size: 13px; cursor: pointer; display: none;
+      align-items: center; justify-content: center; line-height: 1;
+    }
+    .showcase-gallery .sg-item:hover .sg-remove { display: flex; }
+    .showcase-upload {
+      padding: 16px 40px 28px; display: flex; align-items: center; gap: 12px;
+    }
+    .showcase-upload-btn {
+      font-size: 12px; font-weight: 600; color: #a5b4fc; background: rgba(255,255,255,.08);
+      border: 1px dashed rgba(165,180,252,.3); border-radius: 8px;
+      padding: 8px 16px; cursor: pointer; transition: background .15s;
+    }
+    .showcase-upload-btn:hover { background: rgba(255,255,255,.14); }
+    .showcase-upload-hint { font-size: 11px; color: rgba(165,180,252,.5); }
+    /* Lightbox */
+    .sg-lightbox {
+      position: fixed; inset: 0; background: rgba(0,0,0,.85); z-index: 2000;
+      display: flex; align-items: center; justify-content: center; cursor: zoom-out;
+    }
+    .sg-lightbox img { max-width: 92vw; max-height: 88vh; border-radius: 8px; box-shadow: 0 8px 40px rgba(0,0,0,.5); }
+    .sg-lightbox .sg-lb-caption { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+      color: #fff; font-size: 14px; font-weight: 600; text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+
+        .org-section { background: #fff; border: 1px solid #e0ddd8; border-radius: 10px; margin-bottom: 20px; overflow: hidden; }
     .org-header { display: flex; align-items: center; gap: 14px; padding: 16px 20px; background: #f9f8f6; border-bottom: 1px solid #e8e5df; }
     .org-logo { height: 32px; width: auto; object-fit: contain; flex-shrink: 0; }
     .org-header-text { flex: 1; }
@@ -2597,6 +2671,49 @@ app.get("/", (req, res) => {
     </div>
   </div>
   <div class="main">
+
+    <!-- ── Showcase Hero — hackathon demo card ── -->
+    <div class="showcase-card" id="showcase">
+      <div class="showcase-top">
+        <div class="showcase-text">
+          <div class="showcase-badge">rec.us Rental Report Platform</div>
+          <h1 class="showcase-title">Beautiful reports for<br>Parks &amp; Recreation</h1>
+          <p class="showcase-desc">
+            A multi-org reporting platform that transforms raw Metabase data into interactive, grouped reports
+            with PDF exports, AI-powered insights, email subscriptions, and real-time dashboards &mdash;
+            purpose-built for parks &amp; rec departments.
+          </p>
+          <div class="showcase-stats">
+            <div class="showcase-stat">
+              <div class="showcase-stat-num">${Object.keys(ORGS).length}</div>
+              <div class="showcase-stat-label">Organizations</div>
+            </div>
+            <div class="showcase-stat">
+              <div class="showcase-stat-num">${REPORT_TYPES.length}</div>
+              <div class="showcase-stat-label">Report Types</div>
+            </div>
+            <div class="showcase-stat">
+              <div class="showcase-stat-num">AI</div>
+              <div class="showcase-stat-label">Chat &amp; Insights</div>
+            </div>
+            <div class="showcase-stat">
+              <div class="showcase-stat-num">PDF</div>
+              <div class="showcase-stat-label">Export &amp; Email</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="showcase-gallery" id="showcase-gallery"></div>
+      <div class="showcase-upload" id="showcase-upload">
+        <label class="showcase-upload-btn">
+          + Add photos
+          <input type="file" accept="image/*" multiple style="display:none"
+            onchange="handleShowcaseUpload(this.files)" />
+        </label>
+        <span class="showcase-upload-hint">Drag &amp; drop or click to add before/after screenshots for the demo</span>
+      </div>
+    </div>
+
     <div class="page-title">Organizations</div>
     ${orgSections}
     <!-- ── Metabase Links editor (all orgs; dashboard-level) ── -->
@@ -3592,6 +3709,72 @@ app.get("/", (req, res) => {
     })();
 
   </script>
+<script>
+  // Showcase gallery — persists images in localStorage
+  var SG_KEY = 'showcase_images';
+  function sgLoad() {
+    try { return JSON.parse(localStorage.getItem(SG_KEY)) || []; } catch(e) { return []; }
+  }
+  function sgSave(imgs) { localStorage.setItem(SG_KEY, JSON.stringify(imgs)); }
+
+  function sgRender() {
+    var gallery = document.getElementById('showcase-gallery');
+    var imgs = sgLoad();
+    gallery.innerHTML = imgs.map(function(img, i) {
+      var cap = img.caption ? '<div class="sg-caption">' + img.caption + '</div>' : '';
+      return '<div class="sg-item" onclick="sgLightbox(' + i + ')">'
+        + '<img src="' + img.data + '" alt="" />'
+        + cap
+        + '<button class="sg-remove" onclick="event.stopPropagation();sgRemove(' + i + ')" title="Remove">&times;</button>'
+        + '</div>';
+    }).join('');
+  }
+
+  function sgRemove(idx) {
+    var imgs = sgLoad();
+    imgs.splice(idx, 1);
+    sgSave(imgs);
+    sgRender();
+  }
+
+  function sgLightbox(idx) {
+    var imgs = sgLoad();
+    if (!imgs[idx]) return;
+    var lb = document.createElement('div');
+    lb.className = 'sg-lightbox';
+    lb.onclick = function() { lb.remove(); };
+    var cap = imgs[idx].caption ? '<div class="sg-lb-caption">' + imgs[idx].caption + '</div>' : '';
+    lb.innerHTML = '<img src="' + imgs[idx].data + '" />' + cap;
+    document.body.appendChild(lb);
+  }
+
+  function handleShowcaseUpload(files) {
+    var imgs = sgLoad();
+    Array.from(files).forEach(function(file) {
+      var reader = new FileReader();
+      reader.onload = function(e) {
+        var caption = prompt('Caption for this image (e.g. "Before: Flat Metabase table"):', '');
+        imgs.push({ data: e.target.result, caption: caption || '' });
+        sgSave(imgs);
+        sgRender();
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  // Drag & drop on the showcase card
+  var sc = document.getElementById('showcase');
+  if (sc) {
+    sc.addEventListener('dragover', function(e) { e.preventDefault(); sc.style.outline = '2px dashed #a5b4fc'; });
+    sc.addEventListener('dragleave', function() { sc.style.outline = ''; });
+    sc.addEventListener('drop', function(e) {
+      e.preventDefault(); sc.style.outline = '';
+      if (e.dataTransfer.files.length) handleShowcaseUpload(e.dataTransfer.files);
+    });
+  }
+
+  sgRender();
+</script>
 </body>
 </html>`);
 });
