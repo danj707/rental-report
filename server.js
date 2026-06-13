@@ -1421,7 +1421,10 @@ app.post("/:org/chat/api/message", async (req, res) => {
     if (!anthropicResp.ok) {
       const errBody = await anthropicResp.text();
       console.error(`[chat] Anthropic ${anthropicResp.status}: ${errBody.slice(0, 500)}`);
-      res.write(`data: [ERROR] AI service error (${anthropicResp.status})\n\n`);
+      // Surface error detail to client for debugging
+      let errMsg = `AI service error (${anthropicResp.status})`;
+      try { const ej = JSON.parse(errBody); errMsg += ': ' + (ej.error?.message || errBody.slice(0, 200)); } catch(_) { errMsg += ': ' + errBody.slice(0, 200); }
+      res.write(`data: [ERROR] ${errMsg}\n\n`);
       res.write("data: [DONE]\n\n");
       res.end();
       return;
