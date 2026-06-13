@@ -1294,8 +1294,9 @@ async function fetchOrgChatData(orgSlug, orgConfig) {
       const limited = rows.slice(0, 150);
       const cols = Object.keys(limited[0]);
       results[rt] = { label: CHAT_REPORT_LABELS[rt] || rt, cols, rows: limited, totalRows: rows.length };
+      console.log(`[chat] ✓ ${orgSlug}/${rt}: ${rows.length} rows`);
     } catch (e) {
-      console.error(`[chat] Failed to fetch ${orgSlug}/${rt}: ${e.message}`);
+      console.error(`[chat] ✗ ${orgSlug}/${rt}: ${e.message}`);
     }
   }));
 
@@ -1308,6 +1309,9 @@ async function fetchOrgChatData(orgSlug, orgConfig) {
 }
 
 function buildChatSystemPrompt(orgName, data) {
+  const loaded = Object.keys(data);
+  const inventory = loaded.map(rt => `  ✓ ${data[rt].label} (${data[rt].totalRows} rows)`).join("\n");
+
   const sections = Object.entries(data).map(([rt, d]) => {
     const header = `## ${d.label} (${d.totalRows} total rows, showing first ${d.rows.length})`;
     const colLine = `Columns: ${d.cols.join(", ")}`;
@@ -1316,7 +1320,12 @@ function buildChatSystemPrompt(orgName, data) {
     return `${header}\n${colLine}\n${rowLines}`;
   });
 
-  return `You are Rec AI, an intelligent data assistant for ${orgName}, a parks and recreation department. You have access to their live operational data across multiple report types.
+  return `You are Rec AI, an intelligent data assistant for ${orgName}, a parks and recreation department.
+
+DATA INVENTORY — you have the following ${loaded.length} report(s) loaded with live data:
+${inventory}
+
+IMPORTANT: You DO have access to all the reports listed above. Analyze and answer from this data directly — do not say you lack data for a report that appears in the inventory. If a report is listed above, its full data is provided below.
 
 YOUR DATA:
 ${sections.join("\n\n")}
@@ -1326,7 +1335,7 @@ RULES:
 - Be concise and specific — name facilities, programs, GL codes, products by name.
 - Format currency as $X,XXX.XX, percentages as X.X%.
 - Use markdown tables, bold, and lists when they help readability.
-- If asked about data you don't have, say so clearly and suggest which report type might help.
+- If asked about data not covered by ANY of the reports in the inventory above, say so and suggest what report type might help. But if the data IS in the inventory, use it.
 - When asked for trends or comparisons, cite the specific numbers.
 - Keep responses focused — 2-4 paragraphs unless a longer answer is clearly needed.
 - Never expose PII (emails, phone numbers, names of individual reservees/customers).`;
