@@ -259,6 +259,7 @@ const HOTDOG_CLAIMS_FILE = path.join(DATA_DIR, "hotdog_claims.json");
 const SUBS_FILE   = path.join(DATA_DIR, "subscriptions.json");
 const LOG_FILE    = path.join(DATA_DIR, "send_log.json");
 const EVENTS_FILE = path.join(DATA_DIR, "events.jsonl");
+const SHOWCASE_FILE = path.join(DATA_DIR, "showcase.json");
 
 // Merge any dynamically-added orgs from data/orgs.json into ORGS
 try {
@@ -2245,6 +2246,33 @@ app.post("/api/admin/new-org", dashboardAuth, async (req, res) => {
   res.json({ ok: true, slug, reports: Object.keys(reports), github });
 });
 
+// ── Showcase gallery API (server-persisted) ─────────────────────────
+function showcaseLoad() {
+  try { return JSON.parse(fs.readFileSync(SHOWCASE_FILE, "utf8")); }
+  catch(e) { return []; }
+}
+function showcaseSave(imgs) {
+  fs.writeFileSync(SHOWCASE_FILE, JSON.stringify(imgs, null, 2));
+}
+
+app.post("/api/admin/showcase", express.json({ limit: "12mb" }), (req, res) => {
+  const { data, caption } = req.body || {};
+  if (!data) return res.status(400).json({ error: "Image data required" });
+  const imgs = showcaseLoad();
+  imgs.push({ data, caption: caption || "" });
+  showcaseSave(imgs);
+  res.json({ ok: true, count: imgs.length });
+});
+
+app.delete("/api/admin/showcase/:index", (req, res) => {
+  const idx = parseInt(req.params.index, 10);
+  const imgs = showcaseLoad();
+  if (isNaN(idx) || idx < 0 || idx >= imgs.length) return res.status(400).json({ error: "Invalid index" });
+  imgs.splice(idx, 1);
+  showcaseSave(imgs);
+  res.json({ ok: true, count: imgs.length });
+});
+
 // ── Root index — all orgs dashboard ─────────────────────────────────
 app.get("/", (req, res) => {
   const reportMeta = {
@@ -2703,7 +2731,12 @@ app.get("/", (req, res) => {
           </div>
         </div>
       </div>
-      <div class="showcase-gallery" id="showcase-gallery"></div>
+      <div class="showcase-gallery" id="showcase-gallery">${showcaseLoad().map((img, i) => `
+          <div class="sg-item" onclick="sgLightbox(${i})">
+            <img src="${img.data}" alt="" />
+            ${img.caption ? `<div class="sg-caption">${img.caption}</div>` : ""}
+            <button class="sg-remove" onclick="event.stopPropagation();sgRemove(${i})" title="Remove">&times;</button>
+          </div>`).join("")}</div>
       <div class="showcase-upload" id="showcase-upload">
         <label class="showcase-upload-btn">
           + Add photos
@@ -3710,59 +3743,44 @@ app.get("/", (req, res) => {
 
   </script>
 <script>
-  // Showcase gallery — persists images in localStorage
-  var SG_KEY = 'showcase_images';
-  function sgLoad() {
-    try { return JSON.parse(localStorage.getItem(SG_KEY)) || []; } catch(e) { return []; }
-  }
-  function sgSave(imgs) { localStorage.setItem(SG_KEY, JSON.stringify(imgs)); }
-
-  function sgRender() {
-    var gallery = document.getElementById('showcase-gallery');
-    var imgs = sgLoad();
-    gallery.innerHTML = imgs.map(function(img, i) {
-      var cap = img.caption ? '<div class="sg-caption">' + img.caption + '</div>' : '';
-      return '<div class="sg-item" onclick="sgLightbox(' + i + ')">'
-        + '<img src="' + img.data + '" alt="" />'
-        + cap
-        + '<button class="sg-remove" onclick="event.stopPropagation();sgRemove(' + i + ')" title="Remove">&times;</button>'
-        + '</div>';
-    }).join('');
-  }
-
+  // Showcase gallery — server-persisted via /api/admin/showcase
   function sgRemove(idx) {
-    var imgs = sgLoad();
-    imgs.splice(idx, 1);
-    sgSave(imgs);
-    sgRender();
+    if (!confirm('Remove this image?')) return;
+    fetch('/api/admin/showcase/' + idx, { method: 'DELETE' })
+      .then(function() { window.location.reload(); })
+      .catch(function(e) { alert('Remove failed: ' + e.message); });
   }
 
   function sgLightbox(idx) {
-    var imgs = sgLoad();
-    if (!imgs[idx]) return;
+    var items = document.querySelectorAll('#showcase-gallery .sg-item img');
+    if (!items[idx]) return;
+    var imgSrc = items[idx].src;
+    var parent = items[idx].parentElement;
+    var capEl = parent.querySelector('.sg-caption');
+    var cap = capEl ? capEl.textContent : '';
     var lb = document.createElement('div');
     lb.className = 'sg-lightbox';
     lb.onclick = function() { lb.remove(); };
-    var cap = imgs[idx].caption ? '<div class="sg-lb-caption">' + imgs[idx].caption + '</div>' : '';
-    lb.innerHTML = '<img src="' + imgs[idx].data + '" />' + cap;
+    lb.innerHTML = '<img src="' + imgSrc + '" />' + (cap ? '<div class="sg-lb-caption">' + cap + '</div>' : '');
     document.body.appendChild(lb);
   }
 
   function handleShowcaseUpload(files) {
-    var imgs = sgLoad();
     Array.from(files).forEach(function(file) {
       var reader = new FileReader();
       reader.onload = function(e) {
-        var caption = prompt('Caption for this image (e.g. "Before: Flat Metabase table"):', '');
-        imgs.push({ data: e.target.result, caption: caption || '' });
-        sgSave(imgs);
-        sgRender();
+        var caption = prompt('Caption (e.g. "Before: Flat Metabase table"):', '');
+        fetch('/api/admin/showcase', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ data: e.target.result, caption: caption || '' })
+        }).then(function() { window.location.reload(); })
+          .catch(function(err) { alert('Upload failed: ' + err.message); });
       };
       reader.readAsDataURL(file);
     });
   }
 
-  // Drag & drop on the showcase card
   var sc = document.getElementById('showcase');
   if (sc) {
     sc.addEventListener('dragover', function(e) { e.preventDefault(); sc.style.outline = '2px dashed #a5b4fc'; });
@@ -3772,8 +3790,6 @@ app.get("/", (req, res) => {
       if (e.dataTransfer.files.length) handleShowcaseUpload(e.dataTransfer.files);
     });
   }
-
-  sgRender();
 </script>
 </body>
 </html>`);
