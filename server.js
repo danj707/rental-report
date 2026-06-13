@@ -2826,8 +2826,11 @@ app.get("/", (req, res) => {
       historic: { label: "Historic Buildings",        icon: "🏛️" },
       roster:   { label: "Class Roster",              icon: "📋" },
       overview: { label: "Facility Overview",         icon: "📈" },
-      products: { label: "Product Sales",         icon: "🛒" },
+      products: { label: "Product Sales",             icon: "🛒" },
       memberships: { label: "Memberships",            icon: "🎫" },
+      "court-utilization": { label: "Court Utilization", icon: "🎾" },
+      calendar: { label: "Calendar",                  icon: "🗓️" },
+      fasttrack: { label: "Fast Track",               icon: "⚡" },
     })))};
 
     function openAddOrg() {
