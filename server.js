@@ -1302,8 +1302,14 @@ async function fetchOrgChatData(orgSlug, orgConfig) {
         }
       }
 
-      // Limit rows to keep context manageable
-      const limited = rows.slice(0, 150);
+      // Limit rows and truncate long values to keep context manageable
+      const limited = rows.slice(0, 75).map(row => {
+        const trimmed = {};
+        for (const [k, v] of Object.entries(row)) {
+          trimmed[k] = typeof v === 'string' && v.length > 120 ? v.slice(0, 117) + '...' : v;
+        }
+        return trimmed;
+      });
       const cols = Object.keys(limited[0]);
       results[rt] = { label: CHAT_REPORT_LABELS[rt] || rt, cols, rows: limited, totalRows: rows.length };
       console.log(`[chat] ✓ ${orgSlug}/${rt}: ${rows.length} rows`);
@@ -1391,6 +1397,7 @@ app.post("/:org/chat/api/message", async (req, res) => {
     res.write("data: [DATA_READY]\n\n");
 
     const systemPrompt = buildChatSystemPrompt(orgName, data);
+    console.log(`[chat] ${slug}: system prompt ${(systemPrompt.length / 1024).toFixed(0)}KB, ${Object.keys(data).length} reports`);
 
     // Clean messages — only role + content
     const cleanMsgs = messages.map(m => ({ role: m.role, content: m.content }));
@@ -1413,7 +1420,7 @@ app.post("/:org/chat/api/message", async (req, res) => {
 
     if (!anthropicResp.ok) {
       const errBody = await anthropicResp.text();
-      console.error(`[chat] Anthropic ${anthropicResp.status}: ${errBody}`);
+      console.error(`[chat] Anthropic ${anthropicResp.status}: ${errBody.slice(0, 500)}`);
       res.write(`data: [ERROR] AI service error (${anthropicResp.status})\n\n`);
       res.write("data: [DONE]\n\n");
       res.end();
