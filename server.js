@@ -2285,6 +2285,20 @@ app.delete("/api/admin/showcase/:index", (req, res) => {
 
 // ── Root index — all orgs dashboard ─────────────────────────────────
 app.get("/", (req, res) => {
+  // Compute AI spend from events log
+  const allEvents = readEvents();
+  const aiEvents = allEvents.filter(e => e.event === "insights" || e.event === "message");
+  const aiSpend = { total: 0, last7d: 0, last24h: 0, calls: 0 };
+  const now = Date.now();
+  aiEvents.forEach(e => {
+    const cost = e.costUsd || 0;
+    aiSpend.total += cost;
+    aiSpend.calls += 1;
+    const age = now - new Date(e.ts).getTime();
+    if (age < 7 * 86400000) aiSpend.last7d += cost;
+    if (age < 86400000) aiSpend.last24h += cost;
+  });
+
   const reportMeta = {
     facility: { label: "Facility Rental Schedule", icon: "📅", desc: "Reservations grouped by date and location", color: "#16a34a" },
     gl:       { label: "GL Code Rollup",            icon: "📊", desc: "Payment and refund summary by GL code",   color: "#3b82f6" },
@@ -2626,6 +2640,15 @@ app.get("/", (req, res) => {
     <span id="rw-mem" style="color:#666"></span>
     <span style="flex:1"></span>
     <span id="rw-error" style="color:#e55;font-size:10px"></span>
+    <span style="color:#444;margin:0 4px">│</span>
+    <span style="color:#666;font-weight:600;text-transform:uppercase;letter-spacing:.06em;font-size:10px">AI Spend</span>
+    <span style="color:#4ade80;font-weight:700">$${aiSpend.total.toFixed(2)}</span>
+    <span style="color:#666">24h: $${aiSpend.last24h.toFixed(2)}</span>
+    <span style="color:#666">7d: $${aiSpend.last7d.toFixed(2)}</span>
+    <span style="color:#666">${aiSpend.calls} calls</span>
+    <a href="https://console.anthropic.com/settings/billing" target="_blank" rel="noopener"
+       style="color:#a78bfa;text-decoration:none;font-size:10px;font-weight:600;margin-left:4px"
+       onmouseover="this.style.color='#c4b5fd'" onmouseout="this.style.color='#a78bfa'">↗ Add Credits</a>
   </div>
   <script>
   (function fetchRailwayStatus(){
