@@ -415,7 +415,8 @@ function compute(rows) {
   var hhRevSeen={};
   rows.forEach(function(r){
     var hid=r['Household ID'];
-    if(!hhRevSeen[hid]) hhRevSeen[hid]={gross:num(col(r,['Gross Revenue','gross_revenue'])),refunds:num(col(r,['Refunds','refunds','Total Refunds'])),net:num(col(r,['Net Revenue','net_revenue'])),items:Math.round(num(col(r,['Items Purchased','items_purchased','Item Count']))),res:col(r,['Residency?','residency?','Residency']).trim()==='Yes'};
+    if(!hhRevSeen[hid]) hhRevSeen[hid]={gross:num(col(r,['Gross Revenue','gross_revenue'])),refunds:num(col(r,['Refunds','refunds','Total Refunds'])),net:num(col(r,['Net Revenue','net_revenue'])),items:Math.round(num(col(r,['Items Purchased','items_purchased','Item Count']))),res:col(r,['Residency?','residency?','Residency']).trim()==='Yes',
+      progRev:num(col(r,['Program Revenue','program_revenue'])),facRev:num(col(r,['Facility Revenue','facility_revenue'])),feeRev:num(col(r,['Fee Revenue','fee_revenue'])),prodRev:num(col(r,['Product Revenue','product_revenue']))};
   });
   var hhRevList=Object.values(hhRevSeen);
   var hasRevData=hhRevList.some(function(h){return h.gross>0||h.refunds>0;});
@@ -463,6 +464,32 @@ function compute(rows) {
     var sum=slice.reduce(function(s,v){return s+v;},0);
     paretoData.push({hhPct:p+'%',revPct:Math.round(sum/paretoTotal*100)});
   });
+
+  // ── Revenue by category ──────────────────────────────────
+  var totalProgRev=hhRevList.reduce(function(s,h){return s+h.progRev;},0);
+  var totalFacRev=hhRevList.reduce(function(s,h){return s+h.facRev;},0);
+  var totalFeeRev=hhRevList.reduce(function(s,h){return s+h.feeRev;},0);
+  var totalProdRev=hhRevList.reduce(function(s,h){return s+h.prodRev;},0);
+  var catData=[
+    {cat:'Programs',value:Math.round(totalProgRev),color:'#7c3aed'},
+    {cat:'Facilities',value:Math.round(totalFacRev),color:'#0d9488'},
+    {cat:'Fees',value:Math.round(totalFeeRev),color:'#f59e0b'},
+    {cat:'Products',value:Math.round(totalProdRev),color:'#f43f5e'},
+  ].filter(function(d){return d.value>0;});
+  var hasCatData=catData.some(function(d){return d.value>0;});
+
+  // Cross-sell: HHs by category usage
+  var progOnly=hhRevList.filter(function(h){return h.progRev>0&&h.facRev===0;}).length;
+  var facOnly=hhRevList.filter(function(h){return h.facRev>0&&h.progRev===0;}).length;
+  var bothProgFac=hhRevList.filter(function(h){return h.progRev>0&&h.facRev>0;}).length;
+  var progHH=hhRevList.filter(function(h){return h.progRev>0;}).length;
+  var facHH=hhRevList.filter(function(h){return h.facRev>0;}).length;
+
+  // Cross-sell CSV lists
+  var progNoFacCSV=[];
+  Object.keys(hhRevSeen).forEach(function(hid){if(hhRevSeen[hid].progRev>0&&hhRevSeen[hid].facRev===0&&hohInfoMap[hid])progNoFacCSV.push(hohInfoMap[hid]);});
+  var facNoProgCSV=[];
+  Object.keys(hhRevSeen).forEach(function(hid){if(hhRevSeen[hid].facRev>0&&hhRevSeen[hid].progRev===0&&hohInfoMap[hid])facNoProgCSV.push(hohInfoMap[hid]);});
 
   // ── Strategy tab computations ───────────────────────────
   // HoH info map for CSV exports
@@ -582,6 +609,10 @@ function compute(rows) {
     unbookedCSV:unbookedCSV, lapsingCSV:lapsingCSV, nonresCSV:nonresCSV, soloUnbookedCSV:soloUnbookedCSV,
     revByAgeBracket:revByAgeBracket, gradeRevData:gradeRevData,
     levers:levers, lapsingCount:lapsingIds.size,
+    catData:catData, hasCatData:hasCatData,
+    totalProgRev:totalProgRev, totalFacRev:totalFacRev, totalFeeRev:totalFeeRev, totalProdRev:totalProdRev,
+    progOnly:progOnly, facOnly:facOnly, bothProgFac:bothProgFac, progHH:progHH, facHH:facHH,
+    progNoFacCSV:progNoFacCSV, facNoProgCSV:facNoProgCSV,
   };
 }
 
@@ -683,6 +714,33 @@ function App() {
 
   var TEAL='#0d9488',AMBER='#f59e0b',ROSE='#f43f5e',EMERALD='#10b981',INDIGO='#6366f1',PURPLE='#8b5cf6',SKY='#0ea5e9';
   var GENDER_COLORS=[INDIGO,'#94a3b8',SKY,AMBER,PURPLE];
+
+  var insightsBlock = (
+    <div className="insights-section no-print">
+      <div className="insights-wrap">
+        <div className="insights-head">
+          <button type="button" className="insights-btn" onClick={getInsights} disabled={insightsLoading}>
+            {insightsLoading?'Analyzing\u2026':(insights?'\u21BB Refresh':'\u2728 Rec Insights')}
+          </button>
+          {insights&&!insightsLoading&&<span style={{fontSize:11,color:'#9ca3af'}}>Analyzed {s.hhCount} households, {s.total} people</span>}
+        </div>
+        {insightsLoading&&<div className="loading"><div className="spinner"/><div className="juice-msg"><span>Squeezing the oranges\u2026</span><span>Juicing!</span><span>Adding the pulp\u2026</span><span>Chilling the glass\u2026</span><span>Pouring it out\u2026</span></div></div>}
+        {insightsError&&!insightsLoading&&<div style={{padding:'8px 20px 16px'}}><div className="error">{insightsError}</div></div>}
+        {insights&&!insightsLoading&&(
+          <div className="insights-grid">
+            {insights.map(function(ins,i){return(
+              <div key={i} className={'insight-card insight-'+(ins.type||'signal')}>
+                <div className="insight-type">{ins.type||'signal'}</div>
+                <div className="insight-title">{ins.title}</div>
+                <div className="insight-detail">{ins.detail}</div>
+                {ins.action&&<div className="insight-action">{'\u2192'} {ins.action}</div>}
+              </div>
+            );})}
+          </div>
+        )}
+      </div>
+    </div>
+  );
   var agePct=Math.round(s.withAge/s.total*100);
   var genderPct=Math.round(s.genderSpecified/s.total*100);
   var zipPct=Math.round((s.total-s.noZip)/s.total*100);
@@ -736,31 +794,7 @@ function App() {
               <div className="obs-grid">{observations.map(function(o,i){return <div key={i}>{o}</div>;})}</div>
             </div>
 
-            {/* AI Insights */}
-            <div className="insights-section no-print">
-              <div className="insights-wrap">
-                <div className="insights-head">
-                  <button type="button" className="insights-btn" onClick={getInsights} disabled={insightsLoading}>
-                    {insightsLoading?'Analyzing…':(insights?'↻ Refresh':'✨ Rec Insights')}
-                  </button>
-                  {insights&&!insightsLoading&&<span style={{fontSize:11,color:'#9ca3af'}}>Analyzed {s.hhCount} households, {s.total} people</span>}
-                </div>
-                {insightsLoading&&<div className="loading"><div className="spinner"/><div className="juice-msg"><span>Squeezing the oranges…</span><span>Juicing!</span><span>Adding the pulp…</span><span>Chilling the glass…</span><span>Pouring it out…</span></div></div>}
-                {insightsError&&!insightsLoading&&<div style={{padding:'8px 20px 16px'}}><div className="error">{insightsError}</div></div>}
-                {insights&&!insightsLoading&&(
-                  <div className="insights-grid">
-                    {insights.map(function(ins,i){return(
-                      <div key={i} className={'insight-card insight-'+(ins.type||'signal')}>
-                        <div className="insight-type">{ins.type||'signal'}</div>
-                        <div className="insight-title">{ins.title}</div>
-                        <div className="insight-detail">{ins.detail}</div>
-                        {ins.action&&<div className="insight-action">→ {ins.action}</div>}
-                      </div>
-                    );})}
-                  </div>
-                )}
-              </div>
-            </div>
+            {insightsBlock}
 
             {/* Row 1: HH Size + Residency */}
             <div className="grid">
@@ -892,6 +926,33 @@ function App() {
                     })}
                   </div>
                 </div>
+
+                {/* Revenue by Category */}
+                {s.hasCatData&&(
+                  <div className="grid">
+                    <ChartPanel title="Revenue by Category" data={s.catData} labelKey="cat" dataKeys={[{key:'value',label:'Revenue $'}]} colors={s.catData.map(function(d){return d.color;})} />
+                    <div className="panel">
+                      <div className="panel-head">Category Breakdown</div>
+                      <div style={{display:'flex',flexDirection:'column',gap:6,padding:'6px 0'}}>
+                        {s.catData.map(function(d){
+                          var pct=s.totalGross>0?Math.round(d.value/s.totalGross*100):0;
+                          return(
+                            <div key={d.cat} style={{display:'flex',alignItems:'center',gap:10}}>
+                              <div style={{width:10,height:10,borderRadius:3,background:d.color,flexShrink:0}}/>
+                              <span style={{fontSize:13,fontWeight:600,flex:1}}>{d.cat}</span>
+                              <span style={{fontSize:14,fontWeight:800}}>${d.value>=1000?(d.value/1000).toFixed(1)+'K':d.value}</span>
+                              <span style={{fontSize:11,color:'#9ca3af',width:36,textAlign:'right'}}>{pct}%</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      <div style={{fontSize:11,color:'#9ca3af',marginTop:8}}>{s.progHH} HH use programs, {s.facHH} book facilities, {s.bothProgFac} do both</div>
+                    </div>
+                  </div>
+                )}
+
+                {insightsBlock}
+
               </React.Fragment>
             )}
           </React.Fragment>
@@ -994,6 +1055,39 @@ function App() {
                     )}
                   </div>
                 </div>
+
+                {/* Cross-sell */}
+                {(s.progOnly>0||s.facOnly>0)&&(
+                  <div className="panel" style={{marginBottom:14}}>
+                    <div className="panel-head">Cross-Sell Opportunities<span className="panel-note">programs vs facilities</span></div>
+                    <div style={{display:'flex',gap:14,padding:'8px 0',flexWrap:'wrap'}}>
+                      {s.progOnly>0&&(
+                        <div style={{flex:1,minWidth:200,padding:'12px 16px',background:'linear-gradient(135deg,#f5f3ff,#ede9fe)',borderRadius:8,border:'1px solid #c4b5fd'}}>
+                          <div style={{fontSize:24,fontWeight:800,color:'#5b21b6'}}>{s.progOnly}</div>
+                          <div style={{fontSize:12,color:'#6d28d9',fontWeight:600}}>HH use programs but never booked a facility</div>
+                          <button style={{marginTop:8,fontSize:11,padding:'5px 10px',borderRadius:5,border:'1px solid #c4b5fd',background:'#fff',cursor:'pointer',fontFamily:'inherit',fontWeight:600}} onClick={function(){exportCSV(s.progNoFacCSV,'programs-no-facility-'+orgSlug);}}>{'\u2B07'} Export CSV</button>
+                        </div>
+                      )}
+                      {s.facOnly>0&&(
+                        <div style={{flex:1,minWidth:200,padding:'12px 16px',background:'linear-gradient(135deg,#f0fdfa,#ccfbf1)',borderRadius:8,border:'1px solid #5eead4'}}>
+                          <div style={{fontSize:24,fontWeight:800,color:'#0f766e'}}>{s.facOnly}</div>
+                          <div style={{fontSize:12,color:'#115e59',fontWeight:600}}>HH book facilities but aren't in any programs</div>
+                          <button style={{marginTop:8,fontSize:11,padding:'5px 10px',borderRadius:5,border:'1px solid #5eead4',background:'#fff',cursor:'pointer',fontFamily:'inherit',fontWeight:600}} onClick={function(){exportCSV(s.facNoProgCSV,'facility-no-programs-'+orgSlug);}}>{'\u2B07'} Export CSV</button>
+                        </div>
+                      )}
+                      {s.bothProgFac>0&&(
+                        <div style={{flex:1,minWidth:200,padding:'12px 16px',background:'#f8fafc',borderRadius:8,border:'1px solid #e2e8f0'}}>
+                          <div style={{fontSize:24,fontWeight:800,color:'#334155'}}>{s.bothProgFac}</div>
+                          <div style={{fontSize:12,color:'#475569',fontWeight:600}}>HH use both programs and facilities</div>
+                          <div style={{fontSize:11,color:'#94a3b8',marginTop:4}}>Your most engaged households</div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {insightsBlock}
+
               </React.Fragment>
             )}
           </React.Fragment>
