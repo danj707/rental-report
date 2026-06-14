@@ -258,6 +258,60 @@ function compute(rows) {
   var multiHH=hhSizes.filter(function(s){return s>1;}).length;
   var maxHH=hhSizes[hhSizes.length-1];
 
+  // ── Revenue (household-level, deduplicated) ──────────────
+  function num(v){if(!v||!String(v).trim())return 0;return parseFloat(String(v).replace(/,/g,''))||0;}
+  var hhRevSeen={};
+  rows.forEach(function(r){
+    var hid=r['Household ID'];
+    if(!hhRevSeen[hid]) hhRevSeen[hid]={gross:num(r['Gross Revenue']),refunds:num(r['Refunds']),net:num(r['Net Revenue']),items:Math.round(num(r['Items Purchased'])),res:r['Residency?'].trim()==='Yes'};
+  });
+  var hhRevList=Object.values(hhRevSeen);
+  var hasRevData=hhRevList.some(function(h){return h.gross>0||h.refunds>0;});
+  var spendingHH=hhRevList.filter(function(h){return h.net>0;});
+  var unbookedHH=hhRevList.filter(function(h){return h.net===0;});
+  var totalGross=hhRevList.reduce(function(s,h){return s+h.gross;},0);
+  var totalRefunds=hhRevList.reduce(function(s,h){return s+h.refunds;},0);
+  var totalNet=hhRevList.reduce(function(s,h){return s+h.net;},0);
+  var spendNets=spendingHH.map(function(h){return h.net;}).sort(function(a,b){return a-b;});
+  var medianRev=spendNets.length?spendNets[Math.floor(spendNets.length/2)]:0;
+  var avgRev=spendNets.length?(totalNet/spendNets.length):0;
+  function pctile(arr,p){if(!arr.length)return 0;var i=Math.floor(arr.length*p/100);return arr[Math.min(i,arr.length-1)];}
+
+  // Revenue distribution buckets
+  var revBuckets=[{label:'$0',lo:0,hi:0},{label:'$1\u2013$50',lo:0.01,hi:50},{label:'$51\u2013$100',lo:50.01,hi:100},{label:'$101\u2013$250',lo:100.01,hi:250},{label:'$251\u2013$500',lo:250.01,hi:500},{label:'$501\u2013$1K',lo:500.01,hi:1000},{label:'$1K\u2013$2K',lo:1000.01,hi:2000},{label:'$2K+',lo:2000.01,hi:999999}];
+  var revDist=revBuckets.map(function(b){var c=hhRevList.filter(function(h){return h.net>=b.lo&&h.net<=b.hi;}).length;return{range:b.label,count:c};}).filter(function(d){return d.count>0;});
+
+  // Revenue by residency
+  var resSpend=spendingHH.filter(function(h){return h.res;});
+  var nonresSpend=spendingHH.filter(function(h){return !h.res;});
+  var resAvg=resSpend.length?(resSpend.reduce(function(s,h){return s+h.net;},0)/resSpend.length):0;
+  var nonresAvg=nonresSpend.length?(nonresSpend.reduce(function(s,h){return s+h.net;},0)/nonresSpend.length):0;
+  var resMedian=resSpend.length?resSpend.map(function(h){return h.net;}).sort(function(a,b){return a-b;})[Math.floor(resSpend.length/2)]:0;
+  var nonresMedian=nonresSpend.length?nonresSpend.map(function(h){return h.net;}).sort(function(a,b){return a-b;})[Math.floor(nonresSpend.length/2)]:0;
+  var resByRes=[{group:'Resident',avg:Math.round(resAvg),median:Math.round(resMedian),count:resSpend.length},{group:'Non-Resident',avg:Math.round(nonresAvg),median:Math.round(nonresMedian),count:nonresSpend.length}];
+
+  // Revenue by HH size
+  var sizeRevMap={};
+  hhRevList.forEach(function(h){
+    var hid=Object.keys(hhRevSeen).find(function(k){return hhRevSeen[k]===h;});
+    var sz=Math.min(hhMap[hid]||1,6);var k=sz<6?String(sz):'6+';
+    if(!sizeRevMap[k])sizeRevMap[k]={spend:[],total:0,all:0};
+    sizeRevMap[k].all++;
+    if(h.net>0){sizeRevMap[k].spend.push(h.net);sizeRevMap[k].total+=h.net;}
+  });
+  var revBySize=['1','2','3','4','5','6+'].filter(function(k){return sizeRevMap[k];}).map(function(k){var d=sizeRevMap[k];return{size:k,avg:d.spend.length?Math.round(d.total/d.spend.length):0,count:d.spend.length,total:Math.round(d.total)};});
+
+  // Pareto curve
+  var paretoNets=spendNets.slice().reverse();
+  var paretoTotal=paretoNets.reduce(function(s,v){return s+v;},0);
+  var paretoData=[];var pRun=0;
+  [5,10,15,20,25,30,40,50,60,70,80,90,100].forEach(function(p){
+    var idx=Math.floor(paretoNets.length*p/100);
+    var slice=paretoNets.slice(0,idx);
+    var sum=slice.reduce(function(s,v){return s+v;},0);
+    paretoData.push({hhPct:p+'%',revPct:Math.round(sum/paretoTotal*100)});
+  });
+
   return {
     total:total, hohCount:hohs.length, memCount:members.length,
     residents:residents, nonResidents:total-residents, resPct:((residents/total)*100).toFixed(1),
@@ -271,6 +325,16 @@ function compute(rows) {
     cities:topCities, topCity:topCity, resByAge:resByAge,
     noAge:noAge, noGender:noGender, noZip:noZip,
     last30:last30, last90:last90, peakMonth:peakMonth,
+    // Revenue
+    hasRevData:hasRevData, totalGross:totalGross, totalRefunds:totalRefunds, totalNet:totalNet,
+    spendingHH:spendingHH.length, unbookedHH:unbookedHH.length,
+    medianRev:medianRev, avgRev:avgRev,
+    revP25:pctile(spendNets,25), revP75:pctile(spendNets,75), revP90:pctile(spendNets,90), revP95:pctile(spendNets,95),
+    revDist:revDist, resByRes:resByRes, revBySize:revBySize, paretoData:paretoData,
+    refundRate:totalGross>0?((totalRefunds/totalGross)*100).toFixed(1):'0',
+    conversionRate:hhCount>0?((spendingHH.length/hhCount)*100).toFixed(0):'0',
+    hhOver100:hhRevList.filter(function(h){return h.net>100;}).length,
+    hhOver500:hhRevList.filter(function(h){return h.net>500;}).length,
   };
 }
 
@@ -287,6 +351,10 @@ function buildInsightsBlob(s) {
     grade:{withData:s.withGrade,breakdown:s.gradeData.map(function(g){return g.grade+':'+g.count;}).join(', ')},
     topCities:s.cities.slice(0,6).map(function(c){return c.city+':'+c.count;}).join(', '),
     dataGaps:{ageMissing:s.noAge,genderMissing:s.noGender,zipMissing:s.noZip},
+    revenue:{totalNet:Math.round(s.totalNet),totalGross:Math.round(s.totalGross),totalRefunds:Math.round(s.totalRefunds),
+      spendingHH:s.spendingHH,unbookedHH:s.unbookedHH,conversionPct:s.conversionRate,
+      medianPerHH:Math.round(s.medianRev),avgPerHH:Math.round(s.avgRev),refundRatePct:s.refundRate,
+      residentAvg:Math.round(s.resByRes[0]?.avg||0),nonResidentAvg:Math.round(s.resByRes[1]?.avg||0)},
   };
 }
 
@@ -366,7 +434,7 @@ function App() {
           </div>
           <div className={'tab'+(tab==='revenue'?' active':'')} onClick={function(){setTab('revenue');}}>
             \uD83D\uDCB0 Revenue
-            <span className="tab-badge" style={{background:'#fef3c7',color:'#92400e'}}>Soon</span>
+            <span className="tab-badge" style={{background:s.hasRevData?'#dcfce7':'#fef3c7',color:s.hasRevData?'#166534':'#92400e'}}>{s.hasRevData?'$'+(s.totalNet/1000).toFixed(0)+'K':'No data'}</span>
           </div>
         </div>
 
@@ -477,25 +545,74 @@ function App() {
         )}
 
         {tab==='revenue' && (
-          <div className="rev-coming">
-            <h2>\uD83D\uDCB0 Revenue Analytics</h2>
-            <p>Phase 2 — connecting household demographic data to spend via <code>materialized.item_log_report</code>.</p>
-            <div className="future-box" style={{marginTop:20,textAlign:'left',maxWidth:600}}>
-              <h4>Planned Metrics</h4>
-              <ul>
-                <li><strong>Revenue per household</strong> — median, avg, distribution histogram</li>
-                <li><strong>Revenue by residency</strong> — resident vs non-resident avg spend</li>
-                <li><strong>Revenue by age group</strong> — where is the money concentrated</li>
-                <li><strong>Revenue by HH size</strong> — do bigger families spend more per capita</li>
-                <li><strong>Unbooked households</strong> — signed up, $0 spend (conversion gap)</li>
-                <li><strong>Revenue concentration</strong> — Pareto: what % of HH drive what % of revenue</li>
-                <li><strong>Program diversity</strong> — how many programs per household (cross-sell)</li>
-                <li><strong>LTV by signup cohort</strong> — do early adopters spend more</li>
-                <li><strong>Seasonal spend by age</strong> — when do different demographics book</li>
-                <li><strong>Underserved segments</strong> — high population, low spend = opportunity</li>
-              </ul>
-            </div>
-          </div>
+          <React.Fragment>
+            {!s.hasRevData ? (
+              <div className="rev-coming">
+                <h2>No Revenue Data</h2>
+                <p>Revenue columns not detected in the data. Ensure the Metabase query includes the <code>hh_revenue</code> CTE with Gross Revenue, Refunds, and Net Revenue columns.</p>
+              </div>
+            ) : (
+              <React.Fragment>
+                {/* Revenue KPIs */}
+                <div className="kpi-row">
+                  <div className="kpi" style={{'--accent':EMERALD}}><div className="kpi-label">Net Revenue</div><div className="kpi-val">${s.totalNet>=1000?(s.totalNet/1000).toFixed(0)+'K':Math.round(s.totalNet)}</div><div className="kpi-sub">${s.totalGross>=1000?(s.totalGross/1000).toFixed(0)+'K':Math.round(s.totalGross)} gross</div></div>
+                  <div className="kpi" style={{'--accent':INDIGO}}><div className="kpi-label">Median / HH</div><div className="kpi-val">${Math.round(s.medianRev)}</div><div className="kpi-sub">Avg ${Math.round(s.avgRev)}</div></div>
+                  <div className="kpi" style={{'--accent':TEAL}}><div className="kpi-label">Conversion</div><div className="kpi-val">{s.conversionRate}%</div><div className="kpi-sub">{s.spendingHH} of {s.hhCount} HH</div></div>
+                  <div className="kpi" style={{'--accent':AMBER}}><div className="kpi-label">Unbooked</div><div className="kpi-val">{s.unbookedHH}</div><div className="kpi-sub">{Math.round(s.unbookedHH/s.hhCount*100)}% of households</div></div>
+                  <div className="kpi" style={{'--accent':ROSE}}><div className="kpi-label">Refund Rate</div><div className="kpi-val">{s.refundRate}%</div><div className="kpi-sub">${s.totalRefunds>=1000?(s.totalRefunds/1000).toFixed(1)+'K':Math.round(s.totalRefunds)} total</div></div>
+                </div>
+
+                {/* Percentiles callout */}
+                <div className="panel" style={{marginBottom:14}}>
+                  <div className="panel-head">Spend Percentiles<span className="panel-note">among {s.spendingHH} spending households</span></div>
+                  <div style={{display:'flex',justifyContent:'space-around',textAlign:'center',padding:'8px 0'}}>
+                    {[{l:'P25',v:s.revP25},{l:'Median',v:s.medianRev},{l:'P75',v:s.revP75},{l:'P90',v:s.revP90},{l:'P95',v:s.revP95}].map(function(p){return(
+                      <div key={p.l}>
+                        <div style={{fontSize:10,fontWeight:600,color:'#6b7280',textTransform:'uppercase'}}>{p.l}</div>
+                        <div style={{fontSize:22,fontWeight:800,color:'#111827'}}>${Math.round(p.v)}</div>
+                      </div>
+                    );})}
+                  </div>
+                </div>
+
+                {/* Charts */}
+                <div className="grid">
+                  <ChartPanel title="Revenue Distribution" note="net $ per household" data={s.revDist} labelKey="range" dataKeys={[{key:'count',label:'Households'}]} colors={[EMERALD]} />
+                  <ChartPanel title="Avg Spend: Resident vs Non-Resident" data={s.resByRes} labelKey="group" dataKeys={[{key:'avg',label:'Avg $'},{key:'median',label:'Median $'}]} colors={[TEAL,SKY]} />
+                </div>
+
+                <div className="grid">
+                  <ChartPanel title="Avg Net Revenue by Household Size" note="bigger families spend more" data={s.revBySize} labelKey="size" dataKeys={[{key:'avg',label:'Avg Net $'}]} colors={[INDIGO]} />
+                  <ChartPanel title="Revenue Concentration (Pareto)" note="top 20% = ~64% of revenue" type="line" data={s.paretoData} labelKey="hhPct" dataKeys={[{key:'revPct',label:'% of Revenue'}]} colors={[ROSE]} opts={{scales:{y:{max:100,ticks:{callback:function(v){return v+'%';}}}}}} />
+                </div>
+
+                {/* Conversion funnel */}
+                <div className="panel" style={{marginBottom:14}}>
+                  <div className="panel-head">Conversion Funnel</div>
+                  <div style={{display:'flex',alignItems:'center',gap:6,padding:'10px 0'}}>
+                    {[
+                      {label:'Signed Up',val:s.hhCount,color:INDIGO},
+                      {label:'First Purchase',val:s.spendingHH,color:TEAL},
+                      {label:'Spent >$100',val:s.hhOver100,color:AMBER},
+                      {label:'Spent >$500',val:s.hhOver500,color:ROSE},
+                    ].map(function(step,i,arr){
+                      var pct=Math.round(step.val/s.hhCount*100);
+                      var w=Math.max(pct,8);
+                      return (
+                        <div key={step.label} style={{flex:1,textAlign:'center'}}>
+                          <div style={{height:Math.max(w*.6,20),background:step.color,borderRadius:6,display:'flex',alignItems:'center',justifyContent:'center',marginBottom:4,transition:'height .3s'}}>
+                            <span style={{fontSize:14,fontWeight:800,color:'#fff'}}>{step.val}</span>
+                          </div>
+                          <div style={{fontSize:10,fontWeight:600,color:'#6b7280'}}>{step.label}</div>
+                          <div style={{fontSize:10,color:'#9ca3af'}}>{pct}%</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </React.Fragment>
+            )}
+          </React.Fragment>
         )}
       </div>
       <div id="report-ready" style={{display:'none'}}/>
