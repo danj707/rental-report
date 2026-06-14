@@ -210,6 +210,12 @@ function AreaChartPanel({ title, data, labelKey, dataKey, color }) {
 
 /* ═══ Compute metrics from raw rows ═══ */
 function compute(rows) {
+  // Metabase returns numbers/nulls for some fields — normalize everything to strings
+  rows = rows.map(function(r) {
+    var o = {};
+    Object.keys(r).forEach(function(k) { o[k] = r[k] == null ? '' : String(r[k]); });
+    return o;
+  });
   var total = rows.length;
   var residents = rows.filter(r => (r['Residency?'] || '').trim() === 'Yes').length;
   var ages = rows.map(r => parseFloat(r['Age'])).filter(a => !isNaN(a)).sort((a,b) => a - b);
