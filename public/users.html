@@ -72,6 +72,7 @@
   .obs { background:linear-gradient(135deg,#f0fdf4,#ecfeff); border-radius:10px; padding:16px 20px; border:1px solid #a7f3d0; margin-bottom:12px; }
   .obs-title { font-size:11px; font-weight:700; color:#065f46; text-transform:uppercase; letter-spacing:.04em; margin-bottom:8px; }
   .obs-grid { display:grid; grid-template-columns:1fr 1fr; gap:5px 20px; font-size:12px; color:#064e3b; line-height:1.5; }
+  .emoji { display:inline; } body.print-mode .emoji { display:none; }
 
   .insights-section { margin-bottom:14px; }
   .insights-wrap { background:linear-gradient(135deg,#eef2ff,#f0fdfa); border-radius:10px; border:1px solid #c7d2fe; overflow:hidden; }
@@ -670,17 +671,39 @@ function buildInsightsBlob(s, currentTab) {
 }
 
 /* ═══ Auto observations ═══ */
+function E(emoji){return React.createElement('span',{className:'emoji'},emoji+' ');}
 function buildObs(s) {
   var o=[];
-  o.push({l:'Households',t:s.hhCount+' households, '+s.total+' people total. '+s.hohCount+' HoH + '+s.memCount+' members. Median HH size: '+s.medianHH+'.'});
-  if(s.medianMemAge!==null) o.push({l:'Ages',t:'Member median age '+s.medianMemAge+' vs HoH median '+s.medianHohAge+'. '+(s.medianMemAge<18?'Primarily a family/youth community.':'Mixed adult household base.')});
-  if(s.peakMonth.count>s.total*0.15) o.push({l:'Growth',t:s.peakMonth.month+' peak: '+s.peakMonth.count+' signups ('+Math.round(s.peakMonth.count/s.total*100)+'% of all).'});
-  o.push({l:'Residency',t:s.resPct+'% residency rate. '+(parseFloat(s.resPct)>75?'Strong local base.':parseFloat(s.resPct)>50?'Moderate local mix.':'Heavy non-resident usage.')});
-  if(s.withGrade>10) o.push({l:'Grades',t:s.withGrade+' people with grade data. Most common: '+s.gradeData[0].grade+' ('+s.gradeData[0].count+'). Covers preschool through high school.'});
+  o.push({e:'\uD83D\uDC68\u200D\uD83D\uDC69\u200D\uD83D\uDC67\u200D\uD83D\uDC66',l:'Households',t:s.hhCount+' households, '+s.total+' people total. '+s.hohCount+' HoH + '+s.memCount+' members. Median HH size: '+s.medianHH+'.'});
+  if(s.medianMemAge!==null) o.push({e:'\uD83D\uDC76',l:'Ages',t:'Member median age '+s.medianMemAge+' vs HoH median '+s.medianHohAge+'. '+(s.medianMemAge<18?'Primarily a family/youth community.':'Mixed adult household base.')});
+  if(s.peakMonth.count>s.total*0.15) o.push({e:'\uD83D\uDCC8',l:'Growth',t:s.peakMonth.month+' peak: '+s.peakMonth.count+' signups ('+Math.round(s.peakMonth.count/s.total*100)+'% of all).'});
+  o.push({e:'\uD83C\uDFE0',l:'Residency',t:s.resPct+'% residency rate. '+(parseFloat(s.resPct)>75?'Strong local base.':parseFloat(s.resPct)>50?'Moderate local mix.':'Heavy non-resident usage.')});
+  if(s.withGrade>10) o.push({e:'\uD83C\uDF93',l:'Grades',t:s.withGrade+' people with grade data. Most common: '+s.gradeData[0].grade+' ('+s.gradeData[0].count+'). Covers preschool through high school.'});
   var gapPct=Math.round(Math.max(s.noAge,s.noGender)/s.total*100);
-  if(gapPct>15) o.push({l:'Data Gap',t:'Up to '+gapPct+'% missing demographics. '+s.noAge+' missing age, '+s.noGender+' missing gender.'});
-  if(s.badAges>0) o.push({l:'Alert',t:s.badAges+' records with invalid DOB (age <0 or >110). Likely data entry errors.'});
-  if(s.topCity) o.push({l:'Geography',t:Math.round(s.cities[0].count/s.total*100)+'% from '+s.topCity+'. Spans '+s.cities.length+'+ cities.'});
+  if(gapPct>15) o.push({e:'\u26A0\uFE0F',l:'Data Gap',t:'Up to '+gapPct+'% missing demographics. '+s.noAge+' missing age, '+s.noGender+' missing gender.'});
+  if(s.badAges>0) o.push({e:'\uD83D\uDEA8',l:'Alert',t:s.badAges+' records with invalid DOB (age <0 or >110). Likely data entry errors.'});
+  if(s.topCity) o.push({e:'\uD83D\uDDFA\uFE0F',l:'Geography',t:Math.round(s.cities[0].count/s.total*100)+'% from '+s.topCity+'. Spans '+s.cities.length+'+ cities.'});
+  return o;
+}
+function buildRevObs(s) {
+  if(!s.hasRevData) return [];
+  var o=[];
+  o.push({e:'\uD83D\uDCB0',l:'Total Revenue',t:'$'+Math.round(s.totalNet).toLocaleString()+' net across '+s.spendingHH+' spending households. $'+Math.round(s.totalRefunds).toLocaleString()+' in refunds ('+s.refundRate+'%).'});
+  o.push({e:'\uD83D\uDCCA',l:'Typical Spend',t:'Median household spends $'+Math.round(s.medianRev)+', avg $'+Math.round(s.avgRev)+'. Top 5% spend $'+Math.round(s.revP95)+'+'});
+  o.push({e:'\uD83D\uDEAA',l:'Conversion',t:s.conversionRate+'% of households have purchased ('+s.spendingHH+' of '+s.hhCount+'). '+s.unbookedHH+' signed up but never bought.'});
+  if(s.resByRes&&s.resByRes[0]&&s.resByRes[1]) o.push({e:'\uD83C\uDFE0',l:'Resident Gap',t:'Residents avg $'+s.resByRes[0].avg+' vs non-residents $'+s.resByRes[1].avg+'. '+(s.resByRes[0].avg>s.resByRes[1].avg*1.5?'Residents spend significantly more.':'Relatively balanced spend.')});
+  if(s.hasCatData&&s.totalProgRev>0) o.push({e:'\uD83C\uDFAF',l:'Category Mix',t:'Programs: $'+Math.round(s.totalProgRev).toLocaleString()+', Facilities: $'+Math.round(s.totalFacRev).toLocaleString()+'. '+s.progHH+' HH use programs, '+s.facHH+' book facilities.'});
+  if(s.revBySize&&s.revBySize.length>1) o.push({e:'\uD83D\uDC6A',l:'Family Spend',t:'Larger families spend more: size 1 avg $'+(s.revBySize[0]?.avg||0)+' vs size 3+ avg $'+(s.revBySize[2]?.avg||s.revBySize[1]?.avg||0)+'. Family programming drives revenue.'});
+  return o;
+}
+function buildStratObs(s) {
+  if(!s.hasRevData) return [];
+  var o=[];
+  if(s.unbookedHH>0) o.push({e:'\uD83D\uDCA1',l:'Unbooked Gap',t:s.unbookedHH+' households signed up but never purchased. If converted at median rate, that\u2019s +$'+Math.round(s.unbookedHH*s.medianRev).toLocaleString()+' potential revenue.'});
+  if(s.lapsingCount>0) o.push({e:'\u23F0',l:'Lapsing Risk',t:s.lapsingCount+' previously active households haven\u2019t purchased in 90+ days. These are re-engagement targets.'});
+  if(s.progOnly>0) o.push({e:'\uD83C\uDFAE',l:'Cross-Sell',t:s.progOnly+' HH use programs but never booked a facility. '+s.facOnly+' book facilities but aren\u2019t in programs. Cross-sell opportunity.'});
+  if(s.gradeRevData&&s.gradeRevData.length>0){var top=s.gradeRevData[0];o.push({e:'\uD83C\uDF93',l:'Grade Insight',t:'Highest concentration: '+top.grade+' ('+top.kids+' kids). HH with '+top.grade+' students avg $'+top.avgHHRev+' spend.'});}
+  if(s.levers&&s.levers.length>0){var totalOpp=s.levers.reduce(function(sum,l){return sum+l.opp;},0);o.push({e:'\uD83D\uDE80',l:'Total Opportunity',t:s.levers.length+' revenue levers identified totaling +$'+Math.round(totalOpp).toLocaleString()+' in potential revenue.'});}
   return o;
 }
 
@@ -712,6 +735,8 @@ function App() {
 
   var s = useMemo(function(){return rows?compute(rows):null;}, [rows]);
   var observations = useMemo(function(){return s?buildObs(s):[];}, [s]);
+  var revObservations = useMemo(function(){return s?buildRevObs(s):[];}, [s]);
+  var stratObservations = useMemo(function(){return s?buildStratObs(s):[];}, [s]);
 
   var getInsights = useCallback(function() {
     if(!s||insightsLoading)return;
@@ -854,7 +879,7 @@ function App() {
             {/* Key Observations */}
             <div className="obs">
               <div className="obs-title">Key Observations</div>
-              <div className="obs-grid">{observations.map(function(o,i){return <div key={i}><strong style={{color:'#065f46'}}>{o.l}</strong> {o.t}</div>;})}</div>
+              <div className="obs-grid">{observations.map(function(o,i){return <div key={i}>{E(o.e)}<strong style={{color:'#065f46'}}>{o.l}</strong> {o.t}</div>;})}</div>
             </div>
 
             {insightsBlock}
@@ -954,6 +979,13 @@ function App() {
                   </div>
                 </div>
 
+                {revObservations.length>0&&(
+                  <div className="obs">
+                    <div className="obs-title">Key Observations</div>
+                    <div className="obs-grid">{revObservations.map(function(o,i){return <div key={i}>{E(o.e)}<strong style={{color:'#065f46'}}>{o.l}</strong> {o.t}</div>;})}</div>
+                  </div>
+                )}
+
                 {insightsBlock}
 
                 {/* Charts */}
@@ -1047,6 +1079,13 @@ function App() {
                     </span>
                   </div>
                 </div>
+
+                {stratObservations.length>0&&(
+                  <div className="obs">
+                    <div className="obs-title">Key Observations</div>
+                    <div className="obs-grid">{stratObservations.map(function(o,i){return <div key={i}>{E(o.e)}<strong style={{color:'#065f46'}}>{o.l}</strong> {o.t}</div>;})}</div>
+                  </div>
+                )}
 
                 {insightsBlock}
 
