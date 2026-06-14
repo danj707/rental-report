@@ -306,8 +306,24 @@ function GenderChart({ gender, genderSpecified, total, colors }) {
 }
 
 /* ═══ compute() ═══ */
-function compute(rows) {
+function compute(rows, includeGuests) {
   rows = rows.map(function(r) { var o={}; Object.keys(r).forEach(function(k){o[k]=r[k]==null?'':String(r[k]);}); return o; });
+
+  // Guest detection: First Name = 'Guest' or email matches guest-user+guest-*
+  function isGuest(r) {
+    var fn = r['First Name'].trim().toLowerCase();
+    var em = (r['Email'] || '').trim().toLowerCase();
+    return fn === 'guest' || em.indexOf('guest-user+guest-') === 0;
+  }
+  var allRows = rows;
+  var guestRows = rows.filter(isGuest);
+  var registeredRows = rows.filter(function(r){return !isGuest(r);});
+  var guestCount = guestRows.length;
+  var guestHHs = new Set(); guestRows.forEach(function(r){guestHHs.add(r['Household ID']);});
+  var guestHHCount = guestHHs.size;
+
+  // Use registered-only for demographics, all for revenue (controlled by toggle)
+  if (!includeGuests) rows = registeredRows;
   var total = rows.length;
   var hohs = rows.filter(function(r){return r['Role']==='Head of Household';});
   var members = rows.filter(function(r){return r['Role']==='Member';});
@@ -628,6 +644,8 @@ function compute(rows) {
     totalProgRev:totalProgRev, totalFacRev:totalFacRev, totalFeeRev:totalFeeRev, totalProdRev:totalProdRev,
     progOnly:progOnly, facOnly:facOnly, bothProgFac:bothProgFac, progHH:progHH, facHH:facHH,
     progNoFacCSV:progNoFacCSV, facNoProgCSV:facNoProgCSV,
+    // Guests
+    guestCount:guestCount, guestHHCount:guestHHCount, totalWithGuests:allRows.length,
   };
 }
 
@@ -636,6 +654,7 @@ function buildInsightsBlob(s, currentTab) {
   var base = {
     totalPeople:s.total, households:s.hhCount, hohCount:s.hohCount, memberCount:s.memCount,
     medianHouseholdSize:s.medianHH, residentPct:s.resPct,
+    guestAccounts:s.guestCount, guestHouseholds:s.guestHHCount,
   };
   if (currentTab === 'revenue') return Object.assign(base, {
     focus:'REVENUE ANALYSIS',
@@ -683,6 +702,7 @@ function buildObs(s) {
   if(gapPct>15) o.push({e:'\u26A0\uFE0F',l:'Data Gap',t:'Up to '+gapPct+'% missing demographics. '+s.noAge+' missing age, '+s.noGender+' missing gender.'});
   if(s.badAges>0) o.push({e:'\uD83D\uDEA8',l:'Alert',t:s.badAges+' records with invalid DOB (age <0 or >110). Likely data entry errors.'});
   if(s.topCity) o.push({e:'\uD83D\uDDFA\uFE0F',l:'Geography',t:Math.round(s.cities[0].count/s.total*100)+'% from '+s.topCity+'. Spans '+s.cities.length+'+ cities.'});
+  if(s.guestCount>0) o.push({e:'\uD83D\uDC64',l:'Guest Accounts',t:s.guestCount+' guest users ('+s.guestHHCount+' HH) detected. These are checkout-only accounts with no demographic data. '+(s.guestCount>s.total*0.2?'High guest volume \u2014 consider prompting account creation at POS.':'')});
   return o;
 }
 function buildRevObs(s) {
@@ -716,6 +736,7 @@ function App() {
   var [refreshing, setRefreshing] = useState(false);
   var [tab, setTab] = useState('demo');
   var [mapMode, setMapMode] = useState('hh');
+  var [includeGuests, setIncludeGuests] = useState(false);
   function switchTab(t){setTab(t);setInsights(null);setInsightsError(null);}
   var [insights, setInsights] = useState(null);
   var [insightsLoading, setInsightsLoading] = useState(false);
@@ -733,7 +754,7 @@ function App() {
       .catch(function(e){setError(e.message);setLoading(false);});
   }, []);
 
-  var s = useMemo(function(){return rows?compute(rows):null;}, [rows]);
+  var s = useMemo(function(){return rows?compute(rows,includeGuests):null;}, [rows,includeGuests]);
   var observations = useMemo(function(){return s?buildObs(s):[];}, [s]);
   var revObservations = useMemo(function(){return s?buildRevObs(s):[];}, [s]);
   var stratObservations = useMemo(function(){return s?buildStratObs(s):[];}, [s]);
@@ -832,7 +853,12 @@ function App() {
       <div className="toolbar no-print">
         <h1>Users Report</h1>
         <span className="pill" style={{background:'rgba(255,255,255,.12)',color:'#ddd'}}>{s.topCity||orgSlug}</span>
-        <span className="pill" style={{background:'rgba(16,185,129,.15)',color:'#6ee7b7'}}>{s.hhCount} households &middot; {s.total} people</span>
+        <span className="pill" style={{background:'rgba(16,185,129,.15)',color:'#6ee7b7'}}>{s.hhCount} HH &middot; {s.total} people</span>
+        {s.guestCount>0&&(
+          <button onClick={function(){setIncludeGuests(!includeGuests);}} style={{padding:'4px 12px',borderRadius:4,border:'1px solid '+(includeGuests?'#fbbf24':'rgba(255,255,255,.25)'),background:includeGuests?'rgba(251,191,36,.18)':'rgba(255,255,255,.08)',color:includeGuests?'#fbbf24':'#fff',fontSize:11,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}>
+            {includeGuests?'Guests ON':'Guests OFF'} ({s.guestCount})
+          </button>
+        )}
         <div className="spacer"/>
         <div className="divider"/>
         <button onClick={function(){window.print();}}>{'\uD83D\uDDA8\uFE0F'} Print</button>
@@ -903,8 +929,10 @@ function App() {
             </div>
 
             {/* Data quality alerts */}
-            {(s.badAges>0||s.maxHH>10)&&(
+            {(s.badAges>0||s.maxHH>10||s.guestCount>0)&&(
               <div style={{marginBottom:14}}>
+                {s.guestCount>0&&!includeGuests&&<div className="alert-card alert-info"><strong>{s.guestCount} guest accounts</strong> ({s.guestHHCount} households) detected and excluded from demographics. Guests are checkout-only accounts with no profile data. Toggle "Guests" in the toolbar to include them.</div>}
+                {s.guestCount>0&&includeGuests&&<div className="alert-card alert-warn"><strong>Guest accounts included</strong> — {s.guestCount} guest users are in this view. They have no demographic data (no DOB, city, phone) and will skew completeness metrics.</div>}
                 {s.badAges>0&&<div className="alert-card alert-warn"><strong>{s.badAges} records</strong> have invalid dates of birth (computed age &lt;0 or &gt;110). These are excluded from age statistics.</div>}
                 {s.maxHH>10&&<div className="alert-card alert-info">Largest household has <strong>{s.maxHH} members</strong>. This may be a test account or organizational account worth reviewing.</div>}
               </div>
