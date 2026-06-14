@@ -181,25 +181,29 @@ function GeoMap({ zipData, mode }) {
     var toGeo = zipData.filter(function(z) { return !cache[z.zip]; });
     if (toGeo.length === 0) { setCoords(cache); setLoading(false); return; }
 
-    var idx = 0;
-    function next() {
-      if (idx >= toGeo.length) {
+    // zippopotam.us is free, CORS-enabled, no rate limit — fire in parallel batches
+    var batch = 0;
+    var batchSize = 8;
+    function doBatch() {
+      var slice = toGeo.slice(batch * batchSize, (batch + 1) * batchSize);
+      if (slice.length === 0) {
         try { localStorage.setItem('_zipGeo', JSON.stringify(cache)); } catch(e) {}
         setCoords(Object.assign({}, cache));
         setLoading(false);
         return;
       }
-      var z = toGeo[idx];
-      var q = z.zip + ' ' + (z.state || 'US');
-      fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&postalcode=' + encodeURIComponent(z.zip) + '&country=US')
-        .then(function(r) { return r.json(); })
-        .then(function(data) {
-          if (data && data[0]) { cache[z.zip] = [parseFloat(data[0].lat), parseFloat(data[0].lon)]; }
-        })
-        .catch(function() {})
-        .finally(function() { idx++; setTimeout(next, 350); });
+      Promise.all(slice.map(function(z) {
+        return fetch('https://api.zippopotam.us/us/' + encodeURIComponent(z.zip))
+          .then(function(r) { return r.ok ? r.json() : null; })
+          .then(function(data) {
+            if (data && data.places && data.places[0]) {
+              cache[z.zip] = [parseFloat(data.places[0].latitude), parseFloat(data.places[0].longitude)];
+            }
+          })
+          .catch(function() {});
+      })).then(function() { batch++; setTimeout(doBatch, 200); });
     }
-    next();
+    doBatch();
   }, [zipData]);
 
   // Build/update map
