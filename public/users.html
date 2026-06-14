@@ -858,7 +858,7 @@ function App() {
     <React.Fragment>
       <div className="toolbar no-print">
         <h1>Users Report</h1>
-        <span className="pill" style={{background:'rgba(255,255,255,.12)',color:'#ddd'}}>{s.topCity||orgSlug}</span>
+        <span className="pill" style={{background:'rgba(255,255,255,.12)',color:'#ddd'}}>{orgSlug.charAt(0).toUpperCase()+orgSlug.slice(1)}</span>
         <span className="pill" style={{background:'rgba(16,185,129,.15)',color:'#6ee7b7'}}>{s.hhCount} HH &middot; {s.total} people</span>
         {s.guestCount>0&&(
           <button onClick={function(){setIncludeGuests(!includeGuests);}} style={{padding:'4px 12px',borderRadius:4,border:'1px solid '+(includeGuests?'#fbbf24':'rgba(255,255,255,.25)'),background:includeGuests?'rgba(251,191,36,.18)':'rgba(255,255,255,.08)',color:includeGuests?'#fbbf24':'#fff',fontSize:11,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}>
