@@ -445,8 +445,8 @@ function compute(rows) {
 
   // Revenue by HH size
   var sizeRevMap={};
-  hhRevList.forEach(function(h){
-    var hid=Object.keys(hhRevSeen).find(function(k){return hhRevSeen[k]===h;});
+  Object.keys(hhRevSeen).forEach(function(hid){
+    var h=hhRevSeen[hid];
     var sz=Math.min(hhMap[hid]||1,6);var k=sz<6?String(sz):'6+';
     if(!sizeRevMap[k])sizeRevMap[k]={spend:[],total:0,all:0};
     sizeRevMap[k].all++;
