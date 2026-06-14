@@ -321,6 +321,96 @@ function compute(rows) {
     paretoData.push({hhPct:p+'%',revPct:Math.round(sum/paretoTotal*100)});
   });
 
+  // ── Strategy tab computations ───────────────────────────
+  // HoH info map for CSV exports
+  var hohInfoMap={};
+  hohs.forEach(function(r){
+    var hid=r['Household ID'];
+    if(!hohInfoMap[hid]) hohInfoMap[hid]={
+      'First Name':r['First Name'],'Last Name':r['Last Name'],'Email':col(r,['Email','email']),
+      'Phone':col(r,['Phone','phone']),'City':r['City'],'State':r['State'],'Zip Code':r['Zip Code'],
+      'Residency':r['Residency?'],'Signup Date':r['Created At'],
+      'HH Size':hhMap[hid]||1,'Net Revenue':num(col(r,['Net Revenue','net_revenue'])),
+    };
+  });
+
+  // 1. Unbooked profile vs spender profile
+  var unbookedIds=new Set(hhRevList.filter(function(h){return h.net===0;}).map(function(h,i){return Object.keys(hhRevSeen)[i];}));
+  // Rebuild unbooked IDs properly
+  unbookedIds=new Set();
+  Object.keys(hhRevSeen).forEach(function(hid){if(hhRevSeen[hid].net===0)unbookedIds.add(hid);});
+  var spenderIds=new Set();
+  Object.keys(hhRevSeen).forEach(function(hid){if(hhRevSeen[hid].net>0)spenderIds.add(hid);});
+
+  function profileSegment(idSet){
+    var seg=rows.filter(function(r){return idSet.has(r['Household ID']);});
+    var segHohs=seg.filter(function(r){return r['Role']==='Head of Household';});
+    var segRes=segHohs.filter(function(r){return r['Residency?'].trim()==='Yes';}).length;
+    var segSizes=[];
+    var seen={};segHohs.forEach(function(r){var h=r['Household ID'];if(!seen[h]){seen[h]=1;segSizes.push(hhMap[h]||1);}});
+    segSizes.sort(function(a,b){return a-b;});
+    var daysArr=segHohs.map(function(r){var d=parseDate(r['Created At']);return d?Math.round((now-d)/(86400000)):null;}).filter(function(v){return v!==null;});
+    daysArr.sort(function(a,b){return a-b;});
+    return {
+      count:idSet.size,resPct:segHohs.length?Math.round(segRes/segHohs.length*100):0,
+      medianSize:segSizes.length?segSizes[Math.floor(segSizes.length/2)]:0,
+      medianDaysOld:daysArr.length?daysArr[Math.floor(daysArr.length/2)]:0,
+    };
+  }
+  var unbookedProfile=profileSegment(unbookedIds);
+  var spenderProfile=profileSegment(spenderIds);
+
+  // Unbooked CSV list
+  var unbookedCSV=[];
+  unbookedIds.forEach(function(hid){if(hohInfoMap[hid])unbookedCSV.push(hohInfoMap[hid]);});
+
+  // 2. Revenue by age group (avg HH revenue for HHs with member in each bracket)
+  var revByAgeBracket=ageBuckets.map(function(b){
+    var hhIdsInBracket=new Set();
+    rows.forEach(function(r){var a=safeAge(r);if(a!==null&&a>=b.lo&&a<=b.hi)hhIdsInBracket.add(r['Household ID']);});
+    var revs=[];
+    hhIdsInBracket.forEach(function(hid){if(hhRevSeen[hid]&&hhRevSeen[hid].net>0)revs.push(hhRevSeen[hid].net);});
+    var memCount=rows.filter(function(r){var a=safeAge(r);return a!==null&&a>=b.lo&&a<=b.hi;}).length;
+    return {range:b.label,hhCount:hhIdsInBracket.size,spendingHH:revs.length,avgRev:revs.length?Math.round(revs.reduce(function(s,v){return s+v;},0)/revs.length):0,memberCount:memCount};
+  }).filter(function(d){return d.hhCount>0;});
+
+  // 3. Grade gap — kids per grade vs avg HH revenue for HHs with kid in that grade
+  var gradeRevData=gradeData.map(function(g){
+    var hhIdsWithGrade=new Set();
+    rows.forEach(function(r){var gr=r['Grade'].trim();if(gr&&(gr.charAt(0).toUpperCase()+gr.slice(1))===g.grade)hhIdsWithGrade.add(r['Household ID']);});
+    var revs=[];
+    hhIdsWithGrade.forEach(function(hid){if(hhRevSeen[hid]&&hhRevSeen[hid].net>0)revs.push(hhRevSeen[hid].net);});
+    return {grade:g.grade,kids:g.count,avgHHRev:revs.length?Math.round(revs.reduce(function(s,v){return s+v;},0)/revs.length):0};
+  });
+
+  // 4. Revenue levers
+  var levers=[];
+  if(unbookedIds.size>0) levers.push({title:'Convert unbooked households',desc:unbookedIds.size+' households signed up but never purchased. If they converted at the median spend rate:',opp:Math.round(unbookedIds.size*medianRev),segment:'unbooked'});
+  if(nonresAvg>0&&resAvg>nonresAvg) levers.push({title:'Close the non-resident spend gap',desc:'Non-residents avg $'+Math.round(nonresAvg)+' vs residents $'+Math.round(resAvg)+'. If non-resident spenders matched resident levels:',opp:Math.round((resAvg-nonresAvg)*nonresSpend.length),segment:'nonresident'});
+  var size1Conv=0,size2Conv=0;
+  if(sizeRevMap['1']){size1Conv=sizeRevMap['1'].spend.length/sizeRevMap['1'].all;}
+  if(sizeRevMap['2']){size2Conv=sizeRevMap['2'].spend.length/sizeRevMap['2'].all;}
+  if(size1Conv<size2Conv&&sizeRevMap['1']) levers.push({title:'Activate single-person households',desc:'Solo HH convert at '+Math.round(size1Conv*100)+'% vs '+Math.round(size2Conv*100)+'% for pairs. If solo conversion matched pairs:',opp:Math.round((size2Conv-size1Conv)*sizeRevMap['1'].all*(sizeRevMap['1'].spend.length>0?sizeRevMap['1'].total/sizeRevMap['1'].spend.length:medianRev)),segment:'solo'});
+
+  // 5. Lapsing households (last txn > 90 days ago)
+  var lapsingIds=new Set();
+  rows.forEach(function(r){
+    if(r['Role']!=='Head of Household')return;
+    var hid=r['Household ID'];
+    var lastTxn=parseDate(col(r,['Last Transaction','last_transaction']));
+    if(lastTxn&&(now-lastTxn)>90*86400000)lapsingIds.add(hid);
+  });
+  var lapsingCSV=[];
+  lapsingIds.forEach(function(hid){if(hohInfoMap[hid]){var info=Object.assign({},hohInfoMap[hid]);lapsingCSV.push(info);}});
+
+  // Non-resident CSV
+  var nonresCSV=[];
+  Object.keys(hohInfoMap).forEach(function(hid){if(hohInfoMap[hid]['Residency']!=='Yes')nonresCSV.push(hohInfoMap[hid]);});
+
+  // Solo unbooked CSV
+  var soloUnbookedCSV=[];
+  unbookedIds.forEach(function(hid){if(hohInfoMap[hid]&&(hhMap[hid]||1)===1)soloUnbookedCSV.push(hohInfoMap[hid]);});
+
   return {
     total:total, hohCount:hohs.length, memCount:members.length,
     residents:residents, nonResidents:total-residents, resPct:((residents/total)*100).toFixed(1),
@@ -344,6 +434,11 @@ function compute(rows) {
     conversionRate:hhCount>0?((spendingHH.length/hhCount)*100).toFixed(0):'0',
     hhOver100:hhRevList.filter(function(h){return h.net>100;}).length,
     hhOver500:hhRevList.filter(function(h){return h.net>500;}).length,
+    // Strategy
+    unbookedProfile:unbookedProfile, spenderProfile:spenderProfile,
+    unbookedCSV:unbookedCSV, lapsingCSV:lapsingCSV, nonresCSV:nonresCSV, soloUnbookedCSV:soloUnbookedCSV,
+    revByAgeBracket:revByAgeBracket, gradeRevData:gradeRevData,
+    levers:levers, lapsingCount:lapsingIds.size,
   };
 }
 
@@ -430,6 +525,14 @@ function App() {
 
   useEffect(function(){window.recShareLink=function(){return window.location.href;};}, []);
 
+  function exportCSV(data, filename) {
+    if(!data||!data.length){alert('No data to export');return;}
+    var ws=XLSX.utils.json_to_sheet(data);
+    var wb=XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb,ws,'Export');
+    XLSX.writeFile(wb,filename+'.csv',{bookType:'csv'});
+  }
+
   if(loading) return <div className="loading"><div className="spinner"/><p>Loading user data\u2026</p></div>;
   if(error) return <div className="dash"><div className="error"><strong>Error:</strong> {error}</div></div>;
   if(!s) return <div className="dash"><div className="empty">No data returned.</div></div>;
@@ -464,6 +567,10 @@ function App() {
           <div className={'tab'+(tab==='revenue'?' active':'')} onClick={function(){setTab('revenue');}}>
             \uD83D\uDCB0 Revenue
             <span className="tab-badge" style={{background:s.hasRevData?'#dcfce7':'#fef3c7',color:s.hasRevData?'#166534':'#92400e'}}>{s.hasRevData?'$'+(s.totalNet/1000).toFixed(0)+'K':'No data'}</span>
+          </div>
+          <div className={'tab'+(tab==='strategy'?' active':'')} onClick={function(){setTab('strategy');}}>
+            \uD83C\uDFAF Strategy
+            {s.hasRevData&&s.levers.length>0&&<span className="tab-badge" style={{background:'#fef3c7',color:'#92400e'}}>{s.levers.length} levers</span>}
           </div>
         </div>
 
@@ -639,6 +746,95 @@ function App() {
                         </div>
                       );
                     })}
+                  </div>
+                </div>
+              </React.Fragment>
+            )}
+          </React.Fragment>
+        )}
+
+        {tab==='strategy' && (
+          <React.Fragment>
+            {!s.hasRevData ? (
+              <div className="rev-coming"><h2>Revenue Data Required</h2><p>Strategy tab needs revenue data. Update the Metabase query to include the revenue CTE.</p></div>
+            ) : (
+              <React.Fragment>
+                {/* Revenue Levers */}
+                <div className="panel" style={{marginBottom:14}}>
+                  <div className="panel-head">Revenue Levers<span className="panel-note">quantified growth opportunities</span></div>
+                  <div style={{display:'flex',flexDirection:'column',gap:10,padding:'4px 0'}}>
+                    {s.levers.map(function(lev,i){return(
+                      <div key={i} style={{display:'flex',alignItems:'center',gap:14,padding:'12px 16px',background:'linear-gradient(135deg,#f0fdf4,#ecfeff)',borderRadius:8,border:'1px solid #a7f3d0'}}>
+                        <div style={{flex:1}}>
+                          <div style={{fontSize:14,fontWeight:700,color:'#065f46',marginBottom:2}}>{lev.title}</div>
+                          <div style={{fontSize:12,color:'#064e3b',lineHeight:1.5}}>{lev.desc}</div>
+                        </div>
+                        <div style={{textAlign:'center',flexShrink:0}}>
+                          <div style={{fontSize:10,fontWeight:600,color:'#059669',textTransform:'uppercase'}}>Opportunity</div>
+                          <div style={{fontSize:24,fontWeight:800,color:'#065f46'}}>+${lev.opp>=1000?(lev.opp/1000).toFixed(0)+'K':lev.opp}</div>
+                        </div>
+                        <button style={{flexShrink:0,fontSize:11,padding:'6px 12px',borderRadius:6,border:'1px solid #d1d5db',background:'#fff',cursor:'pointer',fontFamily:'inherit',fontWeight:600}} onClick={function(){
+                          if(lev.segment==='unbooked')exportCSV(s.unbookedCSV,'unbooked-households-'+orgSlug);
+                          else if(lev.segment==='nonresident')exportCSV(s.nonresCSV,'nonresident-households-'+orgSlug);
+                          else if(lev.segment==='solo')exportCSV(s.soloUnbookedCSV,'solo-unbooked-'+orgSlug);
+                        }}>{'\u2B07'} Export CSV</button>
+                      </div>
+                    );})}
+                  </div>
+                </div>
+
+                {/* Unbooked vs Spender + Lapsing */}
+                <div className="grid">
+                  <div className="panel">
+                    <div className="panel-head">Who's Not Buying?<span className="panel-note">{s.unbookedProfile.count} unbooked</span></div>
+                    <div style={{display:'grid',gridTemplateColumns:'1fr auto auto',gap:'6px 16px',fontSize:12,padding:'6px 0'}}>
+                      <div style={{fontWeight:700,color:'#6b7280'}}></div><div style={{fontWeight:700,color:'#059669',textAlign:'right'}}>Spenders</div><div style={{fontWeight:700,color:'#dc2626',textAlign:'right'}}>Unbooked</div>
+                      <div>Households</div><div style={{textAlign:'right',fontWeight:600}}>{s.spenderProfile.count}</div><div style={{textAlign:'right',fontWeight:600}}>{s.unbookedProfile.count}</div>
+                      <div>Residency rate</div><div style={{textAlign:'right',fontWeight:600}}>{s.spenderProfile.resPct}%</div><div style={{textAlign:'right',fontWeight:600}}>{s.unbookedProfile.resPct}%</div>
+                      <div>Median HH size</div><div style={{textAlign:'right',fontWeight:600}}>{s.spenderProfile.medianSize}</div><div style={{textAlign:'right',fontWeight:600}}>{s.unbookedProfile.medianSize}</div>
+                      <div>Median account age</div><div style={{textAlign:'right',fontWeight:600}}>{s.spenderProfile.medianDaysOld}d</div><div style={{textAlign:'right',fontWeight:600}}>{s.unbookedProfile.medianDaysOld}d</div>
+                    </div>
+                    <button style={{marginTop:10,fontSize:11,padding:'6px 12px',borderRadius:6,border:'1px solid #d1d5db',background:'#fff',cursor:'pointer',fontFamily:'inherit',fontWeight:600,color:'#374151'}} onClick={function(){exportCSV(s.unbookedCSV,'unbooked-households-'+orgSlug);}}>{'\u2B07'} Export {s.unbookedCSV.length} unbooked contacts</button>
+                  </div>
+
+                  <div className="panel">
+                    <div className="panel-head">Lapsing Households<span className="panel-note">no purchase in 90+ days</span></div>
+                    <div style={{padding:'20px 0',textAlign:'center'}}>
+                      <div style={{fontSize:40,fontWeight:800,color:s.lapsingCount>50?'#dc2626':'#f59e0b'}}>{s.lapsingCount}</div>
+                      <div style={{fontSize:13,color:'#6b7280',marginTop:4}}>previously active households</div>
+                      <div style={{fontSize:12,color:'#9ca3af'}}>haven't purchased in 90+ days</div>
+                    </div>
+                    {s.lapsingCount>0&&<button style={{fontSize:11,padding:'6px 12px',borderRadius:6,border:'1px solid #d1d5db',background:'#fff',cursor:'pointer',fontFamily:'inherit',fontWeight:600,color:'#374151'}} onClick={function(){exportCSV(s.lapsingCSV,'lapsing-households-'+orgSlug);}}>{'\u2B07'} Export {s.lapsingCSV.length} lapsing contacts</button>}
+                  </div>
+                </div>
+
+                {/* Revenue by age + Grade gap */}
+                <div className="grid">
+                  <ChartPanel title="Avg HH Revenue by Member Age" note="households with member in age range" data={s.revByAgeBracket} labelKey="range" dataKeys={[{key:'avgRev',label:'Avg Net $'}]} colors={['#6366f1']} />
+                  <div className="panel">
+                    <div className="panel-head">Grade Gap Analysis<span className="panel-note">kids vs household spend</span></div>
+                    {s.gradeRevData.length>0?(
+                      <div style={{display:'flex',flexDirection:'column',gap:3,padding:'4px 0'}}>
+                        <div style={{display:'grid',gridTemplateColumns:'80px 40px 1fr 60px',gap:4,fontSize:10,fontWeight:700,color:'#6b7280',textTransform:'uppercase',paddingBottom:4,borderBottom:'1px solid #e5e7eb'}}>
+                          <div>Grade</div><div style={{textAlign:'right'}}>Kids</div><div></div><div style={{textAlign:'right'}}>Avg HH $</div>
+                        </div>
+                        {s.gradeRevData.map(function(g){
+                          var maxRev=Math.max.apply(null,s.gradeRevData.map(function(x){return x.avgHHRev||1;}));
+                          return(
+                            <div key={g.grade} style={{display:'grid',gridTemplateColumns:'80px 40px 1fr 60px',gap:4,alignItems:'center',fontSize:12}}>
+                              <div style={{fontWeight:600}}>{g.grade}</div>
+                              <div style={{textAlign:'right',color:'#6b7280'}}>{g.kids}</div>
+                              <div style={{height:10,background:'#f1f5f9',borderRadius:3,overflow:'hidden'}}>
+                                <div style={{width:Math.max(g.avgHHRev/maxRev*100,2)+'%',height:'100%',background:'#8b5cf6',borderRadius:3}}/>
+                              </div>
+                              <div style={{textAlign:'right',fontWeight:700}}>${g.avgHHRev}</div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ):(
+                      <div className="empty">No grade data available</div>
+                    )}
                   </div>
                 </div>
               </React.Fragment>
