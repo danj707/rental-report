@@ -16,12 +16,16 @@
   body.print-mode .no-print { display: none !important; }
   body.print-mode .toolbar { display: none !important; }
 
-  .toolbar { display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding:12px 20px; background:#fff; border-bottom:1px solid #e5e7eb; position:sticky; top:0; z-index:100; }
-  .toolbar h1 { font-size:17px; font-weight:800; color:#111827; white-space:nowrap; }
+  .toolbar { display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding:8px 20px; background:#2c2c2c; color:#eee; font-size:13px; position:sticky; top:0; z-index:100; }
+  .toolbar h1 { font-size:15px; font-weight:700; color:#fff; white-space:nowrap; margin-right:4px; }
   .pill { font-size:11px; font-weight:700; padding:3px 10px; border-radius:20px; }
   .spacer { flex:1; }
-  .btn { display:inline-flex; align-items:center; gap:5px; padding:7px 14px; border-radius:6px; font-size:12px; font-weight:600; border:1px solid #d1d5db; background:#fff; cursor:pointer; color:#374151; font-family:inherit; }
-  .btn:hover { background:#f9fafb; }
+  .toolbar button { padding:6px 14px; border:1px solid rgba(255,255,255,.25); border-radius:4px; background:rgba(255,255,255,.08); color:#fff; font-size:12px; font-family:inherit; cursor:pointer; transition:background .15s; white-space:nowrap; }
+  .toolbar button:hover { background:rgba(255,255,255,.18); }
+  .toolbar .btn-pdf { background:#3b82f6; border-color:#3b82f6; font-weight:600; }
+  .toolbar .btn-pdf:hover { background:#2563eb; }
+  .toolbar .btn-pdf:disabled { opacity:.5; cursor:not-allowed; }
+  .toolbar .divider { width:1px; height:28px; background:rgba(255,255,255,.15); margin:0 2px; }
 
   /* Tabs */
   .tabs { display:flex; gap:0; border-bottom:2px solid #e5e7eb; margin-bottom:16px; }
@@ -408,6 +412,22 @@ function App() {
     .finally(function(){setInsightsLoading(false);});
   }, [s,insightsLoading]);
 
+  var [pdfLoading, setPdfLoading] = useState(false);
+
+  function downloadPdf() {
+    setPdfLoading(true);
+    fetch(withToken('/'+orgSlug+'/'+reportType+'/api/pdf'))
+      .then(function(r){return r.blob();})
+      .then(function(blob){
+        var a=document.createElement('a');
+        a.href=URL.createObjectURL(blob);
+        a.download='users-report-'+orgSlug+'.pdf';
+        document.body.appendChild(a);a.click();a.remove();
+      })
+      .catch(function(e){alert('PDF generation failed: '+e.message);})
+      .finally(function(){setPdfLoading(false);});
+  }
+
   useEffect(function(){window.recShareLink=function(){return window.location.href;};}, []);
 
   if(loading) return <div className="loading"><div className="spinner"/><p>Loading user data\u2026</p></div>;
@@ -425,10 +445,14 @@ function App() {
     <React.Fragment>
       <div className="toolbar no-print">
         <h1>Users Report</h1>
-        <span className="pill" style={{background:'#dbeafe',color:'#1e40af'}}>{s.topCity||orgSlug}</span>
-        <span className="pill" style={{background:'#dcfce7',color:'#166534'}}>{s.hhCount} households &middot; {s.total} people</span>
+        <span className="pill" style={{background:'rgba(255,255,255,.12)',color:'#ddd'}}>{s.topCity||orgSlug}</span>
+        <span className="pill" style={{background:'rgba(16,185,129,.15)',color:'#6ee7b7'}}>{s.hhCount} households &middot; {s.total} people</span>
         <div className="spacer"/>
-        <button className="btn" onClick={function(){window.print();}}>\uD83D\uDDA8\uFE0F Print</button>
+        <div className="divider"/>
+        <button onClick={function(){window.print();}}>{'\uD83D\uDDA8\uFE0F'} Print</button>
+        <button className="btn-pdf" onClick={downloadPdf} disabled={pdfLoading}>
+          {pdfLoading?'Generating\u2026':'\uD83D\uDCC4 PDF'}
+        </button>
       </div>
 
       <div className="dash">
@@ -453,6 +477,38 @@ function App() {
               <div className="kpi" style={{'--accent':AMBER}}><div className="kpi-label">Median HH Size</div><div className="kpi-val">{s.medianHH}</div><div className="kpi-sub">Avg {s.avgHH} &middot; Max {s.maxHH}</div></div>
               <div className="kpi" style={{'--accent':SKY}}><div className="kpi-label">Median Age</div><div className="kpi-val">{s.medianAge!=null?s.medianAge:'\u2014'}</div><div className="kpi-sub">HoH {s.medianHohAge} &middot; Mem {s.medianMemAge}</div></div>
               <div className="kpi" style={{'--accent':EMERALD}}><div className="kpi-label">With Grade</div><div className="kpi-val">{s.withGrade}</div><div className="kpi-sub">{gradePct}% of people</div></div>
+            </div>
+
+            {/* Key Observations */}
+            <div className="obs">
+              <div className="obs-title">Key Observations</div>
+              <div className="obs-grid">{observations.map(function(o,i){return <div key={i}>{o}</div>;})}</div>
+            </div>
+
+            {/* AI Insights */}
+            <div className="insights-section no-print">
+              <div className="insights-wrap">
+                <div className="insights-head">
+                  <button type="button" className="insights-btn" onClick={getInsights} disabled={insightsLoading}>
+                    {insightsLoading?'Analyzing\u2026':(insights?'\u21BB Refresh':'\u2728 Rec Insights')}
+                  </button>
+                  {insights&&!insightsLoading&&<span style={{fontSize:11,color:'#9ca3af'}}>Analyzed {s.hhCount} households, {s.total} people</span>}
+                </div>
+                {insightsLoading&&<div className="loading"><div className="spinner"/><p>Analyzing {s.total} people across {s.cities.length} cities\u2026</p></div>}
+                {insightsError&&!insightsLoading&&<div style={{padding:'8px 20px 16px'}}><div className="error">{insightsError}</div></div>}
+                {insights&&!insightsLoading&&(
+                  <div className="insights-grid">
+                    {insights.map(function(ins,i){return(
+                      <div key={i} className={'insight-card insight-'+(ins.type||'signal')}>
+                        <div className="insight-type">{ins.type||'signal'}</div>
+                        <div className="insight-title">{ins.title}</div>
+                        <div className="insight-detail">{ins.detail}</div>
+                        {ins.action&&<div className="insight-action">\u2192 {ins.action}</div>}
+                      </div>
+                    );})}
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Row 1: HH Size + Residency */}
@@ -515,37 +571,6 @@ function App() {
               </div>
             </div>
 
-            {/* AI Insights */}
-            <div className="insights-section no-print">
-              <div className="insights-wrap">
-                <div className="insights-head">
-                  <button type="button" className="insights-btn" onClick={getInsights} disabled={insightsLoading}>
-                    {insightsLoading?'Analyzing\u2026':(insights?'\u21BB Refresh':'\u2728 Rec Insights')}
-                  </button>
-                  {insights&&!insightsLoading&&<span style={{fontSize:11,color:'#9ca3af'}}>Analyzed {s.hhCount} households, {s.total} people</span>}
-                </div>
-                {insightsLoading&&<div className="loading"><div className="spinner"/><p>Analyzing {s.total} people across {s.cities.length} cities\u2026</p></div>}
-                {insightsError&&!insightsLoading&&<div style={{padding:'8px 20px 16px'}}><div className="error">{insightsError}</div></div>}
-                {insights&&!insightsLoading&&(
-                  <div className="insights-grid">
-                    {insights.map(function(ins,i){return(
-                      <div key={i} className={'insight-card insight-'+(ins.type||'signal')}>
-                        <div className="insight-type">{ins.type||'signal'}</div>
-                        <div className="insight-title">{ins.title}</div>
-                        <div className="insight-detail">{ins.detail}</div>
-                        {ins.action&&<div className="insight-action">\u2192 {ins.action}</div>}
-                      </div>
-                    );})}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Observations */}
-            <div className="obs">
-              <div className="obs-title">Key Observations</div>
-              <div className="obs-grid">{observations.map(function(o,i){return <div key={i}>{o}</div>;})}</div>
-            </div>
           </React.Fragment>
         )}
 
