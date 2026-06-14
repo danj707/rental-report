@@ -87,6 +87,14 @@
   .loading { text-align:center; padding:60px 16px; color:#6b7280; }
   .spinner { width:32px; height:32px; border:3px solid #e5e7eb; border-top-color:#6366f1; border-radius:50%; animation:spin .6s linear infinite; margin:0 auto 12px; }
   @keyframes spin { to { transform:rotate(360deg); } }
+  .juice-msg { position:relative; height:1.4em; line-height:1.4em; min-width:200px; margin:0 auto; }
+  .juice-msg span { position:absolute; left:0; right:0; text-align:center; opacity:0; animation:juice-phrase 10s infinite; }
+  .juice-msg span:nth-child(1) { animation-delay:0s; }
+  .juice-msg span:nth-child(2) { animation-delay:2s; }
+  .juice-msg span:nth-child(3) { animation-delay:4s; }
+  .juice-msg span:nth-child(4) { animation-delay:6s; }
+  .juice-msg span:nth-child(5) { animation-delay:8s; }
+  @keyframes juice-phrase { 0%{opacity:0;transform:translateY(5px)} 2%{opacity:1;transform:translateY(0)} 18%{opacity:1;transform:translateY(0)} 20%{opacity:0;transform:translateY(-5px)} 100%{opacity:0} }
   .error { padding:14px; background:#fef2f2; color:#991b1b; border-radius:8px; margin:10px 0; font-size:13px; }
   .empty { padding:30px; text-align:center; color:#9ca3af; font-size:13px; }
 
@@ -245,7 +253,7 @@ function GeoMap({ zipData, mode }) {
     map.fitBounds(bounds, { padding: [30, 30], maxZoom: 12 });
   }, [loading, coords, mode, zipData]);
 
-  if (loading) return <div className="map-loading"><div className="spinner" style={{marginRight:8}}/> Geocoding {zipData.length} zip codes\u2026</div>;
+  if (loading) return <div className="map-loading"><div className="spinner" style={{marginRight:8}}/><div className="juice-msg"><span>Mapping the territory…</span><span>Plotting zip codes…</span><span>Drawing the heatmap…</span><span>Finding the hotspots…</span><span>Almost mapped…</span></div></div>;
   return <div ref={mapRef} className="map-wrap"></div>;
 }
 
@@ -361,7 +369,7 @@ function compute(rows) {
     zipAgg[z].people++;
     if(!hhZipSeen[hid+'|'+z]){hhZipSeen[hid+'|'+z]=1;zipAgg[z].hh++;zipAgg[z].revenue+=num(col(r,['Net Revenue','net_revenue']));}
   });
-  var zipData=Object.values(zipAgg).sort(function(a,b){return b.hh-a.hh;});
+  var zipData=Object.values(zipAgg).sort(function(a,b){return b.hh-a.hh;}).slice(0,30);
 
   // Velocity (HoH signups as proxy)
   var now=new Date();
@@ -647,7 +655,7 @@ function App() {
     XLSX.writeFile(wb,filename+'.csv',{bookType:'csv'});
   }
 
-  if(loading) return <div className="loading"><div className="spinner"/><p>Loading user data\u2026</p></div>;
+  if(loading) return <div className="loading"><div className="spinner"/><div className="juice-msg"><span>Squeezing the demographics…</span><span>Counting households…</span><span>Crunching the numbers…</span><span>Pouring the insights…</span><span>Almost there…</span></div></div>;
   if(error) return <div className="dash"><div className="error"><strong>Error:</strong> {error}</div></div>;
   if(!s) return <div className="dash"><div className="empty">No data returned.</div></div>;
 
@@ -668,7 +676,7 @@ function App() {
         <div className="divider"/>
         <button onClick={function(){window.print();}}>{'\uD83D\uDDA8\uFE0F'} Print</button>
         <button className="btn-pdf" onClick={downloadPdf} disabled={pdfLoading}>
-          {pdfLoading?'Generating\u2026':'\uD83D\uDCC4 PDF'}
+          {pdfLoading?'Generating…':'\uD83D\uDCC4 PDF'}
         </button>
       </div>
 
@@ -676,14 +684,14 @@ function App() {
         {/* Tabs */}
         <div className="tabs no-print">
           <div className={'tab'+(tab==='demo'?' active':'')} onClick={function(){setTab('demo');}}>
-            \uD83D\uDCCA Demographics
+            Demographics
           </div>
           <div className={'tab'+(tab==='revenue'?' active':'')} onClick={function(){setTab('revenue');}}>
-            \uD83D\uDCB0 Revenue
+            Revenue
             <span className="tab-badge" style={{background:s.hasRevData?'#dcfce7':'#fef3c7',color:s.hasRevData?'#166534':'#92400e'}}>{s.hasRevData?'$'+(s.totalNet/1000).toFixed(0)+'K':'No data'}</span>
           </div>
           <div className={'tab'+(tab==='strategy'?' active':'')} onClick={function(){setTab('strategy');}}>
-            \uD83C\uDFAF Strategy
+            Strategy
             {s.hasRevData&&s.levers.length>0&&<span className="tab-badge" style={{background:'#fef3c7',color:'#92400e'}}>{s.levers.length} levers</span>}
           </div>
         </div>
@@ -711,11 +719,11 @@ function App() {
               <div className="insights-wrap">
                 <div className="insights-head">
                   <button type="button" className="insights-btn" onClick={getInsights} disabled={insightsLoading}>
-                    {insightsLoading?'Analyzing\u2026':(insights?'\u21BB Refresh':'\u2728 Rec Insights')}
+                    {insightsLoading?'Analyzing…':(insights?'↻ Refresh':'✨ Rec Insights')}
                   </button>
                   {insights&&!insightsLoading&&<span style={{fontSize:11,color:'#9ca3af'}}>Analyzed {s.hhCount} households, {s.total} people</span>}
                 </div>
-                {insightsLoading&&<div className="loading"><div className="spinner"/><p>Analyzing {s.total} people across {s.cities.length} cities\u2026</p></div>}
+                {insightsLoading&&<div className="loading"><div className="spinner"/><div className="juice-msg"><span>Reading the tea leaves…</span><span>Crunching {s.total} profiles…</span><span>Finding the patterns…</span><span>Writing the insights…</span><span>Almost ready…</span></div></div>}
                 {insightsError&&!insightsLoading&&<div style={{padding:'8px 20px 16px'}}><div className="error">{insightsError}</div></div>}
                 {insights&&!insightsLoading&&(
                   <div className="insights-grid">
@@ -724,7 +732,7 @@ function App() {
                         <div className="insight-type">{ins.type||'signal'}</div>
                         <div className="insight-title">{ins.title}</div>
                         <div className="insight-detail">{ins.detail}</div>
-                        {ins.action&&<div className="insight-action">\u2192 {ins.action}</div>}
+                        {ins.action&&<div className="insight-action">→ {ins.action}</div>}
                       </div>
                     );})}
                   </div>
@@ -904,7 +912,7 @@ function App() {
                           if(lev.segment==='unbooked')exportCSV(s.unbookedCSV,'unbooked-households-'+orgSlug);
                           else if(lev.segment==='nonresident')exportCSV(s.nonresCSV,'nonresident-households-'+orgSlug);
                           else if(lev.segment==='solo')exportCSV(s.soloUnbookedCSV,'solo-unbooked-'+orgSlug);
-                        }}>{'\u2B07'} Export CSV</button>
+                        }}>{'⬇'} Export CSV</button>
                       </div>
                     );})}
                   </div>
@@ -921,7 +929,7 @@ function App() {
                       <div>Median HH size</div><div style={{textAlign:'right',fontWeight:600}}>{s.spenderProfile.medianSize}</div><div style={{textAlign:'right',fontWeight:600}}>{s.unbookedProfile.medianSize}</div>
                       <div>Median account age</div><div style={{textAlign:'right',fontWeight:600}}>{s.spenderProfile.medianDaysOld}d</div><div style={{textAlign:'right',fontWeight:600}}>{s.unbookedProfile.medianDaysOld}d</div>
                     </div>
-                    <button style={{marginTop:10,fontSize:11,padding:'6px 12px',borderRadius:6,border:'1px solid #d1d5db',background:'#fff',cursor:'pointer',fontFamily:'inherit',fontWeight:600,color:'#374151'}} onClick={function(){exportCSV(s.unbookedCSV,'unbooked-households-'+orgSlug);}}>{'\u2B07'} Export {s.unbookedCSV.length} unbooked contacts</button>
+                    <button style={{marginTop:10,fontSize:11,padding:'6px 12px',borderRadius:6,border:'1px solid #d1d5db',background:'#fff',cursor:'pointer',fontFamily:'inherit',fontWeight:600,color:'#374151'}} onClick={function(){exportCSV(s.unbookedCSV,'unbooked-households-'+orgSlug);}}>{'⬇'} Export {s.unbookedCSV.length} unbooked contacts</button>
                   </div>
 
                   <div className="panel">
@@ -931,7 +939,7 @@ function App() {
                       <div style={{fontSize:13,color:'#6b7280',marginTop:4}}>previously active households</div>
                       <div style={{fontSize:12,color:'#9ca3af'}}>haven't purchased in 90+ days</div>
                     </div>
-                    {s.lapsingCount>0&&<button style={{fontSize:11,padding:'6px 12px',borderRadius:6,border:'1px solid #d1d5db',background:'#fff',cursor:'pointer',fontFamily:'inherit',fontWeight:600,color:'#374151'}} onClick={function(){exportCSV(s.lapsingCSV,'lapsing-households-'+orgSlug);}}>{'\u2B07'} Export {s.lapsingCSV.length} lapsing contacts</button>}
+                    {s.lapsingCount>0&&<button style={{fontSize:11,padding:'6px 12px',borderRadius:6,border:'1px solid #d1d5db',background:'#fff',cursor:'pointer',fontFamily:'inherit',fontWeight:600,color:'#374151'}} onClick={function(){exportCSV(s.lapsingCSV,'lapsing-households-'+orgSlug);}}>{'⬇'} Export {s.lapsingCSV.length} lapsing contacts</button>}
                   </div>
                 </div>
 
