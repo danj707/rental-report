@@ -347,7 +347,7 @@
   render();
 
   /* ── Rec AI Chat card (always shown, after reports) ── */
-  if (cfg.reports && cfg.reports.length > 0) {
+  if (cfg.reports && cfg.reports.length > 0 && cfg.chatVisible !== false) {
     var chatCard = document.createElement('a');
     chatCard.href = '/' + slug + '/chat' + tokenQS;
     chatCard.className = 'card';

@@ -1989,6 +1989,7 @@ app.get("/:org", (req, res, next) => {
     logoUrl: org.logoUrl || "",
     reports: available,
     token: org.token || "",
+    chatVisible: !orgHidden.has("chat"),
   };
   const html = require("fs").readFileSync(path.join(__dirname, "public", "org.html"), "utf8");
   const inject = `<script>window.ORG_CONFIG=${JSON.stringify(orgConfig)};</script>`;
@@ -2000,7 +2001,7 @@ app.post("/api/admin/toggle-report", express.json(), (req, res) => {
   if (dashboardPasswordBlocked(req, res)) return;
   const { org: slug, report } = req.body || {};
   if (!ORGS[slug]) return res.status(404).json({ error: "Unknown org" });
-  if (!REPORT_TYPES.includes(report)) return res.status(400).json({ error: "Unknown report type" });
+  if (!REPORT_TYPES.includes(report) && report !== "chat") return res.status(400).json({ error: "Unknown report type" });
   const hidden = getHiddenReports(slug);
   const idx = hidden.indexOf(report);
   if (idx >= 0) hidden.splice(idx, 1); else hidden.push(report);
@@ -2372,17 +2373,22 @@ app.get("/", (req, res) => {
         </a>`;
     });
 
-    // Rec AI Chat card — always shown if org has at least one report
+    // Rec AI Chat card — toggleable like other reports
     if (available.length > 0) {
+      const chatHidden = orgHidden.indexOf('chat') >= 0;
+      const chatDim = chatHidden ? ' report-card-hidden' : '';
       cards.push(`
-        <a href="/${slug}/chat${tokenQS}" class="report-card" style="border-left:3px solid #6366f1;background:linear-gradient(135deg,#f5f3ff 0%,#eef2ff 100%)">
-          <span class="report-icon">✦</span>
+        <a href="/${slug}/chat${tokenQS}" class="report-card${chatDim}" style="border-left:3px solid #6366f1;background:linear-gradient(135deg,#f5f3ff 0%,#eef2ff 100%)" data-org="${slug}" data-report="chat">
+          <span class="report-icon">\u2726</span>
           <div class="report-body">
             <div class="report-label" style="color:#312e81">Rec AI Chat</div>
             <div class="report-desc">Ask anything about your data across all reports</div>
-            <span class="ai-pill">✦ AI powered</span>
+            <span class="ai-pill">\u2726 AI powered</span>
           </div>
-          <span class="report-arrow">→</span>
+          <button type="button" class="vis-toggle" onclick="event.preventDefault();event.stopPropagation();toggleVis('${slug}','chat',this)" title="${chatHidden ? 'Hidden from org page' : 'Visible on org page'}">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style="display:${chatHidden ? 'none' : 'block'}"><path d="M8 3C3 3 1 8 1 8s2 5 7 5 7-5 7-5-2-5-7-5z" stroke="currentColor" stroke-width="1.5" fill="none"/><circle cx="8" cy="8" r="2" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style="display:${chatHidden ? 'block' : 'none'}"><path d="M8 3C3 3 1 8 1 8s2 5 7 5 7-5 7-5-2-5-7-5z" stroke="currentColor" stroke-width="1.5" fill="none"/><circle cx="8" cy="8" r="2" stroke="currentColor" stroke-width="1.5" fill="none"/><line x1="2" y1="14" x2="14" y2="2" stroke="currentColor" stroke-width="1.5"/></svg>
+          </button>
         </a>`);
     }
 
