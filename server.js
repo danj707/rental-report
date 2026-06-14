@@ -206,6 +206,7 @@ const ORGS = {
     logoUrl: "https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2Forganization-a6aef5df-f742-41a2-9088-1fb6d48c3cb1%2FfullLogo.png%3F1748866523048&w=1920&q=75",
     displayName: "Town of Danvers",
     gl      : { mbUuid: "f82f6e95-6c18-4c57-a8dc-4fb833537f2c" },
+    roster  : { mbUuid: "483df1ab-8e6b-4004-b532-de28bd28c477" },
   },
   midland: {
     token:   "2TiwFAhbgFqcnbbT",
