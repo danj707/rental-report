@@ -397,7 +397,7 @@ function compute(rows, includeGuests) {
   // City
   var cMap={};
   rows.forEach(function(r){var c=r['City'].trim()||'Unknown';cMap[c]=(cMap[c]||0)+1;});
-  var topCity=Object.entries(cMap).sort(function(a,b){return b[1]-a[1];})[0];
+  var topCity=Object.entries(cMap).filter(function(e){return e[0]!=='Unknown'&&e[0]!=='(empty)';}).sort(function(a,b){return b[1]-a[1];})[0];
   topCity=topCity?topCity[0]:'';
   var cityArr=Object.entries(cMap).sort(function(a,b){return b[1]-a[1];});
   var topCities=cityArr.slice(0,8).map(function(e){return{city:e[0],count:e[1]};});
