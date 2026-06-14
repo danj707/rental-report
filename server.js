@@ -186,6 +186,7 @@ const ORGS = {
     products: { mbUuid: "b7d1ed06-6df2-4d74-aea2-68d4e2428aec" },
     memberships: { mbUuid: "1e539837-b437-4a12-b1bb-11498b12808b" },
     fasttrack: { mbUuid: "10e8dcdd-2913-4880-b093-d407fc357d76" },
+    users   : { mbUuid: "d3b160b8-9da2-4ad1-bbf6-2e5ff67261e9" },
   },
   theranch: {
     token:   "mXI0BgPPazLu61jl",
