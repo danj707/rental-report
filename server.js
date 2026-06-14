@@ -1152,11 +1152,11 @@ Rules:
 - Name specific programs when making observations rather than speaking generally.
 - Be terse. No filler. Vary the "type" across the four insights where the data supports it.`;
 
-const USERS_SYS_PROMPT = `You are a parks & recreation demographic analyst for US municipal departments. You are given aggregate user demographic data for a single organization \u2014 total users, residency rates, age distribution, gender breakdown, grade data, signup velocity, geographic distribution, and data completeness metrics, all pre-computed.
+const USERS_SYS_PROMPT = `You are a parks & recreation demographic analyst for US municipal departments. You are given aggregate HOUSEHOLD demographic data for a single organization \u2014 total people (head-of-household + members/dependents), household sizes, residency rates, age distribution split by role (HoH adults vs member children), gender, grade distribution, signup velocity, geographic distribution, and data completeness metrics, all pre-computed.
 
 Respond ONLY with a valid JSON array of 4\u20136 objects. Each object: {"type":"opportunity|risk|signal","title":"short headline","detail":"1\u20132 sentence explanation with specific numbers","action":"one concrete next step"}.
 
-Focus on: population characteristics that should shape programming and outreach, data quality issues worth addressing with specific remediation steps, growth patterns and what they indicate, residency implications for pricing or access policy, demographic gaps representing underserved populations, and geographic reach opportunities. Be specific with numbers from the data. Do not invent numbers not in the input.`;
+Focus on: household composition patterns (family size, age mix between parents and children), youth vs adult programming balance based on actual member ages, data quality issues worth addressing, growth patterns, residency implications for pricing, grade-level program opportunities (which grades are most represented), geographic reach, and underserved demographic segments. Be specific with numbers from the data. Do not invent numbers not in the input.`;
 
 const SYS_PROMPTS = { programs: PROGRAMS_SYS_PROMPT, fasttrack: FASTTRACK_SYS_PROMPT, users: USERS_SYS_PROMPT };
 
@@ -3534,7 +3534,9 @@ app.get("/", (req, res) => {
     // Newest first. Add a new entry at the TOP for every change we ship.
     // History below back-filled from the GitHub commit log.
     const UPDATES = [
-      { date: '2026-06-14', title: 'Users Report \u2014 demographic dashboard for org admins', items: [
+      { date: '2026-06-14', title: 'Users Report \u2014 full household demographic dashboard', items: [
+        'Major expansion: Users report now includes ALL household members (dependents/kids), not just Head of Household. Reveals the full demographic picture \u2014 youth ages, grade distribution, household sizes',
+        'New panels: Household Size distribution, Age by Role (HoH vs Member stacked), Data Quality alerts (bad DOBs, outlier households), tabbed UI (Demographics + Revenue placeholder)',
         'New report: Users \u2014 full demographic breakdown of all head-of-household accounts. Shows total users, residency rate, median age, gender, grade, data completeness rings, signup velocity, age distribution (stacked by residency), geographic breakdown by city, and residency rate by age group',
         'Auto-generated Key Observations panel synthesizes the data into actionable insights (growth spikes, demographic skew, data gaps, geographic concentration)',
         'Rec Insights AI analysis available \u2014 sends aggregate demographic summary (no PII) for 4\u20136 actionable insight cards',

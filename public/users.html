@@ -16,78 +16,87 @@
   body.print-mode .no-print { display: none !important; }
   body.print-mode .toolbar { display: none !important; }
 
-  .toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 12px 20px; background: #fff; border-bottom: 1px solid #e5e7eb; position: sticky; top: 0; z-index: 100; }
-  .toolbar h1 { font-size: 17px; font-weight: 800; color: #111827; white-space: nowrap; }
-  .toolbar .pill { font-size: 11px; font-weight: 700; padding: 3px 10px; border-radius: 20px; }
-  .toolbar .spacer { flex: 1; }
-  .btn { display: inline-flex; align-items: center; gap: 5px; padding: 7px 14px; border-radius: 6px; font-size: 12px; font-weight: 600; border: 1px solid #d1d5db; background: #fff; cursor: pointer; color: #374151; font-family: inherit; }
-  .btn:hover { background: #f9fafb; }
+  .toolbar { display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding:12px 20px; background:#fff; border-bottom:1px solid #e5e7eb; position:sticky; top:0; z-index:100; }
+  .toolbar h1 { font-size:17px; font-weight:800; color:#111827; white-space:nowrap; }
+  .pill { font-size:11px; font-weight:700; padding:3px 10px; border-radius:20px; }
+  .spacer { flex:1; }
+  .btn { display:inline-flex; align-items:center; gap:5px; padding:7px 14px; border-radius:6px; font-size:12px; font-weight:600; border:1px solid #d1d5db; background:#fff; cursor:pointer; color:#374151; font-family:inherit; }
+  .btn:hover { background:#f9fafb; }
 
-  .dash { max-width: 1120px; margin: 0 auto; padding: 20px 16px; }
-  .kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(155px, 1fr)); gap: 10px; margin-bottom: 14px; }
-  .kpi { background: #fff; border-radius: 10px; padding: 16px 18px; box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 0 0 1px rgba(0,0,0,0.03); border-top: 3px solid var(--accent, #6366f1); }
-  .kpi-label { font-size: 11px; font-weight: 600; color: #6b7280; text-transform: uppercase; letter-spacing: 0.06em; }
-  .kpi-val { font-size: 30px; font-weight: 800; color: #111827; line-height: 1; margin: 3px 0; }
-  .kpi-sub { font-size: 12px; color: #9ca3af; line-height: 1.4; }
+  /* Tabs */
+  .tabs { display:flex; gap:0; border-bottom:2px solid #e5e7eb; margin-bottom:16px; }
+  .tab { padding:10px 20px; font-size:13px; font-weight:600; color:#6b7280; cursor:pointer; border-bottom:2px solid transparent; margin-bottom:-2px; transition:all .15s; user-select:none; }
+  .tab:hover { color:#374151; }
+  .tab.active { color:#6366f1; border-bottom-color:#6366f1; }
+  .tab .tab-badge { font-size:10px; font-weight:700; padding:2px 7px; border-radius:10px; margin-left:6px; }
 
-  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px; }
-  .panel { background: #fff; border-radius: 10px; padding: 18px 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 0 0 1px rgba(0,0,0,0.03); }
-  .panel-head { font-size: 12px; font-weight: 700; color: #374151; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 12px; }
-  .panel-note { font-size: 11px; color: #9ca3af; font-style: italic; margin-left: 8px; }
-  .span2 { grid-column: span 2; }
+  .dash { max-width:1120px; margin:0 auto; padding:20px 16px; }
+  .kpi-row { display:grid; grid-template-columns:repeat(auto-fit, minmax(145px, 1fr)); gap:10px; margin-bottom:14px; }
+  .kpi { background:#fff; border-radius:10px; padding:14px 16px; box-shadow:0 1px 3px rgba(0,0,0,.06), 0 0 0 1px rgba(0,0,0,.03); border-top:3px solid var(--accent,#6366f1); }
+  .kpi-label { font-size:10px; font-weight:600; color:#6b7280; text-transform:uppercase; letter-spacing:.06em; }
+  .kpi-val { font-size:26px; font-weight:800; color:#111827; line-height:1; margin:3px 0; }
+  .kpi-sub { font-size:11px; color:#9ca3af; line-height:1.4; }
 
-  .ring-row { display: flex; justify-content: space-around; padding: 4px 0; }
-  .ring-wrap { display: flex; flex-direction: column; align-items: center; gap: 3px; }
-  .ring-label { font-size: 11px; color: #6b7280; text-align: center; }
+  .grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:14px; }
+  .panel { background:#fff; border-radius:10px; padding:16px 18px; box-shadow:0 1px 3px rgba(0,0,0,.06), 0 0 0 1px rgba(0,0,0,.03); }
+  .panel-head { font-size:11px; font-weight:700; color:#374151; text-transform:uppercase; letter-spacing:.04em; margin-bottom:10px; }
+  .panel-note { font-size:10px; color:#9ca3af; font-style:italic; margin-left:6px; }
+  .span2 { grid-column:span 2; }
 
-  .res-bar { display: flex; height: 24px; border-radius: 6px; overflow: hidden; }
-  .res-bar .seg { display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; color: #fff; }
-  .legend { display: flex; gap: 16px; font-size: 12px; margin-top: 8px; }
-  .legend-dot { width: 10px; height: 10px; border-radius: 3px; display: inline-block; margin-right: 5px; }
+  .ring-row { display:flex; justify-content:space-around; padding:4px 0; }
+  .ring-wrap { display:flex; flex-direction:column; align-items:center; gap:3px; }
+  .ring-label { font-size:10px; color:#6b7280; text-align:center; }
 
-  .chart-wrap { position: relative; height: 210px; }
-  .chart-wrap canvas { width: 100% !important; height: 100% !important; }
+  .chart-wrap { position:relative; height:200px; }
+  .chart-wrap canvas { width:100%!important; height:100%!important; }
 
-  .city-bar-row { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
-  .city-label { font-size: 12px; width: 100px; text-align: right; flex-shrink: 0; }
-  .city-track { flex: 1; height: 14px; background: #f1f5f9; border-radius: 4px; overflow: hidden; }
-  .city-fill { height: 100%; border-radius: 4px; display: flex; align-items: center; justify-content: center; }
-  .city-fill span { font-size: 9px; font-weight: 700; color: #fff; }
-  .city-count { font-size: 11px; color: #9ca3af; width: 24px; }
-  .city-pct { font-size: 11px; color: #9ca3af; width: 36px; text-align: right; }
+  .city-bar-row { display:flex; align-items:center; gap:8px; margin-bottom:3px; }
+  .city-label { font-size:11px; width:90px; text-align:right; flex-shrink:0; }
+  .city-track { flex:1; height:12px; background:#f1f5f9; border-radius:4px; overflow:hidden; }
+  .city-fill { height:100%; border-radius:4px; display:flex; align-items:center; justify-content:center; }
+  .city-fill span { font-size:8px; font-weight:700; color:#fff; }
+  .city-pct { font-size:10px; color:#9ca3af; width:36px; text-align:right; }
 
-  .obs { background: linear-gradient(135deg, #f0fdf4 0%, #ecfeff 100%); border-radius: 10px; padding: 18px 22px; border: 1px solid #a7f3d0; margin-bottom: 12px; }
-  .obs-title { font-size: 12px; font-weight: 700; color: #065f46; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 10px; }
-  .obs-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 24px; font-size: 13px; color: #064e3b; line-height: 1.6; }
+  .obs { background:linear-gradient(135deg,#f0fdf4,#ecfeff); border-radius:10px; padding:16px 20px; border:1px solid #a7f3d0; margin-bottom:12px; }
+  .obs-title { font-size:11px; font-weight:700; color:#065f46; text-transform:uppercase; letter-spacing:.04em; margin-bottom:8px; }
+  .obs-grid { display:grid; grid-template-columns:1fr 1fr; gap:5px 20px; font-size:12px; color:#064e3b; line-height:1.5; }
 
-  /* AI Insights */
-  .insights-section { margin-bottom: 14px; }
-  .insights-wrap { background: linear-gradient(135deg, #eef2ff 0%, #f0fdfa 100%); border-radius: 10px; border: 1px solid #c7d2fe; overflow: hidden; }
-  .insights-head { display: flex; align-items: center; gap: 12px; padding: 14px 20px; }
-  .insights-btn { display: inline-flex; align-items: center; gap: 6px; background: #111827; color: #fff; border: none; border-radius: 6px; padding: 8px 16px; font-size: 13px; font-weight: 600; font-family: inherit; cursor: pointer; }
-  .insights-btn:hover:not(:disabled) { background: #374151; }
-  .insights-btn:disabled { opacity: .6; cursor: default; }
-  .insights-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; padding: 0 20px 16px; }
-  .insight-card { border: 1px solid #e5e7eb; border-left-width: 4px; border-radius: 8px; padding: 14px 16px; background: #fff; }
-  .insight-type { font-size: 10px; font-weight: 700; letter-spacing: .6px; text-transform: uppercase; margin-bottom: 6px; }
-  .insight-title { font-size: 14px; font-weight: 700; color: #111827; margin-bottom: 5px; line-height: 1.3; }
-  .insight-detail { font-size: 12.5px; color: #374151; line-height: 1.45; }
-  .insight-action { font-size: 12px; color: #6b7280; margin-top: 8px; font-weight: 500; }
-  .insight-opportunity { border-left-color: #10b981; } .insight-opportunity .insight-type { color: #059669; }
-  .insight-risk { border-left-color: #f59e0b; } .insight-risk .insight-type { color: #d97706; }
-  .insight-signal { border-left-color: #6366f1; } .insight-signal .insight-type { color: #4f46e5; }
+  .insights-section { margin-bottom:14px; }
+  .insights-wrap { background:linear-gradient(135deg,#eef2ff,#f0fdfa); border-radius:10px; border:1px solid #c7d2fe; overflow:hidden; }
+  .insights-head { display:flex; align-items:center; gap:12px; padding:14px 20px; }
+  .insights-btn { display:inline-flex; align-items:center; gap:6px; background:#111827; color:#fff; border:none; border-radius:6px; padding:8px 16px; font-size:13px; font-weight:600; font-family:inherit; cursor:pointer; }
+  .insights-btn:hover:not(:disabled) { background:#374151; }
+  .insights-btn:disabled { opacity:.6; cursor:default; }
+  .insights-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:12px; padding:0 20px 16px; }
+  .insight-card { border:1px solid #e5e7eb; border-left-width:4px; border-radius:8px; padding:12px 14px; background:#fff; }
+  .insight-type { font-size:9px; font-weight:700; letter-spacing:.6px; text-transform:uppercase; margin-bottom:5px; }
+  .insight-title { font-size:13px; font-weight:700; color:#111827; margin-bottom:4px; line-height:1.3; }
+  .insight-detail { font-size:12px; color:#374151; line-height:1.45; }
+  .insight-action { font-size:11px; color:#6b7280; margin-top:6px; font-weight:500; }
+  .insight-opportunity { border-left-color:#10b981; } .insight-opportunity .insight-type { color:#059669; }
+  .insight-risk { border-left-color:#f59e0b; } .insight-risk .insight-type { color:#d97706; }
+  .insight-signal { border-left-color:#6366f1; } .insight-signal .insight-type { color:#4f46e5; }
 
-  .loading { text-align: center; padding: 60px 16px; color: #6b7280; }
-  .spinner { width: 32px; height: 32px; border: 3px solid #e5e7eb; border-top-color: #6366f1; border-radius: 50%; animation: spin .6s linear infinite; margin: 0 auto 12px; }
-  @keyframes spin { to { transform: rotate(360deg); } }
-  .error { padding: 16px; background: #fef2f2; color: #991b1b; border-radius: 8px; margin: 12px 0; }
-  .empty { padding: 40px; text-align: center; color: #9ca3af; }
+  .loading { text-align:center; padding:60px 16px; color:#6b7280; }
+  .spinner { width:32px; height:32px; border:3px solid #e5e7eb; border-top-color:#6366f1; border-radius:50%; animation:spin .6s linear infinite; margin:0 auto 12px; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+  .error { padding:14px; background:#fef2f2; color:#991b1b; border-radius:8px; margin:10px 0; font-size:13px; }
+  .empty { padding:30px; text-align:center; color:#9ca3af; font-size:13px; }
 
-  .future-box { background: linear-gradient(135deg, #ede9fe 0%, #dbeafe 100%); border-radius: 10px; padding: 16px 22px; border: 1px solid #c7d2fe; }
-  .future-box h4 { font-size: 12px; font-weight: 700; color: #4338ca; margin-bottom: 4px; }
-  .future-box p { font-size: 12px; color: #4338ca; line-height: 1.7; opacity: 0.85; }
+  .alert-card { padding:10px 14px; border-radius:8px; font-size:12px; line-height:1.5; margin-bottom:6px; }
+  .alert-warn { background:#fef3c7; color:#92400e; border:1px solid #fcd34d; }
+  .alert-info { background:#dbeafe; color:#1e40af; border:1px solid #93c5fd; }
 
-  @media print { body { background: #fff; } .no-print { display: none !important; } .panel { break-inside: avoid; } }
+  .future-box { background:linear-gradient(135deg,#ede9fe,#dbeafe); border-radius:10px; padding:16px 20px; border:1px solid #c7d2fe; margin-top:12px; }
+  .future-box h4 { font-size:12px; font-weight:700; color:#4338ca; margin-bottom:4px; }
+  .future-box p { font-size:12px; color:#4338ca; line-height:1.6; opacity:.85; }
+  .future-box ul { font-size:12px; color:#4338ca; line-height:1.8; opacity:.85; margin:6px 0 0 18px; }
+
+  .rev-coming { display:flex; flex-direction:column; align-items:center; justify-content:center; padding:80px 20px; text-align:center; }
+  .rev-coming h2 { font-size:20px; font-weight:800; color:#111827; margin-bottom:8px; }
+  .rev-coming p { font-size:14px; color:#6b7280; max-width:500px; line-height:1.6; }
+
+  @media print { body { background:#fff; } .no-print { display:none!important; } .panel { break-inside:avoid; } }
 </style>
 </head>
 <body>
@@ -100,7 +109,6 @@
 <script type="text/babel">
 var { useState, useEffect, useCallback, useMemo, useRef } = React;
 
-/* ═══ URL helpers ═══ */
 var parts = window.location.pathname.split('/').filter(Boolean);
 var orgSlug = parts[0] || '';
 var reportType = parts[1] || 'users';
@@ -108,467 +116,394 @@ var urlParams = new URLSearchParams(window.location.search);
 var token = urlParams.get('token') || '';
 var isPrint = urlParams.get('_print') === '1';
 if (isPrint) document.body.classList.add('print-mode');
+function withToken(u) { return !token ? u : u + (u.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(token); }
 
-function withToken(url) {
-  if (!token) return url;
-  return url + (url.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(token);
-}
+if (typeof Chart !== 'undefined') { Chart.defaults.font.family = "'Inter',sans-serif"; Chart.defaults.font.size = 11; Chart.defaults.plugins.legend.display = false; }
 
-/* ═══ Chart.js defaults ═══ */
-if (typeof Chart !== 'undefined') {
-  Chart.defaults.font.family = "'Inter', sans-serif";
-  Chart.defaults.font.size = 11;
-  Chart.defaults.plugins.legend.display = false;
-}
-
-/* ═══ SVG Ring ═══ */
+/* ═══ Shared UI ═══ */
 function Ring({ pct, label, color }) {
-  var r = 28, circ = 2 * Math.PI * r, offset = circ * (1 - pct / 100);
-  return (
-    <div className="ring-wrap">
-      <svg width="64" height="64" viewBox="0 0 72 72">
-        <circle cx="36" cy="36" r={r} fill="none" stroke="#f1f5f9" strokeWidth="6" />
-        <circle cx="36" cy="36" r={r} fill="none" stroke={color} strokeWidth="6"
-          strokeDasharray={circ} strokeDashoffset={offset} strokeLinecap="round"
-          transform="rotate(-90 36 36)" />
-        <text x="36" y="40" textAnchor="middle" fontSize="13" fontWeight="800" fill="#111827">{pct}%</text>
-      </svg>
-      <div className="ring-label">{label}</div>
-    </div>
-  );
+  var r=28, circ=2*Math.PI*r, offset=circ*(1-pct/100);
+  return (<div className="ring-wrap"><svg width="60" height="60" viewBox="0 0 72 72"><circle cx="36" cy="36" r={r} fill="none" stroke="#f1f5f9" strokeWidth="6"/><circle cx="36" cy="36" r={r} fill="none" stroke={color} strokeWidth="6" strokeDasharray={circ} strokeDashoffset={offset} strokeLinecap="round" transform="rotate(-90 36 36)"/><text x="36" y="40" textAnchor="middle" fontSize="12" fontWeight="800" fill="#111827">{pct}%</text></svg><div className="ring-label">{label}</div></div>);
 }
 
-/* ═══ Chart component ═══ */
-function BarChartPanel({ title, note, data, labelKey, dataKeys, colors, stacked, pctAxis, className }) {
-  var canvasRef = useRef(null);
-  var chartRef = useRef(null);
-  useEffect(() => {
-    if (!canvasRef.current || !data || !data.length) return;
-    if (chartRef.current) { chartRef.current.destroy(); chartRef.current = null; }
-    var datasets = dataKeys.map((dk, i) => ({
-      label: dk.label || dk.key,
-      data: data.map(d => d[dk.key]),
-      backgroundColor: colors[i] || '#6366f1',
-      borderRadius: stacked ? (i === dataKeys.length - 1 ? 4 : 0) : 4,
-      barPercentage: 0.7,
-    }));
-    chartRef.current = new Chart(canvasRef.current, {
-      type: 'bar',
-      data: { labels: data.map(d => d[labelKey]), datasets },
-      options: {
-        responsive: true, maintainAspectRatio: false,
-        scales: {
-          x: { grid: { display: false }, stacked: !!stacked },
-          y: { grid: { color: '#f1f5f9' }, stacked: !!stacked, beginAtZero: true,
-            ticks: pctAxis ? { callback: v => v + '%' } : {},
-            max: pctAxis ? 100 : undefined },
-        },
-        plugins: { legend: { display: dataKeys.length > 1, position: 'top', labels: { boxWidth: 12, font: { size: 11 } } } },
-      },
+function ChartPanel({ title, note, type, data, labelKey, dataKeys, colors, stacked, pctAxis, className, opts }) {
+  var canvasRef = useRef(null); var chartRef = useRef(null);
+  useEffect(function() {
+    if (!canvasRef.current||!data||!data.length) return;
+    if (chartRef.current) chartRef.current.destroy();
+    var isLine = type === 'line';
+    var datasets = dataKeys.map(function(dk,i) {
+      var base = { label:dk.label||dk.key, data:data.map(function(d){return d[dk.key];}), backgroundColor:isLine?(colors[i]||'#6366f1')+'20':colors[i]||'#6366f1', borderColor:isLine?colors[i]||'#6366f1':undefined, borderWidth:isLine?2.5:0, borderRadius:isLine?0:4, barPercentage:.7, fill:isLine, tension:.3, pointRadius:isLine?3:0 };
+      if (stacked && !isLine) base.borderRadius = (i===dataKeys.length-1)?4:0;
+      return base;
     });
-    return () => { if (chartRef.current) chartRef.current.destroy(); };
-  }, [data]);
-  return (
-    <div className={'panel ' + (className || '')}>
-      <div className="panel-head">{title}{note && <span className="panel-note">{note}</span>}</div>
-      <div className="chart-wrap"><canvas ref={canvasRef}></canvas></div>
-    </div>
-  );
-}
-
-function AreaChartPanel({ title, data, labelKey, dataKey, color }) {
-  var canvasRef = useRef(null);
-  var chartRef = useRef(null);
-  useEffect(() => {
-    if (!canvasRef.current || !data || !data.length) return;
-    if (chartRef.current) { chartRef.current.destroy(); chartRef.current = null; }
-    chartRef.current = new Chart(canvasRef.current, {
-      type: 'line',
-      data: {
-        labels: data.map(d => d[labelKey]),
-        datasets: [{
-          data: data.map(d => d[dataKey]),
-          borderColor: color || '#6366f1', borderWidth: 2.5,
-          backgroundColor: (color || '#6366f1') + '20',
-          fill: true, tension: 0.3, pointRadius: 3,
-        }],
-      },
-      options: {
-        responsive: true, maintainAspectRatio: false,
-        scales: { x: { grid: { display: false } }, y: { grid: { color: '#f1f5f9' }, beginAtZero: true } },
-      },
+    chartRef.current = new Chart(canvasRef.current, { type:isLine?'line':'bar', data:{labels:data.map(function(d){return d[labelKey];}),datasets:datasets},
+      options:Object.assign({ responsive:true, maintainAspectRatio:false, scales:{ x:{grid:{display:false},stacked:!!stacked}, y:{grid:{color:'#f1f5f9'},stacked:!!stacked,beginAtZero:true,ticks:pctAxis?{callback:function(v){return v+'%';}}:{},max:pctAxis?100:undefined}}, plugins:{legend:{display:dataKeys.length>1,position:'top',labels:{boxWidth:12,font:{size:10}}}} }, opts||{})
     });
-    return () => { if (chartRef.current) chartRef.current.destroy(); };
+    return function(){if(chartRef.current)chartRef.current.destroy();};
   }, [data]);
-  return (
-    <div className="panel">
-      <div className="panel-head">{title}</div>
-      <div className="chart-wrap"><canvas ref={canvasRef}></canvas></div>
-    </div>
-  );
+  return (<div className={'panel '+(className||'')}><div className="panel-head">{title}{note&&<span className="panel-note">{note}</span>}</div><div className="chart-wrap"><canvas ref={canvasRef}></canvas></div></div>);
 }
 
-/* ═══ Compute metrics from raw rows ═══ */
+function GenderChart({ gender, genderSpecified, total, colors }) {
+  var canvasRef = useRef(null); var chartRef = useRef(null);
+  useEffect(function() {
+    if (!canvasRef.current) return;
+    if (chartRef.current) chartRef.current.destroy();
+    chartRef.current = new Chart(canvasRef.current, { type:'doughnut', data:{labels:gender.map(function(g){return g.name;}),datasets:[{data:gender.map(function(g){return g.value;}),backgroundColor:colors.slice(0,gender.length),borderWidth:0}]}, options:{responsive:true,maintainAspectRatio:false,cutout:'60%',plugins:{legend:{display:true,position:'right',labels:{boxWidth:12,font:{size:10}}}}} });
+    return function(){if(chartRef.current)chartRef.current.destroy();};
+  }, [gender]);
+  return (<div className="panel"><div className="panel-head">Gender<span className="panel-note">{total-genderSpecified} not specified</span></div><div className="chart-wrap"><canvas ref={canvasRef}></canvas></div></div>);
+}
+
+/* ═══ compute() ═══ */
 function compute(rows) {
-  // Metabase returns numbers/nulls for some fields — normalize everything to strings
-  rows = rows.map(function(r) {
-    var o = {};
-    Object.keys(r).forEach(function(k) { o[k] = r[k] == null ? '' : String(r[k]); });
-    return o;
-  });
+  rows = rows.map(function(r) { var o={}; Object.keys(r).forEach(function(k){o[k]=r[k]==null?'':String(r[k]);}); return o; });
   var total = rows.length;
-  var residents = rows.filter(r => (r['Residency?'] || '').trim() === 'Yes').length;
-  var ages = rows.map(r => parseFloat(r['Age'])).filter(a => !isNaN(a)).sort((a,b) => a - b);
-  var withAge = ages.length;
-  var medianAge = ages.length ? Math.round(ages[Math.floor(ages.length / 2)]) : null;
-  var avgAge = ages.length ? (ages.reduce((s,a) => s + a, 0) / ages.length).toFixed(1) : null;
+  var hohs = rows.filter(function(r){return r['Role']==='Head of Household';});
+  var members = rows.filter(function(r){return r['Role']==='Member';});
+  var residents = rows.filter(function(r){return r['Residency?'].trim()==='Yes';}).length;
+
+  // Household sizes
+  var hhMap = {};
+  rows.forEach(function(r){ var h=r['Household ID']; hhMap[h]=(hhMap[h]||0)+1; });
+  var hhCount = Object.keys(hhMap).length;
+  var hhSizes = Object.values(hhMap).sort(function(a,b){return a-b;});
+  var medianHH = hhSizes[Math.floor(hhSizes.length/2)];
+  var avgHH = (hhSizes.reduce(function(s,v){return s+v;},0)/hhSizes.length).toFixed(1);
+  var hhSizeDist = {};
+  hhSizes.forEach(function(s){ var k = s>=6?'6+':String(s); hhSizeDist[k]=(hhSizeDist[k]||0)+1; });
+  var hhSizeData = ['1','2','3','4','5','6+'].filter(function(k){return hhSizeDist[k];}).map(function(k){return {size:k,count:hhSizeDist[k]};});
+
+  // Ages — clamp to 0-110 for sanity
+  function safeAge(r) { var a=parseFloat(r['Age']); return (!isNaN(a)&&a>=0&&a<=110)?Math.round(a):null; }
+  var allAges = rows.map(safeAge).filter(function(a){return a!==null;});
+  var hohAges = hohs.map(safeAge).filter(function(a){return a!==null;});
+  var memAges = members.map(safeAge).filter(function(a){return a!==null;});
+  allAges.sort(function(a,b){return a-b;}); hohAges.sort(function(a,b){return a-b;}); memAges.sort(function(a,b){return a-b;});
+  var medianAge = allAges.length?allAges[Math.floor(allAges.length/2)]:null;
+  var medianHohAge = hohAges.length?hohAges[Math.floor(hohAges.length/2)]:null;
+  var medianMemAge = memAges.length?memAges[Math.floor(memAges.length/2)]:null;
+
+  // Bad ages (outside 0-110)
+  var badAges = rows.filter(function(r){ var a=parseFloat(r['Age']); return !isNaN(a)&&(a<0||a>110); }).length;
 
   var ageBuckets = [
-    { label: '0\u201317', lo: 0, hi: 17 }, { label: '18\u201324', lo: 18, hi: 24 },
-    { label: '25\u201334', lo: 25, hi: 34 }, { label: '35\u201344', lo: 35, hi: 44 },
-    { label: '45\u201354', lo: 45, hi: 54 }, { label: '55\u201364', lo: 55, hi: 64 },
-    { label: '65\u201374', lo: 65, hi: 74 }, { label: '75\u201384', lo: 75, hi: 84 },
-    { label: '85+', lo: 85, hi: 999 },
+    {label:'0\u20134',lo:0,hi:4},{label:'5\u20139',lo:5,hi:9},{label:'10\u201312',lo:10,hi:12},
+    {label:'13\u201317',lo:13,hi:17},{label:'18\u201324',lo:18,hi:24},{label:'25\u201334',lo:25,hi:34},
+    {label:'35\u201344',lo:35,hi:44},{label:'45\u201354',lo:45,hi:54},{label:'55\u201364',lo:55,hi:64},{label:'65+',lo:65,hi:999},
   ];
-  var ageDist = ageBuckets.map(function(b) {
-    var bucket = rows.filter(function(r) { var a = parseFloat(r['Age']); return !isNaN(a) && a >= b.lo && a <= b.hi; });
-    var res = bucket.filter(function(r) { return (r['Residency?']||'').trim() === 'Yes'; }).length;
-    return { range: b.label, residents: res, nonResidents: bucket.length - res };
-  }).filter(function(d) { return d.residents + d.nonResidents > 0; });
+  var ageDist = ageBuckets.map(function(b){
+    var bHoh=0,bMem=0;
+    hohs.forEach(function(r){var a=safeAge(r); if(a!==null&&a>=b.lo&&a<=b.hi) bHoh++;});
+    members.forEach(function(r){var a=safeAge(r); if(a!==null&&a>=b.lo&&a<=b.hi) bMem++;});
+    return {range:b.label,hoh:bHoh,member:bMem};
+  }).filter(function(d){return d.hoh+d.member>0;});
 
-  var gMap = {};
-  rows.forEach(function(r) { var g = (r['Gender']||'').trim(); g = g ? g.charAt(0).toUpperCase() + g.slice(1) : 'Not specified'; gMap[g] = (gMap[g]||0) + 1; });
-  var gender = Object.entries(gMap).map(function(e) { return { name: e[0], value: e[1] }; }).sort(function(a,b) { return b.value - a.value; });
-  var genderSpecified = total - (gMap['Not specified'] || 0);
+  // Gender
+  var gMap={};
+  rows.forEach(function(r){ var g=r['Gender'].trim(); g=g?g.charAt(0).toUpperCase()+g.slice(1):'Not specified'; gMap[g]=(gMap[g]||0)+1; });
+  var gender=Object.entries(gMap).map(function(e){return{name:e[0],value:e[1]};}).sort(function(a,b){return b.value-a.value;});
+  var genderSpecified=total-(gMap['Not specified']||0);
 
-  var grMap = {};
-  rows.forEach(function(r) { var g = (r['Grade']||'').trim(); if (g) { g = g.charAt(0).toUpperCase() + g.slice(1); grMap[g] = (grMap[g]||0) + 1; }});
-  var withGrade = rows.filter(function(r) { return (r['Grade']||'').trim(); }).length;
-  var gradeData = Object.entries(grMap).map(function(e) { return { grade: e[0], count: e[1] }; }).sort(function(a,b) { return b.count - a.count; });
+  // Grade
+  var gradeOrder=['Preschool','Pre-k','Kindergarten','First','Second','Third','Fourth','Fifth','Sixth','Seventh','Eighth','Ninth','Tenth','Eleventh','Twelfth'];
+  var grMap={};
+  rows.forEach(function(r){ var g=r['Grade'].trim(); if(g){g=g.charAt(0).toUpperCase()+g.slice(1); grMap[g]=(grMap[g]||0)+1;}});
+  var gradeData=gradeOrder.filter(function(g){return grMap[g];}).map(function(g){return{grade:g,count:grMap[g]};});
+  Object.keys(grMap).forEach(function(g){if(!gradeData.find(function(d){return d.grade===g;})) gradeData.push({grade:g,count:grMap[g]});});
+  var withGrade=rows.filter(function(r){return r['Grade'].trim();}).length;
 
-  var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  function parseDate(s) {
-    if (!s) return null;
-    // "June 14, 2026, 5:22 AM" or "2026-06-14"
-    var d = new Date(s);
-    return isNaN(d.getTime()) ? null : d;
-  }
-  function monthKey(d) { return months[d.getMonth()] + " '" + String(d.getFullYear()).slice(2); }
+  // Signups
+  var months=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  function parseDate(s){if(!s)return null;var d=new Date(s);return isNaN(d.getTime())?null:d;}
+  var mMap={};
+  rows.forEach(function(r){var d=parseDate(r['Created At']);if(d){var k=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');mMap[k]=(mMap[k]||0)+1;}});
+  var signups=Object.entries(mMap).sort(function(a,b){return a[0].localeCompare(b[0]);}).map(function(e){var p=e[0].split('-');return{month:months[parseInt(p[1])-1]+" '"+p[0].slice(2),count:e[1]};});
+  var running=0;
+  var cumulative=Object.entries(mMap).sort(function(a,b){return a[0].localeCompare(b[0]);}).map(function(e){running+=e[1];var p=e[0].split('-');return{month:months[parseInt(p[1])-1]+" '"+p[0].slice(2),cumulative:running};});
 
-  var mMap = {};
-  rows.forEach(function(r) { var d = parseDate(r['Created At']); if (d) { var k = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0'); mMap[k] = (mMap[k]||0) + 1; }});
-  var signups = Object.entries(mMap).sort(function(a,b) { return a[0].localeCompare(b[0]); }).map(function(e) {
-    var p = e[0].split('-'); return { month: months[parseInt(p[1])-1] + " '" + p[0].slice(2), count: e[1] };
-  });
-  var running = 0;
-  var cumulative = Object.entries(mMap).sort(function(a,b) { return a[0].localeCompare(b[0]); }).map(function(e) {
-    running += e[1]; var p = e[0].split('-'); return { month: months[parseInt(p[1])-1] + " '" + p[0].slice(2), cumulative: running };
-  });
+  // City
+  var cMap={};
+  rows.forEach(function(r){var c=r['City'].trim()||'Unknown';cMap[c]=(cMap[c]||0)+1;});
+  var topCity=Object.entries(cMap).sort(function(a,b){return b[1]-a[1];})[0];
+  topCity=topCity?topCity[0]:'';
+  var cityArr=Object.entries(cMap).sort(function(a,b){return b[1]-a[1];});
+  var topCities=cityArr.slice(0,8).map(function(e){return{city:e[0],count:e[1]};});
+  var otherC=cityArr.slice(8).reduce(function(s,e){return s+e[1];},0);
+  if(otherC>0)topCities.push({city:'Other',count:otherC});
 
-  var cMap = {};
-  rows.forEach(function(r) { var c = (r['City']||'').trim() || 'Unknown'; cMap[c] = (cMap[c]||0) + 1; });
-  var topCity = Object.entries(cMap).sort(function(a,b) { return b[1] - a[1]; })[0];
-  topCity = topCity ? topCity[0] : '';
-  var cityArr = Object.entries(cMap).sort(function(a,b) { return b[1] - a[1]; });
-  var topCities = cityArr.slice(0, 8).map(function(e) { return { city: e[0], count: e[1] }; });
-  var otherCount = cityArr.slice(8).reduce(function(s,e) { return s + e[1]; }, 0);
-  if (otherCount > 0) topCities.push({ city: 'Other', count: otherCount });
-
-  var resByAge = ageBuckets.map(function(b) {
-    var bucket = rows.filter(function(r) { var a = parseFloat(r['Age']); return !isNaN(a) && a >= b.lo && a <= b.hi; });
-    if (!bucket.length) return null;
-    var res = bucket.filter(function(r) { return (r['Residency?']||'').trim() === 'Yes'; }).length;
-    return { range: b.label, rate: Math.round(res/bucket.length*100), total: bucket.length };
+  // Residency by age
+  var resByAge=ageBuckets.map(function(b){
+    var bucket=rows.filter(function(r){var a=safeAge(r);return a!==null&&a>=b.lo&&a<=b.hi;});
+    if(!bucket.length)return null;
+    var res=bucket.filter(function(r){return r['Residency?'].trim()==='Yes';}).length;
+    return{range:b.label,rate:Math.round(res/bucket.length*100),total:bucket.length};
   }).filter(Boolean);
 
-  var noAge = rows.filter(function(r) { return !r['Age'] || !(r['Age']||'').trim(); }).length;
-  var noGender = rows.filter(function(r) { return !r['Gender'] || !(r['Gender']||'').trim(); }).length;
-  var noZip = rows.filter(function(r) { return !r['Zip Code'] || !(r['Zip Code']||'').trim(); }).length;
+  // Completeness
+  var noAge=rows.filter(function(r){return !r['Age'].trim();}).length;
+  var noGender=rows.filter(function(r){return !r['Gender'].trim();}).length;
+  var noZip=rows.filter(function(r){return !r['Zip Code'].trim();}).length;
 
-  var now = new Date();
-  var d30 = new Date(now); d30.setDate(d30.getDate() - 30);
-  var d90 = new Date(now); d90.setDate(d90.getDate() - 90);
-  var last30 = rows.filter(function(r) { var d = parseDate(r['Created At']); return d && d >= d30; }).length;
-  var last90 = rows.filter(function(r) { var d = parseDate(r['Created At']); return d && d >= d90; }).length;
+  // Velocity (HoH signups as proxy)
+  var now=new Date();
+  var d30=new Date(now);d30.setDate(d30.getDate()-30);
+  var d90=new Date(now);d90.setDate(d90.getDate()-90);
+  var last30=hohs.filter(function(r){var d=parseDate(r['Created At']);return d&&d>=d30;}).length;
+  var last90=hohs.filter(function(r){var d=parseDate(r['Created At']);return d&&d>=d90;}).length;
+  var peakMonth=signups.reduce(function(best,s){return s.count>best.count?s:best;},{month:'',count:0});
 
-  var peakMonth = signups.reduce(function(best, s) { return s.count > best.count ? s : best; }, { month: '', count: 0 });
+  // Multi-member HH stats
+  var multiHH=hhSizes.filter(function(s){return s>1;}).length;
+  var maxHH=hhSizes[hhSizes.length-1];
 
   return {
-    total: total, residents: residents, nonResidents: total - residents,
-    resPct: ((residents/total)*100).toFixed(1),
-    medianAge: medianAge, avgAge: avgAge, minAge: ages[0], maxAge: ages[ages.length-1],
-    withAge: withAge, ageDist: ageDist, gender: gender, genderSpecified: genderSpecified,
-    gradeData: gradeData, withGrade: withGrade,
-    signups: signups, cumulative: cumulative, cities: topCities, topCity: topCity, resByAge: resByAge,
-    noAge: noAge, noGender: noGender, noZip: noZip,
-    last30: last30, last90: last90, peakMonth: peakMonth,
+    total:total, hohCount:hohs.length, memCount:members.length,
+    residents:residents, nonResidents:total-residents, resPct:((residents/total)*100).toFixed(1),
+    hhCount:hhCount, medianHH:medianHH, avgHH:avgHH, hhSizeData:hhSizeData, multiHH:multiHH, maxHH:maxHH,
+    medianAge:medianAge, medianHohAge:medianHohAge, medianMemAge:medianMemAge,
+    minAge:allAges[0], maxAge:allAges[allAges.length-1], withAge:allAges.length,
+    badAges:badAges, ageDist:ageDist,
+    gender:gender, genderSpecified:genderSpecified,
+    gradeData:gradeData, withGrade:withGrade,
+    signups:signups, cumulative:cumulative,
+    cities:topCities, topCity:topCity, resByAge:resByAge,
+    noAge:noAge, noGender:noGender, noZip:noZip,
+    last30:last30, last90:last90, peakMonth:peakMonth,
   };
 }
 
-/* ═══ Build AI insights blob ═══ */
+/* ═══ Insights blob ═══ */
 function buildInsightsBlob(s) {
-  var gStr = s.gender.map(function(g) { return g.name + ': ' + g.value; }).join(', ');
-  var ageStr = s.ageDist.map(function(d) { return d.range + ': ' + (d.residents+d.nonResidents); }).join(', ');
-  var cityStr = s.cities.slice(0,6).map(function(c) { return c.city + ': ' + c.count; }).join(', ');
   return {
-    total: s.total, residents: s.residents, nonResidents: s.nonResidents, residentPct: s.resPct,
-    signupVelocity: { last30: s.last30, last90: s.last90 },
-    peakMonth: s.peakMonth,
-    age: { withData: s.withAge, median: s.medianAge, avg: s.avgAge, min: s.minAge, max: s.maxAge, missingPct: Math.round(s.noAge/s.total*100) },
-    ageDistribution: ageStr,
-    gender: gStr, genderMissingPct: Math.round((s.total-s.genderSpecified)/s.total*100),
-    grade: { withData: s.withGrade, pct: Math.round(s.withGrade/s.total*100) },
-    topCities: cityStr, primaryCity: s.topCity,
-    dataGaps: { ageMissing: s.noAge, genderMissing: s.noGender, zipMissing: s.noZip },
+    totalPeople:s.total, households:s.hhCount, hohCount:s.hohCount, memberCount:s.memCount,
+    medianHouseholdSize:s.medianHH, avgHouseholdSize:s.avgHH, maxHouseholdSize:s.maxHH,
+    residentPct:s.resPct, residents:s.residents, nonResidents:s.nonResidents,
+    signupVelocity:{last30HH:s.last30,last90HH:s.last90}, peakMonth:s.peakMonth,
+    age:{withData:s.withAge,medianAll:s.medianAge,medianHoH:s.medianHohAge,medianMember:s.medianMemAge,badEntries:s.badAges},
+    ageDistribution:s.ageDist.map(function(d){return d.range+':'+d.hoh+'hoh+'+d.member+'mem';}),
+    gender:s.gender.map(function(g){return g.name+':'+g.value;}).join(', '),
+    grade:{withData:s.withGrade,breakdown:s.gradeData.map(function(g){return g.grade+':'+g.count;}).join(', ')},
+    topCities:s.cities.slice(0,6).map(function(c){return c.city+':'+c.count;}).join(', '),
+    dataGaps:{ageMissing:s.noAge,genderMissing:s.noGender,zipMissing:s.noZip},
   };
 }
 
 /* ═══ Auto observations ═══ */
-function buildObservations(s) {
-  var obs = [];
-  if (s.peakMonth.count > s.total * 0.3)
-    obs.push('\uD83D\uDCC8 ' + s.peakMonth.month + ' saw ' + s.peakMonth.count + ' signups (' + Math.round(s.peakMonth.count/s.total*100) + '% of all users) \u2014 likely a launch or campaign.');
-  obs.push('\uD83D\uDE80 ' + s.last30 + ' new users in the last 30 days, ' + s.last90 + ' in the last 90. ' + (s.last90 > s.total * 0.5 ? 'Growth still accelerating.' : 'Steady growth.'));
-  obs.push('\uD83C\uDFE0 ' + s.resPct + '% residency rate. ' + (parseFloat(s.resPct) > 75 ? 'Strong local base.' : parseFloat(s.resPct) > 50 ? 'Moderate local presence.' : 'Significant non-resident usage.'));
-  if (s.withAge > 0) {
-    var dom = s.ageDist.reduce(function(best, d) { return (d.residents+d.nonResidents) > (best.residents+best.nonResidents) ? d : best; }, { residents: 0, nonResidents: 0 });
-    obs.push('\uD83D\uDC64 Median age ' + s.medianAge + ' (range ' + s.minAge + '\u2013' + s.maxAge + '). Largest group: ' + dom.range + ' with ' + (dom.residents+dom.nonResidents) + ' users.');
-  }
-  if (s.gender[0] && s.genderSpecified > 0)
-    obs.push('\u26A7 ' + s.gender[0].name + ' = ' + Math.round(s.gender[0].value/s.genderSpecified*100) + '% of those who specified. ' + Math.round((s.total-s.genderSpecified)/s.total*100) + '% unspecified.');
-  var gapPct = Math.round(Math.max(s.noAge, s.noGender) / s.total * 100);
-  if (gapPct > 15) obs.push('\u26A0\uFE0F Up to ' + gapPct + '% missing demographics. Consider prompting profile completion at next login.');
-  if (s.topCity) obs.push('\uD83D\uDDFA\uFE0F ' + Math.round(s.cities[0].count/s.total*100) + '% from ' + s.topCity + '. Users span ' + s.cities.length + '+ cities.');
-  return obs;
+function buildObs(s) {
+  var o=[];
+  o.push('\uD83D\uDC68\u200D\uD83D\uDC69\u200D\uD83D\uDC67\u200D\uD83D\uDC66 '+s.hhCount+' households, '+s.total+' people total. '+s.hohCount+' HoH + '+s.memCount+' members. Median HH size: '+s.medianHH+'.');
+  if(s.medianMemAge!==null) o.push('\uD83D\uDC76 Member median age '+s.medianMemAge+' vs HoH median '+s.medianHohAge+'. '+(s.medianMemAge<18?'Primarily a family/youth community.':'Mixed adult household base.'));
+  if(s.peakMonth.count>s.total*0.15) o.push('\uD83D\uDCC8 '+s.peakMonth.month+' peak: '+s.peakMonth.count+' signups ('+Math.round(s.peakMonth.count/s.total*100)+'% of all).');
+  o.push('\uD83C\uDFE0 '+s.resPct+'% residency rate. '+(parseFloat(s.resPct)>75?'Strong local base.':parseFloat(s.resPct)>50?'Moderate local mix.':'Heavy non-resident usage.'));
+  if(s.withGrade>10) o.push('\uD83C\uDF93 '+s.withGrade+' people with grade data. Most common: '+s.gradeData[0].grade+' ('+s.gradeData[0].count+'). Covers preschool through high school.');
+  var gapPct=Math.round(Math.max(s.noAge,s.noGender)/s.total*100);
+  if(gapPct>15) o.push('\u26A0\uFE0F Up to '+gapPct+'% missing demographics. '+s.noAge+' missing age, '+s.noGender+' missing gender.');
+  if(s.badAges>0) o.push('\uD83D\uDEA8 '+s.badAges+' records with invalid DOB (age <0 or >110). Likely data entry errors.');
+  if(s.topCity) o.push('\uD83D\uDDFA\uFE0F '+Math.round(s.cities[0].count/s.total*100)+'% from '+s.topCity+'. Spans '+s.cities.length+'+ cities.');
+  return o;
 }
 
-/* ═══════════════════════════════════════════════════════════
-   MAIN APP
-   ═══════════════════════════════════════════════════════════ */
-function GenderChart({ gender, genderSpecified, total, colors }) {
-  var canvasRef = useRef(null);
-  var chartRef = useRef(null);
-  useEffect(function() {
-    if (!canvasRef.current) return;
-    if (chartRef.current) chartRef.current.destroy();
-    chartRef.current = new Chart(canvasRef.current, {
-      type: 'doughnut',
-      data: { labels: gender.map(function(g){return g.name;}), datasets: [{ data: gender.map(function(g){return g.value;}), backgroundColor: colors.slice(0, gender.length), borderWidth: 0 }] },
-      options: { responsive: true, maintainAspectRatio: false, cutout: '60%', plugins: { legend: { display: true, position: 'right', labels: { boxWidth: 12, font: { size: 11 } } } } },
-    });
-    return function() { if (chartRef.current) chartRef.current.destroy(); };
-  }, [gender]);
-  return (
-    <div className="panel">
-      <div className="panel-head">Gender<span className="panel-note">{total - genderSpecified} not specified</span></div>
-      <div className="chart-wrap"><canvas ref={canvasRef}></canvas></div>
-    </div>
-  );
-}
-
+/* ═══ MAIN ═══ */
 function App() {
   var [rows, setRows] = useState(null);
   var [loading, setLoading] = useState(true);
   var [error, setError] = useState(null);
+  var [tab, setTab] = useState('demo');
   var [insights, setInsights] = useState(null);
   var [insightsLoading, setInsightsLoading] = useState(false);
   var [insightsError, setInsightsError] = useState(null);
 
   useEffect(function() {
-    fetch(withToken('/' + orgSlug + '/' + reportType + '/api/data'))
-      .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
-      .then(function(json) { setRows(json.rows || json); setLoading(false); })
-      .catch(function(e) { setError(e.message); setLoading(false); });
+    fetch(withToken('/'+orgSlug+'/'+reportType+'/api/data'))
+      .then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json();})
+      .then(function(j){setRows(j.rows||j);setLoading(false);})
+      .catch(function(e){setError(e.message);setLoading(false);});
   }, []);
 
-  var s = useMemo(function() { return rows ? compute(rows) : null; }, [rows]);
-  var observations = useMemo(function() { return s ? buildObservations(s) : []; }, [s]);
+  var s = useMemo(function(){return rows?compute(rows):null;}, [rows]);
+  var observations = useMemo(function(){return s?buildObs(s):[];}, [s]);
 
   var getInsights = useCallback(function() {
-    if (!s || insightsLoading) return;
-    setInsightsLoading(true); setInsightsError(null);
-    fetch(withToken('/' + orgSlug + '/' + reportType + '/api/insights'), {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(buildInsightsBlob(s)),
-    })
-    .then(function(r) { return r.json(); })
-    .then(function(json) {
-      if (!json.ok) throw new Error(json.error || 'Request failed');
-      setInsights(json.insights || []);
-    })
-    .catch(function(e) { setInsightsError(e.message); })
-    .finally(function() { setInsightsLoading(false); });
-  }, [s, insightsLoading]);
+    if(!s||insightsLoading)return;
+    setInsightsLoading(true);setInsightsError(null);
+    fetch(withToken('/'+orgSlug+'/'+reportType+'/api/insights'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(buildInsightsBlob(s))})
+    .then(function(r){return r.json();})
+    .then(function(j){if(!j.ok)throw new Error(j.error||'Failed');setInsights(j.insights||[]);})
+    .catch(function(e){setInsightsError(e.message);})
+    .finally(function(){setInsightsLoading(false);});
+  }, [s,insightsLoading]);
 
-  /* ── Share link hook ── */
-  useEffect(function() {
-    window.recShareLink = function() { return window.location.href; };
-  }, []);
+  useEffect(function(){window.recShareLink=function(){return window.location.href;};}, []);
 
-  if (loading) return <div className="loading"><div className="spinner" /><p>Loading user data…</p></div>;
-  if (error) return <div className="dash"><div className="error"><strong>Error:</strong> {error}</div></div>;
-  if (!s) return <div className="dash"><div className="empty">No data returned.</div></div>;
+  if(loading) return <div className="loading"><div className="spinner"/><p>Loading user data\u2026</p></div>;
+  if(error) return <div className="dash"><div className="error"><strong>Error:</strong> {error}</div></div>;
+  if(!s) return <div className="dash"><div className="empty">No data returned.</div></div>;
 
-  var agePct = Math.round(s.withAge / s.total * 100);
-  var genderPct = Math.round(s.genderSpecified / s.total * 100);
-  var zipPct = Math.round((s.total - s.noZip) / s.total * 100);
-  var gradePct = Math.round(s.withGrade / s.total * 100);
-  var TEAL = '#0d9488', AMBER = '#f59e0b', ROSE = '#f43f5e', EMERALD = '#10b981';
-
-  var signupColors = s.signups.map(function(e) { return e.count > 100 ? '#6366f1' : e.count > 30 ? '#818cf8' : '#c7d2fe'; });
-  var resAgeColors = s.resByAge.map(function(e) { return e.rate >= 85 ? TEAL : e.rate >= 70 ? AMBER : ROSE; });
-
-  var GENDER_COLORS = ['#6366f1','#94a3b8','#0ea5e9','#f59e0b','#8b5cf6'];
+  var TEAL='#0d9488',AMBER='#f59e0b',ROSE='#f43f5e',EMERALD='#10b981',INDIGO='#6366f1',PURPLE='#8b5cf6',SKY='#0ea5e9';
+  var GENDER_COLORS=[INDIGO,'#94a3b8',SKY,AMBER,PURPLE];
+  var agePct=Math.round(s.withAge/s.total*100);
+  var genderPct=Math.round(s.genderSpecified/s.total*100);
+  var zipPct=Math.round((s.total-s.noZip)/s.total*100);
+  var gradePct=Math.round(s.withGrade/s.total*100);
 
   return (
     <React.Fragment>
       <div className="toolbar no-print">
         <h1>Users Report</h1>
-        <span className="pill" style={{background:'#dbeafe',color:'#1e40af'}}>{s.topCity || orgSlug}</span>
-        <span className="pill" style={{background:'#dcfce7',color:'#166534'}}>{s.total} users</span>
-        <div className="spacer" />
-        <button className="btn" onClick={function() { window.print(); }}>\uD83D\uDDA8\uFE0F Print</button>
+        <span className="pill" style={{background:'#dbeafe',color:'#1e40af'}}>{s.topCity||orgSlug}</span>
+        <span className="pill" style={{background:'#dcfce7',color:'#166534'}}>{s.hhCount} households &middot; {s.total} people</span>
+        <div className="spacer"/>
+        <button className="btn" onClick={function(){window.print();}}>\uD83D\uDDA8\uFE0F Print</button>
       </div>
 
       <div className="dash">
-        {/* KPIs */}
-        <div className="kpi-row">
-          <div className="kpi" style={{'--accent':'#6366f1'}}><div className="kpi-label">Total Users</div><div className="kpi-val">{s.total}</div><div className="kpi-sub">+{s.last30} last 30d &middot; +{s.last90} last 90d</div></div>
-          <div className="kpi" style={{'--accent':TEAL}}><div className="kpi-label">Residents</div><div className="kpi-val">{s.resPct}%</div><div className="kpi-sub">{s.residents} of {s.total}</div></div>
-          <div className="kpi" style={{'--accent':AMBER}}><div className="kpi-label">Median Age</div><div className="kpi-val">{s.medianAge != null ? s.medianAge : '\u2014'}</div><div className="kpi-sub">{s.avgAge ? 'Avg ' + s.avgAge + ' \u00B7 ' + s.minAge + '\u2013' + s.maxAge : s.noAge + ' missing DOB'}</div></div>
-          <div className="kpi" style={{'--accent':'#8b5cf6'}}><div className="kpi-label">Grade on File</div><div className="kpi-val">{s.withGrade}</div><div className="kpi-sub">{gradePct}% of users</div></div>
-        </div>
-
-        {/* Completeness + Residency */}
-        <div className="grid">
-          <div className="panel">
-            <div className="panel-head">Data Completeness<span className="panel-note">{s.noAge + s.noGender + s.noZip} gaps</span></div>
-            <div className="ring-row">
-              <Ring pct={100} label="Email" color={EMERALD} />
-              <Ring pct={zipPct} label="Zip" color={zipPct < 90 ? AMBER : EMERALD} />
-              <Ring pct={agePct} label="DOB" color={agePct < 85 ? AMBER : EMERALD} />
-              <Ring pct={genderPct} label="Gender" color={genderPct < 75 ? ROSE : AMBER} />
-              <Ring pct={gradePct} label="Grade" color={gradePct < 10 ? ROSE : AMBER} />
-            </div>
+        {/* Tabs */}
+        <div className="tabs no-print">
+          <div className={'tab'+(tab==='demo'?' active':'')} onClick={function(){setTab('demo');}}>
+            \uD83D\uDCCA Demographics
           </div>
-          <div className="panel">
-            <div className="panel-head">Residency Breakdown</div>
-            <div style={{display:'flex',flexDirection:'column',gap:8,justifyContent:'center',height:'calc(100% - 30px)'}}>
-              <div className="res-bar">
-                <div className="seg" style={{width:s.resPct+'%',background:TEAL}}>{s.residents}</div>
-                <div className="seg" style={{flex:1,background:'#e2e8f0',color:'#6b7280'}}>{s.nonResidents}</div>
-              </div>
-              <div className="legend">
-                <span><span className="legend-dot" style={{background:TEAL}} /><strong>Resident</strong> {s.resPct}%</span>
-                <span><span className="legend-dot" style={{background:'#e2e8f0'}} /><strong>Non-Resident</strong> {(100 - parseFloat(s.resPct)).toFixed(1)}%</span>
-              </div>
-            </div>
+          <div className={'tab'+(tab==='revenue'?' active':'')} onClick={function(){setTab('revenue');}}>
+            \uD83D\uDCB0 Revenue
+            <span className="tab-badge" style={{background:'#fef3c7',color:'#92400e'}}>Soon</span>
           </div>
         </div>
 
-        {/* Charts */}
-        <div className="grid">
-          <BarChartPanel title="New Signups by Month" data={s.signups} labelKey="month"
-            dataKeys={[{key:'count',label:'Signups'}]} colors={signupColors} />
-          <AreaChartPanel title="Cumulative Growth" data={s.cumulative} labelKey="month" dataKey="cumulative" color="#6366f1" />
+        {tab==='demo' && (
+          <React.Fragment>
+            {/* KPIs */}
+            <div className="kpi-row">
+              <div className="kpi" style={{'--accent':INDIGO}}><div className="kpi-label">Households</div><div className="kpi-val">{s.hhCount}</div><div className="kpi-sub">+{s.last30} last 30d</div></div>
+              <div className="kpi" style={{'--accent':PURPLE}}><div className="kpi-label">Total People</div><div className="kpi-val">{s.total}</div><div className="kpi-sub">{s.hohCount} HoH + {s.memCount} members</div></div>
+              <div className="kpi" style={{'--accent':TEAL}}><div className="kpi-label">Residents</div><div className="kpi-val">{s.resPct}%</div><div className="kpi-sub">{s.residents} of {s.total}</div></div>
+              <div className="kpi" style={{'--accent':AMBER}}><div className="kpi-label">Median HH Size</div><div className="kpi-val">{s.medianHH}</div><div className="kpi-sub">Avg {s.avgHH} &middot; Max {s.maxHH}</div></div>
+              <div className="kpi" style={{'--accent':SKY}}><div className="kpi-label">Median Age</div><div className="kpi-val">{s.medianAge!=null?s.medianAge:'\u2014'}</div><div className="kpi-sub">HoH {s.medianHohAge} &middot; Mem {s.medianMemAge}</div></div>
+              <div className="kpi" style={{'--accent':EMERALD}}><div className="kpi-label">With Grade</div><div className="kpi-val">{s.withGrade}</div><div className="kpi-sub">{gradePct}% of people</div></div>
+            </div>
 
-          <BarChartPanel title="Age Distribution" note="Resident vs Non-Resident" data={s.ageDist} labelKey="range"
-            dataKeys={[{key:'residents',label:'Resident'},{key:'nonResidents',label:'Non-Resident'}]} colors={[TEAL,'#cbd5e1']} stacked />
-
-          <GenderChart gender={s.gender} genderSpecified={s.genderSpecified} total={s.total} colors={GENDER_COLORS} />
-
-          <BarChartPanel title="Residency Rate by Age" note="% of each group" data={s.resByAge} labelKey="range"
-            dataKeys={[{key:'rate',label:'Resident %'}]} colors={resAgeColors} pctAxis />
-
-          {/* City breakdown */}
-          <div className="panel">
-            <div className="panel-head">Users by City</div>
-            {s.cities.map(function(c) {
-              var pct = (c.count / s.total * 100);
-              var isTop = c.city === s.topCity;
-              return (
-                <div key={c.city} className="city-bar-row">
-                  <div className="city-label" style={{color: isTop ? '#166534' : '#6b7280', fontWeight: isTop ? 700 : 400}}>{c.city}</div>
-                  <div className="city-track">
-                    <div className="city-fill" style={{width: Math.max(pct, 1.5) + '%', background: isTop ? TEAL : '#94a3b8'}}>
-                      {pct > 4 && <span>{c.count}</span>}
-                    </div>
-                  </div>
-                  {pct <= 4 && <div className="city-count">{c.count}</div>}
-                  <div className="city-pct">{pct.toFixed(1)}%</div>
+            {/* Row 1: HH Size + Residency */}
+            <div className="grid">
+              <ChartPanel title="Household Size Distribution" note={s.multiHH+' multi-member'} type="bar" data={s.hhSizeData} labelKey="size" dataKeys={[{key:'count',label:'Households'}]} colors={[INDIGO]} />
+              <div className="panel">
+                <div className="panel-head">Residency &amp; Completeness</div>
+                <div style={{display:'flex',height:20,borderRadius:5,overflow:'hidden',marginBottom:10}}>
+                  <div style={{width:s.resPct+'%',background:TEAL,display:'flex',alignItems:'center',justifyContent:'center'}}><span style={{fontSize:10,fontWeight:700,color:'#fff'}}>{s.residents}</span></div>
+                  <div style={{flex:1,background:'#e2e8f0',display:'flex',alignItems:'center',justifyContent:'center'}}><span style={{fontSize:10,fontWeight:700,color:'#6b7280'}}>{s.nonResidents}</span></div>
                 </div>
-              );
-            })}
-          </div>
-
-          {/* Grade */}
-          <div className="panel span2">
-            <div className="panel-head">Grade Distribution<span className="panel-note">{s.withGrade > 0 ? s.withGrade + ' users' : 'New field \u2014 data accumulating'}</span></div>
-            {s.gradeData.length > 0 ? (
-              <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'flex-end',padding:'8px 0'}}>
-                {s.gradeData.map(function(g) { return (
-                  <div key={g.grade} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:4}}>
-                    <span style={{fontSize:14,fontWeight:800,color:'#8b5cf6'}}>{g.count}</span>
-                    <div style={{width:36,height:Math.max(g.count*20,8),background:'#8b5cf6',borderRadius:4}} />
-                    <span style={{fontSize:11,color:'#6b7280'}}>{g.grade}</span>
-                  </div>
-                );})}
+                <div className="ring-row">
+                  <Ring pct={agePct} label="DOB" color={agePct<70?ROSE:agePct<85?AMBER:EMERALD} />
+                  <Ring pct={genderPct} label="Gender" color={genderPct<50?ROSE:genderPct<75?AMBER:EMERALD} />
+                  <Ring pct={zipPct} label="Zip" color={zipPct<90?AMBER:EMERALD} />
+                  <Ring pct={gradePct} label="Grade" color={gradePct<10?ROSE:gradePct<30?AMBER:EMERALD} />
+                </div>
               </div>
-            ) : (
-              <div className="empty">Grade is a new profile field \u2014 data will populate as users sign up or update their profiles.</div>
-            )}
-          </div>
-        </div>
-
-        {/* AI Insights */}
-        <div className="insights-section no-print">
-          <div className="insights-wrap">
-            <div className="insights-head">
-              <button type="button" className="insights-btn" onClick={getInsights} disabled={insightsLoading}>
-                {insightsLoading ? 'Analyzing\u2026' : (insights ? '\u21BB Refresh insights' : '\u2728 Rec Insights')}
-              </button>
-              {insights && !insightsLoading && (
-                <span style={{fontSize:11,color:'#9ca3af'}}>Generated from {s.total} users</span>
-              )}
             </div>
-            {insightsLoading && <div className="loading"><div className="spinner" /><p>Analyzing {s.total} users across {s.cities.length} cities\u2026</p></div>}
-            {insightsError && !insightsLoading && <div style={{padding:'8px 20px 16px'}}><div className="error">{insightsError}</div></div>}
-            {insights && !insightsLoading && (
-              <div className="insights-grid">
-                {insights.map(function(ins, i) { return (
-                  <div key={i} className={'insight-card insight-' + (ins.type || 'signal')}>
-                    <div className="insight-type">{ins.type || 'signal'}</div>
-                    <div className="insight-title">{ins.title}</div>
-                    <div className="insight-detail">{ins.detail}</div>
-                    {ins.action && <div className="insight-action">\u2192 {ins.action}</div>}
-                  </div>
-                );})}
+
+            {/* Data quality alerts */}
+            {(s.badAges>0||s.maxHH>10)&&(
+              <div style={{marginBottom:14}}>
+                {s.badAges>0&&<div className="alert-card alert-warn">\uD83D\uDEA8 <strong>{s.badAges} records</strong> have invalid dates of birth (computed age &lt;0 or &gt;110). These are excluded from age statistics.</div>}
+                {s.maxHH>10&&<div className="alert-card alert-info">\uD83D\uDCA1 Largest household has <strong>{s.maxHH} members</strong>. This may be a test account or organizational account worth reviewing.</div>}
               </div>
             )}
-          </div>
-        </div>
 
-        {/* Key Observations */}
-        <div className="obs">
-          <div className="obs-title">Key Observations</div>
-          <div className="obs-grid">
-            {observations.map(function(o, i) { return <div key={i}>{o}</div>; })}
-          </div>
-        </div>
+            {/* Row 2: Signups + Growth */}
+            <div className="grid">
+              <ChartPanel title="New Signups by Month" data={s.signups} labelKey="month" dataKeys={[{key:'count',label:'Signups'}]} colors={[INDIGO]} />
+              <ChartPanel title="Cumulative Growth" type="line" data={s.cumulative} labelKey="month" dataKeys={[{key:'cumulative',label:'Total'}]} colors={[INDIGO]} />
+            </div>
 
-        {/* Future */}
-        <div className="future-box">
-          <h4>\uD83D\uDC8E Phase 2: Revenue + Household Profiles</h4>
-          <p>Join to <code>materialized.item_log_report</code> via household for spend data. Expand to full household profiles for dependent demographics, grade distribution, and per-member spend analysis.</p>
-        </div>
+            {/* Row 3: Age by Role + Gender */}
+            <div className="grid">
+              <ChartPanel title="Age Distribution by Role" note="HoH vs Members" data={s.ageDist} labelKey="range" dataKeys={[{key:'hoh',label:'Head of Household'},{key:'member',label:'Member'}]} colors={[INDIGO,'#c7d2fe']} stacked />
+              <GenderChart gender={s.gender} genderSpecified={s.genderSpecified} total={s.total} colors={GENDER_COLORS} />
+            </div>
+
+            {/* Row 4: Residency by Age + Grade */}
+            <div className="grid">
+              <ChartPanel title="Residency Rate by Age" note="% of each group" data={s.resByAge} labelKey="range" dataKeys={[{key:'rate',label:'Resident %'}]} colors={s.resByAge.map(function(e){return e.rate>=80?TEAL:e.rate>=65?AMBER:ROSE;})} pctAxis />
+              <ChartPanel title="Grade Distribution" note={s.withGrade+' people'} data={s.gradeData} labelKey="grade" dataKeys={[{key:'count',label:'Students'}]} colors={[PURPLE]} />
+            </div>
+
+            {/* City */}
+            <div className="grid">
+              <div className="panel span2">
+                <div className="panel-head">People by City</div>
+                {s.cities.map(function(c){
+                  var pct=(c.count/s.total*100);var isTop=c.city===s.topCity;
+                  return (<div key={c.city} className="city-bar-row">
+                    <div className="city-label" style={{color:isTop?'#166534':'#6b7280',fontWeight:isTop?700:400}}>{c.city}</div>
+                    <div className="city-track"><div className="city-fill" style={{width:Math.max(pct,1.5)+'%',background:isTop?TEAL:'#94a3b8'}}>{pct>4&&<span>{c.count}</span>}</div></div>
+                    {pct<=4&&<div style={{fontSize:10,color:'#9ca3af',width:24}}>{c.count}</div>}
+                    <div className="city-pct">{pct.toFixed(1)}%</div>
+                  </div>);
+                })}
+              </div>
+            </div>
+
+            {/* AI Insights */}
+            <div className="insights-section no-print">
+              <div className="insights-wrap">
+                <div className="insights-head">
+                  <button type="button" className="insights-btn" onClick={getInsights} disabled={insightsLoading}>
+                    {insightsLoading?'Analyzing\u2026':(insights?'\u21BB Refresh':'\u2728 Rec Insights')}
+                  </button>
+                  {insights&&!insightsLoading&&<span style={{fontSize:11,color:'#9ca3af'}}>Analyzed {s.hhCount} households, {s.total} people</span>}
+                </div>
+                {insightsLoading&&<div className="loading"><div className="spinner"/><p>Analyzing {s.total} people across {s.cities.length} cities\u2026</p></div>}
+                {insightsError&&!insightsLoading&&<div style={{padding:'8px 20px 16px'}}><div className="error">{insightsError}</div></div>}
+                {insights&&!insightsLoading&&(
+                  <div className="insights-grid">
+                    {insights.map(function(ins,i){return(
+                      <div key={i} className={'insight-card insight-'+(ins.type||'signal')}>
+                        <div className="insight-type">{ins.type||'signal'}</div>
+                        <div className="insight-title">{ins.title}</div>
+                        <div className="insight-detail">{ins.detail}</div>
+                        {ins.action&&<div className="insight-action">\u2192 {ins.action}</div>}
+                      </div>
+                    );})}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Observations */}
+            <div className="obs">
+              <div className="obs-title">Key Observations</div>
+              <div className="obs-grid">{observations.map(function(o,i){return <div key={i}>{o}</div>;})}</div>
+            </div>
+          </React.Fragment>
+        )}
+
+        {tab==='revenue' && (
+          <div className="rev-coming">
+            <h2>\uD83D\uDCB0 Revenue Analytics</h2>
+            <p>Phase 2 — connecting household demographic data to spend via <code>materialized.item_log_report</code>.</p>
+            <div className="future-box" style={{marginTop:20,textAlign:'left',maxWidth:600}}>
+              <h4>Planned Metrics</h4>
+              <ul>
+                <li><strong>Revenue per household</strong> — median, avg, distribution histogram</li>
+                <li><strong>Revenue by residency</strong> — resident vs non-resident avg spend</li>
+                <li><strong>Revenue by age group</strong> — where is the money concentrated</li>
+                <li><strong>Revenue by HH size</strong> — do bigger families spend more per capita</li>
+                <li><strong>Unbooked households</strong> — signed up, $0 spend (conversion gap)</li>
+                <li><strong>Revenue concentration</strong> — Pareto: what % of HH drive what % of revenue</li>
+                <li><strong>Program diversity</strong> — how many programs per household (cross-sell)</li>
+                <li><strong>LTV by signup cohort</strong> — do early adopters spend more</li>
+                <li><strong>Seasonal spend by age</strong> — when do different demographics book</li>
+                <li><strong>Underserved segments</strong> — high population, low spend = opportunity</li>
+              </ul>
+            </div>
+          </div>
+        )}
       </div>
-
-      <div id="report-ready" style={{display:'none'}} />
+      <div id="report-ready" style={{display:'none'}}/>
     </React.Fragment>
   );
 }
 
-ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
 </script>
 </body>
 </html>
