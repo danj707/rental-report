@@ -8,6 +8,9 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
 <script src="/share-widget.js" defer></script>
 <script src="/feedback-widget.js" defer></script>
 <style>
@@ -101,6 +104,11 @@
   .rev-coming p { font-size:14px; color:#6b7280; max-width:500px; line-height:1.6; }
 
   @media print { body { background:#fff; } .no-print { display:none!important; } .panel { break-inside:avoid; } }
+  .map-wrap { height:420px; border-radius:8px; overflow:hidden; border:1px solid #e5e7eb; }
+  .map-toggle { display:flex; gap:4px; }
+  .map-toggle button { padding:5px 12px; border-radius:4px; border:1px solid #d1d5db; background:#fff; font-size:11px; font-weight:600; cursor:pointer; font-family:inherit; color:#6b7280; }
+  .map-toggle button.active { background:#6366f1; color:#fff; border-color:#6366f1; }
+  .map-loading { display:flex; align-items:center; justify-content:center; height:420px; color:#6b7280; font-size:13px; }
 </style>
 </head>
 <body>
@@ -147,6 +155,98 @@ function ChartPanel({ title, note, type, data, labelKey, dataKeys, colors, stack
     return function(){if(chartRef.current)chartRef.current.destroy();};
   }, [data]);
   return (<div className={'panel '+(className||'')}><div className="panel-head">{title}{note&&<span className="panel-note">{note}</span>}</div><div className="chart-wrap"><canvas ref={canvasRef}></canvas></div></div>);
+}
+
+function GeoMap({ zipData, mode }) {
+  var mapRef = useRef(null);
+  var mapInst = useRef(null);
+  var heatLayer = useRef(null);
+  var markersRef = useRef([]);
+  var [coords, setCoords] = useState({});
+  var [loading, setLoading] = useState(true);
+
+  // Geocode zip codes via Nominatim, cache in localStorage
+  useEffect(function() {
+    if (!zipData || !zipData.length) { setLoading(false); return; }
+    var cache = {};
+    try { cache = JSON.parse(localStorage.getItem('_zipGeo') || '{}'); } catch(e) {}
+    var toGeo = zipData.filter(function(z) { return !cache[z.zip]; });
+    if (toGeo.length === 0) { setCoords(cache); setLoading(false); return; }
+
+    var idx = 0;
+    function next() {
+      if (idx >= toGeo.length) {
+        try { localStorage.setItem('_zipGeo', JSON.stringify(cache)); } catch(e) {}
+        setCoords(Object.assign({}, cache));
+        setLoading(false);
+        return;
+      }
+      var z = toGeo[idx];
+      var q = z.zip + ' ' + (z.state || 'US');
+      fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&postalcode=' + encodeURIComponent(z.zip) + '&country=US')
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+          if (data && data[0]) { cache[z.zip] = [parseFloat(data[0].lat), parseFloat(data[0].lon)]; }
+        })
+        .catch(function() {})
+        .finally(function() { idx++; setTimeout(next, 350); });
+    }
+    next();
+  }, [zipData]);
+
+  // Build/update map
+  useEffect(function() {
+    if (loading || !mapRef.current || !zipData.length) return;
+    var pts = zipData.filter(function(z) { return coords[z.zip]; }).map(function(z) {
+      return { lat: coords[z.zip][0], lng: coords[z.zip][1], hh: z.hh, rev: z.revenue, zip: z.zip, city: z.city };
+    });
+    if (!pts.length) return;
+
+    if (!mapInst.current) {
+      mapInst.current = L.map(mapRef.current, { scrollWheelZoom: true, zoomControl: true });
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '\u00A9 OpenStreetMap', maxZoom: 18, opacity: 0.85
+      }).addTo(mapInst.current);
+    }
+    var map = mapInst.current;
+
+    // Clear old
+    if (heatLayer.current) { map.removeLayer(heatLayer.current); heatLayer.current = null; }
+    markersRef.current.forEach(function(m) { map.removeLayer(m); });
+    markersRef.current = [];
+
+    // Heat data
+    var maxVal = Math.max.apply(null, pts.map(function(p) { return mode === 'rev' ? p.rev : p.hh; }));
+    var heatPts = pts.map(function(p) {
+      var intensity = (mode === 'rev' ? p.rev : p.hh) / (maxVal || 1);
+      return [p.lat, p.lng, Math.max(intensity, 0.1)];
+    });
+    heatLayer.current = L.heatLayer(heatPts, { radius: 35, blur: 25, maxZoom: 14, gradient: { 0.2: '#6366f1', 0.5: '#0d9488', 0.8: '#f59e0b', 1.0: '#f43f5e' } }).addTo(map);
+
+    // Circle markers
+    pts.forEach(function(p) {
+      var val = mode === 'rev' ? p.rev : p.hh;
+      var r = Math.max(Math.sqrt(val / (maxVal || 1)) * 28, 6);
+      var marker = L.circleMarker([p.lat, p.lng], {
+        radius: r, fillColor: mode === 'rev' ? '#0d9488' : '#6366f1', fillOpacity: 0.7,
+        color: '#fff', weight: 2,
+      }).addTo(map);
+      marker.bindTooltip(
+        '<strong>' + p.city + ' ' + p.zip + '</strong><br/>' +
+        p.hh + ' households<br/>' +
+        '$' + Math.round(p.rev).toLocaleString() + ' revenue',
+        { direction: 'top' }
+      );
+      markersRef.current.push(marker);
+    });
+
+    // Fit bounds
+    var bounds = L.latLngBounds(pts.map(function(p) { return [p.lat, p.lng]; }));
+    map.fitBounds(bounds, { padding: [30, 30], maxZoom: 12 });
+  }, [loading, coords, mode, zipData]);
+
+  if (loading) return <div className="map-loading"><div className="spinner" style={{marginRight:8}}/> Geocoding {zipData.length} zip codes\u2026</div>;
+  return <div ref={mapRef} className="map-wrap"></div>;
 }
 
 function GenderChart({ gender, genderSpecified, total, colors }) {
@@ -249,6 +349,19 @@ function compute(rows) {
   var noAge=rows.filter(function(r){return !r['Age'].trim();}).length;
   var noGender=rows.filter(function(r){return !r['Gender'].trim();}).length;
   var noZip=rows.filter(function(r){return !r['Zip Code'].trim();}).length;
+
+  // Zip-level aggregation for map
+  var zipAgg={};
+  var hhZipSeen={};
+  rows.forEach(function(r){
+    var z=r['Zip Code'].trim();var c=r['City'].trim();var st=r['State'].trim();
+    var hid=r['Household ID'];
+    if(!z)return;
+    if(!zipAgg[z])zipAgg[z]={zip:z,city:c,state:st,hh:0,people:0,revenue:0};
+    zipAgg[z].people++;
+    if(!hhZipSeen[hid+'|'+z]){hhZipSeen[hid+'|'+z]=1;zipAgg[z].hh++;zipAgg[z].revenue+=num(col(r,['Net Revenue','net_revenue']));}
+  });
+  var zipData=Object.values(zipAgg).sort(function(a,b){return b.hh-a.hh;});
 
   // Velocity (HoH signups as proxy)
   var now=new Date();
@@ -422,7 +535,7 @@ function compute(rows) {
     gradeData:gradeData, withGrade:withGrade,
     signups:signups, cumulative:cumulative,
     cities:topCities, topCity:topCity, resByAge:resByAge,
-    noAge:noAge, noGender:noGender, noZip:noZip,
+    noAge:noAge, noGender:noGender, noZip:noZip, zipData:zipData,
     last30:last30, last90:last90, peakMonth:peakMonth,
     // Revenue
     hasRevData:hasRevData, totalGross:totalGross, totalRefunds:totalRefunds, totalNet:totalNet,
@@ -483,6 +596,7 @@ function App() {
   var [loading, setLoading] = useState(true);
   var [error, setError] = useState(null);
   var [tab, setTab] = useState('demo');
+  var [mapMode, setMapMode] = useState('hh');
   var [insights, setInsights] = useState(null);
   var [insightsLoading, setInsightsLoading] = useState(false);
   var [insightsError, setInsightsError] = useState(null);
@@ -759,6 +873,19 @@ function App() {
               <div className="rev-coming"><h2>Revenue Data Required</h2><p>Strategy tab needs revenue data. Update the Metabase query to include the revenue CTE.</p></div>
             ) : (
               <React.Fragment>
+                {/* Geographic Heatmap */}
+                <div className="panel" style={{marginBottom:14}}>
+                  <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:10}}>
+                    <div className="panel-head" style={{marginBottom:0}}>Where Are Your Users?</div>
+                    <div className="map-toggle" style={{marginLeft:'auto'}}>
+                      <button className={mapMode==='hh'?'active':''} onClick={function(){setMapMode('hh');}}>Households</button>
+                      <button className={mapMode==='rev'?'active':''} onClick={function(){setMapMode('rev');}}>Revenue</button>
+                    </div>
+                  </div>
+                  <GeoMap zipData={s.zipData} mode={mapMode} />
+                  <div style={{fontSize:11,color:'#9ca3af',marginTop:6}}>{s.zipData.length} zip codes &middot; {mapMode==='hh'?'sized by household count':'sized by net revenue'} &middot; hover for details</div>
+                </div>
+
                 {/* Revenue Levers */}
                 <div className="panel" style={{marginBottom:14}}>
                   <div className="panel-head">Revenue Levers<span className="panel-note">quantified growth opportunities</span></div>
