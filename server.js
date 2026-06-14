@@ -173,6 +173,7 @@ const ORGS = {
     roster:   { mbUuid: "4f9861ef-e8ac-4447-bf88-3648c1e54a8b" },
     calendar: { mbUuid: "70717c4f-9395-4c50-95ac-0622d95567f6" },
     "court-utilization": { mbUuid: "35862f6e-6494-4e6e-89a1-40fee8fbc872" },
+    users: { mbUuid: "aa678f93-0099-4677-a2ad-b6eb7724e2d7" },
   },
   apex: {
     token:   "pcj5Qf0Wts7Wzc7P",
@@ -244,7 +245,7 @@ const ORGS = {
   },
 };
 
-const REPORT_TYPES = ["facility", "gl", "historic", "programs", "roster", "overview", "products", "memberships", "court-utilization", "calendar", "fasttrack"];
+const REPORT_TYPES = ["facility", "gl", "historic", "programs", "roster", "overview", "products", "memberships", "court-utilization", "calendar", "fasttrack", "users"];
 // Report types that are valid system-wide but should NOT be offered in the
 // dashboard "+ Add report" flow (e.g. not yet ready for self-serve onboarding).
 const NON_ADDABLE_REPORTS = new Set(["overview"]);
@@ -1151,7 +1152,13 @@ Rules:
 - Name specific programs when making observations rather than speaking generally.
 - Be terse. No filler. Vary the "type" across the four insights where the data supports it.`;
 
-const SYS_PROMPTS = { programs: PROGRAMS_SYS_PROMPT, fasttrack: FASTTRACK_SYS_PROMPT };
+const USERS_SYS_PROMPT = `You are a parks & recreation demographic analyst for US municipal departments. You are given aggregate user demographic data for a single organization \u2014 total users, residency rates, age distribution, gender breakdown, grade data, signup velocity, geographic distribution, and data completeness metrics, all pre-computed.
+
+Respond ONLY with a valid JSON array of 4\u20136 objects. Each object: {"type":"opportunity|risk|signal","title":"short headline","detail":"1\u20132 sentence explanation with specific numbers","action":"one concrete next step"}.
+
+Focus on: population characteristics that should shape programming and outreach, data quality issues worth addressing with specific remediation steps, growth patterns and what they indicate, residency implications for pricing or access policy, demographic gaps representing underserved populations, and geographic reach opportunities. Be specific with numbers from the data. Do not invent numbers not in the input.`;
+
+const SYS_PROMPTS = { programs: PROGRAMS_SYS_PROMPT, fasttrack: FASTTRACK_SYS_PROMPT, users: USERS_SYS_PROMPT };
 
 // Extract up to 4 valid insight objects from a model text response.
 function salvageInsights(text) {
@@ -1789,6 +1796,12 @@ app.get("/:org/fasttrack", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "fasttrack.html"));
 });
 
+app.get("/:org/users", (req, res) => {
+  if (!ORGS[req.params.org]) return res.status(404).send("Unknown org");
+  logEvent(req.params.org, "users", "view", req.ip);
+  res.sendFile(path.join(__dirname, "public", "users.html"));
+});
+
 app.get("/:org/chat", (req, res) => {
   const slug = req.params.org;
   const org  = ORGS[slug];
@@ -2343,6 +2356,7 @@ app.get("/", (req, res) => {
     "court-utilization": { label: "Court Utilization",  icon: "🎾", desc: "Court utilization % or reserved hours by court, split by customer, program, and closure usage", color: "#0d9488", ai: true },
     calendar:    { label: "Calendar",               icon: "🗓️", desc: "Public class & rental schedule (week / list view)", color: "#ea580c" },
     fasttrack:   { label: "Fast Track",             icon: "⚡", desc: "Pre-registration demand signal with conversion tracking", color: "#6366f1", ai: true },
+    users:       { label: "Users",                    icon: "👥", desc: "Demographic breakdown of all head-of-household accounts", color: "#7c3aed", ai: true },
   };
 
   const hiddenReports = getAllHiddenReports();
@@ -3520,6 +3534,12 @@ app.get("/", (req, res) => {
     // Newest first. Add a new entry at the TOP for every change we ship.
     // History below back-filled from the GitHub commit log.
     const UPDATES = [
+      { date: '2026-06-14', title: 'Users Report \u2014 demographic dashboard for org admins', items: [
+        'New report: Users \u2014 full demographic breakdown of all head-of-household accounts. Shows total users, residency rate, median age, gender, grade, data completeness rings, signup velocity, age distribution (stacked by residency), geographic breakdown by city, and residency rate by age group',
+        'Auto-generated Key Observations panel synthesizes the data into actionable insights (growth spikes, demographic skew, data gaps, geographic concentration)',
+        'Rec Insights AI analysis available \u2014 sends aggregate demographic summary (no PII) for 4\u20136 actionable insight cards',
+        'First org: Watertown. Phase 2 will add revenue integration and full household profile expansion',
+      ] },
       { date: '2026-06-14', title: 'Report visibility toggles on admin dashboard', items: [
         'Admin dashboard report cards now show an eye icon on hover \u2014 click to hide or show a report on that org\u2019s landing page',
         'Hidden reports appear dimmed with a strikethrough label on the admin dashboard so you can always re-enable them',
