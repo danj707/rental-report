@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Users Report</title>
+<title>Rec Technologies - Intelligent Reporting</title>
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
@@ -307,12 +307,18 @@ function GenderChart({ gender, genderSpecified, total, colors }) {
 
 /* ═══ compute() ═══ */
 function compute(rows, includeGuests) {
-  rows = rows.map(function(r) { var o={}; Object.keys(r).forEach(function(k){o[k]=r[k]==null?'':String(r[k]);}); return o; });
+  var EXPECTED_KEYS=['Household ID','Role','HoH Name','Created At','Rec ID','First Name','Last Name','Email','Phone','Street Number','Street Name','City','State','Zip Code','Date of Birth','Age','Grade','Gender','Residency?','Gross Revenue','Refunds','Net Revenue','Items Purchased','First Transaction','Last Transaction','Program Revenue','Facility Revenue','Fee Revenue','Product Revenue'];
+  rows = rows.map(function(r) {
+    var o={};
+    EXPECTED_KEYS.forEach(function(k){o[k]='';});
+    Object.keys(r).forEach(function(k){o[k]=r[k]==null?'':String(r[k]);});
+    return o;
+  });
 
   // Guest detection: First Name = 'Guest' or email matches guest-user+guest-*
   function isGuest(r) {
-    var fn = r['First Name'].trim().toLowerCase();
-    var em = (r['Email'] || '').trim().toLowerCase();
+    var fn = (r['First Name']||'').trim().toLowerCase();
+    var em = (r['Email']||'').trim().toLowerCase();
     return fn === 'guest' || em.indexOf('guest-user+guest-') === 0;
   }
   var allRows = rows;
