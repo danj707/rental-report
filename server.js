@@ -260,6 +260,7 @@ const SUBS_FILE   = path.join(DATA_DIR, "subscriptions.json");
 const LOG_FILE    = path.join(DATA_DIR, "send_log.json");
 const EVENTS_FILE = path.join(DATA_DIR, "events.jsonl");
 const SHOWCASE_FILE = path.join(DATA_DIR, "showcase.json");
+const VISIBILITY_FILE = path.join(DATA_DIR, "report-visibility.json");
 
 // Merge any dynamically-added orgs from data/orgs.json into ORGS
 try {
@@ -273,6 +274,20 @@ function readJSON(file, def) {
 }
 function writeJSON(file, data) {
   fs.writeFileSync(file, JSON.stringify(data, null, 2));
+}
+
+// ── Report visibility (per-org hidden reports) ───────────────────────
+function getHiddenReports(slug) {
+  const all = readJSON(VISIBILITY_FILE, {});
+  return Array.isArray(all[slug]) ? all[slug] : [];
+}
+function setHiddenReports(slug, list) {
+  const all = readJSON(VISIBILITY_FILE, {});
+  if (list.length) all[slug] = list; else delete all[slug];
+  writeJSON(VISIBILITY_FILE, all);
+}
+function getAllHiddenReports() {
+  return readJSON(VISIBILITY_FILE, {});
 }
 
 // ── GitHub push: write new orgs to server.js so they live in code ────
@@ -1965,7 +1980,9 @@ app.get("/:org", (req, res, next) => {
   if (!org) return next();
 
   const slugTitle = slug.charAt(0).toUpperCase() + slug.slice(1);
-  const available = REPORT_TYPES.filter(r => org[r]?.mbUuid);
+  const allAvailable = REPORT_TYPES.filter(r => org[r]?.mbUuid);
+  const orgHidden = new Set(getHiddenReports(slug));
+  const available = allAvailable.filter(r => !orgHidden.has(r));
   const orgConfig = {
     slug,
     displayName: org.displayName || `${slugTitle} Parks & Recreation`,
@@ -1976,6 +1993,19 @@ app.get("/:org", (req, res, next) => {
   const html = require("fs").readFileSync(path.join(__dirname, "public", "org.html"), "utf8");
   const inject = `<script>window.ORG_CONFIG=${JSON.stringify(orgConfig)};</script>`;
   res.type("html").send(html.replace("</head>", inject + "</head>"));
+});
+
+// ── POST /api/admin/toggle-report — show/hide a report on the org page ──
+app.post("/api/admin/toggle-report", express.json(), (req, res) => {
+  if (dashboardPasswordBlocked(req, res)) return;
+  const { org: slug, report } = req.body || {};
+  if (!ORGS[slug]) return res.status(404).json({ error: "Unknown org" });
+  if (!REPORT_TYPES.includes(report)) return res.status(400).json({ error: "Unknown report type" });
+  const hidden = getHiddenReports(slug);
+  const idx = hidden.indexOf(report);
+  if (idx >= 0) hidden.splice(idx, 1); else hidden.push(report);
+  setHiddenReports(slug, hidden);
+  res.json({ ok: true, hidden });
 });
 
 // ── POST /api/admin/links — list every org's reports + current links ──
@@ -2313,6 +2343,8 @@ app.get("/", (req, res) => {
     fasttrack:   { label: "Fast Track",             icon: "⚡", desc: "Pre-registration demand signal with conversion tracking", color: "#6366f1", ai: true },
   };
 
+  const hiddenReports = getAllHiddenReports();
+
   const orgSections = Object.entries(ORGS).map(([slug, org]) => {
     const available    = REPORT_TYPES.filter(r => org[r]?.mbUuid);
     const slugTitle    = slug.charAt(0).toUpperCase() + slug.slice(1);
@@ -2320,17 +2352,23 @@ app.get("/", (req, res) => {
     const tokenQS      = org.token ? `?token=${encodeURIComponent(org.token)}` : "";
 
     // Standard Metabase-backed report cards
+    const orgHidden = hiddenReports[slug] || [];
     const cards = available.map(r => {
-      const m = reportMeta[r] || { label: r, icon: "📄", desc: "", color: "#888" };
+      const m = reportMeta[r] || { label: r, icon: "\u{1F4C4}", desc: "", color: "#888" };
+      const isHidden = orgHidden.indexOf(r) >= 0;
+      const dimCls = isHidden ? ' report-card-hidden' : '';
       return `
-        <a href="/${slug}/${r}${tokenQS}" class="report-card" style="--accent:${m.color}">
+        <a href="/${slug}/${r}${tokenQS}" class="report-card${dimCls}" style="--accent:${m.color}" data-org="${slug}" data-report="${r}">
           <span class="report-icon">${m.icon}</span>
           <div class="report-body">
             <div class="report-label">${m.label}</div>
             <div class="report-desc">${m.desc}</div>
-            ${m.ai ? '<span class="ai-pill">✦ AI enhanced</span>' : ''}
+            ${m.ai ? '<span class="ai-pill">\u2726 AI enhanced</span>' : ''}
           </div>
-          <span class="report-arrow">→</span>
+          <button type="button" class="vis-toggle" onclick="event.preventDefault();event.stopPropagation();toggleVis('${slug}','${r}',this)" title="${isHidden ? 'Hidden from org page' : 'Visible on org page'}">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style="display:${isHidden ? 'none' : 'block'}"><path d="M8 3C3 3 1 8 1 8s2 5 7 5 7-5 7-5-2-5-7-5z" stroke="currentColor" stroke-width="1.5" fill="none"/><circle cx="8" cy="8" r="2" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style="display:${isHidden ? 'block' : 'none'}"><path d="M8 3C3 3 1 8 1 8s2 5 7 5 7-5 7-5-2-5-7-5z" stroke="currentColor" stroke-width="1.5" fill="none"/><circle cx="8" cy="8" r="2" stroke="currentColor" stroke-width="1.5" fill="none"/><line x1="2" y1="14" x2="14" y2="2" stroke="currentColor" stroke-width="1.5"/></svg>
+          </button>
         </a>`;
     });
 
@@ -2545,7 +2583,14 @@ app.get("/", (req, res) => {
     .ai-pill { display: inline-flex; align-items: center; gap: 3px; font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; padding: 2px 7px; border-radius: 20px; background: linear-gradient(90deg, #6d28d9, #0d9488); color: #fff; margin-top: 5px; }
     .report-arrow { font-size: 14px; color: #ccc; flex-shrink: 0; }
     .report-card:hover .report-arrow { color: var(--accent, #888); }
-    .add-report-card { border: none; border-left: 3px dashed #cbd5c0; background: #fbfbf9; cursor: pointer; font: inherit; text-align: left; width: 100%; }
+    .report-card-hidden { opacity: 0.4; }
+    .report-card-hidden:hover { opacity: 0.7; }
+    .report-card-hidden .report-label { text-decoration: line-through; }
+    .vis-toggle { background: none; border: none; cursor: pointer; padding: 4px; border-radius: 4px; flex-shrink: 0; opacity: 0; transition: opacity .15s; color: #999; line-height: 0; }
+    .report-card:hover .vis-toggle { opacity: 0.5; }
+    .report-card-hidden .vis-toggle { opacity: 0.5; }
+    .vis-toggle:hover { opacity: 1 !important; background: rgba(0,0,0,.05); color: #333; }
+        .add-report-card { border: none; border-left: 3px dashed #cbd5c0; background: #fbfbf9; cursor: pointer; font: inherit; text-align: left; width: 100%; }
     .add-report-card:hover { background: #f3f6ef; border-left-color: #16a34a; }
     .add-report-card .report-icon { color: #16a34a; font-weight: 700; }
     .add-report-card .report-label { color: #16a34a; }
@@ -3212,9 +3257,43 @@ app.get("/", (req, res) => {
     // ── Add reports to an existing org ─────────────────
     const ADD_REPORT_ORGS = ${JSON.stringify(addReportOrgs)};
     const ADD_REPORT_META = ${JSON.stringify(addReportMeta)};
+    const HIDDEN_REPORTS = ${JSON.stringify(hiddenReports)};
     let addReportSlug = null;
 
-    function openAddReport(slug) {
+    async function toggleVis(slug, report, btn) {
+      if (!mbPwd) {
+        mbPwd = prompt('Dashboard password:');
+        if (!mbPwd) return;
+      }
+      btn.style.opacity = '0.2';
+      try {
+        const res = await fetch('/api/admin/toggle-report', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ password: mbPwd, org: slug, report: report }),
+        });
+        const data = await res.json().catch(function(){ return {}; });
+        if (!res.ok || !data.ok) {
+          if (res.status === 401) mbPwd = '';
+          throw new Error(data.error || 'Failed');
+        }
+        HIDDEN_REPORTS[slug] = data.hidden;
+        const card = btn.closest('.report-card');
+        const isNowHidden = data.hidden.indexOf(report) >= 0;
+        card.classList.toggle('report-card-hidden', isNowHidden);
+        // Toggle SVG icons (first = eye-open, second = eye-slash)
+        var svgs = btn.querySelectorAll('svg');
+        svgs[0].style.display = isNowHidden ? 'none' : 'block';
+        svgs[1].style.display = isNowHidden ? 'block' : 'none';
+        btn.title = isNowHidden ? 'Hidden from org page' : 'Visible on org page';
+        mbToast(isNowHidden ? report + ' hidden from ' + slug + ' org page' : report + ' visible on ' + slug + ' org page');
+      } catch (e) {
+        alert('Toggle failed: ' + e.message);
+      }
+      btn.style.opacity = '';
+    }
+
+        function openAddReport(slug) {
       const info = ADD_REPORT_ORGS[slug];
       if (!info || !info.missing || !info.missing.length) return;
       addReportSlug = slug;
@@ -3434,6 +3513,11 @@ app.get("/", (req, res) => {
     // Newest first. Add a new entry at the TOP for every change we ship.
     // History below back-filled from the GitHub commit log.
     const UPDATES = [
+      { date: '2026-06-14', title: 'Report visibility toggles on admin dashboard', items: [
+        'Admin dashboard report cards now show an eye icon on hover \u2014 click to hide or show a report on that org\u2019s landing page',
+        'Hidden reports appear dimmed with a strikethrough label on the admin dashboard so you can always re-enable them',
+        'Visibility state persists across deploys (stored on the data volume); toggling requires the dashboard password',
+      ] },
       { date: '2026-06-12', title: 'Rec AI Chat — ask anything about your data', items: [
         'New: Rec AI Chat — a conversational AI assistant that can answer questions across all of an org\u2019s reports. Pulls live data from every configured Metabase report, streams responses in real time, and supports follow-up questions with full conversation context',
         'Suggested questions adapt to each org\u2019s available reports (facility schedules, GL codes, programs, products, memberships, court utilization, Fast Track)',
