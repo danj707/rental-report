@@ -260,10 +260,15 @@ function compute(rows) {
 
   // ── Revenue (household-level, deduplicated) ──────────────
   function num(v){if(!v||!String(v).trim())return 0;return parseFloat(String(v).replace(/,/g,''))||0;}
+  // Resilient column lookup — Metabase JSON keys can differ from CSV headers
+  function col(r,names){for(var i=0;i<names.length;i++){if(r[names[i]]!==undefined)return r[names[i]];}
+    var keys=Object.keys(r);for(var i=0;i<names.length;i++){var lc=names[i].toLowerCase();for(var j=0;j<keys.length;j++){if(keys[j].toLowerCase()===lc)return r[keys[j]];}}return '';}
+  // Debug: log first row's keys so we can see what Metabase returns
+  if(rows.length>0){console.log('[users] Row keys:', Object.keys(rows[0])); console.log('[users] Sample Gross Revenue:', col(rows[0],['Gross Revenue','gross_revenue','Gross_Revenue']));}
   var hhRevSeen={};
   rows.forEach(function(r){
     var hid=r['Household ID'];
-    if(!hhRevSeen[hid]) hhRevSeen[hid]={gross:num(r['Gross Revenue']),refunds:num(r['Refunds']),net:num(r['Net Revenue']),items:Math.round(num(r['Items Purchased'])),res:r['Residency?'].trim()==='Yes'};
+    if(!hhRevSeen[hid]) hhRevSeen[hid]={gross:num(col(r,['Gross Revenue','gross_revenue'])),refunds:num(col(r,['Refunds','refunds','Total Refunds'])),net:num(col(r,['Net Revenue','net_revenue'])),items:Math.round(num(col(r,['Items Purchased','items_purchased','Item Count']))),res:col(r,['Residency?','residency?','Residency']).trim()==='Yes'};
   });
   var hhRevList=Object.values(hhRevSeen);
   var hasRevData=hhRevList.some(function(h){return h.gross>0||h.refunds>0;});
