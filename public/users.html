@@ -485,14 +485,8 @@ function compute(rows) {
   var progHH=hhRevList.filter(function(h){return h.progRev>0;}).length;
   var facHH=hhRevList.filter(function(h){return h.facRev>0;}).length;
 
-  // Cross-sell CSV lists
-  var progNoFacCSV=[];
-  Object.keys(hhRevSeen).forEach(function(hid){if(hhRevSeen[hid].progRev>0&&hhRevSeen[hid].facRev===0&&hohInfoMap[hid])progNoFacCSV.push(hohInfoMap[hid]);});
-  var facNoProgCSV=[];
-  Object.keys(hhRevSeen).forEach(function(hid){if(hhRevSeen[hid].facRev>0&&hhRevSeen[hid].progRev===0&&hohInfoMap[hid])facNoProgCSV.push(hohInfoMap[hid]);});
-
   // ── Strategy tab computations ───────────────────────────
-  // HoH info map for CSV exports
+  // HoH info map for CSV exports — must be built before cross-sell CSV lists
   var hohInfoMap={};
   hohs.forEach(function(r){
     var hid=r['Household ID'];
@@ -503,6 +497,12 @@ function compute(rows) {
       'HH Size':hhMap[hid]||1,'Net Revenue':num(col(r,['Net Revenue','net_revenue'])),
     };
   });
+
+  // Cross-sell CSV lists
+  var progNoFacCSV=[];
+  Object.keys(hhRevSeen).forEach(function(hid){if(hhRevSeen[hid].progRev>0&&hhRevSeen[hid].facRev===0&&hohInfoMap[hid])progNoFacCSV.push(hohInfoMap[hid]);});
+  var facNoProgCSV=[];
+  Object.keys(hhRevSeen).forEach(function(hid){if(hhRevSeen[hid].facRev>0&&hhRevSeen[hid].progRev===0&&hohInfoMap[hid])facNoProgCSV.push(hohInfoMap[hid]);});
 
   // 1. Unbooked profile vs spender profile
   var unbookedIds=new Set(hhRevList.filter(function(h){return h.net===0;}).map(function(h,i){return Object.keys(hhRevSeen)[i];}));
