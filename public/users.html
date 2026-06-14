@@ -569,12 +569,13 @@ function App() {
 
                 {/* Percentiles callout */}
                 <div className="panel" style={{marginBottom:14}}>
-                  <div className="panel-head">Spend Percentiles<span className="panel-note">among {s.spendingHH} spending households</span></div>
+                  <div className="panel-head">How Much Do Households Spend?<span className="panel-note">{s.spendingHH} households with purchases</span></div>
                   <div style={{display:'flex',justifyContent:'space-around',textAlign:'center',padding:'8px 0'}}>
-                    {[{l:'P25',v:s.revP25},{l:'Median',v:s.medianRev},{l:'P75',v:s.revP75},{l:'P90',v:s.revP90},{l:'P95',v:s.revP95}].map(function(p){return(
+                    {[{l:'Low Spender',sub:'Bottom 25%',v:s.revP25},{l:'Typical',sub:'Middle household',v:s.medianRev},{l:'Active',sub:'Top 25%',v:s.revP75},{l:'Power User',sub:'Top 10%',v:s.revP90},{l:'Super Fan',sub:'Top 5%',v:s.revP95}].map(function(p){return(
                       <div key={p.l}>
-                        <div style={{fontSize:10,fontWeight:600,color:'#6b7280',textTransform:'uppercase'}}>{p.l}</div>
+                        <div style={{fontSize:10,fontWeight:700,color:'#374151',textTransform:'uppercase'}}>{p.l}</div>
                         <div style={{fontSize:22,fontWeight:800,color:'#111827'}}>${Math.round(p.v)}</div>
+                        <div style={{fontSize:10,color:'#9ca3af'}}>{p.sub}</div>
                       </div>
                     );})}
                   </div>
