@@ -370,15 +370,15 @@ function buildInsightsBlob(s) {
 /* ═══ Auto observations ═══ */
 function buildObs(s) {
   var o=[];
-  o.push('\uD83D\uDC68\u200D\uD83D\uDC69\u200D\uD83D\uDC67\u200D\uD83D\uDC66 '+s.hhCount+' households, '+s.total+' people total. '+s.hohCount+' HoH + '+s.memCount+' members. Median HH size: '+s.medianHH+'.');
-  if(s.medianMemAge!==null) o.push('\uD83D\uDC76 Member median age '+s.medianMemAge+' vs HoH median '+s.medianHohAge+'. '+(s.medianMemAge<18?'Primarily a family/youth community.':'Mixed adult household base.'));
-  if(s.peakMonth.count>s.total*0.15) o.push('\uD83D\uDCC8 '+s.peakMonth.month+' peak: '+s.peakMonth.count+' signups ('+Math.round(s.peakMonth.count/s.total*100)+'% of all).');
-  o.push('\uD83C\uDFE0 '+s.resPct+'% residency rate. '+(parseFloat(s.resPct)>75?'Strong local base.':parseFloat(s.resPct)>50?'Moderate local mix.':'Heavy non-resident usage.'));
-  if(s.withGrade>10) o.push('\uD83C\uDF93 '+s.withGrade+' people with grade data. Most common: '+s.gradeData[0].grade+' ('+s.gradeData[0].count+'). Covers preschool through high school.');
+  o.push('[Households] '+s.hhCount+' households, '+s.total+' people total. '+s.hohCount+' HoH + '+s.memCount+' members. Median HH size: '+s.medianHH+'.');
+  if(s.medianMemAge!==null) o.push('[Ages] Member median age '+s.medianMemAge+' vs HoH median '+s.medianHohAge+'. '+(s.medianMemAge<18?'Primarily a family/youth community.':'Mixed adult household base.'));
+  if(s.peakMonth.count>s.total*0.15) o.push('[Growth] '+s.peakMonth.month+' peak: '+s.peakMonth.count+' signups ('+Math.round(s.peakMonth.count/s.total*100)+'% of all).');
+  o.push('[Residency] '+s.resPct+'% residency rate. '+(parseFloat(s.resPct)>75?'Strong local base.':parseFloat(s.resPct)>50?'Moderate local mix.':'Heavy non-resident usage.'));
+  if(s.withGrade>10) o.push('[Grades] '+s.withGrade+' people with grade data. Most common: '+s.gradeData[0].grade+' ('+s.gradeData[0].count+'). Covers preschool through high school.');
   var gapPct=Math.round(Math.max(s.noAge,s.noGender)/s.total*100);
-  if(gapPct>15) o.push('\u26A0\uFE0F Up to '+gapPct+'% missing demographics. '+s.noAge+' missing age, '+s.noGender+' missing gender.');
-  if(s.badAges>0) o.push('\uD83D\uDEA8 '+s.badAges+' records with invalid DOB (age <0 or >110). Likely data entry errors.');
-  if(s.topCity) o.push('\uD83D\uDDFA\uFE0F '+Math.round(s.cities[0].count/s.total*100)+'% from '+s.topCity+'. Spans '+s.cities.length+'+ cities.');
+  if(gapPct>15) o.push('[Data Gap] Up to '+gapPct+'% missing demographics. '+s.noAge+' missing age, '+s.noGender+' missing gender.');
+  if(s.badAges>0) o.push('[Alert] '+s.badAges+' records with invalid DOB (age <0 or >110). Likely data entry errors.');
+  if(s.topCity) o.push('[Geography] '+Math.round(s.cities[0].count/s.total*100)+'% from '+s.topCity+'. Spans '+s.cities.length+'+ cities.');
   return o;
 }
 
@@ -532,8 +532,8 @@ function App() {
             {/* Data quality alerts */}
             {(s.badAges>0||s.maxHH>10)&&(
               <div style={{marginBottom:14}}>
-                {s.badAges>0&&<div className="alert-card alert-warn">\uD83D\uDEA8 <strong>{s.badAges} records</strong> have invalid dates of birth (computed age &lt;0 or &gt;110). These are excluded from age statistics.</div>}
-                {s.maxHH>10&&<div className="alert-card alert-info">\uD83D\uDCA1 Largest household has <strong>{s.maxHH} members</strong>. This may be a test account or organizational account worth reviewing.</div>}
+                {s.badAges>0&&<div className="alert-card alert-warn"><strong>{s.badAges} records</strong> have invalid dates of birth (computed age &lt;0 or &gt;110). These are excluded from age statistics.</div>}
+                {s.maxHH>10&&<div className="alert-card alert-info">Largest household has <strong>{s.maxHH} members</strong>. This may be a test account or organizational account worth reviewing.</div>}
               </div>
             )}
 
