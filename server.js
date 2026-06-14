@@ -155,6 +155,7 @@ const ORGS = {
     roster:   { mbUuid: "ce13ffa2-2bc5-4764-992d-957b4c3a35f9" },
     products: { mbUuid: "b9cae7d1-ea23-4dca-8854-d8689bc2b247" },
     programs: { mbUuid: "776bb123-3109-48d6-b50b-7f1fd161285f" },
+    users   : { mbUuid: "4c0f0103-6614-4917-b5da-f09e6a9bef38" },
   },
   norman: {
     token:   "RfuFOIz6KrFnSxBK",
