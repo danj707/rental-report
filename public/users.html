@@ -130,7 +130,7 @@
   .rev-coming p { font-size:14px; color:#6b7280; max-width:500px; line-height:1.6; }
 
   @media print { body { background:#fff; } .no-print { display:none!important; } .panel { break-inside:avoid; } }
-  .map-wrap { height:420px; border-radius:8px; overflow:hidden; border:1px solid #e5e7eb; }
+  .map-wrap { height:420px; border-radius:8px; overflow:hidden; border:1px solid #e5e7eb; position:relative; z-index:1; }
   .map-toggle { display:flex; gap:4px; }
   .map-toggle button { padding:5px 12px; border-radius:4px; border:1px solid #d1d5db; background:#fff; font-size:11px; font-weight:600; cursor:pointer; font-family:inherit; color:#6b7280; }
   .map-toggle button.active { background:#6366f1; color:#fff; border-color:#6366f1; }
@@ -253,12 +253,21 @@ function GeoMap({ zipData, mode }) {
     });
     heatLayer.current = L.heatLayer(heatPts, { radius: 35, blur: 25, maxZoom: 14, gradient: { 0.2: '#6366f1', 0.5: '#0d9488', 0.8: '#f59e0b', 1.0: '#f43f5e' } }).addTo(map);
 
-    // Circle markers
+    // Circle markers with value-based color gradient
     pts.forEach(function(p) {
       var val = mode === 'rev' ? p.rev : p.hh;
       var r = Math.max(Math.sqrt(val / (maxVal || 1)) * 28, 6);
+      var pct = val / (maxVal || 1);
+      // Color gradient: light teal → amber → red based on intensity
+      var color;
+      if (pct < 0.15) color = '#6ee7b7';       // light green (low)
+      else if (pct < 0.3) color = '#0d9488';    // teal
+      else if (pct < 0.5) color = '#0284c7';    // blue
+      else if (pct < 0.7) color = '#f59e0b';    // amber
+      else if (pct < 0.85) color = '#ea580c';   // orange
+      else color = '#dc2626';                    // red (high)
       var marker = L.circleMarker([p.lat, p.lng], {
-        radius: r, fillColor: mode === 'rev' ? '#0d9488' : '#6366f1', fillOpacity: 0.7,
+        radius: r, fillColor: color, fillOpacity: 0.75,
         color: '#fff', weight: 2,
       }).addTo(map);
       marker.bindTooltip(
@@ -993,7 +1002,15 @@ function App() {
                     </div>
                   </div>
                   <GeoMap zipData={s.zipData} mode={mapMode} />
-                  <div style={{fontSize:11,color:'#9ca3af',marginTop:6}}>{s.zipData.length} zip codes &middot; {mapMode==='hh'?'sized by household count':'sized by net revenue'} &middot; hover for details</div>
+                  <div style={{fontSize:11,color:'#9ca3af',marginTop:6,display:'flex',alignItems:'center',gap:12,flexWrap:'wrap'}}>
+                    <span>{s.zipData.length} zip codes &middot; {mapMode==='hh'?'sized by household count':'sized by net revenue'} &middot; hover for details</span>
+                    <span style={{display:'flex',alignItems:'center',gap:3,fontSize:10}}>
+                      <span style={{width:10,height:10,borderRadius:'50%',background:'#6ee7b7',display:'inline-block'}}/>Low
+                      <span style={{width:10,height:10,borderRadius:'50%',background:'#0284c7',display:'inline-block',marginLeft:4}}/>Med
+                      <span style={{width:10,height:10,borderRadius:'50%',background:'#f59e0b',display:'inline-block',marginLeft:4}}/>High
+                      <span style={{width:10,height:10,borderRadius:'50%',background:'#dc2626',display:'inline-block',marginLeft:4}}/>Top
+                    </span>
+                  </div>
                 </div>
 
                 {insightsBlock}
