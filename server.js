@@ -43,6 +43,21 @@ const FROM_NAME      = process.env.FROM_NAME      || "rec.us Reports";
 const CACHE_TTL = 5 * 60 * 1000;  // 5 minutes
 const dataCache = new Map();
 
+// Long-lived cache for users report (refreshed daily by cron)
+const USERS_CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
+const usersCache = new Map(); // key: orgSlug → { data: result, ts: Date.now() }
+
+function getCachedUsers(orgSlug) {
+  const entry = usersCache.get(orgSlug);
+  if (!entry) return null;
+  if (Date.now() - entry.ts > USERS_CACHE_TTL) { usersCache.delete(orgSlug); return null; }
+  return entry;
+}
+
+function setCacheUsers(orgSlug, data) {
+  usersCache.set(orgSlug, { data, ts: Date.now() });
+}
+
 function getCached(key) {
   const entry = dataCache.get(key);
   if (!entry) return null;
@@ -905,6 +920,34 @@ cron.schedule("0 7 * * *", () => runSchedule("daily"));
 cron.schedule("0 7 * * 1", () => runSchedule("weekly"));
 cron.schedule("0 7 1 * *", () => runSchedule("monthly"));
 
+// ── Daily pre-warm for users report (runs at 5am) ────────────────────
+async function prewarmUsersCache() {
+  console.log("[users-cache] Pre-warming users report data…");
+  for (const slug of Object.keys(ORGS)) {
+    const org = ORGS[slug];
+    if (!org.token || !org.users?.mbUuid) continue;
+    try {
+      const url = `${METABASE_URL}/api/public/card/${org.users.mbUuid}/query/json`;
+      console.log(`[users-cache] Fetching ${slug}/users…`);
+      const resp = await fetch(url);
+      if (!resp.ok) { console.warn(`[users-cache] ${slug} HTTP ${resp.status}`); continue; }
+      const data = await resp.json();
+      const result = {
+        rows: data,
+        meta: { org_slug: slug, logo_url: org.logoUrl, report_type: "users", generated_at: new Date().toISOString() },
+      };
+      setCacheUsers(slug, result);
+      console.log(`[users-cache] Cached ${slug}/users (${data.length} rows)`);
+    } catch (e) {
+      console.warn(`[users-cache] Failed ${slug}: ${e.message}`);
+    }
+  }
+  console.log("[users-cache] Pre-warm complete");
+}
+cron.schedule("0 5 * * *", prewarmUsersCache); // 5am daily
+// Also pre-warm on startup (after a short delay to let server settle)
+setTimeout(prewarmUsersCache, 15000);
+
 // ── Express setup ────────────────────────────────────────────────────
 const app = express();
 app.use(dashboardAuth);
@@ -1512,6 +1555,17 @@ app.get("/:org/:report/api/data", resolveOrg, async (req, res) => {
 
     // ── Cache check (skip with _nocache=1) ──
     const cacheKey = `${orgSlug}:${reportType}:${paramStr}`;
+
+    // Users report: check daily pre-warmed cache first
+    if (reportType === "users" && req.query._nocache !== "1") {
+      const uc = getCachedUsers(orgSlug);
+      if (uc) {
+        console.log(`[users-cache] HIT ${orgSlug}/users (${uc.data.rows.length} rows, cached ${new Date(uc.ts).toISOString()})`);
+        const result = Object.assign({}, uc.data, { meta: Object.assign({}, uc.data.meta, { cached_at: new Date(uc.ts).toISOString() }) });
+        return res.json(result);
+      }
+    }
+
     if (req.query._nocache !== "1") {
       const cached = getCached(cacheKey);
       if (cached) {
@@ -1555,6 +1609,8 @@ app.get("/:org/:report/api/data", resolveOrg, async (req, res) => {
     };
 
     setCache(cacheKey, result);
+    // Also populate the daily users cache for subsequent requests
+    if (reportType === "users") setCacheUsers(orgSlug, result);
     console.log(`[cache] STORE ${orgSlug}/${reportType} (${data.length} rows, ${dataCache.size} entries)`);
 
     res.json(result);
