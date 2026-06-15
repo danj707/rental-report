@@ -284,6 +284,7 @@ const EVENTS_FILE = path.join(DATA_DIR, "events.jsonl");
 const SHOWCASE_FILE = path.join(DATA_DIR, "showcase.json");
 const VISIBILITY_FILE = path.join(DATA_DIR, "report-visibility.json");
 const VOTES_FILE = path.join(DATA_DIR, "votes.json");
+const HEALTH_FILE = path.join(DATA_DIR, "health-check.json");
 
 // ── Vote tracker ──────────────────────────────────────────────────────
 function loadVotes() {
@@ -300,6 +301,84 @@ function recordVote(org, report, sentiment) {
   else if (sentiment === "down") votes[key].down++;
   saveVotes(votes);
   return votes[key];
+}
+
+// ── Health check system ──────────────────────────────────────────────
+function loadHealthResults() {
+  try { return JSON.parse(fs.readFileSync(HEALTH_FILE, "utf8")); } catch { return null; }
+}
+function saveHealthResults(results) {
+  fs.writeFileSync(HEALTH_FILE, JSON.stringify(results, null, 2));
+}
+
+async function runHealthCheck() {
+  console.log("[health] Starting daily health check…");
+  const ts = new Date().toISOString();
+  const results = { timestamp: ts, reports: {}, failures: [] };
+
+  for (const slug of Object.keys(ORGS)) {
+    const org = ORGS[slug];
+    if (!org.token) continue;
+    results.reports[slug] = {};
+
+    for (const rt of REPORT_TYPES) {
+      const mbUuid = org[rt]?.mbUuid;
+      if (!mbUuid) continue;
+
+      const entry = { status: "ok", rows: 0, checkedAt: ts };
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 30000);
+        const url = `${METABASE_URL}/api/public/card/${mbUuid}/query/json`;
+        const resp = await fetch(url, { signal: controller.signal });
+        clearTimeout(timeout);
+
+        if (!resp.ok) {
+          entry.status = "error";
+          entry.error = `HTTP ${resp.status}`;
+          results.failures.push({ org: slug, report: rt, error: entry.error });
+        } else {
+          const data = await resp.json();
+          entry.rows = Array.isArray(data) ? data.length : 0;
+          if (entry.rows === 0) {
+            entry.status = "empty";
+            // Don't alert on empty — some reports legitimately have no data for default params
+          }
+        }
+      } catch (err) {
+        entry.status = "error";
+        entry.error = err.name === "AbortError" ? "Timeout (30s)" : err.message;
+        results.failures.push({ org: slug, report: rt, error: entry.error });
+      }
+      results.reports[slug][rt] = entry;
+    }
+  }
+
+  saveHealthResults(results);
+
+  const fCount = results.failures.length;
+  console.log(`[health] Check complete: ${fCount} failure(s)`);
+
+  // Email alert on failures
+  if (fCount > 0) {
+    const resend = getResendClient();
+    if (resend) {
+      const lines = results.failures.map(f => `• ${f.org}/${f.report}: ${f.error}`).join("<br>");
+      try {
+        await resend.emails.send({
+          from: `${FROM_NAME} <${FROM_EMAIL}>`,
+          to: "dan@rec.us",
+          subject: `⚠️ Health Check: ${fCount} report(s) failing`,
+          html: `<p>Daily health check found <strong>${fCount}</strong> failing report(s):</p><p style="font-family:monospace">${lines}</p><p style="color:#6b7280;font-size:12px">Checked at ${ts}</p>`,
+        });
+        console.log(`[health] Alert email sent (${fCount} failures)`);
+      } catch (e) {
+        console.error("[health] Failed to send alert email:", e.message);
+      }
+    }
+  }
+
+  return results;
 }
 
 // Merge any dynamically-added orgs from data/orgs.json into ORGS
@@ -967,6 +1046,7 @@ async function prewarmUsersCache() {
   console.log("[users-cache] Pre-warm complete");
 }
 cron.schedule("0 5 * * *", prewarmUsersCache); // 5am daily
+cron.schedule("0 6 * * *", runHealthCheck);    // 6am daily health check
 // Also pre-warm on startup (after a short delay to let server settle)
 setTimeout(prewarmUsersCache, 15000);
 
@@ -2115,6 +2195,11 @@ app.get("/:org", (req, res, next) => {
     token: org.token || "",
     chatVisible: !orgHidden.has("chat"),
   };
+  // Attach latest health-check results for this org's reports
+  const hc = loadHealthResults();
+  if (hc && hc.reports && hc.reports[slug]) {
+    orgConfig.healthCheck = { timestamp: hc.timestamp, reports: hc.reports[slug] };
+  }
   const html = require("fs").readFileSync(path.join(__dirname, "public", "org.html"), "utf8");
   const inject = `<script>window.ORG_CONFIG=${JSON.stringify(orgConfig)};</script>`;
   res.type("html").send(html.replace("</head>", inject + "</head>"));
@@ -2131,6 +2216,24 @@ app.post("/api/admin/toggle-report", express.json(), (req, res) => {
   if (idx >= 0) hidden.splice(idx, 1); else hidden.push(report);
   setHiddenReports(slug, hidden);
   res.json({ ok: true, hidden });
+});
+
+// ── GET /api/health-check — latest health check results ──────────────
+app.get("/api/health-check", (req, res) => {
+  const results = loadHealthResults();
+  if (!results) return res.json({ timestamp: null, reports: {}, failures: [] });
+  res.json(results);
+});
+
+// ── POST /api/health-check/run — trigger health check manually ───────
+app.post("/api/health-check/run", express.json(), async (req, res) => {
+  if (dashboardPasswordBlocked(req, res)) return;
+  try {
+    const results = await runHealthCheck();
+    res.json(results);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // ── POST /api/admin/links — list every org's reports + current links ──
@@ -2471,6 +2574,7 @@ app.get("/", (req, res) => {
 
   const hiddenReports = getAllHiddenReports();
   const allVotes = loadVotes();
+  const healthData = loadHealthResults();
 
   const orgSections = Object.entries(ORGS).map(([slug, org]) => {
     const available    = REPORT_TYPES.filter(r => org[r]?.mbUuid);
@@ -2492,6 +2596,7 @@ app.get("/", (req, res) => {
             <div class="report-desc">${m.desc}</div>
             ${m.ai ? '<span class="ai-pill">\u2726 AI enhanced</span>' : ''}
             ${(() => { const v = allVotes[slug + ':' + r]; return v && (v.up || v.down) ? '<span style="font-size:10px;color:#6b7280;margin-top:3px;">\uD83D\uDC4D ' + (v.up||0) + ' \u00B7 \uD83D\uDC4E ' + (v.down||0) + '</span>' : ''; })()}
+            ${(() => { const h = healthData?.reports?.[slug]?.[r]; if (!h) return ''; const d = new Date(h.checkedAt); const ds = d.toLocaleDateString('en-US',{month:'short',day:'numeric'}); if (h.status === 'ok') return '<span class="health-badge health-ok" title="Verified ' + ds + ' (' + h.rows + ' rows)">\u2705 Verified ' + ds + '</span>'; if (h.status === 'empty') return '<span class="health-badge health-empty" title="Returned 0 rows on ' + ds + '">\u26A0\uFE0F Empty ' + ds + '</span>'; return '<span class="health-badge health-error" title="' + (h.error || 'Error') + '">\u274C Failed ' + ds + '</span>'; })()}
           </div>
           <button type="button" class="vis-toggle" onclick="event.preventDefault();event.stopPropagation();toggleVis('${slug}','${r}',this)" title="${isHidden ? 'Hidden from org page' : 'Visible on org page'}">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style="display:${isHidden ? 'none' : 'block'}"><path d="M8 3C3 3 1 8 1 8s2 5 7 5 7-5 7-5-2-5-7-5z" stroke="currentColor" stroke-width="1.5" fill="none"/><circle cx="8" cy="8" r="2" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>
@@ -2744,6 +2849,10 @@ app.get("/", (req, res) => {
     .add-report-card:hover { background: #f3f6ef; border-left-color: #16a34a; }
     .add-report-card .report-icon { color: #16a34a; font-weight: 700; }
     .add-report-card .report-label { color: #16a34a; }
+    .health-badge { display: inline-flex; align-items: center; gap: 3px; font-size: 9px; font-weight: 600; padding: 1px 6px; border-radius: 8px; margin-top: 3px; }
+    .health-ok { background: #dcfce7; color: #15803d; }
+    .health-empty { background: #fef9c3; color: #a16207; }
+    .health-error { background: #fee2e2; color: #b91c1c; }
     .org-name-link { font-weight: 700; font-size: 14px; color: inherit; text-decoration: none; }
     .org-name-link:hover { color: #16a34a; text-decoration: underline; }
     .metrics-toggle-row { display: flex; align-items: center; gap: 10px; padding: 8px 16px; border-top: 1px solid #e8e5df; background: #fafaf8; }
@@ -2844,6 +2953,18 @@ app.get("/", (req, res) => {
     <a href="https://console.anthropic.com/settings/billing" target="_blank" rel="noopener"
        style="color:#a78bfa;text-decoration:none;font-size:10px;font-weight:600;margin-left:4px"
        onmouseover="this.style.color='#c4b5fd'" onmouseout="this.style.color='#a78bfa'">↗ Add Credits</a>
+    <span style="color:#444;margin:0 4px">|</span>
+    <span style="color:#666;font-weight:600;text-transform:uppercase;letter-spacing:.06em;font-size:10px">Health</span>
+    ${(() => {
+      const hc = healthData;
+      if (!hc || !hc.timestamp) return '<span style="color:#999">No check yet</span>';
+      const d = new Date(hc.timestamp);
+      const ds = d.toLocaleDateString('en-US',{month:'short',day:'numeric'}) + ' ' + d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
+      const fc = hc.failures?.length || 0;
+      if (fc === 0) return '<span style="color:#22c55e;font-weight:700">✅ All passing</span><span style="color:#666">' + ds + '</span>';
+      return '<span style="color:#ef4444;font-weight:700">❌ ' + fc + ' failing</span><span style="color:#666">' + ds + '</span>';
+    })()}
+    <button onclick="runHealthCheck(this)" style="font-size:10px;color:#3b82f6;background:none;border:1px solid #3b82f6;border-radius:4px;padding:2px 8px;cursor:pointer;margin-left:2px" onmouseover="this.style.background='#eff6ff'" onmouseout="this.style.background='none'">Run Now</button>
   </div>
   <script>
   (function fetchRailwayStatus(){
@@ -2867,6 +2988,19 @@ app.get("/", (req, res) => {
       }).catch(()=>{document.getElementById('rw-status').textContent='Failed to reach API';});
     setTimeout(fetchRailwayStatus,60000);
   })();
+  async function runHealthCheck(btn) {
+    var pwd = prompt('Dashboard password:');
+    if (!pwd) return;
+    btn.textContent = 'Running…'; btn.disabled = true;
+    try {
+      const r = await fetch('/api/health-check/run', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: pwd }) });
+      const d = await r.json();
+      if (!r.ok) { btn.textContent = d.error || 'Auth failed'; return; }
+      const fc = d.failures?.length || 0;
+      btn.textContent = fc === 0 ? '\u2705 Done' : '\u274C ' + fc + ' failed';
+      setTimeout(() => location.reload(), 1500);
+    } catch(e) { btn.textContent = 'Error'; }
+  }
   </script>
   <!-- ── Add Org Modal ── -->
   <div id="add-org-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:1000;overflow-y:auto;padding:40px 16px">
@@ -3716,6 +3850,14 @@ app.get("/", (req, res) => {
     // Newest first. Add a new entry at the TOP for every change we ship.
     // History below back-filled from the GitHub commit log.
     const UPDATES = [
+      { date: '2026-06-15', title: 'Daily Health Check \u2014 automated report monitoring', items: [
+        'New: Daily health check cron (6am) hits every configured Metabase report across all orgs, verifies HTTP 200 + valid JSON response',
+        'Alert email sent to dan@rec.us when any report fails (timeout, HTTP error, or Metabase query error)',
+        'Health badges on org landing page cards and admin dashboard \u2014 green \u2705 Verified with date, yellow \u26A0\uFE0F Empty, red \u274C Failed',
+        'Manual Run Now button on admin dashboard status bar triggers immediate health check',
+        'API endpoints: GET /api/health-check (latest results), POST /api/health-check/run (manual trigger)',
+        'Results persisted in data/health-check.json on Railway volume. Auto-seeds on first startup if no prior check exists',
+      ] },
       { date: '2026-06-14', title: 'Users Report \u2014 3-tab demographic + revenue + strategy intelligence', items: [
         'New report: Users \u2014 full household demographic, revenue, and strategic intelligence dashboard with 3 tabs',
         'Demographics tab: KPIs (households, people, residents%, median age, grade coverage), Key Observations with emojis (stripped in PDF), Rec AI Insights, HH size distribution, residency & completeness rings, data quality alerts, signups by month, cumulative growth, age by role (stacked), gender donut, residency by age, grade distribution, city breakdown',
@@ -4148,6 +4290,9 @@ app.listen(PORT, () => {
 
   // Pre-warm cache after a brief delay to let startup complete
   setTimeout(prewarmCache, 3000);
+
+  // Run initial health check on startup (after cache is warm)
+  if (!loadHealthResults()) setTimeout(runHealthCheck, 60000);
 
   // Re-warm every 4 minutes to keep cache perpetually hot
   setInterval(prewarmCache, 4 * 60 * 1000);

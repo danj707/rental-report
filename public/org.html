@@ -110,6 +110,10 @@
       line-height: 1.4;
     }
     .ai-pill { display: inline-flex; align-items: center; gap: 3px; font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; padding: 2px 7px; border-radius: 20px; background: linear-gradient(90deg, #6d28d9, #0d9488); color: #fff; margin-top: 5px; }
+    .health-badge { display: inline-flex; align-items: center; gap: 3px; font-size: 9px; font-weight: 600; padding: 1px 6px; border-radius: 8px; margin-top: 3px; }
+    .health-ok { background: #dcfce7; color: #15803d; }
+    .health-empty { background: #fef9c3; color: #a16207; }
+    .health-error { background: #fee2e2; color: #b91c1c; }
 
     .card-right {
       display: flex;
@@ -327,6 +331,17 @@
     });
   }
 
+  function healthBadge(r) {
+    var hc = cfg.healthCheck;
+    if (!hc || !hc.reports || !hc.reports[r]) return '';
+    var h = hc.reports[r];
+    var d = new Date(h.checkedAt);
+    var ds = d.toLocaleDateString('en-US',{month:'short',day:'numeric'});
+    if (h.status === 'ok') return '<span class="health-badge health-ok" title="Verified ' + ds + ' (' + h.rows + ' rows)">✅ Verified ' + ds + '</span>';
+    if (h.status === 'empty') return '<span class="health-badge health-empty" title="Returned 0 rows on ' + ds + '">⚠️ Empty ' + ds + '</span>';
+    return '<span class="health-badge health-error" title="' + (h.error || 'Error') + '">❌ Failed ' + ds + '</span>';
+  }
+
   function cardHTML(r, isPinned) {
     var m = REPORT_META[r] || { label: r, icon: '📄', desc: '' };
     return '<a href="/' + slug + '/' + r + tokenQS + '" class="card' + (isPinned ? ' pinned' : '') + '">'
@@ -335,6 +350,7 @@
         + '<div class="card-label">' + m.label + '</div>'
         + '<div class="card-desc">' + m.desc + '</div>'
         + (m.ai ? '<span class="ai-pill">✦ AI enhanced</span>' : '')
+        + healthBadge(r)
       + '</div>'
       + '<div class="card-right">'
         + '<button class="pin-btn" data-report="' + r + '" title="' + (isPinned ? 'Unpin' : 'Pin to top') + '">'
