@@ -1308,6 +1308,51 @@ Focus on: household composition patterns (family size, age mix between parents a
 
 const SYS_PROMPTS = { programs: PROGRAMS_SYS_PROMPT, fasttrack: FASTTRACK_SYS_PROMPT, users: USERS_SYS_PROMPT };
 
+// ── Program Finder AI ────────────────────────────────────────────────
+const RECOMMEND_SYS_PROMPT = `You are a friendly, helpful recreation program advisor for a municipal parks & recreation department. A resident has described what they're looking for, and you have the department's upcoming schedule of programs and activities.
+
+Your job: recommend the 5–8 best-matching programs from the data provided. Be warm, encouraging, and specific about why each program is a great fit.
+
+Respond with ONLY a JSON array (no markdown fences, no preamble). Each element:
+{
+  "name": "Program or activity name",
+  "datetime": "Human-readable schedule (e.g. 'Tuesdays & Thursdays, 6:00–7:30 PM, Jun 17 – Jul 24')",
+  "location": "Facility and location name",
+  "description": "1-2 sentence description of the program (from data or inferred from name/activity type)",
+  "price": "$XX or 'Free' or 'See website' if unknown",
+  "match_reason": "1-2 sentence personalized reason this matches what the resident described",
+  "url": "Section URL if available, otherwise null"
+}
+
+Rules:
+- Only recommend programs that genuinely match the resident's description. Don't pad the list.
+- If fewer than 5 match well, that's fine — quality over quantity.
+- If a program is Full or has a Waitlist, mention that in the description but still include it if relevant.
+- Group related sessions (same program, different days) into one recommendation.
+- Sort by relevance to the resident's request, best matches first.
+- Keep it concise and actionable.`;
+
+// Simple per-IP rate limiter for public endpoints
+const _rateBuckets = new Map();
+function rateLimit(key, maxPerHour) {
+  const now = Date.now();
+  const bucket = _rateBuckets.get(key) || [];
+  const recent = bucket.filter(ts => now - ts < 3600000);
+  if (recent.length >= maxPerHour) return false;
+  recent.push(now);
+  _rateBuckets.set(key, recent);
+  return true;
+}
+// Prune old rate-limit entries every 30 min
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, v] of _rateBuckets) {
+    const recent = v.filter(ts => now - ts < 3600000);
+    if (recent.length === 0) _rateBuckets.delete(k);
+    else _rateBuckets.set(k, recent);
+  }
+}, 30 * 60 * 1000);
+
 // Extract up to 4 valid insight objects from a model text response.
 function salvageInsights(text) {
   if (!text) return [];
@@ -1946,6 +1991,216 @@ app.get("/:org/calendar", (req, res) => {
   const html = fs.readFileSync(path.join(__dirname, "public", "calendar.html"), "utf-8");
   const inject = `<script>window.__ORG__=${JSON.stringify(meta)};</script>`;
   res.type("html").send(html.replace("</head>", inject + "</head>"));
+});
+
+// ── POST /:org/calendar/api/recommend — AI program finder + email ────
+app.post("/:org/calendar/api/recommend", express.json(), async (req, res) => {
+  const slug = req.params.org;
+  const org  = ORGS[slug];
+  if (!org) return res.status(404).json({ ok: false, error: "Unknown org" });
+  if (!org.calendar?.mbUuid && !org.programs?.mbUuid) {
+    return res.status(404).json({ ok: false, error: "No calendar or program data for this org" });
+  }
+
+  const { description, email } = req.body || {};
+  if (!description || typeof description !== "string" || description.trim().length < 5) {
+    return res.status(400).json({ ok: false, error: "Please describe what you're looking for (at least a few words)" });
+  }
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return res.status(400).json({ ok: false, error: "Please enter a valid email address" });
+  }
+  if (description.length > 1000) {
+    return res.status(400).json({ ok: false, error: "Description too long (max 1000 characters)" });
+  }
+
+  // Rate limit: 3 per IP per hour
+  const clientIP = req.ip || req.connection?.remoteAddress || "unknown";
+  if (!rateLimit(`recommend:${clientIP}`, 3)) {
+    return res.status(429).json({ ok: false, error: "You\u2019ve sent a few requests recently. Please try again in an hour." });
+  }
+
+  if (!process.env.ANTHROPIC_API_KEY) {
+    return res.status(503).json({ ok: false, error: "AI service not configured" });
+  }
+
+  const resend = getResendClient();
+  if (!resend) {
+    return res.status(503).json({ ok: false, error: "Email service not configured" });
+  }
+
+  try {
+    // Fetch upcoming schedule data (next 30 days)
+    const today = new Date();
+    const future = new Date(today); future.setDate(future.getDate() + 30);
+    const startDate = toISO(today);
+    const endDate   = toISO(future);
+
+    let rows = [];
+    const mbUuid = org.calendar?.mbUuid;
+    if (mbUuid) {
+      const params = buildMetabaseParams({ start_date: startDate, end_date: endDate }, "calendar");
+      const paramStr = params.length > 0 ? `?parameters=${encodeURIComponent(JSON.stringify(params))}` : "";
+      const url = `${METABASE_URL}/api/public/card/${mbUuid}/query/json${paramStr}`;
+      const resp = await fetch(url);
+      if (resp.ok) rows = await resp.json();
+    }
+
+    // Also try programs data for richer info
+    let programRows = [];
+    if (org.programs?.mbUuid) {
+      const pUrl = `${METABASE_URL}/api/public/card/${org.programs.mbUuid}/query/json`;
+      const pResp = await fetch(pUrl);
+      if (pResp.ok) programRows = await pResp.json();
+    }
+
+    if (rows.length === 0 && programRows.length === 0) {
+      return res.status(404).json({ ok: false, error: "No upcoming programs found. Check back soon!" });
+    }
+
+    // Build a condensed program list for AI (strip PII, deduplicate)
+    const seen = new Set();
+    const programs = [];
+    for (const r of rows) {
+      const label = r["Section"] || r["Purpose"] || r["Activity"] || r["Program"] || r["Site Type"] || "Activity";
+      const key = `${label}|${r["Location"] || ""}|${r["Activity"] || ""}`;
+      if (seen.has(key) && programs.length > 80) continue; // allow some dupes for schedule variety
+      seen.add(key);
+      programs.push({
+        program: r["Program"] || r["Activity"] || "",
+        section: r["Section"] || r["Purpose"] || label,
+        activity: r["Activity"] || r["Site Type"] || "",
+        date: r["Date"] || r["Begin Sort"] || "",
+        start: r["Begin"] || r["Start"] || r["Start Time"] || "",
+        end: r["End"] || r["End Time"] || "",
+        location: r["Location"] || r["Facility Location"] || "",
+        facility: r["Facility"] || r["Court"] || "",
+        description: r["Description"] || r["description"] || "",
+        price: r["Price"] || r["Total"] || r["price"] || "",
+        status: r["Status"] || r["status"] || "",
+        url: r["Section URL"] || r["Url"] || r["url"] || r["sectionUrl"] || "",
+      });
+    }
+
+    // Add program revenue data for additional context
+    for (const r of programRows) {
+      const name = r["Program Template"] || r["Program"] || r["program_template_name"] || "";
+      const section = r["Section"] || r["section_name"] || "";
+      if (!name) continue;
+      const key = `prog:${name}|${section}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      programs.push({
+        program: name,
+        section: section,
+        activity: r["Activity"] || r["Category"] || "",
+        date: r["Start Date"] || r["start_date"] || "",
+        end: r["End Date"] || r["end_date"] || "",
+        location: r["Location"] || "",
+        description: r["Description"] || "",
+        enrolled: r["Enrolled"] || r["Enrollments"] || "",
+        capacity: r["Capacity"] || "",
+        price: r["Price"] || r["Revenue Per Enrollment"] || "",
+        url: r["Section URL"] || r["section_url"] || "",
+      });
+    }
+
+    // Cap at 200 items to keep tokens reasonable
+    const condensed = programs.slice(0, 200);
+
+    const slugTitle = slug.charAt(0).toUpperCase() + slug.slice(1);
+    const orgName = org.displayName || `${slugTitle} Parks & Recreation`;
+
+    // Call Claude
+    const aiResp = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "x-api-key": process.env.ANTHROPIC_API_KEY,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        model: INSIGHTS_MODEL,
+        max_tokens: 1500,
+        system: RECOMMEND_SYS_PROMPT.replace(/a municipal parks & recreation department/, orgName),
+        messages: [{ role: "user", content: `RESIDENT'S REQUEST:\n${description.trim()}\n\nAVAILABLE PROGRAMS (next 30 days):\n${JSON.stringify(condensed)}` }],
+      }),
+    });
+
+    if (!aiResp.ok) {
+      const errBody = await aiResp.text();
+      console.error(`[recommend] Anthropic ${aiResp.status}: ${errBody}`);
+      return res.status(502).json({ ok: false, error: "AI service temporarily unavailable" });
+    }
+
+    const aiData = await aiResp.json();
+    let aiText = (aiData.content || []).filter(c => c.type === "text").map(c => c.text).join("");
+
+    // Parse JSON response
+    aiText = aiText.replace(/```json|```/g, "").trim();
+    let recommendations;
+    try {
+      recommendations = JSON.parse(aiText);
+      if (!Array.isArray(recommendations)) recommendations = [recommendations];
+    } catch {
+      console.error("[recommend] Failed to parse AI response:", aiText.slice(0, 500));
+      return res.status(502).json({ ok: false, error: "Could not parse program recommendations" });
+    }
+
+    // Log AI cost
+    const usage = aiData.usage || {};
+    const costUsd = insightsCostUsd(INSIGHTS_MODEL, usage.input_tokens || 0, usage.output_tokens || 0);
+    logEvent(slug, "calendar", "recommend", clientIP, { costUsd, email: email.split("@")[0] + "@***", count: recommendations.length });
+
+    // Build branded HTML email
+    const logoHtml = org.logoUrl ? `<img src="${org.logoUrl}" alt="${orgName}" style="height:40px;max-width:200px;object-fit:contain" />` : "";
+    const calendarUrl = `${BASE_URL}/${slug}/calendar${org.token ? "?token=" + encodeURIComponent(org.token) : ""}`;
+
+    const recCards = recommendations.map((r, i) => `
+      <tr><td style="padding:16px 0;border-bottom:1px solid #e5e7eb">
+        <div style="font-weight:700;font-size:16px;color:#1f2937">${i + 1}. ${r.name || "Program"}</div>
+        ${r.datetime ? `<div style="margin-top:4px;color:#4b5563;font-size:14px">\u{1F4C5} ${r.datetime}</div>` : ""}
+        ${r.location ? `<div style="color:#4b5563;font-size:14px">\u{1F4CD} ${r.location}</div>` : ""}
+        ${r.price ? `<div style="color:#4b5563;font-size:14px">\u{1F4B2} ${r.price}</div>` : ""}
+        ${r.description ? `<div style="margin-top:8px;color:#374151;font-size:14px">${r.description}</div>` : ""}
+        <div style="margin-top:8px;padding:8px 12px;background:#f0fdf4;border-radius:8px;font-size:13px;color:#166534">\u2728 <strong>Why this is a great match:</strong> ${r.match_reason || ""}</div>
+        ${r.url ? `<div style="margin-top:8px"><a href="${r.url}" style="color:#2563eb;font-weight:600;font-size:14px;text-decoration:none">View &amp; Register \u2192</a></div>` : ""}
+      </td></tr>
+    `).join("");
+
+    const emailHtml = `
+    <div style="max-width:600px;margin:0 auto;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif">
+      <div style="padding:24px;background:linear-gradient(135deg,#f0f9ff 0%,#f5f3ff 100%);border-radius:12px 12px 0 0;text-align:center">
+        ${logoHtml}
+        <h1 style="margin:12px 0 4px;font-size:22px;color:#1f2937">Your Personalized Program Picks</h1>
+        <p style="margin:0;color:#6b7280;font-size:14px">Curated just for you by ${orgName}</p>
+      </div>
+      <div style="padding:20px 24px;background:#fff">
+        <p style="color:#374151;font-size:14px;line-height:1.6">You asked: <em>\u201C${description.trim().replace(/</g, "&lt;").slice(0, 200)}\u201D</em></p>
+        <p style="color:#374151;font-size:14px;line-height:1.6">Based on what you\u2019re looking for, here are our top recommendations:</p>
+        <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:8px">
+          ${recCards}
+        </table>
+      </div>
+      <div style="padding:20px 24px;background:#f9fafb;border-radius:0 0 12px 12px;text-align:center">
+        <a href="${calendarUrl}" style="display:inline-block;background:#2563eb;color:#fff;padding:12px 28px;border-radius:8px;font-weight:700;font-size:14px;text-decoration:none">Browse Full Calendar</a>
+        <p style="margin:16px 0 0;color:#9ca3af;font-size:12px">Powered by rec.us \u00B7 ${orgName}</p>
+      </div>
+    </div>`;
+
+    await resend.emails.send({
+      from: `${orgName} <${FROM_EMAIL}>`,
+      to: email.trim(),
+      subject: `\u2728 Your Personalized Program Recommendations from ${orgName}`,
+      html: emailHtml,
+    });
+
+    console.log(`[recommend] Sent ${recommendations.length} recommendations to ${email.split("@")[0]}@*** for ${slug}`);
+    res.json({ ok: true, count: recommendations.length });
+
+  } catch (err) {
+    console.error("[recommend] Error:", err);
+    res.status(500).json({ ok: false, error: "Something went wrong. Please try again." });
+  }
 });
 
 app.get("/:org/fasttrack", (req, res) => {
@@ -3852,6 +4107,13 @@ app.get("/", (req, res) => {
     // Newest first. Add a new entry at the TOP for every change we ship.
     // History below back-filled from the GitHub commit log.
     const UPDATES = [
+      { date: '2026-06-15', title: 'Program Finder \u2014 AI-curated program recommendations via email', items: [
+        'New: \u2728 Find Programs for Me \u2014 floating CTA on the public calendar lets residents describe what they\u2019re looking for and receive a personalized, AI-curated list of matching programs via email',
+        'Pulls live calendar + programs data (next 30 days), sends condensed schedule to Claude, generates ranked recommendations with personalized match reasons',
+        'Branded HTML email with org logo, program details (schedule, location, price), \u201CWhy this is a great match\u201D blurbs, direct register links, and Browse Full Calendar CTA',
+        'Rate limited: 3 requests per IP per hour. Email used once (no storage, no spam). Description capped at 1000 chars',
+        'POST /:org/calendar/api/recommend endpoint. AI cost tracked in events log alongside other insights spend',
+      ] },
       { date: '2026-06-15', title: 'Daily Health Check \u2014 automated report monitoring', items: [
         'New: Daily health check cron (6am) hits every configured Metabase report across all orgs, verifies HTTP 200 + valid JSON response',
         'Alert email sent to dan@rec.us when any report fails (timeout, HTTP error, or Metabase query error)',

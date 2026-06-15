@@ -195,6 +195,42 @@
   body.present-mode .row .right{font-size:14px}
   body.present-mode .chip{font-size:12px;padding:1px 8px}
   body.present-mode .present-status{position:fixed;bottom:12px;right:16px;font-size:11px;color:var(--muted);opacity:.5;z-index:10}
+
+  /* Program Finder */
+  .pf-fab{position:fixed;bottom:24px;right:24px;z-index:100;display:flex;align-items:center;gap:8px;
+    background:linear-gradient(135deg,#6366f1,#2563eb);color:#fff;border:none;border-radius:50px;
+    padding:14px 22px;font-size:14px;font-weight:700;cursor:pointer;box-shadow:0 4px 20px rgba(37,99,235,.35);
+    transition:transform .15s,box-shadow .15s}
+  .pf-fab:hover{transform:translateY(-2px);box-shadow:0 6px 28px rgba(37,99,235,.45)}
+  .pf-fab .pf-spark{font-size:18px}
+  .pf-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:200;display:flex;align-items:center;justify-content:center;padding:20px}
+  .pf-modal{background:#fff;border-radius:16px;max-width:480px;width:100%;max-height:90vh;overflow-y:auto;box-shadow:0 24px 60px rgba(0,0,0,.25)}
+  .pf-head{padding:24px 24px 16px;text-align:center;background:linear-gradient(135deg,#f0f9ff 0%,#f5f3ff 100%);border-radius:16px 16px 0 0}
+  .pf-head h2{margin:0;font-size:20px;color:#1f2937}
+  .pf-head p{margin:8px 0 0;color:#6b7280;font-size:13px;line-height:1.5}
+  .pf-body{padding:20px 24px 24px}
+  .pf-label{display:block;font-weight:600;font-size:13px;color:#374151;margin-bottom:6px}
+  .pf-textarea{width:100%;min-height:80px;border:1.5px solid var(--line);border-radius:10px;padding:10px 12px;
+    font:inherit;font-size:14px;resize:vertical;transition:border-color .15s}
+  .pf-textarea:focus{outline:none;border-color:#6366f1}
+  .pf-input{width:100%;border:1.5px solid var(--line);border-radius:10px;padding:10px 12px;
+    font:inherit;font-size:14px;transition:border-color .15s;margin-top:14px}
+  .pf-input:focus{outline:none;border-color:#6366f1}
+  .pf-hint{font-size:11px;color:var(--muted);margin-top:4px}
+  .pf-submit{width:100%;margin-top:18px;padding:12px;border:none;border-radius:10px;font:inherit;font-size:15px;
+    font-weight:700;color:#fff;background:linear-gradient(135deg,#6366f1,#2563eb);cursor:pointer;
+    transition:filter .15s}
+  .pf-submit:hover:not(:disabled){filter:brightness(.92)}
+  .pf-submit:disabled{opacity:.6;cursor:not-allowed}
+  .pf-close{position:absolute;top:12px;right:16px;background:none;border:none;font-size:22px;color:#9ca3af;cursor:pointer;padding:4px}
+  .pf-close:hover{color:#374151}
+  .pf-error{margin-top:10px;padding:10px 14px;background:#fef2f2;border-radius:8px;color:#b91c1c;font-size:13px}
+  .pf-success{text-align:center;padding:32px 24px}
+  .pf-success .pf-check{font-size:48px;margin-bottom:12px}
+  .pf-success h3{margin:0;font-size:18px;color:#1f2937}
+  .pf-success p{margin:8px 0 0;color:#6b7280;font-size:14px;line-height:1.5}
+  body.print-mode .pf-fab{display:none}
+  @media(max-width:500px){.pf-fab{bottom:16px;right:16px;padding:12px 18px;font-size:13px}}
 </style>
 </head>
 <body>
@@ -785,6 +821,80 @@ function PopoverCard({ev,onClose}){
   );
 }
 
+/* ---------- Program Finder ---------- */
+function ProgramFinder(){
+  const [open,setOpen]=useState(false);
+  const [desc,setDesc]=useState('');
+  const [email,setEmail]=useState('');
+  const [sending,setSending]=useState(false);
+  const [error,setError]=useState('');
+  const [done,setDone]=useState(false);
+
+  const {org,token}=ctx();
+  if(!org) return null; // only show for live orgs
+
+  function reset(){setOpen(false);setDesc('');setEmail('');setError('');setDone(false);setSending(false);}
+
+  async function submit(){
+    if(desc.trim().length<5){setError('Tell us a bit more about what you\u2019re looking for!');return;}
+    if(!email||!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){setError('Please enter a valid email address.');return;}
+    setError('');setSending(true);
+    try{
+      const u=new URL('/'+org+'/calendar/api/recommend',location.origin);
+      const r=await fetch(u.toString(),{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({description:desc.trim(),email:email.trim()})
+      });
+      const d=await r.json();
+      if(!r.ok||!d.ok){setError(d.error||'Something went wrong. Please try again.');setSending(false);return;}
+      setDone(true);setSending(false);
+    }catch(e){setError('Network error. Please try again.');setSending(false);}
+  }
+
+  return (<React.Fragment>
+    <button className="pf-fab" onClick={()=>setOpen(true)}>
+      <span className="pf-spark">{'\u2728'}</span> Find Programs for Me
+    </button>
+    {open && (
+      <div className="pf-overlay" onClick={e=>{if(e.target===e.currentTarget)reset();}}>
+        <div className="pf-modal" style={{position:'relative'}}>
+          <button className="pf-close" onClick={reset}>{'\u00D7'}</button>
+          {done ? (
+            <div className="pf-success">
+              <div className="pf-check">{'\u2709\uFE0F'}</div>
+              <h3>Check Your Inbox!</h3>
+              <p>We've sent a personalized list of program recommendations to <strong>{email}</strong>. It should arrive within a minute or two.</p>
+              <button className="pf-submit" style={{marginTop:20,maxWidth:200}} onClick={reset}>Done</button>
+            </div>
+          ) : (
+            <React.Fragment>
+              <div className="pf-head">
+                <h2>{'\u2728'} Find Your Perfect Program</h2>
+                <p>Tell us what you're looking for and we'll email you a personalized list of programs that match your interests!</p>
+              </div>
+              <div className="pf-body">
+                <label className="pf-label">What are you looking for?</label>
+                <textarea className="pf-textarea" value={desc} onChange={e=>setDesc(e.target.value)}
+                  placeholder="e.g. &quot;After-school activities for my 7-year-old who loves sports&quot; or &quot;Evening yoga classes for beginners&quot; or &quot;Weekend art programs for teens&quot;"
+                  maxLength={1000} disabled={sending}/>
+                <div className="pf-hint">{desc.length}/1000</div>
+                <input className="pf-input" type="email" value={email} onChange={e=>setEmail(e.target.value)}
+                  placeholder="Your email address" disabled={sending}/>
+                {error && <div className="pf-error">{error}</div>}
+                <button className="pf-submit" onClick={submit} disabled={sending}>
+                  {sending ? 'Finding your perfect programs\u2026' : 'Send My Recommendations'}
+                </button>
+                <div className="pf-hint" style={{textAlign:'center',marginTop:8}}>We'll only use your email to send this one list. No spam, ever.</div>
+              </div>
+            </React.Fragment>
+          )}
+        </div>
+      </div>
+    )}
+  </React.Fragment>);
+}
+
 function App(){
   const c=ctx();
   const [weekStart,setWeekStart]=useState(()=>{
@@ -995,6 +1105,7 @@ function App(){
         : <ListView events={filtered} onEv={setPopoverEv}/>}
 
       <PopoverCard ev={popoverEv} onClose={()=>setPopoverEv(null)}/>
+      <ProgramFinder/>
       {src==='sample' && <div className="note">Showing sample data.{fetchError ? ' Reason: '+fetchError+'.' : ''} Check browser console for details. Wire <code>/{'{org}'}/calendar/api/data</code> to go live.</div>}
       {!loading && <div id="report-ready" style={{display:'none'}}>ready</div>}
       {isPresent && <div className="present-status">Auto-refreshes every 5 min · Press Esc to exit</div>}
