@@ -839,11 +839,11 @@ function App() {
       <div className="insights-wrap">
         <div className="insights-head">
           <button type="button" className="insights-btn" onClick={getInsights} disabled={insightsLoading}>
-            {insightsLoading?'Analyzing\u2026':(insights?'\u21BB Refresh':'\u2728 Rec Insights')}
+            {insightsLoading?'Analyzing…':(insights?'↻ Refresh':'✨ Rec Insights')}
           </button>
           {insights&&!insightsLoading&&<span style={{fontSize:11,color:'#9ca3af'}}>Analyzed {s.hhCount} households, {s.total} people</span>}
         </div>
-        {insightsLoading&&<div className="loading"><div className="spinner"/><div className="juice-msg"><span>Squeezing the oranges\u2026</span><span>Juicing!</span><span>Adding the pulp\u2026</span><span>Chilling the glass\u2026</span><span>Pouring it out\u2026</span></div></div>}
+        {insightsLoading&&<div className="loading"><div className="spinner"/><div className="juice-msg"><span>Squeezing the oranges…</span><span>Juicing!</span><span>Adding the pulp…</span><span>Chilling the glass…</span><span>Pouring it out…</span></div></div>}
         {insightsError&&!insightsLoading&&<div style={{padding:'8px 20px 16px'}}><div className="error">{insightsError}</div></div>}
         {insights&&!insightsLoading&&(
           <div className="insights-grid">
@@ -887,7 +887,7 @@ function App() {
       {cacheInfo&&(
         <div className="cache-banner no-print">
           <span>Cached data from <strong>{new Date(cacheInfo.at).toLocaleString()}</strong></span>
-          <button onClick={refreshData} disabled={refreshing}>{refreshing?'Refreshing\u2026':'Refresh Now'}</button>
+          <button onClick={refreshData} disabled={refreshing}>{refreshing?'Refreshing…':'Refresh Now'}</button>
         </div>
       )}
 
