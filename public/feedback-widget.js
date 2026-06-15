@@ -45,6 +45,12 @@
     + ".fb-ok h2{color:#059669;margin:0 0 6px;}"
     + ".fb-ok p{color:#6b7280;font-size:14px;margin:0;}"
     + "@media print{.fb-btn,.fb-overlay{display:none!important;}}"
+    + ".fb-thumbs{position:fixed;bottom:20px;right:200px;z-index:99998;display:inline-flex;gap:4px;}"
+    + ".fb-thumb{background:#fff;border:1px solid #e5e7eb;cursor:pointer;padding:6px 10px;border-radius:999px;font-size:16px;box-shadow:0 2px 8px rgba(0,0,0,0.08);transition:transform .12s ease,box-shadow .12s ease,background .12s ease;line-height:1;}"
+    + ".fb-thumb:hover{transform:translateY(-2px);box-shadow:0 4px 12px rgba(0,0,0,0.15);}"
+    + ".fb-thumb.voted{opacity:0.5;pointer-events:none;}"
+    + "@media print{.fb-thumbs{display:none!important;}}"
+    + "body.print-mode .fb-thumbs{display:none!important;}"
     + "body.print-mode .fb-btn,body.print-mode .fb-overlay{display:none!important;}";
 
   function injectStyle(){
@@ -77,7 +83,7 @@
     modal.className = "fb-modal";
     modal.innerHTML = ''
       + '<h2>Got feedback?</h2>'
-      + '<p class="fb-sub">Tell us what\u2019s working, what\u2019s broken, or what you\u2019d love to see. Goes straight to Dan.</p>'
+      + '<p class="fb-sub">Tell us what\u2019s working, what\u2019s broken, or what you\u2019d love to see. Goes straight to Rec Partner Success.</p>'
       + '<label for="fb-email">Your email <span style="color:#9ca3af;font-weight:400;">(optional, so we can follow up)</span></label>'
       + '<input id="fb-email" type="email" placeholder="you@example.com" autocomplete="email" />'
       + '<label for="fb-message">Feedback</label>'
@@ -146,7 +152,7 @@
         }
         modal.innerHTML = '<div class="fb-ok">'
           + '<h2>Thanks! \uD83C\uDF89</h2>'
-          + '<p>Your feedback is on its way to Dan.</p>'
+          + '<p>Your feedback is on its way to Rec Partner Success.</p>'
           + '</div>';
         setTimeout(close, 2200);
       } catch(e){
@@ -163,9 +169,41 @@
     });
   }
 
+  function mountThumbs(){
+    if (document.querySelector(".fb-thumbs")) return;
+    var wrap = document.createElement("div");
+    wrap.className = "fb-thumbs";
+    var up = document.createElement("button");
+    up.type = "button"; up.className = "fb-thumb"; up.innerHTML = "\uD83D\uDC4D";
+    up.title = "This report is helpful";
+    var down = document.createElement("button");
+    down.type = "button"; down.className = "fb-thumb"; down.innerHTML = "\uD83D\uDC4E";
+    down.title = "This report needs work";
+    function vote(sentiment, btn){
+      btn.classList.add("voted");
+      fetch("/api/feedback", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message: sentiment === "up" ? "\uD83D\uDC4D Report is helpful" : "\uD83D\uDC4E Report needs work",
+          email: "",
+          page: window.location.pathname + window.location.search,
+          userAgent: navigator.userAgent,
+          quickVote: sentiment
+        })
+      }).catch(function(){});
+    }
+    up.addEventListener("click", function(){ vote("up", up); });
+    down.addEventListener("click", function(){ vote("down", down); });
+    wrap.appendChild(up);
+    wrap.appendChild(down);
+    document.body.appendChild(wrap);
+  }
+
   function init(){
     injectStyle();
     mountButton();
+    mountThumbs();
   }
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", init);
