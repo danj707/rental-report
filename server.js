@@ -184,6 +184,7 @@ const ORGS = {
   watertown: {
     token:   "7qNNXDFo4HGpOh5B",
     orgId:   "d781690b-c5a0-43c5-8443-9ae43899528c",
+    calendarPublicUrl: "https://www.watertown-ma.gov/1425/Recreation",
     logoUrl: "https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2Forganization-d781690b-c5a0-43c5-8443-9ae43899528c%2FfullLogo.png%3F1750270261391&w=1920&q=75",
     facility: { mbUuid: "4b64af10-d57f-41af-aad8-b16d12a8f7b8" },
     gl:       { mbUuid: "e0043550-0ab8-429f-bbb0-35911c1190f6" },
@@ -2153,7 +2154,7 @@ app.post("/:org/calendar/api/recommend", express.json(), async (req, res) => {
 
     // Build branded HTML email
     const logoHtml = org.logoUrl ? `<img src="${org.logoUrl}" alt="${orgName}" style="height:40px;max-width:200px;object-fit:contain" />` : "";
-    const calendarUrl = `${BASE_URL}/${slug}/calendar${org.token ? "?token=" + encodeURIComponent(org.token) : ""}`;
+    const calendarUrl = org.calendarPublicUrl || `${BASE_URL}/${slug}/calendar${org.token ? "?token=" + encodeURIComponent(org.token) : ""}`;
 
     const recCards = recommendations.map((r, i) => `
       <tr><td style="padding:16px 0;border-bottom:1px solid #e5e7eb">

@@ -222,6 +222,8 @@
     transition:filter .15s}
   .pf-submit:hover:not(:disabled){filter:brightness(.92)}
   .pf-submit:disabled{opacity:.6;cursor:not-allowed}
+  .pf-spinner{display:inline-block;width:16px;height:16px;border:2.5px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:pf-spin .7s linear infinite;vertical-align:middle;margin-right:8px}
+  @keyframes pf-spin{to{transform:rotate(360deg)}}
   .pf-close{position:absolute;top:12px;right:16px;background:none;border:none;font-size:22px;color:#9ca3af;cursor:pointer;padding:4px}
   .pf-close:hover{color:#374151}
   .pf-error{margin-top:10px;padding:10px 14px;background:#fef2f2;border-radius:8px;color:#b91c1c;font-size:13px}
@@ -883,7 +885,7 @@ function ProgramFinder(){
                   placeholder="Your email address" disabled={sending}/>
                 {error && <div className="pf-error">{error}</div>}
                 <button className="pf-submit" onClick={submit} disabled={sending}>
-                  {sending ? 'Finding your perfect programs\u2026' : 'Send My Recommendations'}
+                  {sending ? <React.Fragment><span className="pf-spinner"></span>Finding your perfect programs&hellip;</React.Fragment> : 'Send My Recommendations'}
                 </button>
                 <div className="pf-hint" style={{textAlign:'center',marginTop:8}}>We'll only use your email to send this one list. No spam, ever.</div>
               </div>
