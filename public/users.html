@@ -321,11 +321,20 @@ function compute(rows, includeGuests) {
     var em = (r['Email']||'').trim().toLowerCase();
     return fn === 'guest' || em.indexOf('guest-user+guest-') === 0;
   }
+  function isStaff(r) {
+    var em = (r['Email']||'').trim().toLowerCase();
+    return em.indexOf('@rec.us') !== -1;
+  }
+
+  // Always exclude staff accounts (@rec.us)
+  var staffCount = rows.filter(isStaff).length;
+  rows = rows.filter(function(r){return !isStaff(r);});
+
   var allRows = rows;
   var guestRows = rows.filter(isGuest);
   var registeredRows = rows.filter(function(r){return !isGuest(r);});
   var guestCount = guestRows.length;
-  var guestHHs = new Set(); guestRows.forEach(function(r){guestHHs.add(r['Household ID']);});
+  var guestHHs = new Set(); guestRows.forEach(function(r){if(r['Household ID'])guestHHs.add(r['Household ID']);});
   var guestHHCount = guestHHs.size;
 
   // Use registered-only for demographics, all for revenue (controlled by toggle)
@@ -653,7 +662,7 @@ function compute(rows, includeGuests) {
     progOnly:progOnly, facOnly:facOnly, bothProgFac:bothProgFac, progHH:progHH, facHH:facHH,
     progNoFacCSV:progNoFacCSV, facNoProgCSV:facNoProgCSV,
     // Guests
-    guestCount:guestCount, guestHHCount:guestHHCount, totalWithGuests:allRows.length,
+    guestCount:guestCount, guestHHCount:guestHHCount, totalWithGuests:allRows.length, staffCount:staffCount,
   };
 }
 
