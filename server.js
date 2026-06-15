@@ -125,6 +125,7 @@ async function prewarmCache() {
 // Set DASHBOARD_PASSWORD in Railway env vars.
 // /hotdog and /api/hotdog are public (no auth required).
 const DASHBOARD_PASSWORD = process.env.DASHBOARD_PASSWORD || '';
+const RECOMMEND_ENABLED  = process.env.RECOMMEND_ENABLED !== 'false'; // default on; set to 'false' to kill
 
 function dashboardAuth(req, res, next) {
   // Only protect the root dashboard; all org routes and /hotdog are public
@@ -1987,6 +1988,7 @@ app.get("/:org/calendar", (req, res) => {
     slug,
     displayName: org.displayName || `${slugTitle} Parks & Recreation`,
     logoUrl: org.logoUrl || '',
+    recommendEnabled: RECOMMEND_ENABLED && !!(org.calendar?.mbUuid || org.programs?.mbUuid),
   };
   const fs = require("fs");
   const html = fs.readFileSync(path.join(__dirname, "public", "calendar.html"), "utf-8");
@@ -1999,6 +2001,7 @@ app.post("/:org/calendar/api/recommend", express.json(), async (req, res) => {
   const slug = req.params.org;
   const org  = ORGS[slug];
   if (!org) return res.status(404).json({ ok: false, error: "Unknown org" });
+  if (!RECOMMEND_ENABLED) return res.status(503).json({ ok: false, error: "Program recommendations are temporarily unavailable" });
   if (!org.calendar?.mbUuid && !org.programs?.mbUuid) {
     return res.status(404).json({ ok: false, error: "No calendar or program data for this org" });
   }

@@ -833,7 +833,7 @@ function ProgramFinder(){
   const [done,setDone]=useState(false);
 
   const {org,token}=ctx();
-  if(!org) return null; // only show for live orgs
+  if(!org || !(window.__ORG__||{}).recommendEnabled) return null; // only show when enabled
 
   function reset(){setOpen(false);setDesc('');setEmail('');setError('');setDone(false);setSending(false);}
 
@@ -942,7 +942,7 @@ function App(){
       const to=fmtISO(addDays(new Date(),180));
       const {rows:wideRows}=await fetchData(from,to);
       const norm=wideRows.map(normalizeRow).filter(e=>!isHiddenActivity(e));
-      setAllActivities([...new Set(norm.map(e=>e.activity).filter(Boolean))].sort());
+      setAllActivities([...new Set(norm.flatMap(e=>(e.activity||'').split(',').map(a=>a.trim())).filter(Boolean))].sort());
       setAllLocations([...new Set(norm.map(e=>e.location).filter(Boolean))].sort());
     })();
   },[]);
@@ -1035,9 +1035,9 @@ function App(){
     ? (()=>{const dt=new Date(selectedDate+'T00:00:00'); return DOWL[dt.getDay()]+', '+MON[dt.getMonth()]+' '+dt.getDate()+', '+dt.getFullYear();})()
     : MON[ws.getMonth()]+' '+ws.getDate()+' – '+MON[we.getMonth()]+' '+we.getDate()+', '+we.getFullYear();
   // Use wide-range options for dropdowns, fall back to current week if wide hasn't loaded yet
-  const activities=allActivities.length>0?allActivities:[...new Set(rows.map(e=>e.activity).filter(Boolean))].sort();
+  const activities=allActivities.length>0?allActivities:[...new Set(rows.flatMap(e=>(e.activity||'').split(',').map(a=>a.trim())).filter(Boolean))].sort();
   const locations=allLocations.length>0?allLocations:[...new Set(rows.map(e=>e.location).filter(Boolean))].sort();
-  const filtered=useMemo(()=>rows.filter(e=>(!actFilter||e.activity===actFilter)&&(!locFilter||e.location===locFilter)&&(availFilter!=='open'||!e.full)&&(availFilter!=='waitlist'||e.waitlist)),[rows,actFilter,locFilter,availFilter]);
+  const filtered=useMemo(()=>rows.filter(e=>(!actFilter||(e.activity||'').split(',').some(a=>a.trim()===actFilter))&&(!locFilter||e.location===locFilter)&&(availFilter!=='open'||!e.full)&&(availFilter!=='waitlist'||e.waitlist)),[rows,actFilter,locFilter,availFilter]);
 
   return (
     <div className="wrap">
