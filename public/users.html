@@ -717,7 +717,7 @@ function buildObs(s) {
   if(s.withGrade>10) o.push({e:'\uD83C\uDF93',l:'Grades',t:s.withGrade+' people with grade data. Most common: '+s.gradeData[0].grade+' ('+s.gradeData[0].count+'). Covers preschool through high school.'});
   var gapPct=Math.round(Math.max(s.noAge,s.noGender)/s.total*100);
   if(gapPct>15) o.push({e:'\u26A0\uFE0F',l:'Data Gap',t:'Up to '+gapPct+'% missing demographics. '+s.noAge+' missing age, '+s.noGender+' missing gender.'});
-  if(s.badAges>0) o.push({e:'\uD83D\uDEA8',l:'Alert',t:s.badAges+' records with invalid DOB (age <0 or >110). Likely data entry errors.'});
+
   if(s.topCity) o.push({e:'\uD83D\uDDFA\uFE0F',l:'Geography',t:Math.round(s.cities[0].count/s.total*100)+'% from '+s.topCity+'. Spans '+s.cities.length+'+ cities.'});
   if(s.guestCount>0) o.push({e:'\uD83D\uDC64',l:'Guest Accounts',t:s.guestCount+' guest users ('+s.guestHHCount+' HH) detected. These are checkout-only accounts with no demographic data. '+(s.guestCount>s.total*0.2?'High guest volume \u2014 consider prompting account creation at POS.':'')});
   return o;
@@ -946,12 +946,11 @@ function App() {
             </div>
 
             {/* Data quality alerts */}
-            {(s.badAges>0||s.maxHH>10||s.guestCount>0)&&(
+            {s.guestCount>0&&(
               <div style={{marginBottom:14}}>
                 {s.guestCount>0&&!includeGuests&&<div className="alert-card alert-info"><strong>{s.guestCount} guest accounts</strong> ({s.guestHHCount} households) detected and excluded from demographics. Guests are checkout-only accounts with no profile data. Toggle "Guests" in the toolbar to include them.</div>}
                 {s.guestCount>0&&includeGuests&&<div className="alert-card alert-warn"><strong>Guest accounts included</strong> — {s.guestCount} guest users are in this view. They have no demographic data (no DOB, city, phone) and will skew completeness metrics.</div>}
-                {s.badAges>0&&<div className="alert-card alert-warn"><strong>{s.badAges} records</strong> have invalid dates of birth (computed age &lt;0 or &gt;110). These are excluded from age statistics.</div>}
-                {s.maxHH>10&&<div className="alert-card alert-info">Largest household has <strong>{s.maxHH} members</strong>. This may be a test account or organizational account worth reviewing.</div>}
+
               </div>
             )}
 
