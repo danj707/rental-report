@@ -337,7 +337,7 @@ function compute(rows, includeGuests) {
 
   // Household sizes
   var hhMap = {};
-  rows.forEach(function(r){ var h=r['Household ID']; hhMap[h]=(hhMap[h]||0)+1; });
+  rows.forEach(function(r){ var h=r['Household ID']; if(h) hhMap[h]=(hhMap[h]||0)+1; });
   var hhCount = Object.keys(hhMap).length;
   var hhSizes = Object.values(hhMap).sort(function(a,b){return a-b;});
   var medianHH = hhSizes[Math.floor(hhSizes.length/2)];
@@ -452,6 +452,7 @@ function compute(rows, includeGuests) {
   var hhRevSeen={};
   rows.forEach(function(r){
     var hid=r['Household ID'];
+    if(!hid) return;
     if(!hhRevSeen[hid]) hhRevSeen[hid]={gross:num(col(r,['Gross Revenue','gross_revenue'])),refunds:num(col(r,['Refunds','refunds','Total Refunds'])),net:num(col(r,['Net Revenue','net_revenue'])),items:Math.round(num(col(r,['Items Purchased','items_purchased','Item Count']))),res:col(r,['Residency?','residency?','Residency']).trim()==='Yes',
       progRev:num(col(r,['Program Revenue','program_revenue'])),facRev:num(col(r,['Facility Revenue','facility_revenue'])),feeRev:num(col(r,['Fee Revenue','fee_revenue'])),prodRev:num(col(r,['Product Revenue','product_revenue']))};
   });
@@ -527,6 +528,7 @@ function compute(rows, includeGuests) {
   var hohInfoMap={};
   hohs.forEach(function(r){
     var hid=r['Household ID'];
+    if(!hid) return;
     if(!hohInfoMap[hid]) hohInfoMap[hid]={
       'First Name':r['First Name'],'Last Name':r['Last Name'],'Email':col(r,['Email','email']),
       'Phone':col(r,['Phone','phone']),'City':r['City'],'State':r['State'],'Zip Code':r['Zip Code'],
