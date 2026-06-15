@@ -2639,10 +2639,27 @@ app.get("/", (req, res) => {
     }
     .showcase-stat { text-align: center; }
     .showcase-stat-num {
-      font-size: 22px; font-weight: 800; color: #fff;
+      font-size: 26px; font-weight: 800; color: #fff; font-variant-numeric: tabular-nums;
     }
     .showcase-stat-label {
-      font-size: 11px; color: #a5b4fc; text-transform: uppercase; letter-spacing: .04em; margin-top: 2px;
+      font-size: 10px; color: #a5b4fc; text-transform: uppercase; letter-spacing: .06em; margin-top: 2px;
+    }
+    .ticker-wrap {
+      margin-top: 20px; overflow: hidden; position: relative;
+      mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent);
+      -webkit-mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent);
+    }
+    .ticker {
+      display: flex; gap: 32px; white-space: nowrap;
+      animation: ticker-scroll 30s linear infinite;
+    }
+    .ticker-item {
+      font-size: 12px; color: #c7d2fe; display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0;
+    }
+    .ticker-dot { width: 5px; height: 5px; border-radius: 50%; background: #818cf8; flex-shrink: 0; }
+    @keyframes ticker-scroll {
+      0% { transform: translateX(0); }
+      100% { transform: translateX(-50%); }
     }
     /* Gallery */
     .showcase-gallery {
@@ -2924,21 +2941,28 @@ app.get("/", (req, res) => {
           </p>
           <div class="showcase-stats">
             <div class="showcase-stat">
-              <div class="showcase-stat-num">${Object.keys(ORGS).length}</div>
+              <div class="showcase-stat-num" data-count="${Object.keys(ORGS).length}">0</div>
               <div class="showcase-stat-label">Organizations</div>
             </div>
             <div class="showcase-stat">
-              <div class="showcase-stat-num">${REPORT_TYPES.length}</div>
+              <div class="showcase-stat-num" data-count="${REPORT_TYPES.length}">0</div>
               <div class="showcase-stat-label">Report Types</div>
             </div>
             <div class="showcase-stat">
-              <div class="showcase-stat-num">AI</div>
-              <div class="showcase-stat-label">Chat &amp; Insights</div>
+              <div class="showcase-stat-num" data-count="${Object.keys(ORGS).reduce((s,k) => s + REPORT_TYPES.filter(r => ORGS[k][r]?.mbUuid).length, 0)}">0</div>
+              <div class="showcase-stat-label">Live Reports</div>
             </div>
             <div class="showcase-stat">
-              <div class="showcase-stat-num">PDF</div>
-              <div class="showcase-stat-label">Export &amp; Email</div>
+              <div class="showcase-stat-num" data-text="AI">AI</div>
+              <div class="showcase-stat-label">Insights & Chat</div>
             </div>
+            <div class="showcase-stat">
+              <div class="showcase-stat-num" data-text="PDF">PDF</div>
+              <div class="showcase-stat-label">Export & Email</div>
+            </div>
+          </div>
+          <div class="ticker-wrap">
+            <div class="ticker" id="feature-ticker"></div>
           </div>
         </div>
       </div>
@@ -3387,6 +3411,52 @@ app.get("/", (req, res) => {
     }
   </script>
   <script>
+    // ── Animated counters ─────────────────────────────────
+    (function(){
+      function animateCounters(){
+        document.querySelectorAll('[data-count]').forEach(function(el){
+          var target = parseInt(el.getAttribute('data-count'));
+          var duration = 1200;
+          var start = performance.now();
+          function tick(now){
+            var elapsed = now - start;
+            var progress = Math.min(elapsed / duration, 1);
+            var eased = 1 - Math.pow(1 - progress, 3);
+            el.textContent = Math.round(eased * target);
+            if (progress < 1) requestAnimationFrame(tick);
+          }
+          requestAnimationFrame(tick);
+        });
+      }
+      // Feature ticker
+      var features = [
+        'Facility Rental Schedules','GL Revenue Breakdown','Program Revenue by Section',
+        'Court Utilization Heatmaps','Product Sales Analytics','Membership Tracking',
+        'Roster Management','User Demographics','Revenue by Category',
+        'Geographic Heatmaps','Cross-Sell Analysis','Guest Detection',
+        'AI-Powered Insights','PDF Export','Email Subscriptions',
+        'Daily Auto-Cache','CSV Targeting Export','Spend Tier Analysis',
+        'Conversion Funnels','Lapsing Household Alerts','Revenue Levers',
+        'Fast Track Bookings','Historic Site Rentals','Real-Time Dashboards'
+      ];
+      var ticker = document.getElementById('feature-ticker');
+      if (ticker) {
+        var html = '';
+        // Duplicate for seamless loop
+        for (var i = 0; i < 2; i++) {
+          features.forEach(function(f){
+            html += '<span class="ticker-item"><span class="ticker-dot"></span>' + f + '</span>';
+          });
+        }
+        ticker.innerHTML = html;
+      }
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', animateCounters);
+      } else {
+        setTimeout(animateCounters, 100);
+      }
+    })();
+
     // ── Add reports to an existing org ─────────────────
     const ADD_REPORT_ORGS = ${JSON.stringify(addReportOrgs)};
     const ADD_REPORT_META = ${JSON.stringify(addReportMeta)};
