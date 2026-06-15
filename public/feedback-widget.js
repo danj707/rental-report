@@ -179,22 +179,27 @@
     var down = document.createElement("button");
     down.type = "button"; down.className = "fb-thumb"; down.innerHTML = "\uD83D\uDC4E";
     down.title = "This report needs work";
-    function vote(sentiment, btn){
+    function vote(sentiment, btn, otherBtn){
       btn.classList.add("voted");
-      fetch("/api/feedback", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          message: sentiment === "up" ? "\uD83D\uDC4D Report is helpful" : "\uD83D\uDC4E Report needs work",
-          email: "",
-          page: window.location.pathname + window.location.search,
-          userAgent: navigator.userAgent,
-          quickVote: sentiment
-        })
-      }).catch(function(){});
+      otherBtn.classList.add("voted");
+      // Parse org/report from URL: /:org/:report/...
+      var parts = window.location.pathname.split("/").filter(Boolean);
+      var org = parts[0] || "";
+      var report = parts[1] || "";
+      var qs = window.location.search || "";
+      var tokenMatch = qs.match(/token=([^&]+)/);
+      var tokenQS = tokenMatch ? "?token=" + tokenMatch[1] : "";
+      if (org && report) {
+        fetch("/" + org + "/" + report + "/api/vote" + tokenQS, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sentiment: sentiment })
+        }).catch(function(){});
+      }
+      btn.innerHTML = sentiment === "up" ? "\uD83D\uDC4D\u2714" : "\uD83D\uDC4E\u2714";
     }
-    up.addEventListener("click", function(){ vote("up", up); });
-    down.addEventListener("click", function(){ vote("down", down); });
+    up.addEventListener("click", function(){ vote("up", up, down); });
+    down.addEventListener("click", function(){ vote("down", down, up); });
     wrap.appendChild(up);
     wrap.appendChild(down);
     document.body.appendChild(wrap);

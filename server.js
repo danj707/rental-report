@@ -283,6 +283,24 @@ const LOG_FILE    = path.join(DATA_DIR, "send_log.json");
 const EVENTS_FILE = path.join(DATA_DIR, "events.jsonl");
 const SHOWCASE_FILE = path.join(DATA_DIR, "showcase.json");
 const VISIBILITY_FILE = path.join(DATA_DIR, "report-visibility.json");
+const VOTES_FILE = path.join(DATA_DIR, "votes.json");
+
+// ── Vote tracker ──────────────────────────────────────────────────────
+function loadVotes() {
+  try { return JSON.parse(fs.readFileSync(VOTES_FILE, "utf8")); } catch (_) { return {}; }
+}
+function saveVotes(votes) {
+  fs.writeFileSync(VOTES_FILE, JSON.stringify(votes, null, 2));
+}
+function recordVote(org, report, sentiment) {
+  const votes = loadVotes();
+  const key = `${org}:${report}`;
+  if (!votes[key]) votes[key] = { up: 0, down: 0 };
+  if (sentiment === "up") votes[key].up++;
+  else if (sentiment === "down") votes[key].down++;
+  saveVotes(votes);
+  return votes[key];
+}
 
 // Merge any dynamically-added orgs from data/orgs.json into ORGS
 try {
@@ -1920,6 +1938,37 @@ app.get('/hotdog', (_req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'hotdog.html'));
 });
 
+// ── POST /:org/:report/api/vote — quick thumbs up/down ──────────────
+app.post("/:org/:report/api/vote", (req, res) => {
+  const org = req.params.org;
+  const report = req.params.report;
+  const { sentiment } = req.body || {};
+  if (!ORGS[org]) return res.status(404).json({ error: "Unknown org" });
+  if (!["up", "down"].includes(sentiment)) return res.status(400).json({ error: "sentiment must be up or down" });
+  const counts = recordVote(org, report, sentiment);
+  console.log(`[vote] ${org}/${report} ${sentiment} → ${JSON.stringify(counts)}`);
+  res.json({ ok: true, counts });
+});
+
+// ── GET /:org/admin/votes — vote counts for admin dashboard ─────────
+app.get("/:org/admin/votes", (req, res) => {
+  if (!ORGS[req.params.org]) return res.status(404).json({ error: "Unknown org" });
+  const votes = loadVotes();
+  const orgVotes = {};
+  for (const [key, counts] of Object.entries(votes)) {
+    if (key.startsWith(req.params.org + ":")) {
+      const report = key.split(":")[1];
+      orgVotes[report] = counts;
+    }
+  }
+  res.json(orgVotes);
+});
+
+// ── GET /admin/votes — all vote counts (cross-org) ──────────────────
+app.get("/admin/votes", (req, res) => {
+  res.json(loadVotes());
+});
+
 // ── POST /api/feedback — user feedback → dan@rec.us ─────────────────
 // Whitelisted by the org token gate (all /api/* paths pass through).
 // Body: { message: string, email?: string, page?: string, userAgent?: string }
@@ -2421,6 +2470,7 @@ app.get("/", (req, res) => {
   };
 
   const hiddenReports = getAllHiddenReports();
+  const allVotes = loadVotes();
 
   const orgSections = Object.entries(ORGS).map(([slug, org]) => {
     const available    = REPORT_TYPES.filter(r => org[r]?.mbUuid);
@@ -2441,6 +2491,7 @@ app.get("/", (req, res) => {
             <div class="report-label">${m.label}</div>
             <div class="report-desc">${m.desc}</div>
             ${m.ai ? '<span class="ai-pill">\u2726 AI enhanced</span>' : ''}
+            ${(() => { const v = allVotes[slug + ':' + r]; return v && (v.up || v.down) ? '<span style="font-size:10px;color:#6b7280;margin-top:3px;">\uD83D\uDC4D ' + (v.up||0) + ' \u00B7 \uD83D\uDC4E ' + (v.down||0) + '</span>' : ''; })()}
           </div>
           <button type="button" class="vis-toggle" onclick="event.preventDefault();event.stopPropagation();toggleVis('${slug}','${r}',this)" title="${isHidden ? 'Hidden from org page' : 'Visible on org page'}">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style="display:${isHidden ? 'none' : 'block'}"><path d="M8 3C3 3 1 8 1 8s2 5 7 5 7-5 7-5-2-5-7-5z" stroke="currentColor" stroke-width="1.5" fill="none"/><circle cx="8" cy="8" r="2" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>
