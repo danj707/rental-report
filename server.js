@@ -3646,18 +3646,25 @@ app.get("/", (req, res) => {
     // Newest first. Add a new entry at the TOP for every change we ship.
     // History below back-filled from the GitHub commit log.
     const UPDATES = [
-      { date: '2026-06-14', title: 'Users Report \u2014 full household demographic dashboard', items: [
-        'Major expansion: Users report now includes ALL household members (dependents/kids), not just Head of Household. Reveals the full demographic picture \u2014 youth ages, grade distribution, household sizes',
-        'New panels: Household Size distribution, Age by Role (HoH vs Member stacked), Data Quality alerts (bad DOBs, outlier households), tabbed UI (Demographics + Revenue placeholder)',
-        'New report: Users \u2014 full demographic breakdown of all head-of-household accounts. Shows total users, residency rate, median age, gender, grade, data completeness rings, signup velocity, age distribution (stacked by residency), geographic breakdown by city, and residency rate by age group',
-        'Auto-generated Key Observations panel synthesizes the data into actionable insights (growth spikes, demographic skew, data gaps, geographic concentration)',
-        'Rec Insights AI analysis available \u2014 sends aggregate demographic summary (no PII) for 4\u20136 actionable insight cards',
-        'First org: Watertown. Phase 2 will add revenue integration and full household profile expansion',
+      { date: '2026-06-14', title: 'Users Report \u2014 3-tab demographic + revenue + strategy intelligence', items: [
+        'New report: Users \u2014 full household demographic, revenue, and strategic intelligence dashboard with 3 tabs',
+        'Demographics tab: KPIs (households, people, residents%, median age, grade coverage), Key Observations with emojis (stripped in PDF), Rec AI Insights, HH size distribution, residency & completeness rings, data quality alerts, signups by month, cumulative growth, age by role (stacked), gender donut, residency by age, grade distribution, city breakdown',
+        'Revenue tab: KPIs (net revenue, median/HH, conversion%, unbooked count, refund rate), spend tier labels (Low Spender/Typical/Active/Power User/Super Fan), Key Observations, Rec AI Insights, revenue distribution histogram, resident vs non-resident comparison, revenue by HH size, Pareto concentration curve, conversion funnel, revenue by category (Programs/Facilities/Fees/Products with donut + breakdown)',
+        'Strategy tab: Geographic heatmap (Leaflet + zippopotam.us geocoding, Households/Revenue toggle, color gradient circles, cached in localStorage), Key Observations, Rec AI Insights, Revenue Levers with dollar amounts + CSV export (unbooked conversion, non-resident parity, solo HH activation), Who\u2019s Not Buying comparison table, Lapsing Households (90+ days), Revenue by Member Age, Grade Gap Analysis, Cross-Sell Opportunities (programs-only vs facility-only HH with CSV export)',
+        'Guest detection: first_name=Guest or email starts with guest-user+guest-. Toolbar toggle (OFF by default), excluded from demographics but included in revenue. High guest volume triggers POS recommendation',
+        'Staff filtering: @rec.us emails silently stripped from all analysis',
+        'Daily 5am pre-cache cron with 24h TTL. Cache banner shows date/time with Refresh Now button. Startup pre-warm after 15s',
+        'Tab-specific AI insights: switching tabs clears previous insights, each tab sends different data blob (demographic/revenue/strategy focused)',
+        'PDF export via Puppeteer. Emojis in observations wrapped in <span class=emoji> hidden via print-mode CSS',
+        'Dark toolbar matching other reports. Juice glass loading animation on all loading states',
+        'SQL: org_households CTE via organization_association, template tags moved to outer WHERE for Metabase compatibility. Revenue from materialized.item_log_report with 4-way category split (reservation-enrollment, site-reservation, transaction-fee, product)',
+        'Deployed to Watertown, Clarksville, Norman, Apex. Empty Household ID guard prevents phantom mega-households',
       ] },
-      { date: '2026-06-14', title: 'Report visibility toggles on admin dashboard', items: [
-        'Admin dashboard report cards now show an eye icon on hover \u2014 click to hide or show a report on that org\u2019s landing page',
-        'Hidden reports appear dimmed with a strikethrough label on the admin dashboard so you can always re-enable them',
-        'Visibility state persists across deploys (stored on the data volume); toggling requires the dashboard password',
+      { date: '2026-06-14', title: 'Platform updates', items: [
+        'Dashboard title rebranded to Rec Technologies \u2014 Intelligent Reporting',
+        'Feedback widget: Goes straight to Rec Partner Success (was Dan). Thumbs up/down quick vote buttons with server-side tracking (data/votes.json). Vote counts shown on admin dashboard report cards',
+        'Report visibility toggles on admin dashboard \u2014 eye icon to hide/show reports on org landing page',
+      ] },
       ] },
       { date: '2026-06-12', title: 'Rec AI Chat — ask anything about your data', items: [
         'New: Rec AI Chat — a conversational AI assistant that can answer questions across all of an org\u2019s reports. Pulls live data from every configured Metabase report, streams responses in real time, and supports follow-up questions with full conversation context',
