@@ -3665,7 +3665,6 @@ app.get("/", (req, res) => {
         'Feedback widget: Goes straight to Rec Partner Success (was Dan). Thumbs up/down quick vote buttons with server-side tracking (data/votes.json). Vote counts shown on admin dashboard report cards',
         'Report visibility toggles on admin dashboard \u2014 eye icon to hide/show reports on org landing page',
       ] },
-      ] },
       { date: '2026-06-12', title: 'Rec AI Chat — ask anything about your data', items: [
         'New: Rec AI Chat — a conversational AI assistant that can answer questions across all of an org\u2019s reports. Pulls live data from every configured Metabase report, streams responses in real time, and supports follow-up questions with full conversation context',
         'Suggested questions adapt to each org\u2019s available reports (facility schedules, GL codes, programs, products, memberships, court utilization, Fast Track)',
