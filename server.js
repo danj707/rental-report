@@ -196,6 +196,7 @@ const ORGS = {
   apex: {
     token:   "pcj5Qf0Wts7Wzc7P",
     orgId:   "aeba47d0-c97f-49cb-a0e9-93c5af3a68fa",
+    healthTimeoutMs: 60000,
     logoUrl: "https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2Forganization-aeba47d0-c97f-49cb-a0e9-93c5af3a68fa%2FfullLogo.png%3F1765923560125&w=1920&q=75",
     facility: { mbUuid: "c641a437-49c7-49f8-82bd-3417a7e3754b", defaultDateRange: 8, defaultLocationFilter: "Apex Center" },
     programs: { mbUuid: "dee5b922-303f-47d9-abe3-75597410ad67" },
@@ -328,7 +329,8 @@ async function runHealthCheck() {
       const entry = { status: "ok", rows: 0, checkedAt: ts };
       try {
         const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 30000);
+        const timeoutMs = org.healthTimeoutMs || 30000;
+        const timeout = setTimeout(() => controller.abort(), timeoutMs);
         const url = `${METABASE_URL}/api/public/card/${mbUuid}/query/json`;
         const resp = await fetch(url, { signal: controller.signal });
         clearTimeout(timeout);
@@ -347,7 +349,7 @@ async function runHealthCheck() {
         }
       } catch (err) {
         entry.status = "error";
-        entry.error = err.name === "AbortError" ? "Timeout (30s)" : err.message;
+        entry.error = err.name === "AbortError" ? `Timeout (${(org.healthTimeoutMs||30000)/1000}s)` : err.message;
         results.failures.push({ org: slug, report: rt, error: entry.error });
       }
       results.reports[slug][rt] = entry;
