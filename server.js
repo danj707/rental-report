@@ -288,6 +288,50 @@ const SHOWCASE_FILE = path.join(DATA_DIR, "showcase.json");
 const VISIBILITY_FILE = path.join(DATA_DIR, "report-visibility.json");
 const VOTES_FILE = path.join(DATA_DIR, "votes.json");
 const HEALTH_FILE = path.join(DATA_DIR, "health-check.json");
+const HEALTH_CONFIG_FILE = path.join(DATA_DIR, "health-config.json");
+
+// ── Health check tiers ───────────────────────────────────────────────
+// Interval in minutes per tier.  "critical" is public-facing (calendar),
+// "standard" is the bread-and-butter reports, "low" is niche.
+const HEALTH_TIERS = { critical: 60, standard: 360, low: 1440 };
+
+// Default tier per report type (admin can override per org/report)
+const DEFAULT_REPORT_TIER = {
+  calendar:            "critical",
+  facility:            "critical",
+  gl:                  "standard",
+  programs:            "standard",
+  products:            "standard",
+  "court-utilization": "standard",
+  users:               "standard",
+  fasttrack:           "standard",
+  memberships:         "standard",
+  historic:            "low",
+  roster:              "low",
+  overview:            "low",
+  hotdog:              "low",
+};
+
+function loadHealthConfig() {
+  try { return JSON.parse(fs.readFileSync(HEALTH_CONFIG_FILE, "utf8")); } catch { return {}; }
+}
+function saveHealthConfig(cfg) {
+  fs.writeFileSync(HEALTH_CONFIG_FILE, JSON.stringify(cfg, null, 2));
+}
+
+// Resolve tier for a specific org/report.  Config can override at
+// org level ("clarksville": { "_default": "critical" }) or per-report
+// ("clarksville": { "gl": "critical" }).
+function getTier(slug, report) {
+  const cfg = loadHealthConfig();
+  const orgCfg = cfg[slug] || {};
+  return orgCfg[report] || orgCfg._default || DEFAULT_REPORT_TIER[report] || "standard";
+}
+
+function getTierMinutes(tier) {
+  return HEALTH_TIERS[tier] || HEALTH_TIERS.standard;
+}
+
 
 // ── Vote tracker ──────────────────────────────────────────────────────
 function loadVotes() {
@@ -314,75 +358,120 @@ function saveHealthResults(results) {
   fs.writeFileSync(HEALTH_FILE, JSON.stringify(results, null, 2));
 }
 
-async function runHealthCheck() {
-  console.log("[health] Starting daily health check…");
-  const ts = new Date().toISOString();
-  const results = { timestamp: ts, reports: {}, failures: [] };
+async function runHealthCheck(forceAll) {
+  const now = Date.now();
+  const ts = new Date(now).toISOString();
+  const existing = loadHealthResults() || { timestamp: ts, reports: {}, failures: [] };
 
+  // Build list of (slug, report) pairs that are due for a check
+  const toCheck = [];
   for (const slug of Object.keys(ORGS)) {
     const org = ORGS[slug];
     if (!org.token) continue;
-    results.reports[slug] = {};
-
     for (const rt of REPORT_TYPES) {
-      const mbUuid = org[rt]?.mbUuid;
-      if (!mbUuid) continue;
-
-      const entry = { status: "ok", rows: 0, checkedAt: ts };
-      try {
-        const controller = new AbortController();
-        const timeoutMs = org.healthTimeoutMs || 30000;
-        const timeout = setTimeout(() => controller.abort(), timeoutMs);
-        const url = `${METABASE_URL}/api/public/card/${mbUuid}/query/json`;
-        const resp = await fetch(url, { signal: controller.signal });
-        clearTimeout(timeout);
-
-        if (!resp.ok) {
-          entry.status = "error";
-          entry.error = `HTTP ${resp.status}`;
-          results.failures.push({ org: slug, report: rt, error: entry.error });
-        } else {
-          const data = await resp.json();
-          entry.rows = Array.isArray(data) ? data.length : 0;
-          if (entry.rows === 0) {
-            entry.status = "empty";
-            // Don't alert on empty — some reports legitimately have no data for default params
-          }
-        }
-      } catch (err) {
-        entry.status = "error";
-        entry.error = err.name === "AbortError" ? `Timeout (${(org.healthTimeoutMs||30000)/1000}s)` : err.message;
-        results.failures.push({ org: slug, report: rt, error: entry.error });
-      }
-      results.reports[slug][rt] = entry;
+      if (!org[rt]?.mbUuid) continue;
+      if (forceAll) { toCheck.push({ slug, rt }); continue; }
+      const prev = existing.reports?.[slug]?.[rt];
+      const tier = getTier(slug, rt);
+      const intervalMs = getTierMinutes(tier) * 60000;
+      const lastCheck = prev?.checkedAt ? new Date(prev.checkedAt).getTime() : 0;
+      if (now - lastCheck >= intervalMs) toCheck.push({ slug, rt, tier });
     }
   }
 
-  saveHealthResults(results);
+  if (toCheck.length === 0) return existing;
 
-  const fCount = results.failures.length;
-  console.log(`[health] Check complete: ${fCount} failure(s)`);
+  const tierLabel = forceAll ? "manual" : [...new Set(toCheck.map(t => t.tier || "all"))].join("/");
+  console.log(`[health] Checking ${toCheck.length} report(s) [${tierLabel}]…`);
 
-  // Email alert on failures
-  if (fCount > 0) {
+  const newFailures = [];
+
+  for (const { slug, rt } of toCheck) {
+    const org = ORGS[slug];
+    const mbUuid = org[rt].mbUuid;
+    if (!existing.reports[slug]) existing.reports[slug] = {};
+
+    const entry = { status: "ok", rows: 0, checkedAt: ts };
+    try {
+      const controller = new AbortController();
+      const timeoutMs = org.healthTimeoutMs || 30000;
+      const timeout = setTimeout(() => controller.abort(), timeoutMs);
+      const url = `${METABASE_URL}/api/public/card/${mbUuid}/query/json`;
+      const resp = await fetch(url, { signal: controller.signal });
+      clearTimeout(timeout);
+
+      if (!resp.ok) {
+        entry.status = "error";
+        entry.error = `HTTP ${resp.status}`;
+      } else {
+        const data = await resp.json();
+        entry.rows = Array.isArray(data) ? data.length : 0;
+        if (entry.rows === 0) entry.status = "empty";
+      }
+    } catch (err) {
+      entry.status = "error";
+      entry.error = err.name === "AbortError" ? `Timeout (${(org.healthTimeoutMs||30000)/1000}s)` : err.message;
+    }
+
+    // Carry forward tier info for display
+    entry.tier = getTier(slug, rt);
+
+    // Detect NEW failure (wasn't failing before, or was alerted >6h ago)
+    if (entry.status === "error") {
+      const prev = existing.reports[slug]?.[rt];
+      const prevWasError = prev?.status === "error";
+      const lastAlerted = prev?.lastAlertedAt ? new Date(prev.lastAlertedAt).getTime() : 0;
+      const suppressWindow = 6 * 3600000; // don't re-alert same failure within 6h
+      if (!prevWasError || (now - lastAlerted >= suppressWindow)) {
+        newFailures.push({ org: slug, report: rt, error: entry.error, tier: entry.tier });
+        entry.lastAlertedAt = ts;
+      } else {
+        entry.lastAlertedAt = prev.lastAlertedAt; // carry forward
+      }
+    }
+
+    existing.reports[slug][rt] = entry;
+  }
+
+  existing.timestamp = ts;
+  // Rebuild global failures list from all current results
+  existing.failures = [];
+  for (const [slug, reports] of Object.entries(existing.reports)) {
+    for (const [rt, e] of Object.entries(reports)) {
+      if (e.status === "error") existing.failures.push({ org: slug, report: rt, error: e.error });
+    }
+  }
+
+  saveHealthResults(existing);
+  console.log(`[health] Done — ${newFailures.length} new failure(s), ${existing.failures.length} total failing`);
+
+  // Email only for NEW failures (deduped)
+  if (newFailures.length > 0) {
     const resend = getResendClient();
     if (resend) {
-      const lines = results.failures.map(f => `• ${f.org}/${f.report}: ${f.error}`).join("<br>");
+      const lines = newFailures.map(f => {
+        const tierBadge = f.tier === "critical" ? "🔴" : f.tier === "standard" ? "🟡" : "⚪";
+        return `${tierBadge} <strong>${f.org}/${f.report}</strong> [${f.tier}]: ${f.error}`;
+      }).join("<br>");
+      const totalFailing = existing.failures.length;
       try {
         await resend.emails.send({
           from: `${FROM_NAME} <${FROM_EMAIL}>`,
           to: "dan@rec.us",
-          subject: `⚠️ Health Check: ${fCount} report(s) failing`,
-          html: `<p>Daily health check found <strong>${fCount}</strong> failing report(s):</p><p style="font-family:monospace">${lines}</p><p style="color:#6b7280;font-size:12px">Checked at ${ts}</p>`,
+          subject: `⚠️ ${newFailures.length} new report failure(s) — ${totalFailing} total failing`,
+          html: `<p><strong>${newFailures.length}</strong> new failure(s) detected:</p>`
+            + `<p style="font-family:monospace;font-size:13px;line-height:1.8">${lines}</p>`
+            + (totalFailing > newFailures.length ? `<p style="color:#6b7280;font-size:12px">${totalFailing} report(s) still failing overall</p>` : "")
+            + `<p style="color:#6b7280;font-size:12px">Tier schedule: critical=hourly, standard=6h, low=daily<br>Checked at ${ts}</p>`,
         });
-        console.log(`[health] Alert email sent (${fCount} failures)`);
+        console.log(`[health] Alert email sent (${newFailures.length} new failures)`);
       } catch (e) {
         console.error("[health] Failed to send alert email:", e.message);
       }
     }
   }
 
-  return results;
+  return existing;
 }
 
 // Merge any dynamically-added orgs from data/orgs.json into ORGS
@@ -1050,7 +1139,7 @@ async function prewarmUsersCache() {
   console.log("[users-cache] Pre-warm complete");
 }
 cron.schedule("0 5 * * *", prewarmUsersCache); // 5am daily
-cron.schedule("0 6 * * *", runHealthCheck);    // 6am daily health check
+cron.schedule("5 * * * *", () => runHealthCheck());  // every hour at :05, checks only what's due per tier
 // Also pre-warm on startup (after a short delay to let server settle)
 setTimeout(prewarmUsersCache, 15000);
 
@@ -2502,11 +2591,50 @@ app.get("/api/health-check", (req, res) => {
 app.post("/api/health-check/run", express.json(), async (req, res) => {
   if (dashboardPasswordBlocked(req, res)) return;
   try {
-    const results = await runHealthCheck();
+    const results = await runHealthCheck(true);  // forceAll
     res.json(results);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// ── GET /api/health-config — current tier configuration ──────────────
+app.get("/api/health-config", (req, res) => {
+  res.json({
+    tiers: HEALTH_TIERS,
+    defaults: DEFAULT_REPORT_TIER,
+    overrides: loadHealthConfig(),
+  });
+});
+
+// ── POST /api/health-config — update tier for org/report ─────────────
+// Body: { org, report?, tier } — sets tier for a specific report, or
+//        org-wide default if report is "_default" or omitted.
+// Tier must be "critical", "standard", or "low".
+app.post("/api/health-config", express.json(), (req, res) => {
+  if (dashboardPasswordBlocked(req, res)) return;
+  const { org, report, tier } = req.body || {};
+  if (!ORGS[org]) return res.status(404).json({ error: "Unknown org" });
+  if (!HEALTH_TIERS[tier]) return res.status(400).json({ error: "Tier must be critical, standard, or low" });
+  const cfg = loadHealthConfig();
+  if (!cfg[org]) cfg[org] = {};
+  cfg[org][report || "_default"] = tier;
+  saveHealthConfig(cfg);
+  res.json({ ok: true, config: cfg[org] });
+});
+
+// ── DELETE /api/health-config — remove tier override ─────────────────
+app.delete("/api/health-config", express.json(), (req, res) => {
+  if (dashboardPasswordBlocked(req, res)) return;
+  const { org, report } = req.body || {};
+  if (!org) return res.status(400).json({ error: "org required" });
+  const cfg = loadHealthConfig();
+  if (cfg[org]) {
+    delete cfg[org][report || "_default"];
+    if (Object.keys(cfg[org]).length === 0) delete cfg[org];
+    saveHealthConfig(cfg);
+  }
+  res.json({ ok: true, config: cfg[org] || {} });
 });
 
 // ── POST /api/admin/links — list every org's reports + current links ──
@@ -2848,6 +2976,7 @@ app.get("/", (req, res) => {
   const hiddenReports = getAllHiddenReports();
   const allVotes = loadVotes();
   const healthData = loadHealthResults();
+  const healthCfg = loadHealthConfig();
 
   const orgSections = Object.entries(ORGS).map(([slug, org]) => {
     const available    = REPORT_TYPES.filter(r => org[r]?.mbUuid);
@@ -2870,7 +2999,18 @@ app.get("/", (req, res) => {
             ${m.ai ? '<span class="ai-pill">\u2726 AI enhanced</span>' : ''}
             ${m.wcag ? '<span class="wcag-pill">\u2713 WCAG AA</span>' : ''}
             ${(() => { const v = allVotes[slug + ':' + r]; return v && (v.up || v.down) ? '<span style="font-size:10px;color:#6b7280;margin-top:3px;">\uD83D\uDC4D ' + (v.up||0) + ' \u00B7 \uD83D\uDC4E ' + (v.down||0) + '</span>' : ''; })()}
-            ${(() => { const h = healthData?.reports?.[slug]?.[r]; if (!h) return ''; const d = new Date(h.checkedAt); const ds = d.toLocaleDateString('en-US',{month:'short',day:'numeric'}); if (h.status === 'ok') return '<span class="health-badge health-ok" title="Verified ' + ds + ' (' + h.rows + ' rows)">\u2705 Verified ' + ds + '</span>'; if (h.status === 'empty') return '<span class="health-badge health-empty" title="Returned 0 rows on ' + ds + '">\u26A0\uFE0F Empty ' + ds + '</span>'; return '<span class="health-badge health-error" title="' + (h.error || 'Error') + '">\u274C Failed ' + ds + '</span>'; })()}
+            ${(() => {
+              const tier = (healthCfg[slug] || {})[r] || (healthCfg[slug] || {})._default || '${DEFAULT_REPORT_TIER[r] || "standard"}';
+              const tierColors = { critical: '#ef4444', standard: '#f59e0b', low: '#94a3b8' };
+              const tierIcons = { critical: '\u{1F534}', standard: '\u{1F7E1}', low: '\u26AA' };
+              const tierBadge = '<span class="tier-badge" style="background:' + tierColors[tier] + '20;color:' + tierColors[tier] + '" title="Monitoring: ' + tier + ' (' + ({critical:'hourly',standard:'6h',low:'daily'}[tier]) + ')' + '\nClick to change" data-org="' + slug + '" data-report="' + r + '" data-tier="' + tier + '" onclick="event.preventDefault();event.stopPropagation();cycleTier(this)">' + tierIcons[tier] + ' ' + tier + '</span>';
+              const h = healthData?.reports?.[slug]?.[r];
+              if (!h) return tierBadge;
+              const d = new Date(h.checkedAt); const ds = d.toLocaleDateString('en-US',{month:'short',day:'numeric'});
+              if (h.status === 'ok') return '<span class="health-badge health-ok" title="Verified ' + ds + ' (' + h.rows + ' rows)">\u2705 Verified ' + ds + '</span>' + tierBadge;
+              if (h.status === 'empty') return '<span class="health-badge health-empty" title="Returned 0 rows on ' + ds + '">\u26A0\uFE0F Empty ' + ds + '</span>' + tierBadge;
+              return '<span class="health-badge health-error" title="' + (h.error || 'Error') + '">\u274C Failed ' + ds + '</span>' + tierBadge;
+            })()}
           </div>
           <button type="button" class="vis-toggle" onclick="event.preventDefault();event.stopPropagation();toggleVis('${slug}','${r}',this)" title="${isHidden ? 'Hidden from org page' : 'Visible on org page'}">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style="display:${isHidden ? 'none' : 'block'}"><path d="M8 3C3 3 1 8 1 8s2 5 7 5 7-5 7-5-2-5-7-5z" stroke="currentColor" stroke-width="1.5" fill="none"/><circle cx="8" cy="8" r="2" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>
@@ -3128,6 +3268,8 @@ app.get("/", (req, res) => {
     .health-ok { background: #dcfce7; color: #15803d; }
     .health-empty { background: #fef9c3; color: #a16207; }
     .health-error { background: #fee2e2; color: #b91c1c; }
+    .tier-badge { display: inline-flex; align-items: center; gap: 3px; font-size: 9px; font-weight: 600; padding: 1px 6px; border-radius: 8px; margin-top: 3px; margin-left: 4px; cursor: pointer; text-transform: capitalize; transition: filter .15s; }
+    .tier-badge:hover { filter: brightness(.88); }
     .org-name-link { font-weight: 700; font-size: 14px; color: inherit; text-decoration: none; }
     .org-name-link:hover { color: #16a34a; text-decoration: underline; }
     .metrics-toggle-row { display: flex; align-items: center; gap: 10px; padding: 8px 16px; border-top: 1px solid #e8e5df; background: #fafaf8; }
@@ -3230,6 +3372,7 @@ app.get("/", (req, res) => {
        onmouseover="this.style.color='#c4b5fd'" onmouseout="this.style.color='#a78bfa'">↗ Add Credits</a>
     <span style="color:#444;margin:0 4px">|</span>
     <span style="color:#666;font-weight:600;text-transform:uppercase;letter-spacing:.06em;font-size:10px">Health</span>
+    <span style="color:#555;font-size:9px" title="critical=hourly, standard=6h, low=daily">(tiered)</span>
     ${(() => {
       const hc = healthData;
       if (!hc || !hc.timestamp) return '<span style="color:#999">No check yet</span>';
@@ -3275,6 +3418,18 @@ app.get("/", (req, res) => {
       btn.textContent = fc === 0 ? '\u2705 Done' : '\u274C ' + fc + ' failed';
       setTimeout(() => location.reload(), 1500);
     } catch(e) { btn.textContent = 'Error'; }
+  }
+  async function cycleTier(el) {
+    var tiers = ['critical', 'standard', 'low'];
+    var cur = el.dataset.tier;
+    var next = tiers[(tiers.indexOf(cur) + 1) % tiers.length];
+    var pwd = prompt('Set ' + el.dataset.org + '/' + el.dataset.report + ' to ' + next + '?\\nDashboard password:');
+    if (!pwd) return;
+    try {
+      var r = await fetch('/api/health-config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: pwd, org: el.dataset.org, report: el.dataset.report, tier: next }) });
+      if (!r.ok) { var d = await r.json(); alert(d.error || 'Failed'); return; }
+      location.reload();
+    } catch(e) { alert('Error: ' + e.message); }
   }
   </script>
   <!-- ── Add Org Modal ── -->
