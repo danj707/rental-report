@@ -3000,7 +3000,7 @@ app.get("/", (req, res) => {
             ${m.wcag ? '<span class="wcag-pill">\u2713 WCAG AA</span>' : ''}
             ${(() => { const v = allVotes[slug + ':' + r]; return v && (v.up || v.down) ? '<span style="font-size:10px;color:#6b7280;margin-top:3px;">\uD83D\uDC4D ' + (v.up||0) + ' \u00B7 \uD83D\uDC4E ' + (v.down||0) + '</span>' : ''; })()}
             ${(() => {
-              const tier = (healthCfg[slug] || {})[r] || (healthCfg[slug] || {})._default || '${DEFAULT_REPORT_TIER[r] || "standard"}';
+              const tier = getTier(slug, r);
               const tierColors = { critical: '#ef4444', standard: '#f59e0b', low: '#94a3b8' };
               const tierIcons = { critical: '\u{1F534}', standard: '\u{1F7E1}', low: '\u26AA' };
               const tierBadge = '<span class="tier-badge" style="background:' + tierColors[tier] + '20;color:' + tierColors[tier] + '" title="Monitoring: ' + tier + ' (' + ({critical:'hourly',standard:'6h',low:'daily'}[tier]) + ')' + '\nClick to change" data-org="' + slug + '" data-report="' + r + '" data-tier="' + tier + '" onclick="event.preventDefault();event.stopPropagation();cycleTier(this)">' + tierIcons[tier] + ' ' + tier + '</span>';
