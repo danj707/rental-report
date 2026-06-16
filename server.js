@@ -2280,14 +2280,19 @@ app.post("/:org/calendar/api/recommend", express.json(), async (req, res) => {
       </div>
     </div>`;
 
-    await resend.emails.send({
+    const { data: sendData, error: sendError } = await resend.emails.send({
       from: `${orgName} <${FROM_EMAIL}>`,
       to: email.trim(),
       subject: `\u2728 Your Personalized Program Recommendations from ${orgName}`,
       html: emailHtml,
     });
 
-    console.log(`[recommend] Sent ${recommendations.length} recommendations to ${email.split("@")[0]}@*** for ${slug}`);
+    if (sendError) {
+      console.error("[recommend] Resend error:", JSON.stringify(sendError));
+      return res.status(502).json({ ok: false, error: "Email delivery failed: " + (sendError.message || "unknown Resend error") });
+    }
+
+    console.log(`[recommend] Sent ${recommendations.length} recommendations to ${email.split("@")[0]}@*** for ${slug} (id: ${sendData?.id || "?"})`);
     res.json({ ok: true, count: recommendations.length });
 
   } catch (err) {
