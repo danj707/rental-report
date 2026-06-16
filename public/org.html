@@ -124,17 +124,24 @@
       display: flex;
       gap: 0;
     }
+    .metrics-bar-inner {
+      display: flex;
+      width: 100%;
+      background: linear-gradient(135deg, #1e1b4b 0%, #312e81 40%, #4338ca 100%);
+      border-radius: 10px;
+      overflow: hidden;
+    }
     .metric-item {
       flex: 1;
-      padding: 14px 0;
+      padding: 18px 0;
       text-align: center;
-      border-right: 1px solid #e0ddd8;
+      border-right: 1px solid rgba(165,180,252,0.15);
     }
     .metric-item:last-child { border-right: none; }
     .metric-value {
       font-size: 26px;
       font-weight: 700;
-      color: #1a1a1a;
+      color: #fff;
       line-height: 1.1;
     }
     .metric-label {
@@ -142,7 +149,7 @@
       font-weight: 600;
       text-transform: uppercase;
       letter-spacing: 1.2px;
-      color: #999;
+      color: #a5b4fc;
       margin-top: 4px;
     }
     @media (max-width: 480px) {
@@ -346,12 +353,12 @@
       { value: m.subscribers, label: 'Subscribers' },
       { value: m.aiInsights,  label: 'AI Insights' },
     ];
-    document.getElementById('metrics-bar').innerHTML = items.map(function(it) {
+    document.getElementById('metrics-bar').innerHTML = '<div class="metrics-bar-inner">' + items.map(function(it) {
       return '<div class="metric-item">'
         + '<div class="metric-value">' + (it.value || 0) + '</div>'
         + '<div class="metric-label">' + it.label + '</div>'
         + '</div>';
-    }).join('');
+    }).join('') + '</div>';
   })();
 
   /* ── Render cards ── */

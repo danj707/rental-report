@@ -2999,22 +2999,24 @@ app.get("/", (req, res) => {
         <a href="/${slug}/${r}${tokenQS}" class="report-card${dimCls}" style="--accent:${m.color}" data-org="${slug}" data-report="${r}">
           <span class="report-icon">${m.icon}</span>
           <div class="report-body">
-            <div class="report-label">${m.label}</div>
+            <div class="report-label">${m.label}${m.ai ? ' <span class="ai-pill-inline">AI</span>' : ''}${m.wcag ? ' <span class="wcag-pill-inline">AA</span>' : ''}</div>
             <div class="report-desc">${m.desc}</div>
-            ${m.ai ? '<span class="ai-pill">\u2726 AI enhanced</span>' : ''}
-            ${m.wcag ? '<span class="wcag-pill">\u2713 WCAG AA</span>' : ''}
-            ${(() => { const v = allVotes[slug + ':' + r]; return v && (v.up || v.down) ? '<span style="font-size:10px;color:#6b7280;margin-top:3px;">\uD83D\uDC4D ' + (v.up||0) + ' \u00B7 \uD83D\uDC4E ' + (v.down||0) + '</span>' : ''; })()}
+          </div>
+          <div class="report-right">
+            ${(() => { const v = allVotes[slug + ':' + r]; return v && v.up ? '<span class="vote-count" title="' + (v.up||0) + ' up / ' + (v.down||0) + ' down">' + v.up + ' \uD83D\uDC4D</span>' : ''; })()}
             ${(() => {
               const tier = getTier(slug, r);
-              const tierColors = { critical: '#ef4444', standard: '#f59e0b', low: '#94a3b8' };
-              const tierIcons = { critical: '\u{1F534}', standard: '\u{1F7E1}', low: '\u26AA' };
-              const tierBadge = '<span class="tier-badge" style="background:' + tierColors[tier] + '20;color:' + tierColors[tier] + '" title="Monitoring: ' + tier + ' (' + ({critical:'hourly',standard:'6h',low:'daily'}[tier]) + ')' + '\nClick to change" data-org="' + slug + '" data-report="' + r + '" data-tier="' + tier + '" onclick="event.preventDefault();event.stopPropagation();cycleTier(this)">' + tierIcons[tier] + ' ' + tier + '</span>';
+              const tierFreq = {critical:'hourly',standard:'6h',low:'daily'}[tier];
               const h = healthData?.reports?.[slug]?.[r];
-              if (!h) return tierBadge;
-              const d = new Date(h.checkedAt); const ds = d.toLocaleDateString('en-US',{month:'short',day:'numeric'});
-              if (h.status === 'ok') return '<span class="health-badge health-ok" title="Verified ' + ds + ' (' + h.rows + ' rows)">\u2705 Verified ' + ds + '</span>' + tierBadge;
-              if (h.status === 'empty') return '<span class="health-badge health-empty" title="Returned 0 rows on ' + ds + '">\u26A0\uFE0F Empty ' + ds + '</span>' + tierBadge;
-              return '<span class="health-badge health-error" title="' + (h.error || 'Error') + '">\u274C Failed ' + ds + '</span>' + tierBadge;
+              let dotCls = 'health-dot';
+              let tipParts = ['Monitoring: ' + tier + ' (' + tierFreq + ')'];
+              if (h) {
+                const d = new Date(h.checkedAt); const ds = d.toLocaleDateString('en-US',{month:'short',day:'numeric'});
+                if (h.status === 'ok') { dotCls += ' dot-ok'; tipParts.unshift('Verified ' + ds + ' (' + h.rows + ' rows)'); }
+                else if (h.status === 'empty') { dotCls += ' dot-warn'; tipParts.unshift('Empty ' + ds); }
+                else { dotCls += ' dot-err'; tipParts.unshift('Failed ' + ds + (h.error ? ': ' + h.error : '')); }
+              } else { dotCls += ' dot-none'; }
+              return '<span class="' + dotCls + '" title="' + tipParts.join('\n') + '" data-org="' + slug + '" data-report="' + r + '" data-tier="' + tier + '" onclick="event.preventDefault();event.stopPropagation();cycleTier(this)"></span>';
             })()}
           </div>
           <button type="button" class="vis-toggle" onclick="event.preventDefault();event.stopPropagation();toggleVis('${slug}','${r}',this)" title="${isHidden ? 'Hidden from org page' : 'Visible on org page'}">
@@ -3032,9 +3034,8 @@ app.get("/", (req, res) => {
         <a href="/${slug}/chat${tokenQS}" class="report-card${chatDim}" style="border-left:3px solid #6366f1;background:linear-gradient(135deg,#f5f3ff 0%,#eef2ff 100%)" data-org="${slug}" data-report="chat">
           <span class="report-icon">\u2726</span>
           <div class="report-body">
-            <div class="report-label" style="color:#312e81">Rec AI Chat</div>
+            <div class="report-label" style="color:#312e81">Rec AI Chat <span class="ai-pill-inline">AI</span></div>
             <div class="report-desc">Ask anything about your data across all reports</div>
-            <span class="ai-pill">\u2726 AI powered</span>
           </div>
           <button type="button" class="vis-toggle" onclick="event.preventDefault();event.stopPropagation();toggleVis('${slug}','chat',this)" title="${chatHidden ? 'Hidden from org page' : 'Visible on org page'}">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style="display:${chatHidden ? 'none' : 'block'}"><path d="M8 3C3 3 1 8 1 8s2 5 7 5 7-5 7-5-2-5-7-5z" stroke="currentColor" stroke-width="1.5" fill="none"/><circle cx="8" cy="8" r="2" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>
@@ -3254,10 +3255,16 @@ app.get("/", (req, res) => {
     .report-body { flex: 1; min-width: 0; }
     .report-label { font-weight: 600; font-size: 13px; }
     .report-desc  { font-size: 11px; color: #999; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .ai-pill { display: inline-flex; align-items: center; gap: 3px; font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; padding: 2px 7px; border-radius: 20px; background: linear-gradient(90deg, #6d28d9, #0d9488); color: #fff; margin-top: 5px; }
-    .wcag-pill { display: inline-flex; align-items: center; gap: 3px; font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; padding: 2px 7px; border-radius: 20px; background: linear-gradient(90deg, #0e7490, #2563eb); color: #fff; margin-top: 5px; }
-    .report-arrow { font-size: 14px; color: #ccc; flex-shrink: 0; }
-    .report-card:hover .report-arrow { color: var(--accent, #888); }
+    .ai-pill-inline { font-size: 9px; font-weight: 700; letter-spacing: 0.03em; padding: 1px 6px; border-radius: 10px; background: linear-gradient(90deg, #6d28d9, #0d9488); color: #fff; vertical-align: 1px; margin-left: 4px; }
+    .wcag-pill-inline { font-size: 9px; font-weight: 700; letter-spacing: 0.03em; padding: 1px 6px; border-radius: 10px; background: linear-gradient(90deg, #0e7490, #2563eb); color: #fff; vertical-align: 1px; margin-left: 4px; }
+    .report-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; margin-left: auto; }
+    .vote-count { font-size: 10px; color: #888; white-space: nowrap; }
+    .health-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; cursor: pointer; transition: transform .15s; background: #ddd; }
+    .health-dot:hover { transform: scale(1.4); }
+    .dot-ok { background: #22c55e; }
+    .dot-warn { background: #f59e0b; }
+    .dot-err { background: #ef4444; }
+    .dot-none { background: #ddd; }
     .report-card-hidden { opacity: 0.4; }
     .report-card-hidden:hover { opacity: 0.7; }
     .report-card-hidden .report-label { text-decoration: line-through; }
@@ -3269,12 +3276,7 @@ app.get("/", (req, res) => {
     .add-report-card:hover { background: #f3f6ef; border-left-color: #16a34a; }
     .add-report-card .report-icon { color: #16a34a; font-weight: 700; }
     .add-report-card .report-label { color: #16a34a; }
-    .health-badge { display: inline-flex; align-items: center; gap: 3px; font-size: 9px; font-weight: 600; padding: 1px 6px; border-radius: 8px; margin-top: 3px; }
-    .health-ok { background: #dcfce7; color: #15803d; }
-    .health-empty { background: #fef9c3; color: #a16207; }
-    .health-error { background: #fee2e2; color: #b91c1c; }
-    .tier-badge { display: inline-flex; align-items: center; gap: 3px; font-size: 9px; font-weight: 600; padding: 1px 6px; border-radius: 8px; margin-top: 3px; margin-left: 4px; cursor: pointer; text-transform: capitalize; transition: filter .15s; }
-    .tier-badge:hover { filter: brightness(.88); }
+    /* health-dot and tier styles are in .health-dot/.dot-ok/.dot-warn/.dot-err above */
     .org-name-link { font-weight: 700; font-size: 14px; color: inherit; text-decoration: none; }
     .org-name-link:hover { color: #16a34a; text-decoration: underline; }
     .metrics-toggle-row { display: flex; align-items: center; gap: 10px; padding: 8px 16px; border-top: 1px solid #e8e5df; background: #fafaf8; }
@@ -4295,6 +4297,11 @@ app.get("/", (req, res) => {
     // Newest first. Add a new entry at the TOP for every change we ship.
     // History below back-filled from the GitHub commit log.
     const UPDATES = [
+      { date: '2026-06-16', title: 'Admin cards cleanup + org metrics bar redesign', items: [
+        'Admin cards: replaced stacked health/tier/vote badges with compact layout \u2014 AI tag inline with label, health status as single colored dot (green/yellow/red) with full details in tooltip, votes as right-aligned count',
+        'Tier cycling preserved: click the health dot to cycle critical/standard/low (tooltip shows current tier + frequency)',
+        'Org landing page: metrics bar now uses indigo gradient (matching admin hero) with white numbers and #a5b4fc labels',
+      ] },
       { date: '2026-06-15', title: 'Program Finder \u2014 AI-curated program recommendations via email', items: [
         'New: \u2728 Find Programs for Me \u2014 floating CTA on the public calendar lets residents describe what they\u2019re looking for and receive a personalized, AI-curated list of matching programs via email',
         'Pulls live calendar + programs data (next 30 days), sends condensed schedule to Claude, generates ranked recommendations with personalized match reasons',
