@@ -3406,14 +3406,24 @@ app.get("/", (req, res) => {
       }).catch(()=>{document.getElementById('rw-status').textContent='Failed to reach API';});
     setTimeout(fetchRailwayStatus,60000);
   })();
+  // Cache dashboard password for the session so admins aren't prompted repeatedly
+  function getDashPwd(actionLabel) {
+    var cached = sessionStorage.getItem('_dpwd');
+    if (cached) return cached;
+    var pwd = prompt((actionLabel ? actionLabel + '\\n' : '') + 'Dashboard password:');
+    if (pwd) sessionStorage.setItem('_dpwd', pwd);
+    return pwd;
+  }
+  function clearDashPwd() { sessionStorage.removeItem('_dpwd'); }
+
   async function runHealthCheck(btn) {
-    var pwd = prompt('Dashboard password:');
+    var pwd = getDashPwd();
     if (!pwd) return;
     btn.textContent = 'Running…'; btn.disabled = true;
     try {
       const r = await fetch('/api/health-check/run', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: pwd }) });
       const d = await r.json();
-      if (!r.ok) { btn.textContent = d.error || 'Auth failed'; return; }
+      if (!r.ok) { clearDashPwd(); btn.textContent = d.error || 'Auth failed'; return; }
       const fc = d.failures?.length || 0;
       btn.textContent = fc === 0 ? '\u2705 Done' : '\u274C ' + fc + ' failed';
       setTimeout(() => location.reload(), 1500);
@@ -3423,11 +3433,11 @@ app.get("/", (req, res) => {
     var tiers = ['critical', 'standard', 'low'];
     var cur = el.dataset.tier;
     var next = tiers[(tiers.indexOf(cur) + 1) % tiers.length];
-    var pwd = prompt('Set ' + el.dataset.org + '/' + el.dataset.report + ' to ' + next + '?\\nDashboard password:');
+    var pwd = getDashPwd('Set ' + el.dataset.org + '/' + el.dataset.report + ' \u2192 ' + next);
     if (!pwd) return;
     try {
       var r = await fetch('/api/health-config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: pwd, org: el.dataset.org, report: el.dataset.report, tier: next }) });
-      if (!r.ok) { var d = await r.json(); alert(d.error || 'Failed'); return; }
+      if (!r.ok) { clearDashPwd(); var d = await r.json(); alert(d.error || 'Failed'); return; }
       location.reload();
     } catch(e) { alert('Error: ' + e.message); }
   }
@@ -4029,7 +4039,7 @@ app.get("/", (req, res) => {
 
     async function toggleVis(slug, report, btn) {
       if (!mbPwd) {
-        mbPwd = prompt('Dashboard password:');
+        mbPwd = getDashPwd();
         if (!mbPwd) return;
       }
       btn.style.opacity = '0.2';
@@ -4041,7 +4051,7 @@ app.get("/", (req, res) => {
         });
         const data = await res.json().catch(function(){ return {}; });
         if (!res.ok || !data.ok) {
-          if (res.status === 401) mbPwd = '';
+          if (res.status === 401) { mbPwd = ''; clearDashPwd(); }
           throw new Error(data.error || 'Failed');
         }
         HIDDEN_REPORTS[slug] = data.hidden;
