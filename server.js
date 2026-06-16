@@ -2840,7 +2840,7 @@ app.get("/", (req, res) => {
     products:    { label: "Product Sales",          icon: "🛒", desc: "Daily revenue, refunds, and net by product",           color: "#0891b2" },
     memberships: { label: "Memberships",                icon: "🎫", desc: "Active and lapsed memberships with renewal tracking",       color: "#db2777" },
     "court-utilization": { label: "Court Utilization",  icon: "🎾", desc: "Court utilization % or reserved hours by court, split by customer, program, and closure usage", color: "#0d9488", ai: true },
-    calendar:    { label: "Calendar",               icon: "🗓️", desc: "Public class & rental schedule (week / list view)", color: "#ea580c" },
+    calendar:    { label: "Calendar",               icon: "🗓️", desc: "Public class & rental schedule (week / list view)", color: "#ea580c", wcag: true },
     fasttrack:   { label: "Fast Track",             icon: "⚡", desc: "Pre-registration demand signal with conversion tracking", color: "#6366f1", ai: true },
     users:       { label: "Users",                    icon: "👥", desc: "Demographic breakdown of all head-of-household accounts", color: "#7c3aed", ai: true },
   };
@@ -2868,6 +2868,7 @@ app.get("/", (req, res) => {
             <div class="report-label">${m.label}</div>
             <div class="report-desc">${m.desc}</div>
             ${m.ai ? '<span class="ai-pill">\u2726 AI enhanced</span>' : ''}
+            ${m.wcag ? '<span class="wcag-pill">\u2713 WCAG AA</span>' : ''}
             ${(() => { const v = allVotes[slug + ':' + r]; return v && (v.up || v.down) ? '<span style="font-size:10px;color:#6b7280;margin-top:3px;">\uD83D\uDC4D ' + (v.up||0) + ' \u00B7 \uD83D\uDC4E ' + (v.down||0) + '</span>' : ''; })()}
             ${(() => { const h = healthData?.reports?.[slug]?.[r]; if (!h) return ''; const d = new Date(h.checkedAt); const ds = d.toLocaleDateString('en-US',{month:'short',day:'numeric'}); if (h.status === 'ok') return '<span class="health-badge health-ok" title="Verified ' + ds + ' (' + h.rows + ' rows)">\u2705 Verified ' + ds + '</span>'; if (h.status === 'empty') return '<span class="health-badge health-empty" title="Returned 0 rows on ' + ds + '">\u26A0\uFE0F Empty ' + ds + '</span>'; return '<span class="health-badge health-error" title="' + (h.error || 'Error') + '">\u274C Failed ' + ds + '</span>'; })()}
           </div>
@@ -3109,6 +3110,7 @@ app.get("/", (req, res) => {
     .report-label { font-weight: 600; font-size: 13px; }
     .report-desc  { font-size: 11px; color: #999; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .ai-pill { display: inline-flex; align-items: center; gap: 3px; font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; padding: 2px 7px; border-radius: 20px; background: linear-gradient(90deg, #6d28d9, #0d9488); color: #fff; margin-top: 5px; }
+    .wcag-pill { display: inline-flex; align-items: center; gap: 3px; font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; padding: 2px 7px; border-radius: 20px; background: linear-gradient(90deg, #0e7490, #2563eb); color: #fff; margin-top: 5px; }
     .report-arrow { font-size: 14px; color: #ccc; flex-shrink: 0; }
     .report-card:hover .report-arrow { color: var(--accent, #888); }
     .report-card-hidden { opacity: 0.4; }
