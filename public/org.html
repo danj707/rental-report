@@ -332,14 +332,7 @@
   }
 
   function healthBadge(r) {
-    var hc = cfg.healthCheck;
-    if (!hc || !hc.reports || !hc.reports[r]) return '';
-    var h = hc.reports[r];
-    var d = new Date(h.checkedAt);
-    var ds = d.toLocaleDateString('en-US',{month:'short',day:'numeric'});
-    if (h.status === 'ok') return '<span class="health-badge health-ok" title="Verified ' + ds + ' (' + h.rows + ' rows)">✅ Verified ' + ds + '</span>';
-    if (h.status === 'empty') return '<span class="health-badge health-empty" title="Returned 0 rows on ' + ds + '">⚠️ Empty ' + ds + '</span>';
-    return '<span class="health-badge health-error" title="' + (h.error || 'Error') + '">❌ Failed ' + ds + '</span>';
+    return ''; // health badges shown only on admin portal
   }
 
   function cardHTML(r, isPinned) {
