@@ -125,7 +125,7 @@ async function prewarmCache() {
 // Set DASHBOARD_PASSWORD in Railway env vars.
 // /hotdog and /api/hotdog are public (no auth required).
 const DASHBOARD_PASSWORD = process.env.DASHBOARD_PASSWORD || '';
-const RECOMMEND_ENABLED  = process.env.RECOMMEND_ENABLED !== 'false'; // default on; set to 'false' to kill
+const RECOMMEND_ENABLED  = process.env.RECOMMEND_ENABLED === 'true'; // off until rec.us domain is verified in Resend; set RECOMMEND_ENABLED=true to re-enable
 
 function dashboardAuth(req, res, next) {
   // Only protect the root dashboard; all org routes and /hotdog are public
