@@ -3520,6 +3520,12 @@ app.get("/", (req, res) => {
             with PDF exports, AI-powered insights, email subscriptions, and real-time dashboards &mdash;
             purpose-built for parks &amp; rec departments.
           </p>
+          <div style="display:flex;flex-wrap:wrap;gap:8px 16px;margin:12px 0 4px 0">
+            <span style="background:rgba(165,180,252,.15);color:#c7d2fe;padding:4px 12px;border-radius:20px;font-size:13px;font-weight:500">Partners don't know what to ask for — we give them the answers</span>
+            <span style="background:rgba(165,180,252,.15);color:#c7d2fe;padding:4px 12px;border-radius:20px;font-size:13px;font-weight:500">AI reads the data so admins don't have to</span>
+            <span style="background:rgba(165,180,252,.15);color:#c7d2fe;padding:4px 12px;border-radius:20px;font-size:13px;font-weight:500">Schema changes? Reports don't break.</span>
+            <span style="background:rgba(165,180,252,.15);color:#c7d2fe;padding:4px 12px;border-radius:20px;font-size:13px;font-weight:500">Not a CSV — a product</span>
+          </div>
           <div class="showcase-stats">
             <div class="showcase-stat">
               <div class="showcase-stat-num" data-count="${Object.keys(ORGS).length}">0</div>
