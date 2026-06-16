@@ -2461,6 +2461,18 @@ app.get("/:org", (req, res, next) => {
   if (hc && hc.reports && hc.reports[slug]) {
     orgConfig.healthCheck = { timestamp: hc.timestamp, reports: hc.reports[slug] };
   }
+  // Attach 30-day usage metrics for org portal header
+  try {
+    const m = buildMetrics(slug, 30);
+    const cr = m.configuredReports || [];
+    orgConfig.metrics = {
+      views:   cr.reduce((n, r) => n + (m.summary[r]?.view  || 0), 0),
+      exports: cr.reduce((n, r) => n + (m.summary[r]?.excel || 0) + (m.summary[r]?.pdf || 0), 0),
+      subscribers: m.totalSubscribers,
+      aiInsights:  m.insights.calls,
+      reports: cr.length,
+    };
+  } catch(e) { orgConfig.metrics = null; }
   const html = require("fs").readFileSync(path.join(__dirname, "public", "org.html"), "utf8");
   const inject = `<script>window.ORG_CONFIG=${JSON.stringify(orgConfig)};</script>`;
   res.type("html").send(html.replace("</head>", inject + "</head>"));

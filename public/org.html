@@ -115,6 +115,42 @@
     .health-empty { background: #fef9c3; color: #a16207; }
     .health-error { background: #fee2e2; color: #b91c1c; }
 
+    /* ── Metrics bar ── */
+    .metrics-bar {
+      max-width: 700px;
+      width: 100%;
+      margin: 0 auto;
+      padding: 24px 24px 0;
+      display: flex;
+      gap: 0;
+    }
+    .metric-item {
+      flex: 1;
+      padding: 14px 0;
+      text-align: center;
+      border-right: 1px solid #e0ddd8;
+    }
+    .metric-item:last-child { border-right: none; }
+    .metric-value {
+      font-size: 26px;
+      font-weight: 700;
+      color: #1a1a1a;
+      line-height: 1.1;
+    }
+    .metric-label {
+      font-size: 9px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 1.2px;
+      color: #999;
+      margin-top: 4px;
+    }
+    @media (max-width: 480px) {
+      .metrics-bar { padding: 16px 16px 0; }
+      .metric-value { font-size: 20px; }
+      .metric-label { font-size: 8px; letter-spacing: 0.8px; }
+    }
+
     .card-right {
       display: flex;
       align-items: center;
@@ -228,6 +264,8 @@
 
 <header class="topbar" id="topbar"></header>
 
+<div class="metrics-bar" id="metrics-bar"></div>
+
 <main class="main">
   <div class="section-label">Reports</div>
   <div class="cards" id="cards">
@@ -297,6 +335,24 @@
       '<div class="topbar-sub">rec.us Reports</div>',
     '</div>',
   ].join('');
+
+  /* ── Metrics bar ── */
+  (function() {
+    var m = cfg.metrics;
+    if (!m) return;
+    var items = [
+      { value: m.views,       label: 'Views (30d)' },
+      { value: m.exports,     label: 'Exports (30d)' },
+      { value: m.subscribers, label: 'Subscribers' },
+      { value: m.aiInsights,  label: 'AI Insights' },
+    ];
+    document.getElementById('metrics-bar').innerHTML = items.map(function(it) {
+      return '<div class="metric-item">'
+        + '<div class="metric-value">' + (it.value || 0) + '</div>'
+        + '<div class="metric-label">' + it.label + '</div>'
+        + '</div>';
+    }).join('');
+  })();
 
   /* ── Render cards ── */
   function render() {
