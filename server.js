@@ -3176,7 +3176,7 @@ app.get("/", (req, res) => {
     }
     .ticker {
       display: flex; gap: 32px; white-space: nowrap;
-      animation: ticker-scroll 30s linear infinite;
+      animation: ticker-scroll 50s linear infinite;
     }
     .ticker-item {
       font-size: 12px; color: #c7d2fe; display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0;
@@ -4011,14 +4011,23 @@ app.get("/", (req, res) => {
       }
       // Feature ticker
       var features = [
+        'Rec AI Chat \u2014 Streaming Claude','Daily 5am Auto-Cache with 24hr TTL',
+        'Report Health Monitoring','Token-Gated Multi-Tenant Security',
+        'PDF Export via Puppeteer','Email Subscription Scheduling',
         'Facility Rental Schedules','GL Revenue Breakdown','Program Revenue by Section',
         'Court Utilization Heatmaps','Product Sales Analytics','Membership Tracking',
-        'Roster Management','User Demographics','Revenue by Category',
-        'Geographic Heatmaps','Cross-Sell Analysis','Guest Detection',
-        'AI-Powered Insights','PDF Export','Email Subscriptions',
-        'Daily Auto-Cache','CSV Targeting Export','Spend Tier Analysis',
-        'Conversion Funnels','Lapsing Household Alerts','Revenue Levers',
-        'Fast Track Bookings','Historic Site Rentals','Real-Time Dashboards'
+        'Roster Management','User Demographics & Strategy','Spend Tier Analysis',
+        'Geographic Heatmaps via Leaflet','Cross-Sell Opportunity Analysis',
+        'Guest Detection Toggle','Tab-Specific AI Insights','Conversion Funnels',
+        'Lapsing Household Alerts','Revenue Levers with CSV Export',
+        'Fast Track Bookings & Conversion','Historic Site Rentals',
+        'Pareto Revenue Curves','Signup Velocity Tracking','Resident vs Non-Resident',
+        'Who\\'s Not Buying Analysis','Revenue by Age Cohort','Grade Gap Detection',
+        'Excel Export via SheetJS','Refund Breakdown Toggle','Acct Credit Tracking',
+        'Desk Location Filtering','Cancellation Rate Tracking',
+        'Section vs Session Reg Modes','Present Mode \u2014 Kiosk/TV Display',
+        'Thumbs Up/Down Vote Tracking','AI Spend Monitoring',
+        'Animated Admin Dashboard','Real-Time Streaming Dashboards'
       ];
       var ticker = document.getElementById('feature-ticker');
       if (ticker) {
