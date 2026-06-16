@@ -198,7 +198,7 @@ const ORGS = {
   apex: {
     token:   "pcj5Qf0Wts7Wzc7P",
     orgId:   "aeba47d0-c97f-49cb-a0e9-93c5af3a68fa",
-    healthTimeoutMs: 60000,
+    healthTimeoutMs: 120000,
     logoUrl: "https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2Forganization-aeba47d0-c97f-49cb-a0e9-93c5af3a68fa%2FfullLogo.png%3F1765923560125&w=1920&q=75",
     facility: { mbUuid: "c641a437-49c7-49f8-82bd-3417a7e3754b", defaultDateRange: 8, defaultLocationFilter: "Apex Center" },
     programs: { mbUuid: "dee5b922-303f-47d9-abe3-75597410ad67" },
