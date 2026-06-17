@@ -741,7 +741,7 @@ function DayDetailPopup({date,events,onEv,onClose}){
       +'@media print{@page{size:Letter landscape;margin:.5in}}</style></head><body>'
       +'<h2>'+label+'</h2><p>'+sorted.length+' session'+(sorted.length!==1?'s':'')+'</p>'
       +'<table><thead><tr><th>Time</th><th>Session</th><th>Location</th><th>Activity</th></tr></thead>'
-      +'<tbody>'+rows+'</tbody></table>    <script src="/nav-breadcrumb.js" defer></script>
+      +'<tbody>'+rows+'</tbody></table>
   </body></html>');
     w.document.close(); w.focus();
     setTimeout(function(){w.print();},400);

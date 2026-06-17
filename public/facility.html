@@ -1722,7 +1722,6 @@ function DayPopover({ date, reservations, locationColors, onClose, selectedLocat
         </tr></thead>
         <tbody>${rows}</tbody>
       </table>
-        <script src="/nav-breadcrumb.js" defer></script>
   </body></html>`);
     win.document.close();
     win.focus();
@@ -3149,11 +3148,11 @@ function App() {
         <HeatmapStrip filteredRows={filteredRows} locationColors={locationColors} />
       )}
 
-      {filteredRows && filteredRows.length > 0 && (
+      {filteredRows && filteredRows.length > 0 && !isPrint && (
         <ResidencyAnalysis filteredRows={filteredRows} />
       )}
 
-      {filteredRows && filteredRows.length > 0 && (
+      {filteredRows && filteredRows.length > 0 && !isPrint && (
         <BookingTypeAnalysis filteredRows={filteredRows} />
       )}
 
