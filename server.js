@@ -330,6 +330,7 @@ const ORGS = {
     roster:   { mbUuid: "462000f0-6be1-4e73-b983-0375668c1a1f" },
     programs: { mbUuid: "ebe20297-455d-4603-aa22-b5560bd5c502" },
     users   : { mbUuid: "f6defe8c-a7bd-418c-8089-160c5fd0cccc" },
+    fasttrack: { mbUuid: "9dd20df0-62a7-4016-bbef-51949874431b" },
   },
   watertown: {
     token:   "7qNNXDFo4HGpOh5B",
