@@ -525,7 +525,7 @@ async function runHealthCheck(forceAll) {
     const entry = { status: "ok", rows: 0, checkedAt: ts };
     try {
       const controller = new AbortController();
-      const timeoutMs = org.healthTimeoutMs || 30000;
+      const timeoutMs = org.healthTimeoutMs || 60000;
       const timeout = setTimeout(() => controller.abort(), timeoutMs);
       const url = `${METABASE_URL}/api/public/card/${mbUuid}/query/json`;
       const resp = await fetch(url, { signal: controller.signal });
@@ -541,7 +541,7 @@ async function runHealthCheck(forceAll) {
       }
     } catch (err) {
       entry.status = "error";
-      entry.error = err.name === "AbortError" ? `Timeout (${(org.healthTimeoutMs||30000)/1000}s)` : err.message;
+      entry.error = err.name === "AbortError" ? `Timeout (${(org.healthTimeoutMs||60000)/1000}s)` : err.message;
     }
 
     // Carry forward tier info for display
