@@ -4539,6 +4539,23 @@ app.get("/", (req, res) => {
     // Newest first. Add a new entry at the TOP for every change we ship.
     // History below back-filled from the GitHub commit log.
     const UPDATES = [
+      { date: '2026-06-17', title: 'Community Intelligence \u2014 cross-report intelligence hub', items: [
+        'Fast Track tab on CI: fetches FT data lazily on click, shows conversion funnel, top programs by demand, KPI row (signups/converted/pending/dropped/FT share), and Key Observations',
+        'FT demographic crossover: v5 SQL adds per-user rows via UNION ALL; CI matches FT customers against demographic data by email/household ID for age distribution, residency rate, geographic concentration vs general population',
+        'Locked tab teasers: reports not enabled for an org show a lock icon with "Contact Partner Success to unlock [X] analytics" \u2014 clean upsell surface',
+        'Products tab placeholder in cross-tab config, ready for analytics computation when needed',
+        'Progressive loading: compute() deferred to next frame via setTimeout so the page shell renders instantly with "Crunching N records\u2026" spinner, then KPIs and charts fill in',
+      ] },
+      { date: '2026-06-17', title: 'Guests tab \u2014 dedicated analytics replacing the toggle button', items: [
+        'New Guests tab on Community Intelligence with pre-aggregated analytics: KPI row (guest count, gross/net revenue, avg transaction, items per guest, share of total revenue), Key Observations (product/program/facility split, volume alerts, upsell opportunity), charts (revenue by category, spend distribution, monthly account creation trend)',
+        'Removed the Guests ON/OFF toggle button that froze the browser with 34K+ rows \u2014 guests are now always excluded from Demographics/Revenue/Strategy tabs with zero performance penalty',
+        'Export CSV button added to the cross-sell "both programs and facilities" card on the Strategy tab',
+      ] },
+      { date: '2026-06-17', title: 'Navigation breadcrumb on all reports', items: [
+        'New shared nav-breadcrumb.js auto-injects a "\u2190 OrgName" link at the start of every report toolbar for one-click return to the org dashboard',
+        'Uses ORG_CONFIG.displayName when available, falls back to capitalizing the slug; preserves token in the link; hides in print/PDF mode',
+        'Skipped on customer-facing calendar page and admin/metrics pages',
+      ] },
       { date: '2026-06-17', title: 'Community Intelligence \u2014 guest detection fix + report rename', items: [
         'Fixed critical guest detection bug: 34,000+ guest accounts at Apex (and similar counts at other orgs) were being misclassified as staff because guest emails (guest-user+*@rec.us) matched the @rec.us staff filter. isStaff now excludes guest-user+ prefixed emails',
         'Report renamed from "Users Report" to "Community Intelligence" \u2014 reflects the report\u2019s evolution into a demographics + revenue + strategy dashboard, not just a user list',
@@ -4554,6 +4571,7 @@ app.get("/", (req, res) => {
         'Default Metabase health-check timeout bumped from 30s to 60s; data proxy route now has a 120s timeout with clear 504 error message instead of hanging silently',
         'Cache pre-warm now stores results under explicit This Month cache key so clicking This Month hits warm cache instead of cold Metabase',
         'Optimized facility SQL for all 6 orgs \u2014 replaced two correlated per-row subqueries (Resident? and Notes) with pre-computed CTEs and LEFT JOINs, cutting Apex monthly from ~2 min to seconds',
+        'PDF export now shows only the rental schedule table \u2014 heatmaps, residency revenue analysis, and booking channel analysis are hidden in print mode',
       ] },
       { date: '2026-06-16', title: 'Daily Pulse \u2014 executive summary with month-over-month trends', items: [
         'Daily Pulse on org landing page \u2014 blue gradient cards showing current-month revenue, refunds, enrollments, bookings, product sales, and households. Fetches from Metabase with explicit date filters (not default cache)',
