@@ -18,7 +18,7 @@
   if (parts.length < 2) return; // not a report page (e.g. root dashboard, org landing)
   var orgSlug = parts[0];
   var reportSlug = parts[1];
-  if (reportSlug === "admin" || reportSlug === "metrics") return; // skip non-reports
+  if (reportSlug === "admin" || reportSlug === "metrics" || reportSlug === "calendar") return; // skip non-reports and public pages
 
   // Get token from URL
   var token = "";
