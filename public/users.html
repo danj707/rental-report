@@ -362,7 +362,7 @@ function compute(rows) {
     if(gr>0){guestWithRev++; guestRevList.push(gr);}
     // Monthly trend from Created At
     var ca=col(r,['Created At','created_at']);
-    if(ca){var ym=toYM(ca);if(ym){guestMonthly[ym]=(guestMonthly[ym]||0)+1;}}
+    if(ca){var dp=parseDate(ca);if(dp){var ym=dp.getFullYear()+'-'+String(dp.getMonth()+1).padStart(2,'0');guestMonthly[ym]=(guestMonthly[ym]||0)+1;}}
   });
   guestRevList.sort(function(a,b){return a-b;});
   var guestAvgRev=guestWithRev>0?guestGross/guestWithRev:0;
