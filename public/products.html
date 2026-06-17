@@ -87,6 +87,23 @@
     .toolbar .divider { width: 1px; height: 28px; background: rgba(255,255,255,.15); margin: 0 4px; }
     .toolbar .row-count { font-size: 11px; color: #aaa; }
 
+    /* ── Desk picker dropdown (inside toolbar, white bg) ── */
+    .desk-picker button {
+      background: #f3f4f6 !important;
+      color: #333 !important;
+      border-color: #ccc !important;
+      font-size: 11px !important;
+      padding: 4px 10px !important;
+    }
+    .desk-picker button:hover { background: #e5e7eb !important; }
+    .desk-picker label {
+      font-size: 12px !important;
+      text-transform: none !important;
+      letter-spacing: 0 !important;
+      color: #333 !important;
+      flex-direction: row !important;
+    }
+
     /* ── Page ── */
     .page {
       max-width: 1320px;
@@ -799,7 +816,7 @@ function App() {
               {deskBtnLabel} ▾
             </button>
             {deskPickerOpen && (
-              <div style={{ position: 'absolute', top: '110%', right: 0, zIndex: 50, background: '#fff',
+              <div className="desk-picker" style={{ position: 'absolute', top: '110%', right: 0, zIndex: 50, background: '#fff',
                 border: '1px solid #ccc', borderRadius: 6, padding: 8, minWidth: 220, maxHeight: 300,
                 overflowY: 'auto', boxShadow: '0 6px 24px rgba(0,0,0,0.15)' }}>
                 <div style={{ marginBottom: 6 }}>
