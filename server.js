@@ -79,7 +79,7 @@ setInterval(() => {
 
 // ── Org Pulse: monthly metrics from Metabase with month-over-month deltas ──
 const pulseCache = new Map();
-const PULSE_CACHE_TTL = 60 * 60 * 1000; // 1 hour
+const PULSE_CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours — refreshed daily by cron
 
 function getCachedPulse(slug) {
   const entry = pulseCache.get(slug);
@@ -91,10 +91,9 @@ function getCachedPulse(slug) {
 const pulseFmt = (n) => n >= 10000 ? `${(n/1000).toFixed(1)}k` : n >= 1000 ? `${(n/1000).toFixed(1)}k` : String(Math.round(n));
 const pulseFmtMoney = (d) => '$' + Math.round(d).toLocaleString('en-US');
 
-async function refreshOrgPulse(slug) {
-  // Return cached if still fresh
-  const cached = getCachedPulse(slug);
-  if (cached) return cached;
+async function refreshOrgPulse(slug, force) {
+  // Return cached if still fresh (unless force-refreshing)
+  if (!force) { const cached = getCachedPulse(slug); if (cached) return cached; }
 
   const org = ORGS[slug];
   if (!org) return null;
@@ -1271,9 +1270,25 @@ async function prewarmUsersCache() {
   console.log("[users-cache] Pre-warm complete");
 }
 cron.schedule("0 5 * * *", prewarmUsersCache); // 5am daily
+cron.schedule("10 5 * * *", prewarmPulseCache); // 5:10am daily (after users cache is warm)
 cron.schedule("5 * * * *", () => runHealthCheck());  // every hour at :05, checks only what's due per tier
 // Also pre-warm on startup (after a short delay to let server settle)
 setTimeout(prewarmUsersCache, 15000);
+setTimeout(prewarmPulseCache, 30000); // pulse after users (needs users cache for households)
+
+async function prewarmPulseCache() {
+  console.log("[pulse] Pre-warming all orgs…");
+  let warmed = 0;
+  for (const slug of Object.keys(ORGS)) {
+    if (!ORGS[slug].token) continue;
+    try {
+      await refreshOrgPulse(slug, true);
+      warmed++;
+      console.log(`[pulse] Warmed ${slug}`);
+    } catch(e) { console.warn(`[pulse] Failed ${slug}: ${e.message}`); }
+  }
+  console.log(`[pulse] Pre-warm complete: ${warmed} orgs`);
+}
 
 // ── Express setup ────────────────────────────────────────────────────
 const app = express();
