@@ -724,62 +724,6 @@
     }
 
 
-    /* ── Email share popover ── */
-    .share-wrap { position: relative; }
-    .share-popover {
-      position: fixed;
-      top: auto;
-      z-index: 9000;
-      background: #1e1e1e;
-      border: 1px solid rgba(255,255,255,.2);
-      border-radius: 8px;
-      padding: 14px;
-      width: 280px;
-      box-shadow: 0 8px 28px rgba(0,0,0,.55);
-    }
-    .share-popover .sp-title {
-      font-size: 11px;
-      text-transform: uppercase;
-      letter-spacing: 0.6px;
-      color: #aaa;
-      margin-bottom: 8px;
-      font-weight: 600;
-    }
-    .share-popover input[type="email"] {
-      width: 100%;
-      padding: 7px 10px;
-      background: rgba(255,255,255,.08);
-      border: 1px solid rgba(255,255,255,.18);
-      border-radius: 4px;
-      color: #fff;
-      font-size: 12px;
-      font-family: inherit;
-      outline: none;
-      margin-bottom: 8px;
-    }
-    .share-popover input[type="email"]:focus { border-color: #3b82f6; }
-    .share-popover input[type="email"]::placeholder { color: #666; }
-    .share-popover .sp-url {
-      font-size: 10px;
-      color: #555;
-      word-break: break-all;
-      margin-bottom: 10px;
-      line-height: 1.4;
-    }
-    .share-popover .sp-row { display: flex; gap: 6px; }
-    .share-popover .sp-send {
-      flex: 1;
-      background: #16a34a;
-      border-color: #16a34a;
-      font-weight: 600;
-      font-size: 12px;
-    }
-    .share-popover .sp-send:disabled { opacity: .5; cursor: not-allowed; }
-    .share-popover .sp-cancel { font-size: 12px; padding: 6px 10px; }
-    .share-popover .sp-feedback { margin-top: 8px; font-size: 11px; text-align: center; }
-    .share-popover .sp-feedback.ok  { color: #4ade80; }
-    .share-popover .sp-feedback.err { color: #f87171; }
-
     /* ── Heatmap strip ── */
     .heatmap-strip {
       max-width: 1100px;
@@ -2021,100 +1965,6 @@ function CalendarView({ filteredRows, locationColors, loadedStart, loadedEnd, se
 
 
 // ── Share Button ────────────────────────────────────────────────────
-function ShareButton({ filteredRows, loadedStart, loadedEnd, selectedLocations, selectedSites, orgSlug }) {
-  const [open, setOpen]         = useState(false);
-  const [email, setEmail]       = useState('');
-  const [sending, setSending]   = useState(false);
-  const [feedback, setFeedback] = useState(null);
-  const wrapRef  = useRef(null);
-  const btnRef   = useRef(null);
-  const [popPos, setPopPos] = useState({ top: 0, left: 0 });
-
-  useEffect(() => {
-    function h(e) { if (wrapRef.current && !wrapRef.current.contains(e.target)) { setOpen(false); setFeedback(null); } }
-    document.addEventListener('mousedown', h);
-    return () => document.removeEventListener('mousedown', h);
-  }, []);
-
-  function openPopover() {
-    if (btnRef.current) {
-      const rect = btnRef.current.getBoundingClientRect();
-      const popW = 280;
-      let left = rect.right - popW;
-      if (left < 8) left = 8;
-      setPopPos({ top: rect.bottom + 6, left });
-    }
-    setOpen(o => !o);
-    setFeedback(null);
-  }
-
-  const shareUrl = useMemo(() => {
-    if (!loadedStart || !loadedEnd) return '';
-    const base = `${window.location.origin}/${orgSlug}/facility${TOKEN_QS}`;
-    const qs = new URLSearchParams();
-    qs.set('start_date', loadedStart);
-    qs.set('end_date', loadedEnd);
-    if (selectedLocations) { const a = [...selectedLocations]; if (a.length) qs.set('locations', a.join(',')); }
-    if (selectedSites)     { const a = [...selectedSites];     if (a.length) qs.set('sites',     a.join(',')); }
-    return `${base}?${qs.toString()}`;
-  }, [loadedStart, loadedEnd, selectedLocations, selectedSites, orgSlug]);
-
-  const dateLabel = useMemo(() => {
-    if (!loadedStart || !loadedEnd) return '';
-    const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
-    const s = new Date(loadedStart + 'T12:00:00');
-    const e = new Date(loadedEnd   + 'T12:00:00');
-    if (s.getMonth() === e.getMonth() && s.getFullYear() === e.getFullYear())
-      return `${MONTHS[s.getMonth()]} ${s.getFullYear()}`;
-    return `${MONTHS[s.getMonth()]} ${s.getDate()} - ${MONTHS[e.getMonth()]} ${e.getDate()}, ${e.getFullYear()}`;
-  }, [loadedStart, loadedEnd]);
-
-  async function handleSend() {
-    if (!email || !shareUrl) return;
-    setSending(true); setFeedback(null);
-    try {
-      const parts = window.location.pathname.replace(/\/$/, '').split('/');
-      const apiBase = parts.length >= 3 ? `/${parts[1]}/${parts[2]}/api/share` : '/api/share';
-      const r = await fetch(withToken(apiBase), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, url: shareUrl, dateLabel }),
-      });
-      const data = await r.json();
-      if (data.ok) { setFeedback({ ok: true, msg: `Sent to ${email}` }); setEmail(''); }
-      else          { setFeedback({ ok: false, msg: data.error || 'Send failed' }); }
-    } catch (err) {
-      setFeedback({ ok: false, msg: err.message });
-    } finally { setSending(false); }
-  }
-
-  const disabled = !filteredRows || filteredRows.length === 0 || !loadedStart;
-
-  return (
-    <div className="share-wrap" ref={wrapRef}>
-      <button ref={btnRef} onClick={openPopover} disabled={disabled} title="Email this report">
-        Email
-      </button>
-      {open && (
-        <div className="share-popover" style={{top: popPos.top, left: popPos.left}}>
-          <div className="sp-title">Share This View</div>
-          <input type="email" placeholder="recipient@example.com" value={email}
-            onChange={e => setEmail(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && handleSend()}
-            autoFocus />
-          <div className="sp-row">
-            <button className="sp-send" onClick={handleSend} disabled={sending || !email}>
-              {sending ? 'Sending...' : 'Send Link'}
-            </button>
-            <button className="sp-cancel" onClick={() => setOpen(false)}>Cancel</button>
-          </div>
-          {feedback && <div className={`sp-feedback ${feedback.ok ? 'ok' : 'err'}`}>{feedback.ok ? '\u2713 ' : ''}{feedback.msg}</div>}
-        </div>
-      )}
-    </div>
-  );
-}
-
 // ── Heatmap helpers ──────────────────────────────────────────────────
 function heatColor(val, max) {
   if (max === 0 || val === 0) return '#f0ede8';
@@ -2675,8 +2525,7 @@ function App() {
   const [selectedSites,     setSelectedSites]     = useState(null);
 
   // Share Link: expose the live applied filter state so the floating Share
-  // widget copies a URL that reproduces the on-screen view (mirrors the PDF
-  // and the built-in email ShareButton).
+  // widget copies a URL that reproduces the on-screen view (mirrors the PDF).
   useEffect(() => {
     window.recShareLink = () => {
       const qs = new URLSearchParams();
@@ -3073,17 +2922,6 @@ function App() {
         >
           📊 Excel
         </button>
-
-        <div className="divider" />
-
-        <ShareButton
-          filteredRows={filteredRows}
-          loadedStart={loadedStart}
-          loadedEnd={loadedEnd}
-          selectedLocations={selectedLocations}
-          selectedSites={selectedSites}
-          orgSlug={orgSlug}
-        />
 
 
       </div>
