@@ -212,6 +212,18 @@ async function refreshOrgPulse(slug, force) {
 async function prewarmCache() {
   console.log(`[cache] Pre-warming default reports…`);
   let warmed = 0;
+
+  // Build "this month" parameterized cache key so explicit date requests also hit cache
+  const now = new Date();
+  const monthStart = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-01`;
+  const lastDay = new Date(now.getFullYear(), now.getMonth()+1, 0).getDate();
+  const monthEnd   = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(lastDay).padStart(2,'0')}`;
+  const monthParams = [
+    { type: "date/single", target: ["variable", ["template-tag", "start_date"]], value: monthStart },
+    { type: "date/single", target: ["variable", ["template-tag", "end_date"]],   value: monthEnd },
+  ];
+  const monthParamStr = `?parameters=${encodeURIComponent(JSON.stringify(monthParams))}`;
+
   for (const slug of Object.keys(ORGS)) {
     const org = ORGS[slug];
     if (!org.token) continue;
@@ -222,8 +234,9 @@ async function prewarmCache() {
       const cacheKey = `${slug}:${rt}:`;
       if (getCached(cacheKey)) continue; // already warm
       try {
+        const timeoutMs = org.healthTimeoutMs || 120000;
         const url = `${METABASE_URL}/api/public/card/${mbUuid}/query/json`;
-        const resp = await fetch(url);
+        const resp = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
         if (resp.ok) {
           let data = await resp.json();
           // Strip PII for calendar
@@ -241,11 +254,16 @@ async function prewarmCache() {
             meta: { org_slug: slug, logo_url: org.logoUrl, report_type: rt, generated_at: new Date().toISOString() },
           };
           setCache(cacheKey, result);
+          // Also store under the explicit "This Month" cache key so users who
+          // click This Month (which sends start_date + end_date params) get a
+          // cache hit instead of re-querying Metabase.
+          setCache(`${slug}:${rt}:${monthParamStr}`, result);
           warmed++;
           console.log(`[cache] Warmed ${slug}/${rt} (${data.length} rows)`);
         }
       } catch (e) {
-        console.warn(`[cache] Pre-warm failed for ${slug}/${rt}: ${e.message}`);
+        const label = e.name === "TimeoutError" || e.name === "AbortError" ? "timeout" : e.message;
+        console.warn(`[cache] Pre-warm failed for ${slug}/${rt}: ${label}`);
       }
     }
   }
