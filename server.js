@@ -414,6 +414,7 @@ const ORGS = {
     roster  : { mbUuid: "f79ce808-e7ab-48dc-b2b9-56491f3b01fc" },
     calendar: { mbUuid: "f4e55dd3-f16d-4da7-9112-de0515980ae4" },
     users   : { mbUuid: "d081b9cc-b47e-443c-b97a-dbac97bab249" },
+    fasttrack: { mbUuid: "337487eb-7d8d-4def-afec-7ba27f152478" },
   },
 };
 
