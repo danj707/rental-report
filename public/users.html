@@ -818,7 +818,51 @@ function App() {
   var [refreshing, setRefreshing] = useState(false);
   var [tab, setTab] = useState('demo');
   var [mapMode, setMapMode] = useState('hh');
-  function switchTab(t){setTab(t);setInsights(null);setInsightsError(null);}
+
+  // ── Cross-tab infrastructure ──────────────────────────────
+  // Tabs that appear conditionally based on org's enabled reports
+  var CROSS_TABS = [
+    { key:'fasttrack', report:'fasttrack', label:'Fast Track', icon:'\u26A1', badge:null, color:'#6366f1' },
+    { key:'products',  report:'products',  label:'Products',   icon:'\uD83D\uDED2', badge:null, color:'#db2777' },
+  ];
+  var orgReports = useMemo(function(){
+    try { return (window.ORG_CONFIG && window.ORG_CONFIG.reports) || []; } catch(e){ return []; }
+  }, []);
+  var [crossData, setCrossData] = useState({});   // { fasttrack: { rows:[], loading:false, error:null }, ... }
+  var [crossComputed, setCrossComputed] = useState({});  // { fasttrack: { ...analytics }, ... }
+
+  function fetchCrossTab(key, report) {
+    if (crossData[key] && (crossData[key].rows || crossData[key].loading)) return;
+    setCrossData(function(prev){
+      var next = Object.assign({}, prev);
+      next[key] = { rows:null, loading:true, error:null };
+      return next;
+    });
+    fetch(withToken('/'+orgSlug+'/'+report+'/api/data'))
+      .then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json();})
+      .then(function(j){
+        var rows = j.rows||j.data||j||[];
+        setCrossData(function(prev){
+          var next = Object.assign({}, prev);
+          next[key] = { rows:rows, loading:false, error:null };
+          return next;
+        });
+      })
+      .catch(function(e){
+        setCrossData(function(prev){
+          var next = Object.assign({}, prev);
+          next[key] = { rows:null, loading:false, error:e.message };
+          return next;
+        });
+      });
+  }
+
+  function switchTab(t){
+    setTab(t);setInsights(null);setInsightsError(null);
+    // Lazy-fetch cross-tab data
+    var ct = CROSS_TABS.find(function(c){return c.key===t;});
+    if (ct && orgReports.indexOf(ct.report) !== -1) fetchCrossTab(ct.key, ct.report);
+  }
   var [insights, setInsights] = useState(null);
   var [insightsLoading, setInsightsLoading] = useState(false);
   var [insightsError, setInsightsError] = useState(null);
@@ -839,6 +883,54 @@ function App() {
   var observations = useMemo(function(){return s?buildObs(s):[];}, [s]);
   var revObservations = useMemo(function(){return s?buildRevObs(s):[];}, [s]);
   var stratObservations = useMemo(function(){return s?buildStratObs(s):[];}, [s]);
+
+  // ── Cross-tab computed analytics ──────────────────────────
+  var ftAnalytics = useMemo(function(){
+    var cd = crossData.fasttrack;
+    if (!cd || !cd.rows || cd.rows.length === 0) return null;
+    var rows = cd.rows;
+    var totalSignups=0, totalConverted=0, totalPending=0, totalDropped=0;
+    var totalEnrolled=0, totalCapacity=0, totalDirect=0;
+    var sectionCount=0;
+    var programMap={};
+    rows.forEach(function(r){
+      var signups = parseInt(r['FT Signups']||r['ft_signups']||0)||0;
+      var converted = parseInt(r['FT Converted']||r['ft_converted']||0)||0;
+      var pending = parseInt(r['FT Pending']||r['ft_pending']||0)||0;
+      var dropped = parseInt(r['FT Dropped']||r['ft_dropped']||0)||0;
+      var enrolled = parseInt(r['Total Enrolled']||r['total_enrolled']||0)||0;
+      var cap = parseInt(r['Capacity']||r['capacity']||0)||0;
+      var direct = parseInt(r['Direct Enrolled']||r['direct_enrolled']||0)||0;
+      var prog = r['Program']||r['program']||'Unknown';
+      totalSignups+=signups; totalConverted+=converted; totalPending+=pending; totalDropped+=dropped;
+      totalEnrolled+=enrolled; totalCapacity+=cap; totalDirect+=direct;
+      if(signups>0) sectionCount++;
+      if(!programMap[prog]) programMap[prog]={signups:0,converted:0,pending:0,dropped:0,sections:0};
+      programMap[prog].signups+=signups; programMap[prog].converted+=converted;
+      programMap[prog].pending+=pending; programMap[prog].dropped+=dropped;
+      programMap[prog].sections++;
+    });
+    var convRate = totalSignups>0?((totalConverted/totalSignups)*100).toFixed(1):'0';
+    var ftShareOfEnrolled = totalEnrolled>0?((totalConverted/totalEnrolled)*100).toFixed(1):'0';
+    // Top programs by FT demand
+    var topPrograms = Object.keys(programMap).map(function(p){return Object.assign({name:p},programMap[p]);})
+      .filter(function(p){return p.signups>0;})
+      .sort(function(a,b){return b.signups-a.signups;})
+      .slice(0,12);
+    // Conversion funnel
+    var funnel = [
+      {label:'FT Signups',value:totalSignups},
+      {label:'Converted',value:totalConverted},
+      {label:'Pending',value:totalPending},
+      {label:'Dropped',value:totalDropped}
+    ];
+    return {
+      totalSignups:totalSignups, totalConverted:totalConverted, totalPending:totalPending, totalDropped:totalDropped,
+      convRate:convRate, sectionCount:sectionCount, totalSections:rows.length,
+      ftShareOfEnrolled:ftShareOfEnrolled, totalEnrolled:totalEnrolled, totalDirect:totalDirect,
+      topPrograms:topPrograms, funnel:funnel,
+    };
+  }, [crossData.fasttrack]);
 
   var getInsights = useCallback(function() {
     if(!s||insightsLoading)return;
@@ -970,6 +1062,23 @@ function App() {
               <span className="tab-badge" style={{background:'#fce7f3',color:'#9d174d'}}>{s.guestCount>999?(s.guestCount/1000).toFixed(1)+'K':s.guestCount}</span>
             </div>
           )}
+          {/* Cross-report tabs: enabled reports get live tabs, others get locked teasers */}
+          {CROSS_TABS.map(function(ct){
+            var enabled = orgReports.indexOf(ct.report) !== -1;
+            var isActive = tab === ct.key;
+            if (enabled) return (
+              <div key={ct.key} className={'tab'+(isActive?' active':'')} onClick={function(){switchTab(ct.key);}}>
+                {ct.icon} {ct.label}
+                {crossData[ct.key]&&crossData[ct.key].rows&&<span className="tab-badge" style={{background:ct.color+'22',color:ct.color}}>{crossData[ct.key].rows.length}</span>}
+              </div>
+            );
+            return (
+              <div key={ct.key} className={'tab'+(isActive?' active':'')} onClick={function(){switchTab(ct.key);}} style={{opacity:0.5}}>
+                {ct.icon} {ct.label}
+                <span className="tab-badge" style={{background:'#f3f4f6',color:'#9ca3af'}}>{'🔒'}</span>
+              </div>
+            );
+          })}
         </div>
 
         {tab==='demo' && (
@@ -1348,6 +1457,74 @@ function App() {
 
           </React.Fragment>
         )}
+
+        {/* ═══ Cross-report tabs ═══ */}
+        {CROSS_TABS.map(function(ct){
+          if (tab !== ct.key) return null;
+          var enabled = orgReports.indexOf(ct.report) !== -1;
+
+          // ── Locked tab teaser ──
+          if (!enabled) return (
+            <div key={ct.key} style={{textAlign:'center',padding:'60px 20px'}}>
+              <div style={{fontSize:48,marginBottom:12}}>{'🔒'}</div>
+              <div style={{fontSize:16,fontWeight:700,color:'#374151',marginBottom:8}}>{ct.icon} {ct.label} Intelligence</div>
+              <div style={{fontSize:13,color:'#6b7280',maxWidth:420,margin:'0 auto',lineHeight:1.6}}>
+                No data available yet. Contact <strong>Partner Success</strong> to unlock {ct.label.toLowerCase()} analytics and add deeper community intelligence to your dashboard.
+              </div>
+            </div>
+          );
+
+          var cd = crossData[ct.key];
+          if (!cd || cd.loading) return (
+            <div key={ct.key} style={{textAlign:'center',padding:'60px 20px',color:'#888',fontSize:14}}>
+              <div className="spinner" style={{margin:'0 auto 12px'}} />Loading {ct.label.toLowerCase()} data…
+            </div>
+          );
+          if (cd.error) return (
+            <div key={ct.key} style={{textAlign:'center',padding:'40px 20px',color:'#b91c1c'}}>
+              Failed to load {ct.label.toLowerCase()} data: {cd.error}
+            </div>
+          );
+
+          // ── Fast Track tab ──
+          if (ct.key === 'fasttrack' && ftAnalytics) {
+            var ft = ftAnalytics;
+            return (
+              <React.Fragment key={ct.key}>
+                <div className="kpi-row">
+                  <div className="kpi" style={{'--accent':'#6366f1'}}><div className="kpi-label">FT Signups</div><div className="kpi-val">{ft.totalSignups.toLocaleString()}</div><div className="kpi-sub">{ft.sectionCount} sections with FT activity</div></div>
+                  <div className="kpi" style={{'--accent':'#059669'}}><div className="kpi-label">Converted</div><div className="kpi-val">{ft.totalConverted.toLocaleString()}</div><div className="kpi-sub">{ft.convRate}% conversion rate</div></div>
+                  <div className="kpi" style={{'--accent':'#d97706'}}><div className="kpi-label">Pending</div><div className="kpi-val">{ft.totalPending.toLocaleString()}</div><div className="kpi-sub">Awaiting confirmation</div></div>
+                  <div className="kpi" style={{'--accent':'#ef4444'}}><div className="kpi-label">Dropped</div><div className="kpi-val">{ft.totalDropped.toLocaleString()}</div><div className="kpi-sub">{ft.totalSignups>0?((ft.totalDropped/ft.totalSignups)*100).toFixed(1):'0'}% drop rate</div></div>
+                  <div className="kpi" style={{'--accent':'#2563eb'}}><div className="kpi-label">FT Share of Enrolled</div><div className="kpi-val">{ft.ftShareOfEnrolled}%</div><div className="kpi-sub">{ft.totalConverted} of {ft.totalEnrolled} total</div></div>
+                  <div className="kpi" style={{'--accent':'#7c3aed'}}><div className="kpi-label">Total Sections</div><div className="kpi-val">{ft.totalSections}</div><div className="kpi-sub">{ft.totalDirect.toLocaleString()} direct-enrolled</div></div>
+                </div>
+
+                <div className="obs-panel">
+                  <div className="obs-title">Key Observations</div>
+                  <div className="obs-grid">
+                    <div>{E('\u26A1')}<strong style={{color:'#065f46'}}>Conversion Pipeline</strong> {ft.totalSignups.toLocaleString()} FT signups, {ft.totalConverted.toLocaleString()} confirmed ({ft.convRate}%). {ft.totalPending>0?ft.totalPending+' still pending.':'All resolved.'}</div>
+                    {ft.totalDropped>0&&<div>{E('\uD83D\uDCC9')}<strong style={{color:'#065f46'}}>Drop-off</strong> {ft.totalDropped.toLocaleString()} signups dropped ({ft.totalSignups>0?((ft.totalDropped/ft.totalSignups)*100).toFixed(1):'0'}%). {ft.totalDropped>ft.totalSignups*0.3?'High drop rate \u2014 review waitlist communication and conversion timing.':'Within normal range.'}</div>}
+                    <div>{E('\uD83C\uDFAF')}<strong style={{color:'#065f46'}}>FT Impact</strong> Fast Track accounts for {ft.ftShareOfEnrolled}% of total enrollments. {parseFloat(ft.ftShareOfEnrolled)>20?'Strong pre-registration channel.':'Room to grow \u2014 consider promoting FT for popular programs.'}</div>
+                    {ft.topPrograms.length>0&&<div>{E('\uD83C\uDFC6')}<strong style={{color:'#065f46'}}>Top Demand</strong> Highest FT demand: {ft.topPrograms[0].name} ({ft.topPrograms[0].signups} signups, {ft.topPrograms[0].signups>0?((ft.topPrograms[0].converted/ft.topPrograms[0].signups)*100).toFixed(0):'0'}% conversion){ft.topPrograms.length>1?', followed by '+ft.topPrograms[1].name+' ('+ft.topPrograms[1].signups+')':''}.</div>}
+                  </div>
+                </div>
+
+                <div className="grid">
+                  <ChartPanel title={'Conversion Funnel'} data={ft.funnel.filter(function(d){return d.value>0;})} labelKey="label" dataKeys={[{key:'value',label:'Count'}]} colors={['#6366f1']} />
+                  <ChartPanel title={'Top Programs by FT Demand'} data={ft.topPrograms.slice(0,10)} labelKey="name" dataKeys={[{key:'signups',label:'Signups'},{key:'converted',label:'Converted'}]} colors={['#6366f1','#059669']} />
+                </div>
+              </React.Fragment>
+            );
+          }
+
+          // ── Generic cross-tab placeholder ──
+          return (
+            <div key={ct.key} style={{textAlign:'center',padding:'60px 20px',color:'#888'}}>
+              {ct.icon} {ct.label} analytics coming soon. {cd.rows.length} rows loaded.
+            </div>
+          );
+        })}
       </div>
       <div id="report-ready" style={{display:'none'}}/>
     </React.Fragment>

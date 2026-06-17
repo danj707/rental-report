@@ -2487,9 +2487,22 @@ app.get("/:org/fasttrack", (req, res) => {
 });
 
 app.get("/:org/users", (req, res) => {
-  if (!ORGS[req.params.org]) return res.status(404).send("Unknown org");
-  logEvent(req.params.org, "users", "view", req.ip);
-  res.sendFile(path.join(__dirname, "public", "users.html"));
+  const slug = req.params.org;
+  const org = ORGS[slug];
+  if (!org) return res.status(404).send("Unknown org");
+  logEvent(slug, "users", "view", req.ip);
+  const available = REPORT_TYPES.filter(r => org[r]?.mbUuid);
+  const slugTitle = slug.charAt(0).toUpperCase() + slug.slice(1);
+  const orgConfig = {
+    slug,
+    displayName: org.displayName || `${slugTitle} Parks & Recreation`,
+    logoUrl: org.logoUrl || "",
+    reports: available,
+    token: org.token || "",
+  };
+  const html = require("fs").readFileSync(path.join(__dirname, "public", "users.html"), "utf8");
+  const inject = `<script>window.ORG_CONFIG=${JSON.stringify(orgConfig)};</script>`;
+  res.type("html").send(html.replace("</head>", inject + "</head>"));
 });
 
 app.get("/:org/chat", (req, res) => {
