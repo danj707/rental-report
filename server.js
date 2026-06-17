@@ -92,9 +92,12 @@ function buildOrgPulse(slug) {
   const glData = getCached(`${slug}:gl:`);
   if (glData && glData.rows && glData.rows.length) {
     let totalPay = 0, totalRef = 0;
+    const sk = Object.keys(glData.rows[0] || {});
+    const payKey = sk.find(k => /^total.?pay/i.test(k)) || "Total Payments";
+    const refKey = sk.find(k => /^total.?ref/i.test(k)) || "Total Refunds";
     for (const r of glData.rows) {
-      const pay = parseFloat(r["Total Payments"] || r["total_payments"] || 0);
-      const ref = parseFloat(r["Total Refunds"] || r["total_refunds"] || 0);
+      const pay = parseFloat(r[payKey] || 0);
+      const ref = parseFloat(r[refKey] || 0);
       totalPay += pay; totalRef += Math.abs(ref);
     }
     const net = totalPay - totalRef;
@@ -107,10 +110,15 @@ function buildOrgPulse(slug) {
   const pgData = getCached(`${slug}:programs:`);
   if (pgData && pgData.rows && pgData.rows.length) {
     let enrollments = 0, cancellations = 0, programs = new Set();
+    // Discover column keys from first row (Metabase keys vary by SQL alias)
+    const sampleKeys = Object.keys(pgData.rows[0] || {});
+    const enrollKey = sampleKeys.find(k => /^enroll/i.test(k)) || "Enrollments";
+    const cancelKey = sampleKeys.find(k => /^cancel/i.test(k)) || "Cancellations";
+    const progKey   = sampleKeys.find(k => /^program$/i.test(k)) || "Program";
     for (const r of pgData.rows) {
-      enrollments += parseInt(r["Enrollments"] || r["enrollments"] || 0);
-      cancellations += parseInt(r["Cancellations"] || r["cancellations"] || 0);
-      const pn = r["Program"] || r["program"];
+      enrollments += parseInt(r[enrollKey]) || 0;
+      cancellations += parseInt(r[cancelKey]) || 0;
+      const pn = r[progKey];
       if (pn) programs.add(pn);
     }
     pulse.items.push({ key: "enrollments", label: "Enrollments", value: fmt(enrollments), sub: `${programs.size} programs`, icon: "🎓" });
@@ -2622,6 +2630,13 @@ app.get("/:org/api/pulse", (req, res) => {
   if (!ORGS[slug]) return res.status(404).json({ error: "Unknown org" });
   const pulse = buildOrgPulse(slug);
   if (!pulse) return res.json({ items: [], generated: null });
+  // Include sample keys for debugging
+  if (req.query.debug === "1") {
+    for (const rt of ["gl","programs","facility","products"]) {
+      const d = getCached(`${slug}:${rt}:`);
+      if (d && d.rows && d.rows[0]) pulse[`_keys_${rt}`] = Object.keys(d.rows[0]);
+    }
+  }
   res.json(pulse);
 });
 
