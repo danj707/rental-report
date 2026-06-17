@@ -1132,11 +1132,7 @@ function App() {
           onClick={exportExcel}
           disabled={!rows || rows.length === 0}
         >📥 Excel</button>
-        <div className="divider" />
-        <button
-          onClick={() => window.open(withToken(`/${orgSlug}/admin`), '_blank')}
-          style={{fontSize:11, padding:'4px 10px'}}
-        >📧 Subscriptions</button>
+
       </div>
     );
   }

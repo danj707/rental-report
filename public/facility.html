@@ -3085,14 +3085,7 @@ function App() {
           orgSlug={orgSlug}
         />
 
-        {orgSlug && (
-          <>
-            <div className="divider" />
-            <a href={withToken(`/${orgSlug}/admin`)} style={{color:'#aaa',fontSize:11,textDecoration:'none',padding:'4px 8px',border:'1px solid rgba(255,255,255,.18)',borderRadius:4,whiteSpace:'nowrap'}}>
-              📧 Subscriptions
-            </a>
-          </>
-        )}
+
       </div>
     );
   }

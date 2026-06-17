@@ -281,7 +281,6 @@ function App() {
             <th style={{textAlign:'right'}}>PDFs</th>
             <th style={{textAlign:'right'}}>Excel</th>
             <th style={{textAlign:'right'}}>Print</th>
-            <th style={{textAlign:'right'}}>Subscribers</th>
           </tr>
         </thead>
         <tbody>
@@ -299,7 +298,6 @@ function App() {
                 {numCell(s.pdf)}
                 {numCell(s.excel)}
                 {numCell(s.print)}
-                {numCell(data.subCounts?.[r])}
               </tr>
             );
           })}
@@ -382,41 +380,7 @@ function App() {
   }
 
   function renderSubscriptions() {
-    const counts   = data?.subCounts   || {};
-    const cadence  = data?.subByCadence || {};
-    const total    = data?.totalSubscribers || 0;
-    if (!total && !reports.length) return null;
-    return (
-      <>
-        <div className="section-title">Email Subscriptions</div>
-        <div className="subs-row">
-          <div className="sub-card">
-            <div className="sub-label">Total</div>
-            <div className="sub-value">{total}</div>
-            <div className="sub-type">subscribers</div>
-          </div>
-          {['daily','weekly','monthly'].map(c => cadence[c] > 0 && (
-            <div className="sub-card" key={c}>
-              <div className="sub-label">{c}</div>
-              <div className="sub-value">{cadence[c]}</div>
-              <div className="sub-type">cadence</div>
-            </div>
-          ))}
-          {reports.map(r => {
-            const n = counts[r] || 0;
-            if (!n) return null;
-            const meta = REPORT_META[r] || { label: r };
-            return (
-              <div className="sub-card" key={r}>
-                <div className="sub-label">{r}</div>
-                <div className="sub-value">{n}</div>
-                <div className="sub-type">{meta.label}</div>
-              </div>
-            );
-          })}
-        </div>
-      </>
-    );
+    return null;
   }
 
   return (
@@ -433,7 +397,6 @@ function App() {
         <button className={`range-btn${days === 9999 ? ' active' : ''}`} onClick={() => setDays(9999)}>All</button>
         <div className="toolbar-spacer" />
         <a href={withToken(`/${orgSlug}`)}     className="nav-link">← Back</a>
-        <a href={withToken(`/${orgSlug}/admin`)} className="nav-link">📧 Subscriptions</a>
       </div>
 
       <div className="page">
@@ -482,11 +445,6 @@ function App() {
                 <div className="sc-label">Prints</div>
                 <div className="sc-value">{totals.print || 0}</div>
                 <div className="sc-sub">print actions</div>
-              </div>
-              <div className="summary-card" style={{borderLeft:'3px solid #7c3aed'}}>
-                <div className="sc-label">Subscribers</div>
-                <div className="sc-value">{data.totalSubscribers || 0}</div>
-                <div className="sc-sub">{data.subByCadence?.daily||0}d · {data.subByCadence?.weekly||0}w · {data.subByCadence?.monthly||0}m</div>
               </div>
               <div className="summary-card" style={{borderLeft:'3px solid #10b981'}}>
                 <div className="sc-label">AI Insights</div>

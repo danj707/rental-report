@@ -304,55 +304,6 @@
     body.print-mode { background: #fff; }
     body.print-mode .page { box-shadow: none; margin: 0; padding: 12px 16px; max-width: 100%; }
 
-    /* ── Subscribe modal ── */
-    .sub-modal-backdrop {
-      position: fixed; inset: 0; background: rgba(0,0,0,.6);
-      display: flex; align-items: center; justify-content: center;
-      z-index: 1000;
-    }
-    .sub-modal {
-      background: #1f1f1f; color: #f3f4f6;
-      border: 1px solid rgba(255,255,255,.18); border-radius: 10px;
-      width: min(460px, 92vw); padding: 22px; box-shadow: 0 12px 48px rgba(0,0,0,.5);
-    }
-    .sub-modal h2 { margin: 0 0 6px; font-size: 18px; }
-    .sub-modal .sub-sub { color: #9ca3af; font-size: 12px; margin-bottom: 16px; }
-    .sub-modal label { display: block; font-size: 11px; font-weight: 600;
-      color: #d1d5db; margin: 12px 0 4px; }
-    .sub-modal input[type="email"], .sub-modal select {
-      width: 100%; padding: 8px 10px; box-sizing: border-box;
-      background: #2a2a2a; color: #f3f4f6; border: 1px solid rgba(255,255,255,.18);
-      border-radius: 5px; font-size: 13px; font-family: inherit;
-    }
-    .sub-modal input[type="email"]:focus, .sub-modal select:focus {
-      border-color: #7c3aed; outline: none;
-    }
-    .sub-summary {
-      background: #2a2a2a; border: 1px solid rgba(255,255,255,.12);
-      border-radius: 6px; padding: 10px 12px; margin: 4px 0 0;
-      font-size: 12px; color: #d1d5db; line-height: 1.5;
-    }
-    .sub-summary strong { color: #f3f4f6; }
-    .sub-summary-empty { color: #9ca3af; font-style: italic; }
-    .sub-error { color: #f87171; font-size: 12px; margin-top: 10px; }
-    .sub-success { color: #4ade80; font-size: 12px; margin-top: 10px; }
-    .sub-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 20px; }
-    .sub-actions button {
-      padding: 7px 14px; border-radius: 5px; font-size: 12px; font-weight: 600;
-      cursor: pointer; border: 1px solid transparent;
-    }
-    .sub-btn-cancel {
-      background: transparent; border-color: rgba(255,255,255,.22); color: #d1d5db;
-    }
-    .sub-btn-cancel:hover { background: rgba(255,255,255,.08); }
-    .sub-btn-save { background: #7c3aed; color: #fff; }
-    .sub-btn-save:hover { background: #6d28d9; }
-    .sub-btn-save:disabled { opacity: .6; cursor: not-allowed; }
-    .toolbar .btn-subscribe {
-      background: #7c3aed; border-color: #7c3aed; font-weight: 600;
-    }
-    .toolbar .btn-subscribe:hover { background: #6d28d9; }
-
 
     /* ── Button loading spinner ── */
     @keyframes btn-spin { to { transform: rotate(360deg); } }
@@ -485,141 +436,6 @@ function normalizeRow(raw) {
   };
 }
 
-
-// ── SubscribeButton ─────────────────────────────────────────────────────────
-function SubscribeButton({ orgSlug, reportType, reportLabel, filters }) {
-  const [open, setOpen]       = useState(false);
-  const [email, setEmail]     = useState('');
-  const [schedule, setSched]  = useState('weekly');
-  const [saving, setSaving]   = useState(false);
-  const [error, setError]     = useState(null);
-  const [success, setSuccess] = useState(null);
-
-  // Build a clean URLSearchParams from the live filters object — skip empty values.
-  // We don't read window.location.search because date pickers / inputs update React
-  // state without touching the URL.
-  const cleanQS = useMemo(() => {
-    const p = new URLSearchParams();
-    Object.entries(filters || {}).forEach(([k, v]) => {
-      if (v !== null && v !== undefined && String(v).trim() !== '') p.set(k, String(v));
-    });
-    return p;
-  }, [filters]);
-
-  const LABELS = {
-    start_date:   'Start date',
-    end_date:     'End date',
-    section_name: 'Section filter',
-    location_name: 'Location',
-    site_type:    'Site type',
-    program_name: 'Program',
-    status:       'Status',
-  };
-
-  const summaryItems = useMemo(() => {
-    const items = [];
-    const sd = cleanQS.get('start_date');
-    const ed = cleanQS.get('end_date');
-    if (sd && ed) items.push({ label: 'Date range', value: `${sd} → ${ed}` });
-    else if (sd)  items.push({ label: 'Start date', value: sd });
-    else if (ed)  items.push({ label: 'End date',   value: ed });
-    cleanQS.forEach((v, k) => {
-      if (k === 'start_date' || k === 'end_date') return;
-      const label = LABELS[k] || k.replace(/_/g, ' ');
-      items.push({ label, value: v });
-    });
-    return items;
-  }, [cleanQS]);
-
-  const handleSave = async () => {
-    setError(null); setSuccess(null);
-    const e = email.trim().toLowerCase();
-    if (!e || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)) {
-      setError('Please enter a valid email address.');
-      return;
-    }
-    setSaving(true);
-    try {
-      const reportParams = {};
-      const qs = cleanQS.toString();
-      if (qs) reportParams[reportType] = qs;
-      const res = await fetch(withToken(`/${orgSlug}/admin/subscribe`), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: e,
-          reports: [reportType],
-          schedule,
-          reportParams,
-        }),
-      });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        setError(body.error || `Failed (${res.status})`);
-      } else {
-        setSuccess(`Subscribed! You'll receive this ${schedule} via email.`);
-        setTimeout(() => { setOpen(false); setSuccess(null); }, 1800);
-      }
-    } catch (err) {
-      setError(err.message || 'Network error');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <>
-      <button className="btn-subscribe" onClick={() => { setOpen(true); setError(null); setSuccess(null); }}>
-        🔔 Subscribe
-      </button>
-      {open && (
-        <div className="sub-modal-backdrop" onClick={e => { if (e.target === e.currentTarget) setOpen(false); }}>
-          <div className="sub-modal">
-            <h2>Subscribe to this view</h2>
-            <div className="sub-sub">
-              Get this <strong>{reportLabel}</strong> emailed to you on a schedule,
-              with the exact filters you have set right now.
-            </div>
-
-            <label>Email</label>
-            <input type="email" value={email} onChange={e => setEmail(e.target.value)}
-              placeholder="you@example.com" autoFocus />
-
-            <label>Frequency</label>
-            <select value={schedule} onChange={e => setSched(e.target.value)}>
-              <option value="daily">Daily (7am)</option>
-              <option value="weekly">Weekly (Mondays 7am)</option>
-              <option value="monthly">Monthly (1st of month, 7am)</option>
-            </select>
-
-            <label>Filters saved with this subscription</label>
-            <div className="sub-summary">
-              {summaryItems.length === 0 ? (
-                <span className="sub-summary-empty">No filters set — full report will be sent.</span>
-              ) : (
-                summaryItems.map((it, i) => (
-                  <div key={i}><strong>{it.label}:</strong> {it.value}</div>
-                ))
-              )}
-            </div>
-
-            {error   && <div className="sub-error">{error}</div>}
-            {success && <div className="sub-success">{success}</div>}
-
-            <div className="sub-actions">
-              <button className="sub-btn-cancel" onClick={() => setOpen(false)} disabled={saving}>
-                Cancel
-              </button>
-              <button className="sub-btn-save" onClick={handleSave} disabled={saving}>
-                {saving ? 'Saving…' : 'Subscribe'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </>
-  );
-}
 
 // ── App ──────────────────────────────────────────────────────────────────────
 function App() {
@@ -975,11 +791,7 @@ function App() {
         >
           {pdfLoading ? 'Generating…' : '📄 PDF'}
         </button>
-        <SubscribeButton orgSlug={orgSlug} reportType="roster" reportLabel="Class Roster" filters={{ start_date: startDate, end_date: endDate, section_name: sectionFilter }} />
-        <div className="toolbar-divider" />
-        <a href={withToken(`/${orgSlug}/admin`)} style={{color:'#aaa',fontSize:11,textDecoration:'none',padding:'4px 8px',border:'1px solid rgba(255,255,255,.18)',borderRadius:4,whiteSpace:'nowrap'}}>
-          📧 Subscriptions
-        </a>
+
       </div>
     );
   }

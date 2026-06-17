@@ -263,28 +263,6 @@
       background: #e2dfd9;
     }
 
-    /* ── Admin link ── */
-    .admin-links {
-      border-top: 1px solid #ddd;
-      padding-top: 16px;
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-    }
-    .admin-link {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      color: #555;
-      text-decoration: none;
-      font-size: 13px;
-      padding: 8px 0;
-      border-radius: 4px;
-      transition: color 0.15s;
-    }
-    .admin-link:hover { color: #111; }
-    .admin-icon { font-size: 18px; }
-
     /* ── Footer ── */
     footer {
       text-align: center;
@@ -329,12 +307,7 @@
   <div class="cards" id="cards">
     <div class="empty">No reports configured.</div>
   </div>
-  <div class="admin-links">
-    <a class="admin-link" id="admin-link" href="#">
-      <span class="admin-icon">📧</span>
-      Manage Email Subscriptions
-    </a>
-  </div>
+
 </main>
 
 <footer id="footer">rec.us</footer>
@@ -401,7 +374,6 @@
     var items = [
       { value: m.views,       label: 'Views (30d)' },
       { value: m.exports,     label: 'Exports (30d)' },
-      { value: m.subscribers, label: 'Subscribers' },
       { value: m.aiInsights,  label: 'AI Insights' },
     ];
     document.getElementById('metrics-bar').innerHTML = '<div class="metrics-bar-inner">' + items.map(function(it) {
@@ -515,8 +487,7 @@
     document.getElementById('cards').appendChild(chatCard);
   }
 
-  /* ── Admin link + footer ── */
-  document.getElementById('admin-link').href = '/' + slug + '/admin' + tokenQS;
+  /* ── Footer ── */
   document.getElementById('footer').textContent = 'rec.us · ' + slug;
 </script>
 </body>
