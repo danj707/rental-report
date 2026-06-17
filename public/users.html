@@ -941,7 +941,7 @@ function App() {
 
     // User-level demographic crossover
     var demo = { hasData:false, ftUsers:userRows.length, matched:0,
-      ages:[], resYes:0, resNo:0, cities:{}, zips:{},
+      ages:[], resYes:0, resNo:0, cities:{}, zips:{}, ftRevTotal:0, ftRevHHs:0,
       ageBrackets:{'0-5':0,'6-12':0,'13-17':0,'18-25':0,'26-35':0,'36-45':0,'46-55':0,'56-65':0,'65+':0} };
     if (userRows.length > 0 && rows && rows.length > 0) {
       var emailMap = {};
@@ -962,6 +962,8 @@ function App() {
         var mhh = match['Household ID']||'';
         if (matchedHHs.has(mhh)) return;
         matchedHHs.add(mhh);
+        var hhNet = num(col(match,['Net Revenue','net_revenue']));
+        if (hhNet > 0) { demo.ftRevTotal += hhNet; demo.ftRevHHs++; }
         var age = parseInt(match['Age'])||0;
         if (age > 0 && age < 120) {
           demo.ages.push(age);
@@ -990,13 +992,23 @@ function App() {
       demo.topZips = Object.keys(demo.zips).map(function(z){return {zip:z,count:demo.zips[z]};}).sort(function(a,b){return b.count-a.count;}).slice(0,8);
       demo.ageBracketData = Object.keys(demo.ageBrackets).map(function(k){return {label:k,count:demo.ageBrackets[k]};});
       demo.matchedHHs = matchedHHs.size;
+      demo.avgFtSpend = demo.ftRevHHs > 0 ? Math.round(demo.ftRevTotal / demo.ftRevHHs) : 0;
     }
+
+    // Efficiency metrics (industry benchmarks: avg phone/walk-in registration ~10 min,
+    // FT self-service ~2 min, saving ~8 min per registration; BLS median rec worker $23/hr)
+    var MINS_SAVED_PER_FT = 8;
+    var ADMIN_HOURLY_RATE = 23;
+    var adminMinsSaved = totalConverted * MINS_SAVED_PER_FT;
+    var adminHoursSaved = Math.round(adminMinsSaved / 60);
+    var costSavings = Math.round((adminMinsSaved / 60) * ADMIN_HOURLY_RATE);
 
     return {
       totalSignups:totalSignups, totalConverted:totalConverted, totalPending:totalPending, totalDropped:totalDropped,
       convRate:convRate, sectionCount:sectionCount, totalSections:sectionRows.length,
       ftShareOfEnrolled:ftShareOfEnrolled, totalEnrolled:totalEnrolled, totalDirect:totalDirect,
       topPrograms:topPrograms, funnel:funnel, demo:demo,
+      adminHoursSaved:adminHoursSaved, costSavings:costSavings,
     };
   }, [crossData.fasttrack, rows]);
 
@@ -1583,6 +1595,25 @@ function App() {
                   <ChartPanel title={'Top Programs by FT Demand'} data={ft.topPrograms.slice(0,10)} labelKey="name" dataKeys={[{key:'signups',label:'Signups'},{key:'converted',label:'Converted'}]} colors={['#6366f1','#059669']} />
                 </div>
 
+                {ft.totalConverted > 0 && (
+                  <React.Fragment>
+                    <div style={{borderTop:'1px solid #e5e7eb',marginTop:20,paddingTop:16}}>
+                      <div style={{fontSize:12,fontWeight:700,textTransform:'uppercase',letterSpacing:'.04em',color:'#059669',marginBottom:12}}>FT Impact <span style={{fontWeight:400,textTransform:'none',color:'#9ca3af',letterSpacing:0}}>— estimated admin efficiency gains</span></div>
+                    </div>
+                    <div className="kpi-row">
+                      <div className="kpi" style={{'--accent':'#059669'}}><div className="kpi-label">Admin Hours Saved</div><div className="kpi-val">{ft.adminHoursSaved.toLocaleString()}</div><div className="kpi-sub">~8 min saved per FT registration</div></div>
+                      <div className="kpi" style={{'--accent':'#059669'}}><div className="kpi-label">Estimated Cost Savings</div><div className="kpi-val">{'$' + ft.costSavings.toLocaleString()}</div><div className="kpi-sub">at $23/hr avg admin rate</div></div>
+                      <div className="kpi" style={{'--accent':'#6366f1'}}><div className="kpi-label">Self-Service Rate</div><div className="kpi-val">{ft.ftShareOfEnrolled}%</div><div className="kpi-sub">{ft.totalConverted.toLocaleString()} of {ft.totalEnrolled.toLocaleString()} enrollments via FT</div></div>
+                    </div>
+                    <div className="obs">
+                      <div className="obs-grid">
+                        <div>{E('\u23F1\uFE0F')}<strong style={{color:'#065f46'}}>Time Savings</strong> {ft.totalConverted.toLocaleString()} Fast Track registrations saved an estimated {ft.adminHoursSaved.toLocaleString()} staff hours. Each FT self-service registration eliminates ~8 minutes of phone/walk-in processing time per transaction.</div>
+                        <div>{E('\uD83D\uDCB0')}<strong style={{color:'#065f46'}}>Cost Efficiency</strong> At the BLS median recreation worker rate of $23/hr, Fast Track has saved an estimated ${ft.costSavings.toLocaleString()} in admin labor costs{ft.totalEnrolled>0?' — covering '+ft.ftShareOfEnrolled+'% of all enrollments without staff intervention.':'.'}</div>
+                      </div>
+                    </div>
+                  </React.Fragment>
+                )}
+
                 {/* Demographic crossover (only when user rows are available from v5 SQL) */}
                 {ft.demo.hasData && (
                   <React.Fragment>
@@ -1594,6 +1625,7 @@ function App() {
                       {ft.demo.medianAge!==null&&<div className="kpi" style={{'--accent':'#d97706'}}><div className="kpi-label">Median Age</div><div className="kpi-val">{ft.demo.medianAge}</div><div className="kpi-sub">{s&&s.medianAge?'vs '+s.medianAge+' overall':'of matched HoH'}</div></div>}
                       {ft.demo.resPct!==null&&<div className="kpi" style={{'--accent':'#059669'}}><div className="kpi-label">Resident Rate</div><div className="kpi-val">{ft.demo.resPct}%</div><div className="kpi-sub">{s?'vs '+s.resPct+'% overall':'of FT users'}</div></div>}
                       {ft.demo.topCities.length>0&&<div className="kpi" style={{'--accent':'#2563eb'}}><div className="kpi-label">Top City</div><div className="kpi-val">{ft.demo.topCities[0].city}</div><div className="kpi-sub">{ft.demo.topCities[0].count} HH ({ft.demo.matchedHHs>0?((ft.demo.topCities[0].count/ft.demo.matchedHHs)*100).toFixed(0):'0'}%)</div></div>}
+                      {ft.demo.avgFtSpend>0&&<div className="kpi" style={{'--accent':'#dc2626'}}><div className="kpi-label">Avg FT Spend</div><div className="kpi-val">{'$'+ft.demo.avgFtSpend.toLocaleString()}</div><div className="kpi-sub">{s&&s.avgRev?'vs $'+Math.round(s.avgRev).toLocaleString()+' overall':'per household'}</div></div>}
                     </div>
                     <div className="obs">
                       <div className="obs-title">Key Observations</div>
@@ -1601,6 +1633,7 @@ function App() {
                         {ft.demo.resPct!==null&&s&&<div>{E('\uD83C\uDFE0')}<strong style={{color:'#065f46'}}>Residency</strong> FT users are {parseFloat(ft.demo.resPct)>parseFloat(s.resPct)?'more':'less'} local than the general population ({ft.demo.resPct}% vs {s.resPct}% resident).{parseFloat(ft.demo.resPct)<parseFloat(s.resPct)*0.8?' Non-residents are disproportionately using Fast Track \u2014 it may be their discovery channel.':''}</div>}
                         {ft.demo.medianAge!==null&&s&&s.medianAge&&<div>{E('\uD83D\uDC76')}<strong style={{color:'#065f46'}}>Age Profile</strong> FT household median age is {ft.demo.medianAge} vs {s.medianAge} overall. {ft.demo.medianAge<s.medianAge-3?'FT skews younger \u2014 families with young children are the primary FT audience.':ft.demo.medianAge>s.medianAge+3?'FT skews older than average.':'Age profile is similar to the general population.'}</div>}
                         {ft.demo.topCities.length>1&&<div>{E('\uD83D\uDDFA\uFE0F')}<strong style={{color:'#065f46'}}>Geography</strong> Top FT cities: {ft.demo.topCities.slice(0,3).map(function(c){return c.city+' ('+c.count+')';}).join(', ')}. {ft.demo.topCities[0].count>ft.demo.matchedHHs*0.5?'Heavily concentrated in '+ft.demo.topCities[0].city+'.':'Spread across multiple areas.'}</div>}
+                        {ft.demo.avgFtSpend>0&&s&&s.avgRev>0&&<div>{E('\uD83D\uDCB8')}<strong style={{color:'#065f46'}}>Spending</strong> FT households spend an average of ${ft.demo.avgFtSpend.toLocaleString()} vs ${Math.round(s.avgRev).toLocaleString()} overall{ft.demo.avgFtSpend>s.avgRev?' \u2014 FT users are higher-value customers, spending '+(((ft.demo.avgFtSpend/s.avgRev)-1)*100).toFixed(0)+'% more than average.':ft.demo.avgFtSpend<s.avgRev*0.8?' \u2014 FT users tend to be lighter spenders, suggesting it attracts casual or first-time participants.':' \u2014 spend levels are comparable to the general population.'}</div>}
                       </div>
                     </div>
                     <div className="grid">
