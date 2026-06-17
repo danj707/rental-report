@@ -166,17 +166,18 @@ const REPORT_META = {
   "court-utilization": { label: "Court Utilization", badgeClass: "badge-court-utilization" },
   calendar:    { label: "Calendar",                 badgeClass: "badge-calendar" },
   fasttrack:   { label: "Fast Track",               badgeClass: "badge-fasttrack" },
+  users:       { label: "Community Intel",           badgeClass: "badge-users" },
 };
 
 // Canonical display order for report rows/charts (matches server REPORT_TYPES).
-const REPORT_ORDER = ['facility','gl','historic','programs','roster','overview','products','memberships','court-utilization','calendar','fasttrack'];
+const REPORT_ORDER = ['facility','gl','historic','programs','roster','overview','products','memberships','court-utilization','calendar','fasttrack','users'];
 
 // Shared per-report colors (sparklines + activity chart).
 const REPORT_COLORS = {
   facility:'#16a34a', gl:'#3b82f6', historic:'#d97706', programs:'#7c3aed',
   roster:'#0891b2', overview:'#059669', products:'#db2777',
   memberships:'#ea580c', 'court-utilization':'#0d9488', calendar:'#ea580c',
-  fasttrack:'#6366f1',
+  fasttrack:'#6366f1', users:'#7c3aed',
 };
 
 const EVENT_LABELS = {

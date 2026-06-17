@@ -323,7 +323,8 @@ function compute(rows, includeGuests) {
   }
   function isStaff(r) {
     var em = (r['Email']||'').trim().toLowerCase();
-    return em.indexOf('@rec.us') !== -1;
+    // Exclude guest-user+* emails — they're checkout-only accounts, not staff
+    return em.indexOf('@rec.us') !== -1 && em.indexOf('guest-user+') !== 0;
   }
 
   // Always exclude staff accounts (@rec.us)
@@ -868,7 +869,7 @@ function App() {
   return (
     <React.Fragment>
       <div className="toolbar no-print">
-        <h1>Users Report</h1>
+        <h1>Community Intelligence</h1>
         <span className="pill" style={{background:'rgba(255,255,255,.12)',color:'#ddd'}}>{orgSlug.charAt(0).toUpperCase()+orgSlug.slice(1)}</span>
         <span className="pill" style={{background:'rgba(16,185,129,.15)',color:'#6ee7b7'}}>{s.hhCount} HH &middot; {s.total} people</span>
         {s.guestCount>0&&(

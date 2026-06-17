@@ -3164,7 +3164,7 @@ app.get("/", (req, res) => {
     "court-utilization": { label: "Court Utilization",  icon: "🎾", desc: "Court utilization % or reserved hours by court, split by customer, program, and closure usage", color: "#0d9488", ai: true },
     calendar:    { label: "Calendar",               icon: "🗓️", desc: "Public class & rental schedule (week / list view)", color: "#ea580c", wcag: true },
     fasttrack:   { label: "Fast Track",             icon: "⚡", desc: "Pre-registration demand signal with conversion tracking", color: "#6366f1", ai: true },
-    users:       { label: "Users",                    icon: "👥", desc: "Demographic breakdown of all head-of-household accounts", color: "#7c3aed", ai: true },
+    users:       { label: "Community Intel",            icon: "👥", desc: "Demographics, revenue, and strategy intelligence across your community", color: "#7c3aed", ai: true },
   };
 
   const hiddenReports = getAllHiddenReports();
@@ -4526,6 +4526,22 @@ app.get("/", (req, res) => {
     // Newest first. Add a new entry at the TOP for every change we ship.
     // History below back-filled from the GitHub commit log.
     const UPDATES = [
+      { date: '2026-06-17', title: 'Community Intelligence \u2014 guest detection fix + report rename', items: [
+        'Fixed critical guest detection bug: 34,000+ guest accounts at Apex (and similar counts at other orgs) were being misclassified as staff because guest emails (guest-user+*@rec.us) matched the @rec.us staff filter. isStaff now excludes guest-user+ prefixed emails',
+        'Report renamed from "Users Report" to "Community Intelligence" \u2014 reflects the report\u2019s evolution into a demographics + revenue + strategy dashboard, not just a user list',
+        'Guest accounts now correctly counted and displayed in the toggle \u2014 $525K gross revenue in Apex alone was previously invisible, 98.7% of it product/concession sales',
+      ] },
+      { date: '2026-06-17', title: 'Memberships report visual overhaul', items: [
+        'Added white page wrapper, report header with org logo/name/title, and footer with run date \u2014 matches programs, facility, GL, and all other reports',
+        'Summary cards restyled from grid-of-colored-border cards to standard beige flex row with colored values (green/red/amber/blue/pink/purple)',
+        'Print and PDF export now renders the same clean page layout with no toolbar or box shadow',
+      ] },
+      { date: '2026-06-17', title: 'Facility report \u2014 per-section column headers + performance', items: [
+        'Column header row (Begin, End, Facility/Site, etc.) now repeats at the top of every date/location section so headers are always visible on page 10+ of a long report',
+        'Default Metabase health-check timeout bumped from 30s to 60s; data proxy route now has a 120s timeout with clear 504 error message instead of hanging silently',
+        'Cache pre-warm now stores results under explicit This Month cache key so clicking This Month hits warm cache instead of cold Metabase',
+        'Optimized facility SQL for all 6 orgs \u2014 replaced two correlated per-row subqueries (Resident? and Notes) with pre-computed CTEs and LEFT JOINs, cutting Apex monthly from ~2 min to seconds',
+      ] },
       { date: '2026-06-16', title: 'Daily Pulse \u2014 executive summary with month-over-month trends', items: [
         'Daily Pulse on org landing page \u2014 blue gradient cards showing current-month revenue, refunds, enrollments, bookings, product sales, and households. Fetches from Metabase with explicit date filters (not default cache)',
         'Month-over-month delta arrows \u2014 green \u2191 / red \u2193 with percentage change vs prior month on every metric',
