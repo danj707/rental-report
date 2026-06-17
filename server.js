@@ -77,96 +77,135 @@ setInterval(() => {
   }
 }, 10 * 60 * 1000);
 
-// ── Org Pulse: extract top-line metrics from cached report data ───────
-function buildOrgPulse(slug) {
+// ── Org Pulse: monthly metrics from Metabase with month-over-month deltas ──
+const pulseCache = new Map();
+const PULSE_CACHE_TTL = 60 * 60 * 1000; // 1 hour
+
+function getCachedPulse(slug) {
+  const entry = pulseCache.get(slug);
+  if (!entry) return null;
+  if (Date.now() - entry.ts > PULSE_CACHE_TTL) { pulseCache.delete(slug); return null; }
+  return entry.data;
+}
+
+const pulseFmt = (n) => n >= 10000 ? `${(n/1000).toFixed(1)}k` : n >= 1000 ? `${(n/1000).toFixed(1)}k` : String(Math.round(n));
+const pulseFmtMoney = (d) => '$' + Math.round(d).toLocaleString('en-US');
+
+async function refreshOrgPulse(slug) {
+  // Return cached if still fresh
+  const cached = getCachedPulse(slug);
+  if (cached) return cached;
+
   const org = ORGS[slug];
   if (!org) return null;
-  const pulse = { items: [], generated: new Date().toISOString(), cached: {} };
-  const fmt = (n) => n >= 1000 ? `${(n/1000).toFixed(1)}k` : String(n);
-  const fmtMoney = (c) => {
-    const d = c / 100;
-    return d >= 1000 ? `$${(d/1000).toFixed(1)}k` : `$${d.toFixed(0)}`;
-  };
 
-  // GL — revenue snapshot
-  const glData = getCached(`${slug}:gl:`);
-  if (glData && glData.rows && glData.rows.length) {
-    let totalPay = 0, totalRef = 0;
-    const sk = Object.keys(glData.rows[0] || {});
-    const payKey = sk.find(k => /^total.?pay/i.test(k)) || "Total Payments";
-    const refKey = sk.find(k => /^total.?ref/i.test(k)) || "Total Refunds";
-    for (const r of glData.rows) {
-      const pay = parseFloat(r[payKey] || 0);
-      const ref = parseFloat(r[refKey] || 0);
-      totalPay += pay; totalRef += Math.abs(ref);
-    }
-    const net = totalPay - totalRef;
-    pulse.items.push({ key: "revenue", label: "Net Revenue", value: "$" + net.toLocaleString("en-US", {minimumFractionDigits:0, maximumFractionDigits:0}), sub: "this month", icon: "💰" });
-    pulse.items.push({ key: "refunds", label: "Refunds", value: "$" + totalRef.toLocaleString("en-US", {minimumFractionDigits:0, maximumFractionDigits:0}), sub: `${((totalRef/(totalPay||1))*100).toFixed(1)}% of gross`, icon: "↩️" });
-    pulse.cached.gl = true;
+  const now = new Date();
+  const curStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0,10);
+  const curEnd   = new Date(now.getFullYear(), now.getMonth()+1, 0).toISOString().slice(0,10);
+  const prevStart = new Date(now.getFullYear(), now.getMonth()-1, 1).toISOString().slice(0,10);
+  const prevEnd   = new Date(now.getFullYear(), now.getMonth(), 0).toISOString().slice(0,10);
+  const monthLabel = now.toLocaleString('en-US', { month: 'long' });
+
+  async function fetchMB(reportType, startDate, endDate) {
+    const mbUuid = org[reportType]?.mbUuid;
+    if (!mbUuid) return null;
+    try {
+      const params = buildMetabaseParams({ start_date: startDate, end_date: endDate }, reportType);
+      const qs = params.length ? `?parameters=${encodeURIComponent(JSON.stringify(params))}` : '';
+      const resp = await fetch(`${METABASE_URL}/api/public/card/${mbUuid}/query/json${qs}`);
+      if (!resp.ok) return null;
+      return await resp.json();
+    } catch(e) { console.warn(`[pulse] fetch failed ${slug}/${reportType}: ${e.message}`); return null; }
   }
 
-  // Programs — enrollment snapshot
-  const pgData = getCached(`${slug}:programs:`);
-  if (pgData && pgData.rows && pgData.rows.length) {
-    let enrollments = 0, cancellations = 0, programs = new Set();
-    // Discover column keys from first row (Metabase keys vary by SQL alias)
-    const sampleKeys = Object.keys(pgData.rows[0] || {});
-    const enrollKey = sampleKeys.find(k => /^enroll/i.test(k)) || "Enrollments";
-    const cancelKey = sampleKeys.find(k => /^cancel/i.test(k)) || "Cancellations";
-    const progKey   = sampleKeys.find(k => /^program$/i.test(k)) || "Program";
-    for (const r of pgData.rows) {
-      enrollments += parseInt(r[enrollKey]) || 0;
-      cancellations += parseInt(r[cancelKey]) || 0;
-      const pn = r[progKey];
-      if (pn) programs.add(pn);
-    }
-    pulse.items.push({ key: "enrollments", label: "Enrollments", value: fmt(enrollments), sub: `${programs.size} programs`, icon: "🎓" });
-    if (cancellations > 0) {
-      pulse.items.push({ key: "cancelRate", label: "Cancel Rate", value: `${((cancellations/(enrollments||1))*100).toFixed(1)}%`, sub: `${cancellations} cancelled`, icon: "⚠️" });
-    }
-    pulse.cached.programs = true;
+  const pulse = { items: [], generated: new Date().toISOString(), month: monthLabel };
+
+  // ── GL: revenue + refunds ──
+  const [glCur, glPrev] = await Promise.all([
+    fetchMB('gl', curStart, curEnd), fetchMB('gl', prevStart, prevEnd)
+  ]);
+  function sumGL(rows) {
+    if (!rows || !rows.length) return { pay: 0, ref: 0 };
+    const sk = Object.keys(rows[0]);
+    const payK = sk.find(k => /total.?pay/i.test(k)) || 'Total Payments';
+    const refK = sk.find(k => /total.?ref/i.test(k)) || 'Total Refunds';
+    let pay = 0, ref = 0;
+    for (const r of rows) { pay += parseFloat(r[payK]||0); ref += Math.abs(parseFloat(r[refK]||0)); }
+    return { pay, ref };
+  }
+  if (glCur) {
+    const cur = sumGL(glCur), prev = sumGL(glPrev||[]);
+    const net = cur.pay - cur.ref, prevNet = prev.pay - prev.ref;
+    const pct = prevNet ? Math.round((net - prevNet) / Math.abs(prevNet) * 100) : null;
+    pulse.items.push({ key:'revenue', label:'Revenue', value: pulseFmtMoney(net), sub: monthLabel, icon:'💰',
+      delta: pct !== null ? (pct >= 0 ? `+${pct}%` : `${pct}%`) : null, direction: pct > 0 ? 'up' : pct < 0 ? 'down' : null });
+    pulse.items.push({ key:'refunds', label:'Refunds', value: pulseFmtMoney(cur.ref), sub: `${((cur.ref/(cur.pay||1))*100).toFixed(1)}% of gross`, icon:'↩️',
+      delta: null, direction: null });
   }
 
-  // Facility — booking count
-  const facData = getCached(`${slug}:facility:`);
-  if (facData && facData.rows && facData.rows.length) {
-    const locations = new Set();
-    for (const r of facData.rows) {
-      const loc = r["Location"] || r["location"] || r["location_name"];
-      if (loc) locations.add(loc);
-    }
-    pulse.items.push({ key: "bookings", label: "Bookings", value: fmt(facData.rows.length), sub: `${locations.size} locations`, icon: "📅" });
-    pulse.cached.facility = true;
+  // ── Programs: enrollments ──
+  const [pgCur, pgPrev] = await Promise.all([
+    fetchMB('programs', curStart, curEnd), fetchMB('programs', prevStart, prevEnd)
+  ]);
+  function sumProg(rows) {
+    if (!rows || !rows.length) return { enroll: 0, cancel: 0, progs: 0 };
+    const sk = Object.keys(rows[0]);
+    const eK = sk.find(k => /^enroll/i.test(k)) || 'Enrollments';
+    const cK = sk.find(k => /^cancel/i.test(k)) || 'Cancellations';
+    const pK = sk.find(k => /^program$/i.test(k)) || 'Program';
+    let e = 0, c = 0; const ps = new Set();
+    for (const r of rows) { e += parseInt(r[eK])||0; c += parseInt(r[cK])||0; if (r[pK]) ps.add(r[pK]); }
+    return { enroll: e, cancel: c, progs: ps.size };
+  }
+  if (pgCur) {
+    const cur = sumProg(pgCur), prev = sumProg(pgPrev||[]);
+    const pct = prev.enroll ? Math.round((cur.enroll - prev.enroll) / Math.abs(prev.enroll) * 100) : null;
+    pulse.items.push({ key:'enrollments', label:'Enrollments', value: pulseFmt(cur.enroll), sub: `${cur.progs} programs`, icon:'🎓',
+      delta: pct !== null ? (pct >= 0 ? `+${pct}%` : `${pct}%`) : null, direction: pct > 0 ? 'up' : pct < 0 ? 'down' : null });
   }
 
-  // Products — POS snapshot
-  const prodData = getCached(`${slug}:products:`);
-  if (prodData && prodData.rows && prodData.rows.length) {
-    let grossRev = 0;
-    for (const r of prodData.rows) {
-      grossRev += parseFloat(r["Gross Revenue"] || r["gross_revenue"] || r["Net Revenue"] || r["net_revenue"] || 0);
-    }
-    if (grossRev > 0) {
-      pulse.items.push({ key: "productRev", label: "Product Sales", value: "$" + grossRev.toLocaleString("en-US", {minimumFractionDigits:0, maximumFractionDigits:0}), sub: `${prodData.rows.length} line items`, icon: "🛒" });
-    }
-    pulse.cached.products = true;
+  // ── Facility: bookings ──
+  const [facCur, facPrev] = await Promise.all([
+    fetchMB('facility', curStart, curEnd), fetchMB('facility', prevStart, prevEnd)
+  ]);
+  if (facCur) {
+    const locs = new Set();
+    for (const r of facCur) { const l = r['Location']||r['location']||r['location_name']; if(l) locs.add(l); }
+    const cc = facCur.length, pc = facPrev ? facPrev.length : 0;
+    const pct = pc ? Math.round((cc - pc) / Math.abs(pc) * 100) : null;
+    pulse.items.push({ key:'bookings', label:'Bookings', value: pulseFmt(cc), sub: `${locs.size} locations`, icon:'📅',
+      delta: pct !== null ? (pct >= 0 ? `+${pct}%` : `${pct}%`) : null, direction: pct > 0 ? 'up' : pct < 0 ? 'down' : null });
   }
 
-  // Users — household count (from users cache, not dataCache)
-  const usersEntry = getCachedUsers(slug);
-  if (usersEntry && usersEntry.data && usersEntry.data.rows) {
-    const hhSet = new Set();
-    for (const r of usersEntry.data.rows) {
-      const hh = r["Household ID"] || r["household_id"];
-      if (hh) hhSet.add(hh);
+  // ── Products: POS ──
+  const [prodCur, prodPrev] = await Promise.all([
+    fetchMB('products', curStart, curEnd), fetchMB('products', prevStart, prevEnd)
+  ]);
+  function sumProd(rows) {
+    if (!rows || !rows.length) return 0;
+    const sk = Object.keys(rows[0]);
+    const gK = sk.find(k => /gross.?rev|net.?rev/i.test(k)) || 'Gross Revenue';
+    let t = 0; for (const r of rows) { t += parseFloat(r[gK]||0); } return t;
+  }
+  if (prodCur) {
+    const cur = sumProd(prodCur), prev = sumProd(prodPrev||[]);
+    if (cur > 0) {
+      const pct = prev ? Math.round((cur - prev) / Math.abs(prev) * 100) : null;
+      pulse.items.push({ key:'productRev', label:'Product Sales', value: pulseFmtMoney(cur), sub: `${prodCur.length} line items`, icon:'🛒',
+        delta: pct !== null ? (pct >= 0 ? `+${pct}%` : `${pct}%`) : null, direction: pct > 0 ? 'up' : pct < 0 ? 'down' : null });
     }
-    if (hhSet.size > 0) {
-      pulse.items.push({ key: "households", label: "Households", value: fmt(hhSet.size), sub: `${fmt(usersEntry.data.rows.length)} people`, icon: "🏠" });
-    }
-    pulse.cached.users = true;
   }
 
+  // ── Households (snapshot, no date range) ──
+  const ue = getCachedUsers(slug);
+  if (ue && ue.data && ue.data.rows) {
+    const hh = new Set();
+    for (const r of ue.data.rows) { const h = r['Household ID']||r['household_id']; if (h) hh.add(h); }
+    if (hh.size > 0) pulse.items.push({ key:'households', label:'Households', value: pulseFmt(hh.size), sub: `${pulseFmt(ue.data.rows.length)} people`, icon:'🏠', delta: null, direction: null });
+  }
+
+  console.log(`[pulse] ${slug}: ${pulse.items.length} items, ${monthLabel}`);
+  pulseCache.set(slug, { data: pulse, ts: Date.now() });
   return pulse;
 }
 
@@ -2625,22 +2664,17 @@ app.get('/api/hotdog', async (req, res) => {
 });
 
 // ── GET /:org/api/pulse — executive summary from cached report data ──
-app.get("/:org/api/pulse", (req, res) => {
+app.get("/:org/api/pulse", async (req, res) => {
   const slug = req.params.org;
   if (!ORGS[slug]) return res.status(404).json({ error: "Unknown org" });
-  const pulse = buildOrgPulse(slug);
-  if (!pulse) return res.json({ items: [], generated: null });
-  // Include sample keys for debugging
-  if (req.query.debug === "1") {
-    for (const rt of ["gl","programs","facility","products"]) {
-      const d = getCached(`${slug}:${rt}:`);
-      if (d && d.rows && d.rows[0]) pulse[`_keys_${rt}`] = Object.keys(d.rows[0]);
-    }
-  }
-  res.json(pulse);
+  try {
+    const pulse = await refreshOrgPulse(slug);
+    if (!pulse) return res.json({ items: [], generated: null });
+    res.json(pulse);
+  } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
-app.get("/:org", (req, res, next) => {
+app.get("/:org", async (req, res, next) => {
   const slug = req.params.org;
   const org  = ORGS[slug];
   // Fall through to express.static so static assets like /feedback-widget.js
@@ -2677,7 +2711,7 @@ app.get("/:org", (req, res, next) => {
     };
   } catch(e) { orgConfig.metrics = null; }
   // Inject executive pulse summary from cached data
-  try { orgConfig.pulse = buildOrgPulse(slug); } catch(e) { orgConfig.pulse = null; }
+  try { orgConfig.pulse = await refreshOrgPulse(slug); } catch(e) { orgConfig.pulse = null; }
   const html = require("fs").readFileSync(path.join(__dirname, "public", "org.html"), "utf8");
   const inject = `<script>window.ORG_CONFIG=${JSON.stringify(orgConfig)};</script>`;
   res.type("html").send(html.replace("</head>", inject + "</head>"));
@@ -3198,11 +3232,14 @@ app.get("/", (req, res) => {
       : `<span>${displayName}</span>`;
 
     // Build pulse metrics strip from cached data
-    const pulse = buildOrgPulse(slug);
+    const pulse = getCachedPulse(slug);
     const pulseStrip = (pulse && pulse.items.length > 0)
-      ? `<div class="org-pulse-strip">${pulse.items.map(it =>
-          `<div class="pulse-item"><div class="pulse-val">${it.value}</div><div class="pulse-label">${it.label}</div><div class="pulse-sub">${it.sub}</div></div>`
-        ).join("")}</div>` : "";
+      ? `<div class="org-pulse-strip">${pulse.items.map(it => {
+          const deltaHtml = it.delta
+            ? `<div class="pulse-delta ${it.direction === 'up' ? 'delta-up' : it.direction === 'down' ? 'delta-down' : ''}">${it.direction === 'up' ? '↑' : it.direction === 'down' ? '↓' : ''} ${it.delta}</div>`
+            : '';
+          return `<div class="pulse-item"><div class="pulse-val">${it.value}</div><div class="pulse-label">${it.label}</div><div class="pulse-sub">${it.sub}</div>${deltaHtml}</div>`;
+        }).join("")}</div>` : "";
 
     const tokenRow = org.token ? `
         <div class="token-row">
@@ -3359,6 +3396,9 @@ app.get("/", (req, res) => {
     .pulse-val { font-size: 18px; font-weight: 700; color: #fff; white-space: nowrap; }
     .pulse-label { font-size: 11px; font-weight: 600; color: #a5b4fc; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 2px; }
     .pulse-sub { font-size: 10px; color: rgba(165,180,252,0.7); margin-top: 1px; white-space: nowrap; }
+    .pulse-delta { font-size: 10px; font-weight: 600; margin-top: 2px; white-space: nowrap; }
+    .delta-up { color: #4ade80; }
+    .delta-down { color: #f87171; }
     .org-logo { height: 32px; width: auto; object-fit: contain; flex-shrink: 0; }
     .org-header-text { flex: 1; }
     .org-name { font-weight: 700; font-size: 14px; }

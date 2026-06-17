@@ -425,11 +425,18 @@
       ts.textContent = 'Updated ' + d.toLocaleTimeString([], {hour:'numeric',minute:'2-digit'});
     }
     grid.innerHTML = p.items.map(function(it) {
+      var deltaHtml = '';
+      if (it.delta) {
+        var color = it.direction === 'up' ? '#4ade80' : it.direction === 'down' ? '#f87171' : '#a5b4fc';
+        var arrow = it.direction === 'up' ? '↑' : it.direction === 'down' ? '↓' : '';
+        deltaHtml = '<div style="font-size:11px;color:' + color + ';margin-top:3px;font-weight:600">' + arrow + ' ' + it.delta + ' vs last month</div>';
+      }
       return '<div class="pulse-card">'
         + '<div class="pulse-card-icon">' + (it.icon || '') + '</div>'
         + '<div class="pulse-card-val">' + it.value + '</div>'
         + '<div class="pulse-card-label">' + it.label + '</div>'
         + '<div class="pulse-card-sub">' + (it.sub || '') + '</div>'
+        + deltaHtml
       + '</div>';
     }).join('');
   })();
