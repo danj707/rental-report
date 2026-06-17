@@ -128,50 +128,49 @@
     .ms-item:hover { background: #f5f4f1; }
     .ms-item input { cursor: pointer; }
 
+    /* ── Page ── */
+    .page {
+      max-width: 1400px; margin: 16px auto; padding: 24px 28px;
+      background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.08);
+    }
+
+    /* ── Header ── */
+    .report-header {
+      display: flex; justify-content: space-between; align-items: center;
+      border-bottom: 2.5px solid #111; padding-bottom: 10px; margin-bottom: 18px; gap: 16px;
+    }
+    .report-header-left { display: flex; align-items: center; gap: 14px; }
+    .report-header-logo { height: 42px; max-width: 140px; object-fit: contain; object-position: left center; }
+    .report-header .org-label { font-size: 10px; letter-spacing: 1.6px; text-transform: uppercase; color: #777; font-weight: 600; }
+    .report-header .title { font-size: 17px; font-weight: 700; margin-top: 1px; }
+    .report-header-right { text-align: right; }
+    .report-header .date-range { font-size: 11px; color: #666; }
+
     /* ── Summary Cards ── */
-    .summary-cards {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-      gap: 10px;
-      padding: 14px 20px 4px 20px;
+    .summary-cards { display: flex; gap: 12px; margin-bottom: 18px; flex-wrap: wrap; }
+    .summary-card {
+      flex: 1; min-width: 120px; background: #f5f4f1;
+      border: 1px solid #ddd; border-radius: 6px; padding: 10px 14px;
     }
-    .scard {
-      background: #fff;
-      border: 1px solid #e5e5e5;
-      border-radius: 6px;
-      padding: 12px 14px;
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-      border-left: 3px solid #999;
+    .summary-card .card-label { font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.8px; color: #888; font-weight: 600; margin-bottom: 4px; }
+    .summary-card .card-value { font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums; color: #111; }
+    .summary-card .card-value.green  { color: #15803d; }
+    .summary-card .card-value.red    { color: #b91c1c; }
+    .summary-card .card-value.blue   { color: #2563eb; }
+    .summary-card .card-value.purple { color: #7c3aed; }
+    .summary-card .card-value.pink   { color: #db2777; }
+    .summary-card .card-value.amber  { color: #d97706; }
+    .summary-card .card-sub { font-size: 10px; color: #999; margin-top: 2px; }
+
+    /* ── Footer ── */
+    .report-footer {
+      display: flex; justify-content: space-between;
+      border-top: 2.5px solid #111; margin-top: 16px; padding-top: 6px;
+      font-size: 10px; color: #777;
     }
-    .scard .scard-label {
-      font-size: 10px;
-      text-transform: uppercase;
-      letter-spacing: .6px;
-      color: #777;
-      font-weight: 600;
-    }
-    .scard .scard-value {
-      font-size: 20px;
-      font-weight: 700;
-      color: #1a1a1a;
-      font-variant-numeric: tabular-nums;
-    }
-    .scard .scard-sub {
-      font-size: 11px;
-      color: #666;
-    }
-    .scard.active   { border-left-color: #16a34a; }
-    .scard.canceled { border-left-color: #ef4444; }
-    .scard.expired  { border-left-color: #f59e0b; }
-    .scard.inactive { border-left-color: #94a3b8; }
-    .scard.renew    { border-left-color: #db2777; }
-    .scard.revenue  { border-left-color: #3b82f6; }
-    .scard.stale    { border-left-color: #7c3aed; }
 
     /* ── Content area ── */
-    .content { padding: 14px 20px 28px; }
+    .content { padding: 0; }
 
     /* ── Table ── */
     table.report {
@@ -269,11 +268,13 @@
     @media print {
       .toolbar { display: none; }
       body { background: #fff; }
-      .content { padding: 0; }
-      .summary-cards { padding: 0 0 8px 0; }
-      .scard { break-inside: avoid; }
+      .page { box-shadow: none; margin: 0; padding: 12px 16px; max-width: 100%; }
+      .summary-card { break-inside: avoid; }
       .chart-card { break-inside: avoid; }
     }
+    body.print-mode .toolbar { display: none !important; }
+    body.print-mode { background: #fff; }
+    body.print-mode .page { box-shadow: none; margin: 0; padding: 12px 16px; max-width: 100%; }
   </style>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -478,7 +479,10 @@
       const reportType = 'memberships';
       const isPrint    = useMemo(() => new URLSearchParams(window.location.search).get('_print') === '1', []);
 
+      useEffect(() => { if (isPrint) document.body.classList.add('print-mode'); }, [isPrint]);
+
       const [data, setData]       = useState([]);
+      const [meta, setMeta]       = useState({});
       const [loading, setLoading] = useState(true);
       const [error, setError]     = useState(null);
 
@@ -522,6 +526,7 @@
           .then(payload => {
             const rows = (payload.rows || payload.data || payload || []).map(normalizeRow);
             setData(rows);
+            setMeta(payload.meta || {});
             setLoading(false);
           })
           .catch(err => {
@@ -1023,6 +1028,11 @@
         { key: 'upcomingRenewals', label: 'Upcoming' },
       ];
 
+      const orgName = meta.org_name || (meta.org_slug ? meta.org_slug.charAt(0).toUpperCase() + meta.org_slug.slice(1) : orgSlug || 'rec.us');
+      const logoUrl = meta.logo_url || null;
+      const now = new Date();
+      const runDate = `${String(now.getMonth()+1).padStart(2,'0')}/${String(now.getDate()).padStart(2,'0')}/${now.getFullYear()} @ ${now.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',hour12:true}).toLowerCase()}`;
+
       return (
         <React.Fragment>
           {!isPrint && (
@@ -1084,50 +1094,70 @@
             </div>
           )}
 
-          <div className="summary-cards">
-            <div className="scard">
-              <div className="scard-label">Total Memberships</div>
-              <div className="scard-value">{summary.total.toLocaleString()}</div>
-              <div className="scard-sub">After filters applied</div>
-            </div>
-            <div className="scard active">
-              <div className="scard-label">Active</div>
-              <div className="scard-value">{summary.active.toLocaleString()}</div>
-            </div>
-            <div className="scard canceled">
-              <div className="scard-label">Canceled</div>
-              <div className="scard-value">{summary.canceled.toLocaleString()}</div>
-            </div>
-            <div className="scard expired">
-              <div className="scard-label">Expired</div>
-              <div className="scard-value">{summary.expired.toLocaleString()}</div>
-            </div>
-            <div className="scard inactive">
-              <div className="scard-label">Inactive</div>
-              <div className="scard-value">{summary.inactive.toLocaleString()}</div>
-            </div>
-            <div className="scard renew">
-              <div className="scard-label">Auto-Renew</div>
-              <div className="scard-value">{summary.autoRenewCount.toLocaleString()}</div>
-              <div className="scard-sub">≈ {money(summary.mrrEstimate)} renewal value</div>
-            </div>
-            <div className="scard revenue">
-              <div className="scard-label">Total Revenue</div>
-              <div className="scard-value">{money(summary.totalRevenue)}</div>
-              <div className="scard-sub">Lifetime, after filters</div>
-            </div>
-            <div className="scard stale">
-              <div className="scard-label">Stale (Active)</div>
-              <div className="scard-value">{summary.stale.toLocaleString()}</div>
-              <div className="scard-sub">No usage in 60+ days</div>
-            </div>
-          </div>
+          <div className="page" style={loading ? {opacity:0.5,pointerEvents:'none'} : {}}>
 
-          <div className="content">
-            {renderView()}
-          </div>
+            {/* Header */}
+            <div className="report-header">
+              <div className="report-header-left">
+                {logoUrl && <img src={logoUrl} alt="" className="report-header-logo" onError={e => e.target.style.display='none'} />}
+                <div>
+                  <div className="org-label">{orgName}</div>
+                  <div className="title">Memberships</div>
+                </div>
+              </div>
+              <div className="report-header-right">
+                <div className="date-range">{filtered.length.toLocaleString()} memberships · {summary.total.toLocaleString()} after filters</div>
+              </div>
+            </div>
 
-          {!loading && !error && <div id="report-ready" style={{display:'none'}} />}
+            {/* Summary cards */}
+            <div className="summary-cards">
+              <div className="summary-card">
+                <div className="card-label">Active</div>
+                <div className="card-value green">{summary.active.toLocaleString()}</div>
+              </div>
+              <div className="summary-card">
+                <div className="card-label">Canceled</div>
+                <div className="card-value red">{summary.canceled.toLocaleString()}</div>
+              </div>
+              <div className="summary-card">
+                <div className="card-label">Expired</div>
+                <div className="card-value amber">{summary.expired.toLocaleString()}</div>
+              </div>
+              <div className="summary-card">
+                <div className="card-label">Inactive</div>
+                <div className="card-value">{summary.inactive.toLocaleString()}</div>
+              </div>
+              <div className="summary-card">
+                <div className="card-label">Auto-Renew</div>
+                <div className="card-value pink">{summary.autoRenewCount.toLocaleString()}</div>
+                <div className="card-sub">≈ {money(summary.mrrEstimate)} renewal value</div>
+              </div>
+              <div className="summary-card">
+                <div className="card-label">Total Revenue</div>
+                <div className="card-value blue">{money(summary.totalRevenue)}</div>
+                <div className="card-sub">Lifetime, after filters</div>
+              </div>
+              <div className="summary-card">
+                <div className="card-label">Stale (Active)</div>
+                <div className="card-value purple">{summary.stale.toLocaleString()}</div>
+                <div className="card-sub">No usage in 60+ days</div>
+              </div>
+            </div>
+
+            {/* Content */}
+            <div className="content">
+              {renderView()}
+            </div>
+
+            {/* Footer */}
+            <div className="report-footer">
+              <span>{orgName} — Memberships</span>
+              <span>Run Date/Time: {runDate}</span>
+            </div>
+
+            {!loading && !error && <div id="report-ready" style={{display:'none'}} />}
+          </div>
         </React.Fragment>
       );
     }
