@@ -962,7 +962,8 @@ function App() {
         var mhh = match['Household ID']||'';
         if (matchedHHs.has(mhh)) return;
         matchedHHs.add(mhh);
-        var hhNet = num(col(match,['Net Revenue','net_revenue']));
+        var rawRev = match['Net Revenue'] || match['net_revenue'] || match['Net_Revenue'] || 0;
+        var hhNet = parseFloat(String(rawRev).replace(/,/g,'')) || 0;
         if (hhNet > 0) { demo.ftRevTotal += hhNet; demo.ftRevHHs++; }
         var age = parseInt(match['Age'])||0;
         if (age > 0 && age < 120) {
