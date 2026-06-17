@@ -728,7 +728,7 @@
             <tbody>
               {sortedRows.map((r, i) => (
                 <tr key={r.membershipId + '-' + i}>
-                  <td><strong>{r.lastName}{r.firstName ? ', ' + r.firstName : ''}</strong></td>
+                  <td><strong>{r.lastName && r.firstName ? `${r.lastName}, ${r.firstName}` : r.lastName || r.firstName || '—'}</strong></td>
                   <td style={{color:'#666'}}>{r.email}</td>
                   <td>{r.type}</td>
                   <td><StatusPill status={r.status} /></td>
