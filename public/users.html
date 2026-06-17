@@ -306,7 +306,7 @@ function GenderChart({ gender, genderSpecified, total, colors }) {
 }
 
 /* ═══ compute() ═══ */
-function compute(rows, includeGuests) {
+function compute(rows) {
   var EXPECTED_KEYS=['Household ID','Role','HoH Name','Created At','Rec ID','First Name','Last Name','Email','Phone','Street Number','Street Name','City','State','Zip Code','Date of Birth','Age','Grade','Gender','Residency?','Gross Revenue','Refunds','Net Revenue','Items Purchased','First Transaction','Last Transaction','Program Revenue','Facility Revenue','Fee Revenue','Product Revenue'];
   rows = rows.map(function(r) {
     var o={};
@@ -338,8 +338,55 @@ function compute(rows, includeGuests) {
   var guestHHs = new Set(); guestRows.forEach(function(r){if(r['Household ID'])guestHHs.add(r['Household ID']);});
   var guestHHCount = guestHHs.size;
 
-  // Use registered-only for demographics, all for revenue (controlled by toggle)
-  if (!includeGuests) rows = registeredRows;
+  // ── Guest analytics (computed once, rendered in Guests tab) ──
+  var guestGross=0, guestRefunds=0, guestNet=0, guestItems=0;
+  var guestProgRev=0, guestFacRev=0, guestFeeRev=0, guestProdRev=0;
+  var guestWithRev=0;
+  var guestRevList=[];
+  var guestMonthly={};
+  var guestHHRevSeen={};
+  guestRows.forEach(function(r){
+    var hid=r['Household ID']||r['Rec ID']||'';
+    if(guestHHRevSeen[hid]) return;
+    guestHHRevSeen[hid]=1;
+    var gr=num(col(r,['Gross Revenue','gross_revenue']));
+    var rf=num(col(r,['Refunds','refunds','Total Refunds']));
+    var nt=num(col(r,['Net Revenue','net_revenue']));
+    var it=Math.round(num(col(r,['Items Purchased','items_purchased','Item Count'])));
+    var pr=num(col(r,['Product Revenue','product_revenue']));
+    var pg=num(col(r,['Program Revenue','program_revenue']));
+    var fc=num(col(r,['Facility Revenue','facility_revenue']));
+    var fe=num(col(r,['Fee Revenue','fee_revenue']));
+    guestGross+=gr; guestRefunds+=rf; guestNet+=nt; guestItems+=it;
+    guestProdRev+=pr; guestProgRev+=pg; guestFacRev+=fc; guestFeeRev+=fe;
+    if(gr>0){guestWithRev++; guestRevList.push(gr);}
+    // Monthly trend from Created At
+    var ca=col(r,['Created At','created_at']);
+    if(ca){var ym=toYM(ca);if(ym){guestMonthly[ym]=(guestMonthly[ym]||0)+1;}}
+  });
+  guestRevList.sort(function(a,b){return a-b;});
+  var guestAvgRev=guestWithRev>0?guestGross/guestWithRev:0;
+  var guestMedianRev=guestRevList.length>0?pctile(guestRevList,50):0;
+  var guestAvgItems=guestWithRev>0?guestItems/guestWithRev:0;
+  // Guest revenue distribution buckets
+  var guestRevDist=[
+    {label:'$0',count:guestHHCount-guestWithRev},
+    {label:'$1–10',count:0},{label:'$11–25',count:0},{label:'$26–50',count:0},
+    {label:'$51–100',count:0},{label:'$100+',count:0}
+  ];
+  guestRevList.forEach(function(v){
+    if(v<=10)guestRevDist[1].count++;
+    else if(v<=25)guestRevDist[2].count++;
+    else if(v<=50)guestRevDist[3].count++;
+    else if(v<=100)guestRevDist[4].count++;
+    else guestRevDist[5].count++;
+  });
+  // Sorted monthly keys for chart
+  var guestMonthKeys=Object.keys(guestMonthly).sort();
+  var guestMonthData=guestMonthKeys.map(function(k){return {label:k,count:guestMonthly[k]};});
+
+  // Demographics / Revenue / Strategy use registered-only
+  rows = registeredRows;
   var total = rows.length;
   var hohs = rows.filter(function(r){return r['Role']==='Head of Household';});
   var members = rows.filter(function(r){return r['Role']==='Member';});
@@ -664,6 +711,10 @@ function compute(rows, includeGuests) {
     progNoFacCSV:progNoFacCSV, facNoProgCSV:facNoProgCSV,
     // Guests
     guestCount:guestCount, guestHHCount:guestHHCount, totalWithGuests:allRows.length, staffCount:staffCount,
+    guestGross:guestGross, guestRefunds:guestRefunds, guestNet:guestNet, guestItems:guestItems,
+    guestProdRev:guestProdRev, guestProgRev:guestProgRev, guestFacRev:guestFacRev, guestFeeRev:guestFeeRev,
+    guestWithRev:guestWithRev, guestAvgRev:guestAvgRev, guestMedianRev:guestMedianRev, guestAvgItems:guestAvgItems,
+    guestRevDist:guestRevDist, guestMonthData:guestMonthData,
   };
 }
 
@@ -693,6 +744,17 @@ function buildInsightsBlob(s, currentTab) {
     revByAge:s.revByAgeBracket.map(function(d){return d.range+': '+d.spendingHH+' HH, avg $'+d.avgRev;}).join(', '),
     gradeGap:s.gradeRevData.map(function(d){return d.grade+': '+d.kids+' kids, avg HH $'+d.avgHHRev;}).join(', '),
   });
+  if (currentTab === 'guests') return Object.assign(base, {
+    focus:'GUEST CHECKOUT ANALYSIS',
+    guestAccounts:s.guestCount, guestHouseholds:s.guestHHCount,
+    guestGrossRevenue:Math.round(s.guestGross), guestNetRevenue:Math.round(s.guestNet),
+    guestRefunds:Math.round(s.guestRefunds), guestTransactingAccounts:s.guestWithRev,
+    avgGuestTransaction:s.guestAvgRev.toFixed(2), medianGuestTransaction:s.guestMedianRev.toFixed(2),
+    avgItemsPerGuest:s.guestAvgItems.toFixed(1), totalGuestItems:s.guestItems,
+    guestProductRevenue:Math.round(s.guestProdRev), guestProgramRevenue:Math.round(s.guestProgRev),
+    guestFacilityRevenue:Math.round(s.guestFacRev),
+    guestShareOfRevenue:((s.guestGross/(s.totalGross+s.guestGross))*100).toFixed(1)+'%',
+  });
   // Demographics (default)
   return Object.assign(base, {
     focus:'DEMOGRAPHIC ANALYSIS',
@@ -720,7 +782,7 @@ function buildObs(s) {
   if(gapPct>15) o.push({e:'\u26A0\uFE0F',l:'Data Gap',t:'Up to '+gapPct+'% missing demographics. '+s.noAge+' missing age, '+s.noGender+' missing gender.'});
 
   if(s.topCity) o.push({e:'\uD83D\uDDFA\uFE0F',l:'Geography',t:Math.round(s.cities[0].count/s.total*100)+'% from '+s.topCity+'. Spans '+s.cities.length+'+ cities.'});
-  if(s.guestCount>0) o.push({e:'\uD83D\uDC64',l:'Guest Accounts',t:s.guestCount+' guest users ('+s.guestHHCount+' HH) detected. These are checkout-only accounts with no demographic data. '+(s.guestCount>s.total*0.2?'High guest volume \u2014 consider prompting account creation at POS.':'')});
+  if(s.guestCount>0) o.push({e:'\uD83D\uDC64',l:'Guest Accounts',t:s.guestCount.toLocaleString()+' guest checkout accounts ($'+Math.round(s.guestGross).toLocaleString()+' revenue). See the Guests tab for full analytics.'});
   return o;
 }
 function buildRevObs(s) {
@@ -754,7 +816,6 @@ function App() {
   var [refreshing, setRefreshing] = useState(false);
   var [tab, setTab] = useState('demo');
   var [mapMode, setMapMode] = useState('hh');
-  var [includeGuests, setIncludeGuests] = useState(false);
   function switchTab(t){setTab(t);setInsights(null);setInsightsError(null);}
   var [insights, setInsights] = useState(null);
   var [insightsLoading, setInsightsLoading] = useState(false);
@@ -772,7 +833,7 @@ function App() {
       .catch(function(e){setError(e.message);setLoading(false);});
   }, []);
 
-  var s = useMemo(function(){return rows?compute(rows,includeGuests):null;}, [rows,includeGuests]);
+  var s = useMemo(function(){return rows?compute(rows):null;}, [rows]);
   var observations = useMemo(function(){return s?buildObs(s):[];}, [s]);
   var revObservations = useMemo(function(){return s?buildRevObs(s):[];}, [s]);
   var stratObservations = useMemo(function(){return s?buildStratObs(s):[];}, [s]);
@@ -872,11 +933,6 @@ function App() {
         <h1>Community Intelligence</h1>
         <span className="pill" style={{background:'rgba(255,255,255,.12)',color:'#ddd'}}>{orgSlug.charAt(0).toUpperCase()+orgSlug.slice(1)}</span>
         <span className="pill" style={{background:'rgba(16,185,129,.15)',color:'#6ee7b7'}}>{s.hhCount} HH &middot; {s.total} people</span>
-        {s.guestCount>0&&(
-          <button onClick={function(){setIncludeGuests(!includeGuests);}} style={{padding:'4px 12px',borderRadius:4,border:'1px solid '+(includeGuests?'#fbbf24':'rgba(255,255,255,.25)'),background:includeGuests?'rgba(251,191,36,.18)':'rgba(255,255,255,.08)',color:includeGuests?'#fbbf24':'#fff',fontSize:11,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}>
-            {includeGuests?'Guests ON':'Guests OFF'} ({s.guestCount})
-          </button>
-        )}
         <div className="spacer"/>
         <div className="divider"/>
         <button onClick={function(){window.print();}}>{'\uD83D\uDDA8\uFE0F'} Print</button>
@@ -906,6 +962,12 @@ function App() {
             Strategy
             {s.hasRevData&&s.levers.length>0&&<span className="tab-badge" style={{background:'#fef3c7',color:'#92400e'}}>{s.levers.length} levers</span>}
           </div>
+          {s.guestCount>0&&(
+            <div className={'tab'+(tab==='guests'?' active':'')} onClick={function(){switchTab('guests');}}>
+              Guests
+              <span className="tab-badge" style={{background:'#fce7f3',color:'#9d174d'}}>{s.guestCount>999?(s.guestCount/1000).toFixed(1)+'K':s.guestCount}</span>
+            </div>
+          )}
         </div>
 
         {tab==='demo' && (
@@ -945,15 +1007,6 @@ function App() {
                 </div>
               </div>
             </div>
-
-            {/* Data quality alerts */}
-            {s.guestCount>0&&(
-              <div style={{marginBottom:14}}>
-                {s.guestCount>0&&!includeGuests&&<div className="alert-card alert-info"><strong>{s.guestCount} guest accounts</strong> ({s.guestHHCount} households) detected and excluded from demographics. Guests are checkout-only accounts with no profile data. Toggle "Guests" in the toolbar to include them.</div>}
-                {s.guestCount>0&&includeGuests&&<div className="alert-card alert-warn"><strong>Guest accounts included</strong> — {s.guestCount} guest users are in this view. They have no demographic data (no DOB, city, phone) and will skew completeness metrics.</div>}
-
-              </div>
-            )}
 
             {/* Row 2: Signups + Growth */}
             <div className="grid">
@@ -1245,6 +1298,51 @@ function App() {
 
               </React.Fragment>
             )}
+          </React.Fragment>
+        )}
+
+        {/* ═══ Guests tab ═══ */}
+        {tab==='guests' && s.guestCount>0 && (
+          <React.Fragment>
+            {/* KPIs */}
+            <div className="kpi-row">
+              <div className="kpi" style={{'--accent':'#db2777'}}><div className="kpi-label">Guest Accounts</div><div className="kpi-val">{s.guestCount.toLocaleString()}</div><div className="kpi-sub">{s.guestHHCount.toLocaleString()} households</div></div>
+              <div className="kpi" style={{'--accent':'#059669'}}><div className="kpi-label">Gross Revenue</div><div className="kpi-val">${Math.round(s.guestGross).toLocaleString()}</div><div className="kpi-sub">{s.guestWithRev.toLocaleString()} transacting guests</div></div>
+              <div className="kpi" style={{'--accent':'#2563eb'}}><div className="kpi-label">Avg Transaction</div><div className="kpi-val">${s.guestAvgRev.toFixed(2)}</div><div className="kpi-sub">Median ${s.guestMedianRev.toFixed(2)}</div></div>
+              <div className="kpi" style={{'--accent':'#d97706'}}><div className="kpi-label">Items per Guest</div><div className="kpi-val">{s.guestAvgItems.toFixed(1)}</div><div className="kpi-sub">{s.guestItems.toLocaleString()} total items</div></div>
+              <div className="kpi" style={{'--accent':'#7c3aed'}}><div className="kpi-label">Net Revenue</div><div className="kpi-val">${Math.round(s.guestNet).toLocaleString()}</div><div className="kpi-sub">${Math.round(s.guestRefunds).toLocaleString()} refunded</div></div>
+              <div className="kpi" style={{'--accent':'#0891b2'}}><div className="kpi-label">Share of All Revenue</div><div className="kpi-val">{s.totalGross+s.guestGross>0?((s.guestGross/(s.totalGross+s.guestGross))*100).toFixed(1):'0'}%</div><div className="kpi-sub">of total platform revenue</div></div>
+            </div>
+
+            {/* Observations */}
+            <div className="obs-panel">
+              <div className="obs-title">Guest Channel Insights</div>
+              <div className="obs-grid">
+                <div className="obs-item"><span className="emoji">{'🛒'} </span><strong>Product Sales</strong> ${Math.round(s.guestProdRev).toLocaleString()} — {s.guestGross>0?((s.guestProdRev/s.guestGross)*100).toFixed(0):'0'}% of guest revenue. Concessions, aquatics, and walk-up items.</div>
+                <div className="obs-item"><span className="emoji">{'📋'} </span><strong>Programs</strong> ${Math.round(s.guestProgRev).toLocaleString()} — {s.guestGross>0?((s.guestProgRev/s.guestGross)*100).toFixed(0):'0'}% of guest revenue.</div>
+                <div className="obs-item"><span className="emoji">{'🏢'} </span><strong>Facility Rentals</strong> ${Math.round(s.guestFacRev).toLocaleString()} — {s.guestGross>0?((s.guestFacRev/s.guestGross)*100).toFixed(0):'0'}% of guest revenue.</div>
+                {s.guestCount>s.total*0.3&&<div className="obs-item"><span className="emoji">{'⚡'} </span><strong>High Guest Volume</strong> Guests make up {((s.guestCount/(s.guestCount+s.total))*100).toFixed(0)}% of all accounts — consider prompting account creation at POS to convert walk-ups into registered users.</div>}
+                {s.guestAvgRev>0&&s.guestAvgRev<25&&<div className="obs-item"><span className="emoji">{'💡'} </span><strong>Upsell Opportunity</strong> Avg guest transaction is ${s.guestAvgRev.toFixed(2)}. Bundling or suggestive selling could move this needle.</div>}
+              </div>
+            </div>
+
+            {/* Charts */}
+            <div className="grid">
+              <ChartPanel title={'Revenue by Category'} data={[
+                {label:'Product',value:Math.round(s.guestProdRev)},
+                {label:'Program',value:Math.round(s.guestProgRev)},
+                {label:'Facility',value:Math.round(s.guestFacRev)},
+                {label:'Fee',value:Math.round(s.guestFeeRev)}
+              ].filter(function(d){return d.value>0;})} labelKey="label" dataKeys={[{key:'value',label:'Revenue'}]} colors={['#db2777']} prefix="$" />
+              <ChartPanel title={'Guest Spend Distribution'} data={s.guestRevDist.filter(function(d){return d.count>0;})} labelKey="label" dataKeys={[{key:'count',label:'Guests'}]} colors={['#7c3aed']} />
+            </div>
+
+            {s.guestMonthData.length>1&&(
+              <div className="grid" style={{gridTemplateColumns:'1fr'}}>
+                <ChartPanel title={'Guest Account Creation by Month'} data={s.guestMonthData} labelKey="label" dataKeys={[{key:'count',label:'New Guests'}]} colors={['#0891b2']} />
+              </div>
+            )}
+
           </React.Fragment>
         )}
       </div>
