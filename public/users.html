@@ -879,7 +879,19 @@ function App() {
       .catch(function(e){setError(e.message);setLoading(false);});
   }, []);
 
-  var s = useMemo(function(){return rows?compute(rows):null;}, [rows]);
+  // Defer heavy compute to next frame so the page shell renders instantly
+  var [s, setS] = useState(null);
+  var [computing, setComputing] = useState(false);
+  useEffect(function(){
+    if (!rows) { setS(null); return; }
+    setComputing(true);
+    var id = setTimeout(function(){
+      setS(compute(rows));
+      setComputing(false);
+    }, 0);
+    return function(){ clearTimeout(id); };
+  }, [rows]);
+
   var observations = useMemo(function(){return s?buildObs(s):[];}, [s]);
   var revObservations = useMemo(function(){return s?buildRevObs(s):[];}, [s]);
   var stratObservations = useMemo(function(){return s?buildStratObs(s):[];}, [s]);
@@ -1041,7 +1053,7 @@ function App() {
 
   if(loading) return <div className="loading"><div className="spinner"/><div className="juice-msg"><span>Squeezing the oranges…</span><span>Juicing!</span><span>Adding the pulp…</span><span>Chilling the glass…</span><span>Pouring it out…</span></div></div>;
   if(error) return <div className="dash"><div className="error"><strong>Error:</strong> {error}</div></div>;
-  if(!s) return <div className="dash"><div className="empty">No data returned.</div></div>;
+  if(!s) return <div className="loading"><div className="spinner"/><div style={{color:'#888',fontSize:13,marginTop:8}}>{computing?'Crunching '+((rows&&rows.length)||0).toLocaleString()+' records…':'No data returned.'}</div></div>;
 
   var TEAL='#0d9488',AMBER='#f59e0b',ROSE='#f43f5e',EMERALD='#10b981',INDIGO='#6366f1',PURPLE='#8b5cf6',SKY='#0ea5e9';
   var GENDER_COLORS=[INDIGO,'#94a3b8',SKY,AMBER,PURPLE];
