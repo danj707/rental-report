@@ -237,7 +237,7 @@ function App() {
       .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
       .then(function(json) {
         var raw = Array.isArray(json) ? json : (json.rows || []);
-        setRows(raw.map(normalizeRow));
+        setRows(raw.filter(function(r){ return (r['Row Type']||'section') !== 'user'; }).map(normalizeRow));
         if (json && json.meta) {
           if (json.meta.org_name) setOrgName(json.meta.org_name);
           if (json.meta.logo_url) setLogoUrl(json.meta.logo_url);

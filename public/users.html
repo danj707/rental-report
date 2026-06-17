@@ -888,12 +888,16 @@ function App() {
   var ftAnalytics = useMemo(function(){
     var cd = crossData.fasttrack;
     if (!cd || !cd.rows || cd.rows.length === 0) return null;
-    var rows = cd.rows;
+    var allFtRows = cd.rows;
+    var sectionRows = allFtRows.filter(function(r){ return (r['Row Type']||'section') !== 'user'; });
+    var userRows    = allFtRows.filter(function(r){ return r['Row Type'] === 'user'; });
+
+    // Section-level analytics (existing)
     var totalSignups=0, totalConverted=0, totalPending=0, totalDropped=0;
     var totalEnrolled=0, totalCapacity=0, totalDirect=0;
     var sectionCount=0;
     var programMap={};
-    rows.forEach(function(r){
+    sectionRows.forEach(function(r){
       var signups = parseInt(r['FT Signups']||r['ft_signups']||0)||0;
       var converted = parseInt(r['FT Converted']||r['ft_converted']||0)||0;
       var pending = parseInt(r['FT Pending']||r['ft_pending']||0)||0;
@@ -912,25 +916,77 @@ function App() {
     });
     var convRate = totalSignups>0?((totalConverted/totalSignups)*100).toFixed(1):'0';
     var ftShareOfEnrolled = totalEnrolled>0?((totalConverted/totalEnrolled)*100).toFixed(1):'0';
-    // Top programs by FT demand
     var topPrograms = Object.keys(programMap).map(function(p){return Object.assign({name:p},programMap[p]);})
       .filter(function(p){return p.signups>0;})
       .sort(function(a,b){return b.signups-a.signups;})
       .slice(0,12);
-    // Conversion funnel
     var funnel = [
       {label:'FT Signups',value:totalSignups},
       {label:'Converted',value:totalConverted},
       {label:'Pending',value:totalPending},
       {label:'Dropped',value:totalDropped}
     ];
+
+    // User-level demographic crossover
+    var demo = { hasData:false, ftUsers:userRows.length, matched:0,
+      ages:[], resYes:0, resNo:0, cities:{}, zips:{},
+      ageBrackets:{'0-5':0,'6-12':0,'13-17':0,'18-25':0,'26-35':0,'36-45':0,'46-55':0,'56-65':0,'65+':0} };
+    if (userRows.length > 0 && rows && rows.length > 0) {
+      var emailMap = {};
+      var hhMap = {};
+      rows.forEach(function(r){
+        var em = (r['Email']||'').trim().toLowerCase();
+        if (em) emailMap[em] = r;
+        var hh = r['Household ID']||'';
+        if (hh && !hhMap[hh]) hhMap[hh] = r;
+      });
+      var matchedHHs = new Set();
+      userRows.forEach(function(ur){
+        var em = (ur['User Email']||'').trim().toLowerCase();
+        var hh = ur['User HH ID']||'';
+        var match = emailMap[em] || hhMap[hh] || null;
+        if (!match) return;
+        demo.matched++;
+        var mhh = match['Household ID']||'';
+        if (matchedHHs.has(mhh)) return;
+        matchedHHs.add(mhh);
+        var age = parseInt(match['Age'])||0;
+        if (age > 0 && age < 120) {
+          demo.ages.push(age);
+          if(age<=5) demo.ageBrackets['0-5']++;
+          else if(age<=12) demo.ageBrackets['6-12']++;
+          else if(age<=17) demo.ageBrackets['13-17']++;
+          else if(age<=25) demo.ageBrackets['18-25']++;
+          else if(age<=35) demo.ageBrackets['26-35']++;
+          else if(age<=45) demo.ageBrackets['36-45']++;
+          else if(age<=55) demo.ageBrackets['46-55']++;
+          else if(age<=65) demo.ageBrackets['56-65']++;
+          else demo.ageBrackets['65+']++;
+        }
+        var res = (match['Residency?']||'').trim();
+        if (res === 'Yes') demo.resYes++;
+        else if (res === 'No') demo.resNo++;
+        var city = (match['City']||'').trim();
+        if (city) demo.cities[city] = (demo.cities[city]||0)+1;
+        var zip = (match['Zip Code']||'').trim();
+        if (zip) demo.zips[zip] = (demo.zips[zip]||0)+1;
+      });
+      demo.hasData = demo.matched > 0;
+      demo.medianAge = demo.ages.length > 0 ? (function(a){a.sort(function(x,y){return x-y;});return a[Math.floor(a.length/2)];})(demo.ages.slice()) : null;
+      demo.resPct = (demo.resYes+demo.resNo)>0 ? ((demo.resYes/(demo.resYes+demo.resNo))*100).toFixed(1) : null;
+      demo.topCities = Object.keys(demo.cities).map(function(c){return {city:c,count:demo.cities[c]};}).sort(function(a,b){return b.count-a.count;}).slice(0,8);
+      demo.topZips = Object.keys(demo.zips).map(function(z){return {zip:z,count:demo.zips[z]};}).sort(function(a,b){return b.count-a.count;}).slice(0,8);
+      demo.ageBracketData = Object.keys(demo.ageBrackets).map(function(k){return {label:k,count:demo.ageBrackets[k]};});
+      demo.matchedHHs = matchedHHs.size;
+    }
+
     return {
       totalSignups:totalSignups, totalConverted:totalConverted, totalPending:totalPending, totalDropped:totalDropped,
-      convRate:convRate, sectionCount:sectionCount, totalSections:rows.length,
+      convRate:convRate, sectionCount:sectionCount, totalSections:sectionRows.length,
       ftShareOfEnrolled:ftShareOfEnrolled, totalEnrolled:totalEnrolled, totalDirect:totalDirect,
-      topPrograms:topPrograms, funnel:funnel,
+      topPrograms:topPrograms, funnel:funnel, demo:demo,
     };
-  }, [crossData.fasttrack]);
+  }, [crossData.fasttrack, rows]);
 
   var getInsights = useCallback(function() {
     if(!s||insightsLoading)return;
@@ -1514,6 +1570,39 @@ function App() {
                   <ChartPanel title={'Conversion Funnel'} data={ft.funnel.filter(function(d){return d.value>0;})} labelKey="label" dataKeys={[{key:'value',label:'Count'}]} colors={['#6366f1']} />
                   <ChartPanel title={'Top Programs by FT Demand'} data={ft.topPrograms.slice(0,10)} labelKey="name" dataKeys={[{key:'signups',label:'Signups'},{key:'converted',label:'Converted'}]} colors={['#6366f1','#059669']} />
                 </div>
+
+                {/* Demographic crossover (only when user rows are available from v5 SQL) */}
+                {ft.demo.hasData && (
+                  <React.Fragment>
+                    <div style={{borderTop:'1px solid #e5e7eb',marginTop:20,paddingTop:16}}>
+                      <div style={{fontSize:12,fontWeight:700,textTransform:'uppercase',letterSpacing:'.04em',color:'#6366f1',marginBottom:12}}>FT User Demographics <span style={{fontWeight:400,textTransform:'none',color:'#9ca3af',letterSpacing:0}}>— {ft.demo.matchedHHs} households matched</span></div>
+                    </div>
+                    <div className="kpi-row">
+                      <div className="kpi" style={{'--accent':'#6366f1'}}><div className="kpi-label">FT Households</div><div className="kpi-val">{ft.demo.matchedHHs}</div><div className="kpi-sub">{ft.demo.ftUsers} unique customers</div></div>
+                      {ft.demo.medianAge!==null&&<div className="kpi" style={{'--accent':'#d97706'}}><div className="kpi-label">Median Age</div><div className="kpi-val">{ft.demo.medianAge}</div><div className="kpi-sub">{s&&s.medianAge?'vs '+s.medianAge+' overall':'of matched HoH'}</div></div>}
+                      {ft.demo.resPct!==null&&<div className="kpi" style={{'--accent':'#059669'}}><div className="kpi-label">Resident Rate</div><div className="kpi-val">{ft.demo.resPct}%</div><div className="kpi-sub">{s?'vs '+s.resPct+'% overall':'of FT users'}</div></div>}
+                      {ft.demo.topCities.length>0&&<div className="kpi" style={{'--accent':'#2563eb'}}><div className="kpi-label">Top City</div><div className="kpi-val">{ft.demo.topCities[0].city}</div><div className="kpi-sub">{ft.demo.topCities[0].count} HH ({ft.demo.matchedHHs>0?((ft.demo.topCities[0].count/ft.demo.matchedHHs)*100).toFixed(0):'0'}%)</div></div>}
+                    </div>
+                    <div className="obs-panel">
+                      <div className="obs-title">Key Observations</div>
+                      <div className="obs-grid">
+                        {ft.demo.resPct!==null&&s&&<div>{E('\uD83C\uDFE0')}<strong style={{color:'#065f46'}}>Residency</strong> FT users are {parseFloat(ft.demo.resPct)>parseFloat(s.resPct)?'more':'less'} local than the general population ({ft.demo.resPct}% vs {s.resPct}% resident).{parseFloat(ft.demo.resPct)<parseFloat(s.resPct)*0.8?' Non-residents are disproportionately using Fast Track \u2014 it may be their discovery channel.':''}</div>}
+                        {ft.demo.medianAge!==null&&s&&s.medianAge&&<div>{E('\uD83D\uDC76')}<strong style={{color:'#065f46'}}>Age Profile</strong> FT household median age is {ft.demo.medianAge} vs {s.medianAge} overall. {ft.demo.medianAge<s.medianAge-3?'FT skews younger \u2014 families with young children are the primary FT audience.':ft.demo.medianAge>s.medianAge+3?'FT skews older than average.':'Age profile is similar to the general population.'}</div>}
+                        {ft.demo.topCities.length>1&&<div>{E('\uD83D\uDDFA\uFE0F')}<strong style={{color:'#065f46'}}>Geography</strong> Top FT cities: {ft.demo.topCities.slice(0,3).map(function(c){return c.city+' ('+c.count+')';}).join(', ')}. {ft.demo.topCities[0].count>ft.demo.matchedHHs*0.5?'Heavily concentrated in '+ft.demo.topCities[0].city+'.':'Spread across multiple areas.'}</div>}
+                      </div>
+                    </div>
+                    <div className="grid">
+                      <ChartPanel title={'FT Users by Age Group'} data={ft.demo.ageBracketData.filter(function(d){return d.count>0;})} labelKey="label" dataKeys={[{key:'count',label:'Households'}]} colors={['#6366f1']} />
+                      <ChartPanel title={'FT Users by City'} data={ft.demo.topCities} labelKey="city" dataKeys={[{key:'count',label:'Households'}]} colors={['#059669']} />
+                    </div>
+                  </React.Fragment>
+                )}
+
+                {ft.demo.ftUsers===0 && (
+                  <div style={{borderTop:'1px solid #e5e7eb',marginTop:20,paddingTop:16,textAlign:'center',color:'#9ca3af',fontSize:13,padding:'24px 0'}}>
+                    User-level demographic crossover available when the Metabase FT query is updated to v5 (adds per-user rows).
+                  </div>
+                )}
               </React.Fragment>
             );
           }
