@@ -382,6 +382,10 @@
       color: #333;
     }
 
+    /* Keep section + column headers together across page breaks */
+    .loc-section { break-inside: avoid-column; }
+    .section-header + .col-header-row { border-top: none; }
+
     /* ── Date + Location section header ── */
     .section-header {
       display: flex;
@@ -3178,20 +3182,6 @@ function App() {
         {/* ── Table View ── */}
         {viewMode === 'table' && (
           <>
-            <div className="col-header-row">
-              <span className="col-start">Begin</span>
-              <span className="col-end">End</span>
-              <span className="col-site">Facility / Site</span>
-              <span className="col-reservee">Reservee</span>
-              <span className="col-phone">Phone #</span>
-              <span className="col-email">Email</span>
-              <span className="col-purpose">Purpose</span>
-              {showResident  && <span className="col-resident">Resident?</span>}
-              {showBookType  && <span className="col-booktype">Book Type</span>}
-              {showHeadCount && <span className="col-hcnt">Cnt</span>}
-              {showTotal     && <span className="col-total">Total</span>}
-            </div>
-
             {sortedDates.map(dateKey => {
               const dateGroup = grouped[dateKey];
               const sortedLocs = Object.keys(dateGroup.locations).sort();
@@ -3200,10 +3190,23 @@ function App() {
                   {sortedLocs.map(locName => {
                     const locRows = dateGroup.locations[locName];
                     return (
-                      <div key={locName}>
+                      <div key={locName} className="loc-section">
                         <div className="section-header">
                           <span className="date-label">{formatDateHeader(dateKey)}</span>
                           <span className="loc-label">—  {locName}</span>
+                        </div>
+                        <div className="col-header-row">
+                          <span className="col-start">Begin</span>
+                          <span className="col-end">End</span>
+                          <span className="col-site">Facility / Site</span>
+                          <span className="col-reservee">Reservee</span>
+                          <span className="col-phone">Phone #</span>
+                          <span className="col-email">Email</span>
+                          <span className="col-purpose">Purpose</span>
+                          {showResident  && <span className="col-resident">Resident?</span>}
+                          {showBookType  && <span className="col-booktype">Book Type</span>}
+                          {showHeadCount && <span className="col-hcnt">Cnt</span>}
+                          {showTotal     && <span className="col-total">Total</span>}
                         </div>
                         {locRows.map((r, i) => (
                           <div key={i}>
