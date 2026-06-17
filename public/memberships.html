@@ -578,17 +578,12 @@
         const byStatus = { active:0, canceled:0, expired:0, inactive:0 };
         let autoRenewCount = 0, mrrEstimate = 0;
         let totalRevenue = 0;
-        let stale = 0;
         for (const r of all) {
           byStatus[r.status] = (byStatus[r.status] || 0) + 1;
           totalRevenue += r.price;
           if (r.status === 'active' && r.renewalType === 'Auto-renew') {
             autoRenewCount++;
             mrrEstimate += r.price;
-          }
-          if (r.status === 'active') {
-            const d = daysSince(r.lastUsed);
-            if (d !== null && d >= 60) stale++;
           }
         }
         return {
@@ -597,7 +592,6 @@
           autoRenewCount,
           mrrEstimate,
           totalRevenue,
-          stale,
         };
       }, [filtered]);
 
@@ -1131,11 +1125,6 @@
                 <div className="card-label">Total Revenue</div>
                 <div className="card-value blue">{money(summary.totalRevenue)}</div>
                 <div className="card-sub">Lifetime, after filters</div>
-              </div>
-              <div className="summary-card">
-                <div className="card-label">Stale (Active)</div>
-                <div className="card-value purple">{summary.stale.toLocaleString()}</div>
-                <div className="card-sub">No usage in 60+ days</div>
               </div>
             </div>
 
