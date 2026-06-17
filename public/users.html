@@ -599,6 +599,8 @@ function compute(rows) {
   Object.keys(hhRevSeen).forEach(function(hid){if(hhRevSeen[hid].progRev>0&&hhRevSeen[hid].facRev===0&&hohInfoMap[hid])progNoFacCSV.push(hohInfoMap[hid]);});
   var facNoProgCSV=[];
   Object.keys(hhRevSeen).forEach(function(hid){if(hhRevSeen[hid].facRev>0&&hhRevSeen[hid].progRev===0&&hohInfoMap[hid])facNoProgCSV.push(hohInfoMap[hid]);});
+  var bothProgFacCSV=[];
+  Object.keys(hhRevSeen).forEach(function(hid){if(hhRevSeen[hid].progRev>0&&hhRevSeen[hid].facRev>0&&hohInfoMap[hid])bothProgFacCSV.push(hohInfoMap[hid]);});
 
   // 1. Unbooked profile vs spender profile
   var unbookedIds=new Set(hhRevList.filter(function(h){return h.net===0;}).map(function(h,i){return Object.keys(hhRevSeen)[i];}));
@@ -708,7 +710,7 @@ function compute(rows) {
     catData:catData, hasCatData:hasCatData,
     totalProgRev:totalProgRev, totalFacRev:totalFacRev, totalFeeRev:totalFeeRev, totalProdRev:totalProdRev,
     progOnly:progOnly, facOnly:facOnly, bothProgFac:bothProgFac, progHH:progHH, facHH:facHH,
-    progNoFacCSV:progNoFacCSV, facNoProgCSV:facNoProgCSV,
+    progNoFacCSV:progNoFacCSV, facNoProgCSV:facNoProgCSV, bothProgFacCSV:bothProgFacCSV,
     // Guests
     guestCount:guestCount, guestHHCount:guestHHCount, totalWithGuests:allRows.length, staffCount:staffCount,
     guestGross:guestGross, guestRefunds:guestRefunds, guestNet:guestNet, guestItems:guestItems,
@@ -1290,6 +1292,7 @@ function App() {
                           <div style={{fontSize:24,fontWeight:800,color:'#334155'}}>{s.bothProgFac}</div>
                           <div style={{fontSize:12,color:'#475569',fontWeight:600}}>HH use both programs and facilities</div>
                           <div style={{fontSize:11,color:'#94a3b8',marginTop:4}}>Your most engaged households</div>
+                          <button style={{marginTop:8,fontSize:11,padding:'5px 10px',borderRadius:5,border:'1px solid #94a3b8',background:'#fff',cursor:'pointer',fontFamily:'inherit',fontWeight:600}} onClick={function(){exportCSV(s.bothProgFacCSV,'engaged-both-prog-fac-'+orgSlug);}}>{'⬇'} Export CSV</button>
                         </div>
                       )}
                     </div>
@@ -1314,15 +1317,15 @@ function App() {
               <div className="kpi" style={{'--accent':'#0891b2'}}><div className="kpi-label">Share of All Revenue</div><div className="kpi-val">{s.totalGross+s.guestGross>0?((s.guestGross/(s.totalGross+s.guestGross))*100).toFixed(1):'0'}%</div><div className="kpi-sub">of total platform revenue</div></div>
             </div>
 
-            {/* Observations */}
+            {/* Key Observations */}
             <div className="obs-panel">
-              <div className="obs-title">Guest Channel Insights</div>
+              <div className="obs-title">Key Observations</div>
               <div className="obs-grid">
-                <div className="obs-item"><span className="emoji">{'🛒'} </span><strong>Product Sales</strong> ${Math.round(s.guestProdRev).toLocaleString()} — {s.guestGross>0?((s.guestProdRev/s.guestGross)*100).toFixed(0):'0'}% of guest revenue. Concessions, aquatics, and walk-up items.</div>
-                <div className="obs-item"><span className="emoji">{'📋'} </span><strong>Programs</strong> ${Math.round(s.guestProgRev).toLocaleString()} — {s.guestGross>0?((s.guestProgRev/s.guestGross)*100).toFixed(0):'0'}% of guest revenue.</div>
-                <div className="obs-item"><span className="emoji">{'🏢'} </span><strong>Facility Rentals</strong> ${Math.round(s.guestFacRev).toLocaleString()} — {s.guestGross>0?((s.guestFacRev/s.guestGross)*100).toFixed(0):'0'}% of guest revenue.</div>
-                {s.guestCount>s.total*0.3&&<div className="obs-item"><span className="emoji">{'⚡'} </span><strong>High Guest Volume</strong> Guests make up {((s.guestCount/(s.guestCount+s.total))*100).toFixed(0)}% of all accounts — consider prompting account creation at POS to convert walk-ups into registered users.</div>}
-                {s.guestAvgRev>0&&s.guestAvgRev<25&&<div className="obs-item"><span className="emoji">{'💡'} </span><strong>Upsell Opportunity</strong> Avg guest transaction is ${s.guestAvgRev.toFixed(2)}. Bundling or suggestive selling could move this needle.</div>}
+                <div>{E('\uD83D\uDED2')}<strong style={{color:'#065f46'}}>Product Sales</strong> ${Math.round(s.guestProdRev).toLocaleString()} — {s.guestGross>0?((s.guestProdRev/s.guestGross)*100).toFixed(0):'0'}% of guest revenue. Concessions, aquatics, and walk-up items.</div>
+                <div>{E('\uD83D\uDCCB')}<strong style={{color:'#065f46'}}>Programs</strong> ${Math.round(s.guestProgRev).toLocaleString()} — {s.guestGross>0?((s.guestProgRev/s.guestGross)*100).toFixed(0):'0'}% of guest revenue.</div>
+                <div>{E('\uD83C\uDFE2')}<strong style={{color:'#065f46'}}>Facility Rentals</strong> ${Math.round(s.guestFacRev).toLocaleString()} — {s.guestGross>0?((s.guestFacRev/s.guestGross)*100).toFixed(0):'0'}% of guest revenue.</div>
+                {s.guestCount>s.total*0.3&&<div>{E('\u26A1')}<strong style={{color:'#065f46'}}>High Guest Volume</strong> Guests make up {((s.guestCount/(s.guestCount+s.total))*100).toFixed(0)}% of all accounts — consider prompting account creation at POS to convert walk-ups into registered users.</div>}
+                {s.guestAvgRev>0&&s.guestAvgRev<25&&<div>{E('\uD83D\uDCA1')}<strong style={{color:'#065f46'}}>Upsell Opportunity</strong> Avg guest transaction is ${s.guestAvgRev.toFixed(2)}. Bundling or suggestive selling could move this needle.</div>}
               </div>
             </div>
 
