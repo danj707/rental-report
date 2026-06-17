@@ -77,6 +77,91 @@ setInterval(() => {
   }
 }, 10 * 60 * 1000);
 
+// ── Org Pulse: extract top-line metrics from cached report data ───────
+function buildOrgPulse(slug) {
+  const org = ORGS[slug];
+  if (!org) return null;
+  const pulse = { items: [], generated: new Date().toISOString(), cached: {} };
+  const fmt = (n) => n >= 1000 ? `${(n/1000).toFixed(1)}k` : String(n);
+  const fmtMoney = (c) => {
+    const d = c / 100;
+    return d >= 1000 ? `$${(d/1000).toFixed(1)}k` : `$${d.toFixed(0)}`;
+  };
+
+  // GL — revenue snapshot
+  const glData = getCached(`${slug}:gl:`);
+  if (glData && glData.rows && glData.rows.length) {
+    let totalPay = 0, totalRef = 0;
+    for (const r of glData.rows) {
+      const pay = parseFloat(r["Total Payments"] || r["total_payments"] || 0);
+      const ref = parseFloat(r["Total Refunds"] || r["total_refunds"] || 0);
+      totalPay += pay; totalRef += Math.abs(ref);
+    }
+    const net = totalPay - totalRef;
+    pulse.items.push({ key: "revenue", label: "Net Revenue", value: "$" + net.toLocaleString("en-US", {minimumFractionDigits:0, maximumFractionDigits:0}), sub: "this month", icon: "💰" });
+    pulse.items.push({ key: "refunds", label: "Refunds", value: "$" + totalRef.toLocaleString("en-US", {minimumFractionDigits:0, maximumFractionDigits:0}), sub: `${((totalRef/(totalPay||1))*100).toFixed(1)}% of gross`, icon: "↩️" });
+    pulse.cached.gl = true;
+  }
+
+  // Programs — enrollment snapshot
+  const pgData = getCached(`${slug}:programs:`);
+  if (pgData && pgData.rows && pgData.rows.length) {
+    let enrollments = 0, cancellations = 0, programs = new Set();
+    for (const r of pgData.rows) {
+      enrollments += parseInt(r["Enrollments"] || r["enrollments"] || 0);
+      cancellations += parseInt(r["Cancellations"] || r["cancellations"] || 0);
+      const pn = r["Program"] || r["program"];
+      if (pn) programs.add(pn);
+    }
+    pulse.items.push({ key: "enrollments", label: "Enrollments", value: fmt(enrollments), sub: `${programs.size} programs`, icon: "🎓" });
+    if (cancellations > 0) {
+      pulse.items.push({ key: "cancelRate", label: "Cancel Rate", value: `${((cancellations/(enrollments||1))*100).toFixed(1)}%`, sub: `${cancellations} cancelled`, icon: "⚠️" });
+    }
+    pulse.cached.programs = true;
+  }
+
+  // Facility — booking count
+  const facData = getCached(`${slug}:facility:`);
+  if (facData && facData.rows && facData.rows.length) {
+    const locations = new Set();
+    for (const r of facData.rows) {
+      const loc = r["Location"] || r["location"] || r["location_name"];
+      if (loc) locations.add(loc);
+    }
+    pulse.items.push({ key: "bookings", label: "Bookings", value: fmt(facData.rows.length), sub: `${locations.size} locations`, icon: "📅" });
+    pulse.cached.facility = true;
+  }
+
+  // Products — POS snapshot
+  const prodData = getCached(`${slug}:products:`);
+  if (prodData && prodData.rows && prodData.rows.length) {
+    let grossRev = 0;
+    for (const r of prodData.rows) {
+      grossRev += parseFloat(r["Gross Revenue"] || r["gross_revenue"] || r["Net Revenue"] || r["net_revenue"] || 0);
+    }
+    if (grossRev > 0) {
+      pulse.items.push({ key: "productRev", label: "Product Sales", value: "$" + grossRev.toLocaleString("en-US", {minimumFractionDigits:0, maximumFractionDigits:0}), sub: `${prodData.rows.length} line items`, icon: "🛒" });
+    }
+    pulse.cached.products = true;
+  }
+
+  // Users — household count (from users cache, not dataCache)
+  const usersEntry = getCachedUsers(slug);
+  if (usersEntry && usersEntry.data && usersEntry.data.rows) {
+    const hhSet = new Set();
+    for (const r of usersEntry.data.rows) {
+      const hh = r["Household ID"] || r["household_id"];
+      if (hh) hhSet.add(hh);
+    }
+    if (hhSet.size > 0) {
+      pulse.items.push({ key: "households", label: "Households", value: fmt(hhSet.size), sub: `${fmt(usersEntry.data.rows.length)} people`, icon: "🏠" });
+    }
+    pulse.cached.users = true;
+  }
+
+  return pulse;
+}
+
 // ── Cache pre-warm on startup ─────────────────────────────────────────
 async function prewarmCache() {
   console.log(`[cache] Pre-warming default reports…`);
@@ -2531,6 +2616,15 @@ app.get('/api/hotdog', async (req, res) => {
   }
 });
 
+// ── GET /:org/api/pulse — executive summary from cached report data ──
+app.get("/:org/api/pulse", (req, res) => {
+  const slug = req.params.org;
+  if (!ORGS[slug]) return res.status(404).json({ error: "Unknown org" });
+  const pulse = buildOrgPulse(slug);
+  if (!pulse) return res.json({ items: [], generated: null });
+  res.json(pulse);
+});
+
 app.get("/:org", (req, res, next) => {
   const slug = req.params.org;
   const org  = ORGS[slug];
@@ -2567,6 +2661,8 @@ app.get("/:org", (req, res, next) => {
       reports: cr.length,
     };
   } catch(e) { orgConfig.metrics = null; }
+  // Inject executive pulse summary from cached data
+  try { orgConfig.pulse = buildOrgPulse(slug); } catch(e) { orgConfig.pulse = null; }
   const html = require("fs").readFileSync(path.join(__dirname, "public", "org.html"), "utf8");
   const inject = `<script>window.ORG_CONFIG=${JSON.stringify(orgConfig)};</script>`;
   res.type("html").send(html.replace("</head>", inject + "</head>"));
@@ -3086,6 +3182,13 @@ app.get("/", (req, res) => {
       ? `<a href="/${slug}${tokenQS}" class="org-name-link">${displayName}</a>`
       : `<span>${displayName}</span>`;
 
+    // Build pulse metrics strip from cached data
+    const pulse = buildOrgPulse(slug);
+    const pulseStrip = (pulse && pulse.items.length > 0)
+      ? `<div class="org-pulse-strip">${pulse.items.map(it =>
+          `<div class="pulse-item"><div class="pulse-val">${it.value}</div><div class="pulse-label">${it.label}</div><div class="pulse-sub">${it.sub}</div></div>`
+        ).join("")}</div>` : "";
+
     const tokenRow = org.token ? `
         <div class="token-row">
           <span class="token-label">🔑 Access token</span>
@@ -3103,6 +3206,7 @@ app.get("/", (req, res) => {
           </div>
           ${headerActions}
         </div>
+        ${pulseStrip}
         <div class="report-cards">${cards.join("")}</div>
         ${tokenRow}
         ${metricsToggle}
@@ -3234,6 +3338,12 @@ app.get("/", (req, res) => {
 
         .org-section { background: #fff; border: 1px solid #e0ddd8; border-radius: 10px; margin-bottom: 20px; overflow: hidden; }
     .org-header { display: flex; align-items: center; gap: 14px; padding: 16px 20px; background: #f9f8f6; border-bottom: 1px solid #e8e5df; }
+    .org-pulse-strip { display: flex; gap: 0; background: linear-gradient(135deg, #312e81 0%, #4338ca 50%, #4f46e5 100%); padding: 0; overflow-x: auto; }
+    .pulse-item { flex: 1; min-width: 0; padding: 12px 16px; text-align: center; border-right: 1px solid rgba(255,255,255,0.1); }
+    .pulse-item:last-child { border-right: none; }
+    .pulse-val { font-size: 18px; font-weight: 700; color: #fff; white-space: nowrap; }
+    .pulse-label { font-size: 11px; font-weight: 600; color: #a5b4fc; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 2px; }
+    .pulse-sub { font-size: 10px; color: rgba(165,180,252,0.7); margin-top: 1px; white-space: nowrap; }
     .org-logo { height: 32px; width: auto; object-fit: contain; flex-shrink: 0; }
     .org-header-text { flex: 1; }
     .org-name { font-weight: 700; font-size: 14px; }
@@ -4312,6 +4422,12 @@ app.get("/", (req, res) => {
     // Newest first. Add a new entry at the TOP for every change we ship.
     // History below back-filled from the GitHub commit log.
     const UPDATES = [
+      { date: '2026-06-16', title: 'Org Pulse \u2014 executive summary + admin metrics strip', items: [
+        'Daily Pulse on org landing page \u2014 blue gradient cards showing net revenue, enrollments, bookings, product sales, households from cached report data. Loads instantly (server-injected), no extra fetch',
+        'Admin dashboard: indigo metrics strip on each org section showing same pulse KPIs at a glance',
+        'New API endpoint GET /:org/api/pulse returns aggregated metrics from cached data for programmatic access',
+        'Value-prop callouts added to admin hero section \u2014 four pill badges below tagline',
+      ] },
       { date: '2026-06-16', title: 'Admin cards cleanup + org metrics bar redesign', items: [
         'Admin cards: replaced stacked health/tier/vote badges with compact layout \u2014 AI tag inline with label, health status as single colored dot (green/yellow/red) with full details in tooltip, votes as right-aligned count',
         'Tier cycling preserved: click the health dot to cycle critical/standard/low (tooltip shows current tier + frequency)',
