@@ -351,7 +351,7 @@
         membershipId:  raw['Membership ID'] || '',
         type:          raw['Membership Type'] || '',
         group:         raw['Group / Plan'] || '',
-        status:        (raw['Status'] || '').toLowerCase(),
+        status:        (raw['Status'] || 'active').toLowerCase(),
         renewalType:   raw['Renewal Type'] || '',
         price:         safeNum(raw['Price']),
         startDate:     raw['Start Date'] || '',
@@ -588,7 +588,7 @@
           }
           if (r.status === 'active') {
             const d = daysSince(r.lastUsed);
-            if (d === null || d >= 60) stale++;
+            if (d !== null && d >= 60) stale++;
           }
         }
         return {
@@ -734,8 +734,8 @@
                   <td><StatusPill status={r.status} /></td>
                   <td><RenewalPill type={r.renewalType} /></td>
                   <td className="num">{money(r.price)}</td>
-                  <td>{dateOnly(r.startDate)}</td>
-                  <td>{dateOnly(r.nextRenewal)}</td>
+                  <td>{r.startDate ? dateOnly(r.startDate) : <span style={{color:'#ccc'}}>—</span>}</td>
+                  <td>{r.nextRenewal ? dateOnly(r.nextRenewal) : <span style={{color:'#ccc'}}>—</span>}</td>
                   <td>{r.lastUsed ? dateOnly(r.lastUsed) : <span style={{color:'#ccc'}}>—</span>}</td>
                   <td className="num">{r.usageCount}</td>
                 </tr>
