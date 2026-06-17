@@ -1483,7 +1483,7 @@ function App() {
             </div>
 
             {/* Key Observations */}
-            <div className="obs-panel">
+            <div className="obs">
               <div className="obs-title">Key Observations</div>
               <div className="obs-grid">
                 <div>{E('\uD83D\uDED2')}<strong style={{color:'#065f46'}}>Product Sales</strong> ${Math.round(s.guestProdRev).toLocaleString()} — {s.guestGross>0?((s.guestProdRev/s.guestGross)*100).toFixed(0):'0'}% of guest revenue. Concessions, aquatics, and walk-up items.</div>
@@ -1556,7 +1556,7 @@ function App() {
                   <div className="kpi" style={{'--accent':'#7c3aed'}}><div className="kpi-label">Total Sections</div><div className="kpi-val">{ft.totalSections}</div><div className="kpi-sub">{ft.totalDirect.toLocaleString()} direct-enrolled</div></div>
                 </div>
 
-                <div className="obs-panel">
+                <div className="obs">
                   <div className="obs-title">Key Observations</div>
                   <div className="obs-grid">
                     <div>{E('\u26A1')}<strong style={{color:'#065f46'}}>Conversion Pipeline</strong> {ft.totalSignups.toLocaleString()} FT signups, {ft.totalConverted.toLocaleString()} confirmed ({ft.convRate}%). {ft.totalPending>0?ft.totalPending+' still pending.':'All resolved.'}</div>
@@ -1583,7 +1583,7 @@ function App() {
                       {ft.demo.resPct!==null&&<div className="kpi" style={{'--accent':'#059669'}}><div className="kpi-label">Resident Rate</div><div className="kpi-val">{ft.demo.resPct}%</div><div className="kpi-sub">{s?'vs '+s.resPct+'% overall':'of FT users'}</div></div>}
                       {ft.demo.topCities.length>0&&<div className="kpi" style={{'--accent':'#2563eb'}}><div className="kpi-label">Top City</div><div className="kpi-val">{ft.demo.topCities[0].city}</div><div className="kpi-sub">{ft.demo.topCities[0].count} HH ({ft.demo.matchedHHs>0?((ft.demo.topCities[0].count/ft.demo.matchedHHs)*100).toFixed(0):'0'}%)</div></div>}
                     </div>
-                    <div className="obs-panel">
+                    <div className="obs">
                       <div className="obs-title">Key Observations</div>
                       <div className="obs-grid">
                         {ft.demo.resPct!==null&&s&&<div>{E('\uD83C\uDFE0')}<strong style={{color:'#065f46'}}>Residency</strong> FT users are {parseFloat(ft.demo.resPct)>parseFloat(s.resPct)?'more':'less'} local than the general population ({ft.demo.resPct}% vs {s.resPct}% resident).{parseFloat(ft.demo.resPct)<parseFloat(s.resPct)*0.8?' Non-residents are disproportionately using Fast Track \u2014 it may be their discovery channel.':''}</div>}
