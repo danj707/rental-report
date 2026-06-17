@@ -306,6 +306,7 @@ const ORGS = {
     products: { mbUuid: "b9cae7d1-ea23-4dca-8854-d8689bc2b247" },
     programs: { mbUuid: "776bb123-3109-48d6-b50b-7f1fd161285f" },
     users   : { mbUuid: "4c0f0103-6614-4917-b5da-f09e6a9bef38" },
+    memberships: { mbUuid: "df1b17fa-8eee-441a-91f2-97206cbc76b1" },
   },
   norman: {
     token:   "RfuFOIz6KrFnSxBK",
