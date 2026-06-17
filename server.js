@@ -3697,7 +3697,8 @@ app.get("/", (req, res) => {
           <h1 class="showcase-title">Beautiful reports for<br>Parks &amp; Recreation<br><span style="font-size:22px;font-weight:600;color:#c7d2fe">Now with more 🧃</span></h1>
           <p class="showcase-desc">
             A multi-org reporting platform that transforms raw Metabase data into interactive, grouped reports
-            with PDF exports, AI-powered insights, email subscriptions, and real-time dashboards &mdash;
+            with PDF exports, AI-powered insights, email subscriptions, real-time dashboards, and a
+            Daily Pulse executive summary with month-over-month trends &mdash;
             purpose-built for parks &amp; rec departments.
           </p>
           <div style="display:flex;flex-wrap:wrap;gap:8px 16px;margin:12px 0 4px 0">
@@ -3726,6 +3727,10 @@ app.get("/", (req, res) => {
             <div class="showcase-stat">
               <div class="showcase-stat-num" data-text="PDF">PDF</div>
               <div class="showcase-stat-label">Export & Email</div>
+            </div>
+            <div class="showcase-stat">
+              <div class="showcase-stat-num" data-text="📊">📊</div>
+              <div class="showcase-stat-label">Daily Pulse</div>
             </div>
           </div>
           <div class="ticker-wrap">
@@ -4492,10 +4497,12 @@ app.get("/", (req, res) => {
     // Newest first. Add a new entry at the TOP for every change we ship.
     // History below back-filled from the GitHub commit log.
     const UPDATES = [
-      { date: '2026-06-16', title: 'Org Pulse \u2014 executive summary + admin metrics strip', items: [
-        'Daily Pulse on org landing page \u2014 blue gradient cards showing net revenue, enrollments, bookings, product sales, households from cached report data. Loads instantly (server-injected), no extra fetch',
-        'Admin dashboard: indigo metrics strip on each org section showing same pulse KPIs at a glance',
-        'New API endpoint GET /:org/api/pulse returns aggregated metrics from cached data for programmatic access',
+      { date: '2026-06-16', title: 'Daily Pulse \u2014 executive summary with month-over-month trends', items: [
+        'Daily Pulse on org landing page \u2014 blue gradient cards showing current-month revenue, refunds, enrollments, bookings, product sales, and households. Fetches from Metabase with explicit date filters (not default cache)',
+        'Month-over-month delta arrows \u2014 green \u2191 / red \u2193 with percentage change vs prior month on every metric',
+        'Admin dashboard: indigo metrics strip on each org section showing same pulse KPIs at a glance with MoM deltas',
+        '24-hour pulse cache pre-warmed daily at 5:10am (after users cache at 5am) and on startup at 30s \u2014 org pages load instantly',
+        'New API endpoint GET /:org/api/pulse returns monthly aggregated metrics with delta data',
         'Value-prop callouts added to admin hero section \u2014 four pill badges below tagline',
       ] },
       { date: '2026-06-16', title: 'Admin cards cleanup + org metrics bar redesign', items: [
