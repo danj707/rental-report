@@ -1964,7 +1964,8 @@ app.get("/:org/:report/api/data", resolveOrg, async (req, res) => {
     const url = `${METABASE_URL}/api/public/card/${mbUuid}/query/json${paramStr}`;
     console.log(`[proxy] ${orgSlug}/${reportType} → ${url}`);
 
-    const response = await fetch(url);
+    const fetchTimeoutMs = orgConfig.healthTimeoutMs || 120000;
+    const response = await fetch(url, { signal: AbortSignal.timeout(fetchTimeoutMs) });
     if (!response.ok) {
       const body = await response.text();
       console.error(`[proxy] Metabase returned ${response.status}: ${body}`);
@@ -2002,8 +2003,12 @@ app.get("/:org/:report/api/data", resolveOrg, async (req, res) => {
 
     res.json(result);
   } catch (err) {
-    console.error("[proxy] Error:", err);
-    res.status(500).json({ error: err.message });
+    const isTimeout = err.name === "TimeoutError" || err.name === "AbortError";
+    const msg = isTimeout
+      ? `Metabase query timed out after ${(orgConfig.healthTimeoutMs || 120000) / 1000}s — try a shorter date range`
+      : err.message;
+    console.error(`[proxy] Error${isTimeout ? " (timeout)" : ""}:`, err.message);
+    res.status(isTimeout ? 504 : 500).json({ error: msg });
   }
 });
 
