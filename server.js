@@ -415,6 +415,7 @@ const ORGS = {
     calendar: { mbUuid: "f4e55dd3-f16d-4da7-9112-de0515980ae4" },
     users   : { mbUuid: "d081b9cc-b47e-443c-b97a-dbac97bab249" },
     fasttrack: { mbUuid: "337487eb-7d8d-4def-afec-7ba27f152478" },
+    memberships: { mbUuid: "0e5fdd43-c44f-44ec-bb36-73d9306fd61f" },
   },
 };
 
