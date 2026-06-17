@@ -343,6 +343,7 @@ const ORGS = {
     calendar: { mbUuid: "70717c4f-9395-4c50-95ac-0622d95567f6" },
     "court-utilization": { mbUuid: "35862f6e-6494-4e6e-89a1-40fee8fbc872" },
     users: { mbUuid: "aa678f93-0099-4677-a2ad-b6eb7724e2d7" },
+    fasttrack: { mbUuid: "27005b9e-47c9-42be-9c14-fa2d31099651" },
   },
   apex: {
     token:   "pcj5Qf0Wts7Wzc7P",
