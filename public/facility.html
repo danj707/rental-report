@@ -1722,7 +1722,8 @@ function DayPopover({ date, reservations, locationColors, onClose, selectedLocat
         </tr></thead>
         <tbody>${rows}</tbody>
       </table>
-    </body></html>`);
+        <script src="/nav-breadcrumb.js" defer></script>
+  </body></html>`);
     win.document.close();
     win.focus();
     setTimeout(() => { win.print(); }, 400);
@@ -3268,6 +3269,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(<App />);
 </script>
     <script src="/share-widget.js" defer></script>
     <script src="/feedback-widget.js" defer></script>
+      <script src="/nav-breadcrumb.js" defer></script>
   </body>
 </html>
 
