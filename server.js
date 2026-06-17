@@ -319,6 +319,7 @@ const ORGS = {
     products:    { mbUuid: '3d0da465-12d7-4009-8cf1-cbf49e166bd2' },
     memberships: { mbUuid: 'c0579813-d8f0-4b0c-8248-ff975129fd31' },
     users   : { mbUuid: "d41e6819-ad60-4709-9323-6f6b5bb32268" },
+    fasttrack: { mbUuid: "22aede50-381f-4c0f-935b-730bb3ca35b4" },
   },
   smyrna: {
     token:   "PeNSGslScErlGLyY",
