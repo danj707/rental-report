@@ -444,6 +444,7 @@ const VISIBILITY_FILE = path.join(DATA_DIR, "report-visibility.json");
 const VOTES_FILE = path.join(DATA_DIR, "votes.json");
 const HEALTH_FILE = path.join(DATA_DIR, "health-check.json");
 const HEALTH_CONFIG_FILE = path.join(DATA_DIR, "health-config.json");
+const QUOTES_FILE = path.join(DATA_DIR, "quotes.json");
 
 // ── Health check tiers ───────────────────────────────────────────────
 // Interval in minutes per tier.  "critical" is public-facing (calendar),
@@ -3149,6 +3150,39 @@ app.delete("/api/admin/showcase/:index", (req, res) => {
   res.json({ ok: true, count: imgs.length });
 });
 
+// ── Partner quotes persistence ──────────────────────────────────────
+const DEFAULT_QUOTES = [
+  { text: "Amazing!", author: "Kaz, Watertown" },
+  { text: "This is incredible! It takes so much of the guesswork from running custom reports, since this is the info we are looking for most of the time anyway. My year end reporting will be much more detailed now, and I can see this feature supporting us in making program and policy decisions.", author: "Laurel, Shrewsbury" },
+];
+function quotesLoad() {
+  try { return JSON.parse(fs.readFileSync(QUOTES_FILE, "utf8")); }
+  catch(e) { return [...DEFAULT_QUOTES]; }
+}
+function quotesSave(arr) {
+  fs.writeFileSync(QUOTES_FILE, JSON.stringify(arr, null, 2));
+}
+
+app.get("/api/admin/quotes", (req, res) => {
+  res.json(quotesLoad());
+});
+app.post("/api/admin/quotes", express.json(), (req, res) => {
+  const { text, author } = req.body || {};
+  if (!text || !author) return res.status(400).json({ error: "text and author required" });
+  const quotes = quotesLoad();
+  quotes.push({ text: text.trim(), author: author.trim() });
+  quotesSave(quotes);
+  res.json({ ok: true, count: quotes.length });
+});
+app.delete("/api/admin/quotes/:index", (req, res) => {
+  const idx = parseInt(req.params.index, 10);
+  const quotes = quotesLoad();
+  if (isNaN(idx) || idx < 0 || idx >= quotes.length) return res.status(400).json({ error: "Invalid index" });
+  quotes.splice(idx, 1);
+  quotesSave(quotes);
+  res.json({ ok: true, count: quotes.length });
+});
+
 // ── Root index — all orgs dashboard ─────────────────────────────────
 app.get("/", (req, res) => {
   // Compute AI spend from events log
@@ -3468,6 +3502,13 @@ app.get("/", (req, res) => {
     .pq-author {
       font-size: 11px; font-weight: 700; color: #a5b4fc; padding-left: 16px;
     }
+    .pq-card .pq-del {
+      position: absolute; top: 6px; right: 6px; width: 20px; height: 20px;
+      border-radius: 50%; background: rgba(0,0,0,.35); color: #e0e7ff;
+      border: none; font-size: 12px; cursor: pointer; display: none;
+      align-items: center; justify-content: center; line-height: 1;
+    }
+    .pq-card:hover .pq-del { display: flex; }
     @keyframes pq-scroll {
       0% { transform: translateX(0); }
       100% { transform: translateX(-50%); }
@@ -3834,12 +3875,11 @@ app.get("/", (req, res) => {
       <div class="partner-quotes">
         <div class="partner-quotes-label">\u2764\uFE0F What Partners Are Saying</div>
         <div class="pq-track-wrap">
-          <div class="pq-track">
-            <div class="pq-card"><div class="pq-text">Amazing!</div><div class="pq-author">&mdash; Kaz, Watertown</div></div>
-            <div class="pq-card"><div class="pq-text">This is incredible! It takes so much of the guesswork from running custom reports, since this is the info we are looking for most of the time anyway. My year end reporting will be much more detailed now, and I can see this feature supporting us in making program and policy decisions.</div><div class="pq-author">&mdash; Laurel, Shrewsbury</div></div>
-            <div class="pq-card"><div class="pq-text">Amazing!</div><div class="pq-author">&mdash; Kaz, Watertown</div></div>
-            <div class="pq-card"><div class="pq-text">This is incredible! It takes so much of the guesswork from running custom reports, since this is the info we are looking for most of the time anyway. My year end reporting will be much more detailed now, and I can see this feature supporting us in making program and policy decisions.</div><div class="pq-author">&mdash; Laurel, Shrewsbury</div></div>
-          </div>
+          <div class="pq-track" id="pq-track"></div>
+        </div>
+        <div style="padding:10px 40px 0;display:flex;align-items:center;gap:10px" id="pq-add-row">
+          <input id="pq-input" type="text" placeholder="\u201CGreat reports!\u201D - Name, Org" style="flex:1;padding:8px 14px;font-size:12px;background:rgba(255,255,255,.08);border:1px solid rgba(165,180,252,.25);border-radius:8px;color:#e0e7ff;outline:none;" />
+          <button onclick="pqAdd()" style="padding:8px 16px;font-size:12px;font-weight:600;color:#a5b4fc;background:rgba(255,255,255,.08);border:1px solid rgba(165,180,252,.25);border-radius:8px;cursor:pointer;white-space:nowrap;">+ Add quote</button>
         </div>
       </div>
     </div>
@@ -4590,6 +4630,9 @@ app.get("/", (req, res) => {
       { date: '2026-06-18', title: 'Partner quotes on admin hero', items: [
         'Scrolling testimonial strip below the photo upload section on the admin dashboard hero card',
         'Auto-scrolling marquee with pause-on-hover; duplicated cards for seamless loop',
+        'Add quotes inline: type in one line like \\u201CGreat reports!\\u201D - Name, Org and hit Enter or click + Add quote',
+        'Quotes persisted to data/quotes.json on Railway volume; hover any card to reveal \\u00D7 delete button',
+        'API: GET/POST/DELETE /api/admin/quotes',
       ] },
       { date: '2026-06-17', title: 'Community Intelligence \u2014 cross-report intelligence hub', items: [
         'Fast Track tab on CI: fetches FT data lazily on click, shows conversion funnel, top programs by demand, KPI row (signups/converted/pending/dropped/FT share), and Key Observations',
@@ -5014,6 +5057,60 @@ app.get("/", (req, res) => {
 
   </script>
 <script>
+  // ── Partner quotes ─────────────────────────────────────────────────
+  function pqRender(quotes) {
+    var track = document.getElementById('pq-track');
+    if (!quotes.length) { track.innerHTML = ''; track.style.animation = 'none'; return; }
+    // Build cards, duplicate set for seamless loop
+    var cards = quotes.map(function(q, i) {
+      return '<div class="pq-card">'
+        + '<button class="pq-del" onclick="event.stopPropagation();pqDel(' + i + ')" title="Remove">&times;</button>'
+        + '<div class="pq-text">' + q.text.replace(/</g,'&lt;') + '</div>'
+        + '<div class="pq-author">&mdash; ' + q.author.replace(/</g,'&lt;') + '</div>'
+        + '</div>';
+    }).join('');
+    track.innerHTML = cards + cards;
+    // Restart animation
+    track.style.animation = 'none';
+    track.offsetHeight;
+    track.style.animation = '';
+  }
+  function pqLoad() {
+    fetch('/api/admin/quotes').then(function(r){return r.json();}).then(pqRender).catch(function(){});
+  }
+  function pqAdd() {
+    var input = document.getElementById('pq-input');
+    var raw = (input.value || '').trim();
+    if (!raw) return;
+    // Parse "quote text - Author, Org" format
+    // Try splitting on last " - " pattern
+    var dashIdx = raw.lastIndexOf(' - ');
+    var text, author;
+    if (dashIdx > 0) {
+      text = raw.substring(0, dashIdx).replace(/^[\u201C\u201D"']+|[\u201C\u201D"']+$/g, '').trim();
+      author = raw.substring(dashIdx + 3).trim();
+    } else {
+      text = raw.replace(/^[\u201C\u201D"']+|[\u201C\u201D"']+$/g, '').trim();
+      author = 'Partner';
+    }
+    if (!text) return;
+    fetch('/api/admin/quotes', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ text: text, author: author })
+    }).then(function() { input.value = ''; pqLoad(); }).catch(function(e) { alert('Failed: ' + e.message); });
+  }
+  function pqDel(idx) {
+    if (!confirm('Remove this quote?')) return;
+    fetch('/api/admin/quotes/' + idx, { method: 'DELETE' })
+      .then(function() { pqLoad(); }).catch(function(e) { alert('Failed: ' + e.message); });
+  }
+  // Enter key in input
+  document.addEventListener('DOMContentLoaded', function() {
+    var inp = document.getElementById('pq-input');
+    if (inp) inp.addEventListener('keydown', function(e) { if (e.key === 'Enter') pqAdd(); });
+    pqLoad();
+  });
+
   // Showcase gallery — server-persisted via /api/admin/showcase
   function sgRemove(idx) {
     if (!confirm('Remove this image?')) return;
