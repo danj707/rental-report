@@ -1065,9 +1065,18 @@ function App() {
     XLSX.writeFile(wb,filename+'.csv',{bookType:'csv'});
   }
 
-  if(loading) return <div className="loading"><div className="spinner"/><div className="juice-msg"><span>Squeezing the oranges…</span><span>Juicing!</span><span>Adding the pulp…</span><span>Chilling the glass…</span><span>Pouring it out…</span></div></div>;
-  if(error) return <div className="dash"><div className="error"><strong>Error:</strong> {error}</div></div>;
-  if(!s) return <div className="loading"><div className="spinner"/><div style={{color:'#888',fontSize:13,marginTop:8}}>{computing?'Crunching '+((rows&&rows.length)||0).toLocaleString()+' records…':'No data returned.'}</div></div>;
+  var headerBar = (
+    <div className="toolbar no-print">
+      <h1>Community Intelligence</h1>
+      <span className="pill" style={{background:'rgba(255,255,255,.12)',color:'#ddd'}}>{orgSlug.charAt(0).toUpperCase()+orgSlug.slice(1)}</span>
+      {s&&<span className="pill" style={{background:'rgba(16,185,129,.15)',color:'#6ee7b7'}}>{s.hhCount} HH &middot; {s.total} people</span>}
+      <div className="spacer"/>
+    </div>
+  );
+
+  if(loading) return <React.Fragment>{headerBar}<div className="loading"><div className="spinner"/><div className="juice-msg"><span>Squeezing the oranges…</span><span>Juicing!</span><span>Adding the pulp…</span><span>Chilling the glass…</span><span>Pouring it out…</span></div></div></React.Fragment>;
+  if(error) return <React.Fragment>{headerBar}<div className="dash"><div className="error"><strong>Error:</strong> {error}</div></div></React.Fragment>;
+  if(!s) return <React.Fragment>{headerBar}<div className="loading"><div className="spinner"/><div style={{color:'#888',fontSize:13,marginTop:8}}>{computing?'Crunching '+((rows&&rows.length)||0).toLocaleString()+' records…':'No data returned.'}</div></div></React.Fragment>;
 
   var TEAL='#0d9488',AMBER='#f59e0b',ROSE='#f43f5e',EMERALD='#10b981',INDIGO='#6366f1',PURPLE='#8b5cf6',SKY='#0ea5e9';
   var GENDER_COLORS=[INDIGO,'#94a3b8',SKY,AMBER,PURPLE];
