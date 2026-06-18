@@ -186,7 +186,7 @@ function ChartPanel({ title, note, type, data, labelKey, dataKeys, colors, stack
     });
     return function(){if(chartRef.current)chartRef.current.destroy();};
   }, [data]);
-  return (<div className={'panel '+(className||'')}><div className="panel-head">{title}{note&&<span className="panel-note">{note}</span>}</div><div className="chart-wrap"><canvas ref={canvasRef}></canvas></div></div>);
+  return (<div className={'panel '+(className||'')}><div className="panel-head">{title}{note&&<span className="panel-note">{note}</span>}</div><div className="chart-wrap">{(!data||!data.length)?<div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100%',color:'#9ca3af',fontSize:13,fontStyle:'italic'}}>No data for this period</div>:<canvas ref={canvasRef}></canvas>}</div></div>);
 }
 
 function GeoMap({ zipData, mode }) {
