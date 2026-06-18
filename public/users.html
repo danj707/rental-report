@@ -181,8 +181,9 @@ function ChartPanel({ title, note, type, data, labelKey, dataKeys, colors, stack
       if (stacked && !isLine) base.borderRadius = (i===dataKeys.length-1)?4:0;
       return base;
     });
-    chartRef.current = new Chart(canvasRef.current, { type:isLine?'line':'bar', data:{labels:data.map(function(d){return d[labelKey];}),datasets:datasets},
-      options:Object.assign({ responsive:true, maintainAspectRatio:false, scales:{ x:{grid:{display:false},stacked:!!stacked}, y:{grid:{color:'#f1f5f9'},stacked:!!stacked,beginAtZero:true,ticks:pctAxis?{callback:function(v){return v+'%';}}:{},max:pctAxis?100:undefined}}, plugins:{legend:{display:dataKeys.length>1,position:'top',labels:{boxWidth:12,font:{size:10}}}} }, opts||{})
+    var fullLabels = data.map(function(d){return d[labelKey];});
+    chartRef.current = new Chart(canvasRef.current, { type:isLine?'line':'bar', data:{labels:fullLabels,datasets:datasets},
+      options:Object.assign({ responsive:true, maintainAspectRatio:false, scales:{ x:{grid:{display:false},stacked:!!stacked,ticks:{callback:function(val,idx){var l=fullLabels[idx]||'';return l.length>24?l.slice(0,22)+'…':l;},maxRotation:45,minRotation:25,font:{size:10}}}, y:{grid:{color:'#f1f5f9'},stacked:!!stacked,beginAtZero:true,ticks:pctAxis?{callback:function(v){return v+'%';}}:{},max:pctAxis?100:undefined}}, plugins:{legend:{display:dataKeys.length>1,position:'top',labels:{boxWidth:12,font:{size:10}}},tooltip:{callbacks:{title:function(items){return items[0]?fullLabels[items[0].dataIndex]:'';}}} }}, opts||{})
     });
     return function(){if(chartRef.current)chartRef.current.destroy();};
   }, [data]);
