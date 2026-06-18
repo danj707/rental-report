@@ -3436,6 +3436,42 @@ app.get("/", (req, res) => {
     }
     .showcase-upload-btn:hover { background: rgba(255,255,255,.14); }
     .showcase-upload-hint { font-size: 11px; color: rgba(165,180,252,.5); }
+    /* Partner quotes */
+    .partner-quotes { padding: 0 0 28px; }
+    .partner-quotes-label {
+      font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em;
+      color: #818cf8; padding: 0 40px 10px;
+    }
+    .pq-track-wrap {
+      overflow: hidden; position: relative;
+      mask-image: linear-gradient(90deg, transparent, #000 6%, #000 94%, transparent);
+      -webkit-mask-image: linear-gradient(90deg, transparent, #000 6%, #000 94%, transparent);
+    }
+    .pq-track {
+      display: flex; gap: 20px; padding: 0 40px;
+      animation: pq-scroll 28s linear infinite;
+    }
+    .pq-track:hover { animation-play-state: paused; }
+    .pq-card {
+      flex: 0 0 auto; max-width: 420px; background: rgba(255,255,255,.07);
+      border: 1px solid rgba(165,180,252,.15); border-radius: 10px;
+      padding: 16px 20px; position: relative;
+    }
+    .pq-card::before {
+      content: "\\201C"; position: absolute; top: 8px; left: 12px;
+      font-size: 32px; color: rgba(165,180,252,.25); font-family: Georgia, serif; line-height: 1;
+    }
+    .pq-text {
+      font-size: 13px; color: #e0e7ff; line-height: 1.55; font-style: italic;
+      margin: 0 0 8px; padding-left: 16px;
+    }
+    .pq-author {
+      font-size: 11px; font-weight: 700; color: #a5b4fc; padding-left: 16px;
+    }
+    @keyframes pq-scroll {
+      0% { transform: translateX(0); }
+      100% { transform: translateX(-50%); }
+    }
     /* Lightbox */
     .sg-lightbox {
       position: fixed; inset: 0; background: rgba(0,0,0,.85); z-index: 2000;
@@ -3793,6 +3829,18 @@ app.get("/", (req, res) => {
             onchange="handleShowcaseUpload(this.files)" />
         </label>
         <span class="showcase-upload-hint">Drag &amp; drop or click to add before/after screenshots for the demo</span>
+      </div>
+
+      <div class="partner-quotes">
+        <div class="partner-quotes-label">\u2764\uFE0F What Partners Are Saying</div>
+        <div class="pq-track-wrap">
+          <div class="pq-track">
+            <div class="pq-card"><div class="pq-text">Amazing!</div><div class="pq-author">&mdash; Kaz, Watertown</div></div>
+            <div class="pq-card"><div class="pq-text">This is incredible! It takes so much of the guesswork from running custom reports, since this is the info we are looking for most of the time anyway. My year end reporting will be much more detailed now, and I can see this feature supporting us in making program and policy decisions.</div><div class="pq-author">&mdash; Laurel, Shrewsbury</div></div>
+            <div class="pq-card"><div class="pq-text">Amazing!</div><div class="pq-author">&mdash; Kaz, Watertown</div></div>
+            <div class="pq-card"><div class="pq-text">This is incredible! It takes so much of the guesswork from running custom reports, since this is the info we are looking for most of the time anyway. My year end reporting will be much more detailed now, and I can see this feature supporting us in making program and policy decisions.</div><div class="pq-author">&mdash; Laurel, Shrewsbury</div></div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -4539,6 +4587,10 @@ app.get("/", (req, res) => {
     // Newest first. Add a new entry at the TOP for every change we ship.
     // History below back-filled from the GitHub commit log.
     const UPDATES = [
+      { date: '2026-06-18', title: 'Partner quotes on admin hero', items: [
+        'Scrolling testimonial strip below the photo upload section on the admin dashboard hero card',
+        'Auto-scrolling marquee with pause-on-hover; duplicated cards for seamless loop',
+      ] },
       { date: '2026-06-17', title: 'Community Intelligence \u2014 cross-report intelligence hub', items: [
         'Fast Track tab on CI: fetches FT data lazily on click, shows conversion funnel, top programs by demand, KPI row (signups/converted/pending/dropped/FT share), and Key Observations',
         'FT demographic crossover: v5 SQL adds per-user rows via UNION ALL; CI matches FT customers against demographic data by email/household ID for age distribution, residency rate, geographic concentration vs general population',
