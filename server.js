@@ -239,7 +239,7 @@ async function prewarmCache() {
       try {
         const timeoutMs = org.healthTimeoutMs || 120000;
         const orgIdParam = useShared && org.orgId
-          ? `?parameters=${encodeURIComponent(JSON.stringify([{ type: "category", target: ["variable", ["template-tag", "org_id"]], value: org.orgId }]))}`
+          ? `?parameters=${encodeURIComponent(JSON.stringify([{ type: "string/=", target: ["variable", ["template-tag", "org_id"]], value: org.orgId }]))}`
           : '';
         const url = `${METABASE_URL}/api/public/card/${mbUuid}/query/json${orgIdParam}`;
         const resp = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
@@ -570,7 +570,7 @@ async function runHealthCheck(forceAll) {
       const timeoutMs = org.healthTimeoutMs || 60000;
       const timeout = setTimeout(() => controller.abort(), timeoutMs);
       const orgIdParamHC = useSharedHC && org.orgId
-        ? `?parameters=${encodeURIComponent(JSON.stringify([{ type: "category", target: ["variable", ["template-tag", "org_id"]], value: org.orgId }]))}`
+        ? `?parameters=${encodeURIComponent(JSON.stringify([{ type: "string/=", target: ["variable", ["template-tag", "org_id"]], value: org.orgId }]))}`
         : '';
       const url = `${METABASE_URL}/api/public/card/${mbUuid}/query/json${orgIdParamHC}`;
       const resp = await fetch(url, { signal: controller.signal });
@@ -1393,7 +1393,7 @@ function parseToISO(dateStr) {
 function buildMetabaseParams(query, reportType, orgId) {
   const params = [];
   if (orgId) {
-    params.push({ type: "category", target: ["variable", ["template-tag", "org_id"]], value: orgId });
+    params.push({ type: "string/=", target: ["variable", ["template-tag", "org_id"]], value: orgId });
   }
   if (query.start_date) {
     params.push({ type: "date/single", target: ["variable", ["template-tag", "start_date"]], value: parseToISO(query.start_date) });
