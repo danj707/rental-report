@@ -40,8 +40,22 @@ const FROM_NAME      = process.env.FROM_NAME      || "rec.us Reports";
 
 
 // ── Metabase response cache ───────────────────────────────────────────
-const CACHE_TTL = 5 * 60 * 1000;  // 5 minutes
+const CACHE_TTL = 60 * 60 * 1000;  // 60-minute default TTL
+const REPORT_CACHE_TTL = {
+  facility: 30 * 60 * 1000,               // 30 min — live bookings
+  gl: 30 * 60 * 1000,                     // 30 min — daily transactions
+  roster: 30 * 60 * 1000,                 // 30 min — enrollments change
+  programs: 2 * 60 * 60 * 1000,           // 2 hrs — section-level revenue
+  memberships: 2 * 60 * 60 * 1000,        // 2 hrs
+  products: 2 * 60 * 60 * 1000,           // 2 hrs
+  fasttrack: 4 * 60 * 60 * 1000,          // 4 hrs — very stable
+  "court-utilization": 4 * 60 * 60 * 1000, // 4 hrs
+  "program-demographics": 4 * 60 * 60 * 1000, // 4 hrs
+  calendar: 30 * 60 * 1000,               // 30 min — schedule changes
+  historic: 2 * 60 * 60 * 1000,           // 2 hrs
+};
 const dataCache = new Map();
+const cacheStats = { hits: 0, misses: 0, prewarms: 0 };
 
 // Long-lived cache for users report (refreshed daily by cron)
 const USERS_CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
@@ -60,22 +74,25 @@ function setCacheUsers(orgSlug, data) {
 
 function getCached(key) {
   const entry = dataCache.get(key);
-  if (!entry) return null;
-  if (Date.now() - entry.ts > CACHE_TTL) { dataCache.delete(key); return null; }
+  if (!entry) { cacheStats.misses++; return null; }
+  const ttl = REPORT_CACHE_TTL[entry.rt] || CACHE_TTL;
+  if (Date.now() - entry.ts > ttl) { dataCache.delete(key); cacheStats.misses++; return null; }
+  cacheStats.hits++;
   return entry.data;
 }
 
-function setCache(key, data) {
-  dataCache.set(key, { data, ts: Date.now() });
+function setCache(key, data, reportType) {
+  dataCache.set(key, { data, ts: Date.now(), rt: reportType || '' });
 }
 
-// Prune expired entries every 10 minutes to prevent memory creep
+// Prune expired entries every 30 minutes to prevent memory creep
 setInterval(() => {
   const now = Date.now();
   for (const [k, v] of dataCache) {
-    if (now - v.ts > CACHE_TTL) dataCache.delete(k);
+    const ttl = REPORT_CACHE_TTL[v.rt] || CACHE_TTL;
+    if (now - v.ts > ttl) dataCache.delete(k);
   }
-}, 10 * 60 * 1000);
+}, 30 * 60 * 1000);
 
 // ── Org Pulse: monthly metrics from Metabase with month-over-month deltas ──
 const pulseCache = new Map();
@@ -259,11 +276,11 @@ async function prewarmCache() {
             rows: data,
             meta: { org_slug: slug, logo_url: org.logoUrl, report_type: rt, generated_at: new Date().toISOString() },
           };
-          setCache(cacheKey, result);
+          setCache(cacheKey, result, rt);
           // Also store under the explicit "This Month" cache key so users who
           // click This Month (which sends start_date + end_date params) get a
           // cache hit instead of re-querying Metabase.
-          setCache(`${slug}:${rt}:${monthParamStr}`, result);
+          setCache(`${slug}:${rt}:${monthParamStr}`, result, rt);
           warmed++;
           console.log(`[cache] Warmed ${slug}/${rt} (${data.length} rows)`);
         }
@@ -273,7 +290,8 @@ async function prewarmCache() {
       }
     }
   }
-  console.log(`[cache] Pre-warm complete: ${warmed} reports cached`);
+  cacheStats.prewarms++;
+  console.log(`[cache] Pre-warm complete: ${warmed} reports cached (cycle #${cacheStats.prewarms})`);
 }
 
 // ── Dashboard authentication ─────────────────────────────────────────
@@ -2074,7 +2092,7 @@ app.get("/:org/:report/api/data", resolveOrg, async (req, res) => {
       },
     };
 
-    setCache(cacheKey, result);
+    setCache(cacheKey, result, reportType);
     // Also populate the daily users cache for subsequent requests
     if (reportType === "users") setCacheUsers(orgSlug, result);
     console.log(`[cache] STORE ${orgSlug}/${reportType} (${data.length} rows, ${dataCache.size} entries)`);
@@ -2958,6 +2976,30 @@ app.post("/api/admin/links", (req, res) => {
 
 // ── GET /api/admin/flags — read feature flags ───────────────────────
 app.get("/api/admin/flags", (req, res) => { res.json(getFlags()); });
+
+// Cache performance stats
+app.get("/api/admin/cache-stats", (req, res) => {
+  const entries = [];
+  for (const [k, v] of dataCache) {
+    const ttl = REPORT_CACHE_TTL[v.rt] || CACHE_TTL;
+    const ageMin = Math.round((Date.now() - v.ts) / 60000);
+    const ttlMin = Math.round(ttl / 60000);
+    entries.push({ key: k, report: v.rt, ageMin, ttlMin, rows: v.data?.rows?.length || 0 });
+  }
+  const hitRate = (cacheStats.hits + cacheStats.misses) > 0
+    ? ((cacheStats.hits / (cacheStats.hits + cacheStats.misses)) * 100).toFixed(1)
+    : '0';
+  res.json({
+    hits: cacheStats.hits,
+    misses: cacheStats.misses,
+    hitRate: hitRate + '%',
+    prewarms: cacheStats.prewarms,
+    entries: entries.length,
+    usersCache: usersCache.size,
+    pulseCache: pulseCache.size,
+    detail: entries.sort((a, b) => a.ageMin - b.ageMin),
+  });
+});
 
 // ── POST /api/admin/flags — update a feature flag ───────────────────
 app.post("/api/admin/flags", express.json(), (req, res) => {
@@ -5448,7 +5490,7 @@ app.listen(PORT, () => {
   if (!loadHealthResults()) setTimeout(runHealthCheck, 60000);
 
   // Re-warm every 4 minutes to keep cache perpetually hot
-  setInterval(prewarmCache, 4 * 60 * 1000);
+  setInterval(prewarmCache, 60 * 60 * 1000);
 
   // Promote any orgs from data/orgs.json into server.js on GitHub.
   // Runs after listen() so startup isn't blocked by GitHub latency.
