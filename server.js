@@ -972,14 +972,17 @@ async function migrateDynamicOrgs() {
 // ── Analytics: append-only JSONL, no extra dependencies ─────────────
 // Schema: { ts, org, report, event, ip }
 // event values: "view" | "fetch" | "pdf" | "excel" | "print"
-function logEvent(org, report, event, ip, extra) {
+function logEvent(org, report, event, reqOrIp, extra) {
   try {
+    const isReq = reqOrIp && typeof reqOrIp === "object" && reqOrIp.headers;
     const rec = {
       ts:     new Date().toISOString(),
       org,
       report,
       event,
-      ip:     ip || null,
+      ip:     isReq ? (reqOrIp.headers["x-forwarded-for"]?.split(",")[0]?.trim() || reqOrIp.ip || null) : (reqOrIp || null),
+      ua:     isReq ? (reqOrIp.headers["user-agent"] || null) : null,
+      ref:    isReq ? (reqOrIp.headers["referer"] || null) : null,
     };
     if (extra && typeof extra === "object") Object.assign(rec, extra);
     const line = JSON.stringify(rec) + "\n";
@@ -1477,7 +1480,7 @@ app.post("/:org/:report/api/log", resolveOrg, (req, res) => {
   const { event } = req.query;
   const ALLOWED = ["excel", "print"];
   if (!ALLOWED.includes(event)) return res.status(400).json({ ok: false, error: "Unknown event" });
-  logEvent(orgSlug, reportType, event, req.ip);
+  logEvent(orgSlug, reportType, event, req);
   res.json({ ok: true });
 });
 
@@ -1775,7 +1778,7 @@ app.post("/:org/:report/api/insights", resolveOrg, async (req, res) => {
     const inTok  = usage.input_tokens  || 0;
     const outTok = usage.output_tokens || 0;
     const costUsd = insightsCostUsd(INSIGHTS_MODEL, inTok, outTok);
-    logEvent(orgSlug, reportType, "insights", req.ip, { inTok, outTok, costUsd });
+    logEvent(orgSlug, reportType, "insights", req, { inTok, outTok, costUsd });
     res.json({ ok: true, insights, cached: false });
   } catch (err) {
     console.error("[insights] Error:", err);
@@ -1985,7 +1988,7 @@ app.post("/:org/chat/api/message", async (req, res) => {
     }
 
     const costUsd = insightsCostUsd(CHAT_MODEL, inputTokens, outputTokens);
-    logEvent(slug, "chat", "message", req.ip, { inTok: inputTokens, outTok: outputTokens, costUsd });
+    logEvent(slug, "chat", "message", req, { inTok: inputTokens, outTok: outputTokens, costUsd });
 
     res.write("data: [DONE]\n\n");
     res.end();
@@ -2009,7 +2012,7 @@ app.get("/:org/:report/api/data", resolveOrg, async (req, res) => {
     const mbUuid = useShared ? SHARED_UUIDS[reportType] : orgConfig[reportType]?.mbUuid;
     if (!mbUuid) return res.status(404).json({ error: `No Metabase question configured for ${orgSlug}/${reportType}` });
 
-    logEvent(orgSlug, reportType, "fetch", req.ip);
+    logEvent(orgSlug, reportType, "fetch", req);
 
     const orgId = useShared ? orgConfig.orgId : null;
     const params = buildMetabaseParams(req.query, reportType, orgId);
@@ -2091,7 +2094,7 @@ app.get("/:org/:report/api/data", resolveOrg, async (req, res) => {
 app.get("/:org/:report/api/pdf", resolveOrg, async (req, res) => {
   try {
     const { orgSlug, reportType } = req;
-    logEvent(orgSlug, reportType, "pdf", req.ip);
+    logEvent(orgSlug, reportType, "pdf", req);
     const pdf = await generatePdf(orgSlug, reportType, req.query.start_date, req.query.end_date, req.query);
     const filename = `${reportType}-report-${req.query.start_date || "report"}.pdf`;
     res.set({ "Content-Type": "application/pdf", "Content-Disposition": `inline; filename="${filename}"`, "Content-Length": pdf.length });
@@ -2220,7 +2223,7 @@ app.get("/:org/facility", (req, res) => {
   const slug = req.params.org;
   const org  = ORGS[slug];
   if (!org) return res.status(404).send("Unknown org");
-  logEvent(slug, "facility", "view", req.ip);
+  logEvent(slug, "facility", "view", req);
   const orgConfig = { defaultDateRange: org.facility?.defaultDateRange || "month", defaultLocationFilter: org.facility?.defaultLocationFilter || null };
   const html = require("fs").readFileSync(path.join(__dirname, "public", "facility.html"), "utf8");
   res.send(html.replace("<head>", `<head><script>window.ORG_CONFIG=${JSON.stringify(orgConfig)};</script>`));
@@ -2228,13 +2231,13 @@ app.get("/:org/facility", (req, res) => {
 
 app.get("/:org/gl", (req, res) => {
   if (!ORGS[req.params.org]) return res.status(404).send("Unknown org");
-  logEvent(req.params.org, "gl", "view", req.ip);
+  logEvent(req.params.org, "gl", "view", req);
   res.sendFile(path.join(__dirname, "public", "gl.html"));
 });
 
 app.get("/:org/historic", (req, res) => {
   if (!ORGS[req.params.org]) return res.status(404).send("Unknown org");
-  logEvent(req.params.org, "historic", "view", req.ip);
+  logEvent(req.params.org, "historic", "view", req);
   res.sendFile(path.join(__dirname, "public", "historic.html"));
 });
 
@@ -2242,7 +2245,7 @@ app.get("/:org/programs", (req, res) => {
   const slug = req.params.org;
   const org  = ORGS[slug];
   if (!org) return res.status(404).send("Unknown org");
-  logEvent(slug, "programs", "view", req.ip);
+  logEvent(slug, "programs", "view", req);
   const PARTICIPANTS_ENABLED = new Set(["westsacramento"]);
   const orgConfig = {
     slug,
@@ -2258,13 +2261,13 @@ app.get("/:org/programs", (req, res) => {
 
 app.get("/:org/roster", (req, res) => {
   if (!ORGS[req.params.org]) return res.status(404).send("Unknown org");
-  logEvent(req.params.org, "roster", "view", req.ip);
+  logEvent(req.params.org, "roster", "view", req);
   res.sendFile(path.join(__dirname, "public", "roster.html"));
 });
 
 app.get("/:org/overview", (req, res) => {
   if (!ORGS[req.params.org]) return res.status(404).send("Unknown org");
-  logEvent(req.params.org, "overview", "view", req.ip);
+  logEvent(req.params.org, "overview", "view", req);
   res.sendFile(path.join(__dirname, "public", "overview.html"));
 });
 
@@ -2273,7 +2276,7 @@ app.get("/:org/products", (req, res) => {
   const org  = ORGS[slug];
   if (!org) return res.status(404).send("Unknown org");
   if (!org.products?.mbUuid && !SHARED_UUIDS.products) return res.status(404).send("Products report not configured for this org.");
-  logEvent(slug, "products", "view", req.ip);
+  logEvent(slug, "products", "view", req);
   res.sendFile(path.join(__dirname, "public", "products.html"));
 });
 
@@ -2282,7 +2285,7 @@ app.get("/:org/memberships", (req, res) => {
   const org  = ORGS[slug];
   if (!org) return res.status(404).send("Unknown org");
   if (!org.memberships?.mbUuid && !SHARED_UUIDS.memberships) return res.status(404).send("Memberships report not configured for this org.");
-  logEvent(slug, "memberships", "view", req.ip);
+  logEvent(slug, "memberships", "view", req);
   res.sendFile(path.join(__dirname, "public", "memberships.html"));
 });
 
@@ -2291,7 +2294,7 @@ app.get("/:org/court-utilization", (req, res) => {
   const org  = ORGS[slug];
   if (!org) return res.status(404).send("Unknown org");
   if (!org["court-utilization"]?.mbUuid && !SHARED_UUIDS["court-utilization"]) return res.status(404).send("Court Utilization report not configured for this org.");
-  logEvent(slug, "court-utilization", "view", req.ip);
+  logEvent(slug, "court-utilization", "view", req);
   res.sendFile(path.join(__dirname, "public", "court-utilization.html"));
 });
 
@@ -2310,7 +2313,7 @@ app.get("/:org/calendar", (req, res) => {
   const org  = ORGS[slug];
   if (!org) return res.status(404).send("Unknown org");
   if (!org.calendar?.mbUuid && !SHARED_UUIDS.calendar) return res.status(404).send("Calendar report not configured for this org.");
-  logEvent(slug, "calendar", "view", req.ip);
+  logEvent(slug, "calendar", "view", req);
   // Inject org metadata so the frontend can show logo + name
   const slugTitle = slug.charAt(0).toUpperCase() + slug.slice(1);
   const meta = {
@@ -2331,7 +2334,7 @@ app.post("/:org/calendar/api/click", express.json(), (req, res) => {
   const org = ORGS[slug];
   if (!org) return res.status(404).end();
   const { section, url } = req.body || {};
-  logEvent(slug, "calendar", "click", req.ip, { section: section || null, url: url || null });
+  logEvent(slug, "calendar", "click", req, { section: section || null, url: url || null });
   res.status(204).end();
 });
 
@@ -2558,7 +2561,7 @@ app.get("/:org/fasttrack", (req, res) => {
   const org  = ORGS[slug];
   if (!org) return res.status(404).send("Unknown org");
   if (!org.fasttrack?.mbUuid && !SHARED_UUIDS.fasttrack) return res.status(404).send("Fast Track report not configured for this org.");
-  logEvent(slug, "fasttrack", "view", req.ip);
+  logEvent(slug, "fasttrack", "view", req);
   res.sendFile(path.join(__dirname, "public", "fasttrack.html"));
 });
 
@@ -2566,7 +2569,7 @@ app.get("/:org/users", (req, res) => {
   const slug = req.params.org;
   const org = ORGS[slug];
   if (!org) return res.status(404).send("Unknown org");
-  logEvent(slug, "users", "view", req.ip);
+  logEvent(slug, "users", "view", req);
   const available = REPORT_TYPES.filter(r => !NON_ADDABLE_REPORTS.has(r) && (org[r]?.mbUuid || SHARED_UUIDS[r]));
   const slugTitle = slug.charAt(0).toUpperCase() + slug.slice(1);
   const orgConfig = {
@@ -2585,7 +2588,7 @@ app.get("/:org/chat", (req, res) => {
   const slug = req.params.org;
   const org  = ORGS[slug];
   if (!org) return res.status(404).send("Unknown org");
-  logEvent(slug, "chat", "view", req.ip);
+  logEvent(slug, "chat", "view", req);
   const available = REPORT_TYPES.filter(r => !NON_ADDABLE_REPORTS.has(r) && (org[r]?.mbUuid || SHARED_UUIDS[r]));
   const slugTitle = slug.charAt(0).toUpperCase() + slug.slice(1);
   const orgConfig = {
