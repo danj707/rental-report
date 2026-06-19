@@ -2272,7 +2272,7 @@ app.get("/:org/products", (req, res) => {
   const slug = req.params.org;
   const org  = ORGS[slug];
   if (!org) return res.status(404).send("Unknown org");
-  if (!org.products?.mbUuid) return res.status(404).send("Products report not configured for this org.");
+  if (!org.products?.mbUuid && !SHARED_UUIDS.products) return res.status(404).send("Products report not configured for this org.");
   logEvent(slug, "products", "view", req.ip);
   res.sendFile(path.join(__dirname, "public", "products.html"));
 });
@@ -2281,7 +2281,7 @@ app.get("/:org/memberships", (req, res) => {
   const slug = req.params.org;
   const org  = ORGS[slug];
   if (!org) return res.status(404).send("Unknown org");
-  if (!org.memberships?.mbUuid) return res.status(404).send("Memberships report not configured for this org.");
+  if (!org.memberships?.mbUuid && !SHARED_UUIDS.memberships) return res.status(404).send("Memberships report not configured for this org.");
   logEvent(slug, "memberships", "view", req.ip);
   res.sendFile(path.join(__dirname, "public", "memberships.html"));
 });
@@ -2290,7 +2290,7 @@ app.get("/:org/court-utilization", (req, res) => {
   const slug = req.params.org;
   const org  = ORGS[slug];
   if (!org) return res.status(404).send("Unknown org");
-  if (!org["court-utilization"]?.mbUuid) return res.status(404).send("Court Utilization report not configured for this org.");
+  if (!org["court-utilization"]?.mbUuid && !SHARED_UUIDS["court-utilization"]) return res.status(404).send("Court Utilization report not configured for this org.");
   logEvent(slug, "court-utilization", "view", req.ip);
   res.sendFile(path.join(__dirname, "public", "court-utilization.html"));
 });
@@ -2557,7 +2557,7 @@ app.get("/:org/fasttrack", (req, res) => {
   const slug = req.params.org;
   const org  = ORGS[slug];
   if (!org) return res.status(404).send("Unknown org");
-  if (!org.fasttrack?.mbUuid) return res.status(404).send("Fast Track report not configured for this org.");
+  if (!org.fasttrack?.mbUuid && !SHARED_UUIDS.fasttrack) return res.status(404).send("Fast Track report not configured for this org.");
   logEvent(slug, "fasttrack", "view", req.ip);
   res.sendFile(path.join(__dirname, "public", "fasttrack.html"));
 });
