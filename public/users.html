@@ -1024,6 +1024,48 @@ function App() {
     .finally(function(){setInsightsLoading(false);});
   }, [s,insightsLoading]);
 
+  var prodAnalytics = useMemo(function(){
+    var cd = crossData.products;
+    if (!cd || !cd.rows || cd.rows.length === 0) return null;
+    var pf = function(v){ return parseFloat(String(v||0).replace(/[,$]/g,''))||0; };
+    var totalQty=0, totalRev=0, totalRefunds=0, totalNet=0;
+    var prodMap={}, deskMap={}, dateMap={};
+    cd.rows.forEach(function(r){
+      var name = r['Product Name']||r['Product']||'(unnamed)';
+      var desk = r['Desk Location']||'(No desk)';
+      var dateRaw = r['Date']||'';
+      var qty = Math.round(pf(r['Qty Sold']||r['Qty']));
+      var rev = pf(r['Revenue ($)']||r['Revenue']);
+      var ref = pf(r['Refunds ($)']||r['Refunds']);
+      var net = r['Net Revenue ($)']!=null||r['Net Revenue']!=null ? pf(r['Net Revenue ($)']||r['Net Revenue']) : rev - ref;
+      totalQty+=qty; totalRev+=rev; totalRefunds+=ref; totalNet+=net;
+      if(!prodMap[name]) prodMap[name]={qty:0,rev:0,refunds:0,net:0};
+      prodMap[name].qty+=qty; prodMap[name].rev+=rev; prodMap[name].refunds+=ref; prodMap[name].net+=net;
+      if(!deskMap[desk]) deskMap[desk]={qty:0,rev:0,net:0};
+      deskMap[desk].qty+=qty; deskMap[desk].rev+=rev; deskMap[desk].net+=net;
+      var dKey = String(dateRaw).split('T')[0];
+      if(!dateMap[dKey]) dateMap[dKey]={qty:0,rev:0,net:0};
+      dateMap[dKey].qty+=qty; dateMap[dKey].rev+=rev; dateMap[dKey].net+=net;
+    });
+    var uniqueProducts = Object.keys(prodMap).length;
+    var avgPerSale = totalQty>0 ? totalNet/totalQty : 0;
+    var refundRate = totalRev>0 ? (totalRefunds/totalRev)*100 : 0;
+    var topByRev = Object.keys(prodMap).map(function(n){return Object.assign({name:n},prodMap[n]);})
+      .sort(function(a,b){return b.net-a.net;}).slice(0,12);
+    var topByQty = Object.keys(prodMap).map(function(n){return Object.assign({name:n},prodMap[n]);})
+      .sort(function(a,b){return b.qty-a.qty;}).slice(0,12);
+    var desks = Object.keys(deskMap).map(function(d){return Object.assign({desk:d},deskMap[d]);})
+      .sort(function(a,b){return b.net-a.net;});
+    var activeDays = Object.keys(dateMap).length;
+    var avgDailyRev = activeDays>0 ? totalNet/activeDays : 0;
+    return {
+      totalQty:totalQty, totalRev:totalRev, totalRefunds:totalRefunds, totalNet:totalNet,
+      uniqueProducts:uniqueProducts, avgPerSale:avgPerSale, refundRate:refundRate,
+      topByRev:topByRev, topByQty:topByQty, desks:desks,
+      activeDays:activeDays, avgDailyRev:avgDailyRev,
+    };
+  }, [crossData.products]);
+
   var [pdfLoading, setPdfLoading] = useState(false);
   var [csvRequestModal, setCsvRequestModal] = useState(null);
 
@@ -1651,6 +1693,80 @@ function App() {
                   </React.Fragment>
                 )}
 
+              </React.Fragment>
+            );
+          }
+
+          // ── Products tab ──
+          if (ct.key === 'products' && prodAnalytics) {
+            var pr = prodAnalytics;
+            var fmtM = function(v){ return '$'+Math.round(v).toLocaleString(); };
+            return (
+              <React.Fragment key={ct.key}>
+                <div className="kpi-row">
+                  <div className="kpi" style={{'--accent':'#db2777'}}><div className="kpi-label">Units Sold</div><div className="kpi-val">{pr.totalQty.toLocaleString()}</div><div className="kpi-sub">{pr.uniqueProducts} unique products</div></div>
+                  <div className="kpi" style={{'--accent':'#059669'}}><div className="kpi-label">Gross Revenue</div><div className="kpi-val">{fmtM(pr.totalRev)}</div><div className="kpi-sub">{pr.activeDays} active selling days</div></div>
+                  <div className="kpi" style={{'--accent':'#ef4444'}}><div className="kpi-label">Refunds</div><div className="kpi-val">{fmtM(pr.totalRefunds)}</div><div className="kpi-sub">{pr.refundRate.toFixed(1)}% refund rate</div></div>
+                  <div className="kpi" style={{'--accent':'#2563eb'}}><div className="kpi-label">Net Revenue</div><div className="kpi-val">{fmtM(pr.totalNet)}</div><div className="kpi-sub">{fmtM(pr.avgDailyRev)}/day avg</div></div>
+                  <div className="kpi" style={{'--accent':'#7c3aed'}}><div className="kpi-label">Avg per Unit</div><div className="kpi-val">${pr.avgPerSale.toFixed(2)}</div><div className="kpi-sub">net revenue / qty</div></div>
+                </div>
+
+                <div className="obs">
+                  <div className="obs-title">Key Observations</div>
+                  <div className="obs-grid">
+                    <div>{E('\uD83D\uDED2')}<strong style={{color:'#065f46'}}>Sales Volume</strong> {pr.totalQty.toLocaleString()} units across {pr.uniqueProducts} products over {pr.activeDays} days.</div>
+                    {pr.topByRev.length>0&&<div>{E('\uD83C\uDFC6')}<strong style={{color:'#065f46'}}>Top Seller</strong> {pr.topByRev[0].name} leads with {fmtM(pr.topByRev[0].net)} net revenue ({pr.topByRev[0].qty} units){pr.topByRev.length>1?', followed by '+pr.topByRev[1].name+' ('+fmtM(pr.topByRev[1].net)+')':''}.</div>}
+                    {pr.refundRate>0&&<div>{E('\uD83D\uDCB8')}<strong style={{color:'#065f46'}}>Refunds</strong> {fmtM(pr.totalRefunds)} refunded ({pr.refundRate.toFixed(1)}% of gross). {pr.refundRate>10?'Elevated \u2014 review top refunded products.':'Within normal range.'}</div>}
+                    {pr.desks.length>1&&<div>{E('\uD83C\uDFEA')}<strong style={{color:'#065f46'}}>Desk Locations</strong> {pr.desks.length} selling locations. Top: {pr.desks[0].desk} ({fmtM(pr.desks[0].net)}){pr.desks.length>1?', '+pr.desks[1].desk+' ('+fmtM(pr.desks[1].net)+')':''}.</div>}
+                  </div>
+                </div>
+
+                <div style={{marginTop:16}}>
+                  <div style={{fontSize:13,fontWeight:700,color:'#111827',marginBottom:10}}>Top Products by Net Revenue</div>
+                  <div style={{overflowX:'auto'}}>
+                    <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+                      <thead><tr style={{borderBottom:'2px solid #e5e7eb'}}>
+                        <th style={{textAlign:'left',padding:'8px 10px',fontWeight:700,color:'#374151'}}>#</th>
+                        <th style={{textAlign:'left',padding:'8px 10px',fontWeight:700,color:'#374151'}}>Product</th>
+                        <th style={{textAlign:'right',padding:'8px 10px',fontWeight:700,color:'#374151'}}>Qty</th>
+                        <th style={{textAlign:'right',padding:'8px 10px',fontWeight:700,color:'#374151'}}>Revenue</th>
+                        <th style={{textAlign:'right',padding:'8px 10px',fontWeight:700,color:'#374151'}}>Refunds</th>
+                        <th style={{textAlign:'right',padding:'8px 10px',fontWeight:700,color:'#374151'}}>Net</th>
+                      </tr></thead>
+                      <tbody>{pr.topByRev.map(function(p,i){
+                        var pct = pr.totalNet>0?((p.net/pr.totalNet)*100).toFixed(1):'0';
+                        return (
+                          <tr key={i} style={{borderBottom:'1px solid #f3f4f6'}}>
+                            <td style={{padding:'7px 10px',color:'#9ca3af'}}>{i+1}</td>
+                            <td style={{padding:'7px 10px',fontWeight:600,color:'#111827'}}>{p.name}</td>
+                            <td style={{padding:'7px 10px',textAlign:'right'}}>{p.qty.toLocaleString()}</td>
+                            <td style={{padding:'7px 10px',textAlign:'right',color:'#059669'}}>{fmtM(p.rev)}</td>
+                            <td style={{padding:'7px 10px',textAlign:'right',color:'#ef4444'}}>{p.refunds>0?fmtM(p.refunds):'\u2014'}</td>
+                            <td style={{padding:'7px 10px',textAlign:'right',fontWeight:700}}>{fmtM(p.net)} <span style={{color:'#9ca3af',fontWeight:400}}>({pct}%)</span></td>
+                          </tr>
+                        );
+                      })}</tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {pr.desks.length>1 && (
+                  <div style={{marginTop:20}}>
+                    <div style={{fontSize:13,fontWeight:700,color:'#111827',marginBottom:10}}>Revenue by Desk Location</div>
+                    <div style={{display:'flex',flexWrap:'wrap',gap:8}}>
+                      {pr.desks.map(function(d,i){
+                        var pct = pr.totalNet>0?((d.net/pr.totalNet)*100).toFixed(1):'0';
+                        return (
+                          <div key={i} style={{background:'#f9fafb',border:'1px solid #e5e7eb',borderRadius:8,padding:'10px 14px',minWidth:140}}>
+                            <div style={{fontSize:11,color:'#6b7280',marginBottom:2}}>{d.desk}</div>
+                            <div style={{fontSize:15,fontWeight:700,color:'#111827'}}>{fmtM(d.net)}</div>
+                            <div style={{fontSize:11,color:'#9ca3af'}}>{d.qty.toLocaleString()} units · {pct}%</div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </React.Fragment>
             );
           }

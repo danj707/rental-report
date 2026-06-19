@@ -4627,6 +4627,12 @@ app.get("/", (req, res) => {
     // Newest first. Add a new entry at the TOP for every change we ship.
     // History below back-filled from the GitHub commit log.
     const UPDATES = [
+      { date: '2026-06-19', title: 'Community Intel: Products analytics tab', items: [
+        'Products cross-tab now fully rendered with KPIs: units sold, gross/net revenue, refunds, refund rate, avg per unit',
+        'Top 12 products table ranked by net revenue with percentage share',
+        'Revenue by Desk Location breakdown when multiple selling locations exist',
+        'Key observations with automated commentary on top sellers, refund rates, and location distribution',
+      ]},
       { date: '2026-06-19', title: 'Community Intel: CSV exports restricted for PII security', items: [
         'Removed direct CSV download of user PII from all Community Intelligence export buttons',
         'Export CSV buttons replaced with Request CSV — opens a modal directing orgs to contact Partner Support via partnersupport@rec.us',
