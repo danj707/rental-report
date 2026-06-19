@@ -444,6 +444,7 @@ const SHARED_UUIDS = {
   roster: "31bdf26f-0b2e-4ac2-ae31-69edbefd894c",
   memberships: "f4496307-d965-4637-b048-ecc703f2d37f",
   products: "b9678f5f-b5fb-48f7-96da-f22a1b4e8d8a",
+  users: "0aa0f55d-738f-4df7-837a-eb21f3ee1793",
 };
 
 // Report types that are valid system-wide but should NOT be offered in the
