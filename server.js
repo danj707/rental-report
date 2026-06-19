@@ -4236,6 +4236,7 @@ app.get("/", (req, res) => {
       calendar: { label: "Calendar",                  icon: "🗓️" },
       fasttrack: { label: "Fast Track",               icon: "⚡" },
     })))};
+    const SHARED_UUIDS_CLIENT = ${JSON.stringify(SHARED_UUIDS)};
 
     function openAddOrg() {
       document.getElementById('add-org-overlay').style.display = 'block';
@@ -4271,13 +4272,17 @@ app.get("/", (req, res) => {
     function updateMetabaseInputs() {
       const checked = [...document.querySelectorAll('#report-checkboxes input:checked')].map(i => i.value);
       const wrap = document.getElementById('metabase-inputs');
-      wrap.innerHTML = checked.length ? \`
-        <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:#888;margin-bottom:4px">Metabase Public Links</div>
-        \${checked.map(r => \`
-          <div>
-            <label style="font-size:12px;color:#555;display:block;margin-bottom:4px">\${REPORT_META[r].icon} \${REPORT_META[r].label}</label>
-            <input type="text" id="mb-\${r}" placeholder="https://rec.metabaseapp.com/public/question/..." style="width:100%;padding:7px 10px;border:1px solid #ddd;border-radius:5px;font-size:12px;font-family:monospace" />
-          </div>\`).join('')}\` : '';
+      const needsUuid = checked.filter(r => !SHARED_UUIDS_CLIENT[r]);
+      const shared = checked.filter(r => SHARED_UUIDS_CLIENT[r]);
+      let html = '';
+      if (shared.length) {
+        html += '<div style="margin-top:4px;padding:10px 14px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px;font-size:12px;color:#065f46"><strong>\\u2705 Shared base query:</strong> ' + shared.map(r => REPORT_META[r].icon + ' ' + REPORT_META[r].label).join(', ') + '<br><span style="font-size:11px;color:#6b7280">No Metabase link needed \\u2014 org_id injected automatically</span></div>';
+      }
+      if (needsUuid.length) {
+        html += '<div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:#888;margin-top:12px;margin-bottom:4px">Per-Org Metabase Links (required)</div>';
+        needsUuid.forEach(r => { html += '<div><label style="font-size:12px;color:#555;display:block;margin-bottom:4px">' + REPORT_META[r].icon + ' ' + REPORT_META[r].label + '</label><input type="text" id="mb-' + r + '" placeholder="https://rec.metabaseapp.com/public/question/..." style="width:100%;padding:7px 10px;border:1px solid #ddd;border-radius:5px;font-size:12px;font-family:monospace" /></div>'; });
+      }
+      wrap.innerHTML = html;
     }
 
     function extractMbUuid(url) {
@@ -4299,6 +4304,7 @@ app.get("/", (req, res) => {
       if (!checked.length) return showErr(err, 'Select at least one report');
       const reports = {};
       for (const r of checked) {
+        if (SHARED_UUIDS_CLIENT[r]) { reports[r] = null; continue; }
         const uuid = extractMbUuid(document.getElementById(\`mb-\${r}\`)?.value || '');
         if (!uuid) return showErr(err, \`Metabase link required for \${REPORT_META[r].label}\`);
         reports[r] = uuid;
@@ -4312,7 +4318,7 @@ app.get("/", (req, res) => {
         \`<div><strong>Logo:</strong> <img src="\${logoUrl}" style="height:24px;vertical-align:middle;margin-left:6px" onerror="this.style.display='none'" /></div>\`,
         \`<div style="margin-top:6px"><strong>Reports:</strong></div>\`,
         ...Object.entries(reports).map(([r, uuid]) =>
-          \`<div style="margin-left:12px;font-size:12px">\${REPORT_META[r].icon} \${REPORT_META[r].label} — <code style="font-size:11px">\${uuid}</code></div>\`)
+          \`<div style="margin-left:12px;font-size:12px">\${REPORT_META[r].icon} \${REPORT_META[r].label} — \${uuid ? '<code style="font-size:11px">' + uuid + '</code>' : '<span style="color:#059669;font-weight:600">shared base query</span>'}</div>\`)
       ];
       document.getElementById('confirm-summary').innerHTML = rows.join('');
       document.getElementById('step1').style.display = 'none';
