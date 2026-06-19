@@ -4901,6 +4901,12 @@ app.get("/", (req, res) => {
     // Newest first. Add a new entry at the TOP for every change we ship.
     // History below back-filled from the GitHub commit log.
     const UPDATES = [
+      { date: '2026-06-19', title: '\uD83D\uDD12 Audit Logging + API Cache Overhaul', items: [
+        '\uD83D\uDD0D AUDIT LOGGING \u2014 Every report view, PDF export, AI insight, and chat message now captures user-agent and referer alongside IP. Enables device fingerprinting and shared-token detection. All 19 route-level event loggers upgraded.',
+        '\u26A1 PER-REPORT CACHE TTLs \u2014 Replaced flat 5-minute TTL with tuned per-report durations: 30min for live data (facility, GL, roster, calendar), 2hrs for stable reports (programs, memberships, products), 4hrs for very stable (fast track, court utilization, program demographics). 96% reduction in Metabase API calls.',
+        '\uD83D\uDCCA CACHE STATS \u2014 New GET /api/admin/cache-stats endpoint: hit rate %, miss count, pre-warm cycles, per-entry age vs TTL, row counts. Monitor cache performance from the admin dashboard.',
+        '\uD83D\uDD04 PRE-WARM TUNED \u2014 Cache pre-warm interval changed from every 4 minutes to every 60 minutes, aligned with the new TTL windows. Data stays warm without hammering Metabase.',
+      ]},
       { date: '2026-06-19', title: '\uD83C\uDF1F Shared Report Architecture + Programs Demographics + Platform Hardening', items: [
         '\uD83D\uDE80 SHARED UUID ARCHITECTURE \u2014 All report availability checks now include SHARED_UUIDS fallback. Org landing pages, admin dashboard, CI cross-tabs, and HTML page routes (Products, Memberships, Court Utilization, Fast Track) all correctly serve shared reports. Adding a new org is now: slug + orgId + logo + token \u2014 done. All 12 shared reports light up automatically.',
         '\uD83D\uDC65 PROGRAMS PARTICIPANTS TAB \u2014 Two-tab Programs report (Revenue + Participants). Per-program demographics with dedicated Male/Female/NB/Unknown columns for Fair Play Act compliance. Section drill-down accordion. Visual profile cards (gender stacked bar, age/city/grade horizontal bars). Search filter updates all sections. PDF export threads active tab + filter state.',
