@@ -4765,25 +4765,14 @@ app.get("/", (req, res) => {
     // Newest first. Add a new entry at the TOP for every change we ship.
     // History below back-filled from the GitHub commit log.
     const UPDATES = [
-      { date: '2026-06-19', title: 'Shared Metabase UUIDs: facility, programs, calendar migrated', items: [
-        'New SHARED_UUIDS config: one Metabase question per report type, parameterized by org_id',
-        'Facility report now uses a single shared query across all orgs instead of per-org Metabase questions',
-        'buildMetabaseParams passes org_id as a text parameter when using shared UUIDs',
-        'Pulse, health checks, and data API all resolve shared UUID with automatic org_id injection',
-        'Per-org facility mbUuid entries remain as fallback but are no longer used when shared UUID is set',
-      ]},
-      { date: '2026-06-19', title: 'Community Intel: Products analytics tab', items: [
-        'Products cross-tab now fully rendered with KPIs: units sold, gross/net revenue, refunds, refund rate, avg per unit',
-        'Top 12 products table ranked by net revenue with percentage share',
-        'Weekly Net Revenue bar chart (Chart.js) showing sales timeline by week',
-        'Revenue by Location panel with horizontal progress bars, proportional widths, and unit/pct detail',
-        'Key observations with automated commentary on top sellers, refund rates, and location distribution',
-      ]},
-      { date: '2026-06-19', title: 'Community Intel: CSV exports restricted for PII security', items: [
-        'Removed direct CSV download of user PII from all Community Intelligence export buttons',
-        'Export CSV buttons replaced with Request CSV — opens a modal directing orgs to contact Partner Support via partnersupport@rec.us',
-        'Modal pre-fills org name and data description into a mailto link for easy request submission',
-        'Request Report button emails dan@rec.us for custom report requests',
+      { date: '2026-06-19', title: '\uD83D\uDE80 Major Architecture Overhaul: Shared Queries + New Analytics + Admin Controls', items: [
+        '\u2728 SHARED QUERY MIGRATION \u2014 9 of 12 report types now run from a single parameterized Metabase question each. No more per-org SQL duplication. Onboarding a new org is now: slug + UUID + logo \u2014 done.',
+        '\uD83D\uDED2 PRODUCTS ANALYTICS \u2014 Full Products tab on Community Intelligence: KPIs, top 12 products by revenue, weekly trend chart, desk location breakdown with progress bars.',
+        '\uD83D\uDD12 PII SECURITY \u2014 CSV exports replaced with Request CSV modal routing to Partner Support. No more direct download of user data.',
+        '\uD83D\uDCC5 CALENDAR \u2014 Today indicator on week view. Today button on all views. Public embed-ready URLs (no token). Session click tracking with admin dashboard metric.',
+        '\uD83D\uDCCA DATA COMPLETENESS \u2014 Phone + Emergency Contact completeness rings on Demographics. Enhanced users SQL with profile demographics, household size, and completeness flags.',
+        '\uD83C\uDFAF REVENUE BY GENDER \u2014 Demographic revenue breakdown on Revenue tab with coverage-aware caveats for low sample sizes.',
+        '\u2699\uFE0F APP CONTROL CENTER \u2014 Feature flags (Email Subscriptions toggle). Metabase Links consolidated into App Control. Add-org wizard auto-detects shared reports.',
       ]},
       { date: '2026-06-18', title: 'Partner quotes on admin hero', items: [
         'Scrolling testimonial strip below the photo upload section on the admin dashboard hero card',
