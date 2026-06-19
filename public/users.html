@@ -962,6 +962,7 @@ function App() {
     // User-level demographic crossover
     var demo = { hasData:false, ftUsers:userRows.length, matched:0,
       ages:[], resYes:0, resNo:0, cities:{}, zips:{}, ftRevTotal:0, ftRevHHs:0,
+      ftFirstTouch:0, ftFirstTouchRev:0, ftFirstTouchHHs:0, nonFtAvgSpend:0,
       ageBrackets:{'0-5':0,'6-12':0,'13-17':0,'18-25':0,'26-35':0,'36-45':0,'46-55':0,'56-65':0,'65+':0} };
     if (userRows.length > 0 && rows && rows.length > 0) {
       var emailMap = {};
@@ -985,6 +986,13 @@ function App() {
         var rawRev = match['Net Revenue'] || match['net_revenue'] || match['Net_Revenue'] || 0;
         var hhNet = parseFloat(String(rawRev).replace(/,/g,'')) || 0;
         if (hhNet > 0) { demo.ftRevTotal += hhNet; demo.ftRevHHs++; }
+        // First-touch acquisition: was FT this household's first-ever booking?
+        var _ftd = ur['First FT Date'] ? new Date(ur['First FT Date']) : null;
+        var _fab = ur['First Any Booking'] ? new Date(ur['First Any Booking']) : null;
+        if (_ftd && _fab && !isNaN(_ftd.getTime()) && !isNaN(_fab.getTime()) && Math.abs(_ftd - _fab) < 172800000) {
+          demo.ftFirstTouch++;
+          if (hhNet > 0) { demo.ftFirstTouchRev += hhNet; demo.ftFirstTouchHHs++; }
+        }
         var age = parseInt(match['Age'])||0;
         if (age > 0 && age < 120) {
           demo.ages.push(age);
@@ -1006,6 +1014,17 @@ function App() {
         var zip = (match['Zip Code']||'').trim();
         if (zip) demo.zips[zip] = (demo.zips[zip]||0)+1;
       });
+      // FT vs non-FT household spend comparison
+      var _nfRev = 0, _nfHHs = 0, _seenNF = {};
+      rows.forEach(function(r) {
+        var hh = r['Household ID'] || '';
+        if (!hh || matchedHHs.has(hh) || _seenNF[hh]) return;
+        _seenNF[hh] = true;
+        var rv = parseFloat(String(r['Net Revenue']||r['net_revenue']||r['Net_Revenue']||0).replace(/,/g,''))||0;
+        if (rv > 0) { _nfRev += rv; _nfHHs++; }
+      });
+      demo.nonFtAvgSpend = _nfHHs > 0 ? Math.round(_nfRev / _nfHHs) : 0;
+      demo.avgFirstTouchSpend = demo.ftFirstTouchHHs > 0 ? Math.round(demo.ftFirstTouchRev / demo.ftFirstTouchHHs) : 0;
       demo.hasData = demo.matched > 0;
       demo.medianAge = demo.ages.length > 0 ? (function(a){a.sort(function(x,y){return x-y;});return a[Math.floor(a.length/2)];})(demo.ages.slice()) : null;
       demo.resPct = (demo.resYes+demo.resNo)>0 ? ((demo.resYes/(demo.resYes+demo.resNo))*100).toFixed(1) : null;
@@ -1732,6 +1751,26 @@ function App() {
                       <div className="obs-grid">
                         <div>{E('\u23F1\uFE0F')}<strong style={{color:'#065f46'}}>Time Savings</strong> {ft.totalConverted.toLocaleString()} Fast Track registrations saved an estimated {ft.adminHoursSaved.toLocaleString()} staff hours. Each FT self-service registration eliminates ~8 minutes of phone/walk-in processing time per transaction.</div>
                         <div>{E('\uD83D\uDCB0')}<strong style={{color:'#065f46'}}>Cost Efficiency</strong> At the BLS median recreation worker rate of $23/hr, Fast Track has saved an estimated ${ft.costSavings.toLocaleString()} in admin labor costs{ft.totalEnrolled>0?' — covering '+ft.ftShareOfEnrolled+'% of all enrollments without staff intervention.':'.'}</div>
+                      </div>
+                    </div>
+                  </React.Fragment>
+                )}
+
+                {/* Demographic crossover (only when user rows are available from v5 SQL) */}
+                {ft.demo.hasData && ft.demo.ftFirstTouch > 0 && (
+                  <React.Fragment>
+                    <div style={{borderTop:'1px solid #e5e7eb',marginTop:20,paddingTop:16}}>
+                      <div style={{fontSize:12,fontWeight:700,textTransform:'uppercase',letterSpacing:'.04em',color:'#10b981',marginBottom:12}}>First-Touch Acquisition <span style={{fontWeight:400,textTransform:'none',color:'#9ca3af',letterSpacing:0}}>— households whose first-ever booking was via Fast Track</span></div>
+                    </div>
+                    <div className="kpi-row">
+                      <div className="kpi" style={{'--accent':'#10b981'}}><div className="kpi-label">FT-Acquired Households</div><div className="kpi-val">{ft.demo.ftFirstTouch}</div><div className="kpi-sub">{ft.demo.matchedHHs>0?((ft.demo.ftFirstTouch/ft.demo.matchedHHs)*100).toFixed(0)+'% of FT households were new':'new to system via FT'}</div></div>
+                      {ft.demo.avgFirstTouchSpend>0&&<div className="kpi" style={{'--accent':'#10b981'}}><div className="kpi-label">FT-Acquired Avg Spend</div><div className="kpi-val">{'$'+ft.demo.avgFirstTouchSpend.toLocaleString()}</div><div className="kpi-sub">lifetime spend since joining via FT</div></div>}
+                      {ft.demo.avgFtSpend>0&&ft.demo.nonFtAvgSpend>0&&<div className="kpi" style={{'--accent':ft.demo.avgFtSpend>=ft.demo.nonFtAvgSpend?'#059669':'#d97706'}}><div className="kpi-label">FT vs Non-FT Spend</div><div className="kpi-val">{'$'+ft.demo.avgFtSpend.toLocaleString()+' vs $'+ft.demo.nonFtAvgSpend.toLocaleString()}</div><div className="kpi-sub">{ft.demo.avgFtSpend>=ft.demo.nonFtAvgSpend?'FT households spend '+(((ft.demo.avgFtSpend/ft.demo.nonFtAvgSpend)-1)*100).toFixed(0)+'% more':'Non-FT households spend '+(((ft.demo.nonFtAvgSpend/ft.demo.avgFtSpend)-1)*100).toFixed(0)+'% more'}</div></div>}
+                    </div>
+                    <div className="obs">
+                      <div className="obs-grid">
+                        <div>{E('\uD83C\uDF31')}<strong style={{color:'#065f46'}}>New Customer Acquisition</strong> {ft.demo.ftFirstTouch} household{ft.demo.ftFirstTouch===1?'':'s'} entered the system for the first time through Fast Track{ft.demo.matchedHHs>0?' \u2014 '+((ft.demo.ftFirstTouch/ft.demo.matchedHHs)*100).toFixed(0)+'% of all FT households. These aren\u2019t existing customers choosing convenience; they\u2019re net-new participants FT brought through the door.':'.'}</div>
+                        {ft.demo.avgFtSpend>0&&ft.demo.nonFtAvgSpend>0&&<div>{E('\uD83D\uDCB8')}<strong style={{color:'#065f46'}}>Revenue Quality</strong> Households that use Fast Track spend an average of ${ft.demo.avgFtSpend.toLocaleString()} vs ${ft.demo.nonFtAvgSpend.toLocaleString()} for non-FT households.{ft.demo.avgFtSpend>ft.demo.nonFtAvgSpend?' FT users are higher-value customers \u2014 the self-service channel attracts engaged, repeat participants.':ft.demo.avgFtSpend<ft.demo.nonFtAvgSpend*0.8?' FT may be attracting first-timers still building engagement. Consider targeted upsell after initial FT registration.':' Spend levels are comparable, suggesting FT doesn\u2019t cannibalize \u2014 it expands the base.'}</div>}
                       </div>
                     </div>
                   </React.Fragment>

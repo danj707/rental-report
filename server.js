@@ -4843,6 +4843,11 @@ app.get("/", (req, res) => {
     // Newest first. Add a new entry at the TOP for every change we ship.
     // History below back-filled from the GitHub commit log.
     const UPDATES = [
+      { date: '2026-06-19', title: '\uD83C\uDF31 Fast Track First-Touch Acquisition Analytics', items: [
+        '\u2728 FIRST-TOUCH ACQUISITION \u2014 New section on Community Intelligence FT tab identifies households whose very first booking was via Fast Track. These are net-new customers FT brought through the door, not existing users choosing convenience.',
+        '\uD83D\uDCB8 FT vs NON-FT SPEND \u2014 Side-by-side average household spend comparison between Fast Track users and non-FT users. Answers the question: are FT-acquired customers higher-value?',
+        '\uD83D\uDCC8 FT SQL v5 \u2014 User-level UNION ALL now includes First FT Date, User Created At, and First Any Booking columns. First-touch detection compares first FT date against first-ever confirmed booking within 48hr window.',
+      ]},
       { date: '2026-06-19', title: '\uD83D\uDE80 Major Architecture Overhaul: Shared Queries + New Analytics + Admin Controls', items: [
         '\u2728 SHARED QUERY MIGRATION \u2014 9 of 12 report types now run from a single parameterized Metabase question each. No more per-org SQL duplication. Onboarding a new org is now: slug + UUID + logo \u2014 done.',
         '\uD83D\uDED2 PRODUCTS ANALYTICS \u2014 Full Products tab on Community Intelligence: KPIs, top 12 products by revenue, weekly trend chart, desk location breakdown with progress bars.',
