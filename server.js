@@ -443,6 +443,7 @@ const SHARED_UUIDS = {
   fasttrack: "9d38ab95-8562-42ca-b6c2-2582b7452457",
   roster: "31bdf26f-0b2e-4ac2-ae31-69edbefd894c",
   memberships: "f4496307-d965-4637-b048-ecc703f2d37f",
+  products: "b9678f5f-b5fb-48f7-96da-f22a1b4e8d8a",
 };
 
 // Report types that are valid system-wide but should NOT be offered in the
