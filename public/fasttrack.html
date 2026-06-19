@@ -428,10 +428,7 @@ function App() {
         )
       ),
 
-      loading && React.createElement('div', { className: 'loading' },
-        React.createElement('div', { className: 'spinner' }),
-        React.createElement('div', { className: 'juice-msg' }, React.createElement('span', null, 'Loading Fast Track data…'))
-      ),
+      loading && React.createElement(JuiceLoader, { messages: ['Loading Fast Track data\u2026', 'Counting signups\u2026', 'Crunching conversions\u2026', 'Mapping demand\u2026', 'Almost there\u2026'] }),
       error && !loading && React.createElement('div', { className: 'error' }, 'Could not load report: ', error),
 
       !loading && !error && React.createElement(React.Fragment, null,
@@ -534,10 +531,7 @@ function App() {
               'Generated from ', programs.length, ' program', programs.length !== 1 ? 's' : ''
             )
           ),
-          insightsLoading && React.createElement('div', { className: 'loading' },
-            React.createElement('div', { className: 'spinner' }),
-            React.createElement('div', { className: 'juice-msg' }, React.createElement('span', null, 'Analyzing Fast Track patterns…'))
-          ),
+          insightsLoading && React.createElement(JuiceLoader, { messages: ['Analyzing Fast Track patterns\u2026', 'Finding trends\u2026', 'Building recommendations\u2026', 'Polishing insights\u2026', 'Almost done\u2026'] }),
           insightsError && !insightsLoading && React.createElement('div', { className: 'error' }, React.createElement('strong', null, 'Insights unavailable: '), insightsError),
           activeInsights && !insightsLoading && React.createElement('div', { className: 'insights-grid' },
             activeInsights.map(function(ins, i) {
@@ -655,5 +649,6 @@ function SummaryCard(props) {
 ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(App));
 </script>
     <script src="/nav-breadcrumb.js" defer></script>
+    <script src="/juice-loader.js" defer></script>
   </body>
 </html>
