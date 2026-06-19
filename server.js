@@ -106,10 +106,12 @@ async function refreshOrgPulse(slug, force) {
   const monthLabel = now.toLocaleString('en-US', { month: 'long' });
 
   async function fetchMB(reportType, startDate, endDate) {
-    const mbUuid = org[reportType]?.mbUuid;
+    const useShared = !!SHARED_UUIDS[reportType];
+    const mbUuid = useShared ? SHARED_UUIDS[reportType] : org[reportType]?.mbUuid;
     if (!mbUuid) return null;
     try {
-      const params = buildMetabaseParams({ start_date: startDate, end_date: endDate }, reportType);
+      const orgId = useShared ? org.orgId : null;
+      const params = buildMetabaseParams({ start_date: startDate, end_date: endDate }, reportType, orgId);
       const qs = params.length ? `?parameters=${encodeURIComponent(JSON.stringify(params))}` : '';
       const resp = await fetch(`${METABASE_URL}/api/public/card/${mbUuid}/query/json${qs}`);
       if (!resp.ok) return null;
@@ -228,14 +230,18 @@ async function prewarmCache() {
     const org = ORGS[slug];
     if (!org.token) continue;
     for (const rt of REPORT_TYPES) {
-      const mbUuid = org[rt]?.mbUuid;
+      const useShared = !!SHARED_UUIDS[rt];
+      const mbUuid = useShared ? SHARED_UUIDS[rt] : org[rt]?.mbUuid;
       if (!mbUuid) continue;
       // Only pre-warm reports with no required params (default = current month)
       const cacheKey = `${slug}:${rt}:`;
       if (getCached(cacheKey)) continue; // already warm
       try {
         const timeoutMs = org.healthTimeoutMs || 120000;
-        const url = `${METABASE_URL}/api/public/card/${mbUuid}/query/json`;
+        const orgIdParam = useShared && org.orgId
+          ? `?parameters=${encodeURIComponent(JSON.stringify([{ type: "category", target: ["variable", ["template-tag", "org_id"]], value: org.orgId }]))}`
+          : '';
+        const url = `${METABASE_URL}/api/public/card/${mbUuid}/query/json${orgIdParam}`;
         const resp = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
         if (resp.ok) {
           let data = await resp.json();
@@ -424,6 +430,15 @@ const ORGS = {
 };
 
 const REPORT_TYPES = ["facility", "gl", "historic", "programs", "roster", "overview", "products", "memberships", "court-utilization", "calendar", "fasttrack", "users"];
+
+// ── Shared Metabase UUIDs (one query per report type, parameterized by org_id) ──
+// When a report type has an entry here, the server uses this UUID + passes the
+// org's orgId as {{org_id}}, instead of using the per-org mbUuid.
+// Migrate report types here one at a time; per-org mbUuid is the fallback.
+const SHARED_UUIDS = {
+  facility: "f6787f45-3a36-4501-8a5f-b0f647451a85",
+};
+
 // Report types that are valid system-wide but should NOT be offered in the
 // dashboard "+ Add report" flow (e.g. not yet ready for self-serve onboarding).
 const NON_ADDABLE_REPORTS = new Set(["overview"]);
@@ -525,7 +540,7 @@ async function runHealthCheck(forceAll) {
     const org = ORGS[slug];
     if (!org.token) continue;
     for (const rt of REPORT_TYPES) {
-      if (!org[rt]?.mbUuid) continue;
+      if (!org[rt]?.mbUuid && !SHARED_UUIDS[rt]) continue;
       if (forceAll) { toCheck.push({ slug, rt }); continue; }
       const prev = existing.reports?.[slug]?.[rt];
       const tier = getTier(slug, rt);
@@ -544,7 +559,9 @@ async function runHealthCheck(forceAll) {
 
   for (const { slug, rt } of toCheck) {
     const org = ORGS[slug];
-    const mbUuid = org[rt].mbUuid;
+    const useSharedHC = !!SHARED_UUIDS[rt];
+    const mbUuid = useSharedHC ? SHARED_UUIDS[rt] : org[rt]?.mbUuid;
+    if (!mbUuid) continue;
     if (!existing.reports[slug]) existing.reports[slug] = {};
 
     const entry = { status: "ok", rows: 0, checkedAt: ts };
@@ -552,7 +569,10 @@ async function runHealthCheck(forceAll) {
       const controller = new AbortController();
       const timeoutMs = org.healthTimeoutMs || 60000;
       const timeout = setTimeout(() => controller.abort(), timeoutMs);
-      const url = `${METABASE_URL}/api/public/card/${mbUuid}/query/json`;
+      const orgIdParamHC = useSharedHC && org.orgId
+        ? `?parameters=${encodeURIComponent(JSON.stringify([{ type: "category", target: ["variable", ["template-tag", "org_id"]], value: org.orgId }]))}`
+        : '';
+      const url = `${METABASE_URL}/api/public/card/${mbUuid}/query/json${orgIdParamHC}`;
       const resp = await fetch(url, { signal: controller.signal });
       clearTimeout(timeout);
 
@@ -1370,8 +1390,11 @@ function parseToISO(dateStr) {
 }
 
 // ── Build Metabase parameters array ─────────────────────────────────
-function buildMetabaseParams(query, reportType) {
+function buildMetabaseParams(query, reportType, orgId) {
   const params = [];
+  if (orgId) {
+    params.push({ type: "category", target: ["variable", ["template-tag", "org_id"]], value: orgId });
+  }
   if (query.start_date) {
     params.push({ type: "date/single", target: ["variable", ["template-tag", "start_date"]], value: parseToISO(query.start_date) });
   }
@@ -1957,12 +1980,15 @@ app.post("/:org/chat/api/message", async (req, res) => {
 app.get("/:org/:report/api/data", resolveOrg, async (req, res) => {
   try {
     const { orgConfig, orgSlug, reportType } = req;
-    const mbUuid = orgConfig[reportType]?.mbUuid;
+    // Prefer shared (parameterized) UUID; fall back to per-org UUID
+    const useShared = !!SHARED_UUIDS[reportType];
+    const mbUuid = useShared ? SHARED_UUIDS[reportType] : orgConfig[reportType]?.mbUuid;
     if (!mbUuid) return res.status(404).json({ error: `No Metabase question configured for ${orgSlug}/${reportType}` });
 
     logEvent(orgSlug, reportType, "fetch", req.ip);
 
-    const params = buildMetabaseParams(req.query, reportType);
+    const orgId = useShared ? orgConfig.orgId : null;
+    const params = buildMetabaseParams(req.query, reportType, orgId);
     const paramStr = params.length > 0 ? `?parameters=${encodeURIComponent(JSON.stringify(params))}` : "";
 
     // ── Cache check (skip with _nocache=1) ──
@@ -4627,6 +4653,13 @@ app.get("/", (req, res) => {
     // Newest first. Add a new entry at the TOP for every change we ship.
     // History below back-filled from the GitHub commit log.
     const UPDATES = [
+      { date: '2026-06-19', title: 'Shared Metabase UUIDs: facility report migrated', items: [
+        'New SHARED_UUIDS config: one Metabase question per report type, parameterized by org_id',
+        'Facility report now uses a single shared query across all orgs instead of per-org Metabase questions',
+        'buildMetabaseParams passes org_id as a text parameter when using shared UUIDs',
+        'Pulse, health checks, and data API all resolve shared UUID with automatic org_id injection',
+        'Per-org facility mbUuid entries remain as fallback but are no longer used when shared UUID is set',
+      ]},
       { date: '2026-06-19', title: 'Community Intel: Products analytics tab', items: [
         'Products cross-tab now fully rendered with KPIs: units sold, gross/net revenue, refunds, refund rate, avg per unit',
         'Top 12 products table ranked by net revenue with percentage share',
