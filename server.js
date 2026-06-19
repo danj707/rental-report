@@ -438,6 +438,7 @@ const REPORT_TYPES = ["facility", "gl", "historic", "programs", "roster", "overv
 const SHARED_UUIDS = {
   facility: "f6787f45-3a36-4501-8a5f-b0f647451a85",
   programs: "e35f2b47-87c9-40e3-8507-3d9b56f9ce62",
+  calendar: "d77a2171-6cc8-4c11-b014-a6ad45491bf4",
 };
 
 // Report types that are valid system-wide but should NOT be offered in the
@@ -2273,7 +2274,7 @@ app.get("/:org/calendar", (req, res) => {
   const slug = req.params.org;
   const org  = ORGS[slug];
   if (!org) return res.status(404).send("Unknown org");
-  if (!org.calendar?.mbUuid) return res.status(404).send("Calendar report not configured for this org.");
+  if (!org.calendar?.mbUuid && !SHARED_UUIDS.calendar) return res.status(404).send("Calendar report not configured for this org.");
   logEvent(slug, "calendar", "view", req.ip);
   // Inject org metadata so the frontend can show logo + name
   const slugTitle = slug.charAt(0).toUpperCase() + slug.slice(1);
@@ -2281,7 +2282,7 @@ app.get("/:org/calendar", (req, res) => {
     slug,
     displayName: org.displayName || `${slugTitle} Parks & Recreation`,
     logoUrl: org.logoUrl || '',
-    recommendEnabled: RECOMMEND_ENABLED && !!(org.calendar?.mbUuid || org.programs?.mbUuid),
+    recommendEnabled: RECOMMEND_ENABLED && !!(org.calendar?.mbUuid || SHARED_UUIDS.calendar || org.programs?.mbUuid || SHARED_UUIDS.programs),
   };
   const fs = require("fs");
   const html = fs.readFileSync(path.join(__dirname, "public", "calendar.html"), "utf-8");
@@ -2295,7 +2296,7 @@ app.post("/:org/calendar/api/recommend", express.json(), async (req, res) => {
   const org  = ORGS[slug];
   if (!org) return res.status(404).json({ ok: false, error: "Unknown org" });
   if (!RECOMMEND_ENABLED) return res.status(503).json({ ok: false, error: "Program recommendations are temporarily unavailable" });
-  if (!org.calendar?.mbUuid && !org.programs?.mbUuid) {
+  if (!org.calendar?.mbUuid && !SHARED_UUIDS.calendar && !org.programs?.mbUuid && !SHARED_UUIDS.programs) {
     return res.status(404).json({ ok: false, error: "No calendar or program data for this org" });
   }
 
@@ -2333,9 +2334,11 @@ app.post("/:org/calendar/api/recommend", express.json(), async (req, res) => {
     const endDate   = toISO(future);
 
     let rows = [];
-    const mbUuid = org.calendar?.mbUuid;
+    const calUseShared = !!SHARED_UUIDS.calendar;
+    const mbUuid = calUseShared ? SHARED_UUIDS.calendar : org.calendar?.mbUuid;
     if (mbUuid) {
-      const params = buildMetabaseParams({ start_date: startDate, end_date: endDate }, "calendar");
+      const orgId = calUseShared ? org.orgId : null;
+      const params = buildMetabaseParams({ start_date: startDate, end_date: endDate }, "calendar", orgId);
       const paramStr = params.length > 0 ? `?parameters=${encodeURIComponent(JSON.stringify(params))}` : "";
       const url = `${METABASE_URL}/api/public/card/${mbUuid}/query/json${paramStr}`;
       const resp = await fetch(url);
@@ -4654,7 +4657,7 @@ app.get("/", (req, res) => {
     // Newest first. Add a new entry at the TOP for every change we ship.
     // History below back-filled from the GitHub commit log.
     const UPDATES = [
-      { date: '2026-06-19', title: 'Shared Metabase UUIDs: facility + programs migrated', items: [
+      { date: '2026-06-19', title: 'Shared Metabase UUIDs: facility, programs, calendar migrated', items: [
         'New SHARED_UUIDS config: one Metabase question per report type, parameterized by org_id',
         'Facility report now uses a single shared query across all orgs instead of per-org Metabase questions',
         'buildMetabaseParams passes org_id as a text parameter when using shared UUIDs',
