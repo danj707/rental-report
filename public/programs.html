@@ -1406,15 +1406,73 @@ function App() {
                 {demoStats.ftCount>0&&<div className="summary-card"><div className="card-label">Fast Track</div><div className="card-value">{demoStats.ftPct}%</div><div className="card-sub">{demoStats.ftCount.toLocaleString()} via FT</div></div>}
               </div>
 
-              {(demoStats.gMaleAll>0||demoStats.gFemaleAll>0) && (
-                <div className="obs">
-                  <div className="obs-title">Participant Profile</div>
-                  <div className="obs-grid">
-                    <div><strong style={{color:'#065f46'}}>Gender</strong> Male {demoStats.gMaleAll.toLocaleString()} ({demoStats.total>0?((demoStats.gMaleAll/demoStats.total)*100).toFixed(1):'0'}%), Female {demoStats.gFemaleAll.toLocaleString()} ({demoStats.total>0?((demoStats.gFemaleAll/demoStats.total)*100).toFixed(1):'0'}%){demoStats.gNBAll>0?', Non-Binary/Other '+demoStats.gNBAll:''}{demoStats.gUnkAll>0?', Unknown '+demoStats.gUnkAll.toLocaleString():''}</div>
-                    {demoStats.topCities.length>0&&<div><strong style={{color:'#065f46'}}>Top Cities</strong> {demoStats.topCities.slice(0,5).map(c => c.city+' ('+c.count+')').join(', ')}</div>}
-                    {demoStats.gradeData.length>0&&<div><strong style={{color:'#065f46'}}>Top Grades</strong> {demoStats.gradeData.slice(0,6).map(g => g.label+': '+g.count).join(', ')}</div>}
-                    {demoStats.bracketData.filter(b=>b.count>0).length>0&&<div><strong style={{color:'#065f46'}}>Age Distribution</strong> {demoStats.bracketData.filter(b=>b.count>0).map(b => b.label+': '+b.count).join(', ')}</div>}
+              {(demoStats.gMaleAll>0||demoStats.gFemaleAll>0||demoStats.bracketData.some(b=>b.count>0)) && (
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:14,marginBottom:16}}>
+                  {/* Gender bar */}
+                  <div style={{background:'#fff',border:'1px solid #e5e7eb',borderRadius:8,padding:14}}>
+                    <div style={{fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:'.5px',color:'#6b7280',marginBottom:10}}>Gender Breakdown</div>
+                    {(() => {
+                      var t=demoStats.total, m=demoStats.gMaleAll, f=demoStats.gFemaleAll, nb=demoStats.gNBAll, u=demoStats.gUnkAll;
+                      var segs=[{label:'Male',val:m,color:'#2563eb'},{label:'Female',val:f,color:'#db2777'},{label:'NB/Other',val:nb,color:'#7c3aed'},{label:'Unknown',val:u,color:'#d1d5db'}].filter(s=>s.val>0);
+                      return (<div>
+                        <div style={{display:'flex',height:24,borderRadius:6,overflow:'hidden',marginBottom:8}}>
+                          {segs.map((s,i) => <div key={i} style={{width:((s.val/t)*100)+'%',background:s.color,minWidth:s.val>0?2:0}} title={s.label+': '+s.val} />)}
+                        </div>
+                        <div style={{display:'flex',flexWrap:'wrap',gap:'6px 16px',fontSize:11.5}}>
+                          {segs.map((s,i) => <span key={i}><span style={{display:'inline-block',width:8,height:8,borderRadius:2,background:s.color,marginRight:4}} />{s.label} <strong>{s.val.toLocaleString()}</strong> <span style={{color:'#9ca3af'}}>({t>0?((s.val/t)*100).toFixed(1):'0'}%)</span></span>)}
+                        </div>
+                      </div>);
+                    })()}
                   </div>
+                  {/* Age distribution bars */}
+                  <div style={{background:'#fff',border:'1px solid #e5e7eb',borderRadius:8,padding:14}}>
+                    <div style={{fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:'.5px',color:'#6b7280',marginBottom:10}}>Age Distribution</div>
+                    {(() => {
+                      var bars=demoStats.bracketData.filter(b=>b.count>0);
+                      var max=Math.max.apply(null,bars.map(b=>b.count));
+                      return bars.map((b,i) => (
+                        <div key={i} style={{display:'flex',alignItems:'center',gap:8,marginBottom:4}}>
+                          <span style={{fontSize:10,width:36,textAlign:'right',color:'#6b7280',flexShrink:0}}>{b.label}</span>
+                          <div style={{flex:1,height:16,background:'#f3f4f6',borderRadius:3,overflow:'hidden'}}>
+                            <div style={{height:'100%',width:max>0?((b.count/max)*100)+'%':'0',background:'#6366f1',borderRadius:3,transition:'width .3s'}} />
+                          </div>
+                          <span style={{fontSize:10,width:40,color:'#374151',fontWeight:600}}>{b.count.toLocaleString()}</span>
+                        </div>
+                      ));
+                    })()}
+                  </div>
+                  {/* Top Cities */}
+                  {demoStats.topCities.length>0 && (
+                    <div style={{background:'#fff',border:'1px solid #e5e7eb',borderRadius:8,padding:14}}>
+                      <div style={{fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:'.5px',color:'#6b7280',marginBottom:10}}>Top Cities</div>
+                      {(() => {
+                        var cities=demoStats.topCities.slice(0,8);
+                        var max=cities[0]?cities[0].count:1;
+                        return cities.map((c,i) => (
+                          <div key={i} style={{display:'flex',alignItems:'center',gap:8,marginBottom:3}}>
+                            <span style={{fontSize:11,width:100,color:'#374151',flexShrink:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{c.city}</span>
+                            <div style={{flex:1,height:14,background:'#f3f4f6',borderRadius:3,overflow:'hidden'}}>
+                              <div style={{height:'100%',width:((c.count/max)*100)+'%',background:'#059669',borderRadius:3}} />
+                            </div>
+                            <span style={{fontSize:10,width:40,color:'#374151',fontWeight:600}}>{c.count.toLocaleString()}</span>
+                          </div>
+                        ));
+                      })()}
+                    </div>
+                  )}
+                  {/* Top Grades */}
+                  {demoStats.gradeData.length>0 && (
+                    <div style={{background:'#fff',border:'1px solid #e5e7eb',borderRadius:8,padding:14}}>
+                      <div style={{fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:'.5px',color:'#6b7280',marginBottom:10}}>Grade Distribution</div>
+                      <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
+                        {demoStats.gradeData.slice(0,12).map((g,i) => (
+                          <span key={i} style={{padding:'4px 10px',background:'#f0fdf4',border:'1px solid #bbf7d0',borderRadius:12,fontSize:11,color:'#166534'}}>
+                            {g.label} <strong>{g.count}</strong>
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -1441,7 +1499,7 @@ function App() {
                   <th style={{color:'#db2777'}}>Female</th>
                   <th style={{color:'#7c3aed'}}>NB/Other</th>
                   <th>Unknown</th>
-                  <th>HHs</th>
+                  <th>Households</th>
                 </tr></thead>
                 <tbody>
                   {progs.map((p,i) => {
