@@ -256,6 +256,13 @@ function pad(n){return n<10?'0'+n:''+n;}
 function fmtISO(d){return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());}
 function startOfWeek(d){const x=new Date(d);const wd=x.getDay();x.setDate(x.getDate()-wd);x.setHours(0,0,0,0);return x;}
 function addDays(d,n){const x=new Date(d);x.setDate(x.getDate()+n);return x;}
+function trackClick(ev){
+  try{
+    const slug=(window.__ORG__||{}).slug||window.location.pathname.split('/').filter(Boolean)[0]||'';
+    const url=ev.url||'';const section=ev.section||ev.label||'';
+    navigator.sendBeacon('/'+slug+'/calendar/api/click',new Blob([JSON.stringify({section:section,url:url})],{type:'application/json'}));
+  }catch(e){}
+}
 const DOW=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 const DOWL=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
 const MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -785,7 +792,7 @@ function DayDetailPopup({date,events,onEv,onClose}){
                         <div className="dp-loc">{[e.activity,e.facility].filter(Boolean).join(' \u00b7 ')}</div>
                         {e.description && <div className="dp-meta">{e.description.length>80?e.description.slice(0,77)+'\u2026':e.description}</div>}
                         {(e.full||e.waitlist) && <div className="dp-meta"><StatusChips ev={e}/></div>}
-                        {e.url && <a className="dp-link" href={e.url} target="_blank" rel="noopener">View Session &#8594;</a>}
+                        {e.url && <a className="dp-link" href={e.url} target="_blank" rel="noopener" onClick={()=>trackClick(e)}>View Session &#8594;</a>}
                       </div>
                     </div>
                   );
@@ -822,7 +829,7 @@ function PopoverCard({ev,onClose}){
           {ev.description && <div className="pop-row"><span className="pop-lbl">Description</span><span style={{whiteSpace:'normal',overflowWrap:'anywhere',display:'-webkit-box',WebkitLineClamp:4,WebkitBoxOrient:'vertical',overflow:'hidden',fontSize:12,lineHeight:'1.45',color:'var(--ink)'}}>{ev.description}</span></div>}
           <div className="pop-row"><span className="pop-lbl">Price</span><span>{price}</span></div>
           {(ev.full||ev.waitlist) && <div className="pop-row pop-chips"><StatusChips ev={ev}/></div>}
-          {ev.url && <a className="pop-link" href={ev.url} target="_blank" rel="noopener">View Session →</a>}
+          {ev.url && <a className="pop-link" href={ev.url} target="_blank" rel="noopener" onClick={()=>trackClick(ev)}>View Session →</a>}
         </div>
       </div>
     </div>

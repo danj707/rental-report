@@ -2290,6 +2290,16 @@ app.get("/:org/calendar", (req, res) => {
   res.type("html").send(html.replace("</head>", inject + "</head>"));
 });
 
+// ── POST /:org/calendar/api/click — track View Session clicks ────────
+app.post("/:org/calendar/api/click", express.json(), (req, res) => {
+  const slug = req.params.org;
+  const org = ORGS[slug];
+  if (!org) return res.status(404).end();
+  const { section, url } = req.body || {};
+  logEvent(slug, "calendar", "click", req.ip, { section: section || null, url: url || null });
+  res.status(204).end();
+});
+
 // ── POST /:org/calendar/api/recommend — AI program finder + email ────
 app.post("/:org/calendar/api/recommend", express.json(), async (req, res) => {
   const slug = req.params.org;
