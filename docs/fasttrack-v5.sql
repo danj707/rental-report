@@ -136,7 +136,7 @@ ft_users AS (
     COUNT(DISTINCT b.id)
       FILTER (WHERE b.canceled_at IS NULL)               AS ft_booking_count
   FROM booking b
-  JOIN "user" u ON u.id = b.customer_user_id
+  JOIN users u ON u.id = b.customer_user_id
   WHERE b.organization_id = (SELECT org_id FROM params)
     AND b.deleted_at    IS NULL
     AND b.is_fast_track  = TRUE
