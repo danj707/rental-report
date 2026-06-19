@@ -1203,8 +1203,8 @@ function App() {
               <th className="group" colSpan={1}>Cash</th>
               <th className="group" colSpan={1}>Check</th>
               {!showRefunds && <th className="group" colSpan={1}>Acct Credit</th>}
-              {showRefunds && <th className="group" colSpan={2}>Other Pmts</th>}
-              {hasScholarship && <th className="group" colSpan={1}>Scholarship</th>}
+              {showRefunds && <th className="group" colSpan={hasScholarship ? 3 : 2}>Other Pmts</th>}
+              {!showRefunds && hasScholarship && <th className="group" colSpan={1}>Scholarship</th>}
               <th className="group" colSpan={1}>Total Pmts</th>
               <th className="group" colSpan={1}></th>
               <th className={`group${showRefunds ? ' refund-group' : ''}`} colSpan={refundCols}>{showRefunds ? 'Refunds' : 'Total Refunds'}</th>
@@ -1232,8 +1232,8 @@ function App() {
               <th>Check</th>
 
               {!showRefunds && <th>Acct Credit</th>}
-              {showRefunds && <><th>Free</th><th>Org Credit</th></>}
-              {hasScholarship && <th>Scholarship</th>}
+              {showRefunds && <><th>Free</th><th>Org Credit</th>{hasScholarship && <th>Scholarship</th>}</>}
+              {!showRefunds && hasScholarship && <th>Scholarship</th>}
 
               <th>Total Pmts</th>
               <th># Pmts</th>
@@ -1281,7 +1281,7 @@ function App() {
                 <td><MoneyCell v={r.checkPayments} /></td>
 
                 {!showRefunds && <td><MoneyCell v={r.orgCreditPayments} /></td>}
-                {hasScholarship && <td><MoneyCell v={r.scholarshipPayments} /></td>}
+                {!showRefunds && hasScholarship && <td><MoneyCell v={r.scholarshipPayments} /></td>}
                 {showRefunds && (
                   <>
                     <td><MoneyCell v={r.freePayments}      /></td>
@@ -1342,7 +1342,7 @@ function App() {
               <td>{fmtMoneyStr(totals.checkPayments)}</td>
 
               {!showRefunds && <td>{fmtMoneyStr(totals.orgCreditPayments)}</td>}
-              {hasScholarship && <td>{fmtMoneyStr(totals.scholarshipPayments)}</td>}
+              {!showRefunds && hasScholarship && <td>{fmtMoneyStr(totals.scholarshipPayments)}</td>}
               {showRefunds && (
                 <>
                   <td>{fmtMoneyStr(sumField(displayRows, 'freePayments'))}</td>
