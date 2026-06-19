@@ -4856,6 +4856,16 @@ app.get("/", (req, res) => {
     // Newest first. Add a new entry at the TOP for every change we ship.
     // History below back-filled from the GitHub commit log.
     const UPDATES = [
+      { date: '2026-06-19', title: '\uD83C\uDF1F Shared Report Architecture + Programs Demographics + Platform Hardening', items: [
+        '\uD83D\uDE80 SHARED UUID FIX \u2014 All report availability checks now include SHARED_UUIDS fallback. Org landing pages, admin dashboard, CI cross-tabs, and HTML page routes (Products, Memberships, Court Utilization, Fast Track) all correctly serve shared reports. Adding a new org is now: slug + orgId + logo + token \u2014 done. All shared reports light up automatically.',
+        '\uD83D\uDC65 PROGRAMS PARTICIPANTS TAB \u2014 New two-tab Programs report (Revenue + Participants). Demographics tab shows per-program enrollment with dedicated Male/Female/NB columns for Fair Play Act compliance. Section drill-down accordion, search filter updates summary cards + profile visualization, PDF export threads active tab and filter state.',
+        '\uD83D\uDCCA VISUAL PROFILE CARDS \u2014 2\u00D72 grid replacing text walls: Gender stacked bar, Age Distribution horizontal bars, Top Cities ranked bars, Grade Distribution bars. All filter-responsive.',
+        '\uD83C\uDF31 FIRST-TOUCH ACQUISITION \u2014 CI Fast Track tab identifies households whose first-ever booking was via FT (48hr window match). FT vs non-FT avg spend comparison. FT SQL v5 with user-level UNION ALL.',
+        '\uD83C\uDF4A SHARED JUICE LOADER \u2014 Extracted loading animation into /juice-loader.js. Drop-in React component for any report: <JuiceLoader messages={[...]} />. Used in Programs and Fast Track.',
+        '\u2705 ROSTER SIGNATURES \u2014 Digital signature base64 blobs replaced with \u201C\u2713 Signed\u201D in form responses. Fixes layout blowout from waiver signatures.',
+        '\uD83C\uDFF7\uFE0F RENAME \u2014 Program Revenue \u2192 Programs across all UI surfaces (dashboard, org pages, metrics, email labels, add-report modal).',
+        '\uD83D\uDD27 ADD-REPORT MODAL \u2014 Now only shows reports needing per-org Metabase UUIDs (just Historic). Shared reports excluded since they\u2019re automatic. Updated description text.',
+      ]},
       { date: '2026-06-19', title: '\uD83D\uDC65 Programs Report: Participants Demographics Tab', items: [
         '\u2728 PARTICIPANTS TAB \u2014 New tab on Programs report showing per-program demographic breakdown: enrollment counts, avg age, Youth/Adult/Senior percentages, gender split, household count. Lazy-loaded on tab click from a dedicated Metabase query.',
         '\uD83D\uDCCA SUMMARY KPIs \u2014 Total enrollments, unique participants, unique households, avg/median age, age bracket distribution, Fast Track enrollment percentage.',
