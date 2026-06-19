@@ -427,6 +427,13 @@ const ORGS = {
     fasttrack: { mbUuid: "337487eb-7d8d-4def-afec-7ba27f152478" },
     memberships: { mbUuid: "0e5fdd43-c44f-44ec-bb36-73d9306fd61f" },
   },
+  westsacramento: {
+    token:   "nZMjcPTrSmCSnqqt",
+    orgId:   "7d22bf62-060a-4881-9821-9dea6a0538d6",
+    logoUrl: "https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2Forganization-7d22bf62-060a-4881-9821-9dea6a0538d6%2FfullLogo.png%3F1764542866233&w=1920&q=75",
+    displayName: "City of West Sacramento",
+    gl      : { mbUuid: "4374b344-06a7-42c5-996c-e1845bda3ff1" },
+  },
 };
 
 const REPORT_TYPES = ["facility", "gl", "historic", "programs", "roster", "overview", "products", "memberships", "court-utilization", "calendar", "fasttrack", "users"];
