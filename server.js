@@ -3087,6 +3087,58 @@ app.post("/api/admin/update-link", async (req, res) => {
 });
 
 // \u2500\u2500 POST /api/admin/add-report \u2014 add a report type to an existing org \u2500
+// ── POST /api/admin/update-shared-link — change a shared base report UUID ──
+app.post("/api/admin/update-shared-link", async (req, res) => {
+  if (dashboardPasswordBlocked(req, res)) return;
+  const { report, link } = req.body || {};
+  if (!report || !SHARED_UUIDS[report]) {
+    return res.status(400).json({ error: '"' + report + '" is not a shared report' });
+  }
+  const newUuid = extractMbUuidFromInput(link);
+  if (!newUuid || !STRICT_UUID.test(newUuid)) {
+    return res.status(400).json({ error: "Could not find a valid Metabase UUID in that link" });
+  }
+  if (newUuid === SHARED_UUIDS[report]) {
+    return res.status(400).json({ error: "That's already the current shared UUID for this report" });
+  }
+  if (!process.env.GITHUB_TOKEN) {
+    return res.status(503).json({ error: "GITHUB_TOKEN not configured on the server" });
+  }
+  try {
+    const token = process.env.GITHUB_TOKEN;
+    const repo = "danj707/rental-report";
+    const filePath = "server.js";
+    const getRes = await fetch(`https://api.github.com/repos/${repo}/contents/${filePath}`, {
+      headers: { Authorization: `token ${token}`, Accept: "application/vnd.github.v3+json" },
+    });
+    if (!getRes.ok) throw new Error("Failed to fetch server.js from GitHub");
+    const fileData = await getRes.json();
+    const src = Buffer.from(fileData.content, "base64").toString("utf8");
+    const keyPat = report.includes("-") ? `"${report}"` : report;
+    const re = new RegExp('(' + keyPat + ':\\s*")([0-9a-f-]{36})(")');
+    if (!re.test(src)) throw new Error("Could not find " + report + " UUID in SHARED_UUIDS block");
+    const oldUuid = (src.match(re) || [])[2];
+    const newSrc = src.replace(re, '$1' + newUuid + '$3');
+    const putRes = await fetch(`https://api.github.com/repos/${repo}/contents/${filePath}`, {
+      method: "PUT",
+      headers: { Authorization: `token ${token}`, Accept: "application/vnd.github.v3+json", "Content-Type": "application/json" },
+      body: JSON.stringify({
+        message: `Update shared ${report} UUID -> ${newUuid}`,
+        content: Buffer.from(newSrc).toString("base64"),
+        sha: fileData.sha,
+      }),
+    });
+    if (!putRes.ok) { const e = await putRes.json(); throw new Error(e.message || "GitHub push failed"); }
+    const putData = await putRes.json();
+    SHARED_UUIDS[report] = newUuid;
+    console.log(`[update-shared-link] ${report}: ${oldUuid} -> ${newUuid}`);
+    res.json({ ok: true, oldUuid, newUuid, commitUrl: putData.commit?.html_url || null, publicUrl: `${METABASE_URL}/public/question/${newUuid}` });
+  } catch (err) {
+    console.error("[update-shared-link] Error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Inserts the report's mbUuid into the org's block in server.js on GitHub
 // (Railway auto-redeploys) and updates the in-memory ORGS map. Use this to
 // ADD a report an org is missing; use /update-link to change an existing one.
@@ -4051,9 +4103,9 @@ app.get("/", (req, res) => {
           <div style="margin-top:10px;padding:10px 14px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px;margin-bottom:10px">
             <div style="font-size:12px;font-weight:700;color:#065f46;margin-bottom:6px">&#9989; Shared Base Reports</div>
             <table style="width:100%;font-size:11px;border-collapse:collapse">
-              <tr style="text-align:left;color:#6b7280;border-bottom:1px solid #d1fae5"><th style="padding:3px 6px">Report</th><th style="padding:3px 6px">UUID</th></tr>
+              <tr style="text-align:left;color:#6b7280;border-bottom:1px solid #d1fae5"><th style="padding:3px 6px">Report</th><th style="padding:3px 6px">UUID</th><th style="padding:3px 6px"></th></tr>
               ${Object.entries(SHARED_UUIDS).map(([k,v]) =>
-                '<tr style="border-bottom:1px solid #ecfdf5"><td style="padding:4px 6px;font-weight:600;color:#111827">'+k+'</td><td style="padding:4px 6px;font-family:monospace;color:#059669;font-size:10px">'+v+'</td></tr>'
+                '<tr style="border-bottom:1px solid #ecfdf5"><td style="padding:4px 6px;font-weight:600;color:#111827">'+k+'</td><td style="padding:4px 6px;font-family:monospace;color:#059669;font-size:10px">'+v+'</td><td style="padding:4px 6px;text-align:right"><button class="mb-edit-btn" onclick="mbOpenSharedModal(\''+k+'\',\''+v+'\')">Update Link</button></td></tr>'
               ).join('')}
             </table>
           </div>
@@ -4706,10 +4758,22 @@ app.get("/", (req, res) => {
       const org = mbData.find(o => o.slug === slug);
       const rep = org && org.reports.find(r => r.key === reportKey);
       if (!rep) return;
-      mbEditing = { org: slug, report: reportKey };
+      mbEditing = { org: slug, report: reportKey, shared: false };
       document.getElementById('mb-modal-title').textContent = rep.label;
       document.getElementById('mb-modal-sub').textContent = org.displayName + ' · ' + slug;
       document.getElementById('mb-modal-current').value = rep.publicUrl;
+      document.getElementById('mb-modal-input').value = '';
+      document.getElementById('mb-modal-err').style.display = 'none';
+      document.getElementById('mb-modal-overlay').style.display = 'block';
+      document.body.style.overflow = 'hidden';
+      setTimeout(() => document.getElementById('mb-modal-input').focus(), 50);
+    }
+
+    function mbOpenSharedModal(reportKey, currentUuid) {
+      mbEditing = { report: reportKey, shared: true };
+      document.getElementById('mb-modal-title').textContent = reportKey + ' (shared base report)';
+      document.getElementById('mb-modal-sub').textContent = 'Applies to ALL orgs using this report';
+      document.getElementById('mb-modal-current').value = currentUuid;
       document.getElementById('mb-modal-input').value = '';
       document.getElementById('mb-modal-err').style.display = 'none';
       document.getElementById('mb-modal-overlay').style.display = 'block';
@@ -4732,19 +4796,25 @@ app.get("/", (req, res) => {
       if (!link) { err.textContent = 'Paste a Metabase public link or UUID'; err.style.display = 'block'; return; }
       btn.disabled = true; btn.textContent = 'Saving…';
       try {
-        const res = await fetch('/api/admin/update-link', {
+        const endpoint = mbEditing.shared ? '/api/admin/update-shared-link' : '/api/admin/update-link';
+        const body = mbEditing.shared
+          ? { password: mbPwd, report: mbEditing.report, link }
+          : { password: mbPwd, org: mbEditing.org, report: mbEditing.report, link };
+        const res = await fetch(endpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ password: mbPwd, org: mbEditing.org, report: mbEditing.report, link }),
+          body: JSON.stringify(body),
         });
         const data = await res.json();
         if (!res.ok || !data.ok) throw new Error(data.error || 'Update failed');
-        const org = mbData.find(o => o.slug === mbEditing.org);
-        const rep = org && org.reports.find(r => r.key === mbEditing.report);
-        if (rep) { rep.mbUuid = data.newUuid; rep.publicUrl = data.publicUrl; }
+        if (!mbEditing.shared) {
+          const org = mbData.find(o => o.slug === mbEditing.org);
+          const rep = org && org.reports.find(r => r.key === mbEditing.report);
+          if (rep) { rep.mbUuid = data.newUuid; rep.publicUrl = data.publicUrl; }
+        }
         mbRenderList();
         mbCloseModal();
-        mbToast('Saved — Railway is redeploying (~1–2 min)');
+        mbToast(mbEditing.shared ? 'Shared UUID updated for all orgs — redeploying (~1–2 min)' : 'Saved — Railway is redeploying (~1–2 min)');
       } catch(e) {
         err.textContent = e.message;
         err.style.display = 'block';
