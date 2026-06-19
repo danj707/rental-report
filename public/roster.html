@@ -406,6 +406,10 @@ function normalizeRow(raw) {
           } else if (rawAns !== null && rawAns !== undefined) {
             answer = choiceMap[String(rawAns)] || String(rawAns);
           }
+          // Digital signatures come through as base64 data URIs — show a clean label
+          if (typeof answer === 'string' && (answer.startsWith('data:image') || answer.startsWith('data:application'))) {
+            answer = '\u2713 Signed';
+          }
           return { q: el.title, a: answer };
         })
         .filter(qa => qa.a !== '');
