@@ -1442,7 +1442,7 @@ function App() {
         {/* ── Participants Tab ── */}
         {tab === 'participants' && participantsEnabled && (
           <React.Fragment>
-            {demoLoading && <JuiceLoader messages={['Counting heads\u2026','Crunching ages\u2026','Sorting by program\u2026','Mapping demographics\u2026','Almost there\u2026']} />}
+            {demoLoading && <JuiceLoader />}
             {demoError && <div style={{textAlign:'center',padding:40,color:'#dc2626'}}>Error: {demoError}</div>}
             {fDemo && (<React.Fragment>
               <div className="summary-cards">
