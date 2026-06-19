@@ -439,6 +439,7 @@ const SHARED_UUIDS = {
   facility: "f6787f45-3a36-4501-8a5f-b0f647451a85",
   programs: "e35f2b47-87c9-40e3-8507-3d9b56f9ce62",
   calendar: "d77a2171-6cc8-4c11-b014-a6ad45491bf4",
+  "court-utilization": "7b0fca20-8fe0-4720-9653-7e15c30176b2",
 };
 
 // Report types that are valid system-wide but should NOT be offered in the
