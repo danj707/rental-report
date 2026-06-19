@@ -437,6 +437,7 @@ const REPORT_TYPES = ["facility", "gl", "historic", "programs", "roster", "overv
 // Migrate report types here one at a time; per-org mbUuid is the fallback.
 const SHARED_UUIDS = {
   facility: "f6787f45-3a36-4501-8a5f-b0f647451a85",
+  programs: "e35f2b47-87c9-40e3-8507-3d9b56f9ce62",
 };
 
 // Report types that are valid system-wide but should NOT be offered in the
@@ -4653,7 +4654,7 @@ app.get("/", (req, res) => {
     // Newest first. Add a new entry at the TOP for every change we ship.
     // History below back-filled from the GitHub commit log.
     const UPDATES = [
-      { date: '2026-06-19', title: 'Shared Metabase UUIDs: facility report migrated', items: [
+      { date: '2026-06-19', title: 'Shared Metabase UUIDs: facility + programs migrated', items: [
         'New SHARED_UUIDS config: one Metabase question per report type, parameterized by org_id',
         'Facility report now uses a single shared query across all orgs instead of per-org Metabase questions',
         'buildMetabaseParams passes org_id as a text parameter when using shared UUIDs',
