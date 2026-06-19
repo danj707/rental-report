@@ -2803,6 +2803,7 @@ app.get("/:org", async (req, res, next) => {
     orgConfig.metrics = {
       views:   cr.reduce((n, r) => n + (m.summary[r]?.view  || 0), 0),
       exports: cr.reduce((n, r) => n + (m.summary[r]?.excel || 0) + (m.summary[r]?.pdf || 0), 0),
+      clicks:  Object.values(m.summary).reduce((n, s) => n + (s.click || 0), 0),
       subscribers: m.totalSubscribers,
       aiInsights:  m.insights.calls,
       reports: cr.length,
@@ -4300,6 +4301,7 @@ app.get("/", (req, res) => {
       const { summary, daily, totalSubscribers, insights, configuredReports } = data;
       const totalViews   = configuredReports.reduce((n, r) => n + (summary[r]?.view  || 0), 0);
       const totalExports = configuredReports.reduce((n, r) => n + (summary[r]?.excel || 0) + (summary[r]?.pdf || 0), 0);
+      const totalClicks  = Object.values(summary).reduce((n, s) => n + (s.click || 0), 0);
       const slug = panel.id.replace('metrics-', '');
       const ins = insights || { calls: 0, costUsd: 0 };
       const costStr = '$' + (ins.costUsd || 0).toFixed(ins.costUsd >= 1 ? 2 : 4);
@@ -4328,6 +4330,7 @@ app.get("/", (req, res) => {
         <div class="metrics-grid">
           <div class="metrics-stat"><div class="metrics-stat-label">Views (30d)</div><div class="metrics-stat-value">\${totalViews}</div></div>
           <div class="metrics-stat"><div class="metrics-stat-label">Exports (30d)</div><div class="metrics-stat-value">\${totalExports}</div></div>
+          <div class="metrics-stat"><div class="metrics-stat-label">Session Clicks (30d)</div><div class="metrics-stat-value">\${totalClicks}</div></div>
           <div class="metrics-stat"><div class="metrics-stat-label">Subscribers</div><div class="metrics-stat-value">\${totalSubscribers}</div></div>
           <div class="metrics-stat"><div class="metrics-stat-label">AI insights (30d)</div><div class="metrics-stat-value">\${ins.calls}</div><div class="metrics-stat-sub">\${costStr}</div></div>
         </div>
