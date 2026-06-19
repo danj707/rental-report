@@ -1373,7 +1373,7 @@ function App() {
         {/* ── Participants Tab ── */}
         {tab === 'participants' && participantsEnabled && (
           <React.Fragment>
-            {demoLoading && <div style={{textAlign:'center',padding:40,color:'#6b7280'}}>Loading participant demographics…</div>}
+            {demoLoading && <JuiceLoader messages={['Counting heads\u2026','Crunching ages\u2026','Sorting by program\u2026','Mapping demographics\u2026','Almost there\u2026']} />}
             {demoError && <div style={{textAlign:'center',padding:40,color:'#dc2626'}}>Error: {demoError}</div>}
             {demoStats && (<React.Fragment>
               <div className="kpi-row">
@@ -1455,6 +1455,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(<App />);
 </script>
     <script src="/share-widget.js" defer></script>
     <script src="/feedback-widget.js" defer></script>
-      <script src="/nav-breadcrumb.js" defer></script>
+    <script src="/nav-breadcrumb.js" defer></script>
+    <script src="/juice-loader.js" defer></script>
   </body>
 </html>
