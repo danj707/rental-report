@@ -1058,11 +1058,25 @@ function App() {
       .sort(function(a,b){return b.net-a.net;});
     var activeDays = Object.keys(dateMap).length;
     var avgDailyRev = activeDays>0 ? totalNet/activeDays : 0;
+    // Weekly aggregation
+    var weekMap = {};
+    Object.keys(dateMap).forEach(function(dKey){
+      var d = new Date(dKey+'T12:00:00');
+      var day = d.getDay(); var diff = d.getDate() - day + (day === 0 ? -6 : 1);
+      var mon = new Date(d); mon.setDate(diff);
+      var wKey = mon.toISOString().slice(0,10);
+      if(!weekMap[wKey]) weekMap[wKey]={qty:0,rev:0,net:0};
+      weekMap[wKey].qty+=dateMap[dKey].qty; weekMap[wKey].rev+=dateMap[dKey].rev; weekMap[wKey].net+=dateMap[dKey].net;
+    });
+    var weeklyData = Object.keys(weekMap).sort().map(function(w){
+      var lbl = new Date(w+'T12:00:00');
+      return { week: lbl.toLocaleDateString('en-US',{month:'short',day:'numeric'}), qty:weekMap[w].qty, rev:Math.round(weekMap[w].rev), net:Math.round(weekMap[w].net) };
+    });
     return {
       totalQty:totalQty, totalRev:totalRev, totalRefunds:totalRefunds, totalNet:totalNet,
       uniqueProducts:uniqueProducts, avgPerSale:avgPerSale, refundRate:refundRate,
       topByRev:topByRev, topByQty:topByQty, desks:desks,
-      activeDays:activeDays, avgDailyRev:avgDailyRev,
+      activeDays:activeDays, avgDailyRev:avgDailyRev, weeklyData:weeklyData,
     };
   }, [crossData.products]);
 
@@ -1752,19 +1766,42 @@ function App() {
 
                 {pr.desks.length>1 && (
                   <div style={{marginTop:20}}>
-                    <div style={{fontSize:13,fontWeight:700,color:'#111827',marginBottom:10}}>Revenue by Desk Location</div>
-                    <div style={{display:'flex',flexWrap:'wrap',gap:8}}>
-                      {pr.desks.map(function(d,i){
-                        var pct = pr.totalNet>0?((d.net/pr.totalNet)*100).toFixed(1):'0';
-                        return (
-                          <div key={i} style={{background:'#f9fafb',border:'1px solid #e5e7eb',borderRadius:8,padding:'10px 14px',minWidth:140}}>
-                            <div style={{fontSize:11,color:'#6b7280',marginBottom:2}}>{d.desk}</div>
-                            <div style={{fontSize:15,fontWeight:700,color:'#111827'}}>{fmtM(d.net)}</div>
-                            <div style={{fontSize:11,color:'#9ca3af'}}>{d.qty.toLocaleString()} units · {pct}%</div>
-                          </div>
-                        );
-                      })}
+                    <div style={{display:'grid',gridTemplateColumns:pr.weeklyData.length>0?'1fr 1fr':'1fr',gap:16}}>
+                      {pr.weeklyData.length>0 && (
+                        <ChartPanel title="Weekly Net Revenue" type="bar" data={pr.weeklyData} labelKey="week" dataKeys={[{key:'net',label:'Net Revenue'}]} colors={['#db2777']} />
+                      )}
+                      <div className="panel">
+                        <div className="panel-head">Revenue by Location</div>
+                        <div style={{padding:'12px 16px'}}>
+                          {pr.desks.map(function(d,i){
+                            var pct = pr.totalNet>0?(d.net/pr.totalNet)*100:0;
+                            var maxNet = pr.desks[0].net;
+                            var barW = maxNet>0?(d.net/maxNet)*100:0;
+                            return (
+                              <div key={i} style={{marginBottom:i<pr.desks.length-1?14:0}}>
+                                <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:4}}>
+                                  <span style={{fontSize:12,fontWeight:600,color:'#111827'}}>{d.desk}</span>
+                                  <span style={{fontSize:12,fontWeight:700,color:'#111827'}}>{fmtM(d.net)}</span>
+                                </div>
+                                <div style={{background:'#f3f4f6',borderRadius:4,height:8,overflow:'hidden'}}>
+                                  <div style={{height:'100%',borderRadius:4,background:'linear-gradient(90deg, #db2777, #f472b6)',width:barW+'%',transition:'width 0.5s ease'}}></div>
+                                </div>
+                                <div style={{display:'flex',justifyContent:'space-between',marginTop:3}}>
+                                  <span style={{fontSize:10,color:'#9ca3af'}}>{d.qty.toLocaleString()} units</span>
+                                  <span style={{fontSize:10,color:'#9ca3af'}}>{pct.toFixed(1)}% of total</span>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
                     </div>
+                  </div>
+                )}
+
+                {pr.desks.length<=1 && pr.weeklyData.length>0 && (
+                  <div style={{marginTop:20}}>
+                    <ChartPanel title="Weekly Net Revenue" type="bar" data={pr.weeklyData} labelKey="week" dataKeys={[{key:'net',label:'Net Revenue'}]} colors={['#db2777']} />
                   </div>
                 )}
               </React.Fragment>
