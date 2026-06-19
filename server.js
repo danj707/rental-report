@@ -2114,7 +2114,7 @@ app.get("/:org/admin/reports", (req, res) => {
     roster:   "Class Roster",
   };
   const available = REPORT_TYPES
-    .filter(r => org[r]?.mbUuid)
+    .filter(r => !NON_ADDABLE_REPORTS.has(r) && (org[r]?.mbUuid || SHARED_UUIDS[r]))
     .map(r => ({ key: r, label: reportLabels[r] || r }));
   res.json({ reports: available });
 });
@@ -2567,7 +2567,7 @@ app.get("/:org/users", (req, res) => {
   const org = ORGS[slug];
   if (!org) return res.status(404).send("Unknown org");
   logEvent(slug, "users", "view", req.ip);
-  const available = REPORT_TYPES.filter(r => org[r]?.mbUuid);
+  const available = REPORT_TYPES.filter(r => !NON_ADDABLE_REPORTS.has(r) && (org[r]?.mbUuid || SHARED_UUIDS[r]));
   const slugTitle = slug.charAt(0).toUpperCase() + slug.slice(1);
   const orgConfig = {
     slug,
@@ -2586,7 +2586,7 @@ app.get("/:org/chat", (req, res) => {
   const org  = ORGS[slug];
   if (!org) return res.status(404).send("Unknown org");
   logEvent(slug, "chat", "view", req.ip);
-  const available = REPORT_TYPES.filter(r => org[r]?.mbUuid);
+  const available = REPORT_TYPES.filter(r => !NON_ADDABLE_REPORTS.has(r) && (org[r]?.mbUuid || SHARED_UUIDS[r]));
   const slugTitle = slug.charAt(0).toUpperCase() + slug.slice(1);
   const orgConfig = {
     slug,
@@ -2815,7 +2815,7 @@ app.get("/:org", async (req, res, next) => {
   if (!org) return next();
 
   const slugTitle = slug.charAt(0).toUpperCase() + slug.slice(1);
-  const allAvailable = REPORT_TYPES.filter(r => org[r]?.mbUuid);
+  const allAvailable = REPORT_TYPES.filter(r => !NON_ADDABLE_REPORTS.has(r) && (org[r]?.mbUuid || SHARED_UUIDS[r]));
   const orgHidden = new Set(getHiddenReports(slug));
   const available = allAvailable.filter(r => !orgHidden.has(r));
   const orgConfig = {
@@ -3365,7 +3365,7 @@ app.get("/", (req, res) => {
   const healthCfg = loadHealthConfig();
 
   const orgSections = Object.entries(ORGS).map(([slug, org]) => {
-    const available    = REPORT_TYPES.filter(r => org[r]?.mbUuid);
+    const available    = REPORT_TYPES.filter(r => !NON_ADDABLE_REPORTS.has(r) && (org[r]?.mbUuid || SHARED_UUIDS[r]));
     const slugTitle    = slug.charAt(0).toUpperCase() + slug.slice(1);
     const displayName  = org.displayName || `${slugTitle} Parks &amp; Recreation`;
     const tokenQS      = org.token ? `?token=${encodeURIComponent(org.token)}` : "";
