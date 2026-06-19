@@ -1679,10 +1679,11 @@ function App() {
             </div>
             <div style={{background:'#f0f9ff',border:'1px solid #bae6fd',borderRadius:8,padding:'12px 14px',marginBottom:18}}>
               <div style={{fontSize:12,color:'#6b7280',marginBottom:4}}>Contact</div>
-              <a href={'mailto:ps@rec.us?subject=CSV%20Export%20Request%20-%20'+encodeURIComponent(orgSlug)+'&body='+encodeURIComponent('Hi PS team,\n\nI\'d like to request a CSV export.\n\nOrg: '+orgSlug+'\nData: '+csvRequestModal+'\n\nThank you!')} style={{fontSize:13,fontWeight:600,color:'#2563eb',textDecoration:'none'}}>ps@rec.us</a>
+              <a href={'mailto:partnersupport@rec.us?subject=CSV%20Export%20Request%20-%20'+encodeURIComponent(orgSlug)+'&body='+encodeURIComponent('Hi Partner Support,\n\nI\'d like to request a CSV export.\n\nOrg: '+orgSlug+'\nData: '+csvRequestModal+'\n\nThank you!')} style={{fontSize:13,fontWeight:600,color:'#2563eb',textDecoration:'none'}}>partnersupport@rec.us</a>
             </div>
-            <div style={{display:'flex',justifyContent:'flex-end'}}>
-              <button style={{fontSize:13,padding:'8px 20px',borderRadius:8,border:'none',background:'#111827',color:'#fff',cursor:'pointer',fontWeight:600,fontFamily:'inherit'}} onClick={function(){setCsvRequestModal(null);}}>Got it</button>
+            <div style={{display:'flex',justifyContent:'flex-end',gap:10}}>
+              <button style={{fontSize:13,padding:'8px 20px',borderRadius:8,border:'1px solid #d1d5db',background:'#fff',color:'#374151',cursor:'pointer',fontWeight:600,fontFamily:'inherit'}} onClick={function(){setCsvRequestModal(null);}}>Close</button>
+              <a href={'mailto:dan@rec.us?subject=Report%20Request%20-%20'+encodeURIComponent(orgSlug)+'&body='+encodeURIComponent('Hi Dan,\n\nI\'d like to request a report.\n\nOrg: '+orgSlug+'\nData: '+csvRequestModal+'\n\nThank you!')} style={{fontSize:13,padding:'8px 20px',borderRadius:8,border:'none',background:'#2563eb',color:'#fff',cursor:'pointer',fontWeight:600,fontFamily:'inherit',textDecoration:'none',display:'inline-block'}}>{'📨'} Request Report</a>
             </div>
           </div>
         </div>

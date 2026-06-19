@@ -4629,8 +4629,9 @@ app.get("/", (req, res) => {
     const UPDATES = [
       { date: '2026-06-19', title: 'Community Intel: CSV exports restricted for PII security', items: [
         'Removed direct CSV download of user PII from all Community Intelligence export buttons',
-        'Export CSV buttons replaced with Request CSV — opens a modal directing orgs to contact PS team via ps@rec.us',
+        'Export CSV buttons replaced with Request CSV — opens a modal directing orgs to contact Partner Support via partnersupport@rec.us',
         'Modal pre-fills org name and data description into a mailto link for easy request submission',
+        'Request Report button emails dan@rec.us for custom report requests',
       ]},
       { date: '2026-06-18', title: 'Partner quotes on admin hero', items: [
         'Scrolling testimonial strip below the photo upload section on the admin dashboard hero card',
