@@ -1158,7 +1158,7 @@ async function generatePdf(orgSlug, reportType, startDate, endDate, filters = {}
     : reportType === "historic"
       ? "Facility Reservations by Date"
       : reportType === "programs"
-        ? "Program Revenue"
+        ? "Programs"
         : reportType === "roster"
           ? "Class Roster"
           : "Facility Rental Schedule";
@@ -1204,7 +1204,7 @@ async function sendReportEmail(orgSlug, email, reportType, schedule, locationFil
     : reportType === "historic"
       ? "Historic Buildings Schedule"
       : reportType === "programs"
-        ? "Program Revenue"
+        ? "Programs"
         : reportType === "roster"
           ? "Class Roster"
           : reportType === "products"
@@ -1497,7 +1497,7 @@ app.post("/:org/:report/api/share", resolveOrg, async (req, res) => {
     : reportType === "historic"
       ? "Historic Buildings Schedule"
       : reportType === "programs"
-        ? "Program Revenue"
+        ? "Programs"
         : "Facility Rental Schedule";
 
   const resend = getResendClient();
@@ -1795,7 +1795,7 @@ const CHAT_DATA_MAX  = 30;
 // Report type human labels for context
 const CHAT_REPORT_LABELS = {
   facility: "Facility Rental Schedule", gl: "GL Code Rollup",
-  programs: "Program Revenue & Enrollment", products: "Product Sales",
+  programs: "Programs & Enrollment", products: "Product Sales",
   memberships: "Memberships", "court-utilization": "Court Utilization",
   roster: "Class Roster", fasttrack: "Fast Track Demand",
   historic: "Historic Buildings", calendar: "Calendar",
@@ -2110,7 +2110,7 @@ app.get("/:org/admin/reports", (req, res) => {
     facility: "Facility Rental Schedule",
     gl:       "GL Code Rollup",
     historic: "Historic Buildings",
-    programs: "Program Revenue",
+    programs: "Programs",
     roster:   "Class Roster",
   };
   const available = REPORT_TYPES
@@ -2930,7 +2930,7 @@ app.post("/api/admin/links", (req, res) => {
     facility: "Facility Rental Schedule",
     gl:       "GL Code Rollup",
     historic: "Historic Buildings",
-    programs: "Program Revenue",
+    programs: "Programs",
     roster:   "Class Roster",
     overview: "Overview",
     products: "Product Revenue",
@@ -3347,7 +3347,7 @@ app.get("/", (req, res) => {
   const reportMeta = {
     facility: { label: "Facility Rental Schedule", icon: "📅", desc: "Reservations grouped by date and location", color: "#16a34a" },
     gl:       { label: "GL Code Rollup",            icon: "📊", desc: "Payment and refund summary by GL code",   color: "#3b82f6" },
-    programs: { label: "Program Revenue",           icon: "🎯", desc: "Enrollment and revenue by program",       color: "#7c3aed", ai: true },
+    programs: { label: "Programs",           icon: "🎯", desc: "Enrollment and revenue by program",       color: "#7c3aed", ai: true },
     historic: { label: "Historic Buildings",        icon: "🏛️",  desc: "Reservations for historic building sites", color: "#d97706" },
     roster:   { label: "Class Roster",              icon: "📋", desc: "Enrolled and cancelled participants by section", color: "#0891b2" },
     overview:    { label: "Facility Overview",         icon: "📈", desc: "Revenue and activity summary by location",                 color: "#059669" },
@@ -4181,7 +4181,7 @@ app.get("/", (req, res) => {
           <li><strong>Facility Rental</strong> &#8212; reservations grouped by date and location, with table and calendar views, heatmap summary, location color coding, and resident detection.</li>
           <li><strong>GL Code Rollup</strong> &#8212; payment method breakdown by GL code, with bar/pie chart views, refund detail toggle, and account credit column.</li>
           <li><strong>Class Roster</strong> &#8212; enrolled and cancelled participants by program section, with form responses, session dates, status filters, and Excel/PDF export.</li>
-          <li><strong>Program Revenue</strong> &#8212; section-grain enrollment, capacity fill rates, charged/received/outstanding financials, and plan-aware pending calculations.</li>
+          <li><strong>Programs</strong> &#8212; section-grain enrollment, capacity fill rates, charged/received/outstanding financials, and plan-aware pending calculations.</li>
           <li><strong>Product Sales (POS)</strong> &#8212; daily revenue, refunds, and net by product, with desk-location breakdown and weekly trend charts.</li>
           <li><strong>Memberships</strong> &#8212; active and lapsed memberships/passes with auto-renew tracking, pricing, and usage counts.</li>
           <li><strong>Fast Track</strong> &#8212; pre-registration pipeline: signups, conversions, pending, dropped, with season/program hierarchy and demand/fill metrics.</li>
@@ -4284,7 +4284,7 @@ app.get("/", (req, res) => {
     const REPORT_META = ${JSON.stringify(Object.fromEntries(Object.entries({
       facility: { label: "Facility Rental Schedule", icon: "📅" },
       gl:       { label: "GL Code Rollup",            icon: "📊" },
-      programs: { label: "Program Revenue",           icon: "🎯" },
+      programs: { label: "Programs",           icon: "🎯" },
       historic: { label: "Historic Buildings",        icon: "🏛️" },
       roster:   { label: "Class Roster",              icon: "📋" },
       overview: { label: "Facility Overview",         icon: "📈" },
