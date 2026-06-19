@@ -474,6 +474,9 @@ function compute(rows) {
   var noAge=rows.filter(function(r){return !r['Age'].trim();}).length;
   var noGender=rows.filter(function(r){return !r['Gender'].trim();}).length;
   var noZip=rows.filter(function(r){return !r['Zip Code'].trim();}).length;
+  var withPhone=rows.filter(function(r){var v=col(r,['Has Phone','Phone']);return v==='true'||v===true||(typeof v==='string'&&v.trim()&&v!=='false');}).length;
+  var withEmergency=rows.filter(function(r){var v=col(r,['Has Emergency Contact']);return v==='true'||v===true;}).length;
+  var withConfirmed=rows.filter(function(r){var v=col(r,['Account Confirmed','Confirmed At']);return v==='true'||v===true||(typeof v==='string'&&v.trim()&&v!=='false'&&v!=='');}).length;
 
   // Zip-level aggregation for map
   var zipAgg={};
@@ -652,6 +655,20 @@ function compute(rows) {
     return {grade:g.grade,kids:g.count,avgHHRev:revs.length?Math.round(revs.reduce(function(s,v){return s+v;},0)/revs.length):0};
   });
 
+  // 3b. Gender revenue breakdown
+  var genderRevMap={};
+  var genderRevTotal=0;
+  rows.forEach(function(r){
+    var g=(col(r,['Gender','gender'])||'').trim();
+    var hid=r['Household ID'];
+    if(!g||!hid||!hhRevSeen[hid]) return;
+    if(!genderRevMap[g]) genderRevMap[g]={gender:g,hh:new Set(),rev:0};
+    if(!genderRevMap[g].hh.has(hid)){genderRevMap[g].hh.add(hid);genderRevMap[g].rev+=hhRevSeen[hid].net;}
+  });
+  var genderRevData=Object.values(genderRevMap).map(function(d){return {gender:d.gender,hhCount:d.hh.size,rev:Math.round(d.rev)};}).sort(function(a,b){return b.rev-a.rev;});
+  genderRevTotal=genderRevData.reduce(function(s,d){return s+d.rev;},0);
+  var genderRevCoverage=genderSpecified>0?Math.round(genderSpecified/total*100):0;
+
   // 4. Revenue levers
   var levers=[];
   if(unbookedIds.size>0) levers.push({title:'Convert unbooked households',desc:unbookedIds.size+' households signed up but never purchased. If they converted at the median spend rate:',opp:Math.round(unbookedIds.size*medianRev),segment:'unbooked'});
@@ -692,6 +709,7 @@ function compute(rows) {
     signups:signups, cumulative:cumulative,
     cities:topCities, topCity:topCity, resByAge:resByAge,
     noAge:noAge, noGender:noGender, noZip:noZip, zipData:zipData,
+    withPhone:withPhone, withEmergency:withEmergency, withConfirmed:withConfirmed,
     last30:last30, last90:last90, peakMonth:peakMonth,
     // Revenue
     hasRevData:hasRevData, totalGross:totalGross, totalRefunds:totalRefunds, totalNet:totalNet,
@@ -707,6 +725,7 @@ function compute(rows) {
     unbookedProfile:unbookedProfile, spenderProfile:spenderProfile,
     unbookedCSV:unbookedCSV, lapsingCSV:lapsingCSV, nonresCSV:nonresCSV, soloUnbookedCSV:soloUnbookedCSV,
     revByAgeBracket:revByAgeBracket, gradeRevData:gradeRevData,
+    genderRevData:genderRevData, genderRevTotal:genderRevTotal, genderRevCoverage:genderRevCoverage,
     levers:levers, lapsingCount:lapsingIds.size,
     catData:catData, hasCatData:hasCatData,
     totalProgRev:totalProgRev, totalFacRev:totalFacRev, totalFeeRev:totalFeeRev, totalProdRev:totalProdRev,
@@ -1164,6 +1183,9 @@ function App() {
   var genderPct=Math.round(s.genderSpecified/s.total*100);
   var zipPct=Math.round((s.total-s.noZip)/s.total*100);
   var gradePct=Math.round(s.withGrade/s.total*100);
+  var phonePct=Math.round(s.withPhone/s.total*100);
+  var emergPct=Math.round(s.withEmergency/s.total*100);
+  var confirmedPct=Math.round(s.withConfirmed/s.total*100);
 
   return (
     <React.Fragment>
@@ -1259,6 +1281,8 @@ function App() {
                   <Ring pct={genderPct} label="Gender" color={genderPct<50?ROSE:genderPct<75?AMBER:EMERALD} />
                   <Ring pct={zipPct} label="Zip" color={zipPct<90?AMBER:EMERALD} />
                   <Ring pct={gradePct} label="Grade" color={gradePct<10?ROSE:gradePct<30?AMBER:EMERALD} />
+                  <Ring pct={phonePct} label="Phone" color={phonePct<60?ROSE:phonePct<80?AMBER:EMERALD} />
+                  <Ring pct={emergPct} label="Emergency" color={emergPct<30?ROSE:emergPct<60?AMBER:EMERALD} />
                 </div>
               </div>
             </div>
@@ -1351,6 +1375,41 @@ function App() {
                   <ChartPanel title="Avg Net Revenue by Household Size" note="bigger families spend more" data={s.revBySize} labelKey="size" dataKeys={[{key:'avg',label:'Avg Net $'}]} colors={[INDIGO]} />
                   <ChartPanel title="Revenue Concentration (Pareto)" note="top 20% = ~64% of revenue" type="line" data={s.paretoData} labelKey="hhPct" dataKeys={[{key:'revPct',label:'% of Revenue'}]} colors={[ROSE]} opts={{scales:{y:{max:100,ticks:{callback:function(v){return v+'%';}}}}}} />
                 </div>
+
+                {/* Gender Revenue Breakdown */}
+                {s.genderRevData.length>0 && s.hasRevData && (
+                  <div className="panel" style={{marginBottom:14}}>
+                    <div className="panel-head">Revenue by Gender
+                      {s.genderRevCoverage<100 && <span className="panel-note">{s.genderRevCoverage<40?'⚠ Low sample — ':''}Based on {s.genderRevCoverage}% of users who reported gender</span>}
+                    </div>
+                    <div style={{display:'flex',gap:12,padding:'10px 16px',flexWrap:'wrap'}}>
+                      {s.genderRevData.map(function(d){
+                        var pct=s.genderRevTotal>0?((d.rev/s.genderRevTotal)*100).toFixed(1):'0';
+                        var barW=s.genderRevData[0].rev>0?(d.rev/s.genderRevData[0].rev)*100:0;
+                        return (
+                          <div key={d.gender} style={{flex:'1 1 140px',minWidth:120}}>
+                            <div style={{display:'flex',justifyContent:'space-between',marginBottom:4}}>
+                              <span style={{fontSize:12,fontWeight:600,color:'#111827'}}>{d.gender}</span>
+                              <span style={{fontSize:12,fontWeight:700,color:'#111827'}}>${d.rev>=1000?(d.rev/1000).toFixed(1)+'K':d.rev}</span>
+                            </div>
+                            <div style={{background:'#f3f4f6',borderRadius:4,height:8,overflow:'hidden'}}>
+                              <div style={{height:'100%',borderRadius:4,background:d.gender==='Female'?'#ec4899':d.gender==='Male'?'#3b82f6':'#8b5cf6',width:barW+'%',transition:'width 0.5s ease'}}></div>
+                            </div>
+                            <div style={{display:'flex',justifyContent:'space-between',marginTop:3}}>
+                              <span style={{fontSize:10,color:'#9ca3af'}}>{d.hhCount} households</span>
+                              <span style={{fontSize:10,color:'#9ca3af'}}>{pct}%</span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    {s.genderRevCoverage<40 && (
+                      <div style={{padding:'6px 16px 10px',fontSize:11,color:'#92400e',background:'#fef9ee',borderTop:'1px solid #fde68a',borderRadius:'0 0 8px 8px'}}>
+                        ⚠ Only {s.genderRevCoverage}% of users have reported gender. This breakdown may not represent the full population. Encourage profile completion for more accurate insights.
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {/* Conversion funnel */}
                 <div className="panel" style={{marginBottom:14}}>
