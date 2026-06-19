@@ -1503,13 +1503,19 @@ function App() {
                   {fDemo.gradeData.length>0 && (
                     <div style={{background:'#fff',border:'1px solid #e5e7eb',borderRadius:8,padding:14}}>
                       <div style={{fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:'.5px',color:'#6b7280',marginBottom:10}}>Grade Distribution</div>
-                      <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
-                        {fDemo.gradeData.slice(0,12).map((g,i) => (
-                          <span key={i} style={{padding:'4px 10px',background:'#f0fdf4',border:'1px solid #bbf7d0',borderRadius:12,fontSize:11,color:'#166534'}}>
-                            {g.label} <strong>{g.count}</strong>
-                          </span>
-                        ))}
-                      </div>
+                      {(() => {
+                        var grades=fDemo.gradeData.slice(0,12);
+                        var max=grades[0]?grades[0].count:1;
+                        return grades.map((g,i) => (
+                          <div key={i} style={{display:'flex',alignItems:'center',gap:8,marginBottom:4}}>
+                            <span style={{fontSize:10,width:72,textAlign:'right',color:'#6b7280',flexShrink:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{g.label}</span>
+                            <div style={{flex:1,height:16,background:'#f3f4f6',borderRadius:3,overflow:'hidden'}}>
+                              <div style={{height:'100%',width:max>0?((g.count/max)*100)+'%':'0',background:'#059669',borderRadius:3}} />
+                            </div>
+                            <span style={{fontSize:10,width:32,color:'#374151',fontWeight:600}}>{g.count}</span>
+                          </div>
+                        ));
+                      })()}
                     </div>
                   )}
                 </div>
