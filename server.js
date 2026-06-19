@@ -3426,7 +3426,7 @@ app.get("/", (req, res) => {
     }
 
     // Append a dashed "add report" tile for any report types this org lacks.
-    const missing = REPORT_TYPES.filter(r => !NON_ADDABLE_REPORTS.has(r) && !(org[r] && org[r].mbUuid));
+    const missing = REPORT_TYPES.filter(r => !NON_ADDABLE_REPORTS.has(r) && !SHARED_UUIDS[r] && !(org[r] && org[r].mbUuid));
     if (missing.length) {
       cards.push(`
         <button type="button" class="report-card add-report-card" onclick="openAddReport('${slug}')" title="Add a report to this org">
@@ -3509,7 +3509,7 @@ app.get("/", (req, res) => {
     Object.entries(ORGS).map(([slug, org]) => {
       const slugTitle = slug.charAt(0).toUpperCase() + slug.slice(1);
       const displayName = org.displayName || `${slugTitle} Parks & Recreation`;
-      const missing = REPORT_TYPES.filter(r => !NON_ADDABLE_REPORTS.has(r) && !(org[r] && org[r].mbUuid));
+      const missing = REPORT_TYPES.filter(r => !NON_ADDABLE_REPORTS.has(r) && !SHARED_UUIDS[r] && !(org[r] && org[r].mbUuid));
       return [slug, { displayName, missing }];
     })
   );
@@ -3981,7 +3981,7 @@ app.get("/", (req, res) => {
               <div class="showcase-stat-label">Report Types</div>
             </div>
             <div class="showcase-stat">
-              <div class="showcase-stat-num" data-count="${Object.keys(ORGS).reduce((s,k) => s + REPORT_TYPES.filter(r => ORGS[k][r]?.mbUuid).length, 0)}">0</div>
+              <div class="showcase-stat-num" data-count="${Object.keys(ORGS).reduce((s,k) => s + REPORT_TYPES.filter(r => !NON_ADDABLE_REPORTS.has(r) && (ORGS[k][r]?.mbUuid || SHARED_UUIDS[r])).length, 0)}">0</div>
               <div class="showcase-stat-label">Live Reports</div>
             </div>
             <div class="showcase-stat">
@@ -4065,7 +4065,7 @@ app.get("/", (req, res) => {
           <button onclick="closeAddReport()" style="background:none;border:none;color:#dcfce7;font-size:20px;cursor:pointer;padding:4px">&#10005;</button>
         </div>
         <div style="padding:22px">
-          <p style="font-size:12px;color:#666;margin:0 0 16px">Paste the Metabase <strong>public link</strong> (or UUID) for each report you want to add. Leave a field blank to skip it. Existing report links aren&rsquo;t changed.</p>
+          <p style="font-size:12px;color:#666;margin:0 0 16px">Most reports use shared queries and are available automatically. The reports below require a <strong>per-org Metabase link</strong>. Leave a field blank to skip it.</p>
           <div id="add-report-fields"></div>
           <label style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:#888;display:block;margin:4px 0 6px">Dashboard password</label>
           <input id="add-report-pwd" type="password" placeholder="Dashboard password" style="width:100%;padding:9px 11px;border:1px solid #ddd;border-radius:5px;font-size:13px;box-sizing:border-box" />
