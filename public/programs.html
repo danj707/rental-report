@@ -590,6 +590,7 @@ function App() {
   const [demoRows, setDemoRows] = useState(null);
   const [demoLoading, setDemoLoading] = useState(false);
   const [demoError, setDemoError] = useState(null);
+  const [demoOpen, setDemoOpen] = useState(() => new Set());
 
   const participantsEnabled = useMemo(() => {
     try { return window.ORG_CONFIG && window.ORG_CONFIG.participantsTab; } catch(e) { return false; }
@@ -634,10 +635,17 @@ function App() {
       var city = (r['City']||'').trim(); if (city) cityMap[city]=(cityMap[city]||0)+1;
       if (r['Is FT']===true||r['Is FT']==='true') ftCount++;
       var prog = r['Program']||'Unknown';
-      if (!progMap[prog]) progMap[prog]={n:0,ages:[],g:{},hhs:new Set(),ft:0};
+      var sect = r['Section']||'';
+      if (!progMap[prog]) progMap[prog]={n:0,ages:[],g:{},hhs:new Set(),ft:0,secs:{}};
       var pm=progMap[prog]; pm.n++; if(age>0&&age<120)pm.ages.push(age);
       pm.g[gen]=(pm.g[gen]||0)+1; if(hh)pm.hhs.add(hh);
       if(r['Is FT']===true||r['Is FT']==='true')pm.ft++;
+      if (sect) {
+        if (!pm.secs[sect]) pm.secs[sect]={n:0,ages:[],g:{},hhs:new Set(),ft:0};
+        var sm=pm.secs[sect]; sm.n++; if(age>0&&age<120)sm.ages.push(age);
+        sm.g[gen]=(sm.g[gen]||0)+1; if(hh)sm.hhs.add(hh);
+        if(r['Is FT']===true||r['Is FT']==='true')sm.ft++;
+      }
     });
     var avgAge = ages.length>0 ? Math.round(ages.reduce((s,a)=>s+a,0)/ages.length) : null;
     var medAge = ages.length>0 ? (a=>{a.sort((x,y)=>x-y);return a[Math.floor(a.length/2)];})(ages.slice()) : null;
@@ -646,7 +654,13 @@ function App() {
       var p=progMap[name]; var aa=p.ages; var aAge=aa.length>0?Math.round(aa.reduce((s,a)=>s+a,0)/aa.length):null;
       var y=aa.filter(a=>a<18).length, ad=aa.filter(a=>a>=18&&a<55).length, sn=aa.filter(a=>a>=55).length, unk=p.n-aa.length;
       var gM=0,gF=0,gNB=0,gU=0; Object.entries(p.g).forEach(function(e){var k=e[0].toLowerCase(),v=e[1];if(k==='male'||k==='m')gM+=v;else if(k==='female'||k==='f')gF+=v;else if(k==='unknown'||k==='')gU+=v;else gNB+=v;});
-      return {name,n:p.n,avgAge:aAge,youth:y,adult:ad,senior:sn,unknown:unk,hhs:p.hhs.size,genders:p.g,ft:p.ft,gMale:gM,gFemale:gF,gNB:gNB,gUnk:gU};
+      var secs = Object.keys(p.secs).map(function(sn){
+        var ss=p.secs[sn]; var sa=ss.ages; var sAvg=sa.length>0?Math.round(sa.reduce(function(s,a){return s+a;},0)/sa.length):null;
+        var sy=sa.filter(function(a){return a<18;}).length, sad=sa.filter(function(a){return a>=18&&a<55;}).length, ssn=sa.filter(function(a){return a>=55;}).length;
+        var sgM=0,sgF=0,sgNB=0,sgU=0; Object.entries(ss.g).forEach(function(e){var k=e[0].toLowerCase(),v=e[1];if(k==='male'||k==='m')sgM+=v;else if(k==='female'||k==='f')sgF+=v;else if(k==='unknown'||k==='')sgU+=v;else sgNB+=v;});
+        return {name:sn,n:ss.n,avgAge:sAvg,youth:sy,adult:sad,senior:ssn,unknown:ss.n-sa.length,hhs:ss.hhs.size,gMale:sgM,gFemale:sgF,gNB:sgNB,gUnk:sgU};
+      }).sort(function(a,b){return b.n-a.n;});
+      return {name,n:p.n,avgAge:aAge,youth:y,adult:ad,senior:sn,unknown:unk,hhs:p.hhs.size,genders:p.g,ft:p.ft,gMale:gM,gFemale:gF,gNB:gNB,gUnk:gU,sections:secs};
     }).sort((a,b)=>b.n-a.n);
     var topCities = Object.keys(cityMap).map(c=>({city:c,count:cityMap[c]})).sort((a,b)=>b.count-a.count).slice(0,10);
     var genderData = Object.keys(gMap).map(g=>({label:g,count:gMap[g]})).sort((a,b)=>b.count-a.count);
@@ -1380,12 +1394,12 @@ function App() {
             {demoLoading && <JuiceLoader messages={['Counting heads\u2026','Crunching ages\u2026','Sorting by program\u2026','Mapping demographics\u2026','Almost there\u2026']} />}
             {demoError && <div style={{textAlign:'center',padding:40,color:'#dc2626'}}>Error: {demoError}</div>}
             {demoStats && (<React.Fragment>
-              <div className="kpi-row">
-                <div className="kpi" style={{'--accent':'#6366f1'}}><div className="kpi-label">Total Enrollments</div><div className="kpi-val">{demoStats.total.toLocaleString()}</div><div className="kpi-sub">{demoStats.programs.length} programs</div></div>
-                <div className="kpi" style={{'--accent':'#059669'}}><div className="kpi-label">Unique Participants</div><div className="kpi-val">{demoStats.uniqueParticipants.toLocaleString()}</div><div className="kpi-sub">{demoStats.uniqueHouseholds.toLocaleString()} households</div></div>
-                {demoStats.avgAge!==null&&<div className="kpi" style={{'--accent':'#d97706'}}><div className="kpi-label">Avg Age</div><div className="kpi-val">{demoStats.avgAge}</div><div className="kpi-sub">median {demoStats.medAge}</div></div>}
-                <div className="kpi" style={{'--accent':'#2563eb'}}><div className="kpi-label">Youth / Adult / Senior</div><div className="kpi-val">{demoStats.youthPct}% / {demoStats.adultPct}% / {demoStats.seniorPct}%</div><div className="kpi-sub">{demoStats.youth.toLocaleString()} / {demoStats.adult.toLocaleString()} / {demoStats.senior.toLocaleString()}{demoStats.unknown>0?' ('+demoStats.unknown+' unknown)':''}</div></div>
-                {demoStats.ftCount>0&&<div className="kpi" style={{'--accent':'#10b981'}}><div className="kpi-label">Fast Track</div><div className="kpi-val">{demoStats.ftPct}%</div><div className="kpi-sub">{demoStats.ftCount.toLocaleString()} via FT</div></div>}
+              <div className="summary-cards">
+                <div className="summary-card"><div className="card-label">Total Enrollments</div><div className="card-value">{demoStats.total.toLocaleString()}</div><div className="card-sub">{demoStats.programs.length} programs</div></div>
+                <div className="summary-card"><div className="card-label">Unique Participants</div><div className="card-value">{demoStats.uniqueParticipants.toLocaleString()}</div><div className="card-sub">{demoStats.uniqueHouseholds.toLocaleString()} households</div></div>
+                {demoStats.avgAge!==null&&<div className="summary-card"><div className="card-label">Avg Age</div><div className="card-value">{demoStats.avgAge}</div><div className="card-sub">median {demoStats.medAge}</div></div>}
+                <div className="summary-card"><div className="card-label">Youth / Adult / Senior</div><div className="card-value">{demoStats.youthPct}% / {demoStats.adultPct}% / {demoStats.seniorPct}%</div><div className="card-sub">{demoStats.youth.toLocaleString()} / {demoStats.adult.toLocaleString()} / {demoStats.senior.toLocaleString()}{demoStats.unknown>0?' ('+demoStats.unknown+' unk)':''}</div></div>
+                {demoStats.ftCount>0&&<div className="summary-card"><div className="card-label">Fast Track</div><div className="card-value">{demoStats.ftPct}%</div><div className="card-sub">{demoStats.ftCount.toLocaleString()} via FT</div></div>}
               </div>
 
               {(demoStats.gMaleAll>0||demoStats.gFemaleAll>0) && (
@@ -1400,17 +1414,18 @@ function App() {
                 </div>
               )}
 
-              {/* Per-program demographics table */}
+              {/* Per-program demographics table with section drill-down */}
               {(() => {
                 var q = search.trim().toLowerCase();
                 var progs = q ? demoStats.programs.filter(p => p.name.toLowerCase().includes(q)) : demoStats.programs;
+                var dToggle = (name) => setDemoOpen(prev => { var n = new Set(prev); n.has(name) ? n.delete(name) : n.add(name); return n; });
                 return (<React.Fragment>
               <div style={{marginBottom:8,fontWeight:700,fontSize:12,textTransform:'uppercase',letterSpacing:'.04em',color:'#374151'}}>
                 Program Demographics Breakdown
                 {q && <span style={{fontWeight:400,color:'#9ca3af',textTransform:'none',marginLeft:8}}>({progs.length} of {demoStats.programs.length} programs)</span>}
               </div>
               <div className="table-scroll">
-              <table className="demo-table">
+              <table className="prog-table">
                 <thead><tr>
                   <th className="left">Program</th>
                   <th>Enrolled</th>
@@ -1431,20 +1446,45 @@ function App() {
                     var aPct = totalKnown>0?((p.adult/totalKnown)*100).toFixed(0):'—';
                     var sPct = totalKnown>0?((p.senior/totalKnown)*100).toFixed(0):'—';
                     var gKnown = p.gMale+p.gFemale+p.gNB;
+                    var hasSecs = p.sections && p.sections.length > 1;
+                    var isOpen = demoOpen.has(p.name);
                     return (
-                      <tr key={i}>
-                        <td className="left">{p.name}</td>
+                      <React.Fragment key={i}>
+                      <tr className={"prog-header" + (hasSecs ? " prog-clickable" : "")} onClick={hasSecs ? () => dToggle(p.name) : undefined}>
+                        <td className="prog-name">{hasSecs && <span className={"chev" + (isOpen ? " open" : "")}>{"\u25B6"}</span>}{p.name}</td>
                         <td>{p.n}</td>
                         <td>{p.avgAge!==null?p.avgAge:'—'}</td>
                         <td>{yPct}{yPct!=='—'?'%':''}</td>
                         <td>{aPct}{aPct!=='—'?'%':''}</td>
                         <td>{sPct}{sPct!=='—'?'%':''}</td>
-                        <td style={{color:'#2563eb'}}>{p.gMale>0?p.gMale+' ('+(gKnown>0?((p.gMale/p.n)*100).toFixed(0):0)+'%)':'—'}</td>
-                        <td style={{color:'#db2777'}}>{p.gFemale>0?p.gFemale+' ('+(gKnown>0?((p.gFemale/p.n)*100).toFixed(0):0)+'%)':'—'}</td>
+                        <td style={{color:'#2563eb'}}>{p.gMale>0?p.gMale+' ('+(p.n>0?((p.gMale/p.n)*100).toFixed(0):0)+'%)':'—'}</td>
+                        <td style={{color:'#db2777'}}>{p.gFemale>0?p.gFemale+' ('+(p.n>0?((p.gFemale/p.n)*100).toFixed(0):0)+'%)':'—'}</td>
                         <td style={{color:'#7c3aed'}}>{p.gNB>0?p.gNB+' ('+((p.gNB/p.n)*100).toFixed(0)+'%)':'—'}</td>
                         <td style={{color:'#aaa'}}>{p.gUnk>0?p.gUnk:'—'}</td>
                         <td>{p.hhs}</td>
                       </tr>
+                      {isOpen && p.sections.map((sec,j) => {
+                        var sk = sec.youth+sec.adult+sec.senior;
+                        var syP = sk>0?((sec.youth/sk)*100).toFixed(0):'—';
+                        var saP = sk>0?((sec.adult/sk)*100).toFixed(0):'—';
+                        var ssP = sk>0?((sec.senior/sk)*100).toFixed(0):'—';
+                        return (
+                          <tr key={j} className="data-row">
+                            <td className="left" style={{paddingLeft:28,fontStyle:'italic',color:'#6b7280'}}>{sec.name}</td>
+                            <td>{sec.n}</td>
+                            <td>{sec.avgAge!==null?sec.avgAge:'—'}</td>
+                            <td>{syP}{syP!=='—'?'%':''}</td>
+                            <td>{saP}{saP!=='—'?'%':''}</td>
+                            <td>{ssP}{ssP!=='—'?'%':''}</td>
+                            <td style={{color:'#2563eb'}}>{sec.gMale>0?sec.gMale+' ('+(sec.n>0?((sec.gMale/sec.n)*100).toFixed(0):0)+'%)':'—'}</td>
+                            <td style={{color:'#db2777'}}>{sec.gFemale>0?sec.gFemale+' ('+(sec.n>0?((sec.gFemale/sec.n)*100).toFixed(0):0)+'%)':'—'}</td>
+                            <td style={{color:'#7c3aed'}}>{sec.gNB>0?sec.gNB:'—'}</td>
+                            <td style={{color:'#aaa'}}>{sec.gUnk>0?sec.gUnk:'—'}</td>
+                            <td>{sec.hhs}</td>
+                          </tr>
+                        );
+                      })}
+                      </React.Fragment>
                     );
                   })}
                 </tbody>
