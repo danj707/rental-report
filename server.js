@@ -3963,7 +3963,7 @@ app.get("/", (req, res) => {
       <div class="org-header">
         <div class="org-header-text">
           <div class="org-name">&#128279; Metabase Links</div>
-          <div class="org-slug">Update the public Metabase link for any report, on any org</div>
+          <div class="org-slug">Shared base report UUIDs + per-org overrides for GL &amp; Historic</div>
         </div>
       </div>
       <div id="mb-locked" style="padding:16px 20px">
@@ -3975,6 +3975,21 @@ app.get("/", (req, res) => {
         <div style="margin-top:10px;font-size:11.5px;color:#999;line-height:1.5">Update the public Metabase link for any report. Saving commits the change to <code style="font-family:monospace;background:#f0ede8;padding:1px 5px;border-radius:3px">server.js</code> and the Railway app redeploys automatically (~1&ndash;2 min).</div>
       </div>
       <div id="mb-unlocked" style="display:none">
+        <div style="padding:16px 20px;background:#f0fdf4;border-bottom:1px solid #bbf7d0">
+          <div style="font-size:13px;font-weight:700;color:#065f46;margin-bottom:8px">&#9989; Shared Base Reports (parameterized by org_id)</div>
+          <div style="font-size:11px;color:#374151;line-height:1.6;margin-bottom:10px">These 9 reports use a single Metabase question each &#8212; the server injects <code>org_id</code> automatically. No per-org UUIDs needed.</div>
+          <table style="width:100%;font-size:11px;border-collapse:collapse">
+            <tr style="text-align:left;color:#6b7280;border-bottom:1px solid #d1fae5">
+              <th style="padding:4px 8px">Report</th><th style="padding:4px 8px">Shared UUID</th>
+            </tr>
+            ${Object.entries(SHARED_UUIDS).map(([k,v]) =>
+              '<tr style="border-bottom:1px solid #ecfdf5"><td style="padding:5px 8px;font-weight:600;color:#111827">'+k+'</td><td style="padding:5px 8px;font-family:monospace;color:#059669;font-size:10px">'+v+'</td></tr>'
+            ).join('')}
+          </table>
+        </div>
+        <div style="padding:12px 20px;background:#fffbeb;border-bottom:1px solid #fde68a">
+          <div style="font-size:12px;color:#92400e">&#9888;&#65039; <strong>Per-org overrides below</strong> are only needed for GL and Historic (not yet migrated). All other report UUIDs are ignored when a shared UUID exists.</div>
+        </div>
         <div id="mb-links-list"></div>
       </div>
     </div>
@@ -4103,17 +4118,21 @@ app.get("/", (req, res) => {
         <p>Tokens are visible in the &#129312; <strong>Access Token</strong> row on each org card &#8212; click <strong>Copy landing URL</strong> to grab a tokenized link ready to share. The <code>/api/*</code> admin endpoints, the cross-org <code>/metrics</code> view, and the public <code>/hotdog</code> page are whitelisted from the token gate.</p>
 
         <h4>Reports</h4>
-        <p>Each report type is a self-contained HTML file served from <code>public/</code>. Reports are React apps loaded via CDN &#8212; no build step required. Data is fetched from <code>/:org/:report/api/data?token=...</code>, which proxies to a Metabase public question UUID configured per org.</p>
+        <p>Each report type is a self-contained HTML file served from <code>public/</code>. Reports are React apps loaded via CDN &#8212; no build step required. Data is fetched from <code>/:org/:report/api/data?token=...</code>, which proxies to either a shared Metabase question (with <code>org_id</code> injected automatically) or a per-org UUID as fallback.</p>
         <ul>
-          <li><strong>Facility Rental</strong> &#8212; reservations grouped by date and location, with table and calendar views, heatmap summary, and location color coding. Used by Clarksville, Norman, Smyrna, Watertown, Apex.</li>
-          <li><strong>GL Code Rollup</strong> &#8212; payment method breakdown by GL code, with bar/pie chart views, refund detail toggle, GL location tags, and a dedicated <strong>ACCT CREDIT</strong> column for organization-credit payments. Used by Clarksville, Norman, Smyrna, Watertown, Littleton, Danvers.</li>
-          <li><strong>Class Roster</strong> &#8212; enrolled and cancelled participants by program section, with status filters and Excel/PDF export. Used by Clarksville, Norman, Smyrna, Watertown, The Ranch.</li>
-          <li><strong>Programs</strong> &#8212; enrollment and revenue by program and section (Norman, Watertown, and Apex).</li>
-          <li><strong>Historic Buildings</strong> &#8212; filtered facility view for historic venue locations (Smyrna only).</li>
-          <li><strong>Memberships</strong> &#8212; active and lapsed memberships with auto-renew tracking, MRR estimate, and stale-usage detection (Norman only).</li>
-          <li><strong>Product Sales</strong> &#8212; daily revenue, refunds, and net by product, with optional desk-location breakdown (Norman only).</li>
-          <li><strong>Calendar</strong> &#8212; public week / list view of the upcoming class and rental schedule, color-coded by activity, with cards that link through to the rec.us section page (Apex only).</li>
+          <li><strong>Facility Rental</strong> &#8212; reservations grouped by date and location, with table and calendar views, heatmap summary, location color coding, and resident detection.</li>
+          <li><strong>GL Code Rollup</strong> &#8212; payment method breakdown by GL code, with bar/pie chart views, refund detail toggle, and account credit column.</li>
+          <li><strong>Class Roster</strong> &#8212; enrolled and cancelled participants by program section, with form responses, session dates, status filters, and Excel/PDF export.</li>
+          <li><strong>Program Revenue</strong> &#8212; section-grain enrollment, capacity fill rates, charged/received/outstanding financials, and plan-aware pending calculations.</li>
+          <li><strong>Product Sales (POS)</strong> &#8212; daily revenue, refunds, and net by product, with desk-location breakdown and weekly trend charts.</li>
+          <li><strong>Memberships</strong> &#8212; active and lapsed memberships/passes with auto-renew tracking, pricing, and usage counts.</li>
+          <li><strong>Fast Track</strong> &#8212; pre-registration pipeline: signups, conversions, pending, dropped, with season/program hierarchy and demand/fill metrics.</li>
+          <li><strong>Court Utilization</strong> &#8212; court-level booking hours and usage patterns by facility and date range.</li>
+          <li><strong>Calendar</strong> &#8212; public-facing week/month/day/list schedule with activity color coding, session click tracking, and iframe-embeddable URLs (no token required).</li>
+          <li><strong>Community Intelligence</strong> &#8212; 6-tab analytics hub: Demographics, Revenue, Strategy, Guests, Fast Track crossover, Products. Includes AI-powered insights, data completeness rings, and household-level revenue analysis.</li>
+          <li><strong>Historic Buildings</strong> &#8212; filtered facility view for historic venue locations (per-org only).</li>
         </ul>
+        <p style="margin-top:8px"><strong>Shared Metabase queries:</strong> 9 of 12 report types now use a single parameterized Metabase question with <code>org_id</code> passed at query time &#8212; no per-org SQL duplication. Only GL and Historic remain on per-org UUIDs.</p>
 
         <h4>Inline Metrics</h4>
         <p>Each org card on this dashboard has a &#9656; <strong>&#128200; Metrics</strong> toggle that expands inline to show that org&#39;s usage over the last 30 days &#8212; report opens by type, daily activity sparkline, and top viewers. Data comes from a lightweight in-process counter (no Metabase round-trip). The <strong>View full metrics &rarr;</strong> link opens a deeper dashboard at <code>/:org/metrics</code>.</p>
@@ -4122,10 +4141,10 @@ app.get("/", (req, res) => {
         <p>PDF generation uses Puppeteer with system Chromium inside the Railway Docker container. The server launches a headless browser, navigates to the report with <code>?_print=1</code> (hides the toolbar) and the org&#39;s access token, waits for the <code>#report-ready</code> DOM marker, then renders a Letter-landscape PDF. The PDF always reflects exactly what the browser renders.</p>
 
         <h4>Email Subscriptions</h4>
-        <p>Subscriber data is stored in <code>data/subscriptions.json</code> on the Railway volume. Three cron jobs run on the server &#8212; daily at 7am, weekly on Monday at 7am, and monthly on the 1st at 7am. Each job filters to matching cadences and sends tokenized report links via the Resend API; the unsubscribe link in each email also carries the token. The Email button in reports uses the same integration for one-off share links.</p>
+        <p>Gated by the <strong>Email Subscriptions</strong> feature flag in the App Control section above &#8212; when OFF (default), all email cron jobs skip and the subscription API returns 503. When ON, subscriber data is stored in <code>data/subscriptions.json</code> on the Railway volume. Three cron jobs run &#8212; daily at 7am, weekly on Monday at 7am, and monthly on the 1st at 7am. Each job filters to matching cadences and sends tokenized report links via the Resend API.</p>
 
         <h4>Adding a New Org</h4>
-        <p>Click <strong>&#10133; Add Org</strong> above to launch the two-step wizard (org details &rarr; Metabase UUID per report), or manually add an entry to the <code>ORGS</code> map in <code>server.js</code> with a token and Metabase public question UUID per report type. No new HTML files needed &#8212; all report templates are shared across orgs.</p>
+        <p>Click <strong>&#10133; Add Org</strong> above to launch the onboarding wizard. New orgs only need a token and <code>orgId</code> &#8212; shared Metabase queries handle the rest automatically. Per-org Metabase UUIDs are only needed for GL and Historic (not yet migrated to shared queries). No new HTML files needed &#8212; all report templates are shared across orgs.</p>
 
         <h4>Environment Variables</h4>
         <ul>
