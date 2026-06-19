@@ -465,6 +465,7 @@ const EVENTS_FILE = path.join(DATA_DIR, "events.jsonl");
 const SHOWCASE_FILE = path.join(DATA_DIR, "showcase.json");
 const VISIBILITY_FILE = path.join(DATA_DIR, "report-visibility.json");
 const VOTES_FILE = path.join(DATA_DIR, "votes.json");
+const FLAGS_FILE = path.join(DATA_DIR, "feature-flags.json");
 const HEALTH_FILE = path.join(DATA_DIR, "health-check.json");
 const HEALTH_CONFIG_FILE = path.join(DATA_DIR, "health-config.json");
 const QUOTES_FILE = path.join(DATA_DIR, "quotes.json");
@@ -671,6 +672,11 @@ function readJSON(file, def) {
 function writeJSON(file, data) {
   fs.writeFileSync(file, JSON.stringify(data, null, 2));
 }
+
+// ── Feature Flags ────────────────────────────────────────────────────
+const DEFAULT_FLAGS = { emailSubscriptions: false };
+function getFlags() { return Object.assign({}, DEFAULT_FLAGS, readJSON(FLAGS_FILE, {})); }
+function setFlag(key, value) { const f = getFlags(); f[key] = value; writeJSON(FLAGS_FILE, f); return f; }
 
 // ── Report visibility (per-org hidden reports) ───────────────────────
 function getHiddenReports(slug) {
@@ -1281,6 +1287,7 @@ async function sendReportEmail(orgSlug, email, reportType, schedule, locationFil
 
 // ── Run scheduled sends ──────────────────────────────────────────────
 async function runSchedule(scheduleType) {
+  if (!getFlags().emailSubscriptions) { console.log(`[cron] ${scheduleType} skipped — emailSubscriptions flag is OFF`); return; }
   console.log(`[cron] Running ${scheduleType} sends...`);
   const subs = db.getAllBySchedule(scheduleType);
   for (const sub of subs) {
@@ -2111,6 +2118,7 @@ app.get("/:org/admin/subscribers", (req, res) => {
 });
 
 app.post("/:org/admin/subscribe", (req, res) => {
+  if (!getFlags().emailSubscriptions) return res.status(503).json({ error: "Email subscriptions are currently disabled" });
   if (!ORGS[req.params.org]) return res.status(404).json({ error: "Unknown org" });
   const { email, reports, schedule, locationFilter, dateRange, reportParams } = req.body;
   if (!email || !reports?.length || !schedule) return res.status(400).json({ error: "email, reports, and schedule are required" });
@@ -2922,6 +2930,23 @@ app.post("/api/admin/links", (req, res) => {
     return { slug, displayName, reports };
   }).filter(o => o.reports.length);
   res.json({ ok: true, orgs });
+});
+
+// ── GET /api/admin/flags — read feature flags ───────────────────────
+app.get("/api/admin/flags", (req, res) => { res.json(getFlags()); });
+
+// ── POST /api/admin/flags — update a feature flag ───────────────────
+app.post("/api/admin/flags", express.json(), (req, res) => {
+  const { password, key, value } = req.body || {};
+  if (!password || password !== process.env.DASHBOARD_PASSWORD) {
+    return res.status(401).json({ error: "Invalid password" });
+  }
+  if (!key || typeof value !== "boolean") {
+    return res.status(400).json({ error: "Provide key (string) and value (boolean)" });
+  }
+  const flags = setFlag(key, value);
+  console.log(`[flags] ${key} set to ${value}`);
+  res.json({ ok: true, flags });
 });
 
 // ── POST /api/admin/restart — redeploy the latest build on Railway ───
@@ -4019,6 +4044,21 @@ app.get("/", (req, res) => {
         </div>
         <div style="font-size:11px;color:#999;margin-top:8px">Redeploys the current build (no new code). Requires <code>RAILWAY_API_TOKEN</code> set in Railway. The app will briefly drop connections while it restarts.</div>
       </div>
+      <div style="padding:14px 18px;background:#f9f8f6;border-top:1px solid #e8e5df">
+        <div style="font-size:12px;font-weight:700;color:#374151;margin-bottom:10px">Feature Flags</div>
+        <div style="display:flex;align-items:center;gap:12px">
+          <label style="position:relative;display:inline-block;width:44px;height:24px;cursor:pointer">
+            <input type="checkbox" id="flag-email" onchange="toggleFlag('emailSubscriptions',this.checked)"
+                   style="opacity:0;width:0;height:0" />
+            <span id="flag-email-track" style="position:absolute;top:0;left:0;right:0;bottom:0;background:#cbd5e1;border-radius:12px;transition:background .2s"></span>
+            <span id="flag-email-thumb" style="position:absolute;top:2px;left:2px;width:20px;height:20px;background:#fff;border-radius:50%;transition:transform .2s;box-shadow:0 1px 3px rgba(0,0,0,.2)"></span>
+          </label>
+          <div>
+            <div style="font-size:13px;font-weight:600;color:#111827">Email Subscriptions</div>
+            <div id="flag-email-status" style="font-size:11px;color:#999">Loading...</div>
+          </div>
+        </div>
+      </div>
     </div>
 
     <div class="org-section">
@@ -4537,6 +4577,40 @@ app.get("/", (req, res) => {
       const el = document.getElementById('restart-status');
       if (el) { el.textContent = msg; el.style.color = color; }
     }
+
+    // ── Feature Flags ──
+    async function loadFlags() {
+      try {
+        const r = await fetch('/api/admin/flags');
+        const flags = await r.json();
+        updateFlagUI('email', flags.emailSubscriptions);
+      } catch(e) { console.warn('[flags] load failed', e); }
+    }
+    function updateFlagUI(name, on) {
+      const cb = document.getElementById('flag-'+name);
+      const track = document.getElementById('flag-'+name+'-track');
+      const thumb = document.getElementById('flag-'+name+'-thumb');
+      const status = document.getElementById('flag-'+name+'-status');
+      if (cb) cb.checked = on;
+      if (track) track.style.background = on ? '#059669' : '#cbd5e1';
+      if (thumb) thumb.style.transform = on ? 'translateX(20px)' : 'translateX(0)';
+      if (status) { status.textContent = on ? 'Enabled — email signups and subscriptions are active' : 'Disabled — email features are hidden from all orgs'; status.style.color = on ? '#059669' : '#999'; }
+    }
+    async function toggleFlag(key, value) {
+      const pwd = prompt('Enter dashboard password to change feature flags:');
+      if (!pwd) { loadFlags(); return; }
+      try {
+        const r = await fetch('/api/admin/flags', {
+          method: 'POST', headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({ password: pwd, key: key, value: value })
+        });
+        const j = await r.json();
+        if (j.ok) { updateFlagUI('email', j.flags.emailSubscriptions); }
+        else { alert(j.error || 'Failed'); loadFlags(); }
+      } catch(e) { alert('Error: ' + e.message); loadFlags(); }
+    }
+    loadFlags();
+
     async function doRestart() {
       const pwd = (document.getElementById('restart-pwd') || {}).value || '';
       if (!pwd) { showRestart('Enter the dashboard password first', '#dc2626'); return; }
