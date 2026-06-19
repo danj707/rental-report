@@ -44,6 +44,10 @@
   .week .dayhead:hover{background:#f8f9ff}
   .week .dayhead small{display:block;color:var(--muted);font-weight:600;font-size:13px;text-transform:none;letter-spacing:0;margin-top:2px}
   .week .corner{border-bottom:1px solid var(--line)}
+  .week .dayhead.today{background:#fef9ee;color:#92400e}
+  .week .dayhead.today small{color:#92400e}
+  .col.today{background:rgba(253,243,220,0.35);box-shadow:inset 0 0 0 1.5px #d97706}
+  .allday .cell.today{background:rgba(253,243,220,0.35)}
   .allday{display:grid;grid-template-columns:56px repeat(7,1fr);border-bottom:1px solid var(--line)}
   .allday .lbl{font-size:11px;color:var(--muted);padding:4px 6px;text-align:right}
   .allday .cell{border-left:1px solid #f0f0f3;padding:3px;display:flex;flex-direction:column;gap:3px}
@@ -436,6 +440,7 @@ function WeekView({weekStart,events,onEv,onDayClick}){
   const [slotGroup,setSlotGroup]=useState(null);
   const [slotRect,setSlotRect]=useState(null);
   const days=useMemo(()=>Array.from({length:7},(_,i)=>fmtISO(addDays(weekStart,i))),[weekStart]);
+  const todayISO=fmtISO(new Date());
   const timed=events.filter(e=>e.beginMin!=null && e.endMin!=null && (e.endMin-e.beginMin)<7*60);
   const allday=events.filter(e=>!(e.beginMin!=null && e.endMin!=null) || (e.endMin-e.beginMin)>=7*60);
   let lo,hi;
@@ -463,12 +468,12 @@ function WeekView({weekStart,events,onEv,onDayClick}){
     <div className="week">
       <div className="corner"></div>
       {days.map((d,i)=>{const dt=addDays(weekStart,i);
-        return <div className="dayhead" key={d} onClick={()=>onDayClick&&onDayClick(d)}>{DOW[i]}<small>{MON[dt.getMonth()]} {dt.getDate()}</small></div>;})}
+        return <div className={'dayhead'+(d===todayISO?' today':'')} key={d} onClick={()=>onDayClick&&onDayClick(d)}>{DOW[i]}<small>{MON[dt.getMonth()]} {dt.getDate()}</small></div>;})}
 
       <div className="allday" style={{gridColumn:'1 / -1'}}>
         <div className="lbl">all-day</div>
         {days.map(d=>(
-          <div className="cell" key={'a'+d}>
+          <div className={'cell'+(d===todayISO?' today':'')} key={'a'+d}>
             {allByDay(d).map((e,j)=>(
               <div className="ev" key={j} style={{position:'static',background:colorFor(e.activity),cursor:'pointer'}} title={e.label} onClick={()=>onEv&&onEv(e)}>
                 <div className="t"><span className="evtitle">{e.label}</span><StatusChips ev={e}/></div>
@@ -483,7 +488,7 @@ function WeekView({weekStart,events,onEv,onDayClick}){
           {hours.map(m=>(<div className="tick" key={m} style={{top:(m-lo)*PX}}>{minToLabel(m).replace(':00','')}</div>))}
         </div>
         {days.map(d=>(
-          <div className="col" key={'c'+d} style={{height:H}}>
+          <div className={'col'+(d===todayISO?' today':'')} key={'c'+d} style={{height:H}}>
             {hours.map(m=>(<div className="hline" key={m} style={{top:(m-lo)*PX}}></div>))}
             {byDay(d).map((grp,gi)=>{
               const first=grp.events[0];
@@ -1050,6 +1055,7 @@ function App(){
         </div>
         {view==='month' ? (
           <React.Fragment>
+            <button onClick={()=>{const t=new Date();setSelectedDate(fmtISO(t));setWeekStart(startOfWeek(t));setView('day');}}>Today</button>
             <button onClick={()=>setMonthDate(new Date())}>This Month</button>
           </React.Fragment>
         ) : view==='day' ? (
@@ -1060,6 +1066,7 @@ function App(){
           </React.Fragment>
         ) : (
           <React.Fragment>
+            <button onClick={()=>{const t=new Date();setSelectedDate(fmtISO(t));setWeekStart(startOfWeek(t));setView('day');}}>Today</button>
             <button onClick={()=>setWeekStart(startOfWeek(new Date()))}>This Week</button>
             <button onClick={()=>setWeekStart(addDays(weekStart,-7))}>‹ Prev</button>
             <button onClick={()=>setWeekStart(addDays(weekStart,7))}>Next ›</button>
