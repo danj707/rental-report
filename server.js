@@ -3958,42 +3958,6 @@ app.get("/", (req, res) => {
 
     <div class="page-title">Organizations</div>
     ${orgSections}
-    <!-- ── Metabase Links editor (all orgs; dashboard-level) ── -->
-    <div class="org-section" id="mb-links-section">
-      <div class="org-header">
-        <div class="org-header-text">
-          <div class="org-name">&#128279; Metabase Links</div>
-          <div class="org-slug">Shared base report UUIDs + per-org overrides for GL &amp; Historic</div>
-        </div>
-      </div>
-      <div id="mb-locked" style="padding:16px 20px">
-        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-          <input id="mb-pwd" type="password" placeholder="Admin password" onkeydown="if(event.key==='Enter')mbUnlock()" style="flex:1;min-width:220px;padding:9px 12px;border:1px solid #ddd;border-radius:6px;font-size:13px" />
-          <button id="mb-unlock-btn" onclick="mbUnlock()" style="padding:9px 22px;background:#16a34a;color:#fff;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer">Unlock</button>
-        </div>
-        <div id="mb-locked-err" style="margin-top:10px;color:#dc2626;font-size:12px;display:none"></div>
-        <div style="margin-top:10px;font-size:11.5px;color:#999;line-height:1.5">Update the public Metabase link for any report. Saving commits the change to <code style="font-family:monospace;background:#f0ede8;padding:1px 5px;border-radius:3px">server.js</code> and the Railway app redeploys automatically (~1&ndash;2 min).</div>
-      </div>
-      <div id="mb-unlocked" style="display:none">
-        <div style="padding:16px 20px;background:#f0fdf4;border-bottom:1px solid #bbf7d0">
-          <div style="font-size:13px;font-weight:700;color:#065f46;margin-bottom:8px">&#9989; Shared Base Reports (parameterized by org_id)</div>
-          <div style="font-size:11px;color:#374151;line-height:1.6;margin-bottom:10px">These 9 reports use a single Metabase question each &#8212; the server injects <code>org_id</code> automatically. No per-org UUIDs needed.</div>
-          <table style="width:100%;font-size:11px;border-collapse:collapse">
-            <tr style="text-align:left;color:#6b7280;border-bottom:1px solid #d1fae5">
-              <th style="padding:4px 8px">Report</th><th style="padding:4px 8px">Shared UUID</th>
-            </tr>
-            ${Object.entries(SHARED_UUIDS).map(([k,v]) =>
-              '<tr style="border-bottom:1px solid #ecfdf5"><td style="padding:5px 8px;font-weight:600;color:#111827">'+k+'</td><td style="padding:5px 8px;font-family:monospace;color:#059669;font-size:10px">'+v+'</td></tr>'
-            ).join('')}
-          </table>
-        </div>
-        <div style="padding:12px 20px;background:#fffbeb;border-bottom:1px solid #fde68a">
-          <div style="font-size:12px;color:#92400e">&#9888;&#65039; <strong>Per-org overrides below</strong> are only needed for GL and Historic (not yet migrated). All other report UUIDs are ignored when a shared UUID exists.</div>
-        </div>
-        <div id="mb-links-list"></div>
-      </div>
-    </div>
-
     <!-- ── Metabase Link edit modal ── -->
     <div id="mb-modal-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:1000;overflow-y:auto;padding:40px 16px">
       <div style="background:#fff;border-radius:10px;max-width:520px;margin:0 auto;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.3)">
@@ -4074,6 +4038,27 @@ app.get("/", (req, res) => {
           </div>
         </div>
       </div>
+      <div style="padding:14px 18px;background:#f5f4f1;border-top:1px solid #e8e5df">
+        <div style="font-size:12px;font-weight:700;color:#374151;margin-bottom:10px">&#128279; Metabase Links</div>
+        <div id="mb-locked">
+          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+            <input id="mb-pwd" type="password" placeholder="Admin password" onkeydown="if(event.key==='Enter')mbUnlock()" style="flex:1;min-width:180px;padding:8px 12px;border:1px solid #d8d4cc;border-radius:5px;font-size:13px" />
+            <button id="mb-unlock-btn" onclick="mbUnlock()" style="padding:8px 18px;background:#16a34a;color:#fff;border:none;border-radius:5px;font-size:13px;font-weight:600;cursor:pointer">Unlock</button>
+          </div>
+          <div id="mb-locked-err" style="margin-top:8px;color:#dc2626;font-size:12px;display:none"></div>
+        </div>
+        <div id="mb-unlocked" style="display:none">
+          <div style="margin-top:10px;padding:10px 14px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px;margin-bottom:10px">
+            <div style="font-size:12px;font-weight:700;color:#065f46;margin-bottom:6px">&#9989; Shared Base Reports</div>
+            <table style="width:100%;font-size:11px;border-collapse:collapse">
+              <tr style="text-align:left;color:#6b7280;border-bottom:1px solid #d1fae5"><th style="padding:3px 6px">Report</th><th style="padding:3px 6px">UUID</th></tr>
+              ${Object.entries(SHARED_UUIDS).map(([k,v]) =>
+                '<tr style="border-bottom:1px solid #ecfdf5"><td style="padding:4px 6px;font-weight:600;color:#111827">'+k+'</td><td style="padding:4px 6px;font-family:monospace;color:#059669;font-size:10px">'+v+'</td></tr>'
+              ).join('')}
+            </table>
+          </div>
+          <div id="mb-links-list"></div>
+        </div>
     </div>
 
     <div class="org-section">
@@ -4697,8 +4682,13 @@ app.get("/", (req, res) => {
 
     function mbRenderList() {
       const wrap = document.getElementById('mb-links-list');
-      if (!mbData.length) { wrap.innerHTML = '<div style="padding:16px 20px;font-size:12px;color:#999">No reports with Metabase links found.</div>'; return; }
-      wrap.innerHTML = mbData.map(org => \`
+      // Filter to only show reports that DON'T have shared UUIDs
+      const filtered = mbData.map(org => ({
+        ...org,
+        reports: org.reports.filter(rep => !SHARED_UUIDS_CLIENT[rep.key])
+      })).filter(org => org.reports.length > 0);
+      if (!filtered.length) { wrap.innerHTML = '<div style="padding:16px 20px;font-size:12px;color:#999">All reports use shared base queries. No per-org overrides needed.</div>'; return; }
+      wrap.innerHTML = filtered.map(org => \`
         <div class="mb-org">
           <div class="mb-org-name">\${org.displayName} · \${org.slug}</div>
           \${org.reports.map(rep => \`
