@@ -1025,6 +1025,7 @@ function App() {
   }, [s,insightsLoading]);
 
   var [pdfLoading, setPdfLoading] = useState(false);
+  var [csvRequestModal, setCsvRequestModal] = useState(null);
 
   function refreshData() {
     setRefreshing(true);setCacheInfo(null);
@@ -1057,12 +1058,8 @@ function App() {
 
   useEffect(function(){window.recShareLink=function(){return window.location.href;};}, []);
 
-  function exportCSV(data, filename) {
-    if(!data||!data.length){alert('No data to export');return;}
-    var ws=XLSX.utils.json_to_sheet(data);
-    var wb=XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb,ws,'Export');
-    XLSX.writeFile(wb,filename+'.csv',{bookType:'csv'});
+  function requestCSV(description) {
+    setCsvRequestModal(description);
   }
 
   var headerBar = (
@@ -1404,10 +1401,10 @@ function App() {
                           <div style={{fontSize:24,fontWeight:800,color:'#065f46'}}>+${lev.opp>=1000?(lev.opp/1000).toFixed(0)+'K':lev.opp}</div>
                         </div>
                         <button style={{flexShrink:0,fontSize:11,padding:'6px 12px',borderRadius:6,border:'1px solid #d1d5db',background:'#fff',cursor:'pointer',fontFamily:'inherit',fontWeight:600}} onClick={function(){
-                          if(lev.segment==='unbooked')exportCSV(s.unbookedCSV,'unbooked-households-'+orgSlug);
-                          else if(lev.segment==='nonresident')exportCSV(s.nonresCSV,'nonresident-households-'+orgSlug);
-                          else if(lev.segment==='solo')exportCSV(s.soloUnbookedCSV,'solo-unbooked-'+orgSlug);
-                        }}>{'⬇'} Export CSV</button>
+                          if(lev.segment==='unbooked')requestCSV('Unbooked households');
+                          else if(lev.segment==='nonresident')requestCSV('Non-resident households');
+                          else if(lev.segment==='solo')requestCSV('Solo unbooked households');
+                        }}>{'📋'} Request CSV</button>
                       </div>
                     );})}
                   </div>
@@ -1424,7 +1421,7 @@ function App() {
                       <div>Median HH size</div><div style={{textAlign:'right',fontWeight:600}}>{s.spenderProfile.medianSize}</div><div style={{textAlign:'right',fontWeight:600}}>{s.unbookedProfile.medianSize}</div>
                       <div>Median account age</div><div style={{textAlign:'right',fontWeight:600}}>{s.spenderProfile.medianDaysOld}d</div><div style={{textAlign:'right',fontWeight:600}}>{s.unbookedProfile.medianDaysOld}d</div>
                     </div>
-                    <button style={{marginTop:10,fontSize:11,padding:'6px 12px',borderRadius:6,border:'1px solid #d1d5db',background:'#fff',cursor:'pointer',fontFamily:'inherit',fontWeight:600,color:'#374151'}} onClick={function(){exportCSV(s.unbookedCSV,'unbooked-households-'+orgSlug);}}>{'⬇'} Export {s.unbookedCSV.length} unbooked contacts</button>
+                    <button style={{marginTop:10,fontSize:11,padding:'6px 12px',borderRadius:6,border:'1px solid #d1d5db',background:'#fff',cursor:'pointer',fontFamily:'inherit',fontWeight:600,color:'#374151'}} onClick={function(){requestCSV('Unbooked households (' + s.unbookedCSV.length + ' contacts)');}}>{'📋'} Request {s.unbookedCSV.length} unbooked contacts</button>
                   </div>
 
                   <div className="panel">
@@ -1434,7 +1431,7 @@ function App() {
                       <div style={{fontSize:13,color:'#6b7280',marginTop:4}}>previously active households</div>
                       <div style={{fontSize:12,color:'#9ca3af'}}>haven't purchased in 90+ days</div>
                     </div>
-                    {s.lapsingCount>0&&<button style={{fontSize:11,padding:'6px 12px',borderRadius:6,border:'1px solid #d1d5db',background:'#fff',cursor:'pointer',fontFamily:'inherit',fontWeight:600,color:'#374151'}} onClick={function(){exportCSV(s.lapsingCSV,'lapsing-households-'+orgSlug);}}>{'⬇'} Export {s.lapsingCSV.length} lapsing contacts</button>}
+                    {s.lapsingCount>0&&<button style={{fontSize:11,padding:'6px 12px',borderRadius:6,border:'1px solid #d1d5db',background:'#fff',cursor:'pointer',fontFamily:'inherit',fontWeight:600,color:'#374151'}} onClick={function(){requestCSV('Lapsing households (' + s.lapsingCSV.length + ' contacts)');}}>{'📋'} Request {s.lapsingCSV.length} lapsing contacts</button>}
                   </div>
                 </div>
 
@@ -1477,14 +1474,14 @@ function App() {
                         <div style={{flex:1,minWidth:200,padding:'12px 16px',background:'linear-gradient(135deg,#f5f3ff,#ede9fe)',borderRadius:8,border:'1px solid #c4b5fd'}}>
                           <div style={{fontSize:24,fontWeight:800,color:'#5b21b6'}}>{s.progOnly}</div>
                           <div style={{fontSize:12,color:'#6d28d9',fontWeight:600}}>HH use programs but never booked a facility</div>
-                          <button style={{marginTop:8,fontSize:11,padding:'5px 10px',borderRadius:5,border:'1px solid #c4b5fd',background:'#fff',cursor:'pointer',fontFamily:'inherit',fontWeight:600}} onClick={function(){exportCSV(s.progNoFacCSV,'programs-no-facility-'+orgSlug);}}>{'\u2B07'} Export CSV</button>
+                          <button style={{marginTop:8,fontSize:11,padding:'5px 10px',borderRadius:5,border:'1px solid #c4b5fd',background:'#fff',cursor:'pointer',fontFamily:'inherit',fontWeight:600}} onClick={function(){requestCSV('Programs-only households (no facility)');}}>{'📋'} Request CSV</button>
                         </div>
                       )}
                       {s.facOnly>0&&(
                         <div style={{flex:1,minWidth:200,padding:'12px 16px',background:'linear-gradient(135deg,#f0fdfa,#ccfbf1)',borderRadius:8,border:'1px solid #5eead4'}}>
                           <div style={{fontSize:24,fontWeight:800,color:'#0f766e'}}>{s.facOnly}</div>
                           <div style={{fontSize:12,color:'#115e59',fontWeight:600}}>HH book facilities but aren't in any programs</div>
-                          <button style={{marginTop:8,fontSize:11,padding:'5px 10px',borderRadius:5,border:'1px solid #5eead4',background:'#fff',cursor:'pointer',fontFamily:'inherit',fontWeight:600}} onClick={function(){exportCSV(s.facNoProgCSV,'facility-no-programs-'+orgSlug);}}>{'\u2B07'} Export CSV</button>
+                          <button style={{marginTop:8,fontSize:11,padding:'5px 10px',borderRadius:5,border:'1px solid #5eead4',background:'#fff',cursor:'pointer',fontFamily:'inherit',fontWeight:600}} onClick={function(){requestCSV('Facility-only households (no programs)');}}>{'📋'} Request CSV</button>
                         </div>
                       )}
                       {s.bothProgFac>0&&(
@@ -1492,7 +1489,7 @@ function App() {
                           <div style={{fontSize:24,fontWeight:800,color:'#334155'}}>{s.bothProgFac}</div>
                           <div style={{fontSize:12,color:'#475569',fontWeight:600}}>HH use both programs and facilities</div>
                           <div style={{fontSize:11,color:'#94a3b8',marginTop:4}}>Your most engaged households</div>
-                          <button style={{marginTop:8,fontSize:11,padding:'5px 10px',borderRadius:5,border:'1px solid #94a3b8',background:'#fff',cursor:'pointer',fontFamily:'inherit',fontWeight:600}} onClick={function(){exportCSV(s.bothProgFacCSV,'engaged-both-prog-fac-'+orgSlug);}}>{'⬇'} Export CSV</button>
+                          <button style={{marginTop:8,fontSize:11,padding:'5px 10px',borderRadius:5,border:'1px solid #94a3b8',background:'#fff',cursor:'pointer',fontFamily:'inherit',fontWeight:600}} onClick={function(){requestCSV('Engaged households (both programs & facility)');}}>{'📋'} Request CSV</button>
                         </div>
                       )}
                     </div>
@@ -1666,6 +1663,30 @@ function App() {
           );
         })}
       </div>
+      {csvRequestModal && (
+        <div style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,0.45)',zIndex:9999,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={function(){setCsvRequestModal(null);}}>
+          <div style={{background:'#fff',borderRadius:12,padding:'28px 32px',maxWidth:440,width:'90%',boxShadow:'0 20px 60px rgba(0,0,0,0.3)',position:'relative'}} onClick={function(e){e.stopPropagation();}}>
+            <div style={{fontSize:15,fontWeight:700,color:'#111827',marginBottom:12}}>{'🔒'} CSV Export Restricted</div>
+            <div style={{fontSize:13,color:'#374151',lineHeight:1.6,marginBottom:8}}>
+              To protect user privacy, CSV exports containing personally identifiable information are no longer available for direct download.
+            </div>
+            <div style={{fontSize:13,color:'#374151',lineHeight:1.6,marginBottom:16}}>
+              To request this data, please contact the Professional Services team:
+            </div>
+            <div style={{background:'#f0fdf4',border:'1px solid #bbf7d0',borderRadius:8,padding:'12px 14px',marginBottom:6}}>
+              <div style={{fontSize:12,color:'#6b7280',marginBottom:4}}>Requested data</div>
+              <div style={{fontSize:13,fontWeight:600,color:'#111827'}}>{csvRequestModal}</div>
+            </div>
+            <div style={{background:'#f0f9ff',border:'1px solid #bae6fd',borderRadius:8,padding:'12px 14px',marginBottom:18}}>
+              <div style={{fontSize:12,color:'#6b7280',marginBottom:4}}>Contact</div>
+              <a href={'mailto:ps@rec.us?subject=CSV%20Export%20Request%20-%20'+encodeURIComponent(orgSlug)+'&body='+encodeURIComponent('Hi PS team,\n\nI\'d like to request a CSV export.\n\nOrg: '+orgSlug+'\nData: '+csvRequestModal+'\n\nThank you!')} style={{fontSize:13,fontWeight:600,color:'#2563eb',textDecoration:'none'}}>ps@rec.us</a>
+            </div>
+            <div style={{display:'flex',justifyContent:'flex-end'}}>
+              <button style={{fontSize:13,padding:'8px 20px',borderRadius:8,border:'none',background:'#111827',color:'#fff',cursor:'pointer',fontWeight:600,fontFamily:'inherit'}} onClick={function(){setCsvRequestModal(null);}}>Got it</button>
+            </div>
+          </div>
+        </div>
+      )}
       <div id="report-ready" style={{display:'none'}}/>
     </React.Fragment>
   );
