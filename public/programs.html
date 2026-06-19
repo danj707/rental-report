@@ -168,6 +168,34 @@
     .prog-table .chev.open { transform:rotate(90deg); }
     .prog-table tr.prog-clickable { cursor:pointer; }
     .prog-table tr.prog-clickable:hover td { background:#eef4ee; }
+
+    /* ── Tabs ── */
+    .tabs { display:flex; gap:0; border-bottom:2px solid #e5e7eb; margin-bottom:16px; }
+    .tab { padding:10px 20px; font-size:13px; font-weight:600; color:#6b7280; cursor:pointer; border-bottom:2px solid transparent; margin-bottom:-2px; transition:all .15s; display:flex; align-items:center; gap:6px; }
+    .tab:hover { color:#111; }
+    .tab.active { color:#059669; border-bottom-color:#059669; }
+    .tab .tab-badge { font-size:10px; padding:2px 7px; border-radius:10px; font-weight:600; }
+    .tab .tab-lock { font-size:10px; padding:2px 7px; border-radius:10px; background:#f3f4f6; color:#9ca3af; }
+    /* ── KPI cards ── */
+    .kpi-row { display:flex; gap:12px; margin-bottom:16px; flex-wrap:wrap; }
+    .kpi { flex:1; min-width:140px; border:1px solid #e5e7eb; border-radius:8px; padding:14px 16px; background:#fff; }
+    .kpi-label { font-size:10px; text-transform:uppercase; letter-spacing:.5px; color:var(--accent,#6b7280); font-weight:600; margin-bottom:4px; }
+    .kpi-val { font-size:24px; font-weight:700; color:#111; font-variant-numeric:tabular-nums; line-height:1.1; }
+    .kpi-sub { font-size:11px; color:#9ca3af; margin-top:4px; }
+    /* ── Observations ── */
+    .obs { background:#f0fdf4; border:1px solid #bbf7d0; border-radius:8px; padding:16px; margin-bottom:16px; font-size:12.5px; line-height:1.6; color:#1a1a1a; }
+    .obs-title { font-weight:700; font-size:11px; text-transform:uppercase; letter-spacing:.5px; color:#065f46; margin-bottom:10px; }
+    .obs-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px 20px; }
+    @media (max-width:700px) { .obs-grid { grid-template-columns:1fr; } }
+    /* ── Demo table ── */
+    .demo-table { width:100%; border-collapse:collapse; font-size:11.5px; margin-bottom:16px; }
+    .demo-table thead th { background:#f9fafb; padding:8px 10px; text-align:right; font-size:10px; text-transform:uppercase; letter-spacing:.4px; color:#6b7280; border-bottom:2px solid #e5e7eb; }
+    .demo-table thead th.left { text-align:left; }
+    .demo-table tbody td { padding:7px 10px; text-align:right; border-bottom:1px solid #f3f4f6; }
+    .demo-table tbody td.left { text-align:left; font-weight:500; }
+    .demo-table tbody tr:hover { background:#f0fdf4; }
+    .demo-table .bar-cell { position:relative; }
+    .demo-table .bar-bg { position:absolute; left:0; top:2px; bottom:2px; border-radius:3px; opacity:.18; }
     .prog-table tr.section-row td { background:#fbfbf9; border-bottom:1px solid #f1efea; font-size:11px; color:#3f3f3f; padding:6px 8px; }
     .prog-table tr.section-row:hover td { background:#f4f3ef; }
     .prog-table tr.section-row td.left { text-align:left; padding-left:26px; }
@@ -557,6 +585,83 @@ function App() {
   const [chartExpanded, setChartExpanded] = useState(false);
   const [chartHover, setChartHover] = useState(null);
 
+  // ── Participants tab ──────────────────────────────────────────────
+  const [tab, setTab] = useState('revenue');
+  const [demoRows, setDemoRows] = useState(null);
+  const [demoLoading, setDemoLoading] = useState(false);
+  const [demoError, setDemoError] = useState(null);
+
+  const participantsEnabled = useMemo(() => {
+    try { return window.ORG_CONFIG && window.ORG_CONFIG.participantsTab; } catch(e) { return false; }
+  }, []);
+
+  const fetchDemoData = useCallback(() => {
+    if (demoRows || demoLoading) return;
+    setDemoLoading(true); setDemoError(null);
+    fetch(withToken(`/${orgSlug}/program-demographics/api/data`))
+      .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .then(j => { setDemoRows(j.rows || j.data || j || []); })
+      .catch(e => { setDemoError(e.message); })
+      .finally(() => { setDemoLoading(false); });
+  }, [demoRows, demoLoading, orgSlug]);
+
+  const switchTab = useCallback((t) => {
+    setTab(t);
+    if (t === 'participants' && !demoRows && !demoLoading) fetchDemoData();
+  }, [demoRows, demoLoading, fetchDemoData]);
+
+  const demoStats = useMemo(() => {
+    if (!demoRows || demoRows.length === 0) return null;
+    var total = demoRows.length;
+    var partSet = new Set(); var hhSet = new Set();
+    var ages = []; var gMap = {}; var grMap = {}; var cityMap = {};
+    var brackets = {'0-5':0,'6-12':0,'13-17':0,'18-25':0,'26-35':0,'36-55':0,'55+':0};
+    var progMap = {};
+    var ftCount = 0;
+    demoRows.forEach(r => {
+      var pid = r['Participant ID']||''; if (pid) partSet.add(pid);
+      var hh = r['Household ID']||''; if (hh) hhSet.add(hh);
+      var age = parseInt(r['Age']); 
+      if (age > 0 && age < 120) {
+        ages.push(age);
+        if (age<=5) brackets['0-5']++; else if (age<=12) brackets['6-12']++;
+        else if (age<=17) brackets['13-17']++; else if (age<=25) brackets['18-25']++;
+        else if (age<=35) brackets['26-35']++; else if (age<=55) brackets['36-55']++;
+        else brackets['55+']++;
+      }
+      var gen = (r['Gender']||'').trim()||'Unknown'; gMap[gen]=(gMap[gen]||0)+1;
+      var gr = (r['Grade']||'').trim(); if (gr) grMap[gr]=(grMap[gr]||0)+1;
+      var city = (r['City']||'').trim(); if (city) cityMap[city]=(cityMap[city]||0)+1;
+      if (r['Is FT']===true||r['Is FT']==='true') ftCount++;
+      var prog = r['Program']||'Unknown';
+      if (!progMap[prog]) progMap[prog]={n:0,ages:[],g:{},hhs:new Set(),ft:0};
+      var pm=progMap[prog]; pm.n++; if(age>0&&age<120)pm.ages.push(age);
+      pm.g[gen]=(pm.g[gen]||0)+1; if(hh)pm.hhs.add(hh);
+      if(r['Is FT']===true||r['Is FT']==='true')pm.ft++;
+    });
+    var avgAge = ages.length>0 ? Math.round(ages.reduce((s,a)=>s+a,0)/ages.length) : null;
+    var medAge = ages.length>0 ? (a=>{a.sort((x,y)=>x-y);return a[Math.floor(a.length/2)];})(ages.slice()) : null;
+    var youth=ages.filter(a=>a<18).length, adult=ages.filter(a=>a>=18&&a<55).length, senior=ages.filter(a=>a>=55).length;
+    var programs = Object.keys(progMap).map(name => {
+      var p=progMap[name]; var aa=p.ages; var aAge=aa.length>0?Math.round(aa.reduce((s,a)=>s+a,0)/aa.length):null;
+      var y=aa.filter(a=>a<18).length, ad=aa.filter(a=>a>=18&&a<55).length, sn=aa.filter(a=>a>=55).length, unk=p.n-aa.length;
+      return {name,n:p.n,avgAge:aAge,youth:y,adult:ad,senior:sn,unknown:unk,hhs:p.hhs.size,genders:p.g,ft:p.ft};
+    }).sort((a,b)=>b.n-a.n);
+    var topCities = Object.keys(cityMap).map(c=>({city:c,count:cityMap[c]})).sort((a,b)=>b.count-a.count).slice(0,10);
+    var genderData = Object.keys(gMap).map(g=>({label:g,count:gMap[g]})).sort((a,b)=>b.count-a.count);
+    var bracketData = Object.keys(brackets).map(k=>({label:k,count:brackets[k]}));
+    var gradeData = Object.keys(grMap).map(g=>({label:g,count:grMap[g]})).sort((a,b)=>b.count-a.count).slice(0,12);
+    return {
+      total,uniqueParticipants:partSet.size,uniqueHouseholds:hhSet.size,
+      avgAge,medAge,youth,adult,senior,unknown:total-ages.length,
+      youthPct:ages.length>0?((youth/ages.length)*100).toFixed(1):'0',
+      adultPct:ages.length>0?((adult/ages.length)*100).toFixed(1):'0',
+      seniorPct:ages.length>0?((senior/ages.length)*100).toFixed(1):'0',
+      genderData,bracketData,gradeData,topCities,programs,
+      ftCount,ftPct:total>0?((ftCount/total)*100).toFixed(1):'0',
+    };
+  }, [demoRows]);
+
   useEffect(() => {
     if (params._print === '1') document.body.classList.add('print-mode');
   }, []);
@@ -817,7 +922,7 @@ function App() {
     if (isPrint) return null;
     return (
       <div className="toolbar">
-        <span className="toolbar-title">Program Revenue</span>
+        <span className="toolbar-title">Programs</span>
         <div className="divider" />
         <label>Start<input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} /></label>
         <label>End<input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} /></label>
@@ -944,7 +1049,7 @@ function App() {
             {logoUrl && <img src={logoUrl} alt="" className="report-header-logo" onError={e => e.target.style.display='none'} />}
             <div>
               <div className="org-label">{orgName}</div>
-              <div className="title">Program Revenue</div>
+              <div className="title">Programs</div>
             </div>
           </div>
           <div className="report-header-right">
@@ -952,6 +1057,26 @@ function App() {
           </div>
         </div>
 
+        {/* Tabs */}
+        {!isPrint && (
+          <div className="tabs">
+            <div className={'tab'+(tab==='revenue'?' active':'')} onClick={()=>switchTab('revenue')}>
+              Revenue
+            </div>
+            {participantsEnabled ? (
+              <div className={'tab'+(tab==='participants'?' active':'')} onClick={()=>switchTab('participants')}>
+                Participants
+                {demoRows && <span className="tab-badge" style={{background:'#dcfce7',color:'#166534'}}>{demoRows.length}</span>}
+              </div>
+            ) : (
+              <div className="tab" style={{opacity:0.5,cursor:'default'}}>
+                Participants <span className="tab-lock">🔒</span>
+              </div>
+            )}
+          </div>
+        )}
+
+        {(tab === 'revenue' || isPrint) && (<React.Fragment>
         {/* Info blurb */}
         <div className="report-blurb">
           <strong>How revenue is calculated:</strong> Revenue is transaction-based. <em>Received</em> is cash actually collected — succeeded payments plus any canceled-status payment that is the sole or partial collection on an item (reversed or retried charges already covered by a successful payment are excluded, so nothing is double-counted); for payment plans, only paid installments count. <em>Charged</em> is the invoiced amount after discounts. <em>Outstanding</em> is the balance still collectible — unpaid, un-waived installments for payment-plan registrations, or the uncollected balance otherwise; waived installments and canceled registrations are excluded. <em>Net Rev</em> = Received minus Refunds. <em>Fill %</em> compares filled seats to capacity (a section registration counts across all of its sessions; session-based programs sum each session's bookings).
@@ -1243,8 +1368,80 @@ function App() {
           </div>
         )}
 
+        </React.Fragment>)}
+
+        {/* ── Participants Tab ── */}
+        {tab === 'participants' && participantsEnabled && (
+          <React.Fragment>
+            {demoLoading && <div style={{textAlign:'center',padding:40,color:'#6b7280'}}>Loading participant demographics…</div>}
+            {demoError && <div style={{textAlign:'center',padding:40,color:'#dc2626'}}>Error: {demoError}</div>}
+            {demoStats && (<React.Fragment>
+              <div className="kpi-row">
+                <div className="kpi" style={{'--accent':'#6366f1'}}><div className="kpi-label">Total Enrollments</div><div className="kpi-val">{demoStats.total.toLocaleString()}</div><div className="kpi-sub">{demoStats.programs.length} programs</div></div>
+                <div className="kpi" style={{'--accent':'#059669'}}><div className="kpi-label">Unique Participants</div><div className="kpi-val">{demoStats.uniqueParticipants.toLocaleString()}</div><div className="kpi-sub">{demoStats.uniqueHouseholds.toLocaleString()} households</div></div>
+                {demoStats.avgAge!==null&&<div className="kpi" style={{'--accent':'#d97706'}}><div className="kpi-label">Avg Age</div><div className="kpi-val">{demoStats.avgAge}</div><div className="kpi-sub">median {demoStats.medAge}</div></div>}
+                <div className="kpi" style={{'--accent':'#2563eb'}}><div className="kpi-label">Youth / Adult / Senior</div><div className="kpi-val">{demoStats.youthPct}% / {demoStats.adultPct}% / {demoStats.seniorPct}%</div><div className="kpi-sub">{demoStats.youth.toLocaleString()} / {demoStats.adult.toLocaleString()} / {demoStats.senior.toLocaleString()}{demoStats.unknown>0?' ('+demoStats.unknown+' unknown)':''}</div></div>
+                {demoStats.ftCount>0&&<div className="kpi" style={{'--accent':'#10b981'}}><div className="kpi-label">Fast Track</div><div className="kpi-val">{demoStats.ftPct}%</div><div className="kpi-sub">{demoStats.ftCount.toLocaleString()} via FT</div></div>}
+              </div>
+
+              {demoStats.genderData.length>0 && (
+                <div className="obs">
+                  <div className="obs-title">Participant Profile</div>
+                  <div className="obs-grid">
+                    <div><strong style={{color:'#065f46'}}>Gender</strong> {demoStats.genderData.map(g => g.label+' '+((g.count/demoStats.total)*100).toFixed(0)+'%').join(', ')}</div>
+                    {demoStats.topCities.length>0&&<div><strong style={{color:'#065f46'}}>Top Cities</strong> {demoStats.topCities.slice(0,5).map(c => c.city+' ('+c.count+')').join(', ')}</div>}
+                    {demoStats.gradeData.length>0&&<div><strong style={{color:'#065f46'}}>Top Grades</strong> {demoStats.gradeData.slice(0,6).map(g => g.label+': '+g.count).join(', ')}</div>}
+                    {demoStats.bracketData.filter(b=>b.count>0).length>0&&<div><strong style={{color:'#065f46'}}>Age Distribution</strong> {demoStats.bracketData.filter(b=>b.count>0).map(b => b.label+': '+b.count).join(', ')}</div>}
+                  </div>
+                </div>
+              )}
+
+              {/* Per-program demographics table */}
+              <div style={{marginBottom:8,fontWeight:700,fontSize:12,textTransform:'uppercase',letterSpacing:'.04em',color:'#374151'}}>Program Demographics Breakdown</div>
+              <div className="table-scroll">
+              <table className="demo-table">
+                <thead><tr>
+                  <th className="left">Program</th>
+                  <th>Enrolled</th>
+                  <th>Avg Age</th>
+                  <th>Youth %</th>
+                  <th>Adult %</th>
+                  <th>Senior %</th>
+                  <th>Unknown</th>
+                  <th>Households</th>
+                  <th>Gender Split</th>
+                </tr></thead>
+                <tbody>
+                  {demoStats.programs.map((p,i) => {
+                    var totalKnown = p.youth+p.adult+p.senior;
+                    var yPct = totalKnown>0?((p.youth/totalKnown)*100).toFixed(0):'—';
+                    var aPct = totalKnown>0?((p.adult/totalKnown)*100).toFixed(0):'—';
+                    var sPct = totalKnown>0?((p.senior/totalKnown)*100).toFixed(0):'—';
+                    var topG = Object.keys(p.genders).sort((a,b)=>p.genders[b]-p.genders[a]);
+                    var gStr = topG.slice(0,2).map(g=>g+' '+((p.genders[g]/p.n)*100).toFixed(0)+'%').join(', ');
+                    return (
+                      <tr key={i}>
+                        <td className="left">{p.name}</td>
+                        <td>{p.n}</td>
+                        <td>{p.avgAge!==null?p.avgAge:'—'}</td>
+                        <td>{yPct}{yPct!=='—'?'%':''}</td>
+                        <td>{aPct}{aPct!=='—'?'%':''}</td>
+                        <td>{sPct}{sPct!=='—'?'%':''}</td>
+                        <td style={{color:'#aaa'}}>{p.unknown||'—'}</td>
+                        <td>{p.hhs}</td>
+                        <td style={{fontSize:10.5}}>{gStr||'—'}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+              </div>
+            </React.Fragment>)}
+          </React.Fragment>
+        )}
+
         <div className="report-footer">
-          <span>{orgName} — Program Revenue</span>
+          <span>{orgName} — Programs</span>
           <span>Run Date/Time: {runDate}</span>
         </div>
 

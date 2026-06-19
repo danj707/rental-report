@@ -436,7 +436,7 @@ const ORGS = {
   },
 };
 
-const REPORT_TYPES = ["facility", "gl", "historic", "programs", "roster", "overview", "products", "memberships", "court-utilization", "calendar", "fasttrack", "users"];
+const REPORT_TYPES = ["facility", "gl", "historic", "programs", "roster", "overview", "products", "memberships", "court-utilization", "calendar", "fasttrack", "users", "program-demographics"];
 
 // ── Shared Metabase UUIDs (one query per report type, parameterized by org_id) ──
 // When a report type has an entry here, the server uses this UUID + passes the
@@ -453,11 +453,12 @@ const SHARED_UUIDS = {
   products: "b9678f5f-b5fb-48f7-96da-f22a1b4e8d8a",
   users: "0aa0f55d-738f-4df7-837a-eb21f3ee1793",
   gl: "4374b344-06a7-42c5-996c-e1845bda3ff1",
+  "program-demographics": "67b77142-19ab-49bd-9d4b-1db8223a3616",
 };
 
 // Report types that are valid system-wide but should NOT be offered in the
 // dashboard "+ Add report" flow (e.g. not yet ready for self-serve onboarding).
-const NON_ADDABLE_REPORTS = new Set(["overview"]);
+const NON_ADDABLE_REPORTS = new Set(["overview", "program-demographics"]);
 
 // ── Dynamic orgs (added via dashboard UI) ────────────────────────────
 // Loaded at startup and merged into ORGS; also updated at runtime.
@@ -2238,9 +2239,21 @@ app.get("/:org/historic", (req, res) => {
 });
 
 app.get("/:org/programs", (req, res) => {
-  if (!ORGS[req.params.org]) return res.status(404).send("Unknown org");
-  logEvent(req.params.org, "programs", "view", req.ip);
-  res.sendFile(path.join(__dirname, "public", "programs.html"));
+  const slug = req.params.org;
+  const org  = ORGS[slug];
+  if (!org) return res.status(404).send("Unknown org");
+  logEvent(slug, "programs", "view", req.ip);
+  const PARTICIPANTS_ENABLED = new Set(["westsacramento"]);
+  const orgConfig = {
+    slug,
+    displayName: org.displayName || (slug.charAt(0).toUpperCase() + slug.slice(1) + " Parks & Recreation"),
+    logoUrl: org.logoUrl || "",
+    token: org.token || "",
+    participantsTab: PARTICIPANTS_ENABLED.has(slug),
+  };
+  const html = require("fs").readFileSync(path.join(__dirname, "public", "programs.html"), "utf8");
+  const inject = `<script>window.ORG_CONFIG=${JSON.stringify(orgConfig)};</script>`;
+  res.type("html").send(html.replace("</head>", inject + "</head>"));
 });
 
 app.get("/:org/roster", (req, res) => {
@@ -4843,6 +4856,11 @@ app.get("/", (req, res) => {
     // Newest first. Add a new entry at the TOP for every change we ship.
     // History below back-filled from the GitHub commit log.
     const UPDATES = [
+      { date: '2026-06-19', title: '\uD83D\uDC65 Programs Report: Participants Demographics Tab', items: [
+        '\u2728 PARTICIPANTS TAB \u2014 New tab on Programs report showing per-program demographic breakdown: enrollment counts, avg age, Youth/Adult/Senior percentages, gender split, household count. Lazy-loaded on tab click from a dedicated Metabase query.',
+        '\uD83D\uDCCA SUMMARY KPIs \u2014 Total enrollments, unique participants, unique households, avg/median age, age bracket distribution, Fast Track enrollment percentage.',
+        '\uD83D\uDD12 ROLLOUT CONTROL \u2014 Participants tab enabled per-org via server-side flag (PARTICIPANTS_ENABLED set). Currently live for West Sacramento; locked with \uD83D\uDD12 badge for other orgs.',
+      ]},
       { date: '2026-06-19', title: '\uD83C\uDF31 Fast Track First-Touch Acquisition Analytics', items: [
         '\u2728 FIRST-TOUCH ACQUISITION \u2014 New section on Community Intelligence FT tab identifies households whose very first booking was via Fast Track. These are net-new customers FT brought through the door, not existing users choosing convenience.',
         '\uD83D\uDCB8 FT vs NON-FT SPEND \u2014 Side-by-side average household spend comparison between Fast Track users and non-FT users. Answers the question: are FT-acquired customers higher-value?',
