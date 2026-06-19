@@ -182,23 +182,23 @@
     }
     .pulse-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-      gap: 10px;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
     }
     .pulse-card {
       background: linear-gradient(135deg, #312e81 0%, #4338ca 100%);
-      border-radius: 10px;
-      padding: 14px 16px;
+      border-radius: 8px;
+      padding: 10px 12px;
       text-align: center;
     }
-    .pulse-card-icon { font-size: 18px; margin-bottom: 4px; }
-    .pulse-card-val { font-size: 22px; font-weight: 700; color: #fff; line-height: 1.1; }
-    .pulse-card-label { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.8px; color: #a5b4fc; margin-top: 3px; }
-    .pulse-card-sub { font-size: 10px; color: rgba(165,180,252,0.65); margin-top: 2px; }
+    .pulse-card-icon { font-size: 14px; margin-bottom: 2px; }
+    .pulse-card-val { font-size: 17px; font-weight: 700; color: #fff; line-height: 1.1; }
+    .pulse-card-label { font-size: 9px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.7px; color: #a5b4fc; margin-top: 2px; }
+    .pulse-card-sub { font-size: 9px; color: rgba(165,180,252,0.65); margin-top: 1px; }
     @media (max-width: 480px) {
       .pulse-panel { padding: 12px 16px 0; }
-      .pulse-grid { grid-template-columns: repeat(2, 1fr); gap: 8px; }
-      .pulse-card-val { font-size: 18px; }
+      .pulse-grid { grid-template-columns: repeat(2, 1fr); gap: 6px; }
+      .pulse-card-val { font-size: 15px; }
     }
 
     .card-right {
@@ -367,27 +367,20 @@
     '</div>',
   ].join('');
 
-  /* ── Metrics bar ── */
-  (function() {
-    var m = cfg.metrics;
-    if (!m) return;
-    var items = [
-      { value: m.views,       label: 'Views (30d)' },
-      { value: m.exports,     label: 'Exports (30d)' },
-      { value: m.aiInsights,  label: 'AI Insights' },
-    ];
-    document.getElementById('metrics-bar').innerHTML = '<div class="metrics-bar-inner">' + items.map(function(it) {
-      return '<div class="metric-item">'
-        + '<div class="metric-value">' + (it.value || 0) + '</div>'
-        + '<div class="metric-label">' + it.label + '</div>'
-        + '</div>';
-    }).join('') + '</div>';
-  })();
+  /* ── Metrics bar — admin-only, hidden on org landing page ── */
+  /* Views/Exports/AI Insights are surfaced on the admin dashboard instead */
 
   /* ── Executive Pulse ── */
   (function() {
     var p = cfg.pulse;
     if (!p || !p.items || p.items.length === 0) return;
+    // Priority: revenue, refunds, enrollments, then products or households
+    var priority = ['revenue', 'refunds', 'enrollments', 'products', 'households', 'bookings'];
+    var sorted = p.items.slice().sort(function(a, b) {
+      var ai = priority.indexOf(a.key); var bi = priority.indexOf(b.key);
+      return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
+    });
+    var items = sorted.slice(0, 4);
     var panel = document.getElementById('pulse-panel');
     var grid = document.getElementById('pulse-grid');
     var ts = document.getElementById('pulse-ts');
@@ -396,7 +389,7 @@
       var d = new Date(p.generated);
       ts.textContent = 'Updated ' + d.toLocaleTimeString([], {hour:'numeric',minute:'2-digit'});
     }
-    grid.innerHTML = p.items.map(function(it) {
+    grid.innerHTML = items.map(function(it) {
       var deltaHtml = '';
       if (it.delta) {
         var color = it.direction === 'up' ? '#4ade80' : it.direction === 'down' ? '#f87171' : '#a5b4fc';
