@@ -645,12 +645,15 @@ function App() {
     var programs = Object.keys(progMap).map(name => {
       var p=progMap[name]; var aa=p.ages; var aAge=aa.length>0?Math.round(aa.reduce((s,a)=>s+a,0)/aa.length):null;
       var y=aa.filter(a=>a<18).length, ad=aa.filter(a=>a>=18&&a<55).length, sn=aa.filter(a=>a>=55).length, unk=p.n-aa.length;
-      return {name,n:p.n,avgAge:aAge,youth:y,adult:ad,senior:sn,unknown:unk,hhs:p.hhs.size,genders:p.g,ft:p.ft};
+      var gM=0,gF=0,gNB=0,gU=0; Object.entries(p.g).forEach(function(e){var k=e[0].toLowerCase(),v=e[1];if(k==='male'||k==='m')gM+=v;else if(k==='female'||k==='f')gF+=v;else if(k==='unknown'||k==='')gU+=v;else gNB+=v;});
+      return {name,n:p.n,avgAge:aAge,youth:y,adult:ad,senior:sn,unknown:unk,hhs:p.hhs.size,genders:p.g,ft:p.ft,gMale:gM,gFemale:gF,gNB:gNB,gUnk:gU};
     }).sort((a,b)=>b.n-a.n);
     var topCities = Object.keys(cityMap).map(c=>({city:c,count:cityMap[c]})).sort((a,b)=>b.count-a.count).slice(0,10);
     var genderData = Object.keys(gMap).map(g=>({label:g,count:gMap[g]})).sort((a,b)=>b.count-a.count);
     var bracketData = Object.keys(brackets).map(k=>({label:k,count:brackets[k]}));
     var gradeData = Object.keys(grMap).map(g=>({label:g,count:grMap[g]})).sort((a,b)=>b.count-a.count).slice(0,12);
+    var gMaleAll=0,gFemaleAll=0,gNBAll=0,gUnkAll=0;
+    Object.entries(gMap).forEach(function(e){var k=e[0].toLowerCase(),v=e[1];if(k==='male'||k==='m')gMaleAll+=v;else if(k==='female'||k==='f')gFemaleAll+=v;else if(k==='unknown'||k==='')gUnkAll+=v;else gNBAll+=v;});
     return {
       total,uniqueParticipants:partSet.size,uniqueHouseholds:hhSet.size,
       avgAge,medAge,youth,adult,senior,unknown:total-ages.length,
@@ -658,6 +661,7 @@ function App() {
       adultPct:ages.length>0?((adult/ages.length)*100).toFixed(1):'0',
       seniorPct:ages.length>0?((senior/ages.length)*100).toFixed(1):'0',
       genderData,bracketData,gradeData,topCities,programs,
+      gMaleAll,gFemaleAll,gNBAll,gUnkAll,
       ftCount,ftPct:total>0?((ftCount/total)*100).toFixed(1):'0',
     };
   }, [demoRows]);
@@ -1384,11 +1388,11 @@ function App() {
                 {demoStats.ftCount>0&&<div className="kpi" style={{'--accent':'#10b981'}}><div className="kpi-label">Fast Track</div><div className="kpi-val">{demoStats.ftPct}%</div><div className="kpi-sub">{demoStats.ftCount.toLocaleString()} via FT</div></div>}
               </div>
 
-              {demoStats.genderData.length>0 && (
+              {(demoStats.gMaleAll>0||demoStats.gFemaleAll>0) && (
                 <div className="obs">
                   <div className="obs-title">Participant Profile</div>
                   <div className="obs-grid">
-                    <div><strong style={{color:'#065f46'}}>Gender</strong> {demoStats.genderData.map(g => g.label+' '+((g.count/demoStats.total)*100).toFixed(0)+'%').join(', ')}</div>
+                    <div><strong style={{color:'#065f46'}}>Gender</strong> Male {demoStats.gMaleAll.toLocaleString()} ({demoStats.total>0?((demoStats.gMaleAll/demoStats.total)*100).toFixed(1):'0'}%), Female {demoStats.gFemaleAll.toLocaleString()} ({demoStats.total>0?((demoStats.gFemaleAll/demoStats.total)*100).toFixed(1):'0'}%){demoStats.gNBAll>0?', Non-Binary/Other '+demoStats.gNBAll:''}{demoStats.gUnkAll>0?', Unknown '+demoStats.gUnkAll.toLocaleString():''}</div>
                     {demoStats.topCities.length>0&&<div><strong style={{color:'#065f46'}}>Top Cities</strong> {demoStats.topCities.slice(0,5).map(c => c.city+' ('+c.count+')').join(', ')}</div>}
                     {demoStats.gradeData.length>0&&<div><strong style={{color:'#065f46'}}>Top Grades</strong> {demoStats.gradeData.slice(0,6).map(g => g.label+': '+g.count).join(', ')}</div>}
                     {demoStats.bracketData.filter(b=>b.count>0).length>0&&<div><strong style={{color:'#065f46'}}>Age Distribution</strong> {demoStats.bracketData.filter(b=>b.count>0).map(b => b.label+': '+b.count).join(', ')}</div>}
@@ -1397,7 +1401,14 @@ function App() {
               )}
 
               {/* Per-program demographics table */}
-              <div style={{marginBottom:8,fontWeight:700,fontSize:12,textTransform:'uppercase',letterSpacing:'.04em',color:'#374151'}}>Program Demographics Breakdown</div>
+              {(() => {
+                var q = search.trim().toLowerCase();
+                var progs = q ? demoStats.programs.filter(p => p.name.toLowerCase().includes(q)) : demoStats.programs;
+                return (<React.Fragment>
+              <div style={{marginBottom:8,fontWeight:700,fontSize:12,textTransform:'uppercase',letterSpacing:'.04em',color:'#374151'}}>
+                Program Demographics Breakdown
+                {q && <span style={{fontWeight:400,color:'#9ca3af',textTransform:'none',marginLeft:8}}>({progs.length} of {demoStats.programs.length} programs)</span>}
+              </div>
               <div className="table-scroll">
               <table className="demo-table">
                 <thead><tr>
@@ -1407,18 +1418,19 @@ function App() {
                   <th>Youth %</th>
                   <th>Adult %</th>
                   <th>Senior %</th>
+                  <th style={{color:'#2563eb'}}>Male</th>
+                  <th style={{color:'#db2777'}}>Female</th>
+                  <th style={{color:'#7c3aed'}}>NB/Other</th>
                   <th>Unknown</th>
-                  <th>Households</th>
-                  <th>Gender Split</th>
+                  <th>HHs</th>
                 </tr></thead>
                 <tbody>
-                  {demoStats.programs.map((p,i) => {
+                  {progs.map((p,i) => {
                     var totalKnown = p.youth+p.adult+p.senior;
                     var yPct = totalKnown>0?((p.youth/totalKnown)*100).toFixed(0):'—';
                     var aPct = totalKnown>0?((p.adult/totalKnown)*100).toFixed(0):'—';
                     var sPct = totalKnown>0?((p.senior/totalKnown)*100).toFixed(0):'—';
-                    var topG = Object.keys(p.genders).sort((a,b)=>p.genders[b]-p.genders[a]);
-                    var gStr = topG.slice(0,2).map(g=>g+' '+((p.genders[g]/p.n)*100).toFixed(0)+'%').join(', ');
+                    var gKnown = p.gMale+p.gFemale+p.gNB;
                     return (
                       <tr key={i}>
                         <td className="left">{p.name}</td>
@@ -1427,15 +1439,19 @@ function App() {
                         <td>{yPct}{yPct!=='—'?'%':''}</td>
                         <td>{aPct}{aPct!=='—'?'%':''}</td>
                         <td>{sPct}{sPct!=='—'?'%':''}</td>
-                        <td style={{color:'#aaa'}}>{p.unknown||'—'}</td>
+                        <td style={{color:'#2563eb'}}>{p.gMale>0?p.gMale+' ('+(gKnown>0?((p.gMale/p.n)*100).toFixed(0):0)+'%)':'—'}</td>
+                        <td style={{color:'#db2777'}}>{p.gFemale>0?p.gFemale+' ('+(gKnown>0?((p.gFemale/p.n)*100).toFixed(0):0)+'%)':'—'}</td>
+                        <td style={{color:'#7c3aed'}}>{p.gNB>0?p.gNB+' ('+((p.gNB/p.n)*100).toFixed(0)+'%)':'—'}</td>
+                        <td style={{color:'#aaa'}}>{p.gUnk>0?p.gUnk:'—'}</td>
                         <td>{p.hhs}</td>
-                        <td style={{fontSize:10.5}}>{gStr||'—'}</td>
                       </tr>
                     );
                   })}
                 </tbody>
               </table>
               </div>
+              </React.Fragment>);
+              })()}
             </React.Fragment>)}
           </React.Fragment>
         )}
