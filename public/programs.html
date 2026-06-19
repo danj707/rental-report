@@ -684,6 +684,45 @@ function App() {
     };
   }, [demoRows]);
 
+  const fDemo = useMemo(() => {
+    if (!demoStats) return null;
+    var q = search.trim().toLowerCase();
+    var progs = q ? demoStats.programs.filter(p => p.name.toLowerCase().includes(q)) : demoStats.programs;
+    if (progs === demoStats.programs && !q) return demoStats; // no filter, use full stats
+    var t=0,y=0,ad=0,sn=0,unk=0,gM=0,gF=0,gNB=0,gU=0,ft=0,hhs=new Set(),parts=new Set();
+    // Re-aggregate from filtered demoRows for accurate unique counts
+    var fRows = q ? (demoRows||[]).filter(r => {var p=(r['Program']||'').toLowerCase();return p.includes(q);}) : demoRows||[];
+    fRows.forEach(r => {
+      t++;
+      var pid=r['Participant ID']||''; if(pid)parts.add(pid);
+      var hh=r['Household ID']||''; if(hh)hhs.add(hh);
+      var age=parseInt(r['Age']); if(age>0&&age<120){if(age<18)y++;else if(age<55)ad++;else sn++;}else{unk++;}
+      var gen=(r['Gender']||'').trim().toLowerCase();
+      if(gen==='male'||gen==='m')gM++;else if(gen==='female'||gen==='f')gF++;else if(gen===''||gen==='unknown')gU++;else gNB++;
+      if(r['Is FT']===true||r['Is FT']==='true')ft++;
+    });
+    var ages=y+ad+sn;
+    var brackets={'0-5':0,'6-12':0,'13-17':0,'18-25':0,'26-35':0,'36-55':0,'55+':0};
+    fRows.forEach(r=>{var a=parseInt(r['Age']);if(a>0&&a<120){if(a<=5)brackets['0-5']++;else if(a<=12)brackets['6-12']++;else if(a<=17)brackets['13-17']++;else if(a<=25)brackets['18-25']++;else if(a<=35)brackets['26-35']++;else if(a<=55)brackets['36-55']++;else brackets['55+']++;}});
+    var bracketData=Object.keys(brackets).map(k=>({label:k,count:brackets[k]}));
+    var grMap={},cityMap={};
+    fRows.forEach(r=>{var g=(r['Grade']||'').trim();if(g)grMap[g]=(grMap[g]||0)+1;var c=(r['City']||'').trim();if(c)cityMap[c]=(cityMap[c]||0)+1;});
+    var avgAge=ages>0?Math.round(fRows.reduce((s,r)=>{var a=parseInt(r['Age']);return a>0&&a<120?s+a:s;},0)/ages):null;
+    var medAge=ages>0?(a=>{a.sort((x,y)=>x-y);return a[Math.floor(a.length/2)];})(fRows.map(r=>parseInt(r['Age'])).filter(a=>a>0&&a<120)):null;
+    return Object.assign({}, demoStats, {
+      total:t, uniqueParticipants:parts.size, uniqueHouseholds:hhs.size,
+      avgAge:avgAge, medAge:medAge, youth:y, adult:ad, senior:sn, unknown:unk,
+      youthPct:ages>0?((y/ages)*100).toFixed(1):'0',
+      adultPct:ages>0?((ad/ages)*100).toFixed(1):'0',
+      seniorPct:ages>0?((sn/ages)*100).toFixed(1):'0',
+      gMaleAll:gM, gFemaleAll:gF, gNBAll:gNB, gUnkAll:gU,
+      bracketData:bracketData,
+      topCities:Object.keys(cityMap).map(c=>({city:c,count:cityMap[c]})).sort((a,b)=>b.count-a.count).slice(0,10),
+      gradeData:Object.keys(grMap).map(g=>({label:g,count:grMap[g]})).sort((a,b)=>b.count-a.count).slice(0,12),
+      programs:progs, ftCount:ft, ftPct:t>0?((ft/t)*100).toFixed(1):'0',
+    });
+  }, [demoStats, demoRows, search]);
+
   useEffect(() => {
     if (params._print === '1') document.body.classList.add('print-mode');
   }, []);
@@ -1397,22 +1436,22 @@ function App() {
           <React.Fragment>
             {demoLoading && <JuiceLoader messages={['Counting heads\u2026','Crunching ages\u2026','Sorting by program\u2026','Mapping demographics\u2026','Almost there\u2026']} />}
             {demoError && <div style={{textAlign:'center',padding:40,color:'#dc2626'}}>Error: {demoError}</div>}
-            {demoStats && (<React.Fragment>
+            {fDemo && (<React.Fragment>
               <div className="summary-cards">
-                <div className="summary-card"><div className="card-label">Total Enrollments</div><div className="card-value">{demoStats.total.toLocaleString()}</div><div className="card-sub">{demoStats.programs.length} programs</div></div>
-                <div className="summary-card"><div className="card-label">Unique Participants</div><div className="card-value">{demoStats.uniqueParticipants.toLocaleString()}</div><div className="card-sub">{demoStats.uniqueHouseholds.toLocaleString()} households</div></div>
-                {demoStats.avgAge!==null&&<div className="summary-card"><div className="card-label">Avg Age</div><div className="card-value">{demoStats.avgAge}</div><div className="card-sub">median {demoStats.medAge}</div></div>}
-                <div className="summary-card"><div className="card-label">Youth / Adult / Senior</div><div className="card-value">{demoStats.youthPct}% / {demoStats.adultPct}% / {demoStats.seniorPct}%</div><div className="card-sub">{demoStats.youth.toLocaleString()} / {demoStats.adult.toLocaleString()} / {demoStats.senior.toLocaleString()}{demoStats.unknown>0?' ('+demoStats.unknown+' unk)':''}</div></div>
-                {demoStats.ftCount>0&&<div className="summary-card"><div className="card-label">Fast Track</div><div className="card-value">{demoStats.ftPct}%</div><div className="card-sub">{demoStats.ftCount.toLocaleString()} via FT</div></div>}
+                <div className="summary-card"><div className="card-label">Total Enrollments</div><div className="card-value">{fDemo.total.toLocaleString()}</div><div className="card-sub">{fDemo.programs.length} programs</div></div>
+                <div className="summary-card"><div className="card-label">Unique Participants</div><div className="card-value">{fDemo.uniqueParticipants.toLocaleString()}</div><div className="card-sub">{fDemo.uniqueHouseholds.toLocaleString()} households</div></div>
+                {fDemo.avgAge!==null&&<div className="summary-card"><div className="card-label">Avg Age</div><div className="card-value">{fDemo.avgAge}</div><div className="card-sub">median {fDemo.medAge}</div></div>}
+                <div className="summary-card"><div className="card-label">Youth / Adult / Senior</div><div className="card-value">{fDemo.youthPct}% / {fDemo.adultPct}% / {fDemo.seniorPct}%</div><div className="card-sub">{fDemo.youth.toLocaleString()} / {fDemo.adult.toLocaleString()} / {fDemo.senior.toLocaleString()}{fDemo.unknown>0?' ('+fDemo.unknown+' unk)':''}</div></div>
+                {fDemo.ftCount>0&&<div className="summary-card"><div className="card-label">Fast Track</div><div className="card-value">{fDemo.ftPct}%</div><div className="card-sub">{fDemo.ftCount.toLocaleString()} via FT</div></div>}
               </div>
 
-              {(demoStats.gMaleAll>0||demoStats.gFemaleAll>0||demoStats.bracketData.some(b=>b.count>0)) && (
+              {(fDemo.gMaleAll>0||fDemo.gFemaleAll>0||fDemo.bracketData.some(b=>b.count>0)) && (
                 <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:14,marginBottom:16}}>
                   {/* Gender bar */}
                   <div style={{background:'#fff',border:'1px solid #e5e7eb',borderRadius:8,padding:14}}>
                     <div style={{fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:'.5px',color:'#6b7280',marginBottom:10}}>Gender Breakdown</div>
                     {(() => {
-                      var t=demoStats.total, m=demoStats.gMaleAll, f=demoStats.gFemaleAll, nb=demoStats.gNBAll, u=demoStats.gUnkAll;
+                      var t=fDemo.total, m=fDemo.gMaleAll, f=fDemo.gFemaleAll, nb=fDemo.gNBAll, u=fDemo.gUnkAll;
                       var segs=[{label:'Male',val:m,color:'#2563eb'},{label:'Female',val:f,color:'#db2777'},{label:'NB/Other',val:nb,color:'#7c3aed'},{label:'Unknown',val:u,color:'#d1d5db'}].filter(s=>s.val>0);
                       return (<div>
                         <div style={{display:'flex',height:24,borderRadius:6,overflow:'hidden',marginBottom:8}}>
@@ -1428,7 +1467,7 @@ function App() {
                   <div style={{background:'#fff',border:'1px solid #e5e7eb',borderRadius:8,padding:14}}>
                     <div style={{fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:'.5px',color:'#6b7280',marginBottom:10}}>Age Distribution</div>
                     {(() => {
-                      var bars=demoStats.bracketData.filter(b=>b.count>0);
+                      var bars=fDemo.bracketData.filter(b=>b.count>0);
                       var max=Math.max.apply(null,bars.map(b=>b.count));
                       return bars.map((b,i) => (
                         <div key={i} style={{display:'flex',alignItems:'center',gap:8,marginBottom:4}}>
@@ -1442,11 +1481,11 @@ function App() {
                     })()}
                   </div>
                   {/* Top Cities */}
-                  {demoStats.topCities.length>0 && (
+                  {fDemo.topCities.length>0 && (
                     <div style={{background:'#fff',border:'1px solid #e5e7eb',borderRadius:8,padding:14}}>
                       <div style={{fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:'.5px',color:'#6b7280',marginBottom:10}}>Top Cities</div>
                       {(() => {
-                        var cities=demoStats.topCities.slice(0,8);
+                        var cities=fDemo.topCities.slice(0,8);
                         var max=cities[0]?cities[0].count:1;
                         return cities.map((c,i) => (
                           <div key={i} style={{display:'flex',alignItems:'center',gap:8,marginBottom:3}}>
@@ -1461,11 +1500,11 @@ function App() {
                     </div>
                   )}
                   {/* Top Grades */}
-                  {demoStats.gradeData.length>0 && (
+                  {fDemo.gradeData.length>0 && (
                     <div style={{background:'#fff',border:'1px solid #e5e7eb',borderRadius:8,padding:14}}>
                       <div style={{fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:'.5px',color:'#6b7280',marginBottom:10}}>Grade Distribution</div>
                       <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
-                        {demoStats.gradeData.slice(0,12).map((g,i) => (
+                        {fDemo.gradeData.slice(0,12).map((g,i) => (
                           <span key={i} style={{padding:'4px 10px',background:'#f0fdf4',border:'1px solid #bbf7d0',borderRadius:12,fontSize:11,color:'#166534'}}>
                             {g.label} <strong>{g.count}</strong>
                           </span>
@@ -1479,7 +1518,7 @@ function App() {
               {/* Per-program demographics table with section drill-down */}
               {(() => {
                 var q = search.trim().toLowerCase();
-                var progs = q ? demoStats.programs.filter(p => p.name.toLowerCase().includes(q)) : demoStats.programs;
+                var progs = fDemo.programs;
                 var dToggle = (name) => setDemoOpen(prev => { var n = new Set(prev); n.has(name) ? n.delete(name) : n.add(name); return n; });
                 return (<React.Fragment>
               <div style={{marginBottom:8,fontWeight:700,fontSize:12,textTransform:'uppercase',letterSpacing:'.04em',color:'#374151'}}>
