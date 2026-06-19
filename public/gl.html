@@ -159,6 +159,8 @@
     .summary-card.slate  .card-value { color: #334155; }
     .summary-card.teal   { border-left-color: #0d9488; }
     .summary-card.teal   .card-value { color: #0f766e; }
+    .summary-card.purple { border-left-color: #9333ea; }
+    .summary-card.purple .card-value { color: #7e22ce; }
 
     /* ── Table ── */
     .table-wrapper { overflow-x: auto; }
@@ -486,7 +488,7 @@ function sumField(rows, field) {
 
 // ── Re-aggregate desk-split rows back to one row per GL code ──────────
 const GL_MONEY_FIELDS = [
-  'ccPayments','cashPayments','checkPayments','freePayments','orgCreditPayments',
+  'ccPayments','cashPayments','checkPayments','freePayments','orgCreditPayments','scholarshipPayments',
   'totalPayments','numPayments','ccRefunds','cashRefunds','checkRefunds',
   'orgCreditRefunds','otherRefunds','totalRefunds','numRefunds','netAmount'
 ];
@@ -546,6 +548,7 @@ function normalizeRow(raw) {
     checkPayments:      pf(raw['Check Payments']),
     freePayments:       pf(raw['Free Payments']),
     orgCreditPayments:  pf(raw['Organization Credit Payments']),
+    scholarshipPayments: pf(raw['Scholarship Payments']),
     totalPayments:      pf(raw['Total Payments']),
     numPayments:        pf(raw['Number of Payments']),
 
@@ -626,6 +629,7 @@ function GlChart({ rows, viewMode, hasCCSplit }) {
             ['Check',        sumField(rows, 'checkPayments'),       '#475569'],
             ['Free',         sumField(rows, 'freePayments'),        '#10b981'],
             ['Org Credit',   sumField(rows, 'orgCreditPayments'),   '#3b82f6'],
+            ['Scholarship',  sumField(rows, 'scholarshipPayments'), '#a855f7'],
           ]
         : [
             ['Credit Card',  sumField(rows, 'ccPayments'),          '#4f46e5'],
@@ -633,6 +637,7 @@ function GlChart({ rows, viewMode, hasCCSplit }) {
             ['Check',        sumField(rows, 'checkPayments'),        '#475569'],
             ['Free',         sumField(rows, 'freePayments'),         '#10b981'],
             ['Org Credit',   sumField(rows, 'orgCreditPayments'),    '#3b82f6'],
+            ['Scholarship',  sumField(rows, 'scholarshipPayments'),  '#a855f7'],
           ];
 
       const active = buckets.filter(([, v]) => v > 0);
@@ -908,6 +913,7 @@ function App() {
       cashPayments:       sumField(displayRows, 'cashPayments'),
       checkPayments:      sumField(displayRows, 'checkPayments'),
       orgCreditPayments:  sumField(displayRows, 'orgCreditPayments'),
+      scholarshipPayments: sumField(displayRows, 'scholarshipPayments'),
     };
   }, [displayRows]);
 
@@ -933,6 +939,7 @@ function App() {
       row['Check Payments']        = r.checkPayments;
       row['Free Payments']         = r.freePayments;
       row['Org Credit Pmts']       = r.orgCreditPayments;
+      row['Scholarship Pmts']      = r.scholarshipPayments;
       row['Total Payments']        = r.totalPayments;
       row['# Payments']            = r.numPayments;
       if (hasCCSplit) {
@@ -967,6 +974,7 @@ function App() {
     totalsRow['Check Payments']      = totals.checkPayments;
     totalsRow['Free Payments']       = sumField(displayRows, 'freePayments');
     totalsRow['Org Credit Pmts']     = sumField(displayRows, 'orgCreditPayments');
+    totalsRow['Scholarship Pmts']    = sumField(displayRows, 'scholarshipPayments');
     totalsRow['Total Payments']      = totals.totalPayments;
     totalsRow['# Payments']          = totals.numPayments;
     if (hasCCSplit) {
@@ -1156,6 +1164,7 @@ function App() {
         <SummaryCard label="Cash"  value={totals.cashPayments}  color="amber" />
         <SummaryCard label="Check" value={totals.checkPayments} color="slate" />
         <SummaryCard label="Acct Credit" value={totals.orgCreditPayments} color="teal" />
+        {totals.scholarshipPayments > 0 && <SummaryCard label="Scholarship" value={totals.scholarshipPayments} color="purple" />}
       </div>
     );
   }
@@ -1168,6 +1177,7 @@ function App() {
 
     const hasAcctName = displayRows.some(r => r.accountName);
     const hasAcctNum  = displayRows.some(r => r.accountNumber);
+    const hasScholarship = displayRows.some(r => r.scholarshipPayments > 0);
     const hasLocs     = (showLocations || isPrint) && displayRows.some(r => r.locations && r.locations.trim());
 
     // colspan helpers
@@ -1189,6 +1199,7 @@ function App() {
               <th className="group" colSpan={1}>Check</th>
               {!showRefunds && <th className="group" colSpan={1}>Acct Credit</th>}
               {showRefunds && <th className="group" colSpan={2}>Other Pmts</th>}
+              {hasScholarship && <th className="group" colSpan={1}>Scholarship</th>}
               <th className="group" colSpan={1}>Total Pmts</th>
               <th className="group" colSpan={1}></th>
               <th className={`group${showRefunds ? ' refund-group' : ''}`} colSpan={refundCols}>{showRefunds ? 'Refunds' : 'Total Refunds'}</th>
@@ -1217,6 +1228,7 @@ function App() {
 
               {!showRefunds && <th>Acct Credit</th>}
               {showRefunds && <><th>Free</th><th>Org Credit</th></>}
+              {hasScholarship && <th>Scholarship</th>}
 
               <th>Total Pmts</th>
               <th># Pmts</th>
@@ -1264,10 +1276,12 @@ function App() {
                 <td><MoneyCell v={r.checkPayments} /></td>
 
                 {!showRefunds && <td><MoneyCell v={r.orgCreditPayments} /></td>}
+                {hasScholarship && <td><MoneyCell v={r.scholarshipPayments} /></td>}
                 {showRefunds && (
                   <>
                     <td><MoneyCell v={r.freePayments}      /></td>
                     <td><MoneyCell v={r.orgCreditPayments} /></td>
+                    {hasScholarship && <td><MoneyCell v={r.scholarshipPayments} /></td>}
                   </>
                 )}
 
@@ -1323,10 +1337,12 @@ function App() {
               <td>{fmtMoneyStr(totals.checkPayments)}</td>
 
               {!showRefunds && <td>{fmtMoneyStr(totals.orgCreditPayments)}</td>}
+              {hasScholarship && <td>{fmtMoneyStr(totals.scholarshipPayments)}</td>}
               {showRefunds && (
                 <>
                   <td>{fmtMoneyStr(sumField(displayRows, 'freePayments'))}</td>
                   <td>{fmtMoneyStr(sumField(displayRows, 'orgCreditPayments'))}</td>
+                  {hasScholarship && <td>{fmtMoneyStr(totals.scholarshipPayments)}</td>}
                 </>
               )}
 
