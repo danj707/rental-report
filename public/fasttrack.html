@@ -53,6 +53,16 @@
     .summary-card .sc-value { font-size: 22px; font-weight: 700; }
     .summary-card .sc-sub { font-size: 11px; color: #888; margin-top: 2px; }
 
+    /* ── Tooltips ── */
+    .tip-wrap { position: relative; display: inline-flex; align-items: center; gap: 4px; }
+    .tip-icon { display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; border-radius: 50%; background: #e5e7eb; color: #888; font-size: 9px; font-weight: 700; font-style: normal; cursor: help; flex-shrink: 0; line-height: 1; }
+    .tip-icon:hover { background: #d1d5db; color: #555; }
+    .tip-bubble { display: none; position: absolute; left: 50%; transform: translateX(-50%); top: calc(100% + 6px); z-index: 50; width: 220px; padding: 8px 10px; background: #1f2937; color: #f3f4f6; font-size: 11px; font-weight: 400; line-height: 1.5; border-radius: 6px; text-transform: none; letter-spacing: 0; box-shadow: 0 4px 16px rgba(0,0,0,.2); pointer-events: none; }
+    .tip-bubble::before { content: ''; position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%); border: 5px solid transparent; border-bottom-color: #1f2937; }
+    .tip-wrap:hover .tip-bubble { display: block; }
+    .kpi .tip-wrap { display: inline-flex; }
+    .kpi .tip-bubble { width: 200px; }
+
     /* ── Explainer ── */
     .explainer { background: #fff; border: 1px solid #e0ddd8; border-radius: 8px; padding: 14px 18px; margin-bottom: 20px; font-size: 12px; color: #555; line-height: 1.6; }
     .explainer strong { color: #333; }
@@ -297,12 +307,12 @@ function PipelineTab(props) {
     /* KPI strip */
     React.createElement('div', { className: 'kpi-row' },
       React.createElement('div', { className: 'kpi', style: { '--accent': '#f59e0b' } },
-        React.createElement('div', { className: 'kpi-label' }, 'Pipeline Sections'),
+        React.createElement('div', { className: 'kpi-label' }, React.createElement(KpiLabel, { label: 'Pipeline Sections', tip: 'Sections that are published and visible to the community but registration hasn\u2019t opened yet. FT wishlists can accumulate during this window.' })),
         React.createElement('div', { className: 'kpi-val' }, totalPipeline),
         React.createElement('div', { className: 'kpi-sub' }, 'published, reg not yet open')
       ),
       pipelineSignups > 0 && React.createElement('div', { className: 'kpi', style: { '--accent': '#6366f1' } },
-        React.createElement('div', { className: 'kpi-label' }, 'FT Wishlists'),
+        React.createElement('div', { className: 'kpi-label' }, React.createElement(KpiLabel, { label: 'FT Wishlists', tip: 'Fast Track pre-registrations on pipeline sections \u2014 demand signal before registration opens.' })),
         React.createElement('div', { className: 'kpi-val' }, pipelineSignups.toLocaleString()),
         React.createElement('div', { className: 'kpi-sub' }, pipelinePending + ' pending conversion')
       ),
@@ -409,6 +419,16 @@ function PipelineTab(props) {
         )
       )
     )
+  );
+}
+
+/* ── Tooltip helper for KPI labels ── */
+function KpiLabel(props) {
+  if (!props.tip) return props.label;
+  return React.createElement('span', { className: 'tip-wrap' },
+    props.label, ' ',
+    React.createElement('span', { className: 'tip-icon' }, 'i'),
+    React.createElement('span', { className: 'tip-bubble' }, props.tip)
   );
 }
 
@@ -833,11 +853,11 @@ function App() {
         activeTab === 'overview' && React.createElement(React.Fragment, null,
                 /* Summary cards */
         React.createElement('div', { className: 'summary-cards' },
-          React.createElement(SummaryCard, { label: 'FT Signups', value: fmtInt(totals.ftSignups), color: '#6366f1' }),
-          React.createElement(SummaryCard, { label: 'Converted', value: fmtInt(totals.ftConverted), sub: overallConvPct != null ? overallConvPct + '% conversion' : null, color: '#22c55e' }),
-          React.createElement(SummaryCard, { label: 'Pending', value: fmtInt(totals.ftPending), color: '#f59e0b' }),
-          React.createElement(SummaryCard, { label: 'Total Enrolled', value: fmtInt(totals.totalEnrolled), sub: overallFillPct != null ? overallFillPct + '% fill rate' : null, color: '#3b82f6' }),
-          totals.waitlisted > 0 && React.createElement(SummaryCard, { label: 'Waitlisted', value: fmtInt(totals.waitlisted), color: '#d97706' })
+          React.createElement(SummaryCard, { label: 'FT Signups', value: fmtInt(totals.ftSignups), color: '#6366f1', tip: 'Total Fast Track wishlist entries \u2014 pre-registrations submitted before registration officially opens.' }),
+          React.createElement(SummaryCard, { label: 'Converted', value: fmtInt(totals.ftConverted), sub: overallConvPct != null ? overallConvPct + '% conversion' : null, color: '#22c55e', tip: 'FT signups that completed actual registration once it opened. Conversion rate = converted \u00F7 total signups.' }),
+          React.createElement(SummaryCard, { label: 'Pending', value: fmtInt(totals.ftPending), color: '#f59e0b', tip: 'FT signups still waiting \u2014 they expressed interest but haven\u2019t completed registration yet.' }),
+          React.createElement(SummaryCard, { label: 'Total Enrolled', value: fmtInt(totals.totalEnrolled), sub: overallFillPct != null ? overallFillPct + '% fill rate' : null, color: '#3b82f6', tip: 'All confirmed registrations across all sections \u2014 includes both FT conversions and direct (non-FT) enrollments.' }),
+          totals.waitlisted > 0 && React.createElement(SummaryCard, { label: 'Waitlisted', value: fmtInt(totals.waitlisted), color: '#d97706', tip: 'Participants on the waitlist after a section reached capacity.' })
         ),
 
         /* Explainer */
@@ -1046,11 +1066,11 @@ function App() {
 
             /* Revenue headline KPIs */
             React.createElement('div', { className: 'kpi-row' },
-              React.createElement('div', { className: 'kpi', style: { '--accent': '#059669' } }, React.createElement('div', { className: 'kpi-label' }, 'Total FT Revenue'), React.createElement('div', { className: 'kpi-val' }, '$' + Math.round(ftAnalytics.demo.ftRevTotal).toLocaleString()), React.createElement('div', { className: 'kpi-sub' }, ftAnalytics.demo.ftRevHHs + ' households with revenue')),
-              React.createElement('div', { className: 'kpi', style: { '--accent': '#2563eb' } }, React.createElement('div', { className: 'kpi-label' }, 'Avg Revenue per HH'), React.createElement('div', { className: 'kpi-val' }, '$' + ftAnalytics.demo.avgFtSpend.toLocaleString()), React.createElement('div', { className: 'kpi-sub' }, ftAnalytics.demo.nonFtAvgSpend > 0 ? (ftAnalytics.demo.avgFtSpend >= ftAnalytics.demo.nonFtAvgSpend ? '+' + (((ftAnalytics.demo.avgFtSpend / ftAnalytics.demo.nonFtAvgSpend) - 1) * 100).toFixed(0) + '% vs non-FT' : (((ftAnalytics.demo.avgFtSpend / ftAnalytics.demo.nonFtAvgSpend) - 1) * 100).toFixed(0) + '% vs non-FT') : 'per FT household')),
-              React.createElement('div', { className: 'kpi', style: { '--accent': '#7c3aed' } }, React.createElement('div', { className: 'kpi-label' }, 'Revenue per Conversion'), React.createElement('div', { className: 'kpi-val' }, '$' + ftAnalytics.demo.revPerConversion.toLocaleString()), React.createElement('div', { className: 'kpi-sub' }, totals.ftConverted.toLocaleString() + ' conversions')),
-              React.createElement('div', { className: 'kpi', style: { '--accent': '#059669' } }, React.createElement('div', { className: 'kpi-label' }, 'Admin Cost Savings'), React.createElement('div', { className: 'kpi-val' }, '$' + costSavings.toLocaleString()), React.createElement('div', { className: 'kpi-sub' }, adminHoursSaved.toLocaleString() + ' hours at $23/hr')),
-              React.createElement('div', { className: 'kpi', style: { '--accent': '#dc2626' } }, React.createElement('div', { className: 'kpi-label' }, 'FT Total Value'), React.createElement('div', { className: 'kpi-val' }, '$' + ftROI.toLocaleString()), React.createElement('div', { className: 'kpi-sub' }, 'revenue + cost savings'))
+              React.createElement('div', { className: 'kpi', style: { '--accent': '#059669' } }, React.createElement('div', { className: 'kpi-label' }, React.createElement(KpiLabel, { label: 'Total FT Revenue', tip: 'Lifetime net revenue from all households that have used Fast Track, across all revenue types.' })), React.createElement('div', { className: 'kpi-val' }, '$' + Math.round(ftAnalytics.demo.ftRevTotal).toLocaleString()), React.createElement('div', { className: 'kpi-sub' }, ftAnalytics.demo.ftRevHHs + ' households with revenue')),
+              React.createElement('div', { className: 'kpi', style: { '--accent': '#2563eb' } }, React.createElement('div', { className: 'kpi-label' }, React.createElement(KpiLabel, { label: 'Avg Revenue per HH', tip: 'Average lifetime spending per Fast Track household. Compared against non-FT households to show revenue quality.' })), React.createElement('div', { className: 'kpi-val' }, '$' + ftAnalytics.demo.avgFtSpend.toLocaleString()), React.createElement('div', { className: 'kpi-sub' }, ftAnalytics.demo.nonFtAvgSpend > 0 ? (ftAnalytics.demo.avgFtSpend >= ftAnalytics.demo.nonFtAvgSpend ? '+' + (((ftAnalytics.demo.avgFtSpend / ftAnalytics.demo.nonFtAvgSpend) - 1) * 100).toFixed(0) + '% vs non-FT' : (((ftAnalytics.demo.avgFtSpend / ftAnalytics.demo.nonFtAvgSpend) - 1) * 100).toFixed(0) + '% vs non-FT') : 'per FT household')),
+              React.createElement('div', { className: 'kpi', style: { '--accent': '#7c3aed' } }, React.createElement('div', { className: 'kpi-label' }, React.createElement(KpiLabel, { label: 'Revenue per Conversion', tip: 'Total FT household revenue divided by the number of FT conversions. Shows the average revenue each FT registration drives.' })), React.createElement('div', { className: 'kpi-val' }, '$' + ftAnalytics.demo.revPerConversion.toLocaleString()), React.createElement('div', { className: 'kpi-sub' }, totals.ftConverted.toLocaleString() + ' conversions')),
+              React.createElement('div', { className: 'kpi', style: { '--accent': '#059669' } }, React.createElement('div', { className: 'kpi-label' }, React.createElement(KpiLabel, { label: 'Admin Cost Savings', tip: 'Estimated labor savings from self-service FT registrations. Each FT conversion saves ~8 min of staff time at $23/hr (BLS median).' })), React.createElement('div', { className: 'kpi-val' }, '$' + costSavings.toLocaleString()), React.createElement('div', { className: 'kpi-sub' }, adminHoursSaved.toLocaleString() + ' hours at $23/hr')),
+              React.createElement('div', { className: 'kpi', style: { '--accent': '#dc2626' } }, React.createElement('div', { className: 'kpi-label' }, React.createElement(KpiLabel, { label: 'FT Total Value', tip: 'Combined value of FT household revenue plus estimated admin cost savings \u2014 the total financial impact of Fast Track.' })), React.createElement('div', { className: 'kpi-val' }, '$' + ftROI.toLocaleString()), React.createElement('div', { className: 'kpi-sub' }, 'revenue + cost savings'))
             ),
 
             /* FT vs Non-FT comparison */
@@ -1124,7 +1144,7 @@ function App() {
                 )
               ),
               React.createElement('div', { className: 'kpi-row' },
-                React.createElement('div', { className: 'kpi', style: { '--accent': '#10b981' } }, React.createElement('div', { className: 'kpi-label' }, 'FT-Acquired Households'), React.createElement('div', { className: 'kpi-val' }, ftAnalytics.demo.ftFirstTouch), React.createElement('div', { className: 'kpi-sub' }, ftAnalytics.demo.matchedHHs > 0 ? ((ftAnalytics.demo.ftFirstTouch / ftAnalytics.demo.matchedHHs) * 100).toFixed(0) + '% of FT households were new' : 'new to system via FT')),
+                React.createElement('div', { className: 'kpi', style: { '--accent': '#10b981' } }, React.createElement('div', { className: 'kpi-label' }, React.createElement(KpiLabel, { label: 'FT-Acquired Households', tip: 'Households whose first-ever booking on the platform was through Fast Track \u2014 net-new participants FT brought in.' })), React.createElement('div', { className: 'kpi-val' }, ftAnalytics.demo.ftFirstTouch), React.createElement('div', { className: 'kpi-sub' }, ftAnalytics.demo.matchedHHs > 0 ? ((ftAnalytics.demo.ftFirstTouch / ftAnalytics.demo.matchedHHs) * 100).toFixed(0) + '% of FT households were new' : 'new to system via FT')),
                 ftAnalytics.demo.avgFirstTouchSpend > 0 && React.createElement('div', { className: 'kpi', style: { '--accent': '#10b981' } }, React.createElement('div', { className: 'kpi-label' }, 'FT-Acquired Avg Spend'), React.createElement('div', { className: 'kpi-val' }, '$' + ftAnalytics.demo.avgFirstTouchSpend.toLocaleString()), React.createElement('div', { className: 'kpi-sub' }, 'lifetime spend since joining via FT')),
 
               ),
@@ -1143,9 +1163,9 @@ function App() {
               )
             ),
             React.createElement('div', { className: 'kpi-row' },
-              React.createElement('div', { className: 'kpi', style: { '--accent': '#6366f1' } }, React.createElement('div', { className: 'kpi-label' }, 'FT Households'), React.createElement('div', { className: 'kpi-val' }, ftAnalytics.demo.matchedHHs), React.createElement('div', { className: 'kpi-sub' }, ftAnalytics.demo.ftUsers + ' unique customers')),
+              React.createElement('div', { className: 'kpi', style: { '--accent': '#6366f1' } }, React.createElement('div', { className: 'kpi-label' }, React.createElement(KpiLabel, { label: 'FT Households', tip: 'Unique households matched between FT user data and community household records.' })), React.createElement('div', { className: 'kpi-val' }, ftAnalytics.demo.matchedHHs), React.createElement('div', { className: 'kpi-sub' }, ftAnalytics.demo.ftUsers + ' unique customers')),
               ftAnalytics.demo.medianAge !== null && React.createElement('div', { className: 'kpi', style: { '--accent': '#d97706' } }, React.createElement('div', { className: 'kpi-label' }, 'Median Age'), React.createElement('div', { className: 'kpi-val' }, ftAnalytics.demo.medianAge), React.createElement('div', { className: 'kpi-sub' }, 'of matched households')),
-              ftAnalytics.demo.resPct !== null && React.createElement('div', { className: 'kpi', style: { '--accent': '#059669' } }, React.createElement('div', { className: 'kpi-label' }, 'Resident Rate'), React.createElement('div', { className: 'kpi-val' }, ftAnalytics.demo.resPct + '%'), React.createElement('div', { className: 'kpi-sub' }, 'of FT users')),
+              ftAnalytics.demo.resPct !== null && React.createElement('div', { className: 'kpi', style: { '--accent': '#059669' } }, React.createElement('div', { className: 'kpi-label' }, React.createElement(KpiLabel, { label: 'Resident Rate', tip: 'Percentage of FT households that hold an active residency membership with the org.' })), React.createElement('div', { className: 'kpi-val' }, ftAnalytics.demo.resPct + '%'), React.createElement('div', { className: 'kpi-sub' }, 'of FT users')),
               ftAnalytics.demo.topCities.length > 0 && React.createElement('div', { className: 'kpi', style: { '--accent': '#2563eb' } }, React.createElement('div', { className: 'kpi-label' }, 'Top City'), React.createElement('div', { className: 'kpi-val' }, ftAnalytics.demo.topCities[0].city), React.createElement('div', { className: 'kpi-sub' }, ftAnalytics.demo.topCities[0].count + ' HH (' + (ftAnalytics.demo.matchedHHs > 0 ? ((ftAnalytics.demo.topCities[0].count / ftAnalytics.demo.matchedHHs) * 100).toFixed(0) : '0') + '%)')),
 
             ),
@@ -1183,7 +1203,15 @@ function App() {
 
 function SummaryCard(props) {
   return React.createElement('div', { className: 'summary-card', style: { borderTop: '3px solid ' + (props.color || '#888') } },
-    React.createElement('div', { className: 'sc-label' }, props.label),
+    React.createElement('div', { className: 'sc-label' },
+      props.tip
+        ? React.createElement('span', { className: 'tip-wrap' },
+            props.label, ' ',
+            React.createElement('span', { className: 'tip-icon' }, 'i'),
+            React.createElement('span', { className: 'tip-bubble' }, props.tip)
+          )
+        : props.label
+    ),
     React.createElement('div', { className: 'sc-value', style: { color: props.color || '#111' } }, props.value),
     props.sub && React.createElement('div', { className: 'sc-sub' }, props.sub)
   );
