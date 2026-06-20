@@ -4807,8 +4807,6 @@ app.get("/", (req, res) => {
     }
     loadFlags();
 
-    async function doRestart() {
-
     async function loadAuditLog() {
       var body = document.getElementById('audit-log-body');
       var days = document.getElementById('audit-days').value;
