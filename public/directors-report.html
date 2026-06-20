@@ -169,6 +169,37 @@ function App() {
       userRows.forEach(r => { var c = (r['City']||'').trim(); if (c) topCity[c] = (topCity[c]||0)+1; });
       var topCityName = Object.entries(topCity).sort((a,b) => b[1]-a[1])[0];
 
+      // Revenue mix (from HoH revenue breakdowns)
+      var revMix = { program: 0, facility: 0, fee: 0, product: 0 };
+      hohs.forEach(r => {
+        revMix.program  += parseFloat(String(r['Program Revenue']||0).replace(/,/g,''))||0;
+        revMix.facility += parseFloat(String(r['Facility Revenue']||0).replace(/,/g,''))||0;
+        revMix.fee      += parseFloat(String(r['Fee Revenue']||0).replace(/,/g,''))||0;
+        revMix.product  += parseFloat(String(r['Product Revenue']||0).replace(/,/g,''))||0;
+      });
+      var revTotal = revMix.program + revMix.facility + revMix.fee + revMix.product;
+
+      // Data completeness
+      var hasAge = userRows.filter(r => { var a = parseInt(r['Age']); return a > 0 && a < 120; }).length;
+      var hasGender = userRows.filter(r => { var g = (r['Gender']||'').trim(); return g && g.toLowerCase() !== 'unknown'; }).length;
+      var hasGrade = userRows.filter(r => { var g = (r['Grade']||'').trim(); return g !== ''; }).length;
+      var hasPhone = userRows.filter(r => { var p = (r['Phone']||'').trim(); return p !== ''; }).length;
+      var dataComp = {
+        age: totalPeople > 0 ? ((hasAge/totalPeople)*100).toFixed(0) : '0',
+        gender: totalPeople > 0 ? ((hasGender/totalPeople)*100).toFixed(0) : '0',
+        grade: totalPeople > 0 ? ((hasGrade/totalPeople)*100).toFixed(0) : '0',
+        phone: totalPeople > 0 ? ((hasPhone/totalPeople)*100).toFixed(0) : '0',
+        missingAge: totalPeople - hasAge,
+        missingGender: totalPeople - hasGender,
+      };
+
+      // Bottom programs (low fill rate with meaningful capacity)
+      var bottomProgs = Object.values(progMap)
+        .filter(p => p.capacity > 10 && p.enrolled > 0)
+        .map(p => ({ name: p.name, enrolled: p.enrolled, capacity: p.capacity, fill: p.capacity > 0 ? ((p.enrolled/p.capacity)*100).toFixed(1) : 0 }))
+        .sort((a,b) => parseFloat(a.fill) - parseFloat(b.fill))
+        .slice(0, 5);
+
       // ── Fast Track metrics ──
       var ftSection = ftRows.filter(r => (r['Row Type']||'section') !== 'user');
       var ftSignups = ftSection.reduce((s,r) => s + (parseInt(r['FT Signups'])||0), 0);
@@ -178,9 +209,12 @@ function App() {
 
       var allMetrics = {
         gl: { net: glNet, gross: glGross, refunds: glRefunds },
-        prog: { total: totalEnroll, capacity: totalCap, revenue: progRevenue, count: programs.length, top5: programs.slice(0,5) },
+        prog: { total: totalEnroll, capacity: totalCap, revenue: progRevenue, count: programs.length, top5: programs.slice(0,5), bottom5: bottomProgs },
         users: { hh: totalHH, people: totalPeople, newHH, medianAge, resRate, avgHHSpend, topCity: topCityName ? topCityName[0] : '—', hohCount: hohs.length, memCount: members.length },
         ft: { signups: ftSignups, converted: ftConverted, convRate: ftConvRate, programs: ftPrograms },
+        revMix: revMix,
+        revTotal: revTotal,
+        dataComp: dataComp,
       };
 
       setMetrics(allMetrics);
@@ -381,6 +415,85 @@ function App() {
           </div>
         </div>
       </div>
+
+      {/* Revenue Mix + Programs Needing Attention */}
+      <div className="two-col">
+        {/* Revenue Mix */}
+        {m.revTotal > 0 && (
+          <div className="section">
+            <div className="section-title"><span style={{color:'#6366f1'}}>📊</span> Revenue Mix (All-Time)</div>
+            {(() => {
+              var segs = [
+                { label: 'Programs', val: m.revMix.program, color: '#6366f1' },
+                { label: 'Facility', val: m.revMix.facility, color: '#059669' },
+                { label: 'Products', val: m.revMix.product, color: '#d97706' },
+                { label: 'Fees', val: m.revMix.fee, color: '#dc2626' },
+              ].filter(s => s.val > 0);
+              return (<div>
+                <div style={{display:'flex',height:20,borderRadius:6,overflow:'hidden',marginBottom:10}}>
+                  {segs.map((s,i) => <div key={i} style={{width:((s.val/m.revTotal)*100)+'%',background:s.color,minWidth:2}} title={s.label+': '+fmtMoney(s.val)} />)}
+                </div>
+                <div style={{display:'flex',flexWrap:'wrap',gap:'4px 14px',fontSize:11}}>
+                  {segs.map((s,i) => <span key={i}><span style={{display:'inline-block',width:8,height:8,borderRadius:2,background:s.color,marginRight:4}} />{s.label} <strong>{fmtMoney(s.val)}</strong> <span style={{color:'#9ca3af'}}>({((s.val/m.revTotal)*100).toFixed(0)}%)</span></span>)}
+                </div>
+              </div>);
+            })()}
+          </div>
+        )}
+
+        {/* Programs Needing Attention */}
+        {m.prog.bottom5 && m.prog.bottom5.length > 0 && (
+          <div className="section">
+            <div className="section-title"><span style={{color:'#d97706'}}>⚠️</span> Programs Needing Attention</div>
+            <table className="mini-table">
+              <thead><tr><th>Program</th><th className="r">Enrolled</th><th className="r">Capacity</th><th className="r">Fill %</th></tr></thead>
+              <tbody>
+                {m.prog.bottom5.map((p,i) => (
+                  <tr key={i}>
+                    <td className="bold">{p.name}</td>
+                    <td className="r">{p.enrolled}</td>
+                    <td className="r">{p.capacity}</td>
+                    <td className="r" style={{color: parseFloat(p.fill) < 25 ? '#dc2626' : '#d97706', fontWeight: 600}}>{p.fill}%</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <div style={{marginTop:8,fontSize:11,color:'#6b7280'}}>Programs with capacity &gt;10 and lowest fill rates. Consider marketing, rescheduling, or consolidating.</div>
+          </div>
+        )}
+      </div>
+
+      {/* Data Completeness */}
+      {m.dataComp && (
+        <div className="section" style={{marginBottom:18}}>
+          <div className="section-title"><span style={{color:'#7c3aed'}}>📋</span> Data Completeness</div>
+          <div style={{display:'flex',gap:16,flexWrap:'wrap'}}>
+            {[
+              { label: 'Age/DOB', pct: m.dataComp.age, color: '#6366f1' },
+              { label: 'Gender', pct: m.dataComp.gender, color: '#db2777' },
+              { label: 'Grade', pct: m.dataComp.grade, color: '#059669' },
+              { label: 'Phone', pct: m.dataComp.phone, color: '#d97706' },
+            ].map((d,i) => (
+              <div key={i} style={{flex:1,minWidth:100}}>
+                <div style={{display:'flex',justifyContent:'space-between',fontSize:11,marginBottom:3}}>
+                  <span style={{color:'#6b7280'}}>{d.label}</span>
+                  <span style={{fontWeight:600,color:parseInt(d.pct)<50?'#dc2626':'#374151'}}>{d.pct}%</span>
+                </div>
+                <div style={{height:8,background:'#f3f4f6',borderRadius:4,overflow:'hidden'}}>
+                  <div style={{height:'100%',width:d.pct+'%',background:d.color,borderRadius:4}} />
+                </div>
+              </div>
+            ))}
+          </div>
+          {(parseInt(m.dataComp.age) < 60 || parseInt(m.dataComp.gender) < 60) && (
+            <div style={{marginTop:10,fontSize:11.5,color:'#6b7280',lineHeight:1.5}}>
+              {m.dataComp.missingAge > 0 && <span><strong style={{color:'#dc2626'}}>{m.dataComp.missingAge.toLocaleString()}</strong> people missing age data. </span>}
+              {m.dataComp.missingGender > 0 && <span><strong style={{color:'#dc2626'}}>{m.dataComp.missingGender.toLocaleString()}</strong> missing gender. </span>}
+              Improving completeness strengthens compliance reporting and program targeting.
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="report-footer">
         <span>Powered by Rec Technologies &middot; rec.us</span>
