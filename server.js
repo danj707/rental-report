@@ -454,7 +454,7 @@ const ORGS = {
   },
 };
 
-const REPORT_TYPES = ["facility", "gl", "historic", "programs", "roster", "overview", "products", "memberships", "court-utilization", "calendar", "fasttrack", "users", "program-demographics"];
+const REPORT_TYPES = ["facility", "gl", "historic", "programs", "roster", "overview", "products", "memberships", "court-utilization", "calendar", "fasttrack", "users", "program-demographics", "directors-report"];
 
 // ── Shared Metabase UUIDs (one query per report type, parameterized by org_id) ──
 // When a report type has an entry here, the server uses this UUID + passes the
@@ -476,7 +476,7 @@ const SHARED_UUIDS = {
 
 // Report types that are valid system-wide but should NOT be offered in the
 // dashboard "+ Add report" flow (e.g. not yet ready for self-serve onboarding).
-const NON_ADDABLE_REPORTS = new Set(["overview", "program-demographics"]);
+const NON_ADDABLE_REPORTS = new Set(["overview", "program-demographics", "directors-report"]);
 
 // ── Dynamic orgs (added via dashboard UI) ────────────────────────────
 // Loaded at startup and merged into ORGS; also updated at runtime.
@@ -2281,6 +2281,22 @@ app.get("/:org/roster", (req, res) => {
   if (!ORGS[req.params.org]) return res.status(404).send("Unknown org");
   logEvent(req.params.org, "roster", "view", req);
   res.sendFile(path.join(__dirname, "public", "roster.html"));
+});
+
+app.get("/:org/directors-report", (req, res) => {
+  const slug = req.params.org;
+  const org  = ORGS[slug];
+  if (!org) return res.status(404).send("Unknown org");
+  logEvent(slug, "directors-report", "view", req);
+  const orgConfig = {
+    slug,
+    displayName: org.displayName || (slug.charAt(0).toUpperCase() + slug.slice(1) + " Parks & Recreation"),
+    logoUrl: org.logoUrl || "",
+    token: org.token || "",
+  };
+  const html = require("fs").readFileSync(path.join(__dirname, "public", "directors-report.html"), "utf8");
+  const inject = `<script>window.ORG_CONFIG=${JSON.stringify(orgConfig)};</script>`;
+  res.type("html").send(html.replace("</head>", inject + "</head>"));
 });
 
 app.get("/:org/overview", (req, res) => {

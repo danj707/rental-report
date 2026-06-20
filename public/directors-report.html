@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Director's Report</title>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'IBM Plex Sans', -apple-system, sans-serif; background: #f5f4f1; color: #111; }
+    .print-mode .no-print { display: none !important; }
+
+    /* ── Generator UI ── */
+    .gen-wrapper { max-width: 680px; margin: 60px auto; text-align: center; padding: 0 20px; }
+    .gen-logo { height: 56px; margin-bottom: 16px; border-radius: 8px; }
+    .gen-title { font-size: 24px; font-weight: 700; margin-bottom: 6px; }
+    .gen-sub { font-size: 14px; color: #6b7280; margin-bottom: 28px; }
+    .gen-btn { padding: 14px 36px; background: #16a34a; color: #fff; border: none; border-radius: 8px; font-size: 15px; font-weight: 700; cursor: pointer; transition: background .15s; }
+    .gen-btn:hover { background: #15803d; }
+    .gen-btn:disabled { background: #9ca3af; cursor: default; }
+    .gen-range { margin-top: 16px; font-size: 13px; color: #9ca3af; }
+
+    /* ── Report layout ── */
+    .report-page { max-width: 1040px; margin: 0 auto; padding: 0 20px 40px; }
+    .report-page .header { display: flex; justify-content: space-between; align-items: flex-start; padding: 24px 0 16px; border-bottom: 3px solid #16a34a; margin-bottom: 20px; }
+    .header-left { display: flex; gap: 14px; align-items: center; }
+    .header-logo { height: 44px; border-radius: 6px; }
+    .header-org { font-size: 10px; letter-spacing: 1.5px; color: #6b7280; text-transform: uppercase; font-weight: 600; }
+    .header-title { font-size: 20px; font-weight: 700; }
+    .header-right { text-align: right; font-size: 12px; color: #6b7280; }
+
+    /* KPI strip */
+    .kpi-strip { display: flex; gap: 10px; margin-bottom: 18px; flex-wrap: wrap; }
+    .kpi-card { flex: 1; min-width: 110px; background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px 14px; }
+    .kpi-card .kl { font-size: 9.5px; text-transform: uppercase; letter-spacing: .6px; font-weight: 600; margin-bottom: 3px; }
+    .kpi-card .kv { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
+    .kpi-card .ks { font-size: 10.5px; color: #9ca3af; margin-top: 2px; }
+
+    /* Two-column body */
+    .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 18px; }
+    @media (max-width: 700px) { .two-col { grid-template-columns: 1fr; } }
+    .section { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; }
+    .section-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .6px; margin-bottom: 10px; display: flex; align-items: center; gap: 6px; }
+    .section p { font-size: 12.5px; line-height: 1.65; color: #374151; }
+    .mini-table { width: 100%; border-collapse: collapse; font-size: 11.5px; margin-top: 8px; }
+    .mini-table thead th { text-align: left; font-size: 9.5px; text-transform: uppercase; letter-spacing: .4px; color: #9ca3af; padding: 4px 6px; border-bottom: 1px solid #e5e7eb; }
+    .mini-table thead th.r { text-align: right; }
+    .mini-table tbody td { padding: 5px 6px; border-bottom: 1px solid #f3f4f6; }
+    .mini-table tbody td.r { text-align: right; font-variant-numeric: tabular-nums; }
+    .mini-table tbody td.bold { font-weight: 600; }
+
+    /* Footer */
+    .report-footer { border-top: 1px solid #ddd; padding-top: 10px; display: flex; justify-content: space-between; font-size: 10.5px; color: #9ca3af; }
+
+    /* Actions bar */
+    .actions { display: flex; gap: 10px; margin-bottom: 20px; }
+    .btn-action { padding: 8px 20px; border: 1px solid #d1d5db; background: #fff; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; }
+    .btn-action:hover { background: #f9fafb; }
+    .btn-pdf { padding: 8px 20px; background: #374151; color: #fff; border: none; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; }
+    .btn-pdf:hover { background: #1f2937; }
+
+    @media print { .no-print { display: none !important; } body { background: #fff; } }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+const { useState, useMemo, useCallback, useEffect } = React;
+
+function App() {
+  const cfg = window.ORG_CONFIG || {};
+  const slug = cfg.slug || '';
+  const orgName = cfg.displayName || slug;
+  const logoUrl = cfg.logoUrl || '';
+  const token = cfg.token || '';
+  const isPrint = new URLSearchParams(window.location.search).get('_print') === '1';
+
+  const [state, setState] = useState('idle'); // idle | loading | done | error
+  const [metrics, setMetrics] = useState(null);
+  const [errMsg, setErrMsg] = useState('');
+  const [pdfLoading, setPdfLoading] = useState(false);
+
+  // Compute last month date range
+  const lastMonth = useMemo(() => {
+    var now = new Date();
+    var end = new Date(now.getFullYear(), now.getMonth(), 0);
+    var start = new Date(end.getFullYear(), end.getMonth(), 1);
+    var fmt = d => d.toISOString().slice(0,10);
+    var monthName = start.toLocaleString('default', { month: 'long', year: 'numeric' });
+    return { start: fmt(start), end: fmt(end), label: monthName };
+  }, []);
+
+  function withToken(url) {
+    return token ? url + (url.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(token) : url;
+  }
+
+  async function fetchData(report, params) {
+    var qs = new URLSearchParams(params || {}).toString();
+    var url = withToken('/' + slug + '/' + report + '/api/data' + (qs ? '?' + qs : ''));
+    var resp = await fetch(url);
+    if (!resp.ok) throw new Error(report + ': HTTP ' + resp.status);
+    var json = await resp.json();
+    return json.rows || json.data || json || [];
+  }
+
+  function fmtMoney(n) { return '$' + Math.round(n).toLocaleString(); }
+  function pct(a,b) { return b > 0 ? ((a/b)*100).toFixed(1) + '%' : '—'; }
+
+  const generate = useCallback(async () => {
+    setState('loading');
+    setErrMsg('');
+    try {
+      // Fetch data in parallel
+      var [glRows, progRows, userRows, ftRows] = await Promise.all([
+        fetchData('gl', { start_date: lastMonth.start, end_date: lastMonth.end }).catch(() => []),
+        fetchData('programs', { start_date: lastMonth.start, end_date: lastMonth.end }).catch(() => []),
+        fetchData('users').catch(() => []),
+        fetchData('fasttrack').catch(() => []),
+      ]);
+
+      // ── GL Revenue metrics ──
+      var glNet = 0, glGross = 0, glRefunds = 0;
+      glRows.forEach(r => {
+        var net = parseFloat(r['Net Revenue'] || r['net_revenue'] || 0);
+        var gross = parseFloat(r['Gross Revenue'] || r['gross_revenue'] || 0);
+        var ref = parseFloat(r['Refunds'] || r['refunds'] || 0);
+        if (!isNaN(net)) glNet += net;
+        if (!isNaN(gross)) glGross += gross;
+        if (!isNaN(ref)) glRefunds += Math.abs(ref);
+      });
+
+      // ── Programs metrics ──
+      var progMap = {};
+      progRows.forEach(r => {
+        var name = r['Program'] || r['program'] || 'Unknown';
+        if (!progMap[name]) progMap[name] = { name, enrolled: 0, capacity: 0, received: 0 };
+        var p = progMap[name];
+        p.enrolled += parseInt(r['Enroll'] || r['Enrollments'] || r['enrolled'] || 0) || 0;
+        p.capacity += parseInt(r['Capacity'] || r['capacity'] || 0) || 0;
+        p.received += parseFloat(r['Received'] || r['received'] || r['Net Rev'] || 0) || 0;
+      });
+      var programs = Object.values(progMap).sort((a,b) => b.enrolled - a.enrolled);
+      var totalEnroll = programs.reduce((s,p) => s + p.enrolled, 0);
+      var totalCap = programs.reduce((s,p) => s + p.capacity, 0);
+      var progRevenue = programs.reduce((s,p) => s + p.received, 0);
+
+      // ── Users/CI metrics ──
+      var hohs = userRows.filter(r => r['Role'] === 'Head of Household');
+      var members = userRows.filter(r => r['Role'] === 'Member');
+      var totalHH = hohs.length;
+      var totalPeople = userRows.length;
+      var thirtyDaysAgo = new Date(Date.now() - 30 * 86400000).toISOString();
+      var newHH = hohs.filter(r => r['Created At'] && new Date(r['Created At']).toISOString() >= thirtyDaysAgo).length;
+      var ages = userRows.map(r => parseInt(r['Age'])).filter(a => a > 0 && a < 120);
+      var medianAge = ages.length > 0 ? (a => { a.sort((x,y) => x-y); return a[Math.floor(a.length/2)]; })(ages.slice()) : null;
+      var residents = userRows.filter(r => r['Residency?'] === 'Yes').length;
+      var resRate = totalPeople > 0 ? ((residents/totalPeople)*100).toFixed(1) : '0';
+      var netRevArr = hohs.map(r => parseFloat(String(r['Net Revenue'] || 0).replace(/,/g,'')) || 0).filter(v => v > 0);
+      var avgHHSpend = netRevArr.length > 0 ? Math.round(netRevArr.reduce((s,v) => s+v, 0) / netRevArr.length) : 0;
+      var topCity = {};
+      userRows.forEach(r => { var c = (r['City']||'').trim(); if (c) topCity[c] = (topCity[c]||0)+1; });
+      var topCityName = Object.entries(topCity).sort((a,b) => b[1]-a[1])[0];
+
+      // ── Fast Track metrics ──
+      var ftSection = ftRows.filter(r => (r['Row Type']||'section') !== 'user');
+      var ftSignups = ftSection.reduce((s,r) => s + (parseInt(r['FT Signups'])||0), 0);
+      var ftConverted = ftSection.reduce((s,r) => s + (parseInt(r['FT Converted'])||0), 0);
+      var ftConvRate = ftSignups > 0 ? ((ftConverted/ftSignups)*100).toFixed(1) : '0';
+      var ftPrograms = new Set(ftSection.map(r => r['Program']).filter(Boolean)).size;
+
+      setMetrics({
+        gl: { net: glNet, gross: glGross, refunds: glRefunds },
+        prog: { total: totalEnroll, capacity: totalCap, revenue: progRevenue, count: programs.length, top5: programs.slice(0,5) },
+        users: { hh: totalHH, people: totalPeople, newHH, medianAge, resRate, avgHHSpend, topCity: topCityName ? topCityName[0] : '—', hohCount: hohs.length, memCount: members.length },
+        ft: { signups: ftSignups, converted: ftConverted, convRate: ftConvRate, programs: ftPrograms },
+      });
+      setState('done');
+    } catch (err) {
+      setErrMsg(err.message);
+      setState('error');
+    }
+  }, [slug, token, lastMonth]);
+
+  // Auto-generate in print mode
+  useEffect(() => { if (isPrint) generate(); }, []);
+
+  function downloadPdf() {
+    setPdfLoading(true);
+    fetch(withToken('/' + slug + '/directors-report/api/pdf'))
+      .then(r => r.blob())
+      .then(blob => {
+        var a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'directors-report-' + slug + '-' + lastMonth.start.slice(0,7) + '.pdf';
+        a.click(); URL.revokeObjectURL(a.href);
+      })
+      .catch(e => alert('PDF failed: ' + e.message))
+      .finally(() => setPdfLoading(false));
+  }
+
+  var m = metrics;
+
+  // ── Idle state: show generate button ──
+  if (state === 'idle') return (
+    <div className="gen-wrapper no-print">
+      {logoUrl && <img src={logoUrl} className="gen-logo" alt="" />}
+      <div className="gen-title">{orgName}</div>
+      <div className="gen-sub">Monthly Director's Report</div>
+      <button className="gen-btn" onClick={generate}>Generate Report</button>
+      <div className="gen-range">{lastMonth.label}</div>
+    </div>
+  );
+
+  if (state === 'loading') return (
+    <div style={{paddingTop:80}}><JuiceLoader /></div>
+  );
+
+  if (state === 'error') return (
+    <div className="gen-wrapper">
+      <div style={{color:'#dc2626',marginBottom:16}}>Error: {errMsg}</div>
+      <button className="gen-btn" onClick={generate}>Retry</button>
+    </div>
+  );
+
+  // ── Report render ──
+  return (
+    <div className="report-page">
+      <div className="actions no-print">
+        <button className="btn-action" onClick={() => { setState('idle'); setMetrics(null); }}>&larr; Back</button>
+        <button className="btn-pdf" onClick={downloadPdf} disabled={pdfLoading}>
+          {pdfLoading ? 'Generating PDF…' : '📄 Download PDF'}
+        </button>
+      </div>
+
+      <div className="header">
+        <div className="header-left">
+          {logoUrl && <img src={logoUrl} className="header-logo" alt="" onError={e => e.target.style.display='none'} />}
+          <div>
+            <div className="header-org">{orgName}</div>
+            <div className="header-title">Monthly Director's Report</div>
+          </div>
+        </div>
+        <div className="header-right">
+          <div style={{fontWeight:600,color:'#111'}}>{lastMonth.label}</div>
+          <div>Generated {new Date().toLocaleDateString()}</div>
+        </div>
+      </div>
+
+      {/* Executive KPI strip */}
+      <div className="kpi-strip">
+        <div className="kpi-card"><div className="kl" style={{color:'#16a34a'}}>Net Revenue</div><div className="kv">{fmtMoney(m.gl.net)}</div>{m.gl.refunds > 0 && <div className="ks">{fmtMoney(m.gl.refunds)} refunded</div>}</div>
+        <div className="kpi-card"><div className="kl" style={{color:'#6366f1'}}>Enrollments</div><div className="kv">{m.prog.total.toLocaleString()}</div><div className="ks">{m.prog.count} programs</div></div>
+        <div className="kpi-card"><div className="kl" style={{color:'#d97706'}}>Households</div><div className="kv">{m.users.hh.toLocaleString()}</div><div className="ks">+{m.users.newHH} new (30d)</div></div>
+        <div className="kpi-card"><div className="kl" style={{color:'#2563eb'}}>Avg HH Spend</div><div className="kv">{fmtMoney(m.users.avgHHSpend)}</div><div className="ks">per spending HH</div></div>
+        <div className="kpi-card"><div className="kl" style={{color:'#10b981'}}>Fast Track</div><div className="kv">{m.ft.converted.toLocaleString()}</div><div className="ks">{m.ft.convRate}% conversion</div></div>
+        {m.users.medianAge && <div className="kpi-card"><div className="kl" style={{color:'#db2777'}}>Median Age</div><div className="kv">{m.users.medianAge}</div><div className="ks">{m.users.resRate}% residents</div></div>}
+      </div>
+
+      <div className="two-col">
+        {/* Left column */}
+        <div style={{display:'flex',flexDirection:'column',gap:16}}>
+          {/* Revenue summary */}
+          <div className="section">
+            <div className="section-title"><span style={{color:'#16a34a'}}>💰</span> Revenue Summary</div>
+            <p>
+              Net revenue of <strong>{fmtMoney(m.gl.net)}</strong> for {lastMonth.label}
+              {m.gl.refunds > 0 ? ' with ' + fmtMoney(m.gl.refunds) + ' in refunds (' + pct(m.gl.refunds, m.gl.gross) + ' of gross)' : ''}.
+              {m.prog.revenue > 0 ? ' Program registrations contributed ' + fmtMoney(m.prog.revenue) + '.' : ''}
+            </p>
+          </div>
+
+          {/* Top programs */}
+          <div className="section">
+            <div className="section-title"><span style={{color:'#6366f1'}}>🎯</span> Top Programs</div>
+            {m.prog.top5.length > 0 ? (
+              <table className="mini-table">
+                <thead><tr><th>Program</th><th className="r">Enrolled</th><th className="r">Fill %</th><th className="r">Revenue</th></tr></thead>
+                <tbody>
+                  {m.prog.top5.map((p,i) => (
+                    <tr key={i}>
+                      <td className="bold">{p.name}</td>
+                      <td className="r">{p.enrolled}</td>
+                      <td className="r">{p.capacity > 0 ? pct(p.enrolled, p.capacity) : '—'}</td>
+                      <td className="r">{fmtMoney(p.received)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : <p style={{color:'#9ca3af'}}>No program data for this period</p>}
+            {m.prog.total > 0 && m.prog.capacity > 0 && (
+              <p style={{marginTop:8,fontSize:11,color:'#6b7280'}}>Overall fill rate: {pct(m.prog.total, m.prog.capacity)} across {m.prog.count} programs</p>
+            )}
+          </div>
+        </div>
+
+        {/* Right column */}
+        <div style={{display:'flex',flexDirection:'column',gap:16}}>
+          {/* Community profile */}
+          <div className="section">
+            <div className="section-title"><span style={{color:'#d97706'}}>👥</span> Community Profile</div>
+            <p>
+              <strong>{m.users.people.toLocaleString()}</strong> people across <strong>{m.users.hh.toLocaleString()}</strong> households
+              ({m.users.hohCount.toLocaleString()} HoH + {m.users.memCount.toLocaleString()} members).
+              {m.users.medianAge ? ' Median age ' + m.users.medianAge + '.' : ''}
+              {' '}{m.users.resRate}% are verified residents.
+              {m.users.topCity !== '—' ? ' Top city: ' + m.users.topCity + '.' : ''}
+            </p>
+            <p style={{marginTop:8}}>
+              <strong>+{m.users.newHH}</strong> new households in the last 30 days.
+              {m.users.avgHHSpend > 0 ? ' Average household spend: ' + fmtMoney(m.users.avgHHSpend) + '.' : ''}
+            </p>
+          </div>
+
+          {/* Fast Track */}
+          <div className="section">
+            <div className="section-title"><span style={{color:'#10b981'}}>⚡</span> Fast Track Adoption</div>
+            <p>
+              <strong>{m.ft.signups.toLocaleString()}</strong> Fast Track signups across <strong>{m.ft.programs}</strong> programs.
+              {' '}<strong>{m.ft.converted.toLocaleString()}</strong> confirmed enrollments ({m.ft.convRate}% conversion rate).
+              {m.ft.converted > 0 ? ' Self-service registrations save staff time and capture revenue 24/7.' : ''}
+            </p>
+          </div>
+
+          {/* Data quality note */}
+          <div className="section" style={{background:'#f9fafb'}}>
+            <div className="section-title"><span style={{color:'#6b7280'}}>📋</span> Data Notes</div>
+            <p style={{fontSize:11.5,color:'#6b7280'}}>
+              Revenue figures from GL Code Rollup. Enrollment data from confirmed program registrations.
+              Community demographics from all-time household data (not date-filtered).
+              Fast Track metrics are all-time cumulative.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div className="report-footer">
+        <span>Powered by Rec Technologies &middot; rec.us</span>
+        <span>Confidential &mdash; {orgName}</span>
+      </div>
+
+      {m && <div id="report-ready" style={{display:'none'}} />}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+  <script src="/juice-loader.js" defer></script>
+  <script src="/nav-breadcrumb.js" defer></script>
+</body>
+</html>
