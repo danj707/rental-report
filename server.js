@@ -5019,6 +5019,13 @@ app.get("/", (req, res) => {
     // Newest first. Add a new entry at the TOP for every change we ship.
     // History below back-filled from the GitHub commit log.
     const UPDATES = [
+      { date: '2026-06-20', title: '\uD83D\uDE80 Fast Track Pipeline Tab \u2014 Pre-Registration Demand Forecasting', items: [
+        '\uD83D\uDE80 PIPELINE TAB \u2014 FT report now has four tabs: Overview, Revenue, Demographics, Pipeline. Pipeline shows sections that are published but registration hasn\u2019t opened yet \u2014 the presale window where FT wishlists accumulate.',
+        '\uD83D\uDCCA DEMAND HEAT \u2014 Pipeline table shows FT wishlists, pending count, capacity, demand ratio with color-coded heat (green/amber/red), countdown to reg opens, and early access dates.',
+        '\uD83D\uDCC5 SCHEDULED \u2014 Also surfaces sections with FT activity that aren\u2019t published yet (scheduled state), so partners can see what\u2019s coming.',
+        '\uD83D\uDD04 ZERO-FT PIPELINE \u2014 SQL v6 adds a third UNION block for published sections with future reg windows but NO FT signups yet. Partners can see which programs need promotion.',
+        '\uD83D\uDCC6 EMPTY STATE \u2014 Friendly message when no pipeline sections exist, explaining when they\u2019ll appear (new seasons publishing with future reg windows).',
+      ]},
       { date: '2026-06-20', title: '\uD83D\uDCB0 Fast Track Revenue Tab \u2014 Financial Impact Analysis', items: [
         '\uD83D\uDCB0 REVENUE TAB \u2014 FT report now has three tabs: Overview, Revenue, and Demographics. Revenue tab lazy-fetches CI data and shows total FT revenue, revenue per HH, revenue per conversion, cost savings, and total FT value (revenue + savings).',
         '\uD83D\uDCCA REVENUE BY TYPE \u2014 Breaks down FT household revenue by source: Programs, Facility, Fees, Products. Bar charts for revenue distribution and household spend buckets ($0, $1-100, $101-300, etc).',

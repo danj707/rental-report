@@ -191,6 +191,12 @@ function normalizeRow(raw) {
     waitlisted:    fmtN(raw['Waitlisted']),
     firstFt:       raw['First FT Signup'] ?? '',
     lastFt:        raw['Last FT Signup'] ?? '',
+    regStatus:     raw['Reg Status'] ?? '',
+    publishDate:   raw['Publish Date'] ?? '',
+    regOpens:      raw['Reg Opens'] ?? '',
+    regCloses:     raw['Reg Closes'] ?? '',
+    earlyAccess:   raw['Early Access Opens'] ?? '',
+    rowType:       raw['Row Type'] ?? 'section',
   };
 }
 
@@ -223,6 +229,187 @@ function rollupToPrograms(rows) {
     out.push(g);
   });
   return out.sort(function(a, b) { return b.ftSignups - a.ftSignups; });
+}
+
+/* ── Pipeline Tab component ── */
+function PipelineTab(props) {
+  var sections = props.sections || [];
+  var pipelineRows = props.pipelineRows || [];
+
+  // Combine: sections with regStatus=pipeline + zero-FT pipeline rows
+  var ftPipeline = sections.filter(function(r){ return r.regStatus === 'pipeline'; });
+  var allPipeline = ftPipeline.concat(pipelineRows);
+
+  // Also show scheduled sections (publish_at in the future)
+  var scheduled = sections.filter(function(r){ return r.regStatus === 'scheduled'; });
+
+  // Sort pipeline by reg opens date
+  allPipeline.sort(function(a,b){
+    var da = a.regOpens ? new Date(a.regOpens) : new Date('2099-01-01');
+    var db = b.regOpens ? new Date(b.regOpens) : new Date('2099-01-01');
+    return da - db;
+  });
+
+  function daysUntil(dateStr) {
+    if (!dateStr) return null;
+    var d = new Date(dateStr);
+    if (isNaN(d.getTime())) return null;
+    var now = new Date();
+    var diff = Math.ceil((d - now) / 86400000);
+    return diff;
+  }
+
+  function fmtDate(dateStr) {
+    if (!dateStr) return '\u2014';
+    var d = new Date(dateStr);
+    if (isNaN(d.getTime())) return dateStr;
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  }
+
+  function demandHeat(signups, capacity) {
+    if (!capacity || capacity === 0) return { color: '#9ca3af', label: '\u2014' };
+    var pct = (signups / capacity) * 100;
+    if (pct >= 100) return { color: '#dc2626', label: pct.toFixed(0) + '% \uD83D\uDD25' };
+    if (pct >= 50) return { color: '#f59e0b', label: pct.toFixed(0) + '%' };
+    if (pct > 0) return { color: '#22c55e', label: pct.toFixed(0) + '%' };
+    return { color: '#d1d5db', label: '0%' };
+  }
+
+  var totalPipeline = allPipeline.length;
+  var totalScheduled = scheduled.length;
+  var pipelineSignups = allPipeline.reduce(function(a,r){ return a + (r.ftSignups||0); }, 0);
+  var pipelinePending = allPipeline.reduce(function(a,r){ return a + (r.ftPending||0); }, 0);
+  var pipelineCap = allPipeline.reduce(function(a,r){ return a + (r.capacity||0); }, 0);
+
+  if (totalPipeline === 0 && totalScheduled === 0) {
+    return React.createElement('div', { style: { textAlign: 'center', padding: '60px 20px' } },
+      React.createElement('div', { style: { fontSize: 48, marginBottom: 16 } }, '\uD83D\uDE80'),
+      React.createElement('div', { style: { fontSize: 16, fontWeight: 600, color: '#333', marginBottom: 8 } }, 'No pipeline sections right now'),
+      React.createElement('div', { style: { fontSize: 13, color: '#888', maxWidth: 420, margin: '0 auto', lineHeight: 1.6 } },
+        'Pipeline sections appear when a program is published but registration hasn\u2019t opened yet. This is the presale window where Fast Track wishlists build up before registration goes live.',
+        React.createElement('br'), React.createElement('br'),
+        'Check back as new seasons are configured \u2014 fall programs typically publish weeks before registration opens.'
+      )
+    );
+  }
+
+  return React.createElement(React.Fragment, null,
+    /* KPI strip */
+    React.createElement('div', { className: 'kpi-row' },
+      React.createElement('div', { className: 'kpi', style: { '--accent': '#f59e0b' } },
+        React.createElement('div', { className: 'kpi-label' }, 'Pipeline Sections'),
+        React.createElement('div', { className: 'kpi-val' }, totalPipeline),
+        React.createElement('div', { className: 'kpi-sub' }, 'published, reg not yet open')
+      ),
+      pipelineSignups > 0 && React.createElement('div', { className: 'kpi', style: { '--accent': '#6366f1' } },
+        React.createElement('div', { className: 'kpi-label' }, 'FT Wishlists'),
+        React.createElement('div', { className: 'kpi-val' }, pipelineSignups.toLocaleString()),
+        React.createElement('div', { className: 'kpi-sub' }, pipelinePending + ' pending conversion')
+      ),
+      pipelineCap > 0 && React.createElement('div', { className: 'kpi', style: { '--accent': '#2563eb' } },
+        React.createElement('div', { className: 'kpi-label' }, 'Total Capacity'),
+        React.createElement('div', { className: 'kpi-val' }, pipelineCap.toLocaleString()),
+        React.createElement('div', { className: 'kpi-sub' }, pipelineSignups > 0 ? (pipelineSignups / pipelineCap * 100).toFixed(0) + '% demand vs supply' : 'across pipeline sections')
+      ),
+      totalScheduled > 0 && React.createElement('div', { className: 'kpi', style: { '--accent': '#9ca3af' } },
+        React.createElement('div', { className: 'kpi-label' }, 'Scheduled'),
+        React.createElement('div', { className: 'kpi-val' }, totalScheduled),
+        React.createElement('div', { className: 'kpi-sub' }, 'not yet published')
+      )
+    ),
+
+    /* Pipeline sections table */
+    allPipeline.length > 0 && React.createElement(React.Fragment, null,
+      React.createElement('div', { style: { fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: '#d97706', marginBottom: 12, marginTop: 8 } },
+        'Pipeline ', React.createElement('span', { style: { fontWeight: 400, textTransform: 'none', color: '#9ca3af', letterSpacing: 0 } }, '\u2014 published programs awaiting registration')
+      ),
+      React.createElement('div', { className: 'table-scroll' },
+        React.createElement('table', { className: 'ft-table' },
+          React.createElement('thead', null,
+            React.createElement('tr', null,
+              React.createElement('th', { className: 'left', style: { minWidth: 240 } }, 'Program / Section'),
+              React.createElement('th', null, 'FT Wishlists'),
+              React.createElement('th', null, 'Pending'),
+              React.createElement('th', null, 'Capacity'),
+              React.createElement('th', null, 'Demand'),
+              React.createElement('th', null, 'Reg Opens'),
+              React.createElement('th', null, 'Countdown'),
+              React.createElement('th', null, 'Early Access')
+            )
+          ),
+          React.createElement('tbody', null,
+            allPipeline.map(function(r, i) {
+              var days = daysUntil(r.regOpens);
+              var heat = demandHeat(r.ftSignups, r.capacity);
+              var hasFT = r.ftSignups > 0;
+              return React.createElement('tr', { key: 'p' + i, style: { background: hasFT ? '#fefce8' : '#fff' } },
+                React.createElement('td', { className: 'left' },
+                  React.createElement('div', { style: { fontWeight: 600, color: '#111' } }, r.program),
+                  React.createElement('div', { style: { fontSize: 11, color: '#888' } }, r.section,
+                    React.createElement('span', { style: { marginLeft: 6, color: '#bbb', fontSize: 10 } }, r.regMode === 'per-session' ? 'per-session' : 'section')
+                  )
+                ),
+                React.createElement('td', { style: { fontWeight: hasFT ? 700 : 400, color: hasFT ? '#6366f1' : '#ccc' } }, hasFT ? r.ftSignups : '\u2014'),
+                React.createElement('td', { style: { color: r.ftPending > 0 ? '#d97706' : '#ccc' } }, r.ftPending > 0 ? r.ftPending : '\u2014'),
+                React.createElement('td', null, r.capacity > 0 ? r.capacity.toLocaleString() : '\u2014'),
+                React.createElement('td', null,
+                  React.createElement('span', { style: { color: heat.color, fontWeight: 600 } }, heat.label)
+                ),
+                React.createElement('td', null, fmtDate(r.regOpens)),
+                React.createElement('td', null,
+                  days !== null && days > 0
+                    ? React.createElement('span', { style: { fontWeight: 700, color: days <= 7 ? '#dc2626' : days <= 14 ? '#f59e0b' : '#22c55e' } }, days + 'd')
+                    : days !== null && days <= 0
+                      ? React.createElement('span', { style: { color: '#22c55e' } }, 'Open')
+                      : '\u2014'
+                ),
+                React.createElement('td', { style: { fontSize: 11, color: '#888' } }, r.earlyAccess ? fmtDate(r.earlyAccess) : '\u2014')
+              );
+            })
+          )
+        )
+      )
+    ),
+
+    /* Scheduled sections (not yet published) */
+    scheduled.length > 0 && React.createElement(React.Fragment, null,
+      React.createElement('div', { style: { fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: '#9ca3af', marginBottom: 12, marginTop: 24, borderTop: '1px solid #e5e7eb', paddingTop: 16 } },
+        'Scheduled ', React.createElement('span', { style: { fontWeight: 400, textTransform: 'none', letterSpacing: 0 } }, '\u2014 not yet published, FT activity detected')
+      ),
+      React.createElement('div', { className: 'table-scroll' },
+        React.createElement('table', { className: 'ft-table' },
+          React.createElement('thead', null,
+            React.createElement('tr', null,
+              React.createElement('th', { className: 'left', style: { minWidth: 240 } }, 'Program / Section'),
+              React.createElement('th', null, 'FT Signups'),
+              React.createElement('th', null, 'Capacity'),
+              React.createElement('th', null, 'Publishes'),
+              React.createElement('th', null, 'Countdown')
+            )
+          ),
+          React.createElement('tbody', null,
+            scheduled.map(function(r, i) {
+              var days = daysUntil(r.publishDate);
+              return React.createElement('tr', { key: 's' + i },
+                React.createElement('td', { className: 'left' },
+                  React.createElement('div', { style: { fontWeight: 600, color: '#111' } }, r.program),
+                  React.createElement('div', { style: { fontSize: 11, color: '#888' } }, r.section)
+                ),
+                React.createElement('td', { style: { color: r.ftSignups > 0 ? '#6366f1' : '#ccc' } }, r.ftSignups > 0 ? r.ftSignups : '\u2014'),
+                React.createElement('td', null, r.capacity > 0 ? r.capacity.toLocaleString() : '\u2014'),
+                React.createElement('td', null, fmtDate(r.publishDate)),
+                React.createElement('td', null,
+                  days !== null && days > 0
+                    ? React.createElement('span', { style: { fontWeight: 700, color: days <= 3 ? '#dc2626' : days <= 7 ? '#f59e0b' : '#9ca3af' } }, days + 'd')
+                    : '\u2014'
+                )
+              );
+            })
+          )
+        )
+      )
+    )
+  );
 }
 
 /* ── Simple Bar Chart component ── */
@@ -261,6 +448,7 @@ function App() {
   var [showExplainer, setShowExplainer] = useState(false);
   var [activeTab, setActiveTab] = useState('overview');
   var [ftUserRows, setFtUserRows] = useState([]);
+  var [pipelineRows, setPipelineRows] = useState([]);
   var [ciData, setCiData]   = useState(null);
   var [ciLoading, setCiLoading] = useState(false);
   var [ciError, setCiError] = useState(null);
@@ -282,7 +470,9 @@ function App() {
         var raw = Array.isArray(json) ? json : (json.rows || []);
         var userR = raw.filter(function(r){ return r['Row Type'] === 'user'; });
         setFtUserRows(userR);
-        setRows(raw.filter(function(r){ return (r['Row Type']||'section') !== 'user'; }).map(normalizeRow));
+        var pipeR = raw.filter(function(r){ return r['Row Type'] === 'pipeline'; }).map(normalizeRow);
+        setPipelineRows(pipeR);
+        setRows(raw.filter(function(r){ return (r['Row Type']||'section') === 'section'; }).map(normalizeRow));
         if (json && json.meta) {
           if (json.meta.org_name) setOrgName(json.meta.org_name);
           if (json.meta.logo_url) setLogoUrl(json.meta.logo_url);
@@ -630,6 +820,13 @@ function App() {
           React.createElement('button', { className: 'tab-btn' + (activeTab === 'demographics' ? ' active' : ''), onClick: function(){ switchTab('demographics'); } },
             '\uD83D\uDC65 Demographics',
             ftUserRows.length > 0 && React.createElement('span', { className: 'tab-badge', style: { background: '#6366f122', color: '#6366f1' } }, ftUserRows.length)
+          ),
+          React.createElement('button', { className: 'tab-btn' + (activeTab === 'pipeline' ? ' active' : ''), onClick: function(){ switchTab('pipeline'); } },
+            '\uD83D\uDE80 Pipeline',
+            (function(){
+              var ct = pipelineRows.length + filtered.filter(function(r){return r.regStatus==='pipeline';}).length;
+              return ct > 0 ? React.createElement('span', { className: 'tab-badge', style: { background: '#f59e0b22', color: '#d97706' } }, ct) : null;
+            })()
           )
         ),
 
@@ -968,6 +1165,10 @@ function App() {
               React.createElement(BarChart, { title: 'FT Users by City', data: ftAnalytics.demo.topCities, labelKey: 'city', valKey: 'count', color: '#059669' })
             )
           )
+        ),
+
+                activeTab === 'pipeline' && React.createElement(React.Fragment, null,
+          React.createElement(PipelineTab, { sections: filtered, pipelineRows: pipelineRows, programs: programs, totals: totals })
         ),
 
                 /* Footer */
