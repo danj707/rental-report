@@ -5021,6 +5021,14 @@ app.get("/", (req, res) => {
     // Newest first. Add a new entry at the TOP for every change we ship.
     // History below back-filled from the GitHub commit log.
     const UPDATES = [
+      { date: '2026-06-20', title: '\uD83D\uDCCB Director\u2019s Monthly Report \u2014 One-Click Executive Summary', items: [
+        '\u2728 ONE-CLICK REPORT \u2014 New /:org/directors-report generates a polished monthly executive summary. Fetches GL revenue, programs, community demographics, and Fast Track data in parallel (all cached). Single button press, instant results.',
+        '\uD83E\uDD16 AI EXECUTIVE INSIGHTS \u2014 Anthropic-powered narrative generates 3-4 actionable insight cards citing specific numbers: achievements, concerns, and recommended actions. Custom system prompt tuned for council presentations.',
+        '\uD83D\uDCCA REVENUE MIX \u2014 Horizontal stacked bar showing Programs/Facility/Products/Fees split with percentages from all-time household revenue data.',
+        '\u26A0\uFE0F PROGRAMS AT RISK \u2014 Bottom 5 programs by fill rate (capacity >10). Red/orange indicators for underperforming programs with actionable guidance.',
+        '\uD83D\uDCCB DATA COMPLETENESS \u2014 Progress bars for Age, Gender, Grade, Phone profile completeness. Highlights missing data counts for compliance reporting.',
+        '\uD83D\uDCC4 PDF EXPORT \u2014 Download as a polished 2-page PDF via existing Puppeteer pipeline. Auto-generates in print mode with report-ready signal.',
+      ]},
       { date: '2026-06-19', title: '\uD83D\uDD12 Audit Logging + API Cache Overhaul', items: [
         '\uD83D\uDD0D AUDIT LOGGING \u2014 Every report view, PDF export, AI insight, and chat message now captures user-agent and referer alongside IP. Enables device fingerprinting and shared-token detection. All 19 route-level event loggers upgraded.',
         '\u26A1 PER-REPORT CACHE TTLs \u2014 Replaced flat 5-minute TTL with tuned per-report durations: 30min for live data (facility, GL, roster, calendar), 2hrs for stable reports (programs, memberships, products), 4hrs for very stable (fast track, court utilization, program demographics). 96% reduction in Metabase API calls.',
