@@ -313,7 +313,7 @@ function PipelineTab(props) {
       pipelineSignups > 0 && React.createElement('div', { className: 'kpi', style: { '--accent': '#6366f1' } },
         React.createElement('div', { className: 'kpi-label' }, React.createElement(KpiLabel, { label: 'FT Wishlists', tip: 'Fast Track pre-registrations on pipeline sections \u2014 demand signal before registration opens.' })),
         React.createElement('div', { className: 'kpi-val' }, pipelineSignups.toLocaleString()),
-        React.createElement('div', { className: 'kpi-sub' }, pipelinePending + ' pending conversion')
+        React.createElement('div', { className: 'kpi-sub' }, 'pre-registrations building')
       ),
       pipelineCap > 0 && React.createElement('div', { className: 'kpi', style: { '--accent': '#2563eb' } },
         React.createElement('div', { className: 'kpi-label' }, 'Total Capacity'),
@@ -338,7 +338,6 @@ function PipelineTab(props) {
             React.createElement('tr', null,
               React.createElement('th', { className: 'left', style: { minWidth: 240 } }, 'Program / Section'),
               React.createElement('th', null, 'FT Wishlists'),
-              React.createElement('th', null, 'Pending'),
               React.createElement('th', null, 'Capacity'),
               React.createElement('th', null, 'Demand'),
               React.createElement('th', null, 'Reg Opens'),
@@ -359,7 +358,6 @@ function PipelineTab(props) {
                   )
                 ),
                 React.createElement('td', { style: { fontWeight: hasFT ? 700 : 400, color: hasFT ? '#6366f1' : '#ccc' } }, hasFT ? r.ftSignups : '\u2014'),
-                React.createElement('td', { style: { color: r.ftPending > 0 ? '#d97706' : '#ccc' } }, r.ftPending > 0 ? r.ftPending : '\u2014'),
                 React.createElement('td', null, r.capacity > 0 ? r.capacity.toLocaleString() : '\u2014'),
                 React.createElement('td', null,
                   React.createElement('span', { style: { color: heat.color, fontWeight: 600 } }, heat.label)
