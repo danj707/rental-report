@@ -3420,7 +3420,11 @@ app.get("/", (req, res) => {
   const healthData = loadHealthResults();
   const healthCfg = loadHealthConfig();
 
-  const orgSections = Object.entries(ORGS).map(([slug, org]) => {
+  const orgSections = Object.entries(ORGS).sort((a, b) => {
+    const nameA = (a[1].displayName || a[0]).toLowerCase();
+    const nameB = (b[1].displayName || b[0]).toLowerCase();
+    return nameA < nameB ? -1 : nameA > nameB ? 1 : 0;
+  }).map(([slug, org]) => {
     const available    = REPORT_TYPES.filter(r => !NON_ADDABLE_REPORTS.has(r) && (org[r]?.mbUuid || SHARED_UUIDS[r]));
     const slugTitle    = slug.charAt(0).toUpperCase() + slug.slice(1);
     const displayName  = org.displayName || `${slugTitle} Parks &amp; Recreation`;
@@ -3541,7 +3545,7 @@ app.get("/", (req, res) => {
         </div>` : "";
 
     return `
-      <div class="org-section">
+      <div class="org-section" id="org-${slug}">
         <div class="org-header">
           ${org.logoUrl ? `<img src="${org.logoUrl}" class="org-logo" alt="" onerror="this.style.display='none'" />` : ""}
           <div class="org-header-text">
@@ -3556,6 +3560,16 @@ app.get("/", (req, res) => {
         ${metricsToggle}
       </div>`;
   }).join("");
+
+  // Org navigation bar (alphabetical, matching orgSections sort order)
+  const orgNav = Object.entries(ORGS).sort((a, b) => {
+    const nameA = (a[1].displayName || a[0]).toLowerCase();
+    const nameB = (b[1].displayName || b[0]).toLowerCase();
+    return nameA < nameB ? -1 : nameA > nameB ? 1 : 0;
+  }).map(([slug, org]) => {
+    const label = org.displayName || (slug.charAt(0).toUpperCase() + slug.slice(1));
+    return `<a href="#org-${slug}" style="color:#4f46e5;text-decoration:none;white-space:nowrap;font-weight:500" onmouseover="this.style.textDecoration='underline'" onmouseout="this.style.textDecoration='none'">${label}</a>`;
+  }).join(' <span style="color:#d1d5db">&middot;</span> ');
 
   // Data for the "Add reports" modal: per-org missing report types + labels.
   const addReportMeta = Object.fromEntries(
@@ -4086,6 +4100,7 @@ app.get("/", (req, res) => {
     </div>
 
     <div class="page-title">Organizations</div>
+    <div style="margin:-14px 0 18px;padding:10px 16px;background:#f9f8f6;border:1px solid #e8e5df;border-radius:8px;font-size:12.5px;line-height:2">${orgNav}</div>
     ${orgSections}
     <!-- ── Metabase Link edit modal ── -->
     <div id="mb-modal-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:1000;overflow-y:auto;padding:40px 16px">
