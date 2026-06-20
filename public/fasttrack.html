@@ -54,13 +54,19 @@
     .summary-card .sc-sub { font-size: 11px; color: #888; margin-top: 2px; }
 
     /* ── Tooltips ── */
-    .tip-wrap { position: relative; display: inline; border-bottom: 1px dotted #bbb; cursor: help; }
-    .tip-wrap:hover { border-bottom-color: #666; }
-    .tip-bubble { display: none; position: absolute; left: 0; top: calc(100% + 8px); z-index: 50; width: 220px; padding: 9px 11px; background: #1f2937; color: #f3f4f6; font-size: 11.5px; font-weight: 400; line-height: 1.5; border-radius: 6px; text-transform: none; letter-spacing: 0; box-shadow: 0 4px 16px rgba(0,0,0,.25); pointer-events: none; }
-    .tip-bubble::before { content: ''; position: absolute; bottom: 100%; left: 14px; border: 5px solid transparent; border-bottom-color: #1f2937; }
-    .tip-wrap:hover .tip-bubble { display: block; }
-    .kpi .tip-bubble { width: 200px; }
-    @media (max-width: 640px) { .tip-bubble { width: 180px; } }
+    .summary-card { position: relative; }
+    .kpi { position: relative; }
+    .has-tip { cursor: default; }
+    .has-tip .sc-label::after, .has-tip .kpi-label::after { content: ' \00B7'; color: #ccc; }
+    .has-tip:hover .sc-label::after, .has-tip:hover .kpi-label::after { color: #888; }
+    .tip-bubble { display: none; position: absolute; left: 12px; right: 12px; bottom: calc(100% + 6px); z-index: 50; padding: 8px 11px; background: #1f2937; color: #f3f4f6; font-size: 11.5px; font-weight: 400; line-height: 1.5; border-radius: 6px; text-transform: none; letter-spacing: 0; box-shadow: 0 4px 16px rgba(0,0,0,.25); pointer-events: none; }
+    .tip-bubble::after { content: ''; position: absolute; top: 100%; left: 20px; border: 5px solid transparent; border-top-color: #1f2937; }
+    .has-tip:hover .tip-bubble, .kpi:hover > .kpi-label .tip-bubble, .summary-card:hover > .tip-bubble { display: block; }
+    .kpi:has(.tip-bubble) { cursor: default; }
+    .kpi:has(.tip-bubble) .kpi-label::after { content: ' \00B7'; color: #ccc; }
+    .kpi:has(.tip-bubble):hover .kpi-label::after { color: #888; }
+    .kpi:has(.tip-bubble):hover .tip-bubble { display: block; }
+    @media print { .tip-bubble { display: none !important; } }
 
     /* ── Explainer ── */
     .explainer { background: #fff; border: 1px solid #e0ddd8; border-radius: 8px; padding: 14px 18px; margin-bottom: 20px; font-size: 12px; color: #555; line-height: 1.6; }
@@ -424,9 +430,9 @@ function PipelineTab(props) {
 /* ── Tooltip helper for KPI labels ── */
 function KpiLabel(props) {
   if (!props.tip) return props.label;
-  return React.createElement('span', { className: 'tip-wrap' },
+  return React.createElement(React.Fragment, null,
     props.label,
-    React.createElement('span', { className: 'tip-bubble' }, props.tip)
+    React.createElement('div', { className: 'tip-bubble' }, props.tip)
   );
 }
 
@@ -1200,15 +1206,10 @@ function App() {
 }
 
 function SummaryCard(props) {
-  return React.createElement('div', { className: 'summary-card', style: { borderTop: '3px solid ' + (props.color || '#888') } },
-    React.createElement('div', { className: 'sc-label' },
-      props.tip
-        ? React.createElement('span', { className: 'tip-wrap' },
-            props.label,
-            React.createElement('span', { className: 'tip-bubble' }, props.tip)
-          )
-        : props.label
-    ),
+  var cls = 'summary-card' + (props.tip ? ' has-tip' : '');
+  return React.createElement('div', { className: cls, style: { borderTop: '3px solid ' + (props.color || '#888') } },
+    props.tip && React.createElement('div', { className: 'tip-bubble' }, props.tip),
+    React.createElement('div', { className: 'sc-label' }, props.label),
     React.createElement('div', { className: 'sc-value', style: { color: props.color || '#111' } }, props.value),
     props.sub && React.createElement('div', { className: 'sc-sub' }, props.sub)
   );
