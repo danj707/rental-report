@@ -461,7 +461,6 @@ function App() {
       {label:'Products',ft:Math.round(demo.ftProductRev),nf:_nfHHs>0?Math.round(demo.nfProductRev/_nfHHs):0},
     ];
     demo.nfHHs = _nfHHs;
-    demo.ftROI = costSavings + Math.round(demo.ftRevTotal);
     return { demo: demo };
   }, [ftUserRows, ciData]);
 
@@ -471,6 +470,7 @@ function App() {
   var adminMinsSaved = totals.ftConverted * MINS_SAVED_PER_FT;
   var adminHoursSaved = Math.round(adminMinsSaved / 60);
   var costSavings = Math.round((adminMinsSaved / 60) * ADMIN_HOURLY_RATE);
+  var ftROI = costSavings + (ftAnalytics ? Math.round(ftAnalytics.demo.ftRevTotal) : 0);
 
 
   /* Expand / collapse */
@@ -854,7 +854,7 @@ function App() {
               React.createElement('div', { className: 'kpi', style: { '--accent': '#2563eb' } }, React.createElement('div', { className: 'kpi-label' }, 'Avg Revenue per HH'), React.createElement('div', { className: 'kpi-val' }, '$' + ftAnalytics.demo.avgFtSpend.toLocaleString()), React.createElement('div', { className: 'kpi-sub' }, ftAnalytics.demo.nonFtAvgSpend > 0 ? (ftAnalytics.demo.avgFtSpend >= ftAnalytics.demo.nonFtAvgSpend ? '+' + (((ftAnalytics.demo.avgFtSpend / ftAnalytics.demo.nonFtAvgSpend) - 1) * 100).toFixed(0) + '% vs non-FT' : (((ftAnalytics.demo.avgFtSpend / ftAnalytics.demo.nonFtAvgSpend) - 1) * 100).toFixed(0) + '% vs non-FT') : 'per FT household')),
               React.createElement('div', { className: 'kpi', style: { '--accent': '#7c3aed' } }, React.createElement('div', { className: 'kpi-label' }, 'Revenue per Conversion'), React.createElement('div', { className: 'kpi-val' }, '$' + ftAnalytics.demo.revPerConversion.toLocaleString()), React.createElement('div', { className: 'kpi-sub' }, totals.ftConverted.toLocaleString() + ' conversions')),
               React.createElement('div', { className: 'kpi', style: { '--accent': '#059669' } }, React.createElement('div', { className: 'kpi-label' }, 'Admin Cost Savings'), React.createElement('div', { className: 'kpi-val' }, '$' + costSavings.toLocaleString()), React.createElement('div', { className: 'kpi-sub' }, adminHoursSaved.toLocaleString() + ' hours at $23/hr')),
-              React.createElement('div', { className: 'kpi', style: { '--accent': '#dc2626' } }, React.createElement('div', { className: 'kpi-label' }, 'FT Total Value'), React.createElement('div', { className: 'kpi-val' }, '$' + ftAnalytics.demo.ftROI.toLocaleString()), React.createElement('div', { className: 'kpi-sub' }, 'revenue + cost savings'))
+              React.createElement('div', { className: 'kpi', style: { '--accent': '#dc2626' } }, React.createElement('div', { className: 'kpi-label' }, 'FT Total Value'), React.createElement('div', { className: 'kpi-val' }, '$' + ftROI.toLocaleString()), React.createElement('div', { className: 'kpi-sub' }, 'revenue + cost savings'))
             ),
 
             /* FT vs Non-FT comparison */
@@ -898,7 +898,7 @@ function App() {
               React.createElement('div', { className: 'obs-grid' },
                 React.createElement('div', null, '\uD83D\uDCB0 ', React.createElement('strong', { style: { color: '#065f46' } }, 'Revenue Attribution'), ' FT households have generated $', Math.round(ftAnalytics.demo.ftRevTotal).toLocaleString(), ' in total revenue across ', ftAnalytics.demo.ftRevHHs, ' households. At $', ftAnalytics.demo.revPerConversion.toLocaleString(), ' per conversion, each Fast Track registration represents meaningful revenue.'),
                 ftAnalytics.demo.avgFtSpend > 0 && ftAnalytics.demo.nonFtAvgSpend > 0 && React.createElement('div', null, '\uD83D\uDCB8 ', React.createElement('strong', { style: { color: '#065f46' } }, 'Spending Comparison'), ' FT households spend $', ftAnalytics.demo.avgFtSpend.toLocaleString(), ' on average vs $', ftAnalytics.demo.nonFtAvgSpend.toLocaleString(), ' for non-FT.', ftAnalytics.demo.avgFtSpend > ftAnalytics.demo.nonFtAvgSpend ? ' FT users are higher-value customers \u2014 the self-service channel attracts engaged, repeat participants.' : ftAnalytics.demo.avgFtSpend < ftAnalytics.demo.nonFtAvgSpend * 0.8 ? ' FT may be attracting first-timers still building engagement. Consider targeted upsell after initial FT registration.' : ' Spend levels are comparable, suggesting FT doesn\u2019t cannibalize \u2014 it expands the base.'),
-                React.createElement('div', null, '\u23F1\uFE0F ', React.createElement('strong', { style: { color: '#065f46' } }, 'Efficiency Gains'), ' ', totals.ftConverted.toLocaleString(), ' self-service registrations saved an estimated ', adminHoursSaved.toLocaleString(), ' staff hours ($', costSavings.toLocaleString(), ' at $23/hr). Combined with revenue, Fast Track has generated $', ftAnalytics.demo.ftROI.toLocaleString(), ' in total value.'),
+                React.createElement('div', null, '\u23F1\uFE0F ', React.createElement('strong', { style: { color: '#065f46' } }, 'Efficiency Gains'), ' ', totals.ftConverted.toLocaleString(), ' self-service registrations saved an estimated ', adminHoursSaved.toLocaleString(), ' staff hours ($', costSavings.toLocaleString(), ' at $23/hr). Combined with revenue, Fast Track has generated $', ftROI.toLocaleString(), ' in total value.'),
                 programs.filter(function(p){return p.ftConverted>0;}).length > 0 && React.createElement('div', null, '\uD83C\uDFC6 ', React.createElement('strong', { style: { color: '#065f46' } }, 'Top Revenue Drivers'), ' ', programs.filter(function(p){return p.ftConverted>0;}).slice(0,3).map(function(p){return p.program + ' (' + p.ftConverted + ' conversions)';}).join(', '), '. These programs generate the highest volume of FT-attributed registrations.')
               )
             )
