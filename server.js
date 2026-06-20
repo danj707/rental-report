@@ -5019,6 +5019,13 @@ app.get("/", (req, res) => {
     // Newest first. Add a new entry at the TOP for every change we ship.
     // History below back-filled from the GitHub commit log.
     const UPDATES = [
+      { date: '2026-06-20', title: '\uD83D\uDCB0 Fast Track Revenue Tab \u2014 Financial Impact Analysis', items: [
+        '\uD83D\uDCB0 REVENUE TAB \u2014 FT report now has three tabs: Overview, Revenue, and Demographics. Revenue tab lazy-fetches CI data and shows total FT revenue, revenue per HH, revenue per conversion, cost savings, and total FT value (revenue + savings).',
+        '\uD83D\uDCCA REVENUE BY TYPE \u2014 Breaks down FT household revenue by source: Programs, Facility, Fees, Products. Bar charts for revenue distribution and household spend buckets ($0, $1-100, $101-300, etc).',
+        '\u2696\uFE0F FT VS NON-FT \u2014 Side-by-side spending comparison showing average spend per household for FT vs non-FT, with dollar and percentage differences.',
+        '\uD83C\uDFC6 TOP PROGRAMS \u2014 Programs ranked by FT conversion volume. Revenue insights narrative auto-generated with top drivers and efficiency metrics.',
+        '\uD83E\uDDF9 DEMOGRAPHICS CLEANUP \u2014 Revenue/spending metrics moved from Demographics \u2192 Revenue tab. Demographics now focused purely on who FT users are (age, residency, geography, first-touch).',
+      ]},
       { date: '2026-06-20', title: '\uD83D\uDC65 Fast Track Demographics Tab \u2014 Moved to FT Report', items: [
         '\u26A1 DEMOGRAPHICS TAB \u2014 FT report now has a two-tab layout: Overview (existing section/program data) and Demographics (community crossover analysis). Demographics tab lazy-fetches CI data on click.',
         '\uD83D\uDD17 CROSS-REFERENCE \u2014 Matches FT users to community households by email/HH ID. Shows first-touch acquisition, FT vs non-FT spending, residency rates, age distribution, and geographic breakdown.',

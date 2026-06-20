@@ -234,11 +234,11 @@ function BarChart(props) {
     data.map(function(d, i) {
       var w = Math.max(2, (d[props.valKey] / max) * 100);
       return React.createElement('div', { key: i, style: { display: 'flex', alignItems: 'center', gap: 10, marginBottom: 5 } },
-        React.createElement('div', { style: { width: 100, flexShrink: 0, fontSize: 11, fontWeight: 500, color: '#333', textAlign: 'right' } }, d[props.labelKey]),
+        React.createElement('div', { style: { width: props.wide ? 220 : 100, flexShrink: 0, fontSize: 11, fontWeight: 500, color: '#333', textAlign: 'right', lineHeight: '1.25', wordBreak: 'break-word' } }, d[props.labelKey]),
         React.createElement('div', { style: { flex: 1, height: 20, background: '#f5f4f1', borderRadius: 4, overflow: 'hidden' } },
           React.createElement('div', { style: { width: w + '%', height: '100%', background: props.color || '#6366f1', borderRadius: 4 } })
         ),
-        React.createElement('div', { style: { width: 40, fontSize: 11, fontWeight: 600, color: '#555', textAlign: 'right' } }, d[props.valKey])
+        React.createElement('div', { style: { width: 50, fontSize: 11, fontWeight: 600, color: '#555', textAlign: 'right' } }, (props.prefix||'') + d[props.valKey].toLocaleString())
       );
     })
   );
@@ -345,7 +345,7 @@ function App() {
 
   function switchTab(t) {
     setActiveTab(t);
-    if (t === 'demographics') fetchCiData();
+    if (t === 'demographics' || t === 'revenue') fetchCiData();
   }
 
   /* ── FT Demographics analytics (ported from CI cross-tab) ── */
@@ -357,7 +357,11 @@ function App() {
     var demo = { hasData:false, ftUsers:userRows.length, matched:0,
       ages:[], resYes:0, resNo:0, cities:{}, zips:{}, ftRevTotal:0, ftRevHHs:0,
       ftFirstTouch:0, ftFirstTouchRev:0, ftFirstTouchHHs:0, nonFtAvgSpend:0,
-      ageBrackets:{'0-5':0,'6-12':0,'13-17':0,'18-25':0,'26-35':0,'36-45':0,'46-55':0,'56-65':0,'65+':0} };
+      ageBrackets:{'0-5':0,'6-12':0,'13-17':0,'18-25':0,'26-35':0,'36-45':0,'46-55':0,'56-65':0,'65+':0},
+      ftProgRev:0, ftFacilityRev:0, ftFeeRev:0, ftProductRev:0, ftGrossRev:0, ftRefunds:0,
+      nfProgRev:0, nfFacilityRev:0, nfFeeRev:0, nfProductRev:0, nfGrossRev:0, nfNetRev:0,
+      spendBuckets:{'$0':0,'$1-100':0,'$101-300':0,'$301-500':0,'$501-1000':0,'$1000+':0},
+      ftBookingCounts:[] };
 
     var emailMap = {};
     var hhMap = {};
@@ -380,6 +384,22 @@ function App() {
       var rawRev = match['Net Revenue'] || match['net_revenue'] || match['Net_Revenue'] || 0;
       var hhNet = parseFloat(String(rawRev).replace(/,/g,'')) || 0;
       if (hhNet > 0) { demo.ftRevTotal += hhNet; demo.ftRevHHs++; }
+      var _pr = parseFloat(String(match['Program Revenue']||0).replace(/,/g,''))||0;
+      var _fr = parseFloat(String(match['Facility Revenue']||0).replace(/,/g,''))||0;
+      var _fe = parseFloat(String(match['Fee Revenue']||0).replace(/,/g,''))||0;
+      var _pd = parseFloat(String(match['Product Revenue']||0).replace(/,/g,''))||0;
+      var _gr = parseFloat(String(match['Gross Revenue']||0).replace(/,/g,''))||0;
+      var _rf = parseFloat(String(match['Refunds']||0).replace(/,/g,''))||0;
+      demo.ftProgRev+=_pr; demo.ftFacilityRev+=_fr; demo.ftFeeRev+=_fe; demo.ftProductRev+=_pd;
+      demo.ftGrossRev+=_gr; demo.ftRefunds+=_rf;
+      if(hhNet<=0) demo.spendBuckets['$0']++;
+      else if(hhNet<=100) demo.spendBuckets['$1-100']++;
+      else if(hhNet<=300) demo.spendBuckets['$101-300']++;
+      else if(hhNet<=500) demo.spendBuckets['$301-500']++;
+      else if(hhNet<=1000) demo.spendBuckets['$501-1000']++;
+      else demo.spendBuckets['$1000+']++;
+      var _bc = parseInt(ur['FT Booking Count'])||0;
+      if(_bc>0) demo.ftBookingCounts.push(_bc);
       var _ftd = ur['First FT Date'] ? new Date(ur['First FT Date']) : null;
       var _fab = ur['First Any Booking'] ? new Date(ur['First Any Booking']) : null;
       if (_ftd && _fab && !isNaN(_ftd.getTime()) && !isNaN(_fab.getTime()) && Math.abs(_ftd - _fab) < 172800000) {
@@ -414,6 +434,12 @@ function App() {
       _seenNF[hh] = true;
       var rv = parseFloat(String(r['Net Revenue']||r['net_revenue']||r['Net_Revenue']||0).replace(/,/g,''))||0;
       if (rv > 0) { _nfRev += rv; _nfHHs++; }
+      demo.nfProgRev += parseFloat(String(r['Program Revenue']||0).replace(/,/g,''))||0;
+      demo.nfFacilityRev += parseFloat(String(r['Facility Revenue']||0).replace(/,/g,''))||0;
+      demo.nfFeeRev += parseFloat(String(r['Fee Revenue']||0).replace(/,/g,''))||0;
+      demo.nfProductRev += parseFloat(String(r['Product Revenue']||0).replace(/,/g,''))||0;
+      demo.nfGrossRev += parseFloat(String(r['Gross Revenue']||0).replace(/,/g,''))||0;
+      demo.nfNetRev += rv;
     });
     demo.nonFtAvgSpend = _nfHHs > 0 ? Math.round(_nfRev / _nfHHs) : 0;
     demo.avgFirstTouchSpend = demo.ftFirstTouchHHs > 0 ? Math.round(demo.ftFirstTouchRev / demo.ftFirstTouchHHs) : 0;
@@ -425,6 +451,17 @@ function App() {
     demo.ageBracketData = Object.keys(demo.ageBrackets).map(function(k){return {label:k,count:demo.ageBrackets[k]};});
     demo.matchedHHs = matchedHHs.size;
     demo.avgFtSpend = demo.ftRevHHs > 0 ? Math.round(demo.ftRevTotal / demo.ftRevHHs) : 0;
+    demo.revPerConversion = totals.ftConverted > 0 ? Math.round(demo.ftRevTotal / totals.ftConverted) : 0;
+    demo.avgBookingCount = demo.ftBookingCounts.length > 0 ? (demo.ftBookingCounts.reduce(function(a,b){return a+b;},0)/demo.ftBookingCounts.length).toFixed(1) : '0';
+    demo.spendBucketData = Object.keys(demo.spendBuckets).map(function(k){return {label:k,count:demo.spendBuckets[k]};});
+    demo.revByType = [
+      {label:'Programs',ft:Math.round(demo.ftProgRev),nf:_nfHHs>0?Math.round(demo.nfProgRev/_nfHHs):0},
+      {label:'Facility',ft:Math.round(demo.ftFacilityRev),nf:_nfHHs>0?Math.round(demo.nfFacilityRev/_nfHHs):0},
+      {label:'Fees',ft:Math.round(demo.ftFeeRev),nf:_nfHHs>0?Math.round(demo.nfFeeRev/_nfHHs):0},
+      {label:'Products',ft:Math.round(demo.ftProductRev),nf:_nfHHs>0?Math.round(demo.nfProductRev/_nfHHs):0},
+    ];
+    demo.nfHHs = _nfHHs;
+    demo.ftROI = costSavings + Math.round(demo.ftRevTotal);
     return { demo: demo };
   }, [ftUserRows, ciData]);
 
@@ -587,6 +624,9 @@ function App() {
         /* Tab bar */
         React.createElement('div', { className: 'tabs no-print' },
           React.createElement('button', { className: 'tab-btn' + (activeTab === 'overview' ? ' active' : ''), onClick: function(){ switchTab('overview'); } }, '\u26A1 Overview'),
+          React.createElement('button', { className: 'tab-btn' + (activeTab === 'revenue' ? ' active' : ''), onClick: function(){ switchTab('revenue'); } },
+            '\uD83D\uDCB0 Revenue'
+          ),
           React.createElement('button', { className: 'tab-btn' + (activeTab === 'demographics' ? ' active' : ''), onClick: function(){ switchTab('demographics'); } },
             '\uD83D\uDC65 Demographics',
             ftUserRows.length > 0 && React.createElement('span', { className: 'tab-badge', style: { background: '#6366f122', color: '#6366f1' } }, ftUserRows.length)
@@ -792,7 +832,80 @@ function App() {
 
         ), /* end overview tab */
 
-        activeTab === 'demographics' && React.createElement(React.Fragment, null,
+        activeTab === 'revenue' && React.createElement(React.Fragment, null,
+          ciLoading && React.createElement('div', { style: { textAlign: 'center', padding: '60px 20px', color: '#888' } },
+            React.createElement('div', { className: 'spinner', style: { margin: '0 auto 12px' } }),
+            'Loading revenue data\u2026'
+          ),
+          ciError && !ciLoading && React.createElement('div', { style: { textAlign: 'center', padding: '40px 20px', color: '#b91c1c' } },
+            'Could not load revenue data: ', ciError
+          ),
+          !ciLoading && !ciError && ciData && !ftAnalytics && React.createElement('div', { style: { textAlign: 'center', padding: '40px 20px', color: '#888' } },
+            'No revenue matches found. This tab cross-references Fast Track users with household spending data.'
+          ),
+          !ciLoading && !ciError && !ciData && React.createElement('div', { style: { textAlign: 'center', padding: '40px 20px', color: '#888' } },
+            React.createElement('div', { className: 'spinner', style: { margin: '0 auto 12px' } }), 'Loading\u2026'
+          ),
+          ftAnalytics && ftAnalytics.demo.hasData && React.createElement(React.Fragment, null,
+
+            /* Revenue headline KPIs */
+            React.createElement('div', { className: 'kpi-row' },
+              React.createElement('div', { className: 'kpi', style: { '--accent': '#059669' } }, React.createElement('div', { className: 'kpi-label' }, 'Total FT Revenue'), React.createElement('div', { className: 'kpi-val' }, '$' + Math.round(ftAnalytics.demo.ftRevTotal).toLocaleString()), React.createElement('div', { className: 'kpi-sub' }, ftAnalytics.demo.ftRevHHs + ' households with revenue')),
+              React.createElement('div', { className: 'kpi', style: { '--accent': '#2563eb' } }, React.createElement('div', { className: 'kpi-label' }, 'Avg Revenue per HH'), React.createElement('div', { className: 'kpi-val' }, '$' + ftAnalytics.demo.avgFtSpend.toLocaleString()), React.createElement('div', { className: 'kpi-sub' }, ftAnalytics.demo.nonFtAvgSpend > 0 ? (ftAnalytics.demo.avgFtSpend >= ftAnalytics.demo.nonFtAvgSpend ? '+' + (((ftAnalytics.demo.avgFtSpend / ftAnalytics.demo.nonFtAvgSpend) - 1) * 100).toFixed(0) + '% vs non-FT' : (((ftAnalytics.demo.avgFtSpend / ftAnalytics.demo.nonFtAvgSpend) - 1) * 100).toFixed(0) + '% vs non-FT') : 'per FT household')),
+              React.createElement('div', { className: 'kpi', style: { '--accent': '#7c3aed' } }, React.createElement('div', { className: 'kpi-label' }, 'Revenue per Conversion'), React.createElement('div', { className: 'kpi-val' }, '$' + ftAnalytics.demo.revPerConversion.toLocaleString()), React.createElement('div', { className: 'kpi-sub' }, totals.ftConverted.toLocaleString() + ' conversions')),
+              React.createElement('div', { className: 'kpi', style: { '--accent': '#059669' } }, React.createElement('div', { className: 'kpi-label' }, 'Admin Cost Savings'), React.createElement('div', { className: 'kpi-val' }, '$' + costSavings.toLocaleString()), React.createElement('div', { className: 'kpi-sub' }, adminHoursSaved.toLocaleString() + ' hours at $23/hr')),
+              React.createElement('div', { className: 'kpi', style: { '--accent': '#dc2626' } }, React.createElement('div', { className: 'kpi-label' }, 'FT Total Value'), React.createElement('div', { className: 'kpi-val' }, '$' + ftAnalytics.demo.ftROI.toLocaleString()), React.createElement('div', { className: 'kpi-sub' }, 'revenue + cost savings'))
+            ),
+
+            /* FT vs Non-FT comparison */
+            React.createElement('div', { style: { borderTop: '1px solid #e5e7eb', marginTop: 20, paddingTop: 16 } },
+              React.createElement('div', { style: { fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: '#059669', marginBottom: 12 } },
+                'FT vs Non-FT Household Spending ', React.createElement('span', { style: { fontWeight: 400, textTransform: 'none', color: '#9ca3af', letterSpacing: 0 } }, '\u2014 revenue comparison by source')
+              )
+            ),
+            React.createElement('div', { className: 'kpi-row' },
+              React.createElement('div', { className: 'kpi', style: { '--accent': '#6366f1' } }, React.createElement('div', { className: 'kpi-label' }, 'FT Avg Spend'), React.createElement('div', { className: 'kpi-val' }, '$' + ftAnalytics.demo.avgFtSpend.toLocaleString()), React.createElement('div', { className: 'kpi-sub' }, ftAnalytics.demo.ftRevHHs + ' households')),
+              React.createElement('div', { className: 'kpi', style: { '--accent': '#9ca3af' } }, React.createElement('div', { className: 'kpi-label' }, 'Non-FT Avg Spend'), React.createElement('div', { className: 'kpi-val' }, '$' + ftAnalytics.demo.nonFtAvgSpend.toLocaleString()), React.createElement('div', { className: 'kpi-sub' }, ftAnalytics.demo.nfHHs.toLocaleString() + ' households')),
+              ftAnalytics.demo.avgFtSpend > 0 && ftAnalytics.demo.nonFtAvgSpend > 0 && React.createElement('div', { className: 'kpi', style: { '--accent': ftAnalytics.demo.avgFtSpend >= ftAnalytics.demo.nonFtAvgSpend ? '#059669' : '#d97706' } }, React.createElement('div', { className: 'kpi-label' }, 'Difference'), React.createElement('div', { className: 'kpi-val' }, (ftAnalytics.demo.avgFtSpend >= ftAnalytics.demo.nonFtAvgSpend ? '+' : '') + '$' + Math.abs(ftAnalytics.demo.avgFtSpend - ftAnalytics.demo.nonFtAvgSpend).toLocaleString()), React.createElement('div', { className: 'kpi-sub' }, ftAnalytics.demo.avgFtSpend >= ftAnalytics.demo.nonFtAvgSpend ? 'FT households spend more' : 'non-FT households spend more'))
+            ),
+
+            /* Revenue by type */
+            ftAnalytics.demo.revByType.some(function(d){return d.ft>0;}) && React.createElement(React.Fragment, null,
+              React.createElement('div', { style: { borderTop: '1px solid #e5e7eb', marginTop: 20, paddingTop: 16 } },
+                React.createElement('div', { style: { fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: '#2563eb', marginBottom: 12 } },
+                  'Revenue by Type ', React.createElement('span', { style: { fontWeight: 400, textTransform: 'none', color: '#9ca3af', letterSpacing: 0 } }, '\u2014 total FT household revenue broken down by source')
+                )
+              ),
+              React.createElement('div', { className: 'grid' },
+                React.createElement(BarChart, { title: 'FT Household Revenue by Type', data: ftAnalytics.demo.revByType.filter(function(d){return d.ft>0;}), labelKey: 'label', valKey: 'ft', color: '#059669', prefix: '$' }),
+                React.createElement(BarChart, { title: 'FT Household Spend Distribution', data: ftAnalytics.demo.spendBucketData.filter(function(d){return d.count>0;}), labelKey: 'label', valKey: 'count', color: '#6366f1' })
+              )
+            ),
+
+            /* Top Programs by FT Conversions */
+            programs.length > 0 && React.createElement(React.Fragment, null,
+              React.createElement('div', { style: { borderTop: '1px solid #e5e7eb', marginTop: 20, paddingTop: 16 } },
+                React.createElement('div', { style: { fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: '#7c3aed', marginBottom: 12 } },
+                  'Top Programs by FT Conversions ', React.createElement('span', { style: { fontWeight: 400, textTransform: 'none', color: '#9ca3af', letterSpacing: 0 } }, '\u2014 programs driving the most FT-attributed registrations')
+                )
+              ),
+              React.createElement(BarChart, { title: 'FT Conversions by Program', data: programs.filter(function(p){return p.ftConverted>0;}).slice(0,15).map(function(p){return {label:p.program,count:p.ftConverted};}), labelKey: 'label', valKey: 'count', color: '#7c3aed', wide: true })
+            ),
+
+            /* Key Observations */
+            React.createElement('div', { className: 'obs', style: { marginTop: 16 } },
+              React.createElement('div', { className: 'obs-title' }, 'Revenue Insights'),
+              React.createElement('div', { className: 'obs-grid' },
+                React.createElement('div', null, '\uD83D\uDCB0 ', React.createElement('strong', { style: { color: '#065f46' } }, 'Revenue Attribution'), ' FT households have generated $', Math.round(ftAnalytics.demo.ftRevTotal).toLocaleString(), ' in total revenue across ', ftAnalytics.demo.ftRevHHs, ' households. At $', ftAnalytics.demo.revPerConversion.toLocaleString(), ' per conversion, each Fast Track registration represents meaningful revenue.'),
+                ftAnalytics.demo.avgFtSpend > 0 && ftAnalytics.demo.nonFtAvgSpend > 0 && React.createElement('div', null, '\uD83D\uDCB8 ', React.createElement('strong', { style: { color: '#065f46' } }, 'Spending Comparison'), ' FT households spend $', ftAnalytics.demo.avgFtSpend.toLocaleString(), ' on average vs $', ftAnalytics.demo.nonFtAvgSpend.toLocaleString(), ' for non-FT.', ftAnalytics.demo.avgFtSpend > ftAnalytics.demo.nonFtAvgSpend ? ' FT users are higher-value customers \u2014 the self-service channel attracts engaged, repeat participants.' : ftAnalytics.demo.avgFtSpend < ftAnalytics.demo.nonFtAvgSpend * 0.8 ? ' FT may be attracting first-timers still building engagement. Consider targeted upsell after initial FT registration.' : ' Spend levels are comparable, suggesting FT doesn\u2019t cannibalize \u2014 it expands the base.'),
+                React.createElement('div', null, '\u23F1\uFE0F ', React.createElement('strong', { style: { color: '#065f46' } }, 'Efficiency Gains'), ' ', totals.ftConverted.toLocaleString(), ' self-service registrations saved an estimated ', adminHoursSaved.toLocaleString(), ' staff hours ($', costSavings.toLocaleString(), ' at $23/hr). Combined with revenue, Fast Track has generated $', ftAnalytics.demo.ftROI.toLocaleString(), ' in total value.'),
+                programs.filter(function(p){return p.ftConverted>0;}).length > 0 && React.createElement('div', null, '\uD83C\uDFC6 ', React.createElement('strong', { style: { color: '#065f46' } }, 'Top Revenue Drivers'), ' ', programs.filter(function(p){return p.ftConverted>0;}).slice(0,3).map(function(p){return p.program + ' (' + p.ftConverted + ' conversions)';}).join(', '), '. These programs generate the highest volume of FT-attributed registrations.')
+              )
+            )
+          )
+        ),
+
+                activeTab === 'demographics' && React.createElement(React.Fragment, null,
           ciLoading && React.createElement('div', { style: { textAlign: 'center', padding: '60px 20px', color: '#888' } },
             React.createElement('div', { className: 'spinner', style: { margin: '0 auto 12px' } }),
             'Loading community data for demographic crossover\u2026'
@@ -808,24 +921,6 @@ function App() {
           ),
           ftAnalytics && ftAnalytics.demo.hasData && React.createElement(React.Fragment, null,
 
-            /* Impact KPIs */
-            React.createElement('div', { style: { borderBottom: '1px solid #e5e7eb', marginBottom: 16, paddingBottom: 8 } },
-              React.createElement('div', { style: { fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: '#059669', marginBottom: 4 } },
-                'FT Impact ', React.createElement('span', { style: { fontWeight: 400, textTransform: 'none', color: '#9ca3af', letterSpacing: 0 } }, '\u2014 estimated admin efficiency gains')
-              )
-            ),
-            React.createElement('div', { className: 'kpi-row' },
-              React.createElement('div', { className: 'kpi', style: { '--accent': '#059669' } }, React.createElement('div', { className: 'kpi-label' }, 'Admin Hours Saved'), React.createElement('div', { className: 'kpi-val' }, adminHoursSaved.toLocaleString()), React.createElement('div', { className: 'kpi-sub' }, '~8 min saved per FT registration')),
-              React.createElement('div', { className: 'kpi', style: { '--accent': '#059669' } }, React.createElement('div', { className: 'kpi-label' }, 'Estimated Cost Savings'), React.createElement('div', { className: 'kpi-val' }, '$' + costSavings.toLocaleString()), React.createElement('div', { className: 'kpi-sub' }, 'at $23/hr avg admin rate')),
-              React.createElement('div', { className: 'kpi', style: { '--accent': '#6366f1' } }, React.createElement('div', { className: 'kpi-label' }, 'Self-Service Rate'), React.createElement('div', { className: 'kpi-val' }, (totals.totalEnrolled > 0 ? (totals.ftConverted / totals.totalEnrolled * 100).toFixed(1) : '0') + '%'), React.createElement('div', { className: 'kpi-sub' }, totals.ftConverted.toLocaleString() + ' of ' + totals.totalEnrolled.toLocaleString() + ' via FT'))
-            ),
-            React.createElement('div', { className: 'obs' },
-              React.createElement('div', { className: 'obs-grid' },
-                React.createElement('div', null, '\u23F1\uFE0F ', React.createElement('strong', { style: { color: '#065f46' } }, 'Time Savings'), ' ', totals.ftConverted.toLocaleString(), ' Fast Track registrations saved an estimated ', adminHoursSaved.toLocaleString(), ' staff hours. Each FT self-service registration eliminates ~8 minutes of phone/walk-in processing time per transaction.'),
-                React.createElement('div', null, '\uD83D\uDCB0 ', React.createElement('strong', { style: { color: '#065f46' } }, 'Cost Efficiency'), ' At the BLS median recreation worker rate of $23/hr, Fast Track has saved an estimated $', costSavings.toLocaleString(), ' in admin labor costs', totals.totalEnrolled > 0 ? ' \u2014 covering ' + (totals.ftConverted / totals.totalEnrolled * 100).toFixed(1) + '% of all enrollments without staff intervention.' : '.')
-              )
-            ),
-
             /* First-Touch Acquisition */
             ftAnalytics.demo.ftFirstTouch > 0 && React.createElement(React.Fragment, null,
               React.createElement('div', { style: { borderTop: '1px solid #e5e7eb', marginTop: 20, paddingTop: 16 } },
@@ -836,12 +931,12 @@ function App() {
               React.createElement('div', { className: 'kpi-row' },
                 React.createElement('div', { className: 'kpi', style: { '--accent': '#10b981' } }, React.createElement('div', { className: 'kpi-label' }, 'FT-Acquired Households'), React.createElement('div', { className: 'kpi-val' }, ftAnalytics.demo.ftFirstTouch), React.createElement('div', { className: 'kpi-sub' }, ftAnalytics.demo.matchedHHs > 0 ? ((ftAnalytics.demo.ftFirstTouch / ftAnalytics.demo.matchedHHs) * 100).toFixed(0) + '% of FT households were new' : 'new to system via FT')),
                 ftAnalytics.demo.avgFirstTouchSpend > 0 && React.createElement('div', { className: 'kpi', style: { '--accent': '#10b981' } }, React.createElement('div', { className: 'kpi-label' }, 'FT-Acquired Avg Spend'), React.createElement('div', { className: 'kpi-val' }, '$' + ftAnalytics.demo.avgFirstTouchSpend.toLocaleString()), React.createElement('div', { className: 'kpi-sub' }, 'lifetime spend since joining via FT')),
-                ftAnalytics.demo.avgFtSpend > 0 && ftAnalytics.demo.nonFtAvgSpend > 0 && React.createElement('div', { className: 'kpi', style: { '--accent': ftAnalytics.demo.avgFtSpend >= ftAnalytics.demo.nonFtAvgSpend ? '#059669' : '#d97706' } }, React.createElement('div', { className: 'kpi-label' }, 'FT vs Non-FT Spend'), React.createElement('div', { className: 'kpi-val' }, '$' + ftAnalytics.demo.avgFtSpend.toLocaleString() + ' vs $' + ftAnalytics.demo.nonFtAvgSpend.toLocaleString()), React.createElement('div', { className: 'kpi-sub' }, ftAnalytics.demo.avgFtSpend >= ftAnalytics.demo.nonFtAvgSpend ? 'FT households spend ' + (((ftAnalytics.demo.avgFtSpend / ftAnalytics.demo.nonFtAvgSpend) - 1) * 100).toFixed(0) + '% more' : 'Non-FT households spend ' + (((ftAnalytics.demo.nonFtAvgSpend / ftAnalytics.demo.avgFtSpend) - 1) * 100).toFixed(0) + '% more'))
+
               ),
               React.createElement('div', { className: 'obs' },
                 React.createElement('div', { className: 'obs-grid' },
                   React.createElement('div', null, '\uD83C\uDF31 ', React.createElement('strong', { style: { color: '#065f46' } }, 'New Customer Acquisition'), ' ', ftAnalytics.demo.ftFirstTouch, ' household', ftAnalytics.demo.ftFirstTouch === 1 ? '' : 's', ' entered the system for the first time through Fast Track', ftAnalytics.demo.matchedHHs > 0 ? ' \u2014 ' + ((ftAnalytics.demo.ftFirstTouch / ftAnalytics.demo.matchedHHs) * 100).toFixed(0) + '% of all FT households. These aren\u2019t existing customers choosing convenience; they\u2019re net-new participants FT brought through the door.' : '.'),
-                  ftAnalytics.demo.avgFtSpend > 0 && ftAnalytics.demo.nonFtAvgSpend > 0 && React.createElement('div', null, '\uD83D\uDCB8 ', React.createElement('strong', { style: { color: '#065f46' } }, 'Revenue Quality'), ' Households that use Fast Track spend an average of $', ftAnalytics.demo.avgFtSpend.toLocaleString(), ' vs $', ftAnalytics.demo.nonFtAvgSpend.toLocaleString(), ' for non-FT households.', ftAnalytics.demo.avgFtSpend > ftAnalytics.demo.nonFtAvgSpend ? ' FT users are higher-value customers \u2014 the self-service channel attracts engaged, repeat participants.' : ftAnalytics.demo.avgFtSpend < ftAnalytics.demo.nonFtAvgSpend * 0.8 ? ' FT may be attracting first-timers still building engagement. Consider targeted upsell after initial FT registration.' : ' Spend levels are comparable, suggesting FT doesn\u2019t cannibalize \u2014 it expands the base.')
+
                 )
               )
             ),
@@ -857,7 +952,7 @@ function App() {
               ftAnalytics.demo.medianAge !== null && React.createElement('div', { className: 'kpi', style: { '--accent': '#d97706' } }, React.createElement('div', { className: 'kpi-label' }, 'Median Age'), React.createElement('div', { className: 'kpi-val' }, ftAnalytics.demo.medianAge), React.createElement('div', { className: 'kpi-sub' }, 'of matched households')),
               ftAnalytics.demo.resPct !== null && React.createElement('div', { className: 'kpi', style: { '--accent': '#059669' } }, React.createElement('div', { className: 'kpi-label' }, 'Resident Rate'), React.createElement('div', { className: 'kpi-val' }, ftAnalytics.demo.resPct + '%'), React.createElement('div', { className: 'kpi-sub' }, 'of FT users')),
               ftAnalytics.demo.topCities.length > 0 && React.createElement('div', { className: 'kpi', style: { '--accent': '#2563eb' } }, React.createElement('div', { className: 'kpi-label' }, 'Top City'), React.createElement('div', { className: 'kpi-val' }, ftAnalytics.demo.topCities[0].city), React.createElement('div', { className: 'kpi-sub' }, ftAnalytics.demo.topCities[0].count + ' HH (' + (ftAnalytics.demo.matchedHHs > 0 ? ((ftAnalytics.demo.topCities[0].count / ftAnalytics.demo.matchedHHs) * 100).toFixed(0) : '0') + '%)')),
-              ftAnalytics.demo.avgFtSpend > 0 && React.createElement('div', { className: 'kpi', style: { '--accent': '#dc2626' } }, React.createElement('div', { className: 'kpi-label' }, 'Avg FT Spend'), React.createElement('div', { className: 'kpi-val' }, '$' + ftAnalytics.demo.avgFtSpend.toLocaleString()), React.createElement('div', { className: 'kpi-sub' }, 'per household'))
+
             ),
             React.createElement('div', { className: 'obs' },
               React.createElement('div', { className: 'obs-title' }, 'Key Observations'),
@@ -865,7 +960,7 @@ function App() {
                 ftAnalytics.demo.resPct !== null && React.createElement('div', null, '\uD83C\uDFE0 ', React.createElement('strong', { style: { color: '#065f46' } }, 'Residency'), ' ', ftAnalytics.demo.resPct, '% of FT users are residents.'),
                 ftAnalytics.demo.medianAge !== null && React.createElement('div', null, '\uD83D\uDC76 ', React.createElement('strong', { style: { color: '#065f46' } }, 'Age Profile'), ' FT household median age is ', ftAnalytics.demo.medianAge, '.'),
                 ftAnalytics.demo.topCities.length > 1 && React.createElement('div', null, '\uD83D\uDDFA\uFE0F ', React.createElement('strong', { style: { color: '#065f46' } }, 'Geography'), ' Top FT cities: ', ftAnalytics.demo.topCities.slice(0, 3).map(function(c) { return c.city + ' (' + c.count + ')'; }).join(', '), '. ', ftAnalytics.demo.topCities[0].count > ftAnalytics.demo.matchedHHs * 0.5 ? 'Heavily concentrated in ' + ftAnalytics.demo.topCities[0].city + '.' : 'Spread across multiple areas.'),
-                ftAnalytics.demo.avgFtSpend > 0 && React.createElement('div', null, '\uD83D\uDCB8 ', React.createElement('strong', { style: { color: '#065f46' } }, 'Spending'), ' FT households spend an average of $', ftAnalytics.demo.avgFtSpend.toLocaleString(), ' per household.')
+
               )
             ),
 
