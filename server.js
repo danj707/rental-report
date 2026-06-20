@@ -1637,7 +1637,19 @@ Respond ONLY with a valid JSON array of 4\u20136 objects. Each object: {"type":"
 
 Focus on: household composition patterns (family size, age mix between parents and children), youth vs adult programming balance based on actual member ages, data quality issues worth addressing, growth patterns, residency implications for pricing, grade-level program opportunities (which grades are most represented), geographic reach, and underserved demographic segments. Be specific with numbers from the data. Do not invent numbers not in the input.`;
 
-const SYS_PROMPTS = { programs: PROGRAMS_SYS_PROMPT, fasttrack: FASTTRACK_SYS_PROMPT, users: USERS_SYS_PROMPT };
+const DIRECTORS_SYS_PROMPT = `You are an executive analyst for US municipal parks & recreation departments. You receive a JSON summary of one month's operational metrics: revenue, program enrollment, community demographics, and self-service (Fast Track) adoption.
+
+Return a JSON array of 3-4 insight objects. Each object has:
+- "type": one of "positive", "warning", "action", "neutral"
+- "title": bold 4-8 word headline
+- "body": 1-2 sentence explanation with specific numbers from the data
+
+Focus on: standout achievements worth celebrating, areas needing attention, and one concrete recommended action. Be specific — cite the exact numbers. Write for a department director who will share this with their city council.
+
+Example output:
+[{"type":"positive","title":"Strong enrollment momentum","body":"575 enrollments across 51 programs shows healthy community engagement, with a 41.5% overall fill rate leaving room to grow."},{"type":"action","title":"Boost Fast Track promotion","body":"Only 8.2% of enrollments come through self-service. Increasing FT adoption for high-demand programs like Swim Lessons could reduce front-desk workload by 15+ hours/month."}]`;
+
+const SYS_PROMPTS = { programs: PROGRAMS_SYS_PROMPT, fasttrack: FASTTRACK_SYS_PROMPT, users: USERS_SYS_PROMPT, "directors-report": DIRECTORS_SYS_PROMPT };
 
 // ── Program Finder AI ────────────────────────────────────────────────
 const RECOMMEND_SYS_PROMPT = `You are a friendly, helpful recreation program advisor for a municipal parks & recreation department. A resident has described what they're looking for, and you have the department's upcoming schedule of programs and activities.

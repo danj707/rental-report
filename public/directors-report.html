@@ -82,6 +82,8 @@ function App() {
   const [metrics, setMetrics] = useState(null);
   const [errMsg, setErrMsg] = useState('');
   const [pdfLoading, setPdfLoading] = useState(false);
+  const [aiInsights, setAiInsights] = useState(null);
+  const [aiLoading, setAiLoading] = useState(false);
 
   // Compute last month date range
   const lastMonth = useMemo(() => {
@@ -124,28 +126,31 @@ function App() {
       // ── GL Revenue metrics ──
       var glNet = 0, glGross = 0, glRefunds = 0;
       glRows.forEach(r => {
-        var net = parseFloat(r['Net Revenue'] || r['net_revenue'] || 0);
-        var gross = parseFloat(r['Gross Revenue'] || r['gross_revenue'] || 0);
-        var ref = parseFloat(r['Refunds'] || r['refunds'] || 0);
+        var net = parseFloat(r['Net Amount'] || r['Net Revenue'] || r['net_amount'] || 0);
+        var gross = parseFloat(r['Gross Amount'] || r['Gross Revenue'] || r['Total Payments'] || r['gross_amount'] || 0);
+        var ref = Math.abs(parseFloat(r['Total Refunds'] || r['Refund Amount'] || r['Refunds'] || r['refunds'] || 0));
         if (!isNaN(net)) glNet += net;
         if (!isNaN(gross)) glGross += gross;
-        if (!isNaN(ref)) glRefunds += Math.abs(ref);
+        if (!isNaN(ref)) glRefunds += ref;
       });
 
       // ── Programs metrics ──
       var progMap = {};
       progRows.forEach(r => {
         var name = r['Program'] || r['program'] || 'Unknown';
-        if (!progMap[name]) progMap[name] = { name, enrolled: 0, capacity: 0, received: 0 };
+        if (!progMap[name]) progMap[name] = { name, enrolled: 0, capacity: 0, received: 0, sections: 0, netRev: 0 };
         var p = progMap[name];
-        p.enrolled += parseInt(r['Enroll'] || r['Enrollments'] || r['enrolled'] || 0) || 0;
+        p.enrolled += parseInt(r['Enrollments'] || r['Enrolled'] || r['enrolled'] || 0) || 0;
         p.capacity += parseInt(r['Capacity'] || r['capacity'] || 0) || 0;
-        p.received += parseFloat(r['Received'] || r['received'] || r['Net Rev'] || 0) || 0;
+        p.received += parseFloat(r['Received'] || r['received'] || 0) || 0;
+        p.netRev += parseFloat(r['Net Revenue'] || r['Net Total'] || r['net_total'] || 0) || 0;
+        p.sections += parseInt(r['Sections'] || 1) || 0;
       });
       var programs = Object.values(progMap).sort((a,b) => b.enrolled - a.enrolled);
       var totalEnroll = programs.reduce((s,p) => s + p.enrolled, 0);
       var totalCap = programs.reduce((s,p) => s + p.capacity, 0);
       var progRevenue = programs.reduce((s,p) => s + p.received, 0);
+      if (progRevenue === 0) progRevenue = programs.reduce((s,p) => s + p.netRev, 0);
 
       // ── Users/CI metrics ──
       var hohs = userRows.filter(r => r['Role'] === 'Head of Household');
@@ -171,13 +176,23 @@ function App() {
       var ftConvRate = ftSignups > 0 ? ((ftConverted/ftSignups)*100).toFixed(1) : '0';
       var ftPrograms = new Set(ftSection.map(r => r['Program']).filter(Boolean)).size;
 
-      setMetrics({
+      var allMetrics = {
         gl: { net: glNet, gross: glGross, refunds: glRefunds },
         prog: { total: totalEnroll, capacity: totalCap, revenue: progRevenue, count: programs.length, top5: programs.slice(0,5) },
         users: { hh: totalHH, people: totalPeople, newHH, medianAge, resRate, avgHHSpend, topCity: topCityName ? topCityName[0] : '—', hohCount: hohs.length, memCount: members.length },
         ft: { signups: ftSignups, converted: ftConverted, convRate: ftConvRate, programs: ftPrograms },
-      });
+      };
+
+      setMetrics(allMetrics);
       setState('done');
+      // Kick off AI narrative in background
+      setAiLoading(true);
+      fetch(withToken('/' + slug + '/directors-report/api/insights'), {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify(allMetrics),
+      }).then(r => r.json()).then(j => {
+        if (j.ok && j.insights) setAiInsights(j.insights);
+      }).catch(() => {}).finally(() => setAiLoading(false));
     } catch (err) {
       setErrMsg(err.message);
       setState('error');
@@ -259,6 +274,30 @@ function App() {
         {m.users.medianAge && <div className="kpi-card"><div className="kl" style={{color:'#db2777'}}>Median Age</div><div className="kv">{m.users.medianAge}</div><div className="ks">{m.users.resRate}% residents</div></div>}
       </div>
 
+      {/* AI Executive Insights */}
+      {(aiInsights || aiLoading) && (
+        <div style={{background:'linear-gradient(135deg,#f0fdf4,#ecfdf5)',border:'1px solid #bbf7d0',borderRadius:10,padding:18,marginBottom:18}}>
+          <div style={{fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:'.6px',color:'#065f46',marginBottom:aiInsights?10:0,display:'flex',alignItems:'center',gap:6}}>
+            <span>✨</span> Executive Insights
+            {aiLoading && <span style={{fontWeight:400,textTransform:'none',color:'#6b7280',letterSpacing:0}}> — analyzing...</span>}
+          </div>
+          {aiInsights && (
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+              {aiInsights.map((ins, i) => {
+                var colors = {positive:'#059669',warning:'#d97706',action:'#2563eb',neutral:'#6b7280'};
+                var icons = {positive:'↗',warning:'⚠',action:'→',neutral:'•'};
+                return (
+                  <div key={i} style={{background:'#fff',borderRadius:6,padding:'10px 12px',borderLeft:'3px solid '+(colors[ins.type]||'#ccc')}}>
+                    <div style={{fontSize:12,fontWeight:700,color:colors[ins.type]||'#111',marginBottom:3}}>{icons[ins.type]||'•'} {ins.title}</div>
+                    <div style={{fontSize:11.5,color:'#374151',lineHeight:1.55}}>{ins.body}</div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="two-col">
         {/* Left column */}
         <div style={{display:'flex',flexDirection:'column',gap:16}}>
@@ -276,23 +315,30 @@ function App() {
           <div className="section">
             <div className="section-title"><span style={{color:'#6366f1'}}>🎯</span> Top Programs</div>
             {m.prog.top5.length > 0 ? (
+              <React.Fragment>
               <table className="mini-table">
                 <thead><tr><th>Program</th><th className="r">Enrolled</th><th className="r">Fill %</th><th className="r">Revenue</th></tr></thead>
                 <tbody>
-                  {m.prog.top5.map((p,i) => (
+                  {m.prog.top5.map((p,i) => {
+                    var maxEnroll = m.prog.top5[0].enrolled || 1;
+                    return (
                     <tr key={i}>
                       <td className="bold">{p.name}</td>
-                      <td className="r">{p.enrolled}</td>
+                      <td className="r" style={{position:'relative'}}>
+                        <div style={{position:'absolute',right:0,top:2,bottom:2,width:pct(p.enrolled,maxEnroll),background:'#c7d2fe',borderRadius:3,opacity:.4}} />
+                        <span style={{position:'relative'}}>{p.enrolled}</span>
+                      </td>
                       <td className="r">{p.capacity > 0 ? pct(p.enrolled, p.capacity) : '—'}</td>
-                      <td className="r">{fmtMoney(p.received)}</td>
+                      <td className="r">{p.received > 0 ? fmtMoney(p.received) : (p.netRev > 0 ? fmtMoney(p.netRev) : '—')}</td>
                     </tr>
-                  ))}
+                  );})}
                 </tbody>
               </table>
+              {m.prog.total > 0 && m.prog.capacity > 0 && (
+                <div style={{marginTop:8,fontSize:11,color:'#6b7280'}}>Overall fill rate: <strong>{pct(m.prog.total, m.prog.capacity)}</strong> across {m.prog.count} programs</div>
+              )}
+              </React.Fragment>
             ) : <p style={{color:'#9ca3af'}}>No program data for this period</p>}
-            {m.prog.total > 0 && m.prog.capacity > 0 && (
-              <p style={{marginTop:8,fontSize:11,color:'#6b7280'}}>Overall fill rate: {pct(m.prog.total, m.prog.capacity)} across {m.prog.count} programs</p>
-            )}
           </div>
         </div>
 
