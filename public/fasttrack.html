@@ -833,9 +833,8 @@ function App() {
         ), /* end overview tab */
 
         activeTab === 'revenue' && React.createElement(React.Fragment, null,
-          ciLoading && React.createElement('div', { style: { textAlign: 'center', padding: '60px 20px', color: '#888' } },
-            React.createElement('div', { className: 'spinner', style: { margin: '0 auto 12px' } }),
-            'Loading revenue data\u2026'
+          ciLoading && React.createElement('div', { style: { textAlign: 'center', padding: '60px 20px' } },
+            React.createElement(JuiceLoader, null)
           ),
           ciError && !ciLoading && React.createElement('div', { style: { textAlign: 'center', padding: '40px 20px', color: '#b91c1c' } },
             'Could not load revenue data: ', ciError
@@ -843,8 +842,8 @@ function App() {
           !ciLoading && !ciError && ciData && !ftAnalytics && React.createElement('div', { style: { textAlign: 'center', padding: '40px 20px', color: '#888' } },
             'No revenue matches found. This tab cross-references Fast Track users with household spending data.'
           ),
-          !ciLoading && !ciError && !ciData && React.createElement('div', { style: { textAlign: 'center', padding: '40px 20px', color: '#888' } },
-            React.createElement('div', { className: 'spinner', style: { margin: '0 auto 12px' } }), 'Loading\u2026'
+          !ciLoading && !ciError && !ciData && React.createElement('div', { style: { textAlign: 'center', padding: '60px 20px' } },
+            React.createElement(JuiceLoader, null)
           ),
           ftAnalytics && ftAnalytics.demo.hasData && React.createElement(React.Fragment, null,
 
@@ -906,9 +905,8 @@ function App() {
         ),
 
                 activeTab === 'demographics' && React.createElement(React.Fragment, null,
-          ciLoading && React.createElement('div', { style: { textAlign: 'center', padding: '60px 20px', color: '#888' } },
-            React.createElement('div', { className: 'spinner', style: { margin: '0 auto 12px' } }),
-            'Loading community data for demographic crossover\u2026'
+          ciLoading && React.createElement('div', { style: { textAlign: 'center', padding: '60px 20px' } },
+            React.createElement(JuiceLoader, null)
           ),
           ciError && !ciLoading && React.createElement('div', { style: { textAlign: 'center', padding: '40px 20px', color: '#b91c1c' } },
             'Could not load community data: ', ciError
