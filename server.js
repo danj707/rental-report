@@ -452,6 +452,12 @@ const ORGS = {
     displayName: "City of West Sacramento",
     gl      : { mbUuid: "4374b344-06a7-42c5-996c-e1845bda3ff1" },
   },
+  boerne: {
+    token:   "VgvWxiyKNso1x2EB",
+    orgId:   "71bf9bc4-cd62-482a-aee5-5d790cdba811",
+    logoUrl: "https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2Forganization-71bf9bc4-cd62-482a-aee5-5d790cdba811%2FfullLogo.png%3F1765481856685&w=1920&q=75",
+    displayName: "Boerne",
+  },
 };
 
 const REPORT_TYPES = ["facility", "gl", "historic", "programs", "roster", "overview", "products", "memberships", "court-utilization", "calendar", "fasttrack", "users", "program-demographics", "directors-report"];
