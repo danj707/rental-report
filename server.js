@@ -2977,6 +2977,17 @@ app.post("/api/admin/links", (req, res) => {
 // ── GET /api/admin/flags — read feature flags ───────────────────────
 app.get("/api/admin/flags", (req, res) => { res.json(getFlags()); });
 
+// Audit log viewer
+app.get("/api/admin/audit-log", (req, res) => {
+  const days = parseInt(req.query.days) || 3;
+  const orgFilter = (req.query.org || '').trim().toLowerCase();
+  const reportFilter = (req.query.report || '').trim().toLowerCase();
+  let events = readEvents(days).reverse(); // newest first
+  if (orgFilter) events = events.filter(e => (e.org || '').toLowerCase().includes(orgFilter));
+  if (reportFilter) events = events.filter(e => (e.report || '').toLowerCase().includes(reportFilter));
+  res.json({ total: events.length, events: events.slice(0, 500) });
+});
+
 // Cache performance stats
 app.get("/api/admin/cache-stats", (req, res) => {
   const entries = [];
@@ -4177,6 +4188,20 @@ app.get("/", (req, res) => {
           </div>
           <div id="mb-links-list"></div>
         </div>
+      <div style="padding:14px 18px;background:#f9f8f6;border-top:1px solid #e8e5df">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <div style="font-size:12px;font-weight:700;color:#374151">&#128270; Audit Log</div>
+          <div style="display:flex;gap:6px;align-items:center">
+            <select id="audit-days" style="padding:4px 8px;border:1px solid #d8d4cc;border-radius:4px;font-size:11px">
+              <option value="1">Last 24h</option><option value="3" selected>Last 3 days</option><option value="7">Last 7 days</option><option value="30">Last 30 days</option>
+            </select>
+            <input id="audit-org-filter" placeholder="Org" style="width:80px;padding:4px 8px;border:1px solid #d8d4cc;border-radius:4px;font-size:11px" />
+            <input id="audit-report-filter" placeholder="Report" style="width:80px;padding:4px 8px;border:1px solid #d8d4cc;border-radius:4px;font-size:11px" />
+            <button onclick="loadAuditLog()" style="padding:4px 12px;background:#374151;color:#fff;border:none;border-radius:4px;font-size:11px;font-weight:600;cursor:pointer">Load</button>
+          </div>
+        </div>
+        <div id="audit-log-body" style="font-size:11px;color:#666">Click Load to fetch recent events</div>
+      </div>
     </div>
 
     <div class="org-section">
@@ -4738,6 +4763,58 @@ app.get("/", (req, res) => {
       } catch(e) { alert('Error: ' + e.message); loadFlags(); }
     }
     loadFlags();
+
+    async function doRestart() {
+
+    async function loadAuditLog() {
+      var body = document.getElementById('audit-log-body');
+      var days = document.getElementById('audit-days').value;
+      var org = document.getElementById('audit-org-filter').value;
+      var report = document.getElementById('audit-report-filter').value;
+      body.innerHTML = '<div style="color:#999;padding:8px">Loading...</div>';
+      try {
+        var qs = 'days=' + days;
+        if (org) qs += '&org=' + encodeURIComponent(org);
+        if (report) qs += '&report=' + encodeURIComponent(report);
+        var resp = await fetch('/api/admin/audit-log?' + qs);
+        var data = await resp.json();
+        if (!data.events || data.events.length === 0) {
+          body.innerHTML = '<div style="color:#999;padding:8px">No events found</div>';
+          return;
+        }
+        var parseUA = function(ua) {
+          if (!ua) return '—';
+          if (ua.includes('Puppeteer') || ua.includes('HeadlessChrome')) return '🤖 PDF';
+          if (ua.includes('iPhone') || ua.includes('iPad')) return '📱 iOS';
+          if (ua.includes('Android')) return '📱 Android';
+          if (ua.includes('Chrome')) return '💻 Chrome';
+          if (ua.includes('Firefox')) return '💻 Firefox';
+          if (ua.includes('Safari')) return '💻 Safari';
+          return ua.substring(0, 20) + '…';
+        };
+        var html = '<div style="max-height:400px;overflow-y:auto;border:1px solid #e5e7eb;border-radius:6px">';
+        html += '<table style="width:100%;border-collapse:collapse;font-size:10.5px">';
+        html += '<thead><tr style="background:#f9fafb;position:sticky;top:0"><th style="padding:6px 8px;text-align:left;border-bottom:1px solid #e5e7eb">Time</th><th style="padding:6px 8px;text-align:left;border-bottom:1px solid #e5e7eb">Org</th><th style="padding:6px 8px;text-align:left;border-bottom:1px solid #e5e7eb">Report</th><th style="padding:6px 8px;text-align:left;border-bottom:1px solid #e5e7eb">Event</th><th style="padding:6px 8px;text-align:left;border-bottom:1px solid #e5e7eb">IP</th><th style="padding:6px 8px;text-align:left;border-bottom:1px solid #e5e7eb">Device</th></tr></thead><tbody>';
+        data.events.forEach(function(e) {
+          var t = e.ts ? new Date(e.ts) : null;
+          var timeStr = t ? (t.getMonth()+1) + '/' + t.getDate() + ' ' + t.getHours() + ':' + String(t.getMinutes()).padStart(2,'0') : '—';
+          var evtColor = e.event === 'view' ? '#059669' : e.event === 'fetch' ? '#6366f1' : e.event === 'pdf' ? '#d97706' : e.event === 'insights' ? '#dc2626' : '#666';
+          html += '<tr style="border-bottom:1px solid #f3f4f6">';
+          html += '<td style="padding:4px 8px;white-space:nowrap;color:#999">' + timeStr + '</td>';
+          html += '<td style="padding:4px 8px;font-weight:600">' + (e.org||'—') + '</td>';
+          html += '<td style="padding:4px 8px">' + (e.report||'—') + '</td>';
+          html += '<td style="padding:4px 8px;color:' + evtColor + ';font-weight:600">' + (e.event||'—') + '</td>';
+          html += '<td style="padding:4px 8px;font-family:monospace;font-size:9.5px;color:#999">' + (e.ip||'—') + '</td>';
+          html += '<td style="padding:4px 8px" title="' + (e.ua||'').replace(/"/g,'&quot;') + '">' + parseUA(e.ua) + '</td>';
+          html += '</tr>';
+        });
+        html += '</tbody></table></div>';
+        html += '<div style="margin-top:6px;color:#999;font-size:10px">' + data.total + ' events (showing ' + Math.min(data.events.length,500) + ')</div>';
+        body.innerHTML = html;
+      } catch(err) {
+        body.innerHTML = '<div style="color:#dc2626;padding:8px">Error: ' + err.message + '</div>';
+      }
+    }
 
     async function doRestart() {
       const pwd = (document.getElementById('restart-pwd') || {}).value || '';
