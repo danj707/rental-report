@@ -5019,6 +5019,12 @@ app.get("/", (req, res) => {
     // Newest first. Add a new entry at the TOP for every change we ship.
     // History below back-filled from the GitHub commit log.
     const UPDATES = [
+      { date: '2026-06-20', title: '\uD83D\uDC65 Fast Track Demographics Tab \u2014 Moved to FT Report', items: [
+        '\u26A1 DEMOGRAPHICS TAB \u2014 FT report now has a two-tab layout: Overview (existing section/program data) and Demographics (community crossover analysis). Demographics tab lazy-fetches CI data on click.',
+        '\uD83D\uDD17 CROSS-REFERENCE \u2014 Matches FT users to community households by email/HH ID. Shows first-touch acquisition, FT vs non-FT spending, residency rates, age distribution, and geographic breakdown.',
+        '\uD83D\uDCC8 IMPACT METRICS \u2014 Admin hours saved, estimated cost savings, and self-service rate now live in the Demographics tab alongside the household-level analysis.',
+        '\uD83D\uDEAE REMOVED FROM CI \u2014 Fast Track tab removed from Community Intelligence report. FT story belongs in the FT report, not buried in a 6-tab hub.',
+      ]},
       { date: '2026-06-20', title: '\uD83D\uDCCB Director\u2019s Monthly Report \u2014 One-Click Executive Summary', items: [
         '\u2728 ONE-CLICK REPORT \u2014 New /:org/directors-report generates a polished monthly executive summary. Fetches GL revenue, programs, community demographics, and Fast Track data in parallel (all cached). Single button press, instant results.',
         '\uD83E\uDD16 AI EXECUTIVE INSIGHTS \u2014 Anthropic-powered narrative generates 3-4 actionable insight cards citing specific numbers: achievements, concerns, and recommended actions. Custom system prompt tuned for council presentations.',
