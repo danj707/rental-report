@@ -2711,13 +2711,13 @@ app.get("/:org/programs", (req, res) => {
   const org  = ORGS[slug];
   if (!org) return res.status(404).send("Unknown org");
   logEvent(slug, "programs", "view", req);
-  const PARTICIPANTS_ENABLED = new Set(["westsacramento"]);
+  const PARTICIPANTS_ENABLED_ALL = true; // Enabled for all orgs — shared UUID 67b77142
   const orgConfig = {
     slug,
     displayName: org.displayName || (slug.charAt(0).toUpperCase() + slug.slice(1) + " Parks & Recreation"),
     logoUrl: org.logoUrl || "",
     token: org.token || "",
-    participantsTab: PARTICIPANTS_ENABLED.has(slug),
+    participantsTab: PARTICIPANTS_ENABLED_ALL,
   };
   const html = require("fs").readFileSync(path.join(__dirname, "public", "programs.html"), "utf8");
   const inject = `<script>window.ORG_CONFIG=${JSON.stringify(orgConfig)};</script>`;
