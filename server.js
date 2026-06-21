@@ -2296,6 +2296,39 @@ app.post("/:org/report-wizard/api/generate", async (req, res) => {
   }
 });
 
+// ── Report Wizard — feedback endpoint ──
+app.post("/:org/report-wizard/api/feedback", (req, res) => {
+  const slug = req.params.org;
+  const org = ORGS[slug];
+  if (!org) return res.status(404).json({ error: "Unknown org" });
+  const qToken = req.query.token || req.headers["x-token"];
+  if (org.token && qToken !== org.token) return res.status(403).json({ error: "Invalid token" });
+  const { vote, prompt, title, widgetCount } = req.body || {};
+  logEvent(slug, "report-wizard", "feedback", req, { vote, prompt: (prompt || "").slice(0, 200), title, widgetCount });
+  console.log(`[wizard] ${slug}: feedback ${vote} for "${(title || "").slice(0, 60)}"`);
+  res.json({ ok: true });
+});
+
+// ── Report Wizard — admin activity log ──
+app.get("/api/admin/wizard-log", (req, res) => {
+  try {
+    if (!fs.existsSync(EVENTS_FILE)) return res.json([]);
+    const lines = fs.readFileSync(EVENTS_FILE, "utf8").trim().split("\n").filter(Boolean);
+    const wizardEvents = [];
+    for (let i = lines.length - 1; i >= 0 && wizardEvents.length < 100; i--) {
+      try {
+        const evt = JSON.parse(lines[i]);
+        if (evt.report === "report-wizard" && (evt.action === "generate" || evt.action === "feedback")) {
+          wizardEvents.push(evt);
+        }
+      } catch (_) {}
+    }
+    res.json(wizardEvents);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 
 app.get("/:org/:report/api/data", resolveOrg, async (req, res) => {
   try {
