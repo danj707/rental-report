@@ -567,7 +567,7 @@ function App() {
                                 <td></td>
                                 <td className="left" style={{paddingLeft:24, color:'#666'}}>{p.name}</td>
                                 <td className="left" style={{color:'#aaa'}}>{p.signupDate}</td>
-                                <td style={{color: p.priceType === 'Group/Resident' ? '#2563eb' : '#666'}}>{fmt(basePriceOnly ? r.residentRate : p.basePrice)}{p.priceType === 'Group/Resident' && <span style={{fontSize:9, marginLeft:3, color:'#93c5fd'}}>R</span>}</td>
+                                <td style={{color: p.priceType === 'Group/Resident' ? '#2563eb' : '#666'}}>{fmt(basePriceOnly ? r.residentRate : p.finalPrice)}{p.priceType === 'Group/Resident' && <span style={{fontSize:9, marginLeft:3, color:'#93c5fd'}}>R</span>}</td>
                                 <td style={{textAlign:'center', color:'#aaa'}}>
                                   <span style={{fontSize:9, padding:'1px 5px', borderRadius:3, background: p.priceType === 'Standard' ? '#f5f5f5' : '#eff6ff', color: p.priceType === 'Standard' ? '#999' : '#3b82f6'}}>{p.priceType === 'Standard' ? 'STD' : 'GRP'}</span>
                                 </td>
