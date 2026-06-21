@@ -1499,17 +1499,6 @@ cron.schedule("0 2 * * *", () => performBackup(false));
 // Backup on startup (after 45s)
 setTimeout(() => performBackup(false), 45000);
 
-// Manual backup trigger
-app.post("/api/admin/backup", async (req, res) => {
-  const result = await performBackup(true);
-  res.json(result);
-});
-
-// Backup status endpoint
-app.get("/api/admin/backup-status", (req, res) => {
-  res.json(_lastBackup);
-});
-
 
 // Also pre-warm on startup (after a short delay to let server settle)
 setTimeout(prewarmUsersCache, 15000);
@@ -1533,6 +1522,15 @@ async function prewarmPulseCache() {
 const app = express();
 app.use(dashboardAuth);
 app.use(express.json({ limit: "50mb" }));
+
+// ── Backup API routes ──
+app.post("/api/admin/backup", async (req, res) => {
+  const result = await performBackup(true);
+  res.json(result);
+});
+app.get("/api/admin/backup-status", (req, res) => {
+  res.json(_lastBackup);
+});
 
 // ── Token gate: every `/:org/*` route requires `?token=` matching ORGS[org].token ──
 // Returns generic 404 on mismatch (no enumeration). Non-org paths fall through.
