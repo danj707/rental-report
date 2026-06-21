@@ -143,6 +143,7 @@ const SPLITS = [
   { label: '90/10', i: 0.90 },
   { label: '80/20', i: 0.80 },
   { label: '70/30', i: 0.70 },
+  { label: '65/35', i: 0.65 },
   { label: '60/40', i: 0.60 },
   { label: '50/50', i: 0.50 },
 ];
@@ -167,6 +168,8 @@ function App() {
   const [pdfLoading, setPdfLoading] = useState(false);
   const [orgName, setOrgName] = useState('');
   const [logoUrl, setLogoUrl] = useState(null);
+  const [basePriceOnly, setBasePriceOnly] = useState(false);
+  const [expandedSections, setExpandedSections] = useState(new Set());
 
   const split = SPLITS[splitIdx];
   const iPct = Math.round(split.i * 100);
@@ -193,23 +196,53 @@ function App() {
       .catch(e => { setError(e.message); setLoading(false); });
   }, []);
 
-  // Normalize
+  // Normalize — aggregate participant rows into sections
   const normalized = useMemo(() => {
     if (!rows) return [];
-    return rows.map(r => ({
-      program:  r['program_name']  || r['Program Name']  || '',
-      section:  r['section_name']  || r['Section Name']  || '',
-      instr:    r['facilitator_name'] || r['Facilitator Name'] || '',
-      canceled: r['section_canceled'] === true || r['section_canceled'] === 'true',
-      startDate: r['section_start_date'] || '',
-      endDate:   r['section_end_date']   || '',
-      price:    Number(r['default_price']    || 0),
-      capacity: Number(r['capacity']         || 0),
-      enrolled: Number(r['number_enrolled']  || 0),
-      paid:     Number(r['total_paid']       || 0),
-      refunded: Number(r['total_refunded']   || 0),
-      net:      Number(r['net_amount']       || 0),
-    }));
+    var smap = new Map();
+    rows.forEach(function(r) {
+      var sid = r['section_id'] || (r['section_name'] + '|' + r['instructor']);
+      if (!smap.has(sid)) {
+        smap.set(sid, {
+          program:  r['program_name']  || r['Program Name']  || '',
+          section:  r['section_name']  || r['Section Name']  || '',
+          sectionId: sid,
+          instr:    r['instructor'] || r['facilitator_name'] || r['Facilitator Name'] || '',
+          canceled: false,
+          startDate: '',
+          endDate:   '',
+          participants: [],
+        });
+      }
+      smap.get(sid).participants.push({
+        name: r['participant_name'] || 'Unknown',
+        signupDate: r['signup_date'] || '',
+        basePrice: Number(r['base_price'] || 0),
+        finalPrice: Number(r['final_price'] || 0),
+        listPrice: Number(r['list_price'] || 0),
+        priceType: r['price_type'] || 'Standard',
+        paid: Number(r['amount_paid'] || 0),
+        refunded: Number(r['amount_refunded'] || 0),
+      });
+    });
+    return [...smap.values()].map(function(s) {
+      var enrolled = s.participants.length;
+      var paid = s.participants.reduce(function(sum, p) { return sum + p.paid; }, 0);
+      var refunded = s.participants.reduce(function(sum, p) { return sum + p.refunded; }, 0);
+      var baseTotal = s.participants.reduce(function(sum, p) { return sum + p.basePrice; }, 0);
+      var finalTotal = s.participants.reduce(function(sum, p) { return sum + p.finalPrice; }, 0);
+      var price = enrolled > 0 ? s.participants[0].basePrice : 0;
+      return Object.assign({}, s, {
+        price: price,
+        capacity: enrolled,
+        enrolled: enrolled,
+        paid: paid,
+        refunded: refunded,
+        net: paid - refunded,
+        baseTotal: baseTotal,
+        finalTotal: finalTotal,
+      });
+    });
   }, [rows]);
 
   // Filter
@@ -235,23 +268,25 @@ function App() {
     const tRef = filtered.reduce((s, r) => s + r.refunded, 0);
     const tEnr = filtered.reduce((s, r) => s + r.enrolled, 0);
     const tCap = filtered.reduce((s, r) => s + r.capacity, 0);
+    const tBase = filtered.reduce((s, r) => s + r.baseTotal, 0);
     const uInstr = new Set(filtered.map(r => r.instr)).size;
     const cnt = filtered.length;
-    return { tNet, tPaid, tRef, tEnr, tCap, uInstr, cnt,
-      iPay: tNet * split.i, oRet: tNet * (1 - split.i),
+    const splitAmt = basePriceOnly ? tBase : tNet;
+    return { tNet, tPaid, tRef, tEnr, tCap, tBase, uInstr, cnt, splitAmt,
+      iPay: splitAmt * split.i, oRet: splitAmt * (1 - split.i),
       avgSec: cnt > 0 ? tNet / cnt : 0, avgInstr: uInstr > 0 ? tNet / uInstr : 0,
       fill: tCap > 0 ? tEnr / tCap : 0, refRate: tPaid > 0 ? tRef / tPaid : 0,
     };
-  }, [filtered, split]);
+  }, [filtered, split, basePriceOnly]);
 
   // Instructor spotlight metrics
   const instrMetrics = useMemo(() => {
     const map = new Map();
     filtered.forEach(r => {
-      if (!map.has(r.instr)) map.set(r.instr, { name: r.instr, net: 0, paid: 0, refunded: 0, enrolled: 0, capacity: 0, sections: 0 });
+      if (!map.has(r.instr)) map.set(r.instr, { name: r.instr, net: 0, paid: 0, refunded: 0, enrolled: 0, capacity: 0, sections: 0, baseTotal: 0 });
       const m = map.get(r.instr);
       m.net += r.net; m.paid += r.paid; m.refunded += r.refunded;
-      m.enrolled += r.enrolled; m.capacity += r.capacity; m.sections += 1;
+      m.enrolled += r.enrolled; m.capacity += r.capacity; m.sections += 1; m.baseTotal += r.baseTotal;
     });
     const list = [...map.values()].map(m => ({
       ...m,
@@ -278,8 +313,8 @@ function App() {
   // Excel
   const exportExcel = useCallback(() => {
     function go() {
-      const h = ['Instructor','Program','Section','Start','End','Price','Cap','Enrolled','Paid','Refunded','Net',`Instructor (${iPct}%)`,`Org (${oPct}%)`];
-      const d = filtered.map(r => [r.instr, r.program, r.section+(r.canceled?' (CANCELED)':''), fmtDate(r.startDate), fmtDate(r.endDate), r.price, r.capacity, r.enrolled, r.paid, r.refunded, r.net, Math.round(r.net*split.i*100)/100, Math.round(r.net*(1-split.i)*100)/100]);
+      const h = ['Instructor','Program','Section','Base Price','Enrolled','Paid','Refunded', basePriceOnly ? 'Base Total' : 'Net',`Instructor (${iPct}%)`,`Org (${oPct}%)`];
+      const d = filtered.map(r => { var sa = basePriceOnly ? r.baseTotal : r.net; return [r.instr, r.program, r.section, r.price, r.enrolled, r.paid, r.refunded, sa, Math.round(sa*split.i*100)/100, Math.round(sa*(1-split.i)*100)/100]; });
       d.push(['TOTALS','','','','','',kpis.tCap,kpis.tEnr,kpis.tPaid,kpis.tRef,kpis.tNet,Math.round(kpis.iPay*100)/100,Math.round(kpis.oRet*100)/100]);
       const ws = XLSX.utils.aoa_to_sheet([h,...d]);
       const wb = XLSX.utils.book_new();
@@ -341,6 +376,10 @@ function App() {
             {instructors.map(n => <option key={n} value={n}>{n}</option>)}
           </select>
         </label>
+        <label style={{cursor:'pointer', flexDirection:'row', alignItems:'center', gap:'6px'}}>
+          <input type="checkbox" checked={basePriceOnly} onChange={e => setBasePriceOnly(e.target.checked)} style={{accentColor:'#f59e0b'}} />
+          <span style={{fontSize:'11px', color: basePriceOnly ? '#f59e0b' : '#aaa', fontWeight: basePriceOnly ? 600 : 400}}>Base Price Split</span>
+        </label>
         <label>
           Search
           <input type="text" placeholder="Section or program..." value={search} onChange={e => setSearch(e.target.value)} style={{minWidth: 150}} />
@@ -375,7 +414,7 @@ function App() {
           <div className="summary-card indigo">
             <div className="card-label">Instructor Payout</div>
             <div className="card-value">{fmt(kpis.iPay)}</div>
-            <div className="card-sub">{iPct}% of net · {kpis.uInstr} instructors</div>
+            <div className="card-sub">{iPct}% of {basePriceOnly ? 'base price' : 'net'} · {kpis.uInstr} instructors</div>
           </div>
           <div className="summary-card teal">
             <div className="card-label">Org Retention</div>
@@ -469,58 +508,80 @@ function App() {
             <table>
               <thead>
                 <tr>
+                  <th className="left" style={{width:'16px'}}></th>
                   <th className="left">Section</th>
                   <th className="left">Program</th>
-                  <th className="left">Dates</th>
-                  <th>Price</th>
+                  <th>Base Price</th>
                   <th>Enrolled</th>
                   <th>Paid</th>
                   <th>Refunded</th>
-                  <th>Net Revenue</th>
+                  <th>{basePriceOnly ? 'Base Total' : 'Net Revenue'}</th>
                   <th>Instr ({iPct}%)</th>
                   <th>Org ({oPct}%)</th>
                 </tr>
               </thead>
               <tbody>
                 {grouped.map(([instr, sections]) => {
-                  const sub = sections.reduce((a, r) => ({ net: a.net+r.net, paid: a.paid+r.paid, ref: a.ref+r.refunded, enr: a.enr+r.enrolled, cap: a.cap+r.capacity }), { net:0, paid:0, ref:0, enr:0, cap:0 });
+                  const sub = sections.reduce((a, r) => ({ net: a.net+r.net, paid: a.paid+r.paid, ref: a.ref+r.refunded, enr: a.enr+r.enrolled, cap: a.cap+r.capacity, base: a.base+r.baseTotal }), { net:0, paid:0, ref:0, enr:0, cap:0, base:0 });
+                  const subSplitAmt = basePriceOnly ? sub.base : sub.net;
                   return (
                     <React.Fragment key={instr}>
                       <tr className="group-header">
                         <td colSpan={10}>
                           {instr}
-                          <span className="group-meta">{sections.length} section{sections.length !== 1 ? 's' : ''} · {sub.enr} enrolled · Net {fmt(sub.net)}</span>
+                          <span className="group-meta">{sections.length} section{sections.length !== 1 ? 's' : ''} · {sub.enr} enrolled · {basePriceOnly ? 'Base' : 'Net'} {fmt(basePriceOnly ? sub.base : sub.net)}</span>
                         </td>
                       </tr>
                       {sections.map((r, i) => {
-                        const fp = r.capacity > 0 ? r.enrolled / r.capacity : 0;
+                        var splitAmt = basePriceOnly ? r.baseTotal : r.net;
+                        var isExpanded = expandedSections.has(r.sectionId);
                         return (
-                          <tr key={i}>
-                            <td className="left">{r.section}{r.canceled && <span className="canceled">Canceled</span>}</td>
-                            <td className="left" style={{color:'#888', fontSize:11}}>{r.program}</td>
-                            <td className="left" style={{fontSize:11, whiteSpace:'nowrap'}}>{fmtDate(r.startDate)}{r.endDate && r.startDate !== r.endDate ? ' – '+fmtDate(r.endDate) : ''}</td>
-                            <td>{fmt(r.price)}</td>
-                            <td style={{textAlign:'center'}}>
-                              {r.enrolled}/{r.capacity}
-                              <span className="fill-bar"><span className="fill-bar-inner" style={{width:(fp*100)+'%', background:fillColor(fp)}}></span></span>
-                            </td>
-                            <td>{fmt(r.paid)}</td>
-                            <td className={v(r.refunded)}>{r.refunded > 0 ? fmt(r.refunded) : '—'}</td>
-                            <td style={{fontWeight:600}}>{fmt(r.net)}</td>
-                            <td className={v(r.net * split.i)}>{fmt(r.net * split.i)}</td>
-                            <td className={v(r.net * (1-split.i))}>{fmt(r.net * (1-split.i))}</td>
-                          </tr>
+                          <React.Fragment key={i}>
+                            <tr style={{cursor:'pointer'}} onClick={() => {
+                              var next = new Set(expandedSections);
+                              if (next.has(r.sectionId)) next.delete(r.sectionId); else next.add(r.sectionId);
+                              setExpandedSections(next);
+                            }}>
+                              <td style={{textAlign:'center', fontSize:10, color:'#999'}}>{isExpanded ? '\u25BC' : '\u25B6'}</td>
+                              <td className="left">{r.section}{r.canceled && <span className="canceled">Canceled</span>}</td>
+                              <td className="left" style={{color:'#888', fontSize:11}}>{r.program}</td>
+                              <td>{fmt(r.price)}</td>
+                              <td style={{textAlign:'center'}}>{r.enrolled}</td>
+                              <td>{fmt(r.paid)}</td>
+                              <td className={v(r.refunded)}>{r.refunded > 0 ? fmt(r.refunded) : '\u2014'}</td>
+                              <td style={{fontWeight:600}}>{fmt(splitAmt)}</td>
+                              <td className={v(splitAmt * split.i)}>{fmt(splitAmt * split.i)}</td>
+                              <td className={v(splitAmt * (1-split.i))}>{fmt(splitAmt * (1-split.i))}</td>
+                            </tr>
+                            {isExpanded && r.participants && r.participants.map((p, pi) => (
+                              <tr key={'p'+pi} style={{background:'#fafaf8', fontSize:'10.5px'}}>
+                                <td></td>
+                                <td className="left" style={{paddingLeft:24, color:'#666'}}>{p.name}</td>
+                                <td className="left" style={{color:'#aaa'}}>{p.signupDate}</td>
+                                <td style={{color: p.priceType === 'Group/Resident' ? '#2563eb' : '#666'}}>{fmt(p.basePrice)}{p.priceType === 'Group/Resident' && <span style={{fontSize:9, marginLeft:3, color:'#93c5fd'}}>R</span>}</td>
+                                <td style={{textAlign:'center', color:'#aaa'}}>
+                                  <span style={{fontSize:9, padding:'1px 5px', borderRadius:3, background: p.priceType === 'Standard' ? '#f5f5f5' : '#eff6ff', color: p.priceType === 'Standard' ? '#999' : '#3b82f6'}}>{p.priceType === 'Standard' ? 'STD' : 'GRP'}</span>
+                                </td>
+                                <td>{fmt(p.paid)}</td>
+                                <td className={v(p.refunded)}>{p.refunded > 0 ? fmt(p.refunded) : '\u2014'}</td>
+                                <td style={{fontWeight:500}}>{fmt(basePriceOnly ? p.basePrice : (p.paid - p.refunded))}</td>
+                                <td style={{color:'#16a34a'}}>{fmt((basePriceOnly ? p.basePrice : (p.paid - p.refunded)) * split.i)}</td>
+                                <td style={{color:'#666'}}>{fmt((basePriceOnly ? p.basePrice : (p.paid - p.refunded)) * (1-split.i))}</td>
+                              </tr>
+                            ))}
+                          </React.Fragment>
                         );
                       })}
                       <tr className="subtotal-row">
-                        <td className="left" colSpan={3}>Subtotal — {instr}</td>
                         <td></td>
-                        <td style={{textAlign:'center'}}>{sub.enr}/{sub.cap}</td>
+                        <td className="left" colSpan={2}>Subtotal — {instr}</td>
+                        <td></td>
+                        <td style={{textAlign:'center'}}>{sub.enr}</td>
                         <td>{fmt(sub.paid)}</td>
                         <td className={v(sub.ref)}>{fmt(sub.ref)}</td>
-                        <td>{fmt(sub.net)}</td>
-                        <td>{fmt(sub.net * split.i)}</td>
-                        <td>{fmt(sub.net * (1-split.i))}</td>
+                        <td>{fmt(subSplitAmt)}</td>
+                        <td>{fmt(subSplitAmt * split.i)}</td>
+                        <td>{fmt(subSplitAmt * (1-split.i))}</td>
                       </tr>
                     </React.Fragment>
                   );
@@ -528,12 +589,13 @@ function App() {
               </tbody>
               <tfoot>
                 <tr>
-                  <td className="left" colSpan={3} style={{textAlign:'left'}}>GRAND TOTAL</td>
                   <td></td>
-                  <td style={{textAlign:'center'}}>{kpis.tEnr}/{kpis.tCap}</td>
+                  <td className="left" colSpan={2} style={{textAlign:'left'}}>GRAND TOTAL</td>
+                  <td></td>
+                  <td style={{textAlign:'center'}}>{kpis.tEnr}</td>
                   <td style={{textAlign:'right'}}>{fmt(kpis.tPaid)}</td>
                   <td style={{textAlign:'right'}}>{fmt(kpis.tRef)}</td>
-                  <td style={{textAlign:'right'}}>{fmt(kpis.tNet)}</td>
+                  <td style={{textAlign:'right'}}>{fmt(kpis.splitAmt)}</td>
                   <td style={{textAlign:'right'}}>{fmt(kpis.iPay)}</td>
                   <td style={{textAlign:'right'}}>{fmt(kpis.oRet)}</td>
                 </tr>
