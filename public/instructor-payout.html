@@ -134,7 +134,7 @@ function App() {
   /* ── Fetch ── */
   useEffect(() => {
     setLoading(true);
-    fetch(`/${orgSlug}/instructor-payout/api/data`)
+    fetch(`/${orgSlug}/instructor-payout/api/data${window.location.search}`)
       .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
       .then(d => {
         const data = d.rows || d;
