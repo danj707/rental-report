@@ -257,7 +257,7 @@ function App() {
   const filtered = useMemo(() => {
     let d = normalized;
     if (instrFilter) d = d.filter(r => r.instr === instrFilter);
-    if (search) { const q = search.toLowerCase(); d = d.filter(r => r.section.toLowerCase().includes(q) || r.program.toLowerCase().includes(q)); }
+    if (search) { const words = search.toLowerCase().split(/\s+/).filter(Boolean); d = d.filter(r => { const hay = (r.section + ' ' + r.program + ' ' + r.instr).toLowerCase(); return words.every(w => hay.includes(w)); }); }
     return d;
   }, [normalized, instrFilter, search]);
 
