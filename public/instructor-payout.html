@@ -384,9 +384,10 @@ function App() {
             {instructors.map(n => <option key={n} value={n}>{n}</option>)}
           </select>
         </label>
-        <label style={{cursor:'pointer', flexDirection:'row', alignItems:'center', gap:'6px'}}>
+        <label style={{cursor:'pointer', flexDirection:'row', alignItems:'center', gap:'6px'}} title="When enabled, instructor split is calculated on the resident/base rate for every participant — not the amount they actually paid. Non-resident surcharges stay entirely with the organization. Use this when your instructor contract specifies payouts based on the standard class rate.">
           <input type="checkbox" checked={basePriceOnly} onChange={e => setBasePriceOnly(e.target.checked)} style={{accentColor:'#f59e0b'}} />
           <span style={{fontSize:'11px', color: basePriceOnly ? '#f59e0b' : '#aaa', fontWeight: basePriceOnly ? 600 : 400}}>Base Price Split</span>
+          <span style={{display:'inline-flex', alignItems:'center', justifyContent:'center', width:14, height:14, borderRadius:'50%', background: basePriceOnly ? '#f59e0b' : '#ccc', color:'#fff', fontSize:9, fontStyle:'italic', fontFamily:'Georgia,serif', cursor:'help', marginLeft:2, flexShrink:0}}>i</span>
         </label>
         <label>
           Search
