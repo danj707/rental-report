@@ -5424,8 +5424,6 @@ app.get("/", (req, res) => {
       }
     }
 
-    async function doRestart() {
-
     // Backup functions
     async function loadBackupStatus() {
       try {
