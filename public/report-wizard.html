@@ -221,6 +221,60 @@
     const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
     const CFG = window.ORG_CONFIG || {};
+
+    // ── 50 wizard-themed juice phrases ──
+    var WIZARD_PHRASES = [
+      'Squeezing the data oranges\u2026',
+      'Juicing your metrics\u2026',
+      'Blending the numbers\u2026',
+      'Pressing fresh insights\u2026',
+      'Zesting the KPIs\u2026',
+      'Muddling the demographics\u2026',
+      'Straining out the noise\u2026',
+      'Adding a splash of charts\u2026',
+      'Peeling back the data layers\u2026',
+      'Crushing the pivot tables\u2026',
+      'Infusing with AI magic\u2026',
+      'Garnishing the dashboard\u2026',
+      'Shaking up the widgets\u2026',
+      'Pouring the first draft\u2026',
+      'Rimming the glass with insight\u2026',
+      'Macerating the metrics\u2026',
+      'Cold-pressing the trends\u2026',
+      'Double-straining for clarity\u2026',
+      'Topping off with foam\u2026',
+      'Extracting the good stuff\u2026',
+      'Centrifuging the spreadsheets\u2026',
+      'Slow-juicing the revenue\u2026',
+      'Pitting the data cherries\u2026',
+      'Simmering the stats\u2026',
+      'Flash-blending the filters\u2026',
+      'Whipping up your dashboard\u2026',
+      'Caramelizing the bar charts\u2026',
+      'Deglazing the GL codes\u2026',
+      'Folding in the enrollment data\u2026',
+      'Reducing the data to a glaze\u2026',
+      'Letting it steep\u2026',
+      'Churning the participation rates\u2026',
+      'Fermenting the fill rates\u2026',
+      'Decanting the demographics\u2026',
+      'Distilling the highlights\u2026',
+      'Plating the final report\u2026',
+      'Squeezing every last drop\u2026',
+      'Rolling the data limes\u2026',
+      'Muddling mint into metrics\u2026',
+      'Straining through the noise\u2026',
+      'Layering the flavor profile\u2026',
+      'Torching the cr\u00e8me br\u00fbl\u00e9e chart\u2026',
+      'Whisking the trendlines\u2026',
+      'Emulsifying the pie slices\u2026',
+      'Scoring the rind for aroma\u2026',
+      'Taste-testing the layout\u2026',
+      'Balancing sweet and tart data\u2026',
+      'Spritzing the finishing touch\u2026',
+      'Pouring over ice, almost done\u2026',
+      'One more squeeze\u2026',
+    ];
     const ORG_SLUG = CFG.slug || '';
     const TOKEN = CFG.token || '';
     const tokenQS = TOKEN ? '?token=' + encodeURIComponent(TOKEN) : '';
@@ -535,11 +589,31 @@
     function ReportView({ report, data, onSave, onNew, onRefine }) {
       var [saveState, setSaveState] = useState('idle');
       var [showDebug, setShowDebug] = useState(false);
+      var [copyState, setCopyState] = useState('idle');
+      var [feedback, setFeedback] = useState(null); // null | 'up' | 'down'
+      var [feedbackSent, setFeedbackSent] = useState(false);
 
       function handleSave() {
         onSave(report);
         setSaveState('saved');
         setTimeout(function() { setSaveState('idle'); }, 2000);
+      }
+
+      function handleCopy() {
+        navigator.clipboard.writeText(JSON.stringify(report, null, 2)).then(function() {
+          setCopyState('copied');
+          setTimeout(function() { setCopyState('idle'); }, 2000);
+        });
+      }
+
+      function handleFeedback(vote) {
+        setFeedback(vote);
+        setFeedbackSent(true);
+        fetch('/' + ORG_SLUG + '/report-wizard/api/feedback' + tokenQS, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ vote: vote, prompt: report.prompt, title: report.title, widgetCount: (report.widgets || []).length }),
+        }).catch(function() {});
       }
 
       var dataInfo = Object.keys(data).map(function(k) {
@@ -554,14 +628,14 @@
               <div>
                 <div className="report-title">{report.title}</div>
                 {report.description && <div className="report-desc">{report.description}</div>}
-                <div className="report-prompt">Prompt: "{report.prompt}"</div>
+                <div className="report-prompt">Prompt: &ldquo;{report.prompt}&rdquo;</div>
               </div>
             </div>
             <div className="report-header-right">
               <button onClick={onRefine}>Refine</button>
               <button onClick={onNew}>New</button>
               <button className={'btn-save' + (saveState === 'saved' ? ' saved' : '')} onClick={handleSave}>
-                {saveState === 'saved' ? '✓ Saved' : 'Save'}
+                {saveState === 'saved' ? '\u2713 Saved' : 'Save'}
               </button>
             </div>
           </div>
@@ -570,15 +644,41 @@
               return <WidgetRenderer key={i} config={w} data={data} />;
             })}
           </div>
-          <div style={{ marginTop: '20px', borderTop: '1px solid #eee', paddingTop: '12px' }}>
+
+          {/* Feedback */}
+          <div style={{ marginTop: '24px', padding: '16px 20px', background: '#fafafa', borderRadius: '8px', border: '1px solid #eee', display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: '13px', color: '#666', fontWeight: 500 }}>How was this report?</span>
+            {!feedbackSent ? (
+              <React.Fragment>
+                <button onClick={function() { handleFeedback('up'); }} style={{ fontSize: '20px', padding: '4px 12px', background: 'none', border: '1px solid #ddd', borderRadius: '6px', cursor: 'pointer', transition: 'all .15s' }} onMouseOver={function(e) { e.target.style.background='#f0fdf4'; e.target.style.borderColor='#86efac'; }} onMouseOut={function(e) { e.target.style.background='none'; e.target.style.borderColor='#ddd'; }}>
+                  \uD83D\uDC4D
+                </button>
+                <button onClick={function() { handleFeedback('down'); }} style={{ fontSize: '20px', padding: '4px 12px', background: 'none', border: '1px solid #ddd', borderRadius: '6px', cursor: 'pointer', transition: 'all .15s' }} onMouseOver={function(e) { e.target.style.background='#fef2f2'; e.target.style.borderColor='#fca5a5'; }} onMouseOut={function(e) { e.target.style.background='none'; e.target.style.borderColor='#ddd'; }}>
+                  \uD83D\uDC4E
+                </button>
+              </React.Fragment>
+            ) : (
+              <span style={{ fontSize: '13px', color: feedback === 'up' ? '#16a34a' : '#dc2626' }}>
+                {feedback === 'up' ? '\uD83D\uDC4D Thanks! Glad it helped.' : '\uD83D\uDC4E Thanks for the feedback \u2014 we\u2019ll improve.'}
+              </span>
+            )}
+          </div>
+
+          {/* Debug */}
+          <div style={{ marginTop: '12px', borderTop: '1px solid #eee', paddingTop: '12px' }}>
             <button onClick={function() { setShowDebug(!showDebug); }} style={{ fontSize: '11px', color: '#999', background: 'none', border: '1px solid #ddd', borderRadius: '4px', padding: '4px 10px', cursor: 'pointer', fontFamily: 'inherit' }}>
               {showDebug ? 'Hide' : 'Show'} Debug Config
             </button>
             <span style={{ fontSize: '11px', color: '#bbb', marginLeft: '10px' }}>{dataInfo}</span>
             {showDebug && (
-              <pre style={{ marginTop: '8px', fontSize: '11px', background: '#f5f4f1', padding: '12px', borderRadius: '6px', overflow: 'auto', maxHeight: '400px', fontFamily: "'IBM Plex Mono', monospace", color: '#555' }}>
-                {JSON.stringify(report, null, 2)}
-              </pre>
+              <div style={{ marginTop: '8px', position: 'relative' }}>
+                <button onClick={handleCopy} style={{ position: 'absolute', top: '8px', right: '8px', fontSize: '11px', padding: '3px 10px', background: '#fff', border: '1px solid #ddd', borderRadius: '4px', cursor: 'pointer', fontFamily: 'inherit', zIndex: 1 }}>
+                  {copyState === 'copied' ? '\u2713 Copied' : 'Copy'}
+                </button>
+                <pre style={{ fontSize: '11px', background: '#f5f4f1', padding: '12px', borderRadius: '6px', overflow: 'auto', maxHeight: '400px', fontFamily: "'IBM Plex Mono', monospace", color: '#555' }}>
+                  {JSON.stringify(report, null, 2)}
+                </pre>
+              </div>
             )}
           </div>
         </div>
@@ -781,7 +881,7 @@
 
             {(phase === 'generating' || phase === 'loading-data') && (
               <div className="loading-panel">
-                <JuiceLoader />
+                <JuiceLoader messages={WIZARD_PHRASES} />
               </div>
             )}
 
