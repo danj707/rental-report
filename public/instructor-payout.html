@@ -223,31 +223,32 @@ function App() {
         priceType: r['price_type'] || 'Standard',
         paid: Number(r['amount_paid'] || 0),
         refunded: Number(r['amount_refunded'] || 0),
+        canceled: (r['booking_status'] || '') === 'Canceled',
       });
     });
     return [...smap.values()].map(function(s) {
-      var enrolled = s.participants.length;
+      var enrolled = s.participants.filter(function(p) { return !p.canceled; }).length;
+      var allCount = s.participants.length;
+      var activeParticipants = s.participants.filter(function(p) { return !p.canceled; });
       var paid = s.participants.reduce(function(sum, p) { return sum + p.paid; }, 0);
       var refunded = s.participants.reduce(function(sum, p) { return sum + p.refunded; }, 0);
-      var baseTotal = s.participants.reduce(function(sum, p) { return sum + p.basePrice; }, 0);
-      var finalTotal = s.participants.reduce(function(sum, p) { return sum + p.finalPrice; }, 0);
-      var price = enrolled > 0 ? s.participants[0].basePrice : 0;
-      // Resident base rate = lowest final_price among group/resident participants (the rate instructors get paid on)
-      var grpParticipants = s.participants.filter(function(p) { return p.priceType === 'Group/Resident'; });
+      var price = allCount > 0 ? s.participants[0].basePrice : 0;
+      // Resident base rate = lowest final_price among active group/resident participants
+      var grpParticipants = activeParticipants.filter(function(p) { return p.priceType === 'Group/Resident'; });
       var residentRate = grpParticipants.length > 0
         ? Math.min.apply(null, grpParticipants.map(function(p) { return p.finalPrice; }))
-        : price; // fallback to sticker price if all participants are Standard
-      var residentBaseTotal = residentRate * enrolled; // ALL participants at resident rate
+        : price;
+      var residentBaseTotal = residentRate * enrolled; // only active participants
       return Object.assign({}, s, {
         price: price,
         residentRate: residentRate,
         capacity: enrolled,
         enrolled: enrolled,
+        totalParticipants: allCount,
         paid: paid,
         refunded: refunded,
         net: paid - refunded,
         baseTotal: residentBaseTotal,
-        finalTotal: finalTotal,
       });
     });
   }, [rows]);
@@ -561,21 +562,31 @@ function App() {
                               <td className={v(splitAmt * (1-split.i))}>{fmt(splitAmt * (1-split.i))}</td>
                             </tr>
                             {isExpanded && r.participants && r.participants.map((p, pi) => {
-                              var pSplitBase = basePriceOnly ? r.residentRate : (p.paid - p.refunded);
+                              var pCanceled = p.canceled;
+                              var pSplitBase = pCanceled ? 0 : (basePriceOnly ? r.residentRate : (p.paid - p.refunded));
+                              var rowStyle = pCanceled
+                                ? {background:'#fef2f2', fontSize:'10.5px', textDecoration:'line-through', color:'#dc2626'}
+                                : {background:'#fafaf8', fontSize:'10.5px'};
                               return (
-                              <tr key={'p'+pi} style={{background:'#fafaf8', fontSize:'10.5px'}}>
+                              <tr key={'p'+pi} style={rowStyle}>
                                 <td></td>
-                                <td className="left" style={{paddingLeft:24, color:'#666'}}>{p.name}</td>
-                                <td className="left" style={{color:'#aaa'}}>{p.signupDate}</td>
-                                <td style={{color: p.priceType === 'Group/Resident' ? '#2563eb' : '#666'}}>{fmt(basePriceOnly ? r.residentRate : p.finalPrice)}{p.priceType === 'Group/Resident' && <span style={{fontSize:9, marginLeft:3, color:'#93c5fd'}}>R</span>}</td>
+                                <td className="left" style={{paddingLeft:24}}>
+                                  {p.name}
+                                  {pCanceled && <span style={{textDecoration:'none', marginLeft:6, fontSize:9, padding:'1px 5px', borderRadius:3, background:'#fee2e2', color:'#b91c1c', fontWeight:600}}>CANCELED</span>}
+                                </td>
+                                <td className="left" style={{color: pCanceled ? '#dc2626' : '#aaa'}}>{p.signupDate}</td>
+                                <td style={{color: pCanceled ? '#dc2626' : (p.priceType === 'Group/Resident' ? '#2563eb' : '#666')}}>{fmt(basePriceOnly ? r.residentRate : p.finalPrice)}{!pCanceled && p.priceType === 'Group/Resident' && <span style={{fontSize:9, marginLeft:3, color:'#93c5fd', textDecoration:'none'}}>R</span>}</td>
                                 <td style={{textAlign:'center', color:'#aaa'}}>
-                                  <span style={{fontSize:9, padding:'1px 5px', borderRadius:3, background: p.priceType === 'Standard' ? '#f5f5f5' : '#eff6ff', color: p.priceType === 'Standard' ? '#999' : '#3b82f6'}}>{p.priceType === 'Standard' ? 'STD' : 'GRP'}</span>
+                                  {pCanceled
+                                    ? <span style={{fontSize:9, padding:'1px 5px', borderRadius:3, background:'#fee2e2', color:'#b91c1c', textDecoration:'none'}}>REF</span>
+                                    : <span style={{fontSize:9, padding:'1px 5px', borderRadius:3, background: p.priceType === 'Standard' ? '#f5f5f5' : '#eff6ff', color: p.priceType === 'Standard' ? '#999' : '#3b82f6'}}>{p.priceType === 'Standard' ? 'STD' : 'GRP'}</span>
+                                  }
                                 </td>
                                 <td>{fmt(p.paid)}</td>
-                                <td className={v(p.refunded)}>{p.refunded > 0 ? fmt(p.refunded) : '\u2014'}</td>
-                                <td style={{fontWeight:500}}>{fmt(pSplitBase)}</td>
-                                <td style={{color:'#16a34a'}}>{fmt(pSplitBase * split.i)}</td>
-                                <td style={{color:'#666'}}>{fmt(pSplitBase * (1-split.i))}</td>
+                                <td style={{color: p.refunded > 0 ? '#dc2626' : '#ccc'}}>{p.refunded > 0 ? fmt(p.refunded) : '\u2014'}</td>
+                                <td style={{fontWeight:500, color: pCanceled ? '#dc2626' : undefined}}>{pCanceled ? '$0.00' : fmt(pSplitBase)}</td>
+                                <td style={{color: pCanceled ? '#dc2626' : '#16a34a'}}>{pCanceled ? '$0.00' : fmt(pSplitBase * split.i)}</td>
+                                <td style={{color: pCanceled ? '#dc2626' : '#666'}}>{pCanceled ? '$0.00' : fmt(pSplitBase * (1-split.i))}</td>
                               </tr>
                               );
                             })}
