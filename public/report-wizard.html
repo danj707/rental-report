@@ -505,6 +505,11 @@
       var rows = data[config.source] || [];
       var filtered = filterRows(rows, config.filter);
 
+      var cols = (config.columns || []).map(function(c) {
+        if (typeof c === 'string') return { field: c, label: c, format: null };
+        return { field: c.field, label: c.label || c.field, format: c.format || null };
+      }).filter(function(c) { return !PII_FIELDS.has(c.field); });
+
       // If groupBy, aggregate
       var tableRows = filtered;
       if (config.groupBy) {
@@ -515,30 +520,36 @@
           groups[key]._rows.push(r);
         });
         tableRows = Object.values(groups).map(function(g) {
-          var agg = { [config.groupBy]: g._key };
-          (config.columns || []).forEach(function(col) {
-            var f = col.field || col;
-            if (f === config.groupBy) return;
-            agg[f] = computeAgg(g._rows, f, config.compute || col.compute || 'sum');
+          var agg = {};
+          cols.forEach(function(col, ci) {
+            var f = col.field;
+            if (ci === 0 && f === config.groupBy) {
+              agg['_col_' + ci] = g._key;
+            } else {
+              agg['_col_' + ci] = computeAgg(g._rows, f, config.compute || col.compute || 'sum');
+            }
           });
           return agg;
+        });
+        cols = cols.map(function(c, ci) {
+          return Object.assign({}, c, { _key: '_col_' + ci });
         });
       }
 
       // Sort
+      var sortLookup = sortField;
+      if (config.groupBy && cols.length) {
+        var matchCol = cols.find(function(c) { return c.field === sortField && c._key; });
+        if (matchCol) sortLookup = matchCol._key;
+      }
       var sorted = tableRows.slice().sort(function(a, b) {
-        var av = a[sortField], bv = b[sortField];
-        var an = getNum(a, sortField), bn = getNum(b, sortField);
+        var av = a[sortLookup], bv = b[sortLookup];
+        var an = getNum(a, sortLookup), bn = getNum(b, sortLookup);
         if (an !== null && bn !== null) return sortDir === 'asc' ? an - bn : bn - an;
         return sortDir === 'asc' ? String(av || '').localeCompare(String(bv || '')) : String(bv || '').localeCompare(String(av || ''));
       });
 
       if (config.limit) sorted = sorted.slice(0, config.limit);
-
-      var cols = (config.columns || []).map(function(c) {
-        if (typeof c === 'string') return { field: c, label: c, format: null };
-        return { field: c.field, label: c.label || c.field, format: c.format || null };
-      }).filter(function(c) { return !PII_FIELDS.has(c.field); });
 
       function handleSort(field) {
         if (sortField === field) setSortDir(sortDir === 'asc' ? 'desc' : 'asc');
@@ -562,8 +573,9 @@
                 return (
                   <tr key={ri}>
                     {cols.map(function(c, ci) {
-                      var val = row[c.field];
-                      var isNum = c.format === 'currency' || c.format === 'currency2' || c.format === 'number' || c.format === 'percent' || (getNum(row, c.field) !== null && typeof val === 'number');
+                      var lookupKey = c._key || c.field;
+                      var val = row[lookupKey];
+                      var isNum = c.format === 'currency' || c.format === 'currency2' || c.format === 'number' || c.format === 'percent' || (getNum(row, lookupKey) !== null && typeof val === 'number');
                       return <td key={ci} className={isNum ? 'num' : ''}>{c.format ? fmt(val, c.format) : (val != null ? String(val) : '—')}</td>;
                     })}
                   </tr>
