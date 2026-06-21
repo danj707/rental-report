@@ -533,12 +533,17 @@
     // ── Report View ──
     function ReportView({ report, data, onSave, onNew, onRefine }) {
       var [saveState, setSaveState] = useState('idle');
+      var [showDebug, setShowDebug] = useState(false);
 
       function handleSave() {
         onSave(report);
         setSaveState('saved');
         setTimeout(function() { setSaveState('idle'); }, 2000);
       }
+
+      var dataInfo = Object.keys(data).map(function(k) {
+        return k + ': ' + (data[k] ? data[k].length + ' rows' : 'NO DATA');
+      }).join(', ');
 
       return (
         <div className="report-view">
@@ -563,6 +568,17 @@
             {(report.widgets || []).map(function(w, i) {
               return <WidgetRenderer key={i} config={w} data={data} />;
             })}
+          </div>
+          <div style={{ marginTop: '20px', borderTop: '1px solid #eee', paddingTop: '12px' }}>
+            <button onClick={function() { setShowDebug(!showDebug); }} style={{ fontSize: '11px', color: '#999', background: 'none', border: '1px solid #ddd', borderRadius: '4px', padding: '4px 10px', cursor: 'pointer', fontFamily: 'inherit' }}>
+              {showDebug ? 'Hide' : 'Show'} Debug Config
+            </button>
+            <span style={{ fontSize: '11px', color: '#bbb', marginLeft: '10px' }}>{dataInfo}</span>
+            {showDebug && (
+              <pre style={{ marginTop: '8px', fontSize: '11px', background: '#f5f4f1', padding: '12px', borderRadius: '6px', overflow: 'auto', maxHeight: '400px', fontFamily: "'IBM Plex Mono', monospace", color: '#555' }}>
+                {JSON.stringify(report, null, 2)}
+              </pre>
+            )}
           </div>
         </div>
       );
