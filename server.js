@@ -53,6 +53,7 @@ const REPORT_CACHE_TTL = {
   "program-demographics": 4 * 60 * 60 * 1000, // 4 hrs
   calendar: 30 * 60 * 1000,               // 30 min — schedule changes
   historic: 2 * 60 * 60 * 1000,           // 2 hrs
+  "instructor-payout": 2 * 60 * 60 * 1000, // 2 hrs — section-level payout
 };
 const dataCache = new Map();
 const cacheStats = { hits: 0, misses: 0, prewarms: 0 };
@@ -460,7 +461,7 @@ const ORGS = {
   },
 };
 
-const REPORT_TYPES = ["facility", "gl", "historic", "programs", "roster", "overview", "products", "memberships", "court-utilization", "calendar", "fasttrack", "users", "program-demographics", "directors-report"];
+const REPORT_TYPES = ["facility", "gl", "historic", "programs", "roster", "overview", "products", "memberships", "court-utilization", "calendar", "fasttrack", "users", "program-demographics", "directors-report", "instructor-payout"];
 
 // ── Shared Metabase UUIDs (one query per report type, parameterized by org_id) ──
 // When a report type has an entry here, the server uses this UUID + passes the
@@ -2809,6 +2810,15 @@ app.get("/:org/fasttrack", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "fasttrack.html"));
 });
 
+app.get("/:org/instructor-payout", (req, res) => {
+  const slug = req.params.org;
+  const org = ORGS[slug];
+  if (!org) return res.status(404).send("Unknown org");
+  if (!org['instructor-payout']?.mbUuid && !SHARED_UUIDS['instructor-payout']) return res.status(404).send("Instructor Payout report not configured for this org.");
+  logEvent(slug, "instructor-payout", "view", req);
+  res.sendFile(path.join(__dirname, "public", "instructor-payout.html"));
+});
+
 app.get("/:org/users", (req, res) => {
   const slug = req.params.org;
   const org = ORGS[slug];
@@ -3660,6 +3670,7 @@ app.get("/", (req, res) => {
     calendar:    { label: "Calendar",               icon: "🗓️", desc: "Public class & rental schedule (week / list view)", color: "#ea580c", wcag: true },
     fasttrack:   { label: "Fast Track",             icon: "⚡", desc: "Pre-registration demand signal with conversion tracking", color: "#6366f1", ai: true },
     users:       { label: "Community Intel",            icon: "👥", desc: "Demographics, revenue, and strategy intelligence across your community", color: "#7c3aed", ai: true },
+    "instructor-payout": { label: "Instructor Payout", icon: "💰", desc: "Revenue splits and payout calculations by instructor", color: "#6366f1" },
   };
 
   const hiddenReports = getAllHiddenReports();
@@ -5238,6 +5249,7 @@ app.get("/", (req, res) => {
     // Newest first. Add a new entry at the TOP for every change we ship.
     // History below back-filled from the GitHub commit log.
     const UPDATES = [
+  { date: '2026-06-21', title: 'Instructor Payout Report', items: ['New report: revenue splits and payout calculations by instructor', 'Split selector (90/10 through 50/50) with instant KPI updates', 'Grouped by instructor with subtotals and grand total', 'Fill rate bars, refund tracking, top instructor chart', 'Excel export with split calculations'] },
       { date: '2026-06-21', title: '🪄 Rec AI Report Wizard — Custom AI-Generated Dashboards', items: [
         '🪄 REPORT WIZARD — New tool at /:org/report-wizard lets admins describe a report in plain English and get an AI-generated dashboard with KPI cards, charts, and tables.',
         '✨ AI CONFIG ENGINE — Claude analyzes available data sources (programs, demographics, GL, facility, products, etc.) and designs a widget layout matching the request.',
