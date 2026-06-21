@@ -3200,6 +3200,7 @@ app.get("/:org", async (req, res, next) => {
     reports: available,
     token: org.token || "",
     chatVisible: !orgHidden.has("chat"),
+    wizardVisible: !orgHidden.has("report-wizard"),
   };
   // Attach latest health-check results for this org's reports
   const hc = loadHealthResults();
@@ -3836,6 +3837,22 @@ app.get("/", (req, res) => {
           <button type="button" class="vis-toggle" onclick="event.preventDefault();event.stopPropagation();toggleVis('${slug}','chat',this)" title="${chatHidden ? 'Hidden from org page' : 'Visible on org page'}">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style="display:${chatHidden ? 'none' : 'block'}"><path d="M8 3C3 3 1 8 1 8s2 5 7 5 7-5 7-5-2-5-7-5z" stroke="currentColor" stroke-width="1.5" fill="none"/><circle cx="8" cy="8" r="2" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style="display:${chatHidden ? 'block' : 'none'}"><path d="M8 3C3 3 1 8 1 8s2 5 7 5 7-5 7-5-2-5-7-5z" stroke="currentColor" stroke-width="1.5" fill="none"/><circle cx="8" cy="8" r="2" stroke="currentColor" stroke-width="1.5" fill="none"/><line x1="2" y1="14" x2="14" y2="2" stroke="currentColor" stroke-width="1.5"/></svg>
+          </button>
+        </a>`);
+
+      // Report Wizard card
+      const wizHidden = orgHidden.indexOf('report-wizard') >= 0;
+      const wizDim = wizHidden ? ' report-card-hidden' : '';
+      cards.push(`
+        <a href="/${slug}/report-wizard${tokenQS}" class="report-card${wizDim}" style="border-left:3px solid #7c3aed;background:linear-gradient(135deg,#faf5ff 0%,#f3e8ff 100%)" data-org="${slug}" data-report="report-wizard">
+          <span class="report-icon">\u{1FA84}</span>
+          <div class="report-body">
+            <div class="report-label" style="color:#581c87">Report Wizard <span class="ai-pill-inline">AI</span></div>
+            <div class="report-desc">Build custom dashboards from plain English prompts</div>
+          </div>
+          <button type="button" class="vis-toggle" onclick="event.preventDefault();event.stopPropagation();toggleVis('${slug}','report-wizard',this)" title="${wizHidden ? 'Hidden from org page' : 'Visible on org page'}">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style="display:${wizHidden ? 'none' : 'block'}"><path d="M8 3C3 3 1 8 1 8s2 5 7 5 7-5 7-5-2-5-7-5z" stroke="currentColor" stroke-width="1.5" fill="none"/><circle cx="8" cy="8" r="2" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style="display:${wizHidden ? 'block' : 'none'}"><path d="M8 3C3 3 1 8 1 8s2 5 7 5 7-5 7-5-2-5-7-5z" stroke="currentColor" stroke-width="1.5" fill="none"/><circle cx="8" cy="8" r="2" stroke="currentColor" stroke-width="1.5" fill="none"/><line x1="2" y1="14" x2="14" y2="2" stroke="currentColor" stroke-width="1.5"/></svg>
           </button>
         </a>`);
     }
@@ -4572,6 +4589,15 @@ app.get("/", (req, res) => {
         </div>
         <div id="audit-log-body" style="font-size:11px;color:#666">Click Load to fetch recent events</div>
       </div>
+
+      <!-- Wizard Activity -->
+      <div style="padding:14px 18px;background:#faf5ff;border-top:1px solid #e9d5ff">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <div style="font-size:12px;font-weight:700;color:#581c87">&#x1FA84; Report Wizard Activity</div>
+          <button onclick="loadWizardLog()" style="padding:4px 12px;background:#7c3aed;color:#fff;border:none;border-radius:4px;font-size:11px;font-weight:600;cursor:pointer">Load</button>
+        </div>
+        <div id="wizard-log-body" style="font-size:11px;color:#666">Click Load to see recent wizard prompts &amp; feedback</div>
+      </div>
     </div>
 
     <div class="org-section">
@@ -5184,6 +5210,44 @@ app.get("/", (req, res) => {
       }
     }
 
+    async function loadWizardLog() {
+      var body = document.getElementById('wizard-log-body');
+      body.innerHTML = '<div style="color:#999;padding:8px">Loading\u2026</div>';
+      try {
+        var resp = await fetch('/api/admin/wizard-log');
+        var events = await resp.json();
+        if (!events.length) {
+          body.innerHTML = '<div style="color:#999;padding:8px">No wizard activity yet</div>';
+          return;
+        }
+        var html = '<div style="max-height:400px;overflow-y:auto;border:1px solid #e9d5ff;border-radius:6px">';
+        html += '<table style="width:100%;border-collapse:collapse;font-size:10.5px">';
+        html += '<thead><tr style="background:#faf5ff;position:sticky;top:0"><th style="padding:6px 8px;text-align:left;border-bottom:1px solid #e9d5ff">Time</th><th style="padding:6px 8px;text-align:left;border-bottom:1px solid #e9d5ff">Org</th><th style="padding:6px 8px;text-align:left;border-bottom:1px solid #e9d5ff">Type</th><th style="padding:6px 8px;text-align:left;border-bottom:1px solid #e9d5ff">Prompt</th><th style="padding:6px 8px;text-align:left;border-bottom:1px solid #e9d5ff">Cost</th><th style="padding:6px 8px;text-align:left;border-bottom:1px solid #e9d5ff">Vote</th></tr></thead><tbody>';
+        events.forEach(function(e) {
+          var t = e.ts ? new Date(e.ts) : null;
+          var timeStr = t ? (t.getMonth()+1) + '/' + t.getDate() + ' ' + t.getHours() + ':' + String(t.getMinutes()).padStart(2,'0') : '\u2014';
+          var isGen = e.action === 'generate';
+          var isFb = e.action === 'feedback';
+          var typeBadge = isGen ? '<span style="background:#7c3aed;color:#fff;padding:1px 6px;border-radius:8px;font-size:9px;font-weight:600">generate</span>' : '<span style="background:' + ((e.extra||{}).vote === 'up' ? '#16a34a' : '#dc2626') + ';color:#fff;padding:1px 6px;border-radius:8px;font-size:9px;font-weight:600">' + ((e.extra||{}).vote === 'up' ? '\uD83D\uDC4D up' : '\uD83D\uDC4E down') + '</span>';
+          var prompt = (e.extra||{}).prompt || (e.extra||{}).title || '\u2014';
+          var cost = isGen && (e.extra||{}).costUsd ? '$' + (e.extra.costUsd).toFixed(3) : '\u2014';
+          html += '<tr style="border-bottom:1px solid #f5f0ff">';
+          html += '<td style="padding:4px 8px;white-space:nowrap;color:#999">' + timeStr + '</td>';
+          html += '<td style="padding:4px 8px;font-weight:600">' + (e.org||'\u2014') + '</td>';
+          html += '<td style="padding:4px 8px">' + typeBadge + '</td>';
+          html += '<td style="padding:4px 8px;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + prompt.replace(/"/g,'&quot;') + '">' + prompt + '</td>';
+          html += '<td style="padding:4px 8px;font-family:monospace;font-size:9.5px;color:#999">' + cost + '</td>';
+          html += '<td style="padding:4px 8px">' + (isFb ? ((e.extra||{}).vote === 'up' ? '\uD83D\uDC4D' : '\uD83D\uDC4E') : '\u2014') + '</td>';
+          html += '</tr>';
+        });
+        html += '</tbody></table></div>';
+        html += '<div style="margin-top:6px;color:#999;font-size:10px">' + events.length + ' events</div>';
+        body.innerHTML = html;
+      } catch(err) {
+        body.innerHTML = '<div style="color:#dc2626;padding:8px">Error: ' + err.message + '</div>';
+      }
+    }
+
     async function doRestart() {
       const pwd = (document.getElementById('restart-pwd') || {}).value || '';
       if (!pwd) { showRestart('Enter the dashboard password first', '#dc2626'); return; }
@@ -5348,11 +5412,13 @@ app.get("/", (req, res) => {
     const UPDATES = [
   { date: '2026-06-21', title: 'Instructor Payout Report', items: ['New report: revenue splits and payout calculations by instructor', 'Split selector (90/10 through 50/50) with instant KPI updates', 'Grouped by instructor with subtotals and grand total', 'Fill rate bars, refund tracking, top instructor chart', 'Excel export with split calculations'] },
       { date: '2026-06-21', title: '🪄 Rec AI Report Wizard — Custom AI-Generated Dashboards', items: [
-        '🪄 REPORT WIZARD — New tool at /:org/report-wizard lets admins describe a report in plain English and get an AI-generated dashboard with KPI cards, charts, and tables.',
-        '✨ AI CONFIG ENGINE — Claude analyzes available data sources (programs, demographics, GL, facility, products, etc.) and designs a widget layout matching the request.',
-        '📊 WIDGET LIBRARY — Four widget types: KPI row (summary metrics), bar chart, pie/donut chart, and sortable data table. All powered by live Metabase data.',
-        '💾 SAVE & RELOAD — Generated reports can be saved to localStorage and reloaded later. Saved reports re-fetch live data on load.',
-        '🎯 EXAMPLE PROMPTS — Click-to-fill example prompts help admins get started: revenue by gender, top programs, GL breakdowns, community demographics, etc.',
+        '🪄 REPORT WIZARD — Describe a report in plain English, get an AI-generated dashboard with KPI cards, charts, and tables. Available at /:org/report-wizard for ALL orgs. Card added to every org dashboard and org landing page.',
+        '✨ AI CONFIG ENGINE — Claude analyzes available data sources (programs, demographics, GL, facility, products, etc.), auto-discovers field names/types, and designs a widget layout. Source descriptions prevent cross-source field confusion.',
+        '📊 WIDGET LIBRARY — KPI row (with per-category filters), bar charts, pie/donut charts, and sortable aggregated tables. Count/countDistinct work on string fields (gender, program names). PII columns auto-stripped.',
+        '💾 SAVE & RELOAD — Save generated reports to localStorage with one click. Reload re-fetches live data. Debug config panel with Copy button for sharing configs.',
+        '👍 FEEDBACK — Thumbs up/down on every generated report, logged to events. Admin dashboard Wizard Activity panel shows all prompts, costs, and feedback votes.',
+        '🎯 50 JUICE PHRASES — Custom juicing-themed loading messages: Centrifuging the spreadsheets, Deglazing the GL codes, Torching the crème brûlée chart, etc.',
+        '🛡️ PII PREVENTION — System prompt bans individual names/emails/phones from tables. Client-side strips PII columns even if AI includes them. Tables show aggregated data only.',
       ]},
       { date: '2026-06-20', title: '\uD83D\uDE80 Fast Track Pipeline Tab \u2014 Pre-Registration Demand Forecasting', items: [
         '\uD83D\uDE80 PIPELINE TAB \u2014 FT report now has four tabs: Overview, Revenue, Demographics, Pipeline. Pipeline shows sections that are published but registration hasn\u2019t opened yet \u2014 the presale window where FT wishlists accumulate.',
