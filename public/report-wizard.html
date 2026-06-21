@@ -881,7 +881,7 @@
 
             {(phase === 'generating' || phase === 'loading-data') && (
               <div className="loading-panel">
-                <JuiceLoader messages={WIZARD_PHRASES} />
+                <JuiceLoader messages={WIZARD_PHRASES.slice().sort(function() { return Math.random() - 0.5; }).slice(0, 5)} />
               </div>
             )}
 
