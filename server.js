@@ -5157,7 +5157,7 @@ app.get("/", (req, res) => {
         'Lapsing Household Alerts','Revenue Levers with CSV Export',
         'Fast Track Bookings & Conversion','Historic Site Rentals',
         'Pareto Revenue Curves','Signup Velocity Tracking','Resident vs Non-Resident',
-        'Who\\'s Not Buying Analysis','Revenue by Age Cohort','Grade Gap Detection',
+        'Who\'s Not Buying Analysis','Revenue by Age Cohort','Grade Gap Detection',
         'Excel Export via SheetJS','Refund Breakdown Toggle','Acct Credit Tracking',
         'Desk Location Filtering','Cancellation Rate Tracking',
         'Section vs Session Reg Modes','Present Mode \u2014 Kiosk/TV Display',
