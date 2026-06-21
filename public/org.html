@@ -481,6 +481,22 @@
     document.getElementById('cards').appendChild(chatCard);
   }
 
+  /* ── Report Wizard card ── */
+  if (cfg.reports && cfg.reports.length > 0 && cfg.wizardVisible !== false) {
+    var wizCard = document.createElement('a');
+    wizCard.href = '/' + slug + '/report-wizard' + tokenQS;
+    wizCard.className = 'card';
+    wizCard.style.cssText = 'border:1.5px solid #e9d5ff;background:linear-gradient(135deg,#faf5ff 0%,#f3e8ff 100%)';
+    wizCard.innerHTML = '<div class="card-icon">\u{1FA84}</div>'
+      + '<div class="card-body">'
+        + '<div class="card-label" style="color:#581c87">Report Wizard</div>'
+        + '<div class="card-desc">Build custom dashboards from plain English prompts</div>'
+        + '<span class="ai-pill">✦ AI powered</span>'
+      + '</div>'
+      + '<div class="card-right"><div class="card-arrow">\u2192</div></div>';
+    document.getElementById('cards').appendChild(wizCard);
+  }
+
   /* ── Footer ── */
   document.getElementById('footer').textContent = 'rec.us · ' + slug;
 </script>
