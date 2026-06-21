@@ -3845,7 +3845,7 @@ app.get("/", (req, res) => {
       const wizDim = wizHidden ? ' report-card-hidden' : '';
       cards.push(`
         <a href="/${slug}/report-wizard${tokenQS}" class="report-card${wizDim}" style="border-left:3px solid #7c3aed;background:linear-gradient(135deg,#faf5ff 0%,#f3e8ff 100%)" data-org="${slug}" data-report="report-wizard">
-          <span class="report-icon">\u{1FA84}</span>
+          <span class="report-icon">&#x1FA84;</span>
           <div class="report-body">
             <div class="report-label" style="color:#581c87">Report Wizard <span class="ai-pill-inline">AI</span></div>
             <div class="report-desc">Build custom dashboards from plain English prompts</div>
