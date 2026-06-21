@@ -1,0 +1,790 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Rec AI Report Wizard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'IBM Plex Sans', system-ui, sans-serif;
+      font-size: 13px; color: #1a1a1a; background: #f5f4f1; line-height: 1.4;
+    }
+
+    /* ── Toolbar ── */
+    .toolbar {
+      position: sticky; top: 0; z-index: 100;
+      display: flex; align-items: center; gap: 10px;
+      padding: 8px 20px; background: #2c2c2c; color: #eee;
+      font-size: 13px; flex-wrap: wrap;
+    }
+    .toolbar-title { font-weight: 600; margin-right: 4px; display: flex; align-items: center; gap: 8px; }
+    .toolbar-title .wizard-icon { font-size: 18px; }
+    .toolbar-spacer { flex: 1; }
+    .toolbar button {
+      padding: 6px 14px; border: 1px solid rgba(255,255,255,.25); border-radius: 4px;
+      background: rgba(255,255,255,.08); color: #fff; font-size: 12px;
+      font-family: inherit; cursor: pointer; transition: background .15s; white-space: nowrap;
+    }
+    .toolbar button:hover { background: rgba(255,255,255,.18); }
+    .toolbar .btn-new { background: #7c3aed; border-color: #7c3aed; font-weight: 600; }
+    .toolbar .btn-new:hover { background: #6d28d9; }
+    .toolbar .btn-back { font-size: 11px; opacity: .8; }
+    .toolbar .saved-count { font-size: 11px; color: #aaa; }
+
+    /* ── Page ── */
+    .page {
+      max-width: 1200px; margin: 0 auto; padding: 24px 28px; min-height: calc(100vh - 50px);
+    }
+
+    /* ── Prompt Panel ── */
+    .prompt-panel {
+      background: #fff; border-radius: 12px; padding: 32px 36px;
+      box-shadow: 0 1px 4px rgba(0,0,0,.06); margin-bottom: 20px;
+    }
+    .prompt-panel h1 {
+      font-size: 22px; font-weight: 700; margin-bottom: 4px; display: flex; align-items: center; gap: 10px;
+    }
+    .prompt-panel h1 .sparkle { font-size: 24px; }
+    .prompt-panel .subtitle { font-size: 13px; color: #666; margin-bottom: 20px; }
+    .prompt-area {
+      position: relative; margin-bottom: 16px;
+    }
+    .prompt-area textarea {
+      width: 100%; min-height: 80px; padding: 14px 16px; border: 2px solid #e5e7eb;
+      border-radius: 8px; font-family: inherit; font-size: 14px; line-height: 1.5;
+      resize: vertical; transition: border-color .15s; outline: none;
+    }
+    .prompt-area textarea:focus { border-color: #7c3aed; }
+    .prompt-area textarea::placeholder { color: #aaa; }
+    .prompt-actions { display: flex; gap: 10px; align-items: center; }
+    .btn-generate {
+      padding: 10px 24px; background: #7c3aed; color: #fff; border: none;
+      border-radius: 8px; font-size: 14px; font-weight: 600; font-family: inherit;
+      cursor: pointer; transition: background .15s; display: flex; align-items: center; gap: 8px;
+    }
+    .btn-generate:hover { background: #6d28d9; }
+    .btn-generate:disabled { opacity: .5; cursor: not-allowed; }
+    .btn-generate .spinner {
+      width: 16px; height: 16px; border: 2px solid rgba(255,255,255,.3);
+      border-top-color: #fff; border-radius: 50%; animation: spin .6s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Examples ── */
+    .examples { margin-top: 16px; }
+    .examples-label { font-size: 11px; text-transform: uppercase; letter-spacing: .8px; color: #999; font-weight: 600; margin-bottom: 8px; }
+    .example-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+    .example-chip {
+      padding: 6px 14px; background: #f3f0ff; color: #7c3aed; border: 1px solid #e9e3ff;
+      border-radius: 20px; font-size: 12px; cursor: pointer; transition: all .15s;
+      font-family: inherit;
+    }
+    .example-chip:hover { background: #ede9fe; border-color: #c4b5fd; }
+
+    /* ── Loading ── */
+    .loading-panel {
+      background: #fff; border-radius: 12px; padding: 48px 36px; text-align: center;
+      box-shadow: 0 1px 4px rgba(0,0,0,.06);
+    }
+    .loading-panel .big-spinner {
+      width: 48px; height: 48px; border: 3px solid #e5e7eb;
+      border-top-color: #7c3aed; border-radius: 50%; animation: spin .8s linear infinite;
+      margin: 0 auto 16px;
+    }
+    .loading-panel .loading-stage { font-size: 14px; color: #666; }
+    .loading-panel .loading-sub { font-size: 12px; color: #aaa; margin-top: 6px; }
+
+    /* ── Report View ── */
+    .report-view {
+      background: #fff; border-radius: 12px; padding: 28px 32px;
+      box-shadow: 0 1px 4px rgba(0,0,0,.06);
+    }
+    .report-header {
+      display: flex; justify-content: space-between; align-items: flex-start;
+      border-bottom: 2px solid #111; padding-bottom: 12px; margin-bottom: 20px; gap: 16px;
+    }
+    .report-header-left { display: flex; align-items: center; gap: 14px; }
+    .report-header-logo { height: 40px; max-width: 130px; object-fit: contain; }
+    .report-header .report-title { font-size: 18px; font-weight: 700; }
+    .report-header .report-desc { font-size: 12px; color: #666; margin-top: 2px; }
+    .report-header .report-prompt { font-size: 11px; color: #999; margin-top: 4px; font-style: italic; }
+    .report-header-right { display: flex; gap: 8px; flex-shrink: 0; }
+    .report-header-right button {
+      padding: 6px 14px; border: 1px solid #ddd; border-radius: 6px;
+      background: #fff; font-size: 12px; font-family: inherit; cursor: pointer; transition: all .15s;
+    }
+    .report-header-right button:hover { background: #f5f5f5; }
+    .report-header-right .btn-save { background: #7c3aed; color: #fff; border-color: #7c3aed; font-weight: 600; }
+    .report-header-right .btn-save:hover { background: #6d28d9; }
+    .report-header-right .btn-save.saved { background: #16a34a; border-color: #16a34a; }
+
+    /* ── Widget Grid ── */
+    .widget-grid { display: flex; flex-direction: column; gap: 20px; }
+
+    /* ── KPI Row ── */
+    .kpi-row { display: flex; gap: 12px; flex-wrap: wrap; }
+    .kpi-card {
+      flex: 1; min-width: 140px; background: #f5f4f1; border: 1px solid #e5e5e5;
+      border-radius: 8px; padding: 14px 18px;
+    }
+    .kpi-card .kpi-label {
+      font-size: 10px; text-transform: uppercase; letter-spacing: .8px;
+      color: #888; font-weight: 600; margin-bottom: 6px;
+    }
+    .kpi-card .kpi-value {
+      font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; color: #111;
+    }
+
+    /* ── Chart Widget ── */
+    .chart-widget {
+      background: #fafafa; border: 1px solid #e5e5e5; border-radius: 8px; padding: 18px;
+    }
+    .chart-widget .chart-title { font-size: 13px; font-weight: 600; margin-bottom: 12px; }
+    .chart-widget canvas { max-height: 320px; }
+
+    /* ── Table Widget ── */
+    .table-widget { overflow-x: auto; }
+    .table-widget .table-title { font-size: 13px; font-weight: 600; margin-bottom: 10px; }
+    .table-widget table {
+      width: 100%; border-collapse: collapse; font-size: 12px;
+    }
+    .table-widget th {
+      text-align: left; padding: 8px 12px; background: #f5f4f1; border-bottom: 2px solid #ddd;
+      font-weight: 600; font-size: 10px; text-transform: uppercase; letter-spacing: .5px; color: #555;
+      cursor: pointer; user-select: none; white-space: nowrap;
+    }
+    .table-widget th:hover { background: #eee; }
+    .table-widget th .sort-arrow { margin-left: 4px; font-size: 10px; color: #999; }
+    .table-widget td {
+      padding: 7px 12px; border-bottom: 1px solid #eee; white-space: nowrap;
+    }
+    .table-widget tr:hover td { background: #fafaf8; }
+    .table-widget .num { text-align: right; font-variant-numeric: tabular-nums; font-family: 'IBM Plex Mono', monospace; }
+
+    /* ── Saved Reports ── */
+    .saved-panel {
+      background: #fff; border-radius: 12px; padding: 24px 28px; margin-top: 20px;
+      box-shadow: 0 1px 4px rgba(0,0,0,.06);
+    }
+    .saved-panel h3 { font-size: 14px; font-weight: 600; margin-bottom: 12px; display: flex; align-items: center; gap: 6px; }
+    .saved-list { display: flex; flex-direction: column; gap: 8px; }
+    .saved-item {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 10px 14px; background: #fafafa; border: 1px solid #eee; border-radius: 6px;
+      cursor: pointer; transition: all .15s;
+    }
+    .saved-item:hover { background: #f0f0f0; border-color: #ddd; }
+    .saved-item .saved-title { font-weight: 600; font-size: 13px; }
+    .saved-item .saved-meta { font-size: 11px; color: #999; margin-top: 2px; }
+    .saved-item .saved-delete {
+      padding: 4px 10px; border: 1px solid #e5e5e5; border-radius: 4px;
+      background: #fff; font-size: 11px; color: #999; cursor: pointer; transition: all .15s;
+    }
+    .saved-item .saved-delete:hover { color: #ef4444; border-color: #fca5a5; background: #fef2f2; }
+
+    /* ── Error ── */
+    .error-box {
+      background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px;
+      padding: 16px 20px; color: #991b1b; font-size: 13px;
+    }
+    .error-box strong { display: block; margin-bottom: 4px; }
+
+    /* ── Breadcrumb ── */
+    .breadcrumb {
+      font-size: 12px; color: #888; margin-bottom: 16px;
+    }
+    .breadcrumb a { color: #7c3aed; text-decoration: none; }
+    .breadcrumb a:hover { text-decoration: underline; }
+
+    @media (max-width: 640px) {
+      .page { padding: 16px; }
+      .prompt-panel { padding: 20px; }
+      .report-view { padding: 16px; }
+      .kpi-card { min-width: 100%; }
+      .report-header { flex-direction: column; }
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
+
+  <script type="text/babel">
+    const { useState, useEffect, useRef, useCallback, useMemo } = React;
+
+    const CFG = window.ORG_CONFIG || {};
+    const ORG_SLUG = CFG.slug || '';
+    const TOKEN = CFG.token || '';
+    const tokenQS = TOKEN ? '?token=' + encodeURIComponent(TOKEN) : '';
+
+    // ── Storage helpers ──
+    const STORAGE_KEY = 'rec-wizard-' + ORG_SLUG;
+    function loadSaved() {
+      try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'); } catch { return []; }
+    }
+    function saveSaved(list) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+    }
+
+    // ── Format helpers ──
+    function fmt(val, format) {
+      if (val == null || val === '' || isNaN(val)) return '—';
+      var n = Number(val);
+      if (format === 'currency') return '$' + n.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+      if (format === 'currency2') return '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      if (format === 'percent') return n.toFixed(1) + '%';
+      if (format === 'number') return n.toLocaleString('en-US');
+      return String(val);
+    }
+
+    // ── Compute helpers ──
+    function getNum(row, field) {
+      var v = row[field];
+      if (v == null || v === '') return null;
+      if (typeof v === 'number') return v;
+      var n = parseFloat(String(v).replace(/[$,%]/g, ''));
+      return isNaN(n) ? null : n;
+    }
+    function filterRows(rows, filters) {
+      if (!filters || !filters.length) return rows;
+      return rows.filter(function(r) {
+        return filters.every(function(f) {
+          var v = r[f.field];
+          if (f.op === 'eq') return v == f.value;
+          if (f.op === 'neq') return v != f.value;
+          if (f.op === 'contains') return String(v || '').toLowerCase().includes(String(f.value).toLowerCase());
+          if (f.op === 'gt') return getNum(r, f.field) > Number(f.value);
+          if (f.op === 'lt') return getNum(r, f.field) < Number(f.value);
+          return true;
+        });
+      });
+    }
+    function computeAgg(rows, field, method) {
+      var vals = rows.map(function(r) { return getNum(r, field); }).filter(function(v) { return v !== null; });
+      if (!vals.length) return 0;
+      if (method === 'sum') return vals.reduce(function(a, b) { return a + b; }, 0);
+      if (method === 'avg') return vals.reduce(function(a, b) { return a + b; }, 0) / vals.length;
+      if (method === 'count') return vals.length;
+      if (method === 'min') return Math.min.apply(null, vals);
+      if (method === 'max') return Math.max.apply(null, vals);
+      if (method === 'countDistinct') {
+        var s = new Set(rows.map(function(r) { return r[field]; }));
+        return s.size;
+      }
+      return vals.reduce(function(a, b) { return a + b; }, 0);
+    }
+    function groupAgg(rows, groupBy, field, method) {
+      var groups = {};
+      rows.forEach(function(r) {
+        var key = r[groupBy] || 'Unknown';
+        if (!groups[key]) groups[key] = [];
+        groups[key].push(r);
+      });
+      var result = {};
+      Object.keys(groups).forEach(function(k) {
+        result[k] = computeAgg(groups[k], field, method);
+      });
+      return result;
+    }
+
+    // ── Color palette ──
+    var COLORS = ['#7c3aed', '#3b82f6', '#16a34a', '#f59e0b', '#ef4444', '#06b6d4', '#ec4899', '#8b5cf6', '#10b981', '#f97316'];
+
+    // ── Example prompts ──
+    var EXAMPLES = [
+      "Program revenue and fill rate by gender",
+      "Top 10 programs by revenue with enrollment details",
+      "Revenue breakdown by GL account with totals",
+      "Community demographics overview — age groups, gender split, revenue per capita",
+      "Fast Track conversion funnel — wishlists vs registrations by program",
+      "Monthly product sales breakdown with top sellers",
+    ];
+
+    // ── KPI Widget ──
+    function KpiRow({ items, data }) {
+      return (
+        <div className="kpi-row">
+          {items.map(function(item, i) {
+            var rows = data[item.source] || [];
+            var filtered = filterRows(rows, item.filter ? [item.filter] : null);
+            var val = computeAgg(filtered, item.field, item.compute || 'sum');
+            return (
+              <div className="kpi-card" key={i}>
+                <div className="kpi-label">{item.label}</div>
+                <div className="kpi-value">{fmt(val, item.format)}</div>
+              </div>
+            );
+          })}
+        </div>
+      );
+    }
+
+    // ── Bar Chart Widget ──
+    function BarChartWidget({ config, data }) {
+      var canvasRef = useRef(null);
+      var chartRef = useRef(null);
+      var rows = data[config.source] || [];
+      var filtered = filterRows(rows, config.filter);
+      var grouped = groupAgg(filtered, config.groupBy, config.metric.field, config.metric.compute || 'sum');
+
+      // Sort descending, limit
+      var entries = Object.entries(grouped).sort(function(a, b) { return b[1] - a[1]; });
+      if (config.limit) entries = entries.slice(0, config.limit);
+
+      useEffect(function() {
+        if (!canvasRef.current) return;
+        if (chartRef.current) chartRef.current.destroy();
+        chartRef.current = new Chart(canvasRef.current, {
+          type: 'bar',
+          data: {
+            labels: entries.map(function(e) { return e[0]; }),
+            datasets: [{
+              label: config.metric.field,
+              data: entries.map(function(e) { return e[1]; }),
+              backgroundColor: entries.map(function(_, i) { return COLORS[i % COLORS.length]; }),
+              borderRadius: 4,
+            }]
+          },
+          options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: {
+              legend: { display: false },
+              tooltip: {
+                callbacks: {
+                  label: function(ctx) { return fmt(ctx.raw, config.format); }
+                }
+              }
+            },
+            scales: {
+              y: {
+                beginAtZero: true,
+                ticks: {
+                  callback: function(v) { return config.format === 'currency' || config.format === 'currency2' ? '$' + v.toLocaleString() : v.toLocaleString(); }
+                }
+              }
+            }
+          }
+        });
+        return function() { if (chartRef.current) chartRef.current.destroy(); };
+      }, [JSON.stringify(entries)]);
+
+      return (
+        <div className="chart-widget">
+          <div className="chart-title">{config.title}</div>
+          <div style={{ height: '280px' }}><canvas ref={canvasRef}></canvas></div>
+        </div>
+      );
+    }
+
+    // ── Pie Chart Widget ──
+    function PieChartWidget({ config, data }) {
+      var canvasRef = useRef(null);
+      var chartRef = useRef(null);
+      var rows = data[config.source] || [];
+      var filtered = filterRows(rows, config.filter);
+      var grouped = groupAgg(filtered, config.groupBy, config.metric.field, config.metric.compute || 'sum');
+
+      var entries = Object.entries(grouped).sort(function(a, b) { return b[1] - a[1]; });
+      if (config.limit) entries = entries.slice(0, config.limit);
+
+      useEffect(function() {
+        if (!canvasRef.current) return;
+        if (chartRef.current) chartRef.current.destroy();
+        chartRef.current = new Chart(canvasRef.current, {
+          type: 'doughnut',
+          data: {
+            labels: entries.map(function(e) { return e[0]; }),
+            datasets: [{
+              data: entries.map(function(e) { return e[1]; }),
+              backgroundColor: entries.map(function(_, i) { return COLORS[i % COLORS.length]; }),
+            }]
+          },
+          options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: {
+              tooltip: {
+                callbacks: {
+                  label: function(ctx) { return ctx.label + ': ' + fmt(ctx.raw, config.format); }
+                }
+              }
+            }
+          }
+        });
+        return function() { if (chartRef.current) chartRef.current.destroy(); };
+      }, [JSON.stringify(entries)]);
+
+      return (
+        <div className="chart-widget">
+          <div className="chart-title">{config.title}</div>
+          <div style={{ height: '280px' }}><canvas ref={canvasRef}></canvas></div>
+        </div>
+      );
+    }
+
+    // ── Table Widget ──
+    function DataTableWidget({ config, data }) {
+      var sortFieldInit = (config.sort && config.sort.field) || (config.columns && config.columns[0] && (config.columns[0].field || config.columns[0])) || '';
+      var sortDirInit = (config.sort && config.sort.dir) || 'desc';
+      var [sortField, setSortField] = useState(sortFieldInit);
+      var [sortDir, setSortDir] = useState(sortDirInit);
+
+      var rows = data[config.source] || [];
+      var filtered = filterRows(rows, config.filter);
+
+      // If groupBy, aggregate
+      var tableRows = filtered;
+      if (config.groupBy) {
+        var groups = {};
+        filtered.forEach(function(r) {
+          var key = r[config.groupBy] || 'Unknown';
+          if (!groups[key]) groups[key] = { _key: key, _rows: [] };
+          groups[key]._rows.push(r);
+        });
+        tableRows = Object.values(groups).map(function(g) {
+          var agg = { [config.groupBy]: g._key };
+          (config.columns || []).forEach(function(col) {
+            var f = col.field || col;
+            if (f === config.groupBy) return;
+            agg[f] = computeAgg(g._rows, f, config.compute || col.compute || 'sum');
+          });
+          return agg;
+        });
+      }
+
+      // Sort
+      var sorted = tableRows.slice().sort(function(a, b) {
+        var av = a[sortField], bv = b[sortField];
+        var an = getNum(a, sortField), bn = getNum(b, sortField);
+        if (an !== null && bn !== null) return sortDir === 'asc' ? an - bn : bn - an;
+        return sortDir === 'asc' ? String(av || '').localeCompare(String(bv || '')) : String(bv || '').localeCompare(String(av || ''));
+      });
+
+      if (config.limit) sorted = sorted.slice(0, config.limit);
+
+      var cols = (config.columns || []).map(function(c) {
+        if (typeof c === 'string') return { field: c, label: c, format: null };
+        return { field: c.field, label: c.label || c.field, format: c.format || null };
+      });
+
+      function handleSort(field) {
+        if (sortField === field) setSortDir(sortDir === 'asc' ? 'desc' : 'asc');
+        else { setSortField(field); setSortDir('desc'); }
+      }
+
+      return (
+        <div className="table-widget">
+          {config.title && <div className="table-title">{config.title}</div>}
+          <table>
+            <thead>
+              <tr>
+                {cols.map(function(c, i) {
+                  var arrow = sortField === c.field ? (sortDir === 'asc' ? ' ↑' : ' ↓') : '';
+                  return <th key={i} onClick={function() { handleSort(c.field); }}>{c.label}<span className="sort-arrow">{arrow}</span></th>;
+                })}
+              </tr>
+            </thead>
+            <tbody>
+              {sorted.map(function(row, ri) {
+                return (
+                  <tr key={ri}>
+                    {cols.map(function(c, ci) {
+                      var val = row[c.field];
+                      var isNum = c.format === 'currency' || c.format === 'currency2' || c.format === 'number' || c.format === 'percent' || (getNum(row, c.field) !== null && typeof val === 'number');
+                      return <td key={ci} className={isNum ? 'num' : ''}>{c.format ? fmt(val, c.format) : (val != null ? String(val) : '—')}</td>;
+                    })}
+                  </tr>
+                );
+              })}
+              {!sorted.length && <tr><td colSpan={cols.length} style={{ textAlign: 'center', color: '#999', padding: '20px' }}>No data</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      );
+    }
+
+    // ── Widget Renderer ──
+    function WidgetRenderer({ config, data }) {
+      if (config.type === 'kpi-row') return <KpiRow items={config.items} data={data} />;
+      if (config.type === 'bar-chart') return <BarChartWidget config={config} data={data} />;
+      if (config.type === 'pie-chart') return <PieChartWidget config={config} data={data} />;
+      if (config.type === 'table') return <DataTableWidget config={config} data={data} />;
+      return <div className="error-box">Unknown widget type: {config.type}</div>;
+    }
+
+    // ── Report View ──
+    function ReportView({ report, data, onSave, onNew, onRefine }) {
+      var [saveState, setSaveState] = useState('idle');
+
+      function handleSave() {
+        onSave(report);
+        setSaveState('saved');
+        setTimeout(function() { setSaveState('idle'); }, 2000);
+      }
+
+      return (
+        <div className="report-view">
+          <div className="report-header">
+            <div className="report-header-left">
+              {CFG.logoUrl && <img src={CFG.logoUrl} className="report-header-logo" alt="" />}
+              <div>
+                <div className="report-title">{report.title}</div>
+                {report.description && <div className="report-desc">{report.description}</div>}
+                <div className="report-prompt">Prompt: "{report.prompt}"</div>
+              </div>
+            </div>
+            <div className="report-header-right">
+              <button onClick={onRefine}>Refine</button>
+              <button onClick={onNew}>New</button>
+              <button className={'btn-save' + (saveState === 'saved' ? ' saved' : '')} onClick={handleSave}>
+                {saveState === 'saved' ? '✓ Saved' : 'Save'}
+              </button>
+            </div>
+          </div>
+          <div className="widget-grid">
+            {(report.widgets || []).map(function(w, i) {
+              return <WidgetRenderer key={i} config={w} data={data} />;
+            })}
+          </div>
+        </div>
+      );
+    }
+
+    // ── Saved Reports List ──
+    function SavedReports({ items, onLoad, onDelete }) {
+      if (!items.length) return null;
+      return (
+        <div className="saved-panel">
+          <h3>📁 Saved Reports</h3>
+          <div className="saved-list">
+            {items.map(function(item, i) {
+              return (
+                <div className="saved-item" key={item.id} onClick={function() { onLoad(item); }}>
+                  <div>
+                    <div className="saved-title">{item.title}</div>
+                    <div className="saved-meta">{new Date(item.savedAt).toLocaleDateString()} · {(item.widgets || []).length} widgets</div>
+                  </div>
+                  <button className="saved-delete" onClick={function(e) { e.stopPropagation(); onDelete(item.id); }}>Delete</button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      );
+    }
+
+    // ── Main App ──
+    function App() {
+      var [prompt, setPrompt] = useState('');
+      var [phase, setPhase] = useState('prompt'); // prompt | generating | loading-data | report | error
+      var [loadingMsg, setLoadingMsg] = useState('');
+      var [error, setError] = useState('');
+      var [reportConfig, setReportConfig] = useState(null);
+      var [reportData, setReportData] = useState({});
+      var [saved, setSaved] = useState(loadSaved);
+
+      // Generate report config via server
+      var handleGenerate = useCallback(async function() {
+        if (!prompt.trim()) return;
+        setPhase('generating');
+        setLoadingMsg('Building your report layout...');
+        setError('');
+
+        try {
+          var resp = await fetch('/' + ORG_SLUG + '/report-wizard/api/generate' + tokenQS, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ prompt: prompt.trim() }),
+          });
+
+          if (!resp.ok) {
+            var errData = await resp.json().catch(function() { return { error: 'Generation failed' }; });
+            throw new Error(errData.error || 'Generation failed (' + resp.status + ')');
+          }
+
+          var config = await resp.json();
+          config.prompt = prompt.trim();
+          setReportConfig(config);
+
+          // Fetch data from needed sources
+          setPhase('loading-data');
+          setLoadingMsg('Fetching data...');
+
+          var sources = config.dataSources || [];
+          var dataMap = {};
+
+          await Promise.all(sources.map(async function(src) {
+            try {
+              setLoadingMsg('Loading ' + src + '...');
+              var dataResp = await fetch('/' + ORG_SLUG + '/' + src + '/api/data' + tokenQS);
+              if (dataResp.ok) {
+                var d = await dataResp.json();
+                dataMap[src] = d.rows || d || [];
+              }
+            } catch (e) {
+              console.warn('Failed to fetch ' + src + ':', e);
+            }
+          }));
+
+          setReportData(dataMap);
+          setPhase('report');
+        } catch (e) {
+          console.error('Generate error:', e);
+          setError(e.message);
+          setPhase('error');
+        }
+      }, [prompt]);
+
+      function handleSave(report) {
+        var entry = Object.assign({}, report, {
+          id: 'rw-' + Date.now(),
+          savedAt: new Date().toISOString(),
+          dataSources: report.dataSources,
+        });
+        var updated = [entry].concat(saved);
+        setSaved(updated);
+        saveSaved(updated);
+      }
+
+      function handleDelete(id) {
+        var updated = saved.filter(function(s) { return s.id !== id; });
+        setSaved(updated);
+        saveSaved(updated);
+      }
+
+      async function handleLoadSaved(item) {
+        setReportConfig(item);
+        setPrompt(item.prompt || '');
+        setPhase('loading-data');
+        setLoadingMsg('Fetching data...');
+
+        var sources = item.dataSources || [];
+        var dataMap = {};
+        await Promise.all(sources.map(async function(src) {
+          try {
+            var dataResp = await fetch('/' + ORG_SLUG + '/' + src + '/api/data' + tokenQS);
+            if (dataResp.ok) {
+              var d = await dataResp.json();
+              dataMap[src] = d.rows || d || [];
+            }
+          } catch (e) {
+            console.warn('Failed to fetch ' + src + ':', e);
+          }
+        }));
+        setReportData(dataMap);
+        setPhase('report');
+      }
+
+      function handleNew() {
+        setPhase('prompt');
+        setPrompt('');
+        setReportConfig(null);
+        setReportData({});
+        setError('');
+      }
+
+      function handleRefine() {
+        setPhase('prompt');
+      }
+
+      return (
+        <React.Fragment>
+          <div className="toolbar">
+            <div className="toolbar-title">
+              <span className="wizard-icon">🪄</span> Rec AI Report Wizard
+            </div>
+            <div className="toolbar-spacer"></div>
+            {phase === 'report' && (
+              <button className="btn-new" onClick={handleNew}>+ New Report</button>
+            )}
+            {phase !== 'prompt' && (
+              <button className="btn-back" onClick={handleNew}>← Back</button>
+            )}
+            <a href={'/' + ORG_SLUG + tokenQS} style={{ color: '#aaa', fontSize: '12px', textDecoration: 'none' }}>Dashboard</a>
+          </div>
+
+          <div className="page">
+            <div className="breadcrumb">
+              <a href={'/' + ORG_SLUG + tokenQS}>{CFG.displayName || ORG_SLUG}</a> &rsaquo; Report Wizard
+            </div>
+
+            {phase === 'prompt' && (
+              <React.Fragment>
+                <div className="prompt-panel">
+                  <h1><span className="sparkle">✨</span> Build a Custom Report</h1>
+                  <div className="subtitle">Describe the report you need in plain English. Rec AI will design a dashboard with the right metrics, charts, and tables.</div>
+
+                  <div className="prompt-area">
+                    <textarea
+                      value={prompt}
+                      onChange={function(e) { setPrompt(e.target.value); }}
+                      onKeyDown={function(e) { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleGenerate(); }}
+                      placeholder="e.g. Show me program revenue by gender with fill rates and a breakdown table..."
+                    ></textarea>
+                  </div>
+
+                  <div className="prompt-actions">
+                    <button className="btn-generate" onClick={handleGenerate} disabled={!prompt.trim()}>
+                      Generate Report
+                    </button>
+                    <span style={{ fontSize: '11px', color: '#aaa' }}>⌘+Enter</span>
+                  </div>
+
+                  <div className="examples">
+                    <div className="examples-label">Try an example</div>
+                    <div className="example-chips">
+                      {EXAMPLES.map(function(ex, i) {
+                        return <button key={i} className="example-chip" onClick={function() { setPrompt(ex); }}>{ex}</button>;
+                      })}
+                    </div>
+                  </div>
+                </div>
+
+                <SavedReports items={saved} onLoad={handleLoadSaved} onDelete={handleDelete} />
+              </React.Fragment>
+            )}
+
+            {(phase === 'generating' || phase === 'loading-data') && (
+              <div className="loading-panel">
+                <div className="big-spinner"></div>
+                <div className="loading-stage">{loadingMsg}</div>
+                <div className="loading-sub">{phase === 'generating' ? 'AI is designing your report layout...' : 'Pulling live data from your reports...'}</div>
+              </div>
+            )}
+
+            {phase === 'error' && (
+              <div>
+                <div className="error-box">
+                  <strong>Report generation failed</strong>
+                  {error}
+                </div>
+                <div style={{ marginTop: '12px' }}>
+                  <button className="btn-generate" onClick={function() { setPhase('prompt'); }}>Try Again</button>
+                </div>
+              </div>
+            )}
+
+            {phase === 'report' && reportConfig && (
+              <ReportView
+                report={reportConfig}
+                data={reportData}
+                onSave={handleSave}
+                onNew={handleNew}
+                onRefine={handleRefine}
+              />
+            )}
+          </div>
+        </React.Fragment>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>
