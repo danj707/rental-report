@@ -2043,7 +2043,7 @@ app.post("/:org/chat/api/message", async (req, res) => {
 // ── GET /:org/:report/api/data — proxy to Metabase ───────────────────
 // ── Report Wizard — AI config generator ─────────────────────────────
 const WIZARD_MODEL = process.env.WIZARD_MODEL || "claude-sonnet-4-6";
-const WIZARD_MAX_TOKENS = 2000;
+const WIZARD_MAX_TOKENS = 3000;
 const _wizardSchemaCache = new Map();
 const WIZARD_SCHEMA_TTL = 30 * 60 * 1000;
 
@@ -2184,7 +2184,7 @@ app.post("/:org/report-wizard/api/generate", async (req, res) => {
       return `SOURCE: "${rt}" (${s.rowCount} rows)${hint ? '\n  DESCRIPTION: ' + hint : ''}\n${fieldList}`;
     }).join("\n\n");
 
-    const userMsg = `DATA SOURCES AVAILABLE:\n\n${schemaText}\n\nUSER REQUEST: ${prompt}`;
+    const userMsg = `DATA SOURCES AVAILABLE:\n\n${schemaText}\n\nUSER REQUEST: ${prompt}\n\nRemember: respond with ONLY the JSON config object, no explanation or markdown.`;
 
     console.log(`[wizard] ${slug}: generating config, ${sourceCount} sources, prompt: "${prompt.slice(0, 80)}"`);
 
@@ -2220,8 +2220,19 @@ app.post("/:org/report-wizard/api/generate", async (req, res) => {
     try {
       config = JSON.parse(cleaned);
     } catch (parseErr) {
-      console.error(`[wizard] JSON parse failed: ${parseErr.message}\n${cleaned.slice(0, 500)}`);
-      return res.status(502).json({ error: "AI returned invalid config - try rephrasing your prompt" });
+      // Try extracting the first JSON object from the response (AI may add preamble)
+      const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        try {
+          config = JSON.parse(jsonMatch[0]);
+        } catch (e2) {
+          console.error(`[wizard] JSON parse failed (both attempts): ${parseErr.message}\n${cleaned.slice(0, 500)}`);
+          return res.status(502).json({ error: "AI returned invalid config - try a shorter, simpler prompt" });
+        }
+      } else {
+        console.error(`[wizard] No JSON object found in response:\n${cleaned.slice(0, 500)}`);
+        return res.status(502).json({ error: "AI returned invalid config - try a shorter, simpler prompt" });
+      }
     }
 
     if (!config.title || !config.widgets || !Array.isArray(config.widgets)) {
