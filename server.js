@@ -4415,12 +4415,10 @@ app.get("/", (req, res) => {
       return '<span style="color:#ef4444;font-weight:700">❌ ' + fc + ' failing</span><span style="color:#666">' + ds + '</span>';
     })()}
     <button onclick="runHealthCheck(this)" style="font-size:10px;color:#3b82f6;background:none;border:1px solid #3b82f6;border-radius:4px;padding:2px 8px;cursor:pointer;margin-left:2px" onmouseover="this.style.background='#eff6ff'" onmouseout="this.style.background='none'">Run Now</button>
-  </div>
-  <!-- Backup status in header -->
-  <span style="color:#444;margin:0 4px">|</span>
-  <span style="color:#666;font-weight:600;text-transform:uppercase;letter-spacing:.06em;font-size:10px">Backup</span>
-  <span id="bk-dot" style="width:8px;height:8px;border-radius:50%;background:#555;flex-shrink:0;display:inline-block"></span>
-  <span id="bk-status" style="color:#999;font-size:11px">...</span>
+    <span style="color:#444;margin:0 4px">|</span>
+    <span style="color:#666;font-weight:600;text-transform:uppercase;letter-spacing:.06em;font-size:10px">Backup</span>
+    <span id="bk-dot" style="width:8px;height:8px;border-radius:50%;background:#555;flex-shrink:0;display:inline-block"></span>
+    <span id="bk-status" style="color:#999;font-size:11px">...</span>
   </div>
   <script>
   (function fetchRailwayStatus(){
