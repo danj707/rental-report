@@ -252,10 +252,21 @@
       var n = parseFloat(String(v).replace(/[$,%]/g, ''));
       return isNaN(n) ? null : n;
     }
+    // ── PII fields to strip from table display ──
+    var PII_FIELDS = new Set(['First Name', 'Last Name', 'Email', 'Phone', 'email', 'phone',
+      'first_name', 'last_name', 'Full Name', 'Name', 'Contact', 'Address']);
+
+    function normalizeFilter(f) {
+      if (!f) return null;
+      if (Array.isArray(f)) return f.length ? f : null;
+      return [f];
+    }
+
     function filterRows(rows, filters) {
-      if (!filters || !filters.length) return rows;
+      var norm = normalizeFilter(filters);
+      if (!norm || !norm.length) return rows;
       return rows.filter(function(r) {
-        return filters.every(function(f) {
+        return norm.every(function(f) {
           var v = r[f.field];
           if (f.op === 'eq') return v == f.value;
           if (f.op === 'neq') return v != f.value;
@@ -313,7 +324,7 @@
         <div className="kpi-row">
           {items.map(function(item, i) {
             var rows = data[item.source] || [];
-            var filtered = filterRows(rows, item.filter ? [item.filter] : null);
+            var filtered = filterRows(rows, item.filter);
             var val = computeAgg(filtered, item.field, item.compute || 'sum');
             return (
               <div className="kpi-card" key={i}>
@@ -471,7 +482,7 @@
       var cols = (config.columns || []).map(function(c) {
         if (typeof c === 'string') return { field: c, label: c, format: null };
         return { field: c.field, label: c.label || c.field, format: c.format || null };
-      });
+      }).filter(function(c) { return !PII_FIELDS.has(c.field); });
 
       function handleSort(field) {
         if (sortField === field) setSortDir(sortDir === 'asc' ? 'desc' : 'asc');
