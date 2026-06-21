@@ -2040,6 +2040,198 @@ app.post("/:org/chat/api/message", async (req, res) => {
 
 
 // ── GET /:org/:report/api/data — proxy to Metabase ───────────────────
+// ── Report Wizard — AI config generator ─────────────────────────────
+const WIZARD_MODEL = process.env.WIZARD_MODEL || "claude-sonnet-4-6";
+const WIZARD_MAX_TOKENS = 2000;
+const _wizardSchemaCache = new Map();
+const WIZARD_SCHEMA_TTL = 30 * 60 * 1000;
+
+async function fetchWizardSchemas(orgSlug, orgConfig) {
+  const hit = _wizardSchemaCache.get(orgSlug);
+  if (hit && Date.now() - hit.ts < WIZARD_SCHEMA_TTL) return hit.schemas;
+  const reportTypes = REPORT_TYPES.filter(r =>
+    !NON_ADDABLE_REPORTS.has(r) && (orgConfig[r]?.mbUuid || SHARED_UUIDS[r])
+  );
+  const schemas = {};
+  await Promise.allSettled(reportTypes.map(async (rt) => {
+    try {
+      const useShared = !!SHARED_UUIDS[rt];
+      const mbUuid = useShared ? SHARED_UUIDS[rt] : orgConfig[rt]?.mbUuid;
+      if (!mbUuid) return;
+      const orgId = useShared ? orgConfig.orgId : null;
+      const params = buildMetabaseParams({}, rt, orgId);
+      const paramStr = params.length > 0 ? `?parameters=${encodeURIComponent(JSON.stringify(params))}` : "";
+      const url = `${METABASE_URL}/api/public/card/${mbUuid}/query/json${paramStr}`;
+      const resp = await fetch(url, { signal: AbortSignal.timeout(15000) });
+      if (!resp.ok) return;
+      const rows = await resp.json();
+      if (!Array.isArray(rows) || !rows.length) return;
+      const sample = rows.slice(0, 3);
+      const fields = Object.keys(sample[0]).map(k => {
+        const vals = sample.map(r => r[k]).filter(v => v != null);
+        const isNum = vals.length > 0 && vals.every(v => typeof v === "number" || /^-?\ [\d,.]+%?$/.test(String(v)));
+        return { name: k, type: isNum ? "number" : "string", sample: vals[0] != null ? String(vals[0]).slice(0, 60) : null };
+      });
+      schemas[rt] = { fields, rowCount: rows.length };
+      console.log(`[wizard] schema ${orgSlug}/${rt}: ${fields.length} fields, ${rows.length} rows`);
+    } catch (e) { console.error(`[wizard] schema ${orgSlug}/${rt}: ${e.message}`); }
+  }));
+  if (_wizardSchemaCache.size > 50) { const oldest = _wizardSchemaCache.keys().next().value; _wizardSchemaCache.delete(oldest); }
+  _wizardSchemaCache.set(orgSlug, { ts: Date.now(), schemas });
+  return schemas;
+}
+
+const WIZARD_SYS_PROMPT = `You are a report configuration generator for a municipal parks & recreation analytics platform.
+
+You receive a natural language description of a desired report and a schema of available data sources with their field names, types, and sample values.
+
+Return ONLY a valid JSON object (no markdown fences, no explanation) with this structure:
+
+{
+  "title": "Report Title",
+  "description": "One-line description",
+  "dataSources": ["programs", "program-demographics"],
+  "widgets": [...]
+}
+
+WIDGET TYPES:
+
+1. kpi-row: Row of summary metric cards (use 3-5 items)
+{"type":"kpi-row","items":[{"label":"Total Revenue","source":"programs","field":"Net Amount","compute":"sum","format":"currency"}]}
+
+2. bar-chart: Grouped bar chart
+{"type":"bar-chart","title":"Revenue by Gender","source":"program-demographics","groupBy":"Gender","metric":{"field":"Net Amount","compute":"sum"},"format":"currency","limit":10}
+
+3. pie-chart: Donut/pie chart
+{"type":"pie-chart","title":"Enrollment by Gender","source":"program-demographics","groupBy":"Gender","metric":{"field":"Gender","compute":"count"},"format":"number"}
+
+4. table: Sortable data table
+{"type":"table","title":"Program Details","source":"programs","columns":[{"field":"Program Name","label":"Program"},{"field":"Net Amount","label":"Revenue","format":"currency"},{"field":"Registrations","label":"Enrolled","format":"number"}],"sort":{"field":"Net Amount","dir":"desc"},"limit":20}
+
+Tables can also aggregate with groupBy + compute:
+{"type":"table","title":"Revenue by Gender","source":"program-demographics","groupBy":"Gender","columns":[{"field":"Gender","label":"Gender"},{"field":"Net Amount","label":"Revenue","format":"currency"}],"compute":"sum"}
+
+AVAILABLE FILTER in any widget (optional):
+"filter": [{"field":"Gender","op":"neq","value":"Unknown"}]
+Ops: eq, neq, contains, gt, lt
+
+COMPUTE METHODS: sum, avg, count, countDistinct, min, max
+
+FORMAT OPTIONS: currency (no decimals), currency2 (2 decimals), number, percent
+
+RULES:
+- Use ONLY field names that exist in the provided schemas
+- dataSources must list every source key used by widgets
+- Start with a kpi-row for the most important metrics
+- Use 3-6 widgets total
+- Prefer bar-chart for categorical comparisons, pie-chart for proportions
+- Use table for detailed drill-down data
+- source must be an exact key from the schema (e.g. "programs", "gl", "program-demographics")
+- Be smart about which data source to use
+- For "count" computations on pie/bar charts, set the metric field to the groupBy field
+- Return ONLY the JSON object, nothing else`;
+
+app.post("/:org/report-wizard/api/generate", async (req, res) => {
+  const slug = req.params.org;
+  const org = ORGS[slug];
+  if (!org) return res.status(404).json({ error: "Unknown org" });
+
+  const qToken = req.query.token || req.headers["x-token"];
+  if (org.token && qToken !== org.token) return res.status(403).json({ error: "Invalid token" });
+
+  if (!process.env.ANTHROPIC_API_KEY) {
+    return res.status(503).json({ error: "AI not configured" });
+  }
+
+  const { prompt } = req.body || {};
+  if (!prompt || typeof prompt !== "string") {
+    return res.status(400).json({ error: "Prompt required" });
+  }
+
+  try {
+    const schemas = await fetchWizardSchemas(slug, org);
+    const sourceCount = Object.keys(schemas).length;
+    if (!sourceCount) {
+      return res.status(500).json({ error: "No data sources available for this org" });
+    }
+
+    const schemaText = Object.entries(schemas).map(([rt, s]) => {
+      const fieldList = s.fields.map(f =>
+        `  - ${f.name} (${f.type})${f.sample ? ` e.g. "${f.sample}"` : ""}`
+      ).join("\n");
+      return `SOURCE: "${rt}" (${s.rowCount} rows)\n${fieldList}`;
+    }).join("\n\n");
+
+    const userMsg = `DATA SOURCES AVAILABLE:\n\n${schemaText}\n\nUSER REQUEST: ${prompt}`;
+
+    console.log(`[wizard] ${slug}: generating config, ${sourceCount} sources, prompt: "${prompt.slice(0, 80)}"`);
+
+    const resp = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "x-api-key": process.env.ANTHROPIC_API_KEY,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        model: WIZARD_MODEL,
+        max_tokens: WIZARD_MAX_TOKENS,
+        system: WIZARD_SYS_PROMPT,
+        messages: [{ role: "user", content: userMsg }],
+      }),
+    });
+
+    if (!resp.ok) {
+      const errBody = await resp.text();
+      console.error(`[wizard] Anthropic ${resp.status}: ${errBody.slice(0, 500)}`);
+      return res.status(502).json({ error: "AI service error" });
+    }
+
+    const data = await resp.json();
+    const text = (data.content || [])
+      .filter(c => c.type === "text")
+      .map(c => c.text)
+      .join("");
+
+    const cleaned = text.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
+    let config;
+    try {
+      config = JSON.parse(cleaned);
+    } catch (parseErr) {
+      console.error(`[wizard] JSON parse failed: ${parseErr.message}\n${cleaned.slice(0, 500)}`);
+      return res.status(502).json({ error: "AI returned invalid config - try rephrasing your prompt" });
+    }
+
+    if (!config.title || !config.widgets || !Array.isArray(config.widgets)) {
+      return res.status(502).json({ error: "AI returned incomplete config - try rephrasing" });
+    }
+    if (!config.dataSources || !Array.isArray(config.dataSources)) {
+      const srcs = new Set();
+      config.widgets.forEach(w => {
+        if (w.source) srcs.add(w.source);
+        if (w.items) w.items.forEach(it => { if (it.source) srcs.add(it.source); });
+      });
+      config.dataSources = Array.from(srcs);
+    }
+
+    const usage = data.usage || {};
+    const costUsd = insightsCostUsd(WIZARD_MODEL, usage.input_tokens || 0, usage.output_tokens || 0);
+    logEvent(slug, "report-wizard", "generate", req, {
+      inTok: usage.input_tokens || 0,
+      outTok: usage.output_tokens || 0,
+      costUsd,
+      prompt: prompt.slice(0, 120),
+    });
+
+    console.log(`[wizard] ${slug}: generated "${config.title}" with ${config.widgets.length} widgets, ${config.dataSources.length} sources`);
+    res.json(config);
+  } catch (err) {
+    console.error("[wizard] Error:", err);
+    res.status(500).json({ error: "Report generation failed: " + err.message });
+  }
+});
+
+
 app.get("/:org/:report/api/data", resolveOrg, async (req, res) => {
   try {
     const { orgConfig, orgSlug, reportType } = req;
@@ -2651,6 +2843,27 @@ app.get("/:org/chat", (req, res) => {
     token: org.token || "",
   };
   const html = require("fs").readFileSync(path.join(__dirname, "public", "chat.html"), "utf8");
+  const inject = `<script>window.ORG_CONFIG=${JSON.stringify(orgConfig)};</script>`;
+  res.type("html").send(html.replace("</head>", inject + "</head>"));
+});
+
+
+// ── Report Wizard — HTML serving ──
+app.get("/:org/report-wizard", (req, res) => {
+  const slug = req.params.org;
+  const org  = ORGS[slug];
+  if (!org) return res.status(404).send("Unknown org");
+  logEvent(slug, "report-wizard", "view", req);
+  const available = REPORT_TYPES.filter(r => !NON_ADDABLE_REPORTS.has(r) && (org[r]?.mbUuid || SHARED_UUIDS[r]));
+  const slugTitle = slug.charAt(0).toUpperCase() + slug.slice(1);
+  const orgConfig = {
+    slug,
+    displayName: org.displayName || `${slugTitle} Parks & Recreation`,
+    logoUrl: org.logoUrl || "",
+    reports: available,
+    token: org.token || "",
+  };
+  const html = require("fs").readFileSync(path.join(__dirname, "public", "report-wizard.html"), "utf8");
   const inject = `<script>window.ORG_CONFIG=${JSON.stringify(orgConfig)};</script>`;
   res.type("html").send(html.replace("</head>", inject + "</head>"));
 });
@@ -5025,6 +5238,13 @@ app.get("/", (req, res) => {
     // Newest first. Add a new entry at the TOP for every change we ship.
     // History below back-filled from the GitHub commit log.
     const UPDATES = [
+      { date: '2026-06-21', title: '🪄 Rec AI Report Wizard — Custom AI-Generated Dashboards', items: [
+        '🪄 REPORT WIZARD — New tool at /:org/report-wizard lets admins describe a report in plain English and get an AI-generated dashboard with KPI cards, charts, and tables.',
+        '✨ AI CONFIG ENGINE — Claude analyzes available data sources (programs, demographics, GL, facility, products, etc.) and designs a widget layout matching the request.',
+        '📊 WIDGET LIBRARY — Four widget types: KPI row (summary metrics), bar chart, pie/donut chart, and sortable data table. All powered by live Metabase data.',
+        '💾 SAVE & RELOAD — Generated reports can be saved to localStorage and reloaded later. Saved reports re-fetch live data on load.',
+        '🎯 EXAMPLE PROMPTS — Click-to-fill example prompts help admins get started: revenue by gender, top programs, GL breakdowns, community demographics, etc.',
+      ]},
       { date: '2026-06-20', title: '\uD83D\uDE80 Fast Track Pipeline Tab \u2014 Pre-Registration Demand Forecasting', items: [
         '\uD83D\uDE80 PIPELINE TAB \u2014 FT report now has four tabs: Overview, Revenue, Demographics, Pipeline. Pipeline shows sections that are published but registration hasn\u2019t opened yet \u2014 the presale window where FT wishlists accumulate.',
         '\uD83D\uDCCA DEMAND HEAT \u2014 Pipeline table shows FT wishlists, pending count, capacity, demand ratio with color-coded heat (green/amber/red), countdown to reg opens, and early access dates.',
