@@ -2144,12 +2144,22 @@ CRITICAL DATA SOURCE RULES:
 - Read the DESCRIPTION line for each source to understand what data it contains
 - If a field doesn't exist in a source, DO NOT reference it — the widget will show 0/blank
 
+PII RULES (CRITICAL — NEVER VIOLATE):
+- NEVER include these fields as table columns: First Name, Last Name, Email, Phone, email, phone, first_name, last_name
+- Tables should show AGGREGATED data (grouped by program, gender, city, etc.) — never individual person rows
+- If asked for a "roster" or individual listing, group by relevant categories instead
+
+KPI FILTER EXAMPLES — to show per-category KPIs, use filter arrays:
+Total Enrolled: {"label":"Total Enrolled","source":"program-demographics","field":"Gender","compute":"count","format":"number"}
+Female Only: {"label":"Female","source":"program-demographics","field":"Gender","compute":"count","format":"number","filter":[{"field":"Gender","op":"eq","value":"female"}]}
+Male Only: {"label":"Male","source":"program-demographics","field":"Gender","compute":"count","format":"number","filter":[{"field":"Gender","op":"eq","value":"male"}]}
+
 LAYOUT RULES:
 - dataSources must list every source key used by widgets
 - Start with a kpi-row for the most important metrics (3-5 cards)
 - Use 3-6 widgets total
 - Prefer bar-chart for categorical comparisons, pie-chart for proportions
-- Use table for detailed drill-down
+- Use table for AGGREGATED drill-down (grouped by program, category, etc. — never individual people)
 - For "count" computations on charts, set the metric field to the groupBy field
 - Return ONLY the JSON object, nothing else`;
 
