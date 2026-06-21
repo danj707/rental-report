@@ -1,482 +1,413 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Instructor Payout Report</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
-<script src="/juice-loader.js"></script>
-<script src="/nav-breadcrumb.js"></script>
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-<style>
-  :root {
-    --bg: #f8fafc; --surface: #ffffff; --border: #e2e8f0;
-    --text: #1e293b; --muted: #64748b; --accent: #6366f1;
-    --accent-light: #eef2ff; --green: #10b981; --green-bg: #ecfdf5;
-    --red: #ef4444; --red-bg: #fef2f2; --amber: #f59e0b; --amber-bg: #fffbeb;
-    --blue: #3b82f6; --blue-bg: #eff6ff; --purple: #7c3aed; --purple-bg: #f5f3ff;
-    --teal: #0d9488; --teal-bg: #f0fdfa;
-    --radius: 10px; --shadow: 0 1px 3px rgba(0,0,0,.06), 0 1px 2px rgba(0,0,0,.04);
-  }
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--bg); color: var(--text); }
-  .container { max-width: 1400px; margin: 0 auto; padding: 16px 24px; }
-  .print-mode .no-print { display: none !important; }
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Instructor Payout Report</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'IBM Plex Sans', 'Segoe UI', system-ui, sans-serif; font-size: 12px; color: #1a1a1a; background: #f5f4f1; line-height: 1.35; }
 
-  /* ── Header ── */
-  .report-header { display: flex; align-items: center; gap: 16px; margin-bottom: 20px; flex-wrap: wrap; }
-  .report-header h1 { font-size: 22px; font-weight: 700; color: var(--text); }
-  .report-header .subtitle { font-size: 13px; color: var(--muted); margin-top: 2px; }
-  .org-badge { background: var(--accent-light); color: var(--accent); font-size: 12px; font-weight: 600; padding: 4px 10px; border-radius: 20px; white-space: nowrap; }
+    /* ── Toolbar ── */
+    .toolbar { position: sticky; top: 0; z-index: 100; display: flex; align-items: center; gap: 10px; padding: 8px 20px; background: #2c2c2c; color: #eee; font-size: 13px; flex-wrap: wrap; }
+    .toolbar-title { font-weight: 600; margin-right: 8px; }
+    .toolbar-spacer { flex: 1; }
+    .toolbar label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: #aaa; display: flex; flex-direction: column; gap: 2px; }
+    .toolbar select, .toolbar input[type="text"] { padding: 4px 8px; border: 1px solid rgba(255,255,255,.2); border-radius: 4px; background: rgba(255,255,255,.1); color: #fff; font-size: 12px; font-family: inherit; outline: none; }
+    .toolbar select:focus, .toolbar input[type="text"]:focus { border-color: #3b82f6; }
+    .toolbar select option { background: #2c2c2c; color: #fff; }
+    .toolbar button { padding: 6px 14px; border: 1px solid rgba(255,255,255,.25); border-radius: 4px; background: rgba(255,255,255,.08); color: #fff; font-size: 12px; font-family: inherit; cursor: pointer; transition: background .15s; }
+    .toolbar button:hover { background: rgba(255,255,255,.18); }
+    .toolbar .btn-excel { background: #16803c; border-color: #16803c; font-weight: 600; }
+    .toolbar .btn-excel:hover { background: #15692f; }
+    .toolbar .btn-print { background: rgba(255,255,255,.08); font-weight: 500; }
+    .toolbar .divider { width: 1px; height: 28px; background: rgba(255,255,255,.15); margin: 0 4px; }
+    .toolbar .row-count { font-size: 11px; color: #aaa; }
 
-  /* ── Controls bar ── */
-  .controls { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 20px; padding: 14px 18px; background: var(--surface); border-radius: var(--radius); border: 1px solid var(--border); box-shadow: var(--shadow); }
-  .controls label { font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
-  .controls select, .controls input[type="text"] {
-    padding: 7px 12px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px;
-    background: var(--bg); color: var(--text); outline: none; transition: border-color .15s;
-  }
-  .controls select:focus, .controls input:focus { border-color: var(--accent); }
-  .controls .spacer { flex: 1; }
-  .btn { display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border-radius: 6px; font-size: 13px; font-weight: 500; cursor: pointer; border: 1px solid var(--border); background: var(--surface); color: var(--text); transition: all .15s; }
-  .btn:hover { background: var(--bg); border-color: #cbd5e1; }
-  .btn-accent { background: var(--accent); color: #fff; border-color: var(--accent); }
-  .btn-accent:hover { background: #4f46e5; }
-  .btn i { font-size: 12px; }
+    /* ── Split pill bar (in toolbar) ── */
+    .split-bar { display: inline-flex; border-radius: 4px; overflow: hidden; border: 1px solid rgba(255,255,255,.2); }
+    .split-bar button { padding: 4px 10px; font-size: 11px; font-weight: 600; border: none; border-right: 1px solid rgba(255,255,255,.15); background: rgba(255,255,255,.06); color: #aaa; cursor: pointer; transition: all .15s; border-radius: 0; }
+    .split-bar button:last-child { border-right: none; }
+    .split-bar button.active { background: #3b82f6; color: #fff; }
+    .split-bar button:hover:not(.active) { background: rgba(255,255,255,.14); color: #ddd; }
 
-  /* ── Split selector pill bar ── */
-  .split-bar { display: inline-flex; border-radius: 8px; overflow: hidden; border: 1px solid var(--border); }
-  .split-bar button { padding: 6px 14px; font-size: 12px; font-weight: 600; border: none; background: var(--surface); color: var(--muted); cursor: pointer; transition: all .15s; border-right: 1px solid var(--border); }
-  .split-bar button:last-child { border-right: none; }
-  .split-bar button.active { background: var(--accent); color: #fff; }
-  .split-bar button:hover:not(.active) { background: var(--accent-light); color: var(--accent); }
+    /* ── Page ── */
+    .page { max-width: 1320px; margin: 16px auto; padding: 24px 28px; background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
 
-  /* ── KPI Grid ── */
-  .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 20px; }
-  .kpi-card { background: var(--surface); border-radius: var(--radius); border: 1px solid var(--border); padding: 16px; box-shadow: var(--shadow); position: relative; }
-  .kpi-card .kpi-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); margin-bottom: 6px; display: flex; align-items: center; gap: 6px; }
-  .kpi-card .kpi-value { font-size: 24px; font-weight: 700; letter-spacing: -0.5px; }
-  .kpi-card .kpi-sub { font-size: 11px; color: var(--muted); margin-top: 4px; }
-  .kpi-card .kpi-icon { width: 32px; height: 32px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 14px; position: absolute; top: 14px; right: 14px; }
-  .kpi-card .kpi-tip { display: inline-flex; align-items: center; justify-content: center; width: 15px; height: 15px; border-radius: 50%; background: #cbd5e1; color: #fff; font-size: 9px; font-family: Georgia, serif; font-style: italic; cursor: help; transition: background .15s; }
-  .kpi-card .kpi-tip:hover { background: #94a3b8; }
+    /* ── Report header ── */
+    .report-header { display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 2.5px solid #111; padding-bottom: 8px; margin-bottom: 16px; }
+    .report-header-logo { height: 42px; max-width: 140px; object-fit: contain; object-position: left center; }
+    .report-header .org-label { font-size: 10.5px; letter-spacing: 1.6px; text-transform: uppercase; color: #777; font-weight: 600; }
+    .report-header .title { font-size: 17px; font-weight: 700; margin-top: 1px; }
+    .report-header .date-range { font-size: 11px; color: #666; text-align: right; }
 
-  /* ── Table ── */
-  .table-wrap { background: var(--surface); border-radius: var(--radius); border: 1px solid var(--border); box-shadow: var(--shadow); overflow-x: auto; margin-bottom: 24px; }
-  table { width: 100%; border-collapse: collapse; font-size: 13px; }
-  thead th { background: #f1f5f9; padding: 10px 12px; text-align: left; font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); border-bottom: 2px solid var(--border); white-space: nowrap; position: sticky; top: 0; z-index: 1; }
-  tbody td { padding: 9px 12px; border-bottom: 1px solid #f1f5f9; }
-  tbody tr:hover { background: #fafbfc; }
-  .text-right { text-align: right; }
-  .text-center { text-align: center; }
-  .instructor-group-header td { background: var(--accent-light); font-weight: 700; color: var(--accent); border-bottom: 2px solid #c7d2fe; padding: 10px 12px; font-size: 13px; }
-  .instructor-group-subtotal td { background: #f8fafc; font-weight: 600; border-top: 1px solid var(--border); font-size: 12px; color: var(--muted); }
-  .grand-total td { background: #1e293b; color: #fff; font-weight: 700; font-size: 13px; padding: 11px 12px; }
-  .canceled-badge { display: inline-block; background: var(--red-bg); color: var(--red); font-size: 10px; font-weight: 600; padding: 2px 6px; border-radius: 4px; margin-left: 6px; }
-  .fill-bar { display: inline-block; width: 50px; height: 6px; background: #e2e8f0; border-radius: 3px; overflow: hidden; vertical-align: middle; margin-left: 6px; }
-  .fill-bar-inner { height: 100%; border-radius: 3px; transition: width .3s; }
+    /* ── Summary cards ── */
+    .summary-cards { display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap; }
+    .summary-card { flex: 1; min-width: 120px; padding: 10px 12px; border-radius: 5px; background: #f8f8f6; border: 1px solid #e4e4e0; border-left: 3px solid #ccc; }
+    .summary-card .card-label { font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.5px; color: #888; font-weight: 600; margin-bottom: 4px; }
+    .summary-card .card-value { font-size: 15px; font-weight: 700; font-family: 'IBM Plex Mono', monospace; white-space: nowrap; }
+    .summary-card .card-sub { font-size: 10px; color: #999; margin-top: 2px; }
+    .summary-card.green  { border-left-color: #16a34a; } .summary-card.green  .card-value { color: #15803d; }
+    .summary-card.blue   { border-left-color: #3b82f6; } .summary-card.blue   .card-value { color: #2563eb; }
+    .summary-card.red    { border-left-color: #ef4444; } .summary-card.red    .card-value { color: #dc2626; }
+    .summary-card.violet { border-left-color: #7c3aed; } .summary-card.violet .card-value { color: #6d28d9; }
+    .summary-card.indigo { border-left-color: #4f46e5; } .summary-card.indigo .card-value { color: #4338ca; }
+    .summary-card.amber  { border-left-color: #d97706; } .summary-card.amber  .card-value { color: #b45309; }
+    .summary-card.teal   { border-left-color: #0d9488; } .summary-card.teal   .card-value { color: #0f766e; }
+    .summary-card.slate  { border-left-color: #475569; } .summary-card.slate  .card-value { color: #334155; }
 
-  /* ── Empty state ── */
-  .empty-state { text-align: center; padding: 60px 20px; color: var(--muted); }
-  .empty-state i { font-size: 48px; margin-bottom: 16px; display: block; opacity: .3; }
-  .empty-state p { font-size: 15px; }
+    /* ── Table ── */
+    .table-wrapper { overflow-x: auto; }
+    table { border-collapse: collapse; width: 100%; font-size: 11.5px; }
+    thead th { background: #e4e4e0; border: 1px solid #ccc; padding: 5px 8px; text-align: right; font-weight: 600; font-size: 10px; text-transform: uppercase; letter-spacing: 0.3px; color: #333; white-space: nowrap; }
+    thead th.left { text-align: left; }
+    tbody td { padding: 5px 8px; border-bottom: 1px solid #eee; text-align: right; font-variant-numeric: tabular-nums; }
+    tbody td.left { text-align: left; }
+    tbody tr:hover { background: #fafaf8; }
 
-  /* ── Top instructors mini-chart ── */
-  .top-chart { display: flex; gap: 8px; align-items: flex-end; height: 80px; margin-top: 8px; }
-  .top-bar { flex: 1; min-width: 30px; border-radius: 4px 4px 0 0; background: var(--accent); position: relative; transition: height .4s ease; }
-  .top-bar-label { position: absolute; bottom: -18px; left: 50%; transform: translateX(-50%); font-size: 9px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 60px; }
-  .top-bar-val { position: absolute; top: -16px; left: 50%; transform: translateX(-50%); font-size: 10px; font-weight: 700; color: var(--text); white-space: nowrap; }
+    /* Instructor group header */
+    tr.group-header td { background: #f0ede7; padding: 7px 8px; font-weight: 700; font-size: 11.5px; color: #333; border-bottom: 1.5px solid #d5d2cc; text-align: left; }
+    tr.group-header td .group-meta { font-weight: 400; font-size: 10px; color: #888; margin-left: 10px; }
 
-  @media print {
-    .no-print { display: none !important; }
-    .container { max-width: 100%; padding: 0; }
-    .kpi-card, .table-wrap { break-inside: avoid; }
-    body { background: #fff; }
-  }
-  @media (max-width: 768px) {
-    .kpi-grid { grid-template-columns: repeat(2, 1fr); }
-    .controls { flex-direction: column; align-items: stretch; }
-  }
-</style>
+    /* Subtotal row */
+    tr.subtotal-row td { background: #edeae4; padding: 5px 8px; font-weight: 700; font-size: 11px; font-variant-numeric: tabular-nums; border-top: 1px solid #ccc; border-bottom: 2px solid #bbb; color: #444; }
+    tr.subtotal-row td.left { text-align: left; font-style: italic; color: #888; }
+
+    /* Grand total */
+    tfoot td { background: #2c2c2c; color: #fff; padding: 7px 8px; font-weight: 700; font-size: 11.5px; font-variant-numeric: tabular-nums; }
+
+    .zero { color: #ccc; }
+    .neg { color: #dc2626; }
+    .canceled { display: inline-block; background: #fee2e2; color: #b91c1c; font-size: 9px; font-weight: 600; padding: 1px 5px; border-radius: 3px; margin-left: 5px; text-transform: uppercase; }
+    .fill-bar { display: inline-block; width: 40px; height: 5px; background: #e4e4e0; border-radius: 2px; overflow: hidden; vertical-align: middle; margin-left: 4px; }
+    .fill-bar-inner { height: 100%; border-radius: 2px; }
+
+    /* ── Empty / loading ── */
+    .empty-state { text-align: center; padding: 60px 20px; color: #888; }
+    .empty-state p { font-size: 14px; }
+
+    /* ── Print ── */
+    @media print { .toolbar { display: none !important; } body { background: #fff; } .page { margin: 0; padding: 10px; box-shadow: none; max-width: 100%; } }
+    body.print-mode .toolbar { display: none !important; }
+    body.print-mode { background: #fff; }
+    body.print-mode .page { margin: 0; padding: 10px; box-shadow: none; max-width: 100%; }
+  </style>
+  <script>
+    const URL_TOKEN = new URLSearchParams(window.location.search).get('token') || '';
+    const TOKEN_QS  = URL_TOKEN ? '?token=' + encodeURIComponent(URL_TOKEN) : '';
+    function withToken(url) {
+      if (!URL_TOKEN) return url;
+      return url + (url.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(URL_TOKEN);
+    }
+  </script>
 </head>
 <body>
 <div id="root"></div>
 <div id="report-ready" style="display:none"></div>
 
+<script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
+<script src="/juice-loader.js"></script>
 <script type="text/babel">
-const { useState, useEffect, useMemo, useCallback, useRef } = React;
+const { useState, useEffect, useMemo, useCallback } = React;
 
-/* ── Helpers ── */
 const fmt = (n) => n == null ? '$0.00' : '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmtPct = (n) => (n * 100).toFixed(1) + '%';
-const pathParts = window.location.pathname.split('/').filter(Boolean);
-const orgSlug = pathParts[0] || '';
+const parts = window.location.pathname.split('/').filter(Boolean);
+const orgSlug = parts[0] || '';
+const reportType = parts[1] || 'instructor-payout';
 
-const SPLIT_OPTIONS = [
-  { label: '90 / 10', instructor: 0.90, org: 0.10 },
-  { label: '80 / 20', instructor: 0.80, org: 0.20 },
-  { label: '70 / 30', instructor: 0.70, org: 0.30 },
-  { label: '60 / 40', instructor: 0.60, org: 0.40 },
-  { label: '50 / 50', instructor: 0.50, org: 0.50 },
+const SPLITS = [
+  { label: '90/10', i: 0.90 },
+  { label: '80/20', i: 0.80 },
+  { label: '70/30', i: 0.70 },
+  { label: '60/40', i: 0.60 },
+  { label: '50/50', i: 0.50 },
 ];
 
-function App() {
-  const [rows, setRows] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [splitIdx, setSplitIdx] = useState(2); // default 70/30
-  const [search, setSearch] = useState('');
-  const [instructorFilter, setInstructorFilter] = useState('');
-  const split = SPLIT_OPTIONS[splitIdx];
+function fmtDate(d) {
+  if (!d) return '';
+  try { return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }); }
+  catch { return d; }
+}
 
-  /* ── Fetch ── */
+function App() {
+  const [rows, setRows]       = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError]     = useState(null);
+  const [splitIdx, setSplitIdx] = useState(2); // 70/30
+  const [search, setSearch]     = useState('');
+  const [instrFilter, setInstrFilter] = useState('');
+  const [orgName, setOrgName] = useState('');
+  const [logoUrl, setLogoUrl] = useState(null);
+
+  const split = SPLITS[splitIdx];
+  const iPct = Math.round(split.i * 100);
+  const oPct = 100 - iPct;
+
+  // Print mode
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get('_print') === '1') document.body.classList.add('print-mode');
+  }, []);
+
+  // Fetch
   useEffect(() => {
     setLoading(true);
-    fetch(`/${orgSlug}/instructor-payout/api/data${window.location.search}`)
+    fetch(withToken(`/${orgSlug}/${reportType}/api/data`))
       .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
-      .then(d => {
-        const data = d.rows || d;
+      .then(json => {
+        const data = json.rows || json;
         setRows(Array.isArray(data) ? data : []);
+        setOrgName(json.meta?.org_name || '');
+        setLogoUrl(json.meta?.logo_url || null);
         setLoading(false);
         document.getElementById('report-ready').style.display = 'block';
       })
       .catch(e => { setError(e.message); setLoading(false); });
   }, []);
 
-  /* ── Normalize rows ── */
+  // Normalize
   const normalized = useMemo(() => {
     if (!rows) return [];
     return rows.map(r => ({
-      program:       r['program_name'] || r['Program Name'] || '',
-      section:       r['section_name'] || r['Section Name'] || '',
-      instructor:    r['facilitator_name'] || r['Facilitator Name'] || '',
-      instructorCnt: Number(r['facilitator_count'] || r['Facilitator Count'] || 1),
-      canceled:      r['section_canceled'] === true || r['section_canceled'] === 'true',
-      startDate:     r['section_start_date'] || r['Start Date'] || '',
-      endDate:       r['section_end_date'] || r['End Date'] || '',
-      price:         Number(r['default_price'] || r['Default Price'] || 0),
-      capacity:      Number(r['capacity'] || r['Capacity'] || 0),
-      enrolled:      Number(r['number_enrolled'] || r['Number Enrolled'] || 0),
-      paid:          Number(r['total_paid'] || r['Total Paid'] || 0),
-      refunded:      Number(r['total_refunded'] || r['Total Refunded'] || 0),
-      net:           Number(r['net_amount'] || r['Net Amount'] || 0),
+      program:  r['program_name']  || r['Program Name']  || '',
+      section:  r['section_name']  || r['Section Name']  || '',
+      instr:    r['facilitator_name'] || r['Facilitator Name'] || '',
+      canceled: r['section_canceled'] === true || r['section_canceled'] === 'true',
+      startDate: r['section_start_date'] || '',
+      endDate:   r['section_end_date']   || '',
+      price:    Number(r['default_price']    || 0),
+      capacity: Number(r['capacity']         || 0),
+      enrolled: Number(r['number_enrolled']  || 0),
+      paid:     Number(r['total_paid']       || 0),
+      refunded: Number(r['total_refunded']   || 0),
+      net:      Number(r['net_amount']       || 0),
     }));
   }, [rows]);
 
-  /* ── Filters ── */
+  // Filter
   const filtered = useMemo(() => {
     let d = normalized;
-    if (instructorFilter) d = d.filter(r => r.instructor === instructorFilter);
-    if (search) {
-      const q = search.toLowerCase();
-      d = d.filter(r => r.section.toLowerCase().includes(q) || r.program.toLowerCase().includes(q));
-    }
+    if (instrFilter) d = d.filter(r => r.instr === instrFilter);
+    if (search) { const q = search.toLowerCase(); d = d.filter(r => r.section.toLowerCase().includes(q) || r.program.toLowerCase().includes(q)); }
     return d;
-  }, [normalized, instructorFilter, search]);
+  }, [normalized, instrFilter, search]);
 
-  /* ── Unique instructors list ── */
-  const instructors = useMemo(() => {
-    const set = new Set(normalized.map(r => r.instructor));
-    return [...set].sort();
-  }, [normalized]);
+  const instructors = useMemo(() => [...new Set(normalized.map(r => r.instr))].sort(), [normalized]);
 
-  /* ── Grouped by instructor ── */
   const grouped = useMemo(() => {
-    const map = new Map();
-    filtered.forEach(r => {
-      if (!map.has(r.instructor)) map.set(r.instructor, []);
-      map.get(r.instructor).push(r);
-    });
-    // Sort groups by instructor name
-    return [...map.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+    const m = new Map();
+    filtered.forEach(r => { if (!m.has(r.instr)) m.set(r.instr, []); m.get(r.instr).push(r); });
+    return [...m.entries()].sort((a, b) => a[0].localeCompare(b[0]));
   }, [filtered]);
 
-  /* ── KPI aggregates ── */
+  // KPIs
   const kpis = useMemo(() => {
-    const totalNet = filtered.reduce((s, r) => s + r.net, 0);
-    const totalPaid = filtered.reduce((s, r) => s + r.paid, 0);
-    const totalRefunded = filtered.reduce((s, r) => s + r.refunded, 0);
-    const totalEnrolled = filtered.reduce((s, r) => s + r.enrolled, 0);
-    const totalCapacity = filtered.reduce((s, r) => s + r.capacity, 0);
-    const uniqueInstructors = new Set(filtered.map(r => r.instructor)).size;
-    const sectionCount = filtered.length;
-    return {
-      totalNet, totalPaid, totalRefunded, totalEnrolled, totalCapacity,
-      uniqueInstructors, sectionCount,
-      instructorPayout: totalNet * split.instructor,
-      orgRetention: totalNet * split.org,
-      avgPerSection: sectionCount > 0 ? totalNet / sectionCount : 0,
-      avgPerInstructor: uniqueInstructors > 0 ? totalNet / uniqueInstructors : 0,
-      fillRate: totalCapacity > 0 ? totalEnrolled / totalCapacity : 0,
-      refundRate: totalPaid > 0 ? totalRefunded / totalPaid : 0,
+    const tNet = filtered.reduce((s, r) => s + r.net, 0);
+    const tPaid = filtered.reduce((s, r) => s + r.paid, 0);
+    const tRef = filtered.reduce((s, r) => s + r.refunded, 0);
+    const tEnr = filtered.reduce((s, r) => s + r.enrolled, 0);
+    const tCap = filtered.reduce((s, r) => s + r.capacity, 0);
+    const uInstr = new Set(filtered.map(r => r.instr)).size;
+    const cnt = filtered.length;
+    return { tNet, tPaid, tRef, tEnr, tCap, uInstr, cnt,
+      iPay: tNet * split.i, oRet: tNet * (1 - split.i),
+      avgSec: cnt > 0 ? tNet / cnt : 0, avgInstr: uInstr > 0 ? tNet / uInstr : 0,
+      fill: tCap > 0 ? tEnr / tCap : 0, refRate: tPaid > 0 ? tRef / tPaid : 0,
     };
   }, [filtered, split]);
 
-  /* ── Top instructors for mini chart ── */
-  const topInstructors = useMemo(() => {
-    const map = new Map();
-    filtered.forEach(r => map.set(r.instructor, (map.get(r.instructor) || 0) + r.net));
-    return [...map.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6);
-  }, [filtered]);
-
-  /* ── Excel export ── */
+  // Excel
   const exportExcel = useCallback(() => {
-    if (typeof XLSX === 'undefined') {
-      const s = document.createElement('script');
-      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
-      s.onload = () => doExport();
-      document.head.appendChild(s);
-    } else { doExport(); }
-
-    function doExport() {
-      const header = ['Instructor', 'Program', 'Section', 'Start Date', 'End Date', 'Price', 'Capacity', 'Enrolled', 'Paid', 'Refunded', 'Net Revenue', 'Instructor Payout (' + split.label + ')', 'Org Retention (' + split.label + ')'];
-      const data = filtered.map(r => [
-        r.instructor, r.program, r.section + (r.canceled ? ' (CANCELED)' : ''),
-        r.startDate, r.endDate, r.price, r.capacity, r.enrolled,
-        r.paid, r.refunded, r.net,
-        Math.round(r.net * split.instructor * 100) / 100,
-        Math.round(r.net * split.org * 100) / 100,
-      ]);
-      // Add totals row
-      const totals = ['TOTALS', '', '', '', '', '', kpis.totalCapacity, kpis.totalEnrolled, kpis.totalPaid, kpis.totalRefunded, kpis.totalNet, Math.round(kpis.instructorPayout * 100) / 100, Math.round(kpis.orgRetention * 100) / 100];
-      data.push(totals);
-
-      const ws = XLSX.utils.aoa_to_sheet([header, ...data]);
+    function go() {
+      const h = ['Instructor','Program','Section','Start','End','Price','Cap','Enrolled','Paid','Refunded','Net',`Instructor (${iPct}%)`,`Org (${oPct}%)`];
+      const d = filtered.map(r => [r.instr, r.program, r.section+(r.canceled?' (CANCELED)':''), fmtDate(r.startDate), fmtDate(r.endDate), r.price, r.capacity, r.enrolled, r.paid, r.refunded, r.net, Math.round(r.net*split.i*100)/100, Math.round(r.net*(1-split.i)*100)/100]);
+      d.push(['TOTALS','','','','','',kpis.tCap,kpis.tEnr,kpis.tPaid,kpis.tRef,kpis.tNet,Math.round(kpis.iPay*100)/100,Math.round(kpis.oRet*100)/100]);
+      const ws = XLSX.utils.aoa_to_sheet([h,...d]);
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, 'Instructor Payout');
       XLSX.writeFile(wb, `instructor-payout-${orgSlug}-${new Date().toISOString().slice(0,10)}.xlsx`);
-
-      // Log export
-      fetch(`/${orgSlug}/instructor-payout/api/log`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'excel', rows: filtered.length })
-      }).catch(() => {});
+      fetch(withToken(`/${orgSlug}/${reportType}/api/log`), { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({action:'excel',rows:filtered.length}) }).catch(()=>{});
     }
-  }, [filtered, split, kpis]);
+    if (typeof XLSX === 'undefined') { const s = document.createElement('script'); s.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'; s.onload=go; document.head.appendChild(s); } else go();
+  }, [filtered, split, kpis, iPct, oPct]);
 
-  /* ── Date formatter ── */
-  const fmtDate = (d) => {
-    if (!d) return '—';
-    try {
-      const dt = new Date(d);
-      return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-    } catch { return d; }
-  };
+  const fillColor = (p) => p >= 0.8 ? '#16a34a' : p >= 0.5 ? '#d97706' : '#ef4444';
+  const v = (n) => n === 0 ? 'zero' : n < 0 ? 'neg' : '';
 
-  /* ── Fill bar color ── */
-  const fillColor = (pct) => pct >= 0.8 ? '#10b981' : pct >= 0.5 ? '#f59e0b' : '#ef4444';
+  if (loading) return React.createElement(window.JuiceLoader || 'div', { text: 'Loading instructor payout data...' });
+  if (error) return (<div className="page" style={{margin:'40px auto'}}><div className="empty-state"><p>Error loading data: {error}</p></div></div>);
 
-  if (loading) return React.createElement(window.JuiceLoader || 'div', { text: 'Loading instructor data...' });
-  if (error) return (
-    <div className="container">
-      <div className="empty-state"><i className="fas fa-exclamation-triangle"></i><p>Error loading data: {error}</p></div>
-    </div>
-  );
-  if (!filtered.length && !normalized.length) return (
-    <div className="container">
-      {window.NavBreadcrumb && <NavBreadcrumb orgSlug={orgSlug} reportName="Instructor Payout" />}
-      <div className="empty-state"><i className="fas fa-chalkboard-teacher"></i><p>No sections with instructors found. This report shows only sections that have an assigned facilitator.</p></div>
-    </div>
-  );
+  const displayOrg = orgName || 'rec.us';
 
   return (
-    <div className="container">
-      {window.NavBreadcrumb && <NavBreadcrumb orgSlug={orgSlug} reportName="Instructor Payout" />}
-
-      {/* Header */}
-      <div className="report-header no-print">
-        <div>
-          <h1><i className="fas fa-hand-holding-usd" style={{color: 'var(--accent)', marginRight: 8}}></i>Instructor Payout Report</h1>
-          <div className="subtitle">{filtered.length} sections across {kpis.uniqueInstructors} instructors</div>
-        </div>
-      </div>
-
-      {/* Controls */}
-      <div className="controls no-print">
-        <div>
-          <label>Revenue Split</label>
-          <div className="split-bar" style={{marginTop: 4}}>
-            {SPLIT_OPTIONS.map((opt, i) => (
-              <button key={i} className={i === splitIdx ? 'active' : ''} onClick={() => setSplitIdx(i)}>
-                {opt.label}
-              </button>
+    <div>
+      {/* ── Toolbar ── */}
+      <div className="toolbar">
+        <span className="toolbar-title">Instructor Payout</span>
+        <span className="divider"></span>
+        <label>
+          Split
+          <div className="split-bar">
+            {SPLITS.map((s, i) => (
+              <button key={i} className={i === splitIdx ? 'active' : ''} onClick={() => setSplitIdx(i)}>{s.label}</button>
             ))}
           </div>
-        </div>
-        <div>
-          <label>Instructor</label>
-          <select value={instructorFilter} onChange={e => setInstructorFilter(e.target.value)} style={{marginTop: 4, minWidth: 160}}>
-            <option value="">All Instructors</option>
+        </label>
+        <span className="divider"></span>
+        <label>
+          Instructor
+          <select value={instrFilter} onChange={e => setInstrFilter(e.target.value)} style={{minWidth: 140}}>
+            <option value="">All</option>
             {instructors.map(n => <option key={n} value={n}>{n}</option>)}
           </select>
-        </div>
-        <div>
-          <label>Search</label>
-          <input type="text" placeholder="Section or program name..." value={search} onChange={e => setSearch(e.target.value)} style={{marginTop: 4, minWidth: 180}} />
-        </div>
-        <div className="spacer"></div>
-        <button className="btn" onClick={exportExcel}><i className="fas fa-file-excel"></i> Excel</button>
-        <button className="btn" onClick={() => window.print()}><i className="fas fa-print"></i> Print</button>
+        </label>
+        <label>
+          Search
+          <input type="text" placeholder="Section or program..." value={search} onChange={e => setSearch(e.target.value)} style={{minWidth: 150}} />
+        </label>
+        <span className="toolbar-spacer"></span>
+        <span className="row-count">{filtered.length} section{filtered.length !== 1 ? 's' : ''} · {kpis.uInstr} instructor{kpis.uInstr !== 1 ? 's' : ''}</span>
+        <span className="divider"></span>
+        <button className="btn-excel" onClick={exportExcel}>⬇ Excel</button>
+        <button className="btn-print" onClick={() => window.print()}>🖨 Print</button>
       </div>
 
-      {/* KPI Cards */}
-      <div className="kpi-grid">
-        <div className="kpi-card">
-          <div className="kpi-icon" style={{background: 'var(--green-bg)', color: 'var(--green)'}}><i className="fas fa-dollar-sign"></i></div>
-          <div className="kpi-label">Total Net Revenue <span className="kpi-tip" title="Gross payments minus refunds across all filtered sections">i</span></div>
-          <div className="kpi-value" style={{color: 'var(--green)'}}>{fmt(kpis.totalNet)}</div>
-          <div className="kpi-sub">{fmt(kpis.totalPaid)} paid · {fmt(kpis.totalRefunded)} refunded</div>
+      {/* ── Page ── */}
+      <div className="page">
+        {/* Report header */}
+        <div className="report-header">
+          <div>
+            {logoUrl && <img src={logoUrl} alt="" className="report-header-logo" onError={e => e.target.style.display='none'} />}
+            <div className="org-label">{displayOrg}</div>
+            <div className="title">Instructor Payout Report</div>
+          </div>
+          <div className="date-range">{iPct}% Instructor / {oPct}% Organization</div>
         </div>
-        <div className="kpi-card">
-          <div className="kpi-icon" style={{background: 'var(--accent-light)', color: 'var(--accent)'}}><i className="fas fa-user-tie"></i></div>
-          <div className="kpi-label">Instructor Payout <span className="kpi-tip" title={'Net revenue × ' + (split.instructor*100) + '% (instructor share)'}>i</span></div>
-          <div className="kpi-value" style={{color: 'var(--accent)'}}>{fmt(kpis.instructorPayout)}</div>
-          <div className="kpi-sub">{split.label} split · {kpis.uniqueInstructors} instructors</div>
+
+        {/* Summary cards */}
+        <div className="summary-cards">
+          <div className="summary-card green">
+            <div className="card-label">Net Revenue</div>
+            <div className="card-value">{fmt(kpis.tNet)}</div>
+            <div className="card-sub">{fmt(kpis.tPaid)} paid · {fmt(kpis.tRef)} refunded</div>
+          </div>
+          <div className="summary-card indigo">
+            <div className="card-label">Instructor Payout</div>
+            <div className="card-value">{fmt(kpis.iPay)}</div>
+            <div className="card-sub">{iPct}% of net · {kpis.uInstr} instructors</div>
+          </div>
+          <div className="summary-card teal">
+            <div className="card-label">Org Retention</div>
+            <div className="card-value">{fmt(kpis.oRet)}</div>
+            <div className="card-sub">{oPct}% of net revenue</div>
+          </div>
+          <div className="summary-card violet">
+            <div className="card-label">Avg / Instructor</div>
+            <div className="card-value">{fmt(kpis.avgInstr)}</div>
+            <div className="card-sub">{kpis.uInstr} unique</div>
+          </div>
+          <div className="summary-card blue">
+            <div className="card-label">Avg / Section</div>
+            <div className="card-value">{fmt(kpis.avgSec)}</div>
+            <div className="card-sub">{kpis.cnt} sections</div>
+          </div>
+          <div className="summary-card amber">
+            <div className="card-label">Fill Rate</div>
+            <div className="card-value">{fmtPct(kpis.fill)}</div>
+            <div className="card-sub">{kpis.tEnr} / {kpis.tCap}</div>
+          </div>
+          <div className={`summary-card ${kpis.refRate > 0.1 ? 'red' : 'slate'}`}>
+            <div className="card-label">Refund Rate</div>
+            <div className="card-value">{fmtPct(kpis.refRate)}</div>
+            <div className="card-sub">{fmt(kpis.tRef)} of {fmt(kpis.tPaid)}</div>
+          </div>
         </div>
-        <div className="kpi-card">
-          <div className="kpi-icon" style={{background: 'var(--teal-bg)', color: 'var(--teal)'}}><i className="fas fa-building"></i></div>
-          <div className="kpi-label">Org Retention <span className="kpi-tip" title={'Net revenue × ' + (split.org*100) + '% (organization share)'}>i</span></div>
-          <div className="kpi-value" style={{color: 'var(--teal)'}}>{fmt(kpis.orgRetention)}</div>
-          <div className="kpi-sub">{(split.org * 100).toFixed(0)}% of net revenue</div>
-        </div>
-        <div className="kpi-card">
-          <div className="kpi-icon" style={{background: 'var(--purple-bg)', color: 'var(--purple)'}}><i className="fas fa-chalkboard-teacher"></i></div>
-          <div className="kpi-label">Avg per Instructor</div>
-          <div className="kpi-value">{fmt(kpis.avgPerInstructor)}</div>
-          <div className="kpi-sub">{kpis.uniqueInstructors} unique instructors</div>
-        </div>
-        <div className="kpi-card">
-          <div className="kpi-icon" style={{background: 'var(--blue-bg)', color: 'var(--blue)'}}><i className="fas fa-layer-group"></i></div>
-          <div className="kpi-label">Avg per Section</div>
-          <div className="kpi-value">{fmt(kpis.avgPerSection)}</div>
-          <div className="kpi-sub">{kpis.sectionCount} sections total</div>
-        </div>
-        <div className="kpi-card">
-          <div className="kpi-icon" style={{background: kpis.fillRate >= 0.5 ? 'var(--green-bg)' : 'var(--amber-bg)', color: kpis.fillRate >= 0.5 ? 'var(--green)' : 'var(--amber)'}}><i className="fas fa-users"></i></div>
-          <div className="kpi-label">Fill Rate <span className="kpi-tip" title="Total enrolled ÷ total capacity across all filtered sections">i</span></div>
-          <div className="kpi-value">{fmtPct(kpis.fillRate)}</div>
-          <div className="kpi-sub">{kpis.totalEnrolled} enrolled / {kpis.totalCapacity} capacity</div>
-        </div>
-        <div className="kpi-card">
-          <div className="kpi-icon" style={{background: kpis.refundRate <= 0.1 ? 'var(--green-bg)' : 'var(--red-bg)', color: kpis.refundRate <= 0.1 ? 'var(--green)' : 'var(--red)'}}><i className="fas fa-undo-alt"></i></div>
-          <div className="kpi-label">Refund Rate <span className="kpi-tip" title="Total refunded ÷ total paid">i</span></div>
-          <div className="kpi-value">{fmtPct(kpis.refundRate)}</div>
-          <div className="kpi-sub">{fmt(kpis.totalRefunded)} of {fmt(kpis.totalPaid)} paid</div>
-        </div>
-        {/* Top instructors mini chart */}
-        <div className="kpi-card" style={{gridColumn: 'span 1'}}>
-          <div className="kpi-label">Top Instructors by Net</div>
-          {topInstructors.length > 0 && (() => {
-            const maxVal = Math.max(...topInstructors.map(t => t[1]), 1);
-            return (
-              <div className="top-chart">
-                {topInstructors.map(([name, val], i) => {
-                  const pct = Math.max((val / maxVal) * 100, 4);
-                  const hue = [243, 160, 280, 170, 210, 330][i % 6];
+
+        {/* Table */}
+        {filtered.length === 0 ? (
+          <div className="empty-state"><p>No sections match your filters.</p></div>
+        ) : (
+          <div className="table-wrapper">
+            <table>
+              <thead>
+                <tr>
+                  <th className="left">Section</th>
+                  <th className="left">Program</th>
+                  <th className="left">Dates</th>
+                  <th>Price</th>
+                  <th>Enrolled</th>
+                  <th>Paid</th>
+                  <th>Refunded</th>
+                  <th>Net Revenue</th>
+                  <th>Instr ({iPct}%)</th>
+                  <th>Org ({oPct}%)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {grouped.map(([instr, sections]) => {
+                  const sub = sections.reduce((a, r) => ({ net: a.net+r.net, paid: a.paid+r.paid, ref: a.ref+r.refunded, enr: a.enr+r.enrolled, cap: a.cap+r.capacity }), { net:0, paid:0, ref:0, enr:0, cap:0 });
                   return (
-                    <div key={name} className="top-bar" style={{height: pct + '%', background: `hsl(${hue}, 60%, 55%)`}}>
-                      <span className="top-bar-val">{fmt(val)}</span>
-                      <span className="top-bar-label">{name.split(' ')[0]}</span>
-                    </div>
+                    <React.Fragment key={instr}>
+                      <tr className="group-header">
+                        <td colSpan={10}>
+                          {instr}
+                          <span className="group-meta">{sections.length} section{sections.length !== 1 ? 's' : ''} · {sub.enr} enrolled · Net {fmt(sub.net)}</span>
+                        </td>
+                      </tr>
+                      {sections.map((r, i) => {
+                        const fp = r.capacity > 0 ? r.enrolled / r.capacity : 0;
+                        return (
+                          <tr key={i}>
+                            <td className="left">{r.section}{r.canceled && <span className="canceled">Canceled</span>}</td>
+                            <td className="left" style={{color:'#888', fontSize:11}}>{r.program}</td>
+                            <td className="left" style={{fontSize:11, whiteSpace:'nowrap'}}>{fmtDate(r.startDate)}{r.endDate && r.startDate !== r.endDate ? ' – '+fmtDate(r.endDate) : ''}</td>
+                            <td>{fmt(r.price)}</td>
+                            <td style={{textAlign:'center'}}>
+                              {r.enrolled}/{r.capacity}
+                              <span className="fill-bar"><span className="fill-bar-inner" style={{width:(fp*100)+'%', background:fillColor(fp)}}></span></span>
+                            </td>
+                            <td>{fmt(r.paid)}</td>
+                            <td className={v(r.refunded)}>{r.refunded > 0 ? fmt(r.refunded) : '—'}</td>
+                            <td style={{fontWeight:600}}>{fmt(r.net)}</td>
+                            <td className={v(r.net * split.i)}>{fmt(r.net * split.i)}</td>
+                            <td className={v(r.net * (1-split.i))}>{fmt(r.net * (1-split.i))}</td>
+                          </tr>
+                        );
+                      })}
+                      <tr className="subtotal-row">
+                        <td className="left" colSpan={3}>Subtotal — {instr}</td>
+                        <td></td>
+                        <td style={{textAlign:'center'}}>{sub.enr}/{sub.cap}</td>
+                        <td>{fmt(sub.paid)}</td>
+                        <td className={v(sub.ref)}>{fmt(sub.ref)}</td>
+                        <td>{fmt(sub.net)}</td>
+                        <td>{fmt(sub.net * split.i)}</td>
+                        <td>{fmt(sub.net * (1-split.i))}</td>
+                      </tr>
+                    </React.Fragment>
                   );
                 })}
-              </div>
-            );
-          })()}
-        </div>
+              </tbody>
+              <tfoot>
+                <tr>
+                  <td className="left" colSpan={3} style={{textAlign:'left'}}>GRAND TOTAL</td>
+                  <td></td>
+                  <td style={{textAlign:'center'}}>{kpis.tEnr}/{kpis.tCap}</td>
+                  <td style={{textAlign:'right'}}>{fmt(kpis.tPaid)}</td>
+                  <td style={{textAlign:'right'}}>{fmt(kpis.tRef)}</td>
+                  <td style={{textAlign:'right'}}>{fmt(kpis.tNet)}</td>
+                  <td style={{textAlign:'right'}}>{fmt(kpis.iPay)}</td>
+                  <td style={{textAlign:'right'}}>{fmt(kpis.oRet)}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        )}
       </div>
-
-      {/* Table */}
-      <div className="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Section</th>
-              <th>Program</th>
-              <th>Dates</th>
-              <th className="text-right">Price</th>
-              <th className="text-center">Enrolled</th>
-              <th className="text-right">Paid</th>
-              <th className="text-right">Refunded</th>
-              <th className="text-right">Net Revenue</th>
-              <th className="text-right">Instructor ({(split.instructor*100).toFixed(0)}%)</th>
-              <th className="text-right">Org ({(split.org*100).toFixed(0)}%)</th>
-            </tr>
-          </thead>
-          <tbody>
-            {grouped.map(([instructor, sections]) => {
-              const subtotal = sections.reduce((s, r) => s + r.net, 0);
-              const subEnrolled = sections.reduce((s, r) => s + r.enrolled, 0);
-              const subCapacity = sections.reduce((s, r) => s + r.capacity, 0);
-              return (
-                <React.Fragment key={instructor}>
-                  <tr className="instructor-group-header">
-                    <td colSpan={10}>
-                      <i className="fas fa-user-tie" style={{marginRight: 8, opacity: .6}}></i>
-                      {instructor}
-                      <span style={{fontWeight: 400, marginLeft: 12, fontSize: 12, opacity: .7}}>
-                        {sections.length} section{sections.length !== 1 ? 's' : ''} · {subEnrolled} enrolled
-                      </span>
-                    </td>
-                  </tr>
-                  {sections.map((r, i) => {
-                    const fillPct = r.capacity > 0 ? r.enrolled / r.capacity : 0;
-                    return (
-                      <tr key={i}>
-                        <td>
-                          {r.section}
-                          {r.canceled && <span className="canceled-badge">CANCELED</span>}
-                        </td>
-                        <td style={{color: 'var(--muted)', fontSize: 12}}>{r.program}</td>
-                        <td style={{fontSize: 12, whiteSpace: 'nowrap'}}>{fmtDate(r.startDate)}{r.endDate && r.startDate !== r.endDate ? ' – ' + fmtDate(r.endDate) : ''}</td>
-                        <td className="text-right">{fmt(r.price)}</td>
-                        <td className="text-center">
-                          {r.enrolled}/{r.capacity}
-                          <div className="fill-bar"><div className="fill-bar-inner" style={{width: (fillPct*100) + '%', background: fillColor(fillPct)}}></div></div>
-                        </td>
-                        <td className="text-right">{fmt(r.paid)}</td>
-                        <td className="text-right" style={{color: r.refunded > 0 ? 'var(--red)' : 'inherit'}}>{r.refunded > 0 ? fmt(r.refunded) : '—'}</td>
-                        <td className="text-right" style={{fontWeight: 600}}>{fmt(r.net)}</td>
-                        <td className="text-right" style={{color: 'var(--accent)'}}>{fmt(r.net * split.instructor)}</td>
-                        <td className="text-right" style={{color: 'var(--teal)'}}>{fmt(r.net * split.org)}</td>
-                      </tr>
-                    );
-                  })}
-                  <tr className="instructor-group-subtotal">
-                    <td colSpan={4} style={{textAlign: 'right'}}>Subtotal — {instructor}</td>
-                    <td className="text-center">{subEnrolled}/{subCapacity}</td>
-                    <td className="text-right">{fmt(sections.reduce((s, r) => s + r.paid, 0))}</td>
-                    <td className="text-right">{fmt(sections.reduce((s, r) => s + r.refunded, 0))}</td>
-                    <td className="text-right" style={{fontWeight: 700, color: 'var(--text)'}}>{fmt(subtotal)}</td>
-                    <td className="text-right" style={{color: 'var(--accent)'}}>{fmt(subtotal * split.instructor)}</td>
-                    <td className="text-right" style={{color: 'var(--teal)'}}>{fmt(subtotal * split.org)}</td>
-                  </tr>
-                </React.Fragment>
-              );
-            })}
-            {/* Grand total */}
-            <tr className="grand-total">
-              <td colSpan={4} style={{textAlign: 'right'}}>GRAND TOTAL</td>
-              <td className="text-center">{kpis.totalEnrolled}/{kpis.totalCapacity}</td>
-              <td className="text-right">{fmt(kpis.totalPaid)}</td>
-              <td className="text-right">{fmt(kpis.totalRefunded)}</td>
-              <td className="text-right">{fmt(kpis.totalNet)}</td>
-              <td className="text-right">{fmt(kpis.instructorPayout)}</td>
-              <td className="text-right">{fmt(kpis.orgRetention)}</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-
-      {/* No results after filter */}
-      {filtered.length === 0 && normalized.length > 0 && (
-        <div className="empty-state">
-          <i className="fas fa-filter"></i>
-          <p>No sections match your current filters. Try adjusting the instructor or search filters.</p>
-        </div>
-      )}
     </div>
   );
 }
