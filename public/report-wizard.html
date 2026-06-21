@@ -279,17 +279,18 @@
       });
     }
     function computeAgg(rows, field, method) {
+      // count and countDistinct work on raw values, not numbers
+      if (method === 'count') return rows.filter(function(r) { return r[field] != null && r[field] !== ''; }).length;
+      if (method === 'countDistinct') {
+        var s = new Set(rows.map(function(r) { return r[field]; }).filter(function(v) { return v != null; }));
+        return s.size;
+      }
       var vals = rows.map(function(r) { return getNum(r, field); }).filter(function(v) { return v !== null; });
       if (!vals.length) return 0;
       if (method === 'sum') return vals.reduce(function(a, b) { return a + b; }, 0);
       if (method === 'avg') return vals.reduce(function(a, b) { return a + b; }, 0) / vals.length;
-      if (method === 'count') return vals.length;
       if (method === 'min') return Math.min.apply(null, vals);
       if (method === 'max') return Math.max.apply(null, vals);
-      if (method === 'countDistinct') {
-        var s = new Set(rows.map(function(r) { return r[field]; }));
-        return s.size;
-      }
       return vals.reduce(function(a, b) { return a + b; }, 0);
     }
     function groupAgg(rows, groupBy, field, method) {
