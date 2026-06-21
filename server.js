@@ -5626,6 +5626,13 @@ app.get("/", (req, res) => {
     // Newest first. Add a new entry at the TOP for every change we ship.
     // History below back-filled from the GitHub commit log.
     const UPDATES = [
+      { date: '2026-06-21', title: '🔧 Platform Fixes & Enhancements', items: [
+        '📊 WIZARD TABLE FIX — Grouped tables now correctly show count columns when the field name matches the groupBy field. Uses indexed column keys to avoid collision between group label and aggregate value.',
+        '🎭 ACTIVITY + CATEGORY — Programs shared SQL now includes activity_name and category_name via class_activity join table. Wizard can filter by activity type (e.g. Camp, Aquatics, Fitness) instead of guessing from program names.',
+        '💾 DAILY BACKUPS — GitHub Gist backup system: daily cron at 2am + startup. All data/ files snapshotted to a private Gist. Manual Backup Now button in App Control. Status indicator in header bar (green/yellow/red dot with age).',
+        '⬆️ RAILWAY PRO — Upgraded to Railway Pro tier: 1TB storage, 99.99% availability, persistent volumes, 30-day logs.',
+        '🐛 APOSTROPHE FIX — Straight apostrophes in template literal JS strings were killing the entire admin script block. All converted to curly apostrophes (’). Documented in project memory.',
+      ]},
       { date: '2026-06-21', title: '💰 Instructor Payout — 65/35 Split, Base Price Toggle & Participant Drill-Down', items: [
         '💰 65/35 SPLIT — Added 65/35 to the split bar alongside existing 90/10, 80/20, 70/30, 60/40, 50/50 options.',
         '🎯 BASE PRICE SPLIT — New toggle calculates instructor payout on the resident/base rate instead of the amount actually paid. Non-resident surcharges stay entirely with the org. Tooltip explains the feature.',
