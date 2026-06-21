@@ -53,7 +53,6 @@ const REPORT_CACHE_TTL = {
   "program-demographics": 4 * 60 * 60 * 1000, // 4 hrs
   calendar: 30 * 60 * 1000,               // 30 min — schedule changes
   historic: 2 * 60 * 60 * 1000,           // 2 hrs
-  "instructor-payout": 2 * 60 * 60 * 1000, // 2 hrs — section-level payout
 };
 const dataCache = new Map();
 const cacheStats = { hits: 0, misses: 0, prewarms: 0 };
@@ -461,7 +460,7 @@ const ORGS = {
   },
 };
 
-const REPORT_TYPES = ["facility", "gl", "historic", "programs", "roster", "overview", "products", "memberships", "court-utilization", "calendar", "fasttrack", "users", "program-demographics", "directors-report", "instructor-payout"];
+const REPORT_TYPES = ["facility", "gl", "historic", "programs", "roster", "overview", "products", "memberships", "court-utilization", "calendar", "fasttrack", "users", "program-demographics", "directors-report"];
 
 // ── Shared Metabase UUIDs (one query per report type, parameterized by org_id) ──
 // When a report type has an entry here, the server uses this UUID + passes the
@@ -2067,11 +2066,12 @@ async function fetchWizardSchemas(orgSlug, orgConfig) {
       if (!resp.ok) return;
       const rows = await resp.json();
       if (!Array.isArray(rows) || !rows.length) return;
-      const sample = rows.slice(0, 3);
+      const sample = rows.slice(0, 5);
       const fields = Object.keys(sample[0]).map(k => {
         const vals = sample.map(r => r[k]).filter(v => v != null);
-        const isNum = vals.length > 0 && vals.every(v => typeof v === "number" || /^-?\ [\d,.]+%?$/.test(String(v)));
-        return { name: k, type: isNum ? "number" : "string", sample: vals[0] != null ? String(vals[0]).slice(0, 60) : null };
+        const isNum = vals.length > 0 && vals.every(v => typeof v === 'number' || /^-?[d,.]+%?$/.test(String(v).replace(/[$,]/g, '')));
+        const unique = [...new Set(vals.map(v => String(v).slice(0, 40)))].slice(0, 3);
+        return { name: k, type: isNum ? 'number' : 'string', samples: unique };
       });
       schemas[rt] = { fields, rowCount: rows.length };
       console.log(`[wizard] schema ${orgSlug}/${rt}: ${fields.length} fields, ${rows.length} rows`);
@@ -2081,6 +2081,20 @@ async function fetchWizardSchemas(orgSlug, orgConfig) {
   _wizardSchemaCache.set(orgSlug, { ts: Date.now(), schemas });
   return schemas;
 }
+
+// Source-level descriptions to help the AI pick the right data source
+const WIZARD_SOURCE_HINTS = {
+  programs: 'Aggregated program/section-level data: revenue, enrollment counts, capacity, cancellations. ONE ROW PER SECTION. Use for revenue totals, fill rates, program comparisons.',
+  'program-demographics': 'Individual participant-level rows: one row per enrolled person with their gender, age, city, grade. Use for demographic breakdowns (gender, age, geography). Does NOT contain revenue or financial data — use programs source for revenue.',
+  gl: 'General ledger / accounting data: revenue and refunds grouped by GL account code. Use for financial breakdowns by account category.',
+  facility: 'Facility rental bookings with dates, times, locations, reservees, totals. Use for utilization, booking patterns, facility revenue.',
+  users: 'Community/household-level data: demographics, revenue per household, membership status. Use for community analytics.',
+  fasttrack: 'Fast Track (self-service) data: FT wishlists, conversions, demand signals. Use for FT adoption analysis.',
+  products: 'Product sales: daily revenue, units sold, refunds by product. Use for merchandise/concession analysis.',
+  memberships: 'Membership/pass data: active members, plan types, renewal dates. Use for membership retention analysis.',
+  'court-utilization': 'Court/field utilization: reserved hours, usage percentages. Use for facility utilization rates.',
+  roster: 'Class roster: enrolled and cancelled participants by section.',
+};
 
 const WIZARD_SYS_PROMPT = `You are a report configuration generator for a municipal parks & recreation analytics platform.
 
@@ -2120,16 +2134,21 @@ COMPUTE METHODS: sum, avg, count, countDistinct, min, max
 
 FORMAT OPTIONS: currency (no decimals), currency2 (2 decimals), number, percent
 
-RULES:
-- Use ONLY field names that exist in the provided schemas
+CRITICAL DATA SOURCE RULES:
+- ONLY reference field names that ACTUALLY APPEAR in the schema for that specific source
+- "program-demographics" has participant rows (gender, age, city) but NO revenue fields — use "programs" for revenue
+- "programs" has section-level aggregates (Net Amount, Registrations, Capacity) but NO gender/age fields — use "program-demographics" for demographics
+- "gl" has accounting data — use for revenue-by-account breakdowns
+- Read the DESCRIPTION line for each source to understand what data it contains
+- If a field doesn't exist in a source, DO NOT reference it — the widget will show 0/blank
+
+LAYOUT RULES:
 - dataSources must list every source key used by widgets
-- Start with a kpi-row for the most important metrics
+- Start with a kpi-row for the most important metrics (3-5 cards)
 - Use 3-6 widgets total
 - Prefer bar-chart for categorical comparisons, pie-chart for proportions
-- Use table for detailed drill-down data
-- source must be an exact key from the schema (e.g. "programs", "gl", "program-demographics")
-- Be smart about which data source to use
-- For "count" computations on pie/bar charts, set the metric field to the groupBy field
+- Use table for detailed drill-down
+- For "count" computations on charts, set the metric field to the groupBy field
 - Return ONLY the JSON object, nothing else`;
 
 app.post("/:org/report-wizard/api/generate", async (req, res) => {
@@ -2157,10 +2176,11 @@ app.post("/:org/report-wizard/api/generate", async (req, res) => {
     }
 
     const schemaText = Object.entries(schemas).map(([rt, s]) => {
+      const hint = WIZARD_SOURCE_HINTS[rt] || '';
       const fieldList = s.fields.map(f =>
-        `  - ${f.name} (${f.type})${f.sample ? ` e.g. "${f.sample}"` : ""}`
+        `  - ${f.name} (${f.type})${f.samples && f.samples.length ? ` examples: ${f.samples.map(v => '"' + v + '"').join(', ')}` : ""}`
       ).join("\n");
-      return `SOURCE: "${rt}" (${s.rowCount} rows)\n${fieldList}`;
+      return `SOURCE: "${rt}" (${s.rowCount} rows)${hint ? '\n  DESCRIPTION: ' + hint : ''}\n${fieldList}`;
     }).join("\n\n");
 
     const userMsg = `DATA SOURCES AVAILABLE:\n\n${schemaText}\n\nUSER REQUEST: ${prompt}`;
@@ -2808,15 +2828,6 @@ app.get("/:org/fasttrack", (req, res) => {
   if (!org.fasttrack?.mbUuid && !SHARED_UUIDS.fasttrack) return res.status(404).send("Fast Track report not configured for this org.");
   logEvent(slug, "fasttrack", "view", req);
   res.sendFile(path.join(__dirname, "public", "fasttrack.html"));
-});
-
-app.get("/:org/instructor-payout", (req, res) => {
-  const slug = req.params.org;
-  const org = ORGS[slug];
-  if (!org) return res.status(404).send("Unknown org");
-  if (!org['instructor-payout']?.mbUuid && !SHARED_UUIDS['instructor-payout']) return res.status(404).send("Instructor Payout report not configured for this org.");
-  logEvent(slug, "instructor-payout", "view", req);
-  res.sendFile(path.join(__dirname, "public", "instructor-payout.html"));
 });
 
 app.get("/:org/users", (req, res) => {
@@ -3670,7 +3681,6 @@ app.get("/", (req, res) => {
     calendar:    { label: "Calendar",               icon: "🗓️", desc: "Public class & rental schedule (week / list view)", color: "#ea580c", wcag: true },
     fasttrack:   { label: "Fast Track",             icon: "⚡", desc: "Pre-registration demand signal with conversion tracking", color: "#6366f1", ai: true },
     users:       { label: "Community Intel",            icon: "👥", desc: "Demographics, revenue, and strategy intelligence across your community", color: "#7c3aed", ai: true },
-    "instructor-payout": { label: "Instructor Payout", icon: "💰", desc: "Revenue splits and payout calculations by instructor", color: "#6366f1" },
   };
 
   const hiddenReports = getAllHiddenReports();
@@ -5249,7 +5259,6 @@ app.get("/", (req, res) => {
     // Newest first. Add a new entry at the TOP for every change we ship.
     // History below back-filled from the GitHub commit log.
     const UPDATES = [
-  { date: '2026-06-21', title: 'Instructor Payout Report', items: ['New report: revenue splits and payout calculations by instructor', 'Split selector (90/10 through 50/50) with instant KPI updates', 'Grouped by instructor with subtotals and grand total', 'Fill rate bars, refund tracking, top instructor chart', 'Excel export with split calculations'] },
       { date: '2026-06-21', title: '🪄 Rec AI Report Wizard — Custom AI-Generated Dashboards', items: [
         '🪄 REPORT WIZARD — New tool at /:org/report-wizard lets admins describe a report in plain English and get an AI-generated dashboard with KPI cards, charts, and tables.',
         '✨ AI CONFIG ENGINE — Claude analyzes available data sources (programs, demographics, GL, facility, products, etc.) and designs a widget layout matching the request.',
