@@ -5410,6 +5410,15 @@ app.get("/", (req, res) => {
     // Newest first. Add a new entry at the TOP for every change we ship.
     // History below back-filled from the GitHub commit log.
     const UPDATES = [
+      { date: '2026-06-21', title: '💰 Instructor Payout — 65/35 Split, Base Price Toggle & Participant Drill-Down', items: [
+        '💰 65/35 SPLIT — Added 65/35 to the split bar alongside existing 90/10, 80/20, 70/30, 60/40, 50/50 options.',
+        '🎯 BASE PRICE SPLIT — New toggle calculates instructor payout on the resident/base rate instead of the amount actually paid. Non-resident surcharges stay entirely with the org. Tooltip explains the feature.',
+        '👥 PARTICIPANT DRILL-DOWN — Click any section row to expand per-participant detail: name, signup date, base vs actual price, GRP/STD badge, and per-person split amounts.',
+        '❌ CANCELED HANDLING — Refunded/canceled participants show in red with strikethrough and CANCELED badge. Split = /bin/sh for canceled — excluded from enrolled count and payout calculations.',
+        '🔍 SEARCH FIX — Search now splits into words and matches across section + program + instructor names. "austin ritter basketball" finds "Austin Ritter's Basketball Clinic".',
+        '📊 RESIDENT RATE LOGIC — Base price split derives the resident rate from Group/Resident participants' actual price (not the sticker price), ensuring the instructor split base is always the lower contracted rate.',
+        '📥 SQL UPGRADE — Metabase query now returns per-participant rows with applied_pricing decomposition (base, final, list prices, price type). Canceled bookings with refunds included.',
+      ]},
   { date: '2026-06-21', title: 'Instructor Payout Report', items: ['New report: revenue splits and payout calculations by instructor', 'Split selector (90/10 through 50/50) with instant KPI updates', 'Grouped by instructor with subtotals and grand total', 'Fill rate bars, refund tracking, top instructor chart', 'Excel export with split calculations'] },
       { date: '2026-06-21', title: '🪄 Rec AI Report Wizard — Custom AI-Generated Dashboards', items: [
         '🪄 REPORT WIZARD — Describe a report in plain English, get an AI-generated dashboard with KPI cards, charts, and tables. Available at /:org/report-wizard for ALL orgs. Card added to every org dashboard and org landing page.',
