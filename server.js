@@ -2147,12 +2147,33 @@ CRITICAL DATA SOURCE RULES:
 PII RULES (CRITICAL — NEVER VIOLATE):
 - NEVER include these fields as table columns: First Name, Last Name, Email, Phone, email, phone, first_name, last_name
 - Tables should show AGGREGATED data (grouped by program, gender, city, etc.) — never individual person rows
-- If asked for a "roster" or individual listing, group by relevant categories instead
 
-KPI FILTER EXAMPLES — to show per-category KPIs, use filter arrays:
-Total Enrolled: {"label":"Total Enrolled","source":"program-demographics","field":"Gender","compute":"count","format":"number"}
-Female Only: {"label":"Female","source":"program-demographics","field":"Gender","compute":"count","format":"number","filter":[{"field":"Gender","op":"eq","value":"female"}]}
-Male Only: {"label":"Male","source":"program-demographics","field":"Gender","compute":"count","format":"number","filter":[{"field":"Gender","op":"eq","value":"male"}]}
+COUNTING ROWS — THIS IS CRITICAL:
+- program-demographics has ONE ROW PER PARTICIPANT. There is NO "Enrollment Count" or "Total Enrolled" field.
+- To count enrollments: use compute:"count" with field set to ANY field that exists (e.g. "Gender")
+- To count by category: use groupBy + compute:"count" with field = the groupBy field
+- NEVER reference fields that don't exist in the schema. If you need a count, use "count" compute on a real field.
+
+COMPLETE WORKING EXAMPLE — gender enrollment report:
+{
+  "title": "Gender Enrollment Report",
+  "description": "Enrollment by gender across all programs",
+  "dataSources": ["program-demographics", "programs"],
+  "widgets": [
+    {"type": "kpi-row", "items": [
+      {"label": "Total Enrolled", "source": "program-demographics", "field": "Gender", "compute": "count", "format": "number"},
+      {"label": "Female", "source": "program-demographics", "field": "Gender", "compute": "count", "format": "number", "filter": [{"field": "Gender", "op": "eq", "value": "female"}]},
+      {"label": "Male", "source": "program-demographics", "field": "Gender", "compute": "count", "format": "number", "filter": [{"field": "Gender", "op": "eq", "value": "male"}]},
+      {"label": "Total Programs", "source": "programs", "field": "Program Name", "compute": "countDistinct", "format": "number"}
+    ]},
+    {"type": "pie-chart", "title": "Gender Distribution", "source": "program-demographics", "groupBy": "Gender", "metric": {"field": "Gender", "compute": "count"}, "format": "number"},
+    {"type": "bar-chart", "title": "Enrollment by Gender", "source": "program-demographics", "groupBy": "Gender", "metric": {"field": "Gender", "compute": "count"}, "format": "number"},
+    {"type": "table", "title": "Gender Enrollment by Program", "source": "program-demographics", "groupBy": "Program", "columns": [{"field": "Program", "label": "Program"}, {"field": "Gender", "label": "Participants", "format": "number"}], "compute": "count", "sort": {"field": "Gender", "dir": "desc"}, "limit": 25},
+    {"type": "table", "title": "Program Details", "source": "programs", "columns": [{"field": "Program Name", "label": "Program"}, {"field": "Section Name", "label": "Section"}, {"field": "Registrations", "label": "Enrolled", "format": "number"}, {"field": "Capacity", "label": "Capacity", "format": "number"}, {"field": "Net Amount", "label": "Revenue", "format": "currency"}], "sort": {"field": "Registrations", "dir": "desc"}, "limit": 25}
+  ]
+}
+
+Adapt this pattern for other requests. The key insight: program-demographics rows ARE the enrollments — count them, don't look for a count field.
 
 LAYOUT RULES:
 - dataSources must list every source key used by widgets
@@ -2160,7 +2181,7 @@ LAYOUT RULES:
 - Use 3-6 widgets total
 - Prefer bar-chart for categorical comparisons, pie-chart for proportions
 - Use table for AGGREGATED drill-down (grouped by program, category, etc. — never individual people)
-- For "count" computations on charts, set the metric field to the groupBy field
+- For "count" computations, set the metric field to the groupBy field (or any existing field)
 - Return ONLY the JSON object, nothing else`;
 
 app.post("/:org/report-wizard/api/generate", async (req, res) => {
