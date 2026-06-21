@@ -651,15 +651,15 @@
             {!feedbackSent ? (
               <React.Fragment>
                 <button onClick={function() { handleFeedback('up'); }} style={{ fontSize: '20px', padding: '4px 12px', background: 'none', border: '1px solid #ddd', borderRadius: '6px', cursor: 'pointer', transition: 'all .15s' }} onMouseOver={function(e) { e.target.style.background='#f0fdf4'; e.target.style.borderColor='#86efac'; }} onMouseOut={function(e) { e.target.style.background='none'; e.target.style.borderColor='#ddd'; }}>
-                  \uD83D\uDC4D
+                  {String.fromCodePoint(0x1F44D)}
                 </button>
                 <button onClick={function() { handleFeedback('down'); }} style={{ fontSize: '20px', padding: '4px 12px', background: 'none', border: '1px solid #ddd', borderRadius: '6px', cursor: 'pointer', transition: 'all .15s' }} onMouseOver={function(e) { e.target.style.background='#fef2f2'; e.target.style.borderColor='#fca5a5'; }} onMouseOut={function(e) { e.target.style.background='none'; e.target.style.borderColor='#ddd'; }}>
-                  \uD83D\uDC4E
+                  {String.fromCodePoint(0x1F44E)}
                 </button>
               </React.Fragment>
             ) : (
               <span style={{ fontSize: '13px', color: feedback === 'up' ? '#16a34a' : '#dc2626' }}>
-                {feedback === 'up' ? '\uD83D\uDC4D Thanks! Glad it helped.' : '\uD83D\uDC4E Thanks for the feedback \u2014 we\u2019ll improve.'}
+                {feedback === 'up' ? String.fromCodePoint(0x1F44D) + ' Thanks! Glad it helped.' : String.fromCodePoint(0x1F44E) + ' Thanks for the feedback \u2014 we\u2019ll improve.'}
               </span>
             )}
           </div>
