@@ -1370,6 +1370,147 @@ async function prewarmUsersCache() {
 cron.schedule("0 5 * * *", prewarmUsersCache); // 5am daily
 cron.schedule("10 5 * * *", prewarmPulseCache); // 5:10am daily (after users cache is warm)
 cron.schedule("5 * * * *", () => runHealthCheck());  // every hour at :05, checks only what's due per tier
+
+// ── Daily Backup to GitHub Gist ──────────────────────────────────────
+const BACKUP_PAT = process.env.GITHUB_PAT || "";
+const BACKUP_GIST_ID_FILE = path.join(DATA_DIR, "backup-gist-id.txt");
+let _lastBackup = { ts: null, status: "never", size: 0, files: 0, gistUrl: null, error: null };
+
+// Load saved gist ID if it exists
+let _backupGistId = "";
+try { _backupGistId = fs.existsSync(BACKUP_GIST_ID_FILE) ? fs.readFileSync(BACKUP_GIST_ID_FILE, "utf8").trim() : ""; } catch (_) {}
+
+async function performBackup(manual = false) {
+  if (!BACKUP_PAT) {
+    console.log("[backup] Skipped — no GITHUB_PAT env var");
+    _lastBackup = { ts: new Date().toISOString(), status: "skipped", size: 0, files: 0, gistUrl: null, error: "GITHUB_PAT not set" };
+    return _lastBackup;
+  }
+
+  console.log(`[backup] Starting ${manual ? "manual" : "scheduled"} backup...`);
+  const started = Date.now();
+
+  try {
+    // Collect all data files
+    const dataFiles = fs.readdirSync(DATA_DIR).filter(f => f.endsWith(".json") || f.endsWith(".jsonl") || f.endsWith(".txt"));
+    const gistFiles = {};
+    let totalSize = 0;
+
+    for (const fname of dataFiles) {
+      if (fname === "backup-gist-id.txt") continue; // skip the gist ID file itself
+      try {
+        const content = fs.readFileSync(path.join(DATA_DIR, fname), "utf8");
+        gistFiles[fname] = { content };
+        totalSize += content.length;
+      } catch (e) {
+        console.warn(`[backup] Skipped ${fname}: ${e.message}`);
+      }
+    }
+
+    // Add a metadata file
+    gistFiles["_backup_meta.json"] = {
+      content: JSON.stringify({
+        timestamp: new Date().toISOString(),
+        manual,
+        fileCount: Object.keys(gistFiles).length,
+        totalBytes: totalSize,
+        orgCount: Object.keys(ORGS).length,
+      }, null, 2)
+    };
+
+    const fileCount = Object.keys(gistFiles).length;
+    const payload = JSON.stringify({
+      description: `rec.us backup — ${new Date().toISOString().split("T")[0]}`,
+      public: false,
+      files: gistFiles,
+    });
+
+    let gistUrl;
+
+    if (_backupGistId) {
+      // Update existing gist
+      const resp = await fetch(`https://api.github.com/gists/${_backupGistId}`, {
+        method: "PATCH",
+        headers: {
+          Authorization: `token ${BACKUP_PAT}`,
+          "Content-Type": "application/json",
+          "User-Agent": "rec-backup",
+        },
+        body: payload,
+      });
+      if (resp.ok) {
+        const data = await resp.json();
+        gistUrl = data.html_url;
+      } else if (resp.status === 404) {
+        // Gist was deleted, create new
+        _backupGistId = "";
+      } else {
+        throw new Error(`Gist update failed: ${resp.status}`);
+      }
+    }
+
+    if (!_backupGistId) {
+      // Create new gist
+      const resp = await fetch("https://api.github.com/gists", {
+        method: "POST",
+        headers: {
+          Authorization: `token ${BACKUP_PAT}`,
+          "Content-Type": "application/json",
+          "User-Agent": "rec-backup",
+        },
+        body: payload,
+      });
+      if (!resp.ok) throw new Error(`Gist create failed: ${resp.status}`);
+      const data = await resp.json();
+      _backupGistId = data.id;
+      gistUrl = data.html_url;
+      fs.writeFileSync(BACKUP_GIST_ID_FILE, _backupGistId, "utf8");
+      console.log(`[backup] Created new gist: ${_backupGistId}`);
+    }
+
+    const elapsed = ((Date.now() - started) / 1000).toFixed(1);
+    _lastBackup = {
+      ts: new Date().toISOString(),
+      status: "ok",
+      size: totalSize,
+      files: fileCount,
+      gistUrl,
+      error: null,
+      elapsed: `${elapsed}s`,
+    };
+    console.log(`[backup] Complete — ${fileCount} files, ${(totalSize / 1024).toFixed(1)}KB, ${elapsed}s`);
+    return _lastBackup;
+  } catch (err) {
+    console.error(`[backup] Failed:`, err.message);
+    _lastBackup = {
+      ts: new Date().toISOString(),
+      status: "error",
+      size: 0,
+      files: 0,
+      gistUrl: _lastBackup.gistUrl,
+      error: err.message,
+    };
+    return _lastBackup;
+  }
+}
+
+// Daily backup at 2am
+cron.schedule("0 2 * * *", () => performBackup(false));
+// Backup on startup (after 45s)
+setTimeout(() => performBackup(false), 45000);
+
+// Manual backup trigger
+app.post("/api/admin/backup", async (req, res) => {
+  const result = await performBackup(true);
+  res.json(result);
+});
+
+// Backup status endpoint
+app.get("/api/admin/backup-status", (req, res) => {
+  res.json(_lastBackup);
+});
+
+
 // Also pre-warm on startup (after a short delay to let server settle)
 setTimeout(prewarmUsersCache, 15000);
 setTimeout(prewarmPulseCache, 30000); // pulse after users (needs users cache for households)
@@ -4598,6 +4739,18 @@ app.get("/", (req, res) => {
         </div>
         <div id="wizard-log-body" style="font-size:11px;color:#666">Click Load to see recent wizard prompts &amp; feedback</div>
       </div>
+
+      <!-- Backups -->
+      <div style="padding:14px 18px;background:#f0fdf4;border-top:1px solid #bbf7d0">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <div style="font-size:12px;font-weight:700;color:#166534">&#128190; Daily Backups</div>
+          <div style="display:flex;gap:6px;align-items:center">
+            <span id="backup-status" style="font-size:11px;color:#999">Loading...</span>
+            <button onclick="triggerBackup()" id="backup-btn" style="padding:4px 12px;background:#16a34a;color:#fff;border:none;border-radius:4px;font-size:11px;font-weight:600;cursor:pointer">Backup Now</button>
+          </div>
+        </div>
+        <div id="backup-detail" style="font-size:11px;color:#666">Backups run daily at 2am and on startup. Data files are saved to a private GitHub Gist.</div>
+      </div>
     </div>
 
     <div class="org-section">
@@ -5246,6 +5399,48 @@ app.get("/", (req, res) => {
       } catch(err) {
         body.innerHTML = '<div style="color:#dc2626;padding:8px">Error: ' + err.message + '</div>';
       }
+    }
+
+    async function doRestart() {
+
+    // Backup functions
+    async function loadBackupStatus() {
+      try {
+        var resp = await fetch('/api/admin/backup-status');
+        var b = await resp.json();
+        var el = document.getElementById('backup-status');
+        var det = document.getElementById('backup-detail');
+        if (b.status === 'never') {
+          el.innerHTML = '<span style="color:#f59e0b">&#9679;</span> No backups yet';
+        } else if (b.status === 'ok') {
+          var ago = Math.round((Date.now() - new Date(b.ts).getTime()) / 3600000);
+          var color = ago < 25 ? '#16a34a' : ago < 49 ? '#f59e0b' : '#dc2626';
+          el.innerHTML = '<span style="color:'+color+'">&#9679;</span> ' + (ago < 1 ? 'Just now' : ago + 'h ago');
+          det.innerHTML = 'Last: ' + new Date(b.ts).toLocaleString() + ' &middot; ' + b.files + ' files &middot; ' + (b.size/1024).toFixed(1) + 'KB' + (b.gistUrl ? ' &middot; <a href="'+b.gistUrl+'" target="_blank" style="color:#16a34a">View Gist</a>' : '') + (b.elapsed ? ' &middot; ' + b.elapsed : '');
+        } else if (b.status === 'error') {
+          el.innerHTML = '<span style="color:#dc2626">&#9679;</span> Failed';
+          det.innerHTML = 'Error: ' + (b.error || 'Unknown') + (b.ts ? ' &middot; ' + new Date(b.ts).toLocaleString() : '');
+        } else if (b.status === 'skipped') {
+          el.innerHTML = '<span style="color:#f59e0b">&#9679;</span> Skipped (no PAT)';
+          det.innerHTML = 'Set GITHUB_PAT env var in Railway to enable backups.';
+        }
+      } catch(e) { console.error('Backup status:', e); }
+    }
+    loadBackupStatus();
+
+    async function triggerBackup() {
+      var btn = document.getElementById('backup-btn');
+      var el = document.getElementById('backup-status');
+      btn.disabled = true; btn.textContent = 'Backing up\u2026';
+      el.innerHTML = '<span style="color:#f59e0b">&#9679;</span> Running\u2026';
+      try {
+        var resp = await fetch('/api/admin/backup', { method: 'POST' });
+        var b = await resp.json();
+        loadBackupStatus();
+      } catch(e) {
+        el.innerHTML = '<span style="color:#dc2626">&#9679;</span> Failed: ' + e.message;
+      }
+      btn.disabled = false; btn.textContent = 'Backup Now';
     }
 
     async function doRestart() {
