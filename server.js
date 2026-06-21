@@ -4416,6 +4416,12 @@ app.get("/", (req, res) => {
     })()}
     <button onclick="runHealthCheck(this)" style="font-size:10px;color:#3b82f6;background:none;border:1px solid #3b82f6;border-radius:4px;padding:2px 8px;cursor:pointer;margin-left:2px" onmouseover="this.style.background='#eff6ff'" onmouseout="this.style.background='none'">Run Now</button>
   </div>
+  <!-- Backup status in header -->
+  <span style="color:#444;margin:0 4px">|</span>
+  <span style="color:#666;font-weight:600;text-transform:uppercase;letter-spacing:.06em;font-size:10px">Backup</span>
+  <span id="bk-dot" style="width:8px;height:8px;border-radius:50%;background:#555;flex-shrink:0;display:inline-block"></span>
+  <span id="bk-status" style="color:#999;font-size:11px">...</span>
+  </div>
   <script>
   (function fetchRailwayStatus(){
     fetch('/api/admin/railway-status')
@@ -4436,6 +4442,27 @@ app.get("/", (req, res) => {
         if(d.uptime) up.textContent='Up '+d.uptime;
         if(d.memMB) mem.textContent=d.memMB+' MB';
       }).catch(()=>{document.getElementById('rw-status').textContent='Failed to reach API';});
+    // Fetch backup status too
+    fetch('/api/admin/backup-status')
+      .then(r=>r.json()).then(b=>{
+        const dot=document.getElementById('bk-dot'),st=document.getElementById('bk-status');
+        if(!dot||!st) return;
+        if(b.status==='ok'){
+          const ago=Math.round((Date.now()-new Date(b.ts).getTime())/3600000);
+          const color=ago<25?'#22c55e':ago<49?'#f59e0b':'#ef4444';
+          dot.style.background=color;
+          st.style.color=color;
+          st.textContent=ago<1?'Just now':ago+'h ago';
+          st.title='Last: '+new Date(b.ts).toLocaleString()+' · '+b.files+' files · '+(b.size/1024).toFixed(1)+'KB';
+        } else if(b.status==='never'){
+          dot.style.background='#f59e0b'; st.textContent='Pending'; st.style.color='#f59e0b';
+        } else if(b.status==='error'){
+          dot.style.background='#ef4444'; st.textContent='Failed'; st.style.color='#ef4444';
+          st.title=b.error||'Unknown error';
+        } else if(b.status==='skipped'){
+          dot.style.background='#f59e0b'; st.textContent='No PAT'; st.style.color='#f59e0b';
+        }
+      }).catch(()=>{});
     setTimeout(fetchRailwayStatus,60000);
   })();
   // Cache dashboard password for the session so admins aren't prompted repeatedly
