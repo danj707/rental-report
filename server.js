@@ -475,6 +475,7 @@ const SHARED_UUIDS = {
   roster: "31bdf26f-0b2e-4ac2-ae31-69edbefd894c",
   memberships: "f4496307-d965-4637-b048-ecc703f2d37f",
   products: "b9678f5f-b5fb-48f7-96da-f22a1b4e8d8a",
+  "instructor-payout": "a8db6d86-eddc-4511-a28c-ad4bf636859e",
   users: "0aa0f55d-738f-4df7-837a-eb21f3ee1793",
   gl: "4374b344-06a7-42c5-996c-e1845bda3ff1",
   "program-demographics": "67b77142-19ab-49bd-9d4b-1db8223a3616",
