@@ -84,6 +84,22 @@
     .fill-bar { display: inline-block; width: 40px; height: 5px; background: #e4e4e0; border-radius: 2px; overflow: hidden; vertical-align: middle; margin-left: 4px; }
     .fill-bar-inner { height: 100%; border-radius: 2px; }
 
+    /* ── Instructor spotlight ── */
+    .spotlight-section { margin-bottom: 20px; }
+    .spotlight-label { font-size: 9.5px; text-transform: uppercase; letter-spacing: 1px; color: #999; font-weight: 600; margin-bottom: 8px; }
+    .spotlight-cards { display: flex; gap: 10px; flex-wrap: wrap; }
+    .spotlight-card { flex: 1; min-width: 150px; max-width: 220px; padding: 10px 12px; border-radius: 5px; background: #f8f8f6; border: 1px solid #e4e4e0; border-left: 3px solid #ccc; }
+    .spotlight-card .spot-cat { font-size: 9px; text-transform: uppercase; letter-spacing: 0.5px; color: #aaa; font-weight: 600; margin-bottom: 2px; }
+    .spotlight-card .spot-name { font-size: 13px; font-weight: 700; color: #222; margin-bottom: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .spotlight-card .spot-value { font-size: 14px; font-weight: 700; font-family: 'IBM Plex Mono', monospace; }
+    .spotlight-card .spot-sub { font-size: 10px; color: #999; margin-top: 1px; }
+    .spotlight-card.green  { border-left-color: #16a34a; } .spotlight-card.green  .spot-value { color: #15803d; }
+    .spotlight-card.blue   { border-left-color: #3b82f6; } .spotlight-card.blue   .spot-value { color: #2563eb; }
+    .spotlight-card.red    { border-left-color: #ef4444; } .spotlight-card.red    .spot-value { color: #dc2626; }
+    .spotlight-card.violet { border-left-color: #7c3aed; } .spotlight-card.violet .spot-value { color: #6d28d9; }
+    .spotlight-card.amber  { border-left-color: #d97706; } .spotlight-card.amber  .spot-value { color: #b45309; }
+    .spotlight-card.teal   { border-left-color: #0d9488; } .spotlight-card.teal   .spot-value { color: #0f766e; }
+
     /* ── Empty / loading ── */
     .empty-state { text-align: center; padding: 60px 20px; color: #888; }
     .empty-state p { font-size: 14px; }
@@ -220,6 +236,37 @@ function App() {
     };
   }, [filtered, split]);
 
+  // Instructor spotlight metrics
+  const instrMetrics = useMemo(() => {
+    const map = new Map();
+    filtered.forEach(r => {
+      if (!map.has(r.instr)) map.set(r.instr, { name: r.instr, net: 0, paid: 0, refunded: 0, enrolled: 0, capacity: 0, sections: 0 });
+      const m = map.get(r.instr);
+      m.net += r.net; m.paid += r.paid; m.refunded += r.refunded;
+      m.enrolled += r.enrolled; m.capacity += r.capacity; m.sections += 1;
+    });
+    const list = [...map.values()].map(m => ({
+      ...m,
+      fill: m.capacity > 0 ? m.enrolled / m.capacity : 0,
+      avgPerSection: m.sections > 0 ? m.net / m.sections : 0,
+    }));
+    if (list.length === 0) return null;
+    const byNet = [...list].sort((a, b) => b.net - a.net);
+    const byFill = [...list].filter(m => m.capacity > 0).sort((a, b) => b.fill - a.fill);
+    const byRef = [...list].filter(m => m.refunded > 0).sort((a, b) => b.refunded - a.refunded);
+    const byEnr = [...list].sort((a, b) => b.enrolled - a.enrolled);
+    const bySec = [...list].sort((a, b) => b.sections - a.sections);
+    const byAvg = [...list].filter(m => m.net > 0).sort((a, b) => b.avgPerSection - a.avgPerSection);
+    return {
+      topRev: byNet[0] || null,
+      bestFill: byFill[0] || null,
+      topRefund: byRef[0] || null,
+      mostEnrolled: byEnr[0] || null,
+      mostSections: bySec[0] || null,
+      highestAvg: byAvg[0] || null,
+    };
+  }, [filtered]);
+
   // Excel
   const exportExcel = useCallback(() => {
     function go() {
@@ -326,6 +373,63 @@ function App() {
             <div className="card-sub">{fmt(kpis.tRef)} of {fmt(kpis.tPaid)}</div>
           </div>
         </div>
+
+        {/* Instructor Spotlights */}
+        {instrMetrics && (
+          <div className="spotlight-section">
+            <div className="spotlight-label">Instructor Spotlights</div>
+            <div className="spotlight-cards">
+              {instrMetrics.topRev && (
+                <div className="spotlight-card green">
+                  <div className="spot-cat">Top Revenue</div>
+                  <div className="spot-name">{instrMetrics.topRev.name}</div>
+                  <div className="spot-value">{fmt(instrMetrics.topRev.net)}</div>
+                  <div className="spot-sub">{instrMetrics.topRev.sections} sections · {instrMetrics.topRev.enrolled} enrolled</div>
+                </div>
+              )}
+              {instrMetrics.bestFill && (
+                <div className="spotlight-card teal">
+                  <div className="spot-cat">Best Fill Rate</div>
+                  <div className="spot-name">{instrMetrics.bestFill.name}</div>
+                  <div className="spot-value">{fmtPct(instrMetrics.bestFill.fill)}</div>
+                  <div className="spot-sub">{instrMetrics.bestFill.enrolled}/{instrMetrics.bestFill.capacity} across {instrMetrics.bestFill.sections} sections</div>
+                </div>
+              )}
+              {instrMetrics.mostEnrolled && (
+                <div className="spotlight-card blue">
+                  <div className="spot-cat">Most Enrolled</div>
+                  <div className="spot-name">{instrMetrics.mostEnrolled.name}</div>
+                  <div className="spot-value">{instrMetrics.mostEnrolled.enrolled}</div>
+                  <div className="spot-sub">{instrMetrics.mostEnrolled.sections} sections · {fmt(instrMetrics.mostEnrolled.net)} net</div>
+                </div>
+              )}
+              {instrMetrics.highestAvg && (
+                <div className="spotlight-card violet">
+                  <div className="spot-cat">Highest Avg/Section</div>
+                  <div className="spot-name">{instrMetrics.highestAvg.name}</div>
+                  <div className="spot-value">{fmt(instrMetrics.highestAvg.avgPerSection)}</div>
+                  <div className="spot-sub">{fmt(instrMetrics.highestAvg.net)} across {instrMetrics.highestAvg.sections} sections</div>
+                </div>
+              )}
+              {instrMetrics.mostSections && (
+                <div className="spotlight-card amber">
+                  <div className="spot-cat">Most Sections</div>
+                  <div className="spot-name">{instrMetrics.mostSections.name}</div>
+                  <div className="spot-value">{instrMetrics.mostSections.sections}</div>
+                  <div className="spot-sub">{instrMetrics.mostSections.enrolled} enrolled · {fmt(instrMetrics.mostSections.net)} net</div>
+                </div>
+              )}
+              {instrMetrics.topRefund && (
+                <div className="spotlight-card red">
+                  <div className="spot-cat">Top Refunds</div>
+                  <div className="spot-name">{instrMetrics.topRefund.name}</div>
+                  <div className="spot-value">{fmt(instrMetrics.topRefund.refunded)}</div>
+                  <div className="spot-sub">{fmtPct(instrMetrics.topRefund.paid > 0 ? instrMetrics.topRefund.refunded / instrMetrics.topRefund.paid : 0)} of {fmt(instrMetrics.topRefund.paid)} paid</div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Table */}
         {filtered.length === 0 ? (
