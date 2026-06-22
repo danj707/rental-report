@@ -4979,11 +4979,17 @@ app.get("/", (req, res) => {
             <text x="493" y="92" text-anchor="middle" font-size="19">&#128197;</text>
             <text x="493" y="110" text-anchor="middle" font-size="10.5" font-weight="600" fill="#2c2c2c">Public Calendar</text>
             <text x="493" y="122" text-anchor="middle" font-size="8.5" fill="#888">Iframe-embeddable, no token</text>
+            <!-- Rental Calendar (NEW) -->
+            <rect x="598" y="72" width="190" height="62" rx="8" fill="#FFF3E0" stroke="#FF9800" stroke-width="1.5"/>
+            <text x="693" y="92" text-anchor="middle" font-size="19">&#127966;</text>
+            <text x="693" y="110" text-anchor="middle" font-size="10.5" font-weight="600" fill="#E65100">Rental Calendar</text>
+            <text x="693" y="122" text-anchor="middle" font-size="8.5" fill="#BF360C">Live MCP data, public, no token</text>
 
             <!-- Arrows down -->
             <line x1="113" y1="134" x2="113" y2="162" stroke="#ccc" stroke-width="1.5" marker-end="url(#arrowhead)"/>
             <line x1="303" y1="134" x2="303" y2="162" stroke="#ccc" stroke-width="1.5" marker-end="url(#arrowhead)"/>
             <line x1="493" y1="134" x2="493" y2="162" stroke="#ccc" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+            <line x1="693" y1="134" x2="693" y2="222" stroke="#FF9800" stroke-width="1.5" stroke-dasharray="4 2" marker-end="url(#arrowhead)"/>
 
             <!-- Row 2: Token Gate -->
             <rect x="28" y="164" width="560" height="38" rx="6" fill="#FFF3E0" stroke="#FFB74D" stroke-width="1"/>
@@ -5030,8 +5036,8 @@ app.get("/", (req, res) => {
             <rect x="524" y="312" width="128" height="32" rx="6" fill="#fff" stroke="#D1C4E9" stroke-width="1"/>
             <text x="588" y="332" text-anchor="middle" font-size="9" font-weight="600" fill="#4527A0">Usage Analytics</text>
 
-            <rect x="664" y="312" width="122" height="32" rx="6" fill="#fff" stroke="#D1C4E9" stroke-width="1"/>
-            <text x="725" y="332" text-anchor="middle" font-size="9" font-weight="600" fill="#4527A0">Health Checks</text>
+            <rect x="664" y="312" width="122" height="32" rx="6" fill="#FFF3E0" stroke="#FF9800" stroke-width="1"/>
+            <text x="725" y="332" text-anchor="middle" font-size="9" font-weight="600" fill="#E65100">MCP SDK Client</text>
 
             <!-- Arrows from Railway down to data layer -->
             <line x1="278" y1="354" x2="278" y2="382" stroke="#ccc" stroke-width="1.5" marker-end="url(#arrowhead)"/>
@@ -5053,7 +5059,7 @@ app.get("/", (req, res) => {
             <rect x="538" y="404" width="260" height="56" rx="8" fill="#FFF8E1" stroke="#FFD54F" stroke-width="1.5"/>
             <text x="668" y="426" text-anchor="middle" font-size="16">&#9729;&#65039;</text>
             <text x="668" y="442" text-anchor="middle" font-size="10.5" font-weight="600" fill="#F57F17">External Services</text>
-            <text x="668" y="454" text-anchor="middle" font-size="8" fill="#888">Anthropic API &#183; GitHub Gists &#183; Resend &#183; Railway API</text>
+            <text x="668" y="454" text-anchor="middle" font-size="8" fill="#888">Anthropic API &#183; rec.us MCP &#183; GitHub Gists &#183; Resend</text>
 
             <!-- Connecting line Metabase to Postgres -->
             <line x1="263" y1="432" x2="283" y2="432" stroke="#B0BEC5" stroke-width="1.2" marker-end="url(#arrowhead)"/>
@@ -5061,6 +5067,7 @@ app.get("/", (req, res) => {
             <!-- Row 5: Legend -->
             <text x="28" y="492" font-size="8" fill="#aaa">&#9679; Server-side proxy eliminates CORS &#8212; staff browsers never hit Metabase directly</text>
             <text x="28" y="506" font-size="8" fill="#aaa">&#9679; Shared UUID architecture: add a new org with just slug + orgId + logo + token &#8212; 12 report types light up automatically</text>
+            <text x="430" y="506" font-size="8" fill="#E65100">&#9679; Rental Calendar: live availability via MCP SDK &#8594; rec.us MCP server (no REST API needed)</text>
 
             <!-- Arrowhead marker -->
             <defs>
@@ -5920,12 +5927,13 @@ app.get("/", (req, res) => {
     // History below back-filled from the GitHub commit log.
     const UPDATES = [
       { date: '2026-06-22', title: 'Public Facility Rental Calendar (Early Access)', items: [
-        'New public-facing facility availability calendar at /:org/rentalcalendar',
-        'Real-time availability via rec.us API — shows bookable slots, no PII exposed',
-        'Auto-groups sites by type (e.g. 12 picnic tables collapse into one expandable row)',
-        'Emoji icons per site type, per-site Book/Request buttons linking to rec.us booking page',
-        'Day view with horizontal timeline bars, Week overview with availability badges',
-        'Operating hours derived from availability data — no manual config needed',
+        '\u{1F4C5} New public-facing facility availability calendar at /:org/rentalcalendar?locationId=X \u2014 no token required, fully public',
+        '\u{1F4E1} LIVE REAL-TIME DATA via @modelcontextprotocol/sdk calling rec.us MCP server (api.rec.us/mcp). Node.js MCP client tries Streamable HTTP, falls back to SSE. 5-min availability cache, 10-min site list cache.',
+        '\u{1F3AF} Validated 100% against Watertown internal calendar: all 22 Arsenal Park sites (5 courts, 2 fields, 3 pavilions, 12 picnic tables) match perfectly including back-to-back bookings and multi-table events.',
+        '\u{1F7E2}\u{1F7E0}\u2B1C Three visual states: green=Available, orange=Reserved (real bookings), gray=Closed (outside site operating hours).',
+        '\u23F0 Per-site operating hours derived from each site\u2019s own availability data (e.g. fields close at 6pm, courts run until 10pm). Duration-aware coverage: a 4pm start with 2hr duration shows 4-6pm as available, not just 4pm.',
+        '\u{1F9E9} Auto-groups sites by type when \u22653 (12 picnic tables collapse into one expandable row). Emoji icons, hour gridlines, Book/Request CTA buttons deep-linking to rec.us booking pages.',
+        '\u{1F4A1} KEY FINDING: Anthropic API mcp_servers param is artifact-only (not server-side). Raw HTTP POST to MCP endpoint returns Not Found. But @modelcontextprotocol/sdk npm package works perfectly as a standalone Node.js MCP client.',
       ] },
   { date: '2026-06-22', title: 'GL Desk Location support for shared query', items: [
     'Shared GL query now includes Desk Location dimension \u2014 all shared-GL orgs get the \u{1F5C4}\uFE0F Desk filter dropdown automatically when their data has 2+ desk locations.',
@@ -6594,6 +6602,7 @@ app.listen(PORT, () => {
   // Runs after listen() so startup isn't blocked by GitHub latency.
   migrateDynamicOrgs();
 });
+
 
 
 
