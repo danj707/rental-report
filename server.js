@@ -3032,64 +3032,9 @@ app.post("/:org/calendar/api/recommend", express.json(), async (req, res) => {
 });
 
 // ── Rental Calendar (public facility availability) ─────────────────
-// Uses rec.us MCP API for real-time bookable slots. Zero PII.
-// MCP Streamable HTTP: POST to /mcp with JSON-RPC tool calls.
-const REC_MCP_URL = 'https://api.rec.us/mcp';
-const rcCache = { sites: {}, avail: {}, sessions: {} };
-
-// MCP helper: initialize session + call a tool
-async function recMcpCall(toolName, args) {
-  try {
-    // 1. Initialize session
-    const initResp = await fetch(REC_MCP_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json, text/event-stream' },
-      body: JSON.stringify({ jsonrpc: '2.0', method: 'initialize', id: 1, params: {
-        protocolVersion: '2025-03-26', capabilities: {},
-        clientInfo: { name: 'rec-rental-calendar', version: '1.0' }
-      }})
-    });
-    const initData = await initResp.json();
-    const sessionId = initResp.headers.get('mcp-session-id') || '';
-    // 2. Send initialized notification
-    const hdrs = { 'Content-Type': 'application/json', 'Accept': 'application/json, text/event-stream' };
-    if (sessionId) hdrs['Mcp-Session-Id'] = sessionId;
-    await fetch(REC_MCP_URL, { method: 'POST', headers: hdrs,
-      body: JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' })
-    });
-    // 3. Call tool
-    const toolResp = await fetch(REC_MCP_URL, { method: 'POST', headers: hdrs,
-      body: JSON.stringify({ jsonrpc: '2.0', method: 'tools/call', id: 2, params: { name: toolName, arguments: args } })
-    });
-    const ct = toolResp.headers.get('content-type') || '';
-    if (ct.includes('text/event-stream')) {
-      // Parse SSE response
-      const text = await toolResp.text();
-      const lines = text.split('\n');
-      for (const line of lines) {
-        if (line.startsWith('data: ')) {
-          try {
-            const evt = JSON.parse(line.slice(6));
-            if (evt.result?.content) {
-              const textBlock = evt.result.content.find(c => c.type === 'text');
-              if (textBlock) return JSON.parse(textBlock.text);
-            }
-          } catch {}
-        }
-      }
-      return null;
-    }
-    const toolData = await toolResp.json();
-    if (toolData.result?.content) {
-      const textBlock = toolData.result.content.find(c => c.type === 'text');
-      if (textBlock) return JSON.parse(textBlock.text);
-    }
-    return toolData;
-  } catch (e) {
-    console.error(`[recMcpCall] ${toolName} failed:`, e.message);
-    return null;
-  }
-}
+// Public-facing page — no token required. Uses cached site data from
+// rec.us MCP API (refreshed manually). Live API integration pending
+// REST endpoint discovery from Rec engineering team.
 
 app.get("/:org/rentalcalendar", (req, res) => {
   const slug = req.params.org;
@@ -3112,59 +3057,55 @@ app.get("/:org/rentalcalendar", (req, res) => {
   res.type("html").send(html.replace("</head>", inject + "</head>"));
 });
 
-// List sites via rec.us MCP
-app.get("/:org/rentalcalendar/api/sites", async (req, res) => {
+// Cached site data for Arsenal Park (Watertown) — fetched via rec.us MCP 2026-06-22
+const RC_SITES_CACHE = {
+  "d781690b-c5a0-43c5-8443-9ae43899528c": {
+    "6b644507-f784-4f78-8008-5aebf1177a5b": [
+      {id:"ddfee60b-8fef-4eef-a260-eddb7516cb3e",courtNumber:"Arsenal Basketball Court 01",type:"court",capacity:20,locationId:"6b644507-f784-4f78-8008-5aebf1177a5b",locationName:"Arsenal Park",bookingUrl:"https://www.rec.us/sites/ddfee60b-8fef-4eef-a260-eddb7516cb3e",bookingFlow:"instant-book",isInstantBookable:true},
+      {id:"0ed3a9a5-f31c-4a87-bfd1-c72a18e0426e",courtNumber:"Arsenal Basketball Court 02",type:"court",capacity:20,locationId:"6b644507-f784-4f78-8008-5aebf1177a5b",locationName:"Arsenal Park",bookingUrl:"https://www.rec.us/sites/0ed3a9a5-f31c-4a87-bfd1-c72a18e0426e",bookingFlow:"instant-book",isInstantBookable:true},
+      {id:"80161cfc-e717-45d0-9b8d-aefc0ca65514",courtNumber:"Arsenal Tennis Court 01",type:"court",capacity:4,locationId:"6b644507-f784-4f78-8008-5aebf1177a5b",locationName:"Arsenal Park",bookingUrl:"https://www.rec.us/sites/80161cfc-e717-45d0-9b8d-aefc0ca65514",bookingFlow:"instant-book",isInstantBookable:true},
+      {id:"f0367fc4-840c-4966-a360-662a6c630fe4",courtNumber:"Arsenal Tennis Court 02",type:"court",capacity:4,locationId:"6b644507-f784-4f78-8008-5aebf1177a5b",locationName:"Arsenal Park",bookingUrl:"https://www.rec.us/sites/f0367fc4-840c-4966-a360-662a6c630fe4",bookingFlow:"instant-book",isInstantBookable:true},
+      {id:"4898bc6e-6db5-489f-b2c0-70aeb5f555c3",courtNumber:"Arsenal Tennis Court 03",type:"court",capacity:4,locationId:"6b644507-f784-4f78-8008-5aebf1177a5b",locationName:"Arsenal Park",bookingUrl:"https://www.rec.us/sites/4898bc6e-6db5-489f-b2c0-70aeb5f555c3",bookingFlow:"instant-book",isInstantBookable:true},
+      {id:"82389180-0bcd-457c-a4bc-351092b5b6a6",courtNumber:"Arsenal Field",type:"field",capacity:50,locationId:"6b644507-f784-4f78-8008-5aebf1177a5b",locationName:"Arsenal Park",bookingUrl:"https://www.rec.us/sites/82389180-0bcd-457c-a4bc-351092b5b6a6",bookingFlow:"view-site",isInstantBookable:false},
+      {id:"e24eb82d-af73-4d9f-bdbb-a414cba7f11f",courtNumber:"Arsenal Green",type:"field",capacity:50,locationId:"6b644507-f784-4f78-8008-5aebf1177a5b",locationName:"Arsenal Park",bookingUrl:"https://www.rec.us/sites/e24eb82d-af73-4d9f-bdbb-a414cba7f11f",bookingFlow:"view-site",isInstantBookable:false},
+      {id:"bca2780d-e317-4aac-8634-14633415e6a1",courtNumber:"Pavilion A",type:"outdoor-event-space",capacity:50,locationId:"6b644507-f784-4f78-8008-5aebf1177a5b",locationName:"Arsenal Park",bookingUrl:"https://www.rec.us/sites/bca2780d-e317-4aac-8634-14633415e6a1",bookingFlow:"view-site",isInstantBookable:false},
+      {id:"e6487319-baa3-4b02-875d-18fddc81b4fa",courtNumber:"Pavilion B",type:"outdoor-event-space",capacity:40,locationId:"6b644507-f784-4f78-8008-5aebf1177a5b",locationName:"Arsenal Park",bookingUrl:"https://www.rec.us/sites/e6487319-baa3-4b02-875d-18fddc81b4fa",bookingFlow:"view-site",isInstantBookable:false},
+      {id:"496c4665-24ce-468c-92a8-d37dc36c0a47",courtNumber:"Pavilion C (near splash pad)",type:"outdoor-event-space",capacity:40,locationId:"6b644507-f784-4f78-8008-5aebf1177a5b",locationName:"Arsenal Park",bookingUrl:"https://www.rec.us/sites/496c4665-24ce-468c-92a8-d37dc36c0a47",bookingFlow:"view-site",isInstantBookable:false},
+      {id:"734a0089-3812-435a-8b05-4a6bf24a3111",courtNumber:"Picnic Table 01",type:"picnic-table",capacity:10,locationId:"6b644507-f784-4f78-8008-5aebf1177a5b",locationName:"Arsenal Park",bookingUrl:"https://www.rec.us/sites/734a0089-3812-435a-8b05-4a6bf24a3111",bookingFlow:"view-site",isInstantBookable:false},
+      {id:"4b3acdc1-40ff-4cb0-9998-a335922e93c5",courtNumber:"Picnic Table 02",type:"picnic-table",capacity:10,locationId:"6b644507-f784-4f78-8008-5aebf1177a5b",locationName:"Arsenal Park",bookingUrl:"https://www.rec.us/sites/4b3acdc1-40ff-4cb0-9998-a335922e93c5",bookingFlow:"view-site",isInstantBookable:false},
+      {id:"8314064c-4831-468e-8ce8-f2ec0489c05f",courtNumber:"Picnic Table 03",type:"picnic-table",capacity:10,locationId:"6b644507-f784-4f78-8008-5aebf1177a5b",locationName:"Arsenal Park",bookingUrl:"https://www.rec.us/sites/8314064c-4831-468e-8ce8-f2ec0489c05f",bookingFlow:"view-site",isInstantBookable:false},
+      {id:"13fbab67-f474-424c-8caa-bfcd90d2b64c",courtNumber:"Picnic Table 04",type:"picnic-table",capacity:10,locationId:"6b644507-f784-4f78-8008-5aebf1177a5b",locationName:"Arsenal Park",bookingUrl:"https://www.rec.us/sites/13fbab67-f474-424c-8caa-bfcd90d2b64c",bookingFlow:"view-site",isInstantBookable:false},
+      {id:"28b9e61d-d7be-403e-988f-63b8ff60d75e",courtNumber:"Picnic Table 05",type:"picnic-table",capacity:10,locationId:"6b644507-f784-4f78-8008-5aebf1177a5b",locationName:"Arsenal Park",bookingUrl:"https://www.rec.us/sites/28b9e61d-d7be-403e-988f-63b8ff60d75e",bookingFlow:"view-site",isInstantBookable:false},
+      {id:"d3698d0f-20c6-4c36-b175-e2da7c4b5923",courtNumber:"Picnic Table 06",type:"picnic-table",capacity:10,locationId:"6b644507-f784-4f78-8008-5aebf1177a5b",locationName:"Arsenal Park",bookingUrl:"https://www.rec.us/sites/d3698d0f-20c6-4c36-b175-e2da7c4b5923",bookingFlow:"view-site",isInstantBookable:false},
+      {id:"726bd8ce-26e2-483a-8b6c-c2b41b0ea004",courtNumber:"Picnic Table 07",type:"picnic-table",capacity:10,locationId:"6b644507-f784-4f78-8008-5aebf1177a5b",locationName:"Arsenal Park",bookingUrl:"https://www.rec.us/sites/726bd8ce-26e2-483a-8b6c-c2b41b0ea004",bookingFlow:"view-site",isInstantBookable:false},
+      {id:"02a854a5-d69c-4a22-8033-5a02b30154e7",courtNumber:"Picnic Table 08",type:"picnic-table",capacity:10,locationId:"6b644507-f784-4f78-8008-5aebf1177a5b",locationName:"Arsenal Park",bookingUrl:"https://www.rec.us/sites/02a854a5-d69c-4a22-8033-5a02b30154e7",bookingFlow:"view-site",isInstantBookable:false},
+      {id:"101d546b-969c-45af-9051-aa264c0a0b32",courtNumber:"Picnic Table 09",type:"picnic-table",capacity:10,locationId:"6b644507-f784-4f78-8008-5aebf1177a5b",locationName:"Arsenal Park",bookingUrl:"https://www.rec.us/sites/101d546b-969c-45af-9051-aa264c0a0b32",bookingFlow:"view-site",isInstantBookable:false},
+      {id:"eeb44bc5-dff2-4619-a9aa-f06d3440ab8c",courtNumber:"Picnic Table 10",type:"picnic-table",capacity:10,locationId:"6b644507-f784-4f78-8008-5aebf1177a5b",locationName:"Arsenal Park",bookingUrl:"https://www.rec.us/sites/eeb44bc5-dff2-4619-a9aa-f06d3440ab8c",bookingFlow:"view-site",isInstantBookable:false},
+      {id:"00f2d8b8-5b56-4b0a-9fc9-a7339522dd87",courtNumber:"Picnic Table 11",type:"picnic-table",capacity:10,locationId:"6b644507-f784-4f78-8008-5aebf1177a5b",locationName:"Arsenal Park",bookingUrl:"https://www.rec.us/sites/00f2d8b8-5b56-4b0a-9fc9-a7339522dd87",bookingFlow:"view-site",isInstantBookable:false},
+      {id:"966d1e8f-4b83-4801-b108-1890d2b9926c",courtNumber:"Picnic Table 12",type:"picnic-table",capacity:10,locationId:"6b644507-f784-4f78-8008-5aebf1177a5b",locationName:"Arsenal Park",bookingUrl:"https://www.rec.us/sites/966d1e8f-4b83-4801-b108-1890d2b9926c",bookingFlow:"view-site",isInstantBookable:false},
+    ],
+  },
+};
+
+app.get("/:org/rentalcalendar/api/sites", (req, res) => {
   const slug = req.params.org;
   const org = ORGS[slug];
   if (!org || !org.orgId) return res.status(404).json({ error: "Unknown org" });
   const locationId = req.query.locationId || '';
-  const cacheKey = org.orgId + ':' + locationId;
-  // Cache for 10 minutes
-  if (rcCache.sites[cacheKey] && Date.now() - rcCache.sites[cacheKey].ts < 600000) {
-    return res.json({ sites: rcCache.sites[cacheKey].data });
+  // Check cache
+  const orgSites = RC_SITES_CACHE[org.orgId];
+  if (orgSites) {
+    const sites = locationId && orgSites[locationId] ? orgSites[locationId] : Object.values(orgSites).flat();
+    return res.json({ sites });
   }
-  try {
-    const data = await recMcpCall('list_sites', { organizationId: org.orgId, pageSize: 100 });
-    if (!data || !data.results) throw new Error('MCP returned no results');
-    let sites = data.results;
-    if (locationId) sites = sites.filter(s => s.locationId === locationId);
-    const clean = sites.map(s => ({
-      id: s.id, name: s.name || s.courtNumber, courtNumber: s.courtNumber,
-      type: s.type, capacity: s.capacity, locationId: s.locationId,
-      locationName: s.locationName, bookingUrl: s.bookingUrl,
-      bookingFlow: s.bookingFlow, bookingCtaLabel: s.bookingCtaLabel,
-      isInstantBookable: s.isInstantBookable,
-    }));
-    rcCache.sites[cacheKey] = { data: clean, ts: Date.now() };
-    res.json({ sites: clean });
-  } catch (e) {
-    console.error('[rentalcalendar] sites error:', e.message);
-    // Return cached data if available (even if stale)
-    if (rcCache.sites[cacheKey]) return res.json({ sites: rcCache.sites[cacheKey].data });
-    res.status(502).json({ error: 'Failed to fetch sites: ' + e.message });
-  }
+  // No cache for this org yet — return empty with helpful message
+  res.json({ sites: [], note: "No cached site data for this org. Contact admin to refresh." });
 });
 
-// Get availability via rec.us MCP
-app.get("/:org/rentalcalendar/api/availability/:siteId", async (req, res) => {
-  const slug = req.params.org;
-  const org = ORGS[slug];
-  if (!org) return res.status(404).json({ error: "Unknown org" });
-  const siteId = req.params.siteId;
-  // Cache availability for 5 minutes
-  if (rcCache.avail[siteId] && Date.now() - rcCache.avail[siteId].ts < 300000) {
-    return res.json({ data: rcCache.avail[siteId].data });
-  }
-  try {
-    const data = await recMcpCall('get_site_availability', { siteId });
-    if (!data || !data.data) throw new Error('MCP returned no data');
-    rcCache.avail[siteId] = { data: data.data, ts: Date.now() };
-    res.json({ data: data.data });
-  } catch (e) {
-    console.error('[rentalcalendar] availability error:', e.message);
-    if (rcCache.avail[siteId]) return res.json({ data: rcCache.avail[siteId].data });
-    res.json({ data: {} }); // Empty = show all as available
-  }
+// Availability: return empty for now (page shows all as available).
+// TODO: Wire live API once rec.us REST endpoint is confirmed.
+app.get("/:org/rentalcalendar/api/availability/:siteId", (req, res) => {
+  res.json({ data: {} });
 });
 
 
@@ -6570,6 +6511,7 @@ app.listen(PORT, () => {
   // Runs after listen() so startup isn't blocked by GitHub latency.
   migrateDynamicOrgs();
 });
+
 
 
 
