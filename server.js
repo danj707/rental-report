@@ -124,8 +124,8 @@ async function refreshOrgPulse(slug, force) {
   const monthLabel = now.toLocaleString('en-US', { month: 'long' });
 
   async function fetchMB(reportType, startDate, endDate) {
-    const useShared = !!SHARED_UUIDS[reportType];
-    const mbUuid = useShared ? SHARED_UUIDS[reportType] : org[reportType]?.mbUuid;
+    const useShared = reportType === "gl" ? (!org.gl?.mbUuid && !!SHARED_UUIDS.gl) : !!SHARED_UUIDS[reportType];
+    const mbUuid = useShared ? SHARED_UUIDS[reportType] : (org[reportType]?.mbUuid || SHARED_UUIDS[reportType]);
     if (!mbUuid) return null;
     try {
       const orgId = useShared ? org.orgId : null;
@@ -248,8 +248,8 @@ async function prewarmCache() {
     const org = ORGS[slug];
     if (!org.token) continue;
     for (const rt of REPORT_TYPES) {
-      const useShared = !!SHARED_UUIDS[rt];
-      const mbUuid = useShared ? SHARED_UUIDS[rt] : org[rt]?.mbUuid;
+      const useShared = rt === "gl" ? (!org.gl?.mbUuid && !!SHARED_UUIDS.gl) : !!SHARED_UUIDS[rt];
+      const mbUuid = useShared ? SHARED_UUIDS[rt] : (org[rt]?.mbUuid || SHARED_UUIDS[rt]);
       if (!mbUuid) continue;
       // Only pre-warm reports with no required params (default = current month)
       const cacheKey = `${slug}:${rt}:`;
@@ -326,7 +326,6 @@ const ORGS = {
     orgId:   "460566d3-3a51-4387-a7a0-0b010923e40d",
     logoUrl: "https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2Forganization-460566d3-3a51-4387-a7a0-0b010923e40d%2FfullLogo.png%3F1742511257248&w=256&q=75",
     facility: { mbUuid: "21e74d52-f49a-46d6-bc2d-f9348027854f" },
-    gl:       { mbUuid: "c6daa914-9ea0-449f-956b-373aa0ac2a8a" },
     roster:   { mbUuid: "ce13ffa2-2bc5-4764-992d-957b4c3a35f9" },
     products: { mbUuid: "b9cae7d1-ea23-4dca-8854-d8689bc2b247" },
     programs: { mbUuid: "776bb123-3109-48d6-b50b-7f1fd161285f" },
@@ -353,7 +352,6 @@ const ORGS = {
     logoUrl: "https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2Forganization-efc0724c-8f32-481a-bab3-fc19c724f3a7%2FfullLogo.png%3F1771265790459&w=1920&q=75",
     facility: { mbUuid: "d541c91e-bb92-4103-abc5-940b3edb61b9" },
     historic: { mbUuid: "af3c5388-7deb-4a05-a102-cc31f6c4b9f7" },
-    gl:       { mbUuid: "45e050fd-10d7-4010-b616-6a2ec6e5f7ed" },
     roster:   { mbUuid: "462000f0-6be1-4e73-b983-0375668c1a1f" },
     programs: { mbUuid: "ebe20297-455d-4603-aa22-b5560bd5c502" },
     users   : { mbUuid: "f6defe8c-a7bd-418c-8089-160c5fd0cccc" },
@@ -365,7 +363,6 @@ const ORGS = {
     calendarPublicUrl: "https://www.watertown-ma.gov/1425/Recreation",
     logoUrl: "https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2Forganization-d781690b-c5a0-43c5-8443-9ae43899528c%2FfullLogo.png%3F1750270261391&w=1920&q=75",
     facility: { mbUuid: "4b64af10-d57f-41af-aad8-b16d12a8f7b8" },
-    gl:       { mbUuid: "e0043550-0ab8-429f-bbb0-35911c1190f6" },
     programs: { mbUuid: "d3a3554f-1232-4803-9cc7-5b0f611360b0" },
     roster:   { mbUuid: "4f9861ef-e8ac-4447-bf88-3648c1e54a8b" },
     calendar: { mbUuid: "70717c4f-9395-4c50-95ac-0622d95567f6" },
@@ -399,14 +396,12 @@ const ORGS = {
     orgId:   "992ee322-4927-4558-827d-7f8768580b85",
     logoUrl: "https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2Forganization-992ee322-4927-4558-827d-7f8768580b85%2FfullLogo.jpeg%3F1776960415666&w=1920&q=75",
     displayName: "Littleton PRCE",
-    gl      : { mbUuid: "050d06f6-4c0f-4fce-a643-16352f095636" },
   },
   danvers: {
     token:   "9h_PGT17witUK73g",
     orgId:   "a6aef5df-f742-41a2-9088-1fb6d48c3cb1",
     logoUrl: "https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2Forganization-a6aef5df-f742-41a2-9088-1fb6d48c3cb1%2FfullLogo.png%3F1748866523048&w=1920&q=75",
     displayName: "Town of Danvers",
-    gl      : { mbUuid: "f82f6e95-6c18-4c57-a8dc-4fb833537f2c" },
     roster  : { mbUuid: "483df1ab-8e6b-4004-b532-de28bd28c477" },
   },
   midland: {
@@ -414,7 +409,6 @@ const ORGS = {
     orgId:   "8a8a4fb1-c184-4196-a878-75c775ce6252",
     logoUrl: "https://www.midlandtexas.gov/ImageRepository/Document?documentID=10068",
     displayName: "Midland",
-    gl      : { mbUuid: "e0e0d020-f22c-4a79-9cc6-760c6afb9f46" },
   },
   windham: {
     token:   "nbwKKe68jACdPOLE",
@@ -428,7 +422,6 @@ const ORGS = {
     orgId:   "ac04aa52-d629-435f-84af-0fc95e152e7b",
     logoUrl: "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSiZe2Rt3BvXmkRLhW9EzhogtTSXY3SkiaVzA&s",
     displayName: "Joplin",
-    gl      : { mbUuid: "01c4658c-cf33-4511-91d8-318ea6fc6f2f" },
     products: { mbUuid: "2a38a516-a618-40ad-8b30-a26081548389" },
     calendar: { mbUuid: "2b6e6819-2fe5-420e-af6f-4cb39b5736cc" },
   },
@@ -438,7 +431,6 @@ const ORGS = {
     logoUrl: "https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2Forganization-0a9c47af-b4c3-4601-ab0f-d2f401bb787a%2FfullLogo.png%3F1760543186527&w=2048&q=75",
     displayName: "Shrewsbury",
     facility: { mbUuid: "9a027e73-cd3b-49ff-8b02-49e09a6ceeeb" },
-    gl      : { mbUuid: "85295b39-f00b-4f7f-9007-b3dafa8051a4" },
     programs: { mbUuid: "f7863975-f44c-4143-abe8-2ca8c6cdfa07" },
     roster  : { mbUuid: "f79ce808-e7ab-48dc-b2b9-56491f3b01fc" },
     calendar: { mbUuid: "f4e55dd3-f16d-4da7-9112-de0515980ae4" },
@@ -451,7 +443,6 @@ const ORGS = {
     orgId:   "7d22bf62-060a-4881-9821-9dea6a0538d6",
     logoUrl: "https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2Forganization-7d22bf62-060a-4881-9821-9dea6a0538d6%2FfullLogo.png%3F1764542866233&w=1920&q=75",
     displayName: "City of West Sacramento",
-    gl      : { mbUuid: "4374b344-06a7-42c5-996c-e1845bda3ff1" },
   },
   boerne: {
     token:   "VgvWxiyKNso1x2EB",
@@ -603,8 +594,8 @@ async function runHealthCheck(forceAll) {
 
   for (const { slug, rt } of toCheck) {
     const org = ORGS[slug];
-    const useSharedHC = !!SHARED_UUIDS[rt];
-    const mbUuid = useSharedHC ? SHARED_UUIDS[rt] : org[rt]?.mbUuid;
+    const useSharedHC = rt === "gl" ? (!org.gl?.mbUuid && !!SHARED_UUIDS.gl) : !!SHARED_UUIDS[rt];
+    const mbUuid = useSharedHC ? SHARED_UUIDS[rt] : (org[rt]?.mbUuid || SHARED_UUIDS[rt]);
     if (!mbUuid) continue;
     if (!existing.reports[slug]) existing.reports[slug] = {};
 
@@ -2196,8 +2187,8 @@ async function fetchWizardSchemas(orgSlug, orgConfig) {
   const schemas = {};
   await Promise.allSettled(reportTypes.map(async (rt) => {
     try {
-      const useShared = !!SHARED_UUIDS[rt];
-      const mbUuid = useShared ? SHARED_UUIDS[rt] : orgConfig[rt]?.mbUuid;
+      const useShared = rt === "gl" ? (!orgConfig.gl?.mbUuid && !!SHARED_UUIDS.gl) : !!SHARED_UUIDS[rt];
+      const mbUuid = useShared ? SHARED_UUIDS[rt] : (orgConfig[rt]?.mbUuid || SHARED_UUIDS[rt]);
       if (!mbUuid) return;
       const orgId = useShared ? orgConfig.orgId : null;
       const params = buildMetabaseParams({}, rt, orgId);
@@ -2472,9 +2463,12 @@ app.get("/api/admin/wizard-log", (req, res) => {
 app.get("/:org/:report/api/data", resolveOrg, async (req, res) => {
   try {
     const { orgConfig, orgSlug, reportType } = req;
-    // Prefer shared (parameterized) UUID; fall back to per-org UUID
-    const useShared = !!SHARED_UUIDS[reportType];
-    const mbUuid = useShared ? SHARED_UUIDS[reportType] : orgConfig[reportType]?.mbUuid;
+    // GL: per-org UUID takes priority (e.g. Norman has custom gl_map); shared fallback.
+    // All other reports: shared first, per-org fallback.
+    const useShared = reportType === "gl"
+      ? (!orgConfig.gl?.mbUuid && !!SHARED_UUIDS.gl)
+      : !!SHARED_UUIDS[reportType];
+    const mbUuid = useShared ? SHARED_UUIDS[reportType] : (orgConfig[reportType]?.mbUuid || SHARED_UUIDS[reportType]);
     if (!mbUuid) return res.status(404).json({ error: `No Metabase question configured for ${orgSlug}/${reportType}` });
 
     logEvent(orgSlug, reportType, "fetch", req);
@@ -5764,6 +5758,11 @@ app.get("/", (req, res) => {
     // Newest first. Add a new entry at the TOP for every change we ship.
     // History below back-filled from the GitHub commit log.
     const UPDATES = [
+  { date: '2026-06-22', title: 'GL Desk Location support for shared query', items: [
+    'Shared GL query now includes Desk Location dimension \u2014 all shared-GL orgs get the \u{1F5C4}\uFE0F Desk filter dropdown automatically when their data has 2+ desk locations.',
+    'GL proxy logic updated: per-org GL UUID takes priority over shared (Norman keeps its custom gl_map query with Locations column). All other report types still prefer shared.',
+    'Removed 9 dead per-org GL UUIDs (clarksville, smyrna, watertown, littleton, danvers, midland, joplin, shrewsbury, westsacramento) \u2014 all now use shared GL.',
+  ]},
   { date: '2026-06-22', title: '\u{1F4D0} How This Works Overhaul + Architecture Diagram', items: [
     '\u{1F3D7}\uFE0F ARCHITECTURE DIAGRAM \u2014 New inline SVG architecture diagram in the How This Works section showing the full system: entry points (rec.us admin iframe, direct token URLs, public calendar), token gate middleware, Railway app internals (React/Babel, Metabase proxy, AI engine, Puppeteer, PII stripper, wizard, email, backups, analytics, health checks), and data layer (Metabase, PostgreSQL, external services).',
     '\u{1F50F} SECURITY BY OBFUSCATION \u2014 New section documenting how the reports portal is embedded as an iframe inside the rec.us admin Metabase dashboard. Partner staff never see the direct Railway URL \u2014 three-layer auth: rec.us admin session + Reporting tab access + 16-char token.',
@@ -6426,6 +6425,7 @@ app.listen(PORT, () => {
   // Runs after listen() so startup isn't blocked by GitHub latency.
   migrateDynamicOrgs();
 });
+
 
 
 
