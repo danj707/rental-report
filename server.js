@@ -3099,28 +3099,16 @@ app.get("/:org/rentalcalendar/api/sites", async (req, res) => {
     const sites = locationId && orgSites[locationId] ? orgSites[locationId] : Object.values(orgSites).flat();
     return res.json({ sites });
   }
-  // Live fetch via Anthropic API + MCP for orgs not in cache
+  // Live fetch via MCP SDK for orgs not in cache
   try {
-    const apiKey = process.env.ANTHROPIC_API_KEY;
-    if (!apiKey) throw new Error('No ANTHROPIC_API_KEY');
-    const prompt = 'Call list_sites with organizationId "' + org.orgId + '" and pageSize 100. Return ONLY the raw JSON results array, nothing else.';
-    const resp = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST', headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
-      body: JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: 16000,
-        mcp_servers: [{ type: 'url', url: 'https://api.rec.us/mcp', name: 'rec' }],
-        messages: [{ role: 'user', content: prompt }],
-      }),
-    });
-    if (!resp.ok) throw new Error('Anthropic API ' + resp.status);
-    const result = await resp.json();
+    const client = await getRecMcpClient();
+    if (!client) throw new Error('MCP client not available');
+    const result = await client.callTool({ name: 'list_sites', arguments: { organizationId: org.orgId, pageSize: 100 } });
     let sites = [];
     for (const block of (result.content || [])) {
-      if (block.type === 'mcp_tool_result' && block.content) {
-        for (const sub of block.content) {
-          if (sub.type === 'text') { try { const p = JSON.parse(sub.text); sites = p.results || p; } catch {} }
-        }
+      if (block.type === 'text' && block.text) {
+        try { const p = JSON.parse(block.text); sites = p.results || p; } catch {}
       }
-      if (block.type === 'text' && block.text) { try { const p = JSON.parse(block.text); sites = Array.isArray(p) ? p : p.results || []; } catch {} }
     }
     if (locationId) sites = sites.filter(s => s.locationId === locationId);
     const clean = sites.map(s => ({
@@ -3136,68 +3124,60 @@ app.get("/:org/rentalcalendar/api/sites", async (req, res) => {
   }
 });
 
-// Availability: use Anthropic API as MCP proxy for live rec.us data
+// Availability: use MCP SDK to call rec.us MCP server directly
 const rcAvailCache = {};
 const RC_AVAIL_TTL = 5 * 60 * 1000; // 5 minutes
+let mcpClientReady = null; // lazy-initialized promise
+
+async function getRecMcpClient() {
+  if (mcpClientReady) return mcpClientReady;
+  mcpClientReady = (async () => {
+    try {
+      const { Client } = await import('@modelcontextprotocol/sdk/client/index.js');
+      const { StreamableHTTPClientTransport } = await import('@modelcontextprotocol/sdk/client/streamableHttp.js');
+      const client = new Client({ name: 'rec-rental-calendar', version: '1.0.0' });
+      const transport = new StreamableHTTPClientTransport(new URL('https://api.rec.us/mcp'));
+      await client.connect(transport);
+      console.log('[rentalcalendar] MCP client connected (Streamable HTTP)');
+      return client;
+    } catch (e1) {
+      console.warn('[rentalcalendar] Streamable HTTP failed:', e1.message, '— trying SSE...');
+      try {
+        const { Client } = await import('@modelcontextprotocol/sdk/client/index.js');
+        const { SSEClientTransport } = await import('@modelcontextprotocol/sdk/client/sse.js');
+        const client = new Client({ name: 'rec-rental-calendar', version: '1.0.0' });
+        const transport = new SSEClientTransport(new URL('https://api.rec.us/mcp'));
+        await client.connect(transport);
+        console.log('[rentalcalendar] MCP client connected (SSE)');
+        return client;
+      } catch (e2) {
+        console.error('[rentalcalendar] MCP SSE also failed:', e2.message);
+        mcpClientReady = null; // allow retry
+        return null;
+      }
+    }
+  })();
+  return mcpClientReady;
+}
 
 async function fetchSiteAvailability(siteId) {
-  // Check cache first
   const cached = rcAvailCache[siteId];
   if (cached && Date.now() - cached.ts < RC_AVAIL_TTL) return cached.data;
-
   try {
-    const apiKey = process.env.ANTHROPIC_API_KEY;
-    if (!apiKey) throw new Error('No ANTHROPIC_API_KEY');
-
-    const resp = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-      },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-6',
-        max_tokens: 16000,
-        mcp_servers: [{ type: 'url', url: 'https://api.rec.us/mcp', name: 'rec' }],
-        messages: [{ role: 'user', content:
-          'Call get_site_availability with siteId "' + siteId + '". Return ONLY the raw JSON data object from the tool result, nothing else. No explanation, no markdown, just the JSON.'
-        }],
-      }),
-    });
-
-    if (!resp.ok) {
-      const errText = await resp.text();
-      throw new Error('Anthropic API ' + resp.status + ': ' + errText.slice(0, 200));
-    }
-
-    const result = await resp.json();
-    // Extract data from Claude's response — could be in text or tool_result blocks
-    let availData = {};
+    const client = await getRecMcpClient();
+    if (!client) throw new Error('MCP client not available');
+    const result = await client.callTool({ name: 'get_site_availability', arguments: { siteId } });
+    let data = {};
     for (const block of (result.content || [])) {
-      if (block.type === 'mcp_tool_result' && block.content) {
-        for (const sub of block.content) {
-          if (sub.type === 'text' && sub.text) {
-            try { availData = JSON.parse(sub.text); } catch {}
-          }
-        }
-      }
       if (block.type === 'text' && block.text) {
-        try {
-          const parsed = JSON.parse(block.text);
-          if (parsed.data) availData = parsed;
-          else if (Object.keys(parsed).length > 0) availData = { data: parsed };
-        } catch {}
+        try { const parsed = JSON.parse(block.text); data = parsed.data || parsed; } catch {}
       }
     }
-
-    const data = availData.data || availData || {};
     rcAvailCache[siteId] = { data, ts: Date.now() };
-    console.log('[rentalcalendar] Live availability fetched for', siteId, '(' + Object.keys(data).length + ' dates)');
+    console.log('[rentalcalendar] Live availability for', siteId, '(' + Object.keys(data).length + ' dates)');
     return data;
   } catch (e) {
-    console.error('[rentalcalendar] availability fetch error:', e.message);
-    // Return stale cache if available
+    console.error('[rentalcalendar] availability error:', e.message);
     if (cached) return cached.data;
     return {};
   }
