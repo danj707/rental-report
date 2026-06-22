@@ -3032,9 +3032,64 @@ app.post("/:org/calendar/api/recommend", express.json(), async (req, res) => {
 });
 
 // ── Rental Calendar (public facility availability) ─────────────────
-// Uses rec.us public API to show real-time bookable slots.
-// No auth required — availability data contains zero PII.
-const REC_API_BASE = 'https://api.rec.us';
+// Uses rec.us MCP API for real-time bookable slots. Zero PII.
+// MCP Streamable HTTP: POST to /mcp with JSON-RPC tool calls.
+const REC_MCP_URL = 'https://api.rec.us/mcp';
+const rcCache = { sites: {}, avail: {}, sessions: {} };
+
+// MCP helper: initialize session + call a tool
+async function recMcpCall(toolName, args) {
+  try {
+    // 1. Initialize session
+    const initResp = await fetch(REC_MCP_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json, text/event-stream' },
+      body: JSON.stringify({ jsonrpc: '2.0', method: 'initialize', id: 1, params: {
+        protocolVersion: '2025-03-26', capabilities: {},
+        clientInfo: { name: 'rec-rental-calendar', version: '1.0' }
+      }})
+    });
+    const initData = await initResp.json();
+    const sessionId = initResp.headers.get('mcp-session-id') || '';
+    // 2. Send initialized notification
+    const hdrs = { 'Content-Type': 'application/json', 'Accept': 'application/json, text/event-stream' };
+    if (sessionId) hdrs['Mcp-Session-Id'] = sessionId;
+    await fetch(REC_MCP_URL, { method: 'POST', headers: hdrs,
+      body: JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' })
+    });
+    // 3. Call tool
+    const toolResp = await fetch(REC_MCP_URL, { method: 'POST', headers: hdrs,
+      body: JSON.stringify({ jsonrpc: '2.0', method: 'tools/call', id: 2, params: { name: toolName, arguments: args } })
+    });
+    const ct = toolResp.headers.get('content-type') || '';
+    if (ct.includes('text/event-stream')) {
+      // Parse SSE response
+      const text = await toolResp.text();
+      const lines = text.split('\n');
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          try {
+            const evt = JSON.parse(line.slice(6));
+            if (evt.result?.content) {
+              const textBlock = evt.result.content.find(c => c.type === 'text');
+              if (textBlock) return JSON.parse(textBlock.text);
+            }
+          } catch {}
+        }
+      }
+      return null;
+    }
+    const toolData = await toolResp.json();
+    if (toolData.result?.content) {
+      const textBlock = toolData.result.content.find(c => c.type === 'text');
+      if (textBlock) return JSON.parse(textBlock.text);
+    }
+    return toolData;
+  } catch (e) {
+    console.error(`[recMcpCall] ${toolName} failed:`, e.message);
+    return null;
+  }
+}
 
 app.get("/:org/rentalcalendar", (req, res) => {
   const slug = req.params.org;
@@ -3057,58 +3112,58 @@ app.get("/:org/rentalcalendar", (req, res) => {
   res.type("html").send(html.replace("</head>", inject + "</head>"));
 });
 
-// Proxy: list sites for an org, optionally filtered by locationId
+// List sites via rec.us MCP
 app.get("/:org/rentalcalendar/api/sites", async (req, res) => {
   const slug = req.params.org;
   const org = ORGS[slug];
   if (!org || !org.orgId) return res.status(404).json({ error: "Unknown org" });
   const locationId = req.query.locationId || '';
+  const cacheKey = org.orgId + ':' + locationId;
+  // Cache for 10 minutes
+  if (rcCache.sites[cacheKey] && Date.now() - rcCache.sites[cacheKey].ts < 600000) {
+    return res.json({ sites: rcCache.sites[cacheKey].data });
+  }
   try {
-    // Try rec.us public API endpoint for listing sites
-    const url = REC_API_BASE + '/public/organizations/' + org.orgId + '/sites?pageSize=100';
-    const resp = await fetch(url);
-    if (!resp.ok) throw new Error('rec.us API returned ' + resp.status);
-    const data = await resp.json();
-    let sites = data.results || data.data || [];
-    // Filter by location if specified
-    if (locationId) {
-      sites = sites.filter(s => s.locationId === locationId);
-    }
-    // Strip any PII fields (shouldn't be any, but be safe)
+    const data = await recMcpCall('list_sites', { organizationId: org.orgId, pageSize: 100 });
+    if (!data || !data.results) throw new Error('MCP returned no results');
+    let sites = data.results;
+    if (locationId) sites = sites.filter(s => s.locationId === locationId);
     const clean = sites.map(s => ({
-      id: s.id,
-      name: s.name || s.courtNumber,
-      courtNumber: s.courtNumber,
-      type: s.type,
-      capacity: s.capacity,
-      locationId: s.locationId,
-      locationName: s.locationName,
-      bookingUrl: s.bookingUrl,
-      bookingFlow: s.bookingFlow,
-      bookingCtaLabel: s.bookingCtaLabel,
+      id: s.id, name: s.name || s.courtNumber, courtNumber: s.courtNumber,
+      type: s.type, capacity: s.capacity, locationId: s.locationId,
+      locationName: s.locationName, bookingUrl: s.bookingUrl,
+      bookingFlow: s.bookingFlow, bookingCtaLabel: s.bookingCtaLabel,
       isInstantBookable: s.isInstantBookable,
     }));
+    rcCache.sites[cacheKey] = { data: clean, ts: Date.now() };
     res.json({ sites: clean });
   } catch (e) {
-    console.error('[rentalcalendar] sites fetch error:', e.message);
+    console.error('[rentalcalendar] sites error:', e.message);
+    // Return cached data if available (even if stale)
+    if (rcCache.sites[cacheKey]) return res.json({ sites: rcCache.sites[cacheKey].data });
     res.status(502).json({ error: 'Failed to fetch sites: ' + e.message });
   }
 });
 
-// Proxy: get availability for a specific site
+// Get availability via rec.us MCP
 app.get("/:org/rentalcalendar/api/availability/:siteId", async (req, res) => {
   const slug = req.params.org;
   const org = ORGS[slug];
   if (!org) return res.status(404).json({ error: "Unknown org" });
+  const siteId = req.params.siteId;
+  // Cache availability for 5 minutes
+  if (rcCache.avail[siteId] && Date.now() - rcCache.avail[siteId].ts < 300000) {
+    return res.json({ data: rcCache.avail[siteId].data });
+  }
   try {
-    const url = REC_API_BASE + '/public/sites/' + req.params.siteId + '/availability';
-    const resp = await fetch(url);
-    if (!resp.ok) throw new Error('rec.us API returned ' + resp.status);
-    const data = await resp.json();
-    res.json(data);
+    const data = await recMcpCall('get_site_availability', { siteId });
+    if (!data || !data.data) throw new Error('MCP returned no data');
+    rcCache.avail[siteId] = { data: data.data, ts: Date.now() };
+    res.json({ data: data.data });
   } catch (e) {
-    console.error('[rentalcalendar] availability fetch error:', e.message);
-    res.status(502).json({ error: 'Failed to fetch availability: ' + e.message });
+    console.error('[rentalcalendar] availability error:', e.message);
+    if (rcCache.avail[siteId]) return res.json({ data: rcCache.avail[siteId].data });
+    res.json({ data: {} }); // Empty = show all as available
   }
 });
 
@@ -6515,6 +6570,7 @@ app.listen(PORT, () => {
   // Runs after listen() so startup isn't blocked by GitHub latency.
   migrateDynamicOrgs();
 });
+
 
 
 
