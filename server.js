@@ -4797,54 +4797,190 @@ app.get("/", (req, res) => {
       </div>
       <div class="how-body">
         <h4>Architecture</h4>
-        <p>This is a lightweight Node.js/Express app deployed on Railway. It sits between your rec.us Metabase instance and your staff, turning flat SQL query results into grouped, printable, interactive reports.</p>
-        <div class="how-arch">
-          <span class="how-arch-box">Staff browser</span>
-          <span class="how-arch-arrow">&#8594;</span>
-          <span class="how-arch-box">Railway (this app)</span>
-          <span class="how-arch-arrow">&#8594;</span>
-          <span class="how-arch-box">Metabase public API</span>
-          <span class="how-arch-arrow">&#8594;</span>
-          <span class="how-arch-box">rec.us PostgreSQL</span>
+        <p>rec.us Reports is a Node.js/Express application deployed on Railway Pro. It acts as an intelligent middleware layer between the rec.us platform database and partner staff, transforming raw SQL results into interactive, AI-narrated dashboards with PDF export, email subscriptions, and cross-org intelligence.</p>
+
+        <!-- Architecture Diagram -->
+        <div style="margin:16px 0 20px;overflow-x:auto">
+          <svg viewBox="0 0 820 520" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:820px;font-family:IBM Plex Sans,system-ui,sans-serif">
+            <!-- Background -->
+            <rect width="820" height="520" rx="12" fill="#f9f8f6" stroke="#e4e4e0" stroke-width="1"/>
+            <!-- Title -->
+            <text x="410" y="30" text-anchor="middle" font-size="13" font-weight="600" fill="#2c2c2c">rec.us Reports &#8212; System Architecture</text>
+
+            <!-- Row 1: Entry Points -->
+            <text x="28" y="62" font-size="9" fill="#888" font-weight="600" letter-spacing="1">ENTRY POINTS</text>
+            <!-- Rec Admin iframe -->
+            <rect x="28" y="72" width="170" height="62" rx="8" fill="#fff" stroke="#e4e4e0" stroke-width="1.5"/>
+            <text x="113" y="92" text-anchor="middle" font-size="19">&#127760;</text>
+            <text x="113" y="110" text-anchor="middle" font-size="10.5" font-weight="600" fill="#2c2c2c">rec.us Admin Portal</text>
+            <text x="113" y="122" text-anchor="middle" font-size="8.5" fill="#888">Metabase iframe embed</text>
+            <!-- Direct link -->
+            <rect x="218" y="72" width="170" height="62" rx="8" fill="#fff" stroke="#e4e4e0" stroke-width="1.5"/>
+            <text x="303" y="92" text-anchor="middle" font-size="19">&#128279;</text>
+            <text x="303" y="110" text-anchor="middle" font-size="10.5" font-weight="600" fill="#2c2c2c">Direct Token URL</text>
+            <text x="303" y="122" text-anchor="middle" font-size="8.5" fill="#888">Bookmarkable staff links</text>
+            <!-- Public calendar -->
+            <rect x="408" y="72" width="170" height="62" rx="8" fill="#fff" stroke="#e4e4e0" stroke-width="1.5"/>
+            <text x="493" y="92" text-anchor="middle" font-size="19">&#128197;</text>
+            <text x="493" y="110" text-anchor="middle" font-size="10.5" font-weight="600" fill="#2c2c2c">Public Calendar</text>
+            <text x="493" y="122" text-anchor="middle" font-size="8.5" fill="#888">Iframe-embeddable, no token</text>
+
+            <!-- Arrows down -->
+            <line x1="113" y1="134" x2="113" y2="162" stroke="#ccc" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+            <line x1="303" y1="134" x2="303" y2="162" stroke="#ccc" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+            <line x1="493" y1="134" x2="493" y2="162" stroke="#ccc" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+
+            <!-- Row 2: Token Gate -->
+            <rect x="28" y="164" width="560" height="38" rx="6" fill="#FFF3E0" stroke="#FFB74D" stroke-width="1"/>
+            <text x="308" y="187" text-anchor="middle" font-size="10.5" font-weight="600" fill="#E65100">&#128274; Token Gate Middleware &#8212; 16-char tokens, fail-closed (generic 404 on mismatch)</text>
+
+            <!-- Arrow down -->
+            <line x1="308" y1="202" x2="308" y2="222" stroke="#ccc" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+
+            <!-- Row 3: Railway App (main box) -->
+            <rect x="28" y="224" width="770" height="130" rx="10" fill="#EDE7F6" stroke="#9575CD" stroke-width="1.5"/>
+            <text x="413" y="244" text-anchor="middle" font-size="11" font-weight="700" fill="#4527A0">&#9881;&#65039; Railway Pro &#8212; Node.js / Express</text>
+
+            <!-- Sub-boxes inside Railway -->
+            <rect x="44" y="256" width="148" height="48" rx="6" fill="#fff" stroke="#D1C4E9" stroke-width="1"/>
+            <text x="118" y="276" text-anchor="middle" font-size="9.5" font-weight="600" fill="#4527A0">React/Babel CDN</text>
+            <text x="118" y="290" text-anchor="middle" font-size="8" fill="#888">15 report HTML files</text>
+
+            <rect x="204" y="256" width="148" height="48" rx="6" fill="#fff" stroke="#D1C4E9" stroke-width="1"/>
+            <text x="278" y="276" text-anchor="middle" font-size="9.5" font-weight="600" fill="#4527A0">Metabase Proxy</text>
+            <text x="278" y="290" text-anchor="middle" font-size="8" fill="#888">Server-side, no CORS</text>
+
+            <rect x="364" y="256" width="148" height="48" rx="6" fill="#fff" stroke="#D1C4E9" stroke-width="1"/>
+            <text x="438" y="276" text-anchor="middle" font-size="9.5" font-weight="600" fill="#4527A0">AI Insights Engine</text>
+            <text x="438" y="290" text-anchor="middle" font-size="8" fill="#888">Claude API narratives</text>
+
+            <rect x="524" y="256" width="128" height="48" rx="6" fill="#fff" stroke="#D1C4E9" stroke-width="1"/>
+            <text x="588" y="276" text-anchor="middle" font-size="9.5" font-weight="600" fill="#4527A0">Puppeteer PDF</text>
+            <text x="588" y="290" text-anchor="middle" font-size="8" fill="#888">Headless Chromium</text>
+
+            <rect x="664" y="256" width="122" height="48" rx="6" fill="#fff" stroke="#D1C4E9" stroke-width="1"/>
+            <text x="725" y="276" text-anchor="middle" font-size="9.5" font-weight="600" fill="#4527A0">PII Stripper</text>
+            <text x="725" y="290" text-anchor="middle" font-size="8" fill="#888">Emails, phones, names</text>
+
+            <!-- Sub-row 2 inside Railway -->
+            <rect x="44" y="312" width="148" height="32" rx="6" fill="#fff" stroke="#D1C4E9" stroke-width="1"/>
+            <text x="118" y="332" text-anchor="middle" font-size="9" font-weight="600" fill="#4527A0">Report Wizard</text>
+
+            <rect x="204" y="312" width="148" height="32" rx="6" fill="#fff" stroke="#D1C4E9" stroke-width="1"/>
+            <text x="278" y="332" text-anchor="middle" font-size="9" font-weight="600" fill="#4527A0">Email Subscriptions</text>
+
+            <rect x="364" y="312" width="148" height="32" rx="6" fill="#fff" stroke="#D1C4E9" stroke-width="1"/>
+            <text x="438" y="332" text-anchor="middle" font-size="9" font-weight="600" fill="#4527A0">Nightly Backups</text>
+
+            <rect x="524" y="312" width="128" height="32" rx="6" fill="#fff" stroke="#D1C4E9" stroke-width="1"/>
+            <text x="588" y="332" text-anchor="middle" font-size="9" font-weight="600" fill="#4527A0">Usage Analytics</text>
+
+            <rect x="664" y="312" width="122" height="32" rx="6" fill="#fff" stroke="#D1C4E9" stroke-width="1"/>
+            <text x="725" y="332" text-anchor="middle" font-size="9" font-weight="600" fill="#4527A0">Health Checks</text>
+
+            <!-- Arrows from Railway down to data layer -->
+            <line x1="278" y1="354" x2="278" y2="382" stroke="#ccc" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+            <line x1="438" y1="354" x2="438" y2="382" stroke="#ccc" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+            <line x1="630" y1="354" x2="630" y2="382" stroke="#ccc" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+
+            <!-- Row 4: Data Layer -->
+            <text x="28" y="396" font-size="9" fill="#888" font-weight="600" letter-spacing="1">DATA LAYER</text>
+            <rect x="28" y="404" width="235" height="56" rx="8" fill="#E3F2FD" stroke="#64B5F6" stroke-width="1.5"/>
+            <text x="145" y="426" text-anchor="middle" font-size="16">&#128202;</text>
+            <text x="145" y="442" text-anchor="middle" font-size="10.5" font-weight="600" fill="#1565C0">Metabase (Public Card API)</text>
+            <text x="145" y="454" text-anchor="middle" font-size="8" fill="#888">12 shared + per-org parameterized queries</text>
+
+            <rect x="283" y="404" width="235" height="56" rx="8" fill="#E8F5E9" stroke="#81C784" stroke-width="1.5"/>
+            <text x="400" y="426" text-anchor="middle" font-size="16">&#128024;</text>
+            <text x="400" y="442" text-anchor="middle" font-size="10.5" font-weight="600" fill="#2E7D32">rec.us PostgreSQL</text>
+            <text x="400" y="454" text-anchor="middle" font-size="8" fill="#888">Platform database (all orgs)</text>
+
+            <rect x="538" y="404" width="260" height="56" rx="8" fill="#FFF8E1" stroke="#FFD54F" stroke-width="1.5"/>
+            <text x="668" y="426" text-anchor="middle" font-size="16">&#9729;&#65039;</text>
+            <text x="668" y="442" text-anchor="middle" font-size="10.5" font-weight="600" fill="#F57F17">External Services</text>
+            <text x="668" y="454" text-anchor="middle" font-size="8" fill="#888">Anthropic API &#183; GitHub Gists &#183; Resend &#183; Railway API</text>
+
+            <!-- Connecting line Metabase to Postgres -->
+            <line x1="263" y1="432" x2="283" y2="432" stroke="#B0BEC5" stroke-width="1.2" marker-end="url(#arrowhead)"/>
+
+            <!-- Row 5: Legend -->
+            <text x="28" y="492" font-size="8" fill="#aaa">&#9679; Server-side proxy eliminates CORS &#8212; staff browsers never hit Metabase directly</text>
+            <text x="28" y="506" font-size="8" fill="#aaa">&#9679; Shared UUID architecture: add a new org with just slug + orgId + logo + token &#8212; 12 report types light up automatically</text>
+
+            <!-- Arrowhead marker -->
+            <defs>
+              <marker id="arrowhead" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+                <polygon points="0 0, 8 3, 0 6" fill="#ccc"/>
+              </marker>
+            </defs>
+          </svg>
         </div>
-        <p style="margin-top:8px">The server proxies all Metabase requests server-side &#8212; this avoids CORS issues since Metabase doesn&#39;t send browser-friendly headers. Staff never interact with Metabase directly.</p>
+
+        <p>The server proxies all Metabase requests server-side &#8212; staff browsers never interact with Metabase directly. This eliminates CORS issues (Metabase OSS doesn&#x27;t send browser-friendly headers) and keeps database query UUIDs hidden from the client.</p>
 
         <h4>Access &amp; Security</h4>
-        <p>Two layers of access control protect this deployment:</p>
+        <p>Multiple layers of access control protect this deployment:</p>
         <ul>
-          <li><strong>Admin dashboard</strong> (this page, at <code>/</code>) is gated by HTTP Basic auth using the <code>DASHBOARD_PASSWORD</code> env var. Only authorized staff see the full org list, subscriber counts, and access tokens.</li>
-          <li><strong>Per-org reports</strong> are protected by 16-character access tokens. Every <code>/:org/*</code> URL requires <code>?token=...</code> matching the org&#39;s configured token; a mismatch returns a generic 404 (no info leak about which orgs exist). Tokens are embedded in the URLs each org receives, so staff can bookmark and share without re-authenticating.</li>
+          <li><strong>Admin dashboard</strong> (this page, at <code>/</code>) is gated by HTTP Basic auth using the <code>DASHBOARD_PASSWORD</code> env var. Only authorized rec.us staff see the full org list, subscriber counts, and access tokens.</li>
+          <li><strong>Per-org reports</strong> are protected by 16-character access tokens. Every <code>/:org/*</code> URL requires <code>?token=...</code> matching the org&#x27;s configured token; a mismatch returns a generic 404 (no info leak about which orgs exist). Tokens are embedded in the URLs each org receives, so staff can bookmark and share without re-authenticating.</li>
+          <li><strong>PII protection</strong> &#8212; API responses strip email addresses, phone numbers, and full names before reaching the browser. CSV exports are disabled; data requests route through a Partner Support modal.</li>
         </ul>
         <p>Tokens are visible in the &#129312; <strong>Access Token</strong> row on each org card &#8212; click <strong>Copy landing URL</strong> to grab a tokenized link ready to share. The <code>/api/*</code> admin endpoints, the cross-org <code>/metrics</code> view, and the public <code>/hotdog</code> page are whitelisted from the token gate.</p>
 
+        <h4 style="margin-top:20px">&#128373;&#65039; Security by Obfuscation</h4>
+        <p>In production, the rec.us Reports portal is <strong>not accessed directly</strong> by partner staff. Instead, each organization&#x27;s reporting dashboard is embedded as an iframe inside their existing Metabase reporting tab within the rec.us admin panel:</p>
+        <div style="background:#f5f4f1;border:1px solid #e4e4e0;border-radius:8px;padding:14px 18px;margin:10px 0 14px;font-size:12px;line-height:1.7">
+          <strong>rec.us Admin</strong> &#8594; Reporting Tab &#8594; Metabase Dashboard &#8594; <code>&lt;iframe&gt;</code> &#8594; <strong>rec.us Reports</strong><br>
+          <span style="color:#888">The direct Railway URL is never exposed to end users.</span>
+        </div>
+        <p>This layered embedding means partner staff interact with the reports through the rec.us admin interface they already trust &#8212; they never see the underlying Railway deployment URL, Metabase query UUIDs, or API endpoints. Since the rec.us admin portal already enforces its own authentication and role-based access controls, embedding the reports within it adds an additional security boundary. A partner staff member must be:</p>
+        <ul>
+          <li>Authenticated in the <strong>rec.us admin portal</strong> (session-based auth with role permissions)</li>
+          <li>Authorized to view the <strong>Reporting tab</strong> in their organization&#x27;s admin panel</li>
+          <li>Holding a valid <strong>16-character access token</strong> embedded in the iframe source URL</li>
+        </ul>
+        <p style="margin-top:6px">This means that even if someone discovered the direct Railway URL, they would still need the org-specific token to access any data &#8212; and the token itself is never visible to end users in the embedded flow.</p>
+
         <h4>Reports</h4>
-        <p>Each report type is a self-contained HTML file served from <code>public/</code>. Reports are React apps loaded via CDN &#8212; no build step required. Data is fetched from <code>/:org/:report/api/data?token=...</code>, which proxies to either a shared Metabase question (with <code>org_id</code> injected automatically) or a per-org UUID as fallback.</p>
+        <p>Each report type is a self-contained HTML file served from <code>public/</code>. Reports are React apps loaded via CDN (no build step). Data is fetched from <code>/:org/:report/api/data?token=...</code>, which proxies to either a shared Metabase question (with <code>org_id</code> injected automatically) or a per-org UUID as fallback.</p>
         <ul>
           <li><strong>Facility Rental</strong> &#8212; reservations grouped by date and location, with table and calendar views, heatmap summary, location color coding, and resident detection.</li>
           <li><strong>GL Code Rollup</strong> &#8212; payment method breakdown by GL code, with bar/pie chart views, refund detail toggle, and account credit column.</li>
           <li><strong>Class Roster</strong> &#8212; enrolled and cancelled participants by program section, with form responses, session dates, status filters, and Excel/PDF export.</li>
-          <li><strong>Programs</strong> &#8212; section-grain enrollment, capacity fill rates, charged/received/outstanding financials, and plan-aware pending calculations.</li>
+          <li><strong>Programs</strong> &#8212; two-tab layout (Revenue + Participants). Section-grain enrollment, capacity fill rates, charged/received/outstanding financials, plan-aware pending calculations, and per-program demographic accordion with gender breakdown.</li>
           <li><strong>Product Sales (POS)</strong> &#8212; daily revenue, refunds, and net by product, with desk-location breakdown and weekly trend charts.</li>
           <li><strong>Memberships</strong> &#8212; active and lapsed memberships/passes with auto-renew tracking, pricing, and usage counts.</li>
-          <li><strong>Fast Track</strong> &#8212; pre-registration pipeline: signups, conversions, pending, dropped, with season/program hierarchy and demand/fill metrics.</li>
-          <li><strong>Court Utilization</strong> &#8212; court-level booking hours and usage patterns by facility and date range.</li>
-          <li><strong>Calendar</strong> &#8212; public-facing week/month/day/list schedule with activity color coding, session click tracking, and iframe-embeddable URLs (no token required).</li>
-          <li><strong>Community Intelligence</strong> &#8212; 6-tab analytics hub: Demographics, Revenue, Strategy, Guests, Fast Track crossover, Products. Includes AI-powered insights, data completeness rings, and household-level revenue analysis.</li>
+          <li><strong>Fast Track</strong> &#8212; pre-registration pipeline: signups, conversions, pending, dropped, with season/program hierarchy and demand/fill metrics. AI-powered insights.</li>
+          <li><strong>Court Utilization</strong> &#8212; court-level booking hours and usage patterns by facility and date range. AI-powered insights.</li>
+          <li><strong>Calendar</strong> &#8212; public-facing week/month/day/list schedule with activity color coding, session click tracking, and iframe-embeddable URLs (no token required, WCAG accessible).</li>
+          <li><strong>Community Intelligence</strong> &#8212; 6-tab analytics hub: Demographics, Revenue, Strategy, Guests, Fast Track crossover, Products. AI-powered insights, data completeness rings, and household-level revenue analysis.</li>
+          <li><strong>Director&#x27;s Report</strong> &#8212; one-click monthly executive summary. Parallel data fetches (GL, programs, users, Fast Track), AI executive insights, top/bottom programs, revenue mix charts, community profile, and data completeness scoring.</li>
+          <li><strong>Instructor Payout</strong> &#8212; per-participant revenue splits by instructor, with configurable split ratios (65/35), base-price-split mode (calculates on resident rate so non-resident surcharges stay with org), and cancelled/refunded participant exclusion.</li>
           <li><strong>Historic Buildings</strong> &#8212; filtered facility view for historic venue locations (per-org only).</li>
         </ul>
-        <p style="margin-top:8px"><strong>Shared Metabase queries:</strong> 9 of 12 report types now use a single parameterized Metabase question with <code>org_id</code> passed at query time &#8212; no per-org SQL duplication. Only GL and Historic remain on per-org UUIDs.</p>
+
+        <h4>AI-Powered Features</h4>
+        <ul>
+          <li><strong>Report Wizard</strong> &#8212; plain-English natural language queries generate live dashboard widgets. Schema discovery with caching, structured system prompts, PII stripping, thumbs up/down feedback logging, and an admin activity panel for tracking wizard usage across orgs.</li>
+          <li><strong>AI Insights</strong> &#8212; Programs, Fast Track, Court Utilization, Community Intel, and Director&#x27;s Report include Claude-generated narrative analysis tailored to each org&#x27;s data. Insights are generated via the Anthropic API with report-specific system prompts.</li>
+        </ul>
+
+        <p style="margin-top:8px"><strong>Shared Metabase queries:</strong> 12 of 15 report types use a single parameterized Metabase question with <code>org_id</code> passed at query time &#8212; no per-org SQL duplication. Only Historic remains as a per-org UUID. Adding a new org lights up all 12 shared reports automatically.</p>
 
         <h4>Inline Metrics</h4>
-        <p>Each org card on this dashboard has a &#9656; <strong>&#128200; Metrics</strong> toggle that expands inline to show that org&#39;s usage over the last 30 days &#8212; report opens by type, daily activity sparkline, and top viewers. Data comes from a lightweight in-process counter (no Metabase round-trip). The <strong>View full metrics &rarr;</strong> link opens a deeper dashboard at <code>/:org/metrics</code>.</p>
+        <p>Each org card on this dashboard has a &#9656; <strong>&#128200; Metrics</strong> toggle that expands inline to show that org&#x27;s usage over the last 30 days &#8212; report opens by type, daily activity sparkline, and top viewers. Data comes from a lightweight in-process counter (no Metabase round-trip). The <strong>View full metrics &rarr;</strong> link opens a deeper dashboard at <code>/:org/metrics</code>.</p>
 
         <h4>PDF Export</h4>
-        <p>PDF generation uses Puppeteer with system Chromium inside the Railway Docker container. The server launches a headless browser, navigates to the report with <code>?_print=1</code> (hides the toolbar) and the org&#39;s access token, waits for the <code>#report-ready</code> DOM marker, then renders a Letter-landscape PDF. The PDF always reflects exactly what the browser renders.</p>
+        <p>PDF generation uses Puppeteer with system Chromium inside the Railway Docker container. The server launches a headless browser, navigates to the report with <code>?_print=1</code> (hides the toolbar) and the org&#x27;s access token, waits for the <code>#report-ready</code> DOM marker, then renders a Letter-landscape PDF. The PDF always reflects exactly what the browser renders.</p>
 
         <h4>Email Subscriptions</h4>
         <p>Gated by the <strong>Email Subscriptions</strong> feature flag in the App Control section above &#8212; when OFF (default), all email cron jobs skip and the subscription API returns 503. When ON, subscriber data is stored in <code>data/subscriptions.json</code> on the Railway volume. Three cron jobs run &#8212; daily at 7am, weekly on Monday at 7am, and monthly on the 1st at 7am. Each job filters to matching cadences and sends tokenized report links via the Resend API.</p>
 
+        <h4>Daily Backups</h4>
+        <p>A nightly cron job (2am) and a 45-second startup job back up all server configuration and subscriber data to private GitHub Gists via the GitHub API. A manual <strong>Backup Now</strong> button is available in the admin header. The backup status dot (green/yellow/red) in the header reflects backup freshness.</p>
+
         <h4>Adding a New Org</h4>
-        <p>Click <strong>&#10133; Add Org</strong> above to launch the onboarding wizard. New orgs only need a token and <code>orgId</code> &#8212; shared Metabase queries handle the rest automatically. Per-org Metabase UUIDs are only needed for GL and Historic (not yet migrated to shared queries). No new HTML files needed &#8212; all report templates are shared across orgs.</p>
+        <p>Click <strong>&#10133; Add Org</strong> above to launch the onboarding wizard. New orgs only need a slug, <code>orgId</code>, logo URL, and access token &#8212; all 12 shared Metabase queries light up automatically. Per-org Metabase UUIDs are only needed for Historic (the sole remaining per-org report). No new HTML files needed &#8212; all report templates are shared across orgs.</p>
 
         <h4>Environment Variables</h4>
         <ul>
@@ -4853,12 +4989,14 @@ app.get("/", (req, res) => {
           <li><code>DASHBOARD_PASSWORD</code> &#8212; Basic-auth password for the admin dashboard at <code>/</code></li>
           <li><code>RESEND_API_KEY</code> &#8212; API key for email delivery via Resend</li>
           <li><code>FROM_EMAIL</code> / <code>FROM_NAME</code> &#8212; sender identity for outbound emails</li>
-          <li><code>DATA_DIR</code> &#8212; path to persistent storage for subscriptions.json</li>
+          <li><code>DATA_DIR</code> &#8212; path to persistent storage (subscriptions, health checks, feature flags)</li>
+          <li><code>GITHUB_PAT</code> &#8212; GitHub Personal Access Token for nightly Gist backups</li>
+          <li><code>ANTHROPIC_API_KEY</code> &#8212; API key for Claude AI insights and Report Wizard</li>
           <li><code>PORT</code> &#8212; server port (Railway sets this automatically)</li>
         </ul>
 
         <h4>Deployment</h4>
-        <p>Auto-deploys from the <code>main</code> branch of <code>danj707/rental-report</code> on GitHub. Every push triggers a Railway redeploy &#8212; typically live in 60&#8211;90 seconds. Uses <code>node:20-slim</code> with system Chromium for Puppeteer.</p>
+        <p>Auto-deploys from the <code>main</code> branch of <code>danj707/rental-report</code> on GitHub. Every push triggers a Railway Pro redeploy &#8212; typically live in 60&#8211;90 seconds. Uses <code>node:20-slim</code> with system Chromium for Puppeteer. Railway persistent volume at <code>/data</code> stores subscriptions, feature flags, and health check results across deploys.</p>
       </div>
     </div>
 
@@ -5626,6 +5764,12 @@ app.get("/", (req, res) => {
     // Newest first. Add a new entry at the TOP for every change we ship.
     // History below back-filled from the GitHub commit log.
     const UPDATES = [
+  { date: '2026-06-22', title: '\u{1F4D0} How This Works Overhaul + Architecture Diagram', items: [
+    '\u{1F3D7}\uFE0F ARCHITECTURE DIAGRAM \u2014 New inline SVG architecture diagram in the How This Works section showing the full system: entry points (rec.us admin iframe, direct token URLs, public calendar), token gate middleware, Railway app internals (React/Babel, Metabase proxy, AI engine, Puppeteer, PII stripper, wizard, email, backups, analytics, health checks), and data layer (Metabase, PostgreSQL, external services).',
+    '\u{1F50F} SECURITY BY OBFUSCATION \u2014 New section documenting how the reports portal is embedded as an iframe inside the rec.us admin Metabase dashboard. Partner staff never see the direct Railway URL \u2014 three-layer auth: rec.us admin session + Reporting tab access + 16-char token.',
+    '\u{1F4CB} REPORTS LIST UPDATED \u2014 Added Director\u2019s Report, Instructor Payout, and AI-Powered Features section (Report Wizard + AI Insights). Updated Programs description (two-tab layout, demographics). Updated shared query count to 12 of 15.',
+    '\u{1F527} ENV VARS + BACKUPS \u2014 Added GITHUB_PAT, ANTHROPIC_API_KEY to env var docs. New Daily Backups section. Updated Adding a New Org to reflect only Historic as remaining per-org report. Updated Deployment section for Railway Pro + persistent volume.',
+  ]},
   { date: '2026-06-22', title: 'Report Wizard toggle fix', items: ['Fixed "Unknown report type" error when toggling Report Wizard visibility from admin dashboard'] },
       { date: '2026-06-21', title: '🔧 Platform Fixes & Enhancements', items: [
         '📊 WIZARD TABLE FIX — Grouped tables now correctly show count columns when the field name matches the groupBy field. Uses indexed column keys to avoid collision between group label and aggregate value.',
