@@ -3031,6 +3031,88 @@ app.post("/:org/calendar/api/recommend", express.json(), async (req, res) => {
   }
 });
 
+// ── Rental Calendar (public facility availability) ─────────────────
+// Uses rec.us public API to show real-time bookable slots.
+// No auth required — availability data contains zero PII.
+const REC_API_BASE = 'https://api.rec.us';
+
+app.get("/:org/rentalcalendar", (req, res) => {
+  const slug = req.params.org;
+  const org = ORGS[slug];
+  if (!org) return res.status(404).send("Unknown org");
+  if (!org.orgId) return res.status(404).send("Rental calendar requires orgId configuration.");
+  logEvent(slug, "rentalcalendar", "view", req);
+  const slugTitle = slug.charAt(0).toUpperCase() + slug.slice(1);
+  const meta = {
+    slug,
+    orgId: org.orgId,
+    displayName: org.displayName || slugTitle + ' Parks & Recreation',
+    logoUrl: org.logoUrl || '',
+    locationId: req.query.locationId || '',
+    locationName: req.query.locationName || '',
+  };
+  const fs = require("fs");
+  const html = fs.readFileSync(path.join(__dirname, "public", "rentalcalendar.html"), "utf-8");
+  const inject = '<script>window.__RC__=' + JSON.stringify(meta) + ';</script>';
+  res.type("html").send(html.replace("</head>", inject + "</head>"));
+});
+
+// Proxy: list sites for an org, optionally filtered by locationId
+app.get("/:org/rentalcalendar/api/sites", async (req, res) => {
+  const slug = req.params.org;
+  const org = ORGS[slug];
+  if (!org || !org.orgId) return res.status(404).json({ error: "Unknown org" });
+  const locationId = req.query.locationId || '';
+  try {
+    // Try rec.us public API endpoint for listing sites
+    const url = REC_API_BASE + '/public/organizations/' + org.orgId + '/sites?pageSize=100';
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error('rec.us API returned ' + resp.status);
+    const data = await resp.json();
+    let sites = data.results || data.data || [];
+    // Filter by location if specified
+    if (locationId) {
+      sites = sites.filter(s => s.locationId === locationId);
+    }
+    // Strip any PII fields (shouldn't be any, but be safe)
+    const clean = sites.map(s => ({
+      id: s.id,
+      name: s.name || s.courtNumber,
+      courtNumber: s.courtNumber,
+      type: s.type,
+      capacity: s.capacity,
+      locationId: s.locationId,
+      locationName: s.locationName,
+      bookingUrl: s.bookingUrl,
+      bookingFlow: s.bookingFlow,
+      bookingCtaLabel: s.bookingCtaLabel,
+      isInstantBookable: s.isInstantBookable,
+    }));
+    res.json({ sites: clean });
+  } catch (e) {
+    console.error('[rentalcalendar] sites fetch error:', e.message);
+    res.status(502).json({ error: 'Failed to fetch sites: ' + e.message });
+  }
+});
+
+// Proxy: get availability for a specific site
+app.get("/:org/rentalcalendar/api/availability/:siteId", async (req, res) => {
+  const slug = req.params.org;
+  const org = ORGS[slug];
+  if (!org) return res.status(404).json({ error: "Unknown org" });
+  try {
+    const url = REC_API_BASE + '/public/sites/' + req.params.siteId + '/availability';
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error('rec.us API returned ' + resp.status);
+    const data = await resp.json();
+    res.json(data);
+  } catch (e) {
+    console.error('[rentalcalendar] availability fetch error:', e.message);
+    res.status(502).json({ error: 'Failed to fetch availability: ' + e.message });
+  }
+});
+
+
 app.get("/:org/fasttrack", (req, res) => {
   const slug = req.params.org;
   const org  = ORGS[slug];
@@ -5758,6 +5840,14 @@ app.get("/", (req, res) => {
     // Newest first. Add a new entry at the TOP for every change we ship.
     // History below back-filled from the GitHub commit log.
     const UPDATES = [
+      { date: '2026-06-22', title: 'Public Facility Rental Calendar (Early Access)', items: [
+        'New public-facing facility availability calendar at /:org/rentalcalendar',
+        'Real-time availability via rec.us API — shows bookable slots, no PII exposed',
+        'Auto-groups sites by type (e.g. 12 picnic tables collapse into one expandable row)',
+        'Emoji icons per site type, per-site Book/Request buttons linking to rec.us booking page',
+        'Day view with horizontal timeline bars, Week overview with availability badges',
+        'Operating hours derived from availability data — no manual config needed',
+      ] },
   { date: '2026-06-22', title: 'GL Desk Location support for shared query', items: [
     'Shared GL query now includes Desk Location dimension \u2014 all shared-GL orgs get the \u{1F5C4}\uFE0F Desk filter dropdown automatically when their data has 2+ desk locations.',
     'GL proxy logic updated: per-org GL UUID takes priority over shared (Norman keeps its custom gl_map query with Locations column). All other report types still prefer shared.',
@@ -6425,6 +6515,7 @@ app.listen(PORT, () => {
   // Runs after listen() so startup isn't blocked by GitHub latency.
   migrateDynamicOrgs();
 });
+
 
 
 
