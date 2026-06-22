@@ -128,7 +128,7 @@ var GROUP_THRESHOLD = 3;
 
 /* ── Derive reserved blocks from availability response ── */
 function deriveBlocks(availSlots, dateStr, globalStart, globalEnd, siteOpStart, siteOpEnd) {
-  // availSlots: { "08:00:00": {...}, "08:30:00": {...}, ... }
+  // availSlots: { "08:00:00": {availableDurationsMinutes:[60,120]}, ... }
   // globalStart/End: the full timeline range (max across all sites)
   // siteOpStart/End: this site's actual operating hours
   // Returns array of {type:'avail'|'reserved'|'past'|'closed', startMin, endMin}
@@ -150,11 +150,20 @@ function deriveBlocks(availSlots, dateStr, globalStart, globalEnd, siteOpStart, 
     return blocks;
   }
 
-  var availSet = {};
+  // Build a "covered" set: each 30-min slot is covered if ANY available
+  // start time's duration window includes it.
+  // e.g. 4:00pm with [120min] duration covers 4:00, 4:30, 5:00, 5:30
+  var coveredSet = {};
+  var availStartSet = {};
   Object.keys(availSlots).forEach(function(t) {
     var parts = t.split(':');
-    var m = parseInt(parts[0]) * 60 + parseInt(parts[1]);
-    availSet[m] = true;
+    var startMin = parseInt(parts[0]) * 60 + parseInt(parts[1]);
+    availStartSet[startMin] = true;
+    var durs = availSlots[t].availableDurationsMinutes || [60];
+    var maxDur = Math.max.apply(null, durs);
+    for (var c = startMin; c < startMin + maxDur; c += 30) {
+      coveredSet[c] = true;
+    }
   });
 
   var blocks = [];
@@ -164,7 +173,7 @@ function deriveBlocks(availSlots, dateStr, globalStart, globalEnd, siteOpStart, 
     var type;
     if (m < siteOpStart || m >= siteOpEnd) {
       type = 'closed';
-    } else if (availSet[m]) {
+    } else if (coveredSet[m]) {
       type = 'avail';
     } else if (isToday && m < nowMin) {
       type = 'past';
