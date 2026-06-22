@@ -3371,7 +3371,7 @@ app.post("/api/admin/toggle-report", express.json(), (req, res) => {
   if (dashboardPasswordBlocked(req, res)) return;
   const { org: slug, report } = req.body || {};
   if (!ORGS[slug]) return res.status(404).json({ error: "Unknown org" });
-  if (!REPORT_TYPES.includes(report) && report !== "chat") return res.status(400).json({ error: "Unknown report type" });
+  if (!REPORT_TYPES.includes(report) && report !== "chat" && report !== "report-wizard") return res.status(400).json({ error: "Unknown report type" });
   const hidden = getHiddenReports(slug);
   const idx = hidden.indexOf(report);
   if (idx >= 0) hidden.splice(idx, 1); else hidden.push(report);
@@ -5626,6 +5626,7 @@ app.get("/", (req, res) => {
     // Newest first. Add a new entry at the TOP for every change we ship.
     // History below back-filled from the GitHub commit log.
     const UPDATES = [
+  { date: '2026-06-22', title: 'Report Wizard toggle fix', items: ['Fixed "Unknown report type" error when toggling Report Wizard visibility from admin dashboard'] },
       { date: '2026-06-21', title: '🔧 Platform Fixes & Enhancements', items: [
         '📊 WIZARD TABLE FIX — Grouped tables now correctly show count columns when the field name matches the groupBy field. Uses indexed column keys to avoid collision between group label and aggregate value.',
         '🎭 ACTIVITY + CATEGORY — Programs shared SQL now includes activity_name and category_name via class_activity join table. Wizard can filter by activity type (e.g. Camp, Aquatics, Fitness) instead of guessing from program names.',
@@ -6281,6 +6282,7 @@ app.listen(PORT, () => {
   // Runs after listen() so startup isn't blocked by GitHub latency.
   migrateDynamicOrgs();
 });
+
 
 
 
