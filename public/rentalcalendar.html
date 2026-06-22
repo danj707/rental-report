@@ -9,7 +9,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.26.9/babel.min.js"></script>
 <style>
 :root{--bg:#f5f6f8;--card:#fff;--ink:#1f2430;--muted:#5b6472;--line:#e5e7eb;
-  --accent:#2563eb;--reserved:#dfe1e6;--reserved-dark:#9ca0a8;
+  --accent:#2563eb;--reserved:#fed7aa;--reserved-dark:#c2410c;--closed:#e5e7eb;--closed-dark:#9ca3af;
   --shadow:0 1px 3px rgba(16,24,40,.08),0 1px 2px rgba(16,24,40,.06)}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
@@ -52,10 +52,13 @@ button.primary:hover{filter:brightness(.95)}
 .bar-track{position:relative;width:100%;height:24px;background:#f8f9fa;border-radius:5px;overflow:hidden;border:1px solid #eef0f2}
 .bar-block{position:absolute;top:2px;bottom:2px;border-radius:3px}
 .bar-block.avail{background:#d1fae5;border:1px solid #a7f3d0}
-.bar-block.reserved{background:var(--reserved);border:1px solid #cdd0d6}
+.bar-block.reserved{background:var(--reserved);border:1px solid #fdba74}
+.bar-block.closed{background:var(--closed);border:1px solid #d1d5db}
 .bar-block.past{background:#f3f4f6;border:1px solid #e5e7eb}
 .bar-block .blabel{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
-  font-size:9px;font-weight:600;color:var(--reserved-dark);text-transform:uppercase;letter-spacing:.02em;overflow:hidden;white-space:nowrap}
+  font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.02em;overflow:hidden;white-space:nowrap}
+.bar-block.reserved .blabel{color:var(--reserved-dark)}
+.bar-block.closed .blabel{color:var(--closed-dark)}
 .bar-now{position:absolute;top:-2px;bottom:-2px;width:2px;background:#ef4444;border-radius:1px;z-index:5}
 .bar-now::before{content:'';position:absolute;top:-3px;left:-3px;width:8px;height:8px;border-radius:50%;background:#ef4444}
 .group-hdr{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--line);
@@ -65,6 +68,7 @@ button.primary:hover{filter:brightness(.95)}
 .group-hdr .gname{font-size:13px;font-weight:700;color:var(--ink);flex:1}
 .group-hdr .gcount{font-size:11px;font-weight:600;padding:2px 10px;border-radius:99px}
 .group-hdr .gcount.has-avail{background:#dcfce7;color:#166534}
+.group-hdr .gcount.some-avail{background:#fef9c3;color:#854d0e}
 .group-hdr .gcount.all-booked{background:#fee2e2;color:#991b1b}
 .group-hdr .garrow{font-size:12px;color:var(--muted);transition:transform .15s}
 .group-hdr .garrow.open{transform:rotate(90deg)}
@@ -121,41 +125,44 @@ function minToLabel(min){var h=Math.floor(min/60),m=min%60;var ap=h>=12?'pm':'am
 var GROUP_THRESHOLD = 3;
 
 /* ── Derive reserved blocks from availability response ── */
-function deriveBlocks(availSlots, dateStr, opStart, opEnd) {
+function deriveBlocks(availSlots, dateStr, globalStart, globalEnd, siteOpStart, siteOpEnd) {
   // availSlots: { "08:00:00": {...}, "08:30:00": {...}, ... }
-  // Returns array of {type:'avail'|'reserved'|'past', startMin, endMin}
+  // globalStart/End: the full timeline range (max across all sites)
+  // siteOpStart/End: this site's actual operating hours
+  // Returns array of {type:'avail'|'reserved'|'past'|'closed', startMin, endMin}
   var now = new Date();
   var nowMin = now.getHours() * 60 + now.getMinutes();
   var isToday = dateStr === fmtISO(now);
 
-  // If no availability data at all, show entire range as available
-  // (we don't have info — don't falsely mark as reserved)
+  // If no availability data at all, show site hours as available, outside as closed
   if (!availSlots || Object.keys(availSlots).length === 0) {
     var blocks = [];
-    if (isToday && nowMin > opStart) {
-      blocks.push({type: 'past', s: opStart, e: Math.min(nowMin, opEnd)});
-      if (nowMin < opEnd) blocks.push({type: 'avail', s: nowMin, e: opEnd});
+    if (siteOpStart > globalStart) blocks.push({type: 'closed', s: globalStart, e: siteOpStart});
+    if (isToday && nowMin > siteOpStart) {
+      blocks.push({type: 'past', s: siteOpStart, e: Math.min(nowMin, siteOpEnd)});
+      if (nowMin < siteOpEnd) blocks.push({type: 'avail', s: Math.max(nowMin, siteOpStart), e: siteOpEnd});
     } else {
-      blocks.push({type: 'avail', s: opStart, e: opEnd});
+      blocks.push({type: 'avail', s: siteOpStart, e: siteOpEnd});
     }
+    if (siteOpEnd < globalEnd) blocks.push({type: 'closed', s: siteOpEnd, e: globalEnd});
     return blocks;
   }
 
   var availSet = {};
-  if (availSlots) {
-    Object.keys(availSlots).forEach(function(t) {
-      var parts = t.split(':');
-      var m = parseInt(parts[0]) * 60 + parseInt(parts[1]);
-      availSet[m] = true;
-    });
-  }
+  Object.keys(availSlots).forEach(function(t) {
+    var parts = t.split(':');
+    var m = parseInt(parts[0]) * 60 + parseInt(parts[1]);
+    availSet[m] = true;
+  });
 
   var blocks = [];
   var curType = null;
   var curStart = null;
-  for (var m = opStart; m < opEnd; m += 30) {
+  for (var m = globalStart; m < globalEnd; m += 30) {
     var type;
-    if (availSet[m]) {
+    if (m < siteOpStart || m >= siteOpEnd) {
+      type = 'closed';
+    } else if (availSet[m]) {
       type = 'avail';
     } else if (isToday && m < nowMin) {
       type = 'past';
@@ -168,7 +175,7 @@ function deriveBlocks(availSlots, dateStr, opStart, opEnd) {
       curStart = m;
     }
   }
-  if (curType !== null) blocks.push({type: curType, s: curStart, e: opEnd});
+  if (curType !== null) blocks.push({type: curType, s: curStart, e: globalEnd});
   return blocks;
 }
 
@@ -181,13 +188,38 @@ function deriveOpHours(availData) {
       var parts = t.split(':');
       var m = parseInt(parts[0]) * 60 + parseInt(parts[1]);
       if (m < earliest) earliest = m;
-      // End = start of last slot + max duration
       var durs = slots[t].availableDurationsMinutes || [60];
       var end = m + Math.max.apply(null, durs);
       if (end > latest) latest = end;
     });
   });
-  if (earliest >= latest) return {start: 8*60, end: 22*60}; // fallback
+  if (earliest >= latest) return {start: 8*60, end: 22*60};
+  return {start: earliest, end: Math.min(latest, 24*60)};
+}
+
+/* ── Derive per-site operating hours from its own availability data ── */
+function deriveSiteOpHours(siteAvailData) {
+  // Look at the fullest future day to determine this site's schedule
+  var earliest = 24*60, latest = 0, maxSlots = 0;
+  Object.keys(siteAvailData || {}).forEach(function(dateStr) {
+    var slots = siteAvailData[dateStr];
+    var keys = Object.keys(slots);
+    if (keys.length > maxSlots) {
+      maxSlots = keys.length;
+      var dayEarliest = 24*60, dayLatest = 0;
+      keys.forEach(function(t) {
+        var parts = t.split(':');
+        var m = parseInt(parts[0]) * 60 + parseInt(parts[1]);
+        if (m < dayEarliest) dayEarliest = m;
+        var durs = slots[t].availableDurationsMinutes || [60];
+        var end = m + Math.max.apply(null, durs);
+        if (end > dayLatest) dayLatest = end;
+      });
+      earliest = dayEarliest;
+      latest = dayLatest;
+    }
+  });
+  if (earliest >= latest) return {start: 8*60, end: 22*60};
   return {start: earliest, end: Math.min(latest, 24*60)};
 }
 
@@ -209,8 +241,8 @@ function TimeRuler({opStart, opEnd}) {
   );
 }
 
-function TimelineBar({avail, dateStr, opStart, opEnd}) {
-  var blocks = deriveBlocks(avail, dateStr, opStart, opEnd);
+function TimelineBar({avail, dateStr, opStart, opEnd, siteOpStart, siteOpEnd}) {
+  var blocks = deriveBlocks(avail, dateStr, opStart, opEnd, siteOpStart || opStart, siteOpEnd || opEnd);
   var total = opEnd - opStart;
   var toPct = function(m) { return ((m - opStart) / total) * 100; };
   var now = new Date();
@@ -225,6 +257,7 @@ function TimelineBar({avail, dateStr, opStart, opEnd}) {
         return (
           <div key={i} className={'bar-block ' + b.type} style={{left: l+'%', width: w+'%'}}>
             {b.type === 'reserved' && w > 8 && <div className="blabel">Reserved</div>}
+            {b.type === 'closed' && w > 6 && <div className="blabel">Closed</div>}
           </div>
         );
       })}
@@ -233,9 +266,12 @@ function TimelineBar({avail, dateStr, opStart, opEnd}) {
   );
 }
 
-function FacRow({site, avail, dateStr, opStart, opEnd}) {
+function FacRow({site, avail, dateStr, opStart, opEnd, siteAvailAll}) {
   var isInstant = site.isInstantBookable;
   var cta = isInstant ? 'Book' : 'Request';
+  var siteOp = useMemo(function() {
+    return deriveSiteOpHours(siteAvailAll);
+  }, [siteAvailAll]);
   return (
     <div className="fac-row">
       <div className="fac-label">
@@ -247,12 +283,12 @@ function FacRow({site, avail, dateStr, opStart, opEnd}) {
         <a className={'book-sm' + (isInstant ? '' : ' secondary')} href={site.bookingUrl} target="_blank" rel="noopener"
            onClick={function(e){e.stopPropagation();}}>{cta}</a>
       </div>
-      <TimelineBar avail={avail} dateStr={dateStr} opStart={opStart} opEnd={opEnd}/>
+      <TimelineBar avail={avail} dateStr={dateStr} opStart={opStart} opEnd={opEnd} siteOpStart={siteOp.start} siteOpEnd={siteOp.end}/>
     </div>
   );
 }
 
-function SiteGroup({type, sites, availMap, dateStr, opStart, opEnd}) {
+function SiteGroup({type, sites, availMap, dateStr, opStart, opEnd, allAvail}) {
   var open = React.useState(true);
   var isOpen = open[0], setOpen = open[1];
   var total = opEnd - opStart;
@@ -278,13 +314,13 @@ function SiteGroup({type, sites, availMap, dateStr, opStart, opEnd}) {
         <span className={'garrow' + (isOpen ? ' open' : '')}>{'\u25B6'}</span>
       </div>
       {isOpen && sites.map(function(s) {
-        return <FacRow key={s.id} site={s} avail={availMap[s.id]} dateStr={dateStr} opStart={opStart} opEnd={opEnd}/>;
+        return <FacRow key={s.id} site={s} avail={availMap[s.id]} dateStr={dateStr} opStart={opStart} opEnd={opEnd} siteAvailAll={allAvail[s.id] || {}}/>;
       })}
     </div>
   );
 }
 
-function DayView({sites, availMap, dateStr, opStart, opEnd}) {
+function DayView({sites, availMap, dateStr, opStart, opEnd, allAvail}) {
   var typeCounts = {};
   sites.forEach(function(s){typeCounts[s.type]=(typeCounts[s.type]||0)+1;});
   var grouped = [];
@@ -304,9 +340,9 @@ function DayView({sites, availMap, dateStr, opStart, opEnd}) {
       <div className="fac-list">
         {grouped.map(function(g, i) {
           if (g.k === 'group') {
-            return <SiteGroup key={g.type} type={g.type} sites={g.sites} availMap={availMap} dateStr={dateStr} opStart={opStart} opEnd={opEnd}/>;
+            return <SiteGroup key={g.type} type={g.type} sites={g.sites} availMap={availMap} dateStr={dateStr} opStart={opStart} opEnd={opEnd} allAvail={allAvail}/>;
           }
-          return <FacRow key={g.site.id} site={g.site} avail={availMap[g.site.id]} dateStr={dateStr} opStart={opStart} opEnd={opEnd}/>;
+          return <FacRow key={g.site.id} site={g.site} avail={availMap[g.site.id]} dateStr={dateStr} opStart={opStart} opEnd={opEnd} siteAvailAll={allAvail[g.site.id] || {}}/>;
         })}
       </div>
     </div>
@@ -465,11 +501,12 @@ function App() {
       </div>
       <div className="legend">
         <span><span className="sw" style={{background:'#d1fae5',border:'1px solid #a7f3d0'}}></span> Available</span>
-        <span><span className="sw" style={{background:'var(--reserved)',border:'1px solid #cdd0d6'}}></span> Reserved</span>
+        <span><span className="sw" style={{background:'var(--reserved)',border:'1px solid #fdba74'}}></span> Reserved</span>
+        <span><span className="sw" style={{background:'var(--closed)',border:'1px solid #d1d5db'}}></span> Closed</span>
         {view === 'day' && <span><span className="sw" style={{background:'#ef4444',width:3,borderRadius:2}}></span> Now</span>}
       </div>
       {view === 'day'
-        ? <DayView sites={sites} availMap={dayAvailMap} dateStr={dateISO} opStart={opHours.start} opEnd={opHours.end}/>
+        ? <DayView sites={sites} availMap={dayAvailMap} dateStr={dateISO} opStart={opHours.start} opEnd={opHours.end} allAvail={allAvail}/>
         : <WeekOverview sites={sites} allAvail={allAvail} weekStart={ws} onDayClick={handleDayClick}/>
       }
       <div className="footer">
