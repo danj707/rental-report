@@ -128,6 +128,19 @@ function deriveBlocks(availSlots, dateStr, opStart, opEnd) {
   var nowMin = now.getHours() * 60 + now.getMinutes();
   var isToday = dateStr === fmtISO(now);
 
+  // If no availability data at all, show entire range as available
+  // (we don't have info — don't falsely mark as reserved)
+  if (!availSlots || Object.keys(availSlots).length === 0) {
+    var blocks = [];
+    if (isToday && nowMin > opStart) {
+      blocks.push({type: 'past', s: opStart, e: Math.min(nowMin, opEnd)});
+      if (nowMin < opEnd) blocks.push({type: 'avail', s: nowMin, e: opEnd});
+    } else {
+      blocks.push({type: 'avail', s: opStart, e: opEnd});
+    }
+    return blocks;
+  }
+
   var availSet = {};
   if (availSlots) {
     Object.keys(availSlots).forEach(function(t) {
@@ -240,7 +253,7 @@ function FacRow({site, avail, dateStr, opStart, opEnd}) {
 }
 
 function SiteGroup({type, sites, availMap, dateStr, opStart, opEnd}) {
-  var open = React.useState(false);
+  var open = React.useState(true);
   var isOpen = open[0], setOpen = open[1];
   var total = opEnd - opStart;
   var availCount = sites.filter(function(s) {
