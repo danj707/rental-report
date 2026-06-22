@@ -1,0 +1,472 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Facility Availability</title>
+<script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
+<script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.26.9/babel.min.js"></script>
+<style>
+:root{--bg:#f5f6f8;--card:#fff;--ink:#1f2430;--muted:#5b6472;--line:#e5e7eb;
+  --accent:#2563eb;--reserved:#dfe1e6;--reserved-dark:#9ca0a8;
+  --shadow:0 1px 3px rgba(16,24,40,.08),0 1px 2px rgba(16,24,40,.06)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+.wrap{max-width:1080px;margin:0 auto;padding:20px}
+.toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;background:var(--card);
+  border:1px solid var(--line);border-radius:12px;padding:10px 14px;box-shadow:var(--shadow);margin-bottom:16px}
+.toolbar .grow{flex:1}
+button,select{font:inherit;border:1px solid var(--line);background:#fff;color:var(--ink);
+  border-radius:8px;padding:6px 12px;cursor:pointer;font-size:13px;transition:border-color .12s,background .12s}
+button:hover{border-color:#cbd5e1;background:#f8fafc}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+button.primary:hover{filter:brightness(.95)}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.seg button{border:none;border-radius:0;background:#fff;font-weight:500;padding:6px 14px;font-size:13px}
+.seg button.on{background:var(--accent);color:#fff;font-weight:600}
+.hdr{display:flex;align-items:center;gap:12px;margin:4px 2px 4px}
+.hdr img{height:40px;max-width:160px;object-fit:contain}
+.hdr h1{font-size:20px;margin:0}
+.hdr .sub{color:var(--muted);font-size:13px}
+.range{font-weight:600;font-size:14px;color:var(--ink)}
+.legend{display:flex;gap:16px;align-items:center;font-size:12px;color:var(--muted);margin:0 2px 14px}
+.legend .sw{width:12px;height:12px;border-radius:3px;display:inline-block;vertical-align:middle;margin-right:4px}
+.fac-list{background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);overflow:hidden}
+.time-ruler{display:flex;padding:0 0 4px;margin-left:240px;margin-right:12px;height:28px;position:relative}
+.time-ruler .tr-tick{position:absolute;font-size:10px;color:#687280;font-weight:500;transform:translateX(-50%)}
+.fac-row{display:flex;align-items:center;border-bottom:1px solid #f0f1f3;min-height:48px;transition:background .08s}
+.fac-row:last-child{border-bottom:none}
+.fac-row:hover{background:#fafbfc}
+.fac-label{width:240px;min-width:240px;padding:6px 12px;display:flex;align-items:center;gap:8px;border-right:1px solid var(--line)}
+.fac-label .ficon{font-size:16px;flex-shrink:0;line-height:1}
+.fac-label .finfo{flex:1;min-width:0}
+.fac-label .fname{font-size:12.5px;font-weight:600;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fac-label .fmeta{font-size:10px;color:var(--muted)}
+.book-sm{flex-shrink:0;padding:3px 10px;border-radius:6px;font-size:11px;font-weight:600;
+  background:var(--accent);color:#fff;border:none;cursor:pointer;text-decoration:none;transition:filter .12s;white-space:nowrap}
+.book-sm:hover{filter:brightness(.9);background:var(--accent)}
+.book-sm.secondary{background:#fff;color:var(--accent);border:1px solid var(--accent)}
+.book-sm.secondary:hover{background:#eff6ff}
+.fac-bar{flex:1;padding:6px 12px 6px 0;display:flex;align-items:center}
+.bar-track{position:relative;width:100%;height:24px;background:#f8f9fa;border-radius:5px;overflow:hidden;border:1px solid #eef0f2}
+.bar-block{position:absolute;top:2px;bottom:2px;border-radius:3px}
+.bar-block.avail{background:#d1fae5;border:1px solid #a7f3d0}
+.bar-block.reserved{background:var(--reserved);border:1px solid #cdd0d6}
+.bar-block.past{background:#f3f4f6;border:1px solid #e5e7eb}
+.bar-block .blabel{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  font-size:9px;font-weight:600;color:var(--reserved-dark);text-transform:uppercase;letter-spacing:.02em;overflow:hidden;white-space:nowrap}
+.bar-now{position:absolute;top:-2px;bottom:-2px;width:2px;background:#ef4444;border-radius:1px;z-index:5}
+.bar-now::before{content:'';position:absolute;top:-3px;left:-3px;width:8px;height:8px;border-radius:50%;background:#ef4444}
+.group-hdr{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--line);
+  background:#fafbfc;cursor:pointer;user-select:none;transition:background .08s}
+.group-hdr:hover{background:#f0f1f4}
+.group-hdr .gicon{font-size:18px;line-height:1}
+.group-hdr .gname{font-size:13px;font-weight:700;color:var(--ink);flex:1}
+.group-hdr .gcount{font-size:11px;font-weight:600;padding:2px 10px;border-radius:99px}
+.group-hdr .gcount.has-avail{background:#dcfce7;color:#166534}
+.group-hdr .gcount.all-booked{background:#fee2e2;color:#991b1b}
+.group-hdr .garrow{font-size:12px;color:var(--muted);transition:transform .15s}
+.group-hdr .garrow.open{transform:rotate(90deg)}
+.week-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:8px}
+.week-card{background:var(--card);border:1px solid var(--line);border-radius:10px;box-shadow:var(--shadow);overflow:hidden;cursor:pointer;transition:border-color .12s,box-shadow .12s}
+.week-card:hover{border-color:#94a3b8;box-shadow:0 2px 8px rgba(0,0,0,.08)}
+.week-card.today{border-color:var(--accent);border-width:2px}
+.week-card .wday{padding:8px 10px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);border-bottom:1px solid var(--line)}
+.week-card.today .wday{color:var(--accent);background:#eff6ff}
+.week-card .wday small{display:block;font-size:14px;font-weight:700;text-transform:none;letter-spacing:0;color:var(--ink);margin-top:2px}
+.week-card.today .wday small{color:var(--accent)}
+.wfac{padding:5px 10px;border-bottom:1px solid #f4f5f7;display:flex;align-items:center;gap:6px;font-size:11.5px}
+.wfac:last-child{border-bottom:none}
+.wfac .wicon{font-size:12px;flex-shrink:0}
+.wfac .wname{flex:1;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.wfac .wstatus{font-size:10px;font-weight:700;padding:2px 8px;border-radius:99px;white-space:nowrap}
+.wfac .wstatus.open{background:#dcfce7;color:#166534}
+.wfac .wstatus.partial{background:#fef9c3;color:#854d0e}
+.wfac .wstatus.full{background:#fee2e2;color:#991b1b}
+.loading{text-align:center;padding:60px 20px;color:var(--muted)}
+.loading .spin{display:inline-block;width:20px;height:20px;border:2.5px solid var(--line);border-top-color:var(--accent);border-radius:50%;animation:spin .7s linear infinite;margin-right:10px;vertical-align:middle}
+@keyframes spin{to{transform:rotate(360deg)}}
+.error-box{background:#fef2f2;border:1px solid #fecaca;border-radius:12px;padding:20px;text-align:center;color:#991b1b;margin:20px 0}
+.footer{text-align:center;font-size:12px;color:var(--muted);margin-top:24px}
+.footer a{color:var(--muted);font-weight:600;text-decoration:none}
+.footer a:hover{text-decoration:underline}
+@media(max-width:800px){.week-grid{grid-template-columns:1fr 1fr}.fac-label{width:180px;min-width:180px}.time-ruler{margin-left:180px}}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const {useState,useEffect,useMemo,useCallback} = React;
+
+/* ── config injected by server ── */
+const CFG = window.__RC__ || {};
+const ORG_SLUG = CFG.slug || window.location.pathname.split('/').filter(Boolean)[0] || '';
+const LOCATION_ID = new URLSearchParams(window.location.search).get('locationId') || CFG.locationId || '';
+
+/* ── emoji map ── */
+const E={"court":"\u{1F3BE}","pool":"\u{1F3CA}","room":"\u{1F3DB}\uFE0F","outdoor-event-space":"\u26FA","picnic-table":"\u{1F9FA}","field":"\u26BD","rink":"\u26F8\uFE0F","gym":"\u{1F3CB}\uFE0F","golf":"\u26F3","campsite":"\u{1F3D5}\uFE0F","bounce-house":"\u{1F389}","other":"\u{1F4CD}"};
+function emojiFor(t){return E[t]||"\u{1F4CD}";}
+
+/* ── helpers ── */
+function pad(n){return n<10?'0'+n:''+n;}
+function fmtISO(d){return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());}
+function addDays(d,n){var x=new Date(d);x.setDate(x.getDate()+n);return x;}
+function startOfWeek(d){var x=new Date(d);x.setDate(x.getDate()-x.getDay());x.setHours(0,0,0,0);return x;}
+var DOW=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+var MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+var DOWL=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+function minToLabel(min){var h=Math.floor(min/60),m=min%60;var ap=h>=12?'pm':'am';var hh=h%12;if(hh===0)hh=12;return hh+(m?':'+pad(m):'')+ap;}
+
+var GROUP_THRESHOLD = 3;
+
+/* ── Derive reserved blocks from availability response ── */
+function deriveBlocks(availSlots, dateStr, opStart, opEnd) {
+  // availSlots: { "08:00:00": {...}, "08:30:00": {...}, ... }
+  // Returns array of {type:'avail'|'reserved'|'past', startMin, endMin}
+  var now = new Date();
+  var nowMin = now.getHours() * 60 + now.getMinutes();
+  var isToday = dateStr === fmtISO(now);
+
+  var availSet = {};
+  if (availSlots) {
+    Object.keys(availSlots).forEach(function(t) {
+      var parts = t.split(':');
+      var m = parseInt(parts[0]) * 60 + parseInt(parts[1]);
+      availSet[m] = true;
+    });
+  }
+
+  var blocks = [];
+  var curType = null;
+  var curStart = null;
+  for (var m = opStart; m < opEnd; m += 30) {
+    var type;
+    if (availSet[m]) {
+      type = 'avail';
+    } else if (isToday && m < nowMin) {
+      type = 'past';
+    } else {
+      type = 'reserved';
+    }
+    if (type !== curType) {
+      if (curType !== null) blocks.push({type: curType, s: curStart, e: m});
+      curType = type;
+      curStart = m;
+    }
+  }
+  if (curType !== null) blocks.push({type: curType, s: curStart, e: opEnd});
+  return blocks;
+}
+
+/* ── Derive operating hours from availability data (fullest day) ── */
+function deriveOpHours(availData) {
+  var earliest = 24*60, latest = 0;
+  Object.keys(availData || {}).forEach(function(dateStr) {
+    var slots = availData[dateStr];
+    Object.keys(slots).forEach(function(t) {
+      var parts = t.split(':');
+      var m = parseInt(parts[0]) * 60 + parseInt(parts[1]);
+      if (m < earliest) earliest = m;
+      // End = start of last slot + max duration
+      var durs = slots[t].availableDurationsMinutes || [60];
+      var end = m + Math.max.apply(null, durs);
+      if (end > latest) latest = end;
+    });
+  });
+  if (earliest >= latest) return {start: 8*60, end: 22*60}; // fallback
+  return {start: earliest, end: Math.min(latest, 24*60)};
+}
+
+/* ── Components ── */
+function TimeRuler({opStart, opEnd}) {
+  var hrs = [];
+  var startH = Math.floor(opStart/60);
+  var endH = Math.ceil(opEnd/60);
+  for (var h = startH; h <= endH; h += 2) hrs.push(h);
+  var total = opEnd - opStart;
+  return (
+    <div className="time-ruler">
+      {hrs.map(function(h) {
+        var pct = ((h*60 - opStart) / total) * 100;
+        if (pct < 0 || pct > 100) return null;
+        return <div key={h} className="tr-tick" style={{left: pct + '%'}}>{minToLabel(h*60)}</div>;
+      })}
+    </div>
+  );
+}
+
+function TimelineBar({avail, dateStr, opStart, opEnd}) {
+  var blocks = deriveBlocks(avail, dateStr, opStart, opEnd);
+  var total = opEnd - opStart;
+  var toPct = function(m) { return ((m - opStart) / total) * 100; };
+  var now = new Date();
+  var nowMin = now.getHours()*60 + now.getMinutes();
+  var isToday = dateStr === fmtISO(now);
+  var showNow = isToday && nowMin >= opStart && nowMin <= opEnd;
+  var nowPct = ((nowMin - opStart) / total) * 100;
+  return (
+    <div className="fac-bar"><div className="bar-track">
+      {blocks.map(function(b, i) {
+        var l = toPct(b.s), w = toPct(b.e) - l;
+        return (
+          <div key={i} className={'bar-block ' + b.type} style={{left: l+'%', width: w+'%'}}>
+            {b.type === 'reserved' && w > 8 && <div className="blabel">Reserved</div>}
+          </div>
+        );
+      })}
+      {showNow && <div className="bar-now" style={{left: nowPct + '%'}}/>}
+    </div></div>
+  );
+}
+
+function FacRow({site, avail, dateStr, opStart, opEnd}) {
+  var isInstant = site.isInstantBookable;
+  var cta = isInstant ? 'Book' : 'Request';
+  return (
+    <div className="fac-row">
+      <div className="fac-label">
+        <span className="ficon">{emojiFor(site.type)}</span>
+        <div className="finfo">
+          <div className="fname">{site.courtNumber || site.name}</div>
+          <div className="fmeta">{(site.type||'').replace(/-/g,' ').replace(/\b\w/g, function(c){return c.toUpperCase();})}</div>
+        </div>
+        <a className={'book-sm' + (isInstant ? '' : ' secondary')} href={site.bookingUrl} target="_blank" rel="noopener"
+           onClick={function(e){e.stopPropagation();}}>{cta}</a>
+      </div>
+      <TimelineBar avail={avail} dateStr={dateStr} opStart={opStart} opEnd={opEnd}/>
+    </div>
+  );
+}
+
+function SiteGroup({type, sites, availMap, dateStr, opStart, opEnd}) {
+  var open = React.useState(false);
+  var isOpen = open[0], setOpen = open[1];
+  var total = opEnd - opStart;
+  var availCount = sites.filter(function(s) {
+    var a = availMap[s.id];
+    if (!a) return true;
+    return Object.keys(a).length > 0;
+  }).length;
+  var label = type.replace(/-/g,' ').replace(/\b\w/g, function(c){return c.toUpperCase();}) + 's';
+  var firstSite = sites[0];
+  return (
+    <div>
+      <div className="group-hdr" onClick={function(){setOpen(!isOpen);}}>
+        <span className="gicon">{emojiFor(type)}</span>
+        <span className="gname">{label} ({sites.length})</span>
+        <span className={'gcount ' + (availCount > 0 ? 'has-avail' : 'all-booked')}>
+          {availCount} of {sites.length} available
+        </span>
+        <a className="book-sm secondary" href={firstSite.bookingUrl} target="_blank" rel="noopener"
+           onClick={function(e){e.stopPropagation();}}>
+          {firstSite.isInstantBookable ? 'Book' : 'Request'}
+        </a>
+        <span className={'garrow' + (isOpen ? ' open' : '')}>{'\u25B6'}</span>
+      </div>
+      {isOpen && sites.map(function(s) {
+        return <FacRow key={s.id} site={s} avail={availMap[s.id]} dateStr={dateStr} opStart={opStart} opEnd={opEnd}/>;
+      })}
+    </div>
+  );
+}
+
+function DayView({sites, availMap, dateStr, opStart, opEnd}) {
+  var typeCounts = {};
+  sites.forEach(function(s){typeCounts[s.type]=(typeCounts[s.type]||0)+1;});
+  var grouped = [];
+  var done = {};
+  sites.forEach(function(s) {
+    if (done[s.type]) return;
+    if (typeCounts[s.type] >= GROUP_THRESHOLD) {
+      done[s.type] = true;
+      grouped.push({k:'group', type:s.type, sites: sites.filter(function(x){return x.type===s.type;})});
+    } else {
+      grouped.push({k:'single', site: s});
+    }
+  });
+  return (
+    <div>
+      <TimeRuler opStart={opStart} opEnd={opEnd}/>
+      <div className="fac-list">
+        {grouped.map(function(g, i) {
+          if (g.k === 'group') {
+            return <SiteGroup key={g.type} type={g.type} sites={g.sites} availMap={availMap} dateStr={dateStr} opStart={opStart} opEnd={opEnd}/>;
+          }
+          return <FacRow key={g.site.id} site={g.site} avail={availMap[g.site.id]} dateStr={dateStr} opStart={opStart} opEnd={opEnd}/>;
+        })}
+      </div>
+    </div>
+  );
+}
+
+function WeekOverview({sites, allAvail, weekStart, onDayClick}) {
+  var days = Array.from({length:7}, function(_,i){return fmtISO(addDays(weekStart,i));});
+  var todayISO = fmtISO(new Date());
+  var typeGroups = useMemo(function() {
+    var m = {};
+    sites.forEach(function(s){if(!m[s.type])m[s.type]={type:s.type,sites:[]};m[s.type].sites.push(s);});
+    return Object.values(m);
+  }, [sites]);
+  return (
+    <div className="week-grid">
+      {days.map(function(d, i) {
+        var dt = addDays(weekStart, i);
+        var isToday = d === todayISO;
+        return (
+          <div key={d} className={'week-card' + (isToday ? ' today' : '')} onClick={function(){onDayClick(d);}}>
+            <div className="wday">{DOW[i]}<small>{MON[dt.getMonth()]+' '+dt.getDate()}</small></div>
+            {typeGroups.map(function(g) {
+              var avail = g.sites.filter(function(s) {
+                var dayData = (allAvail[s.id] || {})[d];
+                return dayData && Object.keys(dayData).length > 0;
+              }).length;
+              var pct = Math.round(((g.sites.length - avail) / g.sites.length) * 100);
+              var status = pct === 0 ? 'open' : pct >= 80 ? 'full' : 'partial';
+              var tn = g.type.replace(/-/g,' ').replace(/\b\w/g, function(c){return c.toUpperCase();});
+              var label = g.sites.length > 1 ? avail+'/'+g.sites.length+' open' : (pct === 0 ? 'Open' : 'Booked');
+              return (
+                <div className="wfac" key={g.type}>
+                  <span className="wicon">{emojiFor(g.type)}</span>
+                  <span className="wname">{tn}{g.sites.length > 1 ? 's' : ''}</span>
+                  <span className={'wstatus ' + status}>{label}</span>
+                </div>
+              );
+            })}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ── Main App ── */
+function App() {
+  var dateState = useState(new Date());
+  var date = dateState[0], setDate = dateState[1];
+  var viewState = useState('day');
+  var view = viewState[0], setView = viewState[1];
+  var sitesState = useState(null);
+  var sites = sitesState[0], setSites = sitesState[1];
+  var availState = useState({});
+  var allAvail = availState[0], setAllAvail = availState[1];
+  var errorState = useState(null);
+  var error = errorState[0], setError = errorState[1];
+  var loadingState = useState(true);
+  var loading = loadingState[0], setLoading = loadingState[1];
+
+  var dateISO = fmtISO(date);
+  var todayISO = fmtISO(new Date());
+  var isToday = dateISO === todayISO;
+  var ws = startOfWeek(date);
+  var dt = new Date(dateISO + 'T00:00:00');
+
+  // Fetch sites on mount
+  useEffect(function() {
+    var locParam = LOCATION_ID ? '?locationId=' + LOCATION_ID : '';
+    fetch('/' + ORG_SLUG + '/rentalcalendar/api/sites' + locParam)
+      .then(function(r){return r.json();})
+      .then(function(data) {
+        if (data.error) throw new Error(data.error);
+        setSites(data.sites || []);
+        setLoading(false);
+        // Fetch availability for each site
+        (data.sites || []).forEach(function(site) {
+          fetch('/' + ORG_SLUG + '/rentalcalendar/api/availability/' + site.id)
+            .then(function(r){return r.json();})
+            .then(function(avData) {
+              setAllAvail(function(prev) {
+                var next = Object.assign({}, prev);
+                next[site.id] = avData.data || {};
+                return next;
+              });
+            })
+            .catch(function(e) { console.warn('Avail fetch failed for ' + site.id, e); });
+        });
+      })
+      .catch(function(e) { setError(e.message); setLoading(false); });
+  }, []);
+
+  // Derive operating hours from all availability data
+  var opHours = useMemo(function() {
+    var earliest = 24*60, latest = 0;
+    Object.values(allAvail).forEach(function(siteData) {
+      var h = deriveOpHours(siteData);
+      if (h.start < earliest) earliest = h.start;
+      if (h.end > latest) latest = h.end;
+    });
+    if (earliest >= latest) return {start: 8*60, end: 22*60};
+    return {start: earliest, end: latest};
+  }, [allAvail]);
+
+  // Build per-site availability map for selected date
+  var dayAvailMap = useMemo(function() {
+    var m = {};
+    Object.keys(allAvail).forEach(function(siteId) {
+      m[siteId] = (allAvail[siteId] || {})[dateISO] || null;
+    });
+    return m;
+  }, [allAvail, dateISO]);
+
+  var nav = useCallback(function(delta) {
+    setDate(function(d) {
+      var n = new Date(d);
+      n.setDate(n.getDate() + (view === 'week' ? delta * 7 : delta));
+      return n;
+    });
+  }, [view]);
+
+  var goToday = useCallback(function(){setDate(new Date());}, []);
+  var handleDayClick = useCallback(function(iso){setDate(new Date(iso+'T00:00:00'));setView('day');}, []);
+
+  var dateLabel = view === 'day'
+    ? DOWL[dt.getDay()]+', '+MON[dt.getMonth()]+' '+dt.getDate()+', '+dt.getFullYear()
+    : MON[ws.getMonth()]+' '+ws.getDate()+' \u2013 '+MON[addDays(ws,6).getMonth()]+' '+addDays(ws,6).getDate()+', '+addDays(ws,6).getFullYear();
+
+  var locationName = CFG.locationName || (sites && sites.length > 0 ? sites[0].locationName : 'Facility Availability');
+
+  if (loading) return <div className="wrap"><div className="loading"><span className="spin"></span>Loading facilities...</div></div>;
+  if (error) return <div className="wrap"><div className="error-box">Failed to load: {error}</div></div>;
+  if (!sites || sites.length === 0) return <div className="wrap"><div className="error-box">No facilities found for this location.</div></div>;
+
+  return (
+    <div className="wrap">
+      <div className="toolbar">
+        <button onClick={function(){nav(-1);}}>&lsaquo; Prev</button>
+        <button onClick={goToday} className={isToday && view === 'day' ? 'primary' : ''}>Today</button>
+        <button onClick={function(){nav(1);}}>Next &rsaquo;</button>
+        <span className="range" style={{marginLeft:8}}>{dateLabel}</span>
+        <div className="grow"></div>
+        <div className="seg">
+          {['day','week'].map(function(v) {
+            return <button key={v} className={view===v?'on':''} onClick={function(){setView(v);}}>{v.charAt(0).toUpperCase()+v.slice(1)}</button>;
+          })}
+        </div>
+      </div>
+      <div className="hdr">
+        {CFG.logoUrl && <img src={CFG.logoUrl} alt=""/>}
+        <div>
+          <h1>{locationName}</h1>
+          {CFG.displayName && <div className="sub">{CFG.displayName}</div>}
+        </div>
+      </div>
+      <div className="legend">
+        <span><span className="sw" style={{background:'#d1fae5',border:'1px solid #a7f3d0'}}></span> Available</span>
+        <span><span className="sw" style={{background:'var(--reserved)',border:'1px solid #cdd0d6'}}></span> Reserved</span>
+        {view === 'day' && <span><span className="sw" style={{background:'#ef4444',width:3,borderRadius:2}}></span> Now</span>}
+      </div>
+      {view === 'day'
+        ? <DayView sites={sites} availMap={dayAvailMap} dateStr={dateISO} opStart={opHours.start} opEnd={opHours.end}/>
+        : <WeekOverview sites={sites} allAvail={allAvail} weekStart={ws} onDayClick={handleDayClick}/>
+      }
+      <div className="footer">
+        Availability updates in real time &middot; Powered by <a href="https://www.rec.us" target="_blank" rel="noopener">rec.us</a>
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>
