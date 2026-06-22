@@ -3087,25 +3087,128 @@ const RC_SITES_CACHE = {
   },
 };
 
-app.get("/:org/rentalcalendar/api/sites", (req, res) => {
+app.get("/:org/rentalcalendar/api/sites", async (req, res) => {
   const slug = req.params.org;
   const org = ORGS[slug];
   if (!org || !org.orgId) return res.status(404).json({ error: "Unknown org" });
   const locationId = req.query.locationId || '';
-  // Check cache
+  const cacheKey = org.orgId + ':' + locationId;
+  // Check hardcoded cache first
   const orgSites = RC_SITES_CACHE[org.orgId];
   if (orgSites) {
     const sites = locationId && orgSites[locationId] ? orgSites[locationId] : Object.values(orgSites).flat();
     return res.json({ sites });
   }
-  // No cache for this org yet — return empty with helpful message
-  res.json({ sites: [], note: "No cached site data for this org. Contact admin to refresh." });
+  // Live fetch via Anthropic API + MCP for orgs not in cache
+  try {
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    if (!apiKey) throw new Error('No ANTHROPIC_API_KEY');
+    const prompt = 'Call list_sites with organizationId "' + org.orgId + '" and pageSize 100. Return ONLY the raw JSON results array, nothing else.';
+    const resp = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
+      body: JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: 16000,
+        mcp_servers: [{ type: 'url', url: 'https://api.rec.us/mcp', name: 'rec' }],
+        messages: [{ role: 'user', content: prompt }],
+      }),
+    });
+    if (!resp.ok) throw new Error('Anthropic API ' + resp.status);
+    const result = await resp.json();
+    let sites = [];
+    for (const block of (result.content || [])) {
+      if (block.type === 'mcp_tool_result' && block.content) {
+        for (const sub of block.content) {
+          if (sub.type === 'text') { try { const p = JSON.parse(sub.text); sites = p.results || p; } catch {} }
+        }
+      }
+      if (block.type === 'text' && block.text) { try { const p = JSON.parse(block.text); sites = Array.isArray(p) ? p : p.results || []; } catch {} }
+    }
+    if (locationId) sites = sites.filter(s => s.locationId === locationId);
+    const clean = sites.map(s => ({
+      id: s.id, name: s.name || s.courtNumber, courtNumber: s.courtNumber,
+      type: s.type, capacity: s.capacity, locationId: s.locationId,
+      locationName: s.locationName, bookingUrl: s.bookingUrl,
+      bookingFlow: s.bookingFlow, isInstantBookable: s.isInstantBookable,
+    }));
+    res.json({ sites: clean });
+  } catch (e) {
+    console.error('[rentalcalendar] live sites error:', e.message);
+    res.json({ sites: [], note: 'Live fetch failed: ' + e.message });
+  }
 });
 
-// Availability: return empty for now (page shows all as available).
-// TODO: Wire live API once rec.us REST endpoint is confirmed.
-app.get("/:org/rentalcalendar/api/availability/:siteId", (req, res) => {
-  res.json({ data: {} });
+// Availability: use Anthropic API as MCP proxy for live rec.us data
+const rcAvailCache = {};
+const RC_AVAIL_TTL = 5 * 60 * 1000; // 5 minutes
+
+async function fetchSiteAvailability(siteId) {
+  // Check cache first
+  const cached = rcAvailCache[siteId];
+  if (cached && Date.now() - cached.ts < RC_AVAIL_TTL) return cached.data;
+
+  try {
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    if (!apiKey) throw new Error('No ANTHROPIC_API_KEY');
+
+    const resp = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-6',
+        max_tokens: 16000,
+        mcp_servers: [{ type: 'url', url: 'https://api.rec.us/mcp', name: 'rec' }],
+        messages: [{ role: 'user', content:
+          'Call get_site_availability with siteId "' + siteId + '". Return ONLY the raw JSON data object from the tool result, nothing else. No explanation, no markdown, just the JSON.'
+        }],
+      }),
+    });
+
+    if (!resp.ok) {
+      const errText = await resp.text();
+      throw new Error('Anthropic API ' + resp.status + ': ' + errText.slice(0, 200));
+    }
+
+    const result = await resp.json();
+    // Extract data from Claude's response — could be in text or tool_result blocks
+    let availData = {};
+    for (const block of (result.content || [])) {
+      if (block.type === 'mcp_tool_result' && block.content) {
+        for (const sub of block.content) {
+          if (sub.type === 'text' && sub.text) {
+            try { availData = JSON.parse(sub.text); } catch {}
+          }
+        }
+      }
+      if (block.type === 'text' && block.text) {
+        try {
+          const parsed = JSON.parse(block.text);
+          if (parsed.data) availData = parsed;
+          else if (Object.keys(parsed).length > 0) availData = { data: parsed };
+        } catch {}
+      }
+    }
+
+    const data = availData.data || availData || {};
+    rcAvailCache[siteId] = { data, ts: Date.now() };
+    console.log('[rentalcalendar] Live availability fetched for', siteId, '(' + Object.keys(data).length + ' dates)');
+    return data;
+  } catch (e) {
+    console.error('[rentalcalendar] availability fetch error:', e.message);
+    // Return stale cache if available
+    if (cached) return cached.data;
+    return {};
+  }
+}
+
+app.get("/:org/rentalcalendar/api/availability/:siteId", async (req, res) => {
+  const slug = req.params.org;
+  const org = ORGS[slug];
+  if (!org) return res.status(404).json({ error: "Unknown org" });
+  const data = await fetchSiteAvailability(req.params.siteId);
+  res.json({ data });
 });
 
 
