@@ -1539,9 +1539,9 @@ app.use((req, res, next) => {
   const org = ORGS[seg];
   if (!org) return next();                          // not an org slug — let routing handle (will 404 normally)
 
-  // Calendar is public — no token required
+  // Calendar + rental calendar are public — no token required
   const segs = req.path.split("/").filter(Boolean);
-  if (segs[1] === "calendar") return next();
+  if (segs[1] === "calendar" || segs[1] === "rentalcalendar") return next();
 
   if (!org.token) {                                 // fail closed: tokenless org must not be public
     return res.status(404).type("text/plain").send("Not found");
