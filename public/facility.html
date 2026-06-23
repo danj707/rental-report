@@ -1684,18 +1684,16 @@ function DayPopover({ date, reservations, locationColors, onClose, selectedLocat
     setTimeout(() => { win.print(); }, 400);
   }
 
-  function handlePdf() {
-    setPdfLoading(true);
+  // PDF URL computed for <a target="_top"> (bypasses iframe sandbox)
+  const pdfUrlDayp = useMemo(function() {
     const parts = window.location.pathname.replace(/\/$/, '').split('/');
-    const pdfBase = parts.length >= 3 ? `/${parts[1]}/${parts[2]}/api/pdf` : '/api/pdf';
+    const pdfBase = parts.length >= 3 ? '/' + parts[1] + '/' + parts[2] + '/api/pdf' : '/api/pdf';
     const qs = new URLSearchParams({ start_date: date, end_date: date });
     if (selectedLocations) { const a = [...selectedLocations]; if (a.length) qs.set('locations', a.join(',')); }
     if (selectedSites)     { const a = [...selectedSites];     if (a.length) qs.set('sites',     a.join(',')); }
-    // Navigate to PDF URL — server returns Content-Disposition:attachment
-    // Browser downloads without leaving the page (works inside iframes)
-    window.location.href = withToken(`${pdfBase}?${qs}`);
-    setTimeout(() => setPdfLoading(false), 3000);
-  }
+    return withToken(pdfBase + '?' + qs);
+  }, [date, selectedLocations, selectedSites]);
+
 
   const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
   const DAYS   = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
@@ -2688,36 +2686,19 @@ function App() {
     setActiveRange(offsetWeeks === 0 ? 'this-week' : 'next-week');
   }
 
-  function downloadPdf() {
-    setPdfLoading(true);
+  // PDF URL computed for <a target="_top"> (bypasses iframe sandbox)
+  const pdfUrlApp = useMemo(function() {
     const qs = new URLSearchParams();
     if (loadedStart) qs.set('start_date', loadedStart);
     if (loadedEnd)   qs.set('end_date',   loadedEnd);
     if (params.location_name) qs.set('location_name', params.location_name);
     if (params.site_type)     qs.set('site_type',     params.site_type);
-    // Respect the current on-screen filter selections so the PDF matches exactly
-    // what's shown. Mirrors the share-URL serialization; the print page reads
-    // these back into selectedLocations/selectedSites on load.
     if (selectedLocations) { const a = [...selectedLocations]; if (a.length) qs.set('locations', a.join(',')); }
     if (selectedSites)     { const a = [...selectedSites];     if (a.length) qs.set('sites',     a.join(',')); }
-
     const pathParts = window.location.pathname.replace(/\/$/, '').split('/');
-    const pdfBase = pathParts.length >= 3
-      ? `/${pathParts[1]}/${pathParts[2]}/api/pdf`
-      : '/api/pdf';
-
-    fetch(withToken(`${pdfBase}?${qs.toString()}`))
-      .then(r => r.blob())
-      .then(blob => {
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        a.download = `rental-schedule-${loadedStart || 'report'}.pdf`;
-        a.click();
-        URL.revokeObjectURL(a.href);
-      })
-      .catch(err => alert('PDF generation failed: ' + err.message))
-      .finally(() => setPdfLoading(false));
-  }
+    const pdfBase = pathParts.length >= 3 ? '/' + pathParts[1] + '/' + pathParts[2] + '/api/pdf' : '/api/pdf';
+    return withToken(pdfBase + '?' + qs.toString());
+  }, [loadedStart, loadedEnd, params, selectedLocations, selectedSites]);
 
   function downloadExcel() {
     if (!filteredRows || filteredRows.length === 0) return;
