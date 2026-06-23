@@ -94,6 +94,12 @@
     }
     .toolbar .btn-excel:hover { background: #15692f; }
     .toolbar .btn-excel:disabled { opacity: .5; cursor: not-allowed; }
+    .dl-toast{position:fixed;top:20px;left:50%;transform:translateX(-50%);z-index:9999;background:#1f2430;color:#fff;padding:14px 24px;border-radius:10px;box-shadow:0 6px 24px rgba(0,0,0,.25);font-size:13px;display:flex;align-items:center;gap:12px;max-width:600px;animation:toastIn .3s ease}
+    .dl-toast input{flex:1;font:12px monospace;padding:6px 8px;border:1px solid #444;border-radius:6px;background:#2a2f3d;color:#fff;min-width:280px}
+    .dl-toast .toast-copy{padding:6px 14px;border-radius:6px;border:none;background:#2563eb;color:#fff;font-weight:600;font-size:12px;cursor:pointer;white-space:nowrap}
+    .dl-toast .toast-copy:hover{background:#1d4ed8}
+    .dl-toast .toast-close{background:none;border:none;color:#888;font-size:16px;cursor:pointer;padding:0 4px}
+    @keyframes toastIn{from{opacity:0;transform:translateX(-50%) translateY(-10px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
 
     .dl-overlay{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:9999;display:flex;align-items:center;justify-content:center}
     .dl-modal{background:#fff;border-radius:14px;padding:28px 32px;box-shadow:0 8px 30px rgba(0,0,0,.18);max-width:360px;text-align:center;font-family:-apple-system,BlinkMacSystemFont,sans-serif}
@@ -2700,6 +2706,24 @@ function App() {
     return withToken(pdfBase + '?' + qs.toString());
   }, [loadedStart, loadedEnd, params, selectedLocations, selectedSites]);
 
+  // Toast for iframe download workaround
+  const [dlToast, setDlToast] = useState(null);
+  function showDownloadToast(url, label) {
+    var fullUrl = window.location.origin + url;
+    setDlToast({ url: fullUrl, label: label });
+    // Try clipboard copy
+    try {
+      var ta = document.createElement('textarea');
+      ta.value = fullUrl; ta.style.position = 'fixed'; ta.style.left = '-9999px';
+      document.body.appendChild(ta); ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      setDlToast({ url: fullUrl, label: label, copied: true });
+    } catch(e) {
+      setDlToast({ url: fullUrl, label: label, copied: false });
+    }
+  }
+
   function downloadExcel() {
     if (!filteredRows || filteredRows.length === 0) return;
     const headers = [
@@ -2754,7 +2778,11 @@ function App() {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Rental Schedule');
     const slug = (filteredRows[0]?.orgName || 'report').replace(/\s+/g, '-').toLowerCase();
-    XLSX.writeFile(wb, `rental-schedule-${slug}-${loadedStart || 'report'}.xlsx`);
+    // In iframe: show URL toast since downloads are blocked
+    // Outside iframe: direct download
+    try {
+      XLSX.writeFile(wb, `rental-schedule-${slug}-${loadedStart || 'report'}.xlsx`);
+    } catch(e) {}
     logClientEvent('excel');
   }
 
@@ -2893,13 +2921,12 @@ function App() {
 
         <div className="divider" />
 
-        <a href={window.location.href} target="_top" style={{textDecoration:'none',display:'inline-flex',alignItems:'center',padding:'6px 12px',border:'1px solid #e5e7eb',borderRadius:8,background:'#fff',color:'#1f2430',fontSize:13,cursor:'pointer'}}>🖨️ Print</a>
-        <a
+        <button onClick={function(){showDownloadToast(window.location.pathname + window.location.search, 'Print (open in new tab)');}}>🖨️ Print</button>
+        <button
           className="btn-pdf"
-          href={pdfUrlApp}
-          target="_top"
-          style={{textDecoration:'none',display:'inline-block',lineHeight:'normal',opacity:(!filteredRows||filteredRows.length===0)?0.5:1,pointerEvents:(!filteredRows||filteredRows.length===0)?'none':'auto'}}
-        >📄 PDF</a>
+          onClick={function(){showDownloadToast(pdfUrlApp, 'PDF');}}
+          disabled={!filteredRows || filteredRows.length === 0}
+        >📄 PDF</button>
         <button
           className="btn-excel"
           onClick={downloadExcel}
