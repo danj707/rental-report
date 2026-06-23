@@ -23,6 +23,7 @@
 // ── Langfuse + OpenTelemetry (must init BEFORE other imports) ────────
 const { NodeSDK }                = require("@opentelemetry/sdk-node");
 const { LangfuseSpanProcessor, isDefaultExportSpan } = require("@langfuse/otel");
+const otelApi = require("@opentelemetry/api");
 const { AnthropicInstrumentation } = require("@arizeai/openinference-instrumentation-anthropic");
 const AnthropicSDK = require("@anthropic-ai/sdk");
 
@@ -53,6 +54,7 @@ if (_langfuseEnabled) {
 
 // Shared Anthropic client — reads ANTHROPIC_API_KEY from env automatically
 const anthropic = process.env.ANTHROPIC_API_KEY ? new AnthropicSDK() : null;
+const _recTracer = otelApi.trace.getTracer("rec-ai");
 
 const express    = require("express");
 const path       = require("path");
@@ -1933,16 +1935,26 @@ app.post("/:org/:report/api/insights", resolveOrg, async (req, res) => {
 
   const hit = _insightsCache.get(key);
   if (hit && Date.now() - hit.ts < INSIGHTS_TTL_MS) {
-    return res.json({ ok: true, insights: hit.insights, cached: true });
+    return res.json({ ok: true, insights: hit.insights, cached: true, traceId: hit.traceId || null });
   }
 
   try {
-    const data = await anthropic.messages.create({
-      model: INSIGHTS_MODEL,
-      max_tokens: 700,
-      system: SYS_PROMPTS[reportType] || INSIGHTS_SYS_PROMPT,
-      messages: [{ role: "user", content: JSON.stringify(blob) }],
+    // Wrap in OTel span so we can capture traceId for user feedback
+    const parentSpan = _recTracer.startSpan("rec.insights", {
+      attributes: { "rec.org": orgSlug, "rec.report": reportType },
     });
+    const traceId = parentSpan.spanContext().traceId;
+    const spanCtx = otelApi.trace.setSpan(otelApi.context.active(), parentSpan);
+
+    const data = await otelApi.context.with(spanCtx, () =>
+      anthropic.messages.create({
+        model: INSIGHTS_MODEL,
+        max_tokens: 700,
+        system: SYS_PROMPTS[reportType] || INSIGHTS_SYS_PROMPT,
+        messages: [{ role: "user", content: JSON.stringify(blob) }],
+      })
+    );
+    parentSpan.end();
 
     const text = (data.content || [])
       .filter(c => c.type === "text")
@@ -1959,19 +1971,65 @@ app.post("/:org/:report/api/insights", resolveOrg, async (req, res) => {
       const oldest = _insightsCache.keys().next().value;
       _insightsCache.delete(oldest);
     }
-    _insightsCache.set(key, { ts: Date.now(), insights });
+    _insightsCache.set(key, { ts: Date.now(), insights, traceId });
 
     const usage  = data.usage || {};
     const inTok  = usage.input_tokens  || 0;
     const outTok = usage.output_tokens || 0;
     const costUsd = insightsCostUsd(INSIGHTS_MODEL, inTok, outTok);
-    logEvent(orgSlug, reportType, "insights", req, { inTok, outTok, costUsd });
-    if (_langfuseProcessor) _langfuseProcessor.forceFlush().then(() => console.log("[langfuse] flush OK")).catch(e => console.error("[langfuse] flush error:", e.message));
-    res.json({ ok: true, insights, cached: false });
+    logEvent(orgSlug, reportType, "insights", req, { inTok, outTok, costUsd, traceId });
+    if (_langfuseProcessor) _langfuseProcessor.forceFlush().catch(() => {});
+    res.json({ ok: true, insights, cached: false, traceId });
   } catch (err) {
     console.error("[insights] Error:", err);
     res.status(502).json({ ok: false, error: "Upstream AI request failed" });
   }
+});
+
+// ── POST /:org/:report/api/insights/score — user feedback → Langfuse ──
+app.post("/:org/:report/api/insights/score", resolveOrg, (req, res) => {
+  const { orgSlug, reportType } = req;
+  const { traceId, score, comment } = req.body || {};
+
+  if (!traceId || typeof traceId !== "string") {
+    return res.status(400).json({ ok: false, error: "traceId required" });
+  }
+  if (score !== 1 && score !== 0) {
+    return res.status(400).json({ ok: false, error: "score must be 1 (up) or 0 (down)" });
+  }
+
+  // Log locally
+  logEvent(orgSlug, reportType, "insights-feedback", req, {
+    traceId,
+    score,
+    comment: (comment || "").slice(0, 500),
+  });
+
+  // Send to Langfuse asynchronously (don't block response)
+  if (process.env.LANGFUSE_PUBLIC_KEY && process.env.LANGFUSE_SECRET_KEY) {
+    const baseUrl = process.env.LANGFUSE_BASE_URL || "https://us.cloud.langfuse.com";
+    const auth = Buffer.from(process.env.LANGFUSE_PUBLIC_KEY + ":" + process.env.LANGFUSE_SECRET_KEY).toString("base64");
+    fetch(baseUrl + "/api/public/scores", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": "Basic " + auth,
+      },
+      body: JSON.stringify({
+        traceId,
+        name: "user-feedback",
+        value: score,
+        comment: comment ? `[${orgSlug}/${reportType}] ${comment}` : `[${orgSlug}/${reportType}] ${score === 1 ? "thumbs up" : "thumbs down"}`,
+      }),
+    })
+    .then(r => {
+      if (!r.ok) r.text().then(t => console.error("[langfuse] score error:", r.status, t.slice(0, 200)));
+      else console.log("[langfuse] score sent:", traceId.slice(0, 8), score === 1 ? "👍" : "👎");
+    })
+    .catch(e => console.error("[langfuse] score error:", e.message));
+  }
+
+  res.json({ ok: true });
 });
 
 // ── Rec AI Chat — conversational data assistant ──────────────────────
