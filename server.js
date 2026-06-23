@@ -22,7 +22,7 @@
 
 // ── Langfuse + OpenTelemetry (must init BEFORE other imports) ────────
 const { NodeSDK }                = require("@opentelemetry/sdk-node");
-const { LangfuseSpanProcessor } = require("@langfuse/otel");
+const { LangfuseSpanProcessor, isDefaultExportSpan } = require("@langfuse/otel");
 const { AnthropicInstrumentation } = require("@arizeai/openinference-instrumentation-anthropic");
 const AnthropicSDK = require("@anthropic-ai/sdk");
 
@@ -37,6 +37,9 @@ if (_langfuseEnabled) {
     publicKey:  process.env.LANGFUSE_PUBLIC_KEY,
     secretKey:  process.env.LANGFUSE_SECRET_KEY,
     baseUrl:    process.env.LANGFUSE_BASE_URL || "https://us.cloud.langfuse.com",
+    shouldExportSpan: ({ otelSpan }) =>
+      isDefaultExportSpan(otelSpan) ||
+      otelSpan.instrumentationScope?.name === "@arizeai/openinference-instrumentation-anthropic",
   });
   _otelSdk = new NodeSDK({
     spanProcessors: [_langfuseProcessor],
