@@ -2893,14 +2893,13 @@ function App() {
 
         <div className="divider" />
 
-        <button onClick={() => window.print()}>🖨️ Print</button>
-        <button
+        <a href={window.location.href} target="_top" style={{textDecoration:'none',display:'inline-flex',alignItems:'center',padding:'6px 12px',border:'1px solid #e5e7eb',borderRadius:8,background:'#fff',color:'#1f2430',fontSize:13,cursor:'pointer'}}>🖨️ Print</a>
+        <a
           className="btn-pdf"
-          onClick={downloadPdf}
-          disabled={pdfLoading || !filteredRows || filteredRows.length === 0}
-        >
-          {pdfLoading ? 'Generating…' : '📄 PDF'}
-        </button>
+          href={pdfUrlApp}
+          target="_top"
+          style={{textDecoration:'none',display:'inline-block',lineHeight:'normal',opacity:(!filteredRows||filteredRows.length===0)?0.5:1,pointerEvents:(!filteredRows||filteredRows.length===0)?'none':'auto'}}
+        >📄 PDF</a>
         <button
           className="btn-excel"
           onClick={downloadExcel}
@@ -3088,6 +3087,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(<App />);
       <script src="/nav-breadcrumb.js" defer></script>
   </body>
 </html>
+
 
 
 
