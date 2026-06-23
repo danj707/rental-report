@@ -94,12 +94,17 @@
     }
     .toolbar .btn-excel:hover { background: #15692f; }
     .toolbar .btn-excel:disabled { opacity: .5; cursor: not-allowed; }
-    .dl-toast{position:fixed;top:20px;left:50%;transform:translateX(-50%);z-index:9999;background:#1f2430;color:#fff;padding:14px 24px;border-radius:10px;box-shadow:0 6px 24px rgba(0,0,0,.25);font-size:13px;display:flex;align-items:center;gap:12px;max-width:600px;animation:toastIn .3s ease}
-    .dl-toast input{flex:1;font:12px monospace;padding:6px 8px;border:1px solid #444;border-radius:6px;background:#2a2f3d;color:#fff;min-width:280px}
-    .dl-toast .toast-copy{padding:6px 14px;border-radius:6px;border:none;background:#2563eb;color:#fff;font-weight:600;font-size:12px;cursor:pointer;white-space:nowrap}
-    .dl-toast .toast-copy:hover{background:#1d4ed8}
-    .dl-toast .toast-close{background:none;border:none;color:#888;font-size:16px;cursor:pointer;padding:0 4px}
-    @keyframes toastIn{from{opacity:0;transform:translateX(-50%) translateY(-10px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
+    .dl-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;display:flex;align-items:center;justify-content:center;animation:fadeIn .2s ease}
+    .dl-modal{background:#fff;border-radius:12px;box-shadow:0 8px 40px rgba(0,0,0,.3);width:90vw;max-width:900px;height:85vh;display:flex;flex-direction:column;overflow:hidden}
+    .dl-modal-hdr{display:flex;align-items:center;padding:12px 16px;border-bottom:1px solid #e5e7eb;background:#fafbfc}
+    .dl-modal-hdr h3{margin:0;font-size:14px;flex:1;color:#1f2430}
+    .dl-modal-hdr .dl-hint{font-size:11px;color:#888;margin-right:12px}
+    .dl-modal-hdr .dl-close{background:none;border:none;font-size:20px;cursor:pointer;color:#999;padding:0 4px}
+    .dl-modal-hdr .dl-close:hover{color:#333}
+    .dl-modal iframe{flex:1;border:none;width:100%}
+    .dl-modal .dl-fallback{padding:24px;text-align:center;color:#666;font-size:13px}
+    .dl-modal .dl-fallback a{color:#2563eb;font-weight:600}
+    @keyframes fadeIn{from{opacity:0}to{opacity:1}}
 
     .dl-overlay{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:9999;display:flex;align-items:center;justify-content:center}
     .dl-modal{background:#fff;border-radius:14px;padding:28px 32px;box-shadow:0 8px 30px rgba(0,0,0,.18);max-width:360px;text-align:center;font-family:-apple-system,BlinkMacSystemFont,sans-serif}
@@ -2706,22 +2711,10 @@ function App() {
     return withToken(pdfBase + '?' + qs.toString());
   }, [loadedStart, loadedEnd, params, selectedLocations, selectedSites]);
 
-  // Toast for iframe download workaround
-  const [dlToast, setDlToast] = useState(null);
-  function showDownloadToast(url, label) {
-    var fullUrl = window.location.origin + url;
-    setDlToast({ url: fullUrl, label: label });
-    // Try clipboard copy
-    try {
-      var ta = document.createElement('textarea');
-      ta.value = fullUrl; ta.style.position = 'fixed'; ta.style.left = '-9999px';
-      document.body.appendChild(ta); ta.select();
-      document.execCommand('copy');
-      document.body.removeChild(ta);
-      setDlToast({ url: fullUrl, label: label, copied: true });
-    } catch(e) {
-      setDlToast({ url: fullUrl, label: label, copied: false });
-    }
+  // Modal for PDF preview (bypasses iframe sandbox download restrictions)
+  const [dlModal, setDlModal] = useState(null);
+  function showPdfModal(url) {
+    setDlModal({ url: url, type: 'pdf' });
   }
 
   function downloadExcel() {
@@ -2921,10 +2914,10 @@ function App() {
 
         <div className="divider" />
 
-        <button onClick={function(){showDownloadToast(window.location.pathname + window.location.search, 'Print (open in new tab)');}}>🖨️ Print</button>
+        <button onClick={function(){showPdfModal(pdfUrlApp);}}>🖨️ Print</button>
         <button
           className="btn-pdf"
-          onClick={function(){showDownloadToast(pdfUrlApp, 'PDF');}}
+          onClick={function(){showPdfModal(pdfUrlApp);}}
           disabled={!filteredRows || filteredRows.length === 0}
         >📄 PDF</button>
         <button
