@@ -4941,11 +4941,11 @@ app.get("/", (req, res) => {
 
             <!-- Row 1: Entry Points -->
             <text x="28" y="62" font-size="9" fill="#888" font-weight="600" letter-spacing="1">ENTRY POINTS</text>
-            <!-- Rec Admin iframe -->
+            <!-- Rec Admin direct link -->
             <rect x="28" y="72" width="170" height="62" rx="8" fill="#fff" stroke="#e4e4e0" stroke-width="1.5"/>
             <text x="113" y="92" text-anchor="middle" font-size="19">&#127760;</text>
             <text x="113" y="110" text-anchor="middle" font-size="10.5" font-weight="600" fill="#2c2c2c">rec.us Admin Portal</text>
-            <text x="113" y="122" text-anchor="middle" font-size="8.5" fill="#888">Metabase iframe embed</text>
+            <text x="113" y="122" text-anchor="middle" font-size="8.5" fill="#888">Direct link in Metabase</text>
             <!-- Direct link -->
             <rect x="218" y="72" width="170" height="62" rx="8" fill="#fff" stroke="#e4e4e0" stroke-width="1.5"/>
             <text x="303" y="92" text-anchor="middle" font-size="19">&#128279;</text>
@@ -5066,19 +5066,19 @@ app.get("/", (req, res) => {
         </ul>
         <p>Tokens are visible in the &#129312; <strong>Access Token</strong> row on each org card &#8212; click <strong>Copy landing URL</strong> to grab a tokenized link ready to share. The <code>/api/*</code> admin endpoints, the cross-org <code>/metrics</code> view, and the public <code>/hotdog</code> page are whitelisted from the token gate.</p>
 
-        <h4 style="margin-top:20px">&#128373;&#65039; Security by Obfuscation</h4>
-        <p>In production, the rec.us Reports portal is <strong>not accessed directly</strong> by partner staff. Instead, each organization&#x27;s reporting dashboard is embedded as an iframe inside their existing Metabase reporting tab within the rec.us admin panel:</p>
+        <h4 style="margin-top:20px">&#128373;&#65039; Access via Metabase</h4>
+        <p>In production, partner staff access rec.us Reports through a <strong>direct link</strong> placed inside their existing Metabase reporting dashboard within the rec.us admin panel:</p>
         <div style="background:#f5f4f1;border:1px solid #e4e4e0;border-radius:8px;padding:14px 18px;margin:10px 0 14px;font-size:12px;line-height:1.7">
-          <strong>rec.us Admin</strong> &#8594; Reporting Tab &#8594; Metabase Dashboard &#8594; <code>&lt;iframe&gt;</code> &#8594; <strong>rec.us Reports</strong><br>
-          <span style="color:#888">The direct Railway URL is never exposed to end users.</span>
+          <strong>rec.us Admin</strong> &#8594; Reporting Tab &#8594; Metabase Dashboard &#8594; <strong>Direct Link</strong> &#8594; <strong>rec.us Reports</strong> (opens in new tab)<br>
+          <span style="color:#888">The tokenized URL is embedded in the Metabase dashboard &#8212; staff click through without needing to know it.</span>
         </div>
-        <p>This layered embedding means partner staff interact with the reports through the rec.us admin interface they already trust &#8212; they never see the underlying Railway deployment URL, Metabase query UUIDs, or API endpoints. Since the rec.us admin portal already enforces its own authentication and role-based access controls, embedding the reports within it adds an additional security boundary. A partner staff member must be:</p>
+        <p>We moved away from iframe embedding because interactive elements (buttons, dropdowns, date pickers, PDF downloads) don&#x27;t work reliably inside iframes. The direct-link approach opens reports in a full browser tab where everything works natively, while still funneling access through Metabase so staff discover reports in the same place they already look. A partner staff member must be:</p>
         <ul>
           <li>Authenticated in the <strong>rec.us admin portal</strong> (session-based auth with role permissions)</li>
           <li>Authorized to view the <strong>Reporting tab</strong> in their organization&#x27;s admin panel</li>
-          <li>Holding a valid <strong>16-character access token</strong> embedded in the iframe source URL</li>
+          <li>Holding a valid <strong>16-character access token</strong> embedded in the link URL</li>
         </ul>
-        <p style="margin-top:6px">This means that even if someone discovered the direct Railway URL, they would still need the org-specific token to access any data &#8212; and the token itself is never visible to end users in the embedded flow.</p>
+        <p style="margin-top:6px">The Railway URL is visible in the browser address bar once they click through, but the token gate ensures that even if someone discovers or shares a URL, they still need the org-specific token to access any data. Without it, the server returns a generic 404 &#8212; no information about which orgs exist or what reports are available.</p>
 
         <h4>Reports</h4>
         <p>Each report type is a self-contained HTML file served from <code>public/</code>. Reports are React apps loaded via CDN (no build step). Data is fetched from <code>/:org/:report/api/data?token=...</code>, which proxies to either a shared Metabase question (with <code>org_id</code> injected automatically) or a per-org UUID as fallback.</p>
@@ -5903,6 +5903,7 @@ app.get("/", (req, res) => {
     // Newest first. Add a new entry at the TOP for every change we ship.
     // History below back-filled from the GitHub commit log.
     const UPDATES = [
+  { date: '2026-06-23', title: 'How This Works doc update', items: ['Updated entry point diagram and security section to reflect direct-link approach (replacing iframe embed) — interactive elements like buttons, date pickers, and PDF downloads broke inside iframes, so reports now open in a full browser tab via links inside Metabase dashboards'] },
       { date: "2026-06-23", title: "Smyrna Historic Report", items: ["Recreated Metabase SQL for Smyrna historic facility rental report", "Updated Metabase public UUID to new question"] },
       { date: '2026-06-22', title: 'Public Facility Rental Calendar (Early Access)', items: [
         '\u{1F4C5} New public-facing facility availability calendar at /:org/rentalcalendar?locationId=X \u2014 no token required, fully public',
