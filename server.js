@@ -3116,6 +3116,10 @@ app.get("/:org/rentalcalendar/api/sites", async (req, res) => {
       type: s.type, capacity: s.capacity, locationId: s.locationId,
       locationName: s.locationName, bookingUrl: s.bookingUrl,
       bookingFlow: s.bookingFlow, isInstantBookable: s.isInstantBookable,
+      imageUrl: (s.images && s.images.mainGallery && s.images.mainGallery[0]) ? s.images.mainGallery[0].url : null,
+      priceCents: s.config && s.config.pricing && s.config.pricing.default ? s.config.pricing.default.cents : null,
+      residentPriceCents: (() => { try { const gc = s.config.pricing.default.groupCents; const vals = Object.values(gc).filter(v => v > 0); return vals.length ? Math.min(...vals) : null; } catch(e) { return null; } })(),
+      durationMinutes: s.allowedReservationDurations ? s.allowedReservationDurations.minutes : null,
     }));
     res.json({ sites: clean });
   } catch (e) {
@@ -6602,6 +6606,7 @@ app.listen(PORT, () => {
   // Runs after listen() so startup isn't blocked by GitHub latency.
   migrateDynamicOrgs();
 });
+
 
 
 
