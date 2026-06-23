@@ -20,6 +20,31 @@
  *   POST /:org/admin/test-send  → send a test email immediately
  */
 
+// ── Langfuse + OpenTelemetry (must init BEFORE other imports) ────────
+const { NodeSDK }                = require("@opentelemetry/sdk-node");
+const { LangfuseSpanProcessor } = require("@langfuse/otel");
+const { AnthropicInstrumentation } = require("@arizeai/openinference-instrumentation-anthropic");
+const AnthropicSDK = require("@anthropic-ai/sdk");
+
+const _anthropicInstrumentation = new AnthropicInstrumentation();
+_anthropicInstrumentation.manuallyInstrument(AnthropicSDK);
+
+const _langfuseEnabled = !!(process.env.LANGFUSE_PUBLIC_KEY && process.env.LANGFUSE_SECRET_KEY);
+let _otelSdk = null;
+if (_langfuseEnabled) {
+  _otelSdk = new NodeSDK({
+    spanProcessors: [new LangfuseSpanProcessor()],
+    instrumentations: [_anthropicInstrumentation],
+  });
+  _otelSdk.start();
+  console.log("[langfuse] OpenTelemetry tracing enabled");
+} else {
+  console.log("[langfuse] LANGFUSE keys not set — tracing disabled (AI features still work)");
+}
+
+// Shared Anthropic client — reads ANTHROPIC_API_KEY from env automatically
+const anthropic = process.env.ANTHROPIC_API_KEY ? new AnthropicSDK() : null;
+
 const express    = require("express");
 const path       = require("path");
 const fs         = require("fs");
@@ -1889,7 +1914,7 @@ app.post("/:org/:report/api/insights", resolveOrg, async (req, res) => {
   if (!blob || typeof blob !== "object" || Array.isArray(blob)) {
     return res.status(400).json({ ok: false, error: "Missing or invalid stats payload" });
   }
-  if (!process.env.ANTHROPIC_API_KEY) {
+  if (!anthropic) {
     return res.status(503).json({ ok: false, error: "AI insights not configured" });
   }
 
@@ -1903,28 +1928,13 @@ app.post("/:org/:report/api/insights", resolveOrg, async (req, res) => {
   }
 
   try {
-    const resp = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "x-api-key": process.env.ANTHROPIC_API_KEY,
-        "anthropic-version": "2023-06-01",
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({
-        model: INSIGHTS_MODEL,
-        max_tokens: 700,
-        system: SYS_PROMPTS[reportType] || INSIGHTS_SYS_PROMPT,
-        messages: [{ role: "user", content: JSON.stringify(blob) }],
-      }),
+    const data = await anthropic.messages.create({
+      model: INSIGHTS_MODEL,
+      max_tokens: 700,
+      system: SYS_PROMPTS[reportType] || INSIGHTS_SYS_PROMPT,
+      messages: [{ role: "user", content: JSON.stringify(blob) }],
     });
 
-    if (!resp.ok) {
-      const errBody = await resp.text();
-      console.error(`[insights] Anthropic ${resp.status}: ${errBody}`);
-      return res.status(502).json({ ok: false, error: "Upstream AI request failed" });
-    }
-
-    const data = await resp.json();
     const text = (data.content || [])
       .filter(c => c.type === "text")
       .map(c => c.text)
@@ -2066,7 +2076,7 @@ app.post("/:org/chat/api/message", async (req, res) => {
   const qToken = req.query.token || req.headers["x-token"];
   if (qToken !== org.token) return res.status(403).json({ error: "Invalid token" });
 
-  if (!process.env.ANTHROPIC_API_KEY) {
+  if (!anthropic) {
     return res.status(503).json({ error: "AI not configured" });
   }
 
@@ -2099,61 +2109,25 @@ app.post("/:org/chat/api/message", async (req, res) => {
     // Clean messages — only role + content
     const cleanMsgs = messages.map(m => ({ role: m.role, content: m.content }));
 
-    const anthropicResp = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "x-api-key": process.env.ANTHROPIC_API_KEY,
-        "anthropic-version": "2023-06-01",
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({
-        model: CHAT_MODEL,
-        max_tokens: CHAT_MAX_TOK,
-        stream: true,
-        system: systemPrompt,
-        messages: cleanMsgs,
-      }),
+    const stream = anthropic.messages.stream({
+      model: CHAT_MODEL,
+      max_tokens: CHAT_MAX_TOK,
+      system: systemPrompt,
+      messages: cleanMsgs,
     });
 
-    if (!anthropicResp.ok) {
-      const errBody = await anthropicResp.text();
-      console.error(`[chat] Anthropic ${anthropicResp.status}: ${errBody.slice(0, 500)}`);
-      // Surface error detail to client for debugging
-      let errMsg = `AI service error (${anthropicResp.status})`;
-      try { const ej = JSON.parse(errBody); errMsg += ': ' + (ej.error?.message || errBody.slice(0, 200)); } catch(_) { errMsg += ': ' + errBody.slice(0, 200); }
-      res.write(`data: [ERROR] ${errMsg}\n\n`);
-      res.write("data: [DONE]\n\n");
-      res.end();
-      return;
-    }
+    stream.on("text", (text) => {
+      res.write("data: " + JSON.stringify({ t: text }) + "\n\n");
+    });
 
-    // Stream the response — read Anthropic SSE and forward text deltas
-    const reader = anthropicResp.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-    let inputTokens = 0, outputTokens = 0;
+    stream.on("error", (err) => {
+      console.error("[chat] Anthropic stream error:", err.message);
+      res.write("data: [ERROR] AI service error: " + err.message + "\n\n");
+    });
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split("\n");
-      buffer = lines.pop() || "";
-
-      for (const line of lines) {
-        if (!line.startsWith("data: ") || line === "data: [DONE]") continue;
-        try {
-          const evt = JSON.parse(line.slice(6));
-          if (evt.type === "content_block_delta" && evt.delta?.text) {
-            res.write(`data: ${JSON.stringify({ t: evt.delta.text })}\n\n`);
-          } else if (evt.type === "message_delta" && evt.usage) {
-            outputTokens = evt.usage.output_tokens || 0;
-          } else if (evt.type === "message_start" && evt.message?.usage) {
-            inputTokens = evt.message.usage.input_tokens || 0;
-          }
-        } catch (_) { /* skip */ }
-      }
-    }
+    const finalMessage = await stream.finalMessage();
+    const inputTokens  = finalMessage.usage?.input_tokens  || 0;
+    const outputTokens = finalMessage.usage?.output_tokens || 0;
 
     const costUsd = insightsCostUsd(CHAT_MODEL, inputTokens, outputTokens);
     logEvent(slug, "chat", "message", req, { inTok: inputTokens, outTok: outputTokens, costUsd });
@@ -2322,7 +2296,7 @@ app.post("/:org/report-wizard/api/generate", async (req, res) => {
   const qToken = req.query.token || req.headers["x-token"];
   if (org.token && qToken !== org.token) return res.status(403).json({ error: "Invalid token" });
 
-  if (!process.env.ANTHROPIC_API_KEY) {
+  if (!anthropic) {
     return res.status(503).json({ error: "AI not configured" });
   }
 
@@ -2350,28 +2324,13 @@ app.post("/:org/report-wizard/api/generate", async (req, res) => {
 
     console.log(`[wizard] ${slug}: generating config, ${sourceCount} sources, prompt: "${prompt.slice(0, 80)}"`);
 
-    const resp = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "x-api-key": process.env.ANTHROPIC_API_KEY,
-        "anthropic-version": "2023-06-01",
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({
-        model: WIZARD_MODEL,
-        max_tokens: WIZARD_MAX_TOKENS,
-        system: WIZARD_SYS_PROMPT,
-        messages: [{ role: "user", content: userMsg }],
-      }),
+    const data = await anthropic.messages.create({
+      model: WIZARD_MODEL,
+      max_tokens: WIZARD_MAX_TOKENS,
+      system: WIZARD_SYS_PROMPT,
+      messages: [{ role: "user", content: userMsg }],
     });
 
-    if (!resp.ok) {
-      const errBody = await resp.text();
-      console.error(`[wizard] Anthropic ${resp.status}: ${errBody.slice(0, 500)}`);
-      return res.status(502).json({ error: "AI service error" });
-    }
-
-    const data = await resp.json();
     const text = (data.content || [])
       .filter(c => c.type === "text")
       .map(c => c.text)
@@ -2840,7 +2799,7 @@ app.post("/:org/calendar/api/recommend", express.json(), async (req, res) => {
     return res.status(429).json({ ok: false, error: "You\u2019ve sent a few requests recently. Please try again in an hour." });
   }
 
-  if (!process.env.ANTHROPIC_API_KEY) {
+  if (!anthropic) {
     return res.status(503).json({ ok: false, error: "AI service not configured" });
   }
 
@@ -2934,28 +2893,13 @@ app.post("/:org/calendar/api/recommend", express.json(), async (req, res) => {
     const orgName = org.displayName || `${slugTitle} Parks & Recreation`;
 
     // Call Claude
-    const aiResp = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "x-api-key": process.env.ANTHROPIC_API_KEY,
-        "anthropic-version": "2023-06-01",
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({
-        model: INSIGHTS_MODEL,
-        max_tokens: 1500,
-        system: RECOMMEND_SYS_PROMPT.replace(/a municipal parks & recreation department/, orgName),
-        messages: [{ role: "user", content: `RESIDENT'S REQUEST:\n${description.trim()}\n\nAVAILABLE PROGRAMS (next 30 days):\n${JSON.stringify(condensed)}` }],
-      }),
+    const aiData = await anthropic.messages.create({
+      model: INSIGHTS_MODEL,
+      max_tokens: 1500,
+      system: RECOMMEND_SYS_PROMPT.replace(/a municipal parks & recreation department/, orgName),
+      messages: [{ role: "user", content: "RESIDENT'S REQUEST:\n" + description.trim() + "\n\nAVAILABLE PROGRAMS (next 30 days):\n" + JSON.stringify(condensed) }],
     });
 
-    if (!aiResp.ok) {
-      const errBody = await aiResp.text();
-      console.error(`[recommend] Anthropic ${aiResp.status}: ${errBody}`);
-      return res.status(502).json({ ok: false, error: "AI service temporarily unavailable" });
-    }
-
-    const aiData = await aiResp.json();
     let aiText = (aiData.content || []).filter(c => c.type === "text").map(c => c.text).join("");
 
     // Parse JSON response
@@ -4011,6 +3955,80 @@ app.delete("/api/admin/quotes/:index", (req, res) => {
 });
 
 // ── Root index — all orgs dashboard ─────────────────────────────────
+
+// ── GET /api/admin/ai-analytics — AI usage metrics for dashboard ─────
+app.get("/api/admin/ai-analytics", (req, res) => {
+  try {
+    const events = readEvents();
+    const now = Date.now();
+    const d7  = 7  * 86400000;
+    const d30 = 30 * 86400000;
+
+    // AI features: insights, message (chat), generate (wizard), recommend
+    const aiActions = new Set(["insights", "message", "generate"]);
+    const aiEvents = events.filter(e => aiActions.has(e.event) || e.report === "calendar" && e.event === "recommend");
+
+    // By feature
+    const byFeature = {};
+    const byOrg = {};
+    let total7d = 0, total30d = 0, totalCost7d = 0, totalCost30d = 0;
+    let totalIn = 0, totalOut = 0;
+
+    for (const e of aiEvents) {
+      const age = now - new Date(e.ts).getTime();
+      const feature = e.event === "insights" ? "insights"
+                    : e.event === "message"  ? "chat"
+                    : e.event === "generate" ? "wizard"
+                    : "recommend";
+
+      if (!byFeature[feature]) byFeature[feature] = { calls: 0, cost: 0, calls7d: 0 };
+      byFeature[feature].calls++;
+      byFeature[feature].cost += e.costUsd || 0;
+      if (age < d7) byFeature[feature].calls7d++;
+
+      const org = e.org || "unknown";
+      if (!byOrg[org]) byOrg[org] = { calls: 0, cost: 0 };
+      byOrg[org].calls++;
+      byOrg[org].cost += e.costUsd || 0;
+
+      if (age < d7)  { total7d++;  totalCost7d  += e.costUsd || 0; }
+      if (age < d30) { total30d++; totalCost30d += e.costUsd || 0; }
+      totalIn  += e.inTok  || 0;
+      totalOut += e.outTok || 0;
+    }
+
+    // Feedback from wizard + chat votes
+    const feedbackEvents = events.filter(e => e.event === "feedback" && e.vote);
+    let thumbsUp = 0, thumbsDown = 0;
+    feedbackEvents.forEach(e => {
+      if (e.vote === "up") thumbsUp++;
+      else if (e.vote === "down") thumbsDown++;
+    });
+
+    // Top 5 orgs by calls
+    const topOrgs = Object.entries(byOrg)
+      .sort((a, b) => b[1].calls - a[1].calls)
+      .slice(0, 8)
+      .map(([org, d]) => ({ org, calls: d.calls, cost: d.cost }));
+
+    res.json({
+      totalCalls: aiEvents.length,
+      calls7d: total7d,
+      calls30d: total30d,
+      cost7d: totalCost7d,
+      cost30d: totalCost30d,
+      totalTokensIn: totalIn,
+      totalTokensOut: totalOut,
+      byFeature,
+      topOrgs,
+      feedback: { up: thumbsUp, down: thumbsDown },
+    });
+  } catch (err) {
+    console.error("[ai-analytics]", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get("/", (req, res) => {
   // Compute AI spend from events log
   const allEvents = readEvents();
@@ -4905,6 +4923,22 @@ app.get("/", (req, res) => {
           </div>
         </div>
         <div id="backup-detail" style="font-size:11px;color:#666">Backups run daily at 2am and on startup. Data files are saved to a private GitHub Gist.</div>
+      </div>
+    </div>
+
+    <div class="org-section" id="ai-analytics-section">
+      <div class="org-header" onclick="toggleHow(this)" style="cursor:pointer;user-select:none">
+        <div class="org-header-text">
+          <div class="org-name">&#129302; AI Analytics</div>
+          <div class="org-slug">Langfuse-traced usage across all AI features</div>
+        </div>
+        <span class="how-chevron" style="transform:rotate(90deg)">&#9658;</span>
+      </div>
+      <div class="how-body" style="display:block">
+        <div id="ai-analytics-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:16px">
+          <div style="color:#888;font-size:13px">Loading AI analytics...</div>
+        </div>
+        <div id="ai-analytics-detail" style="display:grid;grid-template-columns:1fr 1fr;gap:16px"></div>
       </div>
     </div>
 
@@ -5902,7 +5936,89 @@ app.get("/", (req, res) => {
     // ── Updates log ───────────────────────────────────────────────────────
     // Newest first. Add a new entry at the TOP for every change we ship.
     // History below back-filled from the GitHub commit log.
+    
+    // ── AI Analytics widget ──
+    (async function loadAiAnalytics() {
+      try {
+        const resp = await fetch("/api/admin/ai-analytics");
+        if (!resp.ok) throw new Error("HTTP " + resp.status);
+        const d = resp.ok ? await resp.json() : null;
+        if (!d) return;
+
+        const fmt = (n) => typeof n === "number" ? (n >= 1000 ? (n/1000).toFixed(1) + "k" : String(n)) : "0";
+        const fmtUsd = (n) => "$" + (n || 0).toFixed(2);
+        const pct = d.feedback.up + d.feedback.down > 0
+          ? Math.round(100 * d.feedback.up / (d.feedback.up + d.feedback.down)) + "%"
+          : "\u2014";
+
+        const cards = [
+          { label: "Total AI Calls", value: fmt(d.totalCalls), sub: fmt(d.calls7d) + " last 7d", color: "#6366f1" },
+          { label: "AI Spend (30d)", value: fmtUsd(d.cost30d), sub: fmtUsd(d.cost7d) + " last 7d", color: "#10b981" },
+          { label: "Tokens (In/Out)", value: fmt(d.totalTokensIn) + " / " + fmt(d.totalTokensOut), sub: "cumulative", color: "#3b82f6" },
+          { label: "Feedback Score", value: pct, sub: "\u{1F44D}" + d.feedback.up + " \u{1F44E}" + d.feedback.down, color: "#f59e0b" },
+        ];
+
+        var grid = document.getElementById("ai-analytics-grid");
+        grid.innerHTML = cards.map(function(c) {
+          return '<div style="background:#fff;border-radius:8px;padding:14px 16px;border-left:3px solid ' + c.color + '">'
+            + '<div style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px">' + c.label + '</div>'
+            + '<div style="font-size:22px;font-weight:700;color:#111">' + c.value + '</div>'
+            + '<div style="font-size:11px;color:#999;margin-top:2px">' + c.sub + '</div>'
+            + '</div>';
+        }).join("");
+
+        // Feature breakdown + top orgs
+        var detail = document.getElementById("ai-analytics-detail");
+        var featureNames = { insights: "AI Insights", chat: "Rec AI Chat", wizard: "Report Wizard", recommend: "Program Finder" };
+        var featureColors = { insights: "#7c3aed", chat: "#3b82f6", wizard: "#6366f1", recommend: "#f59e0b" };
+
+        var featureHtml = '<div style="background:#fff;border-radius:8px;padding:14px 16px">'
+          + '<div style="font-size:12px;font-weight:600;color:#555;text-transform:uppercase;letter-spacing:.04em;margin-bottom:10px">By Feature</div>';
+        Object.entries(d.byFeature).sort(function(a,b){ return b[1].calls - a[1].calls; }).forEach(function(entry) {
+          var k = entry[0], v = entry[1];
+          var maxCalls = Math.max.apply(null, Object.values(d.byFeature).map(function(x){ return x.calls; }));
+          var barW = maxCalls > 0 ? Math.max(4, Math.round(100 * v.calls / maxCalls)) : 0;
+          featureHtml += '<div style="margin-bottom:8px">'
+            + '<div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:2px">'
+            + '<span style="color:#333">' + (featureNames[k] || k) + '</span>'
+            + '<span style="color:#666">' + v.calls + ' calls \u00B7 ' + fmtUsd(v.cost) + '</span></div>'
+            + '<div style="background:#f0f0f0;border-radius:3px;height:6px;overflow:hidden">'
+            + '<div style="width:' + barW + '%;height:100%;background:' + (featureColors[k] || '#888') + ';border-radius:3px"></div>'
+            + '</div></div>';
+        });
+        featureHtml += '</div>';
+
+        var orgHtml = '<div style="background:#fff;border-radius:8px;padding:14px 16px">'
+          + '<div style="font-size:12px;font-weight:600;color:#555;text-transform:uppercase;letter-spacing:.04em;margin-bottom:10px">Top Orgs by AI Usage</div>';
+        d.topOrgs.forEach(function(o) {
+          var maxC = d.topOrgs[0] ? d.topOrgs[0].calls : 1;
+          var barW = Math.max(4, Math.round(100 * o.calls / maxC));
+          orgHtml += '<div style="margin-bottom:8px">'
+            + '<div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:2px">'
+            + '<span style="color:#333">' + o.org + '</span>'
+            + '<span style="color:#666">' + o.calls + ' calls \u00B7 ' + fmtUsd(o.cost) + '</span></div>'
+            + '<div style="background:#f0f0f0;border-radius:3px;height:6px;overflow:hidden">'
+            + '<div style="width:' + barW + '%;height:100%;background:#6366f1;border-radius:3px"></div>'
+            + '</div></div>';
+        });
+        if (!d.topOrgs.length) orgHtml += '<div style="color:#999;font-size:12px">No AI usage yet</div>';
+        orgHtml += '</div>';
+
+        detail.innerHTML = featureHtml + orgHtml;
+
+      } catch(e) {
+        var el = document.getElementById("ai-analytics-grid");
+        if (el) el.innerHTML = '<div style="color:#c66;font-size:12px">Could not load AI analytics</div>';
+      }
+    })();
+
     const UPDATES = [
+  { date: '2026-06-23', title: 'Langfuse AI Observability', items: [
+    '\u{1F50D} LANGFUSE INTEGRATION \u2014 All 4 AI features (Insights, Chat, Wizard, Program Finder) now traced via Langfuse + OpenTelemetry. Every Claude call captures full input/output, token usage, latency, and cost. Auto-instrumented via @arizeai/openinference-instrumentation-anthropic.',
+    '\u{1F4E6} Migrated from raw fetch() to official @anthropic-ai/sdk for all AI endpoints. Chat streaming uses SDK stream() API with event-driven text forwarding. Cleaner error handling, automatic retries.',
+    '\u{1F4CA} New AI Analytics section on root dashboard \u2014 total calls, spend (7d/30d), token usage, feedback score, breakdown by feature and org. Powered by /api/admin/ai-analytics endpoint reading from events.jsonl.',
+    '\u{1F6E1}\uFE0F Graceful degradation: if LANGFUSE env vars not set, tracing is silently disabled but all AI features continue working normally.',
+  ] },
   { date: '2026-06-23', title: 'How This Works doc update', items: ['Updated entry point diagram and security section to reflect direct-link approach (replacing iframe embed) — interactive elements like buttons, date pickers, and PDF downloads broke inside iframes, so reports now open in a full browser tab via links inside Metabase dashboards'] },
       { date: "2026-06-23", title: "Smyrna Historic Report", items: ["Recreated Metabase SQL for Smyrna historic facility rental report", "Updated Metabase public UUID to new question"] },
       { date: '2026-06-22', title: 'Public Facility Rental Calendar (Early Access)', items: [
