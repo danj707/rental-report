@@ -94,29 +94,6 @@
     }
     .toolbar .btn-excel:hover { background: #15692f; }
     .toolbar .btn-excel:disabled { opacity: .5; cursor: not-allowed; }
-    .dl-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;display:flex;align-items:center;justify-content:center;animation:fadeIn .2s ease}
-    .dl-modal{background:#fff;border-radius:12px;box-shadow:0 8px 40px rgba(0,0,0,.3);width:90vw;max-width:900px;height:85vh;display:flex;flex-direction:column;overflow:hidden}
-    .dl-modal-hdr{display:flex;align-items:center;padding:12px 16px;border-bottom:1px solid #e5e7eb;background:#fafbfc}
-    .dl-modal-hdr h3{margin:0;font-size:14px;flex:1;color:#1f2430}
-    .dl-modal-hdr .dl-hint{font-size:11px;color:#888;margin-right:12px}
-    .dl-modal-hdr .dl-close{background:none;border:none;font-size:20px;cursor:pointer;color:#999;padding:0 4px}
-    .dl-modal-hdr .dl-close:hover{color:#333}
-    .dl-modal iframe{flex:1;border:none;width:100%}
-    .dl-modal .dl-fallback{padding:24px;text-align:center;color:#666;font-size:13px}
-    .dl-modal .dl-fallback a{color:#2563eb;font-weight:600}
-    @keyframes fadeIn{from{opacity:0}to{opacity:1}}
-
-    .dl-overlay{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:9999;display:flex;align-items:center;justify-content:center}
-    .dl-modal{background:#fff;border-radius:14px;padding:28px 32px;box-shadow:0 8px 30px rgba(0,0,0,.18);max-width:360px;text-align:center;font-family:-apple-system,BlinkMacSystemFont,sans-serif}
-    .dl-modal h3{margin:0 0 8px;font-size:16px;color:#1f2430}
-    .dl-modal p{margin:0 0 18px;font-size:13px;color:#666}
-    .dl-modal .dl-btn{display:inline-block;padding:10px 28px;border-radius:8px;font-size:14px;font-weight:600;color:#fff;text-decoration:none;cursor:pointer;border:none}
-    .dl-modal .dl-btn.pdf{background:#2563eb}
-    .dl-modal .dl-btn.pdf:hover{background:#1d4ed8}
-    .dl-modal .dl-btn.excel{background:#1a7f37}
-    .dl-modal .dl-btn.excel:hover{background:#15692f}
-    .dl-modal .dl-close{display:block;margin-top:12px;font-size:12px;color:#888;cursor:pointer;border:none;background:none}
-    .dl-modal .dl-close:hover{color:#333}
 
     /* ── View toggle ── */
     .view-toggle {
@@ -1695,16 +1672,25 @@ function DayPopover({ date, reservations, locationColors, onClose, selectedLocat
     setTimeout(() => { win.print(); }, 400);
   }
 
-  // PDF URL computed for <a target="_top"> (bypasses iframe sandbox)
-  const pdfUrlDayp = useMemo(function() {
+  function handlePdf() {
+    setPdfLoading(true);
     const parts = window.location.pathname.replace(/\/$/, '').split('/');
-    const pdfBase = parts.length >= 3 ? '/' + parts[1] + '/' + parts[2] + '/api/pdf' : '/api/pdf';
+    const pdfBase = parts.length >= 3 ? `/${parts[1]}/${parts[2]}/api/pdf` : '/api/pdf';
     const qs = new URLSearchParams({ start_date: date, end_date: date });
     if (selectedLocations) { const a = [...selectedLocations]; if (a.length) qs.set('locations', a.join(',')); }
     if (selectedSites)     { const a = [...selectedSites];     if (a.length) qs.set('sites',     a.join(',')); }
-    return withToken(pdfBase + '?' + qs);
-  }, [date, selectedLocations, selectedSites]);
-
+    fetch(withToken(`${pdfBase}?${qs}`))
+      .then(r => r.blob())
+      .then(blob => {
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `rental-schedule-${date}.pdf`;
+        a.click();
+        URL.revokeObjectURL(a.href);
+      })
+      .catch(err => alert('PDF failed: ' + err.message))
+      .finally(() => setPdfLoading(false));
+  }
 
   const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
   const DAYS   = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
@@ -2697,24 +2683,35 @@ function App() {
     setActiveRange(offsetWeeks === 0 ? 'this-week' : 'next-week');
   }
 
-  // PDF URL computed for <a target="_top"> (bypasses iframe sandbox)
-  const pdfUrlApp = useMemo(function() {
+  function downloadPdf() {
+    setPdfLoading(true);
     const qs = new URLSearchParams();
     if (loadedStart) qs.set('start_date', loadedStart);
     if (loadedEnd)   qs.set('end_date',   loadedEnd);
     if (params.location_name) qs.set('location_name', params.location_name);
     if (params.site_type)     qs.set('site_type',     params.site_type);
+    // Respect the current on-screen filter selections so the PDF matches exactly
+    // what's shown. Mirrors the share-URL serialization; the print page reads
+    // these back into selectedLocations/selectedSites on load.
     if (selectedLocations) { const a = [...selectedLocations]; if (a.length) qs.set('locations', a.join(',')); }
     if (selectedSites)     { const a = [...selectedSites];     if (a.length) qs.set('sites',     a.join(',')); }
-    const pathParts = window.location.pathname.replace(/\/$/, '').split('/');
-    const pdfBase = pathParts.length >= 3 ? '/' + pathParts[1] + '/' + pathParts[2] + '/api/pdf' : '/api/pdf';
-    return withToken(pdfBase + '?' + qs.toString());
-  }, [loadedStart, loadedEnd, params, selectedLocations, selectedSites]);
 
-  // Modal for PDF preview (bypasses iframe sandbox download restrictions)
-  const [dlModal, setDlModal] = useState(null);
-  function showPdfModal(url) {
-    setDlModal({ url: url, type: 'pdf' });
+    const pathParts = window.location.pathname.replace(/\/$/, '').split('/');
+    const pdfBase = pathParts.length >= 3
+      ? `/${pathParts[1]}/${pathParts[2]}/api/pdf`
+      : '/api/pdf';
+
+    fetch(withToken(`${pdfBase}?${qs.toString()}`))
+      .then(r => r.blob())
+      .then(blob => {
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `rental-schedule-${loadedStart || 'report'}.pdf`;
+        a.click();
+        URL.revokeObjectURL(a.href);
+      })
+      .catch(err => alert('PDF generation failed: ' + err.message))
+      .finally(() => setPdfLoading(false));
   }
 
   function downloadExcel() {
@@ -2771,11 +2768,7 @@ function App() {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Rental Schedule');
     const slug = (filteredRows[0]?.orgName || 'report').replace(/\s+/g, '-').toLowerCase();
-    // In iframe: show URL toast since downloads are blocked
-    // Outside iframe: direct download
-    try {
-      XLSX.writeFile(wb, `rental-schedule-${slug}-${loadedStart || 'report'}.xlsx`);
-    } catch(e) {}
+    XLSX.writeFile(wb, `rental-schedule-${slug}-${loadedStart || 'report'}.xlsx`);
     logClientEvent('excel');
   }
 
@@ -2914,12 +2907,14 @@ function App() {
 
         <div className="divider" />
 
-        <button onClick={function(){showPdfModal(pdfUrlApp);}}>🖨️ Print</button>
+        <button onClick={() => window.print()}>🖨️ Print</button>
         <button
           className="btn-pdf"
-          onClick={function(){showPdfModal(pdfUrlApp);}}
-          disabled={!filteredRows || filteredRows.length === 0}
-        >📄 PDF</button>
+          onClick={downloadPdf}
+          disabled={pdfLoading || !filteredRows || filteredRows.length === 0}
+        >
+          {pdfLoading ? 'Generating…' : '📄 PDF'}
+        </button>
         <button
           className="btn-excel"
           onClick={downloadExcel}
@@ -3107,9 +3102,6 @@ ReactDOM.createRoot(document.getElementById('root')).render(<App />);
       <script src="/nav-breadcrumb.js" defer></script>
   </body>
 </html>
-
-
-
 
 
 
