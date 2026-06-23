@@ -976,19 +976,19 @@ function App() {
 
   const sendInsightsFeedback = useCallback((score) => {
     if (!insightsTraceId) return;
-    fetch(withToken(basePath + '/api/insights/score'), {
+    fetch(withToken('/' + orgSlug + '/' + reportType + '/api/insights/score'), {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ traceId: insightsTraceId, score, comment: score === 0 ? fbComment : '' }),
     }).catch(() => {});
     setFbSent(true); setFbMode(null);
-  }, [insightsTraceId, fbComment, basePath]);
+  }, [insightsTraceId, fbComment, orgSlug, reportType]);
 
   const getInsights = useCallback(async () => {
     const blob = buildInsightsBlob();
     if (!blob) return;
     setInsightsLoading(true); setInsightsError(null);
     try {
-      const resp = await fetch(withToken(basePath + '/api/insights'), {
+      const resp = await fetch(withToken('/' + orgSlug + '/' + reportType + '/api/insights'), {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(blob),
       });
@@ -1002,7 +1002,7 @@ function App() {
     } finally {
       setInsightsLoading(false);
     }
-  }, [buildInsightsBlob, basePath]);
+  }, [buildInsightsBlob, orgSlug, reportType]);
 
   // ── Excel export ────────────────────────────────────────────────────
   function exportExcel() {
