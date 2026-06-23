@@ -2556,7 +2556,7 @@ app.get("/:org/:report/api/pdf", resolveOrg, async (req, res) => {
     logEvent(orgSlug, reportType, "pdf", req);
     const pdf = await generatePdf(orgSlug, reportType, req.query.start_date, req.query.end_date, req.query);
     const filename = `${reportType}-report-${req.query.start_date || "report"}.pdf`;
-    res.set({ "Content-Type": "application/pdf", "Content-Disposition": `inline; filename="${filename}"`, "Content-Length": pdf.length });
+    res.set({ "Content-Type": "application/pdf", "Content-Disposition": `attachment; filename="${filename}"`, "Content-Length": pdf.length });
     res.send(pdf);
   } catch (err) {
     console.error("[pdf] Error:", err);
@@ -6602,6 +6602,7 @@ app.listen(PORT, () => {
   // Runs after listen() so startup isn't blocked by GitHub latency.
   migrateDynamicOrgs();
 });
+
 
 
 
