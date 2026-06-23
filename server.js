@@ -351,7 +351,7 @@ const ORGS = {
     orgId:   "efc0724c-8f32-481a-bab3-fc19c724f3a7",
     logoUrl: "https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2Forganization-efc0724c-8f32-481a-bab3-fc19c724f3a7%2FfullLogo.png%3F1771265790459&w=1920&q=75",
     facility: { mbUuid: "d541c91e-bb92-4103-abc5-940b3edb61b9" },
-    historic: { mbUuid: "af3c5388-7deb-4a05-a102-cc31f6c4b9f7" },
+    historic: { mbUuid: "66e39b77-199e-4c6f-947d-588ab472720f" },
     roster:   { mbUuid: "462000f0-6be1-4e73-b983-0375668c1a1f" },
     programs: { mbUuid: "ebe20297-455d-4603-aa22-b5560bd5c502" },
     users   : { mbUuid: "f6defe8c-a7bd-418c-8089-160c5fd0cccc" },
@@ -5903,6 +5903,7 @@ app.get("/", (req, res) => {
     // Newest first. Add a new entry at the TOP for every change we ship.
     // History below back-filled from the GitHub commit log.
     const UPDATES = [
+      { date: "2026-06-23", title: "Smyrna Historic Report", items: ["Recreated Metabase SQL for Smyrna historic facility rental report", "Updated Metabase public UUID to new question"] },
       { date: '2026-06-22', title: 'Public Facility Rental Calendar (Early Access)', items: [
         '\u{1F4C5} New public-facing facility availability calendar at /:org/rentalcalendar?locationId=X \u2014 no token required, fully public',
         '\u{1F4E1} LIVE REAL-TIME DATA via @modelcontextprotocol/sdk calling rec.us MCP server (api.rec.us/mcp). Node.js MCP client tries Streamable HTTP, falls back to SSE. 5-min availability cache, 10-min site list cache.',
