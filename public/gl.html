@@ -439,9 +439,9 @@
     .insights-feedback .fb-down-form input:focus { border-color:#6366f1; box-shadow:0 0 0 2px rgba(99,102,241,.15); }
     .insights-feedback .fb-send { background:#6366f1!important; color:#fff!important; border-color:#6366f1!important; font-weight:600; }
     .insights-feedback .fb-send:hover { background:#4f46e5!important; }
-    .loading { padding: 36px 16px; text-align: center; }
-    .spinner { border:3px solid #e5e7eb; border-top:3px solid #6366f1; border-radius:50%; width:24px; height:24px; margin:0 auto 8px; animation:spin 1s linear infinite; }
-    @keyframes spin { to { transform:rotate(360deg); } }
+    .ai-loading { padding: 24px 16px; text-align: center; }
+    .ai-spinner { border:3px solid #e5e7eb; border-top:3px solid #6366f1; border-radius:50%; width:24px; height:24px; margin:0 auto 8px; animation:ai-spin 1s linear infinite; }
+    @keyframes ai-spin { to { transform:rotate(360deg); } }
   </style>
   <script>
     // ── Token auth (injected) ────────────────────────────────────────
@@ -1538,7 +1538,7 @@ function App() {
               )}
             </div>
             {insightsLoading && (
-              <div className="loading"><div className="spinner" /></div>
+              <div className="ai-loading"><div className="ai-spinner" /></div>
             )}
             {insightsError && !insightsLoading && (
               <div style={{color:'#dc2626',fontSize:13,padding:'8px 0'}}><strong>Insights unavailable:</strong> {insightsError}</div>
