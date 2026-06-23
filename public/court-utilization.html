@@ -501,6 +501,10 @@ function App() {
   const [insights, setInsights]             = useState(null);
   const [insightsLoading, setInsightsLoading] = useState(false);
   const [insightsError, setInsightsError]     = useState(null);
+  const [insightsTraceId, setInsightsTraceId] = useState(null);
+  const [fbSent, setFbSent] = useState(false);
+  const [fbMode, setFbMode] = useState(null);
+  const [fbComment, setFbComment] = useState('');
 
   const runReport = useCallback(async () => {
     setLoading(true);
