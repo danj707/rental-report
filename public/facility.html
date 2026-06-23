@@ -95,6 +95,17 @@
     .toolbar .btn-excel:hover { background: #15692f; }
     .toolbar .btn-excel:disabled { opacity: .5; cursor: not-allowed; }
     .dl-overlay{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:9999;display:flex;align-items:center;justify-content:center}
+    .dl-modal{background:#fff;border-radius:14px;padding:28px 32px;box-shadow:0 8px 30px rgba(0,0,0,.18);max-width:400px;text-align:center;font-family:-apple-system,BlinkMacSystemFont,sans-serif}
+    .dl-modal h3{margin:0 0 8px;font-size:17px;color:#1f2430}
+    .dl-modal p{margin:0 0 18px;font-size:13px;color:#666}
+    .dl-modal .dl-btn{display:inline-block;padding:11px 28px;border-radius:8px;font-size:14px;font-weight:600;color:#fff;text-decoration:none;cursor:pointer;border:none}
+    .dl-modal .dl-btn.pdf{background:#2563eb}
+    .dl-modal .dl-btn.pdf:hover{background:#1d4ed8}
+    .dl-modal .dl-btn.excel{background:#1a7f37}
+    .dl-modal .dl-btn.excel:hover{background:#15692f}
+    .dl-modal .dl-close{display:block;margin-top:14px;font-size:12px;color:#999;cursor:pointer;border:none;background:none}
+    .dl-modal .dl-close:hover{color:#333}
+    .dl-overlay{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:9999;display:flex;align-items:center;justify-content:center}
     .dl-modal{background:#fff;border-radius:14px;padding:28px 32px;box-shadow:0 8px 30px rgba(0,0,0,.18);max-width:360px;text-align:center;font-family:-apple-system,BlinkMacSystemFont,sans-serif}
     .dl-modal h3{margin:0 0 8px;font-size:16px;color:#1f2430}
     .dl-modal p{margin:0 0 18px;font-size:13px;color:#666}
@@ -1617,7 +1628,7 @@ function HoverCard({ reservation, position, locationColors }) {
 
 
 // ── DayPopover component ─────────────────────────────────────────────
-function DayPopover({ date, reservations, locationColors, onClose, selectedLocations, selectedSites }) {
+function DayPopover({ date, reservations, locationColors, onClose, selectedLocations, selectedSites, onDownload }) {
   const popRef = useRef(null);
   const [pos, setPos]   = useState({ top: 80, left: '50%', transform: 'translateX(-50%)' });
 
@@ -1973,6 +1984,7 @@ function CalendarView({ filteredRows, locationColors, loadedStart, loadedEnd, se
           onClose={() => setSelectedDay(null)}
           selectedLocations={selectedLocations}
           selectedSites={selectedSites}
+          onDownload={setDlModal}
         />
       )}
     </div>
@@ -2489,6 +2501,7 @@ function App() {
   const [error,      setError]      = useState(null);
   const [loading,    setLoading]    = useState(false);
   const [pdfLoading, setPdfLoading] = useState(false);
+  const [dlModal, setDlModal] = useState(null);
 
   const [loadedStart, setLoadedStart] = useState(null);
   const [loadedEnd,   setLoadedEnd]   = useState(null);
@@ -3131,6 +3144,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(<App />);
       <script src="/nav-breadcrumb.js" defer></script>
   </body>
 </html>
+
 
 
 
