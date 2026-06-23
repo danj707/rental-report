@@ -31,13 +31,19 @@ _anthropicInstrumentation.manuallyInstrument(AnthropicSDK);
 
 const _langfuseEnabled = !!(process.env.LANGFUSE_PUBLIC_KEY && process.env.LANGFUSE_SECRET_KEY);
 let _otelSdk = null;
+let _langfuseProcessor = null;
 if (_langfuseEnabled) {
+  _langfuseProcessor = new LangfuseSpanProcessor({
+    publicKey:  process.env.LANGFUSE_PUBLIC_KEY,
+    secretKey:  process.env.LANGFUSE_SECRET_KEY,
+    baseUrl:    process.env.LANGFUSE_BASE_URL || "https://us.cloud.langfuse.com",
+  });
   _otelSdk = new NodeSDK({
-    spanProcessors: [new LangfuseSpanProcessor()],
+    spanProcessors: [_langfuseProcessor],
     instrumentations: [_anthropicInstrumentation],
   });
   _otelSdk.start();
-  console.log("[langfuse] OpenTelemetry tracing enabled");
+  console.log("[langfuse] OpenTelemetry tracing enabled — baseUrl:", process.env.LANGFUSE_BASE_URL || "(default US)");
 } else {
   console.log("[langfuse] LANGFUSE keys not set — tracing disabled (AI features still work)");
 }
@@ -1957,6 +1963,7 @@ app.post("/:org/:report/api/insights", resolveOrg, async (req, res) => {
     const outTok = usage.output_tokens || 0;
     const costUsd = insightsCostUsd(INSIGHTS_MODEL, inTok, outTok);
     logEvent(orgSlug, reportType, "insights", req, { inTok, outTok, costUsd });
+    if (_langfuseProcessor) _langfuseProcessor.forceFlush().catch(() => {});
     res.json({ ok: true, insights, cached: false });
   } catch (err) {
     console.error("[insights] Error:", err);
@@ -2131,6 +2138,7 @@ app.post("/:org/chat/api/message", async (req, res) => {
 
     const costUsd = insightsCostUsd(CHAT_MODEL, inputTokens, outputTokens);
     logEvent(slug, "chat", "message", req, { inTok: inputTokens, outTok: outputTokens, costUsd });
+    if (_langfuseProcessor) _langfuseProcessor.forceFlush().catch(() => {});
 
     res.write("data: [DONE]\n\n");
     res.end();
@@ -2370,6 +2378,7 @@ app.post("/:org/report-wizard/api/generate", async (req, res) => {
 
     const usage = data.usage || {};
     const costUsd = insightsCostUsd(WIZARD_MODEL, usage.input_tokens || 0, usage.output_tokens || 0);
+    if (_langfuseProcessor) _langfuseProcessor.forceFlush().catch(() => {});
     logEvent(slug, "report-wizard", "generate", req, {
       inTok: usage.input_tokens || 0,
       outTok: usage.output_tokens || 0,
