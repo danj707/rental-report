@@ -1966,7 +1966,7 @@ app.post("/:org/:report/api/insights", resolveOrg, async (req, res) => {
     const outTok = usage.output_tokens || 0;
     const costUsd = insightsCostUsd(INSIGHTS_MODEL, inTok, outTok);
     logEvent(orgSlug, reportType, "insights", req, { inTok, outTok, costUsd });
-    if (_langfuseProcessor) _langfuseProcessor.forceFlush().catch(() => {});
+    if (_langfuseProcessor) _langfuseProcessor.forceFlush().then(() => console.log("[langfuse] flush OK")).catch(e => console.error("[langfuse] flush error:", e.message));
     res.json({ ok: true, insights, cached: false });
   } catch (err) {
     console.error("[insights] Error:", err);
