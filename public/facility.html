@@ -1691,22 +1691,10 @@ function DayPopover({ date, reservations, locationColors, onClose, selectedLocat
     const qs = new URLSearchParams({ start_date: date, end_date: date });
     if (selectedLocations) { const a = [...selectedLocations]; if (a.length) qs.set('locations', a.join(',')); }
     if (selectedSites)     { const a = [...selectedSites];     if (a.length) qs.set('sites',     a.join(',')); }
-    fetch(withToken(`${pdfBase}?${qs}`))
-      .then(r => r.blob())
-      .then(blob => {
-        const url = URL.createObjectURL(blob);
-        const filename = `rental-schedule-${date}.pdf`;
-        // In iframe: open in new tab. Outside: programmatic download.
-        if (window.self !== window.top) {
-          window.open(url, '_blank');
-        } else {
-          const a = document.createElement('a');
-          a.href = url; a.download = filename; a.click();
-          URL.revokeObjectURL(url);
-        }
-      })
-      .catch(err => alert('PDF failed: ' + err.message))
-      .finally(() => setPdfLoading(false));
+    // Navigate to PDF URL — server returns Content-Disposition:attachment
+    // Browser downloads without leaving the page (works inside iframes)
+    window.location.href = withToken(`${pdfBase}?${qs}`);
+    setTimeout(() => setPdfLoading(false), 3000);
   }
 
   const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
@@ -2785,20 +2773,7 @@ function App() {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Rental Schedule');
     const slug = (filteredRows[0]?.orgName || 'report').replace(/\s+/g, '-').toLowerCase();
-    // Try direct download, fall back to modal for iframe contexts
-    try {
-      if (window.self !== window.top) {
-        // In iframe: create blob URL and show modal
-        const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
-        const blob = new Blob([wbout], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-        const url = URL.createObjectURL(blob);
-        setDlModal({ url, filename: `rental-schedule-${slug}-${loadedStart || 'report'}.xlsx`, type: 'excel' });
-      } else {
-        XLSX.writeFile(wb, `rental-schedule-${slug}-${loadedStart || 'report'}.xlsx`);
-      }
-    } catch(e) {
-      XLSX.writeFile(wb, `rental-schedule-${slug}-${loadedStart || 'report'}.xlsx`);
-    }
+    XLSX.writeFile(wb, `rental-schedule-${slug}-${loadedStart || 'report'}.xlsx`);
     logClientEvent('excel');
   }
 
