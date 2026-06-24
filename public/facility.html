@@ -3310,7 +3310,11 @@ function App() {
                               return (
                                 <div className="sub-row">
                                   {r.notes || ''}
-                                  {visAddons ? ` | Add-ons: ${visAddons}` : ''}
+                                  {visAddons ? ` | Add-ons: ${visAddons.split(',').map(s => {
+                                    const trimmed = s.trim();
+                                    const rawName = trimmed.replace(/\s*\(\$[\d,.]+\)$/, '').trim();
+                                    return getAddOnEmoji(rawName) + ' ' + trimmed;
+                                  }).join(', ')}` : ''}
                                 </div>
                               );
                             })()}
