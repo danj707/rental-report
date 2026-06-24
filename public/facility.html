@@ -1536,6 +1536,101 @@ function SiteFilter({ allSites, selectedSites, onChange }) {
   );
 }
 
+// ── Add-On Filter component ───────────────────────────────────────
+// Parses comma-separated add-on strings into individual items.
+// Mirrors SiteFilter UX: all selected = show everything; deselect = hide.
+// Special "(No add-ons)" entry controls rows with empty addons field.
+function parseAddOnItems(addonsStr) {
+  if (!addonsStr || !addonsStr.trim()) return [];
+  return addonsStr.split(',').map(s => s.trim()).filter(Boolean);
+}
+
+const NO_ADDONS_KEY = '(No add-ons)';
+
+function AddOnFilter({ allAddOns, selectedAddOns, onChange }) {
+  const [open, setOpen]     = useState(false);
+  const [search, setSearch] = useState('');
+  const wrapRef             = useRef(null);
+
+  useEffect(() => {
+    function handleClick(e) {
+      if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false);
+    }
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, []);
+
+  const filtered    = allAddOns.filter(s => s.toLowerCase().includes(search.toLowerCase()));
+  const allSelected = selectedAddOns.size === allAddOns.length;
+  const noneSelected = selectedAddOns.size === 0;
+
+  function toggle(item) {
+    const next = new Set(selectedAddOns);
+    next.has(item) ? next.delete(item) : next.add(item);
+    onChange(next);
+  }
+
+  function selectAll() { onChange(new Set(allAddOns)); }
+  function clearAll()  { onChange(new Set()); }
+
+  const badgeCount = allSelected ? null : selectedAddOns.size;
+
+  return (
+    <div className="loc-filter-wrap" ref={wrapRef}>
+      <button
+        className="btn-loc-filter"
+        onClick={() => setOpen(o => !o)}
+        style={!allSelected ? { borderColor: '#f59e0b', color: '#fde68a' } : {}}
+      >
+        \u2795 Add Ons
+        {badgeCount !== null && (
+          <span className="badge">{badgeCount}/{allAddOns.length}</span>
+        )}
+      </button>
+
+      {open && (
+        <div className="loc-dropdown">
+          <div className="loc-dropdown-header">
+            <span>Filter Add-Ons</span>
+            <div className="loc-dropdown-header-actions">
+              <button onClick={selectAll} disabled={allSelected}>All</button>
+              <button onClick={clearAll}  disabled={noneSelected}>None</button>
+            </div>
+          </div>
+
+          {allAddOns.length > 5 && (
+            <div className="loc-dropdown-search">
+              <input
+                type="text"
+                placeholder="Search add-ons\u2026"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                autoFocus
+              />
+            </div>
+          )}
+
+          <div className="loc-dropdown-list">
+            {filtered.length === 0 && (
+              <div style={{padding:'10px 12px', color:'#666', fontSize:11}}>No matches</div>
+            )}
+            {filtered.map(item => (
+              <label key={item} className="loc-item">
+                <input
+                  type="checkbox"
+                  checked={selectedAddOns.has(item)}
+                  onChange={() => toggle(item)}
+                />
+                <span title={item}>{item}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Hover Card component ─────────────────────────────────────────────
 function HoverCard({ reservation, position, locationColors }) {
   const cardRef = useRef(null);
@@ -1694,6 +1789,7 @@ function DayPopover({ date, reservations, locationColors, onClose, selectedLocat
     if (selectedLocations) { const a = [...selectedLocations]; if (a.length) qs.set('locations', a.join(',')); }
     if (selectedSites)     { const a = [...selectedSites];     if (a.length) qs.set('sites',     a.join(',')); }
     if (bookTypeFilter && bookTypeFilter !== 'all') qs.set('book_type', bookTypeFilter);
+    if (selectedAddOns)    { const a = [...selectedAddOns];    if (a.length) qs.set('addons',    a.join(',')); }
     fetch(withToken(`${pdfBase}?${qs}`))
       .then(r => r.blob())
       .then(blob => {
@@ -1785,7 +1881,7 @@ function DayPopover({ date, reservations, locationColors, onClose, selectedLocat
 }
 
 // ── Calendar View component ──────────────────────────────────────────
-function CalendarView({ filteredRows, locationColors, loadedStart, loadedEnd, selectedLocations, selectedSites }) {
+function CalendarView({ filteredRows, locationColors, loadedStart, loadedEnd, selectedLocations, selectedSites, selectedAddOns }) {
   const [calMonth, setCalMonth] = useState(() => {
     // Start at first month of loaded range
     if (loadedStart) {
@@ -1972,6 +2068,7 @@ function CalendarView({ filteredRows, locationColors, loadedStart, loadedEnd, se
           onClose={() => setSelectedDay(null)}
           selectedLocations={selectedLocations}
           selectedSites={selectedSites}
+          selectedAddOns={selectedAddOns}
         />
       )}
     </div>
@@ -2547,6 +2644,7 @@ function App() {
   // ── Location filter state ────────────────────────────────────────
   const [selectedLocations, setSelectedLocations] = useState(null);
   const [selectedSites,     setSelectedSites]     = useState(null);
+  const [selectedAddOns,    setSelectedAddOns]    = useState(null);
 
   // Share Link: expose the live applied filter state so the floating Share
   // widget copies a URL that reproduces the on-screen view (mirrors the PDF).
@@ -2558,11 +2656,12 @@ function App() {
       if (selectedLocations) { const a = [...selectedLocations]; if (a.length) qs.set('locations', a.join(',')); }
       if (selectedSites)     { const a = [...selectedSites];     if (a.length) qs.set('sites',     a.join(',')); }
       if (bookTypeFilter && bookTypeFilter !== 'all') qs.set('book_type', bookTypeFilter);
+      if (selectedAddOns)    { const a = [...selectedAddOns];    if (a.length) qs.set('addons',    a.join(',')); }
       if (URL_TOKEN) qs.set('token', URL_TOKEN);
       return `${window.location.pathname}?${qs.toString()}`;
     };
     return () => { try { delete window.recShareLink; } catch (e) { window.recShareLink = undefined; } };
-  }, [loadedStart, loadedEnd, startDate, endDate, selectedLocations, selectedSites]);
+  }, [loadedStart, loadedEnd, startDate, endDate, selectedLocations, selectedSites, selectedAddOns]);
 
   useEffect(() => {
     if (params._print === '1') document.body.classList.add('print-mode');
@@ -2635,6 +2734,32 @@ function App() {
           sites.forEach(s => { if (!next.has(s)) next.add(s); });
           return next;
         });
+
+        setSelectedAddOns(prev => {
+          // Build full add-on list from data
+          const items = new Set();
+          normalized.forEach(r => {
+            const parts = parseAddOnItems(r.addons);
+            if (parts.length === 0) items.add(NO_ADDONS_KEY);
+            else parts.forEach(p => items.add(p));
+          });
+          const all = [...items].sort((a, b) => {
+            if (a === NO_ADDONS_KEY) return -1;
+            if (b === NO_ADDONS_KEY) return 1;
+            return a.localeCompare(b);
+          });
+          if (prev === null) {
+            // Respect shared URL addons param
+            if (params.addons) {
+              const shared = params.addons.split(',').map(s => s.trim()).filter(s => all.includes(s));
+              if (shared.length > 0) return new Set(shared);
+            }
+            return new Set(all);
+          }
+          const next = new Set(prev);
+          all.forEach(a => { if (!next.has(a)) next.add(a); });
+          return next;
+        });
       })
       .catch(err => setError(err.message))
       .finally(() => setLoading(false));
@@ -2656,6 +2781,23 @@ function App() {
     return [...new Set(rows.map(r => r.site).filter(Boolean))].sort();
   }, [rows]);
 
+  const allAddOns = useMemo(() => {
+    if (!rows) return [];
+    const items = new Set();
+    rows.forEach(r => {
+      const parts = parseAddOnItems(r.addons);
+      if (parts.length === 0) items.add(NO_ADDONS_KEY);
+      else parts.forEach(p => items.add(p));
+    });
+    // Sort with "(No add-ons)" always first
+    const arr = [...items].sort((a, b) => {
+      if (a === NO_ADDONS_KEY) return -1;
+      if (b === NO_ADDONS_KEY) return 1;
+      return a.localeCompare(b);
+    });
+    return arr;
+  }, [rows]);
+
   const filteredRows = useMemo(() => {
     if (!rows) return null;
     let result = rows;
@@ -2668,8 +2810,15 @@ function App() {
     if (bookTypeFilter !== 'all') {
       result = result.filter(r => (r.bookingType || '').trim().toLowerCase() === bookTypeFilter);
     }
+    if (selectedAddOns && selectedAddOns.size < allAddOns.length) {
+      result = result.filter(r => {
+        const parts = parseAddOnItems(r.addons);
+        if (parts.length === 0) return selectedAddOns.has(NO_ADDONS_KEY);
+        return parts.some(p => selectedAddOns.has(p));
+      });
+    }
     return result;
-  }, [rows, selectedLocations, allLocations, selectedSites, allSites, bookTypeFilter]);
+  }, [rows, selectedLocations, allLocations, selectedSites, allSites, bookTypeFilter, selectedAddOns, allAddOns]);
 
   const grouped = useMemo(() => {
     if (!filteredRows) return null;
@@ -2724,6 +2873,7 @@ function App() {
     if (selectedLocations) { const a = [...selectedLocations]; if (a.length) qs.set('locations', a.join(',')); }
     if (selectedSites)     { const a = [...selectedSites];     if (a.length) qs.set('sites',     a.join(',')); }
     if (bookTypeFilter && bookTypeFilter !== 'all') qs.set('book_type', bookTypeFilter);
+    if (selectedAddOns)    { const a = [...selectedAddOns];    if (a.length) qs.set('addons',    a.join(',')); }
 
     const pathParts = window.location.pathname.replace(/\/$/, '').split('/');
     const pdfBase = pathParts.length >= 3
@@ -2877,6 +3027,17 @@ function App() {
               allSites={allSites}
               selectedSites={selectedSites}
               onChange={setSelectedSites}
+            />
+          </>
+        )}
+
+        {allAddOns.length > 1 && selectedAddOns && !(allAddOns.length === 1 && allAddOns[0] === NO_ADDONS_KEY) && (
+          <>
+            <div className="divider" />
+            <AddOnFilter
+              allAddOns={allAddOns}
+              selectedAddOns={selectedAddOns}
+              onChange={setSelectedAddOns}
             />
           </>
         )}
@@ -3064,6 +3225,7 @@ function App() {
             loadedEnd={loadedEnd}
             selectedLocations={selectedLocations}
             selectedSites={selectedSites}
+            selectedAddOns={selectedAddOns}
           />
         )}
 
