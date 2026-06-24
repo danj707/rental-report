@@ -4382,18 +4382,18 @@ app.get("/", (req, res) => {
     const sideFbDown = sideEvents.filter(e => e.event === 'insights-feedback' && e.score === 0).length;
     const sideSubs = db.getSubscriptions(slug).length;
 
-    const sidebarHtml = \`
+    const sidebarHtml = `
       <div class="org-sidebar">
         <div class="org-sidebar-head">Usage (30d)</div>
         <div class="org-sidebar-row"><span class="org-sidebar-label">Views</span><span class="org-sidebar-val">\${sideViews}</span></div>
         <div class="org-sidebar-row"><span class="org-sidebar-label">PDF exports</span><span class="org-sidebar-val">\${sidePdfs}</span></div>
         <div class="org-sidebar-row"><span class="org-sidebar-label">Excel exports</span><span class="org-sidebar-val">\${sideExports}</span></div>
-        <div class="org-sidebar-row"><span class="org-sidebar-label">Subscribers</span><span class="org-sidebar-val">\${sideSubs}</span></div>
+        <div class="org-sidebar-row"><span class="org-sidebar-label">Subscribers</span><span class="org-sidebar-val">${sideSubs}</span></div>
         <div class="org-sidebar-head">AI (30d)</div>
-        <div class="org-sidebar-row"><span class="org-sidebar-label">AI calls</span><span class="org-sidebar-val">\${sideAiCalls}</span></div>
-        <div class="org-sidebar-row"><span class="org-sidebar-label">AI spend</span><span class="org-sidebar-val">$\${sideAiCost.toFixed(2)}</span></div>
-        \${(sideFbUp + sideFbDown) > 0 ? \`<div class="org-sidebar-row"><span class="org-sidebar-label">Feedback</span><span class="org-sidebar-val">\uD83D\uDC4D\${sideFbUp} \uD83D\uDC4E\${sideFbDown}</span></div>\` : ''}
-      </div>\`;
+        <div class="org-sidebar-row"><span class="org-sidebar-label">AI calls</span><span class="org-sidebar-val">${sideAiCalls}</span></div>
+        <div class="org-sidebar-row"><span class="org-sidebar-label">AI spend</span><span class="org-sidebar-val">$${sideAiCost.toFixed(2)}</span></div>
+        ${(sideFbUp + sideFbDown) > 0 ? `<div class="org-sidebar-row"><span class="org-sidebar-label">Feedback</span><span class="org-sidebar-val">\uD83D\uDC4D${sideFbUp} \uD83D\uDC4E${sideFbDown}</span></div>` : ''}
+      </div>`;
 
     // Build pulse metrics strip from cached data
     const pulse = getCachedPulse(slug);
