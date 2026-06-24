@@ -5316,9 +5316,13 @@ app.get("/", (req, res) => {
         </ul>
 
         <h4>AI-Powered Features</h4>
+        <p>All AI features are powered by the Anthropic Claude API via the official <code>@anthropic-ai/sdk</code>, with full observability through <strong>Langfuse</strong> (OpenTelemetry-based tracing). Every Claude call is auto-instrumented: input/output, token usage, latency, and cost are captured and exported to Langfuse Cloud for monitoring, evaluation, and prompt iteration.</p>
         <ul>
-          <li><strong>Report Wizard</strong> &#8212; plain-English natural language queries generate live dashboard widgets. Schema discovery with caching, structured system prompts, PII stripping, thumbs up/down feedback logging, and an admin activity panel for tracking wizard usage across orgs.</li>
-          <li><strong>AI Insights</strong> &#8212; Programs, Fast Track, Court Utilization, Community Intel, and Director&#x27;s Report include Claude-generated narrative analysis tailored to each org&#x27;s data. Insights are generated via the Anthropic API with report-specific system prompts.</li>
+          <li><strong>AI Insights (11 reports)</strong> &#8212; Every report except Facility Rental and Calendar has a &#10024; <em>Rec Insights</em> button that generates 4 data-grounded insight cards (opportunity, risk, signal) with concrete actions. Each report type has a tailored system prompt. Responses cached with SHA-256 keys. Thumbs up/down feedback attached to Langfuse traces as scores for quality monitoring.</li>
+          <li><strong>Report Wizard</strong> &#8212; plain-English natural language queries generate live dashboard widgets. Schema auto-discovery with 30-min cache. Structured system prompt with full example config. Feedback thumbs up/down logged to events.</li>
+          <li><strong>Rec AI Chat</strong> &#8212; streaming conversational assistant with full org data context. Fetches all available report data, builds a comprehensive system prompt, and streams Claude responses via SSE.</li>
+          <li><strong>Program Finder</strong> &#8212; public-facing AI that matches residents to upcoming programs based on natural language descriptions. Emails personalized recommendations.</li>
+          <li><strong>Langfuse Integration</strong> &#8212; OpenTelemetry auto-instrumentation via <code>@arizeai/openinference-instrumentation-anthropic</code>. Every AI call creates a Langfuse trace with full I/O. User feedback (thumbs up/down + optional comments) sent as Langfuse scores via the REST API. AI Analytics dashboard on the admin page shows calls by feature, cost trends, feedback rates, and top orgs. Gracefully disabled if <code>LANGFUSE_*</code> env vars are not set.</li>
         </ul>
 
         <p style="margin-top:8px"><strong>Shared Metabase queries:</strong> 12 of 15 report types use a single parameterized Metabase question with <code>org_id</code> passed at query time &#8212; no per-org SQL duplication. Only Historic remains as a per-org UUID. Adding a new org lights up all 12 shared reports automatically.</p>
@@ -5347,7 +5351,10 @@ app.get("/", (req, res) => {
           <li><code>FROM_EMAIL</code> / <code>FROM_NAME</code> &#8212; sender identity for outbound emails</li>
           <li><code>DATA_DIR</code> &#8212; path to persistent storage (subscriptions, health checks, feature flags)</li>
           <li><code>GITHUB_PAT</code> &#8212; GitHub Personal Access Token for nightly Gist backups</li>
-          <li><code>ANTHROPIC_API_KEY</code> &#8212; API key for Claude AI insights and Report Wizard</li>
+          <li><code>ANTHROPIC_API_KEY</code> &#8212; API key for Claude AI insights, Chat, Wizard, and Program Finder</li>
+          <li><code>LANGFUSE_PUBLIC_KEY</code> &#8212; Langfuse project public key (enables AI observability tracing)</li>
+          <li><code>LANGFUSE_SECRET_KEY</code> &#8212; Langfuse project secret key</li>
+          <li><code>LANGFUSE_BASE_URL</code> &#8212; Langfuse region endpoint (e.g. <code>https://us.cloud.langfuse.com</code>)</li>
           <li><code>PORT</code> &#8212; server port (Railway sets this automatically)</li>
         </ul>
 
@@ -6196,11 +6203,14 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
-  { date: '2026-06-23', title: 'Langfuse AI Observability', items: [
-    '\u{1F50D} LANGFUSE INTEGRATION \u2014 All 4 AI features (Insights, Chat, Wizard, Program Finder) now traced via Langfuse + OpenTelemetry. Every Claude call captures full input/output, token usage, latency, and cost. Auto-instrumented via @arizeai/openinference-instrumentation-anthropic.',
-    '\u{1F4E6} Migrated from raw fetch() to official @anthropic-ai/sdk for all AI endpoints. Chat streaming uses SDK stream() API with event-driven text forwarding. Cleaner error handling, automatic retries.',
-    '\u{1F4CA} New AI Analytics section on root dashboard \u2014 total calls, spend (7d/30d), token usage, feedback score, breakdown by feature and org. Powered by /api/admin/ai-analytics endpoint reading from events.jsonl.',
-    '\u{1F6E1}\uFE0F Graceful degradation: if LANGFUSE env vars not set, tracing is silently disabled but all AI features continue working normally.',
+  { date: '2026-06-23', title: 'Langfuse AI Observability + Insights Everywhere', items: [
+    '\u{1F50D} LANGFUSE INTEGRATION \u2014 All 4 AI features (Insights, Chat, Wizard, Program Finder) now traced via Langfuse + OpenTelemetry. Every Claude call captures full input/output, token usage, latency, and cost. Auto-instrumented via @arizeai/openinference-instrumentation-anthropic. Explicit shouldExportSpan filter for OpenInference spans.',
+    '\u{1F4E6} ANTHROPIC SDK MIGRATION \u2014 All AI endpoints migrated from raw fetch() to official @anthropic-ai/sdk. Chat streaming uses SDK stream() API with event-driven text forwarding. Shared client instance with automatic API key detection.',
+    '\u{1F44D} USER FEEDBACK \u2192 LANGFUSE SCORES \u2014 Thumbs up/down on AI insights cards send scores to Langfuse via REST API (POST /api/public/scores). Thumbs down expands inline text input for typed feedback. TraceId captured via parent OTel span wrapping each Anthropic call. Cached insights preserve traceId for feedback on repeated views.',
+    '\u2728 AI INSIGHTS ON 11 REPORTS \u2014 Expanded from 4 reports to 11. New: GL, Overview, Products, Memberships, Historic, Roster, Instructor Payout. Each has a tailored system prompt, buildInsightsBlob with report-specific data aggregation, and the full feedback UI. Only Calendar and Facility Rental excluded.',
+    '\u{1F3A8} CONSISTENT BUTTON STYLING \u2014 All 11 Rec Insights buttons now use the gradient purple style (linear-gradient #6366f1 \u2192 #8b5cf6). AI pill badges added to all insight-enabled report cards on the root dashboard.',
+    '\u{1F4CA} AI ANALYTICS DASHBOARD \u2014 New section on root dashboard showing total calls, spend (7d/30d), token usage, feedback score, breakdown by feature (bar chart) and top orgs by AI usage. Powered by /api/admin/ai-analytics endpoint.',
+    '\u{1F6E1}\uFE0F Graceful degradation: if LANGFUSE env vars not set, tracing is silently disabled but all AI features continue working normally. forceFlush() after each insights call ensures prompt export.',
   ] },
   { date: '2026-06-23', title: 'How This Works doc update', items: ['Updated entry point diagram and security section to reflect direct-link approach (replacing iframe embed) — interactive elements like buttons, date pickers, and PDF downloads broke inside iframes, so reports now open in a full browser tab via links inside Metabase dashboards'] },
       { date: "2026-06-23", title: "Smyrna Historic Report", items: ["Recreated Metabase SQL for Smyrna historic facility rental report", "Updated Metabase public UUID to new question"] },
