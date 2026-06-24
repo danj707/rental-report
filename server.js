@@ -4371,6 +4371,30 @@ app.get("/", (req, res) => {
       ? `<a href="/${slug}${tokenQS}" class="org-name-link">${displayName}</a>`
       : `<span>${displayName}</span>`;
 
+    // Build sidebar metrics
+    const sideEvents = readEvents(30).filter(e => e.org === slug);
+    const sideViews = sideEvents.filter(e => e.event === 'view').length;
+    const sidePdfs = sideEvents.filter(e => e.event === 'pdf').length;
+    const sideExports = sideEvents.filter(e => e.event === 'excel').length;
+    const sideAiCalls = sideEvents.filter(e => ['insights','message','generate'].includes(e.event)).length;
+    const sideAiCost = sideEvents.filter(e => e.costUsd).reduce((s,e) => s + (e.costUsd || 0), 0);
+    const sideFbUp = sideEvents.filter(e => e.event === 'insights-feedback' && e.score === 1).length;
+    const sideFbDown = sideEvents.filter(e => e.event === 'insights-feedback' && e.score === 0).length;
+    const sideSubs = db.getSubscriptions(slug).length;
+
+    const sidebarHtml = \`
+      <div class="org-sidebar">
+        <div class="org-sidebar-head">Usage (30d)</div>
+        <div class="org-sidebar-row"><span class="org-sidebar-label">Views</span><span class="org-sidebar-val">\${sideViews}</span></div>
+        <div class="org-sidebar-row"><span class="org-sidebar-label">PDF exports</span><span class="org-sidebar-val">\${sidePdfs}</span></div>
+        <div class="org-sidebar-row"><span class="org-sidebar-label">Excel exports</span><span class="org-sidebar-val">\${sideExports}</span></div>
+        <div class="org-sidebar-row"><span class="org-sidebar-label">Subscribers</span><span class="org-sidebar-val">\${sideSubs}</span></div>
+        <div class="org-sidebar-head">AI (30d)</div>
+        <div class="org-sidebar-row"><span class="org-sidebar-label">AI calls</span><span class="org-sidebar-val">\${sideAiCalls}</span></div>
+        <div class="org-sidebar-row"><span class="org-sidebar-label">AI spend</span><span class="org-sidebar-val">$\${sideAiCost.toFixed(2)}</span></div>
+        \${(sideFbUp + sideFbDown) > 0 ? \`<div class="org-sidebar-row"><span class="org-sidebar-label">Feedback</span><span class="org-sidebar-val">\uD83D\uDC4D\${sideFbUp} \uD83D\uDC4E\${sideFbDown}</span></div>\` : ''}
+      </div>\`;
+
     // Build pulse metrics strip from cached data
     const pulse = getCachedPulse(slug);
     const pulseStrip = (pulse && pulse.items.length > 0)
@@ -4399,9 +4423,14 @@ app.get("/", (req, res) => {
           ${headerActions}
         </div>
         ${pulseStrip}
-        <div class="report-cards">${cards.join("")}</div>
-        ${tokenRow}
-        ${metricsToggle}
+        <div class="org-body">
+          ${sidebarHtml}
+          <div style="flex:1;min-width:0">
+            <div class="report-cards">${cards.join("")}</div>
+            ${tokenRow}
+            ${metricsToggle}
+          </div>
+        </div>
       </div>`;
   }).join("");
 
@@ -4606,6 +4635,15 @@ app.get("/", (req, res) => {
     .token-copy-btn:hover { background: #f0ede8; border-color: #999; }
     .token-copy-btn.copied { background: #16a34a; color: #fff; border-color: #16a34a; }
     .sub-badge { display: inline-block; margin-left: 6px; font-size: 10px; background: #16a34a; color: #fff; border-radius: 3px; padding: 1px 5px; font-weight: 600; letter-spacing: 0.3px; }
+    .org-body { display: flex; gap: 0; }
+    .org-sidebar { width: 180px; flex-shrink: 0; padding: 12px 14px; background: #faf9f7; border-right: 1px solid #eae7e1; font-size: 11px; }
+    .org-sidebar-row { display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px solid #f0ede8; }
+    .org-sidebar-row:last-child { border-bottom: none; }
+    .org-sidebar-label { color: #888; }
+    .org-sidebar-val { font-weight: 600; color: #333; font-variant-numeric: tabular-nums; }
+    .org-sidebar-head { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: #aaa; margin: 8px 0 4px; }
+    .org-sidebar-head:first-child { margin-top: 0; }
+    @media (max-width: 700px) { .org-body { flex-direction: column; } .org-sidebar { width: 100%; border-right: none; border-bottom: 1px solid #eae7e1; } }
     .report-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 1px; background: #e8e5df; }
     .report-card { display: flex; align-items: center; gap: 12px; padding: 14px 18px; background: #fff; text-decoration: none; color: inherit; transition: background .15s; border-left: 3px solid transparent; }
     .report-card:hover { background: #fafaf8; border-left-color: var(--accent, #888); }
