@@ -1155,12 +1155,12 @@
     }
 
     .bt-filter { display: inline-flex; gap: 1px; font-size: 12px; }
-    .bt-filter button { background: #f5f4f1; border: 1px solid #d1d5db; padding: 6px 14px; cursor: pointer; color: #555; font-family: inherit; font-size: 12px; font-weight: 500; transition: all .15s; }
+    .bt-filter button { background: transparent; border: 1px solid rgba(255,255,255,0.25); padding: 6px 14px; cursor: pointer; color: rgba(255,255,255,0.7); font-family: inherit; font-size: 12px; font-weight: 500; transition: all .15s; }
     .bt-filter button:first-child { border-radius: 6px 0 0 6px; }
     .bt-filter button:last-child { border-radius: 0 6px 6px 0; }
     .bt-filter button:not(:first-child) { border-left: none; }
-    .bt-filter button:hover { background: #eee; }
-    .bt-filter button.active { background: #2c2c2c; color: #fff; border-color: #2c2c2c; }
+    .bt-filter button:hover { background: rgba(255,255,255,0.1); color: #fff; }
+    .bt-filter button.active { background: rgba(255,255,255,0.15); color: #fff; border-color: rgba(255,255,255,0.4); }
     body.print-mode .bt-filter { display: none; }
     .metrics-toggle { background: #f5f4f1; border: 1px solid #d1d5db; border-radius: 6px; padding: 6px 14px; cursor: pointer; color: #555; font-family: inherit; font-size: 12px; font-weight: 500; transition: all .15s; }
     .metrics-toggle:hover { background: #eee; }
@@ -3078,7 +3078,7 @@ function App() {
           </>
         )}
 
-        {filteredRows && filteredRows.some(r => r.bookingType && r.bookingType.trim()) && (
+        {rows && rows.some(r => r.bookingType && r.bookingType.trim()) && (
           <>
             <div className="divider" />
             <div className="bt-filter">
