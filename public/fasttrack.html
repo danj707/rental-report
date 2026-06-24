@@ -153,6 +153,17 @@
       .chart-label { width: 140px; font-size: 11px; }
       .summary-card { min-width: 100px; }
     }
+
+    .insights-feedback { display:flex; align-items:center; gap:8px; margin-top:12px; padding:8px 4px; font-size:13px; color:#666; }
+    .insights-feedback button { background:none; border:1px solid #e5e7eb; border-radius:6px; padding:4px 10px; cursor:pointer; font-size:13px; transition:all .15s; }
+    .insights-feedback button:hover { background:#f3f4f6; border-color:#d1d5db; }
+    .insights-feedback .fb-label { color:#888; font-size:12px; }
+    .insights-feedback .fb-thanks { color:#10b981; font-weight:600; font-size:13px; }
+    .insights-feedback .fb-down-form { display:flex; align-items:center; gap:6px; flex:1; }
+    .insights-feedback .fb-down-form input { flex:1; border:1px solid #d1d5db; border-radius:6px; padding:5px 10px; font-size:13px; font-family:inherit; outline:none; }
+    .insights-feedback .fb-down-form input:focus { border-color:#6366f1; box-shadow:0 0 0 2px rgba(99,102,241,.15); }
+    .insights-feedback .fb-send { background:#6366f1!important; color:#fff!important; border-color:#6366f1!important; font-weight:600; }
+    .insights-feedback .fb-send:hover { background:#4f46e5!important; }
   </style>
 </head>
 <body>
@@ -475,6 +486,10 @@ function App() {
   var [insights, setInsights]               = useState(null);
   var [insightsLoading, setInsightsLoading] = useState(false);
   var [insightsError, setInsightsError]     = useState(null);
+  var [insightsTraceId, setInsightsTraceId] = useState(null);
+  var [fbSent, setFbSent] = useState(false);
+  var [fbMode, setFbMode] = useState(null);
+  var [fbComment, setFbComment] = useState('');
   var [insightsMeta, setInsightsMeta]       = useState(null);
 
   useEffect(function() { if (isPrint) document.body.classList.add('print-mode'); }, []);
@@ -749,6 +764,15 @@ function App() {
     };
   }, [programs, totals, overallConvPct, overallFillPct]);
 
+  var sendInsightsFeedback = useCallback(function(score) {
+    if (!insightsTraceId) return;
+    fetch(withToken(basePath + '/api/insights/score'), {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ traceId: insightsTraceId, score: score, comment: score === 0 ? fbComment : '' }),
+    }).catch(function(){});
+    setFbSent(true); setFbMode(null);
+  }, [insightsTraceId, fbComment, basePath]);
+
   var getInsights = useCallback(function() {
     setInsightsLoading(true);
     setInsightsError(null);
@@ -761,6 +785,7 @@ function App() {
       .then(function(r) { return r.json().catch(function() { return {}; }).then(function(j) { if (!r.ok || !j.ok) throw new Error(j.error || 'Request failed (' + r.status + ')'); return j; }); })
       .then(function(json) {
         setInsights(json.insights || []);
+      setInsightsTraceId(json.traceId || null); setFbSent(false); setFbMode(null); setFbComment('');
         setInsightsMeta({ programCount: programs.length, names: programs.map(function(p) { return p.program; }) });
       })
       .catch(function(err) { setInsightsError(err.message || 'Could not generate insights'); })
