@@ -1653,7 +1653,7 @@ function AddOnFilter({ allAddOns, selectedAddOns, onChange }) {
                   checked={selectedAddOns.has(item)}
                   onChange={() => toggle(item)}
                 />
-                <span title={item}>{item === NO_ADDONS_KEY ? '➖ ' : getAddOnEmoji(item.replace(/\s*\(\$[\d,.]+\)$/, '')) + ' '}{item}</span>
+                <span title={item}>{getAddOnEmoji(item) + ' '}{item}</span>
               </label>
             ))}
           </div>
@@ -2780,15 +2780,9 @@ function App() {
         setSelectedAddOns(prev => {
           const items = new Set();
           normalized.forEach(r => {
-            const parts = parseAddOnItems(r.addons);
-            if (parts.length === 0) items.add(NO_ADDONS_KEY);
-            else parts.forEach(p => items.add(stripAddonPrice(p)));
+            parseAddOnItems(r.addons).forEach(p => items.add(stripAddonPrice(p)));
           });
-          const all = [...items].sort((a, b) => {
-            if (a === NO_ADDONS_KEY) return -1;
-            if (b === NO_ADDONS_KEY) return 1;
-            return a.localeCompare(b);
-          });
+          const all = [...items].sort();
           if (prev === null) {
             // Respect shared URL addons param
             if (params.addons) {
@@ -2826,16 +2820,9 @@ function App() {
     if (!rows) return [];
     const items = new Set();
     rows.forEach(r => {
-      const parts = parseAddOnItems(r.addons);
-      if (parts.length === 0) items.add(NO_ADDONS_KEY);
-      else parts.forEach(p => items.add(stripAddonPrice(p)));
+      parseAddOnItems(r.addons).forEach(p => items.add(stripAddonPrice(p)));
     });
-    const arr = [...items].sort((a, b) => {
-      if (a === NO_ADDONS_KEY) return -1;
-      if (b === NO_ADDONS_KEY) return 1;
-      return a.localeCompare(b);
-    });
-    return arr;
+    return [...items].sort();
   }, [rows]);
 
   const filteredRows = useMemo(() => {
@@ -2850,14 +2837,8 @@ function App() {
     if (bookTypeFilter !== 'all') {
       result = result.filter(r => (r.bookingType || '').trim().toLowerCase() === bookTypeFilter);
     }
-    if (selectedAddOns && !selectedAddOns.has(NO_ADDONS_KEY)) {
-      result = result.filter(r => {
-        const parts = parseAddOnItems(r.addons);
-        return parts.length > 0;
-      });
-    }
     return result;
-  }, [rows, selectedLocations, allLocations, selectedSites, allSites, bookTypeFilter, selectedAddOns]);
+  }, [rows, selectedLocations, allLocations, selectedSites, allSites, bookTypeFilter]);
 
   const grouped = useMemo(() => {
     if (!filteredRows) return null;
@@ -3080,7 +3061,7 @@ function App() {
           </>
         )}
 
-        {allAddOns.length > 1 && selectedAddOns && !(allAddOns.length === 1 && allAddOns[0] === NO_ADDONS_KEY) && (
+        {allAddOns.length > 0 && selectedAddOns && (
           <>
             <div className="divider" />
             <AddOnFilter
