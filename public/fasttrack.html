@@ -983,6 +983,21 @@ function App() {
                 ins.action && React.createElement('div', { className: 'insight-action' }, '→ ', ins.action)
               );
             })
+          ),
+          activeInsights && !insightsLoading && React.createElement('div', { className: 'insights-feedback' },
+            fbSent
+              ? React.createElement('span', { className: 'fb-thanks' }, '✅ Thanks for the feedback!')
+              : fbMode === 'down'
+                ? React.createElement('div', { className: 'fb-down-form' },
+                    React.createElement('input', { placeholder: 'What could be better?', value: fbComment, onChange: function(e) { setFbComment(e.target.value); }, onKeyDown: function(e) { if (e.key === 'Enter') sendInsightsFeedback(0); }, autoFocus: true, maxLength: 500 }),
+                    React.createElement('button', { className: 'fb-send', onClick: function() { sendInsightsFeedback(0); } }, 'Send'),
+                    React.createElement('button', { onClick: function() { setFbMode(null); } }, 'Cancel')
+                  )
+                : React.createElement(React.Fragment, null,
+                    React.createElement('span', { className: 'fb-label' }, 'Were these insights helpful?'),
+                    React.createElement('button', { onClick: function() { sendInsightsFeedback(1); }, title: 'Yes' }, '👍'),
+                    React.createElement('button', { onClick: function() { setFbMode('down'); }, title: 'Not helpful' }, '👎')
+                  )
           )
         ),
 
