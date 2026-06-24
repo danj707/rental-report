@@ -2478,6 +2478,7 @@ CRITICAL — FIELD NAMES:
 - WRONG: "field": "section"     RIGHT: "field": "Section"
 - If a field name has spaces like "Net Revenue" or "Fill %", use that exact string.
 - Never guess, abbreviate, or normalize field names. The renderer matches them against raw data columns.
+- For "contains" filter VALUES: use the shortest distinctive substring that uniquely identifies the target. Data often has spelling variations (e.g. "Pequossette" vs "Pequosette"). Using "Pequos" instead of the full name catches both. Prefer 5-8 character substrings over full names.
 
 SECTION/PROGRAM BREAKDOWN RULES:
 - When the user asks to see "all sections", "by section", "section breakdown", or "every section" for a program: ALWAYS include a table widget showing each section as its own row. The table is the primary widget — bar charts are supplementary.
