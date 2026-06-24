@@ -2133,7 +2133,7 @@ app.post("/:org/:report/api/insights/score", resolveOrg, (req, res) => {
         name: "user-feedback",
         value: score,
         comment: comment ? `[${orgSlug}/${reportType}] ${comment}` : `[${orgSlug}/${reportType}] ${score === 1 ? "thumbs up" : "thumbs down"}`,
-        metadata: { org: orgSlug, report: reportType, hasComment: !!comment },
+        metadata: { org: orgSlug, report: reportType, userComment: comment || null },
       }),
     })
     .then(r => {
