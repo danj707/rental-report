@@ -526,13 +526,6 @@ function App() {
     return null;
   });
   const [qPanelOpen, setQPanelOpen] = useState(false);
-  const [insights, setInsights] = useState(null);
-  const [insightsLoading, setInsightsLoading] = useState(false);
-  const [insightsError, setInsightsError] = useState(null);
-  const [insightsTraceId, setInsightsTraceId] = useState(null);
-  const [fbSent, setFbSent] = useState(false);
-  const [fbMode, setFbMode] = useState(null);
-  const [fbComment, setFbComment] = useState('');
 
   const availableQuestions = useMemo(() => {
     if (!rows) return [];
@@ -651,46 +644,6 @@ function App() {
     } catch {}
   }
 
-
-  // ── AI Insights ──
-  const buildInsightsBlob = useCallback(() => {
-    if (!displayRows || !displayRows.length) return null;
-    const sections = new Set(); let enrolled = 0, cancelled = 0;
-    displayRows.forEach(r => { sections.add(r.section||r.program||'');
-      if (r.status === 'Cancelled' || r.cancelled) cancelled++; else enrolled++; });
-    return { rowCount: displayRows.length, sectionCount: sections.size, enrolled, cancelled,
-      cancelRate: displayRows.length > 0 ? (100*cancelled/displayRows.length).toFixed(1)+'%' : '0%' };
-  }, [displayRows]);
-
-  const sendInsightsFeedback = useCallback((score) => {
-    if (!insightsTraceId) return;
-    fetch(withToken('/' + orgSlug + '/roster' + '/api/insights/score'), {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ traceId: insightsTraceId, score, comment: score === 0 ? fbComment : '' }),
-    }).catch(() => {});
-    setFbSent(true); setFbMode(null);
-  }, [insightsTraceId, fbComment]);
-
-  const getInsights = useCallback(async () => {
-    const blob = buildInsightsBlob();
-    if (!blob) return;
-    setInsightsLoading(true); setInsightsError(null);
-    try {
-      const resp = await fetch(withToken('/' + orgSlug + '/roster' + '/api/insights'), {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(blob),
-      });
-      const json = await resp.json().catch(() => ({}));
-      if (!resp.ok || !json.ok) throw new Error(json.error || 'Request failed');
-      setInsights(json.insights || []);
-      setInsightsTraceId(json.traceId || null);
-      setFbSent(false); setFbMode(null); setFbComment('');
-    } catch (err) {
-      setInsightsError(err.message);
-    } finally {
-      setInsightsLoading(false);
-    }
-  }, [buildInsightsBlob]);
 
   // ── Excel export ──
   function toXlDate(s) { if (!s) return ''; const p = String(s).split('T')[0].split('-'); return p.length === 3 ? new Date(+p[0], +p[1]-1, +p[2]) : s; }
@@ -1019,57 +972,6 @@ function App() {
         })}
 
 
-        {/* AI Insights */}
-        {displayRows && displayRows.length > 0 && (
-          <div className="insights-section no-print">
-            <div className="insights-head">
-              <button type="button" className="insights-btn" onClick={getInsights} disabled={insightsLoading}>
-                {insightsLoading ? 'Analyzing…' : (insights ? '↻ Refresh' : '✨ Rec Insights')}
-              </button>
-              {insights && !insightsLoading && (
-                <span className="insights-sub">{'Analyzed ' + displayRows.length + ' enrollments'}</span>
-              )}
-            </div>
-            {insightsLoading && <div className="ai-loading"><div className="ai-spinner" /></div>}
-            {insightsError && !insightsLoading && (
-              <div style={{color:'#dc2626',fontSize:13,padding:'8px 0'}}><strong>Insights unavailable:</strong> {insightsError}</div>
-            )}
-            {insights && !insightsLoading && (
-              <div className="insights-grid">
-                {insights.map((ins, i) => (
-                  <div key={i} className={'insight-card insight-' + (ins.type || 'signal')}>
-                    <div className="insight-type">{ins.type || 'signal'}</div>
-                    <div className="insight-title">{ins.title}</div>
-                    <div className="insight-detail">{ins.detail}</div>
-                    {ins.action && <div className="insight-action">→ {ins.action}</div>}
-                  </div>
-                ))}
-              </div>
-            )}
-            {insights && !insightsLoading && (
-              <div className="insights-feedback">
-                {fbSent ? (
-                  <span className="fb-thanks">✅ Thanks for the feedback!</span>
-                ) : fbMode === 'down' ? (
-                  <div className="fb-down-form">
-                    <input placeholder="What could be better?" value={fbComment}
-                      onChange={e => setFbComment(e.target.value)}
-                      onKeyDown={e => e.key === 'Enter' && sendInsightsFeedback(0)}
-                      autoFocus maxLength={500} />
-                    <button className="fb-send" onClick={() => sendInsightsFeedback(0)}>Send</button>
-                    <button onClick={() => setFbMode(null)}>Cancel</button>
-                  </div>
-                ) : (
-                  <React.Fragment>
-                    <span className="fb-label">Were these insights helpful?</span>
-                    <button onClick={() => sendInsightsFeedback(1)} title="Yes">👍</button>
-                    <button onClick={() => setFbMode('down')} title="Not helpful">👎</button>
-                  </React.Fragment>
-                )}
-              </div>
-            )}
-          </div>
-        )}
 
         <div className="report-footer">
           <span>{orgName || orgSlug}</span>
