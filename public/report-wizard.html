@@ -301,7 +301,7 @@
 
     // ── Compute helpers ──
     function getNum(row, field) {
-      var v = row[field];
+      var v = resolveField(row, field);
       if (v == null || v === '') return null;
       if (typeof v === 'number') return v;
       var n = parseFloat(String(v).replace(/[$,%]/g, ''));
@@ -310,6 +310,45 @@
     // ── PII fields to strip from table display ──
     var PII_FIELDS = new Set(['First Name', 'Last Name', 'Email', 'Phone', 'email', 'phone',
       'first_name', 'last_name', 'Full Name', 'Name', 'Contact', 'Address']);
+
+    // Case-insensitive field resolver with common aliases
+    var _fieldCache = {};
+    function resolveField(row, field) {
+      if (row[field] !== undefined) return row[field];
+      // Build a lowercase lookup for this row's keys (cached per key set)
+      var keys = Object.keys(row);
+      var keyStr = keys.join('|');
+      if (!_fieldCache[keyStr]) {
+        var map = {};
+        keys.forEach(function(k) { map[k.toLowerCase().replace(/[\s_]+/g, '')] = k; });
+        _fieldCache[keyStr] = map;
+      }
+      var norm = field.toLowerCase().replace(/[\s_]+/g, '');
+      var realKey = _fieldCache[keyStr][norm];
+      if (realKey) return row[realKey];
+      // Common aliases
+      var aliases = {
+        'nettotal': ['netrevenue','netamount','net'],
+        'netrevenue': ['nettotal','netamount','net'],
+        'program': ['programname'],
+        'programname': ['program'],
+        'section': ['sectionname'],
+        'sectionname': ['section'],
+        'sectionstatus': ['status'],
+        'fillpct': ['fill%','fillrate'],
+        'fill%': ['fillpct','fillrate'],
+        'enrolled': ['enrollments','registrations'],
+        'enrollments': ['enrolled','registrations'],
+      };
+      var alts = aliases[norm];
+      if (alts) {
+        for (var i = 0; i < alts.length; i++) {
+          var altKey = _fieldCache[keyStr][alts[i]];
+          if (altKey) return row[altKey];
+        }
+      }
+      return undefined;
+    }
 
     function normalizeFilter(f) {
       if (!f) return null;
@@ -322,7 +361,7 @@
       if (!norm || !norm.length) return rows;
       return rows.filter(function(r) {
         return norm.every(function(f) {
-          var v = r[f.field];
+          var v = resolveField(r, f.field);
           if (f.op === 'eq') return v == f.value;
           if (f.op === 'neq') return v != f.value;
           if (f.op === 'contains') return String(v || '').toLowerCase().includes(String(f.value).toLowerCase());
@@ -334,9 +373,9 @@
     }
     function computeAgg(rows, field, method) {
       // count and countDistinct work on raw values, not numbers
-      if (method === 'count') return rows.filter(function(r) { return r[field] != null && r[field] !== ''; }).length;
+      if (method === 'count') return rows.filter(function(r) { var _v = resolveField(r, field); return _v != null && _v !== ''; }).length;
       if (method === 'countDistinct') {
-        var s = new Set(rows.map(function(r) { return r[field]; }).filter(function(v) { return v != null; }));
+        var s = new Set(rows.map(function(r) { return resolveField(r, field); }).filter(function(v) { return v != null; }));
         return s.size;
       }
       var vals = rows.map(function(r) { return getNum(r, field); }).filter(function(v) { return v !== null; });
@@ -515,7 +554,7 @@
       if (config.groupBy) {
         var groups = {};
         filtered.forEach(function(r) {
-          var key = r[config.groupBy] || 'Unknown';
+          var key = resolveField(r, config.groupBy) || 'Unknown';
           if (!groups[key]) groups[key] = { _key: key, _rows: [] };
           groups[key]._rows.push(r);
         });
