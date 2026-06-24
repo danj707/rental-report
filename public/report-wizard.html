@@ -618,13 +618,16 @@
         });
       }
 
-      function handleFeedback(vote) {
+      var [fbComment, setFbComment] = useState('');
+      var [fbMode, setFbMode] = useState(null); // null | 'down'
+
+      function handleFeedback(vote, comment) {
         setFeedback(vote);
         setFeedbackSent(true);
         fetch('/' + ORG_SLUG + '/report-wizard/api/feedback' + tokenQS, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ vote: vote, prompt: report.prompt, title: report.title, widgetCount: (report.widgets || []).length }),
+          body: JSON.stringify({ vote: vote, prompt: report.prompt, title: report.title, widgetCount: (report.widgets || []).length, traceId: report._traceId || null, comment: comment || '' }),
         }).catch(function() {});
       }
 
@@ -660,18 +663,32 @@
           {/* Feedback */}
           <div style={{ marginTop: '24px', padding: '16px 20px', background: '#fafafa', borderRadius: '8px', border: '1px solid #eee', display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
             <span style={{ fontSize: '13px', color: '#666', fontWeight: 500 }}>How was this report?</span>
-            {!feedbackSent ? (
-              <React.Fragment>
-                <button onClick={function() { handleFeedback('up'); }} style={{ fontSize: '20px', padding: '4px 12px', background: 'none', border: '1px solid #ddd', borderRadius: '6px', cursor: 'pointer', transition: 'all .15s' }} onMouseOver={function(e) { e.target.style.background='#f0fdf4'; e.target.style.borderColor='#86efac'; }} onMouseOut={function(e) { e.target.style.background='none'; e.target.style.borderColor='#ddd'; }}>
-                  {String.fromCodePoint(0x1F44D)}
-                </button>
-                <button onClick={function() { handleFeedback('down'); }} style={{ fontSize: '20px', padding: '4px 12px', background: 'none', border: '1px solid #ddd', borderRadius: '6px', cursor: 'pointer', transition: 'all .15s' }} onMouseOver={function(e) { e.target.style.background='#fef2f2'; e.target.style.borderColor='#fca5a5'; }} onMouseOut={function(e) { e.target.style.background='none'; e.target.style.borderColor='#ddd'; }}>
-                  {String.fromCodePoint(0x1F44E)}
-                </button>
-              </React.Fragment>
+{!feedbackSent ? (
+              fbMode === 'down' ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: 1 }}>
+                  <input placeholder="What could be better?" value={fbComment}
+                    onChange={function(e) { setFbComment(e.target.value); }}
+                    onKeyDown={function(e) { if (e.key === 'Enter') { handleFeedback('down', fbComment); } }}
+                    autoFocus maxLength={500}
+                    style={{ flex: 1, border: '1px solid #d1d5db', borderRadius: '6px', padding: '5px 10px', fontSize: '13px', fontFamily: 'inherit', outline: 'none' }} />
+                  <button onClick={function() { handleFeedback('down', fbComment); }}
+                    style={{ background: '#6366f1', color: '#fff', border: 'none', borderRadius: '6px', padding: '5px 14px', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}>Send</button>
+                  <button onClick={function() { setFbMode(null); }}
+                    style={{ background: 'none', border: '1px solid #e5e7eb', borderRadius: '6px', padding: '5px 10px', fontSize: '13px', cursor: 'pointer' }}>Cancel</button>
+                </div>
+              ) : (
+                <React.Fragment>
+                  <button onClick={function() { handleFeedback('up'); }} style={{ fontSize: '20px', padding: '4px 12px', background: 'none', border: '1px solid #e5e7eb', borderRadius: '6px', cursor: 'pointer' }}>
+                    {String.fromCodePoint(0x1F44D)}
+                  </button>
+                  <button onClick={function() { setFbMode('down'); }} style={{ fontSize: '20px', padding: '4px 12px', background: 'none', border: '1px solid #e5e7eb', borderRadius: '6px', cursor: 'pointer' }}>
+                    {String.fromCodePoint(0x1F44E)}
+                  </button>
+                </React.Fragment>
+              )
             ) : (
               <span style={{ fontSize: '13px', color: feedback === 'up' ? '#16a34a' : '#dc2626' }}>
-                {feedback === 'up' ? String.fromCodePoint(0x1F44D) + ' Thanks! Glad it helped.' : String.fromCodePoint(0x1F44E) + ' Thanks for the feedback \u2014 we\u2019ll improve.'}
+                {feedback === 'up' ? String.fromCodePoint(0x1F44D) + ' Thanks! Glad it helped.' : String.fromCodePoint(0x1F44E) + ' Thanks for the feedback.'}
               </span>
             )}
           </div>
