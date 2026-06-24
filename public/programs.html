@@ -102,7 +102,7 @@
     .summary-card .card-sub { font-size: 10px; color: #999; margin-top: 2px; }
 
     /* ── Table ── */
-    .prog-table { width: 100%; border-collapse: collapse; font-size: 11.5px; }
+    .prog-table { width: 100%; border-collapse: collapse; font-size: 11.5px; table-layout: fixed; font-variant-numeric: tabular-nums; }
 
     /* Column headers */
     .prog-table thead tr {
@@ -132,9 +132,9 @@
     .prog-table tbody tr.data-row:nth-child(even) { background: #fafaf8; }
     .prog-table tbody tr.data-row:hover { background: #f0eeea; }
     .prog-table tbody tr.data-row td {
-      padding: 5px 8px; text-align: right; vertical-align: middle;
+      padding: 5px 8px; text-align: right; vertical-align: middle; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     }
-    .prog-table tbody tr.data-row td.left { text-align: left; }
+    .prog-table tbody tr.data-row td.left { text-align: left; white-space: normal; overflow: visible; text-overflow: clip; word-break: break-word; }
     .prog-table tbody tr.data-row td.mono {
       font-family: 'IBM Plex Mono', monospace; font-size: 10.5px;
     }
@@ -1381,8 +1381,8 @@ function App() {
           <table className="prog-table">
             <thead>
               <tr>
-                <th className="left" style={{minWidth:200}}>Program</th>
-                <th className="left" style={{minWidth:100}}>Season</th>
+                <th className="left" style={{width:220}}>Program</th>
+                <th className="left" style={{width:100}}>Season</th>
                 {showRegModeCol && <th className="left" style={{width:100}}>Reg Mode</th>}
                 <th className="left" style={{width:88}}>Start</th>
                 <th className="left" style={{width:88}}>End</th>
