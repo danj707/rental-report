@@ -191,51 +191,7 @@ function App() {
   const _initParams = useMemo(() => new URLSearchParams(window.location.search), []);
   const [splitIdx, setSplitIdx] = useState(() => {
     const si = parseInt(_initParams.get('split'));
-
-  // ── AI Insights ──
-  const buildInsightsBlob = useCallback(() => {
-    if (!rows || !rows.length) return null;
-    const byInstructor = {};
-    rows.forEach(r => { const inst = r.instructor||r.instructorName||'Unknown';
-      if (!byInstructor[inst]) byInstructor[inst] = {participants:0,revenue:0,sections: new Set()};
-      byInstructor[inst].participants++;
-      byInstructor[inst].revenue += Number(r.split||r.instructorPayout||r.revenue||0);
-      byInstructor[inst].sections.add(r.section||r.program||''); });
-    const summary = Object.entries(byInstructor).map(([name,d]) => ({name, participants:d.participants, revenue:d.revenue, sections:d.sections.size}));
-    return { rowCount: rows.length, instructorCount: summary.length, instructors: summary.sort((a,b)=>b.revenue-a.revenue).slice(0,15) };
-  }, [rows]);
-
-  const sendInsightsFeedback = useCallback((score) => {
-    if (!insightsTraceId) return;
-    fetch(withToken('/' + orgSlug + '/' + reportType + '/api/insights/score'), {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ traceId: insightsTraceId, score, comment: score === 0 ? fbComment : '' }),
-    }).catch(() => {});
-    setFbSent(true); setFbMode(null);
-  }, [insightsTraceId, fbComment]);
-
-  const getInsights = useCallback(async () => {
-    const blob = buildInsightsBlob();
-    if (!blob) return;
-    setInsightsLoading(true); setInsightsError(null);
-    try {
-      const resp = await fetch(withToken('/' + orgSlug + '/' + reportType + '/api/insights'), {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(blob),
-      });
-      const json = await resp.json().catch(() => ({}));
-      if (!resp.ok || !json.ok) throw new Error(json.error || 'Request failed');
-      setInsights(json.insights || []);
-      setInsightsTraceId(json.traceId || null);
-      setFbSent(false); setFbMode(null); setFbComment('');
-    } catch (err) {
-      setInsightsError(err.message);
-    } finally {
-      setInsightsLoading(false);
-    }
-  }, [buildInsightsBlob]);
-
-  return (si >= 0 && si < SPLITS.length) ? si : 2;
+    return (si >= 0 && si < SPLITS.length) ? si : 2;
   }); // 70/30 default
   const [search, setSearch]     = useState(_initParams.get('search') || '');
   const [instrFilter, setInstrFilter] = useState(_initParams.get('instructor') || '');
@@ -442,6 +398,51 @@ function App() {
   if (error) return (<div className="page" style={{margin:'40px auto'}}><div className="empty-state"><p>Error loading data: {error}</p></div></div>);
 
   const displayOrg = orgName || 'rec.us';
+
+  // ── AI Insights ──
+  const buildInsightsBlob = useCallback(() => {
+    if (!rows || !rows.length) return null;
+    const byInstructor = {};
+    rows.forEach(r => {
+      const inst = r.instructor || r.instructorName || 'Unknown';
+      if (!byInstructor[inst]) byInstructor[inst] = { participants: 0, revenue: 0, sections: new Set() };
+      byInstructor[inst].participants++;
+      byInstructor[inst].revenue += Number(r.split || r.instructorPayout || r.revenue || 0);
+      byInstructor[inst].sections.add(r.section || r.program || '');
+    });
+    const summary = Object.entries(byInstructor).map(([name, d]) => ({
+      name, participants: d.participants, revenue: d.revenue, sections: d.sections.size
+    }));
+    return { rowCount: rows.length, instructorCount: summary.length,
+      instructors: summary.sort((a, b) => b.revenue - a.revenue).slice(0, 15) };
+  }, [rows]);
+
+  const sendInsightsFeedback = useCallback((score) => {
+    if (!insightsTraceId) return;
+    fetch(withToken('/' + orgSlug + '/' + reportType + '/api/insights/score'), {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ traceId: insightsTraceId, score, comment: score === 0 ? fbComment : '' }),
+    }).catch(() => {});
+    setFbSent(true); setFbMode(null);
+  }, [insightsTraceId, fbComment]);
+
+  const getInsights = useCallback(async () => {
+    const blob = buildInsightsBlob();
+    if (!blob) return;
+    setInsightsLoading(true); setInsightsError(null);
+    try {
+      const resp = await fetch(withToken('/' + orgSlug + '/' + reportType + '/api/insights'), {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(blob),
+      });
+      const json = await resp.json().catch(() => ({}));
+      if (!resp.ok || !json.ok) throw new Error(json.error || 'Request failed');
+      setInsights(json.insights || []);
+      setInsightsTraceId(json.traceId || null);
+      setFbSent(false); setFbMode(null); setFbComment('');
+    } catch (err) { setInsightsError(err.message); }
+    finally { setInsightsLoading(false); }
+  }, [buildInsightsBlob]);
 
   return (
     <div>
