@@ -2507,12 +2507,22 @@ app.post("/:org/report-wizard/api/generate", async (req, res) => {
 
     console.log(`[wizard] ${slug}: generating config, ${sourceCount} sources, prompt: "${prompt.slice(0, 80)}"`);
 
-    const data = await anthropic.messages.create({
-      model: WIZARD_MODEL,
-      max_tokens: WIZARD_MAX_TOKENS,
-      system: WIZARD_SYS_PROMPT,
-      messages: [{ role: "user", content: userMsg }],
+    // Wrap in OTel span to capture traceId for feedback
+    const wizSpan = _recTracer.startSpan("rec.wizard", {
+      attributes: { "rec.org": slug, "rec.feature": "wizard" },
     });
+    const wizCtx = otelApi.trace.setSpan(otelApi.context.active(), wizSpan);
+
+    const data = await otelApi.context.with(wizCtx, () =>
+      anthropic.messages.create({
+        model: WIZARD_MODEL,
+        max_tokens: WIZARD_MAX_TOKENS,
+        system: WIZARD_SYS_PROMPT,
+        messages: [{ role: "user", content: userMsg }],
+      })
+    );
+    wizSpan.end();
+    const wizTraceId = wizSpan.spanContext().traceId;
 
     const text = (data.content || [])
       .filter(c => c.type === "text")
@@ -2559,10 +2569,11 @@ app.post("/:org/report-wizard/api/generate", async (req, res) => {
       outTok: usage.output_tokens || 0,
       costUsd,
       prompt: prompt.slice(0, 120),
+      traceId: wizTraceId,
     });
 
     console.log(`[wizard] ${slug}: generated "${config.title}" with ${config.widgets.length} widgets, ${config.dataSources.length} sources`);
-    res.json(config);
+    res.json({ ...config, _traceId: wizTraceId });
   } catch (err) {
     console.error("[wizard] Error:", err);
     res.status(500).json({ error: "Report generation failed: " + err.message });
@@ -2576,8 +2587,27 @@ app.post("/:org/report-wizard/api/feedback", (req, res) => {
   if (!org) return res.status(404).json({ error: "Unknown org" });
   const qToken = req.query.token || req.headers["x-token"];
   if (org.token && qToken !== org.token) return res.status(403).json({ error: "Invalid token" });
-  const { vote, prompt, title, widgetCount } = req.body || {};
-  logEvent(slug, "report-wizard", "feedback", req, { vote, prompt: (prompt || "").slice(0, 200), title, widgetCount });
+  const { vote, prompt, title, widgetCount, traceId, comment } = req.body || {};
+  logEvent(slug, "report-wizard", "feedback", req, { vote, prompt: (prompt || "").slice(0, 200), title, widgetCount, traceId });
+
+  // Send score to Langfuse
+  if (traceId && process.env.LANGFUSE_PUBLIC_KEY && process.env.LANGFUSE_SECRET_KEY) {
+    const baseUrl = process.env.LANGFUSE_BASE_URL || "https://us.cloud.langfuse.com";
+    const auth = Buffer.from(process.env.LANGFUSE_PUBLIC_KEY + ":" + process.env.LANGFUSE_SECRET_KEY).toString("base64");
+    fetch(baseUrl + "/api/public/scores", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": "Basic " + auth },
+      body: JSON.stringify({
+        traceId,
+        name: "wizard-feedback",
+        value: vote === "up" ? 1 : 0,
+        comment: `[${slug}/wizard] ${comment || (vote === "up" ? "thumbs up" : "thumbs down")}`,
+        metadata: { org: slug, feature: "wizard", prompt: (prompt || "").slice(0, 200), title, widgetCount, userComment: comment || null },
+      }),
+    })
+    .then(r => { if (!r.ok) r.text().then(t => console.error("[langfuse] wizard score error:", r.status, t.slice(0, 200))); })
+    .catch(e => console.error("[langfuse] wizard score error:", e.message));
+  }
   console.log(`[wizard] ${slug}: feedback ${vote} for "${(title || "").slice(0, 60)}"`);
   res.json({ ok: true });
 });
