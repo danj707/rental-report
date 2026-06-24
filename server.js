@@ -6315,8 +6315,9 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
-  { date: '2026-06-24', title: '\u2795 Facility Report \u2014 Add-Ons Filter', items: [
+  { date: '2026-06-24', title: '\u2795 Facility Report \u2014 Add-On Fees + Filter', items: [
     '\uD83C\uDF9B\uFE0F ADD-ONS FILTER \u2014 New dropdown filter on facility report toolbar (same UX as Sites). Parses comma-separated add-on items from each rental, shows checkboxes for individual add-ons (Field Lights, Scoreboard, etc.). Includes (No add-ons) entry. Filter state persisted to share links and PDF export.',
+    '\uD83D\uDCB0 ADD-ON FEES COLUMN \u2014 New \u201CAdd-On $\u201D column shows the actual paid price for add-ons (uses applied_pricing finalCents, not list price). Inline pricing in the Add Ons text (e.g. \u201CField Lights ($50.00)\u201D). Separate numeric column for sorting/totaling. Toggleable via column checkbox, included in Excel export with currency formatting, and visible in hover cards.',
   ]},
   { date: '2026-06-24', title: '\uD83D\uDD27 Report Cleanup + Langfuse Feedback Loop + Wizard Intelligence', items: [
     '\uD83C\uDFA8 FACILITY CLEANUP \u2014 Booking type filter restyled to dark toolbar (matches Locations/Sites). Heatmap + Revenue Metrics collapsed behind toolbar toggle buttons (off by default, localStorage persisted). Site names wrap instead of truncating.',
