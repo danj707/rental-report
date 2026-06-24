@@ -4229,18 +4229,18 @@ app.get("/", (req, res) => {
 
   const reportMeta = {
     facility: { label: "Facility Rental Schedule", icon: "📅", desc: "Reservations grouped by date and location", color: "#16a34a" },
-    gl:       { label: "GL Code Rollup",            icon: "📊", desc: "Payment and refund summary by GL code",   color: "#3b82f6" },
+    gl:       { label: "GL Code Rollup",            ai: true,            icon: "📊", desc: "Payment and refund summary by GL code",   color: "#3b82f6" },
     programs: { label: "Programs",           icon: "🎯", desc: "Enrollment and revenue by program",       color: "#7c3aed", ai: true },
-    historic: { label: "Historic Buildings",        icon: "🏛️",  desc: "Reservations for historic building sites", color: "#d97706" },
-    roster:   { label: "Class Roster",              icon: "📋", desc: "Enrolled and cancelled participants by section", color: "#0891b2" },
-    overview:    { label: "Facility Overview",         icon: "📈", desc: "Revenue and activity summary by location",                 color: "#059669" },
-    products:    { label: "Product Sales",          icon: "🛒", desc: "Daily revenue, refunds, and net by product",           color: "#0891b2" },
-    memberships: { label: "Memberships",                icon: "🎫", desc: "Active and lapsed memberships with renewal tracking",       color: "#db2777" },
+    historic: { label: "Historic Buildings",        ai: true,        icon: "🏛️",  desc: "Reservations for historic building sites", color: "#d97706" },
+    roster:   { label: "Class Roster",              ai: true,              icon: "📋", desc: "Enrolled and cancelled participants by section", color: "#0891b2" },
+    overview:    { label: "Facility Overview",         ai: true,         icon: "📈", desc: "Revenue and activity summary by location",                 color: "#059669" },
+    products:    { label: "Product Sales",          ai: true,          icon: "🛒", desc: "Daily revenue, refunds, and net by product",           color: "#0891b2" },
+    memberships: { label: "Memberships",                ai: true,                icon: "🎫", desc: "Active and lapsed memberships with renewal tracking",       color: "#db2777" },
     "court-utilization": { label: "Court Utilization",  icon: "🎾", desc: "Court utilization % or reserved hours by court, split by customer, program, and closure usage", color: "#0d9488", ai: true },
     calendar:    { label: "Calendar",               icon: "🗓️", desc: "Public class & rental schedule (week / list view)", color: "#ea580c", wcag: true },
     fasttrack:   { label: "Fast Track",             icon: "⚡", desc: "Pre-registration demand signal with conversion tracking", color: "#6366f1", ai: true },
     users:       { label: "Community Intel",            icon: "👥", desc: "Demographics, revenue, and strategy intelligence across your community", color: "#7c3aed", ai: true },
-    "instructor-payout": { label: "Instructor Payout", icon: "💰", desc: "Revenue splits and payout calculations by instructor", color: "#6366f1" },
+    "instructor-payout": { label: "Instructor Payout", ai: true, icon: "💰", desc: "Revenue splits and payout calculations by instructor", color: "#6366f1" },
   };
 
   const hiddenReports = getAllHiddenReports();
