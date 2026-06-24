@@ -1201,7 +1201,7 @@ async function generatePdf(orgSlug, reportType, startDate, endDate, filters = {}
   // server-side Metabase filters. The print page initializes its filter state
   // from these params before emitting #report-ready, so Puppeteer captures the
   // filtered render rather than the full dataset.
-  ["locations", "sites", "location_name", "site_type", "desks", "by_desk", "by_item", "hide_zero", "chart_net", "metric", "programs", "closures", "hrs", "section_name", "status", "questions", "cols", "search", "tab", "instructor", "split", "book_type"].forEach(k => {
+  ["locations", "sites", "location_name", "site_type", "desks", "by_desk", "by_item", "hide_zero", "chart_net", "metric", "programs", "closures", "hrs", "section_name", "status", "questions", "cols", "search", "tab", "instructor", "split", "book_type", "addons"].forEach(k => {
     if (filters[k]) qsObj[k] = filters[k];
   });
   if (orgTok) qsObj.token = orgTok;
@@ -6315,6 +6315,9 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  { date: '2026-06-24', title: '\u2795 Facility Report \u2014 Add-Ons Filter', items: [
+    '\uD83C\uDF9B\uFE0F ADD-ONS FILTER \u2014 New dropdown filter on facility report toolbar (same UX as Sites). Parses comma-separated add-on items from each rental, shows checkboxes for individual add-ons (Field Lights, Scoreboard, etc.). Includes (No add-ons) entry. Filter state persisted to share links and PDF export.',
+  ]},
   { date: '2026-06-24', title: '\uD83D\uDD27 Report Cleanup + Langfuse Feedback Loop + Wizard Intelligence', items: [
     '\uD83C\uDFA8 FACILITY CLEANUP \u2014 Booking type filter restyled to dark toolbar (matches Locations/Sites). Heatmap + Revenue Metrics collapsed behind toolbar toggle buttons (off by default, localStorage persisted). Site names wrap instead of truncating.',
     '\uD83D\uDCCB PDF FILTER FIX \u2014 PDF generation now respects ALL active filters including booking type. Added book_type to server-side Puppeteer param whitelist. Standing rule: PDFs must always match on-screen filtered view.',
