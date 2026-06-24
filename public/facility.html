@@ -1542,6 +1542,10 @@ function SiteFilter({ allSites, selectedSites, onChange }) {
 // Parses comma-separated add-on strings into individual items.
 // Mirrors SiteFilter UX: all selected = show everything; deselect = hide.
 // Special "(No add-ons)" entry controls rows with empty addons field.
+function stripAddonPrice(s) {
+  return s.replace(/\s*\(\$[\d,.]+\)$/, '').trim();
+}
+
 function parseAddOnItems(addonsStr) {
   if (!addonsStr || !addonsStr.trim()) return [];
   return addonsStr.split(',').map(s => s.trim()).filter(Boolean);
@@ -2774,12 +2778,11 @@ function App() {
         });
 
         setSelectedAddOns(prev => {
-          // Build full add-on list from data
           const items = new Set();
           normalized.forEach(r => {
             const parts = parseAddOnItems(r.addons);
             if (parts.length === 0) items.add(NO_ADDONS_KEY);
-            else parts.forEach(p => items.add(p));
+            else parts.forEach(p => items.add(stripAddonPrice(p)));
           });
           const all = [...items].sort((a, b) => {
             if (a === NO_ADDONS_KEY) return -1;
@@ -2825,9 +2828,8 @@ function App() {
     rows.forEach(r => {
       const parts = parseAddOnItems(r.addons);
       if (parts.length === 0) items.add(NO_ADDONS_KEY);
-      else parts.forEach(p => items.add(p));
+      else parts.forEach(p => items.add(stripAddonPrice(p)));
     });
-    // Sort with "(No add-ons)" always first
     const arr = [...items].sort((a, b) => {
       if (a === NO_ADDONS_KEY) return -1;
       if (b === NO_ADDONS_KEY) return 1;
