@@ -2471,6 +2471,14 @@ LAYOUT RULES:
 - For "count" computations, set the metric field to the groupBy field (or any existing field)
 - Return ONLY the JSON object, nothing else
 
+CRITICAL — FIELD NAMES:
+- You MUST use the EXACT field names from the schema provided. Copy them character-for-character, including capitalization and spaces.
+- WRONG: "field": "program"     RIGHT: "field": "Program"
+- WRONG: "field": "net_total"   RIGHT: "field": "Net Revenue"  (or whatever the schema shows)
+- WRONG: "field": "section"     RIGHT: "field": "Section"
+- If a field name has spaces like "Net Revenue" or "Fill %", use that exact string.
+- Never guess, abbreviate, or normalize field names. The renderer matches them against raw data columns.
+
 SECTION/PROGRAM BREAKDOWN RULES:
 - When the user asks to see "all sections", "by section", "section breakdown", or "every section" for a program: ALWAYS include a table widget showing each section as its own row. The table is the primary widget — bar charts are supplementary.
 - Use "contains" filters carefully. If the user says "Pequossette summer camp", filter on the program name, NOT the section name. Sections will naturally appear as rows in the table.
