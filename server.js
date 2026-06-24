@@ -6328,7 +6328,7 @@ app.get("/", (req, res) => {
   ]},
   { date: '2026-06-24', title: '\uD83D\uDC4D Feedback Pipeline \u2014 All 10 Reports Wired to Langfuse Scores', items: [
     '\u2705 10/10 REPORTS COMPLETE \u2014 Every AI Insights-enabled report now has thumbs up/down UI with typed comment on thumbs down. Programs, Court Util, Fast Track, Community Intel, GL, Overview, Products, Memberships, Historic, Instructor Payout.',
-    '\uD83D\uDCE8 LANGFUSE SCORES \u2014 Thumbs up (value=1) and thumbs down (value=0) sent as user-feedback scores to Langfuse REST API. Metadata includes org, report type, and user\'s typed comment.',
+    '\uD83D\uDCE8 LANGFUSE SCORES \u2014 Thumbs up (value=1) and thumbs down (value=0) sent as user-feedback scores to Langfuse REST API. Metadata includes org, report type, and the typed user comment.',
     '\uD83D\uDD0D END-TO-END VERIFIED \u2014 Full loop confirmed: AI call \u2192 OTel trace \u2192 user feedback \u2192 Langfuse score attached to trace. Scores visible in Langfuse Analytics with trend-over-time and distribution charts.',
     '\uD83E\uDDE0 FAST TRACK + CI FIXED \u2014 Both createElement-style reports (Fast Track) and JSX-style (Community Intel) now have full feedback UI. CI feedback CSS re-added after being lost in earlier push.',
   ]},
@@ -6336,7 +6336,7 @@ app.get("/", (req, res) => {
     '\uD83D\uDD2D WIZARD TRACING \u2014 Generate endpoint wrapped in OTel parent span. TraceId returned in response and sent with feedback. Every wizard prompt \u2192 config generation fully traced in Langfuse.',
     '\uD83D\uDC4D WIZARD FEEDBACK \u2014 Thumbs up/down with typed comment flows as wizard-feedback scores to Langfuse. Metadata: org, prompt, title, widget count, user comment.',
     '\uD83D\uDD0D FIELD NAME RESOLUTION \u2014 New resolveField() helper in renderer: case-insensitive matching, underscore/space tolerance, common alias mapping (net_total\u2194Net Revenue, program\u2194Program Name, section\u2194Section Name). Safety net for AI field name mismatches.',
-    '\uD83E\uDDEC FUZZY CONTAINS FILTER \u2014 Contains filter now collapses doubled letters as fallback (Pequossette\u2192Pequosete matches Pequosette\u2192Pequosete) + prefix matching. Fixes Watertown\'s inconsistent program spelling.',
+    '\uD83E\uDDEC FUZZY CONTAINS FILTER \u2014 Contains filter now collapses doubled letters as fallback (Pequossette\u2192Pequosete matches Pequosette\u2192Pequosete) + prefix matching. Fixes Watertown inconsistent program spelling.',
     '\uD83C\uDFAF PROMPT IMPROVEMENTS \u2014 CRITICAL field name rule (use exact schema names). Section breakdown rules (always table for "all sections" requests). Short filter value rule (use distinctive substrings to handle spelling variants).',
     '\uD83D\uDD04 FEEDBACK LOOP PROVEN \u2014 First real cycle: user thumbs down \u2192 diagnose in Langfuse trace \u2192 identify spelling mismatch \u2192 add fuzzy matching + prompt rules \u2192 re-run same prompt \u2192 10 sections rendered vs 1. Score improvement measurable in Langfuse trend.',
   ]},
