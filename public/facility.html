@@ -1153,12 +1153,18 @@
       border-top-color: #888;
     }
 
-    .bt-filter { display: inline-flex; border: 1px solid #d1d5db; border-radius: 6px; overflow: hidden; font-size: 12px; }
-    .bt-filter button { background: #fff; border: none; padding: 5px 12px; cursor: pointer; color: #555; font-family: inherit; font-size: 12px; border-right: 1px solid #d1d5db; transition: all .15s; }
-    .bt-filter button:last-child { border-right: none; }
-    .bt-filter button:hover { background: #f3f4f6; }
-    .bt-filter button.active { background: #6366f1; color: #fff; }
+    .bt-filter { display: inline-flex; gap: 1px; font-size: 12px; }
+    .bt-filter button { background: #f5f4f1; border: 1px solid #d1d5db; padding: 6px 14px; cursor: pointer; color: #555; font-family: inherit; font-size: 12px; font-weight: 500; transition: all .15s; }
+    .bt-filter button:first-child { border-radius: 6px 0 0 6px; }
+    .bt-filter button:last-child { border-radius: 0 6px 6px 0; }
+    .bt-filter button:not(:first-child) { border-left: none; }
+    .bt-filter button:hover { background: #eee; }
+    .bt-filter button.active { background: #2c2c2c; color: #fff; border-color: #2c2c2c; }
     body.print-mode .bt-filter { display: none; }
+    .metrics-toggle { background: #f5f4f1; border: 1px solid #d1d5db; border-radius: 6px; padding: 6px 14px; cursor: pointer; color: #555; font-family: inherit; font-size: 12px; font-weight: 500; transition: all .15s; }
+    .metrics-toggle:hover { background: #eee; }
+    .metrics-toggle.active { background: #2c2c2c; color: #fff; border-color: #2c2c2c; }
+    body.print-mode .metrics-toggle { display: none; }
   </style>
   <script>
     // ── Token auth (injected) ────────────────────────────────────────
@@ -2521,6 +2527,10 @@ function App() {
     try { return localStorage.getItem('col_booktype') !== 'false'; } catch { return true; }
   });
   const [bookTypeFilter, setBookTypeFilter] = useState('all');
+  const [showMetrics, setShowMetrics] = useState(() => {
+    try { return localStorage.getItem('facility_metrics') === 'true'; } catch { return false; }
+  });
+  useEffect(() => { try { localStorage.setItem('facility_metrics', showMetrics); } catch {} }, [showMetrics]);
 
   useEffect(() => { try { localStorage.setItem('col_headcount', showHeadCount); } catch {} }, [showHeadCount]);
   useEffect(() => { try { localStorage.setItem('col_total',     showTotal);     } catch {} }, [showTotal]);
@@ -3002,11 +3012,18 @@ function App() {
       )}
 
       {filteredRows && filteredRows.length > 0 && !isPrint && (
-        <ResidencyAnalysis filteredRows={filteredRows} />
-      )}
-
-      {filteredRows && filteredRows.length > 0 && !isPrint && (
-        <BookingTypeAnalysis filteredRows={filteredRows} />
+        <div style={{margin:'12px 0'}}>
+          <button type="button" className={'metrics-toggle' + (showMetrics ? ' active' : '')}
+            onClick={() => setShowMetrics(!showMetrics)}>
+            {showMetrics ? '▼ Hide Revenue Metrics' : '▶ Revenue Metrics'}
+          </button>
+          {showMetrics && (
+            <>
+              <ResidencyAnalysis filteredRows={filteredRows} />
+              <BookingTypeAnalysis filteredRows={filteredRows} />
+            </>
+          )}
+        </div>
       )}
 
       <div className="page" style={loading ? {opacity:0.5,pointerEvents:'none'} : {}}>
