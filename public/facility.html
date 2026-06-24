@@ -1549,6 +1549,32 @@ function parseAddOnItems(addonsStr) {
 
 const NO_ADDONS_KEY = '(No add-ons)';
 
+function getAddOnEmoji(name) {
+  if (!name) return '🏷️';
+  const n = name.toLowerCase();
+  if (n.includes('light'))       return '💡';
+  if (n.includes('clean'))       return '🧹';
+  if (n.includes('security'))    return '🛡️';
+  if (n.includes('auditorium'))  return '🎭';
+  if (n.includes('stage'))       return '🎤';
+  if (n.includes('sound') || n.includes('audio') || n.includes('speaker')) return '🔊';
+  if (n.includes('projector') || n.includes('screen'))  return '📽️';
+  if (n.includes('boathouse'))   return '⛵';
+  if (n.includes('patio'))       return '☕';
+  if (n.includes('kitchen'))     return '🍳';
+  if (n.includes('table') || n.includes('chair') || n.includes('furniture')) return '🪑';
+  if (n.includes('tent'))        return '⛺';
+  if (n.includes('parking'))     return '🅿️';
+  if (n.includes('banner') || n.includes('sign'))  return '🚩';
+  if (n.includes('scoreboard'))  return '📋';
+  if (n.includes('field') || n.includes('turf'))   return '🏟️';
+  if (n.includes('gym'))         return '🏋️';
+  if (n.includes('pool') || n.includes('aqua'))    return '🏊';
+  if (n.includes('game'))        return '🎮';
+  if (n.includes('fee'))         return '💲';
+  return '🏷️';
+}
+
 function AddOnFilter({ allAddOns, selectedAddOns, onChange }) {
   const [open, setOpen]     = useState(false);
   const [search, setSearch] = useState('');
@@ -1623,7 +1649,7 @@ function AddOnFilter({ allAddOns, selectedAddOns, onChange }) {
                   checked={selectedAddOns.has(item)}
                   onChange={() => toggle(item)}
                 />
-                <span title={item}>{item}</span>
+                <span title={item}>{item === NO_ADDONS_KEY ? '➖ ' : getAddOnEmoji(item.replace(/\s*\(\$[\d,.]+\)$/, '')) + ' '}{item}</span>
               </label>
             ))}
           </div>
