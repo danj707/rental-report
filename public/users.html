@@ -885,6 +885,10 @@ function App() {
   var [insights, setInsights] = useState(null);
   var [insightsLoading, setInsightsLoading] = useState(false);
   var [insightsError, setInsightsError] = useState(null);
+  var [insightsTraceId, setInsightsTraceId] = useState(null);
+  var [fbSent, setFbSent] = useState(false);
+  var [fbMode, setFbMode] = useState(null);
+  var [fbComment, setFbComment] = useState('');
 
   useEffect(function() {
     fetch(withToken('/'+orgSlug+'/'+reportType+'/api/data'))
@@ -916,12 +920,22 @@ function App() {
   var stratObservations = useMemo(function(){return s?buildStratObs(s):[];}, [s]);
 
 
+  var sendInsightsFeedback = useCallback(function(score) {
+    if (!insightsTraceId) return;
+    fetch(withToken('/' + orgSlug + '/' + reportType + '/api/insights/score'), {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ traceId: insightsTraceId, score: score, comment: score === 0 ? fbComment : '' }),
+    }).catch(function(){});
+    setFbSent(true); setFbMode(null);
+  }, [insightsTraceId, fbComment]);
+
   var getInsights = useCallback(function() {
     if(!s||insightsLoading)return;
     setInsightsLoading(true);setInsightsError(null);
     fetch(withToken('/'+orgSlug+'/'+reportType+'/api/insights'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(buildInsightsBlob(s,tab))})
     .then(function(r){return r.json();})
     .then(function(j){if(!j.ok)throw new Error(j.error||'Failed');setInsights(j.insights||[]);})
+      setInsightsTraceId(j.traceId||null);setFbSent(false);setFbMode(null);setFbComment('');
     .catch(function(e){setInsightsError(e.message);})
     .finally(function(){setInsightsLoading(false);});
   }, [s,insightsLoading]);
