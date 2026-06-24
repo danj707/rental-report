@@ -749,12 +749,12 @@ function App() {
 
   const sendInsightsFeedback = useCallback((score) => {
     if (!insightsTraceId) return;
-    fetch(withToken(basePath + '/api/insights/score'), {
+    fetch(withToken('/' + orgSlug + '/' + reportType + '/api/insights/score'), {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ traceId: insightsTraceId, score, comment: score === 0 ? fbComment : '' }),
     }).catch(() => {});
     setFbSent(true); setFbMode(null);
-  }, [insightsTraceId, fbComment, basePath]);
+  }, [insightsTraceId, fbComment, orgSlug, reportType]);
 
   const getInsights = useCallback(async () => {
     setInsightsLoading(true);
