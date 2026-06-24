@@ -934,8 +934,7 @@ function App() {
     setInsightsLoading(true);setInsightsError(null);
     fetch(withToken('/'+orgSlug+'/'+reportType+'/api/insights'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(buildInsightsBlob(s,tab))})
     .then(function(r){return r.json();})
-    .then(function(j){if(!j.ok)throw new Error(j.error||'Failed');setInsights(j.insights||[]);})
-      setInsightsTraceId(j.traceId||null);setFbSent(false);setFbMode(null);setFbComment('');
+    .then(function(j){if(!j.ok)throw new Error(j.error||'Failed');setInsights(j.insights||[]);setInsightsTraceId(j.traceId||null);setFbSent(false);setFbMode(null);setFbComment('');})
     .catch(function(e){setInsightsError(e.message);})
     .finally(function(){setInsightsLoading(false);});
   }, [s,insightsLoading]);
