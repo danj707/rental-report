@@ -2850,8 +2850,14 @@ function App() {
     if (bookTypeFilter !== 'all') {
       result = result.filter(r => (r.bookingType || '').trim().toLowerCase() === bookTypeFilter);
     }
+    if (selectedAddOns && !selectedAddOns.has(NO_ADDONS_KEY)) {
+      result = result.filter(r => {
+        const parts = parseAddOnItems(r.addons);
+        return parts.length > 0;
+      });
+    }
     return result;
-  }, [rows, selectedLocations, allLocations, selectedSites, allSites, bookTypeFilter]);
+  }, [rows, selectedLocations, allLocations, selectedSites, allSites, bookTypeFilter, selectedAddOns]);
 
   const grouped = useMemo(() => {
     if (!filteredRows) return null;
