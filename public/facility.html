@@ -1206,6 +1206,7 @@ function getParams() {
     _print:        p.get('_print'),
     locations:     p.get('locations'),  // comma-separated, from share URL
     sites:         p.get('sites'),      // comma-separated, from share URL
+    book_type:     p.get('book_type'),  // instant | managed | all
   };
 }
 
@@ -1692,6 +1693,7 @@ function DayPopover({ date, reservations, locationColors, onClose, selectedLocat
     const qs = new URLSearchParams({ start_date: date, end_date: date });
     if (selectedLocations) { const a = [...selectedLocations]; if (a.length) qs.set('locations', a.join(',')); }
     if (selectedSites)     { const a = [...selectedSites];     if (a.length) qs.set('sites',     a.join(',')); }
+    if (bookTypeFilter && bookTypeFilter !== 'all') qs.set('book_type', bookTypeFilter);
     fetch(withToken(`${pdfBase}?${qs}`))
       .then(r => r.blob())
       .then(blob => {
@@ -2526,7 +2528,7 @@ function App() {
   const [showBookType, setShowBookType] = useState(() => {
     try { return localStorage.getItem('col_booktype') !== 'false'; } catch { return true; }
   });
-  const [bookTypeFilter, setBookTypeFilter] = useState('all');
+  const [bookTypeFilter, setBookTypeFilter] = useState(params.book_type || 'all');
   const [showMetrics, setShowMetrics] = useState(() => {
     try { return localStorage.getItem('facility_metrics') === 'true'; } catch { return false; }
   });
@@ -2555,6 +2557,7 @@ function App() {
       qs.set('end_date',   loadedEnd   || endDate);
       if (selectedLocations) { const a = [...selectedLocations]; if (a.length) qs.set('locations', a.join(',')); }
       if (selectedSites)     { const a = [...selectedSites];     if (a.length) qs.set('sites',     a.join(',')); }
+      if (bookTypeFilter && bookTypeFilter !== 'all') qs.set('book_type', bookTypeFilter);
       if (URL_TOKEN) qs.set('token', URL_TOKEN);
       return `${window.location.pathname}?${qs.toString()}`;
     };
@@ -2720,6 +2723,7 @@ function App() {
     // these back into selectedLocations/selectedSites on load.
     if (selectedLocations) { const a = [...selectedLocations]; if (a.length) qs.set('locations', a.join(',')); }
     if (selectedSites)     { const a = [...selectedSites];     if (a.length) qs.set('sites',     a.join(',')); }
+    if (bookTypeFilter && bookTypeFilter !== 'all') qs.set('book_type', bookTypeFilter);
 
     const pathParts = window.location.pathname.replace(/\/$/, '').split('/');
     const pdfBase = pathParts.length >= 3
