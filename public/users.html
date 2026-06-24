@@ -48,6 +48,13 @@
   .kpi-label { font-size:10px; font-weight:600; color:#6b7280; text-transform:uppercase; letter-spacing:.06em; }
   .kpi-val { font-size:26px; font-weight:800; color:#111827; line-height:1; margin:3px 0; }
   .kpi-sub { font-size:11px; color:#9ca3af; line-height:1.4; }
+  .tip-wrap { position:relative; display:inline-flex; align-items:center; gap:4px; }
+  .tip-icon { display:inline-flex; align-items:center; justify-content:center; width:14px; height:14px; border-radius:50%; background:#4b5563; color:#fff; font-size:9px; font-weight:700; font-style:normal; cursor:help; flex-shrink:0; }
+  .tip-icon:hover { background:#374151; }
+  .tip-bubble { display:none; position:absolute; left:50%; transform:translateX(-50%); bottom:calc(100% + 8px); z-index:50; width:240px; background:#1f2937; color:#f3f4f6; border-radius:8px; padding:10px 12px; font-size:12px; font-weight:400; line-height:1.5; letter-spacing:normal; text-transform:none; box-shadow:0 4px 12px rgba(0,0,0,.25); pointer-events:none; }
+  .tip-bubble::after { content:''; position:absolute; top:100%; left:50%; transform:translateX(-50%); border:5px solid transparent; border-top-color:#1f2937; }
+  .tip-wrap:hover .tip-bubble { display:block; }
+  @media print { .tip-bubble, .tip-icon { display:none !important; } }
 
   .grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:14px; }
   .panel { background:#fff; border-radius:10px; padding:16px 18px; box-shadow:0 1px 3px rgba(0,0,0,.06), 0 0 0 1px rgba(0,0,0,.03); }
