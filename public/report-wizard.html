@@ -364,7 +364,17 @@
           var v = resolveField(r, f.field);
           if (f.op === 'eq') return v == f.value;
           if (f.op === 'neq') return v != f.value;
-          if (f.op === 'contains') return String(v || '').toLowerCase().includes(String(f.value).toLowerCase());
+          if (f.op === 'contains') {
+            var sv = String(v || '').toLowerCase();
+            var fv = String(f.value).toLowerCase();
+            if (sv.includes(fv)) return true;
+            // Fuzzy: collapse doubled letters and retry (handles Pequossette vs Pequosette)
+            var dedup = function(s) { return s.replace(/(.)\1+/g, '$1'); };
+            if (dedup(sv).includes(dedup(fv))) return true;
+            // Fuzzy: try matching with first N chars (min 5) to handle truncation/spelling variants
+            if (fv.length >= 5 && sv.includes(fv.slice(0, Math.max(5, Math.floor(fv.length * 0.6))))) return true;
+            return false;
+          }
           if (f.op === 'gt') return getNum(r, f.field) > Number(f.value);
           if (f.op === 'lt') return getNum(r, f.field) < Number(f.value);
           return true;
