@@ -815,6 +815,59 @@ function App() {
       {/* ── Table view ── */}
       {rows && !loading && view === 'table' && (
         <div className="table-wrap">
+
+        {/* AI Insights */}
+        {rows && rows.length > 0 && (
+          <div className="insights-section no-print">
+            <div className="insights-head">
+              <button type="button" className="insights-btn" onClick={getInsights} disabled={insightsLoading}>
+                {insightsLoading ? 'Analyzing…' : (insights ? '↻ Refresh' : '✨ Rec Insights')}
+              </button>
+              {insights && !insightsLoading && (
+                <span className="insights-sub">{'Analyzed ' + rows.length + ' records'}</span>
+              )}
+            </div>
+            {insightsLoading && <div className="ai-loading"><div className="ai-spinner" /></div>}
+            {insightsError && !insightsLoading && (
+              <div style={{color:'#dc2626',fontSize:13,padding:'8px 0'}}><strong>Insights unavailable:</strong> {insightsError}</div>
+            )}
+            {insights && !insightsLoading && (
+              <div className="insights-grid">
+                {insights.map((ins, i) => (
+                  <div key={i} className={'insight-card insight-' + (ins.type || 'signal')}>
+                    <div className="insight-type">{ins.type || 'signal'}</div>
+                    <div className="insight-title">{ins.title}</div>
+                    <div className="insight-detail">{ins.detail}</div>
+                    {ins.action && <div className="insight-action">→ {ins.action}</div>}
+                  </div>
+                ))}
+              </div>
+            )}
+            {insights && !insightsLoading && (
+              <div className="insights-feedback">
+                {fbSent ? (
+                  <span className="fb-thanks">✅ Thanks for the feedback!</span>
+                ) : fbMode === 'down' ? (
+                  <div className="fb-down-form">
+                    <input placeholder="What could be better?" value={fbComment}
+                      onChange={e => setFbComment(e.target.value)}
+                      onKeyDown={e => e.key === 'Enter' && sendInsightsFeedback(0)}
+                      autoFocus maxLength={500} />
+                    <button className="fb-send" onClick={() => sendInsightsFeedback(0)}>Send</button>
+                    <button onClick={() => setFbMode(null)}>Cancel</button>
+                  </div>
+                ) : (
+                  <React.Fragment>
+                    <span className="fb-label">Were these insights helpful?</span>
+                    <button onClick={() => sendInsightsFeedback(1)} title="Yes">👍</button>
+                    <button onClick={() => setFbMode('down')} title="Not helpful">👎</button>
+                  </React.Fragment>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
           <table>
             <thead>
               <tr>
