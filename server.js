@@ -4385,9 +4385,9 @@ app.get("/", (req, res) => {
     const sidebarHtml = `
       <div class="org-sidebar">
         <div class="org-sidebar-head">Usage (30d)</div>
-        <div class="org-sidebar-row"><span class="org-sidebar-label">Views</span><span class="org-sidebar-val">\${sideViews}</span></div>
-        <div class="org-sidebar-row"><span class="org-sidebar-label">PDF exports</span><span class="org-sidebar-val">\${sidePdfs}</span></div>
-        <div class="org-sidebar-row"><span class="org-sidebar-label">Excel exports</span><span class="org-sidebar-val">\${sideExports}</span></div>
+        <div class="org-sidebar-row"><span class="org-sidebar-label">Views</span><span class="org-sidebar-val">${sideViews}</span></div>
+        <div class="org-sidebar-row"><span class="org-sidebar-label">PDF exports</span><span class="org-sidebar-val">${sidePdfs}</span></div>
+        <div class="org-sidebar-row"><span class="org-sidebar-label">Excel exports</span><span class="org-sidebar-val">${sideExports}</span></div>
         <div class="org-sidebar-row"><span class="org-sidebar-label">Subscribers</span><span class="org-sidebar-val">${sideSubs}</span></div>
         <div class="org-sidebar-head">AI (30d)</div>
         <div class="org-sidebar-row"><span class="org-sidebar-label">AI calls</span><span class="org-sidebar-val">${sideAiCalls}</span></div>
