@@ -524,6 +524,7 @@
     .col-resident{ width: 72px; text-align: center; }
     .col-booktype{ width: 72px; text-align: center; font-size: 10px; }
     .col-total   { width: 62px; text-align: right; }
+    .col-addon-fees { width: 72px; text-align: right; }
 
     /* ═══════════════════════════════════════════════════════════════
        CALENDAR VIEW
@@ -1282,6 +1283,7 @@ function normalizeRow(raw) {
     phone:     raw['Phone']     || raw['phone']      || '',
     notes:     raw['Notes']     || raw['notes']      || '',
     addons:    raw['Add Ons?']  || raw['Add Ons']   || raw['addons']     || '',
+    addonFees: raw['Add-On Fees'] || raw['addon_fees'] || raw['addonFees'] || null,
     resident:  raw['Resident?'] || raw['Resident']  || raw['resident']   || '',
     bookingType: raw['Booking Type'] || raw['booking_type'] || raw['bookingType'] || '',
     total:     raw['Total']     || raw['total']      || null,
@@ -1701,6 +1703,12 @@ function HoverCard({ reservation, position, locationColors }) {
         <div className="hc-row">
           <span className="hc-label">Total</span>
           <span className="hc-val">{formatMoney(r.total)}</span>
+        </div>
+      )}
+      {r.addonFees != null && r.addonFees !== '' && parseFloat(r.addonFees) !== 0 && (
+        <div className="hc-row">
+          <span className="hc-label">Add-On Fees</span>
+          <span className="hc-val">{formatMoney(r.addonFees)}</span>
         </div>
       )}
       {(r.notes || r.addons) && (
@@ -2616,6 +2624,9 @@ function App() {
   const [showTotal, setShowTotal] = useState(() => {
     try { return localStorage.getItem('col_total') !== 'false'; } catch { return true; }
   });
+  const [showAddonFees, setShowAddonFees] = useState(() => {
+    try { return localStorage.getItem('col_addon_fees') !== 'false'; } catch { return true; }
+  });
   const [showNotes, setShowNotes] = useState(() => {
     try { return localStorage.getItem('col_notes') !== 'false'; } catch { return true; }
   });
@@ -2637,6 +2648,7 @@ function App() {
 
   useEffect(() => { try { localStorage.setItem('col_headcount', showHeadCount); } catch {} }, [showHeadCount]);
   useEffect(() => { try { localStorage.setItem('col_total',     showTotal);     } catch {} }, [showTotal]);
+  useEffect(() => { try { localStorage.setItem('col_addon_fees', showAddonFees); } catch {} }, [showAddonFees]);
   useEffect(() => { try { localStorage.setItem('col_notes',     showNotes);     } catch {} }, [showNotes]);
   useEffect(() => { try { localStorage.setItem('col_resident',  showResident);  } catch {} }, [showResident]);
   useEffect(() => { try { localStorage.setItem('col_booktype',  showBookType);  } catch {} }, [showBookType]);
@@ -2901,6 +2913,7 @@ function App() {
     ];
     if (showHeadCount) headers.push('Head Cnt');
     if (showTotal)     headers.push('Total');
+    if (showAddonFees) headers.push('Add-On Fees');
     if (showNotes)     headers.push('Notes', 'Add-ons');
     if (showResident)  headers.push('Resident?');
     if (showBookType)  headers.push('Booking Type');
@@ -2915,6 +2928,7 @@ function App() {
       ];
       if (showHeadCount) row.push(r.headCount !== '' ? Number(r.headCount) || r.headCount : '');
       if (showTotal) { const n = parseFloat(r.total); row.push(!isNaN(n) && n !== 0 ? n : ''); }
+      if (showAddonFees) { const n = parseFloat(r.addonFees); row.push(!isNaN(n) && n !== 0 ? n : ''); }
       if (showNotes) { row.push(r.notes || ''); row.push(r.addons || ''); }
       if (showResident) row.push(r.resident || '');
       if (showBookType) row.push(r.bookingType || '');
@@ -2933,6 +2947,7 @@ function App() {
       {wch:20},{wch:20},{wch:14},{wch:28},
       ...(showHeadCount?[{wch:8}]:[]),
       ...(showTotal?[{wch:10}]:[]),
+      ...(showAddonFees?[{wch:12}]:[]),
       ...(showNotes?[{wch:30},{wch:30}]:[]),
       ...(showResident?[{wch:10}]:[]),
       ...(showBookType?[{wch:14}]:[]),
@@ -2941,6 +2956,13 @@ function App() {
       const totalColIdx = headers.indexOf('Total');
       for (let rowIdx = 1; rowIdx <= dataRows.length; rowIdx++) {
         const cellAddr = XLSX.utils.encode_cell({ r: rowIdx, c: totalColIdx });
+        if (ws[cellAddr] && typeof ws[cellAddr].v === 'number') ws[cellAddr].z = '"$"#,##0.00';
+      }
+    }
+    if (showAddonFees) {
+      const afColIdx = headers.indexOf('Add-On Fees');
+      for (let rowIdx = 1; rowIdx <= dataRows.length; rowIdx++) {
+        const cellAddr = XLSX.utils.encode_cell({ r: rowIdx, c: afColIdx });
         if (ws[cellAddr] && typeof ws[cellAddr].v === 'number') ws[cellAddr].z = '"$"#,##0.00';
       }
     }
@@ -3089,6 +3111,10 @@ function App() {
               <label>
                 <input type="checkbox" checked={showTotal} onChange={e => setShowTotal(e.target.checked)} />
                 Total
+              </label>
+              <label>
+                <input type="checkbox" checked={showAddonFees} onChange={e => setShowAddonFees(e.target.checked)} />
+                Add-On $
               </label>
               <label>
                 <input type="checkbox" checked={showNotes} onChange={e => setShowNotes(e.target.checked)} />
@@ -3257,6 +3283,7 @@ function App() {
                           {showBookType  && <span className="col-booktype">Book Type</span>}
                           {showHeadCount && <span className="col-hcnt">Cnt</span>}
                           {showTotal     && <span className="col-total">Total</span>}
+                          {showAddonFees && <span className="col-addon-fees">Add-On $</span>}
                         </div>
                         {locRows.map((r, i) => (
                           <div key={i}>
@@ -3276,6 +3303,7 @@ function App() {
                               {showBookType  && <span className="cell col-booktype">{r.bookingType}</span>}
                               {showHeadCount && <span className="cell col-hcnt">{r.headCount}</span>}
                               {showTotal     && <span className="cell col-total">{formatMoney(r.total)}</span>}
+                              {showAddonFees && <span className="cell col-addon-fees">{formatMoney(r.addonFees)}</span>}
                             </div>
                             {showNotes && (r.notes || r.addons) && (
                               <div className="sub-row">
