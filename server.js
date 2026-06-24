@@ -6315,6 +6315,31 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  { date: '2026-06-24', title: '\uD83D\uDD27 Report Cleanup + Langfuse Feedback Loop + Wizard Intelligence', items: [
+    '\uD83C\uDFA8 FACILITY CLEANUP \u2014 Booking type filter restyled to dark toolbar (matches Locations/Sites). Heatmap + Revenue Metrics collapsed behind toolbar toggle buttons (off by default, localStorage persisted). Site names wrap instead of truncating.',
+    '\uD83D\uDCCB PDF FILTER FIX \u2014 PDF generation now respects ALL active filters including booking type. Added book_type to server-side Puppeteer param whitelist. Standing rule: PDFs must always match on-screen filtered view.',
+    '\uD83D\uDCC8 ORG SIDEBAR METRICS \u2014 Each org card on admin dashboard now has a compact left sidebar: Views, PDF exports, Excel exports, Subscribers (Usage 30d) + AI calls, AI spend, Feedback thumbs (AI 30d). Server-side computed from events.jsonl.',
+    '\uD83D\uDCCA PROGRAMS ALIGNMENT \u2014 Added font-variant-numeric: tabular-nums for consistent number column alignment across the programs table.',
+    '\u2139\uFE0F COMMUNITY INTEL TOOLTIPS \u2014 Reusable Tip component with hover-based dark tooltip bubbles. Applied to Demographics (6 KPIs), Revenue (7 KPIs), and Guests (1 KPI). Same style as Fast Track report tooltips.',
+    '\uD83D\uDEAE ROSTER INSIGHTS REMOVED \u2014 AI Insights removed from Class Roster (not useful for a plain enrollment list). AI pill removed from dashboard card.',
+    '\uD83D\uDDD1\uFE0F PRODUCTS ROLLING 12 REMOVED \u2014 Rolling 12 button removed from Product Sales (revisit post-summer with Quarterly view). Function left as dead code for easy restoration.',
+    '\uD83C\uDFD7\uFE0F ARCHITECTURE DIAGRAM \u2014 Updated SVG with 5-row layout including new AI Observability lane: Langfuse Cloud with OTel Traces, User Scores, Prompt Iteration, Cost Monitoring. Purple dashed arrow from OTel badge.',
+    '\uD83D\uDD17 LANGFUSE LINK \u2014 "Open Langfuse \u2197" link added to AI Analytics section header on admin dashboard.',
+  ]},
+  { date: '2026-06-24', title: '\uD83D\uDC4D Feedback Pipeline \u2014 All 10 Reports Wired to Langfuse Scores', items: [
+    '\u2705 10/10 REPORTS COMPLETE \u2014 Every AI Insights-enabled report now has thumbs up/down UI with typed comment on thumbs down. Programs, Court Util, Fast Track, Community Intel, GL, Overview, Products, Memberships, Historic, Instructor Payout.',
+    '\uD83D\uDCE8 LANGFUSE SCORES \u2014 Thumbs up (value=1) and thumbs down (value=0) sent as user-feedback scores to Langfuse REST API. Metadata includes org, report type, and user\'s typed comment.',
+    '\uD83D\uDD0D END-TO-END VERIFIED \u2014 Full loop confirmed: AI call \u2192 OTel trace \u2192 user feedback \u2192 Langfuse score attached to trace. Scores visible in Langfuse Analytics with trend-over-time and distribution charts.',
+    '\uD83E\uDDE0 FAST TRACK + CI FIXED \u2014 Both createElement-style reports (Fast Track) and JSX-style (Community Intel) now have full feedback UI. CI feedback CSS re-added after being lost in earlier push.',
+  ]},
+  { date: '2026-06-24', title: '\u2728 Report Wizard \u2014 Langfuse Tracing + Field Resolution + Fuzzy Matching', items: [
+    '\uD83D\uDD2D WIZARD TRACING \u2014 Generate endpoint wrapped in OTel parent span. TraceId returned in response and sent with feedback. Every wizard prompt \u2192 config generation fully traced in Langfuse.',
+    '\uD83D\uDC4D WIZARD FEEDBACK \u2014 Thumbs up/down with typed comment flows as wizard-feedback scores to Langfuse. Metadata: org, prompt, title, widget count, user comment.',
+    '\uD83D\uDD0D FIELD NAME RESOLUTION \u2014 New resolveField() helper in renderer: case-insensitive matching, underscore/space tolerance, common alias mapping (net_total\u2194Net Revenue, program\u2194Program Name, section\u2194Section Name). Safety net for AI field name mismatches.',
+    '\uD83E\uDDEC FUZZY CONTAINS FILTER \u2014 Contains filter now collapses doubled letters as fallback (Pequossette\u2192Pequosete matches Pequosette\u2192Pequosete) + prefix matching. Fixes Watertown\'s inconsistent program spelling.',
+    '\uD83C\uDFAF PROMPT IMPROVEMENTS \u2014 CRITICAL field name rule (use exact schema names). Section breakdown rules (always table for "all sections" requests). Short filter value rule (use distinctive substrings to handle spelling variants).',
+    '\uD83D\uDD04 FEEDBACK LOOP PROVEN \u2014 First real cycle: user thumbs down \u2192 diagnose in Langfuse trace \u2192 identify spelling mismatch \u2192 add fuzzy matching + prompt rules \u2192 re-run same prompt \u2192 10 sections rendered vs 1. Score improvement measurable in Langfuse trend.',
+  ]},
   { date: '2026-06-23', title: 'Langfuse AI Observability + Insights Everywhere', items: [
     '\u{1F50D} LANGFUSE INTEGRATION \u2014 All 4 AI features (Insights, Chat, Wizard, Program Finder) now traced via Langfuse + OpenTelemetry. Every Claude call captures full input/output, token usage, latency, and cost. Auto-instrumented via @arizeai/openinference-instrumentation-anthropic. Explicit shouldExportSpan filter for OpenInference spans.',
     '\u{1F4E6} ANTHROPIC SDK MIGRATION \u2014 All AI endpoints migrated from raw fetch() to official @anthropic-ai/sdk. Chat streaming uses SDK stream() API with event-driven text forwarding. Shared client instance with automatic API key detection.',
