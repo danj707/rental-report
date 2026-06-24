@@ -394,10 +394,6 @@ function App() {
   const fillColor = (p) => p >= 0.8 ? '#16a34a' : p >= 0.5 ? '#d97706' : '#ef4444';
   const v = (n) => n === 0 ? 'zero' : n < 0 ? 'neg' : '';
 
-  if (loading) return React.createElement(window.JuiceLoader || 'div', { text: 'Loading instructor payout data...' });
-  if (error) return (<div className="page" style={{margin:'40px auto'}}><div className="empty-state"><p>Error loading data: {error}</p></div></div>);
-
-  const displayOrg = orgName || 'rec.us';
 
   // ── AI Insights ──
   const buildInsightsBlob = useCallback(() => {
@@ -443,6 +439,12 @@ function App() {
     } catch (err) { setInsightsError(err.message); }
     finally { setInsightsLoading(false); }
   }, [buildInsightsBlob]);
+
+  if (loading) return React.createElement(window.JuiceLoader || 'div', { text: 'Loading instructor payout data...' });
+  if (error) return (<div className="page" style={{margin:'40px auto'}}><div className="empty-state"><p>Error loading data: {error}</p></div></div>);
+
+  const displayOrg = orgName || 'rec.us';
+
 
   return (
     <div>
