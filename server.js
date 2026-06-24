@@ -4232,7 +4232,7 @@ app.get("/", (req, res) => {
     gl:       { label: "GL Code Rollup",            ai: true,            icon: "📊", desc: "Payment and refund summary by GL code",   color: "#3b82f6" },
     programs: { label: "Programs",           icon: "🎯", desc: "Enrollment and revenue by program",       color: "#7c3aed", ai: true },
     historic: { label: "Historic Buildings",        ai: true,        icon: "🏛️",  desc: "Reservations for historic building sites", color: "#d97706" },
-    roster:   { label: "Class Roster",              ai: true,              icon: "📋", desc: "Enrolled and cancelled participants by section", color: "#0891b2" },
+    roster:   { label: "Class Roster",              icon: "📋", desc: "Enrolled and cancelled participants by section", color: "#0891b2" },
     overview:    { label: "Facility Overview",         ai: true,         icon: "📈", desc: "Revenue and activity summary by location",                 color: "#059669" },
     products:    { label: "Product Sales",          ai: true,          icon: "🛒", desc: "Daily revenue, refunds, and net by product",           color: "#0891b2" },
     memberships: { label: "Memberships",                ai: true,                icon: "🎫", desc: "Active and lapsed memberships with renewal tracking",       color: "#db2777" },
