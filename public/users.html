@@ -1083,6 +1083,28 @@ function App() {
             );})}
           </div>
         )}
+        {insights && !insightsLoading && (
+          <div className="insights-feedback">
+            {fbSent ? (
+              <span className="fb-thanks">✅ Thanks for the feedback!</span>
+            ) : fbMode === 'down' ? (
+              <div className="fb-down-form">
+                <input placeholder="What could be better?" value={fbComment}
+                  onChange={e => setFbComment(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && sendInsightsFeedback(0)}
+                  autoFocus maxLength={500} />
+                <button className="fb-send" onClick={() => sendInsightsFeedback(0)}>Send</button>
+                <button onClick={() => setFbMode(null)}>Cancel</button>
+              </div>
+            ) : (
+              <React.Fragment>
+                <span className="fb-label">Were these insights helpful?</span>
+                <button onClick={() => sendInsightsFeedback(1)} title="Yes">👍</button>
+                <button onClick={() => setFbMode('down')} title="Not helpful">👎</button>
+              </React.Fragment>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
