@@ -793,6 +793,10 @@ function buildInsightsBlob(s, currentTab) {
 
 /* ═══ Auto observations ═══ */
 function E(emoji){return React.createElement('span',{className:'emoji'},emoji+' ');}
+function Tip({label, tip}){
+  if(!tip) return label;
+  return <span className="tip-wrap">{label}<span className="tip-icon">i</span><span className="tip-bubble">{tip}</span></span>;
+}
 function buildObs(s) {
   var o=[];
   o.push({e:'\uD83D\uDC68\u200D\uD83D\uDC69\u200D\uD83D\uDC67\u200D\uD83D\uDC66',l:'Households',t:s.hhCount+' households, '+s.total+' people total. '+s.hohCount+' HoH + '+s.memCount+' members. Median HH size: '+s.medianHH+'.'});
@@ -1147,12 +1151,12 @@ function App() {
           <React.Fragment>
             {/* KPIs */}
             <div className="kpi-row">
-              <div className="kpi" style={{'--accent':INDIGO}}><div className="kpi-label">Households</div><div className="kpi-val">{s.hhCount}</div><div className="kpi-sub">+{s.last30} last 30d</div></div>
-              <div className="kpi" style={{'--accent':PURPLE}}><div className="kpi-label">Total People</div><div className="kpi-val">{s.total}</div><div className="kpi-sub">{s.hohCount} HoH + {s.memCount} members</div></div>
-              <div className="kpi" style={{'--accent':TEAL}}><div className="kpi-label">Residents</div><div className="kpi-val">{s.resPct}%</div><div className="kpi-sub">{s.residents} of {s.total}</div></div>
-              <div className="kpi" style={{'--accent':AMBER}}><div className="kpi-label">Median HH Size</div><div className="kpi-val">{s.medianHH}</div><div className="kpi-sub">Avg {s.avgHH} &middot; Max {s.maxHH}</div></div>
-              <div className="kpi" style={{'--accent':SKY}}><div className="kpi-label">Median Age</div><div className="kpi-val">{s.medianAge!=null?s.medianAge:'\u2014'}</div><div className="kpi-sub">HoH {s.medianHohAge} &middot; Mem {s.medianMemAge}</div></div>
-              <div className="kpi" style={{'--accent':EMERALD}}><div className="kpi-label">With Grade</div><div className="kpi-val">{s.withGrade}</div><div className="kpi-sub">{gradePct}% of people</div></div>
+              <div className="kpi" style={{'--accent':INDIGO}}><div className="kpi-label"><Tip label="Households" tip="Unique household accounts registered in the system. Each has one head of household (HoH) and zero or more members." /></div><div className="kpi-val">{s.hhCount}</div><div className="kpi-sub">+{s.last30} last 30d</div></div>
+              <div className="kpi" style={{'--accent':PURPLE}}><div className="kpi-label"><Tip label="Total People" tip="All individuals — heads of household plus members. Includes anyone with an account, whether or not they’ve purchased." /></div><div className="kpi-val">{s.total}</div><div className="kpi-sub">{s.hohCount} HoH + {s.memCount} members</div></div>
+              <div className="kpi" style={{'--accent':TEAL}}><div className="kpi-label"><Tip label="Residents" tip="Percentage of people with a local residential address on file." /></div><div className="kpi-val">{s.resPct}%</div><div className="kpi-sub">{s.residents} of {s.total}</div></div>
+              <div className="kpi" style={{'--accent':AMBER}}><div className="kpi-label"><Tip label="Median HH Size" tip="Median number of people per household. Size 1 = single-person HH." /></div><div className="kpi-val">{s.medianHH}</div><div className="kpi-sub">Avg {s.avgHH} &middot; Max {s.maxHH}</div></div>
+              <div className="kpi" style={{'--accent':SKY}}><div className="kpi-label"><Tip label="Median Age" tip="Median age from date of birth records. Only includes people with DOB on file." /></div><div className="kpi-val">{s.medianAge!=null?s.medianAge:'\u2014'}</div><div className="kpi-sub">HoH {s.medianHohAge} &middot; Mem {s.medianMemAge}</div></div>
+              <div className="kpi" style={{'--accent':EMERALD}}><div className="kpi-label"><Tip label="With Grade" tip="People with a school grade level recorded. Key for youth program targeting." /></div><div className="kpi-val">{s.withGrade}</div><div className="kpi-sub">{gradePct}% of people</div></div>
             </div>
 
             {/* Key Observations */}
@@ -1231,11 +1235,11 @@ function App() {
               <React.Fragment>
                 {/* Revenue KPIs */}
                 <div className="kpi-row">
-                  <div className="kpi" style={{'--accent':EMERALD}}><div className="kpi-label">Net Revenue</div><div className="kpi-val">${s.totalNet>=1000?(s.totalNet/1000).toFixed(0)+'K':Math.round(s.totalNet)}</div><div className="kpi-sub">${s.totalGross>=1000?(s.totalGross/1000).toFixed(0)+'K':Math.round(s.totalGross)} gross</div></div>
+                  <div className="kpi" style={{'--accent':EMERALD}}><div className="kpi-label"><Tip label="Net Revenue" tip="Total payments minus refunds. The actual revenue retained." /></div><div className="kpi-val">${s.totalNet>=1000?(s.totalNet/1000).toFixed(0)+'K':Math.round(s.totalNet)}</div><div className="kpi-sub">${s.totalGross>=1000?(s.totalGross/1000).toFixed(0)+'K':Math.round(s.totalGross)} gross</div></div>
                   <div className="kpi" style={{'--accent':INDIGO}}><div className="kpi-label">Median / HH</div><div className="kpi-val">${Math.round(s.medianRev)}</div><div className="kpi-sub">Avg ${Math.round(s.avgRev)}</div></div>
-                  <div className="kpi" style={{'--accent':TEAL}}><div className="kpi-label">Conversion</div><div className="kpi-val">{s.conversionRate}%</div><div className="kpi-sub">{s.spendingHH} of {s.hhCount} HH</div></div>
+                  <div className="kpi" style={{'--accent':TEAL}}><div className="kpi-label"><Tip label="Conversion" tip="Percentage of registered households that made at least one purchase." /></div><div className="kpi-val">{s.conversionRate}%</div><div className="kpi-sub">{s.spendingHH} of {s.hhCount} HH</div></div>
                   <div className="kpi" style={{'--accent':AMBER}}><div className="kpi-label">Unbooked</div><div className="kpi-val">{s.unbookedHH}</div><div className="kpi-sub">{Math.round(s.unbookedHH/s.hhCount*100)}% of households</div></div>
-                  <div className="kpi" style={{'--accent':ROSE}}><div className="kpi-label">Refund Rate</div><div className="kpi-val">{s.refundRate}%</div><div className="kpi-sub">${s.totalRefunds>=1000?(s.totalRefunds/1000).toFixed(1)+'K':Math.round(s.totalRefunds)} total</div></div>
+                  <div className="kpi" style={{'--accent':ROSE}}><div className="kpi-label"><Tip label="Refund Rate" tip="Total refunds as a percentage of gross revenue." /></div><div className="kpi-val">{s.refundRate}%</div><div className="kpi-sub">${s.totalRefunds>=1000?(s.totalRefunds/1000).toFixed(1)+'K':Math.round(s.totalRefunds)} total</div></div>
                 </div>
 
                 {/* Percentiles callout */}
@@ -1517,12 +1521,12 @@ function App() {
           <React.Fragment>
             {/* KPIs */}
             <div className="kpi-row">
-              <div className="kpi" style={{'--accent':'#db2777'}}><div className="kpi-label">Guest Accounts</div><div className="kpi-val">{s.guestCount.toLocaleString()}</div><div className="kpi-sub">{s.guestHHCount.toLocaleString()} households</div></div>
-              <div className="kpi" style={{'--accent':'#059669'}}><div className="kpi-label">Gross Revenue</div><div className="kpi-val">${Math.round(s.guestGross).toLocaleString()}</div><div className="kpi-sub">{s.guestWithRev.toLocaleString()} transacting guests</div></div>
+              <div className="kpi" style={{'--accent':'#db2777'}}><div className="kpi-label"><Tip label="Guest Accounts" tip="Accounts created via guest checkout (no full registration)." /></div><div className="kpi-val">{s.guestCount.toLocaleString()}</div><div className="kpi-sub">{s.guestHHCount.toLocaleString()} households</div></div>
+              <div className="kpi" style={{'--accent':'#059669'}}><div className="kpi-label"><Tip label="Gross Revenue" tip="Total payments before refunds." /></div><div className="kpi-val">${Math.round(s.guestGross).toLocaleString()}</div><div className="kpi-sub">{s.guestWithRev.toLocaleString()} transacting guests</div></div>
               <div className="kpi" style={{'--accent':'#2563eb'}}><div className="kpi-label">Avg Transaction</div><div className="kpi-val">${s.guestAvgRev.toFixed(2)}</div><div className="kpi-sub">Median ${s.guestMedianRev.toFixed(2)}</div></div>
               <div className="kpi" style={{'--accent':'#d97706'}}><div className="kpi-label">Items per Guest</div><div className="kpi-val">{s.guestAvgItems.toFixed(1)}</div><div className="kpi-sub">{s.guestItems.toLocaleString()} total items</div></div>
-              <div className="kpi" style={{'--accent':'#7c3aed'}}><div className="kpi-label">Net Revenue</div><div className="kpi-val">${Math.round(s.guestNet).toLocaleString()}</div><div className="kpi-sub">${Math.round(s.guestRefunds).toLocaleString()} refunded</div></div>
-              <div className="kpi" style={{'--accent':'#0891b2'}}><div className="kpi-label">Share of All Revenue</div><div className="kpi-val">{s.totalGross+s.guestGross>0?((s.guestGross/(s.totalGross+s.guestGross))*100).toFixed(1):'0'}%</div><div className="kpi-sub">of total platform revenue</div></div>
+              <div className="kpi" style={{'--accent':'#7c3aed'}}><div className="kpi-label"><Tip label="Net Revenue" tip="Total payments minus refunds. The actual revenue retained." /></div><div className="kpi-val">${Math.round(s.guestNet).toLocaleString()}</div><div className="kpi-sub">${Math.round(s.guestRefunds).toLocaleString()} refunded</div></div>
+              <div className="kpi" style={{'--accent':'#0891b2'}}><div className="kpi-label"><Tip label="Share of All Revenue" tip="This segment’s contribution to total org revenue." /></div><div className="kpi-val">{s.totalGross+s.guestGross>0?((s.guestGross/(s.totalGross+s.guestGross))*100).toFixed(1):'0'}%</div><div className="kpi-sub">of total platform revenue</div></div>
             </div>
 
             {/* Key Observations */}
@@ -1593,9 +1597,9 @@ function App() {
               <React.Fragment key={ct.key}>
                 <div className="kpi-row">
                   <div className="kpi" style={{'--accent':'#db2777'}}><div className="kpi-label">Units Sold</div><div className="kpi-val">{pr.totalQty.toLocaleString()}</div><div className="kpi-sub">{pr.uniqueProducts} unique products</div></div>
-                  <div className="kpi" style={{'--accent':'#059669'}}><div className="kpi-label">Gross Revenue</div><div className="kpi-val">{fmtM(pr.totalRev)}</div><div className="kpi-sub">{pr.activeDays} active selling days</div></div>
+                  <div className="kpi" style={{'--accent':'#059669'}}><div className="kpi-label"><Tip label="Gross Revenue" tip="Total payments before refunds." /></div><div className="kpi-val">{fmtM(pr.totalRev)}</div><div className="kpi-sub">{pr.activeDays} active selling days</div></div>
                   <div className="kpi" style={{'--accent':'#ef4444'}}><div className="kpi-label">Refunds</div><div className="kpi-val">{fmtM(pr.totalRefunds)}</div><div className="kpi-sub">{pr.refundRate.toFixed(1)}% refund rate</div></div>
-                  <div className="kpi" style={{'--accent':'#2563eb'}}><div className="kpi-label">Net Revenue</div><div className="kpi-val">{fmtM(pr.totalNet)}</div><div className="kpi-sub">{fmtM(pr.avgDailyRev)}/day avg</div></div>
+                  <div className="kpi" style={{'--accent':'#2563eb'}}><div className="kpi-label"><Tip label="Net Revenue" tip="Total payments minus refunds. The actual revenue retained." /></div><div className="kpi-val">{fmtM(pr.totalNet)}</div><div className="kpi-sub">{fmtM(pr.avgDailyRev)}/day avg</div></div>
                   <div className="kpi" style={{'--accent':'#7c3aed'}}><div className="kpi-label">Avg per Unit</div><div className="kpi-val">${pr.avgPerSale.toFixed(2)}</div><div className="kpi-sub">net revenue / qty</div></div>
                 </div>
 
