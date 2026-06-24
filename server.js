@@ -5151,7 +5151,11 @@ app.get("/", (req, res) => {
       <div class="org-header" onclick="toggleHow(this)" style="cursor:pointer;user-select:none">
         <div class="org-header-text">
           <div class="org-name">&#129302; AI Analytics</div>
-          <div class="org-slug">Langfuse-traced usage across all AI features</div>
+          <div class="org-slug">Langfuse-traced usage across all AI features
+            <a href="https://us.cloud.langfuse.com" target="_blank" rel="noopener"
+               style="color:#7c3aed;text-decoration:none;font-weight:600;margin-left:8px"
+               onmouseover="this.style.color='#6d28d9'" onmouseout="this.style.color='#7c3aed'">Open Langfuse &#8599;</a>
+          </div>
         </div>
         <span class="how-chevron" style="transform:rotate(90deg)">&#9658;</span>
       </div>
@@ -5188,125 +5192,148 @@ app.get("/", (req, res) => {
 
         <!-- Architecture Diagram -->
         <div style="margin:16px 0 20px;overflow-x:auto">
-          <svg viewBox="0 0 820 520" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:820px;font-family:IBM Plex Sans,system-ui,sans-serif">
+          <svg viewBox="0 0 820 580" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:820px;font-family:IBM Plex Sans,system-ui,sans-serif">
             <!-- Background -->
-            <rect width="820" height="520" rx="12" fill="#f9f8f6" stroke="#e4e4e0" stroke-width="1"/>
+            <rect width="820" height="580" rx="12" fill="#f9f8f6" stroke="#e4e4e0" stroke-width="1"/>
             <!-- Title -->
             <text x="410" y="30" text-anchor="middle" font-size="13" font-weight="600" fill="#2c2c2c">rec.us Reports &#8212; System Architecture</text>
 
             <!-- Row 1: Entry Points -->
             <text x="28" y="62" font-size="9" fill="#888" font-weight="600" letter-spacing="1">ENTRY POINTS</text>
-            <!-- Rec Admin direct link -->
             <rect x="28" y="72" width="170" height="62" rx="8" fill="#fff" stroke="#e4e4e0" stroke-width="1.5"/>
             <text x="113" y="92" text-anchor="middle" font-size="19">&#127760;</text>
             <text x="113" y="110" text-anchor="middle" font-size="10.5" font-weight="600" fill="#2c2c2c">rec.us Admin Portal</text>
             <text x="113" y="122" text-anchor="middle" font-size="8.5" fill="#888">Direct link in Metabase</text>
-            <!-- Direct link -->
             <rect x="218" y="72" width="170" height="62" rx="8" fill="#fff" stroke="#e4e4e0" stroke-width="1.5"/>
             <text x="303" y="92" text-anchor="middle" font-size="19">&#128279;</text>
             <text x="303" y="110" text-anchor="middle" font-size="10.5" font-weight="600" fill="#2c2c2c">Direct Token URL</text>
             <text x="303" y="122" text-anchor="middle" font-size="8.5" fill="#888">Bookmarkable staff links</text>
-            <!-- Public calendar -->
             <rect x="408" y="72" width="170" height="62" rx="8" fill="#fff" stroke="#e4e4e0" stroke-width="1.5"/>
             <text x="493" y="92" text-anchor="middle" font-size="19">&#128197;</text>
             <text x="493" y="110" text-anchor="middle" font-size="10.5" font-weight="600" fill="#2c2c2c">Public Calendar</text>
             <text x="493" y="122" text-anchor="middle" font-size="8.5" fill="#888">Iframe-embeddable, no token</text>
-            <!-- Rental Calendar (NEW) -->
-            <rect x="598" y="72" width="190" height="62" rx="8" fill="#FFF3E0" stroke="#FF9800" stroke-width="1.5"/>
-            <text x="693" y="92" text-anchor="middle" font-size="19">&#127966;</text>
-            <text x="693" y="110" text-anchor="middle" font-size="10.5" font-weight="600" fill="#E65100">Rental Calendar</text>
-            <text x="693" y="122" text-anchor="middle" font-size="8.5" fill="#BF360C">Live MCP data, public, no token</text>
+            <rect x="598" y="72" width="192" height="62" rx="8" fill="#fff" stroke="#e4e4e0" stroke-width="1.5"/>
+            <text x="694" y="92" text-anchor="middle" font-size="19">&#127966;</text>
+            <text x="694" y="110" text-anchor="middle" font-size="10.5" font-weight="600" fill="#2c2c2c">Rental Calendar</text>
+            <text x="694" y="122" text-anchor="middle" font-size="8.5" fill="#888">Live MCP data, public, no token</text>
 
-            <!-- Arrows down -->
-            <line x1="113" y1="134" x2="113" y2="162" stroke="#ccc" stroke-width="1.5" marker-end="url(#arrowhead)"/>
-            <line x1="303" y1="134" x2="303" y2="162" stroke="#ccc" stroke-width="1.5" marker-end="url(#arrowhead)"/>
-            <line x1="493" y1="134" x2="493" y2="162" stroke="#ccc" stroke-width="1.5" marker-end="url(#arrowhead)"/>
-            <line x1="693" y1="134" x2="693" y2="222" stroke="#FF9800" stroke-width="1.5" stroke-dasharray="4 2" marker-end="url(#arrowhead)"/>
+            <!-- Arrow: Entry -> Token Gate -->
+            <line x1="410" y1="134" x2="410" y2="148" stroke="#bbb" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+            <defs><marker id="arrowhead" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6Z" fill="#bbb"/></marker></defs>
 
             <!-- Row 2: Token Gate -->
-            <rect x="28" y="164" width="560" height="38" rx="6" fill="#FFF3E0" stroke="#FFB74D" stroke-width="1"/>
-            <text x="308" y="187" text-anchor="middle" font-size="10.5" font-weight="600" fill="#E65100">&#128274; Token Gate Middleware &#8212; 16-char tokens, fail-closed (generic 404 on mismatch)</text>
+            <rect x="28" y="148" width="762" height="30" rx="6" fill="#2c2c2c"/>
+            <text x="410" y="168" text-anchor="middle" font-size="10" font-weight="600" fill="#fff">&#128274; Token Gate Middleware &#8212; 16-char tokens, fail-closed (generic 404)</text>
 
-            <!-- Arrow down -->
-            <line x1="308" y1="202" x2="308" y2="222" stroke="#ccc" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+            <!-- Arrow: Token Gate -> Server -->
+            <line x1="410" y1="178" x2="410" y2="198" stroke="#bbb" stroke-width="1.5" marker-end="url(#arrowhead)"/>
 
-            <!-- Row 3: Railway App (main box) -->
-            <rect x="28" y="224" width="770" height="130" rx="10" fill="#EDE7F6" stroke="#9575CD" stroke-width="1.5"/>
-            <text x="413" y="244" text-anchor="middle" font-size="11" font-weight="700" fill="#4527A0">&#9881;&#65039; Railway Pro &#8212; Node.js / Express</text>
+            <!-- Row 3: Server Box -->
+            <rect x="28" y="198" width="762" height="140" rx="10" fill="#fff" stroke="#6366f1" stroke-width="2"/>
+            <text x="40" y="218" font-size="11" font-weight="700" fill="#4338ca">&#9881;&#65039; Railway Pro &#8212; Node.js / Express</text>
 
-            <!-- Sub-boxes inside Railway -->
-            <rect x="44" y="256" width="148" height="48" rx="6" fill="#fff" stroke="#D1C4E9" stroke-width="1"/>
-            <text x="118" y="276" text-anchor="middle" font-size="9.5" font-weight="600" fill="#4527A0">React/Babel CDN</text>
-            <text x="118" y="290" text-anchor="middle" font-size="8" fill="#888">15 report HTML files</text>
+            <!-- Server modules -->
+            <rect x="40" y="228" width="100" height="44" rx="6" fill="#eef2ff" stroke="#c7d2fe"/>
+            <text x="90" y="246" text-anchor="middle" font-size="9" font-weight="600" fill="#4338ca">React/Babel CDN</text>
+            <text x="90" y="260" text-anchor="middle" font-size="8" fill="#6366f1">15 report HTML files</text>
 
-            <rect x="204" y="256" width="148" height="48" rx="6" fill="#fff" stroke="#D1C4E9" stroke-width="1"/>
-            <text x="278" y="276" text-anchor="middle" font-size="9.5" font-weight="600" fill="#4527A0">Metabase Proxy</text>
-            <text x="278" y="290" text-anchor="middle" font-size="8" fill="#888">Server-side, no CORS</text>
+            <rect x="150" y="228" width="100" height="44" rx="6" fill="#eef2ff" stroke="#c7d2fe"/>
+            <text x="200" y="246" text-anchor="middle" font-size="9" font-weight="600" fill="#4338ca">Metabase Proxy</text>
+            <text x="200" y="260" text-anchor="middle" font-size="8" fill="#6366f1">Server-side, no CORS</text>
 
-            <rect x="364" y="256" width="148" height="48" rx="6" fill="#fff" stroke="#D1C4E9" stroke-width="1"/>
-            <text x="438" y="276" text-anchor="middle" font-size="9.5" font-weight="600" fill="#4527A0">AI Insights Engine</text>
-            <text x="438" y="290" text-anchor="middle" font-size="8" fill="#888">Claude API narratives</text>
+            <rect x="260" y="228" width="105" height="44" rx="6" fill="#fef3c7" stroke="#fbbf24"/>
+            <text x="312" y="246" text-anchor="middle" font-size="9" font-weight="600" fill="#92400e">AI Insights Engine</text>
+            <text x="312" y="260" text-anchor="middle" font-size="8" fill="#b45309">11 reports, Claude API</text>
 
-            <rect x="524" y="256" width="128" height="48" rx="6" fill="#fff" stroke="#D1C4E9" stroke-width="1"/>
-            <text x="588" y="276" text-anchor="middle" font-size="9.5" font-weight="600" fill="#4527A0">Puppeteer PDF</text>
-            <text x="588" y="290" text-anchor="middle" font-size="8" fill="#888">Headless Chromium</text>
+            <rect x="375" y="228" width="95" height="44" rx="6" fill="#eef2ff" stroke="#c7d2fe"/>
+            <text x="422" y="246" text-anchor="middle" font-size="9" font-weight="600" fill="#4338ca">Puppeteer PDF</text>
+            <text x="422" y="260" text-anchor="middle" font-size="8" fill="#6366f1">Headless Chromium</text>
 
-            <rect x="664" y="256" width="122" height="48" rx="6" fill="#fff" stroke="#D1C4E9" stroke-width="1"/>
-            <text x="725" y="276" text-anchor="middle" font-size="9.5" font-weight="600" fill="#4527A0">PII Stripper</text>
-            <text x="725" y="290" text-anchor="middle" font-size="8" fill="#888">Emails, phones, names</text>
+            <rect x="480" y="228" width="95" height="44" rx="6" fill="#fce7f3" stroke="#f9a8d4"/>
+            <text x="527" y="246" text-anchor="middle" font-size="9" font-weight="600" fill="#9d174d">PII Stripper</text>
+            <text x="527" y="260" text-anchor="middle" font-size="8" fill="#be185d">Emails, phones, names</text>
 
-            <!-- Sub-row 2 inside Railway -->
-            <rect x="44" y="312" width="148" height="32" rx="6" fill="#fff" stroke="#D1C4E9" stroke-width="1"/>
-            <text x="118" y="332" text-anchor="middle" font-size="9" font-weight="600" fill="#4527A0">Report Wizard</text>
+            <rect x="585" y="228" width="95" height="44" rx="6" fill="#fef3c7" stroke="#fbbf24"/>
+            <text x="632" y="246" text-anchor="middle" font-size="9" font-weight="600" fill="#92400e">Report Wizard</text>
+            <text x="632" y="260" text-anchor="middle" font-size="8" fill="#b45309">NL &#8594; dashboards</text>
 
-            <rect x="204" y="312" width="148" height="32" rx="6" fill="#fff" stroke="#D1C4E9" stroke-width="1"/>
-            <text x="278" y="332" text-anchor="middle" font-size="9" font-weight="600" fill="#4527A0">Email Subscriptions</text>
+            <rect x="690" y="228" width="90" height="44" rx="6" fill="#eef2ff" stroke="#c7d2fe"/>
+            <text x="735" y="246" text-anchor="middle" font-size="9" font-weight="600" fill="#4338ca">MCP SDK Client</text>
+            <text x="735" y="260" text-anchor="middle" font-size="8" fill="#6366f1">Rental availability</text>
 
-            <rect x="364" y="312" width="148" height="32" rx="6" fill="#fff" stroke="#D1C4E9" stroke-width="1"/>
-            <text x="438" y="332" text-anchor="middle" font-size="9" font-weight="600" fill="#4527A0">Nightly Backups</text>
+            <!-- Row 3b: second row of server modules -->
+            <rect x="40" y="282" width="105" height="38" rx="6" fill="#ecfdf5" stroke="#6ee7b7"/>
+            <text x="92" y="300" text-anchor="middle" font-size="9" font-weight="600" fill="#065f46">Email Subscriptions</text>
+            <text x="92" y="312" text-anchor="middle" font-size="8" fill="#047857">Resend, cron-scheduled</text>
 
-            <rect x="524" y="312" width="128" height="32" rx="6" fill="#fff" stroke="#D1C4E9" stroke-width="1"/>
-            <text x="588" y="332" text-anchor="middle" font-size="9" font-weight="600" fill="#4527A0">Usage Analytics</text>
+            <rect x="155" y="282" width="95" height="38" rx="6" fill="#ecfdf5" stroke="#6ee7b7"/>
+            <text x="202" y="300" text-anchor="middle" font-size="9" font-weight="600" fill="#065f46">Nightly Backups</text>
+            <text x="202" y="312" text-anchor="middle" font-size="8" fill="#047857">GitHub Gists</text>
 
-            <rect x="664" y="312" width="122" height="32" rx="6" fill="#FFF3E0" stroke="#FF9800" stroke-width="1"/>
-            <text x="725" y="332" text-anchor="middle" font-size="9" font-weight="600" fill="#E65100">MCP SDK Client</text>
+            <rect x="260" y="282" width="105" height="38" rx="6" fill="#ecfdf5" stroke="#6ee7b7"/>
+            <text x="312" y="300" text-anchor="middle" font-size="9" font-weight="600" fill="#065f46">Usage Analytics</text>
+            <text x="312" y="312" text-anchor="middle" font-size="8" fill="#047857">events.jsonl + metrics</text>
 
-            <!-- Arrows from Railway down to data layer -->
-            <line x1="278" y1="354" x2="278" y2="382" stroke="#ccc" stroke-width="1.5" marker-end="url(#arrowhead)"/>
-            <line x1="438" y1="354" x2="438" y2="382" stroke="#ccc" stroke-width="1.5" marker-end="url(#arrowhead)"/>
-            <line x1="630" y1="354" x2="630" y2="382" stroke="#ccc" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+            <rect x="375" y="282" width="95" height="38" rx="6" fill="#ecfdf5" stroke="#6ee7b7"/>
+            <text x="422" y="300" text-anchor="middle" font-size="9" font-weight="600" fill="#065f46">Rec AI Chat</text>
+            <text x="422" y="312" text-anchor="middle" font-size="8" fill="#047857">Streaming SSE</text>
+
+            <rect x="480" y="282" width="95" height="38" rx="6" fill="#ecfdf5" stroke="#6ee7b7"/>
+            <text x="527" y="300" text-anchor="middle" font-size="9" font-weight="600" fill="#065f46">Program Finder</text>
+            <text x="527" y="312" text-anchor="middle" font-size="8" fill="#047857">Public AI matching</text>
+
+            <!-- OTel/Langfuse badge on AI modules -->
+            <rect x="585" y="282" width="195" height="38" rx="6" fill="#f5f3ff" stroke="#a78bfa"/>
+            <text x="682" y="298" text-anchor="middle" font-size="9" font-weight="600" fill="#5b21b6">OpenTelemetry Tracing</text>
+            <text x="682" y="310" text-anchor="middle" font-size="8" fill="#7c3aed">Auto-instrumented &#183; all AI calls</text>
+
+            <!-- Arrow: Server -> Data Layer -->
+            <line x1="410" y1="338" x2="410" y2="358" stroke="#bbb" stroke-width="1.5" marker-end="url(#arrowhead)"/>
 
             <!-- Row 4: Data Layer -->
-            <text x="28" y="396" font-size="9" fill="#888" font-weight="600" letter-spacing="1">DATA LAYER</text>
-            <rect x="28" y="404" width="235" height="56" rx="8" fill="#E3F2FD" stroke="#64B5F6" stroke-width="1.5"/>
-            <text x="145" y="426" text-anchor="middle" font-size="16">&#128202;</text>
-            <text x="145" y="442" text-anchor="middle" font-size="10.5" font-weight="600" fill="#1565C0">Metabase (Public Card API)</text>
-            <text x="145" y="454" text-anchor="middle" font-size="8" fill="#888">12 shared + per-org parameterized queries</text>
+            <text x="28" y="372" font-size="9" fill="#888" font-weight="600" letter-spacing="1">DATA LAYER</text>
+            <rect x="28" y="380" width="230" height="62" rx="8" fill="#fff" stroke="#e4e4e0" stroke-width="1.5"/>
+            <text x="143" y="400" text-anchor="middle" font-size="19">&#128202;</text>
+            <text x="143" y="416" text-anchor="middle" font-size="10.5" font-weight="600" fill="#2c2c2c">Metabase (Public Card API)</text>
+            <text x="143" y="428" text-anchor="middle" font-size="8.5" fill="#888">12 shared + per-org parameterized queries</text>
 
-            <rect x="283" y="404" width="235" height="56" rx="8" fill="#E8F5E9" stroke="#81C784" stroke-width="1.5"/>
-            <text x="400" y="426" text-anchor="middle" font-size="16">&#128024;</text>
-            <text x="400" y="442" text-anchor="middle" font-size="10.5" font-weight="600" fill="#2E7D32">rec.us PostgreSQL</text>
-            <text x="400" y="454" text-anchor="middle" font-size="8" fill="#888">Platform database (all orgs)</text>
+            <rect x="278" y="380" width="230" height="62" rx="8" fill="#fff" stroke="#e4e4e0" stroke-width="1.5"/>
+            <text x="393" y="400" text-anchor="middle" font-size="19">&#128024;</text>
+            <text x="393" y="416" text-anchor="middle" font-size="10.5" font-weight="600" fill="#2c2c2c">rec.us PostgreSQL</text>
+            <text x="393" y="428" text-anchor="middle" font-size="8.5" fill="#888">Platform database (all orgs)</text>
 
-            <rect x="538" y="404" width="260" height="56" rx="8" fill="#FFF8E1" stroke="#FFD54F" stroke-width="1.5"/>
-            <text x="668" y="426" text-anchor="middle" font-size="16">&#9729;&#65039;</text>
-            <text x="668" y="442" text-anchor="middle" font-size="10.5" font-weight="600" fill="#F57F17">External Services</text>
-            <text x="668" y="454" text-anchor="middle" font-size="8" fill="#888">Anthropic API &#183; rec.us MCP &#183; GitHub Gists &#183; Resend</text>
+            <rect x="528" y="380" width="262" height="62" rx="8" fill="#fff" stroke="#e4e4e0" stroke-width="1.5"/>
+            <text x="659" y="400" text-anchor="middle" font-size="19">&#9729;&#65039;</text>
+            <text x="659" y="416" text-anchor="middle" font-size="10.5" font-weight="600" fill="#2c2c2c">External Services</text>
+            <text x="659" y="428" text-anchor="middle" font-size="8.5" fill="#888">Anthropic API &#183; rec.us MCP &#183; GitHub &#183; Resend</text>
 
-            <!-- Connecting line Metabase to Postgres -->
-            <line x1="263" y1="432" x2="283" y2="432" stroke="#B0BEC5" stroke-width="1.2" marker-end="url(#arrowhead)"/>
+            <!-- Row 5: Langfuse Observability -->
+            <text x="28" y="462" font-size="9" fill="#888" font-weight="600" letter-spacing="1">AI OBSERVABILITY</text>
+            <rect x="28" y="470" width="762" height="58" rx="8" fill="#f5f3ff" stroke="#a78bfa" stroke-width="1.5" stroke-dasharray="4 2"/>
+            <text x="52" y="492" font-size="15">&#128269;</text>
+            <text x="72" y="492" font-size="11" font-weight="700" fill="#5b21b6">Langfuse Cloud</text>
+            <text x="72" y="506" font-size="8.5" fill="#7c3aed">us.cloud.langfuse.com</text>
 
-            <!-- Row 5: Legend -->
-            <text x="28" y="492" font-size="8" fill="#aaa">&#9679; Server-side proxy eliminates CORS &#8212; staff browsers never hit Metabase directly</text>
-            <text x="28" y="506" font-size="8" fill="#aaa">&#9679; Shared UUID architecture: add a new org with just slug + orgId + logo + token &#8212; 12 report types light up automatically</text>
-            <text x="430" y="506" font-size="8" fill="#E65100">&#9679; Rental Calendar: live availability via MCP SDK &#8594; rec.us MCP server (no REST API needed)</text>
+            <text x="220" y="490" font-size="9" font-weight="600" fill="#6d28d9">OTel Traces</text>
+            <text x="220" y="503" font-size="8" fill="#7c3aed">Full I/O, tokens, latency, cost</text>
 
-            <!-- Arrowhead marker -->
-            <defs>
-              <marker id="arrowhead" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
-                <polygon points="0 0, 8 3, 0 6" fill="#ccc"/>
-              </marker>
-            </defs>
+            <text x="370" y="490" font-size="9" font-weight="600" fill="#6d28d9">User Scores</text>
+            <text x="370" y="503" font-size="8" fill="#7c3aed">Thumbs up/down + comments</text>
+
+            <text x="510" y="490" font-size="9" font-weight="600" fill="#6d28d9">Prompt Iteration</text>
+            <text x="510" y="503" font-size="8" fill="#7c3aed">Compare versions, A/B test</text>
+
+            <text x="660" y="490" font-size="9" font-weight="600" fill="#6d28d9">Cost Monitoring</text>
+            <text x="660" y="503" font-size="8" fill="#7c3aed">Per-org, per-feature spend</text>
+
+            <!-- Dashed arrow from OTel badge to Langfuse -->
+            <line x1="682" y1="320" x2="682" y2="470" stroke="#a78bfa" stroke-width="1.5" stroke-dasharray="4 3" marker-end="url(#arrowpurple)"/>
+            <defs><marker id="arrowpurple" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6Z" fill="#a78bfa"/></marker></defs>
+
+            <!-- Notes -->
+            <text x="28" y="550" font-size="8.5" fill="#666">&#9679; Server-side proxy eliminates CORS &#8212; staff browsers never hit Metabase directly</text>
+            <text x="28" y="564" font-size="8.5" fill="#666">&#9679; Shared UUID architecture: add a new org with just slug + orgId + logo + token &#8212; all shared reports light up automatically</text>
+            <text x="28" y="578" font-size="8.5" fill="#666">&#9679; Every AI call auto-instrumented via OpenTelemetry &#8594; Langfuse Cloud. User feedback (thumbs) attached as scores for quality monitoring</text>
           </svg>
         </div>
 
