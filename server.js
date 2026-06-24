@@ -2469,7 +2469,14 @@ LAYOUT RULES:
 - Prefer bar-chart for categorical comparisons, pie-chart for proportions
 - Use table for AGGREGATED drill-down (grouped by program, category, etc. — never individual people)
 - For "count" computations, set the metric field to the groupBy field (or any existing field)
-- Return ONLY the JSON object, nothing else`;
+- Return ONLY the JSON object, nothing else
+
+SECTION/PROGRAM BREAKDOWN RULES:
+- When the user asks to see "all sections", "by section", "section breakdown", or "every section" for a program: ALWAYS include a table widget showing each section as its own row. The table is the primary widget — bar charts are supplementary.
+- Use "contains" filters carefully. If the user says "Pequossette summer camp", filter on the program name, NOT the section name. Sections will naturally appear as rows in the table.
+- Do NOT over-filter. If the user asks for "all Week 2 sections", use a single filter on the section field for "Week 2", not stacked filters on both program AND section unless the user explicitly names both.
+- When groupBy is "section", every unique section matching the filter should appear as its own bar/row. If only 1 bar appears, the filter is too restrictive.
+- For program revenue reports, always include a detail table with section, enrolled, capacity, fill %, charged, refunds, and net revenue columns. This is what staff actually need to see.`;
 
 app.post("/:org/report-wizard/api/generate", async (req, res) => {
   const slug = req.params.org;
