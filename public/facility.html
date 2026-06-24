@@ -1584,7 +1584,7 @@ function AddOnFilter({ allAddOns, selectedAddOns, onChange }) {
         onClick={() => setOpen(o => !o)}
         style={!allSelected ? { borderColor: '#f59e0b', color: '#fde68a' } : {}}
       >
-        \u2795 Add Ons
+        ➕ Add Ons
         {badgeCount !== null && (
           <span className="badge">{badgeCount}/{allAddOns.length}</span>
         )}
@@ -2822,15 +2822,8 @@ function App() {
     if (bookTypeFilter !== 'all') {
       result = result.filter(r => (r.bookingType || '').trim().toLowerCase() === bookTypeFilter);
     }
-    if (selectedAddOns && selectedAddOns.size < allAddOns.length) {
-      result = result.filter(r => {
-        const parts = parseAddOnItems(r.addons);
-        if (parts.length === 0) return selectedAddOns.has(NO_ADDONS_KEY);
-        return parts.some(p => selectedAddOns.has(p));
-      });
-    }
     return result;
-  }, [rows, selectedLocations, allLocations, selectedSites, allSites, bookTypeFilter, selectedAddOns, allAddOns]);
+  }, [rows, selectedLocations, allLocations, selectedSites, allSites, bookTypeFilter]);
 
   const grouped = useMemo(() => {
     if (!filteredRows) return null;
@@ -3305,12 +3298,22 @@ function App() {
                               {showTotal     && <span className="cell col-total">{formatMoney(r.total)}</span>}
                               {showAddonFees && <span className="cell col-addon-fees">{formatMoney(r.addonFees)}</span>}
                             </div>
-                            {showNotes && (r.notes || r.addons) && (
-                              <div className="sub-row">
-                                {r.notes || ''}
-                                {r.addons ? ` | Add-ons: ${r.addons}` : ''}
-                              </div>
-                            )}
+                            {showNotes && (() => {
+                              let visAddons = r.addons || '';
+                              if (visAddons && selectedAddOns && selectedAddOns.size < allAddOns.length) {
+                                visAddons = visAddons.split(',').map(s => s.trim()).filter(s => {
+                                  const name = s.replace(/\s*\(\$[\d,.]+\)$/, '').trim();
+                                  return selectedAddOns.has(name);
+                                }).join(', ');
+                              }
+                              if (!r.notes && !visAddons) return null;
+                              return (
+                                <div className="sub-row">
+                                  {r.notes || ''}
+                                  {visAddons ? ` | Add-ons: ${visAddons}` : ''}
+                                </div>
+                              );
+                            })()}
                           </div>
                         ))}
                       </div>
