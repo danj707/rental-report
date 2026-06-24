@@ -55,6 +55,16 @@
   .tip-bubble::after { content:''; position:absolute; top:100%; left:50%; transform:translateX(-50%); border:5px solid transparent; border-top-color:#1f2937; }
   .tip-wrap:hover .tip-bubble { display:block; }
   @media print { .tip-bubble, .tip-icon { display:none !important; } }
+  .insights-feedback { display:flex; align-items:center; gap:8px; margin-top:12px; padding:8px 4px; font-size:13px; color:#666; }
+  .insights-feedback button { background:none; border:1px solid #e5e7eb; border-radius:6px; padding:4px 10px; cursor:pointer; font-size:13px; transition:all .15s; }
+  .insights-feedback button:hover { background:#f3f4f6; border-color:#d1d5db; }
+  .insights-feedback .fb-label { color:#888; font-size:12px; }
+  .insights-feedback .fb-thanks { color:#10b981; font-weight:600; font-size:13px; }
+  .insights-feedback .fb-down-form { display:flex; align-items:center; gap:6px; flex:1; }
+  .insights-feedback .fb-down-form input { flex:1; border:1px solid #d1d5db; border-radius:6px; padding:5px 10px; font-size:13px; font-family:inherit; outline:none; }
+  .insights-feedback .fb-down-form input:focus { border-color:#6366f1; box-shadow:0 0 0 2px rgba(99,102,241,.15); }
+  .insights-feedback .fb-send { background:#6366f1!important; color:#fff!important; border-color:#6366f1!important; font-weight:600; }
+  .insights-feedback .fb-send:hover { background:#4f46e5!important; }
 
   .grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:14px; }
   .panel { background:#fff; border-radius:10px; padding:16px 18px; box-shadow:0 1px 3px rgba(0,0,0,.06), 0 0 0 1px rgba(0,0,0,.03); }
