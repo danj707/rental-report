@@ -2531,6 +2531,10 @@ function App() {
     try { return localStorage.getItem('facility_metrics') === 'true'; } catch { return false; }
   });
   useEffect(() => { try { localStorage.setItem('facility_metrics', showMetrics); } catch {} }, [showMetrics]);
+  const [showHeatmap, setShowHeatmap] = useState(() => {
+    try { return localStorage.getItem('facility_heatmap') === 'true'; } catch { return false; }
+  });
+  useEffect(() => { try { localStorage.setItem('facility_heatmap', showHeatmap); } catch {} }, [showHeatmap]);
 
   useEffect(() => { try { localStorage.setItem('col_headcount', showHeadCount); } catch {} }, [showHeadCount]);
   useEffect(() => { try { localStorage.setItem('col_total',     showTotal);     } catch {} }, [showTotal]);
@@ -2939,6 +2943,20 @@ function App() {
 
         <div className="divider" />
 
+        <button type="button" className={'metrics-toggle' + (showHeatmap ? ' active' : '')}
+          onClick={() => setShowHeatmap(!showHeatmap)}
+          title="Toggle heatmap visualization">
+          {showHeatmap ? '📊 Heatmap' : '📊 Heatmap'}
+        </button>
+
+        <button type="button" className={'metrics-toggle' + (showMetrics ? ' active' : '')}
+          onClick={() => setShowMetrics(!showMetrics)}
+          title="Toggle revenue metrics panels">
+          {showMetrics ? '💰 Metrics' : '💰 Metrics'}
+        </button>
+
+        <div className="divider" />
+
         <button onClick={() => window.print()}>🖨️ Print</button>
         <button
           className="btn-pdf"
@@ -3007,16 +3025,12 @@ function App() {
     <div>
       {renderToolbar()}
 
-      {filteredRows && filteredRows.length > 0 && !isPrint && (
+      {showHeatmap && filteredRows && filteredRows.length > 0 && !isPrint && (
         <HeatmapStrip filteredRows={filteredRows} locationColors={locationColors} />
       )}
 
       {filteredRows && filteredRows.length > 0 && !isPrint && (
-        <div style={{margin:'12px 0'}}>
-          <button type="button" className={'metrics-toggle' + (showMetrics ? ' active' : '')}
-            onClick={() => setShowMetrics(!showMetrics)}>
-            {showMetrics ? '▼ Hide Revenue Metrics' : '▶ Revenue Metrics'}
-          </button>
+        <div>
           {showMetrics && (
             <>
               <ResidencyAnalysis filteredRows={filteredRows} />
