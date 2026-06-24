@@ -1152,6 +1152,13 @@
     .toolbar button:disabled .btn-spinner {
       border-top-color: #888;
     }
+
+    .bt-filter { display: inline-flex; border: 1px solid #d1d5db; border-radius: 6px; overflow: hidden; font-size: 12px; }
+    .bt-filter button { background: #fff; border: none; padding: 5px 12px; cursor: pointer; color: #555; font-family: inherit; font-size: 12px; border-right: 1px solid #d1d5db; transition: all .15s; }
+    .bt-filter button:last-child { border-right: none; }
+    .bt-filter button:hover { background: #f3f4f6; }
+    .bt-filter button.active { background: #6366f1; color: #fff; }
+    body.print-mode .bt-filter { display: none; }
   </style>
   <script>
     // ── Token auth (injected) ────────────────────────────────────────
@@ -2513,6 +2520,7 @@ function App() {
   const [showBookType, setShowBookType] = useState(() => {
     try { return localStorage.getItem('col_booktype') !== 'false'; } catch { return true; }
   });
+  const [bookTypeFilter, setBookTypeFilter] = useState('all');
 
   useEffect(() => { try { localStorage.setItem('col_headcount', showHeadCount); } catch {} }, [showHeadCount]);
   useEffect(() => { try { localStorage.setItem('col_total',     showTotal);     } catch {} }, [showTotal]);
@@ -2640,8 +2648,11 @@ function App() {
     if (selectedSites && selectedSites.size < allSites.length) {
       result = result.filter(r => selectedSites.has(r.site));
     }
+    if (bookTypeFilter !== 'all') {
+      result = result.filter(r => (r.bookingType || '').trim().toLowerCase() === bookTypeFilter);
+    }
     return result;
-  }, [rows, selectedLocations, allLocations, selectedSites, allSites]);
+  }, [rows, selectedLocations, allLocations, selectedSites, allSites, bookTypeFilter]);
 
   const grouped = useMemo(() => {
     if (!filteredRows) return null;
@@ -2849,6 +2860,17 @@ function App() {
               selectedSites={selectedSites}
               onChange={setSelectedSites}
             />
+          </>
+        )}
+
+        {filteredRows && filteredRows.some(r => r.bookingType && r.bookingType.trim()) && (
+          <>
+            <div className="divider" />
+            <div className="bt-filter">
+              <button className={bookTypeFilter === 'all' ? 'active' : ''} onClick={() => setBookTypeFilter('all')}>All</button>
+              <button className={bookTypeFilter === 'instant' ? 'active' : ''} onClick={() => setBookTypeFilter('instant')}>Instant</button>
+              <button className={bookTypeFilter === 'managed' ? 'active' : ''} onClick={() => setBookTypeFilter('managed')}>Managed</button>
+            </div>
           </>
         )}
 
