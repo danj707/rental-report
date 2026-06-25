@@ -5396,7 +5396,7 @@ app.get("/", (req, res) => {
         <h4>Reports</h4>
         <p>Each report type is a self-contained HTML file served from <code>public/</code>. Reports are React apps loaded via CDN (no build step). Data is fetched from <code>/:org/:report/api/data?token=...</code>, which proxies to either a shared Metabase question (with <code>org_id</code> injected automatically) or a per-org UUID as fallback.</p>
         <ul>
-          <li><strong>Facility Rental</strong> &#8212; reservations grouped by date and location, with table and calendar views, heatmap summary, location color coding, and resident detection.</li>
+          <li><strong>Facility Rental</strong> &#8212; reservations grouped by date and location, with table and calendar views, heatmap summary, location color coding, resident detection, add-on filter (emoji-tagged), add-on fees column (actual finalCents pricing), and All/Instant/Managed booking type filter.</li>
           <li><strong>GL Code Rollup</strong> &#8212; payment method breakdown by GL code, with bar/pie chart views, refund detail toggle, and account credit column.</li>
           <li><strong>Class Roster</strong> &#8212; enrolled and cancelled participants by program section, with form responses, session dates, status filters, and Excel/PDF export.</li>
           <li><strong>Programs</strong> &#8212; two-tab layout (Revenue + Participants). Section-grain enrollment, capacity fill rates, charged/received/outstanding financials, plan-aware pending calculations, and per-program demographic accordion with gender breakdown.</li>
@@ -5409,6 +5409,7 @@ app.get("/", (req, res) => {
           <li><strong>Director&#x27;s Report</strong> &#8212; one-click monthly executive summary. Parallel data fetches (GL, programs, users, Fast Track), AI executive insights, top/bottom programs, revenue mix charts, community profile, and data completeness scoring.</li>
           <li><strong>Instructor Payout</strong> &#8212; per-participant revenue splits by instructor, with configurable split ratios (65/35), base-price-split mode (calculates on resident rate so non-resident surcharges stay with org), and cancelled/refunded participant exclusion.</li>
           <li><strong>Historic Buildings</strong> &#8212; filtered facility view for historic venue locations (per-org only).</li>
+          <li><strong>Facility Rental Calendar</strong> &#8212; public real-time availability calendar powered by rec.us MCP. Guided booking wizard (date &#8594; type &#8594; location) with smart date options, canonical site type and location filter pills, clickable site modals with photo/description/pricing/booking links, weather.gov daily forecast in toolbar, image precaching, embed mode (?embed=1) for iframe on org websites, and URL param pre-filtering (?type=court&amp;location=Arsenal+Park). Per-org opt-in (Watertown only currently). No token required.</li>
         </ul>
 
         <h4>AI-Powered Features</h4>
@@ -5421,7 +5422,7 @@ app.get("/", (req, res) => {
           <li><strong>Langfuse Integration</strong> &#8212; OpenTelemetry auto-instrumentation via <code>@arizeai/openinference-instrumentation-anthropic</code>. Every AI call creates a Langfuse trace with full I/O. User feedback (thumbs up/down + optional comments) sent as Langfuse scores via the REST API. AI Analytics dashboard on the admin page shows calls by feature, cost trends, feedback rates, and top orgs. Gracefully disabled if <code>LANGFUSE_*</code> env vars are not set.</li>
         </ul>
 
-        <p style="margin-top:8px"><strong>Shared Metabase queries:</strong> 12 of 15 report types use a single parameterized Metabase question with <code>org_id</code> passed at query time &#8212; no per-org SQL duplication. Only Historic remains as a per-org UUID. Adding a new org lights up all 12 shared reports automatically.</p>
+        <p style="margin-top:8px"><strong>Shared Metabase queries:</strong> 12 of 16 report types use a single parameterized Metabase question with <code>org_id</code> passed at query time &#8212; no per-org SQL duplication. Only Historic remains as a per-org UUID. Adding a new org lights up all 12 shared reports automatically.</p>
 
         <h4>Inline Metrics</h4>
         <p>Each org card on this dashboard has a &#9656; <strong>&#128200; Metrics</strong> toggle that expands inline to show that org&#x27;s usage over the last 30 days &#8212; report opens by type, daily activity sparkline, and top viewers. Data comes from a lightweight in-process counter (no Metabase round-trip). The <strong>View full metrics &rarr;</strong> link opens a deeper dashboard at <code>/:org/metrics</code>.</p>
