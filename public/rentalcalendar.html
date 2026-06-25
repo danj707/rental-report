@@ -30,6 +30,20 @@ button.primary:hover{filter:brightness(.95)}
 .hdr h1{font-size:20px;margin:0}
 .hdr .sub{color:var(--muted);font-size:13px}
 .range{font-weight:600;font-size:14px;color:var(--ink)}
+.modal-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:1000;display:flex;align-items:center;justify-content:center;padding:20px}
+.modal-card{background:#fff;border-radius:12px;max-width:480px;width:100%;max-height:90vh;overflow-y:auto;position:relative;box-shadow:0 20px 60px rgba(0,0,0,0.3)}
+.modal-close{position:absolute;top:12px;right:12px;background:rgba(0,0,0,0.4);color:#fff;border:none;width:28px;height:28px;border-radius:50%;cursor:pointer;font-size:14px;z-index:1;display:flex;align-items:center;justify-content:center}
+.modal-close:hover{background:rgba(0,0,0,0.6)}
+.modal-img{width:100%;height:200px;object-fit:cover;border-radius:12px 12px 0 0}
+.modal-body{padding:20px}
+.modal-body h2{margin:0 0 4px;font-size:20px;color:#111}
+.modal-type{font-size:13px;color:#6b7280;margin-bottom:4px}
+.modal-loc{font-size:13px;color:#6b7280;margin-bottom:12px}
+.modal-desc{font-size:14px;color:#374151;line-height:1.5;margin:0 0 16px}
+.modal-details{display:flex;flex-wrap:wrap;gap:12px;font-size:13px;color:#4b5563;margin-bottom:16px}
+.modal-details span{display:flex;align-items:center;gap:4px}
+.modal-book{display:inline-block;padding:10px 20px;background:#1e40af;color:#fff;text-decoration:none;border-radius:8px;font-size:14px;font-weight:600;transition:background .15s}
+.modal-book:hover{background:#1e3a8a}
 .filters{padding:10px 16px;display:flex;flex-direction:column;gap:8px;border-bottom:1px solid #e5e7eb}
 .filter-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .filter-label{font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.5px;min-width:60px}
@@ -315,7 +329,7 @@ function TimelineBar({avail, dateStr, opStart, opEnd, siteOpStart, siteOpEnd}) {
   );
 }
 
-function FacRow({site, avail, dateStr, opStart, opEnd, siteAvailAll}) {
+function FacRow({site, avail, dateStr, opStart, opEnd, siteAvailAll, onSiteClick}) {
   var isInstant = site.isInstantBookable;
   var cta = isInstant ? 'Book' : 'Request';
   var siteOp = useMemo(function() {
@@ -348,7 +362,7 @@ function FacRow({site, avail, dateStr, opStart, opEnd, siteAvailAll}) {
   var detailLine = detailParts.join(' \u00b7 ');
   return (
     <div className="fac-row">
-      <div className="fac-label">
+      <div className="fac-label" style={{cursor:'pointer'}} onClick={function(){if(onSiteClick)onSiteClick(site);}}>
         {photoUrl
           ? <img className="fac-thumb" src={photoUrl} alt="" loading="lazy"/>
           : <div className="fac-thumb-placeholder">{emojiFor(site.type)}</div>
@@ -358,15 +372,13 @@ function FacRow({site, avail, dateStr, opStart, opEnd, siteAvailAll}) {
           <div className="fmeta">{metaLine}</div>
           {detailLine && <div className="fmeta" style={{color:'#4b5563'}}>{detailLine}</div>}
         </div>
-        <a className={'book-sm' + (isInstant ? '' : ' secondary')} href={site.bookingUrl} target="_blank" rel="noopener"
-           onClick={function(e){e.stopPropagation();}}>{cta}</a>
       </div>
       <TimelineBar avail={avail} dateStr={dateStr} opStart={opStart} opEnd={opEnd} siteOpStart={siteOp.start} siteOpEnd={siteOp.end}/>
     </div>
   );
 }
 
-function SiteGroup({type, sites, availMap, dateStr, opStart, opEnd, allAvail}) {
+function SiteGroup({type, sites, availMap, dateStr, opStart, opEnd, allAvail, onSiteClick}) {
   var open = React.useState(true);
   var isOpen = open[0], setOpen = open[1];
   var total = opEnd - opStart;
@@ -392,13 +404,55 @@ function SiteGroup({type, sites, availMap, dateStr, opStart, opEnd, allAvail}) {
         <span className={'garrow' + (isOpen ? ' open' : '')}>{'\u25B6'}</span>
       </div>
       {isOpen && sites.map(function(s) {
-        return <FacRow key={s.id} site={s} avail={availMap[s.id]} dateStr={dateStr} opStart={opStart} opEnd={opEnd} siteAvailAll={allAvail[s.id] || {}}/>;
+        return <FacRow key={s.id} site={s} avail={availMap[s.id]} dateStr={dateStr} opStart={opStart} opEnd={opEnd} siteAvailAll={allAvail[s.id] || {}} onSiteClick={onSiteClick}/>;
       })}
     </div>
   );
 }
 
-function DayView({sites, availMap, dateStr, opStart, opEnd, allAvail}) {
+function SiteModal({site, onClose}) {
+  if (!site) return null;
+  var typeLabel = (site.type||'').replace(/-/g,' ').replace(/\b\w/g, function(c){return c.toUpperCase();});
+  var priceStr = '';
+  if (site.priceCents) {
+    var d = site.priceCents / 100;
+    priceStr = '$' + (d % 1 === 0 ? d.toFixed(0) : d.toFixed(2)) + '/hr';
+    if (site.residentPriceCents != null && site.residentPriceCents !== site.priceCents) {
+      var rd = site.residentPriceCents / 100;
+      priceStr += ' \u00b7 $' + (rd % 1 === 0 ? rd.toFixed(0) : rd.toFixed(2)) + ' resident';
+    }
+  }
+  var durStr = '';
+  if (site.durationMinutes && site.durationMinutes.length > 0) {
+    durStr = site.durationMinutes.map(function(m){return m >= 60 ? (m/60)+'hr' : m+'min';}).join(' / ');
+  }
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-card" onClick={function(e){e.stopPropagation();}}>
+        <button className="modal-close" onClick={onClose}>✕</button>
+        {site.imageUrl && <img className="modal-img" src={site.imageUrl} alt=""/>}
+        <div className="modal-body">
+          <h2>{site.courtNumber || site.name}</h2>
+          <div className="modal-type">{emojiFor(site.type)} {typeLabel}</div>
+          {site.locationName && <div className="modal-loc">📍 {site.locationName}</div>}
+          {site.description && <p className="modal-desc">{site.description}</p>}
+          <div className="modal-details">
+            {priceStr && <span>💰 {priceStr}</span>}
+            {durStr && <span>⏱️ {durStr}</span>}
+            {site.capacity && <span>👥 {site.capacity} capacity</span>}
+          </div>
+          {site.bookingUrl && (
+            <a className="modal-book" href={site.bookingUrl} target="_blank" rel="noopener">
+              {site.isInstantBookable ? 'Book Now on rec.us' : 'Request on rec.us'} →
+            </a>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DayView({sites, availMap, dateStr, opStart, opEnd, allAvail, onSiteClick}) {
   var typeCounts = {};
   sites.forEach(function(s){typeCounts[s.type]=(typeCounts[s.type]||0)+1;});
   var grouped = [];
@@ -418,9 +472,9 @@ function DayView({sites, availMap, dateStr, opStart, opEnd, allAvail}) {
       <div className="fac-list">
         {grouped.map(function(g, i) {
           if (g.k === 'group') {
-            return <SiteGroup key={g.type} type={g.type} sites={g.sites} availMap={availMap} dateStr={dateStr} opStart={opStart} opEnd={opEnd} allAvail={allAvail}/>;
+            return <SiteGroup key={g.type} type={g.type} sites={g.sites} availMap={availMap} dateStr={dateStr} opStart={opStart} opEnd={opEnd} allAvail={allAvail} onSiteClick={onSiteClick}/>;
           }
-          return <FacRow key={g.site.id} site={g.site} avail={availMap[g.site.id]} dateStr={dateStr} opStart={opStart} opEnd={opEnd} siteAvailAll={allAvail[g.site.id] || {}}/>;
+          return <FacRow key={g.site.id} site={g.site} avail={availMap[g.site.id]} dateStr={dateStr} opStart={opStart} opEnd={opEnd} siteAvailAll={allAvail[g.site.id] || {}} onSiteClick={onSiteClick}/>;
         })}
       </div>
     </div>
@@ -531,6 +585,8 @@ function App() {
   var selectedTypes = typeFilterState[0], setSelectedTypes = typeFilterState[1];
   var locFilterState = useState(null);
   var selectedLocs = locFilterState[0], setSelectedLocs = locFilterState[1];
+  var modalState = useState(null);
+  var modalSite = modalState[0], setModalSite = modalState[1];
 
   var allTypes = useMemo(function() {
     if (!sites) return [];
@@ -669,9 +725,10 @@ function App() {
         <div style={{padding:'40px 20px',textAlign:'center',color:'#6b7280',fontSize:14}}>No facilities match the current filters.</div>
       )}
       {view === 'day'
-        ? <DayView sites={filteredSites} availMap={dayAvailMap} dateStr={dateISO} opStart={opHours.start} opEnd={opHours.end} allAvail={allAvail}/>
+        ? <DayView sites={filteredSites} availMap={dayAvailMap} dateStr={dateISO} opStart={opHours.start} opEnd={opHours.end} allAvail={allAvail} onSiteClick={function(s){setModalSite(s);}}/>
         : <WeekOverview sites={filteredSites} allAvail={allAvail} weekStart={ws} onDayClick={handleDayClick}/>
       }
+      {modalSite && <SiteModal site={modalSite} onClose={function(){setModalSite(null);}}/>}
       <div className="footer">
         Availability updates in real time &middot; Powered by <a href="https://www.rec.us" target="_blank" rel="noopener">rec.us</a>
       </div>
