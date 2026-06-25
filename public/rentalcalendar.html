@@ -30,9 +30,9 @@ button.primary:hover{filter:brightness(.95)}
 .hdr h1{font-size:20px;margin:0}
 .hdr .sub{color:var(--muted);font-size:13px}
 .range{font-weight:600;font-size:14px;color:var(--ink)}
-.wiz-bar{padding:12px 16px;background:linear-gradient(135deg,#eef2ff,#e0e7ff);border-bottom:1px solid #c7d2fe;cursor:pointer;text-align:center;font-size:14px;color:#3730a3;font-weight:500;transition:background .15s}
+.wiz-bar{padding:14px 16px;background:linear-gradient(135deg,#eef2ff,#e0e7ff);border:2px solid #818cf8;border-radius:12px;cursor:pointer;text-align:center;font-size:14px;color:#3730a3;font-weight:600;transition:all .15s;box-shadow:0 2px 8px rgba(99,102,241,0.12)}
 .wiz-bar:hover{background:linear-gradient(135deg,#e0e7ff,#c7d2fe)}
-.wiz-wrap{padding:16px 20px;background:linear-gradient(135deg,#eef2ff,#f5f3ff);border-bottom:1px solid #c7d2fe}
+.wiz-wrap{padding:20px 24px;background:linear-gradient(135deg,#eef2ff,#f5f3ff);border:2px solid #818cf8;border-radius:12px;margin:12px 12px 0;box-shadow:0 4px 16px rgba(99,102,241,0.15)}
 .wiz-head{display:flex;justify-content:space-between;align-items:center;font-size:15px;font-weight:600;color:#312e81;margin-bottom:12px}
 .wiz-x{background:none;border:none;font-size:16px;cursor:pointer;color:#6b7280;padding:2px 6px}
 .wiz-x:hover{color:#111}
@@ -49,6 +49,12 @@ button.primary:hover{filter:brightness(.95)}
 .wiz-date{padding:6px 10px;border:1px solid #c7d2fe;border-radius:8px;font-size:13px;font-family:inherit;margin-top:4px}
 .wiz-back{background:none;border:none;font-size:12px;color:#6b7280;cursor:pointer;padding:4px 0;margin-top:4px}
 .wiz-back:hover{color:#374151}
+.wiz-collapsed{margin:12px 12px 0}
+.wiz-collapsed .wiz-bar{margin:0;border-radius:12px 12px 0 0}
+.wiz-fb{display:flex;align-items:center;gap:8px;padding:8px 16px;background:#f5f3ff;border:2px solid #818cf8;border-top:none;border-radius:0 0 12px 12px;font-size:13px;color:#4b5563}
+.wiz-fb-btn{background:none;border:none;font-size:18px;cursor:pointer;padding:2px 6px;border-radius:6px;transition:background .15s}
+.wiz-fb-btn:hover{background:#e0e7ff}
+.wiz-fb-ty{padding:8px 16px;background:#f0fdf4;border:2px solid #86efac;border-top:none;border-radius:0 0 12px 12px;font-size:13px;color:#166534;text-align:center}
 .wiz-sparkle{margin-right:6px}
 .modal-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:1000;display:flex;align-items:center;justify-content:center;padding:20px}
 .modal-card{background:#fff;border-radius:12px;max-width:480px;width:100%;max-height:90vh;overflow-y:auto;position:relative;box-shadow:0 20px 60px rgba(0,0,0,0.3)}
@@ -78,7 +84,7 @@ button.primary:hover{filter:brightness(.95)}
 .time-ruler .tr-label{width:280px;min-width:280px;padding:0 12px;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;border-right:1px solid var(--line)}
 .time-ruler .tr-track{flex:1;position:relative;height:100%;padding-right:12px}
 .time-ruler .tr-tick{position:absolute;font-size:10px;color:#687280;font-weight:500;transform:translateX(-50%);top:50%;margin-top:-6px}
-.fac-row{display:flex;align-items:center;border-bottom:1px solid #f0f1f3;min-height:48px;transition:background .08s}
+.fac-row{display:flex;contain:layout style;align-items:center;border-bottom:1px solid #f0f1f3;min-height:48px;transition:background .08s}
 .fac-row:last-child{border-bottom:none}
 .fac-row:hover{background:#fafbfc}
 .fac-label{width:280px;min-width:280px;padding:8px 12px;display:flex;align-items:center;gap:10px;border-right:1px solid var(--line)}
@@ -384,7 +390,7 @@ function FacRow({site, avail, dateStr, opStart, opEnd, siteAvailAll, onSiteClick
     <div className="fac-row">
       <div className="fac-label" style={{cursor:'pointer'}} onClick={function(){if(onSiteClick)onSiteClick(site);}}>
         {photoUrl
-          ? <img className="fac-thumb" src={photoUrl} alt="" loading="lazy"/>
+          ? <img className="fac-thumb" src={photoUrl} alt="" loading="lazy" decoding="async"/>
           : <div className="fac-thumb-placeholder">{emojiFor(site.type)}</div>
         }
         <div className="finfo">
@@ -399,7 +405,7 @@ function FacRow({site, avail, dateStr, opStart, opEnd, siteAvailAll, onSiteClick
 }
 
 function SiteGroup({type, sites, availMap, dateStr, opStart, opEnd, allAvail, onSiteClick}) {
-  var open = React.useState(true);
+  var open = React.useState(sites.length <= 6);
   var isOpen = open[0], setOpen = open[1];
   var total = opEnd - opStart;
   var availCount = sites.filter(function(s) {
@@ -439,6 +445,8 @@ function BookingWizard({allTypes, allLocations, sites, onApply}) {
   var chosenDate = dateState[0], setChosenDate = dateState[1];
   var openSt = useState(true);
   var isOpen = openSt[0], setIsOpen = openSt[1];
+  var fbState = useState(null);
+  var feedback = fbState[0], setFeedback = fbState[1];
   var pickerSt = useState(false);
   var showPicker = pickerSt[0], setShowPicker = pickerSt[1];
 
@@ -472,8 +480,22 @@ function BookingWizard({allTypes, allLocations, sites, onApply}) {
   function reset() { setStep(0); setChosenType(null); setChosenDate(null); setShowPicker(false); }
 
   if (!isOpen) return (
-    <div className="wiz-bar" onClick={function(){setIsOpen(true); reset();}}>
-      <span className="wiz-sparkle">✨</span> Find availability — tell us what you need
+    <div className="wiz-collapsed">
+      <div className="wiz-bar" onClick={function(){setIsOpen(true); reset();}}>
+        <span className="wiz-sparkle">✨</span> Find availability — tell us what you need
+      </div>
+      {feedback === null && chosenType && (
+        <div className="wiz-fb">
+          <span>Did this help?</span>
+          <button className="wiz-fb-btn" onClick={function(e){e.stopPropagation();setFeedback('up');
+            fetch('/'+ORG_SLUG+'/rentalcalendar/api/feedback',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({vote:'up',type:chosenType})}).catch(function(){});
+          }}>👍</button>
+          <button className="wiz-fb-btn" onClick={function(e){e.stopPropagation();setFeedback('down');
+            fetch('/'+ORG_SLUG+'/rentalcalendar/api/feedback',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({vote:'down',type:chosenType})}).catch(function(){});
+          }}>👎</button>
+        </div>
+      )}
+      {feedback && <div className="wiz-fb-ty">Thanks for the feedback!</div>}
     </div>
   );
 
