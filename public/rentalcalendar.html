@@ -58,7 +58,10 @@ button.primary:hover{filter:brightness(.95)}
 .wiz-datepick{padding:8px 14px;border-radius:20px;border:1px dashed #c7d2fe;background:#fff;font-size:13px;cursor:pointer;color:#6b7280;font-family:inherit}
 .wiz-back{background:none;border:none;font-size:12px;color:#6b7280;cursor:pointer;padding:4px 0;margin-top:4px}
 .wiz-back:hover{color:#374151}
-.wiz-collapsed{margin:12px 12px 0}
+.wiz-results{background:linear-gradient(135deg,#f0fdf4,#ecfdf5);border-color:#86efac}
+.wiz-results-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap;font-size:14px;color:#166534}
+.wiz-results-row strong{font-weight:600}
+.wiz-fb-inline{margin-left:auto;display:flex;align-items:center;gap:4px}
 .wiz-collapsed .wiz-bar{margin:0;border-radius:12px 12px 0 0}
 .wiz-fb{display:flex;align-items:center;gap:8px;padding:8px 16px;background:#f5f3ff;border:2px solid #818cf8;border-top:none;border-radius:0 0 12px 12px;font-size:13px;color:#4b5563}
 .wiz-fb-btn{background:none;border:none;font-size:18px;cursor:pointer;padding:2px 6px;border-radius:6px;transition:background .15s}
@@ -98,9 +101,9 @@ button.primary:hover{filter:brightness(.95)}
 .fac-row{display:flex;contain:layout style;align-items:center;border-bottom:1px solid #f0f1f3;min-height:48px;transition:background .08s}
 .fac-row:last-child{border-bottom:none}
 .fac-row:hover{background:#fafbfc}
-.fac-label{width:310px;min-width:310px;padding:8px 12px;display:flex;align-items:center;gap:10px;border-right:1px solid var(--line)}
-.fac-thumb{width:68px;height:68px;border-radius:6px;object-fit:cover;flex-shrink:0;background:#eef0f2}
-.fac-thumb-placeholder{width:68px;height:68px;font-size:24px;border-radius:6px;flex-shrink:0;background:#eef0f2;display:flex;align-items:center;justify-content:center;font-size:20px}
+.fac-label{width:340px;min-width:340px;padding:8px 12px;display:flex;align-items:center;gap:10px;border-right:1px solid var(--line)}
+.fac-thumb{width:100px;height:100px;border-radius:6px;object-fit:cover;flex-shrink:0;background:#eef0f2}
+.fac-thumb-placeholder{width:100px;height:100px;font-size:32px;border-radius:6px;flex-shrink:0;background:#eef0f2;display:flex;align-items:center;justify-content:center;font-size:20px}
 .fac-label .ficon{font-size:16px;flex-shrink:0;line-height:1}
 .fac-label .finfo{flex:1;min-width:0}
 .fac-label .fname{font-size:12.5px;font-weight:600;color:var(--ink);line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
@@ -159,7 +162,7 @@ button.primary:hover{filter:brightness(.95)}
 .footer{text-align:center;font-size:12px;color:var(--muted);margin-top:24px}
 .footer a{color:var(--muted);font-weight:600;text-decoration:none}
 .footer a:hover{text-decoration:underline}
-@media(max-width:800px){.week-grid{grid-template-columns:1fr 1fr}.fac-label{width:200px;min-width:200px}.time-ruler .tr-label{width:200px;min-width:200px}.fac-thumb,.fac-thumb-placeholder{width:56px;height:56px}}
+@media(max-width:800px){.week-grid{grid-template-columns:1fr 1fr}.fac-label{width:200px;min-width:200px}.time-ruler .tr-label{width:200px;min-width:200px}.fac-thumb,.fac-thumb-placeholder{width:72px;height:72px}}
 </style>
 </head>
 <body>
@@ -509,7 +512,7 @@ function SiteGroup({type, sites, availMap, dateStr, opStart, opEnd, allAvail, on
   );
 }
 
-function BookingWizard({allTypes, allLocations, sites, onApply}) {
+function BookingWizard({allTypes, allLocations, sites, onApply, resultCount}) {
   var stepState = useState(0);
   var step = stepState[0], setStep = stepState[1];
   var typeState = useState(null);
@@ -522,6 +525,8 @@ function BookingWizard({allTypes, allLocations, sites, onApply}) {
   var feedback = fbState[0], setFeedback = fbState[1];
   var pickerSt = useState(false);
   var showPicker = pickerSt[0], setShowPicker = pickerSt[1];
+  var locSt = useState(null);
+  var chosenLoc = locSt[0], setChosenLoc = locSt[1];
 
   function nextDow(dow) {
     var d = new Date();
@@ -547,28 +552,31 @@ function BookingWizard({allTypes, allLocations, sites, onApply}) {
   }, [chosenType, sites, allLocations]);
 
   function handleApply(loc) {
+    setChosenLoc(loc || null);
     onApply({type: chosenType, date: chosenDate, location: loc || null});
-    setIsOpen(false);
+    setStep(3);
   }
-  function reset() { setStep(0); setChosenDate(null); setChosenType(null); setShowPicker(false); }
+  function reset() { setStep(0); setChosenDate(null); setChosenType(null); setChosenLoc(null); setShowPicker(false); setFeedback(null); }
 
-  if (!isOpen) return (
-    <div className="wiz-collapsed">
-      <div className="wiz-bar" onClick={function(){setIsOpen(true); reset();}}>
-        <span className="wiz-sparkle">✨</span> Find availability — tell us what you need
+  if (step === 3) return (
+    <div className="wiz-wrap wiz-results">
+      <div className="wiz-results-row">
+        <span>{'✨'} Showing <strong>{resultCount}</strong> {chosenType ? (SITE_TYPES.find(function(t){return t.key===chosenType;})||{}).label : 'facilities'}{chosenLoc ? ' at ' + chosenLoc : ''}{chosenDate ? ' on ' + MON[chosenDate.getMonth()] + ' ' + chosenDate.getDate() + ', ' + chosenDate.getFullYear() : ''}</span>
+        <button className="wiz-pill" onClick={function(){reset();}}>{'🔍'} Search Again</button>
+        <span className="wiz-fb-inline">
+          {feedback === null && (
+            <span>
+              <button className="wiz-fb-btn" title="Helpful" onClick={function(){setFeedback('up');
+                fetch('/'+ORG_SLUG+'/rentalcalendar/api/feedback',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({vote:'up',type:chosenType})}).catch(function(){});
+              }}>{'👍'}</button>
+              <button className="wiz-fb-btn" title="Not helpful" onClick={function(){setFeedback('down');
+                fetch('/'+ORG_SLUG+'/rentalcalendar/api/feedback',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({vote:'down',type:chosenType})}).catch(function(){});
+              }}>{'👎'}</button>
+            </span>
+          )}
+          {feedback && <span style={{fontSize:12,color:'#166534'}}>{'✅'} Thanks!</span>}
+        </span>
       </div>
-      {feedback === null && chosenType && (
-        <div className="wiz-fb">
-          <span>Did this help?</span>
-          <button className="wiz-fb-btn" onClick={function(e){e.stopPropagation();setFeedback('up');
-            fetch('/'+ORG_SLUG+'/rentalcalendar/api/feedback',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({vote:'up',type:chosenType})}).catch(function(){});
-          }}>👍</button>
-          <button className="wiz-fb-btn" onClick={function(e){e.stopPropagation();setFeedback('down');
-            fetch('/'+ORG_SLUG+'/rentalcalendar/api/feedback',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({vote:'down',type:chosenType})}).catch(function(){});
-          }}>👎</button>
-        </div>
-      )}
-      {feedback && <div className="wiz-fb-ty">Thanks for the feedback!</div>}
     </div>
   );
 
@@ -898,7 +906,7 @@ function App() {
           {CFG.displayName && <div className="sub">{CFG.displayName}</div>}
         </div>
       </div>
-      <BookingWizard allTypes={allTypes} allLocations={allLocations} sites={sites}
+      <BookingWizard allTypes={allTypes} allLocations={allLocations} sites={sites} resultCount={filteredSites.length}
         onApply={function(r) {
           if (r.type) setSelectedTypes(new Set([r.type]));
           if (r.location) setSelectedLocs(new Set([r.location]));
@@ -907,12 +915,7 @@ function App() {
           setWizResult(r);
         }}/>
 
-      {wizResult && filteredSites.length > 0 && (
-        <div className="wiz-result">
-          {'✨'} We found <strong>{filteredSites.length} {(SITE_TYPES.find(function(t){return t.key===wizResult.type;})||{}).label || 'facilities'}</strong> available{wizResult.location ? ' at '+wizResult.location : ''}{wizResult.date ? ' on '+MON[wizResult.date.getMonth()]+' '+wizResult.date.getDate()+', '+wizResult.date.getFullYear() : ''} — check them out below!
-          <button className="wiz-result-x" onClick={function(){setWizResult(null);}}>{'✕'}</button>
-        </div>
-      )}
+
       {allTypes.length > 0 && (
         <div className="filters">
           {allTypes.length > 1 && (
