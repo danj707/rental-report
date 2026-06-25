@@ -6299,6 +6299,16 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  { date: '2026-06-25', title: '\uD83C\uDFDF\uFE0F Facility Rental Calendar v2', items: [
+    '\u2728 BOOKING WIZARD \u2014 3-step guided flow (When \u2192 What type \u2192 Where) with smart date options, clickable breadcrumbs to edit, date picker, and results card showing matched count. Search Again to restart.',
+    '\uD83C\uDF21\uFE0F WEATHER \u2014 Daily forecast from weather.gov in toolbar (emoji + hi/lo temp), cached per date.',
+    '\uD83D\uDCCD FILTERS \u2014 Canonical site type pills (Fields, Courts, Rinks, etc.) consistent across orgs. Dynamic location pills. Pre-filterable via URL params (?type=court&location=Arsenal+Park).',
+    '\uD83D\uDCF7 SITE MODAL \u2014 Click any facility for photo, description, pricing, capacity, and Book/Request link to rec.us.',
+    '\uD83D\uDCE6 EMBED MODE \u2014 ?embed=1 hides footer, compact padding. Header/branding stays. Iframe-ready for org websites.',
+    '\uD83D\uDE80 PERFORMANCE \u2014 Groups auto-collapse (>6 sites), image precaching on load, 100px thumbnails, CSS containment.',
+    '\u274C Week view removed \u2014 day view only with Prev/Today/Next + date picker.',
+    '\u{1F3F7}\uFE0F Title fixed to Facility Rentals. Legend moved into toolbar.',
+  ]},
   { date: '2026-06-24', title: '\uD83D\uDDD1\uFE0F Org Cleanup', items: [
     '\u2702\uFE0F REMOVED 5 INACTIVE ORGS \u2014 Boerne, Littleton, Midland, Danvers, Windham. Not using the platform, removed to reduce clutter and bandwidth.',
   ]},
