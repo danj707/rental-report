@@ -17,10 +17,11 @@ body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 -apple-system
 .toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;background:var(--card);
   border:1px solid var(--line);border-radius:12px;padding:10px 14px;box-shadow:var(--shadow);margin-bottom:16px}
 .toolbar .grow{flex:1}
+.tb-weather{font-size:13px;color:#374151;font-weight:500;margin-left:10px;white-space:nowrap;cursor:default}
 .tb-date{padding:4px 6px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;font-family:inherit;margin-left:8px;color:#374151;cursor:pointer}
 .tb-legend{display:flex;gap:10px;align-items:center;font-size:11px;color:#6b7280;margin-right:8px}
 .tb-legend .sw{width:10px;height:10px;border-radius:2px;display:inline-block;vertical-align:middle;margin-right:3px}
-@media(max-width:700px){.tb-legend{display:none}.tb-date{display:none}}
+@media(max-width:700px){.tb-legend{display:none}.tb-date{display:none}.tb-weather{display:none}}
 button,select{font:inherit;border:1px solid var(--line);background:#fff;color:var(--ink);
   border-radius:8px;padding:6px 12px;cursor:pointer;font-size:13px;transition:border-color .12s,background .12s}
 button:hover{border-color:#cbd5e1;background:#f8fafc}
