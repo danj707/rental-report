@@ -4272,6 +4272,8 @@ app.get("/", (req, res) => {
     return nameA < nameB ? -1 : nameA > nameB ? 1 : 0;
   }).map(([slug, org]) => {
     const available    = REPORT_TYPES.filter(r => !NON_ADDABLE_REPORTS.has(r) && (org[r]?.mbUuid || SHARED_UUIDS[r]));
+    // Rental calendar — non-Metabase, per-org opt-in
+    if (slug === 'watertown') available.push('rentalcalendar');
     const slugTitle    = slug.charAt(0).toUpperCase() + slug.slice(1);
     const displayName  = org.displayName || `${slugTitle} Parks &amp; Recreation`;
     const tokenQS      = org.token ? `?token=${encodeURIComponent(org.token)}` : "";
