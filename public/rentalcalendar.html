@@ -169,6 +169,9 @@ const {useState,useEffect,useMemo,useCallback,useRef} = React;
 const CFG = window.__RC__ || {};
 const ORG_SLUG = CFG.slug || window.location.pathname.split('/').filter(Boolean)[0] || '';
 const LOCATION_ID = new URLSearchParams(window.location.search).get('locationId') || CFG.locationId || '';
+const EMBED = new URLSearchParams(window.location.search).get('embed') === '1';
+const URL_TYPE = new URLSearchParams(window.location.search).get('type') || '';
+const URL_LOC = new URLSearchParams(window.location.search).get('location') || '';
 
 /* ── emoji map ── */
 const E={"court":"\u{1F3BE}","pool":"\u{1F3CA}","room":"\u{1F3DB}\uFE0F","outdoor-event-space":"\u26FA","picnic-table":"\u{1F9FA}","field":"\u26BD","rink":"\u26F8\uFE0F","gym":"\u{1F3CB}\uFE0F","golf":"\u26F3","campsite":"\u{1F3D5}\uFE0F","bounce-house":"\u{1F389}","other":"\u{1F4CD}"};
@@ -808,10 +811,16 @@ function App() {
   }, [sites]);
 
   useEffect(function() {
-    if (sites && sites.length > 0 && selectedTypes === null) setSelectedTypes(new Set(allTypes.map(function(t){return t.key;})));
+    if (sites && sites.length > 0 && selectedTypes === null) {
+      if (URL_TYPE) { setSelectedTypes(new Set([URL_TYPE])); }
+      else { setSelectedTypes(new Set(allTypes.map(function(t){return t.key;}))); }
+    }
   }, [allTypes]);
   useEffect(function() {
-    if (sites && sites.length > 0 && selectedLocs === null) setSelectedLocs(new Set(allLocations));
+    if (sites && sites.length > 0 && selectedLocs === null) {
+      if (URL_LOC) { setSelectedLocs(new Set([decodeURIComponent(URL_LOC)])); }
+      else { setSelectedLocs(new Set(allLocations)); }
+    }
   }, [allLocations]);
 
   var filteredSites = useMemo(function() {
