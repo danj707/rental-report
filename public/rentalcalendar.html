@@ -472,6 +472,7 @@ function FacRow({site, avail, dateStr, opStart, opEnd, siteAvailAll, onSiteClick
 function SiteGroup({type, sites, availMap, dateStr, opStart, opEnd, allAvail, onSiteClick, forceOpen}) {
   var open = React.useState(forceOpen || sites.length <= 6);
   var isOpen = open[0], setOpen = open[1];
+  useEffect(function(){ if (forceOpen) setOpen(true); }, [forceOpen]);
   var total = opEnd - opStart;
   var availCount = sites.filter(function(s) {
     var a = availMap[s.id];
@@ -820,6 +821,14 @@ function App() {
     });
   }, [sites, selectedTypes, selectedLocs, allTypes, allLocations]);
 
+  // Precache site thumbnails so they load instantly when groups expand
+  useEffect(function() {
+    if (!sites) return;
+    sites.forEach(function(s) {
+      if (s.imageUrl) { var img = new Image(); img.src = s.imageUrl; }
+    });
+  }, [sites]);
+
   // Build per-site availability map for selected date
   var dayAvailMap = useMemo(function() {
     var m = {};
@@ -887,7 +896,7 @@ function App() {
 
       {wizResult && filteredSites.length > 0 && (
         <div className="wiz-result">
-          {'✨'} We found <strong>{filteredSites.length} {(SITE_TYPES.find(function(t){return t.key===wizResult.type;})||{}).label || 'facilities'}</strong> available{wizResult.location ? ' at '+wizResult.location : ''} — check them out below!
+          {'✨'} We found <strong>{filteredSites.length} {(SITE_TYPES.find(function(t){return t.key===wizResult.type;})||{}).label || 'facilities'}</strong> available{wizResult.location ? ' at '+wizResult.location : ''}{wizResult.date ? ' on '+MON[wizResult.date.getMonth()]+' '+wizResult.date.getDate()+', '+wizResult.date.getFullYear() : ''} — check them out below!
           <button className="wiz-result-x" onClick={function(){setWizResult(null);}}>{'✕'}</button>
         </div>
       )}
