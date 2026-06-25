@@ -75,6 +75,10 @@ button.primary:hover{filter:brightness(.95)}
 .modal-details span{display:flex;align-items:center;gap:4px}
 .modal-book{display:inline-block;padding:10px 20px;background:#1e40af;color:#fff;text-decoration:none;border-radius:8px;font-size:14px;font-weight:600;transition:background .15s}
 .modal-book:hover{background:#1e3a8a}
+.wiz-result{padding:12px 20px;background:linear-gradient(135deg,#f0fdf4,#ecfdf5);border:1px solid #86efac;border-radius:10px;margin:10px 12px 0;font-size:14px;color:#166534;display:flex;align-items:center;gap:8px}
+.wiz-result strong{font-weight:600}
+.wiz-result-x{background:none;border:none;color:#6b7280;cursor:pointer;font-size:14px;margin-left:auto;padding:2px 6px}
+.wiz-result-x:hover{color:#111}
 .filters{padding:10px 16px;display:flex;flex-direction:column;gap:8px;border-bottom:1px solid #e5e7eb}
 .filter-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .filter-label{font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.5px;min-width:60px}
@@ -465,8 +469,8 @@ function FacRow({site, avail, dateStr, opStart, opEnd, siteAvailAll, onSiteClick
   );
 }
 
-function SiteGroup({type, sites, availMap, dateStr, opStart, opEnd, allAvail, onSiteClick}) {
-  var open = React.useState(sites.length <= 6);
+function SiteGroup({type, sites, availMap, dateStr, opStart, opEnd, allAvail, onSiteClick, forceOpen}) {
+  var open = React.useState(forceOpen || sites.length <= 6);
   var isOpen = open[0], setOpen = open[1];
   var total = opEnd - opStart;
   var availCount = sites.filter(function(s) {
@@ -651,7 +655,7 @@ function SiteModal({site, onClose}) {
   );
 }
 
-function DayView({sites, availMap, dateStr, opStart, opEnd, allAvail, onSiteClick}) {
+function DayView({sites, availMap, dateStr, opStart, opEnd, allAvail, onSiteClick, forceOpen}) {
   var typeCounts = {};
   sites.forEach(function(s){typeCounts[s.type]=(typeCounts[s.type]||0)+1;});
   var grouped = [];
@@ -671,7 +675,7 @@ function DayView({sites, availMap, dateStr, opStart, opEnd, allAvail, onSiteClic
       <div className="fac-list">
         {grouped.map(function(g, i) {
           if (g.k === 'group') {
-            return <SiteGroup key={g.type} type={g.type} sites={g.sites} availMap={availMap} dateStr={dateStr} opStart={opStart} opEnd={opEnd} allAvail={allAvail} onSiteClick={onSiteClick}/>;
+            return <SiteGroup key={g.type} type={g.type} sites={g.sites} availMap={availMap} dateStr={dateStr} opStart={opStart} opEnd={opEnd} allAvail={allAvail} onSiteClick={onSiteClick} forceOpen={forceOpen}/>;
           }
           return <FacRow key={g.site.id} site={g.site} avail={availMap[g.site.id]} dateStr={dateStr} opStart={opStart} opEnd={opEnd} siteAvailAll={allAvail[g.site.id] || {}} onSiteClick={onSiteClick}/>;
         })}
@@ -787,6 +791,8 @@ function App() {
   var selectedLocs = locFilterState[0], setSelectedLocs = locFilterState[1];
   var modalState = useState(null);
   var modalSite = modalState[0], setModalSite = modalState[1];
+  var wizResultState = useState(null);
+  var wizResult = wizResultState[0], setWizResult = wizResultState[1];
 
   var allTypes = useMemo(function() {
     if (!sites) return [];
@@ -884,8 +890,15 @@ function App() {
           if (r.location) setSelectedLocs(new Set([r.location]));
           else if (allLocations.length > 0) setSelectedLocs(new Set(allLocations));
           if (r.date) { setDate(r.date); setView('day'); }
+          setWizResult(r);
         }}/>
 
+      {wizResult && filteredSites.length > 0 && (
+        <div className="wiz-result">
+          {'✨'} We found <strong>{filteredSites.length} {(SITE_TYPES.find(function(t){return t.key===wizResult.type;})||{}).label || 'facilities'}</strong> available{wizResult.location ? ' at '+wizResult.location : ''} — check them out below!
+          <button className="wiz-result-x" onClick={function(){setWizResult(null);}}>{'✕'}</button>
+        </div>
+      )}
       {allTypes.length > 0 && (
         <div className="filters">
           {allTypes.length > 1 && (
@@ -935,7 +948,7 @@ function App() {
         <div style={{padding:'40px 20px',textAlign:'center',color:'#6b7280',fontSize:14}}>No facilities match the current filters.</div>
       )}
       {view === 'day'
-        ? <DayView sites={filteredSites} availMap={dayAvailMap} dateStr={dateISO} opStart={opHours.start} opEnd={opHours.end} allAvail={allAvail} onSiteClick={function(s){setModalSite(s);}}/>
+        ? <DayView sites={filteredSites} availMap={dayAvailMap} dateStr={dateISO} opStart={opHours.start} opEnd={opHours.end} allAvail={allAvail} onSiteClick={function(s){setModalSite(s);}} forceOpen={selectedTypes && selectedTypes.size === 1}/>
         : <WeekOverview sites={filteredSites} allAvail={allAvail} weekStart={ws} onDayClick={handleDayClick}/>
       }
       {modalSite && <SiteModal site={modalSite} onClose={function(){setModalSite(null);}}/>}
