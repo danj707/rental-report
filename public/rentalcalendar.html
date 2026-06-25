@@ -17,6 +17,10 @@ body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 -apple-system
 .toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;background:var(--card);
   border:1px solid var(--line);border-radius:12px;padding:10px 14px;box-shadow:var(--shadow);margin-bottom:16px}
 .toolbar .grow{flex:1}
+.tb-date{padding:4px 6px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;font-family:inherit;margin-left:8px;color:#374151;cursor:pointer}
+.tb-legend{display:flex;gap:10px;align-items:center;font-size:11px;color:#6b7280;margin-right:8px}
+.tb-legend .sw{width:10px;height:10px;border-radius:2px;display:inline-block;vertical-align:middle;margin-right:3px}
+@media(max-width:700px){.tb-legend{display:none}.tb-date{display:none}}
 button,select{font:inherit;border:1px solid var(--line);background:#fff;color:var(--ink);
   border-radius:8px;padding:6px 12px;cursor:pointer;font-size:13px;transition:border-color .12s,background .12s}
 button:hover{border-color:#cbd5e1;background:#f8fafc}
@@ -77,8 +81,6 @@ button.primary:hover{filter:brightness(.95)}
 .pill{padding:4px 10px;border-radius:12px;border:1px solid #d1d5db;background:#fff;font-size:12px;cursor:pointer;color:#374151;transition:all .15s;font-family:inherit}
 .pill:hover{background:#f3f4f6;border-color:#9ca3af}
 .pill.active{background:#1e40af;color:#fff;border-color:#1e40af}
-.legend{display:flex;gap:16px;align-items:center;font-size:12px;color:var(--muted);margin:0 2px 14px}
-.legend .sw{width:12px;height:12px;border-radius:3px;display:inline-block;vertical-align:middle;margin-right:4px}
 .fac-list{background:var(--card);border:1px solid var(--line);border-top:none;border-radius:0 0 12px 12px;box-shadow:var(--shadow);overflow:hidden}
 .time-ruler{position:sticky;top:0;z-index:10;background:var(--card);border:1px solid var(--line);border-bottom:2px solid var(--line);border-radius:10px 10px 0 0;box-shadow:0 2px 6px rgba(0,0,0,.06);display:flex;align-items:center;height:38px}
 .time-ruler .tr-label{width:280px;min-width:280px;padding:0 12px;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;border-right:1px solid var(--line)}
@@ -477,7 +479,7 @@ function BookingWizard({allTypes, allLocations, sites, onApply}) {
     onApply({type: chosenType, date: chosenDate, location: loc || null});
     setIsOpen(false);
   }
-  function reset() { setStep(0); setChosenType(null); setChosenDate(null); setShowPicker(false); }
+  function reset() { setStep(0); setChosenDate(null); setChosenType(null); setShowPicker(false); }
 
   if (!isOpen) return (
     <div className="wiz-collapsed">
@@ -507,29 +509,29 @@ function BookingWizard({allTypes, allLocations, sites, onApply}) {
       </div>
       {step === 0 && (
         <div className="wiz-step">
-          <div className="wiz-q">What are you looking for?</div>
+          <div className="wiz-q">When do you need it?</div>
           <div className="wiz-opts">
-            {allTypes.map(function(t) {
-              return <button key={t.key} className="wiz-pill" onClick={function(){setChosenType(t.key); setStep(1);}}>{emojiFor(t.key)} {t.label}</button>;
-            })}
+            {dayOpts.map(function(o){return <button key={o.label} className="wiz-pill" onClick={function(){setChosenDate(o.date);setStep(1);}}>{o.label}</button>;})}
+            <button className="wiz-pill wiz-alt" onClick={function(){setShowPicker(true);}}>Pick a date…</button>
+            {showPicker && <input type="date" className="wiz-date" autoFocus onChange={function(e){if(e.target.value){setChosenDate(new Date(e.target.value+'T12:00:00'));setStep(1);setShowPicker(false);}}}/>}
           </div>
         </div>
       )}
       {step === 1 && (
         <div className="wiz-step">
-          <div className="wiz-crumb">{emojiFor(chosenType)} {(SITE_TYPES.find(function(t){return t.key===chosenType;})||{}).label}</div>
-          <div className="wiz-q">When do you need it?</div>
+          <div className="wiz-crumb">{chosenDate && (MON[chosenDate.getMonth()]+' '+chosenDate.getDate()+', '+chosenDate.getFullYear())}</div>
+          <div className="wiz-q">What are you looking for?</div>
           <div className="wiz-opts">
-            {dayOpts.map(function(o){return <button key={o.label} className="wiz-pill" onClick={function(){setChosenDate(o.date);setStep(2);}}>{o.label}</button>;})}
-            <button className="wiz-pill wiz-alt" onClick={function(){setShowPicker(true);}}>Pick a date…</button>
-            {showPicker && <input type="date" className="wiz-date" autoFocus onChange={function(e){if(e.target.value){setChosenDate(new Date(e.target.value+'T12:00:00'));setStep(2);setShowPicker(false);}}}/>}
+            {allTypes.map(function(t) {
+              return <button key={t.key} className="wiz-pill" onClick={function(){setChosenType(t.key); setStep(2);}}>{emojiFor(t.key)} {t.label}</button>;
+            })}
           </div>
-          <button className="wiz-back" onClick={function(){setStep(0);setChosenType(null);}}>← Back</button>
+          <button className="wiz-back" onClick={function(){setStep(0);setChosenDate(null);}}>← Back</button>
         </div>
       )}
       {step === 2 && (
         <div className="wiz-step">
-          <div className="wiz-crumb">{emojiFor(chosenType)} {(SITE_TYPES.find(function(t){return t.key===chosenType;})||{}).label} · {chosenDate && (MON[chosenDate.getMonth()]+' '+chosenDate.getDate())}</div>
+          <div className="wiz-crumb">{chosenDate && (MON[chosenDate.getMonth()]+' '+chosenDate.getDate())} · {emojiFor(chosenType)} {(SITE_TYPES.find(function(t){return t.key===chosenType;})||{}).label}</div>
           {relevantLocs.length > 1 ? (
             <div>
               <div className="wiz-q">Any location preference?</div>
@@ -541,7 +543,7 @@ function BookingWizard({allTypes, allLocations, sites, onApply}) {
           ) : (
             <div className="wiz-opts"><button className="wiz-pill wiz-go" onClick={function(){handleApply(relevantLocs[0]||null);}}>Show availability →</button></div>
           )}
-          <button className="wiz-back" onClick={function(){setStep(1);setChosenDate(null);}}>← Back</button>
+          <button className="wiz-back" onClick={function(){setStep(1);setChosenType(null);}}>← Back</button>
         </div>
       )}
     </div>
