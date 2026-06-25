@@ -124,6 +124,20 @@ const LOCATION_ID = new URLSearchParams(window.location.search).get('locationId'
 /* ── emoji map ── */
 const E={"court":"\u{1F3BE}","pool":"\u{1F3CA}","room":"\u{1F3DB}\uFE0F","outdoor-event-space":"\u26FA","picnic-table":"\u{1F9FA}","field":"\u26BD","rink":"\u26F8\uFE0F","gym":"\u{1F3CB}\uFE0F","golf":"\u26F3","campsite":"\u{1F3D5}\uFE0F","bounce-house":"\u{1F389}","other":"\u{1F4CD}"};
 function emojiFor(t){return E[t]||"\u{1F4CD}";}
+var SITE_TYPES = [
+  {key:"field", label:"Fields"},
+  {key:"court", label:"Courts"},
+  {key:"rink", label:"Rinks"},
+  {key:"pool", label:"Pools"},
+  {key:"room", label:"Rooms"},
+  {key:"gym", label:"Gyms"},
+  {key:"outdoor-event-space", label:"Outdoor Event Spaces"},
+  {key:"picnic-table", label:"Picnic Tables"},
+  {key:"golf", label:"Golf"},
+  {key:"campsite", label:"Campsites"},
+  {key:"bounce-house", label:"Bounce Houses"},
+  {key:"other", label:"Other"},
+];
 
 /* ── helpers ── */
 function pad(n){return n<10?'0'+n:''+n;}
@@ -512,6 +526,42 @@ function App() {
     return {start: earliest, end: latest};
   }, [allAvail]);
 
+  // ── Filters ──
+  var typeFilterState = useState(null);
+  var selectedTypes = typeFilterState[0], setSelectedTypes = typeFilterState[1];
+  var locFilterState = useState(null);
+  var selectedLocs = locFilterState[0], setSelectedLocs = locFilterState[1];
+
+  var allTypes = useMemo(function() {
+    if (!sites) return [];
+    var present = new Set();
+    sites.forEach(function(x) { if (x.type) present.add(x.type); });
+    return SITE_TYPES.filter(function(t) { return present.has(t.key); });
+  }, [sites]);
+
+  var allLocations = useMemo(function() {
+    if (!sites) return [];
+    var s = new Set();
+    sites.forEach(function(x) { if (x.locationName) s.add(x.locationName); });
+    return Array.from(s).sort();
+  }, [sites]);
+
+  useEffect(function() {
+    if (sites && sites.length > 0 && selectedTypes === null) setSelectedTypes(new Set(allTypes.map(function(t){return t.key;})));
+  }, [allTypes]);
+  useEffect(function() {
+    if (sites && sites.length > 0 && selectedLocs === null) setSelectedLocs(new Set(allLocations));
+  }, [allLocations]);
+
+  var filteredSites = useMemo(function() {
+    if (!sites) return [];
+    return sites.filter(function(s) {
+      if (selectedTypes && allTypes.length > 0 && selectedTypes.size < allTypes.length && !selectedTypes.has(s.type)) return false;
+      if (selectedLocs && allLocations.length > 0 && selectedLocs.size < allLocations.length && !selectedLocs.has(s.locationName)) return false;
+      return true;
+    });
+  }, [sites, selectedTypes, selectedLocs, allTypes, allLocations]);
+
   // Build per-site availability map for selected date
   var dayAvailMap = useMemo(function() {
     var m = {};
@@ -570,9 +620,57 @@ function App() {
         <span><span className="sw" style={{background:'var(--closed)',border:'1px solid #d1d5db'}}></span> Closed</span>
         {view === 'day' && <span><span className="sw" style={{background:'#ef4444',width:3,borderRadius:2}}></span> Now</span>}
       </div>
+      {allTypes.length > 0 && (
+        <div className="filters">
+          {allTypes.length > 1 && (
+            <div className="filter-row">
+              <span className="filter-label">Type</span>
+              <div className="filter-pills">
+                <button className={!selectedTypes || selectedTypes.size === allTypes.length ? 'pill active' : 'pill'}
+                  onClick={function(){setSelectedTypes(new Set(allTypes.map(function(t){return t.key;})));}}>All</button>
+                {allTypes.map(function(t) {
+                  var isOn = selectedTypes && selectedTypes.has(t.key);
+                  return <button key={t.key} className={'pill' + (isOn && selectedTypes.size < allTypes.length ? ' active' : '')}
+                    onClick={function(){
+                      var allKeys = new Set(allTypes.map(function(x){return x.key;}));
+                      var next = new Set(selectedTypes || allKeys);
+                      if (next.size === allTypes.length) { next = new Set([t.key]); }
+                      else if (next.has(t.key) && next.size > 1) { next.delete(t.key); }
+                      else { next.add(t.key); }
+                      setSelectedTypes(next);
+                    }}>{emojiFor(t.key)} {t.label}</button>;
+                })}
+              </div>
+            </div>
+          )}
+          {allLocations.length > 1 && (
+            <div className="filter-row">
+              <span className="filter-label">Location</span>
+              <div className="filter-pills">
+                <button className={!selectedLocs || selectedLocs.size === allLocations.length ? 'pill active' : 'pill'}
+                  onClick={function(){setSelectedLocs(new Set(allLocations));}}>All</button>
+                {allLocations.map(function(loc) {
+                  var isOn = selectedLocs && selectedLocs.has(loc);
+                  return <button key={loc} className={'pill' + (isOn && selectedLocs.size < allLocations.length ? ' active' : '')}
+                    onClick={function(){
+                      var next = new Set(selectedLocs || new Set(allLocations));
+                      if (next.size === allLocations.length) { next = new Set([loc]); }
+                      else if (next.has(loc) && next.size > 1) { next.delete(loc); }
+                      else { next.add(loc); }
+                      setSelectedLocs(next);
+                    }}>{loc}</button>;
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+      {filteredSites.length === 0 && sites && sites.length > 0 && (
+        <div style={{padding:'40px 20px',textAlign:'center',color:'#6b7280',fontSize:14}}>No facilities match the current filters.</div>
+      )}
       {view === 'day'
-        ? <DayView sites={sites} availMap={dayAvailMap} dateStr={dateISO} opStart={opHours.start} opEnd={opHours.end} allAvail={allAvail}/>
-        : <WeekOverview sites={sites} allAvail={allAvail} weekStart={ws} onDayClick={handleDayClick}/>
+        ? <DayView sites={filteredSites} availMap={dayAvailMap} dateStr={dateISO} opStart={opHours.start} opEnd={opHours.end} allAvail={allAvail}/>
+        : <WeekOverview sites={filteredSites} allAvail={allAvail} weekStart={ws} onDayClick={handleDayClick}/>
       }
       <div className="footer">
         Availability updates in real time &middot; Powered by <a href="https://www.rec.us" target="_blank" rel="noopener">rec.us</a>
