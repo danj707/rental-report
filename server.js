@@ -427,32 +427,6 @@ const ORGS = {
     logoUrl: "https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2Forganization-2d147f38-068c-409e-890d-a8acc88d8079%2FfullLogo.jpeg%3F1764460109546&w=2048&q=75",
     roster:  { mbUuid: "09707fab-067c-4297-98c1-3c1c39804333" },
   },
-  littleton: {
-    token:   "reaFHptbqztp_1YB",
-    orgId:   "992ee322-4927-4558-827d-7f8768580b85",
-    logoUrl: "https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2Forganization-992ee322-4927-4558-827d-7f8768580b85%2FfullLogo.jpeg%3F1776960415666&w=1920&q=75",
-    displayName: "Littleton PRCE",
-  },
-  danvers: {
-    token:   "9h_PGT17witUK73g",
-    orgId:   "a6aef5df-f742-41a2-9088-1fb6d48c3cb1",
-    logoUrl: "https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2Forganization-a6aef5df-f742-41a2-9088-1fb6d48c3cb1%2FfullLogo.png%3F1748866523048&w=1920&q=75",
-    displayName: "Town of Danvers",
-    roster  : { mbUuid: "483df1ab-8e6b-4004-b532-de28bd28c477" },
-  },
-  midland: {
-    token:   "2TiwFAhbgFqcnbbT",
-    orgId:   "8a8a4fb1-c184-4196-a878-75c775ce6252",
-    logoUrl: "https://www.midlandtexas.gov/ImageRepository/Document?documentID=10068",
-    displayName: "Midland",
-  },
-  windham: {
-    token:   "nbwKKe68jACdPOLE",
-    orgId:   "1c80a358-74c2-477d-aa0b-87bb2d0514b3",
-    logoUrl: "https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2Forganization-1c80a358-74c2-477d-aa0b-87bb2d0514b3%2FfullLogo.png%3F1755282265506&w=1920&q=75",
-    displayName: "Windham Parks and Recreation",
-    roster  : { mbUuid: "ff78b207-c015-4bac-80a1-86213cfbad04" },
-  },
   joplin: {
     token:   "mJpBoV84IRlCoXPM",
     orgId:   "ac04aa52-d629-435f-84af-0fc95e152e7b",
@@ -479,12 +453,6 @@ const ORGS = {
     orgId:   "7d22bf62-060a-4881-9821-9dea6a0538d6",
     logoUrl: "https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2Forganization-7d22bf62-060a-4881-9821-9dea6a0538d6%2FfullLogo.png%3F1764542866233&w=1920&q=75",
     displayName: "City of West Sacramento",
-  },
-  boerne: {
-    token:   "VgvWxiyKNso1x2EB",
-    orgId:   "71bf9bc4-cd62-482a-aee5-5d790cdba811",
-    logoUrl: "https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2Forganization-71bf9bc4-cd62-482a-aee5-5d790cdba811%2FfullLogo.png%3F1765481856685&w=1920&q=75",
-    displayName: "Boerne",
   },
 };
 
@@ -6315,6 +6283,9 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  { date: '2026-06-24', title: '\uD83D\uDDD1\uFE0F Org Cleanup', items: [
+    '\u2702\uFE0F REMOVED 5 INACTIVE ORGS \u2014 Boerne, Littleton, Midland, Danvers, Windham. Not using the platform, removed to reduce clutter and bandwidth.',
+  ]},
   { date: '2026-06-24', title: '\u2795 Facility Report \u2014 Add-On Fees + Filter', items: [
     '\uD83C\uDF9B\uFE0F ADD-ONS FILTER \u2014 New dropdown filter on facility report toolbar (same UX as Sites). Parses comma-separated add-on items from each rental, shows checkboxes for individual add-ons (Field Lights, Scoreboard, etc.). Includes (No add-ons) entry. Filter state persisted to share links and PDF export.',
     '\uD83D\uDCB0 ADD-ON FEES COLUMN \u2014 New \u201CAdd-On $\u201D column shows the actual paid price for add-ons (uses applied_pricing finalCents, not list price). Inline pricing in the Add Ons text (e.g. \u201CField Lights ($50.00)\u201D). Separate numeric column for sorting/totaling. Toggleable via column checkbox, included in Excel export with currency formatting, and visible in hover cards.',
