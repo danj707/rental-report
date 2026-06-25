@@ -396,6 +396,7 @@ const ORGS = {
   watertown: {
     token:   "7qNNXDFo4HGpOh5B",
     orgId:   "d781690b-c5a0-43c5-8443-9ae43899528c",
+    coords:  { lat: 42.3709, lon: -71.1828 },
     calendarPublicUrl: "https://www.watertown-ma.gov/1425/Recreation",
     logoUrl: "https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2Forganization-d781690b-c5a0-43c5-8443-9ae43899528c%2FfullLogo.png%3F1750270261391&w=1920&q=75",
     facility: { mbUuid: "4b64af10-d57f-41af-aad8-b16d12a8f7b8" },
@@ -3192,6 +3193,7 @@ app.get("/:org/rentalcalendar", (req, res) => {
     logoUrl: org.logoUrl || '',
     locationId: req.query.locationId || '',
     locationName: req.query.locationName || '',
+    coords: org.coords || null,
   };
   const fs = require("fs");
   const html = fs.readFileSync(path.join(__dirname, "public", "rentalcalendar.html"), "utf-8");
