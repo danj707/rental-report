@@ -1099,7 +1099,7 @@ function buildMetrics(org, daysBack) {
     insights.costUsd += e.costUsd || 0;
   });
 
-  const configuredReports = REPORT_TYPES.filter(r => ORGS[org]?.[r]?.mbUuid);
+  const configuredReports = REPORT_TYPES.filter(r => ORGS[org]?.[r]?.mbUuid || SHARED_UUIDS[r]);
   return { summary, daily, subCounts, subByCadence, totalSubscribers: allSubs.length, insights, configuredReports };
 }
 
