@@ -30,6 +30,26 @@ button.primary:hover{filter:brightness(.95)}
 .hdr h1{font-size:20px;margin:0}
 .hdr .sub{color:var(--muted);font-size:13px}
 .range{font-weight:600;font-size:14px;color:var(--ink)}
+.wiz-bar{padding:12px 16px;background:linear-gradient(135deg,#eef2ff,#e0e7ff);border-bottom:1px solid #c7d2fe;cursor:pointer;text-align:center;font-size:14px;color:#3730a3;font-weight:500;transition:background .15s}
+.wiz-bar:hover{background:linear-gradient(135deg,#e0e7ff,#c7d2fe)}
+.wiz-wrap{padding:16px 20px;background:linear-gradient(135deg,#eef2ff,#f5f3ff);border-bottom:1px solid #c7d2fe}
+.wiz-head{display:flex;justify-content:space-between;align-items:center;font-size:15px;font-weight:600;color:#312e81;margin-bottom:12px}
+.wiz-x{background:none;border:none;font-size:16px;cursor:pointer;color:#6b7280;padding:2px 6px}
+.wiz-x:hover{color:#111}
+.wiz-step{animation:wizFade .2s ease}
+@keyframes wizFade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+.wiz-q{font-size:14px;color:#374151;margin-bottom:10px;font-weight:500}
+.wiz-crumb{font-size:12px;color:#6366f1;font-weight:600;margin-bottom:8px}
+.wiz-opts{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}
+.wiz-pill{padding:8px 14px;border-radius:20px;border:1px solid #c7d2fe;background:#fff;font-size:13px;cursor:pointer;color:#312e81;transition:all .15s;font-family:inherit;font-weight:500}
+.wiz-pill:hover{background:#e0e7ff;border-color:#818cf8}
+.wiz-alt{border-style:dashed;color:#6b7280}
+.wiz-go{background:#4f46e5;color:#fff;border-color:#4f46e5}
+.wiz-go:hover{background:#4338ca}
+.wiz-date{padding:6px 10px;border:1px solid #c7d2fe;border-radius:8px;font-size:13px;font-family:inherit;margin-top:4px}
+.wiz-back{background:none;border:none;font-size:12px;color:#6b7280;cursor:pointer;padding:4px 0;margin-top:4px}
+.wiz-back:hover{color:#374151}
+.wiz-sparkle{margin-right:6px}
 .modal-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:1000;display:flex;align-items:center;justify-content:center;padding:20px}
 .modal-card{background:#fff;border-radius:12px;max-width:480px;width:100%;max-height:90vh;overflow-y:auto;position:relative;box-shadow:0 20px 60px rgba(0,0,0,0.3)}
 .modal-close{position:absolute;top:12px;right:12px;background:rgba(0,0,0,0.4);color:#fff;border:none;width:28px;height:28px;border-radius:50%;cursor:pointer;font-size:14px;z-index:1;display:flex;align-items:center;justify-content:center}
@@ -410,6 +430,102 @@ function SiteGroup({type, sites, availMap, dateStr, opStart, opEnd, allAvail, on
   );
 }
 
+function BookingWizard({allTypes, allLocations, sites, onApply}) {
+  var stepState = useState(0);
+  var step = stepState[0], setStep = stepState[1];
+  var typeState = useState(null);
+  var chosenType = typeState[0], setChosenType = typeState[1];
+  var dateState = useState(null);
+  var chosenDate = dateState[0], setChosenDate = dateState[1];
+  var openSt = useState(true);
+  var isOpen = openSt[0], setIsOpen = openSt[1];
+  var pickerSt = useState(false);
+  var showPicker = pickerSt[0], setShowPicker = pickerSt[1];
+
+  function nextDow(dow) {
+    var d = new Date();
+    var diff = (dow - d.getDay() + 7) % 7;
+    if (diff === 0) diff = 7;
+    d.setDate(d.getDate() + diff);
+    return d;
+  }
+  var today = new Date();
+  var tomorrow = new Date(); tomorrow.setDate(today.getDate() + 1);
+  var dayOpts = [
+    {label: 'Today', date: today},
+    {label: 'Tomorrow', date: tomorrow},
+    {label: today.getDay() === 6 ? 'Next Saturday' : 'This Saturday', date: nextDow(6)},
+    {label: today.getDay() === 0 ? 'Next Sunday' : 'This Sunday', date: nextDow(0)},
+  ];
+
+  var relevantLocs = useMemo(function() {
+    if (!chosenType || !sites) return allLocations;
+    var s = new Set();
+    sites.forEach(function(x) { if (x.type === chosenType && x.locationName) s.add(x.locationName); });
+    return Array.from(s).sort();
+  }, [chosenType, sites, allLocations]);
+
+  function handleApply(loc) {
+    onApply({type: chosenType, date: chosenDate, location: loc || null});
+    setIsOpen(false);
+  }
+  function reset() { setStep(0); setChosenType(null); setChosenDate(null); setShowPicker(false); }
+
+  if (!isOpen) return (
+    <div className="wiz-bar" onClick={function(){setIsOpen(true); reset();}}>
+      <span className="wiz-sparkle">✨</span> Find availability — tell us what you need
+    </div>
+  );
+
+  return (
+    <div className="wiz-wrap">
+      <div className="wiz-head">
+        <span>✨ Find a facility</span>
+        <button className="wiz-x" onClick={function(){setIsOpen(false);}}>✕</button>
+      </div>
+      {step === 0 && (
+        <div className="wiz-step">
+          <div className="wiz-q">What are you looking for?</div>
+          <div className="wiz-opts">
+            {allTypes.map(function(t) {
+              return <button key={t.key} className="wiz-pill" onClick={function(){setChosenType(t.key); setStep(1);}}>{emojiFor(t.key)} {t.label}</button>;
+            })}
+          </div>
+        </div>
+      )}
+      {step === 1 && (
+        <div className="wiz-step">
+          <div className="wiz-crumb">{emojiFor(chosenType)} {(SITE_TYPES.find(function(t){return t.key===chosenType;})||{}).label}</div>
+          <div className="wiz-q">When do you need it?</div>
+          <div className="wiz-opts">
+            {dayOpts.map(function(o){return <button key={o.label} className="wiz-pill" onClick={function(){setChosenDate(o.date);setStep(2);}}>{o.label}</button>;})}
+            <button className="wiz-pill wiz-alt" onClick={function(){setShowPicker(true);}}>Pick a date…</button>
+            {showPicker && <input type="date" className="wiz-date" autoFocus onChange={function(e){if(e.target.value){setChosenDate(new Date(e.target.value+'T12:00:00'));setStep(2);setShowPicker(false);}}}/>}
+          </div>
+          <button className="wiz-back" onClick={function(){setStep(0);setChosenType(null);}}>← Back</button>
+        </div>
+      )}
+      {step === 2 && (
+        <div className="wiz-step">
+          <div className="wiz-crumb">{emojiFor(chosenType)} {(SITE_TYPES.find(function(t){return t.key===chosenType;})||{}).label} · {chosenDate && (MON[chosenDate.getMonth()]+' '+chosenDate.getDate())}</div>
+          {relevantLocs.length > 1 ? (
+            <div>
+              <div className="wiz-q">Any location preference?</div>
+              <div className="wiz-opts">
+                <button className="wiz-pill" onClick={function(){handleApply(null);}}>Anywhere</button>
+                {relevantLocs.map(function(loc){return <button key={loc} className="wiz-pill" onClick={function(){handleApply(loc);}}>{loc}</button>;})}
+              </div>
+            </div>
+          ) : (
+            <div className="wiz-opts"><button className="wiz-pill wiz-go" onClick={function(){handleApply(relevantLocs[0]||null);}}>Show availability →</button></div>
+          )}
+          <button className="wiz-back" onClick={function(){setStep(1);setChosenDate(null);}}>← Back</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function SiteModal({site, onClose}) {
   if (!site) return null;
   var typeLabel = (site.type||'').replace(/-/g,' ').replace(/\b\w/g, function(c){return c.toUpperCase();});
@@ -670,6 +786,13 @@ function App() {
           {CFG.displayName && <div className="sub">{CFG.displayName}</div>}
         </div>
       </div>
+      <BookingWizard allTypes={allTypes} allLocations={allLocations} sites={sites}
+        onApply={function(r) {
+          if (r.type) setSelectedTypes(new Set([r.type]));
+          if (r.location) setSelectedLocs(new Set([r.location]));
+          else if (allLocations.length > 0) setSelectedLocs(new Set(allLocations));
+          if (r.date) { setDate(r.date); setView('day'); }
+        }}/>
       <div className="legend">
         <span><span className="sw" style={{background:'#d1fae5',border:'1px solid #a7f3d0'}}></span> Available</span>
         <span><span className="sw" style={{background:'var(--reserved)',border:'1px solid #fdba74'}}></span> Reserved</span>
