@@ -595,17 +595,13 @@ function BookingWizard({allTypes, allLocations, sites, onApply}) {
       {step === 2 && (
         <div className="wiz-step">
           <div className="wiz-crumb">{chosenDate && (MON[chosenDate.getMonth()]+' '+chosenDate.getDate())} · {emojiFor(chosenType)} {(SITE_TYPES.find(function(t){return t.key===chosenType;})||{}).label}</div>
-          {relevantLocs.length > 1 ? (
-            <div>
-              <div className="wiz-q">Any location preference?</div>
-              <div className="wiz-opts">
-                <button className="wiz-pill" onClick={function(){handleApply(null);}}>Anywhere</button>
-                {relevantLocs.map(function(loc){return <button key={loc} className="wiz-pill" onClick={function(){handleApply(loc);}}>{loc}</button>;})}
-              </div>
+          <div>
+            <div className="wiz-q">Any location preference?</div>
+            <div className="wiz-opts">
+              <button className="wiz-pill" onClick={function(){handleApply(null);}}>Anywhere</button>
+              {relevantLocs.map(function(loc){return <button key={loc} className="wiz-pill" onClick={function(){handleApply(loc);}}>{loc}</button>;})}
             </div>
-          ) : (
-            <div className="wiz-opts"><button className="wiz-pill wiz-go" onClick={function(){handleApply(relevantLocs[0]||null);}}>Show availability →</button></div>
-          )}
+          </div>
           <button className="wiz-back" onClick={function(){setStep(1);setChosenType(null);}}>← Back</button>
         </div>
       )}
