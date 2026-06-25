@@ -182,6 +182,64 @@ var SITE_TYPES = [
   {key:"other", label:"Other"},
 ];
 
+/* ── weather ── */
+function weatherEmoji(fc) {
+  if (!fc) return "☁️";
+  var f = fc.toLowerCase();
+  if (f.includes("thunder") || f.includes("storm")) return "⛈️";
+  if (f.includes("rain") || f.includes("shower") || f.includes("drizzle")) return "🌧️";
+  if (f.includes("snow") || f.includes("blizzard") || f.includes("flurr")) return "❄️";
+  if (f.includes("fog") || f.includes("haze") || f.includes("mist")) return "🌫️";
+  if (f.includes("cloud") || f.includes("overcast")) return "☁️";
+  if (f.includes("partly")) return "⛅";
+  if (f.includes("sun") || f.includes("clear") || f.includes("fair")) return "☀️";
+  if (f.includes("wind")) return "💨";
+  if (f.includes("hot")) return "🔥";
+  return "🌤️";
+}
+
+function useWeather(coords, dateISO) {
+  var state = useState(null);
+  var weather = state[0], setWeather = state[1];
+  var cacheRef = useRef({});
+
+  useEffect(function() {
+    if (!coords || !coords.lat || !dateISO) return;
+    var key = dateISO;
+    if (cacheRef.current[key]) { setWeather(cacheRef.current[key]); return; }
+
+    var ua = "rec.us-reports/1.0 (dan@rec.us)";
+    fetch("https://api.weather.gov/points/" + coords.lat + "," + coords.lon, {headers:{"User-Agent":ua}})
+      .then(function(r){return r.json();})
+      .then(function(d){
+        var url = d.properties && d.properties.forecast;
+        if (!url) return;
+        return fetch(url, {headers:{"User-Agent":ua}});
+      })
+      .then(function(r){return r && r.json();})
+      .then(function(d){
+        if (!d || !d.properties || !d.properties.periods) return;
+        var periods = d.properties.periods;
+        var match = null, night = null;
+        for (var i = 0; i < periods.length; i++) {
+          var p = periods[i];
+          if (p.startTime && p.startTime.substring(0,10) === dateISO) {
+            if (p.isDaytime && !match) match = p;
+            if (!p.isDaytime && !night) night = p;
+          }
+        }
+        if (match) {
+          var w = {hi:match.temperature, lo:night?night.temperature:null, unit:match.temperatureUnit||"F", desc:match.shortForecast, emoji:weatherEmoji(match.shortForecast)};
+          cacheRef.current[key] = w;
+          setWeather(w);
+        }
+      })
+      .catch(function(){});
+  }, [coords, dateISO]);
+
+  return weather;
+}
+
 /* ── helpers ── */
 function pad(n){return n<10?'0'+n:''+n;}
 function fmtISO(d){return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());}
@@ -678,6 +736,7 @@ function App() {
   var loading = loadingState[0], setLoading = loadingState[1];
 
   var dateISO = fmtISO(date);
+  var weather = useWeather(CFG.coords, dateISO);
   var todayISO = fmtISO(new Date());
   var isToday = dateISO === todayISO;
   var ws = startOfWeek(date);
@@ -797,6 +856,7 @@ function App() {
         <button onClick={goToday} className={isToday && view === 'day' ? 'primary' : ''}>Today</button>
         <button onClick={function(){nav(1);}}>Next &rsaquo;</button>
         <span className="range" style={{marginLeft:8}}>{dateLabel}</span>
+        {weather && <span className="tb-weather" title={weather.desc}>{weather.emoji} {weather.hi}°{weather.unit}{weather.lo != null ? ' / '+weather.lo+'°' : ''}</span>}
         <input type="date" className="tb-date" value={dateISO} onChange={function(e){if(e.target.value){setDate(new Date(e.target.value+'T12:00:00'));setView('day');}}}/>
         <div className="grow"></div>
         <div className="tb-legend">
