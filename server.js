@@ -3606,6 +3606,8 @@ app.get("/:org", async (req, res, next) => {
   const allAvailable = REPORT_TYPES.filter(r => !NON_ADDABLE_REPORTS.has(r) && (org[r]?.mbUuid || SHARED_UUIDS[r]));
   const orgHidden = new Set(getHiddenReports(slug));
   const available = allAvailable.filter(r => !orgHidden.has(r));
+  // Rental calendar — non-Metabase, per-org opt-in
+  if (slug === 'watertown' && !orgHidden.has('rentalcalendar')) available.push('rentalcalendar');
   const orgConfig = {
     slug,
     displayName: org.displayName || `${slugTitle} Parks & Recreation`,
@@ -3645,7 +3647,7 @@ app.post("/api/admin/toggle-report", express.json(), (req, res) => {
   if (dashboardPasswordBlocked(req, res)) return;
   const { org: slug, report } = req.body || {};
   if (!ORGS[slug]) return res.status(404).json({ error: "Unknown org" });
-  if (!REPORT_TYPES.includes(report) && report !== "chat" && report !== "report-wizard") return res.status(400).json({ error: "Unknown report type" });
+  if (!REPORT_TYPES.includes(report) && report !== "chat" && report !== "report-wizard" && report !== "rentalcalendar") return res.status(400).json({ error: "Unknown report type" });
   const hidden = getHiddenReports(slug);
   const idx = hidden.indexOf(report);
   if (idx >= 0) hidden.splice(idx, 1); else hidden.push(report);
@@ -4256,7 +4258,8 @@ app.get("/", (req, res) => {
     fasttrack:   { label: "Fast Track",             icon: "⚡", desc: "Pre-registration demand signal with conversion tracking", color: "#6366f1", ai: true },
     users:       { label: "Community Intel",            icon: "👥", desc: "Demographics, revenue, and strategy intelligence across your community", color: "#7c3aed", ai: true },
     "instructor-payout": { label: "Instructor Payout", ai: true, icon: "💰", desc: "Revenue splits and payout calculations by instructor", color: "#6366f1" },
-  };
+
+    "rentalcalendar":    { label: "Rental Calendar", icon: "🏟️", desc: "Real-time facility availability with live booking data", color: "#059669" },  };
 
   const hiddenReports = getAllHiddenReports();
   const allVotes = loadVotes();
