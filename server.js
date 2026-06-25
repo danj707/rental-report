@@ -3310,6 +3310,14 @@ app.get("/:org/rentalcalendar/api/availability/:siteId", async (req, res) => {
   const data = await fetchSiteAvailability(req.params.siteId);
   res.json({ data });
 });
+app.post("/:org/rentalcalendar/api/feedback", express.json(), (req, res) => {
+  const slug = req.params.org;
+  if (!ORGS[slug]) return res.status(404).json({error:"Unknown org"});
+  const { vote, type } = req.body || {};
+  logEvent(slug, "rentalcalendar", "wizard-feedback", req, { vote, siteType: type });
+  res.json({ok:true});
+});
+
 
 
 app.get("/:org/fasttrack", (req, res) => {
