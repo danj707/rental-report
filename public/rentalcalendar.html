@@ -571,7 +571,7 @@ function BookingWizard({allTypes, allLocations, sites, onApply}) {
           <div className="wiz-q">When do you need it?</div>
           <div className="wiz-opts">
             {dayOpts.map(function(o){return <button key={o.label} className="wiz-pill" onClick={function(){setChosenDate(o.date);setStep(1);}}>{o.label}</button>;})}
-            <input type="date" className="wiz-datepick" onChange={function(e){if(e.target.value){setChosenDate(new Date(e.target.value+'T12:00:00'));setStep(1);}}}/>
+            <input type="date" className="wiz-datepick" onChange={function(e){if(e.target.value){var d=new Date(e.target.value+'T12:00:00');setChosenDate(d);setTimeout(function(){setStep(1);},150);}}}/>
           </div>
         </div>
       )}
