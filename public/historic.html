@@ -565,9 +565,9 @@ function App() {
   const [fbSent, setFbSent] = useState(false);
   const [fbMode, setFbMode] = useState(null);
   const [fbComment, setFbComment] = useState('');
-  const [allLocations,      setAllLocations]      = useState([]);
+  const [allLocations,      setAllLocations]      = useState(['Brawner Hall', 'Reed House', 'Taylor-Brawner House']);
   const [allSites,          setAllSites]          = useState([]);
-  const [selectedLocations, setSelectedLocations] = useState(null);
+  const [selectedLocations, setSelectedLocations] = useState(new Set(['Brawner Hall', 'Reed House', 'Taylor-Brawner House']));
   const [selectedSites,     setSelectedSites]     = useState(null);
 
   // Share Link: expose the live applied filter state so the floating Share
