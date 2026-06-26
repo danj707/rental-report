@@ -1518,6 +1518,54 @@ async function prewarmPulseCache() {
 
 // ── Express setup ────────────────────────────────────────────────────
 const app = express();
+
+// ── Startup readiness gate ───────────────────────────────────────────────────
+let serverReady = false;
+
+app.get("/healthz", (req, res) => {
+  if (serverReady) return res.status(200).json({ status: "ok" });
+  res.status(503).json({ status: "starting" });
+});
+
+const STARTUP_PAGE = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="refresh" content="4">
+<title>Updates in Progress</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { min-height: 100vh; display: flex; align-items: center; justify-content: center;
+    background: #0f1117; color: #e0e0e0; font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
+  .card { text-align: center; max-width: 460px; padding: 48px 36px; }
+  .logo { font-size: 42px; margin-bottom: 16px; }
+  h1 { font-size: 22px; font-weight: 600; margin-bottom: 10px; color: #fff; }
+  p { font-size: 14px; color: #999; line-height: 1.6; margin-bottom: 24px; }
+  .spinner { width: 36px; height: 36px; border: 3px solid #333; border-top-color: #4f8cff;
+    border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .hint { margin-top: 20px; font-size: 11px; color: #555; }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="logo">\u{1F3DB}\uFE0F</div>
+  <h1>Updates in Progress</h1>
+  <p>The report server is restarting with the latest updates.<br>This page will refresh automatically.</p>
+  <div class="spinner"></div>
+  <div class="hint">rec.us Analytics Platform</div>
+</div>
+</body>
+</html>`;
+
+app.use((req, res, next) => {
+  if (serverReady) return next();
+  if (req.path === "/healthz") return next();
+  if (req.path.match(/\.(css|js|ico|png|jpg|svg|woff2?)$/)) return next();
+  res.status(503).send(STARTUP_PAGE);
+});
+
 app.use(dashboardAuth);
 app.use(express.json({ limit: "50mb" }));
 
@@ -6348,6 +6396,11 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  { date: '2026-06-26', title: 'Startup Loading Page', items: [
+    'Added Updates in Progress loading page shown during server restarts instead of broken 404',
+    'Auto-refreshes every 4 seconds until the server is ready',
+    'Added /healthz endpoint for Railway health checks enabling zero-downtime deploys'
+  ]},
   { date: '2026-06-26', title: 'Reservation Instructions on Facility Report', items: [
     'Added support for reservation-level internal notes (admin_instructions_md) on the facility rental schedule',
     'Instructions display in sub-row with clipboard emoji, alongside legacy notes and add-ons',
@@ -7062,6 +7115,7 @@ app.get("/", (req, res) => {
 app.use(express.static(path.join(__dirname, "public")));
 
 app.listen(PORT, () => {
+  serverReady = true;
   console.log(`\n  🏛️  rec.us Report Server`);
   console.log(`  ├─ Base URL: ${BASE_URL}`);
   Object.keys(ORGS).forEach(slug => {
