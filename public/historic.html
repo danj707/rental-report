@@ -564,6 +564,8 @@ function App() {
   const [fbSent, setFbSent] = useState(false);
   const [fbMode, setFbMode] = useState(null);
   const [fbComment, setFbComment] = useState('');
+  const [allLocations,      setAllLocations]      = useState([]);
+  const [allSites,          setAllSites]          = useState([]);
   const [selectedLocations, setSelectedLocations] = useState(null);
   const [selectedSites,     setSelectedSites]     = useState(null);
 
@@ -596,10 +598,31 @@ function App() {
     fetch(withToken(`${basePath}/api/data?${qs}`))
       .then(r => { if (!r.ok) throw new Error(`Server returned ${r.status}`); return r.json(); })
       .then(json => {
-        setRows((json.rows || []).map(normalizeRow));
+        var normalized = (json.rows || []).map(normalizeRow);
+        setRows(normalized);
         setMeta(json.meta || {});
         setLoadedStart(sd);
         setLoadedEnd(ed);
+        // Accumulate locations/sites (never remove historical ones)
+        var newLocs = normalized.map(function(r) { return r.location; }).filter(Boolean);
+        setAllLocations(function(prev) {
+          var merged = new Set(prev); newLocs.forEach(function(l) { merged.add(l); });
+          return Array.from(merged).sort();
+        });
+        var newSites = normalized.map(function(r) { return r.siteType; }).filter(Boolean);
+        setAllSites(function(prev) {
+          var merged = new Set(prev); newSites.forEach(function(s) { merged.add(s); });
+          return Array.from(merged).sort();
+        });
+        // Accumulate selectedLocations/selectedSites
+        setSelectedLocations(function(prev) {
+          if (!prev) return new Set(newLocs);
+          var next = new Set(prev); newLocs.forEach(function(l) { next.add(l); }); return next;
+        });
+        setSelectedSites(function(prev) {
+          if (!prev) return new Set(newSites);
+          var next = new Set(prev); newSites.forEach(function(s) { next.add(s); }); return next;
+        });
       })
       .catch(err => setError(err.message))
       .finally(() => setLoading(false));
@@ -635,28 +658,6 @@ function App() {
 
   const isPrint      = params._print === '1';
   const datesChanged = startDate !== loadedStart || endDate !== loadedEnd;
-
-  // ── Derive filter options from ALL rows (always visible) ──
-  var allLocations = useMemo(function() {
-    if (!rows) return [];
-    var set = new Set();
-    rows.forEach(function(r) { if (r.location) set.add(r.location); });
-    return Array.from(set).sort();
-  }, [rows]);
-
-  var allSites = useMemo(function() {
-    if (!rows) return [];
-    var set = new Set();
-    rows.forEach(function(r) { if (r.siteType) set.add(r.siteType); });
-    return Array.from(set).sort();
-  }, [rows]);
-
-  useEffect(function() {
-    if (allLocations.length && !selectedLocations) setSelectedLocations(new Set(allLocations));
-  }, [allLocations]);
-  useEffect(function() {
-    if (allSites.length && !selectedSites) setSelectedSites(new Set(allSites));
-  }, [allSites]);
 
   var filteredRows = useMemo(function() {
     if (!rows) return null;
