@@ -264,7 +264,7 @@ var MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'
 var DOWL=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
 function minToLabel(min){var h=Math.floor(min/60),m=min%60;var ap=h>=12?'pm':'am';var hh=h%12;if(hh===0)hh=12;return hh+(m?':'+pad(m):'')+ap;}
 
-var GROUP_THRESHOLD = 3;
+var GROUP_THRESHOLD = 1;
 
 /* ── Derive reserved blocks from availability response ── */
 function deriveBlocks(availSlots, dateStr, globalStart, globalEnd, siteOpStart, siteOpEnd) {
