@@ -6398,18 +6398,22 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
-  { date: '2026-06-26', title: 'Facility Report: Persistent Filters', items: [
-    'Location and Site Type filter dropdowns now accumulate across date range changes',
-    'Historical locations that had reservations in previous date ranges remain visible in filters',
-    'Filters never remove options when switching months — only add new ones'
+  { date: '2026-06-26', title: 'Facility Report: Cleaner Filters + Calendar Removal', items: [
+    'Stripped color swatches from Location filter \u2014 now just checkbox + name, side by side',
+    'Removed Calendar view entirely (Table/Calendar toggle gone) \u2014 table-only now',
+    'Background seed fetch on mount (1yr back/forward) discovers all locations/sites for filter dropdowns',
+    'Filters accumulate across date range changes \u2014 historical locations never disappear',
+    'Added beer emoji for Alcohol Permit add-ons'
   ]},
-  { date: '2026-06-26', title: 'Historic Report Location & Site Filters', items: [
-    'Added Location and Site Type filter dropdowns to Historic Buildings report',
-    'Filters always show all options regardless of current selection (derived from full dataset)',
-    'Row count shows filtered/total when filters active, filter state included in share URLs'
+  { date: '2026-06-26', title: 'Historic Buildings Report Overhaul', items: [
+    'Rebuilt SQL from facility rental base query \u2014 hardcoded to Smyrna, locked to 3 historic locations (Brawner Hall, Reed House, Taylor-Brawner House)',
+    'Added Location and Sites filter dropdowns \u2014 all 3 buildings always visible regardless of reservations',
+    'Notes sub-row now shows admin instructions, notes, and add-ons with per-item emojis (beer for Alcohol Permit, clock for Additional Hours)',
+    'Added Excel export with all columns including instructions, notes, and add-ons',
+    'Removed Rec Insights \u2014 not needed on this report'
   ]},
   { date: '2026-06-26', title: 'Rental Calendar Timeline Improvements', items: [
-    'Taller timeline bars (24px → 32px) with half-hour gridlines for better readability',
+    'Taller timeline bars (24px \u2192 32px) with half-hour gridlines for better readability',
     'Hourly tick marks on ruler (was every 2 hours), bolder labels',
     'More saturated green for available slots, stronger gridline contrast',
     'Hour labels inside bars, bolder now-marker'
