@@ -1283,6 +1283,7 @@ function normalizeRow(raw) {
     email:     raw['Email']     || raw['email']      || '',
     phone:     raw['Phone']     || raw['phone']      || '',
     notes:     raw['Notes']     || raw['notes']      || '',
+    instructions: raw['Instructions'] || raw['instructions'] || raw['admin_instructions_md'] || '',
     addons:    raw['Add Ons?']  || raw['Add Ons']   || raw['addons']     || '',
     addonFees: raw['Add-On Fees'] || raw['addon_fees'] || raw['addonFees'] || null,
     resident:  raw['Resident?'] || raw['Resident']  || raw['resident']   || '',
@@ -2929,7 +2930,7 @@ function App() {
     if (showHeadCount) headers.push('Head Cnt');
     if (showTotal)     headers.push('Total');
     if (showAddonFees) headers.push('Add-On Fees');
-    if (showNotes)     headers.push('Notes', 'Add-ons');
+    if (showNotes)     headers.push('Instructions', 'Notes', 'Add-ons');
     if (showResident)  headers.push('Resident?');
     if (showBookType)  headers.push('Booking Type');
 
@@ -2944,7 +2945,7 @@ function App() {
       if (showHeadCount) row.push(r.headCount !== '' ? Number(r.headCount) || r.headCount : '');
       if (showTotal) { const n = parseFloat(r.total); row.push(!isNaN(n) && n !== 0 ? n : ''); }
       if (showAddonFees) { const n = parseFloat(r.addonFees); row.push(!isNaN(n) && n !== 0 ? n : ''); }
-      if (showNotes) { row.push(r.notes || ''); row.push(r.addons || ''); }
+      if (showNotes) { row.push(r.instructions || ''); row.push(r.notes || ''); row.push(r.addons || ''); }
       if (showResident) row.push(r.resident || '');
       if (showBookType) row.push(r.bookingType || '');
       return row;
@@ -2963,7 +2964,7 @@ function App() {
       ...(showHeadCount?[{wch:8}]:[]),
       ...(showTotal?[{wch:10}]:[]),
       ...(showAddonFees?[{wch:12}]:[]),
-      ...(showNotes?[{wch:30},{wch:30}]:[]),
+      ...(showNotes?[{wch:30},{wch:30},{wch:30}]:[]),
       ...(showResident?[{wch:10}]:[]),
       ...(showBookType?[{wch:14}]:[]),
     ];
@@ -3328,15 +3329,18 @@ function App() {
                                   return selectedAddOns.has(name);
                                 }).join(', ');
                               }
-                              if (!r.notes && !visAddons) return null;
-                              return (
-                                <div className="sub-row">
-                                  {r.notes || ''}
-                                  {visAddons ? ` | Add-ons: ${visAddons.split(',').map(s => {
+                              if (!r.notes && !visAddons && !r.instructions) return null;
+                              var parts = [];
+                              if (r.instructions) parts.push("📋 " + r.instructions);
+                              if (r.notes) parts.push(r.notes);
+                              if (visAddons) parts.push("Add-ons: " + visAddons.split(',').map(s => {
                                     const trimmed = s.trim();
                                     const rawName = trimmed.replace(/\s*\(\$[\d,.]+\)$/, '').trim();
                                     return getAddOnEmoji(rawName) + ' ' + trimmed;
-                                  }).join(', ')}` : ''}
+                                  }).join(', '));
+                              return (
+                                <div className="sub-row">
+                                  {parts.join(' | ')}
                                 </div>
                               );
                             })()}
