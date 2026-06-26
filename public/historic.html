@@ -75,6 +75,9 @@
     .toolbar .btn-pdf { background: #3b82f6; border-color: #3b82f6; font-weight: 600; }
     .toolbar .btn-pdf:hover { background: #2563eb; }
     .toolbar .btn-pdf:disabled { opacity: .5; cursor: not-allowed; }
+    .toolbar .btn-excel { background: #16a34a; border-color: #16a34a; font-weight: 600; color: #fff; }
+    .toolbar .btn-excel:hover { background: #15692f; }
+    .toolbar .btn-excel:disabled { opacity: .5; cursor: not-allowed; }
     .toolbar .row-count { font-size: 11px; color: #aaa; }
     .toolbar .divider { width: 1px; height: 28px; background: rgba(255,255,255,.15); margin: 0 2px; }
 
@@ -328,6 +331,7 @@
 <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 
 <script type="text/babel">
 const { useState, useEffect, useMemo, useCallback, useRef } = React;
@@ -372,6 +376,24 @@ function formatMoney(v) {
   const n = typeof v === 'string' ? parseFloat(v) : v;
   if (isNaN(n) || n === 0) return '';
   return '$' + n.toFixed(2);
+}
+
+function getAddOnEmoji(name) {
+  if (!name) return '🏷️';
+  var n = name.toLowerCase();
+  if (n.includes('alcohol') || n.includes('beer') || n.includes('wine') || n.includes('liquor')) return '🍺';
+  if (n.includes('light'))       return '💡';
+  if (n.includes('clean'))       return '🧹';
+  if (n.includes('security'))    return '🛡️';
+  if (n.includes('kitchen'))     return '🍳';
+  if (n.includes('table') || n.includes('chair') || n.includes('furniture')) return '🪑';
+  if (n.includes('tent'))        return '⛺';
+  if (n.includes('parking'))     return '🅿️';
+  if (n.includes('stage') || n.includes('sound') || n.includes('audio'))    return '🎤';
+  if (n.includes('projector') || n.includes('screen'))  return '📽️';
+  if (n.includes('fee'))         return '💲';
+  if (n.includes('additional') || n.includes('hour'))   return '⏰';
+  return '🏷️';
 }
 
 function normalizeRow(raw) {
@@ -661,6 +683,31 @@ function App() {
 
 
 
+  function downloadExcel() {
+    if (!filteredRows || filteredRows.length === 0) return;
+    var headers = ['Location/Facility', 'Rental Date/Time', 'Event Title', 'Invoice #', 'Renter', 'Phone', 'Email', 'Alcohol', 'Head Cnt', 'Total', 'Instructions', 'Notes', 'Add-Ons'];
+    var dataRows = filteredRows.map(function(r) {
+      return [
+        r.locationFacility, r.rentalDateTime, r.eventTitle, r.invoiceNum,
+        r.renter, r.phone, r.email, r.alcohol || '', r.headCnt,
+        (function() { var n = parseFloat(r.total); return !isNaN(n) && n !== 0 ? n : ''; })(),
+        r.instructions || '', r.notes || '', r.addOns || ''
+      ];
+    });
+    var wsData = [headers].concat(dataRows);
+    var ws = XLSX.utils.aoa_to_sheet(wsData);
+    ws['!cols'] = [{wch:30},{wch:28},{wch:24},{wch:10},{wch:20},{wch:14},{wch:28},{wch:6},{wch:6},{wch:10},{wch:30},{wch:30},{wch:40}];
+    var totalColIdx = headers.indexOf('Total');
+    for (var ri = 1; ri <= dataRows.length; ri++) {
+      var addr = XLSX.utils.encode_cell({ r: ri, c: totalColIdx });
+      if (ws[addr] && typeof ws[addr].v === 'number') ws[addr].z = '"$"#,##0.00';
+    }
+    var wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Historic Rentals');
+    var slug = (filteredRows[0] && filteredRows[0].orgName || 'report').replace(/\s+/g, '-').toLowerCase();
+    XLSX.writeFile(wb, 'historic-rentals-' + slug + '-' + (loadedStart || 'report') + '.xlsx');
+  }
+
   function renderToolbar() {
     if (isPrint) return null;
     return (
@@ -692,6 +739,9 @@ function App() {
         <button onClick={() => window.print()}>🖨️ Print</button>
         <button className="btn-pdf" onClick={downloadPdf} disabled={pdfLoading || !rows || rows.length === 0}>
           {pdfLoading ? 'Generating…' : '📄 PDF'}
+        </button>
+        <button className="btn-excel" onClick={downloadExcel} disabled={!rows || rows.length === 0}>
+          📊 Excel
         </button>
       </div>
     );
@@ -765,7 +815,7 @@ function App() {
                           {[
                             r.instructions ? '📝 ' + r.instructions : '',
                             r.notes || '',
-                            r.addOns ? 'Add-ons: ' + r.addOns : ''
+                            r.addOns ? 'Add-ons: ' + r.addOns.split(', ').map(function(a) { var name = a.replace(/\s*\(\$[\d,.]+\)$/, '').trim(); return getAddOnEmoji(name) + ' ' + a; }).join(', ') : ''
                           ].filter(Boolean).join(' | ')}
                         </td>
                       </tr>
