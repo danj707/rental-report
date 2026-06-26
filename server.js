@@ -6398,6 +6398,11 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  { date: '2026-06-26', title: 'Facility Report: Persistent Filters', items: [
+    'Location and Site Type filter dropdowns now accumulate across date range changes',
+    'Historical locations that had reservations in previous date ranges remain visible in filters',
+    'Filters never remove options when switching months — only add new ones'
+  ]},
   { date: '2026-06-26', title: 'Historic Report Location & Site Filters', items: [
     'Added Location and Site Type filter dropdowns to Historic Buildings report',
     'Filters always show all options regardless of current selection (derived from full dataset)',
