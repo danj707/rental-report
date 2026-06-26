@@ -3331,7 +3331,7 @@ function App() {
                               }
                               if (!r.notes && !visAddons && !r.instructions) return null;
                               var parts = [];
-                              if (r.instructions) parts.push("📋 " + r.instructions);
+                              if (r.instructions) parts.push("📝 " + r.instructions);
                               if (r.notes) parts.push(r.notes);
                               if (visAddons) parts.push("Add-ons: " + visAddons.split(',').map(s => {
                                     const trimmed = s.trim();
