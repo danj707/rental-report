@@ -6398,6 +6398,12 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  { date: '2026-06-26', title: 'Rental Calendar Timeline Improvements', items: [
+    'Taller timeline bars (24px → 32px) with half-hour gridlines for better readability',
+    'Hourly tick marks on ruler (was every 2 hours), bolder labels',
+    'More saturated green for available slots, stronger gridline contrast',
+    'Hour labels inside bars, bolder now-marker'
+  ]},
   { date: '2026-06-26', title: 'Program Retention Tab', items: [
     'New Retention tab on Programs report — surfaces repeat participation rates per program',
     'KPIs: org-wide retention rate, returners, avg sections/person, most loyal program',
