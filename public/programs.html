@@ -610,6 +610,17 @@ function App() {
   const [demoError, setDemoError] = useState(null);
   const [demoOpen, setDemoOpen] = useState(() => new Set());
 
+  // ── Retention tab ──────────────────────────────────────────────────
+  const [retRows, setRetRows] = useState(null);
+  const [retLoading, setRetLoading] = useState(false);
+  const [retError, setRetError] = useState(null);
+  const [retSort, setRetSort] = useState({ col: 'retPct', dir: 'desc' });
+
+  // Auto-fetch retention data if print mode
+  useEffect(() => {
+    if (params._print === '1' && params.tab === 'retention' && !retRows && !retLoading) fetchRetentionData();
+  }, []);
+
   // Auto-fetch demographics data if print mode is on the participants tab
   useEffect(() => {
     if (params._print === '1' && params.tab === 'participants' && !demoRows && !demoLoading) {
@@ -620,6 +631,20 @@ function App() {
   const participantsEnabled = useMemo(() => {
     try { return window.ORG_CONFIG && window.ORG_CONFIG.participantsTab; } catch(e) { return false; }
   }, []);
+
+  const retentionEnabled = useMemo(() => {
+    try { return window.ORG_CONFIG && window.ORG_CONFIG.retentionTab; } catch(e) { return false; }
+  }, []);
+
+  const fetchRetentionData = useCallback(() => {
+    if (retRows || retLoading) return;
+    setRetLoading(true); setRetError(null);
+    fetch(withToken('/' + orgSlug + '/retention/api/data'))
+      .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .then(j => { setRetRows(j.rows || j.data || j || []); })
+      .catch(e => { setRetError(e.message); })
+      .finally(() => { setRetLoading(false); });
+  }, [retRows, retLoading, orgSlug]);
 
   const fetchDemoData = useCallback(() => {
     if (demoRows || demoLoading) return;
@@ -634,7 +659,8 @@ function App() {
   const switchTab = useCallback((t) => {
     setTab(t);
     if (t === 'participants' && !demoRows && !demoLoading) fetchDemoData();
-  }, [demoRows, demoLoading, fetchDemoData]);
+    if (t === 'retention' && !retRows && !retLoading) fetchRetentionData();
+  }, [demoRows, demoLoading, fetchDemoData, retRows, retLoading, fetchRetentionData]);
 
   const demoStats = useMemo(() => {
     if (!demoRows || demoRows.length === 0) return null;
@@ -743,6 +769,41 @@ function App() {
       programs:progs, ftCount:ft, ftPct:t>0?((ft/t)*100).toFixed(1):'0',
     });
   }, [demoStats, demoRows, search]);
+
+  var retStats = useMemo(() => {
+    if (!retRows || retRows.length === 0) return null;
+    var programs = retRows.map(r => {
+      var total = parseInt(r['Total Participants']) || 0;
+      var returners = parseInt(r['Returners (2+)']) || 0;
+      var loyal = parseInt(r['Loyal (3+)']) || 0;
+      var superLoyal = parseInt(r['Super Loyal (4+)']) || 0;
+      var avgSec = parseFloat(r['Avg Sections/Person']) || 1;
+      var maxSec = parseInt(r['Max Sections']) || 1;
+      return { name: r['Program'] || '', total: total, returners: returners, loyal: loyal, superLoyal: superLoyal,
+        retPct: total > 0 ? Math.round((returners / total) * 100) : 0, avgSec: avgSec, maxSec: maxSec };
+    });
+    var totalP = programs.reduce((a, p) => a + p.total, 0);
+    var totalR = programs.reduce((a, p) => a + p.returners, 0);
+    var totalL = programs.reduce((a, p) => a + p.loyal, 0);
+    var totalS = programs.reduce((a, p) => a + p.superLoyal, 0);
+    var orgRetPct = totalP > 0 ? Math.round((totalR / totalP) * 100) : 0;
+    var avgSec = totalP > 0 ? (programs.reduce((a, p) => a + p.avgSec * p.total, 0) / totalP).toFixed(1) : '1.0';
+    var progsWithReturners = programs.filter(p => p.returners > 0).length;
+    var topRetaining = programs.filter(p => p.total >= 10).sort((a, b) => b.retPct - a.retPct)[0] || null;
+    return { programs: programs, totalP: totalP, totalR: totalR, totalL: totalL, totalS: totalS, orgRetPct: orgRetPct, avgSec: avgSec, progsWithReturners: progsWithReturners, topRetaining: topRetaining };
+  }, [retRows]);
+
+  var sortedRetPrograms = useMemo(() => {
+    if (!retStats) return [];
+    var col = retSort.col, dir = retSort.dir;
+    return retStats.programs.slice().sort((a, b) => {
+      var va = a[col], vb = b[col];
+      if (typeof va === 'string') { va = va.toLowerCase(); vb = (vb||'').toLowerCase(); }
+      if (va < vb) return dir === 'asc' ? -1 : 1;
+      if (va > vb) return dir === 'asc' ? 1 : -1;
+      return 0;
+    });
+  }, [retStats, retSort]);
 
   useEffect(() => {
     if (params._print === '1') document.body.classList.add('print-mode');
@@ -1165,6 +1226,16 @@ function App() {
             ) : (
               <div className="tab" style={{opacity:0.5,cursor:'default'}}>
                 Participants <span className="tab-lock">🔒</span>
+              </div>
+            )}
+            {retentionEnabled ? (
+              <div className={'tab'+(tab==='retention'?' active':'')} onClick={()=>switchTab('retention')}>
+                Retention
+                {retStats && <span className="tab-badge" style={{background:'#fef3c7',color:'#92400e'}}>{retStats.orgRetPct}%</span>}
+              </div>
+            ) : (
+              <div className="tab" style={{opacity:0.5,cursor:'default'}}>
+                Retention <span className="tab-lock">🔒</span>
               </div>
             )}
           </div>
@@ -1661,12 +1732,100 @@ function App() {
           </React.Fragment>
         )}
 
-        <div className="report-footer">
+        {/* ── Retention Tab ── */}
+        {tab === 'retention' && retentionEnabled && (
+          <React.Fragment>
+            {retLoading && <JuiceLoader />}
+            {retError && <div style={{textAlign:'center',padding:40,color:'#dc2626'}}>Error: {retError}</div>}
+            {retStats && (<React.Fragment>
+              <div className="summary-cards">
+                <div className="summary-card"><div className="card-label">Org-Wide Retention</div><div className="card-value" style={{color:retStats.orgRetPct>=30?'#16a34a':retStats.orgRetPct>=15?'#d97706':'#dc2626'}}>{retStats.orgRetPct}%</div><div className="card-sub">{retStats.totalR.toLocaleString()} of {retStats.totalP.toLocaleString()} came back</div></div>
+                <div className="summary-card"><div className="card-label">Programs w/ Returners</div><div className="card-value">{retStats.progsWithReturners}</div><div className="card-sub">of {retStats.programs.length} total</div></div>
+                <div className="summary-card"><div className="card-label">Avg Sections/Person</div><div className="card-value">{retStats.avgSec}</div><div className="card-sub">weighted across all programs</div></div>
+                {retStats.topRetaining && <div className="summary-card"><div className="card-label">Top Retaining</div><div className="card-value" style={{fontSize:14}}>{retStats.topRetaining.name}</div><div className="card-sub">{retStats.topRetaining.retPct}% retention ({retStats.topRetaining.total} participants)</div></div>}
+              </div>
+
+              {(() => {
+                var top = retStats.programs.filter(p => p.total >= 10).sort((a, b) => b.retPct - a.retPct).slice(0, 10);
+                if (top.length === 0) return null;
+                var maxPct = Math.max.apply(null, top.map(p => p.retPct));
+                return (
+                  <div style={{background:'#fff',border:'1px solid #e5e7eb',borderRadius:8,padding:14,marginBottom:16}}>
+                    <div style={{fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:'.5px',color:'#6b7280',marginBottom:12}}>Top 10 Retention Rate (min 10 participants)</div>
+                    {top.map((p, i) => {
+                      var color = p.retPct >= 60 ? '#16a34a' : p.retPct >= 40 ? '#65a30d' : p.retPct >= 20 ? '#d97706' : '#dc2626';
+                      return (
+                        <div key={i} style={{display:'flex',alignItems:'center',gap:8,marginBottom:6}}>
+                          <span style={{fontSize:11,width:200,textAlign:'right',color:'#374151',flexShrink:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title={p.name}>{p.name}</span>
+                          <div style={{flex:1,height:20,background:'#f3f4f6',borderRadius:4,overflow:'hidden'}}>
+                            <div style={{height:'100%',width:maxPct>0?((p.retPct/maxPct)*100)+'%':'0',background:color,borderRadius:4,transition:'width .3s'}} />
+                          </div>
+                          <span style={{fontSize:11,width:40,fontWeight:700,color:color}}>{p.retPct}%</span>
+                          <span style={{fontSize:10,width:30,color:'#9ca3af'}}>{p.total}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+
+              {(() => {
+                var toggleSort = (col) => setRetSort(prev => ({ col: col, dir: prev.col === col && prev.dir === 'desc' ? 'asc' : 'desc' }));
+                var arrow = (col) => retSort.col === col ? (retSort.dir === 'desc' ? ' \u25BC' : ' \u25B2') : '';
+                return (
+                  <div className="table-scroll">
+                    <table className="prog-table">
+                      <thead><tr>
+                        <th className="left" style={{cursor:'pointer'}} onClick={() => toggleSort('name')}>Program{arrow('name')}</th>
+                        <th style={{cursor:'pointer'}} onClick={() => toggleSort('total')}>Participants{arrow('total')}</th>
+                        <th style={{cursor:'pointer'}} onClick={() => toggleSort('retPct')}>Retention %{arrow('retPct')}</th>
+                        <th style={{cursor:'pointer'}} onClick={() => toggleSort('returners')}>Returners{arrow('returners')}</th>
+                        <th style={{cursor:'pointer'}} onClick={() => toggleSort('loyal')}>Loyal (3+){arrow('loyal')}</th>
+                        <th style={{cursor:'pointer'}} onClick={() => toggleSort('superLoyal')}>Super (4+){arrow('superLoyal')}</th>
+                        <th style={{cursor:'pointer'}} onClick={() => toggleSort('avgSec')}>Avg Sections{arrow('avgSec')}</th>
+                        <th style={{cursor:'pointer'}} onClick={() => toggleSort('maxSec')}>Max{arrow('maxSec')}</th>
+                      </tr></thead>
+                      <tbody>
+                        {sortedRetPrograms.map((p, i) => {
+                          var color = p.retPct >= 60 ? '#16a34a' : p.retPct >= 40 ? '#65a30d' : p.retPct >= 20 ? '#d97706' : p.retPct > 0 ? '#dc2626' : '#d1d5db';
+                          return (
+                            <tr key={i} className="data-row">
+                              <td className="left">{p.name}</td>
+                              <td>{p.total}</td>
+                              <td style={{fontWeight:700,color:color}}>{p.retPct}%</td>
+                              <td>{p.returners > 0 ? p.returners : <span className="zero">0</span>}</td>
+                              <td>{p.loyal > 0 ? p.loyal : <span className="zero">0</span>}</td>
+                              <td>{p.superLoyal > 0 ? p.superLoyal : <span className="zero">0</span>}</td>
+                              <td>{p.avgSec}</td>
+                              <td>{p.maxSec}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                      <tfoot><tr>
+                        <td className="left">TOTALS ({retStats.programs.length} programs)</td>
+                        <td>{retStats.totalP.toLocaleString()}</td>
+                        <td style={{fontWeight:700,color:retStats.orgRetPct>=30?'#16a34a':'#d97706'}}>{retStats.orgRetPct}%</td>
+                        <td>{retStats.totalR.toLocaleString()}</td>
+                        <td>{retStats.totalL.toLocaleString()}</td>
+                        <td>{retStats.totalS.toLocaleString()}</td>
+                        <td>{retStats.avgSec}</td>
+                        <td></td>
+                      </tr></tfoot>
+                    </table>
+                  </div>
+                );
+              })()}
+            </React.Fragment>)}
+          </React.Fragment>
+        )}
+
+                <div className="report-footer">
           <span>{orgName} — Programs</span>
           <span>Run Date/Time: {runDate}</span>
         </div>
 
-        {((tab === 'revenue' && rows) || (tab === 'participants' && demoRows)) && <div id="report-ready" style={{display:'none'}} />}
+        {((tab === 'revenue' && rows) || (tab === 'participants' && demoRows) || (tab === 'retention' && retRows)) && <div id="report-ready" style={{display:'none'}} />}
       </div>
     </div>
   );
