@@ -404,22 +404,9 @@ function normalizeRow(raw) {
     orgName:          raw['Org Name']          || raw['org_name']          || '',
     date:             raw['Date']              || raw['date']               || '',
     locationFacility: raw['Location/Facility'] || raw['location_facility'] || '',
-    location:         raw['Location'] || raw['location'] || (function() {
-      var lf = raw['Location/Facility'] || raw['location_facility'] || '';
-      var sep = lf.indexOf(' – ');
-      if (sep > 0) return lf.substring(0, sep).trim();
-      sep = lf.indexOf(' - ');
-      if (sep > 0) return lf.substring(0, sep).trim();
-      return lf;
-    })(),
-    siteType:         raw['Type'] || raw['Site Type'] || raw['site_type'] || (function() {
-      var lf = raw['Location/Facility'] || raw['location_facility'] || '';
-      var sep = lf.indexOf(' – ');
-      if (sep > 0) return lf.substring(sep + 3).trim();
-      sep = lf.indexOf(' - ');
-      if (sep > 0) return lf.substring(sep + 3).trim();
-      return '';
-    })(),
+    location:         raw['Location']           || raw['location']          || '',
+    site:             raw['Site']               || raw['Site/Room']         || raw['Facility'] || '',
+    siteType:         raw['Type']               || raw['Site Type']         || raw['site_type'] || '',
     rentalDateTime:   raw['Rental Date/Time']  || raw['rental_date_time']  || '',
     eventTitle:       raw['Event Title']       || raw['event_title']       || '',
     invoiceNum:       raw['Invoice #']         || raw['invoice_num']       || '',
@@ -623,7 +610,7 @@ function App() {
           var merged = new Set(prev); newLocs.forEach(function(l) { merged.add(l); });
           return Array.from(merged).sort();
         });
-        var newSites = normalized.map(function(r) { return r.siteType; }).filter(Boolean);
+        var newSites = normalized.map(function(r) { return r.site; }).filter(Boolean);
         setAllSites(function(prev) {
           var merged = new Set(prev); newSites.forEach(function(s) { merged.add(s); });
           return Array.from(merged).sort();
@@ -680,7 +667,7 @@ function App() {
       result = result.filter(function(r) { return selectedLocations.has(r.location || ''); });
     }
     if (selectedSites && allSites.length > 0 && selectedSites.size < allSites.length) {
-      result = result.filter(function(r) { return selectedSites.has(r.siteType || ''); });
+      result = result.filter(function(r) { return selectedSites.has(r.site || ''); });
     }
     return result;
   }, [rows, selectedLocations, allLocations, selectedSites, allSites]);
