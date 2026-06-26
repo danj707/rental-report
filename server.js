@@ -3205,6 +3205,10 @@ app.get("/:org/rentalcalendar", (req, res) => {
 
 // Cached site data for Arsenal Park (Watertown) — fetched via rec.us MCP 2026-06-22
 const RC_SITES_CACHE = {}; // Live MCP fetch for all orgs (provides rich data: photos, pricing, duration)
+const rcLiveSitesCache = {}; // cacheKey -> { sites, ts }
+const RC_LIVE_SITES_TTL = 60 * 60 * 1000; // 1 hour — sites rarely change
+const rcPhotoCache = new Map(); // url -> { buf, type, ts }
+const RC_PHOTO_TTL = 24 * 60 * 60 * 1000; // 24 hours
 
 app.get("/:org/rentalcalendar/api/sites", async (req, res) => {
   const slug = req.params.org;
@@ -3217,6 +3221,11 @@ app.get("/:org/rentalcalendar/api/sites", async (req, res) => {
   if (orgSites) {
     const sites = locationId && orgSites[locationId] ? orgSites[locationId] : Object.values(orgSites).flat();
     return res.json({ sites });
+  }
+  // Check live MCP response cache (1 hour TTL)
+  const liveHit = rcLiveSitesCache[cacheKey];
+  if (liveHit && Date.now() - liveHit.ts < RC_LIVE_SITES_TTL) {
+    return res.json({ sites: liveHit.sites });
   }
   // Live fetch via MCP SDK for orgs not in cache
   try {
@@ -3241,10 +3250,47 @@ app.get("/:org/rentalcalendar/api/sites", async (req, res) => {
       residentPriceCents: (() => { try { const gc = s.config.pricing.default.groupCents; const vals = Object.values(gc).filter(v => v > 0); return vals.length ? Math.min(...vals) : null; } catch(e) { return null; } })(),
       durationMinutes: s.allowedReservationDurations ? s.allowedReservationDurations.minutes : null,
     }));
+    // Proxy photo URLs through our server for caching + Cache-Control headers
+    clean.forEach(s => {
+      if (s.imageUrl) s.imageUrl = '/' + slug + '/rentalcalendar/api/photo?url=' + encodeURIComponent(s.imageUrl);
+    });
+    // Cache the MCP response for 1 hour
+    rcLiveSitesCache[cacheKey] = { sites: clean, ts: Date.now() };
     res.json({ sites: clean });
   } catch (e) {
     console.error('[rentalcalendar] live sites error:', e.message);
     res.json({ sites: [], note: 'Live fetch failed: ' + e.message });
+  }
+});
+
+// Photo proxy — caches remote facility images in-memory with 24h TTL + browser Cache-Control
+app.get("/:org/rentalcalendar/api/photo", async (req, res) => {
+  const url = req.query.url;
+  if (!url) return res.status(400).end();
+  // Serve from memory cache
+  const cached = rcPhotoCache.get(url);
+  if (cached && Date.now() - cached.ts < RC_PHOTO_TTL) {
+    res.set("Cache-Control", "public, max-age=86400, immutable");
+    res.set("Content-Type", cached.type);
+    return res.send(cached.buf);
+  }
+  try {
+    const resp = await fetch(url);
+    if (!resp.ok) return res.status(502).end();
+    const buf = Buffer.from(await resp.arrayBuffer());
+    const type = resp.headers.get("content-type") || "image/jpeg";
+    rcPhotoCache.set(url, { buf, type, ts: Date.now() });
+    // Cap cache size — evict oldest if > 200 entries
+    if (rcPhotoCache.size > 200) {
+      const oldest = rcPhotoCache.keys().next().value;
+      rcPhotoCache.delete(oldest);
+    }
+    res.set("Cache-Control", "public, max-age=86400, immutable");
+    res.set("Content-Type", type);
+    res.send(buf);
+  } catch (e) {
+    console.error("[rentalcalendar] photo proxy error:", e.message);
+    res.status(502).end();
   }
 });
 
@@ -6305,6 +6351,7 @@ app.get("/", (req, res) => {
   { date: '2026-06-26', title: '\uD83D\uDCCA Rental Calendar Metrics', items: [
     '\uD83D\uDCCA METRICS WIRING \u2014 Rental Calendar views and wizard-feedback events now roll up into org metrics totals (Views, Exports, Clicks), admin dashboard chart, and full metrics page. Previously events were logged but not aggregated.',
     '\uD83D\uDD17 COMBINED HEADER \u2014 Rental Calendar toolbar (nav, date, weather, legend) merged with the facility time-ruler into one unified sticky header block. Cleaner layout, less vertical space.',
+    '\u26A1 PHOTO CACHING \u2014 Facility photos now served through server-side proxy with 24h in-memory cache + browser Cache-Control (max-age=86400, immutable). Sites API response also cached 1 hour to skip MCP round-trips on repeat visits.',
   ]},
   { date: '2026-06-25', title: '\uD83C\uDFDF\uFE0F Facility Rental Calendar v2', items: [
     '\u2728 BOOKING WIZARD \u2014 3-step guided flow (When \u2192 What type \u2192 Where) with smart date options, clickable breadcrumbs to edit, date picker, and results card showing matched count. Search Again to restart.',
