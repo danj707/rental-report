@@ -6398,6 +6398,11 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  { date: '2026-06-26', title: 'Historic Report Location & Site Filters', items: [
+    'Added Location and Site Type filter dropdowns to Historic Buildings report',
+    'Filters always show all options regardless of current selection (derived from full dataset)',
+    'Row count shows filtered/total when filters active, filter state included in share URLs'
+  ]},
   { date: '2026-06-26', title: 'Rental Calendar Timeline Improvements', items: [
     'Taller timeline bars (24px → 32px) with half-hour gridlines for better readability',
     'Hourly tick marks on ruler (was every 2 hours), bolder labels',
