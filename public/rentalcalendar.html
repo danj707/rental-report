@@ -14,11 +14,10 @@
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
 .embed .wrap{padding:4px}
-.embed .toolbar{border-radius:0;margin-bottom:8px}
+.embed .sticky-hdr{border-radius:0}
 .wrap{max-width:1080px;margin:0 auto;padding:20px}
-.toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;background:var(--card);
-  border:1px solid var(--line);border-radius:12px;padding:10px 14px;box-shadow:var(--shadow);margin-bottom:16px}
-.toolbar .grow{flex:1}
+.toolbar-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:8px 14px;border-bottom:1px solid var(--line)}
+.toolbar-row .grow{flex:1}
 .tb-weather{font-size:13px;color:#374151;font-weight:500;margin-left:10px;white-space:nowrap;cursor:default}
 .tb-date{padding:4px 6px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;font-family:inherit;margin-left:8px;color:#374151;cursor:pointer}
 .tb-legend{display:flex;gap:10px;align-items:center;font-size:11px;color:#6b7280;margin-right:8px}
@@ -94,7 +93,8 @@ button.primary:hover{filter:brightness(.95)}
 .pill:hover{background:#f3f4f6;border-color:#9ca3af}
 .pill.active{background:#1e40af;color:#fff;border-color:#1e40af}
 .fac-list{background:var(--card);border:1px solid var(--line);border-top:none;border-radius:0 0 12px 12px;box-shadow:var(--shadow);overflow:hidden}
-.time-ruler{position:sticky;top:0;z-index:10;background:var(--card);border:1px solid var(--line);border-bottom:2px solid var(--line);border-radius:10px 10px 0 0;box-shadow:0 2px 6px rgba(0,0,0,.06);display:flex;align-items:center;height:38px}
+.sticky-hdr{position:sticky;top:0;z-index:10;background:var(--card);border:1px solid var(--line);border-radius:10px 10px 0 0;box-shadow:0 2px 6px rgba(0,0,0,.06)}
+.time-ruler{display:flex;align-items:center;height:38px}
 .time-ruler .tr-label{width:280px;min-width:280px;padding:0 12px;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;border-right:1px solid var(--line)}
 .time-ruler .tr-track{flex:1;position:relative;height:100%;padding-right:12px}
 .time-ruler .tr-tick{position:absolute;font-size:10px;color:#687280;font-weight:500;transform:translateX(-50%);top:50%;margin-top:-6px}
@@ -667,7 +667,7 @@ function SiteModal({site, onClose}) {
   );
 }
 
-function DayView({sites, availMap, dateStr, opStart, opEnd, allAvail, onSiteClick, forceOpen}) {
+function DayView({sites, availMap, dateStr, opStart, opEnd, allAvail, onSiteClick, forceOpen, toolbar}) {
   var typeCounts = {};
   sites.forEach(function(s){typeCounts[s.type]=(typeCounts[s.type]||0)+1;});
   var grouped = [];
@@ -683,7 +683,10 @@ function DayView({sites, availMap, dateStr, opStart, opEnd, allAvail, onSiteClic
   });
   return (
     <div>
-      <TimeRuler opStart={opStart} opEnd={opEnd}/>
+      <div className="sticky-hdr">
+        {toolbar}
+        <TimeRuler opStart={opStart} opEnd={opEnd}/>
+      </div>
       <div className="fac-list">
         {grouped.map(function(g, i) {
           if (g.k === 'group') {
@@ -881,24 +884,27 @@ function App() {
   if (!sites || sites.length === 0) return <div className="wrap"><div className="error-box">No facilities found for this location.</div></div>;
   var noFilterResults = filteredSites.length === 0 && sites.length > 0;
 
+  var toolbarEl = (
+    <div className="toolbar-row">
+      <button onClick={function(){nav(-1);}}>&lsaquo; Prev</button>
+      <button onClick={goToday} className={isToday && view === 'day' ? 'primary' : ''}>Today</button>
+      <button onClick={function(){nav(1);}}>Next &rsaquo;</button>
+      <span className="range" style={{marginLeft:8}}>{dateLabel}</span>
+      {weather && <span className="tb-weather" title={weather.desc}>{weather.emoji} {weather.hi}°{weather.unit}{weather.lo != null ? ' / '+weather.lo+'°' : ''}</span>}
+      <input type="date" className="tb-date" value={dateISO} onChange={function(e){if(e.target.value){setDate(new Date(e.target.value+'T12:00:00'));setView('day');}}}/>
+      <div className="grow"></div>
+      <div className="tb-legend">
+        <span><span className="sw" style={{background:'#d1fae5',border:'1px solid #a7f3d0'}}></span>Available</span>
+        <span><span className="sw" style={{background:'var(--reserved)',border:'1px solid #fdba74'}}></span>Reserved</span>
+        <span><span className="sw" style={{background:'var(--closed)',border:'1px solid #d1d5db'}}></span>Closed</span>
+        {view === 'day' && <span><span className="sw" style={{background:'#ef4444',width:3,borderRadius:2}}></span>Now</span>}
+      </div>
+    </div>
+  );
+
   return (
     <div className="wrap">
-      <div className="toolbar">
-        <button onClick={function(){nav(-1);}}>&lsaquo; Prev</button>
-        <button onClick={goToday} className={isToday && view === 'day' ? 'primary' : ''}>Today</button>
-        <button onClick={function(){nav(1);}}>Next &rsaquo;</button>
-        <span className="range" style={{marginLeft:8}}>{dateLabel}</span>
-        {weather && <span className="tb-weather" title={weather.desc}>{weather.emoji} {weather.hi}°{weather.unit}{weather.lo != null ? ' / '+weather.lo+'°' : ''}</span>}
-        <input type="date" className="tb-date" value={dateISO} onChange={function(e){if(e.target.value){setDate(new Date(e.target.value+'T12:00:00'));setView('day');}}}/>
-        <div className="grow"></div>
-        <div className="tb-legend">
-          <span><span className="sw" style={{background:'#d1fae5',border:'1px solid #a7f3d0'}}></span>Available</span>
-          <span><span className="sw" style={{background:'var(--reserved)',border:'1px solid #fdba74'}}></span>Reserved</span>
-          <span><span className="sw" style={{background:'var(--closed)',border:'1px solid #d1d5db'}}></span>Closed</span>
-          {view === 'day' && <span><span className="sw" style={{background:'#ef4444',width:3,borderRadius:2}}></span>Now</span>}
-        </div>
-
-      </div>
+      {/* toolbar rendered inside DayView sticky header */}
       <div className="hdr">
         {CFG.logoUrl && <img src={CFG.logoUrl} alt=""/>}
         <div>
@@ -965,7 +971,7 @@ function App() {
         <div style={{padding:'40px 20px',textAlign:'center',color:'#6b7280',fontSize:14}}>No facilities match the current filters.</div>
       )}
       {view === 'day'
-        ? <DayView sites={filteredSites} availMap={dayAvailMap} dateStr={dateISO} opStart={opHours.start} opEnd={opHours.end} allAvail={allAvail} onSiteClick={function(s){setModalSite(s);}} forceOpen={selectedTypes && selectedTypes.size === 1}/>
+        ? <DayView sites={filteredSites} availMap={dayAvailMap} dateStr={dateISO} opStart={opHours.start} opEnd={opHours.end} allAvail={allAvail} onSiteClick={function(s){setModalSite(s);}} forceOpen={selectedTypes && selectedTypes.size === 1} toolbar={toolbarEl}/>
         : null
       }
       {modalSite && <SiteModal site={modalSite} onClose={function(){setModalSite(null);}}/>}
