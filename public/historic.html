@@ -160,6 +160,27 @@
     tr:nth-child(even) td { background: #fafaf8; }
 
     /* ── Column widths ── */
+    /* ── Filter dropdowns ── */
+    .loc-filter-wrap { position: relative; }
+    .btn-loc-filter { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+    .btn-loc-filter .badge { background: #f59e0b; color: #1a1a1a; border-radius: 10px; font-size: 10px; font-weight: 700; padding: 1px 6px; line-height: 1.4; }
+    .loc-dropdown { position: absolute; top: calc(100% + 6px); left: 0; z-index: 200; background: #1e1e1e; border: 1px solid rgba(255,255,255,.15); border-radius: 6px; min-width: 220px; max-height: 360px; display: flex; flex-direction: column; box-shadow: 0 8px 24px rgba(0,0,0,.5); }
+    .loc-dropdown-header { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; border-bottom: 1px solid rgba(255,255,255,.1); font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: #aaa; flex-shrink: 0; }
+    .loc-dropdown-header-actions { display: flex; gap: 8px; }
+    .loc-dropdown-header button { padding: 2px 6px; font-size: 10px; border-color: rgba(255,255,255,.15); background: rgba(255,255,255,.06); }
+    .loc-dropdown-search { padding: 6px 10px; border-bottom: 1px solid rgba(255,255,255,.08); flex-shrink: 0; }
+    .loc-dropdown-search input { width: 100%; padding: 4px 8px; background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.15); border-radius: 4px; color: #fff; font-size: 11px; font-family: inherit; outline: none; }
+    .loc-dropdown-search input::placeholder { color: #777; }
+    .loc-dropdown-search input:focus { border-color: #3b82f6; }
+    .loc-dropdown-list { overflow-y: auto; flex: 1; padding: 4px 0; }
+    .loc-dropdown-list::-webkit-scrollbar { width: 4px; }
+    .loc-dropdown-list::-webkit-scrollbar-track { background: transparent; }
+    .loc-dropdown-list::-webkit-scrollbar-thumb { background: rgba(255,255,255,.2); border-radius: 2px; }
+    .loc-item { display: flex; align-items: center; gap: 8px; padding: 5px 12px; cursor: pointer; transition: background .1s; font-size: 12px; color: #ddd; }
+    .loc-item:hover { background: rgba(255,255,255,.07); }
+    .loc-item input[type="checkbox"] { accent-color: #3b82f6; width: 13px; height: 13px; flex-shrink: 0; cursor: pointer; }
+    .loc-item span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+
     .col-location  { width: 14%; }
     .col-datetime  { width: 14%; white-space: nowrap; }
     .col-title     { width: 13%; }
@@ -334,7 +355,7 @@
 <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
 
 <script type="text/babel">
-const { useState, useEffect, useMemo, useCallback } = React;
+const { useState, useEffect, useMemo, useCallback, useRef } = React;
 
 function getOrgAndBase() {
   const parts = window.location.pathname.split('/').filter(Boolean);
@@ -383,6 +404,8 @@ function normalizeRow(raw) {
     orgName:          raw['Org Name']          || raw['org_name']          || '',
     date:             raw['Date']              || raw['date']               || '',
     locationFacility: raw['Location/Facility'] || raw['location_facility'] || '',
+    location:         raw['Location']           || raw['location']          || '',
+    siteType:         raw['Type']               || raw['Site Type']         || raw['site_type'] || '',
     rentalDateTime:   raw['Rental Date/Time']  || raw['rental_date_time']  || '',
     eventTitle:       raw['Event Title']       || raw['event_title']       || '',
     invoiceNum:       raw['Invoice #']         || raw['invoice_num']       || '',
@@ -414,6 +437,112 @@ const COL_HEADERS = () => (
   </thead>
 );
 
+// ── Location Filter Dropdown ──────────────────────────────────────────
+function LocationFilter({ allLocations, selectedLocations, onChange }) {
+  var [open, setOpen]     = useState(false);
+  var [search, setSearch] = useState('');
+  var wrapRef             = useRef(null);
+  useEffect(function() {
+    function handleClick(e) { if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false); }
+    document.addEventListener('mousedown', handleClick);
+    return function() { document.removeEventListener('mousedown', handleClick); };
+  }, []);
+  var filtered    = allLocations.filter(function(l) { return l.toLowerCase().includes(search.toLowerCase()); });
+  var allSelected = selectedLocations.size === allLocations.length;
+  var noneSelected = selectedLocations.size === 0;
+  function toggle(loc) { var next = new Set(selectedLocations); next.has(loc) ? next.delete(loc) : next.add(loc); onChange(next); }
+  function selectAll() { onChange(new Set(allLocations)); }
+  function clearAll()  { onChange(new Set()); }
+  var badgeCount = allSelected ? null : selectedLocations.size;
+  return (
+    <div className="loc-filter-wrap" ref={wrapRef}>
+      <button className="btn-loc-filter" onClick={function() { setOpen(function(o) { return !o; }); }}
+        style={!allSelected ? { borderColor: '#f59e0b', color: '#fde68a' } : {}}>
+        📍 Locations
+        {badgeCount !== null && <span className="badge">{badgeCount}/{allLocations.length}</span>}
+      </button>
+      {open && (
+        <div className="loc-dropdown">
+          <div className="loc-dropdown-header">
+            <span>Filter Locations</span>
+            <div className="loc-dropdown-header-actions">
+              <button onClick={selectAll} disabled={allSelected}>All</button>
+              <button onClick={clearAll}  disabled={noneSelected}>None</button>
+            </div>
+          </div>
+          {allLocations.length > 5 && (
+            <div className="loc-dropdown-search">
+              <input type="text" placeholder="Search locations…" value={search} onChange={function(e) { setSearch(e.target.value); }} autoFocus />
+            </div>
+          )}
+          <div className="loc-dropdown-list">
+            {filtered.length === 0 && <div style={{padding:'10px 12px', color:'#666', fontSize:11}}>No matches</div>}
+            {filtered.map(function(loc) {
+              return (<label key={loc} className="loc-item">
+                <input type="checkbox" checked={selectedLocations.has(loc)} onChange={function() { toggle(loc); }} />
+                <span title={loc}>{loc}</span>
+              </label>);
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Site Type Filter Dropdown ─────────────────────────────────────────
+function SiteFilter({ allSites, selectedSites, onChange }) {
+  var [open, setOpen]     = useState(false);
+  var [search, setSearch] = useState('');
+  var wrapRef             = useRef(null);
+  useEffect(function() {
+    function handleClick(e) { if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false); }
+    document.addEventListener('mousedown', handleClick);
+    return function() { document.removeEventListener('mousedown', handleClick); };
+  }, []);
+  var filtered    = allSites.filter(function(s) { return s.toLowerCase().includes(search.toLowerCase()); });
+  var allSelected = selectedSites.size === allSites.length;
+  var noneSelected = selectedSites.size === 0;
+  function toggle(site) { var next = new Set(selectedSites); next.has(site) ? next.delete(site) : next.add(site); onChange(next); }
+  function selectAll() { onChange(new Set(allSites)); }
+  function clearAll()  { onChange(new Set()); }
+  var badgeCount = allSelected ? null : selectedSites.size;
+  return (
+    <div className="loc-filter-wrap" ref={wrapRef}>
+      <button className="btn-loc-filter" onClick={function() { setOpen(function(o) { return !o; }); }}
+        style={!allSelected ? { borderColor: '#f59e0b', color: '#fde68a' } : {}}>
+        🏢 Site Types
+        {badgeCount !== null && <span className="badge">{badgeCount}/{allSites.length}</span>}
+      </button>
+      {open && (
+        <div className="loc-dropdown">
+          <div className="loc-dropdown-header">
+            <span>Filter Site Types</span>
+            <div className="loc-dropdown-header-actions">
+              <button onClick={selectAll} disabled={allSelected}>All</button>
+              <button onClick={clearAll}  disabled={noneSelected}>None</button>
+            </div>
+          </div>
+          {allSites.length > 5 && (
+            <div className="loc-dropdown-search">
+              <input type="text" placeholder="Search site types…" value={search} onChange={function(e) { setSearch(e.target.value); }} autoFocus />
+            </div>
+          )}
+          <div className="loc-dropdown-list">
+            {filtered.length === 0 && <div style={{padding:'10px 12px', color:'#666', fontSize:11}}>No matches</div>}
+            {filtered.map(function(site) {
+              return (<label key={site} className="loc-item">
+                <input type="checkbox" checked={selectedSites.has(site)} onChange={function() { toggle(site); }} />
+                <span title={site}>{site}</span>
+              </label>);
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function App() {
   const { orgSlug, basePath } = useMemo(() => getOrgAndBase(), []);
   const params   = useMemo(() => getParams(), []);
@@ -435,6 +564,8 @@ function App() {
   const [fbSent, setFbSent] = useState(false);
   const [fbMode, setFbMode] = useState(null);
   const [fbComment, setFbComment] = useState('');
+  const [selectedLocations, setSelectedLocations] = useState(null);
+  const [selectedSites,     setSelectedSites]     = useState(null);
 
   // Share Link: expose the live applied filter state so the floating Share
   // widget copies a URL that reproduces the on-screen view (mirrors the PDF).
@@ -444,11 +575,13 @@ function App() {
       qs.set('start_date', loadedStart || startDate);
       qs.set('end_date',   loadedEnd   || endDate);
       if (params.site_type) qs.set('site_type', params.site_type);
+      if (selectedLocations && selectedLocations.size < allLocations.length) qs.set('locations', [...selectedLocations].join(','));
+      if (selectedSites && selectedSites.size < allSites.length) qs.set('sites', [...selectedSites].join(','));
       if (URL_TOKEN) qs.set('token', URL_TOKEN);
       return `${window.location.pathname}?${qs.toString()}`;
     };
     return () => { try { delete window.recShareLink; } catch (e) { window.recShareLink = undefined; } };
-  }, [loadedStart, loadedEnd, startDate, endDate, params.site_type]);
+  }, [loadedStart, loadedEnd, startDate, endDate, params.site_type, selectedLocations, selectedSites, allLocations, allSites]);
 
   useEffect(() => {
     if (params._print === '1') document.body.classList.add('print-mode');
@@ -503,16 +636,50 @@ function App() {
   const isPrint      = params._print === '1';
   const datesChanged = startDate !== loadedStart || endDate !== loadedEnd;
 
-  const grouped = useMemo(() => {
+  // ── Derive filter options from ALL rows (always visible) ──
+  var allLocations = useMemo(function() {
+    if (!rows) return [];
+    var set = new Set();
+    rows.forEach(function(r) { if (r.location) set.add(r.location); });
+    return Array.from(set).sort();
+  }, [rows]);
+
+  var allSites = useMemo(function() {
+    if (!rows) return [];
+    var set = new Set();
+    rows.forEach(function(r) { if (r.siteType) set.add(r.siteType); });
+    return Array.from(set).sort();
+  }, [rows]);
+
+  useEffect(function() {
+    if (allLocations.length && !selectedLocations) setSelectedLocations(new Set(allLocations));
+  }, [allLocations]);
+  useEffect(function() {
+    if (allSites.length && !selectedSites) setSelectedSites(new Set(allSites));
+  }, [allSites]);
+
+  var filteredRows = useMemo(function() {
     if (!rows) return null;
-    const byDate = {};
-    rows.forEach(row => {
-      const dk = (row.date || '').split('T')[0] || '';
+    var result = rows;
+    if (selectedLocations && allLocations.length > 0 && selectedLocations.size < allLocations.length) {
+      result = result.filter(function(r) { return selectedLocations.has(r.location || ''); });
+    }
+    if (selectedSites && allSites.length > 0 && selectedSites.size < allSites.length) {
+      result = result.filter(function(r) { return selectedSites.has(r.siteType || ''); });
+    }
+    return result;
+  }, [rows, selectedLocations, allLocations, selectedSites, allSites]);
+
+  const grouped = useMemo(function() {
+    if (!filteredRows) return null;
+    var byDate = {};
+    filteredRows.forEach(function(row) {
+      var dk = (row.date || '').split('T')[0] || '';
       if (!byDate[dk]) byDate[dk] = [];
       byDate[dk].push(row);
     });
     return byDate;
-  }, [rows]);
+  }, [filteredRows]);
 
   const sortedDates = grouped ? Object.keys(grouped).sort() : [];
 
@@ -577,8 +744,14 @@ function App() {
         >
           {loading ? <><span className="btn-spinner" />Loading…</> : '▶ Run Report'}
         </button>
+        {allLocations.length > 0 && selectedLocations && (
+          <LocationFilter allLocations={allLocations} selectedLocations={selectedLocations} onChange={setSelectedLocations} />
+        )}
+        {allSites.length > 0 && selectedSites && (
+          <SiteFilter allSites={allSites} selectedSites={selectedSites} onChange={setSelectedSites} />
+        )}
         <div className="toolbar-spacer" />
-        {rows && <span className="row-count">{rows.length} rental{rows.length !== 1 ? 's' : ''}</span>}
+        {filteredRows && <span className="row-count">{filteredRows.length}{filteredRows.length !== rows.length ? '/' + rows.length : ''} rental{filteredRows.length !== 1 ? 's' : ''}</span>}
         <div className="divider" />
         <button onClick={() => window.print()}>🖨️ Print</button>
         <button className="btn-pdf" onClick={downloadPdf} disabled={pdfLoading || !rows || rows.length === 0}>
@@ -641,7 +814,7 @@ function App() {
                 {insightsLoading ? 'Analyzing…' : (insights ? '↻ Refresh' : '✨ Rec Insights')}
               </button>
               {insights && !insightsLoading && (
-                <span className="insights-sub">{'Analyzed ' + rows.length + ' reservations'}</span>
+                <span className="insights-sub">{'Analyzed ' + (filteredRows || rows).length + ' reservations'}</span>
               )}
             </div>
             {insightsLoading && <div className="ai-loading"><div className="ai-spinner" /></div>}
