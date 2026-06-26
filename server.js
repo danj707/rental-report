@@ -457,7 +457,7 @@ const ORGS = {
   },
 };
 
-const REPORT_TYPES = ["facility", "gl", "historic", "programs", "roster", "overview", "products", "memberships", "court-utilization", "calendar", "fasttrack", "users", "program-demographics", "directors-report", "instructor-payout"];
+const REPORT_TYPES = ["facility", "gl", "historic", "programs", "roster", "overview", "products", "memberships", "court-utilization", "calendar", "fasttrack", "users", "program-demographics", "directors-report", "instructor-payout", "retention"];
 
 // ── Shared Metabase UUIDs (one query per report type, parameterized by org_id) ──
 // When a report type has an entry here, the server uses this UUID + passes the
@@ -476,11 +476,12 @@ const SHARED_UUIDS = {
   users: "0aa0f55d-738f-4df7-837a-eb21f3ee1793",
   gl: "4374b344-06a7-42c5-996c-e1845bda3ff1",
   "program-demographics": "67b77142-19ab-49bd-9d4b-1db8223a3616",
+  retention: "3cfc9cfa-b1db-41e9-83fd-01fb90a5b0c8",
 };
 
 // Report types that are valid system-wide but should NOT be offered in the
 // dashboard "+ Add report" flow (e.g. not yet ready for self-serve onboarding).
-const NON_ADDABLE_REPORTS = new Set(["overview", "program-demographics", "directors-report"]);
+const NON_ADDABLE_REPORTS = new Set(["overview", "program-demographics", "directors-report", "retention"]);
 
 // ── Dynamic orgs (added via dashboard UI) ────────────────────────────
 // Loaded at startup and merged into ORGS; also updated at runtime.
@@ -2920,6 +2921,7 @@ app.get("/:org/programs", (req, res) => {
     logoUrl: org.logoUrl || "",
     token: org.token || "",
     participantsTab: PARTICIPANTS_ENABLED_ALL,
+    retentionTab: true,
   };
   const html = require("fs").readFileSync(path.join(__dirname, "public", "programs.html"), "utf8");
   const inject = `<script>window.ORG_CONFIG=${JSON.stringify(orgConfig)};</script>`;
@@ -6396,6 +6398,12 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  { date: '2026-06-26', title: 'Program Retention Tab', items: [
+    'New Retention tab on Programs report — surfaces repeat participation rates per program',
+    'KPIs: org-wide retention rate, returners, avg sections/person, most loyal program',
+    'Top 10 retention bar chart (min 10 participants), sortable table with color-coded retention %',
+    'Shared Metabase question (3cfc9cfa) available to all orgs automatically'
+  ]},
   { date: '2026-06-26', title: 'Startup Loading Page', items: [
     'Added Updates in Progress loading page shown during server restarts instead of broken 404',
     'Auto-refreshes every 4 seconds until the server is ready',
