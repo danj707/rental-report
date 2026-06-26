@@ -2686,6 +2686,8 @@ function App() {
   useEffect(() => { try { localStorage.setItem('col_booktype',  showBookType);  } catch {} }, [showBookType]);
 
   // ── Location filter state ────────────────────────────────────────
+  const [allLocations,      setAllLocations]      = useState([]);
+  const [allSites,          setAllSites]          = useState([]);
   const [selectedLocations, setSelectedLocations] = useState(null);
   const [selectedSites,     setSelectedSites]     = useState(null);
   const [selectedAddOns,    setSelectedAddOns]    = useState(null);
@@ -2747,6 +2749,13 @@ function App() {
           return next;
         });
 
+        // Accumulate all known locations (never remove historical ones)
+        setAllLocations(prev => {
+          const merged = new Set(prev);
+          locs.forEach(l => merged.add(l));
+          return [...merged].sort();
+        });
+
         setSelectedLocations(prev => {
           if (prev === null) {
             // Respect shared URL locations param
@@ -2762,6 +2771,16 @@ function App() {
           locs.forEach(l => { if (!next.has(l)) next.add(l); });
           return next;
         });
+
+        // Accumulate all known site types (never remove historical ones)
+        {
+          const sites = [...new Set(normalized.map(r => r.site).filter(Boolean))].sort();
+          setAllSites(prev => {
+            const merged = new Set(prev);
+            sites.forEach(s => merged.add(s));
+            return [...merged].sort();
+          });
+        }
 
         setSelectedSites(prev => {
           if (prev === null) {
@@ -2808,15 +2827,9 @@ function App() {
 
   const datesChanged = startDate !== loadedStart || endDate !== loadedEnd;
 
-  const allLocations = useMemo(() => {
-    if (!rows) return [];
-    return [...new Set(rows.map(r => r.location).filter(Boolean))].sort();
-  }, [rows]);
-
-  const allSites = useMemo(() => {
-    if (!rows) return [];
-    return [...new Set(rows.map(r => r.site).filter(Boolean))].sort();
-  }, [rows]);
+  // allLocations / allSites are now STATE that accumulates across fetches
+  // so historical locations always remain visible in the filter dropdowns.
+  // They are updated in the fetch callback below (setAllLocations / setAllSites).
 
   const allAddOns = useMemo(() => {
     if (!rows) return [];
@@ -3045,7 +3058,7 @@ function App() {
           {loading ? <><span className="btn-spinner" />Loading…</> : '▶ Run Report'}
         </button>
 
-        {allLocations.length > 1 && selectedLocations && (
+        {allLocations.length > 0 && selectedLocations && (
           <>
             <div className="divider" />
             <LocationFilter
@@ -3058,7 +3071,7 @@ function App() {
           </>
         )}
 
-        {allSites.length > 1 && selectedSites && (
+        {allSites.length > 0 && selectedSites && (
           <>
             <div className="divider" />
             <SiteFilter
