@@ -390,8 +390,12 @@ function normalizeRow(raw) {
     email:            raw['Email']             || raw['email']             || '',
     headCnt:          raw['Head Cnt']          || raw['head_cnt']          || '',
     alcohol:          raw['Alcohol']           || raw['alcohol']           || '',
+    instructions:     raw['Instructions']      || raw['instructions']      || raw['admin_instructions_md'] || '',
     notes:            raw['Notes']             || raw['notes']             || '',
     addOns:           raw['Add Ons']           || raw['add_ons']           || '',
+    addonFees:        raw['Add-On Fees']       || raw['addon_fees']        || null,
+    resident:         raw['Resident?']         || raw['Resident']          || raw['resident'] || '',
+    bookingType:      raw['Booking Type']      || raw['booking_type']      || '',
     total:            raw['Total']             ?? raw['total']             ?? null,
   };
 }
@@ -755,10 +759,14 @@ function App() {
                       <td className="col-hcnt">{r.headCnt              || ''}</td>
                       <td className="col-total">{formatMoney(r.total)}</td>
                     </tr>
-                    {(r.notes || r.addOns) && (
+                    {(r.instructions || r.notes || r.addOns) && (
                       <tr className="notes-row">
                         <td colSpan={10}>
-                          {r.notes || ''}{r.addOns ? ` | Add-ons: ${r.addOns}` : ''}
+                          {[
+                            r.instructions ? '📝 ' + r.instructions : '',
+                            r.notes || '',
+                            r.addOns ? 'Add-ons: ' + r.addOns : ''
+                          ].filter(Boolean).join(' | ')}
                         </td>
                       </tr>
                     )}
