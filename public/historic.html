@@ -404,8 +404,22 @@ function normalizeRow(raw) {
     orgName:          raw['Org Name']          || raw['org_name']          || '',
     date:             raw['Date']              || raw['date']               || '',
     locationFacility: raw['Location/Facility'] || raw['location_facility'] || '',
-    location:         raw['Location']           || raw['location']          || '',
-    siteType:         raw['Type']               || raw['Site Type']         || raw['site_type'] || '',
+    location:         raw['Location'] || raw['location'] || (function() {
+      var lf = raw['Location/Facility'] || raw['location_facility'] || '';
+      var sep = lf.indexOf(' – ');
+      if (sep > 0) return lf.substring(0, sep).trim();
+      sep = lf.indexOf(' - ');
+      if (sep > 0) return lf.substring(0, sep).trim();
+      return lf;
+    })(),
+    siteType:         raw['Type'] || raw['Site Type'] || raw['site_type'] || (function() {
+      var lf = raw['Location/Facility'] || raw['location_facility'] || '';
+      var sep = lf.indexOf(' – ');
+      if (sep > 0) return lf.substring(sep + 3).trim();
+      sep = lf.indexOf(' - ');
+      if (sep > 0) return lf.substring(sep + 3).trim();
+      return '';
+    })(),
     rentalDateTime:   raw['Rental Date/Time']  || raw['rental_date_time']  || '',
     eventTitle:       raw['Event Title']       || raw['event_title']       || '',
     invoiceNum:       raw['Invoice #']         || raw['invoice_num']       || '',
@@ -511,13 +525,13 @@ function SiteFilter({ allSites, selectedSites, onChange }) {
     <div className="loc-filter-wrap" ref={wrapRef}>
       <button className="btn-loc-filter" onClick={function() { setOpen(function(o) { return !o; }); }}
         style={!allSelected ? { borderColor: '#f59e0b', color: '#fde68a' } : {}}>
-        🏢 Site Types
+        🏢 Sites
         {badgeCount !== null && <span className="badge">{badgeCount}/{allSites.length}</span>}
       </button>
       {open && (
         <div className="loc-dropdown">
           <div className="loc-dropdown-header">
-            <span>Filter Site Types</span>
+            <span>Filter Sites</span>
             <div className="loc-dropdown-header-actions">
               <button onClick={selectAll} disabled={allSelected}>All</button>
               <button onClick={clearAll}  disabled={noneSelected}>None</button>
@@ -525,7 +539,7 @@ function SiteFilter({ allSites, selectedSites, onChange }) {
           </div>
           {allSites.length > 5 && (
             <div className="loc-dropdown-search">
-              <input type="text" placeholder="Search site types…" value={search} onChange={function(e) { setSearch(e.target.value); }} autoFocus />
+              <input type="text" placeholder="Search sites…" value={search} onChange={function(e) { setSearch(e.target.value); }} autoFocus />
             </div>
           )}
           <div className="loc-dropdown-list">
