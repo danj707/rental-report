@@ -94,10 +94,10 @@ button.primary:hover{filter:brightness(.95)}
 .pill.active{background:#1e40af;color:#fff;border-color:#1e40af}
 .fac-list{background:var(--card);border:1px solid var(--line);border-top:none;border-radius:0 0 12px 12px;box-shadow:var(--shadow);overflow:hidden}
 .sticky-hdr{position:sticky;top:0;z-index:10;background:var(--card);border:1px solid var(--line);border-radius:10px 10px 0 0;box-shadow:0 2px 6px rgba(0,0,0,.06)}
-.time-ruler{display:flex;align-items:center;height:38px}
+.time-ruler{display:flex;align-items:center;height:42px}
 .time-ruler .tr-label{width:280px;min-width:280px;padding:0 12px;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;border-right:1px solid var(--line)}
 .time-ruler .tr-track{flex:1;position:relative;height:100%;padding-right:12px}
-.time-ruler .tr-tick{position:absolute;font-size:10px;color:#687280;font-weight:500;transform:translateX(-50%);top:50%;margin-top:-6px}
+.time-ruler .tr-tick{position:absolute;font-size:11px;color:#374151;font-weight:600;transform:translateX(-50%);top:50%;margin-top:-6px}
 .fac-row{display:flex;contain:layout style;align-items:center;border-bottom:1px solid #f0f1f3;min-height:48px;transition:background .08s}
 .fac-row:last-child{border-bottom:none}
 .fac-row:hover{background:#fafbfc}
@@ -114,9 +114,9 @@ button.primary:hover{filter:brightness(.95)}
 .book-sm.secondary{background:#fff;color:var(--accent);border:1px solid var(--accent)}
 .book-sm.secondary:hover{background:#eff6ff}
 .fac-bar{flex:1;padding:6px 12px 6px 0;display:flex;align-items:center}
-.bar-track{position:relative;width:100%;height:24px;background:#f8f9fa;border-radius:5px;overflow:hidden;border:1px solid #eef0f2}
+.bar-track{position:relative;width:100%;height:32px;background:#f8f9fa;border-radius:5px;overflow:hidden;border:1px solid #e0e2e6}
 .bar-block{position:absolute;top:2px;bottom:2px;border-radius:3px}
-.bar-block.avail{background:#d1fae5;border:1px solid #a7f3d0}
+.bar-block.avail{background:#bbf7d0;border:1px solid #86efac}
 .bar-block.reserved{background:var(--reserved);border:1px solid #fdba74}
 .bar-block.closed{background:var(--closed);border:1px solid #d1d5db}
 .bar-block.past{background:#f3f4f6;border:1px solid #e5e7eb}
@@ -124,11 +124,11 @@ button.primary:hover{filter:brightness(.95)}
   font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.02em;overflow:hidden;white-space:nowrap}
 .bar-block.reserved .blabel{color:var(--reserved-dark)}
 .bar-block.closed .blabel{color:var(--closed-dark)}
-.bar-gridline{position:absolute;top:0;bottom:0;width:1px;background:rgba(0,0,0,.08);z-index:1}
-.bar-gridline.half{background:rgba(0,0,0,.04)}
-.bar-now{position:absolute;top:-2px;bottom:-2px;width:2px;background:#ef4444;border-radius:1px;z-index:5}
+.bar-gridline{position:absolute;top:0;bottom:0;width:1px;background:rgba(0,0,0,.18);z-index:1}
+.bar-gridline.half{background:rgba(0,0,0,.10)}
+.bar-now{position:absolute;top:-3px;bottom:-3px;width:2.5px;background:#dc2626;border-radius:1px;z-index:5}
 .bar-now::before{content:'';position:absolute;top:-3px;left:-3px;width:8px;height:8px;border-radius:50%;background:#ef4444}
-.bar-timelabel{position:absolute;bottom:-1px;transform:translateX(-50%);font-size:7px;color:rgba(0,0,0,.25);z-index:2;pointer-events:none;font-variant-numeric:tabular-nums}
+.bar-timelabel{position:absolute;top:1px;transform:translateX(-50%);font-size:8.5px;color:rgba(0,0,0,.38);z-index:2;pointer-events:none;font-variant-numeric:tabular-nums;font-weight:500}
 .group-hdr{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--line);
   background:#fafbfc;cursor:pointer;user-select:none;transition:background .08s}
 .group-hdr:hover{background:#f0f1f4}
@@ -380,7 +380,7 @@ function TimeRuler({opStart, opEnd}) {
   var hrs = [];
   var startH = Math.floor(opStart/60);
   var endH = Math.ceil(opEnd/60);
-  for (var h = startH; h <= endH; h += 2) hrs.push(h);
+  for (var h = startH; h <= endH; h++) hrs.push(h);
   var total = opEnd - opStart;
   return (
     <div className="time-ruler">
@@ -407,17 +407,18 @@ function TimelineBar({avail, dateStr, opStart, opEnd, siteOpStart, siteOpEnd}) {
   var nowPct = ((nowMin - opStart) / total) * 100;
   // Render hour gridlines
   var gridlines = [];
-  for (var gh = Math.ceil(opStart/60); gh <= Math.floor(opEnd/60); gh++) {
-    var gPct = ((gh*60 - opStart) / total) * 100;
-    if (gPct > 0 && gPct < 100) gridlines.push({pct: gPct, hour: true});
+  for (var gh = Math.ceil(opStart/30); gh <= Math.floor(opEnd/30); gh++) {
+    var mins = gh * 30;
+    var gPct = ((mins - opStart) / total) * 100;
+    if (gPct > 0 && gPct < 100) gridlines.push({pct: gPct, hour: mins % 60 === 0});
   }
 
   return (
     <div className="fac-bar"><div className="bar-track">
       {gridlines.map(function(gl, gi) {
-        return <div key={'g'+gi} className="bar-gridline" style={{left: gl.pct + '%'}}/>;
+        return <div key={'g'+gi} className={'bar-gridline' + (gl.hour ? '' : ' half')} style={{left: gl.pct + '%'}}/>;
       })}
-      {gridlines.filter(function(_, gi) { return gi % 2 === 0; }).map(function(gl, gi) {
+      {gridlines.filter(function(gl) { return gl.hour; }).map(function(gl, gi) {
         return <div key={'t'+gi} className="bar-timelabel" style={{left: gl.pct + '%'}}>{minToLabel(opStart + (gl.pct/100)*total)}</div>;
       })}
       {blocks.map(function(b, i) {
@@ -998,3 +999,4 @@ ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
 </script>
 </body>
 </html>
+
