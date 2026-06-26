@@ -6304,6 +6304,7 @@ app.get("/", (req, res) => {
     const UPDATES = [
   { date: '2026-06-26', title: '\uD83D\uDCCA Rental Calendar Metrics', items: [
     '\uD83D\uDCCA METRICS WIRING \u2014 Rental Calendar views and wizard-feedback events now roll up into org metrics totals (Views, Exports, Clicks), admin dashboard chart, and full metrics page. Previously events were logged but not aggregated.',
+    '\uD83D\uDD17 COMBINED HEADER \u2014 Rental Calendar toolbar (nav, date, weather, legend) merged with the facility time-ruler into one unified sticky header block. Cleaner layout, less vertical space.',
   ]},
   { date: '2026-06-25', title: '\uD83C\uDFDF\uFE0F Facility Rental Calendar v2', items: [
     '\u2728 BOOKING WIZARD \u2014 3-step guided flow (When \u2192 What type \u2192 Where) with smart date options, clickable breadcrumbs to edit, date picker, and results card showing matched count. Search Again to restart.',
