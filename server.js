@@ -1069,6 +1069,8 @@ function buildMetrics(org, daysBack) {
   });
 
   const configuredReports = REPORT_TYPES.filter(r => ORGS[org]?.[r]?.mbUuid || SHARED_UUIDS[r]);
+  // Include non-Metabase reports that have their own routes (e.g. rentalcalendar)
+  if (org === 'watertown') configuredReports.push('rentalcalendar');
   return { summary, daily, subCounts, subByCadence, totalSubscribers: allSubs.length, insights, configuredReports };
 }
 
@@ -5518,7 +5520,7 @@ app.get("/", (req, res) => {
         panel.innerHTML = '<div class="metrics-loading" style="color:#e55">Failed to load metrics</div>';
       }
     }
-    const REPORT_COLORS = { facility:'#16a34a', gl:'#3b82f6', programs:'#7c3aed', historic:'#d97706', roster:'#0891b2', overview:'#059669' };
+    const REPORT_COLORS = { facility:'#16a34a', gl:'#3b82f6', programs:'#7c3aed', historic:'#d97706', roster:'#0891b2', overview:'#059669', rentalcalendar:'#059669' };
     const chartInstances = {};
     // ── Add Org modal ────────────────────────────────────────────────
     const REPORT_META = ${JSON.stringify(Object.fromEntries(Object.entries({
@@ -6300,6 +6302,9 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  { date: '2026-06-26', title: '\uD83D\uDCCA Rental Calendar Metrics', items: [
+    '\uD83D\uDCCA METRICS WIRING \u2014 Rental Calendar views and wizard-feedback events now roll up into org metrics totals (Views, Exports, Clicks), admin dashboard chart, and full metrics page. Previously events were logged but not aggregated.',
+  ]},
   { date: '2026-06-25', title: '\uD83C\uDFDF\uFE0F Facility Rental Calendar v2', items: [
     '\u2728 BOOKING WIZARD \u2014 3-step guided flow (When \u2192 What type \u2192 Where) with smart date options, clickable breadcrumbs to edit, date picker, and results card showing matched count. Search Again to restart.',
     '\uD83C\uDF21\uFE0F WEATHER \u2014 Daily forecast from weather.gov in toolbar (emoji + hi/lo temp), cached per date.',
