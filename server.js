@@ -6348,6 +6348,12 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  { date: '2026-06-26', title: 'Reservation Instructions on Facility Report', items: [
+    'Added support for reservation-level internal notes (admin_instructions_md) on the facility rental schedule',
+    'Instructions display in sub-row with clipboard emoji, alongside legacy notes and add-ons',
+    'Included in Excel export as separate Instructions column',
+    'SQL change required per org: add r.admin_instructions_md AS reservation_instructions to base CTE, b.reservation_instructions AS "Instructions" to outer SELECT'
+  ]},
   { date: '2026-06-26', title: '\uD83C\uDFDF\uFE0F Rental Calendar Polish + Metrics', items: [
     '\uD83D\uDCCA METRICS WIRING \u2014 Rental Calendar views and wizard-feedback events now roll up into org metrics totals (Views, Exports, Clicks), admin dashboard chart, and full metrics page. Previously events were logged but not aggregated.',
     '\uD83D\uDD17 COMBINED HEADER \u2014 Rental Calendar toolbar (nav, date, weather, legend) merged with the facility time-ruler into one unified sticky header block. Cleaner layout, less vertical space.',
