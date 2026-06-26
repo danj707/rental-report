@@ -103,6 +103,7 @@
     .badge-fasttrack { background: #e0e7ff; color: #3730a3; }
     .badge-users { background: #f3e8ff; color: #6b21a8; }
     .badge-instructor-payout { background: #e0e7ff; color: #3730a3; }
+    .badge-rentalcalendar { background: #d1fae5; color: #065f46; }
 
     /* ── Sparkline section ── */
     .chart-card { background: #fff; border: 1px solid #e0ddd8; border-radius: 7px; padding: 16px 18px; margin-bottom: 24px; }
@@ -169,10 +170,11 @@ const REPORT_META = {
   fasttrack:   { label: "Fast Track",               badgeClass: "badge-fasttrack" },
   users:       { label: "Community Intel",           badgeClass: "badge-users" },
   "instructor-payout": { label: "Instructor Payout", badgeClass: "badge-instructor-payout" },
+  "rentalcalendar": { label: "Rental Calendar", badgeClass: "badge-rentalcalendar" },
 };
 
 // Canonical display order for report rows/charts (matches server REPORT_TYPES).
-const REPORT_ORDER = ['facility','gl','historic','programs','roster','overview','products','memberships','court-utilization','calendar','fasttrack','users','instructor-payout'];
+const REPORT_ORDER = ['facility','gl','historic','programs','roster','overview','products','memberships','court-utilization','calendar','fasttrack','users','instructor-payout','rentalcalendar'];
 
 // Shared per-report colors (sparklines + activity chart).
 const REPORT_COLORS = {
@@ -180,6 +182,7 @@ const REPORT_COLORS = {
   roster:'#0891b2', overview:'#059669', products:'#db2777',
   memberships:'#ea580c', 'court-utilization':'#0d9488', calendar:'#ea580c',
   fasttrack:'#6366f1', users:'#7c3aed', 'instructor-payout':'#6366f1',
+  rentalcalendar:'#059669',
 };
 
 const EVENT_LABELS = {
