@@ -2824,6 +2824,60 @@ function App() {
 
   useEffect(() => { fetchData(startDate, endDate); }, []);
 
+  // ── Seed all locations/sites with a wide date range (background, silent) ──
+  useEffect(() => {
+    const pathParts = window.location.pathname.replace(/\/$/, '').split('/');
+    const apiBase = pathParts.length >= 3
+      ? '/' + pathParts[1] + '/' + pathParts[2] + '/api/data'
+      : '/api/data';
+    const now = new Date();
+    const seedStart = new Date(now.getFullYear() - 1, now.getMonth(), 1);
+    const seedEnd   = new Date(now.getFullYear() + 1, now.getMonth(), 0);
+    const toISO = d => d.toISOString().split('T')[0];
+    const qs = new URLSearchParams();
+    qs.set('start_date', toISO(seedStart));
+    qs.set('end_date',   toISO(seedEnd));
+    if (params.location_name) qs.set('location_name', params.location_name);
+    if (params.site_type)     qs.set('site_type',     params.site_type);
+    fetch(withToken(apiBase + '?' + qs.toString()))
+      .then(r => r.ok ? r.json() : null)
+      .then(json => {
+        if (!json || !json.rows) return;
+        const normalized = json.rows.map(normalizeRow);
+        const locs  = [...new Set(normalized.map(r => r.location).filter(Boolean))].sort();
+        const sites = [...new Set(normalized.map(r => r.site).filter(Boolean))].sort();
+        setLocationColors(prev => {
+          const next = assignColors(locs, prev);
+          saveLocationColors(orgSlug, next);
+          return next;
+        });
+        setAllLocations(prev => {
+          const merged = new Set(prev);
+          locs.forEach(l => merged.add(l));
+          return [...merged].sort();
+        });
+        setAllSites(prev => {
+          const merged = new Set(prev);
+          sites.forEach(s => merged.add(s));
+          return [...merged].sort();
+        });
+        // Also add to selected sets so they're checked by default
+        setSelectedLocations(prev => {
+          if (!prev) return new Set(locs);
+          const next = new Set(prev);
+          locs.forEach(l => next.add(l));
+          return next;
+        });
+        setSelectedSites(prev => {
+          if (!prev) return new Set(sites);
+          const next = new Set(prev);
+          sites.forEach(s => next.add(s));
+          return next;
+        });
+      })
+      .catch(() => {}); // silent — don't block anything
+  }, []);
+
   function handleRunReport() { fetchData(startDate, endDate); }
 
   const datesChanged = startDate !== loadedStart || endDate !== loadedEnd;
