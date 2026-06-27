@@ -457,7 +457,7 @@ const ORGS = {
   },
 };
 
-const REPORT_TYPES = ["facility", "gl", "historic", "programs", "roster", "overview", "products", "memberships", "court-utilization", "calendar", "fasttrack", "users", "program-demographics", "directors-report", "instructor-payout", "retention"];
+const REPORT_TYPES = ["facility", "gl", "historic", "programs", "roster", "overview", "products", "memberships", "court-utilization", "calendar", "fasttrack", "users", "program-demographics", "directors-report", "instructor-payout", "retention", "annual-report"];
 
 // ── Shared Metabase UUIDs (one query per report type, parameterized by org_id) ──
 // When a report type has an entry here, the server uses this UUID + passes the
@@ -481,7 +481,7 @@ const SHARED_UUIDS = {
 
 // Report types that are valid system-wide but should NOT be offered in the
 // dashboard "+ Add report" flow (e.g. not yet ready for self-serve onboarding).
-const NON_ADDABLE_REPORTS = new Set(["overview", "program-demographics", "directors-report", "retention"]);
+const NON_ADDABLE_REPORTS = new Set(["overview", "program-demographics", "directors-report", "retention", "annual-report"]);
 
 // ── Dynamic orgs (added via dashboard UI) ────────────────────────────
 // Loaded at startup and merged into ORGS; also updated at runtime.
@@ -3079,6 +3079,233 @@ app.get("/:org/court-utilization/api/schedules", async (req, res) => {
   } catch (e) {
     console.error("[court-utilization] schedules error:", e.message);
     res.json({ schedules: {}, fallbackHrsPerDay: 12, error: e.message });
+  }
+});
+
+// ━━ Annual Report Generator ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+app.get("/:org/annual-report", (req, res) => {
+  const slug = req.params.org;
+  const org  = ORGS[slug];
+  if (!org) return res.status(404).send("Unknown org");
+  logEvent(slug, "annual-report", "view", req);
+  res.sendFile(path.join(__dirname, "public", "annual-report.html"));
+});
+
+// Helper: fetch Metabase data directly (server-side, no HTTP round-trip)
+async function fetchMBDirect(orgSlug, reportType, startDate, endDate) {
+  const org = ORGS[orgSlug];
+  if (!org) return null;
+  const mbUuid = reportType === "gl"
+    ? (org.gl?.mbUuid || SHARED_UUIDS.gl)
+    : (org[reportType]?.mbUuid || SHARED_UUIDS[reportType]);
+  if (!mbUuid) return null;
+  const orgId = (SHARED_UUIDS[reportType] && !(reportType === "gl" && org.gl?.mbUuid)) ? org.orgId : null;
+  const params = buildMetabaseParams({ start_date: startDate, end_date: endDate }, reportType, orgId);
+  const paramStr = params.length > 0 ? "?parameters=" + encodeURIComponent(JSON.stringify(params)) : "";
+  const url = METABASE_URL + "/api/public/card/" + mbUuid + "/query/json" + paramStr;
+  console.log("[annual-report] fetch " + reportType + " → " + url.substring(0, 120));
+  const resp = await fetch(url, { signal: AbortSignal.timeout(120000) });
+  if (!resp.ok) { console.error("[annual-report] " + reportType + " returned " + resp.status); return null; }
+  return resp.json();
+}
+
+const ANNUAL_REPORT_PROMPT = `You are an expert municipal parks & recreation analyst writing an annual report for a city council audience.
+
+You receive aggregated data from an entire fiscal year: revenue by GL category, program enrollments, facility utilization, and community metrics.
+
+Return a JSON object with EXACTLY these keys (no markdown fences, no preamble):
+{
+  "executiveSummary": "2–3 paragraphs summarizing the year’s highlights, challenges, and key numbers. Write in a confident, professional tone suitable for elected officials. Reference specific dollar amounts, percentages, and program names from the data.",
+  "revenueNarrative": "1–2 paragraphs analyzing revenue trends, top categories, growth vs prior year if available.",
+  "programsNarrative": "1–2 paragraphs covering participation trends, top programs, fill rates, demographics.",
+  "facilityNarrative": "1–2 paragraphs on facility/court utilization, busiest venues, scheduling patterns.",
+  "recommendations": [
+    { "icon": "calendar-dollar|users-plus|sun|chart-arrows-vertical|target|bulb", "title": "short title", "detail": "1–2 sentence recommendation grounded in the data" }
+  ]
+}
+
+Rules:
+- Ground EVERY number in the provided data. Never invent figures.
+- 4–6 recommendations, each actionable and specific.
+- Write for a non-technical audience. No jargon.
+- Highlight both achievements and opportunities.
+- If data is missing for a section, note it gracefully.`;
+
+const _annualReportCache = new Map();
+const AR_CACHE_TTL = 30 * 60 * 1000; // 30min
+
+app.post("/:org/annual-report/api/generate", async (req, res) => {
+  const slug = req.params.org;
+  const org = ORGS[slug];
+  if (!org) return res.status(404).json({ error: "Unknown org" });
+
+  const { start_date, end_date } = req.body;
+  if (!start_date || !end_date) return res.status(400).json({ error: "Missing start_date or end_date" });
+
+  const cacheKey = slug + "|" + start_date + "|" + end_date;
+  const cached = _annualReportCache.get(cacheKey);
+  if (cached && Date.now() - cached.ts < AR_CACHE_TTL) {
+    return res.json({ ok: true, ...cached.data, cached: true });
+  }
+
+  try {
+    console.log("[annual-report] Generating for " + slug + " " + start_date + " to " + end_date);
+    logEvent(slug, "annual-report", "generate", req);
+
+    // Fetch all report data in parallel
+    const [glRows, progRows, courtRows, facilityRows] = await Promise.all([
+      fetchMBDirect(slug, "gl", start_date, end_date),
+      fetchMBDirect(slug, "programs", start_date, end_date),
+      fetchMBDirect(slug, "court-utilization", start_date, end_date),
+      fetchMBDirect(slug, "facility", start_date, end_date),
+    ]);
+
+    // ── Aggregate GL ──
+    const gl = { total: 0, categories: {}, refunds: 0 };
+    if (glRows && Array.isArray(glRows)) {
+      for (const r of glRows) {
+        const acct = r["Account Name"] || r.account_name || "Unknown";
+        const amt = parseFloat(r["Net Amount"] || r.net_amount || r["Net Revenue"] || 0);
+        if (isNaN(amt)) continue;
+        gl.total += amt;
+        gl.categories[acct] = (gl.categories[acct] || 0) + amt;
+        if (amt < 0) gl.refunds += amt;
+      }
+      // Sort categories by absolute value
+      gl.topCategories = Object.entries(gl.categories)
+        .sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]))
+        .slice(0, 15)
+        .map(([name, amount]) => ({ name, amount: Math.round(amount * 100) / 100 }));
+    }
+
+    // ── Aggregate Programs ──
+    const prog = { sections: 0, totalEnrollments: 0, totalCapacity: 0, totalRevenue: 0, programs: {} };
+    if (progRows && Array.isArray(progRows)) {
+      const seen = new Set();
+      for (const r of progRows) {
+        const key = r.section_id || r["Section Id"] || (r.program_name || "") + "|" + (r.section_name || "");
+        if (seen.has(key)) continue;
+        seen.add(key);
+        prog.sections++;
+        const enrolled = parseInt(r.enrollments || r.Enrollments || r.enrolled || 0) || 0;
+        const cap = parseInt(r.capacity || r.Capacity || 0) || 0;
+        const rev = parseFloat(r.revenue || r.Revenue || r["Total Revenue"] || r.total_revenue || 0) || 0;
+        prog.totalEnrollments += enrolled;
+        prog.totalCapacity += cap;
+        prog.totalRevenue += rev;
+        const pName = r.program_name || r["Program Name"] || "Unknown";
+        if (!prog.programs[pName]) prog.programs[pName] = { enrollments: 0, revenue: 0, sections: 0 };
+        prog.programs[pName].enrollments += enrolled;
+        prog.programs[pName].revenue += rev;
+        prog.programs[pName].sections++;
+      }
+      prog.fillRate = prog.totalCapacity > 0 ? Math.round((prog.totalEnrollments / prog.totalCapacity) * 100) : null;
+      prog.topByEnrollment = Object.entries(prog.programs)
+        .sort((a, b) => b[1].enrollments - a[1].enrollments)
+        .slice(0, 10)
+        .map(([name, d]) => ({ name, enrollments: d.enrollments, revenue: Math.round(d.revenue * 100) / 100, sections: d.sections }));
+      prog.topByRevenue = Object.entries(prog.programs)
+        .sort((a, b) => b[1].revenue - a[1].revenue)
+        .slice(0, 10)
+        .map(([name, d]) => ({ name, enrollments: d.enrollments, revenue: Math.round(d.revenue * 100) / 100, sections: d.sections }));
+    }
+
+    // ── Aggregate Court Utilization ──
+    const court = { totalBookings: 0, totalHours: 0, courts: new Set(), locations: new Set(), frIds: new Set() };
+    if (courtRows && Array.isArray(courtRows)) {
+      for (const r of courtRows) {
+        const cn = r.court_name || r["Court Name"] || "";
+        const ln = r.location_name || r["Location Name"] || "";
+        if (cn) court.courts.add(ln + " — " + cn);
+        if (ln) court.locations.add(ln);
+        court.totalHours += parseFloat(r.duration_hours || r["Duration Hours"] || 0) || 0;
+        const frId = r.facility_rental_id || r["Facility Rental Id"];
+        if (frId) court.frIds.add(frId);
+      }
+      court.totalBookings = court.frIds.size;
+      court.courtCount = court.courts.size;
+      court.locationCount = court.locations.size;
+      court.totalHours = Math.round(court.totalHours * 10) / 10;
+    }
+    // Clean up Sets for JSON
+    delete court.courts; delete court.locations; delete court.frIds;
+
+    // ── Aggregate Facility ──
+    const fac = { totalBookings: 0, totalRevenue: 0, locations: new Set(), frIds: new Set() };
+    if (facilityRows && Array.isArray(facilityRows)) {
+      for (const r of facilityRows) {
+        const ln = r.location_name || r["Location"] || r["Location Name"] || "";
+        if (ln) fac.locations.add(ln);
+        const frId = r.facility_rental_id || r["Facility Rental Id"] || r.id;
+        if (frId) fac.frIds.add(frId);
+        fac.totalRevenue += parseFloat(r.total || r.Total || r.revenue || 0) || 0;
+      }
+      fac.totalBookings = fac.frIds.size;
+      fac.locationCount = fac.locations.size;
+      fac.totalRevenue = Math.round(fac.totalRevenue * 100) / 100;
+      fac.locationList = Array.from(fac.locations).sort();
+    }
+    delete fac.locations; delete fac.frIds;
+
+    const aggregates = {
+      period: { start: start_date, end: end_date },
+      gl, programs: prog, courtUtilization: court, facility: fac,
+      dataSources: {
+        gl: !!glRows, programs: !!progRows,
+        courtUtilization: !!courtRows, facility: !!facilityRows,
+      }
+    };
+
+    // ── Generate AI narrative ──
+    let narrative = null;
+    if (anthropic) {
+      try {
+        const parentSpan = _recTracer.startSpan("rec.annual-report", {
+          attributes: { "rec.org": slug },
+        });
+        const traceId = parentSpan.spanContext().traceId;
+        const spanCtx = otelApi.trace.setSpan(otelApi.context.active(), parentSpan);
+
+        const aiRes = await otelApi.context.with(spanCtx, () =>
+          anthropic.messages.create({
+            model: process.env.ANNUAL_REPORT_MODEL || "claude-sonnet-4-6",
+            max_tokens: 2500,
+            system: ANNUAL_REPORT_PROMPT,
+            messages: [{ role: "user", content: JSON.stringify(aggregates) }],
+          })
+        );
+        parentSpan.end();
+
+        const text = (aiRes.content || []).filter(c => c.type === "text").map(c => c.text).join("");
+        try {
+          const cleaned = text.replace(/```json|```/g, "").trim();
+          narrative = JSON.parse(cleaned);
+        } catch (pe) {
+          console.error("[annual-report] Could not parse AI narrative:", text.substring(0, 300));
+          narrative = { executiveSummary: text, error: "Could not parse structured response" };
+        }
+
+        const usage = aiRes.usage || {};
+        const inTok = usage.input_tokens || 0;
+        const outTok = usage.output_tokens || 0;
+        const costUsd = insightsCostUsd(aiRes.model || "claude-sonnet-4-6", inTok, outTok);
+        logEvent(slug, "annual-report", "ai-generate", req, { inTok, outTok, costUsd, traceId });
+      } catch (aiErr) {
+        console.error("[annual-report] AI error:", aiErr.message);
+        narrative = { error: aiErr.message };
+      }
+    }
+
+    const result = { aggregates, narrative, org: { slug, displayName: org.displayName || slug, logoUrl: org.logoUrl } };
+    _annualReportCache.set(cacheKey, { data: result, ts: Date.now() });
+    if (_annualReportCache.size > 20) {
+      const oldest = _annualReportCache.keys().next().value;
+      _annualReportCache.delete(oldest);
+    }
+    res.json({ ok: true, ...result });
+  } catch (e) {
+    console.error("[annual-report] Error:", e);
+    res.status(500).json({ ok: false, error: e.message });
   }
 });
 
