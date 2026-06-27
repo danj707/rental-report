@@ -2983,6 +2983,105 @@ app.get("/:org/court-utilization", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "court-utilization.html"));
 });
 
+// ── Court-utilization: real per-court operating schedules via MCP ────
+const cuScheduleCache = {}; // { orgId: { data, ts } }
+const CU_SCHEDULE_TTL = 4 * 60 * 60 * 1000; // 4 hrs (schedules rarely change)
+
+app.get("/:org/court-utilization/api/schedules", async (req, res) => {
+  const slug = req.params.org;
+  const org  = ORGS[slug];
+  if (!org || !org.orgId) return res.json({ schedules: {}, fallbackHrsPerDay: 12 });
+
+  // Cache check
+  const cached = cuScheduleCache[org.orgId];
+  if (cached && Date.now() - cached.ts < CU_SCHEDULE_TTL) {
+    return res.json(cached.data);
+  }
+
+  try {
+    const client = await getRecMcpClient();
+    if (!client) throw new Error("MCP client not available");
+
+    // Paginate all sites (courts, fields, etc.)
+    let allSites = [];
+    let page = 1;
+    const pageSize = 100;
+    while (true) {
+      const result = await client.callTool({
+        name: "list_sites",
+        arguments: { organizationId: org.orgId, pageSize, page }
+      });
+      let sites = [], total = 0;
+      for (const block of (result.content || [])) {
+        if (block.type === "text" && block.text) {
+          try { const p = JSON.parse(block.text); sites = p.results || p; total = p.total || 0; } catch {}
+        }
+      }
+      allSites = allSites.concat(sites);
+      if (allSites.length >= total || sites.length < pageSize) break;
+      page++;
+    }
+
+    // Extract per-court operating hours from bookingPolicies slots
+    const schedules = {};
+    const hrsCollector = []; // collect per-court avg hrs for fallback computation
+
+    for (const site of allSites) {
+      const key = (site.locationName || "") + " \u2014 " + (site.courtNumber || "");
+      const policies = site.config && site.config.bookingPolicies;
+      if (!policies || !policies.length) continue;
+
+      // Find the first policy with populated slots
+      const policy = policies.find(p => p.slots && p.slots.length > 0);
+      if (!policy) continue;
+
+      // Group slots by dayOfWeek → compute hours span per day
+      // dayOfWeek: 1=Mon ... 7=Sun
+      const byDay = {};
+      for (const slot of policy.slots) {
+        const dow = slot.dayOfWeek;
+        if (!byDay[dow]) byDay[dow] = { minStart: slot.startTimeLocal, maxEnd: slot.endTimeLocal };
+        else {
+          if (slot.startTimeLocal < byDay[dow].minStart) byDay[dow].minStart = slot.startTimeLocal;
+          if (slot.endTimeLocal > byDay[dow].maxEnd)     byDay[dow].maxEnd = slot.endTimeLocal;
+        }
+      }
+
+      // Convert to hours per day-of-week
+      const dailyHrs = {};
+      for (const [dow, range] of Object.entries(byDay)) {
+        const [sh, sm] = range.minStart.split(":").map(Number);
+        const [eh, em] = range.maxEnd.split(":").map(Number);
+        dailyHrs[dow] = (eh + em / 60) - (sh + sm / 60);
+      }
+
+      // Fill missing days with 0 (closed that day)
+      for (let d = 1; d <= 7; d++) {
+        if (!dailyHrs[d]) dailyHrs[d] = 0;
+      }
+
+      const avg = Object.values(dailyHrs).reduce((a, b) => a + b, 0) / 7;
+      schedules[key] = { dailyHrs, avgHrsPerDay: Math.round(avg * 10) / 10 };
+      hrsCollector.push(avg);
+    }
+
+    // Compute org-level fallback from median of courts with data
+    let fallbackHrsPerDay = 12;
+    if (hrsCollector.length > 0) {
+      hrsCollector.sort((a, b) => a - b);
+      const mid = Math.floor(hrsCollector.length / 2);
+      fallbackHrsPerDay = Math.round((hrsCollector.length % 2 ? hrsCollector[mid] : (hrsCollector[mid - 1] + hrsCollector[mid]) / 2) * 10) / 10;
+    }
+
+    const payload = { schedules, fallbackHrsPerDay, courtCount: allSites.length, matchedCount: Object.keys(schedules).length };
+    cuScheduleCache[org.orgId] = { data: payload, ts: Date.now() };
+    res.json(payload);
+  } catch (e) {
+    console.error("[court-utilization] schedules error:", e.message);
+    res.json({ schedules: {}, fallbackHrsPerDay: 12, error: e.message });
+  }
+});
+
 app.get("/:org/admin", (req, res) => {
   if (!ORGS[req.params.org]) return res.status(404).send("Unknown org");
   res.sendFile(path.join(__dirname, "public", "admin.html"));
@@ -7171,3 +7270,4 @@ app.listen(PORT, () => {
   // Runs after listen() so startup isn't blocked by GitHub latency.
   migrateDynamicOrgs();
 });
+
