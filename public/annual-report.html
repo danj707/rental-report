@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Annual Report</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&family=Playfair+Display:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'IBM Plex Sans', system-ui, sans-serif;
+      font-size: 13px; color: #1a1a1a; background: #eae8e3; line-height: 1.5;
+    }
+
+    /* Toolbar */
+    .toolbar {
+      position: sticky; top: 0; z-index: 100;
+      display: flex; align-items: center; gap: 10px;
+      padding: 8px 20px; background: #1a1a1a; color: #fff;
+      border-bottom: 1px solid #2a2a2a; flex-wrap: wrap;
+    }
+    .toolbar-title { font-weight: 600; margin-right: 8px; }
+    .toolbar-spacer { flex: 1; }
+    .toolbar label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: #aaa; margin-right: 4px; display: flex; flex-direction: column; gap: 2px; }
+    .toolbar select, .toolbar input[type="date"] {
+      background: #2a2a2a; border: 1px solid #3a3a3a; color: #fff;
+      padding: 5px 8px; border-radius: 4px; font-size: 12px; font-family: inherit;
+    }
+    .toolbar select:focus, .toolbar input:focus { outline: none; border-color: #3b82f6; }
+    .toolbar input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(1); cursor: pointer; }
+    .toolbar button {
+      background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.15);
+      color: #fff; padding: 6px 12px; border-radius: 4px; font-size: 12px;
+      cursor: pointer; font-family: inherit; transition: background .12s;
+    }
+    .toolbar button:hover:not(:disabled) { background: rgba(255,255,255,.18); }
+    .toolbar button:disabled { opacity: .5; cursor: not-allowed; }
+    .toolbar .btn-generate { background: #7c3aed; border-color: #7c3aed; font-weight: 600; padding: 7px 18px; }
+    .toolbar .btn-generate:hover:not(:disabled) { background: #6d28d9; }
+    .toolbar .btn-pdf { background: #3b82f6; border-color: #3b82f6; font-weight: 600; }
+    .toolbar .divider { width: 1px; height: 28px; background: rgba(255,255,255,.15); margin: 0 4px; }
+    .toolbar .status { font-size: 11px; color: #aaa; }
+
+    /* Print */
+    @media print { .toolbar { display: none !important; } }
+    body.print-mode .toolbar { display: none !important; }
+    body.print-mode { background: #fff; }
+    body.print-mode .page { box-shadow: none; margin: 0; max-width: none; border-radius: 0; }
+
+    /* Page container */
+    .pages-wrap { max-width: 900px; margin: 20px auto; padding: 0 16px; }
+    .page {
+      background: #fff; border-radius: 4px; padding: 48px 56px;
+      margin-bottom: 20px; box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+      position: relative; page-break-after: always;
+    }
+
+    /* Cover */
+    .cover { text-align: center; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 500px; }
+    .cover-org { font-size: 32px; font-weight: 700; letter-spacing: 3px; text-transform: uppercase; }
+    .cover-sub { font-size: 14px; color: #888; letter-spacing: 1.5px; text-transform: uppercase; margin: 4px 0 48px; }
+    .cover-title { font-family: 'Playfair Display', serif; font-size: 40px; font-weight: 500; margin-bottom: 8px; }
+    .cover-period { font-size: 16px; color: #666; margin-bottom: 48px; }
+    .cover-logo { height: 64px; max-width: 200px; object-fit: contain; margin-bottom: 16px; }
+    .cover-footer { font-size: 11px; color: #aaa; padding-top: 24px; border-top: 1px solid #e4e4e0; width: 200px; }
+
+    /* Typography */
+    .divider { height: 3px; background: #111; margin: 0 0 20px; }
+    .divider-thin { height: 1px; background: #e4e4e0; margin: 20px 0; }
+    h1.section-title { font-size: 22px; font-weight: 700; margin-bottom: 16px; display: flex; align-items: center; gap: 10px; }
+    h1.section-title .icon { font-size: 20px; opacity: 0.6; }
+    h2.sub-title { font-size: 15px; font-weight: 600; margin: 20px 0 10px; color: #374151; }
+    .narrative { font-family: 'Playfair Display', serif; font-size: 14px; line-height: 1.85; color: #444; margin-bottom: 16px; }
+    .narrative strong { color: #111; font-weight: 600; }
+
+    /* KPI cards */
+    .kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-bottom: 18px; }
+    .kpi { padding: 12px 14px; border-radius: 5px; background: #f8f8f6; border: 1px solid #e4e4e0; border-left: 3px solid #2563eb; }
+    .kpi.green { border-left-color: #16a34a; } .kpi.purple { border-left-color: #7c3aed; }
+    .kpi.amber { border-left-color: #f59e0b; } .kpi.gray { border-left-color: #9ca3af; }
+    .kpi-label { font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.5px; color: #666; font-weight: 600; }
+    .kpi-val { font-size: 22px; font-weight: 700; margin-top: 2px; font-family: 'IBM Plex Mono', monospace; }
+    .kpi-note { font-size: 11px; color: #888; margin-top: 2px; }
+
+    /* Bar chart rows */
+    .bar-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+    .bar-label { font-size: 12px; width: 160px; text-align: right; color: #555; flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .bar-track { flex: 1; height: 22px; background: #f3f3f0; border-radius: 3px; overflow: hidden; }
+    .bar-fill { height: 100%; border-radius: 3px; display: flex; align-items: center; padding-left: 8px; font-size: 11px; font-weight: 600; color: #fff; white-space: nowrap; }
+    .bar-val { font-size: 12px; font-family: 'IBM Plex Mono', monospace; width: 70px; text-align: right; color: #888; flex-shrink: 0; }
+
+    /* Recommendations */
+    .rec { display: flex; gap: 12px; padding: 14px 16px; background: #f8f8f6; border-radius: 5px; margin-bottom: 8px; border: 1px solid #e4e4e0; }
+    .rec-icon { font-size: 22px; flex-shrink: 0; }
+    .rec-title { font-weight: 600; font-size: 13px; margin-bottom: 3px; }
+    .rec-detail { font-size: 12.5px; color: #555; line-height: 1.6; }
+
+    /* Table */
+    .data-table { width: 100%; border-collapse: collapse; font-size: 12px; margin: 10px 0; }
+    .data-table th { text-align: left; padding: 6px 8px; border-bottom: 2px solid #111; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: #666; font-weight: 600; }
+    .data-table td { padding: 5px 8px; border-bottom: 1px solid #f0f0ec; }
+    .data-table tr:hover td { background: #fafaf8; }
+    .data-table .num { text-align: right; font-family: 'IBM Plex Mono', monospace; }
+
+    /* Loading */
+    .loading-wrap { text-align: center; padding: 80px 20px; }
+    .loading-wrap .spinner { display: inline-block; width: 32px; height: 32px; border: 3px solid #e4e4e0; border-top-color: #7c3aed; border-radius: 50%; animation: spin 0.8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .loading-msg { margin-top: 12px; color: #888; font-size: 13px; }
+
+    /* Empty state */
+    .empty-state { text-align: center; padding: 80px 20px; color: #888; }
+
+    /* Page footer */
+    .page-footer { display: flex; justify-content: space-between; font-size: 10px; color: #aaa; margin-top: 24px; padding-top: 12px; border-top: 1px solid #f0f0ec; }
+
+    /* TOC */
+    .toc-item { display: flex; padding: 7px 0; border-bottom: 1px solid #f0f0ec; font-size: 14px; }
+    .toc-num { width: 28px; color: #aaa; font-family: 'IBM Plex Mono', monospace; font-size: 12px; }
+    .toc-label { flex: 1; }
+  </style>
+
+  <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
+  <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
+  <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.26.9/babel.min.js"></script>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useMemo, useCallback, useEffect, useRef } = React;
+
+const URL_TOKEN = new URLSearchParams(window.location.search).get('token') || '';
+function withToken(url) {
+  if (!URL_TOKEN) return url;
+  return url + (url.includes('?') ? '&' : '?') + 'token=' + URL_TOKEN;
+}
+if (new URLSearchParams(window.location.search).get('_print') === '1') {
+  document.body.classList.add('print-mode');
+}
+
+const fmt$ = (n) => {
+  if (n == null || isNaN(n)) return '—';
+  const abs = Math.abs(n);
+  if (abs >= 1e6) return (n < 0 ? '-' : '') + '$' + (abs / 1e6).toFixed(2) + 'M';
+  if (abs >= 1e3) return (n < 0 ? '-' : '') + '$' + (abs / 1e3).toFixed(1) + 'K';
+  return '$' + n.toLocaleString(undefined, { maximumFractionDigits: 0 });
+};
+const fmtN = (n) => n == null ? '—' : n.toLocaleString();
+const fmtPct = (n) => n == null ? '—' : n.toFixed(0) + '%';
+
+const REC_ICONS = {
+  'calendar-dollar': '💰', 'users-plus': '👥', 'sun': '☀️',
+  'chart-arrows-vertical': '📈', 'target': '🎯', 'bulb': '💡',
+  'trending-up': '📈', 'alert-triangle': '⚠️', 'star': '⭐',
+};
+
+function App() {
+  var orgSlug = useMemo(function() { return window.location.pathname.split('/').filter(Boolean)[0] || ''; }, []);
+
+  var today = new Date();
+  // Default: current fiscal year (Jul-Jun) or last 12 months
+  var defStart = today.getFullYear() + '-01-01';
+  var defEnd = today.getFullYear() + '-' + String(today.getMonth() + 1).padStart(2, '0') + '-' + String(today.getDate()).padStart(2, '0');
+
+  var [startDate, setStartDate] = useState(defStart);
+  var [endDate, setEndDate] = useState(defEnd);
+  var [loading, setLoading] = useState(false);
+  var [error, setError] = useState(null);
+  var [report, setReport] = useState(null); // { aggregates, narrative, org }
+  var [loadPhase, setLoadPhase] = useState('');
+
+  var periodLabel = useMemo(function() {
+    if (!startDate || !endDate) return '';
+    var s = new Date(startDate + 'T12:00:00');
+    var e = new Date(endDate + 'T12:00:00');
+    var opts = { year: 'numeric', month: 'long', day: 'numeric' };
+    return s.toLocaleDateString('en-US', opts) + ' — ' + e.toLocaleDateString('en-US', opts);
+  }, [startDate, endDate]);
+
+  var generate = useCallback(async function() {
+    setLoading(true);
+    setError(null);
+    setReport(null);
+    setLoadPhase('Fetching data from all reports…');
+    try {
+      var res = await fetch(withToken('/' + orgSlug + '/annual-report/api/generate'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ start_date: startDate, end_date: endDate }),
+      });
+      setLoadPhase('Generating AI narrative…');
+      if (!res.ok) {
+        var text = await res.text();
+        throw new Error(res.status + ': ' + text.substring(0, 200));
+      }
+      var json = await res.json();
+      if (!json.ok) throw new Error(json.error || 'Generation failed');
+      setReport(json);
+    } catch (e) {
+      setError(String(e.message || e));
+    } finally {
+      setLoading(false);
+      setLoadPhase('');
+    }
+  }, [orgSlug, startDate, endDate]);
+
+  var setPeriod = useCallback(function(preset) {
+    var y = today.getFullYear();
+    if (preset === 'ytd') { setStartDate(y + '-01-01'); setEndDate(defEnd); }
+    else if (preset === 'fy') {
+      // Fiscal year: Jul prior year to Jun current year
+      var fyStart = (today.getMonth() >= 6) ? y : y - 1;
+      setStartDate(fyStart + '-07-01'); setEndDate((fyStart + 1) + '-06-30');
+    }
+    else if (preset === 'last12') {
+      var d = new Date(today); d.setFullYear(d.getFullYear() - 1); d.setDate(d.getDate() + 1);
+      setStartDate(d.toISOString().split('T')[0]); setEndDate(defEnd);
+    }
+  }, [defEnd]);
+
+  // PDF export
+  var exportPdf = useCallback(async function() {
+    if (!report) return;
+    var params = new URLSearchParams({ start_date: startDate, end_date: endDate, _print: '1' });
+    if (URL_TOKEN) params.set('token', URL_TOKEN);
+    var url = '/' + orgSlug + '/annual-report/api/pdf?' + params.toString();
+    window.open(withToken(url), '_blank');
+  }, [orgSlug, startDate, endDate, report]);
+
+  var agg = report ? report.aggregates : null;
+  var nar = report ? report.narrative : null;
+  var orgInfo = report ? report.org : {};
+  var gl = agg ? agg.gl : {};
+  var prog = agg ? agg.programs : {};
+  var court = agg ? agg.courtUtilization : {};
+  var fac = agg ? agg.facility : {};
+  var sources = agg ? agg.dataSources : {};
+
+  var runDate = new Date().toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' });
+
+  // Compute max for GL bar scaling
+  var glMax = useMemo(function() {
+    if (!gl || !gl.topCategories) return 1;
+    return Math.max(...gl.topCategories.filter(function(c) { return c.amount > 0; }).map(function(c) { return c.amount; }), 1);
+  }, [gl]);
+
+  var progMax = useMemo(function() {
+    if (!prog || !prog.topByEnrollment) return 1;
+    return Math.max(...prog.topByEnrollment.map(function(p) { return p.enrollments; }), 1);
+  }, [prog]);
+
+  return (
+    <div>
+      <div className="toolbar">
+        <span className="toolbar-title">Annual Report</span>
+        <label>Start
+          <input type="date" value={startDate} onChange={function(e) { setStartDate(e.target.value); }} />
+        </label>
+        <label>End
+          <input type="date" value={endDate} onChange={function(e) { setEndDate(e.target.value); }} />
+        </label>
+        <button onClick={function() { setPeriod('ytd'); }}>YTD</button>
+        <button onClick={function() { setPeriod('fy'); }}>Fiscal Year</button>
+        <button onClick={function() { setPeriod('last12'); }}>Last 12 Mo</button>
+        <button className="btn-generate" onClick={generate} disabled={loading}>
+          {loading ? '⏳ Generating…' : '✨ Generate Annual Report'}
+        </button>
+        <div className="toolbar-spacer" />
+        {report && (
+          <>
+            <button className="btn-pdf" onClick={exportPdf}>📄 PDF</button>
+            <button onClick={function() { window.print(); }}>🖨 Print</button>
+          </>
+        )}
+      </div>
+
+      <div className="pages-wrap">
+
+        {/* Empty state */}
+        {!loading && !report && !error && (
+          <div className="page">
+            <div className="empty-state">
+              <div style={{fontSize: '48px', marginBottom: '16px'}}>📊</div>
+              <div style={{fontSize: '18px', fontWeight: 600, marginBottom: '8px'}}>Annual Report Generator</div>
+              <div>Select a date range and click <strong>Generate Annual Report</strong> to create a council-ready report from your data.</div>
+              <div style={{marginTop: '12px', fontSize: '12px', color: '#aaa'}}>
+                Pulls from GL revenue, programs, facility rentals, and court utilization data.
+                <br />AI-generated executive summary and recommendations included.
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Loading */}
+        {loading && (
+          <div className="page">
+            <div className="loading-wrap">
+              <div className="spinner" />
+              <div className="loading-msg">{loadPhase || 'Generating…'}</div>
+              <div style={{marginTop: '8px', fontSize: '11px', color: '#bbb'}}>This may take 15–30 seconds</div>
+            </div>
+          </div>
+        )}
+
+        {/* Error */}
+        {error && (
+          <div className="page">
+            <div style={{color: '#dc2626', padding: '24px'}}><strong>Error:</strong> {error}</div>
+          </div>
+        )}
+
+        {/* ── REPORT OUTPUT ── */}
+        {report && !loading && (
+          <>
+            {/* Cover Page */}
+            <div className="page">
+              <div className="cover">
+                {orgInfo.logoUrl && <img src={orgInfo.logoUrl} alt="" className="cover-logo" onError={function(e) { e.target.style.display='none'; }} />}
+                <div className="cover-org">{orgInfo.displayName || orgSlug}</div>
+                <div className="cover-sub">Parks and Recreation</div>
+                <div className="cover-title">Annual Report</div>
+                <div className="cover-period">{periodLabel}</div>
+                <div className="cover-footer">Generated by rec.us<br />{runDate}</div>
+              </div>
+            </div>
+
+            {/* Executive Summary */}
+            <div className="page">
+              <div className="divider" />
+              <h1 className="section-title"><span className="icon">📋</span> Executive Summary</h1>
+              {nar && nar.executiveSummary ? (
+                <div className="narrative" dangerouslySetInnerHTML={{__html: nar.executiveSummary.replace(/\n/g, '<br />')}} />
+              ) : (
+                <div className="narrative" style={{color: '#aaa', fontStyle: 'italic'}}>AI narrative not available</div>
+              )}
+
+              {/* Quick KPIs */}
+              <div className="kpi-row" style={{marginTop: '20px'}}>
+                {sources.gl && <div className="kpi green"><div className="kpi-label">Total Revenue</div><div className="kpi-val">{fmt$(gl.total)}</div></div>}
+                {sources.programs && <div className="kpi purple"><div className="kpi-label">Total Enrollments</div><div className="kpi-val">{fmtN(prog.totalEnrollments)}</div></div>}
+                {sources.programs && <div className="kpi amber"><div className="kpi-label">Program Sections</div><div className="kpi-val">{fmtN(prog.sections)}</div></div>}
+                {sources.facility && <div className="kpi"><div className="kpi-label">Facility Bookings</div><div className="kpi-val">{fmtN(fac.totalBookings)}</div></div>}
+              </div>
+              {sources.courtUtilization && (
+                <div className="kpi-row">
+                  <div className="kpi" style={{borderLeftColor: '#0d9488'}}><div className="kpi-label">Courts Active</div><div className="kpi-val">{fmtN(court.courtCount)}</div></div>
+                  <div className="kpi gray"><div className="kpi-label">Court Hours Booked</div><div className="kpi-val">{fmtN(court.totalHours)}</div></div>
+                  <div className="kpi green"><div className="kpi-label">Distinct Bookings</div><div className="kpi-val">{fmtN(court.totalBookings)}</div></div>
+                  {sources.facility && <div className="kpi amber"><div className="kpi-label">Facility Revenue</div><div className="kpi-val">{fmt$(fac.totalRevenue)}</div></div>}
+                </div>
+              )}
+              <div className="page-footer">
+                <span>{orgInfo.displayName || orgSlug}</span>
+                <span>Generated {runDate} by rec.us</span>
+              </div>
+            </div>
+
+            {/* Revenue Overview */}
+            {sources.gl && gl.topCategories && gl.topCategories.length > 0 && (
+              <div className="page">
+                <div className="divider" />
+                <h1 className="section-title"><span className="icon">💰</span> Revenue Overview</h1>
+                {nar && nar.revenueNarrative && (
+                  <div className="narrative" dangerouslySetInnerHTML={{__html: nar.revenueNarrative.replace(/\n/g, '<br />')}} />
+                )}
+                <h2 className="sub-title">Revenue by GL Category</h2>
+                {gl.topCategories.filter(function(c) { return c.amount > 0; }).map(function(cat) {
+                  var pct = glMax > 0 ? Math.max(2, (cat.amount / glMax) * 100) : 0;
+                  return (
+                    <div className="bar-row" key={cat.name}>
+                      <div className="bar-label" title={cat.name}>{cat.name}</div>
+                      <div className="bar-track"><div className="bar-fill" style={{width: pct + '%', background: '#16a34a', minWidth: 'fit-content'}}>{fmt$(cat.amount)}</div></div>
+                      <div className="bar-val">{((cat.amount / gl.total) * 100).toFixed(1)}%</div>
+                    </div>
+                  );
+                })}
+                {gl.refunds < 0 && (
+                  <div style={{marginTop: '12px', fontSize: '12px', color: '#dc2626'}}>
+                    Total refunds/credits: {fmt$(gl.refunds)}
+                  </div>
+                )}
+                <div className="page-footer">
+                  <span>{orgInfo.displayName || orgSlug}</span>
+                  <span>Generated {runDate} by rec.us</span>
+                </div>
+              </div>
+            )}
+
+            {/* Programs & Participation */}
+            {sources.programs && prog.topByEnrollment && prog.topByEnrollment.length > 0 && (
+              <div className="page">
+                <div className="divider" />
+                <h1 className="section-title"><span className="icon">🏃</span> Programs & Participation</h1>
+                {nar && nar.programsNarrative && (
+                  <div className="narrative" dangerouslySetInnerHTML={{__html: nar.programsNarrative.replace(/\n/g, '<br />')}} />
+                )}
+                <div className="kpi-row">
+                  <div className="kpi green"><div className="kpi-label">Enrollments</div><div className="kpi-val">{fmtN(prog.totalEnrollments)}</div></div>
+                  <div className="kpi"><div className="kpi-label">Sections</div><div className="kpi-val">{fmtN(prog.sections)}</div></div>
+                  {prog.fillRate != null && <div className="kpi amber"><div className="kpi-label">Avg Fill Rate</div><div className="kpi-val">{fmtPct(prog.fillRate)}</div></div>}
+                  <div className="kpi purple"><div className="kpi-label">Program Revenue</div><div className="kpi-val">{fmt$(prog.totalRevenue)}</div></div>
+                </div>
+                <h2 className="sub-title">Top Programs by Enrollment</h2>
+                {prog.topByEnrollment.map(function(p) {
+                  var pct = progMax > 0 ? Math.max(2, (p.enrollments / progMax) * 100) : 0;
+                  return (
+                    <div className="bar-row" key={p.name}>
+                      <div className="bar-label" title={p.name}>{p.name}</div>
+                      <div className="bar-track"><div className="bar-fill" style={{width: pct + '%', background: '#2563eb', minWidth: 'fit-content'}}>{fmtN(p.enrollments)}</div></div>
+                      <div className="bar-val">{fmt$(p.revenue)}</div>
+                    </div>
+                  );
+                })}
+                <div className="page-footer">
+                  <span>{orgInfo.displayName || orgSlug}</span>
+                  <span>Generated {runDate} by rec.us</span>
+                </div>
+              </div>
+            )}
+
+            {/* Facility Utilization */}
+            {(sources.courtUtilization || sources.facility) && (
+              <div className="page">
+                <div className="divider" />
+                <h1 className="section-title"><span className="icon">🏟️</span> Facility Utilization</h1>
+                {nar && nar.facilityNarrative && (
+                  <div className="narrative" dangerouslySetInnerHTML={{__html: nar.facilityNarrative.replace(/\n/g, '<br />')}} />
+                )}
+                <div className="kpi-row">
+                  {sources.courtUtilization && <div className="kpi" style={{borderLeftColor:'#0d9488'}}><div className="kpi-label">Courts with Activity</div><div className="kpi-val">{fmtN(court.courtCount)}</div></div>}
+                  {sources.courtUtilization && <div className="kpi green"><div className="kpi-label">Total Court Hours</div><div className="kpi-val">{fmtN(court.totalHours)}</div></div>}
+                  {sources.facility && <div className="kpi purple"><div className="kpi-label">Rental Revenue</div><div className="kpi-val">{fmt$(fac.totalRevenue)}</div></div>}
+                  {sources.facility && <div className="kpi amber"><div className="kpi-label">Locations</div><div className="kpi-val">{fmtN(fac.locationCount)}</div></div>}
+                </div>
+                {fac.locationList && fac.locationList.length > 0 && (
+                  <>
+                    <h2 className="sub-title">Active Locations</h2>
+                    <div style={{display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '16px'}}>
+                      {fac.locationList.map(function(loc) {
+                        return <span key={loc} style={{background: '#f3f3f0', padding: '4px 10px', borderRadius: '12px', fontSize: '12px', border: '1px solid #e4e4e0'}}>{loc}</span>;
+                      })}
+                    </div>
+                  </>
+                )}
+                <div className="page-footer">
+                  <span>{orgInfo.displayName || orgSlug}</span>
+                  <span>Generated {runDate} by rec.us</span>
+                </div>
+              </div>
+            )}
+
+            {/* Recommendations */}
+            {nar && nar.recommendations && nar.recommendations.length > 0 && (
+              <div className="page">
+                <div className="divider" />
+                <h1 className="section-title"><span className="icon">🔭</span> Looking Ahead</h1>
+                <div className="narrative" style={{marginBottom: '20px'}}>
+                  Based on the data from this reporting period, rec.us AI identifies the following strategic priorities:
+                </div>
+                {nar.recommendations.map(function(rec, i) {
+                  var icon = REC_ICONS[rec.icon] || '💡';
+                  return (
+                    <div className="rec" key={i}>
+                      <div className="rec-icon">{icon}</div>
+                      <div>
+                        <div className="rec-title">{rec.title}</div>
+                        <div className="rec-detail">{rec.detail}</div>
+                      </div>
+                    </div>
+                  );
+                })}
+                <div style={{marginTop: '32px', padding: '20px', background: '#f8f8f6', borderRadius: '5px', textAlign: 'center', border: '1px solid #e4e4e0'}}>
+                  <div style={{fontSize: '11px', color: '#aaa', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '6px'}}>Prepared by</div>
+                  <div style={{fontSize: '15px', fontWeight: 600}}>rec.us analytics platform</div>
+                  <div style={{fontSize: '11px', color: '#888', marginTop: '4px'}}>
+                    AI-generated narrative and recommendations powered by Anthropic Claude.
+                    <br />Report generated {runDate}.
+                  </div>
+                </div>
+                <div className="page-footer">
+                  <span>{orgInfo.displayName || orgSlug}</span>
+                  <span>Generated {runDate} by rec.us</span>
+                </div>
+              </div>
+            )}
+
+            {/* Data sources */}
+            <div className="page" style={{padding: '24px 56px'}}>
+              <div style={{fontSize: '11px', color: '#aaa'}}>
+                <strong>Data sources:</strong> {Object.entries(sources).filter(function(e) { return e[1]; }).map(function(e) { return e[0]; }).join(', ')}
+                {' | '}Period: {periodLabel}
+                {report.cached && ' | Cached result'}
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+      <div id="report-ready" style={{display: 'none'}} />
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+<script src="/share-widget.js" defer></script>
+<script src="/feedback-widget.js" defer></script>
+<script src="/nav-breadcrumb.js" defer></script>
+</body>
+</html>
