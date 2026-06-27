@@ -6497,6 +6497,13 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  { date: '2026-06-26', title: 'Court Utilization: Real Schedules, Heatmap & Demand Indicators', items: [
+    'Real per-court operating hours from rec.us MCP replace the flat assumed hrs/day \u2014 utilization % now uses actual booking schedules per court per day-of-week',
+    'Day-of-week heatmap grid shows utilization intensity across courts \u00d7 Mon\u2013Sun \u2014 instantly reveals scheduling gaps and peak days',
+    '\uD83D\uDD25 Demand indicators: fire emoji on hot courts (50%+) and double fire on 80%+ in both bar chart and heatmap',
+    'Location filter moved to toolbar and restyled to match facility report dark-theme pattern',
+    'Green badge shows how many courts have real schedule data vs estimated fallback'
+  ]},
   { date: '2026-06-26', title: 'Facility Report: Cleaner Filters + Calendar Removal', items: [
     'Stripped color swatches from Location filter \u2014 now just checkbox + name, side by side',
     'Removed Calendar view entirely (Table/Calendar toggle gone) \u2014 table-only now',
@@ -7270,4 +7277,5 @@ app.listen(PORT, () => {
   // Runs after listen() so startup isn't blocked by GitHub latency.
   migrateDynamicOrgs();
 });
+
 
