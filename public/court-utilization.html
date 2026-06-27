@@ -80,6 +80,57 @@
     .toolbar .divider { width: 1px; height: 28px; background: rgba(255,255,255,.15); margin: 0 4px; }
     .toolbar .row-count { font-size: 11px; color: #aaa; }
 
+    /* ── Location filter (shared pattern with facility.html) ── */
+    .loc-filter-wrap { position: relative; }
+    .btn-loc-filter {
+      display: flex; align-items: center; gap: 6px; white-space: nowrap;
+    }
+    .btn-loc-filter .badge {
+      background: #f59e0b; color: #1a1a1a; border-radius: 10px;
+      font-size: 10px; font-weight: 700; padding: 1px 6px; line-height: 1.4;
+    }
+    .loc-dropdown {
+      position: absolute; top: calc(100% + 6px); right: 0; z-index: 200;
+      background: #1e1e1e; border: 1px solid rgba(255,255,255,.15);
+      border-radius: 6px; min-width: 220px; max-height: 360px;
+      display: flex; flex-direction: column; box-shadow: 0 8px 24px rgba(0,0,0,.5);
+    }
+    .loc-dropdown-header {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 8px 12px; border-bottom: 1px solid rgba(255,255,255,.1);
+      font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px;
+      color: #aaa; flex-shrink: 0;
+    }
+    .loc-dropdown-header-actions { display: flex; gap: 8px; }
+    .loc-dropdown-header button {
+      padding: 2px 6px; font-size: 10px;
+      border-color: rgba(255,255,255,.15); background: rgba(255,255,255,.06);
+    }
+    .loc-dropdown-search {
+      padding: 6px 10px; border-bottom: 1px solid rgba(255,255,255,.08); flex-shrink: 0;
+    }
+    .loc-dropdown-search input {
+      width: 100%; padding: 4px 8px; background: rgba(255,255,255,.08);
+      border: 1px solid rgba(255,255,255,.15); border-radius: 4px;
+      color: #fff; font-size: 11px; font-family: inherit; outline: none;
+      box-sizing: border-box;
+    }
+    .loc-dropdown-search input::placeholder { color: #777; }
+    .loc-dropdown-search input:focus { border-color: #3b82f6; }
+    .loc-dropdown-list { overflow-y: auto; flex: 1; padding: 4px 0; }
+    .loc-dropdown-list::-webkit-scrollbar { width: 4px; }
+    .loc-dropdown-list::-webkit-scrollbar-track { background: transparent; }
+    .loc-dropdown-list::-webkit-scrollbar-thumb { background: rgba(255,255,255,.2); border-radius: 2px; }
+    .loc-item {
+      display: flex; align-items: center; gap: 8px; padding: 5px 12px;
+      cursor: pointer; transition: background .1s; font-size: 12px; color: #ddd;
+    }
+    .loc-item:hover { background: rgba(255,255,255,.07); }
+    .loc-item input[type="checkbox"] {
+      accent-color: #3b82f6; width: 13px; height: 13px; flex-shrink: 0; cursor: pointer;
+    }
+    .loc-item span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+
     /* ── Page body ── */
     .page {
       max-width: 1280px;
@@ -391,10 +442,10 @@ function normalize(rows) {
     .filter(r => r.courtName);
 }
 
-// ── Location multi-select (mirrors the facility.html location filter) ─
-function LocationFilter({ all, selected, onChange, dark }) {
+// ── Location multi-select (shared pattern — matches facility.html) ──
+function LocationFilter({ all, selected, onChange }) {
   const [open, setOpen] = useState(false);
-  const [q, setQ] = useState('');
+  const [search, setSearch] = useState('');
   const ref = useRef(null);
 
   useEffect(() => {
@@ -404,57 +455,49 @@ function LocationFilter({ all, selected, onChange, dark }) {
   }, []);
 
   const sel = new Set(selected);
-  const partial = selected.length > 0 && selected.length < all.length;
-  let label;
-  if (all.length === 0) label = 'No locations';
-  else if (selected.length === 0) label = 'No locations';
-  else if (selected.length === all.length) label = 'All locations';
-  else if (selected.length === 1) label = selected[0];
-  else label = `${selected.length} of ${all.length}`;
-
-  const shown = q ? all.filter(l => l.toLowerCase().includes(q.toLowerCase())) : all;
+  const allSelected = selected.length === all.length;
+  const noneSelected = selected.length === 0;
+  const filtered = search ? all.filter(l => l.toLowerCase().includes(search.toLowerCase())) : all;
+  const badgeCount = allSelected ? null : selected.length;
 
   function toggle(loc) {
     const next = new Set(sel);
     if (next.has(loc)) next.delete(loc); else next.add(loc);
-    onChange(all.filter(l => next.has(l))); // preserve sorted order
+    onChange(all.filter(l => next.has(l)));
   }
 
   return (
-    <div ref={ref} style={{position:'relative', display:'inline-block'}}>
-      <button type="button" onClick={() => setOpen(o => !o)}
-        style={{display:'flex', alignItems:'center', gap:'8px', padding:'6px 10px',
-          border: dark ? '1px solid rgba(255,255,255,.15)' : '1px solid #d1d5db',
-          borderRadius:'6px', background: dark ? 'rgba(255,255,255,.08)' : '#fff',
-          fontSize:'13px', cursor:'pointer', minWidth:'160px', justifyContent:'space-between',
-          color: dark ? '#fff' : 'inherit'}}>
-        <span style={{display:'flex', alignItems:'center', gap:'6px'}}>
-          <span style={{fontSize:'11px', color: dark ? '#aaa' : '#666', fontWeight:600, textTransform:'uppercase', letterSpacing:'0.5px'}}>Locations</span>
-          <span>{label}</span>
-          {partial && <span style={{background:'#f59e0b', color:'#fff', borderRadius:'10px', padding:'0 6px', fontSize:'10px', fontWeight:700}}>{selected.length}</span>}
-        </span>
-        <span style={{color: dark ? 'rgba(255,255,255,.4)' : '#9ca3af', fontSize:'10px'}}>▾</span>
+    <div className="loc-filter-wrap" ref={ref}>
+      <button type="button" className="btn-loc-filter"
+        onClick={() => setOpen(o => !o)}
+        style={!allSelected ? { borderColor: '#f59e0b', color: '#fde68a' } : {}}>
+        {'\uD83D\uDCCD'} Locations
+        {badgeCount !== null && <span className="badge">{badgeCount}/{all.length}</span>}
       </button>
+
       {open && (
-        <div style={{position:'absolute', top:'calc(100% + 4px)', right:0, width:'260px', zIndex:200,
-          background:'#fff', border:'1px solid #d1d5db', borderRadius:'8px',
-          boxShadow:'0 8px 24px rgba(0,0,0,0.12)', padding:'8px'}}>
-          <input type="text" placeholder="Search locations…" value={q}
-            onChange={e => setQ(e.target.value)} autoFocus
-            style={{width:'100%', boxSizing:'border-box', padding:'6px 8px', marginBottom:'6px',
-              border:'1px solid #d1d5db', borderRadius:'6px', fontSize:'13px'}} />
-          <div style={{display:'flex', gap:'8px', marginBottom:'6px'}}>
-            <button type="button" onClick={() => onChange(all.slice())}
-              style={{flex:1, padding:'4px', fontSize:'12px', border:'1px solid #d1d5db', borderRadius:'6px', background:'#f9fafb', cursor:'pointer'}}>Select all</button>
-            <button type="button" onClick={() => onChange([])}
-              style={{flex:1, padding:'4px', fontSize:'12px', border:'1px solid #d1d5db', borderRadius:'6px', background:'#f9fafb', cursor:'pointer'}}>None</button>
+        <div className="loc-dropdown">
+          <div className="loc-dropdown-header">
+            <span>Filter Locations</span>
+            <div className="loc-dropdown-header-actions">
+              <button type="button" onClick={() => onChange(all.slice())} disabled={allSelected}>All</button>
+              <button type="button" onClick={() => onChange([])} disabled={noneSelected}>None</button>
+            </div>
           </div>
-          <div style={{maxHeight:'220px', overflowY:'auto'}}>
-            {shown.length === 0 && <div style={{padding:'8px', fontSize:'13px', color:'#9ca3af'}}>No matches</div>}
-            {shown.map(loc => (
-              <label key={loc} style={{display:'flex', alignItems:'center', gap:'8px', padding:'4px 4px', fontSize:'13px', cursor:'pointer'}}>
+
+          {all.length > 5 && (
+            <div className="loc-dropdown-search">
+              <input type="text" placeholder="Search locations\u2026" value={search}
+                onChange={e => setSearch(e.target.value)} autoFocus />
+            </div>
+          )}
+
+          <div className="loc-dropdown-list">
+            {filtered.length === 0 && <div style={{padding:'10px 12px', color:'#666', fontSize:11}}>No matches</div>}
+            {filtered.map(loc => (
+              <label key={loc} className="loc-item">
                 <input type="checkbox" checked={sel.has(loc)} onChange={() => toggle(loc)} />
-                <span>{loc}</span>
+                <span title={loc}>{loc}</span>
               </label>
             ))}
           </div>
@@ -1050,7 +1093,7 @@ function App() {
           {loading ? <><span className="btn-spinner" />Loading…</> : '▶ Run Report'}
         </button>
         {allLocations.length > 0 && (
-          <LocationFilter all={allLocations} selected={selectedLocations} onChange={setSelectedLocations} dark />
+          <LocationFilter all={allLocations} selected={selectedLocations} onChange={setSelectedLocations} />
         )}
         <div className="toolbar-spacer" />
         <span className="row-count">{rows.length.toLocaleString()} rows</span>
@@ -1232,4 +1275,5 @@ ReactDOM.createRoot(document.getElementById('root')).render(<App />);
       <script src="/nav-breadcrumb.js" defer></script>
   </body>
 </html>
+
 
