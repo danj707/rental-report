@@ -219,6 +219,45 @@
       height: 620px;
       margin-top: 4px;
     }
+
+    /* ── DOW Heatmap ── */
+    .heatmap-section { margin-top: 20px; }
+    .heatmap-title {
+      font-size: 13px; font-weight: 700; margin-bottom: 8px;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .heatmap-title .subtitle { font-weight: 400; color: #888; font-size: 11px; }
+    .heatmap-grid {
+      display: grid;
+      grid-template-columns: minmax(180px, 1fr) repeat(7, 1fr);
+      gap: 2px;
+      font-size: 11px;
+    }
+    .heatmap-hdr {
+      text-align: center; font-weight: 700; font-size: 10px;
+      text-transform: uppercase; letter-spacing: 0.5px; color: #888;
+      padding: 4px 2px;
+    }
+    .heatmap-label {
+      padding: 5px 8px; font-size: 11px; white-space: nowrap;
+      overflow: hidden; text-overflow: ellipsis;
+      display: flex; align-items: center; gap: 4px;
+      border-radius: 3px; background: #f8f8f6;
+    }
+    .heatmap-cell {
+      text-align: center; padding: 5px 2px; border-radius: 3px;
+      font-family: 'IBM Plex Mono', monospace; font-size: 10px; font-weight: 600;
+      transition: transform .1s;
+    }
+    .heatmap-cell:hover { transform: scale(1.08); }
+    .heatmap-legend {
+      display: flex; align-items: center; gap: 12px;
+      margin-top: 8px; font-size: 10px; color: #888;
+    }
+    .heatmap-legend-swatch {
+      display: inline-block; width: 14px; height: 14px; border-radius: 3px;
+      vertical-align: middle; margin-right: 3px;
+    }
     .empty, .loading {
       color: #9ca3af;
       text-align: center;
@@ -487,7 +526,7 @@ function LocationFilter({ all, selected, onChange }) {
 
           {all.length > 5 && (
             <div className="loc-dropdown-search">
-              <input type="text" placeholder="Search locations\u2026" value={search}
+              <input type="text" placeholder="Search locations…" value={search}
                 onChange={e => setSearch(e.target.value)} autoFocus />
             </div>
           )}
@@ -715,6 +754,7 @@ function App() {
     const arr = Array.from(byCourt.values()).map(e => {
       const usedHrs = e.customerHrs + e.programHrs; // closures are unavailability, not utilization
       const avail = computeCourtAvail(e.label);
+      const pct = avail.availHrs > 0 ? (usedHrs / avail.availHrs) * 100 : null;
       return {
         ...e,
         customer: e.customer.size,
@@ -724,7 +764,8 @@ function App() {
         usedHrs,
         availHrs: avail.availHrs,
         availSource: avail.source,
-        utilPct:  avail.availHrs > 0 ? (usedHrs / avail.availHrs) * 100 : null,
+        utilPct:  pct,
+        demand:   pct >= 80 ? 'hot' : pct >= 50 ? 'warm' : null,
       };
     });
     arr.sort((a,b) => b.total - a.total);
@@ -760,6 +801,38 @@ function App() {
       totalHours: hours,
     };
   }, [filtered]);
+
+  // ── Day-of-week heatmap data ────────────────────────────────────
+  const DOW_LABELS = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+  const dowHeatmap = useMemo(() => {
+    if (!grouped.length || !filtered.length) return [];
+    // Accumulate hours by court label + DOW
+    var courtDow = {};
+    for (var i = 0; i < filtered.length; i++) {
+      var r = filtered[i];
+      if (!r.localDate || !r.durationHours) continue;
+      if (r.usageCategory === 'Closure / Block') continue; // exclude closures from util
+      var label = r.locationName + ' \u2014 ' + r.courtName;
+      var jsDay = new Date(r.localDate + 'T12:00:00').getDay(); // 0=Sun..6=Sat
+      var dow = jsDay === 0 ? 7 : jsDay; // 1=Mon..7=Sun
+      var key = label + '|' + dow;
+      courtDow[key] = (courtDow[key] || 0) + r.durationHours;
+    }
+    // Build rows sorted by overall utilization (match bar chart order)
+    var fallbackHrs = Number(hrsPerDay) || 12;
+    return grouped.map(function(g) {
+      var cells = [];
+      for (var d = 1; d <= 7; d++) {
+        var used = courtDow[g.label + '|' + d] || 0;
+        var courtSched = schedules && schedules[g.label] && schedules[g.label].dailyHrs;
+        var hrsForDay = courtSched ? (courtSched[d] || 0) : fallbackHrs;
+        var avail = hrsForDay * (dowCounts[d] || 0);
+        var pct = avail > 0 ? (used / avail) * 100 : 0;
+        cells.push({ dow: d, used: used, avail: avail, pct: pct });
+      }
+      return { label: g.label, court: g.court, location: g.location, demand: g.demand, utilPct: g.utilPct, cells: cells };
+    });
+  }, [grouped, filtered, schedules, dowCounts, hrsPerDay]);
 
   // ── AI insights ───────────────────────────────────────────────────
   // Build a compact aggregate blob from the on-screen (filtered) view.
@@ -905,7 +978,10 @@ function App() {
     if (chartRef.current) { chartRef.current.destroy(); chartRef.current = null; }
     if (grouped.length === 0) return;
 
-    const labels = grouped.map(g => g.label);
+    const labels = grouped.map(g => {
+      const fire = g.demand === 'hot' ? ' \uD83D\uDD25\uD83D\uDD25' : g.demand === 'warm' ? ' \uD83D\uDD25' : '';
+      return g.label + fire;
+    });
     const isUtil = metric === 'util';
     // Per-court value for each usage category, in the active metric's unit.
     //   util  → category's share of that court's available hours (segments sum to the court's total utilization %)
@@ -1255,6 +1331,57 @@ function App() {
           </div>
         )}
 
+        {/* Day-of-week heatmap */}
+        {!loading && dowHeatmap.length > 0 && (
+          <div className="heatmap-section">
+            <div className="heatmap-title">
+              Day-of-Week Utilization
+              <span className="subtitle">Which courts are busiest on which days</span>
+            </div>
+            <div className="heatmap-grid">
+              {/* Header row */}
+              <div className="heatmap-hdr" style={{textAlign:'left', paddingLeft:8}}>Court</div>
+              {DOW_LABELS.map(d => <div key={d} className="heatmap-hdr">{d}</div>)}
+              {/* Data rows */}
+              {dowHeatmap.map(row => (
+                <React.Fragment key={row.label}>
+                  <div className="heatmap-label" title={row.label}>
+                    {row.demand === 'hot' && '\uD83D\uDD25\uD83D\uDD25'}
+                    {row.demand === 'warm' && '\uD83D\uDD25'}
+                    <span style={{overflow:'hidden', textOverflow:'ellipsis'}}>{row.court}</span>
+                    {row.utilPct != null && <span style={{marginLeft:'auto', color:'#999', fontSize:10, flexShrink:0}}>{Math.round(row.utilPct)}%</span>}
+                  </div>
+                  {row.cells.map(c => {
+                    var bg, fg;
+                    if (c.avail === 0) { bg = '#f3f3f0'; fg = '#ccc'; }
+                    else if (c.pct >= 80) { bg = '#dc2626'; fg = '#fff'; }
+                    else if (c.pct >= 60) { bg = '#ea580c'; fg = '#fff'; }
+                    else if (c.pct >= 40) { bg = '#f59e0b'; fg = '#1a1a1a'; }
+                    else if (c.pct >= 20) { bg = '#fde68a'; fg = '#1a1a1a'; }
+                    else if (c.pct > 0)   { bg = '#fef9c3'; fg = '#666'; }
+                    else                  { bg = '#f8f8f6'; fg = '#ccc'; }
+                    return (
+                      <div key={c.dow} className="heatmap-cell"
+                        style={{background: bg, color: fg}}
+                        title={`${row.court} ${DOW_LABELS[c.dow - 1]}: ${c.used.toFixed(1)}h used / ${c.avail.toFixed(0)}h avail (${c.pct.toFixed(0)}%)`}>
+                        {c.avail === 0 ? '\u2014' : c.pct < 1 && c.pct > 0 ? '<1%' : Math.round(c.pct) + '%'}
+                      </div>
+                    );
+                  })}
+                </React.Fragment>
+              ))}
+            </div>
+            <div className="heatmap-legend">
+              <span><span className="heatmap-legend-swatch" style={{background:'#f8f8f6',border:'1px solid #e4e4e0'}} />0%</span>
+              <span><span className="heatmap-legend-swatch" style={{background:'#fef9c3'}} />1-19%</span>
+              <span><span className="heatmap-legend-swatch" style={{background:'#fde68a'}} />20-39%</span>
+              <span><span className="heatmap-legend-swatch" style={{background:'#f59e0b'}} />40-59%</span>
+              <span><span className="heatmap-legend-swatch" style={{background:'#ea580c'}} />60-79%</span>
+              <span><span className="heatmap-legend-swatch" style={{background:'#dc2626'}} />80%+ \uD83D\uDD25</span>
+            </div>
+          </div>
+        )}
+
         {/* Footer */}
         <div className="report-footer">
           <span>{displayOrg}</span>
@@ -1275,5 +1402,6 @@ ReactDOM.createRoot(document.getElementById('root')).render(<App />);
       <script src="/nav-breadcrumb.js" defer></script>
   </body>
 </html>
+
 
 
