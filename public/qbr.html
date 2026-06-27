@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>QBR · rec.us</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,400&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<style>
+  :root {
+    --ink:    #0F1B2D;
+    --slate:  #5A6B82;
+    --faint:  #8A97A8;
+    --paper:  #FFFFFF;
+    --mist:   #F4F6F9;
+    --line:   #E4E8EE;
+    --emerald:#1F7A5A;
+    --emerald-soft:#E7F1EC;
+    --up:     #15803D;
+    --down:   #C2410C;
+    --shadow: 0 1px 2px rgba(15,27,45,.04), 0 8px 24px rgba(15,27,45,.05);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: 'IBM Plex Sans', system-ui, sans-serif;
+    color: var(--ink);
+    background: #ECEFF3;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 28px 22px 60px; }
+
+  /* ── Picker ── */
+  .picker {
+    background: var(--paper); border: 1px solid var(--line); border-radius: 14px;
+    box-shadow: var(--shadow); padding: 18px 20px; margin-bottom: 26px;
+    display: flex; flex-wrap: wrap; align-items: flex-end; gap: 16px;
+  }
+  .picker .field { display: flex; flex-direction: column; gap: 6px; }
+  .picker label {
+    font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase;
+    color: var(--faint);
+  }
+  .picker select {
+    font-family: inherit; font-size: 15px; font-weight: 500; color: var(--ink);
+    background: var(--mist); border: 1px solid var(--line); border-radius: 9px;
+    padding: 9px 13px; min-width: 150px; cursor: pointer;
+  }
+  .picker select:focus-visible { outline: 2px solid var(--emerald); outline-offset: 1px; }
+  .picker .go {
+    margin-left: auto; font-family: inherit; font-size: 15px; font-weight: 600;
+    color: #fff; background: var(--emerald); border: none; border-radius: 9px;
+    padding: 11px 26px; cursor: pointer; transition: background .15s;
+  }
+  .picker .go:hover { background: #1a6a4e; }
+  .picker .tag {
+    font-size: 11px; font-weight: 600; color: var(--emerald); background: var(--emerald-soft);
+    padding: 4px 9px; border-radius: 20px; align-self: center; letter-spacing: .03em;
+  }
+
+  /* ── Report page ── */
+  .page {
+    background: var(--paper); border-radius: 14px; box-shadow: var(--shadow);
+    overflow: hidden; position: relative;
+  }
+
+  /* Header band */
+  .band {
+    display: flex; align-items: center; justify-content: space-between; gap: 20px;
+    padding: 26px 34px; border-bottom: 1px solid var(--line);
+  }
+  .band-l { display: flex; align-items: center; gap: 16px; }
+  .logo { height: 44px; width: auto; display: block; }
+  .monogram {
+    height: 44px; width: 44px; border-radius: 10px; background: var(--ink); color: #fff;
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'Fraunces', serif; font-weight: 600; font-size: 20px;
+  }
+  .org-name { font-size: 20px; font-weight: 600; letter-spacing: -.01em; line-height: 1.1; }
+  .org-sub { font-size: 12px; color: var(--slate); margin-top: 3px; }
+  .band-r { text-align: right; }
+  .eyebrow {
+    font-family: 'Fraunces', serif; font-style: italic; font-size: 15px; color: var(--emerald);
+    letter-spacing: .01em;
+  }
+  .period { font-size: 22px; font-weight: 600; letter-spacing: -.01em; margin-top: 2px; }
+  .prepared { font-size: 11.5px; color: var(--faint); margin-top: 4px; letter-spacing: .02em; }
+
+  /* Reconciliation strip — the signature */
+  .recon {
+    margin: 22px 34px 0; background: var(--mist); border: 1px solid var(--line);
+    border-radius: 13px; padding: 20px 26px;
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  }
+  .recon-seg { display: flex; flex-direction: column; gap: 3px; }
+  .recon-lab {
+    font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--faint);
+  }
+  .recon-val { font-family: 'Fraunces', serif; font-size: 30px; font-weight: 600; color: var(--ink); font-variant-numeric: tabular-nums; letter-spacing: -.01em; line-height: 1; }
+  .recon-val.refund { color: var(--down); }
+  .recon-op { font-family: 'Fraunces', serif; font-size: 30px; color: #B9C2CE; font-weight: 400; padding: 0 16px; align-self: center; }
+  .recon-net { margin-left: auto; display: flex; align-items: baseline; gap: 14px; }
+  .recon-net .net-lab {
+    font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--emerald);
+  }
+  .recon-net .net-val {
+    font-family: 'Fraunces', serif; font-size: 46px; font-weight: 600; color: var(--emerald);
+    letter-spacing: -.02em; line-height: 1; font-variant-numeric: tabular-nums;
+  }
+
+  /* KPI row */
+  .kpis { display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px; padding: 22px 34px 0; }
+  .kpi { border: 1px solid var(--line); border-radius: 12px; padding: 15px 16px 16px; }
+  .kpi-lab {
+    font-size: 11px; font-weight: 600; letter-spacing: .07em; text-transform: uppercase; color: var(--faint);
+  }
+  .kpi-val {
+    font-size: 27px; font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: -.02em;
+    margin-top: 8px; line-height: 1;
+  }
+  .kpi-sub { font-size: 12px; color: var(--slate); margin-top: 7px; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 3px; font-size: 12px; font-weight: 600;
+    padding: 2px 8px; border-radius: 20px; margin-top: 9px;
+  }
+  .chip.up   { color: var(--up);   background: #E7F4EC; }
+  .chip.down { color: var(--down); background: #FBEAE1; }
+  .chip.flat { color: var(--slate); background: var(--mist); }
+  .est { font-size: 10px; font-weight: 600; color: var(--faint); background: var(--mist);
+         padding: 2px 6px; border-radius: 5px; margin-left: 6px; letter-spacing: .03em; vertical-align: middle; }
+
+  /* Lower split */
+  .lower { display: grid; grid-template-columns: 1.35fr 1fr; gap: 22px; padding: 24px 34px 30px; }
+  .sec-lab {
+    font-family: 'Fraunces', serif; font-style: italic; font-size: 15px; color: var(--ink);
+    margin: 0 0 11px;
+  }
+  .summary { font-size: 14.5px; line-height: 1.62; color: #2A3848; }
+  .highlights { list-style: none; margin: 20px 0 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+  .highlights li { display: flex; gap: 11px; }
+  .hl-dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--emerald); margin-top: 7px; }
+  .hl-t { font-size: 13.5px; font-weight: 600; }
+  .hl-d { font-size: 13px; color: var(--slate); line-height: 1.5; margin-top: 1px; }
+  .chart-card { border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; }
+  .chart-wrap { position: relative; height: 200px; margin-top: 6px; }
+
+  /* Footer */
+  .foot {
+    border-top: 1px solid var(--line); padding: 16px 34px 22px; background: var(--mist);
+  }
+  .season { font-family: 'Fraunces', serif; font-style: italic; font-size: 13px; color: #3A4754; line-height: 1.5; }
+  .method { font-size: 10.5px; color: var(--faint); margin-top: 8px; line-height: 1.5; letter-spacing: .01em; }
+
+  /* Print */
+  @page { size: letter landscape; margin: 0.35in; }
+  body.print { background: #fff; }
+  body.print .wrap { max-width: none; padding: 0; }
+  body.print .picker { display: none; }
+  body.print .page { box-shadow: none; border-radius: 0; }
+  @media (max-width: 1000px) { .lower { grid-template-columns: 1fr; } }
+  @media (max-width: 820px) {
+    .kpis { grid-template-columns: repeat(2, 1fr); }
+    .recon { row-gap: 6px; }
+    .recon-net { margin-left: 0; width: 100%; margin-top: 12px; }
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel">
+const { useState, useEffect, useRef } = React;
+
+// ── In production this is injected/fetched; preview uses Watertown-shaped mock ──
+const PREVIEW = !window.__QBR_LIVE__;
+const MOCK = {
+  org: {
+    slug: 'watertown',
+    displayName: 'Watertown Parks & Recreation',
+    logoUrl: 'https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2Forganization-d781690b-c5a0-43c5-8443-9ae43899528c%2FfullLogo.png%3F1750270261391&w=256&q=75',
+    orgId: 'd781690b-c5a0-43c5-8443-9ae43899528c',
+  },
+  period:     { year: 2025, quarter: 3, start: '2025-07-01', end: '2025-09-30', label: 'Q3 2025' },
+  comparison: { start: '2025-04-01', end: '2025-06-30', label: 'Q2 2025' },
+  metrics: {
+    financial: { gross: 487200, refunds: 18940, net: 468260, netDelta: 34, grossDelta: 31, transactions: 6842, transactionsDelta: 22, refundCount: 214 },
+    programs:  { enrollments: 4210, sections: 312, programs: 88, enrollmentsDelta: 41 },
+    facility:  { bookings: 1847, locations: 22, revenue: 214500, bookingsDelta: 28 },
+    court:     { hoursBooked: 3120, courts: 13, utilization: 41, utilizationEstimated: true, hrsPerDay: 12 },
+    retention: { rate: 73.5 },
+    memberships: null,
+  },
+  narrative: {
+    executiveSummary: "Watertown closed Q3 at $468,260 in net revenue, up 34% over Q2 as summer programming and field rentals reached their seasonal peak. Program enrollments led the quarter at 4,210 across 312 sections, a 41% jump, while facility bookings reached 1,847 across 22 locations. Court time stayed busy at 3,120 booked hours over 13 courts, and program retention held at 73.5%.",
+    highlights: [
+      { label: 'Programs drove the quarter', detail: '4,210 enrollments (+41% QoQ) across 88 programs — the largest single contributor to the revenue jump.' },
+      { label: 'Facility demand climbed', detail: '1,847 bookings (+28%) generated $214,500 in rental revenue across 22 locations.' },
+      { label: 'Refunds stayed contained', detail: '$18,940 refunded against $487,200 gross — 3.9% of gross, steady with prior quarters.' },
+    ],
+    seasonality: "Q3 (Jul–Sep) typically runs well above Q2 in Watertown on summer camps, programs, and field rentals — read the quarter-over-quarter jumps with that seasonal pattern in mind.",
+  },
+};
+
+const ORG_OPTIONS = [
+  ['watertown','Watertown Parks & Recreation'], ['clarksville','Clarksville Parks and Recreation'],
+  ['norman','Norman'], ['smyrna','Smyrna'], ['apex','Apex'], ['theranch','The Ranch Parks and Recreation'],
+  ['westsacramento','City of West Sacramento'], ['joplin','Joplin'], ['shrewsbury','Shrewsbury'],
+  ['littleton','Littleton'], ['danvers','Danvers'], ['rec','Rec'],
+];
+
+const fmtMoney = (n) => '$' + Math.round(n).toLocaleString('en-US');
+const fmtNum   = (n) => Math.round(n).toLocaleString('en-US');
+
+// Draw the % value at the end of each bar — the chart is a static PDF artifact, no hover.
+const barEndLabels = {
+  id: 'barEndLabels',
+  afterDatasetsDraw(chart) {
+    const ctx = chart.ctx;
+    const ds = chart.data.datasets[0];
+    const meta = chart.getDatasetMeta(0);
+    ctx.save();
+    ctx.font = "600 12px 'IBM Plex Sans', system-ui, sans-serif";
+    ctx.textBaseline = 'middle';
+    meta.data.forEach((bar, i) => {
+      const v = ds.data[i];
+      const txt = (v > 0 ? '+' : '') + v + '%';
+      ctx.fillStyle = v >= 0 ? '#15803D' : '#C2410C';
+      if (v >= 0) { ctx.textAlign = 'left';  ctx.fillText(txt, bar.x + 8, bar.y); }
+      else        { ctx.textAlign = 'right'; ctx.fillText(txt, bar.x - 8, bar.y); }
+    });
+    ctx.restore();
+  },
+};
+
+function Chip({ delta }) {
+  if (delta === null || delta === undefined) return null;
+  const cls = delta > 0 ? 'up' : delta < 0 ? 'down' : 'flat';
+  const arrow = delta > 0 ? '▲' : delta < 0 ? '▼' : '–';
+  const sign = delta > 0 ? '+' : '';
+  return <span className={`chip ${cls}`}>{arrow} {sign}{delta}% <span style={{fontWeight:500,opacity:.7}}>QoQ</span></span>;
+}
+
+function Kpi({ lab, val, sub, delta, est }) {
+  return (
+    <div className="kpi">
+      <div className="kpi-lab">{lab}</div>
+      <div className="kpi-val">{val}{est && <span className="est">EST.</span>}</div>
+      {sub && <div className="kpi-sub">{sub}</div>}
+      <Chip delta={delta} />
+    </div>
+  );
+}
+
+function MovementChart({ metrics }) {
+  const ref = useRef(null);
+  const inst = useRef(null);
+  useEffect(() => {
+    if (!ref.current) return;
+    const rows = [];
+    const f = metrics.financial, p = metrics.programs, fa = metrics.facility;
+    if (f && f.netDelta != null)          rows.push(['Net revenue', f.netDelta]);
+    if (f && f.transactionsDelta != null) rows.push(['Transactions', f.transactionsDelta]);
+    if (p && p.enrollmentsDelta != null)  rows.push(['Enrollments', p.enrollmentsDelta]);
+    if (fa && fa.bookingsDelta != null)   rows.push(['Bookings', fa.bookingsDelta]);
+    if (inst.current) inst.current.destroy();
+    inst.current = new Chart(ref.current.getContext('2d'), {
+      type: 'bar',
+      plugins: [barEndLabels],
+      data: {
+        labels: rows.map(r => r[0]),
+        datasets: [{
+          data: rows.map(r => r[1]),
+          backgroundColor: rows.map(r => r[1] >= 0 ? '#1F7A5A' : '#C2410C'),
+          borderRadius: 5, barThickness: 22,
+        }],
+      },
+      options: {
+        indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+        layout: { padding: { left: 6, right: 24, top: 4, bottom: 2 } },
+        plugins: {
+          legend: { display: false },
+          tooltip: { callbacks: { label: (c) => (c.raw >= 0 ? '+' : '') + c.raw + '% vs prior quarter' } },
+        },
+        scales: {
+          x: { beginAtZero: true, grace: '12%',
+               ticks: { callback: (v) => v + '%', font: { family: 'IBM Plex Sans', size: 11 }, color: '#8A97A8' },
+               grid: { color: '#EEF1F5' }, border: { display: false } },
+          y: { ticks: { font: { family: 'IBM Plex Sans', size: 12, weight: 500 }, color: '#0F1B2D' },
+               grid: { display: false }, border: { display: false } },
+        },
+      },
+    });
+    if (document.fonts && document.fonts.ready) {
+      document.fonts.ready.then(() => { if (inst.current) inst.current.update(); });
+    }
+    return () => { if (inst.current) inst.current.destroy(); };
+  }, [metrics]);
+  return <div className="chart-wrap"><canvas ref={ref}></canvas></div>;
+}
+
+function Report({ data }) {
+  const [logoOk, setLogoOk] = useState(true);
+  const { org, period, comparison, metrics, narrative } = data;
+  const m = metrics;
+  const initial = (org.displayName || org.slug || '?').trim().charAt(0).toUpperCase();
+  const fmtRange = (s, e) => {
+    const o = { month: 'short', day: 'numeric' };
+    const sd = new Date(s + 'T00:00:00'), ed = new Date(e + 'T00:00:00');
+    return sd.toLocaleDateString('en-US', o) + ' – ' + ed.toLocaleDateString('en-US', { ...o, year: 'numeric' });
+  };
+
+  return (
+    <div className="page">
+      <div className="band">
+        <div className="band-l">
+          {org.logoUrl && logoOk
+            ? <img className="logo" src={org.logoUrl} alt="" onError={() => setLogoOk(false)} />
+            : <div className="monogram">{initial}</div>}
+          <div>
+            <div className="org-name">{org.displayName}</div>
+            <div className="org-sub">{fmtRange(period.start, period.end)} · vs {comparison.label}</div>
+          </div>
+        </div>
+        <div className="band-r">
+          <div className="eyebrow">Quarterly Business Review</div>
+          <div className="period">{period.label}</div>
+          <div className="prepared">Prepared by rec.us</div>
+        </div>
+      </div>
+
+      {m.financial && (
+        <div className="recon">
+          <div className="recon-seg">
+            <div className="recon-lab">Gross</div>
+            <div className="recon-val">{fmtMoney(m.financial.gross)}</div>
+          </div>
+          <div className="recon-op">−</div>
+          <div className="recon-seg">
+            <div className="recon-lab">Refunds</div>
+            <div className="recon-val refund">{fmtMoney(m.financial.refunds)}</div>
+          </div>
+          <div className="recon-op">=</div>
+          <div className="recon-net">
+            <div>
+              <div className="net-lab">Net revenue</div>
+              <Chip delta={m.financial.netDelta} />
+            </div>
+            <div className="net-val">{fmtMoney(m.financial.net)}</div>
+          </div>
+        </div>
+      )}
+
+      <div className="kpis">
+        {m.financial && <Kpi lab="Transactions" val={fmtNum(m.financial.transactions)} sub={`${fmtNum(m.financial.refundCount)} refunded`} delta={m.financial.transactionsDelta} />}
+        {m.programs   && <Kpi lab="Enrollments"  val={fmtNum(m.programs.enrollments)}    sub={`${fmtNum(m.programs.sections)} sections · ${m.programs.programs} programs`} delta={m.programs.enrollmentsDelta} />}
+        {m.facility   && <Kpi lab="Bookings"     val={fmtNum(m.facility.bookings)}       sub={`${m.facility.locations} locations · ${fmtMoney(m.facility.revenue)}`} delta={m.facility.bookingsDelta} />}
+        {m.court      && <Kpi lab="Court util."  val={`${m.court.utilization}%`}         sub={`${fmtNum(m.court.hoursBooked)} hrs · ${m.court.courts} courts`} est={m.court.utilizationEstimated} />}
+        {m.retention  && <Kpi lab="Retention"    val={`${m.retention.rate}%`}            sub="point-in-time" />}
+        {m.memberships && <Kpi lab="Members"     val={fmtNum(m.memberships.active)}      sub="active at quarter close" />}
+      </div>
+
+      <div className="lower">
+        <div>
+          <h3 className="sec-lab">Executive summary</h3>
+          <p className="summary">{narrative.executiveSummary}</p>
+          {narrative.highlights && narrative.highlights.length > 0 && (
+            <ul className="highlights">
+              {narrative.highlights.map((h, i) => (
+                <li key={i}>
+                  <span className="hl-dot"></span>
+                  <span><span className="hl-t">{h.label}.</span> <span className="hl-d">{h.detail}</span></span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+        <div>
+          <h3 className="sec-lab">Quarter-over-quarter movement</h3>
+          <div className="chart-card"><MovementChart metrics={m} /></div>
+        </div>
+      </div>
+
+      <div className="foot">
+        <div className="season">{narrative.seasonality}</div>
+        <div className="method">
+          Net = Gross − Refunds, summed from the GL Code Rollup card. Transactions = number of payments.
+          Court utilization estimated against a {m.court ? m.court.hrsPerDay : 12} hr/day operating window. All deltas vs {comparison.label} (prior calendar quarter).
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function App() {
+  const params = new URLSearchParams(location.search);
+  const printMode = params.get('_print') === '1';
+  const [data, setData] = useState(PREVIEW ? MOCK : null);
+  const [org, setOrg] = useState(params.get('org') || 'watertown');
+  const [q, setQ] = useState(parseInt(params.get('quarter')) || 3);
+  const [year, setYear] = useState(parseInt(params.get('year')) || 2025);
+  const [ready, setReady] = useState(false);
+  const [orgs, setOrgs] = useState(ORG_OPTIONS);
+
+  useEffect(() => {
+    fetch('/qbr/api/orgs').then(r => r.ok ? r.json() : null).then(d => {
+      if (d && Array.isArray(d.orgs) && d.orgs.length) setOrgs(d.orgs.map(o => [o.slug, o.displayName]));
+    }).catch(() => {});
+  }, []);
+
+  // Live mode (served by /qbr or the PDF route): auto-generate from the URL selection on mount.
+  useEffect(() => {
+    if (!PREVIEW) generate(params.get('org') || 'watertown', parseInt(params.get('quarter')) || 3, parseInt(params.get('year')) || 2025);
+  }, []);
+
+  useEffect(() => {
+    if (printMode) document.body.classList.add('print');
+  }, [printMode]);
+
+  useEffect(() => {
+    if (!data) return;
+    let cancelled = false;
+    const fontsReady = (document.fonts && document.fonts.ready) ? document.fonts.ready : Promise.resolve();
+    fontsReady.then(() => { if (!cancelled) setTimeout(() => setReady(true), 200); });
+    return () => { cancelled = true; };
+  }, [data]);
+
+  const generate = (o, qq, yy) => {
+    if (PREVIEW) { setData({ ...MOCK }); return; }
+    setReady(false); setData(null);
+    fetch('/qbr/api/generate', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ orgSlug: o, year: yy, quarter: qq }),
+    }).then(r => r.json()).then(d => setData(d && d.ok ? d : MOCK)).catch(() => setData(MOCK));
+  };
+  const run = () => generate(org, q, year);
+
+  const years = [2024, 2025, 2026];
+
+  return (
+    <div className="wrap">
+      <div className="picker">
+        <div className="field">
+          <label>Organization</label>
+          <select value={org} onChange={e => setOrg(e.target.value)}>
+            {orgs.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+          </select>
+        </div>
+        <div className="field">
+          <label>Quarter</label>
+          <select value={q} onChange={e => setQ(+e.target.value)}>
+            {[1,2,3,4].map(n => <option key={n} value={n}>Q{n}</option>)}
+          </select>
+        </div>
+        <div className="field">
+          <label>Year</label>
+          <select value={year} onChange={e => setYear(+e.target.value)}>
+            {years.map(y => <option key={y} value={y}>{y}</option>)}
+          </select>
+        </div>
+        {PREVIEW && <span className="tag">PREVIEW · mock data</span>}
+        <button className="go" onClick={run}>Generate QBR</button>
+      </div>
+
+      {data && <Report data={data} />}
+      {ready && <div id="report-ready" style={{ display: 'none' }}></div>}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>

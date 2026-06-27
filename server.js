@@ -1588,6 +1588,7 @@ app.use((req, res, next) => {
   if (req.path.startsWith("/api/")) return next();   // /api/admin/* etc.
   if (req.path === "/metrics" || req.path.startsWith("/metrics/")) return next();
   if (req.path === "/hotdog" || req.path.startsWith("/hotdog")) return next();
+  if (req.path === "/qbr" || req.path.startsWith("/qbr/")) return next();
 
   // Extract first path segment
   const seg = req.path.split("/").filter(Boolean)[0];
@@ -3310,6 +3311,251 @@ app.post("/:org/annual-report/api/generate", async (req, res) => {
     res.status(500).json({ ok: false, error: e.message });
   }
 });
+
+// ━━ QBR (Quarterly Business Review) — cross-org one-pager ━━━━━━━━━━━━
+const qpf = (v) => { const n = parseFloat(v); return isNaN(n) ? 0 : n; };
+const QBR_COURT_HRS_PER_DAY = 12; // est. operating window for utilization %; tighten via MCP list_sites later
+function qbrQuarterRange(year, q) {
+  const sm = (q - 1) * 3;
+  const start = new Date(year, sm, 1);
+  const end   = new Date(year, sm + 3, 0);
+  const toISO = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  return { start: toISO(start), end: toISO(end), label: `Q${q} ${year}` };
+}
+function qbrPrevQuarter(year, q) { return q > 1 ? { year, q: q - 1 } : { year: year - 1, q: 4 }; }
+function qbrPctDelta(cur, prev) { return prev ? Math.round((cur - prev) / Math.abs(prev) * 100) : null; }
+function qbrDaysBetween(a, b) { return Math.round((new Date(b) - new Date(a)) / 86400000) + 1; }
+
+async function qbrFetch(orgCtx, reportType, startDate, endDate) {
+  const override = orgCtx.uuids && orgCtx.uuids[reportType];
+  const shared = reportType === "gl" ? SHARED_UUIDS.gl : SHARED_UUIDS[reportType];
+  const mbUuid = override || shared;
+  if (!mbUuid) return null;
+  const orgId = override ? null : orgCtx.orgId;
+  const params = buildMetabaseParams({ start_date: startDate, end_date: endDate }, reportType, orgId);
+  const paramStr = params.length ? "?parameters=" + encodeURIComponent(JSON.stringify(params)) : "";
+  const url = METABASE_URL + "/api/public/card/" + mbUuid + "/query/json" + paramStr;
+  try {
+    const resp = await fetch(url, { signal: AbortSignal.timeout(120000) });
+    if (!resp.ok) { console.error("[qbr] " + reportType + " -> " + resp.status); return null; }
+    return await resp.json();
+  } catch (e) { console.warn("[qbr] fetch " + reportType + " failed: " + e.message); return null; }
+}
+
+function qbrSumGL(rows) {
+  if (!Array.isArray(rows) || !rows.length) return null;
+  let gross = 0, refunds = 0, payments = 0, refundCount = 0;
+  for (const r of rows) {
+    gross += qpf(r["Total Payments"]); refunds += qpf(r["Total Refunds"]);
+    payments += qpf(r["Number of Payments"]); refundCount += qpf(r["Number of Refunds"]);
+  }
+  return { gross, refunds, net: gross - refunds, transactions: payments, refundCount };
+}
+function qbrSumProg(rows) {
+  if (!Array.isArray(rows) || !rows.length) return null;
+  const k = Object.keys(rows[0]);
+  const eK = k.find(x => /^enroll/i.test(x)) || "Enrollments";
+  const pK = k.find(x => /^program$|program.?name/i.test(x)) || "Program";
+  let enroll = 0; const progs = new Set();
+  for (const r of rows) { enroll += parseInt(r[eK]) || 0; if (r[pK]) progs.add(r[pK]); }
+  return { enrollments: enroll, sections: rows.length, programs: progs.size };
+}
+function qbrSumFac(rows) {
+  if (!Array.isArray(rows) || !rows.length) return null;
+  const locs = new Set(); const frIds = new Set(); let rev = 0;
+  for (const r of rows) {
+    const l = r["Location"] || r["location"] || r["Location Name"] || r["location_name"]; if (l) locs.add(l);
+    const id = r["Facility Rental Id"] || r["facility_rental_id"] || r["id"]; if (id) frIds.add(id);
+    rev += qpf(r["Total"] || r["total"] || r["revenue"]);
+  }
+  return { bookings: frIds.size || rows.length, locations: locs.size, revenue: rev };
+}
+function qbrSumCourt(rows, days) {
+  if (!Array.isArray(rows) || !rows.length) return null;
+  const courts = new Set(); let hours = 0;
+  for (const r of rows) {
+    const c = r["Court Name"] || r["court_name"]; const l = r["Location Name"] || r["location_name"] || "";
+    if (c) courts.add(l + "|" + c);
+    hours += qpf(r["Duration Hours"] || r["duration_hours"]);
+  }
+  const hoursBooked = Math.round(hours * 10) / 10;
+  const courtCount = courts.size;
+  const availableHours = courtCount * (days || 0) * QBR_COURT_HRS_PER_DAY;
+  let utilization = availableHours > 0 ? Math.round(hoursBooked / availableHours * 100) : null;
+  if (utilization != null && utilization > 100) utilization = 100;
+  return { hoursBooked, courts: courtCount, utilization, utilizationEstimated: true, hrsPerDay: QBR_COURT_HRS_PER_DAY };
+}
+function qbrSumRetention(rows) {
+  if (!Array.isArray(rows) || !rows.length) return null;
+  const k = Object.keys(rows[0]);
+  const rateK = k.find(x => /retention|retained|return.?rate/i.test(x));
+  if (!rateK) return null;
+  const vals = rows.map(r => qpf(r[rateK])).filter(v => v > 0);
+  if (!vals.length) return null;
+  return { rate: Math.round(vals.reduce((a, b) => a + b, 0) / vals.length * 10) / 10 };
+}
+function qbrSumMemberships(rows) {
+  if (!Array.isArray(rows) || !rows.length) return null;
+  const k = Object.keys(rows[0]);
+  const activeK = k.find(x => /active|current.?member|member.?count/i.test(x));
+  let active = 0;
+  if (activeK) { for (const r of rows) active += parseInt(r[activeK]) || 0; } else { active = rows.length; }
+  return { active };
+}
+
+async function buildQbr(orgCtx, year, q) {
+  const cur = qbrQuarterRange(year, q);
+  const pv = qbrPrevQuarter(year, q);
+  const prev = qbrQuarterRange(pv.year, pv.q);
+  const [glC, glP, pgC, pgP, facC, facP, courtC, retC, memC] = await Promise.all([
+    qbrFetch(orgCtx, "gl", cur.start, cur.end),       qbrFetch(orgCtx, "gl", prev.start, prev.end),
+    qbrFetch(orgCtx, "programs", cur.start, cur.end), qbrFetch(orgCtx, "programs", prev.start, prev.end),
+    qbrFetch(orgCtx, "facility", cur.start, cur.end), qbrFetch(orgCtx, "facility", prev.start, prev.end),
+    qbrFetch(orgCtx, "court-utilization", cur.start, cur.end),
+    qbrFetch(orgCtx, "retention", cur.start, cur.end),
+    qbrFetch(orgCtx, "memberships", cur.start, cur.end),
+  ]);
+  const gl = qbrSumGL(glC), glPrev = qbrSumGL(glP);
+  const pg = qbrSumProg(pgC), pgPrev = qbrSumProg(pgP);
+  const fac = qbrSumFac(facC), facPrev = qbrSumFac(facP);
+  const metrics = {
+    financial: gl ? {
+      gross: gl.gross, refunds: gl.refunds, net: gl.net,
+      netDelta: glPrev ? qbrPctDelta(gl.net, glPrev.net) : null,
+      grossDelta: glPrev ? qbrPctDelta(gl.gross, glPrev.gross) : null,
+      transactions: gl.transactions,
+      transactionsDelta: glPrev ? qbrPctDelta(gl.transactions, glPrev.transactions) : null,
+      refundCount: gl.refundCount,
+    } : null,
+    programs: pg ? { enrollments: pg.enrollments, sections: pg.sections, programs: pg.programs,
+      enrollmentsDelta: pgPrev ? qbrPctDelta(pg.enrollments, pgPrev.enrollments) : null } : null,
+    facility: fac ? { bookings: fac.bookings, locations: fac.locations, revenue: fac.revenue,
+      bookingsDelta: facPrev ? qbrPctDelta(fac.bookings, facPrev.bookings) : null } : null,
+    court: qbrSumCourt(courtC, qbrDaysBetween(cur.start, cur.end)),
+    retention: qbrSumRetention(retC),
+    memberships: qbrSumMemberships(memC),
+  };
+  return {
+    org: { slug: orgCtx.slug, displayName: orgCtx.displayName, logoUrl: orgCtx.logoUrl, orgId: orgCtx.orgId },
+    period: { year, quarter: q, start: cur.start, end: cur.end, label: cur.label },
+    comparison: { start: prev.start, end: prev.end, label: prev.label },
+    metrics,
+  };
+}
+
+function qbrOrgCtx(slug) {
+  const o = ORGS[slug];
+  if (!o) return null;
+  const title = slug.charAt(0).toUpperCase() + slug.slice(1);
+  const uuids = {};
+  for (const rt of ["gl","programs","facility","court-utilization","retention","memberships"]) {
+    if (o[rt] && o[rt].mbUuid) uuids[rt] = o[rt].mbUuid;
+  }
+  return { slug, orgId: o.orgId, displayName: o.displayName || (title + " Parks & Recreation"), logoUrl: o.logoUrl || "", uuids };
+}
+
+function qbrMoney(n) { return "$" + Math.round(n).toLocaleString("en-US"); }
+function qbrFallbackNarrative(result) {
+  const m = result.metrics, parts = [];
+  if (m.financial) parts.push(result.org.displayName + " recorded " + qbrMoney(m.financial.net) + " in net revenue for " + result.period.label + (m.financial.netDelta != null ? " (" + (m.financial.netDelta >= 0 ? "+" : "") + m.financial.netDelta + "% vs " + result.comparison.label + ")" : "") + ".");
+  if (m.programs) parts.push("Programs drew " + m.programs.enrollments.toLocaleString() + " enrollments across " + m.programs.sections + " sections.");
+  if (m.facility) parts.push("Facilities saw " + m.facility.bookings.toLocaleString() + " bookings across " + m.facility.locations + " locations.");
+  const highlights = [];
+  if (m.programs && m.programs.enrollmentsDelta != null) highlights.push({ label: "Program enrollment", detail: m.programs.enrollments.toLocaleString() + " enrollments (" + (m.programs.enrollmentsDelta >= 0 ? "+" : "") + m.programs.enrollmentsDelta + "% QoQ)." });
+  if (m.facility && m.facility.bookingsDelta != null) highlights.push({ label: "Facility demand", detail: m.facility.bookings.toLocaleString() + " bookings (" + (m.facility.bookingsDelta >= 0 ? "+" : "") + m.facility.bookingsDelta + "% QoQ), " + qbrMoney(m.facility.revenue) + " in rentals." });
+  if (m.financial) highlights.push({ label: "Refunds", detail: qbrMoney(m.financial.refunds) + " refunded against " + qbrMoney(m.financial.gross) + " gross." });
+  return { executiveSummary: parts.join(" "), highlights: highlights.slice(0, 3), seasonality: "Read quarter-over-quarter movement against seasonal programming patterns for this quarter." };
+}
+
+const QBR_PROMPT = `You write the narrative for a one-page Quarterly Business Review that a rec.us account manager presents to a parks & recreation partner. Tone: confident, factual account-review — what the partner accomplished on the platform this quarter.
+
+You receive aggregated quarter metrics with quarter-over-quarter deltas. Return ONLY JSON (no markdown fences):
+{
+  "executiveSummary": "3-4 sentences. Lead with net revenue and its QoQ move, then participation and facility activity. Use only numbers present in the data.",
+  "highlights": [ { "label": "3-5 words", "detail": "1 sentence grounded in a specific figure" } ],
+  "seasonality": "1 sentence noting that QoQ moves should be read against seasonal patterns for this quarter."
+}
+Rules: 2-3 highlights, each tied to a real number. Never invent figures. No caveats about data gaps. If a section is null, ignore it.`;
+
+const _qbrCache = new Map();
+const QBR_CACHE_TTL = 30 * 60 * 1000;
+
+// ── GET /qbr — cross-org QBR page (no token; whitelisted) ──
+app.get("/qbr", (req, res) => {
+  const fs = require("fs");
+  const html = fs.readFileSync(path.join(__dirname, "public", "qbr.html"), "utf-8");
+  const inject = "<script>window.__QBR_LIVE__=true;</script>";
+  res.type("html").send(html.replace("</head>", inject + "</head>"));
+});
+
+// ── GET /qbr/api/orgs — dropdown source (phase 1: ORGS map) ──
+app.get("/qbr/api/orgs", (req, res) => {
+  const orgs = Object.keys(ORGS).map(slug => {
+    const title = slug.charAt(0).toUpperCase() + slug.slice(1);
+    return { slug, displayName: ORGS[slug].displayName || (title + " Parks & Recreation") };
+  }).sort((a, b) => a.displayName.localeCompare(b.displayName));
+  res.json({ orgs });
+});
+
+// ── POST /qbr/api/generate ──
+app.post("/qbr/api/generate", express.json(), async (req, res) => {
+  const { orgSlug, year, quarter } = req.body || {};
+  const ctx = qbrOrgCtx(orgSlug);
+  if (!ctx) return res.status(404).json({ ok: false, error: "Unknown org" });
+  const y = parseInt(year), q = parseInt(quarter);
+  if (!y || !(q >= 1 && q <= 4)) return res.status(400).json({ ok: false, error: "Bad year/quarter" });
+  const cacheKey = orgSlug + "|" + y + "|" + q;
+  const cached = _qbrCache.get(cacheKey);
+  if (cached && Date.now() - cached.ts < QBR_CACHE_TTL) return res.json({ ok: true, ...cached.data, cached: true });
+  try {
+    logEvent(orgSlug, "qbr", "generate", req);
+    const result = await buildQbr(ctx, y, q);
+    let narrative = null;
+    if (anthropic) {
+      try {
+        const span = _recTracer.startSpan("rec.qbr", { attributes: { "rec.org": orgSlug } });
+        const traceId = span.spanContext().traceId;
+        const sctx = otelApi.trace.setSpan(otelApi.context.active(), span);
+        const ai = await otelApi.context.with(sctx, () => anthropic.messages.create({
+          model: process.env.QBR_MODEL || "claude-sonnet-4-6",
+          max_tokens: 1200, system: QBR_PROMPT,
+          messages: [{ role: "user", content: JSON.stringify({ org: result.org.displayName, period: result.period.label, comparison: result.comparison.label, metrics: result.metrics }) }],
+        }));
+        span.end();
+        const text = (ai.content || []).filter(c => c.type === "text").map(c => c.text).join("");
+        try { narrative = JSON.parse(text.replace(/```json|```/g, "").trim()); } catch (pe) { narrative = null; }
+        const u = ai.usage || {};
+        logEvent(orgSlug, "qbr", "ai-generate", req, { inTok: u.input_tokens || 0, outTok: u.output_tokens || 0, costUsd: insightsCostUsd(ai.model || "claude-sonnet-4-6", u.input_tokens || 0, u.output_tokens || 0), traceId });
+      } catch (aiErr) { console.error("[qbr] AI error: " + aiErr.message); }
+    }
+    result.narrative = narrative || qbrFallbackNarrative(result);
+    _qbrCache.set(cacheKey, { data: result, ts: Date.now() });
+    if (_qbrCache.size > 30) _qbrCache.delete(_qbrCache.keys().next().value);
+    res.json({ ok: true, ...result });
+  } catch (e) { console.error("[qbr] error: " + e.message); res.status(500).json({ ok: false, error: e.message }); }
+});
+
+// ── GET /qbr/api/pdf — Puppeteer one-pager ──
+app.get("/qbr/api/pdf", async (req, res) => {
+  const puppeteer = require("puppeteer");
+  const { org, year, quarter } = req.query;
+  if (!qbrOrgCtx(org)) return res.status(404).json({ error: "Unknown org" });
+  const url = `http://localhost:${PORT}/qbr?org=${encodeURIComponent(org)}&year=${encodeURIComponent(year||"")}&quarter=${encodeURIComponent(quarter||"")}&_print=1`;
+  let browser;
+  try {
+    browser = await puppeteer.launch({ headless: true, executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined, args: ["--no-sandbox","--disable-setuid-sandbox","--disable-dev-shm-usage","--disable-gpu"] });
+    const page = await browser.newPage();
+    await page.setViewport({ width: 1280, height: 860, deviceScaleFactor: 2 });
+    await page.goto(url, { waitUntil: "networkidle0", timeout: 60000 });
+    await page.waitForSelector("#report-ready", { timeout: 45000 });
+    const pdf = await page.pdf({ format: "Letter", landscape: true, printBackground: true, margin: { top: "0.35in", bottom: "0.4in", left: "0.35in", right: "0.35in" }, displayHeaderFooter: true, headerTemplate: "<span></span>", footerTemplate: `<div style="font-size:9px;width:100%;padding:0 0.4in;display:flex;justify-content:space-between;color:#888;font-family:sans-serif;"><span>rec.us — Quarterly Business Review</span><span>Q${quarter||""} ${year||""}</span></div>` });
+    res.set({ "Content-Type": "application/pdf", "Content-Disposition": `inline; filename="qbr-${org}-Q${quarter||""}-${year||""}.pdf"`, "Content-Length": pdf.length });
+    res.send(pdf);
+  } catch (err) { console.error("[qbr] pdf error: " + err.message); res.status(500).json({ error: err.message }); }
+  finally { if (browser) await browser.close(); }
+});
+// ━━ end QBR ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
 
 app.get("/:org/admin", (req, res) => {
   if (!ORGS[req.params.org]) return res.status(404).send("Unknown org");
@@ -5209,6 +5455,7 @@ app.get("/", (req, res) => {
     <div class="topbar-divider"></div>
     <div class="topbar-sub">Report Server</div>
     <div style="flex:1"></div>
+    <a href="/qbr" style="font-size:12px;padding:6px 14px;background:rgba(31,122,90,.92);border:1px solid rgba(31,122,90,1);border-radius:5px;color:#fff;cursor:pointer;text-decoration:none;margin-right:8px;transition:background .15s" onmouseover="this.style.background='rgba(26,106,78,1)'" onmouseout="this.style.background='rgba(31,122,90,.92)'">📊 QBR Generator</a>
     <button onclick="openAddOrg()" style="font-size:12px;padding:6px 14px;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.2);border-radius:5px;color:#eee;cursor:pointer;transition:background .15s" onmouseover="this.style.background='rgba(255,255,255,.22)'" onmouseout="this.style.background='rgba(255,255,255,.12)'">➕ Add Org</button>
   </div>
   <!-- Railway Status Bar -->
@@ -6726,6 +6973,12 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+    { date: '2026-06-27', title: 'QBR Generator \u2014 cross-org quarterly business review', items: [
+      'New internal page at /qbr: pick any org + quarter, generates a one-page partner-facing QBR (no token, whitelisted like /metrics).',
+      'Financial block mirrors the GL report exactly: gross minus refunds equals net, plus transaction count, all off the GL card. Programs, facility, court utilization, retention, and memberships render only when their card returns rows.',
+      'QoQ vs the prior calendar quarter with delta chips and a print-ready movement chart. Court utilization is an estimate against a 12 hr/day window. AI exec summary + highlights via Sonnet, Puppeteer PDF at /qbr/api/pdf.',
+      'Engine keys off orgId, not the ORGS slug \u2014 ready to extend to any org via a Metabase org list or Rec MCP search_organizations.',
+    ] },
   { date: '2026-06-26', title: 'Court Utilization: Real Schedules, Heatmap & Demand Indicators', items: [
     'Real per-court operating hours from rec.us MCP replace the flat assumed hrs/day \u2014 utilization % now uses actual booking schedules per court per day-of-week',
     'Day-of-week heatmap grid shows utilization intensity across courts \u00d7 Mon\u2013Sun \u2014 instantly reveals scheduling gaps and peak days',
