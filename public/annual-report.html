@@ -310,7 +310,7 @@ function App() {
           </div>
         )}
 
-        {/* ── REPORT OUTPUT ── */}
+        {/* REPORT OUTPUT */}
         {report && !loading && (
           <>
             {/* Cover Page */}
@@ -328,70 +328,53 @@ function App() {
             {/* Executive Summary */}
             <div className="page">
               <div className="divider" />
-              <h1 className="section-title"><span className="icon">📋</span> Executive Summary</h1>
+              <h1 className="section-title">Executive Summary</h1>
               {nar && nar.executiveSummary ? (
                 <div className="narrative" dangerouslySetInnerHTML={{__html: nar.executiveSummary.replace(/\n/g, '<br />')}} />
               ) : (
                 <div className="narrative" style={{color: '#aaa', fontStyle: 'italic'}}>AI narrative not available</div>
               )}
-
-              {/* Quick KPIs */}
               <div className="kpi-row" style={{marginTop: '20px'}}>
                 {sources.gl && <div className="kpi green"><div className="kpi-label">Total Revenue</div><div className="kpi-val">{fmt$(gl.total)}</div></div>}
                 {sources.programs && <div className="kpi purple"><div className="kpi-label">Total Enrollments</div><div className="kpi-val">{fmtN(prog.totalEnrollments)}</div></div>}
-                {sources.programs && <div className="kpi amber"><div className="kpi-label">Program Sections</div><div className="kpi-val">{fmtN(prog.sections)}</div></div>}
-                {sources.facility && <div className="kpi"><div className="kpi-label">Facility Bookings</div><div className="kpi-val">{fmtN(fac.totalBookings)}</div></div>}
+                {sources.courtUtilization && <div className="kpi" style={{borderLeftColor:'#0d9488'}}><div className="kpi-label">Court Hours Booked</div><div className="kpi-val">{fmtN(court.totalHours)}</div></div>}
+                {sources.facility && <div className="kpi amber"><div className="kpi-label">Facility Bookings</div><div className="kpi-val">{fmtN(fac.totalBookings)}</div></div>}
               </div>
-              {sources.courtUtilization && (
-                <div className="kpi-row">
-                  <div className="kpi" style={{borderLeftColor: '#0d9488'}}><div className="kpi-label">Courts Active</div><div className="kpi-val">{fmtN(court.courtCount)}</div></div>
-                  <div className="kpi gray"><div className="kpi-label">Court Hours Booked</div><div className="kpi-val">{fmtN(court.totalHours)}</div></div>
-                  <div className="kpi green"><div className="kpi-label">Distinct Bookings</div><div className="kpi-val">{fmtN(court.totalBookings)}</div></div>
-                  {sources.facility && <div className="kpi amber"><div className="kpi-label">Facility Revenue</div><div className="kpi-val">{fmt$(fac.totalRevenue)}</div></div>}
-                </div>
-              )}
-              <div className="page-footer">
-                <span>{orgInfo.displayName || orgSlug}</span>
-                <span>Generated {runDate} by rec.us</span>
-              </div>
+              <div className="page-footer"><span>{orgInfo.displayName || orgSlug}</span><span>Generated {runDate} by rec.us</span></div>
             </div>
 
-            {/* Revenue Overview */}
+            {/* Revenue */}
             {sources.gl && gl.topCategories && gl.topCategories.length > 0 && (
               <div className="page">
                 <div className="divider" />
-                <h1 className="section-title"><span className="icon">💰</span> Revenue Overview</h1>
+                <h1 className="section-title">Revenue</h1>
                 {nar && nar.revenueNarrative && (
                   <div className="narrative" dangerouslySetInnerHTML={{__html: nar.revenueNarrative.replace(/\n/g, '<br />')}} />
                 )}
+                <div className="kpi-row">
+                  <div className="kpi green"><div className="kpi-label">Total Revenue</div><div className="kpi-val">{fmt$(gl.total)}</div></div>
+                  <div className="kpi"><div className="kpi-label">GL Categories</div><div className="kpi-val">{gl.topCategories.length}</div></div>
+                </div>
                 <h2 className="sub-title">Revenue by GL Category</h2>
-                {gl.topCategories.filter(function(c) { return c.amount > 0; }).map(function(cat) {
+                {gl.topCategories.filter(function(c) { return c.amount > 0; }).slice(0, 12).map(function(cat) {
                   var pct = glMax > 0 ? Math.max(2, (cat.amount / glMax) * 100) : 0;
                   return (
                     <div className="bar-row" key={cat.name}>
                       <div className="bar-label" title={cat.name}>{cat.name}</div>
                       <div className="bar-track"><div className="bar-fill" style={{width: pct + '%', background: '#16a34a', minWidth: 'fit-content'}}>{fmt$(cat.amount)}</div></div>
-                      <div className="bar-val">{((cat.amount / gl.total) * 100).toFixed(1)}%</div>
+                      <div className="bar-val">{gl.total > 0 ? ((cat.amount / gl.total) * 100).toFixed(1) + '%' : ''}</div>
                     </div>
                   );
                 })}
-                {gl.refunds < 0 && (
-                  <div style={{marginTop: '12px', fontSize: '12px', color: '#dc2626'}}>
-                    Total refunds/credits: {fmt$(gl.refunds)}
-                  </div>
-                )}
-                <div className="page-footer">
-                  <span>{orgInfo.displayName || orgSlug}</span>
-                  <span>Generated {runDate} by rec.us</span>
-                </div>
+                <div className="page-footer"><span>{orgInfo.displayName || orgSlug}</span><span>Generated {runDate} by rec.us</span></div>
               </div>
             )}
 
-            {/* Programs & Participation */}
+            {/* Programs */}
             {sources.programs && prog.topByEnrollment && prog.topByEnrollment.length > 0 && (
               <div className="page">
                 <div className="divider" />
-                <h1 className="section-title"><span className="icon">🏃</span> Programs & Participation</h1>
+                <h1 className="section-title">Programs</h1>
                 {nar && nar.programsNarrative && (
                   <div className="narrative" dangerouslySetInnerHTML={{__html: nar.programsNarrative.replace(/\n/g, '<br />')}} />
                 )}
@@ -412,26 +395,40 @@ function App() {
                     </div>
                   );
                 })}
-                <div className="page-footer">
-                  <span>{orgInfo.displayName || orgSlug}</span>
-                  <span>Generated {runDate} by rec.us</span>
-                </div>
+                <div className="page-footer"><span>{orgInfo.displayName || orgSlug}</span><span>Generated {runDate} by rec.us</span></div>
               </div>
             )}
 
-            {/* Facility Utilization */}
-            {(sources.courtUtilization || sources.facility) && (
+            {/* Court Utilization */}
+            {sources.courtUtilization && court.courtCount > 0 && (
               <div className="page">
                 <div className="divider" />
-                <h1 className="section-title"><span className="icon">🏟️</span> Facility Utilization</h1>
+                <h1 className="section-title">Court Utilization</h1>
+                {nar && nar.courtNarrative && (
+                  <div className="narrative" dangerouslySetInnerHTML={{__html: nar.courtNarrative.replace(/\n/g, '<br />')}} />
+                )}
+                <div className="kpi-row">
+                  <div className="kpi" style={{borderLeftColor:'#0d9488'}}><div className="kpi-label">Courts Active</div><div className="kpi-val">{fmtN(court.courtCount)}</div></div>
+                  <div className="kpi green"><div className="kpi-label">Distinct Bookings</div><div className="kpi-val">{fmtN(court.totalBookings)}</div></div>
+                  <div className="kpi"><div className="kpi-label">Total Hours</div><div className="kpi-val">{fmtN(court.totalHours)}</div></div>
+                  <div className="kpi gray"><div className="kpi-label">Locations</div><div className="kpi-val">{fmtN(court.locationCount)}</div></div>
+                </div>
+                <div className="page-footer"><span>{orgInfo.displayName || orgSlug}</span><span>Generated {runDate} by rec.us</span></div>
+              </div>
+            )}
+
+            {/* Facility Rentals */}
+            {sources.facility && fac.totalBookings > 0 && (
+              <div className="page">
+                <div className="divider" />
+                <h1 className="section-title">Facility Rentals</h1>
                 {nar && nar.facilityNarrative && (
                   <div className="narrative" dangerouslySetInnerHTML={{__html: nar.facilityNarrative.replace(/\n/g, '<br />')}} />
                 )}
                 <div className="kpi-row">
-                  {sources.courtUtilization && <div className="kpi" style={{borderLeftColor:'#0d9488'}}><div className="kpi-label">Courts with Activity</div><div className="kpi-val">{fmtN(court.courtCount)}</div></div>}
-                  {sources.courtUtilization && <div className="kpi green"><div className="kpi-label">Total Court Hours</div><div className="kpi-val">{fmtN(court.totalHours)}</div></div>}
-                  {sources.facility && <div className="kpi purple"><div className="kpi-label">Rental Revenue</div><div className="kpi-val">{fmt$(fac.totalRevenue)}</div></div>}
-                  {sources.facility && <div className="kpi amber"><div className="kpi-label">Locations</div><div className="kpi-val">{fmtN(fac.locationCount)}</div></div>}
+                  <div className="kpi green"><div className="kpi-label">Total Bookings</div><div className="kpi-val">{fmtN(fac.totalBookings)}</div></div>
+                  <div className="kpi purple"><div className="kpi-label">Rental Revenue</div><div className="kpi-val">{fmt$(fac.totalRevenue)}</div></div>
+                  <div className="kpi amber"><div className="kpi-label">Locations</div><div className="kpi-val">{fmtN(fac.locationCount)}</div></div>
                 </div>
                 {fac.locationList && fac.locationList.length > 0 && (
                   <>
@@ -443,10 +440,7 @@ function App() {
                     </div>
                   </>
                 )}
-                <div className="page-footer">
-                  <span>{orgInfo.displayName || orgSlug}</span>
-                  <span>Generated {runDate} by rec.us</span>
-                </div>
+                <div className="page-footer"><span>{orgInfo.displayName || orgSlug}</span><span>Generated {runDate} by rec.us</span></div>
               </div>
             )}
 
@@ -454,12 +448,9 @@ function App() {
             {nar && nar.recommendations && nar.recommendations.length > 0 && (
               <div className="page">
                 <div className="divider" />
-                <h1 className="section-title"><span className="icon">🔭</span> Looking Ahead</h1>
-                <div className="narrative" style={{marginBottom: '20px'}}>
-                  Based on the data from this reporting period, rec.us AI identifies the following strategic priorities:
-                </div>
+                <h1 className="section-title">Looking Ahead</h1>
                 {nar.recommendations.map(function(rec, i) {
-                  var icon = REC_ICONS[rec.icon] || '💡';
+                  var icon = REC_ICONS[rec.icon] || String.fromCodePoint(0x1F4A1);
                   return (
                     <div className="rec" key={i}>
                       <div className="rec-icon">{icon}</div>
@@ -473,26 +464,11 @@ function App() {
                 <div style={{marginTop: '32px', padding: '20px', background: '#f8f8f6', borderRadius: '5px', textAlign: 'center', border: '1px solid #e4e4e0'}}>
                   <div style={{fontSize: '11px', color: '#aaa', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '6px'}}>Prepared by</div>
                   <div style={{fontSize: '15px', fontWeight: 600}}>rec.us analytics platform</div>
-                  <div style={{fontSize: '11px', color: '#888', marginTop: '4px'}}>
-                    AI-generated narrative and recommendations powered by Anthropic Claude.
-                    <br />Report generated {runDate}.
-                  </div>
+                  <div style={{fontSize: '11px', color: '#888', marginTop: '4px'}}>AI-generated narrative powered by Anthropic Claude. Report generated {runDate}.</div>
                 </div>
-                <div className="page-footer">
-                  <span>{orgInfo.displayName || orgSlug}</span>
-                  <span>Generated {runDate} by rec.us</span>
-                </div>
+                <div className="page-footer"><span>{orgInfo.displayName || orgSlug}</span><span>Generated {runDate} by rec.us</span></div>
               </div>
             )}
-
-            {/* Data sources */}
-            <div className="page" style={{padding: '24px 56px'}}>
-              <div style={{fontSize: '11px', color: '#aaa'}}>
-                <strong>Data sources:</strong> {Object.entries(sources).filter(function(e) { return e[1]; }).map(function(e) { return e[0]; }).join(', ')}
-                {' | '}Period: {periodLabel}
-                {report.cached && ' | Cached result'}
-              </div>
-            </div>
           </>
         )}
       </div>
@@ -508,3 +484,4 @@ ReactDOM.createRoot(document.getElementById('root')).render(<App />);
 <script src="/nav-breadcrumb.js" defer></script>
 </body>
 </html>
+
