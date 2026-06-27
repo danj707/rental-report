@@ -508,6 +508,31 @@ function App() {
   const [fbMode, setFbMode] = useState(null);
   const [fbComment, setFbComment] = useState('');
 
+  // Real per-court operating schedules from MCP
+  const [schedules, setSchedules] = useState(null); // null = loading, {} = loaded
+  const [schedulesMeta, setSchedulesMeta] = useState(null); // { fallbackHrsPerDay, matchedCount, courtCount }
+
+  // Fetch schedules once on mount
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch(withToken(`/${orgSlug}/court-utilization/api/schedules`));
+        if (!res.ok) throw new Error('schedules fetch failed');
+        const json = await res.json();
+        setSchedules(json.schedules || {});
+        setSchedulesMeta({ fallbackHrsPerDay: json.fallbackHrsPerDay || 12, matchedCount: json.matchedCount || 0, courtCount: json.courtCount || 0 });
+        // Update default hrsPerDay to the org's real fallback (only if user hasn't manually set via URL)
+        if (!urlParams.get('hrs') && json.fallbackHrsPerDay) {
+          setHrsPerDay(json.fallbackHrsPerDay);
+        }
+      } catch (e) {
+        console.warn('[schedules]', e.message);
+        setSchedules({});
+        setSchedulesMeta({ fallbackHrsPerDay: 12, matchedCount: 0, courtCount: 0 });
+      }
+    })();
+  }, [orgSlug]);
+
   const runReport = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -596,10 +621,41 @@ function App() {
     });
   }, [normalized, includePrograms, includeClosures, selectedLocations]);
 
+  // Count occurrences of each day-of-week (1=Mon..7=Sun) in the loaded range.
+  const dowCounts = useMemo(() => {
+    const s = loadedStart || startDate, e = loadedEnd || endDate;
+    if (!s || !e) return {};
+    const counts = {};
+    const cur = new Date(s + 'T12:00:00'); // noon to avoid DST edge
+    const end = new Date(e + 'T12:00:00');
+    while (cur <= end) {
+      const jsDay = cur.getDay(); // 0=Sun..6=Sat → convert to 1=Mon..7=Sun
+      const dow = jsDay === 0 ? 7 : jsDay;
+      counts[dow] = (counts[dow] || 0) + 1;
+      cur.setDate(cur.getDate() + 1);
+    }
+    return counts;
+  }, [loadedStart, loadedEnd, startDate, endDate]);
+
+  // Compute real available hours for a court using its schedule.
+  // Returns { availHrs, source: 'schedule' | 'fallback' }
+  var computeCourtAvail = useCallback((courtLabel) => {
+    if (schedules && schedules[courtLabel] && schedules[courtLabel].dailyHrs) {
+      const dh = schedules[courtLabel].dailyHrs;
+      var totalHrs = 0;
+      for (var dow = 1; dow <= 7; dow++) {
+        totalHrs += (dh[dow] || 0) * (dowCounts[dow] || 0);
+      }
+      return { availHrs: totalHrs, source: 'schedule' };
+    }
+    // Fallback: flat hrs/day × days in range
+    return { availHrs: (Number(hrsPerDay) || 0) * daysInRange, source: 'fallback' };
+  }, [schedules, dowCounts, hrsPerDay, daysInRange]);
+
   const grouped = useMemo(() => {
     const byCourt = new Map();
     for (const r of filtered) {
-      const label = `${r.locationName} — ${r.courtName}`;
+      const label = `${r.locationName} \u2014 ${r.courtName}`;
       if (!byCourt.has(label)) {
         byCourt.set(label, {
           label, location: r.locationName, court: r.courtName,
@@ -613,9 +669,9 @@ function App() {
       else if (r.usageCategory === 'Closure / Block') { e.closure.add(r.facilityRentalId);  e.closureHrs  += hrs; }
       else                                             { e.customer.add(r.facilityRentalId); e.customerHrs += hrs; }
     }
-    const availPerCourt = (Number(hrsPerDay) || 0) * daysInRange;
     const arr = Array.from(byCourt.values()).map(e => {
       const usedHrs = e.customerHrs + e.programHrs; // closures are unavailability, not utilization
+      const avail = computeCourtAvail(e.label);
       return {
         ...e,
         customer: e.customer.size,
@@ -623,13 +679,14 @@ function App() {
         closure:  e.closure.size,
         total:    e.customer.size + e.program.size + e.closure.size,
         usedHrs,
-        availHrs: availPerCourt,
-        utilPct:  availPerCourt > 0 ? (usedHrs / availPerCourt) * 100 : null,
+        availHrs: avail.availHrs,
+        availSource: avail.source,
+        utilPct:  avail.availHrs > 0 ? (usedHrs / avail.availHrs) * 100 : null,
       };
     });
     arr.sort((a,b) => b.total - a.total);
     return arr;
-  }, [filtered, hrsPerDay, daysInRange]);
+  }, [filtered, computeCourtAvail]);
 
   // Overall utilization across the courts currently shown.
   const overallUtil = useMemo(() => {
@@ -637,6 +694,16 @@ function App() {
     const used  = grouped.reduce((s,g) => s + g.usedHrs, 0);
     const avail = grouped.reduce((s,g) => s + g.availHrs, 0);
     return avail > 0 ? (used / avail) * 100 : null;
+  }, [grouped]);
+
+  // How many of the visible courts have real schedule data vs fallback.
+  const scheduleStats = useMemo(() => {
+    if (!grouped.length) return { real: 0, fallback: 0, total: 0 };
+    var real = 0, fallback = 0;
+    for (var i = 0; i < grouped.length; i++) {
+      if (grouped[i].availSource === 'schedule') real++; else fallback++;
+    }
+    return { real, fallback, total: grouped.length };
   }, [grouped]);
 
   const stats = useMemo(() => {
@@ -716,7 +783,8 @@ function App() {
         start: loadedStart || startDate,
         end: loadedEnd || endDate,
         days: daysInRange,
-        hrsPerDayAssumed: Number(hrsPerDay) || 0,
+        hrsPerDayFallback: Number(hrsPerDay) || 0,
+        scheduleSources: { real: scheduleStats.real, fallback: scheduleStats.fallback },
       },
       overall: {
         utilizationPct: r1(overallUtil),
@@ -732,6 +800,8 @@ function App() {
         bookings: g.total,
         utilizationPct: r1(g.utilPct),
         hoursUsed: r1(g.usedHrs),
+        availHrs: r1(g.availHrs),
+        availSource: g.availSource,
         customerBookings: g.customer,
         programBookings: g.program,
         closureBookings: g.closure,
@@ -864,7 +934,7 @@ function App() {
                 if (!g) return '';
                 const out = [`Total bookings: ${g.total}`];
                 if (g.utilPct != null) {
-                  out.push(`Utilization: ${g.utilPct.toFixed(0)}% (${g.usedHrs.toFixed(1)} of ${g.availHrs.toFixed(0)}h)`);
+                  out.push(`Utilization: ${g.utilPct.toFixed(0)}% (${g.usedHrs.toFixed(1)} of ${g.availHrs.toFixed(0)}h${g.availSource === 'schedule' ? '' : ' est.'})`);
                 }
                 return out;
               },
@@ -897,6 +967,7 @@ function App() {
       Total: g.total,
       'Used Hours': Number(g.usedHrs.toFixed(2)),
       'Avail Hours': Number(g.availHrs.toFixed(1)),
+      'Avail Source': g.availSource === 'schedule' ? 'Real schedule' : 'Estimated',
       'Utilization %': g.utilPct == null ? '' : Number(g.utilPct.toFixed(1)),
     }));
     const tUsed  = grouped.reduce((s,g) => s + g.usedHrs, 0);
@@ -1052,13 +1123,24 @@ function App() {
             <input type="checkbox" checked={includeClosures} onChange={e => setIncludeClosures(e.target.checked)} />
             Include closures / blocks
           </label>
-          <label title="Assumed hours each court is open per day. Used as the interim denominator for utilization % until real per-court operating hours are wired in.">
-            Open hrs/day
-            <input type="number" min="1" max="24" step="0.5"
-              value={hrsPerDay}
-              onChange={e => setHrsPerDay(e.target.value)}
-              style={{width:'58px',marginLeft:'6px'}} />
-          </label>
+          {scheduleStats.total > 0 && (
+            <span style={{fontSize:'11px', color:'#666', display:'flex', alignItems:'center', gap:'6px'}}>
+              {scheduleStats.real > 0 && (
+                <span style={{background:'#dcfce7', color:'#166534', borderRadius:'10px', padding:'1px 8px', fontWeight:600, fontSize:'10px'}}>
+                  {scheduleStats.real === scheduleStats.total ? 'Real schedules' : `${scheduleStats.real}/${scheduleStats.total} real`}
+                </span>
+              )}
+              {scheduleStats.fallback > 0 && (
+                <label title="Fallback hours per day for courts without schedule data from rec.us. Used as the denominator for utilization %.">
+                  {scheduleStats.real > 0 ? 'Fallback' : 'Open'} hrs/day
+                  <input type="number" min="1" max="24" step="0.5"
+                    value={hrsPerDay}
+                    onChange={e => setHrsPerDay(e.target.value)}
+                    style={{width:'58px',marginLeft:'6px'}} />
+                </label>
+              )}
+            </span>
+          )}
         </div>
 
         {/* AI Insights */}
