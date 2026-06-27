@@ -392,7 +392,7 @@ function normalize(rows) {
 }
 
 // ── Location multi-select (mirrors the facility.html location filter) ─
-function LocationFilter({ all, selected, onChange }) {
+function LocationFilter({ all, selected, onChange, dark }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState('');
   const ref = useRef(null);
@@ -424,14 +424,16 @@ function LocationFilter({ all, selected, onChange }) {
     <div ref={ref} style={{position:'relative', display:'inline-block'}}>
       <button type="button" onClick={() => setOpen(o => !o)}
         style={{display:'flex', alignItems:'center', gap:'8px', padding:'6px 10px',
-          border:'1px solid #d1d5db', borderRadius:'6px', background:'#fff',
-          fontSize:'13px', cursor:'pointer', minWidth:'160px', justifyContent:'space-between'}}>
+          border: dark ? '1px solid rgba(255,255,255,.15)' : '1px solid #d1d5db',
+          borderRadius:'6px', background: dark ? 'rgba(255,255,255,.08)' : '#fff',
+          fontSize:'13px', cursor:'pointer', minWidth:'160px', justifyContent:'space-between',
+          color: dark ? '#fff' : 'inherit'}}>
         <span style={{display:'flex', alignItems:'center', gap:'6px'}}>
-          <span style={{fontSize:'11px', color:'#666', fontWeight:600, textTransform:'uppercase', letterSpacing:'0.5px'}}>Locations</span>
+          <span style={{fontSize:'11px', color: dark ? '#aaa' : '#666', fontWeight:600, textTransform:'uppercase', letterSpacing:'0.5px'}}>Locations</span>
           <span>{label}</span>
           {partial && <span style={{background:'#f59e0b', color:'#fff', borderRadius:'10px', padding:'0 6px', fontSize:'10px', fontWeight:700}}>{selected.length}</span>}
         </span>
-        <span style={{color:'#9ca3af', fontSize:'10px'}}>▾</span>
+        <span style={{color: dark ? 'rgba(255,255,255,.4)' : '#9ca3af', fontSize:'10px'}}>▾</span>
       </button>
       {open && (
         <div style={{position:'absolute', top:'calc(100% + 4px)', right:0, width:'260px', zIndex:200,
@@ -976,6 +978,9 @@ function App() {
         <button className="btn-run" onClick={runReport} disabled={loading}>
           {loading ? <><span className="btn-spinner" />Loading…</> : '▶ Run Report'}
         </button>
+        {allLocations.length > 0 && (
+          <LocationFilter all={allLocations} selected={selectedLocations} onChange={setSelectedLocations} dark />
+        )}
         <div className="toolbar-spacer" />
         <span className="row-count">{rows.length.toLocaleString()} rows</span>
         <div className="divider" />
@@ -1054,9 +1059,6 @@ function App() {
               onChange={e => setHrsPerDay(e.target.value)}
               style={{width:'58px',marginLeft:'6px'}} />
           </label>
-          <div style={{marginLeft:'auto'}}>
-            <LocationFilter all={allLocations} selected={selectedLocations} onChange={setSelectedLocations} />
-          </div>
         </div>
 
         {/* AI Insights */}
@@ -1148,3 +1150,4 @@ ReactDOM.createRoot(document.getElementById('root')).render(<App />);
       <script src="/nav-breadcrumb.js" defer></script>
   </body>
 </html>
+
