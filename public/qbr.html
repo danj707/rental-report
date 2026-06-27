@@ -11,6 +11,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<script src="/juice-loader.js"></script>
 <style>
   :root {
     --ink:    #0F1B2D;
@@ -58,6 +59,27 @@
     padding: 11px 26px; cursor: pointer; transition: background .15s;
   }
   .picker .go:hover { background: #1a6a4e; }
+  .picker .org-input {
+    font-family: inherit; font-size: 15px; font-weight: 500; color: var(--ink);
+    background: var(--mist); border: 1px solid var(--line); border-radius: 9px;
+    padding: 9px 13px; min-width: 240px;
+  }
+  .picker .org-input:focus-visible { outline: 2px solid var(--emerald); outline-offset: 1px; }
+  .org-drop {
+    position: absolute; top: 100%; left: 0; right: 0; margin-top: 4px; background: #fff;
+    border: 1px solid var(--line); border-radius: 10px; box-shadow: var(--shadow);
+    max-height: 300px; overflow-y: auto; z-index: 30;
+  }
+  .org-opt { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; padding: 9px 13px; cursor: pointer; }
+  .org-opt:hover { background: var(--mist); }
+  .org-opt-name { font-size: 14px; font-weight: 500; color: var(--ink); }
+  .org-opt-slug { font-size: 11px; color: var(--faint); }
+  .pdf-btn {
+    font-family: inherit; font-size: 14px; font-weight: 600; color: var(--emerald);
+    background: var(--emerald-soft); border: 1px solid #cfe6da; border-radius: 9px;
+    padding: 10px 18px; text-decoration: none; align-self: center;
+  }
+  .pdf-btn:hover { background: #d9ede3; }
   .picker .tag {
     font-size: 11px; font-weight: 600; color: var(--emerald); background: var(--emerald-soft);
     padding: 4px 9px; border-radius: 20px; align-self: center; letter-spacing: .03em;
@@ -400,22 +422,42 @@ function App() {
   const params = new URLSearchParams(location.search);
   const printMode = params.get('_print') === '1';
   const [data, setData] = useState(PREVIEW ? MOCK : null);
-  const [org, setOrg] = useState(params.get('org') || 'watertown');
   const [q, setQ] = useState(parseInt(params.get('quarter')) || 3);
   const [year, setYear] = useState(parseInt(params.get('year')) || 2025);
   const [ready, setReady] = useState(false);
-  const [orgs, setOrgs] = useState(ORG_OPTIONS);
+  const [loading, setLoading] = useState(false);
+
+  // Org combobox — local ORGS list + live search across every platform org
+  const [localOrgs, setLocalOrgs] = useState(ORG_OPTIONS.map(([slug, displayName]) => ({ slug, displayName, orgId: null })));
+  const [sel, setSel] = useState(null);
+  const [orgQuery, setOrgQuery] = useState('');
+  const [results, setResults] = useState([]);
+  const [openDrop, setOpenDrop] = useState(false);
 
   useEffect(() => {
     fetch('/qbr/api/orgs').then(r => r.ok ? r.json() : null).then(d => {
-      if (d && Array.isArray(d.orgs) && d.orgs.length) setOrgs(d.orgs.map(o => [o.slug, o.displayName]));
-    }).catch(() => {});
+      const list = (d && Array.isArray(d.orgs) && d.orgs.length) ? d.orgs : null;
+      if (list) setLocalOrgs(list);
+      const pool = list || localOrgs;
+      const def = pool.find(o => o.slug === (params.get('org') || 'watertown')) || pool[0];
+      if (def) { setSel(s => s || def); setOrgQuery(s => s || def.displayName); }
+    }).catch(() => {
+      const def = localOrgs.find(o => o.slug === (params.get('org') || 'watertown')) || localOrgs[0];
+      if (def) { setSel(def); setOrgQuery(def.displayName); }
+    });
   }, []);
 
-  // Live mode (served by /qbr or the PDF route): auto-generate from the URL selection on mount.
   useEffect(() => {
-    if (!PREVIEW) generate(params.get('org') || 'watertown', parseInt(params.get('quarter')) || 3, parseInt(params.get('year')) || 2025);
-  }, []);
+    if (!openDrop) return;
+    if (!orgQuery || (sel && orgQuery === sel.displayName)) { setResults(localOrgs.slice(0, 12)); return; }
+    const t = setTimeout(() => {
+      fetch('/qbr/api/orgs/search?q=' + encodeURIComponent(orgQuery))
+        .then(r => r.ok ? r.json() : null)
+        .then(d => { if (d && Array.isArray(d.orgs)) setResults(d.orgs); else throw new Error('x'); })
+        .catch(() => setResults(localOrgs.filter(o => o.displayName.toLowerCase().includes(orgQuery.toLowerCase()))));
+    }, 250);
+    return () => clearTimeout(t);
+  }, [orgQuery, openDrop]);
 
   useEffect(() => {
     if (printMode) document.body.classList.add('print');
@@ -429,26 +471,51 @@ function App() {
     return () => { cancelled = true; };
   }, [data]);
 
-  const generate = (o, qq, yy) => {
+  const generate = (payload) => {
     if (PREVIEW) { setData({ ...MOCK }); return; }
-    setReady(false); setData(null);
+    setReady(false); setLoading(true); setData(null);
     fetch('/qbr/api/generate', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ orgSlug: o, year: yy, quarter: qq }),
-    }).then(r => r.json()).then(d => setData(d && d.ok ? d : MOCK)).catch(() => setData(MOCK));
+      body: JSON.stringify(payload),
+    }).then(r => r.json()).then(d => setData(d && d.ok ? d : MOCK)).catch(() => setData(MOCK)).finally(() => setLoading(false));
   };
-  const run = () => generate(org, q, year);
+  const run = () => { const o = sel || {}; generate({ orgSlug: o.slug, orgId: o.orgId, displayName: o.displayName, year, quarter: q }); };
+  const pick = (o) => { setSel(o); setOrgQuery(o.displayName); setOpenDrop(false); };
+  const pdfUrl = () => {
+    const o = sel || {};
+    const qs = new URLSearchParams({ org: o.slug || '', year: String(year), quarter: String(q) });
+    if (o.orgId) qs.set('orgId', o.orgId);
+    if (o.displayName) qs.set('displayName', o.displayName);
+    return '/qbr/api/pdf?' + qs.toString();
+  };
+
+  // Live mode (served by /qbr or the PDF route): auto-generate from the URL selection on mount.
+  useEffect(() => {
+    if (PREVIEW) return;
+    generate({ orgSlug: params.get('org') || 'watertown', orgId: params.get('orgId') || undefined, displayName: params.get('displayName') || undefined, year: parseInt(params.get('year')) || 2025, quarter: parseInt(params.get('quarter')) || 3 });
+  }, []);
 
   const years = [2024, 2025, 2026];
 
   return (
     <div className="wrap">
       <div className="picker">
-        <div className="field">
+        <div className="field" style={{ position: 'relative' }}>
           <label>Organization</label>
-          <select value={org} onChange={e => setOrg(e.target.value)}>
-            {orgs.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-          </select>
+          <input className="org-input" type="text" value={orgQuery} placeholder="Search any org…"
+            onChange={e => { setOrgQuery(e.target.value); setOpenDrop(true); }}
+            onFocus={() => setOpenDrop(true)}
+            onBlur={() => setTimeout(() => setOpenDrop(false), 180)} />
+          {openDrop && results.length > 0 && (
+            <div className="org-drop">
+              {results.map(o => (
+                <div key={o.slug || o.orgId} className="org-opt" onMouseDown={() => pick(o)}>
+                  <span className="org-opt-name">{o.displayName}</span>
+                  {o.slug && <span className="org-opt-slug">{o.slug}</span>}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
         <div className="field">
           <label>Quarter</label>
@@ -464,9 +531,13 @@ function App() {
         </div>
         {PREVIEW && <span className="tag">PREVIEW · mock data</span>}
         <button className="go" onClick={run}>Generate QBR</button>
+        {!PREVIEW && data && <a className="pdf-btn" href={pdfUrl()} target="_blank" rel="noopener">Download PDF</a>}
       </div>
 
-      {data && <Report data={data} />}
+      {loading && (window.JuiceLoader
+        ? <div className="page"><JuiceLoader messages={['Pulling the GL\u2026','Tallying enrollments\u2026','Counting reservations\u2026','Reconciling refunds\u2026','Charting the quarter\u2026']} /></div>
+        : <div className="page" style={{ padding: 48, textAlign: 'center', color: '#888' }}>Generating…</div>)}
+      {!loading && data && <Report data={data} />}
       {ready && <div id="report-ready" style={{ display: 'none' }}></div>}
     </div>
   );

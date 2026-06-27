@@ -3492,28 +3492,51 @@ app.get("/qbr", (req, res) => {
 app.get("/qbr/api/orgs", (req, res) => {
   const orgs = Object.keys(ORGS).map(slug => {
     const title = slug.charAt(0).toUpperCase() + slug.slice(1);
-    return { slug, displayName: ORGS[slug].displayName || (title + " Parks & Recreation") };
+    return { slug, orgId: ORGS[slug].orgId || null, displayName: ORGS[slug].displayName || (title + " Parks & Recreation") };
   }).sort((a, b) => a.displayName.localeCompare(b.displayName));
   res.json({ orgs });
 });
 
+// ── GET /qbr/api/orgs/search — full platform org search via Rec MCP ──
+app.get("/qbr/api/orgs/search", async (req, res) => {
+  const q = (req.query.q || "").toString().trim();
+  if (!q) return res.json({ orgs: [] });
+  try {
+    const client = await getRecMcpClient();
+    const result = await client.callTool({ name: "search_organizations", arguments: { query: q, pageSize: 20 } });
+    const txt = ((result && result.content) || []).filter(c => c.type === "text").map(c => c.text).join("");
+    const parsed = JSON.parse(txt);
+    const orgs = (parsed.data || []).map(o => ({ slug: o.slug, orgId: o.id, displayName: o.displayName || o.name }));
+    res.json({ orgs });
+  } catch (e) {
+    console.warn("[qbr] org search failed: " + e.message);
+    const ql = q.toLowerCase();
+    const orgs = Object.keys(ORGS).map(slug => {
+      const title = slug.charAt(0).toUpperCase() + slug.slice(1);
+      return { slug, orgId: ORGS[slug].orgId || null, displayName: ORGS[slug].displayName || (title + " Parks & Recreation") };
+    }).filter(o => o.displayName.toLowerCase().includes(ql) || o.slug.includes(ql));
+    res.json({ orgs, fallback: true });
+  }
+});
+
 // ── POST /qbr/api/generate ──
 app.post("/qbr/api/generate", express.json(), async (req, res) => {
-  const { orgSlug, year, quarter } = req.body || {};
-  const ctx = qbrOrgCtx(orgSlug);
+  const { orgSlug, orgId, displayName, year, quarter } = req.body || {};
+  let ctx = (orgSlug && ORGS[orgSlug]) ? qbrOrgCtx(orgSlug) : null;
+  if (!ctx && orgId) ctx = { slug: orgSlug || orgId, orgId, displayName: displayName || orgSlug || "Organization", logoUrl: "", uuids: {} };
   if (!ctx) return res.status(404).json({ ok: false, error: "Unknown org" });
   const y = parseInt(year), q = parseInt(quarter);
   if (!y || !(q >= 1 && q <= 4)) return res.status(400).json({ ok: false, error: "Bad year/quarter" });
-  const cacheKey = orgSlug + "|" + y + "|" + q;
+  const cacheKey = ctx.slug + "|" + y + "|" + q;
   const cached = _qbrCache.get(cacheKey);
   if (cached && Date.now() - cached.ts < QBR_CACHE_TTL) return res.json({ ok: true, ...cached.data, cached: true });
   try {
-    logEvent(orgSlug, "qbr", "generate", req);
+    logEvent(ctx.slug, "qbr", "generate", req);
     const result = await buildQbr(ctx, y, q);
     let narrative = null;
     if (anthropic) {
       try {
-        const span = _recTracer.startSpan("rec.qbr", { attributes: { "rec.org": orgSlug } });
+        const span = _recTracer.startSpan("rec.qbr", { attributes: { "rec.org": ctx.slug } });
         const traceId = span.spanContext().traceId;
         const sctx = otelApi.trace.setSpan(otelApi.context.active(), span);
         const ai = await otelApi.context.with(sctx, () => anthropic.messages.create({
@@ -3525,7 +3548,7 @@ app.post("/qbr/api/generate", express.json(), async (req, res) => {
         const text = (ai.content || []).filter(c => c.type === "text").map(c => c.text).join("");
         try { narrative = JSON.parse(text.replace(/```json|```/g, "").trim()); } catch (pe) { narrative = null; }
         const u = ai.usage || {};
-        logEvent(orgSlug, "qbr", "ai-generate", req, { inTok: u.input_tokens || 0, outTok: u.output_tokens || 0, costUsd: insightsCostUsd(ai.model || "claude-sonnet-4-6", u.input_tokens || 0, u.output_tokens || 0), traceId });
+        logEvent(ctx.slug, "qbr", "ai-generate", req, { inTok: u.input_tokens || 0, outTok: u.output_tokens || 0, costUsd: insightsCostUsd(ai.model || "claude-sonnet-4-6", u.input_tokens || 0, u.output_tokens || 0), traceId });
       } catch (aiErr) { console.error("[qbr] AI error: " + aiErr.message); }
     }
     result.narrative = narrative || qbrFallbackNarrative(result);
@@ -3538,9 +3561,12 @@ app.post("/qbr/api/generate", express.json(), async (req, res) => {
 // ── GET /qbr/api/pdf — Puppeteer one-pager ──
 app.get("/qbr/api/pdf", async (req, res) => {
   const puppeteer = require("puppeteer");
-  const { org, year, quarter } = req.query;
-  if (!qbrOrgCtx(org)) return res.status(404).json({ error: "Unknown org" });
-  const url = `http://localhost:${PORT}/qbr?org=${encodeURIComponent(org)}&year=${encodeURIComponent(year||"")}&quarter=${encodeURIComponent(quarter||"")}&_print=1`;
+  const { org, orgId, displayName, year, quarter } = req.query;
+  if (!(org && ORGS[org]) && !orgId) return res.status(404).json({ error: "Unknown org" });
+  const qp = new URLSearchParams({ org: org || "", year: year || "", quarter: quarter || "", _print: "1" });
+  if (orgId) qp.set("orgId", orgId);
+  if (displayName) qp.set("displayName", displayName);
+  const url = `http://localhost:${PORT}/qbr?${qp.toString()}`;
   let browser;
   try {
     browser = await puppeteer.launch({ headless: true, executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined, args: ["--no-sandbox","--disable-setuid-sandbox","--disable-dev-shm-usage","--disable-gpu"] });
@@ -3549,7 +3575,7 @@ app.get("/qbr/api/pdf", async (req, res) => {
     await page.goto(url, { waitUntil: "networkidle0", timeout: 60000 });
     await page.waitForSelector("#report-ready", { timeout: 45000 });
     const pdf = await page.pdf({ format: "Letter", landscape: true, printBackground: true, margin: { top: "0.35in", bottom: "0.4in", left: "0.35in", right: "0.35in" }, displayHeaderFooter: true, headerTemplate: "<span></span>", footerTemplate: `<div style="font-size:9px;width:100%;padding:0 0.4in;display:flex;justify-content:space-between;color:#888;font-family:sans-serif;"><span>rec.us — Quarterly Business Review</span><span>Q${quarter||""} ${year||""}</span></div>` });
-    res.set({ "Content-Type": "application/pdf", "Content-Disposition": `inline; filename="qbr-${org}-Q${quarter||""}-${year||""}.pdf"`, "Content-Length": pdf.length });
+    res.set({ "Content-Type": "application/pdf", "Content-Disposition": `inline; filename="qbr-${org||orgId}-Q${quarter||""}-${year||""}.pdf"`, "Content-Length": pdf.length });
     res.send(pdf);
   } catch (err) { console.error("[qbr] pdf error: " + err.message); res.status(500).json({ error: err.message }); }
   finally { if (browser) await browser.close(); }
@@ -6973,6 +6999,11 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+    { date: '2026-06-27', title: 'QBR \u2014 full org search + loading animation', items: [
+      'Org picker is now a live search across every published rec.us org via the Rec MCP (search_organizations), not just the ORGS map. Known orgs still resolve with their logos and per-org cards; the static list is the offline fallback.',
+      'JuiceLoader animation now plays while a QBR generates, instead of a blank pause.',
+      'Added a Download PDF button to the picker; the PDF route resolves searched orgs by id.',
+    ] },
     { date: '2026-06-27', title: 'QBR Generator \u2014 cross-org quarterly business review', items: [
       'New internal page at /qbr: pick any org + quarter, generates a one-page partner-facing QBR (no token, whitelisted like /metrics).',
       'Financial block mirrors the GL report exactly: gross minus refunds equals net, plus transaction count, all off the GL card. Programs, facility, court utilization, retention, and memberships render only when their card returns rows.',
