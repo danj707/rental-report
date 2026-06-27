@@ -3109,27 +3109,29 @@ async function fetchMBDirect(orgSlug, reportType, startDate, endDate) {
   return resp.json();
 }
 
-const ANNUAL_REPORT_PROMPT = `You are an expert municipal parks & recreation analyst writing an annual report for a city council audience.
+const ANNUAL_REPORT_PROMPT = `You write section narratives for a municipal parks & recreation annual report. Your audience is city council members and department leadership.
 
-You receive aggregated data from an entire fiscal year: revenue by GL category, program enrollments, facility utilization, and community metrics.
+You receive aggregated data for a reporting period. Write short, factual narratives for each section using ONLY the numbers in the data. Never invent figures, never speculate about missing data, never apologize for what is not included. If a data source has no rows, return null for that section.
 
-Return a JSON object with EXACTLY these keys (no markdown fences, no preamble):
+Return a JSON object with these keys (no markdown fences, no preamble):
 {
-  "executiveSummary": "2–3 paragraphs summarizing the year’s highlights, challenges, and key numbers. Write in a confident, professional tone suitable for elected officials. Reference specific dollar amounts, percentages, and program names from the data.",
-  "revenueNarrative": "1–2 paragraphs analyzing revenue trends, top categories, growth vs prior year if available.",
-  "programsNarrative": "1–2 paragraphs covering participation trends, top programs, fill rates, demographics.",
-  "facilityNarrative": "1–2 paragraphs on facility/court utilization, busiest venues, scheduling patterns.",
+  "executiveSummary": "1 short paragraph (3-4 sentences). Lead with the single most impressive number. Summarize total revenue, participation volume, and facility activity. Confident tone, no caveats.",
+  "revenueNarrative": "2-3 sentences. State total revenue, name the top 2-3 GL categories by dollar amount with their figures. Note the revenue mix.",
+  "programsNarrative": "2-3 sentences. State total enrollments, number of sections, fill rate if available. Name the top 2-3 programs by enrollment with their numbers.",
+  "courtNarrative": "2-3 sentences on court/field utilization. State total hours booked, number of active courts, distinct bookings.",
+  "facilityNarrative": "2-3 sentences on facility rentals. State total bookings, number of locations, total rental revenue.",
   "recommendations": [
-    { "icon": "calendar-dollar|users-plus|sun|chart-arrows-vertical|target|bulb", "title": "short title", "detail": "1–2 sentence recommendation grounded in the data" }
+    { "icon": "calendar-dollar|users-plus|sun|chart-arrows-vertical|target|bulb", "title": "5 words max", "detail": "1 sentence, grounded in a specific number from the data" }
   ]
 }
 
 Rules:
-- Ground EVERY number in the provided data. Never invent figures.
-- 4–6 recommendations, each actionable and specific.
-- Write for a non-technical audience. No jargon.
-- Highlight both achievements and opportunities.
-- If data is missing for a section, note it gracefully.`;
+- Every number you write MUST appear in the provided data. Do not compute ratios, averages, or percentages not already in the data.
+- 3-5 recommendations max. Each must reference a specific data point.
+- No editorializing about data quality, gaps, or limitations.
+- No superlatives unless the data supports them.
+- If a data section (gl, programs, courtUtilization, facility) has no data or is empty, set that narrative to null.
+- Keep it tight. Council members skim.`;
 
 const _annualReportCache = new Map();
 const AR_CACHE_TTL = 30 * 60 * 1000; // 30min
@@ -7504,5 +7506,6 @@ app.listen(PORT, () => {
   // Runs after listen() so startup isn't blocked by GitHub latency.
   migrateDynamicOrgs();
 });
+
 
 
