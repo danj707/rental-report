@@ -3323,7 +3323,11 @@ function qbrQuarterRange(year, q) {
   return { start: toISO(start), end: toISO(end), label: `Q${q} ${year}` };
 }
 function qbrPrevQuarter(year, q) { return q > 1 ? { year, q: q - 1 } : { year: year - 1, q: 4 }; }
-function qbrPctDelta(cur, prev) { return prev ? Math.round((cur - prev) / Math.abs(prev) * 100) : null; }
+function qbrPctDelta(cur, prev) {
+  if (!prev || prev <= 0) return null;                 // no prior-quarter baseline to compare against
+  const p = Math.round((cur - prev) / Math.abs(prev) * 100);
+  return Math.abs(p) > 1000 ? null : p;                // base too small for a meaningful percentage
+}
 function qbrDaysBetween(a, b) { return Math.round((new Date(b) - new Date(a)) / 86400000) + 1; }
 
 async function qbrFetch(orgCtx, reportType, startDate, endDate) {
@@ -7029,6 +7033,11 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+    { date: '2026-06-27', title: 'QBR \u2014 ramping-org guardrails + UX fixes', items: [
+      'QoQ deltas now suppress when the prior quarter has no/negligible baseline (avoids absurd figures like +16,000,000% off a near-empty Q2). Cards show the real current number with no misleading chip; the movement chart shows an honest note when there is no comparable baseline.',
+      'Interactive page no longer auto-generates on load \u2014 it waits for the Generate button. Auto-run is limited to the PDF/print route.',
+      'Download PDF button bottom-aligned with Generate.',
+    ] },
     { date: '2026-06-27', title: 'QBR \u2014 narrative number fix + point-in-time retention/memberships', items: [
       'Executive summary now receives display-ready figure strings and uses them verbatim \u2014 fixes the +345% delta rendering as a dollar amount and the unrounded cents in prose.',
       'Retention and memberships now fetched point-in-time (no date params), so Metabase no longer drops them when the card has no start/end tags.',
