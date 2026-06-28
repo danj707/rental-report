@@ -7352,6 +7352,12 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+    { date: '2026-06-28', title: '\uD83D\uDDFA\uFE0F Organization Metrics complete \u2014 weekend wrap', items: [
+      'The QBR is now a full internal dashboard: tabbed layout (Generate / Saved QBRs / Organization Metrics), saved point-in-time snapshots with PDF + internal @rec.us email, usage metrics, an all-orgs picker, total/new users, and a transaction count that ties to the Transactions report.',
+      'Organization Metrics tab: a national map with a colored bubble per org (toggle revenue / transactions / users, hover for detail) plus a revenue-by-org bar chart, built off a cached single-quarter fleet pull with Quarter/Year selectors so any quarter can be built and switched between instantly.',
+      'Published City of Madeira Beach (FL) live via the GTM publish command \u2014 it set published_at + primary state, so the org now appears in the published enumeration the map uses and will join the fleet on the next Q1 2026 rebuild.',
+      'Learning for next time: the public homepage search box surfaces live orgs broadly, while published_at (what the search_organizations API and the map enumerate) is the narrower curated published set \u2014 different scopes, so \u201Cnot in the API list\u201D never meant \u201Cnot published.\u201D',
+    ] },
     { date: '2026-06-28', title: 'QBR org map \u2014 pick any quarter + include unpublished orgs', items: [
       'The Organization Metrics map now has Quarter + Year selectors. Each timeframe builds and caches its own snapshot, so you can switch between built quarters instantly and Rebuild the one you are viewing. Picking a quarter with no snapshot yet shows a Build button for it.',
       'Added an extra-orgs list so orgs that are not in the published homepage search can still be mapped \u2014 Madeira Beach FL is now included. (Rebuild Q1 2026 once to pull it into that snapshot.)',
