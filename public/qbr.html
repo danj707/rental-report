@@ -136,7 +136,7 @@
   }
 
   /* KPI row */
-  .kpis { display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px; padding: 22px 34px 0; }
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 14px; padding: 22px 34px 0; }
   .kpi { border: 1px solid var(--line); border-radius: 12px; padding: 15px 16px 16px; }
   .kpi-lab {
     font-size: 11px; font-weight: 600; letter-spacing: .07em; text-transform: uppercase; color: var(--faint);
@@ -210,12 +210,12 @@ const MOCK = {
   period:     { year: 2025, quarter: 3, start: '2025-07-01', end: '2025-09-30', label: 'Q3 2025' },
   comparison: { start: '2025-04-01', end: '2025-06-30', label: 'Q2 2025' },
   metrics: {
-    financial: { gross: 487200, refunds: 18940, net: 468260, netDelta: 34, grossDelta: 31, transactions: 6842, transactionsDelta: 22, refundCount: 214 },
+    financial: { gross: 487200, refunds: 18940, net: 468260, netDelta: 34, grossDelta: 31, transactions: 3120, transactionsDelta: 18, refundCount: 214 },
     programs:  { enrollments: 4210, sections: 312, programs: 88, enrollmentsDelta: 41 },
     facility:  { bookings: 1847, locations: 22, revenue: 214500, bookingsDelta: 28 },
     court:     { hoursBooked: 3120, courts: 13, utilization: 41, utilizationEstimated: true, hrsPerDay: 12 },
     retention: { rate: 73.5 },
-    memberships: null,
+    users: { total: 18450, new: 1240, newDelta: 9 },
   },
   narrative: {
     executiveSummary: "Watertown closed Q3 at $468,260 in net revenue, up 34% over Q2 as summer programming and field rentals reached their seasonal peak. Program enrollments led the quarter at 4,210 across 312 sections, a 41% jump, while facility bookings reached 1,847 across 22 locations. Court time stayed busy at 3,120 booked hours over 13 courts, and program retention held at 73.5%.",
@@ -387,12 +387,13 @@ function Report({ data }) {
       )}
 
       <div className="kpis">
-        {m.financial && <Kpi lab="Transactions" val={fmtNum(m.financial.transactions)} sub={`${fmtNum(m.financial.refundCount)} refunded`} delta={m.financial.transactionsDelta} />}
+        {m.financial && m.financial.transactions != null && <Kpi lab="Transactions" val={fmtNum(m.financial.transactions)} sub={`${fmtNum(m.financial.refundCount)} refunded`} delta={m.financial.transactionsDelta} />}
         {m.programs   && <Kpi lab="Enrollments"  val={fmtNum(m.programs.enrollments)}    sub={`${fmtNum(m.programs.sections)} sections · ${m.programs.programs} programs`} delta={m.programs.enrollmentsDelta} />}
         {m.facility   && <Kpi lab="Bookings"     val={fmtNum(m.facility.bookings)}       sub={`${m.facility.locations} locations · ${fmtMoney(m.facility.revenue)}`} delta={m.facility.bookingsDelta} />}
         {m.court      && <Kpi lab="Court util."  val={`${m.court.utilization}%`}         sub={`${fmtNum(m.court.hoursBooked)} hrs · ${m.court.courts} courts`} est={m.court.utilizationEstimated} />}
         {m.retention  && <Kpi lab="Retention"    val={`${m.retention.rate}%`}            sub="point-in-time" />}
-        {m.memberships && <Kpi lab="Members"     val={fmtNum(m.memberships.active)}      sub="active at quarter close" />}
+        {m.users && m.users.total != null && <Kpi lab="Total users" val={fmtNum(m.users.total)} sub="all-time" />}
+        {m.users && m.users.new != null   && <Kpi lab="New users"   val={fmtNum(m.users.new)}   sub={`joined in ${data.period.label}`} delta={m.users.newDelta} />}
       </div>
 
       <div className="lower">
@@ -419,7 +420,7 @@ function Report({ data }) {
       <div className="foot">
         <div className="season">{narrative.seasonality}</div>
         <div className="method">
-          Net = Gross − Refunds, summed from the GL Code Rollup card. Transactions = number of payments.
+          Net = Gross − Refunds, summed from the GL Code Rollup card. Transactions = distinct transactions.
           Court utilization estimated against a {m.court ? m.court.hrsPerDay : 12} hr/day operating window. All deltas vs {comparison.label} (prior calendar quarter).
         </div>
       </div>

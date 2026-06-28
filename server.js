@@ -3346,14 +3346,25 @@ async function qbrFetch(orgCtx, reportType, startDate, endDate) {
   } catch (e) { console.warn("[qbr] fetch " + reportType + " failed: " + e.message); return null; }
 }
 
+function qbrScalar(rows, key) {
+  if (!rows.length || !Object.prototype.hasOwnProperty.call(rows[0], key)) return null;
+  for (const r of rows) { if (r[key] != null && r[key] !== "") return qpf(r[key]); }
+  return 0;
+}
 function qbrSumGL(rows) {
   if (!Array.isArray(rows) || !rows.length) return null;
-  let gross = 0, refunds = 0, payments = 0, refundCount = 0;
+  let gross = 0, refunds = 0, refundCount = 0;
   for (const r of rows) {
-    gross += qpf(r["Total Payments"]); refunds += qpf(r["Total Refunds"]);
-    payments += qpf(r["Number of Payments"]); refundCount += qpf(r["Number of Refunds"]);
+    gross += qpf(r["Total Payments"]); refunds += qpf(r["Total Refunds"]); refundCount += qpf(r["Number of Refunds"]);
   }
-  return { gross, refunds, net: gross - refunds, transactions: payments, refundCount };
+  // Distinct transaction count + user counts are org-level scalars on the GL card (same value
+  // repeated per row). "Number of Payments" is per-GL-code and overcounts, so it is NOT used.
+  return {
+    gross, refunds, net: gross - refunds, refundCount,
+    transactions: qbrScalar(rows, "Transaction Count"),
+    totalUsers: qbrScalar(rows, "Total Users"),
+    newUsers: qbrScalar(rows, "New Users"),
+  };
 }
 function qbrSumProg(rows) {
   if (!Array.isArray(rows) || !rows.length) return null;
@@ -3411,13 +3422,12 @@ async function buildQbr(orgCtx, year, q) {
   const cur = qbrQuarterRange(year, q);
   const pv = qbrPrevQuarter(year, q);
   const prev = qbrQuarterRange(pv.year, pv.q);
-  const [glC, glP, pgC, pgP, facC, facP, courtC, retC, memC] = await Promise.all([
+  const [glC, glP, pgC, pgP, facC, facP, courtC, retC] = await Promise.all([
     qbrFetch(orgCtx, "gl", cur.start, cur.end),       qbrFetch(orgCtx, "gl", prev.start, prev.end),
     qbrFetch(orgCtx, "programs", cur.start, cur.end), qbrFetch(orgCtx, "programs", prev.start, prev.end),
     qbrFetch(orgCtx, "facility", cur.start, cur.end), qbrFetch(orgCtx, "facility", prev.start, prev.end),
     qbrFetch(orgCtx, "court-utilization", cur.start, cur.end),
     qbrFetch(orgCtx, "retention", null, null),
-    qbrFetch(orgCtx, "memberships", null, null),
   ]);
   const gl = qbrSumGL(glC), glPrev = qbrSumGL(glP);
   const pg = qbrSumProg(pgC), pgPrev = qbrSumProg(pgP);
@@ -3428,7 +3438,7 @@ async function buildQbr(orgCtx, year, q) {
       netDelta: glPrev ? qbrPctDelta(gl.net, glPrev.net) : null,
       grossDelta: glPrev ? qbrPctDelta(gl.gross, glPrev.gross) : null,
       transactions: gl.transactions,
-      transactionsDelta: glPrev ? qbrPctDelta(gl.transactions, glPrev.transactions) : null,
+      transactionsDelta: (gl.transactions != null && glPrev && glPrev.transactions != null) ? qbrPctDelta(gl.transactions, glPrev.transactions) : null,
       refundCount: gl.refundCount,
     } : null,
     programs: pg ? { enrollments: pg.enrollments, sections: pg.sections, programs: pg.programs,
@@ -3437,7 +3447,10 @@ async function buildQbr(orgCtx, year, q) {
       bookingsDelta: facPrev ? qbrPctDelta(fac.bookings, facPrev.bookings) : null } : null,
     court: qbrSumCourt(courtC, qbrDaysBetween(cur.start, cur.end)),
     retention: qbrSumRetention(retC),
-    memberships: qbrSumMemberships(memC),
+    users: (gl && (gl.totalUsers != null || gl.newUsers != null)) ? {
+      total: gl.totalUsers, new: gl.newUsers,
+      newDelta: (gl.newUsers != null && glPrev && glPrev.newUsers != null) ? qbrPctDelta(gl.newUsers, glPrev.newUsers) : null,
+    } : null,
   };
   return {
     org: { slug: orgCtx.slug, displayName: orgCtx.displayName, logoUrl: orgCtx.logoUrl, orgId: orgCtx.orgId },
@@ -3480,8 +3493,10 @@ function qbrDisplayFigures(result) {
     f.netRevenueChange = qbrFmtDelta(m.financial.netDelta);
     f.gross = qbrMoney(m.financial.gross);
     f.refunds = qbrMoney(m.financial.refunds);
-    f.transactions = m.financial.transactions.toLocaleString("en-US");
-    f.transactionsChange = qbrFmtDelta(m.financial.transactionsDelta);
+    if (m.financial.transactions != null) {
+      f.transactions = m.financial.transactions.toLocaleString("en-US");
+      f.transactionsChange = qbrFmtDelta(m.financial.transactionsDelta);
+    }
   }
   if (m.programs) {
     f.enrollments = m.programs.enrollments.toLocaleString("en-US");
@@ -3495,7 +3510,10 @@ function qbrDisplayFigures(result) {
   }
   if (m.court) f.courtUtilization = m.court.utilization + "% (estimated), " + m.court.hoursBooked + " hours across " + m.court.courts + " courts";
   if (m.retention) f.retentionRate = m.retention.rate + "%";
-  if (m.memberships) f.activeMembers = m.memberships.active.toLocaleString("en-US");
+  if (m.users) {
+    if (m.users.total != null) f.totalUsers = m.users.total.toLocaleString("en-US");
+    if (m.users.new != null) { f.newUsers = m.users.new.toLocaleString("en-US"); f.newUsersChange = qbrFmtDelta(m.users.newDelta); }
+  }
   return f;
 }
 
@@ -7033,6 +7051,11 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+    { date: '2026-06-28', title: 'QBR \u2014 correct transaction count + total/new users', items: [
+      'Transactions no longer use the GL per-code payment-line count (which overcounted ~2.2x vs the Transactions report). The card now reads a distinct Transaction Count column from the GL card and hides itself until that column exists, so a wrong number is never shown to a partner.',
+      'Replaced the Members card with Total Users (all-time) and New Users (joined in the quarter, with QoQ). Both read Total Users / New Users columns from the GL card and hide until present.',
+      'KPI grid auto-fits to the number of cards present.',
+    ] },
     { date: '2026-06-27', title: 'QBR \u2014 ramping-org guardrails + UX fixes', items: [
       'QoQ deltas now suppress when the prior quarter has no/negligible baseline (avoids absurd figures like +16,000,000% off a near-empty Q2). Cards show the real current number with no misleading chip; the movement chart shows an honest note when there is no comparable baseline.',
       'Interactive page no longer auto-generates on load \u2014 it waits for the Generate button. Auto-run is limited to the PDF/print route.',
