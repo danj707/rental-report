@@ -477,6 +477,7 @@ const SHARED_UUIDS = {
   gl: "4374b344-06a7-42c5-996c-e1845bda3ff1",
   "program-demographics": "67b77142-19ab-49bd-9d4b-1db8223a3616",
   retention: "3cfc9cfa-b1db-41e9-83fd-01fb90a5b0c8",
+  "qbr-stats": "3039d98b-a396-4c05-b1d7-0b8f2f2dd520",
 };
 
 // Report types that are valid system-wide but should NOT be offered in the
@@ -7057,6 +7058,10 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+    { date: '2026-06-28', title: 'QBR \u2014 transaction count live', items: [
+      'Wired the qbr-stats card (materialized.transaction_report, distinct transaction_event_id) into SHARED_UUIDS. The Transactions KPI now shows the real distinct count that ties to the Transactions report, across every org.',
+      'Total Users / New Users will light up on the same card once those columns are added (editing the shared question keeps its UUID \u2014 no re-wire needed).',
+    ] },
     { date: '2026-06-28', title: 'QBR \u2014 transactions + users from a dedicated stats card', items: [
       'Distinct transaction count and user counts now come from a single purpose-built QBR stats card (materialized source) instead of being bolted onto the GL report. GL stays financials-only.',
       'Reads Transaction Count, Total Users, and New Users from that card (org + date scoped), with QoQ on transactions and new users. Cards stay hidden until the card UUID is wired into SHARED_UUIDS.',
