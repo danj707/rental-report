@@ -658,7 +658,7 @@ function App() {
 
   const switchTab = useCallback((t) => {
     setTab(t);
-    if (t === 'participants' && !demoRows && !demoLoading) fetchDemoData();
+    if ((t === 'participants' || t === 'retention') && !demoRows && !demoLoading) fetchDemoData();
     if (t === 'retention' && !retRows && !retLoading) fetchRetentionData();
   }, [demoRows, demoLoading, fetchDemoData, retRows, retLoading, fetchRetentionData]);
 
@@ -792,6 +792,64 @@ function App() {
     var topRetaining = programs.filter(p => p.total >= 10).sort((a, b) => b.retPct - a.retPct)[0] || null;
     return { programs: programs, totalP: totalP, totalR: totalR, totalL: totalL, totalS: totalS, orgRetPct: orgRetPct, avgSec: avgSec, progsWithReturners: progsWithReturners, topRetaining: topRetaining };
   }, [retRows]);
+
+  // ── Cohort retention + cross-program affinity from enrollment data ──
+  var cohortAnalytics = useMemo(() => {
+    if (!demoRows || demoRows.length === 0) return null;
+    var partMap = {};
+    demoRows.forEach(r => {
+      var pid = r['Participant ID'] || r['participant_id'] || '';
+      var dateRaw = r['Enrolled Date'] || r['enrolled_date'] || r['Enrolled date'] || '';
+      var prog = r['Program'] || r['program'] || '';
+      if (!pid || !dateRaw) return;
+      var d = String(dateRaw).split('T')[0];
+      var monthKey = d.slice(0, 7);
+      if (!partMap[pid]) partMap[pid] = { firstMonth: monthKey, months: new Set(), programs: new Set() };
+      if (monthKey < partMap[pid].firstMonth) partMap[pid].firstMonth = monthKey;
+      partMap[pid].months.add(monthKey);
+      if (prog) partMap[pid].programs.add(prog);
+    });
+    var allMonths = new Set();
+    Object.values(partMap).forEach(p => { p.months.forEach(m => allMonths.add(m)); allMonths.add(p.firstMonth); });
+    var sortedMonths = Array.from(allMonths).sort();
+    var monthIndex = {}; sortedMonths.forEach((m, i) => { monthIndex[m] = i; });
+    var cohortMap = {};
+    Object.values(partMap).forEach(p => {
+      var fm = p.firstMonth;
+      if (!cohortMap[fm]) cohortMap[fm] = { size: 0, offsets: {} };
+      cohortMap[fm].size++;
+      p.months.forEach(m => {
+        var offset = monthIndex[m] - monthIndex[fm];
+        if (offset >= 0 && offset <= 11) cohortMap[fm].offsets[offset] = (cohortMap[fm].offsets[offset] || 0) + 1;
+      });
+    });
+    var now = new Date();
+    var cutoff = new Date(now.getFullYear(), now.getMonth() - 11, 1).toISOString().slice(0, 7);
+    var cohortKeys = Object.keys(cohortMap).filter(k => k >= cutoff && cohortMap[k].size >= 5).sort();
+    var maxOffset = 0;
+    cohortKeys.forEach(k => { var mx = Math.max.apply(null, Object.keys(cohortMap[k].offsets).map(Number)); if (mx > maxOffset) maxOffset = mx; });
+    maxOffset = Math.min(maxOffset, 11);
+    var heatmap = cohortKeys.map(k => {
+      var c = cohortMap[k]; var cells = [];
+      for (var off = 0; off <= maxOffset; off++) { var count = c.offsets[off] || 0; cells.push({ offset: off, count: count, pct: Math.round((count / c.size) * 100) }); }
+      return { month: k, label: new Date(k + '-15').toLocaleDateString('en-US', { month: 'short', year: '2-digit' }), size: c.size, cells: cells };
+    });
+    var progParts = {};
+    Object.keys(partMap).forEach(pid => { partMap[pid].programs.forEach(prog => { if (!progParts[prog]) progParts[prog] = new Set(); progParts[prog].add(pid); }); });
+    var progNames = Object.keys(progParts).filter(p => progParts[p].size >= 5);
+    var affinities = [];
+    for (var i = 0; i < progNames.length; i++) {
+      for (var j = i + 1; j < progNames.length; j++) {
+        var a = progNames[i], b = progNames[j]; var shared = 0;
+        progParts[a].forEach(pid => { if (progParts[b].has(pid)) shared++; });
+        if (shared >= 3) affinities.push({ progA: a, progB: b, shared: shared, sizeA: progParts[a].size, sizeB: progParts[b].size, pctA: Math.round((shared / progParts[a].size) * 100), pctB: Math.round((shared / progParts[b].size) * 100), score: shared });
+      }
+    }
+    affinities.sort((a, b) => b.score - a.score);
+    var tiers = { champion: 0, regular: 0, oneAndDone: 0 };
+    Object.values(partMap).forEach(p => { var n = p.programs.size; if (n >= 4) tiers.champion++; else if (n >= 2) tiers.regular++; else tiers.oneAndDone++; });
+    return { heatmap: heatmap, affinities: affinities.slice(0, 12), tiers: tiers, totalParts: Object.keys(partMap).length, maxOffset: maxOffset };
+  }, [demoRows]);
 
   var sortedRetPrograms = useMemo(() => {
     if (!retStats) return [];
@@ -1817,6 +1875,87 @@ function App() {
                 );
               })()}
             </React.Fragment>)}
+
+            {/* Cohort Retention Heatmap */}
+            {cohortAnalytics && cohortAnalytics.heatmap.length > 0 && (
+              <div style={{background:'#fff',border:'1px solid #e5e7eb',borderRadius:8,padding:14,marginBottom:16,marginTop:16}}>
+                <div style={{fontSize:13,fontWeight:700,color:'#111827',marginBottom:4}}>Cohort Retention Heatmap</div>
+                <div style={{fontSize:11,color:'#6b7280',marginBottom:12}}>Each row is a signup cohort (month of first enrollment). Cells show what % enrolled in something again N months later.</div>
+                <div style={{overflowX:'auto'}}>
+                  <table style={{borderCollapse:'collapse',fontSize:11,width:'100%'}}>
+                    <thead><tr>
+                      <th style={{padding:'6px 8px',textAlign:'left',fontWeight:700,color:'#374151',borderBottom:'2px solid #e5e7eb',whiteSpace:'nowrap'}}>Cohort</th>
+                      <th style={{padding:'6px 8px',textAlign:'right',fontWeight:700,color:'#374151',borderBottom:'2px solid #e5e7eb'}}>Size</th>
+                      {Array.from({length: cohortAnalytics.maxOffset + 1}, (_, i) => (
+                        <th key={i} style={{padding:'6px 6px',textAlign:'center',fontWeight:600,color:'#6b7280',borderBottom:'2px solid #e5e7eb',minWidth:40}}>{i === 0 ? 'Mo 0' : '+' + i}</th>
+                      ))}
+                    </tr></thead>
+                    <tbody>{cohortAnalytics.heatmap.map((row, ri) => (
+                      <tr key={ri}>
+                        <td style={{padding:'5px 8px',fontWeight:600,color:'#111827',whiteSpace:'nowrap',borderBottom:'1px solid #f3f4f6'}}>{row.label}</td>
+                        <td style={{padding:'5px 8px',textAlign:'right',color:'#6b7280',borderBottom:'1px solid #f3f4f6'}}>{row.size}</td>
+                        {row.cells.map((cell, ci) => {
+                          var intensity = cell.pct / 100;
+                          var bg = cell.pct === 0 ? '#f9fafb' : 'rgba(22, 163, 74, ' + (0.1 + intensity * 0.7).toFixed(2) + ')';
+                          var textCol = intensity > 0.5 ? '#fff' : cell.pct === 0 ? '#d1d5db' : '#111827';
+                          return <td key={ci} style={{padding:'5px 6px',textAlign:'center',background:bg,color:textCol,fontWeight:cell.pct>0?600:400,borderBottom:'1px solid #f3f4f6',fontSize:11}} title={cell.count + ' of ' + row.size}>{cell.pct > 0 ? cell.pct + '%' : '\u00B7'}</td>;
+                        })}
+                      </tr>
+                    ))}</tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* Loyalty Tiers + Cross-Program Affinity */}
+            {cohortAnalytics && (
+              <div style={{display:'grid',gridTemplateColumns: cohortAnalytics.affinities.length > 0 ? '1fr 1fr' : '1fr',gap:16,marginBottom:16}}>
+                <div style={{background:'#fff',border:'1px solid #e5e7eb',borderRadius:8,padding:14}}>
+                  <div style={{fontSize:13,fontWeight:700,color:'#111827',marginBottom:12}}>Loyalty Tiers</div>
+                  {[
+                    { label: 'Champions', desc: '4+ programs', count: cohortAnalytics.tiers.champion, color: '#16a34a', emoji: '🏆' },
+                    { label: 'Regulars', desc: '2\u20133 programs', count: cohortAnalytics.tiers.regular, color: '#2563eb', emoji: '🔁' },
+                    { label: 'One-and-Done', desc: '1 program only', count: cohortAnalytics.tiers.oneAndDone, color: '#9ca3af', emoji: '👋' },
+                  ].map((tier, i) => {
+                    var pct = cohortAnalytics.totalParts > 0 ? Math.round((tier.count / cohortAnalytics.totalParts) * 100) : 0;
+                    return (
+                      <div key={i} style={{marginBottom:i<2?14:0}}>
+                        <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:4}}>
+                          <span style={{fontSize:12,fontWeight:600,color:'#111827'}}>{tier.emoji} {tier.label} <span style={{fontWeight:400,color:'#9ca3af'}}>({tier.desc})</span></span>
+                          <span style={{fontSize:13,fontWeight:700,color:tier.color}}>{tier.count.toLocaleString()} <span style={{fontWeight:400,color:'#9ca3af',fontSize:11}}>({pct}%)</span></span>
+                        </div>
+                        <div style={{background:'#f3f4f6',borderRadius:4,height:8,overflow:'hidden'}}>
+                          <div style={{height:'100%',borderRadius:4,background:tier.color,width:pct+'%',transition:'width 0.5s'}}></div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                {cohortAnalytics.affinities.length > 0 && (
+                  <div style={{background:'#fff',border:'1px solid #e5e7eb',borderRadius:8,padding:14}}>
+                    <div style={{fontSize:13,fontWeight:700,color:'#111827',marginBottom:4}}>Cross-Program Affinity</div>
+                    <div style={{fontSize:11,color:'#6b7280',marginBottom:10}}>Programs sharing the most participants \u2014 natural cross-sell and bundling candidates.</div>
+                    {cohortAnalytics.affinities.slice(0, 8).map((af, i) => (
+                      <div key={i} style={{display:'flex',alignItems:'center',gap:8,marginBottom:8,fontSize:11}}>
+                        <span style={{fontWeight:700,color:'#2563eb',minWidth:28,textAlign:'right'}}>{af.shared}</span>
+                        <span style={{color:'#374151'}}>
+                          <strong>{af.progA.length > 25 ? af.progA.slice(0,23) + '\u2026' : af.progA}</strong>
+                          {" \u2194 "}
+                          <strong>{af.progB.length > 25 ? af.progB.slice(0,23) + '\u2026' : af.progB}</strong>
+                          <span style={{color:'#9ca3af',marginLeft:6}}>({af.pctA}% / {af.pctB}%)</span>
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {!cohortAnalytics && demoLoading && (
+              <div style={{textAlign:'center',padding:'30px 20px',color:'#888',fontSize:13}}>
+                <div className="spinner" style={{margin:'0 auto 12px'}} />Loading enrollment history for cohort analysis\u2026
+              </div>
+            )}
           </React.Fragment>
         )}
 

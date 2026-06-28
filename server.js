@@ -7362,6 +7362,11 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+    { date: '2026-06-28', title: '🔥 Cohort retention heatmap + loyalty tiers + cross-program affinity on Programs Retention', items: [
+      'The Programs Retention tab now loads enrollment history (program-demographics) alongside the existing retention stats. Three new visualizations surface below the existing KPIs and table.',
+      'Cohort Retention Heatmap: a Mixpanel-style green grid where each row is a signup cohort (month of first enrollment) and columns show what % enrolled in something again 1, 2, 3\u2026 months later. The pattern is instantly readable \u2014 green = people coming back, fading = people dropping off.',
+      'Loyalty Tiers: Champions (4+ programs), Regulars (2\u20133), One-and-Done (1 only) with percentage bars. Cross-Program Affinity: top program pairs sharing participants with shared count and overlap percentages \u2014 natural cross-sell and bundling candidates.',
+    ] },
     { date: '2026-06-28', title: '📈 Fill Rate tab on Community Intel', items: [
       'New Fill Rate tab on Community Intel shows enrollment fill curves over time for every program section. Each line plots cumulative registrations by date \u2014 the shape tells the story: steep early = high demand (raise prices or add sections), slow trickle = needs marketing, late spike = procrastinators.',
       'Built entirely from existing data: program-demographics (enrollment timestamps) + programs (capacity per section). No new Metabase questions needed. Section picker lets you compare up to 12 sections side by side with capacity reference lines.',
