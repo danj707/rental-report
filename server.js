@@ -3579,6 +3579,58 @@ Rules: 2-3 highlights, each tied to a provided figure. Only reference fields tha
 const _qbrCache = new Map();
 const QBR_CACHE_TTL = 30 * 60 * 1000;
 
+// ── QBR snapshot persistence — frozen point-in-time records ──
+const QBR_DIR = path.join(DATA_DIR, "qbr");
+try { fs.mkdirSync(QBR_DIR, { recursive: true }); } catch (e) {}
+const QBR_INDEX = path.join(QBR_DIR, "_index.json");
+function qbrReadIndex() { try { return JSON.parse(fs.readFileSync(QBR_INDEX, "utf8")); } catch { return []; } }
+function qbrSaveSnapshot(result) {
+  try {
+    const slug = (result.org && result.org.slug) || "org";
+    const y = result.period && result.period.year, qn = result.period && result.period.quarter;
+    const ts = Date.now();
+    const id = slug + "-" + y + "-q" + qn + "-" + ts;
+    const generatedAt = new Date(ts).toISOString();
+    fs.writeFileSync(path.join(QBR_DIR, id + ".json"), JSON.stringify({ id, generatedAt, data: result }));
+    const f = result.metrics && result.metrics.financial;
+    const idx = qbrReadIndex();
+    idx.unshift({ id, generatedAt, slug,
+      displayName: (result.org && result.org.displayName) || slug,
+      logoUrl: (result.org && result.org.logoUrl) || "",
+      year: y, quarter: qn, periodLabel: (result.period && result.period.label) || ("Q" + qn + " " + y),
+      net: f ? f.net : null, netDelta: f ? f.netDelta : null, transactions: f ? f.transactions : null });
+    try { fs.writeFileSync(QBR_INDEX, JSON.stringify(idx.slice(0, 500), null, 2)); } catch (e) {}
+    return id;
+  } catch (e) { console.warn("[qbr] snapshot save failed: " + e.message); return null; }
+}
+function qbrGetSnapshot(id) {
+  if (!id || !/^[a-z0-9._\-]+$/i.test(id)) return null;
+  try { return JSON.parse(fs.readFileSync(path.join(QBR_DIR, id + ".json"), "utf8")); } catch { return null; }
+}
+
+// ── Shared QBR PDF renderer (used by /qbr/api/pdf and /qbr/api/email) ──
+async function qbrRenderPdf({ org, orgId, displayName, year, quarter, saved }) {
+  const puppeteer = require("puppeteer");
+  const qp = new URLSearchParams({ _print: "1" });
+  if (saved) { qp.set("saved", saved); }
+  else {
+    qp.set("org", org || ""); qp.set("year", year || ""); qp.set("quarter", quarter || "");
+    if (orgId) qp.set("orgId", orgId);
+    if (displayName) qp.set("displayName", displayName);
+  }
+  const url = `http://localhost:${PORT}/qbr?${qp.toString()}`;
+  let browser;
+  try {
+    browser = await puppeteer.launch({ headless: true, executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined, args: ["--no-sandbox","--disable-setuid-sandbox","--disable-dev-shm-usage","--disable-gpu"] });
+    const page = await browser.newPage();
+    await page.setViewport({ width: 1280, height: 860, deviceScaleFactor: 2 });
+    await page.goto(url, { waitUntil: "networkidle0", timeout: 60000 });
+    await page.waitForSelector("#report-ready", { timeout: 45000 });
+    const footQ = quarter ? ("Q" + quarter) : "";
+    return await page.pdf({ format: "Letter", landscape: true, printBackground: true, margin: { top: "0.35in", bottom: "0.4in", left: "0.35in", right: "0.35in" }, displayHeaderFooter: true, headerTemplate: "<span></span>", footerTemplate: `<div style="font-size:9px;width:100%;padding:0 0.4in;display:flex;justify-content:space-between;color:#888;font-family:sans-serif;"><span>rec.us — Quarterly Business Review</span><span>${footQ} ${year||""}</span></div>` });
+  } finally { if (browser) await browser.close(); }
+}
+
 // ── GET /qbr — cross-org QBR page (no token; whitelisted) ──
 app.get("/qbr", (req, res) => {
   const fs = require("fs");
@@ -3653,8 +3705,9 @@ app.post("/qbr/api/generate", express.json(), async (req, res) => {
   const y = parseInt(year), q = parseInt(quarter);
   if (!y || !(q >= 1 && q <= 4)) return res.status(400).json({ ok: false, error: "Bad year/quarter" });
   const cacheKey = ctx.slug + "|" + y + "|" + q;
+  logEvent(ctx.slug, "qbr", "view", req);
   const cached = _qbrCache.get(cacheKey);
-  if (cached && Date.now() - cached.ts < QBR_CACHE_TTL) return res.json({ ok: true, ...cached.data, cached: true });
+  if (cached && Date.now() - cached.ts < QBR_CACHE_TTL) return res.json({ ok: true, ...cached.data, cached: true, savedId: cached.savedId });
   try {
     logEvent(ctx.slug, "qbr", "generate", req);
     const result = await buildQbr(ctx, y, q);
@@ -3677,33 +3730,93 @@ app.post("/qbr/api/generate", express.json(), async (req, res) => {
       } catch (aiErr) { console.error("[qbr] AI error: " + aiErr.message); }
     }
     result.narrative = narrative || qbrFallbackNarrative(result);
-    _qbrCache.set(cacheKey, { data: result, ts: Date.now() });
+    const savedId = qbrSaveSnapshot(result);
+    _qbrCache.set(cacheKey, { data: result, ts: Date.now(), savedId });
     if (_qbrCache.size > 30) _qbrCache.delete(_qbrCache.keys().next().value);
-    res.json({ ok: true, ...result });
+    res.json({ ok: true, ...result, savedId });
   } catch (e) { console.error("[qbr] error: " + e.message); res.status(500).json({ ok: false, error: e.message }); }
 });
 
-// ── GET /qbr/api/pdf — Puppeteer one-pager ──
+// ── GET /qbr/api/history — saved snapshots, newest first ──
+app.get("/qbr/api/history", (req, res) => {
+  let idx = qbrReadIndex();
+  const org = (req.query.org || "").toString().trim();
+  if (org) idx = idx.filter(r => r.slug === org);
+  res.json({ items: idx.slice(0, parseInt(req.query.limit) || 100) });
+});
+
+// ── GET /qbr/api/saved/:id — one frozen snapshot ──
+app.get("/qbr/api/saved/:id", (req, res) => {
+  const snap = qbrGetSnapshot(req.params.id);
+  if (!snap) return res.status(404).json({ ok: false, error: "Not found" });
+  logEvent((snap.data.org && snap.data.org.slug) || "org", "qbr", "view", req, { saved: req.params.id });
+  res.json({ ok: true, ...snap.data, savedId: snap.id, generatedAt: snap.generatedAt });
+});
+
+// ── GET /qbr/api/metrics — usage rollup across all orgs ──
+app.get("/qbr/api/metrics", (req, res) => {
+  const all = readEvents(null).filter(e => e.report === "qbr");
+  const d30 = readEvents(30).filter(e => e.report === "qbr");
+  const cnt = (arr, ev) => arr.filter(e => e.event === ev).length;
+  const cost30 = d30.filter(e => e.event === "ai-generate").reduce((s, e) => s + (e.costUsd || 0), 0);
+  res.json({
+    generated30: cnt(d30, "generate"), views30: cnt(d30, "view"),
+    pdf30: cnt(d30, "pdf"), email30: cnt(d30, "email"),
+    generatedAll: cnt(all, "generate"),
+    orgs30: new Set(d30.filter(e => e.event === "generate").map(e => e.org)).size,
+    aiCost30: cost30, saved: qbrReadIndex().length,
+  });
+});
+
+// ── GET /qbr/api/pdf — Puppeteer one-pager (live selection or ?saved=id) ──
 app.get("/qbr/api/pdf", async (req, res) => {
-  const puppeteer = require("puppeteer");
-  const { org, orgId, displayName, year, quarter } = req.query;
-  if (!(org && ORGS[org]) && !orgId) return res.status(404).json({ error: "Unknown org" });
-  const qp = new URLSearchParams({ org: org || "", year: year || "", quarter: quarter || "", _print: "1" });
-  if (orgId) qp.set("orgId", orgId);
-  if (displayName) qp.set("displayName", displayName);
-  const url = `http://localhost:${PORT}/qbr?${qp.toString()}`;
-  let browser;
+  const { org, orgId, displayName, year, quarter, saved } = req.query;
+  let yr = year, qn = quarter, label = org || orgId;
+  if (saved) {
+    const snap = qbrGetSnapshot(saved);
+    if (!snap) return res.status(404).json({ error: "Snapshot not found" });
+    yr = snap.data.period.year; qn = snap.data.period.quarter; label = snap.data.org.slug;
+  } else if (!(org && ORGS[org]) && !orgId) {
+    return res.status(404).json({ error: "Unknown org" });
+  }
   try {
-    browser = await puppeteer.launch({ headless: true, executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined, args: ["--no-sandbox","--disable-setuid-sandbox","--disable-dev-shm-usage","--disable-gpu"] });
-    const page = await browser.newPage();
-    await page.setViewport({ width: 1280, height: 860, deviceScaleFactor: 2 });
-    await page.goto(url, { waitUntil: "networkidle0", timeout: 60000 });
-    await page.waitForSelector("#report-ready", { timeout: 45000 });
-    const pdf = await page.pdf({ format: "Letter", landscape: true, printBackground: true, margin: { top: "0.35in", bottom: "0.4in", left: "0.35in", right: "0.35in" }, displayHeaderFooter: true, headerTemplate: "<span></span>", footerTemplate: `<div style="font-size:9px;width:100%;padding:0 0.4in;display:flex;justify-content:space-between;color:#888;font-family:sans-serif;"><span>rec.us — Quarterly Business Review</span><span>Q${quarter||""} ${year||""}</span></div>` });
-    res.set({ "Content-Type": "application/pdf", "Content-Disposition": `inline; filename="qbr-${org||orgId}-Q${quarter||""}-${year||""}.pdf"`, "Content-Length": pdf.length });
+    const pdf = await qbrRenderPdf({ org, orgId, displayName, year: yr, quarter: qn, saved });
+    logEvent((label || "org").toString(), "qbr", "pdf", req, saved ? { saved } : undefined);
+    res.set({ "Content-Type": "application/pdf", "Content-Disposition": `inline; filename="qbr-${label}-Q${qn||""}-${yr||""}.pdf"`, "Content-Length": pdf.length });
     res.send(pdf);
   } catch (err) { console.error("[qbr] pdf error: " + err.message); res.status(500).json({ error: err.message }); }
-  finally { if (browser) await browser.close(); }
+});
+
+// ── POST /qbr/api/email — email a saved QBR PDF to a @rec.us address (internal only) ──
+app.post("/qbr/api/email", express.json(), async (req, res) => {
+  const { id, to } = req.body || {};
+  const addr = (to || "").toString().trim().toLowerCase();
+  if (!addr || !/^[^@\s]+@rec\.us$/.test(addr)) return res.status(400).json({ ok: false, error: "Recipient must be a @rec.us address" });
+  const snap = qbrGetSnapshot(id);
+  if (!snap) return res.status(404).json({ ok: false, error: "Snapshot not found" });
+  const resend = getResendClient();
+  if (!resend) return res.status(503).json({ ok: false, error: "Email is not configured (no RESEND_API_KEY)" });
+  try {
+    const d = snap.data;
+    const pdf = await qbrRenderPdf({ saved: id, year: d.period.year, quarter: d.period.quarter });
+    const fname = `qbr-${d.org.slug}-Q${d.period.quarter}-${d.period.year}.pdf`;
+    const f = d.metrics && d.metrics.financial;
+    const netStr = f && f.net != null ? "$" + Math.round(f.net).toLocaleString("en-US") : "\u2014";
+    await resend.emails.send({
+      from: `${FROM_NAME} <${FROM_EMAIL}>`,
+      to: addr,
+      subject: `QBR \u2014 ${d.org.displayName} \u2014 ${d.period.label}`,
+      html: `<div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:28px 24px">
+        <h2 style="margin:0 0 4px;font-size:19px;color:#111">${d.org.displayName}</h2>
+        <p style="color:#888;margin:0 0 18px;font-size:14px">Quarterly Business Review &middot; ${d.period.label}</p>
+        <p style="color:#333;font-size:14px;line-height:1.5;margin:0 0 16px">Net revenue <strong>${netStr}</strong> for ${d.period.label}. The full one-page QBR is attached as a PDF.</p>
+        <p style="font-size:12px;color:#aaa;margin:18px 0 0">Snapshot generated ${new Date(snap.generatedAt).toLocaleString("en-US")} &middot; rec.us internal</p>
+      </div>`,
+      attachments: [{ filename: fname, content: Buffer.from(pdf).toString("base64") }],
+    });
+    logEvent(d.org.slug, "qbr", "email", req, { saved: id, to: addr });
+    res.json({ ok: true });
+  } catch (e) { console.error("[qbr] email error: " + e.message); res.status(500).json({ ok: false, error: e.message }); }
 });
 // ━━ end QBR ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -6260,6 +6373,8 @@ app.get("/", (req, res) => {
         </ul>
         <p style="margin-top:8px"><strong>Guardrails:</strong> quarter-over-quarter deltas are suppressed when the prior quarter has no comparable data or the swing exceeds &#177;1000%, so brand-new and ramping orgs show clean absolute figures instead of nonsensical percentages. When nothing is comparable, the movement chart shows a &#8220;first comparable quarter&#8221; note. Court-only pilots with no charging correctly render $0 financials with no deltas. Results are cached 30 minutes per org + quarter.</p>
 
+        <p style="margin-top:8px"><strong>Dashboard, history &amp; sharing:</strong> <code>/qbr</code> is an internal admin dashboard &#8212; a usage metrics strip (generated / viewed / PDFs / emails over 30 days, plus distinct orgs and total saved), the generator, and a running list of every QBR generated. Each generation is saved as a frozen point-in-time snapshot to the Railway volume (swept by the nightly Gist backup), so &#8220;download the QBR as generated on the 28th&#8221; renders the exact numbers shown that day &#8212; even after later refunds and data post. Saved rows can be re-opened, downloaded as PDF, or emailed. Email is internal-only: a hard server-side allowlist rejects any non-<code>@rec.us</code> recipient, and it runs on its own path without re-enabling the broader subscription email system.</p>
+
         <h4>Inline Metrics</h4>
         <p>Each org card on this dashboard has a &#9656; <strong>&#128200; Metrics</strong> toggle that expands inline to show that org&#x27;s usage over the last 30 days &#8212; report opens by type, daily activity sparkline, and top viewers. Data comes from a lightweight in-process counter (no Metabase round-trip). The <strong>View full metrics &rarr;</strong> link opens a deeper dashboard at <code>/:org/metrics</code>.</p>
 
@@ -7136,6 +7251,11 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+    { date: '2026-06-28', title: '\uD83D\uDCCA QBR dashboard \u2014 saved history, metrics & internal email', items: [
+      'The /qbr page is now a full admin dashboard: a usage metrics strip (generated / viewed / PDFs / emails over 30 days), the generator, and a running list of every QBR generated.',
+      'Every generation is saved as a frozen point-in-time snapshot \u2014 re-open it, download its PDF, or email it later, and the numbers stay exactly as shown the day it was run (even after refunds and late data post). Snapshots live on the Railway volume and ride the nightly Gist backup.',
+      'Email a saved QBR PDF to yourself or a teammate \u2014 internal only, hard-locked to @rec.us recipients, on its own path that does not re-enable the broader subscription email system.',
+    ] },
     { date: '2026-06-28', title: '\uD83D\uDCCA QBR Generator \u2014 shipped & documented', items: [
       'The Quarterly Business Review generator is live and ready to surface to the team. Open it from the QBR Generator button in the header or at /qbr: pick any published org and a quarter to get a one-page, slide-ready partner review with a Gross \u2212 Refunds = Net strip, five KPI cards, a data-driven quarter-over-quarter movement chart, an AI executive summary, and one-click PDF.',
       'Works for every published rec.us org (not just the built-out ones) \u2014 the org picker pulls the full list live, resolves logos by org ID, and runs off the shared queries so any org returns data. Guardrails suppress nonsensical deltas for brand-new and court-only orgs.',

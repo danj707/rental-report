@@ -190,6 +190,34 @@
     .recon { row-gap: 6px; }
     .recon-net { margin-left: 0; width: 100%; margin-top: 12px; }
   }
+  /* ── Dashboard chrome ── */
+  .qbr-head { display:flex; align-items:flex-start; justify-content:space-between; margin-bottom:18px; gap:16px; }
+  .qbr-head h1 { font-family:'Fraunces',serif; font-size:24px; font-weight:600; color:var(--ink); margin:0; letter-spacing:-.01em; }
+  .qbr-head .sub { font-size:12.5px; color:var(--faint); margin-top:3px; }
+  .back-link { font-size:12.5px; color:var(--emerald); text-decoration:none; font-weight:600; white-space:nowrap; padding-top:4px; }
+  .back-link:hover { text-decoration:underline; }
+  .stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(132px,1fr)); gap:11px; margin-bottom:18px; }
+  .stat { background:var(--paper); border:1px solid var(--line); border-radius:12px; padding:13px 15px; }
+  .stat-num { font-family:'Fraunces',serif; font-size:26px; font-weight:600; color:var(--ink); line-height:1; font-variant-numeric:tabular-nums; }
+  .stat-lab { font-size:10.5px; font-weight:600; letter-spacing:.07em; text-transform:uppercase; color:var(--faint); margin-top:7px; }
+  .hist { background:var(--paper); border:1px solid var(--line); border-radius:14px; box-shadow:var(--shadow); margin-top:24px; overflow:hidden; }
+  .hist-h { font-family:'Fraunces',serif; font-style:italic; font-size:15px; color:var(--ink); padding:16px 20px 4px; }
+  .hist-empty { padding:14px 20px 24px; color:var(--faint); font-size:13px; line-height:1.5; }
+  .hrow { display:grid; grid-template-columns:1fr 92px 150px auto; align-items:center; gap:12px; padding:12px 20px; border-top:1px solid var(--line); }
+  .hrow .org { display:flex; align-items:center; gap:10px; min-width:0; }
+  .hrow .org img { height:24px; width:24px; border-radius:5px; object-fit:contain; background:var(--mist); }
+  .hrow .org .nm { font-size:13.5px; font-weight:600; color:var(--ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .hrow .qtr { font-size:12.5px; color:var(--slate); font-weight:500; }
+  .hrow .gen { font-size:11.5px; color:var(--faint); }
+  .hrow .acts { display:flex; align-items:center; gap:7px; justify-self:end; }
+  .rbtn { font-size:11.5px; font-weight:600; padding:5px 11px; border-radius:7px; border:1px solid var(--line); background:var(--paper); color:var(--slate); cursor:pointer; text-decoration:none; white-space:nowrap; }
+  .rbtn:hover { background:var(--mist); }
+  .rbtn.em { color:var(--emerald); border-color:var(--emerald-soft); background:var(--emerald-soft); }
+  .email-pop { display:flex; align-items:center; gap:9px; padding:11px 20px 14px; border-top:1px dashed var(--line); background:var(--mist); flex-wrap:wrap; }
+  .email-pop input { flex:0 1 280px; font-family:inherit; font-size:13px; padding:7px 10px; border:1px solid var(--line); border-radius:7px; background:var(--paper); color:var(--ink); }
+  .email-pop .hint { font-size:11px; color:var(--faint); }
+  .toast { position:fixed; bottom:22px; left:50%; transform:translateX(-50%); background:var(--ink); color:#fff; font-size:13px; padding:10px 18px; border-radius:9px; box-shadow:var(--shadow); z-index:50; }
+  body.print .qbr-head, body.print .stats, body.print .hist, body.print .toast { display:none !important; }
 </style>
 </head>
 <body>
@@ -445,6 +473,21 @@ function App() {
   const [results, setResults] = useState([]);
   const [openDrop, setOpenDrop] = useState(false);
 
+  // Dashboard: metrics strip, saved-QBR history, email box, toast
+  const [metrics, setMetrics] = useState(null);
+  const [history, setHistory] = useState([]);
+  const [savedId, setSavedId] = useState(null);
+  const [emailRow, setEmailRow] = useState(null);
+  const [emailTo, setEmailTo] = useState('');
+  const [toast, setToast] = useState(null);
+
+  const refreshDash = () => {
+    if (PREVIEW || printMode) return;
+    fetch('/qbr/api/metrics').then(r => r.ok ? r.json() : null).then(d => { if (d) setMetrics(d); }).catch(() => {});
+    fetch('/qbr/api/history?limit=100').then(r => r.ok ? r.json() : null).then(d => { if (d) setHistory(d.items || []); }).catch(() => {});
+  };
+  useEffect(() => { refreshDash(); }, []);
+
   useEffect(() => {
     fetch('/qbr/api/orgs').then(r => r.ok ? r.json() : null).then(d => {
       const list = (d && Array.isArray(d.orgs) && d.orgs.length) ? d.orgs : null;
@@ -479,15 +522,35 @@ function App() {
 
   const generate = (payload) => {
     if (PREVIEW) { setData({ ...MOCK }); return; }
-    setReady(false); setLoading(true); setData(null);
+    setReady(false); setLoading(true); setData(null); setSavedId(null);
     fetch('/qbr/api/generate', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
-    }).then(r => r.json()).then(d => setData(d && d.ok ? d : MOCK)).catch(() => setData(MOCK)).finally(() => setLoading(false));
+    }).then(r => r.json()).then(d => {
+      if (d && d.ok) { setData(d); setSavedId(d.savedId || null); refreshDash(); }
+      else setData(MOCK);
+    }).catch(() => setData(MOCK)).finally(() => setLoading(false));
+  };
+  const openSaved = (id) => {
+    setReady(false); setLoading(true); setData(null);
+    fetch('/qbr/api/saved/' + encodeURIComponent(id)).then(r => r.json()).then(d => {
+      if (d && d.ok) { setData(d); setSavedId(d.savedId || id); window.scrollTo({ top: 0, behavior: 'smooth' }); }
+    }).catch(() => {}).finally(() => setLoading(false));
+  };
+  const sendEmail = (id) => {
+    const addr = emailTo.trim();
+    if (!/^[^@\s]+@rec\.us$/i.test(addr)) { setToast('Enter a @rec.us address'); setTimeout(() => setToast(null), 2600); return; }
+    setToast('Sending\u2026');
+    fetch('/qbr/api/email', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, to: addr }) })
+      .then(r => r.json()).then(d => {
+        setToast(d && d.ok ? ('Emailed to ' + addr) : ('Email failed: ' + ((d && d.error) || 'error')));
+        if (d && d.ok) { try { localStorage.setItem('qbrEmail', addr); } catch (e) {} setEmailRow(null); setEmailTo(''); refreshDash(); }
+      }).catch(() => setToast('Email failed')).finally(() => setTimeout(() => setToast(null), 3400));
   };
   const run = () => { const o = sel || {}; generate({ orgSlug: o.slug, orgId: o.orgId, displayName: o.displayName, year, quarter: q }); };
   const pick = (o) => { setSel(o); setOrgQuery(o.displayName); setOpenDrop(false); };
   const pdfUrl = () => {
+    if (savedId) return '/qbr/api/pdf?saved=' + encodeURIComponent(savedId);
     const o = sel || {};
     const qs = new URLSearchParams({ org: o.slug || '', year: String(year), quarter: String(q) });
     if (o.orgId) qs.set('orgId', o.orgId);
@@ -498,13 +561,38 @@ function App() {
   // Auto-generate on mount ONLY for the PDF/print route; the interactive page waits for the Generate button.
   useEffect(() => {
     if (PREVIEW || !printMode) return;
+    const sid = params.get('saved');
+    if (sid) {
+      fetch('/qbr/api/saved/' + encodeURIComponent(sid)).then(r => r.json()).then(d => { if (d && d.ok) setData(d); }).catch(() => {});
+      return;
+    }
     generate({ orgSlug: params.get('org') || 'watertown', orgId: params.get('orgId') || undefined, displayName: params.get('displayName') || undefined, year: parseInt(params.get('year')) || 2025, quarter: parseInt(params.get('quarter')) || 3 });
   }, []);
 
   const years = [2024, 2025, 2026];
+  const fmtGen = (iso) => { try { return new Date(iso).toLocaleString('en-US', { month:'short', day:'numeric', hour:'numeric', minute:'2-digit' }); } catch (e) { return iso; } };
 
   return (
     <div className="wrap">
+      <div className="qbr-head">
+        <div>
+          <h1>Quarterly Business Review</h1>
+          <div className="sub">Cross-org partner reviews {'\u2014'} generate, save, and share</div>
+        </div>
+        <a className="back-link" href="/">{'\u2190'} Dashboard</a>
+      </div>
+
+      {!PREVIEW && metrics && (
+        <div className="stats">
+          <div className="stat"><div className="stat-num">{fmtNum(metrics.generated30)}</div><div className="stat-lab">Generated {'\u00b7'} 30d</div></div>
+          <div className="stat"><div className="stat-num">{fmtNum(metrics.views30)}</div><div className="stat-lab">Views {'\u00b7'} 30d</div></div>
+          <div className="stat"><div className="stat-num">{fmtNum(metrics.pdf30)}</div><div className="stat-lab">PDFs {'\u00b7'} 30d</div></div>
+          <div className="stat"><div className="stat-num">{fmtNum(metrics.email30)}</div><div className="stat-lab">Emails {'\u00b7'} 30d</div></div>
+          <div className="stat"><div className="stat-num">{fmtNum(metrics.orgs30)}</div><div className="stat-lab">Orgs {'\u00b7'} 30d</div></div>
+          <div className="stat"><div className="stat-num">{fmtNum(metrics.saved)}</div><div className="stat-lab">Saved total</div></div>
+        </div>
+      )}
+
       <div className="picker">
         <div className="field" style={{ position: 'relative' }}>
           <label>Organization</label>
@@ -545,6 +633,45 @@ function App() {
         : <div className="page" style={{ padding: 48, textAlign: 'center', color: '#888' }}>Generating…</div>)}
       {!loading && data && <Report data={data} />}
       {ready && <div id="report-ready" style={{ display: 'none' }}></div>}
+
+      {!PREVIEW && (
+        <div className="hist">
+          <div className="hist-h">Saved QBRs</div>
+          {history.length === 0
+            ? <div className="hist-empty">No saved QBRs yet {'\u2014'} generate one above and it will be archived here, frozen at the moment you ran it (numbers stay as-shown even as later data lands).</div>
+            : history.map(h => (
+              <React.Fragment key={h.id}>
+                <div className="hrow">
+                  <div className="org">
+                    {h.logoUrl
+                      ? <img src={h.logoUrl} alt="" onError={e => { e.target.style.display = 'none'; }} />
+                      : <span style={{ height: 24, width: 24, borderRadius: 5, background: 'var(--mist)', display: 'inline-block' }}></span>}
+                    <span className="nm">{h.displayName}</span>
+                  </div>
+                  <div className="qtr">{h.periodLabel}</div>
+                  <div className="gen">{fmtGen(h.generatedAt)}</div>
+                  <div className="acts">
+                    <button className="rbtn" onClick={() => openSaved(h.id)}>Open</button>
+                    <a className="rbtn" href={'/qbr/api/pdf?saved=' + encodeURIComponent(h.id)} target="_blank" rel="noopener">PDF</a>
+                    <button className="rbtn em" onClick={() => { const open = emailRow === h.id ? null : h.id; setEmailRow(open); if (open) { try { setEmailTo(localStorage.getItem('qbrEmail') || ''); } catch (e) { setEmailTo(''); } } }}>Email</button>
+                  </div>
+                </div>
+                {emailRow === h.id && (
+                  <div className="email-pop">
+                    <input type="email" placeholder="you@rec.us" value={emailTo} autoFocus
+                      onChange={e => setEmailTo(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter') sendEmail(h.id); }} />
+                    <button className="rbtn em" onClick={() => sendEmail(h.id)}>Send</button>
+                    <span className="hint">@rec.us addresses only</span>
+                  </div>
+                )}
+              </React.Fragment>
+            ))
+          }
+        </div>
+      )}
+
+      {toast && <div className="toast">{toast}</div>}
     </div>
   );
 }
