@@ -965,7 +965,7 @@ function App() {
   // Tabs that appear conditionally based on org's enabled reports
   var CROSS_TABS = [
     { key:'products',  report:'products',  label:'Products',   icon:'\uD83D\uDED2', badge:null, color:'#db2777' },
-    { key:'fillrate',  report:'program-demographics',  label:'Fill Rate',  icon:'\uD83D\uDCC8', badge:null, color:'#2563eb' },
+    { key:'fillrate',  report:'program-demographics',  gate:'programs',  label:'Fill Rate',  icon:'\uD83D\uDCC8', badge:null, color:'#2563eb' },
   ];
   var orgReports = useMemo(function(){
     try { return (window.ORG_CONFIG && window.ORG_CONFIG.reports) || []; } catch(e){ return []; }
@@ -1005,7 +1005,7 @@ function App() {
     setTab(t);setInsights(null);setInsightsError(null);
     // Lazy-fetch cross-tab data
     var ct = CROSS_TABS.find(function(c){return c.key===t;});
-    if (ct && orgReports.indexOf(ct.report) !== -1) fetchCrossTab(ct.key, ct.report);
+    if (ct && orgReports.indexOf(ct.gate || ct.report) !== -1) fetchCrossTab(ct.key, ct.report);
     // Fill Rate also needs programs data for capacity
     if (t === 'fillrate' && !fillCapacity) {
       fetch(withToken('/'+orgSlug+'/programs/api/data'))
@@ -1350,7 +1350,7 @@ function App() {
           )}
           {/* Cross-report tabs: enabled reports get live tabs, others get locked teasers */}
           {CROSS_TABS.map(function(ct){
-            var enabled = orgReports.indexOf(ct.report) !== -1;
+            var enabled = orgReports.indexOf(ct.gate || ct.report) !== -1;
             var isActive = tab === ct.key;
             if (enabled) return (
               <div key={ct.key} className={'tab'+(isActive?' active':'')} onClick={function(){switchTab(ct.key);}}>
@@ -1784,7 +1784,7 @@ function App() {
         {/* ═══ Cross-report tabs ═══ */}
         {CROSS_TABS.map(function(ct){
           if (tab !== ct.key) return null;
-          var enabled = orgReports.indexOf(ct.report) !== -1;
+          var enabled = orgReports.indexOf(ct.gate || ct.report) !== -1;
 
           // ── Locked tab teaser ──
           if (!enabled) return (
