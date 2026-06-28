@@ -232,6 +232,9 @@
   .omap-toggle { display:inline-flex; background:var(--mist); border:1px solid var(--line); border-radius:8px; overflow:hidden; }
   .omap-toggle button { font-family:inherit; font-size:12px; font-weight:600; color:var(--slate); background:none; border:none; padding:6px 12px; cursor:pointer; }
   .omap-toggle button.on { background:var(--emerald); color:#fff; }
+  .tf-pick { display:inline-flex; gap:6px; }
+  .tf-pick select { font-family:inherit; font-size:12px; font-weight:600; color:var(--slate); background:var(--mist); border:1px solid var(--line); border-radius:8px; padding:5px 9px; cursor:pointer; }
+  .tf-pick select:disabled { opacity:.55; cursor:default; }
   .omap-wrap { height:520px; width:100%; }
   .omap-foot { font-size:11px; color:var(--faint); padding:10px 20px 14px; display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
   .omap-foot .lg { display:inline-flex; align-items:center; gap:3px; font-size:10px; }
@@ -504,7 +507,7 @@ const orgBarLabels = {
   },
 };
 
-function OrgRevChart({ orgs }) {
+function OrgRevChart({ orgs, tfLabel }) {
   const ref = useRef(null);
   const inst = useRef(null);
   const [sort, setSort] = useState('az');
@@ -547,7 +550,7 @@ function OrgRevChart({ orgs }) {
       <div className="orgbar-scroll">
         <div style={{ height: H }}><canvas ref={ref}></canvas></div>
       </div>
-      <div className="omap-foot"><span>{orgs.length} orgs {'\u00b7'} Q1 2026 net revenue (gross {'\u2212'} refunds) {'\u00b7'} hover or read the bar-end value</span></div>
+      <div className="omap-foot"><span>{orgs.length} orgs {'\u00b7'} {tfLabel || 'Q1 2026'} net revenue (gross {'\u2212'} refunds) {'\u00b7'} hover or read the bar-end value</span></div>
     </div>
   );
 }
@@ -563,30 +566,34 @@ function OrgMap() {
   const [progress, setProgress] = useState({ done: 0, total: 0 });
   const [coords, setCoords] = useState({});
   const [mode, setMode] = useState('revenue');
+  const [year, setYear] = useState(2026);
+  const [quarter, setQuarter] = useState(1);
 
-  const load = () => {
-    fetch('/qbr/api/orgmap').then(r => r.json()).then(d => {
+  const load = (y, qn) => {
+    setLoading(true);
+    fetch('/qbr/api/orgmap?year=' + y + '&quarter=' + qn).then(r => r.json()).then(d => {
       setSnap(d && d.ok ? d : { orgs: [] });
       setBuilding(!!(d && d.building));
     }).catch(() => setSnap({ orgs: [] })).finally(() => setLoading(false));
   };
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(year, quarter); }, []);
   useEffect(() => () => { if (mapInst.current) { mapInst.current.remove(); mapInst.current = null; } }, []);
+  const changeTf = (y, qn) => { setYear(y); setQuarter(qn); setBuilding(false); setSnap(null); load(y, qn); };
 
   useEffect(() => {
     if (!building) { if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; } return; }
     pollRef.current = setInterval(() => {
       fetch('/qbr/api/orgmap/status').then(r => r.json()).then(s => {
         setProgress(s.progress || { done: 0, total: 0 });
-        if (!s.building) { setBuilding(false); load(); }
+        if (!s.building) { setBuilding(false); load(year, quarter); }
       }).catch(() => {});
     }, 3000);
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
-  }, [building]);
+  }, [building, year, quarter]);
 
   const build = () => {
     setBuilding(true); setProgress({ done: 0, total: 0 });
-    fetch('/qbr/api/orgmap/refresh', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ year: 2026, quarter: 1 }) }).then(r => r.json()).catch(() => {});
+    fetch('/qbr/api/orgmap/refresh', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ year: year, quarter: quarter }) }).then(r => r.json()).catch(() => {});
   };
 
   const orgs = (snap && snap.orgs) || [];
@@ -614,7 +621,8 @@ function OrgMap() {
 
   // Build / update map
   useEffect(() => {
-    if (!mapRef.current || !placeable.length) return;
+    if (!mapRef.current) { if (mapInst.current) { mapInst.current.remove(); mapInst.current = null; } return; }
+    if (!placeable.length) return;
     const pts = placeable.filter(o => coords[o.zip]).map(o => Object.assign({}, o, { lat: coords[o.zip][0], lng: coords[o.zip][1] }));
     if (!mapInst.current) {
       mapInst.current = L.map(mapRef.current, { scrollWheelZoom: true, zoomControl: true }).setView([39.5, -98.35], 4);
@@ -646,47 +654,56 @@ function OrgMap() {
     });
   }, [coords, mode, snap]);
 
-  if (loading) return <div className="omap-card"><div className="omap-cta" style={{ color: '#8A97A8', fontSize: 13 }}>Loading…</div></div>;
-
-  if (building) {
-    const pc = progress.total ? Math.round(progress.done / progress.total * 100) : 0;
-    return <div className="omap-card"><div className="omap-cta">
-      <h3>Building the fleet snapshot…</h3>
-      <p>Pulling Q1 2026 revenue, transactions, and users for every org. This takes a couple of minutes the first time{progress.total ? ' (' + progress.done + ' of ' + progress.total + ' orgs · ' + pc + '%)' : ''}.</p>
-      {window.JuiceLoader ? <JuiceLoader messages={['Sweeping the fleet\u2026', 'Counting users\u2026', 'Reconciling revenue\u2026', 'Mapping the country\u2026']} /> : null}
-    </div></div>;
-  }
-
-  if (!orgs.length) {
-    return <div className="omap-card"><div className="omap-cta">
-      <h3>Organization Metrics</h3>
-      <p>A national map of every rec.us org — revenue, transactions, and users for Q1 2026, placed by where each org's users cluster. Building it pulls data for all ~58 orgs, so it runs once and caches.</p>
-      <button className="build-btn" onClick={build}>Build Q1 2026 snapshot</button>
-    </div></div>;
-  }
-
+  const hasMap = !loading && !building && orgs.length > 0;
   const placed = placeable.length, totalOrgs = orgs.length;
-  const gen = snap.generatedAt ? new Date(snap.generatedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '';
+  const gen = snap && snap.generatedAt ? new Date(snap.generatedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '';
+  const tfLabel = 'Q' + quarter + ' ' + year;
+  const pc = progress.total ? Math.round(progress.done / progress.total * 100) : 0;
   return (
     <React.Fragment>
     <div className="omap-card">
       <div className="omap-head">
         <h2>Where are your orgs?</h2>
-        <div className="omap-toggle" style={{ marginLeft: 'auto' }}>
-          <button className={mode === 'revenue' ? 'on' : ''} onClick={() => setMode('revenue')}>Revenue</button>
-          <button className={mode === 'transactions' ? 'on' : ''} onClick={() => setMode('transactions')}>Transactions</button>
-          <button className={mode === 'users' ? 'on' : ''} onClick={() => setMode('users')}>Users</button>
+        <div className="tf-pick" style={{ marginLeft: 'auto' }}>
+          <select value={quarter} onChange={e => changeTf(year, +e.target.value)} disabled={building}>
+            {[1,2,3,4].map(n => <option key={n} value={n}>Q{n}</option>)}
+          </select>
+          <select value={year} onChange={e => changeTf(+e.target.value, quarter)} disabled={building}>
+            {[2024,2025,2026].map(y => <option key={y} value={y}>{y}</option>)}
+          </select>
         </div>
+        {hasMap && (
+          <div className="omap-toggle">
+            <button className={mode === 'revenue' ? 'on' : ''} onClick={() => setMode('revenue')}>Revenue</button>
+            <button className={mode === 'transactions' ? 'on' : ''} onClick={() => setMode('transactions')}>Transactions</button>
+            <button className={mode === 'users' ? 'on' : ''} onClick={() => setMode('users')}>Users</button>
+          </div>
+        )}
       </div>
-      <div ref={mapRef} className="omap-wrap"></div>
-      <div className="omap-foot">
-        <span>{placed} of {totalOrgs} orgs placed · Q{snap.quarter} {snap.year} · sized and colored by {mode} · hover for details</span>
+
+      {loading && <div className="omap-cta" style={{ color: '#8A97A8', fontSize: 13 }}>Loading…</div>}
+
+      {!loading && building && <div className="omap-cta">
+        <h3>Building the {tfLabel} snapshot…</h3>
+        <p>Pulling {tfLabel} revenue, transactions, and users for every org. This takes a couple of minutes{progress.total ? ' (' + progress.done + ' of ' + progress.total + ' orgs · ' + pc + '%)' : ''}.</p>
+        {window.JuiceLoader ? <JuiceLoader messages={['Sweeping the fleet\u2026', 'Counting users\u2026', 'Reconciling revenue\u2026', 'Mapping the country\u2026']} /> : null}
+      </div>}
+
+      {!loading && !building && !orgs.length && <div className="omap-cta">
+        <h3>No {tfLabel} snapshot yet</h3>
+        <p>A national map of every rec.us org — revenue, transactions, and users for {tfLabel}, placed by where each org's users cluster. Building pulls data for all ~58 orgs, so it runs once and caches per quarter.</p>
+        <button className="build-btn" onClick={build}>Build {tfLabel} snapshot</button>
+      </div>}
+
+      {hasMap && <div ref={mapRef} className="omap-wrap"></div>}
+      {hasMap && <div className="omap-foot">
+        <span>{placed} of {totalOrgs} orgs placed · {tfLabel} · sized and colored by {mode} · hover for details</span>
         <span className="lg"><span className="dot" style={{ background: '#6ee7b7' }} />Low<span className="dot" style={{ background: '#0284c7', marginLeft: 6 }} />Med<span className="dot" style={{ background: '#f59e0b', marginLeft: 6 }} />High<span className="dot" style={{ background: '#dc2626', marginLeft: 6 }} />Top</span>
         <button className="refresh-btn" style={{ marginLeft: 'auto' }} onClick={build}>Rebuild</button>
         {gen && <span>Updated {gen}</span>}
-      </div>
+      </div>}
     </div>
-    <OrgRevChart orgs={orgs} />
+    {hasMap && <OrgRevChart orgs={orgs} tfLabel={tfLabel} />}
     </React.Fragment>
   );
 }

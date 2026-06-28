@@ -3634,9 +3634,21 @@ async function qbrRenderPdf({ org, orgId, displayName, year, quarter, saved }) {
 // ── GET /qbr — cross-org QBR page (no token; whitelisted) ──
 // ── QBR fleet map — single-quarter snapshot of every org (Organization Metrics tab) ──
 let _orgMapBuilding = false;
+let _orgMapBuildingKey = null;
 let _orgMapProgress = { done: 0, total: 0 };
-const QBR_ORGMAP_FILE = path.join(QBR_DIR, "orgmap.json");
-function qbrReadOrgMap() { try { return JSON.parse(fs.readFileSync(QBR_ORGMAP_FILE, "utf8")); } catch { return null; } }
+const QBR_ORGMAP_FILE = path.join(QBR_DIR, "orgmap.json"); // legacy single-file (Q1 2026)
+function qbrOrgMapFile(year, q) { return path.join(QBR_DIR, "orgmap-" + year + "q" + q + ".json"); }
+function qbrReadOrgMap(year, q) {
+  try { return JSON.parse(fs.readFileSync(qbrOrgMapFile(year, q), "utf8")); }
+  catch {
+    if (Number(year) === 2026 && Number(q) === 1) { try { return JSON.parse(fs.readFileSync(QBR_ORGMAP_FILE, "utf8")); } catch {} }
+    return null;
+  }
+}
+// Orgs to include on the fleet map even though they aren't in the published homepage search.
+const EXTRA_MAP_ORGS = [
+  { id: "baa12a2d-b31b-4900-85a1-e6f634f0a3ce", slug: "madeira-beach", name: "Madeira Beach", displayName: "Madeira Beach" },
+];
 
 // One org's map point: Q-scoped net revenue + transactions, all-time user count, and a
 // home-base location derived from the modal user zip (geocoded client-side).
@@ -3678,6 +3690,8 @@ async function qbrBuildOrgMap(year, q) {
     const t = parsed.meta && parsed.meta.pg && parsed.meta.pg.totalResults;
     if (!data.length || (t != null && all.length >= t)) break;
   }
+  const seen = new Set(all.map(o => o.id));
+  for (const ex of EXTRA_MAP_ORGS) { if (!seen.has(ex.id)) { all.push(ex); seen.add(ex.id); } }
   _orgMapProgress = { done: 0, total: all.length };
   const points = []; const CONC = 4;
   for (let i = 0; i < all.length; i += CONC) {
@@ -3692,7 +3706,7 @@ async function qbrBuildOrgMap(year, q) {
     _orgMapProgress.done = Math.min(all.length, i + CONC);
   }
   const payload = { generatedAt: new Date().toISOString(), year, quarter: q, orgs: points };
-  try { fs.writeFileSync(QBR_ORGMAP_FILE, JSON.stringify(payload)); } catch (e) { console.warn("[qbr] orgmap write failed: " + e.message); }
+  try { fs.writeFileSync(qbrOrgMapFile(year, q), JSON.stringify(payload)); } catch (e) { console.warn("[qbr] orgmap write failed: " + e.message); }
   return payload;
 }
 
@@ -3882,26 +3896,28 @@ app.post("/qbr/api/email", express.json(), async (req, res) => {
     res.json({ ok: true });
   } catch (e) { console.error("[qbr] email error: " + e.message); res.status(500).json({ ok: false, error: e.message }); }
 });
-// ── GET /qbr/api/orgmap — cached fleet snapshot for the Organization Metrics tab ──
+// ── GET /qbr/api/orgmap?year=&quarter= — cached fleet snapshot for a timeframe ──
 app.get("/qbr/api/orgmap", (req, res) => {
-  const data = qbrReadOrgMap();
-  if (!data) return res.json({ ok: true, orgs: [], generatedAt: null, building: _orgMapBuilding });
-  res.json({ ok: true, ...data, building: _orgMapBuilding });
+  const y = parseInt(req.query.year) || 2026;
+  const q = parseInt(req.query.quarter) || 1;
+  const building = _orgMapBuilding && _orgMapBuildingKey === (y + "q" + q);
+  const data = qbrReadOrgMap(y, q);
+  if (!data) return res.json({ ok: true, orgs: [], generatedAt: null, year: y, quarter: q, building });
+  res.json({ ok: true, ...data, building });
 });
 // ── GET /qbr/api/orgmap/status — build progress polling ──
 app.get("/qbr/api/orgmap/status", (req, res) => {
-  const data = qbrReadOrgMap();
-  res.json({ building: _orgMapBuilding, progress: _orgMapProgress, generatedAt: data ? data.generatedAt : null });
+  res.json({ building: _orgMapBuilding, buildingKey: _orgMapBuildingKey, progress: _orgMapProgress });
 });
-// ── POST /qbr/api/orgmap/refresh — kick off the background fleet pull ──
+// ── POST /qbr/api/orgmap/refresh — kick off the background fleet pull for a timeframe ──
 app.post("/qbr/api/orgmap/refresh", express.json(), (req, res) => {
-  if (_orgMapBuilding) return res.json({ ok: true, building: true, already: true });
+  if (_orgMapBuilding) return res.json({ ok: true, building: true, already: true, buildingKey: _orgMapBuildingKey });
   const y = parseInt(req.body && req.body.year) || 2026;
   const q = parseInt(req.body && req.body.quarter) || 1;
-  _orgMapBuilding = true; _orgMapProgress = { done: 0, total: 0 };
+  _orgMapBuilding = true; _orgMapBuildingKey = y + "q" + q; _orgMapProgress = { done: 0, total: 0 };
   logEvent("all", "qbr", "orgmap-build", req, { year: y, quarter: q });
-  qbrBuildOrgMap(y, q).then(() => console.log("[qbr] orgmap built (" + y + " Q" + q + ")")).catch(e => console.error("[qbr] orgmap build error: " + e.message)).finally(() => { _orgMapBuilding = false; });
-  res.json({ ok: true, building: true });
+  qbrBuildOrgMap(y, q).then(() => console.log("[qbr] orgmap built (" + y + " Q" + q + ")")).catch(e => console.error("[qbr] orgmap build error: " + e.message)).finally(() => { _orgMapBuilding = false; _orgMapBuildingKey = null; });
+  res.json({ ok: true, building: true, buildingKey: _orgMapBuildingKey });
 });
 // ━━ end QBR ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -7336,6 +7352,10 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+    { date: '2026-06-28', title: 'QBR org map \u2014 pick any quarter + include unpublished orgs', items: [
+      'The Organization Metrics map now has Quarter + Year selectors. Each timeframe builds and caches its own snapshot, so you can switch between built quarters instantly and Rebuild the one you are viewing. Picking a quarter with no snapshot yet shows a Build button for it.',
+      'Added an extra-orgs list so orgs that are not in the published homepage search can still be mapped \u2014 Madeira Beach FL is now included. (Rebuild Q1 2026 once to pull it into that snapshot.)',
+    ] },
     { date: '2026-06-28', title: 'QBR Organization Metrics \u2014 revenue bar chart', items: [
       'Added a revenue-by-organization bar chart below the national map on the Organization Metrics tab: every org as a horizontal bar, Q1 2026 net revenue on the X axis, with a bar-end dollar value and tier colors matching the map bubbles.',
       'Sort toggle (A\u2013Z / by revenue). Runs off the same cached fleet snapshot as the map \u2014 no extra data pull, and Rebuild refreshes both.',
