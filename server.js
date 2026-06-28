@@ -7362,6 +7362,11 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+    { date: '2026-06-28', title: '📈 Fill Rate tab on Community Intel', items: [
+      'New Fill Rate tab on Community Intel shows enrollment fill curves over time for every program section. Each line plots cumulative registrations by date \u2014 the shape tells the story: steep early = high demand (raise prices or add sections), slow trickle = needs marketing, late spike = procrastinators.',
+      'Built entirely from existing data: program-demographics (enrollment timestamps) + programs (capacity per section). No new Metabase questions needed. Section picker lets you compare up to 12 sections side by side with capacity reference lines.',
+      'KPIs: sections tracked, avg fill %, fastest/slowest fill in days. Full table with fill bars for quick scanning. Designed to directly inform the early-bird discount vs flat pricing debate.',
+    ] },
     { date: '2026-06-28', title: '✨ Sparklines on org dashboard pulse cards', items: [
       'Each metric in the Daily Pulse panel (Revenue, Refunds, Enrollments, Bookings, Product Sales) now shows a 6-month trailing sparkline — a tiny inline SVG line chart showing the trend at a glance. Green = trending up, red = trending down, neutral = flat.',
       'The pulse system now fetches all 4 report types × 6 months in a single parallel burst (Promise.all of Promise.all), so sparkline data adds near-zero latency vs the old 2-month sequential fetches. Cached 24hrs like existing pulse.',

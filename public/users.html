@@ -207,6 +207,107 @@ function ChartPanel({ title, note, type, data, labelKey, dataKeys, colors, stack
   return (<div className={'panel '+(className||'')}><div className="panel-head">{title}{note&&<span className="panel-note">{note}</span>}</div><div className="chart-wrap">{(!data||!data.length)?<div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100%',color:'#9ca3af',fontSize:13,fontStyle:'italic'}}>No data for this period</div>:<canvas ref={canvasRef}></canvas>}</div></div>);
 }
 
+function FillRateChart({ sections, colors, selected }) {
+  var canvasRef = useRef(null);
+  var chartRef = useRef(null);
+
+  useEffect(function(){
+    if (!canvasRef.current || !sections || !sections.length) return;
+    if (chartRef.current) chartRef.current.destroy();
+
+    // Build unified date axis across all sections
+    var allDates = {};
+    sections.forEach(function(sec){
+      sec.timeline.forEach(function(pt){ allDates[pt.date] = true; });
+    });
+    var labels = Object.keys(allDates).sort();
+
+    // Build datasets
+    var datasets = sections.map(function(sec, i){
+      var ci = selected ? selected.indexOf(sec.section) : i;
+      var color = colors[ci % colors.length];
+      // Map timeline to aligned label positions
+      var dataMap = {};
+      sec.timeline.forEach(function(pt){ dataMap[pt.date] = pt.count; });
+      // Forward-fill: carry last known value
+      var lastVal = 0;
+      var data = labels.map(function(d){
+        if (dataMap[d] !== undefined) lastVal = dataMap[d];
+        // Only start filling once section has started
+        if (d < sec.timeline[0].date) return null;
+        return lastVal;
+      });
+      return {
+        label: sec.section.length > 30 ? sec.section.slice(0,28) + '…' : sec.section,
+        data: data,
+        borderColor: color,
+        backgroundColor: color + '18',
+        borderWidth: 2.5,
+        fill: false,
+        tension: 0.25,
+        pointRadius: 2,
+        pointHoverRadius: 5,
+        spanGaps: true,
+      };
+    });
+
+    // Add capacity reference lines
+    var maxCap = 0;
+    sections.forEach(function(sec){
+      if (sec.capacity && sec.capacity > maxCap) maxCap = sec.capacity;
+      if (sec.capacity) {
+        datasets.push({
+          label: sec.section.slice(0,20) + ' capacity',
+          data: labels.map(function(){ return sec.capacity; }),
+          borderColor: colors[(selected ? selected.indexOf(sec.section) : 0) % colors.length] + '40',
+          borderWidth: 1.5,
+          borderDash: [6, 4],
+          fill: false,
+          pointRadius: 0,
+          pointHoverRadius: 0,
+        });
+      }
+    });
+
+    var fmtDate = function(d){ var p=d.split('-'); return new Date(p[0],p[1]-1,p[2]).toLocaleDateString('en-US',{month:'short',day:'numeric'}); };
+
+    chartRef.current = new Chart(canvasRef.current, {
+      type: 'line',
+      data: { labels: labels.map(fmtDate), datasets: datasets },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        scales: {
+          x: { grid: { display: false }, ticks: { maxRotation: 45, minRotation: 25, font: { size: 10 }, maxTicksLimit: 20 } },
+          y: { grid: { color: '#f1f5f9' }, beginAtZero: true, title: { display: true, text: 'Enrollments', font: { size: 11 } } },
+        },
+        plugins: {
+          legend: { display: true, position: 'top', labels: { boxWidth: 12, font: { size: 10 }, filter: function(item){ return item.text.indexOf('capacity') === -1; } } },
+          tooltip: {
+            callbacks: {
+              title: function(items){ return items[0] ? items[0].label : ''; },
+            }
+          },
+        },
+      },
+    });
+    return function(){ if(chartRef.current) chartRef.current.destroy(); };
+  }, [sections, selected]);
+
+  if (!sections || !sections.length) return (
+    React.createElement('div', {style:{textAlign:'center',padding:'40px 20px',color:'#888',fontSize:13}}, 'Select sections above to view fill rate curves.')
+  );
+  return (
+    React.createElement('div', {className:'panel'}, 
+      React.createElement('div', {className:'panel-head'}, 'Enrollment Fill Rate Over Time'),
+      React.createElement('div', {className:'chart-wrap', style:{height:Math.min(400, 200 + sections.length * 20)}},
+        React.createElement('canvas', {ref:canvasRef})
+      )
+    )
+  );
+}
+
 function GeoMap({ zipData, mode }) {
   var mapRef = useRef(null);
   var mapInst = useRef(null);
@@ -864,12 +965,15 @@ function App() {
   // Tabs that appear conditionally based on org's enabled reports
   var CROSS_TABS = [
     { key:'products',  report:'products',  label:'Products',   icon:'\uD83D\uDED2', badge:null, color:'#db2777' },
+    { key:'fillrate',  report:'program-demographics',  label:'Fill Rate',  icon:'\uD83D\uDCC8', badge:null, color:'#2563eb' },
   ];
   var orgReports = useMemo(function(){
     try { return (window.ORG_CONFIG && window.ORG_CONFIG.reports) || []; } catch(e){ return []; }
   }, []);
   var [crossData, setCrossData] = useState({});   // { fasttrack: { rows:[], loading:false, error:null }, ... }
   var [crossComputed, setCrossComputed] = useState({});  // { fasttrack: { ...analytics }, ... }
+  var [fillCapacity, setFillCapacity] = useState(null); // programs data for capacity
+  var [fillSelected, setFillSelected] = useState(null); // selected section names for chart
 
   function fetchCrossTab(key, report) {
     if (crossData[key] && (crossData[key].rows || crossData[key].loading)) return;
@@ -902,6 +1006,13 @@ function App() {
     // Lazy-fetch cross-tab data
     var ct = CROSS_TABS.find(function(c){return c.key===t;});
     if (ct && orgReports.indexOf(ct.report) !== -1) fetchCrossTab(ct.key, ct.report);
+    // Fill Rate also needs programs data for capacity
+    if (t === 'fillrate' && !fillCapacity) {
+      fetch(withToken('/'+orgSlug+'/programs/api/data'))
+        .then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json();})
+        .then(function(j){setFillCapacity(j.rows||j.data||j||[]);})
+        .catch(function(){setFillCapacity([]);});
+    }
   }
   var [insights, setInsights] = useState(null);
   var [insightsLoading, setInsightsLoading] = useState(false);
@@ -1015,6 +1126,76 @@ function App() {
       activeDays:activeDays, avgDailyRev:avgDailyRev, weeklyData:weeklyData,
     };
   }, [crossData.products]);
+
+  // ── Fill Rate analytics ──────────────────────────────────────
+  var fillRateAnalytics = useMemo(function(){
+    var cd = crossData.fillrate;
+    if (!cd || !cd.rows || cd.rows.length === 0) return null;
+
+    // Build per-section enrollment timeline from program-demographics data
+    var secMap = {};
+    cd.rows.forEach(function(r){
+      var sec = r['Section'] || r['section'] || '';
+      var prog = r['Program'] || r['program'] || '';
+      var dateRaw = r['Enrolled Date'] || r['enrolled_date'] || r['Enrolled date'] || '';
+      if (!sec || !dateRaw) return;
+      var dKey = String(dateRaw).split('T')[0];
+      if (!secMap[sec]) secMap[sec] = { program: prog, section: sec, dates: {}, total: 0 };
+      if (!secMap[sec].dates[dKey]) secMap[sec].dates[dKey] = 0;
+      secMap[sec].dates[dKey]++;
+      secMap[sec].total++;
+    });
+
+    // Merge capacity from programs data
+    if (fillCapacity && fillCapacity.length) {
+      fillCapacity.forEach(function(r){
+        var sec = r['section'] || r['Section'] || '';
+        var cap = parseInt(r['capacity'] || r['Capacity'] || 0);
+        if (sec && secMap[sec] && cap > 0) secMap[sec].capacity = cap;
+      });
+    }
+
+    // Build cumulative time series for each section
+    var sections = Object.keys(secMap).map(function(k){ return secMap[k]; })
+      .filter(function(s){ return s.total >= 3; }) // skip tiny sections
+      .sort(function(a,b){ return b.total - a.total; });
+
+    sections.forEach(function(sec){
+      var sortedDates = Object.keys(sec.dates).sort();
+      var cumul = 0;
+      sec.timeline = sortedDates.map(function(d){
+        cumul += sec.dates[d];
+        return { date: d, count: cumul };
+      });
+      sec.firstDate = sortedDates[0];
+      sec.lastDate = sortedDates[sortedDates.length - 1];
+      // Days from first enrollment to reaching total
+      var d0 = new Date(sec.firstDate + 'T12:00:00');
+      var d1 = new Date(sec.lastDate + 'T12:00:00');
+      sec.fillDays = Math.max(1, Math.round((d1 - d0) / 86400000));
+      sec.fillPct = sec.capacity ? Math.round(sec.total / sec.capacity * 100) : null;
+    });
+
+    // KPIs
+    var totalSections = sections.length;
+    var atCapacity = sections.filter(function(s){ return s.fillPct && s.fillPct >= 95; }).length;
+    var avgFillPct = sections.filter(function(s){ return s.fillPct; });
+    var avgPct = avgFillPct.length > 0 ? Math.round(avgFillPct.reduce(function(a,s){ return a + s.fillPct; }, 0) / avgFillPct.length) : null;
+    var fastestFill = sections.filter(function(s){ return s.fillDays > 0 && s.total >= 5; })
+      .sort(function(a,b){ return a.fillDays - b.fillDays; })[0] || null;
+    var slowestFill = sections.filter(function(s){ return s.fillDays > 0 && s.total >= 5; })
+      .sort(function(a,b){ return b.fillDays - a.fillDays; })[0] || null;
+
+    return {
+      sections: sections,
+      totalSections: totalSections,
+      atCapacity: atCapacity,
+      avgPct: avgPct,
+      fastestFill: fastestFill,
+      slowestFill: slowestFill,
+      top: sections.slice(0, 30),
+    };
+  }, [crossData.fillrate, fillCapacity]);
 
   var [pdfLoading, setPdfLoading] = useState(false);
   var [csvRequestModal, setCsvRequestModal] = useState(null);
@@ -1721,6 +1902,90 @@ function App() {
                     <ChartPanel title="Weekly Net Revenue" type="bar" data={pr.weeklyData} labelKey="week" dataKeys={[{key:'net',label:'Net Revenue'}]} colors={['#db2777']} />
                   </div>
                 )}
+              </React.Fragment>
+            );
+          }
+
+          // ── Fill Rate tab ──
+          if (ct.key === 'fillrate' && fillRateAnalytics) {
+            var fr = fillRateAnalytics;
+            var FILL_COLORS = ['#2563eb','#dc2626','#059669','#d97706','#7c3aed','#db2777','#0891b2','#4f46e5','#ea580c','#16a34a','#6d28d9','#e11d48'];
+            // Section picker state: default to top 5
+            var selected = fillSelected || fr.top.slice(0,5).map(function(s){return s.section;});
+            var chartSections = fr.sections.filter(function(s){return selected.indexOf(s.section)!==-1;});
+
+            return (
+              <React.Fragment key={ct.key}>
+                <div className="kpi-row">
+                  <div className="kpi" style={{'--accent':'#2563eb'}}><div className="kpi-label"><Tip label="Sections Tracked" tip="Sections with 3+ enrollments, enough data to show a meaningful fill curve." /></div><div className="kpi-val">{fr.totalSections}</div><div className="kpi-sub">from program-demographics</div></div>
+                  {fr.avgPct!==null&&<div className="kpi" style={{'--accent':'#059669'}}><div className="kpi-label"><Tip label="Avg Fill Rate" tip="Average enrollment as a percentage of capacity, across sections that have capacity set." /></div><div className="kpi-val">{fr.avgPct}%</div><div className="kpi-sub">{fr.atCapacity} at capacity</div></div>}
+                  {fr.fastestFill&&<div className="kpi" style={{'--accent':'#d97706'}}><div className="kpi-label"><Tip label="Fastest Fill" tip="Section that reached its current enrollment in the fewest days from first registration." /></div><div className="kpi-val">{fr.fastestFill.fillDays}d</div><div className="kpi-sub">{fr.fastestFill.section.length>25?fr.fastestFill.section.slice(0,23)+'…':fr.fastestFill.section}</div></div>}
+                  {fr.slowestFill&&<div className="kpi" style={{'--accent':'#7c3aed'}}><div className="kpi-label"><Tip label="Slowest Fill" tip="Section that took the longest to reach its current enrollment." /></div><div className="kpi-val">{fr.slowestFill.fillDays}d</div><div className="kpi-sub">{fr.slowestFill.section.length>25?fr.slowestFill.section.slice(0,23)+'…':fr.slowestFill.section}</div></div>}
+                </div>
+
+                {/* Section picker */}
+                <div style={{marginBottom:14,display:'flex',flexWrap:'wrap',gap:6,alignItems:'center'}}>
+                  <span style={{fontSize:11,fontWeight:700,color:'#6b7280',textTransform:'uppercase',letterSpacing:'.06em',marginRight:4}}>Sections:</span>
+                  {fr.top.slice(0,20).map(function(sec,i){
+                    var isOn = selected.indexOf(sec.section)!==-1;
+                    var ci = selected.indexOf(sec.section);
+                    var col = ci>=0?FILL_COLORS[ci%FILL_COLORS.length]:'#d1d5db';
+                    return (
+                      <button key={i} onClick={function(){
+                        var next;
+                        if(isOn) next=selected.filter(function(s){return s!==sec.section;});
+                        else next=selected.concat([sec.section]);
+                        setFillSelected(next.length>0?next:null);
+                      }} style={{fontSize:11,padding:'3px 10px',borderRadius:20,border:'1.5px solid '+(isOn?col:'#d1d5db'),background:isOn?col+'18':'#fff',color:isOn?col:'#9ca3af',fontWeight:isOn?700:500,cursor:'pointer',fontFamily:'inherit',transition:'all .15s',lineHeight:'1.5'}}>
+                        {sec.section.length>28?sec.section.slice(0,26)+'…':sec.section}
+                        <span style={{marginLeft:4,opacity:0.7}}>{sec.total}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Chart */}
+                <FillRateChart sections={chartSections} colors={FILL_COLORS} selected={selected} />
+
+                {/* Table: all tracked sections */}
+                <div style={{marginTop:20}}>
+                  <div style={{fontSize:13,fontWeight:700,color:'#111827',marginBottom:10}}>All Tracked Sections</div>
+                  <div style={{overflowX:'auto'}}>
+                    <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+                      <thead><tr style={{borderBottom:'2px solid #e5e7eb'}}>
+                        <th style={{textAlign:'left',padding:'8px 10px',fontWeight:700,color:'#374151'}}>Section</th>
+                        <th style={{textAlign:'left',padding:'8px 10px',fontWeight:700,color:'#374151'}}>Program</th>
+                        <th style={{textAlign:'right',padding:'8px 10px',fontWeight:700,color:'#374151'}}>Enrolled</th>
+                        <th style={{textAlign:'right',padding:'8px 10px',fontWeight:700,color:'#374151'}}>Capacity</th>
+                        <th style={{textAlign:'right',padding:'8px 10px',fontWeight:700,color:'#374151'}}>Fill %</th>
+                        <th style={{textAlign:'right',padding:'8px 10px',fontWeight:700,color:'#374151'}}>Fill Days</th>
+                      </tr></thead>
+                      <tbody>{fr.top.map(function(sec,i){
+                        var barPct = sec.fillPct ? Math.min(sec.fillPct, 100) : 0;
+                        var barCol = barPct >= 95 ? '#059669' : barPct >= 70 ? '#d97706' : barPct >= 40 ? '#2563eb' : '#9ca3af';
+                        return (
+                          <tr key={i} style={{borderBottom:'1px solid #f3f4f6'}}>
+                            <td style={{padding:'7px 10px',fontWeight:600,color:'#111827',maxWidth:200,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{sec.section}</td>
+                            <td style={{padding:'7px 10px',color:'#6b7280',maxWidth:180,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{sec.program}</td>
+                            <td style={{padding:'7px 10px',textAlign:'right',fontWeight:600}}>{sec.total}</td>
+                            <td style={{padding:'7px 10px',textAlign:'right'}}>{sec.capacity||'—'}</td>
+                            <td style={{padding:'7px 10px',textAlign:'right'}}>
+                              {sec.fillPct!==null ? (
+                                <span style={{display:'inline-flex',alignItems:'center',gap:6}}>
+                                  <span style={{width:48,height:6,borderRadius:3,background:'#f3f4f6',display:'inline-block',position:'relative',overflow:'hidden'}}>
+                                    <span style={{position:'absolute',left:0,top:0,bottom:0,borderRadius:3,background:barCol,width:barPct+'%'}}></span>
+                                  </span>
+                                  <span style={{fontWeight:600,color:barCol}}>{sec.fillPct}%</span>
+                                </span>
+                              ) : '—'}
+                            </td>
+                            <td style={{padding:'7px 10px',textAlign:'right',color:'#6b7280'}}>{sec.fillDays}d</td>
+                          </tr>
+                        );
+                      })}</tbody>
+                    </table>
+                  </div>
+                </div>
               </React.Fragment>
             );
           }
