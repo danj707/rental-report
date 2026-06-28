@@ -3314,7 +3314,7 @@ app.post("/:org/annual-report/api/generate", async (req, res) => {
 
 // ━━ QBR (Quarterly Business Review) — cross-org one-pager ━━━━━━━━━━━━
 const qpf = (v) => { const n = parseFloat(v); return isNaN(n) ? 0 : n; };
-const QBR_COURT_HRS_PER_DAY = 12; // est. operating window for utilization %; tighten via MCP list_sites later
+const QBR_COURT_HRS_PER_DAY = 11; // matches the court-utilization report's default open hrs/day; tighten via MCP list_sites later
 function qbrQuarterRange(year, q) {
   const sm = (q - 1) * 3;
   const start = new Date(year, sm, 1);
@@ -3412,8 +3412,8 @@ async function buildQbr(orgCtx, year, q) {
     qbrFetch(orgCtx, "programs", cur.start, cur.end), qbrFetch(orgCtx, "programs", prev.start, prev.end),
     qbrFetch(orgCtx, "facility", cur.start, cur.end), qbrFetch(orgCtx, "facility", prev.start, prev.end),
     qbrFetch(orgCtx, "court-utilization", cur.start, cur.end),
-    qbrFetch(orgCtx, "retention", cur.start, cur.end),
-    qbrFetch(orgCtx, "memberships", cur.start, cur.end),
+    qbrFetch(orgCtx, "retention", null, null),
+    qbrFetch(orgCtx, "memberships", null, null),
   ]);
   const gl = qbrSumGL(glC), glPrev = qbrSumGL(glP);
   const pg = qbrSumProg(pgC), pgPrev = qbrSumProg(pgP);
@@ -3467,15 +3467,45 @@ function qbrFallbackNarrative(result) {
   return { executiveSummary: parts.join(" "), highlights: highlights.slice(0, 3), seasonality: "Read quarter-over-quarter movement against seasonal programming patterns for this quarter." };
 }
 
-const QBR_PROMPT = `You write the narrative for a one-page Quarterly Business Review that a rec.us account manager presents to a parks & recreation partner. Tone: confident, factual account-review — what the partner accomplished on the platform this quarter.
-
-You receive aggregated quarter metrics with quarter-over-quarter deltas. Return ONLY JSON (no markdown fences):
-{
-  "executiveSummary": "3-4 sentences. Lead with net revenue and its QoQ move, then participation and facility activity. Use only numbers present in the data.",
-  "highlights": [ { "label": "3-5 words", "detail": "1 sentence grounded in a specific figure" } ],
-  "seasonality": "1 sentence noting that QoQ moves should be read against seasonal patterns for this quarter."
+function qbrFmtDelta(d) { return d == null ? null : (d >= 0 ? "+" : "") + d + "% QoQ"; }
+function qbrDisplayFigures(result) {
+  const m = result.metrics, f = {};
+  f.org = result.org.displayName; f.period = result.period.label; f.comparison = result.comparison.label;
+  if (m.financial) {
+    f.netRevenue = qbrMoney(m.financial.net);
+    f.netRevenueChange = qbrFmtDelta(m.financial.netDelta);
+    f.gross = qbrMoney(m.financial.gross);
+    f.refunds = qbrMoney(m.financial.refunds);
+    f.transactions = m.financial.transactions.toLocaleString("en-US");
+    f.transactionsChange = qbrFmtDelta(m.financial.transactionsDelta);
+  }
+  if (m.programs) {
+    f.enrollments = m.programs.enrollments.toLocaleString("en-US");
+    f.enrollmentsChange = qbrFmtDelta(m.programs.enrollmentsDelta);
+    f.sections = String(m.programs.sections); f.programs = String(m.programs.programs);
+  }
+  if (m.facility) {
+    f.bookings = m.facility.bookings.toLocaleString("en-US");
+    f.bookingsChange = qbrFmtDelta(m.facility.bookingsDelta);
+    f.locations = String(m.facility.locations); f.facilityRevenue = qbrMoney(m.facility.revenue);
+  }
+  if (m.court) f.courtUtilization = m.court.utilization + "% (estimated), " + m.court.hoursBooked + " hours across " + m.court.courts + " courts";
+  if (m.retention) f.retentionRate = m.retention.rate + "%";
+  if (m.memberships) f.activeMembers = m.memberships.active.toLocaleString("en-US");
+  return f;
 }
-Rules: 2-3 highlights, each tied to a real number. Never invent figures. No caveats about data gaps. If a section is null, ignore it.`;
+
+const QBR_PROMPT = `You write the narrative for a one-page Quarterly Business Review a rec.us account manager presents to a parks & recreation partner. Tone: confident, factual account-review.
+
+You are given DISPLAY-READY figures as strings. Use these strings verbatim wherever you cite a figure. Do NOT compute, round, re-derive, or reformat any number. Any field ending in "Change" is a quarter-over-quarter percentage that already includes its sign and unit (e.g. "+345% QoQ") — render it exactly as given and NEVER express a change as a dollar amount.
+
+Return ONLY JSON (no markdown fences):
+{
+  "executiveSummary": "3-4 sentences. Lead with netRevenue and netRevenueChange, then participation and facility activity.",
+  "highlights": [ { "label": "3-5 words", "detail": "1 sentence built around a provided figure" } ],
+  "seasonality": "1 sentence: read QoQ moves against seasonal patterns for this quarter."
+}
+Rules: 2-3 highlights, each tied to a provided figure. Only reference fields that are present. Never invent or reformat numbers.`;
 
 const _qbrCache = new Map();
 const QBR_CACHE_TTL = 30 * 60 * 1000;
@@ -3542,7 +3572,7 @@ app.post("/qbr/api/generate", express.json(), async (req, res) => {
         const ai = await otelApi.context.with(sctx, () => anthropic.messages.create({
           model: process.env.QBR_MODEL || "claude-sonnet-4-6",
           max_tokens: 1200, system: QBR_PROMPT,
-          messages: [{ role: "user", content: JSON.stringify({ org: result.org.displayName, period: result.period.label, comparison: result.comparison.label, metrics: result.metrics }) }],
+          messages: [{ role: "user", content: JSON.stringify(qbrDisplayFigures(result)) }],
         }));
         span.end();
         const text = (ai.content || []).filter(c => c.type === "text").map(c => c.text).join("");
@@ -6999,6 +7029,11 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+    { date: '2026-06-27', title: 'QBR \u2014 narrative number fix + point-in-time retention/memberships', items: [
+      'Executive summary now receives display-ready figure strings and uses them verbatim \u2014 fixes the +345% delta rendering as a dollar amount and the unrounded cents in prose.',
+      'Retention and memberships now fetched point-in-time (no date params), so Metabase no longer drops them when the card has no start/end tags.',
+      'Court utilization denominator aligned to the court report default of 11 open hrs/day.',
+    ] },
     { date: '2026-06-27', title: 'QBR \u2014 full org search + loading animation', items: [
       'Org picker is now a live search across every published rec.us org via the Rec MCP (search_organizations), not just the ORGS map. Known orgs still resolve with their logos and per-org cards; the static list is the offline fallback.',
       'JuiceLoader animation now plays while a QBR generates, instead of a blank pause.',
