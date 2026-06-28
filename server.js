@@ -7336,6 +7336,10 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+    { date: '2026-06-28', title: 'QBR Organization Metrics \u2014 revenue bar chart', items: [
+      'Added a revenue-by-organization bar chart below the national map on the Organization Metrics tab: every org as a horizontal bar, Q1 2026 net revenue on the X axis, with a bar-end dollar value and tier colors matching the map bubbles.',
+      'Sort toggle (A\u2013Z / by revenue). Runs off the same cached fleet snapshot as the map \u2014 no extra data pull, and Rebuild refreshes both.',
+    ] },
     { date: '2026-06-28', title: '\uD83D\uDDFA\uFE0F QBR Organization Metrics \u2014 national org heatmap', items: [
       'New tabbed layout on /qbr (Generate / Saved QBRs / Organization Metrics). The Organization Metrics tab is a US map with a colored bubble for every rec.us org \u2014 sized and colored by Q1 2026 revenue, transactions, or users (toggle), with org name + revenue + transactions + users on hover.',
       'Each org is placed by where its users cluster (modal user zip, geocoded client-side via the same cache as Community Intel). Built off a one-time fleet pull of all ~58 orgs for Q1 2026 that runs in the background and caches to disk \u2014 hit Rebuild to refresh.',
