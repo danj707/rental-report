@@ -6248,6 +6248,18 @@ app.get("/", (req, res) => {
 
         <p style="margin-top:8px"><strong>Shared Metabase queries:</strong> 12 of 16 report types use a single parameterized Metabase question with <code>org_id</code> passed at query time &#8212; no per-org SQL duplication. Only Historic remains as a per-org UUID. Adding a new org lights up all 12 shared reports automatically.</p>
 
+        <h4>Quarterly Business Review (QBR)</h4>
+        <p>An internal, cross-org tool for account managers &#8212; a one-page, partner-facing quarterly review generated on demand at <code>/qbr</code>. Pick any organization and a quarter; the QBR pulls that quarter&#x27;s data across the shared Metabase queries, computes quarter-over-quarter movement against the prior calendar quarter, writes an executive narrative with Claude, and renders a slide-ready page with PDF export. Built for presenting in partner reviews and council meetings.</p>
+        <ul>
+          <li><strong>Org picker</strong> &#8212; lists every published rec.us org, pulled live from the platform via the Rec MCP (<code>search_organizations</code>). Type to filter instantly. Built-out orgs resolve their logo and per-org config by org ID; any other org gets a logo derived from its ID, with a clean monogram fallback.</li>
+          <li><strong>Financial strip</strong> &#8212; the signature <em>Gross &#8722; Refunds = Net</em> reconciliation, sourced from the GL Code Rollup card so it ties exactly to the GL report.</li>
+          <li><strong>KPI cards (5-wide, slide-sized)</strong> &#8212; Transactions (distinct count from a dedicated materialized stats card, matching the Transactions report), Enrollments (programs card), Bookings + facility revenue (facility card), Court Utilization (estimated against an 11 hr/day window, tagged EST.), and Total Users + New Users (from the Community Intelligence users card, counted by signup date with staff and guests excluded so it ties to Community Intelligence).</li>
+          <li><strong>Quarter-over-quarter movement chart</strong> &#8212; one horizontal bar per metric that has a comparable prior quarter (net revenue, transactions, enrollments, bookings, new users). Fully data-driven: each org shows only the bars it has data for, positive green / negative orange.</li>
+          <li><strong>AI executive summary</strong> &#8212; Claude Sonnet writes the summary, three highlights, and a seasonality note. It is handed display-ready figure strings and renders them verbatim (no re-rounding or re-deriving), and every call is traced in Langfuse like the rest of the AI features.</li>
+          <li><strong>PDF export</strong> &#8212; one-click landscape PDF via Puppeteer, identical to the on-screen page.</li>
+        </ul>
+        <p style="margin-top:8px"><strong>Guardrails:</strong> quarter-over-quarter deltas are suppressed when the prior quarter has no comparable data or the swing exceeds &#177;1000%, so brand-new and ramping orgs show clean absolute figures instead of nonsensical percentages. When nothing is comparable, the movement chart shows a &#8220;first comparable quarter&#8221; note. Court-only pilots with no charging correctly render $0 financials with no deltas. Results are cached 30 minutes per org + quarter.</p>
+
         <h4>Inline Metrics</h4>
         <p>Each org card on this dashboard has a &#9656; <strong>&#128200; Metrics</strong> toggle that expands inline to show that org&#x27;s usage over the last 30 days &#8212; report opens by type, daily activity sparkline, and top viewers. Data comes from a lightweight in-process counter (no Metabase round-trip). The <strong>View full metrics &rarr;</strong> link opens a deeper dashboard at <code>/:org/metrics</code>.</p>
 
@@ -7124,6 +7136,11 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+    { date: '2026-06-28', title: '\uD83D\uDCCA QBR Generator \u2014 shipped & documented', items: [
+      'The Quarterly Business Review generator is live and ready to surface to the team. Open it from the QBR Generator button in the header or at /qbr: pick any published org and a quarter to get a one-page, slide-ready partner review with a Gross \u2212 Refunds = Net strip, five KPI cards, a data-driven quarter-over-quarter movement chart, an AI executive summary, and one-click PDF.',
+      'Works for every published rec.us org (not just the built-out ones) \u2014 the org picker pulls the full list live, resolves logos by org ID, and runs off the shared queries so any org returns data. Guardrails suppress nonsensical deltas for brand-new and court-only orgs.',
+      'Full write-up added to the How This Works section below (data sources per metric, guardrails, caching).',
+    ] },
     { date: '2026-06-28', title: 'QBR \u2014 movement chart picks up new-user growth', items: [
       'The quarter-over-quarter movement chart now plots a New Users bar alongside net revenue, transactions, enrollments, and bookings \u2014 whenever there is a comparable prior quarter. The chart stays fully data-driven: each org shows bars only for the metrics it actually has QoQ data for, and brand-new orgs still show the first-comparable-quarter note.',
     ] },
