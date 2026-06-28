@@ -11,6 +11,8 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="/juice-loader.js"></script>
 <style>
   :root {
@@ -218,6 +220,32 @@
   .email-pop .hint { font-size:11px; color:var(--faint); }
   .toast { position:fixed; bottom:22px; left:50%; transform:translateX(-50%); background:var(--ink); color:#fff; font-size:13px; padding:10px 18px; border-radius:9px; box-shadow:var(--shadow); z-index:50; }
   body.print .qbr-head, body.print .stats, body.print .hist, body.print .toast { display:none !important; }
+  /* ── Tabs ── */
+  .tabs { display:flex; gap:4px; border-bottom:1px solid var(--line); margin-bottom:20px; }
+  .tab { font-family:inherit; font-size:13.5px; font-weight:600; color:var(--faint); background:none; border:none; border-bottom:2px solid transparent; padding:9px 14px 11px; cursor:pointer; margin-bottom:-1px; }
+  .tab:hover { color:var(--slate); }
+  .tab.on { color:var(--emerald); border-bottom-color:var(--emerald); }
+  /* ── Org map ── */
+  .omap-card { background:var(--paper); border:1px solid var(--line); border-radius:14px; box-shadow:var(--shadow); overflow:hidden; }
+  .omap-head { display:flex; align-items:center; gap:12px; padding:16px 20px 12px; flex-wrap:wrap; }
+  .omap-head h2 { font-family:'Fraunces',serif; font-style:italic; font-size:16px; font-weight:600; color:var(--ink); margin:0; }
+  .omap-toggle { display:inline-flex; background:var(--mist); border:1px solid var(--line); border-radius:8px; overflow:hidden; }
+  .omap-toggle button { font-family:inherit; font-size:12px; font-weight:600; color:var(--slate); background:none; border:none; padding:6px 12px; cursor:pointer; }
+  .omap-toggle button.on { background:var(--emerald); color:#fff; }
+  .omap-wrap { height:520px; width:100%; }
+  .omap-foot { font-size:11px; color:var(--faint); padding:10px 20px 14px; display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
+  .omap-foot .lg { display:inline-flex; align-items:center; gap:3px; font-size:10px; }
+  .omap-foot .dot { width:10px; height:10px; border-radius:50%; display:inline-block; }
+  .refresh-btn { font-family:inherit; font-size:11.5px; font-weight:600; color:var(--slate); background:var(--paper); border:1px solid var(--line); border-radius:7px; padding:5px 11px; cursor:pointer; }
+  .refresh-btn:hover { background:var(--mist); }
+  .omap-cta { text-align:center; padding:60px 24px; }
+  .omap-cta h3 { font-family:'Fraunces',serif; font-size:19px; color:var(--ink); margin:0 0 8px; }
+  .omap-cta p { font-size:13px; color:var(--faint); max-width:440px; margin:0 auto 20px; line-height:1.55; }
+  .build-btn { font-family:inherit; font-size:14px; font-weight:600; color:#fff; background:var(--emerald); border:none; border-radius:9px; padding:11px 24px; cursor:pointer; }
+  .build-btn:disabled { opacity:.6; cursor:default; }
+  .leaflet-tooltip.org-tip { font-family:'IBM Plex Sans',sans-serif; font-size:12px; line-height:1.45; padding:8px 11px; border-radius:8px; border:1px solid var(--line); box-shadow:var(--shadow); }
+  .leaflet-tooltip.org-tip .tn { font-weight:700; color:var(--ink); font-size:13px; }
+  body.print .tabs { display:none !important; }
 </style>
 </head>
 <body>
@@ -457,6 +485,142 @@ function Report({ data }) {
   );
 }
 
+function OrgMap() {
+  const mapRef = useRef(null);
+  const mapInst = useRef(null);
+  const markers = useRef([]);
+  const pollRef = useRef(null);
+  const [snap, setSnap] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [building, setBuilding] = useState(false);
+  const [progress, setProgress] = useState({ done: 0, total: 0 });
+  const [coords, setCoords] = useState({});
+  const [mode, setMode] = useState('revenue');
+
+  const load = () => {
+    fetch('/qbr/api/orgmap').then(r => r.json()).then(d => {
+      setSnap(d && d.ok ? d : { orgs: [] });
+      setBuilding(!!(d && d.building));
+    }).catch(() => setSnap({ orgs: [] })).finally(() => setLoading(false));
+  };
+  useEffect(() => { load(); }, []);
+  useEffect(() => () => { if (mapInst.current) { mapInst.current.remove(); mapInst.current = null; } }, []);
+
+  useEffect(() => {
+    if (!building) { if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; } return; }
+    pollRef.current = setInterval(() => {
+      fetch('/qbr/api/orgmap/status').then(r => r.json()).then(s => {
+        setProgress(s.progress || { done: 0, total: 0 });
+        if (!s.building) { setBuilding(false); load(); }
+      }).catch(() => {});
+    }, 3000);
+    return () => { if (pollRef.current) clearInterval(pollRef.current); };
+  }, [building]);
+
+  const build = () => {
+    setBuilding(true); setProgress({ done: 0, total: 0 });
+    fetch('/qbr/api/orgmap/refresh', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ year: 2026, quarter: 1 }) }).then(r => r.json()).catch(() => {});
+  };
+
+  const orgs = (snap && snap.orgs) || [];
+  const placeable = orgs.filter(o => o.zip);
+
+  // Geocode modal zips client-side (shared _zipGeo localStorage cache)
+  useEffect(() => {
+    if (!placeable.length) return;
+    let cache = {}; try { cache = JSON.parse(localStorage.getItem('_zipGeo') || '{}'); } catch (e) {}
+    const need = placeable.filter(o => !cache[o.zip]);
+    if (!need.length) { setCoords(Object.assign({}, cache)); return; }
+    let batch = 0; const size = 8; let stop = false;
+    const run = () => {
+      if (stop) return;
+      const slice = need.slice(batch * size, (batch + 1) * size);
+      if (!slice.length) { try { localStorage.setItem('_zipGeo', JSON.stringify(cache)); } catch (e) {} setCoords(Object.assign({}, cache)); return; }
+      Promise.all(slice.map(o => fetch('https://api.zippopotam.us/us/' + encodeURIComponent(o.zip))
+        .then(r => r.ok ? r.json() : null)
+        .then(d => { if (d && d.places && d.places[0]) cache[o.zip] = [parseFloat(d.places[0].latitude), parseFloat(d.places[0].longitude)]; })
+        .catch(() => {}))).then(() => { batch++; setCoords(Object.assign({}, cache)); setTimeout(run, 180); });
+    };
+    run();
+    return () => { stop = true; };
+  }, [snap]);
+
+  // Build / update map
+  useEffect(() => {
+    if (!mapRef.current || !placeable.length) return;
+    const pts = placeable.filter(o => coords[o.zip]).map(o => Object.assign({}, o, { lat: coords[o.zip][0], lng: coords[o.zip][1] }));
+    if (!mapInst.current) {
+      mapInst.current = L.map(mapRef.current, { scrollWheelZoom: true, zoomControl: true }).setView([39.5, -98.35], 4);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '\u00A9 OpenStreetMap', maxZoom: 18, opacity: 0.9 }).addTo(mapInst.current);
+    }
+    const map = mapInst.current;
+    markers.current.forEach(m => map.removeLayer(m)); markers.current = [];
+    if (!pts.length) return;
+    const valOf = (o) => mode === 'revenue' ? (o.revenue || 0) : mode === 'transactions' ? (o.transactions || 0) : (o.users || 0);
+    const maxVal = Math.max.apply(null, pts.map(valOf)) || 1;
+    const money = (n) => '$' + Math.round(n || 0).toLocaleString('en-US');
+    const num = (n) => Math.round(n || 0).toLocaleString('en-US');
+    pts.forEach(o => {
+      const val = valOf(o); const pct = val / maxVal;
+      const r = Math.max(Math.sqrt(pct) * 30, 6);
+      let color;
+      if (pct < 0.15) color = '#6ee7b7'; else if (pct < 0.3) color = '#0d9488'; else if (pct < 0.5) color = '#0284c7';
+      else if (pct < 0.7) color = '#f59e0b'; else if (pct < 0.85) color = '#ea580c'; else color = '#dc2626';
+      const mk = L.circleMarker([o.lat, o.lng], { radius: r, fillColor: color, fillOpacity: 0.72, color: '#fff', weight: 2 }).addTo(map);
+      mk.bindTooltip(
+        '<div class="tn">' + o.displayName + '</div>' +
+        (o.city ? ('<div style="color:#8A97A8">' + o.city + (o.state ? ', ' + o.state : '') + '</div>') : '') +
+        '<div style="margin-top:4px">' + money(o.revenue) + ' revenue</div>' +
+        '<div>' + num(o.transactions) + ' transactions</div>' +
+        '<div>' + num(o.users) + ' users</div>',
+        { direction: 'top', className: 'org-tip', opacity: 1 }
+      );
+      markers.current.push(mk);
+    });
+  }, [coords, mode, snap]);
+
+  if (loading) return <div className="omap-card"><div className="omap-cta" style={{ color: '#8A97A8', fontSize: 13 }}>Loading…</div></div>;
+
+  if (building) {
+    const pc = progress.total ? Math.round(progress.done / progress.total * 100) : 0;
+    return <div className="omap-card"><div className="omap-cta">
+      <h3>Building the fleet snapshot…</h3>
+      <p>Pulling Q1 2026 revenue, transactions, and users for every org. This takes a couple of minutes the first time{progress.total ? ' (' + progress.done + ' of ' + progress.total + ' orgs · ' + pc + '%)' : ''}.</p>
+      {window.JuiceLoader ? <JuiceLoader messages={['Sweeping the fleet\u2026', 'Counting users\u2026', 'Reconciling revenue\u2026', 'Mapping the country\u2026']} /> : null}
+    </div></div>;
+  }
+
+  if (!orgs.length) {
+    return <div className="omap-card"><div className="omap-cta">
+      <h3>Organization Metrics</h3>
+      <p>A national map of every rec.us org — revenue, transactions, and users for Q1 2026, placed by where each org's users cluster. Building it pulls data for all ~58 orgs, so it runs once and caches.</p>
+      <button className="build-btn" onClick={build}>Build Q1 2026 snapshot</button>
+    </div></div>;
+  }
+
+  const placed = placeable.length, totalOrgs = orgs.length;
+  const gen = snap.generatedAt ? new Date(snap.generatedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '';
+  return (
+    <div className="omap-card">
+      <div className="omap-head">
+        <h2>Where are your orgs?</h2>
+        <div className="omap-toggle" style={{ marginLeft: 'auto' }}>
+          <button className={mode === 'revenue' ? 'on' : ''} onClick={() => setMode('revenue')}>Revenue</button>
+          <button className={mode === 'transactions' ? 'on' : ''} onClick={() => setMode('transactions')}>Transactions</button>
+          <button className={mode === 'users' ? 'on' : ''} onClick={() => setMode('users')}>Users</button>
+        </div>
+      </div>
+      <div ref={mapRef} className="omap-wrap"></div>
+      <div className="omap-foot">
+        <span>{placed} of {totalOrgs} orgs placed · Q{snap.quarter} {snap.year} · sized and colored by {mode} · hover for details</span>
+        <span className="lg"><span className="dot" style={{ background: '#6ee7b7' }} />Low<span className="dot" style={{ background: '#0284c7', marginLeft: 6 }} />Med<span className="dot" style={{ background: '#f59e0b', marginLeft: 6 }} />High<span className="dot" style={{ background: '#dc2626', marginLeft: 6 }} />Top</span>
+        <button className="refresh-btn" style={{ marginLeft: 'auto' }} onClick={build}>Rebuild</button>
+        {gen && <span>Updated {gen}</span>}
+      </div>
+    </div>
+  );
+}
+
 function App() {
   const params = new URLSearchParams(location.search);
   const printMode = params.get('_print') === '1';
@@ -480,6 +644,7 @@ function App() {
   const [emailRow, setEmailRow] = useState(null);
   const [emailTo, setEmailTo] = useState('');
   const [toast, setToast] = useState(null);
+  const [tab, setTab] = useState('generate');
 
   const refreshDash = () => {
     if (PREVIEW || printMode) return;
@@ -572,6 +737,18 @@ function App() {
   const years = [2024, 2025, 2026];
   const fmtGen = (iso) => { try { return new Date(iso).toLocaleString('en-US', { month:'short', day:'numeric', hour:'numeric', minute:'2-digit' }); } catch (e) { return iso; } };
 
+  if (printMode) {
+    return (
+      <div className="wrap">
+        {loading && (window.JuiceLoader
+          ? <div className="page"><JuiceLoader messages={['Pulling the GL\u2026','Charting the quarter\u2026']} /></div>
+          : <div className="page" style={{ padding: 48, textAlign: 'center', color: '#888' }}>Generating…</div>)}
+        {!loading && data && <Report data={data} />}
+        {ready && <div id="report-ready" style={{ display: 'none' }}></div>}
+      </div>
+    );
+  }
+
   return (
     <div className="wrap">
       <div className="qbr-head">
@@ -582,6 +759,13 @@ function App() {
         <a className="back-link" href="/">{'\u2190'} Dashboard</a>
       </div>
 
+      <div className="tabs">
+        <button className={tab === 'generate' ? 'tab on' : 'tab'} onClick={() => setTab('generate')}>Generate</button>
+        <button className={tab === 'saved' ? 'tab on' : 'tab'} onClick={() => setTab('saved')}>Saved QBRs</button>
+        <button className={tab === 'map' ? 'tab on' : 'tab'} onClick={() => setTab('map')}>Organization Metrics</button>
+      </div>
+
+      {tab === 'generate' && <React.Fragment>
       {!PREVIEW && metrics && (
         <div className="stats">
           <div className="stat"><div className="stat-num">{fmtNum(metrics.generated30)}</div><div className="stat-lab">Generated {'\u00b7'} 30d</div></div>
@@ -633,8 +817,11 @@ function App() {
         : <div className="page" style={{ padding: 48, textAlign: 'center', color: '#888' }}>Generating…</div>)}
       {!loading && data && <Report data={data} />}
       {ready && <div id="report-ready" style={{ display: 'none' }}></div>}
+      </React.Fragment>}
 
-      {!PREVIEW && (
+      {tab === 'map' && <OrgMap />}
+
+      {tab === 'saved' && (
         <div className="hist">
           <div className="hist-h">Saved QBRs</div>
           {history.length === 0

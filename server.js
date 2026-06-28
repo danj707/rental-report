@@ -3632,6 +3632,70 @@ async function qbrRenderPdf({ org, orgId, displayName, year, quarter, saved }) {
 }
 
 // ── GET /qbr — cross-org QBR page (no token; whitelisted) ──
+// ── QBR fleet map — single-quarter snapshot of every org (Organization Metrics tab) ──
+let _orgMapBuilding = false;
+let _orgMapProgress = { done: 0, total: 0 };
+const QBR_ORGMAP_FILE = path.join(QBR_DIR, "orgmap.json");
+function qbrReadOrgMap() { try { return JSON.parse(fs.readFileSync(QBR_ORGMAP_FILE, "utf8")); } catch { return null; } }
+
+// One org's map point: Q-scoped net revenue + transactions, all-time user count, and a
+// home-base location derived from the modal user zip (geocoded client-side).
+async function qbrOrgMapPoint(ctx, year, q) {
+  const cur = qbrQuarterRange(year, q);
+  const [glC, stC, usrC] = await Promise.all([
+    qbrFetch(ctx, "gl", cur.start, cur.end),
+    qbrFetch(ctx, "qbr-stats", cur.start, cur.end),
+    qbrFetch(ctx, "users", null, null),
+  ]);
+  const gl = qbrSumGL(glC), stats = qbrStats(stC);
+  let total = 0; const zc = {}, zcity = {}, zstate = {};
+  if (Array.isArray(usrC)) {
+    for (const r of usrC) {
+      const fn = String(r["First Name"] || "").trim().toLowerCase();
+      const em = String(r["Email"] || "").trim().toLowerCase();
+      const isStaff = em.indexOf("@rec.us") !== -1 && em.indexOf("guest-user+") !== 0;
+      const isGuest = fn === "guest" || em.indexOf("guest-user+guest-") === 0;
+      if (isStaff || isGuest) continue;
+      total++;
+      const z = String(r["Zip Code"] || "").trim().slice(0, 5);
+      if (/^\d{5}$/.test(z)) { zc[z] = (zc[z] || 0) + 1; if (!zcity[z]) { zcity[z] = String(r["City"] || "").trim(); zstate[z] = String(r["State"] || "").trim(); } }
+    }
+  }
+  let zip = null, city = "", state = "", best = 0;
+  for (const z in zc) { if (zc[z] > best) { best = zc[z]; zip = z; city = zcity[z]; state = zstate[z]; } }
+  return { slug: ctx.slug, displayName: ctx.displayName, orgId: ctx.orgId, logoUrl: ctx.logoUrl || "",
+    zip, city, state, revenue: gl ? gl.net : null, transactions: stats ? stats.transactions : null, users: total };
+}
+
+// Build the whole-fleet snapshot (heavy: 3 Metabase fetches per org). Runs in the background.
+async function qbrBuildOrgMap(year, q) {
+  const client = await getRecMcpClient();
+  const all = [];
+  for (let pg = 1; pg <= 10; pg++) {
+    const result = await client.callTool({ name: "search_organizations", arguments: { query: "", pageSize: 100, page: pg } });
+    const txt = ((result && result.content) || []).filter(c => c.type === "text").map(c => c.text).join("");
+    const parsed = JSON.parse(txt); const data = parsed.data || []; all.push(...data);
+    const t = parsed.meta && parsed.meta.pg && parsed.meta.pg.totalResults;
+    if (!data.length || (t != null && all.length >= t)) break;
+  }
+  _orgMapProgress = { done: 0, total: all.length };
+  const points = []; const CONC = 4;
+  for (let i = 0; i < all.length; i += CONC) {
+    const slice = all.slice(i, i + CONC);
+    const res = await Promise.all(slice.map(async (o) => {
+      const known = qbrSlugByOrgId(o.id);
+      const ctx = known ? qbrOrgCtx(known) : { slug: o.slug, orgId: o.id, displayName: o.displayName || o.name, logoUrl: qbrLogoFromOrgId(o.id), uuids: {} };
+      try { return await qbrOrgMapPoint(ctx, year, q); }
+      catch (e) { console.warn("[qbr] orgmap point failed " + o.slug + ": " + e.message); return { slug: o.slug, displayName: o.displayName || o.name, orgId: o.id, zip: null, revenue: null, transactions: null, users: 0, error: true }; }
+    }));
+    points.push(...res);
+    _orgMapProgress.done = Math.min(all.length, i + CONC);
+  }
+  const payload = { generatedAt: new Date().toISOString(), year, quarter: q, orgs: points };
+  try { fs.writeFileSync(QBR_ORGMAP_FILE, JSON.stringify(payload)); } catch (e) { console.warn("[qbr] orgmap write failed: " + e.message); }
+  return payload;
+}
+
 app.get("/qbr", (req, res) => {
   const fs = require("fs");
   const html = fs.readFileSync(path.join(__dirname, "public", "qbr.html"), "utf-8");
@@ -3817,6 +3881,27 @@ app.post("/qbr/api/email", express.json(), async (req, res) => {
     logEvent(d.org.slug, "qbr", "email", req, { saved: id, to: addr });
     res.json({ ok: true });
   } catch (e) { console.error("[qbr] email error: " + e.message); res.status(500).json({ ok: false, error: e.message }); }
+});
+// ── GET /qbr/api/orgmap — cached fleet snapshot for the Organization Metrics tab ──
+app.get("/qbr/api/orgmap", (req, res) => {
+  const data = qbrReadOrgMap();
+  if (!data) return res.json({ ok: true, orgs: [], generatedAt: null, building: _orgMapBuilding });
+  res.json({ ok: true, ...data, building: _orgMapBuilding });
+});
+// ── GET /qbr/api/orgmap/status — build progress polling ──
+app.get("/qbr/api/orgmap/status", (req, res) => {
+  const data = qbrReadOrgMap();
+  res.json({ building: _orgMapBuilding, progress: _orgMapProgress, generatedAt: data ? data.generatedAt : null });
+});
+// ── POST /qbr/api/orgmap/refresh — kick off the background fleet pull ──
+app.post("/qbr/api/orgmap/refresh", express.json(), (req, res) => {
+  if (_orgMapBuilding) return res.json({ ok: true, building: true, already: true });
+  const y = parseInt(req.body && req.body.year) || 2026;
+  const q = parseInt(req.body && req.body.quarter) || 1;
+  _orgMapBuilding = true; _orgMapProgress = { done: 0, total: 0 };
+  logEvent("all", "qbr", "orgmap-build", req, { year: y, quarter: q });
+  qbrBuildOrgMap(y, q).then(() => console.log("[qbr] orgmap built (" + y + " Q" + q + ")")).catch(e => console.error("[qbr] orgmap build error: " + e.message)).finally(() => { _orgMapBuilding = false; });
+  res.json({ ok: true, building: true });
 });
 // ━━ end QBR ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -6373,7 +6458,7 @@ app.get("/", (req, res) => {
         </ul>
         <p style="margin-top:8px"><strong>Guardrails:</strong> quarter-over-quarter deltas are suppressed when the prior quarter has no comparable data or the swing exceeds &#177;1000%, so brand-new and ramping orgs show clean absolute figures instead of nonsensical percentages. When nothing is comparable, the movement chart shows a &#8220;first comparable quarter&#8221; note. Court-only pilots with no charging correctly render $0 financials with no deltas. Results are cached 30 minutes per org + quarter.</p>
 
-        <p style="margin-top:8px"><strong>Dashboard, history &amp; sharing:</strong> <code>/qbr</code> is an internal admin dashboard &#8212; a usage metrics strip (generated / viewed / PDFs / emails over 30 days, plus distinct orgs and total saved), the generator, and a running list of every QBR generated. Each generation is saved as a frozen point-in-time snapshot to the Railway volume (swept by the nightly Gist backup), so &#8220;download the QBR as generated on the 28th&#8221; renders the exact numbers shown that day &#8212; even after later refunds and data post. Saved rows can be re-opened, downloaded as PDF, or emailed. Email is internal-only: a hard server-side allowlist rejects any non-<code>@rec.us</code> recipient, and it runs on its own path without re-enabling the broader subscription email system.</p>
+        <p style="margin-top:8px"><strong>Dashboard, history &amp; sharing:</strong> <code>/qbr</code> is an internal admin dashboard &#8212; a usage metrics strip (generated / viewed / PDFs / emails over 30 days, plus distinct orgs and total saved), the generator, and a running list of every QBR generated. Each generation is saved as a frozen point-in-time snapshot to the Railway volume (swept by the nightly Gist backup), so &#8220;download the QBR as generated on the 28th&#8221; renders the exact numbers shown that day &#8212; even after later refunds and data post. Saved rows can be re-opened, downloaded as PDF, or emailed. Email is internal-only: a hard server-side allowlist rejects any non-<code>@rec.us</code> recipient, and it runs on its own path without re-enabling the broader subscription email system. The page is organized into tabs (Generate / Saved QBRs / Organization Metrics); the <strong>Organization Metrics</strong> tab is a national map of the whole fleet &#8212; every org plotted by where its users cluster (modal user zip, geocoded client-side), with bubbles sized and colored by Q1 2026 revenue, transactions, or users and on-hover detail. It is a heavy one-time pull (three Metabase queries per org), so it builds in the background, caches to <code>data/qbr/orgmap.json</code>, and rides the nightly backup.</p>
 
         <h4>Inline Metrics</h4>
         <p>Each org card on this dashboard has a &#9656; <strong>&#128200; Metrics</strong> toggle that expands inline to show that org&#x27;s usage over the last 30 days &#8212; report opens by type, daily activity sparkline, and top viewers. Data comes from a lightweight in-process counter (no Metabase round-trip). The <strong>View full metrics &rarr;</strong> link opens a deeper dashboard at <code>/:org/metrics</code>.</p>
@@ -7251,6 +7336,10 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+    { date: '2026-06-28', title: '\uD83D\uDDFA\uFE0F QBR Organization Metrics \u2014 national org heatmap', items: [
+      'New tabbed layout on /qbr (Generate / Saved QBRs / Organization Metrics). The Organization Metrics tab is a US map with a colored bubble for every rec.us org \u2014 sized and colored by Q1 2026 revenue, transactions, or users (toggle), with org name + revenue + transactions + users on hover.',
+      'Each org is placed by where its users cluster (modal user zip, geocoded client-side via the same cache as Community Intel). Built off a one-time fleet pull of all ~58 orgs for Q1 2026 that runs in the background and caches to disk \u2014 hit Rebuild to refresh.',
+    ] },
     { date: '2026-06-28', title: '\uD83D\uDCCA QBR dashboard \u2014 saved history, metrics & internal email', items: [
       'The /qbr page is now a full admin dashboard: a usage metrics strip (generated / viewed / PDFs / emails over 30 days), the generator, and a running list of every QBR generated.',
       'Every generation is saved as a frozen point-in-time snapshot \u2014 re-open it, download its PDF, or email it later, and the numbers stay exactly as shown the day it was run (even after refunds and late data post). Snapshots live on the Railway volume and ride the nightly Gist backup.',
