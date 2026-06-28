@@ -388,6 +388,31 @@
   /* ── Metrics bar — admin-only, hidden on org landing page ── */
   /* Views/Exports/AI Insights are surfaced on the admin dashboard instead */
 
+  /* ── Sparkline SVG generator ── */
+  function sparkSVG(trail) {
+    if (!trail || trail.length < 2) return '';
+    var w = 56, h = 20, pad = 2;
+    var max = -Infinity, min = Infinity;
+    for (var i = 0; i < trail.length; i++) {
+      if (trail[i] > max) max = trail[i];
+      if (trail[i] < min) min = trail[i];
+    }
+    var range = max - min || 1;
+    var pts = [];
+    for (var i = 0; i < trail.length; i++) {
+      var x = (i / (trail.length - 1)) * w;
+      var y = (h - pad) - ((trail[i] - min) / range) * (h - pad * 2);
+      pts.push(x.toFixed(1) + ',' + y.toFixed(1));
+    }
+    var last = trail[trail.length - 1], first = trail[0];
+    var color = last > first * 1.03 ? '#4ade80' : last < first * 0.97 ? '#f87171' : '#a5b4fc';
+    var lastPt = pts[pts.length - 1].split(',');
+    return '<svg width="' + w + '" height="' + h + '" viewBox="0 0 ' + w + ' ' + h + '" style="display:block;margin:4px auto 0;opacity:0.85">'
+      + '<polyline points="' + pts.join(' ') + '" fill="none" stroke="' + color + '" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>'
+      + '<circle cx="' + lastPt[0] + '" cy="' + lastPt[1] + '" r="1.5" fill="' + color + '"/>'
+      + '</svg>';
+  }
+
   /* ── Executive Pulse ── */
   (function() {
     var p = cfg.pulse;
@@ -414,12 +439,14 @@
         var arrow = it.direction === 'up' ? '↑' : it.direction === 'down' ? '↓' : '';
         deltaHtml = '<div style="font-size:11px;color:' + color + ';margin-top:3px;font-weight:600">' + arrow + ' ' + it.delta + ' vs last month</div>';
       }
+      var sparkHtml = sparkSVG(it.trail);
       return '<div class="pulse-card">'
         + '<div class="pulse-card-icon">' + (it.icon || '') + '</div>'
         + '<div class="pulse-card-val">' + it.value + '</div>'
         + '<div class="pulse-card-label">' + it.label + '</div>'
         + '<div class="pulse-card-sub">' + (it.sub || '') + '</div>'
         + deltaHtml
+        + sparkHtml
       + '</div>';
     }).join('');
   })();

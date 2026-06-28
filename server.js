@@ -153,10 +153,15 @@ async function refreshOrgPulse(slug, force) {
   if (!org) return null;
 
   const now = new Date();
-  const curStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0,10);
-  const curEnd   = new Date(now.getFullYear(), now.getMonth()+1, 0).toISOString().slice(0,10);
-  const prevStart = new Date(now.getFullYear(), now.getMonth()-1, 1).toISOString().slice(0,10);
-  const prevEnd   = new Date(now.getFullYear(), now.getMonth(), 0).toISOString().slice(0,10);
+  // Generate 6 trailing monthly date ranges (oldest first) for sparklines
+  const trailMonths = [];
+  for (let mi = 5; mi >= 0; mi--) {
+    const s = new Date(now.getFullYear(), now.getMonth() - mi, 1);
+    const e = new Date(now.getFullYear(), now.getMonth() - mi + 1, 0);
+    trailMonths.push({ start: s.toISOString().slice(0,10), end: e.toISOString().slice(0,10), label: s.toLocaleString('en-US', { month: 'short' }) });
+  }
+  const curStart = trailMonths[5].start, curEnd = trailMonths[5].end;
+  const prevStart = trailMonths[4].start, prevEnd = trailMonths[4].end;
   const monthLabel = now.toLocaleString('en-US', { month: 'long' });
 
   async function fetchMB(reportType, startDate, endDate) {
@@ -173,12 +178,18 @@ async function refreshOrgPulse(slug, force) {
     } catch(e) { console.warn(`[pulse] fetch failed ${slug}/${reportType}: ${e.message}`); return null; }
   }
 
-  const pulse = { items: [], generated: new Date().toISOString(), month: monthLabel };
+  const pulse = { items: [], generated: new Date().toISOString(), month: monthLabel, trailLabels: trailMonths.map(m => m.label) };
+
+  // ── Fetch all report types × 6 months in parallel for sparklines ──
+  const [glAll, pgAll, facAll, prodAll] = await Promise.all([
+    Promise.all(trailMonths.map(m => fetchMB('gl', m.start, m.end))),
+    Promise.all(trailMonths.map(m => fetchMB('programs', m.start, m.end))),
+    Promise.all(trailMonths.map(m => fetchMB('facility', m.start, m.end))),
+    Promise.all(trailMonths.map(m => fetchMB('products', m.start, m.end))),
+  ]);
 
   // ── GL: revenue + refunds ──
-  const [glCur, glPrev] = await Promise.all([
-    fetchMB('gl', curStart, curEnd), fetchMB('gl', prevStart, prevEnd)
-  ]);
+  const glCur = glAll[5], glPrev = glAll[4];
   function sumGL(rows) {
     if (!rows || !rows.length) return { pay: 0, ref: 0 };
     const sk = Object.keys(rows[0]);
@@ -192,16 +203,16 @@ async function refreshOrgPulse(slug, force) {
     const cur = sumGL(glCur), prev = sumGL(glPrev||[]);
     const net = cur.pay - cur.ref, prevNet = prev.pay - prev.ref;
     const pct = prevNet ? Math.round((net - prevNet) / Math.abs(prevNet) * 100) : null;
+    const glTrail = glAll.map(r => { const s = sumGL(r||[]); return s.pay - s.ref; });
+    const refTrail = glAll.map(r => sumGL(r||[]).ref);
     pulse.items.push({ key:'revenue', label:'Revenue', value: pulseFmtMoney(net), sub: monthLabel, icon:'💰',
-      delta: pct !== null ? (pct >= 0 ? `+${pct}%` : `${pct}%`) : null, direction: pct > 0 ? 'up' : pct < 0 ? 'down' : null });
+      delta: pct !== null ? (pct >= 0 ? `+${pct}%` : `${pct}%`) : null, direction: pct > 0 ? 'up' : pct < 0 ? 'down' : null, trail: glTrail });
     pulse.items.push({ key:'refunds', label:'Refunds', value: pulseFmtMoney(cur.ref), sub: `${((cur.ref/(cur.pay||1))*100).toFixed(1)}% of gross`, icon:'↩️',
-      delta: null, direction: null });
+      delta: null, direction: null, trail: refTrail });
   }
 
   // ── Programs: enrollments ──
-  const [pgCur, pgPrev] = await Promise.all([
-    fetchMB('programs', curStart, curEnd), fetchMB('programs', prevStart, prevEnd)
-  ]);
+  const pgCur = pgAll[5], pgPrev = pgAll[4];
   function sumProg(rows) {
     if (!rows || !rows.length) return { enroll: 0, cancel: 0, progs: 0 };
     const sk = Object.keys(rows[0]);
@@ -215,27 +226,25 @@ async function refreshOrgPulse(slug, force) {
   if (pgCur) {
     const cur = sumProg(pgCur), prev = sumProg(pgPrev||[]);
     const pct = prev.enroll ? Math.round((cur.enroll - prev.enroll) / Math.abs(prev.enroll) * 100) : null;
+    const enrollTrail = pgAll.map(r => sumProg(r||[]).enroll);
     pulse.items.push({ key:'enrollments', label:'Enrollments', value: pulseFmt(cur.enroll), sub: `${cur.progs} programs`, icon:'🎓',
-      delta: pct !== null ? (pct >= 0 ? `+${pct}%` : `${pct}%`) : null, direction: pct > 0 ? 'up' : pct < 0 ? 'down' : null });
+      delta: pct !== null ? (pct >= 0 ? `+${pct}%` : `${pct}%`) : null, direction: pct > 0 ? 'up' : pct < 0 ? 'down' : null, trail: enrollTrail });
   }
 
   // ── Facility: bookings ──
-  const [facCur, facPrev] = await Promise.all([
-    fetchMB('facility', curStart, curEnd), fetchMB('facility', prevStart, prevEnd)
-  ]);
+  const facCur = facAll[5], facPrev = facAll[4];
   if (facCur) {
     const locs = new Set();
     for (const r of facCur) { const l = r['Location']||r['location']||r['location_name']; if(l) locs.add(l); }
     const cc = facCur.length, pc = facPrev ? facPrev.length : 0;
     const pct = pc ? Math.round((cc - pc) / Math.abs(pc) * 100) : null;
+    const bookTrail = facAll.map(r => (r||[]).length);
     pulse.items.push({ key:'bookings', label:'Bookings', value: pulseFmt(cc), sub: `${locs.size} locations`, icon:'📅',
-      delta: pct !== null ? (pct >= 0 ? `+${pct}%` : `${pct}%`) : null, direction: pct > 0 ? 'up' : pct < 0 ? 'down' : null });
+      delta: pct !== null ? (pct >= 0 ? `+${pct}%` : `${pct}%`) : null, direction: pct > 0 ? 'up' : pct < 0 ? 'down' : null, trail: bookTrail });
   }
 
   // ── Products: POS ──
-  const [prodCur, prodPrev] = await Promise.all([
-    fetchMB('products', curStart, curEnd), fetchMB('products', prevStart, prevEnd)
-  ]);
+  const prodCur = prodAll[5], prodPrev = prodAll[4];
   function sumProd(rows) {
     if (!rows || !rows.length) return 0;
     const sk = Object.keys(rows[0]);
@@ -246,8 +255,9 @@ async function refreshOrgPulse(slug, force) {
     const cur = sumProd(prodCur), prev = sumProd(prodPrev||[]);
     if (cur > 0) {
       const pct = prev ? Math.round((cur - prev) / Math.abs(prev) * 100) : null;
+      const prodTrail = prodAll.map(r => sumProd(r||[]));
       pulse.items.push({ key:'productRev', label:'Product Sales', value: pulseFmtMoney(cur), sub: `${prodCur.length} line items`, icon:'🛒',
-        delta: pct !== null ? (pct >= 0 ? `+${pct}%` : `${pct}%`) : null, direction: pct > 0 ? 'up' : pct < 0 ? 'down' : null });
+        delta: pct !== null ? (pct >= 0 ? `+${pct}%` : `${pct}%`) : null, direction: pct > 0 ? 'up' : pct < 0 ? 'down' : null, trail: prodTrail });
     }
   }
 
@@ -7352,6 +7362,11 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+    { date: '2026-06-28', title: '✨ Sparklines on org dashboard pulse cards', items: [
+      'Each metric in the Daily Pulse panel (Revenue, Refunds, Enrollments, Bookings, Product Sales) now shows a 6-month trailing sparkline — a tiny inline SVG line chart showing the trend at a glance. Green = trending up, red = trending down, neutral = flat.',
+      'The pulse system now fetches all 4 report types × 6 months in a single parallel burst (Promise.all of Promise.all), so sparkline data adds near-zero latency vs the old 2-month sequential fetches. Cached 24hrs like existing pulse.',
+      'Sparkline trail data (array of 6 monthly values + month labels) is injected into each pulse item and rendered client-side as a pure SVG polyline with a dot on the current month — no Chart.js dependency, works in PDF.',
+    ] },
     { date: '2026-06-28', title: '\uD83D\uDDFA\uFE0F Organization Metrics complete \u2014 weekend wrap', items: [
       'The QBR is now a full internal dashboard: tabbed layout (Generate / Saved QBRs / Organization Metrics), saved point-in-time snapshots with PDF + internal @rec.us email, usage metrics, an all-orgs picker, total/new users, and a transaction count that ties to the Transactions report.',
       'Organization Metrics tab: a national map with a colored bubble per org (toggle revenue / transactions / users, hover for detail) plus a revenue-by-org bar chart, built off a cached single-quarter fleet pull with Quarter/Year selectors so any quarter can be built and switched between instantly.',
