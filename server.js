@@ -3360,15 +3360,38 @@ function qbrSumGL(rows) {
   }
   return { gross, refunds, net: gross - refunds, refundCount };
 }
-// Dedicated QBR stats card (materialized) — one row of org/date scalars the grouped reports can't give:
-// distinct Transaction Count (matches the Transactions report), Total Users, New Users.
+// Dedicated QBR stats card (materialized) — distinct Transaction Count that matches the
+// Transactions report (the grouped GL report can't give a distinct transaction count).
 function qbrStats(rows) {
   if (!Array.isArray(rows) || !rows.length) return null;
-  return {
-    transactions: qbrScalar(rows, "Transaction Count"),
-    totalUsers: qbrScalar(rows, "Total Users"),
-    newUsers: qbrScalar(rows, "New Users"),
-  };
+  return { transactions: qbrScalar(rows, "Transaction Count") };
+}
+// Total / New users from the existing Community Intel users card (one row per person,
+// signup date in "Created At"). Mirrors users.html exclusions exactly: drop staff
+// (@rec.us, non-guest) and guests (First Name "Guest" or guest-user+guest- email).
+function qbrUserYmd(v) {
+  if (!v) return null;
+  const d = new Date(v);
+  if (isNaN(d.getTime())) return null;
+  const p = (n) => String(n).padStart(2, "0");
+  return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate());
+}
+function qbrSumUsers(rows, cur, prev) {
+  if (!Array.isArray(rows) || !rows.length) return null;
+  let total = 0, newCur = 0, newPrev = 0;
+  for (const r of rows) {
+    const fn = String(r["First Name"] || "").trim().toLowerCase();
+    const em = String(r["Email"] || "").trim().toLowerCase();
+    const isStaff = em.indexOf("@rec.us") !== -1 && em.indexOf("guest-user+") !== 0;
+    const isGuest = fn === "guest" || em.indexOf("guest-user+guest-") === 0;
+    if (isStaff || isGuest) continue;
+    total++;
+    const ymd = qbrUserYmd(r["Created At"]);
+    if (!ymd) continue;
+    if (ymd >= cur.start && ymd <= cur.end) newCur++;
+    else if (ymd >= prev.start && ymd <= prev.end) newPrev++;
+  }
+  return { total, new: newCur, newPrev };
 }
 function qbrSumProg(rows) {
   if (!Array.isArray(rows) || !rows.length) return null;
@@ -3426,7 +3449,7 @@ async function buildQbr(orgCtx, year, q) {
   const cur = qbrQuarterRange(year, q);
   const pv = qbrPrevQuarter(year, q);
   const prev = qbrQuarterRange(pv.year, pv.q);
-  const [glC, glP, pgC, pgP, facC, facP, courtC, retC, stC, stP] = await Promise.all([
+  const [glC, glP, pgC, pgP, facC, facP, courtC, retC, stC, stP, usrC] = await Promise.all([
     qbrFetch(orgCtx, "gl", cur.start, cur.end),       qbrFetch(orgCtx, "gl", prev.start, prev.end),
     qbrFetch(orgCtx, "programs", cur.start, cur.end), qbrFetch(orgCtx, "programs", prev.start, prev.end),
     qbrFetch(orgCtx, "facility", cur.start, cur.end), qbrFetch(orgCtx, "facility", prev.start, prev.end),
@@ -3434,11 +3457,13 @@ async function buildQbr(orgCtx, year, q) {
     qbrFetch(orgCtx, "retention", null, null),
     qbrFetch(orgCtx, "qbr-stats", cur.start, cur.end),
     qbrFetch(orgCtx, "qbr-stats", prev.start, prev.end),
+    qbrFetch(orgCtx, "users", null, null),
   ]);
   const gl = qbrSumGL(glC), glPrev = qbrSumGL(glP);
   const pg = qbrSumProg(pgC), pgPrev = qbrSumProg(pgP);
   const fac = qbrSumFac(facC), facPrev = qbrSumFac(facP);
   const stats = qbrStats(stC), statsPrev = qbrStats(stP);
+  const users = qbrSumUsers(usrC, cur, prev);
   const metrics = {
     financial: gl ? {
       gross: gl.gross, refunds: gl.refunds, net: gl.net,
@@ -3454,9 +3479,9 @@ async function buildQbr(orgCtx, year, q) {
       bookingsDelta: facPrev ? qbrPctDelta(fac.bookings, facPrev.bookings) : null } : null,
     court: qbrSumCourt(courtC, qbrDaysBetween(cur.start, cur.end)),
     retention: qbrSumRetention(retC),
-    users: (stats && (stats.totalUsers != null || stats.newUsers != null)) ? {
-      total: stats.totalUsers, new: stats.newUsers,
-      newDelta: (stats.newUsers != null && statsPrev && statsPrev.newUsers != null) ? qbrPctDelta(stats.newUsers, statsPrev.newUsers) : null,
+    users: users ? {
+      total: users.total, new: users.new,
+      newDelta: qbrPctDelta(users.new, users.newPrev),
     } : null,
   };
   return {
@@ -7058,6 +7083,10 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+    { date: '2026-06-28', title: 'QBR \u2014 Total / New Users live (from the users report)', items: [
+      'Total Users and New Users now come straight from the existing Community Intel users report \u2014 no new SQL. Each user row carries a signup date (Created At), so the QBR counts the full registered base and how many joined during the quarter, with a QoQ delta on new signups.',
+      'Counts mirror Community Intel exactly: staff (@rec.us) and guest checkout accounts are excluded, so Total Users ties to the people total you see on the Community Intel page.',
+    ] },
     { date: '2026-06-28', title: 'QBR \u2014 transaction count live', items: [
       'Wired the qbr-stats card (materialized.transaction_report, distinct transaction_event_id) into SHARED_UUIDS. The Transactions KPI now shows the real distinct count that ties to the Transactions report, across every org.',
       'Total Users / New Users will light up on the same card once those columns are added (editing the shared question keeps its UUID \u2014 no re-wire needed).',
