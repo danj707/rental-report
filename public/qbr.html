@@ -281,12 +281,13 @@ function Kpi({ lab, val, sub, delta, est }) {
 function MovementChart({ metrics }) {
   const ref = useRef(null);
   const inst = useRef(null);
-  const f = metrics.financial, p = metrics.programs, fa = metrics.facility;
+  const f = metrics.financial, p = metrics.programs, fa = metrics.facility, u = metrics.users;
   const rows = [];
   if (f && typeof f.netDelta === 'number')          rows.push(['Net revenue', f.netDelta]);
   if (f && typeof f.transactionsDelta === 'number') rows.push(['Transactions', f.transactionsDelta]);
   if (p && typeof p.enrollmentsDelta === 'number')  rows.push(['Enrollments', p.enrollmentsDelta]);
   if (fa && typeof fa.bookingsDelta === 'number')   rows.push(['Bookings', fa.bookingsDelta]);
+  if (u && typeof u.newDelta === 'number')          rows.push(['New users', u.newDelta]);
 
   useEffect(() => {
     if (!ref.current || rows.length === 0) return;

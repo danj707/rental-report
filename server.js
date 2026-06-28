@@ -7124,6 +7124,9 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+    { date: '2026-06-28', title: 'QBR \u2014 movement chart picks up new-user growth', items: [
+      'The quarter-over-quarter movement chart now plots a New Users bar alongside net revenue, transactions, enrollments, and bookings \u2014 whenever there is a comparable prior quarter. The chart stays fully data-driven: each org shows bars only for the metrics it actually has QoQ data for, and brand-new orgs still show the first-comparable-quarter note.',
+    ] },
     { date: '2026-06-28', title: 'QBR \u2014 org picker now spans every published org', items: [
       'The QBR organization picker lists all published rec.us orgs (pulled live from the platform), not just the ones with built-out report cards. Type to filter instantly; pick any org and generate.',
       'Built-out orgs still resolve their logo and per-org config automatically (matched by org ID), and any other org gets a logo derived from its ID with a clean monogram fallback. Cross-org reports run off the shared queries, so every org returns data.',
