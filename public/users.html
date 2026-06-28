@@ -974,6 +974,7 @@ function App() {
   var [crossComputed, setCrossComputed] = useState({});  // { fasttrack: { ...analytics }, ... }
   var [fillCapacity, setFillCapacity] = useState(null); // programs data for capacity
   var [fillSelected, setFillSelected] = useState(null); // selected section names for chart
+  var [fillSort, setFillSort] = useState({ col: 'total', dir: 'desc' }); // sortable table
 
   function fetchCrossTab(key, report) {
     if (crossData[key] && (crossData[key].rows || crossData[key].loading)) return;
@@ -1064,7 +1065,18 @@ function App() {
   var getInsights = useCallback(function() {
     if(!s||insightsLoading)return;
     setInsightsLoading(true);setInsightsError(null);
-    fetch(withToken('/'+orgSlug+'/'+reportType+'/api/insights'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(buildInsightsBlob(s,tab))})
+    var insightsPayload = (tab === 'fillrate' && fillRateAnalytics) ? {
+        focus: 'FILL RATE ANALYSIS — analyze enrollment velocity, demand patterns, and pricing implications',
+        totalSections: fillRateAnalytics.totalSections,
+        atCapacity: fillRateAnalytics.atCapacity,
+        avgFillPct: fillRateAnalytics.avgPct,
+        fastestFill: fillRateAnalytics.fastestFill ? { section: fillRateAnalytics.fastestFill.section, program: fillRateAnalytics.fastestFill.program, days: fillRateAnalytics.fastestFill.fillDays, enrolled: fillRateAnalytics.fastestFill.total, capacity: fillRateAnalytics.fastestFill.capacity } : null,
+        slowestFill: fillRateAnalytics.slowestFill ? { section: fillRateAnalytics.slowestFill.section, program: fillRateAnalytics.slowestFill.program, days: fillRateAnalytics.slowestFill.fillDays, enrolled: fillRateAnalytics.slowestFill.total, capacity: fillRateAnalytics.slowestFill.capacity } : null,
+        topSections: fillRateAnalytics.top.slice(0, 15).map(function(sec){ return { section: sec.section, program: sec.program, enrolled: sec.total, capacity: sec.capacity||null, fillPct: sec.fillPct, fillDays: sec.fillDays }; }),
+        overCapacity: fillRateAnalytics.sections.filter(function(s){ return s.fillPct && s.fillPct > 100; }).length,
+        underHalf: fillRateAnalytics.sections.filter(function(s){ return s.fillPct !== null && s.fillPct < 50; }).length,
+      } : buildInsightsBlob(s, tab);
+    fetch(withToken('/'+orgSlug+'/'+reportType+'/api/insights'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(insightsPayload)})
     .then(function(r){return r.json();})
     .then(function(j){if(!j.ok)throw new Error(j.error||'Failed');setInsights(j.insights||[]);setInsightsTraceId(j.traceId||null);setFbSent(false);setFbMode(null);setFbComment('');})
     .catch(function(e){setInsightsError(e.message);})
@@ -1953,14 +1965,19 @@ function App() {
                   <div style={{overflowX:'auto'}}>
                     <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
                       <thead><tr style={{borderBottom:'2px solid #e5e7eb'}}>
-                        <th style={{textAlign:'left',padding:'8px 10px',fontWeight:700,color:'#374151'}}>Section</th>
-                        <th style={{textAlign:'left',padding:'8px 10px',fontWeight:700,color:'#374151'}}>Program</th>
-                        <th style={{textAlign:'right',padding:'8px 10px',fontWeight:700,color:'#374151'}}>Enrolled</th>
-                        <th style={{textAlign:'right',padding:'8px 10px',fontWeight:700,color:'#374151'}}>Capacity</th>
-                        <th style={{textAlign:'right',padding:'8px 10px',fontWeight:700,color:'#374151'}}>Fill %</th>
-                        <th style={{textAlign:'right',padding:'8px 10px',fontWeight:700,color:'#374151'}}>Fill Days</th>
+                        {[{k:'section',l:'Section',a:'left'},{k:'program',l:'Program',a:'left'},{k:'total',l:'Enrolled',a:'right'},{k:'capacity',l:'Capacity',a:'right'},{k:'fillPct',l:'Fill %',a:'right'},{k:'fillDays',l:'Fill Days',a:'right'}].map(function(h){
+                          var active=fillSort.col===h.k;
+                          var arrow=active?(fillSort.dir==='desc'?' ▼':' ▲'):'';
+                          return <th key={h.k} style={{textAlign:h.a,padding:'8px 10px',fontWeight:700,color:active?'#2563eb':'#374151',cursor:'pointer',userSelect:'none',whiteSpace:'nowrap'}} onClick={function(){setFillSort({col:h.k,dir:active&&fillSort.dir==='desc'?'asc':'desc'});}}>{h.l}{arrow}</th>;
+                        })}
                       </tr></thead>
-                      <tbody>{fr.top.map(function(sec,i){
+                      <tbody>{fr.top.slice().sort(function(a,b){
+                        var c=fillSort.col,d=fillSort.dir==='asc'?1:-1;
+                        var va=c==='section'?a.section:c==='program'?a.program:c==='total'?a.total:c==='capacity'?(a.capacity||0):c==='fillPct'?(a.fillPct||0):a.fillDays;
+                        var vb=c==='section'?b.section:c==='program'?b.program:c==='total'?b.total:c==='capacity'?(b.capacity||0):c==='fillPct'?(b.fillPct||0):b.fillDays;
+                        if(typeof va==='string')return va.localeCompare(vb)*d;
+                        return ((va||0)-(vb||0))*d;
+                      }).map(function(sec,i){
                         var barPct = sec.fillPct ? Math.min(sec.fillPct, 100) : 0;
                         var barCol = barPct >= 95 ? '#059669' : barPct >= 70 ? '#d97706' : barPct >= 40 ? '#2563eb' : '#9ca3af';
                         return (
@@ -1973,9 +1990,9 @@ function App() {
                               {sec.fillPct!==null ? (
                                 <span style={{display:'inline-flex',alignItems:'center',gap:6}}>
                                   <span style={{width:48,height:6,borderRadius:3,background:'#f3f4f6',display:'inline-block',position:'relative',overflow:'hidden'}}>
-                                    <span style={{position:'absolute',left:0,top:0,bottom:0,borderRadius:3,background:barCol,width:barPct+'%'}}></span>
+                                    <span style={{position:'absolute',left:0,top:0,bottom:0,borderRadius:3,background:barCol,width:Math.min(barPct,100)+'%'}}></span>
                                   </span>
-                                  <span style={{fontWeight:600,color:barCol}}>{sec.fillPct}%</span>
+                                  {sec.fillPct>100?<span style={{fontWeight:700,color:'#059669',fontSize:11}}>Full <span style={{fontWeight:400,color:'#9ca3af'}}>({sec.total}/{sec.capacity})</span></span>:<span style={{fontWeight:600,color:barCol}}>{sec.fillPct}%</span>}
                                 </span>
                               ) : '—'}
                             </td>
