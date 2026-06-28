@@ -459,15 +459,10 @@ function App() {
 
   useEffect(() => {
     if (!openDrop) return;
-    if (!orgQuery || (sel && orgQuery === sel.displayName)) { setResults(localOrgs.slice(0, 12)); return; }
-    const t = setTimeout(() => {
-      fetch('/qbr/api/orgs/search?q=' + encodeURIComponent(orgQuery))
-        .then(r => r.ok ? r.json() : null)
-        .then(d => { if (d && Array.isArray(d.orgs)) setResults(d.orgs); else throw new Error('x'); })
-        .catch(() => setResults(localOrgs.filter(o => o.displayName.toLowerCase().includes(orgQuery.toLowerCase()))));
-    }, 250);
-    return () => clearTimeout(t);
-  }, [orgQuery, openDrop]);
+    const q = orgQuery.trim().toLowerCase();
+    if (!q || (sel && orgQuery === sel.displayName)) { setResults(localOrgs); return; }
+    setResults(localOrgs.filter(o => o.displayName.toLowerCase().includes(q) || (o.slug || '').toLowerCase().includes(q)));
+  }, [orgQuery, openDrop, localOrgs]);
 
   useEffect(() => {
     if (printMode) document.body.classList.add('print');

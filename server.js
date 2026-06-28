@@ -3502,6 +3502,21 @@ function qbrOrgCtx(slug) {
   }
   return { slug, orgId: o.orgId, displayName: o.displayName || (title + " Parks & Recreation"), logoUrl: o.logoUrl || "", uuids };
 }
+// Reverse lookup: platform orgId -> our short built-out ORGS slug (if any). Lets the QBR
+// resolve a fully-configured org (logo + per-org UUIDs) even when the picker passes the
+// platform slug like "city-of-norman" instead of our short key "norman".
+function qbrSlugByOrgId(orgId) {
+  if (!orgId) return null;
+  for (const slug of Object.keys(ORGS)) { if (ORGS[slug].orgId === orgId) return slug; }
+  return null;
+}
+// Best-effort org logo for any platform org, derived from the orgId (same S3 path the
+// rec.us app uses). If the org has no fullLogo.png the page's onError falls back to a monogram.
+function qbrLogoFromOrgId(orgId) {
+  if (!orgId) return "";
+  const s3 = "https://prod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com/organization-" + orgId + "/fullLogo.png";
+  return "https://www.rec.us/_next/image?url=" + encodeURIComponent(s3) + "&w=256&q=75";
+}
 
 function qbrMoney(n) { return "$" + Math.round(n).toLocaleString("en-US"); }
 function qbrFallbackNarrative(result) {
@@ -3573,12 +3588,34 @@ app.get("/qbr", (req, res) => {
 });
 
 // ── GET /qbr/api/orgs — dropdown source (phase 1: ORGS map) ──
-app.get("/qbr/api/orgs", (req, res) => {
-  const orgs = Object.keys(ORGS).map(slug => {
+app.get("/qbr/api/orgs", async (req, res) => {
+  const builtOut = () => Object.keys(ORGS).map(slug => {
     const title = slug.charAt(0).toUpperCase() + slug.slice(1);
     return { slug, orgId: ORGS[slug].orgId || null, displayName: ORGS[slug].displayName || (title + " Parks & Recreation") };
   }).sort((a, b) => a.displayName.localeCompare(b.displayName));
-  res.json({ orgs });
+  try {
+    const client = await getRecMcpClient();
+    const all = [];
+    for (let pg = 1; pg <= 10; pg++) {
+      const result = await client.callTool({ name: "search_organizations", arguments: { query: "", pageSize: 100, page: pg } });
+      const txt = ((result && result.content) || []).filter(c => c.type === "text").map(c => c.text).join("");
+      const parsed = JSON.parse(txt);
+      const data = parsed.data || [];
+      all.push(...data);
+      const total = parsed.meta && parsed.meta.pg && parsed.meta.pg.totalResults;
+      if (!data.length || (total != null && all.length >= total)) break;
+    }
+    if (!all.length) return res.json({ orgs: builtOut() });
+    const orgs = all.map(o => {
+      // Prefer our short slug for built-out orgs so the generate fast-path + clean URLs apply.
+      const known = qbrSlugByOrgId(o.id);
+      return { slug: known || o.slug, orgId: o.id, displayName: o.displayName || o.name };
+    }).sort((a, b) => a.displayName.localeCompare(b.displayName));
+    res.json({ orgs });
+  } catch (e) {
+    console.warn("[qbr] org list failed: " + e.message);
+    res.json({ orgs: builtOut(), fallback: true });
+  }
 });
 
 // ── GET /qbr/api/orgs/search — full platform org search via Rec MCP ──
@@ -3607,7 +3644,11 @@ app.get("/qbr/api/orgs/search", async (req, res) => {
 app.post("/qbr/api/generate", express.json(), async (req, res) => {
   const { orgSlug, orgId, displayName, year, quarter } = req.body || {};
   let ctx = (orgSlug && ORGS[orgSlug]) ? qbrOrgCtx(orgSlug) : null;
-  if (!ctx && orgId) ctx = { slug: orgSlug || orgId, orgId, displayName: displayName || orgSlug || "Organization", logoUrl: "", uuids: {} };
+  if (!ctx && orgId) {
+    const known = qbrSlugByOrgId(orgId);
+    ctx = known ? qbrOrgCtx(known)
+                : { slug: orgSlug || orgId, orgId, displayName: displayName || orgSlug || "Organization", logoUrl: qbrLogoFromOrgId(orgId), uuids: {} };
+  }
   if (!ctx) return res.status(404).json({ ok: false, error: "Unknown org" });
   const y = parseInt(year), q = parseInt(quarter);
   if (!y || !(q >= 1 && q <= 4)) return res.status(400).json({ ok: false, error: "Bad year/quarter" });
@@ -7083,6 +7124,10 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+    { date: '2026-06-28', title: 'QBR \u2014 org picker now spans every published org', items: [
+      'The QBR organization picker lists all published rec.us orgs (pulled live from the platform), not just the ones with built-out report cards. Type to filter instantly; pick any org and generate.',
+      'Built-out orgs still resolve their logo and per-org config automatically (matched by org ID), and any other org gets a logo derived from its ID with a clean monogram fallback. Cross-org reports run off the shared queries, so every org returns data.',
+    ] },
     { date: '2026-06-28', title: 'QBR \u2014 Total / New Users live (from the users report)', items: [
       'Total Users and New Users now come straight from the existing Community Intel users report \u2014 no new SQL. Each user row carries a signup date (Created At), so the QBR counts the full registered base and how many joined during the quarter, with a QoQ delta on new signups.',
       'Counts mirror Community Intel exactly: staff (@rec.us) and guest checkout accounts are excluded, so Total Users ties to the people total you see on the Community Intel page.',
