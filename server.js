@@ -3357,10 +3357,13 @@ function qbrSumGL(rows) {
   for (const r of rows) {
     gross += qpf(r["Total Payments"]); refunds += qpf(r["Total Refunds"]); refundCount += qpf(r["Number of Refunds"]);
   }
-  // Distinct transaction count + user counts are org-level scalars on the GL card (same value
-  // repeated per row). "Number of Payments" is per-GL-code and overcounts, so it is NOT used.
+  return { gross, refunds, net: gross - refunds, refundCount };
+}
+// Dedicated QBR stats card (materialized) — one row of org/date scalars the grouped reports can't give:
+// distinct Transaction Count (matches the Transactions report), Total Users, New Users.
+function qbrStats(rows) {
+  if (!Array.isArray(rows) || !rows.length) return null;
   return {
-    gross, refunds, net: gross - refunds, refundCount,
     transactions: qbrScalar(rows, "Transaction Count"),
     totalUsers: qbrScalar(rows, "Total Users"),
     newUsers: qbrScalar(rows, "New Users"),
@@ -3422,23 +3425,26 @@ async function buildQbr(orgCtx, year, q) {
   const cur = qbrQuarterRange(year, q);
   const pv = qbrPrevQuarter(year, q);
   const prev = qbrQuarterRange(pv.year, pv.q);
-  const [glC, glP, pgC, pgP, facC, facP, courtC, retC] = await Promise.all([
+  const [glC, glP, pgC, pgP, facC, facP, courtC, retC, stC, stP] = await Promise.all([
     qbrFetch(orgCtx, "gl", cur.start, cur.end),       qbrFetch(orgCtx, "gl", prev.start, prev.end),
     qbrFetch(orgCtx, "programs", cur.start, cur.end), qbrFetch(orgCtx, "programs", prev.start, prev.end),
     qbrFetch(orgCtx, "facility", cur.start, cur.end), qbrFetch(orgCtx, "facility", prev.start, prev.end),
     qbrFetch(orgCtx, "court-utilization", cur.start, cur.end),
     qbrFetch(orgCtx, "retention", null, null),
+    qbrFetch(orgCtx, "qbr-stats", cur.start, cur.end),
+    qbrFetch(orgCtx, "qbr-stats", prev.start, prev.end),
   ]);
   const gl = qbrSumGL(glC), glPrev = qbrSumGL(glP);
   const pg = qbrSumProg(pgC), pgPrev = qbrSumProg(pgP);
   const fac = qbrSumFac(facC), facPrev = qbrSumFac(facP);
+  const stats = qbrStats(stC), statsPrev = qbrStats(stP);
   const metrics = {
     financial: gl ? {
       gross: gl.gross, refunds: gl.refunds, net: gl.net,
       netDelta: glPrev ? qbrPctDelta(gl.net, glPrev.net) : null,
       grossDelta: glPrev ? qbrPctDelta(gl.gross, glPrev.gross) : null,
-      transactions: gl.transactions,
-      transactionsDelta: (gl.transactions != null && glPrev && glPrev.transactions != null) ? qbrPctDelta(gl.transactions, glPrev.transactions) : null,
+      transactions: stats ? stats.transactions : null,
+      transactionsDelta: (stats && stats.transactions != null && statsPrev && statsPrev.transactions != null) ? qbrPctDelta(stats.transactions, statsPrev.transactions) : null,
       refundCount: gl.refundCount,
     } : null,
     programs: pg ? { enrollments: pg.enrollments, sections: pg.sections, programs: pg.programs,
@@ -3447,9 +3453,9 @@ async function buildQbr(orgCtx, year, q) {
       bookingsDelta: facPrev ? qbrPctDelta(fac.bookings, facPrev.bookings) : null } : null,
     court: qbrSumCourt(courtC, qbrDaysBetween(cur.start, cur.end)),
     retention: qbrSumRetention(retC),
-    users: (gl && (gl.totalUsers != null || gl.newUsers != null)) ? {
-      total: gl.totalUsers, new: gl.newUsers,
-      newDelta: (gl.newUsers != null && glPrev && glPrev.newUsers != null) ? qbrPctDelta(gl.newUsers, glPrev.newUsers) : null,
+    users: (stats && (stats.totalUsers != null || stats.newUsers != null)) ? {
+      total: stats.totalUsers, new: stats.newUsers,
+      newDelta: (stats.newUsers != null && statsPrev && statsPrev.newUsers != null) ? qbrPctDelta(stats.newUsers, statsPrev.newUsers) : null,
     } : null,
   };
   return {
@@ -7051,6 +7057,10 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+    { date: '2026-06-28', title: 'QBR \u2014 transactions + users from a dedicated stats card', items: [
+      'Distinct transaction count and user counts now come from a single purpose-built QBR stats card (materialized source) instead of being bolted onto the GL report. GL stays financials-only.',
+      'Reads Transaction Count, Total Users, and New Users from that card (org + date scoped), with QoQ on transactions and new users. Cards stay hidden until the card UUID is wired into SHARED_UUIDS.',
+    ] },
     { date: '2026-06-28', title: 'QBR \u2014 correct transaction count + total/new users', items: [
       'Transactions no longer use the GL per-code payment-line count (which overcounted ~2.2x vs the Transactions report). The card now reads a distinct Transaction Count column from the GL card and hides itself until that column exists, so a wrong number is never shown to a partner.',
       'Replaced the Members card with Total Users (all-time) and New Users (joined in the quarter, with QoQ). Both read Total Users / New Users columns from the GL card and hide until present.',
