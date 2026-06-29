@@ -1188,11 +1188,6 @@ async function generatePdf(orgSlug, reportType, startDate, endDate, filters = {}
   ["locations", "sites", "location_name", "site_type", "desks", "by_desk", "by_item", "hide_zero", "chart_net", "metric", "programs", "closures", "hrs", "section_name", "status", "questions", "cols", "search", "tab", "instructor", "split", "book_type", "addons"].forEach(k => {
     if (filters[k]) qsObj[k] = filters[k];
   });
-  // Map client-side locations filter → server-side location_name Metabase param
-  // so the query itself returns only filtered data (not relying on client JS)
-  if (qsObj.locations && !qsObj.location_name) {
-    qsObj.location_name = qsObj.locations;
-  }
   if (orgTok) qsObj.token = orgTok;
   const qs = new URLSearchParams(qsObj);
   const url = `http://localhost:${PORT}/${orgSlug}/${reportType}?${qs}`;
@@ -1222,13 +1217,8 @@ async function generatePdf(orgSlug, reportType, startDate, endDate, filters = {}
     }
     await page.goto(url, { waitUntil: "networkidle0", timeout: 60000 });
     await page.waitForSelector("#report-ready", { timeout: 30000 });
-    // Give React one more paint cycle to ensure filtered render is committed
-    await page.waitForFunction(() => {
-      const el = document.getElementById('report-ready');
-      return el && el.dataset.ready === 'true';
-    }, { timeout: 10000 }).catch(() => {});
-    // Safety: wait 500ms for any final re-renders
-    await new Promise(r => setTimeout(r, 500));
+    // Safety: wait for React to finish rendering filtered data
+    await new Promise(r => setTimeout(r, 1500));
     return await page.pdf({
       format: "Letter",
       landscape: true,
