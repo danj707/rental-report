@@ -492,6 +492,12 @@
       .then(function(d) {
         if (d.totals.pageViews === 0 && d.totals.detailViews === 0) return;
         panel.style.display = 'block';
+        // Match pulse panel width exactly
+        var pulseEl = document.getElementById('pulse-panel');
+        if (pulseEl && pulseEl.offsetWidth > 0) {
+          panel.style.maxWidth = pulseEl.offsetWidth + 'px';
+          panel.style.boxSizing = 'border-box';
+        }
         sub.textContent = 'Last ' + d.days + ' days';
         var rcLabel = d.rental.pageViews > 0 && d.program.pageViews > 0 ? 'both calendars' : d.rental.pageViews > 0 ? 'rental calendar' : 'program calendar';
         var items = [
