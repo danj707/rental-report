@@ -2448,16 +2448,7 @@ function App() {
         <HeatmapStrip filteredRows={filteredRows} locationColors={locationColors} />
       )}
 
-      {filteredRows && filteredRows.length > 0 && !isPrint && (
-        <div>
-          {showMetrics && (
-            <>
-              <ResidencyAnalysis filteredRows={filteredRows} />
-              <BookingTypeAnalysis filteredRows={filteredRows} />
-            </>
-          )}
-        </div>
-      )}
+      {/* Metrics analysis placeholder — components not yet implemented */}
 
       <div className="page" style={loading ? {opacity:0.5,pointerEvents:'none'} : {}}>
         {/* Report header */}
