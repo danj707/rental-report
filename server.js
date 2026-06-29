@@ -4359,6 +4359,81 @@ app.get("/:org/rentalcalendar/api/availability/:siteId", async (req, res) => {
   const data = await fetchSiteAvailability(req.params.siteId);
   res.json({ data });
 });
+// ── GET /:org/api/calendar-analytics — aggregate calendar funnel metrics ──
+app.get("/:org/api/calendar-analytics", (req, res) => {
+  const slug = req.params.org;
+  const org = ORGS[slug];
+  if (!org) return res.status(404).json({ error: "Unknown org" });
+
+  const days = parseInt(req.query.days) || 30;
+  const events = readEvents(days).filter(e => e.org === slug);
+
+  // Separate by calendar type
+  const rc = events.filter(e => e.report === "rentalcalendar");
+  const pc = events.filter(e => e.report === "calendar");
+
+  // Rental calendar funnel
+  const rcPageViews = rc.filter(e => e.event === "view").length;
+  const rcFacViews  = rc.filter(e => e.event === "facility_view").length;
+  const rcBookClicks = rc.filter(e => e.event === "book_click").length;
+
+  // Program calendar funnel
+  const pcPageViews = pc.filter(e => e.event === "view").length;
+  const pcClicks    = pc.filter(e => e.event === "click").length;
+
+  // Top facilities by views
+  const facCounts = {};
+  rc.filter(e => e.event === "facility_view" && e.entity).forEach(e => {
+    facCounts[e.entity] = (facCounts[e.entity] || { views: 0, clicks: 0 });
+    facCounts[e.entity].views++;
+  });
+  rc.filter(e => e.event === "book_click" && e.entity).forEach(e => {
+    if (!facCounts[e.entity]) facCounts[e.entity] = { views: 0, clicks: 0 };
+    facCounts[e.entity].clicks++;
+  });
+  const topFacilities = Object.entries(facCounts)
+    .map(([name, c]) => ({ name, views: c.views, clicks: c.clicks, convPct: c.views > 0 ? Math.round(c.clicks / c.views * 100) : 0 }))
+    .sort((a, b) => b.views - a.views)
+    .slice(0, 10);
+
+  // Daily breakdown for sparklines (last N days)
+  const dailyMap = {};
+  const now = new Date();
+  for (let i = days - 1; i >= 0; i--) {
+    const d = new Date(now); d.setDate(d.getDate() - i);
+    dailyMap[d.toISOString().slice(0, 10)] = { rcViews: 0, rcFacViews: 0, rcClicks: 0, pcViews: 0, pcClicks: 0 };
+  }
+  rc.forEach(e => {
+    const day = e.ts?.substring(0, 10);
+    if (!dailyMap[day]) return;
+    if (e.event === "view") dailyMap[day].rcViews++;
+    if (e.event === "facility_view") dailyMap[day].rcFacViews++;
+    if (e.event === "book_click") dailyMap[day].rcClicks++;
+  });
+  pc.forEach(e => {
+    const day = e.ts?.substring(0, 10);
+    if (!dailyMap[day]) return;
+    if (e.event === "view") dailyMap[day].pcViews++;
+    if (e.event === "click") dailyMap[day].pcClicks++;
+  });
+  const daily = Object.entries(dailyMap).sort(([a],[b]) => a.localeCompare(b))
+    .map(([date, d]) => ({ date, ...d }));
+
+  const totalViews = rcPageViews + pcPageViews;
+  const totalDetailViews = rcFacViews + pcClicks;
+  const totalBookClicks = rcBookClicks;
+  const convPct = totalDetailViews > 0 ? Math.round(totalBookClicks / totalDetailViews * 100) : 0;
+
+  res.json({
+    days,
+    rental: { pageViews: rcPageViews, facilityViews: rcFacViews, bookClicks: rcBookClicks, convPct: rcFacViews > 0 ? Math.round(rcBookClicks / rcFacViews * 100) : 0 },
+    program: { pageViews: pcPageViews, sectionClicks: pcClicks },
+    totals: { pageViews: totalViews, detailViews: totalDetailViews, bookClicks: totalBookClicks, convPct },
+    topFacilities,
+    daily,
+  });
+});
+
 // ── POST /:org/api/track — generic calendar analytics tracking ──────
 app.post("/:org/api/track", express.json(), (req, res) => {
   const slug = req.params.org;

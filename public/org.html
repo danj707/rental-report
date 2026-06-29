@@ -158,6 +158,23 @@
       .metric-label { font-size: 8px; letter-spacing: 0.8px; }
     }
 
+    /* ── Calendar Analytics ── */
+    .cal-analytics-panel {
+      max-width: 700px; width: 100%; margin: 0 auto;
+      background: linear-gradient(135deg, #065f46 0%, #047857 40%, #059669 100%);
+      border-radius: 16px; padding: 18px 24px 8px; margin-bottom: 18px;
+      box-shadow: 0 4px 24px rgba(5,150,105,0.18);
+    }
+    .cal-analytics-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+    .cal-analytics-title { font-weight: 800; font-size: 15px; color: #fff; }
+    .cal-analytics-sub { font-size: 11px; color: rgba(255,255,255,0.6); }
+    .cal-analytics-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; padding-bottom: 14px; }
+    .cal-card { background: rgba(255,255,255,0.12); border-radius: 12px; padding: 14px 12px 10px; text-align: center; backdrop-filter: blur(4px); border: 1px solid rgba(255,255,255,0.08); }
+    .cal-card-val { font-size: 24px; font-weight: 800; color: #fff; line-height: 1.1; }
+    .cal-card-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: rgba(255,255,255,0.7); margin-top: 2px; }
+    .cal-card-sub { font-size: 10px; color: rgba(255,255,255,0.45); margin-top: 1px; }
+    @media (max-width: 600px) { .cal-analytics-grid { grid-template-columns: repeat(2, 1fr); } .cal-analytics-panel { padding: 12px 16px 0; } }
+
     /* ── Pulse executive summary ── */
     .pulse-panel {
       max-width: 700px;
@@ -318,6 +335,14 @@
   <div class="pulse-grid" id="pulse-grid"></div>
 </div>
 
+<div class="cal-analytics-panel" id="cal-analytics" style="display:none">
+  <div class="cal-analytics-header">
+    <span class="cal-analytics-title">📈 Calendar Performance</span>
+    <span class="cal-analytics-sub" id="cal-analytics-sub"></span>
+  </div>
+  <div class="cal-analytics-grid" id="cal-analytics-grid"></div>
+</div>
+
 <main class="main">
   <div class="section-label">Reports</div>
   <div class="cards" id="cards">
@@ -449,6 +474,41 @@
         + sparkHtml
       + '</div>';
     }).join('');
+  })();
+
+  /* ── Calendar Analytics ── */
+  (function() {
+    var reports = cfg.reports || [];
+    var hasCal = reports.indexOf('calendar') > -1 || reports.indexOf('rentalcalendar') > -1;
+    if (!hasCal) return;
+    var panel = document.getElementById('cal-analytics');
+    var grid = document.getElementById('cal-analytics-grid');
+    var sub = document.getElementById('cal-analytics-sub');
+    var url = '/' + slug + '/api/calendar-analytics?days=30';
+    if (cfg.token) url += '&token=' + encodeURIComponent(cfg.token);
+    fetch(url)
+      .then(function(r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+      .then(function(d) {
+        if (d.totals.pageViews === 0 && d.totals.detailViews === 0) return;
+        panel.style.display = 'block';
+        sub.textContent = 'Last ' + d.days + ' days';
+        var items = [
+          { val: d.totals.pageViews, label: 'Calendar Views', sub: 'page loads', trail: d.daily.map(function(x){return x.rcViews+x.pcViews;}) },
+          { val: d.totals.detailViews, label: 'Detail Views', sub: 'facility + section taps', trail: d.daily.map(function(x){return x.rcFacViews+x.pcClicks;}) },
+          { val: d.totals.bookClicks, label: 'Book Clicks', sub: 'outbound to rec.us', trail: d.daily.map(function(x){return x.rcClicks;}) },
+          { val: d.totals.convPct + '%', label: 'Conversion', sub: 'detail \u2192 book', trail: null },
+        ];
+        grid.innerHTML = items.map(function(it) {
+          var spark = it.trail ? sparkSVG(it.trail) : '';
+          return '<div class="cal-card">'
+            + '<div class="cal-card-val">' + it.val + '</div>'
+            + '<div class="cal-card-label">' + it.label + '</div>'
+            + '<div class="cal-card-sub">' + it.sub + '</div>'
+            + spark
+          + '</div>';
+        }).join('');
+      })
+      .catch(function(e) { console.warn('[cal-analytics]', e); });
   })();
 
   /* ── Render cards ── */
