@@ -2047,8 +2047,15 @@ function App() {
 
   const grouped = useMemo(() => {
     if (!filteredRows) return null;
+    // Belt-and-suspenders: in print mode, re-apply URL location filter directly
+    // to guard against React state timing issues
+    let finalRows = filteredRows;
+    if (params._print === '1' && params.locations) {
+      const allowed = new Set(params.locations.split(',').map(l => l.trim()));
+      finalRows = filteredRows.filter(r => allowed.has(r.location));
+    }
     const byDate = {};
-    filteredRows.forEach(row => {
+    finalRows.forEach(row => {
       const dk = row.date;
       if (!byDate[dk]) byDate[dk] = { locations: {} };
       const lk = row.location || 'Unknown';
