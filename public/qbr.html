@@ -783,7 +783,7 @@ function App() {
     }).catch(() => setData(MOCK)).finally(() => setLoading(false));
   };
   const openSaved = (id) => {
-    setReady(false); setLoading(true); setData(null);
+    setReady(false); setLoading(true); setData(null); setTab('generate');
     fetch('/qbr/api/saved/' + encodeURIComponent(id)).then(r => r.json()).then(d => {
       if (d && d.ok) { setData(d); setSavedId(d.savedId || id); window.scrollTo({ top: 0, behavior: 'smooth' }); }
     }).catch(() => {}).finally(() => setLoading(false));
