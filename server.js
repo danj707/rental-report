@@ -493,6 +493,7 @@ const SHARED_UUIDS = {
 // Report types that are valid system-wide but should NOT be offered in the
 // dashboard "+ Add report" flow (e.g. not yet ready for self-serve onboarding).
 const NON_ADDABLE_REPORTS = new Set(["overview", "program-demographics", "directors-report", "retention", "annual-report"]);
+const RENTAL_CALENDAR_ORGS = new Set(["watertown", "norman"]);
 
 // ── Dynamic orgs (added via dashboard UI) ────────────────────────────
 // Loaded at startup and merged into ORGS; also updated at runtime.
@@ -1082,7 +1083,7 @@ function buildMetrics(org, daysBack) {
 
   const configuredReports = REPORT_TYPES.filter(r => ORGS[org]?.[r]?.mbUuid || SHARED_UUIDS[r]);
   // Include non-Metabase reports that have their own routes (e.g. rentalcalendar)
-  if (org === 'watertown') configuredReports.push('rentalcalendar');
+  if (RENTAL_CALENDAR_ORGS.has(org)) configuredReports.push('rentalcalendar');
   return { summary, daily, subCounts, subByCadence, totalSubscribers: allSubs.length, insights, configuredReports };
 }
 
@@ -4769,7 +4770,7 @@ app.get("/:org", async (req, res, next) => {
   const orgHidden = new Set(getHiddenReports(slug));
   const available = allAvailable.filter(r => !orgHidden.has(r));
   // Rental calendar — non-Metabase, per-org opt-in
-  if (slug === 'watertown' && !orgHidden.has('rentalcalendar')) available.push('rentalcalendar');
+  if (RENTAL_CALENDAR_ORGS.has(slug) && !orgHidden.has('rentalcalendar')) available.push('rentalcalendar');
   const orgConfig = {
     slug,
     displayName: org.displayName || `${slugTitle} Parks & Recreation`,
@@ -5435,7 +5436,7 @@ app.get("/", (req, res) => {
   }).map(([slug, org]) => {
     const available    = REPORT_TYPES.filter(r => !NON_ADDABLE_REPORTS.has(r) && (org[r]?.mbUuid || SHARED_UUIDS[r]));
     // Rental calendar — non-Metabase, per-org opt-in
-    if (slug === 'watertown') available.push('rentalcalendar');
+    if (RENTAL_CALENDAR_ORGS.has(slug)) available.push('rentalcalendar');
     const slugTitle    = slug.charAt(0).toUpperCase() + slug.slice(1);
     const displayName  = org.displayName || `${slugTitle} Parks &amp; Recreation`;
     const tokenQS      = org.token ? `?token=${encodeURIComponent(org.token)}` : "";
