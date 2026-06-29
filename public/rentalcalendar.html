@@ -546,7 +546,6 @@ function BookingWizard({allTypes, allLocations, sites, onApply, resultCount}) {
   var chosenDate = dateState[0], setChosenDate = dateState[1];
   var openSt = useState(true);
   var isOpen = openSt[0], setIsOpen = openSt[1];
-  if (!isOpen) return null;
   var fbState = useState(null);
   var feedback = fbState[0], setFeedback = fbState[1];
   var pickerSt = useState(false);
@@ -576,6 +575,8 @@ function BookingWizard({allTypes, allLocations, sites, onApply, resultCount}) {
     sites.forEach(function(x) { if (x.type === chosenType && x.locationName) s.add(x.locationName); });
     return Array.from(s).sort();
   }, [chosenType, sites, allLocations]);
+
+  if (!isOpen) return null;
 
   function handleApply(loc) {
     setChosenLoc(loc || null);
