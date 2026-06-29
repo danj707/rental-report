@@ -166,7 +166,7 @@
       box-sizing: border-box;
       box-shadow: 0 2px 12px rgba(5,150,105,0.12);
     }
-    .cal-analytics-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+    .cal-analytics-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; padding: 0 4px; }
     .cal-analytics-title { font-weight: 800; font-size: 15px; color: #fff; }
     .cal-analytics-sub { font-size: 11px; color: rgba(255,255,255,0.6); }
     .cal-analytics-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; padding-bottom: 14px; }
@@ -492,10 +492,10 @@
       .then(function(d) {
         if (d.totals.pageViews === 0 && d.totals.detailViews === 0) return;
         panel.style.display = 'block';
-        // Match pulse panel width exactly
-        var pulseEl = document.getElementById('pulse-panel');
-        if (pulseEl && pulseEl.offsetWidth > 0) {
-          panel.style.maxWidth = pulseEl.offsetWidth + 'px';
+        // Match pulse card grid visible width (not the transparent wrapper)
+        var pulseGrid = document.getElementById('pulse-grid');
+        if (pulseGrid && pulseGrid.offsetWidth > 0) {
+          panel.style.maxWidth = pulseGrid.offsetWidth + 'px';
           panel.style.boxSizing = 'border-box';
         }
         sub.textContent = 'Last ' + d.days + ' days';
