@@ -1584,6 +1584,11 @@ app.use((req, res, next) => {
 app.use(dashboardAuth);
 app.use(express.json({ limit: "50mb" }));
 
+// ── Favicon ──
+const FAVICON_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><circle cx="16" cy="16" r="15" fill="#2d6a4f"/><text x="16" y="22" text-anchor="middle" font-family="system-ui,sans-serif" font-weight="700" font-size="20" fill="#fff">R</text></svg>';
+app.get("/favicon.ico", (req, res) => { res.type("image/svg+xml").send(FAVICON_SVG); });
+app.get("/favicon.svg", (req, res) => { res.type("image/svg+xml").send(FAVICON_SVG); });
+
 // ── Backup API routes ──
 app.post("/api/admin/backup", async (req, res) => {
   const result = await performBackup(true);
@@ -8352,6 +8357,7 @@ app.listen(PORT, () => {
   // Runs after listen() so startup isn't blocked by GitHub latency.
   migrateDynamicOrgs();
 });
+
 
 
 
