@@ -1212,6 +1212,9 @@ function getParams() {
   };
 }
 
+// Debug: log params so Railway logs show what Puppeteer receives
+console.log('[facility] params:', JSON.stringify(getParams()));
+
 function getCurrentMonthRange() {
   const now = new Date();
   const y = now.getFullYear(), m = now.getMonth();
@@ -2105,7 +2108,9 @@ function App() {
       ? `/${pathParts[1]}/${pathParts[2]}/api/pdf`
       : '/api/pdf';
 
+    console.log('[pdf-request]', `${pdfBase}?${qs.toString()}`);
     fetch(withToken(`${pdfBase}?${qs.toString()}`))
+
       .then(r => r.blob())
       .then(blob => {
         const a = document.createElement('a');
