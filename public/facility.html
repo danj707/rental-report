@@ -1245,6 +1245,21 @@ function formatTime(t) {
   return `${hr}:${parts[2]}${ampm}`;
 }
 
+function parseHour(t) {
+  if (!t) return null;
+  const s = t.trim().toLowerCase();
+  const ampm = s.match(/^(\d{1,2}):(\d{2})\s*(am|pm)$/);
+  if (ampm) {
+    let h = parseInt(ampm[1], 10);
+    const p = ampm[3];
+    if (p === 'am' && h === 12) h = 0;
+    else if (p === 'pm' && h !== 12) h += 12;
+    return h;
+  }
+  const parts = s.match(/^(\d{1,2}):/);
+  return parts ? parseInt(parts[1], 10) : null;
+}
+
 function formatDateHeader(dateStr) {
   const d = new Date(dateStr + (dateStr.includes('T') ? '' : 'T12:00:00'));
   const days = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
@@ -2568,6 +2583,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(<App />);
       <script src="/nav-breadcrumb.js" defer></script>
   </body>
 </html>
+
 
 
 
