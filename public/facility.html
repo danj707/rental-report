@@ -1627,6 +1627,15 @@ function AddOnFilter({ allAddOns, selectedAddOns, onChange }) {
 
 // ── Hover Card component ─────────────────────────────────────────────
 
+function heatColor(count, max) {
+  if (!count || !max) return '#f0ede8';
+  const t = Math.min(count / max, 1);
+  const r = Math.round(240 - t * 171);
+  const g = Math.round(237 - t * 114);
+  const b = Math.round(232 - t * 75);
+  return `rgb(${r},${g},${b})`;
+}
+
 function HeatmapStrip({ filteredRows, locationColors }) {
   const HOURS = Array.from({length:15}, (_,i) => i+7);
   const HOUR_LABELS = HOURS.map(h => h<=12 ? `${h}${h===12?'p':'a'}` : `${h-12}p`);
