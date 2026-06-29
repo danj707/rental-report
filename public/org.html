@@ -495,8 +495,8 @@
         var rcLabel = d.rental.pageViews > 0 && d.program.pageViews > 0 ? 'both calendars' : d.rental.pageViews > 0 ? 'rental calendar' : 'program calendar';
         var items = [
           { val: d.totals.pageViews.toLocaleString(), label: 'Page Views', sub: rcLabel, trail: d.daily.map(function(x){return x.rcViews+x.pcViews;}) },
-          { val: d.totals.detailViews.toLocaleString(), label: 'Engagement', sub: 'facility taps + section clicks', trail: d.daily.map(function(x){return x.rcFacViews+x.pcClicks;}) },
-          { val: d.totals.bookClicks.toLocaleString(), label: 'Book Now Taps', sub: 'rental calendar', trail: d.daily.map(function(x){return x.rcClicks;}) },
+          { val: d.totals.detailViews.toLocaleString(), label: 'Program Clicks', sub: 'section clicks + facility taps', trail: d.daily.map(function(x){return x.rcFacViews+x.pcClicks;}) },
+          { val: d.totals.bookClicks.toLocaleString(), label: 'Rental Clicks', sub: 'book now taps', trail: d.daily.map(function(x){return x.rcClicks;}) },
           { val: d.totals.convPct + '%', label: 'Conversion', sub: 'engagement \u2192 book', trail: null },
         ];
         grid.innerHTML = items.map(function(it) {

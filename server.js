@@ -1610,6 +1610,7 @@ app.use((req, res, next) => {
   // Calendar + rental calendar are public — no token required
   const segs = req.path.split("/").filter(Boolean);
   if (segs[1] === "calendar" || segs[1] === "rentalcalendar") return next();
+  if (segs[1] === "api" && (segs[2] === "track" || segs[2] === "calendar-analytics")) return next();
 
   if (!org.token) {                                 // fail closed: tokenless org must not be public
     return res.status(404).type("text/plain").send("Not found");
