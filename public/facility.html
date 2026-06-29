@@ -2098,8 +2098,8 @@ function App() {
     // Respect the current on-screen filter selections so the PDF matches exactly
     // what's shown. Mirrors the share-URL serialization; the print page reads
     // these back into selectedLocations/selectedSites on load.
-    if (selectedLocations) { const a = [...selectedLocations]; if (a.length) qs.set('locations', a.join(',')); }
-    if (selectedSites)     { const a = [...selectedSites];     if (a.length) qs.set('sites',     a.join(',')); }
+    if (selectedLocations && selectedLocations.size < allLocations.length) { qs.set('locations', [...selectedLocations].join(',')); }
+    if (selectedSites && selectedSites.size < allSites.length) { qs.set('sites', [...selectedSites].join(',')); }
     if (bookTypeFilter && bookTypeFilter !== 'all') qs.set('book_type', bookTypeFilter);
     if (selectedAddOns)    { const a = [...selectedAddOns];    if (a.length) qs.set('addons',    a.join(',')); }
 
