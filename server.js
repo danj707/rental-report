@@ -1584,10 +1584,10 @@ app.use((req, res, next) => {
 app.use(dashboardAuth);
 app.use(express.json({ limit: "50mb" }));
 
-// ── Favicon ──
-const FAVICON_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><circle cx="16" cy="16" r="15" fill="#2d6a4f"/><text x="16" y="22" text-anchor="middle" font-family="system-ui,sans-serif" font-weight="700" font-size="20" fill="#fff">R</text></svg>';
-app.get("/favicon.ico", (req, res) => { res.type("image/svg+xml").send(FAVICON_SVG); });
-app.get("/favicon.svg", (req, res) => { res.type("image/svg+xml").send(FAVICON_SVG); });
+// ── Favicon (rec.us logo) ──
+const FAVICON_BUF = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAEWUlEQVR4nO2XW4hWVRTHf2vvc87ndxnHZsa5SBYiKUgkGmXmGFI9ZFIU+RIUPSRC0IOIoEEvIojQBbpQoUXahYymJLMoqbCL+lA2CJmCjo6MzjiazjiX73yXs/fq4Yyic6lHe5j1dDhnsfdv7/Xf/7WPuAMNyg0McyMnnwSYBJgE+F8ABKNfqArOewCMEVDBqyIiWAPgQQWngqoCiojBmtTPBEFJn72CHxkLDIERkOt97yqACuAFGyg2nwFxEFdBPWQzUElwsUF9OpApeAgsIFBOcLGgYhFxKKDeEWYthBEYA64MRXAKMu4OeDBhQte5Ah/sAafCQ0syFKaEfPXLEK0LcyyZXwQNiJOI7/fB0VMlojDk3nk13L3A4UvDOBcQiEMKWY4cDdl/uMzFAcOslgIrlpbIZxzoOADqBYngVI/hxa1dgOeP47M5fOwSnef6yUVTOPhRC2GkPP1CH4eOFoEE8AgRzzzaxFsbcmTMAGWbZ8OWgK27eojLVdIZIw7saGDx7Z4kVowZTwMaEgYVAmsRgZOnh+k8N0gYhRQrFfbss7Tt7aX9xADN03IsX1ZPf5/j64MDbN99hqbaJrZsrGXt+jJvf9YNWFrqCsyZFXG8w1FxjJH9uCJMXFqT+5dmmXNrI5//fJ7lixrpvSi0nxikbtpUPnyphQcXeRBY9/IUXv/4DDt/KPJIax3bd/+NNcJ9Cwvs2FTHzKaErrOGbFhBKw4xZmKAa6OlUOHVNyLa25tYMC/HY+u6EQkpx2We2tBJXPIEgafqLNXEc7q7xLYvPZWkjPMZ1q9qZubNlyj1KTObHOpDvDMTiHCcqFbAUObO28pgHdWSBSrkC3kWz8sxXC4hXsgVIJeZRiBFCjUJTg3gCHwVVAi8BQ+iilGDiuPKWfhXIxIBRRiOASssmT8VVYsRYdPzjez9tJHv2hp49vHpzJpRw7bNzaxZmRCpYI1j03v9dHUXCGqEzgu1nL+cgSBBdZwSqKRQhpHjjWAMiHiCQNGiY/VKy/bdWTp6hmhd1cHDi2uIS4ZvD/ZRqlY4cbKRne/UsvqJet5s6+WnQ4MserLE3NkZ/uoYom1zA40toIPp4saWQKCaQOI8oAyX0nci4KpKY33Mrtem89zGiP1HBvhk74Wr61h+z01sXJMnGerllbX1GNvMu1/009MX0/N7DAREFvBwrRHIlTuhqmAiONttef8bcMADCyJa74pxJYeRAOc9YVaplmv48bcqf3akR/aOuSHLFhrEXKZSDghNgmRrOHJM+LU9oX9AuWVGyIpWRyEbgzdjARgBMwGQv2KxDl+63ju9B2s8kjdg7YhaFV9M8BisgFdB1RFkFaJMKjWtQtHh/fWyG1MCl4C75IDUws0omRoDHoMfBHyqZhEQazAjmyuSNqgkFnwxARwCGBMgEzWjqwwCQXBtkoxOQSDtjP/RzI2B9NTbCXMm8IGxk04c//ZbMfrb2NwbfiGZBJgEmAT4B/ajz479nqqPAAAAAElFTkSuQmCC", "base64");
+app.get("/favicon.ico", (req, res) => { res.type("image/png").send(FAVICON_BUF); });
+app.get("/favicon.png", (req, res) => { res.type("image/png").send(FAVICON_BUF); });
 
 // ── Backup API routes ──
 app.post("/api/admin/backup", async (req, res) => {
