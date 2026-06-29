@@ -196,8 +196,7 @@
   .qbr-head { display:flex; align-items:flex-start; justify-content:space-between; margin-bottom:18px; gap:16px; }
   .qbr-head h1 { font-family:'Fraunces',serif; font-size:24px; font-weight:600; color:var(--ink); margin:0; letter-spacing:-.01em; }
   .qbr-head .sub { font-size:12.5px; color:var(--faint); margin-top:3px; }
-  .back-link { font-size:12.5px; color:var(--emerald); text-decoration:none; font-weight:600; white-space:nowrap; padding-top:4px; }
-  .back-link:hover { text-decoration:underline; }
+
   .stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(132px,1fr)); gap:11px; margin-bottom:18px; }
   .stat { background:var(--paper); border:1px solid var(--line); border-radius:12px; padding:13px 15px; }
   .stat-num { font-family:'Fraunces',serif; font-size:26px; font-weight:600; color:var(--ink); line-height:1; font-variant-numeric:tabular-nums; }
@@ -843,7 +842,6 @@ function App() {
           <h1>Quarterly Business Review</h1>
           <div className="sub">Cross-org partner reviews {'\u2014'} generate, save, and share</div>
         </div>
-        <a className="back-link" href="/">{'\u2190'} Dashboard</a>
       </div>
 
       <div className="tabs">
