@@ -1289,6 +1289,7 @@ function normalizeRow(raw) {
     resident:  raw['Resident?'] || raw['Resident']  || raw['resident']   || '',
     bookingType: raw['Booking Type'] || raw['booking_type'] || raw['bookingType'] || '',
     total:     raw['Total']     || raw['total']      || null,
+    status:    raw['Status']    || raw['status']     || '',
   };
 }
 
@@ -2025,7 +2026,7 @@ function App() {
 
   const filteredRows = useMemo(() => {
     if (!rows) return null;
-    let result = rows;
+    let result = rows.filter(r => !r.status || !/cancel/i.test(r.status));
     if (selectedLocations && selectedLocations.size < allLocations.length) {
       result = result.filter(r => selectedLocations.has(r.location));
     }
@@ -2546,7 +2547,7 @@ function App() {
           <span>Run Date/Time: {runDate}</span>
         </div>
 
-        <div id="report-ready" style={{display:'none'}} />
+        {filteredRows && !loading && <div id="report-ready" style={{display:'none'}} />}
       </div>
     </div>
   );
