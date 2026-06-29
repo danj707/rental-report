@@ -1210,6 +1210,10 @@ async function generatePdf(orgSlug, reportType, startDate, endDate, filters = {}
   });
   try {
     const page = await browser.newPage();
+    page.on('console', msg => {
+      const text = msg.text();
+      if (text.includes('[filter') || text.includes('[facility]')) console.log('[pdf-page]', text);
+    });
     const isGL = reportType === "gl";
     // GL table is very wide — render at 1600px so layout is natural, then scale to fit Letter landscape.
     if (isGL) {

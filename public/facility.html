@@ -1893,7 +1893,11 @@ function App() {
           if (prev === null) {
             // Respect shared URL locations param
             if (params.locations) {
-              const shared = params.locations.split(',').map(l => l.trim()).filter(l => locs.includes(l));
+              const requested = params.locations.split(',').map(l => l.trim());
+              const shared = requested.filter(l => locs.includes(l));
+              console.log('[filter-init] params.locations:', params.locations);
+              console.log('[filter-init] requested:', requested.length, 'shared:', shared.length, 'dataLocs:', locs.length);
+              if (shared.length === 0 && requested.length > 0) console.warn('[filter-init] NO MATCH! requested:', requested.slice(0,3), 'dataLocs:', locs.slice(0,3));
               if (shared.length > 0) return new Set(shared);
             }
             const defaultLoc = window.ORG_CONFIG?.defaultLocationFilter;
