@@ -121,7 +121,7 @@ button.primary:hover{filter:brightness(.95)}
 .bar-block.closed{background:var(--closed);border:1px solid #d1d5db}
 .bar-block.past{background:#f3f4f6;border:1px solid #e5e7eb}
 .bar-block .blabel{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
-  font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.02em;overflow:hidden;white-space:nowrap}
+  font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.03em;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;padding:0 4px}
 .bar-block.reserved .blabel{color:var(--reserved-dark)}
 .bar-block.closed .blabel{color:var(--closed-dark)}
 .bar-gridline{position:absolute;top:0;bottom:0;width:1px;background:rgba(0,0,0,.18);z-index:1}
@@ -446,8 +446,7 @@ function TimelineBar({avail, dateStr, opStart, opEnd, siteOpStart, siteOpEnd}) {
           : timeRange;
         return (
           <div key={i} className={'bar-block ' + b.type} style={{left: l+'%', width: w+'%'}} title={hoverTip}>
-            {b.type === 'reserved' && w > 6 && <div className="blabel">{w > 18 ? 'Reserved ' + timeRange : 'Reserved'}</div>}
-            {b.type === 'reserved' && w > 5 && w <= 12 && <div className="blabel" style={{fontSize:8}}>{timeRange}</div>}
+            {b.type === 'reserved' && w > 4 && <div className="blabel">{w > 20 ? 'Reserved ' + timeRange : w > 10 ? 'Reserved' : ''}</div>}
             {b.type === 'closed' && w > 10 && <div className="blabel">{(b.s >= 6*60 && b.e <= 22*60) ? 'Unavailable' : 'Closed'}</div>}
           </div>
         );
@@ -833,6 +832,8 @@ function App() {
   // ── Filters ──
   var typeFilterState = useState(null);
   var selectedTypes = typeFilterState[0], setSelectedTypes = typeFilterState[1];
+  var bookFilterState = useState('all');
+  var bookFilter = bookFilterState[0], setBookFilter = bookFilterState[1];
   var locFilterState = useState(null);
   var selectedLocs = locFilterState[0], setSelectedLocs = locFilterState[1];
   var modalState = useState(null);
@@ -872,9 +873,10 @@ function App() {
     return sites.filter(function(s) {
       if (selectedTypes && allTypes.length > 0 && selectedTypes.size < allTypes.length && !selectedTypes.has(s.type)) return false;
       if (selectedLocs && allLocations.length > 0 && selectedLocs.size < allLocations.length && !selectedLocs.has(s.locationName)) return false;
+      if (bookFilter !== 'all') { if (bookFilter === 'instant' && !s.isInstantBookable) return false; if (bookFilter === 'request' && s.isInstantBookable) return false; }
       return true;
     });
-  }, [sites, selectedTypes, selectedLocs, allTypes, allLocations]);
+  }, [sites, selectedTypes, selectedLocs, allTypes, allLocations, bookFilter]);
 
   // Precache site thumbnails so they load instantly when groups expand
   useEffect(function() {
@@ -996,6 +998,15 @@ function App() {
               </div>
             </div>
           )}
+          <div className="filter-row">
+            <span className="filter-label">Booking</span>
+            <div className="filter-pills">
+              {[{k:'all',l:'All'},{k:'instant',l:'⚡ Instant Book'},{k:'request',l:'📋 Request'}].map(function(o){
+                return <button key={o.k} className={'pill' + (bookFilter===o.k?' active':'')}
+                  onClick={function(){setBookFilter(o.k);}}>{o.l}</button>;
+              })}
+            </div>
+          </div>
         </div>
       )}
       {filteredSites.length === 0 && sites && sites.length > 0 && (
