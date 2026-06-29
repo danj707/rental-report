@@ -1188,12 +1188,6 @@ async function generatePdf(orgSlug, reportType, startDate, endDate, filters = {}
   ["locations", "sites", "location_name", "site_type", "desks", "by_desk", "by_item", "hide_zero", "chart_net", "metric", "programs", "closures", "hrs", "section_name", "status", "questions", "cols", "search", "tab", "instructor", "split", "book_type", "addons"].forEach(k => {
     if (filters[k]) qsObj[k] = filters[k];
   });
-  // Convert client-side locations filter to server-side Metabase location_name
-  // so the query itself returns only filtered data — then drop the client param
-  if (qsObj.locations && !qsObj.location_name) {
-    qsObj.location_name = qsObj.locations;
-  }
-  delete qsObj.locations;  // Don't confuse client-side filter
   if (orgTok) qsObj.token = orgTok;
   const qs = new URLSearchParams(qsObj);
   const url = `http://localhost:${PORT}/${orgSlug}/${reportType}?${qs}`;
@@ -1223,8 +1217,8 @@ async function generatePdf(orgSlug, reportType, startDate, endDate, filters = {}
     }
     await page.goto(url, { waitUntil: "networkidle0", timeout: 60000 });
     await page.waitForSelector("#report-ready", { timeout: 30000 });
-    // Safety: wait for React to finish rendering filtered data
-    await new Promise(r => setTimeout(r, 1500));
+    // Wait for React to fully apply client-side filters before capture
+    await new Promise(r => setTimeout(r, 3000));
     return await page.pdf({
       format: "Letter",
       landscape: true,
