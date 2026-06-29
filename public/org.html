@@ -493,12 +493,12 @@
         if (d.totals.pageViews === 0 && d.totals.detailViews === 0) return;
         panel.style.display = 'block';
         sub.textContent = 'Last ' + d.days + ' days';
-        var rcLabel = d.rental.pageViews > 0 && d.program.pageViews > 0 ? 'both calendars' : d.rental.pageViews > 0 ? 'rental calendar' : 'program calendar';
+        var fmtMoney = function(n) { return '$' + n.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ','); };
         var items = [
-          { val: d.totals.pageViews.toLocaleString(), label: 'Page Views', sub: rcLabel, trail: d.daily.map(function(x){return x.rcViews+x.pcViews;}) },
-          { val: d.totals.detailViews.toLocaleString(), label: 'Program Clicks', sub: 'section clicks + facility taps', trail: d.daily.map(function(x){return x.rcFacViews+x.pcClicks;}) },
-          { val: d.totals.bookClicks.toLocaleString(), label: 'Rental Clicks', sub: 'book now taps', trail: d.daily.map(function(x){return x.rcClicks;}) },
-          { val: d.totals.convPct + '%', label: 'Conversion', sub: 'engagement \u2192 book', trail: null },
+          { val: d.totals.pageViews.toLocaleString(), label: 'Calendar Views', sub: 'both calendars', trail: d.daily.map(function(x){return x.rcViews+x.pcViews;}) },
+          { val: d.totals.detailViews.toLocaleString(), label: 'Engagement', sub: 'clicks + taps', trail: d.daily.map(function(x){return x.rcFacViews+x.pcClicks;}) },
+          { val: (d.totals.bookings || 0).toLocaleString(), label: 'Bookings', sub: 'confirmed rentals', trail: null },
+          { val: fmtMoney(d.totals.revenue || 0), label: 'Revenue', sub: 'attributed rental $', trail: null },
         ];
         grid.innerHTML = items.map(function(it) {
           var spark = it.trail ? sparkSVG(it.trail) : '';

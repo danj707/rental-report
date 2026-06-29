@@ -4361,7 +4361,7 @@ app.get("/:org/rentalcalendar/api/availability/:siteId", async (req, res) => {
   res.json({ data });
 });
 // ── GET /:org/api/calendar-analytics — aggregate calendar funnel metrics ──
-app.get("/:org/api/calendar-analytics", (req, res) => {
+app.get("/:org/api/calendar-analytics", async (req, res) => {
   const slug = req.params.org;
   const org = ORGS[slug];
   if (!org) return res.status(404).json({ error: "Unknown org" });
@@ -4425,11 +4425,28 @@ app.get("/:org/api/calendar-analytics", (req, res) => {
   const totalBookClicks = rcBookClicks;
   const convPct = totalDetailViews > 0 ? Math.round(totalBookClicks / totalDetailViews * 100) : 0;
 
+  // ── Fetch actual bookings + revenue from Metabase facility data ──
+  let bookings = 0, revenue = 0;
+  try {
+    const now = new Date();
+    const endDate = now.toISOString().slice(0, 10);
+    const startDate = new Date(now - days * 86400000).toISOString().slice(0, 10);
+    const facRows = await fetchMBDirect(slug, "facility", startDate, endDate);
+    if (facRows && Array.isArray(facRows)) {
+      bookings = facRows.length;
+      facRows.forEach(r => {
+        const t = parseFloat(r["Total"] || r["total"] || r["Revenue"] || r["revenue"] || 0);
+        if (!isNaN(t)) revenue += t;
+      });
+      revenue = Math.round(revenue * 100) / 100;
+    }
+  } catch (e) { console.warn("[cal-analytics] Metabase fetch error:", e.message); }
+
   res.json({
     days,
     rental: { pageViews: rcPageViews, facilityViews: rcFacViews, bookClicks: rcBookClicks, convPct: rcFacViews > 0 ? Math.round(rcBookClicks / rcFacViews * 100) : 0 },
     program: { pageViews: pcPageViews, sectionClicks: pcClicks },
-    totals: { pageViews: totalViews, detailViews: totalDetailViews, bookClicks: totalBookClicks, convPct },
+    totals: { pageViews: totalViews, detailViews: totalDetailViews, bookClicks: totalBookClicks, convPct, bookings, revenue },
     topFacilities,
     daily,
   });
