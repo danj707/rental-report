@@ -1212,9 +1212,6 @@ function getParams() {
   };
 }
 
-// Debug: log params so Railway logs show what Puppeteer receives
-console.log('[facility] params:', JSON.stringify(getParams()));
-
 function getCurrentMonthRange() {
   const now = new Date();
   const y = now.getFullYear(), m = now.getMonth();
@@ -1893,15 +1890,7 @@ function App() {
           if (prev === null) {
             // Respect shared URL locations param
             if (params.locations) {
-              const requested = params.locations.split(',').map(l => l.trim());
-              const shared = requested.filter(l => locs.includes(l));
-              console.log('[filter-init] params.locations:', params.locations);
-              console.log('[filter-init] requested:', requested.length, 'shared:', shared.length, 'dataLocs:', locs.length);
-              if (shared.length < requested.length) {
-                var missing = requested.filter(function(r) { return !locs.includes(r); });
-                console.warn('[filter-init] MISMATCH! missing:', JSON.stringify(missing));
-                console.warn('[filter-init] dataLocs:', JSON.stringify(locs));
-              }
+              const shared = params.locations.split(',').map(l => l.trim()).filter(l => locs.includes(l));
               if (shared.length > 0) return new Set(shared);
             }
             const defaultLoc = window.ORG_CONFIG?.defaultLocationFilter;
@@ -2116,7 +2105,6 @@ function App() {
       ? `/${pathParts[1]}/${pathParts[2]}/api/pdf`
       : '/api/pdf';
 
-    console.log('[pdf-request]', `${pdfBase}?${qs.toString()}`);
     fetch(withToken(`${pdfBase}?${qs.toString()}`))
 
       .then(r => r.blob())
