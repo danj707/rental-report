@@ -498,6 +498,10 @@ function FacRow({site, avail, dateStr, opStart, opEnd, siteAvailAll, onSiteClick
           <div className="fname">{site.courtNumber || site.name}</div>
           <div className="fmeta">{metaLine}</div>
           {detailLine && <div className="fmeta" style={{color:'#4b5563'}}>{detailLine}</div>}
+          <span style={{display:'inline-block',marginTop:2,fontSize:9,fontWeight:700,padding:'1px 6px',borderRadius:4,
+            background:isInstant?'#dcfce7':'#dbeafe',color:isInstant?'#166534':'#1e40af'}}>
+            {isInstant ? '⚡ Instant Book' : '📋 Request'}
+          </span>
         </div>
       </div>
       <TimelineBar avail={avail} dateStr={dateStr} opStart={opStart} opEnd={opEnd} siteOpStart={siteOp.start} siteOpEnd={siteOp.end}/>
@@ -525,11 +529,7 @@ function SiteGroup({type, sites, availMap, dateStr, opStart, opEnd, allAvail, on
         <span className={'gcount ' + (availCount > 0 ? 'has-avail' : 'all-booked')}>
           {availCount} of {sites.length} available
         </span>
-        <a className="book-sm secondary" href={firstSite.bookingUrl} target="_blank" rel="noopener"
-           onClick={function(){trackCalendarEvent('book_click',firstSite.name,{siteId:firstSite.id,inline:true});}}
-           onClick={function(e){e.stopPropagation();}}>
-          {firstSite.isInstantBookable ? 'Book' : 'Request'}
-        </a>
+
         <span className={'garrow' + (isOpen ? ' open' : '')}>{'\u25B6'}</span>
       </div>
       {isOpen && sites.map(function(s) {
