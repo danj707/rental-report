@@ -113,8 +113,8 @@ button.primary:hover{filter:brightness(.95)}
 .book-sm:hover{filter:brightness(.9);background:var(--accent)}
 .book-sm.secondary{background:#fff;color:var(--accent);border:1px solid var(--accent)}
 .book-sm.secondary:hover{background:#eff6ff}
-.fac-bar{flex:1;padding:6px 12px 6px 0;display:flex;align-items:center}
-.bar-track{position:relative;width:100%;height:32px;background:#f8f9fa;border-radius:5px;overflow:hidden;border:1px solid #e0e2e6}
+.fac-bar{flex:1;min-height:0;padding:6px 12px 6px 0;display:flex;align-items:center}
+.bar-track{position:relative;width:100%;height:72px;background:#f8f9fa;border-radius:5px;overflow:hidden;border:1px solid #e0e2e6}
 .bar-block{position:absolute;top:2px;bottom:2px;border-radius:3px}
 .bar-block.avail{background:#bbf7d0;border:1px solid #86efac}
 .bar-block.reserved{background:var(--reserved);border:1px solid #fdba74}
@@ -127,6 +127,8 @@ button.primary:hover{filter:brightness(.95)}
 .bar-gridline{position:absolute;top:0;bottom:0;width:1px;background:rgba(0,0,0,.18);z-index:1}
 .bar-gridline.half{background:rgba(0,0,0,.10)}
 .bar-now{position:absolute;top:-3px;bottom:-3px;width:2.5px;background:#dc2626;border-radius:1px;z-index:5}
+.global-now{position:absolute;top:0;bottom:0;width:2px;background:#dc2626;z-index:15;pointer-events:none}
+.global-now::before{content:'Now';position:absolute;top:-16px;left:50%;transform:translateX(-50%);font-size:8px;color:#dc2626;font-weight:700;white-space:nowrap}
 .bar-now::before{content:'';position:absolute;top:-3px;left:-3px;width:8px;height:8px;border-radius:50%;background:#ef4444}
 .bar-timelabel{position:absolute;top:1px;transform:translateX(-50%);font-size:8.5px;color:rgba(0,0,0,.38);z-index:2;pointer-events:none;font-variant-numeric:tabular-nums;font-weight:500}
 .group-hdr{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--line);
@@ -403,6 +405,7 @@ function TimeRuler({opStart, opEnd}) {
           if (pct < 0 || pct > 100) return null;
           return <div key={h} className="tr-tick" style={{left: pct + '%'}}>{minToLabel(h*60)}</div>;
         })}
+        {(function(){ var n=new Date(),nMin=n.getHours()*60+n.getMinutes(),nPct=((nMin-opStart)/(opEnd-opStart))*100; return nPct>0&&nPct<100 ? <div className="global-now" style={{left:nPct+'%'}}/> : null; })()}
       </div>
     </div>
   );
