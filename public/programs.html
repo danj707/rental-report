@@ -1061,8 +1061,11 @@ function App() {
       if (!map[r.programName]) map[r.programName] = [];
       map[r.programName].push(r);
     });
-    if (!search.trim()) return map;
-    const q = search.trim().toLowerCase();
+    // Belt-and-suspenders: in print mode, read search from URL directly
+    const isPrint = new URLSearchParams(window.location.search).get('_print') === '1';
+    const urlSearch = new URLSearchParams(window.location.search).get('search');
+    const q = (isPrint && urlSearch ? urlSearch : search).trim().toLowerCase();
+    if (!q) return map;
     const filtered = {};
     Object.entries(map).forEach(([prog, sections]) => {
       if (prog.toLowerCase().includes(q)) filtered[prog] = sections;

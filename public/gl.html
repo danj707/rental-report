@@ -935,6 +935,12 @@ function App() {
   // For orgs without a desk dimension this is a no-op (displayRows === rows).
   const displayRows = useMemo(() => {
     if (!rows) return [];
+    // Belt-and-suspenders: in print mode, apply desk filter from URL directly
+    if (params._print === '1' && params.desks) {
+      const allowed = new Set(params.desks.split(',').map(d => d.trim()));
+      const filtered = rows.filter(r => allowed.has(r.deskLocation || NO_DESK_LABEL));
+      return aggregateByGlCode(filtered);
+    }
     if (!hasDesk) return rows;
     const sel = selectedDesks || new Set(allDesks);
     const filtered = rows.filter(r => sel.has(r.deskLocation || NO_DESK_LABEL));

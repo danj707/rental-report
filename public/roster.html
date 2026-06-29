@@ -606,12 +606,17 @@ function App() {
 
   const displayRows = useMemo(() => {
     if (!rows) return [];
-    const secLower = sectionFilter.trim().toLowerCase();
+    // Belt-and-suspenders: in print mode, apply filters from URL directly
+    const isPrint = new URLSearchParams(window.location.search).get('_print') === '1';
+    const urlSection = new URLSearchParams(window.location.search).get('section_name');
+    const urlStatus = new URLSearchParams(window.location.search).get('status');
+    const secLower = (isPrint && urlSection ? urlSection : sectionFilter).trim().toLowerCase();
+    const statFilter = (isPrint && urlStatus ? urlStatus : statusFilter);
     return rows.filter(r => {
       const statusOk =
-        statusFilter === 'all' ||
-        (statusFilter === 'enrolled'  && r.status === 'Enrolled') ||
-        (statusFilter === 'cancelled' && r.status === 'Cancelled');
+        statFilter === 'all' || !statFilter ||
+        (statFilter === 'enrolled'  && r.status === 'Enrolled') ||
+        (statFilter === 'cancelled' && r.status === 'Cancelled');
       const sectionOk = !secLower || r.section.toLowerCase().includes(secLower);
       return statusOk && sectionOk;
     });
