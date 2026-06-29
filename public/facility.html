@@ -2552,7 +2552,7 @@ function App() {
           <span>Run Date/Time: {runDate}</span>
         </div>
 
-        {filteredRows && !loading && <div id="report-ready" style={{display:'none'}} />}
+        {filteredRows && !loading && <div id="report-ready" data-ready="true" style={{display:'none'}} />}
       </div>
     </div>
   );

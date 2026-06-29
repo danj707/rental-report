@@ -1222,6 +1222,13 @@ async function generatePdf(orgSlug, reportType, startDate, endDate, filters = {}
     }
     await page.goto(url, { waitUntil: "networkidle0", timeout: 60000 });
     await page.waitForSelector("#report-ready", { timeout: 30000 });
+    // Give React one more paint cycle to ensure filtered render is committed
+    await page.waitForFunction(() => {
+      const el = document.getElementById('report-ready');
+      return el && el.dataset.ready === 'true';
+    }, { timeout: 10000 }).catch(() => {});
+    // Safety: wait 500ms for any final re-renders
+    await new Promise(r => setTimeout(r, 500));
     return await page.pdf({
       format: "Letter",
       landscape: true,
