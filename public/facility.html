@@ -1897,7 +1897,11 @@ function App() {
               const shared = requested.filter(l => locs.includes(l));
               console.log('[filter-init] params.locations:', params.locations);
               console.log('[filter-init] requested:', requested.length, 'shared:', shared.length, 'dataLocs:', locs.length);
-              if (shared.length === 0 && requested.length > 0) console.warn('[filter-init] NO MATCH! requested:', requested.slice(0,3), 'dataLocs:', locs.slice(0,3));
+              if (shared.length < requested.length) {
+                var missing = requested.filter(function(r) { return !locs.includes(r); });
+                console.warn('[filter-init] MISMATCH! missing:', JSON.stringify(missing));
+                console.warn('[filter-init] dataLocs:', JSON.stringify(locs));
+              }
               if (shared.length > 0) return new Set(shared);
             }
             const defaultLoc = window.ORG_CONFIG?.defaultLocationFilter;
