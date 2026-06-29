@@ -1188,6 +1188,11 @@ async function generatePdf(orgSlug, reportType, startDate, endDate, filters = {}
   ["locations", "sites", "location_name", "site_type", "desks", "by_desk", "by_item", "hide_zero", "chart_net", "metric", "programs", "closures", "hrs", "section_name", "status", "questions", "cols", "search", "tab", "instructor", "split", "book_type", "addons"].forEach(k => {
     if (filters[k]) qsObj[k] = filters[k];
   });
+  // Map client-side locations filter → server-side location_name Metabase param
+  // so the query itself returns only filtered data (not relying on client JS)
+  if (qsObj.locations && !qsObj.location_name) {
+    qsObj.location_name = qsObj.locations;
+  }
   if (orgTok) qsObj.token = orgTok;
   const qs = new URLSearchParams(qsObj);
   const url = `http://localhost:${PORT}/${orgSlug}/${reportType}?${qs}`;
