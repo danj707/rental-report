@@ -158,23 +158,23 @@
       .metric-label { font-size: 8px; letter-spacing: 0.8px; }
     }
 
-    /* ── Calendar Analytics ── */
+    /* ── Calendar Analytics (matches pulse-panel pattern) ── */
     .cal-analytics-panel {
-      max-width: 700px; width: 100%; margin: 0 auto 18px;
-      background: linear-gradient(135deg, #065f46 0%, #047857 40%, #059669 100%);
-      border-radius: 16px; padding: 16px 24px 0;
-      box-sizing: border-box;
-      box-shadow: 0 2px 12px rgba(5,150,105,0.12);
+      max-width: 700px; width: 100%; margin: 0 auto;
+      padding: 16px 24px 0;
     }
-    .cal-analytics-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; padding: 0 4px; }
-    .cal-analytics-title { font-weight: 800; font-size: 15px; color: #fff; }
-    .cal-analytics-sub { font-size: 11px; color: rgba(255,255,255,0.6); }
-    .cal-analytics-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; padding-bottom: 14px; }
-    .cal-card { background: rgba(255,255,255,0.12); border-radius: 12px; padding: 14px 12px 10px; text-align: center; backdrop-filter: blur(4px); border: 1px solid rgba(255,255,255,0.08); }
-    .cal-card-val { font-size: 24px; font-weight: 800; color: #fff; line-height: 1.1; }
-    .cal-card-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: rgba(255,255,255,0.7); margin-top: 2px; }
-    .cal-card-sub { font-size: 10px; color: rgba(255,255,255,0.45); margin-top: 1px; }
-    @media (max-width: 600px) { .cal-analytics-grid { grid-template-columns: repeat(2, 1fr); } .cal-analytics-panel { padding: 12px 16px 0; } }
+    .cal-analytics-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+    .cal-analytics-title { font-weight: 800; font-size: 15px; color: #065f46; }
+    .cal-analytics-sub { font-size: 11px; color: #6b7280; }
+    .cal-analytics-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+    .cal-card {
+      background: linear-gradient(135deg, #064e3b 0%, #047857 100%);
+      border-radius: 8px; padding: 10px 12px; text-align: center;
+    }
+    .cal-card-val { font-size: 17px; font-weight: 700; color: #fff; line-height: 1.1; }
+    .cal-card-label { font-size: 9px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.7px; color: #6ee7b7; margin-top: 2px; }
+    .cal-card-sub { font-size: 9px; color: rgba(110,231,183,0.65); margin-top: 1px; }
+    @media (max-width: 480px) { .cal-analytics-panel { padding: 12px 16px 0; } .cal-analytics-grid { grid-template-columns: repeat(2, 1fr); gap: 6px; } .cal-card-val { font-size: 15px; } }
 
     /* ── Pulse executive summary ── */
     .pulse-panel {
@@ -492,12 +492,6 @@
       .then(function(d) {
         if (d.totals.pageViews === 0 && d.totals.detailViews === 0) return;
         panel.style.display = 'block';
-        // Match pulse card grid visible width (not the transparent wrapper)
-        var pulseGrid = document.getElementById('pulse-grid');
-        if (pulseGrid && pulseGrid.offsetWidth > 0) {
-          panel.style.maxWidth = pulseGrid.offsetWidth + 'px';
-          panel.style.boxSizing = 'border-box';
-        }
         sub.textContent = 'Last ' + d.days + ' days';
         var rcLabel = d.rental.pageViews > 0 && d.program.pageViews > 0 ? 'both calendars' : d.rental.pageViews > 0 ? 'rental calendar' : 'program calendar';
         var items = [
