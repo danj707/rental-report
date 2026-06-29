@@ -177,12 +177,14 @@ const ORG_SLUG = CFG.slug || window.location.pathname.split('/').filter(Boolean)
 
 // Analytics tracking — fire-and-forget
 function trackCalendarEvent(type, entity, meta) {
+  console.log('[track]', type, entity, meta);
   try {
     fetch('/' + ORG_SLUG + '/api/track', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({ type: type, source: 'rentalcalendar', entity: entity || null, meta: meta || {} })
-    }).catch(function(){});
-  } catch(e) {}
+    }).then(function(r){ console.log('[track] response:', r.status); })
+     .catch(function(e){ console.error('[track] error:', e); });
+  } catch(e) { console.error('[track] exception:', e); }
 }
 const LOCATION_ID = new URLSearchParams(window.location.search).get('locationId') || CFG.locationId || '';
 const EMBED = new URLSearchParams(window.location.search).get('embed') === '1';
