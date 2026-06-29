@@ -160,9 +160,9 @@
 
     /* ── Calendar Analytics ── */
     .cal-analytics-panel {
-      max-width: 700px; width: 100%; margin: 0 auto;
+      max-width: 700px; width: 100%; margin: 0 auto 18px;
       background: linear-gradient(135deg, #065f46 0%, #047857 40%, #059669 100%);
-      border-radius: 16px; padding: 18px 24px 8px; margin-bottom: 18px;
+      border-radius: 16px; padding: 16px 24px 0; box-sizing: border-box;
       box-shadow: 0 4px 24px rgba(5,150,105,0.18);
     }
     .cal-analytics-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
@@ -492,11 +492,12 @@
         if (d.totals.pageViews === 0 && d.totals.detailViews === 0) return;
         panel.style.display = 'block';
         sub.textContent = 'Last ' + d.days + ' days';
+        var rcLabel = d.rental.pageViews > 0 && d.program.pageViews > 0 ? 'both calendars' : d.rental.pageViews > 0 ? 'rental calendar' : 'program calendar';
         var items = [
-          { val: d.totals.pageViews, label: 'Calendar Views', sub: 'page loads', trail: d.daily.map(function(x){return x.rcViews+x.pcViews;}) },
-          { val: d.totals.detailViews, label: 'Detail Views', sub: 'facility + section taps', trail: d.daily.map(function(x){return x.rcFacViews+x.pcClicks;}) },
-          { val: d.totals.bookClicks, label: 'Book Clicks', sub: 'outbound to rec.us', trail: d.daily.map(function(x){return x.rcClicks;}) },
-          { val: d.totals.convPct + '%', label: 'Conversion', sub: 'detail \u2192 book', trail: null },
+          { val: d.totals.pageViews.toLocaleString(), label: 'Page Views', sub: rcLabel, trail: d.daily.map(function(x){return x.rcViews+x.pcViews;}) },
+          { val: d.totals.detailViews.toLocaleString(), label: 'Engagement', sub: 'facility taps + section clicks', trail: d.daily.map(function(x){return x.rcFacViews+x.pcClicks;}) },
+          { val: d.totals.bookClicks.toLocaleString(), label: 'Book Now Taps', sub: 'rental calendar', trail: d.daily.map(function(x){return x.rcClicks;}) },
+          { val: d.totals.convPct + '%', label: 'Conversion', sub: 'engagement \u2192 book', trail: null },
         ];
         grid.innerHTML = items.map(function(it) {
           var spark = it.trail ? sparkSVG(it.trail) : '';
