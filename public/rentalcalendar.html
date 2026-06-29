@@ -446,9 +446,9 @@ function TimelineBar({avail, dateStr, opStart, opEnd, siteOpStart, siteOpEnd}) {
           : timeRange;
         return (
           <div key={i} className={'bar-block ' + b.type} style={{left: l+'%', width: w+'%'}} title={hoverTip}>
-            {b.type === 'reserved' && w > 12 && <div className="blabel">{timeRange}</div>}
+            {b.type === 'reserved' && w > 6 && <div className="blabel">{w > 18 ? 'Reserved ' + timeRange : 'Reserved'}</div>}
             {b.type === 'reserved' && w > 5 && w <= 12 && <div className="blabel" style={{fontSize:8}}>{timeRange}</div>}
-            {b.type === 'closed' && w > 10 && <div className="blabel">Closed</div>}
+            {b.type === 'closed' && w > 10 && <div className="blabel">{(b.s >= 6*60 && b.e <= 22*60) ? 'Unavailable' : 'Closed'}</div>}
           </div>
         );
       })}
