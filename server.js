@@ -4359,6 +4359,17 @@ app.get("/:org/rentalcalendar/api/availability/:siteId", async (req, res) => {
   const data = await fetchSiteAvailability(req.params.siteId);
   res.json({ data });
 });
+// ── POST /:org/api/track — generic calendar analytics tracking ──────
+app.post("/:org/api/track", express.json(), (req, res) => {
+  const slug = req.params.org;
+  const org = ORGS[slug];
+  if (!org) return res.status(404).end();
+  const { type, source, entity, meta } = req.body || {};
+  if (!type || !source) return res.status(400).end();
+  logEvent(slug, source, type, req, { entity: entity || null, ...(meta || {}) });
+  res.status(204).end();
+});
+
 app.post("/:org/rentalcalendar/api/feedback", express.json(), (req, res) => {
   const slug = req.params.org;
   if (!ORGS[slug]) return res.status(404).json({error:"Unknown org"});
@@ -5312,7 +5323,7 @@ app.get("/", (req, res) => {
     products:    { label: "Product Sales",          ai: true,          icon: "🛒", desc: "Daily revenue, refunds, and net by product",           color: "#0891b2" },
     memberships: { label: "Memberships",                ai: true,                icon: "🎫", desc: "Active and lapsed memberships with renewal tracking",       color: "#db2777" },
     "court-utilization": { label: "Court Utilization",  icon: "🎾", desc: "Court utilization % or reserved hours by court, split by customer, program, and closure usage", color: "#0d9488", ai: true },
-    calendar:    { label: "Calendar",               icon: "🗓️", desc: "Public class & rental schedule (week / list view)", color: "#ea580c", wcag: true },
+    calendar:    { label: "Program Calendar",               icon: "🗓️", desc: "Public class & rental schedule (week / list view)", color: "#ea580c", wcag: true },
     fasttrack:   { label: "Fast Track",             icon: "⚡", desc: "Pre-registration demand signal with conversion tracking", color: "#6366f1", ai: true },
     users:       { label: "Community Intel",            icon: "👥", desc: "Demographics, revenue, and strategy intelligence across your community", color: "#7c3aed", ai: true },
     "instructor-payout": { label: "Instructor Payout", ai: true, icon: "💰", desc: "Revenue splits and payout calculations by instructor", color: "#6366f1" },
@@ -6593,7 +6604,7 @@ app.get("/", (req, res) => {
       products: { label: "Product Sales",             icon: "🛒" },
       memberships: { label: "Memberships",            icon: "🎫" },
       "court-utilization": { label: "Court Utilization", icon: "🎾" },
-      calendar: { label: "Calendar",                  icon: "🗓️" },
+      calendar: { label: "Program Calendar",                  icon: "🗓️" },
       fasttrack: { label: "Fast Track",               icon: "⚡" },
     })))};
     const SHARED_UUIDS_CLIENT = ${JSON.stringify(SHARED_UUIDS)};
@@ -7362,6 +7373,11 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+    { date: '2026-06-29', title: '📊 Calendar analytics tracking + Program Calendar rename', items: [
+      'New generic POST /:org/api/track endpoint for anonymous calendar analytics. Fire-and-forget, no PII, writes to existing events.jsonl via logEvent(). Tracks facility_view (site modal opened) and book_click (Book Now tapped) with entity name, site ID, and type.',
+      'Rental calendar (rentalcalendar.html) now fires tracking events on site modal open and Book Now click. Program calendar already had view+click tracking via existing logEvent calls.',
+      'Renamed Calendar display label to Program Calendar in all REPORT_META locations. URL path /:org/calendar unchanged \u2014 existing embeds on live org sites are safe.',
+    ] },
     { date: '2026-06-28', title: '🔥 Cohort retention heatmap + loyalty tiers + cross-program affinity on Programs Retention', items: [
       'The Programs Retention tab now loads enrollment history (program-demographics) alongside the existing retention stats. Three new visualizations surface below the existing KPIs and table.',
       'Cohort Retention Heatmap: a Mixpanel-style green grid where each row is a signup cohort (month of first enrollment) and columns show what % enrolled in something again 1, 2, 3\u2026 months later. The pattern is instantly readable \u2014 green = people coming back, fading = people dropping off.',

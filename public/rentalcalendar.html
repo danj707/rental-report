@@ -174,6 +174,16 @@ const {useState,useEffect,useMemo,useCallback,useRef} = React;
 /* ── config injected by server ── */
 const CFG = window.__RC__ || {};
 const ORG_SLUG = CFG.slug || window.location.pathname.split('/').filter(Boolean)[0] || '';
+
+// Analytics tracking — fire-and-forget
+function trackCalendarEvent(type, entity, meta) {
+  try {
+    fetch('/' + ORG_SLUG + '/api/track', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ type: type, source: 'rentalcalendar', entity: entity || null, meta: meta || {} })
+    }).catch(function(){});
+  } catch(e) {}
+}
 const LOCATION_ID = new URLSearchParams(window.location.search).get('locationId') || CFG.locationId || '';
 const EMBED = new URLSearchParams(window.location.search).get('embed') === '1';
 const URL_TYPE = new URLSearchParams(window.location.search).get('type') || '';
@@ -512,6 +522,7 @@ function SiteGroup({type, sites, availMap, dateStr, opStart, opEnd, allAvail, on
           {availCount} of {sites.length} available
         </span>
         <a className="book-sm secondary" href={firstSite.bookingUrl} target="_blank" rel="noopener"
+           onClick={function(){trackCalendarEvent('book_click',firstSite.name,{siteId:firstSite.id,inline:true});}}
            onClick={function(e){e.stopPropagation();}}>
           {firstSite.isInstantBookable ? 'Book' : 'Request'}
         </a>
@@ -669,7 +680,8 @@ function SiteModal({site, onClose}) {
             {site.capacity && <span>👥 {site.capacity} capacity</span>}
           </div>
           {site.bookingUrl && (
-            <a className="modal-book" href={site.bookingUrl} target="_blank" rel="noopener">
+            <a className="modal-book" href={site.bookingUrl} target="_blank" rel="noopener"
+              onClick={function(){trackCalendarEvent('book_click',site.name,{siteId:site.id,type:site.type});}}>
               {site.isInstantBookable ? 'Book Now on rec.us' : 'Request on rec.us'} →
             </a>
           )}
@@ -983,7 +995,7 @@ function App() {
         <div style={{padding:'40px 20px',textAlign:'center',color:'#6b7280',fontSize:14}}>No facilities match the current filters.</div>
       )}
       {view === 'day'
-        ? <DayView sites={filteredSites} availMap={dayAvailMap} dateStr={dateISO} opStart={opHours.start} opEnd={opHours.end} allAvail={allAvail} onSiteClick={function(s){setModalSite(s);}} forceOpen={selectedTypes && selectedTypes.size === 1} toolbar={toolbarEl}/>
+        ? <DayView sites={filteredSites} availMap={dayAvailMap} dateStr={dateISO} opStart={opHours.start} opEnd={opHours.end} allAvail={allAvail} onSiteClick={function(s){setModalSite(s);trackCalendarEvent('facility_view',s.name,{siteId:s.id,type:s.type});}} forceOpen={selectedTypes && selectedTypes.size === 1} toolbar={toolbarEl}/>
         : null
       }
       {modalSite && <SiteModal site={modalSite} onClose={function(){setModalSite(null);}}/>}
