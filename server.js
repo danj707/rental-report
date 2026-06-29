@@ -7469,6 +7469,16 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+    { date: '2026-06-29', title: '📤 PDF filter fix + rental calendar upgrades + Norman rental calendar', items: [
+      'PDF export now reliably respects all active filters (locations, sites, desks, section, status, search). Root cause: React state wasn’t reliably initialized from URL params in Puppeteer’s headless browser. Fix: in print mode, every report reads filter values directly from window.location.search in the grouped/displayRows useMemo — bypasses React state entirely. Applied to facility, GL, roster, and programs.',
+      'Rental calendar: taller time blocks (72px, up from 32px) fill more of the facility row like competitor products. Global “Now” red line in time ruler header. Reserved blocks show “Reserved” label (wide) or just the time range (narrow). Mid-day closed blocks show “Unavailable” instead of “Closed”.',
+      'Rental calendar: per-site booking type badge (⚡ Instant Book green / 📋 Request blue) on each facility row. Removed misleading group-level Book/Request button. New “Booking” filter row (All / Instant Book / Request) filters the full site list.',
+      'Rental calendar: wizard X button now works (close returns null after all hooks). Time ruler label width fixed (280px → 340px to match facility rows).',
+      'Norman rental calendar enabled. RENTAL_CALENDAR_ORGS set replaces 3 hardcoded Watertown checks — adding future orgs is one line.',
+      'Calendar Performance dashboard cards redesigned to match Daily Pulse pattern: transparent wrapper with individual green gradient cards. Tracking fix: whitelisted /:org/api/track and /:org/api/calendar-analytics in token middleware (was returning 404 for public rental calendar). Full funnel: Calendar Views → Engagement → Bookings → Revenue (bookings + revenue fetched from Metabase facility data).',
+      'Program calendar: sticky day header row (overflow:clip instead of overflow:hidden). Current-time red line on today’s column.',
+      'Facility rental SQL: added AND r.canceled_at IS NULL to reservation JOIN — cancelled individual reservations no longer show in the schedule (even when the parent rental is still active).',
+    ] },
     { date: '2026-06-29', title: '📊 Calendar analytics tracking + Program Calendar rename', items: [
       'New generic POST /:org/api/track endpoint for anonymous calendar analytics. Fire-and-forget, no PII, writes to existing events.jsonl via logEvent(). Tracks facility_view (site modal opened) and book_click (Book Now tapped) with entity name, site ID, and type.',
       'Rental calendar (rentalcalendar.html) now fires tracking events on site modal open and Book Now click. Program calendar already had view+click tracking via existing logEvent calls.',
