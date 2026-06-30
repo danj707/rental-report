@@ -999,10 +999,18 @@ function App() {
     });
     // Process reservation rows into siteId → date → [{s, e}]
     var map = {};
+    var matched = 0, unmatched = 0;
+    var unmatchedNames = {};
     rawReservations.forEach(function(r) {
       var siteName = (r.site || '').toLowerCase().trim();
       var siteId = nameToId[siteName];
-      if (!siteId) return;
+      if (!siteId) {
+        unmatched++;
+        if (!unmatchedNames[siteName]) unmatchedNames[siteName] = 0;
+        unmatchedNames[siteName]++;
+        return;
+      }
+      matched++;
       var dateKey = parseDateToISO(r.date);
       if (!dateKey) return;
       var sMin = parseTimeToMin(r.start);
@@ -1012,6 +1020,11 @@ function App() {
       if (!map[siteId][dateKey]) map[siteId][dateKey] = [];
       map[siteId][dateKey].push({s: sMin, e: eMin});
     });
+    console.log('[rentalcalendar] Reservation matching: ' + matched + ' matched, ' + unmatched + ' unmatched');
+    if (unmatched > 0) {
+      console.log('[rentalcalendar] Unmatched Metabase site names:', unmatchedNames);
+      console.log('[rentalcalendar] Known MCP site names:', Object.keys(nameToId));
+    }
     return map;
   }, [sites, rawReservations]);
 
