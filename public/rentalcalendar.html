@@ -1005,26 +1005,54 @@ function App() {
   }, [allAvail, dateISO]);
 
   // Build reservation map: siteId → date → [{s: startMin, e: endMin}]
-  // Matches Metabase site names to MCP site IDs via courtNumber
+  // Matches Metabase site names to MCP site IDs via courtNumber.
+  // Metabase returns names like "Outdoor Event Space: Arsenal Park - Pavilion A, Arsenal Park"
+  // while MCP uses bare courtNumber like "Arsenal Park - Pavilion A".
   var reservationMap = useMemo(function() {
     if (!sites || !rawReservations || rawReservations.length === 0) return {};
+    // Normalize Metabase site name: strip "Type: " prefix and ", Location" suffix
+    function normName(raw) {
+      var s = (raw || '').toLowerCase().trim();
+      var colon = s.indexOf(':');
+      if (colon > 0 && colon < 30) s = s.substring(colon + 1).trim();
+      var lastComma = s.lastIndexOf(',');
+      if (lastComma > 0) s = s.substring(0, lastComma).trim();
+      return s;
+    }
     // Build courtNumber → siteId lookup (case-insensitive)
     var nameToId = {};
     sites.forEach(function(s) {
       var cn = (s.courtNumber || s.name || '').toLowerCase().trim();
       if (cn) nameToId[cn] = s.id;
     });
+    // Also build locationName → [siteIds] for location-level fallback
+    var locToSiteIds = {};
+    sites.forEach(function(s) {
+      var loc = (s.locationName || '').toLowerCase().trim();
+      if (loc) {
+        if (!locToSiteIds[loc]) locToSiteIds[loc] = [];
+        locToSiteIds[loc].push(s.id);
+      }
+    });
     // Process reservation rows into siteId → date → [{s, e}]
     var map = {};
     var matched = 0, unmatched = 0;
     var unmatchedNames = {};
     rawReservations.forEach(function(r) {
-      var siteName = (r.site || '').toLowerCase().trim();
-      var siteId = nameToId[siteName];
-      if (!siteId) {
+      var rawName = (r.site || '').toLowerCase().trim();
+      var normSite = normName(r.site);
+      // Try exact match on raw name, then normalized name
+      var siteId = nameToId[rawName] || nameToId[normSite];
+      var siteIds = siteId ? [siteId] : [];
+      // If still no match, try location-level fallback (applies to all sites at that location)
+      if (siteIds.length === 0) {
+        var loc = (r.location || '').toLowerCase().trim();
+        if (loc && locToSiteIds[loc]) siteIds = locToSiteIds[loc];
+      }
+      if (siteIds.length === 0) {
         unmatched++;
-        if (!unmatchedNames[siteName]) unmatchedNames[siteName] = 0;
-        unmatchedNames[siteName]++;
+        if (!unmatchedNames[rawName]) unmatchedNames[rawName] = 0;
+        unmatchedNames[rawName]++;
         return;
       }
       matched++;
@@ -1033,9 +1061,11 @@ function App() {
       var sMin = parseTimeToMin(r.start);
       var eMin = parseTimeToMin(r.end);
       if (sMin === null || eMin === null || sMin >= eMin) return;
-      if (!map[siteId]) map[siteId] = {};
-      if (!map[siteId][dateKey]) map[siteId][dateKey] = [];
-      map[siteId][dateKey].push({s: sMin, e: eMin});
+      siteIds.forEach(function(sid) {
+        if (!map[sid]) map[sid] = {};
+        if (!map[sid][dateKey]) map[sid][dateKey] = [];
+        map[sid][dateKey].push({s: sMin, e: eMin});
+      });
     });
     console.log('[rentalcalendar] Reservation matching: ' + matched + ' matched, ' + unmatched + ' unmatched');
     if (unmatched > 0) {
