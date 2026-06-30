@@ -196,6 +196,7 @@ function trackCalendarEvent(type, entity, meta) {
 }
 const LOCATION_ID = new URLSearchParams(window.location.search).get('locationId') || CFG.locationId || '';
 const EMBED = new URLSearchParams(window.location.search).get('embed') === '1';
+const REFRESH = new URLSearchParams(window.location.search).get('refresh') === '1';
 const URL_TYPE = new URLSearchParams(window.location.search).get('type') || '';
 const URL_LOC = new URLSearchParams(window.location.search).get('location') || '';
 
@@ -871,24 +872,21 @@ function App() {
         if (data.error) throw new Error(data.error);
         setSites(data.sites || []);
         setLoading(false);
-        // Fetch availability for each site
-        (data.sites || []).forEach(function(site) {
-          fetch('/' + ORG_SLUG + '/rentalcalendar/api/availability/' + site.id)
-            .then(function(r){return r.json();})
-            .then(function(avData) {
-              setAllAvail(function(prev) {
-                var next = Object.assign({}, prev);
-                next[site.id] = avData.data || {};
-                return next;
-              });
-            })
-            .catch(function(e) { console.warn('Avail fetch failed for ' + site.id, e); });
-        });
+        // Fetch availability for ALL sites in one batch call (replaces 60+ individual fetches)
+        var siteIds = (data.sites || []).map(function(s) { return s.id; }).join(',');
+        var refreshParam = REFRESH ? '&refresh=1' : '';
+        fetch('/' + ORG_SLUG + '/rentalcalendar/api/availability-batch?siteIds=' + siteIds + refreshParam)
+          .then(function(r) { return r.json(); })
+          .then(function(batchData) {
+            setAllAvail(batchData.data || {});
+            console.log('[rentalcalendar] Batch availability loaded for ' + Object.keys(batchData.data || {}).length + ' sites');
+          })
+          .catch(function(e) { console.warn('Batch availability failed:', e); });
         // Fetch actual reservations from Metabase facility report (PII-stripped)
         var today = fmtISO(new Date());
         var future = fmtISO(addDays(new Date(), 90));
         resWindowRef.current = {start: today, end: future};
-        fetch('/' + ORG_SLUG + '/rentalcalendar/api/reservations?start_date=' + today + '&end_date=' + future)
+        fetch('/' + ORG_SLUG + '/rentalcalendar/api/reservations?start_date=' + today + '&end_date=' + future + refreshParam)
           .then(function(r){return r.json();})
           .then(function(resData) {
             setRawReservations(resData.reservations || []);
