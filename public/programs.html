@@ -981,6 +981,7 @@ function App() {
 
   const fetchData = useCallback((sd, ed) => {
     setLoading(true); setError(null);
+    if (detailSection) { setDetailSection(null); setDetailSectionId(null); setDetailRows(null); setDetailError(null); setTab('revenue'); document.body.removeAttribute('data-hide-widgets'); }
     setInsights(null); setInsightsMeta(null); setInsightsError(null);
     const qs = new URLSearchParams();
     if (sd) qs.set('start_date', sd);
