@@ -684,7 +684,7 @@ function BookingWizard({allTypes, allLocations, sites, onApply, resultCount}) {
           <div className="wiz-q">When do you need it?</div>
           <div className="wiz-opts">
             {dayOpts.map(function(o){return <button key={o.label} className="wiz-pill" onClick={function(){setChosenDate(o.date);setStep(1);}}>{o.label}</button>;})}
-            <input type="date" className="wiz-datepick" value={chosenDate ? fmtISO(chosenDate) : ''} min={fmtISO(new Date())} max={fmtISO(addDays(new Date(),MAX_DAYS_AHEAD))} onChange={function(e){if(e.target.value){var v=e.target.value;var mx=fmtISO(addDays(new Date(),MAX_DAYS_AHEAD));if(v>mx)v=mx;setChosenDate(new Date(v+'T12:00:00'));}}}/>
+            <input type="date" className="wiz-datepick" value={chosenDate ? fmtISO(chosenDate) : ''} min={fmtISO(new Date())} onChange={function(e){if(e.target.value){setChosenDate(new Date(e.target.value+'T12:00:00'));}}}/>
             {chosenDate && step === 0 && <button className="wiz-pill wiz-go" onClick={function(){setStep(1);}}>Go →</button>}
           </div>
         </div>
@@ -856,7 +856,7 @@ function App() {
   var todayISO = fmtISO(new Date());
   var isToday = dateISO === todayISO;
   var maxDateISO = fmtISO(addDays(new Date(), MAX_DAYS_AHEAD));
-  var atMaxDate = dateISO >= maxDateISO;
+  var beyondRealtime = dateISO > maxDateISO;
   var ws = startOfWeek(date);
   var dt = new Date(dateISO + 'T00:00:00');
 
@@ -1049,12 +1049,9 @@ function App() {
     setDate(function(d) {
       var n = new Date(d);
       n.setDate(n.getDate() + (view === 'week' ? delta * 7 : delta));
-      // Cap at +30 days
-      var maxD = new Date(maxDateISO + 'T12:00:00');
-      if (n > maxD) n = maxD;
       return n;
     });
-  }, [view, maxDateISO]);
+  }, [view]);
 
   var goToday = useCallback(function(){setDate(new Date());}, []);
   var handleDayClick = useCallback(function(iso){setDate(new Date(iso+'T00:00:00'));setView('day');}, []);
@@ -1074,10 +1071,10 @@ function App() {
     <div className="toolbar-row">
       <button onClick={function(){nav(-1);}}>&lsaquo; Prev</button>
       <button onClick={goToday} className={isToday && view === 'day' ? 'primary' : ''}>Today</button>
-      <button onClick={function(){nav(1);}} disabled={atMaxDate} style={atMaxDate?{opacity:0.4,cursor:'default'}:{}}>Next &rsaquo;</button>
+      <button onClick={function(){nav(1);}}>Next &rsaquo;</button>
       <span className="range" style={{marginLeft:8}}>{dateLabel}</span>
       {weather && <span className="tb-weather" title={weather.desc}>{weather.emoji} {weather.hi}°{weather.unit}{weather.lo != null ? ' / '+weather.lo+'°' : ''}</span>}
-      <input type="date" className="tb-date" value={dateISO} max={maxDateISO} onChange={function(e){if(e.target.value){var picked=e.target.value;if(picked>maxDateISO)picked=maxDateISO;setDate(new Date(picked+'T12:00:00'));setView('day');}}}/>
+      <input type="date" className="tb-date" value={dateISO} min={fmtISO(new Date())} onChange={function(e){if(e.target.value){setDate(new Date(e.target.value+'T12:00:00'));setView('day');}}}/>
       <div className="grow"></div>
       <div className="tb-legend" role="group" aria-label="Timeline legend">
         <span><span className="sw" style={{background:'#bbf7d0',border:'2px solid #16a34a'}}></span>✓ Available</span>
@@ -1165,9 +1162,9 @@ function App() {
       {filteredSites.length === 0 && sites && sites.length > 0 && (
         <div style={{padding:'40px 20px',textAlign:'center',color:'#6b7280',fontSize:14}}>No facilities match the current filters.</div>
       )}
-      {atMaxDate && (
+      {beyondRealtime && (
         <div className="date-cap">
-          {'📅'} Availability is shown for the next 30 days. For dates beyond <strong>{MON[new Date(maxDateISO+'T12:00:00').getMonth()]+' '+new Date(maxDateISO+'T12:00:00').getDate()+', '+new Date(maxDateISO+'T12:00:00').getFullYear()}</strong>, please call or email for availability.
+          Availability beyond 30 days is based on confirmed facility bookings and may not reflect all holds. Call or email to confirm before submitting a request.
         </div>
       )}
       {view === 'day'
