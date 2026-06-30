@@ -328,12 +328,12 @@ function deriveBlocks(availSlots, dateStr, globalStart, globalEnd, siteOpStart, 
     var type;
     if (m < siteOpStart || m >= siteOpEnd) {
       type = 'closed';
-    } else if (coveredSet[m]) {
-      type = 'avail';
+    } else if (!coveredSet[m]) {
+      type = 'reserved';
     } else if (isToday && m < nowMin) {
       type = 'past';
     } else {
-      type = 'reserved';
+      type = 'avail';
     }
     if (type !== curType) {
       if (curType !== null) blocks.push({type: curType, s: curStart, e: m});
