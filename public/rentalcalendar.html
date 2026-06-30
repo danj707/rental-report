@@ -440,13 +440,13 @@ function TimelineBar({avail, dateStr, opStart, opEnd, siteOpStart, siteOpEnd}) {
         var l = toPct(b.s), w = toPct(b.e) - l;
         var tStart = minToLabel(b.s), tEnd = minToLabel(b.e);
         var timeRange = tStart + '–' + tEnd;
-        var hoverTip = b.type === 'reserved' ? 'Reserved ' + timeRange
+        var hoverTip = b.type === 'reserved' ? 'Unavailable ' + timeRange
           : b.type === 'closed' ? 'Closed ' + timeRange
           : b.type === 'avail' ? 'Available ' + timeRange
           : timeRange;
         return (
           <div key={i} className={'bar-block ' + b.type} style={{left: l+'%', width: w+'%'}} title={hoverTip}>
-            {b.type === 'reserved' && w > 4 && <div className="blabel">{w > 20 ? 'Reserved ' + timeRange : w > 10 ? 'Reserved' : ''}</div>}
+            {b.type === 'reserved' && w > 4 && <div className="blabel">{w > 20 ? 'UNAVAILABLE ' + timeRange : w > 10 ? 'UNAVAILABLE' : ''}</div>}
             {b.type === 'closed' && w > 10 && <div className="blabel">{(b.s >= 6*60 && b.e <= 22*60) ? 'Unavailable' : 'Closed'}</div>}
           </div>
         );
@@ -928,7 +928,7 @@ function App() {
       <div className="grow"></div>
       <div className="tb-legend">
         <span><span className="sw" style={{background:'#d1fae5',border:'1px solid #a7f3d0'}}></span>Available</span>
-        <span><span className="sw" style={{background:'var(--reserved)',border:'1px solid #fdba74'}}></span>Reserved</span>
+        <span><span className="sw" style={{background:'var(--reserved)',border:'1px solid #fdba74'}}></span>Unavailable</span>
         <span><span className="sw" style={{background:'var(--closed)',border:'1px solid #d1d5db'}}></span>Closed</span>
         {view === 'day' && <span><span className="sw" style={{background:'#ef4444',width:3,borderRadius:2}}></span>Now</span>}
       </div>
