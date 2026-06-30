@@ -21,7 +21,7 @@ body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 -apple-system
 .tb-weather{font-size:13px;color:#374151;font-weight:500;margin-left:10px;white-space:nowrap;cursor:default}
 .tb-date{padding:4px 6px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;font-family:inherit;margin-left:8px;color:#374151;cursor:pointer}
 .tb-legend{display:flex;gap:10px;align-items:center;font-size:11px;color:#6b7280;margin-right:8px}
-.tb-legend .sw{width:10px;height:10px;border-radius:2px;display:inline-block;vertical-align:middle;margin-right:3px}
+.tb-legend .sw{width:14px;height:14px;border-radius:2px;display:inline-block;vertical-align:middle;margin-right:3px}
 @media(max-width:700px){.tb-legend{display:none}.tb-date{display:none}.tb-weather{display:none}}
 button,select{font:inherit;border:1px solid var(--line);background:#fff;color:var(--ink);
   border-radius:8px;padding:6px 12px;cursor:pointer;font-size:13px;transition:border-color .12s,background .12s}
@@ -116,10 +116,11 @@ button.primary:hover{filter:brightness(.95)}
 .fac-bar{flex:1;min-height:0;padding:6px 12px 6px 0;display:flex;align-items:center}
 .bar-track{position:relative;width:100%;height:72px;background:#f8f9fa;border-radius:5px;overflow:hidden;border:1px solid #e0e2e6}
 .bar-block{position:absolute;top:2px;bottom:2px;border-radius:3px}
-.bar-block.avail{background:#bbf7d0;border:1px solid #86efac}
-.bar-block.reserved{background:var(--reserved);border:1px solid #fdba74}
-.bar-block.closed{background:var(--closed);border:1px solid #d1d5db}
-.bar-block.past{background:#f3f4f6;border:1px solid #e5e7eb}
+.bar-block.avail{background:#bbf7d0;border:2px solid #16a34a;background-image:none}
+.bar-block.avail .blabel{color:#15803d}
+.bar-block.reserved{background:repeating-linear-gradient(-45deg,#fed7aa,#fed7aa 4px,#fde0b0 4px,#fde0b0 8px);border:2px solid #c2410c}
+.bar-block.closed{background:repeating-linear-gradient(45deg,#e5e7eb,#e5e7eb 4px,#d4d6da 4px,#d4d6da 8px);border:2px solid #6b7280}
+.bar-block.past{background:#f3f4f6;border:2px solid #d1d5db}
 .bar-block .blabel{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
   font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.03em;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;padding:0 4px}
 .bar-block.reserved .blabel{color:var(--reserved-dark)}
@@ -165,6 +166,7 @@ button.primary:hover{filter:brightness(.95)}
 .footer{text-align:center;font-size:12px;color:var(--muted);margin-top:24px}
 .footer a{color:var(--muted);font-weight:600;text-decoration:none}
 .footer a:hover{text-decoration:underline}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 @media(max-width:800px){.week-grid{grid-template-columns:1fr 1fr}.fac-label{width:200px;min-width:200px}.time-ruler .tr-label{width:200px;min-width:200px}.fac-thumb,.fac-thumb-placeholder{width:72px;height:72px}}
 </style>
 </head>
@@ -429,7 +431,7 @@ function TimelineBar({avail, dateStr, opStart, opEnd, siteOpStart, siteOpEnd}) {
   }
 
   return (
-    <div className="fac-bar"><div className="bar-track">
+    <div className="fac-bar"><div className="bar-track" role="img" aria-label={blocks.map(function(b){var tS=minToLabel(b.s),tE=minToLabel(b.e);return (b.type==='avail'?'Available':b.type==='reserved'?'Unavailable':b.type==='closed'?'Closed':'Past')+' '+tS+' to '+tE;}).join(', ')}>
       {gridlines.map(function(gl, gi) {
         return <div key={'g'+gi} className={'bar-gridline' + (gl.hour ? '' : ' half')} style={{left: gl.pct + '%'}}/>;
       })}
@@ -445,8 +447,9 @@ function TimelineBar({avail, dateStr, opStart, opEnd, siteOpStart, siteOpEnd}) {
           : b.type === 'avail' ? 'Available ' + timeRange
           : timeRange;
         return (
-          <div key={i} className={'bar-block ' + b.type} style={{left: l+'%', width: w+'%'}} title={hoverTip}>
-            {b.type === 'reserved' && w > 4 && <div className="blabel">{w > 20 ? 'UNAVAILABLE ' + timeRange : w > 10 ? 'UNAVAILABLE' : ''}</div>}
+          <div key={i} className={'bar-block ' + b.type} style={{left: l+'%', width: w+'%'}} title={hoverTip} role="img" aria-label={hoverTip}>
+            {b.type === 'avail' && w > 4 && <div className="blabel">{w > 20 ? 'AVAILABLE ' + timeRange : w > 8 ? 'AVAILABLE' : '✓'}</div>}
+            {b.type === 'reserved' && w > 4 && <div className="blabel">{w > 20 ? 'UNAVAILABLE ' + timeRange : w > 10 ? 'UNAVAILABLE' : '✗'}</div>}
             {b.type === 'closed' && w > 10 && <div className="blabel">{(b.s >= 6*60 && b.e <= 22*60) ? 'Unavailable' : 'Closed'}</div>}
           </div>
         );
@@ -491,7 +494,7 @@ function FacRow({site, avail, dateStr, opStart, opEnd, siteAvailAll, onSiteClick
     <div className="fac-row">
       <div className="fac-label" style={{cursor:'pointer'}} onClick={function(){if(onSiteClick)onSiteClick(site);}}>
         {photoUrl
-          ? <img className="fac-thumb" src={photoUrl} alt="" loading="lazy" decoding="async"/>
+          ? <img className="fac-thumb" src={photoUrl} alt={(site.courtNumber || site.name)} loading="lazy" decoding="async"/>
           : <div className="fac-thumb-placeholder">{emojiFor(site.type)}</div>
         }
         <div className="finfo">
@@ -673,8 +676,8 @@ function SiteModal({site, onClose}) {
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-card" onClick={function(e){e.stopPropagation();}}>
-        <button className="modal-close" onClick={onClose}>✕</button>
-        {site.imageUrl && <img className="modal-img" src={site.imageUrl} alt=""/>}
+        <button className="modal-close" onClick={onClose} aria-label="Close detail panel">✕</button>
+        {site.imageUrl && <img className="modal-img" src={site.imageUrl} alt={(site.courtNumber || site.name) + " photo"}/>}
         <div className="modal-body">
           <h2>{site.courtNumber || site.name}</h2>
           <div className="modal-type">{emojiFor(site.type)} {typeLabel}</div>
@@ -686,9 +689,9 @@ function SiteModal({site, onClose}) {
             {site.capacity && <span>👥 {site.capacity} capacity</span>}
           </div>
           {site.bookingUrl && (
-            <a className="modal-book" href={site.bookingUrl} target="_blank" rel="noopener"
+            <a className="modal-book" href={site.bookingUrl} target="_blank" rel="noopener noreferrer"
               onClick={function(){trackCalendarEvent('book_click',site.name,{siteId:site.id,type:site.type});}}>
-              {site.isInstantBookable ? 'Book Now on rec.us' : 'Request on rec.us'} →
+              {site.isInstantBookable ? 'Book Now on rec.us' : 'Request on rec.us'} → <span className="sr-only">(opens in new tab)</span>
             </a>
           )}
         </div>
@@ -926,10 +929,10 @@ function App() {
       {weather && <span className="tb-weather" title={weather.desc}>{weather.emoji} {weather.hi}°{weather.unit}{weather.lo != null ? ' / '+weather.lo+'°' : ''}</span>}
       <input type="date" className="tb-date" value={dateISO} onChange={function(e){if(e.target.value){setDate(new Date(e.target.value+'T12:00:00'));setView('day');}}}/>
       <div className="grow"></div>
-      <div className="tb-legend">
-        <span><span className="sw" style={{background:'#d1fae5',border:'1px solid #a7f3d0'}}></span>Available</span>
-        <span><span className="sw" style={{background:'var(--reserved)',border:'1px solid #fdba74'}}></span>Unavailable</span>
-        <span><span className="sw" style={{background:'var(--closed)',border:'1px solid #d1d5db'}}></span>Closed</span>
+      <div className="tb-legend" role="group" aria-label="Timeline legend">
+        <span><span className="sw" style={{background:'#bbf7d0',border:'2px solid #16a34a'}}></span>✓ Available</span>
+        <span><span className="sw" style={{background:'repeating-linear-gradient(-45deg,#fed7aa,#fed7aa 3px,#fde0b0 3px,#fde0b0 6px)',border:'2px solid #c2410c'}}></span>✗ Unavailable</span>
+        <span><span className="sw" style={{background:'repeating-linear-gradient(45deg,#e5e7eb,#e5e7eb 3px,#d4d6da 3px,#d4d6da 6px)',border:'2px solid #6b7280'}}></span>— Closed</span>
         {view === 'day' && <span><span className="sw" style={{background:'#ef4444',width:3,borderRadius:2}}></span>Now</span>}
       </div>
     </div>
@@ -939,7 +942,7 @@ function App() {
     <div className="wrap">
       {/* toolbar rendered inside DayView sticky header */}
       <div className="hdr">
-        {CFG.logoUrl && <img src={CFG.logoUrl} alt=""/>}
+        {CFG.logoUrl && <img src={CFG.logoUrl} alt={(CFG.displayName || 'Organization') + ' logo'}/>}
         <div>
           <h1>{locationName}</h1>
           {CFG.displayName && <div className="sub">{CFG.displayName}</div>}
@@ -1017,6 +1020,9 @@ function App() {
         : null
       }
       {modalSite && <SiteModal site={modalSite} onClose={function(){setModalSite(null);}}/>}
+      <div aria-live="polite" role="status" className="sr-only">
+        {loading ? 'Loading facilities' : filteredSites.length === 0 ? 'No facilities match the current filters' : 'Showing ' + filteredSites.length + ' of ' + sites.length + ' facilities'}
+      </div>
       <div className="footer">
         Availability updates in real time &middot; Powered by <a href="https://www.rec.us" target="_blank" rel="noopener">rec.us</a>
       </div>
