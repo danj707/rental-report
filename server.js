@@ -7479,6 +7479,10 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  { date: '2026-06-30', title: 'Rental calendar availability fix', items: [
+    'Fixed critical bug where fully-booked facilities showed green AVAILABLE bars. The MCP booking API omits dates with no bookable slots (e.g. all gaps too short for minimum duration). Previously the calendar treated missing data as \'fully available\' — now correctly shows as UNAVAILABLE when the site has data for other dates but not the selected one.',
+    'Fixed group header available count (e.g. \'3 of 3 available\') to use the same corrected logic.',
+  ] },
   { date: '2026-06-30', title: 'WCAG Stage 1 accessibility', items: ['Rental calendar: recolored availability bars for 3:1 contrast ratio', 'Added stripe patterns to Unavailable/Closed bars for non-color differentiation', 'Added text labels (✓/✗) inside timeline bars', 'Screen reader: aria-live status region, sr-only timeline summaries, alt text on all images', 'Book Now link indicates new-tab behavior for assistive tech'] },
   { date: '2026-06-30', title: 'Court booking link fix', items: ['Rental calendar now links court-type sites (Tennis, Pickleball, Basketball) to the location’s court reservations page instead of the site-level booking page'] },
   { date: '2026-06-30', title: 'Fast Track report: streamlined columns + pipeline search fix', items: [
