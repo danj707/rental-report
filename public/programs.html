@@ -422,7 +422,7 @@ function getOrgAndBase() {
 
 function getParams() {
   const p = new URLSearchParams(window.location.search);
-  return { start_date: p.get('start_date'), end_date: p.get('end_date'), _print: p.get('_print'), tab: p.get('tab'), section_name: p.get('section_name') };
+  return { start_date: p.get('start_date'), end_date: p.get('end_date'), _print: p.get('_print'), tab: p.get('tab'), section_id: p.get('section_id') };
 }
 
 function getCurrentMonthRange() {
@@ -669,6 +669,7 @@ function App() {
   const [retSort, setRetSort] = useState({ col: 'retPct', dir: 'desc' });
   const [fillSelected, setFillSelected] = useState(null);
   const [detailSection, setDetailSection] = useState(null);
+  const [detailSectionId, setDetailSectionId] = useState(null);
   const [detailRows, setDetailRows] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState(null);
@@ -720,8 +721,9 @@ function App() {
     if (t === 'retention' && !retRows && !retLoading) fetchRetentionData();
   }, [demoRows, demoLoading, fetchDemoData, retRows, retLoading, fetchRetentionData]);
 
-  const openSectionDetail = useCallback((sectionName) => {
+  const openSectionDetail = useCallback((sectionId, sectionName) => {
     setDetailSection(sectionName);
+    setDetailSectionId(sectionId);
     setDetailRows(null);
     setDetailError(null);
     setDetailLoading(true);
@@ -729,7 +731,7 @@ function App() {
     document.body.setAttribute('data-hide-widgets','1');
     const sd = startDate || loadedStart || '';
     const ed = endDate || loadedEnd || '';
-    fetch(withToken(`/${orgSlug}/section-detail/api/data?start_date=${encodeURIComponent(sd)}&end_date=${encodeURIComponent(ed)}&section_name=${encodeURIComponent(sectionName)}`))
+    fetch(withToken(`/${orgSlug}/section-detail/api/data?start_date=${encodeURIComponent(sd)}&end_date=${encodeURIComponent(ed)}&section_id=${encodeURIComponent(sectionId)}`))
       .then(r => { if (!r.ok) throw new Error('Failed to load detail'); return r.json(); })
       .then(data => {
         const rows = (data.rows || data || []);
@@ -972,8 +974,8 @@ function App() {
   useEffect(() => {
     if (params._print === '1') document.body.classList.add('print-mode');
     if (params._print === '1' && params.tab === 'detail') {
-      const sn = new URLSearchParams(window.location.search).get('section_name');
-      if (sn) setTimeout(() => openSectionDetail(sn), 100);
+      const sid = new URLSearchParams(window.location.search).get('section_id');
+      if (sid) setTimeout(() => openSectionDetail(sid, 'Section Detail'), 100);
     }
   }, []);
 
@@ -1025,7 +1027,7 @@ function App() {
     if (loadedEnd)   qs.set('end_date',   loadedEnd);
     if (search && search.trim()) qs.set('search', search.trim());
     if (tab !== 'revenue') qs.set('tab', tab);
-    if (tab === 'detail' && detailSection) qs.set('section_name', detailSection);
+    if (tab === 'detail' && detailSectionId) qs.set('section_id', detailSectionId);
     fetch(withToken(`${basePath}/api/pdf?${qs}`))
       .then(r => r.blob())
       .then(blob => {
@@ -1417,7 +1419,7 @@ function App() {
             {detailSection && (
               <div className={'tab'+(tab==='detail'?' active':'')} onClick={()=>setTab('detail')} style={{position:'relative'}}>
                 🔍 Detail
-                <span style={{fontSize:9,marginLeft:4,cursor:'pointer',opacity:0.5}} onClick={(e)=>{e.stopPropagation();setDetailSection(null);setDetailRows(null);setTab('revenue');document.body.removeAttribute('data-hide-widgets');}}>✕</span>
+                <span style={{fontSize:9,marginLeft:4,cursor:'pointer',opacity:0.5}} onClick={(e)=>{e.stopPropagation();setDetailSection(null);setDetailSectionId(null);setDetailRows(null);setTab('revenue');document.body.removeAttribute('data-hide-widgets');}}>✕</span>
               </div>
             )}
           </div>
@@ -1687,7 +1689,7 @@ function App() {
                     const scp = cancelPct(sx.cancellations, sx.enrollments);
                     return (
                       <tr key={i + '-' + j} className="section-row">
-                        <td className="left"><span onClick={()=>openSectionDetail(sx.sectionName)} style={{cursor:'pointer',display:'inline-flex',alignItems:'center',gap:4}} title="View registrant detail"><span style={{color:'#6366f1',fontSize:10,opacity:0.6}}>&#x25B6;</span>{sx.sectionName}</span>{sx.status && <span className="sec-status">{sx.status}</span>}</td>
+                        <td className="left"><span onClick={()=>openSectionDetail(sx.sectionId, sx.sectionName)} style={{cursor:'pointer',display:'inline-flex',alignItems:'center',gap:4}} title="View registrant detail"><span style={{color:'#6366f1',fontSize:10,opacity:0.6}}>&#x25B6;</span>{sx.sectionName}</span>{sx.status && <span className="sec-status">{sx.status}</span>}</td>
                         <td className="left mono">{sx.season}</td>
                         {showRegModeCol && <td className="left">{regModeLabel(sx.regMode)}</td>}
                         <td className="left mono">{sx.startDate}</td>
