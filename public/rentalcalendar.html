@@ -830,6 +830,7 @@ function App() {
   var allAvail = availState[0], setAllAvail = availState[1];
   var resState = useState([]);
   var rawReservations = resState[0], setRawReservations = resState[1];
+  var resWindowRef = useRef({start: null, end: null});  // tracks loaded Metabase reservation range
   var errorState = useState(null);
   var error = errorState[0], setError = errorState[1];
   var loadingState = useState(true);
@@ -866,17 +867,47 @@ function App() {
         });
         // Fetch actual reservations from Metabase facility report (PII-stripped)
         var today = fmtISO(new Date());
-        var future = fmtISO(addDays(new Date(), 35));
+        var future = fmtISO(addDays(new Date(), 90));
+        resWindowRef.current = {start: today, end: future};
         fetch('/' + ORG_SLUG + '/rentalcalendar/api/reservations?start_date=' + today + '&end_date=' + future)
           .then(function(r){return r.json();})
           .then(function(resData) {
             setRawReservations(resData.reservations || []);
-            console.log('[rentalcalendar] Loaded ' + (resData.reservations || []).length + ' reservations from Metabase');
+            console.log('[rentalcalendar] Loaded ' + (resData.reservations || []).length + ' reservations (' + today + ' to ' + future + ')');
           })
           .catch(function(e) { console.warn('Reservations fetch failed:', e); });
       })
       .catch(function(e) { setError(e.message); setLoading(false); });
   }, []);
+
+  // Re-fetch reservations when user navigates outside the loaded date window
+  useEffect(function() {
+    var win = resWindowRef.current;
+    if (!win.start || !sites || sites.length === 0) return;
+    if (dateISO >= win.start && dateISO <= win.end) return;
+    // Extend window 90 days in direction of navigation
+    var fetchStart, fetchEnd;
+    if (dateISO > win.end) {
+      fetchStart = win.end;
+      fetchEnd = fmtISO(addDays(new Date(dateISO + 'T12:00:00'), 60));
+    } else {
+      fetchStart = fmtISO(addDays(new Date(dateISO + 'T12:00:00'), -60));
+      fetchEnd = win.start;
+    }
+    console.log('[rentalcalendar] Date outside window, fetching reservations ' + fetchStart + ' to ' + fetchEnd);
+    resWindowRef.current = {
+      start: fetchStart < win.start ? fetchStart : win.start,
+      end: fetchEnd > win.end ? fetchEnd : win.end
+    };
+    fetch('/' + ORG_SLUG + '/rentalcalendar/api/reservations?start_date=' + fetchStart + '&end_date=' + fetchEnd)
+      .then(function(r) { return r.json(); })
+      .then(function(resData) {
+        var newRes = resData.reservations || [];
+        console.log('[rentalcalendar] Extended range: +' + newRes.length + ' reservations');
+        setRawReservations(function(prev) { return prev.concat(newRes); });
+      })
+      .catch(function(e) { console.warn('Reservations re-fetch failed:', e); });
+  }, [dateISO, sites]);
 
   // Derive operating hours from all availability data
   var opHours = useMemo(function() {
