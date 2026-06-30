@@ -281,36 +281,45 @@ var MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'
 var DOWL=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
 function minToLabel(min){var h=Math.floor(min/60),m=min%60;var ap=h>=12?'pm':'am';var hh=h%12;if(hh===0)hh=12;return hh+(m?':'+pad(m):'')+ap;}
 
+/* Parse "08:00am" / "05:00pm" / "17:00" → minutes since midnight */
+function parseTimeToMin(t) {
+  if (!t) return null;
+  var s = String(t).toLowerCase().replace(/\s/g, '');
+  var m = s.match(/^(\d{1,2}):(\d{2})(am|pm)?$/);
+  if (!m) return null;
+  var h = parseInt(m[1]), min = parseInt(m[2]), ap = m[3];
+  if (ap === 'pm' && h !== 12) h += 12;
+  if (ap === 'am' && h === 12) h = 0;
+  return h * 60 + min;
+}
+
+/* Normalize Metabase date to ISO "YYYY-MM-DD" */
+function parseDateToISO(d) {
+  if (!d) return '';
+  if (/^\d{4}-\d{2}-\d{2}/.test(d)) return d.substring(0, 10);
+  var dt = new Date(d);
+  if (!isNaN(dt.getTime())) return fmtISO(dt);
+  return '';
+}
+
 var GROUP_THRESHOLD = 1;
 
-/* ── Derive reserved blocks from availability response ── */
-function deriveBlocks(availSlots, dateStr, globalStart, globalEnd, siteOpStart, siteOpEnd, hasAnyData) {
-  // availSlots: { "08:00:00": {availableDurationsMinutes:[60,120]}, ... }
-  // globalStart/End: the full timeline range (max across all sites)
-  // siteOpStart/End: this site's actual operating hours
-  // hasAnyData: true if the MCP returned availability for ANY date for this site
-  // Returns array of {type:'avail'|'reserved'|'past'|'closed', startMin, endMin}
+/* ── Derive timeline blocks from MCP availability + Metabase reservations ── */
+function deriveBlocks(availSlots, dateStr, globalStart, globalEnd, siteOpStart, siteOpEnd, hasAnyData, reservations) {
+  // availSlots:   MCP bookable start times { "08:00:00": {availableDurationsMinutes:[60,120]}, ... }
+  // reservations: Metabase actual bookings [{s: startMin, e: endMin}, ...]
+  // hasAnyData:   true if MCP returned availability for ANY date for this site
+  // Returns array of {type:'avail'|'reserved'|'past'|'closed', s, e}
   var now = new Date();
   var nowMin = now.getHours() * 60 + now.getMinutes();
   var isToday = dateStr === fmtISO(now);
+  var hasReservations = reservations && reservations.length > 0;
+  var hasAvailSlots = availSlots && Object.keys(availSlots).length > 0;
+  var hasAnyInfo = hasAnyData || hasReservations;
 
-  // No bookable slots for this date
-  if (!availSlots || Object.keys(availSlots).length === 0) {
+  // No data from either source — loading fallback
+  if (!hasAvailSlots && !hasReservations && !hasAnyData) {
     var blocks = [];
-    // If MCP has data for other dates but not this one, the date is fully booked —
-    // the API only returns bookable start times, so absence = nothing to book
-    if (hasAnyData) {
-      if (siteOpStart > globalStart) blocks.push({type: 'closed', s: globalStart, e: siteOpStart});
-      if (isToday && nowMin > siteOpStart) {
-        blocks.push({type: 'past', s: siteOpStart, e: Math.min(nowMin, siteOpEnd)});
-        if (nowMin < siteOpEnd) blocks.push({type: 'reserved', s: nowMin, e: siteOpEnd});
-      } else {
-        blocks.push({type: 'reserved', s: siteOpStart, e: siteOpEnd});
-      }
-      if (siteOpEnd < globalEnd) blocks.push({type: 'closed', s: siteOpEnd, e: globalEnd});
-      return blocks;
-    }
-    // No data loaded yet (initial load) — show site hours as available
     if (siteOpStart > globalStart) blocks.push({type: 'closed', s: globalStart, e: siteOpStart});
     if (isToday && nowMin > siteOpStart) {
       blocks.push({type: 'past', s: siteOpStart, e: Math.min(nowMin, siteOpEnd)});
@@ -322,22 +331,25 @@ function deriveBlocks(availSlots, dateStr, globalStart, globalEnd, siteOpStart, 
     return blocks;
   }
 
-  // Build a "covered" set: each 30-min slot is covered if ANY available
-  // start time's duration window includes it.
-  // e.g. 4:00pm with [120min] duration covers 4:00, 4:30, 5:00, 5:30
-  var coveredSet = {};
-  var availStartSet = {};
-  Object.keys(availSlots).forEach(function(t) {
-    var parts = t.split(':');
-    var startMin = parseInt(parts[0]) * 60 + parseInt(parts[1]);
-    availStartSet[startMin] = true;
-    var durs = availSlots[t].availableDurationsMinutes || [60];
-    var maxDur = Math.max.apply(null, durs);
-    for (var c = startMin; c < startMin + maxDur; c += 30) {
-      coveredSet[c] = true;
-    }
+  // Build reserved set from actual Metabase bookings (highest priority)
+  var reservedSet = {};
+  (reservations || []).forEach(function(r) {
+    for (var c = r.s; c < r.e; c += 30) { reservedSet[c] = true; }
   });
 
+  // Build covered set from MCP bookable slots
+  var coveredSet = {};
+  if (availSlots) {
+    Object.keys(availSlots).forEach(function(t) {
+      var parts = t.split(':');
+      var startMin = parseInt(parts[0]) * 60 + parseInt(parts[1]);
+      var durs = availSlots[t].availableDurationsMinutes || [60];
+      var maxDur = Math.max.apply(null, durs);
+      for (var c = startMin; c < startMin + maxDur; c += 30) { coveredSet[c] = true; }
+    });
+  }
+
+  // Walk timeline in 30-min slots, assigning each slot a type
   var blocks = [];
   var curType = null;
   var curStart = null;
@@ -345,12 +357,18 @@ function deriveBlocks(availSlots, dateStr, globalStart, globalEnd, siteOpStart, 
     var type;
     if (m < siteOpStart || m >= siteOpEnd) {
       type = 'closed';
-    } else if (!coveredSet[m]) {
+    } else if (reservedSet[m]) {
+      // Metabase confirms a booking here → reserved regardless of MCP
       type = 'reserved';
-    } else if (isToday && m < nowMin) {
-      type = 'past';
+    } else if (coveredSet[m]) {
+      // MCP says bookable, Metabase has no booking
+      type = isToday && m < nowMin ? 'past' : 'avail';
+    } else if (hasAnyInfo) {
+      // Inside operating hours but neither source covers it →
+      // buffer time, gap too small for min duration, or MCP omitted the date
+      type = isToday && m < nowMin ? 'past' : 'reserved';
     } else {
-      type = 'avail';
+      type = isToday && m < nowMin ? 'past' : 'avail';
     }
     if (type !== curType) {
       if (curType !== null) blocks.push({type: curType, s: curStart, e: m});
@@ -428,8 +446,8 @@ function TimeRuler({opStart, opEnd}) {
   );
 }
 
-function TimelineBar({avail, dateStr, opStart, opEnd, siteOpStart, siteOpEnd, hasAnyData}) {
-  var blocks = deriveBlocks(avail, dateStr, opStart, opEnd, siteOpStart || opStart, siteOpEnd || opEnd, hasAnyData);
+function TimelineBar({avail, dateStr, opStart, opEnd, siteOpStart, siteOpEnd, hasAnyData, reservations}) {
+  var blocks = deriveBlocks(avail, dateStr, opStart, opEnd, siteOpStart || opStart, siteOpEnd || opEnd, hasAnyData, reservations);
   var total = opEnd - opStart;
   var toPct = function(m) { return ((m - opStart) / total) * 100; };
   var now = new Date();
@@ -474,13 +492,17 @@ function TimelineBar({avail, dateStr, opStart, opEnd, siteOpStart, siteOpEnd, ha
   );
 }
 
-function FacRow({site, avail, dateStr, opStart, opEnd, siteAvailAll, onSiteClick}) {
+function FacRow({site, avail, dateStr, opStart, opEnd, siteAvailAll, onSiteClick, siteReservations}) {
   var isInstant = site.isInstantBookable;
   var cta = isInstant ? 'Book' : 'Request';
   var siteOp = useMemo(function() {
     return deriveSiteOpHours(siteAvailAll);
   }, [siteAvailAll]);
   var hasAnyData = siteAvailAll && Object.keys(siteAvailAll).length > 0;
+  // Get reservation blocks for this site on the selected date
+  var dayReservations = useMemo(function() {
+    return (siteReservations && siteReservations[dateStr]) || [];
+  }, [siteReservations, dateStr]);
   // Photo thumbnail
   var photoUrl = site.imageUrl || null;
   // Pricing
@@ -523,12 +545,12 @@ function FacRow({site, avail, dateStr, opStart, opEnd, siteAvailAll, onSiteClick
           </span>
         </div>
       </div>
-      <TimelineBar avail={avail} dateStr={dateStr} opStart={opStart} opEnd={opEnd} siteOpStart={siteOp.start} siteOpEnd={siteOp.end} hasAnyData={hasAnyData}/>
+      <TimelineBar avail={avail} dateStr={dateStr} opStart={opStart} opEnd={opEnd} siteOpStart={siteOp.start} siteOpEnd={siteOp.end} hasAnyData={hasAnyData} reservations={dayReservations}/>
     </div>
   );
 }
 
-function SiteGroup({type, sites, availMap, dateStr, opStart, opEnd, allAvail, onSiteClick, forceOpen}) {
+function SiteGroup({type, sites, availMap, dateStr, opStart, opEnd, allAvail, onSiteClick, forceOpen, reservationMap}) {
   var open = React.useState(forceOpen || sites.length <= 6);
   var isOpen = open[0], setOpen = open[1];
   useEffect(function(){ if (forceOpen) setOpen(true); }, [forceOpen]);
@@ -556,7 +578,7 @@ function SiteGroup({type, sites, availMap, dateStr, opStart, opEnd, allAvail, on
         <span className={'garrow' + (isOpen ? ' open' : '')}>{'\u25B6'}</span>
       </div>
       {isOpen && sites.map(function(s) {
-        return <FacRow key={s.id} site={s} avail={availMap[s.id]} dateStr={dateStr} opStart={opStart} opEnd={opEnd} siteAvailAll={allAvail[s.id] || {}} onSiteClick={onSiteClick}/>;
+        return <FacRow key={s.id} site={s} avail={availMap[s.id]} dateStr={dateStr} opStart={opStart} opEnd={opEnd} siteAvailAll={allAvail[s.id] || {}} onSiteClick={onSiteClick} siteReservations={reservationMap[s.id]}/>;
       })}
     </div>
   );
@@ -720,7 +742,7 @@ function SiteModal({site, onClose}) {
   );
 }
 
-function DayView({sites, availMap, dateStr, opStart, opEnd, allAvail, onSiteClick, forceOpen, toolbar}) {
+function DayView({sites, availMap, dateStr, opStart, opEnd, allAvail, onSiteClick, forceOpen, toolbar, reservationMap}) {
   var typeCounts = {};
   sites.forEach(function(s){typeCounts[s.type]=(typeCounts[s.type]||0)+1;});
   var grouped = [];
@@ -743,9 +765,9 @@ function DayView({sites, availMap, dateStr, opStart, opEnd, allAvail, onSiteClic
       <div className="fac-list">
         {grouped.map(function(g, i) {
           if (g.k === 'group') {
-            return <SiteGroup key={g.type} type={g.type} sites={g.sites} availMap={availMap} dateStr={dateStr} opStart={opStart} opEnd={opEnd} allAvail={allAvail} onSiteClick={onSiteClick} forceOpen={forceOpen}/>;
+            return <SiteGroup key={g.type} type={g.type} sites={g.sites} availMap={availMap} dateStr={dateStr} opStart={opStart} opEnd={opEnd} allAvail={allAvail} onSiteClick={onSiteClick} forceOpen={forceOpen} reservationMap={reservationMap}/>;
           }
-          return <FacRow key={g.site.id} site={g.site} avail={availMap[g.site.id]} dateStr={dateStr} opStart={opStart} opEnd={opEnd} siteAvailAll={allAvail[g.site.id] || {}} onSiteClick={onSiteClick}/>;
+          return <FacRow key={g.site.id} site={g.site} avail={availMap[g.site.id]} dateStr={dateStr} opStart={opStart} opEnd={opEnd} siteAvailAll={allAvail[g.site.id] || {}} onSiteClick={onSiteClick} siteReservations={reservationMap[g.site.id]}/>;
         })}
       </div>
     </div>
@@ -802,6 +824,8 @@ function App() {
   var sites = sitesState[0], setSites = sitesState[1];
   var availState = useState({});
   var allAvail = availState[0], setAllAvail = availState[1];
+  var resState = useState([]);
+  var rawReservations = resState[0], setRawReservations = resState[1];
   var errorState = useState(null);
   var error = errorState[0], setError = errorState[1];
   var loadingState = useState(true);
@@ -836,6 +860,16 @@ function App() {
             })
             .catch(function(e) { console.warn('Avail fetch failed for ' + site.id, e); });
         });
+        // Fetch actual reservations from Metabase facility report (PII-stripped)
+        var today = fmtISO(new Date());
+        var future = fmtISO(addDays(new Date(), 35));
+        fetch('/' + ORG_SLUG + '/rentalcalendar/api/reservations?start_date=' + today + '&end_date=' + future)
+          .then(function(r){return r.json();})
+          .then(function(resData) {
+            setRawReservations(resData.reservations || []);
+            console.log('[rentalcalendar] Loaded ' + (resData.reservations || []).length + ' reservations from Metabase');
+          })
+          .catch(function(e) { console.warn('Reservations fetch failed:', e); });
       })
       .catch(function(e) { setError(e.message); setLoading(false); });
   }, []);
@@ -917,6 +951,34 @@ function App() {
     });
     return m;
   }, [allAvail, dateISO]);
+
+  // Build reservation map: siteId → date → [{s: startMin, e: endMin}]
+  // Matches Metabase site names to MCP site IDs via courtNumber
+  var reservationMap = useMemo(function() {
+    if (!sites || !rawReservations || rawReservations.length === 0) return {};
+    // Build courtNumber → siteId lookup (case-insensitive)
+    var nameToId = {};
+    sites.forEach(function(s) {
+      var cn = (s.courtNumber || s.name || '').toLowerCase().trim();
+      if (cn) nameToId[cn] = s.id;
+    });
+    // Process reservation rows into siteId → date → [{s, e}]
+    var map = {};
+    rawReservations.forEach(function(r) {
+      var siteName = (r.site || '').toLowerCase().trim();
+      var siteId = nameToId[siteName];
+      if (!siteId) return;
+      var dateKey = parseDateToISO(r.date);
+      if (!dateKey) return;
+      var sMin = parseTimeToMin(r.start);
+      var eMin = parseTimeToMin(r.end);
+      if (sMin === null || eMin === null || sMin >= eMin) return;
+      if (!map[siteId]) map[siteId] = {};
+      if (!map[siteId][dateKey]) map[siteId][dateKey] = [];
+      map[siteId][dateKey].push({s: sMin, e: eMin});
+    });
+    return map;
+  }, [sites, rawReservations]);
 
   var nav = useCallback(function(delta) {
     setDate(function(d) {
@@ -1036,7 +1098,7 @@ function App() {
         <div style={{padding:'40px 20px',textAlign:'center',color:'#6b7280',fontSize:14}}>No facilities match the current filters.</div>
       )}
       {view === 'day'
-        ? <DayView sites={filteredSites} availMap={dayAvailMap} dateStr={dateISO} opStart={opHours.start} opEnd={opHours.end} allAvail={allAvail} onSiteClick={function(s){setModalSite(s);trackCalendarEvent('facility_view',s.name,{siteId:s.id,type:s.type});}} forceOpen={selectedTypes && selectedTypes.size === 1} toolbar={toolbarEl}/>
+        ? <DayView sites={filteredSites} availMap={dayAvailMap} dateStr={dateISO} opStart={opHours.start} opEnd={opHours.end} allAvail={allAvail} onSiteClick={function(s){setModalSite(s);trackCalendarEvent('facility_view',s.name,{siteId:s.id,type:s.type});}} forceOpen={selectedTypes && selectedTypes.size === 1} toolbar={toolbarEl} reservationMap={reservationMap}/>
         : null
       }
       {modalSite && <SiteModal site={modalSite} onClose={function(){setModalSite(null);}}/>}
