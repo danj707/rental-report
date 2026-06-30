@@ -298,6 +298,22 @@
     .insight-title { font-size: 14px; font-weight: 700; color: #111827; margin-bottom: 5px; line-height: 1.3; }
     .insight-detail { font-size: 12.5px; color: #374151; line-height: 1.45; }
     .insight-action { font-size: 12px; color: #6b7280; margin-top: 8px; font-weight: 500; }
+    .detail-table { table-layout:fixed; width:100%; }
+    .detail-table th, .detail-table td { padding:5px 8px; font-size:11px; white-space:nowrap; }
+    .detail-table th.col-name { width:160px; }
+    .detail-table th.col-email { width:140px; }
+    .detail-table th.col-date { width:80px; }
+    .detail-table th.col-status { width:60px; }
+    .detail-table th.col-money { width:75px; text-align:right; }
+    .detail-table td.money { text-align:right; font-variant-numeric:tabular-nums; }
+    .detail-table th.col-prorated { width:90px; text-align:right; background:#eef2ff; color:#4338ca; }
+    .detail-table tfoot td { padding:6px 8px; }
+    body[data-hide-widgets] .feedback-widget,
+    body[data-hide-widgets] .share-fab,
+    body[data-hide-widgets] [class*="feedback"],
+    body[data-hide-widgets] [class*="share-btn"],
+    body[data-hide-widgets] .floating-share { display:none!important; }
+    @media print { .detail-table { font-size:9px; } .detail-table th, .detail-table td { padding:3px 5px; } }
     .insights-feedback { display:flex; align-items:center; gap:8px; margin-top:12px; padding:8px 4px; font-size:13px; color:#666; }
     .insights-feedback button { background:none; border:1px solid #e5e7eb; border-radius:6px; padding:4px 10px; cursor:pointer; font-size:13px; transition:all .15s; }
     .insights-feedback button:hover { background:#f3f4f6; border-color:#d1d5db; }
@@ -406,7 +422,7 @@ function getOrgAndBase() {
 
 function getParams() {
   const p = new URLSearchParams(window.location.search);
-  return { start_date: p.get('start_date'), end_date: p.get('end_date'), _print: p.get('_print'), tab: p.get('tab') };
+  return { start_date: p.get('start_date'), end_date: p.get('end_date'), _print: p.get('_print'), tab: p.get('tab'), section_name: p.get('section_name') };
 }
 
 function getCurrentMonthRange() {
@@ -710,6 +726,7 @@ function App() {
     setDetailError(null);
     setDetailLoading(true);
     setTab('detail');
+    document.body.setAttribute('data-hide-widgets','1');
     const sd = loadedStart || '';
     const ed = loadedEnd || '';
     fetch(withToken(`/${orgSlug}/section-detail/api/data?start_date=${encodeURIComponent(sd)}&end_date=${encodeURIComponent(ed)}&section_name=${encodeURIComponent(sectionName)}`))
@@ -954,6 +971,10 @@ function App() {
 
   useEffect(() => {
     if (params._print === '1') document.body.classList.add('print-mode');
+    if (params._print === '1' && params.tab === 'detail') {
+      const sn = new URLSearchParams(window.location.search).get('section_name');
+      if (sn) setTimeout(() => openSectionDetail(sn), 100);
+    }
   }, []);
 
   const fetchData = useCallback((sd, ed) => {
@@ -1004,12 +1025,13 @@ function App() {
     if (loadedEnd)   qs.set('end_date',   loadedEnd);
     if (search && search.trim()) qs.set('search', search.trim());
     if (tab !== 'revenue') qs.set('tab', tab);
+    if (tab === 'detail' && detailSection) qs.set('section_name', detailSection);
     fetch(withToken(`${basePath}/api/pdf?${qs}`))
       .then(r => r.blob())
       .then(blob => {
         const a = document.createElement('a');
         a.href = URL.createObjectURL(blob);
-        a.download = `programs-${tab === 'participants' ? 'participants' : 'revenue'}-${loadedStart || 'report'}.pdf`;
+        a.download = `programs-${tab === 'detail' ? 'section-detail' : tab === 'participants' ? 'participants' : 'revenue'}-${loadedStart || 'report'}.pdf`;
         a.click();
         URL.revokeObjectURL(a.href);
       })
@@ -1395,7 +1417,7 @@ function App() {
             {detailSection && (
               <div className={'tab'+(tab==='detail'?' active':'')} onClick={()=>setTab('detail')} style={{position:'relative'}}>
                 🔍 Detail
-                <span style={{fontSize:9,marginLeft:4,cursor:'pointer',opacity:0.5}} onClick={(e)=>{e.stopPropagation();setDetailSection(null);setDetailRows(null);setTab('revenue');}}>✕</span>
+                <span style={{fontSize:9,marginLeft:4,cursor:'pointer',opacity:0.5}} onClick={(e)=>{e.stopPropagation();setDetailSection(null);setDetailRows(null);setTab('revenue');document.body.removeAttribute('data-hide-widgets');}}>✕</span>
               </div>
             )}
           </div>
@@ -2099,7 +2121,7 @@ function App() {
         {tab === 'detail' && detailSection && (
           <React.Fragment>
             <div style={{marginBottom:16}}>
-              <span onClick={()=>setTab('revenue')} style={{cursor:'pointer',color:'#6366f1',fontSize:13,fontWeight:600}}>← Back to Revenue</span>
+              <span onClick={()=>{setTab('revenue');document.body.removeAttribute('data-hide-widgets');}} style={{cursor:'pointer',color:'#6366f1',fontSize:13,fontWeight:600}}>← Back to Revenue</span>
             </div>
             <div style={{background:'#f8f7f4',border:'1px solid #e4e4e0',borderRadius:8,padding:'16px 20px',marginBottom:20}}>
               <div style={{fontSize:18,fontWeight:700,color:'#111827',marginBottom:4}}>{detailSection}</div>
@@ -2136,19 +2158,19 @@ function App() {
                     <div className="summary-card" style={{borderLeft:'3px solid #6366f1'}}><div className="card-label">Prorated Net Revenue</div><div className="card-value" style={{color:'#6366f1'}}>{fmtMoney(sumProratedNet)}</div><div className="card-sub">{prorateLabel}</div></div>
                   </div>
                   <div className="table-scroll">
-                  <table className="prog-table">
+                  <table className="prog-table detail-table">
                     <thead><tr>
-                      <th className="left">Registrant</th>
-                      <th className="left">Email</th>
-                      <th>Registered</th>
-                      <th>Status</th>
-                      <th>Charged</th>
-                      <th>Received</th>
-                      <th>Outstanding</th>
-                      <th>Refunds</th>
-                      <th>Net</th>
-                      <th style={{background:'#eef2ff',color:'#4338ca'}}>Prorated Charged</th>
-                      <th style={{background:'#eef2ff',color:'#4338ca'}}>Prorated Net</th>
+                      <th className="left col-name">Registrant</th>
+                      <th className="left col-email">Email</th>
+                      <th className="col-date">Registered</th>
+                      <th className="col-status">Status</th>
+                      <th className="col-money">Charged</th>
+                      <th className="col-money">Received</th>
+                      <th className="col-money">Outstanding</th>
+                      <th className="col-money" style={{color:'#b91c1c'}}>Refunds</th>
+                      <th className="col-money">Net</th>
+                      <th className="col-prorated">Prorated Chg</th>
+                      <th className="col-prorated">Prorated Net</th>
                     </tr></thead>
                     <tbody>
                       {dr.map((r, i) => {
@@ -2177,7 +2199,7 @@ function App() {
                         <td className="money">{fmtMoney(sumCharged)}</td>
                         <td className="money">{fmtMoney(sumReceived)}</td>
                         <td className="money">{fmtMoney(sumOutstanding)}</td>
-                        <td className="money">{fmtMoney(sumRefunds)}</td>
+                        <td className="money" style={{color:'#ff6b6b'}}>{fmtMoney(sumRefunds)}</td>
                         <td className="money">{fmtMoney(sumNet)}</td>
                         <td className="money" style={{background:'#312e81',color:'#c7d2fe'}}>{fmtMoney(sumProratedCharged)}</td>
                         <td className="money" style={{background:'#312e81',color:'#c7d2fe'}}>{fmtMoney(sumProratedNet)}</td>
