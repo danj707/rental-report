@@ -90,6 +90,7 @@ const REPORT_CACHE_TTL = {
   calendar: 30 * 60 * 1000,               // 30 min — schedule changes
   historic: 2 * 60 * 60 * 1000,           // 2 hrs
   "instructor-payout": 2 * 60 * 60 * 1000, // 2 hrs — section-level payout
+  "section-detail": 15 * 60 * 1000,          // 15 min — per-registration drill-down
 };
 const dataCache = new Map();
 const cacheStats = { hits: 0, misses: 0, prewarms: 0 };
@@ -467,7 +468,7 @@ const ORGS = {
   },
 };
 
-const REPORT_TYPES = ["facility", "gl", "historic", "programs", "roster", "overview", "products", "memberships", "court-utilization", "calendar", "fasttrack", "users", "program-demographics", "directors-report", "instructor-payout", "retention", "annual-report"];
+const REPORT_TYPES = ["facility", "gl", "historic", "programs", "roster", "overview", "products", "memberships", "court-utilization", "calendar", "fasttrack", "users", "program-demographics", "directors-report", "instructor-payout", "retention", "annual-report", "section-detail"];
 
 // ── Shared Metabase UUIDs (one query per report type, parameterized by org_id) ──
 // When a report type has an entry here, the server uses this UUID + passes the
@@ -488,11 +489,12 @@ const SHARED_UUIDS = {
   "program-demographics": "67b77142-19ab-49bd-9d4b-1db8223a3616",
   retention: "3cfc9cfa-b1db-41e9-83fd-01fb90a5b0c8",
   "qbr-stats": "3039d98b-a396-4c05-b1d7-0b8f2f2dd520",
+  "section-detail": "bbb347c8-9e2d-446d-b014-a86a9d14115a",
 };
 
 // Report types that are valid system-wide but should NOT be offered in the
 // dashboard "+ Add report" flow (e.g. not yet ready for self-serve onboarding).
-const NON_ADDABLE_REPORTS = new Set(["overview", "program-demographics", "directors-report", "retention", "annual-report"]);
+const NON_ADDABLE_REPORTS = new Set(["overview", "program-demographics", "directors-report", "retention", "annual-report", "section-detail"]);
 const RENTAL_CALENDAR_ORGS = new Set(["watertown", "norman"]);
 
 // ── Dynamic orgs (added via dashboard UI) ────────────────────────────
@@ -1673,6 +1675,9 @@ function buildMetabaseParams(query, reportType, orgId) {
   // NOTE: roster section filtering is client-side (substring match in the page),
   // not a Metabase template tag. Passing section_name here would make Metabase
   // reject the query (unknown parameter), so it is intentionally not forwarded.
+  if (reportType === "section-detail" && query.section_name) {
+    params.push({ type: "string/=", target: ["variable", ["template-tag", "section_name"]], value: query.section_name });
+  }
   return params;
 }
 
@@ -7474,6 +7479,11 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  { date: '2026-06-30', title: 'Section Revenue Detail', items: [
+    'New Detail tab in Programs report — click the arrow next to any section name to drill into per-registrant revenue',
+    'Shows full and prorated financials based on sessions within the selected date range',
+    'Handles both per-session and per-section registration modes with accurate proration math',
+  ]},
     { date: '2026-06-29', title: '📤 PDF filter fix + rental calendar upgrades + Norman rental calendar', items: [
       'PDF export now reliably respects all active filters (locations, sites, desks, section, status, search). Root cause: React state wasn’t reliably initialized from URL params in Puppeteer’s headless browser. Fix: in print mode, every report reads filter values directly from window.location.search in the grouped/displayRows useMemo — bypasses React state entirely. Applied to facility, GL, roster, and programs.',
       'Rental calendar: taller time blocks (72px, up from 32px) fill more of the facility row like competitor products. Global “Now” red line in time ruler header. Reserved blocks show “Reserved” label (wide) or just the time range (narrow). Mid-day closed blocks show “Unavailable” instead of “Closed”.',
