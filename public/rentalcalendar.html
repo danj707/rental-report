@@ -119,6 +119,8 @@ button.primary:hover{filter:brightness(.95)}
 .bar-block.avail{background:#bbf7d0;border:2px solid #16a34a;background-image:none}
 .bar-block.avail .blabel{color:#15803d}
 .bar-block.reserved{background:repeating-linear-gradient(-45deg,#fed7aa,#fed7aa 4px,#fde0b0 4px,#fde0b0 8px);border:2px solid #c2410c}
+.bar-block.gap{background:repeating-linear-gradient(-45deg,#e5e7eb,#e5e7eb 4px,#d4d6da 4px,#d4d6da 8px);border:2px solid #9ca3af}
+.bar-block.gap .blabel{color:#6b7280}
 .bar-block.closed{background:repeating-linear-gradient(45deg,#e5e7eb,#e5e7eb 4px,#d4d6da 4px,#d4d6da 8px);border:2px solid #6b7280}
 .bar-block.past{background:#f3f4f6;border:2px solid #d1d5db}
 .bar-block .blabel{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
@@ -366,7 +368,7 @@ function deriveBlocks(availSlots, dateStr, globalStart, globalEnd, siteOpStart, 
     } else if (hasAnyInfo) {
       // Inside operating hours but neither source covers it →
       // buffer time, gap too small for min duration, or MCP omitted the date
-      type = isToday && m < nowMin ? 'past' : 'reserved';
+      type = isToday && m < nowMin ? 'past' : 'gap';
     } else {
       type = isToday && m < nowMin ? 'past' : 'avail';
     }
@@ -464,7 +466,7 @@ function TimelineBar({avail, dateStr, opStart, opEnd, siteOpStart, siteOpEnd, ha
   }
 
   return (
-    <div className="fac-bar"><div className="bar-track" role="img" aria-label={blocks.map(function(b){var tS=minToLabel(b.s),tE=minToLabel(b.e);return (b.type==='avail'?'Available':b.type==='reserved'?'Unavailable':b.type==='closed'?'Closed':'Past')+' '+tS+' to '+tE;}).join(', ')}>
+    <div className="fac-bar"><div className="bar-track" role="img" aria-label={blocks.map(function(b){var tS=minToLabel(b.s),tE=minToLabel(b.e);return (b.type==='avail'?'Available':b.type==='reserved'?'Reserved':b.type==='gap'?'Unavailable':b.type==='closed'?'Closed':'Past')+' '+tS+' to '+tE;}).join(', ')}>
       {gridlines.map(function(gl, gi) {
         return <div key={'g'+gi} className={'bar-gridline' + (gl.hour ? '' : ' half')} style={{left: gl.pct + '%'}}/>;
       })}
@@ -475,7 +477,8 @@ function TimelineBar({avail, dateStr, opStart, opEnd, siteOpStart, siteOpEnd, ha
         var l = toPct(b.s), w = toPct(b.e) - l;
         var tStart = minToLabel(b.s), tEnd = minToLabel(b.e);
         var timeRange = tStart + '–' + tEnd;
-        var hoverTip = b.type === 'reserved' ? 'Unavailable ' + timeRange
+        var hoverTip = b.type === 'reserved' ? 'Reserved ' + timeRange
+          : b.type === 'gap' ? 'Unavailable ' + timeRange
           : b.type === 'closed' ? 'Closed ' + timeRange
           : b.type === 'avail' ? 'Available ' + timeRange
           : timeRange;
@@ -483,6 +486,7 @@ function TimelineBar({avail, dateStr, opStart, opEnd, siteOpStart, siteOpEnd, ha
           <div key={i} className={'bar-block ' + b.type} style={{left: l+'%', width: w+'%'}} title={hoverTip} role="img" aria-label={hoverTip}>
             {b.type === 'avail' && w > 4 && <div className="blabel">{w > 20 ? 'AVAILABLE ' + timeRange : w > 8 ? 'AVAILABLE' : '✓'}</div>}
             {b.type === 'reserved' && w > 4 && <div className="blabel">{w > 20 ? 'UNAVAILABLE ' + timeRange : w > 10 ? 'UNAVAILABLE' : '✗'}</div>}
+            {b.type === 'gap' && w > 4 && <div className="blabel">{w > 20 ? 'UNAVAILABLE ' + timeRange : w > 10 ? 'UNAVAILABLE' : '–'}</div>}
             {b.type === 'closed' && w > 10 && <div className="blabel">{(b.s >= 6*60 && b.e <= 22*60) ? 'Unavailable' : 'Closed'}</div>}
           </div>
         );
