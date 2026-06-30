@@ -307,10 +307,11 @@ function parseDateToISO(d) {
 var GROUP_THRESHOLD = 1;
 
 /* ── Derive timeline blocks from MCP availability + Metabase reservations ── */
-function deriveBlocks(availSlots, dateStr, globalStart, globalEnd, siteOpStart, siteOpEnd, hasAnyData, reservations) {
-  // availSlots:   MCP bookable start times { "08:00:00": {availableDurationsMinutes:[60,120]}, ... }
-  // reservations: Metabase actual bookings [{s: startMin, e: endMin}, ...]
-  // hasAnyData:   true if MCP returned availability for ANY date for this site
+function deriveBlocks(availSlots, dateStr, globalStart, globalEnd, siteOpStart, siteOpEnd, hasAnyData, reservations, dateWithinMcp) {
+  // availSlots:    MCP bookable start times { "08:00:00": {availableDurationsMinutes:[60,120]}, ... }
+  // reservations:  Metabase actual bookings [{s: startMin, e: endMin}, ...]
+  // hasAnyData:    true if MCP returned availability for ANY date for this site
+  // dateWithinMcp: true if the selected date falls within the MCP's ~30-day window
   // Returns array of {type:'avail'|'reserved'|'past'|'closed', s, e}
   var now = new Date();
   var nowMin = now.getHours() * 60 + now.getMinutes();
@@ -365,11 +366,12 @@ function deriveBlocks(availSlots, dateStr, globalStart, globalEnd, siteOpStart, 
     } else if (coveredSet[m]) {
       // MCP says bookable, Metabase has no booking
       type = isToday && m < nowMin ? 'past' : 'avail';
-    } else if (hasAnyInfo) {
-      // Inside operating hours but neither source covers it →
-      // buffer time, gap too small for min duration, or MCP omitted the date
+    } else if (hasAvailSlots || dateWithinMcp) {
+      // MCP covers this date (has slots, or date is within its window but fully booked)
+      // → slots not covered by MCP are gaps (buffer time, min duration, etc.)
       type = isToday && m < nowMin ? 'past' : 'gap';
     } else {
+      // Beyond MCP window — trust Metabase: no reservation here = available
       type = isToday && m < nowMin ? 'past' : 'avail';
     }
     if (type !== curType) {
@@ -448,8 +450,8 @@ function TimeRuler({opStart, opEnd}) {
   );
 }
 
-function TimelineBar({avail, dateStr, opStart, opEnd, siteOpStart, siteOpEnd, hasAnyData, reservations}) {
-  var blocks = deriveBlocks(avail, dateStr, opStart, opEnd, siteOpStart || opStart, siteOpEnd || opEnd, hasAnyData, reservations);
+function TimelineBar({avail, dateStr, opStart, opEnd, siteOpStart, siteOpEnd, hasAnyData, reservations, dateWithinMcp}) {
+  var blocks = deriveBlocks(avail, dateStr, opStart, opEnd, siteOpStart || opStart, siteOpEnd || opEnd, hasAnyData, reservations, dateWithinMcp);
   var total = opEnd - opStart;
   var toPct = function(m) { return ((m - opStart) / total) * 100; };
   var now = new Date();
@@ -503,6 +505,12 @@ function FacRow({site, avail, dateStr, opStart, opEnd, siteAvailAll, onSiteClick
     return deriveSiteOpHours(siteAvailAll);
   }, [siteAvailAll]);
   var hasAnyData = siteAvailAll && Object.keys(siteAvailAll).length > 0;
+  // Determine if the selected date falls within the MCP's coverage window (~30 days)
+  var mcpMaxDate = useMemo(function() {
+    var dates = Object.keys(siteAvailAll || {});
+    return dates.length > 0 ? dates.sort().pop() : null;
+  }, [siteAvailAll]);
+  var dateWithinMcp = hasAnyData && mcpMaxDate && dateStr <= mcpMaxDate;
   // Get reservation blocks for this site on the selected date
   var dayReservations = useMemo(function() {
     return (siteReservations && siteReservations[dateStr]) || [];
@@ -549,7 +557,7 @@ function FacRow({site, avail, dateStr, opStart, opEnd, siteAvailAll, onSiteClick
           </span>
         </div>
       </div>
-      <TimelineBar avail={avail} dateStr={dateStr} opStart={opStart} opEnd={opEnd} siteOpStart={siteOp.start} siteOpEnd={siteOp.end} hasAnyData={hasAnyData} reservations={dayReservations}/>
+      <TimelineBar avail={avail} dateStr={dateStr} opStart={opStart} opEnd={opEnd} siteOpStart={siteOp.start} siteOpEnd={siteOp.end} hasAnyData={hasAnyData} reservations={dayReservations} dateWithinMcp={dateWithinMcp}/>
     </div>
   );
 }
