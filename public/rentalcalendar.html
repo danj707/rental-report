@@ -242,6 +242,8 @@ function useWeather(coords, dateISO) {
     if (!coords || !coords.lat || !dateISO) return;
     var key = dateISO;
     if (cacheRef.current[key]) { setWeather(cacheRef.current[key]); return; }
+    // Clear stale weather while we fetch — if no forecast exists for this date, stays null
+    setWeather(null);
 
     var ua = "rec.us-reports/1.0 (dan@rec.us)";
     fetch("https://api.weather.gov/points/" + coords.lat + "," + coords.lon, {headers:{"User-Agent":ua}})
