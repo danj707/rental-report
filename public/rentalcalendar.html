@@ -284,18 +284,33 @@ function minToLabel(min){var h=Math.floor(min/60),m=min%60;var ap=h>=12?'pm':'am
 var GROUP_THRESHOLD = 1;
 
 /* ── Derive reserved blocks from availability response ── */
-function deriveBlocks(availSlots, dateStr, globalStart, globalEnd, siteOpStart, siteOpEnd) {
+function deriveBlocks(availSlots, dateStr, globalStart, globalEnd, siteOpStart, siteOpEnd, hasAnyData) {
   // availSlots: { "08:00:00": {availableDurationsMinutes:[60,120]}, ... }
   // globalStart/End: the full timeline range (max across all sites)
   // siteOpStart/End: this site's actual operating hours
+  // hasAnyData: true if the MCP returned availability for ANY date for this site
   // Returns array of {type:'avail'|'reserved'|'past'|'closed', startMin, endMin}
   var now = new Date();
   var nowMin = now.getHours() * 60 + now.getMinutes();
   var isToday = dateStr === fmtISO(now);
 
-  // If no availability data at all, show site hours as available, outside as closed
+  // No bookable slots for this date
   if (!availSlots || Object.keys(availSlots).length === 0) {
     var blocks = [];
+    // If MCP has data for other dates but not this one, the date is fully booked —
+    // the API only returns bookable start times, so absence = nothing to book
+    if (hasAnyData) {
+      if (siteOpStart > globalStart) blocks.push({type: 'closed', s: globalStart, e: siteOpStart});
+      if (isToday && nowMin > siteOpStart) {
+        blocks.push({type: 'past', s: siteOpStart, e: Math.min(nowMin, siteOpEnd)});
+        if (nowMin < siteOpEnd) blocks.push({type: 'reserved', s: nowMin, e: siteOpEnd});
+      } else {
+        blocks.push({type: 'reserved', s: siteOpStart, e: siteOpEnd});
+      }
+      if (siteOpEnd < globalEnd) blocks.push({type: 'closed', s: siteOpEnd, e: globalEnd});
+      return blocks;
+    }
+    // No data loaded yet (initial load) — show site hours as available
     if (siteOpStart > globalStart) blocks.push({type: 'closed', s: globalStart, e: siteOpStart});
     if (isToday && nowMin > siteOpStart) {
       blocks.push({type: 'past', s: siteOpStart, e: Math.min(nowMin, siteOpEnd)});
@@ -413,8 +428,8 @@ function TimeRuler({opStart, opEnd}) {
   );
 }
 
-function TimelineBar({avail, dateStr, opStart, opEnd, siteOpStart, siteOpEnd}) {
-  var blocks = deriveBlocks(avail, dateStr, opStart, opEnd, siteOpStart || opStart, siteOpEnd || opEnd);
+function TimelineBar({avail, dateStr, opStart, opEnd, siteOpStart, siteOpEnd, hasAnyData}) {
+  var blocks = deriveBlocks(avail, dateStr, opStart, opEnd, siteOpStart || opStart, siteOpEnd || opEnd, hasAnyData);
   var total = opEnd - opStart;
   var toPct = function(m) { return ((m - opStart) / total) * 100; };
   var now = new Date();
@@ -465,6 +480,7 @@ function FacRow({site, avail, dateStr, opStart, opEnd, siteAvailAll, onSiteClick
   var siteOp = useMemo(function() {
     return deriveSiteOpHours(siteAvailAll);
   }, [siteAvailAll]);
+  var hasAnyData = siteAvailAll && Object.keys(siteAvailAll).length > 0;
   // Photo thumbnail
   var photoUrl = site.imageUrl || null;
   // Pricing
@@ -507,7 +523,7 @@ function FacRow({site, avail, dateStr, opStart, opEnd, siteAvailAll, onSiteClick
           </span>
         </div>
       </div>
-      <TimelineBar avail={avail} dateStr={dateStr} opStart={opStart} opEnd={opEnd} siteOpStart={siteOp.start} siteOpEnd={siteOp.end}/>
+      <TimelineBar avail={avail} dateStr={dateStr} opStart={opStart} opEnd={opEnd} siteOpStart={siteOp.start} siteOpEnd={siteOp.end} hasAnyData={hasAnyData}/>
     </div>
   );
 }
@@ -519,8 +535,12 @@ function SiteGroup({type, sites, availMap, dateStr, opStart, opEnd, allAvail, on
   var total = opEnd - opStart;
   var availCount = sites.filter(function(s) {
     var a = availMap[s.id];
-    if (!a) return true;
-    return Object.keys(a).length > 0;
+    if (!a || Object.keys(a).length === 0) {
+      // No slots for selected date — only count as available if no data loaded yet at all
+      var siteData = allAvail[s.id];
+      return !siteData || Object.keys(siteData).length === 0;
+    }
+    return true;
   }).length;
   var label = type.replace(/-/g,' ').replace(/\b\w/g, function(c){return c.toUpperCase();}) + 's';
   var firstSite = sites[0];
