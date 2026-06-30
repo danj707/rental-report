@@ -216,6 +216,10 @@ function normalizeRow(raw) {
     regOpens:      raw['Reg Opens'] ?? '',
     regCloses:     raw['Reg Closes'] ?? '',
     earlyAccess:   raw['Early Access Opens'] ?? '',
+    sectionStart:  raw['Section Start'] ?? '',
+    sectionEnd:    raw['Section End'] ?? '',
+    sectionDay:    raw['Section Day'] ?? '',
+    sectionTime:   raw['Section Time'] ?? '',
     rowType:       raw['Row Type'] ?? 'section',
   };
 }
@@ -548,6 +552,17 @@ function App() {
     }, { ftSignups:0, ftConverted:0, ftPending:0, ftDropped:0, directEnrolled:0, totalEnrolled:0, capacity:0, waitlisted:0 });
   }, [programs]);
 
+  var filteredPipeline = useMemo(function() {
+    return pipelineRows.filter(function(r) {
+      if (seasonFilter && r.season !== seasonFilter) return false;
+      if (searchTerm.trim()) {
+        var q = searchTerm.trim().toLowerCase();
+        if (r.program.toLowerCase().indexOf(q) === -1 && r.section.toLowerCase().indexOf(q) === -1) return false;
+      }
+      return true;
+    });
+  }, [pipelineRows, seasonFilter, searchTerm]);
+
   var overallConvPct = totals.ftSignups > 0 ? Math.round(1000 * totals.ftConverted / totals.ftSignups) / 10 : null;
   var overallFillPct = totals.capacity > 0  ? Math.round(1000 * totals.totalEnrolled / totals.capacity) / 10 : null;
 
@@ -734,16 +749,22 @@ function App() {
   /* Excel */
   function handleExcel() {
     if (typeof XLSX === 'undefined') return;
-    var header = ['Program','Section','Season','Reg Mode','FT Signups','FT Converted','FT Pending','FT Dropped','Conversion %','Direct Enrolled','Total Enrolled','Capacity','Fill %','Demand %','Waitlisted'];
+    var header = ['Program','Section','Season','Date Range','Day','Time','Reg Mode','FT Signups','FT Converted','FT Pending','Conversion %','Demand %'];
     var data = [header];
     programs.forEach(function(p) {
       p.sections.forEach(function(s) {
-        data.push([s.program, s.section, s.season, s.regMode, s.ftSignups, s.ftConverted, s.ftPending, s.ftDropped,
-          s.convPct, s.directEnrolled, s.totalEnrolled, s.capacity, s.fillPct, s.demandPct, s.waitlisted]);
+        var dr = '';
+        if (s.sectionStart) {
+          var sd = new Date(s.sectionStart); var ed = s.sectionEnd ? new Date(s.sectionEnd) : null;
+          var fmt = function(d) { return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); };
+          dr = fmt(sd) + (ed && ed.getTime() !== sd.getTime() ? ' - ' + fmt(ed) : '');
+        }
+        data.push([s.program, s.section, s.season, dr, s.sectionDay || '', s.sectionTime || '', s.regMode, s.ftSignups, s.ftConverted, s.ftPending,
+          s.convPct, s.demandPct]);
       });
     });
-    data.push(['TOTAL','','','', totals.ftSignups, totals.ftConverted, totals.ftPending, totals.ftDropped,
-      overallConvPct, totals.directEnrolled, totals.totalEnrolled, totals.capacity, overallFillPct, '', totals.waitlisted]);
+    data.push(['TOTAL','','','','','','', totals.ftSignups, totals.ftConverted, totals.ftPending,
+      overallConvPct, '']);
     var ws = XLSX.utils.aoa_to_sheet(data);
     var wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Fast Track');
@@ -866,7 +887,7 @@ function App() {
           React.createElement('button', { className: 'tab-btn' + (activeTab === 'pipeline' ? ' active' : ''), onClick: function(){ switchTab('pipeline'); } },
             '\uD83D\uDE80 Pipeline',
             (function(){
-              var ct = pipelineRows.length + filtered.filter(function(r){return r.regStatus==='pipeline';}).length;
+              var ct = filteredPipeline.length + filtered.filter(function(r){return r.regStatus==='pipeline';}).length;
               return ct > 0 ? React.createElement('span', { className: 'tab-badge', style: { background: '#f59e0b22', color: '#d97706' } }, ct) : null;
             })()
           )
@@ -875,11 +896,10 @@ function App() {
         activeTab === 'overview' && React.createElement(React.Fragment, null,
                 /* Summary cards */
         React.createElement('div', { className: 'summary-cards' },
-          React.createElement(SummaryCard, { label: 'FT Signups', value: fmtInt(totals.ftSignups), color: '#6366f1', tip: 'Total Fast Track wishlist entries \u2014 pre-registrations submitted before registration officially opens.' }),
-          React.createElement(SummaryCard, { label: 'Converted', value: fmtInt(totals.ftConverted), sub: overallConvPct != null ? overallConvPct + '% conversion' : null, color: '#22c55e', tip: 'FT signups that completed actual registration once it opened. Conversion rate = converted \u00F7 total signups.' }),
-          React.createElement(SummaryCard, { label: 'Pending', value: fmtInt(totals.ftPending), color: '#f59e0b', tip: 'FT signups still waiting \u2014 they expressed interest but haven\u2019t completed registration yet.' }),
-          React.createElement(SummaryCard, { label: 'Total Enrolled', value: fmtInt(totals.totalEnrolled), sub: overallFillPct != null ? overallFillPct + '% fill rate' : null, color: '#3b82f6', tip: 'All confirmed registrations across all sections \u2014 includes both FT conversions and direct (non-FT) enrollments.' }),
-          totals.waitlisted > 0 && React.createElement(SummaryCard, { label: 'Waitlisted', value: fmtInt(totals.waitlisted), color: '#d97706', tip: 'Participants on the waitlist after a section reached capacity.' })
+          React.createElement(SummaryCard, { label: 'FT Signups', value: fmtInt(totals.ftSignups), color: '#6366f1', tip: 'Total Fast Track wishlist entries — pre-registrations submitted before registration officially opens.' }),
+          React.createElement(SummaryCard, { label: 'Converted', value: fmtInt(totals.ftConverted), sub: overallConvPct != null ? overallConvPct + '% conversion' : null, color: '#22c55e', tip: 'FT signups that completed actual registration once it opened. Conversion rate = converted ÷ total signups.' }),
+          React.createElement(SummaryCard, { label: 'Pending', value: fmtInt(totals.ftPending), color: '#f59e0b', tip: 'FT signups still waiting — they expressed interest but haven’t completed registration yet.' }),
+          totals.capacity > 0 && React.createElement(SummaryCard, { label: 'Overall Demand', value: (totals.ftSignups > 0 && totals.capacity > 0 ? (totals.ftSignups / totals.capacity * 100).toFixed(1) + '%' : '—'), color: '#3b82f6', tip: 'FT Signups ÷ Total Capacity — how much FT interest exists relative to available spots.' })
         ),
 
         /* Explainer */
@@ -891,13 +911,8 @@ function App() {
             React.createElement('li', null, React.createElement('strong', null, 'FT Signups'), ' — Total Fast Track wishlist entries (pre-registrations before registration opens)'),
             React.createElement('li', null, React.createElement('strong', null, 'Converted'), ' — FT signups that completed actual registration'),
             React.createElement('li', null, React.createElement('strong', null, 'Pending'), ' — FT signups still waiting (haven\'t registered yet)'),
-            React.createElement('li', null, React.createElement('strong', null, 'Dropped'), ' — FT signups that were canceled before converting'),
-            React.createElement('li', null, React.createElement('strong', null, 'Conversion %'), ' — Converted ÷ Total FT Signups'),
-            React.createElement('li', null, React.createElement('strong', null, 'Direct Enrolled'), ' — Registrations that didn\'t go through Fast Track'),
-            React.createElement('li', null, React.createElement('strong', null, 'Total Enrolled'), ' — Converted + Direct (all confirmed registrations)'),
-            React.createElement('li', null, React.createElement('strong', null, 'Capacity'), ' — Total available spots (section cap for section-reg, sum of session caps for per-session)'),
-            React.createElement('li', null, React.createElement('strong', null, 'Fill %'), ' — Total Enrolled ÷ Capacity'),
-            React.createElement('li', null, React.createElement('strong', null, 'Demand %'), ' — FT Signups ÷ Capacity (interest level relative to supply)')
+            React.createElement('li', null, React.createElement('strong', null, 'Conv %'), ' — Converted ÷ Total FT Signups'),
+            React.createElement('li', null, React.createElement('strong', null, 'Demand %'), ' — FT Signups ÷ Capacity (interest level relative to available spots)')
           )
         ),
 
@@ -1008,18 +1023,12 @@ function App() {
               React.createElement('table', { className: 'ft-table' },
                 React.createElement('thead', null,
                   React.createElement('tr', null,
-                    React.createElement('th', { className: 'left', style: { minWidth: 220 } }, 'Program / Section'),
+                    React.createElement('th', { className: 'left', style: { minWidth: 280 } }, 'Program / Section'),
                     React.createElement('th', null, 'FT Signups'),
                     React.createElement('th', null, 'Converted'),
                     React.createElement('th', null, 'Pending'),
-                    React.createElement('th', null, 'Dropped'),
                     React.createElement('th', null, 'Conv %'),
-                    React.createElement('th', null, 'Direct'),
-                    React.createElement('th', null, 'Enrolled'),
-                    React.createElement('th', null, 'Capacity'),
-                    React.createElement('th', null, 'Fill %'),
-                    React.createElement('th', null, 'Demand %'),
-                    React.createElement('th', null, 'Waitlist')
+                    React.createElement('th', null, 'Demand %')
                   )
                 ),
                 React.createElement('tbody', null,
@@ -1036,31 +1045,33 @@ function App() {
                         React.createElement('td', null, fmtInt(p.ftSignups)),
                         React.createElement('td', { style: { color: '#16a34a' } }, fmtInt(p.ftConverted)),
                         React.createElement('td', { style: { color: '#d97706' } }, fmtInt(p.ftPending)),
-                        React.createElement('td', { style: { color: '#999' } }, p.ftDropped === 0 ? React.createElement('span', { className: 'cell-zero' }, '—') : fmtInt(p.ftDropped)),
                         React.createElement('td', null, fmtPct(p.convPct)),
-                        React.createElement('td', null, fmtInt(p.directEnrolled)),
-                        React.createElement('td', null, fmtInt(p.totalEnrolled)),
-                        React.createElement('td', null, p.capacity === 0 ? '—' : fmtInt(p.capacity)),
-                        React.createElement('td', null, fmtPct(p.fillPct)),
-                        React.createElement('td', null, fmtPct(p.demandPct)),
-                        React.createElement('td', null, p.waitlisted === 0 ? React.createElement('span', { className: 'cell-zero' }, '—') : fmtInt(p.waitlisted))
+                        React.createElement('td', null, fmtPct(p.demandPct))
                       ),
                       isOpen && p.sections.map(function(s, i) {
+                        var dateLabel = '';
+                        if (s.sectionStart) {
+                          var sd = new Date(s.sectionStart);
+                          var ed = s.sectionEnd ? new Date(s.sectionEnd) : null;
+                          var fmt = function(d) { return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); };
+                          dateLabel = fmt(sd) + (ed && ed.getTime() !== sd.getTime() ? ' – ' + fmt(ed) : '');
+                        }
+                        var timeLabel = '';
+                        if (s.sectionDay) timeLabel += s.sectionDay;
+                        if (s.sectionTime) timeLabel += (timeLabel ? ' ' : '') + s.sectionTime;
+                        var schedLabel = [dateLabel, timeLabel].filter(Boolean).join(' · ');
                         return React.createElement('tr', { key: p.program + '|' + i, className: 'sec-row' },
-                          React.createElement('td', { className: 'left' }, s.section,
-                            React.createElement('span', { style: { color: '#bbb', marginLeft: 6, fontSize: 10 } }, s.regMode === 'per-session' ? 'per-session' : 'section')
+                          React.createElement('td', { className: 'left' },
+                            React.createElement('div', null, s.section,
+                              React.createElement('span', { style: { color: '#bbb', marginLeft: 6, fontSize: 10 } }, s.regMode === 'per-session' ? 'per-session' : 'section')
+                            ),
+                            schedLabel && React.createElement('div', { style: { fontSize: 10, color: '#999', marginTop: 1 } }, schedLabel)
                           ),
                           React.createElement('td', null, fmtInt(s.ftSignups)),
                           React.createElement('td', { style: { color: '#16a34a' } }, fmtInt(s.ftConverted)),
                           React.createElement('td', { style: { color: '#d97706' } }, fmtInt(s.ftPending)),
-                          React.createElement('td', { style: { color: '#999' } }, s.ftDropped === 0 ? React.createElement('span', { className: 'cell-zero' }, '—') : fmtInt(s.ftDropped)),
                           React.createElement('td', null, fmtPct(s.convPct)),
-                          React.createElement('td', null, fmtInt(s.directEnrolled)),
-                          React.createElement('td', null, fmtInt(s.totalEnrolled)),
-                          React.createElement('td', null, s.capacity === 0 ? '—' : fmtInt(s.capacity)),
-                          React.createElement('td', null, fmtPct(s.fillPct)),
-                          React.createElement('td', null, fmtPct(s.demandPct)),
-                          React.createElement('td', null, s.waitlisted === 0 ? React.createElement('span', { className: 'cell-zero' }, '—') : fmtInt(s.waitlisted))
+                          React.createElement('td', null, fmtPct(s.demandPct))
                         );
                       })
                     );
@@ -1071,14 +1082,8 @@ function App() {
                     React.createElement('td', null, fmtInt(totals.ftSignups)),
                     React.createElement('td', null, fmtInt(totals.ftConverted)),
                     React.createElement('td', null, fmtInt(totals.ftPending)),
-                    React.createElement('td', null, fmtInt(totals.ftDropped)),
                     React.createElement('td', null, fmtPct(overallConvPct)),
-                    React.createElement('td', null, fmtInt(totals.directEnrolled)),
-                    React.createElement('td', null, fmtInt(totals.totalEnrolled)),
-                    React.createElement('td', null, totals.capacity === 0 ? '—' : fmtInt(totals.capacity)),
-                    React.createElement('td', null, fmtPct(overallFillPct)),
-                    React.createElement('td', null, ''),
-                    React.createElement('td', null, fmtInt(totals.waitlisted))
+                    React.createElement('td', null, '')
                   )
                 )
               )
@@ -1225,7 +1230,7 @@ function App() {
         ),
 
                 activeTab === 'pipeline' && React.createElement(React.Fragment, null,
-          React.createElement(PipelineTab, { sections: filtered, pipelineRows: pipelineRows, programs: programs, totals: totals })
+          React.createElement(PipelineTab, { sections: filtered, pipelineRows: filteredPipeline, programs: programs, totals: totals })
         ),
 
                 /* Footer */
@@ -1261,3 +1266,4 @@ ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(
   <script src="/feedback-widget.js" defer></script>
 </body>
 </html>
+
