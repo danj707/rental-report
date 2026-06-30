@@ -298,6 +298,7 @@ async function prewarmCache() {
       const useShared = rt === "gl" ? (!org.gl?.mbUuid && !!SHARED_UUIDS.gl) : !!SHARED_UUIDS[rt];
       const mbUuid = useShared ? SHARED_UUIDS[rt] : (org[rt]?.mbUuid || SHARED_UUIDS[rt]);
       if (!mbUuid) continue;
+      if (HEALTH_SKIP_REPORTS.has(rt)) continue;
       // Only pre-warm reports with no required params (default = current month)
       const cacheKey = `${slug}:${rt}:`;
       if (getCached(cacheKey)) continue; // already warm
