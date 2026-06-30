@@ -1,11 +1,11 @@
-/* rec.us — Got Feedback widget
-   Floating button + modal, POSTs to /api/feedback which emails dan@rec.us.
-   Self-disables in print mode. No deps. Idempotent (won't double-init). */
+/* rec.us — Pre-release banner + Got Feedback + Thumbs
+   Injects a sticky top banner with pre-release notice, thumbs up/down,
+   and Got Feedback button. Feedback POSTs to /api/feedback.
+   Self-disables in print mode. No deps. Idempotent. */
 (function(){
   if (window.__recFeedbackLoaded) return;
   window.__recFeedbackLoaded = true;
 
-  // Skip in print/PDF mode
   try {
     var qs = window.location.search || "";
     if (qs.indexOf("_print=1") !== -1) return;
@@ -13,12 +13,15 @@
   } catch (_) {}
 
   var CSS = ""
-    + ".fb-btn{position:fixed;bottom:20px;right:20px;z-index:99998;background:#111827;color:#fff;"
-    + "border:none;cursor:pointer;padding:11px 16px;border-radius:999px;font-size:13px;font-weight:600;"
-    + "font-family:system-ui,-apple-system,'Segoe UI',sans-serif;box-shadow:0 4px 14px rgba(0,0,0,0.18);"
-    + "display:inline-flex;align-items:center;gap:7px;transition:transform .15s ease,box-shadow .15s ease,background .15s ease;}"
-    + ".fb-btn:hover{transform:translateY(-2px);box-shadow:0 6px 18px rgba(0,0,0,0.24);background:#1f2937;}"
-    + ".fb-btn:focus-visible{outline:3px solid rgba(59,130,246,.45);outline-offset:2px;}"
+    + ".rec-banner{position:sticky;top:0;z-index:99998;background:#f97316;color:#fff;display:flex;align-items:center;justify-content:center;gap:12px;padding:8px 16px;font-size:13px;font-weight:500;letter-spacing:0.2px;font-family:system-ui,-apple-system,'Segoe UI',sans-serif;}"
+    + ".rec-banner a{color:#fff;text-decoration:underline;font-weight:600;}"
+    + ".rec-banner-msg{flex:1;text-align:center;}"
+    + ".rec-banner-thumbs{display:inline-flex;gap:4px;flex-shrink:0;}"
+    + ".rec-banner-thumb{background:rgba(255,255,255,0.2);border:1px solid rgba(255,255,255,0.35);cursor:pointer;padding:4px 8px;border-radius:999px;font-size:15px;line-height:1;transition:background .12s ease,transform .1s ease;}"
+    + ".rec-banner-thumb:hover{background:rgba(255,255,255,0.35);transform:scale(1.1);}"
+    + ".rec-banner-thumb.voted{opacity:0.5;pointer-events:none;}"
+    + ".rec-banner-fb{background:rgba(0,0,0,0.25);color:#fff;border:1px solid rgba(255,255,255,0.3);cursor:pointer;padding:6px 14px;border-radius:999px;font-size:12px;font-weight:600;font-family:inherit;display:inline-flex;align-items:center;gap:5px;transition:background .12s ease,transform .1s ease;flex-shrink:0;}"
+    + ".rec-banner-fb:hover{background:rgba(0,0,0,0.4);transform:translateY(-1px);}"
     + ".fb-overlay{position:fixed;inset:0;background:rgba(15,23,42,0.55);z-index:99999;"
     + "display:flex;align-items:center;justify-content:center;padding:20px;"
     + "font-family:system-ui,-apple-system,'Segoe UI',sans-serif;animation:fbFade .15s ease;}"
@@ -44,31 +47,14 @@
     + ".fb-ok{text-align:center;padding:14px 0 6px;}"
     + ".fb-ok h2{color:#059669;margin:0 0 6px;}"
     + ".fb-ok p{color:#6b7280;font-size:14px;margin:0;}"
-    + "@media print{.fb-btn,.fb-overlay{display:none!important;}}"
-    + ".fb-thumbs{position:fixed;bottom:20px;right:200px;z-index:99998;display:inline-flex;gap:4px;}"
-    + ".fb-thumb{background:#fff;border:1px solid #e5e7eb;cursor:pointer;padding:6px 10px;border-radius:999px;font-size:16px;box-shadow:0 2px 8px rgba(0,0,0,0.08);transition:transform .12s ease,box-shadow .12s ease,background .12s ease;line-height:1;}"
-    + ".fb-thumb:hover{transform:translateY(-2px);box-shadow:0 4px 12px rgba(0,0,0,0.15);}"
-    + ".fb-thumb.voted{opacity:0.5;pointer-events:none;}"
-    + "@media print{.fb-thumbs{display:none!important;}}"
-    + "body.print-mode .fb-thumbs{display:none!important;}"
-    + "body.print-mode .fb-btn,body.print-mode .fb-overlay{display:none!important;}";
+    + "@media print{.rec-banner,.fb-overlay{display:none!important;}}"
+    + "body.print-mode .rec-banner,body.print-mode .fb-overlay{display:none!important;}";
 
   function injectStyle(){
     var s = document.createElement("style");
     s.setAttribute("data-rec-feedback","1");
     s.textContent = CSS;
     document.head.appendChild(s);
-  }
-
-  function mountButton(){
-    if (document.querySelector(".fb-btn")) return;
-    var b = document.createElement("button");
-    b.type = "button";
-    b.className = "fb-btn";
-    b.setAttribute("aria-label","Send feedback");
-    b.innerHTML = '<span aria-hidden="true">💬</span><span>Got Feedback?</span>';
-    b.addEventListener("click", openModal);
-    document.body.appendChild(b);
   }
 
   function openModal(){
@@ -163,26 +149,28 @@
       }
     }
     $send.addEventListener("click", send);
-    // Cmd/Ctrl+Enter to submit from the textarea
     $msg.addEventListener("keydown", function(e){
       if ((e.metaKey || e.ctrlKey) && e.key === "Enter") send();
     });
   }
 
-  function mountThumbs(){
-    if (document.querySelector(".fb-thumbs")) return;
-    var wrap = document.createElement("div");
-    wrap.className = "fb-thumbs";
+  function mountBanner(){
+    if (document.querySelector(".rec-banner")) return;
+    var banner = document.createElement("div");
+    banner.className = "rec-banner";
+
+    // Thumbs
+    var thumbs = document.createElement("div");
+    thumbs.className = "rec-banner-thumbs";
     var up = document.createElement("button");
-    up.type = "button"; up.className = "fb-thumb"; up.innerHTML = "\uD83D\uDC4D";
+    up.type = "button"; up.className = "rec-banner-thumb"; up.innerHTML = "\uD83D\uDC4D";
     up.title = "This report is helpful";
     var down = document.createElement("button");
-    down.type = "button"; down.className = "fb-thumb"; down.innerHTML = "\uD83D\uDC4E";
+    down.type = "button"; down.className = "rec-banner-thumb"; down.innerHTML = "\uD83D\uDC4E";
     down.title = "This report needs work";
     function vote(sentiment, btn, otherBtn){
       btn.classList.add("voted");
       otherBtn.classList.add("voted");
-      // Parse org/report from URL: /:org/:report/...
       var parts = window.location.pathname.split("/").filter(Boolean);
       var org = parts[0] || "";
       var report = parts[1] || "";
@@ -200,15 +188,31 @@
     }
     up.addEventListener("click", function(){ vote("up", up, down); });
     down.addEventListener("click", function(){ vote("down", down, up); });
-    wrap.appendChild(up);
-    wrap.appendChild(down);
-    document.body.appendChild(wrap);
+    thumbs.appendChild(up);
+    thumbs.appendChild(down);
+
+    // Center message
+    var msg = document.createElement("div");
+    msg.className = "rec-banner-msg";
+    msg.innerHTML = 'Enhanced Reports in Pre-Release \u2014 Contact <a href="mailto:dan@rec.us">dan@rec.us</a> with Feedback or Questions';
+
+    // Got Feedback button
+    var fbBtn = document.createElement("button");
+    fbBtn.type = "button";
+    fbBtn.className = "rec-banner-fb";
+    fbBtn.innerHTML = '<span aria-hidden="true">\uD83D\uDCAC</span><span>Got Feedback?</span>';
+    fbBtn.addEventListener("click", openModal);
+
+    banner.appendChild(thumbs);
+    banner.appendChild(msg);
+    banner.appendChild(fbBtn);
+
+    document.body.insertBefore(banner, document.body.firstChild);
   }
 
   function init(){
     injectStyle();
-    mountButton();
-    mountThumbs();
+    mountBanner();
   }
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", init);
