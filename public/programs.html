@@ -652,6 +652,10 @@ function App() {
   const [retError, setRetError] = useState(null);
   const [retSort, setRetSort] = useState({ col: 'retPct', dir: 'desc' });
   const [fillSelected, setFillSelected] = useState(null);
+  const [detailSection, setDetailSection] = useState(null);
+  const [detailRows, setDetailRows] = useState(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState(null);
   const [fillSort, setFillSort] = useState({ col: 'total', dir: 'desc' });
 
   // Auto-fetch retention data if print mode
@@ -699,6 +703,24 @@ function App() {
     if ((t === 'participants' || t === 'retention' || t === 'fillrate') && !demoRows && !demoLoading) fetchDemoData();
     if (t === 'retention' && !retRows && !retLoading) fetchRetentionData();
   }, [demoRows, demoLoading, fetchDemoData, retRows, retLoading, fetchRetentionData]);
+
+  const openSectionDetail = useCallback((sectionName) => {
+    setDetailSection(sectionName);
+    setDetailRows(null);
+    setDetailError(null);
+    setDetailLoading(true);
+    setTab('detail');
+    const sd = loadedStart || '';
+    const ed = loadedEnd || '';
+    fetch(`/${ORG}/section-detail/api/data?start_date=${encodeURIComponent(sd)}&end_date=${encodeURIComponent(ed)}&section_name=${encodeURIComponent(sectionName)}`)
+      .then(r => { if (!r.ok) throw new Error('Failed to load detail'); return r.json(); })
+      .then(data => {
+        const rows = (data.rows || data || []);
+        setDetailRows(rows);
+        setDetailLoading(false);
+      })
+      .catch(e => { setDetailError(e.message); setDetailLoading(false); });
+  }, [loadedStart, loadedEnd]);
 
   const demoStats = useMemo(() => {
     if (!demoRows || demoRows.length === 0) return null;
@@ -1370,6 +1392,12 @@ function App() {
               📈 Fill Rate
               {fillRateAnalytics && <span className="tab-badge" style={{background:'#dbeafe',color:'#1d4ed8'}}>{fillRateAnalytics.totalSections}</span>}
             </div>
+            {detailSection && (
+              <div className={'tab'+(tab==='detail'?' active':'')} onClick={()=>setTab('detail')} style={{position:'relative'}}>
+                🔍 Detail
+                <span style={{fontSize:9,marginLeft:4,cursor:'pointer',opacity:0.5}} onClick={(e)=>{e.stopPropagation();setDetailSection(null);setDetailRows(null);setTab('revenue');}}>✕</span>
+              </div>
+            )}
           </div>
         )}
 
@@ -1637,7 +1665,7 @@ function App() {
                     const scp = cancelPct(sx.cancellations, sx.enrollments);
                     return (
                       <tr key={i + '-' + j} className="section-row">
-                        <td className="left">{sx.sectionName}{sx.status && <span className="sec-status">{sx.status}</span>}</td>
+                        <td className="left"><span onClick={()=>openSectionDetail(sx.sectionName)} style={{cursor:'pointer',display:'inline-flex',alignItems:'center',gap:4}} title="View registrant detail"><span style={{color:'#6366f1',fontSize:10,opacity:0.6}}>&#x25B6;</span>{sx.sectionName}</span>{sx.status && <span className="sec-status">{sx.status}</span>}</td>
                         <td className="left mono">{sx.season}</td>
                         {showRegModeCol && <td className="left">{regModeLabel(sx.regMode)}</td>}
                         <td className="left mono">{sx.startDate}</td>
@@ -2068,12 +2096,107 @@ function App() {
           </React.Fragment>
         )}
 
+        {tab === 'detail' && detailSection && (
+          <React.Fragment>
+            <div style={{marginBottom:16}}>
+              <span onClick={()=>setTab('revenue')} style={{cursor:'pointer',color:'#6366f1',fontSize:13,fontWeight:600}}>← Back to Revenue</span>
+            </div>
+            <div style={{background:'#f8f7f4',border:'1px solid #e4e4e0',borderRadius:8,padding:'16px 20px',marginBottom:20}}>
+              <div style={{fontSize:18,fontWeight:700,color:'#111827',marginBottom:4}}>{detailSection}</div>
+              <div style={{fontSize:13,color:'#6b7280'}}>Registrant revenue detail — {loadedStart || 'all dates'} to {loadedEnd || 'present'}</div>
+            </div>
+            {detailLoading && <div style={{textAlign:'center',padding:40,color:'#6b7280'}}>Loading registrant data…</div>}
+            {detailError && <div style={{textAlign:'center',padding:40,color:'#b91c1c'}}>{detailError}</div>}
+            {detailRows && detailRows.length === 0 && <div style={{textAlign:'center',padding:40,color:'#6b7280'}}>No registrations found for this section in the selected date range.</div>}
+            {detailRows && detailRows.length > 0 && (() => {
+              const dr = detailRows;
+              const totalSessions = parseInt(dr[0].total_sessions || dr[0]['total_sessions']) || 0;
+              const sessInRange = parseInt(dr[0].sessions_in_range || dr[0]['sessions_in_range']) || 0;
+              const regMode = dr[0].reg_mode || dr[0]['reg_mode'] || '';
+              const secStart = dr[0].section_start || dr[0]['section_start'] || '';
+              const secEnd = dr[0].section_end || dr[0]['section_end'] || '';
+              const sumCharged = dr.reduce((s,r) => s + parseFloat(r.charged || 0), 0);
+              const sumReceived = dr.reduce((s,r) => s + parseFloat(r.received || 0), 0);
+              const sumOutstanding = dr.reduce((s,r) => s + parseFloat(r.outstanding || 0), 0);
+              const sumRefunds = dr.reduce((s,r) => s + parseFloat(r.refunds || 0), 0);
+              const sumNet = dr.reduce((s,r) => s + parseFloat(r.net || 0), 0);
+              const sumProratedCharged = dr.reduce((s,r) => s + parseFloat(r.prorated_charged || 0), 0);
+              const sumProratedNet = dr.reduce((s,r) => s + parseFloat(r.prorated_net || 0), 0);
+              const activeCount = dr.filter(r => (r.reg_status || r['reg_status']) === 'Active').length;
+              const canceledCount = dr.filter(r => (r.reg_status || r['reg_status']) === 'Canceled').length;
+              const uniqueNames = new Set(dr.map(r => r.registrant)).size;
+              const prorateLabel = totalSessions > 0 ? sessInRange + ' of ' + totalSessions + ' sessions in range' : 'all sessions';
+              return (
+                <React.Fragment>
+                  <div className="summary-cards" style={{marginBottom:20}}>
+                    <div className="summary-card"><div className="card-label">Section Dates</div><div className="card-value" style={{fontSize:15}}>{secStart} → {secEnd}</div><div className="card-sub">{regMode === 'per-session' ? 'Per-Session' : 'Per-Section'} registration</div></div>
+                    <div className="summary-card"><div className="card-label">Sessions in Range</div><div className="card-value">{sessInRange} / {totalSessions}</div><div className="card-sub">{totalSessions > 0 ? Math.round(sessInRange/totalSessions*100) + '% of program' : '—'}</div></div>
+                    <div className="summary-card"><div className="card-label">Registrants</div><div className="card-value">{uniqueNames}</div><div className="card-sub">{activeCount} active{canceledCount > 0 ? ', ' + canceledCount + ' canceled' : ''}</div></div>
+                    <div className="summary-card"><div className="card-label">Full Net Revenue</div><div className="card-value">{fmtMoney(sumNet)}</div><div className="card-sub">Entire registration period</div></div>
+                    <div className="summary-card" style={{borderLeft:'3px solid #6366f1'}}><div className="card-label">Prorated Net Revenue</div><div className="card-value" style={{color:'#6366f1'}}>{fmtMoney(sumProratedNet)}</div><div className="card-sub">{prorateLabel}</div></div>
+                  </div>
+                  <div className="table-scroll">
+                  <table className="prog-table">
+                    <thead><tr>
+                      <th className="left">Registrant</th>
+                      <th className="left">Email</th>
+                      <th>Registered</th>
+                      <th>Status</th>
+                      <th>Charged</th>
+                      <th>Received</th>
+                      <th>Outstanding</th>
+                      <th>Refunds</th>
+                      <th>Net</th>
+                      <th style={{background:'#eef2ff',color:'#4338ca'}}>Prorated Charged</th>
+                      <th style={{background:'#eef2ff',color:'#4338ca'}}>Prorated Net</th>
+                    </tr></thead>
+                    <tbody>
+                      {dr.map((r, i) => {
+                        const isCanceled = (r.reg_status || r['reg_status']) === 'Canceled';
+                        return (
+                          <tr key={i} style={isCanceled ? {opacity:0.5} : {}}>
+                            <td className="left" style={{fontWeight:600}}>{r.registrant || 'Unknown'}</td>
+                            <td className="left" style={{fontSize:11,color:'#6b7280'}}>{r.email || '—'}</td>
+                            <td className="mono">{r.registered_on || r['registered_on'] || '—'}</td>
+                            <td>{isCanceled ? <span style={{color:'#b91c1c',fontWeight:600,fontSize:11}}>Canceled</span> : <span style={{color:'#059669',fontSize:11}}>Active</span>}</td>
+                            <td className="money">{fmtMoney(parseFloat(r.charged || 0))}</td>
+                            <td className="money">{fmtMoney(parseFloat(r.received || 0))}</td>
+                            <td className="money">{fmtMoney(parseFloat(r.outstanding || 0))}</td>
+                            <td className="money" style={parseFloat(r.refunds || 0) > 0 ? {color:'#b91c1c'} : {}}>{fmtMoney(parseFloat(r.refunds || 0))}</td>
+                            <td className="money" style={{fontWeight:600}}>{fmtMoney(parseFloat(r.net || 0))}</td>
+                            <td className="money" style={{background:'#f5f3ff',color:'#4338ca',fontWeight:600}}>{fmtMoney(parseFloat(r.prorated_charged || 0))}</td>
+                            <td className="money" style={{background:'#f5f3ff',color:'#4338ca',fontWeight:700}}>{fmtMoney(parseFloat(r.prorated_net || 0))}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                    <tfoot>
+                      <tr style={{background:'#2c2c2c',color:'#fff',fontWeight:700}}>
+                        <td className="left">TOTAL — {uniqueNames} REGISTRANTS</td>
+                        <td></td><td></td><td></td>
+                        <td className="money">{fmtMoney(sumCharged)}</td>
+                        <td className="money">{fmtMoney(sumReceived)}</td>
+                        <td className="money">{fmtMoney(sumOutstanding)}</td>
+                        <td className="money">{fmtMoney(sumRefunds)}</td>
+                        <td className="money">{fmtMoney(sumNet)}</td>
+                        <td className="money" style={{background:'#312e81',color:'#c7d2fe'}}>{fmtMoney(sumProratedCharged)}</td>
+                        <td className="money" style={{background:'#312e81',color:'#c7d2fe'}}>{fmtMoney(sumProratedNet)}</td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                  </div>
+                </React.Fragment>
+              );
+            })()}
+          </React.Fragment>
+        )}
+
                 <div className="report-footer">
           <span>{orgName} — Programs</span>
           <span>Run Date/Time: {runDate}</span>
         </div>
 
-        {((tab === 'revenue' && rows) || (tab === 'participants' && demoRows) || (tab === 'retention' && retRows) || (tab === 'fillrate' && demoRows)) && <div id="report-ready" style={{display:'none'}} />}
+        {((tab === 'revenue' && rows) || (tab === 'participants' && demoRows) || (tab === 'retention' && retRows) || (tab === 'fillrate' && demoRows) || (tab === 'detail' && detailRows)) && <div id="report-ready" style={{display:'none'}} />}
       </div>
     </div>
   );
