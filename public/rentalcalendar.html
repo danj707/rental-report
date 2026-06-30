@@ -560,7 +560,7 @@ function FacRow({site, avail, dateStr, opStart, opEnd, siteAvailAll, onSiteClick
           </span>
         </div>
       </div>
-      <TimelineBar avail={avail} dateStr={dateStr} opStart={opStart} opEnd={opEnd} siteOpStart={siteOp.start} siteOpEnd={siteOp.end} hasAnyData={hasAnyData} reservations={dayReservations} dateWithinMcp={dateWithinMcp}/>
+      <TimelineBar avail={avail} dateStr={dateStr} opStart={opStart} opEnd={opEnd} siteOpStart={opStart} siteOpEnd={opEnd} hasAnyData={hasAnyData} reservations={dayReservations} dateWithinMcp={dateWithinMcp}/>
     </div>
   );
 }
