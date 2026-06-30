@@ -7479,6 +7479,11 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  { date: '2026-06-30', title: 'Pre-release banner with feedback on every report', items: [
+    'Orange pre-release banner now appears at the top of every org report page with thumbs up/down and Got Feedback button',
+    'Share Link button removed from all reports',
+    'Banner is consistent across all report pages including org dashboard',
+  ] },
   { date: '2026-06-30', title: 'Rental Calendar: Reservation time accuracy fix', items: [
     'Fixed reserved blocks showing truncated start times when viewed mid-reservation (e.g. a 9am–1pm reservation displayed as 9:30am–1pm if viewed at 9:30am)',
     'Reserved slots now always show their true time extent regardless of current time',
