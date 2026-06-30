@@ -4373,6 +4373,62 @@ app.get("/:org/rentalcalendar/api/availability/:siteId", async (req, res) => {
   const data = await fetchSiteAvailability(req.params.siteId);
   res.json({ data });
 });
+
+// Reservation overlay — fetches actual bookings from Metabase facility report, strips PII.
+// Returns only date/time/site/location so the public calendar can show precise reserved blocks
+// without exposing reservee names, emails, phone, notes, or revenue.
+const rcReservationCache = {}; // orgId:startDate:endDate -> { data, ts }
+const RC_RES_TTL = 5 * 60 * 1000; // 5 minutes
+
+app.get("/:org/rentalcalendar/api/reservations", async (req, res) => {
+  const slug = req.params.org;
+  const org = ORGS[slug];
+  if (!org || !org.orgId) return res.status(404).json({ reservations: [] });
+
+  const today = new Date().toISOString().slice(0, 10);
+  const startDate = req.query.start_date || today;
+  const endDate = req.query.end_date || new Date(Date.now() + 35 * 86400000).toISOString().slice(0, 10);
+
+  const cacheKey = `${org.orgId}:${startDate}:${endDate}`;
+  const cached = rcReservationCache[cacheKey];
+  if (cached && Date.now() - cached.ts < RC_RES_TTL) {
+    return res.json({ reservations: cached.data });
+  }
+
+  // Use shared facility UUID with org_id, or per-org fallback
+  const mbUuid = SHARED_UUIDS.facility || (org.facility && org.facility.mbUuid);
+  if (!mbUuid) return res.json({ reservations: [] });
+
+  const useShared = !!SHARED_UUIDS.facility;
+  const orgId = useShared ? org.orgId : null;
+  const params = buildMetabaseParams({ start_date: startDate, end_date: endDate }, "facility", orgId);
+  const paramStr = params.length > 0 ? `?parameters=${encodeURIComponent(JSON.stringify(params))}` : "";
+
+  try {
+    const url = `${METABASE_URL}/api/public/card/${mbUuid}/query/json${paramStr}`;
+    console.log(`[rentalcalendar] reservations fetch: ${slug} ${startDate}..${endDate}`);
+    const response = await fetch(url, { signal: AbortSignal.timeout(30000) });
+    if (!response.ok) { console.error(`[rentalcalendar] reservations MB ${response.status}`); return res.json({ reservations: [] }); }
+
+    const data = await response.json();
+
+    // Strip ALL PII — return only timeline-essential fields
+    const reservations = (data || []).map(row => ({
+      date:     row["Date"] || row["date"] || "",
+      start:    row["Start"] || row["start"] || row["Begin"] || "",
+      end:      row["End"] || row["end"] || "",
+      site:     row["Site/Room"] || row["Site"] || row["site"] || row["Facility"] || "",
+      location: row["Location"] || row["location"] || "",
+    })).filter(r => r.date && r.start && r.end && r.site);
+
+    console.log(`[rentalcalendar] reservations: ${reservations.length} bookings for ${slug}`);
+    rcReservationCache[cacheKey] = { data: reservations, ts: Date.now() };
+    res.json({ reservations });
+  } catch (e) {
+    console.error("[rentalcalendar] reservations error:", e.message);
+    res.json({ reservations: [] });
+  }
+});
 // ── GET /:org/api/calendar-analytics — aggregate calendar funnel metrics ──
 app.get("/:org/api/calendar-analytics", async (req, res) => {
   const slug = req.params.org;
@@ -7479,9 +7535,12 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
-  { date: '2026-06-30', title: 'Rental calendar availability fix', items: [
-    'Fixed critical bug where fully-booked facilities showed green AVAILABLE bars. The MCP booking API omits dates with no bookable slots (e.g. all gaps too short for minimum duration). Previously the calendar treated missing data as \'fully available\' — now correctly shows as UNAVAILABLE when the site has data for other dates but not the selected one.',
-    'Fixed group header available count (e.g. \'3 of 3 available\') to use the same corrected logic.',
+  { date: '2026-06-30', title: 'Rental calendar: Metabase reservation overlay', items: [
+    'NEW: Rental calendar now fetches actual facility reservations from Metabase and overlays them on the MCP availability timeline. Two data sources merged: MCP bookable slots (green) + Metabase confirmed bookings (reserved). Eliminates false-positive AVAILABLE bars when MCP omits booked dates.',
+    'New server route /:org/rentalcalendar/api/reservations — proxies shared Metabase facility query, strips ALL PII (no reservee, email, phone, notes, revenue). Returns only date/time/site/location. 5-min cache.',
+    'Client-side reservation matching: courtNumber-based join between MCP site IDs and Metabase Site/Room column. Reservation data fetched on mount for 35-day window matching MCP coverage.',
+    'Unified deriveBlocks: Metabase bookings = definite reserved (highest priority), MCP slots = available, gaps with data = reserved (buffer/min duration), no data = available (loading fallback).',
+    'Fixed group header available count to correctly treat missing-date sites as unavailable when MCP has data for other dates.',
   ] },
   { date: '2026-06-30', title: 'WCAG Stage 1 accessibility', items: ['Rental calendar: recolored availability bars for 3:1 contrast ratio', 'Added stripe patterns to Unavailable/Closed bars for non-color differentiation', 'Added text labels (✓/✗) inside timeline bars', 'Screen reader: aria-live status region, sr-only timeline summaries, alt text on all images', 'Book Now link indicates new-tab behavior for assistive tech'] },
   { date: '2026-06-30', title: 'Court booking link fix', items: ['Rental calendar now links court-type sites (Tennis, Pickleball, Basketball) to the location’s court reservations page instead of the site-level booking page'] },
