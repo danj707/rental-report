@@ -965,7 +965,6 @@ function App() {
   // Tabs that appear conditionally based on org's enabled reports
   var CROSS_TABS = [
     { key:'products',  report:'products',  label:'Products',   icon:'\uD83D\uDED2', badge:null, color:'#db2777' },
-    { key:'fillrate',  report:'program-demographics',  gate:'programs',  label:'Fill Rate',  icon:'\uD83D\uDCC8', badge:null, color:'#2563eb' },
   ];
   var orgReports = useMemo(function(){
     try { return (window.ORG_CONFIG && window.ORG_CONFIG.reports) || []; } catch(e){ return []; }
