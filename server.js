@@ -4309,7 +4309,7 @@ app.get("/:org/rentalcalendar/api/photo", async (req, res) => {
 
 // Availability: use MCP SDK to call rec.us MCP server directly
 const rcAvailCache = {};
-const RC_AVAIL_TTL = 5 * 60 * 1000; // 5 minutes
+const RC_AVAIL_TTL = 15 * 60 * 1000; // 15 minutes
 let mcpClientReady = null; // lazy-initialized promise
 
 async function getRecMcpClient() {
@@ -4370,7 +4370,39 @@ app.get("/:org/rentalcalendar/api/availability/:siteId", async (req, res) => {
   const slug = req.params.org;
   const org = ORGS[slug];
   if (!org) return res.status(404).json({ error: "Unknown org" });
+  if (req.query.refresh === '1') delete rcAvailCache[req.params.siteId];
   const data = await fetchSiteAvailability(req.params.siteId);
+  res.json({ data });
+});
+
+// Batch availability — fetches all sites in one request instead of 60+ individual calls.
+// Processes in batches of 10 to avoid overwhelming the MCP connection.
+app.get("/:org/rentalcalendar/api/availability-batch", async (req, res) => {
+  const slug = req.params.org;
+  const org = ORGS[slug];
+  if (!org) return res.status(404).json({ error: "Unknown org" });
+
+  const siteIds = (req.query.siteIds || '').split(',').filter(Boolean);
+  if (siteIds.length === 0) return res.json({ data: {} });
+
+  const refresh = req.query.refresh === '1';
+  if (refresh) {
+    siteIds.forEach(id => { delete rcAvailCache[id]; });
+    console.log(`[rentalcalendar] Cache cleared for ${siteIds.length} sites (refresh=1)`);
+  }
+
+  // Process in batches of 10 to limit MCP concurrency
+  const BATCH_SIZE = 10;
+  const data = {};
+  for (let i = 0; i < siteIds.length; i += BATCH_SIZE) {
+    const batch = siteIds.slice(i, i + BATCH_SIZE);
+    const results = await Promise.allSettled(batch.map(id => fetchSiteAvailability(id)));
+    batch.forEach((id, j) => {
+      data[id] = results[j].status === 'fulfilled' ? results[j].value : {};
+    });
+  }
+
+  console.log(`[rentalcalendar] Batch availability: ${siteIds.length} sites for ${slug} (${refresh ? 'refreshed' : 'cached'})`);
   res.json({ data });
 });
 
@@ -4378,7 +4410,7 @@ app.get("/:org/rentalcalendar/api/availability/:siteId", async (req, res) => {
 // Returns only date/time/site/location so the public calendar can show precise reserved blocks
 // without exposing reservee names, emails, phone, notes, or revenue.
 const rcReservationCache = {}; // orgId:startDate:endDate -> { data, ts }
-const RC_RES_TTL = 5 * 60 * 1000; // 5 minutes
+const RC_RES_TTL = 15 * 60 * 1000; // 15 minutes
 
 app.get("/:org/rentalcalendar/api/reservations", async (req, res) => {
   const slug = req.params.org;
@@ -4390,6 +4422,8 @@ app.get("/:org/rentalcalendar/api/reservations", async (req, res) => {
   const endDate = req.query.end_date || new Date(Date.now() + 35 * 86400000).toISOString().slice(0, 10);
 
   const cacheKey = `${org.orgId}:${startDate}:${endDate}`;
+  const refresh = req.query.refresh === '1';
+  if (refresh) delete rcReservationCache[cacheKey];
   const cached = rcReservationCache[cacheKey];
   if (cached && Date.now() - cached.ts < RC_RES_TTL) {
     return res.json({ reservations: cached.data });
