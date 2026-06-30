@@ -1187,7 +1187,7 @@ async function generatePdf(orgSlug, reportType, startDate, endDate, filters = {}
   // server-side Metabase filters. The print page initializes its filter state
   // from these params before emitting #report-ready, so Puppeteer captures the
   // filtered render rather than the full dataset.
-  ["locations", "sites", "location_name", "site_type", "desks", "by_desk", "by_item", "hide_zero", "chart_net", "metric", "programs", "closures", "hrs", "section_name", "status", "questions", "cols", "search", "tab", "instructor", "split", "book_type", "addons"].forEach(k => {
+  ["locations", "sites", "location_name", "site_type", "desks", "by_desk", "by_item", "hide_zero", "chart_net", "metric", "programs", "closures", "hrs", "section_name", "section_id", "status", "questions", "cols", "search", "tab", "instructor", "split", "book_type", "addons"].forEach(k => {
     if (filters[k]) qsObj[k] = filters[k];
   });
   if (orgTok) qsObj.token = orgTok;
@@ -1675,8 +1675,8 @@ function buildMetabaseParams(query, reportType, orgId) {
   // NOTE: roster section filtering is client-side (substring match in the page),
   // not a Metabase template tag. Passing section_name here would make Metabase
   // reject the query (unknown parameter), so it is intentionally not forwarded.
-  if (reportType === "section-detail" && query.section_name) {
-    params.push({ type: "string/=", target: ["variable", ["template-tag", "section_name"]], value: query.section_name });
+  if (reportType === "section-detail" && query.section_id) {
+    params.push({ type: "string/=", target: ["variable", ["template-tag", "section_id"]], value: query.section_id });
   }
   return params;
 }
