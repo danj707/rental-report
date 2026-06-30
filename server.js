@@ -7479,6 +7479,10 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  { date: '2026-06-30', title: 'Rental Calendar: Reservation time accuracy fix', items: [
+    'Fixed reserved blocks showing truncated start times when viewed mid-reservation (e.g. a 9am–1pm reservation displayed as 9:30am–1pm if viewed at 9:30am)',
+    'Reserved slots now always show their true time extent regardless of current time',
+  ] },
   { date: '2026-06-30', title: 'Section Revenue Detail', items: [
     'New Detail tab in Programs report — click the arrow next to any section name to drill into per-registrant revenue',
     'Shows full and prorated financials based on sessions within the selected date range',
