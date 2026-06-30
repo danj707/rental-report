@@ -7479,6 +7479,13 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  { date: '2026-06-30', title: 'Fast Track report: streamlined columns + pipeline search fix', items: [
+    'Overview table stripped to FT-focused columns: Signups, Converted, Pending, Conv %, Demand %. Removed Dropped, Direct, Enrolled, Capacity, Fill %, Waitlist clutter',
+    'Section rows now display date range and day/time schedule (e.g. "Jun 1 – Jul 27 · Mon 4:15pm–5:00pm") to disambiguate identical section names — requires SQL update with Section Start/End/Day/Time columns',
+    'Pipeline tab now respects search bar and season filter (was showing unfiltered results)',
+    'Summary cards streamlined: FT Signups, Converted, Pending, Overall Demand %',
+    'Excel export updated with Date Range, Day, Time columns',
+  ] },
   { date: '2026-06-30', title: 'Pre-release banner with feedback on every report', items: [
     'Orange pre-release banner now appears at the top of every org report page with thumbs up/down and Got Feedback button',
     'Share Link button removed from all reports',
