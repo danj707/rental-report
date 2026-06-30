@@ -712,7 +712,7 @@ function App() {
     setTab('detail');
     const sd = loadedStart || '';
     const ed = loadedEnd || '';
-    fetch(`/${ORG}/section-detail/api/data?start_date=${encodeURIComponent(sd)}&end_date=${encodeURIComponent(ed)}&section_name=${encodeURIComponent(sectionName)}`)
+    fetch(withToken(`/${orgSlug}/section-detail/api/data?start_date=${encodeURIComponent(sd)}&end_date=${encodeURIComponent(ed)}&section_name=${encodeURIComponent(sectionName)}`))
       .then(r => { if (!r.ok) throw new Error('Failed to load detail'); return r.json(); })
       .then(data => {
         const rows = (data.rows || data || []);
@@ -720,7 +720,7 @@ function App() {
         setDetailLoading(false);
       })
       .catch(e => { setDetailError(e.message); setDetailLoading(false); });
-  }, [loadedStart, loadedEnd]);
+  }, [loadedStart, loadedEnd, orgSlug]);
 
   const demoStats = useMemo(() => {
     if (!demoRows || demoRows.length === 0) return null;
