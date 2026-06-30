@@ -4255,7 +4255,7 @@ app.get("/:org/rentalcalendar/api/sites", async (req, res) => {
     const clean = sites.map(s => ({
       id: s.id, name: s.name || s.courtNumber, courtNumber: s.courtNumber,
       type: s.type, capacity: s.capacity, locationId: s.locationId,
-      locationName: s.locationName, bookingUrl: s.bookingUrl,
+      locationName: s.locationName, bookingUrl: s.type === 'court' ? ('https://www.rec.us/locations/' + s.locationId) : s.bookingUrl,
       bookingFlow: s.bookingFlow, isInstantBookable: s.isInstantBookable,
       description: s.description || '',
       imageUrl: (s.images && s.images.mainGallery && s.images.mainGallery[0]) ? s.images.mainGallery[0].url : null,
@@ -7479,6 +7479,7 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  { date: '2026-06-30', title: 'Court booking link fix', items: ['Rental calendar now links court-type sites (Tennis, Pickleball, Basketball) to the location’s court reservations page instead of the site-level booking page'] },
   { date: '2026-06-30', title: 'Fast Track report: streamlined columns + pipeline search fix', items: [
     'Overview table stripped to FT-focused columns: Signups, Converted, Pending, Conv %, Demand %. Removed Dropped, Direct, Enrolled, Capacity, Fill %, Waitlist clutter',
     'Section rows now display date range and day/time schedule (e.g. "Jun 1 – Jul 27 · Mon 4:15pm–5:00pm") to disambiguate identical section names — requires SQL update with Section Start/End/Day/Time columns',
