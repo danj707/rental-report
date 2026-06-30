@@ -495,6 +495,8 @@ const SHARED_UUIDS = {
 // Report types that are valid system-wide but should NOT be offered in the
 // dashboard "+ Add report" flow (e.g. not yet ready for self-serve onboarding).
 const NON_ADDABLE_REPORTS = new Set(["overview", "program-demographics", "directors-report", "retention", "annual-report", "section-detail"]);
+// Reports that require extra params (e.g. section_id) and cannot be health-checked with org_id alone
+const HEALTH_SKIP_REPORTS = new Set(["section-detail"]);
 const RENTAL_CALENDAR_ORGS = new Set(["watertown", "norman"]);
 
 // ── Dynamic orgs (added via dashboard UI) ────────────────────────────
@@ -596,6 +598,7 @@ async function runHealthCheck(forceAll) {
     if (!org.token) continue;
     for (const rt of REPORT_TYPES) {
       if (!org[rt]?.mbUuid && !SHARED_UUIDS[rt]) continue;
+      if (HEALTH_SKIP_REPORTS.has(rt)) continue;  // drill-down reports need extra params
       if (forceAll) { toCheck.push({ slug, rt }); continue; }
       const prev = existing.reports?.[slug]?.[rt];
       const tier = getTier(slug, rt);
@@ -7569,6 +7572,9 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  { date: '2026-06-30', title: 'Health check fix: skip drill-down reports', items: [
+    'Excluded section-detail from health checks — it requires a section_id param that the checker cannot provide, causing false-positive HTTP 400 failures across all orgs',
+  ] },
   { date: '2026-06-30', title: '🏟️ Facility Rental Calendar v3 — Dual-Source Availability Engine', items: [
     '🚀 STANDALONE FACILITY RENTAL + PROGRAM CALENDAR with real-time availability and API integration. Two data sources merged into a single unified timeline: rec.us MCP real-time bookable slots + Metabase confirmed facility reservations.',
     '📡 DUAL-SOURCE ARCHITECTURE — Within 30 days: MCP get_site_availability provides real-time bookable start times (catches facility rentals AND program holds). Beyond 30 days: 100% available minus confirmed Metabase facility bookings. Soft disclaimer banner for dates past the MCP window.',
