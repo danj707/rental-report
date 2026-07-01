@@ -146,6 +146,24 @@ function getCachedPulse(slug) {
 const pulseFmt = (n) => n >= 10000 ? `${(n/1000).toFixed(1)}k` : n >= 1000 ? `${(n/1000).toFixed(1)}k` : String(Math.round(n));
 const pulseFmtMoney = (d) => '$' + Math.round(d).toLocaleString('en-US');
 
+// Server-side sparkline SVG generator (mirrors client-side sparkSVG in org.html)
+function pulseSparkSVG(trail) {
+  if (!trail || trail.length < 2) return '';
+  const w = 56, h = 18, pad = 2;
+  let max = -Infinity, min = Infinity;
+  for (const v of trail) { if (v > max) max = v; if (v < min) min = v; }
+  const range = max - min || 1;
+  const pts = trail.map((v, i) => {
+    const x = (i / (trail.length - 1)) * w;
+    const y = (h - pad) - ((v - min) / range) * (h - pad * 2);
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  });
+  const last = trail[trail.length - 1], first = trail[0];
+  const color = last > first * 1.03 ? '#4ade80' : last < first * 0.97 ? '#f87171' : '#a5b4fc';
+  const lp = pts[pts.length - 1].split(',');
+  return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" style="display:block;margin:4px auto 0;opacity:0.85"><polyline points="${pts.join(' ')}" fill="none" stroke="${color}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="${lp[0]}" cy="${lp[1]}" r="1.5" fill="${color}"/></svg>`;
+}
+
 async function refreshOrgPulse(slug, force) {
   // Return cached if still fresh (unless force-refreshing)
   if (!force) { const cached = getCachedPulse(slug); if (cached) return cached; }
@@ -5743,9 +5761,10 @@ app.get("/", (req, res) => {
     const pulseStrip = (pulse && pulse.items.length > 0)
       ? `<div class="org-pulse-strip">${pulse.items.map(it => {
           const deltaHtml = it.delta
-            ? `<div class="pulse-delta ${it.direction === 'up' ? 'delta-up' : it.direction === 'down' ? 'delta-down' : ''}">${it.direction === 'up' ? '↑' : it.direction === 'down' ? '↓' : ''} ${it.delta}</div>`
+            ? `<div class="pulse-delta ${it.direction === 'up' ? 'delta-up' : it.direction === 'down' ? 'delta-down' : ''}">${it.direction === 'up' ? '\u2191' : it.direction === 'down' ? '\u2193' : ''} ${it.delta}</div>`
             : '';
-          return `<div class="pulse-item"><div class="pulse-val">${it.value}</div><div class="pulse-label">${it.label}</div><div class="pulse-sub">${it.sub}</div>${deltaHtml}</div>`;
+          const sparkHtml = pulseSparkSVG(it.trail);
+          return `<div class="pulse-item"><div class="pulse-val">${it.value}</div><div class="pulse-label">${it.label}</div><div class="pulse-sub">${it.sub}</div>${deltaHtml}${sparkHtml}</div>`;
         }).join("")}</div>` : "";
 
     const tokenRow = org.token ? `
@@ -7657,6 +7676,9 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  { date: '2026-07-01', title: '\uD83D\uDCC8 Admin Dashboard Sparklines', items: [
+    '\uD83D\uDCC8 ADMIN PULSE SPARKLINES \u2014 The indigo pulse strip on each org card in the admin dashboard now shows 6-month trailing sparklines for every metric (revenue, refunds, enrollments, bookings, product sales). Server-side SVG generation mirrors the client-side sparkSVG in org.html. Green = trending up, red = trending down, neutral = flat. Data was already being computed by the pulse pre-warm \u2014 this just surfaces it visually on the admin side.',
+  ] },
   { date: '2026-07-01', title: '\u2744\uFE0F Ice Participant Calendar (Apex) + Public Mode Toggle', items: [
     '\u2744\uFE0F ICE PARTICIPANT CALENDAR \u2014 New ice-calendar report for Apex ice programs. Participant-filtered monthly calendar with per-session grain from Metabase card 6f02d09d. SQL filters to confirmed, non-cancelled, non-rec-managed Ice Hockey + Ice Skating bookings.',
     'RICH CALENDAR CHIPS \u2014 Each chip shows: participant name (bold, top line with separator), section name, time range, and location/facility. Click chip \u2192 popover card with full PII (email, phone, head count, notes, add-ons, total). Click day \u2192 day detail popup with all sessions sorted by time.',
