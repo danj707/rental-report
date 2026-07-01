@@ -87,9 +87,14 @@
   .pop-lbl{color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.05em;min-width:78px;white-space:nowrap;font-weight:600}
   /* loading */
   .loader{text-align:center;padding:60px 20px;color:var(--muted)}
-  .loader .spin{display:inline-block;width:28px;height:28px;border:3px solid var(--line);border-top-color:var(--accent);
-    border-radius:50%;animation:sp .7s linear infinite}
-  @keyframes sp{to{transform:rotate(360deg)}}
+  .zam-wrap{position:relative;width:280px;height:48px;margin:0 auto 16px;overflow:hidden}
+  .zam-track{position:absolute;top:38px;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,#bfdbfe 20%,#bfdbfe 80%,transparent);border-radius:1px}
+  .zam-ice{position:absolute;top:38px;height:2px;border-radius:1px;background:linear-gradient(90deg,#60a5fa,#93c5fd);animation:zam-trail 3s ease-in-out infinite}
+  @keyframes zam-trail{0%{left:0;right:100%}50%{left:0;right:0}100%{left:100%;right:0}}
+  .zamboni{position:absolute;top:6px;animation:zam-drive 3s ease-in-out infinite}
+  @keyframes zam-drive{0%{left:-10%;transform:scaleX(1)}45%{left:85%;transform:scaleX(1)}50%{left:85%;transform:scaleX(-1)}95%{left:-10%;transform:scaleX(-1)}100%{left:-10%;transform:scaleX(1)}}
+  .zam-phrase{font-size:13px;font-weight:600;color:var(--ink);margin-bottom:4px}
+  .zam-sub{font-size:11px;color:var(--muted)}
   /* print mode */
   body.print-mode .toolbar{display:none}
   body.print-mode .month-cell{min-height:80px}
@@ -366,6 +371,39 @@ function PopoverCard({ev,onClose}){
   );
 }
 
+/* ---------- Zamboni Loader ---------- */
+const ICE_PHRASES = [
+  ["Resurfacing the ice", "Hang tight, the Zamboni is making rounds"],
+  ["Flooding the rink", "Smooth ice takes a minute"],
+  ["Clearing the shavings", "Almost ready for your session"],
+  ["Warming up the Zamboni", "Checking the schedule between periods"],
+  ["Polishing the blue lines", "Your calendar is on its way"],
+  ["Making fresh ice", "The Zamboni never rests"],
+  ["Driving between periods", "Loading participant data"],
+];
+function ZamboniLoader(){
+  const [phrase]=useState(()=>ICE_PHRASES[Math.floor(Math.random()*ICE_PHRASES.length)]);
+  return (
+    <div className="loader">
+      <div className="zam-phrase">{phrase[0]}</div>
+      <div className="zam-wrap">
+        <div className="zam-track"></div>
+        <div className="zam-ice"></div>
+        <svg className="zamboni" width="40" height="28" viewBox="0 0 40 28" fill="none">
+          <rect x="4" y="8" width="32" height="12" rx="3" fill="#3b82f6"/>
+          <rect x="2" y="14" width="36" height="8" rx="2" fill="#1e40af"/>
+          <rect x="6" y="10" width="10" height="7" rx="1.5" fill="#bfdbfe" opacity=".9"/>
+          <rect x="30" y="16" width="8" height="4" rx="1" fill="#93c5fd"/>
+          <circle cx="10" cy="24" r="3" fill="#1e3a5f"/><circle cx="10" cy="24" r="1.5" fill="#64748b"/>
+          <circle cx="30" cy="24" r="3" fill="#1e3a5f"/><circle cx="30" cy="24" r="1.5" fill="#64748b"/>
+          <rect x="0" y="22" width="40" height="2" rx="1" fill="#93c5fd" opacity=".3"/>
+        </svg>
+      </div>
+      <div className="zam-sub">{phrase[1]}</div>
+    </div>
+  );
+}
+
 /* ---------- App ---------- */
 function App(){
   const c=ctx();
@@ -497,7 +535,7 @@ function App(){
       </div>
 
       {loading ? (
-        <div className="loader"><div className="spin"></div><div style={{marginTop:12}}>Loading data\u2026</div></div>
+        <ZamboniLoader />
       ) : fetchError ? (
         <div className="loader" style={{color:'#dc2626'}}>{fetchError}</div>
       ) : !participant ? (
