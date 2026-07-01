@@ -5563,11 +5563,12 @@ app.get("/api/admin/ai-analytics", (req, res) => {
   }
 });
 
-app.get("/", async (req, res) => {
-  // Pre-fetch pulse data for any orgs missing from cache (handles dynamic orgs, failed pre-warms)
+app.get("/", (req, res) => {
+  // Fire-and-forget: warm pulse cache for any orgs missing data (don't block render)
   const slugsMissingPulse = Object.keys(ORGS).filter(s => ORGS[s].token && !getCachedPulse(s));
   if (slugsMissingPulse.length > 0) {
-    await Promise.all(slugsMissingPulse.map(s => refreshOrgPulse(s).catch(() => null)));
+    Promise.all(slugsMissingPulse.map(s => refreshOrgPulse(s).catch(() => null)))
+      .then(() => console.log(`[pulse] Background-filled ${slugsMissingPulse.length} org(s)`));
   }
   // Compute AI spend from events log
   const allEvents = readEvents();
