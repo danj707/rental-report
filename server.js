@@ -7682,6 +7682,9 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  { date: '2026-07-01', title: '\uD83D\uDCCA GL Code Rollup: Excel Header + Cleanup', items: [
+    '\uD83D\uDCCA GL EXCEL HEADER \u2014 Excel export now includes org name and date range as a header row above the data columns. Removed Rec Insights button from GL report (straight financial data, no AI needed). Also fixed gift card and other payments being lost during desk-location aggregation (GL_MONEY_FIELDS was missing the new fields).'
+  ]},
   { date: '2026-07-01', title: '\uD83D\uDCB3 GL Code Rollup: Gift Card + Other Payments', items: [
     '\uD83D\uDCB3 GL GIFT CARD & OTHER PAYMENTS \u2014 Surfaced new Gift Card Payments and Other Payments columns on the GL Code Rollup frontend to match updated SQL that closes the $65 reconciliation gap. Columns appear only in the expanded Refund Breakdown view and only when the org has data, keeping the default table compact. Also added both payment types to the pie/doughnut chart and Excel export.'
   ]},
