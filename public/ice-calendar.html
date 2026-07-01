@@ -485,7 +485,7 @@ function App(){
   const participants=useMemo(()=>{
     const s=new Set();
     rows.forEach(r=>{if(r.reservee) s.add(r.reservee);});
-    return [...s].sort();
+    return [...s].sort((a,b)=>{const la=(a.split(' ').pop()||'').toLowerCase(),lb=(b.split(' ').pop()||'').toLowerCase();return la<lb?-1:la>lb?1:a.localeCompare(b);});
   },[rows]);
 
   // Read URL participant on initial load and keep in sync
