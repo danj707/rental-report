@@ -35,7 +35,7 @@
   .month-dow{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;margin-bottom:2px}
   .month-dow div{text-align:center;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);padding:4px 0}
   .month-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:2px}
-  .month-cell{min-height:100px;border:1px solid var(--line);border-radius:6px;background:var(--card);
+  .month-cell{min-height:120px;border:1px solid var(--line);border-radius:6px;background:var(--card);
     padding:6px;overflow:hidden}
   .month-cell.other{background:#fafafa;opacity:.45}
   .month-cell.today{border-color:var(--accent);border-width:2px}
@@ -43,8 +43,11 @@
   .month-cell.has-ev:hover{border-color:#94a3b8;box-shadow:0 2px 6px rgba(0,0,0,.06)}
   .month-num{font-size:11px;font-weight:700;color:var(--muted);margin-bottom:3px;line-height:1}
   .month-cell.today .month-num{color:var(--accent)}
-  .month-chip{display:block;border-radius:4px;padding:2px 5px;margin-bottom:2px;font-size:10px;font-weight:500;
-    color:#fff;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;cursor:pointer;transition:filter .12s,transform .12s}
+  .month-chip{display:block;border-radius:4px;padding:3px 5px;margin-bottom:3px;font-size:10px;font-weight:500;
+    color:#fff;overflow:hidden;cursor:pointer;transition:filter .12s,transform .12s;line-height:1.35}
+  .month-chip .chip-label{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .month-chip .chip-time{opacity:.92;font-size:9px}
+  .month-chip .chip-loc{opacity:.8;font-size:9px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .month-chip:hover{filter:brightness(1.1);transform:translateY(-1px);z-index:2}
   .month-more{font-size:9px;color:var(--muted);padding:1px 3px;cursor:pointer}
   .month-more:hover{color:var(--accent)}
@@ -244,7 +247,7 @@ function MonthView({events,monthDate,onMonthChange,onEv}){
   },[year,month]);
 
   const todayISO=fmtISO(new Date());
-  const MAX_CHIPS=3;
+  const MAX_CHIPS=2;
 
   return (
     <React.Fragment>
@@ -269,8 +272,10 @@ function MonthView({events,monthDate,onMonthChange,onEv}){
               {vis.map((e,i)=>(
                 <div key={i} className="month-chip" style={{background:colorFor(e.activity)}}
                      onClick={evt=>{evt.stopPropagation();onEv&&onEv(e);}}
-                     title={(e.reservee?e.reservee+': ':'')+e.label+' '+(e.beginMin!=null?minToLabel(e.beginMin):'')}>
-                  {e.beginMin!=null?minToLabel(e.beginMin)+' ':''}{e.reservee||e.label}
+                     title={e.label}>
+                  <div className="chip-label">{e.label}</div>
+                  <div className="chip-time">{e.beginMin!=null?minToLabel(e.beginMin):''}{e.endMin!=null?'\u2013'+minToLabel(e.endMin):''}</div>
+                  <div className="chip-loc">{[e.location,e.facility].filter(Boolean).join(', ')}</div>
                 </div>
               ))}
               {overflow>0 && (
