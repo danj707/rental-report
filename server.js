@@ -7682,6 +7682,9 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  { date: '2026-07-01', title: '\uD83D\uDCB3 GL Code Rollup: Gift Card + Other Payments', items: [
+    '\uD83D\uDCB3 GL GIFT CARD & OTHER PAYMENTS \u2014 Surfaced new Gift Card Payments and Other Payments columns on the GL Code Rollup frontend to match updated SQL that closes the $65 reconciliation gap. Columns appear only in the expanded Refund Breakdown view and only when the org has data, keeping the default table compact. Also added both payment types to the pie/doughnut chart and Excel export.'
+  ]},
   { date: '2026-07-01', title: '\uD83D\uDCC8 Admin Dashboard Sparklines', items: [
     '\uD83D\uDCC8 ADMIN PULSE SPARKLINES \u2014 The indigo pulse strip on each org card in the admin dashboard now shows 6-month trailing sparklines for every metric (revenue, refunds, enrollments, bookings, product sales). Server-side SVG generation mirrors the client-side sparkSVG in org.html. Green = trending up, red = trending down, neutral = flat. Data was already being computed by the pulse pre-warm \u2014 this just surfaces it visually on the admin side.',
     '\uD83D\uDD27 ADMIN PULSE FIX \u2014 Admin dashboard route now pre-fetches pulse data for any org missing from cache before rendering. Previously used getCachedPulse (pure cache read) which showed nothing for orgs where the startup pre-warm failed or timed out. Now falls back to a live Metabase fetch via refreshOrgPulse in parallel for any gaps. Dynamic orgs and recently-added orgs now always show their pulse strip.',
