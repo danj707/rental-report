@@ -1,0 +1,513 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Ice Participant Calendar</title>
+<script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
+<script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.26.9/babel.min.js"></script>
+<style>
+  :root{
+    --bg:#f5f6f8; --card:#fff; --ink:#1f2430; --muted:#5b6472; --line:#e5e7eb;
+    --accent:#2563eb; --shadow:0 1px 3px rgba(16,24,40,.08),0 1px 2px rgba(16,24,40,.06);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  .wrap{max-width:1280px;margin:0 auto;padding:20px}
+  .toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;background:var(--card);
+    border:1px solid var(--line);border-radius:12px;padding:10px 14px;box-shadow:var(--shadow);margin-bottom:16px}
+  .toolbar .grow{flex:1}
+  button,select,input[type=date]{font:inherit;border:1px solid var(--line);background:#fff;color:var(--ink);
+    border-radius:8px;padding:6px 12px;cursor:pointer;font-size:13px;transition:border-color .12s,background .12s}
+  button:hover{border-color:#cbd5e1;background:#f8fafc}
+  button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+  button.primary:hover{filter:brightness(.95)}
+  select{max-width:240px;text-overflow:ellipsis}
+  .org-banner{display:flex;align-items:center;gap:14px;margin-bottom:16px;padding:14px 18px;
+    background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow)}
+  .org-banner img{height:44px;max-width:180px;object-fit:contain}
+  .org-banner .org-name{font-size:18px;font-weight:700;color:var(--ink)}
+  .org-banner .org-sub{font-size:13px;color:var(--muted);margin-top:2px}
+  /* month grid */
+  .month-nav{display:flex;align-items:center;justify-content:center;gap:16px;margin-bottom:16px}
+  .month-nav .month-label{font-size:18px;font-weight:700;min-width:200px;text-align:center}
+  .month-dow{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;margin-bottom:2px}
+  .month-dow div{text-align:center;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);padding:4px 0}
+  .month-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:2px}
+  .month-cell{min-height:100px;border:1px solid var(--line);border-radius:6px;background:var(--card);
+    padding:6px;overflow:hidden}
+  .month-cell.other{background:#fafafa;opacity:.45}
+  .month-cell.today{border-color:var(--accent);border-width:2px}
+  .month-cell.has-ev{cursor:pointer}
+  .month-cell.has-ev:hover{border-color:#94a3b8;box-shadow:0 2px 6px rgba(0,0,0,.06)}
+  .month-num{font-size:11px;font-weight:700;color:var(--muted);margin-bottom:3px;line-height:1}
+  .month-cell.today .month-num{color:var(--accent)}
+  .month-chip{display:block;border-radius:4px;padding:2px 5px;margin-bottom:2px;font-size:10px;font-weight:500;
+    color:#fff;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;cursor:pointer;transition:filter .12s,transform .12s}
+  .month-chip:hover{filter:brightness(1.1);transform:translateY(-1px);z-index:2}
+  .month-more{font-size:9px;color:var(--muted);padding:1px 3px;cursor:pointer}
+  .month-more:hover{color:var(--accent)}
+  /* day detail popup */
+  .dp-overlay{position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:1000;display:flex;align-items:center;justify-content:center}
+  .dp-panel{background:var(--card);border-radius:16px;box-shadow:0 12px 48px rgba(0,0,0,.2);
+    width:580px;max-width:94vw;max-height:80vh;display:flex;flex-direction:column;overflow:hidden}
+  .dp-head{display:flex;align-items:center;justify-content:space-between;padding:16px 18px;
+    border-bottom:1px solid var(--line)}
+  .dp-date{font-size:16px;font-weight:700}
+  .dp-count{font-size:12px;color:var(--muted);margin-top:2px}
+  .dp-actions{display:flex;gap:6px;align-items:center}
+  .dp-actions button{font-size:11px;padding:4px 10px;border-radius:6px;border:1px solid var(--line);
+    background:var(--card);cursor:pointer}
+  .dp-actions button:hover{background:var(--bg)}
+  .dp-list{flex:1;overflow-y:auto;padding:12px 16px}
+  .dp-item{display:flex;gap:10px;padding:10px;border-radius:10px;margin-bottom:6px;
+    background:var(--bg);cursor:pointer;transition:background .1s}
+  .dp-item:hover{background:#eef2ff}
+  .dp-bar{width:4px;border-radius:4px;align-self:stretch;flex:0 0 auto}
+  .dp-body{flex:1;min-width:0}
+  .dp-top{display:flex;align-items:baseline;justify-content:space-between;gap:8px}
+  .dp-label{font-weight:600;font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0}
+  .dp-time{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums;flex:0 0 auto}
+  .dp-loc{font-size:11.5px;color:var(--muted);margin-top:1px}
+  .dp-meta{font-size:11px;color:#636b78;margin-top:2px}
+  /* hover card */
+  .pop-overlay{position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:1000;display:flex;align-items:center;justify-content:center}
+  .pop{background:var(--card);border-radius:16px;box-shadow:0 12px 48px rgba(0,0,0,.2);width:400px;max-width:92vw;overflow:hidden}
+  .pop-head{display:flex;align-items:flex-start;justify-content:space-between;padding:18px 18px 14px;border-bottom:1px solid var(--line)}
+  .pop-act{font-weight:700;font-size:16px}
+  .pop-time{font-size:13px;color:var(--muted);margin-top:4px}
+  .pop-x{border:1px solid var(--line);background:var(--card);border-radius:6px;width:28px;height:28px;font-size:16px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--muted);flex-shrink:0;padding:0;transition:background .1s}
+  .pop-x:hover{background:var(--bg)}
+  .pop-body{padding:14px 18px 18px}
+  .pop-row{display:flex;gap:8px;align-items:flex-start;font-size:13px;color:var(--ink);margin-bottom:8px;word-break:break-word}
+  .pop-lbl{color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.05em;min-width:78px;white-space:nowrap;font-weight:600}
+  /* loading */
+  .loader{text-align:center;padding:60px 20px;color:var(--muted)}
+  .loader .spin{display:inline-block;width:28px;height:28px;border:3px solid var(--line);border-top-color:var(--accent);
+    border-radius:50%;animation:sp .7s linear infinite}
+  @keyframes sp{to{transform:rotate(360deg)}}
+  /* print mode */
+  body.print-mode .toolbar{display:none}
+  body.print-mode .month-cell{min-height:80px}
+  body.print-mode .month-chip{font-size:9px;padding:1px 4px}
+  @media print{
+    .toolbar{display:none!important}
+    body{background:#fff}
+    .wrap{padding:8px}
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const {useState,useEffect,useMemo,useCallback,useRef} = React;
+
+/* ---------- helpers ---------- */
+const PALETTE = ['#2563eb','#0a7b71','#db2777','#b45309','#7c3aed','#dc2626','#0e7490','#4d7c0f','#c026d3','#475569'];
+function colorFor(key){
+  const s = String(key||'').toLowerCase();
+  let h=0; for(let i=0;i<s.length;i++) h=(h*31+s.charCodeAt(i))>>>0;
+  return PALETTE[h % PALETTE.length];
+}
+function pad(n){return n<10?'0'+n:''+n;}
+function fmtISO(d){return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());}
+function addDays(d,n){const x=new Date(d);x.setDate(x.getDate()+n);return x;}
+function addMonths(d,n){const x=new Date(d);x.setMonth(x.getMonth()+n);return x;}
+const DOW=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+const DOWL=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+const MONTH_NAMES=['January','February','March','April','May','June','July','August','September','October','November','December'];
+
+function toMin(v){
+  if(v==null) return null;
+  let s=String(v).trim();
+  if(!s) return null;
+  if(s.indexOf('T')>=0) s=s.split('T')[1]||s;
+  const m=s.match(/(\d{1,2}):(\d{2})\s*([ap]\.?m\.?)?/i);
+  if(!m) return null;
+  let h=+m[1], mm=+m[2];
+  const ap=(m[3]||'').toLowerCase().replace(/\./g,'');
+  if(ap==='pm'&&h<12) h+=12;
+  if(ap==='am'&&h===12) h=0;
+  return h*60+mm;
+}
+function minToLabel(min){
+  let h=Math.floor(min/60), m=min%60; const ap=h>=12?'pm':'am';
+  let hh=h%12; if(hh===0) hh=12;
+  return hh+':'+pad(m)+ap;
+}
+
+function pick(r,keys){ for(const k of keys){ if(r[k]!=null&&r[k]!=='') return r[k]; } return ''; }
+function stripHtml(s){ if(!s) return ''; return String(s).replace(/<[^>]*>/g,' ').replace(/&nbsp;/g,' ').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&#?\w+;/g,' ').replace(/\s+/g,' ').trim(); }
+
+function parseDateISO(v){
+  if(!v) return '';
+  const s=String(v).trim();
+  // already ISO? 2026-03-01
+  if(/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0,10);
+  const d=new Date(s);
+  return isNaN(d)?'':fmtISO(d);
+}
+
+function normalizeRow(r){
+  const begin=pick(r,['Begin','Start','Start Time','begin','start']);
+  const end=pick(r,['End','End Time','end']);
+  return {
+    orgName: pick(r,['Org Name','Organization','orgName']),
+    dateISO: parseDateISO(pick(r,['Date','Begin Sort','date','starts_at','Starts At'])),
+    begin, end,
+    beginMin: toMin(pick(r,['Begin Sort','Begin','Start','start','starts_at'])),
+    endMin: toMin(end),
+    location: pick(r,['Location','location','Facility Location'])||'Unassigned',
+    facility: pick(r,['Facility','Court','facility']),
+    activity: pick(r,['Activity','Site Type','Purpose','activity'])||'Session',
+    program: pick(r,['Program','program']),
+    section: pick(r,['Section','section','Purpose']),
+    label: pick(r,['Section','section','Purpose']) || pick(r,['Program','program']) || pick(r,['Activity','Site Type','Purpose','activity']) || 'Session',
+    reservee: pick(r,['Reservee','reservee','Name','name','Participant']),
+    email: pick(r,['Email','email']),
+    phone: pick(r,['Phone','phone']),
+    headCount: pick(r,['Head Cnt','Head Count','headCount','head_count']),
+    notes: stripHtml(pick(r,['Notes','notes'])),
+    addOns: pick(r,['Add Ons','addOns','add_ons']),
+    total: pick(r,['Total','total','Price','price']),
+    url: pick(r,['Section URL','Url','url','sectionUrl']),
+    description: stripHtml(pick(r,['Description','description'])),
+  };
+}
+
+/* ---------- context + data ---------- */
+function ctx(){
+  const parts=window.location.pathname.split('/').filter(Boolean);
+  const org=(parts.length>=2 && parts[1]==='ice-calendar')?parts[0]:null;
+  const q=new URLSearchParams(window.location.search);
+  return {org, token:q.get('token')||'', print:q.get('_print')==='1',
+    startDate:q.get('start_date')||'', endDate:q.get('end_date')||'',
+    participant:q.get('participant')||''};
+}
+
+async function fetchData(from,to){
+  const {org,token}=ctx();
+  if(org){
+    try{
+      const u=new URL('/'+org+'/ice-calendar/api/data',window.location.origin);
+      u.searchParams.set('start_date',from); u.searchParams.set('end_date',to);
+      if(token) u.searchParams.set('token',token);
+      const res=await fetch(u.toString());
+      if(!res.ok){
+        const body=await res.text().catch(()=>'');
+        console.error('[ice-calendar] fetch failed',res.status,body);
+        return {rows:[],src:'error',error:'Server returned '+res.status};
+      }
+      const j=await res.json();
+      const rows=j.rows||j.data||j||[];
+      return {rows,src:'live'};
+    }catch(e){
+      console.error('[ice-calendar] fetch error',e);
+      return {rows:[],src:'error',error:e.message};
+    }
+  }
+  return {rows:[],src:'none'};
+}
+
+/* ---------- MonthView ---------- */
+function MonthView({events,monthDate,onMonthChange,onEv}){
+  const [selectedDay,setSelectedDay]=useState(null);
+  const year=monthDate.getFullYear(), month=monthDate.getMonth();
+
+  const byDate=useMemo(()=>{
+    const m={};
+    events.forEach(e=>{ if(e.dateISO){ (m[e.dateISO]=m[e.dateISO]||[]).push(e); } });
+    Object.values(m).forEach(arr=>arr.sort((a,b)=>(a.beginMin||0)-(b.beginMin||0)));
+    return m;
+  },[events]);
+
+  const calDays=useMemo(()=>{
+    const first=new Date(year,month,1);
+    const last=new Date(year,month+1,0);
+    const startDow=first.getDay();
+    const days=[];
+    for(let i=0;i<startDow;i++){
+      const d=new Date(year,month,-startDow+i+1);
+      days.push({iso:fmtISO(d),inMonth:false,num:d.getDate()});
+    }
+    for(let dd=1;dd<=last.getDate();dd++){
+      days.push({iso:fmtISO(new Date(year,month,dd)),inMonth:true,num:dd});
+    }
+    const rem=42-days.length;
+    for(let j=1;j<=rem;j++){
+      const d2=new Date(year,month+1,j);
+      days.push({iso:fmtISO(d2),inMonth:false,num:d2.getDate()});
+    }
+    return days;
+  },[year,month]);
+
+  const todayISO=fmtISO(new Date());
+  const MAX_CHIPS=3;
+
+  return (
+    <React.Fragment>
+      <div className="month-nav">
+        <button onClick={()=>onMonthChange(-1)}>&#8249; Prev</button>
+        <div className="month-label">{MONTH_NAMES[month]} {year}</div>
+        <button onClick={()=>onMonthChange(1)}>Next &#8250;</button>
+      </div>
+      <div className="month-dow">
+        {DOW.map(d=><div key={d}>{d}</div>)}
+      </div>
+      <div className="month-grid">
+        {calDays.map(cd=>{
+          const dayEvs=byDate[cd.iso]||[];
+          const isToday=cd.iso===todayISO;
+          const vis=dayEvs.slice(0,MAX_CHIPS);
+          const overflow=dayEvs.length-MAX_CHIPS;
+          const cls='month-cell'+(cd.inMonth?'':' other')+(isToday?' today':'')+(dayEvs.length?' has-ev':'');
+          return (
+            <div key={cd.iso} className={cls} onClick={()=>{if(dayEvs.length) setSelectedDay(cd.iso);}}>
+              <div className="month-num">{cd.num}</div>
+              {vis.map((e,i)=>(
+                <div key={i} className="month-chip" style={{background:colorFor(e.activity)}}
+                     onClick={evt=>{evt.stopPropagation();onEv&&onEv(e);}}
+                     title={(e.reservee?e.reservee+': ':'')+e.label+' '+(e.beginMin!=null?minToLabel(e.beginMin):'')}>
+                  {e.beginMin!=null?minToLabel(e.beginMin)+' ':''}{e.reservee||e.label}
+                </div>
+              ))}
+              {overflow>0 && (
+                <div className="month-more" onClick={evt=>{evt.stopPropagation();setSelectedDay(cd.iso);}}>
+                  +{overflow} more
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      {selectedDay && (
+        <DayDetailPopup date={selectedDay} events={byDate[selectedDay]||[]} onEv={onEv}
+          onClose={()=>setSelectedDay(null)}/>
+      )}
+    </React.Fragment>
+  );
+}
+
+/* ---------- Day Detail Popup ---------- */
+function DayDetailPopup({date,events,onEv,onClose}){
+  const dt=new Date(date+'T00:00:00');
+  const label=DOWL[dt.getDay()]+', '+MONTH_NAMES[dt.getMonth()]+' '+dt.getDate()+', '+dt.getFullYear();
+  const sorted=events.slice().sort((a,b)=>(a.beginMin||0)-(b.beginMin||0));
+
+  return (
+    <div className="dp-overlay" onClick={onClose}>
+      <div className="dp-panel" onClick={e=>e.stopPropagation()}>
+        <div className="dp-head">
+          <div>
+            <div className="dp-date">{label}</div>
+            <div className="dp-count">{sorted.length} session{sorted.length!==1?'s':''}</div>
+          </div>
+          <div className="dp-actions">
+            <button onClick={onClose}>&#10005;</button>
+          </div>
+        </div>
+        <div className="dp-list">
+          {sorted.map((e,i)=>(
+            <div className="dp-item" key={i} onClick={()=>onEv&&onEv(e)}>
+              <div className="dp-bar" style={{background:colorFor(e.activity)}}></div>
+              <div className="dp-body">
+                <div className="dp-top">
+                  <span className="dp-label">{e.label}</span>
+                  <span className="dp-time">{e.beginMin!=null?minToLabel(e.beginMin):''}{e.endMin!=null?' \u2013 '+minToLabel(e.endMin):''}</span>
+                </div>
+                <div className="dp-loc">{[e.location,e.facility].filter(Boolean).join(' \u00b7 ')}</div>
+                {e.reservee && <div className="dp-meta">{e.reservee}{e.email?' \u00b7 '+e.email:''}</div>}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---------- PopoverCard ---------- */
+function PopoverCard({ev,onClose}){
+  if(!ev) return null;
+  const loc=[ev.location,ev.facility].filter(Boolean).join(' \u00b7 ');
+  return (
+    <div className="pop-overlay" onClick={onClose}>
+      <div className="pop" onClick={e=>e.stopPropagation()}>
+        <div className="pop-head">
+          <div style={{flex:1,marginRight:10}}>
+            <div className="pop-act" style={{color:colorFor(ev.activity)}}>{ev.label}</div>
+            <div className="pop-time">{ev.begin}{ev.end?' \u2013 '+ev.end:''}</div>
+          </div>
+          <button className="pop-x" onClick={onClose}>&times;</button>
+        </div>
+        <div className="pop-body">
+          {ev.reservee && <div className="pop-row"><span className="pop-lbl">Participant</span><span>{ev.reservee}</span></div>}
+          {ev.email && <div className="pop-row"><span className="pop-lbl">Email</span><span>{ev.email}</span></div>}
+          {ev.phone && <div className="pop-row"><span className="pop-lbl">Phone</span><span>{ev.phone}</span></div>}
+          {loc && <div className="pop-row"><span className="pop-lbl">Location</span><span>{loc}</span></div>}
+          {ev.activity && <div className="pop-row"><span className="pop-lbl">Activity</span><span>{ev.activity}</span></div>}
+          {ev.program && <div className="pop-row"><span className="pop-lbl">Program</span><span>{ev.program}</span></div>}
+          {ev.section && <div className="pop-row"><span className="pop-lbl">Section</span><span>{ev.section}</span></div>}
+          {ev.headCount && <div className="pop-row"><span className="pop-lbl">Head Count</span><span>{ev.headCount}</span></div>}
+          {ev.notes && <div className="pop-row"><span className="pop-lbl">Notes</span><span style={{whiteSpace:'normal',overflowWrap:'anywhere'}}>{ev.notes}</span></div>}
+          {ev.addOns && <div className="pop-row"><span className="pop-lbl">Add-Ons</span><span>{ev.addOns}</span></div>}
+          {ev.total!==''&&ev.total!=null && <div className="pop-row"><span className="pop-lbl">Total</span><span>{typeof ev.total==='number'?'$'+ev.total.toFixed(2):ev.total}</span></div>}
+          {ev.url && <a className="pop-link" href={ev.url} target="_blank" rel="noopener">View Section &#8594;</a>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---------- App ---------- */
+function App(){
+  const c=ctx();
+  // Initial date range: URL params or current month
+  const now=new Date();
+  const [startDate,setStartDate]=useState(()=>c.startDate||fmtISO(new Date(now.getFullYear(),now.getMonth(),1)));
+  const [endDate,setEndDate]=useState(()=>c.endDate||fmtISO(new Date(now.getFullYear(),now.getMonth()+1,0)));
+  const [monthDate,setMonthDate]=useState(()=>{
+    if(c.startDate){ const d=new Date(c.startDate+'T00:00:00'); return isNaN(d)?new Date():d; }
+    return new Date();
+  });
+  const [rows,setRows]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [fetchError,setFetchError]=useState('');
+  const [popoverEv,setPopoverEv]=useState(null);
+  const [participant,setParticipant]=useState(c.participant);
+
+  // Load data for the date range
+  const load=useCallback(async(from,to)=>{
+    setLoading(true); setFetchError('');
+    const {rows:raw,src,error}=await fetchData(from,to);
+    setRows(raw.map(normalizeRow));
+    setFetchError(error||'');
+    setLoading(false);
+  },[]);
+
+  // initial load
+  useEffect(()=>{
+    if(c.print) document.body.classList.add('print-mode');
+    load(startDate,endDate);
+  },[]);
+
+  // Month navigation syncs dates
+  const goMonth=useCallback((offset)=>{
+    setMonthDate(d=>{
+      const n=addMonths(d,offset);
+      const first=new Date(n.getFullYear(),n.getMonth(),1);
+      const last=new Date(n.getFullYear(),n.getMonth()+1,0);
+      setStartDate(fmtISO(first));
+      setEndDate(fmtISO(last));
+      load(fmtISO(first),fmtISO(last));
+      return n;
+    });
+  },[load]);
+
+  // Quick month buttons
+  const setMonth=(offset)=>{
+    const n=addMonths(new Date(),offset);
+    const first=new Date(n.getFullYear(),n.getMonth(),1);
+    const last=new Date(n.getFullYear(),n.getMonth()+1,0);
+    setMonthDate(n);
+    setStartDate(fmtISO(first));
+    setEndDate(fmtISO(last));
+    load(fmtISO(first),fmtISO(last));
+  };
+
+  const handleRun=()=>{
+    const d=new Date(startDate+'T00:00:00');
+    if(!isNaN(d)) setMonthDate(d);
+    load(startDate,endDate);
+  };
+
+  const handlePrint=()=>window.print();
+
+  const handlePdf=()=>{
+    const {org,token}=ctx();
+    if(!org) return;
+    const u=new URL('/'+org+'/ice-calendar/api/pdf',window.location.origin);
+    u.searchParams.set('start_date',startDate);
+    u.searchParams.set('end_date',endDate);
+    if(participant) u.searchParams.set('participant',participant);
+    if(token) u.searchParams.set('token',token);
+    window.open(u.toString(),'_blank');
+  };
+
+  // Build participant list from current rows
+  const participants=useMemo(()=>{
+    const s=new Set();
+    rows.forEach(r=>{if(r.reservee) s.add(r.reservee);});
+    return [...s].sort();
+  },[rows]);
+
+  // Read URL participant on initial load and keep in sync
+  useEffect(()=>{
+    if(c.participant && !participant) setParticipant(c.participant);
+  },[]);
+
+  // Filter rows by selected participant
+  const filtered=useMemo(()=>{
+    if(!participant) return rows;
+    return rows.filter(r=>r.reservee===participant);
+  },[rows,participant]);
+
+  // Org metadata injected by server
+  const meta=window.__ORG__||{};
+
+  // Emit #report-ready once loaded
+  const readyRef=useRef(false);
+  useEffect(()=>{
+    if(!loading && !readyRef.current){ readyRef.current=true; }
+  },[loading]);
+
+  return (
+    <div className="wrap">
+      {meta.logoUrl && (
+        <div className="org-banner">
+          <img src={meta.logoUrl} alt={meta.displayName||''} />
+          <div>
+            <div className="org-name">{meta.displayName||''}</div>
+            <div className="org-sub">Ice Participant Calendar</div>
+          </div>
+        </div>
+      )}
+      <div className="toolbar">
+        <input type="date" value={startDate} onChange={e=>setStartDate(e.target.value)} />
+        <span style={{color:'var(--muted)'}}>to</span>
+        <input type="date" value={endDate} onChange={e=>setEndDate(e.target.value)} />
+        <button onClick={()=>setMonth(-1)}>Last Month</button>
+        <button onClick={()=>setMonth(0)}>This Month</button>
+        <button onClick={()=>setMonth(1)}>Next Month</button>
+        <button className="primary" onClick={handleRun}>Run Report</button>
+        <div className="grow"></div>
+        <select value={participant} onChange={e=>setParticipant(e.target.value)}>
+          <option value="">All Participants ({rows.length})</option>
+          {participants.map(p=><option key={p} value={p}>{p}</option>)}
+        </select>
+        <button onClick={handlePrint} title="Print">Print</button>
+        <button onClick={handlePdf} title="Download PDF">PDF</button>
+      </div>
+
+      {loading ? (
+        <div className="loader"><div className="spin"></div><div style={{marginTop:12}}>Loading data\u2026</div></div>
+      ) : fetchError ? (
+        <div className="loader" style={{color:'#dc2626'}}>{fetchError}</div>
+      ) : filtered.length===0 ? (
+        <div className="loader">No sessions found for this date range{participant?' and participant':''}.</div>
+      ) : (
+        <MonthView events={filtered} monthDate={monthDate} onMonthChange={goMonth}
+          onEv={e=>setPopoverEv(e)} />
+      )}
+
+      {popoverEv && <PopoverCard ev={popoverEv} onClose={()=>setPopoverEv(null)} />}
+      {!loading && <div id="report-ready" style={{display:'none'}}></div>}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>

@@ -432,6 +432,7 @@ const ORGS = {
     memberships: { mbUuid: "1e539837-b437-4a12-b1bb-11498b12808b" },
     fasttrack: { mbUuid: "10e8dcdd-2913-4880-b093-d407fc357d76" },
     users   : { mbUuid: "d3b160b8-9da2-4ad1-bbf6-2e5ff67261e9" },
+    "ice-calendar": { mbUuid: "6f02d09d-6694-462f-9471-7a4cb8b90d01" },
   },
   theranch: {
     token:   "mXI0BgPPazLu61jl",
@@ -469,7 +470,7 @@ const ORGS = {
   },
 };
 
-const REPORT_TYPES = ["facility", "gl", "historic", "programs", "roster", "overview", "products", "memberships", "court-utilization", "calendar", "fasttrack", "users", "program-demographics", "directors-report", "instructor-payout", "retention", "annual-report", "section-detail"];
+const REPORT_TYPES = ["facility", "gl", "historic", "programs", "roster", "overview", "products", "memberships", "court-utilization", "calendar", "fasttrack", "users", "program-demographics", "directors-report", "instructor-payout", "retention", "annual-report", "section-detail", "ice-calendar"];
 
 // ── Shared Metabase UUIDs (one query per report type, parameterized by org_id) ──
 // When a report type has an entry here, the server uses this UUID + passes the
@@ -495,7 +496,7 @@ const SHARED_UUIDS = {
 
 // Report types that are valid system-wide but should NOT be offered in the
 // dashboard "+ Add report" flow (e.g. not yet ready for self-serve onboarding).
-const NON_ADDABLE_REPORTS = new Set(["overview", "program-demographics", "directors-report", "retention", "annual-report", "section-detail"]);
+const NON_ADDABLE_REPORTS = new Set(["overview", "program-demographics", "directors-report", "retention", "annual-report", "section-detail", "ice-calendar"]);
 // Reports that require extra params (e.g. section_id) and cannot be health-checked with org_id alone
 const HEALTH_SKIP_REPORTS = new Set(["section-detail"]);
 const RENTAL_CALENDAR_ORGS = new Set(["watertown", "norman"]);
@@ -1191,7 +1192,7 @@ async function generatePdf(orgSlug, reportType, startDate, endDate, filters = {}
   // server-side Metabase filters. The print page initializes its filter state
   // from these params before emitting #report-ready, so Puppeteer captures the
   // filtered render rather than the full dataset.
-  ["locations", "sites", "location_name", "site_type", "desks", "by_desk", "by_item", "hide_zero", "chart_net", "metric", "programs", "closures", "hrs", "section_name", "section_id", "status", "questions", "cols", "search", "tab", "instructor", "split", "book_type", "addons"].forEach(k => {
+  ["locations", "sites", "location_name", "site_type", "desks", "by_desk", "by_item", "hide_zero", "chart_net", "metric", "programs", "closures", "hrs", "section_name", "section_id", "status", "questions", "cols", "search", "tab", "instructor", "split", "book_type", "addons", "participant"].forEach(k => {
     if (filters[k]) qsObj[k] = filters[k];
   });
   if (orgTok) qsObj.token = orgTok;
@@ -1207,7 +1208,9 @@ async function generatePdf(orgSlug, reportType, startDate, endDate, filters = {}
         ? "Programs"
         : reportType === "roster"
           ? "Class Roster"
-          : "Facility Rental Schedule";
+          : reportType === "ice-calendar"
+        ? "Ice Participant Calendar"
+        : "Facility Rental Schedule";
 
   const browser = await puppeteer.launch({
     headless: true,
@@ -3958,6 +3961,25 @@ app.get("/:org/admin", (req, res) => {
 app.get("/:org/metrics", (req, res) => {
   if (!ORGS[req.params.org]) return res.status(404).send("Unknown org");
   res.sendFile(path.join(__dirname, "public", "metrics.html"));
+});
+
+// ---- Ice Participant Calendar (Apex) ---- participant-filtered month view
+app.get("/:org/ice-calendar", (req, res) => {
+  const slug = req.params.org;
+  const org  = ORGS[slug];
+  if (!org) return res.status(404).send("Unknown org");
+  if (!org["ice-calendar"]?.mbUuid) return res.status(404).send("Ice calendar not configured for this org.");
+  logEvent(slug, "ice-calendar", "view", req);
+  const slugTitle = slug.charAt(0).toUpperCase() + slug.slice(1);
+  const meta = {
+    slug,
+    displayName: org.displayName || `${slugTitle} Parks & Recreation`,
+    logoUrl: org.logoUrl || '',
+  };
+  const fs = require("fs");
+  const html = fs.readFileSync(path.join(__dirname, "public", "ice-calendar.html"), "utf-8");
+  const inject = `<script>window.__ORG__=${JSON.stringify(meta)};</script>`;
+  res.type("html").send(html.replace("</head>", inject + "</head>"));
 });
 
 app.get("/:org/calendar", (req, res) => {
@@ -7573,6 +7595,12 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  { date: '2026-07-01', title: '\u2744\uFE0F Ice Participant Calendar (Apex)', items: [
+    'New ice-calendar report type: participant-filtered monthly calendar showing session chips colored by program, click-a-day popover with full PII (name/email/phone), and hover card with complete booking details.',
+    'Toolbar: date range pickers + Last/This/Next Month + participant dropdown + Print + PDF export. Reads token, start_date, end_date, participant, _print from URL.',
+    'Metabase card 6f02d09d wired to apex ORGS entry. Report added to REPORT_TYPES and NON_ADDABLE_REPORTS (admin-only, not auto-added to org dashboards).',
+    'PDF export forwards participant filter. Footer label: Ice Participant Calendar.',
+  ] },
   { date: '2026-06-30', title: 'Health check fix: skip drill-down reports', items: [
     'Excluded section-detail from health checks — it requires a section_id param that the checker cannot provide, causing false-positive HTTP 400 failures across all orgs',
   ] },
