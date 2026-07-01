@@ -584,6 +584,8 @@ function normalizeRow(raw) {
     freePayments:       pf(raw['Free Payments']),
     orgCreditPayments:  pf(raw['Organization Credit Payments']),
     scholarshipPayments: pf(raw['Scholarship Payments']),
+    giftCardPayments:   pf(raw['Gift Card Payments']),
+    otherPayments:      pf(raw['Other Payments']),
     totalPayments:      pf(raw['Total Payments']),
     numPayments:        pf(raw['Number of Payments']),
 
@@ -665,6 +667,8 @@ function GlChart({ rows, viewMode, hasCCSplit }) {
             ['Free',         sumField(rows, 'freePayments'),        '#10b981'],
             ['Org Credit',   sumField(rows, 'orgCreditPayments'),   '#3b82f6'],
             ['Scholarship',  sumField(rows, 'scholarshipPayments'), '#a855f7'],
+            ['Gift Card',    sumField(rows, 'giftCardPayments'),   '#f59e0b'],
+            ['Other',        sumField(rows, 'otherPayments'),      '#6b7280'],
           ]
         : [
             ['Credit Card',  sumField(rows, 'ccPayments'),          '#4f46e5'],
@@ -673,6 +677,8 @@ function GlChart({ rows, viewMode, hasCCSplit }) {
             ['Free',         sumField(rows, 'freePayments'),         '#10b981'],
             ['Org Credit',   sumField(rows, 'orgCreditPayments'),    '#3b82f6'],
             ['Scholarship',  sumField(rows, 'scholarshipPayments'),  '#a855f7'],
+            ['Gift Card',    sumField(rows, 'giftCardPayments'),     '#f59e0b'],
+            ['Other',        sumField(rows, 'otherPayments'),        '#6b7280'],
           ];
 
       const active = buckets.filter(([, v]) => v > 0);
@@ -1033,6 +1039,8 @@ function App() {
       row['Free Payments']         = r.freePayments;
       row['Org Credit Pmts']       = r.orgCreditPayments;
       row['Scholarship Pmts']      = r.scholarshipPayments;
+      row['Gift Card Pmts']        = r.giftCardPayments;
+      row['Other Pmts']            = r.otherPayments;
       row['Total Payments']        = r.totalPayments;
       row['# Payments']            = r.numPayments;
       if (hasCCSplit) {
@@ -1068,6 +1076,8 @@ function App() {
     totalsRow['Free Payments']       = sumField(displayRows, 'freePayments');
     totalsRow['Org Credit Pmts']     = sumField(displayRows, 'orgCreditPayments');
     totalsRow['Scholarship Pmts']    = sumField(displayRows, 'scholarshipPayments');
+    totalsRow['Gift Card Pmts']      = sumField(displayRows, 'giftCardPayments');
+    totalsRow['Other Pmts']          = sumField(displayRows, 'otherPayments');
     totalsRow['Total Payments']      = totals.totalPayments;
     totalsRow['# Payments']          = totals.numPayments;
     if (hasCCSplit) {
@@ -1271,6 +1281,8 @@ function App() {
     const hasAcctName = displayRows.some(r => r.accountName);
     const hasAcctNum  = displayRows.some(r => r.accountNumber);
     const hasScholarship = displayRows.some(r => r.scholarshipPayments > 0);
+    const hasGiftCard    = displayRows.some(r => r.giftCardPayments > 0);
+    const hasOtherPmts   = displayRows.some(r => r.otherPayments > 0);
     const hasLocs     = (showLocations || isPrint) && displayRows.some(r => r.locations && r.locations.trim());
 
     // colspan helpers
@@ -1291,7 +1303,7 @@ function App() {
               <th className="group" colSpan={1}>Cash</th>
               <th className="group" colSpan={1}>Check</th>
               {!showRefunds && <th className="group" colSpan={1}>Acct Credit</th>}
-              {showRefunds && <th className="group" colSpan={hasScholarship ? 3 : 2}>Other Pmts</th>}
+              {showRefunds && <th className="group" colSpan={2 + (hasScholarship ? 1 : 0) + (hasGiftCard ? 1 : 0) + (hasOtherPmts ? 1 : 0)}>Other Pmts</th>}
               {!showRefunds && hasScholarship && <th className="group" colSpan={1}>Scholarship</th>}
               <th className="group" colSpan={1}>Total Pmts</th>
               <th className="group" colSpan={1}></th>
@@ -1320,7 +1332,7 @@ function App() {
               <th>Check</th>
 
               {!showRefunds && <th>Acct Credit</th>}
-              {showRefunds && <><th>Free</th><th>Org Credit</th>{hasScholarship && <th>Scholarship</th>}</>}
+              {showRefunds && <><th>Free</th><th>Org Credit</th>{hasScholarship && <th>Schlrshp</th>}{hasGiftCard && <th>Gift Card</th>}{hasOtherPmts && <th>Other</th>}</>}
               {!showRefunds && hasScholarship && <th>Scholarship</th>}
 
               <th>Total Pmts</th>
@@ -1375,6 +1387,8 @@ function App() {
                     <td><MoneyCell v={r.freePayments}      /></td>
                     <td><MoneyCell v={r.orgCreditPayments} /></td>
                     {hasScholarship && <td><MoneyCell v={r.scholarshipPayments} /></td>}
+                    {hasGiftCard    && <td><MoneyCell v={r.giftCardPayments}    /></td>}
+                    {hasOtherPmts   && <td><MoneyCell v={r.otherPayments}       /></td>}
                   </>
                 )}
 
@@ -1436,6 +1450,8 @@ function App() {
                   <td>{fmtMoneyStr(sumField(displayRows, 'freePayments'))}</td>
                   <td>{fmtMoneyStr(sumField(displayRows, 'orgCreditPayments'))}</td>
                   {hasScholarship && <td>{fmtMoneyStr(totals.scholarshipPayments)}</td>}
+                  {hasGiftCard    && <td>{fmtMoneyStr(sumField(displayRows, 'giftCardPayments'))}</td>}
+                  {hasOtherPmts   && <td>{fmtMoneyStr(sumField(displayRows, 'otherPayments'))}</td>}
                 </>
               )}
 
@@ -1612,4 +1628,5 @@ ReactDOM.createRoot(document.getElementById('root')).render(<App />);
       <script src="/nav-breadcrumb.js" defer></script>
   </body>
 </html>
+
 
