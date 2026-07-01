@@ -90,7 +90,8 @@
   /* print mode */
   body.print-mode .toolbar{display:none}
   body.print-mode .month-cell{min-height:80px}
-  body.print-mode .month-chip{font-size:9px;padding:1px 4px}
+  body.print-mode .month-chip{font-size:9px;padding:2px 4px}
+  body.print-mode .month-chip .chip-time,body.print-mode .month-chip .chip-loc{font-size:8px}
   @media print{
     .toolbar{display:none!important}
     body{background:#fff}
@@ -494,8 +495,10 @@ function App(){
         <div className="loader"><div className="spin"></div><div style={{marginTop:12}}>Loading data\u2026</div></div>
       ) : fetchError ? (
         <div className="loader" style={{color:'#dc2626'}}>{fetchError}</div>
+      ) : !participant ? (
+        <div className="loader">Select a participant from the dropdown above to view their calendar.</div>
       ) : filtered.length===0 ? (
-        <div className="loader">No sessions found for this date range{participant?' and participant':''}.</div>
+        <div className="loader">No sessions found for {participant} in this date range.</div>
       ) : (
         <MonthView events={filtered} monthDate={monthDate} onMonthChange={goMonth}
           onEv={e=>setPopoverEv(e)} />
