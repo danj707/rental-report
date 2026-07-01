@@ -174,7 +174,7 @@ function normalizeRow(r){
     program: pick(r,['Program','program']),
     section: pick(r,['Section','section','Purpose']),
     label: pick(r,['Section','section','Purpose']) || pick(r,['Program','program']) || pick(r,['Activity','Site Type','Purpose','activity']) || 'Session',
-    reservee: pick(r,['Reservee','reservee','Name','name','Participant']),
+    reservee: (pick(r,['Reservee','reservee','Name','name','Participant'])||'').trim(),
     email: pick(r,['Email','email']),
     phone: pick(r,['Phone','phone']),
     headCount: pick(r,['Head Cnt','Head Count','headCount','head_count']),
@@ -484,8 +484,8 @@ function App(){
   // Build participant list from current rows
   const participants=useMemo(()=>{
     const s=new Set();
-    rows.forEach(r=>{if(r.reservee) s.add(r.reservee);});
-    return [...s].sort((a,b)=>{const la=(a.split(' ').pop()||'').toLowerCase(),lb=(b.split(' ').pop()||'').toLowerCase();return la<lb?-1:la>lb?1:a.localeCompare(b);});
+    rows.forEach(r=>{if(r.reservee) s.add(r.reservee.trim());});
+    return [...s].sort((a,b)=>{const la=(a.trim().split(' ').pop()||'').toLowerCase(),lb=(b.trim().split(' ').pop()||'').toLowerCase();return la<lb?-1:la>lb?1:a.localeCompare(b);});
   },[rows]);
 
   // Read URL participant on initial load and keep in sync
@@ -529,7 +529,7 @@ function App(){
         <button className="primary" onClick={handleRun}>Run Report</button>
         <div className="grow"></div>
         <select value={participant} onChange={e=>setParticipant(e.target.value)}>
-          <option value="">All Participants ({rows.length})</option>
+          <option value="">-- Select a participant --</option>
           {participants.map(p=><option key={p} value={p}>{p}</option>)}
         </select>
         <button onClick={handlePrint} title="Print">Print</button>
