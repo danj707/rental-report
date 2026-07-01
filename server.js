@@ -5698,7 +5698,7 @@ app.get("/", (req, res) => {
     const isPublic = !!publicModes[slug];
     const pubToggle = `<button type="button" class="pub-toggle${isPublic ? ' pub-on' : ''}" onclick="togglePublicMode('${slug}',this)" title="${isPublic ? 'Public mode ON \u2014 org page shows reports only' : 'Public mode OFF \u2014 org page shows full dashboard'}">
       <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M8 3C3 3 1 8 1 8s2 5 7 5 7-5 7-5-2-5-7-5z" stroke="currentColor" stroke-width="1.5" fill="none"/><circle cx="8" cy="8" r="2" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>
-      ${isPublic ? 'Public' : 'Full'}
+      <span>${isPublic ? 'Public' : 'Full'}</span>
     </button>`;
     const headerActions = `<div class="org-header-actions">${adminLink}${pubToggle}</div>`;
 
@@ -7168,7 +7168,7 @@ app.get("/", (req, res) => {
         }
         btn.classList.toggle('pub-on', data.publicMode);
         btn.title = data.publicMode ? 'Public mode ON \u2014 org page shows reports only' : 'Public mode OFF \u2014 org page shows full dashboard';
-        btn.querySelector('svg + *').textContent = data.publicMode ? 'Public' : 'Full';
+        btn.querySelector('span').textContent = data.publicMode ? 'Public' : 'Full';
         mbToast(data.publicMode ? slug + ' org page: public mode ON (reports only)' : slug + ' org page: public mode OFF (full dashboard)');
       } catch (e) {
         alert('Toggle failed: ' + e.message);
