@@ -1096,13 +1096,17 @@ function App() {
     totalsRow['Net Amount']          = totals.netAmount;
     data.push(totalsRow);
 
-    const ws = XLSX.utils.json_to_sheet(data);
+    const ws = XLSX.utils.aoa_to_sheet([
+      [`${displayOrg} \u2014 GL Code Rollup \u2014 ${dateRangeLabel}`],
+      []
+    ]);
+    XLSX.utils.sheet_add_json(ws, data, { origin: 'A3' });
 
-    // Currency format on money columns
+    // Currency format on money columns (data starts at row 3 = index 3, header row at index 2)
     const headers = Object.keys(data[0]);
     const moneyHeaders = headers.filter(h => !['GL Code','Account Name','Locations','Account #','# Payments','# Refunds'].includes(h));
     const range = XLSX.utils.decode_range(ws['!ref']);
-    for (let R = 1; R <= range.e.r; R++) {
+    for (let R = 3; R <= range.e.r; R++) {
       moneyHeaders.forEach(h => {
         const c = headers.indexOf(h);
         if (c < 0) return;
@@ -1112,7 +1116,7 @@ function App() {
     }
 
     // Bold totals row
-    const totalsRowIdx = data.length;
+    const totalsRowIdx = 2 + data.length;
     headers.forEach((h, c) => {
       const addr = XLSX.utils.encode_cell({ r: totalsRowIdx, c });
       if (ws[addr]) ws[addr].s = { font: { bold: true } };
@@ -1556,60 +1560,6 @@ function App() {
 
         {/* Summary cards */}
         {renderSummaryCards()}
-
-        {/* AI Insights */}
-        {displayRows && displayRows.length > 0 && (
-          <div className="insights-section no-print">
-            <div className="insights-head">
-              <button type="button" className="insights-btn" onClick={getInsights} disabled={insightsLoading}>
-                {insightsLoading ? 'Analyzing…' : (insights ? '↻ Refresh insights' : '✨ Rec Insights')}
-              </button>
-              {insights && !insightsLoading && (
-                <span className="insights-sub">Analyzed {displayRows.length} GL codes</span>
-              )}
-            </div>
-            {insightsLoading && (
-              <div className="ai-loading"><div className="ai-spinner" /></div>
-            )}
-            {insightsError && !insightsLoading && (
-              <div style={{color:'#dc2626',fontSize:13,padding:'8px 0'}}><strong>Insights unavailable:</strong> {insightsError}</div>
-            )}
-            {insights && !insightsLoading && (
-              <div className="insights-grid">
-                {insights.map((ins, i) => (
-                  <div key={i} className={'insight-card insight-' + (ins.type || 'signal')}>
-                    <div className="insight-type">{ins.type || 'signal'}</div>
-                    <div className="insight-title">{ins.title}</div>
-                    <div className="insight-detail">{ins.detail}</div>
-                    {ins.action && <div className="insight-action">→ {ins.action}</div>}
-                  </div>
-                ))}
-              </div>
-            )}
-            {insights && !insightsLoading && (
-              <div className="insights-feedback">
-                {fbSent ? (
-                  <span className="fb-thanks">✅ Thanks for the feedback!</span>
-                ) : fbMode === 'down' ? (
-                  <div className="fb-down-form">
-                    <input placeholder="What could be better?" value={fbComment}
-                      onChange={e => setFbComment(e.target.value)}
-                      onKeyDown={e => e.key === 'Enter' && sendInsightsFeedback(0)}
-                      autoFocus maxLength={500} />
-                    <button className="fb-send" onClick={() => sendInsightsFeedback(0)}>Send</button>
-                    <button onClick={() => setFbMode(null)}>Cancel</button>
-                  </div>
-                ) : (
-                  <React.Fragment>
-                    <span className="fb-label">Were these insights helpful?</span>
-                    <button onClick={() => sendInsightsFeedback(1)} title="Yes, helpful">👍</button>
-                    <button onClick={() => setFbMode('down')} title="Not helpful">👎</button>
-                  </React.Fragment>
-                )}
-              </div>
-            )}
-          </div>
-        )}
 
         {/* Content: table or chart */}
         {viewMode === 'table'
