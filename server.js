@@ -7657,11 +7657,14 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
-  { date: '2026-07-01', title: '\u2744\uFE0F Ice Participant Calendar (Apex)', items: [
-    'New ice-calendar report type: participant-filtered monthly calendar showing session chips colored by program, click-a-day popover with full PII (name/email/phone), and hover card with complete booking details.',
-    'Toolbar: date range pickers + Last/This/Next Month + participant dropdown + Print + PDF export. Reads token, start_date, end_date, participant, _print from URL.',
-    'Metabase card 6f02d09d wired to apex ORGS entry. Report added to REPORT_TYPES and NON_ADDABLE_REPORTS (admin-only, not auto-added to org dashboards).',
-    'PDF export forwards participant filter. Footer label: Ice Participant Calendar.',
+  { date: '2026-07-01', title: '\u2744\uFE0F Ice Participant Calendar (Apex) + Public Mode Toggle', items: [
+    '\u2744\uFE0F ICE PARTICIPANT CALENDAR \u2014 New ice-calendar report for Apex ice programs. Participant-filtered monthly calendar with per-session grain from Metabase card 6f02d09d. SQL filters to confirmed, non-cancelled, non-rec-managed Ice Hockey + Ice Skating bookings.',
+    'RICH CALENDAR CHIPS \u2014 Each chip shows: participant name (bold, top line with separator), section name, time range, and location/facility. Click chip \u2192 popover card with full PII (email, phone, head count, notes, add-ons, total). Click day \u2192 day detail popup with all sessions sorted by time.',
+    'PARTICIPANT DROPDOWN \u2014 Sorted by last name (with trailing-space trim for Metabase data). Defaults to empty with prompt: admin must select a participant before any calendar renders. reservee field trimmed in normalizeRow, Set builder, and sort comparator.',
+    'PDF EXPORT \u2014 Renders the currently viewed month (not toolbar start_date), so PDF matches what the admin sees on screen. Participant filter forwarded via generatePdf allowlist.',
+    '\u26F7\uFE0F ZAMBONI LOADER \u2014 Custom SVG Zamboni drives left-right across an ice track with fresh-ice trail animation. Random phrase pairs on each load (Resurfacing the ice, Flooding the rink, Clearing the shavings, etc.).',
+    'REPORT WIRING \u2014 Added to REPORT_TYPES, reportMeta in admin dashboard + org.html (\u2744\uFE0F icon, sky-blue accent), explicit /:org/ice-calendar route with __ORG__ metadata injection. Visible on Apex org card.',
+    '\uD83D\uDC41\uFE0F PUBLIC MODE TOGGLE \u2014 Per-org eye button on admin dashboard org card header. Toggles between Full (default) and Public mode. Persisted in DATA_DIR/public-mode.json. When enabled, org landing page (org.html) strips Daily Pulse, Calendar Analytics, and metrics bar \u2014 shows only the report card grid. Ready to flip for Apex before sharing dashboard link externally.',
   ] },
   { date: '2026-06-30', title: 'Health check fix: skip drill-down reports', items: [
     'Excluded section-detail from health checks — it requires a section_id param that the checker cannot provide, causing false-positive HTTP 400 failures across all orgs',
