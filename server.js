@@ -496,7 +496,7 @@ const SHARED_UUIDS = {
 
 // Report types that are valid system-wide but should NOT be offered in the
 // dashboard "+ Add report" flow (e.g. not yet ready for self-serve onboarding).
-const NON_ADDABLE_REPORTS = new Set(["overview", "program-demographics", "directors-report", "retention", "annual-report", "section-detail", "ice-calendar"]);
+const NON_ADDABLE_REPORTS = new Set(["overview", "program-demographics", "directors-report", "retention", "annual-report", "section-detail"]);
 // Reports that require extra params (e.g. section_id) and cannot be health-checked with org_id alone
 const HEALTH_SKIP_REPORTS = new Set(["section-detail"]);
 const RENTAL_CALENDAR_ORGS = new Set(["watertown", "norman"]);
@@ -5550,7 +5550,8 @@ app.get("/", (req, res) => {
     users:       { label: "Community Intel",            icon: "👥", desc: "Demographics, revenue, and strategy intelligence across your community", color: "#7c3aed", ai: true },
     "instructor-payout": { label: "Instructor Payout", ai: true, icon: "💰", desc: "Revenue splits and payout calculations by instructor", color: "#6366f1" },
 
-    "rentalcalendar":    { label: "Rental Calendar", icon: "🏟️", desc: "Real-time facility availability with live booking data", color: "#059669" },  };
+    "rentalcalendar":    { label: "Rental Calendar", icon: "🏟️", desc: "Real-time facility availability with live booking data", color: "#059669" },
+    "ice-calendar":      { label: "Ice Participant Calendar", icon: "❄️", desc: "Participant-filtered monthly ice program calendar", color: "#0ea5e9" },  };
 
   const hiddenReports = getAllHiddenReports();
   const allVotes = loadVotes();
