@@ -45,6 +45,7 @@
   .month-cell.today .month-num{color:var(--accent)}
   .month-chip{display:block;border-radius:4px;padding:3px 5px;margin-bottom:3px;font-size:10px;font-weight:500;
     color:#fff;overflow:hidden;cursor:pointer;transition:filter .12s,transform .12s;line-height:1.35}
+  .month-chip .chip-name{font-weight:700;font-size:10.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;border-bottom:1px solid rgba(255,255,255,.25);padding-bottom:1px;margin-bottom:1px}
   .month-chip .chip-label{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .month-chip .chip-time{opacity:.92;font-size:9px}
   .month-chip .chip-loc{opacity:.8;font-size:9px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -277,7 +278,8 @@ function MonthView({events,monthDate,onMonthChange,onEv}){
               {vis.map((e,i)=>(
                 <div key={i} className="month-chip" style={{background:colorFor(e.activity)}}
                      onClick={evt=>{evt.stopPropagation();onEv&&onEv(e);}}
-                     title={e.label}>
+                     title={e.reservee||e.label}>
+                  {e.reservee && <div className="chip-name">{e.reservee}</div>}
                   <div className="chip-label">{e.label}</div>
                   <div className="chip-time">{e.beginMin!=null?minToLabel(e.beginMin):''}{e.endMin!=null?'\u2013'+minToLabel(e.endMin):''}</div>
                   <div className="chip-loc">{[e.location,e.facility].filter(Boolean).join(', ')}</div>
