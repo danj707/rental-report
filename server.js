@@ -5563,7 +5563,12 @@ app.get("/api/admin/ai-analytics", (req, res) => {
   }
 });
 
-app.get("/", (req, res) => {
+app.get("/", async (req, res) => {
+  // Pre-fetch pulse data for any orgs missing from cache (handles dynamic orgs, failed pre-warms)
+  const slugsMissingPulse = Object.keys(ORGS).filter(s => ORGS[s].token && !getCachedPulse(s));
+  if (slugsMissingPulse.length > 0) {
+    await Promise.all(slugsMissingPulse.map(s => refreshOrgPulse(s).catch(() => null)));
+  }
   // Compute AI spend from events log
   const allEvents = readEvents();
   const aiEvents = allEvents.filter(e => e.event === "insights" || e.event === "message");
@@ -7678,6 +7683,7 @@ app.get("/", (req, res) => {
     const UPDATES = [
   { date: '2026-07-01', title: '\uD83D\uDCC8 Admin Dashboard Sparklines', items: [
     '\uD83D\uDCC8 ADMIN PULSE SPARKLINES \u2014 The indigo pulse strip on each org card in the admin dashboard now shows 6-month trailing sparklines for every metric (revenue, refunds, enrollments, bookings, product sales). Server-side SVG generation mirrors the client-side sparkSVG in org.html. Green = trending up, red = trending down, neutral = flat. Data was already being computed by the pulse pre-warm \u2014 this just surfaces it visually on the admin side.',
+    '\uD83D\uDD27 ADMIN PULSE FIX \u2014 Admin dashboard route now pre-fetches pulse data for any org missing from cache before rendering. Previously used getCachedPulse (pure cache read) which showed nothing for orgs where the startup pre-warm failed or timed out. Now falls back to a live Metabase fetch via refreshOrgPulse in parallel for any gaps. Dynamic orgs and recently-added orgs now always show their pulse strip.',
   ] },
   { date: '2026-07-01', title: '\u2744\uFE0F Ice Participant Calendar (Apex) + Public Mode Toggle', items: [
     '\u2744\uFE0F ICE PARTICIPANT CALENDAR \u2014 New ice-calendar report for Apex ice programs. Participant-filtered monthly calendar with per-session grain from Metabase card 6f02d09d. SQL filters to confirmed, non-cancelled, non-rec-managed Ice Hockey + Ice Skating bookings.',
