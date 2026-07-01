@@ -474,8 +474,8 @@ function App(){
     const {org,token}=ctx();
     if(!org) return;
     const u=new URL('/'+org+'/ice-calendar/api/pdf',window.location.origin);
-    u.searchParams.set('start_date',startDate);
-    u.searchParams.set('end_date',endDate);
+    u.searchParams.set('start_date',fmtISO(new Date(monthDate.getFullYear(),monthDate.getMonth(),1)));
+    u.searchParams.set('end_date',fmtISO(new Date(monthDate.getFullYear(),monthDate.getMonth()+1,0)));
     if(participant) u.searchParams.set('participant',participant);
     if(token) u.searchParams.set('token',token);
     window.open(u.toString(),'_blank');
