@@ -514,6 +514,7 @@ const LOG_FILE    = path.join(DATA_DIR, "send_log.json");
 const EVENTS_FILE = path.join(DATA_DIR, "events.jsonl");
 const SHOWCASE_FILE = path.join(DATA_DIR, "showcase.json");
 const VISIBILITY_FILE = path.join(DATA_DIR, "report-visibility.json");
+const PUBLIC_MODE_FILE = path.join(DATA_DIR, "public-mode.json");
 const VOTES_FILE = path.join(DATA_DIR, "votes.json");
 const FLAGS_FILE = path.join(DATA_DIR, "feature-flags.json");
 const HEALTH_FILE = path.join(DATA_DIR, "health-check.json");
@@ -728,6 +729,19 @@ function writeJSON(file, data) {
 const DEFAULT_FLAGS = { emailSubscriptions: false };
 function getFlags() { return Object.assign({}, DEFAULT_FLAGS, readJSON(FLAGS_FILE, {})); }
 function setFlag(key, value) { const f = getFlags(); f[key] = value; writeJSON(FLAGS_FILE, f); return f; }
+
+// ── Public mode (per-org toggle to strip admin chrome from org page) ──
+function getPublicMode(slug) {
+  return !!readJSON(PUBLIC_MODE_FILE, {})[slug];
+}
+function setPublicMode(slug, enabled) {
+  const all = readJSON(PUBLIC_MODE_FILE, {});
+  if (enabled) all[slug] = true; else delete all[slug];
+  writeJSON(PUBLIC_MODE_FILE, all);
+}
+function getAllPublicModes() {
+  return readJSON(PUBLIC_MODE_FILE, {});
+}
 
 // ── Report visibility (per-org hidden reports) ───────────────────────
 function getHiddenReports(slug) {
@@ -4907,6 +4921,7 @@ app.get("/:org", async (req, res, next) => {
     token: org.token || "",
     chatVisible: !orgHidden.has("chat"),
     wizardVisible: !orgHidden.has("report-wizard"),
+    publicMode: getPublicMode(slug),
   };
   // Attach latest health-check results for this org's reports
   const hc = loadHealthResults();
@@ -4944,6 +4959,16 @@ app.post("/api/admin/toggle-report", express.json(), (req, res) => {
   if (idx >= 0) hidden.splice(idx, 1); else hidden.push(report);
   setHiddenReports(slug, hidden);
   res.json({ ok: true, hidden });
+});
+
+// ── POST /api/admin/toggle-public-mode — show/hide admin chrome on org page ──
+app.post("/api/admin/toggle-public-mode", express.json(), (req, res) => {
+  if (dashboardPasswordBlocked(req, res)) return;
+  const { org: slug } = req.body || {};
+  if (!ORGS[slug]) return res.status(404).json({ error: "Unknown org" });
+  const current = getPublicMode(slug);
+  setPublicMode(slug, !current);
+  res.json({ ok: true, publicMode: !current });
 });
 
 // ── GET /api/health-check — latest health check results ──────────────
@@ -5554,6 +5579,7 @@ app.get("/", (req, res) => {
     "ice-calendar":      { label: "Ice Participant Calendar", icon: "❄️", desc: "Participant-filtered monthly ice program calendar", color: "#0ea5e9" },  };
 
   const hiddenReports = getAllHiddenReports();
+  const publicModes = getAllPublicModes();
   const allVotes = loadVotes();
   const healthData = loadHealthResults();
   const healthCfg = loadHealthConfig();
@@ -5669,7 +5695,12 @@ app.get("/", (req, res) => {
       const badge = parts ? `<span class="sub-badge">${parts}</span>` : '';
       adminLink = `<a href="/${slug}/admin${tokenQS}" class="org-action-link" title="${total} subscriber${total!==1?'s':''}">📧 Admin${badge}</a>`;
     }
-    const headerActions = adminLink ? `<div class="org-header-actions">${adminLink}</div>` : "";
+    const isPublic = !!publicModes[slug];
+    const pubToggle = `<button type="button" class="pub-toggle${isPublic ? ' pub-on' : ''}" onclick="togglePublicMode('${slug}',this)" title="${isPublic ? 'Public mode ON \u2014 org page shows reports only' : 'Public mode OFF \u2014 org page shows full dashboard'}">
+      <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M8 3C3 3 1 8 1 8s2 5 7 5 7-5 7-5-2-5-7-5z" stroke="currentColor" stroke-width="1.5" fill="none"/><circle cx="8" cy="8" r="2" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>
+      ${isPublic ? 'Public' : 'Full'}
+    </button>`;
+    const headerActions = `<div class="org-header-actions">${adminLink}${pubToggle}</div>`;
 
     // Inline metrics toggle (only for orgs with orgId)
     const metricsToggle = org.orgId ? `
@@ -5976,6 +6007,9 @@ app.get("/", (req, res) => {
     .report-card-hidden { opacity: 0.4; }
     .report-card-hidden:hover { opacity: 0.7; }
     .report-card-hidden .report-label { text-decoration: line-through; }
+    .pub-toggle { font-size: 11px; display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; border: 1px solid #ddd; border-radius: 5px; background: #fff; color: #888; cursor: pointer; transition: all .15s; white-space: nowrap; }
+    .pub-toggle:hover { background: #f0f0f0; color: #333; }
+    .pub-toggle.pub-on { background: #ecfdf5; border-color: #6ee7b7; color: #059669; }
     .vis-toggle { background: none; border: none; cursor: pointer; padding: 4px; border-radius: 4px; flex-shrink: 0; opacity: 0; transition: opacity .15s; color: #999; line-height: 0; }
     .report-card:hover .vis-toggle { opacity: 0.5; }
     .report-card-hidden .vis-toggle { opacity: 0.5; }
@@ -7109,6 +7143,33 @@ app.get("/", (req, res) => {
         svgs[1].style.display = isNowHidden ? 'block' : 'none';
         btn.title = isNowHidden ? 'Hidden from org page' : 'Visible on org page';
         mbToast(isNowHidden ? report + ' hidden from ' + slug + ' org page' : report + ' visible on ' + slug + ' org page');
+      } catch (e) {
+        alert('Toggle failed: ' + e.message);
+      }
+      btn.style.opacity = '';
+    }
+
+    async function togglePublicMode(slug, btn) {
+      if (!mbPwd) {
+        mbPwd = getDashPwd();
+        if (!mbPwd) return;
+      }
+      btn.style.opacity = '0.3';
+      try {
+        const res = await fetch('/api/admin/toggle-public-mode', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ password: mbPwd, org: slug }),
+        });
+        const data = await res.json().catch(function(){ return {}; });
+        if (!res.ok || !data.ok) {
+          if (res.status === 401) { mbPwd = ''; clearDashPwd(); }
+          throw new Error(data.error || 'Failed');
+        }
+        btn.classList.toggle('pub-on', data.publicMode);
+        btn.title = data.publicMode ? 'Public mode ON \u2014 org page shows reports only' : 'Public mode OFF \u2014 org page shows full dashboard';
+        btn.querySelector('svg + *').textContent = data.publicMode ? 'Public' : 'Full';
+        mbToast(data.publicMode ? slug + ' org page: public mode ON (reports only)' : slug + ' org page: public mode OFF (full dashboard)');
       } catch (e) {
         alert('Toggle failed: ' + e.message);
       }

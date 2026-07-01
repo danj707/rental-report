@@ -399,6 +399,15 @@
     '</div>',
   ].join('');
 
+  /* ── Public mode: strip admin chrome, show reports only ── */
+  if (cfg.publicMode) {
+    document.getElementById('pulse-panel').remove();
+    document.getElementById('cal-analytics').remove();
+    document.getElementById('metrics-bar').remove();
+    var sub = document.querySelector('.topbar-sub');
+    if (sub) sub.textContent = 'Reports';
+  }
+
   /* ── Metrics bar — admin-only, hidden on org landing page ── */
   /* Views/Exports/AI Insights are surfaced on the admin dashboard instead */
 
@@ -429,6 +438,7 @@
 
   /* ── Executive Pulse ── */
   (function() {
+    if (cfg.publicMode) return;
     var p = cfg.pulse;
     if (!p || !p.items || p.items.length === 0) return;
     // Priority: revenue, refunds, enrollments, then products or households
@@ -467,6 +477,7 @@
 
   /* ── Calendar Analytics ── */
   (function() {
+    if (cfg.publicMode) return;
     var reports = cfg.reports || [];
     var hasCal = reports.indexOf('calendar') > -1 || reports.indexOf('rentalcalendar') > -1;
     if (!hasCal) return;
