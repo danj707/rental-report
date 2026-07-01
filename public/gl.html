@@ -1294,7 +1294,7 @@ function App() {
 
     return (
       <div className="table-wrapper">
-        <table className={(showRefunds || hasScholarship) ? 'compact' : ''}>
+        <table className={(showRefunds || hasScholarship || hasGiftCard || hasOtherPmts) ? 'compact' : ''}>
           <thead>
             {/* ── Group header ── */}
             <tr>
@@ -1305,6 +1305,8 @@ function App() {
               {!showRefunds && <th className="group" colSpan={1}>Acct Credit</th>}
               {showRefunds && <th className="group" colSpan={2 + (hasScholarship ? 1 : 0) + (hasGiftCard ? 1 : 0) + (hasOtherPmts ? 1 : 0)}>Other Pmts</th>}
               {!showRefunds && hasScholarship && <th className="group" colSpan={1}>Scholarship</th>}
+              {!showRefunds && hasGiftCard    && <th className="group" colSpan={1}>Gift Card</th>}
+              {!showRefunds && hasOtherPmts   && <th className="group" colSpan={1}>Other</th>}
               <th className="group" colSpan={1}>Total Pmts</th>
               <th className="group" colSpan={1}></th>
               <th className={`group${showRefunds ? ' refund-group' : ''}`} colSpan={refundCols}>{showRefunds ? 'Refunds' : 'Total Refunds'}</th>
@@ -1334,6 +1336,8 @@ function App() {
               {!showRefunds && <th>Acct Credit</th>}
               {showRefunds && <><th>Free</th><th>Org Credit</th>{hasScholarship && <th>Schlrshp</th>}{hasGiftCard && <th>Gift Card</th>}{hasOtherPmts && <th>Other</th>}</>}
               {!showRefunds && hasScholarship && <th>Scholarship</th>}
+              {!showRefunds && hasGiftCard    && <th>Gift Card</th>}
+              {!showRefunds && hasOtherPmts   && <th>Other</th>}
 
               <th>Total Pmts</th>
               <th># Pmts</th>
@@ -1382,6 +1386,8 @@ function App() {
 
                 {!showRefunds && <td><MoneyCell v={r.orgCreditPayments} /></td>}
                 {!showRefunds && hasScholarship && <td><MoneyCell v={r.scholarshipPayments} /></td>}
+                {!showRefunds && hasGiftCard    && <td><MoneyCell v={r.giftCardPayments}    /></td>}
+                {!showRefunds && hasOtherPmts   && <td><MoneyCell v={r.otherPayments}       /></td>}
                 {showRefunds && (
                   <>
                     <td><MoneyCell v={r.freePayments}      /></td>
@@ -1445,6 +1451,8 @@ function App() {
 
               {!showRefunds && <td>{fmtMoneyStr(totals.orgCreditPayments)}</td>}
               {!showRefunds && hasScholarship && <td>{fmtMoneyStr(totals.scholarshipPayments)}</td>}
+              {!showRefunds && hasGiftCard    && <td>{fmtMoneyStr(sumField(displayRows, 'giftCardPayments'))}</td>}
+              {!showRefunds && hasOtherPmts   && <td>{fmtMoneyStr(sumField(displayRows, 'otherPayments'))}</td>}
               {showRefunds && (
                 <>
                   <td>{fmtMoneyStr(sumField(displayRows, 'freePayments'))}</td>
