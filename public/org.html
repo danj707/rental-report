@@ -508,7 +508,7 @@
       if (it.delta) {
         var color = it.direction === 'up' ? '#4ade80' : it.direction === 'down' ? '#f87171' : '#a5b4fc';
         var arrow = it.direction === 'up' ? '↑' : it.direction === 'down' ? '↓' : '';
-        deltaHtml = '<div style="font-size:11px;color:' + color + ';margin-top:3px;font-weight:600">' + arrow + ' ' + it.delta + ' vs last month</div>';
+        deltaHtml = '<div style="font-size:11px;color:' + color + ';margin-top:3px;font-weight:600">' + arrow + ' ' + it.delta + ' vs prior pace</div>';
       }
       var sparkHtml = sparkSVG(it.trail);
       var goalHtml = '';
