@@ -213,6 +213,17 @@
     .pulse-card-val { font-size: 17px; font-weight: 700; color: #fff; line-height: 1.1; }
     .pulse-card-label { font-size: 9px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.7px; color: #a5b4fc; margin-top: 2px; }
     .pulse-card-sub { font-size: 9px; color: rgba(165,180,252,0.65); margin-top: 1px; }
+    .pulse-goal-wrap { display: flex; align-items: center; gap: 10px; margin-top: 6px; }
+    .pulse-goal-ring { width: 36px; height: 36px; flex-shrink: 0; }
+    .pulse-goal-text { font-size: 9px; color: #c7d2fe; line-height: 1.3; }
+    .pulse-goal-pct { font-weight: 700; font-size: 11px; }
+    .goal-edit-row { display: flex; align-items: center; gap: 6px; margin-top: 4px; }
+    .goal-edit-row input { width: 80px; padding: 3px 6px; border: 1px solid rgba(255,255,255,0.2); border-radius: 4px; background: rgba(255,255,255,0.1); color: #fff; font-size: 10px; font-family: inherit; }
+    .goal-edit-row button { padding: 3px 8px; border: none; border-radius: 4px; background: rgba(255,255,255,0.2); color: #fff; font-size: 10px; cursor: pointer; font-family: inherit; }
+    .goal-edit-row button:hover { background: rgba(255,255,255,0.35); }
+    .pulse-goal-toggle { position: absolute; top: 6px; right: 6px; background: none; border: none; color: rgba(165,180,252,0.5); cursor: pointer; font-size: 11px; padding: 2px; }
+    .pulse-goal-toggle:hover { color: #fff; }
+    .pulse-card { position: relative; }
     @media (max-width: 480px) {
       .pulse-panel { padding: 12px 16px 0; }
       .pulse-grid { grid-template-columns: repeat(2, 1fr); gap: 6px; }
@@ -341,6 +352,7 @@
 
 <footer id="footer">rec.us</footer>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <script>
   var cfg = window.ORG_CONFIG || {};
   var slug = cfg.slug || '';
@@ -436,12 +448,13 @@
       + '</svg>';
   }
 
-  /* ── Executive Pulse ── */
+  /* ── Executive Pulse (enhanced with goal rings for Watertown) ── */
   (function() {
     if (cfg.publicMode) return;
     var p = cfg.pulse;
     if (!p || !p.items || p.items.length === 0) return;
-    // Priority: revenue, refunds, enrollments, then products or households
+    var goals = cfg.goals || {};
+    var isWatertown = slug === 'watertown';
     var priority = ['revenue', 'refunds', 'enrollments', 'products', 'households', 'bookings'];
     var sorted = p.items.slice().sort(function(a, b) {
       var ai = priority.indexOf(a.key); var bi = priority.indexOf(b.key);
@@ -456,7 +469,13 @@
       var d = new Date(p.generated);
       ts.textContent = 'Updated ' + d.toLocaleTimeString([], {hour:'numeric',minute:'2-digit'});
     }
-    grid.innerHTML = items.map(function(it) {
+
+    function parseVal(s) {
+      if (!s) return 0;
+      return parseFloat(String(s).replace(/[$,%]/g, '').replace(/,/g, '')) || 0;
+    }
+
+    grid.innerHTML = items.map(function(it, idx) {
       var deltaHtml = '';
       if (it.delta) {
         var color = it.direction === 'up' ? '#4ade80' : it.direction === 'down' ? '#f87171' : '#a5b4fc';
@@ -464,15 +483,98 @@
         deltaHtml = '<div style="font-size:11px;color:' + color + ';margin-top:3px;font-weight:600">' + arrow + ' ' + it.delta + ' vs last month</div>';
       }
       var sparkHtml = sparkSVG(it.trail);
-      return '<div class="pulse-card">'
+      var goalHtml = '';
+      var goal = goals[it.key];
+      if (isWatertown && goal && goal.target > 0) {
+        var actual = parseVal(it.value);
+        var pct = Math.min(Math.round((actual / goal.target) * 100), 100);
+        var gColor = pct >= 80 ? '#4ade80' : pct >= 50 ? '#fbbf24' : '#f87171';
+        var prefix = (it.key === 'revenue' || it.key === 'refunds' || it.key === 'productRev') ? '$' : '';
+        goalHtml = '<div class="pulse-goal-wrap">'
+          + '<canvas class="pulse-goal-ring" id="goal-ring-' + idx + '" width="36" height="36"></canvas>'
+          + '<div class="pulse-goal-text"><span class="pulse-goal-pct" style="color:' + gColor + '">' + pct + '%</span> of ' + prefix + goal.target.toLocaleString() + ' goal</div>'
+          + '</div>';
+      }
+      var editHtml = isWatertown ? '<button class="pulse-goal-toggle" data-key="' + it.key + '" title="Set goal">⚙</button>' : '';
+      return '<div class="pulse-card" data-key="' + it.key + '">'
+        + editHtml
         + '<div class="pulse-card-icon">' + (it.icon || '') + '</div>'
         + '<div class="pulse-card-val">' + it.value + '</div>'
         + '<div class="pulse-card-label">' + it.label + '</div>'
         + '<div class="pulse-card-sub">' + (it.sub || '') + '</div>'
         + deltaHtml
+        + goalHtml
         + sparkHtml
       + '</div>';
     }).join('');
+
+    /* Animated count-up on pulse values (Watertown) */
+    if (isWatertown) {
+      grid.querySelectorAll('.pulse-card-val').forEach(function(el) {
+        var text = el.textContent;
+        var num = parseVal(text);
+        if (num === 0) return;
+        var isMoney = text.indexOf('$') !== -1;
+        var steps = 30; var step = 0;
+        el.textContent = isMoney ? '$0' : '0';
+        var iv = setInterval(function() {
+          step++;
+          var eased = 1 - Math.pow(1 - step / steps, 3);
+          var cur = Math.round(num * eased);
+          el.textContent = isMoney ? '$' + cur.toLocaleString() : cur.toLocaleString();
+          if (step >= steps) { el.textContent = text; clearInterval(iv); }
+        }, 25);
+      });
+    }
+
+    /* Initialize Chart.js doughnut rings */
+    if (isWatertown && typeof Chart !== 'undefined') {
+      items.forEach(function(it, idx) {
+        var goal = goals[it.key];
+        if (!goal || goal.target <= 0) return;
+        var canvas = document.getElementById('goal-ring-' + idx);
+        if (!canvas) return;
+        var actual = parseVal(it.value);
+        var pct = Math.min((actual / goal.target) * 100, 100);
+        var remaining = Math.max(100 - pct, 0);
+        var gColor = pct >= 80 ? '#4ade80' : pct >= 50 ? '#fbbf24' : '#f87171';
+        new Chart(canvas.getContext('2d'), {
+          type: 'doughnut',
+          data: { datasets: [{ data: [pct, remaining], backgroundColor: [gColor, 'rgba(255,255,255,0.08)'], borderWidth: 0, borderRadius: pct > 0 && pct < 100 ? 3 : 0 }] },
+          options: { cutout: '72%', responsive: false, plugins: { legend: { display: false }, tooltip: { enabled: false } }, animation: { duration: 800, easing: 'easeOutQuart' } }
+        });
+      });
+    }
+
+    /* Goal edit handlers (Watertown) */
+    if (isWatertown) {
+      grid.querySelectorAll('.pulse-goal-toggle').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+          var key = btn.getAttribute('data-key');
+          var card = btn.closest('.pulse-card');
+          var existing = card.querySelector('.goal-edit-row');
+          if (existing) { existing.remove(); return; }
+          var goal = goals[key] || {};
+          var row = document.createElement('div');
+          row.className = 'goal-edit-row';
+          row.innerHTML = '<input type="number" placeholder="Target" value="' + (goal.target || '') + '" /><button>Save</button>';
+          card.appendChild(row);
+          var inp = row.querySelector('input');
+          inp.focus();
+          function save() {
+            var val = parseFloat(inp.value) || 0;
+            if (val > 0) goals[key] = { target: val }; else delete goals[key];
+            var url = '/' + slug + '/api/goals';
+            if (cfg.token) url += '?token=' + encodeURIComponent(cfg.token);
+            fetch(url, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(goals) })
+              .then(function() { window.location.reload(); })
+              .catch(function(e) { alert('Save failed: ' + e.message); });
+          }
+          row.querySelector('button').addEventListener('click', save);
+          inp.addEventListener('keydown', function(e) { if (e.key === 'Enter') save(); });
+        });
+      });
+    }
   })();
 
   /* ── Calendar Analytics ── */
