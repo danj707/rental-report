@@ -563,6 +563,16 @@ function aggregateByGlCode(list) {
 }
 
 // ── Normalize row ────────────────────────────────────────────────────
+function StaleCacheBanner({ cachedAt }) {
+  if (!cachedAt) return null;
+  const when = new Date(cachedAt).toLocaleString();
+  return (
+    <div style={{background:'#fef3c7',borderBottom:'1px solid #f59e0b',padding:'8px 16px',textAlign:'center',fontSize:13,color:'#92400e'}}>
+      ⚠️ Showing cached data from {when} — live data is temporarily unavailable
+    </div>
+  );
+}
+
 function normalizeRow(raw) {
   const isSplit = 'CC Online Payments' in raw;
   return {
@@ -816,6 +826,7 @@ function App() {
 
   const [rows,    setRows]    = useState(null);
   const [orgName, setOrgName] = useState('');
+  const [staleCacheAt, setStaleCacheAt] = useState(null);
   const [logoUrl,  setLogoUrl]  = useState(null);
   const [pdfLoading, setPdfLoading] = useState(false);
   const [error,   setError]   = useState(null);
@@ -874,6 +885,7 @@ function App() {
       .then(json => {
         setRows(json.rows.map(normalizeRow));
         setOrgName(json.meta?.org_name || '');
+        setStaleCacheAt(json.meta?.stale_cache ? json.meta.cached_at : null);
         setLogoUrl(json.meta?.logo_url || null);
         setLoadedStart(sd);
         setLoadedEnd(ed);
@@ -1508,6 +1520,7 @@ function App() {
     return (
       <div>
         {renderToolbar()}
+        <StaleCacheBanner cachedAt={staleCacheAt} />
         <div className="page">
           <div className="error" style={{textAlign:'center',padding:'3rem 1rem'}}>
             <p style={{fontSize:'2.5rem',marginBottom:'0.5rem'}}>😔</p>
