@@ -472,7 +472,10 @@
 
     function parseVal(s) {
       if (!s) return 0;
-      return parseFloat(String(s).replace(/[$,%]/g, '').replace(/,/g, '')) || 0;
+      var str = String(s).replace(/[$,%]/g, '').replace(/,/g, '');
+      var hasK = /k$/i.test(str);
+      var num = parseFloat(str) || 0;
+      return hasK ? num * 1000 : num;
     }
 
     grid.innerHTML = items.map(function(it, idx) {
