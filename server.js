@@ -124,6 +124,24 @@ function setCache(key, data, reportType) {
   dataCache.set(key, { data, ts: Date.now(), rt: reportType || '' });
 }
 
+// Return cached data even if TTL-expired (for fallback when Metabase is down).
+// Tries exact key first, then the base (prewarm) key for this org/report.
+function getStaleCached(orgSlug, reportType, exactKey) {
+  // Try exact key
+  let entry = dataCache.get(exactKey);
+  if (entry?.data) return { data: entry.data, ts: entry.ts };
+  // Try base prewarm key (no params)
+  const baseKey = `${orgSlug}:${reportType}:`;
+  entry = dataCache.get(baseKey);
+  if (entry?.data) return { data: entry.data, ts: entry.ts };
+  // Try users cache for users report
+  if (reportType === "users") {
+    const uc = usersCache.get(orgSlug);
+    if (uc?.data) return { data: uc.data, ts: uc.ts };
+  }
+  return null;
+}
+
 // Prune expired entries every 30 minutes to prevent memory creep
 setInterval(() => {
   const now = Date.now();
@@ -2836,6 +2854,15 @@ app.get("/:org/:report/api/data", resolveOrg, async (req, res) => {
     if (!response.ok) {
       const body = await response.text();
       console.error(`[proxy] Metabase returned ${response.status}: ${body}`);
+      // Fall back to stale cache if available
+      const stale = getStaleCached(orgSlug, reportType, cacheKey);
+      if (stale) {
+        console.log(`[cache] STALE fallback for ${orgSlug}/${reportType} (cached ${new Date(stale.ts).toISOString()})`);
+        const result = Object.assign({}, stale.data, {
+          meta: Object.assign({}, stale.data.meta, { stale_cache: true, cached_at: new Date(stale.ts).toISOString() })
+        });
+        return res.json(result);
+      }
       return res.status(response.status).json({ error: body });
     }
 
@@ -2872,10 +2899,20 @@ app.get("/:org/:report/api/data", resolveOrg, async (req, res) => {
     res.json(result);
   } catch (err) {
     const isTimeout = err.name === "TimeoutError" || err.name === "AbortError";
+    console.error(`[proxy] Error${isTimeout ? " (timeout)" : ""}:`, err.message);
+    // Fall back to stale cache if available
+    const cacheKey = `${req.orgSlug}:${req.reportType}:${(() => { try { const p = buildMetabaseParams(req.query, req.reportType, req.orgConfig?.orgId); return p.length > 0 ? `?parameters=${encodeURIComponent(JSON.stringify(p))}` : ''; } catch { return ''; } })()}`;
+    const stale = getStaleCached(req.orgSlug, req.reportType, cacheKey);
+    if (stale) {
+      console.log(`[cache] STALE fallback for ${req.orgSlug}/${req.reportType} (cached ${new Date(stale.ts).toISOString()})`);
+      const result = Object.assign({}, stale.data, {
+        meta: Object.assign({}, stale.data.meta, { stale_cache: true, cached_at: new Date(stale.ts).toISOString() })
+      });
+      return res.json(result);
+    }
     const msg = isTimeout
       ? `Metabase query timed out after ${(req.orgConfig?.healthTimeoutMs || 120000) / 1000}s — try a shorter date range`
       : err.message;
-    console.error(`[proxy] Error${isTimeout ? " (timeout)" : ""}:`, err.message);
     res.status(isTimeout ? 504 : 500).json({ error: msg });
   }
 });
