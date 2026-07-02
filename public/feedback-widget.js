@@ -1,5 +1,5 @@
-/* rec.us — Pre-release banner + Got Feedback + Thumbs
-   Injects a sticky top banner with pre-release notice, thumbs up/down,
+/* rec.us — Early Access banner + Got Feedback + Thumbs
+   Injects a sticky top banner with early access notice, thumbs up/down,
    and Got Feedback button. Feedback POSTs to /api/feedback.
    Self-disables in print mode. No deps. Idempotent. */
 (function(){
@@ -194,7 +194,7 @@
     // Center message
     var msg = document.createElement("div");
     msg.className = "rec-banner-msg";
-    msg.innerHTML = 'Enhanced Reports in Pre-Release \u2014 Contact <a href="mailto:dan@rec.us">dan@rec.us</a> with Feedback or Questions';
+    msg.innerHTML = 'Enhanced Reports in Early Access \u2014 Contact <a href="mailto:dan@rec.us">dan@rec.us</a> with Feedback or Questions';
 
     // Got Feedback button
     var fbBtn = document.createElement("button");
