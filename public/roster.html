@@ -416,6 +416,16 @@ function formatDOB(dob) {
   return dob;
 }
 
+function StaleCacheBanner({ cachedAt }) {
+  if (!cachedAt) return null;
+  const when = new Date(cachedAt).toLocaleString();
+  return (
+    <div style={{background:'#fef3c7',borderBottom:'1px solid #f59e0b',padding:'8px 16px',textAlign:'center',fontSize:13,color:'#92400e'}}>
+      ⚠️ Showing cached data from {when} — live data is temporarily unavailable
+    </div>
+  );
+}
+
 function normalizeRow(raw) {
   // Decode form responses from form_submission schema + submission
   const formResponses = (() => {
@@ -484,6 +494,7 @@ function App() {
 
   const [rows, setRows]       = useState(null);
   const [orgName, setOrgName] = useState('');
+  const [staleCacheAt, setStaleCacheAt] = useState(null);
   const [logoUrl,  setLogoUrl]  = useState(null);
   const [pdfLoading, setPdfLoading] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -571,6 +582,7 @@ function App() {
         setRows(json.rows.map(normalizeRow));
         if (json.rows.length > 0 && json.rows[0]['Org Name']) setOrgName(json.rows[0]['Org Name']);
         setLogoUrl(json.meta?.logo_url || null);
+        setStaleCacheAt(json.meta?.stale_cache ? json.meta.cached_at : null);
         setLoadedStart(sd); setLoadedEnd(ed); setLoadedSection(sec || '');
       })
       .catch(err => setError(err.message))
@@ -920,6 +932,7 @@ function App() {
   return (
     <div>
       {renderToolbar()}
+      <StaleCacheBanner cachedAt={staleCacheAt} />
       <div className="page" style={loading ? {opacity:.5, pointerEvents:'none'} : {}}>
 
         <div className="report-header">
