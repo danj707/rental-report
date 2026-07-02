@@ -931,7 +931,12 @@ function normalizeRow(raw) {
       );
 
       // ── Render content ──
+      const PDF_ROW_LIMIT = 500;
+
       function renderTable() {
+        const displayRows = isPrint && sortedRows.length > PDF_ROW_LIMIT
+          ? sortedRows.slice(0, PDF_ROW_LIMIT) : sortedRows;
+        const isTruncated = isPrint && sortedRows.length > PDF_ROW_LIMIT;
         const cols = [
           { key: 'lastName',    label: 'Name' },
           { key: 'email',       label: 'Email' },
@@ -948,6 +953,7 @@ function normalizeRow(raw) {
           { key: 'usageCount',  label: 'Uses', num: true },
         ];
         return (
+          <React.Fragment>
           <table className="report">
             <thead>
               <tr>
@@ -963,7 +969,7 @@ function normalizeRow(raw) {
               </tr>
             </thead>
             <tbody>
-              {sortedRows.map((r, i) => (
+              {displayRows.map((r, i) => (
                 <tr key={r.membershipId + '-' + i}>
                   <td><strong>{r.lastName && r.firstName ? `${r.lastName}, ${r.firstName}` : r.lastName || r.firstName || '—'}</strong></td>
                   <td style={{color:'#666'}}>{r.email}</td>
@@ -982,6 +988,12 @@ function normalizeRow(raw) {
               ))}
             </tbody>
           </table>
+          {isTruncated && (
+            <div style={{textAlign:'center', padding:'12px 0', color:'#888', fontSize:11, borderTop:'1px solid #eee', marginTop:8}}>
+              Showing first {PDF_ROW_LIMIT.toLocaleString()} of {sortedRows.length.toLocaleString()} memberships. Use Excel export for the full dataset.
+            </div>
+          )}
+        </React.Fragment>
         );
       }
 
