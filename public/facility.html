@@ -525,6 +525,7 @@
     .col-booktype{ width: 72px; text-align: center; font-size: 10px; }
     .col-total   { width: 62px; text-align: right; }
     .col-addon-fees { width: 72px; text-align: right; }
+    .col-rec-link { width: 28px; text-align: center; }
 
     /* ═══════════════════════════════════════════════════════════════
        CALENDAR VIEW
@@ -1305,6 +1306,7 @@ function normalizeRow(raw) {
     bookingType: raw['Booking Type'] || raw['booking_type'] || raw['bookingType'] || '',
     total:     raw['Total']     || raw['total']      || null,
     status:    raw['Status']    || raw['status']     || '',
+    resId:     raw['Reservation ID'] || raw['reservation_id'] || raw['res_id'] || raw['id'] || '',
   };
 }
 
@@ -1829,6 +1831,9 @@ function App() {
   const [showNotes, setShowNotes] = useState(() => {
     try { return localStorage.getItem('col_notes') !== 'false'; } catch { return true; }
   });
+  const [showLink, setShowLink] = useState(() => {
+    try { return localStorage.getItem('col_link') === 'true'; } catch { return false; }
+  });
   const [showResident, setShowResident] = useState(() => {
     try { return localStorage.getItem('col_resident') !== 'false'; } catch { return true; }
   });
@@ -1849,6 +1854,7 @@ function App() {
   useEffect(() => { try { localStorage.setItem('col_total',     showTotal);     } catch {} }, [showTotal]);
   useEffect(() => { try { localStorage.setItem('col_addon_fees', showAddonFees); } catch {} }, [showAddonFees]);
   useEffect(() => { try { localStorage.setItem('col_notes',     showNotes);     } catch {} }, [showNotes]);
+  useEffect(() => { try { localStorage.setItem('col_link',      showLink);      } catch {} }, [showLink]);
   useEffect(() => { try { localStorage.setItem('col_resident',  showResident);  } catch {} }, [showResident]);
   useEffect(() => { try { localStorage.setItem('col_booktype',  showBookType);  } catch {} }, [showBookType]);
 
@@ -2370,6 +2376,10 @@ function App() {
                 <input type="checkbox" checked={showNotes} onChange={e => setShowNotes(e.target.checked)} />
                 Notes
               </label>
+              <label style={{display:'flex',alignItems:'center',gap:4,cursor:'pointer',fontSize:11}}>
+                <input type="checkbox" checked={showLink} onChange={e => setShowLink(e.target.checked)} />
+                Rec Link
+              </label>
               <label>
                 <input type="checkbox" checked={showResident} onChange={e => setShowResident(e.target.checked)} />
                 Resident?
@@ -2514,6 +2524,7 @@ function App() {
                           {showHeadCount && <span className="col-hcnt">Cnt</span>}
                           {showTotal     && <span className="col-total">Total</span>}
                           {showAddonFees && <span className="col-addon-fees">Add-On $</span>}
+                          {showLink && <span className="col-rec-link">↗</span>}
                         </div>
                         {locRows.map((r, i) => (
                           <div key={i}>
@@ -2534,6 +2545,7 @@ function App() {
                               {showHeadCount && <span className="cell col-hcnt">{r.headCount}</span>}
                               {showTotal     && <span className="cell col-total">{formatMoney(r.total)}</span>}
                               {showAddonFees && <span className="cell col-addon-fees">{formatMoney(r.addonFees)}</span>}
+                              {showLink && <span className="cell col-rec-link">{r.resId ? <a href={`https://www.rec.us/admin/o/${meta.org_id}/facility-rentals/${r.resId}`} target="_blank" rel="noopener noreferrer" title="Open in Rec" style={{color:'#2563eb',textDecoration:'none',fontSize:13}}>↗️</a> : ''}</span>}
                             </div>
                             {showNotes && (() => {
                               let visAddons = r.addons || '';
