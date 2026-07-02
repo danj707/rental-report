@@ -383,7 +383,7 @@ async function prewarmCache() {
           }
           const result = {
             rows: data,
-            meta: { org_slug: slug, logo_url: org.logoUrl, report_type: rt, generated_at: new Date().toISOString() },
+            meta: { org_slug: slug, org_id: org.orgId, logo_url: org.logoUrl, report_type: rt, generated_at: new Date().toISOString() },
           };
           setCache(cacheKey, result, rt);
           // Also store under the explicit "This Month" cache key so users who
@@ -2855,6 +2855,7 @@ app.get("/:org/:report/api/data", resolveOrg, async (req, res) => {
       rows: data,
       meta: {
         org_slug: orgSlug,
+        org_id: orgConfig.orgId,
         logo_url: orgConfig.logoUrl,
         report_type: reportType,
         generated_at: new Date().toISOString(),
