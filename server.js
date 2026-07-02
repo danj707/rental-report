@@ -182,6 +182,9 @@ async function refreshOrgPulse(slug, force) {
   const curStart = trailMonths[5].start, curEnd = trailMonths[5].end;
   const prevStart = trailMonths[4].start, prevEnd = trailMonths[4].end;
   const monthLabel = now.toLocaleString('en-US', { month: 'long' });
+  const daysElapsed = Math.max(now.getDate(), 1);
+  const daysInPrevMonth = new Date(now.getFullYear(), now.getMonth(), 0).getDate();
+  const daysInCurMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
 
   async function fetchMB(reportType, startDate, endDate) {
     const useShared = reportType === "gl" ? (!org.gl?.mbUuid && !!SHARED_UUIDS.gl) : !!SHARED_UUIDS[reportType];
@@ -221,10 +224,12 @@ async function refreshOrgPulse(slug, force) {
   if (glCur) {
     const cur = sumGL(glCur), prev = sumGL(glPrev||[]);
     const net = cur.pay - cur.ref, prevNet = prev.pay - prev.ref;
-    const pct = prevNet ? Math.round((net - prevNet) / Math.abs(prevNet) * 100) : null;
+    const dailyCur = net / daysElapsed, dailyPrev = prevNet / daysInPrevMonth;
+    const pace = Math.round(dailyCur * daysInCurMonth);
+    const pct = dailyPrev ? Math.round((dailyCur - dailyPrev) / Math.abs(dailyPrev) * 100) : null;
     const glTrail = glAll.map(r => { const s = sumGL(r||[]); return s.pay - s.ref; });
     const refTrail = glAll.map(r => sumGL(r||[]).ref);
-    pulse.items.push({ key:'revenue', label:'Revenue', value: pulseFmtMoney(net), sub: monthLabel, icon:'💰',
+    pulse.items.push({ key:'revenue', label:'Revenue', value: pulseFmtMoney(net), sub: `day ${daysElapsed} • pace ${pulseFmtMoney(pace)}`, icon:'💰',
       delta: pct !== null ? (pct >= 0 ? `+${pct}%` : `${pct}%`) : null, direction: pct > 0 ? 'up' : pct < 0 ? 'down' : null, trail: glTrail });
     pulse.items.push({ key:'refunds', label:'Refunds', value: pulseFmtMoney(cur.ref), sub: `${((cur.ref/(cur.pay||1))*100).toFixed(1)}% of gross`, icon:'↩️',
       delta: null, direction: null, trail: refTrail });
@@ -244,9 +249,11 @@ async function refreshOrgPulse(slug, force) {
   }
   if (pgCur) {
     const cur = sumProg(pgCur), prev = sumProg(pgPrev||[]);
-    const pct = prev.enroll ? Math.round((cur.enroll - prev.enroll) / Math.abs(prev.enroll) * 100) : null;
+    const eDailyCur = cur.enroll / daysElapsed, eDailyPrev = prev.enroll / daysInPrevMonth;
+    const ePace = Math.round(eDailyCur * daysInCurMonth);
+    const pct = eDailyPrev ? Math.round((eDailyCur - eDailyPrev) / Math.abs(eDailyPrev) * 100) : null;
     const enrollTrail = pgAll.map(r => sumProg(r||[]).enroll);
-    pulse.items.push({ key:'enrollments', label:'Enrollments', value: pulseFmt(cur.enroll), sub: `${cur.progs} programs`, icon:'🎓',
+    pulse.items.push({ key:'enrollments', label:'Enrollments', value: pulseFmt(cur.enroll), sub: `${cur.progs} programs • pace ${pulseFmt(ePace)}`, icon:'🎓',
       delta: pct !== null ? (pct >= 0 ? `+${pct}%` : `${pct}%`) : null, direction: pct > 0 ? 'up' : pct < 0 ? 'down' : null, trail: enrollTrail });
   }
 
@@ -256,10 +263,12 @@ async function refreshOrgPulse(slug, force) {
     const locs = new Set();
     for (const r of facCur) { const l = r['Location']||r['location']||r['location_name']; if(l) locs.add(l); }
     const cc = facCur.length, pc = facPrev ? facPrev.length : 0;
-    const pct = pc ? Math.round((cc - pc) / Math.abs(pc) * 100) : null;
+    const bDailyCur = cc / daysElapsed, bDailyPrev = pc / daysInPrevMonth;
+    const bPace = Math.round(bDailyCur * daysInCurMonth);
+    const bPct = bDailyPrev ? Math.round((bDailyCur - bDailyPrev) / Math.abs(bDailyPrev) * 100) : null;
     const bookTrail = facAll.map(r => (r||[]).length);
-    pulse.items.push({ key:'bookings', label:'Bookings', value: pulseFmt(cc), sub: `${locs.size} locations`, icon:'📅',
-      delta: pct !== null ? (pct >= 0 ? `+${pct}%` : `${pct}%`) : null, direction: pct > 0 ? 'up' : pct < 0 ? 'down' : null, trail: bookTrail });
+    pulse.items.push({ key:'bookings', label:'Bookings', value: pulseFmt(cc), sub: `${locs.size} locations • pace ${pulseFmt(bPace)}`, icon:'📅',
+      delta: bPct !== null ? (bPct >= 0 ? `+${bPct}%` : `${bPct}%`) : null, direction: bPct > 0 ? 'up' : bPct < 0 ? 'down' : null, trail: bookTrail });
   }
 
   // ── Products: POS ──
@@ -273,10 +282,12 @@ async function refreshOrgPulse(slug, force) {
   if (prodCur) {
     const cur = sumProd(prodCur), prev = sumProd(prodPrev||[]);
     if (cur > 0) {
-      const pct = prev ? Math.round((cur - prev) / Math.abs(prev) * 100) : null;
+      const pDailyCur = cur / daysElapsed, pDailyPrev = prev / daysInPrevMonth;
+      const pPace = Math.round(pDailyCur * daysInCurMonth);
+      const pPct = pDailyPrev ? Math.round((pDailyCur - pDailyPrev) / Math.abs(pDailyPrev) * 100) : null;
       const prodTrail = prodAll.map(r => sumProd(r||[]));
-      pulse.items.push({ key:'productRev', label:'Product Sales', value: pulseFmtMoney(cur), sub: `${prodCur.length} line items`, icon:'🛒',
-        delta: pct !== null ? (pct >= 0 ? `+${pct}%` : `${pct}%`) : null, direction: pct > 0 ? 'up' : pct < 0 ? 'down' : null, trail: prodTrail });
+      pulse.items.push({ key:'productRev', label:'Product Sales', value: pulseFmtMoney(cur), sub: `${prodCur.length} items • pace ${pulseFmtMoney(pPace)}`, icon:'🛒',
+        delta: pPct !== null ? (pPct >= 0 ? `+${pPct}%` : `${pPct}%`) : null, direction: pPct > 0 ? 'up' : pPct < 0 ? 'down' : null, trail: prodTrail });
     }
   }
 
@@ -305,7 +316,7 @@ async function refreshOrgPulse(slug, force) {
       const resp = await anthropic.messages.create({
         model: INSIGHTS_MODEL,
         max_tokens: 300,
-        system: `You are a parks & recreation analytics advisor. Given monthly KPI data for "${orgName}", write exactly 3 concise bullet insights (each 1 sentence, max 20 words). Focus on: (1) the most notable change or trend, (2) an actionable observation, (3) something positive or a watch-item. Format: return ONLY a JSON array of 3 strings. No markdown, no preamble.`,
+        system: `You are a parks & recreation analytics advisor for "${orgName}". Today is day ${daysElapsed} of ${monthLabel} (${daysInCurMonth} days total), so all month-over-month deltas are already normalized to daily run rate — do NOT flag partial-month data as a concern.\n\nKey distinctions: Enrollments = program registrations (classes, camps, lessons). Bookings = facility reservations (pavilion rentals, field rentals). These are separate funnels.\n\nWrite exactly 3 concise bullet insights (each 1 sentence, max 20 words). Focus on: (1) the most notable pace trend, (2) an actionable observation, (3) something positive or a watch-item. Return ONLY a JSON array of 3 strings.`,
         messages: [{ role: 'user', content: `Month: ${monthLabel}\n${summary}` }],
       });
       const raw = (resp.content || []).filter(c => c.type === 'text').map(c => c.text).join('');
@@ -7744,6 +7755,9 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  { date: '2026-07-02', title: '\uD83D\uDCC8 Daily Rate Normalization + Rec Daily Insights', items: [
+    '\uD83D\uDCC8 DAILY RATE NORMALIZATION \u2014 All pulse month-over-month deltas now compare daily run rates instead of raw totals. On July 2, revenue/day is compared to June revenue/30 days \u2014 no more misleading -96% drops. Sub text shows day count and projected pace (e.g. day 2 \u2022 pace $134k).',
+  ]},
   { date: '2026-07-02', title: '\u2728 Rec Daily Insights', items: [
     '\u2728 REC DAILY INSIGHTS \u2014 New AI-powered insights panel on org dashboards. Haiku generates 3 concise bullet observations from the pulse KPI data during the 5:10am daily pre-warm. Cached with the pulse \u2014 zero extra Metabase calls. Deep indigo panel with sparkle bullet styling positioned between Calendar Performance and report cards.',
   ]},
