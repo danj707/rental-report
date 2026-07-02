@@ -7821,6 +7821,9 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  { date: '2026-07-02', title: '\uD83D\uDCC5 Memberships Date Range Filter', items: [
+    '\uD83D\uDCC5 MEMBERSHIPS DATE RANGE \u2014 Added start/end date pickers, Last/This/Next Month quick buttons, and Run Report button to the Memberships report. Dates pass through to Metabase via start_date/end_date template tags. URL syncs with loaded dates for sharing/bookmarking. PDF export includes date range. Matches facility report date filter pattern.',
+  ]},
   { date: '2026-07-02', title: '\u23F8\uFE0F Caching Kill Switch', items: [
     '\u23F8\uFE0F CACHING TOGGLE \u2014 New Report Caching & Polling feature flag on admin dashboard. When OFF (default), all background Metabase requests are paused: report pre-warming, users cache, pulse pre-warming, and health checks. Existing cached data still serves. Toggle ON to resume.',
   ]},
