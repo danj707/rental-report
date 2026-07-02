@@ -1337,6 +1337,20 @@ async function generatePdf(orgSlug, reportType, startDate, endDate, filters = {}
     await page.waitForNetworkIdle({ idleTime: 500, timeout: 15000 }).catch(() => {});
     // Final safety buffer for React paint + Chart.js animation settle
     await new Promise(r => setTimeout(r, 3000));
+    // Convert Chart.js canvases to static images — Chrome printToPDF crashes on
+    // pages with many <canvas> elements ("Protocol error: Printing failed")
+    await page.evaluate(() => {
+      document.querySelectorAll('canvas').forEach(c => {
+        try {
+          const img = new Image();
+          img.src = c.toDataURL('image/png');
+          img.style.width = (c.offsetWidth || c.width) + 'px';
+          img.style.height = (c.offsetHeight || c.height) + 'px';
+          img.style.display = 'block';
+          if (c.parentNode) c.parentNode.replaceChild(img, c);
+        } catch (_) { /* cross-origin or empty canvas — leave it */ }
+      });
+    });
     return await page.pdf({
       format: "Letter",
       landscape: true,
