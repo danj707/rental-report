@@ -57,6 +57,7 @@ const anthropic = process.env.ANTHROPIC_API_KEY ? new AnthropicSDK() : null;
 const _recTracer = otelApi.trace.getTracer("rec-ai");
 
 const express    = require("express");
+const compression = require("compression");
 const path       = require("path");
 const fs         = require("fs");
 const cron       = require("node-cron");
@@ -78,7 +79,7 @@ const FROM_NAME      = process.env.FROM_NAME      || "rec.us Reports";
 // ── Metabase response cache ───────────────────────────────────────────
 const CACHE_TTL = 60 * 60 * 1000;  // 60-minute default TTL
 const REPORT_CACHE_TTL = {
-  facility: 30 * 60 * 1000,               // 30 min — live bookings
+  facility: 2 * 60 * 60 * 1000,            // 2 hrs — schedule data
   gl: 30 * 60 * 1000,                     // 30 min — daily transactions
   roster: 30 * 60 * 1000,                 // 30 min — enrollments change
   programs: 2 * 60 * 60 * 1000,           // 2 hrs — section-level revenue
@@ -1628,6 +1629,7 @@ async function prewarmPulseCache() {
 
 // ── Express setup ────────────────────────────────────────────────────
 const app = express();
+app.use(compression());
 
 // ── Startup readiness gate ───────────────────────────────────────────────────
 let serverReady = false;
@@ -8682,7 +8684,7 @@ app.get("/", (req, res) => {
 </html>`);
 });
 
-app.use(express.static(path.join(__dirname, "public")));
+app.use(express.static(path.join(__dirname, "public"), { maxAge: "10m" }));
 
 app.listen(PORT, () => {
   serverReady = true;
