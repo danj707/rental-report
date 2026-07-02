@@ -1509,9 +1509,9 @@ function App() {
       <div>
         {renderToolbar()}
         <div className="page">
-          <div className="error">
-            <p><strong>Failed to load report data</strong></p>
-            <p style={{marginTop:8}}>{error}</p>
+          <div className="error" style={{textAlign:'center',padding:'3rem 1rem'}}>
+            <p style={{fontSize:'2.5rem',marginBottom:'0.5rem'}}>😔</p>
+            <p style={{fontSize:'1.1rem',color:'#666'}}>Looks like reporting has encountered an issue — try loading this report again later.</p>
           </div>
         </div>
       </div>
