@@ -311,6 +311,27 @@
     body.print-mode .toolbar { display: none !important; }
     body.print-mode { background: #fff; }
     body.print-mode .page { box-shadow: none; margin: 0; padding: 12px 16px; max-width: 100%; }
+    /* ── Print-friendly table: hide non-essential columns, compact spacing ── */
+    /* Cols: 1=Name 2=Email 3=Type 4=Status 5=Renewal 6=Price 7=Paid 8=Refunded 9=Net 10=Start 11=NextRenewal 12=LastUsed 13=Uses */
+    body.print-mode table.report th:nth-child(2),
+    body.print-mode table.report td:nth-child(2),
+    body.print-mode table.report th:nth-child(7),
+    body.print-mode table.report td:nth-child(7),
+    body.print-mode table.report th:nth-child(8),
+    body.print-mode table.report td:nth-child(8),
+    body.print-mode table.report th:nth-child(12),
+    body.print-mode table.report td:nth-child(12),
+    body.print-mode table.report th:nth-child(13),
+    body.print-mode table.report td:nth-child(13) { display: none; }
+    body.print-mode table.report th,
+    body.print-mode table.report td { font-size: 10px; padding: 3px 6px; }
+    body.print-mode table.report { font-size: 10px; }
+    body.print-mode .summary-cards { gap: 8px; }
+    body.print-mode .summary-card { padding: 8px 10px; }
+    body.print-mode .summary-card .card-value { font-size: 16px; }
+    body.print-mode .insights-section { display: none; }
+    body.print-mode .view-tabs { display: none; }
+    body.print-mode .filter-bar { display: none; }
 
     /* ── AI Insights ── */
     .insights-section { margin: 0 0 16px; padding: 16px 0 0; }
