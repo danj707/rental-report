@@ -497,6 +497,16 @@ function cancelPct(cancellations, enrollments) {
 // Reads BOTH the program-grain feed (legacy, Title-Case aggregate columns) and
 // the section-grain feed (one row per section, with a 'Section' column). When a
 // 'Section' is present the row is flagged isSection and rolled up below.
+function StaleCacheBanner({ meta }) {
+  if (!meta?.stale_cache) return null;
+  const when = meta.cached_at ? new Date(meta.cached_at).toLocaleString() : 'recently';
+  return (
+    <div style={{background:'#fef3c7',borderBottom:'1px solid #f59e0b',padding:'8px 16px',textAlign:'center',fontSize:13,color:'#92400e'}}>
+      ⚠️ Showing cached data from {when} — live data is temporarily unavailable
+    </div>
+  );
+}
+
 function normalizeRow(raw) {
   const pick = (...keys) => { for (const k of keys) { if (raw[k] != null && raw[k] !== '') return raw[k]; } return null; };
   const sectionName = raw['Section'] ?? raw['section'] ?? '';
@@ -1345,6 +1355,7 @@ function App() {
   // ── Error / Loading ────────────────────────────────────────────────
   if (error && !rows) return (
     <div>{renderToolbar()}
+      <StaleCacheBanner meta={meta} />
       <div className="page"><div className="error" style={{textAlign:'center',padding:'3rem 1rem'}}>
         <p style={{fontSize:'2.5rem',marginBottom:'0.5rem'}}>😔</p>
         <p style={{fontSize:'1.1rem',color:'#666'}}>Looks like reporting has encountered an issue — try loading this report again later.</p>
