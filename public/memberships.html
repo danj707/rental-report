@@ -372,7 +372,17 @@
       return Math.floor((d.getTime() - Date.now()) / 86400000);
     };
 
-    function normalizeRow(raw) {
+    function StaleCacheBanner({ meta }) {
+  if (!meta?.stale_cache) return null;
+  const when = meta.cached_at ? new Date(meta.cached_at).toLocaleString() : 'recently';
+  return (
+    <div style={{background:'#fef3c7',borderBottom:'1px solid #f59e0b',padding:'8px 16px',textAlign:'center',fontSize:13,color:'#92400e'}}>
+      ⚠️ Showing cached data from {when} — live data is temporarily unavailable
+    </div>
+  );
+}
+
+function normalizeRow(raw) {
       return {
         userId:        raw['User ID'] || '',
         firstName:     raw['First Name'] || '',
