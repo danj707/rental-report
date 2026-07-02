@@ -3803,6 +3803,21 @@ async function qbrRenderPdf({ org, orgId, displayName, year, quarter, saved }) {
     await page.setViewport({ width: 1280, height: 860, deviceScaleFactor: 2 });
     await page.goto(url, { waitUntil: "networkidle0", timeout: 60000 });
     await page.waitForSelector("#report-ready", { timeout: 45000 });
+    await page.waitForNetworkIdle({ idleTime: 500, timeout: 15000 }).catch(() => {});
+    await new Promise(r => setTimeout(r, 2000));
+    // Convert canvases to images for stable PDF rendering
+    await page.evaluate(() => {
+      document.querySelectorAll('canvas').forEach(c => {
+        try {
+          const img = new Image();
+          img.src = c.toDataURL('image/png');
+          img.style.width = (c.offsetWidth || c.width) + 'px';
+          img.style.height = (c.offsetHeight || c.height) + 'px';
+          img.style.display = 'block';
+          if (c.parentNode) c.parentNode.replaceChild(img, c);
+        } catch (_) {}
+      });
+    });
     const footQ = quarter ? ("Q" + quarter) : "";
     return await page.pdf({ format: "Letter", landscape: true, printBackground: true, margin: { top: "0.35in", bottom: "0.4in", left: "0.35in", right: "0.35in" }, displayHeaderFooter: true, headerTemplate: "<span></span>", footerTemplate: `<div style="font-size:9px;width:100%;padding:0 0.4in;display:flex;justify-content:space-between;color:#888;font-family:sans-serif;"><span>rec.us — Quarterly Business Review</span><span>${footQ} ${year||""}</span></div>` });
   } finally { if (browser) await browser.close(); }
