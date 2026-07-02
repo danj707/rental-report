@@ -899,12 +899,27 @@ function normalizeRow(raw) {
         window.print();
       };
 
+      const [pdfLoading, setPdfLoading] = useState(false);
       const downloadPdf = () => {
+        setPdfLoading(true);
         const qs = new URLSearchParams();
         if (loadedStart) qs.set('start_date', loadedStart);
         if (loadedEnd)   qs.set('end_date',   loadedEnd);
         const url = withToken(`/${orgSlug}/${reportType}/api/pdf?${qs.toString()}`);
-        window.open(url, '_blank');
+        fetch(url)
+          .then(r => {
+            if (!r.ok) return r.text().then(t => { throw new Error(t); });
+            return r.blob();
+          })
+          .then(blob => {
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = `${orgSlug}-memberships-${loadedStart || 'report'}.pdf`;
+            a.click();
+            URL.revokeObjectURL(a.href);
+          })
+          .catch(err => alert('PDF generation failed: ' + err.message))
+          .finally(() => setPdfLoading(false));
       };
 
       // ── Status pill ──
@@ -1353,7 +1368,7 @@ function normalizeRow(raw) {
 
               <button onClick={printPage} title="Print">🖨️ Print</button>
               <button onClick={exportExcel} title="Excel">📊 Excel</button>
-              <button className="btn-pdf" onClick={downloadPdf} title="PDF">📄 PDF</button>
+              <button className="btn-pdf" onClick={downloadPdf} disabled={pdfLoading} title="PDF">{pdfLoading ? "Generating…" : "📄 PDF"}</button>
             </div>
           )}
 
