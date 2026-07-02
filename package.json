@@ -15,6 +15,7 @@
     "@anthropic-ai/sdk": "^0.105.0",
     "@arizeai/openinference-instrumentation-anthropic": "^0.1.14",
     "@langfuse/otel": "^5.6.0",
-    "@opentelemetry/sdk-node": "^0.219.0"
+    "@opentelemetry/sdk-node": "^0.219.0",
+    "compression": "^1.7.4"
   }
 }
