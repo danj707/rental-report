@@ -63,6 +63,42 @@
     .toolbar button.active { background: rgba(255,255,255,.22); border-color: rgba(255,255,255,.55); }
     .toolbar .btn-pdf { background: #3b82f6; border-color: #3b82f6; font-weight: 600; }
     .toolbar .btn-pdf:hover { background: #2563eb; }
+    .toolbar input[type="date"] {
+      padding: 4px 8px;
+      border: 1px solid rgba(255,255,255,.25);
+      border-radius: 4px;
+      background: rgba(255,255,255,.08);
+      color: #fff;
+      font-size: 12px;
+      font-family: inherit;
+      outline: none;
+      color-scheme: dark;
+    }
+    .toolbar input[type="date"]:focus { border-color: #db2777; }
+    .toolbar input[type="date"]::-webkit-calendar-picker-indicator {
+      filter: invert(1); cursor: pointer; opacity: .6;
+    }
+    .toolbar label { display: flex; align-items: center; gap: 4px; font-size: 11px; white-space: nowrap; }
+    .toolbar .divider { width: 1px; height: 24px; background: rgba(255,255,255,.2); margin: 0 2px; }
+    .btn-run {
+      padding: 6px 14px !important;
+      background: #22c55e !important;
+      border-color: #22c55e !important;
+      color: #fff !important;
+      font-weight: 600 !important;
+      transition: background .15s, box-shadow .15s;
+    }
+    .btn-run:hover { background: #16a34a !important; }
+    .btn-run:disabled { opacity: .6; cursor: wait; }
+    .btn-spinner {
+      display: inline-block; width: 12px; height: 12px;
+      border: 2px solid rgba(255,255,255,.3);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin .6s linear infinite;
+      margin-right: 6px; vertical-align: middle;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
 
     .view-group { display: flex; gap: 0; }
     .view-group button {
@@ -340,6 +376,8 @@
     const LS_DATEFIELD    = 'memberships.dateField';
     const LS_SORTKEY      = 'memberships.sortKey';
     const LS_SORTDIR      = 'memberships.sortDir';
+    const LS_STARTDATE    = 'memberships.startDate';
+    const LS_ENDDATE      = 'memberships.endDate';
 
     // ── Helpers ──
     const safeNum = (v) => {
@@ -371,6 +409,23 @@
       if (Number.isNaN(d.getTime())) return null;
       return Math.floor((d.getTime() - Date.now()) / 86400000);
     };
+
+    const toISO = (d) => {
+      const dt = d instanceof Date ? d : new Date(d);
+      return dt.toISOString().slice(0, 10);
+    };
+
+    function getParams() {
+      const p = new URLSearchParams(window.location.search);
+      return { start_date: p.get('start_date'), end_date: p.get('end_date'), _print: p.get('_print') };
+    }
+
+    function defaultDates() {
+      const now = new Date();
+      const start = new Date(now.getFullYear(), now.getMonth(), 1);
+      const end   = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+      return { start: toISO(start), end: toISO(end) };
+    }
 
     function StaleCacheBanner({ meta }) {
   if (!meta?.stale_cache) return null;
@@ -521,6 +576,15 @@ function normalizeRow(raw) {
 
       useEffect(() => { if (isPrint) document.body.classList.add('print-mode'); }, [isPrint]);
 
+      const params   = useMemo(() => getParams(), []);
+      const defaults = useMemo(() => defaultDates(), []);
+
+      const [startDate, setStartDate] = useState(() => params.start_date || localStorage.getItem(LS_STARTDATE) || defaults.start);
+      const [endDate,   setEndDate]   = useState(() => params.end_date   || localStorage.getItem(LS_ENDDATE)   || defaults.end);
+      const [loadedStart, setLoadedStart] = useState(null);
+      const [loadedEnd,   setLoadedEnd]   = useState(null);
+      const [activeRange, setActiveRange] = useState('this-month');
+
       const [data, setData]       = useState([]);
       const [meta, setMeta]       = useState({});
       const [loading, setLoading] = useState(true);
@@ -560,12 +624,28 @@ function normalizeRow(raw) {
       useEffect(() => { localStorage.setItem(LS_DATEFIELD, dateField); }, [dateField]);
       useEffect(() => { localStorage.setItem(LS_SORTKEY,   sortKey); }, [sortKey]);
       useEffect(() => { localStorage.setItem(LS_SORTDIR,   sortDir); }, [sortDir]);
+      useEffect(() => { localStorage.setItem(LS_STARTDATE, startDate); }, [startDate]);
+      useEffect(() => { localStorage.setItem(LS_ENDDATE,   endDate); }, [endDate]);
+
+      // Sync URL with loaded dates
+      useEffect(() => {
+        if (!loadedStart || !loadedEnd) return;
+        const qs = new URLSearchParams(window.location.search);
+        qs.set('start_date', loadedStart);
+        qs.set('end_date',   loadedEnd);
+        const newUrl = window.location.pathname + '?' + qs.toString();
+        window.history.replaceState(null, '', newUrl);
+      }, [loadedStart, loadedEnd]);
 
       // ── Fetch ──
-      useEffect(() => {
+      const fetchData = useCallback((sd, ed) => {
         setLoading(true);
         setError(null);
-        fetch(withToken(`/${orgSlug}/${reportType}/api/data`))
+        const qs = new URLSearchParams();
+        if (sd) qs.set('start_date', sd);
+        if (ed) qs.set('end_date',   ed);
+        const qsStr = qs.toString();
+        fetch(withToken(`/${orgSlug}/${reportType}/api/data${qsStr ? '?' + qsStr : ''}`))
           .then(r => {
             if (!r.ok) throw new Error(`Server returned ${r.status}`);
             return r.json();
@@ -574,6 +654,8 @@ function normalizeRow(raw) {
             const rows = (payload.rows || payload.data || payload || []).map(normalizeRow);
             setData(rows);
             setMeta(payload.meta || {});
+            setLoadedStart(sd);
+            setLoadedEnd(ed);
             setLoading(false);
           })
           .catch(err => {
@@ -582,6 +664,21 @@ function normalizeRow(raw) {
             setLoading(false);
           });
       }, [orgSlug]);
+
+      useEffect(() => { fetchData(startDate, endDate); }, []);
+
+      const datesChanged = startDate !== loadedStart || endDate !== loadedEnd;
+
+      function handleRunReport() { fetchData(startDate, endDate); }
+
+      function setMonth(offset) {
+        const now = new Date();
+        const target = new Date(now.getFullYear(), now.getMonth() + offset, 1);
+        const last   = new Date(target.getFullYear(), target.getMonth() + 1, 0);
+        setStartDate(toISO(target));
+        setEndDate(toISO(last));
+        setActiveRange(offset === -1 ? 'last-month' : offset === 0 ? 'this-month' : 'next-month');
+      }
 
       // ── Derived option lists ──
       const allTypes = useMemo(
@@ -768,6 +865,14 @@ function normalizeRow(raw) {
           body: JSON.stringify({ action: 'print' })
         }).catch(()=>{});
         window.print();
+      };
+
+      const downloadPdf = () => {
+        const qs = new URLSearchParams();
+        if (loadedStart) qs.set('start_date', loadedStart);
+        if (loadedEnd)   qs.set('end_date',   loadedEnd);
+        const url = withToken(`/${orgSlug}/${reportType}/api/pdf?${qs.toString()}`);
+        window.open(url, '_blank');
       };
 
       // ── Status pill ──
@@ -1121,6 +1226,46 @@ function normalizeRow(raw) {
             <div className="toolbar">
               <span className="toolbar-title">🎫 Memberships</span>
 
+              <label>
+                Start
+                <input type="date" value={startDate} onChange={e => { setStartDate(e.target.value); setActiveRange(null); }} />
+              </label>
+              <label>
+                End
+                <input type="date" value={endDate} onChange={e => { setEndDate(e.target.value); setActiveRange(null); }} />
+              </label>
+
+              {[
+                { key:'last-month',  label:'Last Month',  action:() => setMonth(-1) },
+                { key:'this-month',  label:'This Month',  action:() => setMonth(0)  },
+                { key:'next-month',  label:'Next Month',  action:() => setMonth(1)  },
+              ].map(({ key, label, action }) => (
+                <button
+                  key={key}
+                  onClick={action}
+                  style={{
+                    fontSize:11, padding:'4px 8px',
+                    ...(activeRange === key ? {
+                      background: '#f59e0b',
+                      borderColor: '#f59e0b',
+                      color: '#1a1a1a',
+                      fontWeight: 600,
+                    } : {}),
+                  }}
+                >{label}</button>
+              ))}
+
+              <button
+                className="btn-run"
+                onClick={handleRunReport}
+                disabled={loading}
+                style={datesChanged && !loading ? {boxShadow:'0 0 0 2px #4ade80'} : {}}
+              >
+                {loading ? <><span className="btn-spinner" />Loading…</> : '▶ Run Report'}
+              </button>
+
+              <div className="divider" />
+
               <MultiSelect
                 label="Status"
                 options={['active','canceled','expired','inactive']}
@@ -1167,6 +1312,7 @@ function normalizeRow(raw) {
 
               <button onClick={printPage} title="Print">🖨️ Print</button>
               <button onClick={exportExcel} title="Excel">📊 Excel</button>
+              <button className="btn-pdf" onClick={downloadPdf} title="PDF">📄 PDF</button>
             </div>
           )}
 
@@ -1182,6 +1328,13 @@ function normalizeRow(raw) {
                 </div>
               </div>
               <div className="report-header-right">
+                {loadedStart && loadedEnd && (
+                  <div className="date-range" style={{fontWeight:600,marginBottom:2}}>
+                    {new Date(loadedStart + 'T12:00:00').toLocaleDateString('en-US', {month:'short',day:'numeric',year:'numeric'})}
+                    {' – '}
+                    {new Date(loadedEnd + 'T12:00:00').toLocaleDateString('en-US', {month:'short',day:'numeric',year:'numeric'})}
+                  </div>
+                )}
                 <div className="date-range">{filtered.length.toLocaleString()} memberships · {summary.total.toLocaleString()} after filters</div>
               </div>
             </div>
