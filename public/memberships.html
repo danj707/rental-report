@@ -449,6 +449,9 @@ function normalizeRow(raw) {
         status:        (raw['Status'] || 'active').toLowerCase(),
         renewalType:   raw['Renewal Type'] || '',
         price:         safeNum(raw['Price']),
+        paid:          safeNum(raw['Paid']),
+        refunded:      safeNum(raw['Refunded']),
+        netCollected:  safeNum(raw['Net Collected']),
         startDate:     raw['Start Date'] || '',
         endDate:       raw['End Date'] || '',
         nextRenewal:   raw['Next Renewal'] || '',
@@ -721,10 +724,11 @@ function normalizeRow(raw) {
         const all = filtered;
         const byStatus = { active:0, canceled:0, expired:0, inactive:0 };
         let autoRenewCount = 0, mrrEstimate = 0;
-        let totalRevenue = 0;
+        let totalRevenue = 0, totalNetCollected = 0;
         for (const r of all) {
           byStatus[r.status] = (byStatus[r.status] || 0) + 1;
           totalRevenue += r.price;
+          totalNetCollected += r.netCollected;
           if (r.status === 'active' && r.renewalType === 'Auto-renew') {
             autoRenewCount++;
             mrrEstimate += r.price;
@@ -736,6 +740,7 @@ function normalizeRow(raw) {
           autoRenewCount,
           mrrEstimate,
           totalRevenue,
+          totalNetCollected,
         };
       }, [filtered]);
 
@@ -805,6 +810,9 @@ function normalizeRow(raw) {
           'Status':         r.status,
           'Renewal Type':   r.renewalType,
           'Price':          r.price,
+          'Paid':           r.paid,
+          'Refunded':       r.refunded,
+          'Net Collected':  r.netCollected,
           'Start Date':     toXlDate(r.startDate),
           'End Date':       toXlDate(r.endDate),
           'Next Renewal':   toXlDate(r.nextRenewal),
@@ -826,6 +834,9 @@ function normalizeRow(raw) {
           'Status': '',
           'Renewal Type': '',
           'Price': rows.reduce((s, x) => s + safeNum(x.Price), 0),
+          'Paid': rows.reduce((s, x) => s + safeNum(x.Paid), 0),
+          'Refunded': rows.reduce((s, x) => s + safeNum(x.Refunded), 0),
+          'Net Collected': rows.reduce((s, x) => s + safeNum(x['Net Collected']), 0),
           'Start Date': '',
           'End Date': '',
           'Next Renewal': '',
@@ -892,6 +903,9 @@ function normalizeRow(raw) {
           { key: 'status',      label: 'Status' },
           { key: 'renewalType', label: 'Renewal' },
           { key: 'price',       label: 'Price', num: true },
+          { key: 'paid',        label: 'Paid', num: true },
+          { key: 'refunded',    label: 'Refunded', num: true },
+          { key: 'netCollected', label: 'Net Collected', num: true },
           { key: 'startDate',   label: 'Start' },
           { key: 'nextRenewal', label: 'Next Renewal' },
           { key: 'lastUsed',    label: 'Last Used' },
@@ -921,6 +935,9 @@ function normalizeRow(raw) {
                   <td><StatusPill status={r.status} /></td>
                   <td><RenewalPill type={r.renewalType} /></td>
                   <td className="num">{money(r.price)}</td>
+                  <td className="num">{money(r.paid)}</td>
+                  <td className="num" style={{color: r.refunded > 0 ? '#ef4444' : undefined}}>{money(r.refunded)}</td>
+                  <td className="num" style={{fontWeight: 600}}>{money(r.netCollected)}</td>
                   <td>{r.startDate ? dateOnly(r.startDate) : <span style={{color:'#ccc'}}>—</span>}</td>
                   <td>{r.nextRenewal ? dateOnly(r.nextRenewal) : <span style={{color:'#ccc'}}>—</span>}</td>
                   <td>{r.lastUsed ? dateOnly(r.lastUsed) : <span style={{color:'#ccc'}}>—</span>}</td>
@@ -998,8 +1015,8 @@ function normalizeRow(raw) {
       function renderRenewalMix() {
         let auto = 0, one = 0, autoRev = 0, oneRev = 0;
         for (const r of filtered) {
-          if (r.renewalType === 'Auto-renew') { auto++; autoRev += r.price; }
-          else { one++; oneRev += r.price; }
+          if (r.renewalType === 'Auto-renew') { auto++; autoRev += r.netCollected; }
+          else { one++; oneRev += r.netCollected; }
         }
         return (
           <div className="chart-grid two-col">
@@ -1054,7 +1071,7 @@ function normalizeRow(raw) {
         const byType = {};
         for (const r of filtered) {
           if (!byType[r.type]) byType[r.type] = { active:0, canceled:0, expired:0, inactive:0 };
-          byType[r.type][r.status] = (byType[r.type][r.status] || 0) + r.price;
+          byType[r.type][r.status] = (byType[r.type][r.status] || 0) + r.netCollected;
         }
         const entries = Object.entries(byType)
           .map(([k, v]) => ({ key: k, total: v.active + v.canceled + v.expired + v.inactive, ...v }))
@@ -1096,7 +1113,7 @@ function normalizeRow(raw) {
         for (const r of filtered) {
           const m = monthKey(r.createdAt);
           if (!m) continue;
-          byMonth[m] = (byMonth[m] || 0) + r.price;
+          byMonth[m] = (byMonth[m] || 0) + r.netCollected;
         }
         const sortedKeys = Object.keys(byMonth).sort();
         const labels = sortedKeys.map(k => {
@@ -1106,7 +1123,7 @@ function normalizeRow(raw) {
         });
         return (
           <div className="chart-card">
-            <h3>Revenue by Month (based on Created Date)</h3>
+            <h3>Net Collected by Month (based on Created Date)</h3>
             <ChartView
               type="bar"
               height={340}
@@ -1363,9 +1380,9 @@ function normalizeRow(raw) {
                 <div className="card-sub">≈ {money(summary.mrrEstimate)} renewal value</div>
               </div>
               <div className="summary-card">
-                <div className="card-label">Total Revenue</div>
-                <div className="card-value blue">{money(summary.totalRevenue)}</div>
-                <div className="card-sub">Lifetime, after filters</div>
+                <div className="card-label">Net Collected</div>
+                <div className="card-value blue">{money(summary.totalNetCollected)}</div>
+                <div className="card-sub">{money(summary.totalRevenue)} contract value</div>
               </div>
             </div>
 
