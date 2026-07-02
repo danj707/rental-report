@@ -1357,7 +1357,7 @@ async function generatePdf(orgSlug, reportType, startDate, endDate, filters = {}
       format: "Letter",
       landscape: true,
       printBackground: true,
-      scale: isGL ? 0.6 : 1.0,
+      scale: isGL ? 0.6 : 0.72,
       margin: { top: "0.4in", bottom: "0.5in", left: "0.4in", right: "0.4in" },
       displayHeaderFooter: true,
       headerTemplate: "<span></span>",
