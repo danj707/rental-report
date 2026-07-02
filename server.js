@@ -533,6 +533,8 @@ const EVENTS_FILE = path.join(DATA_DIR, "events.jsonl");
 const SHOWCASE_FILE = path.join(DATA_DIR, "showcase.json");
 const VISIBILITY_FILE = path.join(DATA_DIR, "report-visibility.json");
 const PUBLIC_MODE_FILE = path.join(DATA_DIR, "public-mode.json");
+const GOALS_DIR = path.join(DATA_DIR, "goals");
+fs.mkdirSync(GOALS_DIR, { recursive: true });
 const VOTES_FILE = path.join(DATA_DIR, "votes.json");
 const FLAGS_FILE = path.join(DATA_DIR, "feature-flags.json");
 const HEALTH_FILE = path.join(DATA_DIR, "health-check.json");
@@ -759,6 +761,16 @@ function setPublicMode(slug, enabled) {
 }
 function getAllPublicModes() {
   return readJSON(PUBLIC_MODE_FILE, {});
+}
+
+// ── Goal targets (per-org KPI goals) ──────────────────────────────────────────
+function getGoals(slug) {
+  const f = path.join(GOALS_DIR, slug + ".json");
+  return readJSON(f, {});
+}
+function setGoals(slug, goals) {
+  const f = path.join(GOALS_DIR, slug + ".json");
+  writeJSON(f, goals);
 }
 
 // ── Report visibility (per-org hidden reports) ───────────────────────
@@ -4918,6 +4930,24 @@ app.get("/:org/api/pulse", async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── GET /:org/api/goals — read KPI goal targets ────────────────────
+app.get("/:org/api/goals", (req, res) => {
+  const slug = req.params.org;
+  if (!ORGS[slug]) return res.status(404).json({ error: "Unknown org" });
+  res.json(getGoals(slug));
+});
+
+// ── PUT /:org/api/goals — save KPI goal targets ────────────────────
+app.put("/:org/api/goals", express.json(), (req, res) => {
+  const slug = req.params.org;
+  if (!ORGS[slug]) return res.status(404).json({ error: "Unknown org" });
+  try {
+    const goals = req.body || {};
+    setGoals(slug, goals);
+    res.json({ ok: true, goals });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 app.get("/:org", async (req, res, next) => {
   const slug = req.params.org;
   const org  = ORGS[slug];
@@ -4961,6 +4991,7 @@ app.get("/:org", async (req, res, next) => {
   } catch(e) { orgConfig.metrics = null; }
   // Inject executive pulse summary from cached data
   try { orgConfig.pulse = await refreshOrgPulse(slug); } catch(e) { orgConfig.pulse = null; }
+  orgConfig.goals = getGoals(slug);
   const html = require("fs").readFileSync(path.join(__dirname, "public", "org.html"), "utf8");
   const inject = `<script>window.ORG_CONFIG=${JSON.stringify(orgConfig)};</script>`;
   res.type("html").send(html.replace("</head>", inject + "</head>"));
@@ -7682,6 +7713,13 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  { date: '2026-07-02', title: '\uD83C\uDFAF Stage 1.1 Daily Pulse + Quick Fixes', items: [
+    '\uD83C\uDFAF GOAL PACING RINGS (Watertown) \u2014 New GET/PUT /:org/api/goals endpoints. Org dashboard pulse cards show Chart.js doughnut rings for goal progress (green/yellow/red). Gear icon to set targets. Gated to Watertown.',
+    '\uD83D\uDCAB ANIMATED KPI COUNTERS (Watertown) \u2014 Pulse values animate with eased cubic timing on page load.',
+    '\uD83C\uDF1F EARLY ACCESS BANNER \u2014 Pre-Release to Early Access platform-wide.',
+    '\uD83D\uDCCA METRICS CHART FIX \u2014 Fixed tooltip clipping on activity chart. Height 280px + overflow:visible.',
+    '\uD83D\uDE80 FT PIPELINE DATE RANGES \u2014 Pipeline and Scheduled tables show section date ranges matching overview tab.',
+  ]},
   { date: '2026-07-01', title: '\uD83D\uDCCA GL Code Rollup: Excel Header + Cleanup', items: [
     '\uD83D\uDCCA GL EXCEL HEADER \u2014 Excel export now includes org name and date range as a header row above the data columns. Removed Rec Insights button from GL report (straight financial data, no AI needed). Also fixed gift card and other payments being lost during desk-location aggregation (GL_MONEY_FIELDS was missing the new fields).'
   ]},
