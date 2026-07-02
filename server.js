@@ -288,6 +288,37 @@ async function refreshOrgPulse(slug, force) {
     if (hh.size > 0) pulse.items.push({ key:'households', label:'Households', value: pulseFmt(hh.size), sub: `${pulseFmt(ue.data.rows.length)} people`, icon:'🏠', delta: null, direction: null });
   }
 
+  // ── Generate AI narrative (Rec Daily Insights) ──
+  if (anthropic && pulse.items.length >= 2) {
+    try {
+      const summary = pulse.items.map(it => {
+        let line = `${it.label}: ${it.value}`;
+        if (it.sub) line += ` (${it.sub})`;
+        if (it.delta) line += ` — ${it.delta} vs last month`;
+        if (it.trail && it.trail.length >= 2) {
+          const trend = it.trail[it.trail.length-1] > it.trail[0] ? 'trending up' : it.trail[it.trail.length-1] < it.trail[0] ? 'trending down' : 'flat';
+          line += ` [6-month: ${trend}]`;
+        }
+        return line;
+      }).join('\n');
+      const orgName = ORGS[slug]?.displayName || slug;
+      const resp = await anthropic.messages.create({
+        model: INSIGHTS_MODEL,
+        max_tokens: 300,
+        system: `You are a parks & recreation analytics advisor. Given monthly KPI data for "${orgName}", write exactly 3 concise bullet insights (each 1 sentence, max 20 words). Focus on: (1) the most notable change or trend, (2) an actionable observation, (3) something positive or a watch-item. Format: return ONLY a JSON array of 3 strings. No markdown, no preamble.`,
+        messages: [{ role: 'user', content: `Month: ${monthLabel}\n${summary}` }],
+      });
+      const raw = (resp.content || []).filter(c => c.type === 'text').map(c => c.text).join('');
+      const parsed = JSON.parse(raw.replace(/```json|```/g, '').trim());
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        pulse.narrative = parsed.slice(0, 3);
+        console.log(`[pulse] ${slug}: AI narrative generated (${parsed.length} insights)`);
+      }
+    } catch(e) {
+      console.warn(`[pulse] ${slug}: AI narrative failed: ${e.message}`);
+    }
+  }
+
   console.log(`[pulse] ${slug}: ${pulse.items.length} items, ${monthLabel}`);
   pulseCache.set(slug, { data: pulse, ts: Date.now() });
   return pulse;
@@ -7713,6 +7744,9 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  { date: '2026-07-02', title: '\u2728 Rec Daily Insights', items: [
+    '\u2728 REC DAILY INSIGHTS \u2014 New AI-powered insights panel on org dashboards. Haiku generates 3 concise bullet observations from the pulse KPI data during the 5:10am daily pre-warm. Cached with the pulse \u2014 zero extra Metabase calls. Deep indigo panel with sparkle bullet styling positioned between Calendar Performance and report cards.',
+  ]},
   { date: '2026-07-02', title: '\uD83C\uDFAF Stage 1.1 Daily Pulse + Quick Fixes', items: [
     '\uD83C\uDFAF GOAL PACING RINGS (Watertown) \u2014 New GET/PUT /:org/api/goals endpoints. Org dashboard pulse cards show Chart.js doughnut rings for goal progress (green/yellow/red). Gear icon to set targets. Gated to Watertown.',
     '\uD83D\uDCAB ANIMATED KPI COUNTERS (Watertown) \u2014 Pulse values animate with eased cubic timing on page load.',
