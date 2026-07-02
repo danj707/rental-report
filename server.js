@@ -559,7 +559,7 @@ const SHARED_UUIDS = {
 // dashboard "+ Add report" flow (e.g. not yet ready for self-serve onboarding).
 const NON_ADDABLE_REPORTS = new Set(["overview", "program-demographics", "directors-report", "retention", "annual-report", "section-detail"]);
 // Reports that require extra params (e.g. section_id) and cannot be health-checked with org_id alone
-const HEALTH_SKIP_REPORTS = new Set(["section-detail", "annual-report"]);
+const HEALTH_SKIP_REPORTS = new Set(["section-detail", "annual-report", "facility"]);
 const RENTAL_CALENDAR_ORGS = new Set(["watertown", "norman"]);
 
 // ── Dynamic orgs (added via dashboard UI) ────────────────────────────
@@ -3277,12 +3277,12 @@ app.post("/:org/annual-report/api/generate", async (req, res) => {
     logEvent(slug, "annual-report", "generate", req);
 
     // Fetch all report data in parallel
-    const [glRows, progRows, courtRows, facilityRows] = await Promise.all([
+    const [glRows, progRows, courtRows] = await Promise.all([
       fetchMBDirect(slug, "gl", start_date, end_date),
       fetchMBDirect(slug, "programs", start_date, end_date),
       fetchMBDirect(slug, "court-utilization", start_date, end_date),
-      fetchMBDirect(slug, "facility", start_date, end_date),
     ]);
+    const facilityRows = null; // facility shared UUID has param issues; skip for now
 
     // ── Aggregate GL ──
     const gl = { total: 0, categories: {}, refunds: 0 };
