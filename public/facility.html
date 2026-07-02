@@ -1283,6 +1283,21 @@ function formatPhone(p) {
   return p;
 }
 
+function timeToMinutes(t) {
+  if (!t) return 9999;
+  const s = t.trim().toLowerCase();
+  const m = s.match(/^(\d{1,2}):(\d{2})\s*(am|pm)?$/);
+  if (!m) return 9999;
+  let h = parseInt(m[1], 10);
+  const min = parseInt(m[2], 10);
+  const ap = m[3];
+  if (ap) {
+    if (ap === 'am' && h === 12) h = 0;
+    if (ap === 'pm' && h !== 12) h += 12;
+  }
+  return h * 60 + min;
+}
+
 function normalizeRow(raw) {
   return {
     orgName:   raw['Org Name']  || raw['org_name']  || '',
@@ -2107,7 +2122,7 @@ function App() {
     });
     Object.values(byDate).forEach(dg => {
       Object.values(dg.locations).forEach(locRows => {
-        locRows.sort((a, b) => (a.start || '').localeCompare(b.start || ''));
+        locRows.sort((a, b) => timeToMinutes(a.start) - timeToMinutes(b.start));
       });
     });
     return byDate;
