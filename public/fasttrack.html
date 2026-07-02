@@ -365,12 +365,23 @@ function PipelineTab(props) {
               var days = daysUntil(r.regOpens);
               var heat = demandHeat(r.ftSignups, r.capacity);
               var hasFT = r.ftSignups > 0;
+              var dateLabel = '';
+              if (r.sectionStart) {
+                var sd = new Date(r.sectionStart); var ed = r.sectionEnd ? new Date(r.sectionEnd) : null;
+                var fmt = function(d) { return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); };
+                dateLabel = fmt(sd) + (ed && ed.getTime() !== sd.getTime() ? ' \u2013 ' + fmt(ed) : '');
+              }
+              var timeLabel = '';
+              if (r.sectionDay) timeLabel += r.sectionDay;
+              if (r.sectionTime) timeLabel += (timeLabel ? ' ' : '') + r.sectionTime;
+              var schedLabel = [dateLabel, timeLabel].filter(Boolean).join(' \u00b7 ');
               return React.createElement('tr', { key: 'p' + i, style: { background: hasFT ? '#fefce8' : '#fff' } },
                 React.createElement('td', { className: 'left' },
                   React.createElement('div', { style: { fontWeight: 600, color: '#111' } }, r.program),
                   React.createElement('div', { style: { fontSize: 11, color: '#888' } }, r.section,
                     React.createElement('span', { style: { marginLeft: 6, color: '#bbb', fontSize: 10 } }, r.regMode === 'per-session' ? 'per-session' : 'section')
-                  )
+                  ),
+                  schedLabel && React.createElement('div', { style: { fontSize: 10, color: '#999', marginTop: 1 } }, schedLabel)
                 ),
                 React.createElement('td', { style: { fontWeight: hasFT ? 700 : 400, color: hasFT ? '#6366f1' : '#ccc' } }, hasFT ? r.ftSignups : '\u2014'),
                 React.createElement('td', null, r.capacity > 0 ? r.capacity.toLocaleString() : '\u2014'),
@@ -412,10 +423,21 @@ function PipelineTab(props) {
           React.createElement('tbody', null,
             scheduled.map(function(r, i) {
               var days = daysUntil(r.publishDate);
+              var dateLabel = '';
+              if (r.sectionStart) {
+                var sd = new Date(r.sectionStart); var ed = r.sectionEnd ? new Date(r.sectionEnd) : null;
+                var fmt = function(d) { return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); };
+                dateLabel = fmt(sd) + (ed && ed.getTime() !== sd.getTime() ? ' \u2013 ' + fmt(ed) : '');
+              }
+              var timeLabel = '';
+              if (r.sectionDay) timeLabel += r.sectionDay;
+              if (r.sectionTime) timeLabel += (timeLabel ? ' ' : '') + r.sectionTime;
+              var schedLabel = [dateLabel, timeLabel].filter(Boolean).join(' \u00b7 ');
               return React.createElement('tr', { key: 's' + i },
                 React.createElement('td', { className: 'left' },
                   React.createElement('div', { style: { fontWeight: 600, color: '#111' } }, r.program),
-                  React.createElement('div', { style: { fontSize: 11, color: '#888' } }, r.section)
+                  React.createElement('div', { style: { fontSize: 11, color: '#888' } }, r.section),
+                  schedLabel && React.createElement('div', { style: { fontSize: 10, color: '#999', marginTop: 1 } }, schedLabel)
                 ),
                 React.createElement('td', { style: { color: r.ftSignups > 0 ? '#6366f1' : '#ccc' } }, r.ftSignups > 0 ? r.ftSignups : '\u2014'),
                 React.createElement('td', null, r.capacity > 0 ? r.capacity.toLocaleString() : '\u2014'),
