@@ -396,6 +396,16 @@ function getAddOnEmoji(name) {
   return '🏷️';
 }
 
+function StaleCacheBanner({ meta }) {
+  if (!meta?.stale_cache) return null;
+  const when = meta.cached_at ? new Date(meta.cached_at).toLocaleString() : 'recently';
+  return (
+    <div style={{background:'#fef3c7',borderBottom:'1px solid #f59e0b',padding:'8px 16px',textAlign:'center',fontSize:13,color:'#92400e'}}>
+      ⚠️ Showing cached data from {when} — live data is temporarily unavailable
+    </div>
+  );
+}
+
 function normalizeRow(raw) {
   return {
     orgName:          raw['Org Name']          || raw['org_name']          || '',
@@ -749,6 +759,7 @@ function App() {
 
   if (error && !rows) return (
     <div>{renderToolbar()}
+      <StaleCacheBanner meta={meta} />
       <div className="page"><div className="error" style={{textAlign:'center',padding:'3rem 1rem'}}>
         <p style={{fontSize:'2.5rem',marginBottom:'0.5rem'}}>😔</p>
         <p style={{fontSize:'1.1rem',color:'#666'}}>Looks like reporting has encountered an issue — try loading this report again later.</p>
