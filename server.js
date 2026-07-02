@@ -5031,8 +5031,9 @@ app.get("/:org", async (req, res, next) => {
       reports: cr.length,
     };
   } catch(e) { orgConfig.metrics = null; }
-  // Inject executive pulse summary from cached data
-  try { orgConfig.pulse = await refreshOrgPulse(slug); } catch(e) { orgConfig.pulse = null; }
+  // Inject executive pulse summary — cache-first, never block page render
+  orgConfig.pulse = getCachedPulse(slug) || null;
+  if (!orgConfig.pulse) refreshOrgPulse(slug).catch(() => {});
   orgConfig.goals = getGoals(slug);
   const html = require("fs").readFileSync(path.join(__dirname, "public", "org.html"), "utf8");
   const inject = `<script>window.ORG_CONFIG=${JSON.stringify(orgConfig)};</script>`;
@@ -7755,6 +7756,10 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  { date: '2026-07-02', title: '\u26A1 Non-Blocking Pulse + Panel Alignment', items: [
+    '\u26A1 NON-BLOCKING PULSE \u2014 Org page now uses getCachedPulse (instant cache read) instead of awaiting refreshOrgPulse. If cache is cold after deploy, page loads immediately without pulse; background pre-warm populates it within 30s. Eliminates 55s page load on cold cache.',
+    '\uD83D\uDCCF INSIGHTS PANEL ALIGNMENT \u2014 Daily Insights panel now uses max-width:700px + margin:0 auto to match pulse and calendar panel widths.',
+  ]},
   { date: '2026-07-02', title: '\uD83D\uDCC8 Daily Rate Normalization + Rec Daily Insights', items: [
     '\uD83D\uDCC8 DAILY RATE NORMALIZATION \u2014 All pulse month-over-month deltas now compare daily run rates instead of raw totals. On July 2, revenue/day is compared to June revenue/30 days \u2014 no more misleading -96% drops. Sub text shows day count and projected pace (e.g. day 2 \u2022 pace $134k).',
   ]},
