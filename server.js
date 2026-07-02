@@ -7821,6 +7821,9 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  { date: '2026-07-02', title: '💰 Memberships Revenue Reconciliation', items: [
+    '💰 NET COLLECTED REVENUE — Memberships report now shows Paid, Refunded, and Net Collected columns from the upgraded SQL (tx CTE against item_log_report). Total Revenue card repointed to Net Collected with contract value sub-line. Revenue by Type stacked bar, Monthly Revenue chart, and Renewal Mix doughnut all use Net Collected. Detail table and Excel export include all three new money columns with totals. Validates against Rec Payments card (e.g. Norman scholarship: $19,605 net vs $19,680 contract).',
+  ]},
   { date: '2026-07-02', title: '\uD83D\uDCC5 Memberships Date Range Filter', items: [
     '\uD83D\uDCC5 MEMBERSHIPS DATE RANGE \u2014 Added start/end date pickers, Last/This/Next Month quick buttons, and Run Report button to the Memberships report. Dates pass through to Metabase via start_date/end_date template tags. URL syncs with loaded dates for sharing/bookmarking. PDF export includes date range. Matches facility report date filter pattern.',
   ]},
