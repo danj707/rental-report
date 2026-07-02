@@ -1332,8 +1332,10 @@ async function generatePdf(orgSlug, reportType, startDate, endDate, filters = {}
       await page.setViewport({ width: 1600, height: 900, deviceScaleFactor: 2 });
     }
     await page.goto(url, { waitUntil: "networkidle0", timeout: 60000 });
-    await page.waitForSelector("#report-ready", { timeout: 30000 });
-    // Wait for React to fully apply client-side filters before capture
+    await page.waitForSelector("#report-ready", { timeout: 90000 });
+    // Wait for any lazy-loaded assets / Chart.js renders to finish
+    await page.waitForNetworkIdle({ idleTime: 500, timeout: 15000 }).catch(() => {});
+    // Final safety buffer for React paint + Chart.js animation settle
     await new Promise(r => setTimeout(r, 3000));
     return await page.pdf({
       format: "Letter",
