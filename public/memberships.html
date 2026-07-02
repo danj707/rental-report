@@ -617,7 +617,7 @@ function normalizeRow(raw) {
       // ── Filters ──
       const [viewMode, setViewMode] = useState(() => {
         const p = new URLSearchParams(window.location.search);
-        return p.get('view') || localStorage.getItem(LS_VIEW) || 'table';
+        return p.get('view') || localStorage.getItem(LS_VIEW) || 'revenueByType';
       });
       const [statusFilter, setStatusFilter] = useState(() => {
         try { return JSON.parse(localStorage.getItem(LS_STATUS)) || ['active']; }
@@ -1268,14 +1268,12 @@ function normalizeRow(raw) {
           case 'revenueByType':    return renderRevenueByType();
           case 'monthlyRevenue':   return renderMonthlyRevenue();
           case 'upcomingRenewals': return renderUpcomingRenewals();
-          case 'table':
-          default:                 return renderTable();
+          default:                 return renderByType();
         }
       }
 
       // ── View definitions ──
       const VIEWS = [
-        { key: 'table',            label: 'Table' },
         { key: 'byType',           label: 'By Type' },
         { key: 'byStatus',         label: 'By Status' },
         { key: 'renewalMix',       label: 'Renewal Mix' },
