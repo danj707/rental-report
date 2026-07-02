@@ -1756,6 +1756,19 @@ function HeatmapStrip({ filteredRows, locationColors }) {
 }
 
 // ── Main App ─────────────────────────────────────────────────────────
+function linkifyNotes(text) {
+  if (!text) return "";
+  return text.replace(/(https?:\/\/[^\s,;]+)/g, function(url) {
+    var label = "\uD83D\uDD17 View";
+    var lower = url.toLowerCase();
+    if (lower.indexOf("contract") !== -1) label = "\uD83D\uDCCE Contract";
+    else if (lower.indexOf("insurance") !== -1) label = "\uD83D\uDCCB Insurance";
+    else if (lower.indexOf("invoice") !== -1) label = "\uD83D\uDCC4 Invoice";
+    else if (lower.indexOf("permit") !== -1) label = "\uD83D\uDCDD Permit";
+    return '<a href="' + url + '" target="_blank" rel="noopener noreferrer" style="color:#2563eb;text-decoration:underline;font-weight:500">' + label + '</a>';
+  });
+}
+
 function App() {
   const params   = useMemo(() => getParams(), []);
   const defaults = useMemo(() => {
@@ -2540,9 +2553,7 @@ function App() {
                                     return getAddOnEmoji(rawName) + ' ' + trimmed;
                                   }).join(', '));
                               return (
-                                <div className="sub-row">
-                                  {parts.join(' | ')}
-                                </div>
+                                <div className="sub-row" dangerouslySetInnerHTML={{__html: linkifyNotes(parts.join(' | '))}} />
                               );
                             })()}
                           </div>
