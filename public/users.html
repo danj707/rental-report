@@ -1027,7 +1027,7 @@ function App() {
       .then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json();})
       .then(function(j){
         setRows(j.rows||j);
-        if(j.meta&&j.meta.cached_at) setCacheInfo({at:j.meta.cached_at});
+        if(j.meta&&j.meta.cached_at) setCacheInfo({at:j.meta.cached_at,stale:!!j.meta.stale_cache});
         else setCacheInfo(null);
         setLoading(false);
       })
@@ -1219,7 +1219,7 @@ function App() {
       .then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json();})
       .then(function(j){
         setRows(j.rows||j);
-        if(j.meta&&j.meta.cached_at) setCacheInfo({at:j.meta.cached_at});
+        if(j.meta&&j.meta.cached_at) setCacheInfo({at:j.meta.cached_at,stale:!!j.meta.stale_cache});
         else setCacheInfo(null);
       })
       .catch(function(e){setError(e.message);})
@@ -1333,8 +1333,8 @@ function App() {
       </div>
 
       {cacheInfo&&(
-        <div className="cache-banner no-print">
-          <span>Cached data from <strong>{new Date(cacheInfo.at).toLocaleString()}</strong></span>
+        <div className="cache-banner no-print" style={cacheInfo.stale?{background:'#fef3c7',borderColor:'#f59e0b',color:'#92400e'}:{}}>
+          <span>{cacheInfo.stale?'⚠️ Showing cached data':'Cached data'} from <strong>{new Date(cacheInfo.at).toLocaleString()}</strong>{cacheInfo.stale?' — live data is temporarily unavailable':''}</span>
           <button onClick={refreshData} disabled={refreshing}>{refreshing?'Refreshing…':'Refresh Now'}</button>
         </div>
       )}
