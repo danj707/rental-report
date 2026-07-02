@@ -1327,10 +1327,12 @@ async function generatePdf(orgSlug, reportType, startDate, endDate, filters = {}
   try {
     const page = await browser.newPage();
     const isGL = reportType === "gl";
-    // GL table is very wide — render at 1600px so layout is natural, then scale to fit Letter landscape.
-    if (isGL) {
-      await page.setViewport({ width: 1600, height: 900, deviceScaleFactor: 2 });
-    }
+    // Set viewport wide enough for multi-column tables. Default 800px causes
+    // "Printing failed" on wide reports (memberships has 13 cols, products etc).
+    // GL is extra-wide with scale-down; everything else gets 1400px at 1x.
+    await page.setViewport(isGL
+      ? { width: 1600, height: 900, deviceScaleFactor: 2 }
+      : { width: 1400, height: 900, deviceScaleFactor: 1 });
     await page.goto(url, { waitUntil: "networkidle0", timeout: 60000 });
     await page.waitForSelector("#report-ready", { timeout: 90000 });
     // Wait for any lazy-loaded assets / Chart.js renders to finish
