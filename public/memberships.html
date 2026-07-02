@@ -1209,6 +1209,9 @@ function normalizeRow(raw) {
         if (error)   return <div className="empty-state error-state" style={{textAlign:'center',padding:'3rem 1rem'}}><span style={{fontSize:'2.5rem'}}>😔</span><br/><span style={{fontSize:'1.1rem',color:'#666'}}>Looks like reporting has encountered an issue — try loading this report again later.</span></div>;
         if (filtered.length === 0) return <div className="empty-state">No memberships match the current filters.</div>;
 
+        // PDF print mode: always render table — Chart.js canvases crash Chrome printToPDF
+        if (isPrint) return renderTable();
+
         switch (viewMode) {
           case 'byType':           return renderByType();
           case 'byStatus':         return renderByStatus();
