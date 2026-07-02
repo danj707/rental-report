@@ -2873,7 +2873,7 @@ app.get("/:org/:report/api/data", resolveOrg, async (req, res) => {
   } catch (err) {
     const isTimeout = err.name === "TimeoutError" || err.name === "AbortError";
     const msg = isTimeout
-      ? `Metabase query timed out after ${(orgConfig.healthTimeoutMs || 120000) / 1000}s — try a shorter date range`
+      ? `Metabase query timed out after ${(req.orgConfig?.healthTimeoutMs || 120000) / 1000}s — try a shorter date range`
       : err.message;
     console.error(`[proxy] Error${isTimeout ? " (timeout)" : ""}:`, err.message);
     res.status(isTimeout ? 504 : 500).json({ error: msg });
