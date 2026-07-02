@@ -356,6 +356,7 @@ async function refreshOrgPulse(slug, force) {
 
 // ── Cache pre-warm on startup ─────────────────────────────────────────
 async function prewarmCache() {
+  if (!getFlags().cachingEnabled) { console.log('[cache] Pre-warm skipped — caching is OFF'); return; }
   console.log(`[cache] Pre-warming default reports…`);
   let warmed = 0;
 
@@ -671,6 +672,7 @@ function saveHealthResults(results) {
 }
 
 async function runHealthCheck(forceAll) {
+  if (!getFlags().cachingEnabled) { console.log('[health] Health check skipped — caching is OFF'); return null; }
   const now = Date.now();
   const ts = new Date(now).toISOString();
   const existing = loadHealthResults() || { timestamp: ts, reports: {}, failures: [] };
@@ -807,7 +809,7 @@ function writeJSON(file, data) {
 }
 
 // ── Feature Flags ────────────────────────────────────────────────────
-const DEFAULT_FLAGS = { emailSubscriptions: false };
+const DEFAULT_FLAGS = { emailSubscriptions: false, cachingEnabled: false };
 function getFlags() { return Object.assign({}, DEFAULT_FLAGS, readJSON(FLAGS_FILE, {})); }
 function setFlag(key, value) { const f = getFlags(); f[key] = value; writeJSON(FLAGS_FILE, f); return f; }
 
@@ -1472,6 +1474,7 @@ cron.schedule("0 7 1 * *", () => runSchedule("monthly"));
 
 // ── Daily pre-warm for users report (runs at 5am) ────────────────────
 async function prewarmUsersCache() {
+  if (!getFlags().cachingEnabled) { console.log('[users-cache] Pre-warm skipped — caching is OFF'); return; }
   console.log("[users-cache] Pre-warming users report data…");
   for (const slug of Object.keys(ORGS)) {
     const org = ORGS[slug];
@@ -1632,6 +1635,7 @@ setTimeout(prewarmUsersCache, 15000);
 setTimeout(prewarmPulseCache, 30000); // pulse after users (needs users cache for households)
 
 async function prewarmPulseCache() {
+  if (!getFlags().cachingEnabled) { console.log('[pulse] Pre-warm skipped — caching is OFF'); return; }
   console.log("[pulse] Pre-warming all orgs…");
   let warmed = 0;
   for (const slug of Object.keys(ORGS)) {
@@ -6574,6 +6578,18 @@ app.get("/", (req, res) => {
             <div id="flag-email-status" style="font-size:11px;color:#999">Loading...</div>
           </div>
         </div>
+        <div style="display:flex;align-items:center;gap:12px;margin-top:12px">
+          <label style="position:relative;display:inline-block;width:44px;height:24px;cursor:pointer">
+            <input type="checkbox" id="flag-caching" onchange="toggleFlag('cachingEnabled',this.checked)"
+                   style="opacity:0;width:0;height:0" />
+            <span id="flag-caching-track" style="position:absolute;top:0;left:0;right:0;bottom:0;background:#cbd5e1;border-radius:12px;transition:background .2s"></span>
+            <span id="flag-caching-thumb" style="position:absolute;top:2px;left:2px;width:20px;height:20px;background:#fff;border-radius:50%;transition:transform .2s;box-shadow:0 1px 3px rgba(0,0,0,.2)"></span>
+          </label>
+          <div>
+            <div style="font-size:13px;font-weight:600;color:#111827">Report Caching &amp; Polling</div>
+            <div id="flag-caching-status" style="font-size:11px;color:#999">Loading...</div>
+          </div>
+        </div>
       </div>
       <div style="padding:14px 18px;background:#f5f4f1;border-top:1px solid #e8e5df">
         <div style="font-size:12px;font-weight:700;color:#374151;margin-bottom:10px">&#128279; Metabase Links</div>
@@ -7403,6 +7419,7 @@ app.get("/", (req, res) => {
         const r = await fetch('/api/admin/flags');
         const flags = await r.json();
         updateFlagUI('email', flags.emailSubscriptions);
+        updateFlagUI('caching', flags.cachingEnabled);
       } catch(e) { console.warn('[flags] load failed', e); }
     }
     function updateFlagUI(name, on) {
@@ -7413,7 +7430,15 @@ app.get("/", (req, res) => {
       if (cb) cb.checked = on;
       if (track) track.style.background = on ? '#059669' : '#cbd5e1';
       if (thumb) thumb.style.transform = on ? 'translateX(20px)' : 'translateX(0)';
-      if (status) { status.textContent = on ? 'Enabled — email signups and subscriptions are active' : 'Disabled — email features are hidden from all orgs'; status.style.color = on ? '#059669' : '#999'; }
+      if (status) {
+        var labels = {
+          email: ['Enabled — email signups and subscriptions are active', 'Disabled — email features are hidden from all orgs'],
+          caching: ['Enabled — background pre-warming, health checks, and polling active', 'Disabled — all background Metabase requests paused']
+        };
+        var pair = labels[name] || ['Enabled', 'Disabled'];
+        status.textContent = on ? pair[0] : pair[1];
+        status.style.color = on ? '#059669' : '#999';
+      }
     }
     async function toggleFlag(key, value) {
       const pwd = prompt('Enter dashboard password to change feature flags:');
@@ -7424,7 +7449,7 @@ app.get("/", (req, res) => {
           body: JSON.stringify({ password: pwd, key: key, value: value })
         });
         const j = await r.json();
-        if (j.ok) { updateFlagUI('email', j.flags.emailSubscriptions); }
+        if (j.ok) { updateFlagUI('email', j.flags.emailSubscriptions); updateFlagUI('caching', j.flags.cachingEnabled); }
         else { alert(j.error || 'Failed'); loadFlags(); }
       } catch(e) { alert('Error: ' + e.message); loadFlags(); }
     }
@@ -7796,6 +7821,9 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  { date: '2026-07-02', title: '\u23F8\uFE0F Caching Kill Switch', items: [
+    '\u23F8\uFE0F CACHING TOGGLE \u2014 New Report Caching & Polling feature flag on admin dashboard. When OFF (default), all background Metabase requests are paused: report pre-warming, users cache, pulse pre-warming, and health checks. Existing cached data still serves. Toggle ON to resume.',
+  ]},
   { date: '2026-07-02', title: '\u26A1 Non-Blocking Pulse + Panel Alignment', items: [
     '\u26A1 NON-BLOCKING PULSE \u2014 Org page now uses getCachedPulse (instant cache read) instead of awaiting refreshOrgPulse. If cache is cold after deploy, page loads immediately without pulse; background pre-warm populates it within 30s. Eliminates 55s page load on cold cache.',
     '\uD83D\uDCCF INSIGHTS PANEL ALIGNMENT \u2014 Daily Insights panel now uses max-width:700px + margin:0 auto to match pulse and calendar panel widths.',
