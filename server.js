@@ -1327,12 +1327,15 @@ async function generatePdf(orgSlug, reportType, startDate, endDate, filters = {}
   try {
     const page = await browser.newPage();
     const isGL = reportType === "gl";
-    // Set viewport wide enough for multi-column tables. Default 800px causes
-    // "Printing failed" on wide reports (memberships has 13 cols, products etc).
-    // GL is extra-wide with scale-down; everything else gets 1400px at 1x.
+    // Wide-table reports overflow at Puppeteer's default 800px, causing Chrome
+    // printToPDF to crash. GL is extra-wide with 2x DPI. Reports with many
+    // columns (memberships 13 cols, products, users, etc.) get 1400px + scale.
+    // Simpler reports keep 1100px which maps cleanly to Letter landscape.
+    const WIDE_REPORTS = new Set(["memberships", "products", "users", "court-utilization", "roster", "instructor-payout"]);
+    const isWide = WIDE_REPORTS.has(reportType);
     await page.setViewport(isGL
       ? { width: 1600, height: 900, deviceScaleFactor: 2 }
-      : { width: 1400, height: 900, deviceScaleFactor: 1 });
+      : { width: isWide ? 1400 : 1100, height: 900, deviceScaleFactor: 1 });
     await page.goto(url, { waitUntil: "networkidle0", timeout: 60000 });
     await page.waitForSelector("#report-ready", { timeout: 90000 });
     // Wait for any lazy-loaded assets / Chart.js renders to finish
@@ -1357,7 +1360,7 @@ async function generatePdf(orgSlug, reportType, startDate, endDate, filters = {}
       format: "Letter",
       landscape: true,
       printBackground: true,
-      scale: isGL ? 0.6 : 0.72,
+      scale: isGL ? 0.6 : isWide ? 0.72 : 0.9,
       margin: { top: "0.4in", bottom: "0.5in", left: "0.4in", right: "0.4in" },
       displayHeaderFooter: true,
       headerTemplate: "<span></span>",
