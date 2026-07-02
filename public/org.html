@@ -178,9 +178,12 @@
 
     /* ── Rec Daily Insights panel ── */
     .daily-insights-panel {
+      max-width: 700px; width: 100%; margin: 0 auto;
+      padding: 0;
+    }
+    .daily-insights-inner {
       background: linear-gradient(135deg, #1e1b4b 0%, #312e81 100%);
-      border-radius: 14px; padding: 16px 24px; box-sizing: border-box;
-      max-width: 748px; width: 100%; margin: 0 auto;
+      border-radius: 14px; padding: 16px 24px;
     }
     .daily-insights-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
     .daily-insights-title { font-weight: 800; font-size: 15px; color: #e0e7ff; }
@@ -361,11 +364,13 @@
 </div>
 
 <div class="daily-insights-panel" id="daily-insights" style="display:none">
-  <div class="daily-insights-header">
-    <span class="daily-insights-title">✨ Rec Daily Insights</span>
-    <span class="daily-insights-ts" id="daily-insights-ts"></span>
+  <div class="daily-insights-inner">
+    <div class="daily-insights-header">
+      <span class="daily-insights-title">✨ Rec Daily Insights</span>
+      <span class="daily-insights-ts" id="daily-insights-ts"></span>
+    </div>
+    <ul class="daily-insights-list" id="daily-insights-list"></ul>
   </div>
-  <ul class="daily-insights-list" id="daily-insights-list"></ul>
 </div>
 
 <main class="main">
