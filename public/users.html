@@ -1815,8 +1815,9 @@ function App() {
             </div>
           );
           if (cd.error) return (
-            <div key={ct.key} style={{textAlign:'center',padding:'40px 20px',color:'#b91c1c'}}>
-              Failed to load {ct.label.toLowerCase()} data: {cd.error}
+            <div key={ct.key} style={{textAlign:'center',padding:'40px 20px'}}>
+              <span style={{fontSize:'2rem'}}>😔</span><br/>
+              <span style={{fontSize:'1rem',color:'#666'}}>Looks like reporting has encountered an issue — try loading this report again later.</span>
             </div>
           );
 
