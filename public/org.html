@@ -176,6 +176,23 @@
     .cal-card-sub { font-size: 9px; color: rgba(110,231,183,0.65); margin-top: 1px; }
     @media (max-width: 480px) { .cal-analytics-panel { padding: 12px 16px 0; } .cal-analytics-grid { grid-template-columns: repeat(2, 1fr); gap: 6px; } .cal-card-val { font-size: 15px; } }
 
+    /* ── Rec Daily Insights panel ── */
+    .daily-insights-panel {
+      background: linear-gradient(135deg, #1e1b4b 0%, #312e81 100%);
+      border-radius: 14px; padding: 18px 22px; margin: 0 20px 16px;
+    }
+    .daily-insights-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+    .daily-insights-title { font-weight: 800; font-size: 15px; color: #e0e7ff; }
+    .daily-insights-ts { font-size: 11px; color: #818cf8; }
+    .daily-insights-list { list-style: none; margin: 0; padding: 0; }
+    .daily-insights-list li {
+      font-size: 13px; color: #c7d2fe; line-height: 1.55; padding: 8px 0;
+      border-bottom: 1px solid rgba(129,140,248,0.15);
+    }
+    .daily-insights-list li:last-child { border-bottom: none; }
+    .daily-insights-list li::before { content: '✨ '; }
+    .daily-insights-empty { font-size: 12px; color: #818cf8; font-style: italic; }
+
     /* ── Pulse executive summary ── */
     .pulse-panel {
       max-width: 700px;
@@ -340,6 +357,14 @@
     <span class="cal-analytics-sub" id="cal-analytics-sub"></span>
   </div>
   <div class="cal-analytics-grid" id="cal-analytics-grid"></div>
+</div>
+
+<div class="daily-insights-panel" id="daily-insights" style="display:none">
+  <div class="daily-insights-header">
+    <span class="daily-insights-title">✨ Rec Daily Insights</span>
+    <span class="daily-insights-ts" id="daily-insights-ts"></span>
+  </div>
+  <ul class="daily-insights-list" id="daily-insights-list"></ul>
 </div>
 
 <main class="main">
@@ -578,6 +603,24 @@
         });
       });
     }
+  })();
+
+  /* ── Rec Daily Insights ── */
+  (function() {
+    if (cfg.publicMode) return;
+    var p = cfg.pulse;
+    if (!p || !p.narrative || p.narrative.length === 0) return;
+    var panel = document.getElementById('daily-insights');
+    var list = document.getElementById('daily-insights-list');
+    var ts = document.getElementById('daily-insights-ts');
+    panel.style.display = 'block';
+    if (p.generated) {
+      var d = new Date(p.generated);
+      ts.textContent = d.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
+    }
+    list.innerHTML = p.narrative.map(function(insight) {
+      return '<li>' + insight + '</li>';
+    }).join('');
   })();
 
   /* ── Calendar Analytics ── */
