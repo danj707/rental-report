@@ -1336,8 +1336,15 @@ async function generatePdf(orgSlug, reportType, startDate, endDate, filters = {}
     await page.setViewport(isGL
       ? { width: 1600, height: 900, deviceScaleFactor: 2 }
       : { width: isWide ? 1400 : 1100, height: 900, deviceScaleFactor: 1 });
-    await page.goto(url, { waitUntil: "networkidle0", timeout: 60000 });
-    await page.waitForSelector("#report-ready", { timeout: 90000 });
+    console.log(`[pdf] navigating to ${url.replace(/token=[^&]+/, "token=***")}`);
+    const t0 = Date.now();
+    await page.goto(url, { waitUntil: "networkidle0", timeout: 120000 });
+    console.log(`[pdf] page loaded in ${((Date.now()-t0)/1000).toFixed(1)}s, waiting for #report-ready…`);
+    // Capture any page-level errors
+    page.on("console", msg => { if (msg.type() === "error") console.log(`[pdf][page] ${msg.text()}`); });
+    page.on("pageerror", err => console.log(`[pdf][page-crash] ${err.message}`));
+    await page.waitForSelector("#report-ready", { timeout: 120000 });
+    console.log(`[pdf] #report-ready found at ${((Date.now()-t0)/1000).toFixed(1)}s`);
     // Wait for any lazy-loaded assets / Chart.js renders to finish
     await page.waitForNetworkIdle({ idleTime: 500, timeout: 15000 }).catch(() => {});
     // Final safety buffer for React paint + Chart.js animation settle
