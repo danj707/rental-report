@@ -1,0 +1,829 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Quarter-over-Quarter Comparison</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'IBM Plex Sans', 'Segoe UI', system-ui, sans-serif;
+      font-size: 12px;
+      color: #1a1a1a;
+      background: #f5f4f1;
+      line-height: 1.35;
+    }
+    body.print-mode .toolbar { display: none !important; }
+    body.print-mode .page { box-shadow: none; margin: 0; max-width: none; }
+
+    /* ── Toolbar ── */
+    .toolbar {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 20px;
+      background: #2c2c2c;
+      color: #eee;
+      font-size: 13px;
+      flex-wrap: wrap;
+    }
+    .toolbar-title { font-weight: 600; margin-right: 4px; white-space: nowrap; }
+    .toolbar-spacer { flex: 1; }
+    .toolbar label {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #aaa;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .toolbar select {
+      padding: 4px 8px;
+      border: 1px solid rgba(255,255,255,.2);
+      border-radius: 4px;
+      background: rgba(255,255,255,.1);
+      color: #fff;
+      font-size: 12px;
+      font-family: inherit;
+      outline: none;
+      cursor: pointer;
+    }
+    .toolbar select:focus { border-color: #3b82f6; }
+    .toolbar select option { background: #333; color: #eee; }
+    .toolbar button {
+      padding: 6px 14px;
+      border: 1px solid rgba(255,255,255,.25);
+      border-radius: 4px;
+      background: rgba(255,255,255,.08);
+      color: #fff;
+      font-size: 12px;
+      font-family: inherit;
+      cursor: pointer;
+      transition: background .15s;
+    }
+    .toolbar button:hover { background: rgba(255,255,255,.18); }
+    .toolbar .btn-compare {
+      background: #3b82f6;
+      border-color: #3b82f6;
+      font-weight: 600;
+      min-width: 90px;
+    }
+    .toolbar .btn-compare:hover { background: #2563eb; }
+    .toolbar .btn-compare:disabled { opacity: .5; cursor: not-allowed; }
+    .toolbar .btn-compare.glow {
+      box-shadow: 0 0 10px rgba(59,130,246,.5);
+      animation: pulse-glow 1.5s ease-in-out infinite;
+    }
+    @keyframes pulse-glow {
+      0%, 100% { box-shadow: 0 0 6px rgba(59,130,246,.4); }
+      50%       { box-shadow: 0 0 14px rgba(59,130,246,.7); }
+    }
+    .toolbar .btn-pdf { background: #3b82f6; border-color: #3b82f6; font-weight: 600; }
+    .toolbar .btn-pdf:hover { background: #2563eb; }
+    .toolbar .btn-pdf:disabled { opacity: .5; cursor: not-allowed; }
+    .toolbar .btn-excel { background: #166534; border-color: #166534; font-weight: 600; }
+    .toolbar .btn-excel:hover { background: #14532d; }
+    .toolbar .btn-excel:disabled { opacity: .5; cursor: not-allowed; }
+    .toolbar .divider { width: 1px; height: 28px; background: rgba(255,255,255,.15); margin: 0 4px; }
+    .period-group {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: 6px;
+      border: 1px solid rgba(255,255,255,.12);
+    }
+    .period-group.a { background: rgba(59,130,246,.15); border-color: rgba(59,130,246,.3); }
+    .period-group.b { background: rgba(245,158,11,.15); border-color: rgba(245,158,11,.3); }
+    .period-label {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+    .period-label.a { color: #60a5fa; }
+    .period-label.b { color: #fbbf24; }
+    .vs-badge {
+      font-size: 11px;
+      font-weight: 700;
+      color: #888;
+      padding: 0 4px;
+    }
+
+    /* ── Page ── */
+    .page {
+      max-width: 1320px;
+      margin: 16px auto;
+      padding: 24px 28px;
+      background: #fff;
+      box-shadow: 0 1px 4px rgba(0,0,0,.08);
+    }
+
+    /* ── Report header ── */
+    .report-header-logo { height: 42px; max-width: 140px; object-fit: contain; object-position: left center; }
+    .report-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      border-bottom: 2.5px solid #111;
+      padding-bottom: 8px;
+      margin-bottom: 16px;
+    }
+    .report-header .org-label {
+      font-size: 10.5px;
+      letter-spacing: 1.6px;
+      text-transform: uppercase;
+      color: #777;
+      font-weight: 600;
+    }
+    .report-header .title { font-size: 17px; font-weight: 700; margin-top: 1px; }
+    .report-header .date-range { font-size: 11px; color: #666; text-align: right; }
+
+    /* ── Delta cards ── */
+    .delta-cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 12px;
+      margin-bottom: 24px;
+    }
+    .delta-card {
+      padding: 14px 16px;
+      border-radius: 6px;
+      background: #f8f8f6;
+      border: 1px solid #e4e4e0;
+      border-left: 4px solid #ccc;
+    }
+    .delta-card .dc-label {
+      font-size: 9.5px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #888;
+      font-weight: 600;
+      margin-bottom: 6px;
+    }
+    .delta-card .dc-row {
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+    }
+    .delta-card .dc-value {
+      font-size: 18px;
+      font-weight: 700;
+      font-family: 'IBM Plex Mono', monospace;
+    }
+    .delta-card .dc-sub {
+      font-size: 11px;
+      color: #999;
+      font-family: 'IBM Plex Mono', monospace;
+    }
+    .delta-card .dc-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      margin-top: 6px;
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-size: 11px;
+      font-weight: 600;
+      font-family: 'IBM Plex Mono', monospace;
+    }
+    .delta-card .dc-badge.up   { background: #dcfce7; color: #15803d; }
+    .delta-card .dc-badge.down { background: #fee2e2; color: #b91c1c; }
+    .delta-card .dc-badge.flat { background: #f1f5f9; color: #64748b; }
+    .delta-card.period-a { border-left-color: #3b82f6; }
+    .delta-card.period-a .dc-value { color: #2563eb; }
+    .delta-card.period-b { border-left-color: #f59e0b; }
+    .delta-card.period-b .dc-value { color: #b45309; }
+    .delta-card.change   { border-left-color: #8b5cf6; }
+    .delta-card.change   .dc-value { color: #6d28d9; }
+
+    /* ── Chart ── */
+    .chart-wrap {
+      margin-bottom: 24px;
+      background: #fafaf8;
+      border: 1px solid #e4e4e0;
+      border-radius: 6px;
+      padding: 16px;
+    }
+    .chart-title {
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #555;
+      margin-bottom: 10px;
+    }
+
+    /* ── Table ── */
+    .table-wrapper { overflow-x: auto; }
+    table { border-collapse: collapse; width: 100%; font-size: 11.5px; }
+    thead th {
+      background: #e4e4e0;
+      border: 1px solid #ccc;
+      padding: 5px 8px;
+      text-align: right;
+      font-weight: 600;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+      color: #333;
+      white-space: nowrap;
+    }
+    thead th.left { text-align: left; }
+    thead th.period-a-hdr { background: #dbeafe; color: #1e40af; }
+    thead th.period-b-hdr { background: #fef3c7; color: #92400e; }
+    thead th.delta-hdr    { background: #ede9fe; color: #5b21b6; }
+    tbody td {
+      border: 1px solid #ddd;
+      padding: 4px 8px;
+      text-align: right;
+      font-family: 'IBM Plex Mono', monospace;
+    }
+    tbody td.left {
+      text-align: left;
+      font-family: 'IBM Plex Sans', sans-serif;
+      font-weight: 500;
+    }
+    tbody tr:nth-child(even) { background: #fafaf9; }
+    tbody tr:hover { background: #f0f0ee; }
+    tbody td.pos { color: #15803d; }
+    tbody td.neg { color: #dc2626; }
+    tfoot td {
+      border: 1px solid #ccc;
+      padding: 5px 8px;
+      text-align: right;
+      font-weight: 700;
+      font-family: 'IBM Plex Mono', monospace;
+      background: #f1f1ef;
+    }
+    tfoot td.left {
+      text-align: left;
+      font-family: 'IBM Plex Sans', sans-serif;
+    }
+
+    /* ── Loading / Error ── */
+    .loading-wrap {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 300px;
+      color: #888;
+      gap: 12px;
+    }
+    .spinner {
+      width: 32px; height: 32px;
+      border: 3px solid #ddd;
+      border-top-color: #3b82f6;
+      border-radius: 50%;
+      animation: spin .8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .error-msg { color: #dc2626; text-align: center; padding: 40px; font-size: 14px; }
+
+    /* ── Print ── */
+    @media print {
+      .toolbar { display: none !important; }
+      .page { box-shadow: none; margin: 0; max-width: none; }
+    }
+  </style>
+
+  <!-- CDN deps -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useCallback, useMemo, useRef } = React;
+
+    /* ── Helpers ─────────────────────────────────────────────────────── */
+    const pf = v => { const n = parseFloat(v); return isNaN(n) ? 0 : n; };
+    const fmt  = n => n.toLocaleString('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 });
+    const fmtD = n => (n >= 0 ? '+' : '') + fmt(n);
+    const fmtPct = n => (n >= 0 ? '+' : '') + n.toFixed(1) + '%';
+    const fmtNum = n => n.toLocaleString('en-US', { maximumFractionDigits: 0 });
+
+    const QUARTERS = [
+      { label: 'Q1 (Jan\u2013Mar)', q: 1, startMM: '01', startDD: '01', endMM: '03', endDD: '31' },
+      { label: 'Q2 (Apr\u2013Jun)', q: 2, startMM: '04', startDD: '01', endMM: '06', endDD: '30' },
+      { label: 'Q3 (Jul\u2013Sep)', q: 3, startMM: '07', startDD: '01', endMM: '09', endDD: '30' },
+      { label: 'Q4 (Oct\u2013Dec)', q: 4, startMM: '10', startDD: '01', endMM: '12', endDD: '31' },
+    ];
+
+    function quarterDates(q, year) {
+      const qd = QUARTERS[q - 1];
+      return {
+        start: `${year}-${qd.startMM}-${qd.startDD}`,
+        end:   `${year}-${qd.endMM}-${qd.endDD}`,
+      };
+    }
+
+    function quarterLabel(q, y) { return `Q${q} ${y}`; }
+
+    // Default: last completed quarter as Period B, same quarter prior year as Period A
+    function defaultPeriods() {
+      const now = new Date();
+      const curMonth = now.getMonth() + 1;
+      const curYear  = now.getFullYear();
+      // last completed quarter
+      let bQ, bY;
+      if (curMonth <= 3)       { bQ = 4; bY = curYear - 1; }
+      else if (curMonth <= 6)  { bQ = 1; bY = curYear; }
+      else if (curMonth <= 9)  { bQ = 2; bY = curYear; }
+      else                     { bQ = 3; bY = curYear; }
+      return { aQ: bQ, aY: bY - 1, bQ, bY };
+    }
+
+    // Available years: 2023 → current year
+    const YEAR_OPTIONS = [];
+    { const cy = new Date().getFullYear(); for (let y = cy; y >= 2023; y--) YEAR_OPTIONS.push(y); }
+
+    /* ── Org / token from URL ────────────────────────────────────────── */
+    const pathParts = window.location.pathname.split('/').filter(Boolean);
+    const orgSlug   = pathParts[0] || '';
+    const reportType = 'gl'; // QoQ fetches GL data
+
+    function withToken(url) {
+      const qs = new URLSearchParams(window.location.search);
+      const t = qs.get('token');
+      if (!t) return url;
+      const sep = url.includes('?') ? '&' : '?';
+      return url + sep + 'token=' + encodeURIComponent(t);
+    }
+
+    /* ── GL normalization (matches gl.html) ─────────────────────────── */
+    function normalizeRow(raw) {
+      const isSplit = 'CC Online Payments' in raw;
+      return {
+        glCode:        raw['GL Code'] || '',
+        accountName:   raw['Account Name'] || raw['GL Code Description'] || '',
+        accountNumber: raw['Account Number'] || '',
+        locations:     raw['Locations'] || '',
+        isSplit,
+        ccPayments:    !isSplit ? pf(raw['Credit Card Payments']) : pf(raw['CC Online Payments']) + pf(raw['CC In-Person Payments']),
+        cashPayments:       pf(raw['Cash Payments']),
+        checkPayments:      pf(raw['Check Payments']),
+        freePayments:       pf(raw['Free Payments']),
+        orgCreditPayments:  pf(raw['Organization Credit Payments']),
+        scholarshipPayments: pf(raw['Scholarship Payments']),
+        giftCardPayments:   pf(raw['Gift Card Payments']),
+        otherPayments:      pf(raw['Other Payments']),
+        totalPayments:      pf(raw['Total Payments']),
+        numPayments:        pf(raw['Number of Payments']),
+        ccRefunds:     !isSplit ? pf(raw['CC Refunds']) : pf(raw['CC Online Refunds']) + pf(raw['CC In-Person Refunds']),
+        cashRefunds:        pf(raw['Cash Refunds']),
+        checkRefunds:       pf(raw['Check Refunds']),
+        orgCreditRefunds:   pf(raw['Org Credit Refunds']),
+        otherRefunds:       pf(raw['Other Refunds']),
+        totalRefunds:       pf(raw['Total Refunds']),
+        numRefunds:         pf(raw['Number of Refunds']),
+        netAmount:          pf(raw['Net Amount']),
+      };
+    }
+
+    /* ── Re-aggregate by GL code (same as gl.html) ───────────────────── */
+    const GL_MONEY_FIELDS = [
+      'ccPayments','cashPayments','checkPayments','freePayments','orgCreditPayments','scholarshipPayments',
+      'giftCardPayments','otherPayments','totalPayments','numPayments','ccRefunds','cashRefunds','checkRefunds',
+      'orgCreditRefunds','otherRefunds','totalRefunds','numRefunds','netAmount'
+    ];
+
+    function aggregateByGlCode(list) {
+      const map = new Map();
+      for (const r of list) {
+        const key = r.glCode || '';
+        let a = map.get(key);
+        if (!a) {
+          a = { glCode: r.glCode, accountName: r.accountName, accountNumber: r.accountNumber };
+          GL_MONEY_FIELDS.forEach(f => { a[f] = 0; });
+          map.set(key, a);
+        }
+        GL_MONEY_FIELDS.forEach(f => { a[f] += pf(r[f]); });
+      }
+      return Array.from(map.values());
+    }
+
+    /* ── Fetch one period ─────────────────────────────────────────────── */
+    function fetchPeriod(orgSlug, q, year) {
+      const { start, end } = quarterDates(q, year);
+      const qs = new URLSearchParams({ start_date: start, end_date: end });
+      return fetch(withToken(`/${orgSlug}/gl/api/data?${qs}`))
+        .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
+        .then(payload => {
+          const rows = (payload.rows || payload.data || payload || []).map(normalizeRow);
+          return aggregateByGlCode(rows);
+        });
+    }
+
+    /* ── Compare two datasets ─────────────────────────────────────────── */
+    function buildComparison(dataA, dataB) {
+      const mapA = new Map(dataA.map(r => [r.glCode, r]));
+      const mapB = new Map(dataB.map(r => [r.glCode, r]));
+      const allCodes = new Set([...mapA.keys(), ...mapB.keys()]);
+      const rows = [];
+      for (const code of allCodes) {
+        const a = mapA.get(code);
+        const b = mapB.get(code);
+        const netA = a ? a.netAmount : 0;
+        const netB = b ? b.netAmount : 0;
+        const paymentsA = a ? a.totalPayments : 0;
+        const paymentsB = b ? b.totalPayments : 0;
+        const refundsA = a ? a.totalRefunds : 0;
+        const refundsB = b ? b.totalRefunds : 0;
+        const numPayA = a ? a.numPayments : 0;
+        const numPayB = b ? b.numPayments : 0;
+        const delta = netB - netA;
+        const pct   = netA !== 0 ? ((netB - netA) / Math.abs(netA)) * 100 : (netB !== 0 ? 100 : 0);
+        rows.push({
+          glCode: code,
+          accountName: (b || a).accountName || '',
+          netA, netB, delta, pct,
+          paymentsA, paymentsB,
+          refundsA, refundsB,
+          numPayA, numPayB,
+        });
+      }
+      rows.sort((x, y) => Math.abs(y.netB) - Math.abs(x.netB));
+      return rows;
+    }
+
+    /* ═══════════════════════════════════════════════════════════════════
+       Main App
+       ═══════════════════════════════════════════════════════════════════ */
+    function App() {
+      const defaults = useMemo(() => defaultPeriods(), []);
+
+      const [aQ, setAQ] = useState(defaults.aQ);
+      const [aY, setAY] = useState(defaults.aY);
+      const [bQ, setBQ] = useState(defaults.bQ);
+      const [bY, setBY] = useState(defaults.bY);
+
+      const [loading, setLoading]     = useState(false);
+      const [error, setError]         = useState(null);
+      const [comparison, setComparison] = useState(null);
+      const [loadedA, setLoadedA]     = useState(null);
+      const [loadedB, setLoadedB]     = useState(null);
+      const [orgName, setOrgName]     = useState('');
+
+      const chartRef = useRef(null);
+      const chartInstance = useRef(null);
+
+      const dirty = !loadedA || aQ !== loadedA.q || aY !== loadedA.y || bQ !== loadedB?.q || bY !== loadedB?.y;
+
+      const runCompare = useCallback(() => {
+        setLoading(true);
+        setError(null);
+        Promise.all([
+          fetchPeriod(orgSlug, aQ, aY),
+          fetchPeriod(orgSlug, bQ, bY),
+        ])
+        .then(([dataA, dataB]) => {
+          const cmp = buildComparison(dataA, dataB);
+          setComparison(cmp);
+          setLoadedA({ q: aQ, y: aY });
+          setLoadedB({ q: bQ, y: bY });
+          // org name from first row
+          if (!orgName) {
+            const slug = orgSlug.charAt(0).toUpperCase() + orgSlug.slice(1);
+            setOrgName(slug + ' Parks & Recreation');
+          }
+          setLoading(false);
+        })
+        .catch(err => {
+          console.error(err);
+          setError(err.message || 'Failed to load data');
+          setLoading(false);
+        });
+      }, [orgSlug, aQ, aY, bQ, bY, orgName]);
+
+      // Auto-run on mount
+      useEffect(() => { runCompare(); }, []);
+
+      /* ── Totals ── */
+      const totals = useMemo(() => {
+        if (!comparison) return null;
+        const tNetA = comparison.reduce((s, r) => s + r.netA, 0);
+        const tNetB = comparison.reduce((s, r) => s + r.netB, 0);
+        const tPayA = comparison.reduce((s, r) => s + r.paymentsA, 0);
+        const tPayB = comparison.reduce((s, r) => s + r.paymentsB, 0);
+        const tRefA = comparison.reduce((s, r) => s + r.refundsA, 0);
+        const tRefB = comparison.reduce((s, r) => s + r.refundsB, 0);
+        const tNumA = comparison.reduce((s, r) => s + r.numPayA, 0);
+        const tNumB = comparison.reduce((s, r) => s + r.numPayB, 0);
+        return {
+          netA: tNetA, netB: tNetB,
+          netDelta: tNetB - tNetA,
+          netPct: tNetA !== 0 ? ((tNetB - tNetA) / Math.abs(tNetA)) * 100 : 0,
+          payA: tPayA, payB: tPayB,
+          payDelta: tPayB - tPayA,
+          payPct: tPayA !== 0 ? ((tPayB - tPayA) / Math.abs(tPayA)) * 100 : 0,
+          refA: tRefA, refB: tRefB,
+          numA: tNumA, numB: tNumB,
+          numDelta: tNumB - tNumA,
+        };
+      }, [comparison]);
+
+      /* ── Chart ── */
+      useEffect(() => {
+        if (!comparison || !chartRef.current) return;
+        if (chartInstance.current) chartInstance.current.destroy();
+
+        const top = comparison.filter(r => r.netA !== 0 || r.netB !== 0).slice(0, 12);
+        const labels = top.map(r => r.glCode.length > 30 ? r.glCode.slice(0, 28) + '\u2026' : r.glCode);
+
+        chartInstance.current = new Chart(chartRef.current, {
+          type: 'bar',
+          data: {
+            labels,
+            datasets: [
+              {
+                label: loadedA ? quarterLabel(loadedA.q, loadedA.y) : 'Period A',
+                data: top.map(r => r.netA),
+                backgroundColor: 'rgba(59, 130, 246, 0.7)',
+                borderColor: 'rgba(59, 130, 246, 1)',
+                borderWidth: 1,
+              },
+              {
+                label: loadedB ? quarterLabel(loadedB.q, loadedB.y) : 'Period B',
+                data: top.map(r => r.netB),
+                backgroundColor: 'rgba(245, 158, 11, 0.7)',
+                borderColor: 'rgba(245, 158, 11, 1)',
+                borderWidth: 1,
+              },
+            ],
+          },
+          options: {
+            indexAxis: 'y',
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: { position: 'top', labels: { font: { family: "'IBM Plex Sans'" } } },
+              tooltip: {
+                callbacks: {
+                  label: ctx => `${ctx.dataset.label}: ${fmt(ctx.raw)}`,
+                },
+              },
+            },
+            scales: {
+              x: {
+                ticks: {
+                  callback: v => fmt(v),
+                  font: { family: "'IBM Plex Mono'", size: 10 },
+                },
+                grid: { color: 'rgba(0,0,0,.06)' },
+              },
+              y: {
+                ticks: { font: { family: "'IBM Plex Sans'", size: 11 } },
+                grid: { display: false },
+              },
+            },
+          },
+        });
+
+        return () => { if (chartInstance.current) chartInstance.current.destroy(); };
+      }, [comparison, loadedA, loadedB]);
+
+      /* ── Excel export ── */
+      function downloadExcel() {
+        if (!comparison || !totals) return;
+        const labelA = loadedA ? quarterLabel(loadedA.q, loadedA.y) : 'Period A';
+        const labelB = loadedB ? quarterLabel(loadedB.q, loadedB.y) : 'Period B';
+        const wsData = [
+          ['GL Code', 'Account Name', `Net ${labelA}`, `Net ${labelB}`, 'Change ($)', 'Change (%)'],
+          ...comparison.map(r => [
+            r.glCode, r.accountName,
+            r.netA, r.netB, r.delta,
+            r.pct !== 0 ? (r.pct / 100) : 0,
+          ]),
+          ['TOTAL', '', totals.netA, totals.netB, totals.netDelta, totals.netPct !== 0 ? (totals.netPct / 100) : 0],
+        ];
+        const ws = XLSX.utils.aoa_to_sheet(wsData);
+        ws['!cols'] = [{ wch: 32 }, { wch: 28 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 12 }];
+        // Format currency cols
+        const range = XLSX.utils.decode_range(ws['!ref']);
+        for (let R = 1; R <= range.e.r; R++) {
+          for (let C = 2; C <= 4; C++) {
+            const addr = XLSX.utils.encode_cell({ r: R, c: C });
+            if (ws[addr]) ws[addr].z = '$#,##0';
+          }
+          const pctAddr = XLSX.utils.encode_cell({ r: R, c: 5 });
+          if (ws[pctAddr]) ws[pctAddr].z = '0.0%';
+        }
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, 'QoQ Comparison');
+        XLSX.writeFile(wb, `qoq-${orgSlug}-${labelA.replace(' ','-')}-vs-${labelB.replace(' ','-')}.xlsx`);
+      }
+
+      /* ── PDF ── */
+      function downloadPdf() {
+        if (!loadedA || !loadedB) return;
+        const { start: sA } = quarterDates(loadedA.q, loadedA.y);
+        const { end: eA }   = quarterDates(loadedA.q, loadedA.y);
+        const { start: sB } = quarterDates(loadedB.q, loadedB.y);
+        const { end: eB }   = quarterDates(loadedB.q, loadedB.y);
+        const qs = new URLSearchParams({
+          start_date: sA, end_date: eA,
+          start_date_b: sB, end_date_b: eB,
+        });
+        const url = withToken(`/${orgSlug}/qoq/api/pdf?${qs}`);
+        window.open(url, '_blank');
+      }
+
+      /* ── Delta badge helper ── */
+      function DeltaBadge({ delta, pct }) {
+        const cls = delta > 0 ? 'up' : delta < 0 ? 'down' : 'flat';
+        const arrow = delta > 0 ? '\u25B2' : delta < 0 ? '\u25BC' : '\u2013';
+        return (
+          <span className={`dc-badge ${cls}`}>
+            {arrow} {fmtD(delta)} ({fmtPct(pct)})
+          </span>
+        );
+      }
+
+      /* ── Render ── */
+      const labelA = loadedA ? quarterLabel(loadedA.q, loadedA.y) : '';
+      const labelB = loadedB ? quarterLabel(loadedB.q, loadedB.y) : '';
+
+      return (
+        <React.Fragment>
+          {/* ── Toolbar ── */}
+          <div className="toolbar">
+            <span className="toolbar-title">QoQ Compare</span>
+            <div className="divider" />
+
+            <div className="period-group a">
+              <span className="period-label a">A</span>
+              <select value={aQ} onChange={e => setAQ(+e.target.value)}>
+                {QUARTERS.map(q => <option key={q.q} value={q.q}>{q.label}</option>)}
+              </select>
+              <select value={aY} onChange={e => setAY(+e.target.value)}>
+                {YEAR_OPTIONS.map(y => <option key={y} value={y}>{y}</option>)}
+              </select>
+            </div>
+
+            <span className="vs-badge">vs</span>
+
+            <div className="period-group b">
+              <span className="period-label b">B</span>
+              <select value={bQ} onChange={e => setBQ(+e.target.value)}>
+                {QUARTERS.map(q => <option key={q.q} value={q.q}>{q.label}</option>)}
+              </select>
+              <select value={bY} onChange={e => setBY(+e.target.value)}>
+                {YEAR_OPTIONS.map(y => <option key={y} value={y}>{y}</option>)}
+              </select>
+            </div>
+
+            <button
+              className={`btn-compare${dirty ? ' glow' : ''}`}
+              onClick={runCompare}
+              disabled={loading}
+            >
+              {loading ? 'Loading\u2026' : 'Compare'}
+            </button>
+
+            <div className="toolbar-spacer" />
+
+            <button className="btn-excel" onClick={downloadExcel} disabled={!comparison}>
+              Excel
+            </button>
+          </div>
+
+          {/* ── Page ── */}
+          <div className="page">
+            {/* Header */}
+            <div className="report-header">
+              <div>
+                <div className="org-label">{orgName || orgSlug}</div>
+                <div className="title">Quarter-over-Quarter Revenue Comparison</div>
+              </div>
+              {loadedA && loadedB && (
+                <div className="date-range">
+                  <span style={{color:'#3b82f6',fontWeight:600}}>{labelA}</span>
+                  {' vs '}
+                  <span style={{color:'#d97706',fontWeight:600}}>{labelB}</span>
+                </div>
+              )}
+            </div>
+
+            {/* Loading */}
+            {loading && (
+              <div className="loading-wrap">
+                <div className="spinner" />
+                <div>Fetching data for both periods...</div>
+              </div>
+            )}
+
+            {/* Error */}
+            {error && <div className="error-msg">{error}</div>}
+
+            {/* Content */}
+            {!loading && !error && comparison && totals && (
+              <React.Fragment>
+                {/* ── Delta Cards ── */}
+                <div className="delta-cards">
+                  <div className="delta-card period-a">
+                    <div className="dc-label">{labelA} Net Revenue</div>
+                    <div className="dc-value">{fmt(totals.netA)}</div>
+                    <div className="dc-sub">{fmtNum(totals.numA)} transactions</div>
+                  </div>
+                  <div className="delta-card period-b">
+                    <div className="dc-label">{labelB} Net Revenue</div>
+                    <div className="dc-value">{fmt(totals.netB)}</div>
+                    <div className="dc-sub">{fmtNum(totals.numB)} transactions</div>
+                  </div>
+                  <div className="delta-card change">
+                    <div className="dc-label">Net Revenue Change</div>
+                    <div className="dc-value">{fmtD(totals.netDelta)}</div>
+                    <DeltaBadge delta={totals.netDelta} pct={totals.netPct} />
+                  </div>
+                  <div className="delta-card" style={{borderLeftColor:'#0d9488'}}>
+                    <div className="dc-label">Gross Payments Change</div>
+                    <div className="dc-value" style={{color:'#0f766e'}}>{fmtD(totals.payDelta)}</div>
+                    <DeltaBadge delta={totals.payDelta} pct={totals.payPct} />
+                  </div>
+                </div>
+
+                {/* ── Chart ── */}
+                <div className="chart-wrap">
+                  <div className="chart-title">Net Revenue by GL Code — Top 12</div>
+                  <div style={{height: Math.max(280, comparison.filter(r => r.netA || r.netB).slice(0,12).length * 36)}}>
+                    <canvas ref={chartRef} />
+                  </div>
+                </div>
+
+                {/* ── Table ── */}
+                <div className="table-wrapper">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th className="left" rowSpan={2}>GL Code</th>
+                        <th className="left" rowSpan={2}>Account</th>
+                        <th className="period-a-hdr" colSpan={2}>{labelA}</th>
+                        <th className="period-b-hdr" colSpan={2}>{labelB}</th>
+                        <th className="delta-hdr" colSpan={2}>Change</th>
+                      </tr>
+                      <tr>
+                        <th className="period-a-hdr">Net</th>
+                        <th className="period-a-hdr"># Txns</th>
+                        <th className="period-b-hdr">Net</th>
+                        <th className="period-b-hdr"># Txns</th>
+                        <th className="delta-hdr">$ \u0394</th>
+                        <th className="delta-hdr">% \u0394</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {comparison.map(r => (
+                        <tr key={r.glCode}>
+                          <td className="left">{r.glCode}</td>
+                          <td className="left">{r.accountName}</td>
+                          <td>{fmt(r.netA)}</td>
+                          <td>{fmtNum(r.numPayA)}</td>
+                          <td>{fmt(r.netB)}</td>
+                          <td>{fmtNum(r.numPayB)}</td>
+                          <td className={r.delta > 0 ? 'pos' : r.delta < 0 ? 'neg' : ''}>{fmtD(r.delta)}</td>
+                          <td className={r.pct > 0 ? 'pos' : r.pct < 0 ? 'neg' : ''}>{fmtPct(r.pct)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr>
+                        <td className="left" colSpan={2}>TOTAL</td>
+                        <td>{fmt(totals.netA)}</td>
+                        <td>{fmtNum(totals.numA)}</td>
+                        <td>{fmt(totals.netB)}</td>
+                        <td>{fmtNum(totals.numB)}</td>
+                        <td className={totals.netDelta > 0 ? 'pos' : totals.netDelta < 0 ? 'neg' : ''}>{fmtD(totals.netDelta)}</td>
+                        <td className={totals.netPct > 0 ? 'pos' : totals.netPct < 0 ? 'neg' : ''}>{fmtPct(totals.netPct)}</td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              </React.Fragment>
+            )}
+
+            {/* Puppeteer signal */}
+            {!loading && <div id="report-ready" style={{display:'none'}} />}
+          </div>
+        </React.Fragment>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>
