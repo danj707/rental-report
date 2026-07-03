@@ -7873,6 +7873,13 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  { date: '2026-07-03', title: 'Fast Track Demand Leaderboard', items: [
+    'New Demand Leaderboard at top of Overview tab \u2014 top 8 programs ranked by FT signups',
+    'Visual conversion bars (green=converted, amber=pending) for each program',
+    'Action badges: \uD83D\uDD25 High Demand (>75%), \u26A0\uFE0F Over Capacity (>100%), \u{1F4C9} Low Conv (<30%)',
+    'Attention alerts for programs needing action (over capacity, high pending + low conversion)',
+    'Compact ranked strips with spots remaining, section count, and pending count',
+  ] },
   { date: '2026-07-03', title: 'Quarter-over-Quarter Comparison', items: [
     'New QoQ report at /:org/qoq \u2014 compares GL revenue between any two quarters',
     'Paired bar chart (Chart.js) showing top 12 GL codes side by side',
