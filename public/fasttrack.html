@@ -512,7 +512,10 @@ function PipelineTab(props) {
                       ? React.createElement('span', { style: { color: '#22c55e' } }, 'Open')
                       : '\u2014'
                 ),
-                React.createElement('td', { style: { fontSize: 11, color: '#888' } }, r.earlyAccess ? fmtDate(r.earlyAccess) : '\u2014')
+                React.createElement('td', { style: { fontSize: 11, color: '#888' } }, r.earlyAccess ? fmtDate(r.earlyAccess) : '\u2014'),
+                React.createElement('td', { style: { padding: '4px 8px' } },
+                  React.createElement(FtSparkline, { dates: sectionDates[(r.program || '') + '|' + (r.section || '')] || [] })
+                )
               );
             })
           )
