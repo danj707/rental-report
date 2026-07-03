@@ -1008,7 +1008,10 @@ function App() {
         )
       ),
 
-      loading && React.createElement(JuiceLoader, null),
+      loading && React.createElement('div', { style: { textAlign: 'center', padding: '20px 0' } },
+        React.createElement(JuiceLoader, null),
+        React.createElement('div', { style: { color: '#999', fontSize: 13, marginTop: 12 } }, 'Loading Fast Track data\u2026')
+      ),
       error && !loading && React.createElement('div', { className: 'error' }, 'Could not load report: ', error),
 
       !loading && !error && React.createElement(React.Fragment, null,
