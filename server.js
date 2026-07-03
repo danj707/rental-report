@@ -3091,6 +3091,15 @@ app.get("/:org/gl", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "gl.html"));
 });
 
+app.get("/:org/qoq", (req, res) => {
+  const slug = req.params.org;
+  if (!ORGS[slug]) return res.status(404).send("Unknown org");
+  // QoQ requires GL data — check GL availability
+  if (!ORGS[slug].gl?.mbUuid && !SHARED_UUIDS.gl) return res.status(404).send("QoQ comparison requires GL report data.");
+  logEvent(slug, "qoq", "view", req);
+  res.sendFile(path.join(__dirname, "public", "qoq.html"));
+});
+
 app.get("/:org/historic", (req, res) => {
   if (!ORGS[req.params.org]) return res.status(404).send("Unknown org");
   logEvent(req.params.org, "historic", "view", req);
@@ -7861,6 +7870,14 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  { date: '2026-07-03', title: 'Quarter-over-Quarter Comparison', items: [
+    'New QoQ report at /:org/qoq \u2014 compares GL revenue between any two quarters',
+    'Paired bar chart (Chart.js) showing top 12 GL codes side by side',
+    'Delta cards: net revenue, gross payments with $ and % change badges',
+    'Full comparison table with color-coded change columns',
+    'Excel export with formatted currency and percentage columns',
+    'Defaults to last completed quarter vs same quarter prior year',
+  ] },
   { date: '2026-07-02', title: '💰 Memberships Revenue Reconciliation', items: [
     '💰 NET COLLECTED REVENUE — Memberships report now shows Paid, Refunded, and Net Collected columns from the upgraded SQL (tx CTE against item_log_report). Total Revenue card repointed to Net Collected with contract value sub-line. Revenue by Type stacked bar, Monthly Revenue chart, and Renewal Mix doughnut all use Net Collected. Detail table and Excel export include all three new money columns with totals. Validates: Norman scholarship 7/1/25–06/30/26 → Net Collected = $19,680 (matches finalCents; the $75 Payments-card gap was a null-order_item_id desk sale recovered by the hybrid join fallback).',
   ]},
