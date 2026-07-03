@@ -431,14 +431,17 @@
     }
 
     /* ── Compare two datasets ─────────────────────────────────────────── */
+    /* Normalize GL code for matching: strip dots/dashes so "2204.347.11" matches "220434711" */
+    function glKey(code) { return (code || '').replace(/[^0-9a-zA-Z]/g, ''); }
+
     function buildComparison(dataA, dataB) {
-      const mapA = new Map(dataA.map(r => [r.glCode, r]));
-      const mapB = new Map(dataB.map(r => [r.glCode, r]));
-      const allCodes = new Set([...mapA.keys(), ...mapB.keys()]);
+      const mapA = new Map(dataA.map(r => [glKey(r.glCode), r]));
+      const mapB = new Map(dataB.map(r => [glKey(r.glCode), r]));
+      const allKeys = new Set([...mapA.keys(), ...mapB.keys()]);
       const rows = [];
-      for (const code of allCodes) {
-        const a = mapA.get(code);
-        const b = mapB.get(code);
+      for (const key of allKeys) {
+        const a = mapA.get(key);
+        const b = mapB.get(key);
         const netA = a ? a.netAmount : 0;
         const netB = b ? b.netAmount : 0;
         const paymentsA = a ? a.totalPayments : 0;
@@ -450,7 +453,7 @@
         const delta = netB - netA;
         const pct   = netA !== 0 ? ((netB - netA) / Math.abs(netA)) * 100 : (netB !== 0 ? 100 : 0);
         rows.push({
-          glCode: code,
+          glCode: (b || a).glCode || key,
           accountName: (b || a).accountName || '',
           netA, netB, delta, pct,
           paymentsA, paymentsB,
@@ -782,8 +785,8 @@
                         <th className="period-a-hdr"># Txns</th>
                         <th className="period-b-hdr">Net</th>
                         <th className="period-b-hdr"># Txns</th>
-                        <th className="delta-hdr">$ \u0394</th>
-                        <th className="delta-hdr">% \u0394</th>
+                        <th className="delta-hdr">$ Δ</th>
+                        <th className="delta-hdr">% Δ</th>
                       </tr>
                     </thead>
                     <tbody>
