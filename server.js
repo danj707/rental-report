@@ -550,7 +550,7 @@ const ORGS = {
   },
 };
 
-const REPORT_TYPES = ["facility", "gl", "historic", "programs", "roster", "overview", "products", "memberships", "court-utilization", "calendar", "fasttrack", "users", "program-demographics", "directors-report", "instructor-payout", "retention", "annual-report", "section-detail", "ice-calendar"];
+const REPORT_TYPES = ["facility", "gl", "historic", "programs", "roster", "overview", "products", "memberships", "court-utilization", "calendar", "fasttrack", "users", "program-demographics", "directors-report", "instructor-payout", "retention", "annual-report", "section-detail", "ice-calendar", "qoq"];
 
 // ── Shared Metabase UUIDs (one query per report type, parameterized by org_id) ──
 // When a report type has an entry here, the server uses this UUID + passes the
@@ -576,9 +576,9 @@ const SHARED_UUIDS = {
 
 // Report types that are valid system-wide but should NOT be offered in the
 // dashboard "+ Add report" flow (e.g. not yet ready for self-serve onboarding).
-const NON_ADDABLE_REPORTS = new Set(["overview", "program-demographics", "directors-report", "retention", "annual-report", "section-detail"]);
+const NON_ADDABLE_REPORTS = new Set(["overview", "program-demographics", "directors-report", "retention", "annual-report", "section-detail", "qoq"]);
 // Reports that require extra params (e.g. section_id) and cannot be health-checked with org_id alone
-const HEALTH_SKIP_REPORTS = new Set(["section-detail", "annual-report"]);
+const HEALTH_SKIP_REPORTS = new Set(["section-detail", "annual-report", "qoq"]);
 const RENTAL_CALENDAR_ORGS = new Set(["watertown", "norman"]);
 
 // ── Dynamic orgs (added via dashboard UI) ────────────────────────────
@@ -5096,6 +5096,7 @@ app.get("/:org", async (req, res, next) => {
   const available = allAvailable.filter(r => !orgHidden.has(r));
   // Rental calendar — non-Metabase, per-org opt-in
   if (RENTAL_CALENDAR_ORGS.has(slug) && !orgHidden.has('rentalcalendar')) available.push('rentalcalendar');
+  if ((org.gl?.mbUuid || SHARED_UUIDS.gl) && !orgHidden.has('qoq')) available.push('qoq');
   const orgConfig = {
     slug,
     displayName: org.displayName || `${slugTitle} Parks & Recreation`,
@@ -5767,7 +5768,8 @@ app.get("/", (req, res) => {
     "instructor-payout": { label: "Instructor Payout", ai: true, icon: "💰", desc: "Revenue splits and payout calculations by instructor", color: "#6366f1" },
 
     "rentalcalendar":    { label: "Rental Calendar", icon: "🏟️", desc: "Real-time facility availability with live booking data", color: "#059669" },
-    "ice-calendar":      { label: "Ice Participant Calendar", icon: "❄️", desc: "Participant-filtered monthly ice program calendar", color: "#0ea5e9" },  };
+    "ice-calendar":      { label: "Ice Participant Calendar", icon: "❄️", desc: "Participant-filtered monthly ice program calendar", color: "#0ea5e9" },
+    qoq:                 { label: "QoQ Revenue Comparison", icon: "📉", desc: "Quarter-over-quarter GL revenue comparison with delta analysis", color: "#8b5cf6" },  };
 
   const hiddenReports = getAllHiddenReports();
   const publicModes = getAllPublicModes();
@@ -5783,6 +5785,7 @@ app.get("/", (req, res) => {
     const available    = REPORT_TYPES.filter(r => !NON_ADDABLE_REPORTS.has(r) && (org[r]?.mbUuid || SHARED_UUIDS[r]));
     // Rental calendar — non-Metabase, per-org opt-in
     if (RENTAL_CALENDAR_ORGS.has(slug)) available.push('rentalcalendar');
+    if (org.gl?.mbUuid || SHARED_UUIDS.gl) available.push('qoq');
     const slugTitle    = slug.charAt(0).toUpperCase() + slug.slice(1);
     const displayName  = org.displayName || `${slugTitle} Parks &amp; Recreation`;
     const tokenQS      = org.token ? `?token=${encodeURIComponent(org.token)}` : "";
