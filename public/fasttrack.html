@@ -133,6 +133,41 @@
     .tab-btn.active { color: #111; border-bottom-color: #6366f1; }
     .tab-badge { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 10px; margin-left: 6px; }
 
+    /* ── Demand Leaderboard ── */
+    .lb-section { margin-bottom: 24px; }
+    .lb-title { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: .8px; color: #444; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+    .lb-title .lb-sub { font-weight: 400; font-size: 11px; color: #999; text-transform: none; letter-spacing: 0; }
+    .lb-grid { display: flex; flex-direction: column; gap: 6px; }
+    .lb-row { display: flex; align-items: center; gap: 12px; padding: 10px 14px; background: #fafaf8; border: 1px solid #e8e5e0; border-radius: 6px; transition: background .15s; }
+    .lb-row:hover { background: #f0efeb; }
+    .lb-rank { font-size: 18px; font-weight: 800; color: #ccc; width: 28px; text-align: center; font-family: 'IBM Plex Mono', monospace; }
+    .lb-row:nth-child(1) .lb-rank { color: #f59e0b; }
+    .lb-row:nth-child(2) .lb-rank { color: #94a3b8; }
+    .lb-row:nth-child(3) .lb-rank { color: #d97706; }
+    .lb-info { flex: 1; min-width: 0; }
+    .lb-name { font-size: 13px; font-weight: 600; color: #111; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .lb-meta { font-size: 10px; color: #999; margin-top: 2px; }
+    .lb-stat { text-align: center; min-width: 64px; }
+    .lb-stat-val { font-size: 18px; font-weight: 700; font-family: 'IBM Plex Mono', monospace; color: #6366f1; }
+    .lb-stat-label { font-size: 9px; text-transform: uppercase; letter-spacing: .5px; color: #999; font-weight: 600; }
+    .lb-bar-wrap { width: 120px; flex-shrink: 0; }
+    .lb-bar-track { height: 8px; background: #e8e5e0; border-radius: 4px; overflow: hidden; display: flex; }
+    .lb-bar-conv { background: #22c55e; height: 100%; }
+    .lb-bar-pend { background: #f59e0b; height: 100%; }
+    .lb-conv-label { font-size: 10px; color: #666; margin-top: 2px; text-align: center; }
+    .lb-badge { font-size: 10px; font-weight: 600; padding: 3px 8px; border-radius: 10px; white-space: nowrap; }
+    .lb-badge.hot { background: #fef3c7; color: #92400e; }
+    .lb-badge.over { background: #fee2e2; color: #b91c1c; }
+    .lb-badge.full { background: #dbeafe; color: #1e40af; }
+    .lb-badge.low-conv { background: #fce7f3; color: #9d174d; }
+    .lb-alerts { margin-bottom: 20px; }
+    .lb-alert { display: flex; align-items: center; gap: 10px; padding: 8px 14px; border-radius: 6px; font-size: 12px; margin-bottom: 6px; }
+    .lb-alert.warn { background: #fef3c7; border: 1px solid #fcd34d; color: #92400e; }
+    .lb-alert.crit { background: #fee2e2; border: 1px solid #fca5a5; color: #b91c1c; }
+    .lb-alert.info { background: #dbeafe; border: 1px solid #93c5fd; color: #1e40af; }
+    .lb-alert-icon { font-size: 16px; }
+    .lb-alert-text strong { font-weight: 700; }
+
     /* ── KPI row (for demographics) ── */
     .kpi-row { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
     .kpi { flex: 1; min-width: 130px; border: 1px solid #e0ddd8; border-radius: 8px; padding: 14px 16px; background: #fff; border-top: 3px solid var(--accent, #888); }
@@ -253,6 +288,87 @@ function rollupToPrograms(rows) {
     out.push(g);
   });
   return out.sort(function(a, b) { return b.ftSignups - a.ftSignups; });
+}
+
+/* ── Demand Leaderboard component ── */
+function DemandLeaderboard(props) {
+  var programs = props.programs || [];
+  var top = programs.slice(0, 8);
+  if (top.length === 0) return null;
+
+  /* Build action alerts */
+  var alerts = [];
+  programs.forEach(function(p) {
+    if (p.demandPct != null && p.demandPct > 100) {
+      alerts.push({ type: 'crit', icon: '\u26A0\uFE0F', text: React.createElement(React.Fragment, null, React.createElement('strong', null, p.program), ' \u2014 demand at ', Math.round(p.demandPct), '% of capacity. Consider adding sections.') });
+    }
+  });
+  programs.forEach(function(p) {
+    if (p.ftPending >= 5 && p.convPct != null && p.convPct < 40) {
+      alerts.push({ type: 'warn', icon: '\uD83D\uDCE3', text: React.createElement(React.Fragment, null, React.createElement('strong', null, p.program), ' \u2014 ', fmtInt(p.ftPending), ' pending with only ', p.convPct, '% conversion. Follow up to convert.') });
+    }
+  });
+  var showAlerts = alerts.slice(0, 4);
+
+  function getBadge(p) {
+    if (p.demandPct != null && p.demandPct > 100) return React.createElement('span', { className: 'lb-badge over' }, '\u26A0\uFE0F Over Capacity');
+    if (p.demandPct != null && p.demandPct > 75) return React.createElement('span', { className: 'lb-badge hot' }, '\uD83D\uDD25 High Demand');
+    if (p.fillPct != null && p.fillPct >= 90) return React.createElement('span', { className: 'lb-badge full' }, '\u2705 Nearly Full');
+    if (p.convPct != null && p.convPct < 30 && p.ftSignups >= 5) return React.createElement('span', { className: 'lb-badge low-conv' }, '\u{1F4C9} Low Conv');
+    return null;
+  }
+
+  return React.createElement('div', { className: 'lb-section' },
+    React.createElement('div', { className: 'lb-title' },
+      '\u{1F3AF} Demand Leaderboard',
+      React.createElement('span', { className: 'lb-sub' }, 'Top programs by Fast Track signups')
+    ),
+
+    /* Alerts */
+    showAlerts.length > 0 && React.createElement('div', { className: 'lb-alerts' },
+      showAlerts.map(function(a, i) {
+        return React.createElement('div', { key: i, className: 'lb-alert ' + a.type },
+          React.createElement('span', { className: 'lb-alert-icon' }, a.icon),
+          React.createElement('span', { className: 'lb-alert-text' }, a.text)
+        );
+      })
+    ),
+
+    /* Ranked rows */
+    React.createElement('div', { className: 'lb-grid' },
+      top.map(function(p, i) {
+        var convW = p.ftSignups > 0 ? Math.round(p.ftConverted / p.ftSignups * 100) : 0;
+        var pendW = p.ftSignups > 0 ? Math.round(p.ftPending / p.ftSignups * 100) : 0;
+        var spotsLeft = p.capacity > 0 ? Math.max(0, p.capacity - p.totalEnrolled) : null;
+        var secCount = p.sections ? p.sections.length : 0;
+        return React.createElement('div', { key: p.program, className: 'lb-row' },
+          React.createElement('div', { className: 'lb-rank' }, i + 1),
+          React.createElement('div', { className: 'lb-info' },
+            React.createElement('div', { className: 'lb-name' }, p.program),
+            React.createElement('div', { className: 'lb-meta' },
+              secCount, ' section', secCount !== 1 ? 's' : '',
+              spotsLeft != null ? (' \u00B7 ' + fmtInt(spotsLeft) + ' spots left') : '',
+              p.ftPending > 0 ? (' \u00B7 ' + fmtInt(p.ftPending) + ' pending') : ''
+            )
+          ),
+          React.createElement('div', { className: 'lb-stat' },
+            React.createElement('div', { className: 'lb-stat-val' }, fmtInt(p.ftSignups)),
+            React.createElement('div', { className: 'lb-stat-label' }, 'FT Signups')
+          ),
+          React.createElement('div', { className: 'lb-bar-wrap' },
+            React.createElement('div', { className: 'lb-bar-track' },
+              React.createElement('div', { className: 'lb-bar-conv', style: { width: convW + '%' } }),
+              React.createElement('div', { className: 'lb-bar-pend', style: { width: pendW + '%' } })
+            ),
+            React.createElement('div', { className: 'lb-conv-label' },
+              p.convPct != null ? p.convPct + '% conv' : '\u2014'
+            )
+          ),
+          getBadge(p)
+        );
+      })
+    )
+  );
 }
 
 /* ── Pipeline Tab component ── */
@@ -916,6 +1032,9 @@ function App() {
         ),
 
         activeTab === 'overview' && React.createElement(React.Fragment, null,
+                /* Demand Leaderboard */
+        React.createElement(DemandLeaderboard, { programs: programs }),
+
                 /* Summary cards */
         React.createElement('div', { className: 'summary-cards' },
           React.createElement(SummaryCard, { label: 'FT Signups', value: fmtInt(totals.ftSignups), color: '#6366f1', tip: 'Total Fast Track wishlist entries — pre-registrations submitted before registration officially opens.' }),
