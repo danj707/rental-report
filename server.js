@@ -7876,6 +7876,7 @@ app.get("/", (req, res) => {
   { date: '2026-07-06', title: 'QoQ Navigation + Metrics Fix', items: [
     '← OrgName back link added to QoQ toolbar for easy navigation to org dashboard',
     'Metrics chart tooltip now hides zero-value report types to prevent overflow cutoff',
+    'QoQ loading spinner replaced with JuiceLoader animation',
   ] },
   { date: '2026-07-03', title: 'Fast Track Demand Leaderboard', items: [
     'New Demand Leaderboard at top of Overview tab \u2014 top 8 programs ranked by FT signups',
