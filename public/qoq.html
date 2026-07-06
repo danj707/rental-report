@@ -550,7 +550,20 @@
         if (chartInstance.current) chartInstance.current.destroy();
 
         const top = comparison.filter(r => r.netA !== 0 || r.netB !== 0).slice(0, 12);
-        const labels = top.map(r => { const lbl = r.accountName ? r.glCode + ' - ' + r.accountName : r.glCode; return lbl.length > 42 ? lbl.slice(0, 40) + '\u2026' : lbl; });
+        const labels = top.map(r => {
+          const name = r.accountName || 'none';
+          const code = r.glCode || '';
+          const full = name + ' (' + code + ')';
+          // Split into lines of ~28 chars for Chart.js multi-line y-axis labels
+          const words = full.split(' ');
+          const lines = []; let line = '';
+          words.forEach(w => {
+            if (line && (line + ' ' + w).length > 28) { lines.push(line); line = w; }
+            else { line = line ? line + ' ' + w : w; }
+          });
+          if (line) lines.push(line);
+          return lines;
+        });
 
         chartInstance.current = new Chart(chartRef.current, {
           type: 'bar',
