@@ -550,7 +550,7 @@
         if (chartInstance.current) chartInstance.current.destroy();
 
         const top = comparison.filter(r => r.netA !== 0 || r.netB !== 0).slice(0, 12);
-        const labels = top.map(r => r.glCode.length > 30 ? r.glCode.slice(0, 28) + '\u2026' : r.glCode);
+        const labels = top.map(r => { const lbl = r.accountName || r.glCode; return lbl.length > 34 ? lbl.slice(0, 32) + '\u2026' : lbl; });
 
         chartInstance.current = new Chart(chartRef.current, {
           type: 'bar',
