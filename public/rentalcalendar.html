@@ -92,6 +92,12 @@ button.primary:hover{filter:brightness(.95)}
 .pill{padding:4px 10px;border-radius:12px;border:1px solid #d1d5db;background:#fff;font-size:12px;cursor:pointer;color:#374151;transition:all .15s;font-family:inherit}
 .pill:hover{background:#f3f4f6;border-color:#9ca3af}
 .pill.active{background:#1e40af;color:#fff;border-color:#1e40af}
+.nightly-bar{display:flex;align-items:center;justify-content:center;flex:1;min-height:56px;border-radius:8px;gap:12px;padding:8px 16px}
+.nightly-bar.avail{background:#dcfce7;border:1px solid #86efac}
+.nightly-bar.unknown{background:#f0fdf4;border:1px dashed #86efac}
+.nightly-avail-badge{font-weight:600;font-size:13px;color:#166534}
+.nightly-detail{font-size:12px;color:#4b5563;display:flex;gap:12px;align-items:center}
+.nightly-detail span{white-space:nowrap}
 .fac-list{background:var(--card);border:1px solid var(--line);border-top:none;border-radius:0 0 12px 12px;box-shadow:var(--shadow);overflow:hidden}
 .sticky-hdr{position:sticky;top:0;z-index:10;background:var(--card);border:1px solid var(--line);border-radius:10px 10px 0 0;box-shadow:0 2px 6px rgba(0,0,0,.06)}
 .time-ruler{display:flex;align-items:center;height:42px}
@@ -286,6 +292,14 @@ function startOfWeek(d){var x=new Date(d);x.setDate(x.getDate()-x.getDay());x.se
 var DOW=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 var MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 var DOWL=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+function fmtCheckTime(t) {
+  if (!t) return '';
+  var parts = t.split(':');
+  var h = parseInt(parts[0]), m = parseInt(parts[1] || '0');
+  var ap = h >= 12 ? 'pm' : 'am';
+  var hh = h % 12; if (hh === 0) hh = 12;
+  return hh + (m > 0 ? ':' + pad(m) : '') + ap;
+}
 function minToLabel(min){var h=Math.floor(min/60),m=min%60;var ap=h>=12?'pm':'am';var hh=h%12;if(hh===0)hh=12;return hh+(m?':'+pad(m):'')+ap;}
 
 /* Parse "08:00am" / "05:00pm" / "17:00" → minutes since midnight */
@@ -563,7 +577,20 @@ function FacRow({site, avail, dateStr, opStart, opEnd, siteAvailAll, onSiteClick
           </span>
         </div>
       </div>
+      {site.pricingType === 'perNight' ? (
+        <div className={'nightly-bar' + (hasAnyData ? ' avail' : ' unknown')}>
+          <span className="nightly-avail-badge">{'✅'} Available</span>
+          {site.nightlyBookingPolicy && (
+            <span className="nightly-detail">
+              <span>{'\u{1F6CE}\uFE0F'} Check-in {fmtCheckTime(site.nightlyBookingPolicy.checkInTime)}</span>
+              <span>{'\u{1F6AA}'} Check-out {fmtCheckTime(site.nightlyBookingPolicy.checkOutTime)}</span>
+              {site.nightlyBookingPolicy.nights && <span>{site.nightlyBookingPolicy.nights.minimum}\u2013{site.nightlyBookingPolicy.nights.maximum} nights</span>}
+            </span>
+          )}
+        </div>
+      ) : (
       <TimelineBar avail={avail} dateStr={dateStr} opStart={opStart} opEnd={opEnd} siteOpStart={opStart} siteOpEnd={opEnd} hasAnyData={hasAnyData} reservations={dayReservations} dateWithinMcp={dateWithinMcp}/>
+      )}
     </div>
   );
 }
