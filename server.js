@@ -694,18 +694,33 @@ async function runHealthCheck(forceAll, failuresOnly) {
 
   // Build list of (slug, report) pairs that are due for a check
   const toCheck = [];
+  // Per-org: only reports with a per-org mbUuid (skip shared-only)
   for (const slug of Object.keys(ORGS)) {
     const org = ORGS[slug];
     if (!org.token) continue;
     for (const rt of REPORT_TYPES) {
-      if (!org[rt]?.mbUuid && !SHARED_UUIDS[rt]) continue;
-      if (HEALTH_SKIP_REPORTS.has(rt)) continue;  // drill-down reports need extra params
+      if (!org[rt]?.mbUuid) continue;
+      if (HEALTH_SKIP_REPORTS.has(rt)) continue;
       if (forceAll) { toCheck.push({ slug, rt }); continue; }
       const prev = existing.reports?.[slug]?.[rt];
       const tier = getTier(slug, rt);
       const intervalMs = getTierMinutes(tier) * 60000;
       const lastCheck = prev?.checkedAt ? new Date(prev.checkedAt).getTime() : 0;
       if (now - lastCheck >= intervalMs) toCheck.push({ slug, rt, tier });
+    }
+  }
+  // Shared: one probe per shared UUID (validates the card itself)
+  const probeEntry = Object.entries(ORGS).find(([, o]) => o.token && o.orgId);
+  if (probeEntry) {
+    const [probeSlug] = probeEntry;
+    for (const rt of Object.keys(SHARED_UUIDS)) {
+      if (HEALTH_SKIP_REPORTS.has(rt)) continue;
+      if (forceAll) { toCheck.push({ slug: probeSlug, rt, shared: true }); continue; }
+      const prev = existing.reports?.["_shared"]?.[rt];
+      const tier = getTier("_shared", rt);
+      const intervalMs = getTierMinutes(tier) * 60000;
+      const lastCheck = prev?.checkedAt ? new Date(prev.checkedAt).getTime() : 0;
+      if (now - lastCheck >= intervalMs) toCheck.push({ slug: probeSlug, rt, tier, shared: true });
     }
   }
 
@@ -726,12 +741,13 @@ async function runHealthCheck(forceAll, failuresOnly) {
   healthCheckRunning = true;
   healthCheckProgress = { checked: 0, total: toCheck.length, startedAt: ts };
 
-  async function checkOne({ slug, rt }) {
+  async function checkOne({ slug, rt, shared }) {
     const org = ORGS[slug];
-    const useSharedHC = rt === "gl" ? (!org.gl?.mbUuid && !!SHARED_UUIDS.gl) : !!SHARED_UUIDS[rt];
-    const mbUuid = useSharedHC ? SHARED_UUIDS[rt] : (org[rt]?.mbUuid || SHARED_UUIDS[rt]);
+    const mbUuid = shared ? SHARED_UUIDS[rt] : org[rt]?.mbUuid;
+    const useSharedHC = !!shared;
     if (!mbUuid) return;
-    if (!existing.reports[slug]) existing.reports[slug] = {};
+    const storeSlug = shared ? "_shared" : slug;
+    if (!existing.reports[storeSlug]) existing.reports[storeSlug] = {};
 
     const entry = { status: "ok", rows: 0, checkedAt: ts };
     try {
@@ -761,7 +777,7 @@ async function runHealthCheck(forceAll, failuresOnly) {
     entry.tier = getTier(slug, rt);
 
     if (entry.status === "error") {
-      const prev = existing.reports[slug]?.[rt];
+      const prev = existing.reports[storeSlug]?.[rt];
       const prevWasError = prev?.status === "error";
       const lastAlerted = prev?.lastAlertedAt ? new Date(prev.lastAlertedAt).getTime() : 0;
       const suppressWindow = 6 * 3600000;
@@ -773,7 +789,7 @@ async function runHealthCheck(forceAll, failuresOnly) {
       }
     }
 
-    existing.reports[slug][rt] = entry;
+    existing.reports[storeSlug][rt] = entry;
   }
 
   await runChunked(toCheck, 3, checkOne, 5000);
@@ -7924,7 +7940,7 @@ app.get("/", (req, res) => {
     '← OrgName back link added to QoQ toolbar for easy navigation to org dashboard',
     'Metrics chart tooltip now hides zero-value report types to prevent overflow cutoff',
     'QoQ loading spinner replaced with JuiceLoader animation',
-    'Health checks: batches of 3 with 5s pause between batches, fire-and-forget + progress polling. Retry Failures (default) vs Run All buttons',
+    'Health checks: per-org mbUuids only + 1 probe per shared UUID (was every org x every report). Batches of 3, 5s pause, Retry Failures default',
   ] },
   { date: '2026-07-03', title: 'Fast Track Demand Leaderboard', items: [
     'New Demand Leaderboard at top of Overview tab \u2014 top 8 programs ranked by FT signups',
