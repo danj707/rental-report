@@ -632,8 +632,8 @@ function normalizeRow(raw) {
       const params   = useMemo(() => getParams(), []);
       const defaults = useMemo(() => defaultDates(), []);
 
-      const [startDate, setStartDate] = useState(() => params.start_date || localStorage.getItem(LS_STARTDATE) || defaults.start);
-      const [endDate,   setEndDate]   = useState(() => params.end_date   || localStorage.getItem(LS_ENDDATE)   || defaults.end);
+      const [startDate, setStartDate] = useState(() => params.start_date || defaults.start);
+      const [endDate,   setEndDate]   = useState(() => params.end_date   || defaults.end);
       const [loadedStart, setLoadedStart] = useState(null);
       const [loadedEnd,   setLoadedEnd]   = useState(null);
       const [activeRange, setActiveRange] = useState('this-month');
@@ -727,7 +727,7 @@ function normalizeRow(raw) {
       useEffect(() => { fetchData(startDate, endDate); }, []);
       function fetchCheckins(sd, ed) {
         setCiLoading(true);
-        fetch('/' + orgSlug + '/checkins/api/data?start_date=' + sd + '&end_date=' + ed)
+        fetch(withToken('/' + orgSlug + '/checkins/api/data?start_date=' + sd + '&end_date=' + ed))
           .then(function(r){ return r.json(); })
           .then(function(json) { setCiRows(json.rows || []); setCiLoading(false); })
           .catch(function(e) { console.error('checkin fetch error', e); setCiLoading(false); });
