@@ -306,6 +306,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="/juice-loader.js" defer></script>
 </head>
 <body>
   <div id="root"></div>
@@ -728,12 +729,7 @@
             </div>
 
             {/* Loading */}
-            {loading && (
-              <div className="loading-wrap">
-                <div className="spinner" />
-                <div>Fetching data for both periods...</div>
-              </div>
-            )}
+            {loading && <JuiceLoader />}
 
             {/* Error */}
             {error && <div className="error-msg">{error}</div>}
