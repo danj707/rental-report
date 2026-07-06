@@ -578,8 +578,8 @@ function FacRow({site, avail, dateStr, opStart, opEnd, siteAvailAll, onSiteClick
         </div>
       </div>
       {site.pricingType === 'perNight' ? (
-        <div className={'nightly-bar' + (hasAnyData ? ' avail' : ' unknown')}>
-          <span className="nightly-avail-badge">{'✅'} Available</span>
+        <div className='nightly-bar unknown'>
+          <span className="nightly-avail-badge" style={{cursor:'pointer'}} onClick={function(){if(site.bookingUrl)window.open(site.bookingUrl,'_blank');}}>{'\u{1F3D5}\uFE0F'} Book on rec.us {'\u2192'}</span>
           {site.nightlyBookingPolicy && (
             <span className="nightly-detail">
               <span>{'\u{1F6CE}\uFE0F'} Check-in {fmtCheckTime(site.nightlyBookingPolicy.checkInTime)}</span>
