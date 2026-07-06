@@ -613,6 +613,9 @@ function normalizeRow(raw) {
       const [meta, setMeta]       = useState({});
       const [loading, setLoading] = useState(true);
       const [error, setError]     = useState(null);
+      const [activeTab, setActiveTab] = useState('memberships');
+      const [ciRows, setCiRows] = useState(null);
+      const [ciLoading, setCiLoading] = useState(false);
 
       // ── Filters ──
       const [viewMode, setViewMode] = useState(() => {
@@ -693,6 +696,13 @@ function normalizeRow(raw) {
       }, [orgSlug]);
 
       useEffect(() => { fetchData(startDate, endDate); }, []);
+      function fetchCheckins(sd, ed) {
+        setCiLoading(true);
+        fetch('/' + orgSlug + '/checkins/api/data?start_date=' + sd + '&end_date=' + ed)
+          .then(function(r){ return r.json(); })
+          .then(function(json) { setCiRows(json.rows || []); setCiLoading(false); })
+          .catch(function(e) { console.error('checkin fetch error', e); setCiLoading(false); });
+      }
 
       const datesChanged = startDate !== loadedStart || endDate !== loadedEnd;
 
@@ -1292,6 +1302,10 @@ function normalizeRow(raw) {
           {!isPrint && (
             <div className="toolbar">
               <span className="toolbar-title">🎫 Memberships</span>
+              <div className="tab-bar">
+                <button className={activeTab === 'memberships' ? 'active' : ''} onClick={function(){ setActiveTab('memberships'); }}>Memberships</button>
+                <button className={activeTab === 'checkins' ? 'active' : ''} onClick={function(){ setActiveTab('checkins'); if (!ciRows) fetchCheckins(startDate, endDate); }}>Check-Ins</button>
+              </div>
 
               <label>
                 Start
