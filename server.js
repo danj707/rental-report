@@ -674,18 +674,19 @@ function saveHealthResults(results) {
 let healthCheckRunning = false;
 let healthCheckProgress = { checked: 0, total: 0, startedAt: null };
 
-async function runChunked(items, concurrency, fn) {
+async function runChunked(items, concurrency, fn, delayMs) {
   const results = [];
   for (let i = 0; i < items.length; i += concurrency) {
     const chunk = items.slice(i, i + concurrency);
     const batch = await Promise.allSettled(chunk.map(fn));
     results.push(...batch);
     healthCheckProgress.checked = Math.min(i + concurrency, items.length);
+    if (delayMs && i + concurrency < items.length) await new Promise(r => setTimeout(r, delayMs));
   }
   return results;
 }
 
-async function runHealthCheck(forceAll) {
+async function runHealthCheck(forceAll, failuresOnly) {
   if (!getFlags().cachingEnabled) { console.log('[health] Health check skipped — caching is OFF'); return null; }
   const now = Date.now();
   const ts = new Date(now).toISOString();
@@ -708,9 +709,17 @@ async function runHealthCheck(forceAll) {
     }
   }
 
+  // If failuresOnly, filter to just previously-failed reports
+  if (failuresOnly) {
+    const failSet = new Set((existing.failures || []).map(f => f.org + "/" + f.report));
+    const filtered = toCheck.filter(t => failSet.has(t.slug + "/" + t.rt));
+    toCheck.length = 0;
+    toCheck.push(...filtered);
+  }
+
   if (toCheck.length === 0) return existing;
 
-  const tierLabel = forceAll ? "manual" : [...new Set(toCheck.map(t => t.tier || "all"))].join("/");
+  const tierLabel = failuresOnly ? "retry-failures" : forceAll ? "manual-all" : [...new Set(toCheck.map(t => t.tier || "all"))].join("/");
   console.log(`[health] Checking ${toCheck.length} report(s) [${tierLabel}]…`);
 
   const newFailures = [];
@@ -767,7 +776,7 @@ async function runHealthCheck(forceAll) {
     existing.reports[slug][rt] = entry;
   }
 
-  await runChunked(toCheck, 10, checkOne);
+  await runChunked(toCheck, 3, checkOne, 5000);
 
   existing.timestamp = ts;
   // Rebuild global failures list from all current results
@@ -5185,9 +5194,10 @@ app.get("/api/health-check", (req, res) => {
 app.post("/api/health-check/run", express.json(), async (req, res) => {
   if (dashboardPasswordBlocked(req, res)) return;
   if (healthCheckRunning) return res.json({ status: "already_running", progress: healthCheckProgress });
-  // Fire-and-forget: respond immediately, run in background
-  res.json({ status: "started", total: 0 });
-  runHealthCheck(true).catch(err => {
+  const forceAll = req.body.forceAll === true;
+  res.json({ status: "started" });
+  // Default: retry failures only. forceAll=true rechecks everything.
+  runHealthCheck(true, !forceAll).catch(err => {
     healthCheckRunning = false;
     console.error("[health] Background check failed:", err.message);
   });
@@ -6350,7 +6360,7 @@ app.get("/", (req, res) => {
       if (fc === 0) return '<span style="color:#22c55e;font-weight:700">✅ All passing</span><span style="color:#666">' + ds + '</span>';
       return '<span style="color:#ef4444;font-weight:700">❌ ' + fc + ' failing</span><span style="color:#666">' + ds + '</span>';
     })()}
-    <button onclick="runHealthCheck(this)" style="font-size:10px;color:#3b82f6;background:none;border:1px solid #3b82f6;border-radius:4px;padding:2px 8px;cursor:pointer;margin-left:2px" onmouseover="this.style.background='#eff6ff'" onmouseout="this.style.background='none'">Run Now</button>
+    <button onclick="runHealthCheck(this, false)" style="font-size:10px;color:#3b82f6;background:none;border:1px solid #3b82f6;border-radius:4px;padding:2px 8px;cursor:pointer;margin-left:2px" onmouseover="this.style.background='#eff6ff'" onmouseout="this.style.background='none'">Retry Failures</button><button onclick="runHealthCheck(this, true)" style="font-size:10px;color:#6b7280;background:none;border:1px solid #d1d5db;border-radius:4px;padding:2px 8px;cursor:pointer;margin-left:2px" onmouseover="this.style.background='#f9fafb'" onmouseout="this.style.background='none'">Run All</button>
     <span style="color:#444;margin:0 4px">|</span>
     <span style="color:#666;font-weight:600;text-transform:uppercase;letter-spacing:.06em;font-size:10px">Backup</span>
     <span id="bk-dot" style="width:8px;height:8px;border-radius:50%;background:#555;flex-shrink:0;display:inline-block"></span>
@@ -6409,12 +6419,12 @@ app.get("/", (req, res) => {
   }
   function clearDashPwd() { sessionStorage.removeItem('_dpwd'); }
 
-  async function runHealthCheck(btn) {
+  async function runHealthCheck(btn, forceAll) {
     var pwd = getDashPwd();
     if (!pwd) return;
     btn.textContent = 'Starting…'; btn.disabled = true;
     try {
-      const r = await fetch('/api/health-check/run', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: pwd }) });
+      const r = await fetch('/api/health-check/run', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: pwd, forceAll: !!forceAll }) });
       const d = await r.json();
       if (!r.ok) { clearDashPwd(); btn.textContent = d.error || 'Auth failed'; return; }
       if (d.status === 'already_running') { btn.textContent = 'Already running (' + (d.progress?.checked || 0) + '/' + (d.progress?.total || '?') + ')'; return; }
@@ -7914,7 +7924,7 @@ app.get("/", (req, res) => {
     '← OrgName back link added to QoQ toolbar for easy navigation to org dashboard',
     'Metrics chart tooltip now hides zero-value report types to prevent overflow cutoff',
     'QoQ loading spinner replaced with JuiceLoader animation',
-    'Health checks now run in batches of 10 concurrently (was sequential) with fire-and-forget + polling progress',
+    'Health checks: batches of 3 with 5s pause between batches, fire-and-forget + progress polling. Retry Failures (default) vs Run All buttons',
   ] },
   { date: '2026-07-03', title: 'Fast Track Demand Leaderboard', items: [
     'New Demand Leaderboard at top of Overview tab \u2014 top 8 programs ranked by FT signups',
