@@ -7873,6 +7873,9 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  { date: '2026-07-06', title: 'QoQ Report Navigation', items: [
+    '← OrgName back link added to QoQ toolbar for easy navigation to org dashboard',
+  ] },
   { date: '2026-07-03', title: 'Fast Track Demand Leaderboard', items: [
     'New Demand Leaderboard at top of Overview tab \u2014 top 8 programs ranked by FT signups',
     'Visual conversion bars (green=converted, amber=pending) for each program',
