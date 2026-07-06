@@ -671,6 +671,20 @@ function saveHealthResults(results) {
   fs.writeFileSync(HEALTH_FILE, JSON.stringify(results, null, 2));
 }
 
+let healthCheckRunning = false;
+let healthCheckProgress = { checked: 0, total: 0, startedAt: null };
+
+async function runChunked(items, concurrency, fn) {
+  const results = [];
+  for (let i = 0; i < items.length; i += concurrency) {
+    const chunk = items.slice(i, i + concurrency);
+    const batch = await Promise.allSettled(chunk.map(fn));
+    results.push(...batch);
+    healthCheckProgress.checked = Math.min(i + concurrency, items.length);
+  }
+  return results;
+}
+
 async function runHealthCheck(forceAll) {
   if (!getFlags().cachingEnabled) { console.log('[health] Health check skipped — caching is OFF'); return null; }
   const now = Date.now();
@@ -700,12 +714,14 @@ async function runHealthCheck(forceAll) {
   console.log(`[health] Checking ${toCheck.length} report(s) [${tierLabel}]…`);
 
   const newFailures = [];
+  healthCheckRunning = true;
+  healthCheckProgress = { checked: 0, total: toCheck.length, startedAt: ts };
 
-  for (const { slug, rt } of toCheck) {
+  async function checkOne({ slug, rt }) {
     const org = ORGS[slug];
     const useSharedHC = rt === "gl" ? (!org.gl?.mbUuid && !!SHARED_UUIDS.gl) : !!SHARED_UUIDS[rt];
     const mbUuid = useSharedHC ? SHARED_UUIDS[rt] : (org[rt]?.mbUuid || SHARED_UUIDS[rt]);
-    if (!mbUuid) continue;
+    if (!mbUuid) return;
     if (!existing.reports[slug]) existing.reports[slug] = {};
 
     const entry = { status: "ok", rows: 0, checkedAt: ts };
@@ -733,25 +749,25 @@ async function runHealthCheck(forceAll) {
       entry.error = err.name === "AbortError" ? `Timeout (${(org.healthTimeoutMs||60000)/1000}s)` : err.message;
     }
 
-    // Carry forward tier info for display
     entry.tier = getTier(slug, rt);
 
-    // Detect NEW failure (wasn't failing before, or was alerted >6h ago)
     if (entry.status === "error") {
       const prev = existing.reports[slug]?.[rt];
       const prevWasError = prev?.status === "error";
       const lastAlerted = prev?.lastAlertedAt ? new Date(prev.lastAlertedAt).getTime() : 0;
-      const suppressWindow = 6 * 3600000; // don't re-alert same failure within 6h
+      const suppressWindow = 6 * 3600000;
       if (!prevWasError || (now - lastAlerted >= suppressWindow)) {
         newFailures.push({ org: slug, report: rt, error: entry.error, tier: entry.tier });
         entry.lastAlertedAt = ts;
       } else {
-        entry.lastAlertedAt = prev.lastAlertedAt; // carry forward
+        entry.lastAlertedAt = prev.lastAlertedAt;
       }
     }
 
     existing.reports[slug][rt] = entry;
   }
+
+  await runChunked(toCheck, 10, checkOne);
 
   existing.timestamp = ts;
   // Rebuild global failures list from all current results
@@ -762,6 +778,7 @@ async function runHealthCheck(forceAll) {
     }
   }
 
+  healthCheckRunning = false;
   saveHealthResults(existing);
   console.log(`[health] Done — ${newFailures.length} new failure(s), ${existing.failures.length} total failing`);
 
@@ -5167,12 +5184,18 @@ app.get("/api/health-check", (req, res) => {
 // ── POST /api/health-check/run — trigger health check manually ───────
 app.post("/api/health-check/run", express.json(), async (req, res) => {
   if (dashboardPasswordBlocked(req, res)) return;
-  try {
-    const results = await runHealthCheck(true);  // forceAll
-    res.json(results);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  if (healthCheckRunning) return res.json({ status: "already_running", progress: healthCheckProgress });
+  // Fire-and-forget: respond immediately, run in background
+  res.json({ status: "started", total: 0 });
+  runHealthCheck(true).catch(err => {
+    healthCheckRunning = false;
+    console.error("[health] Background check failed:", err.message);
+  });
+});
+
+// ── GET /api/health-check/progress — poll for running status ─────────
+app.get("/api/health-check/progress", (req, res) => {
+  res.json({ running: healthCheckRunning, progress: healthCheckProgress });
 });
 
 // ── GET /api/health-config — current tier configuration ──────────────
@@ -6389,14 +6412,28 @@ app.get("/", (req, res) => {
   async function runHealthCheck(btn) {
     var pwd = getDashPwd();
     if (!pwd) return;
-    btn.textContent = 'Running…'; btn.disabled = true;
+    btn.textContent = 'Starting…'; btn.disabled = true;
     try {
       const r = await fetch('/api/health-check/run', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: pwd }) });
       const d = await r.json();
       if (!r.ok) { clearDashPwd(); btn.textContent = d.error || 'Auth failed'; return; }
-      const fc = d.failures?.length || 0;
-      btn.textContent = fc === 0 ? '\u2705 Done' : '\u274C ' + fc + ' failed';
-      setTimeout(() => location.reload(), 1500);
+      if (d.status === 'already_running') { btn.textContent = 'Already running (' + (d.progress?.checked || 0) + '/' + (d.progress?.total || '?') + ')'; return; }
+      // Poll for progress
+      var poll = setInterval(async () => {
+        try {
+          var pr = await fetch('/api/health-check/progress');
+          var pg = await pr.json();
+          btn.textContent = 'Checking ' + pg.progress.checked + '/' + pg.progress.total + '…';
+          if (!pg.running) {
+            clearInterval(poll);
+            var hr = await fetch('/api/health-check');
+            var hd = await hr.json();
+            var fc = hd.failures?.length || 0;
+            btn.textContent = fc === 0 ? '\u2705 All passing' : '\u274C ' + fc + ' failing';
+            setTimeout(() => location.reload(), 2000);
+          }
+        } catch(pe) { /* keep polling */ }
+      }, 3000);
     } catch(e) { btn.textContent = 'Error'; }
   }
   async function cycleTier(el) {
@@ -7877,6 +7914,7 @@ app.get("/", (req, res) => {
     '← OrgName back link added to QoQ toolbar for easy navigation to org dashboard',
     'Metrics chart tooltip now hides zero-value report types to prevent overflow cutoff',
     'QoQ loading spinner replaced with JuiceLoader animation',
+    'Health checks now run in batches of 10 concurrently (was sequential) with fire-and-forget + polling progress',
   ] },
   { date: '2026-07-03', title: 'Fast Track Demand Leaderboard', items: [
     'New Demand Leaderboard at top of Overview tab \u2014 top 8 programs ranked by FT signups',
