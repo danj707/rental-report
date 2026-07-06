@@ -35,6 +35,8 @@
       font-size: 13px;
       flex-wrap: wrap;
     }
+    .toolbar-back { font-size: 12px; opacity: 0.6; cursor: pointer; text-decoration: none; color: #eee; white-space: nowrap; }
+    .toolbar-back:hover { opacity: 1; }
     .toolbar-title { font-weight: 600; margin-right: 4px; white-space: nowrap; }
     .toolbar-spacer { flex: 1; }
     .toolbar label {
@@ -666,6 +668,8 @@
         <React.Fragment>
           {/* ── Toolbar ── */}
           <div className="toolbar">
+            <a className="toolbar-back" href={withToken('/' + orgSlug)}>{'←'} {orgName || orgSlug}</a>
+            <div className="divider" />
             <span className="toolbar-title">QoQ Compare</span>
             <div className="divider" />
 
