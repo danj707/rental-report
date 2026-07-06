@@ -4527,6 +4527,8 @@ app.get("/:org/rentalcalendar/api/sites", async (req, res) => {
       durationMinutes: s.allowedReservationDurations ? s.allowedReservationDurations.minutes : null,
       pricingType: s.config && s.config.pricing && s.config.pricing.default ? s.config.pricing.default.type : 'perHour',
       nightlyBookingPolicy: s.config && s.config.nightlyBookingPolicy ? s.config.nightlyBookingPolicy : null,
+      bookingUnit: s.bookingUnit || null,
+      subType: s.subType || null,
     }));
     // Proxy photo URLs through our server for caching + Cache-Control headers
     clean.forEach(s => {
@@ -7954,6 +7956,7 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  { date: '2026-07-06', title: 'Camping API Fields \u26FA', items: ['Pipe through bookingUnit and subType from CON-50 sites API update for richer campsite display.'] },
   { date: '2026-07-06', title: 'Camping Support \u26FA', items: ['Added City of Niagara Falls as demo org for campsite/nightly booking calendar development.'] },
   { date: '2026-07-06', title: 'QoQ Navigation + Metrics Fix', items: [
     '← OrgName back link added to QoQ toolbar for easy navigation to org dashboard',
