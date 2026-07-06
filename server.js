@@ -578,7 +578,7 @@ const SHARED_UUIDS = {
 // dashboard "+ Add report" flow (e.g. not yet ready for self-serve onboarding).
 const NON_ADDABLE_REPORTS = new Set(["overview", "program-demographics", "directors-report", "retention", "annual-report", "section-detail", "qoq"]);
 // Reports that require extra params (e.g. section_id) and cannot be health-checked with org_id alone
-const HEALTH_SKIP_REPORTS = new Set(["section-detail", "annual-report", "qoq"]);
+const HEALTH_SKIP_REPORTS = new Set(["section-detail", "annual-report", "qoq", "qbr-stats"]);
 const RENTAL_CALENDAR_ORGS = new Set(["watertown", "norman"]);
 
 // ── Dynamic orgs (added via dashboard UI) ────────────────────────────
