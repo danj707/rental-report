@@ -1783,9 +1783,26 @@ function HeatmapStrip({ filteredRows, locationColors }) {
 }
 
 // ── Main App ─────────────────────────────────────────────────────────
-function linkifyNotes(text) {
+function renderNotes(text) {
   if (!text) return "";
-  return text.replace(/(https?:\/\/[^\s,;]+)/g, function(url) {
+  // Escape HTML entities first for safety
+  var s = text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  // Markdown links [text](url) -> clickable links
+  s = s.replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, function(m, label, url) {
+    return '<a href="' + url + '" target="_blank" rel="noopener noreferrer" style="color:#2563eb;text-decoration:underline;font-weight:500">' + label + '</a>';
+  });
+  // Bold **text** or __text__
+  s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  s = s.replace(/__([^_]+)__/g, '<strong>$1</strong>');
+  // Italic *text* or _text_ (but not inside URLs/tags)
+  s = s.replace(/(?<![\/\w])\*([^*]+)\*(?!\w)/g, '<em>$1</em>');
+  s = s.replace(/(?<![\/\w])_([^_]+)_(?!\w)/g, '<em>$1</em>');
+  // Bullet points: lines starting with - or *
+  s = s.replace(/(?:^|\\n|\n)\s*[-*]\s+/g, ' &bull; ');
+  // Trailing backslashes (line break artifacts)
+  s = s.replace(/\\\s*/g, ' ');
+  // Bare URLs not already inside an href
+  s = s.replace(/(?<!href=")(?<!">)(https?:\/\/[^\s,;<]+)/g, function(url) {
     var label = "\uD83D\uDD17 View";
     var lower = url.toLowerCase();
     if (lower.indexOf("contract") !== -1) label = "\uD83D\uDCCE Contract";
@@ -1794,6 +1811,9 @@ function linkifyNotes(text) {
     else if (lower.indexOf("permit") !== -1) label = "\uD83D\uDCDD Permit";
     return '<a href="' + url + '" target="_blank" rel="noopener noreferrer" style="color:#2563eb;text-decoration:underline;font-weight:500">' + label + '</a>';
   });
+  // Clean up multiple spaces
+  s = s.replace(/\s{2,}/g, ' ').trim();
+  return s;
 }
 
 function App() {
@@ -2588,7 +2608,7 @@ function App() {
                                     return getAddOnEmoji(rawName) + ' ' + trimmed;
                                   }).join(', '));
                               return (
-                                <div className="sub-row" dangerouslySetInnerHTML={{__html: linkifyNotes(parts.join(' | '))}} />
+                                <div className="sub-row" dangerouslySetInnerHTML={{__html: renderNotes(parts.join(' | '))}} />
                               );
                             })()}
                           </div>
