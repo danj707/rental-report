@@ -362,6 +362,35 @@
     .ai-loading { padding: 24px 16px; text-align: center; }
     .ai-spinner { border:3px solid #e5e7eb; border-top:3px solid #6366f1; border-radius:50%; width:24px; height:24px; margin:0 auto; animation:ai-spin 1s linear infinite; }
     @keyframes ai-spin { to { transform:rotate(360deg); } }
+    /* ── Report Tabs (FT-style) ── */
+    .report-tabs { display: flex; gap: 0; border-bottom: 2px solid #e0ddd8; margin-bottom: 20px; }
+    .report-tabs .tab-btn { padding: 10px 20px; font-size: 13px; font-weight: 600; font-family: inherit; background: none; border: none; border-bottom: 2px solid transparent; margin-bottom: -2px; cursor: pointer; color: #888; transition: color .15s, border-color .15s; }
+    .report-tabs .tab-btn:hover { color: #333; }
+    .report-tabs .tab-btn.active { color: #111; border-bottom-color: #6366f1; }
+    .report-tabs .tab-badge { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 10px; margin-left: 6px; background: #6366f122; color: #6366f1; }
+
+    /* ── Check-In Dashboard ── */
+    .ci-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; margin-bottom: 16px; }
+    .ci-kpi { background: #fff; border: 1px solid #e8e6e0; border-radius: 6px; padding: 12px 14px; }
+    .ci-kpi .kl { font-size: 11px; font-weight: 600; color: #888; text-transform: uppercase; letter-spacing: .4px; margin-bottom: 4px; }
+    .ci-kpi .kv { font-size: 20px; font-weight: 700; color: #111; font-variant-numeric: tabular-nums; }
+    .ci-kpi .ks { font-size: 11px; color: #999; margin-top: 2px; }
+    .ci-charts { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+    @media (max-width: 700px) { .ci-charts { grid-template-columns: 1fr; } }
+    .ci-chart-box { background: #fff; border: 1px solid #e8e6e0; border-radius: 6px; padding: 14px 16px; }
+    .ci-chart-title { font-size: 12px; font-weight: 700; color: #333; margin-bottom: 10px; }
+    .ci-bar-row { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+    .ci-bar-label { font-size: 11px; color: #666; width: 48px; text-align: right; flex-shrink: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .ci-bar-track { flex: 1; height: 14px; background: #f0eeea; border-radius: 3px; overflow: hidden; }
+    .ci-bar-fill { height: 100%; border-radius: 3px; transition: width .3s; }
+    .ci-bar-val { font-size: 10px; color: #888; width: 32px; text-align: right; font-variant-numeric: tabular-nums; }
+    .ci-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+    .ci-table th { background: #333; color: #fff; padding: 6px 8px; text-align: left; font-weight: 600; font-size: 10px; text-transform: uppercase; letter-spacing: .3px; position: sticky; top: 0; }
+    .ci-table td { padding: 5px 8px; border-bottom: 1px solid #f0eeea; }
+    .ci-table tr:hover { background: #fafaf7; }
+
+    body.print-mode .report-tabs { display: none; }
+    @media print { .report-tabs { display: none; } }
   </style>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -1302,11 +1331,6 @@ function normalizeRow(raw) {
           {!isPrint && (
             <div className="toolbar">
               <span className="toolbar-title">🎫 Memberships</span>
-              <div className="tab-bar">
-                <button className={activeTab === 'memberships' ? 'active' : ''} onClick={function(){ setActiveTab('memberships'); }}>Memberships</button>
-                <button className={activeTab === 'checkins' ? 'active' : ''} onClick={function(){ setActiveTab('checkins'); if (!ciRows) fetchCheckins(startDate, endDate); }}>Check-Ins</button>
-              </div>
-
               <label>
                 Start
                 <input type="date" value={startDate} onChange={e => { setStartDate(e.target.value); setActiveRange(null); }} />
@@ -1345,6 +1369,7 @@ function normalizeRow(raw) {
                 {loading ? <><span className="btn-spinner" />Loading…</> : '▶ Run Report'}
               </button>
 
+              {activeTab === 'memberships' && <React.Fragment>
               <div className="divider" />
 
               <MultiSelect
@@ -1390,6 +1415,8 @@ function normalizeRow(raw) {
                   </button>
                 ))}
               </div>
+              </React.Fragment>}
+              {activeTab === 'checkins' && <span className="toolbar-spacer" />}
 
               <button onClick={printPage} title="Print">🖨️ Print</button>
               <button onClick={exportExcel} title="Excel">📊 Excel</button>
@@ -1397,8 +1424,45 @@ function normalizeRow(raw) {
             </div>
           )}
 
+          <div className="page" style={(activeTab === 'memberships' && loading) ? {opacity:0.5,pointerEvents:'none'} : {}}>
+
+            {/* Shared Report Header */}
+            <div className="report-header">
+              <div className="report-header-left">
+                {logoUrl && <img src={logoUrl} alt="" className="report-header-logo" onError={e => e.target.style.display='none'} />}
+                <div>
+                  <div className="org-label">{orgName}</div>
+                  <div className="title">Memberships</div>
+                </div>
+              </div>
+              <div className="report-header-right">
+                {loadedStart && loadedEnd && (
+                  <div className="date-range" style={{fontWeight:600,marginBottom:2}}>
+                    {new Date(loadedStart + 'T12:00:00').toLocaleDateString('en-US', {month:'short',day:'numeric',year:'numeric'})}
+                    {' – '}
+                    {new Date(loadedEnd + 'T12:00:00').toLocaleDateString('en-US', {month:'short',day:'numeric',year:'numeric'})}
+                  </div>
+                )}
+                <div className="date-range">
+                  {activeTab === 'memberships' && <span>{filtered.length.toLocaleString()} memberships · {summary.total.toLocaleString()} after filters</span>}
+                  {activeTab === 'checkins' && ciRows && <span>{ciRows.length.toLocaleString()} check-ins</span>}
+                </div>
+              </div>
+            </div>
+
+            {/* Tab bar */}
+            <div className="report-tabs no-print">
+              <button className={'tab-btn' + (activeTab === 'memberships' ? ' active' : '')} onClick={function(){ setActiveTab('memberships'); }}>
+                🎟️ Memberships
+              </button>
+              <button className={'tab-btn' + (activeTab === 'checkins' ? ' active' : '')} onClick={function(){ setActiveTab('checkins'); if (!ciRows) fetchCheckins(startDate, endDate); }}>
+                ✅ Check-Ins
+                {ciRows && ciRows.length > 0 && <span className="tab-badge">{ciRows.length.toLocaleString()}</span>}
+              </button>
+            </div>
+
           {activeTab === 'checkins' && (
-            <div style={{maxWidth:1100,margin:'0 auto',padding:'16px 0'}}>
+            <div style={{maxWidth:1100,margin:'0 auto',padding:'0'}}>
               {ciLoading && <div style={{textAlign:'center',padding:40,color:'#999'}}>Loading check-in data...</div>}
               {!ciLoading && ciRows && ciRows.length > 0 && (() => {
                 var uniqueMembers = new Set(); var hourCounts = {}; var dayCounts = {}; var deskCounts = {}; var prodCounts = {};
@@ -1479,28 +1543,7 @@ function normalizeRow(raw) {
           )}
 
           {activeTab === 'memberships' && (
-                    <div className="page" style={loading ? {opacity:0.5,pointerEvents:'none'} : {}}>
-
-            {/* Header */}
-            <div className="report-header">
-              <div className="report-header-left">
-                {logoUrl && <img src={logoUrl} alt="" className="report-header-logo" onError={e => e.target.style.display='none'} />}
-                <div>
-                  <div className="org-label">{orgName}</div>
-                  <div className="title">Memberships</div>
-                </div>
-              </div>
-              <div className="report-header-right">
-                {loadedStart && loadedEnd && (
-                  <div className="date-range" style={{fontWeight:600,marginBottom:2}}>
-                    {new Date(loadedStart + 'T12:00:00').toLocaleDateString('en-US', {month:'short',day:'numeric',year:'numeric'})}
-                    {' – '}
-                    {new Date(loadedEnd + 'T12:00:00').toLocaleDateString('en-US', {month:'short',day:'numeric',year:'numeric'})}
-                  </div>
-                )}
-                <div className="date-range">{filtered.length.toLocaleString()} memberships · {summary.total.toLocaleString()} after filters</div>
-              </div>
-            </div>
+            <React.Fragment>
 
             {/* Summary cards */}
             <div className="summary-cards">
@@ -1591,7 +1634,10 @@ function normalizeRow(raw) {
               {renderView()}
             </div>
 
-            {/* Footer */}
+            </React.Fragment>
+          )}
+
+            {/* Shared footer */}
             <div className="report-footer">
               <span>{orgName} — Memberships</span>
               <span>Run Date/Time: {runDate}</span>
@@ -1599,7 +1645,6 @@ function normalizeRow(raw) {
 
             {!loading && !error && <div id="report-ready" style={{display:'none'}} />}
           </div>
-                  )}
 </React.Fragment>
       );
     }
