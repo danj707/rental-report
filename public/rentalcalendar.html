@@ -584,7 +584,7 @@ function FacRow({site, avail, dateStr, opStart, opEnd, siteAvailAll, onSiteClick
             <span className="nightly-detail">
               <span>{'\u{1F6CE}\uFE0F'} Check-in {fmtCheckTime(site.nightlyBookingPolicy.checkInTime)}</span>
               <span>{'\u{1F6AA}'} Check-out {fmtCheckTime(site.nightlyBookingPolicy.checkOutTime)}</span>
-              {site.nightlyBookingPolicy.nights && <span>{site.nightlyBookingPolicy.nights.minimum}\u2013{site.nightlyBookingPolicy.nights.maximum} nights</span>}
+              {site.nightlyBookingPolicy.nights && <span>{site.nightlyBookingPolicy.nights.minimum}–{site.nightlyBookingPolicy.nights.maximum} nights</span>}
             </span>
           )}
         </div>
