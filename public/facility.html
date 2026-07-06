@@ -2527,7 +2527,110 @@ function App() {
         <HeatmapStrip filteredRows={filteredRows} locationColors={locationColors} />
       )}
 
-      {/* Metrics analysis placeholder — components not yet implemented */}
+      {showMetrics && filteredRows && filteredRows.length > 0 && !isPrint && (() => {
+        var fmt = function(n) { return '$' + (n||0).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ','); };
+        // Residency breakdown
+        var hasRes = filteredRows.some(function(r){ return r.resident === 'Yes' || r.resident === 'No'; });
+        var resRows = filteredRows.filter(function(r){ return r.resident === 'Yes'; });
+        var nonResRows = filteredRows.filter(function(r){ return r.resident === 'No'; });
+        var resRev = resRows.reduce(function(s,r){ return s + (parseFloat(r.total)||0); }, 0);
+        var nonResRev = nonResRows.reduce(function(s,r){ return s + (parseFloat(r.total)||0); }, 0);
+        var totalRev = filteredRows.reduce(function(s,r){ return s + (parseFloat(r.total)||0); }, 0);
+        var resPct = totalRev > 0 ? (resRev / totalRev * 100).toFixed(1) : '0';
+        // Booking channel breakdown
+        var instantRows = filteredRows.filter(function(r){ return (r.bookingType||'').toLowerCase() === 'instant'; });
+        var managedRows = filteredRows.filter(function(r){ return (r.bookingType||'').toLowerCase() === 'managed'; });
+        var instantRev = instantRows.reduce(function(s,r){ return s + (parseFloat(r.total)||0); }, 0);
+        var managedRev = managedRows.reduce(function(s,r){ return s + (parseFloat(r.total)||0); }, 0);
+        var instantAvg = instantRows.length > 0 ? instantRev / instantRows.length : 0;
+        var managedAvg = managedRows.length > 0 ? managedRev / managedRows.length : 0;
+        // Location breakdown for residency
+        var locMap = {};
+        filteredRows.forEach(function(r) {
+          var loc = r.location || 'Unknown';
+          if (!locMap[loc]) locMap[loc] = { res: 0, nonRes: 0, total: 0 };
+          var v = parseFloat(r.total) || 0;
+          locMap[loc].total += v;
+          if (r.resident === 'Yes') locMap[loc].res += v;
+          else if (r.resident === 'No') locMap[loc].nonRes += v;
+        });
+        var locEntries = Object.entries(locMap).sort(function(a,b){ return b[1].total - a[1].total; });
+        var maxLoc = locEntries.length > 0 ? locEntries[0][1].total : 1;
+        return (
+          <div className="residency-strip">
+            {hasRes && (
+              <div style={{marginBottom: 20}}>
+                <div style={{fontSize:11,fontWeight:700,color:'#666',textTransform:'uppercase',letterSpacing:'0.5px',marginBottom:10}}>Residency Revenue Analysis</div>
+                <div className="residency-cards">
+                  <div className="res-card total-card">
+                    <div className="rc-label">Total Revenue</div>
+                    <div className="rc-value">{fmt(totalRev)}</div>
+                    <div className="rc-sub">{filteredRows.length} bookings</div>
+                  </div>
+                  <div className="res-card resident">
+                    <div className="rc-label">Resident Revenue</div>
+                    <div className="rc-value">{fmt(resRev)}</div>
+                    <div className="rc-sub">{resRows.length} bookings</div>
+                  </div>
+                  <div className="res-card nonresident">
+                    <div className="rc-label">Non-Resident Revenue</div>
+                    <div className="rc-value">{fmt(nonResRev)}</div>
+                    <div className="rc-sub">{nonResRows.length} bookings</div>
+                  </div>
+                  <div className="res-card pct-card">
+                    <div className="rc-label">Resident Share</div>
+                    <div className="rc-value">{resPct}%</div>
+                    <div className="rc-sub">of total revenue</div>
+                  </div>
+                </div>
+                {locEntries.length > 0 && (
+                  <div style={{marginTop:8}}>
+                    {locEntries.map(function(e) {
+                      var loc = e[0], d = e[1];
+                      var rW = maxLoc > 0 ? (d.res / maxLoc * 100) : 0;
+                      var nW = maxLoc > 0 ? (d.nonRes / maxLoc * 100) : 0;
+                      return (
+                        <div key={loc} style={{display:'flex',alignItems:'center',gap:8,marginBottom:4,fontSize:11}}>
+                          <span style={{width:140,textAlign:'right',color:'#555',flexShrink:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{loc}</span>
+                          <div style={{flex:1,display:'flex',height:16,background:'#f3f2ee',borderRadius:3,overflow:'hidden'}}>
+                            <div style={{width:rW+'%',background:'#10b981',transition:'width .3s'}} title={'Resident: ' + fmt(d.res)} />
+                            <div style={{width:nW+'%',background:'#f59e0b',transition:'width .3s'}} title={'Non-Resident: ' + fmt(d.nonRes)} />
+                          </div>
+                          <span style={{width:70,textAlign:'right',fontWeight:600,color:'#333',fontSize:10}}>{fmt(d.total)}</span>
+                        </div>
+                      );
+                    })}
+                    <div style={{display:'flex',gap:16,marginTop:6,fontSize:9,color:'#888'}}>
+                      <span>{'\u25A0'} <span style={{color:'#10b981'}}>Resident</span></span>
+                      <span>{'\u25A0'} <span style={{color:'#f59e0b'}}>Non-Resident</span></span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+            <div style={{marginBottom: 12}}>
+              <div style={{fontSize:11,fontWeight:700,color:'#666',textTransform:'uppercase',letterSpacing:'0.5px',marginBottom:10}}>Booking Channel Analysis</div>
+              <div className="residency-cards">
+                <div className="res-card" style={{borderLeft:'3px solid #3b82f6'}}>
+                  <div className="rc-label">Instant Book</div>
+                  <div className="rc-value">{fmt(instantRev)}</div>
+                  <div className="rc-sub">{instantRows.length} bookings {instantRows.length > 0 ? '\u00b7 avg ' + fmt(instantAvg) : ''}</div>
+                </div>
+                <div className="res-card" style={{borderLeft:'3px solid #8b5cf6'}}>
+                  <div className="rc-label">Managed / Admin</div>
+                  <div className="rc-value">{fmt(managedRev)}</div>
+                  <div className="rc-sub">{managedRows.length} bookings {managedRows.length > 0 ? '\u00b7 avg ' + fmt(managedAvg) : ''}</div>
+                </div>
+                <div className="res-card" style={{borderLeft:'3px solid #6b7280'}}>
+                  <div className="rc-label">Channel Split</div>
+                  <div className="rc-value">{instantRows.length > 0 || managedRows.length > 0 ? Math.round(instantRows.length / (instantRows.length + managedRows.length) * 100) + '% / ' + Math.round(managedRows.length / (instantRows.length + managedRows.length) * 100) + '%' : 'N/A'}</div>
+                  <div className="rc-sub">instant / managed</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       <div className="page" style={loading ? {opacity:0.5,pointerEvents:'none'} : {}}>
         {/* Report header */}
