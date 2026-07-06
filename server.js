@@ -548,6 +548,12 @@ const ORGS = {
     logoUrl: "https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2Forganization-7d22bf62-060a-4881-9821-9dea6a0538d6%2FfullLogo.png%3F1764542866233&w=1920&q=75",
     displayName: "City of West Sacramento",
   },
+  niagarafalls: {
+    token:   "LjW1vF7eZJCyjWVN",
+    orgId:   "a976a11a-5303-4785-838a-1b281ca77678",
+    logoUrl: "https://prod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com/organization-a976a11a-5303-4785-838a-1b281ca77678/fullLogo.png",
+    displayName: "City of Niagara Falls",
+  },
 };
 
 const REPORT_TYPES = ["facility", "gl", "historic", "programs", "roster", "overview", "products", "memberships", "court-utilization", "calendar", "fasttrack", "users", "program-demographics", "directors-report", "instructor-payout", "retention", "annual-report", "section-detail", "ice-calendar", "qoq"];
@@ -4519,6 +4525,8 @@ app.get("/:org/rentalcalendar/api/sites", async (req, res) => {
       priceCents: s.config && s.config.pricing && s.config.pricing.default ? s.config.pricing.default.cents : null,
       residentPriceCents: (() => { try { const gc = s.config.pricing.default.groupCents; const vals = Object.values(gc).filter(v => v > 0); return vals.length ? Math.min(...vals) : null; } catch(e) { return null; } })(),
       durationMinutes: s.allowedReservationDurations ? s.allowedReservationDurations.minutes : null,
+      pricingType: s.config && s.config.pricing && s.config.pricing.default ? s.config.pricing.default.type : 'perHour',
+      nightlyBookingPolicy: s.config && s.config.nightlyBookingPolicy ? s.config.nightlyBookingPolicy : null,
     }));
     // Proxy photo URLs through our server for caching + Cache-Control headers
     clean.forEach(s => {
@@ -7946,6 +7954,7 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  { date: '2026-07-06', title: 'Camping Support \u26FA', items: ['Added City of Niagara Falls as demo org for campsite/nightly booking calendar development.'] },
   { date: '2026-07-06', title: 'QoQ Navigation + Metrics Fix', items: [
     '← OrgName back link added to QoQ toolbar for easy navigation to org dashboard',
     'Metrics chart tooltip now hides zero-value report types to prevent overflow cutoff',
