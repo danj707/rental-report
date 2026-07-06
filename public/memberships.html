@@ -696,7 +696,7 @@ function normalizeRow(raw) {
 
       const datesChanged = startDate !== loadedStart || endDate !== loadedEnd;
 
-      function handleRunReport() { fetchData(startDate, endDate); }
+      function handleRunReport() { fetchData(startDate, endDate); if (activeTab === 'checkins') fetchCheckins(startDate, endDate); }
 
       function setMonth(offset) {
         const now = new Date();
@@ -1383,7 +1383,89 @@ function normalizeRow(raw) {
             </div>
           )}
 
-          <div className="page" style={loading ? {opacity:0.5,pointerEvents:'none'} : {}}>
+          {activeTab === 'checkins' && (
+            <div style={{maxWidth:1100,margin:'0 auto',padding:'16px 0'}}>
+              {ciLoading && <div style={{textAlign:'center',padding:40,color:'#999'}}>Loading check-in data...</div>}
+              {!ciLoading && ciRows && ciRows.length > 0 && (() => {
+                var uniqueMembers = new Set(); var hourCounts = {}; var dayCounts = {}; var deskCounts = {}; var prodCounts = {};
+                var dayTypeCounts = {};
+                ciRows.forEach(function(r) {
+                  uniqueMembers.add(r['Member ID']);
+                  var h = parseInt(r['Hour']); hourCounts[h] = (hourCounts[h]||0)+1;
+                  var dow = (r['Day of Week']||'').trim(); dayCounts[dow] = (dayCounts[dow]||0)+1;
+                  var desk = r['Desk Location']||'Unknown'; deskCounts[desk] = (deskCounts[desk]||0)+1;
+                  var prod = r['Product Name']||'Unknown'; prodCounts[prod] = (prodCounts[prod]||0)+1;
+                  var dt = (r['Day Type']||'').trim(); if (dt) dayTypeCounts[dt] = (dayTypeCounts[dt]||0)+1;
+                });
+                var uniqueDates = new Set(ciRows.map(function(r){ return r['Date']; }));
+                var avgPerDay = uniqueDates.size > 0 ? Math.round(ciRows.length / uniqueDates.size) : 0;
+                var peakEntry = Object.entries(hourCounts).sort(function(a,b){return b[1]-a[1];})[0];
+                var pH = peakEntry ? parseInt(peakEntry[0]) : 0;
+                var peakLabel = peakEntry ? (pH === 0 ? '12am' : pH === 12 ? '12pm' : pH > 12 ? (pH-12)+'pm' : pH+'am') : 'N/A';
+                var maxH = Math.max.apply(null, Object.values(hourCounts).concat([1]));
+                var maxDk = Math.max.apply(null, Object.values(deskCounts).concat([1]));
+                var maxPr = Math.max.apply(null, Object.values(prodCounts).concat([1]));
+                var dayOrd = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
+                var maxDy = Math.max.apply(null, dayOrd.map(function(d){return dayCounts[d]||0;}).concat([1]));
+                var memCount = ciRows.filter(function(r){return r['Check-In Type']==='membership';}).length;
+                var passCount = ciRows.filter(function(r){return r['Check-In Type']==='pass';}).length;
+                return (
+                  <React.Fragment>
+                    <div className="ci-kpis">
+                      <div className="ci-kpi" style={{borderLeft:'3px solid #3b82f6'}}><div className="kl">Total Check-Ins</div><div className="kv">{ciRows.length.toLocaleString()}</div><div className="ks">{uniqueDates.size} days</div></div>
+                      <div className="ci-kpi" style={{borderLeft:'3px solid #10b981'}}><div className="kl">Unique Members</div><div className="kv">{uniqueMembers.size.toLocaleString()}</div><div className="ks">{(ciRows.length / Math.max(uniqueMembers.size,1)).toFixed(1)} visits/member</div></div>
+                      <div className="ci-kpi" style={{borderLeft:'3px solid #f59e0b'}}><div className="kl">Avg per Day</div><div className="kv">{avgPerDay.toLocaleString()}</div><div className="ks">{dayTypeCounts['Weekday']||0} weekday / {dayTypeCounts['Weekend']||0} weekend</div></div>
+                      <div className="ci-kpi" style={{borderLeft:'3px solid #8b5cf6'}}><div className="kl">Peak Hour</div><div className="kv">{peakLabel}</div><div className="ks">{peakEntry ? peakEntry[1]+' check-ins' : ''}</div></div>
+                      <div className="ci-kpi" style={{borderLeft:'3px solid #06b6d4'}}><div className="kl">Membership vs Pass</div><div className="kv">{Math.round(memCount/Math.max(ciRows.length,1)*100)}% / {Math.round(passCount/Math.max(ciRows.length,1)*100)}%</div><div className="ks">{memCount.toLocaleString()} / {passCount.toLocaleString()}</div></div>
+                    </div>
+                    <div className="ci-charts">
+                      <div className="ci-chart-box">
+                        <div className="ci-chart-title">Hourly Distribution</div>
+                        {Array.from({length:17}, function(_,i){ var h=i+5; var c=hourCounts[h]||0; return (
+                          <div key={h} className="ci-bar-row"><span className="ci-bar-label">{h===0?'12am':h===12?'12pm':h>12?(h-12)+'pm':h+'am'}</span><div className="ci-bar-track"><div className="ci-bar-fill" style={{width:(c/maxH*100)+'%',background:'#3b82f6'}}/></div><span className="ci-bar-val">{c||''}</span></div>
+                        );})}
+                      </div>
+                      <div className="ci-chart-box">
+                        <div className="ci-chart-title">Day of Week</div>
+                        {dayOrd.map(function(d){ var c=dayCounts[d]||0; return (
+                          <div key={d} className="ci-bar-row"><span className="ci-bar-label">{d.slice(0,3)}</span><div className="ci-bar-track"><div className="ci-bar-fill" style={{width:(c/maxDy*100)+'%',background:'#10b981'}}/></div><span className="ci-bar-val">{c||''}</span></div>
+                        );})}
+                      </div>
+                    </div>
+                    <div className="ci-charts">
+                      <div className="ci-chart-box">
+                        <div className="ci-chart-title">Desk Locations</div>
+                        {Object.entries(deskCounts).sort(function(a,b){return b[1]-a[1];}).map(function(e){ return (
+                          <div key={e[0]} className="ci-bar-row"><span className="ci-bar-label" title={e[0]}>{e[0]}</span><div className="ci-bar-track"><div className="ci-bar-fill" style={{width:(e[1]/maxDk*100)+'%',background:'#f59e0b'}}/></div><span className="ci-bar-val">{e[1]}</span></div>
+                        );})}
+                      </div>
+                      <div className="ci-chart-box">
+                        <div className="ci-chart-title">Top Membership / Pass Types</div>
+                        {Object.entries(prodCounts).sort(function(a,b){return b[1]-a[1];}).slice(0,10).map(function(e){ return (
+                          <div key={e[0]} className="ci-bar-row"><span className="ci-bar-label" style={{width:180}} title={e[0]}>{e[0].length>28?e[0].slice(0,26)+'...':e[0]}</span><div className="ci-bar-track"><div className="ci-bar-fill" style={{width:(e[1]/maxPr*100)+'%',background:e[0].toLowerCase().indexOf('pass')!==-1?'#8b5cf6':'#06b6d4'}}/></div><span className="ci-bar-val">{e[1]}</span></div>
+                        );})}
+                      </div>
+                    </div>
+                    <div style={{background:'#fff',border:'1px solid #e8e6e0',borderRadius:6,padding:16,boxShadow:'0 1px 3px rgba(0,0,0,.05)'}}>
+                      <div className="ci-chart-title" style={{marginBottom:8}}>Recent Check-Ins ({ciRows.length.toLocaleString()} total)</div>
+                      <div style={{maxHeight:400,overflow:'auto'}}>
+                        <table className="ci-table"><thead><tr><th>Date</th><th>Time</th><th>Member</th><th>Product</th><th>Type</th><th>Desk</th><th>Recorded By</th></tr></thead>
+                          <tbody>{ciRows.slice(0,200).map(function(r,i){ return (
+                            <tr key={i}><td>{r['Date']}</td><td>{r['Time']}</td><td>{(r['First Name']||'')+' '+(r['Last Name']||'')}</td><td style={{maxWidth:200,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title={r['Product Name']}>{r['Product Name']}</td><td><span style={{fontSize:9,fontWeight:600,padding:'2px 6px',borderRadius:3,background:r['Check-In Type']==='membership'?'#dbeafe':'#ede9fe',color:r['Check-In Type']==='membership'?'#1e40af':'#5b21b6'}}>{r['Check-In Type']}</span></td><td>{r['Desk Location']}</td><td>{r['Recorded By']}</td></tr>
+                          );})}</tbody>
+                        </table>
+                        {ciRows.length > 200 && <div style={{textAlign:'center',padding:8,color:'#999',fontSize:11}}>Showing 200 of {ciRows.length.toLocaleString()}</div>}
+                      </div>
+                    </div>
+                  </React.Fragment>
+                );
+              })()}
+              {!ciLoading && (!ciRows || ciRows.length === 0) && !ciLoading && <div style={{textAlign:'center',padding:40,color:'#999'}}>Click Run Report to load check-in data</div>}
+            </div>
+          )}
+
+          {activeTab === 'memberships' && (
+                    <div className="page" style={loading ? {opacity:0.5,pointerEvents:'none'} : {}}>
 
             {/* Header */}
             <div className="report-header">
@@ -1503,7 +1585,8 @@ function normalizeRow(raw) {
 
             {!loading && !error && <div id="report-ready" style={{display:'none'}} />}
           </div>
-        </React.Fragment>
+                  )}
+</React.Fragment>
       );
     }
 
