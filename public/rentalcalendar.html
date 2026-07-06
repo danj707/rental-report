@@ -527,7 +527,7 @@ function FacRow({site, avail, dateStr, opStart, opEnd, siteAvailAll, onSiteClick
   var priceStr = '';
   if (site.priceCents) {
     var dollars = (site.priceCents / 100);
-    priceStr = '$' + (dollars % 1 === 0 ? dollars.toFixed(0) : dollars.toFixed(2)) + '/hr';
+    priceStr = '$' + (dollars % 1 === 0 ? dollars.toFixed(0) : dollars.toFixed(2)) + (site.pricingType === 'perNight' ? '/night' : '/hr');
     if (site.residentPriceCents != null && site.residentPriceCents !== site.priceCents) {
       var resDollars = (site.residentPriceCents / 100);
       priceStr += ' \u00b7 $' + (resDollars % 1 === 0 ? resDollars.toFixed(0) : resDollars.toFixed(2)) + ' res';
@@ -727,7 +727,7 @@ function SiteModal({site, onClose}) {
   var priceStr = '';
   if (site.priceCents) {
     var d = site.priceCents / 100;
-    priceStr = '$' + (d % 1 === 0 ? d.toFixed(0) : d.toFixed(2)) + '/hr';
+    priceStr = '$' + (d % 1 === 0 ? d.toFixed(0) : d.toFixed(2)) + (site.pricingType === 'perNight' ? '/night' : '/hr');
     if (site.residentPriceCents != null && site.residentPriceCents !== site.priceCents) {
       var rd = site.residentPriceCents / 100;
       priceStr += ' \u00b7 $' + (rd % 1 === 0 ? rd.toFixed(0) : rd.toFixed(2)) + ' resident';
