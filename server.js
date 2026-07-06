@@ -7957,6 +7957,7 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  { date: '2026-07-06', title: 'Memberships Check-Ins Tab \u2705', items: ['Moved Check-Ins to proper FT-style underline tabs below toolbar (not in toolbar).', 'Shared report header and footer between Memberships and Check-Ins tabs.', 'Membership-specific filters hidden when on Check-Ins tab.', 'Added CSS for check-in dashboard components (KPI cards, bar charts, data table).'] },
   { date: '2026-07-06', title: 'Check-Ins Data \u2705', items: ['Added shared check-ins Metabase question (574324e0) for membership/pass check-in analytics tab.'] },
   { date: '2026-07-06', title: 'Niagara Falls Rental Calendar \u26FA', items: ['Enabled rental calendar report card for Niagara Falls demo org.'] },
   { date: '2026-07-06', title: 'Camping API Fields \u26FA', items: ['Pipe through bookingUnit and subType from CON-50 sites API update for richer campsite display.'] },
