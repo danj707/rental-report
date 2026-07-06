@@ -586,7 +586,7 @@ function SiteGroup({type, sites, availMap, dateStr, opStart, opEnd, allAvail, on
     // Beyond MCP window — optimistic: count as available (user sees timeline for details)
     return true;
   }).length;
-  var label = (type || 'other').replace(/-/g,' ').replace(/\b\w/g, function(c){return c.toUpperCase();}) + 's';
+  var label = type.replace(/-/g,' ').replace(/\b\w/g, function(c){return c.toUpperCase();}) + 's';
   var firstSite = sites[0];
   return (
     <div>
@@ -766,15 +766,14 @@ function SiteModal({site, onClose}) {
 
 function DayView({sites, availMap, dateStr, opStart, opEnd, allAvail, onSiteClick, forceOpen, toolbar, reservationMap}) {
   var typeCounts = {};
-  sites.forEach(function(s){var t=s.type||'other';typeCounts[t]=(typeCounts[t]||0)+1;});
+  sites.forEach(function(s){typeCounts[s.type]=(typeCounts[s.type]||0)+1;});
   var grouped = [];
   var done = {};
   sites.forEach(function(s) {
-    var sType = s.type || 'other';
-    if (done[sType]) return;
-    if (typeCounts[sType] >= GROUP_THRESHOLD) {
-      done[sType] = true;
-      grouped.push({k:'group', type:sType, sites: sites.filter(function(x){return (x.type||'other')===sType;})});
+    if (done[s.type]) return;
+    if (typeCounts[s.type] >= GROUP_THRESHOLD) {
+      done[s.type] = true;
+      grouped.push({k:'group', type:s.type, sites: sites.filter(function(x){return x.type===s.type;})});
     } else {
       grouped.push({k:'single', site: s});
     }
@@ -802,7 +801,7 @@ function WeekOverview({sites, allAvail, weekStart, onDayClick}) {
   var todayISO = fmtISO(new Date());
   var typeGroups = useMemo(function() {
     var m = {};
-    sites.forEach(function(s){var t=s.type||'other';if(!m[t])m[t]={type:t,sites:[]};m[t].sites.push(s);});
+    sites.forEach(function(s){if(!m[s.type])m[s.type]={type:s.type,sites:[]};m[s.type].sites.push(s);});
     return Object.values(m);
   }, [sites]);
   return (
@@ -871,7 +870,7 @@ function App() {
       .then(function(r){return r.json();})
       .then(function(data) {
         if (data.error) throw new Error(data.error);
-        setSites(data.sites || []);
+        setSites((data.sites || []).filter(function(s){ return !!s.type; }));
         setLoading(false);
         // Fetch availability for ALL sites in one batch call (replaces 60+ individual fetches)
         var siteIds = (data.sites || []).map(function(s) { return s.id; }).join(',');
