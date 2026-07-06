@@ -541,7 +541,7 @@ function FacRow({site, avail, dateStr, opStart, opEnd, siteAvailAll, onSiteClick
   var priceStr = '';
   if (site.priceCents) {
     var dollars = (site.priceCents / 100);
-    priceStr = '$' + (dollars % 1 === 0 ? dollars.toFixed(0) : dollars.toFixed(2)) + (site.bookingUnit === 'nightly' ? '/night' : '/hr');
+    priceStr = '$' + (dollars % 1 === 0 ? dollars.toFixed(0) : dollars.toFixed(2)) + ((site.bookingUnit === 'nightly' || site.pricingType === 'perNight') ? '/night' : '/hr');
     if (site.residentPriceCents != null && site.residentPriceCents !== site.priceCents) {
       var resDollars = (site.residentPriceCents / 100);
       priceStr += ' \u00b7 $' + (resDollars % 1 === 0 ? resDollars.toFixed(0) : resDollars.toFixed(2)) + ' res';
@@ -578,7 +578,7 @@ function FacRow({site, avail, dateStr, opStart, opEnd, siteAvailAll, onSiteClick
           </span>
         </div>
       </div>
-      {site.bookingUnit === 'nightly' ? (
+      {(site.bookingUnit === 'nightly' || site.pricingType === 'perNight') ? (
         <div className='nightly-bar unknown'>
           <span className="nightly-avail-badge" style={{cursor:'pointer'}} onClick={function(){if(site.bookingUrl)window.open(site.bookingUrl,'_blank');}}>{'\u{1F3D5}\uFE0F'} Book on rec.us {'\u2192'}</span>
           {site.nightlyBookingPolicy && (
@@ -755,7 +755,7 @@ function SiteModal({site, onClose}) {
   var priceStr = '';
   if (site.priceCents) {
     var d = site.priceCents / 100;
-    priceStr = '$' + (d % 1 === 0 ? d.toFixed(0) : d.toFixed(2)) + (site.bookingUnit === 'nightly' ? '/night' : '/hr');
+    priceStr = '$' + (d % 1 === 0 ? d.toFixed(0) : d.toFixed(2)) + ((site.bookingUnit === 'nightly' || site.pricingType === 'perNight') ? '/night' : '/hr');
     if (site.residentPriceCents != null && site.residentPriceCents !== site.priceCents) {
       var rd = site.residentPriceCents / 100;
       priceStr += ' \u00b7 $' + (rd % 1 === 0 ? rd.toFixed(0) : rd.toFixed(2)) + ' resident';
