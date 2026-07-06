@@ -795,7 +795,17 @@ async function runHealthCheck(forceAll, failuresOnly) {
   await runChunked(toCheck, 3, checkOne, 5000);
 
   existing.timestamp = ts;
-  // Rebuild global failures list from all current results
+  // Purge stale entries from old check strategy (shared-UUID-only combos per org)
+  for (const slug of Object.keys(existing.reports)) {
+    if (slug === "_shared") continue;  // shared probes are valid
+    const org = ORGS[slug];
+    if (!org) { delete existing.reports[slug]; continue; }
+    for (const rt of Object.keys(existing.reports[slug])) {
+      if (!org[rt]?.mbUuid) delete existing.reports[slug][rt];
+    }
+  }
+
+  // Rebuild global failures list from current results
   existing.failures = [];
   for (const [slug, reports] of Object.entries(existing.reports)) {
     for (const [rt, e] of Object.entries(reports)) {
