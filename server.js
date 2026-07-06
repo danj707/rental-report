@@ -556,7 +556,7 @@ const ORGS = {
   },
 };
 
-const REPORT_TYPES = ["facility", "gl", "historic", "programs", "roster", "overview", "products", "memberships", "court-utilization", "calendar", "fasttrack", "users", "program-demographics", "directors-report", "instructor-payout", "retention", "annual-report", "section-detail", "ice-calendar", "qoq"];
+const REPORT_TYPES = ["facility", "gl", "historic", "programs", "roster", "overview", "products", "memberships", "court-utilization", "calendar", "fasttrack", "users", "program-demographics", "directors-report", "instructor-payout", "retention", "annual-report", "section-detail", "ice-calendar", "qoq", "checkins"];
 
 // ── Shared Metabase UUIDs (one query per report type, parameterized by org_id) ──
 // When a report type has an entry here, the server uses this UUID + passes the
@@ -578,13 +578,14 @@ const SHARED_UUIDS = {
   retention: "3cfc9cfa-b1db-41e9-83fd-01fb90a5b0c8",
   "qbr-stats": "3039d98b-a396-4c05-b1d7-0b8f2f2dd520",
   "section-detail": "bbb347c8-9e2d-446d-b014-a86a9d14115a",
+  checkins: "574324e0-b5a1-46c5-8770-8c466631fdcf",
 };
 
 // Report types that are valid system-wide but should NOT be offered in the
 // dashboard "+ Add report" flow (e.g. not yet ready for self-serve onboarding).
-const NON_ADDABLE_REPORTS = new Set(["overview", "program-demographics", "directors-report", "retention", "annual-report", "section-detail", "qoq"]);
+const NON_ADDABLE_REPORTS = new Set(["overview", "program-demographics", "directors-report", "retention", "annual-report", "section-detail", "qoq", "checkins"]);
 // Reports that require extra params (e.g. section_id) and cannot be health-checked with org_id alone
-const HEALTH_SKIP_REPORTS = new Set(["section-detail", "annual-report", "qoq", "qbr-stats"]);
+const HEALTH_SKIP_REPORTS = new Set(["section-detail", "annual-report", "qoq", "qbr-stats", "checkins"]);
 const RENTAL_CALENDAR_ORGS = new Set(["watertown", "norman", "niagarafalls"]);
 
 // ── Dynamic orgs (added via dashboard UI) ────────────────────────────
@@ -7956,6 +7957,7 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  { date: '2026-07-06', title: 'Check-Ins Data \u2705', items: ['Added shared check-ins Metabase question (574324e0) for membership/pass check-in analytics tab.'] },
   { date: '2026-07-06', title: 'Niagara Falls Rental Calendar \u26FA', items: ['Enabled rental calendar report card for Niagara Falls demo org.'] },
   { date: '2026-07-06', title: 'Camping API Fields \u26FA', items: ['Pipe through bookingUnit and subType from CON-50 sites API update for richer campsite display.'] },
   { date: '2026-07-06', title: 'Camping Support \u26FA', items: ['Added City of Niagara Falls as demo org for campsite/nightly booking calendar development.'] },
