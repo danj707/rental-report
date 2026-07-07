@@ -864,6 +864,15 @@ function App() {
 
   const [search, setSearch] = useState(() => new URLSearchParams(window.location.search).get('search') || '');
   const [activityFilter, setActivityFilter] = useState('');
+
+  // Plain function — NOT a hook — to get activity for a program name
+  function getProgActivity(progName) {
+    if (!demoRows) return '';
+    for (var i = 0; i < demoRows.length; i++) {
+      if ((demoRows[i]['Program'] || '') === progName) return demoRows[i]['Activity'] || '';
+    }
+    return '';
+  }
   const activityInfo = useMemo(function() {
     if (!demoRows) return { map: {}, list: [] };
     var map = {};
@@ -2195,14 +2204,15 @@ function App() {
             {retError && <div style={{textAlign:'center',padding:40,color:'#dc2626'}}>Error: {retError}</div>}
             {retStats && (<React.Fragment>
               <div className="summary-cards">
-                <div className="summary-card"><div className="card-label">Org-Wide Retention</div><div className="card-value" style={{color:retStats.orgRetPct>=30?'#16a34a':retStats.orgRetPct>=15?'#d97706':'#dc2626'}}>{retStats.orgRetPct}%</div><div className="card-sub">{retStats.totalR.toLocaleString()} of {retStats.totalP.toLocaleString()} came back</div></div>
+                <div className="summary-card"><div className="card-label">Org-Wide Retention</div>{(() => { var fp = activityFilter ? retStats.programs.filter(function(p){return getProgActivity(p.name)===activityFilter;}) : retStats.programs; var tp=fp.reduce(function(a,p){return a+p.total;},0); var tr=fp.reduce(function(a,p){return a+p.returners;},0); var pct=tp>0?Math.round(tr/tp*100):0; return <React.Fragment><div className="card-value" style={{color:pct>=30?'#16a34a':pct>=15?'#d97706':'#dc2626'}}>{pct}%</div><div className="card-sub">{tr.toLocaleString()} of {tp.toLocaleString()} came back{activityFilter ? ' in '+activityFilter : ''}</div></React.Fragment>; })()}</div>
                 <div className="summary-card"><div className="card-label">Programs w/ Returners</div><div className="card-value">{retStats.progsWithReturners}</div><div className="card-sub">of {retStats.programs.length} total</div></div>
                 <div className="summary-card"><div className="card-label">Avg Sections/Person</div><div className="card-value">{retStats.avgSec}</div><div className="card-sub">weighted across all programs</div></div>
                 {retStats.topRetaining && <div className="summary-card"><div className="card-label">Top Retaining</div><div className="card-value" style={{fontSize:14}}>{retStats.topRetaining.name}</div><div className="card-sub">{retStats.topRetaining.retPct}% retention ({retStats.topRetaining.total} participants)</div></div>}
               </div>
 
               {(() => {
-                var top = retStats.programs.filter(p => p.total >= 10).sort((a, b) => b.retPct - a.retPct).slice(0, 10);
+                var progs = activityFilter ? retStats.programs.filter(function(p) { return getProgActivity(p.name) === activityFilter; }) : retStats.programs;
+                var top = progs.filter(p => p.total >= 10).sort((a, b) => b.retPct - a.retPct).slice(0, 10);
                 if (top.length === 0) return null;
                 var maxPct = Math.max.apply(null, top.map(p => p.retPct));
                 return (
@@ -2242,7 +2252,7 @@ function App() {
                         <th style={{cursor:'pointer'}} onClick={() => toggleSort('maxSec')}>Max{arrow('maxSec')}</th>
                       </tr></thead>
                       <tbody>
-                        {sortedRetPrograms.map((p, i) => {
+                        {(activityFilter ? sortedRetPrograms.filter(function(p) { return getProgActivity(p.name) === activityFilter; }) : sortedRetPrograms).map((p, i) => {
                           var color = p.retPct >= 60 ? '#16a34a' : p.retPct >= 40 ? '#65a30d' : p.retPct >= 20 ? '#d97706' : p.retPct > 0 ? '#dc2626' : '#d1d5db';
                           return (
                             <tr key={i} className="data-row">
@@ -2259,7 +2269,7 @@ function App() {
                         })}
                       </tbody>
                       <tfoot><tr>
-                        <td className="left">TOTALS ({retStats.programs.length} programs)</td>
+                        <td className="left">TOTALS ({(activityFilter ? retStats.programs.filter(function(p) { return getProgActivity(p.name) === activityFilter; }).length : retStats.programs.length)} programs)</td>
                         <td>{retStats.totalP.toLocaleString()}</td>
                         <td style={{fontWeight:700,color:retStats.orgRetPct>=30?'#16a34a':'#d97706'}}>{retStats.orgRetPct}%</td>
                         <td>{retStats.totalR.toLocaleString()}</td>
