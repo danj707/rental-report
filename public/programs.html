@@ -2255,8 +2255,8 @@ function App() {
             {/* Cumulative Re-engagement + Activity Flow */}
             {(() => {
               var reData = null;
-              try { reData = buildReengagement(fDemoRows); } catch(e) { console.error('[re-engagement] CRASH:', e.message, e.stack); return <div style={{padding:20,color:'#dc2626',background:'#fee2e2',borderRadius:8,margin:'16px 0'}}>Re-engagement error: {e.message}</div>; }
-              if (!reData) { console.warn('[re-engagement] null result. fDemoRows:', fDemoRows ? fDemoRows.length + ' rows' : 'null/undefined'); return null; }
+              try { reData = buildReengagement(demoRows); } catch(e) { console.error('[re-engagement] CRASH:', e.message, e.stack); return <div style={{padding:20,color:'#dc2626',background:'#fee2e2',borderRadius:8,margin:'16px 0'}}>Re-engagement error: {e.message}</div>; }
+              if (!reData) { console.warn('[re-engagement] null result. demoRows:', demoRows ? demoRows.length + ' rows' : 'null/undefined'); return null; }
               return (
                 <React.Fragment>
                   {reData.cumulative.length > 0 && (
