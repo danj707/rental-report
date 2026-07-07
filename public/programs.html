@@ -863,6 +863,17 @@ function App() {
   }, [loadedStart, loadedEnd, startDate, endDate]);
 
   const [search, setSearch] = useState(() => new URLSearchParams(window.location.search).get('search') || '');
+  const [activityFilter, setActivityFilter] = useState('');
+  const activityInfo = useMemo(() => {
+    if (!demoRows) return { map: {}, list: [] };
+    var map = {};
+    demoRows.forEach(r => { var prog = r['Program']||''; var act = r['Activity']||''; if (prog && act && act !== 'Uncategorized') map[prog] = act; });
+    return { map: map, list: [...new Set(Object.values(map))].sort() };
+  }, [demoRows]);
+  const fDemoRows = useMemo(() => {
+    if (!demoRows || !activityFilter) return demoRows;
+    return demoRows.filter(r => (r['Activity'] || activityInfo.map[r['Program']||''] || '') === activityFilter);
+  }, [demoRows, activityFilter, activityInfo]);
 
   const [colPresence, setColPresence] = useState({ regMode: false, cancellations: false });
   const [insights,        setInsights]        = useState(null);
@@ -967,14 +978,14 @@ function App() {
   }, [startDate, endDate, loadedStart, loadedEnd, orgSlug]);
 
   const demoStats = useMemo(() => {
-    if (!demoRows || demoRows.length === 0) return null;
-    var total = demoRows.length;
+    if (!fDemoRows || fDemoRows.length === 0) return null;
+    var total = fDemoRows.length;
     var partSet = new Set(); var hhSet = new Set();
     var ages = []; var gMap = {}; var grMap = {}; var cityMap = {};
     var brackets = {'0-5':0,'6-12':0,'13-17':0,'18-25':0,'26-35':0,'36-55':0,'55+':0};
     var progMap = {};
     var ftCount = 0;
-    demoRows.forEach(r => {
+    fDemoRows.forEach(r => {
       var pid = r['Participant ID']||''; if (pid) partSet.add(pid);
       var hh = r['Household ID']||''; if (hh) hhSet.add(hh);
       var age = parseInt(r['Age']); 
@@ -1033,7 +1044,7 @@ function App() {
       gMaleAll,gFemaleAll,gNBAll,gUnkAll,
       ftCount,ftPct:total>0?((ftCount/total)*100).toFixed(1):'0',
     };
-  }, [demoRows]);
+  }, [fDemoRows]);
 
   const fDemo = useMemo(() => {
     if (!demoStats) return null;
@@ -1042,7 +1053,7 @@ function App() {
     if (progs === demoStats.programs && !q) return demoStats; // no filter, use full stats
     var t=0,y=0,ad=0,sn=0,unk=0,gM=0,gF=0,gNB=0,gU=0,ft=0,hhs=new Set(),parts=new Set();
     // Re-aggregate from filtered demoRows for accurate unique counts
-    var fRows = q ? (demoRows||[]).filter(r => {var p=(r['Program']||'').toLowerCase();return p.includes(q);}) : demoRows||[];
+    var fRows = q ? (fDemoRows||[]).filter(r => {var p=(r['Program']||'').toLowerCase();return p.includes(q);}) : demoRows||[];
     fRows.forEach(r => {
       t++;
       var pid=r['Participant ID']||''; if(pid)parts.add(pid);
@@ -1072,11 +1083,13 @@ function App() {
       gradeData:Object.keys(grMap).map(g=>({label:g,count:grMap[g]})).sort((a,b)=>b.count-a.count).slice(0,12),
       programs:progs, ftCount:ft, ftPct:t>0?((ft/t)*100).toFixed(1):'0',
     });
-  }, [demoStats, demoRows, search]);
+  }, [demoStats, fDemoRows, search]);
 
   var retStats = useMemo(() => {
     if (!retRows || retRows.length === 0) return null;
-    var programs = retRows.map(r => {
+    var fRet = activityFilter ? retRows.filter(r => (activityInfo.map[r['Program']||'']||'') === activityFilter) : retRows;
+    if (fRet.length === 0) return null;
+    var programs = fRet.map(r => {
       var total = parseInt(r['Total Participants']) || 0;
       var returners = parseInt(r['Returners (2+)']) || 0;
       var loyal = parseInt(r['Loyal (3+)']) || 0;
@@ -1095,13 +1108,13 @@ function App() {
     var progsWithReturners = programs.filter(p => p.returners > 0).length;
     var topRetaining = programs.filter(p => p.total >= 10).sort((a, b) => b.retPct - a.retPct)[0] || null;
     return { programs: programs, totalP: totalP, totalR: totalR, totalL: totalL, totalS: totalS, orgRetPct: orgRetPct, avgSec: avgSec, progsWithReturners: progsWithReturners, topRetaining: topRetaining };
-  }, [retRows]);
+  }, [retRows, activityFilter, activityInfo]);
 
   // ── Cohort retention + cross-program affinity from enrollment data ──
   var cohortAnalytics = useMemo(() => {
-    if (!demoRows || demoRows.length === 0) return null;
+    if (!fDemoRows || fDemoRows.length === 0) return null;
     var partMap = {};
-    demoRows.forEach(r => {
+    fDemoRows.forEach(r => {
       var pid = r['Participant ID'] || r['participant_id'] || '';
       var dateRaw = r['Enrolled Date'] || r['enrolled_date'] || r['Enrolled date'] || '';
       var prog = r['Program'] || r['program'] || '';
@@ -1153,12 +1166,12 @@ function App() {
     var tiers = { champion: 0, regular: 0, oneAndDone: 0 };
     Object.values(partMap).forEach(p => { var n = p.programs.size; if (n >= 4) tiers.champion++; else if (n >= 2) tiers.regular++; else tiers.oneAndDone++; });
     return { heatmap: heatmap, affinities: affinities.slice(0, 12), tiers: tiers, totalParts: Object.keys(partMap).length, maxOffset: maxOffset };
-  }, [demoRows]);
+  }, [fDemoRows]);
 
   var fillRateAnalytics = useMemo(() => {
-    if (!demoRows || demoRows.length === 0) return null;
+    if (!fDemoRows || fDemoRows.length === 0) return null;
     var secMap = {};
-    demoRows.forEach(r => {
+    fDemoRows.forEach(r => {
       var sec = r['Section'] || r['section'] || '';
       var prog = r['Program'] || r['program'] || '';
       var dateRaw = r['Enrolled Date'] || r['enrolled_date'] || r['Enrolled date'] || '';
@@ -1182,7 +1195,7 @@ function App() {
     var fast = sections.filter(s => s.fillDays > 0 && s.total >= 5).sort((a,b) => a.fillDays - b.fillDays)[0] || null;
     var slow = sections.filter(s => s.fillDays > 0 && s.total >= 5).sort((a,b) => b.fillDays - a.fillDays)[0] || null;
     return { sections, totalSections: sections.length, atCapacity: atCap, avgPct, fastestFill: fast, slowestFill: slow, top: sections.slice(0, 30) };
-  }, [demoRows]);
+  }, [fDemoRows]);
 
   var sortedRetPrograms = useMemo(() => {
     if (!retStats) return [];
@@ -1328,8 +1341,9 @@ function App() {
   // ── Computed values ────────────────────────────────────────────────
   const grouped = useMemo(() => {
     if (!rows) return null;
+    const base = activityFilter ? rows.filter(r => (activityInfo.map[r.programName]||'') === activityFilter) : rows;
     const map = {};
-    rows.forEach(r => {
+    base.forEach(r => {
       if (!map[r.programName]) map[r.programName] = [];
       map[r.programName].push(r);
     });
@@ -1343,7 +1357,7 @@ function App() {
       if (prog.toLowerCase().includes(q)) filtered[prog] = sections;
     });
     return filtered;
-  }, [rows, search]);
+  }, [rows, search, activityFilter, activityInfo]);
 
   // Rows remaining after the program search filter — drives summary cards + grand total
   const filteredRows = useMemo(() => (grouped ? Object.values(grouped).flat() : []), [grouped]);
@@ -1522,6 +1536,14 @@ function App() {
             </label>
           </>
         )}
+        {activityInfo.list.length > 0 && (<React.Fragment>
+            <div className="divider" />
+            <select value={activityFilter} onChange={e => { setActivityFilter(e.target.value); setInsights(null); setInsightsMeta(null); }}
+              style={{padding:'4px 8px',border:'1px solid rgba(255,255,255,.2)',borderRadius:4,background:'rgba(255,255,255,.1)',color:'#fff',fontSize:12,fontFamily:'inherit',outline:'none',cursor:'pointer',maxWidth:160}}>
+              <option value="" style={{color:'#333'}}>All Activities</option>
+              {activityInfo.list.map(a => <option key={a} value={a} style={{color:'#333'}}>{a}</option>)}
+            </select>
+          </React.Fragment>)}
         <div className="divider" />
         <div style={{position:'relative',display:'flex',alignItems:'center'}}>
           <span style={{position:'absolute',left:8,color:'#666',fontSize:12,pointerEvents:'none'}}>🔍</span>
@@ -2232,7 +2254,7 @@ function App() {
 
             {/* Cumulative Re-engagement + Activity Flow */}
             {(() => {
-              var reData = buildReengagement(demoRows);
+              var reData = buildReengagement(fDemoRows);
               if (!reData) return null;
               return (
                 <React.Fragment>
