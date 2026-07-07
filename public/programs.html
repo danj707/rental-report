@@ -870,6 +870,8 @@ function App() {
     demoRows.forEach(r => { var prog = r['Program']||''; var act = r['Activity']||''; if (prog && act && act !== 'Uncategorized') map[prog] = act; });
     return { map: map, list: [...new Set(Object.values(map))].sort() };
   }, [demoRows]);
+  useEffect(() => { if (demoRows && demoRows.length > 0) { var sample = demoRows[0]; console.log('[activity-debug] demoRows[0] keys:', Object.keys(sample).join(', ')); console.log('[activity-debug] Activity value:', sample['Activity']); console.log('[activity-debug] activityInfo.list:', activityInfo.list); } }, [demoRows, activityInfo]);
+
   const fDemoRows = useMemo(() => {
     if (!demoRows || !activityFilter) return demoRows;
     return demoRows.filter(r => (r['Activity'] || activityInfo.map[r['Program']||''] || '') === activityFilter);
