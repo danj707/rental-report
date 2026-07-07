@@ -864,11 +864,21 @@ function App() {
 
   const [search, setSearch] = useState(() => new URLSearchParams(window.location.search).get('search') || '');
   const [activityFilter, setActivityFilter] = useState('');
-  const activityInfo = useMemo(() => {
+  const activityInfo = useMemo(function() {
     if (!demoRows) return { map: {}, list: [] };
     var map = {};
-    demoRows.forEach(r => { var prog = r['Program']||''; var act = r['Activity']||''; if (prog && act && act !== 'Uncategorized') map[prog] = act; });
-    return { map: map, list: [...new Set(Object.values(map))].sort() };
+    for (var i = 0; i < demoRows.length; i++) {
+      var r = demoRows[i];
+      var prog = r['Program'] || '';
+      var act = r['Activity'] || '';
+      if (prog && act && act !== 'Uncategorized') map[prog] = act;
+    }
+    var vals = Object.values(map);
+    var unique = {};
+    for (var j = 0; j < vals.length; j++) unique[vals[j]] = true;
+    var list = Object.keys(unique).sort();
+    console.log('[activityInfo]', demoRows.length, 'rows,', Object.keys(map).length, 'programs mapped,', list.length, 'activities:', list.join(', '));
+    return { map: map, list: list };
   }, [demoRows]);
   useEffect(() => { if (demoRows && demoRows.length > 0) { var sample = demoRows[0]; console.log('[activity-debug] demoRows[0] keys:', Object.keys(sample).join(', ')); console.log('[activity-debug] Activity value:', sample['Activity']); console.log('[activity-debug] activityInfo.list:', activityInfo.list); } }, [demoRows, activityInfo]);
 
