@@ -487,7 +487,7 @@ function WeekView({weekStart,events,onEv,onDayClick}){
         {days.map(d=>(
           <div className={'cell'+(d===todayISO?' today':'')} key={'a'+d}>
             {allByDay(d).map((e,j)=>(
-              <div className="ev" key={j} style={{position:'static',background:colorFor(e.activity),cursor:'pointer'}} title={e.label} onClick={()=>onEv&&onEv(e)}>
+              <div className="ev" key={j} style={{position:'static',background:colorForBg(e.activity),borderLeftColor:colorFor(e.activity),cursor:'pointer'}} title={e.label} onClick={()=>onEv&&onEv(e)}>
                 <div className="t"><span className="evtitle">{e.label}</span><StatusChips ev={e}/></div>
               </div>
             ))}
@@ -510,7 +510,7 @@ function WeekView({weekStart,events,onEv,onDayClick}){
               const minHt=extra>0?34:20;
               const ht=Math.max((first.endMin-first.beginMin)*PX,minHt);
               return (
-                <div className="ev" key={gi} style={{top,height:ht,background:colorFor(first.activity),cursor:'pointer'}}
+                <div className="ev" key={gi} style={{top,height:ht,background:colorForBg(first.activity),borderLeftColor:colorFor(first.activity),cursor:'pointer'}}
                      onClick={()=>onEv&&onEv(first)}
                      title={first.label+' '+first.begin+'–'+first.end}>
                   <div className="t"><span className="evtime">{minToLabel(first.beginMin)}</span><span className="evtitle">{first.label}</span><StatusChips ev={first}/></div>
@@ -567,7 +567,7 @@ function DayView({dateISO,events,onEv}){
           <div className="lbl">all-day</div>
           <div className="cell">
             {allday.map((e,j)=>(
-              <div className="ev" key={j} style={{position:'static',background:colorFor(e.activity),cursor:'pointer',maxWidth:300}} onClick={()=>onEv&&onEv(e)}>
+              <div className="ev" key={j} style={{position:'static',background:colorForBg(e.activity),borderLeftColor:colorFor(e.activity),cursor:'pointer',maxWidth:300}} onClick={()=>onEv&&onEv(e)}>
                 <div className="t"><span className="evtitle">{e.label}</span><StatusChips ev={e}/></div>
                 <div className="s">{e.facility||e.activity}</div>
               </div>
@@ -590,7 +590,7 @@ function DayView({dateISO,events,onEv}){
             const left=info.col*colW+'%';
             const width=colW+'%';
             return (
-              <div className="ev" key={j} style={{top,height:ht,background:colorFor(e.activity),cursor:'pointer',left,width,right:'auto',paddingRight:4}}
+              <div className="ev" key={j} style={{top,height:ht,background:colorForBg(e.activity),borderLeftColor:colorFor(e.activity),cursor:'pointer',left,width,right:'auto',paddingRight:4}}
                    onClick={()=>onEv&&onEv(e)}
                    title={e.label+' '+e.begin+'–'+e.end}>
                 <div className="t"><span className="evtime">{minToLabel(e.beginMin)}</span><span className="evtitle">{e.label}</span><StatusChips ev={e}/></div>
@@ -708,7 +708,7 @@ function MonthView({events,monthDate,onMonthChange,onEv}){
               <div className="month-num">{cd.num}</div>
               {vis.map(function(e,i){
                 return (
-                  <div key={i} className="month-chip" style={{background:colorFor(e.activity)}}
+                  <div key={i} className="month-chip" style={{background:colorForBg(e.activity),borderLeftColor:colorFor(e.activity)}}
                        onClick={function(evt){evt.stopPropagation();setSelectedDay(cd.iso);}}
                        title={e.label+' '+(e.begin||'')}>
                     {e.begin?minToLabel(e.beginMin)+' ':''}{e.label.length>20?e.label.slice(0,18)+'\u2026':e.label}
