@@ -7993,6 +7993,13 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  { date: '2026-07-07', title: '🎨 Recess Components Calendar Restyle', items: [
+    '🎨 RECESS DESIGN LANGUAGE — Program calendar restyled to match Rec’s internal Recess Components Storybook. Pill-shaped segmented toggles (Week/Month/Day/List), rounded nav buttons, cleaner month grid with proper cell borders.',
+    '🌈 MUTED ACTIVITY COLORS — Event blocks now use soft pastel backgrounds (82% white + 18% activity color) with saturated left-border accents instead of fully saturated blocks. Easier on the eyes, still color-coded by activity.',
+    '🔴 TODAY INDICATOR — Black filled circle with white number for today’s date in both month and week views, matching Recess Storybook exactly.',
+    '🏠 WEEKEND TINT — Saturday/Sunday columns have a subtle warm background tint in month view.',
+    '📋 LIST VIEW — Clean card-style day groups with hover states and accent color bars.',
+  ]},
       { date: '2026-07-07', title: '\u26A1 Aggressive Cache Layer', items: [
         'TTLs bumped to 4\u20136h (from 30\u201360min) \u2014 5am daily warm fills all orgs/reports before business hours, data stays hot all day',
         'Cache-first health checks \u2014 warm cache = instant OK (zero Metabase hit). Only cold/stale entries probe the read replica',
