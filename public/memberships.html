@@ -362,6 +362,21 @@
     .ai-loading { padding: 24px 16px; text-align: center; }
     .ai-spinner { border:3px solid #e5e7eb; border-top:3px solid #6366f1; border-radius:50%; width:24px; height:24px; margin:0 auto; animation:ai-spin 1s linear infinite; }
     @keyframes ai-spin { to { transform:rotate(360deg); } }
+
+    /* ── Retention Tab ── */
+    .ret-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 16px; }
+    .ret-kpi { background: #fff; border: 1px solid #e8e6e0; border-radius: 6px; padding: 12px 14px; }
+    .ret-kpi .rl { font-size: 10px; font-weight: 600; color: #888; text-transform: uppercase; letter-spacing: .4px; margin-bottom: 3px; }
+    .ret-kpi .rv { font-size: 20px; font-weight: 700; color: #111; font-variant-numeric: tabular-nums; }
+    .ret-kpi .rs { font-size: 10px; color: #999; margin-top: 2px; }
+    .ret-table-wrap { overflow-x: auto; margin-top: 16px; }
+    .ret-table { width: 100%; border-collapse: collapse; font-size: 10px; }
+    .ret-table th { padding: 5px 7px; text-align: right; font-weight: 600; color: #888; border-bottom: 1.5px solid #ddd; font-size: 9px; white-space: nowrap; }
+    .ret-table th:first-child { text-align: left; }
+    .ret-table td { padding: 5px 7px; text-align: right; border-bottom: 0.5px solid #eee; font-weight: 500; font-variant-numeric: tabular-nums; }
+    .ret-table td:first-child { text-align: left; font-weight: 600; color: #333; white-space: nowrap; }
+    .ret-table td:nth-child(2) { color: #666; }
+
     /* ── Report Tabs (FT-style) ── */
     .report-tabs { display: flex; gap: 0; border-bottom: 2px solid #e0ddd8; margin-bottom: 20px; }
     .report-tabs .tab-btn { padding: 10px 20px; font-size: 13px; font-weight: 600; font-family: inherit; background: none; border: none; border-bottom: 2px solid transparent; margin-bottom: -2px; cursor: pointer; color: #888; transition: color .15s, border-color .15s; }
@@ -513,6 +528,55 @@ function normalizeRow(raw) {
       };
     }
 
+
+    // ── Cohort retention computation ──
+    function buildCohorts(rows) {
+      var now = new Date();
+      var cohortMap = {};
+      rows.forEach(function(r) {
+        if (!r.createdAt) return;
+        var created = new Date(r.createdAt);
+        if (isNaN(created.getTime())) return;
+        var key = created.getFullYear() + '-' + String(created.getMonth()+1).padStart(2,'0');
+        if (!cohortMap[key]) cohortMap[key] = [];
+        var endMs;
+        if (r.status === 'active') {
+          endMs = now.getTime();
+        } else if (r.canceledAt) {
+          endMs = new Date(r.canceledAt).getTime();
+          if (isNaN(endMs)) endMs = now.getTime();
+        } else if (r.endDate) {
+          endMs = new Date(r.endDate).getTime();
+          if (isNaN(endMs)) endMs = now.getTime();
+        } else {
+          endMs = created.getTime();
+        }
+        var survivalMonths = Math.max(0, (endMs - created.getTime()) / (1000*60*60*24*30.44));
+        cohortMap[key].push({ created: created, survivalMonths: survivalMonths, status: r.status });
+      });
+
+      var keys = Object.keys(cohortMap).sort();
+      if (keys.length > 12) keys = keys.slice(-12);
+
+      return keys.map(function(key) {
+        var members = cohortMap[key];
+        var size = members.length;
+        var retention = [100];
+        var monthsSinceStart = (now.getTime() - new Date(key + '-01').getTime()) / (1000*60*60*24*30.44);
+        for (var m = 1; m <= 12; m++) {
+          if (m > monthsSinceStart + 0.5) {
+            retention.push(null);
+          } else {
+            var alive = members.filter(function(mb){ return mb.survivalMonths >= m; }).length;
+            retention.push(Math.round(alive / size * 100));
+          }
+        }
+        var parts = key.split('-');
+        var label = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][parseInt(parts[1])-1] + ' ' + parts[0];
+        return { key: key, label: label, size: size, retention: retention };
+      });
+    }
+
     // ── MultiSelect component (mirrors GL Locations pattern) ──
     function MultiSelect({ label, options, selected, onChange, allowAll = true }) {
       const [open, setOpen] = useState(false);
@@ -620,6 +684,78 @@ function normalizeRow(raw) {
         if (typeof av === 'number' && typeof bv === 'number') return (av - bv) * mult;
         return String(av || '').localeCompare(String(bv || '')) * mult;
       });
+    }
+
+    // ── Retention Chart Component ──
+    var RET_COLORS = ['#e34948','#eb6834','#eda100','#008300','#1baf7a','#2a78d6','#4a3aa7','#e87ba4','#1d9e75','#d85a30','#d4537e','#639922'];
+
+    function RetentionChart({ cohorts }) {
+      var canvasRef = useRef(null);
+      var chartRef = useRef(null);
+
+      useEffect(function() {
+        if (!canvasRef.current || !cohorts || cohorts.length === 0) return;
+        if (chartRef.current) chartRef.current.destroy();
+
+        var labels = ['0'];
+        for (var i = 1; i <= 12; i++) labels.push(String(i));
+
+        var datasets = cohorts.map(function(c, idx) {
+          var color = RET_COLORS[idx % RET_COLORS.length];
+          return {
+            label: c.label + ' (' + c.size + ')',
+            data: c.retention.map(function(v) { return v; }),
+            borderColor: color,
+            backgroundColor: color + '18',
+            borderWidth: 2,
+            pointRadius: 3,
+            pointHoverRadius: 5,
+            pointBackgroundColor: color,
+            pointBorderColor: '#fff',
+            pointBorderWidth: 2,
+            tension: 0.3,
+            fill: false,
+            spanGaps: false,
+          };
+        });
+
+        chartRef.current = new Chart(canvasRef.current, {
+          type: 'line',
+          data: { labels: labels, datasets: datasets },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+              legend: { display: true, position: 'bottom', labels: { boxWidth: 10, padding: 12, font: { size: 10 } } },
+              tooltip: {
+                callbacks: {
+                  title: function(items) { return 'Month ' + items[0].label; },
+                  label: function(item) { return item.dataset.label + ': ' + item.raw + '% retained'; }
+                }
+              }
+            },
+            scales: {
+              y: {
+                min: 0, max: 100,
+                grid: { color: '#e1e0d9' },
+                border: { color: '#e1e0d9' },
+                ticks: { color: '#898781', font: { size: 10 }, callback: function(v) { return v + '%'; } }
+              },
+              x: {
+                title: { display: true, text: 'Months since signup', color: '#898781', font: { size: 10 } },
+                grid: { display: false },
+                border: { color: '#e1e0d9' },
+                ticks: { color: '#898781', font: { size: 10 } }
+              }
+            }
+          }
+        });
+
+        return function() { if (chartRef.current) chartRef.current.destroy(); };
+      }, [cohorts]);
+
+      return <div style={{position:'relative',height:300,marginBottom:16}}><canvas ref={canvasRef}></canvas></div>;
     }
 
     function App() {
@@ -1369,7 +1505,7 @@ function normalizeRow(raw) {
                 {loading ? <><span className="btn-spinner" />Loading…</> : '▶ Run Report'}
               </button>
 
-              {activeTab === 'memberships' && <React.Fragment>
+              {(activeTab === 'memberships') && <React.Fragment>
               <div className="divider" />
 
               <MultiSelect
@@ -1416,7 +1552,7 @@ function normalizeRow(raw) {
                 ))}
               </div>
               </React.Fragment>}
-              {activeTab === 'checkins' && <span className="toolbar-spacer" />}
+              {(activeTab === 'checkins' || activeTab === 'retention') && <span className="toolbar-spacer" />}
 
               <button onClick={printPage} title="Print">🖨️ Print</button>
               <button onClick={exportExcel} title="Excel">📊 Excel</button>
@@ -1446,6 +1582,7 @@ function normalizeRow(raw) {
                 <div className="date-range">
                   {activeTab === 'memberships' && <span>{filtered.length.toLocaleString()} memberships · {summary.total.toLocaleString()} after filters</span>}
                   {activeTab === 'checkins' && ciRows && <span>{ciRows.length.toLocaleString()} check-ins</span>}
+                  {activeTab === 'retention' && <span>Cohort retention analysis</span>}
                 </div>
               </div>
             </div>
@@ -1458,6 +1595,9 @@ function normalizeRow(raw) {
               <button className={'tab-btn' + (activeTab === 'checkins' ? ' active' : '')} onClick={function(){ setActiveTab('checkins'); if (!ciRows) fetchCheckins(startDate, endDate); }}>
                 ✅ Check-Ins
                 {ciRows && ciRows.length > 0 && <span className="tab-badge">{ciRows.length.toLocaleString()}</span>}
+              </button>
+              <button className={'tab-btn' + (activeTab === 'retention' ? ' active' : '')} onClick={function(){ setActiveTab('retention'); }}>
+                📈 Retention
               </button>
             </div>
 
@@ -1539,6 +1679,62 @@ function normalizeRow(raw) {
                 );
               })()}
               {!ciLoading && (!ciRows || ciRows.length === 0) && !ciLoading && <div style={{textAlign:'center',padding:40,color:'#999'}}>Click Run Report to load check-in data</div>}
+            </div>
+          )}
+
+          {activeTab === 'retention' && (
+            <div style={{maxWidth:1100,margin:'0 auto'}}>
+              {(() => {
+                var cohorts = buildCohorts(data);
+                if (!cohorts || cohorts.length === 0) return <div style={{textAlign:'center',padding:40,color:'#999'}}>Not enough membership data to build cohorts. Need memberships with Created At dates.</div>;
+
+                var retAt6 = cohorts.filter(function(c){ return c.retention[6] !== null; });
+                var avg6 = retAt6.length > 0 ? Math.round(retAt6.reduce(function(s,c){ return s + c.retention[6]; }, 0) / retAt6.length) : null;
+                var best6 = retAt6.length > 0 ? retAt6.reduce(function(a,b){ return (b.retention[6]||0) > (a.retention[6]||0) ? b : a; }) : null;
+                var worst6 = retAt6.length > 0 ? retAt6.reduce(function(a,b){ return (b.retention[6]||0) < (a.retention[6]||0) ? b : a; }) : null;
+                var m1drops = cohorts.filter(function(c){ return c.retention[1] !== null; });
+                var avgM1drop = m1drops.length > 0 ? Math.round(m1drops.reduce(function(s,c){ return s + (100 - c.retention[1]); },0) / m1drops.length) : null;
+
+                return (
+                  <React.Fragment>
+                    <div className="ret-kpis">
+                      {avg6 !== null && <div className="ret-kpi"><div className="rl">Avg 6-month retention</div><div className="rv">{avg6}%</div><div className="rs">{retAt6.length} cohorts measured</div></div>}
+                      {best6 && <div className="ret-kpi"><div className="rl">Best cohort</div><div className="rv" style={{color:'#10b981'}}>{best6.label}</div><div className="rs">{best6.retention[6]}% at 6 months ({best6.size} members)</div></div>}
+                      {worst6 && <div className="ret-kpi"><div className="rl">Worst cohort</div><div className="rv" style={{color:'#ef4444'}}>{worst6.label}</div><div className="rs">{worst6.retention[6]}% at 6 months ({worst6.size} members)</div></div>}
+                      {avgM1drop !== null && <div className="ret-kpi"><div className="rl">Avg month-1 churn</div><div className="rv">{avgM1drop}%</div><div className="rs">Biggest drop-off window</div></div>}
+                    </div>
+
+                    <RetentionChart cohorts={cohorts} />
+
+                    <div className="ret-table-wrap">
+                      <table className="ret-table">
+                        <thead><tr><th>Cohort</th><th>Size</th>{Array.from({length:12}, function(_,i){ return <th key={i}>M{i+1}</th>; })}</tr></thead>
+                        <tbody>
+                          {cohorts.map(function(c) {
+                            return (
+                              <tr key={c.key}>
+                                <td>{c.label}</td>
+                                <td>{c.size.toLocaleString()}</td>
+                                {Array.from({length:12}, function(_,i) {
+                                  var val = c.retention[i+1];
+                                  if (val === null) return <td key={i} style={{color:'#ddd'}}>-</td>;
+                                  var bg, fg;
+                                  if (val >= 70) { bg = '#dcfce7'; fg = '#166534'; }
+                                  else if (val >= 50) { bg = '#dbeafe'; fg = '#1e40af'; }
+                                  else if (val >= 30) { bg = '#fef3c7'; fg = '#92400e'; }
+                                  else { bg = '#fee2e2'; fg = '#991b1b'; }
+                                  return <td key={i} style={{background:bg,color:fg}}>{val}%</td>;
+                                })}
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                    <div style={{fontSize:9,color:'#aaa',textAlign:'center',marginTop:6}}>Green = healthy retention · Blue = moderate · Amber = caution · Red = high churn</div>
+                  </React.Fragment>
+                );
+              })()}
             </div>
           )}
 
