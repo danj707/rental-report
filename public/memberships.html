@@ -1596,7 +1596,21 @@ function normalizeRow(raw) {
                 ✅ Check-Ins
                 {ciRows && ciRows.length > 0 && <span className="tab-badge">{ciRows.length.toLocaleString()}</span>}
               </button>
-              <button className={'tab-btn' + (activeTab === 'retention' ? ' active' : '')} onClick={function(){ setActiveTab('retention'); }}>
+              <button className={'tab-btn' + (activeTab === 'retention' ? ' active' : '')} onClick={function(){
+                  setActiveTab('retention');
+                  // Auto-expand to 12 months for meaningful cohort data
+                  var now = new Date();
+                  var start12 = new Date(now.getFullYear() - 1, now.getMonth(), 1);
+                  var end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+                  var s = toISO(start12);
+                  var e = toISO(end);
+                  if (startDate > s || endDate < e) {
+                    setStartDate(s);
+                    setEndDate(e);
+                    setActiveRange(null);
+                    fetchData(s, e);
+                  }
+                }}>
                 📈 Retention
               </button>
             </div>
@@ -1686,7 +1700,7 @@ function normalizeRow(raw) {
             <div style={{maxWidth:1100,margin:'0 auto'}}>
               {(() => {
                 var cohorts = buildCohorts(data);
-                if (!cohorts || cohorts.length === 0) return <div style={{textAlign:'center',padding:40,color:'#999'}}>Not enough membership data to build cohorts. Need memberships with Created At dates.</div>;
+                if (!cohorts || cohorts.length === 0) return <div style={{textAlign:'center',padding:40,color:'#999'}}>Loading membership data\u2026 The Retention tab needs 12+ months of data. Dates have been auto-expanded \u2014 click Run Report if data hasn\u2019t loaded.</div>;
 
                 var retAt6 = cohorts.filter(function(c){ return c.retention[6] !== null; });
                 var avg6 = retAt6.length > 0 ? Math.round(retAt6.reduce(function(s,c){ return s + c.retention[6]; }, 0) / retAt6.length) : null;
