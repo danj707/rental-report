@@ -7957,6 +7957,7 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  { date: '2026-07-06', title: 'Cohort Retention Tab \uD83D\uDCC8', items: ['New Retention tab on Memberships report with cohort survival curves.', 'Groups members by signup month, tracks % still active at 1-12 month intervals.', 'Chart.js line chart + color-coded retention table (green/blue/amber/red).', 'KPI cards: avg 6-month retention, best/worst cohort, month-1 churn rate.', 'Pure client-side computation from existing membership data \u2014 no new API calls.'] },
   { date: '2026-07-06', title: 'Memberships Check-Ins Tab \u2705', items: ['Moved Check-Ins to proper FT-style underline tabs below toolbar (not in toolbar).', 'Shared report header and footer between Memberships and Check-Ins tabs.', 'Membership-specific filters hidden when on Check-Ins tab.', 'Added CSS for check-in dashboard components (KPI cards, bar charts, data table).'] },
   { date: '2026-07-06', title: 'Check-Ins Data \u2705', items: ['Added shared check-ins Metabase question (574324e0) for membership/pass check-in analytics tab.'] },
   { date: '2026-07-06', title: 'Niagara Falls Rental Calendar \u26FA', items: ['Enabled rental calendar report card for Niagara Falls demo org.'] },
