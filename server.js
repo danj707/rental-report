@@ -868,7 +868,7 @@ function writeJSON(file, data) {
 }
 
 // ── Feature Flags ────────────────────────────────────────────────────
-const DEFAULT_FLAGS = { emailSubscriptions: false, cachingEnabled: false };
+const DEFAULT_FLAGS = { emailSubscriptions: false, cachingEnabled: true };
 function getFlags() { return Object.assign({}, DEFAULT_FLAGS, readJSON(FLAGS_FILE, {})); }
 function setFlag(key, value) { const f = getFlags(); f[key] = value; writeJSON(FLAGS_FILE, f); return f; }
 
