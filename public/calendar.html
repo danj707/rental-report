@@ -83,6 +83,8 @@
   .chip{display:inline-block;border-radius:999px;padding:0 6px;font-size:10px;font-weight:700;background:rgba(0,0,0,.08);color:var(--ink)}
   .chip.full{background:#1a1a1a;color:#fff}
   .chip.wait{background:#FEF3C7;color:#92400E;border:1px solid #F59E0B}
+  .chip.closed{background:#FEE2E2;color:#991B1B;border:1px solid #F87171}
+  .chip.open-reg{background:#D1FAE5;color:#065F46;border:1px solid #34D399}
   /* +N more chip (inline inside event) */
   .more-chip{display:inline-block;border-radius:999px;padding:1px 7px;margin-top:1px;
     font-size:10px;font-weight:700;color:#1f2430;background:rgba(255,255,255,.88);
@@ -324,6 +326,7 @@ function normalizeRow(r){
     url: pick(r,['Section URL','Url','url','sectionUrl']),
     full: status.indexOf('full')>=0 || status.indexOf('capacity')>=0,
     waitlist: status.indexOf('wait')>=0,
+    closed: status.indexOf('closed')>=0,
     total: pick(r,['price','Price','Total','total']),
     description: stripHtml(pick(r,['Description','description'])),
   };
@@ -422,6 +425,7 @@ function StatusChips({ev}){
   return (<React.Fragment>
     {ev.full && <span className="chip full">Full</span>}
     {ev.waitlist && <span className="chip wait">Waitlist</span>}
+    {ev.closed && !ev.full && <span className="chip closed">Closed</span>}
   </React.Fragment>);
 }
 
@@ -807,7 +811,7 @@ function DayDetailPopup({date,events,onEv,onClose}){
                         </div>
                         <div className="dp-loc">{[e.activity,e.facility].filter(Boolean).join(' \u00b7 ')}</div>
                         {e.description && <div className="dp-meta">{e.description.length>80?e.description.slice(0,77)+'\u2026':e.description}</div>}
-                        {(e.full||e.waitlist) && <div className="dp-meta"><StatusChips ev={e}/></div>}
+                        {(e.full||e.waitlist||e.closed) && <div className="dp-meta"><StatusChips ev={e}/></div>}
                         {e.url && <a className="dp-link" href={e.url} target="_blank" rel="noopener" onClick={()=>trackClick(e)}>View Session &#8594;</a>}
                       </div>
                     </div>
@@ -844,7 +848,7 @@ function PopoverCard({ev,onClose}){
           {ev.activity && <div className="pop-row"><span className="pop-lbl">Activity</span><span style={{whiteSpace:'normal',overflowWrap:'anywhere'}}>{ev.activity}</span></div>}
           {ev.description && <div className="pop-row"><span className="pop-lbl">Description</span><span style={{whiteSpace:'normal',overflowWrap:'anywhere',display:'-webkit-box',WebkitLineClamp:4,WebkitBoxOrient:'vertical',overflow:'hidden',fontSize:12,lineHeight:'1.45',color:'var(--ink)'}}>{ev.description}</span></div>}
           <div className="pop-row"><span className="pop-lbl">Price</span><span>{price}</span></div>
-          {(ev.full||ev.waitlist) && <div className="pop-row pop-chips"><StatusChips ev={ev}/></div>}
+          {(ev.full||ev.waitlist||ev.closed) && <div className="pop-row pop-chips"><StatusChips ev={ev}/></div>}
           {ev.url && <a className="pop-link" href={ev.url} target="_blank" rel="noopener" onClick={()=>trackClick(ev)}>View Session →</a>}
         </div>
       </div>
@@ -1066,7 +1070,7 @@ function App(){
   // Use wide-range options for dropdowns, fall back to current week if wide hasn't loaded yet
   const activities=allActivities.length>0?allActivities:[...new Set(rows.flatMap(e=>(e.activity||'').split(',').map(a=>a.trim())).filter(Boolean))].sort();
   const locations=allLocations.length>0?allLocations:[...new Set(rows.map(e=>e.location).filter(Boolean))].sort();
-  const filtered=useMemo(()=>rows.filter(e=>(!actFilter||(e.activity||'').split(',').some(a=>a.trim()===actFilter))&&(!locFilter||e.location===locFilter)&&(availFilter!=='open'||!e.full)&&(availFilter!=='waitlist'||e.waitlist)),[rows,actFilter,locFilter,availFilter]);
+  const filtered=useMemo(()=>rows.filter(e=>(!actFilter||(e.activity||'').split(',').some(a=>a.trim()===actFilter))&&(!locFilter||e.location===locFilter)&&(availFilter!=='open'||(!e.full&&!e.closed))&&(availFilter!=='waitlist'||e.waitlist)&&(availFilter!=='closed'||e.closed)),[rows,actFilter,locFilter,availFilter]);
 
   return (
     <div className="wrap">
@@ -1110,8 +1114,9 @@ function App(){
         </select>
         <select className="filter-sel" value={availFilter} onChange={e=>setAvailFilter(e.target.value)}>
           <option value="">All Availability</option>
-          <option value="open">Open Availability</option>
+          <option value="open">Open for Registration</option>
           <option value="waitlist">Waitlist Available</option>
+          <option value="closed">Registration Closed</option>
         </select>
         {(actFilter||locFilter||availFilter)&&<span className="filter-clear" onClick={()=>{setActFilter('');setLocFilter('');setAvailFilter('');}}>✕ Clear</span>}
       </div>
