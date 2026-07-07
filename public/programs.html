@@ -1053,7 +1053,7 @@ function App() {
     if (progs === demoStats.programs && !q) return demoStats; // no filter, use full stats
     var t=0,y=0,ad=0,sn=0,unk=0,gM=0,gF=0,gNB=0,gU=0,ft=0,hhs=new Set(),parts=new Set();
     // Re-aggregate from filtered demoRows for accurate unique counts
-    var fRows = q ? (fDemoRows||[]).filter(r => {var p=(r['Program']||'').toLowerCase();return p.includes(q);}) : demoRows||[];
+    var fRows = q ? (fDemoRows||[]).filter(r => {var p=(r['Program']||'').toLowerCase();return p.includes(q);}) : fDemoRows||[];
     fRows.forEach(r => {
       t++;
       var pid=r['Participant ID']||''; if(pid)parts.add(pid);
