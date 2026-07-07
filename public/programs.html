@@ -1548,14 +1548,24 @@ function App() {
             </label>
           </>
         )}
-        {activityInfo.list.length > 0 && (<React.Fragment>
+        {(() => {
+          if (!demoRows || demoRows.length === 0) return null;
+          var actMap = {};
+          for (var i = 0; i < demoRows.length; i++) {
+            var act = demoRows[i]['Activity'] || '';
+            if (act && act !== 'Uncategorized') actMap[act] = true;
+          }
+          var acts = Object.keys(actMap).sort();
+          if (acts.length === 0) return null;
+          return (<React.Fragment>
             <div className="divider" />
-            <select value={activityFilter} onChange={e => { setActivityFilter(e.target.value); setInsights(null); setInsightsMeta(null); }}
+            <select value={activityFilter} onChange={function(e) { setActivityFilter(e.target.value); setInsights(null); setInsightsMeta(null); }}
               style={{padding:'4px 8px',border:'1px solid rgba(255,255,255,.2)',borderRadius:4,background:'rgba(255,255,255,.1)',color:'#fff',fontSize:12,fontFamily:'inherit',outline:'none',cursor:'pointer',maxWidth:160}}>
-              <option value="" style={{color:'#333'}}>All Activities</option>
-              {activityInfo.list.map(a => <option key={a} value={a} style={{color:'#333'}}>{a}</option>)}
+              <option value="" style={{color:'#333'}}>All Activities ({acts.length})</option>
+              {acts.map(function(a) { return <option key={a} value={a} style={{color:'#333'}}>{a}</option>; })}
             </select>
-          </React.Fragment>)}
+          </React.Fragment>);
+        })()}
         <div className="divider" />
         <div style={{position:'relative',display:'flex',alignItems:'center'}}>
           <span style={{position:'absolute',left:8,color:'#666',fontSize:12,pointerEvents:'none'}}>🔍</span>
