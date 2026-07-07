@@ -77,24 +77,24 @@ const FROM_NAME      = process.env.FROM_NAME      || "rec.us Reports";
 
 
 // ── Metabase response cache ───────────────────────────────────────────
-const CACHE_TTL = 60 * 60 * 1000;  // 60-minute default TTL
+const CACHE_TTL = 4 * 60 * 60 * 1000;  // 4-hour default TTL — warmed at 5am, serves all day
 const REPORT_CACHE_TTL = {
-  facility: 2 * 60 * 60 * 1000,            // 2 hrs — schedule data
-  gl: 30 * 60 * 1000,                     // 30 min — daily transactions
-  roster: 30 * 60 * 1000,                 // 30 min — enrollments change
-  programs: 2 * 60 * 60 * 1000,           // 2 hrs — section-level revenue
-  memberships: 2 * 60 * 60 * 1000,        // 2 hrs
-  products: 2 * 60 * 60 * 1000,           // 2 hrs
-  fasttrack: 4 * 60 * 60 * 1000,          // 4 hrs — very stable
-  "court-utilization": 4 * 60 * 60 * 1000, // 4 hrs
-  "program-demographics": 4 * 60 * 60 * 1000, // 4 hrs
-  calendar: 30 * 60 * 1000,               // 30 min — schedule changes
-  historic: 2 * 60 * 60 * 1000,           // 2 hrs
-  "instructor-payout": 2 * 60 * 60 * 1000, // 2 hrs — section-level payout
-  "section-detail": 15 * 60 * 1000,          // 15 min — per-registration drill-down
+  facility: 4 * 60 * 60 * 1000,            // 4 hrs — warmed at 5am
+  gl: 2 * 60 * 60 * 1000,                 // 2 hrs — transactions update more often
+  roster: 2 * 60 * 60 * 1000,             // 2 hrs — enrollments change
+  programs: 4 * 60 * 60 * 1000,           // 4 hrs
+  memberships: 4 * 60 * 60 * 1000,        // 4 hrs
+  products: 4 * 60 * 60 * 1000,           // 4 hrs
+  fasttrack: 6 * 60 * 60 * 1000,          // 6 hrs — very stable
+  "court-utilization": 6 * 60 * 60 * 1000, // 6 hrs
+  "program-demographics": 6 * 60 * 60 * 1000, // 6 hrs
+  calendar: 2 * 60 * 60 * 1000,           // 2 hrs — schedule changes
+  historic: 6 * 60 * 60 * 1000,           // 6 hrs — rarely changes
+  "instructor-payout": 4 * 60 * 60 * 1000, // 4 hrs
+  "section-detail": 60 * 60 * 1000,       // 1 hr — drill-down still relatively fresh
 };
 const dataCache = new Map();
-const cacheStats = { hits: 0, misses: 0, prewarms: 0 };
+const cacheStats = { hits: 0, misses: 0, prewarms: 0, healthCacheHits: 0, healthProbes: 0 };
 
 // Long-lived cache for users report (refreshed daily by cron)
 const USERS_CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
@@ -142,14 +142,14 @@ function getStaleCached(orgSlug, reportType, exactKey) {
   return null;
 }
 
-// Prune expired entries every 30 minutes to prevent memory creep
+// Prune expired entries every 60 minutes — keep 2x TTL grace for stale fallback
 setInterval(() => {
   const now = Date.now();
   for (const [k, v] of dataCache) {
     const ttl = REPORT_CACHE_TTL[v.rt] || CACHE_TTL;
-    if (now - v.ts > ttl) dataCache.delete(k);
+    if (now - v.ts > ttl * 2) dataCache.delete(k);
   }
-}, 30 * 60 * 1000);
+}, 60 * 60 * 1000);
 
 // ── Org Pulse: monthly metrics from Metabase with month-over-month deltas ──
 const pulseCache = new Map();
@@ -757,6 +757,21 @@ async function runHealthCheck(forceAll, failuresOnly) {
     if (!existing.reports[storeSlug]) existing.reports[storeSlug] = {};
 
     const entry = { status: "ok", rows: 0, checkedAt: ts };
+
+    // Cache-first: if warm data exists, skip the Metabase probe entirely
+    const cacheKey = `${slug}:${rt}:`;
+    const cachedEntry = dataCache.get(cacheKey);
+    const ttl = REPORT_CACHE_TTL[rt] || CACHE_TTL;
+    if (cachedEntry && (now - cachedEntry.ts < ttl)) {
+      entry.rows = cachedEntry.data?.rows?.length || 0;
+      entry.source = "cache";
+      if (entry.rows === 0) entry.status = "empty";
+      cacheStats.healthCacheHits++;
+      existing.reports[storeSlug][rt] = Object.assign(entry, { tier: getTier(slug, rt) });
+      return;  // Zero Metabase hit
+    }
+
+    // Cache cold/stale — probe Metabase to verify card health
     try {
       const controller = new AbortController();
       const timeoutMs = org.healthTimeoutMs || 60000;
@@ -775,10 +790,23 @@ async function runHealthCheck(forceAll, failuresOnly) {
         const data = await resp.json();
         entry.rows = Array.isArray(data) ? data.length : 0;
         if (entry.rows === 0) entry.status = "empty";
+        // Opportunistic cache-fill: don’t waste the probe data
+        if (entry.rows > 0) {
+          const result = {
+            rows: data,
+            meta: { org_slug: slug, org_id: org.orgId, logo_url: org.logoUrl, report_type: rt, generated_at: new Date().toISOString() },
+          };
+          setCache(cacheKey, result, rt);
+          console.log(`[health] Opportunistic cache-fill ${slug}/${rt} (${data.length} rows)`);
+        }
       }
+      entry.source = "probe";
+      cacheStats.healthProbes++;
     } catch (err) {
       entry.status = "error";
       entry.error = err.name === "AbortError" ? `Timeout (${(org.healthTimeoutMs||60000)/1000}s)` : err.message;
+      entry.source = "probe";
+      cacheStats.healthProbes++;
     }
 
     entry.tier = getTier(slug, rt);
@@ -822,7 +850,11 @@ async function runHealthCheck(forceAll, failuresOnly) {
 
   healthCheckRunning = false;
   saveHealthResults(existing);
-  console.log(`[health] Done — ${newFailures.length} new failure(s), ${existing.failures.length} total failing`);
+  const runCacheHits = toCheck.filter(t => {
+    const s = t.shared ? "_shared" : t.slug;
+    return existing.reports[s]?.[t.rt]?.source === "cache";
+  }).length;
+  console.log(`[health] Done — ${newFailures.length} new failure(s), ${existing.failures.length} total failing | ${runCacheHits} cache-ok, ${toCheck.length - runCacheHits} probed`);
 
   // Email only for NEW failures (deduped)
   if (newFailures.length > 0) {
@@ -1581,6 +1613,7 @@ async function prewarmUsersCache() {
   }
   console.log("[users-cache] Pre-warm complete");
 }
+cron.schedule("50 4 * * *", () => { console.log("[cache] 4:50am daily warm starting\u2026"); prewarmCache(); }); // 4:50am comprehensive warm
 cron.schedule("0 5 * * *", prewarmUsersCache); // 5am daily
 cron.schedule("10 5 * * *", prewarmPulseCache); // 5:10am daily (after users cache is warm)
 cron.schedule("5 * * * *", () => runHealthCheck());  // every hour at :05, checks only what's due per tier
@@ -2917,7 +2950,8 @@ app.get("/:org/:report/api/data", resolveOrg, async (req, res) => {
     const cacheKey = `${orgSlug}:${reportType}:${paramStr}`;
 
     // Users report: check daily pre-warmed cache first
-    if (reportType === "users" && req.query._nocache !== "1") {
+    const forceRefresh = req.query._nocache === "1" || req.query._refresh === "1";
+    if (reportType === "users" && !forceRefresh) {
       const uc = getCachedUsers(orgSlug);
       if (uc) {
         console.log(`[users-cache] HIT ${orgSlug}/users (${uc.data.rows.length} rows, cached ${new Date(uc.ts).toISOString()})`);
@@ -2926,7 +2960,7 @@ app.get("/:org/:report/api/data", resolveOrg, async (req, res) => {
       }
     }
 
-    if (req.query._nocache !== "1") {
+    if (!forceRefresh) {
       const cached = getCached(cacheKey);
       if (cached) {
         console.log(`[cache] HIT ${orgSlug}/${reportType} (${dataCache.size} entries)`);
@@ -5347,6 +5381,8 @@ app.get("/api/admin/cache-stats", (req, res) => {
     misses: cacheStats.misses,
     hitRate: hitRate + '%',
     prewarms: cacheStats.prewarms,
+    healthCacheHits: cacheStats.healthCacheHits,
+    healthProbes: cacheStats.healthProbes,
     entries: entries.length,
     usersCache: usersCache.size,
     pulseCache: pulseCache.size,
@@ -7957,6 +7993,14 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+      { date: '2026-07-07', title: '\u26A1 Aggressive Cache Layer', items: [
+        'TTLs bumped to 4\u20136h (from 30\u201360min) \u2014 5am daily warm fills all orgs/reports before business hours, data stays hot all day',
+        'Cache-first health checks \u2014 warm cache = instant OK (zero Metabase hit). Only cold/stale entries probe the read replica',
+        'Health check probes now opportunistically warm the cache so the data isn\u2019t wasted',
+        'Prune interval relaxed: expired entries kept at 2\u00D7 TTL as stale fallback if Metabase goes down',
+        '_refresh=1 URL param to force re-fetch and re-cache (alongside existing _nocache=1)',
+        '4:50am comprehensive warm cron \u2014 runs before users cache (5am) and pulse (5:10am)',
+      ]},
   { date: '2026-07-07', title: 'Activity Filter \u{1F3AF}', items: ['Activity dropdown in toolbar filters Revenue, Participants, Retention, and Fill Rate tabs.', 'Select an activity (Swimming, Camps, Dance, etc.) to see retention, re-engagement, and flow data scoped to that activity.', 'Activity column now sourced from Metabase program-demographics query (v3).'] },
   { date: '2026-07-07', title: 'Program Re-engagement \u2728', items: ['Cumulative re-engagement curves: flipped survival chart showing % of cohort that came back within N months.', 'Cross-activity flow matrix: shows participant overlap between activity categories (Swimming, Camps, etc).', 'Missed opportunities: flags large activities with <10% participant overlap \u2014 marketing targets.', 'Activity derived from program names until native Activity column added to Metabase.'] },
   { date: '2026-07-06', title: 'Cohort Retention Tab \uD83D\uDCC8', items: ['New Retention tab on Memberships report with cohort survival curves.', 'Groups members by signup month, tracks % still active at 1-12 month intervals.', 'Chart.js line chart + color-coded retention table (green/blue/amber/red).', 'KPI cards: avg 6-month retention, best/worst cohort, month-1 churn rate.', 'Pure client-side computation from existing membership data \u2014 no new API calls.'] },
