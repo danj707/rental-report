@@ -1165,6 +1165,7 @@
     .musco-btn{background:#fef9c3;color:#854d0e;border:1px solid #facc15;padding:5px 10px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;margin-left:8px;font-family:inherit;transition:all .15s}
     .musco-btn.active{background:#facc15;color:#422006;border-color:#eab308}
     .musco-btn:hover{background:#fde047}
+    .col-lighting{width:50px;text-align:center}
 
     body.print-mode .bt-filter { display: none; }
     .metrics-toggle { background: #f5f4f1; border: 1px solid #d1d5db; border-radius: 6px; padding: 6px 14px; cursor: pointer; color: #555; font-family: inherit; font-size: 12px; font-weight: 500; transition: all .15s; }
@@ -1336,6 +1337,10 @@ function normalizeRow(raw) {
     total:     raw['Total']     || raw['total']      || null,
     status:    raw['Status']    || raw['status']     || '',
     resId:     raw['Reservation ID'] || raw['reservation_id'] || raw['res_id'] || raw['id'] || '',
+    lighting:     raw['Lighting']      || '',
+    litFrom:      raw['Lit From']       || '',
+    litUntil:     raw['Lit Until']      || '',
+    lightingSync: raw['Lighting Sync']  || '',
   };
 }
 
@@ -1889,6 +1894,10 @@ function App() {
   const [showBookType, setShowBookType] = useState(() => {
     try { return localStorage.getItem('col_booktype') !== 'false'; } catch { return true; }
   });
+  const [showLighting, setShowLighting] = useState(() => {
+    try { return localStorage.getItem('col_lighting') === 'true'; } catch { return false; }
+  });
+  const [filterLighting, setFilterLighting] = useState(false);
   const [bookTypeFilter, setBookTypeFilter] = useState(params.book_type || 'all');
   const [showMetrics, setShowMetrics] = useState(() => {
     try { return localStorage.getItem('facility_metrics') === 'true'; } catch { return false; }
@@ -1906,6 +1915,7 @@ function App() {
   useEffect(() => { try { localStorage.setItem('col_link',      showLink);      } catch {} }, [showLink]);
   useEffect(() => { try { localStorage.setItem('col_resident',  showResident);  } catch {} }, [showResident]);
   useEffect(() => { try { localStorage.setItem('col_booktype',  showBookType);  } catch {} }, [showBookType]);
+  useEffect(() => { try { localStorage.setItem('col_lighting',   showLighting);   } catch {} }, [showLighting]);
 
   // ── Location filter state ────────────────────────────────────────
   const [allLocations,      setAllLocations]      = useState([]);
@@ -2116,6 +2126,8 @@ function App() {
     return [...items].sort();
   }, [rows]);
 
+  const hasLighting = useMemo(() => rows && rows.some(r => r.lighting === 'Yes'), [rows]);
+
   const filteredRows = useMemo(() => {
     if (!rows) return null;
     let result = rows.filter(r => !r.status || !/cancel/i.test(r.status));
@@ -2134,8 +2146,11 @@ function App() {
         return parts.some(p => selectedAddOns.has(p));
       });
     }
+    if (filterLighting) {
+      result = result.filter(r => r.lighting === 'Yes');
+    }
     return result;
-  }, [rows, selectedLocations, allLocations, selectedSites, allSites, bookTypeFilter, selectedAddOns, allAddOns]);
+  }, [rows, selectedLocations, allLocations, selectedSites, allSites, bookTypeFilter, selectedAddOns, allAddOns, filterLighting]);
 
   const grouped = useMemo(() => {
     if (!filteredRows) return null;
@@ -2230,6 +2245,7 @@ function App() {
     if (showNotes)     headers.push('Instructions', 'Notes', 'Add-ons');
     if (showResident)  headers.push('Resident?');
     if (showBookType)  headers.push('Booking Type');
+    if (showLighting)  headers.push('Lighting', 'Lit From', 'Lit Until');
 
     const dataRows = filteredRows.map(r => {
       const dp = (r.date || '').split('T')[0].split('-');
@@ -2245,6 +2261,7 @@ function App() {
       if (showNotes) { row.push(r.instructions || ''); row.push(r.notes || ''); row.push(r.addons || ''); }
       if (showResident) row.push(r.resident || '');
       if (showBookType) row.push(r.bookingType || '');
+      if (showLighting) { row.push(r.lighting || ''); row.push(r.litFrom || ''); row.push(r.litUntil || ''); }
       return row;
     });
 
@@ -2264,6 +2281,7 @@ function App() {
       ...(showNotes?[{wch:30},{wch:30},{wch:30}]:[]),
       ...(showResident?[{wch:10}]:[]),
       ...(showBookType?[{wch:14}]:[]),
+      ...(showLighting?[{wch:8},{wch:14},{wch:14}]:[]),
     ];
     if (showTotal) {
       const totalColIdx = headers.indexOf('Total');
@@ -2375,6 +2393,16 @@ function App() {
             />
           </>
         )}
+        {hasLighting && (
+          <>
+            <div className="divider" />
+            <button type="button" className={'musco-btn' + (filterLighting ? ' active' : '')}
+              onClick={() => setFilterLighting(!filterLighting)}
+              title={filterLighting ? 'Show all reservations' : 'Show only reservations with Musco lighting'}>
+              💡 {filterLighting ? 'Lit Only' : 'Lighting'}
+            </button>
+          </>
+        )}
 
         {rows && rows.some(r => r.bookingType && r.bookingType.trim()) && (
           <>
@@ -2437,6 +2465,10 @@ function App() {
                 <input type="checkbox" checked={showBookType} onChange={e => setShowBookType(e.target.checked)} />
                 Book Type
               </label>
+              {hasLighting && <label>
+                <input type="checkbox" checked={showLighting} onChange={e => setShowLighting(e.target.checked)} />
+                💡 Lighting
+              </label>}
             </div>
           </>
         )}
@@ -2671,6 +2703,7 @@ function App() {
                           <span className="col-purpose">Purpose</span>
                           {showResident  && <span className="col-resident">Resident?</span>}
                           {showBookType  && <span className="col-booktype">Book Type</span>}
+                          {showLighting  && <span className="col-lighting">💡 Lit</span>}
                           {showHeadCount && <span className="col-hcnt">Cnt</span>}
                           {showTotal     && <span className="col-total">Total</span>}
                           {showAddonFees && <span className="col-addon-fees">Add-On $</span>}
@@ -2692,6 +2725,7 @@ function App() {
                               <span className="cell col-purpose">{r.resName}</span>
                               {showResident  && <span className="cell col-resident">{r.resident}</span>}
                               {showBookType  && <span className="cell col-booktype">{r.bookingType}</span>}
+                              {showLighting  && <span className="cell col-lighting" title={r.lighting === 'Yes' ? (r.litFrom + ' \u2013 ' + r.litUntil) : ''}>{r.lighting === 'Yes' ? '\u2705' : ''}</span>}
                               {showHeadCount && <span className="cell col-hcnt">{r.headCount}</span>}
                               {showTotal     && <span className="cell col-total">{formatMoney(r.total)}</span>}
                               {showAddonFees && <span className="cell col-addon-fees">{formatMoney(r.addonFees)}</span>}
