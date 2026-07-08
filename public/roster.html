@@ -219,8 +219,10 @@
     .col-owner     { width: 130px; }
     .col-ownerph   { width: 108px; }
     .col-ownerem   { width: 155px; font-size: 10.5px; }
-    .col-emergency { width: 200px; font-size: 10.5px; white-space: normal; line-height: 1.3; }
-    .col-pickup    { width: 200px; font-size: 10.5px; white-space: normal; line-height: 1.3; }
+    .contacts-sub-row { padding: 2px 12px 6px 24px; font-size: 11px; color: #d1d5db; display: flex; gap: 24px; flex-wrap: wrap; border-bottom: 1px solid rgba(255,255,255,.04); }
+    .contacts-sub-row .contact-group { display: flex; gap: 4px; align-items: baseline; }
+    .contacts-sub-row .contact-label { font-weight: 700; color: #9ca3af; font-size: 10px; text-transform: uppercase; letter-spacing: .3px; }
+    .contacts-sub-row .contact-val { color: #e5e7eb; }
     .col-times     { width: 138px; }
     .col-status    { width: 76px; }
     .col-reg       { width: 82px; }
@@ -884,8 +886,6 @@ function App() {
         {cols.contact  && <><span className="cell col-phone">Phone</span><span className="cell col-email">Email</span></>}
         {cols.owner    && <span className="cell col-owner">Household Owner</span>}
         {cols.ownerContact && <><span className="cell col-ownerph">Owner Phone</span><span className="cell col-ownerem">Owner Email</span></>}
-        {cols.emergency && <span className="cell col-emergency">Emergency Contact</span>}
-        {cols.pickup    && <span className="cell col-pickup">Authorized Pickup</span>}
         {cols.times    && <span className="cell col-times">Start – End</span>}
         <span className="cell col-status">Status</span>
         {cols.registered && <span className="cell col-reg">Registered</span>}
@@ -918,8 +918,6 @@ function App() {
             <span className="cell col-ownerph">{formatPhone(r.ownerPhone)}</span>
             <span className="cell col-ownerem">{r.ownerEmail}</span>
           </>}
-          {cols.emergency && <span className="cell col-emergency">{r.emergencyContacts}</span>}
-          {cols.pickup    && <span className="cell col-pickup">{r.authorizedPickups}</span>}
           {cols.times && <span className="cell col-times" style={{fontSize:'10.5px'}}>
             {r.sessionStart && r.sessionEnd ? `${r.sessionStart} – ${r.sessionEnd}` : r.sessionStart || ''}
           </span>}
@@ -938,6 +936,22 @@ function App() {
                 </div>
               ))}
             </div>
+          </div>
+        )}
+        {((cols.emergency && r.emergencyContacts) || (cols.pickup && r.authorizedPickups)) && (
+          <div className="contacts-sub-row">
+            {cols.emergency && r.emergencyContacts && (
+              <div className="contact-group">
+                <span className="contact-label">🛑 Emergency:</span>
+                <span className="contact-val">{r.emergencyContacts}</span>
+              </div>
+            )}
+            {cols.pickup && r.authorizedPickups && (
+              <div className="contact-group">
+                <span className="contact-label">🚸 Pickup:</span>
+                <span className="contact-val">{r.authorizedPickups}</span>
+              </div>
+            )}
           </div>
         )}
       </>
