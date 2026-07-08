@@ -597,6 +597,8 @@ fs.mkdirSync(DATA_DIR, { recursive: true });
 const ORGS_FILE          = path.join(DATA_DIR, "orgs.json");
 const HOTDOG_CLAIMS_FILE = path.join(DATA_DIR, "hotdog_claims.json");
 const SUBS_FILE   = path.join(DATA_DIR, "subscriptions.json");
+const EMAIL_ENABLED_ORGS = new Set(["niagarafalls"]);
+const ALLOWED_EMAIL_DOMAINS = ["rec.us"];
 const LOG_FILE    = path.join(DATA_DIR, "send_log.json");
 const EVENTS_FILE = path.join(DATA_DIR, "events.jsonl");
 const SHOWCASE_FILE = path.join(DATA_DIR, "showcase.json");
@@ -900,7 +902,7 @@ function writeJSON(file, data) {
 }
 
 // ── Feature Flags ────────────────────────────────────────────────────
-const DEFAULT_FLAGS = { emailSubscriptions: false, cachingEnabled: true };
+const DEFAULT_FLAGS = { emailSubscriptions: true, cachingEnabled: true };
 function getFlags() { return Object.assign({}, DEFAULT_FLAGS, readJSON(FLAGS_FILE, {})); }
 function setFlag(key, value) { const f = getFlags(); f[key] = value; writeJSON(FLAGS_FILE, f); return f; }
 
@@ -2930,7 +2932,6 @@ app.get("/api/admin/wizard-log", (req, res) => {
 
 
 app.get("/:org/:report/api/data", resolveOrg, async (req, res) => {
-  res.set("Cache-Control", "no-store");
   try {
     const { orgConfig, orgSlug, reportType } = req;
     // GL: per-org UUID takes priority (e.g. Norman has custom gl_map); shared fallback.
@@ -3084,6 +3085,9 @@ app.post("/:org/admin/subscribe", (req, res) => {
   if (!ORGS[req.params.org]) return res.status(404).json({ error: "Unknown org" });
   const { email, reports, schedule, locationFilter, dateRange, reportParams } = req.body;
   if (!email || !reports?.length || !schedule) return res.status(400).json({ error: "email, reports, and schedule are required" });
+  const emailDomain = email.split("@")[1]?.toLowerCase();
+  if (!ALLOWED_EMAIL_DOMAINS.includes(emailDomain)) return res.status(403).json({ error: `Only ${ALLOWED_EMAIL_DOMAINS.join(", ")} email addresses are allowed` });
+  if (!EMAIL_ENABLED_ORGS.has(req.params.org)) return res.status(403).json({ error: "Email subscriptions are not enabled for this organization" });
   if (!["daily","weekly","monthly"].includes(schedule)) return res.status(400).json({ error: "schedule must be daily, weekly, or monthly" });
   const validReports = reports.filter(r => REPORT_TYPES.includes(r));
   if (!validReports.length) return res.status(400).json({ error: "No valid report types" });
@@ -4227,8 +4231,15 @@ app.post("/qbr/api/orgmap/refresh", express.json(), (req, res) => {
 
 
 app.get("/:org/admin", (req, res) => {
-  if (!ORGS[req.params.org]) return res.status(404).send("Unknown org");
-  res.sendFile(path.join(__dirname, "public", "admin.html"));
+  const slug = req.params.org;
+  if (!ORGS[slug]) return res.status(404).send("Unknown org");
+  const adminConfig = {
+    orgSlug: slug,
+    emailEnabled: EMAIL_ENABLED_ORGS.has(slug) && getFlags().emailSubscriptions,
+    allowedDomains: ALLOWED_EMAIL_DOMAINS,
+  };
+  const html = require("fs").readFileSync(path.join(__dirname, "public", "admin.html"), "utf8");
+  res.send(html.replace("<head>", `<head><script>window.ADMIN_CONFIG=${JSON.stringify(adminConfig)};</script>`));
 });
 
 app.get("/:org/metrics", (req, res) => {
@@ -7994,7 +8005,13 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
-  { date: '2026-07-07', title: '🛑 Roster: Emergency Contacts + Authorized Pickups', items: [
+  { date: '2026-07-08', title: '\u{1F4E7} Email Subscriptions — Niagara Falls Pilot', items: [
+    'Email subscription admin enabled for Niagara Falls (gated per-org via EMAIL_ENABLED_ORGS).',
+    'Only @rec.us email addresses allowed (server-side + client-side validation).',
+    'Admin page shows locked state for non-enabled orgs with contact link.',
+    'Feature flag emailSubscriptions flipped to true; per-org gating handles restriction.',
+  ]},
+  { date: '2026-07-07', title: '\U0001F6D1 Roster: Emergency Contacts + Authorized Pickups', items: [
     'Emergency Contact and Authorized Pickup columns added to class rosters.',
     'Data sourced from household_contact_user + household_contact tables via LATERAL joins.',
     'Both columns on by default, toggleable. Pipe-delimited format: Name (relationship) Phone.',
