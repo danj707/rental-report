@@ -260,7 +260,7 @@
 
       <div class="form-group">
         <label>Email Address</label>
-        <input type="email" id="email-input" placeholder="name@example.com" />
+        <input type="email" id="email-input" placeholder="name@rec.us" />
       </div>
 
       <div class="form-group">
@@ -335,6 +335,9 @@
 </div>
 
 <script>
+// ── Config injected by server ─────────────────────────────────────────
+const ADMIN_CFG = window.ADMIN_CONFIG || {};
+
 // ── Derive org slug from URL ──────────────────────────────────────────
 const orgSlug = window.location.pathname.split('/').filter(Boolean)[0];
 document.getElementById('org-label').textContent = orgSlug.charAt(0).toUpperCase() + orgSlug.slice(1);
@@ -342,6 +345,20 @@ document.getElementById('report-links').innerHTML = `
   <a href="/${orgSlug}/facility${TOKEN_QS}">Facility Report</a>
   <a href="/${orgSlug}/gl${TOKEN_QS}">GL Rollup</a>
 `;
+
+// ── Email gating ──────────────────────────────────────────────────────
+if (!ADMIN_CFG.emailEnabled) {
+  document.querySelector('.container').innerHTML = `
+    <div style="grid-column:1/-1;text-align:center;padding:60px 20px">
+      <div style="font-size:48px;margin-bottom:16px">🔒</div>
+      <h2 style="font-size:18px;font-weight:600;margin-bottom:8px">Email Subscriptions</h2>
+      <p style="color:#666;font-size:13px;max-width:400px;margin:0 auto">
+        Email subscriptions are not yet enabled for this organization.<br>
+        Contact <a href="mailto:dan@rec.us" style="color:#3b82f6">dan@rec.us</a> to get started.
+      </p>
+    </div>
+  `;
+}
 
 // ── Schedule radio buttons ────────────────────────────────────────────
 let selectedSchedule = 'weekly';
@@ -458,6 +475,9 @@ async function subscribe() {
   const alert    = document.getElementById('form-alert');
 
   if (!email) return showAlert(alert, 'error', 'Please enter an email address.');
+  const allowedDomains = ADMIN_CFG.allowedDomains || ['rec.us'];
+  const domain = email.split('@')[1]?.toLowerCase();
+  if (!allowedDomains.includes(domain)) return showAlert(alert, 'error', 'Only ' + allowedDomains.join(', ') + ' email addresses are allowed.');
   if (!reports.length) return showAlert(alert, 'error', 'Select at least one report.');
 
   const btn = document.getElementById('subscribe-btn');
