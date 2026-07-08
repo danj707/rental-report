@@ -7993,6 +7993,16 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  { date: '2026-07-07', title: '💡 Musco Lighting on Facility Report', items: [
+    'Lighting columns (Lit/From/Until/Sync) wired into facility report from Metabase reservation_lighting_schedule join.',
+    'Amber 💡 Lighting filter button in toolbar — click to show only lit reservations.',
+    'Column toggle checkbox (off by default). When enabled, shows \u2705 on lit rows with tooltip showing Lit From\u2013Until times.',
+    'Lighting data included in Excel export when column is toggled on.',
+  ]},
+  { date: '2026-07-07', title: '\u{1F3AF} Activity Filter All Tabs', items: [
+    'Activity dropdown now filters Participants, Fill Rate, Retention, and Re-engagement tabs (was only Revenue).',
+    'Fixed: fDemoRows activity-filtered memo was defined but never consumed by downstream useMemos.',
+  ]},
   { date: '2026-07-07', title: '🎨 Recess Components Calendar Restyle', items: [
     '🎨 RECESS DESIGN LANGUAGE — Program calendar restyled to match Rec’s internal Recess Components Storybook. Pill-shaped segmented toggles (Week/Month/Day/List), rounded nav buttons, cleaner month grid with proper cell borders.',
     '🌈 MUTED ACTIVITY COLORS — Event blocks now use soft pastel backgrounds (82% white + 18% activity color) with saturated left-border accents instead of fully saturated blocks. Easier on the eyes, still color-coded by activity.',
