@@ -408,7 +408,11 @@ function ChatApp() {
               <div className="welcome-icon"><img src={REC_LOGO} style={{width:52,height:52,borderRadius:10}} alt="rec" /></div>
               <div className="welcome-title">Ask anything about your data</div>
               <div className="welcome-sub">
-                Rec AI has access to your {reports.length > 0 ? reports.length + ' report' + (reports.length !== 1 ? 's' : '') : 'reports'} — facility schedules, revenue, programs, and more. Ask a question or try one of these.
+                Rec AI has access to your {reports.length > 0 ? reports.length + ' report' + (reports.length !== 1 ? 's' : '') : 'reports'} — {(() => {
+                  var labels = { facility: 'facility schedules', gl: 'revenue', programs: 'programs', products: 'product sales', memberships: 'memberships', 'court-utilization': 'court usage', roster: 'class rosters', fasttrack: 'fast track', calendar: 'calendar', historic: 'historic buildings', users: 'user data' };
+                  var named = reports.map(function(r) { return labels[r] || r; }).slice(0, 3);
+                  return named.join(', ') + (reports.length > 3 ? ', and more' : '');
+                })()} . Ask a question or try one of these.
               </div>
               <div className="suggestions">
                 {SUGGESTIONS.map(function(s, i) {
