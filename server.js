@@ -27,10 +27,9 @@ const otelApi = require("@opentelemetry/api");
 const { AnthropicInstrumentation } = require("@arizeai/openinference-instrumentation-anthropic");
 const AnthropicSDK = require("@anthropic-ai/sdk");
 
+// Anthropic instrumentation DISABLED — .withResponse() incompatible with current SDK
 // const _anthropicInstrumentation = new AnthropicInstrumentation();
 // _anthropicInstrumentation.manuallyInstrument(AnthropicSDK);
-// DISABLED: instrumentation calls .withResponse() which is incompatible with current SDK
-const _anthropicInstrumentation = { instrumentationScope: { name: "disabled" } };
 
 const _langfuseEnabled = !!(process.env.LANGFUSE_PUBLIC_KEY && process.env.LANGFUSE_SECRET_KEY);
 let _otelSdk = null;
@@ -46,7 +45,7 @@ if (_langfuseEnabled) {
   });
   _otelSdk = new NodeSDK({
     spanProcessors: [_langfuseProcessor],
-    instrumentations: [_anthropicInstrumentation],
+    instrumentations: [],  // Anthropic instrumentation disabled — see above
   });
   _otelSdk.start();
   console.log("[langfuse] OpenTelemetry tracing enabled — baseUrl:", process.env.LANGFUSE_BASE_URL || "(default US)");
