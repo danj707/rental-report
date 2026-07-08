@@ -2453,13 +2453,15 @@ async function fetchOrgChatData(orgSlug, orgConfig) {
   const hit = _chatDataCache.get(orgSlug);
   if (hit && Date.now() - hit.ts < CHAT_DATA_TTL) return hit.data;
 
-  const reports = REPORT_TYPES.filter(r => orgConfig[r]?.mbUuid);
+  const reports = REPORT_TYPES.filter(r => orgConfig[r]?.mbUuid || SHARED_UUIDS[r]);
   const results = {};
 
   await Promise.allSettled(reports.map(async (rt) => {
     try {
-      const uuid = orgConfig[rt].mbUuid;
-      const url = `${METABASE_URL}/api/public/card/${uuid}/query/json`;
+      const uuid = orgConfig[rt]?.mbUuid || SHARED_UUIDS[rt];
+      const isShared = !orgConfig[rt]?.mbUuid && !!SHARED_UUIDS[rt];
+      const orgIdParam = isShared && orgConfig.orgId ? `?parameters=${encodeURIComponent(JSON.stringify([{type:"category",target:["variable",["template-tag","org_id"]],value:orgConfig.orgId}]))}` : "";
+      const url = `${METABASE_URL}/api/public/card/${uuid}/query/json${orgIdParam}`;
       const resp = await fetch(url, { signal: AbortSignal.timeout(12000) });
       if (!resp.ok) return;
       const rows = await resp.json();
@@ -2568,6 +2570,9 @@ app.post("/:org/chat/api/message", async (req, res) => {
     const orgName = org.displayName || `${orgSlugTitle} Parks & Recreation`;
     const data = await fetchOrgChatData(slug, org);
 
+    const _dbgKeys = Object.keys(data);
+    const _dbgInfo = _dbgKeys.length > 0 ? _dbgKeys.map(rt => data[rt].label + " (" + data[rt].totalRows + " rows)").join(", ") : "NO REPORTS LOADED";
+    res.write("data: " + JSON.stringify({ debug: "Loaded: " + _dbgInfo }) + "\n\n");
     res.write("data: [DATA_READY]\n\n");
 
     const systemPrompt = buildChatSystemPrompt(orgName, data);
