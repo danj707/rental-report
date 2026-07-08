@@ -757,6 +757,21 @@
     document.getElementById('cards').appendChild(wizCard);
   }
 
+  /* ── Email Subscriptions card (gated per-org) ── */
+  if (cfg.emailEnabled) {
+    var emailCard = document.createElement('a');
+    emailCard.href = '/' + slug + '/admin' + tokenQS;
+    emailCard.className = 'card';
+    emailCard.style.cssText = 'border:1.5px solid #bbf7d0;background:linear-gradient(135deg,#f0fdf4 0%,#dcfce7 100%)';
+    emailCard.innerHTML = '<div class="card-icon">📧</div>'
+      + '<div class="card-body">'
+        + '<div class="card-label" style="color:#166534">Email Subscriptions</div>'
+        + '<div class="card-desc">Manage scheduled report emails for your team</div>'
+      + '</div>'
+      + '<div class="card-right"><div class="card-arrow">→</div></div>';
+    document.getElementById('cards').appendChild(emailCard);
+  }
+
   /* ── Footer ── */
   document.getElementById('footer').textContent = 'rec.us · ' + slug;
 </script>
