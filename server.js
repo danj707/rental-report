@@ -599,6 +599,7 @@ const HOTDOG_CLAIMS_FILE = path.join(DATA_DIR, "hotdog_claims.json");
 const SUBS_FILE   = path.join(DATA_DIR, "subscriptions.json");
 const EMAIL_ENABLED_ORGS = new Set(["niagarafalls"]);
 const ALLOWED_EMAIL_DOMAINS = ["rec.us"];
+const EMAIL_SUBSCRIBABLE_REPORTS = new Set(["facility", "gl"]);
 const LOG_FILE    = path.join(DATA_DIR, "send_log.json");
 const EVENTS_FILE = path.join(DATA_DIR, "events.jsonl");
 const SHOWCASE_FILE = path.join(DATA_DIR, "showcase.json");
@@ -1302,7 +1303,7 @@ const db = {
   getAllBySchedule(schedule) {
     return readJSON(SUBS_FILE, []).filter(s => s.active && s.schedule === schedule);
   },
-  upsertSubscription(org, email, reports, schedule, locationFilter, dateRange, reportParams) {
+  upsertSubscription(org, email, reports, schedule, locationFilter, dateRange, reportParams, reportDateRanges) {
     const subs = readJSON(SUBS_FILE, []);
     const now  = new Date().toISOString();
     const params = (reportParams && typeof reportParams === "object" && !Array.isArray(reportParams)) ? reportParams : {};
@@ -1318,9 +1319,9 @@ const db = {
       return JSON.stringify(sp) === paramsKey;
     });
     if (idx >= 0) {
-      subs[idx] = { ...subs[idx], reports, schedule, locationFilter: locationFilter || null, dateRange: dateRange || null, reportParams: params, active: 1, updated_at: now };
+      subs[idx] = { ...subs[idx], reports, schedule, locationFilter: locationFilter || null, dateRange: dateRange || null, reportParams: params, reportDateRanges: reportDateRanges || {}, active: 1, updated_at: now };
     } else {
-      subs.push({ id: Date.now() + Math.floor(Math.random() * 1000), org, email, reports, schedule, locationFilter: locationFilter || null, dateRange: dateRange || null, reportParams: params, active: 1, created_at: now, updated_at: now });
+      subs.push({ id: Date.now() + Math.floor(Math.random() * 1000), org, email, reports, schedule, locationFilter: locationFilter || null, dateRange: dateRange || null, reportParams: params, reportDateRanges: reportDateRanges || {}, active: 1, created_at: now, updated_at: now });
     }
     writeJSON(SUBS_FILE, subs);
   },
@@ -1579,7 +1580,8 @@ async function runSchedule(scheduleType) {
     const reports = Array.isArray(sub.reports) ? sub.reports : JSON.parse(sub.reports);
     for (const report of reports) {
       const savedParams = (sub.reportParams && typeof sub.reportParams === "object") ? (sub.reportParams[report] || null) : null;
-      await sendReportEmail(sub.org, sub.email, report, scheduleType, sub.locationFilter, sub.dateRange, savedParams);
+      const perReportDateRange = (sub.reportDateRanges && sub.reportDateRanges[report]) || sub.dateRange;
+      await sendReportEmail(sub.org, sub.email, report, scheduleType, sub.locationFilter, perReportDateRange, savedParams);
     }
   }
   console.log(`[cron] ${scheduleType} sends complete — ${subs.length} subscribers`);
@@ -3068,7 +3070,7 @@ app.get("/:org/admin/reports", (req, res) => {
     roster:   "Class Roster",
   };
   const available = REPORT_TYPES
-    .filter(r => !NON_ADDABLE_REPORTS.has(r) && (org[r]?.mbUuid || SHARED_UUIDS[r]))
+    .filter(r => EMAIL_SUBSCRIBABLE_REPORTS.has(r) && (org[r]?.mbUuid || SHARED_UUIDS[r]))
     .map(r => ({ key: r, label: reportLabels[r] || r }));
   res.json({ reports: available });
 });
@@ -3082,7 +3084,7 @@ app.get("/:org/admin/subscribers", (req, res) => {
 
 app.post("/:org/admin/subscribe", (req, res) => {
   if (!ORGS[req.params.org]) return res.status(404).json({ error: "Unknown org" });
-  const { email, reports, schedule, locationFilter, dateRange, reportParams } = req.body;
+  const { email, reports, schedule, locationFilter, dateRange, reportParams, reportDateRanges } = req.body;
   if (!email || !reports?.length || !schedule) return res.status(400).json({ error: "email, reports, and schedule are required" });
   const emailDomain = email.split("@")[1]?.toLowerCase();
   if (!ALLOWED_EMAIL_DOMAINS.includes(emailDomain)) return res.status(403).json({ error: `Only ${ALLOWED_EMAIL_DOMAINS.join(", ")} email addresses are allowed` });
@@ -3111,6 +3113,13 @@ app.post("/:org/admin/subscribe", (req, res) => {
     }
   }
 
+  // Clean reportDateRanges
+  const cleanDateRanges = {};
+  if (reportDateRanges && typeof reportDateRanges === "object") {
+    for (const [k, v] of Object.entries(reportDateRanges)) {
+      if (validReports.includes(k) && validDateRanges.includes(v)) cleanDateRanges[k] = v;
+    }
+  }
   db.upsertSubscription(
     req.params.org,
     email.toLowerCase().trim(),
@@ -3119,6 +3128,7 @@ app.post("/:org/admin/subscribe", (req, res) => {
     locationFilter || null,
     validDateRanges.includes(dateRange) ? dateRange : null,
     cleanReportParams,
+    cleanDateRanges,
   );
   res.json({ ok: true });
 });
