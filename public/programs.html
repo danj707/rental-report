@@ -865,6 +865,10 @@ function App() {
   const [search, setSearch] = useState(() => new URLSearchParams(window.location.search).get('search') || '');
   const [activityFilter, setActivityFilter] = useState('');
 
+  const [demoRows, setDemoRows] = useState(null);
+  const [demoLoading, setDemoLoading] = useState(false);
+  const [demoError, setDemoError] = useState(null);
+
   // Plain function — NOT a hook — to get activity for a program name
   function getProgActivity(progName) {
     if (!demoRows) return '';
@@ -914,9 +918,7 @@ function App() {
 
   // ── Participants tab ──────────────────────────────────────────────
   const [tab, setTab] = useState(params.tab || 'revenue');
-  const [demoRows, setDemoRows] = useState(null);
-  const [demoLoading, setDemoLoading] = useState(false);
-  const [demoError, setDemoError] = useState(null);
+  // demoRows/demoLoading/demoError moved above activityInfo (Babel var-hoisting fix)
   const [demoOpen, setDemoOpen] = useState(() => new Set());
 
   // ── Retention tab ──────────────────────────────────────────────────
