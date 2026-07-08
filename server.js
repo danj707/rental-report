@@ -7993,6 +7993,12 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  { date: '2026-07-07', title: '🛑 Roster: Emergency Contacts + Authorized Pickups', items: [
+    'Emergency Contact and Authorized Pickup columns added to class rosters.',
+    'Data sourced from household_contact_user + household_contact tables via LATERAL joins.',
+    'Both columns on by default, toggleable. Pipe-delimited format: Name (relationship) Phone.',
+    'Included in Excel export.',
+  ]},
   { date: '2026-07-07', title: '💡 Musco Lighting on Facility Report', items: [
     'Lighting columns (Lit/From/Until/Sync) wired into facility report from Metabase reservation_lighting_schedule join.',
     'Amber 💡 Lighting filter button in toolbar — click to show only lit reservations.',
