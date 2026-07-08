@@ -5224,6 +5224,7 @@ app.get("/:org", async (req, res, next) => {
     chatVisible: !orgHidden.has("chat"),
     wizardVisible: !orgHidden.has("report-wizard"),
     publicMode: getPublicMode(slug),
+    emailEnabled: EMAIL_ENABLED_ORGS.has(slug),
   };
   // Attach latest health-check results for this org's reports
   const hc = loadHealthResults();
