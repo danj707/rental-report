@@ -2930,6 +2930,7 @@ app.get("/api/admin/wizard-log", (req, res) => {
 
 
 app.get("/:org/:report/api/data", resolveOrg, async (req, res) => {
+  res.set("Cache-Control", "no-store");
   try {
     const { orgConfig, orgSlug, reportType } = req;
     // GL: per-org UUID takes priority (e.g. Norman has custom gl_map); shared fallback.
