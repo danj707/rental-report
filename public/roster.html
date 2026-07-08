@@ -219,6 +219,8 @@
     .col-owner     { width: 130px; }
     .col-ownerph   { width: 108px; }
     .col-ownerem   { width: 155px; font-size: 10.5px; }
+    .col-emergency { width: 200px; font-size: 10.5px; white-space: normal; line-height: 1.3; }
+    .col-pickup    { width: 200px; font-size: 10.5px; white-space: normal; line-height: 1.3; }
     .col-times     { width: 138px; }
     .col-status    { width: 76px; }
     .col-reg       { width: 82px; }
@@ -376,6 +378,7 @@ const LS_COLS = 'roster_cols_v2';
 const COL_DEFAULTS = {
   recId: false, dob: false, age: true, grade: true, gender: false,
   contact: true, owner: true, ownerContact: false,
+  emergency: true, pickup: true,
   times: true, registered: false, responses: false,
 };
 
@@ -469,6 +472,8 @@ function normalizeRow(raw) {
     owner:        raw['Household Owner'] || '',
     ownerEmail:   raw['Owner Email']     || '',
     ownerPhone:   raw['Owner Phone']     || '',
+    emergencyContacts: raw['Emergency Contacts'] || '',
+    authorizedPickups: raw['Authorized Pickups'] || '',
     className:    raw['Class']           || '',
     section:      raw['Section']         || '',
     sessionDate:  raw['Session Date']    || '',
@@ -678,6 +683,8 @@ function App() {
       ...(cols.contact  ? ['Phone', 'Email'] : []),
       ...(cols.owner    ? ['Household Owner'] : []),
       ...(cols.ownerContact ? ['Owner Phone', 'Owner Email'] : []),
+      ...(cols.emergency ? ['Emergency Contacts'] : []),
+      ...(cols.pickup    ? ['Authorized Pickups'] : []),
       'Status',
       ...(cols.registered ? ['Registered'] : []),
     ];
@@ -693,6 +700,8 @@ function App() {
       ...(cols.contact  ? [formatPhone(r.phone), r.email] : []),
       ...(cols.owner    ? [r.owner] : []),
       ...(cols.ownerContact ? [formatPhone(r.ownerPhone), r.ownerEmail] : []),
+      ...(cols.emergency ? [r.emergencyContacts] : []),
+      ...(cols.pickup    ? [r.authorizedPickups] : []),
       r.status,
       ...(cols.registered ? [toXlDate(r.registered)] : []),
     ]);
@@ -795,6 +804,8 @@ function App() {
         <ColToggle k="contact"      label="Contact" />
         <ColToggle k="owner"        label="Owner" />
         <ColToggle k="ownerContact" label="Owner Contact" />
+        <ColToggle k="emergency"    label="🛑 Emergency" />
+        <ColToggle k="pickup"       label="🚸 Pickup" />
         <ColToggle k="times"        label="Times" />
         <ColToggle k="registered"   label="Registered" />
         <ColToggle k="responses"    label="Form Responses" />
@@ -873,6 +884,8 @@ function App() {
         {cols.contact  && <><span className="cell col-phone">Phone</span><span className="cell col-email">Email</span></>}
         {cols.owner    && <span className="cell col-owner">Household Owner</span>}
         {cols.ownerContact && <><span className="cell col-ownerph">Owner Phone</span><span className="cell col-ownerem">Owner Email</span></>}
+        {cols.emergency && <span className="cell col-emergency">Emergency Contact</span>}
+        {cols.pickup    && <span className="cell col-pickup">Authorized Pickup</span>}
         {cols.times    && <span className="cell col-times">Start – End</span>}
         <span className="cell col-status">Status</span>
         {cols.registered && <span className="cell col-reg">Registered</span>}
@@ -905,6 +918,8 @@ function App() {
             <span className="cell col-ownerph">{formatPhone(r.ownerPhone)}</span>
             <span className="cell col-ownerem">{r.ownerEmail}</span>
           </>}
+          {cols.emergency && <span className="cell col-emergency">{r.emergencyContacts}</span>}
+          {cols.pickup    && <span className="cell col-pickup">{r.authorizedPickups}</span>}
           {cols.times && <span className="cell col-times" style={{fontSize:'10.5px'}}>
             {r.sessionStart && r.sessionEnd ? `${r.sessionStart} – ${r.sessionEnd}` : r.sessionStart || ''}
           </span>}
