@@ -2732,7 +2732,7 @@ function App() {
                                   return selectedAddOns.has(name);
                                 }).join(', ');
                               }
-                              var litStr = r.lighting === 'Yes' ? ('💡 Lit: ' + (r.litFrom || '').replace(/^.*,\s*(\d)/, '$1') + ' \u2013 ' + (r.litUntil || '').replace(/^.*,\s*(\d)/, '$1')) : '';
+                              var litStr = ''; if (r.lighting === 'Yes') { var _fmt = function(s) { if (!s) return ''; try { var d = new Date(s); var h = d.getHours(); var m = d.getMinutes(); var ap = h >= 12 ? 'PM' : 'AM'; h = h % 12 || 12; return h + ':' + String(m).padStart(2,'0') + ' ' + ap; } catch(e) { return s; } }; litStr = '💡 Lit: ' + _fmt(r.litFrom) + ' – ' + _fmt(r.litUntil); }
                               if (!r.notes && !visAddons && !r.instructions && !litStr) return null;
                               var parts = [];
                               if (litStr) parts.push(litStr);
