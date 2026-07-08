@@ -1984,7 +1984,34 @@ app.get("/:org/api/calendar-conversion", async (req, res) => {
     console.warn("[calendar-conversion] enrollment fetch error:", err.message);
   }
 
-  // 3. Build paired daily data
+  // 3. Fetch programs revenue data for avg ticket price
+  let avgTicket = 0;
+  try {
+    const progUuid = orgConfig.programs?.mbUuid || SHARED_UUIDS.programs;
+    if (progUuid) {
+      const progCacheKey = slug + "/programs";
+      let progRows = getCached(progCacheKey)?.rows;
+      if (!progRows) {
+        const orgIdP = orgConfig.orgId ? `?parameters=${encodeURIComponent(JSON.stringify([{type:"category",target:["variable",["template-tag","org_id"]],value:orgConfig.orgId}]))}` : "";
+        const pUrl = `${METABASE_URL}/api/public/card/${progUuid}/query/json${orgIdP}`;
+        const pResp = await fetch(pUrl);
+        if (pResp.ok) progRows = await pResp.json();
+      }
+      if (progRows && progRows.length > 0) {
+        let totalRev = 0, totalEnr = 0;
+        progRows.forEach(r => {
+          const rev = parseFloat(r["Net Revenue"] || r["Net Total"] || r["net_total"] || 0) || 0;
+          const enr = parseInt(r["Enrollments"] || r["enrollments"] || r["Enrolled"] || 0) || 0;
+          totalRev += rev; totalEnr += enr;
+        });
+        if (totalEnr > 0) avgTicket = totalRev / totalEnr;
+      }
+    }
+  } catch (err) {
+    console.warn("[calendar-conversion] revenue fetch error:", err.message);
+  }
+
+  // 4. Build paired daily data
   const allDays = new Set([...Object.keys(viewsByDay), ...Object.keys(enrollByDay)]);
   const daily = [...allDays].filter(d => d >= cutoffStr).sort().map(d => ({
     date: d,
@@ -1994,12 +2021,15 @@ app.get("/:org/api/calendar-conversion", async (req, res) => {
 
   const totalViews = daily.reduce((s, d) => s + d.views, 0);
   const totalEnroll = daily.reduce((s, d) => s + d.enrollments, 0);
+  const attributedRevenue = totalEnroll * avgTicket;
 
   res.json({
     period: days + "d",
     totalViews,
     totalEnrollments: totalEnroll,
     conversionRate: totalViews > 0 ? ((totalEnroll / totalViews) * 100).toFixed(1) : null,
+    avgTicketPrice: Math.round(avgTicket * 100) / 100,
+    attributedRevenue: Math.round(attributedRevenue * 100) / 100,
     daily,
   });
 });
