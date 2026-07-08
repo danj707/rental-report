@@ -3081,7 +3081,6 @@ app.get("/:org/admin/subscribers", (req, res) => {
 });
 
 app.post("/:org/admin/subscribe", (req, res) => {
-  if (!getFlags().emailSubscriptions) return res.status(503).json({ error: "Email subscriptions are currently disabled" });
   if (!ORGS[req.params.org]) return res.status(404).json({ error: "Unknown org" });
   const { email, reports, schedule, locationFilter, dateRange, reportParams } = req.body;
   if (!email || !reports?.length || !schedule) return res.status(400).json({ error: "email, reports, and schedule are required" });
@@ -4235,7 +4234,7 @@ app.get("/:org/admin", (req, res) => {
   if (!ORGS[slug]) return res.status(404).send("Unknown org");
   const adminConfig = {
     orgSlug: slug,
-    emailEnabled: EMAIL_ENABLED_ORGS.has(slug) && getFlags().emailSubscriptions,
+    emailEnabled: EMAIL_ENABLED_ORGS.has(slug),  // per-org gate; global flag is kill switch for cron sends only
     allowedDomains: ALLOWED_EMAIL_DOMAINS,
   };
   const html = require("fs").readFileSync(path.join(__dirname, "public", "admin.html"), "utf8");
