@@ -289,16 +289,7 @@
         </div>
       </div>
 
-      <div class="form-group">
-        <label>Date Range <span style="font-weight:400;color:#aaa">(what the link shows)</span></label>
-        <div class="radio-group" id="daterange-group">
-          <div class="radio-btn" data-value="today">Today</div>
-          <div class="radio-btn selected" data-value="next7">Next 7 days</div>
-          <div class="radio-btn" data-value="next30">Next 30 days</div>
-          <div class="radio-btn" data-value="last7">Last 7 days</div>
-          <div class="radio-btn" data-value="lastMonth">Last month</div>
-        </div>
-      </div>
+
 
       <button class="btn btn-primary" id="subscribe-btn" onclick="subscribe()">
         Add Subscriber
@@ -362,7 +353,14 @@ if (!ADMIN_CFG.emailEnabled) {
 
 // ── Schedule radio buttons ────────────────────────────────────────────
 let selectedSchedule = 'weekly';
-let selectedDateRange = 'next7';
+const DATE_RANGE_OPTIONS = [
+  { value: 'today', label: 'Today' },
+  { value: 'next7', label: 'Next 7 days' },
+  { value: 'next30', label: 'Next 30 days' },
+  { value: 'last7', label: 'Last 7 days' },
+  { value: 'lastMonth', label: 'Last month' },
+];
+const DATE_RANGE_DEFAULTS = { facility: 'next7', gl: 'lastMonth' };
 
 function updateLocationVisibility() {
   const hasFacility = !!document.querySelector('#report-checkboxes input[value="facility"]:checked');
@@ -375,13 +373,6 @@ document.querySelectorAll('#schedule-group .radio-btn').forEach(btn => {
     selectedSchedule = btn.dataset.value;
   });
 });
-document.querySelectorAll('#daterange-group .radio-btn').forEach(btn => {
-  btn.addEventListener('click', () => {
-    document.querySelectorAll('#daterange-group .radio-btn').forEach(b => b.classList.remove('selected'));
-    btn.classList.add('selected');
-    selectedDateRange = btn.dataset.value;
-  });
-});
 
 // ── Load available reports ────────────────────────────────────────────
 async function loadReports() {
@@ -392,12 +383,17 @@ async function loadReports() {
     box.innerHTML = '<div style="color:#aaa;font-size:11px">No reports configured</div>';
     return;
   }
-  box.innerHTML = data.reports.map(r => `
-    <label class="checkbox-label">
-      <input type="checkbox" value="${r.key}" checked onchange="updateLocationVisibility()" />
-      ${r.label}
-    </label>
-  `).join('');
+  box.innerHTML = data.reports.map(r => {
+    const def = DATE_RANGE_DEFAULTS[r.key] || 'next7';
+    const opts = DATE_RANGE_OPTIONS.map(o =>
+      '<option value="' + o.value + '"' + (o.value === def ? ' selected' : '') + '>' + o.label + '</option>'
+    ).join('');
+    return '<label class="checkbox-label" style="display:flex;align-items:center;gap:8px">' +
+      '<input type="checkbox" value="' + r.key + '" checked onchange="updateLocationVisibility()" />' +
+      '<span style="flex:1">' + r.label + '</span>' +
+      '<select class="date-range-select" data-report="' + r.key + '" style="font-size:11px;padding:3px 6px;border:1px solid #ddd;border-radius:4px;background:#fafafa;color:#333">' + opts + '</select>' +
+    '</label>';
+  }).join('');
 }
 
 // ── Load subscribers ──────────────────────────────────────────────────
@@ -430,7 +426,7 @@ function renderSubscribers(subs) {
             <td>${s.reports.map(r => `<span class="badge badge-${r}">${r === 'gl' ? 'GL' : 'Facility'}</span>`).join('')}${s.locationFilter ? `<br><span style="font-size:10px;color:#888">📍 ${s.locationFilter}</span>` : ''}</td>
             <td>
               <span class="badge badge-${s.schedule}">${s.schedule}</span>
-              ${s.dateRange ? `<span class="badge" style="background:#f0f0f0;color:#555;border:1px solid #ddd">${s.dateRange}</span>` : ''}
+              ${s.reportDateRanges ? Object.entries(s.reportDateRanges).map(([k,v]) => '<span class="badge" style="background:#f0f0f0;color:#555;border:1px solid #ddd;font-size:10px">' + k + ': ' + v + '</span>').join(' ') : (s.dateRange ? '<span class="badge" style="background:#f0f0f0;color:#555;border:1px solid #ddd">' + s.dateRange + '</span>' : '')}
             </td>
             <td class="actions-cell">
               <button class="btn btn-test" onclick="testSend('${s.email}', ${JSON.stringify(s.reports).replace(/"/g, '&quot;')}, '${s.schedule}')" id="test-${btoa(s.email).replace(/[=+/]/g, '_')}">
@@ -491,7 +487,9 @@ async function subscribe() {
       email,
       reports,
       schedule: selectedSchedule,
-      dateRange: selectedDateRange,
+      reportDateRanges: Object.fromEntries(
+        reports.map(r => [r, document.querySelector('.date-range-select[data-report="' + r + '"]')?.value || 'next7'])
+      ),
       locationFilter: document.getElementById('location-filter-input')?.value.trim() || null,
     }),
   });
