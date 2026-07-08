@@ -2002,8 +2002,8 @@ app.get("/:org/api/calendar-conversion", async (req, res) => {
         res._debugProgSample = Object.keys(progRows[0]);
         let totalRev = 0, totalEnr = 0;
         progRows.forEach(r => {
-          const rev = parseFloat(r["Net Revenue"] || r["Net Total"] || r["net_total"] || 0) || 0;
-          const enr = parseInt(r["Enrollments"] || r["enrollments"] || r["Enrolled"] || 0) || 0;
+          const rev = parseFloat(r["net_total"] || r["Net Revenue"] || r["Net Total"] || 0) || 0;
+          const enr = parseInt(r["enrolled"] || r["Enrollments"] || r["Enrolled"] || 0) || 0;
           totalRev += rev; totalEnr += enr;
         });
         if (totalEnr > 0) avgTicket = totalRev / totalEnr;
