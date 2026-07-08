@@ -1988,11 +1988,12 @@ app.get("/:org/api/calendar-conversion", async (req, res) => {
   let avgTicket = 0;
   try {
     const progUuid = orgConfig.programs?.mbUuid || SHARED_UUIDS.programs;
+    const progIsShared = !orgConfig.programs?.mbUuid && !!SHARED_UUIDS.programs;
     if (progUuid) {
       const progCacheKey = slug + "/programs";
       let progRows = getCached(progCacheKey)?.rows;
       if (!progRows) {
-        const orgIdP = orgConfig.orgId ? `?parameters=${encodeURIComponent(JSON.stringify([{type:"category",target:["variable",["template-tag","org_id"]],value:orgConfig.orgId}]))}` : "";
+        const orgIdP = progIsShared && orgConfig.orgId ? `?parameters=${encodeURIComponent(JSON.stringify([{type:"category",target:["variable",["template-tag","org_id"]],value:orgConfig.orgId}]))}` : "";
         const pUrl = `${METABASE_URL}/api/public/card/${progUuid}/query/json${orgIdP}`;
         const pResp = await fetch(pUrl);
         if (pResp.ok) progRows = await pResp.json();
