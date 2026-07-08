@@ -1165,7 +1165,6 @@
     .musco-btn{background:#fef9c3;color:#854d0e;border:1px solid #facc15;padding:5px 10px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;margin-left:8px;font-family:inherit;transition:all .15s}
     .musco-btn.active{background:#facc15;color:#422006;border-color:#eab308}
     .musco-btn:hover{background:#fde047}
-    .col-lighting{width:50px;text-align:center}
 
     body.print-mode .bt-filter { display: none; }
     .metrics-toggle { background: #f5f4f1; border: 1px solid #d1d5db; border-radius: 6px; padding: 6px 14px; cursor: pointer; color: #555; font-family: inherit; font-size: 12px; font-weight: 500; transition: all .15s; }
@@ -2465,10 +2464,6 @@ function App() {
                 <input type="checkbox" checked={showBookType} onChange={e => setShowBookType(e.target.checked)} />
                 Book Type
               </label>
-              {hasLighting && <label>
-                <input type="checkbox" checked={showLighting} onChange={e => setShowLighting(e.target.checked)} />
-                💡 Lighting
-              </label>}
             </div>
           </>
         )}
@@ -2703,7 +2698,6 @@ function App() {
                           <span className="col-purpose">Purpose</span>
                           {showResident  && <span className="col-resident">Resident?</span>}
                           {showBookType  && <span className="col-booktype">Book Type</span>}
-                          {showLighting  && <span className="col-lighting">💡 Lit</span>}
                           {showHeadCount && <span className="col-hcnt">Cnt</span>}
                           {showTotal     && <span className="col-total">Total</span>}
                           {showAddonFees && <span className="col-addon-fees">Add-On $</span>}
@@ -2725,7 +2719,6 @@ function App() {
                               <span className="cell col-purpose">{r.resName}</span>
                               {showResident  && <span className="cell col-resident">{r.resident}</span>}
                               {showBookType  && <span className="cell col-booktype">{r.bookingType}</span>}
-                              {showLighting  && <span className="cell col-lighting" title={r.lighting === 'Yes' ? (r.litFrom + ' \u2013 ' + r.litUntil) : ''}>{r.lighting === 'Yes' ? '\u2705' : ''}</span>}
                               {showHeadCount && <span className="cell col-hcnt">{r.headCount}</span>}
                               {showTotal     && <span className="cell col-total">{formatMoney(r.total)}</span>}
                               {showAddonFees && <span className="cell col-addon-fees">{formatMoney(r.addonFees)}</span>}
@@ -2739,8 +2732,10 @@ function App() {
                                   return selectedAddOns.has(name);
                                 }).join(', ');
                               }
-                              if (!r.notes && !visAddons && !r.instructions) return null;
+                              var litStr = r.lighting === 'Yes' ? ('💡 Lit: ' + (r.litFrom || '').replace(/^.*,\s*(\d)/, '$1') + ' \u2013 ' + (r.litUntil || '').replace(/^.*,\s*(\d)/, '$1')) : '';
+                              if (!r.notes && !visAddons && !r.instructions && !litStr) return null;
                               var parts = [];
+                              if (litStr) parts.push(litStr);
                               if (r.instructions) parts.push("📝 " + r.instructions);
                               if (r.notes) parts.push(r.notes);
                               if (visAddons) parts.push("Add-ons: " + visAddons.split(',').map(s => {
