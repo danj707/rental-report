@@ -27,8 +27,10 @@ const otelApi = require("@opentelemetry/api");
 const { AnthropicInstrumentation } = require("@arizeai/openinference-instrumentation-anthropic");
 const AnthropicSDK = require("@anthropic-ai/sdk");
 
-const _anthropicInstrumentation = new AnthropicInstrumentation();
-_anthropicInstrumentation.manuallyInstrument(AnthropicSDK);
+// const _anthropicInstrumentation = new AnthropicInstrumentation();
+// _anthropicInstrumentation.manuallyInstrument(AnthropicSDK);
+// DISABLED: instrumentation calls .withResponse() which is incompatible with current SDK
+const _anthropicInstrumentation = { instrumentationScope: { name: "disabled" } };
 
 const _langfuseEnabled = !!(process.env.LANGFUSE_PUBLIC_KEY && process.env.LANGFUSE_SECRET_KEY);
 let _otelSdk = null;
