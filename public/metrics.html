@@ -377,6 +377,14 @@ function App() {
             <div className="conv-kpi-val" style={{color:'#3b82f6'}}>{conv.conversionRate || '0'}%</div>
             <div className="conv-kpi-label">Conversion Rate</div>
           </div>
+          {conv.avgTicketPrice > 0 && <div className="conv-kpi">
+            <div className="conv-kpi-val" style={{color:'#666'}}>${Math.round(conv.avgTicketPrice)}</div>
+            <div className="conv-kpi-label">Avg Ticket</div>
+          </div>}
+          {conv.attributedRevenue > 0 && <div className="conv-kpi">
+            <div className="conv-kpi-val" style={{color:'#16a34a',fontSize:26}}>${conv.attributedRevenue >= 1000 ? (conv.attributedRevenue / 1000).toFixed(1) + 'k' : Math.round(conv.attributedRevenue)}</div>
+            <div className="conv-kpi-label">Attributed Revenue</div>
+          </div>}
         </div>
         <div className="conv-bars">
           {conv.daily.map((d, i) => (
