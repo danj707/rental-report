@@ -2453,7 +2453,8 @@ async function fetchOrgChatData(orgSlug, orgConfig) {
   const hit = _chatDataCache.get(orgSlug);
   if (hit && Date.now() - hit.ts < CHAT_DATA_TTL) return hit.data;
 
-  const reports = REPORT_TYPES.filter(r => orgConfig[r]?.mbUuid || SHARED_UUIDS[r]);
+  const orgHidden = new Set(getHiddenReports(orgSlug));
+  const reports = REPORT_TYPES.filter(r => !orgHidden.has(r) && (orgConfig[r]?.mbUuid || SHARED_UUIDS[r]));
   const results = {};
 
   await Promise.allSettled(reports.map(async (rt) => {
