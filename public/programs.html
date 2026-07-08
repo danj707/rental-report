@@ -965,19 +965,16 @@ function App() {
   }, [retRows, retLoading, orgSlug]);
 
   const fetchDemoData = useCallback(() => {
-    console.log('[demo-fetch] guard check:', { demoRows: !!demoRows, demoLoading });
     if (demoRows || demoLoading) return;
-    console.log('[demo-fetch] firing for', orgSlug);
     setDemoLoading(true); setDemoError(null);
     fetch(withToken(`/${orgSlug}/program-demographics/api/data`))
-      .then(r => { console.log('[demo-fetch] response:', r.status, r.ok); if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
-      .then(j => { var rows = j.rows || j.data || j || []; console.log('[demo-fetch] got', rows.length, 'rows, keys:', Object.keys(j)); setDemoRows(rows); })
-      .catch(e => { console.error('[demo-fetch] ERROR:', e.message); setDemoError(e.message); })
+      .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .then(j => { setDemoRows(j.rows || j.data || j || []); })
+      .catch(e => { setDemoError(e.message); })
       .finally(() => { setDemoLoading(false); });
   }, [demoRows, demoLoading, orgSlug]);
 
   const switchTab = useCallback((t) => {
-    console.log('[switchTab]', t, { demoRows: !!demoRows, demoLoading });
     setTab(t);
     if ((t === 'participants' || t === 'retention' || t === 'fillrate') && !demoRows && !demoLoading) fetchDemoData();
     if (t === 'retention' && !retRows && !retLoading) fetchRetentionData();
