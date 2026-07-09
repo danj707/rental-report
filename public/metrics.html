@@ -125,6 +125,13 @@
     .conv-kpi { text-align: center; }
     .conv-kpi-val { font-size: 22px; font-weight: 700; font-family: 'IBM Plex Mono', monospace; }
     .conv-kpi-label { font-size: 10px; color: #888; text-transform: uppercase; letter-spacing: .5px; }
+  .fb-card { background: #fff; border-radius: 8px; padding: 16px; margin-bottom: 24px; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+  .fb-list { display: flex; flex-direction: column; gap: 8px; max-height: 400px; overflow-y: auto; }
+  .fb-item { display: flex; gap: 10px; align-items: flex-start; padding: 8px 10px; border-radius: 6px; background: #fafafa; font-size: 12px; }
+  .fb-score { font-size: 16px; flex-shrink: 0; }
+  .fb-meta { color: #888; font-size: 10px; }
+  .fb-comment { color: #333; margin-top: 2px; font-style: italic; }
+  .fb-empty { text-align: center; color: #aaa; padding: 24px; font-size: 13px; }
     .conv-bars { display: flex; align-items: flex-end; gap: 2px; height: 60px; }
     .conv-bar-group { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 1px; }
     .conv-bar-view { width: 100%; border-radius: 2px 2px 0 0; background: #fb923c; opacity: 0.5; min-height: 1px; }
@@ -406,6 +413,37 @@ function App() {
     );
   }
 
+  function FeedbackFeed() {
+    const [fb, setFb] = React.useState(null);
+    React.useEffect(function() {
+      fetch(withToken('/api/admin/feedback?days=' + days))
+        .then(function(r) { return r.ok ? r.json() : null; })
+        .then(function(d) { setFb(d); })
+        .catch(function() {});
+    }, [days]);
+    if (!fb || !fb.feedback || fb.feedback.length === 0) return null;
+    return (
+      <div className=fb-card>
+        <div className=section-title>💬 AI Feedback ({fb.total} responses)</div>
+        <div className=fb-list>
+          {fb.feedback.map(function(f, i) {
+            return (
+              <div key={i} className=fb-item>
+                <span className=fb-score>{f.score === 1 ? '👍' : '👎'}</span>
+                <div style={{flex:1}}>
+                  <div className=fb-meta>
+                    <strong>{f.org}</strong> · {f.type === 'chat' ? 'Rec AI Chat' : f.report + ' insights'} · {f.ts ? new Date(f.ts).toLocaleDateString() + ' ' + new Date(f.ts).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : ''}
+                  </div>
+                  {f.comment && <div className=fb-comment>“{f.comment}”</div>}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
   function renderActivityChart() {
     const daily = data?.daily || {};
     const labels = [];
@@ -531,6 +569,7 @@ function App() {
 
             {/* Activity timeline chart */}
             <ConversionCard />
+        <FeedbackFeed />
         {renderActivityChart()}
 
             {/* Sparklines */}
