@@ -386,9 +386,17 @@ function ChatApp() {
             <span className="header-badge">✦ Beta</span>
           </div>
         </div>
-        <a href={'/' + slug + tokenQS} className="header-back">
-          ← Reports
-        </a>
+        <div style={{display:'flex',alignItems:'center',gap:12}}>
+          {messages.length > 0 && (
+            <button className="header-back" style={{background:'none',border:'none',cursor:'pointer',fontFamily:'inherit',fontSize:'inherit',padding:0}}
+              onClick={function() { setMessages([]); }}>
+              ✦ New Chat
+            </button>
+          )}
+          <a href={'/' + slug + tokenQS} className="header-back">
+            ← Reports
+          </a>
+        </div>
       </div>
 
       {/* Messages area */}
