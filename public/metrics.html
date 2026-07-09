@@ -422,24 +422,84 @@ function App() {
         .catch(function() {});
     }, [days]);
     if (!fb || !fb.feedback || fb.feedback.length === 0) return null;
+
+    // Filter to this org
+    var orgFb = fb.feedback.filter(function(f) { return f.org === orgSlug; });
+    if (orgFb.length === 0) return null;
+
+    // Compute summary
+    var totalUp = orgFb.filter(function(f) { return f.score === 1; }).length;
+    var totalDown = orgFb.filter(function(f) { return f.score === 0; }).length;
+    var withComments = orgFb.filter(function(f) { return f.comment; });
+
+    // Per-source breakdown
+    var bySource = {};
+    orgFb.forEach(function(f) {
+      var src = f.type === 'chat' ? 'Rec AI Chat' : (f.report || 'unknown') + ' insights';
+      if (!bySource[src]) bySource[src] = { up: 0, down: 0, total: 0 };
+      bySource[src].total++;
+      if (f.score === 1) bySource[src].up++;
+      else bySource[src].down++;
+    });
+    var sources = Object.entries(bySource).sort(function(a, b) { return b[1].total - a[1].total; });
+
     return (
       <div className="fb-card">
-        <div className="section-title">💬 AI Feedback ({fb.total} responses)</div>
-        <div className="fb-list">
-          {fb.feedback.map(function(f, i) {
-            return (
-              <div key={i} className="fb-item">
-                <span className="fb-score">{f.score === 1 ? '👍' : '👎'}</span>
-                <div style={{flex:1}}>
-                  <div className="fb-meta">
-                    <strong>{f.org}</strong> · {f.type === 'chat' ? 'Rec AI Chat' : f.report + ' insights'} · {f.ts ? new Date(f.ts).toLocaleDateString() + ' ' + new Date(f.ts).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : ''}
-                  </div>
-                  {f.comment && <div className="fb-comment">“{f.comment}”</div>}
-                </div>
-              </div>
-            );
-          })}
+        <div className="section-title">💬 AI Feedback</div>
+        <div style={{display:'flex',gap:24,marginBottom:12,flexWrap:'wrap'}}>
+          <div className="conv-kpi">
+            <div className="conv-kpi-val" style={{color:'#16a34a'}}>{totalUp}</div>
+            <div className="conv-kpi-label">👍 Positive</div>
+          </div>
+          <div className="conv-kpi">
+            <div className="conv-kpi-val" style={{color:'#dc2626'}}>{totalDown}</div>
+            <div className="conv-kpi-label">👎 Negative</div>
+          </div>
+          <div className="conv-kpi">
+            <div className="conv-kpi-val" style={{color:'#3b82f6'}}>{orgFb.length > 0 ? Math.round((totalUp / orgFb.length) * 100) : 0}%</div>
+            <div className="conv-kpi-label">Satisfaction</div>
+          </div>
         </div>
+
+        {sources.length > 0 && (
+          <div style={{marginBottom:12}}>
+            <div style={{fontSize:11,fontWeight:600,color:'#666',marginBottom:6,textTransform:'uppercase',letterSpacing:'.5px'}}>By Report</div>
+            <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+              {sources.map(function(s) {
+                var pct = s[1].total > 0 ? Math.round((s[1].up / s[1].total) * 100) : 0;
+                var color = pct >= 80 ? '#16a34a' : pct >= 50 ? '#eab308' : '#dc2626';
+                return (
+                  <div key={s[0]} style={{background:'#f9fafb',border:'1px solid #e5e7eb',borderRadius:6,padding:'6px 10px',fontSize:11}}>
+                    <div style={{fontWeight:600,marginBottom:2}}>{s[0]}</div>
+                    <span style={{color:color,fontWeight:700}}>{pct}%</span>
+                    <span style={{color:'#999',marginLeft:4}}>👍{s[1].up} 👎{s[1].down}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {withComments.length > 0 && (
+          <div>
+            <div style={{fontSize:11,fontWeight:600,color:'#666',marginBottom:6,textTransform:'uppercase',letterSpacing:'.5px'}}>Written Feedback</div>
+            <div className="fb-list">
+              {withComments.map(function(f, i) {
+                return (
+                  <div key={i} className="fb-item">
+                    <span className="fb-score">{f.score === 1 ? '👍' : '👎'}</span>
+                    <div style={{flex:1}}>
+                      <div className="fb-meta">
+                        {f.type === 'chat' ? 'Rec AI Chat' : f.report + ' insights'} · {f.ts ? new Date(f.ts).toLocaleDateString() + ' ' + new Date(f.ts).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : ''}
+                      </div>
+                      <div className="fb-comment">“{f.comment}”</div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
     );
   }
