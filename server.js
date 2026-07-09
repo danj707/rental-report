@@ -2634,6 +2634,8 @@ RULES:
 - If asked about data not covered by ANY of the reports in the inventory above, say so and suggest what report type might help. But if the data IS in the inventory, use it.
 - When asked for trends or comparisons, cite the specific numbers.
 - Keep responses focused — 2-4 paragraphs unless a longer answer is clearly needed.
+- Before analyzing a report, check the data volume. If a report has very few records (under 5), note that the organization doesn’t appear to use that feature heavily yet, and keep your analysis brief. Example: “Watertown currently has only 1 membership record, suggesting memberships haven’t been widely adopted yet.” Don’t over-analyze thin data.
+- Stay on-topic with the data source. If the user asks about products, use the Products report — don’t substitute GL Code Rollup data. If the relevant report has little data, say so rather than pulling from a different report. Only cross-reference reports when it genuinely adds insight.
 - When data would be better shown as a chart, include a chart spec block:
   \`\`\`chart
   {"type":"bar","title":"Chart Title","labels":["A","B","C"],"datasets":[{"label":"Series","data":[10,20,30]}]}
