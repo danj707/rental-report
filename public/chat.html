@@ -267,6 +267,7 @@ function ChatApp() {
   var [streaming, setStreaming]   = useState(false);
   var [dataStatus, setDataStatus] = useState('idle'); // idle | loading | ready | error
   var [error, setError]           = useState('');
+  var [debugMsgs, setDebugMsgs]   = useState([]);
 
   /* Auto-scroll to bottom */
   useEffect(function() {
@@ -284,6 +285,7 @@ function ChatApp() {
   var sendMessage = useCallback(function(text) {
     if (!text.trim() || streaming) return;
     setError('');
+    setDebugMsgs([]);
     var userMsg = { role: 'user', content: text.trim() };
     var newMessages = messages.concat([userMsg]);
     setMessages(newMessages);
@@ -344,7 +346,8 @@ function ChatApp() {
             }
             try {
               var parsed = JSON.parse(payload);
-              if (parsed.messageId) {
+              if (parsed.debug) { setDebugMsgs(function(p) { return p.concat([parsed.debug]); }); }
+            if (parsed.messageId) {
                 setMessages(function(prev) {
                   var u = prev.slice();
                   for (var j = u.length - 1; j >= 0; j--) {
@@ -459,7 +462,9 @@ function ChatApp() {
               </div>
             </div>
           ) : (
-            messages.map(function(m, i) {
+            <React.Fragment>
+            {debugMsgs.length > 0 && <div style={{padding:"6px 12px",background:"#fef3c7",borderRadius:6,fontSize:10,color:"#92400e",marginBottom:8,fontFamily:"monospace"}}>{debugMsgs.map(function(d,di) { return <div key={di}>{d}</div>; })}</div>}
+            {messages.map(function(m, i) {
               var isUser = m.role === 'user';
               var isStreaming = m.streaming && i === messages.length - 1;
               return (
@@ -542,7 +547,8 @@ function ChatApp() {
                   </div>
                 </div>
               );
-            })
+            })}
+            </React.Fragment>
           )}
         </div>
       </div>
