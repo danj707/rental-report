@@ -2036,6 +2036,27 @@ app.get("/:org/api/calendar-conversion", async (req, res) => {
   });
 });
 
+// ── GET /api/admin/feedback — recent feedback across all orgs ─────────
+app.get("/api/admin/feedback", (req, res) => {
+  res.set("Cache-Control", "no-store");
+  const days = parseInt(req.query.days) || 30;
+  const events = readEvents(days);
+  const feedback = events
+    .filter(e => e.event === "chat-feedback" || e.event === "insights-feedback")
+    .map(e => ({
+      ts: e.ts,
+      org: e.org,
+      type: e.event === "chat-feedback" ? "chat" : "insights",
+      report: e.report || null,
+      score: e.extra?.score,
+      comment: e.extra?.comment || e.extra?.userComment || null,
+      messageId: e.extra?.messageId || e.extra?.traceId || null,
+    }))
+    .reverse()
+    .slice(0, 100);
+  res.json({ feedback, total: feedback.length });
+});
+
 // ── GET /metrics/api/data — cross-org summary ────────────────────────
 app.get("/metrics/api/data", (req, res) => {
   const days = parseInt(req.query.days) || 30;
