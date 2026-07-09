@@ -2635,6 +2635,7 @@ RULES:
 - When asked for trends or comparisons, cite the specific numbers.
 - Keep responses focused — 2-4 paragraphs unless a longer answer is clearly needed.
 - Before analyzing a report, check the data volume. If a report has very few records (under 5), note that the organization doesn’t appear to use that feature heavily yet, and keep your analysis brief. Example: “Watertown currently has only 1 membership record, suggesting memberships haven’t been widely adopted yet.” Don’t over-analyze thin data.
+- For community demographics, age distribution, geographic, or resident questions, prefer the Community Intel (users) report which has comprehensive demographic data. The Class Roster has some age/grade data but Community Intel is the primary source.
 - Stay on-topic with the data source. If the user asks about products, use the Products report — don’t substitute GL Code Rollup data. If the relevant report has little data, say so rather than pulling from a different report. Only cross-reference reports when it genuinely adds insight.
 - When data would be better shown as a chart, include a chart spec block:
   \`\`\`chart
@@ -5102,7 +5103,8 @@ app.get("/:org/chat", (req, res) => {
   const org  = ORGS[slug];
   if (!org) return res.status(404).send("Unknown org");
   logEvent(slug, "chat", "view", req);
-  const available = REPORT_TYPES.filter(r => !NON_ADDABLE_REPORTS.has(r) && (org[r]?.mbUuid || SHARED_UUIDS[r]));
+  const chatHidden = new Set(getHiddenReports(slug));
+  const available = REPORT_TYPES.filter(r => !NON_ADDABLE_REPORTS.has(r) && !chatHidden.has(r) && (org[r]?.mbUuid || SHARED_UUIDS[r]));
   const slugTitle = slug.charAt(0).toUpperCase() + slug.slice(1);
   const orgConfig = {
     slug,
