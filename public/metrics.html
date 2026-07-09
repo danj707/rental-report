@@ -439,7 +439,7 @@ function App() {
       if (!bySource[src]) bySource[src] = { up: 0, down: 0, total: 0 };
       bySource[src].total++;
       if (f.score === 1) bySource[src].up++;
-      else bySource[src].down++;
+      else if (f.score === 0) bySource[src].down++;
     });
     var sources = Object.entries(bySource).sort(function(a, b) { return b[1].total - a[1].total; });
 
