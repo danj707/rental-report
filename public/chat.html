@@ -317,7 +317,8 @@ function ChatApp() {
             if (buffer.trim()) processBuffer();
             setMessages(function(prev) {
               var copy = prev.slice();
-              copy[copy.length - 1] = { role: 'assistant', content: fullText };
+              var last = copy[copy.length - 1] || {};
+              copy[copy.length - 1] = { role: 'assistant', content: fullText, messageId: last.messageId || null };
               return copy;
             });
             setStreaming(false);
