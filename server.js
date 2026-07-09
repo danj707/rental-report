@@ -2584,7 +2584,7 @@ async function fetchOrgChatData(orgSlug, orgConfig) {
       const orgIdParam = isShared && orgConfig.orgId ? `?parameters=${encodeURIComponent(JSON.stringify([{type:"category",target:["variable",["template-tag","org_id"]],value:orgConfig.orgId}]))}` : "";
       const url = `${METABASE_URL}/api/public/card/${uuid}/query/json${orgIdParam}`;
       console.log("[chat-data] " + orgSlug + "/" + rt + ": fetching...");
-      const resp = await fetch(url, { signal: AbortSignal.timeout(12000) });
+      const resp = await fetch(url, { signal: AbortSignal.timeout(30000) });
       if (!resp.ok) { console.warn("[chat-data] " + orgSlug + "/" + rt + ": HTTP " + resp.status); return; }
       const rows = await resp.json();
       if (!Array.isArray(rows) || !rows.length) { console.warn("[chat-data] " + orgSlug + "/" + rt + ": empty"); return; }
