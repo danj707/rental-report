@@ -223,9 +223,13 @@ var CARD_MAP = {
   historic:           { icon: '🏛️', label: 'Historic buildings',   text: 'Summarize our historic building rental activity. Which properties are most popular?' },
 };
 function buildSuggestions() {
-  var s = reports.filter(function(r) { return CARD_MAP[r]; }).map(function(r) { return CARD_MAP[r]; });
-  s.push({ icon: '💡', label: 'Key trends', text: 'What are the most important trends and insights across all of our data right now?' });
-  return s;
+  var rc = reports.filter(function(r) { return CARD_MAP[r]; }).map(function(r) { return CARD_MAP[r]; });
+  var ic = [
+    { icon: '💡', label: 'Key trends', text: 'What are the most important trends and insights across all of our data right now?' },
+    { icon: '🔍', label: 'Revenue opportunities', text: 'Based on all our data, where are the biggest revenue opportunities? What is underutilized?' },
+    { icon: '📈', label: 'Month-over-month', text: 'How are we trending compared to last month? What is growing, declining, and what should we watch?' },
+  ];
+  return { reportCards: rc, insightCards: ic };
 }
 
 var SUGGESTIONS = buildSuggestions();
@@ -451,9 +455,23 @@ function ChatApp() {
                 })()} . Ask a question or try one of these.
               </div>
               <div className="suggestions">
-                {SUGGESTIONS.map(function(s, i) {
+                {SUGGESTIONS.reportCards.map(function(s, i) {
                   return (
                     <div key={i} className="suggestion-card" onClick={function() { sendMessage(s.text); }}>
+                      <span className="suggestion-icon">{s.icon}</span>
+                      <div className="suggestion-label">{s.label}</div>
+                      <div>{s.text.length > 60 ? s.text.slice(0, 57) + '…' : s.text}</div>
+                    </div>
+                  );
+                })}
+              </div>
+              <div style={{borderTop:'1px solid #e5e7eb',margin:'16px auto 8px',maxWidth:740,position:'relative'}}>
+                <span style={{position:'absolute',top:-10,left:'50%',transform:'translateX(-50%)',background:'#f5f5f5',padding:'0 12px',fontSize:11,color:'#999',textTransform:'uppercase',letterSpacing:'.5px'}}>Insights</span>
+              </div>
+              <div className="suggestions">
+                {SUGGESTIONS.insightCards.map(function(s, i) {
+                  return (
+                    <div key={'i'+i} className="suggestion-card" onClick={function() { sendMessage(s.text); }}>
                       <span className="suggestion-icon">{s.icon}</span>
                       <div className="suggestion-label">{s.label}</div>
                       <div>{s.text.length > 60 ? s.text.slice(0, 57) + '…' : s.text}</div>
