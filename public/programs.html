@@ -1193,6 +1193,16 @@ function App() {
 
   var fillRateAnalytics = useMemo(() => {
     if (!fDemoRows || fDemoRows.length === 0) return null;
+    // Build capacity map from revenue data
+    var capMap = {};
+    if (rows && rows.length > 0) {
+      rows.forEach(r => {
+        if (r.isSection && r.sectionName) {
+          var cap = parseInt(r.capacity) || 0;
+          if (cap > 0) capMap[r.sectionName] = cap;
+        }
+      });
+    }
     var secMap = {};
     fDemoRows.forEach(r => {
       var sec = r['Section'] || r['section'] || '';
@@ -1200,7 +1210,7 @@ function App() {
       var dateRaw = r['Enrolled Date'] || r['enrolled_date'] || r['Enrolled date'] || '';
       if (!sec || !dateRaw) return;
       var dKey = String(dateRaw).split('T')[0];
-      if (!secMap[sec]) secMap[sec] = { program: prog, section: sec, dates: {}, total: 0 };
+      if (!secMap[sec]) secMap[sec] = { program: prog, section: sec, dates: {}, total: 0, capacity: capMap[sec] || 0 };
       if (!secMap[sec].dates[dKey]) secMap[sec].dates[dKey] = 0;
       secMap[sec].dates[dKey]++; secMap[sec].total++;
     });
@@ -1210,7 +1220,7 @@ function App() {
       sec.timeline = sd.map(d => { cumul += sec.dates[d]; return { date: d, count: cumul }; });
       sec.firstDate = sd[0]; sec.lastDate = sd[sd.length - 1];
       sec.fillDays = Math.max(1, Math.round((new Date(sec.lastDate+'T12:00:00') - new Date(sec.firstDate+'T12:00:00')) / 86400000));
-      sec.fillPct = sec.capacity ? Math.round(sec.total / sec.capacity * 100) : null;
+      sec.fillPct = sec.capacity > 0 ? Math.round(sec.total / sec.capacity * 100) : null;
     });
     var atCap = sections.filter(s => s.fillPct && s.fillPct >= 95).length;
     var withPct = sections.filter(s => s.fillPct);
@@ -1218,7 +1228,7 @@ function App() {
     var fast = sections.filter(s => s.fillDays > 0 && s.total >= 5).sort((a,b) => a.fillDays - b.fillDays)[0] || null;
     var slow = sections.filter(s => s.fillDays > 0 && s.total >= 5).sort((a,b) => b.fillDays - a.fillDays)[0] || null;
     return { sections, totalSections: sections.length, atCapacity: atCap, avgPct, fastestFill: fast, slowestFill: slow, top: sections.slice(0, 30) };
-  }, [fDemoRows]);
+  }, [fDemoRows, rows]);
 
   var sortedRetPrograms = useMemo(() => {
     if (!retStats) return [];
@@ -2464,7 +2474,7 @@ function App() {
                     <div style={{fontSize:13,fontWeight:700,color:"#111827",marginBottom:10}}>All Tracked Sections</div>
                     <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
                       <thead><tr style={{borderBottom:"2px solid #e5e7eb"}}>{[{k:"section",l:"Section",a:"left"},{k:"program",l:"Program",a:"left"},{k:"total",l:"Enrolled",a:"right"},{k:"capacity",l:"Capacity",a:"right"},{k:"fillPct",l:"Fill %",a:"right"},{k:"fillDays",l:"Fill Days",a:"right"}].map(h=>{var ac=fillSort.col===h.k;return <th key={h.k} style={{textAlign:h.a,padding:"8px 10px",fontWeight:700,color:ac?"#2563eb":"#374151",cursor:"pointer",userSelect:"none",whiteSpace:"nowrap"}} onClick={()=>setFillSort({col:h.k,dir:ac&&fillSort.dir==="desc"?"asc":"desc"})}>{h.l}{ac?(fillSort.dir==="desc"?" ▼":" ▲"):""}</th>;})}</tr></thead>
-                      <tbody>{fr.top.slice().sort((a,b)=>{var c=fillSort.col,d=fillSort.dir==="asc"?1:-1;var va=c==="section"?a.section:c==="program"?a.program:c==="total"?a.total:c==="capacity"?(a.capacity||0):c==="fillPct"?(a.fillPct||0):a.fillDays;var vb=c==="section"?b.section:c==="program"?b.program:c==="total"?b.total:c==="capacity"?(b.capacity||0):c==="fillPct"?(b.fillPct||0):b.fillDays;if(typeof va==="string")return va.localeCompare(vb)*d;return((va||0)-(vb||0))*d;}).map((sec,i)=>{var bp=sec.fillPct?Math.min(sec.fillPct,100):0;var bc=bp>=95?"#059669":bp>=70?"#d97706":bp>=40?"#2563eb":"#9ca3af";return <tr key={i} style={{borderBottom:"1px solid #f3f4f6"}}><td style={{padding:"7px 10px",fontWeight:600,color:"#111827",maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{sec.section}</td><td style={{padding:"7px 10px",color:"#6b7280",maxWidth:180,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{sec.program}</td><td style={{padding:"7px 10px",textAlign:"right",fontWeight:600}}>{sec.total}</td><td style={{padding:"7px 10px",textAlign:"right"}}>{sec.capacity||"—"}</td><td style={{padding:"7px 10px",textAlign:"right"}}>{sec.fillPct!==null?<span style={{display:"inline-flex",alignItems:"center",gap:6}}><span style={{width:48,height:6,borderRadius:3,background:"#f3f4f6",display:"inline-block",position:"relative",overflow:"hidden"}}><span style={{position:"absolute",left:0,top:0,bottom:0,borderRadius:3,background:bc,width:Math.min(bp,100)+"%"}}></span></span>{sec.fillPct>100?<span style={{fontWeight:700,color:"#059669",fontSize:11}}>Full ({sec.total}/{sec.capacity})</span>:<span style={{fontWeight:600,color:bc}}>{sec.fillPct}%</span>}</span>:"—"}</td><td style={{padding:"7px 10px",textAlign:"right",color:"#6b7280"}}>{sec.fillDays}d</td></tr>;})}</tbody>
+                      <tbody>{fr.top.slice().sort((a,b)=>{var c=fillSort.col,d=fillSort.dir==="asc"?1:-1;var va=c==="section"?a.section:c==="program"?a.program:c==="total"?a.total:c==="capacity"?(a.capacity||0):c==="fillPct"?(a.fillPct||0):a.fillDays;var vb=c==="section"?b.section:c==="program"?b.program:c==="total"?b.total:c==="capacity"?(b.capacity||0):c==="fillPct"?(b.fillPct||0):b.fillDays;if(typeof va==="string")return va.localeCompare(vb)*d;return((va||0)-(vb||0))*d;}).map((sec,i)=>{var bp=sec.fillPct?Math.min(sec.fillPct,100):0;var bc=bp>=95?"#059669":bp>=70?"#d97706":bp>=40?"#2563eb":"#9ca3af";return <tr key={i} style={{borderBottom:"1px solid #f3f4f6"}}><td style={{padding:"7px 10px",fontWeight:600,color:"#111827",maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{sec.fillPct !== null && sec.fillPct >= 85 ? "🔥 " : sec.fillPct !== null && sec.fillPct <= 25 ? "🧊 " : ""}{sec.section}</td><td style={{padding:"7px 10px",color:"#6b7280",maxWidth:180,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{sec.program}</td><td style={{padding:"7px 10px",textAlign:"right",fontWeight:600}}>{sec.total}</td><td style={{padding:"7px 10px",textAlign:"right"}}>{sec.capacity > 0 ? sec.capacity : "—"}</td><td style={{padding:"7px 10px",textAlign:"right"}}>{sec.fillPct!==null?<span style={{display:"inline-flex",alignItems:"center",gap:6}}><span style={{width:48,height:6,borderRadius:3,background:"#f3f4f6",display:"inline-block",position:"relative",overflow:"hidden"}}><span style={{position:"absolute",left:0,top:0,bottom:0,borderRadius:3,background:bc,width:Math.min(bp,100)+"%"}}></span></span>{sec.fillPct>100?<span style={{fontWeight:700,color:"#059669",fontSize:11}}>Full ({sec.total}/{sec.capacity})</span>:<span style={{fontWeight:600,color:bc}}>{sec.fillPct}%</span>}</span>:"—"}</td><td style={{padding:"7px 10px",textAlign:"right",color:"#6b7280"}}>{sec.fillDays}d</td></tr>;})}</tbody>
                     </table></div>
                   </div>
                 </React.Fragment>
