@@ -7,6 +7,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.1/marked.min.js"></script>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -127,6 +128,15 @@
   }
   .suggestion-icon { font-size: 18px; margin-bottom: 6px; display: block; }
   .suggestion-label { font-weight: 600; color: #1a1a1a; margin-bottom: 2px; }
+  .feedback-row { display: flex; align-items: center; gap: 8px; margin-top: 8px; padding-top: 8px; border-top: 1px solid #f0f0f0; font-size: 12px; color: #999; flex-wrap: wrap; }
+  .feedback-btn { background: none; border: 1px solid #e5e7eb; border-radius: 6px; padding: 4px 10px; cursor: pointer; font-size: 13px; transition: all .15s; }
+  .feedback-btn:hover { background: #f3f4f6; border-color: #d1d5db; }
+  .feedback-form { display: flex; gap: 6px; margin-top: 6px; width: 100%; }
+  .feedback-input { flex: 1; font-size: 12px; padding: 6px 10px; border: 1px solid #e5e7eb; border-radius: 6px; font-family: inherit; }
+  .feedback-submit { font-size: 11px; padding: 6px 12px; background: #1e1e1e; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-family: inherit; }
+  .chart-container { background: #fff; border-radius: 8px; padding: 12px; margin: 12px 0; max-width: 500px; }
+  .csv-download { display: inline-flex; align-items: center; gap: 4px; margin: 8px 0; padding: 6px 14px; background: #16a34a; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-size: 12px; font-family: inherit; }
+  .csv-download:hover { background: #15803d; }
 
   /* ── Input bar ──────────────────────────────────────── */
   .input-bar {
@@ -219,6 +229,14 @@ function buildSuggestions() {
 }
 
 var SUGGESTIONS = buildSuggestions();
+
+function sendFeedback(orgSlug, tok, messageId, score, comment) {
+  fetch('/' + orgSlug + '/chat/api/feedback?token=' + encodeURIComponent(tok), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ messageId: messageId, score: score, comment: comment || null }),
+  }).catch(function() {});
+}
 
 /* ── Markdown renderer setup ── */
 if (window.marked) {
@@ -326,6 +344,15 @@ function ChatApp() {
             }
             try {
               var parsed = JSON.parse(payload);
+              if (parsed.messageId) {
+                setMessages(function(prev) {
+                  var u = prev.slice();
+                  for (var j = u.length - 1; j >= 0; j--) {
+                    if (u[j].role === 'assistant') { u[j] = Object.assign({}, u[j], { messageId: parsed.messageId }); break; }
+                  }
+                  return u;
+                });
+              }
               if (parsed.t) {
                 fullText += parsed.t;
                 setMessages(function(prev) {
@@ -442,10 +469,76 @@ function ChatApp() {
                     {isUser
                       ? m.content
                       : m.content
-                        ? <div dangerouslySetInnerHTML={{ __html: renderMd(m.content) }} />
+                        ? <div ref={function(el) {
+                            if (!el || m.streaming) return;
+                            el.querySelectorAll('code.language-chart').forEach(function(codeEl) {
+                              if (codeEl.dataset.rendered) return;
+                              codeEl.dataset.rendered = '1';
+                              try {
+                                var spec = JSON.parse(codeEl.textContent);
+                                var wrap = document.createElement('div');
+                                wrap.className = 'chart-container';
+                                var canvas = document.createElement('canvas');
+                                wrap.appendChild(canvas);
+                                var pre = codeEl.closest('pre');
+                                pre.parentNode.replaceChild(wrap, pre);
+                                new Chart(canvas, {
+                                  type: spec.type || 'bar',
+                                  data: { labels: spec.labels || [], datasets: (spec.datasets || []).map(function(ds) { return Object.assign({ backgroundColor: ['#3b82f6','#f97316','#22c55e','#eab308','#ef4444','#8b5cf6','#ec4899','#06b6d4'], borderWidth: 0 }, ds); }) },
+                                  options: { responsive: true, plugins: { title: { display: !!spec.title, text: spec.title || '' }, legend: { display: (spec.datasets||[]).length > 1 } }, scales: spec.type === 'pie' || spec.type === 'doughnut' ? {} : { y: { beginAtZero: true } } },
+                                });
+                              } catch(e) { console.warn('Chart render error:', e); }
+                            });
+                            el.querySelectorAll('code.language-csv').forEach(function(codeEl) {
+                              if (codeEl.dataset.rendered) return;
+                              codeEl.dataset.rendered = '1';
+                              var csvText = codeEl.textContent;
+                              var btn = document.createElement('button');
+                              btn.className = 'csv-download';
+                              btn.textContent = '⬇️ Download CSV';
+                              btn.onclick = function() {
+                                var blob = new Blob([csvText], { type: 'text/csv' });
+                                var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'export.csv'; a.click();
+                              };
+                              codeEl.closest('pre').parentNode.insertBefore(btn, codeEl.closest('pre'));
+                            });
+                          }} dangerouslySetInnerHTML={{ __html: renderMd(m.content) }} />
                         : <div className="typing-dots"><span /><span /><span /></div>
                     }
                     {isStreaming && m.content && <span style={{opacity:.5}}>▌</span>}
+                    {!isUser && !m.streaming && m.messageId && (function() {
+                      var voted = m.feedbackScore !== undefined;
+                      return (
+                        <div className="feedback-row">
+                          {!voted ? (
+                            <React.Fragment>
+                              <span>How was this response?</span>
+                              <button className="feedback-btn" onClick={function() {
+                                sendFeedback(slug, token, m.messageId, 1);
+                                setMessages(function(p) { var u = p.slice(); u[i] = Object.assign({}, u[i], { feedbackScore: 1 }); return u; });
+                              }}>👍</button>
+                              <button className="feedback-btn" onClick={function() {
+                                setMessages(function(p) { var u = p.slice(); u[i] = Object.assign({}, u[i], { showFeedbackForm: true }); return u; });
+                              }}>👎</button>
+                            </React.Fragment>
+                          ) : (
+                            <span style={{color: m.feedbackScore === 1 ? '#16a34a' : '#dc2626'}}>
+                              {m.feedbackScore === 1 ? '👍 Thanks!' : '👎 Feedback sent'}
+                            </span>
+                          )}
+                          {m.showFeedbackForm && !voted && (
+                            <div className="feedback-form">
+                              <input className="feedback-input" id={'fb-' + i} placeholder="What could be better?" onKeyDown={function(e) { if (e.key === 'Enter') document.getElementById('fb-submit-' + i).click(); }} />
+                              <button className="feedback-submit" id={'fb-submit-' + i} onClick={function() {
+                                var cmt = document.getElementById('fb-' + i).value;
+                                sendFeedback(slug, token, m.messageId, 0, cmt);
+                                setMessages(function(p) { var u = p.slice(); u[i] = Object.assign({}, u[i], { feedbackScore: 0, showFeedbackForm: false }); return u; });
+                              }}>Send</button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </div>
                 </div>
               );
