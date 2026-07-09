@@ -2630,6 +2630,17 @@ RULES:
 - If asked about data not covered by ANY of the reports in the inventory above, say so and suggest what report type might help. But if the data IS in the inventory, use it.
 - When asked for trends or comparisons, cite the specific numbers.
 - Keep responses focused — 2-4 paragraphs unless a longer answer is clearly needed.
+- When data would be better shown as a chart, include a chart spec block:
+  \`\`\`chart
+  {"type":"bar","title":"Chart Title","labels":["A","B","C"],"datasets":[{"label":"Series","data":[10,20,30]}]}
+  \`\`\`
+  Supported types: bar, pie, line, doughnut. Use clear labels and a descriptive title.
+- When the user asks to export or download data, provide a CSV block:
+  \`\`\`csv
+  Column1,Column2,Column3
+  val1,val2,val3
+  \`\`\`
+  The system will automatically offer a download button.
 - Never expose PII (emails, phone numbers, names of individual reservees/customers).`;
 }
 
@@ -2660,6 +2671,7 @@ app.post("/:org/chat/api/message", async (req, res) => {
     "X-Accel-Buffering": "no",
   });
 
+  const messageId = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
   try {
     // Signal data loading
     res.write("data: [DATA_LOADING]\n\n");
@@ -2700,9 +2712,10 @@ app.post("/:org/chat/api/message", async (req, res) => {
     const outputTokens = finalMessage.usage?.output_tokens || 0;
 
     const costUsd = insightsCostUsd(CHAT_MODEL, inputTokens, outputTokens);
-    logEvent(slug, "chat", "message", req, { inTok: inputTokens, outTok: outputTokens, costUsd });
+    logEvent(slug, "chat", "message", req, { messageId, inTok: inputTokens, outTok: outputTokens, costUsd });
     if (_langfuseProcessor) _langfuseProcessor.forceFlush().catch(() => {});
 
+    res.write("data: " + JSON.stringify({ messageId }) + "\n\n");
     res.write("data: [DONE]\n\n");
     res.end();
   } catch (err) {
@@ -2715,6 +2728,44 @@ app.post("/:org/chat/api/message", async (req, res) => {
   }
 });
 
+
+// ── POST /:org/chat/api/feedback — chat thumbs up/down → Langfuse ───
+app.post("/:org/chat/api/feedback", (req, res) => {
+  const slug = req.params.org;
+  const org = ORGS[slug];
+  if (!org) return res.status(404).json({ error: "Unknown org" });
+
+  const { messageId, score, comment } = req.body || {};
+  if (!messageId) return res.status(400).json({ error: "messageId required" });
+  if (score !== 1 && score !== 0) return res.status(400).json({ error: "score must be 1 or 0" });
+
+  logEvent(slug, "chat", "chat-feedback", req, {
+    messageId, score, comment: (comment || "").slice(0, 500),
+  });
+
+  // Send to Langfuse
+  if (process.env.LANGFUSE_PUBLIC_KEY && process.env.LANGFUSE_SECRET_KEY) {
+    const baseUrl = process.env.LANGFUSE_BASE_URL || "https://us.cloud.langfuse.com";
+    const auth = Buffer.from(process.env.LANGFUSE_PUBLIC_KEY + ":" + process.env.LANGFUSE_SECRET_KEY).toString("base64");
+    fetch(baseUrl + "/api/public/scores", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": "Basic " + auth },
+      body: JSON.stringify({
+        name: "chat-feedback",
+        value: score,
+        comment: comment ? `[${slug}/chat] ${comment}` : `[${slug}/chat] ${score === 1 ? "thumbs up" : "thumbs down"}`,
+        metadata: { org: slug, messageId, userComment: comment || null },
+      }),
+    })
+    .then(r => {
+      if (!r.ok) r.text().then(t => console.error("[langfuse] chat score error:", r.status, t.slice(0, 200)));
+      else console.log("[langfuse] chat score:", messageId.slice(0, 8), score === 1 ? "\uD83D\uDC4D" : "\uD83D\uDC4E");
+    })
+    .catch(e => console.error("[langfuse] chat score error:", e.message));
+  }
+
+  res.json({ ok: true });
+});
 
 // ── GET /:org/:report/api/data — proxy to Metabase ───────────────────
 // ── Report Wizard — AI config generator ─────────────────────────────
