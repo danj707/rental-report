@@ -423,18 +423,18 @@ function App() {
     }, [days]);
     if (!fb || !fb.feedback || fb.feedback.length === 0) return null;
     return (
-      <div className=fb-card>
-        <div className=section-title>💬 AI Feedback ({fb.total} responses)</div>
-        <div className=fb-list>
+      <div className="fb-card">
+        <div className="section-title">💬 AI Feedback ({fb.total} responses)</div>
+        <div className="fb-list">
           {fb.feedback.map(function(f, i) {
             return (
-              <div key={i} className=fb-item>
-                <span className=fb-score>{f.score === 1 ? '👍' : '👎'}</span>
+              <div key={i} className="fb-item">
+                <span className="fb-score">{f.score === 1 ? '👍' : '👎'}</span>
                 <div style={{flex:1}}>
-                  <div className=fb-meta>
+                  <div className="fb-meta">
                     <strong>{f.org}</strong> · {f.type === 'chat' ? 'Rec AI Chat' : f.report + ' insights'} · {f.ts ? new Date(f.ts).toLocaleDateString() + ' ' + new Date(f.ts).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : ''}
                   </div>
-                  {f.comment && <div className=fb-comment>“{f.comment}”</div>}
+                  {f.comment && <div className="fb-comment">“{f.comment}”</div>}
                 </div>
               </div>
             );
