@@ -385,10 +385,14 @@ async function prewarmCache() {
       if (getCached(cacheKey)) continue; // already warm
       try {
         const timeoutMs = org.healthTimeoutMs || 120000;
-        const orgIdParam = useShared && org.orgId
-          ? `?parameters=${encodeURIComponent(JSON.stringify([{ type: "string/=", target: ["variable", ["template-tag", "org_id"]], value: org.orgId }]))}`
-          : '';
-        const url = `${METABASE_URL}/api/public/card/${mbUuid}/query/json${orgIdParam}`;
+        // Build params: org_id (shared) + this-month dates (avoid querying all-time data)
+        const fetchParams = [];
+        if (useShared && org.orgId) {
+          fetchParams.push({ type: "string/=", target: ["variable", ["template-tag", "org_id"]], value: org.orgId });
+        }
+        fetchParams.push(...monthParams);
+        const paramStr = fetchParams.length > 0 ? `?parameters=${encodeURIComponent(JSON.stringify(fetchParams))}` : '';
+        const url = `${METABASE_URL}/api/public/card/${mbUuid}/query/json${paramStr}`;
         const resp = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
         if (resp.ok) {
           let data = await resp.json();
@@ -1891,10 +1895,24 @@ function parseToISO(dateStr) {
 }
 
 // ── Build Metabase parameters array ─────────────────────────────────
+const FORWARD_REPORTS = new Set(["facility", "calendar", "roster", "historic"]);
+const DEFAULT_WINDOW_DAYS = 7;
+
 function buildMetabaseParams(query, reportType, orgId) {
   const params = [];
   if (orgId) {
     params.push({ type: "string/=", target: ["variable", ["template-tag", "org_id"]], value: orgId });
+  }
+  // Default 7-day window when no dates provided — forward or backward depending on report type
+  if (!query.start_date && !query.end_date) {
+    const now = new Date();
+    const offset = DEFAULT_WINDOW_DAYS * 86400000;
+    if (FORWARD_REPORTS.has(reportType)) {
+      query = Object.assign({}, query, { start_date: now.toISOString().slice(0,10), end_date: new Date(now.getTime() + offset).toISOString().slice(0,10) });
+    } else {
+      query = Object.assign({}, query, { start_date: new Date(now.getTime() - offset).toISOString().slice(0,10), end_date: now.toISOString().slice(0,10) });
+    }
+    console.log("[data] " + reportType + ": no dates, defaulting to " + query.start_date + " → " + query.end_date);
   }
   if (query.start_date) {
     params.push({ type: "date/single", target: ["variable", ["template-tag", "start_date"]], value: parseToISO(query.start_date) });
