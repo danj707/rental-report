@@ -390,7 +390,7 @@ async function prewarmCache() {
         if (useShared && org.orgId) {
           fetchParams.push({ type: "string/=", target: ["variable", ["template-tag", "org_id"]], value: org.orgId });
         }
-        fetchParams.push(...monthParams);
+        if (!NO_DATE_REPORTS.has(rt)) fetchParams.push(...monthParams);
         const paramStr = fetchParams.length > 0 ? `?parameters=${encodeURIComponent(JSON.stringify(fetchParams))}` : '';
         const url = `${METABASE_URL}/api/public/card/${mbUuid}/query/json${paramStr}`;
         const resp = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
@@ -1896,6 +1896,7 @@ function parseToISO(dateStr) {
 
 // ── Build Metabase parameters array ─────────────────────────────────
 const FORWARD_REPORTS = new Set(["facility", "calendar", "roster", "historic"]);
+const NO_DATE_REPORTS = new Set(["program-demographics", "memberships", "users", "retention", "section-detail", "ice-calendar", "checkins"]);
 const DEFAULT_WINDOW_DAYS = 7;
 
 function buildMetabaseParams(query, reportType, orgId) {
@@ -1903,8 +1904,8 @@ function buildMetabaseParams(query, reportType, orgId) {
   if (orgId) {
     params.push({ type: "string/=", target: ["variable", ["template-tag", "org_id"]], value: orgId });
   }
-  // Default 7-day window when no dates provided — forward or backward depending on report type
-  if (!query.start_date && !query.end_date) {
+  // Default 7-day window when no dates provided (skip reports without date template vars) — forward or backward depending on report type
+  if (!query.start_date && !query.end_date && !NO_DATE_REPORTS.has(reportType)) {
     const now = new Date();
     const offset = DEFAULT_WINDOW_DAYS * 86400000;
     if (FORWARD_REPORTS.has(reportType)) {
