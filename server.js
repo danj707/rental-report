@@ -2048,9 +2048,9 @@ app.get("/api/admin/feedback", (req, res) => {
       org: e.org,
       type: e.event === "chat-feedback" ? "chat" : "insights",
       report: e.report || null,
-      score: e.extra?.score,
-      comment: e.extra?.comment || e.extra?.userComment || null,
-      messageId: e.extra?.messageId || e.extra?.traceId || null,
+      score: e.score,
+      comment: e.comment || e.userComment || null,
+      messageId: e.messageId || e.traceId || null,
     }))
     .reverse()
     .slice(0, 100);
