@@ -1999,7 +1999,6 @@ app.get("/:org/api/calendar-conversion", async (req, res) => {
         if (pResp.ok) progRows = await pResp.json();
       }
       if (progRows && progRows.length > 0) {
-        res._debugProgSample = Object.keys(progRows[0]);
         let totalRev = 0, totalEnr = 0;
         progRows.forEach(r => {
           const rev = parseFloat(r["net_total"] || r["Net Revenue"] || r["Net Total"] || 0) || 0;
@@ -2033,7 +2032,7 @@ app.get("/:org/api/calendar-conversion", async (req, res) => {
     avgTicketPrice: Math.round(avgTicket * 100) / 100,
     attributedRevenue: Math.round(attributedRevenue * 100) / 100,
     daily,
-    _debug: { avgTicket, progRowsSample: res._debugProgSample || "no data" },
+
   });
 });
 
