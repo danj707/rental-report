@@ -383,8 +383,11 @@ function App() {
           </div>}
           {conv.attributedRevenue > 0 && <div className="conv-kpi">
             <div className="conv-kpi-val" style={{color:'#16a34a',fontSize:26}}>${conv.attributedRevenue >= 1000 ? (conv.attributedRevenue / 1000).toFixed(1) + 'k' : Math.round(conv.attributedRevenue)}</div>
-            <div className="conv-kpi-label">Attributed Revenue</div>
+            <div className="conv-kpi-label">Enrollment Revenue</div>
           </div>}
+        </div>
+        <div style={{fontSize:10,color:'#999',marginBottom:8,lineHeight:1.4}}>
+          Correlation, not causation — enrollment revenue reflects registrations that occurred on days the program calendar was viewed. Not all enrollments are directly attributable to calendar views.
         </div>
         <div className="conv-bars">
           {conv.daily.map((d, i) => (
