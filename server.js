@@ -2551,7 +2551,9 @@ async function fetchOrgChatData(orgSlug, orgConfig) {
   if (hit && Date.now() - hit.ts < CHAT_DATA_TTL) return hit.data;
 
   const orgHidden = new Set(getHiddenReports(orgSlug));
-  const reports = REPORT_TYPES.filter(r => !orgHidden.has(r) && (orgConfig[r]?.mbUuid || SHARED_UUIDS[r]));
+  const CHAT_SKIP = new Set(["section-detail","program-demographics","retention","directors-report","annual-report","checkins","ice-calendar","qoq","overview"]);
+  const reports = REPORT_TYPES.filter(r => !orgHidden.has(r) && !CHAT_SKIP.has(r) && (orgConfig[r]?.mbUuid || SHARED_UUIDS[r]));
+  console.log("[chat-data] " + orgSlug + ": fetching " + reports.length + " reports: " + reports.join(", "));
   const results = {};
 
   await Promise.allSettled(reports.map(async (rt) => {
@@ -2560,10 +2562,12 @@ async function fetchOrgChatData(orgSlug, orgConfig) {
       const isShared = !orgConfig[rt]?.mbUuid && !!SHARED_UUIDS[rt];
       const orgIdParam = isShared && orgConfig.orgId ? `?parameters=${encodeURIComponent(JSON.stringify([{type:"category",target:["variable",["template-tag","org_id"]],value:orgConfig.orgId}]))}` : "";
       const url = `${METABASE_URL}/api/public/card/${uuid}/query/json${orgIdParam}`;
+      console.log("[chat-data] " + orgSlug + "/" + rt + ": fetching...");
       const resp = await fetch(url, { signal: AbortSignal.timeout(12000) });
-      if (!resp.ok) return;
+      if (!resp.ok) { console.warn("[chat-data] " + orgSlug + "/" + rt + ": HTTP " + resp.status); return; }
       const rows = await resp.json();
-      if (!Array.isArray(rows) || !rows.length) return;
+      if (!Array.isArray(rows) || !rows.length) { console.warn("[chat-data] " + orgSlug + "/" + rt + ": empty"); return; }
+      console.log("[chat-data] " + orgSlug + "/" + rt + ": " + rows.length + " rows");
 
       // Calendar: strip PII before including in chat context
       if (rt === "calendar") {
