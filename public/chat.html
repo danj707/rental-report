@@ -114,7 +114,7 @@
   .welcome-title { font-size: 22px; font-weight: 700; color: #312e81; margin-bottom: 6px; }
   .welcome-sub { font-size: 14px; color: #6b6b80; margin-bottom: 28px; max-width: 440px; margin-left: auto; margin-right: auto; line-height: 1.5; }
 
-  .suggestions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; max-width: 560px; margin: 0 auto; }
+  .suggestions { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; max-width: 740px; margin: 0 auto; }
   @media (max-width: 520px) { .suggestions { grid-template-columns: 1fr; } }
   .suggestion-card {
     background: #fff; border: 1px solid #e5e5ec; border-radius: 12px;
@@ -198,27 +198,24 @@ var reports  = CFG.reports || [];
 var tokenQS  = token ? '?token=' + encodeURIComponent(token) : '';
 
 /* ── Suggested questions based on available reports ── */
+var CARD_MAP = {
+  facility:           { icon: '📅', label: 'Busiest facilities',   text: 'What are our busiest facilities this month, and what times see the most demand?' },
+  gl:                 { icon: '📊', label: 'Revenue breakdown',    text: 'Summarize our payments vs refunds by GL code. Are there any codes with unusually high refund rates?' },
+  programs:           { icon: '🎯', label: 'Program performance',  text: 'Which programs have the highest enrollment and revenue? Are any programs underperforming?' },
+  products:           { icon: '🛒', label: 'Top products',         text: 'What are our top-selling products by net revenue, and are there any products with a lot of refunds?' },
+  memberships:        { icon: '🎫', label: 'Membership health',    text: 'How is our membership retention? How many active vs lapsed memberships do we have?' },
+  'court-utilization':{ icon: '🎾', label: 'Court usage',          text: 'Which courts are most and least utilized? Where do we have room to book more?' },
+  fasttrack:          { icon: '⚡',     label: 'Demand signals',       text: 'Which programs have the most Fast Track signups? What are our conversion rates?' },
+  roster:             { icon: '📋', label: 'Class rosters',        text: 'Show me a summary of class enrollments. Which sections have the most participants?' },
+  calendar:           { icon: '🗓️', label: 'Program calendar',    text: 'What programs and events are coming up this month? Which days are busiest?' },
+  users:              { icon: '👥', label: 'Community demographics',text: 'What does our community look like? Age distribution, where do our residents come from?' },
+  'instructor-payout':{ icon: '💰', label: 'Instructor payouts',   text: 'Summarize instructor revenue splits and payouts. Who are our highest-earning instructors?' },
+  historic:           { icon: '🏛️', label: 'Historic buildings',   text: 'Summarize our historic building rental activity. Which properties are most popular?' },
+};
 function buildSuggestions() {
-  var s = [];
-  if (reports.includes('facility'))
-    s.push({ icon: '📅', label: 'Busiest facilities', text: 'What are our busiest facilities this month, and what times see the most demand?' });
-  if (reports.includes('gl'))
-    s.push({ icon: '📊', label: 'Revenue breakdown', text: 'Summarize our payments vs refunds by GL code. Are there any codes with unusually high refund rates?' });
-  if (reports.includes('programs'))
-    s.push({ icon: '🎯', label: 'Program performance', text: 'Which programs have the highest enrollment and revenue? Are any programs underperforming?' });
-  if (reports.includes('products'))
-    s.push({ icon: '🛒', label: 'Top products', text: 'What are our top-selling products by net revenue, and are there any products with a lot of refunds?' });
-  if (reports.includes('memberships'))
-    s.push({ icon: '🎫', label: 'Membership health', text: 'How is our membership retention? How many active vs lapsed memberships do we have?' });
-  if (reports.includes('court-utilization'))
-    s.push({ icon: '🎾', label: 'Court usage', text: 'Which courts are most and least utilized? Where do we have room to book more?' });
-  if (reports.includes('fasttrack'))
-    s.push({ icon: '⚡', label: 'Demand signals', text: 'Which programs have the most Fast Track signups? What are our conversion rates?' });
-
-  // Always add a general one
+  var s = reports.filter(function(r) { return CARD_MAP[r]; }).map(function(r) { return CARD_MAP[r]; });
   s.push({ icon: '💡', label: 'Key trends', text: 'What are the most important trends and insights across all of our data right now?' });
-
-  return s.slice(0, 6);
+  return s;
 }
 
 var SUGGESTIONS = buildSuggestions();
