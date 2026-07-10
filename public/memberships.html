@@ -404,6 +404,22 @@
     .ci-table td { padding: 5px 8px; border-bottom: 1px solid #f0eeea; }
     .ci-table tr:hover { background: #fafaf7; }
 
+    /* ── Heatmap ── */
+    .ci-heatmap-wrap { background: #fff; border: 1px solid #e8e6e0; border-radius: 6px; padding: 16px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,.05); }
+    .ci-heatmap { display: grid; gap: 2px; }
+    .ci-hm-cell { border-radius: 2px; display: flex; align-items: center; justify-content: center; font-size: 9px; font-weight: 600; color: transparent; cursor: default; transition: opacity .15s; min-height: 22px; }
+    .ci-hm-cell:hover { opacity: .85; color: #fff; text-shadow: 0 0 2px rgba(0,0,0,.4); }
+    .ci-hm-cell.empty { background: #f5f3ef; }
+    .ci-hm-header { font-size: 10px; font-weight: 600; color: #888; display: flex; align-items: center; justify-content: center; }
+    .ci-hm-row-label { font-size: 10px; font-weight: 600; color: #666; display: flex; align-items: center; justify-content: flex-end; padding-right: 6px; }
+    .ci-hm-legend { display: flex; align-items: center; gap: 4px; margin-top: 8px; font-size: 10px; color: #888; justify-content: flex-end; }
+    .ci-hm-legend-swatch { width: 14px; height: 10px; border-radius: 2px; }
+
+    /* ── Daily Trend ── */
+    .ci-trend-wrap { background: #fff; border: 1px solid #e8e6e0; border-radius: 6px; padding: 16px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,.05); }
+    .ci-trend-svg { width: 100%; overflow: visible; }
+    .ci-trend-tooltip { position: absolute; background: #333; color: #fff; font-size: 11px; padding: 4px 8px; border-radius: 4px; pointer-events: none; white-space: nowrap; z-index: 10; transform: translate(-50%, -110%); }
+
     body.print-mode .report-tabs { display: none; }
     @media print { .report-tabs { display: none; } }
   </style>
@@ -1620,7 +1636,7 @@ function normalizeRow(raw) {
               {ciLoading && <div style={{textAlign:'center',padding:40,color:'#999'}}>Loading check-in data...</div>}
               {!ciLoading && ciRows && ciRows.length > 0 && (() => {
                 var uniqueMembers = new Set(); var hourCounts = {}; var dayCounts = {}; var deskCounts = {}; var prodCounts = {};
-                var dayTypeCounts = {};
+                var dayTypeCounts = {}; var heatGrid = {}; var dailyCounts = {};
                 ciRows.forEach(function(r) {
                   uniqueMembers.add(r['Member ID']);
                   var h = parseInt(r['Hour']); hourCounts[h] = (hourCounts[h]||0)+1;
@@ -1628,6 +1644,8 @@ function normalizeRow(raw) {
                   var desk = r['Desk Location']||'Unknown'; deskCounts[desk] = (deskCounts[desk]||0)+1;
                   var prod = r['Product Name']||'Unknown'; prodCounts[prod] = (prodCounts[prod]||0)+1;
                   var dt = (r['Day Type']||'').trim(); if (dt) dayTypeCounts[dt] = (dayTypeCounts[dt]||0)+1;
+                  if (dow && !isNaN(h)) { if (!heatGrid[dow]) heatGrid[dow] = {}; heatGrid[dow][h] = (heatGrid[dow][h]||0)+1; }
+                  var dateKey = r['Date']||''; if (dateKey) dailyCounts[dateKey] = (dailyCounts[dateKey]||0)+1;
                 });
                 var uniqueDates = new Set(ciRows.map(function(r){ return r['Date']; }));
                 var avgPerDay = uniqueDates.size > 0 ? Math.round(ciRows.length / uniqueDates.size) : 0;
@@ -1650,6 +1668,84 @@ function normalizeRow(raw) {
                       <div className="ci-kpi" style={{borderLeft:'3px solid #8b5cf6'}}><div className="kl">Peak Hour</div><div className="kv">{peakLabel}</div><div className="ks">{peakEntry ? peakEntry[1]+' check-ins' : ''}</div></div>
                       <div className="ci-kpi" style={{borderLeft:'3px solid #06b6d4'}}><div className="kl">Membership vs Pass</div><div className="kv">{Math.round(memCount/Math.max(ciRows.length,1)*100)}% / {Math.round(passCount/Math.max(ciRows.length,1)*100)}%</div><div className="ks">{memCount.toLocaleString()} / {passCount.toLocaleString()}</div></div>
                     </div>
+                    {/* ── Hour x Day Heatmap ── */}
+                    {(() => {
+                      var hmHours = []; for (var hh=5; hh<=21; hh++) hmHours.push(hh);
+                      var hmMax = 0;
+                      dayOrd.forEach(function(d){ hmHours.forEach(function(h){ var v = (heatGrid[d]||{})[h]||0; if (v > hmMax) hmMax = v; }); });
+                      function hmColor(v) {
+                        if (!v || hmMax === 0) return '#f5f3ef';
+                        var pct = v / hmMax;
+                        if (pct < 0.15) return '#dbeafe';
+                        if (pct < 0.3)  return '#93c5fd';
+                        if (pct < 0.5)  return '#60a5fa';
+                        if (pct < 0.7)  return '#3b82f6';
+                        if (pct < 0.85) return '#2563eb';
+                        return '#1d4ed8';
+                      }
+                      return (
+                        <div className="ci-heatmap-wrap">
+                          <div className="ci-chart-title">Peak Hours by Day of Week</div>
+                          <div className="ci-heatmap" style={{gridTemplateColumns: '50px repeat(' + hmHours.length + ', 1fr)'}}>
+                            <div className="ci-hm-header" />
+                            {hmHours.map(function(h){ return <div key={h} className="ci-hm-header">{h===0?'12a':h===12?'12p':h>12?(h-12)+'p':h+'a'}</div>; })}
+                            {dayOrd.map(function(d){
+                              return <React.Fragment key={d}>
+                                <div className="ci-hm-row-label">{d.slice(0,3)}</div>
+                                {hmHours.map(function(h){
+                                  var v = (heatGrid[d]||{})[h]||0;
+                                  return <div key={h} className={'ci-hm-cell' + (v===0?' empty':'')} style={{background: hmColor(v)}} title={d.slice(0,3) + ' ' + (h===0?'12am':h===12?'12pm':h>12?(h-12)+'pm':h+'am') + ': ' + v + ' check-ins'}>{v||''}</div>;
+                                })}
+                              </React.Fragment>;
+                            })}
+                          </div>
+                          <div className="ci-hm-legend">
+                            <span>Fewer</span>
+                            {['#f5f3ef','#dbeafe','#93c5fd','#60a5fa','#3b82f6','#2563eb','#1d4ed8'].map(function(c,i){ return <div key={i} className="ci-hm-legend-swatch" style={{background:c}} />; })}
+                            <span>More</span>
+                          </div>
+                        </div>
+                      );
+                    })()}
+                    {/* ── Daily Trend ── */}
+                    {(() => {
+                      var sortedDays = Object.entries(dailyCounts).sort(function(a,b){ return a[0].localeCompare(b[0]); });
+                      if (sortedDays.length < 2) return null;
+                      var maxDay = Math.max.apply(null, sortedDays.map(function(e){ return e[1]; }));
+                      var W = 1060; var H = 160; var padL = 40; var padR = 10; var padT = 10; var padB = 24;
+                      var plotW = W - padL - padR; var plotH = H - padT - padB;
+                      var pts = sortedDays.map(function(e, i) {
+                        var x = padL + (i / Math.max(sortedDays.length - 1, 1)) * plotW;
+                        var y = padT + plotH - (e[1] / maxDay) * plotH;
+                        return { x: x, y: y, date: e[0], count: e[1] };
+                      });
+                      var line = pts.map(function(p){ return p.x + ',' + p.y; }).join(' ');
+                      var area = padL + ',' + (padT + plotH) + ' ' + line + ' ' + pts[pts.length-1].x + ',' + (padT + plotH);
+                      var yTicks = [0, Math.round(maxDay/2), maxDay];
+                      var xLabels = sortedDays.length <= 14 ? sortedDays : sortedDays.filter(function(_,i){ return i % Math.ceil(sortedDays.length/10) === 0 || i === sortedDays.length-1; });
+                      return (
+                        <div className="ci-trend-wrap">
+                          <div className="ci-chart-title">Daily Check-Ins</div>
+                          <svg viewBox={'0 0 ' + W + ' ' + H} className="ci-trend-svg" style={{height: 180}}>
+                            {yTicks.map(function(v) {
+                              var y = padT + plotH - (v / maxDay) * plotH;
+                              return <React.Fragment key={v}><line x1={padL} x2={W-padR} y1={y} y2={y} stroke="#e8e6e0" strokeWidth="1" /><text x={padL-4} y={y+3} textAnchor="end" fontSize="9" fill="#999">{v.toLocaleString()}</text></React.Fragment>;
+                            })}
+                            <polygon points={area} fill="rgba(59,130,246,0.12)" />
+                            <polyline points={line} fill="none" stroke="#3b82f6" strokeWidth="2" strokeLinejoin="round" />
+                            {pts.map(function(p, i) {
+                              var fmtD = (function(){ try { var d = new Date(p.date + 'T12:00:00'); return d.toLocaleDateString('en-US',{month:'short',day:'numeric'}); } catch(e){ return p.date; } })();
+                              return <circle key={i} cx={p.x} cy={p.y} r="3.5" fill="#3b82f6" stroke="#fff" strokeWidth="1.5" style={{cursor:'default'}}><title>{fmtD + ': ' + p.count.toLocaleString() + ' check-ins'}</title></circle>;
+                            })}
+                            {xLabels.map(function(e) {
+                              var idx = sortedDays.indexOf(e); var x = padL + (idx / Math.max(sortedDays.length - 1, 1)) * plotW;
+                              var fmtD = (function(){ try { var d = new Date(e[0] + 'T12:00:00'); return d.toLocaleDateString('en-US',{month:'short',day:'numeric'}); } catch(ex){ return e[0]; } })();
+                              return <text key={e[0]} x={x} y={H - 4} textAnchor="middle" fontSize="9" fill="#999">{fmtD}</text>;
+                            })}
+                          </svg>
+                        </div>
+                      );
+                    })()}
                     <div className="ci-charts">
                       <div className="ci-chart-box">
                         <div className="ci-chart-title">Hourly Distribution</div>
