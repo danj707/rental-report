@@ -1776,11 +1776,12 @@ function App() {
             if (r.status === 'Canceled' || r.status === 'Cancelled') { if (p.status !== 'In Progress' && p.status !== 'Past') p.status = 'Canceled'; }
             else if (r.status === 'In Progress') p.status = 'In Progress';
             else if (r.status === 'Upcoming' && p.status !== 'In Progress' && p.status !== 'Past') p.status = 'Upcoming';
-            if (r.startDate && (!p.startDate || r.startDate < p.startDate)) p.startDate = r.startDate;
-            if (r.endDate && (!p.endDate || r.endDate > p.endDate)) p.endDate = r.endDate;
+            var sd = r.startDate ? String(r.startDate).slice(0,10) : '';
+            var ed = r.endDate ? String(r.endDate).slice(0,10) : '';
+            if (sd && sd.length === 10 && (!p.startDate || sd < p.startDate)) p.startDate = sd;
+            if (ed && ed.length === 10 && (!p.endDate || ed > p.endDate)) p.endDate = ed;
           });
           var progs = Object.values(progMap);
-          // A program is "cancelled" only if ALL its sections are cancelled
           progs.forEach(function(p) {
             var allCancel = p.sections.length > 0 && p.sections.every(function(s) { return s.status === 'Canceled' || s.status === 'Cancelled'; });
             if (allCancel) p.status = 'Canceled';
@@ -1791,10 +1792,13 @@ function App() {
           var upcomingProgs = progs.filter(function(p) { return p.status === 'Upcoming'; });
           var totalRev = progs.reduce(function(s,p){ return s + p.netRevenue; }, 0);
           var totalEnrolled = progs.reduce(function(s,p){ return s + p.enrolled; }, 0);
+          var totalSections = progs.reduce(function(s,p){ return s + p.sections.length; }, 0);
           var ranPct = (ranProgs.length + cancelledProgs.length) > 0 ? Math.round(ranProgs.length / (ranProgs.length + cancelledProgs.length) * 100) : 100;
           var withCap = ranProgs.filter(function(p) { return p.capacity > 0; });
           var avgFill = withCap.length > 0 ? Math.round(withCap.reduce(function(s,p){ return s + p.fillPct; }, 0) / withCap.length) : 0;
-          // By activity
+          var fmt$ = function(n) { return '$' + Math.round(n).toLocaleString(); };
+          var fmtD = function(d) { if (!d || String(d).length < 8) return ''; try { var dt = new Date(d + 'T12:00:00'); var s = dt.toLocaleDateString('en-US',{month:'short',day:'numeric'}); return s === 'Invalid Date' ? '' : s; } catch(e) { return ''; } };
+          // By activity — compact
           var byAct = {};
           progs.forEach(function(p) {
             var a = p.activity || 'Uncategorized';
@@ -1806,24 +1810,23 @@ function App() {
             if (p.status === 'Canceled') byAct[a].cancelled++;
           });
           var actEntries = Object.entries(byAct).sort(function(a,b){ return b[1].revenue - a[1].revenue; });
-          var actColors = ['#d97706','#2563eb','#16a34a','#dc2626','#7c3aed','#0891b2','#ea580c','#64748b','#db2777','#059669'];
-          // Revenue bar chart data
-          var maxActRev = Math.max.apply(null, actEntries.map(function(e){ return e[1].revenue; }).concat([1]));
-          // Participants donut data
-          var totalActEnrolled = actEntries.reduce(function(s,e){ return s + e[1].enrolled; }, 0);
-          var fmt$ = function(n) { return '$' + Math.round(n).toLocaleString(); };
-          var fmtD = function(d) { try { return new Date(d + 'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'}); } catch(e) { return d || ''; } };
+          var actByEnrolled = actEntries.slice().sort(function(a,b){ return b[1].enrolled - a[1].enrolled; });
+          // Sorted programs
+          var progsSorted = progs.slice().sort(function(a,b){ return b.netRevenue - a.netRevenue; });
           return (
             <div style={{maxWidth:1100,margin:'0 auto'}}>
+              {/* ── Summary Cards ── */}
               <div className="sum-cards">
-                <div className="sum-card"><div className="sc-label">Programs</div><div className="sc-val sc-blue">{progs.length}</div><div className="sc-sub">{totals ? totals.sections : filteredRows.length} sections</div></div>
-                <div className="sum-card"><div className="sc-label">Participants</div><div className="sc-val sc-green">{totalEnrolled.toLocaleString()}</div><div className="sc-sub">{avgFill}% avg fill rate</div></div>
+                <div className="sum-card"><div className="sc-label">Programs</div><div className="sc-val sc-blue">{progs.length}</div><div className="sc-sub">{totalSections} sections</div></div>
+                <div className="sum-card"><div className="sc-label">Participants</div><div className="sc-val sc-green">{totalEnrolled.toLocaleString()}</div><div className="sc-sub">{avgFill > 0 ? avgFill + '% avg fill rate' : ''}</div></div>
                 <div className="sum-card"><div className="sc-label">Net Revenue</div><div className="sc-val sc-amber">{fmt$(totalRev)}</div><div className="sc-sub">{ranProgs.length > 0 ? fmt$(Math.round(totalRev / ranProgs.length)) + ' avg/program' : ''}</div></div>
-                <div className="sum-card"><div className="sc-label">Completed</div><div className="sc-val sc-green">{ranProgs.length}</div><div className="sc-sub">{ranPct}% completion</div></div>
-                <div className="sum-card"><div className="sc-label">Cancelled</div><div className="sc-val sc-red">{cancelledProgs.length}</div><div className="sc-sub">{100 - ranPct}% of total</div></div>
+                <div className="sum-card"><div className="sc-label">Ran / Active</div><div className="sc-val sc-green">{ranProgs.length}</div><div className="sc-sub">{ranPct}% of scheduled</div></div>
+                <div className="sum-card"><div className="sc-label">Cancelled</div><div className="sc-val sc-red">{cancelledProgs.length}</div><div className="sc-sub">{cancelledProgs.length > 0 ? (100 - ranPct) + '% of scheduled' : 'None'}</div></div>
                 <div className="sum-card"><div className="sc-label">Upcoming</div><div className="sc-val sc-purple">{upcomingProgs.length}</div><div className="sc-sub">Not yet started</div></div>
               </div>
-              {(ranProgs.length + cancelledProgs.length) > 0 && (
+
+              {/* ── Completion Bar ── */}
+              {(ranProgs.length + cancelledProgs.length) > 1 && (
                 <div className="sum-bar-wrap">
                   <div className="sum-bar-label">Program Completion</div>
                   <div className="sum-bar">
@@ -1832,75 +1835,56 @@ function App() {
                   </div>
                   <div className="sum-legend">
                     <span><span className="sum-dot" style={{background:'#16a34a'}} /> Ran/Active ({ranPct}%)</span>
-                    <span><span className="sum-dot" style={{background:'#dc2626'}} /> Cancelled ({100-ranPct}%)</span>
+                    {cancelledProgs.length > 0 && <span><span className="sum-dot" style={{background:'#dc2626'}} /> Cancelled ({100-ranPct}%)</span>}
                   </div>
                 </div>
               )}
-              {actEntries.length > 0 && (
-                <div className="sum-charts">
-                  <div className="sum-chart-box">
-                    <div className="sum-chart-title">Revenue by Activity</div>
-                    {actEntries.map(function(e, i) {
-                      var pct = maxActRev > 0 ? (e[1].revenue / maxActRev * 100) : 0;
-                      return <div key={e[0]} style={{display:'flex',alignItems:'center',gap:6,marginBottom:4}}>
-                        <span style={{fontSize:10,color:'#666',width:100,textAlign:'right',flexShrink:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title={e[0]}>{e[0]}</span>
-                        <div style={{flex:1,height:16,background:'#f0eeea',borderRadius:3,overflow:'hidden'}}><div style={{width:pct+'%',height:'100%',background:actColors[i%actColors.length],borderRadius:3}} /></div>
-                        <span style={{fontSize:10,color:'#888',width:60,textAlign:'right',fontVariantNumeric:'tabular-nums'}}>{fmt$(e[1].revenue)}</span>
-                      </div>;
-                    })}
-                  </div>
-                  <div className="sum-chart-box">
-                    <div className="sum-chart-title">Participants by Activity</div>
-                    {actEntries.map(function(e, i) {
-                      var pct = totalActEnrolled > 0 ? (e[1].enrolled / totalActEnrolled * 100) : 0;
-                      return <div key={e[0]} style={{display:'flex',alignItems:'center',gap:6,marginBottom:4}}>
-                        <span style={{fontSize:10,color:'#666',width:100,textAlign:'right',flexShrink:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title={e[0]}>{e[0]}</span>
-                        <div style={{flex:1,height:16,background:'#f0eeea',borderRadius:3,overflow:'hidden'}}><div style={{width:pct+'%',height:'100%',background:actColors[i%actColors.length],borderRadius:3}} /></div>
-                        <span style={{fontSize:10,color:'#888',width:40,textAlign:'right',fontVariantNumeric:'tabular-nums'}}>{e[1].enrolled}</span>
-                      </div>;
-                    })}
-                  </div>
-                </div>
-              )}
-              {actEntries.length > 0 && (
-                <div style={{background:'#fff',border:'1px solid #e8e6e0',borderRadius:8,overflow:'hidden',marginBottom:16}}>
-                  <table className="sum-cat-table">
-                    <thead><tr><th>Activity</th><th style={{textAlign:'center'}}>Programs</th><th style={{textAlign:'center'}}>Sections</th><th style={{textAlign:'center'}}>Cancelled</th><th style={{textAlign:'right'}}>Participants</th><th style={{textAlign:'right'}}>Net Revenue</th><th style={{textAlign:'right'}}>% of Rev</th></tr></thead>
-                    <tbody>
-                      {actEntries.map(function(e) {
-                        return <tr key={e[0]}><td style={{fontWeight:500}}>{e[0]}</td><td style={{textAlign:'center'}}>{e[1].count}</td><td style={{textAlign:'center'}}>{e[1].sections}</td><td style={{textAlign:'center',color:e[1].cancelled>0?'#dc2626':'#ccc'}}>{e[1].cancelled}</td><td style={{textAlign:'right'}}>{e[1].enrolled.toLocaleString()}</td><td style={{textAlign:'right',fontWeight:500}}>{fmt$(e[1].revenue)}</td><td style={{textAlign:'right',color:'#888'}}>{totalRev>0?Math.round(e[1].revenue/totalRev*100)+'%':'\u2014'}</td></tr>;
-                      })}
-                      <tr className="totals-row"><td>Total</td><td style={{textAlign:'center'}}>{progs.length}</td><td style={{textAlign:'center'}}>{totals ? totals.sections : filteredRows.length}</td><td style={{textAlign:'center',color:'#dc2626'}}>{cancelledProgs.length}</td><td style={{textAlign:'right'}}>{totalEnrolled.toLocaleString()}</td><td style={{textAlign:'right'}}>{fmt$(totalRev)}</td><td style={{textAlign:'right'}}>100%</td></tr>
-                    </tbody>
-                  </table>
-                </div>
-              )}
-              <div style={{background:'#fff',border:'1px solid #e8e6e0',borderRadius:8,overflow:'hidden'}}>
-                <div style={{maxHeight:600,overflow:'auto'}}>
+
+              {/* ── Program Detail Table (hero) ── */}
+              <div style={{fontSize:13,fontWeight:700,color:'#333',marginBottom:6,marginTop:16}}>All Programs ({progs.length})</div>
+              <div style={{background:'#fff',border:'1px solid #e8e6e0',borderRadius:8,overflow:'hidden',marginBottom:20}}>
+                <div style={{maxHeight:700,overflow:'auto'}}>
                   <table className="sum-prog-table">
-                    <thead><tr><th>Program</th><th>Activity</th><th style={{textAlign:'center'}}>Status</th><th style={{textAlign:'center'}}>Sections</th><th style={{textAlign:'right'}}>Enrolled</th><th style={{textAlign:'right'}}>Capacity</th><th style={{textAlign:'right'}}>Fill %</th><th style={{textAlign:'right'}}>Net Revenue</th><th>Dates</th></tr></thead>
+                    <thead><tr><th>Program</th><th style={{textAlign:'center'}}>Status</th><th style={{textAlign:'center'}}>Sections</th><th style={{textAlign:'right'}}>Enrolled</th><th style={{textAlign:'right'}}>Capacity</th><th style={{textAlign:'right'}}>Fill %</th><th style={{textAlign:'right'}}>Net Revenue</th><th>Dates</th></tr></thead>
                     <tbody>
-                      {progs.slice().sort(function(a,b){ return b.netRevenue - a.netRevenue; }).map(function(p) {
+                      {progsSorted.map(function(p) {
                         var isCancelled = p.status === 'Canceled';
-                        var badgeClass = p.status === 'Past' || p.status === 'In Progress' ? 'sum-badge-ran' : p.status === 'Canceled' ? 'sum-badge-cancel' : p.status === 'Upcoming' ? 'sum-badge-upcoming' : 'sum-badge-active';
+                        var badgeClass = (p.status === 'Past' || p.status === 'In Progress') ? 'sum-badge-ran' : p.status === 'Canceled' ? 'sum-badge-cancel' : p.status === 'Upcoming' ? 'sum-badge-upcoming' : 'sum-badge-active';
                         var statusLabel = p.status === 'Past' ? 'Ran' : p.status;
                         return <tr key={p.name} className={isCancelled ? 'row-cancel' : ''}>
-                          <td style={{fontWeight:500}}>{p.name}</td>
-                          <td style={{fontSize:10,color:'#888'}}>{p.activity}</td>
+                          <td style={{fontWeight:500,maxWidth:280}}>{p.name}</td>
                           <td style={{textAlign:'center'}}><span className={'sum-badge ' + badgeClass}>{statusLabel}</span></td>
                           <td style={{textAlign:'center'}}>{p.sections.length}</td>
                           <td style={{textAlign:'right'}}>{p.enrolled}</td>
                           <td style={{textAlign:'right',color:'#888'}}>{p.capacity || '\u2014'}</td>
                           <td style={{textAlign:'right',color:p.fillPct!=null?(p.fillPct>=85?'#16a34a':p.fillPct<=25?'#dc2626':'#333'):'#ccc',fontWeight:p.fillPct!=null&&(p.fillPct>=85||p.fillPct<=25)?700:400}}>{p.fillPct != null ? p.fillPct + '%' : '\u2014'}</td>
                           <td style={{textAlign:'right',fontWeight:500}}>{p.netRevenue > 0 ? fmt$(p.netRevenue) : '\u2014'}</td>
-                          <td style={{fontSize:10,color:'#888',whiteSpace:'nowrap'}}>{fmtD(p.startDate)}{p.endDate ? ' \u2013 ' + fmtD(p.endDate) : ''}</td>
+                          <td style={{fontSize:10,color:'#888',whiteSpace:'nowrap'}}>{fmtD(p.startDate)}{fmtD(p.endDate) ? ' \u2013 ' + fmtD(p.endDate) : ''}</td>
                         </tr>;
                       })}
+                      <tr className="totals-row"><td>Total</td><td /><td style={{textAlign:'center'}}>{totalSections}</td><td style={{textAlign:'right'}}>{totalEnrolled.toLocaleString()}</td><td /><td style={{textAlign:'right',color:'#888'}}>{avgFill > 0 ? avgFill + '%' : ''}</td><td style={{textAlign:'right',fontWeight:700}}>{fmt$(totalRev)}</td><td /></tr>
                     </tbody>
                   </table>
                 </div>
-                {progs.length > 20 && <div style={{textAlign:'center',padding:8,color:'#999',fontSize:11}}>{progs.length} programs</div>}
               </div>
+
+              {/* ── Activity Breakdown (secondary) ── */}
+              {actEntries.length > 1 && (
+                <React.Fragment>
+                  <div style={{fontSize:13,fontWeight:700,color:'#333',marginBottom:6}}>By Activity ({actEntries.length})</div>
+                  <div style={{background:'#fff',border:'1px solid #e8e6e0',borderRadius:8,overflow:'hidden',marginBottom:16}}>
+                    <table className="sum-cat-table">
+                      <thead><tr><th>Activity</th><th style={{textAlign:'center'}}>Programs</th><th style={{textAlign:'center'}}>Sections</th><th style={{textAlign:'center'}}>Cancelled</th><th style={{textAlign:'right'}}>Participants</th><th style={{textAlign:'right'}}>Net Revenue</th><th style={{textAlign:'right'}}>% of Rev</th></tr></thead>
+                      <tbody>
+                        {actEntries.map(function(e) {
+                          return <tr key={e[0]}><td style={{fontWeight:500}}>{e[0]}</td><td style={{textAlign:'center'}}>{e[1].count}</td><td style={{textAlign:'center'}}>{e[1].sections}</td><td style={{textAlign:'center',color:e[1].cancelled>0?'#dc2626':'#ccc'}}>{e[1].cancelled}</td><td style={{textAlign:'right'}}>{e[1].enrolled.toLocaleString()}</td><td style={{textAlign:'right',fontWeight:500}}>{fmt$(e[1].revenue)}</td><td style={{textAlign:'right',color:'#888'}}>{totalRev>0?Math.round(e[1].revenue/totalRev*100)+'%':'\u2014'}</td></tr>;
+                        })}
+                        <tr className="totals-row"><td>Total</td><td style={{textAlign:'center'}}>{progs.length}</td><td style={{textAlign:'center'}}>{totalSections}</td><td style={{textAlign:'center',color:'#dc2626'}}>{cancelledProgs.length}</td><td style={{textAlign:'right'}}>{totalEnrolled.toLocaleString()}</td><td style={{textAlign:'right'}}>{fmt$(totalRev)}</td><td style={{textAlign:'right'}}>100%</td></tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </React.Fragment>
+              )}
             </div>
           );
         })()}
