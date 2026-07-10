@@ -1790,6 +1790,7 @@ function App() {
           var ranProgs = progs.filter(function(p) { return p.status === 'Past' || p.status === 'In Progress'; });
           var cancelledProgs = progs.filter(function(p) { return p.status === 'Canceled'; });
           var upcomingProgs = progs.filter(function(p) { return p.status === 'Upcoming'; });
+          var cancelledSections = filteredRows.filter(function(r) { return r.status === 'Canceled' || r.status === 'Cancelled'; }).length;
           var totalRev = progs.reduce(function(s,p){ return s + p.netRevenue; }, 0);
           var totalEnrolled = progs.reduce(function(s,p){ return s + p.enrolled; }, 0);
           var totalSections = progs.reduce(function(s,p){ return s + p.sections.length; }, 0);
@@ -1809,6 +1810,7 @@ function App() {
             byAct[a].revenue += p.netRevenue;
             byAct[a].sections += p.sections.length;
             if (p.status === 'Canceled') byAct[a].cancelled++;
+            byAct[a].cancelledSections = (byAct[a].cancelledSections || 0) + p.sections.filter(function(s){ return s.status === 'Canceled' || s.status === 'Cancelled'; }).length;
           });
           var actEntries = Object.entries(byAct).sort(function(a,b){ return b[1].revenue - a[1].revenue; });
           var actByEnrolled = actEntries.slice().sort(function(a,b){ return b[1].enrolled - a[1].enrolled; });
@@ -1821,22 +1823,22 @@ function App() {
                 <div className="sum-card"><div className="sc-label">Programs</div><div className="sc-val sc-blue">{progs.length}</div><div className="sc-sub">{totalSections} sections</div></div>
                 <div className="sum-card"><div className="sc-label">Participants</div><div className="sc-val sc-green">{totalEnrolled.toLocaleString()}</div><div className="sc-sub">{avgFill > 0 ? avgFill + '% avg fill rate' : ''}</div></div>
                 <div className="sum-card"><div className="sc-label">Net Revenue</div><div className="sc-val sc-amber">{fmt$(totalRev)}</div><div className="sc-sub">{ranProgs.length > 0 ? fmt$(Math.round(totalRev / ranProgs.length)) + ' avg/program' : ''}</div></div>
-                <div className="sum-card"><div className="sc-label">Ran / Active</div><div className="sc-val sc-green">{ranProgs.length}</div><div className="sc-sub">{ranPct}% of scheduled</div></div>
-                <div className="sum-card"><div className="sc-label">Cancelled</div><div className="sc-val sc-red">{cancelledProgs.length}</div><div className="sc-sub">{cancelledProgs.length > 0 ? (100 - ranPct) + '% of scheduled' : 'None'}</div></div>
+                <div className="sum-card"><div className="sc-label">Ran / Active</div><div className="sc-val sc-green">{ranProgs.length}</div><div className="sc-sub">{ranPct}% of programs</div></div>
+                <div className="sum-card"><div className="sc-label">Cancelled</div><div className="sc-val sc-red">{cancelledSections}</div><div className="sc-sub">{cancelledSections === 1 ? '1 section' : cancelledSections + ' sections'}{cancelledProgs.length > 0 ? ' (' + cancelledProgs.length + ' full programs)' : ''}</div></div>
                 <div className="sum-card"><div className="sc-label">Upcoming</div><div className="sc-val sc-purple">{upcomingProgs.length}</div><div className="sc-sub">Not yet started</div></div>
               </div>
 
               {/* ── Completion Bar ── */}
-              {(ranProgs.length + cancelledProgs.length) > 1 && (
+              {totalSections > 1 && (
                 <div className="sum-bar-wrap">
                   <div className="sum-bar-label">Program Completion</div>
                   <div className="sum-bar">
-                    <div className="bar-ran" style={{width: ranPct + '%'}}>{ranProgs.length} ran</div>
-                    {cancelledProgs.length > 0 && <div className="bar-cancel" style={{width: (100-ranPct) + '%'}}>{cancelledProgs.length} cancelled</div>}
+                    <div className="bar-ran" style={{width: Math.round((totalSections - cancelledSections) / Math.max(totalSections,1) * 100) + '%'}}>{totalSections - cancelledSections} ran</div>
+                    {cancelledSections > 0 && <div className="bar-cancel" style={{width: Math.round(cancelledSections / Math.max(totalSections,1) * 100) + '%'}}>{cancelledSections} cancelled</div>}
                   </div>
                   <div className="sum-legend">
-                    <span><span className="sum-dot" style={{background:'#16a34a'}} /> Ran/Active ({ranPct}%)</span>
-                    {cancelledProgs.length > 0 && <span><span className="sum-dot" style={{background:'#dc2626'}} /> Cancelled ({100-ranPct}%)</span>}
+                    <span><span className="sum-dot" style={{background:'#16a34a'}} /> Ran/Active ({Math.round((totalSections - cancelledSections) / Math.max(totalSections,1) * 100)}%)</span>
+                    {cancelledSections > 0 && <span><span className="sum-dot" style={{background:'#dc2626'}} /> Cancelled ({Math.round(cancelledSections / Math.max(totalSections,1) * 100)}%)</span>}
                   </div>
                 </div>
               )}
@@ -1942,9 +1944,9 @@ function App() {
                       <thead><tr><th>Activity</th><th style={{textAlign:'center'}}>Programs</th><th style={{textAlign:'center'}}>Sections</th><th style={{textAlign:'center'}}>Cancelled</th><th style={{textAlign:'right'}}>Participants</th><th style={{textAlign:'right'}}>Net Revenue</th><th style={{textAlign:'right'}}>% of Rev</th></tr></thead>
                       <tbody>
                         {actEntries.map(function(e) {
-                          return <tr key={e[0]}><td style={{fontWeight:500}}>{e[0]}</td><td style={{textAlign:'center'}}>{e[1].count}</td><td style={{textAlign:'center'}}>{e[1].sections}</td><td style={{textAlign:'center',color:e[1].cancelled>0?'#dc2626':'#ccc'}}>{e[1].cancelled}</td><td style={{textAlign:'right'}}>{e[1].enrolled.toLocaleString()}</td><td style={{textAlign:'right',fontWeight:500}}>{fmt$(e[1].revenue)}</td><td style={{textAlign:'right',color:'#888'}}>{totalRev>0?Math.round(e[1].revenue/totalRev*100)+'%':'\u2014'}</td></tr>;
+                          return <tr key={e[0]}><td style={{fontWeight:500}}>{e[0]}</td><td style={{textAlign:'center'}}>{e[1].count}</td><td style={{textAlign:'center'}}>{e[1].sections}</td><td style={{textAlign:'center',color:(e[1].cancelledSections||0)>0?'#dc2626':'#ccc'}}>{e[1].cancelledSections||0}</td><td style={{textAlign:'right'}}>{e[1].enrolled.toLocaleString()}</td><td style={{textAlign:'right',fontWeight:500}}>{fmt$(e[1].revenue)}</td><td style={{textAlign:'right',color:'#888'}}>{totalRev>0?Math.round(e[1].revenue/totalRev*100)+'%':'\u2014'}</td></tr>;
                         })}
-                        <tr className="totals-row"><td>Total</td><td style={{textAlign:'center'}}>{progs.length}</td><td style={{textAlign:'center'}}>{totalSections}</td><td style={{textAlign:'center',color:'#dc2626'}}>{cancelledProgs.length}</td><td style={{textAlign:'right'}}>{totalEnrolled.toLocaleString()}</td><td style={{textAlign:'right'}}>{fmt$(totalRev)}</td><td style={{textAlign:'right'}}>100%</td></tr>
+                        <tr className="totals-row"><td>Total</td><td style={{textAlign:'center'}}>{progs.length}</td><td style={{textAlign:'center'}}>{totalSections}</td><td style={{textAlign:'center',color:cancelledSections>0?'#dc2626':'#ccc'}}>{cancelledSections}</td><td style={{textAlign:'right'}}>{totalEnrolled.toLocaleString()}</td><td style={{textAlign:'right'}}>{fmt$(totalRev)}</td><td style={{textAlign:'right'}}>100%</td></tr>
                       </tbody>
                     </table>
                   </div>
