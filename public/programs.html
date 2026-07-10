@@ -1820,7 +1820,7 @@ function App() {
             <div style={{maxWidth:1100,margin:'0 auto'}}>
               {/* ── Summary Cards ── */}
               <div className="sum-cards">
-                <div className="sum-card"><div className="sc-label">Programs</div><div className="sc-val sc-blue">{progs.length}</div><div className="sc-sub">{totalSections} sections</div></div>
+                <div className="sum-card"><div className="sc-label">Programs</div><div className="sc-val sc-blue">{progs.length}</div><div className="sc-sub">{totalSections} sections{cancelledSections > 0 ? ' (' + (totalSections - cancelledSections) + ' ran, ' + cancelledSections + ' cancelled)' : ''}</div></div>
                 <div className="sum-card"><div className="sc-label">Participants</div><div className="sc-val sc-green">{totalEnrolled.toLocaleString()}</div><div className="sc-sub">{avgFill > 0 ? avgFill + '% avg fill rate' : ''}</div></div>
                 <div className="sum-card"><div className="sc-label">Net Revenue</div><div className="sc-val sc-amber">{fmt$(totalRev)}</div><div className="sc-sub">{ranProgs.length > 0 ? fmt$(Math.round(totalRev / ranProgs.length)) + ' avg/program' : ''}</div></div>
                 <div className="sum-card"><div className="sc-label">Ran / Active</div><div className="sc-val sc-green">{ranProgs.length}</div><div className="sc-sub">{ranPct}% of programs</div></div>
@@ -1920,8 +1920,8 @@ function App() {
                         var statusLabel = p.status === 'Past' ? 'Ran' : p.status;
                         return <tr key={p.name} className={isCancelled ? 'row-cancel' : ''}>
                           <td style={{fontWeight:500,maxWidth:280}}>{p.name}</td>
-                          <td style={{textAlign:'center'}}><span className={'sum-badge ' + badgeClass}>{statusLabel}</span>{(() => { var cs = p.sections.filter(function(s){ return s.status === 'Canceled' || s.status === 'Cancelled'; }).length; return cs > 0 && p.status !== 'Canceled' ? <span style={{fontSize:9,color:'#dc2626',marginLeft:4}}>{cs} cancelled</span> : null; })()}</td>
-                          <td style={{textAlign:'center'}}>{p.sections.length}</td>
+                          <td style={{textAlign:'center'}}><span className={'sum-badge ' + badgeClass}>{statusLabel}</span></td>
+                          {(() => { var cs = p.sections.filter(function(s){ return s.status === 'Canceled' || s.status === 'Cancelled'; }).length; var rs = p.sections.length - cs; return <td style={{textAlign:'center'}}>{cs > 0 ? <span>{rs} ran<span style={{color:'#dc2626',fontSize:10}}> / {cs} canc.</span></span> : p.sections.length}</td>; })()}
                           <td style={{textAlign:'right'}}>{p.enrolled}</td>
                           <td style={{textAlign:'right',color:'#888'}}>{p.capacity || '\u2014'}</td>
                           <td style={{textAlign:'right',color:p.fillPct!=null?(p.fillPct>=85?'#16a34a':p.fillPct<=25?'#dc2626':'#333'):'#ccc',fontWeight:p.fillPct!=null&&(p.fillPct>=85||p.fillPct<=25)?700:400}}>{p.fillPct != null ? p.fillPct + '%' : '\u2014'}</td>
@@ -1929,7 +1929,7 @@ function App() {
                           <td style={{fontSize:10,color:'#888',whiteSpace:'nowrap'}}>{fmtD(p.startDate)}{fmtD(p.endDate) ? ' \u2013 ' + fmtD(p.endDate) : ''}</td>
                         </tr>;
                       })}
-                      <tr className="totals-row"><td>Total</td><td /><td style={{textAlign:'center'}}>{totalSections}</td><td style={{textAlign:'right'}}>{totalEnrolled.toLocaleString()}</td><td /><td style={{textAlign:'right',color:'#888'}}>{avgFill > 0 ? avgFill + '%' : ''}</td><td style={{textAlign:'right',fontWeight:700}}>{fmt$(totalRev)}</td><td /></tr>
+                      <tr className="totals-row"><td>Total</td><td /><td style={{textAlign:'center'}}>{cancelledSections > 0 ? <span>{totalSections - cancelledSections} ran<span style={{color:'#dc2626',fontSize:10}}> / {cancelledSections} canc.</span></span> : totalSections}</td><td style={{textAlign:'right'}}>{totalEnrolled.toLocaleString()}</td><td /><td style={{textAlign:'right',color:'#888'}}>{avgFill > 0 ? avgFill + '%' : ''}</td><td style={{textAlign:'right',fontWeight:700}}>{fmt$(totalRev)}</td><td /></tr>
                     </tbody>
                   </table>
                 </div>
