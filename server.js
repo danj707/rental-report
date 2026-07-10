@@ -8218,10 +8218,12 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
-  { date: '2026-07-10', title: 'Check-Ins Heatmap, Rec Insights on All Tabs, GL Filter', items: [
-    'Added Hour x Day-of-Week heatmap to Check-Ins tab \u2014 color-coded grid shows peak staffing hours at a glance. Hover for exact counts.',
+  { date: '2026-07-10', title: 'Program Summary Tab + Check-Ins Heatmap + GL Filter', items: [
+    'NEW: Program Summary tab \u2014 now the default landing tab on the Programs page. Shows executive overview: program count, participants, net revenue, completion rate (ran vs cancelled), by-activity breakdown with revenue + participant bar charts, category summary table, and full program detail table with status badges and fill % indicators.',
+    'Summary tab aggregates existing section-level data into program-level rollups \u2014 no new Metabase cards needed. Respects activity filter and program search.',
+    'Added Hour x Day-of-Week heatmap to Check-Ins tab \u2014 color-coded grid shows peak staffing hours at a glance.',
     'Added Daily Check-Ins trend line (SVG area chart) showing volume per day across the date range.',
-    'Rec Insights now available on all Memberships tabs (Memberships, Check-Ins, Retention) \u2014 builds tab-specific data blob, resets on tab switch.',
+    'Rec Insights now available on all Memberships tabs (Memberships, Check-Ins, Retention).',
     'GL Code Report: type-ahead text filter in toolbar \u2014 filters table rows by GL code or account name, recalculates summary cards + chart from filtered set.',
   ] },
   { date: '2026-07-08', title: '\u{1F4E7} Email Subscriptions \u2014 Niagara Falls Pilot', items: [
