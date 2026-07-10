@@ -8218,10 +8218,11 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
-  { date: '2026-07-10', title: 'Check-Ins: Heatmap + Daily Trend', items: [
+  { date: '2026-07-10', title: 'Check-Ins Heatmap, Rec Insights on All Tabs, GL Filter', items: [
     'Added Hour x Day-of-Week heatmap to Check-Ins tab \u2014 color-coded grid shows peak staffing hours at a glance. Hover for exact counts.',
     'Added Daily Check-Ins trend line (SVG area chart) showing volume per day across the date range.',
-    'Both visualizations use pure frontend aggregation from existing check-in data \u2014 no new Metabase cards.',
+    'Rec Insights now available on all Memberships tabs (Memberships, Check-Ins, Retention) \u2014 builds tab-specific data blob, resets on tab switch.',
+    'GL Code Report: type-ahead text filter in toolbar \u2014 filters table rows by GL code or account name, recalculates summary cards + chart from filtered set.',
   ] },
   { date: '2026-07-08', title: '\u{1F4E7} Email Subscriptions \u2014 Niagara Falls Pilot', items: [
     'Email subscription admin enabled for Niagara Falls (gated per-org via EMAIL_ENABLED_ORGS).',
