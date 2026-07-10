@@ -838,6 +838,9 @@ function normalizeRow(raw) {
       useEffect(() => { localStorage.setItem(LS_STARTDATE, startDate); }, [startDate]);
       useEffect(() => { localStorage.setItem(LS_ENDDATE,   endDate); }, [endDate]);
 
+      // Clear insights when switching tabs so stale results don't carry over
+      useEffect(() => { setInsights(null); setInsightsError(null); setFbSent(false); setFbMode(null); }, [activeTab]);
+
       // Sync URL with loaded dates
       useEffect(() => {
         if (!loadedStart || !loadedEnd) return;
@@ -973,13 +976,35 @@ function normalizeRow(raw) {
     
   // ── AI Insights ──
   const buildInsightsBlob = useCallback(() => {
+    if (activeTab === 'checkins') {
+      if (!ciRows || !ciRows.length) return null;
+      var hourCts = {}; var dayCts = {}; var deskCts = {}; var prodCts = {}; var uniqM = new Set();
+      ciRows.forEach(function(r) {
+        uniqM.add(r['Member ID']);
+        var h = parseInt(r['Hour']); hourCts[h] = (hourCts[h]||0)+1;
+        var dow = (r['Day of Week']||'').trim(); dayCts[dow] = (dayCts[dow]||0)+1;
+        var desk = r['Desk Location']||'Unknown'; deskCts[desk] = (deskCts[desk]||0)+1;
+        var prod = r['Product Name']||'Unknown'; prodCts[prod] = (prodCts[prod]||0)+1;
+      });
+      var memCt = ciRows.filter(function(r){return r['Check-In Type']==='membership';}).length;
+      var passCt = ciRows.filter(function(r){return r['Check-In Type']==='pass';}).length;
+      var uniqueDts = new Set(ciRows.map(function(r){ return r['Date']; }));
+      return { reportContext: 'check-ins', totalCheckIns: ciRows.length, uniqueMembers: uniqM.size, days: uniqueDts.size,
+        avgPerDay: uniqueDts.size > 0 ? Math.round(ciRows.length / uniqueDts.size) : 0,
+        membershipVsPass: { membership: memCt, pass: passCt },
+        byHour: hourCts, byDayOfWeek: dayCts, byDeskLocation: deskCts, byProduct: prodCts };
+    }
+    if (activeTab === 'retention') {
+      if (!data || !data.length) return null;
+      return { reportContext: 'retention', totalMembers: data.length, note: 'Retention cohort analysis tab' };
+    }
     if (!data || !data.length) return null;
     const byStatus = {}; const byType = {};
     data.forEach(r => { byStatus[r.status||'unknown'] = (byStatus[r.status||'unknown']||0)+1;
       byType[r.membershipName||r.type||'unknown'] = (byType[r.membershipName||r.type||'unknown']||0)+1; });
-    return { totalMembers: data.length, byStatus, byType,
+    return { reportContext: 'memberships', totalMembers: data.length, byStatus, byType,
       sample: data.slice(0,20).map(r => ({ type: r.membershipName||r.type, status: r.status, revenue: r.revenue||r.amount })) };
-  }, [data]);
+  }, [data, ciRows, activeTab]);
 
   const sendInsightsFeedback = useCallback((score) => {
     if (!insightsTraceId) return;
@@ -1883,14 +1908,14 @@ function normalizeRow(raw) {
 
 
         {/* AI Insights */}
-        {data && data.length > 0 && (
+        {((activeTab === 'memberships' && data && data.length > 0) || (activeTab === 'checkins' && ciRows && ciRows.length > 0) || (activeTab === 'retention' && data && data.length > 0)) && (
           <div className="insights-section no-print">
             <div className="insights-head">
               <button type="button" className="insights-btn" onClick={getInsights} disabled={insightsLoading}>
-                {insightsLoading ? 'Analyzing…' : (insights ? '↻ Refresh' : '✨ Rec Insights')}
+                {insightsLoading ? 'Analyzing\u2026' : (insights ? '\u21BB Refresh' : '\u2728 Rec Insights')}
               </button>
               {insights && !insightsLoading && (
-                <span className="insights-sub">{'Analyzed ' + data.length + ' memberships'}</span>
+                <span className="insights-sub">{'Analyzed ' + (activeTab === 'checkins' ? (ciRows||[]).length.toLocaleString() + ' check-ins' : data.length.toLocaleString() + ' memberships')}</span>
               )}
             </div>
             {insightsLoading && <div className="ai-loading"><div className="ai-spinner" /></div>}
