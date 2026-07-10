@@ -860,6 +860,7 @@ function App() {
 
   // Desk-location filter (session-only; resets when new data loads)
   const [selectedDesks, setSelectedDesks] = useState(null);
+  const [glFilter, setGlFilter] = useState('');
   const [insights, setInsights] = useState(null);
   const [insightsLoading, setInsightsLoading] = useState(false);
   const [insightsError, setInsightsError] = useState(null);
@@ -954,17 +955,29 @@ function App() {
   // For orgs without a desk dimension this is a no-op (displayRows === rows).
   const displayRows = useMemo(() => {
     if (!rows) return [];
+    var base;
     // Belt-and-suspenders: in print mode, apply desk filter from URL directly
     if (params._print === '1' && params.desks) {
       const allowed = new Set(params.desks.split(',').map(d => d.trim()));
       const filtered = rows.filter(r => allowed.has(r.deskLocation || NO_DESK_LABEL));
-      return aggregateByGlCode(filtered);
+      base = aggregateByGlCode(filtered);
+    } else if (!hasDesk) {
+      base = rows;
+    } else {
+      const sel = selectedDesks || new Set(allDesks);
+      const filtered = rows.filter(r => sel.has(r.deskLocation || NO_DESK_LABEL));
+      base = aggregateByGlCode(filtered);
     }
-    if (!hasDesk) return rows;
-    const sel = selectedDesks || new Set(allDesks);
-    const filtered = rows.filter(r => sel.has(r.deskLocation || NO_DESK_LABEL));
-    return aggregateByGlCode(filtered);
-  }, [rows, hasDesk, selectedDesks, allDesks]);
+    // GL code / account name text filter
+    if (glFilter && glFilter.trim()) {
+      var q = glFilter.trim().toLowerCase();
+      base = base.filter(function(r) {
+        return (r.glCode || '').toLowerCase().indexOf(q) !== -1 ||
+               (r.accountName || '').toLowerCase().indexOf(q) !== -1;
+      });
+    }
+    return base;
+  }, [rows, hasDesk, selectedDesks, allDesks, glFilter]);
 
   const totals = useMemo(() => {
     if (!displayRows) return {};
@@ -1245,7 +1258,11 @@ function App() {
 
         <div className="toolbar-spacer" />
 
-        {rows && <span className="row-count">{displayRows.length} GL code{displayRows.length !== 1 ? 's' : ''}</span>}
+        <input type="text" value={glFilter} onChange={e => setGlFilter(e.target.value)}
+          placeholder="Filter GL codes..."
+          style={{background:'rgba(255,255,255,.12)',border:'1px solid rgba(255,255,255,.2)',borderRadius:6,padding:'5px 10px',color:'#fff',fontSize:12,fontFamily:'inherit',width:160,outline:'none'}} />
+
+        {rows && <span className="row-count">{displayRows.length} GL code{displayRows.length !== 1 ? 's' : ''}{glFilter.trim() ? ' (filtered)' : ''}</span>}
 
         <div className="divider" />
 
