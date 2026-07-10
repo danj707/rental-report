@@ -1290,7 +1290,7 @@ function App() {
 
   const fetchData = useCallback((sd, ed) => {
     setLoading(true); setError(null);
-    setDetailSection(null); setDetailSectionId(null); setDetailRows(null); setDetailError(null); setTab('revenue'); document.body.removeAttribute('data-hide-widgets');
+    setDetailSection(null); setDetailSectionId(null); setDetailRows(null); setDetailError(null); setTab('summary'); document.body.removeAttribute('data-hide-widgets');
     setInsights(null); setInsightsMeta(null); setInsightsError(null);
     const qs = new URLSearchParams();
     if (sd) qs.set('start_date', sd);
@@ -1839,6 +1839,70 @@ function App() {
                   </div>
                 </div>
               )}
+
+              {/* ── Top Programs + Participant Donut ── */}
+              <div className="sum-charts">
+                <div className="sum-chart-box">
+                  <div className="sum-chart-title">Top Programs by Revenue</div>
+                  {(() => {
+                    var top10 = progsSorted.filter(function(p){ return p.netRevenue > 0; }).slice(0, 10);
+                    var maxRev = top10.length > 0 ? top10[0].netRevenue : 1;
+                    return top10.map(function(p, i) {
+                      var pct = (p.netRevenue / maxRev * 100);
+                      var barColors = ['#d97706','#2563eb','#16a34a','#dc2626','#7c3aed','#0891b2','#ea580c','#64748b','#db2777','#059669'];
+                      return <div key={p.name} style={{display:'flex',alignItems:'center',gap:6,marginBottom:5}}>
+                        <span style={{fontSize:10,color:'#666',width:140,textAlign:'right',flexShrink:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title={p.name}>{p.name.length > 24 ? p.name.slice(0,22) + '\u2026' : p.name}</span>
+                        <div style={{flex:1,height:18,background:'#f0eeea',borderRadius:3,overflow:'hidden'}}><div style={{width:pct+'%',height:'100%',background:barColors[i%barColors.length],borderRadius:3}} /></div>
+                        <span style={{fontSize:10,color:'#888',width:65,textAlign:'right',fontVariantNumeric:'tabular-nums'}}>{fmt$(p.netRevenue)}</span>
+                      </div>;
+                    });
+                  })()}
+                </div>
+                <div className="sum-chart-box">
+                  <div className="sum-chart-title">Participant Distribution</div>
+                  {(() => {
+                    var top10p = progsSorted.filter(function(p){ return p.enrolled > 0 && p.status !== 'Canceled'; }).slice(0, 10);
+                    var donutTotal = top10p.reduce(function(s,p){ return s + p.enrolled; }, 0);
+                    var otherEnrolled = totalEnrolled - donutTotal;
+                    var donutColors = ['#d97706','#2563eb','#16a34a','#dc2626','#7c3aed','#0891b2','#ea580c','#64748b','#db2777','#059669'];
+                    // Build SVG donut
+                    var slices = top10p.map(function(p,i){ return { label: p.name, val: p.enrolled, color: donutColors[i%donutColors.length] }; });
+                    if (otherEnrolled > 0) slices.push({ label: 'Other', val: otherEnrolled, color: '#d1d5db' });
+                    var total = slices.reduce(function(s,sl){ return s + sl.val; }, 0);
+                    if (total === 0) return <div style={{color:'#999',textAlign:'center',padding:20}}>No enrollment data</div>;
+                    var cx = 90, cy = 90, r = 70, ir = 42;
+                    var angle = -Math.PI / 2;
+                    var paths = slices.map(function(sl) {
+                      var pct = sl.val / total;
+                      var a1 = angle;
+                      var a2 = angle + pct * Math.PI * 2;
+                      var large = pct > 0.5 ? 1 : 0;
+                      var x1 = cx + r * Math.cos(a1), y1 = cy + r * Math.sin(a1);
+                      var x2 = cx + r * Math.cos(a2), y2 = cy + r * Math.sin(a2);
+                      var ix1 = cx + ir * Math.cos(a2), iy1 = cy + ir * Math.sin(a2);
+                      var ix2 = cx + ir * Math.cos(a1), iy2 = cy + ir * Math.sin(a1);
+                      var d = 'M'+x1+','+y1+' A'+r+','+r+' 0 '+large+' 1 '+x2+','+y2+' L'+ix1+','+iy1+' A'+ir+','+ir+' 0 '+large+' 0 '+ix2+','+iy2+' Z';
+                      angle = a2;
+                      return { d: d, color: sl.color, label: sl.label, val: sl.val, pct: Math.round(pct*100) };
+                    });
+                    return <div style={{display:'flex',gap:12,alignItems:'flex-start'}}>
+                      <svg viewBox="0 0 180 180" style={{width:160,height:160,flexShrink:0}}>
+                        {paths.map(function(p,i){ return <path key={i} d={p.d} fill={p.color}><title>{p.label + ': ' + p.val.toLocaleString() + ' (' + p.pct + '%)'}</title></path>; })}
+                        <text x={cx} y={cy-4} textAnchor="middle" fontSize="16" fontWeight="800" fill="#333">{total.toLocaleString()}</text>
+                        <text x={cx} y={cy+10} textAnchor="middle" fontSize="8" fill="#999">participants</text>
+                      </svg>
+                      <div style={{fontSize:10,lineHeight:'18px',paddingTop:4}}>
+                        {slices.slice(0,8).map(function(sl,i){ return <div key={i} style={{display:'flex',alignItems:'center',gap:4}}>
+                          <span style={{width:7,height:7,borderRadius:'50%',background:sl.color,flexShrink:0}} />
+                          <span style={{color:'#666',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',maxWidth:120}} title={sl.label}>{sl.label.length > 18 ? sl.label.slice(0,16) + '\u2026' : sl.label}</span>
+                          <span style={{color:'#999',marginLeft:'auto'}}>{sl.val.toLocaleString()}</span>
+                        </div>; })}
+                        {slices.length > 8 && <div style={{color:'#999'}}>+{slices.length - 8} more</div>}
+                      </div>
+                    </div>;
+                  })()}
+                </div>
+              </div>
 
               {/* ── Program Detail Table (hero) ── */}
               <div style={{fontSize:13,fontWeight:700,color:'#333',marginBottom:6,marginTop:16}}>All Programs ({progs.length})</div>
