@@ -1762,36 +1762,47 @@ function App() {
 
         {/* ── Summary Tab ── */}
         {tab === 'summary' && rows && rows.length > 0 && (() => {
+          // filteredRows = program-level rollups. Each has _sections array with actual section rows.
           var progMap = {};
           filteredRows.forEach(function(r) {
             var key = r.programId || r.programName;
-            if (!progMap[key]) progMap[key] = { name: r.programName, activity: r.activityName || getProgActivity(r.programName) || 'Uncategorized', sections: [], enrolled: 0, capacity: 0, charged: 0, received: 0, refunds: 0, netRevenue: 0, status: 'Past', startDate: null, endDate: null };
-            var p = progMap[key];
-            p.sections.push(r);
-            p.enrolled += fmtNum(r.enrollments);
-            p.capacity += (r.capacity == null ? 0 : fmtNum(r.capacity));
-            p.charged += fmtNum(r.charged);
-            p.received += fmtNum(r.received);
-            p.refunds += fmtNum(r.refunds);
-            p.netRevenue += fmtNum(r.netRevenue);
-            if (r.status === 'Canceled' || r.status === 'Cancelled') { if (p.status !== 'In Progress' && p.status !== 'Past') p.status = 'Canceled'; }
-            else if (r.status === 'In Progress') p.status = 'In Progress';
-            else if (r.status === 'Upcoming' && p.status !== 'In Progress' && p.status !== 'Past') p.status = 'Upcoming';
-            var sd = r.startDate ? String(r.startDate).slice(0,10) : '';
-            var ed = r.endDate ? String(r.endDate).slice(0,10) : '';
-            if (sd && sd.length === 10 && (!p.startDate || sd < p.startDate)) p.startDate = sd;
-            if (ed && ed.length === 10 && (!p.endDate || ed > p.endDate)) p.endDate = ed;
+            // Get actual sections from the rollup's _sections array
+            var secs = r._sections || [r];
+            var secStatuses = secs.map(function(s) { return s.status || ''; });
+            // Determine program-level status from sections
+            var allCancel = secs.length > 0 && secs.every(function(s) { return s.status === 'Canceled' || s.status === 'Cancelled'; });
+            var anyInProgress = secs.some(function(s) { return s.status === 'In Progress'; });
+            var anyPast = secs.some(function(s) { return s.status === 'Past'; });
+            var allUpcoming = secs.every(function(s) { return s.status === 'Upcoming'; });
+            var progStatus = allCancel ? 'Canceled' : anyInProgress ? 'In Progress' : allUpcoming ? 'Upcoming' : 'Past';
+            // Get first activity from sections
+            var activity = '';
+            for (var si = 0; si < secs.length; si++) { if (secs[si].activityName) { activity = secs[si].activityName; break; } }
+            if (!activity) activity = r.activityName || getProgActivity(r.programName) || 'Uncategorized';
+            // Dates from sections
+            var startDate = null; var endDate = null;
+            secs.forEach(function(s) {
+              var sd = s.startDate ? String(s.startDate).slice(0,10) : '';
+              var ed = s.endDate ? String(s.endDate).slice(0,10) : '';
+              if (sd && sd.length === 10 && (!startDate || sd < startDate)) startDate = sd;
+              if (ed && ed.length === 10 && (!endDate || ed > endDate)) endDate = ed;
+            });
+            progMap[key] = {
+              name: r.programName, activity: activity, sections: secs,
+              enrolled: fmtNum(r.enrollments), capacity: r._cap || 0,
+              charged: fmtNum(r.charged), received: fmtNum(r.received),
+              refunds: fmtNum(r.refunds), netRevenue: fmtNum(r.netRevenue),
+              status: progStatus, startDate: startDate, endDate: endDate
+            };
           });
           var progs = Object.values(progMap);
           progs.forEach(function(p) {
-            var allCancel = p.sections.length > 0 && p.sections.every(function(s) { return s.status === 'Canceled' || s.status === 'Cancelled'; });
-            if (allCancel) p.status = 'Canceled';
             p.fillPct = p.capacity > 0 ? Math.round(p.enrolled / p.capacity * 100) : null;
           });
           var ranProgs = progs.filter(function(p) { return p.status === 'Past' || p.status === 'In Progress'; });
           var cancelledProgs = progs.filter(function(p) { return p.status === 'Canceled'; });
           var upcomingProgs = progs.filter(function(p) { return p.status === 'Upcoming'; });
-          var cancelledSections = filteredRows.filter(function(r) { return r.status === 'Canceled' || r.status === 'Cancelled'; }).length;
+          var cancelledSections = progs.reduce(function(s,p) { return s + p.sections.filter(function(sec) { return sec.status === 'Canceled' || sec.status === 'Cancelled'; }).length; }, 0);
           var totalRev = progs.reduce(function(s,p){ return s + p.netRevenue; }, 0);
           var totalEnrolled = progs.reduce(function(s,p){ return s + p.enrolled; }, 0);
           var totalSections = progs.reduce(function(s,p){ return s + p.sections.length; }, 0);
