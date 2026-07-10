@@ -3380,7 +3380,7 @@ app.post("/:org/admin/test-send", async (req, res) => {
 // still yield cheap 304s when the file is unchanged. (Scoped here: sits below
 // the API/PDF routes, above the page handlers, so only HTML pages are affected.)
 app.use((req, res, next) => {
-  res.set("Cache-Control", "no-cache");
+  res.set("Cache-Control", "no-store, no-cache, must-revalidate");
   next();
 });
 
