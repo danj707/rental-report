@@ -1912,7 +1912,7 @@ function App() {
               <div style={{background:'#fff',border:'1px solid #e8e6e0',borderRadius:8,overflow:'hidden',marginBottom:20}}>
                 <div style={{maxHeight:700,overflow:'auto'}}>
                   <table className="sum-prog-table">
-                    <thead><tr><th>Program</th><th style={{textAlign:'center'}}>Status</th><th style={{textAlign:'center'}}>Sections</th><th style={{textAlign:'right'}}>Enrolled</th>{hasCapacity && <th style={{textAlign:'right'}}>Capacity</th>}{hasCapacity && <th style={{textAlign:'right'}}>Fill %</th>}<th style={{textAlign:'right'}}>Net Revenue</th><th>Dates</th></tr></thead>
+                    <thead><tr><th>Program</th><th style={{textAlign:'center'}}>Status</th><th style={{textAlign:'center'}}>Sections</th><th style={{textAlign:'right'}}>Enrolled</th><th style={{textAlign:'right'}}>Capacity</th><th style={{textAlign:'right'}}>Fill %</th><th style={{textAlign:'right'}}>Net Revenue</th><th>Dates</th></tr></thead>
                     <tbody>
                       {progsSorted.map(function(p) {
                         var isCancelled = p.status === 'Canceled';
@@ -1920,16 +1920,16 @@ function App() {
                         var statusLabel = p.status === 'Past' ? 'Ran' : p.status;
                         return <tr key={p.name} className={isCancelled ? 'row-cancel' : ''}>
                           <td style={{fontWeight:500,maxWidth:280}}>{p.name}</td>
-                          <td style={{textAlign:'center'}}><span className={'sum-badge ' + badgeClass}>{statusLabel}</span></td>
+                          <td style={{textAlign:'center'}}><span className={'sum-badge ' + badgeClass}>{statusLabel}</span>{(() => { var cs = p.sections.filter(function(s){ return s.status === 'Canceled' || s.status === 'Cancelled'; }).length; return cs > 0 && p.status !== 'Canceled' ? <span style={{fontSize:9,color:'#dc2626',marginLeft:4}}>{cs} cancelled</span> : null; })()}</td>
                           <td style={{textAlign:'center'}}>{p.sections.length}</td>
                           <td style={{textAlign:'right'}}>{p.enrolled}</td>
-                          {hasCapacity && <td style={{textAlign:'right',color:'#888'}}>{p.capacity || '\u2014'}</td>}
-                          {hasCapacity && <td style={{textAlign:'right',color:p.fillPct!=null?(p.fillPct>=85?'#16a34a':p.fillPct<=25?'#dc2626':'#333'):'#ccc',fontWeight:p.fillPct!=null&&(p.fillPct>=85||p.fillPct<=25)?700:400}}>{p.fillPct != null ? p.fillPct + '%' : '\u2014'}</td>}
+                          <td style={{textAlign:'right',color:'#888'}}>{p.capacity || '\u2014'}</td>
+                          <td style={{textAlign:'right',color:p.fillPct!=null?(p.fillPct>=85?'#16a34a':p.fillPct<=25?'#dc2626':'#333'):'#ccc',fontWeight:p.fillPct!=null&&(p.fillPct>=85||p.fillPct<=25)?700:400}}>{p.fillPct != null ? p.fillPct + '%' : '\u2014'}</td>
                           <td style={{textAlign:'right',fontWeight:500}}>{p.netRevenue > 0 ? fmt$(p.netRevenue) : '\u2014'}</td>
                           <td style={{fontSize:10,color:'#888',whiteSpace:'nowrap'}}>{fmtD(p.startDate)}{fmtD(p.endDate) ? ' \u2013 ' + fmtD(p.endDate) : ''}</td>
                         </tr>;
                       })}
-                      <tr className="totals-row"><td>Total</td><td /><td style={{textAlign:'center'}}>{totalSections}</td><td style={{textAlign:'right'}}>{totalEnrolled.toLocaleString()}</td>{hasCapacity && <td />}{hasCapacity && <td style={{textAlign:'right',color:'#888'}}>{avgFill > 0 ? avgFill + '%' : ''}</td>}<td style={{textAlign:'right',fontWeight:700}}>{fmt$(totalRev)}</td><td /></tr>
+                      <tr className="totals-row"><td>Total</td><td /><td style={{textAlign:'center'}}>{totalSections}</td><td style={{textAlign:'right'}}>{totalEnrolled.toLocaleString()}</td><td /><td style={{textAlign:'right',color:'#888'}}>{avgFill > 0 ? avgFill + '%' : ''}</td><td style={{textAlign:'right',fontWeight:700}}>{fmt$(totalRev)}</td><td /></tr>
                     </tbody>
                   </table>
                 </div>
