@@ -220,6 +220,23 @@
       margin-top: 4px;
     }
 
+    /* ── Tabs ── */
+    .cu-tabs { display: flex; gap: 0; margin: 16px 0 0; border-bottom: 2px solid #e5e7eb; }
+    .cu-tab { padding: 8px 20px; font-size: 13px; font-weight: 600; color: #6b7280; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -2px; transition: all .15s; background: none; border-top: none; border-left: none; border-right: none; font-family: inherit; }
+    .cu-tab:hover { color: #374151; }
+    .cu-tab.active { color: #2563eb; border-bottom-color: #2563eb; }
+
+    /* ── Map ── */
+    .cu-map-wrap { height: 520px; border-radius: 8px; overflow: hidden; border: 1px solid #e5e7eb; margin-top: 12px; }
+    .cu-map-legend { display: flex; gap: 16px; align-items: center; padding: 10px 0; font-size: 11px; color: #666; }
+    .cu-map-dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; margin-right: 4px; vertical-align: -1px; }
+    .cu-popup-title { font-weight: 700; font-size: 13px; color: #1e1b4b; margin-bottom: 8px; }
+    .cu-popup-bar-wrap { margin: 4px 0; }
+    .cu-popup-bar-label { font-size: 11px; color: #374151; margin-bottom: 2px; display: flex; justify-content: space-between; }
+    .cu-popup-bar-track { height: 8px; background: #f3f4f6; border-radius: 4px; overflow: hidden; }
+    .cu-popup-bar-fill { height: 100%; border-radius: 4px; transition: width .3s; }
+    .cu-popup-stats { font-size: 10px; color: #9ca3af; margin-top: 6px; }
+
     /* ── DOW Heatmap ── */
     .heatmap-section { margin-top: 20px; }
     .heatmap-title {
@@ -444,6 +461,8 @@
 <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 
 <script type="text/babel">
@@ -568,6 +587,7 @@ function App() {
     const h = parseFloat(urlParams.get('hrs'));
     return Number.isFinite(h) && h > 0 ? h : 16;
   });
+  const [activeTab, setActiveTab] = useState("overview");
   const [metric, setMetric] = useState(() => {    // bar chart metric: 'util' (default) | 'hours'
     const m = urlParams.get('metric');
     if (m === 'util' || m === 'hours') return m;  // URL wins (print/share) over saved pref
@@ -1152,6 +1172,158 @@ function App() {
 
   const displayOrg = 'rec.us';
 
+  // ── Map View Component ────────────────────────────────────────────
+  function MapView({ grouped, orgCoords }) {
+    var mapRef = React.useRef(null);
+    var mapInstanceRef = React.useRef(null);
+    var [geocoded, setGeocoded] = React.useState(null);
+    var geocodeCacheRef = React.useRef({});
+
+    // Aggregate by location
+    var locations = React.useMemo(function() {
+      var byLoc = {};
+      grouped.forEach(function(g) {
+        var loc = g.label.split(' \u2014 ')[0] || g.label;
+        if (!byLoc[loc]) byLoc[loc] = { name: loc, courts: [], totalUsed: 0, totalAvail: 0 };
+        byLoc[loc].courts.push(g);
+        byLoc[loc].totalUsed += g.customerHrs + g.programHrs;
+        byLoc[loc].totalAvail += g.availHrs;
+      });
+      return Object.values(byLoc).map(function(l) {
+        l.utilPct = l.totalAvail > 0 ? Math.round(l.totalUsed / l.totalAvail * 100) : 0;
+        return l;
+      });
+    }, [grouped]);
+
+    // Geocode locations
+    React.useEffect(function() {
+      if (!locations.length) return;
+      var orgName = window.ORG_CONFIG?.displayName || '';
+      var pending = locations.length;
+      var results = [];
+      locations.forEach(function(loc) {
+        var cacheKey = loc.name;
+        if (geocodeCacheRef.current[cacheKey]) {
+          results.push(Object.assign({}, loc, geocodeCacheRef.current[cacheKey]));
+          pending--;
+          if (pending === 0) setGeocoded(results);
+          return;
+        }
+        var q = encodeURIComponent(loc.name + ', ' + orgName);
+        setTimeout(function() {
+          fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&q=' + q)
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+              if (data && data[0]) {
+                var coords = { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
+                geocodeCacheRef.current[cacheKey] = coords;
+                results.push(Object.assign({}, loc, coords));
+              } else if (orgCoords) {
+                // Fallback to org center with small offset
+                var offset = (results.length * 0.002) - 0.004;
+                results.push(Object.assign({}, loc, { lat: orgCoords.lat + offset, lng: orgCoords.lon + offset }));
+              }
+              pending--;
+              if (pending === 0) setGeocoded(results);
+            })
+            .catch(function() { pending--; if (pending === 0) setGeocoded(results); });
+        }, results.length * 1100); // Nominatim: 1 req/sec
+      });
+    }, [locations]);
+
+    // Render map
+    React.useEffect(function() {
+      if (!geocoded || !geocoded.length || !mapRef.current) return;
+      if (mapInstanceRef.current) { mapInstanceRef.current.remove(); mapInstanceRef.current = null; }
+
+      var center = orgCoords ? [orgCoords.lat, orgCoords.lon] : [geocoded[0].lat, geocoded[0].lng];
+      var map = L.map(mapRef.current).setView(center, 13);
+      mapInstanceRef.current = map;
+
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '\u00a9 OpenStreetMap',
+        maxZoom: 18
+      }).addTo(map);
+
+      function utilColor(pct) {
+        if (pct >= 70) return '#dc2626';
+        if (pct >= 40) return '#f59e0b';
+        if (pct >= 15) return '#22c55e';
+        return '#94a3b8';
+      }
+
+      geocoded.forEach(function(loc) {
+        var radius = Math.max(18, Math.min(50, loc.courts.length * 12 + 10));
+        var color = utilColor(loc.utilPct);
+
+        var circle = L.circleMarker([loc.lat, loc.lng], {
+          radius: radius,
+          fillColor: color,
+          color: '#fff',
+          weight: 2,
+          opacity: 1,
+          fillOpacity: 0.8,
+        }).addTo(map);
+
+        // Build popup HTML
+        var barsHtml = loc.courts.map(function(c) {
+          var courtName = c.label.split(' \u2014 ')[1] || c.label;
+          var pct = c.utilPct != null ? c.utilPct.toFixed(0) : 0;
+          var barColor = utilColor(pct);
+          return '<div class="cu-popup-bar-wrap">'
+            + '<div class="cu-popup-bar-label"><span>' + courtName + '</span><span style="font-weight:600;color:' + barColor + '">' + pct + '%</span></div>'
+            + '<div class="cu-popup-bar-track"><div class="cu-popup-bar-fill" style="width:' + Math.min(pct, 100) + '%;background:' + barColor + '"></div></div>'
+            + '</div>';
+        }).join('');
+
+        var popupHtml = '<div style="min-width:220px;max-width:300px">'
+          + '<div class="cu-popup-title">' + loc.name + '</div>'
+          + barsHtml
+          + '<div class="cu-popup-stats">' + loc.courts.length + ' court' + (loc.courts.length > 1 ? 's' : '') + ' \u2022 ' + Math.round(loc.totalUsed) + ' hrs used of ' + Math.round(loc.totalAvail) + ' available</div>'
+          + '</div>';
+        circle.bindPopup(popupHtml, { maxWidth: 320 });
+
+        // Center label
+        L.marker([loc.lat, loc.lng], {
+          icon: L.divIcon({
+            className: '',
+            html: '<div style="font-size:11px;font-weight:700;color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.5);text-align:center;pointer-events:none">' + loc.utilPct + '%</div>',
+            iconSize: [40, 20],
+            iconAnchor: [20, 10],
+          })
+        }).addTo(map);
+      });
+
+      // Fit bounds
+      if (geocoded.length > 1) {
+        var bounds = L.latLngBounds(geocoded.map(function(l) { return [l.lat, l.lng]; }));
+        map.fitBounds(bounds, { padding: [40, 40] });
+      }
+
+      return function() { if (mapInstanceRef.current) { mapInstanceRef.current.remove(); mapInstanceRef.current = null; } };
+    }, [geocoded]);
+
+    if (!geocoded) return (
+      <div style={{textAlign:'center', padding:'80px 20px', color:'#888', fontSize:'14px'}}>
+        <div className="btn-spinner" style={{margin:'0 auto 12px', width:20, height:20, borderWidth:2}} />
+        Geocoding {locations.length} location{locations.length > 1 ? 's' : ''}...
+      </div>
+    );
+
+    return (
+      <div>
+        <div className="cu-map-legend">
+          <span><span className="cu-map-dot" style={{background:'#dc2626'}} /> 70%+ High</span>
+          <span><span className="cu-map-dot" style={{background:'#f59e0b'}} /> 40-70% Medium</span>
+          <span><span className="cu-map-dot" style={{background:'#22c55e'}} /> 15-40% Moderate</span>
+          <span><span className="cu-map-dot" style={{background:'#94a3b8'}} /> &lt;15% Low</span>
+          <span style={{marginLeft:'auto', fontSize:10, color:'#bbb'}}>Click a location for court breakdown</span>
+        </div>
+        <div className="cu-map-wrap" ref={mapRef} />
+      </div>
+    );
+  }
+
   return (
     <div>
       {/* Toolbar */}
@@ -1219,6 +1391,17 @@ function App() {
           </div>
         </div>
 
+        {/* Tab bar */}
+        <div className="cu-tabs">
+          <button className={"cu-tab" + (activeTab === "overview" ? " active" : "")} onClick={() => setActiveTab("overview")}>Overview</button>
+          <button className={"cu-tab" + (activeTab === "map" ? " active" : "")} onClick={() => setActiveTab("map")}>{'🗺️'} Map</button>
+        </div>
+
+        {activeTab === "map" && !loading && grouped.length > 0 && (
+          <MapView grouped={grouped} orgCoords={window.ORG_CONFIG?.coords || null} />
+        )}
+
+        {activeTab === "overview" && <React.Fragment>
         {/* Toggle row */}
         <div className="toggle-row">
           <div style={{display:'flex', alignItems:'center', gap:'8px'}}>
@@ -1382,6 +1565,8 @@ function App() {
             </div>
           </div>
         )}
+
+        </React.Fragment>}
 
         {/* Footer */}
         <div className="report-footer">
