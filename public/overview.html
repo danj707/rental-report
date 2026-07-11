@@ -501,6 +501,7 @@ function App() {
     setLoading(true); setError(null);
     try {
       const params = new URLSearchParams({ start: startDate, end: endDate });
+      if (new URLSearchParams(window.location.search).get('_nocache') === '1' || new URLSearchParams(window.location.search).get('_refresh') === '1') params.set('_nocache', '1');
       const res = await fetch(withToken(`/${orgSlug}/overview/api/data?${params}`));
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
