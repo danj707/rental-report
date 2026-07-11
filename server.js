@@ -6902,7 +6902,7 @@ app.get("/", (req, res) => {
         </div>
         <span class="how-chevron" style="transform:rotate(90deg)">&#9658;</span>
       </div>
-      <div class="how-body" style="display:block">
+      <div class="how-body open">
         ${usageTableHtml}
       </div>
     </div>
