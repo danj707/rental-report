@@ -151,6 +151,8 @@
     .loading { text-align: center; padding: 80px; color: #888; }
     .spinner { display: inline-block; width: 28px; height: 28px; border: 3px solid #ddd; border-top-color: #3b82f6; border-radius: 50%; animation: spin .7s linear infinite; margin-bottom: 12px; }
     @keyframes spin { to { transform: rotate(360deg); } }
+    @keyframes conv-shimmer { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+    .conv-loading { animation: conv-shimmer 1.2s ease-in-out infinite; }
     .empty { text-align: center; padding: 40px; color: #bbb; font-size: 13px; }
   </style>
   <script>
@@ -359,55 +361,97 @@ function App() {
   }
 
   function ConversionCard() {
-    const [conv, setConv] = React.useState(null);
+    const [views, setViews] = React.useState(null);
+    const [enroll, setEnroll] = React.useState(null);
+
+    // Phase 1: fetch views (instant from events.jsonl)
     React.useEffect(() => {
       fetch(withToken(`/${orgSlug}/api/calendar-conversion?days=${days}`))
         .then(r => r.ok ? r.json() : null)
-        .then(d => setConv(d))
+        .then(d => { if (d && d.totalViews > 0) setViews(d); })
         .catch(() => {});
     }, [days]);
-    if (!conv || !conv.daily || conv.daily.length === 0 || conv.totalViews === 0) return null;
-    const maxVal = Math.max(...conv.daily.map(d => Math.max(d.views, d.enrollments)), 1);
+
+    // Phase 2: fetch enrollment + revenue data (async, may be slow)
+    React.useEffect(() => {
+      if (!views) return;
+      setEnroll(null);
+      const cutoff = new Date(Date.now() - days * 86400000).toISOString().substring(0, 10);
+      Promise.all([
+        fetch(withToken(`/${orgSlug}/program-demographics/api/data`)).then(r => r.ok ? r.json() : null),
+        fetch(withToken(`/${orgSlug}/programs/api/data`)).then(r => r.ok ? r.json() : null),
+      ]).then(([demoJ, progJ]) => {
+        const demoRows = demoJ?.rows || demoJ || [];
+        const progRows = progJ?.rows || progJ || [];
+        const byDay = {};
+        demoRows.forEach(r => {
+          const d = r['Enrolled Date'] || r['enrolled_date'] || '';
+          if (!d) return;
+          const day = String(d).substring(0, 10);
+          if (day >= cutoff) byDay[day] = (byDay[day] || 0) + 1;
+        });
+        const total = Object.values(byDay).reduce((s, v) => s + v, 0);
+        let totalRev = 0, totalEnr = 0;
+        progRows.forEach(r => {
+          totalRev += parseFloat(r['net_total'] || r['Net Revenue'] || r['Net Total'] || 0) || 0;
+          totalEnr += parseInt(r['enrolled'] || r['Enrollments'] || r['Enrolled'] || 0) || 0;
+        });
+        const avgTicket = totalEnr > 0 ? totalRev / totalEnr : 0;
+        setEnroll({ byDay, total, avgTicket, revenue: Math.round(total * avgTicket * 100) / 100 });
+      }).catch(() => setEnroll({ byDay: {}, total: 0, avgTicket: 0, revenue: 0 }));
+    }, [views, days]);
+
+    if (!views) return null;
+
+    const loading = !enroll;
+    const shimCls = loading ? ' conv-loading' : '';
+    const daily = views.daily.map(d => ({
+      date: d.date, views: d.views,
+      enrollments: enroll ? (enroll.byDay[d.date] || 0) : 0,
+    }));
+    const maxVal = Math.max(...daily.map(d => Math.max(d.views, d.enrollments)), 1);
+    const convRate = enroll && views.totalViews > 0 ? ((enroll.total / views.totalViews) * 100).toFixed(1) : null;
+
     return (
       <div className="conv-card">
-        <div className="section-title">📅 Calendar View → Registration Funnel</div>
+        <div className="section-title">{'\u{1F4C5}'} Calendar View {'\u2192'} Registration Funnel</div>
         <div className="conv-kpis">
           <div className="conv-kpi">
-            <div className="conv-kpi-val" style={{color:'#fb923c'}}>{conv.totalViews}</div>
+            <div className="conv-kpi-val" style={{color:'#fb923c'}}>{views.totalViews}</div>
             <div className="conv-kpi-label">Calendar Views</div>
           </div>
-          <div className="conv-kpi">
-            <div className="conv-kpi-val" style={{color:'#22c55e'}}>{conv.totalEnrollments}</div>
+          <div className={'conv-kpi' + shimCls}>
+            <div className="conv-kpi-val" style={{color:'#22c55e'}}>{loading ? '\u2026' : enroll.total}</div>
             <div className="conv-kpi-label">Enrollments</div>
           </div>
-          <div className="conv-kpi">
-            <div className="conv-kpi-val" style={{color:'#3b82f6'}}>{conv.conversionRate || '0'}%</div>
+          <div className={'conv-kpi' + shimCls}>
+            <div className="conv-kpi-val" style={{color:'#3b82f6'}}>{loading ? '\u2026' : (convRate || '0') + '%'}</div>
             <div className="conv-kpi-label">Conversion Rate</div>
           </div>
-          {conv.avgTicketPrice > 0 && <div className="conv-kpi">
-            <div className="conv-kpi-val" style={{color:'#666'}}>${Math.round(conv.avgTicketPrice)}</div>
+          <div className={'conv-kpi' + shimCls}>
+            <div className="conv-kpi-val" style={{color:'#666'}}>{loading ? '\u2026' : (enroll.avgTicket > 0 ? '$' + Math.round(enroll.avgTicket) : '\u2014')}</div>
             <div className="conv-kpi-label">Avg Ticket</div>
-          </div>}
-          {conv.attributedRevenue > 0 && <div className="conv-kpi">
-            <div className="conv-kpi-val" style={{color:'#16a34a',fontSize:26}}>${conv.attributedRevenue >= 1000 ? (conv.attributedRevenue / 1000).toFixed(1) + 'k' : Math.round(conv.attributedRevenue)}</div>
+          </div>
+          <div className={'conv-kpi' + shimCls}>
+            <div className="conv-kpi-val" style={{color:'#16a34a',fontSize:26}}>{loading ? '\u2026' : (enroll.revenue > 0 ? '$' + (enroll.revenue >= 1000 ? (enroll.revenue / 1000).toFixed(1) + 'k' : Math.round(enroll.revenue)) : '\u2014')}</div>
             <div className="conv-kpi-label">Enrollment Revenue</div>
-          </div>}
+          </div>
         </div>
         <div style={{fontSize:10,color:'#999',marginBottom:8,lineHeight:1.4}}>
           Correlation, not causation — enrollment revenue reflects registrations that occurred on days the program calendar was viewed. Not all enrollments are directly attributable to calendar views.
         </div>
         <div className="conv-bars">
-          {conv.daily.map((d, i) => (
-            <div className="conv-bar-group" key={i} title={d.date + ': ' + d.views + ' views, ' + d.enrollments + ' enrollments'}>
+          {daily.map((d, i) => (
+            <div className="conv-bar-group" key={i} title={d.date + ': ' + d.views + ' views' + (loading ? '' : ', ' + d.enrollments + ' enrollments')}>
               <div className="conv-bar-view" style={{height: Math.max((d.views / maxVal) * 60, d.views > 0 ? 2 : 0) + 'px'}} />
-              <div className="conv-bar-enroll" style={{height: Math.max((d.enrollments / maxVal) * 60, d.enrollments > 0 ? 2 : 0) + 'px'}} />
+              {!loading && <div className="conv-bar-enroll" style={{height: Math.max((d.enrollments / maxVal) * 60, d.enrollments > 0 ? 2 : 0) + 'px'}} />}
             </div>
           ))}
         </div>
         <div className="sparkline-dates">
-          <span>{conv.daily[0]?.date?.slice(5)}</span>
-          <span style={{fontSize:9,color:'#bbb'}}>🟧 views   🟩 enrollments</span>
-          <span>{conv.daily[conv.daily.length - 1]?.date?.slice(5)}</span>
+          <span>{daily[0]?.date?.slice(5)}</span>
+          <span style={{fontSize:9,color:'#bbb'}}>{'\uD83D\uDFE7'} views{!loading && ' \uD83D\uDFE9 enrollments'}</span>
+          <span>{daily[daily.length - 1]?.date?.slice(5)}</span>
         </div>
       </div>
     );
