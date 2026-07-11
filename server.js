@@ -467,6 +467,8 @@ const ORGS = {
   clarksville: {
     token:   "6JmoTcHxMOV3ugyO",
     orgId:   "460566d3-3a51-4387-a7a0-0b010923e40d",
+    coords:  { lat: 38.2968, lon: -85.7600 },
+    mapCity: "Clarksville, IN",
     logoUrl: "https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2Forganization-460566d3-3a51-4387-a7a0-0b010923e40d%2FfullLogo.png%3F1742511257248&w=256&q=75",
     facility: { mbUuid: "21e74d52-f49a-46d6-bc2d-f9348027854f" },
     roster:   { mbUuid: "ce13ffa2-2bc5-4764-992d-957b4c3a35f9" },
@@ -478,6 +480,8 @@ const ORGS = {
   norman: {
     token:   "RfuFOIz6KrFnSxBK",
     orgId:   "574923bd-9e7b-43e0-9e5f-7ce256189cbf",
+    coords:  { lat: 35.2226, lon: -97.4395 },
+    mapCity: "Norman, OK",
     logoUrl: "https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2Forganization-574923bd-9e7b-43e0-9e5f-7ce256189cbf%2FfullLogo.png%3F1763816879340&w=256&q=75",
     facility:    { mbUuid: "81c43b6d-1776-4a13-9fec-cb6f9e9895bb" },
     gl:          { mbUuid: "46b7e83b-f8ac-4d84-8c5c-4c72ca57cea4" },
@@ -536,6 +540,8 @@ const ORGS = {
   theranch: {
     token:   "mXI0BgPPazLu61jl",
     orgId:   "2d147f38-068c-409e-890d-a8acc88d8079",
+    coords:  { lat: 37.8735, lon: -122.4567 },
+    mapCity: "Tiburon, CA",
     displayName: "The Ranch Parks and Recreation",
     logoUrl: "https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2Forganization-2d147f38-068c-409e-890d-a8acc88d8079%2FfullLogo.jpeg%3F1764460109546&w=2048&q=75",
     roster:  { mbUuid: "09707fab-067c-4297-98c1-3c1c39804333" },
@@ -543,6 +549,8 @@ const ORGS = {
   joplin: {
     token:   "mJpBoV84IRlCoXPM",
     orgId:   "ac04aa52-d629-435f-84af-0fc95e152e7b",
+    coords:  { lat: 37.0842, lon: -94.5133 },
+    mapCity: "Joplin, MO",
     logoUrl: "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSiZe2Rt3BvXmkRLhW9EzhogtTSXY3SkiaVzA&s",
     displayName: "Joplin",
     products: { mbUuid: "2a38a516-a618-40ad-8b30-a26081548389" },
@@ -551,6 +559,8 @@ const ORGS = {
   shrewsbury: {
     token:   "17hO58KgKgNVauE5",
     orgId:   "0a9c47af-b4c3-4601-ab0f-d2f401bb787a",
+    coords:  { lat: 42.2959, lon: -71.7126 },
+    mapCity: "Shrewsbury, MA",
     logoUrl: "https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2Forganization-0a9c47af-b4c3-4601-ab0f-d2f401bb787a%2FfullLogo.png%3F1760543186527&w=2048&q=75",
     displayName: "Shrewsbury",
     facility: { mbUuid: "9a027e73-cd3b-49ff-8b02-49e09a6ceeeb" },
@@ -564,12 +574,16 @@ const ORGS = {
   westsacramento: {
     token:   "nZMjcPTrSmCSnqqt",
     orgId:   "7d22bf62-060a-4881-9821-9dea6a0538d6",
+    coords:  { lat: 38.5805, lon: -121.5302 },
+    mapCity: "West Sacramento, CA",
     logoUrl: "https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2Forganization-7d22bf62-060a-4881-9821-9dea6a0538d6%2FfullLogo.png%3F1764542866233&w=1920&q=75",
     displayName: "City of West Sacramento",
   },
   niagarafalls: {
     token:   "LjW1vF7eZJCyjWVN",
     orgId:   "a976a11a-5303-4785-838a-1b281ca77678",
+    coords:  { lat: 43.0962, lon: -79.0377 },
+    mapCity: "Niagara Falls, NY",
     logoUrl: "https://prod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com/organization-a976a11a-5303-4785-838a-1b281ca77678/fullLogo.png",
     displayName: "City of Niagara Falls",
   },
