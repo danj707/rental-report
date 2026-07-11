@@ -6289,13 +6289,14 @@ app.get("/", (req, res) => {
     <div class="usage-table-wrap">
       <div style="padding:10px 14px;display:flex;align-items:center;gap:12px;border-bottom:1px solid #e8e5df"><span style="font-size:11px;color:#9ca3af">30-day trend</span><svg viewBox="0 0 200 32" style="width:180px;height:28px"><polyline points="${sparkPts}" fill="none" stroke="#6d28d9" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg><span style="font-size:11px;font-weight:600;color:#6d28d9">${sparkTotal.toLocaleString()} views</span></div>
       <table class="usage-table">
-        <thead><tr><th>Organization</th><th class="num">Views</th><th class="num">Exports</th><th class="num">AI Insights</th><th class="num">Reports</th></tr></thead>
+        <thead><tr><th>Organization</th><th class="num">Views</th><th class="num">Exports</th><th class="num">AI Insights</th><th class="num">Reports</th><th style="width:30px"></th></tr></thead>
         <tbody>${usageRows.map(r => `<tr>
-          <td><a href="/${r.slug}?token=${ORGS[r.slug]?.token || ''}" class="usage-org-name" style="text-decoration:none;color:#1e1b4b">${r.name}</a><div class="usage-bar" style="width:${Math.round(r.views / maxViews * 100)}%"></div></td>
+          <td><a href="#org-${r.slug}" class="usage-org-name" style="text-decoration:none;color:#1e1b4b" onclick="event.preventDefault();var el=document.getElementById('org-'+'${r.slug}');if(el){el.scrollIntoView({behavior:'smooth',block:'start'});var body=el.querySelector('.org-body');if(body&&body.style.display==='none'){body.style.display='';var chev=el.querySelector('.org-collapse-chevron');if(chev)chev.style.transform='rotate(90deg)'}}">${r.name}</a><div class="usage-bar" style="width:${Math.round(r.views / maxViews * 100)}%"></div></td>
           <td class="num${r.views === 0 ? ' usage-zero' : ''}">${r.views.toLocaleString()}</td>
           <td class="num${r.exports === 0 ? ' usage-zero' : ''}">${r.exports}</td>
           <td class="num${r.aiCalls === 0 ? ' usage-zero' : ''}">${r.aiCalls}</td>
           <td class="num">${r.reports}</td>
+          <td style="text-align:center"><a href="/${r.slug}?token=${ORGS[r.slug]?.token || ''}" target="_blank" title="Open ${r.name} reports" style="color:#9ca3af;text-decoration:none"><i class="ph ph-arrow-square-out" style="font-size:14px"></i></a></td>
         </tr>`).join('')}</tbody>
       </table>
     </div>`;
