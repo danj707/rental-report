@@ -174,6 +174,8 @@
     .cal-card-val { font-size: 17px; font-weight: 700; color: #fff; line-height: 1.1; }
     .cal-card-label { font-size: 9px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.7px; color: #6ee7b7; margin-top: 2px; }
     .cal-card-sub { font-size: 9px; color: rgba(110,231,183,0.65); margin-top: 1px; }
+    .cal-card-loading .cal-card-val { animation: cal-shimmer 1.2s ease-in-out infinite; }
+    @keyframes cal-shimmer { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
     @media (max-width: 480px) { .cal-analytics-panel { padding: 12px 16px 0; } .cal-analytics-grid { grid-template-columns: repeat(2, 1fr); gap: 6px; } .cal-card-val { font-size: 15px; } }
 
     /* ── Rec Daily Insights panel ── */
@@ -639,30 +641,54 @@
     var panel = document.getElementById('cal-analytics');
     var grid = document.getElementById('cal-analytics-grid');
     var sub = document.getElementById('cal-analytics-sub');
-    var url = '/' + slug + '/api/calendar-analytics?days=30';
-    if (cfg.token) url += '&token=' + encodeURIComponent(cfg.token);
-    fetch(url)
+    var calUrl = '/' + slug + '/api/calendar-analytics?days=30';
+    if (cfg.token) calUrl += '&token=' + encodeURIComponent(cfg.token);
+    var fmtMoney = function(n) { return '$' + n.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ','); };
+    function renderCalCards(views, engagement, bookingsVal, revenueVal, daily, loading) {
+      var loadCls = loading ? ' cal-card-loading' : '';
+      var items = [
+        { val: views.toLocaleString(), label: 'Calendar Views', sub: 'both calendars', trail: daily ? daily.map(function(x){return x.rcViews+x.pcViews;}) : null },
+        { val: engagement.toLocaleString(), label: 'Engagement', sub: 'clicks + taps', trail: daily ? daily.map(function(x){return x.rcFacViews+x.pcClicks;}) : null },
+        { val: bookingsVal, label: 'Bookings', sub: 'confirmed rentals', trail: null, isAsync: true },
+        { val: revenueVal, label: 'Revenue', sub: 'attributed rental $', trail: null, isAsync: true },
+      ];
+      grid.innerHTML = items.map(function(it) {
+        var spark = it.trail ? sparkSVG(it.trail) : '';
+        var cls = (it.isAsync && loading) ? loadCls : '';
+        return '<div class="cal-card' + cls + '">'
+          + '<div class="cal-card-val">' + it.val + '</div>'
+          + '<div class="cal-card-label">' + it.label + '</div>'
+          + '<div class="cal-card-sub">' + it.sub + '</div>'
+          + spark
+        + '</div>';
+      }).join('');
+    }
+    fetch(calUrl)
       .then(function(r) { if (!r.ok) throw new Error(r.status); return r.json(); })
       .then(function(d) {
         if (d.totals.pageViews === 0 && d.totals.detailViews === 0) return;
         panel.style.display = 'block';
         sub.textContent = 'Last ' + d.days + ' days';
-        var fmtMoney = function(n) { return '$' + n.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ','); };
-        var items = [
-          { val: d.totals.pageViews.toLocaleString(), label: 'Calendar Views', sub: 'both calendars', trail: d.daily.map(function(x){return x.rcViews+x.pcViews;}) },
-          { val: d.totals.detailViews.toLocaleString(), label: 'Engagement', sub: 'clicks + taps', trail: d.daily.map(function(x){return x.rcFacViews+x.pcClicks;}) },
-          { val: (d.totals.bookings || 0).toLocaleString(), label: 'Bookings', sub: 'confirmed rentals', trail: null },
-          { val: fmtMoney(d.totals.revenue || 0), label: 'Revenue', sub: 'attributed rental $', trail: null },
-        ];
-        grid.innerHTML = items.map(function(it) {
-          var spark = it.trail ? sparkSVG(it.trail) : '';
-          return '<div class="cal-card">'
-            + '<div class="cal-card-val">' + it.val + '</div>'
-            + '<div class="cal-card-label">' + it.label + '</div>'
-            + '<div class="cal-card-sub">' + it.sub + '</div>'
-            + spark
-          + '</div>';
-        }).join('');
+        // Show immediately with loading shimmer on bookings/revenue
+        renderCalCards(d.totals.pageViews, d.totals.detailViews, '\u2026', '\u2026', d.daily, true);
+        // Async fetch facility data for bookings + revenue
+        var facUrl = '/' + slug + '/facility/api/data?start_date=' + new Date(Date.now() - d.days * 86400000).toISOString().slice(0,10) + '&end_date=' + new Date().toISOString().slice(0,10);
+        if (cfg.token) facUrl += '&token=' + encodeURIComponent(cfg.token);
+        fetch(facUrl)
+          .then(function(r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+          .then(function(fj) {
+            var rows = fj.rows || fj || [];
+            var bk = rows.length;
+            var rev = 0;
+            rows.forEach(function(r) {
+              var t = parseFloat(r['Total'] || r['total'] || r['Revenue'] || r['revenue'] || 0);
+              if (!isNaN(t)) rev += t;
+            });
+            renderCalCards(d.totals.pageViews, d.totals.detailViews, bk.toLocaleString(), fmtMoney(rev), d.daily, false);
+          })
+          .catch(function() {
+            renderCalCards(d.totals.pageViews, d.totals.detailViews, '0', '$0', d.daily, false);
+          });
       })
       .catch(function(e) { console.warn('[cal-analytics]', e); });
   })();
