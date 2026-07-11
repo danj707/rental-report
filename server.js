@@ -6166,7 +6166,7 @@ app.get("/", (req, res) => {
       adminLink = `<a href="/${slug}/admin${tokenQS}" class="org-action-link" title="${total} subscriber${total!==1?'s':''}">📧 Admin${badge}</a>`;
     }
     const isPublic = !!publicModes[slug];
-    const pubToggle = `<button type="button" class="pub-toggle${isPublic ? ' pub-on' : ''}" onclick="togglePublicMode('${slug}',this)" title="${isPublic ? 'Public mode ON \u2014 org page shows reports only' : 'Public mode OFF \u2014 org page shows full dashboard'}">
+    const pubToggle = `<button type="button" class="pub-toggle${isPublic ? ' pub-on' : ''}" onclick="event.stopPropagation();togglePublicMode('${slug}',this)" title="${isPublic ? 'Public mode ON \u2014 org page shows reports only' : 'Public mode OFF \u2014 org page shows full dashboard'}">
       <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M8 3C3 3 1 8 1 8s2 5 7 5 7-5 7-5-2-5-7-5z" stroke="currentColor" stroke-width="1.5" fill="none"/><circle cx="8" cy="8" r="2" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>
       <span>${isPublic ? 'Public' : 'Full'}</span>
     </button>`;
@@ -6228,13 +6228,14 @@ app.get("/", (req, res) => {
 
     return `
       <div class="org-section" id="org-${slug}">
-        <div class="org-header">
+        <div class="org-header" onclick="toggleOrgBody(this)" style="cursor:pointer;user-select:none">
           ${org.logoUrl ? `<img src="${org.logoUrl}" class="org-logo" alt="" onerror="this.style.display='none'" />` : ""}
           <div class="org-header-text">
             ${orgNameHtml}
             <div class="org-slug">${slug}</div>
           </div>
           ${headerActions}
+          <span class="how-chevron org-collapse-chevron" style="font-size:12px;color:#9ca3af;margin-left:auto;padding:0 8px">&#9658;</span>
         </div>
         ${pulseStrip}
         <div class="org-body" style="display:none">
