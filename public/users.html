@@ -94,7 +94,10 @@
   .insights-section { margin-bottom:14px; }
   .insights-wrap { background:linear-gradient(135deg,#eef2ff,#f0fdfa); border-radius:10px; border:1px solid #c7d2fe; overflow:hidden; }
   .insights-head { display:flex; align-items:center; gap:12px; padding:14px 20px; }
-  .insights-btn { display:inline-flex; align-items:center; gap:6px; background: linear-gradient(135deg, #6366f1, #8b5cf6); color:#fff; border:none; border-radius:6px; padding:8px 16px; font-size:13px; font-weight:600; font-family:inherit; cursor:pointer; }
+  .insights-btn { display:inline-flex; align-items:center; gap:6px; background: linear-gradient(135deg, #6366f1, #8b5cf6); color:#fff; border:none; border-radius:6px; padding:8px 16px; font-size:13px; font-weight:600; font-family:inherit; cursor:pointer; 
+      position: relative; overflow: visible;
+      box-shadow: 0 2px 12px rgba(99,102,241,.3);
+    }
   .insights-btn:hover:not(:disabled) { background:#374151; }
   .insights-btn:disabled { opacity:.6; cursor:default; }
   .insights-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:12px; padding:0 20px 16px; }
@@ -1267,7 +1270,8 @@ function App() {
       <div className="insights-wrap">
         <div className="insights-head">
           <button type="button" className="insights-btn" onClick={getInsights} disabled={insightsLoading}>
-            {insightsLoading?'Analyzing…':(insights?'↻ Refresh':'✨ Rec Insights')}
+                            <span className="sparkle">✦</span><span className="sparkle">✧</span><span className="sparkle">✦</span><span className="sparkle">✧</span><span className="sparkle">✦</span><span className="sparkle">✧</span>
+{insightsLoading?'Analyzing…':(insights?'↻ Refresh':'✨ Rec Insights')}
           </button>
           {insights&&!insightsLoading&&<span style={{fontSize:11,color:'#9ca3af'}}>Analyzed {s.hhCount} households, {s.total} people</span>}
         </div>
