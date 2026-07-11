@@ -2055,8 +2055,9 @@ function App() {
 
   useEffect(() => { fetchData(startDate, endDate); }, []);
 
-  // ── Seed all locations/sites with a wide date range (background, silent) ──
+  // ── Seed all locations/sites — delayed to avoid competing with main fetch ──
   useEffect(() => {
+    const timer = setTimeout(() => {
     const pathParts = window.location.pathname.replace(/\/$/, '').split('/');
     const apiBase = pathParts.length >= 3
       ? '/' + pathParts[1] + '/' + pathParts[2] + '/api/data'
@@ -2107,6 +2108,8 @@ function App() {
         });
       })
       .catch(() => {}); // silent — don't block anything
+    }, 3000); // 3s delay so main fetch gets a head start
+    return () => clearTimeout(timer);
   }, []);
 
   function handleRunReport() { fetchData(startDate, endDate); }
