@@ -858,6 +858,7 @@ function normalizeRow(raw) {
         const qs = new URLSearchParams();
         if (sd) qs.set('start_date', sd);
         if (ed) qs.set('end_date',   ed);
+        if (params._nocache === '1' || params._refresh === '1') qs.set('_nocache', '1');
         const qsStr = qs.toString();
         fetch(withToken(`/${orgSlug}/${reportType}/api/data${qsStr ? '?' + qsStr : ''}`))
           .then(r => {
