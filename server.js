@@ -6880,6 +6880,12 @@ app.get("/", (req, res) => {
           </div>
         </div>
       </div>
+      <div class="partner-quotes">
+        <div class="partner-quotes-label">\u2764\uFE0F What Partners Are Saying</div>
+        <div class="pq-track-wrap">
+          <div class="pq-track" id="pq-track"></div>
+        </div>
+      </div>
       <div class="showcase-gallery" id="showcase-gallery">${showcaseLoad().map((img, i) => `
           <div class="sg-item" onclick="sgLightbox(${i})">
             <img src="${img.data}" alt="" />
@@ -6895,16 +6901,7 @@ app.get("/", (req, res) => {
         <span class="showcase-upload-hint">Drag &amp; drop or click to add before/after screenshots for the demo</span>
       </div>
 
-      <div class="partner-quotes">
-        <div class="partner-quotes-label">\u2764\uFE0F What Partners Are Saying</div>
-        <div class="pq-track-wrap">
-          <div class="pq-track" id="pq-track"></div>
-        </div>
-        <div style="padding:10px 40px 0;display:flex;align-items:center;gap:10px" id="pq-add-row">
-          <input id="pq-input" type="text" placeholder="\u201CGreat reports!\u201D - Name, Org" style="flex:1;padding:8px 14px;font-size:12px;background:rgba(255,255,255,.08);border:1px solid rgba(165,180,252,.25);border-radius:8px;color:#e0e7ff;outline:none;" />
-          <button onclick="pqAdd()" style="padding:8px 16px;font-size:12px;font-weight:600;color:#a5b4fc;background:rgba(255,255,255,.08);border:1px solid rgba(165,180,252,.25);border-radius:8px;cursor:pointer;white-space:nowrap;">+ Add quote</button>
-        </div>
-      </div>
+
     </div>
 
     <div class="org-section">
@@ -6979,6 +6976,13 @@ app.get("/", (req, res) => {
         <span class="how-chevron"><i class="ph ph-caret-right" style="font-size:14px"></i></span>
       </div>
       <div class="how-body">
+      <div style="padding:14px 18px;background:#f5f4f1;border-top:1px solid #e8e5df">
+        <div style="font-size:12px;font-weight:700;color:#374151;margin-bottom:8px">\u2764\uFE0F Partner Quotes</div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input id="pq-input" type="text" placeholder="\u201CGreat reports!\u201D \u2014 Name, Org" style="flex:1;padding:8px 12px;font-size:12px;border:1px solid #d8d4cc;border-radius:5px" />
+          <button onclick="pqAdd()" style="padding:8px 16px;font-size:12px;font-weight:600;color:#fff;background:#7c3aed;border:none;border-radius:5px;cursor:pointer">+ Add quote</button>
+        </div>
+      </div>
       <div style="padding:14px 18px;background:#f5f4f1;border-top:1px solid #e8e5df">
         <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
           <input type="password" id="restart-pwd" placeholder="Dashboard password"
