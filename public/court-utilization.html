@@ -1195,71 +1195,76 @@ function App() {
       });
     }, [grouped]);
 
-    // Geocode locations — reverse-geocode org coords for city/state, then forward-geocode each location
-    var [orgLocale, setOrgLocale] = React.useState(null); // "Watertown, MA"
+    // Geocode locations — single async flow: reverse-geocode org → forward-geocode each location
     React.useEffect(function() {
-      if (!orgCoords) { setOrgLocale(''); return; }
-      var revUrl = 'https://nominatim.openstreetmap.org/reverse?format=json&lat=' + orgCoords.lat + '&lon=' + orgCoords.lon + '&zoom=10';
-      fetch(revUrl).then(function(r) { return r.json(); }).then(function(data) {
-        var addr = data.address || {};
-        var city = addr.city || addr.town || addr.village || '';
-        var state = addr.state || '';
-        setOrgLocale(city + (state ? ', ' + state : ''));
-      }).catch(function() { setOrgLocale(''); });
-    }, [orgCoords]);
+      if (!locations.length) return;
+      var cache = geocodeCacheRef.current;
 
-    React.useEffect(function() {
-      if (orgLocale === null || !locations.length) return; // wait for reverse geocode
-      var pending = locations.length;
-      var results = [];
-      var delay = 0;
-      locations.forEach(function(loc) {
-        var cacheKey = loc.name;
-        if (geocodeCacheRef.current[cacheKey]) {
-          results.push(Object.assign({}, loc, geocodeCacheRef.current[cacheKey]));
-          pending--;
-          if (pending === 0) finalizeGeocode(results);
-          return;
+      (async function() {
+        // Step 1: reverse-geocode org coords to get "City, State"
+        var locale = '';
+        if (orgCoords) {
+          try {
+            var revResp = await fetch('https://nominatim.openstreetmap.org/reverse?format=json&lat=' + orgCoords.lat + '&lon=' + orgCoords.lon + '&zoom=10');
+            var revData = await revResp.json();
+            var addr = revData.address || {};
+            var city = addr.city || addr.town || addr.village || '';
+            var state = addr.state || '';
+            locale = city + (state ? ', ' + state : '');
+            console.log('[map] org locale:', locale);
+          } catch(e) { console.warn('[map] reverse geocode failed:', e.message); }
         }
-        // "Arsenal Park, Watertown, MA" — specific enough for a unique match
-        var q = encodeURIComponent(loc.name + (orgLocale ? ', ' + orgLocale : ''));
-        setTimeout(function() {
-          fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&q=' + q)
-            .then(function(r) { return r.json(); })
-            .then(function(data) {
-              if (data && data[0]) {
-                var coords = { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
-                geocodeCacheRef.current[cacheKey] = coords;
-                results.push(Object.assign({}, loc, coords));
-              } else if (orgCoords) {
-                var offset = (results.length * 0.003) - 0.005;
-                results.push(Object.assign({}, loc, { lat: orgCoords.lat + offset, lng: orgCoords.lon + offset }));
-              }
-              pending--;
-              if (pending === 0) finalizeGeocode(results);
-            })
-            .catch(function() { pending--; if (pending === 0) finalizeGeocode(results); });
-        }, delay);
-        delay += 1100;
-      });
 
-      function finalizeGeocode(locs) {
-        // Spread overlapping markers — if two locations are within ~300m, offset them
-        for (var i = 0; i < locs.length; i++) {
-          for (var j = i + 1; j < locs.length; j++) {
-            var dlat = locs[i].lat - locs[j].lat;
-            var dlng = locs[i].lng - locs[j].lng;
-            var dist = Math.sqrt(dlat * dlat + dlng * dlng);
-            if (dist < 0.003) {
-              var angle = (j * 2.2);
-              locs[j].lat += Math.cos(angle) * 0.003;
-              locs[j].lng += Math.sin(angle) * 0.003;
+        // Step 2: forward-geocode each location sequentially (Nominatim 1 req/sec)
+        var results = [];
+        for (var i = 0; i < locations.length; i++) {
+          var loc = locations[i];
+          if (cache[loc.name]) {
+            results.push(Object.assign({}, loc, cache[loc.name]));
+            continue;
+          }
+          var q = loc.name + (locale ? ', ' + locale : '');
+          console.log('[map] geocoding:', q);
+          try {
+            await new Promise(function(r) { setTimeout(r, i === 0 ? 1100 : 1100); }); // rate limit
+            var resp = await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&q=' + encodeURIComponent(q));
+            var data = await resp.json();
+            if (data && data[0]) {
+              var coords = { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
+              cache[loc.name] = coords;
+              results.push(Object.assign({}, loc, coords));
+              console.log('[map]  →', loc.name, coords.lat.toFixed(4), coords.lng.toFixed(4));
+            } else {
+              console.warn('[map]  → no result for', q);
+              if (orgCoords) {
+                var off = (results.length * 0.003) - 0.005;
+                results.push(Object.assign({}, loc, { lat: orgCoords.lat + off, lng: orgCoords.lon + off }));
+              }
+            }
+          } catch(e) {
+            console.warn('[map] geocode error:', e.message);
+            if (orgCoords) {
+              results.push(Object.assign({}, loc, { lat: orgCoords.lat, lng: orgCoords.lon }));
             }
           }
         }
-        setGeocoded(locs);
-      }
-    }, [locations, orgLocale]);
+
+        // Step 3: spread overlapping markers
+        for (var i = 0; i < results.length; i++) {
+          for (var j = i + 1; j < results.length; j++) {
+            var dlat = results[i].lat - results[j].lat;
+            var dlng = results[i].lng - results[j].lng;
+            if (Math.sqrt(dlat * dlat + dlng * dlng) < 0.003) {
+              var angle = j * 2.2;
+              results[j].lat += Math.cos(angle) * 0.003;
+              results[j].lng += Math.sin(angle) * 0.003;
+            }
+          }
+        }
+
+        setGeocoded(results);
+      })();
+    }, [locations]);
 
     // Render map
     React.useEffect(function() {
