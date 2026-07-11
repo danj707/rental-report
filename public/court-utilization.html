@@ -1462,8 +1462,8 @@ function App() {
           const totI = grouped.reduce((s,g) => s + g.customerHrs, 0);
           const totM = grouped.reduce((s,g) => s + g.programHrs, 0);
           const totA = totI + totM;
-          const cntI = grouped.reduce((s,g) => s + g.customer.size, 0);
-          const cntM = grouped.reduce((s,g) => s + g.program.size, 0);
+          const cntI = grouped.reduce((s,g) => s + (g.customer || 0), 0);
+          const cntM = grouped.reduce((s,g) => s + (g.program || 0), 0);
           const pI = totA > 0 ? Math.round(totI / totA * 100) : 0;
           const pM = totA > 0 ? Math.round(totM / totA * 100) : 0;
           return (
