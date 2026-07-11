@@ -7659,23 +7659,47 @@ app.get("/", (req, res) => {
       }
       // Feature ticker
       var features = [
-        'Rec AI Chat \u2014 Streaming Claude','Daily 5am Auto-Cache with 24hr TTL',
-        'Report Health Monitoring','Token-Gated Multi-Tenant Security',
-        'PDF Export via Puppeteer','Email Subscription Scheduling',
-        'Facility Rental Schedules','GL Revenue Breakdown','Program Revenue by Section',
-        'Court Utilization Heatmaps','Product Sales Analytics','Membership Tracking',
-        'Roster Management','User Demographics & Strategy','Spend Tier Analysis',
-        'Geographic Heatmaps via Leaflet','Cross-Sell Opportunity Analysis',
-        'Guest Detection Toggle','Tab-Specific AI Insights','Conversion Funnels',
-        'Lapsing Household Alerts','Revenue Levers with CSV Export',
-        'Fast Track Bookings & Conversion','Historic Site Rentals',
-        'Pareto Revenue Curves','Signup Velocity Tracking','Resident vs Non-Resident',
-        'Who\u2019s Not Buying Analysis','Revenue by Age Cohort','Grade Gap Detection',
-        'Excel Export via SheetJS','Refund Breakdown Toggle','Acct Credit Tracking',
-        'Desk Location Filtering','Cancellation Rate Tracking',
-        'Section vs Session Reg Modes','Present Mode \u2014 Kiosk/TV Display',
-        'Thumbs Up/Down Vote Tracking','AI Spend Monitoring',
-        'Animated Admin Dashboard','Real-Time Streaming Dashboards'
+        '\u{1F916} Rec AI Chat \u2014 Streaming Claude Sonnet',
+        '\u{1F4CA} Daily Pulse \u2014 Auto KPI Summary at 5am',
+        '\u{1F5FA} Court Utilization Maps \u2014 Leaflet + Geocoding',
+        '\u{1F3AF} Fill Rate Tracking \u2014 Capacity vs Enrollment',
+        '\u{1F4C8} Activity Retention Analysis \u2014 Top Retaining Programs',
+        '\u26A1 Instant vs Managed Booking Split',
+        '\u{1F512} Token-Gated Multi-Tenant Security',
+        '\u{1F4E7} Email Subscription Scheduling',
+        '\u{1F4C4} PDF Export via Puppeteer',
+        '\u{1F4CA} Excel Export via SheetJS',
+        '\u{2728} Tab-Specific AI Insights',
+        '\u{1F4B0} GL Revenue Breakdown \u2014 Type-Ahead Filter',
+        '\u{1F3D7} Facility Rental Schedules \u2014 Location Filter',
+        '\u{1F3BE} Court Utilization \u2014 Heatmaps + Bar Charts',
+        '\u{1F4CB} Program Revenue by Section \u2014 Fill Rate + Retention',
+        '\u{1F6D2} Product Sales Analytics',
+        '\u{1F4B3} Membership Check-In Heatmaps',
+        '\u{1F4DD} Class Roster \u2014 Emergency Contacts + Pickups',
+        '\u{1F465} Community Intel \u2014 6-Tab Demographics Hub',
+        '\u{1F4A1} Revenue Levers with CSV Export',
+        '\u{1F680} Fast Track Bookings & Conversion Pipeline',
+        '\u{1F3DB} Historic Site Rentals',
+        '\u{1F3C3} Signup Velocity Tracking',
+        '\u{1F4C5} Program Calendar \u2014 AI Program Finder',
+        '\u{1F3DF} Rental Calendar \u2014 Real-Time MCP Availability',
+        '\u2744\uFE0F Ice Participant Calendar',
+        '\u{1F4CA} Instructor Payout Calculator',
+        '\u{1F4CA} QoQ Revenue Comparison',
+        '\u{1F9D9} Report Wizard \u2014 AI-Built Custom Dashboards',
+        '\u{1F4F0} Directors Report \u2014 AI Executive Summary',
+        '\u{1F4C8} Annual Report Generator',
+        '\u{1F50D} Audit Logging + Event Tracking',
+        '\u{1F4BE} Nightly GitHub Gist Backups',
+        '\u{1F4CA} Langfuse AI Observability',
+        '\u{1F3A8} Present Mode \u2014 Kiosk/TV Display',
+        '\u{1F44D} Thumbs Up/Down Feedback Tracking',
+        '\u26A1 5am Auto-Cache with 24hr TTL',
+        '\u{1F6E1} Report Health Monitoring',
+        '\u{1F30D} Geographic Heatmaps via Leaflet',
+        '\u{1F4CA} Pareto Revenue Curves',
+        '\u{1F468}\u200D\u{1F469}\u200D\u{1F467} Resident vs Non-Resident Analysis'
       ];
       var ticker = document.getElementById('feature-ticker');
       if (ticker) {
@@ -9191,10 +9215,11 @@ app.get("/", (req, res) => {
         + '</div>';
     }).join('');
     track.innerHTML = cards + cards;
-    // Restart animation
+    // Scale animation duration with quote count (8s per quote, minimum 24s)
+    var dur = Math.max(quotes.length * 10, 24);
     track.style.animation = 'none';
     track.offsetHeight;
-    track.style.animation = '';
+    track.style.animation = 'pq-scroll ' + dur + 's linear infinite';
   }
   function pqLoad() {
     fetch('/api/admin/quotes').then(function(r){return r.json();}).then(pqRender).catch(function(){});
