@@ -3088,6 +3088,7 @@ app.get("/:org/:report/api/data", resolveOrg, async (req, res) => {
     logEvent(orgSlug, reportType, "fetch", req);
 
     const orgId = useShared ? orgConfig.orgId : null;
+    if (useShared && !orgId) return res.status(400).json({ error: "Missing org_id for shared report — org config may be incomplete" });
     const params = buildMetabaseParams(req.query, reportType, orgId);
     const paramStr = params.length > 0 ? `?parameters=${encodeURIComponent(JSON.stringify(params))}` : "";
 
