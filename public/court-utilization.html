@@ -1195,23 +1195,30 @@ function App() {
       });
     }, [grouped]);
 
-    // Geocode locations
+    // Geocode locations (viewbox-bounded to org area)
     React.useEffect(function() {
       if (!locations.length) return;
       var orgName = window.ORG_CONFIG?.displayName || '';
+      // Build viewbox from org coords (±0.08 deg ≈ 5 miles)
+      var vb = '';
+      if (orgCoords) {
+        var d = 0.08;
+        vb = '&viewbox=' + (orgCoords.lon - d) + ',' + (orgCoords.lat + d) + ',' + (orgCoords.lon + d) + ',' + (orgCoords.lat - d) + '&bounded=1';
+      }
       var pending = locations.length;
       var results = [];
+      var delay = 0;
       locations.forEach(function(loc) {
         var cacheKey = loc.name;
         if (geocodeCacheRef.current[cacheKey]) {
           results.push(Object.assign({}, loc, geocodeCacheRef.current[cacheKey]));
           pending--;
-          if (pending === 0) setGeocoded(results);
+          if (pending === 0) finalizeGeocode(results);
           return;
         }
         var q = encodeURIComponent(loc.name + ', ' + orgName);
         setTimeout(function() {
-          fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&q=' + q)
+          fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&q=' + q + vb)
             .then(function(r) { return r.json(); })
             .then(function(data) {
               if (data && data[0]) {
@@ -1219,16 +1226,33 @@ function App() {
                 geocodeCacheRef.current[cacheKey] = coords;
                 results.push(Object.assign({}, loc, coords));
               } else if (orgCoords) {
-                // Fallback to org center with small offset
-                var offset = (results.length * 0.002) - 0.004;
+                var offset = (results.length * 0.003) - 0.005;
                 results.push(Object.assign({}, loc, { lat: orgCoords.lat + offset, lng: orgCoords.lon + offset }));
               }
               pending--;
-              if (pending === 0) setGeocoded(results);
+              if (pending === 0) finalizeGeocode(results);
             })
-            .catch(function() { pending--; if (pending === 0) setGeocoded(results); });
-        }, results.length * 1100); // Nominatim: 1 req/sec
+            .catch(function() { pending--; if (pending === 0) finalizeGeocode(results); });
+        }, delay);
+        delay += 1100;
       });
+
+      function finalizeGeocode(locs) {
+        // Spread overlapping markers — if two locations are within ~200m, offset them
+        for (var i = 0; i < locs.length; i++) {
+          for (var j = i + 1; j < locs.length; j++) {
+            var dlat = locs[i].lat - locs[j].lat;
+            var dlng = locs[i].lng - locs[j].lng;
+            var dist = Math.sqrt(dlat * dlat + dlng * dlng);
+            if (dist < 0.003) { // ~300m
+              var angle = (j * 2.2); // radians, spread evenly
+              locs[j].lat += Math.cos(angle) * 0.003;
+              locs[j].lng += Math.sin(angle) * 0.003;
+            }
+          }
+        }
+        setGeocoded(locs);
+      }
     }, [locations]);
 
     // Render map
