@@ -1958,8 +1958,9 @@ app.get("/:org/metrics/api/data", (req, res) => {
   res.json(buildMetrics(org, days));
 });
 
-// ── GET /:org/api/calendar-conversion — calendar views vs enrollments ──
-app.get("/:org/api/calendar-conversion", async (req, res) => {
+// ── GET /:org/api/calendar-conversion — calendar views (fast, events only) ──
+// Enrollment + revenue data fetched client-side for instant render
+app.get("/:org/api/calendar-conversion", (req, res) => {
   res.set("Cache-Control", "no-store");
   const slug = req.params.org;
   const orgConfig = ORGS[slug];
@@ -1969,7 +1970,7 @@ app.get("/:org/api/calendar-conversion", async (req, res) => {
   const cutoff = new Date(Date.now() - days * 86400000);
   const cutoffStr = cutoff.toISOString().substring(0, 10);
 
-  // 1. Calendar views per day from events.jsonl
+  // Calendar views per day from events.jsonl (instant)
   const events = readEvents(days).filter(e => e.org === slug && e.report === "calendar" && e.event === "view");
   const viewsByDay = {};
   events.forEach(e => {
@@ -1977,81 +1978,17 @@ app.get("/:org/api/calendar-conversion", async (req, res) => {
     viewsByDay[day] = (viewsByDay[day] || 0) + 1;
   });
 
-  // 2. Enrollments per day from program-demographics
-  let enrollByDay = {};
-  try {
-    const demoUuid = orgConfig["program-demographics"]?.mbUuid || SHARED_UUIDS["program-demographics"];
-    if (demoUuid) {
-      const cacheKey = slug + "/program-demographics";
-      let rows = getCached(cacheKey)?.rows;
-      if (!rows) {
-        const orgIdParam = orgConfig.orgId ? `?parameters=${encodeURIComponent(JSON.stringify([{type:"category",target:["variable",["template-tag","org_id"]],value:orgConfig.orgId}]))}` : "";
-        const url = `${METABASE_URL}/api/public/card/${demoUuid}/query/json${orgIdParam}`;
-        const resp = await fetch(url);
-        if (resp.ok) rows = await resp.json();
-      }
-      if (rows) {
-        rows.forEach(r => {
-          const d = r["Enrolled Date"] || r["enrolled_date"] || "";
-          if (!d) return;
-          const day = String(d).substring(0, 10);
-          if (day >= cutoffStr) enrollByDay[day] = (enrollByDay[day] || 0) + 1;
-        });
-      }
-    }
-  } catch (err) {
-    console.warn("[calendar-conversion] enrollment fetch error:", err.message);
-  }
-
-  // 3. Fetch programs revenue data for avg ticket price
-  let avgTicket = 0;
-  try {
-    const progUuid = orgConfig.programs?.mbUuid || SHARED_UUIDS.programs;
-    const progIsShared = !orgConfig.programs?.mbUuid && !!SHARED_UUIDS.programs;
-    if (progUuid) {
-      const progCacheKey = slug + "/programs";
-      let progRows = getCached(progCacheKey)?.rows;
-      if (!progRows) {
-        const orgIdP = progIsShared && orgConfig.orgId ? `?parameters=${encodeURIComponent(JSON.stringify([{type:"category",target:["variable",["template-tag","org_id"]],value:orgConfig.orgId}]))}` : "";
-        const pUrl = `${METABASE_URL}/api/public/card/${progUuid}/query/json${orgIdP}`;
-        const pResp = await fetch(pUrl);
-        if (pResp.ok) progRows = await pResp.json();
-      }
-      if (progRows && progRows.length > 0) {
-        let totalRev = 0, totalEnr = 0;
-        progRows.forEach(r => {
-          const rev = parseFloat(r["net_total"] || r["Net Revenue"] || r["Net Total"] || 0) || 0;
-          const enr = parseInt(r["enrolled"] || r["Enrollments"] || r["Enrolled"] || 0) || 0;
-          totalRev += rev; totalEnr += enr;
-        });
-        if (totalEnr > 0) avgTicket = totalRev / totalEnr;
-      }
-    }
-  } catch (err) {
-    console.warn("[calendar-conversion] revenue fetch error:", err.message);
-  }
-
-  // 4. Build paired daily data
-  const allDays = new Set([...Object.keys(viewsByDay), ...Object.keys(enrollByDay)]);
-  const daily = [...allDays].filter(d => d >= cutoffStr).sort().map(d => ({
+  const daily = Object.keys(viewsByDay).filter(d => d >= cutoffStr).sort().map(d => ({
     date: d,
     views: viewsByDay[d] || 0,
-    enrollments: enrollByDay[d] || 0,
   }));
 
   const totalViews = daily.reduce((s, d) => s + d.views, 0);
-  const totalEnroll = daily.reduce((s, d) => s + d.enrollments, 0);
-  const attributedRevenue = totalEnroll * avgTicket;
 
   res.json({
     period: days + "d",
     totalViews,
-    totalEnrollments: totalEnroll,
-    conversionRate: totalViews > 0 ? ((totalEnroll / totalViews) * 100).toFixed(1) : null,
-    avgTicketPrice: Math.round(avgTicket * 100) / 100,
-    attributedRevenue: Math.round(attributedRevenue * 100) / 100,
     daily,
-
   });
 });
 
@@ -8253,6 +8190,7 @@ app.get("/", (req, res) => {
     'Fixed Calendar Performance showing 0 bookings / $0 revenue \u2014 fetchMBDirect was using per-org Metabase UUIDs but also passing org_id parameter (which per-org questions don\u2019t have), causing Metabase to reject the query. Now aligned with main data route: prefers shared UUID + org_id filtering.',
     'Fixed Fill Rate tab capacity dashes \u2014 fillRateAnalytics was checking r.isSection on program-level rollup rows (always false). Section-level capacity lives in r._sections[]. Now iterates _sections to build the capacity map.',
     'Calendar Performance: moved bookings/revenue to async client-side fetch with loading animation \u2014 endpoint returns instantly with views/engagement, then bookings + revenue fill in when Metabase responds.',
+    'Registration Funnel (metrics page): same async pattern \u2014 endpoint stripped to views-only, enrollments + avg ticket + attributed revenue computed client-side from program-demographics and programs data.',
   ] },
   { date: '2026-07-07', title: 'Activity Filter \u{1F3AF}', items: ['Activity dropdown in toolbar filters Revenue, Participants, Retention, and Fill Rate tabs.', 'Select an activity (Swimming, Camps, Dance, etc.) to see retention, re-engagement, and flow data scoped to that activity.', 'Activity column now sourced from Metabase program-demographics query (v3).'] },
   { date: '2026-07-07', title: 'Program Re-engagement \u2728', items: ['Cumulative re-engagement curves: flipped survival chart showing % of cohort that came back within N months.', 'Cross-activity flow matrix: shows participant overlap between activity categories (Swimming, Camps, etc).', 'Missed opportunities: flags large activities with <10% participant overlap \u2014 marketing targets.', 'Activity derived from program names until native Activity column added to Metabase.'] },
