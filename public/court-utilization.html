@@ -1319,8 +1319,9 @@ function App() {
           + '</div>';
         circle.bindPopup(popupHtml, { maxWidth: 320 });
 
-        // Center label
+        // Center label (non-interactive so clicks pass through to circle)
         L.marker([loc.lat, loc.lng], {
+          interactive: false,
           icon: L.divIcon({
             className: '',
             html: '<div style="font-size:11px;font-weight:700;color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.5);text-align:center;pointer-events:none">' + loc.utilPct + '%</div>',
