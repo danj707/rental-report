@@ -6235,7 +6235,7 @@ app.get("/", (req, res) => {
             <div class="org-slug">${slug}</div>
           </div>
           ${headerActions}
-          <span class="how-chevron org-collapse-chevron" style="font-size:12px;color:#9ca3af;margin-left:auto;padding:0 8px">&#9658;</span>
+          <span class="how-chevron org-collapse-chevron" style="color:#9ca3af;margin-left:auto;padding:0 8px"><i class="ph ph-caret-right" style="font-size:14px"></i></span>
         </div>
         ${pulseStrip}
         <div class="org-body" style="display:none">
@@ -6319,7 +6319,8 @@ app.get("/", (req, res) => {
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>rec.us Reports</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css" />
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -6900,7 +6901,7 @@ app.get("/", (req, res) => {
           <div class="org-name">&#128202; Platform Usage</div>
           <div class="org-slug">Last 30 days \u00b7 all organizations</div>
         </div>
-        <span class="how-chevron" style="transform:rotate(90deg)">&#9658;</span>
+        <span class="how-chevron" style="transform:rotate(90deg)"><i class="ph ph-caret-right" style="font-size:14px"></i></span>
       </div>
       <div class="how-body open">
         ${usageTableHtml}
@@ -6963,7 +6964,7 @@ app.get("/", (req, res) => {
           <div class="org-name">&#9851;&#65039; App Control</div>
           <div class="org-slug">Platform admin, feature flags, Metabase links, audit &amp; backups</div>
         </div>
-        <span class="how-chevron">&#9658;</span>
+        <span class="how-chevron"><i class="ph ph-caret-right" style="font-size:14px"></i></span>
       </div>
       <div class="how-body">
       <div style="padding:14px 18px;background:#f5f4f1;border-top:1px solid #e8e5df">
@@ -7069,7 +7070,7 @@ app.get("/", (req, res) => {
         <div class="org-header-text">
           <div class="org-name">&#128203; Updates <span class="updates-count" id="updates-count"></span></div>
         </div>
-        <span class="how-chevron">&#9658;</span>
+        <span class="how-chevron"><i class="ph ph-caret-right" style="font-size:14px"></i></span>
       </div>
       <div class="how-body">
         <div class="updates-list" id="updates-list"></div>
@@ -7081,7 +7082,7 @@ app.get("/", (req, res) => {
         <div class="org-header-text">
           <div class="org-name">&#9881;&#65039; How This Works</div>
         </div>
-        <span class="how-chevron">&#9658;</span>
+        <span class="how-chevron"><i class="ph ph-caret-right" style="font-size:14px"></i></span>
       </div>
       <div class="how-body">
         <h4>Architecture</h4>
