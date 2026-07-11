@@ -7807,6 +7807,19 @@ app.get("/", (req, res) => {
       }
     }
 
+    function toggleOrgBody(hdr) {
+      var section = hdr.closest('.org-section');
+      var body = section.querySelector('.org-body');
+      var chevron = hdr.querySelector('.org-collapse-chevron');
+      if (!body) return;
+      if (body.style.display === 'none') {
+        body.style.display = '';
+        if (chevron) chevron.style.transform = 'rotate(90deg)';
+      } else {
+        body.style.display = 'none';
+        if (chevron) chevron.style.transform = '';
+      }
+    }
     function toggleHow(row) {
       row.querySelector('.how-chevron').classList.toggle('open');
       row.nextElementSibling.classList.toggle('open');
