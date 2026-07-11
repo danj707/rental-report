@@ -1645,7 +1645,7 @@ function normalizeRow(raw) {
                   setActiveTab('retention');
                   // Auto-expand to 12 months for meaningful cohort data
                   var now = new Date();
-                  var start12 = new Date(now.getFullYear() - 1, now.getMonth(), 1);
+                  var start12 = new Date(now.getTime() - 90 * 86400000);
                   var end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
                   var s = toISO(start12);
                   var e = toISO(end);
