@@ -717,7 +717,7 @@ function App() {
   const filtered = useMemo(() => {
     const locSet = new Set(selectedLocations);
     return normalized.filter(r => {
-      if (!includePrograms && r.usageCategory === 'Program / League') return false;
+      if (!includePrograms && r.bookingSource !== 'instant' && r.usageCategory !== 'Closure / Block') return false;
       if (!includeClosures && r.usageCategory === 'Closure / Block')  return false;
       if (!locSet.has(r.locationName))                                return false;
       return true;
@@ -768,9 +768,9 @@ function App() {
       }
       const e = byCourt.get(label);
       const hrs = r.durationHours || 0;
-      if (r.usageCategory === 'Program / League')     { e.program.add(r.facilityRentalId);  e.programHrs  += hrs; }
-      else if (r.usageCategory === 'Closure / Block') { e.closure.add(r.facilityRentalId);  e.closureHrs  += hrs; }
-      else                                             { e.customer.add(r.facilityRentalId); e.customerHrs += hrs; }
+      if (r.usageCategory === 'Closure / Block')      { e.closure.add(r.facilityRentalId);  e.closureHrs  += hrs; }
+      else if (r.bookingSource === 'instant')           { e.customer.add(r.facilityRentalId); e.customerHrs += hrs; }
+      else                                             { e.program.add(r.facilityRentalId);  e.programHrs  += hrs; }
     }
     const arr = Array.from(byCourt.values()).map(e => {
       const usedHrs = e.customerHrs + e.programHrs; // closures are unavailability, not utilization
@@ -891,9 +891,9 @@ function App() {
     const DOW = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
     for (const r of filtered) {
       const hrs = r.durationHours || 0;
-      if (r.usageCategory === 'Program / League')      { usageMix.programBookings++;  usageMix.programHrs  += hrs; }
-      else if (r.usageCategory === 'Closure / Block')  { usageMix.closureBookings++;  usageMix.closureHrs  += hrs; }
-      else                                              { usageMix.customerBookings++; usageMix.customerHrs += hrs; }
+      if (r.usageCategory === 'Closure / Block')       { usageMix.closureBookings++; usageMix.closureHrs += hrs; }
+      else if (r.bookingSource === 'instant')              { usageMix.customerBookings++; usageMix.customerHrs += hrs; }
+      else                                                { usageMix.programBookings++;  usageMix.programHrs  += hrs; }
 
       const src = r.bookingSource || '(unknown)';
       (srcSets[src] = srcSets[src] || new Set()).add(r.facilityRentalId);
@@ -1020,9 +1020,9 @@ function App() {
     const custColors = grouped.map(g => barColor(g.utilPct || 0));
     const progColors = grouped.map(g => { var c = barColor(g.utilPct || 0); return c + 'aa'; }); // slightly transparent
     const datasets = [
-      { label: 'Customer Bookings', data: grouped.map(valCustomer), backgroundColor: custColors, borderWidth: 0 },
+      { label: 'Instant Bookings', data: grouped.map(valCustomer), backgroundColor: custColors, borderWidth: 0 },
     ];
-    if (includePrograms) datasets.push({ label: 'Programs / Leagues', data: grouped.map(valProgram), backgroundColor: progColors, borderWidth: 0 });
+    if (includePrograms) datasets.push({ label: 'Leagues / Managed', data: grouped.map(valProgram), backgroundColor: progColors, borderWidth: 0 });
     // Closures are unavailability, not utilization — only meaningful in the hours view.
     if (includeClosures && !isUtil) datasets.push({ label: 'Closures / Blocks', data: grouped.map(g => g.closureHrs), backgroundColor: '#9ca3af', borderWidth: 0 });
 
@@ -1470,7 +1470,7 @@ function App() {
           </div>
           <label>
             <input type="checkbox" checked={includePrograms} onChange={e => setIncludePrograms(e.target.checked)} />
-            Include programs / leagues
+            Include leagues / managed
           </label>
           <label>
             <input type="checkbox" checked={includeClosures} onChange={e => setIncludeClosures(e.target.checked)} />
