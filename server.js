@@ -6532,8 +6532,8 @@ app.get("/", (req, res) => {
     .dot-warn { background: #f59e0b; }
     .dot-err { background: #ef4444; }
     .dot-none { background: #ddd; }
-    .report-card-hidden { opacity: 0.4; }
-    .report-card-hidden:hover { opacity: 0.7; }
+    .report-card-hidden { background: #f0eeeb; opacity: 0.6; }
+    .report-card-hidden:hover { opacity: 0.8; }
     .report-card-hidden .report-label { text-decoration: line-through; }
     .pub-toggle { font-size: 11px; display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; border: 1px solid #ddd; border-radius: 5px; background: #fff; color: #888; cursor: pointer; transition: all .15s; white-space: nowrap; }
     .pub-toggle:hover { background: #f0f0f0; color: #333; }
@@ -6901,7 +6901,7 @@ app.get("/", (req, res) => {
           <div class="org-name">&#128202; Platform Usage</div>
           <div class="org-slug">Last 30 days \u00b7 all organizations</div>
         </div>
-        <span class="how-chevron" style="transform:rotate(90deg)"><i class="ph ph-caret-right" style="font-size:14px"></i></span>
+        <span class="how-chevron open"><i class="ph ph-caret-right" style="font-size:14px"></i></span>
       </div>
       <div class="how-body open">
         ${usageTableHtml}
