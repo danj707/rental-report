@@ -7081,6 +7081,7 @@ app.get("/", (req, res) => {
       <div class="org-header" onclick="toggleHow(this)" style="cursor:pointer;user-select:none">
         <div class="org-header-text">
           <div class="org-name">&#128203; Updates <span class="updates-count" id="updates-count"></span></div>
+          <div class="org-slug">Ship log \u2014 every feature, fix, and improvement</div>
         </div>
         <span class="how-chevron"><i class="ph ph-caret-right" style="font-size:14px"></i></span>
       </div>
@@ -7093,6 +7094,7 @@ app.get("/", (req, res) => {
       <div class="org-header" onclick="toggleHow(this)" style="cursor:pointer;user-select:none">
         <div class="org-header-text">
           <div class="org-name">&#9881;&#65039; How This Works</div>
+          <div class="org-slug">Architecture, report registry, onboarding, and documentation</div>
         </div>
         <span class="how-chevron"><i class="ph ph-caret-right" style="font-size:14px"></i></span>
       </div>
