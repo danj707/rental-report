@@ -1071,7 +1071,7 @@ function App() {
         maintainAspectRatio: false,
         interaction: { mode: 'index', intersect: false },
         plugins: {
-          legend: { position: 'top', labels: { boxWidth: 14, font: { size: 12 } } },
+          legend: { display: false },
           tooltip: {
             callbacks: {
               label: (it) => {
@@ -1325,7 +1325,7 @@ function App() {
             + '</div>';
         }).join('');
 
-        var popupHtml = '<div style="min-width:220px;max-width:300px">'
+        var popupHtml = '<div style="min-width:220px;max-width:300px;max-height:320px;overflow-y:auto">'
           + '<div class="cu-popup-title">' + loc.name + '</div>'
           + barsHtml
           + '<div class="cu-popup-stats">' + loc.courts.length + ' court' + (loc.courts.length > 1 ? 's' : '') + ' \u2022 ' + Math.round(loc.totalUsed) + ' hrs used of ' + Math.round(loc.totalAvail) + ' available</div>'
@@ -1559,11 +1559,20 @@ function App() {
         {!loading && !error && grouped.length === 0 && (
           <div className="empty">No bookings match the current filters.</div>
         )}
-        {!loading && grouped.length > 0 && (
+        {!loading && grouped.length > 0 && (<React.Fragment>
+          <div style={{display:'flex',gap:16,justifyContent:'center',marginBottom:8,fontSize:11,color:'#666',flexWrap:'wrap'}}>
+              <span><span style={{display:'inline-block',width:10,height:10,borderRadius:2,background:'#dc2626',marginRight:4,verticalAlign:'-1px'}} />70%+ High</span>
+              <span><span style={{display:'inline-block',width:10,height:10,borderRadius:2,background:'#ea580c',marginRight:4,verticalAlign:'-1px'}} />50-70%</span>
+              <span><span style={{display:'inline-block',width:10,height:10,borderRadius:2,background:'#f59e0b',marginRight:4,verticalAlign:'-1px'}} />30-50%</span>
+              <span><span style={{display:'inline-block',width:10,height:10,borderRadius:2,background:'#16a34a',marginRight:4,verticalAlign:'-1px'}} />15-30%</span>
+              <span><span style={{display:'inline-block',width:10,height:10,borderRadius:2,background:'#94a3b8',marginRight:4,verticalAlign:'-1px'}} />&lt;15%</span>
+              <span style={{marginLeft:8,borderLeft:'1px solid #ddd',paddingLeft:8}}>Solid = Instant</span>
+              <span>Faded = Leagues</span>
+          </div>
           <div className="chart-wrap">
             <canvas ref={canvasRef}></canvas>
           </div>
-        )}
+        </React.Fragment>)}
 
         {/* Day-of-week heatmap */}
         {!loading && dowHeatmap.length > 0 && (
