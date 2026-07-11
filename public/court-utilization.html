@@ -581,8 +581,8 @@ function App() {
   const [startDate, setStartDate] = useState(urlParams.get('start_date') || isoDate(startOfMonth(today)));
   const [endDate,   setEndDate]   = useState(urlParams.get('end_date')   || isoDate(endOfMonth(today)));
   const [selectedLocations, setSelectedLocations] = useState([]); // explicit list of locations to show
-  const [includePrograms, setIncludePrograms] = useState(urlParams.get('programs') !== '0');
-  const [includeClosures, setIncludeClosures] = useState(urlParams.get('closures') === '1');
+  const [showInstant, setShowInstant] = useState(urlParams.get('instant') !== '0');
+  const [showManaged, setShowManaged] = useState(urlParams.get('managed') !== '0');
   const [hrsPerDay, setHrsPerDay] = useState(() => {           // assumed open hrs/day per court — interim utilization denominator until real per-court hours are wired in (item #4)
     const h = parseFloat(urlParams.get('hrs'));
     return Number.isFinite(h) && h > 0 ? h : 16;
@@ -694,8 +694,8 @@ function App() {
       qs.set('start_date', loadedStart || startDate);
       qs.set('end_date',   loadedEnd   || endDate);
       qs.set('metric',   metric);
-      qs.set('programs', includePrograms ? '1' : '0');
-      qs.set('closures', includeClosures ? '1' : '0');
+      qs.set('instant', showInstant ? '1' : '0');
+      qs.set('managed', showManaged ? '1' : '0');
       qs.set('hrs',      String(hrsPerDay));
       if (selectedLocations.length && selectedLocations.length < allLocations.length) {
         qs.set('locations', selectedLocations.join(','));
@@ -704,7 +704,7 @@ function App() {
       return `${window.location.pathname}?${qs.toString()}`;
     };
     return () => { try { delete window.recShareLink; } catch (e) { window.recShareLink = undefined; } };
-  }, [loadedStart, loadedEnd, startDate, endDate, metric, includePrograms, includeClosures, hrsPerDay, selectedLocations, allLocations]);
+  }, [loadedStart, loadedEnd, startDate, endDate, metric, showManaged, showInstant, hrsPerDay, selectedLocations, allLocations]);
 
   // Calendar days in the loaded range (inclusive) — used for the utilization denominator.
   const daysInRange = useMemo(() => {
@@ -717,12 +717,11 @@ function App() {
   const filtered = useMemo(() => {
     const locSet = new Set(selectedLocations);
     return normalized.filter(r => {
-      if (!includePrograms && r.bookingSource !== 'instant' && r.usageCategory !== 'Closure / Block') return false;
-      if (!includeClosures && r.usageCategory === 'Closure / Block')  return false;
+      // Filtering now at chart level — keep all rows for stable court list
       if (!locSet.has(r.locationName))                                return false;
       return true;
     });
-  }, [normalized, includePrograms, includeClosures, selectedLocations]);
+  }, [normalized, showManaged, showInstant, selectedLocations]);
 
   // Count occurrences of each day-of-week (1=Mon..7=Sun) in the loaded range.
   const dowCounts = useMemo(() => {
@@ -789,7 +788,7 @@ function App() {
         demand:   pct >= 80 ? 'hot' : pct >= 50 ? 'warm' : null,
       };
     });
-    arr.sort((a,b) => b.total - a.total);
+    arr.sort((a,b) => a.label.localeCompare(b.label));
     return arr;
   }, [filtered, computeCourtAvail]);
 
@@ -839,7 +838,7 @@ function App() {
       var key = label + '|' + dow;
       courtDow[key] = (courtDow[key] || 0) + r.durationHours;
     }
-    // Build rows sorted by overall utilization (match bar chart order)
+    // Build rows sorted alphabetically (match bar chart order)
     var fallbackHrs = Number(hrsPerDay) || 12;
     return grouped.map(function(g) {
       var cells = [];
@@ -948,13 +947,13 @@ function App() {
       bookingSourceMix,
       dayOfWeek,
       filtersActive: {
-        includePrograms,
-        includeClosures,
+        showManaged,
+        showInstant,
         locationsShown: `${selectedLocations.length} of ${allLocations.length}`,
       },
     };
   }, [grouped, filtered, overallUtil, stats, loadedStart, loadedEnd, startDate, endDate,
-      daysInRange, hrsPerDay, includePrograms, includeClosures, selectedLocations, allLocations]);
+      daysInRange, hrsPerDay, showManaged, showInstant, selectedLocations, allLocations]);
 
   const sendInsightsFeedback = useCallback((score) => {
     if (!insightsTraceId) return;
@@ -1018,13 +1017,11 @@ function App() {
       return '#94a3b8';
     }
     const custColors = grouped.map(g => barColor(g.utilPct || 0));
-    const progColors = grouped.map(g => { var c = barColor(g.utilPct || 0); return c + 'aa'; }); // slightly transparent
-    const datasets = [
-      { label: 'Instant Bookings', data: grouped.map(valCustomer), backgroundColor: custColors, borderWidth: 0 },
-    ];
-    if (includePrograms) datasets.push({ label: 'Leagues / Managed', data: grouped.map(valProgram), backgroundColor: progColors, borderWidth: 0 });
+    const progColors = grouped.map(g => { var c = barColor(g.utilPct || 0); return c + '88'; });
+    const datasets = [];
+    if (showInstant) datasets.push({ label: 'Instant Bookings', data: grouped.map(valCustomer), backgroundColor: custColors, borderWidth: 0 });
+    if (showManaged) datasets.push({ label: 'Leagues / Managed', data: grouped.map(valProgram), backgroundColor: progColors, borderWidth: 0 });
     // Closures are unavailability, not utilization — only meaningful in the hours view.
-    if (includeClosures && !isUtil) datasets.push({ label: 'Closures / Blocks', data: grouped.map(g => g.closureHrs), backgroundColor: '#9ca3af', borderWidth: 0 });
 
     // Draw each court's headline metric just above its stacked bar:
     //   util  → utilization %        hours → total reserved hours (matching the visible stack)
@@ -1044,7 +1041,7 @@ function App() {
             if (g.utilPct == null) return;
             text = Math.round(g.utilPct) + '%';
           } else {
-            const h = g.customerHrs + (includePrograms ? g.programHrs : 0) + (includeClosures ? g.closureHrs : 0);
+            const h = (showInstant ? g.customerHrs : 0) + (showManaged ? g.programHrs : 0);
             if (h <= 0) return;
             text = fmtHrs(h) + 'h';
           }
@@ -1103,7 +1100,7 @@ function App() {
     });
 
     return () => { if (chartRef.current) { chartRef.current.destroy(); chartRef.current = null; } };
-  }, [grouped, includePrograms, includeClosures, metric]);
+  }, [grouped, showManaged, showInstant, metric]);
 
   // ── Export: Excel ─────────────────────────────────────────────────
   const exportExcel = useCallback(() => {
@@ -1149,8 +1146,8 @@ function App() {
       const params = new URLSearchParams({ start_date: loadedStart || startDate, end_date: loadedEnd || endDate });
       // Forward the active view so the PDF matches what's on screen.
       params.set('metric', metric);
-      params.set('programs', includePrograms ? '1' : '0');
-      params.set('closures', includeClosures ? '1' : '0');
+      params.set('instant', showInstant ? '1' : '0');
+      params.set('managed', showManaged ? '1' : '0');
       params.set('hrs', String(hrsPerDay));
       // Locations: only when a subset is selected (omit ⇒ "all", keeps URL short).
       if (selectedLocations.length && selectedLocations.length < allLocations.length) {
@@ -1161,7 +1158,7 @@ function App() {
     } finally {
       setTimeout(() => setPdfLoading(false), 1500);
     }
-  }, [orgSlug, reportType, loadedStart, loadedEnd, startDate, endDate, metric, includePrograms, includeClosures, hrsPerDay, selectedLocations, allLocations]);
+  }, [orgSlug, reportType, loadedStart, loadedEnd, startDate, endDate, metric, showManaged, showInstant, hrsPerDay, selectedLocations, allLocations]);
 
   // ── Date preset helpers ───────────────────────────────────────────
   const setMonth = (offset) => {
@@ -1452,6 +1449,36 @@ function App() {
         )}
 
         <div style={{display: activeTab === "overview" ? "block" : "none"}}>
+        {/* Instant vs Managed breakdown */}
+        {!loading && grouped.length > 0 && (() => {
+          const totI = grouped.reduce((s,g) => s + g.customerHrs, 0);
+          const totM = grouped.reduce((s,g) => s + g.programHrs, 0);
+          const totA = totI + totM;
+          const cntI = grouped.reduce((s,g) => s + g.customer.size, 0);
+          const cntM = grouped.reduce((s,g) => s + g.program.size, 0);
+          const pI = totA > 0 ? Math.round(totI / totA * 100) : 0;
+          const pM = totA > 0 ? Math.round(totM / totA * 100) : 0;
+          return (
+            <div style={{display:'flex', gap:10, marginTop:10, flexWrap:'wrap'}}>
+              <div className="summary-card" style={{flex:1,minWidth:140,borderLeftColor:'#2563eb'}}>
+                <div className="summary-label">Instant Bookings</div>
+                <div className="summary-value">{cntI}</div>
+                <div className="summary-sub">{Math.round(totI)} hrs ({pI}%)</div>
+              </div>
+              <div className="summary-card" style={{flex:1,minWidth:140,borderLeftColor:'#f59e0b'}}>
+                <div className="summary-label">Leagues / Managed</div>
+                <div className="summary-value">{cntM}</div>
+                <div className="summary-sub">{Math.round(totM)} hrs ({pM}%)</div>
+              </div>
+              <div className="summary-card" style={{flex:1,minWidth:140,borderLeftColor:'#6b7280'}}>
+                <div className="summary-label">Booking Mix</div>
+                <div className="summary-value" style={{fontSize:18}}>{pI}% / {pM}%</div>
+                <div className="summary-sub">instant / managed</div>
+              </div>
+            </div>
+          );
+        })()}
+
         {/* Toggle row */}
         <div className="toggle-row">
           <div style={{display:'flex', alignItems:'center', gap:'8px'}}>
@@ -1469,12 +1496,12 @@ function App() {
             </div>
           </div>
           <label>
-            <input type="checkbox" checked={includePrograms} onChange={e => setIncludePrograms(e.target.checked)} />
-            Include leagues / managed
+            <input type="checkbox" checked={showInstant} onChange={e => setShowInstant(e.target.checked)} />
+            <span style={{fontWeight: showInstant ? 600 : 400}}>Instant</span>
           </label>
-          <label>
-            <input type="checkbox" checked={includeClosures} onChange={e => setIncludeClosures(e.target.checked)} />
-            Include closures / blocks
+          <label style={{display:'flex', alignItems:'center', gap:'4px', fontSize:'12px', cursor:'pointer'}}>
+            <input type="checkbox" checked={showManaged} onChange={e => setShowManaged(e.target.checked)} />
+            <span style={{fontWeight: showManaged ? 600 : 400}}>Leagues / Managed</span>
           </label>
           {scheduleStats.total > 0 && (
             <span style={{fontSize:'11px', color:'#666', display:'flex', alignItems:'center', gap:'6px'}}>
