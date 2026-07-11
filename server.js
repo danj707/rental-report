@@ -6237,7 +6237,7 @@ app.get("/", (req, res) => {
           ${headerActions}
         </div>
         ${pulseStrip}
-        <div class="org-body">
+        <div class="org-body" style="display:none">
           ${sidebarHtml}
           <div style="flex:1;min-width:0">
             <div class="report-cards">${cards.join("")}</div>
@@ -6260,12 +6260,22 @@ app.get("/", (req, res) => {
     } catch(e) { return { slug, name: org.displayName || slug, views: 0, exports: 0, aiCalls: 0, reports: 0 }; }
   }).sort((a, b) => b.views - a.views);
   const maxViews = Math.max(...usageRows.map(r => r.views), 1);
+  // Daily usage sparkline (last 30 days)
+  const usageDaily = (() => {
+    const evts = readEvents(30);
+    const byDay = {};
+    evts.forEach(e => { if (e.event !== 'view') return; const d = e.ts.substring(0, 10); byDay[d] = (byDay[d] || 0) + 1; });
+    const days = [];
+    for (let i = 29; i >= 0; i--) { const d = new Date(Date.now() - i * 86400000).toISOString().substring(0, 10); days.push(byDay[d] || 0); }
+    return days;
+  })();
+  const sparkMax = Math.max(...usageDaily, 1);
+  const sparkPts = usageDaily.map((v, i) => `${(i / 29 * 200).toFixed(1)},${(30 - v / sparkMax * 28).toFixed(1)}`).join(' ');
+  const sparkTotal = usageDaily.reduce((a, b) => a + b, 0);
+
   const usageTableHtml = `
     <div class="usage-table-wrap">
-      <div class="usage-header">
-        <span class="usage-header-title">\u{1F4CA} Platform Usage</span>
-        <span class="usage-header-sub">Last 30 days</span>
-      </div>
+      <div style="padding:10px 14px;display:flex;align-items:center;gap:12px;border-bottom:1px solid #e8e5df"><span style="font-size:11px;color:#9ca3af">30-day trend</span><svg viewBox="0 0 200 32" style="width:180px;height:28px"><polyline points="${sparkPts}" fill="none" stroke="#6d28d9" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg><span style="font-size:11px;font-weight:600;color:#6d28d9">${sparkTotal.toLocaleString()} views</span></div>
       <table class="usage-table">
         <thead><tr><th>Organization</th><th class="num">Views</th><th class="num">Exports</th><th class="num">AI Insights</th><th class="num">Reports</th></tr></thead>
         <tbody>${usageRows.map(r => `<tr>
@@ -6883,7 +6893,18 @@ app.get("/", (req, res) => {
       </div>
     </div>
 
-    ${usageTableHtml}
+    <div class="org-section">
+      <div class="org-header" onclick="toggleHow(this)" style="cursor:pointer;user-select:none">
+        <div class="org-header-text">
+          <div class="org-name">&#128202; Platform Usage</div>
+          <div class="org-slug">Last 30 days \u00b7 all organizations</div>
+        </div>
+        <span class="how-chevron" style="transform:rotate(90deg)">&#9658;</span>
+      </div>
+      <div class="how-body" style="display:block">
+        ${usageTableHtml}
+      </div>
+    </div>
 
     <div class="page-title">Organizations</div>
     <div style="margin:-14px 0 18px;padding:10px 16px;background:#f9f8f6;border:1px solid #e8e5df;border-radius:8px;font-size:12.5px;line-height:2">${orgNav}</div>
@@ -6942,6 +6963,7 @@ app.get("/", (req, res) => {
           <div style="font-size:12px;color:#999;margin-top:2px">Redeploy the latest build on Railway</div>
         </div>
       </div>
+      <div class="how-body">
       <div style="padding:14px 18px;background:#f5f4f1;border-top:1px solid #e8e5df">
         <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
           <input type="password" id="restart-pwd" placeholder="Dashboard password"
@@ -7036,27 +7058,9 @@ app.get("/", (req, res) => {
         </div>
         <div id="backup-detail" style="font-size:11px;color:#666">Backups run daily at 2am and on startup. Data files are saved to a private GitHub Gist.</div>
       </div>
+      </div>
     </div>
 
-    <div class="org-section" id="ai-analytics-section">
-      <div class="org-header" onclick="toggleHow(this)" style="cursor:pointer;user-select:none">
-        <div class="org-header-text">
-          <div class="org-name">&#129302; AI Analytics</div>
-          <div class="org-slug">Langfuse-traced usage across all AI features
-            <a href="https://us.cloud.langfuse.com" target="_blank" rel="noopener"
-               style="color:#7c3aed;text-decoration:none;font-weight:600;margin-left:8px"
-               onmouseover="this.style.color='#6d28d9'" onmouseout="this.style.color='#7c3aed'">Open Langfuse &#8599;</a>
-          </div>
-        </div>
-        <span class="how-chevron" style="transform:rotate(90deg)">&#9658;</span>
-      </div>
-      <div class="how-body" style="display:block">
-        <div id="ai-analytics-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:16px">
-          <div style="color:#888;font-size:13px">Loading AI analytics...</div>
-        </div>
-        <div id="ai-analytics-detail" style="display:grid;grid-template-columns:1fr 1fr;gap:16px"></div>
-      </div>
-    </div>
 
     <div class="org-section">
       <div class="org-header" onclick="toggleHow(this)" style="cursor:pointer;user-select:none">
