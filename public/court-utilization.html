@@ -1009,10 +1009,20 @@ function App() {
     //   hours → raw reserved hours for the category
     const valCustomer = g => isUtil ? (g.availHrs > 0 ? (g.customerHrs / g.availHrs) * 100 : 0) : g.customerHrs;
     const valProgram  = g => isUtil ? (g.availHrs > 0 ? (g.programHrs  / g.availHrs) * 100 : 0) : g.programHrs;
+    // Per-bar colors based on overall utilization %
+    function barColor(pct) {
+      if (pct >= 70) return '#dc2626';
+      if (pct >= 50) return '#ea580c';
+      if (pct >= 30) return '#f59e0b';
+      if (pct >= 15) return '#16a34a';
+      return '#94a3b8';
+    }
+    const custColors = grouped.map(g => barColor(g.utilPct || 0));
+    const progColors = grouped.map(g => { var c = barColor(g.utilPct || 0); return c + 'aa'; }); // slightly transparent
     const datasets = [
-      { label: 'Customer Bookings', data: grouped.map(valCustomer), backgroundColor: '#16a34a', borderWidth: 0 },
+      { label: 'Customer Bookings', data: grouped.map(valCustomer), backgroundColor: custColors, borderWidth: 0 },
     ];
-    if (includePrograms) datasets.push({ label: 'Programs / Leagues', data: grouped.map(valProgram), backgroundColor: '#2563eb', borderWidth: 0 });
+    if (includePrograms) datasets.push({ label: 'Programs / Leagues', data: grouped.map(valProgram), backgroundColor: progColors, borderWidth: 0 });
     // Closures are unavailability, not utilization — only meaningful in the hours view.
     if (includeClosures && !isUtil) datasets.push({ label: 'Closures / Blocks', data: grouped.map(g => g.closureHrs), backgroundColor: '#9ca3af', borderWidth: 0 });
 
@@ -1438,7 +1448,7 @@ function App() {
           <MapView grouped={grouped} orgCoords={window.ORG_CONFIG?.coords || null} />
         )}
 
-        {activeTab === "overview" && <React.Fragment>
+        <div style={{display: activeTab === "overview" ? "block" : "none"}}>
         {/* Toggle row */}
         <div className="toggle-row">
           <div style={{display:'flex', alignItems:'center', gap:'8px'}}>
@@ -1603,7 +1613,7 @@ function App() {
           </div>
         )}
 
-        </React.Fragment>}
+        </div>
 
         {/* Footer */}
         <div className="report-footer">
