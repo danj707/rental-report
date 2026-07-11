@@ -7309,6 +7309,22 @@ app.get("/", (req, res) => {
 
         <h4>Deployment</h4>
         <p>Auto-deploys from the <code>main</code> branch of <code>danj707/rental-report</code> on GitHub. Every push triggers a Railway Pro redeploy &#8212; typically live in 60&#8211;90 seconds. Uses <code>node:20-slim</code> with system Chromium for Puppeteer. Railway persistent volume at <code>/data</code> stores subscriptions, feature flags, and health check results across deploys.</p>
+
+        <h4>Documentation</h4>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;margin:8px 0 16px">
+          <a href="/docs-architecture.html" target="_blank" style="display:inline-flex;align-items:center;gap:8px;padding:10px 18px;background:linear-gradient(135deg,#1e1b4b,#4338ca);color:#fff;border-radius:8px;text-decoration:none;font-size:13px;font-weight:600">
+            &#x1F3D7;&#xFE0F; Architecture &amp; Admin Guide &#8599;
+          </a>
+          <a href="/docs-security.html" target="_blank" style="display:inline-flex;align-items:center;gap:8px;padding:10px 18px;background:linear-gradient(135deg,#064e3b,#059669);color:#fff;border-radius:8px;text-decoration:none;font-size:13px;font-weight:600">
+            &#x1F512; Security &amp; Privacy Overview &#8599;
+          </a>
+        </div>
+
+        <h4>Planned Improvements</h4>
+        <ul>
+          <li><strong>Firebase OAuth Integration</strong> &#8212; Server-side token verification using Firebase Auth. Currently exploring whether dashboards accessed exclusively from within the rec.us admin interface are natively protected by Firebase sessions, or if additional server-side verification is needed for the direct-link access pattern.</li>
+          <li><strong>Email Domain Verification (rec.us)</strong> &#8212; Resend domain verification requires DNS TXT record changes managed by Rec engineering. Once verified, email subscriptions will send from a branded @rec.us address. The subscription infrastructure, scheduling engine, and feature flags are fully built and ready to activate.</li>
+        </ul>
       </div>
     </div>
 
@@ -8237,6 +8253,8 @@ app.get("/", (req, res) => {
     'Fixed Calendar Performance showing 0 bookings / $0 revenue \u2014 fetchMBDirect was using per-org Metabase UUIDs but also passing org_id parameter (which per-org questions don\u2019t have), causing Metabase to reject the query. Now aligned with main data route: prefers shared UUID + org_id filtering.',
     'Fixed Fill Rate tab capacity dashes \u2014 fillRateAnalytics was checking r.isSection on program-level rollup rows (always false). Section-level capacity lives in r._sections[]. Now iterates _sections to build the capacity map.',
     'Calendar Performance: moved bookings/revenue to async client-side fetch with loading animation \u2014 endpoint returns instantly with views/engagement, then bookings + revenue fill in when Metabase responds.',
+    'Architecture & Admin Guide + Security & Privacy Overview \u2014 two new standalone doc pages linked from How This Works section. Covers system architecture, report registry, onboarding steps, shared UUID architecture, access control, PII handling, infrastructure security, and audit trail.',
+    'Planned Improvements section in How This Works \u2014 Firebase OAuth and Resend DNS verification listed with status notes.',
     'Fixed Program Calendar AA badge \u2192 AI (was wcag: true, should be ai: true since calendar has AI program finder).',
     '\u{1F4CA} Platform Usage table on admin dashboard \u2014 per-org 30-day usage (views, exports, AI insights, report count) with gradient bar chart, sorted by views.',
     'Registration Funnel (metrics page): same async pattern \u2014 endpoint stripped to views-only, enrollments + avg ticket + attributed revenue computed client-side from program-demographics and programs data.',
