@@ -5055,31 +5055,12 @@ app.get("/:org/api/calendar-analytics", async (req, res) => {
   const totalBookClicks = rcBookClicks;
   const convPct = totalDetailViews > 0 ? Math.round(totalBookClicks / totalDetailViews * 100) : 0;
 
-  // ── Fetch actual bookings + revenue from Metabase facility data (10s timeout so endpoint stays fast) ──
-  let bookings = 0, revenue = 0;
-  try {
-    const now = new Date();
-    const endDate = now.toISOString().slice(0, 10);
-    const startDate = new Date(now - days * 86400000).toISOString().slice(0, 10);
-    const facRows = await Promise.race([
-      fetchMBDirect(slug, "facility", startDate, endDate),
-      new Promise(resolve => setTimeout(() => resolve(null), 10000)),
-    ]);
-    if (facRows && Array.isArray(facRows)) {
-      bookings = facRows.length;
-      facRows.forEach(r => {
-        const t = parseFloat(r["Total"] || r["total"] || r["Revenue"] || r["revenue"] || 0);
-        if (!isNaN(t)) revenue += t;
-      });
-      revenue = Math.round(revenue * 100) / 100;
-    }
-  } catch (e) { console.warn("[cal-analytics] Metabase fetch error:", e.message); }
-
+  // Bookings + revenue fetched client-side from facility data route (keeps this endpoint fast)
   res.json({
     days,
     rental: { pageViews: rcPageViews, facilityViews: rcFacViews, bookClicks: rcBookClicks, convPct: rcFacViews > 0 ? Math.round(rcBookClicks / rcFacViews * 100) : 0 },
     program: { pageViews: pcPageViews, sectionClicks: pcClicks },
-    totals: { pageViews: totalViews, detailViews: totalDetailViews, bookClicks: totalBookClicks, convPct, bookings, revenue },
+    totals: { pageViews: totalViews, detailViews: totalDetailViews, bookClicks: totalBookClicks, convPct },
     topFacilities,
     daily,
   });
@@ -8271,7 +8252,7 @@ app.get("/", (req, res) => {
   { date: '2026-07-11', title: 'Fill Rate + Calendar Performance Fix \u{1F527}', items: [
     'Fixed Calendar Performance showing 0 bookings / $0 revenue \u2014 fetchMBDirect was using per-org Metabase UUIDs but also passing org_id parameter (which per-org questions don\u2019t have), causing Metabase to reject the query. Now aligned with main data route: prefers shared UUID + org_id filtering.',
     'Fixed Fill Rate tab capacity dashes \u2014 fillRateAnalytics was checking r.isSection on program-level rollup rows (always false). Section-level capacity lives in r._sections[]. Now iterates _sections to build the capacity map.',
-    'Calendar Performance Metabase fetch now races against a 10s timeout \u2014 endpoint returns fast even when Metabase is slow (bookings/revenue show 0 temporarily rather than blocking the entire panel).',
+    'Calendar Performance: moved bookings/revenue to async client-side fetch with loading animation \u2014 endpoint returns instantly with views/engagement, then bookings + revenue fill in when Metabase responds.',
   ] },
   { date: '2026-07-07', title: 'Activity Filter \u{1F3AF}', items: ['Activity dropdown in toolbar filters Revenue, Participants, Retention, and Fill Rate tabs.', 'Select an activity (Swimming, Camps, Dance, etc.) to see retention, re-engagement, and flow data scoped to that activity.', 'Activity column now sourced from Metabase program-demographics query (v3).'] },
   { date: '2026-07-07', title: 'Program Re-engagement \u2728', items: ['Cumulative re-engagement curves: flipped survival chart showing % of cohort that came back within N months.', 'Cross-activity flow matrix: shows participant overlap between activity categories (Swimming, Camps, etc).', 'Missed opportunities: flags large activities with <10% participant overlap \u2014 marketing targets.', 'Activity derived from program names until native Activity column added to Metabase.'] },
