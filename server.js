@@ -6301,7 +6301,7 @@ app.get("/", (req, res) => {
     })
   );
 
-  res.send(`<!DOCTYPE html>
+  res.set("Cache-Control", "no-store"); res.send(`<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
