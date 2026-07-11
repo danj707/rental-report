@@ -6538,9 +6538,9 @@ app.get("/", (req, res) => {
     .pub-toggle { font-size: 11px; display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; border: 1px solid #ddd; border-radius: 5px; background: #fff; color: #888; cursor: pointer; transition: all .15s; white-space: nowrap; }
     .pub-toggle:hover { background: #f0f0f0; color: #333; }
     .pub-toggle.pub-on { background: #ecfdf5; border-color: #6ee7b7; color: #059669; }
-    .vis-toggle { background: none; border: none; cursor: pointer; padding: 4px; border-radius: 4px; flex-shrink: 0; opacity: 0; transition: opacity .15s; color: #999; line-height: 0; }
-    .report-card:hover .vis-toggle { opacity: 0.5; }
-    .report-card-hidden .vis-toggle { opacity: 0.5; }
+    .vis-toggle { background: none; border: none; cursor: pointer; padding: 4px; border-radius: 4px; flex-shrink: 0; opacity: 0.35; transition: opacity .15s; color: #999; line-height: 0; }
+    .report-card:hover .vis-toggle { opacity: 0.6; }
+    .report-card-hidden .vis-toggle { opacity: 0.7; color: #dc2626; }
     .vis-toggle:hover { opacity: 1 !important; background: rgba(0,0,0,.05); color: #333; }
         .add-report-card { border: none; border-left: 3px dashed #cbd5c0; background: #fbfbf9; cursor: pointer; font: inherit; text-align: left; width: 100%; }
     .add-report-card:hover { background: #f3f6ef; border-left-color: #16a34a; }
