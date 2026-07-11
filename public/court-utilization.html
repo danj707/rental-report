@@ -1195,75 +1195,76 @@ function App() {
       });
     }, [grouped]);
 
-    // Geocode locations — single async flow: reverse-geocode org → forward-geocode each location
+    // Geocode locations — city name from displayName + viewbox bias from org coords
     React.useEffect(function() {
       if (!locations.length) return;
       var cache = geocodeCacheRef.current;
+      // Extract city from "Watertown Parks & Recreation" → "Watertown"
+      var dn = (window.ORG_CONFIG && window.ORG_CONFIG.displayName) || '';
+      var cityName = dn.replace(/\s*(Parks|Recreation|Department|City of|Town of).*$/i, '').replace(/^(City of|Town of)\s*/i, '').trim();
+      // Viewbox bias from org coords (±0.15° ≈ 10mi, not bounded — just preference)
+      var vb = '';
+      if (orgCoords) {
+        var d = 0.15;
+        vb = '&viewbox=' + (orgCoords.lon - d) + ',' + (orgCoords.lat + d) + ',' + (orgCoords.lon + d) + ',' + (orgCoords.lat - d);
+      }
+      console.log('[map] city:', cityName, '| viewbox center:', orgCoords ? orgCoords.lat.toFixed(3) + ',' + orgCoords.lon.toFixed(3) : 'none');
 
-      (async function() {
-        // Step 1: reverse-geocode org coords to get "City, State"
-        var locale = '';
-        if (orgCoords) {
-          try {
-            var revResp = await fetch('https://nominatim.openstreetmap.org/reverse?format=json&lat=' + orgCoords.lat + '&lon=' + orgCoords.lon + '&zoom=10');
-            var revData = await revResp.json();
-            var addr = revData.address || {};
-            var city = addr.city || addr.town || addr.village || '';
-            var state = addr.state || '';
-            locale = city + (state ? ', ' + state : '');
-            console.log('[map] org locale:', locale);
-          } catch(e) { console.warn('[map] reverse geocode failed:', e.message); }
-        }
-
-        // Step 2: forward-geocode each location sequentially (Nominatim 1 req/sec)
-        var results = [];
-        for (var i = 0; i < locations.length; i++) {
-          var loc = locations[i];
-          if (cache[loc.name]) {
-            results.push(Object.assign({}, loc, cache[loc.name]));
-            continue;
-          }
-          var q = loc.name + (locale ? ', ' + locale : '');
-          console.log('[map] geocoding:', q);
-          try {
-            await new Promise(function(r) { setTimeout(r, i === 0 ? 1100 : 1100); }); // rate limit
-            var resp = await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&q=' + encodeURIComponent(q));
-            var data = await resp.json();
-            if (data && data[0]) {
-              var coords = { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
-              cache[loc.name] = coords;
-              results.push(Object.assign({}, loc, coords));
-              console.log('[map]  →', loc.name, coords.lat.toFixed(4), coords.lng.toFixed(4));
-            } else {
-              console.warn('[map]  → no result for', q);
-              if (orgCoords) {
-                var off = (results.length * 0.003) - 0.005;
-                results.push(Object.assign({}, loc, { lat: orgCoords.lat + off, lng: orgCoords.lon + off }));
+      var idx = 0;
+      function geocodeNext() {
+        if (idx >= locations.length) {
+          // Spread overlapping markers
+          for (var i = 0; i < results.length; i++) {
+            for (var j = i + 1; j < results.length; j++) {
+              var dlat = results[i].lat - results[j].lat;
+              var dlng = results[i].lng - results[j].lng;
+              if (Math.sqrt(dlat * dlat + dlng * dlng) < 0.003) {
+                var angle = j * 2.2;
+                results[j].lat += Math.cos(angle) * 0.003;
+                results[j].lng += Math.sin(angle) * 0.003;
               }
             }
-          } catch(e) {
-            console.warn('[map] geocode error:', e.message);
-            if (orgCoords) {
-              results.push(Object.assign({}, loc, { lat: orgCoords.lat, lng: orgCoords.lon }));
-            }
           }
+          setGeocoded(results);
+          return;
         }
-
-        // Step 3: spread overlapping markers
-        for (var i = 0; i < results.length; i++) {
-          for (var j = i + 1; j < results.length; j++) {
-            var dlat = results[i].lat - results[j].lat;
-            var dlng = results[i].lng - results[j].lng;
-            if (Math.sqrt(dlat * dlat + dlng * dlng) < 0.003) {
-              var angle = j * 2.2;
-              results[j].lat += Math.cos(angle) * 0.003;
-              results[j].lng += Math.sin(angle) * 0.003;
-            }
-          }
+        var loc = locations[idx];
+        idx++;
+        if (cache[loc.name]) {
+          results.push(Object.assign({}, loc, cache[loc.name]));
+          geocodeNext();
+          return;
         }
-
-        setGeocoded(results);
-      })();
+        // "Arsenal Park, Watertown" + viewbox bias
+        var q = loc.name + (cityName ? ', ' + cityName : '');
+        console.log('[map] geocoding:', q);
+        setTimeout(function() {
+          fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&q=' + encodeURIComponent(q) + vb)
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+              if (data && data[0]) {
+                var coords = { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
+                cache[loc.name] = coords;
+                results.push(Object.assign({}, loc, coords));
+                console.log('[map]  →', loc.name, coords.lat.toFixed(4), coords.lng.toFixed(4), data[0].display_name.substring(0, 60));
+              } else {
+                console.warn('[map]  → no result, using org center offset');
+                if (orgCoords) {
+                  var off = (results.length * 0.003) - 0.005;
+                  results.push(Object.assign({}, loc, { lat: orgCoords.lat + off, lng: orgCoords.lon + off }));
+                }
+              }
+              geocodeNext();
+            })
+            .catch(function(e) {
+              console.warn('[map] fetch error:', e.message);
+              if (orgCoords) results.push(Object.assign({}, loc, { lat: orgCoords.lat, lng: orgCoords.lon }));
+              geocodeNext();
+            });
+        }, 1100);
+      }
+      var results = [];
+      geocodeNext(); // kick off sequential chain
     }, [locations]);
 
     // Render map
