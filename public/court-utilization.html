@@ -1210,8 +1210,11 @@ function App() {
       if (!locations.length) return;
       var cache = geocodeCacheRef.current;
       // Extract city from "Watertown Parks & Recreation" → "Watertown"
-      var dn = (window.ORG_CONFIG && window.ORG_CONFIG.displayName) || '';
-      var cityName = dn.replace(/\s*(Parks|Recreation|Department|City of|Town of).*$/i, '').replace(/^(City of|Town of)\s*/i, '').trim();
+      var cityName = (window.ORG_CONFIG && window.ORG_CONFIG.mapCity) || '';
+      if (!cityName) {
+        var dn = (window.ORG_CONFIG && window.ORG_CONFIG.displayName) || '';
+        cityName = dn.replace(/\s*(Parks|Recreation|Department|City of|Town of).*$/i, '').replace(/^(City of|Town of)\s*/i, '').trim();
+      }
       // Viewbox bias from org coords (±0.15° ≈ 10mi, not bounded — just preference)
       var vb = '';
       if (orgCoords) {
