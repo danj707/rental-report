@@ -329,7 +329,10 @@
     /* ── AI Insights ── */
     .insights-section { margin: 0 0 16px; padding: 16px 0 0; }
     .insights-head { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
-    .insights-btn { background: linear-gradient(135deg, #6366f1, #8b5cf6); color: #fff; border: none; border-radius: 8px; padding: 8px 18px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit; }
+    .insights-btn { background: linear-gradient(135deg, #6366f1, #8b5cf6); color: #fff; border: none; border-radius: 8px; padding: 8px 18px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit; 
+      position: relative; overflow: visible;
+      box-shadow: 0 2px 12px rgba(99,102,241,.3);
+    }
     .insights-btn:hover { filter: brightness(1.08); }
     .insights-btn:disabled { opacity: .6; cursor: wait; }
     .insights-sub { font-size: 12px; color: #888; }
