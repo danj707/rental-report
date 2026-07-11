@@ -220,6 +220,12 @@
       margin-top: 4px;
     }
 
+    /* ── Booking KPI cards ── */
+    .kpi-card { flex: 1; min-width: 140px; background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px 16px; }
+    .kpi-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
+    .kpi-value { font-size: 24px; font-weight: 800; color: #1e1b4b; line-height: 1.1; }
+    .kpi-sub { font-size: 11px; color: #9ca3af; margin-top: 4px; }
+
     /* ── Tabs ── */
     .cu-tabs { display: flex; gap: 0; margin: 16px 0 0; border-bottom: 2px solid #e5e7eb; }
     .cu-tab { padding: 8px 20px; font-size: 13px; font-weight: 600; color: #6b7280; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -2px; transition: all .15s; background: none; border-top: none; border-left: none; border-right: none; font-family: inherit; }
@@ -1038,8 +1044,10 @@ function App() {
         grouped.forEach((g, i) => {
           let text;
           if (isUtil) {
-            if (g.utilPct == null) return;
-            text = Math.round(g.utilPct) + '%';
+            const visHrs = (showInstant ? g.customerHrs : 0) + (showManaged ? g.programHrs : 0);
+            const visPct = g.availHrs > 0 ? (visHrs / g.availHrs) * 100 : null;
+            if (visPct == null || visPct <= 0) return;
+            text = Math.round(visPct) + '%';
           } else {
             const h = (showInstant ? g.customerHrs : 0) + (showManaged ? g.programHrs : 0);
             if (h <= 0) return;
@@ -1459,21 +1467,21 @@ function App() {
           const pI = totA > 0 ? Math.round(totI / totA * 100) : 0;
           const pM = totA > 0 ? Math.round(totM / totA * 100) : 0;
           return (
-            <div style={{display:'flex', gap:10, marginTop:10, flexWrap:'wrap'}}>
-              <div className="summary-card" style={{flex:1,minWidth:140,borderLeftColor:'#2563eb'}}>
-                <div className="summary-label">Instant Bookings</div>
-                <div className="summary-value">{cntI}</div>
-                <div className="summary-sub">{Math.round(totI)} hrs ({pI}%)</div>
+            <div className="summary-row" style={{display:'flex', gap:10, marginTop:8, flexWrap:'wrap'}}>
+              <div className="kpi-card">
+                <div className="kpi-label" style={{color:'#2563eb'}}>Instant Bookings</div>
+                <div className="kpi-value">{cntI}</div>
+                <div className="kpi-sub">{Math.round(totI)} hrs ({pI}% of court time)</div>
               </div>
-              <div className="summary-card" style={{flex:1,minWidth:140,borderLeftColor:'#f59e0b'}}>
-                <div className="summary-label">Leagues / Managed</div>
-                <div className="summary-value">{cntM}</div>
-                <div className="summary-sub">{Math.round(totM)} hrs ({pM}%)</div>
+              <div className="kpi-card">
+                <div className="kpi-label" style={{color:'#f59e0b'}}>Leagues / Managed</div>
+                <div className="kpi-value">{cntM}</div>
+                <div className="kpi-sub">{Math.round(totM)} hrs ({pM}% of court time)</div>
               </div>
-              <div className="summary-card" style={{flex:1,minWidth:140,borderLeftColor:'#6b7280'}}>
-                <div className="summary-label">Booking Mix</div>
-                <div className="summary-value" style={{fontSize:18}}>{pI}% / {pM}%</div>
-                <div className="summary-sub">instant / managed</div>
+              <div className="kpi-card">
+                <div className="kpi-label" style={{color:'#6b7280'}}>Booking Mix</div>
+                <div className="kpi-value" style={{fontSize:20}}>{pI}% / {pM}%</div>
+                <div className="kpi-sub">instant / managed</div>
               </div>
             </div>
           );
