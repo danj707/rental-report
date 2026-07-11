@@ -3423,7 +3423,16 @@ app.get("/:org/court-utilization", (req, res) => {
   if (!org) return res.status(404).send("Unknown org");
   if (!org["court-utilization"]?.mbUuid && !SHARED_UUIDS["court-utilization"]) return res.status(404).send("Court Utilization report not configured for this org.");
   logEvent(slug, "court-utilization", "view", req);
-  res.sendFile(path.join(__dirname, "public", "court-utilization.html"));
+  const orgConfig = {
+    slug,
+    displayName: org.displayName || (slug.charAt(0).toUpperCase() + slug.slice(1) + " Parks & Recreation"),
+    logoUrl: org.logoUrl || "",
+    token: org.token || "",
+    coords: org.coords || null,
+  };
+  const html = require("fs").readFileSync(path.join(__dirname, "public", "court-utilization.html"), "utf8");
+  const inject = `<script>window.ORG_CONFIG=${JSON.stringify(orgConfig)};</script>`;
+  res.type("html").send(html.replace("</head>", inject + "</head>"));
 });
 
 // ── Court-utilization: real per-court operating schedules via MCP ────
