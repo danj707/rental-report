@@ -6268,7 +6268,7 @@ app.get("/", (req, res) => {
       const exports = Object.values(m.summary).reduce((n, s) => n + (s.pdf || 0) + (s.excel || 0), 0);
       const aiCalls = m.insights.calls;
       const reports = m.configuredReports.length;
-      return { slug, name: org.displayName || slug, views, exports, aiCalls, reports };
+      const _hid = new Set(getHiddenReports(slug)); const _act = reports - _hid.size; return { slug, name: org.displayName || slug, views, exports, aiCalls, reports, active: _act > 0 ? _act : reports };
     } catch(e) { return { slug, name: org.displayName || slug, views: 0, exports: 0, aiCalls: 0, reports: 0, active: 0 }; }
   }).sort((a, b) => b.views - a.views);
   const maxViews = Math.max(...usageRows.map(r => r.views), 1);
