@@ -492,6 +492,8 @@ const ORGS = {
   smyrna: {
     token:   "PeNSGslScErlGLyY",
     orgId:   "efc0724c-8f32-481a-bab3-fc19c724f3a7",
+    coords:  { lat: 33.8839, lon: -84.5144 },
+    mapCity: "Smyrna, GA",
     logoUrl: "https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2Forganization-efc0724c-8f32-481a-bab3-fc19c724f3a7%2FfullLogo.png%3F1771265790459&w=1920&q=75",
     facility: { mbUuid: "d541c91e-bb92-4103-abc5-940b3edb61b9" },
     historic: { mbUuid: "66e39b77-199e-4c6f-947d-588ab472720f" },
