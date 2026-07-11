@@ -968,11 +968,11 @@ function App(){
     setRows(rows.map(normalizeRow).filter(e=>!isHiddenActivity(e))); setSrc(src); setFetchError(error||''); setLoading(false);
   },[]);
 
-  // One-time wide fetch to populate all filter options (today → +180 days)
+  // One-time wide fetch to populate all filter options (today → +60 days)
   useEffect(()=>{
     (async()=>{
       const from=fmtISO(new Date());
-      const to=fmtISO(addDays(new Date(),180));
+      const to=fmtISO(addDays(new Date(),60));
       const {rows:wideRows}=await fetchData(from,to);
       const norm=wideRows.map(normalizeRow).filter(e=>!isHiddenActivity(e));
       setAllActivities([...new Set(norm.flatMap(e=>(e.activity||'').split(',').map(a=>a.trim())).filter(Boolean))].sort());
