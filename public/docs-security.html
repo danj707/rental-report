@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>rec.us Reports — Security &amp; Privacy Overview</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'IBM Plex Sans', system-ui, sans-serif; background: #f9f8f6; color: #1e1b4b; line-height: 1.7; }
+  .header { background: linear-gradient(135deg, #064e3b 0%, #047857 60%, #059669 100%); padding: 48px 32px; color: #fff; }
+  .header-inner { max-width: 860px; margin: 0 auto; }
+  .header-badge { display: inline-block; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .1em; color: #6ee7b7; background: rgba(110,231,183,.12); padding: 4px 12px; border-radius: 20px; margin-bottom: 14px; }
+  .header h1 { font-size: 32px; font-weight: 800; margin-bottom: 10px; }
+  .header p { font-size: 15px; color: #a7f3d0; max-width: 640px; }
+  .content { max-width: 860px; margin: 0 auto; padding: 32px; }
+  .card { background: #fff; border: 1px solid #e0ddd8; border-radius: 10px; padding: 28px 32px; margin-bottom: 20px; }
+  h2 { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .7px; color: #059669; margin-bottom: 16px; }
+  h3 { font-size: 16px; font-weight: 700; color: #1e1b4b; margin: 20px 0 8px; }
+  h3:first-child { margin-top: 0; }
+  p { margin-bottom: 12px; font-size: 14px; color: #374151; }
+  code { font-family: 'IBM Plex Mono', monospace; font-size: 12px; background: #f3f0eb; padding: 2px 6px; border-radius: 3px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; margin: 12px 0 16px; }
+  th { text-align: left; padding: 8px 12px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: #9ca3af; border-bottom: 2px solid #e5e7eb; }
+  td { padding: 8px 12px; border-bottom: 1px solid #f3f4f6; color: #374151; vertical-align: top; }
+  td:first-child { font-weight: 600; color: #1e1b4b; white-space: nowrap; }
+  tr:hover { background: #faf9f7; }
+  .back-link { display: inline-flex; align-items: center; gap: 6px; color: #6ee7b7; text-decoration: none; font-size: 13px; font-weight: 600; margin-bottom: 8px; }
+  .back-link:hover { color: #fff; }
+  .shield { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; padding: 4px 12px; border-radius: 6px; margin: 4px 4px 4px 0; }
+  .shield-green { background: #f0fdf4; color: #166534; border: 1px solid #bbf7d0; }
+  .shield-blue { background: #eff6ff; color: #1e40af; border: 1px solid #bfdbfe; }
+  .shield-amber { background: #fffbeb; color: #92400e; border: 1px solid #fde68a; }
+  .callout { background: #f0fdf4; border-left: 3px solid #16a34a; padding: 12px 16px; border-radius: 0 6px 6px 0; margin: 12px 0 16px; font-size: 13px; color: #166534; }
+  .flow { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 12px 0 16px; font-size: 12px; }
+  .flow-step { background: #f3f0eb; padding: 5px 12px; border-radius: 6px; font-weight: 600; }
+  .flow-arrow { color: #9ca3af; }
+  footer { text-align: center; padding: 32px; font-size: 12px; color: #9ca3af; }
+</style>
+</head>
+<body>
+<div class="header">
+  <div class="header-inner">
+    <a href="/" class="back-link">&larr; Back to Dashboard</a>
+    <div class="header-badge">Security Documentation</div>
+    <h1>Security &amp; Privacy Overview</h1>
+    <p>How rec.us Reports protects partner data — access controls, data handling, PII safety, and infrastructure security.</p>
+  </div>
+</div>
+
+<div class="content">
+
+  <div class="card">
+    <h2>Security Posture</h2>
+    <div style="margin-bottom:16px">
+      <span class="shield shield-green">&#x2705; Read-Only Database Access</span>
+      <span class="shield shield-green">&#x2705; No PII in URLs</span>
+      <span class="shield shield-green">&#x2705; Per-Org Token Isolation</span>
+      <span class="shield shield-blue">&#x1F512; Railway Pro Infrastructure</span>
+      <span class="shield shield-blue">&#x1F512; HTTPS Everywhere</span>
+      <span class="shield shield-amber">&#x1F6A7; Firebase OAuth (Planned)</span>
+    </div>
+    <p>The platform is designed around a zero-write, read-only architecture. Reports never modify the rec.us production database — all data flows one direction, from PostgreSQL through Metabase public card APIs to the reporting frontend.</p>
+  </div>
+
+  <div class="card">
+    <h2>Access Control</h2>
+    <h3>Token-Based Authentication</h3>
+    <p>Every org has a unique 16-character access token. Requests to <code>/:org/*</code> routes must include the token as a query parameter. Invalid or missing tokens receive a generic 404 (not 403) to avoid leaking org existence.</p>
+    <div class="flow">
+      <span class="flow-step">Request arrives</span>
+      <span class="flow-arrow">&rarr;</span>
+      <span class="flow-step">Token middleware checks ORGS map</span>
+      <span class="flow-arrow">&rarr;</span>
+      <span class="flow-step">Match? Proceed</span>
+      <span class="flow-arrow">&rarr;</span>
+      <span class="flow-step">No match? 404</span>
+    </div>
+    <h3>Org Isolation</h3>
+    <p>Each org can only access its own data. Shared Metabase queries include an <code>org_id</code> parameter that filters results to the requesting org. There is no cross-org data access — even at the API level, an org's token only grants access to that org's routes.</p>
+    <h3>Admin Dashboard</h3>
+    <p>The admin dashboard at <code>/</code> is protected by a separate password. Sensitive operations (redeploy, report toggling, Metabase link editing) require re-entering the admin password.</p>
+    <h3>Public Routes (No Token Required)</h3>
+    <table>
+      <tr><td><code>/:org/rentalcalendar</code></td><td>Public facility rental calendar — intentionally public for community access. PII stripped from all reservation data.</td></tr>
+      <tr><td><code>/:org/calendar</code></td><td>Public program calendar — shows class schedules only, no participant data.</td></tr>
+      <tr><td><code>/:org/api/track</code></td><td>Analytics tracking endpoint for public calendars.</td></tr>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2>Data Flow &amp; PII Handling</h2>
+    <h3>Data Sources</h3>
+    <table>
+      <thead><tr><th>Source</th><th>Access Method</th><th>Contains PII?</th><th>Handling</th></tr></thead>
+      <tbody>
+        <tr><td>Metabase</td><td>Public card API (read-only)</td><td>Yes — names, emails, phones</td><td>Displayed only to authenticated org admins</td></tr>
+        <tr><td>rec.us MCP</td><td>MCP SDK (read-only)</td><td>No — availability slots only</td><td>Bookable time slots, no user data</td></tr>
+        <tr><td>Anthropic API</td><td>HTTPS POST</td><td>Aggregated metrics only</td><td>No PII sent to AI — only numeric summaries</td></tr>
+        <tr><td>Events log</td><td>Local JSONL file</td><td>IP addresses only</td><td>Used for analytics, auto-rotated</td></tr>
+      </tbody>
+    </table>
+    <h3>PII in Reports</h3>
+    <p>Reports that display PII (names, emails, phone numbers) — such as Facility Rental Schedule, Class Roster, and Community Intel — are only accessible via authenticated org routes. The data is rendered client-side and never cached in a way that could leak across orgs.</p>
+    <h3>PII Stripping for Public Routes</h3>
+    <p>The rental calendar reservation overlay route explicitly strips all personal data before returning results. Only date, time, location, and booking status are included — no names, emails, or contact info.</p>
+    <div class="callout">
+      <strong>AI Safety:</strong> When sending data to the Anthropic API for insights, the system sends only aggregated numbers (revenue totals, enrollment counts, category breakdowns). Individual-level PII (names, emails, addresses) is never included in AI prompts.
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Infrastructure Security</h2>
+    <table>
+      <thead><tr><th>Layer</th><th>Implementation</th></tr></thead>
+      <tbody>
+        <tr><td>Transport</td><td>HTTPS enforced on all Railway endpoints. No HTTP fallback.</td></tr>
+        <tr><td>Hosting</td><td>Railway Pro — SOC 2 compliant infrastructure, automatic SSL certificates.</td></tr>
+        <tr><td>Container</td><td>Docker (node:20-slim) — minimal attack surface, no unnecessary packages.</td></tr>
+        <tr><td>Database</td><td>Read-only access via Metabase public card APIs. No direct database credentials in the app.</td></tr>
+        <tr><td>Secrets</td><td>All API keys and tokens stored as Railway environment variables, never committed to source.</td></tr>
+        <tr><td>Backups</td><td>Nightly GitHub Gist backups of persistent data (subscriptions, flags). Encrypted in transit.</td></tr>
+        <tr><td>Dependencies</td><td>Minimal npm footprint: express, puppeteer, @anthropic-ai/sdk, resend, node-cron.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2>Audit &amp; Observability</h2>
+    <h3>Event Logging</h3>
+    <p>Every significant action is logged to <code>/data/events.jsonl</code> with timestamp, org, report type, event type, and metadata. Events include: page views, data fetches, PDF exports, Excel downloads, AI insight requests, email deliveries, and feedback submissions.</p>
+    <h3>AI Observability</h3>
+    <p>All AI API calls are traced via OpenTelemetry instrumentation to Langfuse (us.cloud.langfuse.com). Every insight, QBR narrative, and chat response has a trace ID linking to the full prompt, response, token usage, latency, and cost. Thumbs up/down feedback is attached to traces as Langfuse scores.</p>
+    <h3>Health Checks</h3>
+    <p>Automated health checks run on a tiered schedule (hourly for critical reports, every 6h for standard, daily for low-priority). Each check verifies Metabase card accessibility and response shape. Results are displayed on org cards in the admin dashboard with green/yellow/red status indicators.</p>
+  </div>
+
+  <div class="card">
+    <h2>Planned Security Improvements</h2>
+    <table>
+      <thead><tr><th>Initiative</th><th>Status</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td>Firebase OAuth</td><td><span class="shield shield-amber">Planned</span></td><td>Server-side token verification using Firebase Auth. If dashboards are accessed exclusively from within the rec.us admin interface, sessions are natively protected by Firebase. Exploring whether additional server-side verification adds meaningful security for the direct-link access pattern.</td></tr>
+        <tr><td>Email Domain Verification</td><td><span class="shield shield-amber">Blocked — DNS</span></td><td>Resend domain verification for rec.us requires DNS TXT record changes managed by Rec engineering. Once verified, email subscriptions can send from a branded @rec.us domain instead of generic sender. Feature flag and subscription infrastructure are fully built and ready.</td></tr>
+        <tr><td>Rate Limiting</td><td><span class="shield shield-amber">Planned</span></td><td>Per-IP rate limiting on data API endpoints to prevent abuse. Currently mitigated by token requirement and non-public API surface.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+</div>
+
+<footer>rec.us Reports — Security &amp; Privacy Documentation</footer>
+</body>
+</html>
