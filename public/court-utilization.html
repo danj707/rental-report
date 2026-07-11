@@ -620,6 +620,7 @@ function App() {
     setError(null);
     try {
       const params = new URLSearchParams({ start_date: startDate, end_date: endDate });
+      if (urlParams.get('_nocache') === '1' || urlParams.get('_refresh') === '1') params.set('_nocache', '1');
       // NOTE: location_name is filtered client-side per platform convention,
       // not forwarded to Metabase.
       const url = `/${orgSlug}/${reportType}/api/data?${params.toString()}`;
