@@ -1231,13 +1231,19 @@ function App() {
 
   var fillRateAnalytics = useMemo(() => {
     if (!fDemoRows || fDemoRows.length === 0) return null;
-    // Build capacity map from revenue data
+    // Build capacity map from revenue data (check _sections[] for rolled-up programs)
     var capMap = {};
     if (rows && rows.length > 0) {
       rows.forEach(r => {
         if (r.isSection && r.sectionName) {
           var cap = parseInt(r.capacity) || 0;
           if (cap > 0) capMap[r.sectionName] = cap;
+        }
+        if (r._sections) {
+          r._sections.forEach(s => {
+            var cap = parseInt(s.capacity) || 0;
+            if (cap > 0 && s.sectionName) capMap[s.sectionName] = cap;
+          });
         }
       });
     }
