@@ -112,8 +112,12 @@ function setCacheUsers(orgSlug, data) {
   usersCache.set(orgSlug, { data, ts: Date.now() });
 }
 
-function getCached(key) {
-  const entry = dataCache.get(key);
+function getCached(key, orgSlug, reportType) {
+  let entry = dataCache.get(key);
+  // Fall back to base prewarm key if exact key misses
+  if (!entry && orgSlug && reportType) {
+    entry = dataCache.get(`${orgSlug}:${reportType}:`);
+  }
   if (!entry) { cacheStats.misses++; return null; }
   const ttl = REPORT_CACHE_TTL[entry.rt] || CACHE_TTL;
   if (Date.now() - entry.ts > ttl) { dataCache.delete(key); cacheStats.misses++; return null; }
@@ -411,10 +415,16 @@ async function prewarmCache() {
             meta: { org_slug: slug, org_id: org.orgId, logo_url: org.logoUrl, report_type: rt, generated_at: new Date().toISOString() },
           };
           setCache(cacheKey, result, rt);
+          // Also store under the full paramStr key (with org_id + dates) so
+          // normal requests get a cache hit, not just prewarm base-key lookups.
+          if (paramStr) setCache(`${slug}:${rt}:${paramStr}`, result, rt);
           // Also store under the explicit "This Month" cache key so users who
           // click This Month (which sends start_date + end_date params) get a
           // cache hit instead of re-querying Metabase.
-          setCache(`${slug}:${rt}:${monthParamStr}`, result, rt);
+          const monthKeyWithOrg = useShared && org.orgId
+            ? `?parameters=${encodeURIComponent(JSON.stringify([{ type: "string/=", target: ["variable", ["template-tag", "org_id"]], value: org.orgId }, ...monthParams]))}`
+            : monthParamStr;
+          setCache(`${slug}:${rt}:${monthKeyWithOrg}`, result, rt);
           warmed++;
           console.log(`[cache] Warmed ${slug}/${rt} (${data.length} rows)`);
         }
@@ -3107,7 +3117,7 @@ app.get("/:org/:report/api/data", resolveOrg, async (req, res) => {
     }
 
     if (!forceRefresh) {
-      const cached = getCached(cacheKey);
+      const cached = getCached(cacheKey, orgSlug, reportType);
       if (cached) {
         console.log(`[cache] HIT ${orgSlug}/${reportType} (${dataCache.size} entries)`);
         return res.json(cached);
