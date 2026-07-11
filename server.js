@@ -6016,7 +6016,7 @@ app.get("/", (req, res) => {
     products:    { label: "Product Sales",          ai: true,          icon: "🛒", desc: "Daily revenue, refunds, and net by product",           color: "#0891b2" },
     memberships: { label: "Memberships",                ai: true,                icon: "🎫", desc: "Active and lapsed memberships with renewal tracking",       color: "#db2777" },
     "court-utilization": { label: "Court Utilization",  icon: "🎾", desc: "Court utilization % or reserved hours by court, split by customer, program, and closure usage", color: "#0d9488", ai: true },
-    calendar:    { label: "Program Calendar",               icon: "🗓️", desc: "Public class & rental schedule (week / list view)", color: "#ea580c", wcag: true },
+    calendar:    { label: "Program Calendar",               icon: "🗓️", desc: "Public class & rental schedule (week / list view)", color: "#ea580c", ai: true },
     fasttrack:   { label: "Fast Track",             icon: "⚡", desc: "Pre-registration demand signal with conversion tracking", color: "#6366f1", ai: true },
     users:       { label: "Community Intel",            icon: "👥", desc: "Demographics, revenue, and strategy intelligence across your community", color: "#7c3aed", ai: true },
     "instructor-payout": { label: "Instructor Payout", ai: true, icon: "💰", desc: "Revenue splits and payout calculations by instructor", color: "#6366f1" },
@@ -6226,6 +6226,36 @@ app.get("/", (req, res) => {
       </div>`;
   }).join("");
 
+  // ── Per-org usage metrics for admin table ──
+  const usageRows = Object.entries(ORGS).map(([slug, org]) => {
+    try {
+      const m = buildMetrics(slug, 30);
+      const views = Object.values(m.summary).reduce((n, s) => n + (s.view || 0), 0);
+      const exports = Object.values(m.summary).reduce((n, s) => n + (s.pdf || 0) + (s.excel || 0), 0);
+      const aiCalls = m.insights.calls;
+      const reports = m.configuredReports.length;
+      return { slug, name: org.displayName || slug, views, exports, aiCalls, reports };
+    } catch(e) { return { slug, name: org.displayName || slug, views: 0, exports: 0, aiCalls: 0, reports: 0 }; }
+  }).sort((a, b) => b.views - a.views);
+  const maxViews = Math.max(...usageRows.map(r => r.views), 1);
+  const usageTableHtml = `
+    <div class="usage-table-wrap">
+      <div class="usage-header">
+        <span class="usage-header-title">\u{1F4CA} Platform Usage</span>
+        <span class="usage-header-sub">Last 30 days</span>
+      </div>
+      <table class="usage-table">
+        <thead><tr><th>Organization</th><th class="num">Views</th><th class="num">Exports</th><th class="num">AI Insights</th><th class="num">Reports</th></tr></thead>
+        <tbody>${usageRows.map(r => `<tr>
+          <td><span class="usage-org-name">${r.name}</span><div class="usage-bar" style="width:${Math.round(r.views / maxViews * 100)}%"></div></td>
+          <td class="num${r.views === 0 ? ' usage-zero' : ''}">${r.views.toLocaleString()}</td>
+          <td class="num${r.exports === 0 ? ' usage-zero' : ''}">${r.exports}</td>
+          <td class="num${r.aiCalls === 0 ? ' usage-zero' : ''}">${r.aiCalls}</td>
+          <td class="num">${r.reports}</td>
+        </tr>`).join('')}</tbody>
+      </table>
+    </div>`;
+
   // Org navigation bar (alphabetical, matching orgSections sort order)
   const orgNav = Object.entries(ORGS).sort((a, b) => {
     const nameA = (a[1].displayName || a[0]).toLowerCase();
@@ -6267,6 +6297,21 @@ app.get("/", (req, res) => {
     .topbar-divider { width: 1px; height: 20px; background: rgba(255,255,255,.2); }
     .topbar-sub { font-size: 12px; color: #aaa; text-transform: uppercase; letter-spacing: 1px; }
     .main { flex: 1; max-width: 860px; margin: 0 auto; padding: 40px 24px; width: 100%; }
+    /* ── Org Usage Table ── */
+    .usage-table-wrap { margin-bottom: 24px; background: #fff; border: 1px solid #e0ddd8; border-radius: 10px; overflow: hidden; }
+    .usage-header { padding: 14px 20px; border-bottom: 1px solid #e8e5df; display: flex; justify-content: space-between; align-items: center; }
+    .usage-header-title { font-weight: 800; font-size: 14px; color: #1e1b4b; }
+    .usage-header-sub { font-size: 11px; color: #9ca3af; }
+    .usage-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+    .usage-table th { text-align: left; padding: 8px 14px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: #9ca3af; border-bottom: 1px solid #e8e5df; }
+    .usage-table th.num { text-align: right; }
+    .usage-table td { padding: 7px 14px; border-bottom: 1px solid #f3f2ef; color: #374151; }
+    .usage-table td.num { text-align: right; font-family: 'IBM Plex Mono', monospace; font-size: 12px; }
+    .usage-table tr:last-child td { border-bottom: none; }
+    .usage-table tr:hover { background: #faf9f7; }
+    .usage-bar { height: 4px; border-radius: 2px; background: linear-gradient(90deg, #6d28d9, #0d9488); margin-top: 3px; }
+    .usage-org-name { font-weight: 600; color: #1e1b4b; }
+    .usage-zero { color: #d1d5db; }
     .page-title { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.2px; color: #888; margin-bottom: 24px; }
     /* ── Showcase hero card ── */
     .showcase-card {
@@ -6815,6 +6860,8 @@ app.get("/", (req, res) => {
         </div>
       </div>
     </div>
+
+    ${usageTableHtml}
 
     <div class="page-title">Organizations</div>
     <div style="margin:-14px 0 18px;padding:10px 16px;background:#f9f8f6;border:1px solid #e8e5df;border-radius:8px;font-size:12.5px;line-height:2">${orgNav}</div>
@@ -8190,6 +8237,8 @@ app.get("/", (req, res) => {
     'Fixed Calendar Performance showing 0 bookings / $0 revenue \u2014 fetchMBDirect was using per-org Metabase UUIDs but also passing org_id parameter (which per-org questions don\u2019t have), causing Metabase to reject the query. Now aligned with main data route: prefers shared UUID + org_id filtering.',
     'Fixed Fill Rate tab capacity dashes \u2014 fillRateAnalytics was checking r.isSection on program-level rollup rows (always false). Section-level capacity lives in r._sections[]. Now iterates _sections to build the capacity map.',
     'Calendar Performance: moved bookings/revenue to async client-side fetch with loading animation \u2014 endpoint returns instantly with views/engagement, then bookings + revenue fill in when Metabase responds.',
+    'Fixed Program Calendar AA badge \u2192 AI (was wcag: true, should be ai: true since calendar has AI program finder).',
+    '\u{1F4CA} Platform Usage table on admin dashboard \u2014 per-org 30-day usage (views, exports, AI insights, report count) with gradient bar chart, sorted by views.',
     'Registration Funnel (metrics page): same async pattern \u2014 endpoint stripped to views-only, enrollments + avg ticket + attributed revenue computed client-side from program-demographics and programs data.',
   ] },
   { date: '2026-07-07', title: 'Activity Filter \u{1F3AF}', items: ['Activity dropdown in toolbar filters Revenue, Participants, Retention, and Fill Rate tabs.', 'Select an activity (Swimming, Camps, Dance, etc.) to see retention, re-engagement, and flow data scoped to that activity.', 'Activity column now sourced from Metabase program-demographics query (v3).'] },
