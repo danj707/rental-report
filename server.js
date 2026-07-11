@@ -6957,11 +6957,12 @@ app.get("/", (req, res) => {
     </div>
 
     <div class="org-section" id="app-control-section">
-      <div class="org-header" style="cursor:default">
+      <div class="org-header" onclick="toggleHow(this)" style="cursor:pointer;user-select:none">
         <div class="org-header-text">
           <div class="org-name">&#9851;&#65039; App Control</div>
-          <div style="font-size:12px;color:#999;margin-top:2px">Redeploy the latest build on Railway</div>
+          <div class="org-slug">Platform admin, feature flags, Metabase links, audit &amp; backups</div>
         </div>
+        <span class="how-chevron">&#9658;</span>
       </div>
       <div class="how-body">
       <div style="padding:14px 18px;background:#f5f4f1;border-top:1px solid #e8e5df">
