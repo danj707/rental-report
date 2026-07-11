@@ -3601,11 +3601,13 @@ app.get("/:org/annual-report", (req, res) => {
 async function fetchMBDirect(orgSlug, reportType, startDate, endDate) {
   const org = ORGS[orgSlug];
   if (!org) return null;
-  const mbUuid = reportType === "gl"
-    ? (org.gl?.mbUuid || SHARED_UUIDS.gl)
-    : (org[reportType]?.mbUuid || SHARED_UUIDS[reportType]);
+  // Match main data route: GL prefers per-org, all others prefer shared UUID + org_id
+  const useShared = reportType === "gl"
+    ? (!org.gl?.mbUuid && !!SHARED_UUIDS.gl)
+    : !!SHARED_UUIDS[reportType];
+  const mbUuid = useShared ? SHARED_UUIDS[reportType] : (org[reportType]?.mbUuid || SHARED_UUIDS[reportType]);
   if (!mbUuid) return null;
-  const orgId = (SHARED_UUIDS[reportType] && !(reportType === "gl" && org.gl?.mbUuid)) ? org.orgId : null;
+  const orgId = useShared ? org.orgId : null;
   const params = buildMetabaseParams({ start_date: startDate, end_date: endDate }, reportType, orgId);
   const paramStr = params.length > 0 ? "?parameters=" + encodeURIComponent(JSON.stringify(params)) : "";
   const url = METABASE_URL + "/api/public/card/" + mbUuid + "/query/json" + paramStr;
@@ -8263,6 +8265,10 @@ app.get("/", (req, res) => {
         '_refresh=1 URL param to force re-fetch and re-cache (alongside existing _nocache=1)',
         '4:50am comprehensive warm cron \u2014 runs before users cache (5am) and pulse (5:10am)',
       ]},
+  { date: '2026-07-11', title: 'Fill Rate + Calendar Performance Fix \u{1F527}', items: [
+    'Fixed Calendar Performance showing 0 bookings / $0 revenue \u2014 fetchMBDirect was using per-org Metabase UUIDs but also passing org_id parameter (which per-org questions don\u2019t have), causing Metabase to reject the query. Now aligned with main data route: prefers shared UUID + org_id filtering.',
+    'Fixed Fill Rate tab capacity dashes \u2014 fillRateAnalytics was checking r.isSection on program-level rollup rows (always false). Section-level capacity lives in r._sections[]. Now iterates _sections to build the capacity map.',
+  ] },
   { date: '2026-07-07', title: 'Activity Filter \u{1F3AF}', items: ['Activity dropdown in toolbar filters Revenue, Participants, Retention, and Fill Rate tabs.', 'Select an activity (Swimming, Camps, Dance, etc.) to see retention, re-engagement, and flow data scoped to that activity.', 'Activity column now sourced from Metabase program-demographics query (v3).'] },
   { date: '2026-07-07', title: 'Program Re-engagement \u2728', items: ['Cumulative re-engagement curves: flipped survival chart showing % of cohort that came back within N months.', 'Cross-activity flow matrix: shows participant overlap between activity categories (Swimming, Camps, etc).', 'Missed opportunities: flags large activities with <10% participant overlap \u2014 marketing targets.', 'Activity derived from program names until native Activity column added to Metabase.'] },
   { date: '2026-07-06', title: 'Cohort Retention Tab \uD83D\uDCC8', items: ['New Retention tab on Memberships report with cohort survival curves.', 'Groups members by signup month, tracks % still active at 1-12 month intervals.', 'Chart.js line chart + color-coded retention table (green/blue/amber/red).', 'KPI cards: avg 6-month retention, best/worst cohort, month-1 churn rate.', 'Pure client-side computation from existing membership data \u2014 no new API calls.'] },
