@@ -2062,8 +2062,8 @@ function App() {
       ? '/' + pathParts[1] + '/' + pathParts[2] + '/api/data'
       : '/api/data';
     const now = new Date();
-    const seedStart = new Date(now.getFullYear() - 1, now.getMonth(), 1);
-    const seedEnd   = new Date(now.getFullYear() + 1, now.getMonth(), 0);
+    const seedStart = new Date(now.getTime() - 90 * 86400000);  // 90 days back (was 1yr)
+    const seedEnd   = new Date(now.getTime() + 30 * 86400000);  // 30 days ahead (was 1yr)
     const toISO = d => d.toISOString().split('T')[0];
     const qs = new URLSearchParams();
     qs.set('start_date', toISO(seedStart));
