@@ -1954,6 +1954,7 @@ function App() {
     if (ed) qs.set('end_date',   ed);
     if (params.location_name) qs.set('location_name', params.location_name);
     if (params.site_type)     qs.set('site_type',     params.site_type);
+    if (params._nocache === '1' || params._refresh === '1') qs.set('_nocache', '1');
 
     const pathParts = window.location.pathname.replace(/\/$/, '').split('/');
     const apiBase = pathParts.length >= 3
