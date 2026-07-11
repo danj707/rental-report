@@ -1168,7 +1168,20 @@ function App() {
     var avgSec = totalP > 0 ? (programs.reduce((a, p) => a + p.avgSec * p.total, 0) / totalP).toFixed(1) : '1.0';
     var progsWithReturners = programs.filter(p => p.returners > 0).length;
     var topRetaining = programs.filter(p => p.total >= 10).sort((a, b) => b.retPct - a.retPct)[0] || null;
-    return { programs: programs, totalP: totalP, totalR: totalR, totalL: totalL, totalS: totalS, orgRetPct: orgRetPct, avgSec: avgSec, progsWithReturners: progsWithReturners, topRetaining: topRetaining };
+    // Aggregate retention by activity
+    var actAgg = {};
+    programs.forEach(p => {
+      var act = activityInfo.map[p.name] || '';
+      if (!act || act === 'Uncategorized') return;
+      if (!actAgg[act]) actAgg[act] = { total: 0, returners: 0 };
+      actAgg[act].total += p.total;
+      actAgg[act].returners += p.returners;
+    });
+    var topActivity = Object.entries(actAgg)
+      .map(function(e) { return { name: e[0], total: e[1].total, returners: e[1].returners, retPct: e[1].total > 0 ? Math.round(e[1].returners / e[1].total * 100) : 0 }; })
+      .filter(function(a) { return a.total >= 20; })
+      .sort(function(a, b) { return b.retPct - a.retPct; })[0] || null;
+    return { programs: programs, totalP: totalP, totalR: totalR, totalL: totalL, totalS: totalS, orgRetPct: orgRetPct, avgSec: avgSec, progsWithReturners: progsWithReturners, topRetaining: topRetaining, topActivity: topActivity };
   }, [retRows, activityFilter, activityInfo]);
 
   // ── Cohort retention + cross-program affinity from enrollment data ──
@@ -2476,6 +2489,7 @@ function App() {
                 <div className="summary-card"><div className="card-label">Programs w/ Returners</div><div className="card-value">{retStats.progsWithReturners}</div><div className="card-sub">of {retStats.programs.length} total</div></div>
                 <div className="summary-card"><div className="card-label">Avg Sections/Person</div><div className="card-value">{retStats.avgSec}</div><div className="card-sub">weighted across all programs</div></div>
                 {retStats.topRetaining && <div className="summary-card"><div className="card-label">Top Retaining</div><div className="card-value" style={{fontSize:14}}>{retStats.topRetaining.name}</div><div className="card-sub">{retStats.topRetaining.retPct}% retention ({retStats.topRetaining.total} participants)</div></div>}
+                {retStats.topActivity && !activityFilter && <div className="summary-card" style={{borderLeft:'3px solid #6d28d9'}}><div className="card-label">Top Activity</div><div className="card-value" style={{color:'#6d28d9'}}>{retStats.topActivity.retPct}%</div><div className="card-sub">{retStats.topActivity.name} ({retStats.topActivity.returners} of {retStats.topActivity.total} returned)</div></div>}
               </div>
 
               {(() => {
