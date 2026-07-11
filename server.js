@@ -6226,6 +6226,17 @@ app.get("/", (req, res) => {
           <button class="token-copy-btn" onclick="copyTokenURL('${slug}', this)" data-base="/${slug}?token=${encodeURIComponent(org.token)}">Copy landing URL</button>
         </div>` : "";
 
+    // Per-org mini sparkline (30 days)
+    const orgEvts = readEvents(30).filter(e => e.org === slug && e.event === 'view');
+    const orgByDay = {};
+    orgEvts.forEach(e => { const d = e.ts.substring(0, 10); orgByDay[d] = (orgByDay[d] || 0) + 1; });
+    const orgDaily = []; for (let i = 29; i >= 0; i--) { const d = new Date(Date.now() - i * 86400000).toISOString().substring(0, 10); orgDaily.push(orgByDay[d] || 0); }
+    const oSpkMax = Math.max(...orgDaily, 1);
+    const oSpkPts = orgDaily.map((v, i) => `${(i / 29 * 100).toFixed(1)},${(20 - v / oSpkMax * 18).toFixed(1)}`).join(' ');
+    const oViews = orgDaily.reduce((a, b) => a + b, 0);
+    const oHidden = new Set(getHiddenReports(slug));
+    const oActive = available.filter(r => !oHidden.has(r)).length;
+
     return `
       <div class="org-section" id="org-${slug}">
         <div class="org-header" onclick="toggleOrgBody(this)" style="cursor:pointer;user-select:none">
@@ -6235,7 +6246,7 @@ app.get("/", (req, res) => {
             <div class="org-slug">${slug}</div>
           </div>
           ${headerActions}
-          <span class="how-chevron org-collapse-chevron" style="color:#9ca3af;margin-left:auto;padding:0 8px"><i class="ph ph-caret-right" style="font-size:14px"></i></span>
+          <div style="display:flex;align-items:center;gap:8px;margin-left:auto;padding:0 8px"><span style="font-size:10px;color:#9ca3af;white-space:nowrap" title="Active / total reports">${oActive}/${available.length}</span><svg viewBox="0 0 100 22" style="width:60px;height:16px;flex-shrink:0"><polyline points="${oSpkPts}" fill="none" stroke="#6d28d9" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg><span style="font-size:10px;font-weight:600;color:#6d28d9;white-space:nowrap">${oViews}</span><span class="how-chevron org-collapse-chevron" style="color:#9ca3af"><i class="ph ph-caret-right" style="font-size:14px"></i></span></div>
         </div>
         ${pulseStrip}
         <div class="org-body" style="display:none">
