@@ -582,6 +582,7 @@ function App() {
     if (sd) qs.set('start_date', sd);
     if (ed) qs.set('end_date', ed);
     if (sec && sec.trim()) qs.set('section_name', sec.trim());
+    if (params._nocache === '1' || params._refresh === '1') qs.set('_nocache', '1');
 
     fetch(withToken(`/${orgSlug}/roster/api/data?${qs}`))
       .then(r => { if (!r.ok) throw new Error(`Server returned ${r.status}`); return r.json(); })
