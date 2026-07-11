@@ -6247,7 +6247,7 @@ app.get("/", (req, res) => {
       <table class="usage-table">
         <thead><tr><th>Organization</th><th class="num">Views</th><th class="num">Exports</th><th class="num">AI Insights</th><th class="num">Reports</th></tr></thead>
         <tbody>${usageRows.map(r => `<tr>
-          <td><span class="usage-org-name">${r.name}</span><div class="usage-bar" style="width:${Math.round(r.views / maxViews * 100)}%"></div></td>
+          <td><a href="/${r.slug}?token=${ORGS[r.slug]?.token || ''}" class="usage-org-name" style="text-decoration:none;color:#1e1b4b">${r.name}</a><div class="usage-bar" style="width:${Math.round(r.views / maxViews * 100)}%"></div></td>
           <td class="num${r.views === 0 ? ' usage-zero' : ''}">${r.views.toLocaleString()}</td>
           <td class="num${r.exports === 0 ? ' usage-zero' : ''}">${r.exports}</td>
           <td class="num${r.aiCalls === 0 ? ' usage-zero' : ''}">${r.aiCalls}</td>
