@@ -6480,7 +6480,7 @@ app.get("/", (req, res) => {
     .sg-lightbox .sg-lb-caption { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
       color: #fff; font-size: 14px; font-weight: 600; text-shadow: 0 2px 8px rgba(0,0,0,.6); }
 
-        .org-section { background: #fff; border: 1px solid #e0ddd8; border-radius: 10px; margin-bottom: 20px; overflow: hidden; }
+        .org-section { background: #fff; border: 1px solid #d4d0ca; border-radius: 10px; margin-bottom: 20px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
     .org-header { display: flex; align-items: center; gap: 14px; padding: 16px 20px; background: #f9f8f6; border-bottom: 1px solid #e8e5df; }
     .org-pulse-strip { display: flex; gap: 0; background: linear-gradient(135deg, #312e81 0%, #4338ca 50%, #4f46e5 100%); padding: 0; overflow-x: auto; }
     .pulse-item { flex: 1; min-width: 0; padding: 12px 16px; text-align: center; border-right: 1px solid rgba(255,255,255,0.1); }
