@@ -1464,8 +1464,10 @@ function App() {
           const totA = totI + totM;
           const cntI = grouped.reduce((s,g) => s + (g.customer || 0), 0);
           const cntM = grouped.reduce((s,g) => s + (g.program || 0), 0);
-          const pI = totA > 0 ? Math.round(totI / totA * 100) : 0;
-          const pM = totA > 0 ? Math.round(totM / totA * 100) : 0;
+          const isUtil = metric === 'util';
+          const cntA = cntI + cntM;
+          const pI = isUtil ? (cntA > 0 ? Math.round(cntI / cntA * 100) : 0) : (totA > 0 ? Math.round(totI / totA * 100) : 0);
+          const pM = isUtil ? (cntA > 0 ? Math.round(cntM / cntA * 100) : 0) : (totA > 0 ? Math.round(totM / totA * 100) : 0);
           return (
             <div className="summary-row" style={{display:'flex', gap:10, marginTop:8, flexWrap:'wrap'}}>
               <div className="kpi-card">
@@ -1481,7 +1483,7 @@ function App() {
               <div className="kpi-card">
                 <div className="kpi-label" style={{color:'#6b7280'}}>Booking Mix</div>
                 <div className="kpi-value" style={{fontSize:20}}>{pI}% / {pM}%</div>
-                <div className="kpi-sub">instant / managed</div>
+                <div className="kpi-sub">{isUtil ? 'by bookings' : 'by hours'}</div>
               </div>
             </div>
           );
