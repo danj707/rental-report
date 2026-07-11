@@ -8253,6 +8253,7 @@ app.get("/", (req, res) => {
     'Fixed Calendar Performance showing 0 bookings / $0 revenue \u2014 fetchMBDirect was using per-org Metabase UUIDs but also passing org_id parameter (which per-org questions don\u2019t have), causing Metabase to reject the query. Now aligned with main data route: prefers shared UUID + org_id filtering.',
     'Fixed Fill Rate tab capacity dashes \u2014 fillRateAnalytics was checking r.isSection on program-level rollup rows (always false). Section-level capacity lives in r._sections[]. Now iterates _sections to build the capacity map.',
     'Calendar Performance: moved bookings/revenue to async client-side fetch with loading animation \u2014 endpoint returns instantly with views/engagement, then bookings + revenue fill in when Metabase responds.',
+    'Top Activity retention card on Programs Retention tab \u2014 aggregates retention by activity category (min 20 participants), shows activity name + retention %. Purple accent, hidden when activity filter is active.',
     'Architecture & Admin Guide + Security & Privacy Overview \u2014 two new standalone doc pages linked from How This Works section. Covers system architecture, report registry, onboarding steps, shared UUID architecture, access control, PII handling, infrastructure security, and audit trail.',
     'Planned Improvements section in How This Works \u2014 Firebase OAuth and Resend DNS verification listed with status notes.',
     'Fixed Program Calendar AA badge \u2192 AI (was wcag: true, should be ai: true since calendar has AI program finder).',
