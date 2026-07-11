@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>rec.us Reports — Architecture & Admin Guide</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'IBM Plex Sans', system-ui, sans-serif; background: #f9f8f6; color: #1e1b4b; line-height: 1.7; }
+  .header { background: linear-gradient(135deg, #1e1b4b 0%, #312e81 40%, #4338ca 100%); padding: 48px 32px; color: #fff; }
+  .header-inner { max-width: 860px; margin: 0 auto; }
+  .header-badge { display: inline-block; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .1em; color: #a5b4fc; background: rgba(165,180,252,.12); padding: 4px 12px; border-radius: 20px; margin-bottom: 14px; }
+  .header h1 { font-size: 32px; font-weight: 800; margin-bottom: 10px; }
+  .header p { font-size: 15px; color: #c7d2fe; max-width: 640px; }
+  .content { max-width: 860px; margin: 0 auto; padding: 32px; }
+  .card { background: #fff; border: 1px solid #e0ddd8; border-radius: 10px; padding: 28px 32px; margin-bottom: 20px; }
+  h2 { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .7px; color: #6d28d9; margin-bottom: 16px; }
+  h3 { font-size: 16px; font-weight: 700; color: #1e1b4b; margin: 20px 0 8px; }
+  h3:first-child { margin-top: 0; }
+  p { margin-bottom: 12px; font-size: 14px; color: #374151; }
+  code { font-family: 'IBM Plex Mono', monospace; font-size: 12px; background: #f3f0eb; padding: 2px 6px; border-radius: 3px; }
+  pre { background: #1e1b4b; color: #e0e7ff; padding: 16px 20px; border-radius: 8px; overflow-x: auto; font-size: 12px; line-height: 1.6; margin: 12px 0 16px; }
+  pre code { background: none; padding: 0; color: inherit; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; margin: 12px 0 16px; }
+  th { text-align: left; padding: 8px 12px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: #9ca3af; border-bottom: 2px solid #e5e7eb; }
+  td { padding: 8px 12px; border-bottom: 1px solid #f3f4f6; color: #374151; }
+  td:first-child { font-weight: 600; color: #1e1b4b; }
+  tr:hover { background: #faf9f7; }
+  .pill { display: inline-block; font-size: 9px; font-weight: 700; padding: 2px 8px; border-radius: 10px; margin-left: 6px; vertical-align: 1px; }
+  .pill-shared { background: #dbeafe; color: #1d4ed8; }
+  .pill-org { background: #fef3c7; color: #92400e; }
+  .pill-ai { background: linear-gradient(90deg, #6d28d9, #0d9488); color: #fff; }
+  .back-link { display: inline-flex; align-items: center; gap: 6px; color: #a5b4fc; text-decoration: none; font-size: 13px; font-weight: 600; margin-bottom: 8px; }
+  .back-link:hover { color: #fff; }
+  .flow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 12px 0 16px; font-size: 13px; }
+  .flow-step { background: #f3f0eb; padding: 6px 14px; border-radius: 6px; font-weight: 600; }
+  .flow-arrow { color: #9ca3af; }
+  .callout { background: #f0fdf4; border-left: 3px solid #16a34a; padding: 12px 16px; border-radius: 0 6px 6px 0; margin: 12px 0 16px; font-size: 13px; color: #166534; }
+  footer { text-align: center; padding: 32px; font-size: 12px; color: #9ca3af; }
+</style>
+</head>
+<body>
+<div class="header">
+  <div class="header-inner">
+    <a href="/" class="back-link">&larr; Back to Dashboard</a>
+    <div class="header-badge">Internal Documentation</div>
+    <h1>Architecture &amp; Admin Guide</h1>
+    <p>Technical reference for the rec.us Enhanced Reports platform — how data flows, how reports are wired, and how to onboard new organizations.</p>
+  </div>
+</div>
+
+<div class="content">
+
+  <div class="card">
+    <h2>System Overview</h2>
+    <p>rec.us Reports is a single-file Node.js/Express application (<code>server.js</code>, ~9,200 lines) deployed on Railway Pro. It transforms raw Metabase/PostgreSQL data into interactive dashboards with AI-powered insights, PDF export, email subscriptions, and cross-org analytics.</p>
+    <h3>Request Flow</h3>
+    <div class="flow">
+      <span class="flow-step">Admin clicks report link</span>
+      <span class="flow-arrow">&rarr;</span>
+      <span class="flow-step">Token gate middleware</span>
+      <span class="flow-arrow">&rarr;</span>
+      <span class="flow-step">Static HTML (React/Babel CDN)</span>
+      <span class="flow-arrow">&rarr;</span>
+      <span class="flow-step">Client fetches /api/data</span>
+      <span class="flow-arrow">&rarr;</span>
+      <span class="flow-step">Server proxies Metabase</span>
+      <span class="flow-arrow">&rarr;</span>
+      <span class="flow-step">JSON response rendered</span>
+    </div>
+    <h3>Stack</h3>
+    <table>
+      <tr><td>Runtime</td><td>Node.js 20 (node:20-slim Docker image)</td></tr>
+      <tr><td>Framework</td><td>Express.js — single server.js, no build step</td></tr>
+      <tr><td>Frontend</td><td>React 18 + Babel Standalone via CDN (in-browser JSX)</td></tr>
+      <tr><td>Charts</td><td>Chart.js for visualizations, SheetJS for Excel export</td></tr>
+      <tr><td>Data</td><td>Metabase Cloud (rec.metabaseapp.com) → PostgreSQL</td></tr>
+      <tr><td>AI</td><td>Anthropic API — Haiku for insights, Sonnet for QBR/directors report</td></tr>
+      <tr><td>PDF</td><td>Puppeteer with system Chromium — renders pages to Letter landscape</td></tr>
+      <tr><td>Email</td><td>Resend SDK + node-cron (daily 7am, weekly Mon 7am, monthly 1st)</td></tr>
+      <tr><td>Observability</td><td>Langfuse via OpenTelemetry auto-instrumentation</td></tr>
+      <tr><td>Hosting</td><td>Railway Pro — auto-deploy from GitHub main branch</td></tr>
+      <tr><td>Storage</td><td>Railway persistent volume at /data — subscriptions, flags, health results</td></tr>
+      <tr><td>Backups</td><td>GitHub Gists — nightly 2am cron + startup snapshot</td></tr>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2>Report Registry</h2>
+    <p>Reports are served from self-contained HTML files in <code>public/</code>. Each report type has a Metabase card UUID (shared across orgs or per-org) and optional AI insights.</p>
+    <table>
+      <thead><tr><th>Report</th><th>File</th><th>Data Source</th><th>Features</th></tr></thead>
+      <tbody>
+        <tr><td>Facility Rental Schedule</td><td>facility.html</td><td>Per-org or shared UUID</td><td>Location filter, PDF, Excel</td></tr>
+        <tr><td>GL Code Rollup</td><td>gl.html</td><td>Shared (4374b344) or per-org</td><td>Type-ahead filter, Table/Bar/Pie views <span class="pill pill-ai">AI</span></td></tr>
+        <tr><td>Programs</td><td>programs.html</td><td>Shared UUID + demographics</td><td>Revenue, Participants, Fill Rate, Retention, Summary <span class="pill pill-ai">AI</span></td></tr>
+        <tr><td>Community Intel</td><td>users.html</td><td>Shared UUID</td><td>6-tab hub: demographics, revenue, strategy, guests, products, fill rate <span class="pill pill-ai">AI</span></td></tr>
+        <tr><td>Fast Track</td><td>fasttrack.html</td><td>Shared UUID (9d38ab95)</td><td>Conversion tracking, pipeline, 4 tabs <span class="pill pill-ai">AI</span></td></tr>
+        <tr><td>Court Utilization</td><td>court-utilization.html</td><td>Per-org or shared UUID</td><td>Hour-by-court heatmap <span class="pill pill-ai">AI</span></td></tr>
+        <tr><td>Memberships</td><td>memberships.html</td><td>Shared UUID</td><td>Check-ins heatmap, retention cohorts <span class="pill pill-ai">AI</span></td></tr>
+        <tr><td>Program Calendar</td><td>calendar.html</td><td>Per-org UUID</td><td>Public week/month/list view, AI recommender <span class="pill pill-ai">AI</span></td></tr>
+        <tr><td>Rental Calendar</td><td>rentalcalendar.html</td><td>MCP + Metabase overlay</td><td>Real-time availability, public, no token</td></tr>
+        <tr><td>Class Roster</td><td>roster.html</td><td>Shared UUID</td><td>Emergency contacts, authorized pickups</td></tr>
+        <tr><td>Products</td><td>products.html</td><td>Shared UUID</td><td>POS daily revenue <span class="pill pill-ai">AI</span></td></tr>
+        <tr><td>Historic Buildings</td><td>historic.html</td><td>Per-org UUID only</td><td>Location/site filters <span class="pill pill-ai">AI</span></td></tr>
+        <tr><td>Instructor Payout</td><td>instructor-payout.html</td><td>Shared UUID</td><td>Split selector, payout calculations <span class="pill pill-ai">AI</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2>Shared UUID Architecture</h2>
+    <p>Most reports use a single shared Metabase question with an <code>{{org_id}}</code> template variable. The server injects the org's UUID at query time. This means new orgs get all shared reports automatically — no new Metabase cards needed.</p>
+    <pre><code>// SHARED_UUIDS — one Metabase card per report type, filtered by org_id
+const SHARED_UUIDS = {
+  facility: "f6787f45-...",
+  programs: "e35f2b47-...",
+  gl:       "4374b344-...",
+  // ... 15+ report types
+};
+
+// Per-org overrides (e.g. Norman has a custom GL query)
+norman: {
+  gl: { mbUuid: "46b7e83b-..." },  // uses this instead of shared
+}</code></pre>
+    <div class="callout">
+      <strong>Key rule:</strong> All report availability checks must use <code>(org[r]?.mbUuid || SHARED_UUIDS[r])</code> — never just one or the other. The main data route prefers shared UUIDs + org_id for non-GL reports.
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Onboarding a New Organization</h2>
+    <p>Adding a new org requires only 4 fields in the <code>ORGS</code> map. All shared reports light up automatically via SHARED_UUIDS.</p>
+    <h3>Minimum Config</h3>
+    <pre><code>neworg: {
+  token:   "randomToken16chars",   // access token for URL auth
+  orgId:   "uuid-from-rec-admin",  // rec.us organization UUID
+  logoUrl: "https://...",          // org logo for report headers
+}</code></pre>
+    <h3>Onboarding Steps</h3>
+    <div class="flow">
+      <span class="flow-step">1. Get org UUID from rec.us admin</span>
+      <span class="flow-arrow">&rarr;</span>
+      <span class="flow-step">2. Generate access token</span>
+      <span class="flow-arrow">&rarr;</span>
+      <span class="flow-step">3. Add to ORGS map in server.js</span>
+      <span class="flow-arrow">&rarr;</span>
+      <span class="flow-step">4. Push to main (auto-deploys)</span>
+    </div>
+    <p>Per-org Metabase cards are only needed for reports that require custom SQL (e.g. historic buildings with org-specific location names). Everything else flows through shared UUIDs.</p>
+    <h3>Post-Onboarding Checklist</h3>
+    <table>
+      <tr><td>Shared reports</td><td>Automatic — facility, GL, programs, users, etc.</td></tr>
+      <tr><td>Daily Pulse</td><td>Automatic — pre-warms at 5:10am</td></tr>
+      <tr><td>AI Insights</td><td>Automatic — available on all AI-enabled reports</td></tr>
+      <tr><td>Rental Calendar</td><td>Opt-in — add slug to RENTAL_CALENDAR_ORGS set</td></tr>
+      <tr><td>Email Subscriptions</td><td>Opt-in — add slug to EMAIL_ENABLED_ORGS + DNS verification</td></tr>
+      <tr><td>Custom reports</td><td>Per-org — duplicate Metabase card, add mbUuid to org config</td></tr>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2>Key Environment Variables</h2>
+    <table>
+      <thead><tr><th>Variable</th><th>Purpose</th></tr></thead>
+      <tbody>
+        <tr><td><code>METABASE_URL</code></td><td>Metabase instance (https://rec.metabaseapp.com)</td></tr>
+        <tr><td><code>PORT</code></td><td>Server port (3100)</td></tr>
+        <tr><td><code>BASE_URL</code></td><td>Public URL for PDF generation self-reference</td></tr>
+        <tr><td><code>DATA_DIR</code></td><td>Persistent volume path (/data)</td></tr>
+        <tr><td><code>ANTHROPIC_API_KEY</code></td><td>AI insights and QBR generation</td></tr>
+        <tr><td><code>RESEND_API_KEY</code></td><td>Email subscription delivery</td></tr>
+        <tr><td><code>LANGFUSE_PUBLIC_KEY</code></td><td>AI observability tracing</td></tr>
+        <tr><td><code>GITHUB_PAT</code></td><td>Nightly Gist backups + code deployment</td></tr>
+        <tr><td><code>RAILWAY_API_TOKEN</code></td><td>Admin app-restart endpoint</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2>API Route Patterns</h2>
+    <pre><code>GET  /:org/:report            → Serves public/*.html with ORG_CONFIG injection
+GET  /:org/:report/api/data   → Proxies Metabase, returns { rows, meta }
+GET  /:org/:report/api/pdf    → Puppeteer renders page → PDF download
+POST /:org/:report/api/insights → AI analysis of report data
+GET  /:org/api/pulse           → Daily KPI snapshot (24hr cache)
+GET  /:org/api/calendar-analytics → Calendar funnel metrics
+GET  /:org/metrics             → Per-org usage analytics page
+GET  /                         → Admin dashboard (password-gated)
+GET  /api/admin/feedback       → Cross-org feedback aggregation</code></pre>
+  </div>
+
+</div>
+
+<footer>rec.us Reports — Internal Documentation</footer>
+</body>
+</html>
