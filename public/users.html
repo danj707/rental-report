@@ -100,6 +100,24 @@
     }
   .insights-btn:hover:not(:disabled) { background:#374151; }
   .insights-btn:disabled { opacity:.6; cursor:default; }
+    .insights-btn .sparkle {
+      position: absolute; pointer-events: none;
+      font-size: 10px; opacity: 0;
+      animation: sparkle-float 2.5s ease-in-out infinite;
+    }
+    .insights-btn .sparkle:nth-child(1) { top: -8px; left: 8%; animation-delay: 0s; }
+    .insights-btn .sparkle:nth-child(2) { top: -6px; right: 12%; animation-delay: 0.7s; font-size: 8px; }
+    .insights-btn .sparkle:nth-child(3) { bottom: -7px; left: 25%; animation-delay: 1.4s; font-size: 7px; }
+    .insights-btn .sparkle:nth-child(4) { top: -5px; left: 50%; animation-delay: 0.3s; font-size: 6px; }
+    .insights-btn .sparkle:nth-child(5) { bottom: -6px; right: 20%; animation-delay: 1.1s; font-size: 9px; }
+    .insights-btn .sparkle:nth-child(6) { top: -9px; right: 3%; animation-delay: 1.9s; font-size: 7px; }
+    @keyframes sparkle-float {
+      0%, 100% { opacity: 0; transform: translateY(0) scale(0.5); }
+      15% { opacity: 1; transform: translateY(-3px) scale(1.1); }
+      30% { opacity: 0.7; transform: translateY(-7px) scale(0.9); }
+      50% { opacity: 0.3; transform: translateY(-11px) scale(0.6); }
+      70% { opacity: 0; transform: translateY(-15px) scale(0.3); }
+    }
   .insights-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:12px; padding:0 20px 16px; }
   .insight-card { border:1px solid #e5e7eb; border-left-width:4px; border-radius:8px; padding:12px 14px; background:#fff; }
   .insight-type { font-size:9px; font-weight:700; letter-spacing:.6px; text-transform:uppercase; margin-bottom:5px; }
