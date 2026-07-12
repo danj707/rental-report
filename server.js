@@ -114,9 +114,12 @@ function setCacheUsers(orgSlug, data) {
 
 function getCached(key, orgSlug, reportType) {
   let entry = dataCache.get(key);
-  // Fall back to base prewarm key if exact key misses
-  if (!entry && orgSlug && reportType) {
-    entry = dataCache.get(`${orgSlug}:${reportType}:`);
+  // Fall back to base prewarm key ONLY if this request has no custom params.
+  // If the key contains query params (date filters, etc.), don't fall back —
+  // the pre-warm data has different dates and would silently serve wrong results.
+  const baseKey = `${orgSlug}:${reportType}:`;
+  if (!entry && orgSlug && reportType && key === baseKey) {
+    entry = dataCache.get(baseKey);
   }
   if (!entry) { cacheStats.misses++; return null; }
   const ttl = REPORT_CACHE_TTL[entry.rt] || CACHE_TTL;
@@ -3273,6 +3276,7 @@ app.get("/:org/:report/api/data", resolveOrg, async (req, res) => {
 
     // ── Cache check (skip with _nocache=1) ──
     const cacheKey = `${orgSlug}:${reportType}:${paramStr}`;
+    console.log(`[data] ${orgSlug}/${reportType} | dates: ${req.query.start_date || '(none)'} → ${req.query.end_date || '(none)'} | uuid: ${mbUuid.slice(0,8)}${useShared ? ' (shared)' : ' (per-org)'} | key: ${cacheKey.slice(0, 80)}...`);
 
     // Users report: check daily pre-warmed cache first
     const forceRefresh = req.query._nocache === "1" || req.query._refresh === "1";
@@ -3288,9 +3292,10 @@ app.get("/:org/:report/api/data", resolveOrg, async (req, res) => {
     if (!forceRefresh) {
       const cached = getCached(cacheKey, orgSlug, reportType);
       if (cached) {
-        console.log(`[cache] HIT ${orgSlug}/${reportType} (${dataCache.size} entries)`);
+        console.log(`[cache] HIT ${orgSlug}/${reportType} | ${cached.rows?.length || 0} rows | key: ${cacheKey.slice(0, 60)}...`);
         return res.json(cached);
       }
+      console.log(`[cache] MISS ${orgSlug}/${reportType} — fetching from Metabase`);
     }
 
     const url = `${METABASE_URL}/api/public/card/${mbUuid}/query/json${paramStr}`;
@@ -8601,6 +8606,7 @@ app.get("/", (req, res) => {
     '🛡 Admin panel — Schema Drift section on root dashboard shows active warnings (auto-expanded when warnings exist), with per-warning Acknowledge and Reseed Baseline buttons. Baselines auto-seed on first fetch, auto-update after drift unless locked.',
     '📖 Full write-up in How This Works section. Admin API: GET /api/admin/schema-drift, POST /api/admin/schema-baseline (lock/unlock/reseed/reseed-all), POST /api/admin/schema-drift/ack.',
     'Triggered by PLA-2213 investigation — Jul 6 transaction_report_v13 migration + item_log_report view update. Our reports survived (validated against Norman $381K memberships, Euclid $2,837, Clarksville QoQ), but the rec.us admin memberships UI broke silently. This catches that class of failure before customers notice.',
+    '🐛 CACHE FALLBACK BUG FIX — getCached() was falling back to base pre-warm cache key when date-filtered requests missed exact key, silently serving default-range data regardless of requested dates. All date-filtered requests now bypass the fallback and hit Metabase live. Added detailed request logging: dates, UUID (shared/per-org), cache hit/miss.',
   ]},
     { date: '2026-07-12', title: '✨ Rec Insights Sparkle Fix', items: [
     '✨ Fixed Rec Insights button sparkle animation on 4 reports (Users, Memberships, Products, Overview) — sparkle CSS + keyframes were missing, causing ✦/✧ characters to render as visible text instead of animated floating particles.',
