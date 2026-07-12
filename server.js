@@ -2080,7 +2080,7 @@ function parseToISO(dateStr) {
 
 // ── Build Metabase parameters array ─────────────────────────────────
 const FORWARD_REPORTS = new Set(["facility", "calendar", "roster", "historic"]);
-const NO_DATE_REPORTS = new Set(["program-demographics", "memberships", "users", "retention", "section-detail", "ice-calendar", "checkins"]);
+const NO_DATE_REPORTS = new Set(["program-demographics", "memberships", "users", "retention", "section-detail", "ice-calendar", "checkins", "fasttrack"]);
 const DEFAULT_WINDOW_DAYS = 7;
 
 function buildMetabaseParams(query, reportType, orgId) {
@@ -8606,6 +8606,7 @@ app.get("/", (req, res) => {
     '🛡 Admin panel — Schema Drift section on root dashboard shows active warnings (auto-expanded when warnings exist), with per-warning Acknowledge and Reseed Baseline buttons. Baselines auto-seed on first fetch, auto-update after drift unless locked.',
     '📖 Full write-up in How This Works section. Admin API: GET /api/admin/schema-drift, POST /api/admin/schema-baseline (lock/unlock/reseed/reseed-all), POST /api/admin/schema-drift/ack.',
     'Triggered by PLA-2213 investigation — Jul 6 transaction_report_v13 migration + item_log_report view update. Our reports survived (validated against Norman $381K memberships, Euclid $2,837, Clarksville QoQ), but the rec.us admin memberships UI broke silently. This catches that class of failure before customers notice.',
+    '⚡ Fast Track added to NO_DATE_REPORTS — was defaulting to 7-day window, clipping 990 rows to 31. FT is a cross-season demand report; season dropdown handles filtering client-side.',
     '🐛 CACHE FALLBACK BUG FIX — getCached() was falling back to base pre-warm cache key when date-filtered requests missed exact key, silently serving default-range data regardless of requested dates. All date-filtered requests now bypass the fallback and hit Metabase live. Added detailed request logging: dates, UUID (shared/per-org), cache hit/miss.',
   ]},
     { date: '2026-07-12', title: '✨ Rec Insights Sparkle Fix', items: [
