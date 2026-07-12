@@ -8304,6 +8304,9 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+    { date: '2026-07-12', title: '✨ Rec Insights Sparkle Fix', items: [
+    '✨ Fixed Rec Insights button sparkle animation on 4 reports (Users, Memberships, Products, Overview) — sparkle CSS + keyframes were missing, causing ✦/✧ characters to render as visible text instead of animated floating particles.',
+  ]},
     { date: '2026-07-11', title: '\u{1F3BE} Court Utilization Report Overhaul', items: [
     '\u{1F3BE} Complete Court Utilization redesign \u2014 Instant vs Leagues/Managed booking split replaces broken Programs/Leagues category. Splits on booking_source field instead of hardcoded usage_category.',
     '\u{1F4CA} New KPI cards row \u2014 Instant Bookings count/hrs/%, Leagues/Managed count/hrs/%, Booking Mix (adapts to view mode: by bookings in util% view, by hours in hours view).',
