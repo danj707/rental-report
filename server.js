@@ -646,6 +646,25 @@ const HEALTH_FILE = path.join(DATA_DIR, "health-check.json");
 const HEALTH_CONFIG_FILE = path.join(DATA_DIR, "health-config.json");
 const QUOTES_FILE = path.join(DATA_DIR, "quotes.json");
 
+// ── Schema Drift Detection ───────────────────────────────────────────
+const SCHEMA_BASELINES_FILE = path.join(DATA_DIR, "schema-baselines.json");
+const SCHEMA_DRIFT_LOG_FILE = path.join(DATA_DIR, "schema-drift-log.json");
+const driftAlertTimestamps = new Map();
+
+// Money columns per report type — zero-revenue sanity check
+const REPORT_MONEY_FIELDS = {
+  gl:                  ["Net Revenue", "Gross Payments", "Refunds", "CC Online Payments"],
+  memberships:         ["Price", "Paid", "Refunded", "Net Collected"],
+  facility:            ["Total", "Add-On $"],
+  programs:            ["Revenue", "Avg Price"],
+  products:            ["Revenue", "Avg Price"],
+  users:               ["Total Revenue", "Gross Revenue", "Refunds"],
+  "instructor-payout": ["Payout Amount", "Gross Revenue"],
+  "court-utilization": ["Revenue"],
+  retention:           ["Revenue"],
+};
+
+
 // ── Health check tiers ───────────────────────────────────────────────
 // Interval in minutes per tier.  "critical" is public-facing (calendar),
 // "standard" is the bread-and-butter reports, "low" is niche.
@@ -933,6 +952,140 @@ function readJSON(file, def) {
 }
 function writeJSON(file, data) {
   fs.writeFileSync(file, JSON.stringify(data, null, 2));
+}
+
+// ── Schema Drift Detection Functions ─────────────────────────────────
+function loadSchemaBaselines() { return readJSON(SCHEMA_BASELINES_FILE, {}); }
+function saveSchemaBaselines(b) { writeJSON(SCHEMA_BASELINES_FILE, b); }
+function loadDriftLog() { return readJSON(SCHEMA_DRIFT_LOG_FILE, []); }
+function appendDriftLog(entry) {
+  const log = loadDriftLog();
+  log.unshift(entry);
+  if (log.length > 200) log.length = 200;
+  writeJSON(SCHEMA_DRIFT_LOG_FILE, log);
+}
+
+function extractColumns(rows) {
+  if (!Array.isArray(rows) || rows.length === 0) return null;
+  return Object.keys(rows[0]).sort();
+}
+
+function checkSchemaDrift(reportType, rows) {
+  try {
+    const currentCols = extractColumns(rows);
+    if (!currentCols) return null;
+    const baselines = loadSchemaBaselines();
+    const baseline = baselines[reportType];
+
+    if (!baseline) {
+      baselines[reportType] = {
+        columns: currentCols,
+        seededAt: new Date().toISOString(),
+        lockedAt: null,
+        source: "auto",
+      };
+      saveSchemaBaselines(baselines);
+      console.log(`[schema] Auto-seeded baseline for ${reportType} (${currentCols.length} cols)`);
+      return null;
+    }
+
+    const expected = new Set(baseline.columns);
+    const actual = new Set(currentCols);
+    const added   = currentCols.filter(c => !expected.has(c));
+    const removed = baseline.columns.filter(c => !actual.has(c));
+    if (added.length === 0 && removed.length === 0) return null;
+
+    const drift = {
+      type: "schema-drift",
+      reportType,
+      detectedAt: new Date().toISOString(),
+      added,
+      removed,
+      previousCount: baseline.columns.length,
+      currentCount: currentCols.length,
+      baselineAge: baseline.seededAt,
+      acknowledged: false,
+    };
+    appendDriftLog(drift);
+
+    if (!baseline.lockedAt) {
+      baselines[reportType].columns = currentCols;
+      baselines[reportType].seededAt = new Date().toISOString();
+      baselines[reportType].source = "auto-updated-after-drift";
+      saveSchemaBaselines(baselines);
+    }
+
+    console.log(`[schema] DRIFT detected on ${reportType}: +[${added.join(",")}] -[${removed.join(",")}]`);
+    return drift;
+  } catch (e) {
+    console.error("[schema] checkSchemaDrift error:", e.message);
+    return null;
+  }
+}
+
+function checkMoneyFieldSanity(reportType, rows) {
+  try {
+    const fields = REPORT_MONEY_FIELDS[reportType];
+    if (!fields || !Array.isArray(rows) || rows.length < 20) return null;
+
+    const allZero = fields.every(f => {
+      const vals = rows.map(r => parseFloat(r[f]) || 0);
+      return vals.every(v => v === 0);
+    });
+    if (!allZero) return null;
+
+    const anomaly = {
+      type: "zero-revenue",
+      reportType,
+      detectedAt: new Date().toISOString(),
+      rowCount: rows.length,
+      fieldsChecked: fields,
+      message: `${rows.length} rows but all money fields are $0 — upstream view may have broken`,
+      acknowledged: false,
+    };
+    appendDriftLog(anomaly);
+    console.log(`[schema] ZERO-REVENUE anomaly on ${reportType}: ${rows.length} rows, fields [${fields.join(",")}]`);
+    return anomaly;
+  } catch (e) {
+    console.error("[schema] checkMoneyFieldSanity error:", e.message);
+    return null;
+  }
+}
+
+async function sendDriftAlert(alerts, orgSlug, reportType) {
+  const resend = getResendClient();
+  if (!resend) return;
+  const suppressKey = `drift:${reportType}`;
+  const lastSent = driftAlertTimestamps.get(suppressKey) || 0;
+  if (Date.now() - lastSent < 24 * 3600000) return;
+
+  const lines = alerts.map(a => {
+    if (a.type === "zero-revenue") {
+      return `&#128308; <strong>${reportType}</strong> &#8212; ZERO REVENUE<br>`
+        + `&nbsp;&nbsp;${a.rowCount} rows, all money fields (${a.fieldsChecked.join(", ")}) = $0<br>`
+        + `&nbsp;&nbsp;Likely: upstream materialized view broke a join`;
+    }
+    return `&#128993; <strong>${reportType}</strong> &#8212; SCHEMA CHANGED<br>`
+      + (a.added.length ? `&nbsp;&nbsp;Added: <code>${a.added.join(", ")}</code><br>` : "")
+      + (a.removed.length ? `&nbsp;&nbsp;Removed: <code>${a.removed.join(", ")}</code><br>` : "")
+      + `&nbsp;&nbsp;Previous: ${a.previousCount} cols &#8594; Now: ${a.currentCount} cols`;
+  }).join("<hr>");
+
+  try {
+    await resend.emails.send({
+      from: `${FROM_NAME} <${FROM_EMAIL}>`,
+      to: "dan@rec.us",
+      subject: `Schema drift: ${reportType} — ${alerts.map(a => a.type === "zero-revenue" ? "all revenue $0" : "columns changed").join(" + ")}`,
+      html: `<p>Drift detected on <strong>${orgSlug}/${reportType}</strong> at ${new Date().toISOString()}</p>`
+        + `<div style="font-family:monospace;font-size:13px;line-height:1.8">${lines}</div>`
+        + `<p style="margin-top:16px"><a href="${BASE_URL}/#drift">View in Admin &#8594;</a></p>`
+        + `<p style="color:#6b7280;font-size:11px">Baselines auto-update after drift (unless locked). Lock a baseline after validating correctness.</p>`,
+    });
+    driftAlertTimestamps.set(suppressKey, Date.now());
+    console.log(`[schema] Drift alert email sent for ${reportType}`);
+  } catch (e) {
+    console.error("[schema] Failed to send drift alert:", e.message);
+  }
 }
 
 // ── Feature Flags ────────────────────────────────────────────────────
@@ -3174,6 +3327,14 @@ app.get("/:org/:report/api/data", resolveOrg, async (req, res) => {
       }
     }
 
+    // ── Schema drift + money-field sanity (live fetches only) ──
+    const schemaDrift = checkSchemaDrift(reportType, data);
+    const moneyAnomaly = checkMoneyFieldSanity(reportType, data);
+    const schemaWarnings = [schemaDrift, moneyAnomaly].filter(Boolean);
+    if (schemaWarnings.length > 0) {
+      sendDriftAlert(schemaWarnings, orgSlug, reportType).catch(() => {});
+    }
+
     const result = {
       rows: data,
       meta: {
@@ -3182,6 +3343,15 @@ app.get("/:org/:report/api/data", resolveOrg, async (req, res) => {
         logo_url: orgConfig.logoUrl,
         report_type: reportType,
         generated_at: new Date().toISOString(),
+        ...(schemaWarnings.length > 0 && {
+          schema_warnings: schemaWarnings.map(a => ({
+            type: a.type,
+            message: a.type === "zero-revenue"
+              ? a.message
+              : `Column changes: +[${a.added.join(", ")}] -[${a.removed.join(", ")}]`,
+            detectedAt: a.detectedAt,
+          })),
+        }),
       },
     };
 
@@ -5539,6 +5709,55 @@ app.post("/api/admin/links", (req, res) => {
 // ── GET /api/admin/flags — read feature flags ───────────────────────
 app.get("/api/admin/flags", (req, res) => { res.json(getFlags()); });
 
+// ── Schema Drift admin API ───────────────────────────────────────────
+app.get("/api/admin/schema-drift", (req, res) => {
+  const baselines = loadSchemaBaselines();
+  const driftLog = loadDriftLog();
+  const activeWarnings = driftLog.filter(e => !e.acknowledged).slice(0, 50);
+  const baselineCount = Object.keys(baselines).length;
+  const lockedCount = Object.values(baselines).filter(b => b.lockedAt).length;
+  res.json({ baselines, driftLog: driftLog.slice(0, 50), activeWarnings, baselineCount, lockedCount });
+});
+
+app.post("/api/admin/schema-baseline", express.json(), (req, res) => {
+  const { action, reportType } = req.body;
+  const baselines = loadSchemaBaselines();
+  if (action === "lock" && reportType) {
+    if (!baselines[reportType]) return res.status(404).json({ error: "No baseline for " + reportType });
+    baselines[reportType].lockedAt = new Date().toISOString();
+    saveSchemaBaselines(baselines);
+    return res.json({ ok: true, message: `Locked ${reportType} baseline` });
+  }
+  if (action === "unlock" && reportType) {
+    if (!baselines[reportType]) return res.status(404).json({ error: "No baseline for " + reportType });
+    baselines[reportType].lockedAt = null;
+    saveSchemaBaselines(baselines);
+    return res.json({ ok: true, message: `Unlocked ${reportType} baseline` });
+  }
+  if (action === "reseed" && reportType) {
+    delete baselines[reportType];
+    saveSchemaBaselines(baselines);
+    return res.json({ ok: true, message: "Cleared " + reportType + " baseline — will re-seed on next fetch" });
+  }
+  if (action === "reseed-all") {
+    saveSchemaBaselines({});
+    return res.json({ ok: true, message: "Cleared all baselines — will re-seed on next health check cycle" });
+  }
+  res.status(400).json({ error: "Invalid action. Use lock/unlock/reseed/reseed-all" });
+});
+
+app.post("/api/admin/schema-drift/ack", express.json(), (req, res) => {
+  const { index } = req.body;
+  const log = loadDriftLog();
+  if (typeof index !== "number" || index < 0 || index >= log.length) {
+    return res.status(400).json({ error: "Invalid index" });
+  }
+  log[index].acknowledged = true;
+  log[index].acknowledgedAt = new Date().toISOString();
+  writeJSON(SCHEMA_DRIFT_LOG_FILE, log);
+  res.json({ ok: true, message: "Acknowledged" });
+});
+
 // Audit log viewer
 app.get("/api/admin/audit-log", (req, res) => {
   const days = parseInt(req.query.days) || 3;
@@ -6068,6 +6287,8 @@ app.get("/", (req, res) => {
   const allVotes = loadVotes();
   const healthData = loadHealthResults();
   const healthCfg = loadHealthConfig();
+  const driftData = { log: loadDriftLog(), baselines: loadSchemaBaselines() };
+  const driftActive = driftData.log.filter(e => !e.acknowledged);
 
   const orgSections = Object.entries(ORGS).sort((a, b) => {
     const nameA = (a[1].displayName || a[0]).toLowerCase();
@@ -7097,6 +7318,46 @@ app.get("/", (req, res) => {
     </div>
 
 
+    <div class="org-section" id="drift-section">
+      <div class="org-header" onclick="toggleHow(this)" style="cursor:pointer;user-select:none">
+        <div class="org-header-text">
+          <div class="org-name">&#128269; Schema Drift
+            <span style="font-size:11px;font-weight:600;margin-left:6px;padding:2px 8px;border-radius:10px;${driftActive.length > 0 ? 'background:#fef2f2;color:#dc2626' : 'background:#f0fdf4;color:#16a34a'}">${driftActive.length > 0 ? driftActive.length + ' warning' + (driftActive.length > 1 ? 's' : '') : 'All clear'}</span>
+          </div>
+          <div class="org-slug">Upstream column changes and revenue anomaly detection</div>
+        </div>
+        <span class="how-chevron"><i class="ph ph-caret-right" style="font-size:14px"></i></span>
+      </div>
+      <div class="how-body"${driftActive.length > 0 ? ' style="display:block"' : ''}>
+        <div style="padding:0 20px 16px">
+          ${driftActive.length === 0
+            ? '<p style="color:#16a34a;font-weight:600;margin:8px 0">&#9989; No active drift warnings. Baselines: ' + Object.keys(driftData.baselines).length + ' seeded, ' + Object.values(driftData.baselines).filter(b => b.lockedAt).length + ' locked.</p>'
+            : driftActive.slice(0, 10).map((d, i) => {
+                const icon = d.type === 'zero-revenue' ? '&#128308;' : '&#128993;';
+                const ts = new Date(d.detectedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+                const detail = d.type === 'zero-revenue'
+                  ? d.rowCount + ' rows, all money fields (' + d.fieldsChecked.join(', ') + ') = $0'
+                  : (d.added.length ? '+[' + d.added.join(', ') + '] ' : '') + (d.removed.length ? '-[' + d.removed.join(', ') + ']' : '');
+                return '<div style="padding:10px 14px;margin:6px 0;background:' + (d.type === 'zero-revenue' ? '#fef2f2' : '#fffbeb') + ';border-radius:8px;border-left:4px solid ' + (d.type === 'zero-revenue' ? '#dc2626' : '#f59e0b') + '">'
+                  + '<div style="display:flex;justify-content:space-between;align-items:center">'
+                  + '<strong>' + icon + ' ' + d.reportType + '</strong>'
+                  + '<span style="font-size:11px;color:#666">' + ts + '</span>'
+                  + '</div>'
+                  + '<div style="font-family:monospace;font-size:12px;color:#555;margin-top:4px">' + detail + '</div>'
+                  + '<div style="margin-top:6px;display:flex;gap:8px">'
+                  + '<button onclick="ackDrift(' + i + ',this)" style="font-size:10px;padding:2px 10px;background:#16a34a;color:#fff;border:none;border-radius:4px;cursor:pointer">Acknowledge</button>'
+                  + `<button onclick="reseedBaseline('` + d.reportType + `',this)" style="font-size:10px;padding:2px 10px;background:#3b82f6;color:#fff;border:none;border-radius:4px;cursor:pointer">Reseed Baseline</button>`
+                  + '</div></div>';
+              }).join('')
+          }
+          <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+            <button onclick="reseedAllBaselines(this)" style="font-size:11px;padding:4px 12px;background:none;border:1px solid #d1d5db;border-radius:4px;cursor:pointer;color:#6b7280">Reseed All</button>
+            <span style="font-size:11px;color:#999;padding-top:6px">Baselines: ${Object.keys(driftData.baselines).length} seeded &#183; ${Object.values(driftData.baselines).filter(b => b.lockedAt).length} locked</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div class="org-section">
       <div class="org-header" onclick="toggleHow(this)" style="cursor:pointer;user-select:none">
         <div class="org-header-text">
@@ -7382,6 +7643,15 @@ app.get("/", (req, res) => {
             &#x1F512; Security &amp; Privacy Overview &#8599;
           </a>
         </div>
+
+        <h4>Schema Drift Detection</h4>
+        <p>Automatic monitoring for upstream database changes that could break report data. Runs on every live Metabase fetch (cache hits are skipped, so overhead is near-zero). Two detection layers:</p>
+        <ul>
+          <li><strong>Column drift</strong> &#8212; compares Metabase response column names against stored baselines. Detects additions, removals, and renames instantly. Example: if a migration renames <code>transaction_event_id</code> to <code>transaction_event_batch_id</code>, the drift detector catches it on the first fetch after deploy.</li>
+          <li><strong>Zero-revenue anomaly</strong> &#8212; if a report returns 20+ rows but every money column (Paid, Refunded, Net Collected, etc.) is $0, a materialized view join likely broke upstream. Catches the silent failure where schema looks fine but data is hollow.</li>
+        </ul>
+        <p>Baselines auto-seed on first fetch and auto-update after drift (unless <strong>locked</strong>). Lock a baseline after validating a report is correct to ensure future changes always trigger alerts. Drift events trigger email alerts to <code>dan@rec.us</code> (suppressed to 1 per report type per 24h) and surface in the Schema Drift admin panel above with acknowledge/reseed controls.</p>
+        <p><strong>Admin API:</strong> <code>GET /api/admin/schema-drift</code> returns baselines + log. <code>POST /api/admin/schema-baseline</code> supports lock/unlock/reseed/reseed-all. <code>POST /api/admin/schema-drift/ack</code> acknowledges a warning.</p>
 
         <h4>Planned Improvements</h4>
         <ul>
@@ -8224,6 +8494,27 @@ app.get("/", (req, res) => {
       setTimeout(() => t.classList.remove('show'), 3200);
     }
 
+    // ── Schema Drift panel functions ────────────────────────────────────
+    function ackDrift(idx, btn) {
+      btn.disabled = true; btn.textContent = '...';
+      fetch('/api/admin/schema-drift/ack', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ index: idx }) })
+        .then(r => r.json()).then(d => { if (d.ok) { btn.textContent = '\u2713 Done'; btn.closest('div[style*="padding:10px"]').style.opacity = '0.4'; } else { btn.textContent = 'Error'; } })
+        .catch(() => { btn.textContent = 'Error'; });
+    }
+    function reseedBaseline(rt, btn) {
+      btn.disabled = true; btn.textContent = '...';
+      fetch('/api/admin/schema-baseline', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'reseed', reportType: rt }) })
+        .then(r => r.json()).then(d => { btn.textContent = d.ok ? '\u2713 Cleared' : 'Error'; })
+        .catch(() => { btn.textContent = 'Error'; });
+    }
+    function reseedAllBaselines(btn) {
+      if (!confirm('Clear all schema baselines? They will re-seed on next fetch.')) return;
+      btn.disabled = true; btn.textContent = '...';
+      fetch('/api/admin/schema-baseline', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'reseed-all' }) })
+        .then(r => r.json()).then(d => { btn.textContent = d.ok ? '\u2713 All cleared' : 'Error'; })
+        .catch(() => { btn.textContent = 'Error'; });
+    }
+
     // ── Updates log ───────────────────────────────────────────────────────
     // Newest first. Add a new entry at the TOP for every change we ship.
     // History below back-filled from the GitHub commit log.
@@ -8304,6 +8595,13 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+    { date: '2026-07-12', title: '🔍 Schema Drift Detection', items: [
+    '🔍 SCHEMA DRIFT DETECTION — Automatic monitoring for upstream database changes. Two layers: (1) column drift compares Metabase response columns against stored baselines, catching renames/additions/removals instantly, (2) zero-revenue anomaly flags reports with 20+ rows but all money fields at $0, catching silent join failures in materialized views. Runs on every live fetch (zero overhead on cache hits). Email alerts to dan@rec.us + admin panel with acknowledge/reseed controls.',
+    '📧 Drift alerts via Resend — one email per report type per 24h with column diff details. Links to admin panel for investigation.',
+    '🛡 Admin panel — Schema Drift section on root dashboard shows active warnings (auto-expanded when warnings exist), with per-warning Acknowledge and Reseed Baseline buttons. Baselines auto-seed on first fetch, auto-update after drift unless locked.',
+    '📖 Full write-up in How This Works section. Admin API: GET /api/admin/schema-drift, POST /api/admin/schema-baseline (lock/unlock/reseed/reseed-all), POST /api/admin/schema-drift/ack.',
+    'Triggered by PLA-2213 investigation — Jul 6 transaction_report_v13 migration + item_log_report view update. Our reports survived (validated against Norman $381K memberships, Euclid $2,837, Clarksville QoQ), but the rec.us admin memberships UI broke silently. This catches that class of failure before customers notice.',
+  ]},
     { date: '2026-07-12', title: '✨ Rec Insights Sparkle Fix', items: [
     '✨ Fixed Rec Insights button sparkle animation on 4 reports (Users, Memberships, Products, Overview) — sparkle CSS + keyframes were missing, causing ✦/✧ characters to render as visible text instead of animated floating particles.',
   ]},
