@@ -2727,7 +2727,7 @@ function App() {
                           <div key={i}>
                             <div className="data-row">
                               <span className="cell col-start">{r.multiDayDays && !r.start && !r.end ? 'All Day' : formatTime(r.start)}</span>
-                              <span className="cell col-end">{r.multiDayDays && !r.start && r.end ? '→ ' + formatTime(r.end) : formatTime(r.end)}</span>
+                              <span className="cell col-end">{formatTime(r.end)}</span>
                               <span className="cell col-site">
                                 {getSiteTypeEmoji(r.siteType)}{getSiteTypeEmoji(r.siteType) ? " " : ""}{r.site}
                                 {r.multiDayDays && r.multiDayNum == 1 && <span style={{display:'block',fontSize:'10px',fontWeight:700,color:'#d97706',marginTop:2}}>Multi-Day Rental ({r.multiDayDays} days)</span>}
