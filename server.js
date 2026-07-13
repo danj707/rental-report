@@ -8898,6 +8898,11 @@ app.get("/", (req, res) => {
     const UPDATES = [
   {
     date: "2026-07-13",
+    title: "Fix: FT Pipeline Tab Crash",
+    items: ["Removed undefined FtSparkline component reference in PipelineTab that caused a ReferenceError, breaking the Fast Track report for all orgs (reported on Douglas County)."],
+  },
+  {
+    date: "2026-07-13",
     title: "Amenity Enrichment on Rental Calendar",
     items: ["Facility cards now show amenity badges. New amenity filter lets you search sites by features like Restrooms, Grill, Trails, etc."],
   },
