@@ -1549,6 +1549,20 @@ function parseAddOnItems(addonsStr) {
 
 const NO_ADDONS_KEY = '(No add-ons)';
 
+function getSiteTypeEmoji(type) {
+  if (!type) return '';
+  const t = type.toLowerCase();
+  if (t.includes('campsite') || t.includes('camping'))  return '🏕️';
+  if (t.includes('court'))                               return '🏀';
+  if (t.includes('field'))                               return '⚽';
+  if (t.includes('pool') || t.includes('aqua'))          return '🏊';
+  if (t.includes('room'))                                return '🏛️';
+  if (t.includes('picnic'))                              return '🧺';
+  if (t.includes('outdoor-event') || t.includes('pavilion')) return '🎪';
+  if (t.includes('rink') || t.includes('ice'))           return '⛸️';
+  return '';
+}
+
 function getAddOnEmoji(name) {
   if (!name) return '🏷️';
   const n = name.toLowerCase();
@@ -2712,7 +2726,7 @@ function App() {
                             <div className="data-row">
                               <span className="cell col-start">{formatTime(r.start)}</span>
                               <span className="cell col-end">{formatTime(r.end)}</span>
-                              <span className="cell col-site">{r.site}</span>
+                              <span className="cell col-site">{getSiteTypeEmoji(r.siteType)}{getSiteTypeEmoji(r.siteType) ? " " : ""}{r.site}</span>
                               <span className="cell col-reservee">{r.reservee}</span>
                               <span className="cell col-phone">{formatPhone(r.phone)}</span>
                               <span className="cell col-email">
