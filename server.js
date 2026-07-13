@@ -5234,6 +5234,7 @@ app.get("/:org/rentalcalendar/api/sites", async (req, res) => {
       nightlyBookingPolicy: s.config && s.config.nightlyBookingPolicy ? s.config.nightlyBookingPolicy : null,
       bookingUnit: s.bookingUnit || null,
       subType: s.subType || null,
+      amenities: ((s.amenities && s.amenities.amenityTagIds) || []).map(id => AMENITY_TAGS[id]).filter(Boolean),
     }));
     // Proxy photo URLs through our server for caching + Cache-Control headers
     clean.forEach(s => {
@@ -8895,6 +8896,11 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  {
+    date: "2026-07-13",
+    title: "Amenity Enrichment on Rental Calendar",
+    items: ["Facility cards now show amenity badges. New amenity filter lets you search sites by features like Restrooms, Grill, Trails, etc."],
+  },
   {
     date: "2026-07-13",
     title: "Amenity Tag Lookup",
