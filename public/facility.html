@@ -1340,6 +1340,8 @@ function normalizeRow(raw) {
     litFrom:      raw['Lit From']       || '',
     litUntil:     raw['Lit Until']      || '',
     lightingSync: raw['Lighting Sync']  || '',
+    multiDayDays: raw['Multi-Day Days'] || null,
+    multiDayNum:  raw['Multi-Day Day#'] || null,
   };
 }
 
@@ -2724,9 +2726,13 @@ function App() {
                         {locRows.map((r, i) => (
                           <div key={i}>
                             <div className="data-row">
-                              <span className="cell col-start">{formatTime(r.start)}</span>
-                              <span className="cell col-end">{formatTime(r.end)}</span>
-                              <span className="cell col-site">{getSiteTypeEmoji(r.siteType)}{getSiteTypeEmoji(r.siteType) ? " " : ""}{r.site}</span>
+                              <span className="cell col-start">{r.multiDayDays && !r.start && !r.end ? 'All Day' : formatTime(r.start)}</span>
+                              <span className="cell col-end">{r.multiDayDays && !r.start && r.end ? '→ ' + formatTime(r.end) : formatTime(r.end)}</span>
+                              <span className="cell col-site">
+                                {getSiteTypeEmoji(r.siteType)}{getSiteTypeEmoji(r.siteType) ? " " : ""}{r.site}
+                                {r.multiDayDays && r.multiDayNum == 1 && <span style={{display:'block',fontSize:'10px',fontWeight:700,color:'#d97706',marginTop:2}}>Multi-Day Rental ({r.multiDayDays} days)</span>}
+                                {r.multiDayDays && r.multiDayNum > 1 && <span style={{display:'block',fontSize:'10px',color:'#888',marginTop:2}}>Day {r.multiDayNum} of {r.multiDayDays}</span>}
+                              </span>
                               <span className="cell col-reservee">{r.reservee}</span>
                               <span className="cell col-phone">{formatPhone(r.phone)}</span>
                               <span className="cell col-email">
