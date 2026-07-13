@@ -861,6 +861,14 @@ function SiteModal({site, onClose}) {
             {durStr && <span>⏱️ {durStr}</span>}
             {site.capacity && <span>👥 {site.capacity} capacity</span>}
           </div>
+          {site.amenities && site.amenities.length > 0 && (
+            <div style={{marginTop:12}}>
+              <div style={{fontSize:11,fontWeight:600,color:'#6b7280',textTransform:'uppercase',letterSpacing:'0.5px',marginBottom:6}}>Amenities</div>
+              <div style={{display:'flex',flexWrap:'wrap',gap:5}}>
+                {site.amenities.map(function(a){return <span key={a} style={{fontSize:11,padding:'3px 8px',borderRadius:6,background:'#f3f4f6',color:'#374151',border:'1px solid #e5e7eb'}}>{a}</span>;})}
+              </div>
+            </div>
+          )}
           {site.bookingUrl && (
             <a className="modal-book" href={site.bookingUrl} target="_blank" rel="noopener noreferrer"
               onClick={function(){trackCalendarEvent('book_click',site.name,{siteId:site.id,type:site.type});}}>
