@@ -178,6 +178,21 @@ button.primary:hover{filter:brightness(.95)}
 .date-cap a{color:#92400e;font-weight:600;text-decoration:underline;text-underline-offset:2px}
 .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 @media(max-width:800px){.week-grid{grid-template-columns:1fr 1fr}.fac-label{width:200px;min-width:200px}.time-ruler .tr-label{width:200px;min-width:200px}.fac-thumb,.fac-thumb-placeholder{width:72px;height:72px}}
+
+.msd-wrap{position:relative;display:inline-block}
+.msd-btn{padding:4px 10px;border-radius:12px;border:1px solid #d1d5db;background:#fff;font-size:12px;cursor:pointer;color:#374151;font-family:inherit;display:flex;align-items:center;gap:4px;transition:all .15s}
+.msd-btn:hover{background:#f3f4f6;border-color:#9ca3af}
+.msd-btn.has-selection{background:#eff6ff;border-color:#93c5fd;color:#1e40af}
+.msd-drop{position:absolute;top:calc(100% + 4px);left:0;z-index:50;background:#fff;border:1px solid #d1d5db;border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,.12);min-width:220px;max-height:280px;overflow-y:auto;padding:4px 0}
+.msd-search{width:calc(100% - 16px);margin:4px 8px 6px;padding:5px 8px;border:1px solid #e5e7eb;border-radius:6px;font-size:12px;font-family:inherit;outline:none}
+.msd-search:focus{border-color:#93c5fd;box-shadow:0 0 0 2px rgba(59,130,246,.15)}
+.msd-actions{display:flex;gap:8px;padding:4px 10px 6px;border-bottom:1px solid #f3f4f6;font-size:11px}
+.msd-actions button{background:none;border:none;color:#2563eb;cursor:pointer;padding:0;font-family:inherit;font-size:11px}
+.msd-actions button:hover{text-decoration:underline}
+.msd-item{display:flex;align-items:center;gap:8px;padding:4px 10px;cursor:pointer;font-size:12px;color:#374151;transition:background .1s}
+.msd-item:hover{background:#f9fafb}
+.msd-item input[type=checkbox]{accent-color:#1e40af;margin:0;cursor:pointer}
+.msd-count{background:#1e40af;color:#fff;font-size:9px;font-weight:700;padding:1px 5px;border-radius:8px;min-width:14px;text-align:center}
 </style>
 </head>
 <body>
@@ -515,6 +530,66 @@ function TimelineBar({avail, dateStr, opStart, opEnd, siteOpStart, siteOpEnd, ha
       })}
       {showNow && <div className="bar-now" style={{left: nowPct + '%'}}/>}
     </div></div>
+  );
+}
+
+function MultiSelectDropdown({label, items, selected, onSelectionChange}) {
+  var openState = useState(false);
+  var open = openState[0], setOpen = openState[1];
+  var searchState = useState('');
+  var search = searchState[0], setSearch = searchState[1];
+  var ref = useRef(null);
+
+  useEffect(function() {
+    function handleClick(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false); }
+    document.addEventListener('mousedown', handleClick);
+    return function() { document.removeEventListener('mousedown', handleClick); };
+  }, []);
+
+  var filtered = useMemo(function() {
+    if (!search) return items;
+    var q = search.toLowerCase();
+    return items.filter(function(it) { return it.toLowerCase().indexOf(q) >= 0; });
+  }, [items, search]);
+
+  var allSelected = !selected || selected.size === items.length;
+  var count = selected ? (selected.size < items.length ? selected.size : 0) : 0;
+  var btnLabel = allSelected ? 'All ' + label : count + ' of ' + items.length;
+
+  function toggleItem(item) {
+    var next = new Set(selected || new Set(items));
+    if (next.has(item)) { if (next.size > 1) next.delete(item); }
+    else next.add(item);
+    onSelectionChange(next);
+  }
+
+  return (
+    <div className="msd-wrap" ref={ref}>
+      <button className={'msd-btn' + (count > 0 ? ' has-selection' : '')} onClick={function(){setOpen(!open);setSearch('');}}>
+        {btnLabel}
+        {count > 0 && <span className="msd-count">{count}</span>}
+        <span style={{fontSize:8,marginLeft:2}}>{open ? '\u25B2' : '\u25BC'}</span>
+      </button>
+      {open && (
+        <div className="msd-drop">
+          {items.length > 5 && <input className="msd-search" placeholder={'Search ' + label.toLowerCase() + '\u2026'} value={search} onChange={function(e){setSearch(e.target.value);}} autoFocus/>}
+          <div className="msd-actions">
+            <button onClick={function(){onSelectionChange(new Set(items));}}>All</button>
+            <button onClick={function(){onSelectionChange(new Set([items[0]]));}}>None</button>
+          </div>
+          {filtered.map(function(item) {
+            var checked = !selected || selected.has(item);
+            return (
+              <label key={item} className="msd-item">
+                <input type="checkbox" checked={allSelected || (selected && selected.has(item))} onChange={function(){toggleItem(item);}}/>
+                {item}
+              </label>
+            );
+          })}
+          {filtered.length === 0 && <div style={{padding:'8px 10px',fontSize:12,color:'#9ca3af'}}>No matches</div>}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -1212,21 +1287,7 @@ function App() {
           {allLocations.length > 1 && (
             <div className="filter-row">
               <span className="filter-label">Location</span>
-              <div className="filter-pills">
-                <button className={!selectedLocs || selectedLocs.size === allLocations.length ? 'pill active' : 'pill'}
-                  onClick={function(){setSelectedLocs(new Set(allLocations));}}>All</button>
-                {allLocations.map(function(loc) {
-                  var isOn = selectedLocs && selectedLocs.has(loc);
-                  return <button key={loc} className={'pill' + (isOn && selectedLocs.size < allLocations.length ? ' active' : '')}
-                    onClick={function(){
-                      var next = new Set(selectedLocs || new Set(allLocations));
-                      if (next.size === allLocations.length) { next = new Set([loc]); }
-                      else if (next.has(loc) && next.size > 1) { next.delete(loc); }
-                      else { next.add(loc); }
-                      setSelectedLocs(next);
-                    }}>{loc}</button>;
-                })}
-              </div>
+              <MultiSelectDropdown label="Locations" items={allLocations} selected={selectedLocs} onSelectionChange={setSelectedLocs}/>
             </div>
           )}
           <div className="filter-row">
@@ -1241,21 +1302,7 @@ function App() {
           {allAmenities.length > 0 && (
             <div className="filter-row">
               <span className="filter-label">Amenities</span>
-              <div className="filter-pills">
-                <button className={!selectedAmenities || selectedAmenities.size === allAmenities.length ? 'pill active' : 'pill'}
-                  onClick={function(){setSelectedAmenities(new Set(allAmenities));}}>All</button>
-                {allAmenities.map(function(a) {
-                  var isOn = selectedAmenities && selectedAmenities.has(a);
-                  return <button key={a} className={'pill' + (isOn && selectedAmenities.size < allAmenities.length ? ' active' : '')}
-                    onClick={function(){
-                      var next = new Set(selectedAmenities || new Set(allAmenities));
-                      if (next.size === allAmenities.length) { next = new Set([a]); }
-                      else if (next.has(a) && next.size > 1) { next.delete(a); }
-                      else { next.add(a); }
-                      setSelectedAmenities(next);
-                    }}>{a}</button>;
-                })}
-              </div>
+              <MultiSelectDropdown label="Amenities" items={allAmenities} selected={selectedAmenities} onSelectionChange={setSelectedAmenities}/>
             </div>
           )}
         </div>
