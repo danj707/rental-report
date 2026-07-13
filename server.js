@@ -589,6 +589,14 @@ const ORGS = {
     mapCity: "Niagara Falls, NY",
     logoUrl: "https://prod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com/organization-a976a11a-5303-4785-838a-1b281ca77678/fullLogo.png",
     displayName: "City of Niagara Falls",
+    facility:            { mbUuid: null },
+    gl:                  { mbUuid: null },
+    historic:            { mbUuid: null },
+    programs:            { mbUuid: null },
+    roster:              { mbUuid: null },
+    products:            { mbUuid: null },
+    memberships:         { mbUuid: null },
+    "court-utilization": { mbUuid: null },
   },
 };
 
@@ -8600,6 +8608,11 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  {
+    date: "2026-07-13",
+    title: "Niagara Falls Reports Enabled",
+    items: ["All report types enabled for City of Niagara Falls (demo mode, no Metabase links yet)."],
+  },
   { date: '2026-07-13', title: 'Fix GL zero-revenue false positive', items: [
     'Schema drift zero-revenue detector was checking wrong column names for GL report (Net Revenue/Gross Payments/Refunds vs actual Net Amount/Total Payments/Total Refunds).',
     'All GL orgs were silently triggering false positive alerts. Fixed field names to match actual Metabase output columns.',
