@@ -656,7 +656,7 @@ const driftAlertTimestamps = new Map();
 
 // Money columns per report type — zero-revenue sanity check
 const REPORT_MONEY_FIELDS = {
-  gl:                  ["Net Revenue", "Gross Payments", "Refunds", "CC Online Payments"],
+  gl:                  ["Net Amount", "Total Payments", "Total Refunds", "Credit Card Payments"],
   memberships:         ["Price", "Paid", "Refunded", "Net Collected"],
   facility:            ["Total", "Add-On $"],
   programs:            ["Revenue", "Avg Price"],
@@ -8600,6 +8600,10 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  { date: '2026-07-13', title: 'Fix GL zero-revenue false positive', items: [
+    'Schema drift zero-revenue detector was checking wrong column names for GL report (Net Revenue/Gross Payments/Refunds vs actual Net Amount/Total Payments/Total Refunds).',
+    'All GL orgs were silently triggering false positive alerts. Fixed field names to match actual Metabase output columns.',
+  ]},
     { date: '2026-07-12', title: '🔍 Schema Drift Detection', items: [
     '🔍 SCHEMA DRIFT DETECTION — Automatic monitoring for upstream database changes. Two layers: (1) column drift compares Metabase response columns against stored baselines, catching renames/additions/removals instantly, (2) zero-revenue anomaly flags reports with 20+ rows but all money fields at $0, catching silent join failures in materialized views. Runs on every live fetch (zero overhead on cache hits). Email alerts to dan@rec.us + admin panel with acknowledge/reseed controls.',
     '📧 Drift alerts via Resend — one email per report type per 24h with column diff details. Links to admin panel for investigation.',
