@@ -8610,6 +8610,11 @@ app.get("/", (req, res) => {
     const UPDATES = [
   {
     date: "2026-07-13",
+    title: "Site Type Emojis",
+    items: ["Facility report now shows emoji icons by site type (campsite, court, field, pool, room, picnic, outdoor event, rink)."],
+  },
+  {
+    date: "2026-07-13",
     title: "Niagara Falls Reports Enabled",
     items: ["All report types enabled for City of Niagara Falls (demo mode, no Metabase links yet)."],
   },
