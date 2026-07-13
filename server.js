@@ -8610,6 +8610,11 @@ app.get("/", (req, res) => {
     const UPDATES = [
   {
     date: "2026-07-13",
+    title: "Multi-Day Rental Support",
+    items: ["Facility report now supports multi-day bookings (camping). Each day of a multi-day reservation appears on its own calendar date with a bold badge on day 1. Requires updated Metabase query with generate_series expansion."],
+  },
+  {
+    date: "2026-07-13",
     title: "Site Type Emojis",
     items: ["Facility report now shows emoji icons by site type (campsite, court, field, pool, room, picnic, outdoor event, rink)."],
   },
