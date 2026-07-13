@@ -576,6 +576,12 @@ function FacRow({site, avail, dateStr, opStart, opEnd, siteAvailAll, onSiteClick
             background:isInstant?'#dcfce7':'#dbeafe',color:isInstant?'#166534':'#1e40af'}}>
             {isInstant ? '⚡ Instant Book' : '📋 Request'}
           </span>
+          {site.amenities && site.amenities.length > 0 && (
+            <div style={{display:'flex',flexWrap:'wrap',gap:3,marginTop:3}}>
+              {site.amenities.slice(0,6).map(function(a){return <span key={a} style={{fontSize:8,padding:'1px 5px',borderRadius:3,background:'#f3f4f6',color:'#6b7280',border:'1px solid #e5e7eb',whiteSpace:'nowrap'}}>{a}</span>;})}
+              {site.amenities.length > 6 && <span style={{fontSize:8,color:'#9ca3af'}}>+{site.amenities.length - 6} more</span>}
+            </div>
+          )}
         </div>
       </div>
       {(site.bookingUnit === 'nightly' || site.pricingType === 'perNight') ? (
@@ -971,6 +977,8 @@ function App() {
   var selectedTypes = typeFilterState[0], setSelectedTypes = typeFilterState[1];
   var bookFilterState = useState('all');
   var bookFilter = bookFilterState[0], setBookFilter = bookFilterState[1];
+  var amenityFilterState = useState(null);
+  var selectedAmenities = amenityFilterState[0], setSelectedAmenities = amenityFilterState[1];
   var locFilterState = useState(null);
   var selectedLocs = locFilterState[0], setSelectedLocs = locFilterState[1];
   var modalState = useState(null);
@@ -992,6 +1000,15 @@ function App() {
     return Array.from(s).sort();
   }, [sites]);
 
+  var allAmenities = useMemo(function() {
+    if (!sites) return [];
+    var set = {};
+    sites.forEach(function(s) {
+      (s.amenities || []).forEach(function(a) { set[a] = true; });
+    });
+    return Object.keys(set).sort();
+  }, [sites]);
+
   useEffect(function() {
     if (sites && sites.length > 0 && selectedTypes === null) {
       if (URL_TYPE) { setSelectedTypes(new Set([URL_TYPE])); }
@@ -1010,10 +1027,16 @@ function App() {
     return sites.filter(function(s) {
       if (selectedTypes && allTypes.length > 0 && selectedTypes.size < allTypes.length && !selectedTypes.has(s.type)) return false;
       if (selectedLocs && allLocations.length > 0 && selectedLocs.size < allLocations.length && !selectedLocs.has(s.locationName)) return false;
+      if (selectedAmenities && allAmenities.length > 0 && selectedAmenities.size < allAmenities.length) {
+        var siteAmenities = s.amenities || [];
+        var hasMatch = false;
+        selectedAmenities.forEach(function(a) { if (siteAmenities.indexOf(a) >= 0) hasMatch = true; });
+        if (!hasMatch) return false;
+      }
       if (bookFilter !== 'all') { if (bookFilter === 'instant' && !s.isInstantBookable) return false; if (bookFilter === 'request' && s.isInstantBookable) return false; }
       return true;
     });
-  }, [sites, selectedTypes, selectedLocs, allTypes, allLocations, bookFilter]);
+  }, [sites, selectedTypes, selectedLocs, selectedAmenities, allTypes, allLocations, allAmenities, bookFilter]);
 
   // Precache site thumbnails so they load instantly when groups expand
   useEffect(function() {
@@ -1215,6 +1238,26 @@ function App() {
               })}
             </div>
           </div>
+          {allAmenities.length > 0 && (
+            <div className="filter-row">
+              <span className="filter-label">Amenities</span>
+              <div className="filter-pills">
+                <button className={!selectedAmenities || selectedAmenities.size === allAmenities.length ? 'pill active' : 'pill'}
+                  onClick={function(){setSelectedAmenities(new Set(allAmenities));}}>All</button>
+                {allAmenities.map(function(a) {
+                  var isOn = selectedAmenities && selectedAmenities.has(a);
+                  return <button key={a} className={'pill' + (isOn && selectedAmenities.size < allAmenities.length ? ' active' : '')}
+                    onClick={function(){
+                      var next = new Set(selectedAmenities || new Set(allAmenities));
+                      if (next.size === allAmenities.length) { next = new Set([a]); }
+                      else if (next.has(a) && next.size > 1) { next.delete(a); }
+                      else { next.add(a); }
+                      setSelectedAmenities(next);
+                    }}>{a}</button>;
+                })}
+              </div>
+            </div>
+          )}
         </div>
       )}
       {filteredSites.length === 0 && sites && sites.length > 0 && (
