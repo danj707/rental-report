@@ -9001,6 +9001,9 @@ app.get("/", (req, res) => {
       "Summary tab 'All Programs' table gained Check-In % and Check-Out % columns (per program, rolled up from tracked sections). Columns only appear for orgs that track attendance.",
     ],
   },
+  {
+    date: "2026-07-13",
+    title: "Langfuse: AI traces now carry prompt + output",
     items: [
       "Fixed empty Langfuse traces across all AI features (Insights, Report Wizard, Annual Report, QBR, Chat). Our manually-created spans weren't matching isDefaultExportSpan, so the LangfuseSpanProcessor was dropping them — feedback scores were landing on empty placeholder traces.",
       "shouldExportSpan now also exports spans from our own 'rec-ai' tracer.",
