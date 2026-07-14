@@ -629,7 +629,7 @@ const ORGS = {
     logoUrl: "https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2Forganization-85c15d5f-a7eb-41f3-98a8-506eb82d99ea%2FfullLogo.png%3F1781819672018&w=256&q=75",
     displayName: "City of Pflugerville",
   },
-  douglas-county-nv: {
+  "douglas-county-nv": {
     token:   "7GEP6DqgJ2FuWfL6",
     orgId:   "0312ebc8-40de-4fc8-a737-8afa26334e13",
     logoUrl: "https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2Forganization-0312ebc8-40de-4fc8-a737-8afa26334e13%2FfullLogo.png%3F1769825787565&w=1920&q=75",
