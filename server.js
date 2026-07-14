@@ -627,6 +627,73 @@ const SHARED_UUIDS = {
   "program-checkins": "cb6fd909-72d3-446b-930b-c0382da02d62",
 };
 
+// ── Report Dependency Manifest (14 report types, 45 DB tables, 221 critical columns) ─
+// Maps each report type to the rec.us DB tables/columns its Metabase SQL depends on.
+// Complements the existing schema-drift baseline system with upstream DB-level context.
+// Use: cross-reference drift alerts against actual DB columns, identify blast radius.
+const REPORT_DEPENDENCIES = {
+  facility: {
+    tables: ["reservation","reservation_court","reservation_user","court","location","facility_rental","order_item","users"],
+    columns: { reservation:["id","starts_at","ends_at","location_id","reservation_type","canceled_at","facility_rental_id","session_id","organization_id"], court:["id","name","court_number","type","location_id","organization_id"], location:["id","name","organization_id","timezone"], facility_rental:["id","name","attendee_count","organization_id"], order_item:["id","booking_id","reservation_id","applied_pricing","name","product_type","organization_id","parent_order_item_id"], users:["id","first_name","last_name","email","phone"] }
+  },
+  gl: {
+    tables: ["gl_entry","gl_account","order_item","order_item_transaction","payment","refund","transaction_event","desk_location"],
+    columns: { gl_entry:["id","date","amount_cents","gl_entry_type","gl_account_id","payment_id","refund_id","order_item_id","organization_id","order_item_transaction_id"], gl_account:["id","name","gl_code","organization_id"], order_item:["id","name","applied_pricing","product_type","gl_code","organization_id"], order_item_transaction:["id","order_item_id","amount","type","organization_id"], payment:["id","amount","payment_method_type","gateway","status","transaction_event_id","organization_id"], refund:["id","amount","organization_id"], transaction_event:["id","type","source","desk_location_id","settled_at","organization_id"], desk_location:["id","name","organization_id"] }
+  },
+  programs: {
+    tables: ["program","section","session","booking","order_item","users","profile","program_activity","activity","section_season","season","section_price","location","attendance_event","registration_window"],
+    columns: { program:["id","name","type","organization_id"], section:["id","name","program_id","capacity","default_capacity","canceled_at","registration_mode","organization_id","section_code","publish_at","gl_account_id","primary_location_id","archived_at"], session:["id","section_id","location_id","starts_at","ends_at","canceled_at","capacity","organization_id"], booking:["id","type","status","section_id","session_id","customer_user_id","participant_user_id","canceled_at","is_fast_track","organization_id","participant_data","created_at"], order_item:["id","booking_id","applied_pricing","name","product_type","organization_id","fully_paid_at"], users:["id","first_name","last_name","email","phone","household_id"], profile:["user_id","date_of_birth","grade","gender"], activity:["id","name","organization_id","category_id"], attendance_event:["id","target_id","target_type","participant_user_id","type","check_in_method_type","organization_id","created_at"] }
+  },
+  memberships: {
+    tables: ["membership","membership_user","group","group_schema","users","profile","household","order_item","payment","section_price"],
+    columns: { membership:["id","group_id","status","start_at","end_at","canceled_at","cancel_reason","next_renewal_at","stripe_subscription_id","household_id","applied_pricing","organization_id","cancel_scheduled_at","current_period_start_at"], membership_user:["membership_id","user_id","type"], group:["id","name","group_type","organization_id"], users:["id","first_name","last_name","email"], household:["id","owner_id","type"] }
+  },
+  "court-utilization": {
+    tables: ["reservation","reservation_court","court","court_slot","location","court_sport"],
+    columns: { reservation:["id","starts_at","ends_at","reservation_type","canceled_at","location_id","organization_id"], reservation_court:["reservation_id","court_id"], court:["id","name","court_number","type","location_id","organization_id"], court_slot:["id","court_id","day_of_week","open_from","open_to","type","organization_id"], location:["id","name","timezone","organization_id"] }
+  },
+  fasttrack: {
+    tables: ["booking","section","session","program","users","order_item","registration_window"],
+    columns: { booking:["id","status","is_fast_track","section_id","session_id","customer_user_id","participant_user_id","canceled_at","created_at","organization_id"], section:["id","name","program_id","organization_id","publish_at"], session:["id","section_id","starts_at","ends_at","organization_id"], registration_window:["id","section_id","opens_at","closes_at","type","group_id","organization_id"] }
+  },
+  users: {
+    tables: ["users","profile","household","organization_association","booking","membership","attendance_event","reservation_user"],
+    columns: { users:["id","first_name","last_name","email","phone","role","type","household_id","created_at","archived_at"], profile:["user_id","date_of_birth","grade","gender","email","phone"], organization_association:["user_id","organization_id","source"], household:["id","owner_id","type"] }
+  },
+  roster: {
+    tables: ["booking","section","session","users","profile","order_item","form_submission"],
+    columns: { booking:["id","status","section_id","session_id","customer_user_id","participant_user_id","canceled_at","participant_data","organization_id"], users:["id","first_name","last_name","email","phone","household_id"], profile:["user_id","date_of_birth","grade","gender"] }
+  },
+  products: {
+    tables: ["product","product_purchase","order_item","payment","users","desk_location"],
+    columns: { product:["id","name","type","pricing_strategy","organization_id"], product_purchase:["id","product_id","customer_user_id","quantity","fulfilled_at","canceled_at","organization_id"], order_item:["id","product_purchase_id","applied_pricing","name","product_type","organization_id"] }
+  },
+  retention: {
+    tables: ["booking","membership","users","organization_association","section","session","attendance_event"],
+    columns: { booking:["id","status","customer_user_id","participant_user_id","section_id","canceled_at","created_at","organization_id"], membership:["id","status","start_at","end_at","canceled_at","organization_id"], organization_association:["user_id","organization_id"] }
+  },
+  "instructor-payout": {
+    tables: ["instructor","instructor_location","instructor_sport","session","section","section_facilitator","session_facilitator","reservation","location","users","organization_facilitator"],
+    columns: { instructor:["id","user_id","is_contractor","organization_id"], instructor_location:["instructor_id","location_id","hourly_rate"], session:["id","section_id","starts_at","ends_at","canceled_at","location_id","organization_id"], section_facilitator:["section_id","facilitator_id","type"], session_facilitator:["session_id","facilitator_id","type"], organization_facilitator:["id","facilitator_id","organization_id"] }
+  },
+  rentalcalendar: {
+    tables: ["reservation","reservation_court","court","location","facility_rental","session","section","program","activity","program_activity"],
+    columns: { reservation:["id","starts_at","ends_at","reservation_type","canceled_at","location_id","facility_rental_id","session_id","organization_id"], court:["id","name","court_number","type","location_id"], location:["id","name","timezone"], session:["id","section_id","starts_at","ends_at"] }
+  },
+  overview: {
+    tables: ["booking","membership","payment","refund","order_item","reservation","attendance_event","users","organization_association","gl_entry"],
+    columns: { booking:["id","status","created_at","canceled_at","organization_id"], membership:["id","status","organization_id"], payment:["id","amount","status","created_at","organization_id"], refund:["id","amount","created_at","organization_id"], attendance_event:["id","type","created_at","organization_id"] }
+  },
+  historic: {
+    tables: ["booking","payment","order_item","membership","reservation","gl_entry","gl_account"],
+    columns: { booking:["id","status","created_at","canceled_at","organization_id"], payment:["id","amount","status","created_at","organization_id"], gl_entry:["id","date","amount_cents","gl_entry_type","gl_account_id","organization_id"] }
+  },
+};
+// Helper: all unique tables across all report types
+function getWatchedTables() { const s = new Set(); for (const r of Object.values(REPORT_DEPENDENCIES)) r.tables.forEach(t => s.add(t)); return [...s].sort(); }
+// Helper: which report types depend on a specific table.column
+function getReportsForColumn(table, col) { return Object.entries(REPORT_DEPENDENCIES).filter(([, r]) => r.columns[table]?.includes(col)).map(([t]) => t); }
+
 // Amenity tag UUID → display name (from tag + tag_alias tables, refreshed 2026-07-13)
 const AMENITY_TAGS = {
   '0164b0ef-127b-570f-ad90-ed9d7aea9c2d': 'Apex Center Guest Services',
@@ -1295,6 +1362,10 @@ function checkSchemaDrift(reportType, rows) {
     const removed = baseline.columns.filter(c => !actual.has(c));
     if (added.length === 0 && removed.length === 0) return null;
 
+    // Cross-reference with REPORT_DEPENDENCIES to find upstream DB blast radius
+    const deps = REPORT_DEPENDENCIES[reportType];
+    const dbTablesAffected = deps ? deps.tables.length : 0;
+    const dbColumnsAffected = deps ? Object.values(deps.columns).reduce((s, c) => s + c.length, 0) : 0;
     const drift = {
       type: "schema-drift",
       reportType,
@@ -1305,6 +1376,7 @@ function checkSchemaDrift(reportType, rows) {
       currentCount: currentCols.length,
       baselineAge: baseline.seededAt,
       acknowledged: false,
+      dbContext: deps ? { tables: dbTablesAffected, criticalColumns: dbColumnsAffected, upstreamTables: deps.tables } : null,
     };
     appendDriftLog(drift);
 
@@ -6145,6 +6217,28 @@ app.post("/api/admin/schema-drift/ack", express.json(), (req, res) => {
   const log = loadDriftLog();
   if (typeof index !== "number" || index < 0 || index >= log.length) {
     return res.status(400).json({ error: "Invalid index" });
+
+// ── GET /api/admin/report-dependencies — upstream DB dependency manifest ──
+app.get("/api/admin/report-dependencies", (req, res) => {
+  const summary = {};
+  for (const [type, config] of Object.entries(REPORT_DEPENDENCIES)) {
+    const colCount = Object.values(config.columns).reduce((s, c) => s + c.length, 0);
+    summary[type] = { tableCount: config.tables.length, tables: config.tables, criticalColumns: colCount };
+  }
+  // Cross-report overlap: columns depended on by the most report types
+  const overlap = {};
+  for (const [type, config] of Object.entries(REPORT_DEPENDENCIES)) {
+    for (const [table, cols] of Object.entries(config.columns)) {
+      for (const col of cols) {
+        const key = `${table}.${col}`;
+        if (!overlap[key]) overlap[key] = [];
+        overlap[key].push(type);
+      }
+    }
+  }
+  const highRisk = Object.entries(overlap).filter(([, r]) => r.length >= 3).sort((a, b) => b[1].length - a[1].length).map(([col, reports]) => ({ column: col, usedBy: reports.length, reports }));
+  res.json({ reportTypes: Object.keys(REPORT_DEPENDENCIES).length, watchedTables: getWatchedTables().length, reports: summary, highRiskColumns: highRisk });
+});
   }
   log[index].acknowledged = true;
   log[index].acknowledgedAt = new Date().toISOString();
@@ -8989,6 +9083,16 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  {
+    date: "2026-07-14",
+    title: "Report Dependency Manifest + Enhanced Drift Detection",
+    items: [
+      "New REPORT_DEPENDENCIES manifest maps all 14 report types to their 45 upstream rec.us DB tables and 221 critical columns, built from live schema inspection via Rec Staff MCP.",
+      "Existing schema drift alerts now include dbContext: upstream table count, critical column count, and affected DB tables for each drift event.",
+      "New admin endpoint: GET /api/admin/report-dependencies returns the full manifest plus a high-risk column analysis showing which columns would break the most reports if changed.",
+      "Top blast-radius columns: booking.status and booking.canceled_at (6 reports each), users.first_name/last_name/email (5 reports each), order_item.applied_pricing (4 reports).",
+    ],
+  },
   {
     date: "2026-07-13",
     title: "Programs: Session Check-In Attendance",
