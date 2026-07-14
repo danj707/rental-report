@@ -3988,15 +3988,18 @@ app.get("/:org/facility", (req, res) => {
   const org  = ORGS[slug];
   if (!org) return res.status(404).send("Unknown org");
   logEvent(slug, "facility", "view", req);
-  const orgConfig = { defaultDateRange: org.facility?.defaultDateRange || "month", defaultLocationFilter: org.facility?.defaultLocationFilter || null };
+  const orgConfig = { defaultDateRange: org.facility?.defaultDateRange || "month", defaultLocationFilter: org.facility?.defaultLocationFilter || null, emailEnabled: EMAIL_ENABLED_ORGS.has(slug) };
   const html = require("fs").readFileSync(path.join(__dirname, "public", "facility.html"), "utf8");
   res.send(html.replace("<head>", `<head><script>window.ORG_CONFIG=${JSON.stringify(orgConfig)};</script>`));
 });
 
 app.get("/:org/gl", (req, res) => {
-  if (!ORGS[req.params.org]) return res.status(404).send("Unknown org");
-  logEvent(req.params.org, "gl", "view", req);
-  res.sendFile(path.join(__dirname, "public", "gl.html"));
+  const slug = req.params.org;
+  if (!ORGS[slug]) return res.status(404).send("Unknown org");
+  logEvent(slug, "gl", "view", req);
+  const orgConfig = { emailEnabled: EMAIL_ENABLED_ORGS.has(slug) };
+  const html = require("fs").readFileSync(path.join(__dirname, "public", "gl.html"), "utf8");
+  res.send(html.replace("<head>", `<head><script>window.ORG_CONFIG=${JSON.stringify(orgConfig)};</script>`));
 });
 
 app.get("/:org/qoq", (req, res) => {
