@@ -599,6 +599,42 @@ const ORGS = {
     memberships:         { mbUuid: null },
     "court-utilization": { mbUuid: null },
   },
+  euclid: {
+    token:   "cwNYpLP6ztbCkKf8",
+    orgId:   "2a118b52-99af-42f3-9727-d9b46b8d31e4",
+    logoUrl: "https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2Forganization-2a118b52-99af-42f3-9727-d9b46b8d31e4%2FfullLogo.png%3F1772808933476&w=2048&q=75",
+    displayName: "Euclid",
+  },
+  boerne: {
+    token:   "toPcEgMQiVRepOiv",
+    orgId:   "71bf9bc4-cd62-482a-aee5-5d790cdba811",
+    logoUrl: "https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2Forganization-71bf9bc4-cd62-482a-aee5-5d790cdba811%2FfullLogo.png%3F1765481856685&w=2048&q=75",
+    displayName: "Boerne",
+  },
+  windham: {
+    token:   "0hvKlIcpmD9akHfD",
+    orgId:   "1c80a358-74c2-477d-aa0b-87bb2d0514b3",
+    logoUrl: "https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2Forganization-1c80a358-74c2-477d-aa0b-87bb2d0514b3%2FfullLogo.png%3F1755282265506&w=1920&q=75",
+    displayName: "Windham Parks and Recreation",
+  },
+  tullahoma: {
+    token:   "2idtt2yL5aBtUEhp",
+    orgId:   "bc7afe82-0054-4bed-b77d-787a79a9018e",
+    logoUrl: "https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2Forganization-bc7afe82-0054-4bed-b77d-787a79a9018e%2FfullLogo.png%3F1776190555768&w=256&q=75",
+    displayName: "Tullahoma",
+  },
+  pflugerville: {
+    token:   "YMaLE6iyJ5NoQwjM",
+    orgId:   "85c15d5f-a7eb-41f3-98a8-506eb82d99ea",
+    logoUrl: "https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2Forganization-85c15d5f-a7eb-41f3-98a8-506eb82d99ea%2FfullLogo.png%3F1781819672018&w=256&q=75",
+    displayName: "City of Pflugerville",
+  },
+  douglas-county-nv: {
+    token:   "7GEP6DqgJ2FuWfL6",
+    orgId:   "0312ebc8-40de-4fc8-a737-8afa26334e13",
+    logoUrl: "https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2Forganization-0312ebc8-40de-4fc8-a737-8afa26334e13%2FfullLogo.png%3F1769825787565&w=1920&q=75",
+    displayName: "Douglas County",
+  },
 };
 
 const REPORT_TYPES = ["facility", "gl", "historic", "programs", "roster", "overview", "products", "memberships", "court-utilization", "calendar", "fasttrack", "users", "program-demographics", "directors-report", "instructor-payout", "retention", "annual-report", "section-detail", "ice-calendar", "qoq", "checkins", "program-checkins"];
