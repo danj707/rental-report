@@ -928,6 +928,11 @@ function App() {
   const [demoLoading, setDemoLoading] = useState(false);
   const [demoError, setDemoError] = useState(null);
 
+  // Session check-in attendance (lazy feed — powers Check-Ins tab + Summary rollup)
+  const [ciRows, setCiRows] = useState(null);
+  const [ciLoading, setCiLoading] = useState(false);
+  const [ciError, setCiError] = useState(null);
+
   // Plain function — NOT a hook — to get activity for a program name
   function getProgActivity(progName) {
     if (!demoRows) return '';
@@ -1032,6 +1037,19 @@ function App() {
       .catch(e => { setDemoError(e.message); })
       .finally(() => { setDemoLoading(false); });
   }, [demoRows, demoLoading, orgSlug]);
+
+  // Session check-in attendance — date-aware, re-fetched whenever the report reloads
+  const fetchCheckins = useCallback((sd, ed) => {
+    setCiLoading(true); setCiError(null);
+    const qs = new URLSearchParams();
+    if (sd) qs.set('start_date', sd);
+    if (ed) qs.set('end_date', ed);
+    fetch(withToken(`/${orgSlug}/program-checkins/api/data?${qs}`))
+      .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .then(j => { setCiRows(j.rows || j.data || j || []); })
+      .catch(e => { setCiError(e.message); setCiRows([]); })
+      .finally(() => { setCiLoading(false); });
+  }, [orgSlug]);
 
   const switchTab = useCallback((t) => {
     setTab(t);
@@ -1332,6 +1350,7 @@ function App() {
     setLoading(true); setError(null);
     setDetailSection(null); setDetailSectionId(null); setDetailRows(null); setDetailError(null); setTab('summary'); document.body.removeAttribute('data-hide-widgets');
     setInsights(null); setInsightsMeta(null); setInsightsError(null);
+    setCiRows(null); fetchCheckins(sd, ed);
     const qs = new URLSearchParams();
     if (sd) qs.set('start_date', sd);
     if (ed) qs.set('end_date',   ed);
@@ -1354,7 +1373,7 @@ function App() {
       })
       .catch(err => setError(err.message))
       .finally(() => setLoading(false));
-  }, [basePath]);
+  }, [basePath, fetchCheckins]);
 
   useEffect(() => { fetchData(startDate, endDate); }, []);
 
@@ -1490,6 +1509,64 @@ function App() {
   }, [filteredRows]);
 
   const programCount = grouped ? Object.keys(grouped).length : 0;
+
+  // ── Session check-in attendance, keyed by section, matched to enrollment ──
+  // Enrollment denominator comes from the already-loaded programs data (per section).
+  const enrollmentBySection = useMemo(() => {
+    const m = {};
+    (rows || []).forEach(g => {
+      (g._sections || [g]).forEach(s => {
+        const sid = s.sectionId;
+        if (sid != null && sid !== '') m[String(sid)] = fmtNum(s.enrollments);
+      });
+    });
+    return m;
+  }, [rows]);
+
+  const checkinRows = useMemo(() => {
+    if (!ciRows) return null;
+    return ciRows.map(r => {
+      const sid = String(r['Section Id'] ?? r['section_id'] ?? '');
+      const checkIns   = fmtNum(r['Check Ins']);
+      const checkOuts  = fmtNum(r['Check Outs']);
+      const attendIn   = fmtNum(r['Attendees In']);
+      const attendOut  = fmtNum(r['Attendees Out']);
+      const enrolled   = enrollmentBySection[sid];
+      const hasEnroll  = enrolled != null && enrolled > 0;
+      return {
+        sectionId: sid,
+        program: r['Program'] || '',
+        section: r['Section'] || '',
+        sectionCode: r['Section Code'] || '',
+        checkIns, checkOuts, attendIn, attendOut,
+        enrolled: hasEnroll ? enrolled : null,
+        checkInPct:  hasEnroll ? Math.round(attendIn / enrolled * 1000) / 10 : null,
+        checkOutPct: attendIn > 0 ? Math.round(attendOut / attendIn * 1000) / 10 : null,
+      };
+    }).sort((a, b) => b.checkIns - a.checkIns);
+  }, [ciRows, enrollmentBySection]);
+
+  const checkinSummary = useMemo(() => {
+    if (!checkinRows || checkinRows.length === 0) return null;
+    let totIn = 0, totOut = 0, totAttendIn = 0, totAttendOut = 0, enrollTracked = 0, sectionsTracked = 0;
+    checkinRows.forEach(r => {
+      if (r.checkIns > 0 || r.checkOuts > 0) sectionsTracked++;
+      totIn += r.checkIns; totOut += r.checkOuts;
+      totAttendIn += r.attendIn; totAttendOut += r.attendOut;
+      if (r.enrolled != null && r.checkIns > 0) enrollTracked += r.enrolled;
+    });
+    return {
+      totalCheckIns: totIn,
+      totalCheckOuts: totOut,
+      totalAttendIn: totAttendIn,
+      totalAttendOut: totAttendOut,
+      sectionsTracked,
+      enrollTracked,
+      // Attendance rate across sections that actually track attendance
+      checkInPct:  enrollTracked > 0 ? Math.round(totAttendIn / enrollTracked * 1000) / 10 : null,
+      checkOutPct: totAttendIn > 0 ? Math.round(totAttendOut / totAttendIn * 1000) / 10 : null,
+    };
+  }, [checkinRows]);
 
   // ── AI Insights (MUST be after computed values — Babel compiles const→var,
   //    so earlier useCallback deps would always see undefined) ─────────────
@@ -1791,6 +1868,10 @@ function App() {
               📈 Fill Rate
               {fillRateAnalytics && <span className="tab-badge" style={{background:'#dbeafe',color:'#1d4ed8'}}>{fillRateAnalytics.totalSections}</span>}
             </div>
+            <div className={'tab'+(tab==='checkins'?' active':'')} onClick={()=>switchTab('checkins')}>
+              ✅ Check-Ins
+              {checkinSummary && checkinSummary.totalCheckIns > 0 && <span className="tab-badge" style={{background:'#dcfce7',color:'#166534'}}>{checkinSummary.totalCheckIns.toLocaleString()}</span>}
+            </div>
             {detailSection && (
               <div className={'tab'+(tab==='detail'?' active':'')} onClick={()=>setTab('detail')} style={{position:'relative'}}>
                 🔍 Detail
@@ -1879,6 +1960,24 @@ function App() {
                 <div className="sum-card"><div className="sc-label">Cancelled</div><div className="sc-val sc-red">{cancelledSections}</div><div className="sc-sub">{cancelledSections === 1 ? '1 section' : cancelledSections + ' sections'}{cancelledProgs.length > 0 ? ' (' + cancelledProgs.length + ' full programs)' : ''}</div></div>
                 <div className="sum-card"><div className="sc-label">Upcoming</div><div className="sc-val sc-purple">{upcomingProgs.length}</div><div className="sc-sub">Not yet started</div></div>
               </div>
+
+              {/* ── Attendance / Check-In rollup ── */}
+              {checkinSummary && checkinSummary.totalCheckIns > 0 && (
+                <div style={{margin:'0 0 16px',padding:'14px 18px',border:'1px solid #dcfce7',background:'linear-gradient(135deg,#f0fdf4,#ffffff)',borderRadius:12}}>
+                  <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:12}}>
+                    <span style={{fontSize:12,fontWeight:700,color:'#166534',textTransform:'uppercase',letterSpacing:'0.05em'}}>✅ Session Attendance</span>
+                    <span style={{fontSize:11,color:'#94a3b8'}}>across {checkinSummary.sectionsTracked} section{checkinSummary.sectionsTracked === 1 ? '' : 's'} tracking check-ins</span>
+                    <span style={{flex:1}} />
+                    <span onClick={()=>switchTab('checkins')} style={{fontSize:11,fontWeight:600,color:'#16a34a',cursor:'pointer'}}>View breakdown →</span>
+                  </div>
+                  <div style={{display:'flex',gap:28,flexWrap:'wrap'}}>
+                    <div><div style={{fontSize:22,fontWeight:800,color:'#16a34a',lineHeight:1.1}}>{checkinSummary.checkInPct != null ? checkinSummary.checkInPct + '%' : '\u2014'}</div><div style={{fontSize:11,color:'#64748b'}}>Check-in rate</div></div>
+                    <div><div style={{fontSize:22,fontWeight:800,color:'#d97706',lineHeight:1.1}}>{checkinSummary.checkOutPct != null ? checkinSummary.checkOutPct + '%' : '\u2014'}</div><div style={{fontSize:11,color:'#64748b'}}>Check-out rate</div></div>
+                    <div><div style={{fontSize:22,fontWeight:800,color:'#334155',lineHeight:1.1}}>{checkinSummary.totalCheckIns.toLocaleString()}</div><div style={{fontSize:11,color:'#64748b'}}>Total check-ins</div></div>
+                    <div><div style={{fontSize:22,fontWeight:800,color:'#334155',lineHeight:1.1}}>{checkinSummary.totalAttendIn.toLocaleString()}</div><div style={{fontSize:11,color:'#64748b'}}>Unique attendees</div></div>
+                  </div>
+                </div>
+              )}
 
               {/* ── Completion Bar ── */}
               {totalSections > 1 && (
@@ -2775,6 +2874,67 @@ function App() {
           </React.Fragment>
         )}
 
+        {tab === 'checkins' && (
+          <React.Fragment>
+            {ciLoading && <div style={{textAlign:'center',padding:48,color:'#94a3b8',fontSize:13}}>Loading check-in data…</div>}
+            {!ciLoading && ciError && <div style={{textAlign:'center',padding:48,color:'#ef4444',fontSize:13}}>Couldn't load check-ins: {ciError}</div>}
+            {!ciLoading && !ciError && checkinRows && checkinRows.length === 0 && (
+              <div style={{textAlign:'center',padding:'56px 24px',maxWidth:520,margin:'0 auto'}}>
+                <div style={{fontSize:40,marginBottom:12}}>✅</div>
+                <div style={{fontSize:16,fontWeight:700,color:'#334155',marginBottom:6}}>No session check-ins in this range</div>
+                <div style={{fontSize:13,color:'#94a3b8',lineHeight:1.6}}>Attendance shows up here once staff check participants into program sessions from the roster. Adjust the date range or run a report to load a different window.</div>
+              </div>
+            )}
+            {!ciLoading && !ciError && checkinRows && checkinRows.length > 0 && (
+              <div style={{maxWidth:1100,margin:'0 auto'}}>
+                <div className="sum-cards">
+                  <div className="sum-card"><div className="sc-label">Total Check-Ins</div><div className="sc-val sc-green">{checkinSummary.totalCheckIns.toLocaleString()}</div><div className="sc-sub">{checkinSummary.totalCheckOuts.toLocaleString()} check-outs</div></div>
+                  <div className="sum-card"><div className="sc-label">Sections Tracked</div><div className="sc-val sc-blue">{checkinSummary.sectionsTracked}</div><div className="sc-sub">with attendance scanned</div></div>
+                  <div className="sum-card"><div className="sc-label">Check-In Rate</div><div className="sc-val sc-green">{checkinSummary.checkInPct != null ? checkinSummary.checkInPct + '%' : '\u2014'}</div><div className="sc-sub">attended \u00f7 enrolled</div></div>
+                  <div className="sum-card"><div className="sc-label">Check-Out Rate</div><div className="sc-val sc-amber">{checkinSummary.checkOutPct != null ? checkinSummary.checkOutPct + '%' : '\u2014'}</div><div className="sc-sub">checked out \u00f7 in</div></div>
+                </div>
+                <div style={{fontSize:11,color:'#94a3b8',margin:'2px 2px 14px',lineHeight:1.5}}>
+                  Check-in rate is distinct attendees scanned in vs. enrolled, across sections that track attendance. Check-out rate is those checked back out vs. checked in. Sections without an enrollment match or without check-outs show \u2014.
+                </div>
+                <div style={{overflowX:'auto',border:'1px solid #e5e7eb',borderRadius:10}}>
+                  <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+                    <thead>
+                      <tr style={{background:'#f8fafc',textAlign:'left',color:'#475569'}}>
+                        <th style={{padding:'9px 12px',fontWeight:600}}>Program</th>
+                        <th style={{padding:'9px 12px',fontWeight:600}}>Section</th>
+                        <th style={{padding:'9px 12px',fontWeight:600,textAlign:'right'}}>Check-Ins</th>
+                        <th style={{padding:'9px 12px',fontWeight:600,textAlign:'right'}}>Attendees</th>
+                        <th style={{padding:'9px 12px',fontWeight:600,textAlign:'right'}}>Enrolled</th>
+                        <th style={{padding:'9px 12px',fontWeight:600,textAlign:'right'}}>Check-In %</th>
+                        <th style={{padding:'9px 12px',fontWeight:600,textAlign:'right'}}>Check-Outs</th>
+                        <th style={{padding:'9px 12px',fontWeight:600,textAlign:'right'}}>Check-Out %</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {checkinRows.map((r, i) => {
+                        var pctColor = function(p) { return p == null ? '#cbd5e1' : p >= 80 ? '#16a34a' : p >= 50 ? '#f59e0b' : '#ef4444'; };
+                        return (
+                          <tr key={r.sectionId || i} style={{borderTop:'1px solid #f1f5f9'}}>
+                            <td style={{padding:'8px 12px',color:'#334155'}}>{r.program}</td>
+                            <td style={{padding:'8px 12px',color:'#64748b'}}>{r.section}{r.sectionCode ? <span style={{color:'#cbd5e1',marginLeft:6,fontSize:10}}>{r.sectionCode}</span> : null}</td>
+                            <td style={{padding:'8px 12px',textAlign:'right',fontWeight:600,color:'#334155'}}>{r.checkIns.toLocaleString()}</td>
+                            <td style={{padding:'8px 12px',textAlign:'right',color:'#64748b'}}>{r.attendIn.toLocaleString()}</td>
+                            <td style={{padding:'8px 12px',textAlign:'right',color:'#64748b'}}>{r.enrolled != null ? r.enrolled.toLocaleString() : '\u2014'}</td>
+                            <td style={{padding:'8px 12px',textAlign:'right',fontWeight:700,color:pctColor(r.checkInPct)}}>{r.checkInPct != null ? r.checkInPct + '%' : '\u2014'}</td>
+                            <td style={{padding:'8px 12px',textAlign:'right',color:'#64748b'}}>{r.checkOuts.toLocaleString()}</td>
+                            <td style={{padding:'8px 12px',textAlign:'right',fontWeight:600,color:r.checkOutPct != null ? '#475569' : '#cbd5e1'}}>{r.checkOutPct != null ? r.checkOutPct + '%' : '\u2014'}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+            {!ciLoading && !ciError && !ciRows && <div style={{textAlign:'center',padding:48,color:'#94a3b8',fontSize:13}}>Run a report to load check-in data.</div>}
+          </React.Fragment>
+        )}
+
         {tab === 'detail' && detailSection && (
           <React.Fragment>
             <div style={{marginBottom:16}}>
@@ -2877,7 +3037,7 @@ function App() {
           <span>Run Date/Time: {runDate}</span>
         </div>
 
-        {((tab === 'summary' && rows) || (tab === 'revenue' && rows) || (tab === 'participants' && demoRows) || (tab === 'retention' && retRows) || (tab === 'fillrate' && demoRows) || (tab === 'detail' && detailRows)) && <div id="report-ready" style={{display:'none'}} />}
+        {((tab === 'summary' && rows) || (tab === 'revenue' && rows) || (tab === 'participants' && demoRows) || (tab === 'retention' && retRows) || (tab === 'fillrate' && demoRows) || (tab === 'checkins' && ciRows) || (tab === 'detail' && detailRows)) && <div id="report-ready" style={{display:'none'}} />}
       </div>
     </div>
   );

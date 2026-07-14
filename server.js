@@ -601,7 +601,7 @@ const ORGS = {
   },
 };
 
-const REPORT_TYPES = ["facility", "gl", "historic", "programs", "roster", "overview", "products", "memberships", "court-utilization", "calendar", "fasttrack", "users", "program-demographics", "directors-report", "instructor-payout", "retention", "annual-report", "section-detail", "ice-calendar", "qoq", "checkins"];
+const REPORT_TYPES = ["facility", "gl", "historic", "programs", "roster", "overview", "products", "memberships", "court-utilization", "calendar", "fasttrack", "users", "program-demographics", "directors-report", "instructor-payout", "retention", "annual-report", "section-detail", "ice-calendar", "qoq", "checkins", "program-checkins"];
 
 // ── Shared Metabase UUIDs (one query per report type, parameterized by org_id) ──
 // When a report type has an entry here, the server uses this UUID + passes the
@@ -624,6 +624,7 @@ const SHARED_UUIDS = {
   "qbr-stats": "3039d98b-a396-4c05-b1d7-0b8f2f2dd520",
   "section-detail": "bbb347c8-9e2d-446d-b014-a86a9d14115a",
   checkins: "574324e0-b5a1-46c5-8770-8c466631fdcf",
+  "program-checkins": "cb6fd909-72d3-446b-930b-c0382da02d62",
 };
 
 // Amenity tag UUID → display name (from tag + tag_alias tables, refreshed 2026-07-13)
@@ -915,9 +916,9 @@ const AMENITY_TAGS = {
 
 // Report types that are valid system-wide but should NOT be offered in the
 // dashboard "+ Add report" flow (e.g. not yet ready for self-serve onboarding).
-const NON_ADDABLE_REPORTS = new Set(["overview", "program-demographics", "directors-report", "retention", "annual-report", "section-detail", "qoq", "checkins"]);
+const NON_ADDABLE_REPORTS = new Set(["overview", "program-demographics", "directors-report", "retention", "annual-report", "section-detail", "qoq", "checkins", "program-checkins"]);
 // Reports that require extra params (e.g. section_id) and cannot be health-checked with org_id alone
-const HEALTH_SKIP_REPORTS = new Set(["section-detail", "annual-report", "qoq", "qbr-stats", "checkins"]);
+const HEALTH_SKIP_REPORTS = new Set(["section-detail", "annual-report", "qoq", "qbr-stats", "checkins", "program-checkins"]);
 const RENTAL_CALENDAR_ORGS = new Set(["watertown", "norman", "niagarafalls"]);
 
 // ── Dynamic orgs (added via dashboard UI) ────────────────────────────
@@ -3025,7 +3026,7 @@ async function fetchOrgChatData(orgSlug, orgConfig) {
   if (hit && Date.now() - hit.ts < CHAT_DATA_TTL) return hit.data;
 
   const orgHidden = new Set(getHiddenReports(orgSlug));
-  const CHAT_SKIP = new Set(["section-detail","program-demographics","retention","directors-report","annual-report","checkins","ice-calendar","qoq","overview"]);
+  const CHAT_SKIP = new Set(["section-detail","program-demographics","retention","directors-report","annual-report","checkins","program-checkins","ice-calendar","qoq","overview"]);
   const reports = REPORT_TYPES.filter(r => !orgHidden.has(r) && !CHAT_SKIP.has(r) && (orgConfig[r]?.mbUuid || SHARED_UUIDS[r]));
   console.log("[chat-data] " + orgSlug + ": fetching " + reports.length + " reports: " + reports.join(", "));
   const results = {};
@@ -8990,7 +8991,14 @@ app.get("/", (req, res) => {
     const UPDATES = [
   {
     date: "2026-07-13",
-    title: "Langfuse: AI traces now carry prompt + output",
+    title: "Programs: Session Check-In Attendance",
+    items: [
+      "New Check-Ins tab on the Programs report — per-section check-in / check-out breakdown with attendance rate vs enrollment.",
+      "Program Summary tab now shows a high-level attendance rollup: check-in rate, check-out rate, and total check-ins across sections that track attendance.",
+      "Data comes from a new shared Metabase card reading attendance_event (target_type='session'), aggregated per section — a separate lazy-loaded feed, so the existing Programs report is unaffected.",
+      "Check-out % shows an em-dash rather than 0% when a section has no check-outs, since attendance scanning is sparse for many orgs.",
+    ],
+  },
     items: [
       "Fixed empty Langfuse traces across all AI features (Insights, Report Wizard, Annual Report, QBR, Chat). Our manually-created spans weren't matching isDefaultExportSpan, so the LangfuseSpanProcessor was dropping them — feedback scores were landing on empty placeholder traces.",
       "shouldExportSpan now also exports spans from our own 'rec-ai' tracer.",
