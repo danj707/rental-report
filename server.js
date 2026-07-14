@@ -3991,6 +3991,20 @@ app.post("/:org/admin/subscribe", (req, res) => {
 
 app.delete("/:org/admin/subscribe", (req, res) => {
   if (!ORGS[req.params.org]) return res.status(404).json({ error: "Unknown org" });
+
+// ── Clear send log for org (password-gated) ──
+app.delete("/:org/admin/log", express.json(), (req, res) => {
+  const slug = req.params.org;
+  if (!ORGS[slug]) return res.status(404).json({ error: "Unknown org" });
+  const { password } = req.body || {};
+  if (!password || password !== process.env.DASHBOARD_PASSWORD) {
+    return res.status(403).json({ error: "Invalid admin password" });
+  }
+  const allLog = readJSON(LOG_FILE, []);
+  const kept = allLog.filter(l => l.org !== slug);
+  writeJSON(LOG_FILE, kept);
+  res.json({ ok: true, removed: allLog.length - kept.length });
+});
   const { email, id } = req.body;
   if (!email) return res.status(400).json({ error: "email required" });
   db.deleteSubscription(req.params.org, email.toLowerCase().trim(), id || null);
@@ -5145,9 +5159,13 @@ app.post("/qbr/api/orgmap/refresh", express.json(), (req, res) => {
 app.get("/:org/admin", (req, res) => {
   const slug = req.params.org;
   if (!ORGS[slug]) return res.status(404).send("Unknown org");
+  const slugTitle = slug.charAt(0).toUpperCase() + slug.slice(1);
   const adminConfig = {
     orgSlug: slug,
-    emailEnabled: EMAIL_ENABLED_ORGS.has(slug),  // per-org gate; global flag is kill switch for cron sends only
+    displayName: ORGS[slug].displayName || slugTitle + " Parks & Recreation",
+    logoUrl: ORGS[slug].logoUrl || "",
+    token: ORGS[slug].token || "",
+    emailEnabled: EMAIL_ENABLED_ORGS.has(slug),
     allowedDomains: ALLOWED_EMAIL_DOMAINS,
   };
   const html = require("fs").readFileSync(path.join(__dirname, "public", "admin.html"), "utf8");
