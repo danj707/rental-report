@@ -2420,6 +2420,19 @@ app.use((req, res, next) => {
 
 app.use(dashboardAuth);
 app.use(express.json({ limit: "50mb" }));
+// ── Inter font injection ─ auto-injects into every HTML res.send ─────────────
+const FONT_INJECT = '<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"><style>body,input,select,button,textarea{font-family:\'Inter\',system-ui,-apple-system,sans-serif !important}.monospace,code,pre,[style*="monospace"]{font-family:inherit !important}</style>';
+app.use((req, res, next) => {
+  const _send = res.send;
+  res.send = function(body) {
+    if (typeof body === "string" && body.includes("</head>")) {
+      body = body.replace("</head>", FONT_INJECT + "\n</head>");
+    }
+    return _send.call(this, body);
+  };
+  next();
+});
+
 
 // ── Favicon (rec.us logo) ──
 const FAVICON_BUF = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAEWUlEQVR4nO2XW4hWVRTHf2vvc87ndxnHZsa5SBYiKUgkGmXmGFI9ZFIU+RIUPSRC0IOIoEEvIojQBbpQoUXahYymJLMoqbCL+lA2CJmCjo6MzjiazjiX73yXs/fq4Yyic6lHe5j1dDhnsfdv7/Xf/7WPuAMNyg0McyMnnwSYBJgE+F8ABKNfqArOewCMEVDBqyIiWAPgQQWngqoCiojBmtTPBEFJn72CHxkLDIERkOt97yqACuAFGyg2nwFxEFdBPWQzUElwsUF9OpApeAgsIFBOcLGgYhFxKKDeEWYthBEYA64MRXAKMu4OeDBhQte5Ah/sAafCQ0syFKaEfPXLEK0LcyyZXwQNiJOI7/fB0VMlojDk3nk13L3A4UvDOBcQiEMKWY4cDdl/uMzFAcOslgIrlpbIZxzoOADqBYngVI/hxa1dgOeP47M5fOwSnef6yUVTOPhRC2GkPP1CH4eOFoEE8AgRzzzaxFsbcmTMAGWbZ8OWgK27eojLVdIZIw7saGDx7Z4kVowZTwMaEgYVAmsRgZOnh+k8N0gYhRQrFfbss7Tt7aX9xADN03IsX1ZPf5/j64MDbN99hqbaJrZsrGXt+jJvf9YNWFrqCsyZFXG8w1FxjJH9uCJMXFqT+5dmmXNrI5//fJ7lixrpvSi0nxikbtpUPnyphQcXeRBY9/IUXv/4DDt/KPJIax3bd/+NNcJ9Cwvs2FTHzKaErrOGbFhBKw4xZmKAa6OlUOHVNyLa25tYMC/HY+u6EQkpx2We2tBJXPIEgafqLNXEc7q7xLYvPZWkjPMZ1q9qZubNlyj1KTObHOpDvDMTiHCcqFbAUObO28pgHdWSBSrkC3kWz8sxXC4hXsgVIJeZRiBFCjUJTg3gCHwVVAi8BQ+iilGDiuPKWfhXIxIBRRiOASssmT8VVYsRYdPzjez9tJHv2hp49vHpzJpRw7bNzaxZmRCpYI1j03v9dHUXCGqEzgu1nL+cgSBBdZwSqKRQhpHjjWAMiHiCQNGiY/VKy/bdWTp6hmhd1cHDi2uIS4ZvD/ZRqlY4cbKRne/UsvqJet5s6+WnQ4MserLE3NkZ/uoYom1zA40toIPp4saWQKCaQOI8oAyX0nci4KpKY33Mrtem89zGiP1HBvhk74Wr61h+z01sXJMnGerllbX1GNvMu1/009MX0/N7DAREFvBwrRHIlTuhqmAiONttef8bcMADCyJa74pxJYeRAOc9YVaplmv48bcqf3akR/aOuSHLFhrEXKZSDghNgmRrOHJM+LU9oX9AuWVGyIpWRyEbgzdjARgBMwGQv2KxDl+63ju9B2s8kjdg7YhaFV9M8BisgFdB1RFkFaJMKjWtQtHh/fWyG1MCl4C75IDUws0omRoDHoMfBHyqZhEQazAjmyuSNqgkFnwxARwCGBMgEzWjqwwCQXBtkoxOQSDtjP/RzI2B9NTbCXMm8IGxk04c//ZbMfrb2NwbfiGZBJgEmAT4B/ajz479nqqPAAAAAElFTkSuQmCC", "base64");
@@ -4050,13 +4063,13 @@ app.get("/:org/qoq", (req, res) => {
   // QoQ requires GL data — check GL availability
   if (!ORGS[slug].gl?.mbUuid && !SHARED_UUIDS.gl) return res.status(404).send("QoQ comparison requires GL report data.");
   logEvent(slug, "qoq", "view", req);
-  res.sendFile(path.join(__dirname, "public", "qoq.html"));
+  res.type("html").send(require("fs").readFileSync(path.join(__dirname, "public", "qoq.html"), "utf8"));
 });
 
 app.get("/:org/historic", (req, res) => {
   if (!ORGS[req.params.org]) return res.status(404).send("Unknown org");
   logEvent(req.params.org, "historic", "view", req);
-  res.sendFile(path.join(__dirname, "public", "historic.html"));
+  res.type("html").send(require("fs").readFileSync(path.join(__dirname, "public", "historic.html"), "utf8"));
 });
 
 app.get("/:org/programs", (req, res) => {
@@ -4081,7 +4094,7 @@ app.get("/:org/programs", (req, res) => {
 app.get("/:org/roster", (req, res) => {
   if (!ORGS[req.params.org]) return res.status(404).send("Unknown org");
   logEvent(req.params.org, "roster", "view", req);
-  res.sendFile(path.join(__dirname, "public", "roster.html"));
+  res.type("html").send(require("fs").readFileSync(path.join(__dirname, "public", "roster.html"), "utf8"));
 });
 
 app.get("/:org/directors-report", (req, res) => {
@@ -4103,7 +4116,7 @@ app.get("/:org/directors-report", (req, res) => {
 app.get("/:org/overview", (req, res) => {
   if (!ORGS[req.params.org]) return res.status(404).send("Unknown org");
   logEvent(req.params.org, "overview", "view", req);
-  res.sendFile(path.join(__dirname, "public", "overview.html"));
+  res.type("html").send(require("fs").readFileSync(path.join(__dirname, "public", "overview.html"), "utf8"));
 });
 
 app.get("/:org/products", (req, res) => {
@@ -4112,7 +4125,7 @@ app.get("/:org/products", (req, res) => {
   if (!org) return res.status(404).send("Unknown org");
   if (!org.products?.mbUuid && !SHARED_UUIDS.products) return res.status(404).send("Products report not configured for this org.");
   logEvent(slug, "products", "view", req);
-  res.sendFile(path.join(__dirname, "public", "products.html"));
+  res.type("html").send(require("fs").readFileSync(path.join(__dirname, "public", "products.html"), "utf8"));
 });
 
 app.get("/:org/memberships", (req, res) => {
@@ -4121,7 +4134,7 @@ app.get("/:org/memberships", (req, res) => {
   if (!org) return res.status(404).send("Unknown org");
   if (!org.memberships?.mbUuid && !SHARED_UUIDS.memberships) return res.status(404).send("Memberships report not configured for this org.");
   logEvent(slug, "memberships", "view", req);
-  res.sendFile(path.join(__dirname, "public", "memberships.html"));
+  res.type("html").send(require("fs").readFileSync(path.join(__dirname, "public", "memberships.html"), "utf8"));
 });
 
 app.get("/:org/court-utilization", (req, res) => {
@@ -4247,7 +4260,7 @@ app.get("/:org/annual-report", (req, res) => {
   const org  = ORGS[slug];
   if (!org) return res.status(404).send("Unknown org");
   logEvent(slug, "annual-report", "view", req);
-  res.sendFile(path.join(__dirname, "public", "annual-report.html"));
+  res.type("html").send(require("fs").readFileSync(path.join(__dirname, "public", "annual-report.html"), "utf8"));
 });
 
 // Helper: fetch Metabase data directly (server-side, no HTTP round-trip)
@@ -5143,7 +5156,7 @@ app.get("/:org/admin", (req, res) => {
 
 app.get("/:org/metrics", (req, res) => {
   if (!ORGS[req.params.org]) return res.status(404).send("Unknown org");
-  res.sendFile(path.join(__dirname, "public", "metrics.html"));
+  res.type("html").send(require("fs").readFileSync(path.join(__dirname, "public", "metrics.html"), "utf8"));
 });
 
 // ---- Ice Participant Calendar (Apex) ---- participant-filtered month view
@@ -5780,7 +5793,7 @@ app.get("/:org/fasttrack", (req, res) => {
   if (!org) return res.status(404).send("Unknown org");
   if (!org.fasttrack?.mbUuid && !SHARED_UUIDS.fasttrack) return res.status(404).send("Fast Track report not configured for this org.");
   logEvent(slug, "fasttrack", "view", req);
-  res.sendFile(path.join(__dirname, "public", "fasttrack.html"));
+  res.type("html").send(require("fs").readFileSync(path.join(__dirname, "public", "fasttrack.html"), "utf8"));
 });
 
 app.get("/:org/instructor-payout", (req, res) => {
@@ -5789,7 +5802,7 @@ app.get("/:org/instructor-payout", (req, res) => {
   if (!org) return res.status(404).send("Unknown org");
   if (!org['instructor-payout']?.mbUuid && !SHARED_UUIDS['instructor-payout']) return res.status(404).send("Instructor Payout report not configured for this org.");
   logEvent(slug, "instructor-payout", "view", req);
-  res.sendFile(path.join(__dirname, "public", "instructor-payout.html"));
+  res.type("html").send(require("fs").readFileSync(path.join(__dirname, "public", "instructor-payout.html"), "utf8"));
 });
 
 app.get("/:org/users", (req, res) => {
@@ -9158,6 +9171,14 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  {
+    date: "2026-07-14",
+    title: "Inter Font Across All Reports",
+    items: [
+      "Switched to Inter (Google Fonts) across every report page via server-side injection middleware. Replaces IBM Plex Sans for a cleaner, more consistent look.",
+      "Middleware auto-injects the font link into every HTML response. All sendFile routes converted to readFileSync for consistent injection.",
+    ],
+  },
   {
     date: "2026-07-14",
     title: "Email Subscriptions: Watertown Pilot",
