@@ -515,9 +515,7 @@ async function subscribe() {
   const alert    = document.getElementById('form-alert');
 
   if (!email) return showAlert(alert, 'error', 'Please enter an email address.');
-  const allowedDomains = ADMIN_CFG.allowedDomains || ['rec.us'];
-  const domain = email.split('@')[1]?.toLowerCase();
-  if (!allowedDomains.includes(domain)) return showAlert(alert, 'error', 'Only ' + allowedDomains.join(', ') + ' email addresses are allowed.');
+  // Domain restriction removed — server validates EMAIL_ENABLED_ORGS + token
   if (!reports.length) return showAlert(alert, 'error', 'Select at least one report.');
 
   const btn = document.getElementById('subscribe-btn');
