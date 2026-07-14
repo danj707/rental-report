@@ -994,7 +994,7 @@ fs.mkdirSync(DATA_DIR, { recursive: true });
 const ORGS_FILE          = path.join(DATA_DIR, "orgs.json");
 const HOTDOG_CLAIMS_FILE = path.join(DATA_DIR, "hotdog_claims.json");
 const SUBS_FILE   = path.join(DATA_DIR, "subscriptions.json");
-const EMAIL_ENABLED_ORGS = new Set(["niagarafalls"]);
+const EMAIL_ENABLED_ORGS = new Set(["niagarafalls", "watertown"]);
 const ALLOWED_EMAIL_DOMAINS = ["rec.us"];
 const EMAIL_SUBSCRIBABLE_REPORTS = new Set(["facility", "gl"]);
 const LOG_FILE    = path.join(DATA_DIR, "send_log.json");
@@ -9113,6 +9113,15 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  {
+    date: "2026-07-14",
+    title: "Email Subscriptions: Watertown Pilot",
+    items: [
+      "Email subscriptions enabled for Watertown. Admins can subscribe to daily, weekly, or monthly report digests.",
+      "Sends via rec.us domain (verified on Resend). Dedicated sending-only API key scoped to rec.us.",
+      "Controlled rollout: Watertown + Niagara Falls only. Additional orgs added on request.",
+    ],
+  },
   {
     date: "2026-07-14",
     title: "AI Insights: Schema-Aware Context",
