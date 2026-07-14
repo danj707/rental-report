@@ -2421,7 +2421,7 @@ app.use((req, res, next) => {
 app.use(dashboardAuth);
 app.use(express.json({ limit: "50mb" }));
 // ── Inter font injection ─ auto-injects into every HTML res.send ─────────────
-const FONT_INJECT = '<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"><style>body,input,select,button,textarea{font-family:\'Inter\',system-ui,-apple-system,sans-serif !important}.monospace,code,pre,[style*="monospace"]{font-family:inherit !important}</style>';
+const FONT_INJECT = '<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"><style>body,input,select,button,textarea{font-family:\'Inter\',system-ui,-apple-system,sans-serif !important}</style>';
 app.use((req, res, next) => {
   const _send = res.send;
   res.send = function(body) {
