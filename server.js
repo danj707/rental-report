@@ -8997,6 +8997,7 @@ app.get("/", (req, res) => {
       "Program Summary tab now shows a high-level attendance rollup: check-in rate, check-out rate, and total check-ins across sections that track attendance.",
       "Data comes from a new shared Metabase card reading attendance_event (target_type='session'), aggregated per section — a separate lazy-loaded feed, so the existing Programs report is unaffected.",
       "Check-out % shows an em-dash rather than 0% when a section has no check-outs, since attendance scanning is sparse for many orgs.",
+      "Fixed KPI sub-labels and note rendering literal \\u escapes; check-out % now reads em-dash (not 0%) whenever a section has zero check-out events.",
     ],
   },
     items: [

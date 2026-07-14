@@ -1541,7 +1541,7 @@ function App() {
         checkIns, checkOuts, attendIn, attendOut,
         enrolled: hasEnroll ? enrolled : null,
         checkInPct:  hasEnroll ? Math.round(attendIn / enrolled * 1000) / 10 : null,
-        checkOutPct: attendIn > 0 ? Math.round(attendOut / attendIn * 1000) / 10 : null,
+        checkOutPct: (checkOuts > 0 && attendIn > 0) ? Math.round(attendOut / attendIn * 1000) / 10 : null,
       };
     }).sort((a, b) => b.checkIns - a.checkIns);
   }, [ciRows, enrollmentBySection]);
@@ -1564,7 +1564,7 @@ function App() {
       enrollTracked,
       // Attendance rate across sections that actually track attendance
       checkInPct:  enrollTracked > 0 ? Math.round(totAttendIn / enrollTracked * 1000) / 10 : null,
-      checkOutPct: totAttendIn > 0 ? Math.round(totAttendOut / totAttendIn * 1000) / 10 : null,
+      checkOutPct: (totOut > 0 && totAttendIn > 0) ? Math.round(totAttendOut / totAttendIn * 1000) / 10 : null,
     };
   }, [checkinRows]);
 
@@ -2890,11 +2890,11 @@ function App() {
                 <div className="sum-cards">
                   <div className="sum-card"><div className="sc-label">Total Check-Ins</div><div className="sc-val sc-green">{checkinSummary.totalCheckIns.toLocaleString()}</div><div className="sc-sub">{checkinSummary.totalCheckOuts.toLocaleString()} check-outs</div></div>
                   <div className="sum-card"><div className="sc-label">Sections Tracked</div><div className="sc-val sc-blue">{checkinSummary.sectionsTracked}</div><div className="sc-sub">with attendance scanned</div></div>
-                  <div className="sum-card"><div className="sc-label">Check-In Rate</div><div className="sc-val sc-green">{checkinSummary.checkInPct != null ? checkinSummary.checkInPct + '%' : '\u2014'}</div><div className="sc-sub">attended \u00f7 enrolled</div></div>
-                  <div className="sum-card"><div className="sc-label">Check-Out Rate</div><div className="sc-val sc-amber">{checkinSummary.checkOutPct != null ? checkinSummary.checkOutPct + '%' : '\u2014'}</div><div className="sc-sub">checked out \u00f7 in</div></div>
+                  <div className="sum-card"><div className="sc-label">Check-In Rate</div><div className="sc-val sc-green">{checkinSummary.checkInPct != null ? checkinSummary.checkInPct + '%' : '\u2014'}</div><div className="sc-sub">attended ÷ enrolled</div></div>
+                  <div className="sum-card"><div className="sc-label">Check-Out Rate</div><div className="sc-val sc-amber">{checkinSummary.checkOutPct != null ? checkinSummary.checkOutPct + '%' : '\u2014'}</div><div className="sc-sub">checked out ÷ in</div></div>
                 </div>
                 <div style={{fontSize:11,color:'#94a3b8',margin:'2px 2px 14px',lineHeight:1.5}}>
-                  Check-in rate is distinct attendees scanned in vs. enrolled, across sections that track attendance. Check-out rate is those checked back out vs. checked in. Sections without an enrollment match or without check-outs show \u2014.
+                  Check-in rate is distinct attendees scanned in vs. enrolled, across sections that track attendance. Check-out rate is those checked back out vs. checked in. Sections without an enrollment match or without check-outs show —.
                 </div>
                 <div style={{overflowX:'auto',border:'1px solid #e5e7eb',borderRadius:10}}>
                   <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
