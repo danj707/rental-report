@@ -1935,11 +1935,143 @@ function App() {
   // ── Location filter state ────────────────────────────────────────
   const [allLocations,      setAllLocations]      = useState([]);
   const [allSites,          setAllSites]          = useState([]);
+  const [showEmailModal, setShowEmailModal] = useState(false);
+  const [emailAddr, setEmailAddr] = useState('');
+  const [emailCadence, setEmailCadence] = useState('weekly');
+  const [emailDateRange, setEmailDateRange] = useState('next7');
+  const [emailStatus, setEmailStatus] = useState(null);
   const [selectedLocations, setSelectedLocations] = useState(null);
   const [selectedSites,     setSelectedSites]     = useState(null);
   const [selectedAddOns,    setSelectedAddOns]    = useState(null);
 
   // Share Link: expose the live applied filter state so the floating Share
+
+  function EmailSubscribeModal() {
+    if (!showEmailModal) return null;
+    const activeFilters = [];
+    if (selectedLocations && allLocations.length > 0 && selectedLocations.size < allLocations.length) {
+      activeFilters.push([...selectedLocations].length + ' of ' + allLocations.length + ' locations');
+    }
+    if (selectedSites && allSites.length > 0 && selectedSites.size < allSites.length) {
+      activeFilters.push([...selectedSites].length + ' of ' + allSites.length + ' site types');
+    }
+    if (selectedAddOns && allAddOns.length > 0 && selectedAddOns.size < allAddOns.length) {
+      activeFilters.push([...selectedAddOns].length + ' of ' + allAddOns.length + ' add-ons');
+    }
+    if (bookTypeFilter !== 'all') activeFilters.push('Booking: ' + bookTypeFilter);
+
+    function buildFilterParams() {
+      const p = new URLSearchParams();
+      if (selectedLocations && selectedLocations.size < allLocations.length) p.set('locations', [...selectedLocations].join(','));
+      if (selectedSites && selectedSites.size < allSites.length) p.set('sites', [...selectedSites].join(','));
+      if (selectedAddOns && selectedAddOns.size < allAddOns.length) p.set('addons', [...selectedAddOns].join(','));
+      if (bookTypeFilter !== 'all') p.set('book_type', bookTypeFilter);
+      return p.toString();
+    }
+
+    async function handleSubscribe() {
+      if (!emailAddr) return;
+      setEmailStatus('sending');
+      try {
+        const segs = window.location.pathname.split('/').filter(Boolean);
+        const org = segs[0];
+        const token = new URLSearchParams(window.location.search).get('token') || '';
+        const filterStr = buildFilterParams();
+        const body = {
+          email: emailAddr,
+          reports: ['facility'],
+          schedule: emailCadence,
+          reportDateRanges: { facility: emailDateRange },
+        };
+        if (filterStr) body.reportParams = { facility: filterStr };
+        const resp = await fetch('/' + org + '/admin/subscribe?token=' + token, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        const data = await resp.json();
+        if (!resp.ok) throw new Error(data.error || 'Failed');
+        setEmailStatus('success');
+      } catch (e) {
+        setEmailStatus('error: ' + e.message);
+      }
+    }
+
+    const cadenceOptions = [['daily','Daily'],['weekly','Weekly'],['monthly','Monthly']];
+    const rangeOptions = [['next7','Next 7 days'],['next30','Next 30 days'],['last7','Last 7 days'],['lastMonth','Last month']];
+
+    return (
+      <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.5)',zIndex:9999,display:'flex',alignItems:'center',justifyContent:'center'}}
+           onClick={e => { if (e.target === e.currentTarget) setShowEmailModal(false); }}>
+        <div style={{background:'#fff',borderRadius:12,padding:'28px 32px',width:420,maxWidth:'90vw',boxShadow:'0 20px 60px rgba(0,0,0,0.3)'}}>
+          <h3 style={{margin:'0 0 6px',fontSize:18,color:'#111'}}>Subscribe to Facility Report</h3>
+          {activeFilters.length > 0 && (
+            <div style={{background:'#fefce8',border:'1px solid #fde68a',borderRadius:6,padding:'8px 12px',margin:'8px 0 16px',fontSize:12,color:'#92400e'}}>
+              <strong>Active filters will be saved:</strong><br/>
+              {activeFilters.join(' | ')}
+            </div>
+          )}
+          {activeFilters.length === 0 && (
+            <p style={{color:'#888',fontSize:13,margin:'4px 0 16px'}}>No filters active. You will receive the full report.</p>
+          )}
+
+          {emailStatus === 'success' ? (
+            <div style={{textAlign:'center',padding:'20px 0'}}>
+              <div style={{fontSize:32,marginBottom:8}}>\u2705</div>
+              <div style={{fontSize:15,fontWeight:600,color:'#16a34a',marginBottom:4}}>Subscribed!</div>
+              <div style={{fontSize:13,color:'#666'}}>You will receive {emailCadence} emails at 7am ET.</div>
+              <button onClick={() => { setShowEmailModal(false); setEmailStatus(null); }}
+                style={{marginTop:16,padding:'8px 20px',background:'#16a34a',color:'#fff',border:'none',borderRadius:6,cursor:'pointer',fontWeight:600}}>
+                Done
+              </button>
+            </div>
+          ) : (
+            <div>
+              <label style={{display:'block',fontSize:11,color:'#999',textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:4,fontWeight:500}}>Email</label>
+              <input value={emailAddr} onChange={e => setEmailAddr(e.target.value)}
+                placeholder="you@rec.us" style={{width:'100%',padding:'8px 10px',border:'1px solid #ddd',borderRadius:6,fontSize:13,marginBottom:14,boxSizing:'border-box'}} />
+
+              <label style={{display:'block',fontSize:11,color:'#999',textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:6,fontWeight:500}}>Date Range</label>
+              <div style={{display:'flex',gap:6,marginBottom:14,flexWrap:'wrap'}}>
+                {rangeOptions.map(([val,lbl]) => (
+                  <button key={val} onClick={() => setEmailDateRange(val)}
+                    style={{padding:'5px 12px',borderRadius:16,border: emailDateRange===val ? '2px solid #16a34a' : '1px solid #ddd',
+                    background: emailDateRange===val ? '#f0fdf4' : '#fff', fontSize:12,cursor:'pointer',fontWeight: emailDateRange===val ? 600 : 400}}>
+                    {lbl}
+                  </button>
+                ))}
+              </div>
+
+              <label style={{display:'block',fontSize:11,color:'#999',textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:6,fontWeight:500}}>Cadence</label>
+              <div style={{display:'flex',gap:6,marginBottom:18}}>
+                {cadenceOptions.map(([val,lbl]) => (
+                  <button key={val} onClick={() => setEmailCadence(val)}
+                    style={{padding:'5px 14px',borderRadius:16,border: emailCadence===val ? '2px solid #16a34a' : '1px solid #ddd',
+                    background: emailCadence===val ? '#f0fdf4' : '#fff', fontSize:12,cursor:'pointer',fontWeight: emailCadence===val ? 600 : 400}}>
+                    {lbl}
+                  </button>
+                ))}
+              </div>
+
+              <div style={{display:'flex',gap:10,justifyContent:'flex-end'}}>
+                <button onClick={() => { setShowEmailModal(false); setEmailStatus(null); }}
+                  style={{padding:'8px 16px',background:'#f3f4f6',border:'none',borderRadius:6,cursor:'pointer',fontSize:13}}>Cancel</button>
+                <button onClick={handleSubscribe} disabled={!emailAddr || emailStatus === 'sending'}
+                  style={{padding:'8px 20px',background:'#16a34a',color:'#fff',border:'none',borderRadius:6,cursor:'pointer',fontWeight:600,fontSize:13,
+                  opacity: (!emailAddr || emailStatus === 'sending') ? 0.5 : 1}}>
+                  {emailStatus === 'sending' ? 'Subscribing...' : 'Subscribe'}
+                </button>
+              </div>
+              {emailStatus && emailStatus.startsWith('error') && (
+                <div style={{color:'#ef4444',fontSize:12,marginTop:8}}>{emailStatus.replace('error: ','')}</div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   // widget copies a URL that reproduces the on-screen view (mirrors the PDF).
   useEffect(() => {
     window.recShareLink = () => {
@@ -2521,15 +2653,7 @@ function App() {
         </button>
 
         {window.ORG_CONFIG?.emailEnabled && !isPrint && (
-          <button
-            className="btn-email"
-            onClick={() => {
-              const segs = window.location.pathname.split('/').filter(Boolean);
-              const org = segs[0];
-              const token = new URLSearchParams(window.location.search).get('token') || '';
-              window.open('/' + org + '?token=' + token + '#email', '_blank');
-            }}
-          >
+          <button className="btn-email" onClick={() => setShowEmailModal(true)}>
             📧 Email
           </button>
         )}
@@ -2582,6 +2706,8 @@ function App() {
   return (
     <div>
       {renderToolbar()}
+
+      {showEmailModal && <EmailSubscribeModal />}
 
       {showHeatmap && filteredRows && filteredRows.length > 0 && !isPrint && (
         <HeatmapStrip filteredRows={filteredRows} locationColors={locationColors} />
