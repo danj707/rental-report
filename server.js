@@ -9181,6 +9181,14 @@ app.get("/", (req, res) => {
   },
   {
     date: "2026-07-14",
+    title: "Subscriber Filter Display",
+    items: [
+      "Subscriber cards on the admin page now show the saved reportParams filters (locations, sites, desk, book type) so admins can see exactly what each person is subscribed to.",
+      "Report badges now display proper labels for all report types instead of only GL/Facility.",
+    ],
+  },
+  {
+    date: "2026-07-14",
     title: "Email Subscriptions: Watertown Pilot",
     items: [
       "Email subscriptions enabled for Watertown. Admins can subscribe to daily, weekly, or monthly report digests.",
