@@ -19,9 +19,9 @@
 
     /* ── Header ── */
     .page-header {
-      background: linear-gradient(135deg, #312e81 0%, #4338ca 50%, #6366f1 100%);
-      color: #fff;
-      padding: 20px 24px 18px;
+      background: #2c2c2c;
+      color: #eee;
+      padding: 16px 24px;
     }
     .header-inner {
       max-width: 960px; margin: 0 auto;
@@ -33,7 +33,7 @@
     .header-sub { font-size: 12px; color: rgba(255,255,255,.7); margin-top: 2px; display: flex; align-items: center; gap: 8px; }
     .header-sub a { color: rgba(255,255,255,.8); text-decoration: none; }
     .header-sub a:hover { color: #fff; text-decoration: underline; }
-    .header-badge { display: inline-flex; align-items: center; gap: 4px; background: rgba(255,255,255,.18); padding: 3px 10px; border-radius: 12px; font-size: 11px; font-weight: 600; }
+    .header-badge { display: inline-flex; align-items: center; gap: 4px; background: rgba(255,255,255,.12); padding: 3px 10px; border-radius: 12px; font-size: 11px; font-weight: 600; color: #4ade80; }
     .header-links { display: flex; gap: 10px; }
     .header-links a { color: rgba(255,255,255,.75); text-decoration: none; font-size: 12px; padding: 5px 12px; border-radius: 6px; background: rgba(255,255,255,.1); transition: background .15s; }
     .header-links a:hover { background: rgba(255,255,255,.2); color: #fff; }
@@ -158,6 +158,7 @@
     .sub-table td { padding: 8px 8px; border-bottom: 1px solid #f0f0f0; vertical-align: middle; }
     .sub-table tr:last-child td { border-bottom: none; }
     .sub-table tr:hover td { background: #fafaf8; }
+    .actions-cell { white-space: nowrap; display: flex; gap: 6px; align-items: center; }
 
     .badge {
       display: inline-block;
@@ -613,6 +614,29 @@ function showAlert(el, type, msg) {
   if (type === 'success') setTimeout(() => el.classList.remove('show'), 4000);
 }
 
+
+// ── Clear send log ───────────────────────────────────────────────────
+async function clearLog() {
+  const pw = prompt('Enter admin password to clear the send log:');
+  if (!pw) return;
+  const btn = document.getElementById('clear-log-btn');
+  btn.disabled = true; btn.textContent = 'Clearing…';
+  try {
+    const res = await fetch(withToken('/' + orgSlug + '/admin/log'), {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: pw }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed');
+    showToast('Cleared ' + data.removed + ' log entries');
+    loadSubscribers();
+  } catch (e) {
+    alert(e.message);
+  } finally {
+    btn.disabled = false; btn.textContent = 'Clear Log';
+  }
+}
 
 // ── Init ──────────────────────────────────────────────────────────────
 loadReports();
