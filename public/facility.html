@@ -2017,7 +2017,7 @@ function App() {
 
           {emailStatus === 'success' ? (
             <div style={{textAlign:'center',padding:'20px 0'}}>
-              <div style={{fontSize:32,marginBottom:8}}>\u2705</div>
+              <div style={{fontSize:32,marginBottom:8}}>✅</div>
               <div style={{fontSize:15,fontWeight:600,color:'#16a34a',marginBottom:4}}>Subscribed!</div>
               <div style={{fontSize:13,color:'#666'}}>You will receive {emailCadence} emails at 7am ET.</div>
               <button onClick={() => { setShowEmailModal(false); setEmailStatus(null); }}
