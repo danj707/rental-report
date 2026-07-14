@@ -2520,6 +2520,19 @@ function App() {
           📊 Excel
         </button>
 
+        {window.ORG_CONFIG?.emailEnabled && !isPrint && (
+          <button
+            className="btn-email"
+            onClick={() => {
+              const segs = window.location.pathname.split('/').filter(Boolean);
+              const org = segs[0];
+              const token = new URLSearchParams(window.location.search).get('token') || '';
+              window.open('/' + org + '?token=' + token + '#email', '_blank');
+            }}
+          >
+            📧 Email
+          </button>
+        )}
 
       </div>
     );
