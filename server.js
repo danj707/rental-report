@@ -41,6 +41,7 @@ if (_langfuseEnabled) {
     baseUrl:    process.env.LANGFUSE_BASE_URL || "https://us.cloud.langfuse.com",
     shouldExportSpan: ({ otelSpan }) =>
       isDefaultExportSpan(otelSpan) ||
+      otelSpan.instrumentationScope?.name === "rec-ai" ||
       otelSpan.instrumentationScope?.name === "@arizeai/openinference-instrumentation-anthropic",
   });
   _otelSdk = new NodeSDK({
@@ -2891,8 +2892,21 @@ app.post("/:org/:report/api/insights", resolveOrg, async (req, res) => {
 
   try {
     // Wrap in OTel span so we can capture traceId for user feedback
+    const sysPrompt = SYS_PROMPTS[reportType] || INSIGHTS_SYS_PROMPT;
     const parentSpan = _recTracer.startSpan("rec.insights", {
-      attributes: { "rec.org": orgSlug, "rec.report": reportType },
+      attributes: {
+        "rec.org": orgSlug,
+        "rec.report": reportType,
+        "langfuse.trace.name": "rec-insights",
+        "langfuse.trace.input": JSON.stringify(blob),
+        "langfuse.trace.metadata": JSON.stringify({ org: orgSlug, report: reportType }),
+        "langfuse.observation.type": "generation",
+        "langfuse.observation.model.name": INSIGHTS_MODEL,
+        "langfuse.observation.input": JSON.stringify([
+          { role: "system", content: sysPrompt },
+          { role: "user", content: JSON.stringify(blob) },
+        ]),
+      },
     });
     const traceId = parentSpan.spanContext().traceId;
     const spanCtx = otelApi.trace.setSpan(otelApi.context.active(), parentSpan);
@@ -2901,16 +2915,23 @@ app.post("/:org/:report/api/insights", resolveOrg, async (req, res) => {
       anthropic.messages.create({
         model: INSIGHTS_MODEL,
         max_tokens: 700,
-        system: SYS_PROMPTS[reportType] || INSIGHTS_SYS_PROMPT,
+        system: sysPrompt,
         messages: [{ role: "user", content: JSON.stringify(blob) }],
       })
     );
-    parentSpan.end();
 
     const text = (data.content || [])
       .filter(c => c.type === "text")
       .map(c => c.text)
       .join("");
+
+    const usage  = data.usage || {};
+    const inTok  = usage.input_tokens  || 0;
+    const outTok = usage.output_tokens || 0;
+    parentSpan.setAttribute("langfuse.observation.output", text);
+    parentSpan.setAttribute("langfuse.trace.output", text);
+    parentSpan.setAttribute("langfuse.observation.usage_details", JSON.stringify({ input: inTok, output: outTok }));
+    parentSpan.end();
 
     const insights = salvageInsights(text);
     if (!insights.length) {
@@ -2924,9 +2945,6 @@ app.post("/:org/:report/api/insights", resolveOrg, async (req, res) => {
     }
     _insightsCache.set(key, { ts: Date.now(), insights, traceId });
 
-    const usage  = data.usage || {};
-    const inTok  = usage.input_tokens  || 0;
-    const outTok = usage.output_tokens || 0;
     const costUsd = insightsCostUsd(INSIGHTS_MODEL, inTok, outTok);
     logEvent(orgSlug, reportType, "insights", req, { inTok, outTok, costUsd, traceId });
     if (_langfuseProcessor) _langfuseProcessor.forceFlush().catch(() => {});
@@ -3134,7 +3152,6 @@ app.post("/:org/chat/api/message", async (req, res) => {
     "X-Accel-Buffering": "no",
   });
 
-  const messageId = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
   try {
     // Signal data loading
     res.write("data: [DATA_LOADING]\n\n");
@@ -3154,12 +3171,29 @@ app.post("/:org/chat/api/message", async (req, res) => {
     // Clean messages — only role + content
     const cleanMsgs = messages.map(m => ({ role: m.role, content: m.content }));
 
-    const stream = anthropic.messages.stream({
+    // Wrap in OTel span so feedback attaches to a real Langfuse trace
+    const chatSpan = _recTracer.startSpan("rec.chat", {
+      attributes: {
+        "rec.org": slug,
+        "rec.feature": "chat",
+        "langfuse.trace.name": "rec-chat",
+        "langfuse.trace.input": cleanMsgs.length ? String(cleanMsgs[cleanMsgs.length - 1].content).slice(0, 4000) : "",
+        "langfuse.trace.metadata": JSON.stringify({ org: slug, turns: cleanMsgs.length }),
+        "langfuse.observation.type": "generation",
+        "langfuse.observation.model.name": CHAT_MODEL,
+        "langfuse.observation.input": JSON.stringify([{ role: "system", content: systemPrompt.slice(0, 8000) }, ...cleanMsgs]),
+      },
+    });
+    const chatCtx = otelApi.trace.setSpan(otelApi.context.active(), chatSpan);
+    let messageId = chatSpan.spanContext().traceId;
+    if (!messageId || /^0+$/.test(messageId)) messageId = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+
+    const stream = otelApi.context.with(chatCtx, () => anthropic.messages.stream({
       model: CHAT_MODEL,
       max_tokens: CHAT_MAX_TOK,
       system: systemPrompt,
       messages: cleanMsgs,
-    });
+    }));
 
     stream.on("text", (text) => {
       res.write("data: " + JSON.stringify({ t: text }) + "\n\n");
@@ -3173,6 +3207,11 @@ app.post("/:org/chat/api/message", async (req, res) => {
     const finalMessage = await stream.finalMessage();
     const inputTokens  = finalMessage.usage?.input_tokens  || 0;
     const outputTokens = finalMessage.usage?.output_tokens || 0;
+    const finalText = (finalMessage.content || []).filter(c => c.type === "text").map(c => c.text).join("");
+    chatSpan.setAttribute("langfuse.observation.output", finalText);
+    chatSpan.setAttribute("langfuse.trace.output", finalText);
+    chatSpan.setAttribute("langfuse.observation.usage_details", JSON.stringify({ input: inputTokens, output: outputTokens }));
+    chatSpan.end();
 
     const costUsd = insightsCostUsd(CHAT_MODEL, inputTokens, outputTokens);
     logEvent(slug, "chat", "message", req, { messageId, inTok: inputTokens, outTok: outputTokens, costUsd });
@@ -3214,6 +3253,7 @@ app.post("/:org/chat/api/feedback", (req, res) => {
       method: "POST",
       headers: { "Content-Type": "application/json", "Authorization": "Basic " + auth },
       body: JSON.stringify({
+        traceId: messageId,
         name: "chat-feedback",
         value: score,
         comment: comment ? `[${slug}/chat] ${comment}` : `[${slug}/chat] ${score === 1 ? "thumbs up" : "thumbs down"}`,
@@ -3427,8 +3467,21 @@ app.post("/:org/report-wizard/api/generate", async (req, res) => {
 
     // Wrap in OTel span to capture traceId for feedback
     const wizSpan = _recTracer.startSpan("rec.wizard", {
-      attributes: { "rec.org": slug, "rec.feature": "wizard" },
+      attributes: {
+        "rec.org": slug,
+        "rec.feature": "wizard",
+        "langfuse.trace.name": "rec-wizard",
+        "langfuse.trace.input": prompt,
+        "langfuse.trace.metadata": JSON.stringify({ org: slug, sources: sourceCount }),
+        "langfuse.observation.type": "generation",
+        "langfuse.observation.model.name": WIZARD_MODEL,
+        "langfuse.observation.input": JSON.stringify([
+          { role: "system", content: WIZARD_SYS_PROMPT },
+          { role: "user", content: userMsg },
+        ]),
+      },
     });
+    const wizTraceId = wizSpan.spanContext().traceId;
     const wizCtx = otelApi.trace.setSpan(otelApi.context.active(), wizSpan);
 
     const data = await otelApi.context.with(wizCtx, () =>
@@ -3439,13 +3492,19 @@ app.post("/:org/report-wizard/api/generate", async (req, res) => {
         messages: [{ role: "user", content: userMsg }],
       })
     );
-    wizSpan.end();
-    const wizTraceId = wizSpan.spanContext().traceId;
 
     const text = (data.content || [])
       .filter(c => c.type === "text")
       .map(c => c.text)
       .join("");
+
+    {
+      const u = data.usage || {};
+      wizSpan.setAttribute("langfuse.observation.output", text);
+      wizSpan.setAttribute("langfuse.trace.output", text);
+      wizSpan.setAttribute("langfuse.observation.usage_details", JSON.stringify({ input: u.input_tokens || 0, output: u.output_tokens || 0 }));
+    }
+    wizSpan.end();
 
     const cleaned = text.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
     let config;
@@ -4215,23 +4274,43 @@ app.post("/:org/annual-report/api/generate", async (req, res) => {
     let narrative = null;
     if (anthropic) {
       try {
+        const annualModel = process.env.ANNUAL_REPORT_MODEL || "claude-sonnet-4-6";
         const parentSpan = _recTracer.startSpan("rec.annual-report", {
-          attributes: { "rec.org": slug },
+          attributes: {
+            "rec.org": slug,
+            "langfuse.trace.name": "rec-annual-report",
+            "langfuse.trace.input": JSON.stringify(aggregates),
+            "langfuse.trace.metadata": JSON.stringify({ org: slug, period: aggregates.period }),
+            "langfuse.observation.type": "generation",
+            "langfuse.observation.model.name": annualModel,
+            "langfuse.observation.input": JSON.stringify([
+              { role: "system", content: ANNUAL_REPORT_PROMPT },
+              { role: "user", content: JSON.stringify(aggregates) },
+            ]),
+          },
         });
         const traceId = parentSpan.spanContext().traceId;
         const spanCtx = otelApi.trace.setSpan(otelApi.context.active(), parentSpan);
 
         const aiRes = await otelApi.context.with(spanCtx, () =>
           anthropic.messages.create({
-            model: process.env.ANNUAL_REPORT_MODEL || "claude-sonnet-4-6",
+            model: annualModel,
             max_tokens: 2500,
             system: ANNUAL_REPORT_PROMPT,
             messages: [{ role: "user", content: JSON.stringify(aggregates) }],
           })
         );
-        parentSpan.end();
 
         const text = (aiRes.content || []).filter(c => c.type === "text").map(c => c.text).join("");
+
+        const usage = aiRes.usage || {};
+        const inTok = usage.input_tokens || 0;
+        const outTok = usage.output_tokens || 0;
+        parentSpan.setAttribute("langfuse.observation.output", text);
+        parentSpan.setAttribute("langfuse.trace.output", text);
+        parentSpan.setAttribute("langfuse.observation.usage_details", JSON.stringify({ input: inTok, output: outTok }));
+        parentSpan.end();
+
         try {
           const cleaned = text.replace(/```json|```/g, "").trim();
           narrative = JSON.parse(cleaned);
@@ -4240,10 +4319,7 @@ app.post("/:org/annual-report/api/generate", async (req, res) => {
           narrative = { executiveSummary: text, error: "Could not parse structured response" };
         }
 
-        const usage = aiRes.usage || {};
-        const inTok = usage.input_tokens || 0;
-        const outTok = usage.output_tokens || 0;
-        const costUsd = insightsCostUsd(aiRes.model || "claude-sonnet-4-6", inTok, outTok);
+        const costUsd = insightsCostUsd(aiRes.model || annualModel, inTok, outTok);
         logEvent(slug, "annual-report", "ai-generate", req, { inTok, outTok, costUsd, traceId });
       } catch (aiErr) {
         console.error("[annual-report] AI error:", aiErr.message);
@@ -4758,19 +4834,35 @@ app.post("/qbr/api/generate", express.json(), async (req, res) => {
     let narrative = null;
     if (anthropic) {
       try {
-        const span = _recTracer.startSpan("rec.qbr", { attributes: { "rec.org": ctx.slug } });
+        const qbrModel = process.env.QBR_MODEL || "claude-sonnet-4-6";
+        const qbrFigures = qbrDisplayFigures(result);
+        const span = _recTracer.startSpan("rec.qbr", { attributes: {
+          "rec.org": ctx.slug,
+          "langfuse.trace.name": "rec-qbr",
+          "langfuse.trace.input": JSON.stringify(qbrFigures),
+          "langfuse.trace.metadata": JSON.stringify({ org: ctx.slug, year: y, quarter: q }),
+          "langfuse.observation.type": "generation",
+          "langfuse.observation.model.name": qbrModel,
+          "langfuse.observation.input": JSON.stringify([
+            { role: "system", content: QBR_PROMPT },
+            { role: "user", content: JSON.stringify(qbrFigures) },
+          ]),
+        } });
         const traceId = span.spanContext().traceId;
         const sctx = otelApi.trace.setSpan(otelApi.context.active(), span);
         const ai = await otelApi.context.with(sctx, () => anthropic.messages.create({
-          model: process.env.QBR_MODEL || "claude-sonnet-4-6",
+          model: qbrModel,
           max_tokens: 1200, system: QBR_PROMPT,
-          messages: [{ role: "user", content: JSON.stringify(qbrDisplayFigures(result)) }],
+          messages: [{ role: "user", content: JSON.stringify(qbrFigures) }],
         }));
-        span.end();
         const text = (ai.content || []).filter(c => c.type === "text").map(c => c.text).join("");
-        try { narrative = JSON.parse(text.replace(/```json|```/g, "").trim()); } catch (pe) { narrative = null; }
         const u = ai.usage || {};
-        logEvent(ctx.slug, "qbr", "ai-generate", req, { inTok: u.input_tokens || 0, outTok: u.output_tokens || 0, costUsd: insightsCostUsd(ai.model || "claude-sonnet-4-6", u.input_tokens || 0, u.output_tokens || 0), traceId });
+        span.setAttribute("langfuse.observation.output", text);
+        span.setAttribute("langfuse.trace.output", text);
+        span.setAttribute("langfuse.observation.usage_details", JSON.stringify({ input: u.input_tokens || 0, output: u.output_tokens || 0 }));
+        span.end();
+        try { narrative = JSON.parse(text.replace(/```json|```/g, "").trim()); } catch (pe) { narrative = null; }
+        logEvent(ctx.slug, "qbr", "ai-generate", req, { inTok: u.input_tokens || 0, outTok: u.output_tokens || 0, costUsd: insightsCostUsd(ai.model || qbrModel, u.input_tokens || 0, u.output_tokens || 0), traceId });
       } catch (aiErr) { console.error("[qbr] AI error: " + aiErr.message); }
     }
     result.narrative = narrative || qbrFallbackNarrative(result);
@@ -8896,6 +8988,16 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  {
+    date: "2026-07-13",
+    title: "Langfuse: AI traces now carry prompt + output",
+    items: [
+      "Fixed empty Langfuse traces across all AI features (Insights, Report Wizard, Annual Report, QBR, Chat). Our manually-created spans weren't matching isDefaultExportSpan, so the LangfuseSpanProcessor was dropping them — feedback scores were landing on empty placeholder traces.",
+      "shouldExportSpan now also exports spans from our own 'rec-ai' tracer.",
+      "Every AI span now records langfuse.observation input/output, model name, and token usage, plus trace-level input/output — so each generation is fully reviewable in Langfuse.",
+      "Fixed chat feedback: the chat-feedback score POST was missing the required traceId field (so scores silently 400'd). Chat now wraps its stream in a rec.chat span and uses the real trace id as the messageId.",
+    ],
+  },
   {
     date: "2026-07-13",
     title: "Fix: FT Pipeline Tab Crash",
