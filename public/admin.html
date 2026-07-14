@@ -161,11 +161,26 @@
       font-weight: 600;
       margin-right: 3px;
     }
-    .badge-facility { background: #eff6ff; color: #2563eb; }
-    .badge-gl       { background: #f0fdf4; color: #15803d; }
+    .badge-facility           { background: #eff6ff; color: #2563eb; }
+    .badge-gl                 { background: #f0fdf4; color: #15803d; }
+    .badge-programs           { background: #fdf4ff; color: #a21caf; }
+    .badge-roster             { background: #fff1f2; color: #be123c; }
+    .badge-products           { background: #fefce8; color: #854d0e; }
+    .badge-memberships        { background: #ecfdf5; color: #047857; }
+    .badge-court-utilization  { background: #f0f9ff; color: #0369a1; }
+    .badge-fasttrack          { background: #fef3c7; color: #b45309; }
+    .badge-users              { background: #ede9fe; color: #6d28d9; }
+    .badge-directors-report   { background: #fce7f3; color: #be185d; }
+    .badge-overview           { background: #e0f2fe; color: #0284c7; }
+    .badge-historic           { background: #f5f5f4; color: #57534e; }
+    .badge-rentalcalendar     { background: #f0fdfa; color: #0f766e; }
+    .badge-instructor-payout  { background: #fff7ed; color: #ea580c; }
+    .badge-retention          { background: #faf5ff; color: #7e22ce; }
     .badge-daily    { background: #fefce8; color: #a16207; }
     .badge-weekly   { background: #fff7ed; color: #c2410c; }
     .badge-monthly  { background: #faf5ff; color: #7c3aed; }
+    .filter-detail  { display: block; font-size: 10px; color: #888; margin-top: 4px; line-height: 1.4; }
+    .filter-detail span { background: #f5f5f4; padding: 1px 6px; border-radius: 3px; margin-right: 4px; display: inline-block; margin-top: 2px; }
 
     .email-cell { font-family: 'IBM Plex Mono', monospace; font-size: 11px; }
 
@@ -404,6 +419,35 @@ async function loadSubscribers() {
   renderLog(data.log || []);
 }
 
+
+const REPORT_LABELS = {
+  facility:'Facility', gl:'GL', programs:'Programs', roster:'Roster',
+  products:'Products', memberships:'Memberships', 'court-utilization':'Court Util',
+  fasttrack:'Fast Track', users:'Community Intel', 'directors-report':'Directors',
+  overview:'Overview', historic:'Historic', rentalcalendar:'Calendar',
+  'instructor-payout':'Instructor Pay', retention:'Retention',
+};
+function reportLabel(r) { return REPORT_LABELS[r] || r; }
+function formatFilters(rp) {
+  if (!rp || typeof rp !== 'object') return '';
+  const parts = [];
+  for (const [report, qs] of Object.entries(rp)) {
+    if (!qs) continue;
+    const p = new URLSearchParams(qs);
+    const locs = p.get('locations');
+    const sites = p.get('sites');
+    const addons = p.get('addons');
+    const bookType = p.get('book_type');
+    const desk = p.get('desk');
+    if (locs) parts.push('\u{1F4CD} ' + locs.split(',').map(s=>decodeURIComponent(s)).join(', '));
+    if (sites) parts.push('\u{1F3E2} ' + sites.split(',').map(s=>decodeURIComponent(s)).join(', '));
+    if (desk) parts.push('\u{1FA91} Desk: ' + decodeURIComponent(desk));
+    if (addons) parts.push('\u{2795} ' + addons.split(',').map(s=>decodeURIComponent(s)).join(', '));
+    if (bookType && bookType !== 'all') parts.push('\u{1F4CB} ' + decodeURIComponent(bookType));
+  }
+  return parts.join(' \u00B7 ');
+}
+
 function renderSubscribers(subs) {
   document.getElementById('sub-count').textContent = `${subs.length} subscriber${subs.length !== 1 ? 's' : ''}`;
   const body = document.getElementById('subscribers-body');
@@ -423,7 +467,7 @@ function renderSubscribers(subs) {
         ${subs.map(s => `
           <tr>
             <td class="email-cell">${s.email}</td>
-            <td>${s.reports.map(r => `<span class="badge badge-${r}">${r === 'gl' ? 'GL' : 'Facility'}</span>`).join('')}${s.locationFilter ? `<br><span style="font-size:10px;color:#888">📍 ${s.locationFilter}</span>` : ''}</td>
+            <td>${s.reports.map(r => `<span class="badge badge-${r}">${reportLabel(r)}</span>`).join('')}${(() => { const f = formatFilters(s.reportParams); const lf = s.locationFilter; return (f || lf) ? '<div class="filter-detail">' + (f ? '<span>' + f + '</span>' : '') + (lf && !f ? '<span>\u{1F4CD} ' + lf + '</span>' : '') + '</div>' : ''; })()}</td>
             <td>
               <span class="badge badge-${s.schedule}">${s.schedule}</span>
               ${s.reportDateRanges ? Object.entries(s.reportDateRanges).map(([k,v]) => '<span class="badge" style="background:#f0f0f0;color:#555;border:1px solid #ddd;font-size:10px">' + k + ': ' + v + '</span>').join(' ') : (s.dateRange ? '<span class="badge" style="background:#f0f0f0;color:#555;border:1px solid #ddd">' + s.dateRange + '</span>' : '')}
