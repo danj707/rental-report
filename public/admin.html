@@ -492,7 +492,7 @@ function renderSubscribers(subs) {
               ${s.reportDateRanges ? Object.entries(s.reportDateRanges).map(([k,v]) => '<span class="badge" style="background:#f0f0f0;color:#555;border:1px solid #ddd;font-size:10px">' + k + ': ' + v + '</span>').join(' ') : (s.dateRange ? '<span class="badge" style="background:#f0f0f0;color:#555;border:1px solid #ddd">' + s.dateRange + '</span>' : '')}
             </td>
             <td class="actions-cell">
-              <button class="btn btn-test" onclick="testSend('${s.email}', ${JSON.stringify(s.reports).replace(/"/g, '&quot;')}, '${s.schedule}')" id="test-${btoa(s.email).replace(/[=+/]/g, '_')}">
+              <button class="btn btn-test" onclick="testSend('${s.email}', ${JSON.stringify(s.reports).replace(/"/g, '&quot;')}, '${s.schedule}', '${s.id}')" id="test-${btoa(s.email).replace(/[=+/]/g, '_')}">
                 Test
               </button>
               <button class="btn btn-danger" onclick="removeSubscriber('${s.email}')">Remove</button>
@@ -580,7 +580,7 @@ async function removeSubscriber(email) {
 }
 
 // ── Test send ─────────────────────────────────────────────────────────
-async function testSend(email, reports, schedule) {
+async function testSend(email, reports, schedule, subId) {
   const key = `test-${btoa(email).replace(/[=+/]/g, '_')}`;
   const btn = document.getElementById(key);
   if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner-inline"></span>Sending…'; }
@@ -590,7 +590,7 @@ async function testSend(email, reports, schedule) {
     await fetch(withToken(`/${orgSlug}/admin/test-send`), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, report, schedule }),
+      body: JSON.stringify({ email, report, schedule, subId }),
     });
   }
 
