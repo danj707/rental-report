@@ -17,20 +17,26 @@
       line-height: 1.4;
     }
 
-    /* ── Topbar ── */
-    .topbar {
-      background: #2c2c2c;
-      color: #eee;
-      padding: 10px 24px;
-      display: flex;
-      align-items: center;
-      gap: 16px;
+    /* ── Header ── */
+    .page-header {
+      background: linear-gradient(135deg, #312e81 0%, #4338ca 50%, #6366f1 100%);
+      color: #fff;
+      padding: 20px 24px 18px;
     }
-    .topbar-title { font-weight: 700; font-size: 14px; }
-    .topbar-org   { font-size: 11px; color: #aaa; }
-    .topbar-links { margin-left: auto; display: flex; gap: 12px; }
-    .topbar-links a { color: #aaa; text-decoration: none; font-size: 12px; }
-    .topbar-links a:hover { color: #fff; }
+    .header-inner {
+      max-width: 960px; margin: 0 auto;
+      display: flex; align-items: center; gap: 16px;
+    }
+    .header-logo { height: 42px; border-radius: 6px; background: rgba(255,255,255,.15); padding: 4px; }
+    .header-text { flex: 1; }
+    .header-org { font-size: 18px; font-weight: 700; letter-spacing: -0.3px; }
+    .header-sub { font-size: 12px; color: rgba(255,255,255,.7); margin-top: 2px; display: flex; align-items: center; gap: 8px; }
+    .header-sub a { color: rgba(255,255,255,.8); text-decoration: none; }
+    .header-sub a:hover { color: #fff; text-decoration: underline; }
+    .header-badge { display: inline-flex; align-items: center; gap: 4px; background: rgba(255,255,255,.18); padding: 3px 10px; border-radius: 12px; font-size: 11px; font-weight: 600; }
+    .header-links { display: flex; gap: 10px; }
+    .header-links a { color: rgba(255,255,255,.75); text-decoration: none; font-size: 12px; padding: 5px 12px; border-radius: 6px; background: rgba(255,255,255,.1); transition: background .15s; }
+    .header-links a:hover { background: rgba(255,255,255,.2); color: #fff; }
 
     /* ── Layout ── */
     .container {
@@ -258,12 +264,18 @@
 </head>
 <body>
 
-<div class="topbar">
-  <div>
-    <div class="topbar-title">📧 Report Subscriptions</div>
-    <div class="topbar-org" id="org-label">Loading…</div>
+<div class="page-header">
+  <div class="header-inner">
+    <img id="header-logo" class="header-logo" src="" alt="" style="display:none" />
+    <div class="header-text">
+      <div class="header-org" id="org-label">Loading…</div>
+      <div class="header-sub">
+        <span>📧 Email Subscriptions</span>
+        <span class="header-badge">✅ Active</span>
+      </div>
+    </div>
+    <div class="header-links" id="report-links"></div>
   </div>
-  <div class="topbar-links" id="report-links"></div>
 </div>
 
 <div class="container">
@@ -275,7 +287,7 @@
 
       <div class="form-group">
         <label>Email Address</label>
-        <input type="email" id="email-input" placeholder="name@rec.us" />
+        <input type="email" id="email-input" placeholder="you@example.gov" />
       </div>
 
       <div class="form-group">
@@ -331,7 +343,7 @@
         <div class="empty-state">Loading…</div>
       </div>
 
-      <div class="section-title">Recent Send Log</div>
+      <div class="section-title" style="display:flex;justify-content:space-between;align-items:center">Recent Send Log <button class="btn" style="font-size:10px;padding:3px 10px;background:#fee2e2;color:#991b1b;border:1px solid #fca5a5;cursor:pointer" onclick="clearLog()" id="clear-log-btn">Clear Log</button></div>
       <div id="log-body" style="padding:0 0 8px">
         <div class="empty-state">No sends yet</div>
       </div>
@@ -346,10 +358,17 @@ const ADMIN_CFG = window.ADMIN_CONFIG || {};
 
 // ── Derive org slug from URL ──────────────────────────────────────────
 const orgSlug = window.location.pathname.split('/').filter(Boolean)[0];
-document.getElementById('org-label').textContent = orgSlug.charAt(0).toUpperCase() + orgSlug.slice(1);
+document.getElementById('org-label').textContent = ADMIN_CFG.displayName || orgSlug.charAt(0).toUpperCase() + orgSlug.slice(1);
+if (ADMIN_CFG.logoUrl) {
+  const logo = document.getElementById('header-logo');
+  logo.src = ADMIN_CFG.logoUrl;
+  logo.style.display = '';
+  logo.onerror = () => { logo.style.display = 'none'; };
+}
 document.getElementById('report-links').innerHTML = `
-  <a href="/${orgSlug}/facility${TOKEN_QS}">Facility Report</a>
-  <a href="/${orgSlug}/gl${TOKEN_QS}">GL Rollup</a>
+  <a href="/${orgSlug}${TOKEN_QS}">🏠 Reports</a>
+  <a href="/${orgSlug}/facility${TOKEN_QS}">📋 Facility</a>
+  <a href="/${orgSlug}/gl${TOKEN_QS}">📊 GL</a>
 `;
 
 // ── Email gating ──────────────────────────────────────────────────────
