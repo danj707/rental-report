@@ -1031,7 +1031,7 @@ const ORGS_FILE          = path.join(DATA_DIR, "orgs.json");
 const HOTDOG_CLAIMS_FILE = path.join(DATA_DIR, "hotdog_claims.json");
 const SUBS_FILE   = path.join(DATA_DIR, "subscriptions.json");
 const EMAIL_ENABLED_ORGS = new Set(["niagarafalls", "watertown"]);
-const ALLOWED_EMAIL_DOMAINS = ["rec.us"];
+const ALLOWED_EMAIL_DOMAINS = []; // empty = no domain restriction; access gated by EMAIL_ENABLED_ORGS + token
 const EMAIL_SUBSCRIBABLE_REPORTS = new Set(["facility", "gl"]);
 const LOG_FILE    = path.join(DATA_DIR, "send_log.json");
 const EVENTS_FILE = path.join(DATA_DIR, "events.jsonl");
@@ -3943,7 +3943,7 @@ app.post("/:org/admin/subscribe", (req, res) => {
   const { email, reports, schedule, locationFilter, dateRange, reportParams, reportDateRanges } = req.body;
   if (!email || !reports?.length || !schedule) return res.status(400).json({ error: "email, reports, and schedule are required" });
   const emailDomain = email.split("@")[1]?.toLowerCase();
-  if (!ALLOWED_EMAIL_DOMAINS.includes(emailDomain)) return res.status(403).json({ error: `Only ${ALLOWED_EMAIL_DOMAINS.join(", ")} email addresses are allowed` });
+  // Domain restriction removed — access is gated by EMAIL_ENABLED_ORGS + token
   if (!EMAIL_ENABLED_ORGS.has(req.params.org)) return res.status(403).json({ error: "Email subscriptions are not enabled for this organization" });
   if (!["daily","weekly","monthly"].includes(schedule)) return res.status(400).json({ error: "schedule must be daily, weekly, or monthly" });
   const validReports = reports.filter(r => REPORT_TYPES.includes(r));
