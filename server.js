@@ -4034,11 +4034,17 @@ app.post("/:org/admin/test-email", async (req, res) => {
 });
 
 app.post("/:org/admin/test-send", async (req, res) => {
-  if (!ORGS[req.params.org]) return res.status(404).json({ error: "Unknown org" });
+  const slug = req.params.org;
+  if (!ORGS[slug]) return res.status(404).json({ error: "Unknown org" });
   const { email, report, schedule } = req.body;
   if (!email || !report || !schedule) return res.status(400).json({ error: "email, report, and schedule required" });
+  // Look up subscriber's saved filters so the test email matches what cron would send
+  const sub = db.getSubscriptions(slug).find(s => s.email === email);
+  const savedParams = (sub?.reportParams && typeof sub.reportParams === "object") ? (sub.reportParams[report] || null) : null;
+  const dateRange = (sub?.reportDateRanges && sub.reportDateRanges[report]) || sub?.dateRange || null;
+  const locationFilter = sub?.locationFilter || null;
   res.json({ ok: true, message: "Sending in background — check the log in a moment" });
-  sendReportEmail(req.params.org, email, report, schedule)
+  sendReportEmail(slug, email, report, schedule, locationFilter, dateRange, savedParams)
     .catch(err => console.error("[test-send] Error:", err));
 });
 
