@@ -7074,6 +7074,11 @@ app.get("/", (req, res) => {
   }).join("");
 
   // ── Per-org usage metrics for admin table ──
+  // Read send log once for email metrics
+  const _sendLog30d = (() => {
+    const cutoff = new Date(Date.now() - 30 * 86400000).toISOString();
+    return readJSON(LOG_FILE, []).filter(l => l.sent_at >= cutoff && l.status === "sent");
+  })();
   const usageRows = Object.entries(ORGS).map(([slug, org]) => {
     try {
       const m = buildMetrics(slug, 30);
@@ -7081,8 +7086,13 @@ app.get("/", (req, res) => {
       const exports = Object.values(m.summary).reduce((n, s) => n + (s.pdf || 0) + (s.excel || 0), 0);
       const aiCalls = m.insights.calls;
       const reports = m.configuredReports.length;
-      const _hid = new Set(getHiddenReports(slug)); const _act = reports - _hid.size; return { slug, name: org.displayName || slug, views, exports, aiCalls, reports, active: _act > 0 ? _act : reports };
-    } catch(e) { return { slug, name: org.displayName || slug, views: 0, exports: 0, aiCalls: 0, reports: 0, active: 0 }; }
+      const subscribers = m.totalSubscribers;
+      const emailsSent = _sendLog30d.filter(l => l.org === slug).length;
+      // Per-org daily sparkline (30 days)
+      const sparkDays = [];
+      for (let i = 29; i >= 0; i--) { const d = new Date(Date.now() - i * 86400000).toISOString().substring(0, 10); const dayData = m.daily[d] || {}; sparkDays.push(Object.values(dayData).reduce((a, b) => a + b, 0)); }
+      const _hid = new Set(getHiddenReports(slug)); const _act = reports - _hid.size; return { slug, name: org.displayName || slug, views, exports, aiCalls, reports, active: _act > 0 ? _act : reports, subscribers, emailsSent, sparkDays };
+    } catch(e) { return { slug, name: org.displayName || slug, views: 0, exports: 0, aiCalls: 0, reports: 0, active: 0, subscribers: 0, emailsSent: 0, sparkDays: new Array(30).fill(0) }; }
   }).sort((a, b) => b.views - a.views);
   const maxViews = Math.max(...usageRows.map(r => r.views), 1);
   // Daily usage sparkline (last 30 days)
@@ -7102,12 +7112,14 @@ app.get("/", (req, res) => {
     <div class="usage-table-wrap">
       <div style="padding:10px 14px;display:flex;align-items:center;gap:12px;border-bottom:1px solid #e8e5df"><span style="font-size:11px;color:#9ca3af">30-day trend</span><svg viewBox="0 0 200 32" style="width:180px;height:28px"><polyline points="${sparkPts}" fill="none" stroke="#6d28d9" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg><span style="font-size:11px;font-weight:600;color:#6d28d9">${sparkTotal.toLocaleString()} views</span></div>
       <table class="usage-table">
-        <thead><tr><th>Organization</th><th class="num">Views</th><th class="num">Exports</th><th class="num">AI Insights</th><th class="num">Reports</th><th style="width:30px"></th></tr></thead>
+        <thead><tr><th>Organization</th><th class="num">Views</th><th class="num">Exports</th><th class="num">AI Insights</th><th class="num">Subscribers</th><th class="num">Emails Sent</th><th class="num">Reports</th><th style="width:30px"></th></tr></thead>
         <tbody>${usageRows.map(r => `<tr>
-          <td><a href="#org-${r.slug}" class="usage-org-name" style="text-decoration:none;color:#1e1b4b" onclick="event.preventDefault();var el=document.getElementById('org-'+'${r.slug}');if(el){el.scrollIntoView({behavior:'smooth',block:'start'});var body=el.querySelector('.org-body');if(body&&body.style.display==='none'){body.style.display='';var chev=el.querySelector('.org-collapse-chevron');if(chev)chev.style.transform='rotate(90deg)'}}">${r.name}</a><div class="usage-bar" style="width:${Math.round(r.views / maxViews * 100)}%"></div></td>
+          <td><a href="#org-${r.slug}" class="usage-org-name" style="text-decoration:none;color:#1e1b4b" onclick="event.preventDefault();var el=document.getElementById('org-'+'${r.slug}');if(el){el.scrollIntoView({behavior:'smooth',block:'start'});var body=el.querySelector('.org-body');if(body&&body.style.display==='none'){body.style.display='';var chev=el.querySelector('.org-collapse-chevron');if(chev)chev.style.transform='rotate(90deg)'}}">${r.name}</a><div style="display:flex;align-items:center;gap:4px;margin-top:1px"><svg viewBox="0 0 90 18" style="width:90px;height:14px;flex-shrink:0">${(() => { const mx = Math.max(...r.sparkDays, 1); const pts = r.sparkDays.map((v, i) => (i / 29 * 88 + 1).toFixed(1) + ',' + (16 - v / mx * 14 + 1).toFixed(1)).join(' '); return '<polyline points="' + pts + '" fill="none" stroke="#6d28d9" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>'; })()}</svg><div class="usage-bar" style="width:${Math.round(r.views / maxViews * 100)}%;flex-shrink:0"></div></div></td>
           <td class="num${r.views === 0 ? ' usage-zero' : ''}">${r.views.toLocaleString()}</td>
           <td class="num${r.exports === 0 ? ' usage-zero' : ''}">${r.exports}</td>
           <td class="num${r.aiCalls === 0 ? ' usage-zero' : ''}">${r.aiCalls}</td>
+          <td class="num${r.subscribers === 0 ? ' usage-zero' : ''}">${r.subscribers}</td>
+          <td class="num${r.emailsSent === 0 ? ' usage-zero' : ''}">${r.emailsSent}</td>
           <td class="num">${r.active}/${r.reports}</td>
           <td style="text-align:center"><a href="/${r.slug}?token=${ORGS[r.slug]?.token || ''}" target="_blank" title="Open ${r.name} reports" style="color:#9ca3af;text-decoration:none"><i class="ph ph-arrow-square-out" style="font-size:14px"></i></a></td>
         </tr>`).join('')}</tbody>
@@ -7165,7 +7177,7 @@ app.get("/", (req, res) => {
     .usage-table th { text-align: left; padding: 8px 14px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: #9ca3af; border-bottom: 1px solid #e8e5df; }
     .usage-table th.num { text-align: right; }
     .usage-table td { padding: 7px 14px; border-bottom: 1px solid #f3f2ef; color: #374151; }
-    .usage-table td.num { text-align: right; font-family: 'IBM Plex Mono', monospace; font-size: 12px; }
+    .usage-table td.num { text-align: right; font-family: 'Inter', monospace; font-size: 12px; font-variant-numeric: tabular-nums; }
     .usage-table tr:last-child td { border-bottom: none; }
     .usage-table tr:hover { background: #faf9f7; }
     .usage-bar { height: 4px; border-radius: 2px; background: linear-gradient(90deg, #6d28d9, #0d9488); margin-top: 3px; }
@@ -9171,6 +9183,14 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  {
+    date: "2026-07-14",
+    title: "Platform Usage: Per-Org Sparklines + Email Metrics",
+    items: [
+      "Each org row in the Platform Usage table now has its own 30-day sparkline showing daily view trends.",
+      "Two new columns: Subscribers (active email subscriptions) and Emails Sent (successful sends in last 30 days).",
+    ],
+  },
   {
     date: "2026-07-14",
     title: "Inter Font Across All Reports",
