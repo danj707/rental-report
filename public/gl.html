@@ -1415,9 +1415,7 @@ function App() {
   }
 
   // ── Summary cards ────────────────────────────────────────────────────
-  function {showEmailModal && EmailSubscribeModal()}
-
-      renderSummaryCards() {
+  function renderSummaryCards() {
     if (!rows) return null;
     return (
       <div className="summary-cards">
@@ -1736,6 +1734,8 @@ function App() {
           <span>{displayOrg}</span>
           <span>Run Date/Time: {runDate}</span>
         </div>
+
+        {showEmailModal && EmailSubscribeModal()}
 
         {/* Puppeteer marker */}
         <div id="report-ready" style={{display:'none'}} />
