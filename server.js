@@ -2056,6 +2056,12 @@ async function sendReportEmail(orgSlug, email, reportType, schedule, locationFil
     const cleaned = new URLSearchParams(savedParams);
     cleaned.delete("token");
     cleaned.delete("_print");
+    // If no dates in savedParams but we have a dateRange preset, calculate and inject
+    if (!cleaned.get("start_date") && !cleaned.get("end_date") && dateRange) {
+      const dr = getDateRange(dateRange);
+      cleaned.set("start_date", dr.start);
+      cleaned.set("end_date", dr.end);
+    }
     if (orgConfig.token) cleaned.set("token", orgConfig.token);
     const qs = cleaned.toString();
     reportUrl = `${BASE_URL}/${orgSlug}/${reportType}${qs ? `?${qs}` : ""}`;
