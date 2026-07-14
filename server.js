@@ -3991,6 +3991,11 @@ app.post("/:org/admin/subscribe", (req, res) => {
 
 app.delete("/:org/admin/subscribe", (req, res) => {
   if (!ORGS[req.params.org]) return res.status(404).json({ error: "Unknown org" });
+  const { email, id } = req.body;
+  if (!email) return res.status(400).json({ error: "email required" });
+  db.deleteSubscription(req.params.org, email.toLowerCase().trim(), id || null);
+  res.json({ ok: true });
+});
 
 // ── Clear send log for org (password-gated) ──
 app.delete("/:org/admin/log", express.json(), (req, res) => {
@@ -4004,11 +4009,6 @@ app.delete("/:org/admin/log", express.json(), (req, res) => {
   const kept = allLog.filter(l => l.org !== slug);
   writeJSON(LOG_FILE, kept);
   res.json({ ok: true, removed: allLog.length - kept.length });
-});
-  const { email, id } = req.body;
-  if (!email) return res.status(400).json({ error: "email required" });
-  db.deleteSubscription(req.params.org, email.toLowerCase().trim(), id || null);
-  res.json({ ok: true });
 });
 
 app.post("/:org/admin/test-email", async (req, res) => {
