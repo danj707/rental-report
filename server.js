@@ -2660,6 +2660,40 @@ function insightsCostUsd(model, inTok, outTok) {
   return (inTok / 1e6) * priceIn + (outTok / 1e6) * priceOut;
 }
 
+// ── Schema Context for AI Insights ──────────────────────────────────
+// Injected into every insights system prompt so the model understands
+// the rec.us data model, column semantics, and known gotchas.
+const SCHEMA_CONTEXT = `
+DATA MODEL REFERENCE (rec.us platform):
+
+Table relationships:
+- program (template) → section (schedulable instance) → session (individual meeting)
+- booking = enrollment record. Links: customer_user_id (payer/parent), participant_user_id (actual attendee, often a child)
+- order → order_item (line items) → order_item_transaction (per-item money movement)
+- payment = cash received event. refund = cash returned event. Both link to order.
+- reservation = facility time-slot booking. reservation_court = site assignment junction.
+- membership links to group (tier), household, and Stripe subscription.
+
+Critical column semantics:
+- "Revenue" from applied_pricing->'result'->>'finalCents' = actual charged amount (cents). order_item.price = original listed price (may differ due to discounts/group pricing).
+- customer_user_id = account holder who pays. participant_user_id = person who attends. For kids, these differ (parent pays, child attends).
+- booking.status: confirmed = active enrollment, planned = Fast Track pre-registration, pending = mid-checkout.
+- booking.is_fast_track: true = pre-registration that promotes in-place when registration opens.
+- section.registration_mode: 'section' = register for whole section, 'per-session' = pick individual sessions.
+- reservation timestamps are stored in LOCAL time (no timezone conversion needed).
+
+Revenue recognition distinction:
+- Payment date (payment.created_at) = when cash was received. Use for cash-basis reporting.
+- Booking date (booking.created_at) = when enrollment was created. Use for accrual/activity reporting.
+- These often differ significantly (30-40% of monthly payments are for bookings from prior months due to season passes and payment plans).
+- payment_plan_installment tracks scheduled payments: due_at, paid_at, amount_cents.
+
+Known data patterns:
+- Household bookings (~20-30% of program bookings): parent is customer_user_id, child is participant_user_id.
+- Free programs: payment.amount = 0 with payment_method_type = 'free'. Still creates order_item records.
+- Canceled bookings retain their row with canceled_at set (soft delete pattern). Filter with canceled_at IS NULL for active.
+- All money amounts in the database are in cents (integer). Divide by 100 for dollars.`;
+
 const INSIGHTS_SYS_PROMPT = `You are a facilities operations analyst for US municipal parks & recreation departments. You are given aggregate court-utilization statistics for a single reporting period (counts, percentages, and hours — already computed for you; never recompute or do arithmetic the data doesn't support).
 
 Return EXACTLY 4 insights as a JSON array and nothing else — no prose, no preamble, no markdown code fences. Each element is an object with exactly these keys:
@@ -2962,7 +2996,7 @@ app.post("/:org/:report/api/insights", resolveOrg, async (req, res) => {
 
   try {
     // Wrap in OTel span so we can capture traceId for user feedback
-    const sysPrompt = SYS_PROMPTS[reportType] || INSIGHTS_SYS_PROMPT;
+    const sysPrompt = (SYS_PROMPTS[reportType] || INSIGHTS_SYS_PROMPT) + "\n\n" + SCHEMA_CONTEXT;
     const parentSpan = _recTracer.startSpan("rec.insights", {
       attributes: {
         "rec.org": orgSlug,
@@ -9079,6 +9113,15 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  {
+    date: "2026-07-14",
+    title: "AI Insights: Schema-Aware Context",
+    items: [
+      "Every AI insight prompt now includes a SCHEMA_CONTEXT block explaining the rec.us data model: table relationships, column semantics, revenue recognition rules, and known data patterns.",
+      "The model now understands that customer_user_id is the payer while participant_user_id is the attendee, that applied_pricing finalCents is the real charged amount, and that payment date differs from booking date.",
+      "Eliminates the class of hallucinations where the model misinterprets column meanings or invents incorrect relationships between tables.",
+    ],
+  },
   {
     date: "2026-07-14",
     title: "Report Dependency Manifest + Enhanced Drift Detection",
