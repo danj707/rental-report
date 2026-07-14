@@ -627,10 +627,6 @@ const SHARED_UUIDS = {
   "program-checkins": "cb6fd909-72d3-446b-930b-c0382da02d62",
 };
 
-// ── Report Dependency Manifest (14 report types, 45 DB tables, 221 critical columns) ─
-// Maps each report type to the rec.us DB tables/columns its Metabase SQL depends on.
-// Complements the existing schema-drift baseline system with upstream DB-level context.
-// Use: cross-reference drift alerts against actual DB columns, identify blast radius.
 const REPORT_DEPENDENCIES = {
   facility: {
     tables: ["reservation","reservation_court","reservation_user","court","location","facility_rental","order_item","users"],
@@ -693,6 +689,7 @@ const REPORT_DEPENDENCIES = {
 function getWatchedTables() { const s = new Set(); for (const r of Object.values(REPORT_DEPENDENCIES)) r.tables.forEach(t => s.add(t)); return [...s].sort(); }
 // Helper: which report types depend on a specific table.column
 function getReportsForColumn(table, col) { return Object.entries(REPORT_DEPENDENCIES).filter(([, r]) => r.columns[table]?.includes(col)).map(([t]) => t); }
+
 
 // Amenity tag UUID → display name (from tag + tag_alias tables, refreshed 2026-07-13)
 const AMENITY_TAGS = {
@@ -6217,6 +6214,12 @@ app.post("/api/admin/schema-drift/ack", express.json(), (req, res) => {
   const log = loadDriftLog();
   if (typeof index !== "number" || index < 0 || index >= log.length) {
     return res.status(400).json({ error: "Invalid index" });
+  }
+  log[index].acknowledged = true;
+  log[index].acknowledgedAt = new Date().toISOString();
+  writeJSON(SCHEMA_DRIFT_LOG_FILE, log);
+  res.json({ ok: true, message: "Acknowledged" });
+});
 
 // ── GET /api/admin/report-dependencies — upstream DB dependency manifest ──
 app.get("/api/admin/report-dependencies", (req, res) => {
@@ -6225,7 +6228,6 @@ app.get("/api/admin/report-dependencies", (req, res) => {
     const colCount = Object.values(config.columns).reduce((s, c) => s + c.length, 0);
     summary[type] = { tableCount: config.tables.length, tables: config.tables, criticalColumns: colCount };
   }
-  // Cross-report overlap: columns depended on by the most report types
   const overlap = {};
   for (const [type, config] of Object.entries(REPORT_DEPENDENCIES)) {
     for (const [table, cols] of Object.entries(config.columns)) {
@@ -6238,12 +6240,6 @@ app.get("/api/admin/report-dependencies", (req, res) => {
   }
   const highRisk = Object.entries(overlap).filter(([, r]) => r.length >= 3).sort((a, b) => b[1].length - a[1].length).map(([col, reports]) => ({ column: col, usedBy: reports.length, reports }));
   res.json({ reportTypes: Object.keys(REPORT_DEPENDENCIES).length, watchedTables: getWatchedTables().length, reports: summary, highRiskColumns: highRisk });
-});
-  }
-  log[index].acknowledged = true;
-  log[index].acknowledgedAt = new Date().toISOString();
-  writeJSON(SCHEMA_DRIFT_LOG_FILE, log);
-  res.json({ ok: true, message: "Acknowledged" });
 });
 
 // Audit log viewer
