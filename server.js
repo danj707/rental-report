@@ -8998,6 +8998,7 @@ app.get("/", (req, res) => {
       "Data comes from a new shared Metabase card reading attendance_event (target_type='session'), aggregated per section — a separate lazy-loaded feed, so the existing Programs report is unaffected.",
       "Check-out % shows an em-dash rather than 0% when a section has no check-outs, since attendance scanning is sparse for many orgs.",
       "Fixed KPI sub-labels and note rendering literal \\u escapes; check-out % now reads em-dash (not 0%) whenever a section has zero check-out events.",
+      "Summary tab 'All Programs' table gained Check-In % and Check-Out % columns (per program, rolled up from tracked sections). Columns only appear for orgs that track attendance.",
     ],
   },
     items: [
