@@ -2707,7 +2707,7 @@ function App() {
     <div>
       {renderToolbar()}
 
-      {showEmailModal && <EmailSubscribeModal />}
+      {showEmailModal && EmailSubscribeModal()}
 
       {showHeatmap && filteredRows && filteredRows.length > 0 && !isPrint && (
         <HeatmapStrip filteredRows={filteredRows} locationColors={locationColors} />
