@@ -345,7 +345,7 @@ function MovementChart({ metrics }) {
   if (f && typeof f.netDelta === 'number')          rows.push(['Net revenue', f.netDelta]);
   if (f && typeof f.transactionsDelta === 'number') rows.push(['Transactions', f.transactionsDelta]);
   if (p && typeof p.enrollmentsDelta === 'number')  rows.push(['Enrollments', p.enrollmentsDelta]);
-  if (fa && typeof fa.bookingsDelta === 'number')   rows.push(['Bookings', fa.bookingsDelta]);
+  if (fa && typeof fa.bookingsDelta === 'number')   rows.push(['Rentals', fa.bookingsDelta]);
   if (u && typeof u.newDelta === 'number')          rows.push(['New users', u.newDelta]);
 
   useEffect(() => {
@@ -449,7 +449,7 @@ function Report({ data }) {
       <div className="kpis">
         {m.financial && m.financial.transactions != null && <Kpi lab="Transactions" val={fmtNum(m.financial.transactions)} sub={`${fmtNum(m.financial.refundCount)} refunded`} delta={m.financial.transactionsDelta} />}
         {m.programs   && <Kpi lab="Enrollments"  val={fmtNum(m.programs.enrollments)}    sub={`${fmtNum(m.programs.sections)} sections · ${m.programs.programs} programs`} delta={m.programs.enrollmentsDelta} />}
-        {m.facility   && <Kpi lab="Bookings"     val={fmtNum(m.facility.bookings)}       sub={`${m.facility.locations} locations · ${fmtMoney(m.facility.revenue)}`} delta={m.facility.bookingsDelta} />}
+        {m.facility   && <Kpi lab="Rentals"     val={fmtNum(m.facility.bookings)}       sub={`${m.facility.locations} locations · ${fmtMoney(m.facility.revenue)}`} delta={m.facility.bookingsDelta} />}
         {m.court      && <Kpi lab="Court util."  val={`${m.court.utilization}%`}         sub={`${fmtNum(m.court.hoursBooked)} hrs · ${m.court.courts} courts`} est={m.court.utilizationEstimated} />}
         {m.retention  && <Kpi lab="Retention"    val={`${m.retention.rate}%`}            sub="point-in-time" />}
         {m.users && m.users.total != null && <Kpi lab="Total users" val={fmtNum(m.users.total)} sub="all-time" />}
