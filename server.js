@@ -1051,18 +1051,7 @@ const SCHEMA_BASELINES_FILE = path.join(DATA_DIR, "schema-baselines.json");
 const SCHEMA_DRIFT_LOG_FILE = path.join(DATA_DIR, "schema-drift-log.json");
 const driftAlertTimestamps = new Map();
 
-// Money columns per report type — zero-revenue sanity check
-const REPORT_MONEY_FIELDS = {
-  gl:                  ["Net Amount", "Total Payments", "Total Refunds", "Credit Card Payments"],
-  memberships:         ["Price", "Paid", "Refunded", "Net Collected"],
-  facility:            ["Total", "Add-On $"],
-  programs:            ["Revenue", "Avg Price"],
-  products:            ["Revenue", "Avg Price"],
-  users:               ["Total Revenue", "Gross Revenue", "Refunds"],
-  "instructor-payout": ["Payout Amount", "Gross Revenue"],
-  "court-utilization": ["Revenue"],
-  retention:           ["Revenue"],
-};
+// (zero-revenue check removed — drift detection focuses on column schema changes)
 
 
 // ── Health check tiers ───────────────────────────────────────────────
@@ -1370,7 +1359,7 @@ function extractColumns(rows) {
   return Object.keys(rows[0]).sort();
 }
 
-function checkSchemaDrift(reportType, rows) {
+function checkSchemaDrift(reportType, rows, orgSlug) {
   try {
     const currentCols = extractColumns(rows);
     if (!currentCols) return null;
@@ -1395,12 +1384,17 @@ function checkSchemaDrift(reportType, rows) {
     const removed = baseline.columns.filter(c => !actual.has(c));
     if (added.length === 0 && removed.length === 0) return null;
 
+    // Severity: removed columns = BREAKING (would break reports), added = FYI (new data available)
+    const severity = removed.length > 0 ? "breaking" : "info";
+
     // Cross-reference with REPORT_DEPENDENCIES to find upstream DB blast radius
     const deps = REPORT_DEPENDENCIES[reportType];
     const dbTablesAffected = deps ? deps.tables.length : 0;
     const dbColumnsAffected = deps ? Object.values(deps.columns).reduce((s, c) => s + c.length, 0) : 0;
     const drift = {
       type: "schema-drift",
+      severity,
+      orgSlug: orgSlug || "unknown",
       reportType,
       detectedAt: new Date().toISOString(),
       added,
@@ -1420,7 +1414,7 @@ function checkSchemaDrift(reportType, rows) {
       saveSchemaBaselines(baselines);
     }
 
-    console.log(`[schema] DRIFT detected on ${reportType}: +[${added.join(",")}] -[${removed.join(",")}]`);
+    console.log(`[schema] ${severity.toUpperCase()} drift on ${orgSlug}/${reportType}: +[${added.join(",")}] -[${removed.join(",")}]`);
     return drift;
   } catch (e) {
     console.error("[schema] checkSchemaDrift error:", e.message);
@@ -1428,66 +1422,56 @@ function checkSchemaDrift(reportType, rows) {
   }
 }
 
-function checkMoneyFieldSanity(reportType, rows) {
-  try {
-    const fields = REPORT_MONEY_FIELDS[reportType];
-    if (!fields || !Array.isArray(rows) || rows.length < 20) return null;
-
-    const allZero = fields.every(f => {
-      const vals = rows.map(r => parseFloat(r[f]) || 0);
-      return vals.every(v => v === 0);
-    });
-    if (!allZero) return null;
-
-    const anomaly = {
-      type: "zero-revenue",
-      reportType,
-      detectedAt: new Date().toISOString(),
-      rowCount: rows.length,
-      fieldsChecked: fields,
-      message: `${rows.length} rows but all money fields are $0 — upstream view may have broken`,
-      acknowledged: false,
-    };
-    appendDriftLog(anomaly);
-    console.log(`[schema] ZERO-REVENUE anomaly on ${reportType}: ${rows.length} rows, fields [${fields.join(",")}]`);
-    return anomaly;
-  } catch (e) {
-    console.error("[schema] checkMoneyFieldSanity error:", e.message);
-    return null;
-  }
-}
+// checkMoneyFieldSanity removed — zero-revenue checks were too noisy (false positives on free programs)
 
 async function sendDriftAlert(alerts, orgSlug, reportType) {
   const resend = getResendClient();
   if (!resend) return;
-  const suppressKey = `drift:${reportType}`;
+  const suppressKey = `drift:${orgSlug}:${reportType}`;
   const lastSent = driftAlertTimestamps.get(suppressKey) || 0;
   if (Date.now() - lastSent < 24 * 3600000) return;
 
+  // Severity: any removed columns = breaking, otherwise info (new fields)
+  const hasBreaking = alerts.some(a => a.removed && a.removed.length > 0);
+  const severity = hasBreaking ? "breaking" : "info";
+
   const lines = alerts.map(a => {
-    if (a.type === "zero-revenue") {
-      return `&#128308; <strong>${reportType}</strong> &#8212; ZERO REVENUE<br>`
-        + `&nbsp;&nbsp;${a.rowCount} rows, all money fields (${a.fieldsChecked.join(", ")}) = $0<br>`
-        + `&nbsp;&nbsp;Likely: upstream materialized view broke a join`;
+    const parts = [];
+    if (a.removed && a.removed.length > 0) {
+      parts.push(`<div style="background:#fef2f2;border-left:4px solid #dc2626;padding:8px 12px;margin:4px 0;border-radius:4px">`
+        + `<strong style="color:#dc2626">BREAKING</strong> &#8212; columns removed from <strong>${orgSlug}/${reportType}</strong><br>`
+        + `<code style="color:#dc2626">${a.removed.join(", ")}</code><br>`
+        + `<span style="color:#666;font-size:11px">These columns may be referenced in report templates. Reports could break.</span></div>`);
     }
-    return `&#128993; <strong>${reportType}</strong> &#8212; SCHEMA CHANGED<br>`
-      + (a.added.length ? `&nbsp;&nbsp;Added: <code>${a.added.join(", ")}</code><br>` : "")
-      + (a.removed.length ? `&nbsp;&nbsp;Removed: <code>${a.removed.join(", ")}</code><br>` : "")
-      + `&nbsp;&nbsp;Previous: ${a.previousCount} cols &#8594; Now: ${a.currentCount} cols`;
-  }).join("<hr>");
+    if (a.added && a.added.length > 0) {
+      parts.push(`<div style="background:#f0fdf4;border-left:4px solid #16a34a;padding:8px 12px;margin:4px 0;border-radius:4px">`
+        + `<strong style="color:#16a34a">NEW FIELDS</strong> &#8212; columns added to <strong>${orgSlug}/${reportType}</strong><br>`
+        + `<code style="color:#16a34a">${a.added.join(", ")}</code><br>`
+        + `<span style="color:#666;font-size:11px">New data available. Consider adding to report templates.</span></div>`);
+    }
+    if (parts.length === 0) {
+      parts.push(`<div style="padding:8px 12px">${a.previousCount} cols &#8594; ${a.currentCount} cols</div>`);
+    }
+    return parts.join("");
+  }).join("");
+
+  const emoji = hasBreaking ? "\u{1F6A8}" : "\u{2728}";
+  const subjectAction = hasBreaking ? "columns removed" : "new fields available";
 
   try {
     await resend.emails.send({
       from: `${FROM_NAME} <${FROM_EMAIL}>`,
       to: "dan@rec.us",
-      subject: `Schema drift: ${reportType} — ${alerts.map(a => a.type === "zero-revenue" ? "all revenue $0" : "columns changed").join(" + ")}`,
-      html: `<p>Drift detected on <strong>${orgSlug}/${reportType}</strong> at ${new Date().toISOString()}</p>`
-        + `<div style="font-family:monospace;font-size:13px;line-height:1.8">${lines}</div>`
-        + `<p style="margin-top:16px"><a href="${BASE_URL}/#drift">View in Admin &#8594;</a></p>`
-        + `<p style="color:#6b7280;font-size:11px">Baselines auto-update after drift (unless locked). Lock a baseline after validating correctness.</p>`,
+      subject: `${emoji} Schema drift: ${orgSlug}/${reportType} \u2014 ${subjectAction}`,
+      html: `<div style="font-family:system-ui,-apple-system,sans-serif;max-width:560px">`
+        + `<p style="margin:0 0 12px">Drift detected on <strong>${orgSlug}/${reportType}</strong> at ${new Date().toISOString()}</p>`
+        + lines
+        + `<p style="margin-top:16px"><a href="${BASE_URL}/#drift" style="color:#3b82f6">View in Admin &#8594;</a></p>`
+        + `<p style="color:#6b7280;font-size:11px">Baselines auto-update after drift (unless locked). Suppressed for this org/report for 24h.</p>`
+        + `</div>`,
     });
     driftAlertTimestamps.set(suppressKey, Date.now());
-    console.log(`[schema] Drift alert email sent for ${reportType}`);
+    console.log(`[schema] Drift alert email sent for ${orgSlug}/${reportType} [${severity}]`);
   } catch (e) {
     console.error("[schema] Failed to send drift alert:", e.message);
   }
@@ -3845,12 +3829,10 @@ app.get("/:org/:report/api/data", resolveOrg, async (req, res) => {
       }
     }
 
-    // ── Schema drift + money-field sanity (live fetches only) ──
-    const schemaDrift = checkSchemaDrift(reportType, data);
-    const moneyAnomaly = checkMoneyFieldSanity(reportType, data);
-    const schemaWarnings = [schemaDrift, moneyAnomaly].filter(Boolean);
-    if (schemaWarnings.length > 0) {
-      sendDriftAlert(schemaWarnings, orgSlug, reportType).catch(() => {});
+    // ── Schema drift detection (live fetches only) ──
+    const schemaDrift = checkSchemaDrift(reportType, data, orgSlug);
+    if (schemaDrift) {
+      sendDriftAlert([schemaDrift], orgSlug, reportType).catch(() => {});
     }
 
     const result = {
@@ -3861,14 +3843,13 @@ app.get("/:org/:report/api/data", resolveOrg, async (req, res) => {
         logo_url: orgConfig.logoUrl,
         report_type: reportType,
         generated_at: new Date().toISOString(),
-        ...(schemaWarnings.length > 0 && {
-          schema_warnings: schemaWarnings.map(a => ({
-            type: a.type,
-            message: a.type === "zero-revenue"
-              ? a.message
-              : `Column changes: +[${a.added.join(", ")}] -[${a.removed.join(", ")}]`,
-            detectedAt: a.detectedAt,
-          })),
+        ...(schemaDrift && {
+          schema_warnings: [{
+            type: schemaDrift.type,
+            severity: schemaDrift.severity,
+            message: `Column changes: +[${schemaDrift.added.join(", ")}] -[${schemaDrift.removed.join(", ")}]`,
+            detectedAt: schemaDrift.detectedAt,
+          }],
         }),
       },
     };
@@ -7937,7 +7918,7 @@ app.get("/", (req, res) => {
           <div class="org-name">&#128269; Schema Drift
             <span style="font-size:11px;font-weight:600;margin-left:6px;padding:2px 8px;border-radius:10px;${driftActive.length > 0 ? 'background:#fef2f2;color:#dc2626' : 'background:#f0fdf4;color:#16a34a'}">${driftActive.length > 0 ? driftActive.length + ' warning' + (driftActive.length > 1 ? 's' : '') : 'All clear'}</span>
           </div>
-          <div class="org-slug">Upstream column changes and revenue anomaly detection</div>
+          <div class="org-slug">Column schema monitoring (breaking changes + new fields)</div>
         </div>
         <span class="how-chevron"><i class="ph ph-caret-right" style="font-size:14px"></i></span>
       </div>
@@ -7946,20 +7927,25 @@ app.get("/", (req, res) => {
           ${driftActive.length === 0
             ? '<p style="color:#16a34a;font-weight:600;margin:8px 0">&#9989; No active drift warnings. Baselines: ' + Object.keys(driftData.baselines).length + ' seeded, ' + Object.values(driftData.baselines).filter(b => b.lockedAt).length + ' locked.</p>'
             : driftActive.slice(0, 10).map((d, i) => {
-                const icon = d.type === 'zero-revenue' ? '&#128308;' : '&#128993;';
+                const isBreaking = d.severity === 'breaking' || (d.removed && d.removed.length > 0);
+                const icon = isBreaking ? '&#128680;' : '&#10024;';
+                const label = isBreaking ? 'BREAKING' : 'NEW FIELDS';
+                const bg = isBreaking ? '#fef2f2' : '#f0fdf4';
+                const border = isBreaking ? '#dc2626' : '#16a34a';
+                const labelColor = isBreaking ? '#dc2626' : '#16a34a';
                 const ts = new Date(d.detectedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
-                const detail = d.type === 'zero-revenue'
-                  ? d.rowCount + ' rows, all money fields (' + d.fieldsChecked.join(', ') + ') = $0'
-                  : (d.added.length ? '+[' + d.added.join(', ') + '] ' : '') + (d.removed.length ? '-[' + d.removed.join(', ') + ']' : '');
-                return '<div style="padding:10px 14px;margin:6px 0;background:' + (d.type === 'zero-revenue' ? '#fef2f2' : '#fffbeb') + ';border-radius:8px;border-left:4px solid ' + (d.type === 'zero-revenue' ? '#dc2626' : '#f59e0b') + '">'
+                const orgLabel = d.orgSlug ? d.orgSlug + '/' : '';
+                const detail = (d.removed && d.removed.length ? '<span style="color:#dc2626">Removed: ' + d.removed.join(', ') + '</span> ' : '')
+                  + (d.added && d.added.length ? '<span style="color:#16a34a">Added: ' + d.added.join(', ') + '</span>' : '');
+                return '<div style="padding:10px 14px;margin:6px 0;background:' + bg + ';border-radius:8px;border-left:4px solid ' + border + '">'
                   + '<div style="display:flex;justify-content:space-between;align-items:center">'
-                  + '<strong>' + icon + ' ' + d.reportType + '</strong>'
+                  + '<strong>' + icon + ' <span style="color:' + labelColor + ';font-size:10px;text-transform:uppercase">' + label + '</span> ' + orgLabel + d.reportType + '</strong>'
                   + '<span style="font-size:11px;color:#666">' + ts + '</span>'
                   + '</div>'
                   + '<div style="font-family:monospace;font-size:12px;color:#555;margin-top:4px">' + detail + '</div>'
                   + '<div style="margin-top:6px;display:flex;gap:8px">'
                   + '<button onclick="ackDrift(' + i + ',this)" style="font-size:10px;padding:2px 10px;background:#16a34a;color:#fff;border:none;border-radius:4px;cursor:pointer">Acknowledge</button>'
-                  + `<button onclick="reseedBaseline('` + d.reportType + `',this)" style="font-size:10px;padding:2px 10px;background:#3b82f6;color:#fff;border:none;border-radius:4px;cursor:pointer">Reseed Baseline</button>`
+                  + '<button onclick="reseedBaseline(\x27' + d.reportType + '\x27,this)" style="font-size:10px;padding:2px 10px;background:#3b82f6;color:#fff;border:none;border-radius:4px;cursor:pointer">Reseed Baseline</button>'
                   + '</div></div>';
               }).join('')
           }
@@ -8266,7 +8252,7 @@ app.get("/", (req, res) => {
         <h4>Schema Drift Detection</h4>
         <p>Automatic monitoring for upstream database changes that could break report data. Runs on every live Metabase fetch (cache hits are skipped, so overhead is near-zero). Two detection layers:</p>
         <ul>
-          <li><strong>Column drift</strong> &#8212; compares Metabase response column names against stored baselines. Detects additions, removals, and renames instantly. Example: if a migration renames <code>transaction_event_id</code> to <code>transaction_event_batch_id</code>, the drift detector catches it on the first fetch after deploy.</li>
+          <li><strong>Column drift</strong> &#8212; compares Metabase response column names against stored baselines. <strong style="color:#dc2626">BREAKING</strong> alerts fire when columns are removed or renamed (would break reports). <strong style="color:#16a34a">NEW FIELDS</strong> alerts fire when new columns appear (new data available to use). Example: if a migration renames <code>transaction_event_id</code> to <code>transaction_event_batch_id</code>, it shows as a BREAKING removal + a NEW FIELDS addition on the first fetch.</li>
           <li><strong>Zero-revenue anomaly</strong> &#8212; if a report returns 20+ rows but every money column (Paid, Refunded, Net Collected, etc.) is $0, a materialized view join likely broke upstream. Catches the silent failure where schema looks fine but data is hollow.</li>
         </ul>
         <p>Baselines auto-seed on first fetch and auto-update after drift (unless <strong>locked</strong>). Lock a baseline after validating a report is correct to ensure future changes always trigger alerts. Drift events trigger email alerts to <code>dan@rec.us</code> (suppressed to 1 per report type per 24h) and surface in the Schema Drift admin panel above with acknowledge/reseed controls.</p>
@@ -9216,6 +9202,18 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  {
+    date: "2026-07-15",
+    title: "Schema Drift Detection Overhaul",
+    items: [
+      "Drift detection now tracks which org triggered each alert (orgSlug stored in every log entry).",
+      "Email suppression key is now per-org per-report (was global per-report, so one org firing blocked alerts for all orgs).",
+      "Alerts now distinguish BREAKING (columns removed, would break reports) from NEW FIELDS (new data available to use).",
+      "Removed zero-revenue false-positive checks (free programs like Boerne were crying wolf).",
+      "Admin panel shows org slug, color-coded severity (red for breaking, green for new fields).",
+      "Drift alert emails redesigned with severity-aware formatting and per-org scoping.",
+    ],
+  },
   {
     date: "2026-07-14",
     title: "Platform Usage: Per-Org Sparklines + Email Metrics",
