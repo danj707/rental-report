@@ -615,6 +615,7 @@ function compute(rows) {
   var noZip=rows.filter(function(r){return !r['Zip Code'].trim();}).length;
   var withPhone=rows.filter(function(r){var v=col(r,['Has Phone','Phone']);return v==='true'||v===true||(typeof v==='string'&&v.trim()&&v!=='false');}).length;
   var withEmergency=rows.filter(function(r){var v=col(r,['Has Emergency Contact']);return v==='true'||v===true;}).length;
+  var withPickup=rows.filter(function(r){var v=col(r,['Has Authorized Pickup']);return v==='true'||v===true;}).length;
   var withConfirmed=rows.filter(function(r){var v=col(r,['Account Confirmed','Confirmed At']);return v==='true'||v===true||(typeof v==='string'&&v.trim()&&v!=='false'&&v!=='');}).length;
 
   // Zip-level aggregation for map
@@ -848,7 +849,7 @@ function compute(rows) {
     signups:signups, cumulative:cumulative,
     cities:topCities, topCity:topCity, resByAge:resByAge,
     noAge:noAge, noGender:noGender, noZip:noZip, zipData:zipData,
-    withPhone:withPhone, withEmergency:withEmergency, withConfirmed:withConfirmed,
+    withPhone:withPhone, withEmergency:withEmergency, withPickup:withPickup, withConfirmed:withConfirmed,
     last30:last30, last90:last90, peakMonth:peakMonth,
     // Revenue
     hasRevData:hasRevData, totalGross:totalGross, totalRefunds:totalRefunds, totalNet:totalNet,
@@ -927,6 +928,7 @@ function buildInsightsBlob(s, currentTab) {
     grade:{withData:s.withGrade,breakdown:s.gradeData.map(function(g){return g.grade+':'+g.count;}).join(', ')},
     topCities:s.cities.slice(0,6).map(function(c){return c.city+':'+c.count;}).join(', '),
     dataGaps:{ageMissing:s.noAge,genderMissing:s.noGender,zipMissing:s.noZip},
+    authorizedPickups:{withPickup:s.withPickup,pct:pickupPct},
   });
 }
 
@@ -1338,6 +1340,7 @@ function App() {
   var gradePct=Math.round(s.withGrade/s.total*100);
   var phonePct=Math.round(s.withPhone/s.total*100);
   var emergPct=Math.round(s.withEmergency/s.total*100);
+  var pickupPct=Math.round(s.withPickup/s.total*100);
   var confirmedPct=Math.round(s.withConfirmed/s.total*100);
 
   return (
@@ -1436,6 +1439,7 @@ function App() {
                   <Ring pct={gradePct} label="Grade" color={gradePct<10?ROSE:gradePct<30?AMBER:EMERALD} />
                   <Ring pct={phonePct} label="Phone" color={phonePct<60?ROSE:phonePct<80?AMBER:EMERALD} />
                   <Ring pct={emergPct} label="Emergency" color={emergPct<30?ROSE:emergPct<60?AMBER:EMERALD} />
+                  <Ring pct={pickupPct} label="Auth Pickup" color={pickupPct<30?ROSE:pickupPct<60?AMBER:EMERALD} />
                 </div>
               </div>
             </div>
