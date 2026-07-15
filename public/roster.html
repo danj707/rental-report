@@ -867,7 +867,8 @@ function App() {
 
   if (error && !rows) return (
     <div>{renderToolbar()}
-      <div className="page"><div className="error" style={{textAlign:'center',padding:'3rem 1rem'}}><p style={{fontSize:'2.5rem',marginBottom:'0.5rem'}}>😔</p><p style={{fontSize:'1.1rem',color:'#666'}}>Looks like reporting has encountered an issue — try loading this report again later.</p></div></div>
+      <div className="page"><div className="error" style={{textAlign:'center',padding:'3rem 1rem'}}><p style={{fontSize:'2.5rem',marginBottom:'0.5rem'}}>😔</p><p style={{fontSize:'1.1rem',color:'#666'}}>Looks like reporting has encountered an issue — try loading this report again later.</p>
+            <p style={{fontSize:'0.8rem',color:'#b91c1c',marginTop:'0.75rem',fontFamily:'monospace',background:'#fef2f2',padding:'8px 14px',borderRadius:6,display:'inline-block',maxWidth:500,wordBreak:'break-word'}}>{error}</p></div></div>
     </div>
   );
 
