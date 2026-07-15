@@ -9276,6 +9276,7 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  { date: '2026-07-15', text: 'Community Intel: added Authorized Pickup completeness ring to demographics panel (requires Has Authorized Pickup column in Metabase card)' },
   {
     date: "2026-07-15",
     title: "Cross-Project Integration + Visibility API",
