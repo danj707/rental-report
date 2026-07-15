@@ -630,7 +630,7 @@ const ORGS = {
     displayName: "City of Pflugerville",
   },
   "douglas-county-nv": {
-    token:   "7GEP6DqgJ2FuWfL6",
+    token:   "ll0hh2Dee5nbwlgt",
     orgId:   "0312ebc8-40de-4fc8-a737-8afa26334e13",
     logoUrl: "https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2Forganization-0312ebc8-40de-4fc8-a737-8afa26334e13%2FfullLogo.png%3F1769825787565&w=1920&q=75",
     displayName: "Douglas County",
@@ -2430,6 +2430,51 @@ app.post("/api/admin/backup", async (req, res) => {
 });
 app.get("/api/admin/backup-status", (req, res) => {
   res.json(_lastBackup);
+});
+
+// ── POST /api/admin/add-org — add org (used by rec-dashboard to sync) ──
+app.post("/api/admin/add-org", express.json(), (req, res) => {
+  const { slug, token, orgId, logoUrl, displayName } = req.body;
+  if (!slug || !token || !orgId) {
+    return res.status(400).json({ error: "slug, token, and orgId are required" });
+  }
+  if (ORGS[slug]) {
+    // Already exists — update token if different (sync case)
+    if (ORGS[slug].token !== token) {
+      ORGS[slug].token = token;
+      console.log(`[orgs] Synced token for existing org: ${slug}`);
+    }
+    // Update other fields if provided
+    if (logoUrl) ORGS[slug].logoUrl = logoUrl;
+    if (displayName) ORGS[slug].displayName = displayName;
+    try {
+      const dynamic = JSON.parse(fs.readFileSync(ORGS_FILE, "utf8"));
+      if (dynamic[slug]) {
+        Object.assign(dynamic[slug], { token, ...(logoUrl && { logoUrl }), ...(displayName && { displayName }) });
+        fs.writeFileSync(ORGS_FILE, JSON.stringify(dynamic, null, 2));
+      }
+    } catch {}
+    return res.json({ ok: true, action: "updated", slug });
+  }
+  // New org
+  const org = {
+    token,
+    orgId,
+    logoUrl: logoUrl || "",
+    displayName: displayName || slug,
+  };
+  ORGS[slug] = org;
+  // Persist to dynamic orgs file
+  try {
+    let dynamic = {};
+    try { dynamic = JSON.parse(fs.readFileSync(ORGS_FILE, "utf8")); } catch {}
+    dynamic[slug] = org;
+    fs.writeFileSync(ORGS_FILE, JSON.stringify(dynamic, null, 2));
+  } catch (e) {
+    console.error("[orgs] Failed to persist dynamic org:", e.message);
+  }
+  console.log(`[orgs] Added org via API: ${slug} (${orgId})`);
+  res.json({ ok: true, action: "created", slug });
 });
 
 // ── Token gate: every `/:org/*` route requires `?token=` matching ORGS[org].token ──
@@ -9202,6 +9247,15 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  {
+    date: "2026-07-15",
+    title: "Cross-Project Org Sync API",
+    items: [
+      "New POST /api/admin/add-org endpoint lets the rec-dashboard sync orgs with matching tokens.",
+      "Douglas County NV token synced to match dashboard (report links now work).",
+      "Schema drift detection overhauled: org-aware, severity-based (BREAKING vs NEW FIELDS), zero-revenue noise removed.",
+    ],
+  },
   {
     date: "2026-07-15",
     title: "Schema Drift Detection Overhaul",
