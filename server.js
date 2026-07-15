@@ -8317,13 +8317,20 @@ app.get("/", (req, res) => {
         </div>
 
         <h4>Schema Drift Detection</h4>
-        <p>Automatic monitoring for upstream database changes that could break report data. Runs on every live Metabase fetch (cache hits are skipped, so overhead is near-zero). Two detection layers:</p>
+        <p>Automatic monitoring for upstream database changes. Runs on every live Metabase fetch (cache hits skipped). Org-aware: each alert tracks which org triggered it, email suppression is per org/report.</p>
         <ul>
-          <li><strong>Column drift</strong> &#8212; compares Metabase response column names against stored baselines. <strong style="color:#dc2626">BREAKING</strong> alerts fire when columns are removed or renamed (would break reports). <strong style="color:#16a34a">NEW FIELDS</strong> alerts fire when new columns appear (new data available to use). Example: if a migration renames <code>transaction_event_id</code> to <code>transaction_event_batch_id</code>, it shows as a BREAKING removal + a NEW FIELDS addition on the first fetch.</li>
-          <li><strong>Zero-revenue anomaly</strong> &#8212; if a report returns 20+ rows but every money column (Paid, Refunded, Net Collected, etc.) is $0, a materialized view join likely broke upstream. Catches the silent failure where schema looks fine but data is hollow.</li>
+          <li><strong style="color:#dc2626">BREAKING</strong> &#8212; columns removed or renamed. Would break report templates. Red severity email alerts.</li>
+          <li><strong style="color:#16a34a">NEW FIELDS</strong> &#8212; new columns added upstream. New data available. Green FYI email alerts.</li>
         </ul>
-        <p>Baselines auto-seed on first fetch and auto-update after drift (unless <strong>locked</strong>). Lock a baseline after validating a report is correct to ensure future changes always trigger alerts. Drift events trigger email alerts to <code>dan@rec.us</code> (suppressed to 1 per report type per 24h) and surface in the Schema Drift admin panel above with acknowledge/reseed controls.</p>
+        <p>Baselines auto-seed on first fetch and auto-update after drift (unless <strong>locked</strong>). Drift emails to <code>dan@rec.us</code>, suppressed 1 per org/report per 24h.</p>
         <p><strong>Admin API:</strong> <code>GET /api/admin/schema-drift</code> returns baselines + log. <code>POST /api/admin/schema-baseline</code> supports lock/unlock/reseed/reseed-all. <code>POST /api/admin/schema-drift/ack</code> acknowledges a warning.</p>
+
+        <h4>Cross-Project Sync</h4>
+        <p>The rec-dashboard companion project syncs orgs and respects report visibility:</p>
+        <ul>
+          <li><strong>POST /api/admin/add-org</strong> &#8212; creates or updates an org with matching token so dashboard report links work automatically.</li>
+          <li><strong>GET /api/org-visibility/:slug</strong> &#8212; returns which reports are visible/hidden. Dashboard filters its sections based on this.</li>
+        </ul>
 
         <h4>Planned Improvements</h4>
         <ul>
@@ -8331,7 +8338,7 @@ app.get("/", (req, res) => {
           <li><strong>Report Wizard Langfuse Integration</strong> &#8212; Wire AI observability tracing into the Report Wizard&#x27;s Claude API calls, matching the pattern already deployed on AI Insights and Chat.</li>
           <li><strong>Admin Feedback Panel</strong> &#8212; Surface AI thumbs up/down ratings and free-text comments from <code>events.jsonl</code> in an in-app admin view. The GET endpoint (<code>/api/admin/feedback</code>) already exists; needs a frontend readout.</li>
         </ul>
-        <p style="font-size:11px;color:#888;margin-top:8px"><strong>Recently completed:</strong> Email domain verification (rec.us verified on Resend, sends from <code>reports@rec.us</code>), Metabase query audit (10 shared cards optimized &#8212; calendar cold-cache timeout eliminated, facility 2min&#8594;10s, unscoped CTEs fixed across fleet), Inter font migration across all reports.</p>
+        <p style="font-size:11px;color:#888;margin-top:8px"><strong>Recently completed:</strong> Cross-project org sync + visibility API, schema drift overhaul (org-aware, severity-based), error screens show actual errors, email domain verification (sends from <code>reports@rec.us</code>), Metabase query audit, Inter font migration.</p>
       </div>
     </div>
 
@@ -9271,11 +9278,13 @@ app.get("/", (req, res) => {
     const UPDATES = [
   {
     date: "2026-07-15",
-    title: "Cross-Project Org Sync API",
+    title: "Cross-Project Integration + Visibility API",
     items: [
-      "New POST /api/admin/add-org endpoint lets the rec-dashboard sync orgs with matching tokens.",
-      "Douglas County NV token synced to match dashboard (report links now work).",
-      "Schema drift detection overhauled: org-aware, severity-based (BREAKING vs NEW FIELDS), zero-revenue noise removed.",
+      "POST /api/admin/add-org: rec-dashboard syncs new orgs with matching tokens on creation.",
+      "GET /api/org-visibility/:slug: returns per-report visible/hidden status for cross-project filtering.",
+      "Douglas County NV onboarded on both projects with synced tokens.",
+      "Error screens on 7 report files now show actual error (504, timeout, etc.) instead of generic sad face.",
+      "Schema drift overhauled: org-aware suppression, BREAKING vs NEW FIELDS severity, zero-revenue checks removed.",
     ],
   },
   {
