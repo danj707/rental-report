@@ -2477,6 +2477,28 @@ app.post("/api/admin/add-org", express.json(), (req, res) => {
   res.json({ ok: true, action: "created", slug });
 });
 
+// ── GET /api/org-visibility/:slug — report visibility for cross-project sync ──
+app.get("/api/org-visibility/:slug", (req, res) => {
+  const slug = req.params.slug;
+  const org = ORGS[slug];
+  if (!org) return res.status(404).json({ error: "Unknown org" });
+  const hidden = new Set(getHiddenReports(slug));
+  // Build list of all available report types for this org
+  const available = [];
+  for (const rt of REPORT_TYPES) {
+    const hasPerOrg = org[rt]?.mbUuid;
+    const hasShared = SHARED_UUIDS[rt];
+    if (hasPerOrg || hasShared) {
+      available.push({ type: rt, visible: !hidden.has(rt) });
+    }
+  }
+  // Also check non-REPORT_TYPES that can be toggled (chat, report-wizard, rentalcalendar)
+  for (const rt of ["chat", "report-wizard", "rentalcalendar"]) {
+    available.push({ type: rt, visible: !hidden.has(rt) });
+  }
+  res.json({ slug, available, hiddenCount: hidden.size });
+});
+
 // ── Token gate: every `/:org/*` route requires `?token=` matching ORGS[org].token ──
 // Returns generic 404 on mismatch (no enumeration). Non-org paths fall through.
 // Whitelist: `/`, `/api/*` (admin), `/metrics*` (cross-org), `/hotdog*`, static files.
