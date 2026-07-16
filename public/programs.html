@@ -1674,6 +1674,12 @@ function App() {
   const toggle   = (id) => setOpen(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
   const toggleAll = () => setOpen(allOpen ? new Set() : new Set((rows || []).map(r => r.programId)));
 
+  // Force revenue tab when ?program= is in URL (belt-and-suspenders for Babel)
+  useEffect(() => {
+    var pp = new URLSearchParams(window.location.search).get('program');
+    if (pp && tab === 'summary') { setTab('revenue'); }
+  }, []);
+
   // Auto-expand matching programs when deep-linked from dashboard via ?program=
   useEffect(() => {
     var programParam = new URLSearchParams(window.location.search).get('program');
