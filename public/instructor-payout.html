@@ -694,7 +694,7 @@ function App() {
                               <td>{fmt(r.price)}</td>
                               <td style={{textAlign:'center'}}>{r.enrolled}</td>
                               <td>{fmt(r.paid)}</td>
-                              <td className={v(r.refunded)}>{r.refunded > 0 ? fmt(r.refunded) : '\u2014'}</td>
+                              <td style={{color: r.refunded > 0 ? '#dc2626' : undefined}} className={v(r.refunded)}>{r.refunded > 0 ? fmt(r.refunded) : '\u2014'}</td>
                               <td style={{fontWeight:600}}>{fmt(splitAmt)}</td>
                               <td className={v(splitAmt * split.i)}>{fmt(splitAmt * split.i)}</td>
                               <td className={v(splitAmt * (1-split.i))}>{fmt(splitAmt * (1-split.i))}</td>
@@ -737,7 +737,7 @@ function App() {
                         <td></td>
                         <td style={{textAlign:'center'}}>{sub.enr}</td>
                         <td>{fmt(sub.paid)}</td>
-                        <td className={v(sub.ref)}>{fmt(sub.ref)}</td>
+                        <td style={{color: sub.ref > 0 ? '#dc2626' : undefined}} className={v(sub.ref)}>{fmt(sub.ref)}</td>
                         <td>{fmt(subSplitAmt)}</td>
                         <td>{fmt(subSplitAmt * split.i)}</td>
                         <td>{fmt(subSplitAmt * (1-split.i))}</td>
@@ -753,7 +753,7 @@ function App() {
                   <td></td>
                   <td style={{textAlign:'center'}}>{kpis.tEnr}</td>
                   <td style={{textAlign:'right'}}>{fmt(kpis.tPaid)}</td>
-                  <td style={{textAlign:'right'}}>{fmt(kpis.tRef)}</td>
+                  <td style={{textAlign:'right', color: kpis.tRef > 0 ? '#dc2626' : undefined}}>{fmt(kpis.tRef)}</td>
                   <td style={{textAlign:'right'}}>{fmt(kpis.splitAmt)}</td>
                   <td style={{textAlign:'right'}}>{fmt(kpis.iPay)}</td>
                   <td style={{textAlign:'right'}}>{fmt(kpis.oRet)}</td>
