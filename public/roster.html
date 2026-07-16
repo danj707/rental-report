@@ -213,7 +213,6 @@
     .contacts-sub-row .contact-group { display: flex; gap: 4px; align-items: baseline; }
     .contacts-sub-row .contact-label { font-weight: 700; color: #1f2937; font-size: 10.5px; text-transform: uppercase; letter-spacing: .3px; }
     .contacts-sub-row .contact-val { color: #111827; }
-    .col-times     { width: 138px; }
     .col-status    { width: 76px; }
     .col-reg       { width: 82px; }
 
@@ -374,7 +373,7 @@ const COL_DEFAULTS = {
   recId: false, dob: false, age: true, grade: true, gender: false,
   contact: true, owner: true, ownerContact: false,
   emergency: true, pickup: true,
-  times: false, registered: false, responses: false,
+  registered: false, responses: false,
 };
 
 function loadCols() {
@@ -669,7 +668,6 @@ function App() {
     if (!rows || !rows.length) return;
     const headers = [
       'Section', 'Class', 'Session Date',
-      ...(cols.times    ? ['Start', 'End'] : []),
       'Last Name', 'First Name',
       ...(cols.recId    ? ['Rec ID'] : []),
       ...(cols.dob      ? ['DOB'] : []),
@@ -686,7 +684,6 @@ function App() {
     ];
     const dataRows = displayRows.map(r => [
       r.section, r.className, toXlDate(r.sessionDate),
-      ...(cols.times    ? [r.sessionStart, r.sessionEnd] : []),
       r.lastName, r.firstName,
       ...(cols.recId    ? [r.recId] : []),
       ...(cols.dob      ? [formatDOB(r.dob)] : []),
@@ -802,7 +799,6 @@ function App() {
         <ColToggle k="ownerContact" label="Owner Contact" />
         <ColToggle k="emergency"    label="🛑 Emergency" />
         <ColToggle k="pickup"       label="🚸 Pickup" />
-        <ColToggle k="times"        label="Times" />
         <ColToggle k="registered"   label="Registered" />
         <ColToggle k="responses"    label="Form Responses" />
         {cols.responses && availableQuestions.length > 0 && (() => {
@@ -881,7 +877,6 @@ function App() {
         {cols.contact  && <><span className="cell col-phone">Phone</span><span className="cell col-email">Email</span></>}
         {cols.owner    && <span className="cell col-owner">Household Owner</span>}
         {cols.ownerContact && <><span className="cell col-ownerph">Owner Phone</span><span className="cell col-ownerem">Owner Email</span></>}
-        {cols.times    && <span className="cell col-times">Start – End</span>}
         <span className="cell col-status">Status</span>
         {cols.registered && <span className="cell col-reg">Registered</span>}
       </div>
@@ -913,9 +908,6 @@ function App() {
             <span className="cell col-ownerph">{formatPhone(r.ownerPhone)}</span>
             <span className="cell col-ownerem">{r.ownerEmail}</span>
           </>}
-          {cols.times && <span className="cell col-times" style={{fontSize:'10.5px'}}>
-            {r.sessionStart && r.sessionEnd ? `${r.sessionStart} – ${r.sessionEnd}` : r.sessionStart || ''}
-          </span>}
           <span className="cell col-status">
             <span className={`status-badge status-${isCancelled ? 'cancelled' : 'enrolled'}`}>{r.status}</span>
           </span>
