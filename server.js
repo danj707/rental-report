@@ -120,7 +120,11 @@ function getCachedUsers(orgSlug) {
 }
 
 function setCacheUsers(orgSlug, data) {
-  usersCache.set(orgSlug, { data, ts: Date.now() });
+  const entry = { data, ts: Date.now() };
+  usersCache.set(orgSlug, entry);
+  try {
+    fs.writeFile(path.join(CACHE_DIR, 'users_' + orgSlug + '.json'), JSON.stringify({ key: 'users:' + orgSlug, data: entry.data, ts: entry.ts, rt: 'users' }), 'utf8', () => {});
+  } catch {}
 }
 
 function getCached(key, orgSlug, reportType) {
@@ -140,7 +144,12 @@ function getCached(key, orgSlug, reportType) {
 }
 
 function setCache(key, data, reportType) {
-  dataCache.set(key, { data, ts: Date.now(), rt: reportType || '' });
+  const entry = { data, ts: Date.now(), rt: reportType || '' };
+  dataCache.set(key, entry);
+  try {
+    const fname = Buffer.from(key).toString('base64url').slice(0, 180) + '.json';
+    fs.writeFile(path.join(CACHE_DIR, fname), JSON.stringify({ key, data: entry.data, ts: entry.ts, rt: entry.rt }), 'utf8', () => {});
+  } catch {}
 }
 
 // Return cached data even if TTL-expired (for fallback when Metabase is down).
@@ -160,6 +169,37 @@ function getStaleCached(orgSlug, reportType, exactKey) {
   }
   return null;
 }
+
+// ── Hydrate cache from disk on startup ──
+(function hydrateCache() {
+  try {
+    const files = fs.readdirSync(CACHE_DIR).filter(f => f.endsWith('.json'));
+    let loaded = 0, expired = 0, userLoaded = 0;
+    for (const file of files) {
+      try {
+        const raw = fs.readFileSync(path.join(CACHE_DIR, file), 'utf8');
+        const entry = JSON.parse(raw);
+        if (!entry.key || !entry.data || !entry.ts) continue;
+        const ttl = REPORT_CACHE_TTL[entry.rt] || CACHE_TTL;
+        if (Date.now() - entry.ts > ttl * 3) {
+          fs.unlink(path.join(CACHE_DIR, file), () => {});
+          expired++;
+          continue;
+        }
+        if (entry.key.startsWith('users:')) {
+          usersCache.set(entry.key.replace('users:', ''), { data: entry.data, ts: entry.ts });
+          userLoaded++;
+        } else {
+          dataCache.set(entry.key, { data: entry.data, ts: entry.ts, rt: entry.rt || '' });
+          loaded++;
+        }
+      } catch {}
+    }
+    console.log('[cache] Hydrated from disk: ' + loaded + ' report entries, ' + userLoaded + ' users entries, ' + expired + ' expired/removed');
+  } catch (err) {
+    console.log('[cache] No disk cache to hydrate: ' + err.message);
+  }
+})();
 
 // Prune expired entries every 60 minutes — keep 2x TTL grace for stale fallback
 setInterval(() => {
@@ -1042,6 +1082,8 @@ const RENTAL_CALENDAR_ORGS = new Set(["watertown", "norman", "niagarafalls"]);
 // ── File storage ─────────────────────────────────────────────────────
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "data");
 fs.mkdirSync(DATA_DIR, { recursive: true });
+const CACHE_DIR = path.join(DATA_DIR, "cache");
+fs.mkdirSync(CACHE_DIR, { recursive: true });
 
 const ORGS_FILE          = path.join(DATA_DIR, "orgs.json");
 const HOTDOG_CLAIMS_FILE = path.join(DATA_DIR, "hotdog_claims.json");
@@ -9358,6 +9400,7 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  { date: "2026-07-16", text: "Persistent disk cache on Railway volume - report data survives restarts/deploys, hydrated from /data/cache/ on boot" },
   { date: "2026-07-16", text: "Programs: merged Enrolled/Capacity into Utilization column showing enrolled / capacity / cancelled (red)" },
   { date: "2026-07-16", text: "Smart retry on Metabase timeout (60s first attempt, 120s retry), request performance log at /api/admin/request-log" },
   { date: "2026-07-16", text: "Instructor Payout: added nav breadcrumb back link and feedback widget, server now injects ORG_CONFIG" },
