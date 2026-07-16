@@ -70,6 +70,7 @@
   .panel { background:#fff; border-radius:10px; padding:16px 18px; box-shadow:0 1px 3px rgba(0,0,0,.06), 0 0 0 1px rgba(0,0,0,.03); }
   .panel-head { font-size:11px; font-weight:700; color:#374151; text-transform:uppercase; letter-spacing:.04em; margin-bottom:10px; }
   .panel-note { font-size:10px; color:#9ca3af; font-style:italic; margin-left:6px; }
+  .panel-desc { font-size:11px; color:#9ca3af; font-weight:400; margin:-6px 0 10px; line-height:1.4; }
   .span2 { grid-column:span 2; }
 
   .ring-row { display:flex; justify-content:space-around; padding:4px 0; }
@@ -208,7 +209,7 @@ function Ring({ pct, label, color }) {
   return (<div className="ring-wrap"><svg width="60" height="60" viewBox="0 0 72 72"><circle cx="36" cy="36" r={r} fill="none" stroke="#f1f5f9" strokeWidth="6"/><circle cx="36" cy="36" r={r} fill="none" stroke={color} strokeWidth="6" strokeDasharray={circ} strokeDashoffset={offset} strokeLinecap="round" transform="rotate(-90 36 36)"/><text x="36" y="40" textAnchor="middle" fontSize="12" fontWeight="800" fill="#111827">{pct}%</text></svg><div className="ring-label">{label}</div></div>);
 }
 
-function ChartPanel({ title, note, type, data, labelKey, dataKeys, colors, stacked, pctAxis, className, opts }) {
+function ChartPanel({ title, note, desc, type, data, labelKey, dataKeys, colors, stacked, pctAxis, className, opts }) {
   var canvasRef = useRef(null); var chartRef = useRef(null);
   useEffect(function() {
     if (!canvasRef.current||!data||!data.length) return;
@@ -225,7 +226,7 @@ function ChartPanel({ title, note, type, data, labelKey, dataKeys, colors, stack
     });
     return function(){if(chartRef.current)chartRef.current.destroy();};
   }, [data]);
-  return (<div className={'panel '+(className||'')}><div className="panel-head">{title}{note&&<span className="panel-note">{note}</span>}</div><div className="chart-wrap">{(!data||!data.length)?<div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100%',color:'#9ca3af',fontSize:13,fontStyle:'italic'}}>No data for this period</div>:<canvas ref={canvasRef}></canvas>}</div></div>);
+  return (<div className={'panel '+(className||'')}><div className="panel-head">{title}{note&&<span className="panel-note">{note}</span>}</div>{desc&&<div className="panel-desc">{desc}</div>}<div className="chart-wrap">{(!data||!data.length)?<div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100%',color:'#9ca3af',fontSize:13,fontStyle:'italic'}}>No data for this period</div>:<canvas ref={canvasRef}></canvas>}</div></div>);
 }
 
 function FillRateChart({ sections, colors, selected }) {
@@ -1425,9 +1426,9 @@ function App() {
 
             {/* Row 1: HH Size + Residency */}
             <div className="grid">
-              <ChartPanel title="Household Size Distribution" note={s.multiHH+' multi-member'} type="bar" data={s.hhSizeData} labelKey="size" dataKeys={[{key:'count',label:'Households'}]} colors={[INDIGO]} />
+              <ChartPanel title="Household Size Distribution" note={s.multiHH+' multi-member'} desc="Number of households by member count. Includes all registered accounts." type="bar" data={s.hhSizeData} labelKey="size" dataKeys={[{key:'count',label:'Households'}]} colors={[INDIGO]} />
               <div className="panel">
-                <div className="panel-head">Residency &amp; Completeness</div>
+                <div className="panel-head">Residency &amp; Completeness</div><div className="panel-desc">Resident vs non-resident breakdown and profile data completeness across all accounts.</div>
                 <div style={{display:'flex',height:20,borderRadius:5,overflow:'hidden',marginBottom:10}}>
                   <div style={{width:s.resPct+'%',background:TEAL,display:'flex',alignItems:'center',justifyContent:'center'}}><span style={{fontSize:10,fontWeight:700,color:'#fff'}}>{s.residents}</span></div>
                   <div style={{flex:1,background:'#e2e8f0',display:'flex',alignItems:'center',justifyContent:'center'}}><span style={{fontSize:10,fontWeight:700,color:'#6b7280'}}>{s.nonResidents}</span></div>
@@ -1446,26 +1447,26 @@ function App() {
 
             {/* Row 2: Signups + Growth */}
             <div className="grid">
-              <ChartPanel title="New Signups by Month" data={s.signups} labelKey="month" dataKeys={[{key:'count',label:'Signups'}]} colors={[INDIGO]} />
-              <ChartPanel title="Cumulative Growth" type="line" data={s.cumulative} labelKey="month" dataKeys={[{key:'cumulative',label:'Total'}]} colors={[INDIGO]} />
+              <ChartPanel title="New Signups by Month" desc="New account registrations per month based on account creation date." data={s.signups} labelKey="month" dataKeys={[{key:'count',label:'Signups'}]} colors={[INDIGO]} />
+              <ChartPanel title="Cumulative Growth" desc="Running total of registered accounts over time." type="line" data={s.cumulative} labelKey="month" dataKeys={[{key:'cumulative',label:'Total'}]} colors={[INDIGO]} />
             </div>
 
             {/* Row 3: Age by Role + Gender */}
             <div className="grid">
-              <ChartPanel title="Age Distribution by Role" note="HoH vs Members" data={s.ageDist} labelKey="range" dataKeys={[{key:'hoh',label:'Head of Household'},{key:'member',label:'Member'}]} colors={[INDIGO,'#c7d2fe']} stacked />
+              <ChartPanel title="Age Distribution by Role" note="HoH vs Members" desc="Age breakdown for heads of household vs additional members (typically children)." data={s.ageDist} labelKey="range" dataKeys={[{key:'hoh',label:'Head of Household'},{key:'member',label:'Member'}]} colors={[INDIGO,'#c7d2fe']} stacked />
               <GenderChart gender={s.gender} genderSpecified={s.genderSpecified} total={s.total} colors={GENDER_COLORS} />
             </div>
 
             {/* Row 4: Residency by Age + Grade */}
             <div className="grid">
-              <ChartPanel title="Residency Rate by Age" note="% of each group" data={s.resByAge} labelKey="range" dataKeys={[{key:'rate',label:'Resident %'}]} colors={s.resByAge.map(function(e){return e.rate>=80?TEAL:e.rate>=65?AMBER:ROSE;})} pctAxis />
-              <ChartPanel title="Grade Distribution" note={s.withGrade+' people'} data={s.gradeData} labelKey="grade" dataKeys={[{key:'count',label:'Students'}]} colors={[PURPLE]} />
+              <ChartPanel title="Residency Rate by Age" note="% of each group" desc="Percentage of people in each age bracket who are verified residents." data={s.resByAge} labelKey="range" dataKeys={[{key:'rate',label:'Resident %'}]} colors={s.resByAge.map(function(e){return e.rate>=80?TEAL:e.rate>=65?AMBER:ROSE;})} pctAxis />
+              <ChartPanel title="Grade Distribution" note={s.withGrade+' people'} desc="School grade level for participants who have grade data on file." data={s.gradeData} labelKey="grade" dataKeys={[{key:'count',label:'Students'}]} colors={[PURPLE]} />
             </div>
 
             {/* City */}
             <div className="grid">
               <div className="panel span2">
-                <div className="panel-head">People by City</div>
+                <div className="panel-head">People by City</div><div className="panel-desc">Geographic distribution based on address data on file.</div>
                 {s.cities.map(function(c){
                   var pct=(c.count/s.total*100);var isTop=c.city===s.topCity;
                   return (<div key={c.city} className="city-bar-row">
