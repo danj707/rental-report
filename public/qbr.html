@@ -220,10 +220,10 @@
   .toast { position:fixed; bottom:22px; left:50%; transform:translateX(-50%); background:var(--ink); color:#fff; font-size:13px; padding:10px 18px; border-radius:9px; box-shadow:var(--shadow); z-index:50; }
   body.print .qbr-head, body.print .stats, body.print .hist, body.print .toast { display:none !important; }
   /* ── Tabs ── */
-  .tabs { display:flex; gap:4px; border-bottom:1px solid var(--line); margin-bottom:20px; }
-  .tab { font-family:inherit; font-size:13.5px; font-weight:600; color:var(--faint); background:none; border:none; border-bottom:2px solid transparent; padding:9px 14px 11px; cursor:pointer; margin-bottom:-1px; }
-  .tab:hover { color:var(--slate); }
-  .tab.on { color:var(--emerald); border-bottom-color:var(--emerald); }
+  .tabs { display:flex; gap:4px; border-bottom:2px solid var(--line); margin-bottom:20px; padding:0 4px; align-items:flex-end; }
+  .tab { font-family:inherit; font-size:13.5px; font-weight:600; color:var(--faint); background:transparent; border:1px solid transparent; border-bottom:none; border-radius:8px 8px 0 0; padding:9px 14px 8px; cursor:pointer; margin-bottom:-2px; position:relative; transition:all .15s; }
+  .tab:hover { color:var(--slate); background:rgba(0,0,0,.03); }
+  .tab.on { color:var(--emerald); background:var(--card-bg,#fff); border-color:var(--line); box-shadow:0 -2px 4px rgba(0,0,0,.04); z-index:1; }
   /* ── Org map ── */
   .omap-card { background:var(--paper); border:1px solid var(--line); border-radius:14px; box-shadow:var(--shadow); overflow:hidden; }
   .omap-head { display:flex; align-items:center; gap:12px; padding:16px 20px 12px; flex-wrap:wrap; }
