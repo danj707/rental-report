@@ -2381,7 +2381,7 @@ function App() {
                     <td className="left mono">{r.endDate}</td>
                     <td>{fmtNum(r.sections) || '—'}</td>
                     <td>{fmtNum(r.enrollments) || '—'}</td>
-                    <td className="mono">{r.utilization || '—'}</td>
+                    <td className="mono" style={{whiteSpace:'nowrap'}}>{r.utilization || '—'}{fmtNum(r.cancellations) > 0 && <span style={{color:'#dc2626'}}> / {fmtNum(r.cancellations)}</span>}</td>
                     <td className={fillClass(r.fillPct)}>{r.fillPct != null ? `${fmtNum(r.fillPct)}%` : '—'}</td>
                     {showWaitlist && <td className={fmtNum(r.waitlist) === 0 ? 'muted' : ''}>{fmtNum(r.waitlist) || '—'}</td>}
                     {showCancelsCol && <>
@@ -2405,7 +2405,7 @@ function App() {
                         <td className="left mono">{sx.endDate}</td>
                         <td className="muted">—</td>
                         <td>{fmtNum(sx.enrollments) || '—'}</td>
-                        <td className="mono">{sx.utilization || '—'}</td>
+                        <td className="mono" style={{whiteSpace:'nowrap'}}>{sx.utilization || '—'}{fmtNum(sx.cancellations) > 0 && <span style={{color:'#dc2626'}}> / {fmtNum(sx.cancellations)}</span>}</td>
                         <td className={fillClass(sx.fillPct)}>{sx.fillPct != null ? `${fmtNum(sx.fillPct)}%` : '—'}</td>
                         {showWaitlist && <td className={fmtNum(sx.waitlist) === 0 ? 'muted' : ''}>{fmtNum(sx.waitlist) || '—'}</td>}
                         {showCancelsCol && <>
