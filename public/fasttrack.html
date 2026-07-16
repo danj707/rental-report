@@ -148,10 +148,10 @@
 
 
     /* ── Tabs ── */
-    .tabs { display: flex; gap: 0; border-bottom: 2px solid #e0ddd8; margin-bottom: 20px; }
-    .tab-btn { padding: 10px 20px; font-size: 13px; font-weight: 600; font-family: inherit; background: none; border: none; border-bottom: 2px solid transparent; margin-bottom: -2px; cursor: pointer; color: #888; transition: color .15s, border-color .15s; }
-    .tab-btn:hover { color: #333; }
-    .tab-btn.active { color: #111; border-bottom-color: #6366f1; }
+    .tabs { display: flex; gap: 4px; border-bottom: 2px solid #d1d5db; margin-bottom: 20px; padding: 0 4px; align-items: flex-end; }
+    .tab-btn { padding: 9px 18px 8px; font-size: 13px; font-weight: 600; font-family: inherit; background: transparent; border: 1px solid transparent; border-bottom: none; border-radius: 8px 8px 0 0; margin-bottom: -2px; cursor: pointer; color: #888; transition: all .15s; position: relative; }
+    .tab-btn:hover { color: #333; background: #f3f4f6; }
+    .tab-btn.active { color: #111; background: #fff; border-color: #d1d5db; box-shadow: 0 -2px 4px rgba(0,0,0,.04); z-index: 1; }
     .tab-badge { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 10px; margin-left: 6px; }
 
     /* ── Demand Leaderboard ── */
