@@ -1502,7 +1502,7 @@ function App() {
 
                 {/* Percentiles callout */}
                 <div className="panel" style={{marginBottom:14}}>
-                  <div className="panel-head">How Much Do Households Spend?<span className="panel-note">{s.spendingHH} households with purchases</span></div>
+                  <div className="panel-head">How Much Do Households Spend?<span className="panel-note">{s.spendingHH} households with purchases</span></div><div className="panel-desc">Spending overview for households with at least one transaction in the selected period.</div>
                   <div style={{display:'flex',justifyContent:'space-around',textAlign:'center',padding:'8px 0'}}>
                     {[{l:'Low Spender',sub:'Bottom 25%',v:s.revP25},{l:'Typical',sub:'Middle household',v:s.medianRev},{l:'Active',sub:'Top 25%',v:s.revP75},{l:'Power User',sub:'Top 10%',v:s.revP90},{l:'Super Fan',sub:'Top 5%',v:s.revP95}].map(function(p){return(
                       <div key={p.l}>
@@ -1525,13 +1525,13 @@ function App() {
 
                 {/* Charts */}
                 <div className="grid">
-                  <ChartPanel title="Revenue Distribution" note="net $ per household" data={s.revDist} labelKey="range" dataKeys={[{key:'count',label:'Households'}]} colors={[EMERALD]} />
-                  <ChartPanel title="Avg Spend: Resident vs Non-Resident" data={s.resByRes} labelKey="group" dataKeys={[{key:'avg',label:'Avg $'},{key:'median',label:'Median $'}]} colors={[TEAL,SKY]} />
+                  <ChartPanel title="Revenue Distribution" note="net $ per household" desc="How net revenue is distributed across households. Each bar shows how many households fall in that spend range." data={s.revDist} labelKey="range" dataKeys={[{key:'count',label:'Households'}]} colors={[EMERALD]} />
+                  <ChartPanel title="Avg Spend: Resident vs Non-Resident" desc="Average and median spend comparing verified residents to non-residents." data={s.resByRes} labelKey="group" dataKeys={[{key:'avg',label:'Avg $'},{key:'median',label:'Median $'}]} colors={[TEAL,SKY]} />
                 </div>
 
                 <div className="grid">
-                  <ChartPanel title="Avg Net Revenue by Household Size" note="bigger families spend more" data={s.revBySize} labelKey="size" dataKeys={[{key:'avg',label:'Avg Net $'}]} colors={[INDIGO]} />
-                  <ChartPanel title="Revenue Concentration (Pareto)" note="top 20% = ~64% of revenue" type="line" data={s.paretoData} labelKey="hhPct" dataKeys={[{key:'revPct',label:'% of Revenue'}]} colors={[ROSE]} opts={{scales:{y:{max:100,ticks:{callback:function(v){return v+'%';}}}}}} />
+                  <ChartPanel title="Avg Net Revenue by Household Size" note="bigger families spend more" desc="Average net spend per household grouped by number of household members." data={s.revBySize} labelKey="size" dataKeys={[{key:'avg',label:'Avg Net $'}]} colors={[INDIGO]} />
+                  <ChartPanel title="Revenue Concentration (Pareto)" note="top 20% = ~64% of revenue" desc="Cumulative share of revenue by household percentile. Shows how concentrated spending is among top customers." type="line" data={s.paretoData} labelKey="hhPct" dataKeys={[{key:'revPct',label:'% of Revenue'}]} colors={[ROSE]} opts={{scales:{y:{max:100,ticks:{callback:function(v){return v+'%';}}}}}} />
                 </div>
 
                 {/* Gender Revenue Breakdown */}
@@ -1571,7 +1571,7 @@ function App() {
 
                 {/* Conversion funnel */}
                 <div className="panel" style={{marginBottom:14}}>
-                  <div className="panel-head">Conversion Funnel</div>
+                  <div className="panel-head">Conversion Funnel</div><div className="panel-desc">From account creation to first purchase. Shows where potential customers drop off.</div>
                   <div style={{display:'flex',alignItems:'center',gap:6,padding:'10px 0'}}>
                     {[
                       {label:'Signed Up',val:s.hhCount,color:INDIGO},
@@ -1597,9 +1597,9 @@ function App() {
                 {/* Revenue by Category */}
                 {s.hasCatData&&(
                   <div className="grid">
-                    <ChartPanel title="Revenue by Category" data={s.catData} labelKey="cat" dataKeys={[{key:'value',label:'Revenue $'}]} colors={s.catData.map(function(d){return d.color;})} />
+                    <ChartPanel title="Revenue by Category" desc="Net revenue split by product type (programs, facilities, fees, products)." data={s.catData} labelKey="cat" dataKeys={[{key:'value',label:'Revenue $'}]} colors={s.catData.map(function(d){return d.color;})} />
                     <div className="panel">
-                      <div className="panel-head">Category Breakdown</div>
+                      <div className="panel-head">Category Breakdown</div><div className="panel-desc">Detailed revenue figures by category with year-over-year comparison when available.</div>
                       <div style={{display:'flex',flexDirection:'column',gap:6,padding:'6px 0'}}>
                         {s.catData.map(function(d){
                           var pct=s.totalGross>0?Math.round(d.value/s.totalGross*100):0;
@@ -1632,7 +1632,7 @@ function App() {
                 {/* Geographic Heatmap */}
                 <div className="panel" style={{marginBottom:14}}>
                   <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:10}}>
-                    <div className="panel-head" style={{marginBottom:0}}>Where Are Your Users?</div>
+                    <div className="panel-head" style={{marginBottom:0}}>Where Are Your Users?</div><div className="panel-desc" style={{marginTop:4}}>Geographic heatmap of registered households by city.</div>
                     <div className="map-toggle" style={{marginLeft:'auto'}}>
                       <button className={mapMode==='hh'?'active':''} onClick={function(){setMapMode('hh');}}>Households</button>
                       <button className={mapMode==='rev'?'active':''} onClick={function(){setMapMode('rev');}}>Revenue</button>
@@ -1661,7 +1661,7 @@ function App() {
 
                 {/* Revenue Levers */}
                 <div className="panel" style={{marginBottom:14}}>
-                  <div className="panel-head">Revenue Levers<span className="panel-note">quantified growth opportunities</span></div>
+                  <div className="panel-head">Revenue Levers<span className="panel-note">quantified growth opportunities</span></div><div className="panel-desc">Actionable opportunities to grow revenue based on current community data.</div>
                   <div style={{display:'flex',flexDirection:'column',gap:10,padding:'4px 0'}}>
                     {s.levers.map(function(lev,i){return(
                       <div key={i} style={{display:'flex',alignItems:'center',gap:14,padding:'12px 16px',background:'linear-gradient(135deg,#f0fdf4,#ecfeff)',borderRadius:8,border:'1px solid #a7f3d0'}}>
@@ -1686,7 +1686,7 @@ function App() {
                 {/* Unbooked vs Spender + Lapsing */}
                 <div className="grid">
                   <div className="panel">
-                    <div className="panel-head">Who's Not Buying?<span className="panel-note">{s.unbookedProfile.count} unbooked</span></div>
+                    <div className="panel-head">Who's Not Buying?<span className="panel-note">{s.unbookedProfile.count} unbooked</span></div><div className="panel-desc">Profile of households that registered but never made a purchase.</div>
                     <div style={{display:'grid',gridTemplateColumns:'1fr auto auto',gap:'6px 16px',fontSize:12,padding:'6px 0'}}>
                       <div style={{fontWeight:700,color:'#6b7280'}}></div><div style={{fontWeight:700,color:'#059669',textAlign:'right'}}>Spenders</div><div style={{fontWeight:700,color:'#dc2626',textAlign:'right'}}>Unbooked</div>
                       <div>Households</div><div style={{textAlign:'right',fontWeight:600}}>{s.spenderProfile.count}</div><div style={{textAlign:'right',fontWeight:600}}>{s.unbookedProfile.count}</div>
@@ -1698,7 +1698,7 @@ function App() {
                   </div>
 
                   <div className="panel">
-                    <div className="panel-head">Lapsing Households<span className="panel-note">no purchase in 90+ days</span></div>
+                    <div className="panel-head">Lapsing Households<span className="panel-note">no purchase in 90+ days</span></div><div className="panel-desc">Previously active households with no transactions in the last 90 days.</div>
                     <div style={{padding:'20px 0',textAlign:'center'}}>
                       <div style={{fontSize:40,fontWeight:800,color:s.lapsingCount>50?'#dc2626':'#f59e0b'}}>{s.lapsingCount}</div>
                       <div style={{fontSize:13,color:'#6b7280',marginTop:4}}>previously active households</div>
@@ -1710,9 +1710,9 @@ function App() {
 
                 {/* Revenue by age + Grade gap */}
                 <div className="grid">
-                  <ChartPanel title="Avg HH Revenue by Member Age" note="households with member in age range" data={s.revByAgeBracket} labelKey="range" dataKeys={[{key:'avgRev',label:'Avg Net $'}]} colors={['#6366f1']} />
+                  <ChartPanel title="Avg HH Revenue by Member Age" note="households with member in age range" desc="Average household spend grouped by the age of their youngest or primary member." data={s.revByAgeBracket} labelKey="range" dataKeys={[{key:'avgRev',label:'Avg Net $'}]} colors={['#6366f1']} />
                   <div className="panel">
-                    <div className="panel-head">Grade Gap Analysis<span className="panel-note">kids vs household spend</span></div>
+                    <div className="panel-head">Grade Gap Analysis<span className="panel-note">kids vs household spend</span></div><div className="panel-desc">Spend patterns by student grade level to identify underserved age groups.</div>
                     {s.gradeRevData.length>0?(
                       <div style={{display:'flex',flexDirection:'column',gap:3,padding:'4px 0'}}>
                         <div style={{display:'grid',gridTemplateColumns:'80px 40px 1fr 60px',gap:4,fontSize:10,fontWeight:700,color:'#6b7280',textTransform:'uppercase',paddingBottom:4,borderBottom:'1px solid #e5e7eb'}}>
@@ -1741,7 +1741,7 @@ function App() {
                 {/* Cross-sell */}
                 {(s.progOnly>0||s.facOnly>0)&&(
                   <div className="panel" style={{marginBottom:14}}>
-                    <div className="panel-head">Cross-Sell Opportunities<span className="panel-note">programs vs facilities</span></div>
+                    <div className="panel-head">Cross-Sell Opportunities<span className="panel-note">programs vs facilities</span></div><div className="panel-desc">Households using only one product type who could be targeted for the other.</div>
                     <div style={{display:'flex',gap:14,padding:'8px 0',flexWrap:'wrap'}}>
                       {s.progOnly>0&&(
                         <div style={{flex:1,minWidth:200,padding:'12px 16px',background:'linear-gradient(135deg,#f5f3ff,#ede9fe)',borderRadius:8,border:'1px solid #c4b5fd'}}>
@@ -1801,18 +1801,18 @@ function App() {
 
             {/* Charts */}
             <div className="grid">
-              <ChartPanel title={'Revenue by Category'} data={[
+              <ChartPanel title={'Revenue by Category'} desc={'Revenue from guest checkout accounts split by product type.'} data={[
                 {label:'Product',value:Math.round(s.guestProdRev)},
                 {label:'Program',value:Math.round(s.guestProgRev)},
                 {label:'Facility',value:Math.round(s.guestFacRev)},
                 {label:'Fee',value:Math.round(s.guestFeeRev)}
               ].filter(function(d){return d.value>0;})} labelKey="label" dataKeys={[{key:'value',label:'Revenue'}]} colors={['#db2777']} prefix="$" />
-              <ChartPanel title={'Guest Spend Distribution'} data={s.guestRevDist.filter(function(d){return d.count>0;})} labelKey="label" dataKeys={[{key:'count',label:'Guests'}]} colors={['#7c3aed']} />
+              <ChartPanel title={'Guest Spend Distribution'} desc={'How guest spending is distributed across spend ranges.'} data={s.guestRevDist.filter(function(d){return d.count>0;})} labelKey="label" dataKeys={[{key:'count',label:'Guests'}]} colors={['#7c3aed']} />
             </div>
 
             {s.guestMonthData.length>1&&(
               <div className="grid" style={{gridTemplateColumns:'1fr'}}>
-                <ChartPanel title={'Guest Account Creation by Month'} data={s.guestMonthData} labelKey="label" dataKeys={[{key:'count',label:'New Guests'}]} colors={['#0891b2']} />
+                <ChartPanel title={'Guest Account Creation by Month'} desc={'New guest checkout accounts created each month.'} data={s.guestMonthData} labelKey="label" dataKeys={[{key:'count',label:'New Guests'}]} colors={['#0891b2']} />
               </div>
             )}
 
@@ -1906,10 +1906,10 @@ function App() {
                   <div style={{marginTop:20}}>
                     <div style={{display:'grid',gridTemplateColumns:pr.weeklyData.length>0?'1fr 1fr':'1fr',gap:16}}>
                       {pr.weeklyData.length>0 && (
-                        <ChartPanel title="Weekly Net Revenue" type="bar" data={pr.weeklyData} labelKey="week" dataKeys={[{key:'net',label:'Net Revenue'}]} colors={['#db2777']} />
+                        <ChartPanel title="Weekly Net Revenue" desc="Net product revenue by week for the selected date range." type="bar" data={pr.weeklyData} labelKey="week" dataKeys={[{key:'net',label:'Net Revenue'}]} colors={['#db2777']} />
                       )}
                       <div className="panel">
-                        <div className="panel-head">Revenue by Location</div>
+                        <div className="panel-head">Revenue by Location</div><div className="panel-desc">Net revenue and unit sales broken down by point-of-sale desk location.</div>
                         <div style={{padding:'12px 16px'}}>
                           {pr.desks.map(function(d,i){
                             var pct = pr.totalNet>0?(d.net/pr.totalNet)*100:0;
@@ -1939,7 +1939,7 @@ function App() {
 
                 {pr.desks.length<=1 && pr.weeklyData.length>0 && (
                   <div style={{marginTop:20}}>
-                    <ChartPanel title="Weekly Net Revenue" type="bar" data={pr.weeklyData} labelKey="week" dataKeys={[{key:'net',label:'Net Revenue'}]} colors={['#db2777']} />
+                    <ChartPanel title="Weekly Net Revenue" desc="Net product revenue by week for the selected date range." type="bar" data={pr.weeklyData} labelKey="week" dataKeys={[{key:'net',label:'Net Revenue'}]} colors={['#db2777']} />
                   </div>
                 )}
               </React.Fragment>
