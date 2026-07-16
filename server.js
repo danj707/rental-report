@@ -5871,7 +5871,11 @@ app.get("/:org/instructor-payout", (req, res) => {
   if (!org) return res.status(404).send("Unknown org");
   if (!org['instructor-payout']?.mbUuid && !SHARED_UUIDS['instructor-payout']) return res.status(404).send("Instructor Payout report not configured for this org.");
   logEvent(slug, "instructor-payout", "view", req);
-  res.type("html").send(require("fs").readFileSync(path.join(__dirname, "public", "instructor-payout.html"), "utf8"));
+  const slugTitle = slug.charAt(0).toUpperCase() + slug.slice(1);
+  const orgConfig = { slug, displayName: org.displayName || `${slugTitle} Parks & Recreation`, logoUrl: org.logoUrl || "", token: org.token || "" };
+  const html = require("fs").readFileSync(path.join(__dirname, "public", "instructor-payout.html"), "utf8");
+  const inject = `<script>window.ORG_CONFIG=${JSON.stringify(orgConfig)};</script>`;
+  res.type("html").send(html.replace("</head>", inject + "</head>"));
 });
 
 app.get("/:org/users", (req, res) => {
@@ -9273,6 +9277,7 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  { date: "2026-07-16", text: "Instructor Payout: added nav breadcrumb back link and feedback widget, server now injects ORG_CONFIG" },
   { date: "2026-07-16", text: "Instructor Payout: loading state now shows toolbar + juice glass inside page wrapper, consistent with other reports" },
   { date: "2026-07-16", text: "Instructor Payout: refund column values now red at section, subtotal, and grand total levels" },
   { date: "2026-07-16", text: "Fast Track: fixed-width leaderboard columns for aligned numbers, bars, and badges" },
