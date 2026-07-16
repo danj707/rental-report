@@ -168,15 +168,15 @@
     .lb-info { flex: 1; min-width: 0; }
     .lb-name { font-size: 13px; font-weight: 600; color: #111; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .lb-meta { font-size: 10px; color: #999; margin-top: 2px; }
-    .lb-stat { text-align: center; min-width: 64px; }
+    .lb-stat { text-align: center; width: 72px; flex-shrink: 0; }
     .lb-stat-val { font-size: 18px; font-weight: 700; font-family: 'IBM Plex Mono', monospace; color: #6366f1; }
     .lb-stat-label { font-size: 9px; text-transform: uppercase; letter-spacing: .5px; color: #999; font-weight: 600; }
-    .lb-bar-wrap { width: 120px; flex-shrink: 0; }
+    .lb-bar-wrap { width: 130px; flex-shrink: 0; }
     .lb-bar-track { height: 8px; background: #e8e5e0; border-radius: 4px; overflow: hidden; display: flex; }
     .lb-bar-conv { background: #22c55e; height: 100%; }
     .lb-bar-pend { background: #f59e0b; height: 100%; }
     .lb-conv-label { font-size: 10px; color: #666; margin-top: 2px; text-align: center; }
-    .lb-badge { font-size: 10px; font-weight: 600; padding: 3px 8px; border-radius: 10px; white-space: nowrap; }
+    .lb-badge { font-size: 10px; font-weight: 600; padding: 3px 8px; border-radius: 10px; white-space: nowrap; width: 100px; text-align: center; flex-shrink: 0; }
     .lb-badge.hot { background: #fef3c7; color: #92400e; }
     .lb-badge.over { background: #fee2e2; color: #b91c1c; }
     .lb-badge.full { background: #dbeafe; color: #1e40af; }
@@ -336,7 +336,7 @@ function DemandLeaderboard(props) {
     if (p.demandPct != null && p.demandPct > 75) return React.createElement('span', { className: 'lb-badge hot' }, '\uD83D\uDD25 High Demand');
     if (p.fillPct != null && p.fillPct >= 90) return React.createElement('span', { className: 'lb-badge full' }, '\u2705 Nearly Full');
     if (p.convPct != null && p.convPct < 30 && p.ftSignups >= 5) return React.createElement('span', { className: 'lb-badge low-conv' }, '\u{1F4C9} Low Conv');
-    return null;
+    return React.createElement('span', { className: 'lb-badge', style: { visibility: 'hidden' } }, '\u2014');
   }
 
   return React.createElement('div', { className: 'lb-section' },
