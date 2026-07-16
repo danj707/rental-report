@@ -480,7 +480,7 @@ function getOrgAndBase() {
 
 function getParams() {
   const p = new URLSearchParams(window.location.search);
-  return { start_date: p.get('start_date'), end_date: p.get('end_date'), _print: p.get('_print'), tab: p.get('tab'), section_id: p.get('section_id') };
+  return { start_date: p.get('start_date'), end_date: p.get('end_date'), _print: p.get('_print'), tab: p.get('tab'), section_id: p.get('section_id'), program: p.get('program') };
 }
 
 function getCurrentMonthRange() {
