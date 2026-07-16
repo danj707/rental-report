@@ -26,11 +26,11 @@
 
     /* ── Print ── */
     .print-mode .toolbar, .print-mode .no-print { display: none !important; }
-    .print-mode .report { padding: 12px 16px; }
+    .print-mode .report { padding: 12px 16px; box-shadow: none; margin: 0; }
     @media print { .toolbar, .no-print { display: none !important; } }
 
     /* ── Report body ── */
-    .report { max-width: 1200px; margin: 0 auto; padding: 24px 28px 48px; }
+    .report { max-width: 1200px; margin: 16px auto; padding: 24px 28px 48px; background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
     .report-header { display: flex; align-items: center; gap: 18px; margin-bottom: 24px; }
     .report-header-logo { max-height: 48px; max-width: 120px; object-fit: contain; }
     .org-label { font-size: 14px; font-weight: 700; color: #333; }
