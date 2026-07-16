@@ -9273,6 +9273,7 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  { date: "2026-07-16", text: "Community Intel: added descriptive subtitles to all demographics chart widgets for context" },
   { date: "2026-07-16", text: "Chrome-style tab redesign applied to Community Intel, Fast Track, and QBR reports for consistency" },
   { date: "2026-07-16", text: "Programs: Chrome-style tab redesign (rounded top, raised active state) for better discoverability; removed Waitlist toolbar checkbox" },
   { date: '2026-07-15', text: 'Removed Facility Overview from REPORT_TYPES, admin UI, and route handler - report dormant, may revisit as a comprehensive facility report later' },
