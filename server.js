@@ -9273,6 +9273,7 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  { date: "2026-07-16", text: "Roster: start/end times now shown in session header bar only, per-row column hidden by default" },
   { date: "2026-07-16", text: "Roster: form responses now display as Question: Answer on full-width rows instead of stacked grid" },
   { date: "2026-07-16", text: "Community Intel: added chart descriptions to Revenue, Strategy, Guests, and Products tabs" },
   { date: "2026-07-16", text: "Community Intel: added descriptive subtitles to all demographics chart widgets for context" },
