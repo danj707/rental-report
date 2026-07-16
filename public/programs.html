@@ -1915,6 +1915,7 @@ function App() {
             progMap[key] = {
               name: r.programName, activity: activity, sections: secs,
               enrolled: fmtNum(r.enrollments), capacity: r._cap || 0,
+              cancellations: fmtNum(r.cancellations),
               charged: fmtNum(r.charged), received: fmtNum(r.received),
               refunds: fmtNum(r.refunds), netRevenue: fmtNum(r.netRevenue),
               status: progStatus, startDate: startDate, endDate: endDate
@@ -1943,6 +1944,8 @@ function App() {
           var cancelledProgs = progs.filter(function(p) { return p.status === 'Canceled'; });
           var upcomingProgs = progs.filter(function(p) { return p.status === 'Upcoming'; });
           var cancelledSections = progs.reduce(function(s,p) { return s + p.sections.filter(function(sec) { return sec.status === 'Canceled' || sec.status === 'Cancelled'; }).length; }, 0);
+          var totalCancellations = progs.reduce(function(s,p) { return s + (p.cancellations || 0); }, 0);
+          var totalCapacity = progs.reduce(function(s,p) { return s + (p.capacity || 0); }, 0);
           var totalRev = progs.reduce(function(s,p){ return s + p.netRevenue; }, 0);
           var totalEnrolled = progs.reduce(function(s,p){ return s + p.enrolled; }, 0);
           var totalSections = progs.reduce(function(s,p){ return s + p.sections.length; }, 0);
@@ -2085,7 +2088,7 @@ function App() {
               <div style={{background:'#fff',border:'1px solid #e8e6e0',borderRadius:8,overflow:'hidden',marginBottom:20}}>
                 <div style={{maxHeight:700,overflow:'auto'}}>
                   <table className="sum-prog-table">
-                    <thead><tr><th>Program</th><th style={{textAlign:'center'}}>Status</th><th style={{textAlign:'center'}}>Sections</th><th style={{textAlign:'right'}}>Enrolled</th><th style={{textAlign:'right'}}>Capacity</th><th style={{textAlign:'right'}}>Fill %</th>{showCi && <th style={{textAlign:'right'}}>Check-In %</th>}{showCi && <th style={{textAlign:'right'}}>Check-Out %</th>}<th style={{textAlign:'right'}}>Net Revenue</th><th>Dates</th></tr></thead>
+                    <thead><tr><th>Program</th><th style={{textAlign:'center'}}>Status</th><th style={{textAlign:'center'}}>Sections</th><th style={{textAlign:'right'}}>Utilization</th><th style={{textAlign:'right'}}>Fill %</th>{showCi && <th style={{textAlign:'right'}}>Check-In %</th>}{showCi && <th style={{textAlign:'right'}}>Check-Out %</th>}<th style={{textAlign:'right'}}>Net Revenue</th><th>Dates</th></tr></thead>
                     <tbody>
                       {progsSorted.map(function(p) {
                         var isCancelled = p.status === 'Canceled';
@@ -2095,8 +2098,7 @@ function App() {
                           <td style={{fontWeight:500,maxWidth:280}}>{p.name}</td>
                           <td style={{textAlign:'center'}}><span className={'sum-badge ' + badgeClass}>{statusLabel}</span></td>
                           {(() => { var cs = p.sections.filter(function(s){ return s.status === 'Canceled' || s.status === 'Cancelled'; }).length; var rs = p.sections.length - cs; return <td style={{textAlign:'center'}}>{cs > 0 ? <span>{rs} ran<span style={{color:'#dc2626',fontSize:10}}> / {cs} canc.</span></span> : p.sections.length}</td>; })()}
-                          <td style={{textAlign:'right'}}>{p.enrolled}</td>
-                          <td style={{textAlign:'right',color:'#888'}}>{p.capacity || '\u2014'}</td>
+                          <td style={{textAlign:'right',whiteSpace:'nowrap'}}>{p.enrolled} <span style={{color:'#888'}}>/ {p.capacity || '\u2014'}</span>{p.cancellations > 0 && <span style={{color:'#dc2626'}}> / {p.cancellations}</span>}</td>
                           <td style={{textAlign:'right',color:p.fillPct!=null?(p.fillPct>=85?'#16a34a':p.fillPct<=25?'#dc2626':'#333'):'#ccc',fontWeight:p.fillPct!=null&&(p.fillPct>=85||p.fillPct<=25)?700:400}}>{p.fillPct != null ? p.fillPct + '%' : '\u2014'}</td>
                           {showCi && <td style={{textAlign:'right',fontWeight:p.checkInPct!=null?700:400,color:ciPctColor(p.checkInPct)}}>{p.checkInPct != null ? p.checkInPct + '%' : '\u2014'}</td>}
                           {showCi && <td style={{textAlign:'right',color:p.checkOutPct!=null?'#475569':'#ccc'}}>{p.checkOutPct != null ? p.checkOutPct + '%' : '\u2014'}</td>}
@@ -2104,7 +2106,7 @@ function App() {
                           <td style={{fontSize:10,color:'#888',whiteSpace:'nowrap'}}>{fmtD(p.startDate)}{fmtD(p.endDate) ? ' \u2013 ' + fmtD(p.endDate) : ''}</td>
                         </tr>;
                       })}
-                      <tr className="totals-row"><td>Total</td><td /><td style={{textAlign:'center'}}>{cancelledSections > 0 ? <span>{totalSections - cancelledSections} ran<span style={{color:'#dc2626',fontSize:10}}> / {cancelledSections} canc.</span></span> : totalSections}</td><td style={{textAlign:'right'}}>{totalEnrolled.toLocaleString()}</td><td /><td style={{textAlign:'right',color:'#888'}}>{avgFill > 0 ? avgFill + '%' : ''}</td>{showCi && <td style={{textAlign:'right',fontWeight:700}}>{checkinSummary.checkInPct != null ? checkinSummary.checkInPct + '%' : '\u2014'}</td>}{showCi && <td style={{textAlign:'right',fontWeight:700}}>{checkinSummary.checkOutPct != null ? checkinSummary.checkOutPct + '%' : '\u2014'}</td>}<td style={{textAlign:'right',fontWeight:700}}>{fmt$(totalRev)}</td><td /></tr>
+                      <tr className="totals-row"><td>Total</td><td /><td style={{textAlign:'center'}}>{cancelledSections > 0 ? <span>{totalSections - cancelledSections} ran<span style={{color:'#dc2626',fontSize:10}}> / {cancelledSections} canc.</span></span> : totalSections}</td><td style={{textAlign:'right',whiteSpace:'nowrap'}}>{totalEnrolled.toLocaleString()} <span style={{color:'#888'}}>/ {totalCapacity > 0 ? totalCapacity.toLocaleString() : '\u2014'}</span>{totalCancellations > 0 && <span style={{color:'#dc2626'}}> / {totalCancellations.toLocaleString()}</span>}</td><td style={{textAlign:'right',color:'#888'}}>{avgFill > 0 ? avgFill + '%' : ''}</td>{showCi && <td style={{textAlign:'right',fontWeight:700}}>{checkinSummary.checkInPct != null ? checkinSummary.checkInPct + '%' : '\u2014'}</td>}{showCi && <td style={{textAlign:'right',fontWeight:700}}>{checkinSummary.checkOutPct != null ? checkinSummary.checkOutPct + '%' : '\u2014'}</td>}<td style={{textAlign:'right',fontWeight:700}}>{fmt$(totalRev)}</td><td /></tr>
                     </tbody>
                   </table>
                 </div>
