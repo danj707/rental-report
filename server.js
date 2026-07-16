@@ -9351,6 +9351,7 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  { date: "2026-07-16", text: "Programs: merged Enrolled/Capacity into Utilization column showing enrolled / capacity / cancelled (red)" },
   { date: "2026-07-16", text: "Smart retry on Metabase timeout (60s first attempt, 120s retry), request performance log at /api/admin/request-log" },
   { date: "2026-07-16", text: "Instructor Payout: added nav breadcrumb back link and feedback widget, server now injects ORG_CONFIG" },
   { date: "2026-07-16", text: "Instructor Payout: loading state now shows toolbar + juice glass inside page wrapper, consistent with other reports" },
