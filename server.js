@@ -9273,6 +9273,7 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  { date: "2026-07-16", text: "Memberships: Chrome-style tabs, juice loader on memberships + check-ins loading, chart widget descriptions" },
   { date: "2026-07-16", text: "Roster: removed Start/End column entirely, times display only in session header bar" },
   { date: "2026-07-16", text: "Roster: reordered sub-rows to user info, then emergency/pickup contacts, then form responses" },
   { date: "2026-07-16", text: "Roster: start/end times now shown in session header bar only, per-row column hidden by default" },
