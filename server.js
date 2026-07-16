@@ -10353,7 +10353,7 @@ app.get("/", (req, res) => {
       let totalItems = 0;
       UPDATES.forEach(u => {
         counts[u.date] = (counts[u.date] || 0) + 1;
-        totalItems += u.items.length;
+        totalItems += u.items ? u.items.length : (u.text ? 1 : 0);
       });
       const allDates = Object.keys(counts).sort();
       const firstDate = new Date(allDates[0] + 'T12:00:00');
