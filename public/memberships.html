@@ -274,7 +274,17 @@
       border-radius: 6px;
     }
     .error-state { color: #b91c1c; }
-    .loading { padding: 40px; text-align: center; color: #666; font-size: 13px; }
+    .loading { padding: 40px; text-align: center; color: #666; font-size: 13px; display: flex; flex-direction: column; align-items: center; gap: 12px; }
+    .spinner { width: 32px; height: 32px; border: 3px solid #e5e7eb; border-top-color: #6366f1; border-radius: 50%; animation: juice-fill 2s ease-in-out infinite; }
+    @keyframes juice-fill { 0%,100% { transform: rotate(0deg); } 50% { transform: rotate(360deg); } }
+    .juice-msg { position: relative; height: 1.4em; line-height: 1.4em; min-width: 190px; }
+    .juice-msg span { position: absolute; left: 0; right: 0; text-align: center; opacity: 0; animation: juice-phrase 10s infinite; }
+    .juice-msg span:nth-child(1) { animation-delay: 0s; }
+    .juice-msg span:nth-child(2) { animation-delay: 2s; }
+    .juice-msg span:nth-child(3) { animation-delay: 4s; }
+    .juice-msg span:nth-child(4) { animation-delay: 6s; }
+    .juice-msg span:nth-child(5) { animation-delay: 8s; }
+    @keyframes juice-phrase { 0% { opacity:0; transform:translateY(5px); } 2% { opacity:1; transform:translateY(0); } 18% { opacity:1; transform:translateY(0); } 20% { opacity:0; transform:translateY(-5px); } 100% { opacity:0; } }
 
     /* ── Chart container ── */
     .chart-card {
@@ -399,10 +409,10 @@
     .ret-table td:nth-child(2) { color: #666; }
 
     /* ── Report Tabs (FT-style) ── */
-    .report-tabs { display: flex; gap: 0; border-bottom: 2px solid #e0ddd8; margin-bottom: 20px; }
-    .report-tabs .tab-btn { padding: 10px 20px; font-size: 13px; font-weight: 600; font-family: inherit; background: none; border: none; border-bottom: 2px solid transparent; margin-bottom: -2px; cursor: pointer; color: #888; transition: color .15s, border-color .15s; }
-    .report-tabs .tab-btn:hover { color: #333; }
-    .report-tabs .tab-btn.active { color: #111; border-bottom-color: #6366f1; }
+    .report-tabs { display: flex; gap: 4px; border-bottom: 2px solid #d1d5db; margin-bottom: 20px; padding: 0 4px; align-items: flex-end; }
+    .report-tabs .tab-btn { padding: 9px 18px 8px; font-size: 13px; font-weight: 600; font-family: inherit; background: transparent; border: 1px solid transparent; border-bottom: none; border-radius: 8px 8px 0 0; margin-bottom: -2px; cursor: pointer; color: #888; transition: all .15s; position: relative; }
+    .report-tabs .tab-btn:hover { color: #333; background: #f3f4f6; }
+    .report-tabs .tab-btn.active { color: #111; background: #fff; border-color: #d1d5db; box-shadow: 0 -2px 4px rgba(0,0,0,.04); z-index: 1; }
     .report-tabs .tab-badge { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 10px; margin-left: 6px; background: #6366f122; color: #6366f1; }
 
     /* ── Check-In Dashboard ── */
@@ -1495,7 +1505,7 @@ function normalizeRow(raw) {
       }
 
       function renderView() {
-        if (loading) return <div className="loading">Loading membership data…</div>;
+        if (loading) return <div className="loading"><div className="spinner" /><div className="juice-msg"><span>Squeezing the oranges…</span><span>Juicing!</span><span>Adding the pulp…</span><span>Chilling the glass…</span><span>Pouring it out…</span></div></div>;
         if (error)   return <div className="empty-state error-state" style={{textAlign:'center',padding:'3rem 1rem'}}><span style={{fontSize:'2.5rem'}}>😔</span><br/><span style={{fontSize:'1.1rem',color:'#666'}}>Looks like reporting has encountered an issue — try loading this report again later.</span><br/><span style={{fontSize:'0.8rem',color:'#b91c1c',marginTop:'0.5rem',fontFamily:'monospace',background:'#fef2f2',padding:'8px 14px',borderRadius:6,display:'inline-block',maxWidth:500,wordBreak:'break-word'}}>{error}</span></div>;
         if (filtered.length === 0) return <div className="empty-state">No memberships match the current filters.</div>;
 
@@ -1680,7 +1690,7 @@ function normalizeRow(raw) {
 
           {activeTab === 'checkins' && (
             <div style={{maxWidth:1100,margin:'0 auto',padding:'0'}}>
-              {ciLoading && <div style={{textAlign:'center',padding:40,color:'#999'}}>Loading check-in data...</div>}
+              {ciLoading && <div className="loading"><div className="spinner" /><div className="juice-msg"><span>Squeezing the oranges…</span><span>Counting check-ins…</span><span>Sorting the data…</span><span>Almost there…</span><span>Pouring it out…</span></div></div>}
               {!ciLoading && ciRows && ciRows.length > 0 && (() => {
                 var uniqueMembers = new Set(); var hourCounts = {}; var dayCounts = {}; var deskCounts = {}; var prodCounts = {};
                 var dayTypeCounts = {}; var heatGrid = {}; var dailyCounts = {};
@@ -1732,7 +1742,7 @@ function normalizeRow(raw) {
                       }
                       return (
                         <div className="ci-heatmap-wrap">
-                          <div className="ci-chart-title">Peak Hours by Day of Week</div>
+                          <div className="ci-chart-title">Peak Hours by Day of Week</div><div style={{fontSize:11,color:'#9ca3af',marginBottom:8,marginTop:-6}}>Heatmap showing which hours are busiest on each day.</div>
                           <div className="ci-heatmap" style={{gridTemplateColumns: '50px repeat(' + hmHours.length + ', 1fr)'}}>
                             <div className="ci-hm-header" />
                             {hmHours.map(function(h){ return <div key={h} className="ci-hm-header">{h===0?'12a':h===12?'12p':h>12?(h-12)+'p':h+'a'}</div>; })}
@@ -1772,7 +1782,7 @@ function normalizeRow(raw) {
                       var xLabels = sortedDays.length <= 14 ? sortedDays : sortedDays.filter(function(_,i){ return i % Math.ceil(sortedDays.length/10) === 0 || i === sortedDays.length-1; });
                       return (
                         <div className="ci-trend-wrap">
-                          <div className="ci-chart-title">Daily Check-Ins</div>
+                          <div className="ci-chart-title">Daily Check-Ins</div><div style={{fontSize:11,color:'#9ca3af',marginBottom:8,marginTop:-6}}>Total check-ins per day for the selected date range.</div>
                           <svg viewBox={'0 0 ' + W + ' ' + H} className="ci-trend-svg" style={{height: 180}}>
                             {yTicks.map(function(v) {
                               var y = padT + plotH - (v / maxDay) * plotH;
@@ -1795,13 +1805,13 @@ function normalizeRow(raw) {
                     })()}
                     <div className="ci-charts">
                       <div className="ci-chart-box">
-                        <div className="ci-chart-title">Hourly Distribution</div>
+                        <div className="ci-chart-title">Hourly Distribution</div><div style={{fontSize:11,color:'#9ca3af',marginBottom:8,marginTop:-6}}>Check-ins grouped by hour of day across all dates.</div>
                         {Array.from({length:17}, function(_,i){ var h=i+5; var c=hourCounts[h]||0; return (
                           <div key={h} className="ci-bar-row"><span className="ci-bar-label">{h===0?'12am':h===12?'12pm':h>12?(h-12)+'pm':h+'am'}</span><div className="ci-bar-track"><div className="ci-bar-fill" style={{width:(c/maxH*100)+'%',background:'#3b82f6'}}/></div><span className="ci-bar-val">{c||''}</span></div>
                         );})}
                       </div>
                       <div className="ci-chart-box">
-                        <div className="ci-chart-title">Day of Week</div>
+                        <div className="ci-chart-title">Day of Week</div><div style={{fontSize:11,color:'#9ca3af',marginBottom:8,marginTop:-6}}>Total check-ins by day of the week.</div>
                         {dayOrd.map(function(d){ var c=dayCounts[d]||0; return (
                           <div key={d} className="ci-bar-row"><span className="ci-bar-label">{d.slice(0,3)}</span><div className="ci-bar-track"><div className="ci-bar-fill" style={{width:(c/maxDy*100)+'%',background:'#10b981'}}/></div><span className="ci-bar-val">{c||''}</span></div>
                         );})}
@@ -1809,13 +1819,13 @@ function normalizeRow(raw) {
                     </div>
                     <div className="ci-charts">
                       <div className="ci-chart-box">
-                        <div className="ci-chart-title">Desk Locations</div>
+                        <div className="ci-chart-title">Desk Locations</div><div style={{fontSize:11,color:'#9ca3af',marginBottom:8,marginTop:-6}}>Check-ins by point-of-sale or entry location.</div>
                         {Object.entries(deskCounts).sort(function(a,b){return b[1]-a[1];}).map(function(e){ return (
                           <div key={e[0]} className="ci-bar-row"><span className="ci-bar-label" title={e[0]}>{e[0]}</span><div className="ci-bar-track"><div className="ci-bar-fill" style={{width:(e[1]/maxDk*100)+'%',background:'#f59e0b'}}/></div><span className="ci-bar-val">{e[1]}</span></div>
                         );})}
                       </div>
                       <div className="ci-chart-box">
-                        <div className="ci-chart-title">Top Membership / Pass Types</div>
+                        <div className="ci-chart-title">Top Membership / Pass Types</div><div style={{fontSize:11,color:'#9ca3af',marginBottom:8,marginTop:-6}}>Most frequently used membership and pass types at check-in.</div>
                         {Object.entries(prodCounts).sort(function(a,b){return b[1]-a[1];}).slice(0,10).map(function(e){ return (
                           <div key={e[0]} className="ci-bar-row"><span className="ci-bar-label" style={{width:180}} title={e[0]}>{e[0].length>28?e[0].slice(0,26)+'...':e[0]}</span><div className="ci-bar-track"><div className="ci-bar-fill" style={{width:(e[1]/maxPr*100)+'%',background:e[0].toLowerCase().indexOf('pass')!==-1?'#8b5cf6':'#06b6d4'}}/></div><span className="ci-bar-val">{e[1]}</span></div>
                         );})}
