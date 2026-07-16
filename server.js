@@ -637,7 +637,7 @@ const ORGS = {
   },
 };
 
-const REPORT_TYPES = ["facility", "gl", "historic", "programs", "roster", "overview", "products", "memberships", "court-utilization", "calendar", "fasttrack", "users", "program-demographics", "directors-report", "instructor-payout", "retention", "annual-report", "section-detail", "ice-calendar", "qoq", "checkins", "program-checkins"];
+const REPORT_TYPES = ["facility", "gl", "historic", "programs", "roster", "products", "memberships", "court-utilization", "calendar", "fasttrack", "users", "program-demographics", "directors-report", "instructor-payout", "retention", "annual-report", "section-detail", "ice-calendar", "qoq", "checkins", "program-checkins"];
 
 // ── Shared Metabase UUIDs (one query per report type, parameterized by org_id) ──
 // When a report type has an entry here, the server uses this UUID + passes the
@@ -1016,7 +1016,7 @@ const AMENITY_TAGS = {
 
 // Report types that are valid system-wide but should NOT be offered in the
 // dashboard "+ Add report" flow (e.g. not yet ready for self-serve onboarding).
-const NON_ADDABLE_REPORTS = new Set(["overview", "program-demographics", "directors-report", "retention", "annual-report", "section-detail", "qoq", "checkins", "program-checkins"]);
+const NON_ADDABLE_REPORTS = new Set(["program-demographics", "directors-report", "retention", "annual-report", "section-detail", "qoq", "checkins", "program-checkins"]);
 // Reports that require extra params (e.g. section_id) and cannot be health-checked with org_id alone
 const HEALTH_SKIP_REPORTS = new Set(["section-detail", "annual-report", "qoq", "qbr-stats", "checkins", "program-checkins"]);
 const RENTAL_CALENDAR_ORGS = new Set(["watertown", "norman", "niagarafalls"]);
@@ -2985,7 +2985,7 @@ Rules:
 - Focus on instructor workload balance, payout equity, class size efficiency, and cancellation impact.
 - Name specific instructors and sections.`;
 
-const SYS_PROMPTS = { programs: PROGRAMS_SYS_PROMPT, fasttrack: FASTTRACK_SYS_PROMPT, users: USERS_SYS_PROMPT, "directors-report": DIRECTORS_SYS_PROMPT, gl: GL_SYS_PROMPT, historic: HISTORIC_SYS_PROMPT, roster: ROSTER_SYS_PROMPT, overview: OVERVIEW_SYS_PROMPT, products: PRODUCTS_SYS_PROMPT, memberships: MEMBERSHIPS_SYS_PROMPT, "instructor-payout": INSTRUCTOR_PAYOUT_SYS_PROMPT };
+const SYS_PROMPTS = { programs: PROGRAMS_SYS_PROMPT, fasttrack: FASTTRACK_SYS_PROMPT, users: USERS_SYS_PROMPT, "directors-report": DIRECTORS_SYS_PROMPT, gl: GL_SYS_PROMPT, historic: HISTORIC_SYS_PROMPT, roster: ROSTER_SYS_PROMPT, products: PRODUCTS_SYS_PROMPT, memberships: MEMBERSHIPS_SYS_PROMPT, "instructor-payout": INSTRUCTOR_PAYOUT_SYS_PROMPT };
 
 // ── Program Finder AI ────────────────────────────────────────────────
 const RECOMMEND_SYS_PROMPT = `You are a friendly, helpful recreation program advisor for a municipal parks & recreation department. A resident has described what they're looking for, and you have the department's upcoming schedule of programs and activities.
@@ -3235,7 +3235,7 @@ async function fetchOrgChatData(orgSlug, orgConfig) {
   if (hit && Date.now() - hit.ts < CHAT_DATA_TTL) return hit.data;
 
   const orgHidden = new Set(getHiddenReports(orgSlug));
-  const CHAT_SKIP = new Set(["section-detail","program-demographics","retention","directors-report","annual-report","checkins","program-checkins","ice-calendar","qoq","overview"]);
+  const CHAT_SKIP = new Set(["section-detail","program-demographics","retention","directors-report","annual-report","checkins","program-checkins","ice-calendar","qoq"]);
   const reports = REPORT_TYPES.filter(r => !orgHidden.has(r) && !CHAT_SKIP.has(r) && (orgConfig[r]?.mbUuid || SHARED_UUIDS[r]));
   console.log("[chat-data] " + orgSlug + ": fetching " + reports.length + " reports: " + reports.join(", "));
   const results = {};
@@ -4182,11 +4182,7 @@ app.get("/:org/directors-report", (req, res) => {
   res.type("html").send(html.replace("</head>", inject + "</head>"));
 });
 
-app.get("/:org/overview", (req, res) => {
-  if (!ORGS[req.params.org]) return res.status(404).send("Unknown org");
-  logEvent(req.params.org, "overview", "view", req);
-  res.type("html").send(require("fs").readFileSync(path.join(__dirname, "public", "overview.html"), "utf8"));
-});
+// overview route removed — report dormant, may revisit later
 
 app.get("/:org/products", (req, res) => {
   const slug = req.params.org;
@@ -6918,7 +6914,6 @@ app.get("/", (req, res) => {
     programs: { label: "Programs",           icon: "🎯", desc: "Enrollment and revenue by program",       color: "#7c3aed", ai: true },
     historic: { label: "Historic Buildings",        ai: true,        icon: "🏛️",  desc: "Reservations for historic building sites", color: "#d97706" },
     roster:   { label: "Class Roster",              icon: "📋", desc: "Enrolled and cancelled participants by section", color: "#0891b2" },
-    overview:    { label: "Facility Overview",         ai: true,         icon: "📈", desc: "Revenue and activity summary by location",                 color: "#059669" },
     products:    { label: "Product Sales",          ai: true,          icon: "🛒", desc: "Daily revenue, refunds, and net by product",           color: "#0891b2" },
     memberships: { label: "Memberships",                ai: true,                icon: "🎫", desc: "Active and lapsed memberships with renewal tracking",       color: "#db2777" },
     "court-utilization": { label: "Court Utilization",  icon: "🎾", desc: "Court utilization % or reserved hours by court, split by customer, program, and closure usage", color: "#0d9488", ai: true },
@@ -8400,7 +8395,7 @@ app.get("/", (req, res) => {
         panel.innerHTML = '<div class="metrics-loading" style="color:#e55">Failed to load metrics</div>';
       }
     }
-    const REPORT_COLORS = { facility:'#16a34a', gl:'#3b82f6', programs:'#7c3aed', historic:'#d97706', roster:'#0891b2', overview:'#059669', rentalcalendar:'#059669' };
+    const REPORT_COLORS = { facility:'#16a34a', gl:'#3b82f6', programs:'#7c3aed', historic:'#d97706', roster:'#0891b2', rentalcalendar:'#059669' };
     const chartInstances = {};
     // ── Add Org modal ────────────────────────────────────────────────
     const REPORT_META = ${JSON.stringify(Object.fromEntries(Object.entries({
@@ -8409,7 +8404,6 @@ app.get("/", (req, res) => {
       programs: { label: "Programs",           icon: "🎯" },
       historic: { label: "Historic Buildings",        icon: "🏛️" },
       roster:   { label: "Class Roster",              icon: "📋" },
-      overview: { label: "Facility Overview",         icon: "📈" },
       products: { label: "Product Sales",             icon: "🛒" },
       memberships: { label: "Memberships",            icon: "🎫" },
       "court-utilization": { label: "Court Utilization", icon: "🎾" },
@@ -9279,6 +9273,7 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  { date: '2026-07-15', text: 'Removed Facility Overview from REPORT_TYPES, admin UI, and route handler - report dormant, may revisit as a comprehensive facility report later' },
   { date: '2026-07-15', text: 'Community Intel: added Authorized Pickup completeness ring to demographics panel (requires Has Authorized Pickup column in Metabase card)' },
   {
     date: "2026-07-15",
