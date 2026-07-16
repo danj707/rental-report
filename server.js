@@ -9273,6 +9273,7 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  { date: "2026-07-16", text: "Instructor Payout: refund column values now red at section, subtotal, and grand total levels" },
   { date: "2026-07-16", text: "Fast Track: fixed-width leaderboard columns for aligned numbers, bars, and badges" },
   { date: "2026-07-16", text: "Fast Track: added page wrapper styling (white background, shadow) to match all other reports" },
   { date: "2026-07-16", text: "Memberships: Chrome-style tabs, juice loader on memberships + check-ins loading, chart widget descriptions" },
