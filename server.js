@@ -8076,7 +8076,28 @@ app.get("/", (req, res) => {
       </div>
     </div>
 
-    <div class="org-section">
+        <div class="org-section">
+      <div class="org-header" onclick="toggleHow(this)" style="cursor:pointer;user-select:none">
+        <div class="org-header-text">
+          <div class="org-name">&#9201; Request Performance</div>
+          <div class="org-slug">Metabase proxy latency, cache hits, errors, and retries</div>
+        </div>
+        <span class="how-chevron"><i class="ph ph-caret-right" style="font-size:14px"></i></span>
+      </div>
+      <div class="how-body">
+        <div style="padding:0 4px">
+          <div style="display:flex;gap:8px;margin-bottom:12px;align-items:center">
+            <select id="perf-org" style="font-size:11px;padding:3px 8px;border:1px solid #ddd;border-radius:4px;font-family:inherit"><option value="">All Orgs</option></select>
+            <select id="perf-rpt" style="font-size:11px;padding:3px 8px;border:1px solid #ddd;border-radius:4px;font-family:inherit"><option value="">All Reports</option></select>
+            <button onclick="loadPerfLog()" style="font-size:10px;padding:3px 10px;background:#f3f4f6;border:1px solid #ddd;border-radius:4px;cursor:pointer">Refresh</button>
+          </div>
+          <div id="perf-stats" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px"></div>
+          <div id="perf-body" style="max-height:350px;overflow-y:auto;font-size:11px"><span style="color:#999">Loading\u2026</span></div>
+        </div>
+      </div>
+    </div>
+
+<div class="org-section">
       <div class="org-header" onclick="toggleHow(this)" style="cursor:pointer;user-select:none">
         <div class="org-header-text">
           <div class="org-name">&#128203; Updates <span class="updates-count" id="updates-count"></span></div>
@@ -10432,14 +10453,56 @@ app.get("/", (req, res) => {
       listEl.innerHTML = heatmapHtml + UPDATES.map(u => \`
         <div class="update-entry">
           <div class="update-date">\${esc(u.date)}</div>
-          <div class="update-body">
-            <div class="update-title">\${esc(u.title)}</div>
-            <ul class="update-items">\${u.items.map(i => \`<li>\${esc(i)}</li>\`).join('')}</ul>
+          <div class="update-body">\${u.text
+            ? \`<div style="color:#444;font-size:12px;line-height:1.5">\${esc(u.text)}</div>\`
+            : \`<div class="update-title">\${esc(u.title||"")}</div>
+               <ul class="update-items">\${(u.items||[]).map(i => \`<li>\${esc(i)}</li>\`).join("")}</ul>\`}
           </div>
         </div>
       \`).join('');
     }
     renderUpdates();
+
+    async function loadPerfLog() {
+      try {
+        var orgF = document.getElementById('perf-org') ? document.getElementById('perf-org').value : '';
+        var repF = document.getElementById('perf-rpt') ? document.getElementById('perf-rpt').value : '';
+        var url = '/api/admin/request-log?limit=200';
+        if (orgF) url += '&org=' + encodeURIComponent(orgF);
+        if (repF) url += '&report=' + encodeURIComponent(repF);
+        var resp = await fetch(url);
+        var json = await resp.json();
+        var st = json.stats, entries = json.entries;
+        var orgSel = document.getElementById('perf-org');
+        var repSel = document.getElementById('perf-rpt');
+        if (orgSel && orgSel.options.length <= 1) {
+          [...new Set(entries.map(function(e){return e.org}).filter(Boolean))].sort().forEach(function(o){ var opt = document.createElement('option'); opt.value=o; opt.textContent=o; orgSel.appendChild(opt); });
+        }
+        if (repSel && repSel.options.length <= 1) {
+          [...new Set(entries.map(function(e){return e.report}).filter(Boolean))].sort().forEach(function(r){ var opt = document.createElement('option'); opt.value=r; opt.textContent=r; repSel.appendChild(opt); });
+        }
+        var sEl = document.getElementById('perf-stats');
+        if (sEl) {
+          function sc(l,v,clr){ return '<div style="min-width:80px;padding:6px 10px;background:#f9f9f7;border:1px solid #e8e5df;border-radius:6px"><div style="font-size:9px;text-transform:uppercase;letter-spacing:.4px;color:#999;font-weight:600">'+l+'</div><div style="font-size:16px;font-weight:700;color:'+(clr||'#111')+';font-variant-numeric:tabular-nums">'+v+'</div></div>'; }
+          sEl.innerHTML = sc('Requests',st.total)+sc('Cache Hit',st.cacheHitRate+'%',st.cacheHitRate>70?'#059669':'#f59e0b')+sc('Avg',st.avgMs>0?(st.avgMs/1000).toFixed(1)+'s':'--',st.avgMs>10000?'#dc2626':'#111')+sc('p50',st.p50>0?(st.p50/1000).toFixed(1)+'s':'--')+sc('p95',st.p95>0?(st.p95/1000).toFixed(1)+'s':'--',st.p95>30000?'#dc2626':'#111')+sc('Errors',st.errors,st.errors>0?'#dc2626':'#059669')+sc('Retries',st.retries,st.retries>0?'#f59e0b':'#059669');
+        }
+        var body = document.getElementById('perf-body');
+        if (!body) return;
+        if (!entries.length){ body.innerHTML='<span style="color:#999">No requests logged yet.</span>'; return; }
+        var rows = entries.map(function(e){
+          var ms=e.ms||0, lat=ms>0?(ms/1000).toFixed(1)+'s':'--';
+          var lc=ms===0?'#ccc':ms<5000?'#059669':ms<15000?'#f59e0b':ms<30000?'#ea580c':'#dc2626';
+          var cc=(e.cache==='hit'||e.cache==='users-cache')?'#059669':e.cache==='stale-fallback'?'#f59e0b':'#999';
+          var stc=e.status>=400?'#dc2626':'#059669';
+          var t=e.ts?new Date(e.ts).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',second:'2-digit',hour12:true}):'';
+          var retry=e.attempt>1?' <span style="background:#fef3c7;color:#92400e;font-size:9px;padding:1px 4px;border-radius:3px;font-weight:600">retry</span>':'';
+          return '<tr style="border-bottom:1px solid #f5f5f5"><td style="padding:3px 6px">'+t+'</td><td style="padding:3px 6px;font-weight:600">'+(e.org||'')+'</td><td style="padding:3px 6px">'+(e.report||'')+'</td><td style="padding:3px 6px;color:'+stc+';font-weight:600">'+(e.status||'')+retry+'</td><td style="padding:3px 6px;color:'+lc+';font-weight:600">'+lat+'</td><td style="padding:3px 6px">'+(e.rows||0).toLocaleString()+'</td><td style="padding:3px 6px;color:'+cc+'">'+(e.cache||'')+'</td></tr>';
+        }).join('');
+        body.innerHTML='<table style="width:100%;border-collapse:collapse;font-size:11px;font-family:IBM Plex Mono,monospace"><thead><tr style="border-bottom:1px solid #eee"><th style="text-align:left;padding:3px 6px;color:#aaa;font-size:10px;font-weight:600;font-family:Inter,sans-serif">Time</th><th style="text-align:left;padding:3px 6px;color:#aaa;font-size:10px;font-weight:600;font-family:Inter,sans-serif">Org</th><th style="text-align:left;padding:3px 6px;color:#aaa;font-size:10px;font-weight:600;font-family:Inter,sans-serif">Report</th><th style="text-align:left;padding:3px 6px;color:#aaa;font-size:10px;font-weight:600;font-family:Inter,sans-serif">Status</th><th style="text-align:left;padding:3px 6px;color:#aaa;font-size:10px;font-weight:600;font-family:Inter,sans-serif">Latency</th><th style="text-align:left;padding:3px 6px;color:#aaa;font-size:10px;font-weight:600;font-family:Inter,sans-serif">Rows</th><th style="text-align:left;padding:3px 6px;color:#aaa;font-size:10px;font-weight:600;font-family:Inter,sans-serif">Cache</th></tr></thead><tbody>'+rows+'</tbody></table>';
+      } catch(err) { var b=document.getElementById('perf-body'); if(b) b.innerHTML='<span style="color:#dc2626">Error: '+err.message+'</span>'; }
+    }
+    setTimeout(loadPerfLog, 800);
+    setInterval(loadPerfLog, 30000);
 
     (function(){
       const ov = document.getElementById('mb-modal-overlay');
