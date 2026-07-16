@@ -1673,6 +1673,18 @@ function App() {
   const allOpen  = sectionGrain && rows && rows.length > 0 && rows.every(r => open.has(r.programId));
   const toggle   = (id) => setOpen(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
   const toggleAll = () => setOpen(allOpen ? new Set() : new Set((rows || []).map(r => r.programId)));
+
+  // Auto-expand matching programs when deep-linked from dashboard via ?program=
+  useEffect(() => {
+    var programParam = new URLSearchParams(window.location.search).get('program');
+    if (programParam && rows && rows.length > 0 && open.size === 0) {
+      var q = programParam.toLowerCase();
+      var matching = rows.filter(function(r) { return r.programName && r.programName.toLowerCase().includes(q); });
+      if (matching.length > 0) {
+        setOpen(new Set(matching.map(function(r) { return r.programId; })));
+      }
+    }
+  }, [rows]);
   const hasRegMode       = colPresence.regMode;
   const hasCancellations = colPresence.cancellations;
   const showRegModeCol   = hasRegMode && showRegMode;
