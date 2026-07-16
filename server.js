@@ -96,6 +96,15 @@ const REPORT_CACHE_TTL = {
   "section-detail": 60 * 60 * 1000,       // 1 hr — drill-down still relatively fresh
 };
 const dataCache = new Map();
+
+// ── Request performance log (ring buffer, last 500 requests) ──
+const REQUEST_LOG = [];
+const REQUEST_LOG_MAX = 500;
+function logRequest(entry) {
+  REQUEST_LOG.unshift(entry);
+  if (REQUEST_LOG.length > REQUEST_LOG_MAX) REQUEST_LOG.length = REQUEST_LOG_MAX;
+}
+
 const cacheStats = { hits: 0, misses: 0, prewarms: 0, healthCacheHits: 0, healthProbes: 0 };
 
 // Long-lived cache for users report (refreshed daily by cron)
@@ -3849,6 +3858,7 @@ app.get("/:org/:report/api/data", resolveOrg, async (req, res) => {
       if (uc) {
         console.log(`[users-cache] HIT ${orgSlug}/users (${uc.data.rows.length} rows, cached ${new Date(uc.ts).toISOString()})`);
         const result = Object.assign({}, uc.data, { meta: Object.assign({}, uc.data.meta, { cached_at: new Date(uc.ts).toISOString() }) });
+        logRequest({ ts: new Date().toISOString(), org: orgSlug, report: reportType, status: 200, ms: 0, rows: uc.data.rows?.length || 0, cache: "users-cache" });
         return res.json(result);
       }
     }
@@ -3857,6 +3867,7 @@ app.get("/:org/:report/api/data", resolveOrg, async (req, res) => {
       const cached = getCached(cacheKey, orgSlug, reportType);
       if (cached) {
         console.log(`[cache] HIT ${orgSlug}/${reportType} | ${cached.rows?.length || 0} rows | key: ${cacheKey.slice(0, 60)}...`);
+        logRequest({ ts: new Date().toISOString(), org: orgSlug, report: reportType, status: 200, ms: 0, rows: cached.rows?.length || 0, cache: "hit" });
         return res.json(cached);
       }
       console.log(`[cache] MISS ${orgSlug}/${reportType} — fetching from Metabase`);
@@ -3865,24 +3876,41 @@ app.get("/:org/:report/api/data", resolveOrg, async (req, res) => {
     const url = `${METABASE_URL}/api/public/card/${mbUuid}/query/json${paramStr}`;
     console.log(`[proxy] ${orgSlug}/${reportType} → ${url}`);
 
-    const fetchTimeoutMs = orgConfig.healthTimeoutMs || 120000;
-    const response = await fetch(url, { signal: AbortSignal.timeout(fetchTimeoutMs) });
+    // Smart retry: 60s first attempt, if timeout retry once with 120s
+    const FIRST_TIMEOUT = 60000;
+    const RETRY_TIMEOUT = 120000;
+    const fetchStart = Date.now();
+    let response, attempt = 1;
+    try {
+      response = await fetch(url, { signal: AbortSignal.timeout(FIRST_TIMEOUT) });
+    } catch (firstErr) {
+      const isTimeout = firstErr.name === "TimeoutError" || firstErr.name === "AbortError";
+      if (!isTimeout) throw firstErr;
+      const elapsed1 = Date.now() - fetchStart;
+      console.log(`[proxy] ${orgSlug}/${reportType} timed out after ${Math.round(elapsed1/1000)}s — retrying with ${RETRY_TIMEOUT/1000}s timeout...`);
+      attempt = 2;
+      response = await fetch(url, { signal: AbortSignal.timeout(RETRY_TIMEOUT) });
+    }
+    const fetchMs = Date.now() - fetchStart;
+
     if (!response.ok) {
       const body = await response.text();
-      console.error(`[proxy] Metabase returned ${response.status}: ${body}`);
-      // Fall back to stale cache if available
+      console.error(`[proxy] Metabase returned ${response.status} after ${fetchMs}ms (attempt ${attempt}): ${body}`);
+      logRequest({ ts: new Date().toISOString(), org: orgSlug, report: reportType, status: response.status, ms: fetchMs, rows: 0, cache: "miss", attempt, error: body.slice(0, 200) });
       const stale = getStaleCached(orgSlug, reportType, cacheKey);
       if (stale) {
         console.log(`[cache] STALE fallback for ${orgSlug}/${reportType} (cached ${new Date(stale.ts).toISOString()})`);
         const result = Object.assign({}, stale.data, {
           meta: Object.assign({}, stale.data.meta, { stale_cache: true, cached_at: new Date(stale.ts).toISOString() })
         });
+        logRequest({ ts: new Date().toISOString(), org: orgSlug, report: reportType, status: 200, ms: fetchMs, rows: stale.data.rows?.length || 0, cache: "stale-fallback", attempt });
         return res.json(result);
       }
       return res.status(response.status).json({ error: body });
     }
 
     const data = await response.json();
+    console.log(`[proxy] ${orgSlug}/${reportType} → ${data.length} rows in ${fetchMs}ms (attempt ${attempt})`);
 
     // Calendar is a public view — defensively strip any PII columns the
     // Metabase question might surface before returning rows to the browser.
@@ -3925,6 +3953,7 @@ app.get("/:org/:report/api/data", resolveOrg, async (req, res) => {
     // Also populate the daily users cache for subsequent requests
     if (reportType === "users") setCacheUsers(orgSlug, result);
     console.log(`[cache] STORE ${orgSlug}/${reportType} (${data.length} rows, ${dataCache.size} entries)`);
+    logRequest({ ts: new Date().toISOString(), org: orgSlug, report: reportType, status: 200, ms: fetchMs, rows: data.length, cache: "miss", attempt });
 
     res.json(result);
   } catch (err) {
@@ -3940,14 +3969,38 @@ app.get("/:org/:report/api/data", resolveOrg, async (req, res) => {
       });
       return res.json(result);
     }
+    logRequest({ ts: new Date().toISOString(), org: req.orgSlug, report: req.reportType, status: isTimeout ? 504 : 500, ms: 0, rows: 0, cache: "miss", error: err.message.slice(0, 200) });
     const msg = isTimeout
-      ? `Metabase query timed out after ${(req.orgConfig?.healthTimeoutMs || 120000) / 1000}s — try a shorter date range`
+      ? `Metabase query timed out after 60s+120s retry — try a shorter date range or refresh`
       : err.message;
     res.status(isTimeout ? 504 : 500).json({ error: msg });
   }
 });
 
 // ── GET /:org/:report/api/pdf — Puppeteer PDF ────────────────────────
+// ── GET /api/admin/request-log — request performance log ──
+app.get("/api/admin/request-log", (req, res) => {
+  const limit = Math.min(parseInt(req.query.limit) || 100, REQUEST_LOG_MAX);
+  const org = req.query.org || null;
+  const report = req.query.report || null;
+  let filtered = REQUEST_LOG;
+  if (org) filtered = filtered.filter(r => r.org === org);
+  if (report) filtered = filtered.filter(r => r.report === report);
+  const entries = filtered.slice(0, limit);
+  const times = entries.map(r => r.ms || 0).filter(t => t > 0).sort((a, b) => a - b);
+  const stats = {
+    total: entries.length, totalAll: REQUEST_LOG.length,
+    avgMs: entries.length > 0 ? Math.round(entries.reduce((s, r) => s + (r.ms || 0), 0) / entries.length) : 0,
+    cacheHitRate: entries.length > 0 ? Math.round(entries.filter(r => r.cache === "hit" || r.cache === "users-cache").length / entries.length * 100) : 0,
+    errors: entries.filter(r => r.status >= 400).length,
+    retries: entries.filter(r => r.attempt > 1).length,
+    p50: times.length > 0 ? times[Math.floor(times.length * 0.5)] : 0,
+    p95: times.length > 0 ? times[Math.floor(times.length * 0.95)] : 0,
+    p99: times.length > 0 ? times[Math.floor(times.length * 0.99)] : 0,
+  };
+  res.json({ stats, entries });
+});
+
 app.get("/:org/:report/api/pdf", resolveOrg, async (req, res) => {
   try {
     const { orgSlug, reportType } = req;
@@ -9277,6 +9330,7 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  { date: "2026-07-16", text: "Smart retry on Metabase timeout (60s first attempt, 120s retry), request performance log at /api/admin/request-log" },
   { date: "2026-07-16", text: "Instructor Payout: added nav breadcrumb back link and feedback widget, server now injects ORG_CONFIG" },
   { date: "2026-07-16", text: "Instructor Payout: loading state now shows toolbar + juice glass inside page wrapper, consistent with other reports" },
   { date: "2026-07-16", text: "Instructor Payout: refund column values now red at section, subtotal, and grand total levels" },
