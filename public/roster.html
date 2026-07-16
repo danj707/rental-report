@@ -921,18 +921,6 @@ function App() {
           </span>
           {cols.registered && <span className="cell col-reg">{r.registered}</span>}
         </div>
-        {cols.responses && qaList.length > 0 && (
-          <div className="form-responses-row">
-            <div className="form-responses-list">
-              {qaList.map((qa, i) => (
-                <div className="form-qa-line" key={i}>
-                  <span className="form-q">{qa.q}:</span>{' '}
-                  <span className="form-a">{qa.a}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
         {((cols.emergency && r.emergencyContacts) || (cols.pickup && r.authorizedPickups)) && (
           <div className="contacts-sub-row">
             {cols.emergency && r.emergencyContacts && (
@@ -947,6 +935,18 @@ function App() {
                 <span className="contact-val">{r.authorizedPickups}</span>
               </div>
             )}
+          </div>
+        )}
+        {cols.responses && qaList.length > 0 && (
+          <div className="form-responses-row">
+            <div className="form-responses-list">
+              {qaList.map((qa, i) => (
+                <div className="form-qa-line" key={i}>
+                  <span className="form-q">{qa.q}:</span>{' '}
+                  <span className="form-a">{qa.a}</span>
+                </div>
+              ))}
+            </div>
           </div>
         )}
       </>
