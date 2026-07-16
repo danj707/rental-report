@@ -652,6 +652,61 @@ function showToast(msg, duration = 5000) {
   t.classList.add('show');
   setTimeout(() => t.classList.remove('show'), duration);
 }
+
+// ── Request Performance Log ──
+async function loadPerfLog() {
+  try {
+    const orgF = document.getElementById('perf-org-filter').value;
+    const repF = document.getElementById('perf-report-filter').value;
+    let url = '/api/admin/request-log?limit=200';
+    if (orgF) url += '&org=' + encodeURIComponent(orgF);
+    if (repF) url += '&report=' + encodeURIComponent(repF);
+    const resp = await fetch(url);
+    const { stats, entries } = await resp.json();
+
+    const orgSel = document.getElementById('perf-org-filter');
+    const repSel = document.getElementById('perf-report-filter');
+    if (orgSel.options.length <= 1) {
+      const orgs = [...new Set(entries.map(e => e.org).filter(Boolean))].sort();
+      orgs.forEach(o => { const opt = document.createElement('option'); opt.value = o; opt.textContent = o; orgSel.appendChild(opt); });
+    }
+    if (repSel.options.length <= 1) {
+      const reps = [...new Set(entries.map(e => e.report).filter(Boolean))].sort();
+      reps.forEach(r => { const opt = document.createElement('option'); opt.value = r; opt.textContent = r; repSel.appendChild(opt); });
+    }
+
+    const statsEl = document.getElementById('perf-stats');
+    const sc = (label, val, color) => '<div style="min-width:90px;padding:8px 12px;background:#f9f9f7;border:1px solid #e8e5df;border-radius:6px"><div style="font-size:9px;text-transform:uppercase;letter-spacing:.4px;color:#999;font-weight:600">' + label + '</div><div style="font-size:18px;font-weight:700;color:' + (color||'#111') + ';font-variant-numeric:tabular-nums">' + val + '</div></div>';
+    statsEl.innerHTML = sc('Requests', stats.total)
+      + sc('Cache Hit', stats.cacheHitRate + '%', stats.cacheHitRate > 70 ? '#059669' : '#f59e0b')
+      + sc('Avg Latency', stats.avgMs > 0 ? (stats.avgMs/1000).toFixed(1) + 's' : '\u2014', stats.avgMs > 10000 ? '#dc2626' : '#111')
+      + sc('p50', stats.p50 > 0 ? (stats.p50/1000).toFixed(1) + 's' : '\u2014')
+      + sc('p95', stats.p95 > 0 ? (stats.p95/1000).toFixed(1) + 's' : '\u2014', stats.p95 > 30000 ? '#dc2626' : '#111')
+      + sc('Errors', stats.errors, stats.errors > 0 ? '#dc2626' : '#059669')
+      + sc('Retries', stats.retries, stats.retries > 0 ? '#f59e0b' : '#059669');
+
+    const body = document.getElementById('perf-body');
+    if (!entries.length) { body.innerHTML = '<div class="empty-state">No requests logged yet. Load some reports first.</div>'; return; }
+
+    const rows = entries.map(e => {
+      const ms = e.ms || 0;
+      const lat = ms > 0 ? (ms/1000).toFixed(1) + 's' : '\u2014';
+      const lc = ms === 0 ? '#ccc' : ms < 5000 ? '#059669' : ms < 15000 ? '#f59e0b' : ms < 30000 ? '#ea580c' : '#dc2626';
+      const cc = (e.cache === 'hit' || e.cache === 'users-cache') ? '#059669' : e.cache === 'stale-fallback' ? '#f59e0b' : '#999';
+      const sc2 = e.status >= 400 ? '#dc2626' : '#059669';
+      const t = e.ts ? new Date(e.ts).toLocaleTimeString('en-US', {hour:'numeric',minute:'2-digit',second:'2-digit',hour12:true}) : '';
+      const retry = e.attempt > 1 ? ' <span style="background:#fef3c7;color:#92400e;font-size:9px;padding:1px 5px;border-radius:3px;font-weight:600">retry</span>' : '';
+      const tip = e.error ? ' title="' + e.error.replace(/"/g,'&quot;').replace(/'/g,'&#39;') + '"' : '';
+      return '<tr' + tip + '><td>' + t + '</td><td style="font-weight:600">' + (e.org||'') + '</td><td>' + (e.report||'') + '</td><td style="color:' + sc2 + ';font-weight:600">' + (e.status||'') + retry + '</td><td style="color:' + lc + ';font-weight:600">' + lat + '</td><td>' + ((e.rows||0).toLocaleString()) + '</td><td style="color:' + cc + '">' + (e.cache||'') + '</td></tr>';
+    }).join('');
+
+    body.innerHTML = '<table class="log-table" style="margin:0"><thead><tr><th>Time</th><th>Org</th><th>Report</th><th>Status</th><th>Latency</th><th>Rows</th><th>Cache</th></tr></thead><tbody>' + rows + '</tbody></table>';
+  } catch (err) {
+    document.getElementById('perf-body').innerHTML = '<div class="empty-state" style="color:#dc2626">Error: ' + err.message + '</div>';
+  }
+}
+setTimeout(loadPerfLog, 500);
+setInterval(loadPerfLog, 30000);
 </script>
 
     <script src="/share-widget.js" defer></script>
