@@ -981,7 +981,7 @@ function App() {
   const [chartHover, setChartHover] = useState(null);
 
   // ── Participants tab ──────────────────────────────────────────────
-  const [tab, setTab] = useState(params.program ? 'revenue' : (params.tab || 'summary'));
+  const [tab, setTab] = useState(() => { var qs = new URLSearchParams(window.location.search); return qs.get('program') ? 'revenue' : (qs.get('tab') || 'summary'); });
   // demoRows/demoLoading/demoError moved above activityInfo (Babel var-hoisting fix)
   const [demoOpen, setDemoOpen] = useState(() => new Set());
 
