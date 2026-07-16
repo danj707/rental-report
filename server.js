@@ -8515,33 +8515,36 @@ app.get("/", (req, res) => {
     function showErr(el, msg) { el.textContent = msg; el.style.display = 'block'; }
 
     async function confirmCreate() {
-      const btn = document.getElementById('confirm-btn');
-      const err = document.getElementById('step2-error');
+      var btn = document.getElementById('confirm-btn');
+      var err = document.getElementById('step2-error');
       btn.disabled = true; btn.textContent = 'Creating…';
       err.style.display = 'none';
-      const slug      = document.getElementById('f-slug').value.trim();
-      const displayName = document.getElementById('f-name').value.trim() || null;
-      const orgId     = document.getElementById('f-orgid').value.trim();
-      const logoUrl   = document.getElementById('f-logo').value.trim();
-      const checked   = [...document.querySelectorAll('#report-checkboxes input:checked')].map(i => i.value);
-      const reports   = {};
-      checked.forEach(r => { reports[r] = extractMbUuid(document.getElementById(\`mb-\${r}\`)?.value || ''); });
+      var slug      = document.getElementById('f-slug').value.trim();
+      var displayName = document.getElementById('f-name').value.trim() || null;
+      var orgId     = document.getElementById('f-orgid').value.trim();
+      var logoUrl   = document.getElementById('f-logo').value.trim();
+      var glUuid    = extractMbUuid(document.getElementById('mb-gl').value || '');
+      var histUuid  = extractMbUuid(document.getElementById('mb-historic').value || '');
+      var reports   = {};
+      Object.keys(SHARED_UUIDS_CLIENT).forEach(function(r) { reports[r] = null; });
+      if (glUuid) reports['gl'] = glUuid;
+      if (histUuid) reports['historic'] = histUuid;
       try {
-        const res  = await fetch('/api/admin/new-org', {
+        var res  = await fetch('/api/admin/new-org', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ slug, displayName, orgId, logoUrl, reports }),
+          body: JSON.stringify({ slug: slug, displayName: displayName, orgId: orgId, logoUrl: logoUrl, reports: reports }),
         });
-        const data = await res.json();
+        var data = await res.json();
         if (!res.ok || !data.ok) throw new Error(data.error || 'Unknown error');
-        if (data.github?.pushed) {
+        if (data.github && data.github.pushed) {
           btn.textContent = '✓ Created & deployed';
           console.log('GitHub commit:', data.github.commitUrl);
         } else {
           btn.textContent = '✓ Created (GitHub push failed)';
-          if (data.github?.error) console.warn('GitHub error:', data.github.error);
+          if (data.github && data.github.error) console.warn('GitHub error:', data.github.error);
         }
-        setTimeout(() => { closeAddOrg(); window.location.reload(); }, 1500);
+        setTimeout(function() { closeAddOrg(); window.location.reload(); }, 1500);
       } catch(e) {
         showErr(err, 'Error: ' + e.message);
         btn.disabled = false; btn.textContent = '✓ Confirm & Create';
