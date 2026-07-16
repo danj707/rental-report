@@ -921,7 +921,7 @@ function App() {
     return () => { try { delete window.recShareLink; } catch (e) { window.recShareLink = undefined; } };
   }, [loadedStart, loadedEnd, startDate, endDate]);
 
-  const [search, setSearch] = useState(() => new URLSearchParams(window.location.search).get('search') || '');
+  const [search, setSearch] = useState(() => new URLSearchParams(window.location.search).get('program') || new URLSearchParams(window.location.search).get('search') || '');
   const [activityFilter, setActivityFilter] = useState('');
 
   const [demoRows, setDemoRows] = useState(null);
