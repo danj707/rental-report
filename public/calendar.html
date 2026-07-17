@@ -211,6 +211,34 @@
   body.present-mode .present-status{position:fixed;bottom:12px;right:16px;font-size:11px;color:var(--muted);opacity:.5;z-index:10}
 
   /* Program Finder */
+
+  /* -- Find a Program Wizard -- */
+  .pgwiz-bar{padding:14px 16px;background:linear-gradient(135deg,#eef2ff,#e0e7ff);border:2px solid #818cf8;border-radius:12px;cursor:pointer;text-align:center;font-size:14px;color:#3730a3;font-weight:600;transition:all .15s;box-shadow:0 2px 8px rgba(99,102,241,0.12);margin:12px 12px 0}
+  .pgwiz-bar:hover{background:linear-gradient(135deg,#e0e7ff,#c7d2fe)}
+  .pgwiz-wrap{padding:20px 24px;background:linear-gradient(135deg,#eef2ff,#f5f3ff);border:2px solid #818cf8;border-radius:12px;margin:12px 12px 0;box-shadow:0 4px 16px rgba(99,102,241,0.15)}
+  .pgwiz-head{display:flex;justify-content:space-between;align-items:center;font-size:15px;font-weight:600;color:#312e81;margin-bottom:12px}
+  .pgwiz-x{background:none;border:none;font-size:16px;cursor:pointer;color:#6b7280;padding:2px 6px}
+  .pgwiz-x:hover{color:#111}
+  .pgwiz-step{animation:pgwizFade .2s ease}
+  @keyframes pgwizFade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+  .pgwiz-q{font-size:14px;color:#374151;margin-bottom:10px;font-weight:500}
+  .pgwiz-opts{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}
+  .pgwiz-pill{padding:8px 14px;border-radius:20px;border:1px solid #c7d2fe;background:#fff;font-size:13px;cursor:pointer;color:#312e81;transition:all .15s;font-family:inherit;font-weight:500}
+  .pgwiz-pill:hover{background:#e0e7ff;border-color:#818cf8}
+  .pgwiz-go{background:#4f46e5;color:#fff;border-color:#4f46e5}
+  .pgwiz-go:hover{background:#4338ca}
+  .pgwiz-back{background:none;border:none;font-size:12px;color:#6b7280;cursor:pointer;padding:4px 0;margin-top:4px}
+  .pgwiz-back:hover{color:#374151}
+  .pgwiz-result{padding:12px 20px;background:linear-gradient(135deg,#f0fdf4,#ecfdf5);border:2px solid #86efac;border-radius:12px;margin:12px 12px 0;font-size:14px;color:#166534;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .pgwiz-result strong{font-weight:600}
+  .pgwiz-result-x{background:none;border:none;color:#6b7280;cursor:pointer;font-size:14px;margin-left:auto;padding:2px 6px}
+  .pgwiz-result-x:hover{color:#111}
+  .pgwiz-crumb{font-size:12px;color:#6366f1;font-weight:600;margin-bottom:8px}
+  .pgwiz-crumb-link{cursor:pointer;text-decoration:underline;text-decoration-style:dotted;text-underline-offset:2px}
+  .pgwiz-crumb-link:hover{color:#4338ca}
+  body.present-mode .pgwiz-bar,body.present-mode .pgwiz-wrap,body.present-mode .pgwiz-result{display:none}
+  @media print{.pgwiz-bar,.pgwiz-wrap,.pgwiz-result{display:none!important}}
+
   .pf-fab{position:fixed;bottom:24px;right:24px;z-index:100;display:flex;align-items:center;gap:8px;
     background:linear-gradient(135deg,#6366f1,#2563eb);color:#fff;border:none;border-radius:50px;
     padding:14px 22px;font-size:14px;font-weight:700;cursor:pointer;box-shadow:0 4px 20px rgba(37,99,235,.35);
@@ -955,6 +983,20 @@ function App(){
   const [availFilter,setAvailFilter]=useState(()=>urlParams.get('avail')||'');
   // All-time filter options (populated from a wide fetch)
   const [allActivities,setAllActivities]=useState([]);
+  const [wizOpen,setWizOpen]=useState(false);
+  const [wizStep,setWizStep]=useState(0);
+  const [wizAct,setWizAct]=useState('');
+  const [wizLoc,setWizLoc]=useState('');
+  const [wizApplied,setWizApplied]=useState(false);
+  function wizApply(act,loc){
+    if(act)setActFilter(act);
+    if(loc)setLocFilter(loc);
+    setWizApplied(true);setWizOpen(false);
+  }
+  function wizReset(){
+    setActFilter('');setLocFilter('');setAvailFilter('');
+    setWizApplied(false);setWizOpen(false);setWizStep(0);setWizAct('');setWizLoc('');
+  }
   const [allLocations,setAllLocations]=useState([]);
   // Present mode
   const isPresent=urlParams.get('present')==='1';
@@ -1120,6 +1162,61 @@ function App(){
         </select>
         {(actFilter||locFilter||availFilter)&&<span className="filter-clear" onClick={()=>{setActFilter('');setLocFilter('');setAvailFilter('');}}>✕ Clear</span>}
       </div>
+
+      {/* Find a Program Wizard */}
+      {!isPresent && !wizOpen && !wizApplied && activities.length>0 && (
+        <div className="pgwiz-bar" onClick={()=>{setWizOpen(true);setWizStep(0);setWizAct('');setWizLoc('');}}>
+          {String.fromCodePoint(10024)} Find a Program
+        </div>
+      )}
+      {wizApplied && (
+        <div className="pgwiz-result">
+          <span>{String.fromCodePoint(10024)}</span>
+          <span>Showing: <strong>{actFilter||'All Activities'}</strong>{locFilter?<span> at <strong>{locFilter}</strong></span>:''} {String.fromCodePoint(8212)} {filtered.length} session{filtered.length!==1?'s':''}</span>
+          <button className="pgwiz-result-x" onClick={wizReset} title="Clear filter">{String.fromCodePoint(10005)}</button>
+        </div>
+      )}
+      {wizOpen && (
+        <div className="pgwiz-wrap">
+          <div className="pgwiz-head">
+            <span>{String.fromCodePoint(10024)} Find a Program</span>
+            <button className="pgwiz-x" onClick={()=>setWizOpen(false)}>{String.fromCodePoint(10005)}</button>
+          </div>
+          {wizStep===0 && (
+            <div className="pgwiz-step">
+              <div className="pgwiz-q">What type of activity?</div>
+              <div className="pgwiz-opts">
+                <button className="pgwiz-pill" onClick={()=>{wizApply('','');}}>Show All</button>
+                {activities.map(a=>(
+                  <button key={a} className="pgwiz-pill" onClick={()=>{setWizAct(a);setWizStep(1);}}>
+                    {a}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          {wizStep===1 && (
+            <div className="pgwiz-step">
+              <div className="pgwiz-crumb">
+                <span className="pgwiz-crumb-link" onClick={()=>{setWizStep(0);setWizAct('');}}>
+                  {wizAct} {String.fromCodePoint(9999)}
+                </span>
+              </div>
+              <div className="pgwiz-q">Any location preference?</div>
+              <div className="pgwiz-opts">
+                <button className="pgwiz-pill pgwiz-go" onClick={()=>wizApply(wizAct,'')}>Anywhere</button>
+                {locations.map(l=>(
+                  <button key={l} className="pgwiz-pill" onClick={()=>wizApply(wizAct,l)}>
+                    {l}
+                  </button>
+                ))}
+              </div>
+              <button className="pgwiz-back" onClick={()=>{setWizStep(0);setWizAct('');}}>{String.fromCodePoint(8592)} Back</button>
+            </div>
+          )}
+        </div>
+      )}
+
 
       <div className="hdr">
         {window.__ORG__ && (
