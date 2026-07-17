@@ -2189,7 +2189,7 @@ async function sendReportEmail(orgSlug, email, reportType, schedule, locationFil
   }
 
   const hasPdf = pdfBuffer && pdfBuffer.length > 0;
-  const attachments = hasPdf ? [{ filename: pdfFilename, content: pdfBuffer.toString("base64") }] : [];
+  const attachments = hasPdf ? [{ filename: pdfFilename, content: pdfBuffer }] : [];
 
   let status, message;
   try {
