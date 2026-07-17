@@ -189,7 +189,7 @@
   .pop-chips{margin-top:4px}
   .pop-link{display:inline-block;margin-top:12px;font-size:13px;color:var(--accent);text-decoration:none;font-weight:600}
   .pop-link:hover{text-decoration:underline}
-  .filter-sel{border:1px solid #d4d4d4;border-radius:20px;padding:5px 12px;font-size:13px;background:var(--card);color:var(--ink);cursor:pointer;height:34px;max-width:160px}
+  .filter-sel{border:1px solid #d4d4d4;border-radius:20px;padding:5px 12px;font-size:13px;background:var(--card);color:var(--ink);cursor:pointer;height:34px;max-width:200px}
   .filter-sel:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 2px rgba(37,99,235,.1)}
   .filter-clear{font-size:11px;color:var(--accent);cursor:pointer;text-decoration:underline;white-space:nowrap}
   /* present / kiosk mode */
@@ -1006,13 +1006,7 @@ function App(){
   const [gradeFilter,setGradeFilter]=useState('');
   const [wizApplied,setWizApplied]=useState(false);
   const [wizScrollIdx,setWizScrollIdx]=useState(0);
-  const _actLen=activities?activities.length:0;
-  useEffect(()=>{
-    if(wizOpen||wizApplied||!_actLen) return;
-    setWizScrollIdx(0);
-    const iv=setInterval(()=>setWizScrollIdx(i=>(i+1)%_actLen),2500);
-    return ()=>clearInterval(iv);
-  },[wizOpen,wizApplied,_actLen]);
+
   function wizApply(act,loc,age,grade){
     if(act)setActFilter(act);
     if(loc)setLocFilter(loc);
@@ -1148,6 +1142,13 @@ function App(){
     : MON[ws.getMonth()]+' '+ws.getDate()+' – '+MON[we.getMonth()]+' '+we.getDate()+', '+we.getFullYear();
   // Use wide-range options for dropdowns, fall back to current week if wide hasn't loaded yet
   const activities=allActivities.length>0?allActivities:[...new Set(rows.flatMap(e=>(e.activity||'').split(',').map(a=>a.trim())).filter(Boolean))].sort();
+  const _actLen=activities?activities.length:0;
+  useEffect(()=>{
+    if(wizOpen||wizApplied||!_actLen) return;
+    setWizScrollIdx(0);
+    const iv=setInterval(()=>setWizScrollIdx(i=>(i+1)%_actLen),2500);
+    return ()=>clearInterval(iv);
+  },[wizOpen,wizApplied,_actLen]);
   const eligData=useMemo(()=>{
     var ageBuckets=new Map(),gradeSet=new Set();
     rows.forEach(function(e){
