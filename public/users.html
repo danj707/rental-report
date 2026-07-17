@@ -15,7 +15,7 @@
 <script src="/feedback-widget.js" defer></script>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: 'Inter', -apple-system, sans-serif; background: #f8fafc; color: #374151; }
+  body { font-family: 'Inter', -apple-system, sans-serif; background: #f5f4f1; color: #374151; }
   body.print-mode .no-print { display: none !important; }
   body.print-mode .toolbar { display: none !important; }
 
@@ -42,7 +42,7 @@
   .tab.active { color:#6366f1; background:#fff; border-color:#d1d5db; box-shadow:0 -2px 4px rgba(0,0,0,.04); z-index:1; }
   .tab .tab-badge { font-size:10px; font-weight:700; padding:2px 7px; border-radius:10px; margin-left:6px; }
 
-  .dash { max-width:1120px; margin:0 auto; padding:20px 16px; }
+  .dash { max-width:1120px; margin:16px auto; padding:24px 28px; background:#fff; box-shadow: 0 1px 4px rgba(0,0,0,.08); border-radius: 2px; }
   .kpi-row { display:grid; grid-template-columns:repeat(auto-fit, minmax(145px, 1fr)); gap:10px; margin-bottom:14px; }
   .kpi { background:#fff; border-radius:10px; padding:14px 16px; box-shadow:0 1px 3px rgba(0,0,0,.06), 0 0 0 1px rgba(0,0,0,.03); border-top:3px solid var(--accent,#6366f1); }
   .kpi-label { font-size:10px; font-weight:600; color:#6b7280; text-transform:uppercase; letter-spacing:.06em; }
@@ -174,7 +174,7 @@
   .rev-coming h2 { font-size:20px; font-weight:800; color:#111827; margin-bottom:8px; }
   .rev-coming p { font-size:14px; color:#6b7280; max-width:500px; line-height:1.6; }
 
-  @media print { body { background:#fff; } .no-print { display:none!important; } .panel { break-inside:avoid; } }
+  @media print { body { background:#fff; } .no-print { display:none!important; } .panel { break-inside:avoid; } .dash { box-shadow:none; margin:0; padding:12px 16px; } }
   .map-wrap { height:420px; border-radius:8px; overflow:hidden; border:1px solid #e5e7eb; position:relative; z-index:1; }
   .map-toggle { display:flex; gap:4px; }
   .map-toggle button { padding:5px 12px; border-radius:4px; border:1px solid #d1d5db; background:#fff; font-size:11px; font-weight:600; cursor:pointer; font-family:inherit; color:#6b7280; }
