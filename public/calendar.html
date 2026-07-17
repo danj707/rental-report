@@ -890,6 +890,7 @@ function PopoverCard({ev,onClose}){
           {loc && <div className="pop-row"><span className="pop-lbl">Location</span><span>{loc}</span></div>}
           {ev.activity && <div className="pop-row"><span className="pop-lbl">Activity</span><span style={{whiteSpace:'normal',overflowWrap:'anywhere'}}>{ev.activity}</span></div>}
           {ev.description && <div className="pop-row"><span className="pop-lbl">Description</span><span style={{whiteSpace:'normal',overflowWrap:'anywhere',display:'-webkit-box',WebkitLineClamp:4,WebkitBoxOrient:'vertical',overflow:'hidden',fontSize:12,lineHeight:'1.45',color:'var(--ink)'}}>{ev.description}</span></div>}
+          {ev.eligibility && <div className="pop-row"><span className="pop-lbl">Ages/Grades</span><span style={{whiteSpace:'normal',overflowWrap:'anywhere'}}>{ev.eligibility}</span></div>}
           <div className="pop-row"><span className="pop-lbl">Price</span><span>{price}</span></div>
           {(ev.full||ev.waitlist||ev.closed) && <div className="pop-row pop-chips"><StatusChips ev={ev}/></div>}
           {ev.url && <a className="pop-link" href={ev.url} target="_blank" rel="noopener" onClick={()=>trackClick(ev)}>View Session →</a>}
@@ -1007,9 +1008,10 @@ function App(){
   const [wizScrollIdx,setWizScrollIdx]=useState(0);
   useEffect(()=>{
     if(wizOpen||wizApplied||!activities.length) return;
-    const iv=setInterval(()=>setWizScrollIdx(i=>(i+1)%activities.length),2000);
+    setWizScrollIdx(0);
+    const iv=setInterval(()=>setWizScrollIdx(i=>(i+1)%activities.length),2500);
     return ()=>clearInterval(iv);
-  },[wizOpen,wizApplied,activities]);
+  },[wizOpen,wizApplied,activities.length]);
   function wizApply(act,loc,age,grade){
     if(act)setActFilter(act);
     if(loc)setLocFilter(loc);
@@ -1234,9 +1236,7 @@ function App(){
         <div className="pgwiz-bar" onClick={()=>{setWizOpen(true);setWizStep(0);setWizAct('');}}>
           <span style={{marginRight:6}}>{String.fromCodePoint(10024)}</span>
           Find a Program
-          <span style={{display:'inline-block',marginLeft:8,overflow:'hidden',height:'1.4em',verticalAlign:'text-bottom',position:'relative',width:160,textAlign:'left',lineHeight:'1.4'}}>
-            <span key={wizScrollIdx} style={{display:'inline-block',animation:'pgwizFade .4s ease',color:'#4f46e5',fontWeight:700}}>{activities[wizScrollIdx%activities.length]||''}</span>
-          </span>
+          <span style={{marginLeft:6,color:'#4f46e5',fontWeight:700}}>{activities.length>0?<span key={wizScrollIdx} style={{display:'inline-block',animation:'pgwizFade .4s ease'}}>{activities[wizScrollIdx%activities.length]}</span>:''}</span>
         </div>
       )}
       {wizApplied && (
@@ -1274,21 +1274,15 @@ function App(){
               <div className="pgwiz-q">Who is it for?</div>
               <div className="pgwiz-opts">
                 <button className="pgwiz-pill pgwiz-go" onClick={()=>setWizStep(2)}>Anyone / All Ages</button>
+                <button className="pgwiz-pill" onClick={()=>{setAgeFilter('4');setWizStep(2);}}>Preschool (3-5)</button>
+                <button className="pgwiz-pill" onClick={()=>{setAgeFilter('8');setWizStep(2);}}>Elementary (6-10)</button>
+                <button className="pgwiz-pill" onClick={()=>{setAgeFilter('12');setWizStep(2);}}>Middle School (11-13)</button>
+                <button className="pgwiz-pill" onClick={()=>{setAgeFilter('16');setWizStep(2);}}>High School (14-18)</button>
+                <button className="pgwiz-pill" onClick={()=>{setAgeFilter('21');setWizStep(2);}}>Adult (18+)</button>
               </div>
-              {eligData.ages.length>0 && (
-                <div style={{marginTop:8}}>
-                  <div style={{fontSize:12,color:'#6b7280',marginBottom:6}}>Filter by age:</div>
-                  <div className="pgwiz-opts">
-                    {[3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18].map(a=>(
-                      <button key={a} className="pgwiz-pill" onClick={()=>{setAgeFilter(String(a));setWizStep(2);}} style={{padding:'6px 12px',fontSize:12}}>{a} yrs</button>
-                    ))}
-                    <button className="pgwiz-pill" onClick={()=>{setAgeFilter('21');setWizStep(2);}} style={{padding:'6px 12px',fontSize:12}}>Adult</button>
-                  </div>
-                </div>
-              )}
               {eligData.grades.length>0 && (
-                <div style={{marginTop:8}}>
-                  <div style={{fontSize:12,color:'#6b7280',marginBottom:6}}>Or by grade:</div>
+                <div style={{marginTop:10}}>
+                  <div style={{fontSize:12,color:'#6b7280',marginBottom:6}}>Or pick a specific grade:</div>
                   <div className="pgwiz-opts">
                     {eligData.grades.map(g=>(
                       <button key={g} className="pgwiz-pill" onClick={()=>{setGradeFilter(g);setWizStep(2);}} style={{padding:'6px 12px',fontSize:12}}>{gradeLabel(g)}</button>
