@@ -9400,6 +9400,7 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  { date: "2026-07-17", text: "Instructor Payout: clickable pay slip link on each section row opens a printable check-style pay slip in a new tab with instructor name, program, participants, and payout amount" },
   { date: "2026-07-17", text: "Fast Track Pipeline: added demand buildup chart showing FT wishlists vs capacity per section, velocity stats (signups/day), and demand heat coloring" },
   { date: "2026-07-17", text: "Facility Schedule: moved revenue metrics inside the page wrapper (paper-on-desk styling). Demographics: warm desk background + white paper content area with shadow." },
   { date: "2026-07-17", text: "Programs: fixed deep link tab switching - fetchData was resetting tab to summary on every data load, overriding the revenue tab set by the program deep link param" },
