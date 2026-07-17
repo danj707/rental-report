@@ -754,22 +754,73 @@ function KpiLabel(props) {
   );
 }
 
-/* ── Simple Bar Chart component ── */
+/* ── Bar Chart component (Chart.js) ── */
 function BarChart(props) {
+  var canvasRef = React.useRef(null);
+  var chartRef = React.useRef(null);
   var data = props.data || [];
-  var max = data.reduce(function(m, d) { return Math.max(m, d[props.valKey] || 0); }, 0) || 1;
+
+  React.useEffect(function() {
+    if (!canvasRef.current || !data.length) return;
+    if (chartRef.current) chartRef.current.destroy();
+
+    var labels = data.map(function(d) {
+      var l = String(d[props.labelKey] || '');
+      return l.length > 30 ? l.slice(0, 28) + '\u2026' : l;
+    });
+    var values = data.map(function(d) { return d[props.valKey] || 0; });
+    var color = props.color || '#6366f1';
+
+    chartRef.current = new Chart(canvasRef.current, {
+      type: 'bar',
+      data: {
+        labels: labels,
+        datasets: [{
+          data: values,
+          backgroundColor: color + 'cc',
+          borderColor: color,
+          borderWidth: 1,
+          borderRadius: 4,
+          barPercentage: 0.7,
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        indexAxis: 'y',
+        scales: {
+          x: {
+            grid: { color: '#f1f5f9' },
+            beginAtZero: true,
+            ticks: { font: { size: 10 }, callback: function(v) { return (props.prefix || '') + v.toLocaleString(); } },
+          },
+          y: {
+            grid: { display: false },
+            ticks: { font: { size: 10, weight: '500' }, color: '#555' },
+          },
+        },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              label: function(ctx) { return (props.prefix || '') + ctx.raw.toLocaleString(); }
+            }
+          },
+        },
+      },
+    });
+
+    return function() { if (chartRef.current) chartRef.current.destroy(); };
+  }, [data, props.labelKey, props.valKey, props.color, props.prefix]);
+
+  if (!data.length) return null;
+  var chartHeight = Math.max(150, data.length * 28 + 40);
+
   return React.createElement('div', { style: { background: '#fff', border: '1px solid #e0ddd8', borderRadius: 10, padding: '16px 20px' } },
     React.createElement('div', { style: { fontSize: 12, fontWeight: 600, color: '#555', marginBottom: 12 } }, props.title),
-    data.map(function(d, i) {
-      var w = Math.max(2, (d[props.valKey] / max) * 100);
-      return React.createElement('div', { key: i, style: { display: 'flex', alignItems: 'center', gap: 10, marginBottom: 5 } },
-        React.createElement('div', { style: { width: props.wide ? 220 : 100, flexShrink: 0, fontSize: 11, fontWeight: 500, color: '#333', textAlign: 'right', lineHeight: '1.25', wordBreak: 'break-word' } }, d[props.labelKey]),
-        React.createElement('div', { style: { flex: 1, height: 20, background: '#f5f4f1', borderRadius: 4, overflow: 'hidden' } },
-          React.createElement('div', { style: { width: w + '%', height: '100%', background: props.color || '#6366f1', borderRadius: 4 } })
-        ),
-        React.createElement('div', { style: { width: 50, fontSize: 11, fontWeight: 600, color: '#555', textAlign: 'right' } }, (props.prefix||'') + d[props.valKey].toLocaleString())
-      );
-    })
+    React.createElement('div', { style: { height: chartHeight } },
+      React.createElement('canvas', { ref: canvasRef })
+    )
   );
 }
 
