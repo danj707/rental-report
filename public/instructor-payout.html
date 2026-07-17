@@ -213,6 +213,86 @@ function fmtDate(d) {
   catch { return d; }
 }
 
+
+function openPaySlip(opts) {
+  var w = window.open('', '_blank');
+  if (!w) return;
+  var activeP = (opts.participants || []).filter(function(p) { return !p.canceled; });
+  var canceledP = (opts.participants || []).filter(function(p) { return p.canceled; });
+  var pRows = activeP.map(function(p, i) {
+    return '<tr><td style="padding:6px 10px;border-bottom:1px solid #e5e7eb;">' + (i+1) + '</td>'
+      + '<td style="padding:6px 10px;border-bottom:1px solid #e5e7eb;">' + p.name + '</td>'
+      + '<td style="padding:6px 10px;border-bottom:1px solid #e5e7eb;text-align:right;">'
+      + (opts.basePriceOnly ? opts.fmtFn(opts.residentRate) : opts.fmtFn(p.paid - p.refunded)) + '</td></tr>';
+  }).join('');
+  var canceledSection = canceledP.length > 0
+    ? '<div style="margin-top:16px;font-size:11px;color:#dc2626;">' + canceledP.length + ' canceled enrollment(s) not included in payout</div>'
+    : '';
+  var today = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+  var html = '<!DOCTYPE html><html><head><title>Pay Slip - ' + opts.instructor + '</title>'
+    + '<style>'
+    + 'body { font-family: Georgia, "Times New Roman", serif; margin: 0; padding: 40px; background: #f5f4f1; color: #1a1a1a; }'
+    + '.slip { max-width: 680px; margin: 0 auto; background: #fff; border: 2px solid #1a1a1a; padding: 0; }'
+    + '.slip-header { display: flex; justify-content: space-between; align-items: flex-start; padding: 28px 32px 20px; border-bottom: 2px solid #1a1a1a; }'
+    + '.slip-header .org { font-size: 18px; font-weight: 700; letter-spacing: 0.5px; }'
+    + '.slip-header .org-sub { font-size: 11px; color: #666; margin-top: 2px; }'
+    + '.slip-header .doc-type { text-align: right; }'
+    + '.slip-header .doc-type .label { font-size: 22px; font-weight: 700; text-transform: uppercase; letter-spacing: 2px; }'
+    + '.slip-header .doc-type .date { font-size: 11px; color: #666; margin-top: 4px; }'
+    + '.pay-to { padding: 20px 32px; border-bottom: 1px solid #e5e7eb; display: flex; gap: 40px; }'
+    + '.pay-to .field { }'
+    + '.pay-to .field-label { font-size: 9px; text-transform: uppercase; letter-spacing: 1.5px; color: #999; font-family: Inter, system-ui, sans-serif; font-weight: 600; margin-bottom: 3px; }'
+    + '.pay-to .field-value { font-size: 16px; font-weight: 600; }'
+    + '.detail { padding: 20px 32px; border-bottom: 1px solid #e5e7eb; }'
+    + '.detail-row { display: flex; justify-content: space-between; padding: 5px 0; font-size: 13px; }'
+    + '.detail-row .label { color: #666; }'
+    + '.detail-row .value { font-weight: 600; }'
+    + 'table { width: 100%; border-collapse: collapse; font-size: 12px; font-family: Inter, system-ui, sans-serif; }'
+    + 'th { background: #f8f7f4; padding: 8px 10px; text-align: left; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: #666; border-bottom: 2px solid #e5e7eb; }'
+    + 'th:last-child { text-align: right; }'
+    + '.amount-box { padding: 24px 32px; background: #fafaf8; border-top: 2px solid #1a1a1a; display: flex; justify-content: space-between; align-items: center; }'
+    + '.amount-box .total-label { font-size: 12px; text-transform: uppercase; letter-spacing: 1.5px; color: #666; font-family: Inter, system-ui, sans-serif; font-weight: 600; }'
+    + '.amount-box .total-amount { font-size: 32px; font-weight: 700; }'
+    + '.footer { padding: 16px 32px; font-size: 10px; color: #999; text-align: center; font-family: Inter, system-ui, sans-serif; border-top: 1px solid #e5e7eb; }'
+    + '.sig-area { padding: 28px 32px; display: flex; gap: 40px; }'
+    + '.sig-line { flex: 1; border-bottom: 1px solid #999; padding-bottom: 4px; font-size: 10px; color: #999; text-transform: uppercase; letter-spacing: 1px; font-family: Inter, system-ui, sans-serif; }'
+    + '@media print { body { background: #fff; padding: 20px; } .slip { border: 1px solid #ccc; } }'
+    + '</style></head><body>'
+    + '<div class="slip">'
+    + '<div class="slip-header">'
+    + '<div><div class="org">' + opts.orgName + '</div><div class="org-sub">Instructor Compensation</div></div>'
+    + '<div class="doc-type"><div class="label">Pay Slip</div><div class="date">' + today + '</div></div>'
+    + '</div>'
+    + '<div class="pay-to">'
+    + '<div class="field"><div class="field-label">Pay To</div><div class="field-value">' + opts.instructor + '</div></div>'
+    + '<div class="field"><div class="field-label">Split</div><div class="field-value">' + opts.splitPct + '%</div></div>'
+    + '</div>'
+    + '<div class="detail">'
+    + '<div class="detail-row"><span class="label">Program</span><span class="value">' + opts.program + '</span></div>'
+    + '<div class="detail-row"><span class="label">Section</span><span class="value">' + opts.section + '</span></div>'
+    + '<div class="detail-row"><span class="label">Active Enrollments</span><span class="value">' + activeP.length + '</span></div>'
+    + '<div class="detail-row"><span class="label">Pricing Mode</span><span class="value">' + (opts.basePriceOnly ? 'Resident Base Rate' : 'Net Revenue') + '</span></div>'
+    + '</div>'
+    + '<div style="padding:16px 32px 0;">'
+    + '<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#666;margin-bottom:8px;font-family:Inter,system-ui,sans-serif;">Enrollments</div>'
+    + '<table><thead><tr><th style="width:30px;">#</th><th>Participant</th><th style="text-align:right;">Amount</th></tr></thead>'
+    + '<tbody>' + pRows + '</tbody></table>'
+    + canceledSection
+    + '</div>'
+    + '<div class="amount-box">'
+    + '<div class="total-label">Instructor Payout (' + opts.splitPct + '%)</div>'
+    + '<div class="total-amount">' + opts.fmtFn(opts.amount) + '</div>'
+    + '</div>'
+    + '<div class="sig-area">'
+    + '<div class="sig-line">Authorized Signature</div>'
+    + '<div class="sig-line">Date</div>'
+    + '</div>'
+    + '<div class="footer">Generated by rec.us Enhanced Reports &middot; ' + today + '</div>'
+    + '</div></body></html>';
+  w.document.write(html);
+  w.document.close();
+}
+
 function App() {
   const [rows, setRows]       = useState(null);
   const [loading, setLoading] = useState(true);
@@ -738,7 +818,10 @@ function App() {
                               <td>{fmt(r.paid)}</td>
                               <td style={{color: r.refunded > 0 ? '#dc2626' : undefined}} className={v(r.refunded)}>{r.refunded > 0 ? fmt(r.refunded) : '\u2014'}</td>
                               <td style={{fontWeight:600}}>{fmt(splitAmt)}</td>
-                              <td className={v(splitAmt * split.i)}>{fmt(splitAmt * split.i)}</td>
+                              <td className={v(splitAmt * split.i)}>
+                                {fmt(splitAmt * split.i)}
+                                <span onClick={(e) => { e.stopPropagation(); openPaySlip({ instructor: r.instr, program: r.program, section: r.section, participants: r.participants, amount: splitAmt * split.i, splitPct: Math.round(split.i * 100), orgName: orgName, basePriceOnly: basePriceOnly, residentRate: r.residentRate, fmtFn: fmt }); }} style={{marginLeft:6, fontSize:9, color:'#3b82f6', cursor:'pointer', textDecoration:'underline', fontWeight:600}} title="Open pay slip in new tab">slip</span>
+                              </td>
                               <td className={v(splitAmt * (1-split.i))}>{fmt(splitAmt * (1-split.i))}</td>
                             </tr>
                             {isExpanded && r.participants && r.participants.map((p, pi) => {
