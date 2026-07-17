@@ -429,8 +429,6 @@
     .chart-expand:hover { background: #fafaf8; border-color: #aaa; }
     @media print { .chart-section { page-break-inside: avoid; } }
 
-
-
     /* ── Button loading spinner ── */
     @keyframes btn-spin { to { transform: rotate(360deg); } }
     .btn-spinner {
@@ -925,9 +923,17 @@ function App() {
 
   const [search, setSearch] = useState(() => new URLSearchParams(window.location.search).get('program') || new URLSearchParams(window.location.search).get('search') || '');
   const [activityFilter, setActivityFilter] = useState('');
+
   const [demoRows, setDemoRows] = useState(null);
   const [demoLoading, setDemoLoading] = useState(false);
   const [demoError, setDemoError] = useState(null);
+
+  // Session check-in attendance (lazy feed — powers Check-Ins tab + Summary rollup)
+  const [ciRows, setCiRows] = useState(null);
+  const [ciLoading, setCiLoading] = useState(false);
+  const [ciError, setCiError] = useState(null);
+
+  // Plain function — NOT a hook — to get activity for a program name
   function getProgActivity(progName) {
     if (!demoRows) return '';
     for (var i = 0; i < demoRows.length; i++) {
