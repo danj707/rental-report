@@ -9400,6 +9400,7 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  { date: "2026-07-17", text: "Programs: fixed deep link tab switching - fetchData was resetting tab to summary on every data load, overriding the revenue tab set by the program deep link param" },
   { date: "2026-07-16", text: "Persistent disk cache on Railway volume - report data survives restarts/deploys, hydrated from /data/cache/ on boot" },
   { date: "2026-07-16", text: "Programs: merged Enrolled/Capacity into Utilization column showing enrolled / capacity / cancelled (red)" },
   { date: "2026-07-16", text: "Smart retry on Metabase timeout (60s first attempt, 120s retry), request performance log at /api/admin/request-log" },
