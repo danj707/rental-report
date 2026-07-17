@@ -925,6 +925,9 @@ function App() {
 
   const [search, setSearch] = useState(() => new URLSearchParams(window.location.search).get('program') || new URLSearchParams(window.location.search).get('search') || '');
   const [activityFilter, setActivityFilter] = useState('');
+  const [demoRows, setDemoRows] = useState(null);
+  const [demoLoading, setDemoLoading] = useState(false);
+  const [demoError, setDemoError] = useState(null);
   const [colPresence, setColPresence] = useState({ regMode: false, cancellations: false });
   const [insights,        setInsights]        = useState(null);
   const [insightsMeta,    setInsightsMeta]    = useState(null); // { programCount, names }
