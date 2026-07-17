@@ -429,6 +429,32 @@
     .chart-expand:hover { background: #fafaf8; border-color: #aaa; }
     @media print { .chart-section { page-break-inside: avoid; } }
 
+    /* -- Find a Program Wizard -- */
+    .pgwiz-bar{padding:14px 16px;background:linear-gradient(135deg,#eef2ff,#e0e7ff);border:2px solid #818cf8;border-radius:12px;cursor:pointer;text-align:center;font-size:14px;color:#3730a3;font-weight:600;transition:all .15s;box-shadow:0 2px 8px rgba(99,102,241,0.12);margin-bottom:16px}
+    .pgwiz-bar:hover{background:linear-gradient(135deg,#e0e7ff,#c7d2fe)}
+    .pgwiz-wrap{padding:20px 24px;background:linear-gradient(135deg,#eef2ff,#f5f3ff);border:2px solid #818cf8;border-radius:12px;margin-bottom:16px;box-shadow:0 4px 16px rgba(99,102,241,0.15)}
+    .pgwiz-head{display:flex;justify-content:space-between;align-items:center;font-size:15px;font-weight:600;color:#312e81;margin-bottom:12px}
+    .pgwiz-x{background:none;border:none;font-size:16px;cursor:pointer;color:#6b7280;padding:2px 6px}
+    .pgwiz-x:hover{color:#111}
+    .pgwiz-step{animation:pgwizFade .2s ease}
+    @keyframes pgwizFade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+    .pgwiz-q{font-size:14px;color:#374151;margin-bottom:10px;font-weight:500}
+    .pgwiz-opts{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}
+    .pgwiz-pill{padding:8px 14px;border-radius:20px;border:1px solid #c7d2fe;background:#fff;font-size:13px;cursor:pointer;color:#312e81;transition:all .15s;font-family:inherit;font-weight:500}
+    .pgwiz-pill:hover{background:#e0e7ff;border-color:#818cf8}
+    .pgwiz-pill.active{background:#4f46e5;color:#fff;border-color:#4f46e5}
+    .pgwiz-back{background:none;border:none;font-size:12px;color:#6b7280;cursor:pointer;padding:4px 0;margin-top:4px}
+    .pgwiz-back:hover{color:#374151}
+    .pgwiz-result{padding:12px 20px;background:linear-gradient(135deg,#f0fdf4,#ecfdf5);border:2px solid #86efac;border-radius:12px;margin-bottom:16px;font-size:14px;color:#166534;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+    .pgwiz-result strong{font-weight:600}
+    .pgwiz-result-x{background:none;border:none;color:#6b7280;cursor:pointer;font-size:14px;margin-left:auto;padding:2px 6px}
+    .pgwiz-result-x:hover{color:#111}
+    .pgwiz-crumb{font-size:12px;color:#6366f1;font-weight:600;margin-bottom:8px}
+    .pgwiz-crumb-link{cursor:pointer;text-decoration:underline;text-decoration-style:dotted;text-underline-offset:2px}
+    .pgwiz-crumb-link:hover{color:#4338ca}
+    @media print { .pgwiz-bar,.pgwiz-wrap,.pgwiz-result { display:none !important; } }
+
+
     /* ── Button loading spinner ── */
     @keyframes btn-spin { to { transform: rotate(360deg); } }
     .btn-spinner {
@@ -923,6 +949,28 @@ function App() {
 
   const [search, setSearch] = useState(() => new URLSearchParams(window.location.search).get('program') || new URLSearchParams(window.location.search).get('search') || '');
   const [activityFilter, setActivityFilter] = useState('');
+  const [wizOpen, setWizOpen] = useState(false);
+  const [wizStep, setWizStep] = useState(0);
+  const [wizActivity, setWizActivity] = useState('');
+  const [wizApplied, setWizApplied] = useState(false);
+
+  function wizApply(activity, keyword) {
+    if (activity) setActivityFilter(activity);
+    if (keyword) setSearch(keyword);
+    setWizApplied(true);
+    setWizOpen(false);
+    setInsights(null); setInsightsMeta(null);
+  }
+  function wizReset() {
+    setActivityFilter('');
+    setSearch('');
+    setWizApplied(false);
+    setWizOpen(false);
+    setWizStep(0);
+    setWizActivity('');
+    setInsights(null); setInsightsMeta(null);
+  }
+
 
   const [demoRows, setDemoRows] = useState(null);
   const [demoLoading, setDemoLoading] = useState(false);
@@ -1856,6 +1904,66 @@ function App() {
             <div className="date-range">{dateRangeLabel}</div>
           </div>
         </div>
+
+        {/* Find a Program Wizard */}
+        {!isPrint && !wizOpen && !wizApplied && (
+          <div className="pgwiz-bar" onClick={() => { setWizOpen(true); setWizStep(0); setWizActivity(''); }}>
+            <span style={{marginRight:6}}>{String.fromCodePoint(10024)}</span> Find a Program
+          </div>
+        )}
+        {wizApplied && (
+          <div className="pgwiz-result">
+            <span>{String.fromCodePoint(10024)}</span>
+            <span>Showing: <strong>{activityFilter || 'All Activities'}</strong>{search ? <span> matching <strong>&ldquo;{search}&rdquo;</strong></span> : ''}</span>
+            <button className="pgwiz-result-x" onClick={wizReset} title="Clear filter">{String.fromCodePoint(10005)}</button>
+          </div>
+        )}
+        {wizOpen && activityInfo && activityInfo.list && activityInfo.list.length > 0 && (
+          <div className="pgwiz-wrap">
+            <div className="pgwiz-head">
+              <span>{String.fromCodePoint(10024)} Find a Program</span>
+              <button className="pgwiz-x" onClick={() => setWizOpen(false)}>{String.fromCodePoint(10005)}</button>
+            </div>
+            {wizStep === 0 && (
+              <div className="pgwiz-step">
+                <div className="pgwiz-q">What type of activity are you looking for?</div>
+                <div className="pgwiz-opts">
+                  <button className="pgwiz-pill" onClick={() => { wizApply('', ''); }}>All Programs</button>
+                  {activityInfo.list.map(a => (
+                    <button key={a} className="pgwiz-pill" onClick={() => { setWizActivity(a); setWizStep(1); }}>
+                      {a}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            {wizStep === 1 && (
+              <div className="pgwiz-step">
+                <div className="pgwiz-crumb">
+                  <span className="pgwiz-crumb-link" onClick={() => { setWizStep(0); setWizActivity(''); }}>
+                    {wizActivity} {String.fromCodePoint(9999)}
+                  </span>
+                </div>
+                <div className="pgwiz-q">Looking for something specific?</div>
+                <div className="pgwiz-opts">
+                  <button className="pgwiz-pill" style={{background:'#4f46e5',color:'#fff',borderColor:'#4f46e5'}} onClick={() => wizApply(wizActivity, '')}>
+                    Show all {wizActivity} programs
+                  </button>
+                </div>
+                <div style={{marginTop:8,display:'flex',alignItems:'center',gap:8}}>
+                  <span style={{fontSize:12,color:'#6b7280'}}>or search:</span>
+                  <input
+                    type="text"
+                    placeholder="e.g. beginner, ages 5-7, saturday..."
+                    style={{flex:1,padding:'8px 12px',border:'1px solid #c7d2fe',borderRadius:20,fontSize:13,fontFamily:'inherit',outline:'none'}}
+                    onKeyDown={e => { if (e.key === 'Enter' && e.target.value.trim()) wizApply(wizActivity, e.target.value.trim()); }}
+                  />
+                </div>
+                <button className="pgwiz-back" onClick={() => { setWizStep(0); setWizActivity(''); }}>{String.fromCodePoint(8592)} Back</button>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Tabs */}
         {!isPrint && (
