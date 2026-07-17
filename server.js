@@ -2168,23 +2168,51 @@ async function sendReportEmail(orgSlug, email, reportType, schedule, locationFil
     return { ok: true, stub: true };
   }
 
+  // ── Generate PDF attachment ──────────────────────────────────────────
+  let pdfBuffer = null;
+  let pdfFilename = `${reportLabel.replace(/[^a-zA-Z0-9]/g, "-")}-${label.replace(/[^a-zA-Z0-9]/g, "-")}.pdf`;
+  try {
+    // Extract dates + filters from the resolved URL for PDF generation
+    const pdfUrl = new URL(reportUrl, BASE_URL);
+    const pdfStart = pdfUrl.searchParams.get("start_date") || "";
+    const pdfEnd = pdfUrl.searchParams.get("end_date") || "";
+    const pdfFilters = {};
+    for (const [k, v] of pdfUrl.searchParams) {
+      if (!["start_date", "end_date", "token", "_print"].includes(k)) pdfFilters[k] = v;
+    }
+    console.log(`[mail] Generating PDF for ${orgSlug}/${reportType} (${pdfStart} to ${pdfEnd})...`);
+    const t0 = Date.now();
+    pdfBuffer = await generatePdf(orgSlug, reportType, pdfStart, pdfEnd, pdfFilters);
+    console.log(`[mail] PDF generated in ${((Date.now() - t0) / 1000).toFixed(1)}s — ${(pdfBuffer.length / 1024).toFixed(0)}KB`);
+  } catch (pdfErr) {
+    console.error(`[mail] PDF generation failed for ${orgSlug}/${reportType}: ${pdfErr.message} — sending link-only email`);
+  }
+
+  const hasPdf = pdfBuffer && pdfBuffer.length > 0;
+  const attachments = hasPdf ? [{ filename: pdfFilename, content: pdfBuffer.toString("base64") }] : [];
+
   let status, message;
   try {
     const { error } = await resend.emails.send({
       from: `${FROM_NAME} <${FROM_EMAIL}>`,
       to: email,
       subject: `${reportLabel} — ${label}${viewSuffix}`,
+      attachments,
       html: `
         <div style="font-family:sans-serif;max-width:500px;margin:0 auto;padding:32px 24px">
           <img src="${orgConfig.logoUrl}" style="height:40px;margin-bottom:20px;display:block" />
           <h2 style="margin:0 0 6px;font-size:20px;color:#111">${reportLabel}</h2>
           <p style="color:#888;margin:0 0 24px;font-size:14px">${label}</p>
-          <p style="color:#333;margin:0 0 24px;font-size:14px;line-height:1.5">
-            Your scheduled report is ready. Click below to open it — the date range is pre-loaded.
-          </p>
+          ${hasPdf
+            ? `<p style="color:#333;margin:0 0 24px;font-size:14px;line-height:1.5">
+                Your scheduled report is attached as a PDF. You can also view the interactive version online:
+              </p>`
+            : `<p style="color:#333;margin:0 0 24px;font-size:14px;line-height:1.5">
+                Your scheduled report is ready. Click below to open it — the date range is pre-loaded.
+              </p>`}
           <a href="${reportUrl}"
              style="display:inline-block;background:#16a34a;color:#fff;padding:12px 22px;border-radius:5px;text-decoration:none;font-weight:600;font-size:14px">
-            View ${reportLabel} →
+            View ${reportLabel} Online →
           </a>
           <p style="margin-top:16px;font-size:12px;color:#aaa">
             Or copy this link:<br>
@@ -2200,7 +2228,7 @@ async function sendReportEmail(orgSlug, email, reportType, schedule, locationFil
     });
     if (error) throw new Error(error.message);
     status = "sent"; message = null;
-    console.log(`[mail] Sent "${reportLabel}" (${label}) to ${email}`);
+    console.log(`[mail] Sent "${reportLabel}" (${label}) to ${email}${hasPdf ? " [PDF attached]" : " [link only]"}`);
   } catch (err) {
     status = "error"; message = err.message;
     console.error(`[mail] Failed to send to ${email}: ${err.message}`);
@@ -9400,6 +9428,12 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  { date: '2026-07-18', title: 'Email subscriptions: PDF attachments', items: [
+    'Scheduled email reports now include a PDF attachment of the report',
+    'PDF respects all saved filters (dates, locations, desks, etc.)',
+    'Graceful fallback to link-only email if PDF generation fails',
+    'Test Send from admin page also generates and attaches PDF'
+  ]},
   { date: "2026-07-17", text: "Cold-cache fix: extended disk hydration grace from 3x to 12x TTL (stale data beats 502), prewarm interval reduced from 60min to 15min" },
   { date: "2026-07-17", text: "Removed directors-report from REPORT_TYPES, metrics, and all report lists (no longer active)" },
   { date: "2026-07-17", text: "Programs: Find a Program wizard - step-through activity picker with optional keyword search, auto-filters program list. Client-side only, no shared view impact." },
