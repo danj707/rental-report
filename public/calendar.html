@@ -986,8 +986,13 @@ function App(){
   const [wizOpen,setWizOpen]=useState(false);
   const [wizStep,setWizStep]=useState(0);
   const [wizAct,setWizAct]=useState('');
-  const [wizLoc,setWizLoc]=useState('');
   const [wizApplied,setWizApplied]=useState(false);
+  const [wizScrollIdx,setWizScrollIdx]=useState(0);
+  useEffect(()=>{
+    if(wizOpen||wizApplied||!activities.length) return;
+    const iv=setInterval(()=>setWizScrollIdx(i=>(i+1)%activities.length),2000);
+    return ()=>clearInterval(iv);
+  },[wizOpen,wizApplied,activities]);
   function wizApply(act,loc){
     if(act)setActFilter(act);
     if(loc)setLocFilter(loc);
@@ -995,8 +1000,17 @@ function App(){
   }
   function wizReset(){
     setActFilter('');setLocFilter('');setAvailFilter('');
-    setWizApplied(false);setWizOpen(false);setWizStep(0);setWizAct('');setWizLoc('');
+    setWizApplied(false);setWizOpen(false);setWizStep(0);setWizAct('');
   }
+  function wizGoWeek(d){setWeekStart(startOfWeek(d));setView('week');}
+  var wizToday=new Date();
+  var wizTomorrow=new Date();wizTomorrow.setDate(wizToday.getDate()+1);
+  function wizNextDow(dow){var d=new Date();var diff=(dow-d.getDay()+7)%7;if(diff===0)diff=7;d.setDate(d.getDate()+diff);return d;}
+  var wizDateOpts=[
+    {label:'This Week',fn:()=>wizGoWeek(wizToday)},
+    {label:'This Weekend',fn:()=>{var sat=wizNextDow(6);setWeekStart(startOfWeek(sat));setView('week');}},
+    {label:'Next Week',fn:()=>{var d=new Date();d.setDate(d.getDate()+7);wizGoWeek(d);}},
+  ];
   const [allLocations,setAllLocations]=useState([]);
   // Present mode
   const isPresent=urlParams.get('present')==='1';
@@ -1165,14 +1179,21 @@ function App(){
 
       {/* Find a Program Wizard */}
       {!isPresent && !wizOpen && !wizApplied && activities.length>0 && (
-        <div className="pgwiz-bar" onClick={()=>{setWizOpen(true);setWizStep(0);setWizAct('');setWizLoc('');}}>
-          {String.fromCodePoint(10024)} Find a Program
+        <div className="pgwiz-bar" onClick={()=>{setWizOpen(true);setWizStep(0);setWizAct('');}}>
+          <span style={{marginRight:6}}>{String.fromCodePoint(10024)}</span>
+          Find a Program
+          <span style={{display:'inline-block',marginLeft:8,overflow:'hidden',height:'1.2em',verticalAlign:'middle',position:'relative',width:140,textAlign:'left'}}>
+            <span key={wizScrollIdx} style={{display:'inline-block',animation:'pgwizFade .4s ease',color:'#4f46e5',fontWeight:700}}>{activities[wizScrollIdx%activities.length]||''}</span>
+          </span>
         </div>
       )}
       {wizApplied && (
         <div className="pgwiz-result">
           <span>{String.fromCodePoint(10024)}</span>
           <span>Showing: <strong>{actFilter||'All Activities'}</strong>{locFilter?<span> at <strong>{locFilter}</strong></span>:''} {String.fromCodePoint(8212)} {filtered.length} session{filtered.length!==1?'s':''}</span>
+          <button className="pgwiz-pill" style={{marginLeft:8,fontSize:11,padding:'4px 12px'}} onClick={()=>{setWizApplied(false);setWizOpen(true);setWizStep(0);setWizAct('');setActFilter('');setLocFilter('');}}>
+            {String.fromCodePoint(8635)} Start Over
+          </button>
           <button className="pgwiz-result-x" onClick={wizReset} title="Clear filter">{String.fromCodePoint(10005)}</button>
         </div>
       )}
@@ -1184,21 +1205,42 @@ function App(){
           </div>
           {wizStep===0 && (
             <div className="pgwiz-step">
-              <div className="pgwiz-q">What type of activity?</div>
+              <div className="pgwiz-q">When are you looking?</div>
               <div className="pgwiz-opts">
-                <button className="pgwiz-pill" onClick={()=>{wizApply('','');}}>Show All</button>
-                {activities.map(a=>(
-                  <button key={a} className="pgwiz-pill" onClick={()=>{setWizAct(a);setWizStep(1);}}>
-                    {a}
-                  </button>
+                {wizDateOpts.map(o=>(
+                  <button key={o.label} className="pgwiz-pill" onClick={()=>{o.fn();setWizStep(1);}}>{o.label}</button>
                 ))}
+                <button className="pgwiz-pill" onClick={()=>setWizStep(1)} style={{borderStyle:'dashed',color:'#6b7280'}}>Any time</button>
               </div>
             </div>
           )}
           {wizStep===1 && (
             <div className="pgwiz-step">
               <div className="pgwiz-crumb">
-                <span className="pgwiz-crumb-link" onClick={()=>{setWizStep(0);setWizAct('');}}>
+                <span className="pgwiz-crumb-link" onClick={()=>setWizStep(0)}>
+                  {String.fromCodePoint(128197)} When {String.fromCodePoint(9999)}
+                </span>
+              </div>
+              <div className="pgwiz-q">What type of activity?</div>
+              <div className="pgwiz-opts">
+                <button className="pgwiz-pill pgwiz-go" onClick={()=>{wizApply('','');}}>Show All</button>
+                {activities.map(a=>(
+                  <button key={a} className="pgwiz-pill" onClick={()=>{setWizAct(a);setWizStep(2);}}>
+                    {a}
+                  </button>
+                ))}
+              </div>
+              <button className="pgwiz-back" onClick={()=>setWizStep(0)}>{String.fromCodePoint(8592)} Back</button>
+            </div>
+          )}
+          {wizStep===2 && (
+            <div className="pgwiz-step">
+              <div className="pgwiz-crumb">
+                <span className="pgwiz-crumb-link" onClick={()=>setWizStep(0)}>
+                  {String.fromCodePoint(128197)} When {String.fromCodePoint(9999)}
+                </span>
+                {' '}{String.fromCodePoint(183)}{' '}
+                <span className="pgwiz-crumb-link" onClick={()=>{setWizStep(1);setWizAct('');}}>
                   {wizAct} {String.fromCodePoint(9999)}
                 </span>
               </div>
@@ -1211,12 +1253,11 @@ function App(){
                   </button>
                 ))}
               </div>
-              <button className="pgwiz-back" onClick={()=>{setWizStep(0);setWizAct('');}}>{String.fromCodePoint(8592)} Back</button>
+              <button className="pgwiz-back" onClick={()=>{setWizStep(1);setWizAct('');}}>{String.fromCodePoint(8592)} Back</button>
             </div>
           )}
         </div>
       )}
-
 
       <div className="hdr">
         {window.__ORG__ && (
