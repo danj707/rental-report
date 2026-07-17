@@ -765,9 +765,8 @@
 
     /* ── Residency Analysis Panel ── */
     .residency-strip {
-      max-width: 1100px;
-      margin: 0 auto;
       padding: 0 0 12px;
+      margin-top: 8px;
     }
     .residency-toggle-btn {
       display: flex;
@@ -2714,6 +2713,18 @@ function App() {
         <HeatmapStrip filteredRows={filteredRows} locationColors={locationColors} />
       )}
 
+
+      <div className="page" style={loading ? {opacity:0.5,pointerEvents:'none'} : {}}>
+        {/* Report header */}
+        <div className="report-header">
+          <div>
+            {logoUrl && <img src={logoUrl} alt="" className="report-header-logo" onError={e => e.target.style.display='none'} />}
+            <div className="org-label">{orgName}</div>
+            <div className="title">Weekly Rental Schedule</div>
+          </div>
+          <div className="date-range">{dateRangeLabel}</div>
+        </div>
+
       {showMetrics && filteredRows && filteredRows.length > 0 && !isPrint && (() => {
         var fmt = function(n) { return '$' + (n||0).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ','); };
         // Residency breakdown
@@ -2819,16 +2830,6 @@ function App() {
         );
       })()}
 
-      <div className="page" style={loading ? {opacity:0.5,pointerEvents:'none'} : {}}>
-        {/* Report header */}
-        <div className="report-header">
-          <div>
-            {logoUrl && <img src={logoUrl} alt="" className="report-header-logo" onError={e => e.target.style.display='none'} />}
-            <div className="org-label">{orgName}</div>
-            <div className="title">Weekly Rental Schedule</div>
-          </div>
-          <div className="date-range">{dateRangeLabel}</div>
-        </div>
 
         
 
