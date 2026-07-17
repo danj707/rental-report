@@ -1069,6 +1069,10 @@ function App() {
         const want = new Set(urlDesks.split(',').map(s => s.trim()).filter(Boolean));
         const valid = allDesks.filter(d => want.has(d));
         setSelectedDesks(new Set(valid.length ? valid : allDesks));
+      } else if (selectedDesks) {
+        // Preserve existing selection across date changes — only prune desks no longer in data
+        const kept = new Set(allDesks.filter(d => selectedDesks.has(d)));
+        setSelectedDesks(kept.size > 0 ? kept : new Set(allDesks));
       } else {
         setSelectedDesks(new Set(allDesks));
       }
