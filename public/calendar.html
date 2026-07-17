@@ -1006,12 +1006,13 @@ function App(){
   const [gradeFilter,setGradeFilter]=useState('');
   const [wizApplied,setWizApplied]=useState(false);
   const [wizScrollIdx,setWizScrollIdx]=useState(0);
+  const _actLen=activities?activities.length:0;
   useEffect(()=>{
-    if(wizOpen||wizApplied||!activities||!activities.length) return;
+    if(wizOpen||wizApplied||!_actLen) return;
     setWizScrollIdx(0);
-    const iv=setInterval(()=>setWizScrollIdx(i=>(i+1)%(activities.length||1)),2500);
+    const iv=setInterval(()=>setWizScrollIdx(i=>(i+1)%_actLen),2500);
     return ()=>clearInterval(iv);
-  },[wizOpen,wizApplied,activities?activities.length:0]);
+  },[wizOpen,wizApplied,_actLen]);
   function wizApply(act,loc,age,grade){
     if(act)setActFilter(act);
     if(loc)setLocFilter(loc);
@@ -1243,7 +1244,7 @@ function App(){
         <div className="pgwiz-result">
           <span>{String.fromCodePoint(10024)}</span>
           <span>Showing: {ageFilter?<span><strong>{ageFilter} yrs</strong> {String.fromCodePoint(183)} </span>:gradeFilter?<span><strong>{gradeLabel(gradeFilter)}</strong> {String.fromCodePoint(183)} </span>:''}<strong>{actFilter||'All Activities'}</strong>{locFilter?<span> at <strong>{locFilter}</strong></span>:''} {String.fromCodePoint(8212)} {filtered.length} session{filtered.length!==1?'s':''}</span>
-          <button className="pgwiz-pill" style={{marginLeft:8,fontSize:11,padding:'4px 12px'}} onClick={()=>{setWizApplied(false);setWizOpen(true);setWizStep(0);setWizAct('');setActFilter('');setLocFilter('');}}>
+          <button className="pgwiz-pill" style={{marginLeft:8,fontSize:11,padding:'4px 12px'}} onClick={()=>{wizReset();setWizOpen(true);}}>
             {String.fromCodePoint(8635)} Start Over
           </button>
           <button className="pgwiz-result-x" onClick={wizReset} title="Clear filter">{String.fromCodePoint(10005)}</button>
