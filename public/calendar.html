@@ -1001,6 +1001,7 @@ function App(){
   function wizReset(){
     setActFilter('');setLocFilter('');setAvailFilter('');
     setWizApplied(false);setWizOpen(false);setWizStep(0);setWizAct('');
+    setWeekStart(startOfWeek(new Date()));setView('week');
   }
   function wizGoWeek(d){setWeekStart(startOfWeek(d));setView('week');}
   var wizToday=new Date();
@@ -1182,7 +1183,7 @@ function App(){
         <div className="pgwiz-bar" onClick={()=>{setWizOpen(true);setWizStep(0);setWizAct('');}}>
           <span style={{marginRight:6}}>{String.fromCodePoint(10024)}</span>
           Find a Program
-          <span style={{display:'inline-block',marginLeft:8,overflow:'hidden',height:'1.2em',verticalAlign:'middle',position:'relative',width:140,textAlign:'left'}}>
+          <span style={{display:'inline-block',marginLeft:8,overflow:'hidden',height:'1.4em',verticalAlign:'text-bottom',position:'relative',width:160,textAlign:'left',lineHeight:'1.4'}}>
             <span key={wizScrollIdx} style={{display:'inline-block',animation:'pgwizFade .4s ease',color:'#4f46e5',fontWeight:700}}>{activities[wizScrollIdx%activities.length]||''}</span>
           </span>
         </div>
