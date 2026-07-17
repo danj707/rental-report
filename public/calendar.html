@@ -1230,7 +1230,19 @@ function App(){
           <option value="waitlist">Waitlist Available</option>
           <option value="closed">Registration Closed</option>
         </select>
-        {(actFilter||locFilter||availFilter)&&<span className="filter-clear" onClick={()=>{setActFilter('');setLocFilter('');setAvailFilter('');}}>✕ Clear</span>}
+        <select className="filter-sel" value={ageFilter} onChange={e=>{setAgeFilter(e.target.value);setGradeFilter('');}}>
+          <option value="">All Ages</option>
+          <option value="4">Preschool (3-5)</option>
+          <option value="8">Elementary (6-10)</option>
+          <option value="12">Middle School (11-13)</option>
+          <option value="16">High School (14-18)</option>
+          <option value="21">Adult (18+)</option>
+        </select>
+        <select className="filter-sel" value={gradeFilter} onChange={e=>{setGradeFilter(e.target.value);setAgeFilter('');}}>
+          <option value="">All Grades</option>
+          {eligData&&eligData.grades?eligData.grades.map(g=><option key={g} value={g}>{gradeLabel(g)}</option>):null}
+        </select>
+        {(actFilter||locFilter||availFilter||ageFilter||gradeFilter)&&<span className="filter-clear" onClick={()=>{setActFilter('');setLocFilter('');setAvailFilter('');setAgeFilter('');setGradeFilter('');}}>✕ Clear</span>}
       </div>
 
       {/* Find a Program Wizard */}
