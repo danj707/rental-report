@@ -2180,8 +2180,25 @@ async function sendReportEmail(orgSlug, email, reportType, schedule, locationFil
     for (const [k, v] of pdfUrl.searchParams) {
       if (!["start_date", "end_date", "token", "_print"].includes(k)) pdfFilters[k] = v;
     }
-    console.log(`[mail] Generating PDF for ${orgSlug}/${reportType} (${pdfStart} to ${pdfEnd})...`);
+    console.log(`[mail] Pre-warming cache for ${orgSlug}/${reportType} (${pdfStart} to ${pdfEnd})...`);
     const t0 = Date.now();
+    // Pre-fetch the data endpoint so it's cached before Puppeteer navigates
+    try {
+      const warmQs = new URLSearchParams();
+      if (pdfStart) warmQs.set("start_date", pdfStart);
+      if (pdfEnd) warmQs.set("end_date", pdfEnd);
+      const warmUrl = `http://localhost:${PORT}/${orgSlug}/${reportType}/api/data?${warmQs}`;
+      const warmResp = await fetch(warmUrl, { signal: AbortSignal.timeout(180000) });
+      if (warmResp.ok) {
+        const warmData = await warmResp.json();
+        console.log(`[mail] Cache warm — ${(warmData.rows||[]).length} rows in ${((Date.now()-t0)/1000).toFixed(1)}s`);
+      } else {
+        console.log(`[mail] Pre-warm returned ${warmResp.status} — proceeding anyway`);
+      }
+    } catch (warmErr) {
+      console.log(`[mail] Pre-warm failed: ${warmErr.message} — proceeding anyway`);
+    }
+    console.log(`[mail] Generating PDF for ${orgSlug}/${reportType}...`);
     pdfBuffer = await generatePdf(orgSlug, reportType, pdfStart, pdfEnd, pdfFilters);
     console.log(`[mail] PDF generated in ${((Date.now() - t0) / 1000).toFixed(1)}s — ${(pdfBuffer.length / 1024).toFixed(0)}KB`);
   } catch (pdfErr) {
