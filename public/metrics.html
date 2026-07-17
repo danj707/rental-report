@@ -277,7 +277,8 @@ function App() {
     // Show all configured reports for this org (zeros if no events yet)
     const configured = data.configuredReports || [];
     const fromSummary = Object.keys(data.summary || {});
-    const allReports = [...new Set([...configured, ...fromSummary])];
+    const HIDDEN_REPORTS = new Set(['directors-report']);
+    const allReports = [...new Set([...configured, ...fromSummary])].filter(r => !HIDDEN_REPORTS.has(r));
     const ordered = REPORT_ORDER.filter(r => allReports.includes(r));
     const extras  = allReports.filter(r => !REPORT_ORDER.includes(r));
     return [...ordered, ...extras];
