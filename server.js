@@ -693,7 +693,7 @@ const ORGS = {
   },
 };
 
-const REPORT_TYPES = ["facility", "gl", "historic", "programs", "roster", "products", "memberships", "court-utilization", "calendar", "fasttrack", "users", "program-demographics", "directors-report", "instructor-payout", "retention", "annual-report", "section-detail", "ice-calendar", "qoq", "checkins", "program-checkins"];
+const REPORT_TYPES = ["facility", "gl", "historic", "programs", "roster", "products", "memberships", "court-utilization", "calendar", "fasttrack", "users", "program-demographics", "instructor-payout", "retention", "annual-report", "section-detail", "ice-calendar", "qoq", "checkins", "program-checkins"];
 
 // ── Shared Metabase UUIDs (one query per report type, parameterized by org_id) ──
 // When a report type has an entry here, the server uses this UUID + passes the
@@ -1072,7 +1072,7 @@ const AMENITY_TAGS = {
 
 // Report types that are valid system-wide but should NOT be offered in the
 // dashboard "+ Add report" flow (e.g. not yet ready for self-serve onboarding).
-const NON_ADDABLE_REPORTS = new Set(["program-demographics", "directors-report", "retention", "annual-report", "section-detail", "qoq", "checkins", "program-checkins"]);
+const NON_ADDABLE_REPORTS = new Set(["program-demographics", "retention", "annual-report", "section-detail", "qoq", "checkins", "program-checkins"]);
 // Reports that require extra params (e.g. section_id) and cannot be health-checked with org_id alone
 const HEALTH_SKIP_REPORTS = new Set(["section-detail", "annual-report", "qoq", "qbr-stats", "checkins", "program-checkins"]);
 const RENTAL_CALENDAR_ORGS = new Set(["watertown", "norman", "niagarafalls"]);
@@ -3043,7 +3043,7 @@ Rules:
 - Focus on instructor workload balance, payout equity, class size efficiency, and cancellation impact.
 - Name specific instructors and sections.`;
 
-const SYS_PROMPTS = { programs: PROGRAMS_SYS_PROMPT, fasttrack: FASTTRACK_SYS_PROMPT, users: USERS_SYS_PROMPT, "directors-report": DIRECTORS_SYS_PROMPT, gl: GL_SYS_PROMPT, historic: HISTORIC_SYS_PROMPT, roster: ROSTER_SYS_PROMPT, products: PRODUCTS_SYS_PROMPT, memberships: MEMBERSHIPS_SYS_PROMPT, "instructor-payout": INSTRUCTOR_PAYOUT_SYS_PROMPT };
+const SYS_PROMPTS = { programs: PROGRAMS_SYS_PROMPT, fasttrack: FASTTRACK_SYS_PROMPT, users: USERS_SYS_PROMPT, gl: GL_SYS_PROMPT, historic: HISTORIC_SYS_PROMPT, roster: ROSTER_SYS_PROMPT, products: PRODUCTS_SYS_PROMPT, memberships: MEMBERSHIPS_SYS_PROMPT, "instructor-payout": INSTRUCTOR_PAYOUT_SYS_PROMPT };
 
 // ── Program Finder AI ────────────────────────────────────────────────
 const RECOMMEND_SYS_PROMPT = `You are a friendly, helpful recreation program advisor for a municipal parks & recreation department. A resident has described what they're looking for, and you have the department's upcoming schedule of programs and activities.
@@ -3293,7 +3293,7 @@ async function fetchOrgChatData(orgSlug, orgConfig) {
   if (hit && Date.now() - hit.ts < CHAT_DATA_TTL) return hit.data;
 
   const orgHidden = new Set(getHiddenReports(orgSlug));
-  const CHAT_SKIP = new Set(["section-detail","program-demographics","retention","directors-report","annual-report","checkins","program-checkins","ice-calendar","qoq"]);
+  const CHAT_SKIP = new Set(["section-detail","program-demographics","retention","annual-report","checkins","program-checkins","ice-calendar","qoq"]);
   const reports = REPORT_TYPES.filter(r => !orgHidden.has(r) && !CHAT_SKIP.has(r) && (orgConfig[r]?.mbUuid || SHARED_UUIDS[r]));
   console.log("[chat-data] " + orgSlug + ": fetching " + reports.length + " reports: " + reports.join(", "));
   const results = {};
@@ -9400,6 +9400,7 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  { date: "2026-07-17", text: "Removed directors-report from REPORT_TYPES, metrics, and all report lists (no longer active)" },
   { date: "2026-07-17", text: "Programs: Find a Program wizard - step-through activity picker with optional keyword search, auto-filters program list. Client-side only, no shared view impact." },
   { date: "2026-07-17", text: "Instructor Payout: clickable pay slip link on each section row opens a printable check-style pay slip in a new tab with instructor name, program, participants, and payout amount" },
   { date: "2026-07-17", text: "Fast Track Pipeline: added demand buildup chart showing FT wishlists vs capacity per section, velocity stats (signups/day), and demand heat coloring" },
