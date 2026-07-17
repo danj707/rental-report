@@ -181,7 +181,7 @@ function getStaleCached(orgSlug, reportType, exactKey) {
         const entry = JSON.parse(raw);
         if (!entry.key || !entry.data || !entry.ts) continue;
         const ttl = REPORT_CACHE_TTL[entry.rt] || CACHE_TTL;
-        if (Date.now() - entry.ts > ttl * 3) {
+        if (Date.now() - entry.ts > ttl * 12) { // generous grace — stale data beats 502
           fs.unlink(path.join(CACHE_DIR, file), () => {});
           expired++;
           continue;
@@ -9400,6 +9400,7 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  { date: "2026-07-17", text: "Cold-cache fix: extended disk hydration grace from 3x to 12x TTL (stale data beats 502), prewarm interval reduced from 60min to 15min" },
   { date: "2026-07-17", text: "Removed directors-report from REPORT_TYPES, metrics, and all report lists (no longer active)" },
   { date: "2026-07-17", text: "Programs: Find a Program wizard - step-through activity picker with optional keyword search, auto-filters program list. Client-side only, no shared view impact." },
   { date: "2026-07-17", text: "Instructor Payout: clickable pay slip link on each section row opens a printable check-style pay slip in a new tab with instructor name, program, participants, and payout amount" },
@@ -10699,8 +10700,8 @@ app.listen(PORT, () => {
   // Run initial health check on startup (after cache is warm)
   if (!loadHealthResults()) setTimeout(runHealthCheck, 60000);
 
-  // Re-warm every 4 minutes to keep cache perpetually hot
-  setInterval(prewarmCache, 60 * 60 * 1000);
+  // Re-warm every 15 minutes to keep cache perpetually hot
+  setInterval(prewarmCache, 15 * 60 * 1000);
 
   // Promote any orgs from data/orgs.json into server.js on GitHub.
   // Runs after listen() so startup isn't blocked by GitHub latency.
