@@ -357,8 +357,23 @@ function normalizeRow(r){
     closed: status.indexOf('closed')>=0,
     total: pick(r,['price','Price','Total','total']),
     description: stripHtml(pick(r,['Description','description'])),
+    eligibility: pick(r,['Eligibility','eligibility'])||'',
   };
 }
+
+function parseEligibility(elig){
+  if(!elig) return {minAge:null,maxAge:null,grades:[]};
+  var minAge=null,maxAge=null,grades=[];
+  var am=elig.match(/Ages\s+(\d+)-(\d+)/);
+  if(am){minAge=parseInt(am[1]);maxAge=parseInt(am[2]);}
+  var ap=elig.match(/Ages\s+(\d+)\+/);
+  if(ap){minAge=parseInt(ap[1]);maxAge=199;}
+  var gm=elig.match(/Grades:\s*([^|]+)/);
+  if(gm){grades=gm[1].split(',').map(function(g){return g.trim();}).filter(Boolean);}
+  return {minAge:minAge,maxAge:maxAge,grades:grades};
+}
+var GRADE_ORDER=['preschool','kindergarten','first','second','third','fourth','fifth','sixth','seventh','eighth','ninth','tenth','eleventh','twelfth'];
+function gradeLabel(g){return g.charAt(0).toUpperCase()+g.slice(1);}
 function parseDateISO(v){
   if(!v) return '';
   let s=String(v);
@@ -986,6 +1001,8 @@ function App(){
   const [wizOpen,setWizOpen]=useState(false);
   const [wizStep,setWizStep]=useState(0);
   const [wizAct,setWizAct]=useState('');
+  const [ageFilter,setAgeFilter]=useState('');
+  const [gradeFilter,setGradeFilter]=useState('');
   const [wizApplied,setWizApplied]=useState(false);
   const [wizScrollIdx,setWizScrollIdx]=useState(0);
   useEffect(()=>{
@@ -993,13 +1010,15 @@ function App(){
     const iv=setInterval(()=>setWizScrollIdx(i=>(i+1)%activities.length),2000);
     return ()=>clearInterval(iv);
   },[wizOpen,wizApplied,activities]);
-  function wizApply(act,loc){
+  function wizApply(act,loc,age,grade){
     if(act)setActFilter(act);
     if(loc)setLocFilter(loc);
+    if(age)setAgeFilter(age);
+    if(grade)setGradeFilter(grade);
     setWizApplied(true);setWizOpen(false);
   }
   function wizReset(){
-    setActFilter('');setLocFilter('');setAvailFilter('');
+    setActFilter('');setLocFilter('');setAvailFilter('');setAgeFilter('');setGradeFilter('');
     setWizApplied(false);setWizOpen(false);setWizStep(0);setWizAct('');
     setWeekStart(startOfWeek(new Date()));setView('week');
   }
@@ -1126,8 +1145,40 @@ function App(){
     : MON[ws.getMonth()]+' '+ws.getDate()+' – '+MON[we.getMonth()]+' '+we.getDate()+', '+we.getFullYear();
   // Use wide-range options for dropdowns, fall back to current week if wide hasn't loaded yet
   const activities=allActivities.length>0?allActivities:[...new Set(rows.flatMap(e=>(e.activity||'').split(',').map(a=>a.trim())).filter(Boolean))].sort();
+  const eligData=useMemo(()=>{
+    var ageBuckets=new Map(),gradeSet=new Set();
+    rows.forEach(function(e){
+      var p=parseEligibility(e.eligibility);
+      if(p.minAge!==null){
+        var label=p.maxAge>=199?p.minAge+'+':p.minAge+'-'+p.maxAge;
+        ageBuckets.set(label,{min:p.minAge,max:p.maxAge});
+      }
+      p.grades.forEach(function(g){gradeSet.add(g);});
+    });
+    var ages=[...ageBuckets.entries()].sort(function(a,b){return a[1].min-b[1].min;});
+    var grades=GRADE_ORDER.filter(function(g){return gradeSet.has(g);});
+    return {ages:ages,grades:grades};
+  },[rows]);
   const locations=allLocations.length>0?allLocations:[...new Set(rows.map(e=>e.location).filter(Boolean))].sort();
-  const filtered=useMemo(()=>rows.filter(e=>(!actFilter||(e.activity||'').split(',').some(a=>a.trim()===actFilter))&&(!locFilter||e.location===locFilter)&&(availFilter!=='open'||(!e.full&&!e.closed))&&(availFilter!=='waitlist'||e.waitlist)&&(availFilter!=='closed'||e.closed)),[rows,actFilter,locFilter,availFilter]);
+  const filtered=useMemo(()=>rows.filter(function(e){
+    if(actFilter&&!(e.activity||'').split(',').some(a=>a.trim()===actFilter)) return false;
+    if(locFilter&&e.location!==locFilter) return false;
+    if(availFilter==='open'&&(e.full||e.closed)) return false;
+    if(availFilter==='waitlist'&&!e.waitlist) return false;
+    if(availFilter==='closed'&&!e.closed) return false;
+    if(ageFilter){
+      var p=parseEligibility(e.eligibility);
+      var fa=parseInt(ageFilter);
+      if(p.minAge===null) return false;
+      if(fa<p.minAge||fa>p.maxAge) return false;
+    }
+    if(gradeFilter){
+      var p2=parseEligibility(e.eligibility);
+      if(!p2.grades.length) return false;
+      if(p2.grades.indexOf(gradeFilter)<0) return false;
+    }
+    return true;
+  }),[rows,actFilter,locFilter,availFilter,ageFilter,gradeFilter]);
 
   return (
     <div className="wrap">
@@ -1191,7 +1242,7 @@ function App(){
       {wizApplied && (
         <div className="pgwiz-result">
           <span>{String.fromCodePoint(10024)}</span>
-          <span>Showing: <strong>{actFilter||'All Activities'}</strong>{locFilter?<span> at <strong>{locFilter}</strong></span>:''} {String.fromCodePoint(8212)} {filtered.length} session{filtered.length!==1?'s':''}</span>
+          <span>Showing: {ageFilter?<span><strong>{ageFilter} yrs</strong> {String.fromCodePoint(183)} </span>:gradeFilter?<span><strong>{gradeLabel(gradeFilter)}</strong> {String.fromCodePoint(183)} </span>:''}<strong>{actFilter||'All Activities'}</strong>{locFilter?<span> at <strong>{locFilter}</strong></span>:''} {String.fromCodePoint(8212)} {filtered.length} session{filtered.length!==1?'s':''}</span>
           <button className="pgwiz-pill" style={{marginLeft:8,fontSize:11,padding:'4px 12px'}} onClick={()=>{setWizApplied(false);setWizOpen(true);setWizStep(0);setWizAct('');setActFilter('');setLocFilter('');}}>
             {String.fromCodePoint(8635)} Start Over
           </button>
@@ -1218,43 +1269,70 @@ function App(){
           {wizStep===1 && (
             <div className="pgwiz-step">
               <div className="pgwiz-crumb">
-                <span className="pgwiz-crumb-link" onClick={()=>setWizStep(0)}>
-                  {String.fromCodePoint(128197)} When {String.fromCodePoint(9999)}
-                </span>
+                <span className="pgwiz-crumb-link" onClick={()=>setWizStep(0)}>{String.fromCodePoint(128197)} When {String.fromCodePoint(9999)}</span>
               </div>
-              <div className="pgwiz-q">What type of activity?</div>
+              <div className="pgwiz-q">Who is it for?</div>
               <div className="pgwiz-opts">
-                <button className="pgwiz-pill pgwiz-go" onClick={()=>{wizApply('','');}}>Show All</button>
-                {activities.map(a=>(
-                  <button key={a} className="pgwiz-pill" onClick={()=>{setWizAct(a);setWizStep(2);}}>
-                    {a}
-                  </button>
-                ))}
+                <button className="pgwiz-pill pgwiz-go" onClick={()=>setWizStep(2)}>Anyone / All Ages</button>
               </div>
+              {eligData.ages.length>0 && (
+                <div style={{marginTop:8}}>
+                  <div style={{fontSize:12,color:'#6b7280',marginBottom:6}}>Filter by age:</div>
+                  <div className="pgwiz-opts">
+                    {[3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18].map(a=>(
+                      <button key={a} className="pgwiz-pill" onClick={()=>{setAgeFilter(String(a));setWizStep(2);}} style={{padding:'6px 12px',fontSize:12}}>{a} yrs</button>
+                    ))}
+                    <button className="pgwiz-pill" onClick={()=>{setAgeFilter('21');setWizStep(2);}} style={{padding:'6px 12px',fontSize:12}}>Adult</button>
+                  </div>
+                </div>
+              )}
+              {eligData.grades.length>0 && (
+                <div style={{marginTop:8}}>
+                  <div style={{fontSize:12,color:'#6b7280',marginBottom:6}}>Or by grade:</div>
+                  <div className="pgwiz-opts">
+                    {eligData.grades.map(g=>(
+                      <button key={g} className="pgwiz-pill" onClick={()=>{setGradeFilter(g);setWizStep(2);}} style={{padding:'6px 12px',fontSize:12}}>{gradeLabel(g)}</button>
+                    ))}
+                  </div>
+                </div>
+              )}
               <button className="pgwiz-back" onClick={()=>setWizStep(0)}>{String.fromCodePoint(8592)} Back</button>
             </div>
           )}
           {wizStep===2 && (
             <div className="pgwiz-step">
               <div className="pgwiz-crumb">
-                <span className="pgwiz-crumb-link" onClick={()=>setWizStep(0)}>
-                  {String.fromCodePoint(128197)} When {String.fromCodePoint(9999)}
-                </span>
+                <span className="pgwiz-crumb-link" onClick={()=>setWizStep(0)}>{String.fromCodePoint(128197)} When {String.fromCodePoint(9999)}</span>
                 {' '}{String.fromCodePoint(183)}{' '}
-                <span className="pgwiz-crumb-link" onClick={()=>{setWizStep(1);setWizAct('');}}>
-                  {wizAct} {String.fromCodePoint(9999)}
-                </span>
+                <span className="pgwiz-crumb-link" onClick={()=>{setWizStep(1);setAgeFilter('');setGradeFilter('');}}>{ageFilter?ageFilter+' yrs':gradeFilter?gradeLabel(gradeFilter):'All ages'} {String.fromCodePoint(9999)}</span>
+              </div>
+              <div className="pgwiz-q">What type of activity?</div>
+              <div className="pgwiz-opts">
+                <button className="pgwiz-pill pgwiz-go" onClick={()=>{wizApply('','',ageFilter,gradeFilter);}}>Show All</button>
+                {activities.map(a=>(
+                  <button key={a} className="pgwiz-pill" onClick={()=>{setWizAct(a);setWizStep(3);}}>{a}</button>
+                ))}
+              </div>
+              <button className="pgwiz-back" onClick={()=>{setWizStep(1);setAgeFilter('');setGradeFilter('');}}>{String.fromCodePoint(8592)} Back</button>
+            </div>
+          )}
+          {wizStep===3 && (
+            <div className="pgwiz-step">
+              <div className="pgwiz-crumb">
+                <span className="pgwiz-crumb-link" onClick={()=>setWizStep(0)}>{String.fromCodePoint(128197)} When {String.fromCodePoint(9999)}</span>
+                {' '}{String.fromCodePoint(183)}{' '}
+                <span className="pgwiz-crumb-link" onClick={()=>{setWizStep(1);setAgeFilter('');setGradeFilter('');}}>{ageFilter?ageFilter+' yrs':gradeFilter?gradeLabel(gradeFilter):'All ages'} {String.fromCodePoint(9999)}</span>
+                {' '}{String.fromCodePoint(183)}{' '}
+                <span className="pgwiz-crumb-link" onClick={()=>{setWizStep(2);setWizAct('');}}>{wizAct} {String.fromCodePoint(9999)}</span>
               </div>
               <div className="pgwiz-q">Any location preference?</div>
               <div className="pgwiz-opts">
-                <button className="pgwiz-pill pgwiz-go" onClick={()=>wizApply(wizAct,'')}>Anywhere</button>
+                <button className="pgwiz-pill pgwiz-go" onClick={()=>wizApply(wizAct,'',ageFilter,gradeFilter)}>Anywhere</button>
                 {locations.map(l=>(
-                  <button key={l} className="pgwiz-pill" onClick={()=>wizApply(wizAct,l)}>
-                    {l}
-                  </button>
+                  <button key={l} className="pgwiz-pill" onClick={()=>wizApply(wizAct,l,ageFilter,gradeFilter)}>{l}</button>
                 ))}
               </div>
-              <button className="pgwiz-back" onClick={()=>{setWizStep(1);setWizAct('');}}>{String.fromCodePoint(8592)} Back</button>
+              <button className="pgwiz-back" onClick={()=>{setWizStep(2);setWizAct('');}}>{String.fromCodePoint(8592)} Back</button>
             </div>
           )}
         </div>
