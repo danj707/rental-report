@@ -392,6 +392,153 @@ function DemandLeaderboard(props) {
   );
 }
 
+
+/* ── Pipeline Velocity Chart ── */
+function PipelineVelocityChart(props) {
+  var canvasRef = React.useRef(null);
+  var chartRef = React.useRef(null);
+  var allPipeline = props.allPipeline || [];
+
+  React.useEffect(function() {
+    if (!canvasRef.current || !allPipeline.length) return;
+    if (chartRef.current) chartRef.current.destroy();
+
+    // Only include sections with FT signups and a reg opens date
+    var sections = allPipeline.filter(function(r) {
+      return r.ftSignups > 0;
+    }).sort(function(a, b) { return b.ftSignups - a.ftSignups; }).slice(0, 15);
+
+    if (!sections.length) return;
+
+    // For each section, calculate velocity (signups per day in the FT window)
+    var labels = sections.map(function(r) {
+      var name = r.program;
+      if (name.length > 35) name = name.slice(0, 33) + '\u2026';
+      return name;
+    });
+
+    var signupData = sections.map(function(r) { return r.ftSignups; });
+    var capacities = sections.map(function(r) { return r.capacity || 0; });
+
+    // Demand % for coloring
+    var barColors = sections.map(function(r) {
+      if (!r.capacity) return '#6366f1';
+      var pct = r.ftSignups / r.capacity * 100;
+      if (pct >= 75) return '#dc2626';
+      if (pct >= 40) return '#f59e0b';
+      return '#6366f1';
+    });
+
+    var datasets = [
+      {
+        label: 'FT Wishlists',
+        data: signupData,
+        backgroundColor: barColors,
+        borderColor: barColors.map(function(c) { return c; }),
+        borderWidth: 1,
+        borderRadius: 4,
+        barPercentage: 0.7,
+      }
+    ];
+
+    // Add capacity line if available
+    if (capacities.some(function(c) { return c > 0; })) {
+      datasets.push({
+        label: 'Capacity',
+        data: capacities,
+        type: 'line',
+        borderColor: '#d1d5db',
+        borderWidth: 2,
+        borderDash: [6, 4],
+        pointRadius: 3,
+        pointBackgroundColor: '#d1d5db',
+        fill: false,
+        order: 0,
+      });
+    }
+
+    chartRef.current = new Chart(canvasRef.current, {
+      type: 'bar',
+      data: { labels: labels, datasets: datasets },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        indexAxis: 'y',
+        interaction: { mode: 'index', intersect: false },
+        scales: {
+          x: {
+            grid: { color: '#f1f5f9' },
+            beginAtZero: true,
+            title: { display: true, text: 'Count', font: { size: 10, weight: '600' }, color: '#888' },
+            ticks: { font: { size: 10 } },
+          },
+          y: {
+            grid: { display: false },
+            ticks: { font: { size: 10, weight: '500' }, color: '#555' },
+          },
+        },
+        plugins: {
+          legend: { display: true, position: 'top', labels: { boxWidth: 12, font: { size: 10 } } },
+          tooltip: {
+            callbacks: {
+              afterBody: function(ctx) {
+                var idx = ctx[0].dataIndex;
+                var r = sections[idx];
+                var lines = [];
+                if (r.capacity) lines.push('Demand: ' + Math.round(r.ftSignups / r.capacity * 100) + '% of capacity');
+                if (r.firstFt) lines.push('First signup: ' + r.firstFt);
+                if (r.lastFt) lines.push('Last signup: ' + r.lastFt);
+                if (r.firstFt && r.lastFt) {
+                  var d1 = new Date(r.firstFt); var d2 = new Date(r.lastFt);
+                  var days = Math.max(1, Math.ceil((d2 - d1) / 86400000));
+                  lines.push('Velocity: ' + (r.ftSignups / days).toFixed(1) + ' signups/day over ' + days + 'd');
+                }
+                if (r.regOpens) lines.push('Reg opens: ' + new Date(r.regOpens).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }));
+                return lines;
+              }
+            }
+          }
+        },
+      },
+    });
+
+    return function() { if (chartRef.current) chartRef.current.destroy(); };
+  }, [allPipeline]);
+
+  if (!allPipeline.length || !allPipeline.some(function(r) { return r.ftSignups > 0; })) return null;
+
+  // Compute velocity stats
+  var withDates = allPipeline.filter(function(r) { return r.ftSignups > 0 && r.firstFt && r.lastFt; });
+  var velocities = withDates.map(function(r) {
+    var d1 = new Date(r.firstFt); var d2 = new Date(r.lastFt);
+    var days = Math.max(1, Math.ceil((d2 - d1) / 86400000));
+    return { name: r.program, vel: r.ftSignups / days, days: days, signups: r.ftSignups };
+  }).sort(function(a, b) { return b.vel - a.vel; });
+  var fastest = velocities.length > 0 ? velocities[0] : null;
+  var totalSignups = allPipeline.reduce(function(s, r) { return s + (r.ftSignups || 0); }, 0);
+  var totalCap = allPipeline.reduce(function(s, r) { return s + (r.capacity || 0); }, 0);
+
+  var chartHeight = Math.max(200, allPipeline.filter(function(r) { return r.ftSignups > 0; }).length * 36 + 60);
+
+  return React.createElement('div', { style: { background: '#fff', border: '1px solid #e0ddd8', borderRadius: 10, padding: '16px 20px', marginBottom: 20 } },
+    React.createElement('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 } },
+      React.createElement('div', { style: { fontSize: 13, fontWeight: 700, color: '#111827' } }, 'Pipeline Demand Buildup'),
+      fastest && React.createElement('div', { style: { fontSize: 11, color: '#888', display: 'flex', gap: 16 } },
+        React.createElement('span', null, '\u26A1 Fastest: ',
+          React.createElement('strong', { style: { color: '#111' } }, fastest.vel.toFixed(1) + '/day'),
+          ' \u2014 ' + (fastest.name.length > 25 ? fastest.name.slice(0, 23) + '\u2026' : fastest.name)
+        ),
+        totalCap > 0 && React.createElement('span', null, 'Overall demand: ',
+          React.createElement('strong', { style: { color: totalSignups / totalCap > 0.5 ? '#dc2626' : '#111' } }, Math.round(totalSignups / totalCap * 100) + '%')
+        )
+      )
+    ),
+    React.createElement('div', { style: { height: chartHeight } },
+      React.createElement('canvas', { ref: canvasRef })
+    )
+  );
+}
+
 /* ── Pipeline Tab component ── */
 function PipelineTab(props) {
   var sections = props.sections || [];
@@ -478,6 +625,9 @@ function PipelineTab(props) {
         React.createElement('div', { className: 'kpi-sub' }, 'not yet published')
       )
     ),
+
+    /* Pipeline velocity chart */
+    React.createElement(PipelineVelocityChart, { allPipeline: allPipeline }),
 
     /* Pipeline sections table */
     allPipeline.length > 0 && React.createElement(React.Fragment, null,
