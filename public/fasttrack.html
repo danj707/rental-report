@@ -306,6 +306,7 @@ function normalizeRow(raw) {
     rowType:       raw['Row Type'] ?? 'section',
     sectionId:     raw['Section ID'] ?? '',
     orgId:         raw['Org ID'] ?? '',
+    programId:     raw['Program ID'] ?? '',
     ftRevenue:     fmtN(raw['FT Revenue']),
     sectionPrice:  fmtN(raw['Section Price']),
     leftOnTable:   fmtN(raw['Left on Table']),
@@ -315,6 +316,10 @@ function normalizeRow(raw) {
 function adminSectionUrl(orgId, sectionId) {
   if (!orgId || !sectionId) return null;
   return 'https://www.rec.us/admin/o/' + orgId + '/programming/sections/' + sectionId;
+}
+function adminProgramUrl(orgId, programId) {
+  if (!orgId || !programId) return null;
+  return 'https://www.rec.us/admin/o/' + orgId + '/programming/programs/' + programId;
 }
 
 
@@ -332,6 +337,7 @@ function rollupToPrograms(rows) {
     var g = map.get(key);
     g.sections.push(r);
     if (r.orgId && !g.orgId) g.orgId = r.orgId;
+    if (r.programId && !g.programId) g.programId = r.programId;
     g.ftSignups      += r.ftSignups;
     g.ftConverted    += r.ftConverted;
     g.ftPending      += r.ftPending;
@@ -406,10 +412,10 @@ function TriagePanel(props) {
       ),
       React.createElement('div', { className: 'triage-row-action' }, '→ ', p._triageAction || ''),
       React.createElement('div', { className: 'triage-row-meta' },
-        p.sections && p.sections.length > 0 && p.sections[0].sectionId && React.createElement('a', {
-          href: adminSectionUrl(p.orgId, p.sections[0].sectionId),
+        p.programId && React.createElement('a', {
+          href: adminProgramUrl(p.orgId, p.programId),
           target: '_blank', rel: 'noopener', className: 'triage-admin-link'
-        }, 'Manage Sections →'),
+        }, 'Manage Program →'),
         p._regOpensDate && React.createElement('span', { className: 'triage-chip' + (p._daysUntilRegOpens != null && p._daysUntilRegOpens <= 7 ? ' soon' : '') },
           p._daysUntilRegOpens != null ? '📅 Reg opens ' + fmtD(p._regOpensDate) + ' (' + p._daysUntilRegOpens + 'd)' : '📅 Reg opened ' + fmtD(p._regOpensDate)),
         p._regClosesDate && p._daysUntilRegCloses != null && React.createElement('span', { className: 'triage-chip' + (p._daysUntilRegCloses <= 3 ? ' urgent' : '') },
@@ -981,6 +987,7 @@ function App() {
   var [pdfLoading, setPdfLoading]     = useState(false);
   var [showExplainer, setShowExplainer] = useState(false);
   var [activeTab, setActiveTab] = useState('overview');
+  var [tabLoading, setTabLoading] = useState(false);
   var [ftUserRows, setFtUserRows] = useState([]);
   var [pipelineRows, setPipelineRows] = useState([]);
   var [dailyRows, setDailyRows] = useState([]);
@@ -1090,7 +1097,11 @@ function App() {
 
   function switchTab(t) {
     setActiveTab(t);
-    if (t === 'demographics' || t === 'revenue' || t === 'conversions') fetchCiData();
+    if (t === 'demographics' || t === 'revenue' || t === 'conversions') {
+      setTabLoading(true);
+      fetchCiData();
+      setTimeout(function(){ setTabLoading(false); }, 1500);
+    }
   }
 
   /* ── FT Demographics analytics (ported from CI cross-tab) ── */
@@ -1608,6 +1619,11 @@ function App() {
         ), /* end overview tab */
 
         activeTab === 'revenue' && React.createElement(React.Fragment, null,
+          (tabLoading && activeTab === 'revenue') && React.createElement('div', { style: { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '60px 0' } },
+            React.createElement('div', { className: 'juice-loader' }),
+            React.createElement('div', { style: { fontSize: 13, color: '#999', marginTop: 12 } }, 'Crunching the numbers...')
+          ),
+
           /* FT Revenue explanation */
           React.createElement('div', { style: { background: '#fff', border: '1px solid #e0ddd8', borderRadius: 10, padding: '14px 20px', marginBottom: 20 } },
             React.createElement('div', { style: { fontSize: 13, fontWeight: 700, color: '#111', marginBottom: 4 } }, 'Fast Track revenue impact'),
@@ -1721,6 +1737,11 @@ function App() {
 
 
                 activeTab === 'conversions' && React.createElement(React.Fragment, null,
+          (tabLoading && activeTab === 'conversions') && React.createElement('div', { style: { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '60px 0' } },
+            React.createElement('div', { className: 'juice-loader' }),
+            React.createElement('div', { style: { fontSize: 13, color: '#999', marginTop: 12 } }, 'Crunching the numbers...')
+          ),
+
           /* Conversions KPI strip */
           (function() {
             var postReg = filtered.filter(function(r){ return r.regStatus === 'open' || r.regStatus === 'closed'; });
@@ -1819,6 +1840,11 @@ function App() {
         ),
 
                 activeTab === 'demographics' && React.createElement(React.Fragment, null,
+          (tabLoading && activeTab === 'demographics') && React.createElement('div', { style: { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '60px 0' } },
+            React.createElement('div', { className: 'juice-loader' }),
+            React.createElement('div', { style: { fontSize: 13, color: '#999', marginTop: 12 } }, 'Crunching the numbers...')
+          ),
+
           ciLoading && React.createElement('div', { style: { textAlign: 'center', padding: '60px 20px' } },
             React.createElement(JuiceLoader, null)
           ),
