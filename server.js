@@ -1088,7 +1088,8 @@ fs.mkdirSync(CACHE_DIR, { recursive: true });
 const ORGS_FILE          = path.join(DATA_DIR, "orgs.json");
 const HOTDOG_CLAIMS_FILE = path.join(DATA_DIR, "hotdog_claims.json");
 const SUBS_FILE   = path.join(DATA_DIR, "subscriptions.json");
-const EMAIL_ENABLED_ORGS = new Set(["niagarafalls", "watertown"]);
+// Email enabled for all orgs — gate is simply: does the org exist in ORGS?
+const EMAIL_ENABLED_ORGS = { has: (slug) => !!ORGS[slug] }; // duck-typed Set — always checks live ORGS map
 const ALLOWED_EMAIL_DOMAINS = []; // empty = no domain restriction; access gated by EMAIL_ENABLED_ORGS + token
 const EMAIL_SUBSCRIBABLE_REPORTS = new Set(["facility", "gl"]);
 const LOG_FILE    = path.join(DATA_DIR, "send_log.json");
@@ -8443,7 +8444,7 @@ app.get("/", (req, res) => {
         <p>Automated report delivery via the <strong>Resend</strong> transactional email API. Partner staff subscribe from the report page (Email button) or the admin panel at <code>/:org/admin</code>. Each subscription stores the report type, cadence, date range preset, and any active filters (locations, sites, booking type) so recipients get exactly the view they subscribed to.</p>
         <p><strong>Architecture:</strong> Subscriber data lives in <code>data/subscriptions.json</code> on the Railway persistent volume (backed up nightly to GitHub Gist). Three node-cron jobs trigger sends: daily at 7am ET, weekly on Monday at 7am, monthly on the 1st at 7am. Each job filters subscribers by cadence, resolves their saved date range preset (e.g. &#8220;next 7 days&#8221; &#8594; concrete dates), builds a tokenized report URL with saved filters baked in, and sends via Resend.</p>
         <p><strong>Sending identity:</strong> <code>Rec Reporting &lt;reports@rec.us&gt;</code> &#8212; the <code>rec.us</code> domain is verified on the Resend account with full DKIM/SPF. The API key (<code>RESEND_API_KEY</code> env var) has Full access permissions. Emails deliver to any address &#8212; no domain restriction on recipients.</p>
-        <p><strong>Per-org gating:</strong> controlled by the <code>EMAIL_ENABLED_ORGS</code> set in server.js. Only enabled orgs show the Email button and accept subscriptions. Currently enabled: Watertown, Niagara Falls. The global Email Subscriptions feature flag is a kill switch for cron sends only.</p>
+        <p><strong>Per-org gating:</strong> <code>EMAIL_ENABLED_ORGS</code> is now set to all orgs. Every org shows the Email button and accepts subscriptions for GL and Facility reports. The global Email Subscriptions feature flag is a kill switch for cron sends only.</p>
         <p><strong>Saved-view subscriptions:</strong> one email address can have multiple subscriptions &#8212; a general digest and any number of saved-view subscriptions with different filters. Each subscription has a unique ID used by the test-send flow to resolve the correct filters. The admin panel shows filter details (locations, sites, desk, date range) on each subscriber card.</p>
         <p><strong>Admin panel</strong> (<code>/:org/admin</code>): add/remove subscribers, test-send individual subscriptions (respects saved filters), view send log, clear log (password-gated). Header shows org logo and name with quick-nav links.</p>
         <p><strong>Email content:</strong> branded HTML email with org logo, report name, date range label, filter count indicator, and a prominent CTA button linking to the pre-filtered report. Plain-text fallback included. No report data in the email body &#8212; just the link.</p>
@@ -9445,6 +9446,11 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  { date: '2026-07-18', title: 'Email subscriptions: universal rollout', items: [
+    'Email subscriptions now enabled for ALL orgs (previously Watertown + Niagara Falls only)',
+    'Scoped to GL Code Rollup and Facility Rental Schedule reports',
+    'PDF attachment included with every scheduled email'
+  ]},
   { date: '2026-07-18', title: 'Email subscriptions: PDF attachments', items: [
     'Scheduled email reports now include a PDF attachment of the report',
     'PDF respects all saved filters (dates, locations, desks, etc.)',
