@@ -159,6 +159,9 @@
     .triage-panel{background:#fff;border:1px solid #e0ddd8;border-radius:10px;padding:20px;margin-bottom:20px}
     .triage-header{font-size:15px;font-weight:700;color:#111;margin-bottom:16px;padding-bottom:12px;border-bottom:2px solid #f1f0ed}
     .triage-header-count{display:inline-flex;align-items:center;justify-content:center;background:#dc2626;color:#fff;font-size:13px;font-weight:700;width:24px;height:24px;border-radius:99px;margin-right:6px}
+
+    .triage-section-head{font-size:14px;font-weight:700;color:#111;padding:10px 0 8px;border-bottom:2px solid #f1f0ed;margin-bottom:12px;display:flex;align-items:center;gap:6px}
+    .triage-section-icon{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:99px;color:#fff;font-size:12px;font-weight:700}
     .triage-bucket{margin-bottom:14px}.triage-bucket:last-child{margin-bottom:0}
     .triage-bucket-head{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;padding:6px 10px;border-radius:6px;display:flex;align-items:center;justify-content:space-between}
     .triage-bucket-head.crit{background:#fef2f2;color:#991b1b}
@@ -437,15 +440,38 @@ function TriagePanel(props) {
     );
   }
   return React.createElement('div', { className: 'triage-panel' },
-    React.createElement('div', { className: 'triage-header' },
-      needsAttention > 0
-        ? React.createElement(React.Fragment, null, React.createElement('span', { className: 'triage-header-count' }, needsAttention), ' program', needsAttention !== 1 ? 's' : '', ' need', needsAttention === 1 ? 's' : '', ' attention')
-        : 'All programs on track'),
-    React.createElement(BucketSection, { icon: '⚠️', label: 'Needs Capacity', cls: 'crit', items: buckets.needsCapacity }),
-    React.createElement(BucketSection, { icon: '📋', label: 'Ready to Open', cls: 'ready', items: buckets.readyToOpen }),
-    React.createElement(BucketSection, { icon: '⚡', label: 'Stalled', cls: 'stalled', items: buckets.stalled }),
-    buckets.convertingWell.length > 0 && React.createElement('div', { className: 'triage-bucket' },
-      React.createElement('div', { className: 'triage-bucket-head ok' }, '✅ ' + buckets.convertingWell.length + ' program' + (buckets.convertingWell.length !== 1 ? 's' : '') + ' converting well'))
+    /* ── Active Programs (reg open) ── */
+    (buckets.needsCapacity.length > 0 || buckets.stalled.length > 0 || buckets.convertingWell.length > 0) &&
+    React.createElement('div', { style: { marginBottom: 20 } },
+      React.createElement('div', { className: 'triage-section-head' },
+        React.createElement('span', { className: 'triage-section-icon', style: { background: '#059669' } }, '✓'),
+        ' Registration Open',
+        React.createElement('span', { style: { fontSize: 12, fontWeight: 400, color: '#888', marginLeft: 8 } },
+          'Programs where families can register now'
+        )
+      ),
+      (buckets.needsCapacity.length > 0 || buckets.stalled.length > 0)
+        ? React.createElement(React.Fragment, null,
+            React.createElement(BucketSection, { icon: '⚠️', label: 'Needs Capacity', cls: 'crit', items: buckets.needsCapacity }),
+            React.createElement(BucketSection, { icon: '⚡', label: 'Stalled — FT interests but no registrations', cls: 'stalled', items: buckets.stalled })
+          )
+        : null,
+      buckets.convertingWell.length > 0 && React.createElement('div', { className: 'triage-bucket' },
+        React.createElement('div', { className: 'triage-bucket-head ok' }, '✅ ' + buckets.convertingWell.length + ' program' + (buckets.convertingWell.length !== 1 ? 's' : '') + ' converting well'))
+    ),
+
+    /* ── Pipeline (reg not yet open) ── */
+    buckets.readyToOpen.length > 0 &&
+    React.createElement('div', { style: { marginBottom: 0 } },
+      React.createElement('div', { className: 'triage-section-head' },
+        React.createElement('span', { className: 'triage-section-icon', style: { background: '#2563eb' } }, '⏳'),
+        ' Pipeline — Registration Not Yet Open',
+        React.createElement('span', { style: { fontSize: 12, fontWeight: 400, color: '#888', marginLeft: 8 } },
+          'FT demand building before registration opens'
+        )
+      ),
+      React.createElement(BucketSection, { icon: '📋', label: 'FT Demand Building', cls: 'ready', items: buckets.readyToOpen })
+    )
   );
 }
 
