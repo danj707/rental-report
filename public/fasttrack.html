@@ -409,8 +409,8 @@ function TriagePanel(props) {
           p.ftConverted > 0 ? ' · ' + fmtInt(p.ftConverted) + ' registered' : '',
           p.ftPending > 0 ? ' · ' + fmtInt(p.ftPending) + ' pending' : '',
           p.ftFamilies > 0 ? ' · ' + fmtInt(p.ftFamilies) + ' families' : '',
-          p._spotsLeft != null ? ' · ' + fmtInt(p._spotsLeft) + ' spots left' : '',
-          p.convPct != null ? ' · ' + p.convPct + '% conv' : ''
+          p._spotsLeft != null ? ' · ' + fmtInt(p._spotsLeft) + (p._spotsLeft === 1 ? ' spot left' : ' spots left') : '',
+          p.convPct != null ? ' · ' + p.convPct + '% FT→registered' : ''
         )
       ),
       React.createElement('div', { className: 'triage-row-action' }, '→ ', p._triageAction || ''),
@@ -526,7 +526,7 @@ function DemandLeaderboard(props) {
               React.createElement('div', { className: 'lb-bar-pend', style: { width: pendW + '%' } })
             ),
             React.createElement('div', { className: 'lb-conv-label' },
-              p.convPct != null ? p.convPct + '% conv' : '\u2014'
+              p.convPct != null ? p.convPct + '% FT\u2192reg' : '\u2014'
             )
           ),
           getBadge(p)
