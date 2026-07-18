@@ -176,6 +176,9 @@
     .triage-row-meta{font-size:11px;color:#9ca3af;margin-top:4px;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
     .triage-chip{background:#f3f4f6;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600}
     .triage-chip.soon{background:#dbeafe;color:#1e40af}
+
+    .triage-admin-link{display:inline-block;background:#3b82f6;color:#fff;font-size:10px;font-weight:700;padding:3px 10px;border-radius:4px;text-decoration:none;margin-right:8px;letter-spacing:.02em}
+    .triage-admin-link:hover{background:#2563eb}
     .triage-chip.urgent{background:#fef2f2;color:#991b1b}
     /* ── Demand Leaderboard ── */
     .lb-section { margin-bottom: 24px; }
@@ -301,8 +304,15 @@ function normalizeRow(raw) {
     sectionDay:    raw['Section Day'] ?? '',
     sectionTime:   raw['Section Time'] ?? '',
     rowType:       raw['Row Type'] ?? 'section',
+    sectionId:     raw['Section ID'] ?? '',
+    orgId:         raw['Org ID'] ?? '',
   };
 }
+function adminSectionUrl(orgId, sectionId) {
+  if (!orgId || !sectionId) return null;
+  return 'https://www.rec.us/admin/o/' + orgId + '/programming/sections/' + sectionId;
+}
+
 
 /* Roll up sections into program-level aggregates */
 function rollupToPrograms(rows) {
@@ -316,6 +326,7 @@ function rollupToPrograms(rows) {
     });
     var g = map.get(key);
     g.sections.push(r);
+    if (r.orgId && !g.orgId) g.orgId = r.orgId;
     g.ftSignups      += r.ftSignups;
     g.ftConverted    += r.ftConverted;
     g.ftPending      += r.ftPending;
@@ -387,6 +398,10 @@ function TriagePanel(props) {
       ),
       React.createElement('div', { className: 'triage-row-action' }, '→ ', p._triageAction || ''),
       React.createElement('div', { className: 'triage-row-meta' },
+        p.sections && p.sections.length > 0 && p.sections[0].sectionId && React.createElement('a', {
+          href: adminSectionUrl(p.orgId, p.sections[0].sectionId),
+          target: '_blank', rel: 'noopener', className: 'triage-admin-link'
+        }, 'Manage Sections →'),
         p._regOpensDate && React.createElement('span', { className: 'triage-chip' + (p._daysUntilRegOpens != null && p._daysUntilRegOpens <= 7 ? ' soon' : '') },
           p._daysUntilRegOpens != null ? '📅 Reg opens ' + fmtD(p._regOpensDate) + ' (' + p._daysUntilRegOpens + 'd)' : '📅 Reg opened ' + fmtD(p._regOpensDate)),
         p._regClosesDate && p._daysUntilRegCloses != null && React.createElement('span', { className: 'triage-chip' + (p._daysUntilRegCloses <= 3 ? ' urgent' : '') },
@@ -473,6 +488,12 @@ function DemandLeaderboard(props) {
           React.createElement('div', { className: 'lb-info' },
             React.createElement('div', { className: 'lb-name' }, p.program),
             React.createElement('div', { className: 'lb-meta' },
+              p.sections && p.sections[0] && p.sections[0].sectionId && React.createElement('a', {
+                href: adminSectionUrl(p.orgId, p.sections[0].sectionId),
+                target: '_blank', rel: 'noopener',
+                style: { color: '#3b82f6', fontWeight: 600, fontSize: 11, textDecoration: 'none', marginRight: 8 },
+                onClick: function(e) { e.stopPropagation(); }
+              }, 'Admin →'),
               secCount, ' section', secCount !== 1 ? 's' : '',
               spotsLeft != null ? (' \u00B7 ' + fmtInt(spotsLeft) + ' spots left') : '',
               p.ftPending > 0 ? (' \u00B7 ' + fmtInt(p.ftPending) + ' pending') : ''
@@ -770,7 +791,14 @@ function PipelineTab(props) {
               var schedLabel = [dateLabel, timeLabel].filter(Boolean).join(' \u00b7 ');
               return React.createElement('tr', { key: 'p' + i, style: { background: hasFT ? '#fefce8' : '#fff' } },
                 React.createElement('td', { className: 'left' },
-                  React.createElement('div', { style: { fontWeight: 600, color: '#111' } }, r.program),
+                  React.createElement('div', { style: { fontWeight: 600, color: '#111' } }, r.program,
+                    r.sectionId && React.createElement('a', {
+                      href: adminSectionUrl(r.orgId, r.sectionId),
+                      target: '_blank', rel: 'noopener',
+                      style: { color: '#3b82f6', fontWeight: 600, fontSize: 10, textDecoration: 'none', marginLeft: 8 },
+                      onClick: function(e) { e.stopPropagation(); }
+                    }, 'Admin →')
+                  ),
                   React.createElement('div', { style: { fontSize: 11, color: '#888' } }, r.section,
                     React.createElement('span', { style: { marginLeft: 6, color: '#bbb', fontSize: 10 } }, r.regMode === 'per-session' ? 'per-session' : 'section')
                   ),
