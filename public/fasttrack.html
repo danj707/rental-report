@@ -383,6 +383,13 @@ function TriagePanel(props) {
     p._daysUntilRegOpens = regOpensDate && regOpensDate > now ? Math.ceil((regOpensDate - now) / 86400000) : null;
     p._daysUntilRegCloses = regClosesDate && regClosesDate > now ? Math.ceil((regClosesDate - now) / 86400000) : null;
     p._allFutureReg = allFutureReg && hasRegOpens;
+    // Skip programs where all sections have already ended
+    var allPast = (p.sections || []).every(function(s) {
+      if (!s.sectionEnd) return false;
+      return new Date(s.sectionEnd) < now;
+    });
+    if (allPast && (p.sections || []).length > 0) return;
+
     if (spotsLeft != null && spotsLeft === 0 && p.ftPending > 0) {
       p._triageAction = 'No spots left with ' + fmtInt(p.ftPending) + ' pending FT. Add capacity or open a new section.';
       buckets.needsCapacity.push(p);
