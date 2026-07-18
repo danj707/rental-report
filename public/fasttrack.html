@@ -1765,9 +1765,9 @@ function App() {
               React.createElement('div', { style: { background: '#fff', border: '1px solid #e0ddd8', borderRadius: 10, padding: '14px 20px', marginBottom: 20 } },
                 React.createElement('div', { style: { fontSize: 13, fontWeight: 700, color: '#111', marginBottom: 4 } }, 'How FT conversions work'),
                 React.createElement('div', { style: { fontSize: 12, color: '#666', lineHeight: 1.6 } },
-                  'When a section opens for registration, everyone who added it to Fast Track gets notified. ',
+                  'When registration opens for a section, families who added it to Fast Track can register. ',
                   React.createElement('strong', null, 'Registered'), ' means they completed registration (paid or free). ',
-                  React.createElement('strong', null, 'Pending'), ' means they were notified but haven’t registered yet. ',
+                  React.createElement('strong', null, 'Pending'), ' means they added it to Fast Track but haven’t registered yet. ',
                   React.createElement('strong', null, 'Dropped'), ' means they canceled their Fast Track interest. ',
                   'A high conversion rate means Fast Track is effectively driving registrations.'
                 )
@@ -1779,12 +1779,12 @@ function App() {
                   React.createElement('div', { className: 'kpi-sub' }, postReg.length + ' sections post-registration')
                 ),
                 React.createElement('div', { className: 'kpi', style: { '--accent': '#22c55e' } },
-                  React.createElement('div', { className: 'kpi-label' }, React.createElement(KpiLabel, { label: 'Registered', tip: 'FT users who completed registration (paid or free) after being notified that registration opened.' })),
+                  React.createElement('div', { className: 'kpi-label' }, React.createElement(KpiLabel, { label: 'Registered', tip: 'FT users who completed registration (paid or free) after adding it to Fast Track.' })),
                   React.createElement('div', { className: 'kpi-val' }, fmtInt(totalConv)),
                   React.createElement('div', { className: 'kpi-sub' }, convRate + '% registration rate')
                 ),
                 React.createElement('div', { className: 'kpi', style: { '--accent': '#f59e0b' } },
-                  React.createElement('div', { className: 'kpi-label' }, React.createElement(KpiLabel, { label: 'Pending', tip: 'FT users who were notified but haven’t registered yet. These are potential conversions — follow up to convert.' })),
+                  React.createElement('div', { className: 'kpi-label' }, React.createElement(KpiLabel, { label: 'Pending', tip: 'FT users who added this to Fast Track but haven’t registered yet. These are potential registrations — follow up to convert.' })),
                   React.createElement('div', { className: 'kpi-val' }, fmtInt(totalPend)),
                   React.createElement('div', { className: 'kpi-sub' }, totalPend > 0 && totalConv > 0 ? 'Potential: ' + fmtInt(totalPend + totalConv) + ' if all register' : 'awaiting registration')
                 ),
@@ -1925,7 +1925,7 @@ function App() {
             React.createElement('div', { style: { fontSize: 13, fontWeight: 700, color: '#111', marginBottom: 4 } }, 'Pre-registration pipeline'),
             React.createElement('div', { style: { fontSize: 12, color: '#666', lineHeight: 1.6 } },
               'These are sections that are ', React.createElement('strong', null, 'published and visible'), ' to the community but registration hasn’t opened yet. ',
-              'Families can add them to Fast Track to get notified when registration opens. ',
+              'Families can add them to Fast Track to express interest before registration opens. ',
               React.createElement('strong', null, 'Hot sections'), ' (high FT count relative to capacity) signal strong demand — consider adding capacity before registration opens. ',
               React.createElement('strong', null, 'Cold sections'), ' (published but no FT interest) may need better descriptions, pricing adjustments, or marketing.'
             )
