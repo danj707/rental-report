@@ -278,7 +278,11 @@ async function refreshOrgPulse(slug, force) {
     } catch(e) { console.warn(`[pulse] fetch failed ${slug}/${reportType}: ${e.message}`); return null; }
   }
 
-  const pulse = { items: [], generated: new Date().toISOString(), month: monthLabel, trailLabels: trailMonths.map(m => m.label) };
+  // Build human-readable date range for the pulse strip header
+  const curMonthShort = now.toLocaleString('en-US', { month: 'short' });
+  const curYear = now.getFullYear();
+  const pulseDateRange = curMonthShort + ' 1\u2013' + daysElapsed + ', ' + curYear;
+  const pulse = { items: [], generated: new Date().toISOString(), month: monthLabel, dateRange: pulseDateRange, trailLabels: trailMonths.map(m => m.label) };
 
   // ── Fetch all report types × 6 months in parallel for sparklines ──
   const [glAll, pgAll, facAll, prodAll] = await Promise.all([
@@ -7244,7 +7248,7 @@ app.get("/", (req, res) => {
     // Build pulse metrics strip from cached data
     const pulse = getCachedPulse(slug);
     const pulseStrip = (pulse && pulse.items.length > 0)
-      ? `<div class="org-pulse-strip">${pulse.items.map(it => {
+      ? `<div class="org-pulse-strip"><div class="pulse-date-range">${pulse.dateRange || pulse.month}</div>${pulse.items.map(it => {
           const deltaHtml = it.delta
             ? `<div class="pulse-delta ${it.direction === 'up' ? 'delta-up' : it.direction === 'down' ? 'delta-down' : ''}">${it.direction === 'up' ? '\u2191' : it.direction === 'down' ? '\u2193' : ''} ${it.delta}</div>`
             : '';
@@ -7547,6 +7551,7 @@ app.get("/", (req, res) => {
     .pulse-label { font-size: 11px; font-weight: 600; color: #a5b4fc; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 2px; }
     .pulse-sub { font-size: 10px; color: rgba(165,180,252,0.7); margin-top: 1px; white-space: nowrap; }
     .pulse-delta { font-size: 10px; font-weight: 600; margin-top: 2px; white-space: nowrap; }
+    .pulse-date-range { display: flex; align-items: center; padding: 0 12px; font-size: 10px; font-weight: 600; color: rgba(165,180,252,0.85); white-space: nowrap; letter-spacing: 0.3px; border-right: 1px solid rgba(255,255,255,0.1); min-width: fit-content; text-transform: uppercase; }
     .delta-up { color: #4ade80; }
     .delta-down { color: #f87171; }
     .org-logo { height: 32px; width: auto; object-fit: contain; flex-shrink: 0; }
@@ -9446,6 +9451,7 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  { date: '2026-07-18', text: 'Admin dashboard pulse strip now shows the date range (e.g. Jul 1 to 18, 2026) so metrics have clear time context' },
   { date: '2026-07-18', title: 'Email subscriptions: universal rollout', items: [
     'Email subscriptions now enabled for ALL orgs (previously Watertown + Niagara Falls only)',
     'Scoped to GL Code Rollup and Facility Rental Schedule reports',
