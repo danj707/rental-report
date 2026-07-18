@@ -7248,7 +7248,7 @@ app.get("/", (req, res) => {
     // Build pulse metrics strip from cached data
     const pulse = getCachedPulse(slug);
     const pulseStrip = (pulse && pulse.items.length > 0)
-      ? `<div class="org-pulse-strip"><div class="pulse-date-range">${pulse.dateRange || pulse.month}</div>${pulse.items.map(it => {
+      ? `<div class="pulse-date-label">${pulse.dateRange || pulse.month}</div><div class="org-pulse-strip">${pulse.items.map(it => {
           const deltaHtml = it.delta
             ? `<div class="pulse-delta ${it.direction === 'up' ? 'delta-up' : it.direction === 'down' ? 'delta-down' : ''}">${it.direction === 'up' ? '\u2191' : it.direction === 'down' ? '\u2193' : ''} ${it.delta}</div>`
             : '';
@@ -7551,7 +7551,7 @@ app.get("/", (req, res) => {
     .pulse-label { font-size: 11px; font-weight: 600; color: #a5b4fc; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 2px; }
     .pulse-sub { font-size: 10px; color: rgba(165,180,252,0.7); margin-top: 1px; white-space: nowrap; }
     .pulse-delta { font-size: 10px; font-weight: 600; margin-top: 2px; white-space: nowrap; }
-    .pulse-date-range { display: flex; align-items: center; padding: 0 12px; font-size: 10px; font-weight: 600; color: rgba(165,180,252,0.85); white-space: nowrap; letter-spacing: 0.3px; border-right: 1px solid rgba(255,255,255,0.1); min-width: fit-content; text-transform: uppercase; }
+    .pulse-date-label { font-size: 10px; font-weight: 600; color: #a5b4fc; text-transform: uppercase; letter-spacing: 0.5px; padding: 4px 16px 0; background: linear-gradient(135deg, #312e81 0%, #4338ca 50%, #4f46e5 100%); }
     .delta-up { color: #4ade80; }
     .delta-down { color: #f87171; }
     .org-logo { height: 32px; width: auto; object-fit: contain; flex-shrink: 0; }
