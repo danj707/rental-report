@@ -306,6 +306,10 @@ function normalizeRow(raw) {
     rowType:       raw['Row Type'] ?? 'section',
     sectionId:     raw['Section ID'] ?? '',
     orgId:         raw['Org ID'] ?? '',
+    ftRevenue:     fmtN(raw['FT Revenue']),
+    sectionPrice:  fmtN(raw['Section Price']),
+    leftOnTable:   fmtN(raw['Left on Table']),
+    overDemand:    fmtN(raw['Over Demand $']),
   };
 }
 function adminSectionUrl(orgId, sectionId) {
@@ -323,6 +327,7 @@ function rollupToPrograms(rows) {
       program: key, season: r.season, sections: [],
       ftSignups: 0, ftConverted: 0, ftPending: 0, ftDropped: 0,
       directEnrolled: 0, totalEnrolled: 0, capacity: 0, waitlisted: 0,
+      ftRevenue: 0, leftOnTable: 0, overDemand: 0,
     });
     var g = map.get(key);
     g.sections.push(r);
@@ -335,6 +340,9 @@ function rollupToPrograms(rows) {
     g.totalEnrolled  += r.totalEnrolled;
     g.capacity       += r.capacity;
     g.waitlisted     += r.waitlisted;
+    g.ftRevenue      += r.ftRevenue;
+    g.leftOnTable    += r.leftOnTable;
+    g.overDemand     += r.overDemand;
   });
   var out = [];
   map.forEach(function(g) {
@@ -975,6 +983,7 @@ function App() {
   var [activeTab, setActiveTab] = useState('overview');
   var [ftUserRows, setFtUserRows] = useState([]);
   var [pipelineRows, setPipelineRows] = useState([]);
+  var [dailyRows, setDailyRows] = useState([]);
   var [ciData, setCiData]   = useState(null);
   var [ciLoading, setCiLoading] = useState(false);
   var [ciError, setCiError] = useState(null);
@@ -1002,6 +1011,11 @@ function App() {
         setFtUserRows(userR);
         var pipeR = raw.filter(function(r){ return r['Row Type'] === 'pipeline'; }).map(normalizeRow);
         setPipelineRows(pipeR);
+        var dailyR = raw.filter(function(r){ return r['Row Type'] === 'ft_daily'; }).map(function(r){
+          return { sectionId: r['Section ID']||'', program: r['Program']||'', section: r['Section']||'',
+                   date: r['Signup Date']||'', daily: fmtN(r['Daily Signups']), cumulative: fmtN(r['Cumulative Signups']) };
+        });
+        setDailyRows(dailyR);
         setRows(raw.filter(function(r){ return (r['Row Type']||'section') === 'section'; }).map(normalizeRow));
         if (json && json.meta) {
           if (json.meta.org_name) setOrgName(json.meta.org_name);
@@ -1076,7 +1090,7 @@ function App() {
 
   function switchTab(t) {
     setActiveTab(t);
-    if (t === 'demographics' || t === 'revenue') fetchCiData();
+    if (t === 'demographics' || t === 'revenue' || t === 'conversions') fetchCiData();
   }
 
   /* ── FT Demographics analytics (ported from CI cross-tab) ── */
@@ -1377,6 +1391,7 @@ function App() {
           React.createElement('button', { className: 'tab-btn' + (activeTab === 'revenue' ? ' active' : ''), onClick: function(){ switchTab('revenue'); } },
             '\uD83D\uDCB0 Revenue'
           ),
+          React.createElement('button', { className: 'tab-btn' + (activeTab === 'conversions' ? ' active' : ''), onClick: function(){ switchTab('conversions'); } }, 'Conversions'),
           React.createElement('button', { className: 'tab-btn' + (activeTab === 'demographics' ? ' active' : ''), onClick: function(){ switchTab('demographics'); } },
             '\uD83D\uDC65 Demographics',
             ftUserRows.length > 0 && React.createElement('span', { className: 'tab-badge', style: { background: '#6366f122', color: '#6366f1' } }, ftUserRows.length)
@@ -1593,6 +1608,46 @@ function App() {
         ), /* end overview tab */
 
         activeTab === 'revenue' && React.createElement(React.Fragment, null,
+          /* FT Revenue explanation */
+          React.createElement('div', { style: { background: '#fff', border: '1px solid #e0ddd8', borderRadius: 10, padding: '14px 20px', marginBottom: 20 } },
+            React.createElement('div', { style: { fontSize: 13, fontWeight: 700, color: '#111', marginBottom: 4 } }, 'Fast Track revenue impact'),
+            React.createElement('div', { style: { fontSize: 12, color: '#666', lineHeight: 1.6 } },
+              React.createElement('strong', null, 'FT Revenue'), ' is the actual dollars collected from registrations that started as Fast Track pre-registrations. ',
+              React.createElement('strong', null, 'Left on Table'), ' estimates what pending FTs would generate if they all converted, based on section pricing. ',
+              React.createElement('strong', null, 'Over Demand'), ' shows the dollar value of FT interest that exceeds available capacity — the signal to add sections.'
+            )
+          ),
+          /* FT Revenue KPIs */
+          (function() {
+            var totalFTRev = filtered.reduce(function(a,r){ return a + r.ftRevenue; }, 0);
+            var totalLeft = filtered.reduce(function(a,r){ return a + r.leftOnTable; }, 0);
+            var totalOver = filtered.reduce(function(a,r){ return a + r.overDemand; }, 0);
+            var totalConv = filtered.reduce(function(a,r){ return a + r.ftConverted; }, 0);
+            var avgPerConv = totalConv > 0 ? totalFTRev / totalConv : 0;
+            return React.createElement('div', { className: 'kpi-row', style: { marginBottom: 20 } },
+              React.createElement('div', { className: 'kpi', style: { '--accent': '#059669' } },
+                React.createElement('div', { className: 'kpi-label' }, React.createElement(KpiLabel, { label: 'FT Revenue', tip: 'Actual dollars collected from confirmed registrations that originated as Fast Track pre-registrations.' })),
+                React.createElement('div', { className: 'kpi-val' }, '$' + totalFTRev.toLocaleString(undefined, {minimumFractionDigits: 0, maximumFractionDigits: 0})),
+                React.createElement('div', { className: 'kpi-sub' }, fmtInt(totalConv) + ' paid conversions')
+              ),
+              React.createElement('div', { className: 'kpi', style: { '--accent': '#f59e0b' } },
+                React.createElement('div', { className: 'kpi-label' }, React.createElement(KpiLabel, { label: 'Left on Table', tip: 'Estimated revenue from pending FTs who haven’t registered yet, calculated as pending count times section price.' })),
+                React.createElement('div', { className: 'kpi-val' }, '$' + totalLeft.toLocaleString(undefined, {minimumFractionDigits: 0, maximumFractionDigits: 0})),
+                React.createElement('div', { className: 'kpi-sub' }, 'if all pending convert')
+              ),
+              React.createElement('div', { className: 'kpi', style: { '--accent': '#dc2626' } },
+                React.createElement('div', { className: 'kpi-label' }, React.createElement(KpiLabel, { label: 'Over Demand', tip: 'Dollar value of FT demand that exceeds available capacity. When FT signups exceed section capacity, this shows what you’d earn if you added enough spots.' })),
+                React.createElement('div', { className: 'kpi-val' }, '$' + totalOver.toLocaleString(undefined, {minimumFractionDigits: 0, maximumFractionDigits: 0})),
+                React.createElement('div', { className: 'kpi-sub' }, 'unmet demand value')
+              ),
+              avgPerConv > 0 && React.createElement('div', { className: 'kpi', style: { '--accent': '#6366f1' } },
+                React.createElement('div', { className: 'kpi-label' }, React.createElement(KpiLabel, { label: 'Avg per Conversion', tip: 'Average revenue per FT conversion. Total FT revenue divided by number of converted registrations.' })),
+                React.createElement('div', { className: 'kpi-val' }, '$' + avgPerConv.toFixed(0)),
+                React.createElement('div', { className: 'kpi-sub' }, 'per FT registration')
+              )
+            );
+          })(),
+
           ciLoading && React.createElement('div', { style: { textAlign: 'center', padding: '60px 20px' } },
             React.createElement(JuiceLoader, null)
           ),
@@ -1664,6 +1719,105 @@ function App() {
           )
         ),
 
+
+                activeTab === 'conversions' && React.createElement(React.Fragment, null,
+          /* Conversions KPI strip */
+          (function() {
+            var postReg = filtered.filter(function(r){ return r.regStatus === 'open' || r.regStatus === 'closed'; });
+            var totalFT = postReg.reduce(function(a,r){ return a + r.ftSignups; }, 0);
+            var totalConv = postReg.reduce(function(a,r){ return a + r.ftConverted; }, 0);
+            var totalPend = postReg.reduce(function(a,r){ return a + r.ftPending; }, 0);
+            var totalDrop = postReg.reduce(function(a,r){ return a + r.ftDropped; }, 0);
+            var convRate = totalFT > 0 ? (totalConv / totalFT * 100).toFixed(1) : '0';
+            var stalledCount = postReg.filter(function(r){ return r.ftSignups >= 3 && (r.convPct === 0 || r.convPct === null); }).length;
+            return React.createElement(React.Fragment, null,
+              React.createElement('div', { style: { background: '#fff', border: '1px solid #e0ddd8', borderRadius: 10, padding: '14px 20px', marginBottom: 20 } },
+                React.createElement('div', { style: { fontSize: 13, fontWeight: 700, color: '#111', marginBottom: 4 } }, 'How FT conversions work'),
+                React.createElement('div', { style: { fontSize: 12, color: '#666', lineHeight: 1.6 } },
+                  'When a section opens for registration, everyone who added it to Fast Track gets notified. ',
+                  React.createElement('strong', null, 'Converted'), ' means they completed registration and paid. ',
+                  React.createElement('strong', null, 'Pending'), ' means they were notified but haven’t registered yet. ',
+                  React.createElement('strong', null, 'Dropped'), ' means they canceled their Fast Track interest. ',
+                  'A high conversion rate means FT is effectively driving registrations.'
+                )
+              ),
+              React.createElement('div', { className: 'kpi-row' },
+                React.createElement('div', { className: 'kpi', style: { '--accent': '#6366f1' } },
+                  React.createElement('div', { className: 'kpi-label' }, React.createElement(KpiLabel, { label: 'FT Signups', tip: 'Total Fast Track pre-registrations on sections where registration has opened or closed.' })),
+                  React.createElement('div', { className: 'kpi-val' }, fmtInt(totalFT)),
+                  React.createElement('div', { className: 'kpi-sub' }, postReg.length + ' sections post-registration')
+                ),
+                React.createElement('div', { className: 'kpi', style: { '--accent': '#22c55e' } },
+                  React.createElement('div', { className: 'kpi-label' }, React.createElement(KpiLabel, { label: 'Converted', tip: 'FT users who completed registration and paid after being notified that registration opened.' })),
+                  React.createElement('div', { className: 'kpi-val' }, fmtInt(totalConv)),
+                  React.createElement('div', { className: 'kpi-sub' }, convRate + '% conversion rate')
+                ),
+                React.createElement('div', { className: 'kpi', style: { '--accent': '#f59e0b' } },
+                  React.createElement('div', { className: 'kpi-label' }, React.createElement(KpiLabel, { label: 'Pending', tip: 'FT users who were notified but haven’t registered yet. These are potential conversions — follow up to convert.' })),
+                  React.createElement('div', { className: 'kpi-val' }, fmtInt(totalPend)),
+                  React.createElement('div', { className: 'kpi-sub' }, totalPend > 0 && totalConv > 0 ? 'Potential: ' + fmtInt(totalPend + totalConv) + ' if all convert' : 'awaiting registration')
+                ),
+                React.createElement('div', { className: 'kpi', style: { '--accent': '#dc2626' } },
+                  React.createElement('div', { className: 'kpi-label' }, React.createElement(KpiLabel, { label: 'Dropped', tip: 'FT users who canceled their interest before or after registration opened.' })),
+                  React.createElement('div', { className: 'kpi-val' }, fmtInt(totalDrop)),
+                  React.createElement('div', { className: 'kpi-sub' }, totalFT > 0 ? ((totalDrop / totalFT * 100).toFixed(1) + '% drop rate') : '')
+                )
+              ),
+              stalledCount > 0 && React.createElement('div', { style: { background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: 8, padding: '10px 14px', marginBottom: 16, fontSize: 12, color: '#92400e' } },
+                React.createElement('strong', null, '⚡ ' + stalledCount + ' section' + (stalledCount !== 1 ? 's' : '') + ' stalled'),
+                ' — have 3+ FT signups but 0% conversion. Review pricing or registration barriers.'
+              ),
+              /* Conversion funnel table */
+              React.createElement('div', { style: { fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: '#059669', marginBottom: 12, marginTop: 8 } },
+                'Conversion Detail ', React.createElement('span', { style: { fontWeight: 400, textTransform: 'none', color: '#9ca3af', letterSpacing: 0 } }, '— sections where registration is open or closed')
+              ),
+              React.createElement('div', { className: 'table-scroll' },
+                React.createElement('table', { className: 'ft-table' },
+                  React.createElement('thead', null,
+                    React.createElement('tr', null,
+                      React.createElement('th', { className: 'left', style: { minWidth: 220 } }, 'Program / Section'),
+                      React.createElement('th', null, 'FT Signups'),
+                      React.createElement('th', null, 'Converted'),
+                      React.createElement('th', null, 'Pending'),
+                      React.createElement('th', null, 'Dropped'),
+                      React.createElement('th', null, 'Conv %'),
+                      React.createElement('th', null, 'Fill %'),
+                      React.createElement('th', null, 'Status'),
+                      React.createElement('th', null, '')
+                    )
+                  ),
+                  React.createElement('tbody', null,
+                    postReg.sort(function(a,b){ return b.ftSignups - a.ftSignups; }).map(function(r, i) {
+                      var convColor = r.convPct >= 70 ? '#059669' : r.convPct >= 40 ? '#f59e0b' : r.convPct > 0 ? '#dc2626' : '#999';
+                      var fillColor = r.fillPct >= 90 ? '#059669' : r.fillPct >= 50 ? '#f59e0b' : '#999';
+                      var statusLabel = r.regStatus === 'closed' ? 'Closed' : 'Open';
+                      var statusColor = r.regStatus === 'closed' ? '#999' : '#059669';
+                      return React.createElement('tr', { key: 'c' + i },
+                        React.createElement('td', { className: 'left' },
+                          React.createElement('div', { style: { fontWeight: 600, color: '#111' } }, r.program,
+                            r.sectionId && React.createElement('a', { href: adminSectionUrl(r.orgId, r.sectionId), target: '_blank', rel: 'noopener', style: { color: '#3b82f6', fontWeight: 600, fontSize: 10, textDecoration: 'none', marginLeft: 8 } }, 'Admin →')
+                          ),
+                          React.createElement('div', { style: { fontSize: 11, color: '#888' } }, r.section)
+                        ),
+                        React.createElement('td', { style: { fontWeight: 600 } }, fmtInt(r.ftSignups)),
+                        React.createElement('td', { style: { fontWeight: 600, color: '#059669' } }, fmtInt(r.ftConverted)),
+                        React.createElement('td', { style: { fontWeight: 600, color: r.ftPending > 0 ? '#f59e0b' : '#999' } }, fmtInt(r.ftPending)),
+                        React.createElement('td', { style: { color: '#999' } }, fmtInt(r.ftDropped)),
+                        React.createElement('td', null, React.createElement('span', { style: { fontWeight: 600, color: convColor } }, r.convPct != null ? r.convPct + '%' : '—')),
+                        React.createElement('td', null, React.createElement('span', { style: { fontWeight: 600, color: fillColor } }, r.fillPct != null ? r.fillPct + '%' : '—')),
+                        React.createElement('td', null, React.createElement('span', { style: { fontSize: 11, fontWeight: 600, color: statusColor } }, statusLabel)),
+                        React.createElement('td', null,
+                          r.ftPending > 0 && r.convPct < 30 && React.createElement('span', { style: { fontSize: 10, background: '#fef2f2', color: '#991b1b', padding: '2px 6px', borderRadius: 4, fontWeight: 600 } }, 'Follow up')
+                        )
+                      );
+                    })
+                  )
+                )
+              )
+            );
+          })()
+        ),
+
                 activeTab === 'demographics' && React.createElement(React.Fragment, null,
           ciLoading && React.createElement('div', { style: { textAlign: 'center', padding: '60px 20px' } },
             React.createElement(JuiceLoader, null)
@@ -1731,6 +1885,15 @@ function App() {
         ),
 
                 activeTab === 'pipeline' && React.createElement(React.Fragment, null,
+          React.createElement('div', { style: { background: '#fff', border: '1px solid #e0ddd8', borderRadius: 10, padding: '14px 20px', marginBottom: 20 } },
+            React.createElement('div', { style: { fontSize: 13, fontWeight: 700, color: '#111', marginBottom: 4 } }, 'Pre-registration pipeline'),
+            React.createElement('div', { style: { fontSize: 12, color: '#666', lineHeight: 1.6 } },
+              'These are sections that are ', React.createElement('strong', null, 'published and visible'), ' to the community but registration hasn’t opened yet. ',
+              'Families can add them to Fast Track to get notified when registration opens. ',
+              React.createElement('strong', null, 'Hot sections'), ' (high FT count relative to capacity) signal strong demand — consider adding capacity before registration opens. ',
+              React.createElement('strong', null, 'Cold sections'), ' (published but no FT interest) may need better descriptions, pricing adjustments, or marketing.'
+            )
+          ),
           React.createElement(PipelineTab, { sections: filtered, pipelineRows: filteredPipeline, programs: programs, totals: totals })
         ),
 
