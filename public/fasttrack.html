@@ -796,6 +796,7 @@ function FillRateChart(props) {
 function PipelineTab(props) {
   var sections = props.sections || [];
   var pipelineRows = props.pipelineRows || [];
+  var dailyRows = props.dailyRows || [];
 
   // Combine: sections with regStatus=pipeline + zero-FT pipeline rows
   var ftPipeline = sections.filter(function(r){ return r.regStatus === 'pipeline'; });
