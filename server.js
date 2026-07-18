@@ -10573,6 +10573,7 @@ app.get("/", (req, res) => {
     renderUpdates();
 
     async function loadPerfLog() {
+      if (!document.getElementById('perf-body') && !document.getElementById('perf-stats')) return;
       try {
         var orgF = document.getElementById('perf-org') ? document.getElementById('perf-org').value : '';
         var repF = document.getElementById('perf-rpt') ? document.getElementById('perf-rpt').value : '';
