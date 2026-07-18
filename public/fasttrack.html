@@ -440,9 +440,22 @@ function TriagePanel(props) {
     );
   }
   return React.createElement('div', { className: 'triage-panel' },
+    /* ── Pipeline (reg not yet open) ── */
+    buckets.readyToOpen.length > 0 &&
+    React.createElement('div', { style: { marginBottom: 20 } },
+      React.createElement('div', { className: 'triage-section-head' },
+        React.createElement('span', { className: 'triage-section-icon', style: { background: '#2563eb' } }, '⏳'),
+        ' Pipeline — Registration Not Yet Open',
+        React.createElement('span', { style: { fontSize: 12, fontWeight: 400, color: '#888', marginLeft: 8 } },
+          'FT demand building before registration opens'
+        )
+      ),
+      React.createElement(BucketSection, { icon: '📋', label: 'FT Demand Building', cls: 'ready', items: buckets.readyToOpen })
+    ),
+
     /* ── Active Programs (reg open) ── */
     (buckets.needsCapacity.length > 0 || buckets.stalled.length > 0 || buckets.convertingWell.length > 0) &&
-    React.createElement('div', { style: { marginBottom: 20 } },
+    React.createElement('div', { style: { marginBottom: 0 } },
       React.createElement('div', { className: 'triage-section-head' },
         React.createElement('span', { className: 'triage-section-icon', style: { background: '#059669' } }, '✓'),
         ' Registration Open',
@@ -458,19 +471,6 @@ function TriagePanel(props) {
         : null,
       buckets.convertingWell.length > 0 && React.createElement('div', { className: 'triage-bucket' },
         React.createElement('div', { className: 'triage-bucket-head ok' }, '✅ ' + buckets.convertingWell.length + ' program' + (buckets.convertingWell.length !== 1 ? 's' : '') + ' converting well'))
-    ),
-
-    /* ── Pipeline (reg not yet open) ── */
-    buckets.readyToOpen.length > 0 &&
-    React.createElement('div', { style: { marginBottom: 0 } },
-      React.createElement('div', { className: 'triage-section-head' },
-        React.createElement('span', { className: 'triage-section-icon', style: { background: '#2563eb' } }, '⏳'),
-        ' Pipeline — Registration Not Yet Open',
-        React.createElement('span', { style: { fontSize: 12, fontWeight: 400, color: '#888', marginLeft: 8 } },
-          'FT demand building before registration opens'
-        )
-      ),
-      React.createElement(BucketSection, { icon: '📋', label: 'FT Demand Building', cls: 'ready', items: buckets.readyToOpen })
     )
   );
 }
@@ -510,14 +510,7 @@ function DemandLeaderboard(props) {
     ),
 
     /* Alerts */
-    showAlerts.length > 0 && React.createElement('div', { className: 'lb-alerts' },
-      showAlerts.map(function(a, i) {
-        return React.createElement('div', { key: i, className: 'lb-alert ' + a.type },
-          React.createElement('span', { className: 'lb-alert-icon' }, a.icon),
-          React.createElement('span', { className: 'lb-alert-text' }, a.text)
-        );
-      })
-    ),
+
 
     /* Ranked rows */
     React.createElement('div', { className: 'lb-grid' },
@@ -1458,19 +1451,7 @@ function App() {
           totals.capacity > 0 && React.createElement(SummaryCard, { label: 'Overall Demand', value: (totals.ftSignups > 0 && totals.capacity > 0 ? (totals.ftSignups / totals.capacity * 100).toFixed(1) + '%' : '—'), color: '#3b82f6', tip: 'FT Signups ÷ Total Capacity — how much FT interest exists relative to available spots.' })
         ),
 
-        /* Explainer */
-        React.createElement('div', { className: 'explainer' },
-          React.createElement('button', { className: 'explainer-toggle', onClick: function() { setShowExplainer(function(v) { return !v; }) } },
-            showExplainer ? '▾ Hide column guide' : '▸ What do these columns mean?'
-          ),
-          showExplainer && React.createElement('ul', null,
-            React.createElement('li', null, React.createElement('strong', null, 'Total FT'), ' — Total Fast Track wishlist entries (pre-registrations before registration opens)'),
-            React.createElement('li', null, React.createElement('strong', null, 'Converted'), ' — FT signups that completed actual registration'),
-            React.createElement('li', null, React.createElement('strong', null, 'Pending'), ' — FT signups still waiting (haven\'t registered yet)'),
-            React.createElement('li', null, React.createElement('strong', null, 'Conv %'), ' — Converted ÷ Total FT Signups'),
-            React.createElement('li', null, React.createElement('strong', null, 'Demand %'), ' — FT Signups ÷ Capacity (interest level relative to available spots)')
-          )
-        ),
+
 
         /* Chart */
         chartPrograms.length > 0 && React.createElement('div', { className: 'chart-section' },
