@@ -154,6 +154,29 @@
     .tab-btn.active { color: #111; background: #fff; border-color: #d1d5db; box-shadow: 0 -2px 4px rgba(0,0,0,.04); z-index: 1; }
     .tab-badge { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 10px; margin-left: 6px; }
 
+
+    /* ── Triage Panel ── */
+    .triage-panel{background:#fff;border:1px solid #e0ddd8;border-radius:10px;padding:20px;margin-bottom:20px}
+    .triage-header{font-size:15px;font-weight:700;color:#111;margin-bottom:16px;padding-bottom:12px;border-bottom:2px solid #f1f0ed}
+    .triage-header-count{display:inline-flex;align-items:center;justify-content:center;background:#dc2626;color:#fff;font-size:13px;font-weight:700;width:24px;height:24px;border-radius:99px;margin-right:6px}
+    .triage-bucket{margin-bottom:14px}.triage-bucket:last-child{margin-bottom:0}
+    .triage-bucket-head{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;padding:6px 10px;border-radius:6px;display:flex;align-items:center;justify-content:space-between}
+    .triage-bucket-head.crit{background:#fef2f2;color:#991b1b}
+    .triage-bucket-head.ready{background:#eff6ff;color:#1e40af}
+    .triage-bucket-head.stalled{background:#fffbeb;color:#92400e}
+    .triage-bucket-head.ok{background:#f0fdf4;color:#166534}
+    .triage-bucket-count{background:rgba(0,0,0,.1);padding:1px 8px;border-radius:99px;font-size:11px}
+    .triage-row{padding:10px 12px;border-left:3px solid #e5e7eb;margin:6px 0 6px 8px}
+    .triage-bucket-head.crit~.triage-row{border-left-color:#fca5a5}
+    .triage-bucket-head.ready~.triage-row{border-left-color:#93c5fd}
+    .triage-bucket-head.stalled~.triage-row{border-left-color:#fcd34d}
+    .triage-row-head{font-size:13px;color:#111}.triage-row-head strong{font-weight:700}
+    .triage-row-stats{color:#6b7280;font-size:12px;margin-left:6px}
+    .triage-row-action{font-size:12px;color:#374151;margin-top:4px;font-style:italic}
+    .triage-row-meta{font-size:11px;color:#9ca3af;margin-top:4px;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+    .triage-chip{background:#f3f4f6;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600}
+    .triage-chip.soon{background:#dbeafe;color:#1e40af}
+    .triage-chip.urgent{background:#fef2f2;color:#991b1b}
     /* ── Demand Leaderboard ── */
     .lb-section { margin-bottom: 24px; }
     .lb-title { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: .8px; color: #444; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
@@ -310,6 +333,88 @@ function rollupToPrograms(rows) {
     out.push(g);
   });
   return out.sort(function(a, b) { return b.ftSignups - a.ftSignups; });
+}
+
+
+/* ── Actionable Triage Panel ── */
+function TriagePanel(props) {
+  var programs = props.programs || [];
+  if (!programs.length) return null;
+  var now = new Date();
+  var buckets = { needsCapacity: [], readyToOpen: [], stalled: [], convertingWell: [] };
+  programs.forEach(function(p) {
+    var spotsLeft = p.capacity > 0 ? Math.max(0, p.capacity - p.totalEnrolled) : null;
+    var regOpensDate = null, regClosesDate = null, hasRegOpens = false, allFutureReg = true;
+    (p.sections || []).forEach(function(s) {
+      if (s.regOpens) { hasRegOpens = true; var d = new Date(s.regOpens); if (!regOpensDate || d < regOpensDate) regOpensDate = d; if (d <= now) allFutureReg = false; }
+      if (s.regCloses) { var dc = new Date(s.regCloses); if (!regClosesDate || dc > regClosesDate) regClosesDate = dc; }
+    });
+    p._spotsLeft = spotsLeft; p._regOpensDate = regOpensDate; p._regClosesDate = regClosesDate;
+    p._daysUntilRegOpens = regOpensDate && regOpensDate > now ? Math.ceil((regOpensDate - now) / 86400000) : null;
+    p._daysUntilRegCloses = regClosesDate && regClosesDate > now ? Math.ceil((regClosesDate - now) / 86400000) : null;
+    p._allFutureReg = allFutureReg && hasRegOpens;
+    if (spotsLeft != null && spotsLeft === 0 && p.ftPending > 0) {
+      p._triageAction = 'No spots left with ' + fmtInt(p.ftPending) + ' pending. Add capacity or open a new section.';
+      buckets.needsCapacity.push(p);
+    } else if (p.demandPct != null && p.demandPct > 90 && spotsLeft != null && spotsLeft < p.ftPending) {
+      p._triageAction = 'Demand at ' + Math.round(p.demandPct) + '% of capacity with ' + fmtInt(p.ftPending) + ' pending. May need more spots.';
+      buckets.needsCapacity.push(p);
+    } else if (p._allFutureReg && p.ftSignups > 0) {
+      p._triageAction = p._daysUntilRegOpens ? 'Registration opens in ' + p._daysUntilRegOpens + ' day' + (p._daysUntilRegOpens !== 1 ? 's' : '') + '. ' + fmtInt(p.ftSignups) + ' wishlist' + (p.ftSignups !== 1 ? 's' : '') + ' waiting.' : 'Registration not yet open. ' + fmtInt(p.ftSignups) + ' wishlists waiting.';
+      buckets.readyToOpen.push(p);
+    } else if (p.ftSignups >= 3 && (p.convPct === 0 || p.convPct === null)) {
+      p._triageAction = fmtInt(p.ftSignups) + ' signups but 0 conversions. Check pricing, description, or registration barriers.';
+      buckets.stalled.push(p);
+    } else if (p.convPct != null && p.convPct >= 60 && p.ftSignups >= 3) {
+      buckets.convertingWell.push(p);
+    }
+  });
+  var needsAttention = buckets.needsCapacity.length + buckets.readyToOpen.length + buckets.stalled.length;
+  if (needsAttention === 0 && buckets.convertingWell.length === 0) return null;
+  function fmtD(d) { return d ? d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : ''; }
+  function TriageRow(rp) {
+    var p = rp.item;
+    return React.createElement('div', { className: 'triage-row' },
+      React.createElement('div', { className: 'triage-row-head' },
+        React.createElement('strong', null, p.program),
+        React.createElement('span', { className: 'triage-row-stats' },
+          fmtInt(p.ftSignups) + ' signups',
+          p.ftConverted > 0 ? ' · ' + fmtInt(p.ftConverted) + ' converted' : '',
+          p.ftPending > 0 ? ' · ' + fmtInt(p.ftPending) + ' pending' : '',
+          p._spotsLeft != null ? ' · ' + fmtInt(p._spotsLeft) + ' spots left' : '',
+          p.convPct != null ? ' · ' + p.convPct + '% conv' : ''
+        )
+      ),
+      React.createElement('div', { className: 'triage-row-action' }, '→ ', p._triageAction || ''),
+      React.createElement('div', { className: 'triage-row-meta' },
+        p._regOpensDate && React.createElement('span', { className: 'triage-chip' + (p._daysUntilRegOpens != null && p._daysUntilRegOpens <= 7 ? ' soon' : '') },
+          p._daysUntilRegOpens != null ? '📅 Reg opens ' + fmtD(p._regOpensDate) + ' (' + p._daysUntilRegOpens + 'd)' : '📅 Reg opened ' + fmtD(p._regOpensDate)),
+        p._regClosesDate && p._daysUntilRegCloses != null && React.createElement('span', { className: 'triage-chip' + (p._daysUntilRegCloses <= 3 ? ' urgent' : '') },
+          '⏰ Closes ' + fmtD(p._regClosesDate) + ' (' + p._daysUntilRegCloses + 'd)'),
+        (p.sections || []).length > 0 && React.createElement('span', null, p.sections.length + ' section' + (p.sections.length !== 1 ? 's' : '') + ' · ' + fmtInt(p.capacity) + ' total capacity')
+      )
+    );
+  }
+  function BucketSection(bp) {
+    if (!bp.items.length) return null;
+    return React.createElement('div', { className: 'triage-bucket' },
+      React.createElement('div', { className: 'triage-bucket-head ' + bp.cls },
+        React.createElement('span', null, bp.icon + ' ' + bp.label),
+        React.createElement('span', { className: 'triage-bucket-count' }, bp.items.length)),
+      bp.items.map(function(p) { return React.createElement(TriageRow, { key: p.program, item: p }); })
+    );
+  }
+  return React.createElement('div', { className: 'triage-panel' },
+    React.createElement('div', { className: 'triage-header' },
+      needsAttention > 0
+        ? React.createElement(React.Fragment, null, React.createElement('span', { className: 'triage-header-count' }, needsAttention), ' program', needsAttention !== 1 ? 's' : '', ' need', needsAttention === 1 ? 's' : '', ' attention')
+        : 'All programs on track'),
+    React.createElement(BucketSection, { icon: '⚠️', label: 'Needs Capacity', cls: 'crit', items: buckets.needsCapacity }),
+    React.createElement(BucketSection, { icon: '📋', label: 'Ready to Open', cls: 'ready', items: buckets.readyToOpen }),
+    React.createElement(BucketSection, { icon: '⚡', label: 'Stalled', cls: 'stalled', items: buckets.stalled }),
+    buckets.convertingWell.length > 0 && React.createElement('div', { className: 'triage-bucket' },
+      React.createElement('div', { className: 'triage-bucket-head ok' }, '✅ ' + buckets.convertingWell.length + ' program' + (buckets.convertingWell.length !== 1 ? 's' : '') + ' converting well'))
+  );
 }
 
 /* ── Demand Leaderboard component ── */
@@ -1259,6 +1364,7 @@ function App() {
 
         activeTab === 'overview' && React.createElement(React.Fragment, null,
                 /* Demand Leaderboard */
+        React.createElement(TriagePanel, { programs: programs }),
         React.createElement(DemandLeaderboard, { programs: programs }),
 
                 /* Summary cards */
