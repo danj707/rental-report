@@ -9451,6 +9451,7 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+    { date: '2026-07-19', text: 'Instructor Payout: pay slip link now opens a bank check-style graphic at the top of the tab (payee, boxed amount, amount in words, memo, signature line, and routing line) with the itemized pay slip kept below' },
     { date: '2026-07-19', title: 'Chrome-style active tab polish', items: [
       'Active tab on Programs, Community Intel, and Fast Track reports now shows a subtle accent-tinted background and colored top border for clearer visual distinction'
     ]},

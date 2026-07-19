@@ -214,6 +214,42 @@ function fmtDate(d) {
 }
 
 
+function amountToWords(n) {
+  n = Number(n); if (!isFinite(n) || n < 0) n = 0;
+  var dollars = Math.floor(n);
+  var cents = Math.round((n - dollars) * 100);
+  if (cents === 100) { dollars += 1; cents = 0; }
+  var ones = ['Zero','One','Two','Three','Four','Five','Six','Seven','Eight','Nine','Ten','Eleven','Twelve','Thirteen','Fourteen','Fifteen','Sixteen','Seventeen','Eighteen','Nineteen'];
+  var tens = ['','','Twenty','Thirty','Forty','Fifty','Sixty','Seventy','Eighty','Ninety'];
+  function below1000(num) {
+    var s = '';
+    if (num >= 100) { s += ones[Math.floor(num / 100)] + ' Hundred'; num %= 100; if (num) s += ' '; }
+    if (num >= 20) { s += tens[Math.floor(num / 10)]; if (num % 10) s += '-' + ones[num % 10]; }
+    else if (num > 0) { s += ones[num]; }
+    return s;
+  }
+  var words;
+  if (dollars === 0) { words = 'Zero'; }
+  else {
+    var scales = [[1000000, 'Million'], [1000, 'Thousand'], [1, '']];
+    var parts = [], rem = dollars;
+    for (var i = 0; i < scales.length; i++) {
+      var chunk = Math.floor(rem / scales[i][0]);
+      if (chunk > 0) parts.push(below1000(chunk) + (scales[i][1] ? ' ' + scales[i][1] : ''));
+      rem %= scales[i][0];
+    }
+    words = parts.join(' ');
+  }
+  var centsStr = (cents < 10 ? '0' : '') + cents;
+  return words + ' and ' + centsStr + '/100';
+}
+
+function checkNoFrom(str) {
+  var h = 0; str = String(str || '');
+  for (var i = 0; i < str.length; i++) { h = (h * 31 + str.charCodeAt(i)) >>> 0; }
+  return String(1000 + (h % 9000));
+}
+
 function openPaySlip(opts) {
   var w = window.open('', '_blank');
   if (!w) return;
@@ -229,6 +265,12 @@ function openPaySlip(opts) {
     ? '<div style="margin-top:16px;font-size:11px;color:#dc2626;">' + canceledP.length + ' canceled enrollment(s) not included in payout</div>'
     : '';
   var today = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+  var amtVal = Number(opts.amount) || 0;
+  var amtNumeric = amtVal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  var amtWords = amountToWords(amtVal);
+  var checkNo = checkNoFrom(opts.instructor + '|' + opts.section + '|' + opts.program);
+  var routingNo = '021000021';
+  var acctNo = String(4000000000 + (parseInt(checkNo, 10) * 104729) % 900000000);
   var html = '<!DOCTYPE html><html><head><title>Pay Slip - ' + opts.instructor + '</title>'
     + '<style>'
     + 'body { font-family: Georgia, "Times New Roman", serif; margin: 0; padding: 40px; background: #f5f4f1; color: #1a1a1a; }'
@@ -256,8 +298,51 @@ function openPaySlip(opts) {
     + '.footer { padding: 16px 32px; font-size: 10px; color: #999; text-align: center; font-family: Inter, system-ui, sans-serif; border-top: 1px solid #e5e7eb; }'
     + '.sig-area { padding: 28px 32px; display: flex; gap: 40px; }'
     + '.sig-line { flex: 1; border-bottom: 1px solid #999; padding-bottom: 4px; font-size: 10px; color: #999; text-transform: uppercase; letter-spacing: 1px; font-family: Inter, system-ui, sans-serif; }'
-    + '@media print { body { background: #fff; padding: 20px; } .slip { border: 1px solid #ccc; } }'
+    + '.check { max-width: 720px; margin: 0 auto 26px; background-color: #f3f6f1; background-image: repeating-linear-gradient(45deg, rgba(90,120,90,0.045) 0, rgba(90,120,90,0.045) 1px, transparent 1px, transparent 7px), repeating-linear-gradient(-45deg, rgba(90,120,90,0.045) 0, rgba(90,120,90,0.045) 1px, transparent 1px, transparent 7px); border: 1px solid #b9c2b3; border-radius: 5px; padding: 26px 30px 20px; position: relative; box-shadow: 0 1px 4px rgba(0,0,0,0.10); }'
+    + '.check::before { content: ""; position: absolute; inset: 6px; border: 1px solid rgba(120,140,120,0.30); border-radius: 3px; pointer-events: none; }'
+    + '.check-top { display: flex; justify-content: space-between; align-items: flex-start; position: relative; }'
+    + '.check .drawer-name { font-size: 15px; font-weight: 700; letter-spacing: 0.3px; }'
+    + '.check .drawer-sub { font-size: 9px; color: #5a6b57; text-transform: uppercase; letter-spacing: 1px; margin-top: 2px; font-family: Inter, system-ui, sans-serif; }'
+    + '.check-meta { text-align: right; }'
+    + '.check-no { font-size: 15px; font-weight: 700; color: #7a2b2b; letter-spacing: 0.5px; }'
+    + '.check-date { margin-top: 12px; font-size: 12px; white-space: nowrap; }'
+    + '.check-date .k { font-size: 8px; color: #5a6b57; letter-spacing: 1px; font-family: Inter, system-ui, sans-serif; }'
+    + '.check-date .v { border-bottom: 1px solid #7a8a77; padding: 0 10px 1px; margin-left: 6px; font-weight: 600; }'
+    + '.pay-line { display: flex; align-items: flex-end; gap: 16px; margin-top: 22px; position: relative; }'
+    + '.pay-order { flex: 1; display: flex; align-items: flex-end; gap: 12px; }'
+    + '.pay-order .ptoo { font-size: 8px; line-height: 1.15; color: #5a6b57; letter-spacing: 1px; font-family: Inter, system-ui, sans-serif; font-weight: 600; white-space: nowrap; padding-bottom: 3px; }'
+    + '.pay-order .payee { flex: 1; border-bottom: 1.5px solid #3a4a37; font-size: 18px; font-weight: 700; padding: 0 6px 3px; }'
+    + '.amt-box { display: flex; align-items: center; justify-content: space-between; border: 2px solid #3a4a37; border-radius: 3px; background: rgba(255,255,255,0.65); padding: 6px 12px; font-size: 20px; font-weight: 700; min-width: 140px; }'
+    + '.amt-box .cur { color: #5a6b57; margin-right: 10px; font-size: 16px; }'
+    + '.words-line { display: flex; align-items: flex-end; gap: 10px; margin-top: 16px; position: relative; }'
+    + '.words-line .words { flex: 1; border-bottom: 1px solid #7a8a77; font-size: 14px; font-style: italic; padding: 0 6px 3px; }'
+    + '.words-line .dollars { font-size: 9px; color: #5a6b57; letter-spacing: 1px; font-family: Inter, system-ui, sans-serif; font-weight: 600; padding-bottom: 3px; }'
+    + '.check-bottom { display: flex; justify-content: space-between; align-items: flex-end; margin-top: 26px; gap: 30px; position: relative; }'
+    + '.check-bottom .memo { flex: 1; }'
+    + '.check-bottom .memo .k { font-size: 8px; color: #5a6b57; letter-spacing: 1px; font-family: Inter, system-ui, sans-serif; font-weight: 600; display: block; margin-bottom: 4px; }'
+    + '.check-bottom .memo .memo-val { display: block; border-bottom: 1px solid #7a8a77; font-size: 11px; padding: 0 4px 3px; color: #333; }'
+    + '.check-bottom .sig { width: 240px; text-align: center; }'
+    + '.check-bottom .sig .sig-line-c { border-bottom: 1.5px solid #3a4a37; height: 22px; }'
+    + '.check-bottom .sig .sig-label { font-size: 8px; color: #5a6b57; letter-spacing: 1px; font-family: Inter, system-ui, sans-serif; font-weight: 600; margin-top: 4px; }'
+    + '.micr { margin-top: 20px; font-family: "Courier New", monospace; font-size: 16px; letter-spacing: 3px; color: #2a2a2a; text-align: center; position: relative; }'
+    + '@media print { body { background: #fff; padding: 20px; } .slip { border: 1px solid #ccc; } .check { break-inside: avoid; box-shadow: none; } }'
     + '</style></head><body>'
+    + '<div class="check">'
+    + '<div class="check-top">'
+    + '<div class="drawer"><div class="drawer-name">' + opts.orgName + '</div><div class="drawer-sub">Instructor Compensation</div><div class="drawer-sub">Payroll Account</div></div>'
+    + '<div class="check-meta"><div class="check-no">No. ' + checkNo + '</div><div class="check-date"><span class="k">DATE</span><span class="v">' + today + '</span></div></div>'
+    + '</div>'
+    + '<div class="pay-line">'
+    + '<div class="pay-order"><span class="ptoo">PAY TO THE<br>ORDER OF</span><span class="payee">' + opts.instructor + '</span></div>'
+    + '<div class="amt-box"><span class="cur">$</span><span>' + amtNumeric + '</span></div>'
+    + '</div>'
+    + '<div class="words-line"><span class="words">' + amtWords + '</span><span class="dollars">DOLLARS</span></div>'
+    + '<div class="check-bottom">'
+    + '<div class="memo"><span class="k">MEMO</span><span class="memo-val">' + opts.program + ' &mdash; ' + opts.section + ' &middot; ' + opts.splitPct + '% split</span></div>'
+    + '<div class="sig"><div class="sig-line-c"></div><div class="sig-label">Authorized Signature</div></div>'
+    + '</div>'
+    + '<div class="micr">&#x2446; ' + routingNo + ' &#x2446; ' + acctNo + ' &#x2448; ' + checkNo + '</div>'
+    + '</div>'
     + '<div class="slip">'
     + '<div class="slip-header">'
     + '<div><div class="org">' + opts.orgName + '</div><div class="org-sub">Instructor Compensation</div></div>'
