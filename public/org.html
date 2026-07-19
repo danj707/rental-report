@@ -9,6 +9,9 @@
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+    :root { --shell-w: min(80%, 1200px); }
+    @media (max-width: 760px) { :root { --shell-w: 100%; } }
+
     body {
       font-family: 'Inter', system-ui, -apple-system, sans-serif;
       background: #f5f4f1;
@@ -42,8 +45,8 @@
     /* ── Main layout ── */
     .main {
       flex: 1;
-      max-width: 700px;
-      width: 100%;
+      width: var(--shell-w);
+      max-width: 100%;
       margin: 0 auto;
       padding: 48px 24px 64px;
     }
@@ -62,9 +65,30 @@
     .cards {
       display: flex;
       flex-direction: column;
-      gap: 10px;
+      gap: 28px;
       margin-bottom: 32px;
     }
+
+    /* Report groups (themed sections) */
+    .report-group-head {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1.1px;
+      color: #6b7280;
+      margin-bottom: 14px;
+    }
+    .report-group-head .rg-icon { font-size: 15px; line-height: 1; }
+    .report-group-head::after { content: ''; flex: 1; height: 1px; background: #e2dfd9; }
+    .report-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+      gap: 12px;
+    }
+    @media (max-width: 520px) { .report-grid { grid-template-columns: 1fr; } }
 
     .card {
       display: flex;
@@ -117,8 +141,8 @@
 
     /* ── Metrics bar ── */
     .metrics-bar {
-      max-width: 700px;
-      width: 100%;
+      width: var(--shell-w);
+      max-width: 100%;
       margin: 0 auto;
       padding: 24px 24px 0;
       display: flex;
@@ -161,7 +185,7 @@
 
     /* ── Rec Daily Insights panel ── */
     .daily-insights-panel {
-      max-width: 700px; width: 100%; margin: 0 auto;
+      width: var(--shell-w); max-width: 100%; margin: 0 auto;
       padding: 16px 24px 0;
     }
     .daily-insights-inner {
@@ -182,8 +206,8 @@
 
     /* ── Pulse executive summary ── */
     .pulse-panel {
-      max-width: 700px;
-      width: 100%;
+      width: var(--shell-w);
+      max-width: 100%;
       margin: 0 auto;
       padding: 16px 24px 0;
     }
@@ -385,6 +409,14 @@
   };
 
   /* ── Pin storage ── */
+  /* Report groups (themed sections) */
+  var CATEGORIES = [
+    { label: 'Programs & Enrollment',    icon: '\u{1F3AF}', keys: ['programs','roster','calendar','fasttrack','ice-calendar'] },
+    { label: 'Facilities & Rentals',     icon: '\u{1F4C5}', keys: ['facility','rentalcalendar','overview','historic','court-utilization'] },
+    { label: 'Revenue & Finance',        icon: '\u{1F4B0}', keys: ['gl','products','memberships','qoq','instructor-payout'] },
+    { label: 'Community & Intelligence', icon: '\u{1F465}', keys: ['users'] },
+  ];
+
   var LS_KEY = 'rec_pinned_' + slug;
 
   function getPins() {
@@ -605,30 +637,54 @@
     }).join('');
   })();
 
-  /* ── Render cards ── */
+  /* Render cards */
+  function groupHTML(icon, label, cardHtmlArr) {
+    return '<section class="report-group">'
+      + '<div class="report-group-head"><span class="rg-icon">' + icon + '</span>' + label + '</div>'
+      + '<div class="report-grid">' + cardHtmlArr.join('') + '</div>'
+    + '</section>';
+  }
+
   function render() {
     var reports = cfg.reports || [];
     if (reports.length === 0) return;
 
     var pins = getPins();
-    // Split into pinned (preserve pin order) and unpinned (preserve original order)
     var pinned = pins.filter(function(r) { return reports.indexOf(r) > -1; });
-    var unpinned = reports.filter(function(r) { return pinned.indexOf(r) === -1; });
+    var used = {};
+    pinned.forEach(function(r) { used[r] = true; });
 
     var html = '';
 
+    // Pinned reports float to the top (preserve pin order)
     if (pinned.length > 0) {
-      html += '<div class="section-divider">Pinned</div>';
-      pinned.forEach(function(r) { html += cardHTML(r, true); });
-      if (unpinned.length > 0) {
-        html += '<div class="section-divider">All reports</div>';
-      }
+      html += groupHTML('\u{1F4CC}', 'Pinned', pinned.map(function(r) { return cardHTML(r, true); }));
     }
-    unpinned.forEach(function(r) { html += cardHTML(r, false); });
+
+    // Themed category sections
+    CATEGORIES.forEach(function(cat) {
+      var cards = [];
+      cat.keys.forEach(function(r) {
+        if (reports.indexOf(r) > -1 && !used[r]) { used[r] = true; cards.push(cardHTML(r, false)); }
+      });
+      if (cards.length) html += groupHTML(cat.icon, cat.label, cards);
+    });
+
+    // Any reports not covered by a category
+    var leftover = reports.filter(function(r) { return !used[r]; });
+    if (leftover.length > 0) {
+      html += groupHTML('\u{1F4C4}', 'More reports', leftover.map(function(r) { return cardHTML(r, false); }));
+    }
+
+    // Rec AI & Tools section (subject to per-org gating)
+    var tools = [];
+    if (cfg.chatVisible !== false) tools.push(chatCardHTML());
+    if (cfg.wizardVisible !== false) tools.push(wizardCardHTML());
+    if (cfg.emailEnabled) tools.push(emailCardHTML());
+    if (tools.length > 0) html += groupHTML('✦', 'Rec AI & Tools', tools);
 
     document.getElementById('cards').innerHTML = html;
 
-    // Bind pin buttons (event delegation would also work, but explicit is fine for ≤12 cards)
     document.querySelectorAll('.pin-btn').forEach(function(btn) {
       btn.addEventListener('click', function(e) {
         e.preventDefault();
@@ -636,6 +692,41 @@
         togglePin(btn.getAttribute('data-report'));
       });
     });
+  }
+
+  function chatCardHTML() {
+    return '<a href="/' + slug + '/chat' + tokenQS + '" class="card" style="border:1.5px solid #e0e7ff;background:linear-gradient(135deg,#f5f3ff 0%,#eef2ff 100%)">'
+      + '<div class="card-icon">✦</div>'
+      + '<div class="card-body">'
+        + '<div class="card-label" style="color:#312e81">Rec AI Chat</div>'
+        + '<div class="card-desc">Ask anything about your data across all reports</div>'
+        + '<span class="ai-pill">✦ AI powered</span>'
+      + '</div>'
+      + '<div class="card-right"><div class="card-arrow">→</div></div>'
+    + '</a>';
+  }
+
+  function wizardCardHTML() {
+    return '<a href="/' + slug + '/report-wizard' + tokenQS + '" class="card" style="border:1.5px solid #e9d5ff;background:linear-gradient(135deg,#faf5ff 0%,#f3e8ff 100%)">'
+      + '<div class="card-icon">\u{1FA84}</div>'
+      + '<div class="card-body">'
+        + '<div class="card-label" style="color:#581c87">Report Wizard</div>'
+        + '<div class="card-desc">Build custom dashboards from plain English prompts</div>'
+        + '<span class="ai-pill">✦ AI powered</span>'
+      + '</div>'
+      + '<div class="card-right"><div class="card-arrow">→</div></div>'
+    + '</a>';
+  }
+
+  function emailCardHTML() {
+    return '<a href="/' + slug + '/admin' + tokenQS + '" class="card" style="border:1.5px solid #bbf7d0;background:linear-gradient(135deg,#f0fdf4 0%,#dcfce7 100%)">'
+      + '<div class="card-icon">\u{1F4E7}</div>'
+      + '<div class="card-body">'
+        + '<div class="card-label" style="color:#166534">Email Subscriptions</div>'
+        + '<div class="card-desc">Manage scheduled report emails for your team</div>'
+      + '</div>'
+      + '<div class="card-right"><div class="card-arrow">→</div></div>'
+    + '</a>';
   }
 
   function healthBadge(r) {
@@ -662,53 +753,6 @@
   }
 
   render();
-
-  /* ── Rec AI Chat card (always shown, after reports) ── */
-  if (cfg.reports && cfg.reports.length > 0 && cfg.chatVisible !== false) {
-    var chatCard = document.createElement('a');
-    chatCard.href = '/' + slug + '/chat' + tokenQS;
-    chatCard.className = 'card';
-    chatCard.style.cssText = 'border:1.5px solid #e0e7ff;background:linear-gradient(135deg,#f5f3ff 0%,#eef2ff 100%)';
-    chatCard.innerHTML = '<div class="card-icon">✦</div>'
-      + '<div class="card-body">'
-        + '<div class="card-label" style="color:#312e81">Rec AI Chat</div>'
-        + '<div class="card-desc">Ask anything about your data across all reports</div>'
-        + '<span class="ai-pill">✦ AI powered</span>'
-      + '</div>'
-      + '<div class="card-right"><div class="card-arrow">→</div></div>';
-    document.getElementById('cards').appendChild(chatCard);
-  }
-
-  /* ── Report Wizard card ── */
-  if (cfg.reports && cfg.reports.length > 0 && cfg.wizardVisible !== false) {
-    var wizCard = document.createElement('a');
-    wizCard.href = '/' + slug + '/report-wizard' + tokenQS;
-    wizCard.className = 'card';
-    wizCard.style.cssText = 'border:1.5px solid #e9d5ff;background:linear-gradient(135deg,#faf5ff 0%,#f3e8ff 100%)';
-    wizCard.innerHTML = '<div class="card-icon">\u{1FA84}</div>'
-      + '<div class="card-body">'
-        + '<div class="card-label" style="color:#581c87">Report Wizard</div>'
-        + '<div class="card-desc">Build custom dashboards from plain English prompts</div>'
-        + '<span class="ai-pill">✦ AI powered</span>'
-      + '</div>'
-      + '<div class="card-right"><div class="card-arrow">\u2192</div></div>';
-    document.getElementById('cards').appendChild(wizCard);
-  }
-
-  /* ── Email Subscriptions card (gated per-org) ── */
-  if (cfg.emailEnabled) {
-    var emailCard = document.createElement('a');
-    emailCard.href = '/' + slug + '/admin' + tokenQS;
-    emailCard.className = 'card';
-    emailCard.style.cssText = 'border:1.5px solid #bbf7d0;background:linear-gradient(135deg,#f0fdf4 0%,#dcfce7 100%)';
-    emailCard.innerHTML = '<div class="card-icon">📧</div>'
-      + '<div class="card-body">'
-        + '<div class="card-label" style="color:#166534">Email Subscriptions</div>'
-        + '<div class="card-desc">Manage scheduled report emails for your team</div>'
-      + '</div>'
-      + '<div class="card-right"><div class="card-arrow">→</div></div>';
-    document.getElementById('cards').appendChild(emailCard);
-  }
 
   /* ── Footer ── */
   document.getElementById('footer').textContent = 'rec.us · ' + slug;
