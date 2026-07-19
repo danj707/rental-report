@@ -1983,6 +1983,13 @@ const db = {
 
 // ── Resend client ─────────────────────────────────────────────────────
 function getResendClient() {
+  // Global kill switch: the admin "email off" toggle sets emailSubscriptions=false.
+  // Gating here (the single send choke point) suppresses ALL outbound email —
+  // scheduled reports, test sends, and internal health/drift alerts alike.
+  if (!getFlags().emailSubscriptions) {
+    console.log("[mail] emailSubscriptions flag is OFF — suppressing all outbound email");
+    return null;
+  }
   if (!RESEND_API_KEY) {
     console.warn("[mail] No RESEND_API_KEY configured — emails will be logged but not sent");
     return null;
@@ -9451,6 +9458,7 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+    { date: '2026-07-19', text: 'Email: the admin email off toggle is now a true global kill switch - when off it suppresses all outbound email (scheduled reports, test sends, and internal health and drift alerts), not just cron sends' },
     { date: '2026-07-19', text: 'Org dashboard: widened the landing page to about 80% and grouped reports into themed sections (Programs, Facilities, Revenue, Community, and Rec AI tools) with a responsive card grid, matching the analytics dashboard look' },
     { date: '2026-07-19', text: 'Instructor Payout: added a Generate PDF button to the pay slip tab so admins can quickly save the check and slip as a PDF via the browser print dialog' },
     { date: '2026-07-19', text: 'Instructor Payout: pay slip link now opens a bank check-style graphic at the top of the tab (payee, boxed amount, amount in words, memo, signature line, and routing line) with the itemized pay slip kept below' },
