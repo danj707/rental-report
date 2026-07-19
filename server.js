@@ -9451,6 +9451,7 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+    { date: '2026-07-19', text: 'Org dashboard: widened the landing page to about 80% and grouped reports into themed sections (Programs, Facilities, Revenue, Community, and Rec AI tools) with a responsive card grid, matching the analytics dashboard look' },
     { date: '2026-07-19', text: 'Instructor Payout: added a Generate PDF button to the pay slip tab so admins can quickly save the check and slip as a PDF via the browser print dialog' },
     { date: '2026-07-19', text: 'Instructor Payout: pay slip link now opens a bank check-style graphic at the top of the tab (payee, boxed amount, amount in words, memo, signature line, and routing line) with the itemized pay slip kept below' },
     { date: '2026-07-19', title: 'Chrome-style active tab polish', items: [
