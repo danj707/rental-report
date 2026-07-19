@@ -9451,6 +9451,9 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+    { date: '2026-07-19', title: 'Chrome-style active tab polish', items: [
+      'Active tab on Programs, Community Intel, and Fast Track reports now shows a subtle accent-tinted background and colored top border for clearer visual distinction'
+    ]},
   { date: '2026-07-18', text: 'Admin dashboard pulse strip now shows the date range (e.g. Jul 1 to 18, 2026) so metrics have clear time context' },
   { date: '2026-07-18', title: 'Email subscriptions: universal rollout', items: [
     'Email subscriptions now enabled for ALL orgs (previously Watertown + Niagara Falls only)',
