@@ -695,7 +695,7 @@ const ORGS = {
     logoUrl: "https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2Forganization-0a9c47af-b4c3-4601-ab0f-d2f401bb787a%2FfullLogo.png%3F1760543186527&w=2048&q=75",
     displayName: "Shrewsbury",
   },
-  town-of-reading: {
+  "town-of-reading": {
     token:   "rLv2XHUFgHPFM6sr",
     orgId:   "8f24ee66-e9a6-40a4-afbb-27efe8ef64d5",
     logoUrl: "https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2Forganization-8f24ee66-e9a6-40a4-afbb-27efe8ef64d5%2FfullLogo.png%3F1772807247304&w=1920&q=75",
