@@ -9458,6 +9458,7 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  { date: "2026-07-20", items: ["Facility rental report: phone and email columns no longer truncate in PDF export — full contact info always visible"] },
     { date: '2026-07-19', text: 'Email: the admin email off toggle is now a true global kill switch - when off it suppresses all outbound email (scheduled reports, test sends, and internal health and drift alerts), not just cron sends' },
     { date: '2026-07-19', text: 'Org dashboard: widened the landing page to about 80% and grouped reports into themed sections (Programs, Facilities, Revenue, Community, and Rec AI tools) with a responsive card grid, matching the analytics dashboard look' },
     { date: '2026-07-19', text: 'Instructor Payout: added a Generate PDF button to the pay slip tab so admins can quickly save the check and slip as a PDF via the browser print dialog' },
