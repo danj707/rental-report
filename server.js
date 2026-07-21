@@ -689,12 +689,6 @@ const ORGS = {
     logoUrl: "https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2Forganization-0312ebc8-40de-4fc8-a737-8afa26334e13%2FfullLogo.png%3F1769825787565&w=1920&q=75",
     displayName: "Douglas County",
   },
-  "town-of-shrewsbury": {
-    token:   "WcAyo1FVtpVmXXA2",
-    orgId:   "0a9c47af-b4c3-4601-ab0f-d2f401bb787a",
-    logoUrl: "https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2Forganization-0a9c47af-b4c3-4601-ab0f-d2f401bb787a%2FfullLogo.png%3F1760543186527&w=2048&q=75",
-    displayName: "Shrewsbury",
-  },
   "town-of-reading": {
     token:   "rLv2XHUFgHPFM6sr",
     orgId:   "8f24ee66-e9a6-40a4-afbb-27efe8ef64d5",
@@ -9464,6 +9458,7 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  { date: "2026-07-20", text: "Removed duplicate Shrewsbury org entry (slug town-of-shrewsbury) that pointed at the same orgId as the fully configured shrewsbury entry, causing two identical cards on the dashboard. Kept the shrewsbury slug with its map coords and per-org report UUIDs." },
   { date: "2026-07-20", text: "Removed the Hot Dog Counter link from the dashboard topbar. The /hotdog page and its claims store remain live and reachable by direct URL, just not linked from the dashboard." },
   { date: "2026-07-20", text: "Hot Dog Counter is back: restored the entry-point link to the staff concession leaderboard in the dashboard topbar, next to the QBR Generator. The /hotdog page and its claims store never left, just its link." },
   { date: "2026-07-20", items: ["Facility rental report: phone and email columns no longer truncate in PDF export — full contact info always visible"] },
