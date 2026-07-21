@@ -9458,6 +9458,7 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  { date: '2026-07-21', items: ['Calendar: added Copy and Share Link button to session popup modals — copies the View Session URL to clipboard for easy sharing'] },
     { date: '2026-07-21', title: '📈 Calendar Funnel: Prior-Period Comparison', items: [
       'Calendar View → Registration Funnel now shows month-over-month delta: compares current 30d enrollments and revenue vs the prior 30d window. Delta badges (↑/↓ %) appear on Enrollments and Revenue KPIs. Prior-period summary row shows raw numbers below KPIs. Revenue comparison uses current avg ticket applied to prior enrollment count (noted as estimated). Data comes from existing program-demographics card (no date filter, returns all enrollments) so no new Metabase fetch required.',
     ] },
