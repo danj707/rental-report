@@ -7702,7 +7702,6 @@ app.get("/", (req, res) => {
     <div class="topbar-sub">Report Server</div>
     <div style="flex:1"></div>
     <a href="/qbr" style="font-size:12px;padding:6px 14px;background:rgba(31,122,90,.92);border:1px solid rgba(31,122,90,1);border-radius:5px;color:#fff;cursor:pointer;text-decoration:none;margin-right:8px;transition:background .15s" onmouseover="this.style.background='rgba(26,106,78,1)'" onmouseout="this.style.background='rgba(31,122,90,.92)'">📊 QBR Generator</a>
-    <a href="/hotdog" style="font-size:12px;padding:6px 14px;background:rgba(217,119,6,.92);border:1px solid rgba(217,119,6,1);border-radius:5px;color:#fff;cursor:pointer;text-decoration:none;margin-right:8px;transition:background .15s" onmouseover="this.style.background='rgba(180,98,4,1)'" onmouseout="this.style.background='rgba(217,119,6,.92)'">🌭 Hot Dog Counter</a>
     <button onclick="openAddOrg()" style="font-size:12px;padding:6px 14px;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.2);border-radius:5px;color:#eee;cursor:pointer;transition:background .15s" onmouseover="this.style.background='rgba(255,255,255,.22)'" onmouseout="this.style.background='rgba(255,255,255,.12)'">➕ Add Org</button>
   </div>
   <!-- Railway Status Bar -->
@@ -9465,6 +9464,7 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  { date: "2026-07-20", text: "Removed the Hot Dog Counter link from the dashboard topbar. The /hotdog page and its claims store remain live and reachable by direct URL, just not linked from the dashboard." },
   { date: "2026-07-20", text: "Hot Dog Counter is back: restored the entry-point link to the staff concession leaderboard in the dashboard topbar, next to the QBR Generator. The /hotdog page and its claims store never left, just its link." },
   { date: "2026-07-20", items: ["Facility rental report: phone and email columns no longer truncate in PDF export — full contact info always visible"] },
     { date: '2026-07-19', text: 'Email: the admin email off toggle is now a true global kill switch - when off it suppresses all outbound email (scheduled reports, test sends, and internal health and drift alerts), not just cron sends' },
