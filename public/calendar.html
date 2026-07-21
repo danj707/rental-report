@@ -189,6 +189,10 @@
   .pop-chips{margin-top:4px}
   .pop-link{display:inline-block;margin-top:12px;font-size:13px;color:var(--accent);text-decoration:none;font-weight:600}
   .pop-link:hover{text-decoration:underline}
+  .pop-actions{display:flex;align-items:center;gap:10px;margin-top:12px}
+  .pop-share{display:inline-flex;align-items:center;gap:5px;font-size:13px;color:var(--muted);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:6px 12px;cursor:pointer;font-weight:500;transition:all .15s;font-family:inherit}
+  .pop-share:hover{color:var(--accent);border-color:var(--accent);background:#f0f5ff}
+  .pop-share.copied{color:#16a34a;border-color:#86efac;background:#f0fdf4}
   .filter-sel{border:1px solid #d4d4d4;border-radius:20px;padding:5px 12px;font-size:13px;background:var(--card);color:var(--ink);cursor:pointer;height:34px;max-width:200px}
   .filter-sel:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 2px rgba(37,99,235,.1)}
   .filter-clear{font-size:11px;color:var(--accent);cursor:pointer;text-decoration:underline;white-space:nowrap}
@@ -893,11 +897,31 @@ function PopoverCard({ev,onClose}){
           {ev.eligibility && <div className="pop-row"><span className="pop-lbl">Ages/Grades</span><span style={{whiteSpace:'normal',overflowWrap:'anywhere'}}>{ev.eligibility}</span></div>}
           <div className="pop-row"><span className="pop-lbl">Price</span><span>{price}</span></div>
           {(ev.full||ev.waitlist||ev.closed) && <div className="pop-row pop-chips"><StatusChips ev={ev}/></div>}
-          {ev.url && <a className="pop-link" href={ev.url} target="_blank" rel="noopener" onClick={()=>trackClick(ev)}>View Session →</a>}
+          {ev.url && <div className="pop-actions">
+            <a className="pop-link" href={ev.url} target="_blank" rel="noopener" onClick={()=>trackClick(ev)} style={{margin:0}}>View Session →</a>
+            <CopyShareBtn url={ev.url}/>
+          </div>}
         </div>
       </div>
     </div>
   );
+}
+
+function CopyShareBtn({url}){
+  const [copied,setCopied]=useState(false);
+  function handleCopy(){
+    if(!url) return;
+    if(navigator.clipboard&&navigator.clipboard.writeText){
+      navigator.clipboard.writeText(url).then(function(){setCopied(true);setTimeout(function(){setCopied(false);},2000);});
+    }else{
+      var ta=document.createElement('textarea');ta.value=url;ta.style.position='fixed';ta.style.left='-9999px';
+      document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta);
+      setCopied(true);setTimeout(function(){setCopied(false);},2000);
+    }
+  }
+  return <button className={'pop-share'+(copied?' copied':'')} onClick={handleCopy} title="Copy session link">
+    {copied?'\u2713 Copied':'\uD83D\uDD17 Share'}
+  </button>;
 }
 
 /* ---------- Program Finder ---------- */
