@@ -125,6 +125,11 @@
     .conv-kpi { text-align: center; }
     .conv-kpi-val { font-size: 22px; font-weight: 700; font-family: 'IBM Plex Mono', monospace; }
     .conv-kpi-label { font-size: 10px; color: #888; text-transform: uppercase; letter-spacing: .5px; }
+    .conv-delta { font-size: 11px; font-weight: 600; margin-top: 2px; }
+    .conv-delta-up { color: #16a34a; }
+    .conv-delta-down { color: #dc2626; }
+    .conv-prior-row { font-size: 11px; color: #888; margin-top: 6px; margin-bottom: 8px; padding: 6px 10px; background: #f8f9fa; border-radius: 6px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .conv-prior-row .conv-delta { display: inline; }
   .fb-card { background: #fff; border-radius: 8px; padding: 16px; margin-bottom: 24px; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
   .fb-list { display: flex; flex-direction: column; gap: 8px; max-height: 400px; overflow-y: auto; }
   .fb-item { display: flex; gap: 10px; align-items: flex-start; padding: 8px 10px; border-radius: 6px; background: #fafafa; font-size: 12px; }
@@ -398,7 +403,18 @@ function App() {
           totalEnr += parseInt(r['enrolled'] || r['Enrollments'] || r['Enrolled'] || 0) || 0;
         });
         const avgTicket = totalEnr > 0 ? totalRev / totalEnr : 0;
-        setEnroll({ byDay, total, avgTicket, revenue: Math.round(total * avgTicket * 100) / 100 });
+        // Prior period: same window length immediately before
+        const priorCutoff = new Date(Date.now() - days * 2 * 86400000).toISOString().substring(0, 10);
+        const priorByDay = {};
+        demoRows.forEach(r => {
+          const d = r['Enrolled Date'] || r['enrolled_date'] || '';
+          if (!d) return;
+          const day = String(d).substring(0, 10);
+          if (day >= priorCutoff && day < cutoff) priorByDay[day] = (priorByDay[day] || 0) + 1;
+        });
+        const priorTotal = Object.values(priorByDay).reduce((s, v) => s + v, 0);
+        const priorRevenue = Math.round(priorTotal * avgTicket * 100) / 100;
+        setEnroll({ byDay, total, avgTicket, revenue: Math.round(total * avgTicket * 100) / 100, priorTotal, priorRevenue });
       }).catch(() => setEnroll({ byDay: {}, total: 0, avgTicket: 0, revenue: 0 }));
     }, [views, days]);
 
@@ -424,6 +440,10 @@ function App() {
           <div className={'conv-kpi' + shimCls}>
             <div className="conv-kpi-val" style={{color:'#22c55e'}}>{loading ? '\u2026' : enroll.total}</div>
             <div className="conv-kpi-label">Enrollments</div>
+            {!loading && enroll.priorTotal > 0 && (() => {
+              const pct = Math.round(((enroll.total - enroll.priorTotal) / enroll.priorTotal) * 100);
+              return <div className={'conv-delta ' + (pct >= 0 ? 'conv-delta-up' : 'conv-delta-down')}>{pct >= 0 ? '\u2191' : '\u2193'}{Math.abs(pct)}% vs prior</div>;
+            })()}
           </div>
           <div className={'conv-kpi' + shimCls}>
             <div className="conv-kpi-val" style={{color:'#3b82f6'}}>{loading ? '\u2026' : (convRate || '0') + '%'}</div>
@@ -436,8 +456,21 @@ function App() {
           <div className={'conv-kpi' + shimCls}>
             <div className="conv-kpi-val" style={{color:'#16a34a',fontSize:26}}>{loading ? '\u2026' : (enroll.revenue > 0 ? '$' + (enroll.revenue >= 1000 ? (enroll.revenue / 1000).toFixed(1) + 'k' : Math.round(enroll.revenue)) : '\u2014')}</div>
             <div className="conv-kpi-label">Enrollment Revenue</div>
+            {!loading && enroll.priorRevenue > 0 && (() => {
+              const pct = Math.round(((enroll.revenue - enroll.priorRevenue) / enroll.priorRevenue) * 100);
+              return <div className={'conv-delta ' + (pct >= 0 ? 'conv-delta-up' : 'conv-delta-down')}>{pct >= 0 ? '\u2191' : '\u2193'}{Math.abs(pct)}% vs prior</div>;
+            })()}
           </div>
         </div>
+        {!loading && enroll.priorTotal > 0 && (
+          <div className="conv-prior-row">
+            <span>Prior {days}d:</span>
+            <span style={{fontWeight:600}}>{enroll.priorTotal} enrollments</span>
+            <span style={{color:'#aaa'}}>{'·'}</span>
+            <span style={{fontWeight:600}}>{enroll.priorRevenue >= 1000 ? '$' + (enroll.priorRevenue / 1000).toFixed(1) + 'k' : '$' + Math.round(enroll.priorRevenue)} est. revenue</span>
+            <span style={{color:'#aaa',fontSize:10}}>(avg ticket applied)</span>
+          </div>
+        )}
         <div style={{fontSize:10,color:'#999',marginBottom:8,lineHeight:1.4}}>
           Correlation, not causation — enrollment revenue reflects registrations that occurred on days the program calendar was viewed. Not all enrollments are directly attributable to calendar views.
         </div>
