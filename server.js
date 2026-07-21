@@ -9458,6 +9458,9 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+    { date: '2026-07-21', title: '📈 Calendar Funnel: Prior-Period Comparison', items: [
+      'Calendar View → Registration Funnel now shows month-over-month delta: compares current 30d enrollments and revenue vs the prior 30d window. Delta badges (↑/↓ %) appear on Enrollments and Revenue KPIs. Prior-period summary row shows raw numbers below KPIs. Revenue comparison uses current avg ticket applied to prior enrollment count (noted as estimated). Data comes from existing program-demographics card (no date filter, returns all enrollments) so no new Metabase fetch required.',
+    ] },
   { date: "2026-07-20", text: "Removed duplicate Shrewsbury org entry (slug town-of-shrewsbury) that pointed at the same orgId as the fully configured shrewsbury entry, causing two identical cards on the dashboard. Kept the shrewsbury slug with its map coords and per-org report UUIDs." },
   { date: "2026-07-20", text: "Removed the Hot Dog Counter link from the dashboard topbar. The /hotdog page and its claims store remain live and reachable by direct URL, just not linked from the dashboard." },
   { date: "2026-07-20", text: "Hot Dog Counter is back: restored the entry-point link to the staff concession leaderboard in the dashboard topbar, next to the QBR Generator. The /hotdog page and its claims store never left, just its link." },
