@@ -1,0 +1,547 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Campsite Map</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<style>
+:root{
+  --bg:#0f172a;--panel:#ffffff;--ink:#1f2937;--muted:#6b7280;--line:#e5e7eb;
+  --avail:#16a34a;--avail-bg:#dcfce7;--booked:#dc2626;--booked-bg:#fee2e2;
+  --unknown:#9ca3af;--unknown-bg:#f3f4f6;--accent:#0f766e;--sel:#f59e0b;
+  --shadow:0 1px 3px rgba(16,24,40,.12),0 1px 2px rgba(16,24,40,.08);
+  --shadow-lg:0 12px 40px rgba(16,24,40,.28);
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:var(--ink);background:#e8ebe6;overflow:hidden}
+#app{position:fixed;inset:0;display:flex;flex-direction:column}
+
+/* ── Header ── */
+.hdr{display:flex;align-items:center;gap:12px;padding:10px 16px;background:#fff;border-bottom:1px solid var(--line);box-shadow:var(--shadow);z-index:600;flex-wrap:wrap}
+.hdr img.logo{height:34px;max-width:150px;object-fit:contain}
+.hdr .titles{flex:1;min-width:180px}
+.hdr h1{font-size:17px;margin:0;line-height:1.2;font-weight:700}
+.hdr .sub{font-size:12px;color:var(--muted);margin-top:1px}
+.hdr .mock-tag{font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:#92400e;background:#fef3c7;border:1px solid #fde68a;border-radius:999px;padding:3px 9px;white-space:nowrap}
+.hdr .wx{font-size:12px;color:#374151;font-weight:600;white-space:nowrap;background:#f3f4f6;border-radius:8px;padding:5px 10px}
+
+/* ── Date bar ── */
+.datebar{display:flex;align-items:center;gap:8px;padding:8px 12px;background:#fff;border-bottom:1px solid var(--line);z-index:600}
+.datebar .summ{font-size:13px;font-weight:600;white-space:nowrap;padding-right:4px}
+.datebar .summ .cnt{color:var(--avail)}
+.chips{display:flex;gap:6px;overflow-x:auto;flex:1;scrollbar-width:thin;padding-bottom:2px}
+.chips::-webkit-scrollbar{height:6px}
+.chips::-webkit-scrollbar-thumb{background:#d1d5db;border-radius:3px}
+.chip{flex:0 0 auto;min-width:46px;text-align:center;padding:5px 8px;border:1px solid var(--line);border-radius:10px;background:#fff;cursor:pointer;transition:all .12s;line-height:1.15}
+.chip:hover{border-color:#9ca3af;background:#f9fafb}
+.chip.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.chip .dow{font-size:10px;font-weight:600;text-transform:uppercase;opacity:.75}
+.chip .dnum{font-size:15px;font-weight:700}
+.chip .mo{font-size:9px;opacity:.7}
+.datebar input[type=date]{border:1px solid var(--line);border-radius:8px;padding:6px 8px;font:inherit;color:#374151;cursor:pointer}
+.datebar .nav{border:1px solid var(--line);background:#fff;border-radius:8px;width:30px;height:30px;cursor:pointer;font-size:15px;color:#374151;flex:0 0 auto}
+.datebar .nav:hover{background:#f3f4f6}
+
+/* ── Map ── */
+.mapwrap{position:relative;flex:1;min-height:0}
+#map{position:absolute;inset:0;background:#aadaff}
+.leaflet-container{font:inherit}
+
+/* control cluster */
+.mapctl{position:absolute;top:12px;right:12px;z-index:500;display:flex;flex-direction:column;gap:8px;align-items:flex-end}
+.basetoggle{display:inline-flex;border:1px solid var(--line);border-radius:9px;overflow:hidden;box-shadow:var(--shadow);background:#fff}
+.basetoggle button{border:none;background:#fff;padding:7px 12px;font-size:12px;font-weight:600;cursor:pointer;color:#374151}
+.basetoggle button.on{background:var(--accent);color:#fff}
+
+/* legend */
+.legend{position:absolute;left:12px;bottom:12px;z-index:500;background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow-lg);padding:12px 14px;max-width:230px;font-size:12px}
+.legend h4{margin:0 0 8px;font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted)}
+.legend .row{display:flex;align-items:center;gap:8px;margin:4px 0}
+.legend .dot{width:16px;height:16px;border-radius:50%;flex:0 0 auto;border:2px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.15)}
+.legend .em{width:18px;text-align:center;flex:0 0 auto}
+.legend .div{height:1px;background:var(--line);margin:8px 0}
+.legend .foot{font-size:10.5px;color:var(--muted);line-height:1.35;margin-top:6px}
+.legend .collapse{display:none}
+@media(max-width:640px){
+  .legend{max-width:none;left:8px;right:8px;bottom:8px}
+  .legend.min .legend-body{display:none}
+  .legend .collapse{display:block;position:absolute;top:8px;right:10px;background:none;border:none;font-size:16px;cursor:pointer;color:var(--muted)}
+}
+
+/* campsite marker */
+.site-marker{position:relative;display:flex;align-items:center;justify-content:center;width:34px;height:34px;border-radius:50%;font-weight:700;font-size:13px;color:#fff;border:2.5px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.4);cursor:pointer;transition:transform .1s}
+.site-marker:hover{transform:scale(1.12)}
+.site-marker.sel{outline:3px solid var(--sel);outline-offset:2px;transform:scale(1.15)}
+.site-marker .kind{position:absolute;bottom:-6px;right:-6px;width:17px;height:17px;border-radius:50%;background:#fff;display:flex;align-items:center;justify-content:center;font-size:10px;box-shadow:0 1px 2px rgba(0,0,0,.3)}
+.amen-marker{display:flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:8px;background:#fff;border:1.5px solid #94a3b8;box-shadow:0 1px 3px rgba(0,0,0,.3);font-size:15px}
+.arm-label{background:rgba(255,255,255,.86);border:1px solid #cbd5e1;border-radius:6px;padding:2px 8px;font-size:11px;font-weight:700;color:#334155;box-shadow:0 1px 2px rgba(0,0,0,.15);white-space:nowrap}
+.leaflet-tooltip.site-tip{font-size:12px;font-weight:600;padding:5px 9px;border-radius:8px;border:1px solid var(--line);box-shadow:var(--shadow)}
+.leaflet-tooltip.site-tip .st{font-weight:700}
+
+/* ── Detail drawer ── */
+.drawer{position:absolute;top:0;right:0;bottom:0;width:380px;max-width:92vw;background:#fff;box-shadow:var(--shadow-lg);z-index:700;transform:translateX(105%);transition:transform .22s cubic-bezier(.4,0,.2,1);display:flex;flex-direction:column;overflow:hidden}
+.drawer.open{transform:translateX(0)}
+.drawer .dclose{position:absolute;top:12px;right:12px;z-index:2;background:rgba(0,0,0,.45);color:#fff;border:none;width:30px;height:30px;border-radius:50%;cursor:pointer;font-size:15px;display:flex;align-items:center;justify-content:center}
+.drawer .dclose:hover{background:rgba(0,0,0,.65)}
+.drawer .gallery{position:relative;height:200px;background:#e5e7eb;flex:0 0 auto;overflow:hidden}
+.drawer .gallery img{width:100%;height:100%;object-fit:cover;display:block}
+.drawer .gallery .gnav{position:absolute;bottom:8px;left:0;right:0;display:flex;justify-content:center;gap:5px}
+.drawer .gallery .gdot{width:7px;height:7px;border-radius:50%;background:rgba(255,255,255,.55);cursor:pointer}
+.drawer .gallery .gdot.on{background:#fff}
+.drawer .gph{position:absolute;top:50%;transform:translateY(-50%);background:rgba(0,0,0,.4);color:#fff;border:none;width:30px;height:44px;cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center}
+.drawer .gph.l{left:0;border-radius:0 8px 8px 0}
+.drawer .gph.r{right:0;border-radius:8px 0 0 8px}
+.dbody{padding:16px 18px;overflow-y:auto;flex:1}
+.dbody .stat-pill{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:700;padding:4px 10px;border-radius:999px;margin-bottom:8px}
+.dbody .stat-pill.avail{background:var(--avail-bg);color:#166534}
+.dbody .stat-pill.booked{background:var(--booked-bg);color:#991b1b}
+.dbody .stat-pill.unknown{background:var(--unknown-bg);color:#374151}
+.dbody h2{margin:2px 0 2px;font-size:20px}
+.dbody .area{font-size:12.5px;color:var(--muted);margin-bottom:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.dbody .tag{font-size:11px;font-weight:700;padding:2px 8px;border-radius:6px}
+.dbody .tag.elec{background:#fef9c3;color:#854d0e}
+.dbody .tag.prim{background:#e0e7ff;color:#3730a3}
+.dbody .blurb{font-size:13px;color:#374151;line-height:1.5;margin:0 0 14px}
+.kv{display:grid;grid-template-columns:1fr 1fr;gap:8px 12px;margin-bottom:14px}
+.kv .k{font-size:10.5px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);font-weight:600}
+.kv .v{font-size:14px;font-weight:600;margin-top:1px}
+.amen-list{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px}
+.amen-list .a{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;background:#f3f4f6;border-radius:7px;padding:4px 9px;color:#374151}
+.sec-h{font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);font-weight:700;margin:6px 0 8px}
+.mini-cal{border:1px solid var(--line);border-radius:10px;padding:10px;margin-bottom:16px}
+.mini-cal .mc-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+.mini-cal .mc-head b{font-size:13px}
+.mini-cal .mc-nav{background:none;border:1px solid var(--line);border-radius:6px;width:26px;height:26px;cursor:pointer;color:#374151}
+.mini-cal .mc-nav:hover{background:#f3f4f6}
+.mc-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:3px}
+.mc-grid .wd{font-size:9.5px;text-align:center;color:var(--muted);font-weight:600;padding-bottom:2px}
+.mc-cell{aspect-ratio:1;display:flex;align-items:center;justify-content:center;font-size:11px;border-radius:6px;cursor:pointer;position:relative}
+.mc-cell.pad{cursor:default}
+.mc-cell.av{background:var(--avail-bg);color:#166534;font-weight:600}
+.mc-cell.bk{background:var(--booked-bg);color:#991b1b;text-decoration:line-through;opacity:.85}
+.mc-cell.un{background:#f9fafb;color:#9ca3af}
+.mc-cell.past{opacity:.35;cursor:default}
+.mc-cell.today{outline:2px solid var(--accent);outline-offset:-2px}
+.mc-cell.sel{outline:2px solid var(--sel);outline-offset:-2px;font-weight:800}
+.mc-cell:not(.pad):not(.past):hover{filter:brightness(.94)}
+.book-btn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;padding:13px;background:var(--accent);color:#fff;text-decoration:none;border-radius:10px;font-size:15px;font-weight:700;transition:filter .12s}
+.book-btn:hover{filter:brightness(1.08)}
+.book-note{font-size:11px;color:var(--muted);text-align:center;margin-top:8px}
+.scrim{position:absolute;inset:0;background:rgba(15,23,42,.35);z-index:650;opacity:0;pointer-events:none;transition:opacity .22s}
+.scrim.on{opacity:1;pointer-events:auto}
+@media(max-width:640px){
+  .drawer{width:100%;max-width:100%;top:auto;height:82%;border-radius:16px 16px 0 0;transform:translateY(105%)}
+  .drawer.open{transform:translateY(0)}
+}
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="hdr">
+    <img class="logo" id="logo" alt="" style="display:none"/>
+    <div class="titles">
+      <h1 id="title">Pleasant Hill City Lake — Campsite Map</h1>
+      <div class="sub" id="subtitle">16210 Smart Rd, Pleasant Hill, MO 64080</div>
+    </div>
+    <span class="wx" id="wx" style="display:none"></span>
+    <span class="mock-tag">Mockup · live rec.us data</span>
+  </div>
+
+  <div class="datebar">
+    <button class="nav" id="prevDay" title="Previous day">‹</button>
+    <div class="summ" id="summ">—</div>
+    <div class="chips" id="chips"></div>
+    <input type="date" id="datePick"/>
+    <button class="nav" id="nextDay" title="Next day">›</button>
+  </div>
+
+  <div class="mapwrap">
+    <div id="map"></div>
+    <div class="mapctl">
+      <div class="basetoggle">
+        <button id="btSat" class="on">Satellite</button>
+        <button id="btStreet">Streets</button>
+      </div>
+    </div>
+    <div class="legend" id="legend">
+      <button class="collapse" id="legToggle">▾</button>
+      <div class="legend-body">
+        <h4>Availability</h4>
+        <div class="row"><span class="dot" style="background:var(--avail)"></span> Open this night</div>
+        <div class="row"><span class="dot" style="background:var(--booked)"></span> Booked</div>
+        <div class="row"><span class="dot" style="background:var(--unknown)"></span> Unknown</div>
+        <div class="div"></div>
+        <h4>Site type</h4>
+        <div class="row"><span class="em">⚡</span> Electric hookup</div>
+        <div class="row"><span class="em">⛺</span> Primitive / tent</div>
+        <div class="div"></div>
+        <h4>Amenities</h4>
+        <div class="row"><span class="em">🛖</span> Ranger station / pay kiosk</div>
+        <div class="row"><span class="em">🚿</span> Bathhouse &amp; showers</div>
+        <div class="row"><span class="em">🚰</span> Dump station / potable water</div>
+        <div class="row"><span class="em">🚤</span> Boat launch</div>
+        <div class="foot" id="legFoot">Live campsite data from rec.us. Marker positions are approximate for sites without saved coordinates.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="scrim" id="scrim"></div>
+  <div class="drawer" id="drawer">
+    <button class="dclose" id="dclose">✕</button>
+    <div class="gallery" id="gallery"></div>
+    <div class="dbody" id="dbody"></div>
+  </div>
+</div>
+
+<script>
+/* ── config injected by server (window.__CM__), with standalone fallback ── */
+var CFG = window.__CM__ || {};
+var SLUG = CFG.slug || (location.pathname.split('/').filter(Boolean)[0] || 'pleasant-hill');
+var LAKE = { lat: (CFG.coords && CFG.coords.lat) || 38.82065625393699, lon: (CFG.coords && CFG.coords.lon) || -94.29997011111854 };
+
+/* ── amenity tag id → label (subset present at Pleasant Hill City Lake) ── */
+var AMENITY = {
+  '98afbd35-fb43-46b7-a34a-bbec2b0455b6':{l:'Horseshoes',e:'🐴'},
+  '57b31208-5b2c-48f1-a77c-3f39c18bef3d':{l:'Corn Hole',e:'🌽'},
+  '83bd5ead-e571-4867-b6a7-56a897a9b111':{l:'Playground',e:'🛝'},
+  '4dc9c07b-fd27-42d0-a0d3-11cf38d4b50e':{l:'Trails',e:'🥾'},
+  'fdfcc17e-ec74-4a58-9541-4766e1dfa8c6':{l:'Restrooms',e:'🚻'},
+  'd1276025-0382-4ac3-8f9e-d887c9522dab':{l:'Parking',e:'🅿️'},
+  '0cf5e4e3-3ed0-484d-9546-625d923bbdba':{l:'Picnic Table',e:'🪑'},
+  '0bb8a677-e906-42ea-9be0-e8dd5be31772':{l:'Chairs',e:'💺'},
+  'cf5a1e6d-f250-4876-94a2-52142b48fdbe':{l:'Electric Available',e:'⚡'},
+  '25452762-2d27-40aa-9a2e-83e2a0c3b34a':{l:'Tent Site',e:'⛺'},
+  'e67c5b0f-5aa5-44fa-aa6e-4dc5c78815a6':{l:'Fire Pit',e:'🔥'},
+  '6d9a600a-7580-4a45-856d-a2d4791c0ec1':{l:'Grill',e:'🍖'},
+  'b0be08df-8fa7-4ce4-a52c-85e8a1522bf1':{l:'Multi-Use Path',e:'🚶'}
+};
+var S3 = 'https://prod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com';
+
+/* ── seed sites: real rec.us data (Pleasant Hill), pulled via Rec Staff MCP ──
+   lat/lng: site 01 is the only one with a stored coordinate; the rest are
+   approximate mockup positions (Main Entrance cluster + Brown's Arm loop).
+   `approx:true` sites snap to real coords automatically once saved in admin. */
+var SEED = [
+  {n:1, id:'5c0bb8d3-ea37-4a5c-b0c6-d5e935889e07', name:'01 Main Entrance', area:'Main Entrance', kind:'electric', lat:38.82468767, lng:-94.29445978, approx:false, ph:['32f27e1c-aec5-464d-9edb-7bc519be7796.png?1758832884234','9a05d2a7-af05-4b79-962a-4b39164faeaa.png?1778032253579'], am:['98afbd35-fb43-46b7-a34a-bbec2b0455b6','57b31208-5b2c-48f1-a77c-3f39c18bef3d','83bd5ead-e571-4867-b6a7-56a897a9b111','4dc9c07b-fd27-42d0-a0d3-11cf38d4b50e','fdfcc17e-ec74-4a58-9541-4766e1dfa8c6','d1276025-0382-4ac3-8f9e-d887c9522dab','0cf5e4e3-3ed0-484d-9546-625d923bbdba','0bb8a677-e906-42ea-9be0-e8dd5be31772','cf5a1e6d-f250-4876-94a2-52142b48fdbe','25452762-2d27-40aa-9a2e-83e2a0c3b34a','e67c5b0f-5aa5-44fa-aa6e-4dc5c78815a6']},
+  {n:2, id:'954685e7-e2b0-4929-b312-b429b43eeb13', name:'02 Main Entrance', area:'Main Entrance', kind:'electric', lat:38.82452, lng:-94.29470, approx:true, ph:['10af872f-db6c-429c-96b9-b4d1484062c1.png?1778032513616','2d773903-0d7e-4436-b6c7-ad933ce8bede.png?1778032519600'], am:['98afbd35-fb43-46b7-a34a-bbec2b0455b6','57b31208-5b2c-48f1-a77c-3f39c18bef3d','83bd5ead-e571-4867-b6a7-56a897a9b111','4dc9c07b-fd27-42d0-a0d3-11cf38d4b50e','fdfcc17e-ec74-4a58-9541-4766e1dfa8c6','d1276025-0382-4ac3-8f9e-d887c9522dab','0cf5e4e3-3ed0-484d-9546-625d923bbdba','0bb8a677-e906-42ea-9be0-e8dd5be31772','cf5a1e6d-f250-4876-94a2-52142b48fdbe','25452762-2d27-40aa-9a2e-83e2a0c3b34a']},
+  {n:3, id:'bd8843da-542f-4590-a864-71f4b8052ad8', name:'03 Main Entrance', area:'Main Entrance', kind:'electric', lat:38.82436, lng:-94.29493, approx:true, ph:['289b6fbd-64ba-4f81-9467-8e9b41fb9a04.png?1778032828411','05085f1e-b85b-44ae-b225-97779484a010.png?1778032833735'], am:['98afbd35-fb43-46b7-a34a-bbec2b0455b6','57b31208-5b2c-48f1-a77c-3f39c18bef3d','83bd5ead-e571-4867-b6a7-56a897a9b111','4dc9c07b-fd27-42d0-a0d3-11cf38d4b50e','fdfcc17e-ec74-4a58-9541-4766e1dfa8c6','d1276025-0382-4ac3-8f9e-d887c9522dab','0cf5e4e3-3ed0-484d-9546-625d923bbdba','0bb8a677-e906-42ea-9be0-e8dd5be31772','cf5a1e6d-f250-4876-94a2-52142b48fdbe','25452762-2d27-40aa-9a2e-83e2a0c3b34a','e67c5b0f-5aa5-44fa-aa6e-4dc5c78815a6']},
+  {n:4, id:'6e2510f9-9aea-477a-9094-6286ddd6d1ab', name:'04 Main Entrance', area:'Main Entrance', kind:'electric', lat:38.82420, lng:-94.29516, approx:true, ph:['833a422f-251c-43fe-9498-9686f4fdc539.png?1778033365118','8b64d411-523f-44ce-b349-85bba06dea1e.png?1778033371746'], am:['98afbd35-fb43-46b7-a34a-bbec2b0455b6','57b31208-5b2c-48f1-a77c-3f39c18bef3d','83bd5ead-e571-4867-b6a7-56a897a9b111','4dc9c07b-fd27-42d0-a0d3-11cf38d4b50e','fdfcc17e-ec74-4a58-9541-4766e1dfa8c6','d1276025-0382-4ac3-8f9e-d887c9522dab','0cf5e4e3-3ed0-484d-9546-625d923bbdba','0bb8a677-e906-42ea-9be0-e8dd5be31772','cf5a1e6d-f250-4876-94a2-52142b48fdbe','25452762-2d27-40aa-9a2e-83e2a0c3b34a','e67c5b0f-5aa5-44fa-aa6e-4dc5c78815a6']},
+  {n:5, id:'9ad33d51-24b0-425e-8ce7-b983cf567677', name:'05 Brown’s Arm', area:"Brown's Arm", kind:'primitive', lat:38.82590, lng:-94.29490, approx:true, ph:['f126cdcb-c6d3-4536-bf93-389acfeecd6e.png?1778029407929','13cecae4-dc28-40e6-8eb7-0bf7dffe8965.png?1778029416620'], am:['98afbd35-fb43-46b7-a34a-bbec2b0455b6','57b31208-5b2c-48f1-a77c-3f39c18bef3d','83bd5ead-e571-4867-b6a7-56a897a9b111','4dc9c07b-fd27-42d0-a0d3-11cf38d4b50e','fdfcc17e-ec74-4a58-9541-4766e1dfa8c6','d1276025-0382-4ac3-8f9e-d887c9522dab','0cf5e4e3-3ed0-484d-9546-625d923bbdba','0bb8a677-e906-42ea-9be0-e8dd5be31772','cf5a1e6d-f250-4876-94a2-52142b48fdbe','25452762-2d27-40aa-9a2e-83e2a0c3b34a']},
+  {n:6, id:'89ef75b5-5e9d-4353-b733-87f2d18b7b91', name:'06 Brown’s Arm', area:"Brown's Arm", kind:'primitive', lat:38.82625, lng:-94.29478, approx:true, ph:['3033df9e-94d0-465e-9110-b908c3f23b20.png?1778029963880','771217aa-df63-4abd-bc6c-37455342ebad.png?1778029971893'], am:['98afbd35-fb43-46b7-a34a-bbec2b0455b6','57b31208-5b2c-48f1-a77c-3f39c18bef3d','83bd5ead-e571-4867-b6a7-56a897a9b111','4dc9c07b-fd27-42d0-a0d3-11cf38d4b50e','fdfcc17e-ec74-4a58-9541-4766e1dfa8c6','d1276025-0382-4ac3-8f9e-d887c9522dab','0cf5e4e3-3ed0-484d-9546-625d923bbdba','0bb8a677-e906-42ea-9be0-e8dd5be31772','25452762-2d27-40aa-9a2e-83e2a0c3b34a']},
+  {n:7, id:'c45fe7ee-6308-4436-9b3d-0827b5f2cbaa', name:'07 Brown’s Arm', area:"Brown's Arm", kind:'electric', lat:38.82660, lng:-94.29468, approx:true, ph:['fbadb098-e6e5-43d2-af51-158c42f4d0cb.png?1778030325014','ec35bf29-1746-4a01-923f-3f74c0b825cd.png?1778030331553'], am:['98afbd35-fb43-46b7-a34a-bbec2b0455b6','57b31208-5b2c-48f1-a77c-3f39c18bef3d','83bd5ead-e571-4867-b6a7-56a897a9b111','4dc9c07b-fd27-42d0-a0d3-11cf38d4b50e','d1276025-0382-4ac3-8f9e-d887c9522dab','0cf5e4e3-3ed0-484d-9546-625d923bbdba','0bb8a677-e906-42ea-9be0-e8dd5be31772','cf5a1e6d-f250-4876-94a2-52142b48fdbe','25452762-2d27-40aa-9a2e-83e2a0c3b34a','e67c5b0f-5aa5-44fa-aa6e-4dc5c78815a6']},
+  {n:8, id:'b416ba6a-7ef7-42d0-9a05-84e41ee8cd45', name:'08 Brown’s Arm', area:"Brown's Arm", kind:'electric', lat:38.82695, lng:-94.29462, approx:true, ph:['0af25635-5020-49e9-9569-254baa6b915c.png?1778030734915','e5b646f5-0616-4efa-9126-9f825077e131.png?1778030741598'], am:['98afbd35-fb43-46b7-a34a-bbec2b0455b6','57b31208-5b2c-48f1-a77c-3f39c18bef3d','83bd5ead-e571-4867-b6a7-56a897a9b111','4dc9c07b-fd27-42d0-a0d3-11cf38d4b50e','fdfcc17e-ec74-4a58-9541-4766e1dfa8c6','d1276025-0382-4ac3-8f9e-d887c9522dab','0cf5e4e3-3ed0-484d-9546-625d923bbdba','0bb8a677-e906-42ea-9be0-e8dd5be31772','cf5a1e6d-f250-4876-94a2-52142b48fdbe','25452762-2d27-40aa-9a2e-83e2a0c3b34a']},
+  {n:9, id:'594c8ad2-80d6-42a3-a240-272fdd2d2a9f', name:'09 Brown’s Arm', area:"Brown's Arm", kind:'electric', lat:38.82730, lng:-94.29460, approx:true, ph:['00a7a1c8-62b7-462b-b856-668085ee0b4f.png?1778030993273','232e51f8-a4be-4c09-9b66-f194b4f84d45.png?1778030998916'], am:['98afbd35-fb43-46b7-a34a-bbec2b0455b6','57b31208-5b2c-48f1-a77c-3f39c18bef3d','83bd5ead-e571-4867-b6a7-56a897a9b111','4dc9c07b-fd27-42d0-a0d3-11cf38d4b50e','fdfcc17e-ec74-4a58-9541-4766e1dfa8c6','6d9a600a-7580-4a45-856d-a2d4791c0ec1','d1276025-0382-4ac3-8f9e-d887c9522dab','0cf5e4e3-3ed0-484d-9546-625d923bbdba','0bb8a677-e906-42ea-9be0-e8dd5be31772','cf5a1e6d-f250-4876-94a2-52142b48fdbe','25452762-2d27-40aa-9a2e-83e2a0c3b34a','e67c5b0f-5aa5-44fa-aa6e-4dc5c78815a6']},
+  {n:10, id:'726e0a52-8887-4123-b534-3694b2078b72', name:'10 Brown’s Arm', area:"Brown's Arm", kind:'electric', lat:38.82765, lng:-94.29464, approx:true, ph:['8c7a254b-4c30-421d-964f-63f61a013445.png?1777724308283','54067e58-14e3-4ddb-bb8a-51857167f632.png?1778011192905'], am:['98afbd35-fb43-46b7-a34a-bbec2b0455b6','57b31208-5b2c-48f1-a77c-3f39c18bef3d','83bd5ead-e571-4867-b6a7-56a897a9b111','4dc9c07b-fd27-42d0-a0d3-11cf38d4b50e','fdfcc17e-ec74-4a58-9541-4766e1dfa8c6','d1276025-0382-4ac3-8f9e-d887c9522dab','0cf5e4e3-3ed0-484d-9546-625d923bbdba','0bb8a677-e906-42ea-9be0-e8dd5be31772','cf5a1e6d-f250-4876-94a2-52142b48fdbe','b0be08df-8fa7-4ce4-a52c-85e8a1522bf1','25452762-2d27-40aa-9a2e-83e2a0c3b34a','e67c5b0f-5aa5-44fa-aa6e-4dc5c78815a6']},
+  {n:11, id:'89dae3f9-d555-432e-b8ca-642fe4b15129', name:'11 Brown’s Arm', area:"Brown's Arm", kind:'electric', lat:38.82800, lng:-94.29474, approx:true, ph:['42eb8914-a44f-4737-8793-45ae25a96025.png?1778011186018','d8fc20d5-728c-47c6-96d8-d3e6372690f4.png?1778011202068'], am:['98afbd35-fb43-46b7-a34a-bbec2b0455b6','57b31208-5b2c-48f1-a77c-3f39c18bef3d','83bd5ead-e571-4867-b6a7-56a897a9b111','4dc9c07b-fd27-42d0-a0d3-11cf38d4b50e','fdfcc17e-ec74-4a58-9541-4766e1dfa8c6','d1276025-0382-4ac3-8f9e-d887c9522dab','0cf5e4e3-3ed0-484d-9546-625d923bbdba','0bb8a677-e906-42ea-9be0-e8dd5be31772','cf5a1e6d-f250-4876-94a2-52142b48fdbe','b0be08df-8fa7-4ce4-a52c-85e8a1522bf1','25452762-2d27-40aa-9a2e-83e2a0c3b34a','e67c5b0f-5aa5-44fa-aa6e-4dc5c78815a6']},
+  {n:12, id:'0c7edf94-c713-4894-86f0-4aa44582cb32', name:'12 Brown’s Arm', area:"Brown's Arm", kind:'primitive', lat:38.82830, lng:-94.29490, approx:true, ph:['5f796070-f648-4fa8-9db4-3e4a23bd16eb.png?1778028952777','2687040b-8e60-4d98-953a-5698759eb862.png?1778028963003'], am:['98afbd35-fb43-46b7-a34a-bbec2b0455b6','57b31208-5b2c-48f1-a77c-3f39c18bef3d','83bd5ead-e571-4867-b6a7-56a897a9b111','4dc9c07b-fd27-42d0-a0d3-11cf38d4b50e','fdfcc17e-ec74-4a58-9541-4766e1dfa8c6','d1276025-0382-4ac3-8f9e-d887c9522dab','0cf5e4e3-3ed0-484d-9546-625d923bbdba','25452762-2d27-40aa-9a2e-83e2a0c3b34a']}
+];
+/* per-area booking rules + rate (from rec.us site config + rulesMd) */
+function siteMeta(s){
+  if(s.area==='Main Entrance') return {rate:25, resRate:20, checkIn:'12:00 PM', checkOut:'10:00 AM', maxNights:null,
+    blurb:'Upgraded electric site with a dedicated power pedestal, built for pop-ups through RVs. Steps from the bathhouse with private showers (Apr–Oct).'};
+  return {rate:25, resRate:20, checkIn:'3:00 PM', checkOut:'11:00 AM', maxNights:5,
+    blurb: s.kind==='electric'
+      ? 'Secluded electric site across the bridge in Brown’s Arm — dedicated parking, picnic table and fire pit, with a portable toilet nearby.'
+      : 'Primitive tent site in the secluded Brown’s Arm — picnic table and space for a tent, with a portable toilet nearby (no electric hookup).'};
+}
+
+/* decorative amenity landmarks (illustrative positions) */
+var LANDMARKS = [
+  {e:'🛖', l:'Ranger Station / Pay Kiosk', lat:38.82445, lng:-94.29505},
+  {e:'🚿', l:'Bathhouse & Showers', lat:38.82408, lng:-94.29472},
+  {e:'🚰', l:'Dump Station / Potable Water', lat:38.82460, lng:-94.29525},
+  {e:'🚤', l:'Boat Launch', lat:38.82250, lng:-94.29655},
+  {e:'🚻', l:'Portable Toilet', lat:38.82690, lng:-94.29448}
+];
+
+/* ── date helpers ── */
+function pad(n){return n<10?'0'+n:''+n;}
+function iso(d){return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());}
+function addDays(d,n){var x=new Date(d.getTime());x.setDate(x.getDate()+n);return x;}
+var DOW=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+var MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+var TODAY = new Date(); TODAY.setHours(0,0,0,0);
+var TODAY_ISO = iso(TODAY);
+
+/* ── availability state: { siteId: { 'YYYY-MM-DD': true } } ── */
+var AVAIL = {};          // date -> available? (true)
+var LIVE = false;        // did we get live data?
+
+/* deterministic pseudo-random 0..1 from a string (offline fallback) */
+function hash01(str){
+  var h=2166136261;
+  for(var i=0;i<str.length;i++){h^=str.charCodeAt(i);h=Math.imul(h,16777619);}
+  return ((h>>>0)%100000)/100000;
+}
+function fallbackAvail(site, dateStr){
+  var d=new Date(dateStr+'T00:00:00');
+  var dow=d.getDay();
+  var booked = 0.20 + (dow===5||dow===6?0.34:0) + hash01(site.id)*0.18; // weekends busier
+  return hash01(site.id+'|'+dateStr) > booked;   // true = available
+}
+/* build 120 days of availability for a site from fallback */
+function seedFallback(site){
+  var m={};
+  for(var i=0;i<160;i++){ var ds=iso(addDays(TODAY,i)); if(fallbackAvail(site,ds)) m[ds]=true; }
+  return m;
+}
+
+/* status of a site on a date: 'avail' | 'booked' | 'unknown' */
+function statusOn(site, dateStr){
+  var a=AVAIL[site.id];
+  if(!a) return 'unknown';
+  if(a.__empty) return 'unknown';
+  return a[dateStr] ? 'avail' : 'booked';
+}
+
+/* ── map setup ── */
+var map = L.map('map', { zoomControl:true, scrollWheelZoom:true }).setView([LAKE.lat, LAKE.lon], 16);
+var satLayer = L.tileLayer('https://mt{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', {
+  subdomains:['0','1','2','3'], maxZoom:21, attribution:'Imagery ©2026 Google'
+});
+var streetLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  maxZoom:19, attribution:'© OpenStreetMap'
+});
+satLayer.addTo(map);
+document.getElementById('btSat').onclick=function(){ if(map.hasLayer(streetLayer))map.removeLayer(streetLayer); satLayer.addTo(map); this.classList.add('on'); document.getElementById('btStreet').classList.remove('on'); };
+document.getElementById('btStreet').onclick=function(){ if(map.hasLayer(satLayer))map.removeLayer(satLayer); streetLayer.addTo(map); this.classList.add('on'); document.getElementById('btSat').classList.remove('on'); };
+
+/* markers */
+var COLORS={avail:'#16a34a',booked:'#dc2626',unknown:'#9ca3af'};
+var markers={};   // siteId -> L.marker
+var selectedId=null;
+
+function markerHtml(site, status){
+  var kindEmoji = site.kind==='electric' ? '⚡' : '⛺';
+  var sel = site.id===selectedId ? ' sel' : '';
+  return '<div class="site-marker'+sel+'" style="background:'+COLORS[status]+'">'+site.n+
+         '<span class="kind">'+kindEmoji+'</span></div>';
+}
+function buildMarkers(){
+  SEED.forEach(function(site){
+    var status=statusOn(site, SELECTED);
+    var icon=L.divIcon({className:'', html:markerHtml(site,status), iconSize:[34,34], iconAnchor:[17,17]});
+    var m=L.marker([site.lat,site.lng],{icon:icon, riseOnHover:true, zIndexOffset:400}).addTo(map);
+    m.bindTooltip(function(){ var st=statusOn(site,SELECTED); var lbl=st==='avail'?'Open':st==='booked'?'Booked':'Unknown';
+      return '<span class="st">'+site.name+'</span><br>'+ (site.kind==='electric'?'⚡ Electric':'⛺ Primitive') +' · '+lbl; },
+      {className:'site-tip', direction:'top', offset:[0,-14]});
+    m.on('click', function(){ openSite(site); });
+    markers[site.id]=m;
+  });
+  // area labels
+  L.marker([38.82405,-94.29540],{icon:L.divIcon({className:'',html:'<div class="arm-label">Main Entrance · 1–4</div>',iconSize:[110,20],iconAnchor:[55,10]}),interactive:false,zIndexOffset:200}).addTo(map);
+  L.marker([38.82720,-94.29520],{icon:L.divIcon({className:'',html:'<div class="arm-label">Brown’s Arm · 5–12</div>',iconSize:[120,20],iconAnchor:[60,10]}),interactive:false,zIndexOffset:200}).addTo(map);
+  // landmarks
+  LANDMARKS.forEach(function(k){
+    var m=L.marker([k.lat,k.lng],{icon:L.divIcon({className:'',html:'<div class="amen-marker">'+k.e+'</div>',iconSize:[28,28],iconAnchor:[14,14]}),zIndexOffset:100}).addTo(map);
+    m.bindTooltip(k.l,{className:'site-tip',direction:'top',offset:[0,-12]});
+  });
+}
+function refreshMarkers(){
+  SEED.forEach(function(site){
+    var status=statusOn(site, SELECTED);
+    markers[site.id].setIcon(L.divIcon({className:'', html:markerHtml(site,status), iconSize:[34,34], iconAnchor:[17,17]}));
+  });
+}
+
+/* ── date bar ── */
+var SELECTED = TODAY_ISO;
+function buildChips(){
+  var wrap=document.getElementById('chips'); wrap.innerHTML='';
+  for(var i=0;i<30;i++){
+    (function(i){
+      var d=addDays(TODAY,i); var ds=iso(d);
+      var c=document.createElement('div');
+      c.className='chip'+(ds===SELECTED?' on':'');
+      c.dataset.ds=ds;
+      c.innerHTML='<div class="dow">'+DOW[d.getDay()]+'</div><div class="dnum">'+d.getDate()+'</div><div class="mo">'+MON[d.getMonth()]+'</div>';
+      c.onclick=function(){ setDate(ds); };
+      wrap.appendChild(c);
+    })(i);
+  }
+}
+function updateSummary(){
+  var open=0, known=0;
+  SEED.forEach(function(s){ var st=statusOn(s,SELECTED); if(st!=='unknown'){known++; if(st==='avail')open++;} });
+  var d=new Date(SELECTED+'T00:00:00');
+  var human=DOW[d.getDay()]+', '+MON[d.getMonth()]+' '+d.getDate();
+  var el=document.getElementById('summ');
+  if(known===0){ el.innerHTML='<span>Loading availability…</span> · '+human; }
+  else { el.innerHTML='<span class="cnt">'+open+'</span> of '+SEED.length+' sites open · '+human; }
+}
+function setDate(ds){
+  SELECTED=ds;
+  document.querySelectorAll('.chip').forEach(function(c){ c.classList.toggle('on', c.dataset.ds===ds); });
+  var picked=document.querySelector('.chip[data-ds="'+ds+'"]');
+  if(picked) picked.scrollIntoView({behavior:'smooth',block:'nearest',inline:'center'});
+  document.getElementById('datePick').value=ds;
+  refreshMarkers(); updateSummary();
+  if(selectedId){ var site=SEED.filter(function(s){return s.id===selectedId;})[0]; if(site) renderBody(site); }
+  fetchWeather();
+}
+document.getElementById('prevDay').onclick=function(){ var d=addDays(new Date(SELECTED+'T00:00:00'),-1); if(iso(d)>=TODAY_ISO) setDate(iso(d)); };
+document.getElementById('nextDay').onclick=function(){ setDate(iso(addDays(new Date(SELECTED+'T00:00:00'),1))); };
+document.getElementById('datePick').onchange=function(){ if(this.value) setDate(this.value); };
+document.getElementById('datePick').min=TODAY_ISO;
+
+/* ── detail drawer ── */
+var galleryIdx=0, calMonth=null;
+function openSite(site){
+  selectedId=site.id; refreshMarkers();
+  galleryIdx=0; calMonth=new Date(SELECTED+'T00:00:00'); calMonth.setDate(1);
+  renderGallery(site); renderBody(site);
+  document.getElementById('drawer').classList.add('open');
+  document.getElementById('scrim').classList.add('on');
+  map.panTo([site.lat,site.lng],{animate:true});
+}
+function closeDrawer(){
+  selectedId=null; refreshMarkers();
+  document.getElementById('drawer').classList.remove('open');
+  document.getElementById('scrim').classList.remove('on');
+}
+document.getElementById('dclose').onclick=closeDrawer;
+document.getElementById('scrim').onclick=closeDrawer;
+
+function photoUrl(site,i){ return S3+'/site-'+site.id+'/mainGallery/'+site.ph[i]; }
+function renderGallery(site){
+  var g=document.getElementById('gallery');
+  var multi=site.ph.length>1;
+  var dots=''; for(var i=0;i<site.ph.length;i++) dots+='<span class="gdot'+(i===galleryIdx?' on':'')+'" data-i="'+i+'"></span>';
+  g.innerHTML='<img src="'+photoUrl(site,galleryIdx)+'" alt="'+site.name+'" onerror="this.style.display=\'none\'"/>'+
+    (multi?'<button class="gph l" data-d="-1">‹</button><button class="gph r" data-d="1">›</button><div class="gnav">'+dots+'</div>':'');
+  g.querySelectorAll('.gph').forEach(function(b){ b.onclick=function(){ galleryIdx=(galleryIdx+parseInt(this.dataset.d)+site.ph.length)%site.ph.length; renderGallery(site); }; });
+  g.querySelectorAll('.gdot').forEach(function(b){ b.onclick=function(){ galleryIdx=parseInt(this.dataset.i); renderGallery(site); }; });
+}
+
+function renderBody(site){
+  var meta=siteMeta(site);
+  var st=statusOn(site,SELECTED);
+  var stPill= st==='avail'?'<span class="stat-pill avail">● Open this night</span>'
+            : st==='booked'?'<span class="stat-pill booked">● Booked this night</span>'
+            : '<span class="stat-pill unknown">● Availability unknown</span>';
+  var d=new Date(SELECTED+'T00:00:00'); var human=DOW[d.getDay()]+', '+MON[d.getMonth()]+' '+d.getDate();
+  var amens=site.am.map(function(id){ var a=AMENITY[id]; return a?'<span class="a">'+a.e+' '+a.l+'</span>':''; }).join('');
+  var kindTag = site.kind==='electric'?'<span class="tag elec">⚡ Electric</span>':'<span class="tag prim">⛺ Primitive</span>';
+  var body='';
+  body+=stPill+' <span style="font-size:12px;color:var(--muted)">'+human+'</span>';
+  body+='<h2>Site '+pad(site.n)+'</h2>';
+  body+='<div class="area">'+kindTag+'<span>📍 '+site.area+' · Pleasant Hill City Lake</span></div>';
+  body+='<p class="blurb">'+meta.blurb+'</p>';
+  body+='<div class="kv">';
+  body+='<div><div class="k">Rate</div><div class="v">$'+meta.rate+' <span style="font-size:11px;color:var(--muted);font-weight:500">/ night</span></div></div>';
+  body+='<div><div class="k">Resident</div><div class="v">$'+meta.resRate+' <span style="font-size:11px;color:var(--muted);font-weight:500">/ night</span></div></div>';
+  body+='<div><div class="k">Check-in</div><div class="v">'+meta.checkIn+'</div></div>';
+  body+='<div><div class="k">Check-out</div><div class="v">'+meta.checkOut+'</div></div>';
+  body+='<div><div class="k">Capacity</div><div class="v">Up to 10</div></div>';
+  body+='<div><div class="k">Max stay</div><div class="v">'+(meta.maxNights?meta.maxNights+' nights':'—')+'</div></div>';
+  body+='</div>';
+  body+='<div class="sec-h">Amenities</div><div class="amen-list">'+amens+'</div>';
+  body+='<div class="sec-h">Availability</div>'+miniCalHtml(site);
+  body+='<a class="book-btn" href="https://www.rec.us/sites/'+site.id+'" target="_blank" rel="noopener">🏕️ Book on rec.us</a>';
+  body+='<div class="book-note">'+(site.approx?'Map position approximate — exact coordinates not yet set for this site.':'Exact location from rec.us.')+'</div>';
+  var el=document.getElementById('dbody');
+  el.innerHTML=body;
+  wireMiniCal(site);
+}
+
+function miniCalHtml(site){
+  var y=calMonth.getFullYear(), mo=calMonth.getMonth();
+  var first=new Date(y,mo,1), startDow=first.getDay();
+  var days=new Date(y,mo+1,0).getDate();
+  var h='<div class="mini-cal"><div class="mc-head"><button class="mc-nav" data-d="-1">‹</button><b>'+MON[mo]+' '+y+'</b><button class="mc-nav" data-d="1">›</button></div><div class="mc-grid">';
+  ['S','M','T','W','T','F','S'].forEach(function(w){ h+='<div class="wd">'+w+'</div>'; });
+  for(var p=0;p<startDow;p++) h+='<div class="mc-cell pad"></div>';
+  for(var day=1;day<=days;day++){
+    var ds=y+'-'+pad(mo+1)+'-'+pad(day);
+    var cls='mc-cell';
+    if(ds<TODAY_ISO){ cls+=' past'; }
+    else { var st=statusOn(site,ds); cls+= st==='avail'?' av':st==='booked'?' bk':' un'; }
+    if(ds===TODAY_ISO) cls+=' today';
+    if(ds===SELECTED) cls+=' sel';
+    h+='<div class="'+cls+'" data-ds="'+ds+'">'+day+'</div>';
+  }
+  h+='</div><div style="font-size:10.5px;color:var(--muted);margin-top:7px;display:flex;gap:12px"><span>🟩 Open</span><span>🟥 Booked</span></div></div>';
+  return h;
+}
+function wireMiniCal(site){
+  document.querySelectorAll('.mini-cal .mc-nav').forEach(function(b){
+    b.onclick=function(){ calMonth.setMonth(calMonth.getMonth()+parseInt(this.dataset.d)); renderBody(site); };
+  });
+  document.querySelectorAll('.mini-cal .mc-cell').forEach(function(c){
+    if(c.classList.contains('pad')||c.classList.contains('past'))return;
+    c.onclick=function(){ setDate(this.dataset.ds); };
+  });
+}
+
+/* ── weather (best-effort, weather.gov) ── */
+var wxCache={};
+function fetchWeather(){
+  var el=document.getElementById('wx');
+  if(wxCache[SELECTED]){ el.textContent=wxCache[SELECTED]; el.style.display=''; return; }
+  var ua='rec.us-reports/1.0 (dan@rec.us)';
+  fetch('https://api.weather.gov/points/'+LAKE.lat+','+LAKE.lon,{headers:{'User-Agent':ua}})
+    .then(function(r){return r.json();})
+    .then(function(d){ var u=d.properties&&d.properties.forecast; if(u) return fetch(u,{headers:{'User-Agent':ua}}); })
+    .then(function(r){return r&&r.json();})
+    .then(function(d){
+      if(!d||!d.properties)return;
+      var p=(d.properties.periods||[]).filter(function(x){return x.startTime&&x.startTime.substring(0,10)===SELECTED&&x.isDaytime;})[0];
+      if(!p)return;
+      var txt=wxEmoji(p.shortForecast)+' '+p.temperature+'°'+(p.temperatureUnit||'F');
+      wxCache[SELECTED]=txt; el.textContent=txt; el.style.display='';
+    }).catch(function(){});
+}
+function wxEmoji(f){ f=(f||'').toLowerCase();
+  if(/thunder|storm/.test(f))return'⛈️'; if(/rain|shower|drizzle/.test(f))return'🌧️';
+  if(/snow|flurr/.test(f))return'❄️'; if(/fog|haze/.test(f))return'🌫️';
+  if(/partly|few clouds/.test(f))return'⛅'; if(/cloud|overcast/.test(f))return'☁️';
+  if(/sun|clear|fair/.test(f))return'☀️'; return'🌤️';
+}
+
+/* ── boot ── */
+function applyConfig(){
+  if(CFG.displayName){ document.getElementById('title').textContent = (CFG.locationName||'Pleasant Hill City Lake')+' — Campsite Map'; }
+  if(CFG.address){ document.getElementById('subtitle').textContent = CFG.address; }
+  if(CFG.logoUrl){ var lg=document.getElementById('logo'); lg.src=CFG.logoUrl; lg.style.display=''; }
+}
+function loadAvailability(){
+  var ids=SEED.map(function(s){return s.id;}).join(',');
+  var url='/'+SLUG+'/rentalcalendar/api/availability-batch?siteIds='+ids;
+  fetch(url).then(function(r){ if(!r.ok) throw new Error('http '+r.status); return r.json(); })
+    .then(function(res){
+      var data=res.data||{}; var any=false;
+      SEED.forEach(function(s){
+        var d=data[s.id];
+        if(d && typeof d==='object' && Object.keys(d).length){
+          var m={}; Object.keys(d).forEach(function(dateStr){ if(d[dateStr]&&Object.keys(d[dateStr]).length) m[dateStr]=true; });
+          AVAIL[s.id]=m; any=true;
+        } else {
+          AVAIL[s.id]={__empty:true};
+        }
+      });
+      if(any){ LIVE=true; document.getElementById('legFoot').innerHTML='<b>Live</b> availability from rec.us. Marker positions are approximate for sites without saved coordinates.'; }
+      else { throw new Error('empty'); }
+      refreshMarkers(); updateSummary(); if(selectedId){var s=SEED.filter(function(x){return x.id===selectedId;})[0]; if(s)renderBody(s);}
+    })
+    .catch(function(){
+      // offline / standalone fallback — deterministic demo availability
+      SEED.forEach(function(s){ AVAIL[s.id]=seedFallback(s); });
+      document.getElementById('legFoot').innerHTML='Demo availability (offline preview). Deploy on the platform for live rec.us booking data.';
+      refreshMarkers(); updateSummary(); if(selectedId){var s2=SEED.filter(function(x){return x.id===selectedId;})[0]; if(s2)renderBody(s2);}
+    });
+}
+document.getElementById('legToggle').onclick=function(){ document.getElementById('legend').classList.toggle('min'); this.textContent=document.getElementById('legend').classList.contains('min')?'▸':'▾'; };
+
+applyConfig();
+buildChips();
+buildMarkers();
+updateSummary();
+loadAvailability();
+fetchWeather();
+setTimeout(function(){ map.invalidateSize(); }, 250);
+</script>
+</body>
+</html>

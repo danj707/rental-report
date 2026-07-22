@@ -695,6 +695,15 @@ const ORGS = {
     logoUrl: "https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2Forganization-8f24ee66-e9a6-40a4-afbb-27efe8ef64d5%2FfullLogo.png%3F1772807247304&w=1920&q=75",
     displayName: "Town of Reading",
   },
+  "pleasant-hill": {
+    token:   "3MEg1QTAX3pF1x6V",
+    orgId:   "52efcded-a5e8-4dbf-8a45-100f70170de0",
+    coords:  { lat: 38.82065625, lon: -94.29997011 },   // Pleasant Hill City Lake
+    mapCity: "Pleasant Hill, MO",
+    displayName: "Pleasant Hill",
+    // Campsite map (public) — 12 sites at Pleasant Hill City Lake; data via rec.us MCP.
+    facility: { mbUuid: null },
+  },
 };
 
 const REPORT_TYPES = ["facility", "gl", "historic", "programs", "roster", "products", "memberships", "court-utilization", "calendar", "fasttrack", "users", "program-demographics", "instructor-payout", "retention", "annual-report", "section-detail", "ice-calendar", "qoq", "checkins", "program-checkins"];
@@ -1080,6 +1089,8 @@ const NON_ADDABLE_REPORTS = new Set(["program-demographics", "retention", "annua
 // Reports that require extra params (e.g. section_id) and cannot be health-checked with org_id alone
 const HEALTH_SKIP_REPORTS = new Set(["section-detail", "annual-report", "qoq", "qbr-stats", "checkins", "program-checkins"]);
 const RENTAL_CALENDAR_ORGS = new Set(["watertown", "norman", "niagarafalls"]);
+// Orgs with an interactive campsite map (public /:org/campmap — Leaflet + live rec.us site data)
+const CAMPMAP_ORGS = new Set(["pleasant-hill"]);
 
 // ── Dynamic orgs (added via dashboard UI) ────────────────────────────
 // Loaded at startup and merged into ORGS; also updated at runtime.
@@ -1930,6 +1941,7 @@ function buildMetrics(org, daysBack) {
   const configuredReports = REPORT_TYPES.filter(r => ORGS[org]?.[r]?.mbUuid || SHARED_UUIDS[r]);
   // Include non-Metabase reports that have their own routes (e.g. rentalcalendar)
   if (RENTAL_CALENDAR_ORGS.has(org)) configuredReports.push('rentalcalendar');
+  if (CAMPMAP_ORGS.has(org)) configuredReports.push('campmap');
   return { summary, daily, subCounts, subByCadence, totalSubscribers: allSubs.length, insights, configuredReports };
 }
 
@@ -2608,7 +2620,7 @@ app.get("/api/org-visibility/:slug", (req, res) => {
     }
   }
   // Also check non-REPORT_TYPES that can be toggled (chat, report-wizard, rentalcalendar)
-  for (const rt of ["chat", "report-wizard", "rentalcalendar"]) {
+  for (const rt of ["chat", "report-wizard", "rentalcalendar", "campmap"]) {
     available.push({ type: rt, visible: !hidden.has(rt) });
   }
   res.json({ slug, available, hiddenCount: hidden.size });
@@ -2631,9 +2643,9 @@ app.use((req, res, next) => {
   const org = ORGS[seg];
   if (!org) return next();                          // not an org slug — let routing handle (will 404 normally)
 
-  // Calendar + rental calendar are public — no token required
+  // Calendar + rental calendar + campsite map are public — no token required
   const segs = req.path.split("/").filter(Boolean);
-  if (segs[1] === "calendar" || segs[1] === "rentalcalendar") return next();
+  if (segs[1] === "calendar" || segs[1] === "rentalcalendar" || segs[1] === "campmap") return next();
   if (segs[1] === "api" && (segs[2] === "track" || segs[2] === "calendar-analytics")) return next();
 
   if (!org.token) {                                 // fail closed: tokenless org must not be public
@@ -5666,6 +5678,32 @@ app.get("/:org/rentalcalendar", (req, res) => {
   res.type("html").send(html.replace("</head>", inject + "</head>"));
 });
 
+// ── Interactive campsite map (public, no token) ──
+// Leaflet map of a campground's sites with a per-night availability overlay.
+// Site data is baked into the page (incl. coords); availability upgrades to live
+// data via the existing /:org/rentalcalendar/api/availability-batch endpoint.
+app.get("/:org/campmap", (req, res) => {
+  const slug = req.params.org;
+  const org = ORGS[slug];
+  if (!org) return res.status(404).send("Unknown org");
+  if (!org.orgId) return res.status(404).send("Campsite map requires orgId configuration.");
+  logEvent(slug, "campmap", "view", req);
+  const slugTitle = slug.charAt(0).toUpperCase() + slug.slice(1);
+  const meta = {
+    slug,
+    orgId: org.orgId,
+    displayName: org.displayName || slugTitle + " Parks & Recreation",
+    logoUrl: org.logoUrl || "",
+    coords: org.coords || null,
+    locationName: req.query.locationName || org.campLocationName || "Pleasant Hill City Lake",
+    address: org.campAddress || "16210 Smart Rd, Pleasant Hill, MO 64080",
+  };
+  const fs = require("fs");
+  const html = fs.readFileSync(path.join(__dirname, "public", "campmap.html"), "utf-8");
+  const inject = '<script>window.__CM__=' + JSON.stringify(meta) + ';</script>';
+  res.type("html").send(html.replace("</head>", inject + "</head>"));
+});
+
 // Cached site data for Arsenal Park (Watertown) — fetched via rec.us MCP 2026-06-22
 const RC_SITES_CACHE = {}; // Live MCP fetch for all orgs (provides rich data: photos, pricing, duration)
 const rcLiveSitesCache = {}; // cacheKey -> { sites, ts }
@@ -6335,6 +6373,7 @@ app.get("/:org", async (req, res, next) => {
   const available = allAvailable.filter(r => !orgHidden.has(r));
   // Rental calendar — non-Metabase, per-org opt-in
   if (RENTAL_CALENDAR_ORGS.has(slug) && !orgHidden.has('rentalcalendar')) available.push('rentalcalendar');
+  if (CAMPMAP_ORGS.has(slug) && !orgHidden.has('campmap')) available.push('campmap');
   if ((org.gl?.mbUuid || SHARED_UUIDS.gl) && !orgHidden.has('qoq')) available.push('qoq');
   const orgConfig = {
     slug,
@@ -7086,6 +7125,7 @@ app.get("/", (req, res) => {
     "instructor-payout": { label: "Instructor Payout", ai: true, icon: "💰", desc: "Revenue splits and payout calculations by instructor", color: "#6366f1" },
 
     "rentalcalendar":    { label: "Rental Calendar", icon: "🏟️", desc: "Real-time facility availability with live booking data", color: "#059669" },
+    "campmap":           { label: "Campsite Map", icon: "🏕️", desc: "Interactive campground map with per-night availability overlay", color: "#15803d" },
     "ice-calendar":      { label: "Ice Participant Calendar", icon: "❄️", desc: "Participant-filtered monthly ice program calendar", color: "#0ea5e9" },
     qoq:                 { label: "QoQ Revenue Comparison", icon: "📉", desc: "Quarter-over-quarter GL revenue comparison with delta analysis", color: "#8b5cf6" },  };
 
@@ -7105,6 +7145,7 @@ app.get("/", (req, res) => {
     const available    = REPORT_TYPES.filter(r => !NON_ADDABLE_REPORTS.has(r) && (org[r]?.mbUuid || SHARED_UUIDS[r]));
     // Rental calendar — non-Metabase, per-org opt-in
     if (RENTAL_CALENDAR_ORGS.has(slug)) available.push('rentalcalendar');
+    if (CAMPMAP_ORGS.has(slug)) available.push('campmap');
     if (org.gl?.mbUuid || SHARED_UUIDS.gl) available.push('qoq');
     const slugTitle    = slug.charAt(0).toUpperCase() + slug.slice(1);
     const displayName  = org.displayName || `${slugTitle} Parks &amp; Recreation`;
@@ -8418,6 +8459,7 @@ app.get("/", (req, res) => {
           <li><strong>Instructor Payout</strong> &#8212; per-participant revenue splits by instructor, with configurable split ratios (65/35), base-price-split mode (calculates on resident rate so non-resident surcharges stay with org), and cancelled/refunded participant exclusion.</li>
           <li><strong>Historic Buildings</strong> &#8212; filtered facility view for historic venue locations (per-org only).</li>
           <li><strong>Facility Rental Calendar</strong> &#8212; standalone real-time facility rental and program availability calendar with dual-source API integration. <em>Within 30 days:</em> rec.us MCP provides real-time bookable start times (catches facility rentals, program holds, internal blocks). <em>Beyond 30 days:</em> Metabase facility reservation overlay shows confirmed bookings against 100% availability baseline, with soft disclaimer banner. Three-tier site name normalization: exact match &#8594; strip &#8220;Type: SiteName, Location&#8221; prefix/suffix &#8594; location-level fallback for whole-park bookings. Unified timeline merges both sources per 30-min slot: Metabase bookings &#8594; reserved, MCP slots &#8594; available, gaps &#8594; unavailable. Batch availability endpoint (60+ sites in one call via Promise.allSettled), 15-min server cache with ?refresh=1 admin override, 90-day reservation window with auto-extending re-fetch. Guided booking wizard (date &#8594; type &#8594; location), site type and location filters, clickable site modals with photo/pricing/booking links, weather.gov forecast (auto-hides past 7 days), image proxy with 24hr cache, embed mode (?embed=1), URL param pre-filtering. PII-safe: reservation route strips all personal data. WCAG accessible: contrast ratios, stripe patterns, aria labels, screen reader support. Per-org opt-in (Watertown, Norman). No token required.</li>
+          <li><strong>Campsite Map</strong> &#8212; interactive Leaflet map (Google satellite / OpenStreetMap toggle) of a campground&#x27;s sites plotted by location, with a per-night <strong>availability overlay</strong>. A date strip recolors each site marker green (open) / red (booked) for the selected night; clicking a site opens a detail card with photo gallery, electric/primitive type, rate, check-in/out, amenities, a month availability mini-calendar, and a &#8220;Book on rec.us&#8221; link. Site data (names, pricing, photos, amenities) is pulled from rec.us; availability upgrades to live data via the shared availability-batch endpoint, with a deterministic offline fallback for standalone preview. Sites without saved coordinates are placed approximately and snap to real positions once coordinates are set. Per-org opt-in (Pleasant Hill). No token required.</li>
         </ul>
 
         <h4>AI-Powered Features</h4>
@@ -9458,6 +9500,12 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  { date: '2026-07-22', title: '🏕️ Interactive Campsite Map — Pleasant Hill', items: [
+    'New public campsite map at /pleasant-hill/campmap — Leaflet map (Google satellite / OpenStreetMap toggle) plotting Pleasant Hill City Lake’s 12 campsites (Main Entrance 1–4, Brown’s Arm 5–12).',
+    'Per-night availability overlay: a date strip recolors each site marker green (open) / red (booked); clicking a site opens a detail card with photo gallery, electric/primitive type, $25/$20 resident rate, check-in/out, amenities, a month mini-calendar, and a Book on rec.us link.',
+    'Live site + availability data pulled via the rec.us MCP (reuses the rentalcalendar availability-batch endpoint); deterministic offline fallback so the page previews standalone. Added pleasant-hill to ORGS; campmap is token-free like the public calendars.',
+    'Known gap: only site 01 has stored lat/lng — the other 11 are placed approximately and will snap to real positions once coordinates are added in rec.us admin.'
+  ] },
   { date: '2026-07-21', items: ['Calendar: added Copy and Share Link button to session popup modals — copies the View Session URL to clipboard for easy sharing'] },
     { date: '2026-07-21', title: '📈 Calendar Funnel: Prior-Period Comparison', items: [
       'Calendar View → Registration Funnel now shows month-over-month delta: compares current 30d enrollments and revenue vs the prior 30d window. Delta badges (↑/↓ %) appear on Enrollments and Revenue KPIs. Prior-period summary row shows raw numbers below KPIs. Revenue comparison uses current avg ticket applied to prior enrollment count (noted as estimated). Data comes from existing program-demographics card (no date filter, returns all enrollments) so no new Metabase fetch required.',

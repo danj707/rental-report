@@ -104,6 +104,7 @@
     .badge-users { background: #f3e8ff; color: #6b21a8; }
     .badge-instructor-payout { background: #e0e7ff; color: #3730a3; }
     .badge-rentalcalendar { background: #d1fae5; color: #065f46; }
+    .badge-campmap { background: #dcfce7; color: #14532d; }
     .badge-qoq { background: #ede9fe; color: #5b21b6; }
 
     /* ── Sparkline section ── */
@@ -195,11 +196,12 @@ const REPORT_META = {
   users:       { label: "Community Intel",           badgeClass: "badge-users" },
   "instructor-payout": { label: "Instructor Payout", badgeClass: "badge-instructor-payout" },
   "rentalcalendar": { label: "Rental Calendar", badgeClass: "badge-rentalcalendar" },
+  "campmap": { label: "Campsite Map", badgeClass: "badge-campmap" },
   qoq: { label: "QoQ Revenue Comparison", badgeClass: "badge-qoq" },
 };
 
 // Canonical display order for report rows/charts (matches server REPORT_TYPES).
-const REPORT_ORDER = ['facility','gl','historic','programs','roster','overview','products','memberships','court-utilization','calendar','fasttrack','users','instructor-payout','rentalcalendar','qoq'];
+const REPORT_ORDER = ['facility','gl','historic','programs','roster','overview','products','memberships','court-utilization','calendar','fasttrack','users','instructor-payout','rentalcalendar','campmap','qoq'];
 
 // Shared per-report colors (sparklines + activity chart).
 const REPORT_COLORS = {
@@ -207,7 +209,7 @@ const REPORT_COLORS = {
   roster:'#0891b2', overview:'#059669', products:'#db2777',
   memberships:'#ea580c', 'court-utilization':'#0d9488', calendar:'#ea580c',
   fasttrack:'#6366f1', users:'#7c3aed', 'instructor-payout':'#6366f1',
-  rentalcalendar:'#059669',
+  rentalcalendar:'#059669', campmap:'#15803d',
   qoq:'#8b5cf6',
 };
 
