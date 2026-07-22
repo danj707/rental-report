@@ -1,0 +1,638 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Langfuse Admin | Rec Reports</title>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f0f14; color: #e4e4e7; min-height: 100vh; }
+    .topbar { background: #18181b; border-bottom: 1px solid #27272a; padding: 12px 24px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 50; }
+    .topbar h1 { font-size: 16px; font-weight: 600; color: #a78bfa; display: flex; align-items: center; gap: 8px; }
+    .topbar h1 .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+    .topbar .nav-links { display: flex; gap: 16px; font-size: 13px; }
+    .topbar .nav-links a { color: #71717a; text-decoration: none; transition: color 0.15s; }
+    .topbar .nav-links a:hover { color: #a78bfa; }
+    .container { max-width: 1400px; margin: 0 auto; padding: 24px; }
+    .kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px; }
+    .kpi-card { background: #18181b; border: 1px solid #27272a; border-radius: 10px; padding: 18px; }
+    .kpi-card .label { font-size: 11px; color: #71717a; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 6px; }
+    .kpi-card .value { font-size: 28px; font-weight: 700; color: #fafafa; }
+    .kpi-card .sub { font-size: 12px; color: #52525b; margin-top: 4px; }
+    .kpi-card .accent { color: #a78bfa; }
+    .kpi-card .green { color: #4ade80; }
+    .kpi-card .amber { color: #fbbf24; }
+    .kpi-card .red { color: #f87171; }
+    .panel { background: #18181b; border: 1px solid #27272a; border-radius: 10px; padding: 20px; margin-bottom: 24px; }
+    .panel-title { font-size: 13px; font-weight: 600; color: #a1a1aa; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 16px; display: flex; align-items: center; justify-content: space-between; }
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+    .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 24px; }
+    @media (max-width: 900px) { .grid-2, .grid-3 { grid-template-columns: 1fr; } }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th { text-align: left; font-size: 11px; color: #71717a; text-transform: uppercase; letter-spacing: 0.05em; padding: 8px 10px; border-bottom: 1px solid #27272a; font-weight: 600; }
+    td { padding: 10px; border-bottom: 1px solid #27272a; color: #d4d4d8; vertical-align: top; }
+    tr:hover td { background: #1f1f24; }
+    .badge { display: inline-block; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 4px; }
+    .badge-up { background: rgba(74,222,128,0.15); color: #4ade80; }
+    .badge-down { background: rgba(248,113,113,0.15); color: #f87171; }
+    .badge-feature { background: rgba(167,139,250,0.15); color: #a78bfa; }
+    .badge-org { background: rgba(96,165,250,0.15); color: #60a5fa; }
+    .bar-bg { background: #27272a; border-radius: 3px; height: 6px; overflow: hidden; }
+    .bar-fill { height: 100%; border-radius: 3px; transition: width 0.3s ease; }
+    .text-muted { color: #52525b; }
+    .text-sm { font-size: 12px; }
+    .mono { font-family: 'SF Mono', 'Fira Code', monospace; font-size: 12px; }
+    .truncate { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 300px; display: inline-block; }
+    .expand-btn { background: none; border: 1px solid #3f3f46; color: #a1a1aa; font-size: 11px; padding: 2px 8px; border-radius: 4px; cursor: pointer; }
+    .expand-btn:hover { background: #27272a; color: #e4e4e7; }
+    .expanded-row { background: #1a1a20; }
+    .expanded-content { padding: 12px 16px; font-size: 12px; color: #a1a1aa; white-space: pre-wrap; word-break: break-word; max-height: 300px; overflow-y: auto; border: 1px solid #27272a; border-radius: 6px; background: #0f0f14; margin: 4px 0; }
+    .tab-bar { display: flex; gap: 0; margin-bottom: 20px; border-bottom: 1px solid #27272a; }
+    .tab { padding: 10px 20px; font-size: 13px; font-weight: 500; color: #71717a; cursor: pointer; border-bottom: 2px solid transparent; transition: all 0.15s; }
+    .tab:hover { color: #a1a1aa; }
+    .tab.active { color: #a78bfa; border-bottom-color: #a78bfa; }
+    .loading { display: flex; align-items: center; justify-content: center; min-height: 200px; color: #52525b; font-size: 14px; }
+    .dot-pulse { display: inline-flex; gap: 4px; margin-left: 8px; }
+    .dot-pulse span { width: 6px; height: 6px; background: #a78bfa; border-radius: 50%; animation: pulse 1.2s ease-in-out infinite; }
+    .dot-pulse span:nth-child(2) { animation-delay: 0.2s; }
+    .dot-pulse span:nth-child(3) { animation-delay: 0.4s; }
+    @keyframes pulse { 0%, 80%, 100% { opacity: 0.3; transform: scale(0.8); } 40% { opacity: 1; transform: scale(1); } }
+    .langfuse-link { display: inline-flex; align-items: center; gap: 4px; color: #7c3aed; font-size: 12px; text-decoration: none; padding: 4px 10px; border: 1px solid #7c3aed33; border-radius: 5px; transition: all 0.15s; }
+    .langfuse-link:hover { background: #7c3aed22; color: #a78bfa; }
+    .filter-row { display: flex; gap: 10px; align-items: center; margin-bottom: 16px; flex-wrap: wrap; }
+    .filter-select { background: #27272a; border: 1px solid #3f3f46; color: #d4d4d8; font-size: 12px; padding: 6px 10px; border-radius: 5px; outline: none; }
+    .filter-select:focus { border-color: #a78bfa; }
+    .refresh-btn { background: #27272a; border: 1px solid #3f3f46; color: #a1a1aa; font-size: 12px; padding: 6px 14px; border-radius: 5px; cursor: pointer; display: flex; align-items: center; gap: 6px; transition: all 0.15s; }
+    .refresh-btn:hover { background: #3f3f46; color: #e4e4e7; }
+    .chart-container { position: relative; height: 200px; }
+    .sparkline-row { display: flex; align-items: flex-end; gap: 2px; height: 40px; }
+    .sparkline-bar { flex: 1; background: #a78bfa; border-radius: 2px 2px 0 0; min-width: 3px; transition: height 0.3s; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useState, useEffect, useRef, useCallback, useMemo } = React;
+
+    const FEATURE_LABELS = { 'rec-insights': 'AI Insights', 'rec-chat': 'Rec AI Chat', 'rec-wizard': 'Report Wizard', 'rec-recommend': 'Program Finder', 'rec-qbr': 'QBR Generator', 'rec-annual': 'Annual Report' };
+    const FEATURE_COLORS = { 'rec-insights': '#7c3aed', 'rec-chat': '#3b82f6', 'rec-wizard': '#6366f1', 'rec-recommend': '#f59e0b', 'rec-qbr': '#10b981', 'rec-annual': '#ec4899' };
+    const SCORE_LABELS = { 'user-feedback': 'Report Feedback', 'wizard-feedback': 'Wizard Feedback', 'chat-feedback': 'Chat Feedback' };
+
+    function fmt(n) { return n >= 1000 ? (n/1000).toFixed(1) + 'k' : String(n); }
+    function fmtUsd(n) { return '$' + (n || 0).toFixed(2); }
+    function fmtDate(iso) { if (!iso) return '\u2014'; const d = new Date(iso); return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); }
+    function fmtTime(iso) { if (!iso) return ''; const d = new Date(iso); return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }); }
+    function fmtAgo(iso) {
+      if (!iso) return '';
+      const ms = Date.now() - new Date(iso).getTime();
+      if (ms < 60000) return 'just now';
+      if (ms < 3600000) return Math.floor(ms/60000) + 'm ago';
+      if (ms < 86400000) return Math.floor(ms/3600000) + 'h ago';
+      return Math.floor(ms/86400000) + 'd ago';
+    }
+    function extractOrg(trace) {
+      try {
+        const meta = typeof trace.metadata === 'string' ? JSON.parse(trace.metadata) : trace.metadata;
+        return meta?.org || meta?.['rec.org'] || '\u2014';
+      } catch { return '\u2014'; }
+    }
+    function extractFeature(trace) { return trace.name || 'unknown'; }
+
+    function App() {
+      const [data, setData] = useState(null);
+      const [loading, setLoading] = useState(true);
+      const [error, setError] = useState(null);
+      const [tab, setTab] = useState('overview');
+      const [featureFilter, setFeatureFilter] = useState('all');
+      const [orgFilter, setOrgFilter] = useState('all');
+      const [expandedTrace, setExpandedTrace] = useState(null);
+      const [refreshing, setRefreshing] = useState(false);
+
+      const fetchData = useCallback(async (force) => {
+        try {
+          if (force) setRefreshing(true);
+          const url = '/api/admin/langfuse' + (force ? '?refresh=1' : '');
+          const r = await fetch(url);
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          const d = await r.json();
+          setData(d);
+          setError(null);
+        } catch (e) {
+          setError(e.message);
+        } finally {
+          setLoading(false);
+          setRefreshing(false);
+        }
+      }, []);
+
+      useEffect(() => { fetchData(); }, [fetchData]);
+
+      if (loading) return React.createElement('div', { className: 'loading' },
+        'Loading Langfuse data',
+        React.createElement('div', { className: 'dot-pulse' },
+          React.createElement('span', null),
+          React.createElement('span', null),
+          React.createElement('span', null)
+        )
+      );
+      if (error && !data) return React.createElement('div', { className: 'loading', style: { color: '#f87171' } }, 'Error: ' + error);
+
+      const { traces, scores, daily, summary } = data || {};
+
+      // Filtered traces
+      const filteredTraces = useMemo(() => {
+        if (!traces) return [];
+        return traces.filter(t => {
+          if (featureFilter !== 'all' && extractFeature(t) !== featureFilter) return false;
+          if (orgFilter !== 'all' && extractOrg(t) !== orgFilter) return false;
+          return true;
+        });
+      }, [traces, featureFilter, orgFilter]);
+
+      // Unique features and orgs for filters
+      const features = useMemo(() => {
+        if (!traces) return [];
+        return [...new Set(traces.map(extractFeature))].sort();
+      }, [traces]);
+      const orgs = useMemo(() => {
+        if (!traces) return [];
+        return [...new Set(traces.map(extractOrg))].filter(o => o !== '\u2014').sort();
+      }, [traces]);
+
+      // Score map by traceId
+      const scoreMap = useMemo(() => {
+        const m = {};
+        (scores || []).forEach(s => {
+          if (!m[s.traceId]) m[s.traceId] = [];
+          m[s.traceId].push(s);
+        });
+        return m;
+      }, [scores]);
+
+      // Scored traces (traces that have at least one score)
+      const scoredTraces = useMemo(() => {
+        return filteredTraces.filter(t => scoreMap[t.id]?.length > 0);
+      }, [filteredTraces, scoreMap]);
+
+      // Low-scored traces
+      const lowScored = useMemo(() => {
+        return scoredTraces
+          .filter(t => scoreMap[t.id]?.some(s => s.value === 0))
+          .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+      }, [scoredTraces, scoreMap]);
+
+      return React.createElement('div', null,
+        // Topbar
+        React.createElement('div', { className: 'topbar' },
+          React.createElement('h1', null,
+            React.createElement('span', { className: 'dot', style: { background: data ? '#4ade80' : '#f87171' } }),
+            'Langfuse Admin'
+          ),
+          React.createElement('div', { className: 'nav-links' },
+            React.createElement('a', { href: '/' }, '\u2190 Dashboard'),
+            React.createElement('a', { href: 'https://us.cloud.langfuse.com', target: '_blank', className: 'langfuse-link' }, 'Open Langfuse \u2197'),
+            React.createElement('button', { className: 'refresh-btn', onClick: () => fetchData(true), disabled: refreshing },
+              refreshing ? 'Refreshing...' : '\u21BB Refresh'
+            )
+          )
+        ),
+
+        React.createElement('div', { className: 'container' },
+          // KPI Row
+          summary && React.createElement(KPIRow, { summary: summary }),
+
+          // Tabs
+          React.createElement('div', { className: 'tab-bar' },
+            ['overview', 'traces', 'scores', 'quality'].map(t =>
+              React.createElement('div', {
+                key: t, className: 'tab' + (tab === t ? ' active' : ''),
+                onClick: () => setTab(t)
+              }, t === 'overview' ? 'Overview' : t === 'traces' ? 'All Traces' : t === 'scores' ? 'Scores & Feedback' : 'Quality by Org')
+            )
+          ),
+
+          // Filters
+          React.createElement('div', { className: 'filter-row' },
+            React.createElement('select', { className: 'filter-select', value: featureFilter, onChange: e => setFeatureFilter(e.target.value) },
+              React.createElement('option', { value: 'all' }, 'All Features'),
+              features.map(f => React.createElement('option', { key: f, value: f }, FEATURE_LABELS[f] || f))
+            ),
+            React.createElement('select', { className: 'filter-select', value: orgFilter, onChange: e => setOrgFilter(e.target.value) },
+              React.createElement('option', { value: 'all' }, 'All Orgs'),
+              orgs.map(o => React.createElement('option', { key: o, value: o }, o))
+            ),
+            React.createElement('span', { className: 'text-sm text-muted' },
+              filteredTraces.length + ' traces' + (scores ? ' \u00B7 ' + scores.length + ' scores' : '')
+            )
+          ),
+
+          // Tab content
+          tab === 'overview' && React.createElement(OverviewTab, { data, filteredTraces, scoreMap, lowScored, daily }),
+          tab === 'traces' && React.createElement(TracesTab, { traces: filteredTraces, scoreMap, expandedTrace, setExpandedTrace }),
+          tab === 'scores' && React.createElement(ScoresTab, { scores: scores || [], traces: traces || [] }),
+          tab === 'quality' && React.createElement(QualityTab, { traces: traces || [], scoreMap, orgs, features })
+        )
+      );
+    }
+
+    function KPIRow({ summary }) {
+      const s = summary || {};
+      const approvalPct = (s.thumbsUp + s.thumbsDown) > 0
+        ? Math.round(100 * s.thumbsUp / (s.thumbsUp + s.thumbsDown))
+        : null;
+      const cards = [
+        { label: 'Total Traces', value: fmt(s.totalTraces || 0), sub: fmt(s.traces7d || 0) + ' last 7d', accent: 'accent' },
+        { label: 'Total Scores', value: fmt(s.totalScores || 0), sub: '\uD83D\uDC4D ' + (s.thumbsUp || 0) + '  \uD83D\uDC4E ' + (s.thumbsDown || 0), accent: 'accent' },
+        { label: 'Approval Rate', value: approvalPct !== null ? approvalPct + '%' : '\u2014', sub: 'thumbs up / total', accent: approvalPct >= 80 ? 'green' : approvalPct >= 60 ? 'amber' : 'red' },
+        { label: 'Total Cost', value: fmtUsd(s.totalCost || 0), sub: fmtUsd(s.cost7d || 0) + ' last 7d', accent: 'accent' },
+        { label: 'Tokens In', value: fmt(s.totalTokensIn || 0), sub: 'input tokens', accent: 'accent' },
+        { label: 'Tokens Out', value: fmt(s.totalTokensOut || 0), sub: 'output tokens', accent: 'accent' },
+      ];
+      return React.createElement('div', { className: 'kpi-row' },
+        cards.map((c, i) => React.createElement('div', { key: i, className: 'kpi-card' },
+          React.createElement('div', { className: 'label' }, c.label),
+          React.createElement('div', { className: 'value ' + c.accent }, c.value),
+          React.createElement('div', { className: 'sub' }, c.sub)
+        ))
+      );
+    }
+
+    function OverviewTab({ data, filteredTraces, scoreMap, lowScored, daily }) {
+      const { summary } = data || {};
+      const byFeature = summary?.byFeature || {};
+      const byOrg = summary?.byOrg || {};
+
+      return React.createElement('div', null,
+        React.createElement('div', { className: 'grid-2' },
+          // Feature breakdown
+          React.createElement('div', { className: 'panel' },
+            React.createElement('div', { className: 'panel-title' }, 'By Feature'),
+            Object.entries(byFeature).sort((a,b) => b[1].traces - a[1].traces).map(([k, v]) => {
+              const maxT = Math.max(...Object.values(byFeature).map(x => x.traces));
+              const barW = maxT > 0 ? Math.max(4, Math.round(100 * v.traces / maxT)) : 0;
+              const approval = (v.up + v.down) > 0 ? Math.round(100 * v.up / (v.up + v.down)) + '%' : '\u2014';
+              return React.createElement('div', { key: k, style: { marginBottom: 12 } },
+                React.createElement('div', { style: { display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 3 } },
+                  React.createElement('span', { style: { color: FEATURE_COLORS[k] || '#888' } }, FEATURE_LABELS[k] || k),
+                  React.createElement('span', { className: 'text-muted' }, v.traces + ' traces \u00B7 ' + approval + ' approval \u00B7 ' + fmtUsd(v.cost))
+                ),
+                React.createElement('div', { className: 'bar-bg' },
+                  React.createElement('div', { className: 'bar-fill', style: { width: barW + '%', background: FEATURE_COLORS[k] || '#888' } })
+                )
+              );
+            })
+          ),
+          // Org breakdown
+          React.createElement('div', { className: 'panel' },
+            React.createElement('div', { className: 'panel-title' }, 'By Organization'),
+            Object.entries(byOrg).sort((a,b) => b[1].traces - a[1].traces).slice(0, 12).map(([k, v]) => {
+              const maxT = Math.max(...Object.values(byOrg).map(x => x.traces));
+              const barW = maxT > 0 ? Math.max(4, Math.round(100 * v.traces / maxT)) : 0;
+              const approval = (v.up + v.down) > 0 ? Math.round(100 * v.up / (v.up + v.down)) + '%' : '\u2014';
+              return React.createElement('div', { key: k, style: { marginBottom: 12 } },
+                React.createElement('div', { style: { display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 3 } },
+                  React.createElement('span', { style: { color: '#60a5fa' } }, k),
+                  React.createElement('span', { className: 'text-muted' }, v.traces + ' traces \u00B7 ' + approval + ' \u00B7 ' + fmtUsd(v.cost))
+                ),
+                React.createElement('div', { className: 'bar-bg' },
+                  React.createElement('div', { className: 'bar-fill', style: { width: barW + '%', background: '#3b82f6' } })
+                )
+              );
+            })
+          )
+        ),
+
+        // Low-scored traces
+        lowScored.length > 0 && React.createElement('div', { className: 'panel', style: { marginTop: 0 } },
+          React.createElement('div', { className: 'panel-title' },
+            React.createElement('span', null, '\uD83D\uDC4E Low-Scored Traces (' + lowScored.length + ')'),
+            React.createElement('a', { href: 'https://us.cloud.langfuse.com', target: '_blank', className: 'langfuse-link' }, 'View in Langfuse \u2197')
+          ),
+          React.createElement('table', null,
+            React.createElement('thead', null,
+              React.createElement('tr', null,
+                React.createElement('th', null, 'When'),
+                React.createElement('th', null, 'Feature'),
+                React.createElement('th', null, 'Org'),
+                React.createElement('th', null, 'Input'),
+                React.createElement('th', null, 'Score'),
+                React.createElement('th', null, 'Comment')
+              )
+            ),
+            React.createElement('tbody', null,
+              lowScored.slice(0, 20).map(t => {
+                const sc = scoreMap[t.id]?.find(s => s.value === 0);
+                return React.createElement('tr', { key: t.id },
+                  React.createElement('td', null, React.createElement('span', { className: 'mono' }, fmtAgo(t.timestamp))),
+                  React.createElement('td', null, React.createElement('span', { className: 'badge badge-feature' }, FEATURE_LABELS[t.name] || t.name)),
+                  React.createElement('td', null, React.createElement('span', { className: 'badge badge-org' }, extractOrg(t))),
+                  React.createElement('td', null, React.createElement('span', { className: 'truncate', title: t.input || '' }, (t.input || '').slice(0, 80) || '\u2014')),
+                  React.createElement('td', null, React.createElement('span', { className: 'badge badge-down' }, '\uD83D\uDC4E')),
+                  React.createElement('td', { className: 'text-sm' }, sc?.comment || '\u2014')
+                );
+              })
+            )
+          )
+        ),
+
+        // Daily chart
+        daily && daily.length > 0 && React.createElement('div', { className: 'panel' },
+          React.createElement('div', { className: 'panel-title' }, 'Daily Activity (Last 30 Days)'),
+          React.createElement(DailyChart, { daily })
+        )
+      );
+    }
+
+    function DailyChart({ daily }) {
+      const canvasRef = useRef(null);
+      const chartRef = useRef(null);
+
+      useEffect(() => {
+        if (!canvasRef.current || !daily?.length) return;
+        if (chartRef.current) chartRef.current.destroy();
+
+        const labels = daily.map(d => {
+          const dt = new Date(d.date);
+          return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        });
+
+        chartRef.current = new Chart(canvasRef.current, {
+          type: 'bar',
+          data: {
+            labels,
+            datasets: [
+              { label: 'Traces', data: daily.map(d => d.countTraces || 0), backgroundColor: '#7c3aed88', borderColor: '#7c3aed', borderWidth: 1, borderRadius: 3 },
+              { label: 'Observations', data: daily.map(d => d.countObservations || 0), backgroundColor: '#3b82f688', borderColor: '#3b82f6', borderWidth: 1, borderRadius: 3 },
+            ]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { labels: { color: '#71717a', font: { size: 11 } } } },
+            scales: {
+              x: { ticks: { color: '#52525b', font: { size: 10 }, maxRotation: 45 }, grid: { color: '#27272a' } },
+              y: { ticks: { color: '#52525b', font: { size: 10 } }, grid: { color: '#27272a' } }
+            }
+          }
+        });
+        return () => { if (chartRef.current) chartRef.current.destroy(); };
+      }, [daily]);
+
+      return React.createElement('div', { className: 'chart-container' },
+        React.createElement('canvas', { ref: canvasRef })
+      );
+    }
+
+    function TracesTab({ traces, scoreMap, expandedTrace, setExpandedTrace }) {
+      const [page, setPage] = useState(0);
+      const pageSize = 50;
+      const paged = traces.slice(page * pageSize, (page + 1) * pageSize);
+      const totalPages = Math.ceil(traces.length / pageSize);
+
+      return React.createElement('div', { className: 'panel' },
+        React.createElement('div', { className: 'panel-title' },
+          React.createElement('span', null, 'All Traces (' + traces.length + ')'),
+          totalPages > 1 && React.createElement('div', { style: { display: 'flex', gap: 8, alignItems: 'center' } },
+            React.createElement('button', { className: 'expand-btn', disabled: page === 0, onClick: () => setPage(p => p - 1) }, '\u2190'),
+            React.createElement('span', { className: 'text-sm text-muted' }, (page + 1) + ' / ' + totalPages),
+            React.createElement('button', { className: 'expand-btn', disabled: page >= totalPages - 1, onClick: () => setPage(p => p + 1) }, '\u2192')
+          )
+        ),
+        React.createElement('table', null,
+          React.createElement('thead', null,
+            React.createElement('tr', null,
+              React.createElement('th', { style: { width: 30 } }),
+              React.createElement('th', null, 'Timestamp'),
+              React.createElement('th', null, 'Feature'),
+              React.createElement('th', null, 'Org'),
+              React.createElement('th', null, 'Input'),
+              React.createElement('th', null, 'Tokens'),
+              React.createElement('th', null, 'Cost'),
+              React.createElement('th', null, 'Score'),
+              React.createElement('th', null, 'Trace ID')
+            )
+          ),
+          React.createElement('tbody', null,
+            paged.map(t => {
+              const sc = scoreMap[t.id];
+              const isExpanded = expandedTrace === t.id;
+              const meta = (() => { try { return typeof t.metadata === 'string' ? JSON.parse(t.metadata) : (t.metadata || {}); } catch { return {}; } })();
+              const usage = t.usage || {};
+              return React.createElement(React.Fragment, { key: t.id },
+                React.createElement('tr', { onClick: () => setExpandedTrace(isExpanded ? null : t.id), style: { cursor: 'pointer' } },
+                  React.createElement('td', null, React.createElement('button', { className: 'expand-btn' }, isExpanded ? '\u25BC' : '\u25B6')),
+                  React.createElement('td', null,
+                    React.createElement('div', { className: 'mono' }, fmtDate(t.timestamp)),
+                    React.createElement('div', { className: 'text-sm text-muted' }, fmtTime(t.timestamp))
+                  ),
+                  React.createElement('td', null, React.createElement('span', { className: 'badge badge-feature' }, FEATURE_LABELS[t.name] || t.name)),
+                  React.createElement('td', null, React.createElement('span', { className: 'badge badge-org' }, extractOrg(t))),
+                  React.createElement('td', null, React.createElement('span', { className: 'truncate', title: t.input || '' }, (t.input || '\u2014').slice(0, 60))),
+                  React.createElement('td', { className: 'mono text-sm' }, fmt(usage.input || usage.totalTokens || 0)),
+                  React.createElement('td', { className: 'mono text-sm' }, usage.totalCost ? fmtUsd(usage.totalCost) : '\u2014'),
+                  React.createElement('td', null,
+                    sc ? sc.map((s, i) => React.createElement('span', { key: i, className: 'badge ' + (s.value >= 1 ? 'badge-up' : 'badge-down'), style: { marginRight: 4 } }, s.value >= 1 ? '\uD83D\uDC4D' : '\uD83D\uDC4E'))
+                      : React.createElement('span', { className: 'text-muted text-sm' }, '\u2014')
+                  ),
+                  React.createElement('td', { className: 'mono text-muted' }, (t.id || '').slice(0, 8))
+                ),
+                isExpanded && React.createElement('tr', { className: 'expanded-row' },
+                  React.createElement('td', { colSpan: 9 },
+                    React.createElement('div', { style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 } },
+                      React.createElement('div', null,
+                        React.createElement('div', { className: 'text-sm', style: { color: '#a78bfa', marginBottom: 4, fontWeight: 600 } }, 'INPUT'),
+                        React.createElement('div', { className: 'expanded-content' }, t.input || 'No input recorded')
+                      ),
+                      React.createElement('div', null,
+                        React.createElement('div', { className: 'text-sm', style: { color: '#4ade80', marginBottom: 4, fontWeight: 600 } }, 'OUTPUT'),
+                        React.createElement('div', { className: 'expanded-content' }, t.output || 'No output recorded')
+                      )
+                    ),
+                    sc && sc.length > 0 && React.createElement('div', { style: { marginTop: 8 } },
+                      React.createElement('div', { className: 'text-sm', style: { color: '#fbbf24', marginBottom: 4, fontWeight: 600 } }, 'FEEDBACK'),
+                      sc.map((s, i) => React.createElement('div', { key: i, className: 'text-sm', style: { marginBottom: 2 } },
+                        React.createElement('span', { className: 'badge ' + (s.value >= 1 ? 'badge-up' : 'badge-down'), style: { marginRight: 8 } }, s.value >= 1 ? 'Thumbs Up' : 'Thumbs Down'),
+                        s.comment && React.createElement('span', { className: 'text-muted' }, s.comment)
+                      ))
+                    ),
+                    React.createElement('div', { style: { marginTop: 8, fontSize: 11, color: '#52525b' } },
+                      'Full Trace ID: ' + t.id,
+                      ' \u00B7 ',
+                      React.createElement('a', { href: 'https://us.cloud.langfuse.com/trace/' + t.id, target: '_blank', style: { color: '#7c3aed' } }, 'Open in Langfuse \u2197')
+                    )
+                  )
+                )
+              );
+            })
+          )
+        )
+      );
+    }
+
+    function ScoresTab({ scores, traces }) {
+      const traceMap = useMemo(() => {
+        const m = {};
+        traces.forEach(t => { m[t.id] = t; });
+        return m;
+      }, [traces]);
+
+      const sorted = useMemo(() => [...scores].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)), [scores]);
+
+      // Score distribution
+      const dist = useMemo(() => {
+        const d = { up: 0, down: 0, byName: {} };
+        scores.forEach(s => {
+          if (s.value >= 1) d.up++; else d.down++;
+          if (!d.byName[s.name]) d.byName[s.name] = { up: 0, down: 0 };
+          if (s.value >= 1) d.byName[s.name].up++; else d.byName[s.name].down++;
+        });
+        return d;
+      }, [scores]);
+
+      return React.createElement('div', null,
+        React.createElement('div', { className: 'grid-3', style: { marginBottom: 24 } },
+          React.createElement('div', { className: 'panel' },
+            React.createElement('div', { className: 'panel-title' }, 'Score Distribution'),
+            React.createElement('div', { style: { display: 'flex', gap: 24, alignItems: 'center', justifyContent: 'center', padding: 16 } },
+              React.createElement('div', { style: { textAlign: 'center' } },
+                React.createElement('div', { style: { fontSize: 36, fontWeight: 700, color: '#4ade80' } }, dist.up),
+                React.createElement('div', { className: 'text-sm text-muted' }, '\uD83D\uDC4D Thumbs Up')
+              ),
+              React.createElement('div', { style: { textAlign: 'center' } },
+                React.createElement('div', { style: { fontSize: 36, fontWeight: 700, color: '#f87171' } }, dist.down),
+                React.createElement('div', { className: 'text-sm text-muted' }, '\uD83D\uDC4E Thumbs Down')
+              )
+            )
+          ),
+          React.createElement('div', { className: 'panel' },
+            React.createElement('div', { className: 'panel-title' }, 'By Score Name'),
+            Object.entries(dist.byName).map(([name, v]) => {
+              const total = v.up + v.down;
+              const pct = total > 0 ? Math.round(100 * v.up / total) : 0;
+              return React.createElement('div', { key: name, style: { marginBottom: 10 } },
+                React.createElement('div', { style: { display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 3 } },
+                  React.createElement('span', null, SCORE_LABELS[name] || name),
+                  React.createElement('span', { className: 'text-muted' }, pct + '% approval (' + total + ' votes)')
+                ),
+                React.createElement('div', { className: 'bar-bg' },
+                  React.createElement('div', { className: 'bar-fill', style: { width: pct + '%', background: pct >= 80 ? '#4ade80' : pct >= 60 ? '#fbbf24' : '#f87171' } })
+                )
+              );
+            })
+          ),
+          React.createElement('div', { className: 'panel' },
+            React.createElement('div', { className: 'panel-title' }, 'Recent Feedback Rate'),
+            React.createElement('div', { className: 'text-sm text-muted', style: { textAlign: 'center', padding: 20 } },
+              scores.length > 0
+                ? fmt(scores.length) + ' total feedback scores across all AI features'
+                : 'No scores yet'
+            )
+          )
+        ),
+        // Full scores table
+        React.createElement('div', { className: 'panel' },
+          React.createElement('div', { className: 'panel-title' }, 'All Scores (' + scores.length + ')'),
+          React.createElement('table', null,
+            React.createElement('thead', null,
+              React.createElement('tr', null,
+                React.createElement('th', null, 'When'),
+                React.createElement('th', null, 'Score Name'),
+                React.createElement('th', null, 'Value'),
+                React.createElement('th', null, 'Feature'),
+                React.createElement('th', null, 'Org'),
+                React.createElement('th', null, 'Comment'),
+                React.createElement('th', null, 'Trace ID')
+              )
+            ),
+            React.createElement('tbody', null,
+              sorted.slice(0, 100).map((s, i) => {
+                const trace = traceMap[s.traceId];
+                const meta = (() => { try { return typeof s.metadata === 'string' ? JSON.parse(s.metadata) : (s.metadata || {}); } catch { return {}; } })();
+                return React.createElement('tr', { key: s.id || i },
+                  React.createElement('td', { className: 'mono' }, fmtAgo(s.timestamp)),
+                  React.createElement('td', null, React.createElement('span', { className: 'badge badge-feature' }, SCORE_LABELS[s.name] || s.name)),
+                  React.createElement('td', null, React.createElement('span', { className: 'badge ' + (s.value >= 1 ? 'badge-up' : 'badge-down') }, s.value >= 1 ? '\uD83D\uDC4D 1' : '\uD83D\uDC4E 0')),
+                  React.createElement('td', null, trace ? React.createElement('span', { className: 'badge badge-feature' }, FEATURE_LABELS[trace.name] || trace.name) : '\u2014'),
+                  React.createElement('td', null, React.createElement('span', { className: 'badge badge-org' }, meta.org || (trace ? extractOrg(trace) : '\u2014'))),
+                  React.createElement('td', { className: 'text-sm', style: { maxWidth: 250 } }, s.comment || '\u2014'),
+                  React.createElement('td', { className: 'mono text-muted' },
+                    React.createElement('a', { href: 'https://us.cloud.langfuse.com/trace/' + s.traceId, target: '_blank', style: { color: '#7c3aed' } }, (s.traceId || '').slice(0, 8))
+                  )
+                );
+              })
+            )
+          )
+        )
+      );
+    }
+
+    function QualityTab({ traces, scoreMap, orgs, features }) {
+      // Build per-org quality matrix
+      const orgQuality = useMemo(() => {
+        const q = {};
+        traces.forEach(t => {
+          const org = extractOrg(t);
+          if (!q[org]) q[org] = { traces: 0, up: 0, down: 0, cost: 0, byFeature: {} };
+          q[org].traces++;
+          const usage = t.usage || {};
+          q[org].cost += usage.totalCost || 0;
+          const feature = extractFeature(t);
+          if (!q[org].byFeature[feature]) q[org].byFeature[feature] = { traces: 0, up: 0, down: 0 };
+          q[org].byFeature[feature].traces++;
+          (scoreMap[t.id] || []).forEach(s => {
+            if (s.value >= 1) { q[org].up++; q[org].byFeature[feature].up++; }
+            else { q[org].down++; q[org].byFeature[feature].down++; }
+          });
+        });
+        return q;
+      }, [traces, scoreMap]);
+
+      const sortedOrgs = Object.entries(orgQuality).sort((a, b) => b[1].traces - a[1].traces);
+
+      return React.createElement('div', { className: 'panel' },
+        React.createElement('div', { className: 'panel-title' }, 'Quality Matrix: Organization \u00D7 Feature'),
+        React.createElement('table', null,
+          React.createElement('thead', null,
+            React.createElement('tr', null,
+              React.createElement('th', null, 'Organization'),
+              React.createElement('th', null, 'Traces'),
+              React.createElement('th', null, 'Approval'),
+              React.createElement('th', null, 'Cost'),
+              ...features.map(f => React.createElement('th', { key: f, style: { fontSize: 10 } }, (FEATURE_LABELS[f] || f).split(' ').slice(0, 2).join(' ')))
+            )
+          ),
+          React.createElement('tbody', null,
+            sortedOrgs.filter(([k]) => k !== '\u2014').map(([org, v]) => {
+              const total = v.up + v.down;
+              const pct = total > 0 ? Math.round(100 * v.up / total) : null;
+              return React.createElement('tr', { key: org },
+                React.createElement('td', null, React.createElement('span', { className: 'badge badge-org' }, org)),
+                React.createElement('td', { className: 'mono' }, v.traces),
+                React.createElement('td', null,
+                  pct !== null
+                    ? React.createElement('span', { className: 'badge ' + (pct >= 80 ? 'badge-up' : pct >= 60 ? 'badge-down' : 'badge-down') }, pct + '%')
+                    : React.createElement('span', { className: 'text-muted' }, '\u2014')
+                ),
+                React.createElement('td', { className: 'mono text-sm' }, fmtUsd(v.cost)),
+                ...features.map(f => {
+                  const fv = v.byFeature[f];
+                  if (!fv) return React.createElement('td', { key: f, className: 'text-muted' }, '\u2014');
+                  const ft = fv.up + fv.down;
+                  const fp = ft > 0 ? Math.round(100 * fv.up / ft) + '%' : '';
+                  return React.createElement('td', { key: f, className: 'mono text-sm' }, fv.traces + (fp ? ' (' + fp + ')' : ''));
+                })
+              );
+            })
+          )
+        )
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(App));
+  </script>
+</body>
+</html>
