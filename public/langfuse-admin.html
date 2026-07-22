@@ -131,16 +131,6 @@
 
       useEffect(() => { fetchData(); }, [fetchData]);
 
-      if (loading) return React.createElement('div', { className: 'loading' },
-        'Loading Langfuse data',
-        React.createElement('div', { className: 'dot-pulse' },
-          React.createElement('span', null),
-          React.createElement('span', null),
-          React.createElement('span', null)
-        )
-      );
-      if (error && !data) return React.createElement('div', { className: 'loading', style: { color: '#f87171' } }, 'Error: ' + error);
-
       const { traces, scores, daily, summary } = data || {};
 
       // Filtered traces
@@ -184,6 +174,16 @@
           .filter(t => scoreMap[t.id]?.some(s => s.value === 0))
           .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
       }, [scoredTraces, scoreMap]);
+
+      if (loading) return React.createElement('div', { className: 'loading' },
+        'Loading Langfuse data',
+        React.createElement('div', { className: 'dot-pulse' },
+          React.createElement('span', null),
+          React.createElement('span', null),
+          React.createElement('span', null)
+        )
+      );
+      if (error && !data) return React.createElement('div', { className: 'loading', style: { color: '#f87171' } }, 'Error: ' + error);
 
       return React.createElement('div', null,
         // Topbar
