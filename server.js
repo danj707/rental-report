@@ -7277,6 +7277,17 @@ app.get("/api/admin/langfuse", async (req, res) => {
   }
 });
 
+// ── POST /api/admin/langfuse/reset — password-gated cache clear ──────
+app.post("/api/admin/langfuse/reset", (req, res) => {
+  const pw = req.body?.password;
+  if (!pw || pw !== process.env.DASHBOARD_PASSWORD) {
+    return res.status(403).json({ error: "Invalid password" });
+  }
+  _langfuseCache = { ts: 0, data: null };
+  console.log("[langfuse-admin] Cache reset by admin");
+  res.json({ ok: true });
+});
+
 // ── Langfuse Admin — page route ──────────────────────────────────────
 app.get("/langfuse", (req, res) => {
   const html = require("fs").readFileSync(path.join(__dirname, "public", "langfuse-admin.html"), "utf-8");

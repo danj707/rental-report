@@ -82,6 +82,7 @@
     const FEATURE_COLORS = { 'rec-insights': '#7c3aed', 'rec-chat': '#3b82f6', 'rec-wizard': '#6366f1', 'rec-recommend': '#f59e0b', 'rec-qbr': '#10b981', 'rec-annual': '#ec4899' };
     const SCORE_LABELS = { 'user-feedback': 'Report Feedback', 'wizard-feedback': 'Wizard Feedback', 'chat-feedback': 'Chat Feedback' };
 
+    function toStr(v) { if (v == null) return ''; if (typeof v === 'string') return v; try { return JSON.stringify(v, null, 2); } catch { return String(v); } }
     function fmt(n) { return n >= 1000 ? (n/1000).toFixed(1) + 'k' : String(n); }
     function fmtUsd(n) { return '$' + (n || 0).toFixed(2); }
     function fmtDate(iso) { if (!iso) return '\u2014'; const d = new Date(iso); return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); }
@@ -131,16 +132,6 @@
 
       useEffect(() => { fetchData(); }, [fetchData]);
 
-      if (loading) return React.createElement('div', { className: 'loading' },
-        'Loading Langfuse data',
-        React.createElement('div', { className: 'dot-pulse' },
-          React.createElement('span', null),
-          React.createElement('span', null),
-          React.createElement('span', null)
-        )
-      );
-      if (error && !data) return React.createElement('div', { className: 'loading', style: { color: '#f87171' } }, 'Error: ' + error);
-
       const { traces, scores, daily, summary } = data || {};
 
       // Filtered traces
@@ -185,6 +176,16 @@
           .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
       }, [scoredTraces, scoreMap]);
 
+      if (loading) return React.createElement('div', { className: 'loading' },
+        'Loading Langfuse data',
+        React.createElement('div', { className: 'dot-pulse' },
+          React.createElement('span', null),
+          React.createElement('span', null),
+          React.createElement('span', null)
+        )
+      );
+      if (error && !data) return React.createElement('div', { className: 'loading', style: { color: '#f87171' } }, 'Error: ' + error);
+
       return React.createElement('div', null,
         // Topbar
         React.createElement('div', { className: 'topbar' },
@@ -197,7 +198,15 @@
             React.createElement('a', { href: 'https://us.cloud.langfuse.com', target: '_blank', className: 'langfuse-link' }, 'Open Langfuse \u2197'),
             React.createElement('button', { className: 'refresh-btn', onClick: () => fetchData(true), disabled: refreshing },
               refreshing ? 'Refreshing...' : '\u21BB Refresh'
-            )
+            ),
+            React.createElement('button', { className: 'refresh-btn', style: { marginLeft: 4, borderColor: '#f8717155' }, onClick: () => {
+              const pw = prompt('Admin password to reset Langfuse cache:');
+              if (!pw) return;
+              fetch('/api/admin/langfuse/reset', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: pw }) })
+                .then(r => r.json())
+                .then(d => { if (d.ok) { alert('Cache cleared. Refreshing...'); fetchData(true); } else { alert(d.error || 'Failed'); } })
+                .catch(e => alert('Error: ' + e.message));
+            } }, '\uD83D\uDD12 Reset Cache')
           )
         ),
 
@@ -330,7 +339,7 @@
                   React.createElement('td', null, React.createElement('span', { className: 'mono' }, fmtAgo(t.timestamp))),
                   React.createElement('td', null, React.createElement('span', { className: 'badge badge-feature' }, FEATURE_LABELS[t.name] || t.name)),
                   React.createElement('td', null, React.createElement('span', { className: 'badge badge-org' }, extractOrg(t))),
-                  React.createElement('td', null, React.createElement('span', { className: 'truncate', title: t.input || '' }, (t.input || '').slice(0, 80) || '\u2014')),
+                  React.createElement('td', null, React.createElement('span', { className: 'truncate', title: toStr(t.input) }, toStr(t.input).slice(0, 80) || '\u2014')),
                   React.createElement('td', null, React.createElement('span', { className: 'badge badge-down' }, '\uD83D\uDC4E')),
                   React.createElement('td', { className: 'text-sm' }, sc?.comment || '\u2014')
                 );
@@ -431,7 +440,7 @@
                   ),
                   React.createElement('td', null, React.createElement('span', { className: 'badge badge-feature' }, FEATURE_LABELS[t.name] || t.name)),
                   React.createElement('td', null, React.createElement('span', { className: 'badge badge-org' }, extractOrg(t))),
-                  React.createElement('td', null, React.createElement('span', { className: 'truncate', title: t.input || '' }, (t.input || '\u2014').slice(0, 60))),
+                  React.createElement('td', null, React.createElement('span', { className: 'truncate', title: toStr(t.input) }, toStr(t.input).slice(0, 60) || '\u2014')),
                   React.createElement('td', { className: 'mono text-sm' }, fmt(usage.input || usage.totalTokens || 0)),
                   React.createElement('td', { className: 'mono text-sm' }, usage.totalCost ? fmtUsd(usage.totalCost) : '\u2014'),
                   React.createElement('td', null,
@@ -445,11 +454,11 @@
                     React.createElement('div', { style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 } },
                       React.createElement('div', null,
                         React.createElement('div', { className: 'text-sm', style: { color: '#a78bfa', marginBottom: 4, fontWeight: 600 } }, 'INPUT'),
-                        React.createElement('div', { className: 'expanded-content' }, t.input || 'No input recorded')
+                        React.createElement('div', { className: 'expanded-content' }, toStr(t.input) || 'No input recorded')
                       ),
                       React.createElement('div', null,
                         React.createElement('div', { className: 'text-sm', style: { color: '#4ade80', marginBottom: 4, fontWeight: 600 } }, 'OUTPUT'),
-                        React.createElement('div', { className: 'expanded-content' }, t.output || 'No output recorded')
+                        React.createElement('div', { className: 'expanded-content' }, toStr(t.output) || 'No output recorded')
                       )
                     ),
                     sc && sc.length > 0 && React.createElement('div', { style: { marginTop: 8 } },
