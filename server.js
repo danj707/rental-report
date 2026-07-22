@@ -7146,6 +7146,144 @@ app.get("/api/admin/ai-analytics", (req, res) => {
   }
 });
 
+// ── Langfuse Admin — API proxy with server-side cache ────────────────
+let _langfuseCache = { ts: 0, data: null };
+const LANGFUSE_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+async function fetchLangfuseAPI(path, params = {}) {
+  if (!process.env.LANGFUSE_PUBLIC_KEY || !process.env.LANGFUSE_SECRET_KEY) return null;
+  const baseUrl = process.env.LANGFUSE_BASE_URL || "https://us.cloud.langfuse.com";
+  const auth = Buffer.from(process.env.LANGFUSE_PUBLIC_KEY + ":" + process.env.LANGFUSE_SECRET_KEY).toString("base64");
+  const qs = new URLSearchParams(params).toString();
+  const url = baseUrl + "/api/public" + path + (qs ? "?" + qs : "");
+  const r = await fetch(url, { headers: { Authorization: "Basic " + auth }, signal: AbortSignal.timeout(15000) });
+  if (!r.ok) { console.error("[langfuse-api]", path, r.status, await r.text().catch(() => "")); return null; }
+  return r.json();
+}
+
+async function buildLangfuseAdminData() {
+  const now = new Date();
+  const from30d = new Date(now - 30 * 86400000).toISOString();
+
+  // Fetch traces (last 30 days, paginated — grab up to 500)
+  let allTraces = [];
+  for (let page = 1; page <= 5; page++) {
+    const batch = await fetchLangfuseAPI("/traces", {
+      limit: 100, page, orderBy: "timestamp.desc",
+      fromTimestamp: from30d,
+    });
+    if (!batch || !batch.data || batch.data.length === 0) break;
+    allTraces = allTraces.concat(batch.data);
+    if (batch.data.length < 100) break;
+  }
+
+  // Fetch scores (last 30 days, paginated)
+  let allScores = [];
+  for (let page = 1; page <= 5; page++) {
+    const batch = await fetchLangfuseAPI("/scores", { limit: 100, page });
+    if (!batch || !batch.data || batch.data.length === 0) break;
+    allScores = allScores.concat(batch.data);
+    if (batch.data.length < 100) break;
+  }
+
+  // Fetch daily metrics
+  const dailyData = await fetchLangfuseAPI("/metrics/daily", { limit: 30 });
+  const daily = dailyData?.data || [];
+
+  // Build summary aggregates
+  const d7 = 7 * 86400000;
+  let totalCost = 0, cost7d = 0, totalIn = 0, totalOut = 0, traces7d = 0;
+  const byFeature = {};
+  const byOrg = {};
+
+  allTraces.forEach(t => {
+    const age = now - new Date(t.timestamp).getTime();
+    const usage = t.usage || {};
+    const cost = usage.totalCost || 0;
+    totalCost += cost;
+    totalIn += usage.input || usage.promptTokens || 0;
+    totalOut += usage.output || usage.completionTokens || 0;
+    if (age < d7) { cost7d += cost; traces7d++; }
+
+    const feature = t.name || "unknown";
+    if (!byFeature[feature]) byFeature[feature] = { traces: 0, cost: 0, up: 0, down: 0 };
+    byFeature[feature].traces++;
+    byFeature[feature].cost += cost;
+
+    let org = "\u2014";
+    try {
+      const meta = typeof t.metadata === "string" ? JSON.parse(t.metadata) : (t.metadata || {});
+      org = meta.org || meta["rec.org"] || "\u2014";
+    } catch {}
+    if (!byOrg[org]) byOrg[org] = { traces: 0, cost: 0, up: 0, down: 0 };
+    byOrg[org].traces++;
+    byOrg[org].cost += cost;
+  });
+
+  // Map scores to features/orgs
+  const traceMap = {};
+  allTraces.forEach(t => { traceMap[t.id] = t; });
+  let thumbsUp = 0, thumbsDown = 0;
+  allScores.forEach(s => {
+    if (s.value >= 1) thumbsUp++; else thumbsDown++;
+    const trace = traceMap[s.traceId];
+    if (trace) {
+      const feature = trace.name || "unknown";
+      if (byFeature[feature]) { if (s.value >= 1) byFeature[feature].up++; else byFeature[feature].down++; }
+      let org = "\u2014";
+      try {
+        const meta = typeof trace.metadata === "string" ? JSON.parse(trace.metadata) : (trace.metadata || {});
+        org = meta.org || meta["rec.org"] || "\u2014";
+      } catch {}
+      if (byOrg[org]) { if (s.value >= 1) byOrg[org].up++; else byOrg[org].down++; }
+    }
+  });
+
+  return {
+    traces: allTraces,
+    scores: allScores,
+    daily,
+    summary: {
+      totalTraces: allTraces.length,
+      traces7d,
+      totalScores: allScores.length,
+      thumbsUp, thumbsDown,
+      totalCost, cost7d,
+      totalTokensIn: totalIn,
+      totalTokensOut: totalOut,
+      byFeature, byOrg,
+    },
+    cachedAt: new Date().toISOString(),
+  };
+}
+
+app.get("/api/admin/langfuse", async (req, res) => {
+  try {
+    if (!process.env.LANGFUSE_PUBLIC_KEY || !process.env.LANGFUSE_SECRET_KEY) {
+      return res.status(503).json({ error: "Langfuse not configured" });
+    }
+    const forceRefresh = req.query.refresh === "1";
+    if (!forceRefresh && _langfuseCache.data && (Date.now() - _langfuseCache.ts < LANGFUSE_CACHE_TTL)) {
+      return res.json(_langfuseCache.data);
+    }
+    console.log("[langfuse-admin] Fetching fresh data from Langfuse API...");
+    const data = await buildLangfuseAdminData();
+    _langfuseCache = { ts: Date.now(), data };
+    console.log("[langfuse-admin] Cached:", data.traces.length, "traces,", data.scores.length, "scores");
+    res.json(data);
+  } catch (err) {
+    console.error("[langfuse-admin]", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Langfuse Admin — page route ──────────────────────────────────────
+app.get("/langfuse", (req, res) => {
+  const html = require("fs").readFileSync(path.join(__dirname, "public", "langfuse-admin.html"), "utf-8");
+  res.type("html").send(html);
+});
+
+
 app.get("/", (req, res) => {
   // Fire-and-forget: warm pulse cache for any orgs missing data (don't block render)
   const slugsMissingPulse = Object.keys(ORGS).filter(s => ORGS[s].token && !getCachedPulse(s));
@@ -7793,6 +7931,7 @@ app.get("/", (req, res) => {
     <div class="topbar-divider"></div>
     <div class="topbar-sub">Report Server</div>
     <div style="flex:1"></div>
+    <a href="/langfuse" style="font-size:12px;padding:6px 14px;background:rgba(124,58,237,.85);border:1px solid rgba(124,58,237,1);border-radius:5px;color:#fff;cursor:pointer;text-decoration:none;margin-right:8px;transition:background .15s" onmouseover="this.style.background='rgba(109,40,217,1)'" onmouseout="this.style.background='rgba(124,58,237,.85)'">&#x1F50D; Langfuse</a>
     <a href="/qbr" style="font-size:12px;padding:6px 14px;background:rgba(31,122,90,.92);border:1px solid rgba(31,122,90,1);border-radius:5px;color:#fff;cursor:pointer;text-decoration:none;margin-right:8px;transition:background .15s" onmouseover="this.style.background='rgba(26,106,78,1)'" onmouseout="this.style.background='rgba(31,122,90,.92)'">📊 QBR Generator</a>
     <button onclick="openAddOrg()" style="font-size:12px;padding:6px 14px;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.2);border-radius:5px;color:#eee;cursor:pointer;transition:background .15s" onmouseover="this.style.background='rgba(255,255,255,.22)'" onmouseout="this.style.background='rgba(255,255,255,.12)'">➕ Add Org</button>
   </div>
@@ -9557,12 +9696,19 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
-  { date: '2026-07-22', title: '🏕️ Interactive Campsite Map — Pleasant Hill', items: [
-    'New public campsite map at /pleasant-hill/campmap — Leaflet map (Google satellite / OpenStreetMap toggle) plotting Pleasant Hill City Lake’s 12 campsites (Main Entrance 1–4, Brown’s Arm 5–12).',
-    'Per-night availability overlay: a date strip recolors each site marker green (open) / red (booked); clicking a site opens a detail card with photo gallery, electric/primitive type, $25/$20 resident rate, check-in/out, amenities, a month mini-calendar, and a Book on rec.us link.',
-    'Live site + availability data pulled via the rec.us MCP (reuses the rentalcalendar availability-batch endpoint); deterministic offline fallback so the page previews standalone. Added pleasant-hill to ORGS; campmap is token-free like the public calendars.',
-    'Known gap: only site 01 has stored lat/lng — the other 11 are placed approximately and will snap to real positions once coordinates are added in rec.us admin.'
+  { date: '2026-07-22', title: '🏕️ Interactive Campsite Maps — Pleasant Hill & Douglas County', items: [
+    'New public campsite maps at /pleasant-hill/campmap and /douglas-county-nv/campmap — Leaflet map (Google satellite / OpenStreetMap toggle) plotting each campground’s sites with a per-night availability overlay. A date strip recolors each site marker green (open) / red (booked); clicking a site opens a detail card with photo gallery, site type, rate, check-in/out, amenities, a month mini-calendar, and a Book on rec.us link.',
+    'Config-driven per org via campmap-seeds.json (Pleasant Hill 12 sites; Douglas County / Topaz Lake 41 sites). Live site + availability data via the rec.us MCP (reuses the rentalcalendar availability-batch endpoint); deterministic offline fallback so the page previews standalone.',
+    'Admin drag-to-place editor (unlocked with the org token): drag pins, Save to publish for all viewers, with Discard / Reset-all / per-pin reset. Positions persist under DATA_DIR (Railway volume). Sites without stored lat/lng are placed approximately until positioned.',
   ] },
+  { date: '2026-07-22', title: 'Langfuse Admin Panel', items: [
+      'New /langfuse page: full cross-org Langfuse admin panel with dark theme. Proxies Langfuse REST API (traces, scores, daily metrics) through /api/admin/langfuse endpoint with 5-min server-side cache.',
+      'Overview tab: KPI row (traces, scores, approval rate, cost, tokens), feature breakdown bars with approval rates, org breakdown bars, low-scored traces table with comments, daily activity chart (Chart.js).',
+      'All Traces tab: paginated 50-per-page table with expandable rows showing full input/output and feedback. Click any trace to see prompt and response. Direct links to Langfuse Cloud per trace.',
+      'Scores and Feedback tab: score distribution (thumbs up/down totals), breakdown by score name with approval bars, full scores table with org/feature/comment columns.',
+      'Quality by Org tab: organization x feature quality matrix showing trace counts, approval rates, and cost per org per feature.',
+      'Filters: global feature and org dropdowns filter all tabs. Refresh button forces cache bust. Linked from root dashboard topbar.',
+    ] },
   { date: '2026-07-21', items: ['Calendar: added Copy and Share Link button to session popup modals — copies the View Session URL to clipboard for easy sharing'] },
     { date: '2026-07-21', title: '📈 Calendar Funnel: Prior-Period Comparison', items: [
       'Calendar View → Registration Funnel now shows month-over-month delta: compares current 30d enrollments and revenue vs the prior 30d window. Delta badges (↑/↓ %) appear on Enrollments and Revenue KPIs. Prior-period summary row shows raw numbers below KPIs. Revenue comparison uses current avg ticket applied to prior enrollment count (noted as estimated). Data comes from existing program-demographics card (no date filter, returns all enrollments) so no new Metabase fetch required.',
