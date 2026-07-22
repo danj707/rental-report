@@ -346,6 +346,7 @@ function siteMeta(s){
     capacity: pick(ad.capacity, def.capacity, haveCfg?null:fb.capacity),
     rate:     pick(ad.rate,     def.rate,     haveCfg?null:fb.rate),
     resRate:  pick(ad.resRate,  def.resRate,  haveCfg?null:fb.resRate),
+    reservationFee: pick(ad.reservationFee, def.reservationFee, null),
     blurb:    pick(ad.blurb,    def.blurb,    haveCfg?null:fb.blurb),
   };
 }
@@ -632,12 +633,16 @@ function renderBody(site){
   body+='<div class="area">'+kindTag+'<span>📍 '+site.area+' · '+locName+'</span></div>';
   if(EDIT){ body+='<div class="pin-edit"><b>Edit mode</b> — drag this pin on the map to move it.<br><button id="pinReset">⟲ Reset this pin to default</button></div>'; }
   body+='<p class="blurb">'+sBlurb(site)+'</p>';
+  var fee = meta.reservationFee;
+  var rateSub = (rate!=null && fee) ? '/ night · from $'+(rate+fee)+' incl. fee' : '/ night';
   body+='<div class="kv">';
-  body+='<div><div class="k">Rate</div><div class="v">'+(rate!=null?'$'+rate:'—')+' <span style="font-size:11px;color:var(--muted);font-weight:500">/ night</span></div></div>';
+  body+='<div><div class="k">Rate</div><div class="v">'+(rate!=null?'$'+rate:'—')+' <span style="font-size:11px;color:var(--muted);font-weight:500">'+rateSub+'</span></div></div>';
   if(resRate!=null) body+='<div><div class="k">Resident</div><div class="v">$'+resRate+' <span style="font-size:11px;color:var(--muted);font-weight:500">/ night</span></div></div>';
+  if(fee) body+='<div><div class="k">Reservation fee</div><div class="v">$'+fee+' <span style="font-size:11px;color:var(--muted);font-weight:500">per booking</span></div></div>';
   if(meta.checkIn) body+='<div><div class="k">Check-in</div><div class="v">'+meta.checkIn+'</div></div>';
   if(meta.checkOut) body+='<div><div class="k">Check-out</div><div class="v">'+meta.checkOut+'</div></div>';
   if(cap!=null) body+='<div><div class="k">Capacity</div><div class="v">Up to '+cap+'</div></div>';
+  if(site.maxTrailer) body+='<div><div class="k">Max trailer</div><div class="v">'+site.maxTrailer+' ft</div></div>';
   if(meta.maxNights) body+='<div><div class="k">Max stay</div><div class="v">'+meta.maxNights+' nights</div></div>';
   body+='</div>';
   body+='<div class="sec-h">Amenities</div><div class="amen-list">'+amens+'</div>';
@@ -892,12 +897,15 @@ function loadSites(){
   fetch('/'+SLUG+'/rentalcalendar/api/sites')
     .then(function(r){ if(!r.ok) throw new Error('http '+r.status); return r.json(); })
     .then(function(res){
-      var live=(res.sites||[]).filter(function(s){ return s.type==='campsite'; });
-      if(!live.length) throw new Error('no live campsites');
-      live.forEach(function(ls){
-        LIVE_BY_ID[ls.id]=ls;
-        if(!SEED.some(function(s){ return s.id===ls.id; })){
-          // a campsite that isn't in the baked seed — add it with an approximate position
+      var all=(res.sites||[]); var used=0;
+      var seedIds={}; SEED.forEach(function(s){ seedIds[s.id]=true; });
+      all.forEach(function(ls){
+        // Merge by ID onto the seed regardless of the API's `type` value (orgs type
+        // campsites inconsistently), so live price/photo/description upgrade the seed.
+        if(seedIds[ls.id]){ LIVE_BY_ID[ls.id]=ls; used++; return; }
+        // A campsite not in the seed — add it with an approximate position.
+        if(ls.type==='campsite'){
+          LIVE_BY_ID[ls.id]=ls; used++;
           var num=parseInt(((ls.courtNumber||ls.name||'').match(/\d+/)||['0'])[0],10) || (SEED.length+1);
           var brown=/brown/i.test(ls.courtNumber||ls.name||'');
           var ns={ n:num, id:ls.id, name:ls.courtNumber||ls.name, area:brown?"Brown's Arm":'Main Entrance',
@@ -907,6 +915,7 @@ function loadSites(){
           SEED.push(ns); addMarker(ns);
         }
       });
+      if(!used) throw new Error('no live sites matched');
       SITES_LIVE=true; updateLegFoot(); refreshMarkers();
       if(selectedId){ var s=SEED.filter(function(x){return x.id===selectedId;})[0]; if(s){ renderGallery(s); renderBody(s); } }
     })
