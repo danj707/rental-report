@@ -25,7 +25,7 @@ body{font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica
 .hdr .titles{flex:1;min-width:180px}
 .hdr h1{font-size:17px;margin:0;line-height:1.2;font-weight:700}
 .hdr .sub{font-size:12px;color:var(--muted);margin-top:1px}
-.hdr .mock-tag{font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:#92400e;background:#fef3c7;border:1px solid #fde68a;border-radius:999px;padding:3px 9px;white-space:nowrap}
+.hdr .mock-tag{font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:#065f46;background:#d1fae5;border:1px solid #a7f3d0;border-radius:999px;padding:3px 9px;white-space:nowrap}
 .hdr .wx{font-size:12px;color:#374151;font-weight:600;white-space:nowrap;background:#f3f4f6;border-radius:8px;padding:5px 10px}
 
 /* ── Date bar ── */
@@ -161,6 +161,27 @@ body{font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica
 .pin-edit b{color:#312e81}
 .pin-edit button{margin-top:6px;border:1px solid #c7d2fe;background:#fff;color:#4338ca;border-radius:7px;padding:4px 9px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:inherit}
 .pin-edit button:hover{background:#eef2ff}
+/* custom admin markers */
+.editbar .addmk{background:#0ea5e9;color:#fff}
+.cust-pin{width:22px;height:22px;background:var(--c,#38bdf8);border:2px solid #fff;border-radius:50% 50% 50% 0;transform:rotate(-45deg);box-shadow:0 2px 5px rgba(0,0,0,.45);cursor:pointer}
+.cust-pin.editing{outline:2px dashed #312e81;outline-offset:3px}
+.leaflet-tooltip.cust-tip{background:#fff;border:1px solid #cbd5e1;border-radius:8px;font-weight:700;font-size:12px;color:#1f2937;box-shadow:0 1px 3px rgba(0,0,0,.28);padding:3px 8px}
+.leaflet-tooltip.cust-tip::before{display:none}
+.mk-editor{position:absolute;top:60px;left:12px;z-index:620;background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow-lg);padding:14px;width:290px;max-width:92vw;display:none}
+.mk-editor.on{display:block}
+.mk-editor h4{margin:0 0 4px;font-size:14px}
+.mk-editor .hint{font-size:11px;color:var(--muted);margin-bottom:8px}
+.mk-editor label{display:block;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin:9px 0 3px}
+.mk-editor input[type=text],.mk-editor textarea{width:100%;border:1px solid var(--line);border-radius:8px;padding:7px 9px;font:inherit;font-size:13px}
+.mk-editor textarea{resize:vertical;min-height:46px}
+.mk-editor .colorrow{display:flex;align-items:center;gap:8px}
+.mk-editor input[type=color]{width:40px;height:30px;border:1px solid var(--line);border-radius:8px;padding:2px;cursor:pointer;flex:0 0 auto}
+.mk-editor .swatches{display:flex;gap:6px;flex-wrap:wrap}
+.mk-editor .sw{width:20px;height:20px;border-radius:50%;cursor:pointer;border:2px solid #fff;box-shadow:0 0 0 1px #cbd5e1}
+.mk-editor .row2{display:flex;justify-content:space-between;margin-top:13px;gap:8px}
+.mk-editor .del{background:#fee2e2;color:#991b1b;border:none;border-radius:8px;padding:7px 12px;font-weight:700;font-size:12px;cursor:pointer}
+.mk-editor .del:hover{background:#fecaca}
+.mk-editor .done2{background:var(--accent);color:#fff;border:none;border-radius:8px;padding:7px 16px;font-weight:700;font-size:12px;cursor:pointer}
 </style>
 </head>
 <body>
@@ -173,7 +194,7 @@ body{font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica
     </div>
     <span class="wx" id="wx" style="display:none"></span>
     <button class="edit-btn" id="editBtn" style="display:none">✏️ Edit layout</button>
-    <span class="mock-tag" id="mockTag">Mockup · live rec.us data</span>
+    <span class="mock-tag" id="mockTag">Live rec.us data</span>
   </div>
 
   <div class="datebar">
@@ -189,10 +210,28 @@ body{font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica
     <div class="editbar" id="editbar">
       <span class="msg" id="editMsg">Drag campsite pins to place them.</span>
       <span class="sep"></span>
+      <button class="addmk" id="editAddMarker">➕ Add marker</button>
       <button class="save" id="editSave" disabled>💾 Save</button>
       <button class="discard" id="editDiscard">↩︎ Discard</button>
       <button class="reset" id="editReset">⟲ Reset all</button>
       <button class="done" id="editDone">Done</button>
+    </div>
+    <div class="mk-editor" id="mkEditor">
+      <h4>Custom marker</h4>
+      <div class="hint">Drag the pin on the map to place it.</div>
+      <label>Label</label>
+      <input type="text" id="mkLabel" placeholder="e.g. Boat Ramp" maxlength="80"/>
+      <label>Color</label>
+      <div class="colorrow">
+        <input type="color" id="mkColor" value="#38bdf8"/>
+        <div class="swatches" id="mkSwatches"></div>
+      </div>
+      <label>Description</label>
+      <textarea id="mkText" placeholder="A line or two shown to customers…" maxlength="500"></textarea>
+      <div class="row2">
+        <button class="del" id="mkDelete">🗑 Delete</button>
+        <button class="done2" id="mkDone">Done</button>
+      </div>
     </div>
     <div class="toast" id="toast"></div>
     <div class="mapctl">
@@ -345,8 +384,8 @@ function computeRate(l, resident){
   var dollars = perNight ? cents/100 : (cents/100)*(dm/60);
   return Math.round(dollars);
 }
-function sRate(s){ var r=computeRate(L_(s),false); return r!=null?r:siteMeta(s).rate; }
-function sResRate(s){ var r=computeRate(L_(s),true); return r!=null?r:siteMeta(s).resRate; }
+function sRate(s){ var r=computeRate(L_(s),false); if(r!=null) return r; if(s.price!=null) return s.price; return siteMeta(s).rate; }
+function sResRate(s){ var r=computeRate(L_(s),true); if(r!=null) return r; if(s.resPrice!=null) return s.resPrice; return siteMeta(s).resRate; }
 function sBlurb(s){ var l=L_(s);
   if(l && l.description){ var t=l.description.replace(/<[^>]*>/g,' ').replace(/&nbsp;/g,' ').replace(/\s+/g,' ').trim();
     var m=t.match(/^.*?[.!?](\s|$)/); return m ? m[0].trim() : t.slice(0,170); }
@@ -359,6 +398,8 @@ function sAmen(s){ var l=L_(s);
 function sPhotos(s){ var l=L_(s);
   if(l && l.gallery && l.gallery.length) return l.gallery.slice();
   if(l && l.imageUrl) return [l.imageUrl];
+  if(s.photos && s.photos.length) return s.photos.slice();
+  if(s.photo) return [s.photo];
   return (s.ph||[]).map(function(f){ return S3+'/site-'+s.id+'/mainGallery/'+f; });
 }
 
@@ -479,6 +520,7 @@ function buildMarkers(){
 function fitToSites(){
   var pts=SEED.map(function(s){ return [s.lat,s.lng]; });
   LANDMARKS.forEach(function(k){ pts.push([k.lat,k.lng]); });
+  customMarkers.forEach(function(m){ pts.push([m.lat,m.lng]); });
   if(pts.length){ try{ map.fitBounds(pts, {padding:[60,60], maxZoom:18}); }catch(e){} }
 }
 function buildLegendDynamic(){
@@ -671,30 +713,45 @@ function wxEmoji(f){ f=(f||'').toLowerCase();
 function snapshotSaved(){ savedCoords={}; SEED.forEach(function(s){ savedCoords[s.id]={lat:s.lat,lng:s.lng}; }); }
 function diffCount(){ var n=0; SEED.forEach(function(s){ var b=savedCoords[s.id]||DEFAULT_COORDS[s.id]; if(b && (Math.abs(b.lat-s.lat)>1e-7 || Math.abs(b.lng-s.lng)>1e-7)) n++; }); return n; }
 function refreshDirty(){
-  var n=diffCount(); DIRTY = n>0;
+  var n=diffCount(); var mk=markersDirty(); DIRTY = n>0 || mk;
   var sv=document.getElementById('editSave'); if(sv) sv.disabled=!DIRTY;
-  var m=document.getElementById('editMsg');
-  if(m) m.innerHTML = DIRTY ? ('<span class="dirty">'+n+' unsaved change'+(n===1?'':'s')+'</span> — Save to publish for everyone.') : 'Drag campsite pins to reposition them.';
+  var m=document.getElementById('editMsg'); if(!m) return;
+  if(!DIRTY){ m.innerHTML='Drag pins to reposition, or ➕ add a custom marker.'; return; }
+  var parts=[];
+  if(n>0) parts.push(n+' pin'+(n===1?'':'s')+' moved');
+  if(mk) parts.push('markers edited');
+  m.innerHTML='<span class="dirty">Unsaved: '+parts.join(' · ')+'</span> — Save to publish for everyone.';
 }
 function setEditMode(on){
   EDIT=on;
   var b=document.getElementById('editBtn'); b.classList.toggle('on',on); b.textContent = on?'✕ Exit edit':'✏️ Edit layout';
   document.getElementById('editbar').classList.toggle('on',on);
   SEED.forEach(function(s){ var m=markers[s.id]; if(m && m.dragging){ if(on) m.dragging.enable(); else m.dragging.disable(); } });
+  Object.keys(markerLayers).forEach(function(id){ var m=markerLayers[id]; if(m && m.dragging){ if(on) m.dragging.enable(); else m.dragging.disable(); } });
+  if(!on) closeMkEditor();
   refreshMarkers(); refreshDirty();
   if(selectedId){ var s=SEED.filter(function(x){return x.id===selectedId;})[0]; if(s) renderBody(s); }
 }
 function saveLayout(){
   var positions={}; SEED.forEach(function(s){ positions[s.id]={lat:+s.lat, lng:+s.lng}; });
+  var q = TOKEN ? ('?token='+encodeURIComponent(TOKEN)) : '';
   var btn=document.getElementById('editSave'); btn.disabled=true; btn.textContent='Saving…';
-  fetch('/'+SLUG+'/campmap/api/positions'+(TOKEN?('?token='+encodeURIComponent(TOKEN)):''),{
-    method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({positions:positions, token:TOKEN})
-  }).then(function(r){ if(!r.ok) throw new Error('http '+r.status); return r.json(); })
-   .then(function(res){ snapshotSaved(); SEED.forEach(function(s){ s.placed=true; }); btn.textContent='💾 Save'; refreshDirty(); refreshMarkers(); toast('Saved '+(res.saved||0)+' pin position'+((res.saved===1)?'':'s')+' ✓'); if(selectedId){var s=SEED.filter(function(x){return x.id===selectedId;})[0]; if(s)renderBody(s);} })
-   .catch(function(){ btn.disabled=false; btn.textContent='💾 Save'; toast('Save failed — open this page with your admin ?token to edit.'); });
+  function chk(r){ if(!r.ok) throw new Error('http '+r.status); return r.json(); }
+  Promise.all([
+    fetch('/'+SLUG+'/campmap/api/positions'+q,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({positions:positions, token:TOKEN})}).then(chk),
+    fetch('/'+SLUG+'/campmap/api/markers'+q,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({markers:normMk(customMarkers), token:TOKEN})}).then(chk)
+  ]).then(function(){
+    snapshotSaved(); savedMarkers=JSON.stringify(normMk(customMarkers)); SEED.forEach(function(s){ s.placed=true; });
+    btn.textContent='💾 Save'; refreshDirty(); refreshMarkers();
+    toast('Saved — pins & markers published ✓');
+    if(selectedId){var s=SEED.filter(function(x){return x.id===selectedId;})[0]; if(s)renderBody(s);}
+  }).catch(function(){ btn.disabled=false; btn.textContent='💾 Save'; toast('Save failed — open this page with your admin ?token to edit.'); });
 }
 function discardChanges(){
   SEED.forEach(function(s){ var base=savedCoords[s.id]; if(base){ s.lat=base.lat; s.lng=base.lng; if(markers[s.id]) markers[s.id].setLatLng([base.lat,base.lng]); } });
+  // revert custom markers to last saved
+  Object.keys(markerLayers).forEach(function(id){ map.removeLayer(markerLayers[id]); delete markerLayers[id]; });
+  customMarkers = JSON.parse(savedMarkers); renderAllCustom(); closeMkEditor();
   refreshDirty(); refreshMarkers(); if(selectedId){var s=SEED.filter(function(x){return x.id===selectedId;})[0]; if(s)renderBody(s);}
 }
 function resetDefaults(){
@@ -719,6 +776,70 @@ function loadPositions(){
     .catch(function(){ snapshotSaved(); });
 }
 
+/* ── custom admin markers (Boat Ramp, etc.) ── */
+var customMarkers = [];      // {id,label,text,color,lat,lng}
+var markerLayers = {};       // id -> L.marker
+var savedMarkers = '[]';     // JSON baseline for dirty/discard
+var editingMkId = null;
+function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
+function normMk(arr){ return arr.map(function(m){ return {id:m.id,label:m.label,text:m.text,color:m.color,lat:m.lat,lng:m.lng}; }); }
+function markersDirty(){ return JSON.stringify(normMk(customMarkers)) !== savedMarkers; }
+function curMk(){ return customMarkers.filter(function(x){return x.id===editingMkId;})[0]; }
+function genMkId(){ return 'cm_' + Date.now().toString(36) + Math.random().toString(36).slice(2,6); }
+function custIcon(cm){ return L.divIcon({className:'', html:'<div class="cust-pin'+((EDIT&&editingMkId===cm.id)?' editing':'')+'" style="--c:'+esc(cm.color||'#38bdf8')+'"></div>', iconSize:[24,24], iconAnchor:[11,22]}); }
+function renderCustomMarker(cm){
+  var m=markerLayers[cm.id];
+  if(!m){
+    m=L.marker([cm.lat,cm.lng],{icon:custIcon(cm), draggable:true, zIndexOffset:300}).addTo(map);
+    if(m.dragging && !EDIT) m.dragging.disable();
+    m.on('dragend', function(){ var ll=m.getLatLng(); cm.lat=ll.lat; cm.lng=ll.lng; refreshDirty(); });
+    m.on('click', function(){ if(EDIT) openMkEditor(cm.id); else showMkPopup(cm); });
+    markerLayers[cm.id]=m;
+  } else { m.setLatLng([cm.lat,cm.lng]); m.setIcon(custIcon(cm)); }
+  var label = esc(cm.label || '(unnamed)');
+  if(m.getTooltip()) m.setTooltipContent(label); else m.bindTooltip(label, {permanent:true, direction:'right', offset:[10,-8], className:'cust-tip'});
+}
+function renderAllCustom(){ customMarkers.forEach(renderCustomMarker); }
+function removeCustomMarker(id){ var m=markerLayers[id]; if(m){ map.removeLayer(m); delete markerLayers[id]; } customMarkers=customMarkers.filter(function(x){return x.id!==id;}); }
+function showMkPopup(cm){
+  var html='<div style="font-weight:700;font-size:14px'+(cm.text?';margin-bottom:4px':'')+'">'+esc(cm.label||'Marker')+'</div>'+(cm.text?'<div style="font-size:12px;color:#374151;line-height:1.45">'+esc(cm.text)+'</div>':'');
+  L.popup({offset:[0,-16]}).setLatLng([cm.lat,cm.lng]).setContent(html).openOn(map);
+}
+function addCustomMarker(){
+  var c=map.getCenter();
+  var cm={ id:genMkId(), label:'New marker', text:'', color:(document.getElementById('mkColor').value||'#38bdf8'), lat:c.lat, lng:c.lng };
+  customMarkers.push(cm); renderCustomMarker(cm); refreshDirty();
+  openMkEditor(cm.id);
+  toast('Marker added — set its label, color & spot, then Save.');
+}
+function openMkEditor(id){
+  editingMkId=id; var cm=curMk(); if(!cm) return;
+  var p=document.getElementById('mkEditor'); p.classList.add('on');
+  document.getElementById('mkLabel').value=cm.label||'';
+  document.getElementById('mkColor').value=/^#[0-9a-fA-F]{6}$/.test(cm.color||'')?cm.color:'#38bdf8';
+  document.getElementById('mkText').value=cm.text||'';
+  renderAllCustom();
+}
+function closeMkEditor(){ editingMkId=null; document.getElementById('mkEditor').classList.remove('on'); renderAllCustom(); }
+function loadMarkers(){
+  fetch('/'+SLUG+'/campmap/api/markers')
+    .then(function(r){ return r.ok ? r.json() : {markers:[]}; })
+    .then(function(res){ customMarkers=(res.markers||[]).map(function(m){ return {id:m.id,label:m.label,text:m.text,color:m.color,lat:m.lat,lng:m.lng}; }); renderAllCustom(); savedMarkers=JSON.stringify(normMk(customMarkers)); })
+    .catch(function(){ savedMarkers=JSON.stringify(normMk(customMarkers)); });
+}
+/* wire the marker editor (once) */
+(function wireMkEditor(){
+  var SW=['#38bdf8','#22c55e','#ef4444','#f59e0b','#a855f7','#0ea5e9','#7c3aed','#111827'];
+  var sw=document.getElementById('mkSwatches');
+  sw.innerHTML=SW.map(function(c){ return '<span class="sw" style="background:'+c+'" data-c="'+c+'"></span>'; }).join('');
+  sw.querySelectorAll('.sw').forEach(function(el){ el.onclick=function(){ var cm=curMk(); if(!cm)return; cm.color=this.dataset.c; document.getElementById('mkColor').value=this.dataset.c; renderCustomMarker(cm); refreshDirty(); }; });
+  document.getElementById('mkLabel').oninput=function(){ var cm=curMk(); if(cm){ cm.label=this.value; renderCustomMarker(cm); refreshDirty(); } };
+  document.getElementById('mkColor').oninput=function(){ var cm=curMk(); if(cm){ cm.color=this.value; renderCustomMarker(cm); refreshDirty(); } };
+  document.getElementById('mkText').oninput=function(){ var cm=curMk(); if(cm){ cm.text=this.value; refreshDirty(); } };
+  document.getElementById('mkDone').onclick=closeMkEditor;
+  document.getElementById('mkDelete').onclick=function(){ var cm=curMk(); if(!cm)return; if(!confirm('Delete this marker?'))return; removeCustomMarker(cm.id); closeMkEditor(); refreshDirty(); toast('Marker deleted — Save to publish.'); };
+})();
+
 /* ── boot ── */
 function applyConfig(){
   if(CFG.displayName){ document.getElementById('title').textContent = (CFG.locationName||'Pleasant Hill City Lake')+' — Campsite Map'; }
@@ -733,9 +854,16 @@ function loadAvailability(){
       var data=res.data||{}; var any=false;
       SEED.forEach(function(s){
         var d=data[s.id];
-        if(d && typeof d==='object' && Object.keys(d).length){
-          var m={}; Object.keys(d).forEach(function(dateStr){ if(d[dateStr]&&Object.keys(d[dateStr]).length) m[dateStr]=true; });
-          AVAIL[s.id]=m; any=true;
+        // Nightly sites nest available dates under `checkInDates`; hourly sites are date→slots.
+        var src = (d && d.checkInDates && typeof d.checkInDates==='object') ? d.checkInDates : d;
+        if(src && typeof src==='object' && Object.keys(src).length){
+          var m={}; Object.keys(src).forEach(function(dateStr){
+            if(!/^\d{4}-\d{2}-\d{2}/.test(dateStr)) return;   // skip non-date keys
+            var v=src[dateStr];
+            var open = v && (v.available===true || (typeof v==='object' && v.available===undefined && Object.keys(v).length>0));
+            if(open) m[dateStr]=true;
+          });
+          if(Object.keys(m).length){ AVAIL[s.id]=m; any=true; } else { AVAIL[s.id]={__empty:true}; }
         } else {
           AVAIL[s.id]={__empty:true};
         }
@@ -799,6 +927,7 @@ document.getElementById('editBtn').onclick=function(){
 document.getElementById('editSave').onclick=saveLayout;
 document.getElementById('editDiscard').onclick=discardChanges;
 document.getElementById('editReset').onclick=resetDefaults;
+document.getElementById('editAddMarker').onclick=addCustomMarker;
 document.getElementById('editDone').onclick=function(){
   if(DIRTY){ if(!confirm('You have unsaved changes. Exit without saving? They will be discarded.')) return; discardChanges(); }
   setEditMode(false);
@@ -809,6 +938,7 @@ buildChips();
 buildMarkers();
 updateSummary();
 loadPositions();   // apply any admin-saved pin positions
+loadMarkers();     // load admin custom markers (Boat Ramp, etc.)
 loadSites();       // live site data → then availability (with offline fallbacks)
 fetchWeather();
 setTimeout(function(){ map.invalidateSize(); }, 250);

@@ -1119,6 +1119,14 @@ function saveCampmapPositions() {
   try { fs.writeFileSync(CAMPMAP_POS_FILE, JSON.stringify(campmapPositions, null, 2)); }
   catch (e) { console.error("[campmap] save positions failed:", e.message); }
 }
+// Admin-created custom map markers (Boat Ramp, etc.): { slug: [ {id,label,text,color,lat,lng} ] }
+const CAMPMAP_MARKERS_FILE = path.join(DATA_DIR, "campmap_markers.json");
+let campmapMarkers = {};
+try { campmapMarkers = JSON.parse(fs.readFileSync(CAMPMAP_MARKERS_FILE, "utf8")); } catch { campmapMarkers = {}; }
+function saveCampmapMarkers() {
+  try { fs.writeFileSync(CAMPMAP_MARKERS_FILE, JSON.stringify(campmapMarkers, null, 2)); }
+  catch (e) { console.error("[campmap] save markers failed:", e.message); }
+}
 // Per-org campsite seed (center, location, landmarks, defaults, sites w/ coords).
 // Committed file; loaded once at startup. See campmap-seeds.json.
 let CAMPMAP_SEEDS = {};
@@ -5757,6 +5765,38 @@ app.post("/:org/campmap/api/positions", express.json(), (req, res) => {
   saveCampmapPositions();
   logEvent(slug, "campmap", "save-positions", req, { count: Object.keys(clean).length });
   res.json({ ok: true, saved: Object.keys(clean).length });
+});
+
+// Custom markers — public GET (viewers see them), token-gated POST (admin edits).
+app.get("/:org/campmap/api/markers", (req, res) => {
+  const slug = req.params.org;
+  if (!ORGS[slug]) return res.status(404).json({ markers: [] });
+  res.json({ markers: campmapMarkers[slug] || [] });
+});
+app.post("/:org/campmap/api/markers", express.json(), (req, res) => {
+  const slug = req.params.org;
+  const org = ORGS[slug];
+  if (!org) return res.status(404).json({ error: "Unknown org" });
+  const token = req.query.token || (req.body && req.body.token) || "";
+  if (!org.token || token !== org.token) return res.status(403).json({ error: "Forbidden — valid org token required to edit." });
+  const markers = (req.body && req.body.markers) || [];
+  const clean = [];
+  for (const m of Array.isArray(markers) ? markers : []) {
+    if (!m || typeof m.lat !== "number" || typeof m.lng !== "number") continue;
+    if (Math.abs(m.lat) > 90 || Math.abs(m.lng) > 180) continue;
+    clean.push({
+      id: String(m.id || "").slice(0, 40) || ("m" + clean.length),
+      label: String(m.label || "").slice(0, 80),
+      text: String(m.text || "").slice(0, 500),
+      color: /^#[0-9a-fA-F]{3,8}$/.test(m.color || "") ? m.color : "#38bdf8",
+      lat: m.lat, lng: m.lng,
+    });
+    if (clean.length >= 100) break; // sane cap
+  }
+  campmapMarkers[slug] = clean;
+  saveCampmapMarkers();
+  logEvent(slug, "campmap", "save-markers", req, { count: clean.length });
+  res.json({ ok: true, saved: clean.length });
 });
 
 // Cached site data for Arsenal Park (Watertown) — fetched via rec.us MCP 2026-06-22

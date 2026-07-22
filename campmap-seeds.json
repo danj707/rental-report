@@ -74,7 +74,10 @@
         "kind": "electric",
         "lat": 38.82468767,
         "lng": -94.29445978,
-        "approx": false
+        "approx": false,
+        "price": 25,
+        "resPrice": 20,
+        "photo": "https://prod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com/site-5c0bb8d3-ea37-4a5c-b0c6-d5e935889e07/mainGallery/32f27e1c-aec5-464d-9edb-7bc519be7796.png?1758832884234"
       },
       {
         "n": 2,
@@ -84,7 +87,10 @@
         "kind": "electric",
         "lat": 38.82452,
         "lng": -94.2947,
-        "approx": true
+        "approx": true,
+        "price": 25,
+        "resPrice": 20,
+        "photo": "https://prod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com/site-954685e7-e2b0-4929-b312-b429b43eeb13/mainGallery/10af872f-db6c-429c-96b9-b4d1484062c1.png?1778032513616"
       },
       {
         "n": 3,
@@ -94,7 +100,10 @@
         "kind": "electric",
         "lat": 38.82436,
         "lng": -94.29493,
-        "approx": true
+        "approx": true,
+        "price": 25,
+        "resPrice": 20,
+        "photo": "https://prod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com/site-bd8843da-542f-4590-a864-71f4b8052ad8/mainGallery/289b6fbd-64ba-4f81-9467-8e9b41fb9a04.png?1778032828411"
       },
       {
         "n": 4,
@@ -104,7 +113,10 @@
         "kind": "electric",
         "lat": 38.8242,
         "lng": -94.29516,
-        "approx": true
+        "approx": true,
+        "price": 25,
+        "resPrice": 20,
+        "photo": "https://prod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com/site-6e2510f9-9aea-477a-9094-6286ddd6d1ab/mainGallery/833a422f-251c-43fe-9498-9686f4fdc539.png?1778033365118"
       },
       {
         "n": 5,
@@ -114,7 +126,10 @@
         "kind": "primitive",
         "lat": 38.8259,
         "lng": -94.2949,
-        "approx": true
+        "approx": true,
+        "price": 25,
+        "resPrice": 20,
+        "photo": "https://prod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com/site-9ad33d51-24b0-425e-8ce7-b983cf567677/mainGallery/f126cdcb-c6d3-4536-bf93-389acfeecd6e.png?1778029407929"
       },
       {
         "n": 6,
@@ -124,7 +139,10 @@
         "kind": "primitive",
         "lat": 38.82625,
         "lng": -94.29478,
-        "approx": true
+        "approx": true,
+        "price": 25,
+        "resPrice": 20,
+        "photo": "https://prod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com/site-89ef75b5-5e9d-4353-b733-87f2d18b7b91/mainGallery/3033df9e-94d0-465e-9110-b908c3f23b20.png?1778029963880"
       },
       {
         "n": 7,
@@ -134,7 +152,10 @@
         "kind": "electric",
         "lat": 38.8266,
         "lng": -94.29468,
-        "approx": true
+        "approx": true,
+        "price": 25,
+        "resPrice": 20,
+        "photo": "https://prod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com/site-c45fe7ee-6308-4436-9b3d-0827b5f2cbaa/mainGallery/fbadb098-e6e5-43d2-af51-158c42f4d0cb.png?1778030325014"
       },
       {
         "n": 8,
@@ -144,7 +165,10 @@
         "kind": "electric",
         "lat": 38.82695,
         "lng": -94.29462,
-        "approx": true
+        "approx": true,
+        "price": 25,
+        "resPrice": 20,
+        "photo": "https://prod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com/site-b416ba6a-7ef7-42d0-9a05-84e41ee8cd45/mainGallery/0af25635-5020-49e9-9569-254baa6b915c.png?1778030734915"
       },
       {
         "n": 9,
@@ -154,7 +178,10 @@
         "kind": "electric",
         "lat": 38.8273,
         "lng": -94.2946,
-        "approx": true
+        "approx": true,
+        "price": 25,
+        "resPrice": 20,
+        "photo": "https://prod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com/site-594c8ad2-80d6-42a3-a240-272fdd2d2a9f/mainGallery/00a7a1c8-62b7-462b-b856-668085ee0b4f.png?1778030993273"
       },
       {
         "n": 10,
@@ -164,7 +191,10 @@
         "kind": "electric",
         "lat": 38.82765,
         "lng": -94.29464,
-        "approx": true
+        "approx": true,
+        "price": 25,
+        "resPrice": 20,
+        "photo": "https://prod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com/site-726e0a52-8887-4123-b534-3694b2078b72/mainGallery/8c7a254b-4c30-421d-964f-63f61a013445.png?1777724308283"
       },
       {
         "n": 11,
@@ -174,7 +204,10 @@
         "kind": "electric",
         "lat": 38.828,
         "lng": -94.29474,
-        "approx": true
+        "approx": true,
+        "price": 25,
+        "resPrice": 20,
+        "photo": "https://prod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com/site-89dae3f9-d555-432e-b8ca-642fe4b15129/mainGallery/42eb8914-a44f-4737-8793-45ae25a96025.png?1778011186018"
       },
       {
         "n": 12,
@@ -184,7 +217,10 @@
         "kind": "primitive",
         "lat": 38.8283,
         "lng": -94.2949,
-        "approx": true
+        "approx": true,
+        "price": 25,
+        "resPrice": 20,
+        "photo": "https://prod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com/site-0c7edf94-c713-4894-86f0-4aa44582cb32/mainGallery/5f796070-f648-4fa8-9db4-3e4a23bd16eb.png?1778028952777"
       }
     ]
   },
@@ -215,7 +251,9 @@
         "kind": "tent-and-rv",
         "lat": 38.69457274845515,
         "lng": -119.51978312589519,
-        "approx": false
+        "approx": false,
+        "price": 30,
+        "photo": "https://prod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com/site-a18b7ac7-0a37-4f9c-97a1-eec384f82d79/mainGallery/32f307d8-592b-46c5-b56b-42f0035f6a22.png?1782870812441"
       },
       {
         "n": 2,
@@ -225,7 +263,9 @@
         "kind": "tent-and-rv",
         "lat": 38.69466153807613,
         "lng": -119.51975998590116,
-        "approx": false
+        "approx": false,
+        "price": 30,
+        "photo": "https://prod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com/site-08a5ffaa-5523-4391-a6bf-4463fa1380ea/mainGallery/ad9b4a3c-62f3-4a9a-a818-921ffbde00eb.jpeg?1782278375183"
       },
       {
         "n": 3,
@@ -235,7 +275,9 @@
         "kind": "tent-and-rv",
         "lat": 38.694762330136705,
         "lng": -119.51988927263203,
-        "approx": false
+        "approx": false,
+        "price": 30,
+        "photo": "https://prod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com/site-37f173f9-3da4-4ea7-a5d2-bcd4a14607f7/mainGallery/d7bd1078-b8e9-4562-b798-e25093bc6e1f.jpeg?1782870914407"
       },
       {
         "n": 4,
@@ -245,7 +287,9 @@
         "kind": "tent-and-rv",
         "lat": 38.694774258257254,
         "lng": -119.51994743213848,
-        "approx": false
+        "approx": false,
+        "price": 30,
+        "photo": "https://prod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com/site-77af83d0-53f6-4775-9263-5381c2b8d214/mainGallery/aa5b7cc2-8d22-43b8-8d86-7578cd97212b.png?1782871474862"
       },
       {
         "n": 5,
@@ -255,7 +299,9 @@
         "kind": "tent-and-rv",
         "lat": 38.694818685375495,
         "lng": -119.51997397076968,
-        "approx": false
+        "approx": false,
+        "price": 30,
+        "photo": "https://prod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com/site-2cde712d-e22c-4917-9396-535f2f68c0e8/mainGallery/eef70625-74d2-4a5f-b1d1-65dcad73be88.jpeg?1782276387497"
       },
       {
         "n": 6,
@@ -265,7 +311,9 @@
         "kind": "tent-and-rv",
         "lat": 38.69496777257381,
         "lng": -119.52002088112894,
-        "approx": false
+        "approx": false,
+        "price": 30,
+        "photo": "https://prod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com/site-28dbd728-7c74-4008-9743-44e234359bc3/mainGallery/17a22006-5a05-4c14-9e05-cb98ef283178.jpeg?1782870382240"
       },
       {
         "n": 7,
@@ -275,7 +323,9 @@
         "kind": "tent-and-rv",
         "lat": 38.6952,
         "lng": -119.5203,
-        "approx": true
+        "approx": true,
+        "price": 30,
+        "photo": "https://prod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com/site-e5dfebdf-a3b3-4da3-a6f4-1f96106c6103/mainGallery/6003ffb5-7389-4fa4-9e0a-455640fae3ed.png?1782871692152"
       },
       {
         "n": 8,
@@ -285,7 +335,9 @@
         "kind": "tent-and-rv",
         "lat": 38.6952,
         "lng": -119.52,
-        "approx": true
+        "approx": true,
+        "price": 30,
+        "photo": "https://prod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com/site-6124189f-3244-4bb7-9593-3fec6502f0ab/mainGallery/5b05a373-3baf-4c24-9440-541ed82eb60d.png?1782871957299"
       },
       {
         "n": 9,
@@ -295,7 +347,9 @@
         "kind": "tent-and-rv",
         "lat": 38.6952,
         "lng": -119.5197,
-        "approx": true
+        "approx": true,
+        "price": 30,
+        "photo": "https://prod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com/site-59789b7b-cb00-47fc-9abd-1eaf6d79c29d/mainGallery/2b858f7e-d9e4-45fe-a02a-4a609999f680.jpeg?1782276561225"
       },
       {
         "n": 10,
@@ -305,7 +359,9 @@
         "kind": "tent-and-rv",
         "lat": 38.6952,
         "lng": -119.5194,
-        "approx": true
+        "approx": true,
+        "price": 30,
+        "photo": "https://prod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com/site-0a4022a0-e7b9-4dcc-95bb-2cb354b3dfa9/mainGallery/88b5230c-4e62-4155-9ede-6a0a2d579aa9.jpeg?1782872044886"
       },
       {
         "n": 11,
@@ -315,7 +371,9 @@
         "kind": "tent-and-rv",
         "lat": 38.6952,
         "lng": -119.5191,
-        "approx": true
+        "approx": true,
+        "price": 30,
+        "photo": "https://prod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com/site-8ffb1056-4fbb-4218-ae4e-33c1d76400a9/mainGallery/ee595fd9-0479-4750-9c22-d0f67b8d58e8.jpeg?1782872145610"
       },
       {
         "n": 12,
@@ -325,7 +383,9 @@
         "kind": "tent-and-rv",
         "lat": 38.6952,
         "lng": -119.5188,
-        "approx": true
+        "approx": true,
+        "price": 30,
+        "photo": "https://prod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com/site-3d349ed2-30c8-4909-811c-2279e891b408/mainGallery/cfc0be34-5a64-4c62-8751-258397eb7d8c.jpeg?1782872202088"
       },
       {
         "n": 13,
@@ -335,7 +395,9 @@
         "kind": "tent-and-rv",
         "lat": 38.6952,
         "lng": -119.5185,
-        "approx": true
+        "approx": true,
+        "price": 30,
+        "photo": "https://prod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com/site-42584d7f-7e5f-432c-89ce-186ad085add3/mainGallery/005a5aaf-b9a5-4c7a-9bf0-cb43b063684c.jpeg?1782872262930"
       },
       {
         "n": 14,
@@ -345,7 +407,9 @@
         "kind": "tent-and-rv",
         "lat": 38.69542,
         "lng": -119.5203,
-        "approx": true
+        "approx": true,
+        "price": 30,
+        "photo": "https://prod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com/site-7a3f6c70-a8cc-4834-aa6a-4c209d444d06/mainGallery/05aac1c3-5679-417d-816f-7edc54703c5e.jpeg?1782309349134"
       },
       {
         "n": 15,
@@ -355,7 +419,9 @@
         "kind": "tent-and-rv",
         "lat": 38.69542,
         "lng": -119.52,
-        "approx": true
+        "approx": true,
+        "price": 30,
+        "photo": "https://prod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com/site-7b824e6a-a7a9-46b3-bf40-04d78412b1d3/mainGallery/21dc6080-43ff-415e-b797-da5f7c872cb3.jpeg?1782309613085"
       },
       {
         "n": 16,
@@ -365,7 +431,9 @@
         "kind": "tent-and-rv",
         "lat": 38.69542,
         "lng": -119.5197,
-        "approx": true
+        "approx": true,
+        "price": 30,
+        "photo": "https://prod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com/site-9a82e4c7-0dca-42dd-9048-934cfdc58100/mainGallery/e24de24e-f73f-448b-bfe7-c965161f804c.jpeg?1782872356844"
       },
       {
         "n": 17,
@@ -375,7 +443,9 @@
         "kind": "tent-and-rv",
         "lat": 38.69542,
         "lng": -119.5194,
-        "approx": true
+        "approx": true,
+        "price": 30,
+        "photo": "https://prod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com/site-113e760b-52b3-4ce2-80cb-8dfbd207cfe4/mainGallery/09d644c8-01e3-4449-bbc1-59f66dae1350.jpeg?1782872550809"
       },
       {
         "n": 18,
@@ -385,7 +455,9 @@
         "kind": "tent-and-rv",
         "lat": 38.69542,
         "lng": -119.5191,
-        "approx": true
+        "approx": true,
+        "price": 30,
+        "photo": "https://prod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com/site-39087627-8fb5-4bf1-8f2c-8122cf82edf8/mainGallery/2d56bb38-d649-4855-8562-5dfd0fc227e0.jpeg?1782309671877"
       },
       {
         "n": 19,
@@ -395,7 +467,9 @@
         "kind": "tent-and-rv",
         "lat": 38.69542,
         "lng": -119.5188,
-        "approx": true
+        "approx": true,
+        "price": 30,
+        "photo": "https://prod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com/site-2fb7624b-2213-4587-a626-a6fa25c1cac4/mainGallery/af3d495e-2961-4634-bce7-b7b3d2ca5d49.jpeg?1782872685041"
       },
       {
         "n": 20,
@@ -405,7 +479,9 @@
         "kind": "tent-and-rv",
         "lat": 38.69542,
         "lng": -119.5185,
-        "approx": true
+        "approx": true,
+        "price": 30,
+        "photo": "https://prod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com/site-daea22df-154c-4ccf-9984-b9c876eaaaeb/mainGallery/e2c83284-f6c1-432e-ae2e-ccdce3397aad.jpeg?1782872731261"
       },
       {
         "n": 21,
@@ -415,7 +491,9 @@
         "kind": "tent-and-rv",
         "lat": 38.69564,
         "lng": -119.5203,
-        "approx": true
+        "approx": true,
+        "price": 40,
+        "photo": "https://prod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com/site-043e84ef-3e90-453d-a02f-d87a95d1f1ce/mainGallery/d88a6ae1-16a5-47c9-83a8-02ea788b9977.jpeg?1782278428364"
       },
       {
         "n": 22,
@@ -425,7 +503,9 @@
         "kind": "tent-and-rv",
         "lat": 38.69564,
         "lng": -119.52,
-        "approx": true
+        "approx": true,
+        "price": 40,
+        "photo": "https://prod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com/site-3e671633-caf4-4688-90c5-00ff0c6d9707/mainGallery/2ffa0c4f-440a-42d2-8ff0-c5de7a6c15b2.jpeg?1782278514165"
       },
       {
         "n": 23,
@@ -435,7 +515,9 @@
         "kind": "tent-and-rv",
         "lat": 38.69564,
         "lng": -119.5197,
-        "approx": true
+        "approx": true,
+        "price": 40,
+        "photo": "https://prod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com/site-50347e4e-6043-4afc-b2fa-8616ed04e7eb/mainGallery/9e64b15c-83ce-41e4-8636-57bf70ad3504.png?1782877683157"
       },
       {
         "n": 24,
@@ -445,7 +527,9 @@
         "kind": "tent-and-rv",
         "lat": 38.69564,
         "lng": -119.5194,
-        "approx": true
+        "approx": true,
+        "price": 40,
+        "photo": "https://prod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com/site-82fee07a-5563-4bd8-86b1-e41ab8ef1739/mainGallery/5136b836-2abf-4199-a70b-ac3ff3935766.jpeg?1782872950422"
       },
       {
         "n": 25,
@@ -455,7 +539,9 @@
         "kind": "tent-and-rv",
         "lat": 38.69564,
         "lng": -119.5191,
-        "approx": true
+        "approx": true,
+        "price": 40,
+        "photo": "https://prod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com/site-5baaec75-7da6-4c49-b797-8685af5c8551/mainGallery/1b0579ff-c4ba-4c4c-9ab7-75d910ca8d2a.png?1782873735538"
       },
       {
         "n": 26,
@@ -465,7 +551,9 @@
         "kind": "tent-and-rv",
         "lat": 38.69564,
         "lng": -119.5188,
-        "approx": true
+        "approx": true,
+        "price": 40,
+        "photo": "https://prod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com/site-3b410ead-3b10-4ea9-90dd-cefdb29679f2/mainGallery/712448ef-000b-4cdd-a5ea-fc096f4e9688.jpeg?1782876120441"
       },
       {
         "n": 27,
@@ -475,7 +563,9 @@
         "kind": "tent-and-rv",
         "lat": 38.69564,
         "lng": -119.5185,
-        "approx": true
+        "approx": true,
+        "price": 40,
+        "photo": "https://prod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com/site-f2e1fc58-0474-4e87-ba64-250ae4236c10/mainGallery/a7b9f69e-568f-4b06-9725-8f4c30a6d4d1.png?1782873255294"
       },
       {
         "n": 28,
@@ -485,7 +575,9 @@
         "kind": "tent-and-rv",
         "lat": 38.69586,
         "lng": -119.5203,
-        "approx": true
+        "approx": true,
+        "price": 40,
+        "photo": "https://prod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com/site-894c389a-b257-42f4-8dda-c5a494e0e7d2/mainGallery/9e39e677-2cd0-43af-9336-0c1981139259.jpeg?1782873299894"
       },
       {
         "n": 29,
@@ -495,7 +587,9 @@
         "kind": "tent-and-rv",
         "lat": 38.69586,
         "lng": -119.52,
-        "approx": true
+        "approx": true,
+        "price": 40,
+        "photo": "https://prod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com/site-03fc8ee3-88be-449b-bda2-8aa8d99ced6a/mainGallery/49e6b5f0-c82b-4c84-a30f-05cc33a923f6.png?1782874026679"
       },
       {
         "n": 30,
@@ -505,7 +599,9 @@
         "kind": "tent-and-rv",
         "lat": 38.69586,
         "lng": -119.5197,
-        "approx": true
+        "approx": true,
+        "price": 40,
+        "photo": "https://prod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com/site-2777d43e-2eb1-4c53-a78f-6bf072a22d30/mainGallery/e87b1cfe-c5f7-417b-94e5-86dd061bfaaa.jpeg?1782876347784"
       },
       {
         "n": 31,
@@ -515,7 +611,9 @@
         "kind": "tent-and-rv",
         "lat": 38.69586,
         "lng": -119.5194,
-        "approx": true
+        "approx": true,
+        "price": 40,
+        "photo": "https://prod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com/site-841275e6-ca67-40d2-8941-70919ff47116/mainGallery/d8491521-1602-470d-91bb-3254f8e69e47.jpeg?1782876452801"
       },
       {
         "n": 32,
@@ -525,7 +623,9 @@
         "kind": "tent-and-rv",
         "lat": 38.69586,
         "lng": -119.5191,
-        "approx": true
+        "approx": true,
+        "price": 40,
+        "photo": "https://prod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com/site-6fea5b31-38b1-4463-a946-145eb8047359/mainGallery/e4b998db-b9a8-4e2a-b876-cbb8e18c22ae.jpeg?1782277983709"
       },
       {
         "n": 33,
@@ -535,7 +635,9 @@
         "kind": "tent-and-rv",
         "lat": 38.69586,
         "lng": -119.5188,
-        "approx": true
+        "approx": true,
+        "price": 40,
+        "photo": "https://prod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com/site-aa2d16d1-2d66-4032-98e5-964211f70489/mainGallery/6cd0a628-7eda-4de9-a2fb-a7f8bc0086c4.jpeg?1782876521077"
       },
       {
         "n": 34,
@@ -545,7 +647,9 @@
         "kind": "tent-and-rv",
         "lat": 38.69586,
         "lng": -119.5185,
-        "approx": true
+        "approx": true,
+        "price": 40,
+        "photo": "https://prod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com/site-0fce8a41-a101-4333-a161-884fe35f2b55/mainGallery/ad5be4b9-110d-477c-bc3d-6fdd50a56e76.jpeg?1782277531375"
       },
       {
         "n": 35,
@@ -555,7 +659,9 @@
         "kind": "tent-and-rv",
         "lat": 38.69608,
         "lng": -119.5203,
-        "approx": true
+        "approx": true,
+        "price": 40,
+        "photo": "https://prod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com/site-5d2d7a2c-d4da-4c77-8ba3-c6ca8b1a189a/mainGallery/cd87c153-7531-45e1-9860-759fd408895c.jpeg?1782277491631"
       },
       {
         "n": 36,
@@ -565,7 +671,9 @@
         "kind": "tent-and-rv",
         "lat": 38.69608,
         "lng": -119.52,
-        "approx": true
+        "approx": true,
+        "price": 30,
+        "photo": "https://prod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com/site-09855e97-9fae-4d17-8aa2-3291304fd003/mainGallery/f2f0359c-6fae-46b2-b916-a840f6f0452b.jpeg?1782276731737"
       },
       {
         "n": 37,
@@ -575,7 +683,9 @@
         "kind": "tent-and-rv",
         "lat": 38.69608,
         "lng": -119.5197,
-        "approx": true
+        "approx": true,
+        "price": 30,
+        "photo": "https://prod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com/site-a6619fb4-52e3-4739-b04d-939fcb1949d3/mainGallery/41c4e158-d64d-4731-90e5-9220a01a4b9b.jpeg?1782870732946"
       },
       {
         "n": 38,
@@ -585,7 +695,9 @@
         "kind": "tent-and-rv",
         "lat": 38.69608,
         "lng": -119.5194,
-        "approx": true
+        "approx": true,
+        "price": 30,
+        "photo": "https://prod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com/site-61a36832-418a-4d39-a08d-e8a791bddd26/mainGallery/f9a0db18-e566-4e47-9bc4-0d7b922a6eef.png?1782874054778"
       },
       {
         "n": 39,
@@ -595,7 +707,9 @@
         "kind": "tent-and-rv",
         "lat": 38.69608,
         "lng": -119.5191,
-        "approx": true
+        "approx": true,
+        "price": 30,
+        "photo": "https://prod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com/site-240b44ea-0ac6-4042-95e1-95c60c864ffc/mainGallery/223f2060-8609-4485-927d-2c318560bf47.jpeg?1782876638537"
       },
       {
         "n": 40,
@@ -605,7 +719,9 @@
         "kind": "tent-and-rv",
         "lat": 38.69608,
         "lng": -119.5188,
-        "approx": true
+        "approx": true,
+        "price": 30,
+        "photo": "https://prod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com/site-3d4e0779-501a-4396-bae0-84695f1cb81b/mainGallery/b95aef23-3f9e-44d0-84c5-288d749c2ea3.jpeg?1782876700983"
       },
       {
         "n": 41,
@@ -615,7 +731,9 @@
         "kind": "tent-and-rv",
         "lat": 38.69608,
         "lng": -119.5185,
-        "approx": true
+        "approx": true,
+        "price": 30,
+        "photo": "https://prod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com/site-bb2c1e8e-f485-4744-977f-4c6c974d18f0/mainGallery/138e2d42-6e91-4500-b1f3-25f93b2db665.png?1782873757404"
       }
     ]
   }
