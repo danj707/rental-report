@@ -136,6 +136,30 @@ body{font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica
   .drawer{width:100%;max-width:100%;top:auto;height:82%;border-radius:16px 16px 0 0;transform:translateY(105%)}
   .drawer.open{transform:translateY(0)}
 }
+
+/* ── admin edit mode ── */
+.edit-btn{font-size:12px;font-weight:700;border:1px solid #c7d2fe;background:#eef2ff;color:#3730a3;border-radius:9px;padding:6px 11px;cursor:pointer;white-space:nowrap}
+.edit-btn:hover{background:#e0e7ff}
+.edit-btn.on{background:#4f46e5;border-color:#4f46e5;color:#fff}
+.editbar{position:absolute;top:12px;left:50%;transform:translateX(-50%);z-index:560;background:#312e81;color:#fff;border-radius:12px;box-shadow:var(--shadow-lg);padding:9px 12px;display:none;align-items:center;gap:10px;font-size:13px;max-width:94vw;flex-wrap:wrap}
+.editbar.on{display:flex}
+.editbar .msg{font-weight:600}
+.editbar .msg .dirty{color:#fde68a}
+.editbar button{border:none;border-radius:8px;padding:7px 12px;font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit}
+.editbar .save{background:#22c55e;color:#06301a}
+.editbar .save:disabled{background:#64748b;color:#cbd5e1;cursor:default}
+.editbar .discard{background:#475569;color:#fff}
+.editbar .reset{background:#b91c1c;color:#fff}
+.editbar .done{background:#e0e7ff;color:#312e81}
+.editbar .sep{width:1px;height:20px;background:rgba(255,255,255,.25)}
+.site-marker.editing{cursor:grab;box-shadow:0 0 0 3px #fde68a,0 2px 6px rgba(0,0,0,.4)}
+.site-marker.editing:active{cursor:grabbing}
+.toast{position:absolute;bottom:20px;left:50%;transform:translateX(-50%) translateY(20px);z-index:800;background:#111827;color:#fff;padding:10px 18px;border-radius:10px;font-size:13px;font-weight:600;box-shadow:var(--shadow-lg);opacity:0;transition:opacity .2s,transform .2s;pointer-events:none}
+.toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
+.pin-edit{border:1px dashed #c7d2fe;background:#f5f3ff;border-radius:9px;padding:9px 11px;margin-bottom:14px;font-size:12px;color:#4338ca}
+.pin-edit b{color:#312e81}
+.pin-edit button{margin-top:6px;border:1px solid #c7d2fe;background:#fff;color:#4338ca;border-radius:7px;padding:4px 9px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:inherit}
+.pin-edit button:hover{background:#eef2ff}
 </style>
 </head>
 <body>
@@ -147,7 +171,8 @@ body{font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica
       <div class="sub" id="subtitle">16210 Smart Rd, Pleasant Hill, MO 64080</div>
     </div>
     <span class="wx" id="wx" style="display:none"></span>
-    <span class="mock-tag">Mockup · live rec.us data</span>
+    <button class="edit-btn" id="editBtn" style="display:none">✏️ Edit layout</button>
+    <span class="mock-tag" id="mockTag">Mockup · live rec.us data</span>
   </div>
 
   <div class="datebar">
@@ -160,6 +185,15 @@ body{font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica
 
   <div class="mapwrap">
     <div id="map"></div>
+    <div class="editbar" id="editbar">
+      <span class="msg" id="editMsg">Drag campsite pins to place them.</span>
+      <span class="sep"></span>
+      <button class="save" id="editSave" disabled>💾 Save</button>
+      <button class="discard" id="editDiscard">↩︎ Discard</button>
+      <button class="reset" id="editReset">⟲ Reset all</button>
+      <button class="done" id="editDone">Done</button>
+    </div>
+    <div class="toast" id="toast"></div>
     <div class="mapctl">
       <div class="basetoggle">
         <button id="btSat" class="on">Satellite</button>
@@ -201,6 +235,8 @@ body{font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica
 var CFG = window.__CM__ || {};
 var SLUG = CFG.slug || (location.pathname.split('/').filter(Boolean)[0] || 'pleasant-hill');
 var LAKE = { lat: (CFG.coords && CFG.coords.lat) || 38.82065625393699, lon: (CFG.coords && CFG.coords.lon) || -94.29997011111854 };
+var TOKEN = new URLSearchParams(location.search).get('token') || '';
+var CAN_EDIT = !!CFG.canEdit;   // server unlocks editing only when the org token matches
 
 /* ── amenity tag id → label (subset present at Pleasant Hill City Lake) ── */
 var AMENITY = {
@@ -357,21 +393,28 @@ document.getElementById('btStreet').onclick=function(){ if(map.hasLayer(satLayer
 var COLORS={avail:'#16a34a',booked:'#dc2626',unknown:'#9ca3af'};
 var markers={};   // siteId -> L.marker
 var selectedId=null;
+/* ── admin edit state ── */
+var EDIT=false, DIRTY=false;
+var DEFAULT_COORDS={};   // siteId -> {lat,lng} original (baked/synth) position
+var savedCoords={};      // siteId -> {lat,lng} last persisted baseline
 
 function markerHtml(site, status){
   var kindEmoji = sKind(site)==='electric' ? '⚡' : '⛺';
-  var sel = site.id===selectedId ? ' sel' : '';
-  return '<div class="site-marker'+sel+'" style="background:'+COLORS[status]+'">'+site.n+
+  var cls = 'site-marker' + (site.id===selectedId?' sel':'') + (EDIT?' editing':'');
+  return '<div class="'+cls+'" style="background:'+COLORS[status]+'">'+site.n+
          '<span class="kind">'+kindEmoji+'</span></div>';
 }
 function addMarker(site){
+  if(!(site.id in DEFAULT_COORDS)) DEFAULT_COORDS[site.id]={lat:site.lat,lng:site.lng};
   var status=statusOn(site, SELECTED);
   var icon=L.divIcon({className:'', html:markerHtml(site,status), iconSize:[34,34], iconAnchor:[17,17]});
-  var m=L.marker([site.lat,site.lng],{icon:icon, riseOnHover:true, zIndexOffset:400}).addTo(map);
+  var m=L.marker([site.lat,site.lng],{icon:icon, riseOnHover:true, zIndexOffset:400, draggable:true}).addTo(map);
+  if(m.dragging && !EDIT) m.dragging.disable();
   m.bindTooltip(function(){ var st=statusOn(site,SELECTED); var lbl=st==='avail'?'Open':st==='booked'?'Booked':'Unknown';
     return '<span class="st">'+sName(site)+'</span><br>'+ (sKind(site)==='electric'?'⚡ Electric':'⛺ Primitive') +' · '+lbl; },
     {className:'site-tip', direction:'top', offset:[0,-14]});
-  m.on('click', function(){ openSite(site); });
+  m.on('click', function(){ if(!EDIT) openSite(site); else { openSite(site); } });
+  m.on('dragend', function(){ var ll=m.getLatLng(); site.lat=ll.lat; site.lng=ll.lng; site.placed=true; site.approx=false; refreshDirty(); if(selectedId===site.id) renderBody(site); });
   markers[site.id]=m;
 }
 function buildMarkers(){
@@ -477,6 +520,7 @@ function renderBody(site){
   body+=stPill+' <span style="font-size:12px;color:var(--muted)">'+human+'</span>';
   body+='<h2>Site '+pad(site.n)+'</h2>';
   body+='<div class="area">'+kindTag+'<span>📍 '+site.area+' · '+locName+'</span></div>';
+  if(EDIT){ body+='<div class="pin-edit"><b>Edit mode</b> — drag this pin on the map to move it.<br><button id="pinReset">⟲ Reset this pin to default</button></div>'; }
   body+='<p class="blurb">'+sBlurb(site)+'</p>';
   body+='<div class="kv">';
   body+='<div><div class="k">Rate</div><div class="v">$'+sRate(site)+' <span style="font-size:11px;color:var(--muted);font-weight:500">/ night</span></div></div>';
@@ -489,9 +533,15 @@ function renderBody(site){
   body+='<div class="sec-h">Amenities</div><div class="amen-list">'+amens+'</div>';
   body+='<div class="sec-h">Availability</div>'+miniCalHtml(site);
   body+='<a class="book-btn" href="'+sBook(site)+'" target="_blank" rel="noopener">🏕️ Book on rec.us</a>';
-  body+='<div class="book-note">'+(site.approx?'Map position approximate — exact coordinates not yet set for this site.':'Exact location from rec.us.')+'</div>';
+  var noteTxt = EDIT ? 'Drag the pin on the map to reposition it; unsaved changes show in the edit bar.'
+    : site.placed ? 'Pin position set by admin.'
+    : site.approx ? 'Approximate position — not yet placed on the map.'
+    : 'Location from rec.us.';
+  body+='<div class="book-note">'+noteTxt+'</div>';
   var el=document.getElementById('dbody');
   el.innerHTML=body;
+  var pr=document.getElementById('pinReset');
+  if(pr) pr.onclick=function(){ var b=DEFAULT_COORDS[site.id]; if(b){ site.lat=b.lat; site.lng=b.lng; site.placed=false; if(markers[site.id]) markers[site.id].setLatLng([b.lat,b.lng]); } refreshDirty(); refreshMarkers(); renderBody(site); };
   wireMiniCal(site);
 }
 
@@ -547,6 +597,58 @@ function wxEmoji(f){ f=(f||'').toLowerCase();
   if(/snow|flurr/.test(f))return'❄️'; if(/fog|haze/.test(f))return'🌫️';
   if(/partly|few clouds/.test(f))return'⛅'; if(/cloud|overcast/.test(f))return'☁️';
   if(/sun|clear|fair/.test(f))return'☀️'; return'🌤️';
+}
+
+/* ── admin edit mode: drag-to-place, save, discard, reset ── */
+function snapshotSaved(){ savedCoords={}; SEED.forEach(function(s){ savedCoords[s.id]={lat:s.lat,lng:s.lng}; }); }
+function diffCount(){ var n=0; SEED.forEach(function(s){ var b=savedCoords[s.id]||DEFAULT_COORDS[s.id]; if(b && (Math.abs(b.lat-s.lat)>1e-7 || Math.abs(b.lng-s.lng)>1e-7)) n++; }); return n; }
+function refreshDirty(){
+  var n=diffCount(); DIRTY = n>0;
+  var sv=document.getElementById('editSave'); if(sv) sv.disabled=!DIRTY;
+  var m=document.getElementById('editMsg');
+  if(m) m.innerHTML = DIRTY ? ('<span class="dirty">'+n+' unsaved change'+(n===1?'':'s')+'</span> — Save to publish for everyone.') : 'Drag campsite pins to reposition them.';
+}
+function setEditMode(on){
+  EDIT=on;
+  var b=document.getElementById('editBtn'); b.classList.toggle('on',on); b.textContent = on?'✕ Exit edit':'✏️ Edit layout';
+  document.getElementById('editbar').classList.toggle('on',on);
+  SEED.forEach(function(s){ var m=markers[s.id]; if(m && m.dragging){ if(on) m.dragging.enable(); else m.dragging.disable(); } });
+  refreshMarkers(); refreshDirty();
+  if(selectedId){ var s=SEED.filter(function(x){return x.id===selectedId;})[0]; if(s) renderBody(s); }
+}
+function saveLayout(){
+  var positions={}; SEED.forEach(function(s){ positions[s.id]={lat:+s.lat, lng:+s.lng}; });
+  var btn=document.getElementById('editSave'); btn.disabled=true; btn.textContent='Saving…';
+  fetch('/'+SLUG+'/campmap/api/positions'+(TOKEN?('?token='+encodeURIComponent(TOKEN)):''),{
+    method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({positions:positions, token:TOKEN})
+  }).then(function(r){ if(!r.ok) throw new Error('http '+r.status); return r.json(); })
+   .then(function(res){ snapshotSaved(); SEED.forEach(function(s){ s.placed=true; }); btn.textContent='💾 Save'; refreshDirty(); refreshMarkers(); toast('Saved '+(res.saved||0)+' pin position'+((res.saved===1)?'':'s')+' ✓'); if(selectedId){var s=SEED.filter(function(x){return x.id===selectedId;})[0]; if(s)renderBody(s);} })
+   .catch(function(){ btn.disabled=false; btn.textContent='💾 Save'; toast('Save failed — open this page with your admin ?token to edit.'); });
+}
+function discardChanges(){
+  SEED.forEach(function(s){ var base=savedCoords[s.id]; if(base){ s.lat=base.lat; s.lng=base.lng; if(markers[s.id]) markers[s.id].setLatLng([base.lat,base.lng]); } });
+  refreshDirty(); refreshMarkers(); if(selectedId){var s=SEED.filter(function(x){return x.id===selectedId;})[0]; if(s)renderBody(s);}
+}
+function resetDefaults(){
+  if(!confirm('Reset ALL campsite pins to their original default positions?\n\nNothing is published until you click Save — use Discard to undo this before saving.')) return;
+  SEED.forEach(function(s){ var b=DEFAULT_COORDS[s.id]; if(b){ s.lat=b.lat; s.lng=b.lng; s.placed=false; if(markers[s.id]) markers[s.id].setLatLng([b.lat,b.lng]); } });
+  refreshDirty(); refreshMarkers(); toast('Reset to defaults — Save to publish, or Discard to undo.');
+  if(selectedId){var s=SEED.filter(function(x){return x.id===selectedId;})[0]; if(s)renderBody(s);}
+}
+var toastT=null;
+function toast(msg){ var t=document.getElementById('toast'); t.textContent=msg; t.classList.add('on'); if(toastT) clearTimeout(toastT); toastT=setTimeout(function(){ t.classList.remove('on'); }, 2800); }
+function loadPositions(){
+  fetch('/'+SLUG+'/campmap/api/positions')
+    .then(function(r){ return r.ok ? r.json() : {positions:{}}; })
+    .then(function(res){
+      var pos=res.positions||{};
+      SEED.forEach(function(s){ var p=pos[s.id];
+        if(p && typeof p.lat==='number' && typeof p.lng==='number'){ s.lat=p.lat; s.lng=p.lng; s.placed=true; s.approx=false; if(markers[s.id]) markers[s.id].setLatLng([p.lat,p.lng]); }
+      });
+      snapshotSaved(); refreshMarkers();
+      if(selectedId){var s=SEED.filter(function(x){return x.id===selectedId;})[0]; if(s)renderBody(s);}
+    })
+    .catch(function(){ snapshotSaved(); });
 }
 
 /* ── boot ── */
@@ -617,10 +719,28 @@ function loadSites(){
 }
 document.getElementById('legToggle').onclick=function(){ document.getElementById('legend').classList.toggle('min'); this.textContent=document.getElementById('legend').classList.contains('min')?'▸':'▾'; };
 
+/* ── edit controls (only functional when the org token unlocked editing) ── */
+if(CAN_EDIT){
+  document.getElementById('editBtn').style.display='';
+  var mt=document.getElementById('mockTag'); if(mt) mt.textContent='Admin · editable';
+}
+document.getElementById('editBtn').onclick=function(){
+  if(EDIT && DIRTY){ if(!confirm('Exit edit mode? Unsaved changes will be discarded.')) return; discardChanges(); }
+  setEditMode(!EDIT);
+};
+document.getElementById('editSave').onclick=saveLayout;
+document.getElementById('editDiscard').onclick=discardChanges;
+document.getElementById('editReset').onclick=resetDefaults;
+document.getElementById('editDone').onclick=function(){
+  if(DIRTY){ if(!confirm('You have unsaved changes. Exit without saving? They will be discarded.')) return; discardChanges(); }
+  setEditMode(false);
+};
+
 applyConfig();
 buildChips();
 buildMarkers();
 updateSummary();
+loadPositions();   // apply any admin-saved pin positions
 loadSites();       // live site data → then availability (with offline fallbacks)
 fetchWeather();
 setTimeout(function(){ map.invalidateSize(); }, 250);

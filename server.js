@@ -1102,6 +1102,16 @@ fs.mkdirSync(CACHE_DIR, { recursive: true });
 
 const ORGS_FILE          = path.join(DATA_DIR, "orgs.json");
 const HOTDOG_CLAIMS_FILE = path.join(DATA_DIR, "hotdog_claims.json");
+
+// ── Campsite map: admin-placed site coordinates ──────────────────────
+// { slug: { siteId: { lat, lng } } } — set via the campmap editor (token-gated).
+const CAMPMAP_POS_FILE = path.join(DATA_DIR, "campmap_positions.json");
+let campmapPositions = {};
+try { campmapPositions = JSON.parse(fs.readFileSync(CAMPMAP_POS_FILE, "utf8")); } catch { campmapPositions = {}; }
+function saveCampmapPositions() {
+  try { fs.writeFileSync(CAMPMAP_POS_FILE, JSON.stringify(campmapPositions, null, 2)); }
+  catch (e) { console.error("[campmap] save positions failed:", e.message); }
+}
 const SUBS_FILE   = path.join(DATA_DIR, "subscriptions.json");
 // Email enabled for all orgs — gate is simply: does the org exist in ORGS?
 const EMAIL_ENABLED_ORGS = { has: (slug) => !!ORGS[slug] }; // duck-typed Set — always checks live ORGS map
@@ -5697,11 +5707,39 @@ app.get("/:org/campmap", (req, res) => {
     coords: org.coords || null,
     locationName: req.query.locationName || org.campLocationName || "Pleasant Hill City Lake",
     address: org.campAddress || "16210 Smart Rd, Pleasant Hill, MO 64080",
+    // Editing (drag-to-place) is unlocked only when the org token is supplied.
+    canEdit: !!(org.token && req.query.token && req.query.token === org.token),
   };
-  const fs = require("fs");
   const html = fs.readFileSync(path.join(__dirname, "public", "campmap.html"), "utf-8");
   const inject = '<script>window.__CM__=' + JSON.stringify(meta) + ';</script>';
   res.type("html").send(html.replace("</head>", inject + "</head>"));
+});
+
+// Campsite map positions — admin-placed site coordinates.
+// GET is public (viewers see the admin's layout); POST requires the org token.
+app.get("/:org/campmap/api/positions", (req, res) => {
+  const slug = req.params.org;
+  if (!ORGS[slug]) return res.status(404).json({ positions: {} });
+  res.json({ positions: campmapPositions[slug] || {} });
+});
+app.post("/:org/campmap/api/positions", express.json(), (req, res) => {
+  const slug = req.params.org;
+  const org = ORGS[slug];
+  if (!org) return res.status(404).json({ error: "Unknown org" });
+  const token = req.query.token || (req.body && req.body.token) || "";
+  if (!org.token || token !== org.token) return res.status(403).json({ error: "Forbidden — valid org token required to edit." });
+  const positions = (req.body && req.body.positions) || {};
+  const clean = {};
+  for (const [id, p] of Object.entries(positions)) {
+    if (p && typeof p.lat === "number" && typeof p.lng === "number" &&
+        Math.abs(p.lat) <= 90 && Math.abs(p.lng) <= 180) {
+      clean[id] = { lat: p.lat, lng: p.lng };
+    }
+  }
+  campmapPositions[slug] = clean;
+  saveCampmapPositions();
+  logEvent(slug, "campmap", "save-positions", req, { count: Object.keys(clean).length });
+  res.json({ ok: true, saved: Object.keys(clean).length });
 });
 
 // Cached site data for Arsenal Park (Watertown) — fetched via rec.us MCP 2026-06-22
