@@ -5747,6 +5747,7 @@ app.get("/:org/rentalcalendar/api/sites", async (req, res) => {
       bookingFlow: s.bookingFlow, isInstantBookable: s.isInstantBookable,
       description: s.description || '',
       imageUrl: (s.images && s.images.mainGallery && s.images.mainGallery[0]) ? s.images.mainGallery[0].url : null,
+      gallery: (s.images && Array.isArray(s.images.mainGallery)) ? s.images.mainGallery.map(g => g && g.url).filter(Boolean) : [],
       priceCents: s.config && s.config.pricing && s.config.pricing.default ? s.config.pricing.default.cents : null,
       residentPriceCents: (() => { try { const gc = s.config.pricing.default.groupCents; const vals = Object.values(gc).filter(v => v > 0); return vals.length ? Math.min(...vals) : null; } catch(e) { return null; } })(),
       durationMinutes: s.allowedReservationDurations ? s.allowedReservationDurations.minutes : null,
@@ -5759,6 +5760,7 @@ app.get("/:org/rentalcalendar/api/sites", async (req, res) => {
     // Proxy photo URLs through our server for caching + Cache-Control headers
     clean.forEach(s => {
       if (s.imageUrl) s.imageUrl = '/' + slug + '/rentalcalendar/api/photo?url=' + encodeURIComponent(s.imageUrl);
+      if (s.gallery && s.gallery.length) s.gallery = s.gallery.map(u => '/' + slug + '/rentalcalendar/api/photo?url=' + encodeURIComponent(u));
     });
     // Cache the MCP response for 1 hour
     rcLiveSitesCache[cacheKey] = { sites: clean, ts: Date.now() };

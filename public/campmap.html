@@ -218,6 +218,14 @@ var AMENITY = {
   '6d9a600a-7580-4a45-856d-a2d4791c0ec1':{l:'Grill',e:'🍖'},
   'b0be08df-8fa7-4ce4-a52c-85e8a1522bf1':{l:'Multi-Use Path',e:'🚶'}
 };
+/* live /api/sites returns amenities as resolved names → map to emoji */
+var NAME_EMOJI = {
+  'Horseshoes':'🐴','Corn Hole':'🌽','Cornhole':'🌽','Playground':'🛝','Trails':'🥾',
+  'Restrooms':'🚻','Restroom':'🚻','Parking':'🅿️','Tables':'🪑','Picnic Table':'🪑','Picnic Tables':'🪑',
+  'Chairs':'💺','Power/Electrical Available':'⚡','Electric':'⚡','Electrical':'⚡',
+  'Tent Site':'⛺','Fire Pit':'🔥','Grill':'🍖','Multi-Use Path':'🚶','Water':'🚰','Potable Water':'🚰',
+  'Showers':'🚿','Shower':'🚿','Dump Station':'🚽','WiFi':'📶','Wifi':'📶','Pets Allowed':'🐾','Boat Launch':'🚤'
+};
 var S3 = 'https://prod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com';
 
 /* ── seed sites: real rec.us data (Pleasant Hill), pulled via Rec Staff MCP ──
@@ -246,6 +254,42 @@ function siteMeta(s){
     blurb: s.kind==='electric'
       ? 'Secluded electric site across the bridge in Brown’s Arm — dedicated parking, picnic table and fire pit, with a portable toilet nearby.'
       : 'Primitive tent site in the secluded Brown’s Arm — picnic table and space for a tent, with a portable toilet nearby (no electric hookup).'};
+}
+
+/* ── live site data (from /api/sites), overlaid on the baked seed ──
+   Accessors prefer live values, falling back to the baked seed so the page
+   still works standalone/offline. Coords + check-in rules stay baked. */
+var LIVE_BY_ID = {};     // siteId -> live site record from /api/sites
+var SITES_LIVE = false;
+function L_(s){ return LIVE_BY_ID[s.id] || null; }
+function sName(s){ var l=L_(s); return (l && (l.courtNumber||l.name)) || s.name; }
+function sKind(s){ var l=L_(s); if(l && l.description){ if(/primitive/i.test(l.description)) return 'primitive'; if(/electric/i.test(l.description)) return 'electric'; } return s.kind; }
+function sCap(s){ var l=L_(s); return (l && l.capacity) || 10; }
+function sBook(s){ var l=L_(s); return (l && l.bookingUrl) || ('https://www.rec.us/sites/'+s.id); }
+function computeRate(l, resident){
+  if(!l) return null;
+  var cents = resident ? (l.residentPriceCents!=null?l.residentPriceCents:null) : (l.priceCents!=null?l.priceCents:null);
+  if(cents==null) return null;
+  var perNight = (l.pricingType==='perNight' || l.bookingUnit==='nightly');
+  var dm = l.durationMinutes; if(Array.isArray(dm)) dm = dm[0]; if(!dm) dm = 60;
+  var dollars = perNight ? cents/100 : (cents/100)*(dm/60);
+  return Math.round(dollars);
+}
+function sRate(s){ var r=computeRate(L_(s),false); return r!=null?r:siteMeta(s).rate; }
+function sResRate(s){ var r=computeRate(L_(s),true); return r!=null?r:siteMeta(s).resRate; }
+function sBlurb(s){ var l=L_(s);
+  if(l && l.description){ var t=l.description.replace(/<[^>]*>/g,' ').replace(/&nbsp;/g,' ').replace(/\s+/g,' ').trim();
+    var m=t.match(/^.*?[.!?](\s|$)/); return m ? m[0].trim() : t.slice(0,170); }
+  return siteMeta(s).blurb;
+}
+function sAmen(s){ var l=L_(s);
+  if(l && l.amenities && l.amenities.length){ return l.amenities.map(function(n){ return {l:n, e:(NAME_EMOJI[n]||'•')}; }); }
+  return (s.am||[]).map(function(id){ var a=AMENITY[id]; return a?{l:a.l,e:a.e}:null; }).filter(Boolean);
+}
+function sPhotos(s){ var l=L_(s);
+  if(l && l.gallery && l.gallery.length) return l.gallery.slice();
+  if(l && l.imageUrl) return [l.imageUrl];
+  return (s.ph||[]).map(function(f){ return S3+'/site-'+s.id+'/mainGallery/'+f; });
 }
 
 /* decorative amenity landmarks (illustrative positions) */
@@ -315,22 +359,23 @@ var markers={};   // siteId -> L.marker
 var selectedId=null;
 
 function markerHtml(site, status){
-  var kindEmoji = site.kind==='electric' ? '⚡' : '⛺';
+  var kindEmoji = sKind(site)==='electric' ? '⚡' : '⛺';
   var sel = site.id===selectedId ? ' sel' : '';
   return '<div class="site-marker'+sel+'" style="background:'+COLORS[status]+'">'+site.n+
          '<span class="kind">'+kindEmoji+'</span></div>';
 }
+function addMarker(site){
+  var status=statusOn(site, SELECTED);
+  var icon=L.divIcon({className:'', html:markerHtml(site,status), iconSize:[34,34], iconAnchor:[17,17]});
+  var m=L.marker([site.lat,site.lng],{icon:icon, riseOnHover:true, zIndexOffset:400}).addTo(map);
+  m.bindTooltip(function(){ var st=statusOn(site,SELECTED); var lbl=st==='avail'?'Open':st==='booked'?'Booked':'Unknown';
+    return '<span class="st">'+sName(site)+'</span><br>'+ (sKind(site)==='electric'?'⚡ Electric':'⛺ Primitive') +' · '+lbl; },
+    {className:'site-tip', direction:'top', offset:[0,-14]});
+  m.on('click', function(){ openSite(site); });
+  markers[site.id]=m;
+}
 function buildMarkers(){
-  SEED.forEach(function(site){
-    var status=statusOn(site, SELECTED);
-    var icon=L.divIcon({className:'', html:markerHtml(site,status), iconSize:[34,34], iconAnchor:[17,17]});
-    var m=L.marker([site.lat,site.lng],{icon:icon, riseOnHover:true, zIndexOffset:400}).addTo(map);
-    m.bindTooltip(function(){ var st=statusOn(site,SELECTED); var lbl=st==='avail'?'Open':st==='booked'?'Booked':'Unknown';
-      return '<span class="st">'+site.name+'</span><br>'+ (site.kind==='electric'?'⚡ Electric':'⛺ Primitive') +' · '+lbl; },
-      {className:'site-tip', direction:'top', offset:[0,-14]});
-    m.on('click', function(){ openSite(site); });
-    markers[site.id]=m;
-  });
+  SEED.forEach(addMarker);
   // area labels
   L.marker([38.82405,-94.29540],{icon:L.divIcon({className:'',html:'<div class="arm-label">Main Entrance · 1–4</div>',iconSize:[110,20],iconAnchor:[55,10]}),interactive:false,zIndexOffset:200}).addTo(map);
   L.marker([38.82720,-94.29520],{icon:L.divIcon({className:'',html:'<div class="arm-label">Brown’s Arm · 5–12</div>',iconSize:[120,20],iconAnchor:[60,10]}),interactive:false,zIndexOffset:200}).addTo(map);
@@ -405,14 +450,16 @@ function closeDrawer(){
 document.getElementById('dclose').onclick=closeDrawer;
 document.getElementById('scrim').onclick=closeDrawer;
 
-function photoUrl(site,i){ return S3+'/site-'+site.id+'/mainGallery/'+site.ph[i]; }
 function renderGallery(site){
   var g=document.getElementById('gallery');
-  var multi=site.ph.length>1;
-  var dots=''; for(var i=0;i<site.ph.length;i++) dots+='<span class="gdot'+(i===galleryIdx?' on':'')+'" data-i="'+i+'"></span>';
-  g.innerHTML='<img src="'+photoUrl(site,galleryIdx)+'" alt="'+site.name+'" onerror="this.style.display=\'none\'"/>'+
+  var photos=sPhotos(site);
+  if(galleryIdx>=photos.length) galleryIdx=0;
+  var multi=photos.length>1;
+  if(!photos.length){ g.innerHTML='<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:48px;background:#dcfce7">'+(sKind(site)==='electric'?'⚡':'⛺')+'</div>'; return; }
+  var dots=''; for(var i=0;i<photos.length;i++) dots+='<span class="gdot'+(i===galleryIdx?' on':'')+'" data-i="'+i+'"></span>';
+  g.innerHTML='<img src="'+photos[galleryIdx]+'" alt="'+sName(site)+'" onerror="this.style.display=\'none\'"/>'+
     (multi?'<button class="gph l" data-d="-1">‹</button><button class="gph r" data-d="1">›</button><div class="gnav">'+dots+'</div>':'');
-  g.querySelectorAll('.gph').forEach(function(b){ b.onclick=function(){ galleryIdx=(galleryIdx+parseInt(this.dataset.d)+site.ph.length)%site.ph.length; renderGallery(site); }; });
+  g.querySelectorAll('.gph').forEach(function(b){ b.onclick=function(){ galleryIdx=(galleryIdx+parseInt(this.dataset.d)+photos.length)%photos.length; renderGallery(site); }; });
   g.querySelectorAll('.gdot').forEach(function(b){ b.onclick=function(){ galleryIdx=parseInt(this.dataset.i); renderGallery(site); }; });
 }
 
@@ -423,24 +470,25 @@ function renderBody(site){
             : st==='booked'?'<span class="stat-pill booked">● Booked this night</span>'
             : '<span class="stat-pill unknown">● Availability unknown</span>';
   var d=new Date(SELECTED+'T00:00:00'); var human=DOW[d.getDay()]+', '+MON[d.getMonth()]+' '+d.getDate();
-  var amens=site.am.map(function(id){ var a=AMENITY[id]; return a?'<span class="a">'+a.e+' '+a.l+'</span>':''; }).join('');
-  var kindTag = site.kind==='electric'?'<span class="tag elec">⚡ Electric</span>':'<span class="tag prim">⛺ Primitive</span>';
+  var amens=sAmen(site).map(function(a){ return '<span class="a">'+a.e+' '+a.l+'</span>'; }).join('');
+  var kindTag = sKind(site)==='electric'?'<span class="tag elec">⚡ Electric</span>':'<span class="tag prim">⛺ Primitive</span>';
+  var locName = (CFG.locationName||'Pleasant Hill City Lake');
   var body='';
   body+=stPill+' <span style="font-size:12px;color:var(--muted)">'+human+'</span>';
   body+='<h2>Site '+pad(site.n)+'</h2>';
-  body+='<div class="area">'+kindTag+'<span>📍 '+site.area+' · Pleasant Hill City Lake</span></div>';
-  body+='<p class="blurb">'+meta.blurb+'</p>';
+  body+='<div class="area">'+kindTag+'<span>📍 '+site.area+' · '+locName+'</span></div>';
+  body+='<p class="blurb">'+sBlurb(site)+'</p>';
   body+='<div class="kv">';
-  body+='<div><div class="k">Rate</div><div class="v">$'+meta.rate+' <span style="font-size:11px;color:var(--muted);font-weight:500">/ night</span></div></div>';
-  body+='<div><div class="k">Resident</div><div class="v">$'+meta.resRate+' <span style="font-size:11px;color:var(--muted);font-weight:500">/ night</span></div></div>';
+  body+='<div><div class="k">Rate</div><div class="v">$'+sRate(site)+' <span style="font-size:11px;color:var(--muted);font-weight:500">/ night</span></div></div>';
+  body+='<div><div class="k">Resident</div><div class="v">$'+sResRate(site)+' <span style="font-size:11px;color:var(--muted);font-weight:500">/ night</span></div></div>';
   body+='<div><div class="k">Check-in</div><div class="v">'+meta.checkIn+'</div></div>';
   body+='<div><div class="k">Check-out</div><div class="v">'+meta.checkOut+'</div></div>';
-  body+='<div><div class="k">Capacity</div><div class="v">Up to 10</div></div>';
+  body+='<div><div class="k">Capacity</div><div class="v">Up to '+sCap(site)+'</div></div>';
   body+='<div><div class="k">Max stay</div><div class="v">'+(meta.maxNights?meta.maxNights+' nights':'—')+'</div></div>';
   body+='</div>';
   body+='<div class="sec-h">Amenities</div><div class="amen-list">'+amens+'</div>';
   body+='<div class="sec-h">Availability</div>'+miniCalHtml(site);
-  body+='<a class="book-btn" href="https://www.rec.us/sites/'+site.id+'" target="_blank" rel="noopener">🏕️ Book on rec.us</a>';
+  body+='<a class="book-btn" href="'+sBook(site)+'" target="_blank" rel="noopener">🏕️ Book on rec.us</a>';
   body+='<div class="book-note">'+(site.approx?'Map position approximate — exact coordinates not yet set for this site.':'Exact location from rec.us.')+'</div>';
   var el=document.getElementById('dbody');
   el.innerHTML=body;
@@ -522,16 +570,50 @@ function loadAvailability(){
           AVAIL[s.id]={__empty:true};
         }
       });
-      if(any){ LIVE=true; document.getElementById('legFoot').innerHTML='<b>Live</b> availability from rec.us. Marker positions are approximate for sites without saved coordinates.'; }
+      if(any){ LIVE=true; }
       else { throw new Error('empty'); }
+      updateLegFoot();
       refreshMarkers(); updateSummary(); if(selectedId){var s=SEED.filter(function(x){return x.id===selectedId;})[0]; if(s)renderBody(s);}
     })
     .catch(function(){
       // offline / standalone fallback — deterministic demo availability
       SEED.forEach(function(s){ AVAIL[s.id]=seedFallback(s); });
-      document.getElementById('legFoot').innerHTML='Demo availability (offline preview). Deploy on the platform for live rec.us booking data.';
+      LIVE=false; updateLegFoot();
       refreshMarkers(); updateSummary(); if(selectedId){var s2=SEED.filter(function(x){return x.id===selectedId;})[0]; if(s2)renderBody(s2);}
     });
+}
+function updateLegFoot(){
+  var f=document.getElementById('legFoot'); if(!f) return;
+  if(SITES_LIVE && LIVE) f.innerHTML='<b>Live</b> site &amp; availability data from rec.us. Positions are approximate for sites without saved coordinates.';
+  else if(SITES_LIVE) f.innerHTML='<b>Live</b> site data from rec.us; availability shown is a demo preview. Positions approximate where coordinates aren’t set.';
+  else if(LIVE) f.innerHTML='<b>Live</b> availability from rec.us. Positions are approximate for sites without saved coordinates.';
+  else f.innerHTML='Demo data (offline preview). Deploy on the platform for live rec.us site &amp; booking data.';
+}
+/* fetch the live site list and overlay it onto the baked seed, then load availability */
+function loadSites(){
+  fetch('/'+SLUG+'/rentalcalendar/api/sites')
+    .then(function(r){ if(!r.ok) throw new Error('http '+r.status); return r.json(); })
+    .then(function(res){
+      var live=(res.sites||[]).filter(function(s){ return s.type==='campsite'; });
+      if(!live.length) throw new Error('no live campsites');
+      live.forEach(function(ls){
+        LIVE_BY_ID[ls.id]=ls;
+        if(!SEED.some(function(s){ return s.id===ls.id; })){
+          // a campsite that isn't in the baked seed — add it with an approximate position
+          var num=parseInt(((ls.courtNumber||ls.name||'').match(/\d+/)||['0'])[0],10) || (SEED.length+1);
+          var brown=/brown/i.test(ls.courtNumber||ls.name||'');
+          var ns={ n:num, id:ls.id, name:ls.courtNumber||ls.name, area:brown?"Brown's Arm":'Main Entrance',
+                   kind:/primitive/i.test(ls.description||'')?'primitive':'electric',
+                   lat:LAKE.lat+(hash01(ls.id)-0.5)*0.005, lng:LAKE.lon+(hash01(ls.id+'x')-0.5)*0.005,
+                   approx:true, ph:[], am:[] };
+          SEED.push(ns); addMarker(ns);
+        }
+      });
+      SITES_LIVE=true; updateLegFoot(); refreshMarkers();
+      if(selectedId){ var s=SEED.filter(function(x){return x.id===selectedId;})[0]; if(s){ renderGallery(s); renderBody(s); } }
+    })
+    .catch(function(){ /* keep baked seed — still fully usable */ })
+    .then(function(){ loadAvailability(); });   // always continue to availability
 }
 document.getElementById('legToggle').onclick=function(){ document.getElementById('legend').classList.toggle('min'); this.textContent=document.getElementById('legend').classList.contains('min')?'▸':'▾'; };
 
@@ -539,7 +621,7 @@ applyConfig();
 buildChips();
 buildMarkers();
 updateSummary();
-loadAvailability();
+loadSites();       // live site data → then availability (with offline fallbacks)
 fetchWeather();
 setTimeout(function(){ map.invalidateSize(); }, 250);
 </script>
