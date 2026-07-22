@@ -1101,6 +1101,11 @@ const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "data");
 fs.mkdirSync(DATA_DIR, { recursive: true });
 const CACHE_DIR = path.join(DATA_DIR, "cache");
 fs.mkdirSync(CACHE_DIR, { recursive: true });
+// Persistence check: confirm campsite-map positions + other state land on a durable
+// disk. In Railway, attach a Volume and set DATA_DIR to its mount path (e.g. /data).
+console.log("[data] DATA_DIR=" + DATA_DIR +
+  (process.env.DATA_DIR ? " (from env — persistent if this is a mounted Railway volume)"
+                        : " (default ./data — EPHEMERAL; attach a Railway volume + set DATA_DIR to persist)"));
 
 const ORGS_FILE          = path.join(DATA_DIR, "orgs.json");
 const HOTDOG_CLAIMS_FILE = path.join(DATA_DIR, "hotdog_claims.json");
