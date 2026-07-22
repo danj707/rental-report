@@ -345,8 +345,8 @@ function computeRate(l, resident){
   var dollars = perNight ? cents/100 : (cents/100)*(dm/60);
   return Math.round(dollars);
 }
-function sRate(s){ var r=computeRate(L_(s),false); return r!=null?r:siteMeta(s).rate; }
-function sResRate(s){ var r=computeRate(L_(s),true); return r!=null?r:siteMeta(s).resRate; }
+function sRate(s){ var r=computeRate(L_(s),false); if(r!=null) return r; if(s.price!=null) return s.price; return siteMeta(s).rate; }
+function sResRate(s){ var r=computeRate(L_(s),true); if(r!=null) return r; if(s.resPrice!=null) return s.resPrice; return siteMeta(s).resRate; }
 function sBlurb(s){ var l=L_(s);
   if(l && l.description){ var t=l.description.replace(/<[^>]*>/g,' ').replace(/&nbsp;/g,' ').replace(/\s+/g,' ').trim();
     var m=t.match(/^.*?[.!?](\s|$)/); return m ? m[0].trim() : t.slice(0,170); }
@@ -359,6 +359,8 @@ function sAmen(s){ var l=L_(s);
 function sPhotos(s){ var l=L_(s);
   if(l && l.gallery && l.gallery.length) return l.gallery.slice();
   if(l && l.imageUrl) return [l.imageUrl];
+  if(s.photos && s.photos.length) return s.photos.slice();
+  if(s.photo) return [s.photo];
   return (s.ph||[]).map(function(f){ return S3+'/site-'+s.id+'/mainGallery/'+f; });
 }
 
@@ -733,9 +735,16 @@ function loadAvailability(){
       var data=res.data||{}; var any=false;
       SEED.forEach(function(s){
         var d=data[s.id];
-        if(d && typeof d==='object' && Object.keys(d).length){
-          var m={}; Object.keys(d).forEach(function(dateStr){ if(d[dateStr]&&Object.keys(d[dateStr]).length) m[dateStr]=true; });
-          AVAIL[s.id]=m; any=true;
+        // Nightly sites nest available dates under `checkInDates`; hourly sites are date→slots.
+        var src = (d && d.checkInDates && typeof d.checkInDates==='object') ? d.checkInDates : d;
+        if(src && typeof src==='object' && Object.keys(src).length){
+          var m={}; Object.keys(src).forEach(function(dateStr){
+            if(!/^\d{4}-\d{2}-\d{2}/.test(dateStr)) return;   // skip non-date keys
+            var v=src[dateStr];
+            var open = v && (v.available===true || (typeof v==='object' && v.available===undefined && Object.keys(v).length>0));
+            if(open) m[dateStr]=true;
+          });
+          if(Object.keys(m).length){ AVAIL[s.id]=m; any=true; } else { AVAIL[s.id]={__empty:true}; }
         } else {
           AVAIL[s.id]={__empty:true};
         }
