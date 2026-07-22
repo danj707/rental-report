@@ -104,6 +104,7 @@ body{font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica
 .dbody .tag{font-size:11px;font-weight:700;padding:2px 8px;border-radius:6px}
 .dbody .tag.elec{background:#fef9c3;color:#854d0e}
 .dbody .tag.prim{background:#e0e7ff;color:#3730a3}
+.dbody .tag.gen{background:#dcfce7;color:#14532d}
 .dbody .blurb{font-size:13px;color:#374151;line-height:1.5;margin:0 0 14px}
 .kv{display:grid;grid-template-columns:1fr 1fr;gap:8px 12px;margin-bottom:14px}
 .kv .k{font-size:10.5px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);font-weight:600}
@@ -207,16 +208,12 @@ body{font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica
         <div class="row"><span class="dot" style="background:var(--avail)"></span> Open this night</div>
         <div class="row"><span class="dot" style="background:var(--booked)"></span> Booked</div>
         <div class="row"><span class="dot" style="background:var(--unknown)"></span> Unknown</div>
-        <div class="div"></div>
-        <h4>Site type</h4>
-        <div class="row"><span class="em">⚡</span> Electric hookup</div>
-        <div class="row"><span class="em">⛺</span> Primitive / tent</div>
-        <div class="div"></div>
-        <h4>Amenities</h4>
-        <div class="row"><span class="em">🛖</span> Ranger station / pay kiosk</div>
-        <div class="row"><span class="em">🚿</span> Bathhouse &amp; showers</div>
-        <div class="row"><span class="em">🚰</span> Dump station / potable water</div>
-        <div class="row"><span class="em">🚤</span> Boat launch</div>
+        <div class="div" id="legKindDiv"></div>
+        <h4 id="legKindH" style="display:none">Site type</h4>
+        <div id="legKinds"></div>
+        <div class="div" id="legAmenDiv" style="display:none"></div>
+        <h4 id="legAmenH" style="display:none">Amenities</h4>
+        <div id="legLandmarks"></div>
         <div class="foot" id="legFoot">Live campsite data from rec.us. Marker positions are approximate for sites without saved coordinates.</div>
       </div>
     </div>
@@ -268,7 +265,7 @@ var S3 = 'https://prod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com';
    lat/lng: site 01 is the only one with a stored coordinate; the rest are
    approximate mockup positions (Main Entrance cluster + Brown's Arm loop).
    `approx:true` sites snap to real coords automatically once saved in admin. */
-var SEED = [
+var SEED_FALLBACK = [
   {n:1, id:'5c0bb8d3-ea37-4a5c-b0c6-d5e935889e07', name:'01 Main Entrance', area:'Main Entrance', kind:'electric', lat:38.82468767, lng:-94.29445978, approx:false, ph:['32f27e1c-aec5-464d-9edb-7bc519be7796.png?1758832884234','9a05d2a7-af05-4b79-962a-4b39164faeaa.png?1778032253579'], am:['98afbd35-fb43-46b7-a34a-bbec2b0455b6','57b31208-5b2c-48f1-a77c-3f39c18bef3d','83bd5ead-e571-4867-b6a7-56a897a9b111','4dc9c07b-fd27-42d0-a0d3-11cf38d4b50e','fdfcc17e-ec74-4a58-9541-4766e1dfa8c6','d1276025-0382-4ac3-8f9e-d887c9522dab','0cf5e4e3-3ed0-484d-9546-625d923bbdba','0bb8a677-e906-42ea-9be0-e8dd5be31772','cf5a1e6d-f250-4876-94a2-52142b48fdbe','25452762-2d27-40aa-9a2e-83e2a0c3b34a','e67c5b0f-5aa5-44fa-aa6e-4dc5c78815a6']},
   {n:2, id:'954685e7-e2b0-4929-b312-b429b43eeb13', name:'02 Main Entrance', area:'Main Entrance', kind:'electric', lat:38.82452, lng:-94.29470, approx:true, ph:['10af872f-db6c-429c-96b9-b4d1484062c1.png?1778032513616','2d773903-0d7e-4436-b6c7-ad933ce8bede.png?1778032519600'], am:['98afbd35-fb43-46b7-a34a-bbec2b0455b6','57b31208-5b2c-48f1-a77c-3f39c18bef3d','83bd5ead-e571-4867-b6a7-56a897a9b111','4dc9c07b-fd27-42d0-a0d3-11cf38d4b50e','fdfcc17e-ec74-4a58-9541-4766e1dfa8c6','d1276025-0382-4ac3-8f9e-d887c9522dab','0cf5e4e3-3ed0-484d-9546-625d923bbdba','0bb8a677-e906-42ea-9be0-e8dd5be31772','cf5a1e6d-f250-4876-94a2-52142b48fdbe','25452762-2d27-40aa-9a2e-83e2a0c3b34a']},
   {n:3, id:'bd8843da-542f-4590-a864-71f4b8052ad8', name:'03 Main Entrance', area:'Main Entrance', kind:'electric', lat:38.82436, lng:-94.29493, approx:true, ph:['289b6fbd-64ba-4f81-9467-8e9b41fb9a04.png?1778032828411','05085f1e-b85b-44ae-b225-97779484a010.png?1778032833735'], am:['98afbd35-fb43-46b7-a34a-bbec2b0455b6','57b31208-5b2c-48f1-a77c-3f39c18bef3d','83bd5ead-e571-4867-b6a7-56a897a9b111','4dc9c07b-fd27-42d0-a0d3-11cf38d4b50e','fdfcc17e-ec74-4a58-9541-4766e1dfa8c6','d1276025-0382-4ac3-8f9e-d887c9522dab','0cf5e4e3-3ed0-484d-9546-625d923bbdba','0bb8a677-e906-42ea-9be0-e8dd5be31772','cf5a1e6d-f250-4876-94a2-52142b48fdbe','25452762-2d27-40aa-9a2e-83e2a0c3b34a','e67c5b0f-5aa5-44fa-aa6e-4dc5c78815a6']},
@@ -282,14 +279,47 @@ var SEED = [
   {n:11, id:'89dae3f9-d555-432e-b8ca-642fe4b15129', name:'11 Brown’s Arm', area:"Brown's Arm", kind:'electric', lat:38.82800, lng:-94.29474, approx:true, ph:['42eb8914-a44f-4737-8793-45ae25a96025.png?1778011186018','d8fc20d5-728c-47c6-96d8-d3e6372690f4.png?1778011202068'], am:['98afbd35-fb43-46b7-a34a-bbec2b0455b6','57b31208-5b2c-48f1-a77c-3f39c18bef3d','83bd5ead-e571-4867-b6a7-56a897a9b111','4dc9c07b-fd27-42d0-a0d3-11cf38d4b50e','fdfcc17e-ec74-4a58-9541-4766e1dfa8c6','d1276025-0382-4ac3-8f9e-d887c9522dab','0cf5e4e3-3ed0-484d-9546-625d923bbdba','0bb8a677-e906-42ea-9be0-e8dd5be31772','cf5a1e6d-f250-4876-94a2-52142b48fdbe','b0be08df-8fa7-4ce4-a52c-85e8a1522bf1','25452762-2d27-40aa-9a2e-83e2a0c3b34a','e67c5b0f-5aa5-44fa-aa6e-4dc5c78815a6']},
   {n:12, id:'0c7edf94-c713-4894-86f0-4aa44582cb32', name:'12 Brown’s Arm', area:"Brown's Arm", kind:'primitive', lat:38.82830, lng:-94.29490, approx:true, ph:['5f796070-f648-4fa8-9db4-3e4a23bd16eb.png?1778028952777','2687040b-8e60-4d98-953a-5698759eb862.png?1778028963003'], am:['98afbd35-fb43-46b7-a34a-bbec2b0455b6','57b31208-5b2c-48f1-a77c-3f39c18bef3d','83bd5ead-e571-4867-b6a7-56a897a9b111','4dc9c07b-fd27-42d0-a0d3-11cf38d4b50e','fdfcc17e-ec74-4a58-9541-4766e1dfa8c6','d1276025-0382-4ac3-8f9e-d887c9522dab','0cf5e4e3-3ed0-484d-9546-625d923bbdba','25452762-2d27-40aa-9a2e-83e2a0c3b34a']}
 ];
-/* per-area booking rules + rate (from rec.us site config + rulesMd) */
-function siteMeta(s){
-  if(s.area==='Main Entrance') return {rate:25, resRate:20, checkIn:'12:00 PM', checkOut:'10:00 AM', maxNights:null,
+/* Sites come from the server-injected per-org seed (window.__CM__.sites); the
+   array above is the Pleasant Hill fallback used only when opened standalone. */
+function normSeed(s){ s.ph=s.ph||[]; s.am=s.am||[]; return s; }
+var SEED = (CFG.sites && CFG.sites.length) ? CFG.sites.map(normSeed) : SEED_FALLBACK;
+/* ── per-site meta resolution: org defaults + per-area overrides (from the seed) ──
+   Falls back to the built-in Pleasant Hill values when no config is injected
+   (standalone file). Live pricing/description still take precedence in sRate/sBlurb. */
+function siteMetaFallback(s){
+  if(s.area==='Main Entrance') return {rate:25, resRate:20, checkIn:'12:00 PM', checkOut:'10:00 AM', maxNights:null, capacity:10,
     blurb:'Upgraded electric site with a dedicated power pedestal, built for pop-ups through RVs. Steps from the bathhouse with private showers (Apr–Oct).'};
-  return {rate:25, resRate:20, checkIn:'3:00 PM', checkOut:'11:00 AM', maxNights:5,
+  return {rate:25, resRate:20, checkIn:'3:00 PM', checkOut:'11:00 AM', maxNights:5, capacity:10,
     blurb: s.kind==='electric'
       ? 'Secluded electric site across the bridge in Brown’s Arm — dedicated parking, picnic table and fire pit, with a portable toilet nearby.'
       : 'Primitive tent site in the secluded Brown’s Arm — picnic table and space for a tent, with a portable toilet nearby (no electric hookup).'};
+}
+function pick(){ for(var i=0;i<arguments.length;i++){ if(arguments[i]!==undefined && arguments[i]!==null) return arguments[i]; } return null; }
+function siteMeta(s){
+  var ad=(CFG.areaDefaults && CFG.areaDefaults[s.area]) || {};
+  var def=CFG.defaults || {};
+  var fb=siteMetaFallback(s);
+  var haveCfg = !!(CFG.sites && CFG.sites.length);   // served with a real per-org seed
+  return {
+    checkIn:  pick(ad.checkIn,  def.checkIn,  haveCfg?null:fb.checkIn),
+    checkOut: pick(ad.checkOut, def.checkOut, haveCfg?null:fb.checkOut),
+    maxNights: (ad.maxNights!==undefined ? ad.maxNights : (def.maxNights!==undefined ? def.maxNights : (haveCfg?null:fb.maxNights))),
+    capacity: pick(ad.capacity, def.capacity, haveCfg?null:fb.capacity),
+    rate:     pick(ad.rate,     def.rate,     haveCfg?null:fb.rate),
+    resRate:  pick(ad.resRate,  def.resRate,  haveCfg?null:fb.resRate),
+    blurb:    pick(ad.blurb,    def.blurb,    haveCfg?null:fb.blurb),
+  };
+}
+/* site-type (sub_type/kind) → marker emoji + human label */
+function kindInfo(k){
+  k = (k||'').toString().toLowerCase();
+  if(k==='electric' || k.indexOf('electric')>=0) return {e:'⚡', label:'Electric'};
+  if(k==='primitive' || k.indexOf('primitive')>=0) return {e:'⛺', label:'Primitive'};
+  if(k.indexOf('rv')>=0) return {e:'🚐', label:'Tent & RV'};
+  if(k.indexOf('tent')>=0) return {e:'⛺', label:'Tent'};
+  if(k.indexOf('cabin')>=0) return {e:'🛖', label:'Cabin'};
+  if(!k) return {e:'🏕️', label:'Campsite'};
+  return {e:'🏕️', label: k.replace(/-/g,' ').replace(/\b\w/g,function(c){return c.toUpperCase();})};
 }
 
 /* ── live site data (from /api/sites), overlaid on the baked seed ──
@@ -298,9 +328,13 @@ function siteMeta(s){
 var LIVE_BY_ID = {};     // siteId -> live site record from /api/sites
 var SITES_LIVE = false;
 function L_(s){ return LIVE_BY_ID[s.id] || null; }
+function shortName(s){ return 'Site '+pad(s.n); }
 function sName(s){ var l=L_(s); return (l && (l.courtNumber||l.name)) || s.name; }
-function sKind(s){ var l=L_(s); if(l && l.description){ if(/primitive/i.test(l.description)) return 'primitive'; if(/electric/i.test(l.description)) return 'electric'; } return s.kind; }
-function sCap(s){ var l=L_(s); return (l && l.capacity) || 10; }
+function sKind(s){ var l=L_(s);
+  if(l){ if(l.subType) return l.subType; if(l.description){ if(/primitive/i.test(l.description)) return 'primitive'; if(/electric/i.test(l.description)) return 'electric'; } }
+  return s.kind || 'campsite';
+}
+function sCap(s){ var l=L_(s); return (l && l.capacity) || siteMeta(s).capacity || null; }
 function sBook(s){ var l=L_(s); return (l && l.bookingUrl) || ('https://www.rec.us/sites/'+s.id); }
 function computeRate(l, resident){
   if(!l) return null;
@@ -328,14 +362,16 @@ function sPhotos(s){ var l=L_(s);
   return (s.ph||[]).map(function(f){ return S3+'/site-'+s.id+'/mainGallery/'+f; });
 }
 
-/* decorative amenity landmarks (illustrative positions) */
-var LANDMARKS = [
+/* decorative amenity landmarks — per-org from the seed (CFG.landmarks).
+   The array below is the Pleasant Hill fallback used only standalone. */
+var LANDMARKS_FALLBACK = [
   {e:'🛖', l:'Ranger Station / Pay Kiosk', lat:38.82445, lng:-94.29505},
   {e:'🚿', l:'Bathhouse & Showers', lat:38.82408, lng:-94.29472},
   {e:'🚰', l:'Dump Station / Potable Water', lat:38.82460, lng:-94.29525},
   {e:'🚤', l:'Boat Launch', lat:38.82250, lng:-94.29655},
   {e:'🚻', l:'Portable Toilet', lat:38.82690, lng:-94.29448}
 ];
+var LANDMARKS = (CFG.landmarks !== undefined && CFG.landmarks !== null) ? CFG.landmarks : LANDMARKS_FALLBACK;
 
 /* ── date helpers ── */
 function pad(n){return n<10?'0'+n:''+n;}
@@ -399,7 +435,7 @@ var DEFAULT_COORDS={};   // siteId -> {lat,lng} original (baked/synth) position
 var savedCoords={};      // siteId -> {lat,lng} last persisted baseline
 
 function markerHtml(site, status){
-  var kindEmoji = sKind(site)==='electric' ? '⚡' : '⛺';
+  var kindEmoji = kindInfo(sKind(site)).e;
   var cls = 'site-marker' + (site.id===selectedId?' sel':'') + (EDIT?' editing':'');
   return '<div class="'+cls+'" style="background:'+COLORS[status]+'">'+site.n+
          '<span class="kind">'+kindEmoji+'</span></div>';
@@ -410,8 +446,8 @@ function addMarker(site){
   var icon=L.divIcon({className:'', html:markerHtml(site,status), iconSize:[34,34], iconAnchor:[17,17]});
   var m=L.marker([site.lat,site.lng],{icon:icon, riseOnHover:true, zIndexOffset:400, draggable:true}).addTo(map);
   if(m.dragging && !EDIT) m.dragging.disable();
-  m.bindTooltip(function(){ var st=statusOn(site,SELECTED); var lbl=st==='avail'?'Open':st==='booked'?'Booked':'Unknown';
-    return '<span class="st">'+sName(site)+'</span><br>'+ (sKind(site)==='electric'?'⚡ Electric':'⛺ Primitive') +' · '+lbl; },
+  m.bindTooltip(function(){ var st=statusOn(site,SELECTED); var lbl=st==='avail'?'Open':st==='booked'?'Booked':'Unknown'; var ki=kindInfo(sKind(site));
+    return '<span class="st">'+shortName(site)+'</span><br>'+ ki.e+' '+ki.label +' · '+lbl; },
     {className:'site-tip', direction:'top', offset:[0,-14]});
   m.on('click', function(){ if(!EDIT) openSite(site); else { openSite(site); } });
   m.on('dragend', function(){ var ll=m.getLatLng(); site.lat=ll.lat; site.lng=ll.lng; site.placed=true; site.approx=false; refreshDirty(); if(selectedId===site.id) renderBody(site); });
@@ -419,19 +455,48 @@ function addMarker(site){
 }
 function buildMarkers(){
   SEED.forEach(addMarker);
-  // area labels
-  L.marker([38.82405,-94.29540],{icon:L.divIcon({className:'',html:'<div class="arm-label">Main Entrance · 1–4</div>',iconSize:[110,20],iconAnchor:[55,10]}),interactive:false,zIndexOffset:200}).addTo(map);
-  L.marker([38.82720,-94.29520],{icon:L.divIcon({className:'',html:'<div class="arm-label">Brown’s Arm · 5–12</div>',iconSize:[120,20],iconAnchor:[60,10]}),interactive:false,zIndexOffset:200}).addTo(map);
-  // landmarks
+  // area labels — only when there is more than one named area (generic across orgs)
+  var areas={};
+  SEED.forEach(function(s){ if(!s.area) return; (areas[s.area]=areas[s.area]||[]).push(s); });
+  var areaNames=Object.keys(areas);
+  if(areaNames.length>1){
+    areaNames.forEach(function(name){
+      var grp=areas[name];
+      var la=0,ln=0; grp.forEach(function(s){ la+=s.lat; ln+=s.lng; }); la/=grp.length; ln/=grp.length;
+      var nums=grp.map(function(s){return s.n;}).sort(function(a,b){return a-b;});
+      var rng = nums.length>1 ? (' · '+nums[0]+'–'+nums[nums.length-1]) : '';
+      L.marker([la,ln],{icon:L.divIcon({className:'',html:'<div class="arm-label">'+name+rng+'</div>',iconSize:[130,20],iconAnchor:[65,-14]}),interactive:false,zIndexOffset:200}).addTo(map);
+    });
+  }
+  // landmarks (per-org, optional)
   LANDMARKS.forEach(function(k){
     var m=L.marker([k.lat,k.lng],{icon:L.divIcon({className:'',html:'<div class="amen-marker">'+k.e+'</div>',iconSize:[28,28],iconAnchor:[14,14]}),zIndexOffset:100}).addTo(map);
     m.bindTooltip(k.l,{className:'site-tip',direction:'top',offset:[0,-12]});
   });
+  buildLegendDynamic();
+  fitToSites();
+}
+function fitToSites(){
+  var pts=SEED.map(function(s){ return [s.lat,s.lng]; });
+  LANDMARKS.forEach(function(k){ pts.push([k.lat,k.lng]); });
+  if(pts.length){ try{ map.fitBounds(pts, {padding:[60,60], maxZoom:18}); }catch(e){} }
+}
+function buildLegendDynamic(){
+  // site-type rows from the kinds actually present
+  var kinds={}; SEED.forEach(function(s){ var k=sKind(s); if(k) kinds[k]=true; });
+  var kk=Object.keys(kinds);
+  var kh=document.getElementById('legKinds');
+  if(kk.length){ kh.innerHTML=kk.map(function(k){ var ki=kindInfo(k); return '<div class="row"><span class="em">'+ki.e+'</span> '+ki.label+'</div>'; }).join('');
+    document.getElementById('legKindH').style.display=''; document.getElementById('legKindDiv').style.display=''; }
+  // landmark rows
+  var lh=document.getElementById('legLandmarks');
+  if(LANDMARKS && LANDMARKS.length){ lh.innerHTML=LANDMARKS.map(function(k){ return '<div class="row"><span class="em">'+k.e+'</span> '+k.l+'</div>'; }).join('');
+    document.getElementById('legAmenH').style.display=''; document.getElementById('legAmenDiv').style.display=''; }
 }
 function refreshMarkers(){
   SEED.forEach(function(site){
-    var status=statusOn(site, SELECTED);
-    markers[site.id].setIcon(L.divIcon({className:'', html:markerHtml(site,status), iconSize:[34,34], iconAnchor:[17,17]}));
+    var m=markers[site.id]; if(!m) return;
+    m.setIcon(L.divIcon({className:'', html:markerHtml(site,statusOn(site, SELECTED)), iconSize:[34,34], iconAnchor:[17,17]}));
   });
 }
 
@@ -514,8 +579,11 @@ function renderBody(site){
             : '<span class="stat-pill unknown">● Availability unknown</span>';
   var d=new Date(SELECTED+'T00:00:00'); var human=DOW[d.getDay()]+', '+MON[d.getMonth()]+' '+d.getDate();
   var amens=sAmen(site).map(function(a){ return '<span class="a">'+a.e+' '+a.l+'</span>'; }).join('');
-  var kindTag = sKind(site)==='electric'?'<span class="tag elec">⚡ Electric</span>':'<span class="tag prim">⛺ Primitive</span>';
+  var ki=kindInfo(sKind(site));
+  var kindCls = ki.label==='Electric'?'elec':(ki.label==='Primitive'?'prim':'gen');
+  var kindTag = '<span class="tag '+kindCls+'">'+ki.e+' '+ki.label+'</span>';
   var locName = (CFG.locationName||'Pleasant Hill City Lake');
+  var rate=sRate(site), resRate=sResRate(site), cap=sCap(site);
   var body='';
   body+=stPill+' <span style="font-size:12px;color:var(--muted)">'+human+'</span>';
   body+='<h2>Site '+pad(site.n)+'</h2>';
@@ -523,12 +591,12 @@ function renderBody(site){
   if(EDIT){ body+='<div class="pin-edit"><b>Edit mode</b> — drag this pin on the map to move it.<br><button id="pinReset">⟲ Reset this pin to default</button></div>'; }
   body+='<p class="blurb">'+sBlurb(site)+'</p>';
   body+='<div class="kv">';
-  body+='<div><div class="k">Rate</div><div class="v">$'+sRate(site)+' <span style="font-size:11px;color:var(--muted);font-weight:500">/ night</span></div></div>';
-  body+='<div><div class="k">Resident</div><div class="v">$'+sResRate(site)+' <span style="font-size:11px;color:var(--muted);font-weight:500">/ night</span></div></div>';
-  body+='<div><div class="k">Check-in</div><div class="v">'+meta.checkIn+'</div></div>';
-  body+='<div><div class="k">Check-out</div><div class="v">'+meta.checkOut+'</div></div>';
-  body+='<div><div class="k">Capacity</div><div class="v">Up to '+sCap(site)+'</div></div>';
-  body+='<div><div class="k">Max stay</div><div class="v">'+(meta.maxNights?meta.maxNights+' nights':'—')+'</div></div>';
+  body+='<div><div class="k">Rate</div><div class="v">'+(rate!=null?'$'+rate:'—')+' <span style="font-size:11px;color:var(--muted);font-weight:500">/ night</span></div></div>';
+  if(resRate!=null) body+='<div><div class="k">Resident</div><div class="v">$'+resRate+' <span style="font-size:11px;color:var(--muted);font-weight:500">/ night</span></div></div>';
+  if(meta.checkIn) body+='<div><div class="k">Check-in</div><div class="v">'+meta.checkIn+'</div></div>';
+  if(meta.checkOut) body+='<div><div class="k">Check-out</div><div class="v">'+meta.checkOut+'</div></div>';
+  if(cap!=null) body+='<div><div class="k">Capacity</div><div class="v">Up to '+cap+'</div></div>';
+  if(meta.maxNights) body+='<div><div class="k">Max stay</div><div class="v">'+meta.maxNights+' nights</div></div>';
   body+='</div>';
   body+='<div class="sec-h">Amenities</div><div class="amen-list">'+amens+'</div>';
   body+='<div class="sec-h">Availability</div>'+miniCalHtml(site);
@@ -645,7 +713,7 @@ function loadPositions(){
       SEED.forEach(function(s){ var p=pos[s.id];
         if(p && typeof p.lat==='number' && typeof p.lng==='number'){ s.lat=p.lat; s.lng=p.lng; s.placed=true; s.approx=false; if(markers[s.id]) markers[s.id].setLatLng([p.lat,p.lng]); }
       });
-      snapshotSaved(); refreshMarkers();
+      snapshotSaved(); refreshMarkers(); fitToSites();
       if(selectedId){var s=SEED.filter(function(x){return x.id===selectedId;})[0]; if(s)renderBody(s);}
     })
     .catch(function(){ snapshotSaved(); });

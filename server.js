@@ -686,6 +686,8 @@ const ORGS = {
   "douglas-county-nv": {
     token:   "ll0hh2Dee5nbwlgt",
     orgId:   "0312ebc8-40de-4fc8-a737-8afa26334e13",
+    coords:  { lat: 38.6955986, lon: -119.5198339 },   // Topaz Lake Recreation Area
+    mapCity: "Gardnerville, NV",
     logoUrl: "https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2Forganization-0312ebc8-40de-4fc8-a737-8afa26334e13%2FfullLogo.png%3F1769825787565&w=1920&q=75",
     displayName: "Douglas County",
   },
@@ -1090,7 +1092,7 @@ const NON_ADDABLE_REPORTS = new Set(["program-demographics", "retention", "annua
 const HEALTH_SKIP_REPORTS = new Set(["section-detail", "annual-report", "qoq", "qbr-stats", "checkins", "program-checkins"]);
 const RENTAL_CALENDAR_ORGS = new Set(["watertown", "norman", "niagarafalls"]);
 // Orgs with an interactive campsite map (public /:org/campmap — Leaflet + live rec.us site data)
-const CAMPMAP_ORGS = new Set(["pleasant-hill"]);
+const CAMPMAP_ORGS = new Set(["pleasant-hill", "douglas-county-nv"]);
 
 // ── Dynamic orgs (added via dashboard UI) ────────────────────────────
 // Loaded at startup and merged into ORGS; also updated at runtime.
@@ -1112,6 +1114,11 @@ function saveCampmapPositions() {
   try { fs.writeFileSync(CAMPMAP_POS_FILE, JSON.stringify(campmapPositions, null, 2)); }
   catch (e) { console.error("[campmap] save positions failed:", e.message); }
 }
+// Per-org campsite seed (center, location, landmarks, defaults, sites w/ coords).
+// Committed file; loaded once at startup. See campmap-seeds.json.
+let CAMPMAP_SEEDS = {};
+try { CAMPMAP_SEEDS = JSON.parse(fs.readFileSync(path.join(__dirname, "campmap-seeds.json"), "utf8")); }
+catch (e) { console.warn("[campmap] seeds load failed:", e.message); }
 const SUBS_FILE   = path.join(DATA_DIR, "subscriptions.json");
 // Email enabled for all orgs — gate is simply: does the org exist in ORGS?
 const EMAIL_ENABLED_ORGS = { has: (slug) => !!ORGS[slug] }; // duck-typed Set — always checks live ORGS map
@@ -5699,14 +5706,19 @@ app.get("/:org/campmap", (req, res) => {
   if (!org.orgId) return res.status(404).send("Campsite map requires orgId configuration.");
   logEvent(slug, "campmap", "view", req);
   const slugTitle = slug.charAt(0).toUpperCase() + slug.slice(1);
+  const seed = CAMPMAP_SEEDS[slug] || {};
   const meta = {
     slug,
     orgId: org.orgId,
     displayName: org.displayName || slugTitle + " Parks & Recreation",
     logoUrl: org.logoUrl || "",
-    coords: org.coords || null,
-    locationName: req.query.locationName || org.campLocationName || "Pleasant Hill City Lake",
-    address: org.campAddress || "16210 Smart Rd, Pleasant Hill, MO 64080",
+    coords: seed.center || org.coords || null,
+    locationName: req.query.locationName || seed.locationName || org.campLocationName || "",
+    address: seed.address || org.campAddress || "",
+    sites: seed.sites || null,
+    landmarks: seed.landmarks || null,
+    defaults: seed.defaults || {},
+    areaDefaults: seed.areaDefaults || {},
     // Editing (drag-to-place) is unlocked only when the org token is supplied.
     canEdit: !!(org.token && req.query.token && req.query.token === org.token),
   };
