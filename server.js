@@ -3399,11 +3399,17 @@ async function fetchOrgChatData(orgSlug, orgConfig) {
 
   await Promise.allSettled(reports.map(async (rt) => {
     try {
-      const uuid = orgConfig[rt]?.mbUuid || SHARED_UUIDS[rt];
-      const isShared = !orgConfig[rt]?.mbUuid && !!SHARED_UUIDS[rt];
-      const orgIdParam = isShared && orgConfig.orgId ? `?parameters=${encodeURIComponent(JSON.stringify([{type:"category",target:["variable",["template-tag","org_id"]],value:orgConfig.orgId}]))}` : "";
+      // Mirror the report-page / wizard pattern: prefer the shared card + inject
+      // org_id, and let buildMetabaseParams add the default date window. (The old
+      // path used stale per-org UUIDs with no dates/org_id → cards errored → empty.)
+      const useShared = rt === "gl" ? (!orgConfig.gl?.mbUuid && !!SHARED_UUIDS.gl) : !!SHARED_UUIDS[rt];
+      const uuid = useShared ? SHARED_UUIDS[rt] : (orgConfig[rt]?.mbUuid || SHARED_UUIDS[rt]);
+      if (!uuid) return;
+      const orgId = useShared ? orgConfig.orgId : null;
+      const params = buildMetabaseParams({}, rt, orgId);
+      const orgIdParam = params.length > 0 ? `?parameters=${encodeURIComponent(JSON.stringify(params))}` : "";
       const url = `${METABASE_URL}/api/public/card/${uuid}/query/json${orgIdParam}`;
-      console.log("[chat-data] " + orgSlug + "/" + rt + ": fetching...");
+      console.log("[chat-data] " + orgSlug + "/" + rt + ": fetching (shared=" + useShared + ")...");
       const resp = await fetch(url, { signal: AbortSignal.timeout(30000) });
       if (!resp.ok) { console.warn("[chat-data] " + orgSlug + "/" + rt + ": HTTP " + resp.status); return; }
       const rows = await resp.json();
