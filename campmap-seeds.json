@@ -1,0 +1,622 @@
+{
+  "pleasant-hill": {
+    "center": {
+      "lat": 38.82065625,
+      "lng": -94.29997011
+    },
+    "locationName": "Pleasant Hill City Lake",
+    "address": "16210 Smart Rd, Pleasant Hill, MO 64080",
+    "landmarks": [
+      {
+        "e": "🛖",
+        "l": "Ranger Station / Pay Kiosk",
+        "lat": 38.82445,
+        "lng": -94.29505
+      },
+      {
+        "e": "🚿",
+        "l": "Bathhouse & Showers",
+        "lat": 38.82408,
+        "lng": -94.29472
+      },
+      {
+        "e": "🚰",
+        "l": "Dump Station / Potable Water",
+        "lat": 38.8246,
+        "lng": -94.29525
+      },
+      {
+        "e": "🚤",
+        "l": "Boat Launch",
+        "lat": 38.8225,
+        "lng": -94.29655
+      },
+      {
+        "e": "🚻",
+        "l": "Portable Toilet",
+        "lat": 38.8269,
+        "lng": -94.29448
+      }
+    ],
+    "defaults": {
+      "checkIn": "3:00 PM",
+      "checkOut": "11:00 AM",
+      "maxNights": 5,
+      "capacity": 10,
+      "rate": 25,
+      "resRate": 20,
+      "blurb": "Nightly campsite at Pleasant Hill City Lake."
+    },
+    "areaDefaults": {
+      "Main Entrance": {
+        "checkIn": "12:00 PM",
+        "checkOut": "10:00 AM",
+        "maxNights": null,
+        "rate": 25,
+        "resRate": 20,
+        "blurb": "Upgraded electric site with a dedicated power pedestal, built for pop-ups through RVs. Steps from the bathhouse with private showers (Apr–Oct)."
+      },
+      "Brown's Arm": {
+        "checkIn": "3:00 PM",
+        "checkOut": "11:00 AM",
+        "maxNights": 5,
+        "rate": 25,
+        "resRate": 20,
+        "blurb": "Secluded site across the bridge in Brown’s Arm — dedicated parking, picnic table and fire pit, with a portable toilet nearby."
+      }
+    },
+    "sites": [
+      {
+        "n": 1,
+        "id": "5c0bb8d3-ea37-4a5c-b0c6-d5e935889e07",
+        "name": "Site 01",
+        "area": "Main Entrance",
+        "kind": "electric",
+        "lat": 38.82468767,
+        "lng": -94.29445978,
+        "approx": false
+      },
+      {
+        "n": 2,
+        "id": "954685e7-e2b0-4929-b312-b429b43eeb13",
+        "name": "Site 02",
+        "area": "Main Entrance",
+        "kind": "electric",
+        "lat": 38.82452,
+        "lng": -94.2947,
+        "approx": true
+      },
+      {
+        "n": 3,
+        "id": "bd8843da-542f-4590-a864-71f4b8052ad8",
+        "name": "Site 03",
+        "area": "Main Entrance",
+        "kind": "electric",
+        "lat": 38.82436,
+        "lng": -94.29493,
+        "approx": true
+      },
+      {
+        "n": 4,
+        "id": "6e2510f9-9aea-477a-9094-6286ddd6d1ab",
+        "name": "Site 04",
+        "area": "Main Entrance",
+        "kind": "electric",
+        "lat": 38.8242,
+        "lng": -94.29516,
+        "approx": true
+      },
+      {
+        "n": 5,
+        "id": "9ad33d51-24b0-425e-8ce7-b983cf567677",
+        "name": "Site 05",
+        "area": "Brown's Arm",
+        "kind": "primitive",
+        "lat": 38.8259,
+        "lng": -94.2949,
+        "approx": true
+      },
+      {
+        "n": 6,
+        "id": "89ef75b5-5e9d-4353-b733-87f2d18b7b91",
+        "name": "Site 06",
+        "area": "Brown's Arm",
+        "kind": "primitive",
+        "lat": 38.82625,
+        "lng": -94.29478,
+        "approx": true
+      },
+      {
+        "n": 7,
+        "id": "c45fe7ee-6308-4436-9b3d-0827b5f2cbaa",
+        "name": "Site 07",
+        "area": "Brown's Arm",
+        "kind": "electric",
+        "lat": 38.8266,
+        "lng": -94.29468,
+        "approx": true
+      },
+      {
+        "n": 8,
+        "id": "b416ba6a-7ef7-42d0-9a05-84e41ee8cd45",
+        "name": "Site 08",
+        "area": "Brown's Arm",
+        "kind": "electric",
+        "lat": 38.82695,
+        "lng": -94.29462,
+        "approx": true
+      },
+      {
+        "n": 9,
+        "id": "594c8ad2-80d6-42a3-a240-272fdd2d2a9f",
+        "name": "Site 09",
+        "area": "Brown's Arm",
+        "kind": "electric",
+        "lat": 38.8273,
+        "lng": -94.2946,
+        "approx": true
+      },
+      {
+        "n": 10,
+        "id": "726e0a52-8887-4123-b534-3694b2078b72",
+        "name": "Site 10",
+        "area": "Brown's Arm",
+        "kind": "electric",
+        "lat": 38.82765,
+        "lng": -94.29464,
+        "approx": true
+      },
+      {
+        "n": 11,
+        "id": "89dae3f9-d555-432e-b8ca-642fe4b15129",
+        "name": "Site 11",
+        "area": "Brown's Arm",
+        "kind": "electric",
+        "lat": 38.828,
+        "lng": -94.29474,
+        "approx": true
+      },
+      {
+        "n": 12,
+        "id": "0c7edf94-c713-4894-86f0-4aa44582cb32",
+        "name": "Site 12",
+        "area": "Brown's Arm",
+        "kind": "primitive",
+        "lat": 38.8283,
+        "lng": -94.2949,
+        "approx": true
+      }
+    ]
+  },
+  "douglas-county-nv": {
+    "center": {
+      "lat": 38.6955986,
+      "lng": -119.5198339
+    },
+    "locationName": "Topaz Lake Recreation Area",
+    "address": "3800 Topaz Park Rd, Gardnerville, NV 89410",
+    "landmarks": [],
+    "defaults": {
+      "checkIn": "1:00 PM",
+      "checkOut": "11:00 AM",
+      "maxNights": null,
+      "capacity": 8,
+      "rate": null,
+      "resRate": null,
+      "blurb": "Nightly tent & RV campsite at Topaz Lake Recreation Area, on the Nevada–California line."
+    },
+    "areaDefaults": {},
+    "sites": [
+      {
+        "n": 1,
+        "id": "a18b7ac7-0a37-4f9c-97a1-eec384f82d79",
+        "name": "Site 01",
+        "area": "Topaz Lake",
+        "kind": "tent-and-rv",
+        "lat": 38.69457274845515,
+        "lng": -119.51978312589519,
+        "approx": false
+      },
+      {
+        "n": 2,
+        "id": "08a5ffaa-5523-4391-a6bf-4463fa1380ea",
+        "name": "Site 02",
+        "area": "Topaz Lake",
+        "kind": "tent-and-rv",
+        "lat": 38.69466153807613,
+        "lng": -119.51975998590116,
+        "approx": false
+      },
+      {
+        "n": 3,
+        "id": "37f173f9-3da4-4ea7-a5d2-bcd4a14607f7",
+        "name": "Site 03",
+        "area": "Topaz Lake",
+        "kind": "tent-and-rv",
+        "lat": 38.694762330136705,
+        "lng": -119.51988927263203,
+        "approx": false
+      },
+      {
+        "n": 4,
+        "id": "77af83d0-53f6-4775-9263-5381c2b8d214",
+        "name": "Site 04",
+        "area": "Topaz Lake",
+        "kind": "tent-and-rv",
+        "lat": 38.694774258257254,
+        "lng": -119.51994743213848,
+        "approx": false
+      },
+      {
+        "n": 5,
+        "id": "2cde712d-e22c-4917-9396-535f2f68c0e8",
+        "name": "Site 05",
+        "area": "Topaz Lake",
+        "kind": "tent-and-rv",
+        "lat": 38.694818685375495,
+        "lng": -119.51997397076968,
+        "approx": false
+      },
+      {
+        "n": 6,
+        "id": "28dbd728-7c74-4008-9743-44e234359bc3",
+        "name": "Site 06",
+        "area": "Topaz Lake",
+        "kind": "tent-and-rv",
+        "lat": 38.69496777257381,
+        "lng": -119.52002088112894,
+        "approx": false
+      },
+      {
+        "n": 7,
+        "id": "e5dfebdf-a3b3-4da3-a6f4-1f96106c6103",
+        "name": "Site 07",
+        "area": "Topaz Lake",
+        "kind": "tent-and-rv",
+        "lat": 38.6952,
+        "lng": -119.5203,
+        "approx": true
+      },
+      {
+        "n": 8,
+        "id": "6124189f-3244-4bb7-9593-3fec6502f0ab",
+        "name": "Site 08",
+        "area": "Topaz Lake",
+        "kind": "tent-and-rv",
+        "lat": 38.6952,
+        "lng": -119.52,
+        "approx": true
+      },
+      {
+        "n": 9,
+        "id": "59789b7b-cb00-47fc-9abd-1eaf6d79c29d",
+        "name": "Site 09",
+        "area": "Topaz Lake",
+        "kind": "tent-and-rv",
+        "lat": 38.6952,
+        "lng": -119.5197,
+        "approx": true
+      },
+      {
+        "n": 10,
+        "id": "0a4022a0-e7b9-4dcc-95bb-2cb354b3dfa9",
+        "name": "Site 10",
+        "area": "Topaz Lake",
+        "kind": "tent-and-rv",
+        "lat": 38.6952,
+        "lng": -119.5194,
+        "approx": true
+      },
+      {
+        "n": 11,
+        "id": "8ffb1056-4fbb-4218-ae4e-33c1d76400a9",
+        "name": "Site 11",
+        "area": "Topaz Lake",
+        "kind": "tent-and-rv",
+        "lat": 38.6952,
+        "lng": -119.5191,
+        "approx": true
+      },
+      {
+        "n": 12,
+        "id": "3d349ed2-30c8-4909-811c-2279e891b408",
+        "name": "Site 12",
+        "area": "Topaz Lake",
+        "kind": "tent-and-rv",
+        "lat": 38.6952,
+        "lng": -119.5188,
+        "approx": true
+      },
+      {
+        "n": 13,
+        "id": "42584d7f-7e5f-432c-89ce-186ad085add3",
+        "name": "Site 13",
+        "area": "Topaz Lake",
+        "kind": "tent-and-rv",
+        "lat": 38.6952,
+        "lng": -119.5185,
+        "approx": true
+      },
+      {
+        "n": 14,
+        "id": "7a3f6c70-a8cc-4834-aa6a-4c209d444d06",
+        "name": "Site 14",
+        "area": "Topaz Lake",
+        "kind": "tent-and-rv",
+        "lat": 38.69542,
+        "lng": -119.5203,
+        "approx": true
+      },
+      {
+        "n": 15,
+        "id": "7b824e6a-a7a9-46b3-bf40-04d78412b1d3",
+        "name": "Site 15",
+        "area": "Topaz Lake",
+        "kind": "tent-and-rv",
+        "lat": 38.69542,
+        "lng": -119.52,
+        "approx": true
+      },
+      {
+        "n": 16,
+        "id": "9a82e4c7-0dca-42dd-9048-934cfdc58100",
+        "name": "Site 16",
+        "area": "Topaz Lake",
+        "kind": "tent-and-rv",
+        "lat": 38.69542,
+        "lng": -119.5197,
+        "approx": true
+      },
+      {
+        "n": 17,
+        "id": "113e760b-52b3-4ce2-80cb-8dfbd207cfe4",
+        "name": "Site 17",
+        "area": "Topaz Lake",
+        "kind": "tent-and-rv",
+        "lat": 38.69542,
+        "lng": -119.5194,
+        "approx": true
+      },
+      {
+        "n": 18,
+        "id": "39087627-8fb5-4bf1-8f2c-8122cf82edf8",
+        "name": "Site 18",
+        "area": "Topaz Lake",
+        "kind": "tent-and-rv",
+        "lat": 38.69542,
+        "lng": -119.5191,
+        "approx": true
+      },
+      {
+        "n": 19,
+        "id": "2fb7624b-2213-4587-a626-a6fa25c1cac4",
+        "name": "Site 19",
+        "area": "Topaz Lake",
+        "kind": "tent-and-rv",
+        "lat": 38.69542,
+        "lng": -119.5188,
+        "approx": true
+      },
+      {
+        "n": 20,
+        "id": "daea22df-154c-4ccf-9984-b9c876eaaaeb",
+        "name": "Site 20",
+        "area": "Topaz Lake",
+        "kind": "tent-and-rv",
+        "lat": 38.69542,
+        "lng": -119.5185,
+        "approx": true
+      },
+      {
+        "n": 21,
+        "id": "043e84ef-3e90-453d-a02f-d87a95d1f1ce",
+        "name": "Site 21",
+        "area": "Topaz Lake",
+        "kind": "tent-and-rv",
+        "lat": 38.69564,
+        "lng": -119.5203,
+        "approx": true
+      },
+      {
+        "n": 22,
+        "id": "3e671633-caf4-4688-90c5-00ff0c6d9707",
+        "name": "Site 22",
+        "area": "Topaz Lake",
+        "kind": "tent-and-rv",
+        "lat": 38.69564,
+        "lng": -119.52,
+        "approx": true
+      },
+      {
+        "n": 23,
+        "id": "50347e4e-6043-4afc-b2fa-8616ed04e7eb",
+        "name": "Site 23",
+        "area": "Topaz Lake",
+        "kind": "tent-and-rv",
+        "lat": 38.69564,
+        "lng": -119.5197,
+        "approx": true
+      },
+      {
+        "n": 24,
+        "id": "82fee07a-5563-4bd8-86b1-e41ab8ef1739",
+        "name": "Site 24",
+        "area": "Topaz Lake",
+        "kind": "tent-and-rv",
+        "lat": 38.69564,
+        "lng": -119.5194,
+        "approx": true
+      },
+      {
+        "n": 25,
+        "id": "5baaec75-7da6-4c49-b797-8685af5c8551",
+        "name": "Site 25",
+        "area": "Topaz Lake",
+        "kind": "tent-and-rv",
+        "lat": 38.69564,
+        "lng": -119.5191,
+        "approx": true
+      },
+      {
+        "n": 26,
+        "id": "3b410ead-3b10-4ea9-90dd-cefdb29679f2",
+        "name": "Site 26",
+        "area": "Topaz Lake",
+        "kind": "tent-and-rv",
+        "lat": 38.69564,
+        "lng": -119.5188,
+        "approx": true
+      },
+      {
+        "n": 27,
+        "id": "f2e1fc58-0474-4e87-ba64-250ae4236c10",
+        "name": "Site 27",
+        "area": "Topaz Lake",
+        "kind": "tent-and-rv",
+        "lat": 38.69564,
+        "lng": -119.5185,
+        "approx": true
+      },
+      {
+        "n": 28,
+        "id": "894c389a-b257-42f4-8dda-c5a494e0e7d2",
+        "name": "Site 28",
+        "area": "Topaz Lake",
+        "kind": "tent-and-rv",
+        "lat": 38.69586,
+        "lng": -119.5203,
+        "approx": true
+      },
+      {
+        "n": 29,
+        "id": "03fc8ee3-88be-449b-bda2-8aa8d99ced6a",
+        "name": "Site 29",
+        "area": "Topaz Lake",
+        "kind": "tent-and-rv",
+        "lat": 38.69586,
+        "lng": -119.52,
+        "approx": true
+      },
+      {
+        "n": 30,
+        "id": "2777d43e-2eb1-4c53-a78f-6bf072a22d30",
+        "name": "Site 30",
+        "area": "Topaz Lake",
+        "kind": "tent-and-rv",
+        "lat": 38.69586,
+        "lng": -119.5197,
+        "approx": true
+      },
+      {
+        "n": 31,
+        "id": "841275e6-ca67-40d2-8941-70919ff47116",
+        "name": "Site 31",
+        "area": "Topaz Lake",
+        "kind": "tent-and-rv",
+        "lat": 38.69586,
+        "lng": -119.5194,
+        "approx": true
+      },
+      {
+        "n": 32,
+        "id": "6fea5b31-38b1-4463-a946-145eb8047359",
+        "name": "Site 32",
+        "area": "Topaz Lake",
+        "kind": "tent-and-rv",
+        "lat": 38.69586,
+        "lng": -119.5191,
+        "approx": true
+      },
+      {
+        "n": 33,
+        "id": "aa2d16d1-2d66-4032-98e5-964211f70489",
+        "name": "Site 33",
+        "area": "Topaz Lake",
+        "kind": "tent-and-rv",
+        "lat": 38.69586,
+        "lng": -119.5188,
+        "approx": true
+      },
+      {
+        "n": 34,
+        "id": "0fce8a41-a101-4333-a161-884fe35f2b55",
+        "name": "Site 34",
+        "area": "Topaz Lake",
+        "kind": "tent-and-rv",
+        "lat": 38.69586,
+        "lng": -119.5185,
+        "approx": true
+      },
+      {
+        "n": 35,
+        "id": "5d2d7a2c-d4da-4c77-8ba3-c6ca8b1a189a",
+        "name": "Site 35",
+        "area": "Topaz Lake",
+        "kind": "tent-and-rv",
+        "lat": 38.69608,
+        "lng": -119.5203,
+        "approx": true
+      },
+      {
+        "n": 36,
+        "id": "09855e97-9fae-4d17-8aa2-3291304fd003",
+        "name": "Site 36",
+        "area": "Topaz Lake",
+        "kind": "tent-and-rv",
+        "lat": 38.69608,
+        "lng": -119.52,
+        "approx": true
+      },
+      {
+        "n": 37,
+        "id": "a6619fb4-52e3-4739-b04d-939fcb1949d3",
+        "name": "Site 37",
+        "area": "Topaz Lake",
+        "kind": "tent-and-rv",
+        "lat": 38.69608,
+        "lng": -119.5197,
+        "approx": true
+      },
+      {
+        "n": 38,
+        "id": "61a36832-418a-4d39-a08d-e8a791bddd26",
+        "name": "Site 38",
+        "area": "Topaz Lake",
+        "kind": "tent-and-rv",
+        "lat": 38.69608,
+        "lng": -119.5194,
+        "approx": true
+      },
+      {
+        "n": 39,
+        "id": "240b44ea-0ac6-4042-95e1-95c60c864ffc",
+        "name": "Site 39",
+        "area": "Topaz Lake",
+        "kind": "tent-and-rv",
+        "lat": 38.69608,
+        "lng": -119.5191,
+        "approx": true
+      },
+      {
+        "n": 40,
+        "id": "3d4e0779-501a-4396-bae0-84695f1cb81b",
+        "name": "Site 40",
+        "area": "Topaz Lake",
+        "kind": "tent-and-rv",
+        "lat": 38.69608,
+        "lng": -119.5188,
+        "approx": true
+      },
+      {
+        "n": 41,
+        "id": "bb2c1e8e-f485-4744-977f-4c6c974d18f0",
+        "name": "Site 41",
+        "area": "Topaz Lake",
+        "kind": "tent-and-rv",
+        "lat": 38.69608,
+        "lng": -119.5185,
+        "approx": true
+      }
+    ]
+  }
+}

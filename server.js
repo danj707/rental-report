@@ -686,6 +686,8 @@ const ORGS = {
   "douglas-county-nv": {
     token:   "ll0hh2Dee5nbwlgt",
     orgId:   "0312ebc8-40de-4fc8-a737-8afa26334e13",
+    coords:  { lat: 38.6955986, lon: -119.5198339 },   // Topaz Lake Recreation Area
+    mapCity: "Gardnerville, NV",
     logoUrl: "https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2Forganization-0312ebc8-40de-4fc8-a737-8afa26334e13%2FfullLogo.png%3F1769825787565&w=1920&q=75",
     displayName: "Douglas County",
   },
@@ -694,6 +696,15 @@ const ORGS = {
     orgId:   "8f24ee66-e9a6-40a4-afbb-27efe8ef64d5",
     logoUrl: "https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2Forganization-8f24ee66-e9a6-40a4-afbb-27efe8ef64d5%2FfullLogo.png%3F1772807247304&w=1920&q=75",
     displayName: "Town of Reading",
+  },
+  "pleasant-hill": {
+    token:   "3MEg1QTAX3pF1x6V",
+    orgId:   "52efcded-a5e8-4dbf-8a45-100f70170de0",
+    coords:  { lat: 38.82065625, lon: -94.29997011 },   // Pleasant Hill City Lake
+    mapCity: "Pleasant Hill, MO",
+    displayName: "Pleasant Hill",
+    // Campsite map (public) — 12 sites at Pleasant Hill City Lake; data via rec.us MCP.
+    facility: { mbUuid: null },
   },
 };
 
@@ -1080,6 +1091,8 @@ const NON_ADDABLE_REPORTS = new Set(["program-demographics", "retention", "annua
 // Reports that require extra params (e.g. section_id) and cannot be health-checked with org_id alone
 const HEALTH_SKIP_REPORTS = new Set(["section-detail", "annual-report", "qoq", "qbr-stats", "checkins", "program-checkins"]);
 const RENTAL_CALENDAR_ORGS = new Set(["watertown", "norman", "niagarafalls"]);
+// Orgs with an interactive campsite map (public /:org/campmap — Leaflet + live rec.us site data)
+const CAMPMAP_ORGS = new Set(["pleasant-hill", "douglas-county-nv"]);
 
 // ── Dynamic orgs (added via dashboard UI) ────────────────────────────
 // Loaded at startup and merged into ORGS; also updated at runtime.
@@ -1088,9 +1101,29 @@ const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "data");
 fs.mkdirSync(DATA_DIR, { recursive: true });
 const CACHE_DIR = path.join(DATA_DIR, "cache");
 fs.mkdirSync(CACHE_DIR, { recursive: true });
+// Persistence check: confirm campsite-map positions + other state land on a durable
+// disk. In Railway, attach a Volume and set DATA_DIR to its mount path (e.g. /data).
+console.log("[data] DATA_DIR=" + DATA_DIR +
+  (process.env.DATA_DIR ? " (from env — persistent if this is a mounted Railway volume)"
+                        : " (default ./data — EPHEMERAL; attach a Railway volume + set DATA_DIR to persist)"));
 
 const ORGS_FILE          = path.join(DATA_DIR, "orgs.json");
 const HOTDOG_CLAIMS_FILE = path.join(DATA_DIR, "hotdog_claims.json");
+
+// ── Campsite map: admin-placed site coordinates ──────────────────────
+// { slug: { siteId: { lat, lng } } } — set via the campmap editor (token-gated).
+const CAMPMAP_POS_FILE = path.join(DATA_DIR, "campmap_positions.json");
+let campmapPositions = {};
+try { campmapPositions = JSON.parse(fs.readFileSync(CAMPMAP_POS_FILE, "utf8")); } catch { campmapPositions = {}; }
+function saveCampmapPositions() {
+  try { fs.writeFileSync(CAMPMAP_POS_FILE, JSON.stringify(campmapPositions, null, 2)); }
+  catch (e) { console.error("[campmap] save positions failed:", e.message); }
+}
+// Per-org campsite seed (center, location, landmarks, defaults, sites w/ coords).
+// Committed file; loaded once at startup. See campmap-seeds.json.
+let CAMPMAP_SEEDS = {};
+try { CAMPMAP_SEEDS = JSON.parse(fs.readFileSync(path.join(__dirname, "campmap-seeds.json"), "utf8")); }
+catch (e) { console.warn("[campmap] seeds load failed:", e.message); }
 const SUBS_FILE   = path.join(DATA_DIR, "subscriptions.json");
 // Email enabled for all orgs — gate is simply: does the org exist in ORGS?
 const EMAIL_ENABLED_ORGS = { has: (slug) => !!ORGS[slug] }; // duck-typed Set — always checks live ORGS map
@@ -1930,6 +1963,7 @@ function buildMetrics(org, daysBack) {
   const configuredReports = REPORT_TYPES.filter(r => ORGS[org]?.[r]?.mbUuid || SHARED_UUIDS[r]);
   // Include non-Metabase reports that have their own routes (e.g. rentalcalendar)
   if (RENTAL_CALENDAR_ORGS.has(org)) configuredReports.push('rentalcalendar');
+  if (CAMPMAP_ORGS.has(org)) configuredReports.push('campmap');
   return { summary, daily, subCounts, subByCadence, totalSubscribers: allSubs.length, insights, configuredReports };
 }
 
@@ -2608,7 +2642,7 @@ app.get("/api/org-visibility/:slug", (req, res) => {
     }
   }
   // Also check non-REPORT_TYPES that can be toggled (chat, report-wizard, rentalcalendar)
-  for (const rt of ["chat", "report-wizard", "rentalcalendar"]) {
+  for (const rt of ["chat", "report-wizard", "rentalcalendar", "campmap"]) {
     available.push({ type: rt, visible: !hidden.has(rt) });
   }
   res.json({ slug, available, hiddenCount: hidden.size });
@@ -2631,9 +2665,9 @@ app.use((req, res, next) => {
   const org = ORGS[seg];
   if (!org) return next();                          // not an org slug — let routing handle (will 404 normally)
 
-  // Calendar + rental calendar are public — no token required
+  // Calendar + rental calendar + campsite map are public — no token required
   const segs = req.path.split("/").filter(Boolean);
-  if (segs[1] === "calendar" || segs[1] === "rentalcalendar") return next();
+  if (segs[1] === "calendar" || segs[1] === "rentalcalendar" || segs[1] === "campmap") return next();
   if (segs[1] === "api" && (segs[2] === "track" || segs[2] === "calendar-analytics")) return next();
 
   if (!org.token) {                                 // fail closed: tokenless org must not be public
@@ -5666,6 +5700,65 @@ app.get("/:org/rentalcalendar", (req, res) => {
   res.type("html").send(html.replace("</head>", inject + "</head>"));
 });
 
+// ── Interactive campsite map (public, no token) ──
+// Leaflet map of a campground's sites with a per-night availability overlay.
+// Site data is baked into the page (incl. coords); availability upgrades to live
+// data via the existing /:org/rentalcalendar/api/availability-batch endpoint.
+app.get("/:org/campmap", (req, res) => {
+  const slug = req.params.org;
+  const org = ORGS[slug];
+  if (!org) return res.status(404).send("Unknown org");
+  if (!org.orgId) return res.status(404).send("Campsite map requires orgId configuration.");
+  logEvent(slug, "campmap", "view", req);
+  const slugTitle = slug.charAt(0).toUpperCase() + slug.slice(1);
+  const seed = CAMPMAP_SEEDS[slug] || {};
+  const meta = {
+    slug,
+    orgId: org.orgId,
+    displayName: org.displayName || slugTitle + " Parks & Recreation",
+    logoUrl: org.logoUrl || "",
+    coords: seed.center || org.coords || null,
+    locationName: req.query.locationName || seed.locationName || org.campLocationName || "",
+    address: seed.address || org.campAddress || "",
+    sites: seed.sites || null,
+    landmarks: seed.landmarks || null,
+    defaults: seed.defaults || {},
+    areaDefaults: seed.areaDefaults || {},
+    // Editing (drag-to-place) is unlocked only when the org token is supplied.
+    canEdit: !!(org.token && req.query.token && req.query.token === org.token),
+  };
+  const html = fs.readFileSync(path.join(__dirname, "public", "campmap.html"), "utf-8");
+  const inject = '<script>window.__CM__=' + JSON.stringify(meta) + ';</script>';
+  res.type("html").send(html.replace("</head>", inject + "</head>"));
+});
+
+// Campsite map positions — admin-placed site coordinates.
+// GET is public (viewers see the admin's layout); POST requires the org token.
+app.get("/:org/campmap/api/positions", (req, res) => {
+  const slug = req.params.org;
+  if (!ORGS[slug]) return res.status(404).json({ positions: {} });
+  res.json({ positions: campmapPositions[slug] || {} });
+});
+app.post("/:org/campmap/api/positions", express.json(), (req, res) => {
+  const slug = req.params.org;
+  const org = ORGS[slug];
+  if (!org) return res.status(404).json({ error: "Unknown org" });
+  const token = req.query.token || (req.body && req.body.token) || "";
+  if (!org.token || token !== org.token) return res.status(403).json({ error: "Forbidden — valid org token required to edit." });
+  const positions = (req.body && req.body.positions) || {};
+  const clean = {};
+  for (const [id, p] of Object.entries(positions)) {
+    if (p && typeof p.lat === "number" && typeof p.lng === "number" &&
+        Math.abs(p.lat) <= 90 && Math.abs(p.lng) <= 180) {
+      clean[id] = { lat: p.lat, lng: p.lng };
+    }
+  }
+  campmapPositions[slug] = clean;
+  saveCampmapPositions();
+  logEvent(slug, "campmap", "save-positions", req, { count: Object.keys(clean).length });
+  res.json({ ok: true, saved: Object.keys(clean).length });
+});
+
 // Cached site data for Arsenal Park (Watertown) — fetched via rec.us MCP 2026-06-22
 const RC_SITES_CACHE = {}; // Live MCP fetch for all orgs (provides rich data: photos, pricing, duration)
 const rcLiveSitesCache = {}; // cacheKey -> { sites, ts }
@@ -5709,6 +5802,7 @@ app.get("/:org/rentalcalendar/api/sites", async (req, res) => {
       bookingFlow: s.bookingFlow, isInstantBookable: s.isInstantBookable,
       description: s.description || '',
       imageUrl: (s.images && s.images.mainGallery && s.images.mainGallery[0]) ? s.images.mainGallery[0].url : null,
+      gallery: (s.images && Array.isArray(s.images.mainGallery)) ? s.images.mainGallery.map(g => g && g.url).filter(Boolean) : [],
       priceCents: s.config && s.config.pricing && s.config.pricing.default ? s.config.pricing.default.cents : null,
       residentPriceCents: (() => { try { const gc = s.config.pricing.default.groupCents; const vals = Object.values(gc).filter(v => v > 0); return vals.length ? Math.min(...vals) : null; } catch(e) { return null; } })(),
       durationMinutes: s.allowedReservationDurations ? s.allowedReservationDurations.minutes : null,
@@ -5721,6 +5815,7 @@ app.get("/:org/rentalcalendar/api/sites", async (req, res) => {
     // Proxy photo URLs through our server for caching + Cache-Control headers
     clean.forEach(s => {
       if (s.imageUrl) s.imageUrl = '/' + slug + '/rentalcalendar/api/photo?url=' + encodeURIComponent(s.imageUrl);
+      if (s.gallery && s.gallery.length) s.gallery = s.gallery.map(u => '/' + slug + '/rentalcalendar/api/photo?url=' + encodeURIComponent(u));
     });
     // Cache the MCP response for 1 hour
     rcLiveSitesCache[cacheKey] = { sites: clean, ts: Date.now() };
@@ -6335,6 +6430,7 @@ app.get("/:org", async (req, res, next) => {
   const available = allAvailable.filter(r => !orgHidden.has(r));
   // Rental calendar — non-Metabase, per-org opt-in
   if (RENTAL_CALENDAR_ORGS.has(slug) && !orgHidden.has('rentalcalendar')) available.push('rentalcalendar');
+  if (CAMPMAP_ORGS.has(slug) && !orgHidden.has('campmap')) available.push('campmap');
   if ((org.gl?.mbUuid || SHARED_UUIDS.gl) && !orgHidden.has('qoq')) available.push('qoq');
   const orgConfig = {
     slug,
@@ -7235,6 +7331,7 @@ app.get("/", (req, res) => {
     "instructor-payout": { label: "Instructor Payout", ai: true, icon: "💰", desc: "Revenue splits and payout calculations by instructor", color: "#6366f1" },
 
     "rentalcalendar":    { label: "Rental Calendar", icon: "🏟️", desc: "Real-time facility availability with live booking data", color: "#059669" },
+    "campmap":           { label: "Campsite Map", icon: "🏕️", desc: "Interactive campground map with per-night availability overlay", color: "#15803d" },
     "ice-calendar":      { label: "Ice Participant Calendar", icon: "❄️", desc: "Participant-filtered monthly ice program calendar", color: "#0ea5e9" },
     qoq:                 { label: "QoQ Revenue Comparison", icon: "📉", desc: "Quarter-over-quarter GL revenue comparison with delta analysis", color: "#8b5cf6" },  };
 
@@ -7254,6 +7351,7 @@ app.get("/", (req, res) => {
     const available    = REPORT_TYPES.filter(r => !NON_ADDABLE_REPORTS.has(r) && (org[r]?.mbUuid || SHARED_UUIDS[r]));
     // Rental calendar — non-Metabase, per-org opt-in
     if (RENTAL_CALENDAR_ORGS.has(slug)) available.push('rentalcalendar');
+    if (CAMPMAP_ORGS.has(slug)) available.push('campmap');
     if (org.gl?.mbUuid || SHARED_UUIDS.gl) available.push('qoq');
     const slugTitle    = slug.charAt(0).toUpperCase() + slug.slice(1);
     const displayName  = org.displayName || `${slugTitle} Parks &amp; Recreation`;
@@ -8568,6 +8666,7 @@ app.get("/", (req, res) => {
           <li><strong>Instructor Payout</strong> &#8212; per-participant revenue splits by instructor, with configurable split ratios (65/35), base-price-split mode (calculates on resident rate so non-resident surcharges stay with org), and cancelled/refunded participant exclusion.</li>
           <li><strong>Historic Buildings</strong> &#8212; filtered facility view for historic venue locations (per-org only).</li>
           <li><strong>Facility Rental Calendar</strong> &#8212; standalone real-time facility rental and program availability calendar with dual-source API integration. <em>Within 30 days:</em> rec.us MCP provides real-time bookable start times (catches facility rentals, program holds, internal blocks). <em>Beyond 30 days:</em> Metabase facility reservation overlay shows confirmed bookings against 100% availability baseline, with soft disclaimer banner. Three-tier site name normalization: exact match &#8594; strip &#8220;Type: SiteName, Location&#8221; prefix/suffix &#8594; location-level fallback for whole-park bookings. Unified timeline merges both sources per 30-min slot: Metabase bookings &#8594; reserved, MCP slots &#8594; available, gaps &#8594; unavailable. Batch availability endpoint (60+ sites in one call via Promise.allSettled), 15-min server cache with ?refresh=1 admin override, 90-day reservation window with auto-extending re-fetch. Guided booking wizard (date &#8594; type &#8594; location), site type and location filters, clickable site modals with photo/pricing/booking links, weather.gov forecast (auto-hides past 7 days), image proxy with 24hr cache, embed mode (?embed=1), URL param pre-filtering. PII-safe: reservation route strips all personal data. WCAG accessible: contrast ratios, stripe patterns, aria labels, screen reader support. Per-org opt-in (Watertown, Norman). No token required.</li>
+          <li><strong>Campsite Map</strong> &#8212; interactive Leaflet map (Google satellite / OpenStreetMap toggle) of a campground&#x27;s sites plotted by location, with a per-night <strong>availability overlay</strong>. A date strip recolors each site marker green (open) / red (booked) for the selected night; clicking a site opens a detail card with photo gallery, electric/primitive type, rate, check-in/out, amenities, a month availability mini-calendar, and a &#8220;Book on rec.us&#8221; link. Site data (names, pricing, photos, amenities) is pulled from rec.us; availability upgrades to live data via the shared availability-batch endpoint, with a deterministic offline fallback for standalone preview. Sites without saved coordinates are placed approximately and snap to real positions once coordinates are set. Per-org opt-in (Pleasant Hill). No token required.</li>
         </ul>
 
         <h4>AI-Powered Features</h4>
@@ -9608,6 +9707,11 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  { date: '2026-07-22', title: '🏕️ Interactive Campsite Maps — Pleasant Hill & Douglas County', items: [
+    'New public campsite maps at /pleasant-hill/campmap and /douglas-county-nv/campmap — Leaflet map (Google satellite / OpenStreetMap toggle) plotting each campground’s sites with a per-night availability overlay. A date strip recolors each site marker green (open) / red (booked); clicking a site opens a detail card with photo gallery, site type, rate, check-in/out, amenities, a month mini-calendar, and a Book on rec.us link.',
+    'Config-driven per org via campmap-seeds.json (Pleasant Hill 12 sites; Douglas County / Topaz Lake 41 sites). Live site + availability data via the rec.us MCP (reuses the rentalcalendar availability-batch endpoint); deterministic offline fallback so the page previews standalone.',
+    'Admin drag-to-place editor (unlocked with the org token): drag pins, Save to publish for all viewers, with Discard / Reset-all / per-pin reset. Positions persist under DATA_DIR (Railway volume). Sites without stored lat/lng are placed approximately until positioned.',
+  ] },
   { date: '2026-07-22', title: 'Langfuse Admin Panel', items: [
       'New /langfuse page: full cross-org Langfuse admin panel with dark theme. Proxies Langfuse REST API (traces, scores, daily metrics) through /api/admin/langfuse endpoint with 5-min server-side cache.',
       'Overview tab: KPI row (traces, scores, approval rate, cost, tokens), feature breakdown bars with approval rates, org breakdown bars, low-scored traces table with comments, daily activity chart (Chart.js).',
