@@ -8312,17 +8312,25 @@ app.get("/", (req, res) => {
     }).join('');
     updToggleAll();
     var list=d.announcements||[];
-    document.getElementById('upd-list').innerHTML=list.length?list.map(function(a){
+    var listEl=document.getElementById('upd-list');
+    listEl.innerHTML=list.length?list.map(function(a){
       var tgt=a.allOrgs?'All orgs':((a.orgs||[]).length+' org'+((a.orgs||[]).length===1?'':'s'));
       var when=a.createdAt?new Date(a.createdAt).toLocaleDateString():'';
-      return '<div style="border:1px solid #eee;border-radius:6px;padding:10px 12px;display:flex;justify-content:space-between;gap:8px;'+(a.active===false?'opacity:.5':'')+'">'
+      return '<div data-uid="'+updEsc(a.id)+'" style="border:1px solid #eee;border-radius:6px;padding:10px 12px;display:flex;justify-content:space-between;gap:8px;'+(a.active===false?'opacity:.5':'')+'">'
         +'<div style="min-width:0"><div style="font-weight:600;font-size:13px">'+updEsc(a.title)+'</div>'
         +'<div style="font-size:11px;color:#999;margin-top:2px">'+tgt+' · '+when+(a.active===false?' · paused':'')+'</div></div>'
         +'<div style="display:flex;gap:6px;flex-shrink:0;align-items:flex-start">'
-        +'<button onclick="toggleUpd(\''+a.id+'\')" style="font-size:11px;padding:4px 9px;background:#f3f4f6;border:1px solid #e5e7eb;border-radius:4px;cursor:pointer">'+(a.active===false?'Activate':'Pause')+'</button>'
-        +'<button onclick="delUpd(\''+a.id+'\')" style="font-size:11px;padding:4px 9px;background:#fef2f2;color:#b91c1c;border:1px solid #fecaca;border-radius:4px;cursor:pointer">Delete</button>'
+        +'<button data-act="toggle" style="font-size:11px;padding:4px 9px;background:#f3f4f6;border:1px solid #e5e7eb;border-radius:4px;cursor:pointer">'+(a.active===false?'Activate':'Pause')+'</button>'
+        +'<button data-act="del" style="font-size:11px;padding:4px 9px;background:#fef2f2;color:#b91c1c;border:1px solid #fecaca;border-radius:4px;cursor:pointer">Delete</button>'
         +'</div></div>';
     }).join(''):'<div style="font-size:12px;color:#aaa">No updates published yet.</div>';
+    listEl.querySelectorAll('button[data-act]').forEach(function(btn){
+      btn.onclick=function(){
+        var host=btn.closest('[data-uid]'); if(!host) return;
+        var id=host.getAttribute('data-uid');
+        if(btn.getAttribute('data-act')==='toggle') toggleUpd(id); else delUpd(id);
+      };
+    });
   }
   async function submitUpd(){
     var pwd=getDashPwd('Publish a project update'); if(!pwd) return;
