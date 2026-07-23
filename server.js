@@ -1093,6 +1093,10 @@ const HEALTH_SKIP_REPORTS = new Set(["section-detail", "annual-report", "qoq", "
 const RENTAL_CALENDAR_ORGS = new Set(["watertown", "norman", "niagarafalls"]);
 // Orgs with an interactive campsite map (public /:org/campmap — Leaflet + live rec.us site data)
 const CAMPMAP_ORGS = new Set(["pleasant-hill", "douglas-county-nv"]);
+// Reports HIDDEN by default for every org (opt-in to show), for WIP reports not
+// yet launched. For these, presence in an org's visibility list means SHOWN —
+// the inverse of the normal opt-out hidden-list semantics. Use reportHiddenForOrg().
+const DEFAULT_HIDDEN_REPORTS = new Set(["facilities"]);
 
 // ── Dynamic orgs (added via dashboard UI) ────────────────────────────
 // Loaded at startup and merged into ORGS; also updated at runtime.
@@ -1621,6 +1625,12 @@ function setHiddenReports(slug, list) {
 }
 function getAllHiddenReports() {
   return readJSON(VISIBILITY_FILE, {});
+}
+// Is `rt` hidden on `slug`'s org page? Normal reports: hidden = listed (opt-out).
+// DEFAULT_HIDDEN_REPORTS invert: listed = shown, so hidden = NOT listed (opt-in).
+function reportHiddenForOrg(slug, rt) {
+  const listed = getHiddenReports(slug).includes(rt);
+  return DEFAULT_HIDDEN_REPORTS.has(rt) ? !listed : listed;
 }
 
 // ── GitHub push: write new orgs to server.js so they live in code ────
@@ -2653,6 +2663,8 @@ app.get("/api/org-visibility/:slug", (req, res) => {
   for (const rt of ["chat", "report-wizard", "rentalcalendar", "campmap"]) {
     available.push({ type: rt, visible: !hidden.has(rt) });
   }
+  // Default-hidden WIP reports use inverted visibility semantics
+  available.push({ type: "facilities", visible: !reportHiddenForOrg(slug, "facilities") });
   res.json({ slug, available, hiddenCount: hidden.size });
 });
 
@@ -4321,6 +4333,24 @@ app.get("/:org/facility", (req, res) => {
   logEvent(slug, "facility", "view", req);
   const orgConfig = { defaultDateRange: org.facility?.defaultDateRange || "month", defaultLocationFilter: org.facility?.defaultLocationFilter || null, emailEnabled: EMAIL_ENABLED_ORGS.has(slug) };
   const html = require("fs").readFileSync(path.join(__dirname, "public", "facility.html"), "utf8");
+  res.send(html.replace("<head>", `<head><script>window.ORG_CONFIG=${JSON.stringify(orgConfig)};</script>`));
+});
+
+// Facilities hub (WIP stub) — Programs-style summary + vertical sub-tabs.
+// Standalone report, separate from the "Facility Rental Schedule" (facility.html).
+// Token-gated like other reports; hidden by default for all orgs (see DEFAULT_HIDDEN_REPORTS).
+app.get("/:org/facilities", (req, res) => {
+  const slug = req.params.org;
+  const org  = ORGS[slug];
+  if (!org) return res.status(404).send("Unknown org");
+  logEvent(slug, "facilities", "view", req);
+  const orgConfig = {
+    slug,
+    displayName: org.displayName || (slug.charAt(0).toUpperCase() + slug.slice(1) + " Parks & Recreation"),
+    logoUrl: org.logoUrl || "",
+    token: org.token || "",
+  };
+  const html = require("fs").readFileSync(path.join(__dirname, "public", "facilities.html"), "utf8");
   res.send(html.replace("<head>", `<head><script>window.ORG_CONFIG=${JSON.stringify(orgConfig)};</script>`));
 });
 
@@ -6478,6 +6508,8 @@ app.get("/:org", async (req, res, next) => {
   if (RENTAL_CALENDAR_ORGS.has(slug) && !orgHidden.has('rentalcalendar')) available.push('rentalcalendar');
   if (CAMPMAP_ORGS.has(slug) && !orgHidden.has('campmap')) available.push('campmap');
   if ((org.gl?.mbUuid || SHARED_UUIDS.gl) && !orgHidden.has('qoq')) available.push('qoq');
+  // Facilities hub — hidden by default for all orgs; shows only when opted in
+  if (!reportHiddenForOrg(slug, 'facilities')) available.push('facilities');
   const orgConfig = {
     slug,
     displayName: org.displayName || `${slugTitle} Parks & Recreation`,
@@ -6521,7 +6553,7 @@ app.post("/api/admin/toggle-report", express.json(), (req, res) => {
   if (dashboardPasswordBlocked(req, res)) return;
   const { org: slug, report } = req.body || {};
   if (!ORGS[slug]) return res.status(404).json({ error: "Unknown org" });
-  if (!REPORT_TYPES.includes(report) && report !== "chat" && report !== "report-wizard" && report !== "rentalcalendar") return res.status(400).json({ error: "Unknown report type" });
+  if (!REPORT_TYPES.includes(report) && report !== "chat" && report !== "report-wizard" && report !== "rentalcalendar" && report !== "facilities") return res.status(400).json({ error: "Unknown report type" });
   const hidden = getHiddenReports(slug);
   const idx = hidden.indexOf(report);
   if (idx >= 0) hidden.splice(idx, 1); else hidden.push(report);
@@ -7475,6 +7507,7 @@ app.get("/", (req, res) => {
 
     "rentalcalendar":    { label: "Rental Calendar", icon: "🏟️", desc: "Real-time facility availability with live booking data", color: "#059669" },
     "campmap":           { label: "Campsite Map", icon: "🏕️", desc: "Interactive campground map with per-night availability overlay", color: "#15803d" },
+    "facilities":        { label: "Facilities", icon: "🏞️", desc: "Facility hub — summary + camping, golf, aquatics & court utilization", color: "#0d9488" },
     "ice-calendar":      { label: "Ice Participant Calendar", icon: "❄️", desc: "Participant-filtered monthly ice program calendar", color: "#0ea5e9" },
     qoq:                 { label: "QoQ Revenue Comparison", icon: "📉", desc: "Quarter-over-quarter GL revenue comparison with delta analysis", color: "#8b5cf6" },  };
 
@@ -7567,6 +7600,22 @@ app.get("/", (req, res) => {
           <button type="button" class="vis-toggle" onclick="event.preventDefault();event.stopPropagation();toggleVis('${slug}','report-wizard',this)" title="${wizHidden ? 'Hidden from org page' : 'Visible on org page'}">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style="display:${wizHidden ? 'none' : 'block'}"><path d="M8 3C3 3 1 8 1 8s2 5 7 5 7-5 7-5-2-5-7-5z" stroke="currentColor" stroke-width="1.5" fill="none"/><circle cx="8" cy="8" r="2" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style="display:${wizHidden ? 'block' : 'none'}"><path d="M8 3C3 3 1 8 1 8s2 5 7 5 7-5 7-5-2-5-7-5z" stroke="currentColor" stroke-width="1.5" fill="none"/><circle cx="8" cy="8" r="2" stroke="currentColor" stroke-width="1.5" fill="none"/><line x1="2" y1="14" x2="14" y2="2" stroke="currentColor" stroke-width="1.5"/></svg>
+          </button>
+        </a>`);
+
+      // Facilities hub — new WIP report, HIDDEN by default (inverted semantics)
+      const facHidden = reportHiddenForOrg(slug, 'facilities');
+      const facDim = facHidden ? ' report-card-hidden' : '';
+      cards.push(`
+        <a href="/${slug}/facilities${tokenQS}" class="report-card${facDim}" style="border-left:3px solid #0d9488;background:linear-gradient(135deg,#f0fdfa 0%,#ecfeff 100%)" data-org="${slug}" data-report="facilities">
+          <span class="report-icon">\u{1F3DE}️</span>
+          <div class="report-body">
+            <div class="report-label" style="color:#134e4a">Facilities <span class="ai-pill-inline" style="background:#99f6e4;color:#134e4a">NEW</span></div>
+            <div class="report-desc">Facility hub — summary + camping, golf, aquatics &amp; court utilization</div>
+          </div>
+          <button type="button" class="vis-toggle" onclick="event.preventDefault();event.stopPropagation();toggleVis('${slug}','facilities',this)" title="${facHidden ? 'Hidden from org page' : 'Visible on org page'}">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style="display:${facHidden ? 'none' : 'block'}"><path d="M8 3C3 3 1 8 1 8s2 5 7 5 7-5 7-5-2-5-7-5z" stroke="currentColor" stroke-width="1.5" fill="none"/><circle cx="8" cy="8" r="2" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style="display:${facHidden ? 'block' : 'none'}"><path d="M8 3C3 3 1 8 1 8s2 5 7 5 7-5 7-5-2-5-7-5z" stroke="currentColor" stroke-width="1.5" fill="none"/><circle cx="8" cy="8" r="2" stroke="currentColor" stroke-width="1.5" fill="none"/><line x1="2" y1="14" x2="14" y2="2" stroke="currentColor" stroke-width="1.5"/></svg>
           </button>
         </a>`);
     }
@@ -9285,7 +9334,10 @@ app.get("/", (req, res) => {
         }
         HIDDEN_REPORTS[slug] = data.hidden;
         const card = btn.closest('.report-card');
-        const isNowHidden = data.hidden.indexOf(report) >= 0;
+        // Default-hidden reports invert: presence in the list means SHOWN
+        const DEFAULT_HIDDEN = ['facilities'];
+        const present = data.hidden.indexOf(report) >= 0;
+        const isNowHidden = DEFAULT_HIDDEN.indexOf(report) >= 0 ? !present : present;
         card.classList.toggle('report-card-hidden', isNowHidden);
         // Toggle SVG icons (first = eye-open, second = eye-slash)
         var svgs = btn.querySelectorAll('svg');
@@ -9850,6 +9902,10 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  { date: '2026-07-23', title: '🏞️ Facilities hub (framework preview)', items: [
+    'New Facilities report scaffolded at /:org/facilities — a Programs-style hub: a Summary tab (reservation mix: instant-book vs staff-managed, revenue by site type, top sites) plus vertical sub-tabs (Court Utilization folds in here, alongside Camping, Golf, Pool/Aquatics). Metrics are placeholders until the data layer is wired.',
+    'Added as a NEW, hidden-by-default report for every org (staff can reveal it per-org from the dashboard eye toggle). The existing "Facility Rental Schedule" report is unchanged and stays separate.',
+  ] },
   { date: '2026-07-23', title: 'Langfuse purge now deletes scores too', items: [
     'The /langfuse "Purge traces" action now also deletes feedback scores. Scores are independent objects in Langfuse — the batch trace delete never removed them, so a full purge still left thumbs-up/down history (and the Scores & Feedback tab populated). The purge now lists all scores (respecting the same optional before-date cutoff) and deletes each via the Langfuse scores API, reporting both counts.',
     'Scores shown in the admin panel are now windowed to the last 30 days, matching the traces view.',

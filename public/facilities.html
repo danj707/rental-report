@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Facilities</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Inter', system-ui, -apple-system, sans-serif; font-size: 12px; color: #1a1a1a; background: #f5f4f1; line-height: 1.35; }
+
+    /* ── Toolbar (matches Programs / Court Utilization) ── */
+    .toolbar { position: sticky; top: 0; z-index: 100; display: flex; align-items: center; gap: 10px; padding: 8px 20px; background: #2c2c2c; color: #eee; font-size: 13px; flex-wrap: wrap; }
+    .toolbar-title { font-weight: 600; margin-right: 4px; }
+    .toolbar-back { color: #9ca3af; text-decoration: none; font-size: 12px; }
+    .toolbar-back:hover { color: #fff; }
+    .toolbar-spacer { flex: 1; }
+    .toolbar label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: #aaa; display: flex; flex-direction: column; gap: 2px; }
+    .toolbar input[type="date"] { padding: 4px 8px; border: 1px solid rgba(255,255,255,.2); border-radius: 4px; background: rgba(255,255,255,.1); color: #fff; font-size: 12px; font-family: inherit; outline: none; }
+    .toolbar input[type="date"]:focus { border-color: #3b82f6; }
+    .toolbar input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(1); cursor: pointer; }
+    .toolbar button { padding: 6px 14px; border: 1px solid rgba(255,255,255,.25); border-radius: 4px; background: rgba(255,255,255,.08); color: #fff; font-size: 12px; font-family: inherit; cursor: pointer; transition: background .15s; white-space: nowrap; }
+    .toolbar button:hover { background: rgba(255,255,255,.18); }
+    .toolbar .btn-run { background: #16a34a; border-color: #16a34a; font-weight: 600; }
+    .toolbar .btn-run:hover { background: #15803d; }
+    .toolbar .btn-pdf { background: #3b82f6; border-color: #3b82f6; font-weight: 600; }
+    .toolbar .btn-excel { background: #16803c; border-color: #16803c; font-weight: 600; }
+    .toolbar .row-count { font-size: 11px; color: #aaa; }
+    .toolbar .divider { width: 1px; height: 28px; background: rgba(255,255,255,.15); margin: 0 2px; }
+    .toolbar .chk { flex-direction: row; align-items: center; gap: 6px; color: #ddd; text-transform: none; letter-spacing: 0; font-size: 12px; cursor: pointer; }
+
+    /* ── Page ── */
+    .page { max-width: 1400px; margin: 16px auto; padding: 24px 28px; background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
+
+    /* ── Header ── */
+    .report-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2.5px solid #111; padding-bottom: 10px; margin-bottom: 18px; gap: 16px; }
+    .report-header-left { display: flex; align-items: center; gap: 14px; }
+    .report-header-logo { height: 42px; max-width: 140px; object-fit: contain; object-position: left center; }
+    .report-header .org-label { font-size: 10px; letter-spacing: 1.6px; text-transform: uppercase; color: #777; font-weight: 600; }
+    .report-header .title { font-size: 17px; font-weight: 700; margin-top: 1px; }
+    .report-header-right { text-align: right; }
+    .report-header .date-range { font-size: 11px; color: #666; }
+
+    /* ── Stub banner ── */
+    .stub-banner { background: #fffbeb; border: 1px solid #fcd34d; border-left: 3px solid #d97706; padding: 10px 14px; margin-bottom: 16px; font-size: 12.5px; line-height: 1.55; color: #92400e; border-radius: 4px; }
+    .stub-banner strong { color: #78350f; }
+
+    /* ── Tabs (matches Programs) ── */
+    .tabs { display:flex; gap:4px; border-bottom:2px solid #d1d5db; margin-bottom:16px; padding:0 4px; align-items:flex-end; flex-wrap: wrap; }
+    .tab { padding:9px 18px 8px; font-size:13px; font-weight:600; color:#6b7280; cursor:pointer; transition:all .15s; display:flex; align-items:center; gap:6px; border-radius:8px 8px 0 0; border:1px solid transparent; border-bottom:none; margin-bottom:-2px; position:relative; background:transparent; }
+    .tab:hover { color:#111; background:#f3f4f6; }
+    .tab.active { color:#059669; background:#f0fdf4; border-color:#d1d5db; border-top:2px solid #059669; box-shadow:0 -2px 4px rgba(0,0,0,.04); z-index:1; }
+    .tab .tab-badge { font-size:10px; padding:2px 7px; border-radius:10px; font-weight:600; background:#e5e7eb; color:#6b7280; }
+
+    /* ── Summary (matches Programs) ── */
+    .sum-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin: 16px 0; }
+    .sum-card { background: #fff; border: 1px solid #e8e6e0; border-radius: 8px; padding: 14px 16px; }
+    .sum-card .sc-label { font-size: 10px; text-transform: uppercase; letter-spacing: .5px; color: #888; font-weight: 700; margin-bottom: 4px; }
+    .sum-card .sc-val { font-size: 24px; font-weight: 800; line-height: 1.1; font-variant-numeric: tabular-nums; }
+    .sum-card .sc-sub { font-size: 11px; color: #999; margin-top: 3px; }
+    .sc-green { color: #16a34a; } .sc-blue { color: #2563eb; } .sc-amber { color: #d97706; } .sc-red { color: #dc2626; } .sc-purple { color: #7c3aed; } .sc-muted { color: #cbd0d6; }
+
+    .band { background: linear-gradient(135deg,#ecfdf5 0%,#f0fdf4 100%); border: 1px solid #bbf7d0; border-radius: 10px; padding: 16px 18px; margin: 16px 0; }
+    .band-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+    .band-title { font-size: 12px; font-weight: 700; color: #166534; display: flex; align-items: center; gap: 8px; }
+    .band-title .sub { color: #6b7280; font-weight: 500; }
+    .band-link { font-size: 12px; color: #059669; font-weight: 600; text-decoration: none; }
+    .band-metrics { display: flex; gap: 30px; flex-wrap: wrap; }
+    .band-metric .bm-val { font-size: 22px; font-weight: 800; font-variant-numeric: tabular-nums; }
+    .band-metric .bm-lbl { font-size: 10px; text-transform: uppercase; letter-spacing: .5px; color: #6b7280; font-weight: 600; }
+
+    .sum-bar-wrap { margin: 16px 0; }
+    .sum-bar-label { font-size: 10px; color: #888; font-weight: 600; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 4px; }
+    .sum-bar { display: flex; height: 24px; border-radius: 4px; overflow: hidden; border: 1px solid #e8e6e0; background: #f3f4f6; }
+    .sum-bar .seg { display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; color: #fff; }
+    .sum-legend { display: flex; gap: 14px; margin-top: 5px; font-size: 10px; color: #888; }
+    .sum-legend span { display: flex; align-items: center; gap: 4px; }
+    .sum-dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
+
+    .sum-cat-table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 16px; }
+    .sum-cat-table caption { text-align: left; font-size: 12px; font-weight: 700; color: #333; margin-bottom: 8px; }
+    .sum-cat-table th { background: #f5f3ef; padding: 7px 12px; text-align: left; font-size: 10px; text-transform: uppercase; letter-spacing: .5px; color: #888; font-weight: 700; border-bottom: 1px solid #e8e6e0; }
+    .sum-cat-table th.num, .sum-cat-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
+    .sum-cat-table td { padding: 6px 12px; border-bottom: 1px solid #f0eeea; color: #555; }
+    .sum-cat-table tr:last-child td { border-bottom: none; }
+    .sum-cat-table .totals-row td { font-weight: 700; background: #f5f3ef; border-top: 1.5px solid #e8e6e0; color: #333; }
+    .sum-badge { display: inline-block; padding: 1px 7px; border-radius: 3px; font-size: 9px; font-weight: 700; letter-spacing: .3px; background:#e0f2fe; color:#075985; }
+
+    /* ── Empty state (non-Summary tabs) ── */
+    .empty { text-align: center; padding: 60px 20px; color: #9ca3af; }
+    .empty .em-icon { font-size: 40px; margin-bottom: 12px; }
+    .empty .em-title { font-size: 16px; font-weight: 700; color: #6b7280; margin-bottom: 6px; }
+    .empty .em-sub { font-size: 12.5px; max-width: 460px; margin: 0 auto; line-height: 1.6; }
+    .section-note { font-size: 11px; color: #9ca3af; margin-top: 18px; text-align: center; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
+  <script type="text/babel">
+    const CFG = window.ORG_CONFIG || {};
+    const e = React.createElement;
+
+    // Facility verticals — Court Utilization folds in here; others are placeholders for the build-out.
+    const TABS = [
+      { key: 'summary',     label: 'Summary' },
+      { key: 'utilization', label: 'Court Utilization' },
+      { key: 'camping',     label: 'Camping',        icon: '🏕️' },
+      { key: 'golf',        label: 'Golf',           icon: '⛳' },
+      { key: 'aquatics',    label: 'Pool / Aquatics', icon: '🏊' },
+    ];
+
+    function fmtDate(d) { return d.toISOString().slice(0, 10); }
+    function monthStart(d) { return new Date(d.getFullYear(), d.getMonth(), 1); }
+    function monthEnd(d) { return new Date(d.getFullYear(), d.getMonth() + 1, 0); }
+
+    function Toolbar(props) {
+      const backHref = '/' + CFG.slug + (CFG.token ? '?token=' + encodeURIComponent(CFG.token) : '');
+      return e('div', { className: 'toolbar' },
+        e('a', { className: 'toolbar-back', href: backHref }, '←'),
+        e('span', { className: 'toolbar-title' }, 'Facilities'),
+        e('label', null, 'START', e('input', { type: 'date', value: props.start, onChange: ev => props.setStart(ev.target.value) })),
+        e('label', null, 'END', e('input', { type: 'date', value: props.end, onChange: ev => props.setEnd(ev.target.value) })),
+        e('button', { onClick: props.thisMonth }, 'This Month'),
+        e('button', { onClick: props.lastMonth }, 'Last Month'),
+        e('button', { onClick: props.thisYear }, 'This Year'),
+        e('button', { className: 'btn-run', onClick: props.run }, '▶ Run Report'),
+        e('div', { className: 'divider' }),
+        e('label', { className: 'chk' }, e('input', { type: 'checkbox', disabled: true }), 'BREAK OUT BY SITE'),
+        e('span', { className: 'toolbar-spacer' }),
+        e('span', { className: 'row-count' }, '— sites · — locations'),
+        e('button', { className: 'btn-pdf', disabled: true }, 'PDF'),
+        e('button', { className: 'btn-excel', disabled: true }, 'Excel'),
+      );
+    }
+
+    function KpiCards() {
+      const cards = [
+        { label: 'Bookings', val: '—', cls: 'sc-blue', sub: 'all facility reservations' },
+        { label: 'Net Revenue', val: '—', cls: 'sc-green', sub: 'rentals + reservations' },
+        { label: 'Instant-Book', val: '—', cls: 'sc-purple', sub: '—% of bookings / revenue' },
+        { label: 'Managed', val: '—', cls: 'sc-amber', sub: 'staff-approved reservations' },
+        { label: 'Top Site Type', val: '—', cls: 'sc-muted', sub: 'by revenue' },
+        { label: 'Active Sites', val: '—', cls: 'sc-muted', sub: 'across all locations' },
+      ];
+      return e('div', { className: 'sum-cards' },
+        cards.map((c, i) => e('div', { className: 'sum-card', key: i },
+          e('div', { className: 'sc-label' }, c.label),
+          e('div', { className: 'sc-val ' + c.cls }, c.val),
+          e('div', { className: 'sc-sub' }, c.sub),
+        ))
+      );
+    }
+
+    function SummaryTab() {
+      const siteTypes = ['Camping', 'Golf', 'Pool / Aquatics', 'Courts & Fields', 'Pavilions & Shelters'];
+      return e('div', null,
+        e(KpiCards),
+        // Instant-book vs Managed band (the marquee split)
+        e('div', { className: 'band' },
+          e('div', { className: 'band-head' },
+            e('div', { className: 'band-title' }, '⚙️ RESERVATION MIX ', e('span', { className: 'sub' }, 'instant-book vs. staff-managed')),
+            e('a', { className: 'band-link', href: '#' }, 'View breakdown →'),
+          ),
+          e('div', { className: 'band-metrics' },
+            e('div', { className: 'band-metric' }, e('div', { className: 'bm-val sc-purple' }, '—%'), e('div', { className: 'bm-lbl' }, 'Instant-book')),
+            e('div', { className: 'band-metric' }, e('div', { className: 'bm-val sc-amber' }, '—%'), e('div', { className: 'bm-lbl' }, 'Managed')),
+            e('div', { className: 'band-metric' }, e('div', { className: 'bm-val sc-green' }, '$—'), e('div', { className: 'bm-lbl' }, 'Instant-book revenue')),
+            e('div', { className: 'band-metric' }, e('div', { className: 'bm-val sc-green' }, '$—'), e('div', { className: 'bm-lbl' }, 'Managed revenue')),
+          ),
+        ),
+        // Stacked bar placeholder
+        e('div', { className: 'sum-bar-wrap' },
+          e('div', { className: 'sum-bar-label' }, 'Booking mix'),
+          e('div', { className: 'sum-bar' },
+            e('div', { className: 'seg', style: { width: '55%', background: '#7c3aed' } }, 'Instant-book'),
+            e('div', { className: 'seg', style: { width: '45%', background: '#d97706' } }, 'Managed'),
+          ),
+          e('div', { className: 'sum-legend' },
+            e('span', null, e('span', { className: 'sum-dot', style: { background: '#7c3aed' } }), 'Instant-book'),
+            e('span', null, e('span', { className: 'sum-dot', style: { background: '#d97706' } }), 'Managed'),
+          ),
+        ),
+        // Revenue by site type
+        e('table', { className: 'sum-cat-table' },
+          e('caption', null, 'Revenue by site type'),
+          e('thead', null, e('tr', null,
+            e('th', null, 'Site type'),
+            e('th', { className: 'num' }, 'Sites'),
+            e('th', { className: 'num' }, 'Bookings'),
+            e('th', { className: 'num' }, 'Net revenue'),
+            e('th', { className: 'num' }, '% instant-book'),
+          )),
+          e('tbody', null,
+            siteTypes.map((t, i) => e('tr', { key: i },
+              e('td', null, t),
+              e('td', { className: 'num' }, '—'),
+              e('td', { className: 'num' }, '—'),
+              e('td', { className: 'num' }, '—'),
+              e('td', { className: 'num' }, '—'),
+            )),
+            e('tr', { className: 'totals-row' },
+              e('td', null, 'Total'),
+              e('td', { className: 'num' }, '—'),
+              e('td', { className: 'num' }, '—'),
+              e('td', { className: 'num' }, '—'),
+              e('td', { className: 'num' }, '—'),
+            ),
+          ),
+        ),
+        // Top sites by revenue
+        e('table', { className: 'sum-cat-table' },
+          e('caption', null, 'Top sites by revenue'),
+          e('thead', null, e('tr', null,
+            e('th', null, 'Site'),
+            e('th', null, 'Type'),
+            e('th', null, 'Location'),
+            e('th', { className: 'num' }, 'Bookings'),
+            e('th', { className: 'num' }, 'Net revenue'),
+          )),
+          e('tbody', null,
+            [0, 1, 2, 3, 4].map(i => e('tr', { key: i },
+              e('td', null, '—'),
+              e('td', null, e('span', { className: 'sum-badge' }, '—')),
+              e('td', null, '—'),
+              e('td', { className: 'num' }, '—'),
+              e('td', { className: 'num' }, '—'),
+            )),
+          ),
+        ),
+        e('div', { className: 'section-note' }, 'Summary layout mirrors the Programs report · metrics wire to live facility data in the next build.'),
+      );
+    }
+
+    function VerticalTab(props) {
+      const isUtil = props.tabKey === 'utilization';
+      return e('div', { className: 'empty' },
+        e('div', { className: 'em-icon' }, props.icon || '📈'),
+        e('div', { className: 'em-title' }, props.label),
+        e('div', { className: 'em-sub' }, isUtil
+          ? 'The existing Court Utilization report folds in here as a sub-tab — utilization %, reserved hours by court, split by customer / program / closure.'
+          : ('A ' + props.label + '-specific view of facility bookings, availability, and revenue will live on this tab.')),
+        e('div', { className: 'section-note' }, 'Framework stub — not yet wired to data.'),
+      );
+    }
+
+    function App() {
+      const now = new Date();
+      const [start, setStart] = React.useState(fmtDate(monthStart(now)));
+      const [end, setEnd] = React.useState(fmtDate(monthEnd(now)));
+      const [tab, setTab] = React.useState(() => {
+        const qs = new URLSearchParams(window.location.search);
+        return qs.get('tab') || 'summary';
+      });
+      const setThisMonth = () => { setStart(fmtDate(monthStart(now))); setEnd(fmtDate(monthEnd(now))); };
+      const setLastMonth = () => { const d = new Date(now.getFullYear(), now.getMonth() - 1, 1); setStart(fmtDate(monthStart(d))); setEnd(fmtDate(monthEnd(d))); };
+      const setThisYear = () => { setStart(fmtDate(new Date(now.getFullYear(), 0, 1))); setEnd(fmtDate(new Date(now.getFullYear(), 11, 31))); };
+
+      const fmtRange = (s, en) => {
+        const o = { year: 'numeric', month: 'long', day: 'numeric' };
+        return new Date(s + 'T00:00:00').toLocaleDateString('en-US', o) + ' – ' + new Date(en + 'T00:00:00').toLocaleDateString('en-US', o);
+      };
+      const active = TABS.find(t => t.key === tab) || TABS[0];
+
+      return e(React.Fragment, null,
+        e(Toolbar, { start, end, setStart, setEnd, thisMonth: setThisMonth, lastMonth: setLastMonth, thisYear: setThisYear, run: () => {} }),
+        e('div', { className: 'page' },
+          e('div', { className: 'report-header' },
+            e('div', { className: 'report-header-left' },
+              CFG.logoUrl ? e('img', { className: 'report-header-logo', src: CFG.logoUrl, alt: '', onError: ev => { ev.target.style.display = 'none'; } }) : null,
+              e('div', null,
+                e('div', { className: 'org-label' }, CFG.displayName || 'Parks & Recreation'),
+                e('div', { className: 'title' }, 'Facilities'),
+              ),
+            ),
+            e('div', { className: 'report-header-right' },
+              e('div', { className: 'date-range' }, fmtRange(start, end)),
+            ),
+          ),
+          e('div', { className: 'stub-banner' },
+            e('strong', null, 'Framework preview.'),
+            ' This is the new Facilities hub scaffold — a Programs-style Summary plus vertical sub-tabs (Court Utilization folds in here). Metrics are placeholders until the data layer is wired.'
+          ),
+          e('div', { className: 'tabs' },
+            TABS.map(t => e('div', {
+              key: t.key,
+              className: 'tab' + (t.key === tab ? ' active' : ''),
+              onClick: () => {
+                setTab(t.key);
+                const u = new URL(window.location); u.searchParams.set('tab', t.key); window.history.replaceState({}, '', u);
+              },
+            }, t.icon ? e('span', null, t.icon) : null, t.label)),
+          ),
+          tab === 'summary' ? e(SummaryTab) : e(VerticalTab, { tabKey: active.key, label: active.label, icon: active.icon }),
+        ),
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(e(App));
+  </script>
+</body>
+</html>
