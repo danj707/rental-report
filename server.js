@@ -706,7 +706,7 @@ const ORGS = {
     // Campsite map (public) — 12 sites at Pleasant Hill City Lake; data via rec.us MCP.
     facility: { mbUuid: null },
   },
-  prescott-valley: {
+  "prescott-valley": {
     token:   "nZoGOrzKhS6U8Yus",
     orgId:   "9acfb33a-4114-4f0f-be3c-2eb0a3930550",
     logoUrl: "https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2Forganization-9acfb33a-4114-4f0f-be3c-2eb0a3930550%2FfullLogo.png%3F1769533327785&w=1920&q=75",
@@ -1666,7 +1666,10 @@ const GITHUB_API  = `https://api.github.com/repos/${GITHUB_REPO}/contents/server
 
 // Serialize one ORGS map entry as JS source matching the existing style.
 function buildOrgEntrySource(slug, orgEntry) {
-  const lines = [`  ${slug}: {`];
+  // Quote the key unless the slug is a valid bare JS identifier — hyphenated
+  // slugs (e.g. "prescott-valley") are NOT, and an unquoted key crashes boot.
+  const key = /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(slug) ? slug : JSON.stringify(slug);
+  const lines = [`  ${key}: {`];
   if (orgEntry.token)       lines.push(`    token:   ${JSON.stringify(orgEntry.token)},`);
   if (orgEntry.orgId)       lines.push(`    orgId:   ${JSON.stringify(orgEntry.orgId)},`);
   if (orgEntry.logoUrl)     lines.push(`    logoUrl: ${JSON.stringify(orgEntry.logoUrl)},`);
@@ -1702,7 +1705,9 @@ async function pushOrgsToGitHub(entries, commitMessage) {
 
   // 2. Skip entries already present in server.js
   const toInsert = entries.filter(({ slug }) => {
-    const re = new RegExp(`^\\s+${slug}:\\s*\\{`, "m");
+    // Match both bare (watertown:) and quoted ("prescott-valley":) key styles
+    const esc = slug.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const re = new RegExp(`^\\s+"?${esc}"?\\s*:\\s*\\{`, "m");
     return !re.test(content);
   });
   if (!toInsert.length) {
