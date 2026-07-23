@@ -7334,6 +7334,56 @@ app.post("/api/admin/langfuse/reset", (req, res) => {
   res.json({ ok: true });
 });
 
+// ── POST /api/admin/langfuse/purge — permanently DELETE traces from Langfuse ──
+// Password-gated + scoped. mode:"all" wipes everything; mode:"before" deletes
+// traces with timestamp < `before` (ISO date). Clearing the cache alone can't
+// remove test data — it lives in Langfuse, so this deletes it via the API.
+app.post("/api/admin/langfuse/purge", async (req, res) => {
+  const { password, mode, before } = req.body || {};
+  if (!password || password !== process.env.DASHBOARD_PASSWORD) {
+    return res.status(403).json({ error: "Invalid password" });
+  }
+  if (!process.env.LANGFUSE_PUBLIC_KEY || !process.env.LANGFUSE_SECRET_KEY) {
+    return res.status(503).json({ error: "Langfuse not configured" });
+  }
+  const beforeTs = (mode === "before" && before) ? new Date(before).toISOString() : null;
+  try {
+    // Collect trace IDs to delete (all, or only those before the cutoff)
+    let ids = [];
+    for (let page = 1; page <= 60; page++) { // safety cap ~6000 traces
+      const params = { limit: 100, page, orderBy: "timestamp.desc" };
+      if (beforeTs) params.toTimestamp = beforeTs; // upper bound
+      const batch = await fetchLangfuseAPI("/traces", params);
+      if (!batch || !batch.data || !batch.data.length) break;
+      ids = ids.concat(batch.data.map(t => t.id));
+      if (batch.data.length < 100) break;
+    }
+    if (!ids.length) { _langfuseCache = { ts: 0, data: null }; return res.json({ ok: true, deleted: 0, requested: 0 }); }
+
+    // Batch-delete via Langfuse public API (DELETE /api/public/traces {traceIds})
+    const baseUrl = process.env.LANGFUSE_BASE_URL || "https://us.cloud.langfuse.com";
+    const auth = Buffer.from(process.env.LANGFUSE_PUBLIC_KEY + ":" + process.env.LANGFUSE_SECRET_KEY).toString("base64");
+    let deleted = 0;
+    for (let i = 0; i < ids.length; i += 100) {
+      const chunk = ids.slice(i, i + 100);
+      const r = await fetch(baseUrl + "/api/public/traces", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json", "Authorization": "Basic " + auth },
+        body: JSON.stringify({ traceIds: chunk }),
+        signal: AbortSignal.timeout(30000),
+      });
+      if (r.ok) deleted += chunk.length;
+      else console.error("[langfuse-admin] purge chunk failed:", r.status, await r.text().catch(() => ""));
+    }
+    _langfuseCache = { ts: 0, data: null };
+    console.log("[langfuse-admin] Purged " + deleted + "/" + ids.length + " traces (mode=" + (mode || "all") + (beforeTs ? " before " + beforeTs : "") + ")");
+    res.json({ ok: true, deleted, requested: ids.length });
+  } catch (e) {
+    console.error("[langfuse-admin] purge error:", e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ── Langfuse Admin — page route ──────────────────────────────────────
 app.get("/langfuse", (req, res) => {
   const html = require("fs").readFileSync(path.join(__dirname, "public", "langfuse-admin.html"), "utf-8");
