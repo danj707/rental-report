@@ -1722,6 +1722,16 @@ async function pushOrgsToGitHub(entries, commitMessage) {
   const insertPos = match.index + 1; // position of `};`
   content = content.slice(0, insertPos) + insertText + content.slice(insertPos);
 
+  // 3b. SAFETY NET: never push a server.js that won't parse — a boot crash
+  // takes down EVERY org. Compile-check the generated source (parse only, no
+  // execution). On failure, throw so the caller falls back to orgs.json: the
+  // new org still works dynamically and production is never crash-looped.
+  try {
+    new (require("vm").Script)(content, { filename: "server.js:pre-push-check" });
+  } catch (e) {
+    throw new Error(`Generated server.js failed syntax check — refusing to push: ${e.message}`);
+  }
+
   // 4. PUT back
   const putRes = await fetch(GITHUB_API, {
     method: "PUT",
