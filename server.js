@@ -740,6 +740,13 @@ const SHARED_UUIDS = {
   "program-checkins": "cb6fd909-72d3-446b-930b-c0382da02d62",
 };
 
+// Facilities hub — Summary tab data source. This is a dedicated public card
+// (org-parameterized, INITCAP booking_type/status, court.type site type, base
+// rental revenue) that — unlike the base `facility` card — INCLUDES canceled
+// reservations so the Summary can surface cancellation rate as an at-risk flag.
+// Row-level output is aggregated client-side in public/facilities.html.
+const FACILITIES_SUMMARY_UUID = "4defd1b6-9415-465b-9474-babf5cac1771";
+
 const REPORT_DEPENDENCIES = {
   facility: {
     tables: ["reservation","reservation_court","reservation_user","court","location","facility_rental","order_item","users"],
@@ -4426,6 +4433,76 @@ app.get("/:org/facilities", (req, res) => {
   };
   const html = require("fs").readFileSync(path.join(__dirname, "public", "facilities.html"), "utf8");
   res.send(html.replace("<head>", `<head><script>window.ORG_CONFIG=${JSON.stringify(orgConfig)};</script>`));
+});
+
+// ── GET /:org/facilities/api/summary — Facilities hub Summary data ──
+// Fetches the org-parameterized Facility Summary card (row-level facility
+// reservations incl. canceled) and returns { rows } for client-side
+// aggregation. Same public-card + buildMetabaseParams pattern as /api/data,
+// with the shared cache (reportType "facilities") + stale fallback.
+app.get("/:org/facilities/api/summary", async (req, res) => {
+  const slug = req.params.org;
+  const org  = ORGS[slug];
+  if (!org) return res.status(404).json({ error: "Unknown org" });
+  if (!org.orgId) return res.status(400).json({ error: "Org is not configured with an org_id" });
+
+  logEvent(slug, "facilities", "fetch", req);
+
+  try {
+    const params  = buildMetabaseParams(req.query, "facilities", org.orgId);
+    const paramStr = params.length > 0 ? `?parameters=${encodeURIComponent(JSON.stringify(params))}` : "";
+    const cacheKey = `${slug}:facilities:${paramStr}`;
+
+    if (req.query._nocache !== "1") {
+      const cached = getCached(cacheKey, slug, "facilities");
+      if (cached) {
+        console.log(`[cache] HIT ${slug}/facilities | ${cached.rows?.length || 0} rows`);
+        return res.json(cached);
+      }
+    }
+
+    const url = `${METABASE_URL}/api/public/card/${FACILITIES_SUMMARY_UUID}/query/json${paramStr}`;
+    console.log(`[proxy] ${slug}/facilities → ${url}`);
+
+    const fetchStart = Date.now();
+    let response, attempt = 1;
+    try {
+      response = await fetch(url, { signal: AbortSignal.timeout(60000) });
+    } catch (firstErr) {
+      const isTimeout = firstErr.name === "TimeoutError" || firstErr.name === "AbortError";
+      if (!isTimeout) throw firstErr;
+      console.log(`[proxy] ${slug}/facilities timed out — retrying with 120s timeout...`);
+      attempt = 2;
+      response = await fetch(url, { signal: AbortSignal.timeout(120000) });
+    }
+    const fetchMs = Date.now() - fetchStart;
+
+    if (!response.ok) {
+      const body = await response.text();
+      console.error(`[proxy] Metabase returned ${response.status} for ${slug}/facilities after ${fetchMs}ms: ${body.slice(0, 200)}`);
+      const stale = getStaleCached(slug, "facilities", cacheKey);
+      if (stale) {
+        console.log(`[cache] STALE fallback for ${slug}/facilities`);
+        return res.json(Object.assign({}, stale.data, { meta: Object.assign({}, stale.data.meta, { stale_cache: true }) }));
+      }
+      return res.status(502).json({ error: `Metabase ${response.status}` });
+    }
+
+    const data = await response.json();
+    const rows = Array.isArray(data) ? data : [];
+    console.log(`[proxy] ${slug}/facilities → ${rows.length} rows in ${fetchMs}ms (attempt ${attempt})`);
+
+    const result = { rows, meta: { org_slug: slug, org_id: org.orgId, report_type: "facilities", generated_at: new Date().toISOString() } };
+    setCache(cacheKey, result, "facilities");
+    res.json(result);
+  } catch (err) {
+    const isTimeout = err.name === "TimeoutError" || err.name === "AbortError";
+    console.error(`[proxy] ${slug}/facilities error${isTimeout ? " (timeout)" : ""}: ${err.message}`);
+    const cacheKey = (() => { try { const p = buildMetabaseParams(req.query, "facilities", org.orgId); return `${slug}:facilities:${p.length ? `?parameters=${encodeURIComponent(JSON.stringify(p))}` : ""}`; } catch { return `${slug}:facilities:`; } })();
+    const stale = getStaleCached(slug, "facilities", cacheKey);
+    if (stale) return res.json(Object.assign({}, stale.data, { meta: Object.assign({}, stale.data.meta, { stale_cache: true }) }));
+    res.status(isTimeout ? 504 : 502).json({ error: isTimeout ? "Facility summary query timed out — try a shorter date range" : err.message });
+  }
 });
 
 app.get("/:org/gl", (req, res) => {
@@ -10133,6 +10210,12 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  { date: '2026-07-23', title: '🏞️ Facilities hub — Summary is now live on real data', items: [
+    'The Facilities hub Summary tab is wired to real facility-reservation data (all orgs). It reads a single org-parameterized Metabase card and aggregates it in the browser — reservation mix (instant-book vs staff-managed, with revenue split), revenue by site type, active sites, and top sites by revenue.',
+    'Cancellation is surfaced as an at-risk signal: a cancellation-rate KPI, a booking-status mix bar (confirmed / in-progress / canceled), and a ⚠ HIGH CANCEL flag on any site with ≥20% canceled bookings.',
+    'Filters drive the whole Summary: per-status chips (confirmed / in-progress / canceled) and a site-type filter using Rec’s real court types (campsite, golf, pool, court, field, gym, rink, room, outdoor-event-space, …). Canceled bookings count toward totals but contribute $0 revenue.',
+    'Court Utilization, Camping, Golf, and Pool/Aquatics sub-tabs are being wired next.',
+  ] },
   { date: '2026-07-23', title: '📣 Project-update announcements + Add-Org fix', items: [
     'New admin "Add Update" composer on the dashboard: write a title + markdown message, target specific orgs (or All orgs, including future ones), and publish. Targeted orgs see it as a one-time dismissible popup on their dashboard the first time they visit (tracked per browser). Pause/delete from the same modal.',
     'Fixed a bug that blocked adding a new organization — the create step read a Metabase-link input for GL (a shared report that renders no such input), throwing a TypeError before the request was sent. The reads are now null-safe.',
