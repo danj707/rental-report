@@ -2570,7 +2570,6 @@ const STARTUP_PAGE = `<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta http-equiv="refresh" content="4">
 <title>Updates in Progress</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -2590,10 +2589,17 @@ const STARTUP_PAGE = `<!DOCTYPE html>
 <div class="card">
   <div class="logo">\u{1F3DB}\uFE0F</div>
   <h1>Updates in Progress</h1>
-  <p>The report server is restarting with the latest updates.<br>This page will refresh automatically.</p>
+  <p>The report server is deploying the latest updates.<br>This page reconnects automatically — no need to refresh.</p>
   <div class="spinner"></div>
   <div class="hint">rec.us Analytics Platform</div>
 </div>
+<script>
+  // Poll readiness and reload the moment the server is back (no jarring meta-refresh flash).
+  (function(){
+    function tick(){ fetch('/healthz',{cache:'no-store'}).then(function(r){ if(r.ok) location.reload(); }).catch(function(){}); }
+    setInterval(tick, 2000);
+  })();
+</script>
 </body>
 </html>`;
 
@@ -2608,11 +2614,44 @@ app.use(dashboardAuth);
 app.use(express.json({ limit: "50mb" }));
 // ── Inter font injection ─ auto-injects into every HTML res.send ─────────────
 const FONT_INJECT = '<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"><style>body,input,select,button,textarea{font-family:\'Inter\',system-ui,-apple-system,sans-serif !important}</style>';
+
+// Deploy-watch: injected into every page. Pings /healthz; on a blip (deploy or
+// crash-restart) it shows a branded "Deploying" overlay and auto-reloads when
+// the server is back — so an in-progress deploy never shows a broken/reloading
+// page to someone with a tab open. Idle poll is light (20s); tightens to 2s
+// once a blip is detected, and also checks on tab focus / network reconnect.
+const DEPLOY_WATCH_INJECT = `<script>
+(function(){
+  if(window.__recDeployWatch)return; window.__recDeployWatch=1;
+  var down=false, fast=null, ov=null;
+  function overlay(){
+    if(ov)return;
+    ov=document.createElement('div');
+    ov.style.cssText='position:fixed;inset:0;z-index:2147483647;display:flex;align-items:center;justify-content:center;background:rgba(15,17,23,.94);font-family:Inter,system-ui,-apple-system,sans-serif';
+    ov.innerHTML='<div style="text-align:center;color:#e0e0e0;max-width:420px;padding:40px">'
+      +'<div style="font-size:40px;margin-bottom:14px">🚀</div>'
+      +'<div style="font-size:20px;font-weight:600;color:#fff;margin-bottom:8px">Deploying an update</div>'
+      +'<div style="font-size:13px;color:#9aa8b8;line-height:1.6;margin-bottom:22px">The platform is updating with the latest changes.<br>Reconnecting automatically — no need to refresh.</div>'
+      +'<div style="width:34px;height:34px;border:3px solid #333;border-top-color:#4f8cff;border-radius:50%;margin:0 auto;animation:recspin .8s linear infinite"></div>'
+      +'<style>@keyframes recspin{to{transform:rotate(360deg)}}</style></div>';
+    if(document.body)document.body.appendChild(ov);
+  }
+  function ping(){ return fetch('/healthz',{cache:'no-store'}).then(function(r){return r.ok;}).catch(function(){return false;}); }
+  function check(){ ping().then(function(ok){
+    if(!ok){ if(!down){ down=true; overlay(); if(!fast)fast=setInterval(check,2000); } }
+    else if(down){ location.reload(); }
+  }); }
+  setInterval(check, 20000);
+  window.addEventListener('focus', check);
+  window.addEventListener('online', check);
+})();
+</script>`;
+
 app.use((req, res, next) => {
   const _send = res.send;
   res.send = function(body) {
     if (typeof body === "string" && body.includes("</head>")) {
-      body = body.replace("</head>", FONT_INJECT + "\n</head>");
+      body = body.replace("</head>", FONT_INJECT + DEPLOY_WATCH_INJECT + "\n</head>");
     }
     return _send.call(this, body);
   };
