@@ -405,6 +405,7 @@
     'instructor-payout': { label: 'Instructor Payout', icon: '💰', desc: 'Revenue splits and payout calculations by instructor' },
     'rentalcalendar':    { label: 'Rental Calendar', icon: '🏟️', desc: 'Real-time facility availability with live booking data' },
     'campmap':           { label: 'Campsite Map', icon: '🏕️', desc: 'Interactive campground map with per-night availability overlay' },
+    'facilities':        { label: 'Facilities', icon: '🏞️', desc: 'Facility hub — summary + camping, golf, aquatics & court utilization' },
     'ice-calendar':      { label: 'Ice Participant Calendar', icon: '❄️', desc: 'Participant-filtered monthly ice program calendar' },
     qoq:                 { label: 'QoQ Revenue Comparison', icon: '📉', desc: 'Quarter-over-quarter GL revenue comparison with delta analysis' },
   };
@@ -413,7 +414,7 @@
   /* Report groups (themed sections) */
   var CATEGORIES = [
     { label: 'Programs & Enrollment',    icon: '\u{1F3AF}', keys: ['programs','roster','calendar','fasttrack','ice-calendar'] },
-    { label: 'Facilities & Rentals',     icon: '\u{1F4C5}', keys: ['facility','rentalcalendar','campmap','overview','historic','court-utilization'] },
+    { label: 'Facilities & Rentals',     icon: '\u{1F4C5}', keys: ['facility','facilities','rentalcalendar','campmap','overview','historic','court-utilization'] },
     { label: 'Revenue & Finance',        icon: '\u{1F4B0}', keys: ['gl','products','memberships','qoq','instructor-payout'] },
     { label: 'Community & Intelligence', icon: '\u{1F465}', keys: ['users'] },
   ];
@@ -754,6 +755,51 @@
   }
 
   render();
+
+  /* ── Project-update popup (shown once per browser per update) ── */
+  (function projectUpdate() {
+    var anns = cfg.announcements || [];
+    if (!anns.length) return;
+    var seen;
+    try { seen = JSON.parse(localStorage.getItem('rec_seen_updates') || '[]'); } catch (e) { seen = []; }
+    if (!Array.isArray(seen)) seen = [];
+    var next = anns.filter(function(a) { return seen.indexOf(a.id) < 0; })[0];
+    if (!next) return;
+
+    function esc(s) { return (s == null ? '' : String(s)).replace(/[&<>"]/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+    function mdToHtml(src) {
+      var lines = esc(src).split(/\r?\n/), out = [], inList = false;
+      function inline(t) {
+        return t
+          .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+          .replace(/\*(.+?)\*/g, '<em>$1</em>')
+          .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener" style="color:#6d28d9;font-weight:600">$1</a>');
+      }
+      lines.forEach(function(ln) {
+        if (/^\s*[-*]\s+/.test(ln)) {
+          if (!inList) { out.push('<ul style="margin:6px 0 6px 18px">'); inList = true; }
+          out.push('<li>' + inline(ln.replace(/^\s*[-*]\s+/, '')) + '</li>');
+        } else {
+          if (inList) { out.push('</ul>'); inList = false; }
+          if (ln.trim()) out.push('<p style="margin:0 0 8px">' + inline(ln) + '</p>');
+        }
+      });
+      if (inList) out.push('</ul>');
+      return out.join('');
+    }
+
+    var ov = document.createElement('div');
+    ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
+    ov.innerHTML = '<div role="dialog" aria-modal="true" style="background:#fff;border-radius:14px;max-width:520px;width:100%;box-shadow:0 24px 70px rgba(0,0,0,.3);overflow:hidden">'
+      + '<div style="background:linear-gradient(135deg,#7c3aed,#4f46e5);color:#fff;padding:16px 22px;font-weight:700;font-size:15px;display:flex;align-items:center;gap:8px">&#128227; ' + esc(next.title) + '</div>'
+      + '<div style="padding:20px 22px;font-size:14px;line-height:1.6;color:#333">' + (mdToHtml(next.body) || '') + '</div>'
+      + '<div style="padding:0 22px 20px;text-align:right"><button id="rec-upd-ok" style="background:#7c3aed;color:#fff;border:none;border-radius:8px;padding:9px 22px;font-size:13px;font-weight:600;cursor:pointer">Got it</button></div>'
+      + '</div>';
+    document.body.appendChild(ov);
+    function dismiss() { seen.push(next.id); try { localStorage.setItem('rec_seen_updates', JSON.stringify(seen)); } catch (e) {} ov.remove(); }
+    ov.querySelector('#rec-upd-ok').addEventListener('click', dismiss);
+    ov.addEventListener('click', function(e) { if (e.target === ov) dismiss(); });
+  })();
 
   /* ── Footer ── */
   document.getElementById('footer').textContent = 'rec.us · ' + slug;
