@@ -97,6 +97,15 @@
        margins let it use the page's full width; the iframe self-sizes via postMessage. */
     .cu-embed { margin: -4px -12px 0; }
     .cu-embed iframe { width: 100%; border: none; display: block; }
+    /* Per-vertical monthly trend */
+    .vtrend-wrap { margin: 18px 0 8px; }
+    .vtrend { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; }
+    .vtrend-row { display: grid; grid-template-columns: 66px 1fr 96px 92px; align-items: center; gap: 10px; font-size: 12px; }
+    .vtrend-mo { color: #6b7280; font-weight: 600; font-variant-numeric: tabular-nums; }
+    .vtrend-track { background: #f1efe9; border-radius: 4px; height: 16px; overflow: hidden; }
+    .vtrend-bar { height: 100%; background: linear-gradient(90deg,#0d9488,#14b8a6); border-radius: 4px; min-width: 2px; }
+    .vtrend-rev { text-align: right; font-weight: 600; color: #111827; font-variant-numeric: tabular-nums; }
+    .vtrend-bk { text-align: right; color: #9ca3af; font-variant-numeric: tabular-nums; }
     @keyframes facspin { to { transform: rotate(360deg); } }
     .fac-spin { width:34px; height:34px; border:3px solid #e8e6e0; border-top-color:#0d9488; border-radius:50%; margin:14px auto; animation:facspin .8s linear infinite; }
 
@@ -163,6 +172,19 @@
     REC_SITE_TYPES.forEach(t => { TYPE_VERTICAL[t.v] = t.grp; });
     const verticalOf = raw => TYPE_VERTICAL[raw] || 'Pavilions & Spaces';
     const HIGH_CANCEL = 20; // % → flag site as at-risk
+
+    // Per-vertical sub-tab config — each is a scoped view of the SAME facility
+    // data the Summary already fetched (site types → vertical). No new SQL.
+    const VERT_CONFIG = {
+      camping:  { label: 'Camping',          icon: '🏕️', types: ['campsite'] },
+      golf:     { label: 'Golf',             icon: '⛳',  types: ['golf'] },
+      aquatics: { label: 'Pool / Aquatics',  icon: '🏊', types: ['pool'] },
+    };
+    const monthLabel = ym => {
+      const p = String(ym).split('-');
+      if (p.length < 2) return ym;
+      return new Date(Number(p[0]), Number(p[1]) - 1, 1).toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
+    };
 
     const money = n => '$' + Math.round(n || 0).toLocaleString();
     const pct = (n, d) => d ? Math.round((n / d) * 100) + '%' : '—';
@@ -411,13 +433,135 @@
       );
     }
 
-    function VerticalTab(props) {
-      return e('div', { className: 'empty' },
-        e('div', { className: 'em-icon' }, props.icon || '📈'),
-        e('div', { className: 'em-title' }, props.label),
-        e('div', { className: 'em-sub' },
-          'A ' + props.label + '-specific view of facility bookings, availability, and revenue lands on this tab next.'),
-        e('div', { className: 'section-note' }, 'Coming in the next update — Summary and Court Utilization are live on real data now.'),
+    // Per-vertical view (Camping / Golf / Pool-Aquatics): a scoped slice of the
+    // same facility rows, honoring the status filter. Same widgets as the
+    // Summary, plus a monthly trend — these verticals are strongly seasonal.
+    function VerticalView({ rows, err, statusSel, vert }) {
+      if (err) return e('div', { className: 'empty' },
+        e('div', { className: 'em-icon' }, '⚠️'),
+        e('div', { className: 'em-title' }, 'Could not load facility data'),
+        e('div', { className: 'em-sub' }, String(err)));
+      if (rows === null) return e('div', { className: 'empty' },
+        e('div', { className: 'em-title', style: { color: '#9ca3af' } }, 'Loading ' + vert.label + ' data…'),
+        e('div', { className: 'fac-spin' }));
+
+      const types = new Set(vert.types);
+      const ss = new Set(statusSel);
+      const scoped = rows.filter(r => types.has(r['Site Type']) && ss.has(lc(r['Status'])));
+      if (!scoped.length) return e('div', { className: 'empty' },
+        e('div', { className: 'em-icon' }, vert.icon || '🗓️'),
+        e('div', { className: 'em-title' }, 'No ' + vert.label + ' bookings in this range'),
+        e('div', { className: 'em-sub' }, 'This org may not run ' + vert.label.toLowerCase() + ' sites, or there were none booked with the current status filter. Try a wider date range.'));
+
+      const isCanceled = r => lc(r['Status']) === 'canceled';
+      const isInstant  = r => lc(r['Booking Type']) === 'instant';
+      const rev        = r => isCanceled(r) ? 0 : (Number(r['Total']) || 0);
+
+      const bookings  = scoped.length;
+      const revenue   = scoped.reduce((s, r) => s + rev(r), 0);
+      const canceled  = scoped.filter(isCanceled).length;
+      const confirmed = scoped.filter(r => lc(r['Status']) === 'confirmed').length;
+      const inprog    = scoped.filter(r => lc(r['Status']) === 'in-progress').length;
+      const instant   = scoped.filter(isInstant).length;
+      const managed   = bookings - instant;
+      const instRev   = scoped.filter(isInstant).reduce((s, r) => s + rev(r), 0);
+      const mgdRev    = revenue - instRev;
+      const guests    = scoped.reduce((s, r) => s + (Number(r['Head Cnt']) || 0), 0);
+      const avgParty  = bookings ? guests / bookings : 0;
+      const sites     = new Set(scoped.map(r => (r['Facility'] || '') + '|' + (r['Location'] || ''))).size;
+
+      // Monthly trend (bookings + revenue by YYYY-MM)
+      const byMonth = {};
+      scoped.forEach(r => {
+        const d = String(r['Date'] || '').slice(0, 7);
+        if (!/^\d{4}-\d{2}$/.test(d)) return;
+        if (!byMonth[d]) byMonth[d] = { bookings: 0, revenue: 0, canceled: 0 };
+        byMonth[d].bookings++; byMonth[d].revenue += rev(r); if (isCanceled(r)) byMonth[d].canceled++;
+      });
+      const months = Object.keys(byMonth).sort();
+      const maxMonthRev = Math.max(1, ...months.map(m => byMonth[m].revenue));
+
+      // Top sites within the vertical
+      const bySite = {};
+      scoped.forEach(r => {
+        const key = (r['Facility'] || '—') + '||' + (r['Location'] || '');
+        if (!bySite[key]) bySite[key] = { facility: r['Facility'] || '—', location: r['Location'] || '', bookings: 0, canceled: 0, revenue: 0, guests: 0 };
+        bySite[key].bookings++; bySite[key].revenue += rev(r); bySite[key].guests += Number(r['Head Cnt']) || 0; if (isCanceled(r)) bySite[key].canceled++;
+      });
+      const topSites = Object.values(bySite).sort((a, b) => b.revenue - a.revenue).slice(0, 12);
+
+      const seg = (n, color, label) => n > 0 ? e('div', {
+        className: 'seg', style: { width: (n / bookings * 100) + '%', background: color }
+      }, (n / bookings >= 0.08 ? label : '')) : null;
+
+      const cards = [
+        { label: 'Bookings', val: bookings.toLocaleString(), cls: 'sc-blue', sub: vert.label + ' reservations in view' },
+        { label: 'Net Revenue', val: money(revenue), cls: 'sc-green', sub: 'excludes canceled' },
+        { label: 'Instant-Book', val: pct(instant, bookings), cls: 'sc-purple', sub: instant.toLocaleString() + ' bkgs · ' + money(instRev) },
+        { label: 'Managed', val: pct(managed, bookings), cls: 'sc-amber', sub: managed.toLocaleString() + ' bkgs · ' + money(mgdRev) },
+        { label: 'Cancellation Rate', val: pct(canceled, bookings), cls: 'sc-red', sub: canceled.toLocaleString() + ' of ' + bookings.toLocaleString() + ' canceled' },
+        { label: 'Active Sites', val: sites.toLocaleString(), cls: 'sc-muted', sub: 'with bookings in view' },
+        { label: 'Total Guests', val: guests.toLocaleString(), cls: 'sc-muted', sub: 'sum of head counts' },
+        { label: 'Avg Party', val: avgParty ? avgParty.toFixed(1) : '—', cls: 'sc-muted', sub: 'guests per booking' },
+      ];
+
+      return e('div', null,
+        e('div', { className: 'sum-cards' },
+          cards.map((c, i) => e('div', { className: 'sum-card', key: i },
+            e('div', { className: 'sc-label' }, c.label),
+            e('div', { className: 'sc-val ' + c.cls }, c.val),
+            e('div', { className: 'sc-sub' }, c.sub),
+          ))
+        ),
+        // Booking status mix
+        e('div', { className: 'sum-bar-wrap' },
+          e('div', { className: 'sum-bar-label' }, 'Booking status mix'),
+          e('div', { className: 'sum-bar' }, seg(confirmed, '#16a34a', 'Confirmed'), seg(inprog, '#2563eb', 'In-progress'), seg(canceled, '#dc2626', 'Canceled')),
+          e('div', { className: 'sum-legend' },
+            e('span', null, e('span', { className: 'sum-dot', style: { background: '#16a34a' } }), 'Confirmed (' + confirmed + ')'),
+            e('span', null, e('span', { className: 'sum-dot', style: { background: '#2563eb' } }), 'In-progress (' + inprog + ')'),
+            e('span', null, e('span', { className: 'sum-dot', style: { background: '#dc2626' } }), 'Canceled (' + canceled + ')')),
+        ),
+        // Monthly trend (seasonality)
+        months.length > 1 ? e('div', { className: 'vtrend-wrap' },
+          e('div', { className: 'sum-bar-label' }, 'Bookings & revenue by month'),
+          e('div', { className: 'vtrend' },
+            months.map((m, i) => e('div', { className: 'vtrend-row', key: i },
+              e('div', { className: 'vtrend-mo' }, monthLabel(m)),
+              e('div', { className: 'vtrend-track' },
+                e('div', { className: 'vtrend-bar', style: { width: (byMonth[m].revenue / maxMonthRev * 100) + '%' } })),
+              e('div', { className: 'vtrend-rev' }, money(byMonth[m].revenue)),
+              e('div', { className: 'vtrend-bk' }, byMonth[m].bookings.toLocaleString() + ' bkgs'),
+            )),
+          ),
+        ) : null,
+        // Top sites in this vertical
+        e('table', { className: 'sum-cat-table' },
+          e('caption', null, 'Top ' + vert.label + ' sites by revenue ',
+            e('span', { style: { fontWeight: 400, color: '#9ca3af', fontSize: 11 } }, '· ', e('span', { className: 'flag' }, '⚠ HIGH CANCEL'), ' ≥' + HIGH_CANCEL + '% canceled')),
+          e('thead', null, e('tr', null,
+            e('th', null, 'Site'),
+            e('th', null, 'Location'),
+            e('th', { className: 'num' }, 'Bookings'),
+            e('th', { className: 'num' }, 'Avg party'),
+            e('th', { className: 'num' }, 'Cancel %'),
+            e('th', { className: 'num' }, 'Net revenue'),
+          )),
+          e('tbody', null,
+            topSites.map((s, i) => {
+              const crPct = s.bookings ? (s.canceled / s.bookings) * 100 : 0;
+              return e('tr', { key: i },
+                e('td', null, s.facility, crPct >= HIGH_CANCEL ? e('span', { className: 'flag', style: { marginLeft: 6 } }, '⚠') : null),
+                e('td', null, s.location),
+                e('td', { className: 'num' }, s.bookings),
+                e('td', { className: 'num' }, s.bookings ? (s.guests / s.bookings).toFixed(1) : '—'),
+                e('td', { className: 'num' }, pct(s.canceled, s.bookings)),
+                e('td', { className: 'num' }, money(s.revenue)),
+              );
+            }),
+          ),
+        ),
+        e('div', { className: 'section-note' }, 'Live facility data · ' + vert.label + ' · ' + bookings.toLocaleString() + ' bookings in range · scoped to ' + vert.types.join(', ') + ' site types.'),
       );
     }
 
@@ -484,6 +628,15 @@
       const active = TABS.find(t => t.key === tab) || TABS[0];
       const count = rows ? rows.length : null;
       const siteCount = rows ? new Set(rows.map(r => (r['Facility'] || '') + '|' + (r['Location'] || ''))).size : 0;
+      // Per-vertical booking counts for the tab badges (respect the status filter)
+      const vertCounts = {};
+      if (rows) {
+        const ss = new Set(statusSel);
+        Object.keys(VERT_CONFIG).forEach(k => {
+          const t = new Set(VERT_CONFIG[k].types);
+          vertCounts[k] = rows.filter(r => t.has(r['Site Type']) && ss.has(lc(r['Status']))).length;
+        });
+      }
 
       return e(React.Fragment, null,
         e(Toolbar, { start, end, setStart, setEnd, thisMonth: setThisMonth, lastMonth: setLastMonth, thisYear: setThisYear, run: () => load(), loading: rows === null, count, sites: siteCount }),
@@ -501,31 +654,40 @@
             ),
           ),
           e('div', { className: 'stub-banner' },
-            e('strong', null, 'Summary and Court Utilization are live on real facility data.'),
-            ' The Camping, Golf, and Pool/Aquatics sub-tabs are being wired next.'
+            e('strong', null, 'Every tab is live on real facility data.'),
+            ' Summary, Court Utilization, Camping, Golf, and Pool/Aquatics all read the platform’s facility reservations.'
           ),
-          e('div', { className: 'filters' },
+          // Filters are context-aware: the site-type filter only makes sense on
+          // the Summary (a vertical tab already fixes the type); Court Utilization
+          // manages its own filters + dates inside the embed, so no hub filters.
+          tab === 'utilization' ? null : e('div', { className: 'filters' },
             e(StatusChips, { sel: statusSel, setSel: setStatusSel }),
-            e('div', { className: 'filter-group' },
+            tab === 'summary' ? e('div', { className: 'filter-group' },
               e('span', { className: 'filter-lbl' }, 'Site type'),
               e(SiteTypeFilter, { sel: typeSel, setSel: setTypeSel }),
-            ),
+            ) : null,
           ),
           e('div', { className: 'tabs' },
-            TABS.map(t => e('div', {
-              key: t.key,
-              className: 'tab' + (t.key === tab ? ' active' : ''),
-              onClick: () => {
-                setTab(t.key);
-                const u = new URL(window.location); u.searchParams.set('tab', t.key); window.history.replaceState({}, '', u);
-              },
-            }, t.icon ? e('span', null, t.icon) : null, t.label)),
+            TABS.map(t => {
+              const badge = (VERT_CONFIG[t.key] && vertCounts[t.key] != null) ? vertCounts[t.key] : null;
+              return e('div', {
+                key: t.key,
+                className: 'tab' + (t.key === tab ? ' active' : ''),
+                onClick: () => {
+                  setTab(t.key);
+                  const u = new URL(window.location); u.searchParams.set('tab', t.key); window.history.replaceState({}, '', u);
+                },
+              }, t.icon ? e('span', null, t.icon) : null, t.label,
+                 badge != null ? e('span', { className: 'tab-badge' }, badge.toLocaleString()) : null);
+            }),
           ),
           tab === 'summary'
             ? e(SummaryTab, { rows, err, statusSel, typeSel })
             : tab === 'utilization'
               ? e(CourtUtilizationTab, { start, end })
-              : e(VerticalTab, { tabKey: active.key, label: active.label, icon: active.icon }),
+              : VERT_CONFIG[tab]
+                ? e(VerticalView, { rows, err, statusSel, vert: Object.assign({ key: tab }, VERT_CONFIG[tab]) })
+                : e(SummaryTab, { rows, err, statusSel, typeSel }),
         ),
       );
     }

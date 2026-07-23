@@ -10210,6 +10210,11 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  { date: '2026-07-23', title: '🏕️⛳🏊 Facilities hub — Camping, Golf & Pool/Aquatics sub-tabs are live', items: [
+    'The Camping, Golf, and Pool/Aquatics tabs now render per-vertical views of the same facility data (no new queries) — each scoped to its site types: bookings, net revenue, instant vs managed split, cancellation rate, active sites, total guests, and average party size.',
+    'Each vertical adds a month-by-month trend (bookings + revenue) — these verticals are strongly seasonal — plus a top-sites table with a ⚠ high-cancellation flag. The tab labels carry a live booking-count badge.',
+    'Filters are now context-aware: the site-type filter shows only on Summary (a vertical tab already fixes the type), and the Court Utilization tab hides the hub filters since the embedded report manages its own.',
+  ] },
   { date: '2026-07-23', title: '🎾 Facilities hub — Court Utilization is now a sub-tab', items: [
     'The full Court Utilization report (summary cards, per-court Overview, the utilization Map, day-of-week detail, and AI insights) now lives inside the Facilities hub as the Court Utilization sub-tab — driven by the hub’s date range, no separate page needed.',
     'It embeds the existing report verbatim (chromeless), so there is one code path to maintain — nothing was re-implemented. The standalone Court Utilization report still works unchanged for now; it will be retired once the Facilities hub is switched on for each org.',
