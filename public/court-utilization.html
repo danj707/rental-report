@@ -453,15 +453,6 @@
     body.print-mode .no-print { display: none !important; }
     body.print-mode .page { box-shadow: none; margin: 0; padding: 12px 16px; max-width: 100%; }
 
-    /* Embed mode: rendered inside the Facilities hub "Court Utilization" sub-tab
-       via an iframe. The hub provides the toolbar + org header, so hide ours and
-       flatten the page chrome so the report blends into the tab. Keep everything
-       else (summary cards, Overview/Map tabs, AI insights). */
-    body.embed-mode { background: transparent; }
-    body.embed-mode .toolbar { display: none !important; }
-    body.embed-mode .report-header { display: none !important; }
-    body.embed-mode .page { box-shadow: none; margin: 0; padding: 4px 2px 16px; max-width: 100%; }
-
     /* ── Button loading spinner ── */
     @keyframes btn-spin { to { transform: rotate(360deg); } }
     .btn-spinner {
@@ -490,27 +481,6 @@
     // Print mode: when loaded by Puppeteer with ?_print=1, hide chrome
     if (new URLSearchParams(window.location.search).get('_print') === '1') {
       document.addEventListener('DOMContentLoaded', () => document.body.classList.add('print-mode'));
-    }
-    // Embed mode: when loaded inside the Facilities hub iframe (?embed=1), hide
-    // our toolbar + org header (the hub provides them) and continuously report
-    // content height to the parent so the iframe sizes itself with no inner
-    // scrollbar. Dates arrive via ?start_date/?end_date, which the app already reads.
-    if (new URLSearchParams(window.location.search).get('embed') === '1') {
-      document.addEventListener('DOMContentLoaded', () => {
-        document.body.classList.add('embed-mode');
-        var last = 0;
-        var post = function () {
-          var h = Math.max(document.body.scrollHeight, document.documentElement.scrollHeight);
-          if (h && h !== last) {
-            last = h;
-            try { window.parent.postMessage({ type: 'cu-embed-height', height: h }, '*'); } catch (e) {}
-          }
-        };
-        post();
-        if (window.ResizeObserver) { try { new ResizeObserver(post).observe(document.body); } catch (e) {} }
-        window.addEventListener('resize', post);
-        setInterval(post, 1200); // safety net for async-rendered charts/maps
-      });
     }
 </script>
 </head>
