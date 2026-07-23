@@ -7223,13 +7223,20 @@ async function buildLangfuseAdminData() {
     if (batch.data.length < 100) break;
   }
 
-  // Fetch scores (last 30 days, paginated)
+  // Fetch scores (last 30 days, paginated — windowed to match the traces view;
+  // falls back to unwindowed if the API rejects fromTimestamp)
   let allScores = [];
-  for (let page = 1; page <= 5; page++) {
-    const batch = await fetchLangfuseAPI("/scores", { limit: 100, page });
-    if (!batch || !batch.data || batch.data.length === 0) break;
-    allScores = allScores.concat(batch.data);
-    if (batch.data.length < 100) break;
+  let scoreParams = { limit: 100, fromTimestamp: from30d };
+  let probe = await fetchLangfuseAPI("/scores", { ...scoreParams, page: 1 });
+  if (!probe) { scoreParams = { limit: 100 }; probe = await fetchLangfuseAPI("/scores", { ...scoreParams, page: 1 }); }
+  if (probe && probe.data && probe.data.length) {
+    allScores = probe.data.slice();
+    for (let page = 2; page <= 5 && allScores.length % 100 === 0; page++) {
+      const batch = await fetchLangfuseAPI("/scores", { ...scoreParams, page });
+      if (!batch || !batch.data || batch.data.length === 0) break;
+      allScores = allScores.concat(batch.data);
+      if (batch.data.length < 100) break;
+    }
   }
 
   // Fetch daily metrics
@@ -7334,10 +7341,13 @@ app.post("/api/admin/langfuse/reset", (req, res) => {
   res.json({ ok: true });
 });
 
-// ── POST /api/admin/langfuse/purge — permanently DELETE traces from Langfuse ──
+// ── POST /api/admin/langfuse/purge — permanently DELETE traces + scores ──
 // Password-gated + scoped. mode:"all" wipes everything; mode:"before" deletes
-// traces with timestamp < `before` (ISO date). Clearing the cache alone can't
+// items with timestamp < `before` (ISO date). Clearing the cache alone can't
 // remove test data — it lives in Langfuse, so this deletes it via the API.
+// Scores are independent objects in Langfuse: the batch trace delete does NOT
+// cascade to them, and there is no bulk score delete — each one is deleted
+// individually via DELETE /api/public/scores/{id}.
 app.post("/api/admin/langfuse/purge", async (req, res) => {
   const { password, mode, before } = req.body || {};
   if (!password || password !== process.env.DASHBOARD_PASSWORD) {
@@ -7358,11 +7368,30 @@ app.post("/api/admin/langfuse/purge", async (req, res) => {
       ids = ids.concat(batch.data.map(t => t.id));
       if (batch.data.length < 100) break;
     }
-    if (!ids.length) { _langfuseCache = { ts: 0, data: null }; return res.json({ ok: true, deleted: 0, requested: 0 }); }
 
-    // Batch-delete via Langfuse public API (DELETE /api/public/traces {traceIds})
+    // Collect score IDs (scores survive trace deletion, so purge them even
+    // when no traces remain). Cutoff filtered client-side — the scores list
+    // endpoint has no toTimestamp param.
+    let scoreIds = [];
+    for (let page = 1; page <= 20; page++) { // safety cap ~2000 scores
+      const batch = await fetchLangfuseAPI("/scores", { limit: 100, page });
+      if (!batch || !batch.data || !batch.data.length) break;
+      const eligible = beforeTs
+        ? batch.data.filter(s => s.timestamp && s.timestamp < beforeTs)
+        : batch.data;
+      scoreIds = scoreIds.concat(eligible.map(s => s.id).filter(Boolean));
+      if (batch.data.length < 100) break;
+    }
+
+    if (!ids.length && !scoreIds.length) {
+      _langfuseCache = { ts: 0, data: null };
+      return res.json({ ok: true, deleted: 0, requested: 0, scoresDeleted: 0, scoresRequested: 0 });
+    }
+
     const baseUrl = process.env.LANGFUSE_BASE_URL || "https://us.cloud.langfuse.com";
     const auth = Buffer.from(process.env.LANGFUSE_PUBLIC_KEY + ":" + process.env.LANGFUSE_SECRET_KEY).toString("base64");
+
+    // Batch-delete traces (DELETE /api/public/traces {traceIds})
     let deleted = 0;
     for (let i = 0; i < ids.length; i += 100) {
       const chunk = ids.slice(i, i + 100);
@@ -7375,9 +7404,27 @@ app.post("/api/admin/langfuse/purge", async (req, res) => {
       if (r.ok) deleted += chunk.length;
       else console.error("[langfuse-admin] purge chunk failed:", r.status, await r.text().catch(() => ""));
     }
+
+    // Delete scores one-by-one, small concurrency
+    let scoresDeleted = 0;
+    for (let i = 0; i < scoreIds.length; i += 5) {
+      const chunk = scoreIds.slice(i, i + 5);
+      const results = await Promise.allSettled(chunk.map(id =>
+        fetch(baseUrl + "/api/public/scores/" + encodeURIComponent(id), {
+          method: "DELETE",
+          headers: { "Authorization": "Basic " + auth },
+          signal: AbortSignal.timeout(15000),
+        })
+      ));
+      results.forEach((r, j) => {
+        if (r.status === "fulfilled" && r.value.ok) scoresDeleted++;
+        else console.error("[langfuse-admin] score delete failed:", chunk[j], r.status === "fulfilled" ? r.value.status : r.reason?.message);
+      });
+    }
+
     _langfuseCache = { ts: 0, data: null };
-    console.log("[langfuse-admin] Purged " + deleted + "/" + ids.length + " traces (mode=" + (mode || "all") + (beforeTs ? " before " + beforeTs : "") + ")");
-    res.json({ ok: true, deleted, requested: ids.length });
+    console.log("[langfuse-admin] Purged " + deleted + "/" + ids.length + " traces, " + scoresDeleted + "/" + scoreIds.length + " scores (mode=" + (mode || "all") + (beforeTs ? " before " + beforeTs : "") + ")");
+    res.json({ ok: true, deleted, requested: ids.length, scoresDeleted, scoresRequested: scoreIds.length });
   } catch (e) {
     console.error("[langfuse-admin] purge error:", e.message);
     res.status(500).json({ error: e.message });
@@ -9803,6 +9850,10 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  { date: '2026-07-23', title: 'Langfuse purge now deletes scores too', items: [
+    'The /langfuse "Purge traces" action now also deletes feedback scores. Scores are independent objects in Langfuse — the batch trace delete never removed them, so a full purge still left thumbs-up/down history (and the Scores & Feedback tab populated). The purge now lists all scores (respecting the same optional before-date cutoff) and deletes each via the Langfuse scores API, reporting both counts.',
+    'Scores shown in the admin panel are now windowed to the last 30 days, matching the traces view.',
+  ] },
   { date: '2026-07-22', title: '🏕️ Interactive Campsite Maps — Pleasant Hill & Douglas County', items: [
     'New public campsite maps at /pleasant-hill/campmap and /douglas-county-nv/campmap — Leaflet map (Google satellite / OpenStreetMap toggle) plotting each campground’s sites with a per-night availability overlay. A date strip recolors each site marker green (open) / red (booked); clicking a site opens a detail card with photo gallery, site type, rate, check-in/out, amenities, a month mini-calendar, and a Book on rec.us link.',
     'Config-driven per org via campmap-seeds.json (Pleasant Hill 12 sites; Douglas County / Topaz Lake 41 sites). Live site + availability data via the rec.us MCP (reuses the rentalcalendar availability-batch endpoint); deterministic offline fallback so the page previews standalone.',

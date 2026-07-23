@@ -208,18 +208,18 @@
                 .catch(e => alert('Error: ' + e.message));
             } }, '\u21BB Clear cache'),
             React.createElement('button', { className: 'refresh-btn', style: { marginLeft: 4, background: '#7f1d1d', borderColor: '#ef4444', color: '#fecaca' }, onClick: () => {
-              const pw = prompt('Admin password to PERMANENTLY DELETE traces from Langfuse:');
+              const pw = prompt('Admin password to PERMANENTLY DELETE traces + scores from Langfuse:');
               if (!pw) return;
-              const cutoff = prompt('Delete traces BEFORE this date (YYYY-MM-DD).\nLeave blank to delete ALL traces + scores.', '');
+              const cutoff = prompt('Delete traces + scores BEFORE this date (YYYY-MM-DD).\nLeave blank to delete ALL traces + scores.', '');
               if (cutoff === null) return;
               const mode = cutoff.trim() ? 'before' : 'all';
               const warn = mode === 'all'
-                ? 'Permanently delete ALL Langfuse traces and their scores? This cannot be undone.'
-                : ('Permanently delete all traces before ' + cutoff.trim() + '? This cannot be undone.');
+                ? 'Permanently delete ALL Langfuse traces AND scores? This cannot be undone.'
+                : ('Permanently delete all traces and scores before ' + cutoff.trim() + '? This cannot be undone.');
               if (!confirm(warn)) return;
               fetch('/api/admin/langfuse/purge', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: pw, mode: mode, before: cutoff.trim() || null }) })
                 .then(r => r.json())
-                .then(d => { if (d.ok) { alert('Purged ' + d.deleted + ' of ' + d.requested + ' traces. Refreshing...'); fetchData(true); } else { alert(d.error || 'Failed'); } })
+                .then(d => { if (d.ok) { alert('Purged ' + d.deleted + ' of ' + d.requested + ' traces and ' + (d.scoresDeleted || 0) + ' of ' + (d.scoresRequested || 0) + ' scores. Refreshing...'); fetchData(true); } else { alert(d.error || 'Failed'); } })
                 .catch(e => alert('Error: ' + e.message));
             } }, '\uD83D\uDDD1 Purge traces')
           )
