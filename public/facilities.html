@@ -42,9 +42,9 @@
     .report-header-right { text-align: right; }
     .report-header .date-range { font-size: 11px; color: #666; }
 
-    /* ── Stub banner ── */
-    .stub-banner { background: #fffbeb; border: 1px solid #fcd34d; border-left: 3px solid #d97706; padding: 10px 14px; margin-bottom: 16px; font-size: 12.5px; line-height: 1.55; color: #92400e; border-radius: 4px; }
-    .stub-banner strong { color: #78350f; }
+    /* ── Info banner ── */
+    .stub-banner { background: #eff6ff; border: 1px solid #bfdbfe; border-left: 3px solid #3b82f6; padding: 10px 14px; margin-bottom: 16px; font-size: 12.5px; line-height: 1.55; color: #1e40af; border-radius: 4px; }
+    .stub-banner strong { color: #1e3a8a; }
 
     /* ── Tabs (matches Programs) ── */
     .tabs { display:flex; gap:4px; border-bottom:2px solid #d1d5db; margin-bottom:16px; padding:0 4px; align-items:flex-end; flex-wrap: wrap; }
@@ -59,7 +59,7 @@
     .sum-card .sc-label { font-size: 10px; text-transform: uppercase; letter-spacing: .5px; color: #888; font-weight: 700; margin-bottom: 4px; }
     .sum-card .sc-val { font-size: 24px; font-weight: 800; line-height: 1.1; font-variant-numeric: tabular-nums; }
     .sum-card .sc-sub { font-size: 11px; color: #999; margin-top: 3px; }
-    .sc-green { color: #16a34a; } .sc-blue { color: #2563eb; } .sc-amber { color: #d97706; } .sc-red { color: #dc2626; } .sc-purple { color: #7c3aed; } .sc-muted { color: #cbd0d6; }
+    .sc-green { color: #16a34a; } .sc-blue { color: #2563eb; } .sc-amber { color: #d97706; } .sc-red { color: #dc2626; } .sc-purple { color: #7c3aed; } .sc-muted { color: #64748b; }
 
     .band { background: linear-gradient(135deg,#ecfdf5 0%,#f0fdf4 100%); border: 1px solid #bbf7d0; border-radius: 10px; padding: 16px 18px; margin: 16px 0; }
     .band-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
@@ -73,7 +73,7 @@
     .sum-bar-wrap { margin: 16px 0; }
     .sum-bar-label { font-size: 10px; color: #888; font-weight: 600; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 4px; }
     .sum-bar { display: flex; height: 24px; border-radius: 4px; overflow: hidden; border: 1px solid #e8e6e0; background: #f3f4f6; }
-    .sum-bar .seg { display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; color: #fff; }
+    .sum-bar .seg { display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; color: #fff; overflow: hidden; white-space: nowrap; }
     .sum-legend { display: flex; gap: 14px; margin-top: 5px; font-size: 10px; color: #888; }
     .sum-legend span { display: flex; align-items: center; gap: 4px; }
     .sum-dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
@@ -87,12 +87,14 @@
     .sum-cat-table .totals-row td { font-weight: 700; background: #f5f3ef; border-top: 1.5px solid #e8e6e0; color: #333; }
     .sum-badge { display: inline-block; padding: 1px 7px; border-radius: 3px; font-size: 9px; font-weight: 700; letter-spacing: .3px; background:#e0f2fe; color:#075985; }
 
-    /* ── Empty state (non-Summary tabs) ── */
+    /* ── Empty / loading / error states ── */
     .empty { text-align: center; padding: 60px 20px; color: #9ca3af; }
     .empty .em-icon { font-size: 40px; margin-bottom: 12px; }
     .empty .em-title { font-size: 16px; font-weight: 700; color: #6b7280; margin-bottom: 6px; }
     .empty .em-sub { font-size: 12.5px; max-width: 460px; margin: 0 auto; line-height: 1.6; }
     .section-note { font-size: 11px; color: #9ca3af; margin-top: 18px; text-align: center; }
+    @keyframes facspin { to { transform: rotate(360deg); } }
+    .fac-spin { width:34px; height:34px; border:3px solid #e8e6e0; border-top-color:#0d9488; border-radius:50%; margin:14px auto; animation:facspin .8s linear infinite; }
 
     /* ── Filters ── */
     .filters { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; padding: 10px 0 14px; border-bottom: 1px solid #eee; margin-bottom: 4px; }
@@ -123,7 +125,6 @@
     const CFG = window.ORG_CONFIG || {};
     const e = React.createElement;
 
-    // Facility verticals — Court Utilization folds in here; others are placeholders for the build-out.
     const TABS = [
       { key: 'summary',     label: 'Summary' },
       { key: 'utilization', label: 'Court Utilization' },
@@ -153,6 +154,15 @@
       { v: 'in-progress', l: 'In-progress' },
       { v: 'canceled',    l: 'Canceled' },
     ];
+    const VERTICALS = ['Camping', 'Golf', 'Pool / Aquatics', 'Courts & Fields', 'Pavilions & Spaces'];
+    const TYPE_VERTICAL = {};
+    REC_SITE_TYPES.forEach(t => { TYPE_VERTICAL[t.v] = t.grp; });
+    const verticalOf = raw => TYPE_VERTICAL[raw] || 'Pavilions & Spaces';
+    const HIGH_CANCEL = 20; // % → flag site as at-risk
+
+    const money = n => '$' + Math.round(n || 0).toLocaleString();
+    const pct = (n, d) => d ? Math.round((n / d) * 100) + '%' : '—';
+    const lc = v => String(v == null ? '' : v).toLowerCase();
 
     // Per-status filter chips (all on by default — every status counts)
     function StatusChips({ sel, setSel }) {
@@ -200,6 +210,53 @@
     function monthStart(d) { return new Date(d.getFullYear(), d.getMonth(), 1); }
     function monthEnd(d) { return new Date(d.getFullYear(), d.getMonth() + 1, 0); }
 
+    // ── Aggregate the card's rows into the Summary metrics, honoring filters ──
+    function aggregate(rows, statusSel, typeSel) {
+      const ts = new Set(typeSel);          // empty = all types
+      const ss = new Set(statusSel);
+      const scoped = rows.filter(r =>
+        (ts.size === 0 || ts.has(r['Site Type'])) && ss.has(lc(r['Status']))
+      );
+      const isCanceled = r => lc(r['Status']) === 'canceled';
+      const isInstant = r => lc(r['Booking Type']) === 'instant';
+      const rev = r => isCanceled(r) ? 0 : (Number(r['Total']) || 0);
+
+      const a = {
+        bookings: scoped.length,
+        canceled: scoped.filter(isCanceled).length,
+        confirmed: scoped.filter(r => lc(r['Status']) === 'confirmed').length,
+        inprog: scoped.filter(r => lc(r['Status']) === 'in-progress').length,
+        revenue: scoped.reduce((s, r) => s + rev(r), 0),
+        instant: scoped.filter(isInstant).length,
+        managed: scoped.filter(r => !isInstant(r)).length,
+        instRev: scoped.filter(isInstant).reduce((s, r) => s + rev(r), 0),
+        mgdRev: scoped.filter(r => !isInstant(r)).reduce((s, r) => s + rev(r), 0),
+        sites: new Set(scoped.map(r => (r['Facility'] || '') + '|' + (r['Location'] || ''))).size,
+        byV: {},
+        topSites: [],
+      };
+
+      VERTICALS.forEach(v => a.byV[v] = { bookings: 0, canceled: 0, revenue: 0, instant: 0, sites: new Set() });
+      const bySite = {};
+      scoped.forEach(r => {
+        const v = verticalOf(r['Site Type']);
+        if (!a.byV[v]) a.byV[v] = { bookings: 0, canceled: 0, revenue: 0, instant: 0, sites: new Set() };
+        const g = a.byV[v];
+        g.bookings++; g.revenue += rev(r);
+        if (isCanceled(r)) g.canceled++;
+        if (isInstant(r)) g.instant++;
+        g.sites.add((r['Facility'] || '') + '|' + (r['Location'] || ''));
+
+        const key = (r['Facility'] || '—') + '||' + (r['Location'] || '');
+        if (!bySite[key]) bySite[key] = { facility: r['Facility'] || '—', location: r['Location'] || '', type: r['Site Type'] || '', bookings: 0, canceled: 0, revenue: 0 };
+        bySite[key].bookings++; bySite[key].revenue += rev(r);
+        if (isCanceled(r)) bySite[key].canceled++;
+      });
+      a.topType = Object.keys(a.byV).filter(v => a.byV[v].bookings).sort((x, y) => a.byV[y].revenue - a.byV[x].revenue)[0] || '—';
+      a.topSites = Object.values(bySite).sort((x, y) => y.revenue - x.revenue).slice(0, 10);
+      return a;
+    }
+
     function Toolbar(props) {
       const backHref = '/' + CFG.slug + (CFG.token ? '?token=' + encodeURIComponent(CFG.token) : '');
       return e('div', { className: 'toolbar' },
@@ -212,21 +269,22 @@
         e('button', { onClick: props.thisYear }, 'This Year'),
         e('button', { className: 'btn-run', onClick: props.run }, '▶ Run Report'),
         e('span', { className: 'toolbar-spacer' }),
-        e('span', { className: 'row-count' }, '— sites · — locations'),
+        e('span', { className: 'row-count' }, props.loading ? 'loading…' :
+          (props.count == null ? '' : props.count.toLocaleString() + ' bookings · ' + props.sites.toLocaleString() + ' sites')),
         e('button', { className: 'btn-pdf', disabled: true }, 'PDF'),
         e('button', { className: 'btn-excel', disabled: true }, 'Excel'),
       );
     }
 
-    function KpiCards() {
+    function KpiCards({ a }) {
       const cards = [
-        { label: 'Bookings', val: '—', cls: 'sc-blue', sub: 'all facility reservations' },
-        { label: 'Net Revenue', val: '—', cls: 'sc-green', sub: 'rentals + reservations' },
-        { label: 'Instant-Book', val: '—', cls: 'sc-purple', sub: '—% of bookings / revenue' },
-        { label: 'Managed', val: '—', cls: 'sc-amber', sub: 'staff-approved reservations' },
-        { label: 'Cancellation Rate', val: '—', cls: 'sc-red', sub: 'canceled / all bookings' },
-        { label: 'Top Site Type', val: '—', cls: 'sc-muted', sub: 'by revenue' },
-        { label: 'Active Sites', val: '—', cls: 'sc-muted', sub: 'across all locations' },
+        { label: 'Bookings', val: a.bookings.toLocaleString(), cls: 'sc-blue', sub: 'facility reservations in view' },
+        { label: 'Net Revenue', val: money(a.revenue), cls: 'sc-green', sub: 'excludes canceled' },
+        { label: 'Instant-Book', val: a.bookings ? pct(a.instant, a.bookings) : '—', cls: 'sc-purple', sub: a.instant.toLocaleString() + ' bkgs · ' + money(a.instRev) },
+        { label: 'Managed', val: a.bookings ? pct(a.managed, a.bookings) : '—', cls: 'sc-amber', sub: a.managed.toLocaleString() + ' bkgs · ' + money(a.mgdRev) },
+        { label: 'Cancellation Rate', val: a.bookings ? pct(a.canceled, a.bookings) : '—', cls: 'sc-red', sub: a.canceled.toLocaleString() + ' of ' + a.bookings.toLocaleString() + ' canceled' },
+        { label: 'Top Site Type', val: a.topType, cls: 'sc-muted', sub: 'by revenue' },
+        { label: 'Active Sites', val: a.sites.toLocaleString(), cls: 'sc-muted', sub: 'with bookings in view' },
       ];
       return e('div', { className: 'sum-cards' },
         cards.map((c, i) => e('div', { className: 'sum-card', key: i },
@@ -237,50 +295,56 @@
       );
     }
 
-    function SummaryTab() {
-      const siteTypes = ['Camping', 'Golf', 'Pool / Aquatics', 'Courts & Fields', 'Pavilions & Shelters'];
+    function SummaryTab({ rows, err, statusSel, typeSel }) {
+      if (err) return e('div', { className: 'empty' },
+        e('div', { className: 'em-icon' }, '⚠️'),
+        e('div', { className: 'em-title' }, 'Could not load facility data'),
+        e('div', { className: 'em-sub' }, String(err)));
+      if (rows === null) return e('div', { className: 'empty' },
+        e('div', { className: 'em-title', style: { color: '#9ca3af' } }, 'Loading facility data…'),
+        e('div', { className: 'fac-spin' }));
+      const a = aggregate(rows, statusSel, typeSel);
+      if (!a.bookings) return e('div', { className: 'empty' },
+        e('div', { className: 'em-icon' }, '🗓️'),
+        e('div', { className: 'em-title' }, 'No facility bookings in this range'),
+        e('div', { className: 'em-sub' }, 'Try a wider date range, or clear the site-type / status filters.'));
+
+      const seg = (n, color, label) => n > 0 ? e('div', {
+        className: 'seg', style: { width: (n / a.bookings * 100) + '%', background: color }
+      }, (n / a.bookings >= 0.08 ? label : '')) : null;
+
       return e('div', null,
-        e(KpiCards),
-        // Instant-book vs Managed band (the marquee split)
+        e(KpiCards, { a }),
+        // Reservation mix band (the marquee split)
         e('div', { className: 'band' },
           e('div', { className: 'band-head' },
             e('div', { className: 'band-title' }, '⚙️ RESERVATION MIX ', e('span', { className: 'sub' }, 'instant-book vs. staff-managed')),
-            e('a', { className: 'band-link', href: '#' }, 'View breakdown →'),
           ),
           e('div', { className: 'band-metrics' },
-            e('div', { className: 'band-metric' }, e('div', { className: 'bm-val sc-purple' }, '—%'), e('div', { className: 'bm-lbl' }, 'Instant-book')),
-            e('div', { className: 'band-metric' }, e('div', { className: 'bm-val sc-amber' }, '—%'), e('div', { className: 'bm-lbl' }, 'Managed')),
-            e('div', { className: 'band-metric' }, e('div', { className: 'bm-val sc-green' }, '$—'), e('div', { className: 'bm-lbl' }, 'Instant-book revenue')),
-            e('div', { className: 'band-metric' }, e('div', { className: 'bm-val sc-green' }, '$—'), e('div', { className: 'bm-lbl' }, 'Managed revenue')),
+            e('div', { className: 'band-metric' }, e('div', { className: 'bm-val sc-purple' }, pct(a.instant, a.bookings)), e('div', { className: 'bm-lbl' }, 'Instant-book')),
+            e('div', { className: 'band-metric' }, e('div', { className: 'bm-val sc-amber' }, pct(a.managed, a.bookings)), e('div', { className: 'bm-lbl' }, 'Managed')),
+            e('div', { className: 'band-metric' }, e('div', { className: 'bm-val sc-green' }, money(a.instRev)), e('div', { className: 'bm-lbl' }, 'Instant-book revenue')),
+            e('div', { className: 'band-metric' }, e('div', { className: 'bm-val sc-green' }, money(a.mgdRev)), e('div', { className: 'bm-lbl' }, 'Managed revenue')),
           ),
         ),
-        // Stacked bar placeholder
+        // Booking mix bar (instant vs managed)
         e('div', { className: 'sum-bar-wrap' },
           e('div', { className: 'sum-bar-label' }, 'Booking mix'),
-          e('div', { className: 'sum-bar' },
-            e('div', { className: 'seg', style: { width: '55%', background: '#7c3aed' } }, 'Instant-book'),
-            e('div', { className: 'seg', style: { width: '45%', background: '#d97706' } }, 'Managed'),
-          ),
+          e('div', { className: 'sum-bar' }, seg(a.instant, '#7c3aed', 'Instant-book'), seg(a.managed, '#d97706', 'Managed')),
           e('div', { className: 'sum-legend' },
-            e('span', null, e('span', { className: 'sum-dot', style: { background: '#7c3aed' } }), 'Instant-book'),
-            e('span', null, e('span', { className: 'sum-dot', style: { background: '#d97706' } }), 'Managed'),
-          ),
+            e('span', null, e('span', { className: 'sum-dot', style: { background: '#7c3aed' } }), 'Instant-book (' + a.instant + ')'),
+            e('span', null, e('span', { className: 'sum-dot', style: { background: '#d97706' } }), 'Managed (' + a.managed + ')')),
         ),
         // Booking status mix (surfaces cancellations)
         e('div', { className: 'sum-bar-wrap' },
           e('div', { className: 'sum-bar-label' }, 'Booking status mix'),
-          e('div', { className: 'sum-bar' },
-            e('div', { className: 'seg', style: { width: '62%', background: '#16a34a' } }, 'Confirmed'),
-            e('div', { className: 'seg', style: { width: '15%', background: '#2563eb' } }, 'In-progress'),
-            e('div', { className: 'seg', style: { width: '23%', background: '#dc2626' } }, 'Canceled'),
-          ),
+          e('div', { className: 'sum-bar' }, seg(a.confirmed, '#16a34a', 'Confirmed'), seg(a.inprog, '#2563eb', 'In-progress'), seg(a.canceled, '#dc2626', 'Canceled')),
           e('div', { className: 'sum-legend' },
-            e('span', null, e('span', { className: 'sum-dot', style: { background: '#16a34a' } }), 'Confirmed'),
-            e('span', null, e('span', { className: 'sum-dot', style: { background: '#2563eb' } }), 'In-progress'),
-            e('span', null, e('span', { className: 'sum-dot', style: { background: '#dc2626' } }), 'Canceled'),
-          ),
+            e('span', null, e('span', { className: 'sum-dot', style: { background: '#16a34a' } }), 'Confirmed (' + a.confirmed + ')'),
+            e('span', null, e('span', { className: 'sum-dot', style: { background: '#2563eb' } }), 'In-progress (' + a.inprog + ')'),
+            e('span', null, e('span', { className: 'sum-dot', style: { background: '#dc2626' } }), 'Canceled (' + a.canceled + ')')),
         ),
-        // Revenue by site type
+        // Revenue by site type (verticals)
         e('table', { className: 'sum-cat-table' },
           e('caption', null, 'Revenue by site type'),
           e('thead', null, e('tr', null,
@@ -292,28 +356,31 @@
             e('th', { className: 'num' }, '% instant-book'),
           )),
           e('tbody', null,
-            siteTypes.map((t, i) => e('tr', { key: i },
-              e('td', null, t),
-              e('td', { className: 'num' }, '—'),
-              e('td', { className: 'num' }, '—'),
-              e('td', { className: 'num' }, '—'),
-              e('td', { className: 'num' }, '—'),
-              e('td', { className: 'num' }, '—'),
-            )),
+            VERTICALS.filter(v => a.byV[v] && a.byV[v].bookings).map((v, i) => {
+              const g = a.byV[v];
+              return e('tr', { key: i },
+                e('td', null, v),
+                e('td', { className: 'num' }, g.sites.size),
+                e('td', { className: 'num' }, g.bookings),
+                e('td', { className: 'num' }, pct(g.canceled, g.bookings)),
+                e('td', { className: 'num' }, money(g.revenue)),
+                e('td', { className: 'num' }, pct(g.instant, g.bookings)),
+              );
+            }),
             e('tr', { className: 'totals-row' },
               e('td', null, 'Total'),
-              e('td', { className: 'num' }, '—'),
-              e('td', { className: 'num' }, '—'),
-              e('td', { className: 'num' }, '—'),
-              e('td', { className: 'num' }, '—'),
-              e('td', { className: 'num' }, '—'),
+              e('td', { className: 'num' }, a.sites),
+              e('td', { className: 'num' }, a.bookings),
+              e('td', { className: 'num' }, pct(a.canceled, a.bookings)),
+              e('td', { className: 'num' }, money(a.revenue)),
+              e('td', { className: 'num' }, pct(a.instant, a.bookings)),
             ),
           ),
         ),
         // Top sites by revenue (with cancellation red-flag)
         e('table', { className: 'sum-cat-table' },
           e('caption', null, 'Top sites by revenue ',
-            e('span', { style: { fontWeight: 400, color: '#9ca3af', fontSize: 11 } }, '· ', e('span', { className: 'flag' }, '⚠ HIGH CANCEL'), ' flags at-risk sites')),
+            e('span', { style: { fontWeight: 400, color: '#9ca3af', fontSize: 11 } }, '· ', e('span', { className: 'flag' }, '⚠ HIGH CANCEL'), ' ≥' + HIGH_CANCEL + '% canceled')),
           e('thead', null, e('tr', null,
             e('th', null, 'Site'),
             e('th', null, 'Type'),
@@ -323,17 +390,20 @@
             e('th', { className: 'num' }, 'Net revenue'),
           )),
           e('tbody', null,
-            [0, 1, 2, 3, 4].map(i => e('tr', { key: i },
-              e('td', null, '—'),
-              e('td', null, e('span', { className: 'sum-badge' }, '—')),
-              e('td', null, '—'),
-              e('td', { className: 'num' }, '—'),
-              e('td', { className: 'num' }, '—'),
-              e('td', { className: 'num' }, '—'),
-            )),
+            a.topSites.map((s, i) => {
+              const crPct = s.bookings ? (s.canceled / s.bookings) * 100 : 0;
+              return e('tr', { key: i },
+                e('td', null, s.facility, crPct >= HIGH_CANCEL ? e('span', { className: 'flag', style: { marginLeft: 6 } }, '⚠') : null),
+                e('td', null, e('span', { className: 'sum-badge' }, verticalOf(s.type))),
+                e('td', null, s.location),
+                e('td', { className: 'num' }, s.bookings),
+                e('td', { className: 'num' }, pct(s.canceled, s.bookings)),
+                e('td', { className: 'num' }, money(s.revenue)),
+              );
+            }),
           ),
         ),
-        e('div', { className: 'section-note' }, 'Summary layout mirrors the Programs report · filters (site type · status) and metrics wire to live facility data in the next build.'),
+        e('div', { className: 'section-note' }, 'Live facility data · ' + rows.length.toLocaleString() + ' bookings in range · metrics update with the filters above.'),
       );
     }
 
@@ -343,9 +413,9 @@
         e('div', { className: 'em-icon' }, props.icon || '📈'),
         e('div', { className: 'em-title' }, props.label),
         e('div', { className: 'em-sub' }, isUtil
-          ? 'The existing Court Utilization report folds in here as a sub-tab — utilization %, reserved hours by court, split by customer / program / closure.'
-          : ('A ' + props.label + '-specific view of facility bookings, availability, and revenue will live on this tab.')),
-        e('div', { className: 'section-note' }, 'Framework stub — not yet wired to data.'),
+          ? 'The existing Court Utilization report folds in here as a sub-tab next — utilization %, reserved hours by court, split by customer / program / closure.'
+          : ('A ' + props.label + '-specific view of facility bookings, availability, and revenue lands on this tab next.')),
+        e('div', { className: 'section-note' }, 'Coming in the next update — the Summary tab is live on real data now.'),
       );
     }
 
@@ -359,18 +429,35 @@
       });
       const [statusSel, setStatusSel] = React.useState(['confirmed', 'in-progress', 'canceled']);
       const [typeSel, setTypeSel] = React.useState([]); // [] = all site types
-      const setThisMonth = () => { setStart(fmtDate(monthStart(now))); setEnd(fmtDate(monthEnd(now))); };
-      const setLastMonth = () => { const d = new Date(now.getFullYear(), now.getMonth() - 1, 1); setStart(fmtDate(monthStart(d))); setEnd(fmtDate(monthEnd(d))); };
-      const setThisYear = () => { setStart(fmtDate(new Date(now.getFullYear(), 0, 1))); setEnd(fmtDate(new Date(now.getFullYear(), 11, 31))); };
+      const [rows, setRows] = React.useState(null);      // null = loading
+      const [err, setErr] = React.useState(null);
+
+      function load(s, en) {
+        const sd = s || start, ed = en || end;
+        setRows(null); setErr(null);
+        const tok = CFG.token ? '&token=' + encodeURIComponent(CFG.token) : '';
+        fetch('/' + CFG.slug + '/facilities/api/summary?start_date=' + sd + '&end_date=' + ed + tok)
+          .then(r => r.json())
+          .then(d => { if (d && d.error) { setErr(d.error); setRows([]); } else { setRows((d && d.rows) || []); } })
+          .catch(er => { setErr(er.message); setRows([]); });
+      }
+      React.useEffect(() => { load(); }, []); // initial
+
+      const runRange = (s, en) => { setStart(s); setEnd(en); load(s, en); };
+      const setThisMonth = () => runRange(fmtDate(monthStart(now)), fmtDate(monthEnd(now)));
+      const setLastMonth = () => { const d = new Date(now.getFullYear(), now.getMonth() - 1, 1); runRange(fmtDate(monthStart(d)), fmtDate(monthEnd(d))); };
+      const setThisYear = () => runRange(fmtDate(new Date(now.getFullYear(), 0, 1)), fmtDate(new Date(now.getFullYear(), 11, 31)));
 
       const fmtRange = (s, en) => {
         const o = { year: 'numeric', month: 'long', day: 'numeric' };
         return new Date(s + 'T00:00:00').toLocaleDateString('en-US', o) + ' – ' + new Date(en + 'T00:00:00').toLocaleDateString('en-US', o);
       };
       const active = TABS.find(t => t.key === tab) || TABS[0];
+      const count = rows ? rows.length : null;
+      const siteCount = rows ? new Set(rows.map(r => (r['Facility'] || '') + '|' + (r['Location'] || ''))).size : 0;
 
       return e(React.Fragment, null,
-        e(Toolbar, { start, end, setStart, setEnd, thisMonth: setThisMonth, lastMonth: setLastMonth, thisYear: setThisYear, run: () => {} }),
+        e(Toolbar, { start, end, setStart, setEnd, thisMonth: setThisMonth, lastMonth: setLastMonth, thisYear: setThisYear, run: () => load(), loading: rows === null, count, sites: siteCount }),
         e('div', { className: 'page' },
           e('div', { className: 'report-header' },
             e('div', { className: 'report-header-left' },
@@ -385,8 +472,8 @@
             ),
           ),
           e('div', { className: 'stub-banner' },
-            e('strong', null, 'Framework preview.'),
-            ' This is the new Facilities hub scaffold — a Programs-style Summary plus vertical sub-tabs (Court Utilization folds in here). Metrics are placeholders until the data layer is wired.'
+            e('strong', null, 'Summary is live on real facility data.'),
+            ' The Court Utilization, Camping, Golf, and Pool/Aquatics sub-tabs are being wired next.'
           ),
           e('div', { className: 'filters' },
             e(StatusChips, { sel: statusSel, setSel: setStatusSel }),
@@ -405,7 +492,9 @@
               },
             }, t.icon ? e('span', null, t.icon) : null, t.label)),
           ),
-          tab === 'summary' ? e(SummaryTab) : e(VerticalTab, { tabKey: active.key, label: active.label, icon: active.icon }),
+          tab === 'summary'
+            ? e(SummaryTab, { rows, err, statusSel, typeSel })
+            : e(VerticalTab, { tabKey: active.key, label: active.label, icon: active.icon }),
         ),
       );
     }
