@@ -6,6 +6,7 @@
   <title>Facilities</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: 'Inter', system-ui, -apple-system, sans-serif; font-size: 12px; color: #1a1a1a; background: #f5f4f1; line-height: 1.35; }
@@ -93,10 +94,6 @@
     .empty .em-title { font-size: 16px; font-weight: 700; color: #6b7280; margin-bottom: 6px; }
     .empty .em-sub { font-size: 12.5px; max-width: 460px; margin: 0 auto; line-height: 1.6; }
     .section-note { font-size: 11px; color: #9ca3af; margin-top: 18px; text-align: center; }
-    /* Court Utilization sub-tab: full report embedded chromeless via iframe. Negative
-       margins let it use the page's full width; the iframe self-sizes via postMessage. */
-    .cu-embed { margin: -4px -12px 0; }
-    .cu-embed iframe { width: 100%; border: none; display: block; }
     /* Per-vertical monthly trend */
     .vtrend-wrap { margin: 18px 0 8px; }
     .vtrend { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; }
@@ -126,6 +123,74 @@
     .dd-actions { display: flex; justify-content: space-between; padding: 7px 8px 3px; border-top: 1px solid #f0f0f0; margin-top: 4px; }
     .dd-actions button { background: none; border: none; color: #0d9488; font-size: 11px; font-weight: 700; cursor: pointer; }
     .flag { display: inline-flex; align-items: center; gap: 3px; font-size: 9px; font-weight: 800; letter-spacing: .3px; padding: 1px 6px; border-radius: 3px; background: #fef2f2; color: #b91c1c; }
+
+    /* ── Court Utilization (native port) — all scoped under .court-native ── */
+    .court-native { margin-top: 4px; }
+    .court-native .kpi-card { flex: 1; min-width: 140px; background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px 16px; }
+    .court-native .kpi-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 4px; }
+    .court-native .kpi-value { font-size: 24px; font-weight: 800; color: #1e1b4b; line-height: 1.1; }
+    .court-native .kpi-sub { font-size: 11px; color: #9ca3af; margin-top: 4px; }
+    .court-native .toggle-row { display: flex; gap: 18px; align-items: center; flex-wrap: wrap; padding: 10px 12px; background: #fafaf8; border: 1px solid #eee; border-radius: 6px; margin: 12px 0 14px; }
+    .court-native .toggle-row label { font-size: 12px; display: flex; gap: 6px; align-items: center; cursor: pointer; user-select: none; }
+    .court-native .toggle-row input[type="number"] { width: 58px; margin-left: 6px; }
+    .court-native .cu-tabs { display: flex; gap: 0; margin: 16px 0 0; border-bottom: 2px solid #e5e7eb; }
+    .court-native .cu-tab { padding: 8px 20px; font-size: 13px; font-weight: 600; color: #6b7280; cursor: pointer; border: none; border-bottom: 2px solid transparent; margin-bottom: -2px; background: none; font-family: inherit; }
+    .court-native .cu-tab:hover { color: #374151; }
+    .court-native .cu-tab.active { color: #0d9488; border-bottom-color: #0d9488; }
+    /* Per-court utilization bars (replaces Chart.js) */
+    .court-native .cu-bars { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+    .court-native .cu-bar-row { display: grid; grid-template-columns: minmax(150px, 260px) 1fr 74px; align-items: center; gap: 10px; font-size: 12px; }
+    .court-native .cu-bar-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #374151; }
+    .court-native .cu-bar-track { position: relative; background: #f1efe9; border-radius: 4px; height: 18px; overflow: hidden; display: flex; }
+    .court-native .cu-bar-seg { height: 100%; }
+    .court-native .cu-bar-val { text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; color: #111827; }
+    .court-native .cu-bar-sub { text-align: right; font-size: 10px; color: #9ca3af; font-variant-numeric: tabular-nums; }
+    .court-native .cu-legend { display: flex; gap: 14px; justify-content: center; margin: 6px 0 2px; font-size: 11px; color: #666; flex-wrap: wrap; }
+    .court-native .cu-legend .sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
+    /* Map */
+    .court-native .cu-map-wrap { height: 520px; border-radius: 8px; overflow: hidden; border: 1px solid #e5e7eb; margin-top: 12px; }
+    .court-native .cu-map-legend { display: flex; gap: 16px; align-items: center; padding: 10px 0; font-size: 11px; color: #666; flex-wrap: wrap; }
+    .court-native .cu-map-dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; margin-right: 4px; vertical-align: -1px; }
+    .court-native .cu-popup-title { font-weight: 700; font-size: 13px; color: #1e1b4b; margin-bottom: 8px; }
+    .court-native .cu-popup-bar-wrap { margin: 4px 0; }
+    .court-native .cu-popup-bar-label { font-size: 11px; color: #374151; margin-bottom: 2px; display: flex; justify-content: space-between; }
+    .court-native .cu-popup-bar-track { height: 8px; background: #f3f4f6; border-radius: 4px; overflow: hidden; }
+    .court-native .cu-popup-bar-fill { height: 100%; border-radius: 4px; }
+    .court-native .cu-popup-stats { font-size: 10px; color: #9ca3af; margin-top: 6px; }
+    /* Day-of-week heatmap */
+    .court-native .heatmap-section { margin-top: 22px; }
+    .court-native .heatmap-title { font-size: 13px; font-weight: 700; margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
+    .court-native .heatmap-title .subtitle { font-weight: 400; color: #888; font-size: 11px; }
+    .court-native .heatmap-grid { display: grid; grid-template-columns: minmax(180px, 1fr) repeat(7, 1fr); gap: 2px; font-size: 11px; }
+    .court-native .heatmap-hdr { text-align: center; font-weight: 700; font-size: 10px; text-transform: uppercase; letter-spacing: .5px; color: #888; padding: 4px 2px; }
+    .court-native .heatmap-label { padding: 5px 8px; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; gap: 4px; border-radius: 3px; background: #f8f8f6; }
+    .court-native .heatmap-cell { text-align: center; padding: 5px 2px; border-radius: 3px; font-family: 'IBM Plex Mono', monospace; font-size: 10px; font-weight: 600; }
+    .court-native .heatmap-legend { display: flex; align-items: center; gap: 12px; margin-top: 8px; font-size: 10px; color: #888; flex-wrap: wrap; }
+    .court-native .heatmap-legend-swatch { display: inline-block; width: 14px; height: 14px; border-radius: 3px; vertical-align: middle; margin-right: 3px; }
+    /* Loading / error */
+    .court-native .cu-loading { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; color: #9ca3af; padding: 60px 16px; font-size: 13px; }
+    .court-native .cu-error { color: #b91c1c; background: #fef2f2; border: 1px solid #fecaca; padding: 10px 14px; border-radius: 5px; font-size: 12px; margin: 10px 0; }
+    /* AI insights */
+    .court-native .insights-section { margin: 14px 0 18px; }
+    .court-native .insights-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+    .court-native .insights-btn { display: inline-flex; align-items: center; gap: 6px; background: linear-gradient(135deg, #6366f1, #8b5cf6); color: #fff; border: none; border-radius: 8px; padding: 10px 20px; font-size: 13px; font-weight: 600; font-family: inherit; cursor: pointer; box-shadow: 0 2px 12px rgba(99,102,241,.3); }
+    .court-native .insights-btn:hover:not(:disabled) { background: linear-gradient(135deg, #4f46e5, #7c3aed); }
+    .court-native .insights-btn:disabled { opacity: .6; cursor: default; }
+    .court-native .insights-sub { font-size: 11.5px; color: #9ca3af; }
+    .court-native .insights-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; }
+    .court-native .insight-card { border: 1px solid #e5e7eb; border-left-width: 4px; border-radius: 8px; padding: 14px 16px; background: #fff; }
+    .court-native .insight-type { font-size: 10px; font-weight: 700; letter-spacing: .6px; text-transform: uppercase; margin-bottom: 6px; }
+    .court-native .insight-title { font-size: 14px; font-weight: 700; color: #111827; margin-bottom: 5px; line-height: 1.3; }
+    .court-native .insight-detail { font-size: 12.5px; color: #374151; line-height: 1.45; }
+    .court-native .insight-action { font-size: 12px; color: #6b7280; margin-top: 8px; font-weight: 500; }
+    .court-native .insight-opportunity { border-left-color: #10b981; } .court-native .insight-opportunity .insight-type { color: #059669; }
+    .court-native .insight-risk { border-left-color: #f59e0b; } .court-native .insight-risk .insight-type { color: #d97706; }
+    .court-native .insight-signal { border-left-color: #6366f1; } .court-native .insight-signal .insight-type { color: #4f46e5; }
+    .court-native .insights-feedback { display: flex; align-items: center; gap: 8px; margin-top: 12px; padding: 8px 4px; font-size: 13px; color: #666; }
+    .court-native .insights-feedback button { background: none; border: 1px solid #e5e7eb; border-radius: 6px; padding: 4px 10px; cursor: pointer; font-size: 13px; }
+    .court-native .insights-feedback button:hover { background: #f3f4f6; }
+    .court-native .insights-feedback .fb-thanks { color: #10b981; font-weight: 600; }
+    .court-native .cu-schedule-badge { background: #dcfce7; color: #166534; border-radius: 10px; padding: 1px 8px; font-weight: 600; font-size: 10px; }
   </style>
 </head>
 <body>
@@ -134,6 +199,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
   <script type="text/babel">
     const CFG = window.ORG_CONFIG || {};
     const e = React.createElement;
@@ -565,30 +631,469 @@
       );
     }
 
-    // Court Utilization folds in as a sub-tab: the existing, full Court
-    // Utilization report is embedded chromeless (?embed=1) and driven by this
-    // hub's date range. It reports its content height back so the iframe sizes
-    // itself with no inner scrollbar. Reusing the page verbatim means one code
-    // path to maintain — nothing re-implemented, nothing new to break.
-    function CourtUtilizationTab({ start, end }) {
-      const [h, setH] = React.useState(760);
+    // ── Court Utilization — native view (ported from court-utilization.html) ──
+    // All metrics/info from the standalone Court Utilization report, rendered
+    // natively in the hub's design. Reuses the existing court data endpoints
+    // (/api/data, /api/schedules, /api/insights) — no new SQL. The computation
+    // is copied verbatim from the standalone report to guarantee parity.
+    const withCuToken = url => CFG.token ? url + (url.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(CFG.token) : url;
+
+    // Normalize court rows (snake_case or Title Case) — verbatim from the report.
+    function cuNormalize(rows) {
+      return (rows || []).map(r => ({
+        courtName:        r.court_name        || r['Court Name']        || '',
+        locationName:     r.location_name     || r['Location Name']     || '',
+        facilityRentalId: r.facility_rental_id|| r['Facility Rental Id']|| '',
+        usageCategory:    r.usage_category    || r['Usage Category']    || 'Customer Booking',
+        bookingSource:    r.booking_source    || r['Booking Source']    || '',
+        localDate:        r.local_date        || '',
+        durationHours:    Number(r.duration_hours || 0),
+      })).filter(r => r.courtName);
+    }
+    const CU_UTIL_COLOR = pct => pct >= 70 ? '#dc2626' : pct >= 50 ? '#ea580c' : pct >= 30 ? '#f59e0b' : pct >= 15 ? '#16a34a' : '#94a3b8';
+    const CU_MAP_COLOR  = pct => pct >= 70 ? '#dc2626' : pct >= 40 ? '#f59e0b' : pct >= 15 ? '#22c55e' : '#94a3b8';
+    const CU_DOW = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+
+    // Location multiselect (hub dropdown styling)
+    function CourtLocationFilter({ all, selected, onChange }) {
+      const [open, setOpen] = React.useState(false);
+      const allSel = selected.length === all.length;
+      const label = allSel ? 'All locations' : selected.length + ' of ' + all.length;
+      const toggle = loc => {
+        const set = new Set(selected);
+        if (set.has(loc)) set.delete(loc); else set.add(loc);
+        onChange(all.filter(l => set.has(l)));
+      };
+      return e('div', { className: 'dd' },
+        e('button', { className: 'dd-btn', onClick: () => setOpen(o => !o) }, '📍 ' + label, e('span', null, '▾')),
+        open ? e('div', { className: 'dd-panel' },
+          e('div', { className: 'dd-actions', style: { borderTop: 'none', borderBottom: '1px solid #f0f0f0', marginBottom: 4 } },
+            e('button', { onClick: () => onChange(all.slice()) }, 'All'),
+            e('button', { onClick: () => onChange([]) }, 'None')),
+          all.map(loc => e('label', { className: 'dd-opt', key: loc },
+            e('input', { type: 'checkbox', checked: selected.includes(loc), onChange: () => toggle(loc) }),
+            e('span', { style: { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, loc))),
+        ) : null,
+      );
+    }
+
+    // Leaflet utilization map by location (ported from the report's MapView)
+    function CourtMap({ grouped }) {
+      const mapRef = React.useRef(null);
+      const mapInst = React.useRef(null);
+      const cacheRef = React.useRef({});
+      const [geocoded, setGeocoded] = React.useState(null);
+
+      const locations = React.useMemo(() => {
+        const byLoc = {};
+        grouped.forEach(g => {
+          const loc = g.label.split(' — ')[0] || g.label;
+          if (!byLoc[loc]) byLoc[loc] = { name: loc, courts: [], totalUsed: 0, totalAvail: 0 };
+          byLoc[loc].courts.push(g);
+          byLoc[loc].totalUsed += g.customerHrs + g.programHrs;
+          byLoc[loc].totalAvail += g.availHrs;
+        });
+        return Object.values(byLoc).map(l => { l.utilPct = l.totalAvail > 0 ? Math.round(l.totalUsed / l.totalAvail * 100) : 0; return l; });
+      }, [grouped]);
+
       React.useEffect(() => {
-        const onMsg = ev => {
-          const d = ev.data;
-          if (d && d.type === 'cu-embed-height' && typeof d.height === 'number' && isFinite(d.height)) {
-            setH(Math.max(400, Math.ceil(d.height) + 8));
+        if (!locations.length) return;
+        const cache = cacheRef.current;
+        let cityName = CFG.mapCity || '';
+        if (!cityName) cityName = (CFG.displayName || '').replace(/\s*(Parks|Recreation|Department|City of|Town of).*$/i, '').replace(/^(City of|Town of)\s*/i, '').trim();
+        let vb = '';
+        const oc = CFG.coords || null;
+        if (oc) { const d = 0.15; vb = '&viewbox=' + (oc.lon - d) + ',' + (oc.lat + d) + ',' + (oc.lon + d) + ',' + (oc.lat - d); }
+        let idx = 0; const results = [];
+        const next = () => {
+          if (idx >= locations.length) {
+            for (let i = 0; i < results.length; i++) for (let j = i + 1; j < results.length; j++) {
+              const dl = results[i].lat - results[j].lat, dg = results[i].lng - results[j].lng;
+              if (Math.sqrt(dl * dl + dg * dg) < 0.003) { const a = j * 2.2; results[j].lat += Math.cos(a) * 0.003; results[j].lng += Math.sin(a) * 0.003; }
+            }
+            setGeocoded(results); return;
           }
+          const loc = locations[idx]; idx++;
+          if (cache[loc.name]) { results.push(Object.assign({}, loc, cache[loc.name])); next(); return; }
+          const q = loc.name + (cityName ? ', ' + cityName : '');
+          setTimeout(() => {
+            fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&q=' + encodeURIComponent(q) + vb)
+              .then(r => r.json())
+              .then(data => {
+                if (data && data[0]) { const c = { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) }; cache[loc.name] = c; results.push(Object.assign({}, loc, c)); }
+                else if (oc) { const off = (results.length * 0.003) - 0.005; results.push(Object.assign({}, loc, { lat: oc.lat + off, lng: oc.lon + off })); }
+                next();
+              })
+              .catch(() => { if (oc) results.push(Object.assign({}, loc, { lat: oc.lat, lng: oc.lon })); next(); });
+          }, 1100);
         };
-        window.addEventListener('message', onMsg);
-        return () => window.removeEventListener('message', onMsg);
-      }, []);
-      const tok = CFG.token ? '&token=' + encodeURIComponent(CFG.token) : '';
-      const src = '/' + CFG.slug + '/court-utilization?embed=1&start_date=' + start + '&end_date=' + end + tok;
-      return e('div', { className: 'cu-embed' },
-        e('iframe', {
-          src, title: 'Court Utilization', loading: 'lazy',
-          style: { width: '100%', border: 'none', display: 'block', background: 'transparent', height: h + 'px' },
-        }),
+        next();
+      }, [locations]);
+
+      React.useEffect(() => {
+        if (!geocoded || !geocoded.length || !mapRef.current || typeof L === 'undefined') return;
+        if (mapInst.current) { mapInst.current.remove(); mapInst.current = null; }
+        const oc = CFG.coords || null;
+        const center = oc ? [oc.lat, oc.lon] : [geocoded[0].lat, geocoded[0].lng];
+        const map = L.map(mapRef.current).setView(center, 13);
+        mapInst.current = map;
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap', maxZoom: 18 }).addTo(map);
+        geocoded.forEach(loc => {
+          const radius = Math.max(18, Math.min(50, loc.courts.length * 12 + 10));
+          const color = CU_MAP_COLOR(loc.utilPct);
+          const circle = L.circleMarker([loc.lat, loc.lng], { radius, fillColor: color, color: '#fff', weight: 2, opacity: 1, fillOpacity: 0.8 }).addTo(map);
+          const bars = loc.courts.map(c => {
+            const cn = c.label.split(' — ')[1] || c.label;
+            const p = c.utilPct != null ? c.utilPct.toFixed(0) : 0;
+            const bc = CU_MAP_COLOR(p);
+            return '<div class="cu-popup-bar-wrap"><div class="cu-popup-bar-label"><span>' + cn + '</span><span style="font-weight:600;color:' + bc + '">' + p + '%</span></div><div class="cu-popup-bar-track"><div class="cu-popup-bar-fill" style="width:' + Math.min(p, 100) + '%;background:' + bc + '"></div></div></div>';
+          }).join('');
+          circle.bindPopup('<div style="min-width:220px;max-width:300px;max-height:320px;overflow-y:auto"><div class="cu-popup-title">' + loc.name + '</div>' + bars + '<div class="cu-popup-stats">' + loc.courts.length + ' court' + (loc.courts.length > 1 ? 's' : '') + ' • ' + Math.round(loc.totalUsed) + ' hrs used of ' + Math.round(loc.totalAvail) + ' available</div></div>', { maxWidth: 320 });
+          L.marker([loc.lat, loc.lng], { interactive: false, icon: L.divIcon({ className: '', html: '<div style="font-size:11px;font-weight:700;color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.5);text-align:center">' + loc.utilPct + '%</div>', iconSize: [40, 20], iconAnchor: [20, 10] }) }).addTo(map);
+        });
+        if (geocoded.length > 1) map.fitBounds(L.latLngBounds(geocoded.map(l => [l.lat, l.lng])), { padding: [40, 40] });
+        return () => { if (mapInst.current) { mapInst.current.remove(); mapInst.current = null; } };
+      }, [geocoded]);
+
+      if (!geocoded) return e('div', { className: 'cu-loading' }, e('div', { className: 'fac-spin' }), 'Geocoding ' + locations.length + ' location' + (locations.length > 1 ? 's' : '') + '…');
+      return e('div', null,
+        e('div', { className: 'cu-map-legend' },
+          e('span', null, e('span', { className: 'cu-map-dot', style: { background: '#dc2626' } }), '70%+ High'),
+          e('span', null, e('span', { className: 'cu-map-dot', style: { background: '#f59e0b' } }), '40-70% Medium'),
+          e('span', null, e('span', { className: 'cu-map-dot', style: { background: '#22c55e' } }), '15-40% Moderate'),
+          e('span', null, e('span', { className: 'cu-map-dot', style: { background: '#94a3b8' } }), '<15% Low'),
+          e('span', { style: { marginLeft: 'auto', fontSize: 10, color: '#bbb' } }, 'Click a location for court breakdown')),
+        e('div', { className: 'cu-map-wrap', ref: mapRef }),
+      );
+    }
+
+    function CourtUtilizationView({ start, end }) {
+      const slug = CFG.slug;
+      const [schedules, setSchedules] = React.useState(null);
+      const [schedMeta, setSchedMeta] = React.useState(null);
+      const [rows, setRows] = React.useState([]);
+      const [loading, setLoading] = React.useState(true);
+      const [error, setError] = React.useState(null);
+      const [loadedStart, setLoadedStart] = React.useState(null);
+      const [loadedEnd, setLoadedEnd] = React.useState(null);
+      const [selectedLocations, setSelectedLocations] = React.useState([]);
+      const [showInstant, setShowInstant] = React.useState(true);
+      const [showManaged, setShowManaged] = React.useState(true);
+      const [hrsPerDay, setHrsPerDay] = React.useState(16);
+      const [metric, setMetric] = React.useState('util');
+      const [ctab, setCtab] = React.useState('overview');
+      // insights
+      const [insights, setInsights] = React.useState(null);
+      const [insLoading, setInsLoading] = React.useState(false);
+      const [insError, setInsError] = React.useState(null);
+      const [insTrace, setInsTrace] = React.useState(null);
+      const [fbSent, setFbSent] = React.useState(false);
+      const [fbMode, setFbMode] = React.useState(null);
+      const [fbComment, setFbComment] = React.useState('');
+
+      // Schedules once on mount
+      React.useEffect(() => {
+        (async () => {
+          try {
+            const r = await fetch(withCuToken('/' + slug + '/court-utilization/api/schedules'));
+            if (!r.ok) throw new Error('schedules fetch failed');
+            const j = await r.json();
+            setSchedules(j.schedules || {});
+            setSchedMeta({ fallbackHrsPerDay: j.fallbackHrsPerDay || 12, matchedCount: j.matchedCount || 0, courtCount: j.courtCount || 0 });
+            if (j.fallbackHrsPerDay) setHrsPerDay(j.fallbackHrsPerDay);
+          } catch (er) { setSchedules({}); setSchedMeta({ fallbackHrsPerDay: 12, matchedCount: 0, courtCount: 0 }); }
+        })();
+      }, [slug]);
+
+      const load = React.useCallback(async (sd, ed) => {
+        setLoading(true); setError(null);
+        try {
+          const params = new URLSearchParams({ start_date: sd, end_date: ed });
+          const r = await fetch(withCuToken('/' + slug + '/court-utilization/api/data?' + params.toString()));
+          if (!r.ok) { const t = await r.text(); throw new Error(r.status + ': ' + t.slice(0, 160)); }
+          const j = await r.json();
+          setRows(Array.isArray(j) ? j : (j.rows || j.data || []));
+          setLoadedStart(sd); setLoadedEnd(ed);
+        } catch (er) { setError(String(er.message || er)); setRows([]); }
+        finally { setLoading(false); }
+      }, [slug]);
+
+      React.useEffect(() => { load(start, end); }, [start, end, load]);
+
+      // ── Derived (verbatim from the standalone report) ──
+      const normalized = React.useMemo(() => cuNormalize(rows), [rows]);
+      const allLocations = React.useMemo(() => Array.from(new Set(normalized.map(r => r.locationName).filter(Boolean))).sort(), [normalized]);
+      React.useEffect(() => { setSelectedLocations(allLocations); }, [allLocations]);
+
+      const daysInRange = React.useMemo(() => {
+        const s = loadedStart || start, en = loadedEnd || end;
+        if (!s || !en) return 1;
+        return Math.max(1, Math.round((new Date(en + 'T00:00:00') - new Date(s + 'T00:00:00')) / 86400000) + 1);
+      }, [loadedStart, loadedEnd, start, end]);
+
+      const dowCounts = React.useMemo(() => {
+        const s = loadedStart || start, en = loadedEnd || end;
+        if (!s || !en) return {};
+        const counts = {}; const cur = new Date(s + 'T12:00:00'); const stop = new Date(en + 'T12:00:00');
+        while (cur <= stop) { const jd = cur.getDay(); const dow = jd === 0 ? 7 : jd; counts[dow] = (counts[dow] || 0) + 1; cur.setDate(cur.getDate() + 1); }
+        return counts;
+      }, [loadedStart, loadedEnd, start, end]);
+
+      const filtered = React.useMemo(() => {
+        const locSet = new Set(selectedLocations);
+        return normalized.filter(r => locSet.has(r.locationName));
+      }, [normalized, selectedLocations]);
+
+      const computeCourtAvail = React.useCallback(label => {
+        if (schedules && schedules[label] && schedules[label].dailyHrs) {
+          const dh = schedules[label].dailyHrs; let total = 0;
+          for (let dow = 1; dow <= 7; dow++) total += (dh[dow] || 0) * (dowCounts[dow] || 0);
+          return { availHrs: total, source: 'schedule' };
+        }
+        return { availHrs: (Number(hrsPerDay) || 0) * daysInRange, source: 'fallback' };
+      }, [schedules, dowCounts, hrsPerDay, daysInRange]);
+
+      const grouped = React.useMemo(() => {
+        const byCourt = new Map();
+        for (const r of filtered) {
+          const label = r.locationName + ' — ' + r.courtName;
+          if (!byCourt.has(label)) byCourt.set(label, { label, location: r.locationName, court: r.courtName, customer: new Set(), program: new Set(), closure: new Set(), customerHrs: 0, programHrs: 0, closureHrs: 0 });
+          const g = byCourt.get(label); const hrs = r.durationHours || 0;
+          if (r.usageCategory === 'Closure / Block') { g.closure.add(r.facilityRentalId); g.closureHrs += hrs; }
+          else if (r.bookingSource === 'instant') { g.customer.add(r.facilityRentalId); g.customerHrs += hrs; }
+          else { g.program.add(r.facilityRentalId); g.programHrs += hrs; }
+        }
+        const arr = Array.from(byCourt.values()).map(g => {
+          const usedHrs = g.customerHrs + g.programHrs;
+          const avail = computeCourtAvail(g.label);
+          const pct = avail.availHrs > 0 ? (usedHrs / avail.availHrs) * 100 : null;
+          return Object.assign({}, g, { customer: g.customer.size, program: g.program.size, closure: g.closure.size, total: g.customer.size + g.program.size + g.closure.size, usedHrs, availHrs: avail.availHrs, availSource: avail.source, utilPct: pct, demand: pct >= 80 ? 'hot' : pct >= 50 ? 'warm' : null });
+        });
+        arr.sort((a, b) => a.label.localeCompare(b.label));
+        return arr;
+      }, [filtered, computeCourtAvail]);
+
+      const overallUtil = React.useMemo(() => {
+        if (!grouped.length) return null;
+        const used = grouped.reduce((s, g) => s + g.usedHrs, 0), avail = grouped.reduce((s, g) => s + g.availHrs, 0);
+        return avail > 0 ? (used / avail) * 100 : null;
+      }, [grouped]);
+
+      const scheduleStats = React.useMemo(() => {
+        let real = 0, fb = 0;
+        grouped.forEach(g => { if (g.availSource === 'schedule') real++; else fb++; });
+        return { real, fallback: fb, total: grouped.length };
+      }, [grouped]);
+
+      const stats = React.useMemo(() => ({
+        distinctFr: new Set(filtered.map(r => r.facilityRentalId).filter(Boolean)).size,
+        distinctCourts: new Set(filtered.map(r => r.locationName + '|' + r.courtName)).size,
+        reservationRows: filtered.length,
+        totalHours: filtered.reduce((s, r) => s + (r.durationHours || 0), 0),
+      }), [filtered]);
+
+      const dowHeatmap = React.useMemo(() => {
+        if (!grouped.length || !filtered.length) return [];
+        const courtDow = {};
+        for (const r of filtered) {
+          if (!r.localDate || !r.durationHours || r.usageCategory === 'Closure / Block') continue;
+          const label = r.locationName + ' — ' + r.courtName;
+          const jd = new Date(r.localDate + 'T12:00:00').getDay(); const dow = jd === 0 ? 7 : jd;
+          courtDow[label + '|' + dow] = (courtDow[label + '|' + dow] || 0) + r.durationHours;
+        }
+        const fb = Number(hrsPerDay) || 12;
+        return grouped.map(g => {
+          const cells = [];
+          for (let d = 1; d <= 7; d++) {
+            const used = courtDow[g.label + '|' + d] || 0;
+            const sched = schedules && schedules[g.label] && schedules[g.label].dailyHrs;
+            const hrsForDay = sched ? (sched[d] || 0) : fb;
+            const avail = hrsForDay * (dowCounts[d] || 0);
+            cells.push({ dow: d, used, avail, pct: avail > 0 ? (used / avail) * 100 : 0 });
+          }
+          return { label: g.label, court: g.court, demand: g.demand, utilPct: g.utilPct, cells };
+        });
+      }, [grouped, filtered, schedules, dowCounts, hrsPerDay]);
+
+      // Insights (reuse the report's endpoint + a compact aggregate blob)
+      const buildBlob = React.useCallback(() => {
+        const r1 = n => n == null ? null : Math.round(n * 10) / 10;
+        return {
+          period: { start: loadedStart || start, end: loadedEnd || end, days: daysInRange, hrsPerDayFallback: Number(hrsPerDay) || 0, scheduleSources: { real: scheduleStats.real, fallback: scheduleStats.fallback } },
+          overall: { utilizationPct: r1(overallUtil), courtsWithActivity: grouped.length, distinctBookings: stats.distinctFr, reservationRows: stats.reservationRows, totalHours: r1(stats.totalHours) },
+          courts: grouped.slice(0, 40).map(g => ({ label: g.label, location: g.location, court: g.court, bookings: g.total, utilizationPct: r1(g.utilPct), hoursUsed: r1(g.usedHrs), availHrs: r1(g.availHrs), availSource: g.availSource, customerBookings: g.customer, programBookings: g.program, closureBookings: g.closure })),
+          filtersActive: { showManaged, showInstant, locationsShown: selectedLocations.length + ' of ' + allLocations.length },
+        };
+      }, [grouped, overallUtil, stats, loadedStart, loadedEnd, start, end, daysInRange, hrsPerDay, scheduleStats, showManaged, showInstant, selectedLocations, allLocations]);
+
+      const getInsights = React.useCallback(async () => {
+        setInsLoading(true); setInsError(null); setInsights(null);
+        try {
+          const resp = await fetch(withCuToken('/' + slug + '/court-utilization/api/insights'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(buildBlob()) });
+          const j = await resp.json().catch(() => ({}));
+          if (!resp.ok || !j.ok) throw new Error(j.error || 'Request failed (' + resp.status + ')');
+          setInsights(j.insights || []); setInsTrace(j.traceId || null); setFbSent(false); setFbMode(null); setFbComment('');
+        } catch (er) { setInsError(er.message || 'Could not generate insights'); }
+        finally { setInsLoading(false); }
+      }, [buildBlob, slug]);
+
+      const sendFb = React.useCallback(score => {
+        if (!insTrace) return;
+        fetch(withCuToken('/' + slug + '/court-utilization/api/insights/score'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ traceId: insTrace, score, comment: score === 0 ? fbComment : '' }) }).catch(() => {});
+        setFbSent(true); setFbMode(null);
+      }, [insTrace, fbComment, slug]);
+
+      if (error) return e('div', { className: 'court-native' }, e('div', { className: 'cu-error' }, e('strong', null, 'Could not load court data: '), error));
+      if (loading && !grouped.length) return e('div', { className: 'court-native' }, e('div', { className: 'cu-loading' }, e('div', { className: 'fac-spin' }), 'Loading court utilization…'));
+
+      // KPI cards (hub sum-card style)
+      const kpis = [
+        { label: 'Court Utilization', val: overallUtil == null ? '—' : overallUtil.toFixed(0) + '%', cls: 'sc-purple' },
+        { label: 'Courts with Activity', val: stats.distinctCourts.toLocaleString(), cls: 'sc-green' },
+        { label: 'Distinct Bookings', val: stats.distinctFr.toLocaleString(), cls: 'sc-blue' },
+        { label: 'Reservation Rows', val: stats.reservationRows.toLocaleString(), cls: 'sc-muted' },
+        { label: 'Total Hours', val: stats.totalHours.toLocaleString(undefined, { maximumFractionDigits: 1 }), cls: 'sc-blue' },
+      ];
+
+      // Instant vs Leagues split
+      const totI = grouped.reduce((s, g) => s + g.customerHrs, 0);
+      const totM = grouped.reduce((s, g) => s + g.programHrs, 0);
+      const totA = totI + totM;
+      const cntI = grouped.reduce((s, g) => s + (g.customer || 0), 0);
+      const cntM = grouped.reduce((s, g) => s + (g.program || 0), 0);
+      const pI = totA > 0 ? Math.round(totI / totA * 100) : 0;
+      const pM = totA > 0 ? Math.round(totM / totA * 100) : 0;
+
+      // Per-court bars — value in the active metric, colored by utilization
+      const maxHrs = Math.max(1, ...grouped.map(g => g.customerHrs + g.programHrs));
+      const barFor = g => {
+        const iVal = showInstant ? (metric === 'util' ? (g.availHrs > 0 ? g.customerHrs / g.availHrs * 100 : 0) : g.customerHrs) : 0;
+        const mVal = showManaged ? (metric === 'util' ? (g.availHrs > 0 ? g.programHrs / g.availHrs * 100 : 0) : g.programHrs) : 0;
+        const denom = metric === 'util' ? 100 : maxHrs;
+        const col = CU_UTIL_COLOR(g.utilPct || 0);
+        const visHrs = (showInstant ? g.customerHrs : 0) + (showManaged ? g.programHrs : 0);
+        const visPct = g.availHrs > 0 ? (visHrs / g.availHrs) * 100 : 0;
+        return {
+          iW: Math.min(100, iVal / denom * 100), mW: Math.min(100, mVal / denom * 100), col,
+          headline: metric === 'util' ? (visPct > 0 ? Math.round(visPct) + '%' : '—') : (visHrs > 0 ? (visHrs >= 10 ? Math.round(visHrs) : Math.round(visHrs * 10) / 10) + 'h' : '—'),
+          sub: g.total + ' bkg' + (g.total === 1 ? '' : 's'),
+        };
+      };
+
+      return e('div', { className: 'court-native' },
+        // KPI row
+        e('div', { className: 'sum-cards' },
+          kpis.map((c, i) => e('div', { className: 'sum-card', key: i },
+            e('div', { className: 'sc-label' }, c.label),
+            e('div', { className: 'sc-val ' + c.cls }, c.val)))
+        ),
+        // Inner tabs (Overview / Map)
+        e('div', { className: 'cu-tabs' },
+          e('button', { className: 'cu-tab' + (ctab === 'overview' ? ' active' : ''), onClick: () => setCtab('overview') }, 'Overview'),
+          e('button', { className: 'cu-tab' + (ctab === 'map' ? ' active' : ''), onClick: () => setCtab('map') }, '🗺️ Map'),
+        ),
+        ctab === 'map'
+          ? (grouped.length ? e(CourtMap, { grouped }) : e('div', { className: 'cu-loading' }, 'No court activity to map in this range.'))
+          : e('div', null,
+              // Instant vs Leagues/Managed
+              grouped.length ? e('div', { style: { display: 'flex', gap: 10, marginTop: 12, flexWrap: 'wrap' } },
+                e('div', { className: 'kpi-card' }, e('div', { className: 'kpi-label', style: { color: '#2563eb' } }, 'Instant Bookings'), e('div', { className: 'kpi-value' }, cntI), e('div', { className: 'kpi-sub' }, Math.round(totI) + ' hrs (' + pI + '% of court time)')),
+                e('div', { className: 'kpi-card' }, e('div', { className: 'kpi-label', style: { color: '#f59e0b' } }, 'Leagues / Managed'), e('div', { className: 'kpi-value' }, cntM), e('div', { className: 'kpi-sub' }, Math.round(totM) + ' hrs (' + pM + '% of court time)')),
+                e('div', { className: 'kpi-card' }, e('div', { className: 'kpi-label', style: { color: '#6b7280' } }, 'Booking Mix'), e('div', { className: 'kpi-value', style: { fontSize: 20 } }, pI + '% / ' + pM + '%'), e('div', { className: 'kpi-sub' }, 'instant / managed')),
+              ) : null,
+              // Toggle row
+              e('div', { className: 'toggle-row' },
+                e('span', { style: { fontSize: 11, color: '#666', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.5px' } }, 'View'),
+                e('div', { style: { display: 'inline-flex', border: '1px solid #d1d5db', borderRadius: 6, overflow: 'hidden' } },
+                  [['util', 'Utilization %'], ['hours', 'Hours reserved']].map(([v, l]) => e('button', {
+                    key: v, type: 'button', onClick: () => setMetric(v),
+                    style: { padding: '5px 12px', fontSize: 12, border: 'none', cursor: 'pointer', fontFamily: 'inherit', background: metric === v ? '#0d9488' : '#fff', color: metric === v ? '#fff' : '#374151', fontWeight: metric === v ? 600 : 400 },
+                  }, l))),
+                e('label', null, e('input', { type: 'checkbox', checked: showInstant, onChange: ev => setShowInstant(ev.target.checked) }), e('span', { style: { fontWeight: showInstant ? 600 : 400 } }, 'Instant')),
+                e('label', null, e('input', { type: 'checkbox', checked: showManaged, onChange: ev => setShowManaged(ev.target.checked) }), e('span', { style: { fontWeight: showManaged ? 600 : 400 } }, 'Leagues / Managed')),
+                allLocations.length > 1 ? e(CourtLocationFilter, { all: allLocations, selected: selectedLocations, onChange: setSelectedLocations }) : null,
+                scheduleStats.total > 0 ? e('span', { style: { fontSize: 11, color: '#666', display: 'flex', alignItems: 'center', gap: 6, marginLeft: 'auto' } },
+                  scheduleStats.real > 0 ? e('span', { className: 'cu-schedule-badge' }, scheduleStats.real === scheduleStats.total ? 'Real schedules' : scheduleStats.real + '/' + scheduleStats.total + ' real') : null,
+                  scheduleStats.fallback > 0 ? e('label', { title: 'Fallback open hours/day — the utilization denominator for courts without schedule data.' }, (scheduleStats.real > 0 ? 'Fallback' : 'Open') + ' hrs/day',
+                    e('input', { type: 'number', min: 1, max: 24, step: 0.5, value: hrsPerDay, onChange: ev => setHrsPerDay(ev.target.value) })) : null,
+                ) : null,
+              ),
+              // AI insights
+              grouped.length ? e('div', { className: 'insights-section' },
+                e('div', { className: 'insights-head' },
+                  e('button', { type: 'button', className: 'insights-btn', onClick: getInsights, disabled: insLoading }, insLoading ? 'Analyzing…' : (insights ? '↻ Refresh insights' : '✨ Rec Insights')),
+                  insights && !insLoading ? e('span', { className: 'insights-sub' }, 'Generated from the ' + selectedLocations.length + ' location' + (selectedLocations.length === 1 ? '' : 's') + ' shown') : null,
+                ),
+                insLoading ? e('div', { className: 'cu-loading', style: { padding: '30px 16px' } }, e('div', { className: 'fac-spin' }), 'Squeezing the oranges…') : null,
+                insError && !insLoading ? e('div', { className: 'cu-error' }, e('strong', null, 'Insights unavailable: '), insError) : null,
+                insights && !insLoading ? e('div', { className: 'insights-grid' },
+                  insights.map((ins, i) => e('div', { key: i, className: 'insight-card insight-' + (ins.type || 'signal') },
+                    e('div', { className: 'insight-type' }, ins.type || 'signal'),
+                    e('div', { className: 'insight-title' }, ins.title),
+                    e('div', { className: 'insight-detail' }, ins.detail),
+                    ins.action ? e('div', { className: 'insight-action' }, '→ ' + ins.action) : null)) ) : null,
+                insights && !insLoading ? e('div', { className: 'insights-feedback' },
+                  fbSent ? e('span', { className: 'fb-thanks' }, '✅ Thanks for the feedback!')
+                    : fbMode === 'down' ? e('div', { style: { display: 'flex', gap: 6, flex: 1 } },
+                        e('input', { placeholder: 'What could be better?', value: fbComment, onChange: ev => setFbComment(ev.target.value), maxLength: 500, style: { flex: 1, border: '1px solid #d1d5db', borderRadius: 6, padding: '5px 10px', fontFamily: 'inherit' } }),
+                        e('button', { onClick: () => sendFb(0) }, 'Send'), e('button', { onClick: () => setFbMode(null) }, 'Cancel'))
+                    : e(React.Fragment, null, e('span', { style: { color: '#888' } }, 'Were these insights helpful?'),
+                        e('button', { onClick: () => sendFb(1), title: 'Yes' }, '👍'), e('button', { onClick: () => setFbMode('down'), title: 'No' }, '👎')),
+                ) : null,
+              ) : null,
+              // Legend + per-court bars
+              e('div', { className: 'cu-legend' },
+                e('span', null, e('span', { className: 'sw', style: { background: '#dc2626' } }), '70%+'),
+                e('span', null, e('span', { className: 'sw', style: { background: '#ea580c' } }), '50-70%'),
+                e('span', null, e('span', { className: 'sw', style: { background: '#f59e0b' } }), '30-50%'),
+                e('span', null, e('span', { className: 'sw', style: { background: '#16a34a' } }), '15-30%'),
+                e('span', null, e('span', { className: 'sw', style: { background: '#94a3b8' } }), '<15%'),
+                e('span', { style: { marginLeft: 8, borderLeft: '1px solid #ddd', paddingLeft: 8 } }, 'Solid = Instant · Faded = Leagues')),
+              grouped.length ? e('div', { className: 'cu-bars' },
+                grouped.map((g, i) => {
+                  const b = barFor(g);
+                  return e('div', { className: 'cu-bar-row', key: i },
+                    e('div', { className: 'cu-bar-name', title: g.label }, (g.demand === 'hot' ? '🔥🔥 ' : g.demand === 'warm' ? '🔥 ' : '') + g.label),
+                    e('div', { className: 'cu-bar-track', title: (g.utilPct != null ? Math.round(g.utilPct) + '% utilization · ' : '') + g.usedHrs.toFixed(1) + ' of ' + g.availHrs.toFixed(0) + 'h' + (g.availSource === 'schedule' ? '' : ' est.') },
+                      b.iW > 0 ? e('div', { className: 'cu-bar-seg', style: { width: b.iW + '%', background: b.col } }) : null,
+                      b.mW > 0 ? e('div', { className: 'cu-bar-seg', style: { width: b.mW + '%', background: b.col + '88' } }) : null),
+                    e('div', null, e('div', { className: 'cu-bar-val' }, b.headline), e('div', { className: 'cu-bar-sub' }, b.sub)));
+                })
+              ) : e('div', { className: 'cu-loading' }, 'No bookings match the current filters.'),
+              // Day-of-week heatmap
+              dowHeatmap.length ? e('div', { className: 'heatmap-section' },
+                e('div', { className: 'heatmap-title' }, 'Day-of-Week Utilization', e('span', { className: 'subtitle' }, 'Which courts are busiest on which days')),
+                e('div', { className: 'heatmap-grid' },
+                  e('div', { className: 'heatmap-hdr', style: { textAlign: 'left', paddingLeft: 8 } }, 'Court'),
+                  CU_DOW.map(d => e('div', { className: 'heatmap-hdr', key: d }, d)),
+                  dowHeatmap.map(row => e(React.Fragment, { key: row.label },
+                    e('div', { className: 'heatmap-label', title: row.label },
+                      row.demand === 'hot' ? '🔥🔥' : row.demand === 'warm' ? '🔥' : '',
+                      e('span', { style: { overflow: 'hidden', textOverflow: 'ellipsis' } }, row.court),
+                      row.utilPct != null ? e('span', { style: { marginLeft: 'auto', color: '#999', fontSize: 10, flexShrink: 0 } }, Math.round(row.utilPct) + '%') : null),
+                    row.cells.map(c => {
+                      let bg, fg;
+                      if (c.avail === 0) { bg = '#f3f3f0'; fg = '#ccc'; }
+                      else if (c.pct >= 80) { bg = '#dc2626'; fg = '#fff'; }
+                      else if (c.pct >= 60) { bg = '#ea580c'; fg = '#fff'; }
+                      else if (c.pct >= 40) { bg = '#f59e0b'; fg = '#1a1a1a'; }
+                      else if (c.pct >= 20) { bg = '#fde68a'; fg = '#1a1a1a'; }
+                      else if (c.pct > 0) { bg = '#fef9c3'; fg = '#666'; }
+                      else { bg = '#f8f8f6'; fg = '#ccc'; }
+                      return e('div', { key: c.dow, className: 'heatmap-cell', style: { background: bg, color: fg }, title: row.court + ' ' + CU_DOW[c.dow - 1] + ': ' + c.used.toFixed(1) + 'h / ' + c.avail.toFixed(0) + 'h (' + c.pct.toFixed(0) + '%)' },
+                        c.avail === 0 ? '—' : c.pct < 1 && c.pct > 0 ? '<1%' : Math.round(c.pct) + '%');
+                    }))),
+                ),
+                e('div', { className: 'heatmap-legend' },
+                  e('span', null, e('span', { className: 'heatmap-legend-swatch', style: { background: '#f8f8f6', border: '1px solid #e4e4e0' } }), '0%'),
+                  e('span', null, e('span', { className: 'heatmap-legend-swatch', style: { background: '#fef9c3' } }), '1-19%'),
+                  e('span', null, e('span', { className: 'heatmap-legend-swatch', style: { background: '#fde68a' } }), '20-39%'),
+                  e('span', null, e('span', { className: 'heatmap-legend-swatch', style: { background: '#f59e0b' } }), '40-59%'),
+                  e('span', null, e('span', { className: 'heatmap-legend-swatch', style: { background: '#ea580c' } }), '60-79%'),
+                  e('span', null, e('span', { className: 'heatmap-legend-swatch', style: { background: '#dc2626' } }), '80%+ 🔥')),
+              ) : null,
+              e('div', { className: 'section-note' }, 'Live court data · ' + stats.reservationRows.toLocaleString() + ' reservation rows · utilization uses real per-court schedules where available.'),
+            ),
       );
     }
 
@@ -684,7 +1189,7 @@
           tab === 'summary'
             ? e(SummaryTab, { rows, err, statusSel, typeSel })
             : tab === 'utilization'
-              ? e(CourtUtilizationTab, { start, end })
+              ? e(CourtUtilizationView, { start, end })
               : VERT_CONFIG[tab]
                 ? e(VerticalView, { rows, err, statusSel, vert: Object.assign({ key: tab }, VERT_CONFIG[tab]) })
                 : e(SummaryTab, { rows, err, statusSel, typeSel }),
@@ -694,5 +1199,8 @@
 
     ReactDOM.createRoot(document.getElementById('root')).render(e(App));
   </script>
+  <!-- Early Access banner + Got Feedback + thumbs (same as every report page).
+       Rendered once at the hub level; the Court Utilization embed hides its own. -->
+  <script src="/feedback-widget.js" defer></script>
 </body>
 </html>

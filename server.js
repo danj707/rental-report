@@ -10215,9 +10215,9 @@ app.get("/", (req, res) => {
     'Each vertical adds a month-by-month trend (bookings + revenue) — these verticals are strongly seasonal — plus a top-sites table with a ⚠ high-cancellation flag. The tab labels carry a live booking-count badge.',
     'Filters are now context-aware: the site-type filter shows only on Summary (a vertical tab already fixes the type), and the Court Utilization tab hides the hub filters since the embedded report manages its own.',
   ] },
-  { date: '2026-07-23', title: '🎾 Facilities hub — Court Utilization is now a sub-tab', items: [
-    'The full Court Utilization report (summary cards, per-court Overview, the utilization Map, day-of-week detail, and AI insights) now lives inside the Facilities hub as the Court Utilization sub-tab — driven by the hub’s date range, no separate page needed.',
-    'It embeds the existing report verbatim (chromeless), so there is one code path to maintain — nothing was re-implemented. The standalone Court Utilization report still works unchanged for now; it will be retired once the Facilities hub is switched on for each org.',
+  { date: '2026-07-23', title: '🎾 Facilities hub — Court Utilization is now a native sub-tab', items: [
+    'All of the Court Utilization report — the summary KPIs, instant-vs-leagues split, per-court utilization bars, the day-of-week heatmap, the location utilization Map, and AI insights — now renders natively inside the Facilities hub as the Court Utilization sub-tab, in the hub’s own design and driven by the hub’s date range.',
+    'It reuses the existing court data endpoints (reservations, per-court operating schedules, insights) — no new queries — and the utilization math is identical to the standalone report. The standalone Court Utilization report still works unchanged for now; it will be retired once the Facilities hub is switched on for each org.',
   ] },
   { date: '2026-07-23', title: '🏞️ Facilities hub — Summary is now live on real data', items: [
     'The Facilities hub Summary tab is wired to real facility-reservation data (all orgs). It reads a single org-parameterized Metabase card and aggregates it in the browser — reservation mix (instant-book vs staff-managed, with revenue split), revenue by site type, active sites, and top sites by revenue.',
