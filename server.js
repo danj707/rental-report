@@ -1109,7 +1109,13 @@ const CAMPMAP_ORGS = new Set(["pleasant-hill", "douglas-county-nv"]);
 // Reports HIDDEN by default for every org (opt-in to show), for WIP reports not
 // yet launched. For these, presence in an org's visibility list means SHOWN —
 // the inverse of the normal opt-out hidden-list semantics. Use reportHiddenForOrg().
-const DEFAULT_HIDDEN_REPORTS = new Set(["facilities"]);
+// (Facilities graduated out of here — it's now visible by default, replacing the
+//  retired standalone Court Utilization card.)
+const DEFAULT_HIDDEN_REPORTS = new Set([]);
+// Reports RETIRED as standalone cards: kept as valid report types + endpoints
+// (so the Facilities hub's native Court Utilization tab, chat, and /api/data all
+// keep working) but no longer rendered as a clickable card on org/admin grids.
+const RETIRED_REPORTS = new Set(["court-utilization"]);
 
 // ── Dynamic orgs (added via dashboard UI) ────────────────────────────
 // Loaded at startup and merged into ORGS; also updated at runtime.
@@ -1646,6 +1652,25 @@ function reportHiddenForOrg(slug, rt) {
   const listed = getHiddenReports(slug).includes(rt);
   return DEFAULT_HIDDEN_REPORTS.has(rt) ? !listed : listed;
 }
+
+// One-time migration: Facilities graduated from hidden-by-default (opt-in) to
+// visible-by-default (opt-out). Under the old inverted semantics, "facilities"
+// in an org's list meant SHOWN; under the new semantics it would mean HIDDEN.
+// Strip any legacy "facilities" entries so every org starts visible-by-default.
+(function migrateFacilitiesVisibility() {
+  try {
+    const all = readJSON(VISIBILITY_FILE, {});
+    let changed = false;
+    for (const slug of Object.keys(all)) {
+      if (Array.isArray(all[slug]) && all[slug].includes("facilities")) {
+        all[slug] = all[slug].filter(r => r !== "facilities");
+        if (!all[slug].length) delete all[slug];
+        changed = true;
+      }
+    }
+    if (changed) { writeJSON(VISIBILITY_FILE, all); console.log("[migrate] cleared legacy facilities opt-in entries — facilities now visible-by-default"); }
+  } catch (e) { console.warn("[migrate] facilities visibility:", e.message); }
+})();
 
 // ── Project-update announcements (admin-published dashboard popups) ───
 function getAnnouncements() {
@@ -4419,7 +4444,7 @@ app.get("/:org/facility", (req, res) => {
 
 // Facilities hub (WIP stub) — Programs-style summary + vertical sub-tabs.
 // Standalone report, separate from the "Facility Rental Schedule" (facility.html).
-// Token-gated like other reports; hidden by default for all orgs (see DEFAULT_HIDDEN_REPORTS).
+// Token-gated like other reports; visible by default for all orgs (it replaced the retired standalone Court Utilization card).
 app.get("/:org/facilities", (req, res) => {
   const slug = req.params.org;
   const org  = ORGS[slug];
@@ -6652,7 +6677,7 @@ app.get("/:org", async (req, res, next) => {
   if (!org) return next();
 
   const slugTitle = slug.charAt(0).toUpperCase() + slug.slice(1);
-  const allAvailable = REPORT_TYPES.filter(r => !NON_ADDABLE_REPORTS.has(r) && (org[r]?.mbUuid || SHARED_UUIDS[r]));
+  const allAvailable = REPORT_TYPES.filter(r => !NON_ADDABLE_REPORTS.has(r) && !RETIRED_REPORTS.has(r) && (org[r]?.mbUuid || SHARED_UUIDS[r]));
   const orgHidden = new Set(getHiddenReports(slug));
   const available = allAvailable.filter(r => !orgHidden.has(r));
   // Rental calendar — non-Metabase, per-org opt-in
@@ -7726,7 +7751,7 @@ app.get("/", (req, res) => {
     const nameB = (b[1].displayName || b[0]).toLowerCase();
     return nameA < nameB ? -1 : nameA > nameB ? 1 : 0;
   }).map(([slug, org]) => {
-    const available    = REPORT_TYPES.filter(r => !NON_ADDABLE_REPORTS.has(r) && (org[r]?.mbUuid || SHARED_UUIDS[r]));
+    const available    = REPORT_TYPES.filter(r => !NON_ADDABLE_REPORTS.has(r) && !RETIRED_REPORTS.has(r) && (org[r]?.mbUuid || SHARED_UUIDS[r]));
     // Rental calendar — non-Metabase, per-org opt-in
     if (RENTAL_CALENDAR_ORGS.has(slug)) available.push('rentalcalendar');
     if (CAMPMAP_ORGS.has(slug)) available.push('campmap');
@@ -9642,8 +9667,9 @@ app.get("/", (req, res) => {
         }
         HIDDEN_REPORTS[slug] = data.hidden;
         const card = btn.closest('.report-card');
-        // Default-hidden reports invert: presence in the list means SHOWN
-        const DEFAULT_HIDDEN = ['facilities'];
+        // Default-hidden reports invert: presence in the list means SHOWN.
+        // (Facilities is now visible-by-default, so nothing is inverted here.)
+        const DEFAULT_HIDDEN = [];
         const present = data.hidden.indexOf(report) >= 0;
         const isNowHidden = DEFAULT_HIDDEN.indexOf(report) >= 0 ? !present : present;
         card.classList.toggle('report-card-hidden', isNowHidden);
@@ -10210,6 +10236,10 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  { date: '2026-07-23', title: '🏞️ Facilities hub is live for all orgs — standalone Court Utilization retired', items: [
+    'The Facilities hub is now visible by default on every org dashboard (it was hidden while it was being built). It replaces the standalone Court Utilization card, which has been retired from the report grid — Court Utilization now lives inside the hub as a native sub-tab.',
+    'Nothing was lost: the court data endpoints, the AI chat’s access to court data, and direct links still work — only the standalone dashboard card was removed. Orgs that prefer the old layout can still hide the Facilities card from the dashboard.',
+  ] },
   { date: '2026-07-23', title: '🏕️⛳🏊 Facilities hub — Camping, Golf & Pool/Aquatics sub-tabs are live', items: [
     'The Camping, Golf, and Pool/Aquatics tabs now render per-vertical views of the same facility data (no new queries) — each scoped to its site types: bookings, net revenue, instant vs managed split, cancellation rate, active sites, total guests, and average party size.',
     'Each vertical adds a month-by-month trend (bookings + revenue) — these verticals are strongly seasonal — plus a top-sites table with a ⚠ high-cancellation flag. The tab labels carry a live booking-count badge.',
