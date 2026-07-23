@@ -1145,6 +1145,7 @@ const LOG_FILE    = path.join(DATA_DIR, "send_log.json");
 const EVENTS_FILE = path.join(DATA_DIR, "events.jsonl");
 const SHOWCASE_FILE = path.join(DATA_DIR, "showcase.json");
 const VISIBILITY_FILE = path.join(DATA_DIR, "report-visibility.json");
+const ANNOUNCEMENTS_FILE = path.join(DATA_DIR, "announcements.json");
 const PUBLIC_MODE_FILE = path.join(DATA_DIR, "public-mode.json");
 const GOALS_DIR = path.join(DATA_DIR, "goals");
 fs.mkdirSync(GOALS_DIR, { recursive: true });
@@ -1631,6 +1632,19 @@ function getAllHiddenReports() {
 function reportHiddenForOrg(slug, rt) {
   const listed = getHiddenReports(slug).includes(rt);
   return DEFAULT_HIDDEN_REPORTS.has(rt) ? !listed : listed;
+}
+
+// ── Project-update announcements (admin-published dashboard popups) ───
+function getAnnouncements() {
+  const a = readJSON(ANNOUNCEMENTS_FILE, []);
+  return Array.isArray(a) ? a : [];
+}
+function saveAnnouncements(list) { writeJSON(ANNOUNCEMENTS_FILE, list); }
+// Active announcements targeted at this org (allOrgs covers current + future orgs)
+function activeAnnouncementsForOrg(slug) {
+  return getAnnouncements()
+    .filter(a => a.active !== false && (a.allOrgs || (Array.isArray(a.orgs) && a.orgs.includes(slug))))
+    .sort((x, y) => (y.createdAt || 0) - (x.createdAt || 0));
 }
 
 // ── GitHub push: write new orgs to server.js so they live in code ────
@@ -6520,6 +6534,7 @@ app.get("/:org", async (req, res, next) => {
     wizardVisible: !orgHidden.has("report-wizard"),
     publicMode: getPublicMode(slug),
     emailEnabled: EMAIL_ENABLED_ORGS.has(slug),
+    announcements: activeAnnouncementsForOrg(slug).map(a => ({ id: a.id, title: a.title, body: a.body })),
   };
   // Attach latest health-check results for this org's reports
   const hc = loadHealthResults();
@@ -6559,6 +6574,56 @@ app.post("/api/admin/toggle-report", express.json(), (req, res) => {
   if (idx >= 0) hidden.splice(idx, 1); else hidden.push(report);
   setHiddenReports(slug, hidden);
   res.json({ ok: true, hidden });
+});
+
+// ── Project-update announcements ─────────────────────────────────────
+// GET list + org roster for the admin composer (dashboard is admin-only surface).
+app.get("/api/admin/announcements", (req, res) => {
+  const orgs = Object.entries(ORGS)
+    .map(([slug, o]) => ({ slug, name: o.displayName || (slug.charAt(0).toUpperCase() + slug.slice(1)) }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const announcements = getAnnouncements().sort((x, y) => (y.createdAt || 0) - (x.createdAt || 0));
+  res.json({ announcements, orgs });
+});
+// Create a new announcement (password-gated).
+app.post("/api/admin/announcements", express.json(), (req, res) => {
+  if (dashboardPasswordBlocked(req, res)) return;
+  const { title, body, orgs, allOrgs } = req.body || {};
+  if (!title || !title.trim()) return res.status(400).json({ error: "Title is required" });
+  if (!allOrgs && (!Array.isArray(orgs) || orgs.length === 0)) {
+    return res.status(400).json({ error: "Select at least one org (or choose All orgs)" });
+  }
+  const list = getAnnouncements();
+  const ann = {
+    id: "upd_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+    title: title.trim(),
+    body: (body || "").trim(),
+    allOrgs: !!allOrgs,
+    orgs: allOrgs ? [] : orgs.filter(s => ORGS[s]),
+    active: true,
+    createdAt: Date.now(),
+    createdISO: new Date().toISOString(),
+  };
+  list.push(ann);
+  saveAnnouncements(list);
+  console.log("[announce] published '" + ann.title + "' → " + (ann.allOrgs ? "ALL orgs" : ann.orgs.length + " orgs"));
+  res.json({ ok: true, announcement: ann });
+});
+// Toggle active / delete (password-gated).
+app.post("/api/admin/announcements/toggle", express.json(), (req, res) => {
+  if (dashboardPasswordBlocked(req, res)) return;
+  const list = getAnnouncements();
+  const a = list.find(x => x.id === (req.body && req.body.id));
+  if (!a) return res.status(404).json({ error: "Not found" });
+  a.active = a.active === false;
+  saveAnnouncements(list);
+  res.json({ ok: true, active: a.active });
+});
+app.post("/api/admin/announcements/delete", express.json(), (req, res) => {
+  if (dashboardPasswordBlocked(req, res)) return;
+  const id = req.body && req.body.id;
+  saveAnnouncements(getAnnouncements().filter(x => x.id !== id));
+  res.json({ ok: true });
 });
 
 // ── POST /api/admin/toggle-public-mode — show/hide admin chrome on org page ──
@@ -8136,6 +8201,7 @@ app.get("/", (req, res) => {
     <div style="flex:1"></div>
     <a href="/langfuse" style="font-size:12px;padding:6px 14px;background:rgba(124,58,237,.85);border:1px solid rgba(124,58,237,1);border-radius:5px;color:#fff;cursor:pointer;text-decoration:none;margin-right:8px;transition:background .15s" onmouseover="this.style.background='rgba(109,40,217,1)'" onmouseout="this.style.background='rgba(124,58,237,.85)'">&#x1F50D; Langfuse</a>
     <a href="/qbr" style="font-size:12px;padding:6px 14px;background:rgba(31,122,90,.92);border:1px solid rgba(31,122,90,1);border-radius:5px;color:#fff;cursor:pointer;text-decoration:none;margin-right:8px;transition:background .15s" onmouseover="this.style.background='rgba(26,106,78,1)'" onmouseout="this.style.background='rgba(31,122,90,.92)'">📊 QBR Generator</a>
+    <button onclick="openUpd()" style="font-size:12px;padding:6px 14px;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.2);border-radius:5px;color:#eee;cursor:pointer;margin-right:8px;transition:background .15s" onmouseover="this.style.background='rgba(255,255,255,.22)'" onmouseout="this.style.background='rgba(255,255,255,.12)'">&#128227; Add Update</button>
     <button onclick="openAddOrg()" style="font-size:12px;padding:6px 14px;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.2);border-radius:5px;color:#eee;cursor:pointer;transition:background .15s" onmouseover="this.style.background='rgba(255,255,255,.22)'" onmouseout="this.style.background='rgba(255,255,255,.12)'">➕ Add Org</button>
   </div>
   <!-- Railway Status Bar -->
@@ -8228,6 +8294,65 @@ app.get("/", (req, res) => {
   }
   function clearDashPwd() { sessionStorage.removeItem('_dpwd'); }
 
+  // ── Project-update composer ──────────────────────────────────────────
+  function updEsc(s){ return (s==null?'':String(s)).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+  function openUpd(){ document.getElementById('upd-overlay').style.display='block'; loadUpd(); }
+  function closeUpd(){ document.getElementById('upd-overlay').style.display='none'; }
+  function updToggleAll(){
+    var on=document.getElementById('upd-all').checked;
+    var box=document.getElementById('upd-orgs');
+    box.style.opacity=on?'.4':'1';
+    box.querySelectorAll('input[type=checkbox]').forEach(function(c){ c.disabled=on; if(on)c.checked=false; });
+  }
+  async function loadUpd(){
+    var d={};
+    try { d=await (await fetch('/api/admin/announcements')).json(); } catch(e){ d={orgs:[],announcements:[]}; }
+    document.getElementById('upd-orgs').innerHTML=(d.orgs||[]).map(function(o){
+      return '<label style="font-size:12px;display:flex;align-items:center;gap:5px;width:calc(50% - 3px)"><input type="checkbox" value="'+updEsc(o.slug)+'" /> '+updEsc(o.name)+'</label>';
+    }).join('');
+    updToggleAll();
+    var list=d.announcements||[];
+    document.getElementById('upd-list').innerHTML=list.length?list.map(function(a){
+      var tgt=a.allOrgs?'All orgs':((a.orgs||[]).length+' org'+((a.orgs||[]).length===1?'':'s'));
+      var when=a.createdAt?new Date(a.createdAt).toLocaleDateString():'';
+      return '<div style="border:1px solid #eee;border-radius:6px;padding:10px 12px;display:flex;justify-content:space-between;gap:8px;'+(a.active===false?'opacity:.5':'')+'">'
+        +'<div style="min-width:0"><div style="font-weight:600;font-size:13px">'+updEsc(a.title)+'</div>'
+        +'<div style="font-size:11px;color:#999;margin-top:2px">'+tgt+' · '+when+(a.active===false?' · paused':'')+'</div></div>'
+        +'<div style="display:flex;gap:6px;flex-shrink:0;align-items:flex-start">'
+        +'<button onclick="toggleUpd(\''+a.id+'\')" style="font-size:11px;padding:4px 9px;background:#f3f4f6;border:1px solid #e5e7eb;border-radius:4px;cursor:pointer">'+(a.active===false?'Activate':'Pause')+'</button>'
+        +'<button onclick="delUpd(\''+a.id+'\')" style="font-size:11px;padding:4px 9px;background:#fef2f2;color:#b91c1c;border:1px solid #fecaca;border-radius:4px;cursor:pointer">Delete</button>'
+        +'</div></div>';
+    }).join(''):'<div style="font-size:12px;color:#aaa">No updates published yet.</div>';
+  }
+  async function submitUpd(){
+    var pwd=getDashPwd('Publish a project update'); if(!pwd) return;
+    var title=document.getElementById('upd-title').value.trim();
+    var body=document.getElementById('upd-body').value;
+    var allOrgs=document.getElementById('upd-all').checked;
+    var orgs=[].slice.call(document.querySelectorAll('#upd-orgs input:checked')).map(function(c){return c.value;});
+    var err=document.getElementById('upd-error'); err.style.display='none';
+    if(!title){ err.textContent='Title is required'; err.style.display='block'; return; }
+    if(!allOrgs && !orgs.length){ err.textContent='Select at least one org (or All orgs)'; err.style.display='block'; return; }
+    try {
+      var r=await fetch('/api/admin/announcements',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:pwd,title:title,body:body,orgs:orgs,allOrgs:allOrgs})});
+      var d=await r.json();
+      if(!r.ok||!d.ok){ if(r.status===401)clearDashPwd(); err.textContent=d.error||'Failed'; err.style.display='block'; return; }
+      document.getElementById('upd-title').value=''; document.getElementById('upd-body').value=''; document.getElementById('upd-all').checked=false;
+      mbToast('Update published to '+(allOrgs?'all orgs':orgs.length+' org'+(orgs.length===1?'':'s'))); loadUpd();
+    } catch(e){ err.textContent='Error: '+e.message; err.style.display='block'; }
+  }
+  async function toggleUpd(id){
+    var pwd=getDashPwd(); if(!pwd) return;
+    var r=await fetch('/api/admin/announcements/toggle',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:pwd,id:id})});
+    if(r.ok){ loadUpd(); } else { clearDashPwd(); mbToast('Auth failed'); }
+  }
+  async function delUpd(id){
+    if(!confirm('Delete this update? This cannot be undone.')) return;
+    var pwd=getDashPwd(); if(!pwd) return;
+    var r=await fetch('/api/admin/announcements/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:pwd,id:id})});
+    if(r.ok){ loadUpd(); } else { clearDashPwd(); mbToast('Auth failed'); }
+  }
+
   async function runHealthCheck(btn, forceAll) {
     var pwd = getDashPwd();
     if (!pwd) return;
@@ -8268,6 +8393,39 @@ app.get("/", (req, res) => {
     } catch(e) { alert('Error: ' + e.message); }
   }
   </script>
+  <!-- ── Add Project Update Modal ── -->
+  <div id="upd-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:1000;overflow-y:auto;padding:40px 16px">
+    <div style="background:#fff;border-radius:10px;max-width:600px;margin:0 auto;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.3)">
+      <div style="padding:20px 24px;background:#2c2c2c;color:#fff;display:flex;align-items:center;justify-content:space-between">
+        <div>
+          <div style="font-weight:700;font-size:15px">&#128227; Project Updates</div>
+          <div style="font-size:11px;color:#aaa;margin-top:2px">Publish a dashboard announcement to selected orgs</div>
+        </div>
+        <button onclick="closeUpd()" style="background:none;border:none;color:#aaa;font-size:20px;cursor:pointer;padding:4px">✕</button>
+      </div>
+      <div style="padding:24px">
+        <label style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:#888;display:block;margin-bottom:6px">Title *</label>
+        <input id="upd-title" type="text" placeholder="e.g. New Facilities report is live" style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:5px;font-size:13px" />
+        <label style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:#888;display:block;margin:16px 0 6px">Message <span style="font-weight:400;text-transform:none;letter-spacing:0;color:#aaa">— markdown ok: **bold**, [links](https://…), - bullets</span></label>
+        <textarea id="upd-body" rows="5" placeholder="What's new…" style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:5px;font-size:13px;font-family:inherit;resize:vertical"></textarea>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin:16px 0 8px">
+          <label style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:#888">Publish to</label>
+          <label style="font-size:12px;display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="upd-all" onchange="updToggleAll()" /> All orgs <span style="color:#aaa">(incl. future)</span></label>
+        </div>
+        <div id="upd-orgs" style="display:flex;flex-wrap:wrap;gap:6px;max-height:170px;overflow:auto;border:1px solid #eee;border-radius:6px;padding:10px"></div>
+        <div id="upd-error" style="margin-top:12px;color:#e55;font-size:12px;display:none"></div>
+        <div style="margin-top:20px;display:flex;justify-content:flex-end;gap:8px">
+          <button onclick="closeUpd()" style="padding:9px 18px;background:#f3f4f6;color:#444;border:none;border-radius:5px;font-size:13px;font-weight:600;cursor:pointer">Cancel</button>
+          <button onclick="submitUpd()" style="padding:9px 20px;background:#7c3aed;color:#fff;border:none;border-radius:5px;font-size:13px;font-weight:600;cursor:pointer">Publish update</button>
+        </div>
+        <div style="margin-top:24px;border-top:1px solid #eee;padding-top:16px">
+          <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:#888">Published updates</div>
+          <div id="upd-list" style="margin-top:10px;display:flex;flex-direction:column;gap:8px"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- ── Add Org Modal ── -->
   <div id="add-org-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:1000;overflow-y:auto;padding:40px 16px">
     <div id="add-org-modal" style="background:#fff;border-radius:10px;max-width:560px;margin:0 auto;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.3)">
@@ -9143,8 +9301,13 @@ app.get("/", (req, res) => {
       var displayName = document.getElementById('f-name').value.trim() || null;
       var orgId     = document.getElementById('f-orgid').value.trim();
       var logoUrl   = document.getElementById('f-logo').value.trim();
-      var glUuid    = extractMbUuid(document.getElementById('mb-gl').value || '');
-      var histUuid  = extractMbUuid(document.getElementById('mb-historic').value || '');
+      // gl/historic inputs only exist when that report isn't shared (gl is shared,
+      // so mb-gl is never rendered). Guard against null — reading .value on a
+      // missing element threw a TypeError that aborted every org creation.
+      var glEl      = document.getElementById('mb-gl');
+      var histEl    = document.getElementById('mb-historic');
+      var glUuid    = glEl   ? extractMbUuid(glEl.value   || '') : '';
+      var histUuid  = histEl ? extractMbUuid(histEl.value || '') : '';
       var reports   = {};
       Object.keys(SHARED_UUIDS_CLIENT).forEach(function(r) { reports[r] = null; });
       if (glUuid) reports['gl'] = glUuid;
@@ -9902,6 +10065,10 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  { date: '2026-07-23', title: '📣 Project-update announcements + Add-Org fix', items: [
+    'New admin "Add Update" composer on the dashboard: write a title + markdown message, target specific orgs (or All orgs, including future ones), and publish. Targeted orgs see it as a one-time dismissible popup on their dashboard the first time they visit (tracked per browser). Pause/delete from the same modal.',
+    'Fixed a bug that blocked adding a new organization — the create step read a Metabase-link input for GL (a shared report that renders no such input), throwing a TypeError before the request was sent. The reads are now null-safe.',
+  ] },
   { date: '2026-07-23', title: '🏞️ Facilities hub (framework preview)', items: [
     'New Facilities report scaffolded at /:org/facilities — a Programs-style hub: a Summary tab (reservation mix: instant-book vs staff-managed, revenue by site type, top sites) plus vertical sub-tabs (Court Utilization folds in here, alongside Camping, Golf, Pool/Aquatics). Metrics are placeholders until the data layer is wired.',
     'Added as a NEW, hidden-by-default report for every org (staff can reveal it per-org from the dashboard eye toggle). The existing "Facility Rental Schedule" report is unchanged and stays separate.',
