@@ -93,6 +93,24 @@
     .empty .em-title { font-size: 16px; font-weight: 700; color: #6b7280; margin-bottom: 6px; }
     .empty .em-sub { font-size: 12.5px; max-width: 460px; margin: 0 auto; line-height: 1.6; }
     .section-note { font-size: 11px; color: #9ca3af; margin-top: 18px; text-align: center; }
+
+    /* ── Filters ── */
+    .filters { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; padding: 10px 0 14px; border-bottom: 1px solid #eee; margin-bottom: 4px; }
+    .filter-group { display: flex; align-items: center; gap: 7px; }
+    .filter-lbl { font-size: 10px; text-transform: uppercase; letter-spacing: .5px; color: #9ca3af; font-weight: 700; }
+    .chip { font-size: 12px; padding: 4px 11px; border-radius: 14px; border: 1px solid #d1d5db; background: #fff; color: #6b7280; cursor: pointer; user-select: none; transition: all .12s; }
+    .chip.on { border-color: #0d9488; background: #f0fdfa; color: #0f766e; font-weight: 600; }
+    .chip.on.cancel { border-color: #dc2626; background: #fef2f2; color: #b91c1c; }
+    .dd { position: relative; }
+    .dd-btn { font-size: 12px; padding: 5px 12px; border-radius: 8px; border: 1px solid #d1d5db; background: #fff; color: #374151; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+    .dd-btn:hover { border-color: #9ca3af; }
+    .dd-panel { position: absolute; top: 112%; left: 0; z-index: 50; background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.14); padding: 6px; min-width: 230px; max-height: 340px; overflow: auto; }
+    .dd-grp { font-size: 9.5px; text-transform: uppercase; letter-spacing: .5px; color: #9ca3af; font-weight: 700; padding: 8px 8px 3px; }
+    .dd-opt { display: flex; align-items: center; gap: 8px; padding: 5px 8px; border-radius: 6px; font-size: 12.5px; color: #374151; cursor: pointer; }
+    .dd-opt:hover { background: #f3f4f6; }
+    .dd-actions { display: flex; justify-content: space-between; padding: 7px 8px 3px; border-top: 1px solid #f0f0f0; margin-top: 4px; }
+    .dd-actions button { background: none; border: none; color: #0d9488; font-size: 11px; font-weight: 700; cursor: pointer; }
+    .flag { display: inline-flex; align-items: center; gap: 3px; font-size: 9px; font-weight: 800; letter-spacing: .3px; padding: 1px 6px; border-radius: 3px; background: #fef2f2; color: #b91c1c; }
   </style>
 </head>
 <body>
@@ -114,6 +132,70 @@
       { key: 'aquatics',    label: 'Pool / Aquatics', icon: '🏊' },
     ];
 
+    // Rec's real site types (court.type), grouped into the display verticals.
+    // These are the filter options — they match what Rec has, per spec.
+    const REC_SITE_TYPES = [
+      { v: 'campsite',            l: 'Campsite',            grp: 'Camping' },
+      { v: 'golf',                l: 'Golf',                grp: 'Golf' },
+      { v: 'pool',                l: 'Pool',                grp: 'Pool / Aquatics' },
+      { v: 'court',               l: 'Court',               grp: 'Courts & Fields' },
+      { v: 'field',               l: 'Field',               grp: 'Courts & Fields' },
+      { v: 'gym',                 l: 'Gym',                 grp: 'Courts & Fields' },
+      { v: 'rink',                l: 'Rink',                grp: 'Courts & Fields' },
+      { v: 'room',                l: 'Room',                grp: 'Pavilions & Spaces' },
+      { v: 'outdoor-event-space', l: 'Outdoor Event Space', grp: 'Pavilions & Spaces' },
+      { v: 'picnic-table',        l: 'Picnic Table',        grp: 'Pavilions & Spaces' },
+      { v: 'bounce-house',        l: 'Bounce House',        grp: 'Pavilions & Spaces' },
+      { v: 'other',               l: 'Other',               grp: 'Pavilions & Spaces' },
+    ];
+    const STATUSES = [
+      { v: 'confirmed',   l: 'Confirmed' },
+      { v: 'in-progress', l: 'In-progress' },
+      { v: 'canceled',    l: 'Canceled' },
+    ];
+
+    // Per-status filter chips (all on by default — every status counts)
+    function StatusChips({ sel, setSel }) {
+      const toggle = v => setSel(sel.includes(v) ? sel.filter(x => x !== v) : sel.concat(v));
+      return e('div', { className: 'filter-group' },
+        e('span', { className: 'filter-lbl' }, 'Status'),
+        STATUSES.map(s => e('span', {
+          key: s.v,
+          className: 'chip' + (sel.includes(s.v) ? ' on' + (s.v === 'canceled' ? ' cancel' : '') : ''),
+          onClick: () => toggle(s.v),
+        }, s.l)),
+      );
+    }
+
+    // Site-type filter — Rec's real types, grouped by vertical. [] = All.
+    function SiteTypeFilter({ sel, setSel }) {
+      const [open, setOpen] = React.useState(false);
+      const allV = REC_SITE_TYPES.map(t => t.v);
+      const label = (sel.length === 0 || sel.length === allV.length) ? 'All site types' : (sel.length + ' selected');
+      const toggle = v => {
+        const base = sel.length === 0 ? allV : sel;
+        const next = base.includes(v) ? base.filter(x => x !== v) : base.concat(v);
+        setSel(next.length === allV.length ? [] : next);
+      };
+      const groups = [];
+      REC_SITE_TYPES.forEach(t => { if (!groups.includes(t.grp)) groups.push(t.grp); });
+      return e('div', { className: 'dd' },
+        e('button', { className: 'dd-btn', onClick: () => setOpen(o => !o) }, '🏷️ ' + label, e('span', null, '▾')),
+        open ? e('div', { className: 'dd-panel' },
+          groups.map(g => e('div', { key: g },
+            e('div', { className: 'dd-grp' }, g),
+            REC_SITE_TYPES.filter(t => t.grp === g).map(t =>
+              e('label', { className: 'dd-opt', key: t.v },
+                e('input', { type: 'checkbox', checked: sel.length === 0 || sel.includes(t.v), onChange: () => toggle(t.v) }),
+                t.l)),
+          )),
+          e('div', { className: 'dd-actions' },
+            e('button', { onClick: () => setSel([]) }, 'Select all'),
+            e('button', { onClick: () => setOpen(false) }, 'Done')),
+        ) : null,
+      );
+    }
+
     function fmtDate(d) { return d.toISOString().slice(0, 10); }
     function monthStart(d) { return new Date(d.getFullYear(), d.getMonth(), 1); }
     function monthEnd(d) { return new Date(d.getFullYear(), d.getMonth() + 1, 0); }
@@ -129,8 +211,6 @@
         e('button', { onClick: props.lastMonth }, 'Last Month'),
         e('button', { onClick: props.thisYear }, 'This Year'),
         e('button', { className: 'btn-run', onClick: props.run }, '▶ Run Report'),
-        e('div', { className: 'divider' }),
-        e('label', { className: 'chk' }, e('input', { type: 'checkbox', disabled: true }), 'BREAK OUT BY SITE'),
         e('span', { className: 'toolbar-spacer' }),
         e('span', { className: 'row-count' }, '— sites · — locations'),
         e('button', { className: 'btn-pdf', disabled: true }, 'PDF'),
@@ -144,6 +224,7 @@
         { label: 'Net Revenue', val: '—', cls: 'sc-green', sub: 'rentals + reservations' },
         { label: 'Instant-Book', val: '—', cls: 'sc-purple', sub: '—% of bookings / revenue' },
         { label: 'Managed', val: '—', cls: 'sc-amber', sub: 'staff-approved reservations' },
+        { label: 'Cancellation Rate', val: '—', cls: 'sc-red', sub: 'canceled / all bookings' },
         { label: 'Top Site Type', val: '—', cls: 'sc-muted', sub: 'by revenue' },
         { label: 'Active Sites', val: '—', cls: 'sc-muted', sub: 'across all locations' },
       ];
@@ -185,6 +266,20 @@
             e('span', null, e('span', { className: 'sum-dot', style: { background: '#d97706' } }), 'Managed'),
           ),
         ),
+        // Booking status mix (surfaces cancellations)
+        e('div', { className: 'sum-bar-wrap' },
+          e('div', { className: 'sum-bar-label' }, 'Booking status mix'),
+          e('div', { className: 'sum-bar' },
+            e('div', { className: 'seg', style: { width: '62%', background: '#16a34a' } }, 'Confirmed'),
+            e('div', { className: 'seg', style: { width: '15%', background: '#2563eb' } }, 'In-progress'),
+            e('div', { className: 'seg', style: { width: '23%', background: '#dc2626' } }, 'Canceled'),
+          ),
+          e('div', { className: 'sum-legend' },
+            e('span', null, e('span', { className: 'sum-dot', style: { background: '#16a34a' } }), 'Confirmed'),
+            e('span', null, e('span', { className: 'sum-dot', style: { background: '#2563eb' } }), 'In-progress'),
+            e('span', null, e('span', { className: 'sum-dot', style: { background: '#dc2626' } }), 'Canceled'),
+          ),
+        ),
         // Revenue by site type
         e('table', { className: 'sum-cat-table' },
           e('caption', null, 'Revenue by site type'),
@@ -192,12 +287,14 @@
             e('th', null, 'Site type'),
             e('th', { className: 'num' }, 'Sites'),
             e('th', { className: 'num' }, 'Bookings'),
+            e('th', { className: 'num' }, 'Cancel %'),
             e('th', { className: 'num' }, 'Net revenue'),
             e('th', { className: 'num' }, '% instant-book'),
           )),
           e('tbody', null,
             siteTypes.map((t, i) => e('tr', { key: i },
               e('td', null, t),
+              e('td', { className: 'num' }, '—'),
               e('td', { className: 'num' }, '—'),
               e('td', { className: 'num' }, '—'),
               e('td', { className: 'num' }, '—'),
@@ -209,17 +306,20 @@
               e('td', { className: 'num' }, '—'),
               e('td', { className: 'num' }, '—'),
               e('td', { className: 'num' }, '—'),
+              e('td', { className: 'num' }, '—'),
             ),
           ),
         ),
-        // Top sites by revenue
+        // Top sites by revenue (with cancellation red-flag)
         e('table', { className: 'sum-cat-table' },
-          e('caption', null, 'Top sites by revenue'),
+          e('caption', null, 'Top sites by revenue ',
+            e('span', { style: { fontWeight: 400, color: '#9ca3af', fontSize: 11 } }, '· ', e('span', { className: 'flag' }, '⚠ HIGH CANCEL'), ' flags at-risk sites')),
           e('thead', null, e('tr', null,
             e('th', null, 'Site'),
             e('th', null, 'Type'),
             e('th', null, 'Location'),
             e('th', { className: 'num' }, 'Bookings'),
+            e('th', { className: 'num' }, 'Cancel %'),
             e('th', { className: 'num' }, 'Net revenue'),
           )),
           e('tbody', null,
@@ -229,10 +329,11 @@
               e('td', null, '—'),
               e('td', { className: 'num' }, '—'),
               e('td', { className: 'num' }, '—'),
+              e('td', { className: 'num' }, '—'),
             )),
           ),
         ),
-        e('div', { className: 'section-note' }, 'Summary layout mirrors the Programs report · metrics wire to live facility data in the next build.'),
+        e('div', { className: 'section-note' }, 'Summary layout mirrors the Programs report · filters (site type · status) and metrics wire to live facility data in the next build.'),
       );
     }
 
@@ -256,6 +357,8 @@
         const qs = new URLSearchParams(window.location.search);
         return qs.get('tab') || 'summary';
       });
+      const [statusSel, setStatusSel] = React.useState(['confirmed', 'in-progress', 'canceled']);
+      const [typeSel, setTypeSel] = React.useState([]); // [] = all site types
       const setThisMonth = () => { setStart(fmtDate(monthStart(now))); setEnd(fmtDate(monthEnd(now))); };
       const setLastMonth = () => { const d = new Date(now.getFullYear(), now.getMonth() - 1, 1); setStart(fmtDate(monthStart(d))); setEnd(fmtDate(monthEnd(d))); };
       const setThisYear = () => { setStart(fmtDate(new Date(now.getFullYear(), 0, 1))); setEnd(fmtDate(new Date(now.getFullYear(), 11, 31))); };
@@ -284,6 +387,13 @@
           e('div', { className: 'stub-banner' },
             e('strong', null, 'Framework preview.'),
             ' This is the new Facilities hub scaffold — a Programs-style Summary plus vertical sub-tabs (Court Utilization folds in here). Metrics are placeholders until the data layer is wired.'
+          ),
+          e('div', { className: 'filters' },
+            e(StatusChips, { sel: statusSel, setSel: setStatusSel }),
+            e('div', { className: 'filter-group' },
+              e('span', { className: 'filter-lbl' }, 'Site type'),
+              e(SiteTypeFilter, { sel: typeSel, setSel: setTypeSel }),
+            ),
           ),
           e('div', { className: 'tabs' },
             TABS.map(t => e('div', {
