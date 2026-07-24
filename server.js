@@ -1116,7 +1116,9 @@ const DEFAULT_HIDDEN_REPORTS = new Set([]);
 // Reports RETIRED as standalone cards: kept as valid report types + endpoints
 // (so the Facilities hub's native Court Utilization tab, chat, and /api/data all
 // keep working) but no longer rendered as a clickable card on org/admin grids.
-const RETIRED_REPORTS = new Set(["court-utilization"]);
+// Globally not-surfaced reports. Routes/code stay intact; they just aren't shown
+// anywhere. chat + report-wizard are deprecated in favor of Rec's "Seb" AI skill.
+const RETIRED_REPORTS = new Set(["court-utilization", "chat", "report-wizard"]);
 
 // ── Dynamic orgs (added via dashboard UI) ────────────────────────────
 // Loaded at startup and merged into ORGS; also updated at runtime.
@@ -2785,6 +2787,7 @@ app.get("/api/org-visibility/:slug", (req, res) => {
   }
   // Also check non-REPORT_TYPES that can be toggled (chat, report-wizard, rentalcalendar)
   for (const rt of ["chat", "report-wizard", "rentalcalendar", "campmap"]) {
+    if (RETIRED_REPORTS.has(rt)) continue; // globally not surfaced
     available.push({ type: rt, visible: !hidden.has(rt) });
   }
   // Default-hidden WIP reports use inverted visibility semantics
@@ -6749,8 +6752,8 @@ app.get("/:org", async (req, res, next) => {
     logoUrl: org.logoUrl || "",
     reports: available,
     token: org.token || "",
-    chatVisible: !orgHidden.has("chat"),
-    wizardVisible: !orgHidden.has("report-wizard"),
+    chatVisible: !RETIRED_REPORTS.has("chat") && !orgHidden.has("chat"),
+    wizardVisible: !RETIRED_REPORTS.has("report-wizard") && !orgHidden.has("report-wizard"),
     publicMode: getPublicMode(slug),
     emailEnabled: EMAIL_ENABLED_ORGS.has(slug),
     announcements: activeAnnouncementsForOrg(slug).map(a => ({ id: a.id, title: a.title, body: a.body })),
@@ -7856,6 +7859,7 @@ app.get("/", (req, res) => {
 
     // Rec AI Chat card — toggleable like other reports
     if (available.length > 0) {
+      if (!RETIRED_REPORTS.has('chat')) {
       const chatHidden = orgHidden.indexOf('chat') >= 0;
       const chatDim = chatHidden ? ' report-card-hidden' : '';
       cards.push(`
@@ -7871,7 +7875,9 @@ app.get("/", (req, res) => {
           </button>
         </a>`);
 
+      }
       // Report Wizard card
+      if (!RETIRED_REPORTS.has('report-wizard')) {
       const wizHidden = orgHidden.indexOf('report-wizard') >= 0;
       const wizDim = wizHidden ? ' report-card-hidden' : '';
       cards.push(`
@@ -7887,6 +7893,7 @@ app.get("/", (req, res) => {
           </button>
         </a>`);
 
+      }
       // Facilities hub — new WIP report, HIDDEN by default (inverted semantics)
       const facHidden = reportHiddenForOrg(slug, 'facilities');
       const facDim = facHidden ? ' report-card-hidden' : '';
