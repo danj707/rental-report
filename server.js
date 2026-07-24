@@ -8101,6 +8101,14 @@ app.get("/", (req, res) => {
   const addReportMeta = Object.fromEntries(
     Object.entries(reportMeta).map(([k, m]) => [k, { label: m.label, icon: m.icon }])
   );
+  // Reports offered in the "Add Organization" modal — the canonical catalog
+  // (reportMeta) minus non-addable + retired reports. Single source of truth, so
+  // new report types appear automatically and retired ones drop off.
+  const addOrgReportMeta = Object.fromEntries(
+    REPORT_TYPES
+      .filter(r => !NON_ADDABLE_REPORTS.has(r) && !RETIRED_REPORTS.has(r) && reportMeta[r])
+      .map(r => [r, { label: reportMeta[r].label, icon: reportMeta[r].icon }])
+  );
   const addReportOrgs = Object.fromEntries(
     Object.entries(ORGS).map(([slug, org]) => {
       const slugTitle = slug.charAt(0).toUpperCase() + slug.slice(1);
@@ -9344,18 +9352,7 @@ app.get("/", (req, res) => {
     const REPORT_COLORS = { facility:'#16a34a', gl:'#3b82f6', programs:'#7c3aed', historic:'#d97706', roster:'#0891b2', rentalcalendar:'#059669' };
     const chartInstances = {};
     // ── Add Org modal ────────────────────────────────────────────────
-    const REPORT_META = ${JSON.stringify(Object.fromEntries(Object.entries({
-      facility: { label: "Facility Rental Schedule", icon: "📅" },
-      gl:       { label: "GL Code Rollup",            icon: "📊" },
-      programs: { label: "Programs",           icon: "🎯" },
-      historic: { label: "Historic Buildings",        icon: "🏛️" },
-      roster:   { label: "Class Roster",              icon: "📋" },
-      products: { label: "Product Sales",             icon: "🛒" },
-      memberships: { label: "Memberships",            icon: "🎫" },
-      "court-utilization": { label: "Court Utilization", icon: "🎾" },
-      calendar: { label: "Program Calendar",                  icon: "🗓️" },
-      fasttrack: { label: "Fast Track",               icon: "⚡" },
-    })))};
+    const REPORT_META = ${JSON.stringify(addOrgReportMeta)};
     const SHARED_UUIDS_CLIENT = ${JSON.stringify(SHARED_UUIDS)};
 
     function openAddOrg() {
