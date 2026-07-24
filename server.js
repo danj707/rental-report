@@ -8712,79 +8712,7 @@ app.get("/", (req, res) => {
   </div>
   <div class="main">
 
-    <!-- ── Showcase Hero — hackathon demo card ── -->
-    <div class="showcase-card" id="showcase">
-      <div class="showcase-top">
-        <div class="showcase-text">
-          <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px"><img src="data:image/jpeg;base64,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" style="height:42px;border-radius:8px" alt="rec" /><div class="showcase-badge" style="margin-bottom:0">Rec Technologies — Intelligent Reporting</div></div>
-          <h1 class="showcase-title">Beautiful Reports, Purpose Built for Parks &amp; Recreation<br><span style="font-size:22px;font-weight:600;color:#c7d2fe">Now with Rec AI Intelligence and more 🧃</span></h1>
-          <p class="showcase-desc">
-            A multi-org reporting platform that transforms raw Metabase data into interactive, grouped reports
-            with PDF exports, AI-powered insights, email subscriptions, real-time dashboards, and a
-            Daily Pulse executive summary with month-over-month trends &mdash;
-            purpose-built for parks &amp; rec departments.
-          </p>
-          <div style="display:flex;flex-wrap:wrap;gap:8px 16px;margin:12px 0 4px 0">
-            <span style="background:rgba(165,180,252,.15);color:#c7d2fe;padding:4px 12px;border-radius:20px;font-size:13px;font-weight:500">Partners don't know what to ask for — we give them the answers</span>
-            <span style="background:rgba(165,180,252,.15);color:#c7d2fe;padding:4px 12px;border-radius:20px;font-size:13px;font-weight:500">AI reads the data so admins don't have to</span>
-            <span style="background:rgba(165,180,252,.15);color:#c7d2fe;padding:4px 12px;border-radius:20px;font-size:13px;font-weight:500">Schema changes? Reports don't break.</span>
-            <span style="background:rgba(165,180,252,.15);color:#c7d2fe;padding:4px 12px;border-radius:20px;font-size:13px;font-weight:500">Not a CSV — a product</span>
-          </div>
-          <div class="showcase-stats">
-            <div class="showcase-stat">
-              <div class="showcase-stat-num" data-count="${Object.keys(ORGS).length}">0</div>
-              <div class="showcase-stat-label">Organizations</div>
-            </div>
-            <div class="showcase-stat">
-              <div class="showcase-stat-num" data-count="${REPORT_TYPES.length}">0</div>
-              <div class="showcase-stat-label">Report Types</div>
-            </div>
-            <div class="showcase-stat">
-              <div class="showcase-stat-num" data-count="${Object.keys(ORGS).reduce((s,k) => s + REPORT_TYPES.filter(r => !NON_ADDABLE_REPORTS.has(r) && (ORGS[k][r]?.mbUuid || SHARED_UUIDS[r])).length, 0)}">0</div>
-              <div class="showcase-stat-label">Live Reports</div>
-            </div>
-            <div class="showcase-stat">
-              <div class="showcase-stat-num" data-text="AI">AI</div>
-              <div class="showcase-stat-label">Insights & Chat</div>
-            </div>
-            <div class="showcase-stat">
-              <div class="showcase-stat-num" data-text="PDF">PDF</div>
-              <div class="showcase-stat-label">Export & Email</div>
-            </div>
-            <div class="showcase-stat">
-              <div class="showcase-stat-num" data-text="📊">📊</div>
-              <div class="showcase-stat-label">Daily Pulse</div>
-            </div>
-          </div>
-          <div class="ticker-wrap">
-            <div class="ticker" id="feature-ticker"></div>
-          </div>
-        </div>
-      </div>
-      <div class="partner-quotes">
-        <div class="partner-quotes-label">\u2764\uFE0F What Partners Are Saying</div>
-        <div class="pq-track-wrap">
-          <div class="pq-track" id="pq-track"></div>
-        </div>
-      </div>
-      <div class="showcase-gallery" id="showcase-gallery">${showcaseLoad().map((img, i) => `
-          <div class="sg-item" onclick="sgLightbox(${i})">
-            <img src="${img.data}" alt="" />
-            ${img.caption ? `<div class="sg-caption">${img.caption}</div>` : ""}
-            <button class="sg-remove" onclick="event.stopPropagation();sgRemove(${i})" title="Remove">&times;</button>
-          </div>`).join("")}</div>
-      <div class="showcase-upload" id="showcase-upload">
-        <label class="showcase-upload-btn">
-          + Add photos
-          <input type="file" accept="image/*" multiple style="display:none"
-            onchange="handleShowcaseUpload(this.files)" />
-        </label>
-        <span class="showcase-upload-hint">Drag &amp; drop or click to add before/after screenshots for the demo</span>
-      </div>
-
-
-    </div>
-
+    <!-- Showcase hero removed 2026-07-24 per Dan (it served its purpose). Restore from git history if it needs to come back. -->
     <div class="org-section">
       <div class="org-header" onclick="toggleHow(this)" style="cursor:pointer;user-select:none">
         <div class="org-header-text">
@@ -11536,6 +11464,7 @@ app.get("/", (req, res) => {
   // ── Partner quotes ─────────────────────────────────────────────────
   function pqRender(quotes) {
     var track = document.getElementById('pq-track');
+    if (!track) return; // showcase hero removed — nothing to render
     if (!quotes.length) { track.innerHTML = ''; track.style.animation = 'none'; return; }
     // Build cards, duplicate set for seamless loop
     var cards = quotes.map(function(q, i) {
