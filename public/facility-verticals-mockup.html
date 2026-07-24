@@ -1,0 +1,624 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Facilities — Camping / Golf / Aquatics (mockup)</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+  <style>
+    /* ── Design system copied verbatim from public/facilities.html so the mockup
+         renders native to the Facilities hub. ── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Inter', system-ui, -apple-system, sans-serif; font-size: 12px; color: #1a1a1a; background: #f5f4f1; line-height: 1.35; }
+
+    /* ── Toolbar ── */
+    .toolbar { position: sticky; top: 0; z-index: 100; display: flex; align-items: center; gap: 10px; padding: 8px 20px; background: #2c2c2c; color: #eee; font-size: 13px; flex-wrap: wrap; }
+    .toolbar-title { font-weight: 600; margin-right: 4px; }
+    .toolbar-back { color: #9ca3af; text-decoration: none; font-size: 12px; }
+    .toolbar-back:hover { color: #fff; }
+    .toolbar-spacer { flex: 1; }
+    .toolbar label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: #aaa; display: flex; flex-direction: column; gap: 2px; }
+    .toolbar input[type="date"] { padding: 4px 8px; border: 1px solid rgba(255,255,255,.2); border-radius: 4px; background: rgba(255,255,255,.1); color: #fff; font-size: 12px; font-family: inherit; outline: none; }
+    .toolbar input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(1); cursor: pointer; }
+    .toolbar button { padding: 6px 14px; border: 1px solid rgba(255,255,255,.25); border-radius: 4px; background: rgba(255,255,255,.08); color: #fff; font-size: 12px; font-family: inherit; cursor: pointer; transition: background .15s; white-space: nowrap; }
+    .toolbar button:hover { background: rgba(255,255,255,.18); }
+    .toolbar .btn-run { background: #16a34a; border-color: #16a34a; font-weight: 600; }
+    .toolbar .btn-run:hover { background: #15803d; }
+    .toolbar .btn-pdf { background: #3b82f6; border-color: #3b82f6; font-weight: 600; }
+    .toolbar .btn-excel { background: #16803c; border-color: #16803c; font-weight: 600; }
+    .toolbar .row-count { font-size: 11px; color: #aaa; }
+    .toolbar .divider { width: 1px; height: 28px; background: rgba(255,255,255,.15); margin: 0 2px; }
+
+    /* ── Page ── */
+    .page { max-width: 1400px; margin: 16px auto; padding: 24px 28px; background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
+
+    /* ── Header ── */
+    .report-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2.5px solid #111; padding-bottom: 10px; margin-bottom: 18px; gap: 16px; }
+    .report-header-left { display: flex; align-items: center; gap: 14px; }
+    .report-header .org-label { font-size: 10px; letter-spacing: 1.6px; text-transform: uppercase; color: #777; font-weight: 600; }
+    .report-header .title { font-size: 17px; font-weight: 700; margin-top: 1px; }
+    .report-header-right { text-align: right; }
+    .report-header .date-range { font-size: 11px; color: #666; }
+
+    /* ── Sample-data ribbon (mockup only) ── */
+    .sample-ribbon { background: #fffbeb; border: 1px solid #fde68a; border-left: 3px solid #f59e0b; color: #92400e; padding: 9px 14px; margin-bottom: 14px; border-radius: 4px; font-size: 12.5px; line-height: 1.5; }
+    .sample-ribbon strong { color: #78350f; }
+    .src-badge { display: inline-block; font-size: 9px; font-weight: 700; letter-spacing: .4px; text-transform: uppercase; padding: 2px 7px; border-radius: 3px; margin-left: 8px; vertical-align: middle; }
+    .src-real { background: #dcfce7; color: #166534; }
+    .src-rep  { background: #fef3c7; color: #92400e; }
+
+    /* ── Tabs ── */
+    .tabs { display:flex; gap:4px; border-bottom:2px solid #d1d5db; margin-bottom:16px; padding:0 4px; align-items:flex-end; flex-wrap: wrap; }
+    .tab { padding:9px 18px 8px; font-size:13px; font-weight:600; color:#6b7280; cursor:pointer; transition:all .15s; display:flex; align-items:center; gap:6px; border-radius:8px 8px 0 0; border:1px solid transparent; border-bottom:none; margin-bottom:-2px; position:relative; background:transparent; }
+    .tab:hover { color:#111; background:#f3f4f6; }
+    .tab.active { color:#059669; background:#f0fdf4; border-color:#d1d5db; border-top:2px solid #059669; box-shadow:0 -2px 4px rgba(0,0,0,.04); z-index:1; }
+    .tab .tab-badge { font-size:10px; padding:2px 7px; border-radius:10px; font-weight:600; background:#e5e7eb; color:#6b7280; }
+
+    /* ── KPI cards ── */
+    .sum-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin: 16px 0; }
+    .sum-card { background: #fff; border: 1px solid #e8e6e0; border-radius: 8px; padding: 14px 16px; }
+    .sum-card .sc-label { font-size: 10px; text-transform: uppercase; letter-spacing: .5px; color: #888; font-weight: 700; margin-bottom: 4px; }
+    .sum-card .sc-val { font-size: 24px; font-weight: 800; line-height: 1.1; font-variant-numeric: tabular-nums; }
+    .sum-card .sc-sub { font-size: 11px; color: #999; margin-top: 3px; }
+    .sc-green { color: #16a34a; } .sc-blue { color: #2563eb; } .sc-amber { color: #d97706; } .sc-red { color: #dc2626; } .sc-purple { color: #7c3aed; } .sc-muted { color: #64748b; }
+
+    /* ── Stacked mix bar ── */
+    .sum-bar-wrap { margin: 16px 0; }
+    .sum-bar-label { font-size: 10px; color: #888; font-weight: 600; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 4px; }
+    .sum-bar { display: flex; height: 24px; border-radius: 4px; overflow: hidden; border: 1px solid #e8e6e0; background: #f3f4f6; }
+    .sum-bar .seg { display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; color: #fff; overflow: hidden; white-space: nowrap; }
+    .sum-legend { display: flex; gap: 14px; margin-top: 5px; font-size: 10px; color: #888; flex-wrap: wrap; }
+    .sum-legend span { display: flex; align-items: center; gap: 4px; }
+    .sum-dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
+
+    /* ── Table ── */
+    .sum-cat-table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 16px; }
+    .sum-cat-table caption { text-align: left; font-size: 12px; font-weight: 700; color: #333; margin-bottom: 8px; }
+    .sum-cat-table th { background: #f5f3ef; padding: 7px 12px; text-align: left; font-size: 10px; text-transform: uppercase; letter-spacing: .5px; color: #888; font-weight: 700; border-bottom: 1px solid #e8e6e0; }
+    .sum-cat-table th.num, .sum-cat-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
+    .sum-cat-table td { padding: 6px 12px; border-bottom: 1px solid #f0eeea; color: #555; }
+    .sum-cat-table tr:last-child td { border-bottom: none; }
+
+    .section-note { font-size: 11px; color: #9ca3af; margin-top: 18px; text-align: center; }
+
+    /* ── Section headings + layout (mockup) ── */
+    .vsec { margin: 24px 0 6px; }
+    .vsec-t { font-size: 13px; font-weight: 700; color: #1e1b4b; display: flex; align-items: center; gap: 8px; margin-bottom: 2px; }
+    .vsec-s { font-size: 11px; color: #9ca3af; margin-bottom: 10px; }
+    .two-col { display: grid; grid-template-columns: 1.05fr .95fr; gap: 22px; align-items: start; }
+    @media (max-width: 900px) { .two-col { grid-template-columns: 1fr; } }
+
+    /* ── Seasonal / monthly trend ── */
+    .vtrend { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; }
+    .vtrend-row { display: grid; grid-template-columns: 56px 1fr 70px 88px; align-items: center; gap: 10px; font-size: 12px; }
+    .vtrend-mo { color: #6b7280; font-weight: 600; font-variant-numeric: tabular-nums; }
+    .vtrend-track { background: #f1efe9; border-radius: 4px; height: 16px; overflow: hidden; }
+    .vtrend-bar { height: 100%; background: linear-gradient(90deg,#0d9488,#14b8a6); border-radius: 4px; min-width: 2px; }
+    .vtrend-rev { text-align: right; font-weight: 700; color: #111827; font-variant-numeric: tabular-nums; }
+    .vtrend-bk { text-align: right; color: #9ca3af; font-variant-numeric: tabular-nums; }
+
+    /* ── Court-native widgets (bars / heatmap / map / insights), scoped ── */
+    .court-native .kpi-card { flex: 1; min-width: 140px; background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px 16px; }
+    .court-native .cu-tabs { display: flex; gap: 0; margin: 8px 0 0; border-bottom: 2px solid #e5e7eb; flex-wrap: wrap; }
+    .court-native .cu-tab { padding: 8px 20px; font-size: 13px; font-weight: 600; color: #6b7280; cursor: pointer; border: none; border-bottom: 2px solid transparent; margin-bottom: -2px; background: none; font-family: inherit; }
+    .court-native .cu-tab:hover { color: #374151; }
+    .court-native .cu-tab.active { color: #0d9488; border-bottom-color: #0d9488; }
+    .court-native .cu-bars { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+    .court-native .cu-bar-row { display: grid; grid-template-columns: minmax(150px, 250px) 1fr 84px; align-items: center; gap: 10px; font-size: 12px; }
+    .court-native .cu-bar-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #374151; }
+    .court-native .cu-bar-track { position: relative; background: #f1efe9; border-radius: 4px; height: 18px; overflow: hidden; display: flex; }
+    .court-native .cu-bar-seg { height: 100%; }
+    .court-native .cu-bar-val { text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; color: #111827; }
+    .court-native .cu-bar-sub { text-align: right; font-size: 10px; color: #9ca3af; font-variant-numeric: tabular-nums; }
+    .court-native .cu-legend { display: flex; gap: 14px; justify-content: center; margin: 10px 0 2px; font-size: 11px; color: #666; flex-wrap: wrap; }
+    .court-native .cu-legend .sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
+    .court-native .cu-map-wrap { height: 460px; border-radius: 8px; overflow: hidden; border: 1px solid #e5e7eb; margin-top: 12px; }
+    .court-native .cu-map-legend { display: flex; gap: 16px; align-items: center; padding: 10px 0; font-size: 11px; color: #666; flex-wrap: wrap; }
+    .court-native .cu-map-dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; margin-right: 4px; vertical-align: -1px; }
+
+    .court-native .heatmap-grid { display: grid; grid-template-columns: minmax(120px, 1fr) repeat(7, 1fr); gap: 2px; font-size: 11px; }
+    .court-native .heatmap-hdr { text-align: center; font-weight: 700; font-size: 10px; text-transform: uppercase; letter-spacing: .5px; color: #888; padding: 4px 2px; }
+    .court-native .heatmap-label { padding: 5px 8px; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; gap: 4px; border-radius: 3px; background: #f8f8f6; }
+    .court-native .heatmap-cell { text-align: center; padding: 6px 2px; border-radius: 3px; font-family: 'IBM Plex Mono', monospace; font-size: 10px; font-weight: 600; }
+    .court-native .heatmap-legend { display: flex; align-items: center; gap: 12px; margin-top: 8px; font-size: 10px; color: #888; flex-wrap: wrap; }
+    .court-native .heatmap-legend-swatch { display: inline-block; width: 14px; height: 14px; border-radius: 3px; vertical-align: middle; margin-right: 3px; }
+
+    .court-native .insights-section { margin: 20px 0 8px; }
+    .court-native .insights-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; }
+    .court-native .insight-card { border: 1px solid #e5e7eb; border-left-width: 4px; border-radius: 8px; padding: 14px 16px; background: #fff; }
+    .court-native .insight-type { font-size: 10px; font-weight: 700; letter-spacing: .6px; text-transform: uppercase; margin-bottom: 6px; }
+    .court-native .insight-title { font-size: 14px; font-weight: 700; color: #111827; margin-bottom: 5px; line-height: 1.3; }
+    .court-native .insight-detail { font-size: 12.5px; color: #374151; line-height: 1.45; }
+    .court-native .insight-action { font-size: 12px; color: #6b7280; margin-top: 8px; font-weight: 500; }
+    .court-native .insight-opportunity { border-left-color: #10b981; } .court-native .insight-opportunity .insight-type { color: #059669; }
+    .court-native .insight-risk { border-left-color: #f59e0b; } .court-native .insight-risk .insight-type { color: #d97706; }
+    .court-native .insight-signal { border-left-color: #6366f1; } .court-native .insight-signal .insight-type { color: #4f46e5; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+  <script type="text/babel">
+    /* =====================================================================
+       Facilities hub — Camping / Golf / Aquatics vertical views  (MOCKUP)
+
+       Standalone demo of how the three verticals could look "fully built
+       out," at the same quality bar as the hub's Court Utilization view.
+       ALL DATA IS BAKED (no live DB calls):
+         • Camping   — grounded in the REAL Pleasant Hill (12 sites) +
+                       Topaz Lake (41 sites) inventory from campmap-seeds.json,
+                       with deterministically-synthesized booking activity.
+         • Golf      — representative municipal course.
+         • Aquatics  — representative community aquatics center.
+       Numbers are generated with a fixed seed, so they are stable & realistic.
+       This file is NOT wired into server.js. Components are written so they
+       can later be ported into facilities.html (as court-utilization.html was).
+       ===================================================================== */
+    const e = React.createElement;
+
+    // ── helpers ──────────────────────────────────────────────────────────
+    const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
+    const money = n => '$' + Math.round(n || 0).toLocaleString();
+    const money1k = n => n >= 1000 ? '$' + (n / 1000).toFixed(n >= 10000 ? 0 : 1) + 'k' : money(n);
+    const pct = n => Math.round(n) + '%';
+    const num = n => Math.round(n).toLocaleString();
+    // Deterministic PRNG (mulberry32) — stable output, no Date/Math.random.
+    function mul(a) { return function () { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+
+    // Utilization/occupancy "heat" scale — same convention as Court Utilization
+    // (hot = busy). Used for per-unit bars.
+    const CU_UTIL_COLOR = p => p >= 70 ? '#dc2626' : p >= 50 ? '#ea580c' : p >= 30 ? '#f59e0b' : p >= 15 ? '#16a34a' : '#94a3b8';
+    const CU_MAP_COLOR  = p => p >= 70 ? '#dc2626' : p >= 40 ? '#f59e0b' : p >= 15 ? '#22c55e' : '#94a3b8';
+    // Heatmap cell shading (0–100).
+    function heatCell(v) {
+      if (v >= 80) return { bg: '#991b1b', fg: '#fff' };
+      if (v >= 65) return { bg: '#dc2626', fg: '#fff' };
+      if (v >= 50) return { bg: '#ea580c', fg: '#fff' };
+      if (v >= 35) return { bg: '#f59e0b', fg: '#3a2606' };
+      if (v >= 20) return { bg: '#fcd34d', fg: '#3a2606' };
+      if (v >= 8)  return { bg: '#d1fae5', fg: '#065f46' };
+      return { bg: '#f3f4f6', fg: '#c0c0c0' };
+    }
+    const DOW = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    // Trailing 12 months ending Jul 2026 (fixed — matches the demo date range).
+    const MONTHS = [
+      { l: 'Aug', days: 31 }, { l: 'Sep', days: 30 }, { l: 'Oct', days: 31 }, { l: 'Nov', days: 30 },
+      { l: 'Dec', days: 31 }, { l: 'Jan', days: 31 }, { l: 'Feb', days: 28 }, { l: 'Mar', days: 31 },
+      { l: 'Apr', days: 30 }, { l: 'May', days: 31 }, { l: 'Jun', days: 30 }, { l: 'Jul', days: 31 },
+    ];
+
+    // ── shared widgets ─────────────────────────────────────────────────────
+    function Kpis({ cards }) {
+      return e('div', { className: 'sum-cards' },
+        cards.map((c, i) => e('div', { className: 'sum-card', key: i },
+          e('div', { className: 'sc-label' }, c.label),
+          e('div', { className: 'sc-val ' + (c.cls || 'sc-muted') }, c.val),
+          e('div', { className: 'sc-sub' }, c.sub))));
+    }
+
+    function SectionTitle({ title, sub }) {
+      return e('div', { className: 'vsec' },
+        e('div', { className: 'vsec-t' }, title),
+        sub ? e('div', { className: 'vsec-s' }, sub) : null);
+    }
+
+    function UtilBars({ rows }) {
+      return e('div', { className: 'court-native' },
+        e('div', { className: 'cu-bars' },
+          rows.map((r, i) => e('div', { className: 'cu-bar-row', key: i },
+            e('div', { className: 'cu-bar-name' }, r.name),
+            e('div', { className: 'cu-bar-track' },
+              e('div', { className: 'cu-bar-seg', style: { width: clamp(r.pct, 0, 100) + '%', background: CU_UTIL_COLOR(r.pct) } })),
+            e('div', null,
+              e('div', { className: 'cu-bar-val' }, r.val),
+              r.sub ? e('div', { className: 'cu-bar-sub' }, r.sub) : null)))),
+        e('div', { className: 'cu-legend' },
+          [['#94a3b8', '<15%'], ['#16a34a', '15–30%'], ['#f59e0b', '30–50%'], ['#ea580c', '50–70%'], ['#dc2626', '70%+']]
+            .map((s, i) => e('span', { key: i }, e('span', { className: 'sw', style: { background: s[0] } }), s[1]))));
+    }
+
+    // Heatmap: rowLabels × the 7 days of week. values = [row][col] (0–100).
+    function Heatmap({ rowLabels, values, unit }) {
+      const cells = [];
+      cells.push(e('div', { className: 'heatmap-hdr', key: 'h-' }, ''));
+      DOW.forEach(d => cells.push(e('div', { className: 'heatmap-hdr', key: 'h-' + d }, d)));
+      rowLabels.forEach((rl, ri) => {
+        cells.push(e('div', { className: 'heatmap-label', key: 'l-' + ri }, rl));
+        values[ri].forEach((v, ci) => {
+          const c = heatCell(v);
+          cells.push(e('div', { className: 'heatmap-cell', key: ri + '-' + ci, style: { background: c.bg, color: c.fg }, title: rl + ' · ' + DOW[ci] + ' · ' + Math.round(v) + (unit || '%') }, Math.round(v)));
+        });
+      });
+      return e('div', { className: 'court-native' },
+        e('div', { className: 'heatmap-grid' }, cells),
+        e('div', { className: 'heatmap-legend' },
+          e('span', null, 'Low'),
+          [8, 20, 35, 50, 65, 80].map((v, i) => e('span', { key: i }, e('span', { className: 'heatmap-legend-swatch', style: { background: heatCell(v).bg } }))),
+          e('span', null, 'High (' + (unit === ' rounds' ? 'rounds' : 'utilization') + ')')));
+    }
+
+    function SeasonCurve({ items }) {
+      const max = Math.max(1, ...items.map(m => m.bar));
+      return e('div', { className: 'vtrend' },
+        items.map((m, i) => e('div', { className: 'vtrend-row', key: i },
+          e('div', { className: 'vtrend-mo' }, m.l),
+          e('div', { className: 'vtrend-track' }, e('div', { className: 'vtrend-bar', style: { width: (m.bar / max * 100) + '%' } })),
+          e('div', { className: 'vtrend-rev' }, m.right),
+          e('div', { className: 'vtrend-bk' }, m.sub))));
+    }
+
+    function MixBar({ label, segs }) {
+      const total = segs.reduce((s, x) => s + x.val, 0) || 1;
+      return e('div', { className: 'sum-bar-wrap' },
+        e('div', { className: 'sum-bar-label' }, label),
+        e('div', { className: 'sum-bar' },
+          segs.map((s, i) => e('div', { className: 'seg', key: i, style: { width: (s.val / total * 100) + '%', background: s.color } },
+            s.val / total >= 0.1 ? Math.round(s.val / total * 100) + '%' : ''))),
+        e('div', { className: 'sum-legend' },
+          segs.map((s, i) => e('span', { key: i }, e('span', { className: 'sum-dot', style: { background: s.color } }), s.label + ' (' + s.disp + ')'))));
+    }
+
+    function Insights({ items }) {
+      return e('div', { className: 'court-native' },
+        e('div', { className: 'insights-section' },
+          e('div', { className: 'insights-grid' },
+            items.map((it, i) => e('div', { className: 'insight-card insight-' + it.type, key: i },
+              e('div', { className: 'insight-type' }, it.type),
+              e('div', { className: 'insight-title' }, it.title),
+              e('div', { className: 'insight-detail' }, it.detail),
+              it.action ? e('div', { className: 'insight-action' }, '→ ' + it.action) : null)))));
+    }
+
+    // Leaflet occupancy map (colored circle markers, auto-fit to points).
+    function OccMap({ points }) {
+      const ref = React.useRef(null), mapRef = React.useRef(null), lgRef = React.useRef(null);
+      React.useEffect(() => {
+        if (!ref.current) return;
+        if (!mapRef.current) {
+          mapRef.current = L.map(ref.current, { scrollWheelZoom: false });
+          L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
+            { maxZoom: 19, attribution: '© OpenStreetMap © CARTO' }).addTo(mapRef.current);
+          lgRef.current = L.layerGroup().addTo(mapRef.current);
+        }
+        const lg = lgRef.current; lg.clearLayers();
+        const pts = [];
+        points.forEach(p => {
+          const m = L.circleMarker([p.lat, p.lng], { radius: 8, color: '#fff', weight: 1.5, fillColor: CU_MAP_COLOR(p.pct), fillOpacity: .92 });
+          m.bindPopup('<div style="font-weight:700;font-size:13px;color:#1e1b4b">' + p.name + '</div>' +
+            '<div style="font-size:11px;color:#374151;margin-top:3px">' + Math.round(p.pct) + '% occupancy · ' + p.sub + '</div>');
+          m.addTo(lg); pts.push([p.lat, p.lng]);
+        });
+        if (pts.length) mapRef.current.fitBounds(pts, { padding: [34, 34], maxZoom: 16 });
+        setTimeout(() => mapRef.current && mapRef.current.invalidateSize(), 60);
+      }, [points]);
+      return e('div', null,
+        e('div', { className: 'court-native' }, e('div', { className: 'cu-map-wrap', ref })),
+        e('div', { className: 'court-native' }, e('div', { className: 'cu-map-legend' },
+          [['#94a3b8', 'Under-used <15%'], ['#22c55e', 'Healthy 15–40%'], ['#f59e0b', 'Busy 40–70%'], ['#dc2626', 'At capacity 70%+']]
+            .map((s, i) => e('span', { key: i }, e('span', { className: 'cu-map-dot', style: { background: s[0] } }), s[1])))));
+    }
+
+    function SubTabs({ tabs, active, onSelect }) {
+      return e('div', { className: 'court-native' },
+        e('div', { className: 'cu-tabs' },
+          tabs.map(t => e('button', { key: t.key, className: 'cu-tab' + (t.key === active ? ' active' : ''), onClick: () => onSelect(t.key) }, t.label))));
+    }
+
+    /* =====================================================================
+       CAMPING data — grounded in the REAL Pleasant Hill + Topaz inventory.
+       ===================================================================== */
+    const CAMP_LOCATIONS = [
+      { key: 'ph', name: 'Pleasant Hill City Lake', city: 'Pleasant Hill, MO' },
+      { key: 'tz', name: 'Topaz Lake Recreation Area', city: 'Gardnerville, NV' },
+    ];
+    // Real Pleasant Hill sites (names / areas / kind / coords from campmap-seeds.json).
+    const PH_RAW = [
+      ['Site 01', 'Main Entrance', 'electric', 38.82468767, -94.29445978],
+      ['Site 02', 'Main Entrance', 'electric', 38.82452, -94.2947],
+      ['Site 03', 'Main Entrance', 'electric', 38.82436, -94.29493],
+      ['Site 04', 'Main Entrance', 'electric', 38.8242, -94.29516],
+      ['Site 05', "Brown's Arm", 'primitive', 38.8259, -94.2949],
+      ['Site 06', "Brown's Arm", 'primitive', 38.82625, -94.29478],
+      ['Site 07', "Brown's Arm", 'electric', 38.8266, -94.29468],
+      ['Site 08', "Brown's Arm", 'electric', 38.82695, -94.29462],
+      ['Site 09', "Brown's Arm", 'electric', 38.8273, -94.2946],
+      ['Site 10', "Brown's Arm", 'electric', 38.82765, -94.29464],
+      ['Site 11', "Brown's Arm", 'electric', 38.828, -94.29474],
+      ['Site 12', "Brown's Arm", 'primitive', 38.8283, -94.2949],
+    ];
+    // Real Topaz sites 01–06 (true coords); 07–41 synthesized around the loop.
+    const TZ_REAL = [
+      [38.69457274845515, -119.51978312589519], [38.69466153807613, -119.51975998590116],
+      [38.694762330136705, -119.51988927263203], [38.694774258257254, -119.51994743213848],
+      [38.694818685375495, -119.51997397076968], [38.69496777257381, -119.52002088112894],
+    ];
+    function buildCamping() {
+      const sites = [];
+      // Season shape (weekend-peak occupancy fraction by month) — strongly seasonal.
+      const seasonMult = [0.95, 0.80, 0.52, 0.30, 0.19, 0.17, 0.20, 0.34, 0.58, 0.80, 0.90, 0.96];
+      const dowFactor  = { Mon: 0.50, Tue: 0.46, Wed: 0.48, Thu: 0.60, Fri: 0.90, Sat: 1.00, Sun: 0.78 };
+      const dowMeanF = DOW.reduce((s, d) => s + dowFactor[d], 0) / 7;
+      const seasonMean = seasonMult.reduce((s, x) => s + x, 0) / 12;
+      // Pleasant Hill (rate $25) then Topaz (26 @ $30, 15 @ $40, $5 res fee).
+      PH_RAW.forEach((r, i) => sites.push({ loc: 'ph', name: r[0], area: r[1], kind: r[2], lat: r[3], lng: r[4], rate: 25, resFee: 0 }));
+      for (let n = 1; n <= 41; n++) {
+        let lat, lng;
+        if (n <= 6) { lat = TZ_REAL[n - 1][0]; lng = TZ_REAL[n - 1][1]; }
+        else { const idx = n - 7, row = Math.floor(idx / 7), col = idx % 7, rr = mul(500 + n); lat = 38.69505 - row * 0.00034 + (rr() - 0.5) * 0.00008; lng = -119.52075 + col * 0.00044 + (rr() - 0.5) * 0.00008; }
+        sites.push({ loc: 'tz', name: 'Site ' + String(n).padStart(2, '0'), area: 'Topaz Lake', kind: 'tent-and-rv', lat, lng, rate: n <= 26 ? 30 : 40, resFee: 5 });
+      }
+      // Per-site occupancy / nights / revenue / cancellation.
+      let totNights = 0, totRev = 0, totResFeeRev = 0, weightedCancel = 0, totReservations = 0;
+      sites.forEach((s, i) => {
+        const rng = mul(1000 + i);
+        const pop = 0.72 + 0.5 * rng();                       // popularity spread
+        const occAnnual = clamp(seasonMean * dowMeanF * pop * 1.9, 0.10, 0.93);
+        const nights = Math.round(occAnnual * 365);
+        const cancel = 5 + 14 * rng();                        // 5–19%
+        const rev = nights * s.rate * (1 - cancel / 100);
+        const reservations = Math.max(1, Math.round(nights / (2.4 + rng())));
+        s.occ = occAnnual * 100; s.nights = nights; s.cancel = cancel; s.rev = rev; s.reservations = reservations;
+        totNights += nights; totRev += rev; totResFeeRev += reservations * s.resFee; totReservations += reservations; weightedCancel += cancel * nights;
+      });
+      const nSites = sites.length;
+      // Monthly aggregate (season curve).
+      const months = MONTHS.map((m, mi) => {
+        const occ = clamp(seasonMult[mi] * dowMeanF * 1.9 * 0.97, 0.05, 0.95);
+        const nights = Math.round(occ * m.days * nSites);
+        const rev = nights * 31.7 * 0.9;
+        return { l: m.l, bar: occ * 100, right: pct(occ * 100), sub: num(nights) + ' nights' };
+      });
+      // Heatmap: month rows × DOW cols (occupancy %).
+      const hm = MONTHS.map((m, mi) => DOW.map(d => clamp(seasonMult[mi] * dowFactor[d] * 100, 0, 98)));
+      // Length-of-stay distribution.
+      const los = [
+        { name: '1 night', pct: 100 * 0.17, val: '17%', sub: '' },
+        { name: '2 nights', pct: 100 * 0.35, val: '35%', sub: 'most common' },
+        { name: '3 nights', pct: 100 * 0.24, val: '24%', sub: '' },
+        { name: '4 nights', pct: 100 * 0.12, val: '12%', sub: '' },
+        { name: '5+ nights', pct: 100 * 0.12, val: '12%', sub: '' },
+      ];
+      const avgLos = 1 * .17 + 2 * .35 + 3 * .24 + 4 * .12 + 5.4 * .12;
+      const occOverall = totNights / (nSites * 365) * 100;
+      const adr = totRev / totNights;
+      const cancelRate = weightedCancel / totNights;
+      return {
+        sites, months, hm, los, avgLos,
+        kpis: [
+          { label: 'Occupancy', val: pct(occOverall), cls: 'sc-green', sub: 'site-nights booked ÷ available' },
+          { label: 'Site-nights', val: num(totNights), cls: 'sc-blue', sub: nSites + ' sites · 2 locations' },
+          { label: 'Net revenue', val: money(totRev), cls: 'sc-green', sub: 'excludes canceled' },
+          { label: 'Avg nightly rate', val: money(adr), cls: 'sc-purple', sub: 'ADR across sites' },
+          { label: 'Avg length of stay', val: avgLos.toFixed(1) + ' nts', cls: 'sc-amber', sub: num(totReservations) + ' reservations' },
+          { label: 'Cancellation', val: pct(cancelRate), cls: 'sc-red', sub: 'of booked nights' },
+          { label: 'Reservation fees', val: money(totResFeeRev), cls: 'sc-muted', sub: 'Topaz $5/reservation' },
+          { label: 'Repeat guests', val: '34%', cls: 'sc-muted', sub: 'est. returning households' },
+        ],
+      };
+    }
+    const CAMP = buildCamping();
+
+    function CampingView() {
+      const [loc, setLoc] = React.useState('ph');
+      const locSites = CAMP.sites.filter(s => s.loc === loc);
+      const barRows = locSites.map(s => ({ name: s.name + '  · ' + s.area, pct: s.occ, val: pct(s.occ), sub: num(s.nights) + ' nts · ' + money1k(s.rev) }));
+      const mapPts = locSites.map(s => ({ name: s.name, lat: s.lat, lng: s.lng, pct: s.occ, sub: money1k(s.rev) + ' · ' + s.kind }));
+      const locName = CAMP_LOCATIONS.find(l => l.key === loc).name;
+      return e('div', null,
+        e(Kpis, { cards: CAMP.kpis }),
+        e(SectionTitle, { title: '🌤️ Seasonal occupancy', sub: 'Occupancy by month — camping is strongly seasonal (summer peak, winter trough).' }),
+        e(SeasonCurve, { items: CAMP.months }),
+        e(SectionTitle, { title: '📅 Occupancy by month × day-of-week', sub: 'Where demand concentrates — weekends and summer run hot; midweek shoulder-season is soft.' }),
+        e(Heatmap, { rowLabels: MONTHS.map(m => m.l), values: CAMP.hm }),
+        e('div', { className: 'two-col', style: { marginTop: 22 } },
+          e('div', null,
+            e(SectionTitle, { title: '🏕️ Per-site occupancy', sub: 'Every campsite, ranked by occupancy.' }),
+            e(SubTabs, { tabs: CAMP_LOCATIONS.map(l => ({ key: l.key, label: l.name })), active: loc, onSelect: setLoc }),
+            e(UtilBars, { rows: barRows })),
+          e('div', null,
+            e(SectionTitle, { title: '🗺️ ' + locName, sub: 'Site map colored by occupancy (real coords where available).' }),
+            e(OccMap, { points: mapPts }),
+            e(SectionTitle, { title: '🛏️ Length of stay', sub: 'Nights per reservation.' }),
+            e(UtilBars, { rows: CAMP.los }))),
+        e(SectionTitle, { title: '💡 Insights', sub: 'Auto-generated from the booking pattern.' }),
+        e(Insights, { items: [
+          { type: 'opportunity', title: 'Weekends near capacity — raise weekend rates', detail: "Fri–Sun occupancy tops 90% in peak months while midweek sits under 45%. Weekend/weekday differential pricing could lift revenue without new sites.", action: 'Pilot a $5 weekend premium at Topaz' },
+          { type: 'risk', title: 'Deep-winter trough at Topaz', detail: 'Dec–Feb occupancy falls under 20%. Fixed costs keep running while revenue stalls.', action: 'Promote winter/off-season stays or seasonal closure review' },
+          { type: 'signal', title: "Brown's Arm outperforms Main Entrance", detail: "Secluded Brown's Arm sites hold higher weekend occupancy than the electric Main Entrance loop despite fewer hookups.", action: 'Feature Brown’s Arm in listings; evaluate electric upgrades' },
+          { type: 'opportunity', title: 'Short stays dominate', detail: '52% of reservations are 1–2 nights. A small multi-night discount could raise length-of-stay and cut turnover cost.', action: 'Test a 3rd-night-10%-off offer' },
+        ] }),
+        e('div', { className: 'section-note' }, 'Camping · grounded in the real Pleasant Hill (12 sites) + Topaz Lake (41 sites) inventory · booking activity is representative sample data.'));
+    }
+
+    /* =====================================================================
+       GOLF — representative municipal course.
+       ===================================================================== */
+    function buildGolf() {
+      const hours = []; for (let h = 6; h <= 18; h++) hours.push(h);
+      const label = h => (h === 12 ? '12p' : h < 12 ? h + 'a' : (h - 12) + 'p');
+      // prime morning peak; twilight softens late; weekends hotter.
+      const hourF = h => h <= 6 ? 0.55 : h <= 10 ? 0.95 : h <= 13 ? 0.78 : h <= 15 ? 0.60 : h <= 16 ? 0.52 : 0.40;
+      const dowF = { Mon: 0.55, Tue: 0.52, Wed: 0.58, Thu: 0.62, Fri: 0.74, Sat: 0.97, Sun: 0.92 };
+      const hm = hours.map(h => DOW.map(d => clamp(hourF(h) * dowF[d] * 100 * 1.02, 0, 98)));
+      // aggregate utilization → rounds.
+      let sum = 0, cnt = 0; hm.forEach(r => r.forEach(v => { sum += v; cnt++; })); const util = sum / cnt;
+      const slotsPerDay = hours.length * 6;                 // tee time every 10 min
+      const bookedTeeTimes = Math.round(slotsPerDay * 365 * (util / 100));
+      const playersPer = 3.1, rounds = Math.round(bookedTeeTimes * playersPer);
+      const greenFee = 42, revGreen = rounds * greenFee * 0.94;
+      const cartAttach = 0.58, revCart = Math.round(bookedTeeTimes * cartAttach) * 20;
+      const revRange = 88000, revPractice = 21000;
+      const revenue = revGreen + revCart + revRange + revPractice;
+      const seasonMult = [0.86, 0.80, 0.62, 0.40, 0.22, 0.18, 0.24, 0.46, 0.74, 0.92, 0.98, 0.95];
+      const months = MONTHS.map((m, mi) => { const r = Math.round(rounds / 12 * seasonMult[mi] / (seasonMult.reduce((s, x) => s + x, 0) / 12)); return { l: m.l, bar: seasonMult[mi] * 100, right: num(r), sub: 'rounds' }; });
+      const segments = [
+        { name: 'Front 9', pct: util + 6, val: pct(util + 6), sub: num(Math.round(rounds * 0.5)) + ' rounds' },
+        { name: 'Back 9', pct: util + 2, val: pct(util + 2), sub: num(Math.round(rounds * 0.48)) + ' rounds' },
+        { name: 'Driving Range', pct: 71, val: '71%', sub: money1k(revRange) },
+        { name: 'Practice Green', pct: 44, val: '44%', sub: money1k(revPractice) },
+        { name: 'Cart rentals', pct: cartAttach * 100, val: pct(cartAttach * 100), sub: 'attach · ' + money1k(revCart) },
+      ];
+      return {
+        hours, label, hm,
+        kpis: [
+          { label: 'Rounds played', val: num(rounds), cls: 'sc-blue', sub: 'player-rounds, trailing 12 mo' },
+          { label: 'Tee-sheet utilization', val: pct(util), cls: 'sc-green', sub: 'booked ÷ available tee times' },
+          { label: 'Revenue', val: money(revenue), cls: 'sc-green', sub: 'green + cart + range + practice' },
+          { label: 'Avg players / tee-time', val: playersPer.toFixed(1), cls: 'sc-purple', sub: 'foursome fill rate 78%' },
+          { label: 'Cart attach', val: pct(cartAttach * 100), cls: 'sc-amber', sub: 'of booked tee times' },
+          { label: 'No-show rate', val: '6%', cls: 'sc-red', sub: 'unfilled reserved tee times' },
+          { label: 'Twilight mix', val: '22%', cls: 'sc-muted', sub: 'after-3pm discounted rounds' },
+          { label: 'Avg green fee', val: money(greenFee), cls: 'sc-muted', sub: 'blended weekday/weekend' },
+        ],
+        segments, months,
+      };
+    }
+    const GOLF = buildGolf();
+
+    function GolfView() {
+      return e('div', null,
+        e(Kpis, { cards: GOLF.kpis }),
+        e(SectionTitle, { title: '⛳ Tee-sheet utilization by hour × day', sub: 'Prime weekend mornings run near capacity; midweek afternoons are the open inventory.' }),
+        e(Heatmap, { rowLabels: GOLF.hours.map(GOLF.label), values: GOLF.hm }),
+        e('div', { className: 'two-col', style: { marginTop: 22 } },
+          e('div', null,
+            e(SectionTitle, { title: '📊 Utilization & revenue by segment', sub: 'The course, the range, and add-ons.' }),
+            e(UtilBars, { rows: GOLF.segments })),
+          e('div', null,
+            e(SectionTitle, { title: '🌤️ Rounds by month', sub: 'Golf season peaks late spring through summer.' }),
+            e(SeasonCurve, { items: GOLF.months }))),
+        e(SectionTitle, { title: '💡 Insights', sub: 'Auto-generated from the tee sheet.' }),
+        e(Insights, { items: [
+          { type: 'opportunity', title: 'Midweek afternoons are wide open', detail: 'Mon–Thu after 1pm sits under 55% utilization. A twilight or league promotion could absorb idle tee times.', action: 'Launch a midweek twilight rate + senior league' },
+          { type: 'risk', title: 'Weekend mornings turning players away', detail: 'Sat/Sun 7–10am is above 90% — demand likely exceeds supply and spills to no-shows.', action: 'Tighten deposit/no-show policy on prime slots' },
+          { type: 'signal', title: 'Cart attach drives margin', detail: '58% of rounds add a cart at $20 — a meaningful share of total revenue beyond green fees.', action: 'Bundle cart + range balls for weekend foursomes' },
+        ] }),
+        e('div', { className: 'section-note' }, 'Golf · representative sample data for a municipal course (Riverbend Golf Course).'));
+    }
+
+    /* =====================================================================
+       AQUATICS — representative community aquatics center.
+       ===================================================================== */
+    function buildAqua() {
+      const hours = []; for (let h = 5; h <= 21; h++) hours.push(h);
+      const label = h => (h === 12 ? '12p' : h < 12 ? h + 'a' : (h - 12) + 'p');
+      // early-morning lap swim + evening lessons peaks; weekend midday open swim.
+      const hourF = h => h <= 6 ? 0.82 : h <= 8 ? 0.74 : h <= 11 ? 0.48 : h <= 14 ? 0.55 : h <= 15 ? 0.5 : h <= 20 ? 0.9 : 0.6;
+      const dowF = { Mon: 0.78, Tue: 0.8, Wed: 0.8, Thu: 0.78, Fri: 0.66, Sat: 0.9, Sun: 0.7 };
+      const hm = hours.map(h => DOW.map(d => clamp(hourF(h) * dowF[d] * 100 * 1.05, 0, 98)));
+      let sum = 0, cnt = 0; hm.forEach(r => r.forEach(v => { sum += v; cnt++; })); const util = sum / cnt;
+      const openHours = hours.length, laneCount = 8;
+      const laneHours = Math.round(openHours * 365 * laneCount * (util / 100) / 2.4);
+      const revenue = 486000;
+      const seasonMult = [0.92, 0.80, 0.74, 0.70, 0.66, 0.68, 0.72, 0.78, 0.84, 0.9, 0.98, 1.0];
+      const months = MONTHS.map((m, mi) => ({ l: m.l, bar: seasonMult[mi] * 100, right: pct(seasonMult[mi] * util * 1.0), sub: 'utilization' }));
+      const pools = [
+        { name: 'Lap Pool (8 lanes)', pct: util + 14, val: pct(util + 14), sub: num(laneHours) + ' lane-hrs' },
+        { name: 'Leisure Pool', pct: 63, val: '63%', sub: 'open swim + parties' },
+        { name: 'Therapy Pool', pct: 48, val: '48%', sub: 'aqua-fit + rehab' },
+        { name: 'Dive Well', pct: 31, val: '31%', sub: 'dive team + rentals' },
+      ];
+      const mix = [
+        { label: 'Swim lessons', val: 205000, disp: money1k(205000), color: '#2563eb' },
+        { label: 'Lap swim (passes)', val: 138000, disp: money1k(138000), color: '#0d9488' },
+        { label: 'Open swim', val: 92000, disp: money1k(92000), color: '#f59e0b' },
+        { label: 'Private rentals', val: 51000, disp: money1k(51000), color: '#7c3aed' },
+      ];
+      return {
+        hours, label, hm, pools, mix, months,
+        kpis: [
+          { label: 'Lane-hours booked', val: num(laneHours), cls: 'sc-blue', sub: '8 lap lanes · trailing 12 mo' },
+          { label: 'Pool utilization', val: pct(util), cls: 'sc-green', sub: 'reserved ÷ available water time' },
+          { label: 'Revenue', val: money(revenue), cls: 'sc-green', sub: 'lessons + passes + rentals' },
+          { label: 'Lessons enrolled', val: '3,180', cls: 'sc-purple', sub: 'across 5 session terms' },
+          { label: 'Avg swimmers / session', val: '19', cls: 'sc-amber', sub: 'open-swim blocks' },
+          { label: 'Peak capacity', val: '96%', cls: 'sc-red', sub: 'Sat 10a–1p open swim' },
+          { label: 'Cancellation', val: '9%', cls: 'sc-muted', sub: 'lessons + rentals' },
+          { label: 'Programs mix', val: '4', cls: 'sc-muted', sub: 'lessons / lap / open / rental' },
+        ],
+      };
+    }
+    const AQUA = buildAqua();
+
+    function AquaticsView() {
+      return e('div', null,
+        e(Kpis, { cards: AQUA.kpis }),
+        e(SectionTitle, { title: '🏊 Water-time utilization by hour × day', sub: 'Early-morning lap swim and evening lessons drive twin daily peaks; weekend midday is open swim.' }),
+        e(Heatmap, { rowLabels: AQUA.hours.map(AQUA.label), values: AQUA.hm }),
+        e('div', { className: 'two-col', style: { marginTop: 22 } },
+          e('div', null,
+            e(SectionTitle, { title: '🌊 Utilization by pool', sub: 'Each body of water at the center.' }),
+            e(UtilBars, { rows: AQUA.pools }),
+            e(SectionTitle, { title: '🎟️ Revenue by program', sub: 'Where aquatics revenue comes from.' }),
+            e(MixBar, { label: 'Program revenue mix', segs: AQUA.mix })),
+          e('div', null,
+            e(SectionTitle, { title: '🌤️ Utilization by month', sub: 'Indoor center holds steadier than camping/golf, with a summer bump.' }),
+            e(SeasonCurve, { items: AQUA.months }))),
+        e(SectionTitle, { title: '💡 Insights', sub: 'Auto-generated from the pool schedule.' }),
+        e(Insights, { items: [
+          { type: 'opportunity', title: 'Late morning is the soft spot', detail: 'Lap Pool sits under 50% from 9am–2pm on weekdays — room for aqua-fit, senior swim, or school programs.', action: 'Add mid-morning aqua-fitness classes' },
+          { type: 'risk', title: 'Saturday open swim at capacity', detail: 'Weekend 10a–1p hits 96% — safety/comfort risk and turned-away families.', action: 'Add a second lifeguarded block or timed sessions' },
+          { type: 'signal', title: 'Lessons are the revenue engine', detail: 'Swim lessons are the largest single revenue line (42% of program revenue) and fill months ahead.', action: 'Expand lesson capacity in the evening peak' },
+        ] }),
+        e('div', { className: 'section-note' }, 'Pool / Aquatics · representative sample data for a community aquatics center.'));
+    }
+
+    /* ── Shell ──────────────────────────────────────────────────────────── */
+    const TABS = [
+      { key: 'camping', label: 'Camping', icon: '🏕️', src: 'real' },
+      { key: 'golf', label: 'Golf', icon: '⛳', src: 'rep' },
+      { key: 'aquatics', label: 'Pool / Aquatics', icon: '🏊', src: 'rep' },
+    ];
+
+    function Toolbar() {
+      return e('div', { className: 'toolbar' },
+        e('a', { className: 'toolbar-back', href: '#' }, '‹ Sample Parks & Rec'),
+        e('span', { className: 'toolbar-title' }, 'Facilities'),
+        e('span', { className: 'divider' }),
+        e('label', null, 'Start', e('input', { type: 'date', defaultValue: '2025-08-01' })),
+        e('label', null, 'End', e('input', { type: 'date', defaultValue: '2026-07-31' })),
+        e('button', { className: 'btn-run' }, '▶ Run Report'),
+        e('button', null, 'COLS'),
+        e('span', { className: 'toolbar-spacer' }),
+        e('span', { className: 'row-count' }, '106 sites · 3 verticals'),
+        e('span', { className: 'divider' }),
+        e('button', { className: 'btn-pdf' }, 'PDF'),
+        e('button', { className: 'btn-excel' }, 'Excel'));
+    }
+
+    function App() {
+      const [tab, setTab] = React.useState('camping');
+      const active = TABS.find(t => t.key === tab);
+      return e(React.Fragment, null,
+        e(Toolbar, null),
+        e('div', { className: 'page' },
+          e('div', { className: 'report-header' },
+            e('div', { className: 'report-header-left' },
+              e('div', null,
+                e('div', { className: 'org-label' }, 'Sample Parks & Recreation'),
+                e('div', { className: 'title' }, 'Facilities'))),
+            e('div', { className: 'report-header-right' },
+              e('div', { className: 'date-range' }, 'August 1, 2025 – July 31, 2026'))),
+          e('div', { className: 'sample-ribbon' },
+            e('strong', null, 'Mockup — sample data. '),
+            'Design study for fully built-out vertical views (quality bar = Court Utilization). ',
+            e('strong', null, 'Camping'), ' is grounded in the real Pleasant Hill + Topaz Lake site inventory; ',
+            e('strong', null, 'Golf'), ' and ', e('strong', null, 'Aquatics'), ' use representative data. Not wired to live reporting.'),
+          e('div', { className: 'tabs' },
+            TABS.map(t => e('div', {
+              key: t.key, className: 'tab' + (t.key === tab ? ' active' : ''), onClick: () => setTab(t.key),
+            }, e('span', null, t.icon), t.label,
+               e('span', { className: 'src-badge ' + (t.src === 'real' ? 'src-real' : 'src-rep') }, t.src === 'real' ? 'real inventory' : 'sample')))),
+          tab === 'camping' ? e(CampingView, null) : tab === 'golf' ? e(GolfView, null) : e(AquaticsView, null)));
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(e(App));
+  </script>
+</body>
+</html>
