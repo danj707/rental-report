@@ -700,6 +700,7 @@ const ORGS = {
   "pleasant-hill": {
     token:   "3MEg1QTAX3pF1x6V",
     orgId:   "52efcded-a5e8-4dbf-8a45-100f70170de0",
+    logoUrl: "https://prod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com/organization-52efcded-a5e8-4dbf-8a45-100f70170de0/fullLogo.png",
     coords:  { lat: 38.82065625, lon: -94.29997011 },   // Pleasant Hill City Lake
     mapCity: "Pleasant Hill, MO",
     displayName: "Pleasant Hill",
