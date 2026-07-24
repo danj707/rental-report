@@ -53,7 +53,7 @@
   }
   .messages-inner { max-width: 780px; margin: 0 auto; padding: 0 16px; }
 
-  .msg { display: flex; gap: 10px; margin-bottom: 20px; animation: msgIn .25s ease-out; }
+  .msg { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 20px; animation: msgIn .25s ease-out; }
   .msg-user { flex-direction: row-reverse; }
   @keyframes msgIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 
@@ -63,7 +63,7 @@
     font-size: 14px; font-weight: 700;
   }
   .msg-user .msg-avatar { background: #e0e7ff; color: #4338ca; }
-  .msg-ai .msg-avatar { background: #312e81; color: #fff; }
+  .msg-ai .msg-avatar { background: none; border-radius: 8px; overflow: hidden; }
 
   .msg-bubble {
     max-width: 85%; padding: 12px 16px; border-radius: 16px;
@@ -488,7 +488,7 @@ function ChatApp() {
               var isStreaming = m.streaming && i === messages.length - 1;
               return (
                 <div key={i} className={'msg ' + (isUser ? 'msg-user' : 'msg-ai')}>
-                  <div className="msg-avatar">{isUser ? 'You' : <img src={REC_LOGO} style={{width:24,height:24,borderRadius:4}} alt="rec" />}</div>
+                  <div className="msg-avatar">{isUser ? 'You' : <img src={REC_LOGO} style={{width:32,height:32,borderRadius:8,display:'block'}} alt="rec" />}</div>
                   <div className="msg-bubble">
                     {isUser
                       ? m.content
