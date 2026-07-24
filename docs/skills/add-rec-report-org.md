@@ -74,10 +74,27 @@ Current report types (from `REPORT_TYPES` in `server.js`):
 | `roster` | Program/section roster |
 | `products` | Product / merchandise sales |
 | `memberships` | Membership report |
-| `court-utilization` | Court utilization (stacked bar) |
-| `overview` | **Internal/aggregate — do NOT offer for self-serve onboarding** (it's in `NON_ADDABLE_REPORTS`). Only add if the user explicitly asks. |
+| `calendar` | Program Calendar (public class & rental schedule) |
+| `fasttrack` | Fast Track (pre-registration demand signal) |
+| `users` | Community Intel (demographics, revenue & strategy) |
+| `instructor-payout` | Instructor Payout (revenue splits by instructor) |
+| `ice-calendar` | Ice Participant Calendar |
 
-**Tip:** Enable whatever the org has and omit the rest — the landing page and startup log only show report keys with a non-null `mbUuid`.
+This list is the single source of truth: the Add-Org modal builds its checkboxes
+from `reportMeta` minus `NON_ADDABLE_REPORTS` and `RETIRED_REPORTS`, so it stays
+in sync automatically — new report types appear on their own.
+
+**Retired / deprecated — do NOT offer** (in `RETIRED_REPORTS`; routes kept but not surfaced):
+- `court-utilization` — folded into the **Facilities** hub (`facilities`).
+- `chat` (Rec AI Chat) and `report-wizard` (Report Wizard) — deprecated in favor of Rec's **Seb** AI skill.
+
+**Non-addable internal reports** (in `NON_ADDABLE_REPORTS`) — not offered for self-serve
+onboarding; only add if the user explicitly asks: `program-demographics`, `retention`,
+`annual-report`, `section-detail`, `qoq`, `checkins`, `program-checkins`.
+
+**Tip:** Enable whatever the org has and omit the rest — the landing page and startup log
+only show report keys with a non-null `mbUuid`. Some reports use a shared base query (no
+per-org Metabase link needed); the Add-Org modal marks which ones still need a UUID.
 
 ---
 
