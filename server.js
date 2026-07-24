@@ -2647,33 +2647,50 @@ app.use(express.json({ limit: "50mb" }));
 // ── Inter font injection ─ auto-injects into every HTML res.send ─────────────
 const FONT_INJECT = '<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"><style>body,input,select,button,textarea{font-family:\'Inter\',system-ui,-apple-system,sans-serif !important}</style>';
 
+// rec.us logo (same asset as the favicon) as a data URI — inlined so the deploy
+// overlay's logo renders even while the server is briefly unreachable.
+const REC_LOGO = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAEWUlEQVR4nO2XW4hWVRTHf2vvc87ndxnHZsa5SBYiKUgkGmXmGFI9ZFIU+RIUPSRC0IOIoEEvIojQBbpQoUXahYymJLMoqbCL+lA2CJmCjo6MzjiazjiX73yXs/fq4Yyic6lHe5j1dDhnsfdv7/Xf/7WPuAMNyg0McyMnnwSYBJgE+F8ABKNfqArOewCMEVDBqyIiWAPgQQWngqoCiojBmtTPBEFJn72CHxkLDIERkOt97yqACuAFGyg2nwFxEFdBPWQzUElwsUF9OpApeAgsIFBOcLGgYhFxKKDeEWYthBEYA64MRXAKMu4OeDBhQte5Ah/sAafCQ0syFKaEfPXLEK0LcyyZXwQNiJOI7/fB0VMlojDk3nk13L3A4UvDOBcQiEMKWY4cDdl/uMzFAcOslgIrlpbIZxzoOADqBYngVI/hxa1dgOeP47M5fOwSnef6yUVTOPhRC2GkPP1CH4eOFoEE8AgRzzzaxFsbcmTMAGWbZ8OWgK27eojLVdIZIw7saGDx7Z4kVowZTwMaEgYVAmsRgZOnh+k8N0gYhRQrFfbss7Tt7aX9xADN03IsX1ZPf5/j64MDbN99hqbaJrZsrGXt+jJvf9YNWFrqCsyZFXG8w1FxjJH9uCJMXFqT+5dmmXNrI5//fJ7lixrpvSi0nxikbtpUPnyphQcXeRBY9/IUXv/4DDt/KPJIax3bd/+NNcJ9Cwvs2FTHzKaErrOGbFhBKw4xZmKAa6OlUOHVNyLa25tYMC/HY+u6EQkpx2We2tBJXPIEgafqLNXEc7q7xLYvPZWkjPMZ1q9qZubNlyj1KTObHOpDvDMTiHCcqFbAUObO28pgHdWSBSrkC3kWz8sxXC4hXsgVIJeZRiBFCjUJTg3gCHwVVAi8BQ+iilGDiuPKWfhXIxIBRRiOASssmT8VVYsRYdPzjez9tJHv2hp49vHpzJpRw7bNzaxZmRCpYI1j03v9dHUXCGqEzgu1nL+cgSBBdZwSqKRQhpHjjWAMiHiCQNGiY/VKy/bdWTp6hmhd1cHDi2uIS4ZvD/ZRqlY4cbKRne/UsvqJet5s6+WnQ4MserLE3NkZ/uoYom1zA40toIPp4saWQKCaQOI8oAyX0nci4KpKY33Mrtem89zGiP1HBvhk74Wr61h+z01sXJMnGerllbX1GNvMu1/009MX0/N7DAREFvBwrRHIlTuhqmAiONttef8bcMADCyJa74pxJYeRAOc9YVaplmv48bcqf3akR/aOuSHLFhrEXKZSDghNgmRrOHJM+LU9oX9AuWVGyIpWRyEbgzdjARgBMwGQv2KxDl+63ju9B2s8kjdg7YhaFV9M8BisgFdB1RFkFaJMKjWtQtHh/fWyG1MCl4C75IDUws0omRoDHoMfBHyqZhEQazAjmyuSNqgkFnwzARwCGBMgEzWjqwwCQXBtkoxOQSDtjP/RzI2B9NTbCXMm8IGxk04c//ZbMfrb2NwbfiGZBJgEmAT4B/ajz479nqqPAAAAAElFTkSuQmCC';
+
 // Deploy-watch: injected into every page. Pings /healthz; on a blip (deploy or
 // crash-restart) it shows a branded "Deploying" overlay and auto-reloads when
 // the server is back — so an in-progress deploy never shows a broken/reloading
-// page to someone with a tab open. Idle poll is light (20s); tightens to 2s
+// page to someone with a tab open. Idle poll is light (15s); tightens to 2s
 // once a blip is detected, and also checks on tab focus / network reconnect.
+// Recovery reloads as soon as the origin is reachable AGAIN (any HTTP response,
+// not just a clean 200), because after a deploy swap the browser's reused
+// keep-alive connection is often dead — background fetch()es keep failing while
+// a full-page navigation would get a fresh connection. A blind-reload fallback
+// (after ~6s down) forces that fresh navigation, and an always-present
+// "Reload now" button guarantees the user is never stuck.
 const DEPLOY_WATCH_INJECT = `<script>
 (function(){
   if(window.__recDeployWatch)return; window.__recDeployWatch=1;
-  var down=false, fast=null, ov=null;
+  var down=false, fast=null, ov=null, downAt=0;
+  function reload(){ try{ location.reload(); }catch(e){ location.href = location.pathname + location.search; } }
   function overlay(){
     if(ov)return;
     ov=document.createElement('div');
     ov.style.cssText='position:fixed;inset:0;z-index:2147483647;display:flex;align-items:center;justify-content:center;background:rgba(15,17,23,.94);font-family:Inter,system-ui,-apple-system,sans-serif';
-    ov.innerHTML='<div style="text-align:center;color:#e0e0e0;max-width:420px;padding:40px">'
-      +'<div style="font-size:40px;margin-bottom:14px">🚀</div>'
-      +'<div style="font-size:20px;font-weight:600;color:#fff;margin-bottom:8px">Deploying an update</div>'
-      +'<div style="font-size:13px;color:#9aa8b8;line-height:1.6;margin-bottom:22px">The platform is updating with the latest changes.<br>Reconnecting automatically — no need to refresh.</div>'
-      +'<div style="width:34px;height:34px;border:3px solid #333;border-top-color:#4f8cff;border-radius:50%;margin:0 auto;animation:recspin .8s linear infinite"></div>'
+    ov.innerHTML='<div style="text-align:center;color:#e0e0e0;max-width:440px;padding:40px">'
+      +'<img src="${REC_LOGO}" alt="rec.us" style="height:46px;width:46px;display:block;margin:0 auto 7px;border-radius:11px;box-shadow:0 3px 14px rgba(13,148,136,.45)">'
+      +'<div style="font-size:12px;font-weight:700;letter-spacing:2.5px;text-transform:uppercase;color:#5eead4;margin-bottom:22px">rec.us</div>'
+      +'<div style="font-size:38px;margin-bottom:12px">🚀</div>'
+      +'<div style="font-size:20px;font-weight:700;color:#fff;margin-bottom:8px">Deploying an update</div>'
+      +'<div style="font-size:13px;color:#9aa8b8;line-height:1.6;margin-bottom:20px">The platform is updating with the latest changes.<br>Reconnecting automatically — no need to refresh.</div>'
+      +'<div style="width:34px;height:34px;border:3px solid #1e2a2a;border-top-color:#14b8a6;border-radius:50%;margin:0 auto 20px;animation:recspin .8s linear infinite"></div>'
+      +'<button id="recReloadNow" style="background:#0d9488;color:#fff;border:none;border-radius:8px;padding:9px 22px;font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;box-shadow:0 2px 12px rgba(13,148,136,.45)">Reload now</button>'
       +'<style>@keyframes recspin{to{transform:rotate(360deg)}}</style></div>';
-    if(document.body)document.body.appendChild(ov);
+    if(document.body){ document.body.appendChild(ov); var b=ov.querySelector('#recReloadNow'); if(b) b.addEventListener('click', reload); }
   }
-  function ping(){ return fetch('/healthz',{cache:'no-store'}).then(function(r){return r.ok;}).catch(function(){return false;}); }
-  function check(){ ping().then(function(ok){
-    if(!ok){ if(!down){ down=true; overlay(); if(!fast)fast=setInterval(check,2000); } }
-    else if(down){ location.reload(); }
+  // Any HTTP response (even a 503 during warmup) means the origin is reachable;
+  // a network error (rejection) means it is down.
+  function probe(){ return fetch('/healthz?_='+Date.now(),{cache:'no-store'}).then(function(){return true;}).catch(function(){return false;}); }
+  function check(){ probe().then(function(up){
+    if(up){ if(down) reload(); return; }
+    if(!down){ down=true; downAt=Date.now(); overlay(); if(!fast) fast=setInterval(check,2000); }
+    else if(Date.now()-downAt > 6000){ reload(); } // fetch stuck on a dead keep-alive conn — force a fresh navigation
   }); }
-  setInterval(check, 20000);
+  setInterval(check, 15000);
   window.addEventListener('focus', check);
   window.addEventListener('online', check);
 })();
