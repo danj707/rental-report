@@ -2650,12 +2650,19 @@ const FONT_INJECT = '<link rel="preconnect" href="https://fonts.googleapis.com">
 // Deploy-watch: injected into every page. Pings /healthz; on a blip (deploy or
 // crash-restart) it shows a branded "Deploying" overlay and auto-reloads when
 // the server is back — so an in-progress deploy never shows a broken/reloading
-// page to someone with a tab open. Idle poll is light (20s); tightens to 2s
+// page to someone with a tab open. Idle poll is light (15s); tightens to 2s
 // once a blip is detected, and also checks on tab focus / network reconnect.
+// Recovery reloads as soon as the origin is reachable AGAIN (any HTTP response,
+// not just a clean 200), because after a deploy swap the browser's reused
+// keep-alive connection is often dead — background fetch()es keep failing while
+// a full-page navigation would get a fresh connection. A blind-reload fallback
+// (after ~6s down) forces that fresh navigation, and an always-present
+// "Reload now" button guarantees the user is never stuck.
 const DEPLOY_WATCH_INJECT = `<script>
 (function(){
   if(window.__recDeployWatch)return; window.__recDeployWatch=1;
-  var down=false, fast=null, ov=null;
+  var down=false, fast=null, ov=null, downAt=0;
+  function reload(){ try{ location.reload(); }catch(e){ location.href = location.pathname + location.search; } }
   function overlay(){
     if(ov)return;
     ov=document.createElement('div');
@@ -2663,17 +2670,21 @@ const DEPLOY_WATCH_INJECT = `<script>
     ov.innerHTML='<div style="text-align:center;color:#e0e0e0;max-width:420px;padding:40px">'
       +'<div style="font-size:40px;margin-bottom:14px">🚀</div>'
       +'<div style="font-size:20px;font-weight:600;color:#fff;margin-bottom:8px">Deploying an update</div>'
-      +'<div style="font-size:13px;color:#9aa8b8;line-height:1.6;margin-bottom:22px">The platform is updating with the latest changes.<br>Reconnecting automatically — no need to refresh.</div>'
-      +'<div style="width:34px;height:34px;border:3px solid #333;border-top-color:#4f8cff;border-radius:50%;margin:0 auto;animation:recspin .8s linear infinite"></div>'
+      +'<div style="font-size:13px;color:#9aa8b8;line-height:1.6;margin-bottom:20px">The platform is updating with the latest changes.<br>Reconnecting automatically — no need to refresh.</div>'
+      +'<div style="width:34px;height:34px;border:3px solid #333;border-top-color:#4f8cff;border-radius:50%;margin:0 auto 20px;animation:recspin .8s linear infinite"></div>'
+      +'<button id="recReloadNow" style="background:#4f8cff;color:#fff;border:none;border-radius:8px;padding:9px 20px;font-family:inherit;font-size:13px;font-weight:600;cursor:pointer">Reload now</button>'
       +'<style>@keyframes recspin{to{transform:rotate(360deg)}}</style></div>';
-    if(document.body)document.body.appendChild(ov);
+    if(document.body){ document.body.appendChild(ov); var b=ov.querySelector('#recReloadNow'); if(b) b.addEventListener('click', reload); }
   }
-  function ping(){ return fetch('/healthz',{cache:'no-store'}).then(function(r){return r.ok;}).catch(function(){return false;}); }
-  function check(){ ping().then(function(ok){
-    if(!ok){ if(!down){ down=true; overlay(); if(!fast)fast=setInterval(check,2000); } }
-    else if(down){ location.reload(); }
+  // Any HTTP response (even a 503 during warmup) means the origin is reachable;
+  // a network error (rejection) means it is down.
+  function probe(){ return fetch('/healthz?_='+Date.now(),{cache:'no-store'}).then(function(){return true;}).catch(function(){return false;}); }
+  function check(){ probe().then(function(up){
+    if(up){ if(down) reload(); return; }
+    if(!down){ down=true; downAt=Date.now(); overlay(); if(!fast) fast=setInterval(check,2000); }
+    else if(Date.now()-downAt > 6000){ reload(); } // fetch stuck on a dead keep-alive conn — force a fresh navigation
   }); }
-  setInterval(check, 20000);
+  setInterval(check, 15000);
   window.addEventListener('focus', check);
   window.addEventListener('online', check);
 })();
