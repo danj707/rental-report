@@ -175,16 +175,44 @@
     // (hot = busy). Used for per-unit bars.
     const CU_UTIL_COLOR = p => p >= 70 ? '#dc2626' : p >= 50 ? '#ea580c' : p >= 30 ? '#f59e0b' : p >= 15 ? '#16a34a' : '#94a3b8';
     const CU_MAP_COLOR  = p => p >= 70 ? '#dc2626' : p >= 40 ? '#f59e0b' : p >= 15 ? '#22c55e' : '#94a3b8';
-    // Heatmap cell shading (0–100).
-    function heatCell(v) {
-      if (v >= 80) return { bg: '#991b1b', fg: '#fff' };
-      if (v >= 65) return { bg: '#dc2626', fg: '#fff' };
-      if (v >= 50) return { bg: '#ea580c', fg: '#fff' };
-      if (v >= 35) return { bg: '#f59e0b', fg: '#3a2606' };
-      if (v >= 20) return { bg: '#fcd34d', fg: '#3a2606' };
-      if (v >= 8)  return { bg: '#d1fae5', fg: '#065f46' };
-      return { bg: '#f3f4f6', fg: '#c0c0c0' };
-    }
+    // Pick the ramp stop for value v (ramp sorted high→low by .min).
+    const rampPick = (v, ramp) => { for (const s of ramp) if (v >= s.min) return s; return ramp[ramp.length - 1]; };
+
+    // ── Per-vertical themes — each section "feels" like its site type ──────
+    // Camping = warm/woodsy (its heatmap ember scale is kept verbatim — Dan's
+    // favorite); Golf = fairway greens; Aquatics = water blues.
+    const THEMES = {
+      camping: {
+        accent: '#3f6212', accentSoft: '#65a30d', heatLabel: 'occupancy',
+        curve: 'linear-gradient(90deg,#4d7c0f,#84cc16)', wash: '#fcfdf4',
+        emoji: '🏕️', title: 'Camping', sub: '2 lakeside campgrounds · 53 sites · Pleasant Hill + Topaz Lake',
+        band: { bg: 'linear-gradient(135deg,#f7fee7,#ecfccb)', border: '#bef264', color: '#3f6212' },
+        heat: [ { min: 80, bg: '#991b1b', fg: '#fff' }, { min: 65, bg: '#dc2626', fg: '#fff' }, { min: 50, bg: '#ea580c', fg: '#fff' }, { min: 35, bg: '#f59e0b', fg: '#3a2606' }, { min: 20, bg: '#fcd34d', fg: '#3a2606' }, { min: 8, bg: '#d1fae5', fg: '#065f46' }, { min: 0, bg: '#f3f4f6', fg: '#c0c0c0' } ],
+        bar: [ { min: 70, color: '#dc2626' }, { min: 50, color: '#ea580c' }, { min: 30, color: '#f59e0b' }, { min: 15, color: '#16a34a' }, { min: 0, color: '#94a3b8' } ],
+      },
+      golf: {
+        accent: '#15803d', accentSoft: '#16a34a', heatLabel: 'utilization',
+        curve: 'linear-gradient(90deg,#15803d,#4ade80)', wash: '#f7fdf8',
+        emoji: '⛳', title: 'Golf', sub: '18-hole course · driving range · practice green',
+        band: { bg: 'linear-gradient(135deg,#f0fdf4,#dcfce7)', border: '#86efac', color: '#15803d' },
+        heat: [ { min: 80, bg: '#14532d', fg: '#fff' }, { min: 65, bg: '#166534', fg: '#fff' }, { min: 50, bg: '#15803d', fg: '#fff' }, { min: 35, bg: '#22c55e', fg: '#052e16' }, { min: 20, bg: '#4ade80', fg: '#052e16' }, { min: 8, bg: '#dcfce7', fg: '#166534' }, { min: 0, bg: '#f5f3ec', fg: '#c0c0c0' } ],
+        bar: [ { min: 70, color: '#166534' }, { min: 50, color: '#15803d' }, { min: 30, color: '#22c55e' }, { min: 15, color: '#4ade80' }, { min: 0, color: '#c7b899' } ],
+      },
+      aquatics: {
+        accent: '#0369a1', accentSoft: '#0891b2', heatLabel: 'utilization',
+        curve: 'linear-gradient(90deg,#0369a1,#38bdf8)', wash: '#f6fcff',
+        emoji: '🏊', title: 'Pool / Aquatics', sub: 'Indoor center · 4 pools · 8 lap lanes',
+        band: { bg: 'linear-gradient(135deg,#ecfeff,#e0f2fe)', border: '#7dd3fc', color: '#0369a1' },
+        heat: [ { min: 80, bg: '#0c4a6e', fg: '#fff' }, { min: 65, bg: '#0369a1', fg: '#fff' }, { min: 50, bg: '#0284c7', fg: '#fff' }, { min: 35, bg: '#38bdf8', fg: '#08303f' }, { min: 20, bg: '#7dd3fc', fg: '#0c4a6e' }, { min: 8, bg: '#e0f2fe', fg: '#0369a1' }, { min: 0, bg: '#f3f4f6', fg: '#c0c0c0' } ],
+        bar: [ { min: 70, color: '#0369a1' }, { min: 50, color: '#0284c7' }, { min: 30, color: '#38bdf8' }, { min: 15, color: '#7dd3fc' }, { min: 0, color: '#cbd5e1' } ],
+      },
+    };
+    // Bar-legend labels shared by every ramp (thresholds 15/30/50/70).
+    const BAR_LEGEND = t => [
+      { color: rampPick(0, t.bar).color, l: '<15%' }, { color: rampPick(15, t.bar).color, l: '15–30%' },
+      { color: rampPick(30, t.bar).color, l: '30–50%' }, { color: rampPick(50, t.bar).color, l: '50–70%' },
+      { color: rampPick(70, t.bar).color, l: '70%+' },
+    ];
     const DOW = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
     // Trailing 12 months ending Jul 2026 (fixed — matches the demo date range).
     const MONTHS = [
@@ -194,63 +222,74 @@
     ];
 
     // ── shared widgets ─────────────────────────────────────────────────────
-    function Kpis({ cards }) {
+    function Kpis({ cards, accent }) {
       return e('div', { className: 'sum-cards' },
-        cards.map((c, i) => e('div', { className: 'sum-card', key: i },
+        cards.map((c, i) => e('div', { className: 'sum-card', key: i, style: accent ? { borderLeft: '3px solid ' + accent } : null },
           e('div', { className: 'sc-label' }, c.label),
           e('div', { className: 'sc-val ' + (c.cls || 'sc-muted') }, c.val),
           e('div', { className: 'sc-sub' }, c.sub))));
     }
 
-    function SectionTitle({ title, sub }) {
+    function SectionTitle({ title, sub, color }) {
       return e('div', { className: 'vsec' },
-        e('div', { className: 'vsec-t' }, title),
+        e('div', { className: 'vsec-t', style: color ? { color } : null }, title),
         sub ? e('div', { className: 'vsec-s' }, sub) : null);
     }
 
-    function UtilBars({ rows }) {
+    function UtilBars({ rows, theme }) {
+      const t = theme || THEMES.camping;
       return e('div', { className: 'court-native' },
         e('div', { className: 'cu-bars' },
           rows.map((r, i) => e('div', { className: 'cu-bar-row', key: i },
             e('div', { className: 'cu-bar-name' }, r.name),
             e('div', { className: 'cu-bar-track' },
-              e('div', { className: 'cu-bar-seg', style: { width: clamp(r.pct, 0, 100) + '%', background: CU_UTIL_COLOR(r.pct) } })),
+              e('div', { className: 'cu-bar-seg', style: { width: clamp(r.pct, 0, 100) + '%', background: rampPick(r.pct, t.bar).color } })),
             e('div', null,
               e('div', { className: 'cu-bar-val' }, r.val),
               r.sub ? e('div', { className: 'cu-bar-sub' }, r.sub) : null)))),
         e('div', { className: 'cu-legend' },
-          [['#94a3b8', '<15%'], ['#16a34a', '15–30%'], ['#f59e0b', '30–50%'], ['#ea580c', '50–70%'], ['#dc2626', '70%+']]
-            .map((s, i) => e('span', { key: i }, e('span', { className: 'sw', style: { background: s[0] } }), s[1]))));
+          BAR_LEGEND(t).map((s, i) => e('span', { key: i }, e('span', { className: 'sw', style: { background: s.color } }), s.l))));
     }
 
     // Heatmap: rowLabels × the 7 days of week. values = [row][col] (0–100).
-    function Heatmap({ rowLabels, values, unit }) {
+    function Heatmap({ rowLabels, values, theme }) {
+      const t = theme || THEMES.camping;
       const cells = [];
       cells.push(e('div', { className: 'heatmap-hdr', key: 'h-' }, ''));
       DOW.forEach(d => cells.push(e('div', { className: 'heatmap-hdr', key: 'h-' + d }, d)));
       rowLabels.forEach((rl, ri) => {
         cells.push(e('div', { className: 'heatmap-label', key: 'l-' + ri }, rl));
         values[ri].forEach((v, ci) => {
-          const c = heatCell(v);
-          cells.push(e('div', { className: 'heatmap-cell', key: ri + '-' + ci, style: { background: c.bg, color: c.fg }, title: rl + ' · ' + DOW[ci] + ' · ' + Math.round(v) + (unit || '%') }, Math.round(v)));
+          const c = rampPick(v, t.heat);
+          cells.push(e('div', { className: 'heatmap-cell', key: ri + '-' + ci, style: { background: c.bg, color: c.fg }, title: rl + ' · ' + DOW[ci] + ' · ' + Math.round(v) + '%' }, Math.round(v)));
         });
       });
       return e('div', { className: 'court-native' },
         e('div', { className: 'heatmap-grid' }, cells),
         e('div', { className: 'heatmap-legend' },
           e('span', null, 'Low'),
-          [8, 20, 35, 50, 65, 80].map((v, i) => e('span', { key: i }, e('span', { className: 'heatmap-legend-swatch', style: { background: heatCell(v).bg } }))),
-          e('span', null, 'High (' + (unit === ' rounds' ? 'rounds' : 'utilization') + ')')));
+          [8, 20, 35, 50, 65, 80].map((v, i) => e('span', { key: i }, e('span', { className: 'heatmap-legend-swatch', style: { background: rampPick(v, t.heat).bg } }))),
+          e('span', null, 'High (' + t.heatLabel + ')')));
     }
 
-    function SeasonCurve({ items }) {
+    function SeasonCurve({ items, gradient }) {
       const max = Math.max(1, ...items.map(m => m.bar));
       return e('div', { className: 'vtrend' },
         items.map((m, i) => e('div', { className: 'vtrend-row', key: i },
           e('div', { className: 'vtrend-mo' }, m.l),
-          e('div', { className: 'vtrend-track' }, e('div', { className: 'vtrend-bar', style: { width: (m.bar / max * 100) + '%' } })),
+          e('div', { className: 'vtrend-track' }, e('div', { className: 'vtrend-bar', style: { width: (m.bar / max * 100) + '%', background: gradient || undefined } })),
           e('div', { className: 'vtrend-rev' }, m.right),
           e('div', { className: 'vtrend-bk' }, m.sub))));
+    }
+
+    // Themed header band per vertical (mirrors the hub's Programs summary band).
+    function VHead({ theme, note }) {
+      return e('div', { style: { background: theme.band.bg, border: '1px solid ' + theme.band.border, borderRadius: 10, padding: '13px 18px', margin: '4px 0 10px', display: 'flex', alignItems: 'center', gap: 14 } },
+        e('div', { style: { fontSize: 30, lineHeight: 1 } }, theme.emoji),
+        e('div', null,
+          e('div', { style: { fontSize: 15, fontWeight: 800, color: theme.band.color } }, theme.title),
+          e('div', { style: { fontSize: 12, color: '#6b7280', marginTop: 2 } }, theme.sub)),
+        e('div', { style: { marginLeft: 'auto', fontSize: 10, fontWeight: 700, letterSpacing: '.5px', textTransform: 'uppercase', color: theme.band.color, opacity: .85, whiteSpace: 'nowrap' } }, note));
     }
 
     function MixBar({ label, segs }) {
@@ -410,23 +449,25 @@
       const barRows = locSites.map(s => ({ name: s.name + '  · ' + s.area, pct: s.occ, val: pct(s.occ), sub: num(s.nights) + ' nts · ' + money1k(s.rev) }));
       const mapPts = locSites.map(s => ({ name: s.name, lat: s.lat, lng: s.lng, pct: s.occ, sub: money1k(s.rev) + ' · ' + s.kind }));
       const locName = CAMP_LOCATIONS.find(l => l.key === loc).name;
-      return e('div', null,
-        e(Kpis, { cards: CAMP.kpis }),
-        e(SectionTitle, { title: '🌤️ Seasonal occupancy', sub: 'Occupancy by month — camping is strongly seasonal (summer peak, winter trough).' }),
-        e(SeasonCurve, { items: CAMP.months }),
-        e(SectionTitle, { title: '📅 Occupancy by month × day-of-week', sub: 'Where demand concentrates — weekends and summer run hot; midweek shoulder-season is soft.' }),
-        e(Heatmap, { rowLabels: MONTHS.map(m => m.l), values: CAMP.hm }),
+      const T = THEMES.camping;
+      return e('div', { style: { background: T.wash, borderRadius: 12, padding: '2px 14px 16px' } },
+        e(VHead, { theme: T, note: 'Real inventory' }),
+        e(Kpis, { cards: CAMP.kpis, accent: T.accentSoft }),
+        e(SectionTitle, { title: '🌲 Seasonal occupancy', sub: 'Occupancy by month — camping is strongly seasonal (summer peak, winter trough).', color: T.accent }),
+        e(SeasonCurve, { items: CAMP.months, gradient: T.curve }),
+        e(SectionTitle, { title: '🔥 Occupancy by month × day-of-week', sub: 'Where demand concentrates — weekends and summer run hot; midweek shoulder-season is soft.', color: T.accent }),
+        e(Heatmap, { rowLabels: MONTHS.map(m => m.l), values: CAMP.hm, theme: T }),
         e('div', { className: 'two-col', style: { marginTop: 22 } },
           e('div', null,
-            e(SectionTitle, { title: '🏕️ Per-site occupancy', sub: 'Every campsite, ranked by occupancy.' }),
+            e(SectionTitle, { title: '⛺ Per-site occupancy', sub: 'Every campsite, ranked by occupancy.', color: T.accent }),
             e(SubTabs, { tabs: CAMP_LOCATIONS.map(l => ({ key: l.key, label: l.name })), active: loc, onSelect: setLoc }),
-            e(UtilBars, { rows: barRows })),
+            e(UtilBars, { rows: barRows, theme: T })),
           e('div', null,
-            e(SectionTitle, { title: '🗺️ ' + locName, sub: 'Site map colored by occupancy (real coords where available).' }),
+            e(SectionTitle, { title: '🗺️ ' + locName, sub: 'Site map colored by occupancy (real coords where available).', color: T.accent }),
             e(OccMap, { points: mapPts }),
-            e(SectionTitle, { title: '🛏️ Length of stay', sub: 'Nights per reservation.' }),
-            e(UtilBars, { rows: CAMP.los }))),
-        e(SectionTitle, { title: '💡 Insights', sub: 'Auto-generated from the booking pattern.' }),
+            e(SectionTitle, { title: '🎒 Length of stay', sub: 'Nights per reservation.', color: T.accent }),
+            e(UtilBars, { rows: CAMP.los, theme: T }))),
+        e(SectionTitle, { title: '🧭 Insights', sub: 'Auto-generated from the booking pattern.', color: T.accent }),
         e(Insights, { items: [
           { type: 'opportunity', title: 'Weekends near capacity — raise weekend rates', detail: "Fri–Sun occupancy tops 90% in peak months while midweek sits under 45%. Weekend/weekday differential pricing could lift revenue without new sites.", action: 'Pilot a $5 weekend premium at Topaz' },
           { type: 'risk', title: 'Deep-winter trough at Topaz', detail: 'Dec–Feb occupancy falls under 20%. Fixed costs keep running while revenue stalls.', action: 'Promote winter/off-season stays or seasonal closure review' },
@@ -482,18 +523,20 @@
     const GOLF = buildGolf();
 
     function GolfView() {
-      return e('div', null,
-        e(Kpis, { cards: GOLF.kpis }),
-        e(SectionTitle, { title: '⛳ Tee-sheet utilization by hour × day', sub: 'Prime weekend mornings run near capacity; midweek afternoons are the open inventory.' }),
-        e(Heatmap, { rowLabels: GOLF.hours.map(GOLF.label), values: GOLF.hm }),
+      const T = THEMES.golf;
+      return e('div', { style: { background: T.wash, borderRadius: 12, padding: '2px 14px 16px' } },
+        e(VHead, { theme: T, note: 'Sample data' }),
+        e(Kpis, { cards: GOLF.kpis, accent: T.accentSoft }),
+        e(SectionTitle, { title: '⛳ Tee-sheet utilization by hour × day', sub: 'Prime weekend mornings run near capacity; midweek afternoons are the open inventory.', color: T.accent }),
+        e(Heatmap, { rowLabels: GOLF.hours.map(GOLF.label), values: GOLF.hm, theme: T }),
         e('div', { className: 'two-col', style: { marginTop: 22 } },
           e('div', null,
-            e(SectionTitle, { title: '📊 Utilization & revenue by segment', sub: 'The course, the range, and add-ons.' }),
-            e(UtilBars, { rows: GOLF.segments })),
+            e(SectionTitle, { title: '🏌️ Utilization & revenue by segment', sub: 'The course, the range, and add-ons.', color: T.accent }),
+            e(UtilBars, { rows: GOLF.segments, theme: T })),
           e('div', null,
-            e(SectionTitle, { title: '🌤️ Rounds by month', sub: 'Golf season peaks late spring through summer.' }),
-            e(SeasonCurve, { items: GOLF.months }))),
-        e(SectionTitle, { title: '💡 Insights', sub: 'Auto-generated from the tee sheet.' }),
+            e(SectionTitle, { title: '🚩 Rounds by month', sub: 'Golf season peaks late spring through summer.', color: T.accent }),
+            e(SeasonCurve, { items: GOLF.months, gradient: T.curve }))),
+        e(SectionTitle, { title: '🏆 Insights', sub: 'Auto-generated from the tee sheet.', color: T.accent }),
         e(Insights, { items: [
           { type: 'opportunity', title: 'Midweek afternoons are wide open', detail: 'Mon–Thu after 1pm sits under 55% utilization. A twilight or league promotion could absorb idle tee times.', action: 'Launch a midweek twilight rate + senior league' },
           { type: 'risk', title: 'Weekend mornings turning players away', detail: 'Sat/Sun 7–10am is above 90% — demand likely exceeds supply and spills to no-shows.', action: 'Tighten deposit/no-show policy on prime slots' },
@@ -525,10 +568,10 @@
         { name: 'Dive Well', pct: 31, val: '31%', sub: 'dive team + rentals' },
       ];
       const mix = [
-        { label: 'Swim lessons', val: 205000, disp: money1k(205000), color: '#2563eb' },
-        { label: 'Lap swim (passes)', val: 138000, disp: money1k(138000), color: '#0d9488' },
-        { label: 'Open swim', val: 92000, disp: money1k(92000), color: '#f59e0b' },
-        { label: 'Private rentals', val: 51000, disp: money1k(51000), color: '#7c3aed' },
+        { label: 'Swim lessons', val: 205000, disp: money1k(205000), color: '#075985' },
+        { label: 'Lap swim (passes)', val: 138000, disp: money1k(138000), color: '#0891b2' },
+        { label: 'Open swim', val: 92000, disp: money1k(92000), color: '#22d3ee' },
+        { label: 'Private rentals', val: 51000, disp: money1k(51000), color: '#a5f3fc' },
       ];
       return {
         hours, label, hm, pools, mix, months,
@@ -547,20 +590,22 @@
     const AQUA = buildAqua();
 
     function AquaticsView() {
-      return e('div', null,
-        e(Kpis, { cards: AQUA.kpis }),
-        e(SectionTitle, { title: '🏊 Water-time utilization by hour × day', sub: 'Early-morning lap swim and evening lessons drive twin daily peaks; weekend midday is open swim.' }),
-        e(Heatmap, { rowLabels: AQUA.hours.map(AQUA.label), values: AQUA.hm }),
+      const T = THEMES.aquatics;
+      return e('div', { style: { background: T.wash, borderRadius: 12, padding: '2px 14px 16px' } },
+        e(VHead, { theme: T, note: 'Sample data' }),
+        e(Kpis, { cards: AQUA.kpis, accent: T.accentSoft }),
+        e(SectionTitle, { title: '🏊 Water-time utilization by hour × day', sub: 'Early-morning lap swim and evening lessons drive twin daily peaks; weekend midday is open swim.', color: T.accent }),
+        e(Heatmap, { rowLabels: AQUA.hours.map(AQUA.label), values: AQUA.hm, theme: T }),
         e('div', { className: 'two-col', style: { marginTop: 22 } },
           e('div', null,
-            e(SectionTitle, { title: '🌊 Utilization by pool', sub: 'Each body of water at the center.' }),
-            e(UtilBars, { rows: AQUA.pools }),
-            e(SectionTitle, { title: '🎟️ Revenue by program', sub: 'Where aquatics revenue comes from.' }),
+            e(SectionTitle, { title: '🌊 Utilization by pool', sub: 'Each body of water at the center.', color: T.accent }),
+            e(UtilBars, { rows: AQUA.pools, theme: T }),
+            e(SectionTitle, { title: '🩱 Revenue by program', sub: 'Where aquatics revenue comes from.', color: T.accent }),
             e(MixBar, { label: 'Program revenue mix', segs: AQUA.mix })),
           e('div', null,
-            e(SectionTitle, { title: '🌤️ Utilization by month', sub: 'Indoor center holds steadier than camping/golf, with a summer bump.' }),
-            e(SeasonCurve, { items: AQUA.months }))),
-        e(SectionTitle, { title: '💡 Insights', sub: 'Auto-generated from the pool schedule.' }),
+            e(SectionTitle, { title: '💧 Utilization by month', sub: 'Indoor center holds steadier than camping/golf, with a summer bump.', color: T.accent }),
+            e(SeasonCurve, { items: AQUA.months, gradient: T.curve }))),
+        e(SectionTitle, { title: '🛟 Insights', sub: 'Auto-generated from the pool schedule.', color: T.accent }),
         e(Insights, { items: [
           { type: 'opportunity', title: 'Late morning is the soft spot', detail: 'Lap Pool sits under 50% from 9am–2pm on weekdays — room for aqua-fit, senior swim, or school programs.', action: 'Add mid-morning aqua-fitness classes' },
           { type: 'risk', title: 'Saturday open swim at capacity', detail: 'Weekend 10a–1p hits 96% — safety/comfort risk and turned-away families.', action: 'Add a second lifeguarded block or timed sessions' },
