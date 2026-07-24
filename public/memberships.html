@@ -197,6 +197,12 @@
     .summary-card .card-value.pink   { color: #db2777; }
     .summary-card .card-value.amber  { color: #d97706; }
     .summary-card .card-sub { font-size: 10px; color: #999; margin-top: 2px; }
+    .mb-scope-note {
+      background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 6px;
+      padding: 9px 13px; margin-bottom: 12px; font-size: 12.5px; color: #0c4a6e;
+    }
+    .mb-scope-note strong { color: #075985; }
+    .mb-scope-note .mb-scope-sub { display: block; margin-top: 3px; font-size: 11px; color: #3b6b8a; line-height: 1.4; }
 
     /* ── Footer ── */
     .report-footer {
@@ -844,6 +850,9 @@ function normalizeRow(raw) {
       const [activeTab, setActiveTab] = useState('memberships');
       const [ciRows, setCiRows] = useState(null);
       const [ciLoading, setCiLoading] = useState(false);
+      // Window the check-in data was loaded for ("sd|ed"), so the Check-Ins tab
+      // refetches when the report's date range changes instead of going stale.
+      const [ciWin, setCiWin] = useState(null);
 
       // ── Filters ──
       const [viewMode, setViewMode] = useState(() => {
@@ -930,6 +939,7 @@ function normalizeRow(raw) {
       useEffect(() => { fetchData(startDate, endDate); }, []);
       function fetchCheckins(sd, ed) {
         setCiLoading(true);
+        setCiWin(sd + '|' + ed);
         fetch(withToken('/' + orgSlug + '/checkins/api/data?start_date=' + sd + '&end_date=' + ed))
           .then(function(r){ return r.json(); })
           .then(function(json) { setCiRows(json.rows || []); setCiLoading(false); })
@@ -938,7 +948,18 @@ function normalizeRow(raw) {
 
       const datesChanged = startDate !== loadedStart || endDate !== loadedEnd;
 
-      function handleRunReport() { fetchData(startDate, endDate); if (activeTab === 'checkins') fetchCheckins(startDate, endDate); }
+      // Fetch check-ins for a window only if they aren't already loaded for it —
+      // keeps the Check-Ins tab in sync with the report's selected date range.
+      function ensureCheckins(sd, ed) {
+        if (!ciRows || ciWin !== (sd + '|' + ed)) fetchCheckins(sd, ed);
+      }
+
+      function handleRunReport() {
+        fetchData(startDate, endDate);
+        // Run refreshes check-ins for the new window whenever they're on screen
+        // or already loaded, so switching back to the tab never shows a stale count.
+        if (activeTab === 'checkins' || ciRows) fetchCheckins(startDate, endDate);
+      }
 
       function setMonth(offset) {
         const now = new Date();
@@ -1681,7 +1702,7 @@ function normalizeRow(raw) {
               <button className={'tab-btn' + (activeTab === 'memberships' ? ' active' : '')} onClick={function(){ setActiveTab('memberships'); }}>
                 🎟️ Memberships
               </button>
-              <button className={'tab-btn' + (activeTab === 'checkins' ? ' active' : '')} onClick={function(){ setActiveTab('checkins'); if (!ciRows) fetchCheckins(startDate, endDate); }}>
+              <button className={'tab-btn' + (activeTab === 'checkins' ? ' active' : '')} onClick={function(){ setActiveTab('checkins'); ensureCheckins(loadedStart || startDate, loadedEnd || endDate); }}>
                 ✅ Check-Ins
                 {ciRows && ciRows.length > 0 && <span className="tab-badge">{ciRows.length.toLocaleString()}</span>}
               </button>
@@ -1924,23 +1945,40 @@ function normalizeRow(raw) {
           {activeTab === 'memberships' && (
             <React.Fragment>
 
+            {/* Purchase-cohort scope note — these KPIs cover memberships/passes
+                PURCHASED in the selected window, not an all-time roster. */}
+            {(() => {
+              const fmtD = (d) => d ? new Date(d + 'T12:00:00').toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'}) : '';
+              const rangeLabel = (loadedStart && loadedEnd) ? (fmtD(loadedStart) + ' – ' + fmtD(loadedEnd)) : 'the selected date range';
+              return (
+                <div className="mb-scope-note">
+                  🎫 Memberships &amp; passes <strong>purchased {rangeLabel}</strong>
+                  <span className="mb-scope-sub">This is the purchase cohort for the selected dates. Active / Canceled / Expired show each purchase&rsquo;s <em>current</em> status — not an all-time member roster. Net Collected is attributed to purchase date, across all payment channels.</span>
+                </div>
+              );
+            })()}
+
             {/* Summary cards */}
             <div className="summary-cards">
               <div className="summary-card">
                 <div className="card-label">Active</div>
                 <div className="card-value green">{summary.active.toLocaleString()}</div>
+                <div className="card-sub">purchased &amp; active now</div>
               </div>
               <div className="summary-card">
                 <div className="card-label">Canceled</div>
                 <div className="card-value red">{summary.canceled.toLocaleString()}</div>
+                <div className="card-sub">purchased, since canceled</div>
               </div>
               <div className="summary-card">
                 <div className="card-label">Expired</div>
                 <div className="card-value amber">{summary.expired.toLocaleString()}</div>
+                <div className="card-sub">purchased, term ended</div>
               </div>
               <div className="summary-card">
                 <div className="card-label">Inactive</div>
                 <div className="card-value">{summary.inactive.toLocaleString()}</div>
+                <div className="card-sub">purchased, inactive</div>
               </div>
               <div className="summary-card">
                 <div className="card-label">Auto-Renew</div>
@@ -1950,7 +1988,7 @@ function normalizeRow(raw) {
               <div className="summary-card">
                 <div className="card-label">Net Collected</div>
                 <div className="card-value blue">{money(summary.totalNetCollected)}</div>
-                <div className="card-sub">{money(summary.totalRevenue)} contract value</div>
+                <div className="card-sub">{money(summary.totalRevenue)} contract · by purchase date, all channels</div>
               </div>
             </div>
 

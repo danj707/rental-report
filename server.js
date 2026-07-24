@@ -10266,6 +10266,11 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  { date: '2026-07-24', title: '🎫 Memberships report — clearer purchase-window framing + Check-Ins date fix', items: [
+    'The Memberships KPI cards now clearly read as a purchase cohort: a caption states the numbers cover memberships & passes PURCHASED in the selected date range, and Active/Canceled/Expired reflect each purchase’s current status — not an all-time member roster. This removes the confusion where a windowed count looked like a full roster (and appeared to disagree with the rec.us admin, which counts purchases/renewals in-window).',
+    'Net Collected is now labeled as attributed to purchase date, across all payment channels (so it won’t line up 1:1 with a payments-settled-in-window or online-only figure).',
+    'Fixed: the Check-Ins tab could show a stale count from an earlier date range — it now always follows the report’s selected window instead of defaulting to the current month.',
+  ] },
   { date: '2026-07-23', title: '🏞️ Facilities hub is live for all orgs — standalone Court Utilization retired', items: [
     'The Facilities hub is now visible by default on every org dashboard (it was hidden while it was being built). It replaces the standalone Court Utilization card, which has been retired from the report grid — Court Utilization now lives inside the hub as a native sub-tab.',
     'Nothing was lost: the court data endpoints, the AI chat’s access to court data, and direct links still work — only the standalone dashboard card was removed. Orgs that prefer the old layout can still hide the Facilities card from the dashboard.',
