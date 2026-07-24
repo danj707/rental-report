@@ -416,11 +416,12 @@ function TriagePanel(props) {
         React.createElement('strong', null, p.program),
         React.createElement('span', { className: 'triage-row-stats' },
           fmtInt(p.ftSignups) + ' FT',
-          p.ftConverted > 0 ? ' · ' + fmtInt(p.ftConverted) + ' registered' : '',
+          p.ftConverted > 0 ? ' · ' + fmtInt(p.ftConverted) + ' converted' : '',
           p.ftPending > 0 ? ' · ' + fmtInt(p.ftPending) + ' pending' : '',
+          p.totalEnrolled > 0 ? ' · ' + fmtInt(p.totalEnrolled) + ' enrolled' : '',
           p.ftFamilies > 0 ? ' · ' + fmtInt(p.ftFamilies) + ' families' : '',
           p._spotsLeft != null ? ' · ' + fmtInt(p._spotsLeft) + (p._spotsLeft === 1 ? ' spot left' : ' spots left') : '',
-          p.convPct != null ? ' · ' + p.convPct + '% FT→registered' : ''
+          p.convPct != null ? ' · ' + p.convPct + '% FT→converted' : ''
         )
       ),
       React.createElement('div', { className: 'triage-row-action' }, '→ ', p._triageAction || ''),
@@ -473,7 +474,7 @@ function TriagePanel(props) {
       (buckets.needsCapacity.length > 0 || buckets.stalled.length > 0)
         ? React.createElement(React.Fragment, null,
             React.createElement(BucketSection, { icon: '⚠️', label: 'Needs Capacity', cls: 'crit', items: buckets.needsCapacity }),
-            React.createElement(BucketSection, { icon: '⚡', label: 'Stalled — FT interests but no registrations', cls: 'stalled', items: buckets.stalled })
+            React.createElement(BucketSection, { icon: '⚡', label: 'Stalled — fast-track interest, none converted yet', cls: 'stalled', items: buckets.stalled })
           )
         : null,
       buckets.convertingWell.length > 0 && React.createElement('div', { className: 'triage-bucket' },
@@ -516,7 +517,7 @@ function DemandLeaderboard(props) {
       React.createElement('span', { className: 'lb-sub' }, 'Top programs by Fast Track activity')
     ),
     React.createElement('div', { style: { fontSize: 12, color: '#888', lineHeight: 1.5, margin: '6px 0 14px', padding: '0 2px' } },
-      'Programs ranked by total Fast Track interest (pending + registered). This is your popularity snapshot \u2014 which programs are generating the most demand. Actionable items are in the triage panel above.'
+      'Ranked by Fast Track (pre-registration) demand \u2014 pending + converted sign-ups. This is a fast-track lens: a program with no fast-track activity won\u2019t appear here even if it has plenty of regular enrollments \u2014 see the Programs report for full enrollment. Enrolled counts are shown per program below for context.'
     ),
 
     /* Alerts */
@@ -541,6 +542,7 @@ function DemandLeaderboard(props) {
                 onClick: function(e) { e.stopPropagation(); }
               }, 'Admin →'),
               secCount, ' section', secCount !== 1 ? 's' : '',
+              p.totalEnrolled > 0 ? (' \u00B7 ' + fmtInt(p.totalEnrolled) + ' enrolled') : '',
               spotsLeft != null ? (' \u00B7 ' + fmtInt(spotsLeft) + ' spots left') : '',
               p.ftPending > 0 ? (' \u00B7 ' + fmtInt(p.ftPending) + ' pending') : ''
             )
@@ -555,7 +557,7 @@ function DemandLeaderboard(props) {
               React.createElement('div', { className: 'lb-bar-pend', style: { width: pendW + '%' } })
             ),
             React.createElement('div', { className: 'lb-conv-label' },
-              p.convPct != null ? p.convPct + '% FT\u2192reg' : '\u2014'
+              p.convPct != null ? p.convPct + '% FT\u2192conv' : '\u2014'
             )
           ),
           getBadge(p)
