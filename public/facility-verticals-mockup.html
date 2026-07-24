@@ -353,8 +353,8 @@
        CAMPING data — grounded in the REAL Pleasant Hill + Topaz inventory.
        ===================================================================== */
     const CAMP_LOCATIONS = [
-      { key: 'ph', name: 'Pleasant Hill City Lake', city: 'Pleasant Hill, MO' },
-      { key: 'tz', name: 'Topaz Lake Recreation Area', city: 'Gardnerville, NV' },
+      { key: 'ph', name: 'Pleasant Hill City Lake', city: 'Pleasant Hill, MO', href: '/pleasant-hill/campmap' },
+      { key: 'tz', name: 'Topaz Lake Recreation Area', city: 'Gardnerville, NV', href: '/douglas-county-nv/campmap' },
     ];
     // Real Pleasant Hill sites (names / areas / kind / coords from campmap-seeds.json).
     const PH_RAW = [
@@ -448,7 +448,9 @@
       const locSites = CAMP.sites.filter(s => s.loc === loc);
       const barRows = locSites.map(s => ({ name: s.name + '  · ' + s.area, pct: s.occ, val: pct(s.occ), sub: num(s.nights) + ' nts · ' + money1k(s.rev) }));
       const mapPts = locSites.map(s => ({ name: s.name, lat: s.lat, lng: s.lng, pct: s.occ, sub: money1k(s.rev) + ' · ' + s.kind }));
-      const locName = CAMP_LOCATIONS.find(l => l.key === loc).name;
+      const locObj = CAMP_LOCATIONS.find(l => l.key === loc) || {};
+      const locName = locObj.name;
+      const locHref = locObj.href || '#';
       const T = THEMES.camping;
       return e('div', { style: { background: T.wash, borderRadius: 12, padding: '2px 14px 16px' } },
         e(VHead, { theme: T, note: 'Real inventory' }),
@@ -464,6 +466,9 @@
             e(UtilBars, { rows: barRows, theme: T })),
           e('div', null,
             e(SectionTitle, { title: '🗺️ ' + locName, sub: 'Site map colored by occupancy (real coords where available).', color: T.accent }),
+            e('div', { style: { display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', margin: '0 0 8px' } },
+              e('a', { href: locHref, target: '_blank', rel: 'noopener', style: { display: 'inline-flex', alignItems: 'center', gap: 6, background: T.accent, color: '#fff', fontWeight: 700, fontSize: 12, padding: '7px 13px', borderRadius: 8, textDecoration: 'none' } }, '🗺️ Open interactive campsite map ↗'),
+              e('a', { href: locHref, target: '_blank', rel: 'noopener', style: { display: 'inline-flex', alignItems: 'center', gap: 6, border: '1px solid ' + T.band.border, color: T.accent, fontWeight: 600, fontSize: 12, padding: '6px 12px', borderRadius: 8, textDecoration: 'none', background: '#fff' } }, '✎ Admin edit (staff)')),
             e(OccMap, { points: mapPts }),
             e(SectionTitle, { title: '🎒 Length of stay', sub: 'Nights per reservation.', color: T.accent }),
             e(UtilBars, { rows: CAMP.los, theme: T }))),

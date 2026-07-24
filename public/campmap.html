@@ -191,6 +191,7 @@ body{font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica
     <div class="titles">
       <h1 id="title">Pleasant Hill City Lake — Campsite Map</h1>
       <div class="sub" id="subtitle">16210 Smart Rd, Pleasant Hill, MO 64080</div>
+      <select id="locSwitch" title="Choose campground" style="display:none;margin-top:6px;font:inherit;font-size:12px;padding:4px 8px;border:1px solid var(--line);border-radius:8px;color:#374151;background:#fff;cursor:pointer;max-width:280px"></select>
     </div>
     <span class="wx" id="wx" style="display:none"></span>
     <button class="edit-btn" id="editBtn" style="display:none">✏️ Edit layout</button>
@@ -272,6 +273,23 @@ var CFG = window.__CM__ || {};
 var SLUG = CFG.slug || (location.pathname.split('/').filter(Boolean)[0] || 'pleasant-hill');
 var LAKE = { lat: (CFG.coords && CFG.coords.lat) || 38.82065625393699, lon: (CFG.coords && CFG.coords.lon) || -94.29997011111854 };
 var TOKEN = new URLSearchParams(location.search).get('token') || '';
+
+/* ── multi-location: switcher + per-location fetch scoping ── */
+var CM_LOCS = (CFG.locations && CFG.locations.length) ? CFG.locations : [];
+var CM_LOC  = CFG.activeLocation || (CM_LOCS[0] && CM_LOCS[0].id) || 'default';
+/* location query fragment — omitted for the default (single) location so existing
+   per-slug saved data is used unchanged */
+function locQS(){ return (CM_LOC && CM_LOC !== 'default') ? ('location=' + encodeURIComponent(CM_LOC)) : ''; }
+function withLoc(url){ var q = locQS(); return q ? (url + (url.indexOf('?') >= 0 ? '&' : '?') + q) : url; }
+(function setupLocSwitch(){
+  var sel = document.getElementById('locSwitch'); if(!sel) return;
+  if(CM_LOCS.length > 1){
+    sel.innerHTML = '';
+    CM_LOCS.forEach(function(l){ var o=document.createElement('option'); o.value=l.id; o.textContent='📍 '+(l.name||l.id); if(l.id===CM_LOC) o.selected=true; sel.appendChild(o); });
+    sel.style.display='';
+    sel.addEventListener('change', function(){ var u=new URL(location.href); u.searchParams.set('location', sel.value); location.href=u.toString(); });
+  }
+})();
 var CAN_EDIT = !!CFG.canEdit;   // server unlocks editing only when the org token matches
 
 /* ── amenity tag id → label (subset present at Pleasant Hill City Lake) ── */
@@ -739,7 +757,8 @@ function setEditMode(on){
 }
 function saveLayout(){
   var positions={}; SEED.forEach(function(s){ positions[s.id]={lat:+s.lat, lng:+s.lng}; });
-  var q = TOKEN ? ('?token='+encodeURIComponent(TOKEN)) : '';
+  var qp=[]; if(TOKEN) qp.push('token='+encodeURIComponent(TOKEN)); var lq=locQS(); if(lq) qp.push(lq);
+  var q = qp.length ? ('?'+qp.join('&')) : '';
   var btn=document.getElementById('editSave'); btn.disabled=true; btn.textContent='Saving…';
   function chk(r){ if(!r.ok) throw new Error('http '+r.status); return r.json(); }
   Promise.all([
@@ -768,7 +787,7 @@ function resetDefaults(){
 var toastT=null;
 function toast(msg){ var t=document.getElementById('toast'); t.textContent=msg; t.classList.add('on'); if(toastT) clearTimeout(toastT); toastT=setTimeout(function(){ t.classList.remove('on'); }, 2800); }
 function loadPositions(){
-  fetch('/'+SLUG+'/campmap/api/positions')
+  fetch(withLoc('/'+SLUG+'/campmap/api/positions'))
     .then(function(r){ return r.ok ? r.json() : {positions:{}}; })
     .then(function(res){
       var pos=res.positions||{};
@@ -827,7 +846,7 @@ function openMkEditor(id){
 }
 function closeMkEditor(){ editingMkId=null; document.getElementById('mkEditor').classList.remove('on'); renderAllCustom(); }
 function loadMarkers(){
-  fetch('/'+SLUG+'/campmap/api/markers')
+  fetch(withLoc('/'+SLUG+'/campmap/api/markers'))
     .then(function(r){ return r.ok ? r.json() : {markers:[]}; })
     .then(function(res){ customMarkers=(res.markers||[]).map(function(m){ return {id:m.id,label:m.label,text:m.text,color:m.color,lat:m.lat,lng:m.lng}; }); renderAllCustom(); savedMarkers=JSON.stringify(normMk(customMarkers)); })
     .catch(function(){ savedMarkers=JSON.stringify(normMk(customMarkers)); });

@@ -5941,6 +5941,39 @@ app.get("/:org/rentalcalendar", (req, res) => {
 // Leaflet map of a campground's sites with a per-night availability overlay.
 // Site data is baked into the page (incl. coords); availability upgrades to live
 // data via the existing /:org/rentalcalendar/api/availability-batch endpoint.
+// Normalize a campmap seed into a list of locations. Backward compatible: a flat
+// single-location seed (the current shape for every existing org) becomes one
+// "default" location, so behavior/stored data for those orgs is unchanged.
+function campmapLocations(slug, seed, org) {
+  if (seed && Array.isArray(seed.locations) && seed.locations.length) {
+    return seed.locations.map((l, i) => ({
+      id: String(l.id || ("loc" + (i + 1))),
+      locationName: l.locationName || l.name || ("Location " + (i + 1)),
+      center: l.center || null,
+      address: l.address || "",
+      sites: l.sites || null,
+      defaults: l.defaults || {},
+      areaDefaults: l.areaDefaults || {},
+      landmarks: l.landmarks || null,
+    }));
+  }
+  return [{
+    id: "default",
+    locationName: (seed && seed.locationName) || org.campLocationName || "",
+    center: (seed && seed.center) || org.coords || null,
+    address: (seed && seed.address) || org.campAddress || "",
+    sites: (seed && seed.sites) || null,
+    defaults: (seed && seed.defaults) || {},
+    areaDefaults: (seed && seed.areaDefaults) || {},
+    landmarks: (seed && seed.landmarks) || null,
+  }];
+}
+// Storage key for admin-saved positions/markers. The default (single) location keeps
+// the flat per-slug key so existing saved data is preserved; extra locations namespace.
+function campmapStoreKey(slug, locationId) {
+  return (!locationId || locationId === "default") ? slug : (slug + "::" + locationId);
+}
+
 app.get("/:org/campmap", (req, res) => {
   const slug = req.params.org;
   const org = ORGS[slug];
@@ -5949,18 +5982,24 @@ app.get("/:org/campmap", (req, res) => {
   logEvent(slug, "campmap", "view", req);
   const slugTitle = slug.charAt(0).toUpperCase() + slug.slice(1);
   const seed = CAMPMAP_SEEDS[slug] || {};
+  const locList = campmapLocations(slug, seed, org);
+  const activeId = req.query.location || (locList[0] && locList[0].id) || "default";
+  const active = locList.find(l => l.id === activeId) || locList[0] || {};
   const meta = {
     slug,
     orgId: org.orgId,
     displayName: org.displayName || slugTitle + " Parks & Recreation",
     logoUrl: org.logoUrl || "",
-    coords: seed.center || org.coords || null,
-    locationName: req.query.locationName || seed.locationName || org.campLocationName || "",
-    address: seed.address || org.campAddress || "",
-    sites: seed.sites || null,
-    landmarks: seed.landmarks || null,
-    defaults: seed.defaults || {},
-    areaDefaults: seed.areaDefaults || {},
+    coords: active.center || org.coords || null,
+    locationName: active.locationName || org.campLocationName || "",
+    address: active.address || org.campAddress || "",
+    sites: active.sites || null,
+    landmarks: active.landmarks || null,
+    defaults: active.defaults || {},
+    areaDefaults: active.areaDefaults || {},
+    // Multi-location: the switcher list + which one is active.
+    locations: locList.map(l => ({ id: l.id, name: l.locationName })),
+    activeLocation: active.id || "default",
     // Editing (drag-to-place) is unlocked only when the org token is supplied.
     canEdit: !!(org.token && req.query.token && req.query.token === org.token),
   };
@@ -5974,7 +6013,7 @@ app.get("/:org/campmap", (req, res) => {
 app.get("/:org/campmap/api/positions", (req, res) => {
   const slug = req.params.org;
   if (!ORGS[slug]) return res.status(404).json({ positions: {} });
-  res.json({ positions: campmapPositions[slug] || {} });
+  res.json({ positions: campmapPositions[campmapStoreKey(slug, req.query.location)] || {} });
 });
 app.post("/:org/campmap/api/positions", express.json(), (req, res) => {
   const slug = req.params.org;
@@ -5990,7 +6029,7 @@ app.post("/:org/campmap/api/positions", express.json(), (req, res) => {
       clean[id] = { lat: p.lat, lng: p.lng };
     }
   }
-  campmapPositions[slug] = clean;
+  campmapPositions[campmapStoreKey(slug, req.query.location)] = clean;
   saveCampmapPositions();
   logEvent(slug, "campmap", "save-positions", req, { count: Object.keys(clean).length });
   res.json({ ok: true, saved: Object.keys(clean).length });
@@ -6000,7 +6039,7 @@ app.post("/:org/campmap/api/positions", express.json(), (req, res) => {
 app.get("/:org/campmap/api/markers", (req, res) => {
   const slug = req.params.org;
   if (!ORGS[slug]) return res.status(404).json({ markers: [] });
-  res.json({ markers: campmapMarkers[slug] || [] });
+  res.json({ markers: campmapMarkers[campmapStoreKey(slug, req.query.location)] || [] });
 });
 app.post("/:org/campmap/api/markers", express.json(), (req, res) => {
   const slug = req.params.org;
@@ -6022,7 +6061,7 @@ app.post("/:org/campmap/api/markers", express.json(), (req, res) => {
     });
     if (clean.length >= 100) break; // sane cap
   }
-  campmapMarkers[slug] = clean;
+  campmapMarkers[campmapStoreKey(slug, req.query.location)] = clean;
   saveCampmapMarkers();
   logEvent(slug, "campmap", "save-markers", req, { count: clean.length });
   res.json({ ok: true, saved: clean.length });
