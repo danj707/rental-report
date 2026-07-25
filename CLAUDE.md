@@ -18,8 +18,18 @@ service **rental-report** (`7ee6e149-bd03-41db-bd42-aa8a751b1000`).
 - Preview URL pattern:
   `https://rental-report-rental-report-pr-<PR#>.up.railway.app`
   (e.g. PR #29 → https://rental-report-rental-report-pr-29.up.railway.app)
-- After opening a PR, confirm the preview actually boots (this app has heavy
-  runtime deps, so a green build is worth verifying) and hand Dan the URL.
+- After opening a PR, confirm the preview actually boots and hand Dan the URL.
+  NOTE: the session sandbox's outbound proxy blocks `*.up.railway.app` (CONNECT
+  403), so I cannot curl the preview to verify it. Verify boot via Railway
+  `list-deployments` on the PR environment instead — status `SUCCESS` means it's
+  up for Dan's browser even though I can't reach it.
+
+## Admin "What's New" popup
+
+The dashboard "What's New" popup shows *published* project-updates (the same ones
+org admins see) — it is EMPTY until at least one update is published, and each PR
+preview is a fresh environment with its own (empty) data store. So a brand-new
+preview shows no popup until you publish an update in it first.
 
 ## Dev branch
 
