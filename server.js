@@ -714,6 +714,12 @@ const ORGS = {
     logoUrl: "https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2Forganization-9acfb33a-4114-4f0f-be3c-2eb0a3930550%2FfullLogo.png%3F1769533327785&w=1920&q=75",
     displayName: "Prescott Valley",
   },
+  "city-of-west-sacramento": {
+    token:   "Ix6q046hgYpjLW2q",
+    orgId:   "7d22bf62-060a-4881-9821-9dea6a0538d6",
+    logoUrl: "https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2Forganization-7d22bf62-060a-4881-9821-9dea6a0538d6%2FfullLogo.png%3F1764542866233&w=1920&q=75",
+    displayName: "City of West Sacramento",
+  },
 };
 
 const REPORT_TYPES = ["facility", "gl", "historic", "programs", "roster", "products", "memberships", "court-utilization", "calendar", "fasttrack", "users", "program-demographics", "instructor-payout", "retention", "annual-report", "section-detail", "ice-calendar", "qoq", "checkins", "program-checkins"];
