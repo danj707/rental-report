@@ -1,0 +1,875 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Golf tab — reimagined (mockup)</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+  <style>
+    /* Design system copied from public/facilities.html / facility-verticals-mockup.html
+       so this renders native to the Facilities hub. */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Inter', system-ui, -apple-system, sans-serif; font-size: 12px; color: #1a1a1a; background: #f5f4f1; line-height: 1.35; }
+
+    .toolbar { position: sticky; top: 0; z-index: 1000; display: flex; align-items: center; gap: 10px; padding: 8px 20px; background: #2c2c2c; color: #eee; font-size: 13px; flex-wrap: wrap; }
+    .toolbar-title { font-weight: 600; margin-right: 4px; }
+    .toolbar-back { color: #9ca3af; text-decoration: none; font-size: 12px; }
+    .toolbar-back:hover { color: #fff; }
+    .toolbar-spacer { flex: 1; }
+    .toolbar label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: #aaa; display: flex; flex-direction: column; gap: 2px; }
+    .toolbar input[type="date"] { padding: 4px 8px; border: 1px solid rgba(255,255,255,.2); border-radius: 4px; background: rgba(255,255,255,.1); color: #fff; font-size: 12px; font-family: inherit; outline: none; }
+    .toolbar input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(1); cursor: pointer; }
+    .toolbar button { padding: 6px 14px; border: 1px solid rgba(255,255,255,.25); border-radius: 4px; background: rgba(255,255,255,.08); color: #fff; font-size: 12px; font-family: inherit; cursor: pointer; transition: background .15s; white-space: nowrap; }
+    .toolbar button:hover { background: rgba(255,255,255,.18); }
+    .toolbar .btn-run { background: #16a34a; border-color: #16a34a; font-weight: 600; }
+    .toolbar .divider { width: 1px; height: 28px; background: rgba(255,255,255,.15); margin: 0 2px; }
+
+    .page { max-width: 1400px; margin: 16px auto; padding: 24px 28px; background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
+
+    .report-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2.5px solid #111; padding-bottom: 10px; margin-bottom: 14px; gap: 16px; }
+    .report-header-left { display: flex; align-items: center; gap: 14px; }
+    .report-header .org-label { font-size: 10px; letter-spacing: 1.6px; text-transform: uppercase; color: #777; font-weight: 600; }
+    .report-header .title { font-size: 17px; font-weight: 700; margin-top: 1px; }
+    .report-header-right { text-align: right; }
+    .report-header .date-range { font-size: 11px; color: #666; }
+
+    .sample-ribbon { background: #fffbeb; border: 1px solid #fde68a; border-left: 3px solid #f59e0b; color: #92400e; padding: 9px 14px; margin-bottom: 14px; border-radius: 4px; font-size: 12.5px; line-height: 1.5; }
+    .sample-ribbon strong { color: #78350f; }
+
+    /* KPI cards */
+    .sum-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin: 14px 0; }
+    .sum-card { background: #fff; border: 1px solid #e8e6e0; border-radius: 8px; padding: 13px 15px; }
+    .sum-card .sc-label { font-size: 10px; text-transform: uppercase; letter-spacing: .5px; color: #888; font-weight: 700; margin-bottom: 4px; }
+    .sum-card .sc-val { font-size: 23px; font-weight: 800; line-height: 1.1; font-variant-numeric: tabular-nums; }
+    .sum-card .sc-sub { font-size: 11px; color: #999; margin-top: 3px; }
+    .sc-green { color: #16a34a; } .sc-blue { color: #2563eb; } .sc-amber { color: #d97706; } .sc-red { color: #dc2626; } .sc-purple { color: #7c3aed; } .sc-muted { color: #64748b; }
+
+    /* Mix bar */
+    .sum-bar-wrap { margin: 12px 0; }
+    .sum-bar-label { font-size: 10px; color: #888; font-weight: 600; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 4px; }
+    .sum-bar { display: flex; height: 26px; border-radius: 4px; overflow: hidden; border: 1px solid #e8e6e0; background: #f3f4f6; }
+    .sum-bar .seg { display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; color: #fff; overflow: hidden; white-space: nowrap; }
+    .sum-legend { display: flex; gap: 14px; margin-top: 6px; font-size: 10.5px; color: #6b7280; flex-wrap: wrap; }
+    .sum-legend span { display: flex; align-items: center; gap: 4px; }
+    .sum-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+
+    .section-note { font-size: 11px; color: #9ca3af; margin-top: 18px; text-align: center; }
+
+    /* Section headings + layout */
+    .vsec { margin: 22px 0 6px; }
+    .vsec-t { font-size: 13px; font-weight: 700; color: #14532d; display: flex; align-items: center; gap: 8px; margin-bottom: 2px; }
+    .vsec-s { font-size: 11px; color: #9ca3af; margin-bottom: 10px; }
+    .two-col { display: grid; grid-template-columns: 1.35fr .65fr; gap: 22px; align-items: start; }
+    .two-col.even { grid-template-columns: 1fr 1fr; }
+    @media (max-width: 950px) { .two-col, .two-col.even { grid-template-columns: 1fr; } }
+
+    /* Golf theme band */
+    .vhead { background: linear-gradient(135deg,#f0fdf4,#dcfce7); border: 1px solid #86efac; border-radius: 10px; padding: 13px 18px; margin: 4px 0 12px; display: flex; align-items: center; gap: 14px; }
+    .vhead .vh-emoji { font-size: 30px; line-height: 1; }
+    .vhead .vh-title { font-size: 15px; font-weight: 800; color: #15803d; }
+    .vhead .vh-sub { font-size: 12px; color: #6b7280; margin-top: 2px; }
+    .vhead .vh-note { margin-left: auto; font-size: 10px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase; color: #15803d; opacity: .85; white-space: nowrap; }
+
+    /* Full-width golf hero banner (self-contained SVG scene, no external image) */
+    .golf-banner { position: relative; width: 100%; height: 176px; border-radius: 12px; overflow: hidden; margin: 4px 0 14px; border: 1px solid #cfe6c6; box-shadow: 0 3px 14px rgba(20,83,45,.16); }
+    .golf-banner .scene { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+    .golf-banner .gb-overlay { position: absolute; inset: 0; padding: 20px 28px; display: flex; flex-direction: column; justify-content: center; z-index: 2; }
+    .golf-banner .gb-kicker { font-size: 10.5px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; color: rgba(255,255,255,.92); text-shadow: 0 1px 3px rgba(0,0,0,.4); }
+    .golf-banner .gb-title { font-size: 31px; font-weight: 800; color: #fff; text-shadow: 0 2px 7px rgba(0,0,0,.42); line-height: 1.04; margin-top: 3px; }
+    .golf-banner .gb-sub { font-size: 13px; color: rgba(255,255,255,.96); text-shadow: 0 1px 4px rgba(0,0,0,.45); margin-top: 6px; max-width: 560px; }
+    .golf-banner .gb-pills { display: flex; gap: 8px; margin-top: 13px; flex-wrap: wrap; }
+    .golf-banner .gb-pill { background: rgba(255,255,255,.18); backdrop-filter: blur(3px); border: 1px solid rgba(255,255,255,.4); color: #fff; font-size: 12px; font-weight: 600; padding: 4px 12px; border-radius: 20px; text-shadow: 0 1px 2px rgba(0,0,0,.3); }
+    .golf-banner .gb-pill b { font-weight: 800; }
+    .golf-banner .gb-badge { position: absolute; top: 14px; right: 16px; z-index: 2; font-size: 10px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase; color: #fff; background: rgba(6,46,22,.32); border: 1px solid rgba(255,255,255,.4); padding: 3px 9px; border-radius: 6px; }
+
+    /* Sub-tabs */
+    .g-tabs { display: flex; gap: 0; margin: 6px 0 4px; border-bottom: 2px solid #e5e7eb; flex-wrap: wrap; }
+    .g-tab { padding: 9px 20px; font-size: 13px; font-weight: 600; color: #6b7280; cursor: pointer; border: none; border-bottom: 2px solid transparent; margin-bottom: -2px; background: none; font-family: inherit; display: flex; align-items: center; gap: 7px; }
+    .g-tab:hover { color: #374151; }
+    .g-tab.active { color: #15803d; border-bottom-color: #15803d; }
+
+    /* Bars (court-native style) */
+    .cu-bars { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+    .cu-bar-row { display: grid; grid-template-columns: minmax(150px, 230px) 1fr 96px; align-items: center; gap: 10px; font-size: 12px; }
+    .cu-bar-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #374151; }
+    .cu-bar-track { position: relative; background: #f1efe9; border-radius: 4px; height: 18px; overflow: hidden; display: flex; }
+    .cu-bar-seg { height: 100%; }
+    .cu-bar-val { text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; color: #111827; }
+    .cu-bar-sub { text-align: right; font-size: 10px; color: #9ca3af; font-variant-numeric: tabular-nums; }
+    .cu-legend { display: flex; gap: 14px; justify-content: center; margin: 10px 0 2px; font-size: 11px; color: #666; flex-wrap: wrap; }
+    .cu-legend .sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
+
+    /* Map */
+    .cu-map-wrap { height: 500px; border-radius: 10px; overflow: hidden; border: 1px solid #e5e7eb; margin-top: 10px; }
+    .cu-map-legend { display: flex; gap: 16px; align-items: center; padding: 10px 2px; font-size: 11px; color: #666; flex-wrap: wrap; }
+    .cu-map-dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; margin-right: 4px; vertical-align: -1px; }
+    .map-toggle { display: inline-flex; border: 1px solid #d1d5db; border-radius: 7px; overflow: hidden; }
+    .map-toggle button { padding: 6px 13px; font-size: 12px; font-weight: 600; background: #fff; color: #6b7280; border: none; cursor: pointer; font-family: inherit; }
+    .map-toggle button.on { background: #15803d; color: #fff; }
+    .hole-pin { display:flex; align-items:center; justify-content:center; width:24px; height:24px; border-radius:50%; color:#fff; font-size:11px; font-weight:800; border:2px solid #fff; box-shadow:0 1px 4px rgba(0,0,0,.4); font-family:'IBM Plex Mono',monospace; }
+    .amen-pin { font-size:18px; filter: drop-shadow(0 1px 2px rgba(0,0,0,.5)); }
+
+    /* Heatmap */
+    .heatmap-grid { display: grid; grid-template-columns: minmax(56px, .7fr) repeat(7, 1fr); gap: 2px; font-size: 11px; }
+    .heatmap-hdr { text-align: center; font-weight: 700; font-size: 10px; text-transform: uppercase; letter-spacing: .5px; color: #888; padding: 4px 2px; }
+    .heatmap-label { padding: 5px 8px; font-size: 11px; white-space: nowrap; border-radius: 3px; background: #f8f8f6; color:#6b7280; font-weight:600; }
+    .heatmap-cell { text-align: center; padding: 6px 2px; border-radius: 3px; font-family: 'IBM Plex Mono', monospace; font-size: 10px; font-weight: 600; }
+    .heatmap-legend { display: flex; align-items: center; gap: 12px; margin-top: 8px; font-size: 10px; color: #888; flex-wrap: wrap; }
+    .heatmap-legend-swatch { display: inline-block; width: 14px; height: 14px; border-radius: 3px; vertical-align: middle; margin-right: 3px; }
+
+    /* Insights */
+    .insights-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; margin-top: 8px; }
+    .insight-card { border: 1px solid #e5e7eb; border-left-width: 4px; border-radius: 8px; padding: 13px 15px; background: #fff; }
+    .insight-type { font-size: 10px; font-weight: 700; letter-spacing: .6px; text-transform: uppercase; margin-bottom: 6px; }
+    .insight-title { font-size: 13.5px; font-weight: 700; color: #111827; margin-bottom: 5px; line-height: 1.3; }
+    .insight-detail { font-size: 12px; color: #374151; line-height: 1.45; }
+    .insight-action { font-size: 12px; color: #6b7280; margin-top: 8px; font-weight: 500; }
+    .insight-opportunity { border-left-color: #10b981; } .insight-opportunity .insight-type { color: #059669; }
+    .insight-risk { border-left-color: #f59e0b; } .insight-risk .insight-type { color: #d97706; }
+    .insight-signal { border-left-color: #6366f1; } .insight-signal .insight-type { color: #4f46e5; }
+
+    /* Pace panel */
+    .pace-hero { text-align:center; padding: 14px 10px 6px; }
+    .pace-hero .ph-big { font-size: 44px; font-weight: 800; color: #15803d; line-height: 1; font-variant-numeric: tabular-nums; }
+    .pace-hero .ph-cap { font-size: 11px; color: #6b7280; margin-top: 4px; }
+    .pace-hero .ph-target { font-size: 11px; color: #9ca3af; margin-top: 2px; }
+    .pace-strip { display: flex; align-items: flex-end; gap: 3px; height: 92px; margin-top: 6px; padding: 0 2px; }
+    .pace-col { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; }
+    .pace-col .pc-bar { width: 100%; border-radius: 3px 3px 0 0; }
+    .pace-col .pc-n { font-size: 8.5px; color: #9ca3af; margin-top: 2px; font-family:'IBM Plex Mono',monospace; }
+    .hist-row { display: grid; grid-template-columns: 74px 1fr 44px; align-items: center; gap: 8px; font-size: 11px; margin-bottom: 4px; }
+    .hist-track { background: #f1efe9; border-radius: 3px; height: 15px; overflow: hidden; }
+    .hist-bar { height: 100%; background: linear-gradient(90deg,#15803d,#4ade80); }
+    .mini-list { margin-top: 8px; }
+    .mini-list .ml-row { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 6px; background: #f8f8f6; margin-bottom: 5px; font-size: 12px; }
+    .mini-list .ml-badge { width: 22px; height: 22px; border-radius: 50%; color:#fff; font-weight:800; font-size:10px; display:flex; align-items:center; justify-content:center; font-family:'IBM Plex Mono',monospace; }
+
+    /* Pricing bands */
+    .band-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px,1fr)); gap: 12px; }
+    .band-card { border: 1px solid #e8e6e0; border-radius: 10px; padding: 14px 16px; position: relative; overflow: hidden; }
+    .band-card .bc-tag { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .6px; }
+    .band-card .bc-time { font-size: 11px; color: #9ca3af; margin: 2px 0 8px; }
+    .band-card .bc-fee { font-size: 26px; font-weight: 800; font-variant-numeric: tabular-nums; }
+    .band-card .bc-row { display: flex; justify-content: space-between; font-size: 12px; color: #4b5563; margin-top: 5px; }
+    .band-card .bc-fillbar { height: 6px; border-radius: 3px; background: #eee; overflow: hidden; margin-top: 8px; }
+    .band-card .bc-fillseg { height: 100%; }
+    .suggest { margin-top: 14px; background: linear-gradient(135deg,#ecfdf5,#d1fae5); border: 1px solid #6ee7b7; border-radius: 10px; padding: 13px 16px; display:flex; gap:12px; align-items:flex-start; }
+    .suggest .s-emoji { font-size: 22px; }
+    .suggest .s-t { font-weight: 700; color: #065f46; font-size: 13px; }
+    .suggest .s-d { font-size: 12px; color: #047857; margin-top: 3px; line-height:1.45; }
+
+    /* Cart fleet */
+    .cart-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(112px,1fr)); gap: 8px; margin-top: 10px; }
+    .cart-chip { border: 1px solid #e8e6e0; border-radius: 8px; padding: 8px 9px; background:#fff; }
+    .cart-chip .cc-id { font-size: 11px; font-weight: 700; font-family:'IBM Plex Mono',monospace; display:flex; align-items:center; justify-content:space-between; }
+    .cart-chip .cc-dot { width:8px; height:8px; border-radius:50%; display:inline-block; }
+    .cart-chip .cc-where { font-size: 10px; color:#6b7280; margin: 3px 0 5px; }
+    .cart-chip .cc-batt { height: 5px; border-radius: 3px; background:#eee; overflow:hidden; }
+    .cart-chip .cc-battseg { height:100%; }
+    .cart-chip .cc-battn { font-size: 9px; color:#9ca3af; margin-top:2px; text-align:right; font-variant-numeric:tabular-nums; }
+    .legend-inline { display:flex; gap:14px; font-size:11px; color:#6b7280; flex-wrap:wrap; margin-top:8px; }
+    .legend-inline span { display:flex; align-items:center; gap:5px; }
+
+    /* Table */
+    .g-table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 8px; }
+    .g-table th { background: #f5f3ef; padding: 7px 12px; text-align: left; font-size: 10px; text-transform: uppercase; letter-spacing: .5px; color: #888; font-weight: 700; border-bottom: 1px solid #e8e6e0; }
+    .g-table th.num, .g-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
+    .g-table td { padding: 7px 12px; border-bottom: 1px solid #f0eeea; color: #555; }
+    .g-table tr:last-child td { border-bottom: none; }
+    .attach-pill { display:inline-block; font-size:10px; font-weight:700; padding:1px 7px; border-radius:10px; background:#dcfce7; color:#166534; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+  <script type="text/babel">
+    /* =====================================================================
+       GOLF TAB — REIMAGINED (design mockup)
+
+       A golf-native ops view for the Facilities hub, at the quality bar of
+       the Court Utilization view. ALL DATA IS BAKED & DETERMINISTIC (fixed
+       seed — no Date/Math.random), representative of a municipal 18-hole
+       course ("Riverbend Golf Course"). Not wired to live reporting; the
+       point is to show what an "awesome" Golf tab could surface.
+
+       Concepts explored: pace-of-play, hole-by-hole bottleneck map, cart
+       GPS fleet tracking, early-bird/prime/twilight yield management,
+       pro-shop + F&B attach, revenue mix.
+       ===================================================================== */
+    const { useState, useRef, useEffect } = React;
+
+    // helpers
+    const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
+    const money = n => '$' + Math.round(n || 0).toLocaleString();
+    const money1k = n => n >= 1000 ? '$' + (n / 1000).toFixed(n >= 10000 ? 0 : 1) + 'k' : money(n);
+    const pct = n => Math.round(n) + '%';
+    const num = n => Math.round(n).toLocaleString();
+    const hm = mins => Math.floor(mins / 60) + ':' + String(Math.round(mins % 60)).padStart(2, '0');
+    function mul(a) { return function () { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+    const rampPick = (v, ramp) => { for (const s of ramp) if (v >= s.min) return s; return ramp[ramp.length - 1]; };
+    const DOW = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+    // pace bottleneck color ramp (green = flowing, red = backed up)
+    const PACE_RAMP = [
+      { min: 75, bg: '#b91c1c', fg: '#fff' }, { min: 58, bg: '#ea580c', fg: '#fff' },
+      { min: 42, bg: '#f59e0b', fg: '#3a2606' }, { min: 26, bg: '#eab308', fg: '#3a2606' },
+      { min: 0, bg: '#22c55e', fg: '#052e16' },
+    ];
+    const paceColor = v => rampPick(v, PACE_RAMP).bg;
+    // cart-traffic ramp (blue-teal density)
+    const CART_RAMP = [
+      { min: 8, bg: '#0f766e' }, { min: 6, bg: '#0d9488' }, { min: 4, bg: '#14b8a6' },
+      { min: 2, bg: '#5eead4' }, { min: 0, bg: '#ccfbf1' },
+    ];
+    const cartColor = v => rampPick(v, CART_RAMP).bg;
+    // utilization heat (tee sheet)
+    const HEAT = [
+      { min: 80, bg: '#14532d', fg: '#fff' }, { min: 65, bg: '#166534', fg: '#fff' }, { min: 50, bg: '#15803d', fg: '#fff' },
+      { min: 35, bg: '#22c55e', fg: '#052e16' }, { min: 20, bg: '#4ade80', fg: '#052e16' }, { min: 8, bg: '#dcfce7', fg: '#166534' }, { min: 0, bg: '#f5f3ec', fg: '#c0c0c0' },
+    ];
+    const BAR = [ { min: 70, color: '#166534' }, { min: 50, color: '#15803d' }, { min: 30, color: '#22c55e' }, { min: 15, color: '#4ade80' }, { min: 0, color: '#c7b899' } ];
+
+    /* ============================ DATA ============================ */
+    function buildCourse() {
+      const rnd = mul(20260724);
+      const lat0 = 38.6035, lng0 = -121.5585;
+      const kx = Math.cos(lat0 * Math.PI / 180);
+      const toLL = (r, deg) => [lat0 + r * Math.sin(deg * Math.PI / 180), lng0 + (r * Math.cos(deg * Math.PI / 180)) / kx];
+      const jit = a => (rnd() - 0.5) * a;
+      const NAMES = ['Rivers Edge', 'The Bend', 'Oak Alley', 'Sandy Draw', 'Long Meadow', 'Willow Run', 'Island Green', 'Heron Point', 'Homeward',
+        'Turnpike', 'The Levee', 'Cottonwood', 'Punchbowl', 'Double Cross', 'Old Mill', 'Big Muddy', 'Postage Stamp', 'Riverbend Finish'];
+      function loop(rBase, startDeg, sweep) {
+        const nodes = [];
+        for (let i = 0; i <= 9; i++) {
+          const deg = startDeg + sweep * (i / 9);
+          nodes.push(toLL(rBase + jit(0.0018), deg));
+        }
+        return nodes;
+      }
+      const fNodes = loop(0.0122, 208, -292);
+      const bNodes = loop(0.0068, 34, -300);
+      const parsF = [4, 4, 3, 5, 4, 4, 3, 5, 4];
+      const parsB = [4, 5, 4, 3, 4, 4, 5, 3, 4];
+      const holes = [];
+      function addNine(nodes, pars, offset, nineName) {
+        for (let i = 0; i < 9; i++) {
+          const tee = nodes[i], green = nodes[i + 1], par = pars[i];
+          const yards = par === 3 ? Math.round(150 + rnd() * 72) : par === 5 ? Math.round(486 + rnd() * 84) : Math.round(332 + rnd() * 128);
+          let backup = (par === 3 ? 54 : par === 5 ? 30 : 34) + jit(20);
+          if (offset === 0 && i === 0) backup += 24;   // 1st-tee starter jam
+          if (offset === 9 && i === 0) backup += 28;   // 10th tee = the turn bottleneck
+          backup = Math.round(clamp(backup, 6, 96));
+          const expMin = par === 3 ? 12 : par === 4 ? 14 : 17;
+          const avgMin = Math.round(expMin + backup / 100 * 8);
+          const cartDwell = Math.round((par === 3 ? 4 : 2) + backup / 100 * 6 + jit(1.2));
+          const mid = [(tee[0] + green[0]) / 2 + jit(0.0013), (tee[1] + green[1]) / 2 + jit(0.0013)];
+          holes.push({ n: offset + i + 1, par, yards, name: NAMES[offset + i], tee, green, path: [tee, mid, green], backup, avgMin, expMin, cartDwell, nine: nineName });
+        }
+      }
+      addNine(fNodes, parsF, 0, 'Front 9');
+      addNine(bNodes, parsB, 9, 'Back 9');
+      const amen = [
+        { emoji: '🏁', name: 'Clubhouse & Pro Shop', ll: toLL(0.0018, 118) },
+        { emoji: '🍺', name: 'Halfway House (after 9)', ll: fNodes[9] },
+        { emoji: '🎯', name: 'Driving Range', ll: toLL(0.0142, 150) },
+        { emoji: '⛳', name: 'Practice Green', ll: toLL(0.0032, 96) },
+        { emoji: '🛺', name: 'Cart Barn', ll: toLL(0.0024, 138) },
+      ];
+      const par = holes.reduce((s, h) => s + h.par, 0);
+      return { holes, amen, par };
+    }
+    const COURSE = buildCourse();
+
+    function buildTeeSheet() {
+      const hours = []; for (let h = 6; h <= 18; h++) hours.push(h);
+      const label = h => (h === 12 ? '12p' : h < 12 ? h + 'a' : (h - 12) + 'p');
+      const hourF = h => h <= 6 ? 0.55 : h <= 10 ? 0.95 : h <= 13 ? 0.80 : h <= 15 ? 0.60 : h <= 16 ? 0.52 : 0.40;
+      const dowF = { Mon: 0.55, Tue: 0.52, Wed: 0.58, Thu: 0.62, Fri: 0.74, Sat: 0.98, Sun: 0.93 };
+      const grid = hours.map(h => DOW.map(d => Math.round(clamp(hourF(h) * dowF[d] * 100 * 1.03, 0, 98))));
+      // yield: bands by tee-time
+      const slotsPerHour = 6;                        // tee time every 10 min
+      const daysYr = 300;                            // playable days/yr
+      function band(hrs, feeWk, feeWe) {
+        let rounds = 0, rev = 0, cap = 0;
+        hrs.forEach(h => {
+          const hi = hours.indexOf(h);
+          DOW.forEach((d, di) => {
+            const fill = grid[hi][di] / 100;
+            const teeTimes = slotsPerHour * (daysYr / 7) * (di >= 5 ? 2 / 5 : 5 / 5) * (di >= 5 ? 1 : 1);
+            const tt = slotsPerHour * (daysYr / 7);
+            const players = tt * fill * 3.4;
+            const fee = di >= 5 ? feeWe : feeWk;
+            rounds += players; rev += players * fee; cap += tt * 3.4;
+          });
+        });
+        return { rounds: Math.round(rounds), rev: Math.round(rev), fill: Math.round(rounds / cap * 100), fee: Math.round(rev / rounds) };
+      }
+      const early = band([6, 7], 28, 34);
+      const prime = band([8, 9, 10, 11, 12, 13, 14], 42, 62);
+      const twilight = band([15, 16, 17, 18], 26, 32);
+      const totalRounds = early.rounds + prime.rounds + twilight.rounds;
+      const totalRev = early.rev + prime.rev + twilight.rev;
+      const availTeeTimes = slotsPerHour * hours.length * daysYr;
+      const revPATT = totalRev / availTeeTimes;
+      return { hours, label, grid, early, prime, twilight, totalRounds, totalRev, revPATT, availTeeTimes };
+    }
+    const TEE = buildTeeSheet();
+
+    function buildFleet() {
+      const rnd = mul(7788);
+      const FLEET = 54;
+      const holeSpots = COURSE.holes.map(h => 'Hole ' + h.n);
+      const carts = [];
+      let inUse = 0, charging = 0, idle = 0, geo = 0, battSum = 0;
+      for (let i = 1; i <= FLEET; i++) {
+        const r = rnd();
+        let status;
+        if (r < 0.70) status = 'in-use';
+        else if (r < 0.84) status = 'charging';
+        else status = 'idle';
+        const batt = status === 'charging' ? Math.round(20 + rnd() * 55) : Math.round(34 + rnd() * 62);
+        const geofence = status === 'in-use' && rnd() < 0.06;
+        if (status === 'in-use') inUse++; else if (status === 'charging') charging++; else idle++;
+        if (geofence) geo++;
+        battSum += batt;
+        carts.push({
+          id: 'C' + String(i).padStart(2, '0'), status, batt, geofence,
+          where: status === 'in-use' ? holeSpots[Math.floor(rnd() * holeSpots.length)] : status === 'charging' ? 'Cart barn' : 'Staging',
+          trip: status === 'in-use' ? Math.round(35 + rnd() * 150) : 0,
+        });
+      }
+      // utilization by hour (share of fleet out)
+      const hours = TEE.hours;
+      const utilByHour = hours.map(h => {
+        const f = h <= 6 ? 0.30 : h <= 10 ? 0.86 : h <= 13 ? 0.74 : h <= 15 ? 0.55 : h <= 16 ? 0.44 : 0.28;
+        return Math.round(f * 100);
+      });
+      return { FLEET, carts, inUse, charging, idle, geo, avgBatt: Math.round(battSum / FLEET), hours, utilByHour, util: Math.round(inUse / FLEET * 100) };
+    }
+    const FLEET = buildFleet();
+
+    function buildPace() {
+      const rnd = mul(3131);
+      const buckets = [
+        { l: '< 3:45', min: 0, base: 0.06 }, { l: '3:45–4:00', min: 0, base: 0.14 }, { l: '4:00–4:15', min: 0, base: 0.22 },
+        { l: '4:15–4:30', min: 0, base: 0.24 }, { l: '4:30–4:45', min: 0, base: 0.18 }, { l: '4:45–5:00', min: 0, base: 0.10 }, { l: '5:00+', min: 0, base: 0.06 },
+      ];
+      const totalRounds = TEE.totalRounds;
+      let s = 0; buckets.forEach(b => { b.count = Math.round(totalRounds * b.base); s += b.count; });
+      const onPace = buckets.slice(0, 4).reduce((a, b) => a + b.count, 0);
+      // avg round time weighted by bucket midpoints (minutes)
+      const mids = [222, 232, 247, 262, 277, 292, 312];
+      const avgMin = buckets.reduce((a, b, i) => a + b.count * mids[i], 0) / s;
+      const front = avgMin * 0.47, back = avgMin * 0.53;
+      const bottleneck = [...COURSE.holes].sort((a, b) => b.backup - a.backup).slice(0, 4);
+      return { buckets, totalRounds: s, onPacePct: Math.round(onPace / s * 100), avgMin, front, back, bottleneck, slowRounds: s - onPace };
+    }
+    const PACE = buildPace();
+
+    function buildProShop() {
+      const rounds = TEE.totalRounds;
+      const items = [
+        { name: 'Range balls — large bucket', unit: 9, sold: Math.round(rounds * 0.42), attach: 42 },
+        { name: 'Titleist Pro V1 (dozen)', unit: 55, sold: Math.round(rounds * 0.05), attach: 5 },
+        { name: 'Golf glove', unit: 22, sold: Math.round(rounds * 0.08), attach: 8 },
+        { name: 'Cart / club rental — 18', unit: 45, sold: Math.round(rounds * 0.11), attach: 11 },
+        { name: 'Logo cap', unit: 26, sold: Math.round(rounds * 0.04), attach: 4 },
+        { name: 'Tees & accessories', unit: 6, sold: Math.round(rounds * 0.19), attach: 19 },
+        { name: 'GPS rangefinder rental', unit: 8, sold: Math.round(rounds * 0.06), attach: 6 },
+        { name: 'Sleeve (3 balls)', unit: 14, sold: Math.round(rounds * 0.12), attach: 12 },
+      ];
+      items.forEach(it => it.rev = it.unit * it.sold);
+      const retail = items.reduce((a, b) => a + b.rev, 0);
+      // F&B / beverage cart
+      const fb = [
+        { name: 'Beverage cart — beer/seltzer', rev: Math.round(rounds * 0.55 * 7) },
+        { name: 'Halfway house — grill', rev: Math.round(rounds * 0.34 * 9) },
+        { name: 'Snacks & water', rev: Math.round(rounds * 0.6 * 3.5) },
+      ];
+      const fbTotal = fb.reduce((a, b) => a + b.rev, 0);
+      const perRound = (retail + fbTotal) / rounds;
+      // revenue mix (whole operation)
+      const greenFees = TEE.totalRev * 0.62;
+      const cartRev = TEE.totalRev * 0.20;
+      const rangeRev = 96000;
+      const lessons = 41000;
+      const passes = 128000;   // annual passes / memberships
+      const mix = [
+        { label: 'Green fees', val: greenFees, color: '#15803d' },
+        { label: 'Cart rental', val: cartRev, color: '#22c55e' },
+        { label: 'Annual passes', val: passes, color: '#0d9488' },
+        { label: 'Driving range', val: rangeRev, color: '#84cc16' },
+        { label: 'Pro shop retail', val: retail, color: '#eab308' },
+        { label: 'F&B', val: fbTotal, color: '#f59e0b' },
+        { label: 'Lessons', val: lessons, color: '#a3e635' },
+      ];
+      const total = mix.reduce((a, b) => a + b.val, 0);
+      mix.forEach(m => m.disp = money1k(m.val));
+      return { items, retail, fb, fbTotal, perRound, mix, total };
+    }
+    const SHOP = buildProShop();
+
+    /* ========================= WIDGETS ========================= */
+    function Kpis({ cards }) {
+      return (
+        <div className="sum-cards">
+          {cards.map((c, i) => (
+            <div className="sum-card" key={i} style={{ borderLeft: '3px solid #16a34a' }}>
+              <div className="sc-label">{c.label}</div>
+              <div className={'sc-val ' + (c.cls || 'sc-muted')}>{c.val}</div>
+              <div className="sc-sub">{c.sub}</div>
+            </div>
+          ))}
+        </div>
+      );
+    }
+    function Sec({ title, sub }) {
+      return <div className="vsec"><div className="vsec-t">{title}</div>{sub ? <div className="vsec-s">{sub}</div> : null}</div>;
+    }
+    function Bars({ rows }) {
+      return (
+        <div>
+          <div className="cu-bars">
+            {rows.map((r, i) => (
+              <div className="cu-bar-row" key={i}>
+                <div className="cu-bar-name">{r.name}</div>
+                <div className="cu-bar-track"><div className="cu-bar-seg" style={{ width: clamp(r.pct, 0, 100) + '%', background: rampPick(r.pct, BAR).color }} /></div>
+                <div><div className="cu-bar-val">{r.val}</div>{r.sub ? <div className="cu-bar-sub">{r.sub}</div> : null}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    }
+    function HeatGrid({ rowLabels, values }) {
+      return (
+        <div>
+          <div className="heatmap-grid">
+            <div className="heatmap-hdr" />
+            {DOW.map(d => <div className="heatmap-hdr" key={d}>{d}</div>)}
+            {rowLabels.map((rl, ri) => (
+              <React.Fragment key={ri}>
+                <div className="heatmap-label">{rl}</div>
+                {values[ri].map((v, ci) => {
+                  const c = rampPick(v, HEAT);
+                  return <div className="heatmap-cell" key={ci} style={{ background: c.bg, color: c.fg }} title={rl + ' · ' + DOW[ci] + ' · ' + v + '%'}>{v}</div>;
+                })}
+              </React.Fragment>
+            ))}
+          </div>
+          <div className="heatmap-legend">
+            <span>Low</span>
+            {[8, 20, 35, 50, 65, 80].map((v, i) => <span key={i}><span className="heatmap-legend-swatch" style={{ background: rampPick(v, HEAT).bg }} /></span>)}
+            <span>High (utilization)</span>
+          </div>
+        </div>
+      );
+    }
+    function Insights({ items }) {
+      return (
+        <div className="insights-grid">
+          {items.map((it, i) => (
+            <div className={'insight-card insight-' + it.type} key={i}>
+              <div className="insight-type">{it.type}</div>
+              <div className="insight-title">{it.title}</div>
+              <div className="insight-detail">{it.detail}</div>
+              {it.action ? <div className="insight-action">→ {it.action}</div> : null}
+            </div>
+          ))}
+        </div>
+      );
+    }
+
+    // Leaflet course map — holes colored by metric ('pace' | 'cart')
+    function CourseMap({ metric }) {
+      const ref = useRef(null), mapRef = useRef(null), lgRef = useRef(null);
+      useEffect(() => {
+        if (!ref.current) return;
+        if (!mapRef.current) {
+          mapRef.current = L.map(ref.current, { scrollWheelZoom: false });
+          L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
+            { maxZoom: 19, attribution: '© OpenStreetMap © CARTO' }).addTo(mapRef.current);
+          lgRef.current = L.layerGroup().addTo(mapRef.current);
+        }
+        const lg = lgRef.current; lg.clearLayers();
+        const allPts = [];
+        COURSE.holes.forEach(h => {
+          const val = metric === 'cart' ? h.cartDwell : h.backup;
+          const col = metric === 'cart' ? cartColor(val) : paceColor(val);
+          L.polyline(h.path, { color: col, weight: 5, opacity: 0.85 }).addTo(lg);
+          h.path.forEach(p => allPts.push(p));
+          // cart-dwell circle in cart mode
+          if (metric === 'cart') {
+            L.circleMarker(h.tee, { radius: 5 + h.cartDwell * 1.7, color: col, weight: 0, fillColor: col, fillOpacity: 0.28 }).addTo(lg);
+          }
+          const pin = L.divIcon({ className: '', html: '<div class="hole-pin" style="background:' + col + '">' + h.n + '</div>', iconSize: [24, 24], iconAnchor: [12, 12] });
+          const mk = L.marker(h.green, { icon: pin }).addTo(lg);
+          mk.bindPopup(
+            '<div style="font-weight:800;font-size:13px;color:#14532d">Hole ' + h.n + ' · ' + h.name + '</div>' +
+            '<div style="font-size:11px;color:#374151;margin-top:3px">Par ' + h.par + ' · ' + h.yards + ' yds · ' + h.nine + '</div>' +
+            '<div style="font-size:11px;color:#374151;margin-top:5px">⏱ Avg time on hole: <b>' + h.avgMin + ' min</b> (par pace ' + h.expMin + ')</div>' +
+            '<div style="font-size:11px;color:#374151">🚦 Backup index: <b>' + h.backup + '</b>/100</div>' +
+            '<div style="font-size:11px;color:#374151">🛺 Cart dwell: <b>' + h.cartDwell + ' min</b></div>'
+          );
+        });
+        COURSE.amen.forEach(a => {
+          const icon = L.divIcon({ className: '', html: '<div class="amen-pin">' + a.emoji + '</div>', iconSize: [22, 22], iconAnchor: [11, 11] });
+          L.marker(a.ll, { icon }).addTo(lg).bindTooltip(a.name, { direction: 'top' });
+          allPts.push(a.ll);
+        });
+        if (allPts.length) mapRef.current.fitBounds(allPts, { padding: [30, 30] });
+        setTimeout(() => mapRef.current && mapRef.current.invalidateSize(), 60);
+      }, [metric]);
+      const legend = metric === 'cart'
+        ? [['#ccfbf1', 'Light traffic'], ['#5eead4', ''], ['#14b8a6', ''], ['#0d9488', ''], ['#0f766e', 'Heavy dwell / idle']]
+        : [['#22c55e', 'Flowing'], ['#eab308', ''], ['#f59e0b', 'Slowing'], ['#ea580c', ''], ['#b91c1c', 'Backed up']];
+      return (
+        <div>
+          <div className="cu-map-wrap" ref={ref} />
+          <div className="cu-map-legend">
+            {legend.map((s, i) => <span key={i}><span className="cu-map-dot" style={{ background: s[0] }} />{s[1]}</span>)}
+            <span style={{ marginLeft: 'auto', color: '#9ca3af' }}>🏁 Clubhouse · 🍺 Halfway house · 🎯 Range · ⛳ Practice · 🛺 Cart barn</span>
+          </div>
+        </div>
+      );
+    }
+
+    /* ========================= VIEWS ========================= */
+    function CourseView() {
+      const [metric, setMetric] = useState('pace');
+      const pv = PACE;
+      return (
+        <div>
+          <div className="two-col">
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 16 }}>
+                <div style={{ flex: 1 }}><Sec title="🗺️ Course map — hole-by-hole" sub="Each hole colored by how it plays. Click a hole for pace, cart dwell & scoring." /></div>
+                <div className="map-toggle">
+                  <button className={metric === 'pace' ? 'on' : ''} onClick={() => setMetric('pace')}>🚦 Pace bottleneck</button>
+                  <button className={metric === 'cart' ? 'on' : ''} onClick={() => setMetric('cart')}>🛺 Cart traffic</button>
+                </div>
+              </div>
+              <CourseMap metric={metric} />
+            </div>
+            <div>
+              <Sec title="⏱️ Pace of play" sub="Time to complete a round." />
+              <div className="pace-hero">
+                <div className="ph-big">{hm(pv.avgMin)}</div>
+                <div className="ph-cap">avg round · target 4:15</div>
+                <div className="ph-target" style={{ color: pv.avgMin > 255 ? '#dc2626' : '#16a34a' }}>
+                  {pv.avgMin > 255 ? '▲ ' + Math.round(pv.avgMin - 255) + ' min over target' : '▼ on target'} · {pv.onPacePct}% of rounds on pace
+                </div>
+                <div style={{ display: 'flex', gap: 10, justifyContent: 'center', marginTop: 8, fontSize: 12, color: '#6b7280' }}>
+                  <span>Front <b>{hm(pv.front)}</b></span><span>·</span><span>Back <b>{hm(pv.back)}</b></span>
+                </div>
+              </div>
+              <div style={{ fontSize: 10, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '.5px', fontWeight: 700, margin: '10px 0 4px' }}>Round-time distribution</div>
+              {pv.buckets.map((b, i) => {
+                const maxc = Math.max(...pv.buckets.map(x => x.count));
+                return (
+                  <div className="hist-row" key={i}>
+                    <span style={{ color: '#6b7280' }}>{b.l}</span>
+                    <div className="hist-track"><div className="hist-bar" style={{ width: (b.count / maxc * 100) + '%', background: i >= 5 ? 'linear-gradient(90deg,#f59e0b,#f87171)' : 'linear-gradient(90deg,#15803d,#4ade80)' }} /></div>
+                    <span style={{ textAlign: 'right', color: '#111827', fontWeight: 600 }}>{num(b.count)}</span>
+                  </div>
+                );
+              })}
+              <div style={{ fontSize: 10, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '.5px', fontWeight: 700, margin: '14px 0 4px' }}>Worst backups (dispatch a ranger)</div>
+              <div className="mini-list">
+                {pv.bottleneck.map((h, i) => (
+                  <div className="ml-row" key={i}>
+                    <span className="ml-badge" style={{ background: paceColor(h.backup) }}>{h.n}</span>
+                    <span style={{ flex: 1 }}>{h.name} <span style={{ color: '#9ca3af' }}>· par {h.par}</span></span>
+                    <span style={{ fontWeight: 700, color: '#b91c1c' }}>{h.avgMin}m</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    function BandCard({ tag, time, color, band }) {
+      return (
+        <div className="band-card">
+          <div className="bc-tag" style={{ color }}>{tag}</div>
+          <div className="bc-time">{time}</div>
+          <div className="bc-fee" style={{ color }}>{money(band.fee)}</div>
+          <div className="bc-row"><span>Rounds</span><b>{num(band.rounds)}</b></div>
+          <div className="bc-row"><span>Revenue</span><b>{money1k(band.rev)}</b></div>
+          <div className="bc-row"><span>Fill</span><b>{band.fill}%</b></div>
+          <div className="bc-fillbar"><div className="bc-fillseg" style={{ width: band.fill + '%', background: color }} /></div>
+        </div>
+      );
+    }
+    function YieldView() {
+      return (
+        <div>
+          <div className="two-col">
+            <div>
+              <Sec title="📅 Tee-sheet demand — hour × day" sub="Prime weekend mornings run near capacity; midweek afternoons are the open inventory." />
+              <HeatGrid rowLabels={TEE.hours.map(TEE.label)} values={TEE.grid} />
+            </div>
+            <div>
+              <Sec title="💵 Yield by tee-time band" sub="Early-bird, prime, and twilight pricing." />
+              <div className="band-grid">
+                <BandCard tag="🌅 Early-bird" time="before 8:00a" color="#0d9488" band={TEE.early} />
+                <BandCard tag="☀️ Prime" time="8:00a – 2:00p" color="#15803d" band={TEE.prime} />
+                <BandCard tag="🌇 Twilight" time="after 3:00p" color="#d97706" band={TEE.twilight} />
+              </div>
+              <div className="sum-cards" style={{ marginTop: 12 }}>
+                <div className="sum-card" style={{ borderLeft: '3px solid #16a34a' }}>
+                  <div className="sc-label">RevPATT</div>
+                  <div className="sc-val sc-green">{money(TEE.revPATT)}</div>
+                  <div className="sc-sub">revenue per available tee time — the golf RevPAR</div>
+                </div>
+                <div className="sum-card" style={{ borderLeft: '3px solid #2563eb' }}>
+                  <div className="sc-label">Available tee times</div>
+                  <div className="sc-val sc-blue">{num(TEE.availTeeTimes)}</div>
+                  <div className="sc-sub">10-min intervals · 300 playable days</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div className="suggest">
+            <div className="s-emoji">💡</div>
+            <div>
+              <div className="s-t">Dynamic pricing opportunity: ~{num(Math.round(TEE.prime.rounds * 0.12))} idle midweek prime slots/yr</div>
+              <div className="s-d">Mon–Thu 11a–2p fills under 60% at the full ${TEE.prime.fee} prime fee. A midweek "value prime" rate (~${Math.round(TEE.prime.fee * 0.8)}) plus a senior league block could convert idle inventory without discounting the weekend peak — where Sat/Sun 7–10a already runs 90%+ and is turning players away.</div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    function CartView() {
+      const statusColor = s => s === 'in-use' ? '#16a34a' : s === 'charging' ? '#2563eb' : '#94a3b8';
+      const battColor = b => b >= 50 ? '#16a34a' : b >= 25 ? '#f59e0b' : '#dc2626';
+      const maxU = Math.max(...FLEET.utilByHour);
+      return (
+        <div>
+          <Kpis cards={[
+            { label: 'Fleet size', val: num(FLEET.FLEET), cls: 'sc-muted', sub: 'GPS-equipped riding carts' },
+            { label: 'In use now', val: num(FLEET.inUse), cls: 'sc-green', sub: pct(FLEET.util) + ' utilization' },
+            { label: 'Charging', val: num(FLEET.charging), cls: 'sc-blue', sub: 'at the cart barn' },
+            { label: 'Idle / staged', val: num(FLEET.idle), cls: 'sc-muted', sub: 'ready to deploy' },
+            { label: 'Avg battery', val: pct(FLEET.avgBatt), cls: FLEET.avgBatt >= 50 ? 'sc-green' : 'sc-amber', sub: 'across fleet' },
+            { label: 'Geofence alerts', val: num(FLEET.geo), cls: FLEET.geo ? 'sc-red' : 'sc-green', sub: 'carts off cart-path / boundary' },
+          ]} />
+          <div className="two-col even">
+            <div>
+              <Sec title="🛺 Live fleet" sub="Real-time cart status, location & battery (GPS telematics)." />
+              <div className="cart-grid">
+                {FLEET.carts.map((c, i) => (
+                  <div className="cart-chip" key={i} style={c.geofence ? { borderColor: '#fca5a5', background: '#fef2f2' } : null}>
+                    <div className="cc-id">{c.id}<span className="cc-dot" style={{ background: statusColor(c.status) }} title={c.status} /></div>
+                    <div className="cc-where">{c.geofence ? '⚠ ' : ''}{c.where}</div>
+                    <div className="cc-batt"><div className="cc-battseg" style={{ width: c.batt + '%', background: battColor(c.batt) }} /></div>
+                    <div className="cc-battn">{c.batt}%{c.status === 'charging' ? ' ⚡' : ''}</div>
+                  </div>
+                ))}
+              </div>
+              <div className="legend-inline">
+                <span><span className="cc-dot" style={{ background: '#16a34a', width: 8, height: 8, borderRadius: '50%', display: 'inline-block' }} />In use</span>
+                <span><span className="cc-dot" style={{ background: '#2563eb', width: 8, height: 8, borderRadius: '50%', display: 'inline-block' }} />Charging</span>
+                <span><span className="cc-dot" style={{ background: '#94a3b8', width: 8, height: 8, borderRadius: '50%', display: 'inline-block' }} />Idle</span>
+                <span style={{ color: '#dc2626' }}>⚠ Geofence breach</span>
+              </div>
+            </div>
+            <div>
+              <Sec title="📈 Fleet utilization by hour" sub="When the fleet is fully deployed vs. sitting idle." />
+              <div className="cu-bars">
+                {FLEET.hours.map((h, i) => (
+                  <div className="cu-bar-row" key={i} style={{ gridTemplateColumns: '46px 1fr 52px' }}>
+                    <div className="cu-bar-name">{TEE.label(h)}</div>
+                    <div className="cu-bar-track"><div className="cu-bar-seg" style={{ width: FLEET.utilByHour[i] + '%', background: rampPick(FLEET.utilByHour[i], BAR).color }} /></div>
+                    <div className="cu-bar-val">{FLEET.utilByHour[i]}%</div>
+                  </div>
+                ))}
+              </div>
+              <div className="suggest" style={{ marginTop: 14 }}>
+                <div className="s-emoji">🔋</div>
+                <div>
+                  <div className="s-t">Charge windows line up with demand valleys</div>
+                  <div className="s-d">Fleet peaks ~86% at 9–11a, so stagger overnight + midday (2–4p) charging to keep every cart above 25% for the twilight rush. {FLEET.geo} cart(s) currently flag a geofence breach — auto-throttle speed when off the cart path.</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    function ShopView() {
+      return (
+        <div>
+          <Kpis cards={[
+            { label: 'Pro shop retail', val: money1k(SHOP.retail), cls: 'sc-amber', sub: 'balls, gloves, rentals, accessories' },
+            { label: 'F&B / beverage cart', val: money1k(SHOP.fbTotal), cls: 'sc-amber', sub: 'halfway house + on-course' },
+            { label: 'Spend per round', val: '$' + SHOP.perRound.toFixed(2), cls: 'sc-green', sub: 'retail + F&B ÷ rounds' },
+            { label: 'Range-ball attach', val: '42%', cls: 'sc-blue', sub: 'of rounds warm up on the range' },
+          ]} />
+          <div className="two-col">
+            <div>
+              <Sec title="🛍️ Top pro-shop & rental items" sub="Units sold, revenue, and attach rate to rounds played." />
+              <table className="g-table">
+                <thead><tr><th>Item</th><th className="num">Price</th><th className="num">Units</th><th className="num">Revenue</th><th className="num">Attach</th></tr></thead>
+                <tbody>
+                  {[...SHOP.items].sort((a, b) => b.rev - a.rev).map((it, i) => (
+                    <tr key={i}>
+                      <td style={{ color: '#111827' }}>{it.name}</td>
+                      <td className="num">{money(it.unit)}</td>
+                      <td className="num">{num(it.sold)}</td>
+                      <td className="num" style={{ fontWeight: 600, color: '#111827' }}>{money1k(it.rev)}</td>
+                      <td className="num"><span className="attach-pill">{it.attach}%</span></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div>
+              <Sec title="🍺 Food & beverage" sub="Where on-course spend comes from." />
+              <table className="g-table">
+                <thead><tr><th>Channel</th><th className="num">Revenue</th></tr></thead>
+                <tbody>
+                  {SHOP.fb.map((f, i) => <tr key={i}><td style={{ color: '#111827' }}>{f.name}</td><td className="num" style={{ fontWeight: 600 }}>{money1k(f.rev)}</td></tr>)}
+                </tbody>
+              </table>
+              <Sec title="💰 Revenue mix" sub="The whole golf operation, not just green fees." />
+              <div className="sum-bar-wrap">
+                <div className="sum-bar">
+                  {SHOP.mix.map((m, i) => <div className="seg" key={i} style={{ width: (m.val / SHOP.total * 100) + '%', background: m.color }}>{m.val / SHOP.total >= 0.08 ? Math.round(m.val / SHOP.total * 100) + '%' : ''}</div>)}
+                </div>
+                <div className="sum-legend">
+                  {SHOP.mix.map((m, i) => <span key={i}><span className="sum-dot" style={{ background: m.color }} />{m.label} ({m.disp})</span>)}
+                </div>
+              </div>
+              <div style={{ fontSize: 12, color: '#6b7280', marginTop: 8 }}>Green fees are only <b>{Math.round(SHOP.mix[0].val / SHOP.total * 100)}%</b> of revenue — carts, passes, range, retail & F&B are the rest. A pure green-fee report hides most of the P&L.</div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // Full-width dawn-fairway hero banner — pure SVG scene, no external assets.
+    function GolfBanner() {
+      return (
+        <div className="golf-banner">
+          <svg className="scene" viewBox="0 0 1200 190" preserveAspectRatio="xMidYMid slice">
+            <defs>
+              <linearGradient id="gbSky" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#38bdf8" />
+                <stop offset="52%" stopColor="#bae6fd" />
+                <stop offset="100%" stopColor="#fef9c3" />
+              </linearGradient>
+              <radialGradient id="gbSun" cx="50%" cy="50%" r="50%">
+                <stop offset="0%" stopColor="#fffbeb" />
+                <stop offset="55%" stopColor="#fde68a" />
+                <stop offset="100%" stopColor="#fde68a" stopOpacity="0" />
+              </radialGradient>
+              <linearGradient id="gbScrim" x1="0" y1="0" x2="1" y2="0">
+                <stop offset="0%" stopColor="#052e16" stopOpacity="0.58" />
+                <stop offset="55%" stopColor="#052e16" stopOpacity="0.12" />
+                <stop offset="100%" stopColor="#052e16" stopOpacity="0" />
+              </linearGradient>
+            </defs>
+            <rect x="0" y="0" width="1200" height="190" fill="url(#gbSky)" />
+            <circle cx="770" cy="66" r="96" fill="url(#gbSun)" />
+            <circle cx="770" cy="66" r="34" fill="#fffef6" />
+            <path d="M0,118 Q150,94 300,108 T600,102 T900,110 T1200,100 L1200,190 L0,190 Z" fill="#166534" opacity="0.5" />
+            <path d="M0,150 Q200,120 460,140 T1000,132 T1200,140 L1200,190 L0,190 Z" fill="#22c55e" />
+            <path d="M0,190 L0,166 Q260,148 560,164 T1200,158 L1200,190 Z" fill="#15803d" />
+            <ellipse cx="330" cy="170" rx="72" ry="12" fill="#fde68a" />
+            <ellipse cx="330" cy="168" rx="72" ry="11" fill="#fef3c7" />
+            <path d="M120,190 Q320,168 540,175 T990,166" stroke="#f1f5f9" strokeWidth="7" fill="none" opacity="0.65" strokeLinecap="round" />
+            <line x1="1052" y1="66" x2="1052" y2="150" stroke="#334155" strokeWidth="3" />
+            <path d="M1052,68 L1104,80 L1052,92 Z" fill="#dc2626" />
+            <ellipse cx="1052" cy="151" rx="7" ry="3" fill="#0f172a" opacity="0.2" />
+            <rect x="0" y="0" width="1200" height="190" fill="url(#gbScrim)" />
+          </svg>
+          <div className="gb-overlay">
+            <div className="gb-kicker">Riverside municipal course · Est. 1972</div>
+            <div className="gb-title">⛳ Riverbend Golf Course</div>
+            <div className="gb-sub">Tee sheet to the turn — the whole golf operation at a glance.</div>
+            <div className="gb-pills">
+              <span className="gb-pill"><b>18</b> holes · par {COURSE.par}</span>
+              <span className="gb-pill"><b>{num(TEE.totalRounds)}</b> rounds/yr</span>
+              <span className="gb-pill"><b>{hm(PACE.avgMin)}</b> avg pace</span>
+              <span className="gb-pill"><b>{FLEET.FLEET}</b>-cart fleet</span>
+              <span className="gb-pill">driving range · pro shop · grill</span>
+            </div>
+          </div>
+          <div className="gb-badge">Sample data</div>
+        </div>
+      );
+    }
+
+    /* ========================= APP ========================= */
+    function GolfApp() {
+      const [tab, setTab] = useState('course');
+      const heroKpis = [
+        { label: 'Rounds played', val: num(TEE.totalRounds), cls: 'sc-blue', sub: 'player-rounds, trailing 12 mo' },
+        { label: 'RevPATT', val: money(TEE.revPATT), cls: 'sc-green', sub: 'revenue / available tee time' },
+        { label: 'Pace of play', val: hm(PACE.avgMin), cls: PACE.avgMin > 255 ? 'sc-amber' : 'sc-green', sub: PACE.onPacePct + '% of rounds on pace' },
+        { label: 'Cart utilization', val: pct(FLEET.util), cls: 'sc-purple', sub: FLEET.inUse + ' of ' + FLEET.FLEET + ' carts out now' },
+        { label: 'Total revenue', val: money1k(SHOP.total), cls: 'sc-green', sub: 'green + cart + passes + range + retail + F&B' },
+        { label: 'Weather-playable', val: '300 days', cls: 'sc-muted', sub: '18 rain-outs · 9 frost delays (yr)' },
+      ];
+      const tabs = [
+        { key: 'course', label: '🗺️ Course & Pace' },
+        { key: 'yield', label: '💵 Tee Sheet & Yield' },
+        { key: 'carts', label: '🛺 Cart Fleet' },
+        { key: 'shop', label: '🛍️ Pro Shop & F&B' },
+      ];
+      return (
+        <div className="page">
+          <div className="report-header">
+            <div className="report-header-left">
+              <div>
+                <div className="org-label">City of Rivertown · Parks &amp; Rec</div>
+                <div className="title">Facilities · Golf</div>
+              </div>
+            </div>
+            <div className="report-header-right"><div className="date-range">Aug 1, 2025 – Jul 31, 2026</div></div>
+          </div>
+
+          <div className="sample-ribbon">
+            <strong>Design mockup — sample data.</strong> A reimagined Golf tab for the Facilities hub (representative 18-hole municipal course, "Riverbend Golf Course"). Not wired to live reporting — it's a concept for how golf-specific ops could look: pace of play, a hole-by-hole bottleneck map, cart GPS telematics, tee-time yield management, and the full revenue mix.
+          </div>
+
+          <GolfBanner />
+
+          <Kpis cards={heroKpis} />
+
+          <div className="g-tabs">
+            {tabs.map(t => <button key={t.key} className={'g-tab' + (t.key === tab ? ' active' : '')} onClick={() => setTab(t.key)}>{t.label}</button>)}
+          </div>
+
+          {tab === 'course' && <CourseView />}
+          {tab === 'yield' && <YieldView />}
+          {tab === 'carts' && <CartView />}
+          {tab === 'shop' && <ShopView />}
+
+          <Sec title="🏆 Insights" sub="Auto-generated from the tee sheet, GPS, and POS." />
+          <Insights items={[
+            { type: 'opportunity', title: 'Midweek prime is the hidden inventory', detail: 'Mon–Thu 11a–2p fills under 60% at full prime rate while weekend mornings turn players away. A "value prime" rate + senior league could lift RevPATT without touching the weekend peak.', action: 'Pilot a midweek value-prime rate & league block' },
+            { type: 'risk', title: 'Pace is ' + Math.round(PACE.avgMin - 255) + ' min over target; the turn is the choke', detail: 'Avg round is ' + hm(PACE.avgMin) + ' vs a 4:15 target, and Hole 10 + the par-3s carry the worst backups. ' + PACE.slowRounds + ' rounds/yr finish over 4:30.', action: 'Station a ranger at the turn; widen par-3 tee intervals' },
+            { type: 'signal', title: 'Green fees are only ' + Math.round(SHOP.mix[0].val / SHOP.total * 100) + '% of revenue', detail: 'Carts, annual passes, range, pro-shop retail and F&B make up the majority. Cart attach and spend-per-round (' + '$' + SHOP.perRound.toFixed(2) + ') move the P&L more than rack rate.', action: 'Bundle cart + range + a halfway-house credit for foursomes' },
+          ]} />
+
+          <div className="section-note">Golf · design mockup with representative sample data (deterministic seed). Components are built to port into the Facilities hub the way Court Utilization was.</div>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<GolfApp />);
+  </script>
+</body>
+</html>

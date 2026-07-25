@@ -1,0 +1,29 @@
+name: CI
+
+# Fast pre-deploy validation. Railway's "Wait for CI" gates production
+# deploys on this passing, so a syntax error can't reach prod (see the
+# boot-crash incidents this was added to prevent).
+on:
+  push:
+  pull_request:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Syntax-check root JS (node --check)
+        run: |
+          shopt -s nullglob
+          for f in *.js; do echo "→ node --check $f"; node --check "$f"; done
+
+      - name: Install @babel/standalone (for JSX parse check)
+        run: npm install --no-save @babel/standalone@7.23.9
+
+      - name: Validate public/*.html JSX blocks
+        run: node scripts/ci-check-html.js

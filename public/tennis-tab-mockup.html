@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Tennis report — SF Rec &amp; Park (real data)</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Inter', system-ui, -apple-system, sans-serif; font-size: 12px; color: #1a1a1a; background: #f5f4f1; line-height: 1.35; }
+
+    .toolbar { position: sticky; top: 0; z-index: 1000; display: flex; align-items: center; gap: 10px; padding: 8px 20px; background: #2c2c2c; color: #eee; font-size: 13px; flex-wrap: wrap; }
+    .toolbar-title { font-weight: 600; margin-right: 4px; }
+    .toolbar-spacer { flex: 1; }
+    .toolbar label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: #aaa; display: flex; flex-direction: column; gap: 2px; }
+    .toolbar input[type="date"] { padding: 4px 8px; border: 1px solid rgba(255,255,255,.2); border-radius: 4px; background: rgba(255,255,255,.1); color: #fff; font-size: 12px; font-family: inherit; }
+    .toolbar input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(1); }
+    .toolbar button { padding: 6px 14px; border: 1px solid rgba(255,255,255,.25); border-radius: 4px; background: rgba(255,255,255,.08); color: #fff; font-size: 12px; font-family: inherit; cursor: pointer; white-space: nowrap; }
+    .toolbar .btn-run { background: #2563eb; border-color: #2563eb; font-weight: 600; }
+    .toolbar .divider { width: 1px; height: 28px; background: rgba(255,255,255,.15); margin: 0 2px; }
+
+    .page { max-width: 1400px; margin: 16px auto; padding: 24px 28px; background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
+
+    .report-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2.5px solid #111; padding-bottom: 10px; margin-bottom: 14px; gap: 16px; }
+    .report-header .org-label { font-size: 10px; letter-spacing: 1.6px; text-transform: uppercase; color: #777; font-weight: 600; }
+    .report-header .title { font-size: 17px; font-weight: 700; margin-top: 1px; }
+    .report-header .date-range { font-size: 11px; color: #666; text-align: right; }
+
+    .real-ribbon { background: #eff6ff; border: 1px solid #bfdbfe; border-left: 3px solid #2563eb; color: #1e40af; padding: 9px 14px; margin-bottom: 14px; border-radius: 4px; font-size: 12.5px; line-height: 1.5; }
+    .real-ribbon strong { color: #1e3a8a; }
+
+    .sum-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin: 14px 0; }
+    .sum-card { background: #fff; border: 1px solid #e8e6e0; border-radius: 8px; padding: 13px 15px; border-left: 3px solid #2563eb; }
+    .sum-card .sc-label { font-size: 10px; text-transform: uppercase; letter-spacing: .5px; color: #888; font-weight: 700; margin-bottom: 4px; }
+    .sum-card .sc-val { font-size: 22px; font-weight: 800; line-height: 1.1; font-variant-numeric: tabular-nums; }
+    .sum-card .sc-sub { font-size: 11px; color: #999; margin-top: 3px; }
+    .sc-green { color: #16a34a; } .sc-blue { color: #2563eb; } .sc-amber { color: #d97706; } .sc-red { color: #dc2626; } .sc-purple { color: #7c3aed; } .sc-muted { color: #64748b; } .sc-indigo { color: #4f46e5; }
+
+    .sum-bar-wrap { margin: 12px 0; }
+    .sum-bar { display: flex; height: 26px; border-radius: 4px; overflow: hidden; border: 1px solid #e8e6e0; background: #f3f4f6; }
+    .sum-bar .seg { display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; color: #fff; overflow: hidden; white-space: nowrap; }
+    .sum-legend { display: flex; gap: 14px; margin-top: 6px; font-size: 10.5px; color: #6b7280; flex-wrap: wrap; }
+    .sum-legend span { display: flex; align-items: center; gap: 4px; }
+    .sum-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+
+    .section-note { font-size: 11px; color: #9ca3af; margin-top: 18px; text-align: center; }
+    .cap-note { font-size: 11px; color: #1e40af; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 6px; padding: 7px 11px; margin-top: 8px; display: flex; gap: 7px; align-items: flex-start; }
+
+    .vsec { margin: 22px 0 6px; }
+    .vsec-t { font-size: 13px; font-weight: 700; color: #1e3a8a; display: flex; align-items: center; gap: 8px; margin-bottom: 2px; }
+    .vsec-s { font-size: 11px; color: #9ca3af; margin-bottom: 10px; }
+    .two-col { display: grid; grid-template-columns: 1.4fr .6fr; gap: 22px; align-items: start; }
+    .two-col.even { grid-template-columns: 1fr 1fr; }
+    @media (max-width: 950px) { .two-col, .two-col.even { grid-template-columns: 1fr; } }
+
+    .g-tabs { display: flex; gap: 0; margin: 6px 0 4px; border-bottom: 2px solid #e5e7eb; flex-wrap: wrap; }
+    .g-tab { padding: 9px 18px; font-size: 13px; font-weight: 600; color: #6b7280; cursor: pointer; border: none; border-bottom: 2px solid transparent; margin-bottom: -2px; background: none; font-family: inherit; display: flex; align-items: center; gap: 7px; }
+    .g-tab:hover { color: #374151; }
+    .g-tab.active { color: #1d4ed8; border-bottom-color: #1d4ed8; }
+
+    .cu-bars { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+    .cu-bar-row { display: grid; grid-template-columns: minmax(140px, 210px) 1fr 108px; align-items: center; gap: 10px; font-size: 12px; }
+    .cu-bar-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #374151; }
+    .cu-bar-track { background: #eef2f7; border-radius: 4px; height: 18px; overflow: hidden; display: flex; }
+    .cu-bar-seg { height: 100%; }
+    .cu-bar-val { text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; color: #111827; }
+    .cu-bar-sub { text-align: right; font-size: 10px; color: #9ca3af; font-variant-numeric: tabular-nums; }
+
+    .cu-map-wrap { height: 520px; border-radius: 10px; overflow: hidden; border: 1px solid #e5e7eb; margin-top: 8px; }
+    .cu-map-legend { display: flex; gap: 16px; align-items: center; padding: 10px 2px; font-size: 11px; color: #666; flex-wrap: wrap; }
+    .cu-map-dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; margin-right: 4px; vertical-align: -1px; }
+
+    .heatmap-grid { display: grid; grid-template-columns: minmax(46px, .6fr) repeat(7, 1fr); gap: 2px; font-size: 11px; }
+    .heatmap-hdr { text-align: center; font-weight: 700; font-size: 10px; text-transform: uppercase; letter-spacing: .5px; color: #888; padding: 4px 2px; }
+    .heatmap-label { padding: 5px 6px; font-size: 10.5px; white-space: nowrap; border-radius: 3px; background: #f1f5f9; color: #64748b; font-weight: 600; }
+    .heatmap-cell { text-align: center; padding: 6px 2px; border-radius: 3px; font-family: 'IBM Plex Mono', monospace; font-size: 10px; font-weight: 600; }
+    .heatmap-legend { display: flex; align-items: center; gap: 12px; margin-top: 8px; font-size: 10px; color: #888; flex-wrap: wrap; }
+    .heatmap-legend-swatch { display: inline-block; width: 14px; height: 14px; border-radius: 3px; vertical-align: middle; margin-right: 3px; }
+
+    .insights-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; margin-top: 8px; }
+    .insight-card { border: 1px solid #e5e7eb; border-left-width: 4px; border-radius: 8px; padding: 13px 15px; background: #fff; }
+    .insight-type { font-size: 10px; font-weight: 700; letter-spacing: .6px; text-transform: uppercase; margin-bottom: 6px; }
+    .insight-title { font-size: 13.5px; font-weight: 700; color: #111827; margin-bottom: 5px; line-height: 1.3; }
+    .insight-detail { font-size: 12px; color: #374151; line-height: 1.45; }
+    .insight-action { font-size: 12px; color: #6b7280; margin-top: 8px; font-weight: 500; }
+    .insight-opportunity { border-left-color: #16a34a; } .insight-opportunity .insight-type { color: #15803d; }
+    .insight-risk { border-left-color: #f59e0b; } .insight-risk .insight-type { color: #d97706; }
+    .insight-signal { border-left-color: #6366f1; } .insight-signal .insight-type { color: #4f46e5; }
+
+    /* Hero banner */
+    .tn-banner { position: relative; width: 100%; height: 176px; border-radius: 12px; overflow: hidden; margin: 4px 0 14px; border: 1px solid #bfdbfe; box-shadow: 0 3px 14px rgba(29,78,216,.16); }
+    .tn-banner .scene { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+    .tn-banner .b-overlay { position: absolute; inset: 0; padding: 20px 28px; display: flex; flex-direction: column; justify-content: center; z-index: 2; }
+    .tn-banner .b-kicker { font-size: 10.5px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; color: rgba(255,255,255,.92); text-shadow: 0 1px 3px rgba(0,0,0,.45); }
+    .tn-banner .b-title { font-size: 30px; font-weight: 800; color: #fff; text-shadow: 0 2px 7px rgba(0,0,0,.45); line-height: 1.04; margin-top: 3px; }
+    .tn-banner .b-sub { font-size: 13px; color: rgba(255,255,255,.96); text-shadow: 0 1px 4px rgba(0,0,0,.5); margin-top: 6px; max-width: 580px; }
+    .tn-banner .b-pills { display: flex; gap: 8px; margin-top: 13px; flex-wrap: wrap; }
+    .tn-banner .b-pill { background: rgba(255,255,255,.2); border: 1px solid rgba(255,255,255,.45); color: #fff; font-size: 12px; font-weight: 600; padding: 4px 12px; border-radius: 20px; text-shadow: 0 1px 2px rgba(0,0,0,.3); }
+    .tn-banner .b-pill b { font-weight: 800; }
+    .tn-banner .b-badge { position: absolute; top: 14px; right: 16px; z-index: 2; font-size: 10px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase; color: #1e3a8a; background: #d9f99d; border: 1px solid #bef264; padding: 3px 9px; border-radius: 6px; }
+
+    .g-table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 8px; }
+    .g-table th { background: #f1f5f9; padding: 7px 12px; text-align: left; font-size: 10px; text-transform: uppercase; letter-spacing: .5px; color: #64748b; font-weight: 700; border-bottom: 1px solid #e2e8f0; }
+    .g-table th.num, .g-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
+    .g-table td { padding: 7px 12px; border-bottom: 1px solid #f1f5f9; color: #555; }
+    .g-table tr:last-child td { border-bottom: none; }
+    .pill { display: inline-block; font-size: 10px; font-weight: 700; padding: 1px 8px; border-radius: 10px; }
+    .pill-green { background: #dcfce7; color: #166534; } .pill-amber { background: #fef3c7; color: #92400e; } .pill-red { background: #fee2e2; color: #991b1b; }
+
+    .mo-curve { display: flex; align-items: flex-end; gap: 4px; height: 120px; margin-top: 8px; }
+    .mo-col { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; }
+    .mo-bar { width: 74%; border-radius: 3px 3px 0 0; background: linear-gradient(180deg,#3b82f6,#1d4ed8); }
+    .mo-x { font-size: 8.5px; color: #9ca3af; margin-top: 3px; font-family: 'IBM Plex Mono', monospace; }
+
+    .pm-detail { border: 1px solid #e5e7eb; border-radius: 10px; padding: 14px 16px; margin-top: 8px; background: #fff; }
+    .pm-detail h4 { font-size: 14px; color: #1e3a8a; margin-bottom: 8px; }
+    .pm-detail .pmd-row { display: flex; justify-content: space-between; font-size: 12px; color: #4b5563; padding: 4px 0; border-bottom: 1px solid #f1f5f9; }
+    .pm-detail .pmd-row:last-child { border-bottom: none; }
+    .pm-detail .pmd-row b { color: #111827; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+  <script type="text/babel">
+    /* =====================================================================
+       TENNIS REPORT — SAN FRANCISCO REC & PARK (REAL DATA)
+
+       Every number below was data-mined from the Rec production read-replica
+       (org 17380e28-…fd7a), trailing 365 days. This is a design study of the
+       layout / component set for a Tennis report — the DATA IS REAL, not
+       representative. USTA-partnership oriented: court supply & access,
+       play/demand, and the private-coaching pipeline.
+
+       Data limitations surfaced honestly: the reservation model is a court-
+       booking model (no singles/doubles split), tennis has no league/class
+       reservation type recorded, and lesson skill-levels are all tagged
+       "all" (no NTRP capture) — these are flagged as USTA opportunities.
+       ===================================================================== */
+    const { useState, useRef, useEffect } = React;
+    const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
+    const money = n => '$' + Math.round(n || 0).toLocaleString();
+    const money1k = n => n >= 1000 ? '$' + (n / 1000).toFixed(n >= 10000 ? 0 : 1) + 'k' : money(n);
+    const pct = n => Math.round(n) + '%';
+    const num = n => Math.round(n).toLocaleString();
+    const rampPick = (v, ramp) => { for (const s of ramp) if (v >= s.min) return s; return ramp[ramp.length - 1]; };
+    const DOW = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    const hlabel = h => (h === 12 ? '12p' : h < 12 ? h + 'a' : (h - 12) + 'p');
+
+    // demand heat (busy = red), for heatmap + map
+    const HEAT = [
+      { min: 82, bg: '#991b1b', fg: '#fff' }, { min: 66, bg: '#dc2626', fg: '#fff' }, { min: 50, bg: '#ea580c', fg: '#fff' },
+      { min: 36, bg: '#f59e0b', fg: '#3a2606' }, { min: 22, bg: '#facc15', fg: '#3a2606' }, { min: 10, bg: '#a3e635', fg: '#1a2e05' }, { min: 0, bg: '#dcfce7', fg: '#166534' },
+    ];
+    const mapColor = rpc => rpc >= 2000 ? '#dc2626' : rpc >= 1000 ? '#f59e0b' : '#22c55e';
+
+    /* ===================== REAL DATA (SF Rec & Park, 365d) ===================== */
+    // Tennis locations — from court/location/court_sport/reservation (all coords real).
+    const LOCS = [
+      { name: 'Dolores', lat: 37.7610051, lng: -122.4271707, courts: 6, resv: 9484, rpc: 1581 },
+      { name: 'McLaren', lat: 37.7191051, lng: -122.4122043, courts: 6, resv: 5703, rpc: 951 },
+      { name: 'Moscone', lat: 37.8022867, lng: -122.4333295, courts: 4, resv: 8383, rpc: 2096 },
+      { name: 'Alice Marble', lat: 37.8014646, lng: -122.4200910, courts: 4, resv: 7623, rpc: 1906 },
+      { name: 'Mountain Lake', lat: 37.7869511, lng: -122.4718231, courts: 4, resv: 7184, rpc: 1796 },
+      { name: 'DuPont', lat: 37.7826482, lng: -122.4908712, courts: 4, resv: 6750, rpc: 1688 },
+      { name: 'Balboa', lat: 37.7229268, lng: -122.4447946, courts: 4, resv: 5593, rpc: 1398 },
+      { name: 'Presidio Wall', lat: 37.7904685, lng: -122.4542353, courts: 4, resv: 3698, rpc: 925 },
+      { name: 'Parkside Square', lat: 37.7379478, lng: -122.4839059, courts: 4, resv: 3607, rpc: 902 },
+      { name: 'J.P. Murphy', lat: 37.7519264, lng: -122.4650584, courts: 3, resv: 5689, rpc: 1896 },
+      { name: 'Crocker Amazon', lat: 37.7144459, lng: -122.4305872, courts: 3, resv: 4145, rpc: 1382 },
+      { name: 'Joe DiMaggio', lat: 37.8022280, lng: -122.4122471, courts: 3, resv: 2455, rpc: 818 },
+      { name: 'Rossi', lat: 37.7790463, lng: -122.4574663, courts: 3, resv: 1273, rpc: 424 },
+      { name: 'Potrero Hill', lat: 37.7561451, lng: -122.3974365, courts: 2, resv: 6545, rpc: 3273 },
+      { name: 'Lafayette', lat: 37.7926498, lng: -122.4261762, courts: 2, resv: 5664, rpc: 2832 },
+      { name: 'Hamilton', lat: 37.7845880, lng: -122.4350898, courts: 2, resv: 4086, rpc: 2043 },
+      { name: 'Glen Canyon', lat: 37.7398211, lng: -122.4418616, courts: 2, resv: 3792, rpc: 1896 },
+      { name: 'Sunset', lat: 37.7575481, lng: -122.4865051, courts: 2, resv: 2971, rpc: 1486 },
+      { name: "St. Mary's", lat: 37.7342435, lng: -122.4216848, courts: 2, resv: 2122, rpc: 1061 },
+      { name: 'Minnie & Lovie Ward', lat: 37.7158129, lng: -122.4575770, courts: 2, resv: 1812, rpc: 906 },
+      { name: 'Buena Vista', lat: 37.7690635, lng: -122.4383776, courts: 2, resv: 1345, rpc: 673 },
+      { name: 'Stern Grove', lat: 37.7347230, lng: -122.4752275, courts: 2, resv: 617, rpc: 309 },
+      { name: 'Jackson', lat: 37.7639005, lng: -122.3989190, courts: 1, resv: 2360, rpc: 2360 },
+      { name: 'Upper Noe', lat: 37.7424327, lng: -122.4278655, courts: 1, resv: 2343, rpc: 2343 },
+      { name: 'Helen Wills', lat: 37.7957018, lng: -122.4205566, courts: 1, resv: 2159, rpc: 2159 },
+      { name: 'Fulton', lat: 37.7735284, lng: -122.4868916, courts: 1, resv: 1911, rpc: 1911 },
+      { name: 'Miraloma', lat: 37.7391202, lng: -122.4489439, courts: 1, resv: 1535, rpc: 1535 },
+      { name: 'Richmond', lat: 37.7860984, lng: -122.4776691, courts: 1, resv: 1178, rpc: 1178 },
+    ];
+    const TOTAL_COURTS = 76, TOTAL_LOCS = 28, INSTANT_COURTS = 69, PRIVATE_COURTS = 19;
+
+    // Play/demand (trailing 365d)
+    const PLAY = {
+      reservations: 139582, canceled: 27555, cancelPct: 19.7, delivered: 112027,
+      players: 17495, avgDur: 82, instantShare: 100, yoy: -32.5, priorYear: 206666,
+      typeMix: [{ label: 'Court reservation', val: 133819, color: '#2563eb' }, { label: 'Private lesson', val: 5763, color: '#a3e635' }],
+      dow: { Mon: 15866, Tue: 15624, Wed: 15799, Thu: 16648, Fri: 21119, Sat: 27360, Sun: 27166 },
+      // smoothed hourly envelope (real signal; raw has on/half-hour slot artifacts)
+      hourW: { 7: 0.68, 8: 0.72, 9: 0.82, 10: 0.85, 11: 0.8, 12: 0.85, 13: 0.88, 14: 0.83, 15: 0.9, 16: 0.93, 17: 0.86, 18: 1.0, 19: 0.6, 20: 0.34 },
+      months: [
+        { m: 'Aug', v: 17963 }, { m: 'Sep', v: 17162 }, { m: 'Oct', v: 15949 }, { m: 'Nov', v: 9407 }, { m: 'Dec', v: 6241 },
+        { m: 'Jan', v: 8525 }, { m: 'Feb', v: 8134 }, { m: 'Mar', v: 10443 }, { m: 'Apr', v: 10330 }, { m: 'May', v: 11777 }, { m: 'Jun', v: 11002 },
+      ],
+    };
+    // Private lessons (trailing 365d)
+    const LESSON = {
+      booked: 6016, delivered: 2448, cancelPct: 59.3, instructors: 54, eligible: 87,
+      revenue: 227133.75, avgPrice: 92.78, yoyBooked: 17.5, yoyDelivered: 92.8,
+      students: 811, repeat: 2.8,
+      top: [
+        { id: 'A', booked: 779, del: 392, avg: 84.73 }, { id: 'B', booked: 580, del: 347, avg: 98.02 },
+        { id: 'C', booked: 550, del: 180, avg: 117.02 }, { id: 'D', booked: 418, del: 182, avg: 101.27 },
+        { id: 'E', booked: 300, del: 83, avg: 105.37 }, { id: 'F', booked: 277, del: 44, avg: 99.20 },
+        { id: 'G', booked: 265, del: 95, avg: 110.00 }, { id: 'H', booked: 260, del: 129, avg: 81.71 },
+      ],
+      months: [
+        { m: 'Aug', v: 176 }, { m: 'Sep', v: 216 }, { m: 'Oct', v: 199 }, { m: 'Nov', v: 166 }, { m: 'Dec', v: 120 },
+        { m: 'Jan', v: 153 }, { m: 'Feb', v: 200 }, { m: 'Mar', v: 192 }, { m: 'Apr', v: 142 }, { m: 'May', v: 209 }, { m: 'Jun', v: 218 },
+      ],
+    };
+    const CENTER = [37.762065, -122.444449];
+
+    /* ========================= WIDGETS ========================= */
+    function Kpis({ cards }) {
+      return (
+        <div className="sum-cards">
+          {cards.map((c, i) => (
+            <div className="sum-card" key={i}>
+              <div className="sc-label">{c.label}</div>
+              <div className={'sc-val ' + (c.cls || 'sc-muted')}>{c.val}</div>
+              <div className="sc-sub">{c.sub}</div>
+            </div>
+          ))}
+        </div>
+      );
+    }
+    function Sec({ title, sub }) {
+      return <div className="vsec"><div className="vsec-t">{title}</div>{sub ? <div className="vsec-s">{sub}</div> : null}</div>;
+    }
+    function Insights({ items }) {
+      return (
+        <div className="insights-grid">
+          {items.map((it, i) => (
+            <div className={'insight-card insight-' + it.type} key={i}>
+              <div className="insight-type">{it.type}</div>
+              <div className="insight-title">{it.title}</div>
+              <div className="insight-detail">{it.detail}</div>
+              {it.action ? <div className="insight-action">→ {it.action}</div> : null}
+            </div>
+          ))}
+        </div>
+      );
+    }
+    function CapNote({ children }) { return <div className="cap-note"><span>ℹ️</span><span>{children}</span></div>; }
+
+    // Tennis hero banner — SVG hard-court scene
+    function TennisBanner() {
+      return (
+        <div className="tn-banner">
+          <svg className="scene" viewBox="0 0 1200 190" preserveAspectRatio="xMidYMid slice">
+            <defs>
+              <linearGradient id="tnSky" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#1e3a8a" /><stop offset="60%" stopColor="#3b82f6" /><stop offset="100%" stopColor="#60a5fa" /></linearGradient>
+              <linearGradient id="tnCourt" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#1d4ed8" /><stop offset="100%" stopColor="#1e40af" /></linearGradient>
+              <radialGradient id="tnSun" cx="50%" cy="50%" r="50%"><stop offset="0%" stopColor="#fffbeb" /><stop offset="55%" stopColor="#fde68a" /><stop offset="100%" stopColor="#fde68a" stopOpacity="0" /></radialGradient>
+              <linearGradient id="tnScrim" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stopColor="#0b1220" stopOpacity="0.62" /><stop offset="55%" stopColor="#0b1220" stopOpacity="0.15" /><stop offset="100%" stopColor="#0b1220" stopOpacity="0" /></linearGradient>
+            </defs>
+            <rect x="0" y="0" width="1200" height="190" fill="url(#tnSky)" />
+            <circle cx="840" cy="52" r="86" fill="url(#tnSun)" /><circle cx="840" cy="52" r="30" fill="#fffef6" />
+            {/* perspective hard court */}
+            <polygon points="470,190 730,190 1180,86 900,86" fill="url(#tnCourt)" opacity="0.96" />
+            <polygon points="600,190 620,86" fill="none" />
+            {/* court lines */}
+            <line x1="600" y1="190" x2="765" y2="86" stroke="#dbeafe" strokeWidth="2" opacity="0.9" />
+            <line x1="470" y1="190" x2="900" y2="86" stroke="#dbeafe" strokeWidth="2" opacity="0.6" />
+            <line x1="730" y1="190" x2="1180" y2="86" stroke="#dbeafe" strokeWidth="2" opacity="0.6" />
+            <line x1="545" y1="150" x2="980" y2="150" stroke="#dbeafe" strokeWidth="2" opacity="0.55" />
+            {/* net */}
+            <line x1="520" y1="126" x2="1035" y2="126" stroke="#f8fafc" strokeWidth="3" opacity="0.85" strokeDasharray="4 4" />
+            {/* tennis ball (optic yellow) */}
+            <circle cx="352" cy="60" r="15" fill="#d4f000" stroke="#a3b800" strokeWidth="1" />
+            <path d="M340,52 Q352,66 364,52" stroke="#fff" strokeWidth="1.6" fill="none" opacity="0.9" />
+            <rect x="0" y="0" width="1200" height="190" fill="url(#tnScrim)" />
+          </svg>
+          <div className="b-overlay">
+            <div className="b-kicker">San Francisco Rec &amp; Park · real read-replica data</div>
+            <div className="b-title">🎾 Tennis</div>
+            <div className="b-sub">76 courts across 28 parks · 139K bookings &amp; 17.5K players a year · a private-coaching engine — the data a USTA partner wants.</div>
+            <div className="b-pills">
+              <span className="b-pill"><b>76</b> courts · 28 parks</span>
+              <span className="b-pill"><b>{num(PLAY.reservations)}</b> bookings/yr</span>
+              <span className="b-pill"><b>{num(PLAY.players)}</b> players</span>
+              <span className="b-pill"><b>{money1k(LESSON.revenue)}</b> lesson revenue</span>
+            </div>
+          </div>
+          <div className="b-badge">Real data</div>
+        </div>
+      );
+    }
+
+    // Leaflet map of SF tennis courts
+    function CourtMap({ onSelect, selected }) {
+      const ref = useRef(null), mapRef = useRef(null), lgRef = useRef(null);
+      useEffect(() => {
+        if (!ref.current) return;
+        if (!mapRef.current) {
+          mapRef.current = L.map(ref.current, { scrollWheelZoom: false });
+          L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', { maxZoom: 19, attribution: '© OpenStreetMap © CARTO' }).addTo(mapRef.current);
+          lgRef.current = L.layerGroup().addTo(mapRef.current);
+        }
+        const lg = lgRef.current; lg.clearLayers();
+        const pts = [];
+        LOCS.forEach(l => {
+          const col = mapColor(l.rpc);
+          const m = L.circleMarker([l.lat, l.lng], { radius: 6 + l.courts * 2.4, color: '#fff', weight: 1.5, fillColor: col, fillOpacity: selected === l.name ? 1 : 0.82 });
+          m.bindPopup('<div style="font-weight:800;font-size:13px;color:#1e3a8a">' + l.name + '</div>' +
+            '<div style="font-size:11px;color:#374151;margin-top:3px">' + l.courts + ' tennis court' + (l.courts > 1 ? 's' : '') + '</div>' +
+            '<div style="font-size:11px;color:#374151">' + num(l.resv) + ' bookings / yr · ' + num(l.rpc) + ' per court</div>');
+          m.on('click', () => onSelect(l.name));
+          m.addTo(lg); pts.push([l.lat, l.lng]);
+        });
+        mapRef.current.fitBounds(pts, { padding: [30, 30] });
+        setTimeout(() => mapRef.current && mapRef.current.invalidateSize(), 60);
+      }, [selected]);
+      return <div className="cu-map-wrap" ref={ref} />;
+    }
+
+    /* ========================= VIEWS ========================= */
+    function MapView() {
+      const [selected, setSelected] = useState('Dolores');
+      const loc = LOCS.find(l => l.name === selected) || LOCS[0];
+      const top = [...LOCS].sort((a, b) => b.rpc - a.rpc);
+      return (
+        <div>
+          <div className="two-col">
+            <div>
+              <Sec title="🗺️ SF tennis courts — every location, mapped" sub="76 courts across 28 parks (real coordinates). Marker size = # courts; color = bookings per court (demand). Click a park." />
+              <CourtMap onSelect={setSelected} selected={selected} />
+              <div className="cu-map-legend">
+                <span><span className="cu-map-dot" style={{ background: '#22c55e' }} />&lt;1,000 / court</span>
+                <span><span className="cu-map-dot" style={{ background: '#f59e0b' }} />1,000–2,000</span>
+                <span><span className="cu-map-dot" style={{ background: '#dc2626' }} />2,000+ (highest demand)</span>
+                <span style={{ marginLeft: 'auto', color: '#9ca3af' }}>marker size = court count</span>
+              </div>
+            </div>
+            <div>
+              <Sec title="🎾 Inventory" sub="What SF has to offer." />
+              <Kpis cards={[
+                { label: 'Tennis courts', val: num(TOTAL_COURTS), cls: 'sc-blue', sub: 'across ' + TOTAL_LOCS + ' parks' },
+                { label: 'Instant-bookable', val: pct(INSTANT_COURTS / TOTAL_COURTS * 100), cls: 'sc-green', sub: INSTANT_COURTS + ' of ' + TOTAL_COURTS + ' courts' },
+              ]} />
+              <div className="pm-detail">
+                <h4>{loc.name}</h4>
+                <div className="pmd-row"><span>Tennis courts</span><b>{loc.courts}</b></div>
+                <div className="pmd-row"><span>Bookings / yr</span><b>{num(loc.resv)}</b></div>
+                <div className="pmd-row"><span>Bookings per court</span><b>{num(loc.rpc)}</b></div>
+                <div className="pmd-row"><span>Demand</span><b style={{ color: mapColor(loc.rpc) }}>{loc.rpc >= 2000 ? 'Very high' : loc.rpc >= 1000 ? 'Moderate' : 'Low — programmable'}</b></div>
+                <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 8 }}>Click any park marker on the map.</div>
+              </div>
+              <div style={{ fontSize: 11, color: '#6b7280', marginTop: 10 }}>Hottest: <b>Potrero Hill</b> (3,273/court), <b>Lafayette</b> (2,832). Coldest: <b>Stern Grove</b> (309), <b>Rossi</b> (424) — capacity to program.</div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    function DemandView() {
+      // heatmap from real day × smoothed-hour marginals
+      const hours = Object.keys(PLAY.hourW).map(Number);
+      const dowMax = Math.max(...DOW.map(d => PLAY.dow[d]));
+      const grid = hours.map(h => DOW.map(d => Math.round(PLAY.hourW[h] * (PLAY.dow[d] / dowMax) * 100)));
+      const moMax = Math.max(...PLAY.months.map(m => m.v));
+      return (
+        <div>
+          <Kpis cards={[
+            { label: 'Reservations (12 mo)', val: num(PLAY.reservations), cls: 'sc-blue', sub: num(PLAY.delivered) + ' played · ' + num(PLAY.players) + ' unique players' },
+            { label: 'Cancellation rate', val: pct(PLAY.cancelPct), cls: 'sc-amber', sub: num(PLAY.canceled) + ' canceled court bookings' },
+            { label: 'Avg slot', val: PLAY.avgDur + ' min', cls: 'sc-muted', sub: '90-min grid · ' + pct(PLAY.instantShare) + ' instant-booked' },
+            { label: 'Bookings YoY', val: (PLAY.yoy > 0 ? '+' : '') + PLAY.yoy + '%', cls: 'sc-red', sub: '⚠ verify — vs ' + num(PLAY.priorYear) + ' prior year' },
+          ]} />
+          <div className="two-col">
+            <div>
+              <Sec title="🔥 When SF plays — hour × day" sub="Derived from real day-of-week and hour-of-day booking distributions (smoothed for 90-min slot bucketing)." />
+              <div className="heatmap-grid">
+                <div className="heatmap-hdr" />
+                {DOW.map(d => <div className="heatmap-hdr" key={d}>{d}</div>)}
+                {hours.map((h, ri) => (
+                  <React.Fragment key={ri}>
+                    <div className="heatmap-label">{hlabel(h)}</div>
+                    {grid[ri].map((v, ci) => { const c = rampPick(v, HEAT); return <div className="heatmap-cell" key={ci} style={{ background: c.bg, color: c.fg }} title={hlabel(h) + ' · ' + DOW[ci]}>{v}</div>; })}
+                  </React.Fragment>
+                ))}
+              </div>
+              <div className="heatmap-legend"><span>Quiet</span>{[10, 22, 36, 50, 66, 82].map((v, i) => <span key={i}><span className="heatmap-legend-swatch" style={{ background: rampPick(v, HEAT).bg }} /></span>)}<span>Packed</span></div>
+              <div style={{ fontSize: 12, color: '#6b7280', marginTop: 8 }}>Weekends carry <b>39%</b> of play (Fri–Sun = 54%); the <b>6pm</b> after-work slot is the single busiest hour. Mornings 9–10a and midday 12–4p are the steady base.</div>
+            </div>
+            <div>
+              <Sec title="📈 Seasonality" sub="Bookings by month — late-summer peak, winter trough." />
+              <div className="mo-curve">
+                {PLAY.months.map((m, i) => (
+                  <div className="mo-col" key={i} title={m.m + ': ' + num(m.v)}>
+                    <div className="mo-bar" style={{ height: (m.v / moMax * 100) + '%' }} />
+                    <div className="mo-x">{m.m}</div>
+                  </div>
+                ))}
+              </div>
+              <Sec title="🎾 Booking types" sub="How tennis water time is used." />
+              <div className="sum-bar-wrap">
+                <div className="sum-bar">
+                  {PLAY.typeMix.map((t, i) => { const tot = PLAY.typeMix.reduce((s, x) => s + x.val, 0); return <div className="seg" key={i} style={{ width: (t.val / tot * 100) + '%', background: t.color, color: i === 1 ? '#1a2e05' : '#fff' }}>{Math.round(t.val / tot * 100) + '%'}</div>; })}
+                </div>
+                <div className="sum-legend">{PLAY.typeMix.map((t, i) => <span key={i}><span className="sum-dot" style={{ background: t.color }} />{t.label} ({num(t.val)})</span>)}</div>
+              </div>
+              <CapNote>It's a court-booking model — a reservation is one court held by one party, so <b>singles vs. doubles isn't distinguishable</b>, and there's no <b>league/class</b> booking type recorded for tennis (both are USTA-integration opportunities).</CapNote>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    function LessonsView() {
+      const maxDel = Math.max(...LESSON.top.map(t => t.del));
+      const moMax = Math.max(...LESSON.months.map(m => m.v));
+      return (
+        <div>
+          <Kpis cards={[
+            { label: 'Lessons delivered', val: num(LESSON.delivered), cls: 'sc-blue', sub: num(LESSON.booked) + ' booked · trailing 12 mo' },
+            { label: 'Realized revenue', val: money1k(LESSON.revenue), cls: 'sc-green', sub: money(LESSON.avgPrice) + ' avg lesson' },
+            { label: 'Delivered YoY', val: '+' + LESSON.yoyDelivered + '%', cls: 'sc-green', sub: 'booked +' + LESSON.yoyBooked + '% — coaching is surging' },
+            { label: 'Instructors', val: num(LESSON.instructors), cls: 'sc-indigo', sub: 'taught · ' + LESSON.eligible + ' eligible org-wide' },
+            { label: 'Students', val: num(LESSON.students), cls: 'sc-purple', sub: '~' + LESSON.repeat + ' lessons each (repeat)' },
+            { label: 'Cancellation', val: pct(LESSON.cancelPct), cls: 'sc-amber', sub: 'mostly unfilled availability slots' },
+          ]} />
+          <div className="two-col even">
+            <div>
+              <Sec title="🏆 Top coaches" sub="By lessons booked (delivered in parens). Anonymized — no PII exposed." />
+              <div className="cu-bars">
+                {LESSON.top.map((t, i) => (
+                  <div className="cu-bar-row" key={i}>
+                    <div className="cu-bar-name">Instructor {t.id}</div>
+                    <div className="cu-bar-track"><div className="cu-bar-seg" style={{ width: (t.del / maxDel * 100) + '%', background: 'linear-gradient(90deg,#3b82f6,#1d4ed8)' }} /></div>
+                    <div><div className="cu-bar-val">{t.del} <span style={{ color: '#9ca3af', fontWeight: 400 }}>/ {t.booked}</span></div><div className="cu-bar-sub">{money(t.avg)} avg</div></div>
+                  </div>
+                ))}
+              </div>
+              <CapNote>SF doesn't populate the <b>pro / contractor</b> flag on instructors (all false) and every lesson is tagged skill-level "<b>all</b>" — so no pro-vs-contractor or NTRP breakout is possible today. Capturing instructor type + swimmer level would unlock coaching-quality analytics.</CapNote>
+            </div>
+            <div>
+              <Sec title="📈 Lessons delivered by month" sub="Steady demand year-round; spring/summer strongest." />
+              <div className="mo-curve">
+                {LESSON.months.map((m, i) => (
+                  <div className="mo-col" key={i} title={m.m + ': ' + num(m.v)}>
+                    <div className="mo-bar" style={{ height: (m.v / moMax * 100) + '%', background: 'linear-gradient(180deg,#a3e635,#65a30d)' }} />
+                    <div className="mo-x">{m.m}</div>
+                  </div>
+                ))}
+              </div>
+              <div style={{ marginTop: 14, background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, padding: '11px 14px' }}>
+                <div style={{ fontSize: 12, color: '#166534' }}><b>Private coaching is the growth story.</b> Delivered lessons nearly doubled year-over-year (+{LESSON.yoyDelivered}%) to {money1k(LESSON.revenue)} — even as open-court bookings dipped. Only {PRIVATE_COURTS} of {TOTAL_COURTS} courts are lesson-enabled, so there's headroom to expand coaching to more sites.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    function UstaView() {
+      return (
+        <div>
+          <Sec title="🏆 USTA partnership snapshot" sub="The public-tennis data a national partner wants: supply, participation, growth, coaching, and access." />
+          <Kpis cards={[
+            { label: 'Public courts', val: num(TOTAL_COURTS), cls: 'sc-blue', sub: TOTAL_LOCS + ' parks citywide' },
+            { label: 'Annual participation', val: num(PLAY.players), cls: 'sc-green', sub: 'unique players · ' + num(PLAY.reservations) + ' bookings' },
+            { label: 'Coaching pipeline', val: num(LESSON.students), cls: 'sc-indigo', sub: LESSON.instructors + ' instructors · ' + num(LESSON.delivered) + ' lessons' },
+            { label: 'Free/low-cost access', val: pct(INSTANT_COURTS / TOTAL_COURTS * 100), cls: 'sc-green', sub: 'courts instantly self-bookable online' },
+          ]} />
+          <div className="two-col even">
+            <div>
+              <Sec title="🌉 Court access across the city" sub="Courts per park — the geographic supply a USTA facility-investment case is built on." />
+              <div className="cu-bars">
+                {[...LOCS].sort((a, b) => b.courts - a.courts).slice(0, 12).map((l, i) => (
+                  <div className="cu-bar-row" key={i}>
+                    <div className="cu-bar-name">{l.name}</div>
+                    <div className="cu-bar-track"><div className="cu-bar-seg" style={{ width: (l.courts / 6 * 100) + '%', background: mapColor(l.rpc) }} /></div>
+                    <div><div className="cu-bar-val">{l.courts} ct</div><div className="cu-bar-sub">{num(l.rpc)}/ct</div></div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div>
+              <Sec title="📋 What USTA would want next" sub="The gaps in today's data — each a partnership build-out." />
+              <table className="g-table">
+                <thead><tr><th>Signal</th><th>Status today</th></tr></thead>
+                <tbody>
+                  <tr><td>Court supply &amp; geo access</td><td><span className="pill pill-green">Have it</span> 76 courts / 28 parks, mapped</td></tr>
+                  <tr><td>Participation &amp; frequency</td><td><span className="pill pill-green">Have it</span> {num(PLAY.players)} players</td></tr>
+                  <tr><td>Private coaching pipeline</td><td><span className="pill pill-green">Have it</span> +{LESSON.yoyDelivered}% YoY</td></tr>
+                  <tr><td>League / team play</td><td><span className="pill pill-amber">Gap</span> no league booking type yet</td></tr>
+                  <tr><td>NTRP / skill ratings</td><td><span className="pill pill-amber">Gap</span> level always "all"</td></tr>
+                  <tr><td>Player demographics (age/geo)</td><td><span className="pill pill-amber">Gap</span> needs profile join / capture</td></tr>
+                </tbody>
+              </table>
+              <CapNote>Adding league play, NTRP levels, and a demographic-reach join would make this a full USTA-grade dataset — and directly power junior-development and access-equity programs.</CapNote>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    /* ========================= APP ========================= */
+    function TennisApp() {
+      const [tab, setTab] = useState('map');
+      const heroKpis = [
+        { label: 'Tennis courts', val: num(TOTAL_COURTS), cls: 'sc-blue', sub: 'across ' + TOTAL_LOCS + ' SF parks' },
+        { label: 'Reservations (12 mo)', val: num(PLAY.reservations), cls: 'sc-blue', sub: num(PLAY.players) + ' unique players' },
+        { label: 'Cancellation rate', val: pct(PLAY.cancelPct), cls: 'sc-amber', sub: 'court bookings' },
+        { label: 'Private-lesson revenue', val: money1k(LESSON.revenue), cls: 'sc-green', sub: num(LESSON.delivered) + ' lessons delivered' },
+        { label: 'Lessons YoY', val: '+' + LESSON.yoyDelivered + '%', cls: 'sc-green', sub: 'delivered · coaching surging' },
+        { label: 'Court bookings YoY', val: PLAY.yoy + '%', cls: 'sc-red', sub: '⚠ verify vs data-model change' },
+      ];
+      const tabs = [
+        { key: 'map', label: '🗺️ Courts & Map' },
+        { key: 'demand', label: '🔥 Play & Demand' },
+        { key: 'lessons', label: '🎓 Private Lessons' },
+        { key: 'usta', label: '🏆 USTA Snapshot' },
+      ];
+      return (
+        <div className="page">
+          <div className="report-header">
+            <div><div className="org-label">San Francisco Rec &amp; Park</div><div className="title">Facilities · Tennis</div></div>
+            <div className="date-range">Trailing 365 days · through Jul 24, 2026</div>
+          </div>
+          <div className="real-ribbon">
+            <strong>Real data — San Francisco Rec &amp; Park.</strong> Every figure was data-mined live from the Rec production read-replica (trailing 365 days). This is a design study of the Tennis report layout; the numbers are real. A few fields aren't captured yet (league play, NTRP levels, player demographics) — flagged inline as USTA build-outs, not faked.
+          </div>
+
+          <TennisBanner />
+          <Kpis cards={heroKpis} />
+
+          <div className="g-tabs">
+            {tabs.map(t => <button key={t.key} className={'g-tab' + (t.key === tab ? ' active' : '')} onClick={() => setTab(t.key)}>{t.label}</button>)}
+          </div>
+
+          {tab === 'map' && <MapView />}
+          {tab === 'demand' && <DemandView />}
+          {tab === 'lessons' && <LessonsView />}
+          {tab === 'usta' && <UstaView />}
+
+          <Sec title="🎾 Rec Insights" sub="Auto-generated from the reservation, court & instructor data — framed around revenue upside and access." />
+          <Insights items={[
+            { type: 'opportunity', title: 'Private coaching is the revenue engine — feed it', detail: 'Delivered lessons nearly doubled YoY (+' + LESSON.yoyDelivered + '%) to ' + money1k(LESSON.revenue) + ', yet only ' + PRIVATE_COURTS + ' of ' + TOTAL_COURTS + ' courts allow lessons and ~811 students repeat ~' + LESSON.repeat + '×. Enable lessons at more high-traffic parks and recruit instructors.', action: 'Turn on private lessons at Moscone/Alice Marble/Potrero; add a lesson-package + promo' },
+            { type: 'opportunity', title: 'Cold courts are programmable inventory', detail: 'Stern Grove (309/court), Rossi (424) and Buena Vista (673) sit far below the ~1,560 citywide average — idle public capacity that clinics, beginner leagues, or junior programs could fill without new construction.', action: 'Stand up beginner clinics / junior programs at the coldest parks' },
+            { type: 'signal', title: 'Access gap: who is NOT on the court?', detail: 'Courts cluster in the north/east; outer-southwest parks (Parkside, Minnie & Lovie Ward) run cooler. A demographic-reach join (age/gender/neighborhood vs. citywide) would reveal which residents the public courts are — and are not — reaching.', action: 'Add a player demographic-reach view; target outreach + subsidized coaching in under-served ZIPs' },
+            { type: 'risk', title: 'Court bookings down ~32% YoY — verify before reporting', detail: 'Open-court reservations fell from ' + num(PLAY.priorYear) + ' to ' + num(PLAY.reservations) + '. That is large enough to be a reservation-model / migration artifact rather than a true demand drop — confirm before it goes to a partner.', action: 'Validate the YoY drop against a known-good month before external use' },
+            { type: 'signal', title: '20% of court bookings cancel', detail: PLAY.cancelPct + '% of court reservations are canceled — on high-demand courts that is turned-away play. A hold/deposit or shorter cancellation window on prime evening/weekend slots would recover capacity.', action: 'Pilot a no-show policy on 5–8pm & weekend prime slots' },
+          ]} />
+
+          <div className="section-note">Tennis · San Francisco Rec &amp; Park · real read-replica data (trailing 365 days). Layout study for a Tennis report — built to wire into the Facilities hub. Gaps (league, NTRP, demographics) flagged as USTA build-outs.</div>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<TennisApp />);
+  </script>
+</body>
+</html>

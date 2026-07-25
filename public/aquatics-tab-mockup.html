@@ -1,0 +1,777 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Aquatics tab — reimagined (mockup)</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Inter', system-ui, -apple-system, sans-serif; font-size: 12px; color: #1a1a1a; background: #f5f4f1; line-height: 1.35; }
+
+    .toolbar { position: sticky; top: 0; z-index: 1000; display: flex; align-items: center; gap: 10px; padding: 8px 20px; background: #2c2c2c; color: #eee; font-size: 13px; flex-wrap: wrap; }
+    .toolbar-title { font-weight: 600; margin-right: 4px; }
+    .toolbar-back { color: #9ca3af; text-decoration: none; font-size: 12px; }
+    .toolbar-spacer { flex: 1; }
+    .toolbar label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: #aaa; display: flex; flex-direction: column; gap: 2px; }
+    .toolbar input[type="date"] { padding: 4px 8px; border: 1px solid rgba(255,255,255,.2); border-radius: 4px; background: rgba(255,255,255,.1); color: #fff; font-size: 12px; font-family: inherit; outline: none; }
+    .toolbar input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(1); cursor: pointer; }
+    .toolbar button { padding: 6px 14px; border: 1px solid rgba(255,255,255,.25); border-radius: 4px; background: rgba(255,255,255,.08); color: #fff; font-size: 12px; font-family: inherit; cursor: pointer; white-space: nowrap; }
+    .toolbar .btn-run { background: #0284c7; border-color: #0284c7; font-weight: 600; }
+    .toolbar .divider { width: 1px; height: 28px; background: rgba(255,255,255,.15); margin: 0 2px; }
+
+    .page { max-width: 1400px; margin: 16px auto; padding: 24px 28px; background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
+
+    .report-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2.5px solid #111; padding-bottom: 10px; margin-bottom: 14px; gap: 16px; }
+    .report-header .org-label { font-size: 10px; letter-spacing: 1.6px; text-transform: uppercase; color: #777; font-weight: 600; }
+    .report-header .title { font-size: 17px; font-weight: 700; margin-top: 1px; }
+    .report-header .date-range { font-size: 11px; color: #666; text-align: right; }
+
+    .sample-ribbon { background: #fffbeb; border: 1px solid #fde68a; border-left: 3px solid #f59e0b; color: #92400e; padding: 9px 14px; margin-bottom: 14px; border-radius: 4px; font-size: 12.5px; line-height: 1.5; }
+    .sample-ribbon strong { color: #78350f; }
+
+    /* KPI cards */
+    .sum-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin: 14px 0; }
+    .sum-card { background: #fff; border: 1px solid #e8e6e0; border-radius: 8px; padding: 13px 15px; border-left: 3px solid #0891b2; }
+    .sum-card .sc-label { font-size: 10px; text-transform: uppercase; letter-spacing: .5px; color: #888; font-weight: 700; margin-bottom: 4px; }
+    .sum-card .sc-val { font-size: 23px; font-weight: 800; line-height: 1.1; font-variant-numeric: tabular-nums; }
+    .sum-card .sc-sub { font-size: 11px; color: #999; margin-top: 3px; }
+    .sc-green { color: #16a34a; } .sc-blue { color: #0284c7; } .sc-amber { color: #d97706; } .sc-red { color: #dc2626; } .sc-purple { color: #7c3aed; } .sc-muted { color: #64748b; } .sc-cyan { color: #0891b2; }
+
+    /* Mix bar */
+    .sum-bar-wrap { margin: 12px 0; }
+    .sum-bar { display: flex; height: 26px; border-radius: 4px; overflow: hidden; border: 1px solid #e8e6e0; background: #f3f4f6; }
+    .sum-bar .seg { display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; color: #fff; overflow: hidden; white-space: nowrap; }
+    .sum-legend { display: flex; gap: 14px; margin-top: 6px; font-size: 10.5px; color: #6b7280; flex-wrap: wrap; }
+    .sum-legend span { display: flex; align-items: center; gap: 4px; }
+    .sum-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+
+    .section-note { font-size: 11px; color: #9ca3af; margin-top: 18px; text-align: center; }
+    .cap-note { font-size: 11px; color: #92400e; background: #fffbeb; border: 1px solid #fde68a; border-radius: 6px; padding: 7px 11px; margin-top: 8px; display: flex; gap: 7px; align-items: flex-start; }
+
+    /* Sections + layout */
+    .vsec { margin: 22px 0 6px; }
+    .vsec-t { font-size: 13px; font-weight: 700; color: #075985; display: flex; align-items: center; gap: 8px; margin-bottom: 2px; }
+    .vsec-s { font-size: 11px; color: #9ca3af; margin-bottom: 10px; }
+    .two-col { display: grid; grid-template-columns: 1.4fr .6fr; gap: 22px; align-items: start; }
+    .two-col.even { grid-template-columns: 1fr 1fr; }
+    @media (max-width: 950px) { .two-col, .two-col.even { grid-template-columns: 1fr; } }
+
+    /* Sub-tabs */
+    .g-tabs { display: flex; gap: 0; margin: 6px 0 4px; border-bottom: 2px solid #e5e7eb; flex-wrap: wrap; }
+    .g-tab { padding: 9px 18px; font-size: 13px; font-weight: 600; color: #6b7280; cursor: pointer; border: none; border-bottom: 2px solid transparent; margin-bottom: -2px; background: none; font-family: inherit; display: flex; align-items: center; gap: 7px; }
+    .g-tab:hover { color: #374151; }
+    .g-tab.active { color: #0369a1; border-bottom-color: #0369a1; }
+
+    /* Bars */
+    .cu-bars { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+    .cu-bar-row { display: grid; grid-template-columns: minmax(140px, 220px) 1fr 104px; align-items: center; gap: 10px; font-size: 12px; }
+    .cu-bar-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #374151; }
+    .cu-bar-track { position: relative; background: #eef2f5; border-radius: 4px; height: 18px; overflow: hidden; display: flex; }
+    .cu-bar-seg { height: 100%; }
+    .cu-bar-val { text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; color: #111827; }
+    .cu-bar-sub { text-align: right; font-size: 10px; color: #9ca3af; font-variant-numeric: tabular-nums; }
+    .cu-legend { display: flex; gap: 14px; justify-content: center; margin: 10px 0 2px; font-size: 11px; color: #666; flex-wrap: wrap; }
+    .cu-legend .sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
+
+    /* Heatmap */
+    .heatmap-grid { display: grid; grid-template-columns: minmax(48px, .6fr) repeat(7, 1fr); gap: 2px; font-size: 11px; }
+    .heatmap-hdr { text-align: center; font-weight: 700; font-size: 10px; text-transform: uppercase; letter-spacing: .5px; color: #888; padding: 4px 2px; }
+    .heatmap-label { padding: 5px 6px; font-size: 10.5px; white-space: nowrap; border-radius: 3px; background: #f0f6fa; color: #64748b; font-weight: 600; }
+    .heatmap-cell { text-align: center; padding: 6px 2px; border-radius: 3px; font-family: 'IBM Plex Mono', monospace; font-size: 10px; font-weight: 600; }
+    .heatmap-legend { display: flex; align-items: center; gap: 12px; margin-top: 8px; font-size: 10px; color: #888; flex-wrap: wrap; }
+    .heatmap-legend-swatch { display: inline-block; width: 14px; height: 14px; border-radius: 3px; vertical-align: middle; margin-right: 3px; }
+
+    /* Insights */
+    .insights-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; margin-top: 8px; }
+    .insight-card { border: 1px solid #e5e7eb; border-left-width: 4px; border-radius: 8px; padding: 13px 15px; background: #fff; }
+    .insight-type { font-size: 10px; font-weight: 700; letter-spacing: .6px; text-transform: uppercase; margin-bottom: 6px; }
+    .insight-title { font-size: 13.5px; font-weight: 700; color: #111827; margin-bottom: 5px; line-height: 1.3; }
+    .insight-detail { font-size: 12px; color: #374151; line-height: 1.45; }
+    .insight-action { font-size: 12px; color: #6b7280; margin-top: 8px; font-weight: 500; }
+    .insight-opportunity { border-left-color: #06b6d4; } .insight-opportunity .insight-type { color: #0891b2; }
+    .insight-risk { border-left-color: #f59e0b; } .insight-risk .insight-type { color: #d97706; }
+    .insight-signal { border-left-color: #6366f1; } .insight-signal .insight-type { color: #4f46e5; }
+
+    /* Hero banner */
+    .aq-banner { position: relative; width: 100%; height: 176px; border-radius: 12px; overflow: hidden; margin: 4px 0 14px; border: 1px solid #bae6fd; box-shadow: 0 3px 14px rgba(3,105,161,.16); }
+    .aq-banner .scene { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+    .aq-banner .b-overlay { position: absolute; inset: 0; padding: 20px 28px; display: flex; flex-direction: column; justify-content: center; z-index: 2; }
+    .aq-banner .b-kicker { font-size: 10.5px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; color: rgba(255,255,255,.92); text-shadow: 0 1px 3px rgba(0,0,0,.4); }
+    .aq-banner .b-title { font-size: 31px; font-weight: 800; color: #fff; text-shadow: 0 2px 7px rgba(3,37,65,.5); line-height: 1.04; margin-top: 3px; }
+    .aq-banner .b-sub { font-size: 13px; color: rgba(255,255,255,.96); text-shadow: 0 1px 4px rgba(3,37,65,.5); margin-top: 6px; max-width: 560px; }
+    .aq-banner .b-pills { display: flex; gap: 8px; margin-top: 13px; flex-wrap: wrap; }
+    .aq-banner .b-pill { background: rgba(255,255,255,.2); border: 1px solid rgba(255,255,255,.45); color: #fff; font-size: 12px; font-weight: 600; padding: 4px 12px; border-radius: 20px; text-shadow: 0 1px 2px rgba(0,0,0,.3); }
+    .aq-banner .b-pill b { font-weight: 800; }
+    .aq-banner .b-badge { position: absolute; top: 14px; right: 16px; z-index: 2; font-size: 10px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase; color: #fff; background: rgba(3,37,65,.34); border: 1px solid rgba(255,255,255,.4); padding: 3px 9px; border-radius: 6px; }
+
+    /* Pool map (SVG floor plan) */
+    .poolmap-wrap { border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden; background: #eff6fb; margin-top: 8px; }
+    .poolmap-wrap svg { display: block; width: 100%; height: auto; }
+    .pm-zone { cursor: pointer; transition: opacity .12s; }
+    .pm-zone:hover { opacity: .85; }
+    .pm-detail { border: 1px solid #e5e7eb; border-radius: 10px; padding: 14px 16px; margin-top: 8px; background: #fff; }
+    .pm-detail h4 { font-size: 14px; color: #075985; margin-bottom: 8px; }
+    .pm-detail .pmd-row { display: flex; justify-content: space-between; font-size: 12px; color: #4b5563; padding: 4px 0; border-bottom: 1px solid #f1f5f9; }
+    .pm-detail .pmd-row:last-child { border-bottom: none; }
+    .pm-detail .pmd-row b { color: #111827; }
+
+    /* Allocation ribbon */
+    .alloc { display: flex; align-items: flex-end; gap: 3px; height: 150px; margin-top: 8px; }
+    .alloc-col { flex: 1; display: flex; flex-direction: column-reverse; height: 100%; border-radius: 3px 3px 0 0; overflow: hidden; }
+    .alloc-seg { width: 100%; }
+    .alloc-x { display: flex; gap: 3px; margin-top: 3px; }
+    .alloc-x span { flex: 1; text-align: center; font-size: 8.5px; color: #9ca3af; font-family: 'IBM Plex Mono', monospace; }
+
+    /* Lesson funnel */
+    .funnel { margin-top: 8px; }
+    .funnel-row { display: grid; grid-template-columns: 96px 1fr 118px; align-items: center; gap: 10px; margin-bottom: 6px; font-size: 12px; }
+    .funnel-track { background: #eef2f5; border-radius: 4px; height: 26px; overflow: hidden; position: relative; }
+    .funnel-bar { height: 100%; display: flex; align-items: center; padding-left: 9px; color: #fff; font-weight: 700; font-size: 11px; }
+    .funnel-adv { font-size: 10px; color: #16a34a; text-align: center; margin: -3px 0 3px; }
+
+    /* Coverage ribbon */
+    .cov { display: flex; align-items: flex-end; gap: 3px; height: 130px; margin-top: 8px; position: relative; }
+    .cov-col { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; }
+    .cov-bar { width: 78%; border-radius: 3px 3px 0 0; }
+    .cov-req { width: 100%; border-top: 2px dashed #dc2626; }
+    .cov-n { font-size: 8.5px; color: #9ca3af; margin-top: 2px; font-family: 'IBM Plex Mono', monospace; }
+
+    /* Tables */
+    .g-table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 8px; }
+    .g-table th { background: #f0f6fa; padding: 7px 12px; text-align: left; font-size: 10px; text-transform: uppercase; letter-spacing: .5px; color: #64748b; font-weight: 700; border-bottom: 1px solid #e2e8f0; }
+    .g-table th.num, .g-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
+    .g-table td { padding: 7px 12px; border-bottom: 1px solid #f1f5f9; color: #555; }
+    .g-table tr:last-child td { border-bottom: none; }
+    .pill { display: inline-block; font-size: 10px; font-weight: 700; padding: 1px 8px; border-radius: 10px; }
+    .pill-green { background: #dcfce7; color: #166534; } .pill-amber { background: #fef3c7; color: #92400e; } .pill-red { background: #fee2e2; color: #991b1b; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
+  <script type="text/babel">
+    /* =====================================================================
+       AQUATICS / POOLS TAB — REIMAGINED (design mockup)
+
+       A water-native ops view for the Facilities hub, grounded in research
+       on what aquatics directors & pool coordinators actually track:
+       lane-hour utilization + allocation mix, learn-to-swim progression,
+       lifeguard coverage vs. required ratio + cert expiry, cost-recovery,
+       and rental water-displacement.
+
+       ALL DATA IS BAKED & DETERMINISTIC (fixed seed — no Date/Math.random),
+       representative of a municipal indoor center ("Riverside Aquatics
+       Center"). Not wired to live reporting. Safety/chemistry data is
+       shown as structured-entry modules (that data rarely has a live feed).
+       ===================================================================== */
+    const { useState } = React;
+    const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
+    const money = n => '$' + Math.round(n || 0).toLocaleString();
+    const money1k = n => n >= 1000 ? '$' + (n / 1000).toFixed(n >= 10000 ? 0 : 1) + 'k' : money(n);
+    const pct = n => Math.round(n) + '%';
+    const num = n => Math.round(n).toLocaleString();
+    function mul(a) { return function () { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+    const rampPick = (v, ramp) => { for (const s of ramp) if (v >= s.min) return s; return ramp[ramp.length - 1]; };
+    const DOW = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    const hlabel = h => (h === 12 ? '12p' : h < 12 ? h + 'a' : (h - 12) + 'p');
+
+    const HEAT = [
+      { min: 80, bg: '#0c4a6e', fg: '#fff' }, { min: 65, bg: '#075985', fg: '#fff' }, { min: 50, bg: '#0284c7', fg: '#fff' },
+      { min: 35, bg: '#38bdf8', fg: '#08303f' }, { min: 20, bg: '#7dd3fc', fg: '#0c4a6e' }, { min: 8, bg: '#e0f2fe', fg: '#0369a1' }, { min: 0, bg: '#f3f4f6', fg: '#c0c0c0' },
+    ];
+    const BAR = [ { min: 70, color: '#075985' }, { min: 50, color: '#0284c7' }, { min: 30, color: '#38bdf8' }, { min: 15, color: '#7dd3fc' }, { min: 0, color: '#cbd5e1' } ];
+    const utilColor = v => rampPick(v, HEAT).bg;
+    // water-use allocation categories
+    const USES = [
+      { key: 'lap', label: 'Lap swim', color: '#0369a1' },
+      { key: 'lessons', label: 'Lessons', color: '#0891b2' },
+      { key: 'open', label: 'Open swim', color: '#22d3ee' },
+      { key: 'team', label: 'Swim team', color: '#0e7490' },
+      { key: 'rental', label: 'Rentals', color: '#a5f3fc' },
+    ];
+
+    /* ============================ DATA ============================ */
+    const HOURS = []; for (let h = 5; h <= 21; h++) HOURS.push(h);
+
+    function buildAqua() {
+      const rnd = mul(20260726);
+      // twin daily peaks: early lap + evening lessons; weekend midday open swim
+      const hourF = h => h <= 6 ? 0.86 : h <= 8 ? 0.78 : h <= 11 ? 0.50 : h <= 14 ? 0.58 : h <= 15 ? 0.54 : h <= 20 ? 0.92 : 0.6;
+      const dowF = { Mon: 0.82, Tue: 0.84, Wed: 0.84, Thu: 0.82, Fri: 0.68, Sat: 0.94, Sun: 0.74 };
+      const grid = HOURS.map(h => DOW.map(d => Math.round(clamp(hourF(h) * dowF[d] * 100 * 1.05, 0, 98))));
+      let sum = 0, cnt = 0; grid.forEach(r => r.forEach(v => { sum += v; cnt++; })); const util = Math.round(sum / cnt);
+
+      // 8 lap lanes, each with its own utilization + dominant use
+      const laneUses = ['lap', 'lap', 'lap', 'lessons', 'lessons', 'open', 'team', 'rental'];
+      const lanes = [];
+      for (let i = 0; i < 8; i++) {
+        const u = clamp(util + 20 - i * 5 + (rnd() - 0.5) * 14, 20, 97);
+        lanes.push({ n: i + 1, util: Math.round(u), use: laneUses[i] });
+      }
+      const laneAvg = Math.round(lanes.reduce((s, l) => s + l.util, 0) / lanes.length);
+      const openHours = HOURS.length;
+      const laneHours = Math.round(openHours * 358 * 8 * (laneAvg / 100) / 2.3);
+
+      const pools = {
+        lap: { name: 'Lap Pool (8 lanes)', util: laneAvg, sub: num(laneHours) + ' lane-hrs · 25-yd', lanes },
+        leisure: { name: 'Leisure Pool', util: 64, sub: 'open swim · parties · zero-depth entry' },
+        therapy: { name: 'Therapy / Warm Pool', util: 47, sub: 'aqua-fit · senior · rehab' },
+        dive: { name: 'Dive Well', util: 33, sub: 'dive team · scuba · rentals' },
+      };
+
+      // allocation share by hour (of allocated water)
+      function allocAt(h) {
+        let lap, lessons, open, team, rental;
+        if (h <= 8) { lap = 62; team = 22; lessons = 8; open = 4; rental = 4; }        // AM lap + masters
+        else if (h <= 14) { lap = 34; lessons = 18; open = 30; team = 4; rental = 14; } // midday open + aqua-fit + rentals
+        else if (h <= 20) { lessons = 44; lap = 22; team = 20; open = 10; rental = 4; } // evening lessons + team
+        else { lap = 40; open = 30; lessons = 6; team = 4; rental = 20; }
+        const tot = lap + lessons + open + team + rental;
+        return { lap: lap / tot, lessons: lessons / tot, open: open / tot, team: team / tot, rental: rental / tot, load: grid[HOURS.indexOf(h)].reduce((s, x) => s + x, 0) / 7 };
+      }
+      const alloc = HOURS.map(allocAt);
+
+      // learn-to-swim levels (Red Cross-style 1-6) + preschool
+      const levelDefs = [
+        { l: 'Parent & Me', cap: 120, adv: null },
+        { l: 'Preschool', cap: 180, adv: 82 },
+        { l: 'Level 1', cap: 240, adv: 74 },
+        { l: 'Level 2', cap: 220, adv: 71 },
+        { l: 'Level 3', cap: 180, adv: 68 },
+        { l: 'Level 4', cap: 130, adv: 66 },
+        { l: 'Level 5', cap: 90, adv: 63 },
+        { l: 'Level 6 / Swim Team prep', cap: 60, adv: null },
+      ];
+      const levels = levelDefs.map((d, i) => {
+        const fillBase = i <= 2 ? 0.92 : 0.72 - i * 0.02;
+        const enrolled = Math.round(d.cap * clamp(fillBase + (rnd() - 0.5) * 0.1, 0.35, 0.99));
+        const waitlist = i <= 3 ? Math.round(d.cap * (0.1 + rnd() * 0.28)) : Math.round(rnd() * 6);
+        return { ...d, enrolled, fill: Math.round(enrolled / d.cap * 100), waitlist };
+      });
+      const lessonsEnrolled = levels.reduce((s, l) => s + l.enrolled, 0);
+      const lessonsCap = levels.reduce((s, l) => s + l.cap, 0);
+      const lessonFill = Math.round(lessonsEnrolled / lessonsCap * 100);
+      const waitTotal = levels.reduce((s, l) => s + l.waitlist, 0);
+
+      // lifeguard coverage: required scales with projected bathers/hour; scheduled has a couple gaps
+      const coverage = HOURS.map((h, i) => {
+        const load = alloc[i].load;                 // ~utilization proxy 0-100
+        const required = clamp(Math.ceil(load / 22) + 1, 1, 6);   // ~1 guard / 22 utilization pts, min 1
+        let scheduled = required;
+        if (h === 12 || h === 13) scheduled = required - 1;        // lunch rotation gap
+        if (h === 19) scheduled = required - 1;                    // evening lessons crunch
+        scheduled = clamp(scheduled, 0, 6);
+        return { h, required, scheduled, gap: scheduled < required };
+      });
+      const covGaps = coverage.filter(c => c.gap).length;
+      const covScore = Math.round(coverage.filter(c => !c.gap).length / coverage.length * 100);
+
+      // certifications
+      const certs = [
+        { name: 'A. Rivera', role: 'Head Guard', cert: 'Lifeguard / CPR-PR', days: 12 },
+        { name: 'M. Chen', role: 'Guard', cert: 'Lifeguard / CPR-PR', days: 27 },
+        { name: 'J. Okafor', role: 'Pool Operator', cert: 'CPO', days: 44 },
+        { name: 'S. Patel', role: 'Guard', cert: 'Lifeguard / CPR-PR', days: 61 },
+        { name: 'K. Nguyen', role: 'WSI', cert: 'Water Safety Instructor', days: 83 },
+        { name: 'T. Brooks', role: 'Guard', cert: 'Lifeguard / CPR-PR', days: 118 },
+      ];
+
+      // revenue mix + cost recovery
+      const mix = [
+        { key: 'lessons', label: 'Swim lessons', val: 214000, color: '#075985' },
+        { key: 'passes', label: 'Lap / memberships', val: 141000, color: '#0284c7' },
+        { key: 'admissions', label: 'Open-swim admissions', val: 96000, color: '#22d3ee' },
+        { key: 'rentals', label: 'Rentals & parties', val: 63000, color: '#67e8f9' },
+        { key: 'team', label: 'Swim team fees', val: 38000, color: '#0e7490' },
+      ];
+      mix.forEach(m => m.disp = money1k(m.val));
+      const revenue = mix.reduce((s, m) => s + m.val, 0);
+      const operatingCost = 902000;
+      const costRecovery = Math.round(revenue / operatingCost * 100);
+
+      // rentals & displacement
+      const rentals = [
+        { type: 'Pool parties (leisure pool)', hrs: 312, rev: 28000, displaced: 0 },
+        { type: 'Lane rentals — swim clubs', hrs: 640, rev: 19000, displaced: 640 },
+        { type: 'School / HS team practice', hrs: 410, rev: 9000, displaced: 410 },
+        { type: 'Swim meets (full facility)', hrs: 96, rev: 7000, displaced: 720 },
+      ];
+      const rentalRev = rentals.reduce((s, r) => s + r.rev, 0);
+      const displaced = rentals.reduce((s, r) => s + r.displaced, 0);
+
+      // seasonal
+      const peakLoad = 96;
+
+      return {
+        util, laneAvg, laneHours, pools, grid, alloc, levels, lessonsEnrolled, lessonFill, waitTotal,
+        coverage, covGaps, covScore, certs, mix, revenue, operatingCost, costRecovery, rentals, rentalRev, displaced, peakLoad,
+      };
+    }
+    const A = buildAqua();
+
+    /* ========================= WIDGETS ========================= */
+    function Kpis({ cards }) {
+      return (
+        <div className="sum-cards">
+          {cards.map((c, i) => (
+            <div className="sum-card" key={i}>
+              <div className="sc-label">{c.label}</div>
+              <div className={'sc-val ' + (c.cls || 'sc-muted')}>{c.val}</div>
+              <div className="sc-sub">{c.sub}</div>
+            </div>
+          ))}
+        </div>
+      );
+    }
+    function Sec({ title, sub }) {
+      return <div className="vsec"><div className="vsec-t">{title}</div>{sub ? <div className="vsec-s">{sub}</div> : null}</div>;
+    }
+    function HeatGrid({ rowLabels, values }) {
+      return (
+        <div>
+          <div className="heatmap-grid">
+            <div className="heatmap-hdr" />
+            {DOW.map(d => <div className="heatmap-hdr" key={d}>{d}</div>)}
+            {rowLabels.map((rl, ri) => (
+              <React.Fragment key={ri}>
+                <div className="heatmap-label">{rl}</div>
+                {values[ri].map((v, ci) => {
+                  const c = rampPick(v, HEAT);
+                  return <div className="heatmap-cell" key={ci} style={{ background: c.bg, color: c.fg }} title={rl + ' · ' + DOW[ci] + ' · ' + v + '%'}>{v}</div>;
+                })}
+              </React.Fragment>
+            ))}
+          </div>
+          <div className="heatmap-legend">
+            <span>Low</span>
+            {[8, 20, 35, 50, 65, 80].map((v, i) => <span key={i}><span className="heatmap-legend-swatch" style={{ background: rampPick(v, HEAT).bg }} /></span>)}
+            <span>High (water-time utilization)</span>
+          </div>
+        </div>
+      );
+    }
+    function Insights({ items }) {
+      return (
+        <div className="insights-grid">
+          {items.map((it, i) => (
+            <div className={'insight-card insight-' + it.type} key={i}>
+              <div className="insight-type">{it.type}</div>
+              <div className="insight-title">{it.title}</div>
+              <div className="insight-detail">{it.detail}</div>
+              {it.action ? <div className="insight-action">→ {it.action}</div> : null}
+            </div>
+          ))}
+        </div>
+      );
+    }
+    function CapNote({ children }) {
+      return <div className="cap-note"><span>✍️</span><span>{children}</span></div>;
+    }
+
+    // Aquatic hero banner — pure SVG (pool + lanes + diving platform + sun)
+    function AquaBanner() {
+      const lanes = [];
+      for (let i = 0; i < 7; i++) lanes.push(112 + i * 12);
+      return (
+        <div className="aq-banner">
+          <svg className="scene" viewBox="0 0 1200 190" preserveAspectRatio="xMidYMid slice">
+            <defs>
+              <linearGradient id="aqSky" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#38bdf8" /><stop offset="55%" stopColor="#bae6fd" /><stop offset="100%" stopColor="#e0f2fe" />
+              </linearGradient>
+              <linearGradient id="aqWater" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#38bdf8" /><stop offset="55%" stopColor="#0ea5e9" /><stop offset="100%" stopColor="#0369a1" />
+              </linearGradient>
+              <radialGradient id="aqSun" cx="50%" cy="50%" r="50%">
+                <stop offset="0%" stopColor="#fffbeb" /><stop offset="55%" stopColor="#fde68a" /><stop offset="100%" stopColor="#fde68a" stopOpacity="0" />
+              </radialGradient>
+              <linearGradient id="aqScrim" x1="0" y1="0" x2="1" y2="0">
+                <stop offset="0%" stopColor="#052e4a" stopOpacity="0.6" /><stop offset="55%" stopColor="#052e4a" stopOpacity="0.14" /><stop offset="100%" stopColor="#052e4a" stopOpacity="0" />
+              </linearGradient>
+            </defs>
+            <rect x="0" y="0" width="1200" height="190" fill="url(#aqSky)" />
+            <circle cx="820" cy="60" r="92" fill="url(#aqSun)" /><circle cx="820" cy="60" r="32" fill="#fffef6" />
+            <rect x="0" y="96" width="1200" height="94" fill="url(#aqWater)" />
+            {lanes.map((y, i) => <line key={i} x1="0" y1={y} x2="1200" y2={y} stroke="#e0f7ff" strokeWidth="2" opacity="0.5" strokeDasharray="14 10" />)}
+            {[118, 154].map((y, i) => (
+              <g key={'rope' + i}>
+                {Array.from({ length: 40 }).map((_, k) => <circle key={k} cx={12 + k * 30} cy={y} r="3" fill={k % 2 ? '#ef4444' : '#f8fafc'} opacity="0.85" />)}
+              </g>
+            ))}
+            <path d="M0,150 Q120,140 240,150 T480,150 T720,150 T960,150 T1200,150" stroke="#bae6fd" strokeWidth="2" fill="none" opacity="0.4" />
+            <g>
+              <rect x="1064" y="70" width="70" height="9" rx="3" fill="#0f172a" opacity="0.75" />
+              <line x1="1074" y1="79" x2="1074" y2="96" stroke="#334155" strokeWidth="4" />
+              <line x1="1124" y1="79" x2="1124" y2="96" stroke="#334155" strokeWidth="4" />
+            </g>
+            <rect x="0" y="0" width="1200" height="190" fill="url(#aqScrim)" />
+          </svg>
+          <div className="b-overlay">
+            <div className="b-kicker">Indoor community center · Est. 1988</div>
+            <div className="b-title">🏊 Riverside Aquatics Center</div>
+            <div className="b-sub">Every lane, every lesson, every guard — the whole pool operation at a glance.</div>
+            <div className="b-pills">
+              <span className="b-pill"><b>4</b> pools</span>
+              <span className="b-pill"><b>8</b> lap lanes</span>
+              <span className="b-pill"><b>{num(A.lessonsEnrolled)}</b> lessons enrolled</span>
+              <span className="b-pill"><b>{A.costRecovery}%</b> cost recovery</span>
+            </div>
+          </div>
+          <div className="b-badge">Sample data</div>
+        </div>
+      );
+    }
+
+    /* ---- Pool floor-plan map (SVG) ---- */
+    function PoolMap({ selected, onSelect }) {
+      const lanes = A.pools.lap.lanes;
+      const laneW = 400, laneX = 60, laneY0 = 40, laneH = 20, laneGap = 3;
+      return (
+        <div className="poolmap-wrap">
+          <svg viewBox="0 0 760 300" preserveAspectRatio="xMidYMid meet">
+            <rect x="0" y="0" width="760" height="300" fill="#eff6fb" />
+            {/* deck label */}
+            <text x="16" y="24" fontSize="11" fill="#94a3b8" fontFamily="Inter" fontWeight="700">POOL DECK · top-down</text>
+
+            {/* Lap pool: 8 lanes */}
+            <rect x={laneX - 6} y={laneY0 - 6} width={laneW + 12} height={laneH * 8 + laneGap * 7 + 12} rx="8" fill="#dbeafe" stroke="#93c5fd" className="pm-zone"
+              onClick={() => onSelect('lap')} />
+            {lanes.map((ln, i) => {
+              const y = laneY0 + i * (laneH + laneGap);
+              return (
+                <g key={i} className="pm-zone" onClick={() => onSelect('lap:' + ln.n)}>
+                  <rect x={laneX} y={y} width={laneW} height={laneH} rx="3" fill={utilColor(ln.util)}
+                    stroke={selected === 'lap:' + ln.n ? '#0f172a' : '#fff'} strokeWidth={selected === 'lap:' + ln.n ? 2 : 1} />
+                  <text x={laneX + 6} y={y + laneH - 6} fontSize="10" fill="#fff" fontFamily="IBM Plex Mono" fontWeight="700">L{ln.n}</text>
+                  <text x={laneX + laneW - 6} y={y + laneH - 6} fontSize="9.5" fill="#fff" textAnchor="end" fontFamily="IBM Plex Mono">{ln.util}%</text>
+                </g>
+              );
+            })}
+            <text x={laneX} y={laneY0 - 12} fontSize="10.5" fill="#075985" fontFamily="Inter" fontWeight="700">LAP POOL · 25 yd · 8 lanes</text>
+
+            {/* Leisure pool (kidney) */}
+            <g className="pm-zone" onClick={() => onSelect('leisure')}>
+              <path d="M500,52 q70,-18 120,10 q34,20 20,58 q-14,40 -70,44 q-70,6 -96,-30 q-22,-32 6,-64 q9,-11 20,-18 z"
+                fill={utilColor(A.pools.leisure.util)} stroke={selected === 'leisure' ? '#0f172a' : '#fff'} strokeWidth={selected === 'leisure' ? 2 : 1.5} />
+              <text x="576" y="98" fontSize="10.5" fill="#fff" textAnchor="middle" fontFamily="Inter" fontWeight="700">Leisure</text>
+              <text x="576" y="112" fontSize="9.5" fill="#fff" textAnchor="middle" fontFamily="IBM Plex Mono">{A.pools.leisure.util}%</text>
+            </g>
+
+            {/* Therapy pool */}
+            <g className="pm-zone" onClick={() => onSelect('therapy')}>
+              <rect x="500" y="188" width="118" height="70" rx="18" fill={utilColor(A.pools.therapy.util)}
+                stroke={selected === 'therapy' ? '#0f172a' : '#fff'} strokeWidth={selected === 'therapy' ? 2 : 1.5} />
+              <text x="559" y="220" fontSize="10.5" fill="#fff" textAnchor="middle" fontFamily="Inter" fontWeight="700">Therapy</text>
+              <text x="559" y="234" fontSize="9.5" fill="#fff" textAnchor="middle" fontFamily="IBM Plex Mono">{A.pools.therapy.util}%</text>
+            </g>
+
+            {/* Dive well */}
+            <g className="pm-zone" onClick={() => onSelect('dive')}>
+              <rect x="648" y="188" width="96" height="70" rx="8" fill={utilColor(A.pools.dive.util)}
+                stroke={selected === 'dive' ? '#0f172a' : '#fff'} strokeWidth={selected === 'dive' ? 2 : 1.5} />
+              <text x="696" y="220" fontSize="10.5" fill="#fff" textAnchor="middle" fontFamily="Inter" fontWeight="700">Dive well</text>
+              <text x="696" y="234" fontSize="9.5" fill="#fff" textAnchor="middle" fontFamily="IBM Plex Mono">{A.pools.dive.util}%</text>
+              <rect x="648" y="184" width="26" height="6" rx="2" fill="#0f172a" opacity="0.6" />
+            </g>
+
+            {/* amenity markers */}
+            <text x="60" y="288" fontSize="15">🛟</text><text x="452" y="288" fontSize="15">🛟</text>
+            <text x="640" y="288" fontSize="14">🚪</text><text x="690" y="288" fontSize="14">🚻</text>
+          </svg>
+        </div>
+      );
+    }
+
+    function PoolDetail({ selected }) {
+      let title, rows;
+      if (selected && selected.startsWith('lap:')) {
+        const n = parseInt(selected.split(':')[1]);
+        const ln = A.pools.lap.lanes.find(l => l.n === n);
+        const use = USES.find(u => u.key === ln.use);
+        title = 'Lap Pool — Lane ' + n;
+        rows = [['Utilization', ln.util + '%'], ['Primary use', use ? use.label : ln.use], ['Est. lane-hrs / yr', num(HOURS.length * 358 * (ln.util / 100) / 2.3)], ['Status', ln.util >= 80 ? 'At capacity' : ln.util >= 50 ? 'Busy' : 'Open inventory']];
+      } else {
+        const key = selected || 'lap';
+        const p = A.pools[key];
+        title = p.name;
+        rows = [['Utilization', p.util + '%'], ['Detail', p.sub], ['Status', p.util >= 80 ? 'At capacity' : p.util >= 50 ? 'Busy' : 'Open inventory']];
+        if (key === 'lap') rows.push(['Lane-hours / yr', num(A.laneHours)]);
+      }
+      return (
+        <div className="pm-detail">
+          <h4>{title}</h4>
+          {rows.map((r, i) => <div className="pmd-row" key={i}><span>{r[0]}</span><b>{r[1]}</b></div>)}
+          <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 8 }}>Click any lane or pool on the map.</div>
+        </div>
+      );
+    }
+
+    /* ---- Allocation ribbon ---- */
+    function AllocRibbon() {
+      return (
+        <div>
+          <div className="alloc">
+            {A.alloc.map((a, i) => (
+              <div className="alloc-col" key={i} title={hlabel(HOURS[i])}>
+                {USES.map(u => <div className="alloc-seg" key={u.key} style={{ height: (a[u.key] * 100) + '%', background: u.color }} />)}
+              </div>
+            ))}
+          </div>
+          <div className="alloc-x">{HOURS.map((h, i) => <span key={i}>{i % 2 === 0 ? hlabel(h) : ''}</span>)}</div>
+          <div className="cu-legend" style={{ marginTop: 8 }}>
+            {USES.map(u => <span key={u.key}><span className="sw" style={{ background: u.color }} />{u.label}</span>)}
+          </div>
+        </div>
+      );
+    }
+
+    /* ============================ VIEWS ============================ */
+    function MapView() {
+      const [selected, setSelected] = useState('lap');
+      return (
+        <div>
+          <div className="two-col">
+            <div>
+              <Sec title="🗺️ Pool map — water by the lane" sub="Top-down floor plan; each lane & pool colored by utilization. Click for stats." />
+              <PoolMap selected={selected} onSelect={setSelected} />
+              <div className="cu-legend" style={{ marginTop: 10 }}>
+                {[['#e0f2fe', '<20%'], ['#7dd3fc', '20–35'], ['#38bdf8', '35–50'], ['#0284c7', '50–65'], ['#075985', '65–80'], ['#0c4a6e', '80%+']].map((s, i) => <span key={i}><span className="sw" style={{ background: s[0] }} />{s[1]}</span>)}
+              </div>
+            </div>
+            <div>
+              <Sec title="💧 Water time" sub="The scarcest resource in aquatics." />
+              <Kpis cards={[
+                { label: 'Water-time utilization', val: pct(A.util), cls: 'sc-blue', sub: 'reserved ÷ available, all pools' },
+                { label: 'Lap-lane utilization', val: pct(A.laneAvg), cls: 'sc-cyan', sub: '8 lanes · ' + num(A.laneHours) + ' lane-hrs/yr' },
+              ]} />
+              <PoolDetail selected={selected} />
+              <CapNote><b>Peak bather load: {A.peakLoad}% of max</b> (Sat 11a–1p). Live concurrent count needs a check-in / turnstile feed — shown here as a manual peak-count field.</CapNote>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    function ScheduleView() {
+      return (
+        <div>
+          <Sec title="📅 Water-time utilization — hour × day" sub="Twin daily peaks: early-morning lap swim and evening lessons; weekend midday is open swim." />
+          <HeatGrid rowLabels={HOURS.map(hlabel)} values={A.grid} />
+          <Sec title="🌊 How the water splits through the day" sub="Share of allocated water time by use — lap / lessons / open swim / swim team / rentals." />
+          <AllocRibbon />
+          <div style={{ fontSize: 12, color: '#6b7280', marginTop: 10 }}>Midday (9a–2p) is the soft window — open swim + rentals dominate but total utilization dips under 55%. That's the inventory to program (aqua-fit, senior swim, school groups).</div>
+        </div>
+      );
+    }
+
+    function LessonsView() {
+      const maxEnroll = Math.max(...A.levels.map(l => l.enrolled));
+      return (
+        <div>
+          <Kpis cards={[
+            { label: 'Lessons enrolled', val: num(A.lessonsEnrolled), cls: 'sc-blue', sub: 'across all levels & terms' },
+            { label: 'Fill rate', val: pct(A.lessonFill), cls: A.lessonFill >= 80 ? 'sc-green' : 'sc-amber', sub: 'enrolled ÷ capacity' },
+            { label: 'Waitlist', val: num(A.waitTotal), cls: 'sc-red', sub: 'unmet demand, mostly early levels' },
+            { label: 'Instructor ratio', val: '1:6', cls: 'sc-muted', sub: 'youth group target (1:5 preschool)' },
+          ]} />
+          <div className="two-col even">
+            <div>
+              <Sec title="🏊 Learn-to-swim progression" sub="Swimmers by level, with advance-to-next-level rate between stages." />
+              <div className="funnel">
+                {A.levels.map((lv, i) => (
+                  <React.Fragment key={i}>
+                    <div className="funnel-row">
+                      <span style={{ color: '#374151' }}>{lv.l}</span>
+                      <div className="funnel-track"><div className="funnel-bar" style={{ width: Math.max(12, lv.enrolled / maxEnroll * 100) + '%', background: rampPick(70 - i * 8, HEAT).bg }}>{lv.enrolled}</div></div>
+                      <span style={{ textAlign: 'right', color: '#9ca3af', fontSize: 11 }}>{lv.fill}% full{lv.waitlist > 4 ? ' · ' + lv.waitlist + ' wait' : ''}</span>
+                    </div>
+                    {i < A.levels.length - 1 && A.levels[i + 1].adv ? <div className="funnel-adv">↓ {A.levels[i + 1].adv}% advance</div> : null}
+                  </React.Fragment>
+                ))}
+              </div>
+            </div>
+            <div>
+              <Sec title="📋 Fill & waitlist by level" sub="Where demand outstrips capacity." />
+              <table className="g-table">
+                <thead><tr><th>Level</th><th className="num">Enrolled</th><th className="num">Cap</th><th className="num">Fill</th><th className="num">Waitlist</th></tr></thead>
+                <tbody>
+                  {A.levels.map((lv, i) => (
+                    <tr key={i}>
+                      <td style={{ color: '#111827' }}>{lv.l}</td>
+                      <td className="num">{lv.enrolled}</td>
+                      <td className="num">{lv.cap}</td>
+                      <td className="num"><span className={'pill ' + (lv.fill >= 90 ? 'pill-red' : lv.fill >= 75 ? 'pill-amber' : 'pill-green')}>{lv.fill}%</span></td>
+                      <td className="num" style={{ color: lv.waitlist > 20 ? '#b91c1c' : '#6b7280', fontWeight: lv.waitlist > 20 ? 700 : 400 }}>{lv.waitlist}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <CapNote>Level advancement is <b>medium-difficulty data</b> — it needs instructors to record skill outcomes in-app (not just paper booklets). The advance % here is illustrative.</CapNote>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    function SafetyView() {
+      const maxG = Math.max(...A.coverage.map(c => Math.max(c.required, c.scheduled)), 1);
+      return (
+        <div>
+          <Kpis cards={[
+            { label: 'Coverage score', val: pct(A.covScore), cls: A.covGaps ? 'sc-amber' : 'sc-green', sub: 'hours meeting required ratio' },
+            { label: 'Coverage gaps', val: num(A.covGaps), cls: A.covGaps ? 'sc-red' : 'sc-green', sub: 'hours understaffed vs. ratio' },
+            { label: 'Certs expiring ≤30d', val: num(A.certs.filter(c => c.days <= 30).length), cls: 'sc-red', sub: 'guard / CPO / CPR' },
+            { label: 'Certs expiring ≤90d', val: num(A.certs.filter(c => c.days <= 90).length), cls: 'sc-amber', sub: 'plan renewals now' },
+          ]} />
+          <div className="two-col even">
+            <div>
+              <Sec title="🛟 Lifeguard coverage vs. required" sub="Scheduled guards (bars) against the code-required ratio (dashed line), across the operating day." />
+              <div className="cov">
+                {A.coverage.map((c, i) => (
+                  <div className="cov-col" key={i} title={hlabel(c.h) + ' · ' + c.scheduled + ' of ' + c.required + ' req'}>
+                    <div className="cov-req" style={{ height: (1 - c.required / maxG) * 100 + '%', width: 0 }} />
+                    <div className="cov-bar" style={{ height: (c.scheduled / maxG * 100) + '%', background: c.gap ? '#dc2626' : '#0284c7' }} />
+                    <div className="cov-n">{hlabel(c.h)}</div>
+                  </div>
+                ))}
+              </div>
+              <div className="cu-legend" style={{ marginTop: 6 }}>
+                <span><span className="sw" style={{ background: '#0284c7' }} />Scheduled (meets ratio)</span>
+                <span><span className="sw" style={{ background: '#dc2626' }} />Understaffed hour</span>
+                <span><span style={{ borderTop: '2px dashed #dc2626', width: 16, display: 'inline-block' }} /> Required</span>
+              </div>
+              <div style={{ fontSize: 12, color: '#6b7280', marginTop: 8 }}>Gaps cluster at the <b>lunch rotation</b> (12–1p) and the <b>evening lesson crunch</b> (7p) — where demand and lessons collide.</div>
+            </div>
+            <div>
+              <Sec title="🎓 Certifications expiring" sub="Guard, CPO, CPR & WSI — traffic-light countdown." />
+              <table className="g-table">
+                <thead><tr><th>Staff</th><th>Certification</th><th className="num">Expires in</th></tr></thead>
+                <tbody>
+                  {A.certs.map((c, i) => (
+                    <tr key={i}>
+                      <td style={{ color: '#111827' }}>{c.name}<div style={{ fontSize: 10, color: '#9ca3af' }}>{c.role}</div></td>
+                      <td>{c.cert}</td>
+                      <td className="num"><span className={'pill ' + (c.days <= 30 ? 'pill-red' : c.days <= 90 ? 'pill-amber' : 'pill-green')}>{c.days}d</span></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <CapNote>Incident/rescue logs, EAP drills & in-service hours are <b>structured-entry modules</b> (mobile form) — they rarely have a live data feed and are the safety backbone worth capturing.</CapNote>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    function RevenueView() {
+      const total = A.mix.reduce((s, m) => s + m.val, 0);
+      const maxRent = Math.max(...A.rentals.map(r => r.rev));
+      return (
+        <div>
+          <Kpis cards={[
+            { label: 'Aquatics revenue', val: money1k(A.revenue), cls: 'sc-green', sub: 'lessons + passes + admissions + rentals + team' },
+            { label: 'Cost recovery', val: pct(A.costRecovery), cls: A.costRecovery >= 60 ? 'sc-green' : 'sc-amber', sub: 'revenue ÷ ' + money1k(A.operatingCost) + ' op cost · target 60%' },
+            { label: 'Rental revenue', val: money1k(A.rentalRev), cls: 'sc-cyan', sub: 'parties · lanes · meets' },
+            { label: 'Public hrs displaced', val: num(A.displaced), cls: 'sc-amber', sub: 'water blocked from public by events/yr' },
+          ]} />
+          <div className="two-col even">
+            <div>
+              <Sec title="💰 Revenue by program" sub="Lessons are the engine; the whole mix matters for cost recovery." />
+              <div className="sum-bar-wrap">
+                <div className="sum-bar">
+                  {A.mix.map((m, i) => <div className="seg" key={i} style={{ width: (m.val / total * 100) + '%', background: m.color }}>{m.val / total >= 0.1 ? Math.round(m.val / total * 100) + '%' : ''}</div>)}
+                </div>
+                <div className="sum-legend">
+                  {A.mix.map((m, i) => <span key={i}><span className="sum-dot" style={{ background: m.color }} />{m.label} ({m.disp})</span>)}
+                </div>
+              </div>
+              <div style={{ marginTop: 14, background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: 8, padding: '11px 14px' }}>
+                <div style={{ fontSize: 12, color: '#0c4a6e' }}><b>Cost recovery: {A.costRecovery}%</b> against a 60% target. Lessons ({Math.round(A.mix[0].val / total * 100)}% of revenue) fill months ahead — the fastest lever is adding lesson capacity in the evening peak, not discounting admissions.</div>
+              </div>
+            </div>
+            <div>
+              <Sec title="🎉 Rentals & displacement" sub="Rental revenue vs. public water-hours the event blocks." />
+              <table className="g-table">
+                <thead><tr><th>Rental type</th><th className="num">Hrs</th><th className="num">Revenue</th><th className="num">Public hrs blocked</th></tr></thead>
+                <tbody>
+                  {A.rentals.map((r, i) => (
+                    <tr key={i}>
+                      <td style={{ color: '#111827' }}>{r.type}</td>
+                      <td className="num">{r.hrs}</td>
+                      <td className="num" style={{ fontWeight: 600 }}>{money1k(r.rev)}</td>
+                      <td className="num" style={{ color: r.displaced > 500 ? '#b91c1c' : '#6b7280' }}>{r.displaced || '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <div style={{ fontSize: 12, color: '#6b7280', marginTop: 8 }}>Swim meets earn {money1k(A.rentals[3].rev)} but block <b>{A.rentals[3].displaced} public water-hours</b> — the real question is revenue vs. resident goodwill, which this surfaces side by side.</div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    /* ============================ APP ============================ */
+    function AquaApp() {
+      const [tab, setTab] = useState('map');
+      const heroKpis = [
+        { label: 'Water-time utilization', val: pct(A.util), cls: 'sc-blue', sub: 'reserved ÷ available, all pools' },
+        { label: 'Lane-hours booked', val: num(A.laneHours), cls: 'sc-cyan', sub: '8 lap lanes · trailing 12 mo' },
+        { label: 'Swim-lesson fill', val: pct(A.lessonFill), cls: A.lessonFill >= 80 ? 'sc-green' : 'sc-amber', sub: num(A.lessonsEnrolled) + ' enrolled · ' + num(A.waitTotal) + ' waitlisted' },
+        { label: 'Lifeguard coverage', val: pct(A.covScore), cls: A.covGaps ? 'sc-amber' : 'sc-green', sub: A.covGaps + ' understaffed hrs vs. ratio' },
+        { label: 'Revenue', val: money1k(A.revenue), cls: 'sc-green', sub: A.costRecovery + '% cost recovery' },
+        { label: 'Peak bather load', val: pct(A.peakLoad), cls: 'sc-red', sub: 'Sat midday open swim' },
+      ];
+      const tabs = [
+        { key: 'map', label: '🗺️ Pool Map & Water Time' },
+        { key: 'schedule', label: '📅 Schedule & Lanes' },
+        { key: 'lessons', label: '🏊 Swim Lessons' },
+        { key: 'safety', label: '🛟 Lifeguards & Safety' },
+        { key: 'revenue', label: '💧 Revenue & Rentals' },
+      ];
+      return (
+        <div className="page">
+          <div className="report-header">
+            <div><div className="org-label">City of Rivertown · Parks &amp; Rec</div><div className="title">Facilities · Pool / Aquatics</div></div>
+            <div className="date-range">Aug 1, 2025 – Jul 31, 2026</div>
+          </div>
+          <div className="sample-ribbon">
+            <strong>Design mockup — sample data.</strong> A reimagined Aquatics tab for the Facilities hub (representative indoor center, "Riverside Aquatics Center"). Grounded in research on what aquatics directors track — lane utilization, learn-to-swim progression, lifeguard coverage & cert expiry, cost recovery, rental displacement. Safety/chemistry data is shown as structured-entry modules (it rarely has a live feed). Not wired to live reporting.
+          </div>
+
+          <AquaBanner />
+          <Kpis cards={heroKpis} />
+
+          <div className="g-tabs">
+            {tabs.map(t => <button key={t.key} className={'g-tab' + (t.key === tab ? ' active' : '')} onClick={() => setTab(t.key)}>{t.label}</button>)}
+          </div>
+
+          {tab === 'map' && <MapView />}
+          {tab === 'schedule' && <ScheduleView />}
+          {tab === 'lessons' && <LessonsView />}
+          {tab === 'safety' && <SafetyView />}
+          {tab === 'revenue' && <RevenueView />}
+
+          <Sec title="🛟 Rec Insights" sub="Auto-generated from the pool schedule, registrations & staffing — framed around revenue upside and access." />
+          <Insights items={[
+            { type: 'opportunity', title: 'Turn the soft midday water into revenue', detail: 'Lap & leisure pools sit under 55% from 9a–2p on weekdays — ~' + num(A.laneHours * 0.14) + ' idle lane-hrs/yr. Program aqua-fit / senior swim / a daytime school contract, and float a targeted midday promo code to seed demand.', action: 'Add mid-morning classes + a "MIDDAY" promo to fill empty water' },
+            { type: 'opportunity', title: 'Fill the under-enrolled advanced levels', detail: 'Levels 4–6 run in the 50–70% range while early levels overflow. Bundle a multi-level pass or a sibling/second-session discount to move swimmers up the ladder instead of losing them after Level 3.', action: 'Auto-offer a progression bundle + discount at Level 3 completion' },
+            { type: 'signal', title: 'Access gap: kids are being turned away from early levels', detail: 'Level 1–2 & preschool run 90%+ full with ' + num(A.waitTotal) + ' waitlisted — capacity is capped by WSI count, not water. A waitlist is unmet community demand, concentrated in the youngest swimmers.', action: 'Certify more WSIs; add early-level sections; prioritize scholarship/subsidized seats' },
+            { type: 'signal', title: 'Check who is NOT in the water', detail: 'Cross-reference lesson enrollment against the community by age band, gender, and neighborhood to surface under-served groups (e.g. a ZIP or age range with near-zero participation) — the accessibility blind spot a fill-rate number hides.', action: 'Add a demographic-reach view; target outreach + subsidized slots where participation lags' },
+            { type: 'risk', title: 'Coverage gaps collide with peak demand', detail: A.covGaps + ' hours fall below the required guard ratio — the lunch rotation and the 7p lesson crunch. That is a safety and turn-away risk.', action: 'Stagger rotations; add a float guard 12–1p & 6–8p' },
+          ]} />
+
+          <div className="section-note">Pool / Aquatics · design mockup with representative sample data (deterministic seed). Built to port into the Facilities hub the way Court Utilization was. Easy-to-source visuals (utilization, enrollment, revenue, rentals) lead; safety/chemistry are capture modules.</div>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<AquaApp />);
+  </script>
+</body>
+</html>
