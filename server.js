@@ -718,6 +718,29 @@ const ORGS = {
 
 const REPORT_TYPES = ["facility", "gl", "historic", "programs", "roster", "products", "memberships", "court-utilization", "calendar", "fasttrack", "users", "program-demographics", "instructor-payout", "retention", "annual-report", "section-detail", "ice-calendar", "qoq", "checkins", "program-checkins"];
 
+// ── Friendly report directory — label + emoji per report type ──────────
+// Powers the smart Project-Update composer (auto-draft from the changelog):
+// the report chips, the emoji on each drafted line, and the audience preview.
+// Keep in sync with reportMeta on the dashboard and REPORT_META in org.html.
+const REPORT_DIRECTORY = {
+  facility:            { label: "Facility Rental Schedule", emoji: "📅" },
+  gl:                  { label: "GL Code Rollup",           emoji: "📊" },
+  programs:            { label: "Programs",                 emoji: "🎯" },
+  historic:            { label: "Historic Buildings",       emoji: "🏛️" },
+  roster:              { label: "Class Roster",             emoji: "📋" },
+  products:            { label: "Product Sales",            emoji: "🛒" },
+  memberships:         { label: "Memberships",              emoji: "🎫" },
+  calendar:            { label: "Program Calendar",         emoji: "🗓️" },
+  fasttrack:           { label: "Fast Track",               emoji: "⚡" },
+  users:               { label: "Community Intel",          emoji: "👥" },
+  "instructor-payout": { label: "Instructor Payout",        emoji: "💰" },
+  rentalcalendar:      { label: "Rental Calendar",          emoji: "🏟️" },
+  campmap:             { label: "Campsite Map",             emoji: "🏕️" },
+  facilities:          { label: "Facilities",               emoji: "🏞️" },
+  "ice-calendar":      { label: "Ice Participant Calendar", emoji: "❄️" },
+  qoq:                 { label: "QoQ Revenue Comparison",   emoji: "📉" },
+};
+
 // ── Shared Metabase UUIDs (one query per report type, parameterized by org_id) ──
 // When a report type has an entry here, the server uses this UUID + passes the
 // org's orgId as {{org_id}}, instead of using the per-org mbUuid.
@@ -1656,6 +1679,23 @@ function reportHiddenForOrg(slug, rt) {
   const listed = getHiddenReports(slug).includes(rt);
   return DEFAULT_HIDDEN_REPORTS.has(rt) ? !listed : listed;
 }
+// Reports actually shown as cards on an org's dashboard — i.e. what a partner
+// admin sees when they open their org page. Mirrors the card-building logic in
+// the GET /:org route; keep the two in sync. Used by the smart Project-Update
+// composer to auto-target "every org that has report X visible".
+function visibleReportsForOrg(slug) {
+  const org = ORGS[slug];
+  if (!org) return [];
+  const hidden = new Set(getHiddenReports(slug));
+  const out = REPORT_TYPES.filter(r =>
+    !NON_ADDABLE_REPORTS.has(r) && !RETIRED_REPORTS.has(r) &&
+    (org[r]?.mbUuid || SHARED_UUIDS[r]) && !hidden.has(r));
+  if (RENTAL_CALENDAR_ORGS.has(slug) && !hidden.has("rentalcalendar")) out.push("rentalcalendar");
+  if (CAMPMAP_ORGS.has(slug) && !hidden.has("campmap")) out.push("campmap");
+  if ((org.gl?.mbUuid || SHARED_UUIDS.gl) && !hidden.has("qoq")) out.push("qoq");
+  if (!reportHiddenForOrg(slug, "facilities")) out.push("facilities");
+  return out;
+}
 
 // One-time migration: Facilities graduated from hidden-by-default (opt-in) to
 // visible-by-default (opt-out). Under the old inverted semantics, "facilities"
@@ -1682,11 +1722,24 @@ function getAnnouncements() {
   return Array.isArray(a) ? a : [];
 }
 function saveAnnouncements(list) { writeJSON(ANNOUNCEMENTS_FILE, list); }
-// Active announcements targeted at this org (allOrgs covers current + future orgs)
+// Active announcements targeted at this org (allOrgs covers current + future orgs).
+// Smart updates carry report-tagged items and are targeted dynamically: an org
+// only receives the items whose report is currently visible on its dashboard,
+// and only sees the update at all if at least one item applies to it.
 function activeAnnouncementsForOrg(slug) {
-  return getAnnouncements()
-    .filter(a => a.active !== false && (a.allOrgs || (Array.isArray(a.orgs) && a.orgs.includes(slug))))
-    .sort((x, y) => (y.createdAt || 0) - (x.createdAt || 0));
+  const visible = new Set(visibleReportsForOrg(slug));
+  const out = [];
+  for (const a of getAnnouncements()) {
+    if (a.active === false) continue;
+    if (a.smart && Array.isArray(a.items)) {
+      const items = a.items.filter(it =>
+        Array.isArray(it.reports) && it.reports.some(r => visible.has(r)));
+      if (items.length) out.push(Object.assign({}, a, { items }));
+    } else if (a.allOrgs || (Array.isArray(a.orgs) && a.orgs.includes(slug))) {
+      out.push(a);
+    }
+  }
+  return out.sort((x, y) => (y.createdAt || 0) - (x.createdAt || 0));
 }
 
 // ── GitHub push: write new orgs to server.js so they live in code ────
@@ -6796,7 +6849,9 @@ app.get("/:org", async (req, res, next) => {
     wizardVisible: !RETIRED_REPORTS.has("report-wizard") && !orgHidden.has("report-wizard"),
     publicMode: getPublicMode(slug),
     emailEnabled: EMAIL_ENABLED_ORGS.has(slug),
-    announcements: activeAnnouncementsForOrg(slug).map(a => ({ id: a.id, title: a.title, body: a.body })),
+    announcements: activeAnnouncementsForOrg(slug).map(a => a.smart
+      ? { id: a.id, title: a.title, smart: true, items: (a.items || []).map(it => ({ text: it.text, emoji: it.emoji || "" })) }
+      : { id: a.id, title: a.title, body: a.body }),
   };
   // Attach latest health-check results for this org's reports
   const hc = loadHealthResults();
@@ -6844,8 +6899,27 @@ app.get("/api/admin/announcements", (req, res) => {
   const orgs = Object.entries(ORGS)
     .map(([slug, o]) => ({ slug, name: o.displayName || (slug.charAt(0).toUpperCase() + slug.slice(1)) }))
     .sort((a, b) => a.name.localeCompare(b.name));
-  const announcements = getAnnouncements().sort((x, y) => (y.createdAt || 0) - (x.createdAt || 0));
-  res.json({ announcements, orgs });
+  // Per-org visible reports — powers the smart composer's live audience preview.
+  const visibility = {};
+  for (const slug of Object.keys(ORGS)) visibility[slug] = visibleReportsForOrg(slug);
+  // Report directory (label + emoji + how many orgs currently show each report).
+  const reports = Object.keys(REPORT_DIRECTORY).map(type => ({
+    type,
+    label: REPORT_DIRECTORY[type].label,
+    emoji: REPORT_DIRECTORY[type].emoji,
+    orgs: Object.keys(visibility).filter(s => visibility[s].includes(type)).length,
+  }));
+  const announcements = getAnnouncements()
+    .sort((x, y) => (y.createdAt || 0) - (x.createdAt || 0))
+    .map(a => {
+      if (!a.smart) return a;
+      // Live audience: orgs that currently see at least one of this update's items.
+      const reportSet = new Set((a.items || []).flatMap(it => it.reports || []));
+      const audience = Object.keys(visibility)
+        .filter(s => [...reportSet].some(r => visibility[s].includes(r))).length;
+      return Object.assign({}, a, { audience });
+    });
+  res.json({ announcements, orgs, visibility, reports });
 });
 // Create a new announcement (password-gated).
 app.post("/api/admin/announcements", express.json(), (req, res) => {
@@ -6870,6 +6944,48 @@ app.post("/api/admin/announcements", express.json(), (req, res) => {
   saveAnnouncements(list);
   console.log("[announce] published '" + ann.title + "' → " + (ann.allOrgs ? "ALL orgs" : ann.orgs.length + " orgs"));
   res.json({ ok: true, announcement: ann });
+});
+// Create a SMART update from selected changelog items (password-gated).
+// Body: { title, items: [{ text, reports:[reportType,...], date? }] }.
+// Targeting is dynamic — no org list is stored. Each org later receives only
+// the items whose report is visible on its dashboard (see activeAnnouncementsForOrg).
+app.post("/api/admin/announcements/from-updates", express.json(), (req, res) => {
+  if (dashboardPasswordBlocked(req, res)) return;
+  const { title, items } = req.body || {};
+  if (!title || !title.trim()) return res.status(400).json({ error: "Title is required" });
+  if (!Array.isArray(items) || !items.length) return res.status(400).json({ error: "Add at least one update item" });
+  const validTypes = new Set(REPORT_TYPES);
+  const cleaned = items.map(it => {
+    const reports = Array.isArray(it.reports) ? it.reports.filter(r => validTypes.has(r)) : [];
+    const primary = reports[0];
+    return {
+      text: String(it.text || "").trim(),
+      reports,
+      emoji: (primary && REPORT_DIRECTORY[primary] && REPORT_DIRECTORY[primary].emoji) || "✨",
+      date: it.date || null,
+    };
+  }).filter(it => it.text && it.reports.length);
+  if (!cleaned.length) return res.status(400).json({ error: "Each item needs text and at least one report tag" });
+  // Audience preview = union of orgs that currently see any tagged report.
+  const reportSet = new Set(cleaned.flatMap(it => it.reports));
+  const audience = Object.keys(ORGS).filter(slug => {
+    const vis = visibleReportsForOrg(slug);
+    return [...reportSet].some(r => vis.includes(r));
+  });
+  const ann = {
+    id: "upd_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+    smart: true,
+    title: title.trim(),
+    items: cleaned,
+    active: true,
+    createdAt: Date.now(),
+    createdISO: new Date().toISOString(),
+  };
+  const list = getAnnouncements();
+  list.push(ann);
+  saveAnnouncements(list);
+  console.log("[announce] smart update '" + ann.title + "' → " + audience.length + " orgs, " + cleaned.length + " items");
+  res.json({ ok: true, announcement: ann, audience: audience.length });
 });
 // Toggle active / delete (password-gated).
 app.post("/api/admin/announcements/toggle", express.json(), (req, res) => {
@@ -8579,20 +8695,26 @@ app.get("/", (req, res) => {
     box.style.opacity=on?'.4':'1';
     box.querySelectorAll('input[type=checkbox]').forEach(function(c){ c.disabled=on; if(on)c.checked=false; });
   }
+  var updState={ visibility:{}, reports:[] };
   async function loadUpd(){
     var d={};
-    try { d=await (await fetch('/api/admin/announcements')).json(); } catch(e){ d={orgs:[],announcements:[]}; }
+    try { d=await (await fetch('/api/admin/announcements')).json(); } catch(e){ d={orgs:[],announcements:[],visibility:{},reports:[]}; }
+    updState.visibility=d.visibility||{}; updState.reports=d.reports||[];
     document.getElementById('upd-orgs').innerHTML=(d.orgs||[]).map(function(o){
       return '<label style="font-size:12px;display:flex;align-items:center;gap:5px;width:calc(50% - 3px)"><input type="checkbox" value="'+updEsc(o.slug)+'" /> '+updEsc(o.name)+'</label>';
     }).join('');
     updToggleAll();
+    renderSmart();
     var list=d.announcements||[];
     var listEl=document.getElementById('upd-list');
     listEl.innerHTML=list.length?list.map(function(a){
-      var tgt=a.allOrgs?'All orgs':((a.orgs||[]).length+' org'+((a.orgs||[]).length===1?'':'s'));
+      var tgt=a.smart
+        ? ('🎯 '+(a.audience||0)+' org'+((a.audience)===1?'':'s')+' · '+((a.items||[]).length)+' item'+(((a.items||[]).length)===1?'':'s'))
+        : (a.allOrgs?'All orgs':((a.orgs||[]).length+' org'+((a.orgs||[]).length===1?'':'s')));
       var when=a.createdAt?new Date(a.createdAt).toLocaleDateString():'';
+      var badge=a.smart?'<span style="font-size:9.5px;font-weight:700;color:#6d28d9;background:#f5f3ff;border:1px solid #ddd6fe;border-radius:4px;padding:1px 5px;margin-left:6px;vertical-align:middle">SMART</span>':'';
       return '<div data-uid="'+updEsc(a.id)+'" style="border:1px solid #eee;border-radius:6px;padding:10px 12px;display:flex;justify-content:space-between;gap:8px;'+(a.active===false?'opacity:.5':'')+'">'
-        +'<div style="min-width:0"><div style="font-weight:600;font-size:13px">'+updEsc(a.title)+'</div>'
+        +'<div style="min-width:0"><div style="font-weight:600;font-size:13px">'+updEsc(a.title)+badge+'</div>'
         +'<div style="font-size:11px;color:#999;margin-top:2px">'+tgt+' · '+when+(a.active===false?' · paused':'')+'</div></div>'
         +'<div style="display:flex;gap:6px;flex-shrink:0;align-items:flex-start">'
         +'<button data-act="toggle" style="font-size:11px;padding:4px 9px;background:#f3f4f6;border:1px solid #e5e7eb;border-radius:4px;cursor:pointer">'+(a.active===false?'Activate':'Pause')+'</button>'
@@ -8606,6 +8728,159 @@ app.get("/", (req, res) => {
         if(btn.getAttribute('data-act')==='toggle') toggleUpd(id); else delUpd(id);
       };
     });
+  }
+  function updSetMode(m){
+    var smart=document.getElementById('upd-smart'), manual=document.getElementById('upd-manual');
+    var ts=document.getElementById('upd-tab-smart'), tm=document.getElementById('upd-tab-manual');
+    var on={background:'#fff',color:'#111',boxShadow:'0 1px 2px rgba(0,0,0,.08)'};
+    var off={background:'transparent',color:'#666',boxShadow:'none'};
+    function sty(el,s){ el.style.background=s.background; el.style.color=s.color; el.style.boxShadow=s.boxShadow; }
+    if(m==='manual'){ smart.style.display='none'; manual.style.display='block'; sty(tm,on); sty(ts,off); }
+    else { smart.style.display='block'; manual.style.display='none'; sty(ts,on); sty(tm,off); }
+  }
+  // Map a changelog entry to the report(s) it touches, by scanning its text for
+  // known report names. Admin reviews/edits every tag before publishing.
+  // NOTE: this JS is emitted inside a server-side backtick template literal, so
+  // every regex backslash must be DOUBLED here (\\b, \\s) to reach the browser as \b, \s.
+  var UPD_RULES=[
+    ['instructor-payout',/instructor\\s*pay(out|\\b)/i],
+    ['memberships',/\\bmembership/i],
+    ['roster',/\\broster\\b|class roster/i],
+    ['fasttrack',/fast\\s*track/i],
+    ['users',/community intel/i],
+    ['products',/product sales|\\bproducts?:/i],
+    ['programs',/\\bprograms?\\b/i],
+    ['calendar',/program calendar|\\bcalendar:/i],
+    ['gl',/\\bGL\\b|gl code/i],
+    ['qoq',/\\bqoq\\b|quarter-over-quarter/i],
+    ['facilities',/facilities|facility hub|court utilization|camping|golf|pool\\/aquatics|aquatics/i],
+    ['facility',/facility (rental|schedule|report)|rental report|rental schedule/i],
+    ['rentalcalendar',/rental calendar/i],
+    ['campmap',/campsite map|campmap|campground/i],
+    ['ice-calendar',/ice (participant|calendar|program)/i],
+    ['historic',/historic building/i]
+  ];
+  function updInferReports(entry){
+    var hay=((entry.title||'')+' '+(entry.text||'')+' '+((entry.items||[]).join(' '))).toString();
+    var found=[]; UPD_RULES.forEach(function(r){ if(r[1].test(hay) && found.indexOf(r[0])<0) found.push(r[0]); });
+    return found;
+  }
+  // Turn a techie changelog entry into a friendly, partner-facing one-liner.
+  function updFriendly(entry){
+    var t=(entry.title||'').trim();
+    if(!t){
+      // Body-text entries: take the first sentence and drop the "Report Name: " prefix.
+      t=(entry.text|| (entry.items&&entry.items[0]) ||'').split(/[.!?]\\s/)[0];
+      t=t.replace(/^[^:]{1,32}:\\s*/,'');
+    }
+    // Scrub obvious internal jargon from whatever we kept.
+    t=t.replace(/\\/[\\/:a-z0-9_.-]+/gi,'').replace(/\\bMetabase\\b/gi,'').replace(/\\bendpoint\\b/gi,'')
+       .replace(/\\bREPORT_TYPES\\b/g,'').replace(/\\bUUIDs?\\b/gi,'').replace(/\\bTypeError\\b/g,'')
+       .replace(/\\bAPI\\b/g,'').replace(/\\bnull-safe\\b/gi,'').replace(/\\bbrowser\\b/gi,'')
+       .replace(/\\bcron\\b/gi,'').replace(/\\s{2,}/g,' ').replace(/\\s+([,.;])/g,'$1').trim();
+    if(t) t=t.charAt(0).toUpperCase()+t.slice(1);
+    return t;
+  }
+  function updReportChip(type,removable,idx){
+    var meta=(updState.reports||[]).filter(function(r){return r.type===type;})[0]||{emoji:'✨',label:type};
+    return '<span data-rt="'+updEsc(type)+'" style="display:inline-flex;align-items:center;gap:3px;font-size:11px;background:#eef2ff;color:#4338ca;border:1px solid #e0e7ff;border-radius:20px;padding:2px 8px">'
+      +updEsc(meta.emoji)+' '+updEsc(meta.label)
+      +(removable?'<span data-rmchip="'+idx+'" data-rt="'+updEsc(type)+'" style="cursor:pointer;color:#818cf8;font-weight:700;margin-left:1px">×</span>':'')+'</span>';
+  }
+  function renderSmart(){
+    var host=document.getElementById('upd-s-list'); if(!host) return;
+    var cl=(window.RECS_CHANGELOG||[]).slice(0,60);
+    var rows=[];
+    cl.forEach(function(entry){
+      var reps=updInferReports(entry);
+      if(!reps.length) return;              // only surface report-tagged changes
+      rows.push({ entry:entry, reports:reps, text:updFriendly(entry), date:entry.date||'' });
+    });
+    rows=rows.slice(0,24);
+    if(!rows.length){ host.innerHTML='<div style="font-size:12px;color:#aaa;padding:6px">No recent report changes detected in the changelog.</div>'; updRecalc(); return; }
+    var opts=(updState.reports||[]).map(function(r){ return '<option value="'+updEsc(r.type)+'">'+updEsc(r.emoji)+' '+updEsc(r.label)+'</option>'; }).join('');
+    host.innerHTML=rows.map(function(row,i){
+      return '<div class="upd-s-row" data-i="'+i+'" data-reports="'+updEsc(row.reports.join(','))+'" style="background:#fff;border:1px solid #eee;border-radius:8px;padding:11px 12px">'
+        +'<label style="display:flex;gap:9px;align-items:flex-start;cursor:pointer">'
+        +'<input type="checkbox" class="upd-s-inc" style="margin-top:4px;accent-color:#7c3aed" />'
+        +'<div style="flex:1;min-width:0">'
+        +'<input type="text" class="upd-s-text" value="'+updEsc(row.text)+'" style="width:100%;border:1px solid #eee;border-radius:5px;padding:6px 8px;font-size:12.5px" />'
+        +'<div style="display:flex;flex-wrap:wrap;gap:5px;align-items:center;margin-top:7px">'
+        +'<span class="upd-s-chips" style="display:inline-flex;flex-wrap:wrap;gap:5px">'+row.reports.map(function(t){return updReportChip(t,true,i);}).join('')+'</span>'
+        +'<select class="upd-s-add" style="font-size:10.5px;border:1px dashed #ddd;border-radius:20px;padding:2px 6px;color:#888;background:#fafafa"><option value="">+ report</option>'+opts+'</select>'
+        +'<span class="upd-s-count" style="font-size:10.5px;color:#9ca3af;margin-left:auto"></span>'
+        +(row.date?'<span style="font-size:10px;color:#c4c4c4">'+updEsc(row.date)+'</span>':'')
+        +'</div></div></label></div>';
+    }).join('');
+    // Wire per-row interactions
+    host.querySelectorAll('.upd-s-row').forEach(function(rowEl){
+      rowEl.querySelector('.upd-s-inc').addEventListener('change',updRecalc);
+      rowEl.querySelector('.upd-s-add').addEventListener('change',function(){
+        var v=this.value; this.value=''; if(!v) return;
+        var cur=(rowEl.getAttribute('data-reports')||'').split(',').filter(Boolean);
+        if(cur.indexOf(v)<0){ cur.push(v); rowEl.setAttribute('data-reports',cur.join(',')); updRedrawChips(rowEl); updRecalc(); }
+      });
+      updRedrawChips(rowEl);
+    });
+    updRecalc();
+  }
+  function updRedrawChips(rowEl){
+    var i=rowEl.getAttribute('data-i');
+    var cur=(rowEl.getAttribute('data-reports')||'').split(',').filter(Boolean);
+    var chips=rowEl.querySelector('.upd-s-chips');
+    chips.innerHTML=cur.map(function(t){return updReportChip(t,true,i);}).join('');
+    chips.querySelectorAll('[data-rmchip]').forEach(function(x){
+      x.addEventListener('click',function(ev){
+        ev.preventDefault(); ev.stopPropagation();
+        var rt=x.getAttribute('data-rt');
+        var list=(rowEl.getAttribute('data-reports')||'').split(',').filter(Boolean).filter(function(z){return z!==rt;});
+        rowEl.setAttribute('data-reports',list.join(',')); updRedrawChips(rowEl); updRecalc();
+      });
+    });
+    // Per-row audience
+    var slugs=updAudienceFor(cur);
+    var cntEl=rowEl.querySelector('.upd-s-count');
+    if(cntEl) cntEl.textContent = cur.length ? ('→ '+slugs.length+' org'+(slugs.length===1?'':'s')) : 'no report tag';
+  }
+  function updAudienceFor(reportList){
+    var vis=updState.visibility||{}; var out=[];
+    Object.keys(vis).forEach(function(slug){
+      if(reportList.some(function(r){return (vis[slug]||[]).indexOf(r)>=0;})) out.push(slug);
+    });
+    return out;
+  }
+  function updRecalc(){
+    var rows=[].slice.call(document.querySelectorAll('.upd-s-row'));
+    rows.forEach(updRedrawChips);
+    var chosen=rows.filter(function(r){return r.querySelector('.upd-s-inc').checked;});
+    var union={};
+    chosen.forEach(function(r){
+      var reps=(r.getAttribute('data-reports')||'').split(',').filter(Boolean);
+      updAudienceFor(reps).forEach(function(s){union[s]=1;});
+    });
+    var n=Object.keys(union).length;
+    var box=document.getElementById('upd-s-audience');
+    if(!chosen.length){ box.style.display='none'; return; }
+    box.style.display='block';
+    box.innerHTML='🎯 <strong>'+n+' org'+(n===1?'':'s')+'</strong> will get this update — each sees only the lines for the reports they have. ('+chosen.length+' item'+(chosen.length===1?'':'s')+' selected)';
+  }
+  async function submitFromUpdates(){
+    var pwd=getDashPwd('Publish a project update'); if(!pwd) return;
+    var title=document.getElementById('upd-s-title').value.trim();
+    var err=document.getElementById('upd-s-error'); err.style.display='none';
+    var items=[].slice.call(document.querySelectorAll('.upd-s-row')).filter(function(r){return r.querySelector('.upd-s-inc').checked;}).map(function(r){
+      return { text:r.querySelector('.upd-s-text').value.trim(),
+               reports:(r.getAttribute('data-reports')||'').split(',').filter(Boolean),
+               date:(r.querySelector('.upd-s-text').getAttribute('data-date')||undefined) };
+    }).filter(function(it){return it.text && it.reports.length;});
+    if(!title){ err.textContent='Give the update a title'; err.style.display='block'; return; }
+    if(!items.length){ err.textContent='Tick at least one change (with a report tag) to include'; err.style.display='block'; return; }
+    try {
+      var r=await fetch('/api/admin/announcements/from-updates',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:pwd,title:title,items:items})});
+      var d=await r.json();
+      if(!r.ok||!d.ok){ if(r.status===401)clearDashPwd(); err.textContent=d.error||'Failed'; err.style.display='block'; return; }
+      mbToast('🚀 Update published to '+(d.audience||0)+' org'+((d.audience)===1?'':'s')); loadUpd();
+    } catch(e){ err.textContent='Error: '+e.message; err.style.display='block'; }
   }
   async function submitUpd(){
     var pwd=getDashPwd('Publish a project update'); if(!pwd) return;
@@ -8682,11 +8957,39 @@ app.get("/", (req, res) => {
       <div style="padding:20px 24px;background:#2c2c2c;color:#fff;display:flex;align-items:center;justify-content:space-between">
         <div>
           <div style="font-weight:700;font-size:15px">&#128227; Project Updates</div>
-          <div style="font-size:11px;color:#aaa;margin-top:2px">Publish a dashboard announcement to selected orgs</div>
+          <div style="font-size:11px;color:#aaa;margin-top:2px">Tell partners what shipped — auto-targeted to the orgs who actually have that report</div>
         </div>
         <button onclick="closeUpd()" style="background:none;border:none;color:#aaa;font-size:20px;cursor:pointer;padding:4px">✕</button>
       </div>
       <div style="padding:24px">
+        <!-- Mode switch -->
+        <div style="display:flex;gap:6px;margin-bottom:20px;background:#f3f4f6;padding:4px;border-radius:8px">
+          <button id="upd-tab-smart" onclick="updSetMode('smart')" style="flex:1;padding:9px 10px;background:#fff;color:#111;border:none;border-radius:6px;font-size:12.5px;font-weight:700;cursor:pointer;box-shadow:0 1px 2px rgba(0,0,0,.08)">📰 From changelog</button>
+          <button id="upd-tab-manual" onclick="updSetMode('manual')" style="flex:1;padding:9px 10px;background:transparent;color:#666;border:none;border-radius:6px;font-size:12.5px;font-weight:700;cursor:pointer">✍️ Write manually</button>
+        </div>
+
+        <!-- ── SMART: auto-draft from changelog ── -->
+        <div id="upd-smart">
+          <div style="background:#f5f3ff;border:1px solid #ddd6fe;border-radius:8px;padding:11px 13px;font-size:12px;color:#5b21b6;line-height:1.5;margin-bottom:16px">
+            ✨ Pick what shipped from the recent changelog below. We tag each line with its report and send it <strong>only to the orgs that actually see that report</strong> — one tidy update per partner. Tweak the wording to keep it friendly. 🎉
+          </div>
+          <label style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:#888;display:block;margin-bottom:6px">Update title *</label>
+          <input id="upd-s-title" type="text" value="✨ What's new in your reports" style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:5px;font-size:13px" />
+          <div style="display:flex;align-items:center;justify-content:space-between;margin:16px 0 8px">
+            <label style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:#888">Recent shipped changes — tick to include</label>
+            <span style="font-size:11px;color:#aaa">edit any line to taste</span>
+          </div>
+          <div id="upd-s-list" style="display:flex;flex-direction:column;gap:10px;max-height:340px;overflow:auto;border:1px solid #eee;border-radius:8px;padding:12px;background:#fafafa"></div>
+          <div id="upd-s-audience" style="margin-top:14px;font-size:13px;color:#374151;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:8px;padding:10px 13px;display:none"></div>
+          <div id="upd-s-error" style="margin-top:12px;color:#e55;font-size:12px;display:none"></div>
+          <div style="margin-top:20px;display:flex;justify-content:flex-end;gap:8px">
+            <button onclick="closeUpd()" style="padding:9px 18px;background:#f3f4f6;color:#444;border:none;border-radius:5px;font-size:13px;font-weight:600;cursor:pointer">Cancel</button>
+            <button onclick="submitFromUpdates()" style="padding:9px 20px;background:#7c3aed;color:#fff;border:none;border-radius:5px;font-size:13px;font-weight:600;cursor:pointer">🚀 Publish to matched orgs</button>
+          </div>
+        </div>
+
+        <!-- ── MANUAL: write your own, pick orgs by hand ── -->
+        <div id="upd-manual" style="display:none">
         <label style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:#888;display:block;margin-bottom:6px">Title *</label>
         <input id="upd-title" type="text" placeholder="e.g. New Facilities report is live" style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:5px;font-size:13px" />
         <label style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:#888;display:block;margin:16px 0 6px">Message <span style="font-weight:400;text-transform:none;letter-spacing:0;color:#aaa">— markdown ok: **bold**, [links](https://…), - bullets</span></label>
@@ -8701,6 +9004,8 @@ app.get("/", (req, res) => {
           <button onclick="closeUpd()" style="padding:9px 18px;background:#f3f4f6;color:#444;border:none;border-radius:5px;font-size:13px;font-weight:600;cursor:pointer">Cancel</button>
           <button onclick="submitUpd()" style="padding:9px 20px;background:#7c3aed;color:#fff;border:none;border-radius:5px;font-size:13px;font-weight:600;cursor:pointer">Publish update</button>
         </div>
+        </div>
+
         <div style="margin-top:24px;border-top:1px solid #eee;padding-top:16px">
           <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:#888">Published updates</div>
           <div id="upd-list" style="margin-top:10px;display:flex;flex-direction:column;gap:8px"></div>
@@ -11340,6 +11645,49 @@ app.get("/", (req, res) => {
         'Onboarded Clarksville, Norman, and Smyrna',
       ]},
     ];
+    // Expose the changelog so the smart Project-Update composer can auto-draft from it.
+    try { window.RECS_CHANGELOG = UPDATES; } catch(e) {}
+
+    // ── Admin "What's New" popup ──────────────────────────────────────
+    // Same published project-updates the org admins see, surfaced once (per
+    // browser) on the internal dashboard. Admins see every item; partners only
+    // see the lines for the reports they actually have.
+    (function adminWhatsNew(){
+      function run(){
+        fetch('/api/admin/announcements').then(function(r){ return r.json(); }).then(function(d){
+          var anns=((d&&d.announcements)||[]).filter(function(a){ return a.active!==false; });
+          if(!anns.length) return;
+          var seen; try{ seen=JSON.parse(localStorage.getItem('rec_admin_seen_updates')||'[]'); }catch(e){ seen=[]; }
+          if(!Array.isArray(seen)) seen=[];
+          var next=anns.filter(function(a){ return seen.indexOf(a.id)<0; })[0];
+          if(!next) return;
+          function esc(s){ return (s==null?'':String(s)).replace(/[&<>"]/g,function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+          var inner;
+          if(next.smart && next.items && next.items.length){
+            inner='<ul style="margin:6px 0 0;padding:0;list-style:none">'+next.items.map(function(it){
+              return '<li style="margin:0 0 12px;padding-left:30px;position:relative;line-height:1.5">'
+                +'<span style="position:absolute;left:0;top:0;font-size:16px">'+esc(it.emoji||'✨')+'</span>'
+                +esc(it.text)+'</li>';
+            }).join('')+'</ul>';
+          } else {
+            inner='<div style="line-height:1.6">'+esc(next.body||'').replace(/\\n/g,'<br>')+'</div>';
+          }
+          var note=next.smart?'<div style="font-size:11px;color:#8b5cf6;margin-bottom:12px;font-weight:600;background:#f5f3ff;border:1px solid #ddd6fe;border-radius:6px;padding:7px 10px">👀 Admin preview — each partner sees only the lines for the reports they have</div>':'';
+          var ov=document.createElement('div');
+          ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:100000;display:flex;align-items:center;justify-content:center;padding:20px';
+          ov.innerHTML='<div style="background:#fff;border-radius:14px;max-width:540px;width:100%;box-shadow:0 24px 70px rgba(0,0,0,.3);overflow:hidden">'
+            +'<div style="background:linear-gradient(135deg,#7c3aed,#4f46e5);color:#fff;padding:16px 22px;font-weight:700;font-size:15px">📣 '+esc(next.title)+'</div>'
+            +'<div style="padding:20px 22px;font-size:14px;color:#333">'+note+inner+'</div>'
+            +'<div style="padding:0 22px 20px;text-align:right"><button id="rec-admin-upd-ok" style="background:#7c3aed;color:#fff;border:none;border-radius:8px;padding:9px 22px;font-size:13px;font-weight:600;cursor:pointer">Got it 🎉</button></div>'
+            +'</div>';
+          document.body.appendChild(ov);
+          function dismiss(){ seen.push(next.id); try{ localStorage.setItem('rec_admin_seen_updates',JSON.stringify(seen)); }catch(e){} ov.remove(); }
+          ov.querySelector('#rec-admin-upd-ok').addEventListener('click',dismiss);
+          ov.addEventListener('click',function(e){ if(e.target===ov) dismiss(); });
+        }).catch(function(){});
+      }
+      if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',run); else run();
+    })();
 
     function renderUpdates() {
       const countEl = document.getElementById('updates-count');
