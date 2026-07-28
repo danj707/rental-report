@@ -76,6 +76,7 @@ const PORT           = process.env.PORT           || 3100;
 const BASE_URL       = process.env.BASE_URL       || `http://localhost:${PORT}`;
 const RESEND_API_KEY = process.env.RESEND_API_KEY || "";
 const SLACK_WEBHOOK_URL = process.env.SLACK_WEBHOOK_URL || ""; // Slack Incoming Webhook for activity pings; inert if unset
+const SLACK_MENTION_USER_ID = process.env.SLACK_MENTION_USER_ID || ""; // Slack member ID (UXXXXXXX) to @mention on feedback events
 const FROM_EMAIL     = process.env.FROM_EMAIL     || "reports@rec.us";
 const FROM_NAME      = process.env.FROM_NAME      || "rec.us Reports";
 
@@ -2113,7 +2114,8 @@ function notifySlack(rec) {
                 : rec.event === "feedback"      ? "Report Wizard"
                 :                                 "AI Insights";
     const commentText = rec.comment ? ` \u2014 _${rec.comment.slice(0, 200)}_` : "";
-    text = `${thumbs} ${orgName} (\`${rec.org}\`) ${label} on *${rec.report}*${commentText}`;
+    const mention = SLACK_MENTION_USER_ID ? ` <@${SLACK_MENTION_USER_ID}>` : "";
+    text = `${thumbs} ${orgName} (\`${rec.org}\`) ${label} on *${rec.report}*${commentText}${mention}`;
   } else {
     text = `${meta.emoji} ${orgName} (\`${rec.org}\`) ${meta.verb} *${rec.report}*`;
   }
@@ -10629,6 +10631,7 @@ app.get("/", (req, res) => {
   { date: '2026-07-28', title: 'Slack Feedback Notifications', items: [
     'Thumbs up/down on AI Insights, Rec AI Chat, and Report Wizard now ping Slack with the vote and optional comment',
     'Feedback events use the same debounce/fire-and-forget pattern as view/export notifications',
+    'Set SLACK_MENTION_USER_ID env var (Slack member ID) to get @mentioned on every feedback event',
   ]},
   { date: '2026-07-28', title: 'GL Desk Filter Reset', items: [
     'Desk location filter now resets to All on every Run Report click',
