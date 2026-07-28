@@ -76,7 +76,7 @@ const PORT           = process.env.PORT           || 3100;
 const BASE_URL       = process.env.BASE_URL       || `http://localhost:${PORT}`;
 const RESEND_API_KEY = process.env.RESEND_API_KEY || "";
 const SLACK_WEBHOOK_URL = process.env.SLACK_WEBHOOK_URL || ""; // Slack Incoming Webhook for activity pings; inert if unset
-const SLACK_MENTION_USER_ID = process.env.SLACK_MENTION_USER_ID || ""; // Slack member ID (UXXXXXXX) to @mention on feedback events
+const SLACK_MENTION_USER_ID = process.env.SLACK_MENTION_USER_ID || "U08Q62BMHJP"; // Dan's Slack member ID — @mention on feedback events
 const FROM_EMAIL     = process.env.FROM_EMAIL     || "reports@rec.us";
 const FROM_NAME      = process.env.FROM_NAME      || "rec.us Reports";
 
