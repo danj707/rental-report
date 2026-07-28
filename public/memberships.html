@@ -1840,6 +1840,91 @@ function normalizeRow(raw) {
                         </div>
                       );
                     })()}
+                    {/* ── Top Members ── */}
+                    {(() => {
+                      var memberMap = {};
+                      ciRows.forEach(function(r) {
+                        var mid = r['Member ID'];
+                        if (!mid) return;
+                        if (!memberMap[mid]) memberMap[mid] = { name: ((r['First Name']||'') + ' ' + (r['Last Name']||'')).trim(), total: 0, products: {}, months: {}, type: r['Check-In Type']||'' };
+                        memberMap[mid].total++;
+                        var prod = r['Product Name']||'Unknown';
+                        memberMap[mid].products[prod] = (memberMap[mid].products[prod]||0)+1;
+                        var dateStr = r['Date']||'';
+                        if (dateStr) {
+                          var mo;
+                          try { var dd = new Date(dateStr + 'T12:00:00'); mo = dd.getFullYear() + '-' + String(dd.getMonth()+1).padStart(2,'0'); }
+                          catch(ex) { mo = dateStr.slice(0,7); }
+                          memberMap[mid].months[mo] = (memberMap[mid].months[mo]||0)+1;
+                        }
+                      });
+                      var topList = Object.values(memberMap).sort(function(a,b){ return b.total - a.total; }).slice(0,15);
+                      if (topList.length === 0) return null;
+                      var allMo = {};
+                      topList.forEach(function(m){ Object.keys(m.months).forEach(function(mo){ allMo[mo]=1; }); });
+                      var moList = Object.keys(allMo).sort();
+                      var sparkMax = 0;
+                      topList.forEach(function(m){ moList.forEach(function(mo){ var v = m.months[mo]||0; if (v > sparkMax) sparkMax = v; }); });
+                      topList.forEach(function(m){
+                        var best = ''; var bestCt = 0;
+                        Object.entries(m.products).forEach(function(e){ if (e[1] > bestCt) { best = e[0]; bestCt = e[1]; } });
+                        m.topProduct = best;
+                      });
+                      var fmtMo = function(mo) { try { var parts = mo.split('-'); var d = new Date(parseInt(parts[0]), parseInt(parts[1])-1, 1); return d.toLocaleDateString('en-US',{month:'short'}); } catch(e){ return mo; } };
+                      return (
+                        <div className="ci-heatmap-wrap">
+                          <div className="ci-chart-title">Top Members</div>
+                          <div style={{fontSize:11,color:'#9ca3af',marginBottom:10,marginTop:-6}}>Members with the most check-ins in the selected period. Bars show monthly activity.</div>
+                          <div style={{overflowX:'auto'}}>
+                            <table className="ci-table" style={{fontSize:12}}>
+                              <thead>
+                                <tr>
+                                  <th style={{width:32,textAlign:'center'}}>#</th>
+                                  <th>Name</th>
+                                  <th style={{textAlign:'right',width:56}}>Visits</th>
+                                  <th style={{minWidth: Math.max(moList.length * 20, 80)}}>
+                                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                                      <span>Monthly</span>
+                                      <span style={{fontWeight:400,fontSize:9,opacity:.7}}>{moList.map(fmtMo).join(' / ')}</span>
+                                    </div>
+                                  </th>
+                                  <th style={{maxWidth:200}}>Membership / Pass</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {topList.map(function(m, idx) {
+                                  var rankColors = ['#f59e0b','#94a3b8','#b45309'];
+                                  var isTop3 = idx < 3;
+                                  return (
+                                    <tr key={idx} style={isTop3 ? {background:'#fefce8'} : {}}>
+                                      <td style={{textAlign:'center'}}>
+                                        {isTop3 ? <span style={{display:'inline-flex',alignItems:'center',justifyContent:'center',width:22,height:22,borderRadius:'50%',background:rankColors[idx],color:'#fff',fontWeight:700,fontSize:11}}>{idx+1}</span>
+                                                 : <span style={{color:'#999',fontWeight:600,fontSize:11}}>{idx+1}</span>}
+                                      </td>
+                                      <td style={{fontWeight: isTop3 ? 700 : 400, fontSize: isTop3 ? 13 : 12}}>{m.name || 'Unknown'}</td>
+                                      <td style={{textAlign:'right',fontWeight:700,fontVariantNumeric:'tabular-nums',fontSize:14,color:'#111'}}>{m.total.toLocaleString()}</td>
+                                      <td>
+                                        <div style={{display:'flex',alignItems:'flex-end',gap:2,height:26,paddingTop:2}}>
+                                          {moList.map(function(mo){
+                                            var v = m.months[mo]||0;
+                                            var h = sparkMax > 0 ? Math.max(v / sparkMax * 22, v > 0 ? 3 : 0) : 0;
+                                            return <div key={mo} style={{width:16,height:h,background: v > 0 ? (m.type === 'pass' ? '#8b5cf6' : '#3b82f6') : '#eee',borderRadius:'2px 2px 0 0',cursor:'default',transition:'height .2s'}} title={fmtMo(mo) + ': ' + v + ' check-ins'} />;
+                                          })}
+                                        </div>
+                                      </td>
+                                      <td style={{maxWidth:200,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',fontSize:11}} title={m.topProduct}>
+                                        <span style={{fontSize:9,fontWeight:600,padding:'2px 6px',borderRadius:3,marginRight:4,background:m.type==='membership'?'#dbeafe':'#ede9fe',color:m.type==='membership'?'#1e40af':'#5b21b6'}}>{m.type}</span>
+                                        {m.topProduct.length > 22 ? m.topProduct.slice(0,20) + '…' : m.topProduct}
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      );
+                    })()}
                     <div className="ci-charts">
                       <div className="ci-chart-box">
                         <div className="ci-chart-title">Hourly Distribution</div><div style={{fontSize:11,color:'#9ca3af',marginBottom:8,marginTop:-6}}>Check-ins grouped by hour of day across all dates.</div>
