@@ -187,8 +187,13 @@
   .pop-row{display:flex;gap:8px;align-items:flex-start;font-size:13px;color:var(--ink);margin-bottom:8px;word-break:break-word}
   .pop-lbl{color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.05em;min-width:78px;white-space:nowrap;font-weight:600}
   .pop-chips{margin-top:4px}
-  .pop-link{display:inline-block;margin-top:12px;font-size:13px;color:var(--accent);text-decoration:none;font-weight:600}
+  .pop-link{display:inline-block;font-size:13px;color:var(--accent);text-decoration:none;font-weight:600}
   .pop-link:hover{text-decoration:underline}
+  .pop-actions{display:flex;align-items:center;gap:16px;margin-top:12px;flex-wrap:wrap}
+  .pop-share{display:inline-flex;align-items:center;gap:5px;font:inherit;font-size:13px;font-weight:600;color:var(--accent);background:none;border:none;padding:0;cursor:pointer;height:auto}
+  .pop-share:hover{text-decoration:underline}
+  .pop-share svg{width:14px;height:14px;flex-shrink:0}
+  .pop-share.copied{color:#059669}
   .filter-sel{border:1px solid #d4d4d4;border-radius:20px;padding:5px 12px;font-size:13px;background:var(--card);color:var(--ink);cursor:pointer;height:34px;max-width:200px}
   .filter-sel:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 2px rgba(37,99,235,.1)}
   .filter-clear{font-size:11px;color:var(--accent);cursor:pointer;text-decoration:underline;white-space:nowrap}
@@ -305,6 +310,31 @@ function trackClick(ev){
     const url=ev.url||'';const section=ev.section||ev.label||'';
     navigator.sendBeacon('/'+slug+'/calendar/api/click',new Blob([JSON.stringify({section:section,url:url})],{type:'application/json'}));
   }catch(e){}
+}
+// Share a single event: native share sheet on mobile, clipboard copy elsewhere.
+// Shares the session registration link when available, otherwise the calendar page.
+async function shareEvent(ev){
+  const shareUrl=(ev&&ev.url)||window.location.href;
+  const orgName=(window.__ORG__||{}).name||(ev&&ev.orgName)||'';
+  const title=[(ev&&ev.label)||'Program',orgName].filter(Boolean).join(' · ');
+  if(navigator.share){
+    try{ await navigator.share({title,text:(ev&&ev.description)||title,url:shareUrl}); return 'shared'; }
+    catch(e){ if(e&&e.name==='AbortError') return 'aborted'; /* fall through to copy */ }
+  }
+  try{
+    let ok=false;
+    if(navigator.clipboard&&navigator.clipboard.writeText){
+      try{ await navigator.clipboard.writeText(shareUrl); ok=true; }catch(e){/* fall back to execCommand */}
+    }
+    if(!ok){
+      const ta=document.createElement('textarea');
+      ta.value=shareUrl; ta.setAttribute('readonly','');
+      ta.style.position='fixed'; ta.style.top='-1000px'; ta.style.opacity='0';
+      document.body.appendChild(ta); ta.select();
+      ok=document.execCommand('copy'); document.body.removeChild(ta);
+    }
+    return ok?'copied':'error';
+  }catch(e){ return 'error'; }
 }
 const DOW=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 const DOWL=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
@@ -872,7 +902,16 @@ function DayDetailPopup({date,events,onEv,onClose}){
 /* ---------- app ---------- */
 
 function PopoverCard({ev,onClose}){
+  const [shareMsg,setShareMsg]=useState('');
+  useEffect(()=>{ setShareMsg(''); },[ev]); // clear stale feedback when a new event opens
   if(!ev) return null;
+  async function onShare(){
+    const res=await shareEvent(ev);
+    if(res==='copied'){ setShareMsg('Link copied!'); }
+    else if(res==='error'){ setShareMsg('Copy failed'); }
+    else { setShareMsg(''); return; } // native share sheet used or dismissed
+    setTimeout(()=>setShareMsg(''),1800);
+  }
   const loc=[ev.location,ev.facility].filter(Boolean).join(' · ');
   const desc=[ev.program,ev.section].filter(Boolean).join(' – ');
   const price=ev.total!==''&&ev.total!=null&&ev.total!==0?('From '+(typeof ev.total==='number'?('$'+ev.total.toFixed(2)):String(ev.total))):'N/A';
@@ -893,7 +932,16 @@ function PopoverCard({ev,onClose}){
           {ev.eligibility && <div className="pop-row"><span className="pop-lbl">Ages/Grades</span><span style={{whiteSpace:'normal',overflowWrap:'anywhere'}}>{ev.eligibility}</span></div>}
           <div className="pop-row"><span className="pop-lbl">Price</span><span>{price}</span></div>
           {(ev.full||ev.waitlist||ev.closed) && <div className="pop-row pop-chips"><StatusChips ev={ev}/></div>}
-          {ev.url && <a className="pop-link" href={ev.url} target="_blank" rel="noopener" onClick={()=>trackClick(ev)}>View Session →</a>}
+          <div className="pop-actions">
+            {ev.url && <a className="pop-link" href={ev.url} target="_blank" rel="noopener" onClick={()=>trackClick(ev)}>View Session →</a>}
+            <button type="button" className={"pop-share"+(shareMsg?' copied':'')} onClick={onShare} title="Copy a shareable link to this program">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+                <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+              </svg>
+              {shareMsg||'Share link'}
+            </button>
+          </div>
         </div>
       </div>
     </div>

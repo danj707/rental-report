@@ -9458,6 +9458,9 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+    { date: '2026-07-21', title: '🔗 Program Calendar: Share Link', items: [
+      'Each program detail popover on the calendar now has a "Share link" action (with a link icon) next to View Session. On desktop it copies the session\'s registration link to the clipboard and shows a green "Link copied!" confirmation; on mobile/tablet it opens the native share sheet. Falls back to the current calendar page URL for events without a registration link.',
+    ] },
     { date: '2026-07-21', title: '📈 Calendar Funnel: Prior-Period Comparison', items: [
       'Calendar View → Registration Funnel now shows month-over-month delta: compares current 30d enrollments and revenue vs the prior 30d window. Delta badges (↑/↓ %) appear on Enrollments and Revenue KPIs. Prior-period summary row shows raw numbers below KPIs. Revenue comparison uses current avg ticket applied to prior enrollment count (noted as estimated). Data comes from existing program-demographics card (no date filter, returns all enrollments) so no new Metabase fetch required.',
     ] },
