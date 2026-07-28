@@ -10577,6 +10577,10 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  { date: '2026-07-28', title: '🎾 Facilities hub — Tennis sub-tab', items: [
+    'New Tennis tab in the Facilities hub: a tennis-scoped view of your live court reservations. It reuses the Court Utilization pipeline (same data, same math) filtered to tennis courts — KPIs, instant-vs-managed mix, per-court utilization bars, a location map (courts placed at their geocoded park), a day-of-week heatmap, and Rec Insights. No new data source: tennis courts are detected by name in the existing facility feed.',
+    'Private instructor lessons are flagged “coming soon” rather than estimated — that needs instructor-level booking data (who taught, private lesson vs. open court), which isn’t in the current facility feed. It lights up once the tennis data source is wired.',
+  ] },
   { date: '2026-07-28', title: '👥 Community Intel — branded report header', items: [
     'The Community Intelligence report now shows the standard branded header band — org logo, org name, and report title, with a household/people summary on the right — between the toolbar and the tabs, matching Memberships, Programs, and the Facilities hub. Previously it jumped straight from the dark toolbar to the tabs, so the report looked like it was missing its top header.',
   ] },

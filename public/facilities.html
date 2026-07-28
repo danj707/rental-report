@@ -200,6 +200,18 @@
     .court-native .insights-feedback button:hover { background: #f3f4f6; }
     .court-native .insights-feedback .fb-thanks { color: #10b981; font-weight: 600; }
     .court-native .cu-schedule-badge { background: #dcfce7; color: #166534; border-radius: 10px; padding: 1px 8px; font-weight: 600; font-size: 10px; }
+    .court-native .cu-empty { padding: 44px 20px; text-align: center; color: #6b7280; font-size: 13px; line-height: 1.6; background: #fafaf8; border: 1px solid #eee; border-radius: 8px; margin-top: 6px; }
+
+    /* ── Tennis tab ── */
+    .tennis-wrap { margin-top: 4px; }
+    .tennis-hero { display: flex; align-items: center; gap: 16px; background: linear-gradient(135deg, #14532d, #16a34a); color: #fff; border-radius: 12px; padding: 18px 22px; margin-bottom: 10px; box-shadow: 0 3px 14px rgba(21,128,61,.22); }
+    .tennis-hero .th-emoji { font-size: 40px; line-height: 1; filter: drop-shadow(0 2px 3px rgba(0,0,0,.25)); }
+    .tennis-hero .th-title { font-size: 22px; font-weight: 800; letter-spacing: -.01em; }
+    .tennis-hero .th-sub { font-size: 12.5px; opacity: .93; margin-top: 3px; max-width: 660px; line-height: 1.45; }
+    .tennis-pending { border: 1px dashed #86efac; background: #f0fdf4; border-radius: 10px; padding: 14px 18px; margin: 20px 0 6px; }
+    .tennis-pending .tp-head { display: flex; align-items: center; gap: 10px; font-size: 14px; font-weight: 700; color: #14532d; margin-bottom: 5px; }
+    .tennis-pending .tp-badge { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; background: #16a34a; color: #fff; border-radius: 10px; padding: 2px 9px; }
+    .tennis-pending .tp-body { font-size: 12.5px; color: #3f6212; line-height: 1.5; }
   </style>
 </head>
 <body>
@@ -219,6 +231,7 @@
       { key: 'camping',     label: 'Camping',        icon: '🏕️' },
       { key: 'golf',        label: 'Golf',           icon: '⛳' },
       { key: 'aquatics',    label: 'Pool / Aquatics', icon: '🏊' },
+      { key: 'tennis',      label: 'Tennis',          icon: '🎾' },
     ];
 
     // Rec's real site types (court.type), grouped into the display verticals.
@@ -815,7 +828,7 @@
       );
     }
 
-    function CourtUtilizationView({ start, end }) {
+    function CourtUtilizationView({ start, end, courtFilter, theme }) {
       const slug = CFG.slug;
       const [schedules, setSchedules] = React.useState(null);
       const [schedMeta, setSchedMeta] = React.useState(null);
@@ -869,7 +882,10 @@
       React.useEffect(() => { load(start, end); }, [start, end, load]);
 
       // ── Derived (verbatim from the standalone report) ──
-      const normalized = React.useMemo(() => cuNormalize(rows), [rows]);
+      const normalized = React.useMemo(() => {
+        const all = cuNormalize(rows);
+        return courtFilter ? all.filter(r => courtFilter(r.courtName, r.locationName)) : all;
+      }, [rows, courtFilter]);
       const allLocations = React.useMemo(() => Array.from(new Set(normalized.map(r => r.locationName).filter(Boolean))).sort(), [normalized]);
       React.useEffect(() => { setSelectedLocations(allLocations); }, [allLocations]);
 
@@ -993,6 +1009,7 @@
 
       if (error) return e('div', { className: 'court-native' }, e('div', { className: 'cu-error' }, e('strong', null, 'Could not load court data: '), error));
       if (loading && !grouped.length) return e('div', { className: 'court-native' }, e('div', { className: 'cu-loading' }, e('div', { className: 'fac-spin' }), 'Loading court utilization…'));
+      if (courtFilter && !loading && normalized.length === 0) return e('div', { className: 'court-native' }, e('div', { className: 'cu-empty' }, (theme && theme.emptyMsg) || 'No matching courts in this range.'));
 
       // KPI cards (hub sum-card style)
       const kpis = [
@@ -1145,6 +1162,35 @@
       );
     }
 
+    // ── Tennis sub-tab ──────────────────────────────────────────────────
+    // Reuses the Court Utilization pipeline (same live data, same math),
+    // scoped to tennis courts by name/location. No new data source: tennis
+    // is isolated from the existing facility feed by matching "tennis" in the
+    // court or location name. Per-court GPS isn't in the feed, so the map
+    // places courts at their geocoded location (park), exactly like Court
+    // Utilization. Private-lesson (instructor) data isn't in this feed — that
+    // section is flagged pending rather than fabricated.
+    const isTennisCourt = (court, loc) => /tennis/i.test(court || '') || /tennis/i.test(loc || '');
+    const TENNIS_THEME = {
+      emptyMsg: 'No tennis courts found for this organization in the selected date range. Tennis courts are detected by court/location name — if you expect courts here, they may be recorded under a name that doesn’t include "tennis", or there were no bookings in this window.',
+    };
+
+    function TennisView({ start, end }) {
+      return e('div', { className: 'tennis-wrap' },
+        e('div', { className: 'tennis-hero' },
+          e('div', { className: 'th-emoji' }, '🎾'),
+          e('div', null,
+            e('div', { className: 'th-title' }, 'Tennis Courts'),
+            e('div', { className: 'th-sub' }, 'Utilization, demand, and instant-vs-managed mix across ' + (CFG.displayName || 'your') + ' tennis courts — filtered live from your facility reservations, with a court map and day-of-week heatmap.')),
+        ),
+        e(CourtUtilizationView, { start, end, courtFilter: isTennisCourt, theme: TENNIS_THEME }),
+        e('div', { className: 'tennis-pending' },
+          e('div', { className: 'tp-head' }, '🎾 Private Instructor Lessons', e('span', { className: 'tp-badge' }, 'Coming soon')),
+          e('div', { className: 'tp-body' }, 'Private tennis lessons and instructor-led sessions — enrollments, revenue, and instructor utilization — will appear here. This needs instructor-level booking data (who taught, private lesson vs. open court), which isn’t part of the current facility feed. It lights up as soon as the tennis data source is wired.'),
+        ),
+      );
+    }
+
     function App() {
       const now = new Date();
       const [start, setStart] = React.useState(fmtDate(monthStart(now)));
@@ -1212,7 +1258,7 @@
           // Filters are context-aware: the site-type filter only makes sense on
           // the Summary (a vertical tab already fixes the type); Court Utilization
           // manages its own filters + dates inside the embed, so no hub filters.
-          tab === 'utilization' ? null : e('div', { className: 'filters' },
+          (tab === 'utilization' || tab === 'tennis') ? null : e('div', { className: 'filters' },
             e(StatusChips, { sel: statusSel, setSel: setStatusSel }),
             tab === 'summary' ? e('div', { className: 'filter-group' },
               e('span', { className: 'filter-lbl' }, 'Site type'),
@@ -1237,9 +1283,11 @@
             ? e(SummaryTab, { rows, err, statusSel, typeSel })
             : tab === 'utilization'
               ? e(CourtUtilizationView, { start, end })
-              : VERT_CONFIG[tab]
-                ? e(VerticalView, { rows, err, statusSel, vert: Object.assign({ key: tab }, VERT_CONFIG[tab]) })
-                : e(SummaryTab, { rows, err, statusSel, typeSel }),
+              : tab === 'tennis'
+                ? e(TennisView, { start, end })
+                : VERT_CONFIG[tab]
+                  ? e(VerticalView, { rows, err, statusSel, vert: Object.assign({ key: tab }, VERT_CONFIG[tab]) })
+                  : e(SummaryTab, { rows, err, statusSel, typeSel }),
         ),
       );
     }
