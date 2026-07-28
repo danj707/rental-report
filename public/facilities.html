@@ -231,7 +231,7 @@
       { key: 'camping',     label: 'Camping',        icon: '🏕️' },
       { key: 'golf',        label: 'Golf',           icon: '⛳' },
       { key: 'aquatics',    label: 'Pool / Aquatics', icon: '🏊' },
-      { key: 'tennis',      label: 'Tennis',          icon: '🎾' },
+      { key: 'racket',      label: 'Racket Sports',   icon: '🎾' },
     ];
 
     // Rec's real site types (court.type), grouped into the display verticals.
@@ -403,10 +403,9 @@
         e('div', { className: 'fb-overlay' },
           e('div', { className: 'fb-kicker' }, CFG.displayName || 'Parks & Recreation'),
           e('div', { className: 'fb-title' }, '🏟️ Facilities'),
-          e('div', { className: 'fb-sub' }, 'Live on real facility reservations — courts, fields, picnic areas & more.'),
+          e('div', { className: 'fb-sub' }, 'Courts, fields, picnic areas & more.'),
           a ? e('div', { className: 'fb-pills' }, pills.map((p, i) => e('span', { className: 'fb-pill', key: i }, e('b', null, p[1]), ' ' + p[0]))) : null,
         ),
-        e('div', { className: 'fb-badge' }, 'Live data'),
       );
     }
 
@@ -556,7 +555,7 @@
             }),
           ),
         ),
-        e('div', { className: 'section-note' }, 'Live facility data · ' + rows.length.toLocaleString() + ' bookings in range · metrics update with the filters above.'),
+        e('div', { className: 'section-note' }, rows.length.toLocaleString() + ' bookings in range · metrics update with the filters above.'),
       );
     }
 
@@ -688,7 +687,7 @@
             }),
           ),
         ),
-        e('div', { className: 'section-note' }, 'Live facility data · ' + vert.label + ' · ' + bookings.toLocaleString() + ' bookings in range · scoped to ' + vert.types.join(', ') + ' site types.'),
+        e('div', { className: 'section-note' }, vert.label + ' · ' + bookings.toLocaleString() + ' bookings in range · scoped to ' + vert.types.join(', ') + ' site types.'),
       );
     }
 
@@ -1157,36 +1156,37 @@
                   e('span', null, e('span', { className: 'heatmap-legend-swatch', style: { background: '#ea580c' } }), '60-79%'),
                   e('span', null, e('span', { className: 'heatmap-legend-swatch', style: { background: '#dc2626' } }), '80%+ 🔥')),
               ) : null,
-              e('div', { className: 'section-note' }, 'Live court data · ' + stats.reservationRows.toLocaleString() + ' reservation rows · utilization uses real per-court schedules where available.'),
+              e('div', { className: 'section-note' }, stats.reservationRows.toLocaleString() + ' reservation rows · utilization uses real per-court schedules where available.'),
             ),
       );
     }
 
-    // ── Tennis sub-tab ──────────────────────────────────────────────────
-    // Reuses the Court Utilization pipeline (same live data, same math),
-    // scoped to tennis courts by name/location. No new data source: tennis
-    // is isolated from the existing facility feed by matching "tennis" in the
-    // court or location name. Per-court GPS isn't in the feed, so the map
+    // ── Racket Sports sub-tab ───────────────────────────────────────────
+    // Reuses the Court Utilization pipeline (same data, same math), scoped to
+    // racket-sport courts by name/location. No new data source: courts are
+    // isolated from the existing facility feed by matching a racket-sport
+    // keyword (tennis, pickleball, padel, racquetball, squash, badminton) in
+    // the court or location name. Per-court GPS isn't in the feed, so the map
     // places courts at their geocoded location (park), exactly like Court
     // Utilization. Private-lesson (instructor) data isn't in this feed — that
     // section is flagged pending rather than fabricated.
-    const isTennisCourt = (court, loc) => /tennis/i.test(court || '') || /tennis/i.test(loc || '');
-    const TENNIS_THEME = {
-      emptyMsg: 'No tennis courts found for this organization in the selected date range. Tennis courts are detected by court/location name — if you expect courts here, they may be recorded under a name that doesn’t include "tennis", or there were no bookings in this window.',
+    const isRacketCourt = (court, loc) => /tennis|pickle|padel|racquet|squash|badminton/i.test((court || '') + ' ' + (loc || ''));
+    const RACKET_THEME = {
+      emptyMsg: 'No racket-sport courts found for this organization in the selected date range. Courts are detected by name (tennis, pickleball, padel, racquetball, squash, badminton) — if you expect courts here, they may be recorded under a different name, or there were no bookings in this window.',
     };
 
-    function TennisView({ start, end }) {
+    function RacketSportsView({ start, end }) {
       return e('div', { className: 'tennis-wrap' },
         e('div', { className: 'tennis-hero' },
           e('div', { className: 'th-emoji' }, '🎾'),
           e('div', null,
-            e('div', { className: 'th-title' }, 'Tennis Courts'),
-            e('div', { className: 'th-sub' }, 'Utilization, demand, and instant-vs-managed mix across ' + (CFG.displayName || 'your') + ' tennis courts — filtered live from your facility reservations, with a court map and day-of-week heatmap.')),
+            e('div', { className: 'th-title' }, 'Racket Sports'),
+            e('div', { className: 'th-sub' }, 'Utilization, demand, and instant-vs-managed mix across ' + (CFG.displayName || 'your') + ' racket-sport courts — tennis, pickleball, padel & more — drawn from your facility reservations, with a court map and day-of-week heatmap.')),
         ),
-        e(CourtUtilizationView, { start, end, courtFilter: isTennisCourt, theme: TENNIS_THEME }),
+        e(CourtUtilizationView, { start, end, courtFilter: isRacketCourt, theme: RACKET_THEME }),
         e('div', { className: 'tennis-pending' },
           e('div', { className: 'tp-head' }, '🎾 Private Instructor Lessons', e('span', { className: 'tp-badge' }, 'Coming soon')),
-          e('div', { className: 'tp-body' }, 'Private tennis lessons and instructor-led sessions — enrollments, revenue, and instructor utilization — will appear here. This needs instructor-level booking data (who taught, private lesson vs. open court), which isn’t part of the current facility feed. It lights up as soon as the tennis data source is wired.'),
+          e('div', { className: 'tp-body' }, 'Private lessons and instructor-led sessions (tennis, pickleball & more) — enrollments, revenue, and instructor utilization — will appear here. This needs instructor-level booking data (who taught, private lesson vs. open court), which isn’t part of the current facility feed. It lights up as soon as the data source is wired.'),
         ),
       );
     }
@@ -1258,7 +1258,7 @@
           // Filters are context-aware: the site-type filter only makes sense on
           // the Summary (a vertical tab already fixes the type); Court Utilization
           // manages its own filters + dates inside the embed, so no hub filters.
-          (tab === 'utilization' || tab === 'tennis') ? null : e('div', { className: 'filters' },
+          (tab === 'utilization' || tab === 'racket') ? null : e('div', { className: 'filters' },
             e(StatusChips, { sel: statusSel, setSel: setStatusSel }),
             tab === 'summary' ? e('div', { className: 'filter-group' },
               e('span', { className: 'filter-lbl' }, 'Site type'),
@@ -1283,8 +1283,8 @@
             ? e(SummaryTab, { rows, err, statusSel, typeSel })
             : tab === 'utilization'
               ? e(CourtUtilizationView, { start, end })
-              : tab === 'tennis'
-                ? e(TennisView, { start, end })
+              : tab === 'racket'
+                ? e(RacketSportsView, { start, end })
                 : VERT_CONFIG[tab]
                   ? e(VerticalView, { rows, err, statusSel, vert: Object.assign({ key: tab }, VERT_CONFIG[tab]) })
                   : e(SummaryTab, { rows, err, statusSel, typeSel }),
