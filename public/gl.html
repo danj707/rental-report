@@ -1023,7 +1023,10 @@ function App() {
 
   useEffect(() => { fetchData(startDate, endDate); }, []);
 
-  function handleRun() { fetchData(startDate, endDate); }
+  function handleRun() {
+    setSelectedDesks(null);   // reset desk filter to "All" — fresh eyes each run
+    fetchData(startDate, endDate);
+  }
 
   function setMonth(offset) {
     const now = new Date();
@@ -1070,7 +1073,8 @@ function App() {
         const valid = allDesks.filter(d => want.has(d));
         setSelectedDesks(new Set(valid.length ? valid : allDesks));
       } else if (selectedDesks) {
-        // Preserve existing selection across date changes — only prune desks no longer in data
+        // Interactive toggle mid-session: prune desks no longer in data but keep selection.
+        // handleRun() resets selectedDesks to null so each Run starts with "All".
         const kept = new Set(allDesks.filter(d => selectedDesks.has(d)));
         setSelectedDesks(kept.size > 0 ? kept : new Set(allDesks));
       } else {
