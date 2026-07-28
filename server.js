@@ -10630,6 +10630,12 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  { date: '2026-07-28', title: 'Check-Ins: Top Members Leaderboard', items: [
+    'Added Top Members section to the Check-Ins tab showing the 15 most active members ranked by visit count',
+    'Monthly sparkline bars per member show activity distribution across the date range (blue for memberships, purple for passes)',
+    'Gold/silver/bronze ranking badges for top 3, membership/pass type badge, and most-used product name per member',
+    'Inspired by Amilia Facility Visits leaderboard — pure frontend aggregation, no new Metabase cards',
+  ]},
   { date: '2026-07-28', title: 'Slack Feedback Notifications', items: [
     'Thumbs up/down on AI Insights, Rec AI Chat, and Report Wizard now ping Slack with the vote and optional comment',
     'Feedback events use the same debounce/fire-and-forget pattern as view/export notifications',
