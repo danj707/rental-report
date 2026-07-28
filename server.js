@@ -714,12 +714,6 @@ const ORGS = {
     logoUrl: "https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2Forganization-9acfb33a-4114-4f0f-be3c-2eb0a3930550%2FfullLogo.png%3F1769533327785&w=1920&q=75",
     displayName: "Prescott Valley",
   },
-  "city-of-west-sacramento": {
-    token:   "Ix6q046hgYpjLW2q",
-    orgId:   "7d22bf62-060a-4881-9821-9dea6a0538d6",
-    logoUrl: "https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2Forganization-7d22bf62-060a-4881-9821-9dea6a0538d6%2FfullLogo.png%3F1764542866233&w=1920&q=75",
-    displayName: "City of West Sacramento",
-  },
   littleton: {
     token:   "QNEZonI1RAmrU8VJ",
     orgId:   "992ee322-4927-4558-827d-7f8768580b85",
@@ -10589,6 +10583,7 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  { date: '2026-07-28', text: 'Removed duplicate West Sacramento org entry (slug city-of-west-sacramento) that pointed at the same orgId as the original westsacramento entry — the migrate-dynamic-orgs step re-added an org already configured here, creating two dashboard cards for one org. Kept the original westsacramento slug (which carries the map coords + mapCity).' },
   { date: '2026-07-28', title: '🎾 Facilities hub — Tennis sub-tab', items: [
     'New Tennis tab in the Facilities hub: a tennis-scoped view of your live court reservations. It reuses the Court Utilization pipeline (same data, same math) filtered to tennis courts — KPIs, instant-vs-managed mix, per-court utilization bars, a location map (courts placed at their geocoded park), a day-of-week heatmap, and Rec Insights. No new data source: tennis courts are detected by name in the existing facility feed.',
     'Private instructor lessons are flagged “coming soon” rather than estimated — that needs instructor-level booking data (who taught, private lesson vs. open court), which isn’t in the current facility feed. It lights up once the tennis data source is wired.',
