@@ -2842,6 +2842,21 @@ app.get("/api/admin/backup-status", (req, res) => {
   res.json(_lastBackup);
 });
 
+// ── GET /api/admin/org/:slug — check if org exists (used by rec-dashboard before add) ──
+app.get("/api/admin/org/:slug", (req, res) => {
+  const slug = req.params.slug;
+  const org = ORGS[slug];
+  if (!org) return res.json({ exists: false });
+  res.json({
+    exists: true,
+    slug,
+    token: org.token,
+    orgId: org.orgId,
+    logoUrl: org.logoUrl,
+    displayName: org.displayName || org.name || slug,
+  });
+});
+
 // ── POST /api/admin/add-org — add org (used by rec-dashboard to sync) ──
 app.post("/api/admin/add-org", express.json(), (req, res) => {
   const { slug, token, orgId, logoUrl, displayName } = req.body;
@@ -10595,6 +10610,11 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  
+  { date: '2026-07-28', title: 'Cross-Project Org Lookup', items: [
+    'Added GET /api/admin/org/:slug endpoint so the dashboard project can check if an org exists before adding.',
+    'Prevents token overwrites when dashboard adds an org that already exists in the reporting project.',
+  ]},
   { date: '2026-07-28', text: 'Removed duplicate West Sacramento org entry (slug city-of-west-sacramento) that pointed at the same orgId as the original westsacramento entry — the migrate-dynamic-orgs step re-added an org already configured here, creating two dashboard cards for one org. Kept the original westsacramento slug (which carries the map coords + mapCity).' },
   { date: '2026-07-28', title: '🎾 Facilities hub — Racket Sports sub-tab', items: [
     'New Racket Sports tab in the Facilities hub: a view of your court reservations across racket sports (tennis, pickleball, padel, racquetball, squash, badminton). It reuses the Court Utilization pipeline (same data, same math) filtered to racket-sport courts — KPIs, instant-vs-managed mix, per-court utilization bars, a location map (courts placed at their geocoded park), a day-of-week heatmap, and Rec Insights. No new data source: courts are detected by name in the existing facility feed.',
