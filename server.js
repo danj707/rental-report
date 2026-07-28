@@ -10616,6 +10616,10 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  { date: '2026-07-28', title: 'GL Desk Filter Reset', items: [
+    'Desk location filter now resets to All on every Run Report click',
+    'Fixes stale filter state carrying across date changes (BJ feedback)',
+  ]},
   
   { date: '2026-07-28', title: 'Cross-Project Org Lookup', items: [
     'Added GET /api/admin/org/:slug endpoint so the dashboard project can check if an org exists before adding.',
