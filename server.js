@@ -10577,6 +10577,9 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  { date: '2026-07-28', title: '👥 Community Intel — branded report header', items: [
+    'The Community Intelligence report now shows the standard branded header band — org logo, org name, and report title, with a household/people summary on the right — between the toolbar and the tabs, matching Memberships, Programs, and the Facilities hub. Previously it jumped straight from the dark toolbar to the tabs, so the report looked like it was missing its top header.',
+  ] },
   { date: '2026-07-24', title: '🎫 Memberships report — clearer purchase-window framing + Check-Ins date fix', items: [
     'The Memberships KPI cards now clearly read as a purchase cohort: a caption states the numbers cover memberships & passes PURCHASED in the selected date range, and Active/Canceled/Expired reflect each purchase’s current status — not an all-time member roster. This removes the confusion where a windowed count looked like a full roster (and appeared to disagree with the rec.us admin, which counts purchases/renewals in-window).',
     'Net Collected is now labeled as attributed to purchase date, across all payment channels (so it won’t line up 1:1 with a payments-settled-in-window or online-only figure).',
