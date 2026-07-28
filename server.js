@@ -2097,7 +2097,9 @@ const SLACK_EVENT_META = {
   view:    { emoji: "👀", verb: "viewed" },
 };
 function notifySlack(rec) {
-  if (!SLACK_WEBHOOK_URL || !rec || !SLACK_NOTIFY.has(rec.event)) return;
+  if (!rec) return;
+  console.log(`[slack] event=${rec.event} org=${rec.org} report=${rec.report} inSet=${SLACK_NOTIFY.has(rec.event)} webhookSet=${!!SLACK_WEBHOOK_URL}`);
+  if (!SLACK_WEBHOOK_URL || !SLACK_NOTIFY.has(rec.event)) return;
   const key = `${rec.org}|${rec.report}|${rec.event}`;
   const now = Date.now();
   const cooldown = SLACK_DEBOUNCE_MS[rec.event] || SLACK_DEFAULT_DEBOUNCE_MS;
@@ -2119,14 +2121,17 @@ function notifySlack(rec) {
   } else {
     text = `${meta.emoji} ${orgName} (\`${rec.org}\`) ${meta.verb} *${rec.report}*`;
   }
+  console.log(`[slack] SENDING: ${text.slice(0, 200)}`);
   try {
     fetch(SLACK_WEBHOOK_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text }),
       signal: AbortSignal.timeout(5000),
-    }).catch(() => {}); // network errors are non-fatal
-  } catch { /* never let a notification break event logging */ }
+    })
+    .then(r => { if (!r.ok) console.error(`[slack] webhook ${r.status}: ${r.statusText}`); else console.log("[slack] webhook OK"); })
+    .catch(e => console.error(`[slack] webhook error: ${e.message}`));
+  } catch (e) { console.error(`[slack] outer error: ${e.message}`); }
 }
 
 // Read events file, optionally filtered to last N days
