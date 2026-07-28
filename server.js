@@ -732,6 +732,12 @@ const ORGS = {
     logoUrl: "https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2Forganization-2e622a3e-80e1-4911-b722-81929ca27056%2FfullLogo.png%3F1777904709733&w=2048&q=75",
     displayName: "Essex Junction",
   },
+  "city-of-lewisburg": {
+    token:   "0BeyVn9pll95qnbJ",
+    orgId:   "ff965a2b-7746-4de9-8b41-402927cb5879",
+    logoUrl: "https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2Forganization-ff965a2b-7746-4de9-8b41-402927cb5879%2FfullLogo.png%3F1776783669314&w=2048&q=75",
+    displayName: "Lewisburg",
+  },
 };
 
 const REPORT_TYPES = ["facility", "gl", "historic", "programs", "roster", "products", "memberships", "court-utilization", "calendar", "fasttrack", "users", "program-demographics", "instructor-payout", "retention", "annual-report", "section-detail", "ice-calendar", "qoq", "checkins", "program-checkins"];
