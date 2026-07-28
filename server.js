@@ -2084,7 +2084,7 @@ function logEvent(org, report, event, reqOrIp, extra) {
 // Inert if the env var is unset. Fire-and-forget — never blocks or breaks logging.
 // To change what pings Slack, edit SLACK_NOTIFY. High-frequency events (view/fetch)
 // are debounced per org+report so Slack isn't a firehose.
-const SLACK_NOTIFY = new Set(["created", "pdf", "excel", "print", "view"]);
+const SLACK_NOTIFY = new Set(["created", "pdf", "excel", "print", "view", "insights-feedback", "chat-feedback", "feedback"]);
 const SLACK_DEBOUNCE_MS = { view: 30 * 60 * 1000, fetch: 30 * 60 * 1000 };
 const SLACK_DEFAULT_DEBOUNCE_MS = 60 * 1000; // dedup rapid double-fires of one-off events
 const slackLastSent = new Map();
@@ -2102,11 +2102,21 @@ function notifySlack(rec) {
   const cooldown = SLACK_DEBOUNCE_MS[rec.event] || SLACK_DEFAULT_DEBOUNCE_MS;
   if (now - (slackLastSent.get(key) || 0) < cooldown) return; // debounced
   slackLastSent.set(key, now);
-  const meta = SLACK_EVENT_META[rec.event] || { emoji: "•", verb: rec.event };
+  const meta = SLACK_EVENT_META[rec.event] || { emoji: "\u2022", verb: rec.event };
   const orgName = (ORGS[rec.org] && ORGS[rec.org].displayName) || rec.org;
-  const text = rec.event === "created"
-    ? `${meta.emoji} *New org created:* ${orgName} (\`${rec.org}\`)${rec.reports ? " — reports: " + rec.reports : ""}`
-    : `${meta.emoji} ${orgName} (\`${rec.org}\`) ${meta.verb} *${rec.report}*`;
+  let text;
+  if (rec.event === "created") {
+    text = `${meta.emoji} *New org created:* ${orgName} (\`${rec.org}\`)${rec.reports ? " \u2014 reports: " + rec.reports : ""}`;
+  } else if (rec.event === "insights-feedback" || rec.event === "chat-feedback" || rec.event === "feedback") {
+    const thumbs = (rec.score === 1 || rec.vote === "up") ? "\uD83D\uDC4D" : "\uD83D\uDC4E";
+    const label = rec.event === "chat-feedback" ? "Rec AI Chat"
+                : rec.event === "feedback"      ? "Report Wizard"
+                :                                 "AI Insights";
+    const commentText = rec.comment ? ` \u2014 _${rec.comment.slice(0, 200)}_` : "";
+    text = `${thumbs} ${orgName} (\`${rec.org}\`) ${label} on *${rec.report}*${commentText}`;
+  } else {
+    text = `${meta.emoji} ${orgName} (\`${rec.org}\`) ${meta.verb} *${rec.report}*`;
+  }
   try {
     fetch(SLACK_WEBHOOK_URL, {
       method: "POST",
@@ -10616,6 +10626,10 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  { date: '2026-07-28', title: 'Slack Feedback Notifications', items: [
+    'Thumbs up/down on AI Insights, Rec AI Chat, and Report Wizard now ping Slack with the vote and optional comment',
+    'Feedback events use the same debounce/fire-and-forget pattern as view/export notifications',
+  ]},
   { date: '2026-07-28', title: 'GL Desk Filter Reset', items: [
     'Desk location filter now resets to All on every Run Report click',
     'Fixes stale filter state carrying across date changes (BJ feedback)',
