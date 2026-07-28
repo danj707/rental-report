@@ -10584,9 +10584,9 @@ app.get("/", (req, res) => {
 
     const UPDATES = [
   { date: '2026-07-28', text: 'Removed duplicate West Sacramento org entry (slug city-of-west-sacramento) that pointed at the same orgId as the original westsacramento entry — the migrate-dynamic-orgs step re-added an org already configured here, creating two dashboard cards for one org. Kept the original westsacramento slug (which carries the map coords + mapCity).' },
-  { date: '2026-07-28', title: '🎾 Facilities hub — Tennis sub-tab', items: [
-    'New Tennis tab in the Facilities hub: a tennis-scoped view of your live court reservations. It reuses the Court Utilization pipeline (same data, same math) filtered to tennis courts — KPIs, instant-vs-managed mix, per-court utilization bars, a location map (courts placed at their geocoded park), a day-of-week heatmap, and Rec Insights. No new data source: tennis courts are detected by name in the existing facility feed.',
-    'Private instructor lessons are flagged “coming soon” rather than estimated — that needs instructor-level booking data (who taught, private lesson vs. open court), which isn’t in the current facility feed. It lights up once the tennis data source is wired.',
+  { date: '2026-07-28', title: '🎾 Facilities hub — Racket Sports sub-tab', items: [
+    'New Racket Sports tab in the Facilities hub: a view of your court reservations across racket sports (tennis, pickleball, padel, racquetball, squash, badminton). It reuses the Court Utilization pipeline (same data, same math) filtered to racket-sport courts — KPIs, instant-vs-managed mix, per-court utilization bars, a location map (courts placed at their geocoded park), a day-of-week heatmap, and Rec Insights. No new data source: courts are detected by name in the existing facility feed.',
+    'Private instructor lessons are flagged “coming soon” rather than estimated — that needs instructor-level booking data (who taught, private lesson vs. open court), which isn’t in the current facility feed. It lights up once the data source is wired.',
   ] },
   { date: '2026-07-28', title: '👥 Community Intel — branded report header', items: [
     'The Community Intelligence report now shows the standard branded header band — org logo, org name, and report title, with a household/people summary on the right — between the toolbar and the tabs, matching Memberships, Programs, and the Facilities hub. Previously it jumped straight from the dark toolbar to the tabs, so the report looked like it was missing its top header.',
