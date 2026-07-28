@@ -726,6 +726,12 @@ const ORGS = {
     logoUrl: "https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2Forganization-5dee565a-6012-4b4f-a325-0aea81674364%2FfullLogo.png%3F1769719595995&w=2048&q=75",
     displayName: "Town of Clarkstown",
   },
+  "essex-junction": {
+    token:   "VZdH7PHZlDJRrUPN",
+    orgId:   "2e622a3e-80e1-4911-b722-81929ca27056",
+    logoUrl: "https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2Forganization-2e622a3e-80e1-4911-b722-81929ca27056%2FfullLogo.png%3F1777904709733&w=2048&q=75",
+    displayName: "Essex Junction",
+  },
 };
 
 const REPORT_TYPES = ["facility", "gl", "historic", "programs", "roster", "products", "memberships", "court-utilization", "calendar", "fasttrack", "users", "program-demographics", "instructor-payout", "retention", "annual-report", "section-detail", "ice-calendar", "qoq", "checkins", "program-checkins"];
