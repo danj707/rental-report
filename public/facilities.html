@@ -43,6 +43,19 @@
     .report-header-right { text-align: right; }
     .report-header .date-range { font-size: 11px; color: #666; }
 
+    /* Facilities hero banner (self-contained SVG scene, no external image) */
+    .fac-banner { position: relative; width: 100%; height: 172px; border-radius: 12px; overflow: hidden; margin: 0 0 16px; border: 1px solid #a7f3d0; box-shadow: 0 3px 14px rgba(6,95,70,.15); }
+    .fac-banner .fb-scene { position: absolute; inset: 0; }
+    .fac-banner .fb-scene svg { width: 100%; height: 100%; display: block; }
+    .fac-banner .fb-overlay { position: absolute; inset: 0; padding: 20px 26px; display: flex; flex-direction: column; justify-content: center; z-index: 2; }
+    .fac-banner .fb-kicker { font-size: 10.5px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; color: rgba(255,255,255,.92); text-shadow: 0 1px 3px rgba(0,0,0,.4); }
+    .fac-banner .fb-title { font-size: 30px; font-weight: 800; color: #fff; text-shadow: 0 2px 7px rgba(0,0,0,.42); line-height: 1.04; margin-top: 3px; }
+    .fac-banner .fb-sub { font-size: 12.5px; color: rgba(255,255,255,.95); text-shadow: 0 1px 4px rgba(0,0,0,.45); margin-top: 6px; max-width: 560px; }
+    .fac-banner .fb-pills { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+    .fac-banner .fb-pill { background: rgba(255,255,255,.2); border: 1px solid rgba(255,255,255,.4); color: #fff; font-size: 12px; font-weight: 600; padding: 4px 12px; border-radius: 20px; text-shadow: 0 1px 2px rgba(0,0,0,.3); }
+    .fac-banner .fb-pill b { font-weight: 800; }
+    .fac-banner .fb-badge { position: absolute; top: 14px; right: 16px; z-index: 2; font-size: 10px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase; color: #065f46; background: #d1fae5; border: 1px solid #6ee7b7; padding: 3px 9px; border-radius: 6px; }
+
     /* ── Tabs (matches Programs) ── */
     .tabs { display:flex; gap:4px; border-bottom:2px solid #d1d5db; margin-bottom:16px; padding:0 4px; align-items:flex-end; flex-wrap: wrap; }
     .tab { padding:9px 18px 8px; font-size:13px; font-weight:600; color:#6b7280; cursor:pointer; transition:all .15s; display:flex; align-items:center; gap:6px; border-radius:8px 8px 0 0; border:1px solid transparent; border-bottom:none; margin-bottom:-2px; position:relative; background:transparent; }
@@ -343,6 +356,45 @@
       a.topType = Object.keys(a.byV).filter(v => a.byV[v].bookings).sort((x, y) => a.byV[y].revenue - a.byV[x].revenue)[0] || '—';
       a.topSites = Object.values(bySite).sort((x, y) => y.revenue - x.revenue).slice(0, 10);
       return a;
+    }
+
+    // Facilities hero banner — self-contained SVG scene (parks & rec at golden
+    // hour: sky, sun, field, a court), with live facility stat pills.
+    const FAC_SCENE = '<svg viewBox="0 0 1200 172" preserveAspectRatio="xMidYMid slice">' +
+      '<defs>' +
+      '<linearGradient id="fbSky" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#0d9488"/><stop offset="55%" stop-color="#5eead4"/><stop offset="100%" stop-color="#fef3c7"/></linearGradient>' +
+      '<radialGradient id="fbSun" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="#fffbeb"/><stop offset="55%" stop-color="#fde68a"/><stop offset="100%" stop-color="#fde68a" stop-opacity="0"/></radialGradient>' +
+      '<linearGradient id="fbScrim" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#052e2b" stop-opacity="0.62"/><stop offset="55%" stop-color="#052e2b" stop-opacity="0.13"/><stop offset="100%" stop-color="#052e2b" stop-opacity="0"/></linearGradient>' +
+      '</defs>' +
+      '<rect x="0" y="0" width="1200" height="172" fill="url(#fbSky)"/>' +
+      '<circle cx="800" cy="50" r="82" fill="url(#fbSun)"/><circle cx="800" cy="50" r="28" fill="#fffef6"/>' +
+      '<path d="M0,104 Q120,84 260,98 T560,92 T880,100 T1200,90 L1200,172 L0,172 Z" fill="#0f766e" opacity="0.5"/>' +
+      '<path d="M0,132 Q200,116 480,128 T1000,124 T1200,130 L1200,172 L0,172 Z" fill="#22c55e"/>' +
+      '<path d="M0,172 L0,150 Q300,138 620,150 T1200,146 L1200,172 Z" fill="#16a34a"/>' +
+      '<polygon points="470,172 720,172 1120,120 900,120" fill="#0e7490" opacity="0.85"/>' +
+      '<line x1="595" y1="172" x2="1010" y2="120" stroke="#e0f2fe" stroke-width="2" opacity="0.7"/>' +
+      '<line x1="470" y1="172" x2="900" y2="120" stroke="#e0f2fe" stroke-width="1.5" opacity="0.5"/>' +
+      '<line x1="720" y1="172" x2="1120" y2="120" stroke="#e0f2fe" stroke-width="1.5" opacity="0.5"/>' +
+      '<rect x="0" y="0" width="1200" height="172" fill="url(#fbScrim)"/>' +
+      '</svg>';
+
+    function FacilitiesBanner({ a }) {
+      const pills = a ? [
+        ['bookings', a.bookings.toLocaleString()],
+        ['net revenue', money(a.revenue)],
+        ['active sites', a.sites.toLocaleString()],
+        ['cancellation', a.bookings ? pct(a.canceled, a.bookings) : '—'],
+      ] : [];
+      return e('div', { className: 'fac-banner' },
+        e('div', { className: 'fb-scene', dangerouslySetInnerHTML: { __html: FAC_SCENE } }),
+        e('div', { className: 'fb-overlay' },
+          e('div', { className: 'fb-kicker' }, CFG.displayName || 'Parks & Recreation'),
+          e('div', { className: 'fb-title' }, '🏟️ Facilities'),
+          e('div', { className: 'fb-sub' }, 'Live on real facility reservations — courts, fields, picnic areas & more.'),
+          a ? e('div', { className: 'fb-pills' }, pills.map((p, i) => e('span', { className: 'fb-pill', key: i }, e('b', null, p[1]), ' ' + p[0]))) : null,
+        ),
+        e('div', { className: 'fb-badge' }, 'Live data'),
+      );
     }
 
     function Toolbar(props) {
@@ -1139,6 +1191,8 @@
         });
       }
 
+      const bannerAgg = rows ? aggregate(rows, statusSel, typeSel) : null;
+
       return e(React.Fragment, null,
         e(Toolbar, { start, end, setStart, setEnd, thisMonth: setThisMonth, lastMonth: setLastMonth, thisYear: setThisYear, run: () => load(), loading: rows === null, count, sites: siteCount }),
         e('div', { className: 'page' },
@@ -1154,6 +1208,7 @@
               e('div', { className: 'date-range' }, fmtRange(start, end)),
             ),
           ),
+          e(FacilitiesBanner, { a: bannerAgg }),
           // Filters are context-aware: the site-type filter only makes sense on
           // the Summary (a vertical tab already fixes the type); Court Utilization
           // manages its own filters + dates inside the embed, so no hub filters.
