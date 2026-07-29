@@ -2085,7 +2085,7 @@ function logEvent(org, report, event, reqOrIp, extra) {
 // Inert if the env var is unset. Fire-and-forget — never blocks or breaks logging.
 // To change what pings Slack, edit SLACK_NOTIFY. High-frequency events (view/fetch)
 // are debounced per org+report so Slack isn't a firehose.
-const SLACK_NOTIFY = new Set(["created", "pdf", "excel", "print", "view", "insights-feedback", "chat-feedback", "feedback", "vote"]);
+const SLACK_NOTIFY = new Set(["created", "pdf", "excel", "print", "view", "insights", "insights-feedback", "chat-feedback", "feedback", "vote"]);
 const SLACK_DEBOUNCE_MS = { view: 30 * 60 * 1000, fetch: 30 * 60 * 1000 };
 const SLACK_DEFAULT_DEBOUNCE_MS = 60 * 1000; // dedup rapid double-fires of one-off events
 const slackLastSent = new Map();
@@ -2095,6 +2095,7 @@ const SLACK_EVENT_META = {
   excel:   { emoji: "📊", verb: "exported to Excel" },
   print:   { emoji: "🖨️", verb: "printed" },
   view:    { emoji: "👀", verb: "viewed" },
+  insights: { emoji: "✨", verb: "generated AI insights for" },
 };
 function notifySlack(rec) {
   if (!SLACK_WEBHOOK_URL || !rec || !SLACK_NOTIFY.has(rec.event)) return;
@@ -3432,7 +3433,55 @@ Rules:
 - Focus on instructor workload balance, payout equity, class size efficiency, and cancellation impact.
 - Name specific instructors and sections.`;
 
-const SYS_PROMPTS = { programs: PROGRAMS_SYS_PROMPT, fasttrack: FASTTRACK_SYS_PROMPT, users: USERS_SYS_PROMPT, gl: GL_SYS_PROMPT, historic: HISTORIC_SYS_PROMPT, roster: ROSTER_SYS_PROMPT, products: PRODUCTS_SYS_PROMPT, memberships: MEMBERSHIPS_SYS_PROMPT, "instructor-payout": INSTRUCTOR_PAYOUT_SYS_PROMPT };
+const FACILITY_SYS_PROMPT = `You are a facilities analyst for US parks & recreation departments. You are given facility rental schedule data showing reservations by date, location, facility/desk, status, and revenue for a reporting period.
+
+Return EXACTLY 4 insights as a JSON array and nothing else — no prose, no preamble, no markdown code fences. Each element is an object with exactly these keys:
+{
+  "type": "opportunity" | "risk" | "signal",
+  "title": short label, 7 words or fewer,
+  "detail": one sentence, 22 words or fewer, citing specific numbers from the data,
+  "action": one concrete next step, 12 words or fewer
+}
+
+Rules:
+- Ground EVERY figure in the data provided. Never invent numbers.
+- Be terse. No filler. Vary the "type" across the four insights where the data supports it.
+- Focus on booking volume and revenue by location, peak vs idle days, cancellation/refund rates, and underused facilities.
+- Name specific locations, facilities, and dates.`;
+
+const QOQ_SYS_PROMPT = `You are a municipal finance analyst for US parks & recreation departments. You are given a quarter-over-quarter GL revenue comparison showing revenue and refund totals by GL code across two quarters, with deltas.
+
+Return EXACTLY 4 insights as a JSON array and nothing else — no prose, no preamble, no markdown code fences. Each element is an object with exactly these keys:
+{
+  "type": "opportunity" | "risk" | "signal",
+  "title": short label, 7 words or fewer,
+  "detail": one sentence, 22 words or fewer, citing specific numbers from the data,
+  "action": one concrete next step, 12 words or fewer
+}
+
+Rules:
+- Ground EVERY figure in the data provided. Never invent numbers.
+- Be terse. No filler. Vary the "type" across the four insights where the data supports it.
+- Focus on the largest quarter-over-quarter swings, GL codes driving growth or decline, and refund trend changes.
+- Name specific GL codes and the percent or dollar change.`;
+
+const ANNUAL_REPORT_SYS_PROMPT = `You are an executive analyst for US municipal parks & recreation departments. You are given an annual summary of operational metrics — revenue, enrollment, memberships, facility usage, and demographics aggregated across the year.
+
+Return EXACTLY 4 insights as a JSON array and nothing else — no prose, no preamble, no markdown code fences. Each element is an object with exactly these keys:
+{
+  "type": "opportunity" | "risk" | "signal",
+  "title": short label, 7 words or fewer,
+  "detail": one sentence, 22 words or fewer, citing specific numbers from the data,
+  "action": one concrete next step, 12 words or fewer
+}
+
+Rules:
+- Ground EVERY figure in the data provided. Never invent numbers.
+- Be terse. No filler. Vary the "type" across the four insights where the data supports it.
+- Focus on year-over-year trends, top revenue and enrollment drivers, and the biggest risk or opportunity for next year.
+- Name specific programs, categories, and figures.`;
+
+const SYS_PROMPTS = { programs: PROGRAMS_SYS_PROMPT, fasttrack: FASTTRACK_SYS_PROMPT, users: USERS_SYS_PROMPT, gl: GL_SYS_PROMPT, historic: HISTORIC_SYS_PROMPT, roster: ROSTER_SYS_PROMPT, products: PRODUCTS_SYS_PROMPT, memberships: MEMBERSHIPS_SYS_PROMPT, "instructor-payout": INSTRUCTOR_PAYOUT_SYS_PROMPT, facility: FACILITY_SYS_PROMPT, qoq: QOQ_SYS_PROMPT, "annual-report": ANNUAL_REPORT_SYS_PROMPT };
 
 // ── Program Finder AI ────────────────────────────────────────────────
 const RECOMMEND_SYS_PROMPT = `You are a friendly, helpful recreation program advisor for a municipal parks & recreation department. A resident has described what they're looking for, and you have the department's upcoming schedule of programs and activities.
@@ -3544,6 +3593,7 @@ app.post("/:org/:report/api/insights", resolveOrg, async (req, res) => {
 
   const hit = _insightsCache.get(key);
   if (hit && Date.now() - hit.ts < INSIGHTS_TTL_MS) {
+    logEvent(orgSlug, reportType, "insights", req, { cached: true }); // ping Slack on click even when served from cache
     return res.json({ ok: true, insights: hit.insights, cached: true, traceId: hit.traceId || null });
   }
 
@@ -10630,6 +10680,7 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  { date: '2026-07-29', text: 'Rec Insights: added the AI insights button to the Facility Schedule, Historic Buildings, Class Roster, QoQ Comparison, and Annual Report pages (with tailored prompts), and a Slack ping now fires whenever anyone generates insights on any report' },
   { date: '2026-07-29', text: 'Instructor Payout: simplified the pay slip check graphic to a generic check - removed the decorative routing and account numbers (MICR line) and the check number' },
   { date: '2026-07-28', title: 'Check-Ins: Top Members Leaderboard', items: [
     'Added Top Members section to the Check-Ins tab showing the 15 most active members ranked by visit count',

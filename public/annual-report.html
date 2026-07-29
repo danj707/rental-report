@@ -119,6 +119,67 @@
     .toc-item { display: flex; padding: 7px 0; border-bottom: 1px solid #f0f0ec; font-size: 14px; }
     .toc-num { width: 28px; color: #aaa; font-family: 'IBM Plex Mono', monospace; font-size: 12px; }
     .toc-label { flex: 1; }
+
+    /* ── AI Insights ── */
+    .insights-section { margin: 4px 0 18px; }
+    .insights-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+    .insights-btn {
+      display: inline-flex; align-items: center; gap: 6px;
+      background: linear-gradient(135deg, #6366f1, #8b5cf6); color: #fff;
+      border: none; border-radius: 6px;
+      padding: 8px 16px; font-size: 13px; font-weight: 600;
+      font-family: inherit; cursor: pointer;
+      transition: background .15s ease, opacity .15s ease;
+
+      position: relative; overflow: visible;
+      box-shadow: 0 2px 12px rgba(99,102,241,.3);
+    }
+    .insights-btn:hover:not(:disabled) { background: linear-gradient(135deg, #4f46e5, #7c3aed); transform: translateY(-1px); box-shadow: 0 4px 20px rgba(99,102,241,.4); }
+    .insights-btn:disabled { opacity: .6; cursor: default; }
+    .insights-btn .sparkle {
+      position: absolute; pointer-events: none;
+      font-size: 10px; opacity: 0;
+      animation: sparkle-float 2.5s ease-in-out infinite;
+    }
+    .insights-btn .sparkle:nth-child(1) { top: -8px; left: 8%; animation-delay: 0s; }
+    .insights-btn .sparkle:nth-child(2) { top: -6px; right: 12%; animation-delay: 0.7s; font-size: 8px; }
+    .insights-btn .sparkle:nth-child(3) { bottom: -7px; left: 25%; animation-delay: 1.4s; font-size: 7px; }
+    .insights-btn .sparkle:nth-child(4) { top: -5px; left: 50%; animation-delay: 0.3s; font-size: 6px; }
+    .insights-btn .sparkle:nth-child(5) { bottom: -6px; right: 20%; animation-delay: 1.1s; font-size: 9px; }
+    .insights-btn .sparkle:nth-child(6) { top: -9px; right: 3%; animation-delay: 1.9s; font-size: 7px; }
+    @keyframes sparkle-float {
+      0%, 100% { opacity: 0; transform: translateY(0) scale(0.5); }
+      15% { opacity: 1; transform: translateY(-3px) scale(1.1); }
+      30% { opacity: 0.7; transform: translateY(-7px) scale(0.9); }
+      50% { opacity: 0.3; transform: translateY(-11px) scale(0.6); }
+      70% { opacity: 0; transform: translateY(-15px) scale(0.3); }
+    }
+    .insights-sub { font-size: 11.5px; color: #9ca3af; }
+    .insights-section .loading-wrap { padding: 36px 16px; }
+    .insights-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; }
+    .insight-card { border: 1px solid #e5e7eb; border-left-width: 4px; border-radius: 8px; padding: 14px 16px; background: #fff; }
+    .insight-type { font-size: 10px; font-weight: 700; letter-spacing: .6px; text-transform: uppercase; margin-bottom: 6px; }
+    .insight-title { font-size: 14px; font-weight: 700; color: #111827; margin-bottom: 5px; line-height: 1.3; }
+    .insight-detail { font-size: 12.5px; color: #374151; line-height: 1.45; }
+    .insight-action { font-size: 12px; color: #6b7280; margin-top: 8px; font-weight: 500; }
+    .insights-feedback { display:flex; align-items:center; gap:8px; margin-top:12px; padding:8px 4px; font-size:13px; color:#666; }
+    .insights-feedback button { background:none; border:1px solid #e5e7eb; border-radius:6px; padding:4px 10px; cursor:pointer; font-size:13px; transition:all .15s; }
+    .insights-feedback button:hover { background:#f3f4f6; border-color:#d1d5db; }
+    .insights-feedback .fb-label { color:#888; font-size:12px; }
+    .insights-feedback .fb-thanks { color:#10b981; font-weight:600; font-size:13px; }
+    .insights-feedback .fb-down-form { display:flex; align-items:center; gap:6px; flex:1; }
+    .insights-feedback .fb-down-form input { flex:1; border:1px solid #d1d5db; border-radius:6px; padding:5px 10px; font-size:13px; font-family:inherit; outline:none; }
+    .insights-feedback .fb-down-form input:focus { border-color:#6366f1; box-shadow:0 0 0 2px rgba(99,102,241,.15); }
+    .insights-feedback .fb-send { background:#6366f1!important; color:#fff!important; border-color:#6366f1!important; font-weight:600; }
+    .insights-feedback .fb-send:hover { background:#4f46e5!important; }
+    .insight-opportunity { border-left-color: #10b981; }
+    .insight-opportunity .insight-type { color: #059669; }
+    .insight-risk { border-left-color: #f59e0b; }
+    .insight-risk .insight-type { color: #d97706; }
+    .insight-signal { border-left-color: #6366f1; }
+    .insight-signal .insight-type { color: #4f46e5; }
+    @media print { .no-print { display: none !important; } }
+    body.print-mode .no-print { display: none !important; }
   </style>
 
   <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
@@ -157,6 +218,7 @@ const REC_ICONS = {
 
 function App() {
   var orgSlug = useMemo(function() { return window.location.pathname.split('/').filter(Boolean)[0] || ''; }, []);
+  var basePath = '/' + orgSlug + '/annual-report';
 
   var today = new Date();
   // Default: current fiscal year (Jul-Jun) or last 12 months
@@ -169,6 +231,16 @@ function App() {
   var [error, setError] = useState(null);
   var [report, setReport] = useState(null); // { aggregates, narrative, org }
   var [loadPhase, setLoadPhase] = useState('');
+
+  // ── AI Insights state ──
+  var [insights,        setInsights]        = useState(null);
+  var [insightsMeta,    setInsightsMeta]    = useState(null); // { fingerprint, label }
+  var [insightsLoading, setInsightsLoading] = useState(false);
+  var [insightsError,   setInsightsError]   = useState(null);
+  var [insightsTraceId, setInsightsTraceId] = useState(null);
+  var [fbSent, setFbSent] = useState(false);
+  var [fbMode, setFbMode] = useState(null);
+  var [fbComment, setFbComment] = useState('');
 
   var periodLabel = useMemo(function() {
     if (!startDate || !endDate) return '';
@@ -249,6 +321,104 @@ function App() {
     if (!prog || !prog.topByEnrollment) return 1;
     return Math.max(...prog.topByEnrollment.map(function(p) { return p.enrollments; }), 1);
   }, [prog]);
+
+  // ── AI Insights (placed after computed values so useCallback deps are defined —
+  //    Babel compiles const→var, so referencing them earlier would see undefined) ──
+  var buildInsightsBlob = useCallback(function() {
+    if (!report || !agg) return {};
+    var r2 = function(n) { return (n == null || isNaN(n)) ? null : Math.round(n * 100) / 100; };
+    var summary = {};
+    if (sources.gl && gl) {
+      summary.totalRevenue = r2(gl.total);
+      summary.glCategoryCount = gl.topCategories ? gl.topCategories.length : 0;
+      summary.topRevenueCategories = (gl.topCategories || [])
+        .filter(function(c) { return c.amount > 0; })
+        .slice(0, 8)
+        .map(function(c) { return { name: c.name, amount: r2(c.amount) }; });
+    }
+    if (sources.programs && prog) {
+      summary.totalEnrollments = prog.totalEnrollments;
+      summary.programSections = prog.sections;
+      summary.programFillRatePct = prog.fillRate != null ? prog.fillRate : null;
+      summary.programRevenue = r2(prog.totalRevenue);
+      summary.topPrograms = (prog.topByEnrollment || [])
+        .slice(0, 8)
+        .map(function(p) { return { name: p.name, enrollments: p.enrollments, revenue: r2(p.revenue) }; });
+    }
+    if (sources.courtUtilization && court) {
+      summary.courtsActive = court.courtCount;
+      summary.courtBookings = court.totalBookings;
+      summary.courtHours = court.totalHours;
+      summary.courtLocations = court.locationCount;
+    }
+    if (sources.facility && fac) {
+      summary.facilityBookings = fac.totalBookings;
+      summary.facilityRevenue = r2(fac.totalRevenue);
+      summary.facilityLocations = fac.locationCount;
+    }
+    return {
+      reportType: 'annual-report',
+      org: orgInfo.displayName || orgSlug,
+      period: { start: startDate, end: endDate, label: periodLabel },
+      dataSources: sources,
+      summary: summary,
+    };
+  }, [report, agg, gl, prog, court, fac, sources, orgInfo, orgSlug, startDate, endDate, periodLabel]);
+
+  var sendInsightsFeedback = useCallback(function(score) {
+    if (!insightsTraceId) return;
+    fetch(withToken(basePath + '/api/insights/score'), {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ traceId: insightsTraceId, score: score, comment: score === 0 ? fbComment : '' }),
+    }).catch(function() {});
+    setFbSent(true); setFbMode(null);
+  }, [insightsTraceId, fbComment, basePath]);
+
+  // Stable fingerprint of the loaded annual report — drives insights invalidation.
+  var reportFingerprint = useMemo(function() {
+    if (!report || !agg) return '';
+    return [
+      gl ? gl.total : '', gl && gl.topCategories ? gl.topCategories.length : '',
+      prog ? prog.totalEnrollments : '', prog ? prog.totalRevenue : '',
+      court ? court.totalHours : '', court ? court.totalBookings : '',
+      fac ? fac.totalBookings : '', fac ? fac.totalRevenue : '',
+    ].join('|');
+  }, [report, agg, gl, prog, court, fac]);
+
+  var getInsights = useCallback(async function() {
+    setInsightsLoading(true);
+    setInsightsError(null);
+    setInsights(null);
+    setInsightsMeta(null);
+    try {
+      var blob = buildInsightsBlob();
+      var resp = await fetch(withToken(basePath + '/api/insights'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(blob),
+      });
+      var json = await resp.json().catch(function() { return {}; });
+      if (!resp.ok || !json.ok) throw new Error(json.error || ('Request failed (' + resp.status + ')'));
+      setInsights(json.insights || []);
+      setInsightsTraceId(json.traceId || null);
+      setFbSent(false); setFbMode(null); setFbComment('');
+      setInsightsMeta({ fingerprint: reportFingerprint, label: periodLabel });
+    } catch (err) {
+      setInsightsError(err.message || 'Could not generate insights');
+    } finally {
+      setInsightsLoading(false);
+    }
+  }, [buildInsightsBlob, basePath, reportFingerprint, periodLabel]);
+
+  // Invalidate insights whenever the loaded report changes (new generate / cleared).
+  useEffect(function() { setInsights(null); setInsightsMeta(null); setInsightsError(null); }, [reportFingerprint]);
+
+  // Belt-and-suspenders: never render insights that belong to a different report.
+  var activeInsights = useMemo(function() {
+    if (!insights || !insightsMeta) return insights;
+    if (insightsMeta.fingerprint !== reportFingerprint) return null;
+    return insights;
+  }, [insights, insightsMeta, reportFingerprint]);
 
   return (
     <div>
@@ -342,6 +512,70 @@ function App() {
               </div>
               <div className="page-footer"><span>{orgInfo.displayName || orgSlug}</span><span>Generated {runDate} by rec.us</span></div>
             </div>
+
+            {/* AI Insights */}
+            {agg && (
+              <div className="page no-print">
+                <div className="divider" />
+                <h1 className="section-title"><span className="icon">✨</span>Rec Insights</h1>
+                <div className="insights-section">
+                  <div className="insights-head">
+                    <button type="button" className="insights-btn" onClick={getInsights} disabled={insightsLoading}>
+                      <span className="sparkle">✦</span><span className="sparkle">✧</span><span className="sparkle">✦</span><span className="sparkle">✧</span><span className="sparkle">✦</span><span className="sparkle">✧</span>
+                      {insightsLoading ? 'Analyzing…' : (activeInsights ? '↻ Refresh insights' : '✨ Rec Insights')}
+                    </button>
+                    {activeInsights && !insightsLoading && (
+                      <span className="insights-sub">Generated from your annual report{insightsMeta && insightsMeta.label ? ' · ' + insightsMeta.label : ''}</span>
+                    )}
+                  </div>
+                  {insightsLoading && (
+                    <div className="loading-wrap"><div className="spinner" /><div className="loading-msg">Analyzing your annual data…</div></div>
+                  )}
+                  {insightsError && !insightsLoading && (
+                    <div style={{color: '#dc2626', padding: '16px 4px'}}><strong>Insights unavailable:</strong> {insightsError}</div>
+                  )}
+                  {activeInsights && !insightsLoading && (
+                    <div className="insights-grid">
+                      {activeInsights.map(function(ins, i) {
+                        return (
+                          <div key={i} className={'insight-card insight-' + (ins.type || 'signal')}>
+                            <div className="insight-type">{ins.type || 'signal'}</div>
+                            <div className="insight-title">{ins.title}</div>
+                            <div className="insight-detail">{ins.detail}</div>
+                            {ins.action && <div className="insight-action">→ {ins.action}</div>}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                  {activeInsights && !insightsLoading && (
+                    <div className="insights-feedback">
+                      {fbSent ? (
+                        <span className="fb-thanks">✅ Thanks for the feedback!</span>
+                      ) : fbMode === 'down' ? (
+                        <div className="fb-down-form">
+                          <input
+                            placeholder="What could be better?"
+                            value={fbComment}
+                            onChange={function(e) { setFbComment(e.target.value); }}
+                            onKeyDown={function(e) { if (e.key === 'Enter') sendInsightsFeedback(0); }}
+                            autoFocus maxLength={500}
+                          />
+                          <button className="fb-send" onClick={function() { sendInsightsFeedback(0); }}>Send</button>
+                          <button onClick={function() { setFbMode(null); }}>Cancel</button>
+                        </div>
+                      ) : (
+                        <React.Fragment>
+                          <span className="fb-label">Were these insights helpful?</span>
+                          <button onClick={function() { sendInsightsFeedback(1); }} title="Yes, helpful">👍</button>
+                          <button onClick={function() { setFbMode('down'); }} title="Not helpful">👎</button>
+                        </React.Fragment>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* Revenue */}
             {sources.gl && gl.topCategories && gl.topCategories.length > 0 && (

@@ -288,8 +288,10 @@
       .toolbar { display: none !important; }
       .page { box-shadow: none; margin: 0; padding: 12px 16px; max-width: 100%; }
       .date-group { page-break-inside: avoid; }
+      .no-print { display: none !important; }
     }
     body.print-mode .toolbar { display: none !important; }
+    body.print-mode .no-print { display: none !important; }
     body.print-mode { background: #fff; }
     body.print-mode .page { box-shadow: none; margin: 0; padding: 12px 16px; max-width: 100%; }
 
@@ -314,6 +316,64 @@
     .ai-loading { padding: 24px 16px; text-align: center; }
     .ai-spinner { border:3px solid #e5e7eb; border-top:3px solid #6366f1; border-radius:50%; width:24px; height:24px; margin:0 auto; animation:ai-spin 1s linear infinite; }
     @keyframes ai-spin { to { transform:rotate(360deg); } }
+
+    /* ── AI Insights ── */
+    .insights-section { margin: 4px 0 18px; }
+    .insights-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+    .insights-btn {
+      display: inline-flex; align-items: center; gap: 6px;
+      background: linear-gradient(135deg, #6366f1, #8b5cf6); color: #fff;
+      border: none; border-radius: 6px;
+      padding: 8px 16px; font-size: 13px; font-weight: 600;
+      font-family: inherit; cursor: pointer;
+      transition: background .15s ease, opacity .15s ease;
+      position: relative; overflow: visible;
+      box-shadow: 0 2px 12px rgba(99,102,241,.3);
+    }
+    .insights-btn:hover:not(:disabled) { background: linear-gradient(135deg, #4f46e5, #7c3aed); transform: translateY(-1px); box-shadow: 0 4px 20px rgba(99,102,241,.4); }
+    .insights-btn:disabled { opacity: .6; cursor: default; }
+    .insights-btn .sparkle {
+      position: absolute; pointer-events: none;
+      font-size: 10px; opacity: 0;
+      animation: sparkle-float 2.5s ease-in-out infinite;
+    }
+    .insights-btn .sparkle:nth-child(1) { top: -8px; left: 8%; animation-delay: 0s; }
+    .insights-btn .sparkle:nth-child(2) { top: -6px; right: 12%; animation-delay: 0.7s; font-size: 8px; }
+    .insights-btn .sparkle:nth-child(3) { bottom: -7px; left: 25%; animation-delay: 1.4s; font-size: 7px; }
+    .insights-btn .sparkle:nth-child(4) { top: -5px; left: 50%; animation-delay: 0.3s; font-size: 6px; }
+    .insights-btn .sparkle:nth-child(5) { bottom: -6px; right: 20%; animation-delay: 1.1s; font-size: 9px; }
+    .insights-btn .sparkle:nth-child(6) { top: -9px; right: 3%; animation-delay: 1.9s; font-size: 7px; }
+    @keyframes sparkle-float {
+      0%, 100% { opacity: 0; transform: translateY(0) scale(0.5); }
+      15% { opacity: 1; transform: translateY(-3px) scale(1.1); }
+      30% { opacity: 0.7; transform: translateY(-7px) scale(0.9); }
+      50% { opacity: 0.3; transform: translateY(-11px) scale(0.6); }
+      70% { opacity: 0; transform: translateY(-15px) scale(0.3); }
+    }
+    .insights-sub { font-size: 11.5px; color: #9ca3af; }
+    .insights-section .loading { padding: 36px 16px; }
+    .insights-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; }
+    .insight-card { border: 1px solid #e5e7eb; border-left-width: 4px; border-radius: 8px; padding: 14px 16px; background: #fff; }
+    .insight-type { font-size: 10px; font-weight: 700; letter-spacing: .6px; text-transform: uppercase; margin-bottom: 6px; }
+    .insight-title { font-size: 14px; font-weight: 700; color: #111827; margin-bottom: 5px; line-height: 1.3; }
+    .insight-detail { font-size: 12.5px; color: #374151; line-height: 1.45; }
+    .insight-action { font-size: 12px; color: #6b7280; margin-top: 8px; font-weight: 500; }
+    .insights-feedback { display:flex; align-items:center; gap:8px; margin-top:12px; padding:8px 4px; font-size:13px; color:#666; }
+    .insights-feedback button { background:none; border:1px solid #e5e7eb; border-radius:6px; padding:4px 10px; cursor:pointer; font-size:13px; transition:all .15s; }
+    .insights-feedback button:hover { background:#f3f4f6; border-color:#d1d5db; }
+    .insights-feedback .fb-label { color:#888; font-size:12px; }
+    .insights-feedback .fb-thanks { color:#10b981; font-weight:600; font-size:13px; }
+    .insights-feedback .fb-down-form { display:flex; align-items:center; gap:6px; flex:1; }
+    .insights-feedback .fb-down-form input { flex:1; border:1px solid #d1d5db; border-radius:6px; padding:5px 10px; font-size:13px; font-family:inherit; outline:none; }
+    .insights-feedback .fb-down-form input:focus { border-color:#6366f1; box-shadow:0 0 0 2px rgba(99,102,241,.15); }
+    .insights-feedback .fb-send { background:#6366f1!important; color:#fff!important; border-color:#6366f1!important; font-weight:600; }
+    .insights-feedback .fb-send:hover { background:#4f46e5!important; }
+    .insight-opportunity { border-left-color: #10b981; }
+    .insight-opportunity .insight-type { color: #059669; }
+    .insight-risk { border-left-color: #f59e0b; }
+    .insight-risk .insight-type { color: #d97706; }
+    .insight-signal { border-left-color: #6366f1; }
+    .insight-signal .insight-type { color: #4f46e5; }
   </style>
   <script>
     // ── Token auth (injected) ────────────────────────────────────────
@@ -575,6 +635,16 @@ function App() {
   const [selectedLocations, setSelectedLocations] = useState(new Set(['Brawner Hall', 'Reed House', 'Taylor-Brawner House']));
   const [selectedSites,     setSelectedSites]     = useState(null);
 
+  // ── AI Insights state ──────────────────────────────────────────────
+  const [insights,        setInsights]        = useState(null);
+  const [insightsMeta,    setInsightsMeta]    = useState(null); // { bookingCount, fingerprint }
+  const [insightsLoading, setInsightsLoading] = useState(false);
+  const [insightsError,   setInsightsError]   = useState(null);
+  const [insightsTraceId, setInsightsTraceId] = useState(null);
+  const [fbSent, setFbSent] = useState(false);
+  const [fbMode, setFbMode] = useState(null);
+  const [fbComment, setFbComment] = useState('');
+
   // Share Link: expose the live applied filter state so the floating Share
   // widget copies a URL that reproduces the on-screen view (mirrors the PDF).
   useEffect(() => {
@@ -691,8 +761,127 @@ function App() {
 
   const sortedDates = grouped ? Object.keys(grouped).sort() : [];
 
+  // ── AI Insights (declared after filteredRows/grouped so Babel's const→var
+  //    hoisting doesn't leave the useCallback deps undefined) ─────────────
+  const buildInsightsBlob = useCallback(() => {
+    if (!filteredRows || filteredRows.length === 0) return {};
+    const r2   = n => Math.round(n * 100) / 100;
+    const money = v => { const n = parseFloat(v); return isNaN(n) ? 0 : n; };
+    const num   = v => { const n = parseInt(v, 10); return isNaN(n) ? 0 : n; };
 
+    let totalRevenue = 0, totalHeadCount = 0, alcoholBookings = 0, residentBookings = 0;
+    const byLocation = {}, bySite = {}, byPurpose = {};
+    const bump = (obj, key, rev) => {
+      const k = key || 'Unspecified';
+      if (!obj[k]) obj[k] = { bookings: 0, revenue: 0 };
+      obj[k].bookings++; obj[k].revenue += rev;
+    };
+    filteredRows.forEach(r => {
+      const rev = money(r.total);
+      totalRevenue   += rev;
+      totalHeadCount += num(r.headCnt);
+      if (String(r.alcohol).toLowerCase() === 'yes') alcoholBookings++;
+      if (String(r.resident).toLowerCase().startsWith('y')) residentBookings++;
+      bump(byLocation, r.location || r.locationFacility, rev);
+      bump(bySite,     r.site, rev);
+      bump(byPurpose,  r.bookingType, rev);
+    });
 
+    const rollup = (obj, limit) => Object.keys(obj)
+      .map(k => ({ name: k, bookings: obj[k].bookings, revenue: r2(obj[k].revenue) }))
+      .sort((a, b) => b.revenue - a.revenue)
+      .slice(0, limit || 1000);
+
+    const topRows = filteredRows
+      .slice()
+      .sort((a, b) => money(b.total) - money(a.total))
+      .slice(0, 30)
+      .map(r => ({
+        date:      (r.date || '').split('T')[0],
+        location:  r.location || r.locationFacility || '',
+        site:      r.site || '',
+        event:     r.eventTitle || '',
+        purpose:   r.bookingType || '',
+        renter:    r.renter || '',
+        resident:  r.resident || '',
+        headCount: num(r.headCnt) || null,
+        alcohol:   String(r.alcohol).toLowerCase() === 'yes',
+        total:     r2(money(r.total)),
+      }));
+
+    return {
+      period: { start: loadedStart, end: loadedEnd },
+      summary: {
+        totalBookings:    filteredRows.length,
+        totalRevenue:     r2(totalRevenue),
+        avgRevenuePerBooking: filteredRows.length ? r2(totalRevenue / filteredRows.length) : 0,
+        totalHeadCount,
+        alcoholBookings,
+        residentBookings,
+        locationCount: Object.keys(byLocation).length,
+        siteCount:     Object.keys(bySite).length,
+        byLocation: rollup(byLocation),
+        byPurpose:  rollup(byPurpose),
+        bySite:     rollup(bySite, 20),
+      },
+      topRows,
+    };
+  }, [filteredRows, loadedStart, loadedEnd]);
+
+  const sendInsightsFeedback = useCallback((score) => {
+    if (!insightsTraceId) return;
+    fetch(withToken(basePath + '/api/insights/score'), {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ traceId: insightsTraceId, score, comment: score === 0 ? fbComment : '' }),
+    }).catch(() => {});
+    setFbSent(true); setFbMode(null);
+  }, [insightsTraceId, fbComment, basePath]);
+
+  // Stable fingerprint of the visible reservation set — drives insights invalidation.
+  const insightsFingerprint = useMemo(() => {
+    if (!filteredRows) return '';
+    return [
+      loadedStart, loadedEnd, filteredRows.length,
+      filteredRows.map(r => (r.invoiceNum || '') + ':' + (r.date || '') + ':' + (r.site || '') + ':' + (r.total || '')).join('|'),
+    ].join('~');
+  }, [filteredRows, loadedStart, loadedEnd]);
+
+  const getInsights = useCallback(async () => {
+    setInsightsLoading(true);
+    setInsightsError(null);
+    setInsights(null);
+    setInsightsMeta(null);
+    try {
+      const blob = buildInsightsBlob();
+      const resp = await fetch(withToken(`${basePath}/api/insights`), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(blob),
+      });
+      const json = await resp.json().catch(() => ({}));
+      if (!resp.ok || !json.ok) throw new Error(json.error || `Request failed (${resp.status})`);
+      setInsights(json.insights || []);
+      setInsightsTraceId(json.traceId || null);
+      setFbSent(false); setFbMode(null); setFbComment('');
+      setInsightsMeta({ bookingCount: filteredRows ? filteredRows.length : 0, fingerprint: insightsFingerprint });
+    } catch (err) {
+      setInsightsError(err.message || 'Could not generate insights');
+    } finally {
+      setInsightsLoading(false);
+    }
+  }, [buildInsightsBlob, basePath, filteredRows, insightsFingerprint]);
+
+  // Invalidate insights whenever the visible reservation set changes
+  // (date-range reload, location/site filters, etc.).
+  useEffect(() => { setInsights(null); setInsightsMeta(null); setInsightsError(null); }, [insightsFingerprint]);
+
+  // Belt-and-suspenders: never render insights that were generated for a
+  // different filtered view than the one currently on screen.
+  const activeInsights = useMemo(() => {
+    if (!insights || !insightsMeta) return insights;
+    if (insightsMeta.fingerprint !== insightsFingerprint) return null;
+    return insights;
+  }, [insights, insightsMeta, insightsFingerprint]);
 
   function downloadExcel() {
     if (!filteredRows || filteredRows.length === 0) return;
@@ -800,6 +989,64 @@ function App() {
             <div className="date-range">{dateRangeLabel}</div>
           </div>
         </div>
+
+        {/* AI Insights */}
+        {!loading && filteredRows && filteredRows.length > 0 && (
+          <div className="insights-section no-print">
+            <div className="insights-head">
+              <button type="button" className="insights-btn" onClick={getInsights} disabled={insightsLoading}>
+                <span className="sparkle">✦</span><span className="sparkle">✧</span><span className="sparkle">✦</span><span className="sparkle">✧</span><span className="sparkle">✦</span><span className="sparkle">✧</span>
+                {insightsLoading ? 'Analyzing…' : (activeInsights ? '↻ Refresh insights' : '✨ Rec Insights')}
+              </button>
+              {activeInsights && !insightsLoading && (
+                <span className="insights-sub">Generated from {insightsMeta ? insightsMeta.bookingCount : filteredRows.length} booking{(insightsMeta ? insightsMeta.bookingCount : filteredRows.length) !== 1 ? 's' : ''}</span>
+              )}
+            </div>
+            {insightsLoading && (
+              <div className="loading"><div className="spinner" /><div className="juice-msg"><span>Squeezing the oranges…</span><span>Juicing!</span><span>Adding the pulp…</span><span>Chilling the glass…</span><span>Pouring it out…</span></div></div>
+            )}
+            {insightsError && !insightsLoading && (
+              <div className="error"><strong>Insights unavailable:</strong> {insightsError}</div>
+            )}
+            {activeInsights && !insightsLoading && (
+              <div className="insights-grid">
+                {activeInsights.map((ins, i) => (
+                  <div key={i} className={`insight-card insight-${ins.type || 'signal'}`}>
+                    <div className="insight-type">{ins.type || 'signal'}</div>
+                    <div className="insight-title">{ins.title}</div>
+                    <div className="insight-detail">{ins.detail}</div>
+                    {ins.action && <div className="insight-action">→ {ins.action}</div>}
+                  </div>
+                ))}
+              </div>
+            )}
+            {activeInsights && !insightsLoading && (
+              <div className="insights-feedback">
+                {fbSent ? (
+                  <span className="fb-thanks">✅ Thanks for the feedback!</span>
+                ) : fbMode === 'down' ? (
+                  <div className="fb-down-form">
+                    <input
+                      placeholder="What could be better?"
+                      value={fbComment}
+                      onChange={e => setFbComment(e.target.value)}
+                      onKeyDown={e => e.key === 'Enter' && sendInsightsFeedback(0)}
+                      autoFocus maxLength={500}
+                    />
+                    <button className="fb-send" onClick={() => sendInsightsFeedback(0)}>Send</button>
+                    <button onClick={() => setFbMode(null)}>Cancel</button>
+                  </div>
+                ) : (
+                  <React.Fragment>
+                    <span className="fb-label">Were these insights helpful?</span>
+                    <button onClick={() => sendInsightsFeedback(1)} title="Yes, helpful">👍</button>
+                    <button onClick={() => setFbMode('down')} title="Not helpful">👎</button>
+                  </React.Fragment>
+                )}
+              </div>
+            )}
+          </div>
+        )}
 
         {sortedDates.map(dateKey => (
           <div key={dateKey} className="date-group">
