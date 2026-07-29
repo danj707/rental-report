@@ -244,12 +244,6 @@ function amountToWords(n) {
   return words + ' and ' + centsStr + '/100';
 }
 
-function checkNoFrom(str) {
-  var h = 0; str = String(str || '');
-  for (var i = 0; i < str.length; i++) { h = (h * 31 + str.charCodeAt(i)) >>> 0; }
-  return String(1000 + (h % 9000));
-}
-
 function openPaySlip(opts) {
   var w = window.open('', '_blank');
   if (!w) return;
@@ -268,9 +262,6 @@ function openPaySlip(opts) {
   var amtVal = Number(opts.amount) || 0;
   var amtNumeric = amtVal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   var amtWords = amountToWords(amtVal);
-  var checkNo = checkNoFrom(opts.instructor + '|' + opts.section + '|' + opts.program);
-  var routingNo = '021000021';
-  var acctNo = String(4000000000 + (parseInt(checkNo, 10) * 104729) % 900000000);
   var html = '<!DOCTYPE html><html><head><title>Pay Slip - ' + opts.instructor + '</title>'
     + '<style>'
     + 'body { font-family: Georgia, "Times New Roman", serif; margin: 0; padding: 40px; background: #f5f4f1; color: #1a1a1a; }'
@@ -304,8 +295,7 @@ function openPaySlip(opts) {
     + '.check .drawer-name { font-size: 15px; font-weight: 700; letter-spacing: 0.3px; }'
     + '.check .drawer-sub { font-size: 9px; color: #5a6b57; text-transform: uppercase; letter-spacing: 1px; margin-top: 2px; font-family: Inter, system-ui, sans-serif; }'
     + '.check-meta { text-align: right; }'
-    + '.check-no { font-size: 15px; font-weight: 700; color: #7a2b2b; letter-spacing: 0.5px; }'
-    + '.check-date { margin-top: 12px; font-size: 12px; white-space: nowrap; }'
+    + '.check-date { margin-top: 0; font-size: 12px; white-space: nowrap; }'
     + '.check-date .k { font-size: 8px; color: #5a6b57; letter-spacing: 1px; font-family: Inter, system-ui, sans-serif; }'
     + '.check-date .v { border-bottom: 1px solid #7a8a77; padding: 0 10px 1px; margin-left: 6px; font-weight: 600; }'
     + '.pay-line { display: flex; align-items: flex-end; gap: 16px; margin-top: 22px; position: relative; }'
@@ -324,7 +314,6 @@ function openPaySlip(opts) {
     + '.check-bottom .sig { width: 240px; text-align: center; }'
     + '.check-bottom .sig .sig-line-c { border-bottom: 1.5px solid #3a4a37; height: 22px; }'
     + '.check-bottom .sig .sig-label { font-size: 8px; color: #5a6b57; letter-spacing: 1px; font-family: Inter, system-ui, sans-serif; font-weight: 600; margin-top: 4px; }'
-    + '.micr { margin-top: 20px; font-family: "Courier New", monospace; font-size: 16px; letter-spacing: 3px; color: #2a2a2a; text-align: center; position: relative; }'
     + '.actionbar { max-width: 720px; margin: 0 auto 18px; display: flex; align-items: center; justify-content: flex-end; gap: 14px; font-family: Inter, system-ui, sans-serif; }'
     + '.actionbar .hint { font-size: 11px; color: #999; }'
     + '.pdf-btn { display: inline-flex; align-items: center; gap: 8px; background: #1a1a1a; color: #fff; border: none; border-radius: 6px; padding: 10px 18px; font-size: 13px; font-weight: 600; letter-spacing: 0.3px; cursor: pointer; font-family: Inter, system-ui, sans-serif; }'
@@ -338,7 +327,7 @@ function openPaySlip(opts) {
     + '<div class="check">'
     + '<div class="check-top">'
     + '<div class="drawer"><div class="drawer-name">' + opts.orgName + '</div><div class="drawer-sub">Instructor Compensation</div><div class="drawer-sub">Payroll Account</div></div>'
-    + '<div class="check-meta"><div class="check-no">No. ' + checkNo + '</div><div class="check-date"><span class="k">DATE</span><span class="v">' + today + '</span></div></div>'
+    + '<div class="check-meta"><div class="check-date"><span class="k">DATE</span><span class="v">' + today + '</span></div></div>'
     + '</div>'
     + '<div class="pay-line">'
     + '<div class="pay-order"><span class="ptoo">PAY TO THE<br>ORDER OF</span><span class="payee">' + opts.instructor + '</span></div>'
@@ -349,7 +338,6 @@ function openPaySlip(opts) {
     + '<div class="memo"><span class="k">MEMO</span><span class="memo-val">' + opts.program + ' &mdash; ' + opts.section + ' &middot; ' + opts.splitPct + '% split</span></div>'
     + '<div class="sig"><div class="sig-line-c"></div><div class="sig-label">Authorized Signature</div></div>'
     + '</div>'
-    + '<div class="micr">&#x2446; ' + routingNo + ' &#x2446; ' + acctNo + ' &#x2448; ' + checkNo + '</div>'
     + '</div>'
     + '<div class="slip">'
     + '<div class="slip-header">'
