@@ -325,6 +325,10 @@ function adminProgramUrl(orgId, programId) {
   if (!orgId || !programId) return null;
   return 'https://www.rec.us/admin/o/' + orgId + '/programming/programs/' + programId;
 }
+function adminUserUrl(orgId, userId) {
+  if (!orgId || !userId) return null;
+  return 'https://www.rec.us/admin/o/' + orgId + '/users/' + userId;
+}
 
 
 /* Roll up sections into program-level aggregates */
@@ -1100,11 +1104,13 @@ function App() {
   var [seasonFilter, setSeasonFilter] = useState(SP.get('season') || '');
   var [searchTerm, setSearchTerm]     = useState(SP.get('search') || '');
   var [open, setOpen]                 = useState(function() { return new Set(); });
+  var [openSecs, setOpenSecs]         = useState(function() { return new Set(); });
   var [pdfLoading, setPdfLoading]     = useState(false);
   var [showExplainer, setShowExplainer] = useState(false);
   var [activeTab, setActiveTab] = useState('overview');
   var [tabLoading, setTabLoading] = useState(false);
   var [ftUserRows, setFtUserRows] = useState([]);
+  var [ftBookingRows, setFtBookingRows] = useState([]);
   var [pipelineRows, setPipelineRows] = useState([]);
   var [dailyRows, setDailyRows] = useState([]);
   var [ciData, setCiData]   = useState(null);
@@ -1132,6 +1138,7 @@ function App() {
         var raw = Array.isArray(json) ? json : (json.rows || []);
         var userR = raw.filter(function(r){ return r['Row Type'] === 'user'; });
         setFtUserRows(userR);
+        setFtBookingRows(raw.filter(function(r){ return r['Row Type'] === 'ft_booking'; }));
         var pipeR = raw.filter(function(r){ return r['Row Type'] === 'pipeline'; }).map(normalizeRow);
         setPipelineRows(pipeR);
         var dailyR = raw.filter(function(r){ return r['Row Type'] === 'ft_daily'; }).map(function(r){
@@ -1345,10 +1352,36 @@ function App() {
   var ftROI = costSavings + (ftAnalytics ? Math.round(ftAnalytics.demo.ftRevTotal) : 0);
 
 
+  /* FT users grouped by section (from per-booking 'ft_booking' rows) */
+  var ftUsersBySection = useMemo(function() {
+    var map = {};
+    (ftBookingRows || []).forEach(function(r) {
+      var sid = r['Section ID'] || '';
+      if (!sid) return;
+      (map[sid] = map[sid] || []).push({
+        userId:      r['User ID'] || '',
+        name:        r['User Name'] || r['User Email'] || 'Unknown user',
+        email:       r['User Email'] || '',
+        participant: r['Participant Name'] || '',
+        status:      r['FT Status'] || '',
+        signup:      r['Signup Date'] || '',
+        orgId:       r['Org ID'] || ''
+      });
+    });
+    Object.keys(map).forEach(function(sid) {
+      map[sid].sort(function(a, b) {
+        if (a.status !== b.status) return a.status === 'Converted' ? -1 : 1;
+        return (a.name || '').localeCompare(b.name || '');
+      });
+    });
+    return map;
+  }, [ftBookingRows]);
+
   /* Expand / collapse */
   var allOpen = programs.length > 0 && programs.every(function(p) { return open.has(p.program); });
   function toggle(name) { setOpen(function(prev) { var n = new Set(prev); n.has(name) ? n.delete(name) : n.add(name); return n; }); }
   function toggleAll() { setOpen(allOpen ? new Set() : new Set(programs.map(function(p) { return p.program; }))); }
+  function toggleSec(id) { setOpenSecs(function(prev) { var n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; }); }
 
   /* Share link */
   useEffect(function() {
@@ -1691,18 +1724,54 @@ function App() {
                         if (s.sectionDay) timeLabel += s.sectionDay;
                         if (s.sectionTime) timeLabel += (timeLabel ? ' ' : '') + s.sectionTime;
                         var schedLabel = [dateLabel, timeLabel].filter(Boolean).join(' · ');
-                        return React.createElement('tr', { key: p.program + '|' + i, className: 'sec-row' },
-                          React.createElement('td', { className: 'left' },
-                            React.createElement('div', null, s.section,
-                              React.createElement('span', { style: { color: '#bbb', marginLeft: 6, fontSize: 10 } }, s.regMode === 'per-session' ? 'per-session' : 'section')
+                        var ftUsers = ftUsersBySection[s.sectionId] || [];
+                        var hasUsers = !isPrint && ftUsers.length > 0;
+                        var secIsOpen = hasUsers && openSecs.has(s.sectionId);
+                        return React.createElement(React.Fragment, { key: p.program + '|' + i },
+                          React.createElement('tr', {
+                            className: 'sec-row',
+                            style: hasUsers ? { cursor: 'pointer' } : null,
+                            onClick: hasUsers ? function() { toggleSec(s.sectionId); } : null,
+                            title: hasUsers ? 'Show the individual customers who fast-tracked this section' : null
+                          },
+                            React.createElement('td', { className: 'left' },
+                              React.createElement('div', null,
+                                hasUsers && React.createElement('span', { style: { display: 'inline-block', width: 12, color: '#6366f1', fontSize: 10 } }, secIsOpen ? '▾' : '▸'),
+                                s.section,
+                                React.createElement('span', { style: { color: '#bbb', marginLeft: 6, fontSize: 10 } }, s.regMode === 'per-session' ? 'per-session' : 'section'),
+                                hasUsers && React.createElement('span', { style: { color: '#6366f1', background: '#6366f114', borderRadius: 10, padding: '1px 7px', marginLeft: 8, fontSize: 10, fontWeight: 600 } }, ftUsers.length, ftUsers.length === 1 ? ' person' : ' people')
+                              ),
+                              schedLabel && React.createElement('div', { style: { fontSize: 10, color: '#999', marginTop: 1, marginLeft: hasUsers ? 12 : 0 } }, schedLabel)
                             ),
-                            schedLabel && React.createElement('div', { style: { fontSize: 10, color: '#999', marginTop: 1 } }, schedLabel)
+                            React.createElement('td', null, fmtInt(s.ftSignups)),
+                            React.createElement('td', { style: { color: '#16a34a' } }, fmtInt(s.ftConverted)),
+                            React.createElement('td', { style: { color: '#d97706' } }, fmtInt(s.ftPending)),
+                            React.createElement('td', null, fmtPct(s.convPct)),
+                            React.createElement('td', null, fmtPct(s.demandPct))
                           ),
-                          React.createElement('td', null, fmtInt(s.ftSignups)),
-                          React.createElement('td', { style: { color: '#16a34a' } }, fmtInt(s.ftConverted)),
-                          React.createElement('td', { style: { color: '#d97706' } }, fmtInt(s.ftPending)),
-                          React.createElement('td', null, fmtPct(s.convPct)),
-                          React.createElement('td', null, fmtPct(s.demandPct))
+                          secIsOpen && React.createElement('tr', { className: 'sec-users-row', key: p.program + '|' + i + '|users' },
+                            React.createElement('td', { colSpan: 6, style: { background: '#faf9f7', padding: '4px 10px 10px 34px' } },
+                              ftUsers.map(function(u, ui) {
+                                var url = adminUserUrl(u.orgId, u.userId);
+                                var isConv = u.status === 'Converted';
+                                var showParticipant = u.participant && u.participant !== u.name;
+                                return React.createElement('div', {
+                                  key: ui,
+                                  style: { display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', borderBottom: ui < ftUsers.length - 1 ? '1px solid #ece9e4' : 'none', fontSize: 12 }
+                                },
+                                  React.createElement('span', {
+                                    style: { flex: '0 0 auto', fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 10, color: isConv ? '#065f46' : '#92400e', background: isConv ? '#d1fae5' : '#fef3c7' }
+                                  }, u.status || '—'),
+                                  url
+                                    ? React.createElement('a', { href: url, target: '_blank', rel: 'noopener noreferrer', style: { color: '#3b82f6', fontWeight: 600, textDecoration: 'none' }, title: 'Open this customer’s profile in your Rec admin console' }, u.name, ' ↗')
+                                    : React.createElement('span', { style: { fontWeight: 600, color: '#111' } }, u.name),
+                                  u.email && React.createElement('span', { style: { color: '#999' } }, '· ', u.email),
+                                  showParticipant && React.createElement('span', { style: { color: '#6b7280', fontStyle: 'italic' } }, '· for ', u.participant),
+                                  u.signup && React.createElement('span', { style: { marginLeft: 'auto', color: '#bbb', fontSize: 11 } }, u.signup)
+                                );
+                              })
+                            )
+                          )
                         );
                       })
                     );
