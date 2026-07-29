@@ -10680,6 +10680,7 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  { date: '2026-07-29', text: 'Rec Insights: added the AI insights button to the Facility Schedule, Historic Buildings, Class Roster, QoQ Comparison, and Annual Report pages (with tailored prompts), and a Slack ping now fires whenever anyone generates insights on any report' },
   { date: '2026-07-29', text: 'Instructor Payout: simplified the pay slip check graphic to a generic check - removed the decorative routing and account numbers (MICR line) and the check number' },
   { date: '2026-07-28', title: 'Check-Ins: Top Members Leaderboard', items: [
     'Added Top Members section to the Check-Ins tab showing the 15 most active members ranked by visit count',
