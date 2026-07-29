@@ -1352,29 +1352,42 @@ function App() {
   var ftROI = costSavings + (ftAnalytics ? Math.round(ftAnalytics.demo.ftRevTotal) : 0);
 
 
-  /* FT users grouped by section (from per-booking 'ft_booking' rows) */
+  /* FT customers grouped by section, de-duped per person.
+     The feed carries one 'ft_booking' row per FT booking, so a customer
+     who fast-tracks several sessions of a per-session section shows up
+     multiple times — we collapse those into one person with an ×N count. */
   var ftUsersBySection = useMemo(function() {
-    var map = {};
+    var bySec = {};
     (ftBookingRows || []).forEach(function(r) {
       var sid = r['Section ID'] || '';
       if (!sid) return;
-      (map[sid] = map[sid] || []).push({
-        userId:      r['User ID'] || '',
-        name:        r['User Name'] || r['User Email'] || 'Unknown user',
-        email:       r['User Email'] || '',
-        participant: r['Participant Name'] || '',
-        status:      r['FT Status'] || '',
-        signup:      r['Signup Date'] || '',
-        orgId:       r['Org ID'] || ''
-      });
+      var name = r['User Name'] || r['User Email'] || 'Unknown user';
+      var key = r['User ID'] || ('email:' + (r['User Email'] || name));
+      var g = (bySec[sid] = bySec[sid] || {});
+      var p = g[key];
+      if (!p) {
+        p = g[key] = {
+          userId: r['User ID'] || '', name: name, email: r['User Email'] || '',
+          orgId: r['Org ID'] || '', count: 0, converted: 0, pending: 0,
+          participants: [], _seen: {}, signup: r['Signup Date'] || ''
+        };
+      }
+      p.count += 1;
+      if (r['FT Status'] === 'Converted') p.converted += 1; else p.pending += 1;
+      var part = (r['Participant Name'] || '').trim();
+      if (part && part !== p.name && !p._seen[part]) { p._seen[part] = 1; p.participants.push(part); }
     });
-    Object.keys(map).forEach(function(sid) {
-      map[sid].sort(function(a, b) {
-        if (a.status !== b.status) return a.status === 'Converted' ? -1 : 1;
+    var out = {};
+    Object.keys(bySec).forEach(function(sid) {
+      var arr = Object.keys(bySec[sid]).map(function(k) { return bySec[sid][k]; });
+      arr.sort(function(a, b) {
+        var ac = a.converted > 0 ? 0 : 1, bc = b.converted > 0 ? 0 : 1;
+        if (ac !== bc) return ac - bc;
         return (a.name || '').localeCompare(b.name || '');
       });
+      out[sid] = arr;
     });
-    return map;
+    return out;
   }, [ftBookingRows]);
 
   /* Expand / collapse */
@@ -1753,21 +1766,26 @@ function App() {
                             React.createElement('td', { colSpan: 6, style: { background: '#faf9f7', padding: '4px 10px 10px 34px' } },
                               ftUsers.map(function(u, ui) {
                                 var url = adminUserUrl(u.orgId, u.userId);
-                                var isConv = u.status === 'Converted';
-                                var showParticipant = u.participant && u.participant !== u.name;
+                                var mixed = u.converted > 0 && u.pending > 0;
+                                var isConv = !mixed && u.converted > 0;
+                                var statusLabel = mixed
+                                  ? (u.converted + ' conv · ' + u.pending + ' pend')
+                                  : ((isConv ? 'Converted' : 'Pending') + (u.count > 1 ? ' ×' + u.count : ''));
+                                var statusColor = mixed ? '#3730a3' : (isConv ? '#065f46' : '#92400e');
+                                var statusBg    = mixed ? '#e0e7ff' : (isConv ? '#d1fae5' : '#fef3c7');
                                 return React.createElement('div', {
                                   key: ui,
                                   style: { display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', borderBottom: ui < ftUsers.length - 1 ? '1px solid #ece9e4' : 'none', fontSize: 12 }
                                 },
                                   React.createElement('span', {
-                                    style: { flex: '0 0 auto', fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 10, color: isConv ? '#065f46' : '#92400e', background: isConv ? '#d1fae5' : '#fef3c7' }
-                                  }, u.status || '—'),
+                                    style: { flex: '0 0 auto', fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 10, color: statusColor, background: statusBg }
+                                  }, statusLabel),
                                   url
                                     ? React.createElement('a', { href: url, target: '_blank', rel: 'noopener noreferrer', style: { color: '#3b82f6', fontWeight: 600, textDecoration: 'none' }, title: 'Open this customer’s profile in your Rec admin console' }, u.name, ' ↗')
                                     : React.createElement('span', { style: { fontWeight: 600, color: '#111' } }, u.name),
                                   u.email && React.createElement('span', { style: { color: '#999' } }, '· ', u.email),
-                                  showParticipant && React.createElement('span', { style: { color: '#6b7280', fontStyle: 'italic' } }, '· for ', u.participant),
-                                  u.signup && React.createElement('span', { style: { marginLeft: 'auto', color: '#bbb', fontSize: 11 } }, u.signup)
+                                  u.participants.length > 0 && React.createElement('span', { style: { color: '#6b7280', fontStyle: 'italic' } }, '· for ', u.participants.join(', ')),
+                                  u.count === 1 && u.signup && React.createElement('span', { style: { marginLeft: 'auto', color: '#bbb', fontSize: 11 } }, u.signup)
                                 );
                               })
                             )
