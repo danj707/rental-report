@@ -1160,8 +1160,6 @@ const NON_ADDABLE_REPORTS = new Set(["program-demographics", "retention", "annua
 // Reports that require extra params (e.g. section_id) and cannot be health-checked with org_id alone
 const HEALTH_SKIP_REPORTS = new Set(["section-detail", "annual-report", "qoq", "qbr-stats", "checkins", "program-checkins"]);
 const RENTAL_CALENDAR_ORGS = new Set(["watertown", "norman", "niagarafalls"]);
-// Orgs with an interactive campsite map (public /:org/campmap — Leaflet + live rec.us site data)
-const CAMPMAP_ORGS = new Set(["pleasant-hill", "douglas-county-nv"]);
 // Reports HIDDEN by default for every org (opt-in to show), for WIP reports not
 // yet launched. For these, presence in an org's visibility list means SHOWN —
 // the inverse of the normal opt-out hidden-list semantics. Use reportHiddenForOrg().
@@ -1173,7 +1171,10 @@ const DEFAULT_HIDDEN_REPORTS = new Set([]);
 // keep working) but no longer rendered as a clickable card on org/admin grids.
 // Globally not-surfaced reports. Routes/code stay intact; they just aren't shown
 // anywhere. chat + report-wizard are deprecated in favor of Rec's "Seb" AI skill.
-const RETIRED_REPORTS = new Set(["court-utilization", "chat", "report-wizard"]);
+// campmap (the standalone campsite map page) is retired in favor of the
+// Facilities hub's Camping tab, which serves the same map + editing for any
+// org with a campmap seed.
+const RETIRED_REPORTS = new Set(["court-utilization", "chat", "report-wizard", "campmap"]);
 
 // ── Dynamic orgs (added via dashboard UI) ────────────────────────────
 // Loaded at startup and merged into ORGS; also updated at runtime.
@@ -1201,6 +1202,7 @@ function saveCampmapPositions() {
   catch (e) { console.error("[campmap] save positions failed:", e.message); }
 }
 // Admin-created custom map markers (Boat Ramp, etc.): { slug: [ {id,label,text,color,lat,lng} ] }
+// Edited via the Camping tab's map editor (POST /:org/facilities/api/campsite-markers).
 const CAMPMAP_MARKERS_FILE = path.join(DATA_DIR, "campmap_markers.json");
 let campmapMarkers = {};
 try { campmapMarkers = JSON.parse(fs.readFileSync(CAMPMAP_MARKERS_FILE, "utf8")); } catch { campmapMarkers = {}; }
@@ -1735,7 +1737,6 @@ function visibleReportsForOrg(slug) {
     !NON_ADDABLE_REPORTS.has(r) && !RETIRED_REPORTS.has(r) &&
     (org[r]?.mbUuid || SHARED_UUIDS[r]) && !hidden.has(r));
   if (RENTAL_CALENDAR_ORGS.has(slug) && !hidden.has("rentalcalendar")) out.push("rentalcalendar");
-  if (CAMPMAP_ORGS.has(slug) && !hidden.has("campmap")) out.push("campmap");
   if ((org.gl?.mbUuid || SHARED_UUIDS.gl) && !hidden.has("qoq")) out.push("qoq");
   if (!reportHiddenForOrg(slug, "facilities")) out.push("facilities");
   return out;
@@ -2201,7 +2202,6 @@ function buildMetrics(org, daysBack) {
   const configuredReports = REPORT_TYPES.filter(r => ORGS[org]?.[r]?.mbUuid || SHARED_UUIDS[r]);
   // Include non-Metabase reports that have their own routes (e.g. rentalcalendar)
   if (RENTAL_CALENDAR_ORGS.has(org)) configuredReports.push('rentalcalendar');
-  if (CAMPMAP_ORGS.has(org)) configuredReports.push('campmap');
   return { summary, daily, subCounts, subByCadence, totalSubscribers: allSubs.length, insights, configuredReports };
 }
 
@@ -3030,7 +3030,7 @@ app.get("/api/org-visibility/:slug", (req, res) => {
     }
   }
   // Also check non-REPORT_TYPES that can be toggled (chat, report-wizard, rentalcalendar)
-  for (const rt of ["chat", "report-wizard", "rentalcalendar", "campmap"]) {
+  for (const rt of ["chat", "report-wizard", "rentalcalendar"]) {
     if (RETIRED_REPORTS.has(rt)) continue; // globally not surfaced
     available.push({ type: rt, visible: !hidden.has(rt) });
   }
@@ -3058,7 +3058,7 @@ app.use((req, res, next) => {
 
   // Calendar + rental calendar + campsite map are public — no token required
   const segs = req.path.split("/").filter(Boolean);
-  if (segs[1] === "calendar" || segs[1] === "rentalcalendar" || segs[1] === "campmap") return next();
+  if (segs[1] === "calendar" || segs[1] === "rentalcalendar") return next();
   if (segs[1] === "api" && (segs[2] === "track" || segs[2] === "calendar-analytics")) return next();
 
   if (!org.token) {                                 // fail closed: tokenless org must not be public
@@ -4777,9 +4777,68 @@ app.get("/:org/facilities/api/campsites", (req, res) => {
         price: (typeof s.price === "number") ? s.price : null, photo: s.photo || "",
       };
     }).filter(Boolean);
-    return { id: loc.id, name: loc.locationName || "", center: loc.center, address: loc.address || "", sites };
+    // Landmarks = seed emoji landmarks (read-only). Custom admin markers are
+    // separate so the Camping tab's editor can edit them (name/notes/color).
+    const landmarks = (loc.landmarks || []).map(lm => ({
+      e: lm.e || "📍", l: lm.l || "", lat: lm.lat, lng: lm.lng,
+    })).filter(lm => typeof lm.lat === "number" && typeof lm.lng === "number");
+    const markers = campmapMarkers[campmapStoreKey(slug, loc.id)] || [];
+    return { id: loc.id, name: loc.locationName || "", center: loc.center, address: loc.address || "", sites, landmarks, markers };
   }).filter(l => l.sites.length);
   res.json({ locations });
+});
+
+// ── POST /:org/facilities/api/campsite-markers — custom map markers editor ──
+// Token-gated; replaces the location's whole marker list. Same shape and store
+// the retired campmap editor used ({id,label,text,color,lat,lng}).
+app.post("/:org/facilities/api/campsite-markers", express.json(), (req, res) => {
+  const slug = req.params.org;
+  const org = ORGS[slug];
+  if (!org) return res.status(404).json({ error: "Unknown org" });
+  const token = req.query.token || (req.body && req.body.token) || "";
+  if (!org.token || token !== org.token) return res.status(403).json({ error: "Forbidden — valid org token required to edit." });
+  const markers = (req.body && req.body.markers) || [];
+  const clean = [];
+  for (const m of Array.isArray(markers) ? markers : []) {
+    if (!m || typeof m.lat !== "number" || typeof m.lng !== "number") continue;
+    if (Math.abs(m.lat) > 90 || Math.abs(m.lng) > 180) continue;
+    clean.push({
+      id: String(m.id || "").slice(0, 40) || ("m" + clean.length),
+      label: String(m.label || "").slice(0, 80),
+      text: String(m.text || "").slice(0, 500),
+      color: /^#[0-9a-fA-F]{3,8}$/.test(m.color || "") ? m.color : "#38bdf8",
+      lat: m.lat, lng: m.lng,
+    });
+    if (clean.length >= 100) break; // sane cap
+  }
+  campmapMarkers[campmapStoreKey(slug, req.query.location)] = clean;
+  saveCampmapMarkers();
+  logEvent(slug, "facilities", "save-campsite-markers", req, { count: clean.length });
+  res.json({ ok: true, saved: clean.length });
+});
+
+// ── POST /:org/facilities/api/campsite-positions — Camping tab site editor ──
+// Token-gated. Replaces the location's whole position map (the client sends
+// every site), stored under the same per-location key the campmap editor used,
+// so history and any not-yet-migrated data stay compatible.
+app.post("/:org/facilities/api/campsite-positions", express.json(), (req, res) => {
+  const slug = req.params.org;
+  const org = ORGS[slug];
+  if (!org) return res.status(404).json({ error: "Unknown org" });
+  const token = req.query.token || (req.body && req.body.token) || "";
+  if (!org.token || token !== org.token) return res.status(403).json({ error: "Forbidden — valid org token required to edit." });
+  const positions = (req.body && req.body.positions) || {};
+  const clean = {};
+  for (const [id, p] of Object.entries(positions)) {
+    if (p && typeof p.lat === "number" && typeof p.lng === "number" &&
+        Math.abs(p.lat) <= 90 && Math.abs(p.lng) <= 180) {
+      clean[id] = { lat: p.lat, lng: p.lng };
+    }
+  }
+  campmapPositions[campmapStoreKey(slug, req.query.location)] = clean;
+  saveCampmapPositions();
+  logEvent(slug, "facilities", "save-campsite-positions", req, { count: Object.keys(clean).length });
+  res.json({ ok: true, saved: Object.keys(clean).length });
 });
 
 // ── GET /:org/facilities/api/summary — Facilities hub Summary data ──
@@ -6290,98 +6349,10 @@ function campmapStoreKey(slug, locationId) {
   return (!locationId || locationId === "default") ? slug : (slug + "::" + locationId);
 }
 
-app.get("/:org/campmap", (req, res) => {
-  const slug = req.params.org;
-  const org = ORGS[slug];
-  if (!org) return res.status(404).send("Unknown org");
-  if (!org.orgId) return res.status(404).send("Campsite map requires orgId configuration.");
-  logEvent(slug, "campmap", "view", req);
-  const slugTitle = slug.charAt(0).toUpperCase() + slug.slice(1);
-  const seed = CAMPMAP_SEEDS[slug] || {};
-  const locList = campmapLocations(slug, seed, org);
-  const activeId = req.query.location || (locList[0] && locList[0].id) || "default";
-  const active = locList.find(l => l.id === activeId) || locList[0] || {};
-  const meta = {
-    slug,
-    orgId: org.orgId,
-    displayName: org.displayName || slugTitle + " Parks & Recreation",
-    logoUrl: org.logoUrl || "",
-    coords: active.center || org.coords || null,
-    locationName: active.locationName || org.campLocationName || "",
-    address: active.address || org.campAddress || "",
-    sites: active.sites || null,
-    landmarks: active.landmarks || null,
-    defaults: active.defaults || {},
-    areaDefaults: active.areaDefaults || {},
-    // Multi-location: the switcher list + which one is active.
-    locations: locList.map(l => ({ id: l.id, name: l.locationName })),
-    activeLocation: active.id || "default",
-    // Editing (drag-to-place) is unlocked only when the org token is supplied.
-    canEdit: !!(org.token && req.query.token && req.query.token === org.token),
-  };
-  const html = fs.readFileSync(path.join(__dirname, "public", "campmap.html"), "utf-8");
-  const inject = '<script>window.__CM__=' + JSON.stringify(meta) + ';</script>';
-  res.type("html").send(html.replace("</head>", inject + "</head>"));
-});
-
-// Campsite map positions — admin-placed site coordinates.
-// GET is public (viewers see the admin's layout); POST requires the org token.
-app.get("/:org/campmap/api/positions", (req, res) => {
-  const slug = req.params.org;
-  if (!ORGS[slug]) return res.status(404).json({ positions: {} });
-  res.json({ positions: campmapPositions[campmapStoreKey(slug, req.query.location)] || {} });
-});
-app.post("/:org/campmap/api/positions", express.json(), (req, res) => {
-  const slug = req.params.org;
-  const org = ORGS[slug];
-  if (!org) return res.status(404).json({ error: "Unknown org" });
-  const token = req.query.token || (req.body && req.body.token) || "";
-  if (!org.token || token !== org.token) return res.status(403).json({ error: "Forbidden — valid org token required to edit." });
-  const positions = (req.body && req.body.positions) || {};
-  const clean = {};
-  for (const [id, p] of Object.entries(positions)) {
-    if (p && typeof p.lat === "number" && typeof p.lng === "number" &&
-        Math.abs(p.lat) <= 90 && Math.abs(p.lng) <= 180) {
-      clean[id] = { lat: p.lat, lng: p.lng };
-    }
-  }
-  campmapPositions[campmapStoreKey(slug, req.query.location)] = clean;
-  saveCampmapPositions();
-  logEvent(slug, "campmap", "save-positions", req, { count: Object.keys(clean).length });
-  res.json({ ok: true, saved: Object.keys(clean).length });
-});
-
-// Custom markers — public GET (viewers see them), token-gated POST (admin edits).
-app.get("/:org/campmap/api/markers", (req, res) => {
-  const slug = req.params.org;
-  if (!ORGS[slug]) return res.status(404).json({ markers: [] });
-  res.json({ markers: campmapMarkers[campmapStoreKey(slug, req.query.location)] || [] });
-});
-app.post("/:org/campmap/api/markers", express.json(), (req, res) => {
-  const slug = req.params.org;
-  const org = ORGS[slug];
-  if (!org) return res.status(404).json({ error: "Unknown org" });
-  const token = req.query.token || (req.body && req.body.token) || "";
-  if (!org.token || token !== org.token) return res.status(403).json({ error: "Forbidden — valid org token required to edit." });
-  const markers = (req.body && req.body.markers) || [];
-  const clean = [];
-  for (const m of Array.isArray(markers) ? markers : []) {
-    if (!m || typeof m.lat !== "number" || typeof m.lng !== "number") continue;
-    if (Math.abs(m.lat) > 90 || Math.abs(m.lng) > 180) continue;
-    clean.push({
-      id: String(m.id || "").slice(0, 40) || ("m" + clean.length),
-      label: String(m.label || "").slice(0, 80),
-      text: String(m.text || "").slice(0, 500),
-      color: /^#[0-9a-fA-F]{3,8}$/.test(m.color || "") ? m.color : "#38bdf8",
-      lat: m.lat, lng: m.lng,
-    });
-    if (clean.length >= 100) break; // sane cap
-  }
-  campmapMarkers[campmapStoreKey(slug, req.query.location)] = clean;
-  saveCampmapMarkers();
-  logEvent(slug, "campmap", "save-markers", req, { count: clean.length });
-  res.json({ ok: true, saved: clean.length });
-});
+// The standalone /:org/campmap page (public viewer + admin editor) is retired —
+// campsite maps and site-position editing live in the Facilities hub's Camping
+// tab now (see /:org/facilities/api/campsites and /api/campsite-positions).
+// The seeds, positions store, and saved custom markers are kept and served there.
 
 // Cached site data for Arsenal Park (Watertown) — fetched via rec.us MCP 2026-06-22
 const RC_SITES_CACHE = {}; // Live MCP fetch for all orgs (provides rich data: photos, pricing, duration)
@@ -7055,7 +7026,6 @@ app.get("/:org", async (req, res, next) => {
   const available = allAvailable.filter(r => !orgHidden.has(r));
   // Rental calendar — non-Metabase, per-org opt-in
   if (RENTAL_CALENDAR_ORGS.has(slug) && !orgHidden.has('rentalcalendar')) available.push('rentalcalendar');
-  if (CAMPMAP_ORGS.has(slug) && !orgHidden.has('campmap')) available.push('campmap');
   if ((org.gl?.mbUuid || SHARED_UUIDS.gl) && !orgHidden.has('qoq')) available.push('qoq');
   // Facilities hub — hidden by default for all orgs; shows only when opted in
   if (!reportHiddenForOrg(slug, 'facilities')) available.push('facilities');
@@ -8158,7 +8128,6 @@ app.get("/", (req, res) => {
     const available    = REPORT_TYPES.filter(r => !NON_ADDABLE_REPORTS.has(r) && !RETIRED_REPORTS.has(r) && (org[r]?.mbUuid || SHARED_UUIDS[r]));
     // Rental calendar — non-Metabase, per-org opt-in
     if (RENTAL_CALENDAR_ORGS.has(slug)) available.push('rentalcalendar');
-    if (CAMPMAP_ORGS.has(slug)) available.push('campmap');
     if (org.gl?.mbUuid || SHARED_UUIDS.gl) available.push('qoq');
     const slugTitle    = slug.charAt(0).toUpperCase() + slug.slice(1);
     const displayName  = org.displayName || `${slugTitle} Parks &amp; Recreation`;
