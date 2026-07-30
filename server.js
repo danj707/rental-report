@@ -10389,7 +10389,7 @@ app.get("/", (req, res) => {
     }
     async function toggleFlag(key, value) {
       if (key === 'maintenanceMode' && value &&
-          !confirm('Put the ENTIRE platform in maintenance mode?\n\nEvery org page will show the "Down for Maintenance" splash until you turn this back off. This admin panel stays reachable.')) {
+          !confirm('Put the ENTIRE platform in maintenance mode?\\n\\nEvery org page will show the "Down for Maintenance" splash until you turn this back off. This admin panel stays reachable.')) {
         loadFlags(); return;
       }
       const pwd = prompt('Enter dashboard password to change feature flags:');
