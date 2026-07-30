@@ -265,6 +265,14 @@
     .camp-dot { width:24px; height:24px; border-radius:50%; border:2px solid #155f36; display:flex; align-items:center; justify-content:center; font-size:10px; font-weight:800; box-shadow:0 1px 5px rgba(0,0,0,.55); cursor:grab; }
     .camp-dot:active { cursor:grabbing; }
     .camp-lm { font-size:15px; line-height:20px; text-align:center; text-shadow:0 1px 3px rgba(0,0,0,.6); }
+    .camp-mk { width:18px; height:18px; border-radius:50% 50% 50% 0; transform:rotate(-45deg); border:2px solid #fff; box-shadow:0 1px 4px rgba(0,0,0,.5); }
+    .camp-mk.edit { cursor:grab; }
+    .camp-mk-form { display:flex; flex-direction:column; gap:6px; min-width:180px; }
+    .camp-mk-form input.mk-l, .camp-mk-form textarea.mk-t { width:100%; box-sizing:border-box; font:inherit; font-size:12px; padding:4px 6px; border:1px solid #d6d3cb; border-radius:6px; }
+    .camp-mk-form textarea.mk-t { resize:vertical; }
+    .camp-mk-form .mk-row { display:flex; align-items:center; justify-content:space-between; font-size:11px; color:#6b7280; }
+    .camp-mk-form .mk-row input.mk-c { width:26px; height:20px; padding:0; border:1px solid #d6d3cb; border-radius:4px; vertical-align:middle; margin-left:4px; cursor:pointer; }
+    .camp-mk-form button.mk-del { font-size:10.5px; color:#dc2626; background:none; border:1px solid #fca5a5; border-radius:10px; padding:2px 8px; cursor:pointer; }
   </style>
 </head>
 <body>
@@ -1065,6 +1073,27 @@
       const [saving, setSaving] = React.useState(false);
       const [msg, setMsg] = React.useState('');
 
+      // Custom marker helpers (admin-created: Boat Ramp, gate codes, etc.)
+      const mkIcon = (color, edit) => L.divIcon({ className: '', iconSize: [18, 18], iconAnchor: [9, 9],
+        html: '<div class="camp-mk' + (edit ? ' edit' : '') + '" style="background:' + (color || '#38bdf8') + '"></div>' });
+      // Plain-DOM popup editor (Leaflet popups live outside React).
+      const mkEditorEl = (mk, lmk, onDelete) => {
+        const div = document.createElement('div');
+        div.className = 'camp-mk-form';
+        div.innerHTML =
+          '<input class="mk-l" maxlength="80" placeholder="Name (e.g. Boat Ramp)">' +
+          '<textarea class="mk-t" maxlength="500" rows="2" placeholder="Notes (optional)"></textarea>' +
+          '<div class="mk-row"><label>Color <input type="color" class="mk-c"></label><button type="button" class="mk-del">🗑 Remove</button></div>';
+        const li = div.querySelector('.mk-l'), ti = div.querySelector('.mk-t'), ci = div.querySelector('.mk-c');
+        li.value = mk.label || ''; ti.value = mk.text || '';
+        ci.value = /^#[0-9a-fA-F]{6}$/.test(mk.color || '') ? mk.color : '#38bdf8';
+        li.addEventListener('input', () => { mk.label = li.value; });
+        ti.addEventListener('input', () => { mk.text = ti.value; });
+        ci.addEventListener('input', () => { mk.color = ci.value; lmk.setIcon(mkIcon(mk.color, true)); });
+        div.querySelector('.mk-del').addEventListener('click', onDelete);
+        return div;
+      };
+
       React.useEffect(() => {
         const el = mapRef.current;
         if (!el || !loc.sites.length || typeof L === 'undefined') return;
@@ -1081,6 +1110,32 @@
           }).addTo(map);
           if (lm.l) m.bindTooltip(lm.l, { direction: 'top' });
         });
+        // Custom markers — working copies while editing (Cancel discards)
+        const mks = [];   // [{ mk, lmk }]
+        const addMk = (mk, openNow) => {
+          const lmk = L.marker([mk.lat, mk.lng], {
+            draggable: editing, autoPan: editing, keyboard: false,
+            icon: mkIcon(mk.color, editing),
+          }).addTo(map);
+          const entry = { mk, lmk };
+          if (editing) {
+            lmk.bindPopup(mkEditorEl(mk, lmk, () => {
+              map.removeLayer(lmk);
+              const i = mks.indexOf(entry); if (i !== -1) mks.splice(i, 1);
+            }), { minWidth: 190 });
+            if (openNow) setTimeout(() => lmk.openPopup(), 60);
+          } else {
+            if (mk.label) lmk.bindTooltip(mk.label, { direction: 'top' });
+            if (mk.text) lmk.bindPopup('<div class="camp-popup"><b></b><br><span></span></div>');
+            if (mk.text) lmk.on('popupopen', ev => {
+              const c = ev.popup.getElement().querySelector('.camp-popup');
+              if (c) { c.querySelector('b').textContent = mk.label || 'Marker'; c.querySelector('span').textContent = mk.text; }
+            });
+          }
+          mks.push(entry);
+          return entry;
+        };
+        (loc.markers || []).forEach(m => addMk(Object.assign({}, m), false));
         loc.sites.forEach(s => {
           const st = findStat(s, loc.name);
           const d = st ? st.days : 0;
@@ -1109,28 +1164,42 @@
           pts.push([s.lat, s.lng]);
         });
         if (pts.length) map.fitBounds(pts, { padding: [28, 28], maxZoom: 18 });
-        liveRef.current = { map, markers };
+        liveRef.current = { map, markers, mks, addMk };
         return () => { map.remove(); liveRef.current = null; };
       }, [loc, editing]);
+
+      const addMarker = () => {
+        const live = liveRef.current; if (!live) return;
+        const c = live.map.getCenter();
+        live.addMk({ id: 'm' + Date.now().toString(36), label: '', text: '', color: '#38bdf8', lat: c.lat, lng: c.lng }, true);
+      };
 
       const save = () => {
         const live = liveRef.current; if (!live) return;
         setSaving(true); setMsg('');
-        // POST replaces the location's whole position map, so send every site.
+        // POSTs replace the location's whole position map / marker list, so send everything.
         const positions = {};
         loc.sites.forEach(s => {
           const m = live.markers[s.id];
           const ll = m ? m.getLatLng() : s;
           positions[s.id] = { lat: ll.lat, lng: ll.lng };
         });
+        const outMks = live.mks.map(x => {
+          const ll = x.lmk.getLatLng();
+          return { id: x.mk.id, label: x.mk.label || '', text: x.mk.text || '', color: x.mk.color || '#38bdf8', lat: ll.lat, lng: ll.lng };
+        });
         const q = '?token=' + encodeURIComponent(CFG.token || '') +
           (loc.id && loc.id !== 'default' ? '&location=' + encodeURIComponent(loc.id) : '');
-        fetch('/' + CFG.slug + '/facilities/api/campsite-positions' + q, {
+        const post = (path, body) => fetch('/' + CFG.slug + path + q, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ positions, token: CFG.token || '' }),
-        }).then(r => r.json()).then(j => {
-          if (!j || !j.ok) throw new Error((j && j.error) || 'save rejected');
+          body: JSON.stringify(Object.assign({ token: CFG.token || '' }, body)),
+        }).then(r => r.json()).then(j => { if (!j || !j.ok) throw new Error((j && j.error) || 'save rejected'); return j; });
+        Promise.all([
+          post('/facilities/api/campsite-positions', { positions }),
+          post('/facilities/api/campsite-markers', { markers: outMks }),
+        ]).then(() => {
           loc.sites.forEach(s => { const m = live.markers[s.id]; if (m) { const ll = m.getLatLng(); s.lat = ll.lat; s.lng = ll.lng; } });
+          loc.markers = outMks;
           setEditing(false); setMsg('Saved ✓');
         }).catch(err => setMsg('Save failed: ' + (err.message || err))).finally(() => setSaving(false));
       };
@@ -1139,12 +1208,13 @@
       return e('div', null,
         e('div', { style: { display: 'flex', alignItems: 'center', marginBottom: 8, minHeight: 22 } },
           e('span', { style: { fontSize: 10.5, color: '#9ca3af' } },
-            editing ? 'Drag pins to the correct spots, then save. Positions are shared with the campsite map.' : 'Click a site for details.'),
+            editing ? 'Drag site pins & markers into place; click a marker to name it. Save when done.' : 'Click a site for details.'),
           msg ? e('span', { style: { fontSize: 10.5, marginLeft: 8, fontWeight: 600, color: msg.indexOf('failed') !== -1 ? '#dc2626' : '#2c8a50' } }, msg) : null,
           e('span', { style: { marginLeft: 'auto', whiteSpace: 'nowrap' } },
-            editable && !editing ? e('button', { onClick: () => { setMsg(''); setEditing(true); }, style: Object.assign({}, pill, { color: '#2c8a50', background: 'none', border: '1px solid #a4d3a0' }) }, '✏️ Edit site locations') : null,
+            editable && !editing ? e('button', { onClick: () => { setMsg(''); setEditing(true); }, style: Object.assign({}, pill, { color: '#2c8a50', background: 'none', border: '1px solid #a4d3a0' }) }, '✏️ Edit map') : null,
+            editing ? e('button', { onClick: addMarker, disabled: saving, style: Object.assign({}, pill, { color: '#0369a1', background: 'none', border: '1px solid #7dd3fc' }) }, '📍 Add marker') : null,
             editing ? e('button', { onClick: () => { setMsg(''); setEditing(false); }, disabled: saving, style: Object.assign({}, pill, { color: '#6b7280', background: 'none', border: '1px solid #d6d3cb' }) }, 'Cancel') : null,
-            editing ? e('button', { onClick: save, disabled: saving, style: Object.assign({}, pill, { color: '#fff', background: '#2c8a50', border: '1px solid #2c8a50' }) }, saving ? 'Saving…' : '💾 Save positions') : null)),
+            editing ? e('button', { onClick: save, disabled: saving, style: Object.assign({}, pill, { color: '#fff', background: '#2c8a50', border: '1px solid #2c8a50' }) }, saving ? 'Saving…' : '💾 Save') : null)),
         e('div', { className: 'camp-map', ref: mapRef }));
     }
 

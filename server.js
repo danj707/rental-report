@@ -1202,10 +1202,14 @@ function saveCampmapPositions() {
   catch (e) { console.error("[campmap] save positions failed:", e.message); }
 }
 // Admin-created custom map markers (Boat Ramp, etc.): { slug: [ {id,label,text,color,lat,lng} ] }
-// Read-only since the campmap editor retired — shown as landmarks on the Camping tab map.
+// Edited via the Camping tab's map editor (POST /:org/facilities/api/campsite-markers).
 const CAMPMAP_MARKERS_FILE = path.join(DATA_DIR, "campmap_markers.json");
 let campmapMarkers = {};
 try { campmapMarkers = JSON.parse(fs.readFileSync(CAMPMAP_MARKERS_FILE, "utf8")); } catch { campmapMarkers = {}; }
+function saveCampmapMarkers() {
+  try { fs.writeFileSync(CAMPMAP_MARKERS_FILE, JSON.stringify(campmapMarkers, null, 2)); }
+  catch (e) { console.error("[campmap] save markers failed:", e.message); }
+}
 // Per-org campsite seed (center, location, landmarks, defaults, sites w/ coords).
 // Committed file; loaded once at startup. See campmap-seeds.json.
 let CAMPMAP_SEEDS = {};
@@ -4773,16 +4777,44 @@ app.get("/:org/facilities/api/campsites", (req, res) => {
         price: (typeof s.price === "number") ? s.price : null, photo: s.photo || "",
       };
     }).filter(Boolean);
-    // Landmarks = seed landmarks (emoji + label) merged with any admin-created
-    // custom markers saved back when the campmap editor existed. Read-only.
+    // Landmarks = seed emoji landmarks (read-only). Custom admin markers are
+    // separate so the Camping tab's editor can edit them (name/notes/color).
     const landmarks = (loc.landmarks || []).map(lm => ({
       e: lm.e || "📍", l: lm.l || "", lat: lm.lat, lng: lm.lng,
-    })).concat((campmapMarkers[campmapStoreKey(slug, loc.id)] || []).map(m => ({
-      e: "📍", l: [m.label, m.text].filter(Boolean).join(" — "), lat: m.lat, lng: m.lng,
-    }))).filter(lm => typeof lm.lat === "number" && typeof lm.lng === "number");
-    return { id: loc.id, name: loc.locationName || "", center: loc.center, address: loc.address || "", sites, landmarks };
+    })).filter(lm => typeof lm.lat === "number" && typeof lm.lng === "number");
+    const markers = campmapMarkers[campmapStoreKey(slug, loc.id)] || [];
+    return { id: loc.id, name: loc.locationName || "", center: loc.center, address: loc.address || "", sites, landmarks, markers };
   }).filter(l => l.sites.length);
   res.json({ locations });
+});
+
+// ── POST /:org/facilities/api/campsite-markers — custom map markers editor ──
+// Token-gated; replaces the location's whole marker list. Same shape and store
+// the retired campmap editor used ({id,label,text,color,lat,lng}).
+app.post("/:org/facilities/api/campsite-markers", express.json(), (req, res) => {
+  const slug = req.params.org;
+  const org = ORGS[slug];
+  if (!org) return res.status(404).json({ error: "Unknown org" });
+  const token = req.query.token || (req.body && req.body.token) || "";
+  if (!org.token || token !== org.token) return res.status(403).json({ error: "Forbidden — valid org token required to edit." });
+  const markers = (req.body && req.body.markers) || [];
+  const clean = [];
+  for (const m of Array.isArray(markers) ? markers : []) {
+    if (!m || typeof m.lat !== "number" || typeof m.lng !== "number") continue;
+    if (Math.abs(m.lat) > 90 || Math.abs(m.lng) > 180) continue;
+    clean.push({
+      id: String(m.id || "").slice(0, 40) || ("m" + clean.length),
+      label: String(m.label || "").slice(0, 80),
+      text: String(m.text || "").slice(0, 500),
+      color: /^#[0-9a-fA-F]{3,8}$/.test(m.color || "") ? m.color : "#38bdf8",
+      lat: m.lat, lng: m.lng,
+    });
+    if (clean.length >= 100) break; // sane cap
+  }
+  campmapMarkers[campmapStoreKey(slug, req.query.location)] = clean;
+  saveCampmapMarkers();
+  logEvent(slug, "facilities", "save-campsite-markers", req, { count: clean.length });
+  res.json({ ok: true, saved: clean.length });
 });
 
 // ── POST /:org/facilities/api/campsite-positions — Camping tab site editor ──
