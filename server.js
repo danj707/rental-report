@@ -1664,9 +1664,23 @@ async function sendDriftAlert(alerts, orgSlug, reportType) {
 }
 
 // ── Feature Flags ────────────────────────────────────────────────────
-const DEFAULT_FLAGS = { emailSubscriptions: true, cachingEnabled: true };
+const DEFAULT_FLAGS = { emailSubscriptions: true, cachingEnabled: true, maintenanceMode: false };
 function getFlags() { return Object.assign({}, DEFAULT_FLAGS, readJSON(FLAGS_FILE, {})); }
-function setFlag(key, value) { const f = getFlags(); f[key] = value; writeJSON(FLAGS_FILE, f); return f; }
+function setFlag(key, value) { const f = getFlags(); f[key] = value; writeJSON(FLAGS_FILE, f); _maintCache.ts = 0; return f; }
+
+// Maintenance mode is checked on every request, so cache the flag-file read
+// for a few seconds; setFlag busts the cache so a toggle applies instantly.
+// MAINTENANCE_MODE=1 in the environment forces it on regardless of the flag
+// (escape hatch if the app is up but the admin panel is not usable).
+const _maintCache = { val: false, ts: 0 };
+function isMaintenanceMode() {
+  if (process.env.MAINTENANCE_MODE === "1") return true;
+  if (Date.now() - _maintCache.ts > 5000) {
+    _maintCache.val = !!getFlags().maintenanceMode;
+    _maintCache.ts = Date.now();
+  }
+  return _maintCache.val;
+}
 
 // ── Public mode (per-org toggle to strip admin chrome from org page) ──
 function getPublicMode(slug) {
@@ -2847,6 +2861,85 @@ app.use((req, res, next) => {
   next();
 });
 
+
+// ── Maintenance mode ─────────────────────────────────────────────────
+// Toggled from the admin panel (Feature Flags → Maintenance Mode) or forced
+// with MAINTENANCE_MODE=1. All org-facing traffic gets a branded 503 splash;
+// the root admin dashboard (/) and /api/admin/* stay reachable so it can be
+// turned back off. The splash polls /api/maintenance-status and reloads
+// itself the moment maintenance ends.
+const MAINTENANCE_PAGE = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Down for Maintenance</title>
+<link rel="icon" type="image/png" href="/favicon.png">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { min-height: 100vh; display: flex; align-items: center; justify-content: center;
+    background: #0f1117; color: #e0e0e0; font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
+  .card { text-align: center; max-width: 480px; padding: 48px 36px; }
+  .logo { height: 46px; width: 46px; border-radius: 11px; box-shadow: 0 3px 14px rgba(13,148,136,.45);
+    display: block; margin: 0 auto 7px; }
+  .brand { font-size: 12px; font-weight: 700; letter-spacing: 2.5px; text-transform: uppercase;
+    color: #5eead4; margin-bottom: 26px; }
+  .emoji { font-size: 40px; margin-bottom: 14px; }
+  h1 { font-size: 24px; font-weight: 700; margin-bottom: 10px; color: #fff; }
+  p { font-size: 14px; color: #9aa8b8; line-height: 1.6; margin-bottom: 26px; }
+  .pulse { width: 10px; height: 10px; background: #f59e0b; border-radius: 50%; margin: 0 auto;
+    animation: pulse 1.6s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% { opacity: .35; transform: scale(.85); } 50% { opacity: 1; transform: scale(1.15); } }
+  .hint { margin-top: 22px; font-size: 11px; color: #555; }
+</style>
+</head>
+<body>
+<div class="card">
+  <img class="logo" src="${REC_LOGO}" alt="rec.us">
+  <div class="brand">rec.us</div>
+  <div class="emoji">\u{1F6E0}️</div>
+  <h1>Down for Maintenance</h1>
+  <p>We'll be back up soon and even better!<br>This page will reconnect automatically — no need to refresh.</p>
+  <div class="pulse"></div>
+  <div class="hint">rec.us Analytics Platform</div>
+</div>
+<script>
+  // Poll maintenance status and reload the moment the platform is back.
+  (function(){
+    function tick(){
+      fetch('/api/maintenance-status',{cache:'no-store'})
+        .then(function(r){ return r.json(); })
+        .then(function(j){ if(!j.maintenance) location.reload(); })
+        .catch(function(){});
+    }
+    setInterval(tick, 10000);
+    window.addEventListener('focus', tick);
+    window.addEventListener('online', tick);
+  })();
+</script>
+</body>
+</html>`;
+
+// Public (unauthenticated) — the splash page polls this to know when to reload.
+app.get("/api/maintenance-status", (req, res) => {
+  res.set("Cache-Control", "no-store");
+  res.json({ maintenance: isMaintenanceMode() });
+});
+
+app.use((req, res, next) => {
+  if (!isMaintenanceMode()) return next();
+  // Keep the admin dashboard + admin API reachable so maintenance can be
+  // toggled back off (/ is already behind dashboardAuth's Basic auth).
+  if (req.path === "/" || req.path.startsWith("/api/admin/")) return next();
+  if (req.path === "/healthz" || req.path === "/api/maintenance-status") return next();
+  if (req.path.match(/\.(css|js|ico|png|jpg|svg|woff2?)$/)) return next();
+  res.set("Retry-After", "300");
+  // Open tabs still fire background API calls — give those JSON, not HTML.
+  if (req.path.includes("/api/")) {
+    return res.status(503).json({ error: "Down for maintenance — we'll be back up soon and even better!", maintenance: true });
+  }
+  res.status(503).send(MAINTENANCE_PAGE);
+});
 
 // ── Favicon (rec.us logo) ──
 const FAVICON_BUF = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAEWUlEQVR4nO2XW4hWVRTHf2vvc87ndxnHZsa5SBYiKUgkGmXmGFI9ZFIU+RIUPSRC0IOIoEEvIojQBbpQoUXahYymJLMoqbCL+lA2CJmCjo6MzjiazjiX73yXs/fq4Yyic6lHe5j1dDhnsfdv7/Xf/7WPuAMNyg0McyMnnwSYBJgE+F8ABKNfqArOewCMEVDBqyIiWAPgQQWngqoCiojBmtTPBEFJn72CHxkLDIERkOt97yqACuAFGyg2nwFxEFdBPWQzUElwsUF9OpApeAgsIFBOcLGgYhFxKKDeEWYthBEYA64MRXAKMu4OeDBhQte5Ah/sAafCQ0syFKaEfPXLEK0LcyyZXwQNiJOI7/fB0VMlojDk3nk13L3A4UvDOBcQiEMKWY4cDdl/uMzFAcOslgIrlpbIZxzoOADqBYngVI/hxa1dgOeP47M5fOwSnef6yUVTOPhRC2GkPP1CH4eOFoEE8AgRzzzaxFsbcmTMAGWbZ8OWgK27eojLVdIZIw7saGDx7Z4kVowZTwMaEgYVAmsRgZOnh+k8N0gYhRQrFfbss7Tt7aX9xADN03IsX1ZPf5/j64MDbN99hqbaJrZsrGXt+jJvf9YNWFrqCsyZFXG8w1FxjJH9uCJMXFqT+5dmmXNrI5//fJ7lixrpvSi0nxikbtpUPnyphQcXeRBY9/IUXv/4DDt/KPJIax3bd/+NNcJ9Cwvs2FTHzKaErrOGbFhBKw4xZmKAa6OlUOHVNyLa25tYMC/HY+u6EQkpx2We2tBJXPIEgafqLNXEc7q7xLYvPZWkjPMZ1q9qZubNlyj1KTObHOpDvDMTiHCcqFbAUObO28pgHdWSBSrkC3kWz8sxXC4hXsgVIJeZRiBFCjUJTg3gCHwVVAi8BQ+iilGDiuPKWfhXIxIBRRiOASssmT8VVYsRYdPzjez9tJHv2hp49vHpzJpRw7bNzaxZmRCpYI1j03v9dHUXCGqEzgu1nL+cgSBBdZwSqKRQhpHjjWAMiHiCQNGiY/VKy/bdWTp6hmhd1cHDi2uIS4ZvD/ZRqlY4cbKRne/UsvqJet5s6+WnQ4MserLE3NkZ/uoYom1zA40toIPp4saWQKCaQOI8oAyX0nci4KpKY33Mrtem89zGiP1HBvhk74Wr61h+z01sXJMnGerllbX1GNvMu1/009MX0/N7DAREFvBwrRHIlTuhqmAiONttef8bcMADCyJa74pxJYeRAOc9YVaplmv48bcqf3akR/aOuSHLFhrEXKZSDghNgmRrOHJM+LU9oX9AuWVGyIpWRyEbgzdjARgBMwGQv2KxDl+63ju9B2s8kjdg7YhaFV9M8BisgFdB1RFkFaJMKjWtQtHh/fWyG1MCl4C75IDUws0omRoDHoMfBHyqZhEQazAjmyuSNqgkFnwxARwCGBMgEzWjqwwCQXBtkoxOQSDtjP/RzI2B9NTbCXMm8IGxk04c//ZbMfrb2NwbfiGZBJgEmAT4B/ajz479nqqPAAAAAElFTkSuQmCC", "base64");
@@ -9300,6 +9393,18 @@ app.get("/", (req, res) => {
             <div id="flag-caching-status" style="font-size:11px;color:#999">Loading...</div>
           </div>
         </div>
+        <div style="display:flex;align-items:center;gap:12px;margin-top:12px">
+          <label style="position:relative;display:inline-block;width:44px;height:24px;cursor:pointer">
+            <input type="checkbox" id="flag-maintenance" onchange="toggleFlag('maintenanceMode',this.checked)"
+                   style="opacity:0;width:0;height:0" />
+            <span id="flag-maintenance-track" style="position:absolute;top:0;left:0;right:0;bottom:0;background:#cbd5e1;border-radius:12px;transition:background .2s"></span>
+            <span id="flag-maintenance-thumb" style="position:absolute;top:2px;left:2px;width:20px;height:20px;background:#fff;border-radius:50%;transition:transform .2s;box-shadow:0 1px 3px rgba(0,0,0,.2)"></span>
+          </label>
+          <div>
+            <div style="font-size:13px;font-weight:600;color:#111827">&#128736;&#65039; Maintenance Mode</div>
+            <div id="flag-maintenance-status" style="font-size:11px;color:#999">Loading...</div>
+          </div>
+        </div>
       </div>
       <div style="padding:14px 18px;background:#f5f4f1;border-top:1px solid #e8e5df">
         <div style="font-size:12px;font-weight:700;color:#374151;margin-bottom:10px">&#128279; Metabase Links</div>
@@ -10258,6 +10363,7 @@ app.get("/", (req, res) => {
         const flags = await r.json();
         updateFlagUI('email', flags.emailSubscriptions);
         updateFlagUI('caching', flags.cachingEnabled);
+        updateFlagUI('maintenance', flags.maintenanceMode);
       } catch(e) { console.warn('[flags] load failed', e); }
     }
     function updateFlagUI(name, on) {
@@ -10265,20 +10371,27 @@ app.get("/", (req, res) => {
       const track = document.getElementById('flag-'+name+'-track');
       const thumb = document.getElementById('flag-'+name+'-thumb');
       const status = document.getElementById('flag-'+name+'-status');
+      // Maintenance is a "danger" flag — its ON state renders red, not green.
+      var onColor = name === 'maintenance' ? '#dc2626' : '#059669';
       if (cb) cb.checked = on;
-      if (track) track.style.background = on ? '#059669' : '#cbd5e1';
+      if (track) track.style.background = on ? onColor : '#cbd5e1';
       if (thumb) thumb.style.transform = on ? 'translateX(20px)' : 'translateX(0)';
       if (status) {
         var labels = {
           email: ['Enabled — email signups and subscriptions are active', 'Disabled — email features are hidden from all orgs'],
-          caching: ['Enabled — background pre-warming, health checks, and polling active', 'Disabled — all background Metabase requests paused']
+          caching: ['Enabled — background pre-warming, health checks, and polling active', 'Disabled — all background Metabase requests paused'],
+          maintenance: ['ON — every org page is showing the "Down for Maintenance" splash', 'Off — platform is live for all orgs']
         };
         var pair = labels[name] || ['Enabled', 'Disabled'];
         status.textContent = on ? pair[0] : pair[1];
-        status.style.color = on ? '#059669' : '#999';
+        status.style.color = on ? onColor : '#999';
       }
     }
     async function toggleFlag(key, value) {
+      if (key === 'maintenanceMode' && value &&
+          !confirm('Put the ENTIRE platform in maintenance mode?\n\nEvery org page will show the "Down for Maintenance" splash until you turn this back off. This admin panel stays reachable.')) {
+        loadFlags(); return;
+      }
       const pwd = prompt('Enter dashboard password to change feature flags:');
       if (!pwd) { loadFlags(); return; }
       try {
@@ -10287,7 +10400,7 @@ app.get("/", (req, res) => {
           body: JSON.stringify({ password: pwd, key: key, value: value })
         });
         const j = await r.json();
-        if (j.ok) { updateFlagUI('email', j.flags.emailSubscriptions); updateFlagUI('caching', j.flags.cachingEnabled); }
+        if (j.ok) { updateFlagUI('email', j.flags.emailSubscriptions); updateFlagUI('caching', j.flags.cachingEnabled); updateFlagUI('maintenance', j.flags.maintenanceMode); }
         else { alert(j.error || 'Failed'); loadFlags(); }
       } catch(e) { alert('Error: ' + e.message); loadFlags(); }
     }
