@@ -4753,6 +4753,37 @@ app.get("/:org/facilities", (req, res) => {
   res.send(html.replace("<head>", `<head><script>window.ORG_CONFIG=${JSON.stringify(orgConfig)};</script>`));
 });
 
+// ── GET /:org/facilities/api/campsites — campsite geo for the Camping tab map ──
+// Merges the org's campmap seed sites (name, area, kind, GPS, price, photo) with
+// any admin-dragged position overrides saved via the campmap editor. Returns an
+// empty sites list when the org has no campmap seed — the Camping tab simply
+// hides its map section.
+app.get("/:org/facilities/api/campsites", (req, res) => {
+  const slug = req.params.org;
+  const org = ORGS[slug];
+  if (!org) return res.status(404).json({ error: "Unknown org" });
+  const seed = CAMPMAP_SEEDS[slug];
+  if (!seed) return res.json({ locationName: "", center: null, sites: [] });
+  const locs = campmapLocations(slug, seed, org);
+  const sites = [];
+  let center = null, locationName = "";
+  for (const loc of locs) {
+    if (!center) { center = loc.center; locationName = loc.locationName; }
+    const overrides = campmapPositions[campmapStoreKey(slug, loc.id)] || {};
+    for (const s of (loc.sites || [])) {
+      const pos = overrides[s.id] || { lat: s.lat, lng: s.lng };
+      if (typeof pos.lat !== "number" || typeof pos.lng !== "number") continue;
+      sites.push({
+        id: s.id, name: s.name || ("Site " + (s.n || "")), area: s.area || loc.locationName || "",
+        kind: s.kind || "", lat: pos.lat, lng: pos.lng,
+        price: (typeof s.price === "number") ? s.price : null, photo: s.photo || "",
+        location: loc.locationName || locationName,
+      });
+    }
+  }
+  res.json({ locationName, center, sites });
+});
+
 // ── GET /:org/facilities/api/summary — Facilities hub Summary data ──
 // Fetches the org-parameterized Facility Summary card (row-level facility
 // reservations incl. canceled) and returns { rows } for client-side
