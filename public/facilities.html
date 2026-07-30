@@ -1529,6 +1529,9 @@
           const t = new Set(VERT_CONFIG[k].types);
           vertCounts[k] = rows.filter(r => t.has(r['Site Type']) && ss.has(lc(r['Status']))).length;
         });
+        // Racket has no site type — courts are matched by name, same rule the
+        // Racket Sports view uses to scope the feed.
+        vertCounts.racket = rows.filter(r => isRacketCourt(r['Facility'], r['Location']) && ss.has(lc(r['Status']))).length;
       }
 
       const bannerAgg = rows ? aggregate(rows, statusSel, typeSel) : null;
@@ -1561,7 +1564,7 @@
           ),
           e('div', { className: 'tabs' },
             TABS.map(t => {
-              const badge = (VERT_CONFIG[t.key] && vertCounts[t.key] != null) ? vertCounts[t.key] : null;
+              const badge = ((VERT_CONFIG[t.key] || t.key === 'racket') && vertCounts[t.key] != null) ? vertCounts[t.key] : null;
               return e('div', {
                 key: t.key,
                 className: 'tab' + (t.key === tab ? ' active' : ''),
