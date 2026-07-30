@@ -5744,7 +5744,18 @@ app.get("/qbr/api/orgs", async (req, res) => {
       // Prefer our short slug for built-out orgs so the generate fast-path + clean URLs apply.
       const known = qbrSlugByOrgId(o.id);
       return { slug: known || o.slug, orgId: o.id, displayName: o.displayName || o.name };
-    }).sort((a, b) => a.displayName.localeCompare(b.displayName));
+    });
+    // Merge locally-configured ORGS that are missing from the MCP list
+    // (e.g. unpublished orgs like Joplin that we have explicitly set up)
+    const mcpOrgIds = new Set(orgs.map(o => o.orgId).filter(Boolean));
+    for (const slug of Object.keys(ORGS)) {
+      const cfg = ORGS[slug];
+      if (cfg.orgId && !mcpOrgIds.has(cfg.orgId)) {
+        const title = slug.charAt(0).toUpperCase() + slug.slice(1);
+        orgs.push({ slug, orgId: cfg.orgId, displayName: cfg.displayName || (title + " Parks & Recreation") });
+      }
+    }
+    orgs.sort((a, b) => a.displayName.localeCompare(b.displayName));
     res.json({ orgs });
   } catch (e) {
     console.warn("[qbr] org list failed: " + e.message);
@@ -10670,6 +10681,7 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  { date: '2026-07-30', text: 'QBR org dropdown now merges locally-configured ORGS into the MCP search results so unpublished orgs (e.g. Joplin) appear in the Generate picker instead of being silently excluded' },
   { date: '2026-07-29', text: 'Rec Insights: added the AI insights button to the Facility Schedule, Historic Buildings, Class Roster, QoQ Comparison, and Annual Report pages (with tailored prompts), and a Slack ping now fires whenever anyone generates insights on any report' },
   { date: '2026-07-29', text: 'Instructor Payout: simplified the pay slip check graphic to a generic check - removed the decorative routing and account numbers (MICR line) and the check number' },
   { date: '2026-07-28', title: 'Check-Ins: Top Members Leaderboard', items: [
@@ -12072,6 +12084,7 @@ app.listen(PORT, () => {
   // Runs after listen() so startup isn't blocked by GitHub latency.
   migrateDynamicOrgs();
 });
+
 
 
 
