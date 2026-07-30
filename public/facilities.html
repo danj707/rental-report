@@ -240,6 +240,30 @@
     .aqua-split .seg { display:flex; align-items:center; justify-content:center; font-size:10px; font-weight:700; color:#fff; white-space:nowrap; overflow:hidden; }
     .aqua-split-legend { display:flex; gap:14px; margin-top:7px; font-size:11px; color:#6b7280; flex-wrap:wrap; }
     .aqua-split-legend .dot { width:8px; height:8px; border-radius:50%; display:inline-block; margin-right:5px; }
+    /* Camping tab */
+    .fac-banner.camp { border-color:#86c99a; box-shadow:0 3px 14px rgba(21,95,54,.2); }
+    .camp-map { height:380px; border-radius:8px; overflow:hidden; border:1px solid #e8e6e0; }
+    .camp-map-legend { display:flex; align-items:center; gap:6px; margin-top:9px; font-size:10.5px; color:#6b7280; flex-wrap:wrap; }
+    .camp-map-legend i { width:14px; height:14px; border-radius:50%; display:inline-block; border:1.5px solid rgba(0,0,0,.15); }
+    .camp-popup { font-size:12px; line-height:1.5; }
+    .camp-popup b { font-size:13px; }
+    .camp-popup img { width:100%; max-width:200px; border-radius:6px; margin-top:6px; display:block; }
+    .camp-cal-wrap { overflow-x:auto; padding-bottom:4px; }
+    .camp-cal { display:grid; gap:2px 1px; font-size:10px; min-width:100%; width:max-content; }
+    .camp-cal .cc-site { position:sticky; left:0; background:#fff; z-index:2; display:flex; align-items:center; justify-content:flex-end; padding-right:9px; color:#374151; font-weight:600; font-size:11px; white-space:nowrap; }
+    .camp-cal .cc-hd { color:#9ca3af; font-weight:700; text-align:center; font-size:9px; display:flex; flex-direction:column; align-items:center; justify-content:flex-end; line-height:1.25; }
+    .camp-cal .cc-hd.we { color:#b45309; }
+    .camp-cal .cc-cell { height:20px; border-radius:3px; background:#f4f3ef; cursor:default; }
+    .camp-cal .cc-cell.occ { background:#5fae70; }
+    .camp-cal .cc-cell.arr { background:#2c8a50; border-top-left-radius:8px; border-bottom-left-radius:8px; }
+    .camp-cal .cc-cell.dep { background:#a4d3a0; border-top-right-radius:8px; border-bottom-right-radius:8px; }
+    .camp-cal .cc-cell.one { background:#2c8a50; border-radius:8px; }
+    .camp-cal-legend { display:flex; align-items:center; gap:12px; margin-top:9px; font-size:10.5px; color:#6b7280; flex-wrap:wrap; }
+    .camp-cal-legend i { width:15px; height:13px; border-radius:3px; display:inline-block; margin-right:4px; vertical-align:-2px; }
+    .camp-site-lbl { background:transparent; border:none; box-shadow:none; font-size:9px; font-weight:800; color:#0f172a; text-shadow:0 0 3px #fff, 0 0 3px #fff; }
+    .camp-site-lbl::before { display:none; }
+    .camp-dot { width:24px; height:24px; border-radius:50%; border:2px solid #155f36; display:flex; align-items:center; justify-content:center; font-size:10px; font-weight:800; box-shadow:0 1px 5px rgba(0,0,0,.55); cursor:grab; }
+    .camp-dot:active { cursor:grabbing; }
   </style>
 </head>
 <body>
@@ -985,6 +1009,403 @@
       );
     }
 
+    // ── Camping — dedicated vertical view ────────────────────────────────
+    // Unlike the other verticals, this view reads the per-day facility feed
+    // (one row per occupied day, with Multi-Day Day# markers), so every stay
+    // is visible even when several stays share one migrated rental record,
+    // and site-level occupancy can be drawn day by day. Canceled reservations
+    // aren't in that feed, so there is no status filter here. Site geography
+    // comes from the org's campmap seed (when configured) for the site map.
+    const CAMP_SCENE = '<svg viewBox="0 0 1200 172" preserveAspectRatio="xMidYMid slice">' +
+      '<defs>' +
+      '<linearGradient id="cmpSky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0b3d2e"/><stop offset=".55" stop-color="#155f36"/><stop offset="1" stop-color="#2c8a50"/></linearGradient>' +
+      '<linearGradient id="cmpHill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0e4a33"/><stop offset="1" stop-color="#0b3d2e"/></linearGradient>' +
+      '</defs>' +
+      '<rect width="1200" height="172" fill="url(#cmpSky)"/>' +
+      '<circle cx="1050" cy="42" r="20" fill="#fde68a" opacity=".9"/>' +
+      '<circle cx="180" cy="30" r="1.6" fill="#fff" opacity=".8"/><circle cx="340" cy="52" r="1.3" fill="#fff" opacity=".65"/><circle cx="520" cy="24" r="1.5" fill="#fff" opacity=".7"/><circle cx="760" cy="40" r="1.2" fill="#fff" opacity=".6"/><circle cx="905" cy="22" r="1.5" fill="#fff" opacity=".75"/>' +
+      '<path d="M0 120 L210 62 L430 122 L640 70 L880 126 L1080 84 L1200 118 L1200 172 L0 172 Z" fill="url(#cmpHill)"/>' +
+      '<path d="M0 146 L1200 132 L1200 172 L0 172 Z" fill="#093225"/>' +
+      ['80,148','130,152','610,146','660,150','980,148','1035,152'].map(function(p){ var xy = p.split(','); var x=+xy[0], y=+xy[1];
+        return '<path d="M'+x+' '+(y-34)+' L'+(x+13)+' '+y+' L'+(x-13)+' '+y+' Z" fill="#0e4a33"/><path d="M'+x+' '+(y-46)+' L'+(x+10)+' '+(y-18)+' L'+(x-10)+' '+(y-18)+' Z" fill="#155f36"/><rect x="'+(x-2)+'" y="'+y+'" width="4" height="7" fill="#3b2f23"/>'; }).join('') +
+      '<path d="M330 154 L368 100 L406 154 Z" fill="#d97706"/><path d="M368 100 L392 154 L406 154 Z" fill="#b45309"/><path d="M362 154 L368 128 L374 154 Z" fill="#78350f"/>' +
+      '<ellipse cx="470" cy="156" rx="9" ry="4" fill="#fbbf24" opacity=".85"/><path d="M466 152 Q470 140 474 152 Q477 156 470 156 Q463 156 466 152Z" fill="#f59e0b"/><path d="M468 150 Q470 143 472 150 Q473 153 470 153 Q467 153 468 150Z" fill="#fde68a"/>' +
+      '</svg>';
+
+    function CampBanner({ stays, nights, occPct, revenue, sitesBooked, sitesTotal }) {
+      const pills = [
+        ['stays', stays.toLocaleString()],
+        ['nights booked', nights.toLocaleString()],
+        ['occupancy', occPct == null ? '—' : occPct.toFixed(occPct < 10 ? 1 : 0) + '%'],
+        ['net revenue', money(revenue)],
+        ['sites booked', sitesBooked.toLocaleString() + (sitesTotal ? ' of ' + sitesTotal : '')],
+      ];
+      return e('div', { className: 'fac-banner camp' },
+        e('div', { className: 'fb-scene', dangerouslySetInnerHTML: { __html: CAMP_SCENE } }),
+        e('div', { className: 'fb-overlay' },
+          e('div', { className: 'fb-kicker' }, CFG.displayName || 'Parks & Recreation'),
+          e('div', { className: 'fb-title' }, '🏕️ Camping'),
+          e('div', { className: 'fb-sub' }, 'Campsite stays, nightly occupancy & where the campground fills up.'),
+          e('div', { className: 'fb-pills' }, pills.map((p, i) => e('span', { className: 'fb-pill', key: i }, e('b', null, p[1]), ' ' + p[0]))),
+        ),
+      );
+    }
+
+    // Leaflet site map — circle per campsite, colored by booked days in range.
+    // Leaflet campground map for ONE campsite location. Edit mode (org token
+    // required) swaps the circles for draggable pins and saves to the same
+    // per-location positions store the standalone campmap editor uses — this
+    // is the editing home for admins as the campmap admin page is retired.
+    const CAMP_RAMP = ['#dcedd6', '#a4d3a0', '#5fae70', '#2c8a50', '#155f36'];
+    function CampMap({ loc, findStat, editable }) {
+      const mapRef = React.useRef(null);
+      const liveRef = React.useRef(null);
+      const [editing, setEditing] = React.useState(false);
+      const [saving, setSaving] = React.useState(false);
+      const [msg, setMsg] = React.useState('');
+
+      React.useEffect(() => {
+        const el = mapRef.current;
+        if (!el || !loc.sites.length || typeof L === 'undefined') return;
+        const map = L.map(el, { scrollWheelZoom: editing });
+        // Same Google hybrid imagery as the public campmap page, so the two maps match.
+        L.tileLayer('https://mt{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', { subdomains: ['0', '1', '2', '3'], maxZoom: 21, attribution: 'Imagery ©2026 Google' }).addTo(map);
+        const maxD = Math.max(1, ...loc.sites.map(s => { const st = findStat(s.name, loc.name); return st ? st.days : 0; }));
+        const markers = {};
+        const pts = [];
+        loc.sites.forEach(s => {
+          const st = findStat(s.name, loc.name);
+          const d = st ? st.days : 0;
+          const fill = d ? CAMP_RAMP[Math.min(4, Math.floor(d / maxD * 4.999))] : '#ffffff';
+          const num = String(s.name).replace(/^Site\s*0?/i, '');
+          if (editing) {
+            const m = L.marker([s.lat, s.lng], {
+              draggable: true, autoPan: true,
+              icon: L.divIcon({ className: '', iconSize: [24, 24], iconAnchor: [12, 12],
+                html: '<div class="camp-dot" style="background:' + (d ? fill : '#fff') + ';color:' + (d ? '#fff' : '#334155') + '">' + num + '</div>' }),
+            }).addTo(map);
+            m.bindTooltip(s.name, { direction: 'top' });
+            markers[s.id] = m;
+          } else {
+            const m = L.circleMarker([s.lat, s.lng], {
+              radius: d ? 10 : 6.5, color: d ? '#155f36' : '#94a3b8', weight: 1.5,
+              fillColor: fill, fillOpacity: d ? .92 : .55,
+            }).addTo(map);
+            m.bindPopup('<div class="camp-popup"><b>' + s.name + '</b>' + (s.area ? ' · ' + s.area : '') + '<br>' +
+              (st ? st.stays + ' stay' + (st.stays === 1 ? '' : 's') + ' · ' + st.days + ' day' + (st.days === 1 ? '' : 's') + ' booked · ' + money(st.rev)
+                  : 'No bookings in this range') +
+              (s.price != null ? '<br>$' + s.price + '/night' + (s.kind ? ' · ' + s.kind.replace(/-/g, ' ') : '') : '') +
+              (s.photo ? '<img src="' + s.photo + '" loading="lazy">' : '') + '</div>');
+            m.bindTooltip(num, { permanent: true, direction: 'center', className: 'camp-site-lbl' });
+          }
+          pts.push([s.lat, s.lng]);
+        });
+        if (pts.length) map.fitBounds(pts, { padding: [28, 28], maxZoom: 18 });
+        liveRef.current = { map, markers };
+        return () => { map.remove(); liveRef.current = null; };
+      }, [loc, editing]);
+
+      const save = () => {
+        const live = liveRef.current; if (!live) return;
+        setSaving(true); setMsg('');
+        // POST replaces the location's whole position map, so send every site.
+        const positions = {};
+        loc.sites.forEach(s => {
+          const m = live.markers[s.id];
+          const ll = m ? m.getLatLng() : s;
+          positions[s.id] = { lat: ll.lat, lng: ll.lng };
+        });
+        const q = '?token=' + encodeURIComponent(CFG.token || '') +
+          (loc.id && loc.id !== 'default' ? '&location=' + encodeURIComponent(loc.id) : '');
+        fetch('/' + CFG.slug + '/campmap/api/positions' + q, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ positions, token: CFG.token || '' }),
+        }).then(r => r.json()).then(j => {
+          if (!j || !j.ok) throw new Error((j && j.error) || 'save rejected');
+          loc.sites.forEach(s => { const m = live.markers[s.id]; if (m) { const ll = m.getLatLng(); s.lat = ll.lat; s.lng = ll.lng; } });
+          setEditing(false); setMsg('Saved ✓');
+        }).catch(err => setMsg('Save failed: ' + (err.message || err))).finally(() => setSaving(false));
+      };
+
+      const pill = { fontSize: 10, fontWeight: 600, borderRadius: 12, padding: '2px 10px', cursor: 'pointer', marginLeft: 8 };
+      return e('div', null,
+        e('div', { style: { display: 'flex', alignItems: 'center', marginBottom: 8, minHeight: 22 } },
+          e('span', { style: { fontSize: 10.5, color: '#9ca3af' } },
+            editing ? 'Drag pins to the correct spots, then save. Positions are shared with the campsite map.' : 'Click a site for details.'),
+          msg ? e('span', { style: { fontSize: 10.5, marginLeft: 8, fontWeight: 600, color: msg.indexOf('failed') !== -1 ? '#dc2626' : '#2c8a50' } }, msg) : null,
+          e('span', { style: { marginLeft: 'auto', whiteSpace: 'nowrap' } },
+            editable && !editing ? e('button', { onClick: () => { setMsg(''); setEditing(true); }, style: Object.assign({}, pill, { color: '#2c8a50', background: 'none', border: '1px solid #a4d3a0' }) }, '✏️ Edit site locations') : null,
+            editing ? e('button', { onClick: () => { setMsg(''); setEditing(false); }, disabled: saving, style: Object.assign({}, pill, { color: '#6b7280', background: 'none', border: '1px solid #d6d3cb' }) }, 'Cancel') : null,
+            editing ? e('button', { onClick: save, disabled: saving, style: Object.assign({}, pill, { color: '#fff', background: '#2c8a50', border: '1px solid #2c8a50' }) }, saving ? 'Saving…' : '💾 Save positions') : null)),
+        e('div', { className: 'camp-map', ref: mapRef }));
+    }
+
+    function CampingView({ start, end }) {
+      const [data, setData] = React.useState({ rows: null, err: null });
+      const [geo, setGeo] = React.useState(null);
+      const [allSites, setAllSites] = React.useState(false);
+
+      React.useEffect(() => {
+        let dead = false;
+        setData({ rows: null, err: null });
+        const tok = CFG.token ? '&token=' + encodeURIComponent(CFG.token) : '';
+        fetch('/' + CFG.slug + '/facility/api/data?start_date=' + start + '&end_date=' + end + tok)
+          .then(r => { if (!r.ok) throw new Error('Server returned ' + r.status); return r.json(); })
+          .then(j => { if (!dead) setData({ rows: (j.rows || []).filter(r => r['Site Type'] === 'campsite'), err: null }); })
+          .catch(err => { if (!dead) setData({ rows: null, err: err.message || String(err) }); });
+        return () => { dead = true; };
+      }, [start, end]);
+
+      React.useEffect(() => {
+        const tok = CFG.token ? '?token=' + encodeURIComponent(CFG.token) : '';
+        fetch('/' + CFG.slug + '/facilities/api/campsites' + tok)
+          .then(r => r.json()).then(j => setGeo(j && j.locations ? j : { locations: [] }))
+          .catch(() => setGeo({ locations: [] }));
+      }, []);
+
+      if (data.err) return e('div', { className: 'empty' },
+        e('div', { className: 'em-icon' }, '⚠️'),
+        e('div', { className: 'em-title' }, 'Could not load camping data'),
+        e('div', { className: 'em-sub' }, String(data.err)));
+      if (data.rows === null || geo === null) return e('div', { className: 'empty' },
+        e('div', { className: 'em-title', style: { color: '#9ca3af' } }, 'Loading Camping data…'),
+        e('div', { className: 'fac-spin' }));
+
+      const rows = data.rows;
+      const dayNum  = r => Number(r['Multi-Day Day#']) || 0;
+      const totDays = r => Number(r['Multi-Day Days']) || 0;
+      const isArrival = r => dayNum(r) <= 1;
+      const shortSite = f => { f = f || '—'; return f.indexOf(' - ') !== -1 ? f.split(' - ').slice(1).join(' - ') : f; };
+
+      const arrivals = rows.filter(isArrival);
+      const stays    = arrivals.length;
+      const nights   = arrivals.reduce((s, r) => s + Math.max((totDays(r) || 1) - 1, 1), 0);
+      const revenue  = arrivals.reduce((s, r) => s + (Number(r['Total']) || 0), 0);
+      const guests   = arrivals.reduce((s, r) => s + (Number(r['Head Cnt']) || 0), 0);
+      const avgStay  = stays ? nights / stays : 0;
+
+      // Day list for the range (daily cells up to ~3 months, weekly buckets beyond)
+      const days = [];
+      { const endD = new Date(end + 'T00:00:00');
+        for (let d = new Date(start + 'T00:00:00'); d <= endD && days.length < 1100; d.setDate(d.getDate() + 1)) days.push(fmtDate(d)); }
+      const weekly = days.length > 95;
+
+      // Per-site, per-day occupancy + per-site stats. Keys pair the reservation
+      // Location with the short site name so same-named sites at different
+      // campsite locations stay separate; find* helpers match a mapped site to
+      // its stats by (name, location) with a name-only fallback.
+      const occByKey = {}, statByKey = {}, occIdx = {}, statIdx = {};
+      rows.forEach(r => {
+        const site = shortSite(r['Facility']);
+        const locName = r['Location'] || '';
+        const key = locName + '||' + site;
+        const d = String(r['Date'] || '').slice(0, 10);
+        const n = dayNum(r), t = totDays(r);
+        const cls = (t <= 1 || !n) ? 'one' : n === 1 ? 'arr' : n === t ? 'dep' : 'occ';
+        let oc = occByKey[key];
+        if (!oc) { oc = occByKey[key] = { location: locName, days: {} }; (occIdx[site] = occIdx[site] || []).push(oc); }
+        oc.days[d] = {
+          cls,
+          tip: (r['Reservee'] || 'Booked') + (t > 1 ? ' · day ' + n + ' of ' + t : '') + (r['Purpose'] ? ' · ' + r['Purpose'] : ''),
+        };
+        let st = statByKey[key];
+        if (!st) { st = statByKey[key] = { site, location: locName, stays: 0, days: 0, rev: 0, guests: 0 }; (statIdx[site] = statIdx[site] || []).push(st); }
+        st.days++;
+        if (isArrival(r)) { st.stays++; st.rev += Number(r['Total']) || 0; st.guests += Number(r['Head Cnt']) || 0; }
+      });
+      const pick = (idx, name, locName) => {
+        const list = idx[name];
+        if (!list) return null;
+        return list.find(x => x.location === locName) || (list.length === 1 ? list[0] : null);
+      };
+      const findStat = (name, locName) => pick(statIdx, name, locName);
+      const findOcc  = (name, locName) => { const o = pick(occIdx, name, locName); return o ? o.days : null; };
+
+      const locs = geo.locations || [];
+      const geoSitesAll = locs.reduce((a, l) => a.concat(l.sites), []);
+      const statList = Object.keys(statByKey).map(k => statByKey[k]);
+      // Calendar groups: one per mapped campsite location, plus booked sites
+      // that aren't on any map ("Other sites").
+      const claimed = new Set();
+      locs.forEach(l => l.sites.forEach(s => { const st = findStat(s.name, l.name); if (st) claimed.add(st); }));
+      const leftovers = statList.filter(st => !claimed.has(st));
+      const byNum = (a, b) => a.n.localeCompare(b.n, undefined, { numeric: true });
+      const calGroups = locs.map(l => ({ name: l.name, sites: l.sites.map(s => ({ n: s.name, loc: l.name })).sort(byNum) }));
+      if (leftovers.length) calGroups.push({ name: locs.length ? 'Other sites' : '', sites: leftovers.map(st => ({ n: st.site, loc: st.location })).sort(byNum) });
+      const sitesTotal  = geoSitesAll.length ? geoSitesAll.length + leftovers.length : statList.length;
+      const sitesBooked = statList.length;
+      const siteDays = rows.length;
+      const occPct = sitesTotal && days.length ? (siteDays / (sitesTotal * days.length)) * 100 : null;
+
+      // Weekly buckets (7-day chunks from range start) when the range is long
+      const RAMP6 = ['#f4f3ef', '#dcedd6', '#a4d3a0', '#5fae70', '#2c8a50', '#155f36'];
+      const weeks = [];
+      if (weekly) for (let i = 0; i < days.length; i += 7) weeks.push(days.slice(i, i + 7));
+
+      // Arrivals by day of week + stay length distribution
+      const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+      const dowCounts = [0, 0, 0, 0, 0, 0, 0];
+      arrivals.forEach(r => {
+        const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(r['Date'] || ''));
+        if (m) dowCounts[new Date(+m[1], +m[2] - 1, +m[3]).getDay()]++;
+      });
+      const LEN = [
+        { lbl: '1 night', lo: 1, hi: 1 }, { lbl: '2 nights', lo: 2, hi: 2 }, { lbl: '3 nights', lo: 3, hi: 3 },
+        { lbl: '4–6 nights', lo: 4, hi: 6 }, { lbl: '7+ nights', lo: 7, hi: Infinity },
+      ];
+      const lenData = LEN.map(b => {
+        const n = arrivals.filter(r => { const nn = Math.max((totDays(r) || 1) - 1, 1); return nn >= b.lo && nn <= b.hi; }).length;
+        return { label: b.lbl, v: n, valText: n.toLocaleString() };
+      });
+
+      // Monthly trend (stays + revenue by arrival month)
+      const byMonth = {};
+      arrivals.forEach(r => {
+        const ym = String(r['Date'] || '').slice(0, 7);
+        if (!/^\d{4}-\d{2}$/.test(ym)) return;
+        if (!byMonth[ym]) byMonth[ym] = { stays: 0, revenue: 0 };
+        byMonth[ym].stays++; byMonth[ym].revenue += Number(r['Total']) || 0;
+      });
+      const months = Object.keys(byMonth).sort();
+      const maxMonthRev = Math.max(1, ...months.map(m => byMonth[m].revenue));
+
+      const topSites = statList.slice().sort((a, b) => b.rev - a.rev || b.days - a.days).slice(0, 12);
+
+      const kpis = [
+        { label: 'Stays', val: stays.toLocaleString(), cls: 'sc-blue', sub: 'campsite check-ins in range' },
+        { label: 'Nights Booked', val: nights.toLocaleString(), cls: 'sc-green', sub: 'checkout day not counted' },
+        { label: 'Occupancy', val: occPct == null ? '—' : occPct.toFixed(occPct < 10 ? 1 : 0) + '%', cls: 'sc-purple', sub: siteDays.toLocaleString() + ' of ' + (sitesTotal * days.length).toLocaleString() + ' site-days' },
+        { label: 'Avg Stay', val: avgStay ? avgStay.toFixed(1) : '—', cls: 'sc-amber', sub: 'nights per stay' },
+        { label: 'Net Revenue', val: money(revenue), cls: 'sc-green', sub: 'base rental, excl. add-ons' },
+        { label: 'Sites Booked', val: sitesBooked.toLocaleString() + (sitesTotal ? ' / ' + sitesTotal : ''), cls: 'sc-muted', sub: 'of mapped campsites' },
+        { label: 'Total Guests', val: guests.toLocaleString(), cls: 'sc-muted', sub: 'sum of head counts' },
+      ];
+
+      const calCell = (site, dList, key) => {
+        const od = findOcc(site.n, site.loc) || {};
+        if (weekly) {
+          const n = dList.reduce((s, d) => s + (od[d] ? 1 : 0), 0);
+          const idx = !n ? 0 : Math.min(5, 1 + Math.floor((n - 1) / dList.length * 5));
+          return e('div', { key, className: 'cc-cell', style: { background: RAMP6[idx] },
+            title: site.n + ' · wk of ' + dList[0] + ' · ' + n + ' of ' + dList.length + ' days booked' });
+        }
+        const c = od[dList[0]];
+        return e('div', { key, className: 'cc-cell' + (c ? ' ' + c.cls : ''), title: site.n + ' · ' + dList[0] + (c ? ' · ' + c.tip : ' · open') });
+      };
+      const calCols = weekly ? weeks : days.map(d => [d]);
+      const hdFor = (dList, i) => {
+        const d = new Date(dList[0] + 'T00:00:00');
+        const we = !weekly && (d.getDay() === 0 || d.getDay() === 6);
+        const lbl = weekly ? ((d.getMonth() + 1) + '/' + d.getDate())
+          : (d.getDate() === 1 || i === 0 ? monthLabel(dList[0].slice(0, 7)).split(' ')[0] + ' ' + d.getDate() : String(d.getDate()));
+        return e('div', { key: 'h' + i, className: 'cc-hd' + (we ? ' we' : ''), title: dList[0] }, lbl);
+      };
+
+      const hasStays = stays > 0;
+
+      return e('div', null,
+        e(CampBanner, { stays, nights, occPct, revenue, sitesBooked, sitesTotal }),
+        e('div', { className: 'sum-cards' },
+          kpis.map((c, i) => e('div', { className: 'sum-card', key: i },
+            e('div', { className: 'sc-label' }, c.label),
+            e('div', { className: 'sc-val ' + c.cls }, c.val),
+            e('div', { className: 'sc-sub' }, c.sub)))),
+
+        // Site × day occupancy calendar — booked sites only by default; empty
+        // rows are noise at campgrounds with many mapped-but-unbooked sites.
+        // One sub-grid per campsite location when the org runs more than one.
+        (() => {
+          const groups = calGroups.map(g => ({
+            name: g.name, all: g.sites, booked: g.sites.filter(s => findStat(s.n, s.loc)),
+          })).filter(g => g.all.length);
+          const totalAll = groups.reduce((n, g) => n + g.all.length, 0);
+          const hidden = totalAll - groups.reduce((n, g) => n + g.booked.length, 0);
+          const shown = groups.map(g => ({ name: g.name, sites: allSites ? g.all : g.booked })).filter(g => g.sites.length);
+          if (!shown.length) return null;
+          return e('div', { className: 'aqua-sec' },
+          e('h3', null, 'Site occupancy calendar', e('span', { className: 'sub' },
+            weekly ? 'weekly — deeper green = more days booked' : 'green runs are stays — dark cell = check-in day'),
+            hidden > 0 ? e('button', {
+              onClick: () => setAllSites(v => !v),
+              style: { marginLeft: 10, fontSize: 10, fontWeight: 600, color: '#2c8a50', background: 'none', border: '1px solid #a4d3a0', borderRadius: 12, padding: '1px 9px', cursor: 'pointer', textTransform: 'none', letterSpacing: 0 },
+            }, allSites ? 'Hide ' + hidden + ' empty sites' : 'Show all ' + totalAll + ' sites') : null),
+          e('div', { className: 'aqua-panel' },
+            shown.map((g, gi) => e('div', { key: gi, style: gi ? { marginTop: 16 } : null },
+              shown.length > 1 ? e('h4', { style: { margin: '0 0 8px', fontSize: 11.5, fontWeight: 700, color: '#374151' } }, g.name || 'Sites',
+                e('span', { className: 'n', style: { fontWeight: 500, color: '#9ca3af', fontSize: 10.5, marginLeft: 6 } }, g.sites.length + ' site' + (g.sites.length === 1 ? '' : 's'))) : null,
+              e('div', { className: 'camp-cal-wrap' },
+                e('div', { className: 'camp-cal', style: { gridTemplateColumns: '110px repeat(' + calCols.length + ', minmax(' + (weekly ? 22 : 14) + 'px, 1fr))' } },
+                  e('div', { className: 'cc-site' }, ''),
+                  calCols.map((dl, i) => hdFor(dl, i)),
+                  g.sites.flatMap(site => [
+                    e('div', { key: site.n + 'lbl', className: 'cc-site', title: site.n + (site.loc ? ' · ' + site.loc : '') }, site.n),
+                    calCols.map((dl, i) => calCell(site, dl, site.n + '-' + i)),
+                  ]))))),
+            weekly
+              ? e('div', { className: 'camp-cal-legend' }, 'Fewer', RAMP6.map((c, i) => e('i', { key: i, style: { background: c, marginRight: 0 } })), 'More days booked / week')
+              : e('div', { className: 'camp-cal-legend' },
+                  e('span', null, e('i', { style: { background: '#2c8a50' } }), 'Check-in'),
+                  e('span', null, e('i', { style: { background: '#5fae70' } }), 'Occupied'),
+                  e('span', null, e('i', { style: { background: '#a4d3a0' } }), 'Checkout'),
+                  e('span', null, e('i', { style: { background: '#f4f3ef', border: '1px solid #e5e3dd' } }), 'Open'))));
+        })(),
+
+        // Campground maps — one per campsite location, with embedded editing
+        // (drag pins, save) writing to the shared campmap positions store.
+        locs.length ? e('div', { className: 'aqua-sec' },
+          e('h3', null, 'Campground map' + (locs.length > 1 ? 's' : ''), e('span', { className: 'sub' },
+            (locs.length > 1 ? locs.length + ' campsite locations' : (locs[0].name || 'sites')) + ' — deeper green = more days booked')),
+          locs.map((l, i) => e('div', { className: 'aqua-panel', key: l.id || i, style: i ? { marginTop: 12 } : null },
+            locs.length > 1 ? e('h4', null, l.name || ('Location ' + (i + 1)), e('span', { className: 'n' }, l.sites.length + ' site' + (l.sites.length === 1 ? '' : 's'))) : null,
+            e(CampMap, { loc: l, findStat, editable: !!CFG.token }),
+            e('div', { className: 'camp-map-legend' },
+              e('span', null, e('i', { style: { background: '#fff', borderColor: '#94a3b8' } }), ' No bookings'),
+              CAMP_RAMP.map((c, ci) => e('i', { key: ci, style: { background: c } })),
+              'More days booked')))) : null,
+
+        // Arrivals by weekday + stay length
+        hasStays ? e('div', { className: 'aqua-sec' },
+          e('div', { className: 'aqua-grid' },
+            e('div', { className: 'aqua-panel' },
+              e('h4', null, 'Check-ins by day of week', e('span', { className: 'n' }, stays.toLocaleString() + ' stays')),
+              e(HBars, { color: '#2c8a50', data: DOW.map((d, i) => ({ label: d, v: dowCounts[i], valText: dowCounts[i].toLocaleString() })) })),
+            e('div', { className: 'aqua-panel' },
+              e('h4', null, 'Stay length', e('span', { className: 'n' }, 'nights per stay')),
+              e(HBars, { color: '#2c8a50', data: lenData })))) : null,
+
+        // Monthly seasonality
+        months.length > 1 ? e('div', { className: 'aqua-sec' },
+          e('h3', null, 'Stays & revenue by month'),
+          e('div', { className: 'vtrend' },
+            months.map((m, i) => e('div', { className: 'vtrend-row', key: i },
+              e('div', { className: 'vtrend-mo' }, monthLabel(m)),
+              e('div', { className: 'vtrend-track' }, e('div', { className: 'vtrend-bar', style: { width: (byMonth[m].revenue / maxMonthRev * 100) + '%', background: '#2c8a50' } })),
+              e('div', { className: 'vtrend-rev' }, money(byMonth[m].revenue)),
+              e('div', { className: 'vtrend-bk' }, byMonth[m].stays.toLocaleString() + ' stays')))),
+        ) : null,
+
+        // Detail table
+        hasStays ? e('table', { className: 'sum-cat-table' },
+          e('caption', null, 'Campsites by revenue'),
+          e('thead', null, e('tr', null,
+            e('th', null, 'Site'), e('th', null, 'Location'),
+            e('th', { className: 'num' }, 'Stays'), e('th', { className: 'num' }, 'Days booked'),
+            e('th', { className: 'num' }, 'Guests'), e('th', { className: 'num' }, 'Net revenue'))),
+          e('tbody', null,
+            topSites.map((s, i) => e('tr', { key: i },
+              e('td', null, s.site),
+              e('td', null, s.location),
+              e('td', { className: 'num' }, s.stays),
+              e('td', { className: 'num' }, s.days),
+              e('td', { className: 'num' }, s.guests || '—'),
+              e('td', { className: 'num' }, money(s.rev)))))) : e('div', { className: 'empty' },
+            e('div', { className: 'em-icon' }, '🏕️'),
+            e('div', { className: 'em-title' }, 'No camping stays in this range'),
+            e('div', { className: 'em-sub' }, 'Try a wider date range — mapped sites still show on the campground map above.')),
+        e('div', { className: 'section-note' }, 'Camping · ' + stays.toLocaleString() + ' stays · ' + siteDays.toLocaleString() + ' booked site-days · per-day reservation feed (canceled stays not included).'),
+      );
+    }
+
     // ── Court Utilization — native view (ported from court-utilization.html) ──
     // All metrics/info from the standalone Court Utilization report, rendered
     // natively in the hub's design. Reuses the existing court data endpoints
@@ -1529,6 +1950,9 @@
           const t = new Set(VERT_CONFIG[k].types);
           vertCounts[k] = rows.filter(r => t.has(r['Site Type']) && ss.has(lc(r['Status']))).length;
         });
+        // Racket has no site type — courts are matched by name, same rule the
+        // Racket Sports view uses to scope the feed.
+        vertCounts.racket = rows.filter(r => isRacketCourt(r['Facility'], r['Location']) && ss.has(lc(r['Status']))).length;
       }
 
       const bannerAgg = rows ? aggregate(rows, statusSel, typeSel) : null;
@@ -1548,11 +1972,11 @@
               e('div', { className: 'date-range' }, fmtRange(start, end)),
             ),
           ),
-          tab === 'aquatics' ? null : e(FacilitiesBanner, { a: bannerAgg }),
+          (tab === 'aquatics' || tab === 'camping') ? null : e(FacilitiesBanner, { a: bannerAgg }),
           // Filters are context-aware: the site-type filter only makes sense on
           // the Summary (a vertical tab already fixes the type); Court Utilization
           // manages its own filters + dates inside the embed, so no hub filters.
-          (tab === 'utilization' || tab === 'racket') ? null : e('div', { className: 'filters' },
+          (tab === 'utilization' || tab === 'racket' || tab === 'camping') ? null : e('div', { className: 'filters' },
             e(StatusChips, { sel: statusSel, setSel: setStatusSel }),
             tab === 'summary' ? e('div', { className: 'filter-group' },
               e('span', { className: 'filter-lbl' }, 'Site type'),
@@ -1561,7 +1985,7 @@
           ),
           e('div', { className: 'tabs' },
             TABS.map(t => {
-              const badge = (VERT_CONFIG[t.key] && vertCounts[t.key] != null) ? vertCounts[t.key] : null;
+              const badge = ((VERT_CONFIG[t.key] || t.key === 'racket') && vertCounts[t.key] != null) ? vertCounts[t.key] : null;
               return e('div', {
                 key: t.key,
                 className: 'tab' + (t.key === tab ? ' active' : ''),
@@ -1579,6 +2003,8 @@
               ? e(CourtUtilizationView, { start, end })
               : tab === 'racket'
                 ? e(RacketSportsView, { start, end })
+                : tab === 'camping'
+                  ? e(CampingView, { start, end })
                 : tab === 'aquatics'
                   ? e(AquaticsView, { rows, err, statusSel, vert: Object.assign({ key: tab }, VERT_CONFIG[tab]) })
                   : VERT_CONFIG[tab]

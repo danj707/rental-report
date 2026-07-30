@@ -1230,7 +1230,6 @@ const VOTES_FILE = path.join(DATA_DIR, "votes.json");
 const FLAGS_FILE = path.join(DATA_DIR, "feature-flags.json");
 const HEALTH_FILE = path.join(DATA_DIR, "health-check.json");
 const HEALTH_CONFIG_FILE = path.join(DATA_DIR, "health-config.json");
-const QUOTES_FILE = path.join(DATA_DIR, "quotes.json");
 
 // ── Schema Drift Detection ───────────────────────────────────────────
 const SCHEMA_BASELINES_FILE = path.join(DATA_DIR, "schema-baselines.json");
@@ -4395,27 +4394,6 @@ app.post("/:org/report-wizard/api/feedback", (req, res) => {
   res.json({ ok: true });
 });
 
-// ── Report Wizard — admin activity log ──
-app.get("/api/admin/wizard-log", (req, res) => {
-  try {
-    if (!fs.existsSync(EVENTS_FILE)) return res.json([]);
-    const lines = fs.readFileSync(EVENTS_FILE, "utf8").trim().split("\n").filter(Boolean);
-    const wizardEvents = [];
-    for (let i = lines.length - 1; i >= 0 && wizardEvents.length < 100; i--) {
-      try {
-        const evt = JSON.parse(lines[i]);
-        if (evt.report === "report-wizard" && (evt.action === "generate" || evt.action === "feedback")) {
-          wizardEvents.push(evt);
-        }
-      } catch (_) {}
-    }
-    res.json(wizardEvents);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-
 app.get("/:org/:report/api/data", resolveOrg, async (req, res) => {
   try {
     const { orgConfig, orgSlug, reportType } = req;
@@ -4773,6 +4751,35 @@ app.get("/:org/facilities", (req, res) => {
   };
   const html = require("fs").readFileSync(path.join(__dirname, "public", "facilities.html"), "utf8");
   res.send(html.replace("<head>", `<head><script>window.ORG_CONFIG=${JSON.stringify(orgConfig)};</script>`));
+});
+
+// ── GET /:org/facilities/api/campsites — campsite geo for the Camping tab map ──
+// One entry per campsite location (an org can run several distinct campgrounds;
+// campmapLocations already normalizes single-location seeds into a one-element
+// list). Each location's sites merge the seed (name, area, kind, GPS, price,
+// photo) with any admin-dragged position overrides — the same store the campmap
+// editor and the Camping tab's embedded editor write to. Empty locations list
+// when the org has no campmap seed — the tab hides its map section.
+app.get("/:org/facilities/api/campsites", (req, res) => {
+  const slug = req.params.org;
+  const org = ORGS[slug];
+  if (!org) return res.status(404).json({ error: "Unknown org" });
+  const seed = CAMPMAP_SEEDS[slug];
+  if (!seed) return res.json({ locations: [] });
+  const locations = campmapLocations(slug, seed, org).map(loc => {
+    const overrides = campmapPositions[campmapStoreKey(slug, loc.id)] || {};
+    const sites = (loc.sites || []).map(s => {
+      const pos = overrides[s.id] || { lat: s.lat, lng: s.lng };
+      if (typeof pos.lat !== "number" || typeof pos.lng !== "number") return null;
+      return {
+        id: s.id, name: s.name || ("Site " + (s.n || "")), area: s.area || loc.locationName || "",
+        kind: s.kind || "", lat: pos.lat, lng: pos.lng,
+        price: (typeof s.price === "number") ? s.price : null, photo: s.photo || "",
+      };
+    }).filter(Boolean);
+    return { id: loc.id, name: loc.locationName || "", center: loc.center, address: loc.address || "", sites };
+  }).filter(l => l.sites.length);
+  res.json({ locations });
 });
 
 // ── GET /:org/facilities/api/summary — Facilities hub Summary data ──
@@ -7762,39 +7769,6 @@ app.delete("/api/admin/showcase/:index", (req, res) => {
   res.json({ ok: true, count: imgs.length });
 });
 
-// ── Partner quotes persistence ──────────────────────────────────────
-const DEFAULT_QUOTES = [
-  { text: "Amazing!", author: "Kaz, Watertown" },
-  { text: "This is incredible! It takes so much of the guesswork from running custom reports, since this is the info we are looking for most of the time anyway. My year end reporting will be much more detailed now, and I can see this feature supporting us in making program and policy decisions.", author: "Laurel, Shrewsbury" },
-];
-function quotesLoad() {
-  try { return JSON.parse(fs.readFileSync(QUOTES_FILE, "utf8")); }
-  catch(e) { return [...DEFAULT_QUOTES]; }
-}
-function quotesSave(arr) {
-  fs.writeFileSync(QUOTES_FILE, JSON.stringify(arr, null, 2));
-}
-
-app.get("/api/admin/quotes", (req, res) => {
-  res.json(quotesLoad());
-});
-app.post("/api/admin/quotes", express.json(), (req, res) => {
-  const { text, author } = req.body || {};
-  if (!text || !author) return res.status(400).json({ error: "text and author required" });
-  const quotes = quotesLoad();
-  quotes.push({ text: text.trim(), author: author.trim() });
-  quotesSave(quotes);
-  res.json({ ok: true, count: quotes.length });
-});
-app.delete("/api/admin/quotes/:index", (req, res) => {
-  const idx = parseInt(req.params.index, 10);
-  const quotes = quotesLoad();
-  if (isNaN(idx) || idx < 0 || idx >= quotes.length) return res.status(400).json({ error: "Invalid index" });
-  quotes.splice(idx, 1);
-  quotesSave(quotes);
-  res.json({ ok: true, count: quotes.length });
-});
-
 // ── Root index — all orgs dashboard ─────────────────────────────────
 
 // ── GET /api/admin/ai-analytics — AI usage metrics for dashboard ─────
@@ -8594,49 +8568,6 @@ app.get("/", (req, res) => {
     }
     .showcase-upload-btn:hover { background: rgba(255,255,255,.14); }
     .showcase-upload-hint { font-size: 11px; color: rgba(165,180,252,.5); }
-    /* Partner quotes */
-    .partner-quotes { padding: 0 0 28px; }
-    .partner-quotes-label {
-      font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em;
-      color: #818cf8; padding: 0 40px 10px;
-    }
-    .pq-track-wrap {
-      overflow: hidden; position: relative;
-      mask-image: linear-gradient(90deg, transparent, #000 6%, #000 94%, transparent);
-      -webkit-mask-image: linear-gradient(90deg, transparent, #000 6%, #000 94%, transparent);
-    }
-    .pq-track {
-      display: flex; gap: 20px; padding: 0 40px;
-      animation: pq-scroll 28s linear infinite;
-    }
-    .pq-track:hover { animation-play-state: paused; }
-    .pq-card {
-      flex: 0 0 auto; max-width: 420px; background: rgba(255,255,255,.07);
-      border: 1px solid rgba(165,180,252,.15); border-radius: 10px;
-      padding: 16px 20px; position: relative;
-    }
-    .pq-card::before {
-      content: "\\201C"; position: absolute; top: 8px; left: 12px;
-      font-size: 32px; color: rgba(165,180,252,.25); font-family: Georgia, serif; line-height: 1;
-    }
-    .pq-text {
-      font-size: 13px; color: #e0e7ff; line-height: 1.55; font-style: italic;
-      margin: 0 0 8px; padding-left: 16px;
-    }
-    .pq-author {
-      font-size: 11px; font-weight: 700; color: #a5b4fc; padding-left: 16px;
-    }
-    .pq-card .pq-del {
-      position: absolute; top: 6px; right: 6px; width: 20px; height: 20px;
-      border-radius: 50%; background: rgba(0,0,0,.35); color: #e0e7ff;
-      border: none; font-size: 12px; cursor: pointer; display: none;
-      align-items: center; justify-content: center; line-height: 1;
-    }
-    .pq-card:hover .pq-del { display: flex; }
-    @keyframes pq-scroll {
-      0% { transform: translateX(0); }
-      100% { transform: translateX(-50%); }
-    }
     /* Lightbox */
     .sg-lightbox {
       position: fixed; inset: 0; background: rgba(0,0,0,.85); z-index: 2000;
@@ -9350,13 +9281,6 @@ app.get("/", (req, res) => {
       </div>
       <div class="how-body">
       <div style="padding:14px 18px;background:#f5f4f1;border-top:1px solid #e8e5df">
-        <div style="font-size:12px;font-weight:700;color:#374151;margin-bottom:8px">\u2764\uFE0F Partner Quotes</div>
-        <div style="display:flex;gap:8px;align-items:center">
-          <input id="pq-input" type="text" placeholder="\u201CGreat reports!\u201D \u2014 Name, Org" style="flex:1;padding:8px 12px;font-size:12px;border:1px solid #d8d4cc;border-radius:5px" />
-          <button onclick="pqAdd()" style="padding:8px 16px;font-size:12px;font-weight:600;color:#fff;background:#7c3aed;border:none;border-radius:5px;cursor:pointer">+ Add quote</button>
-        </div>
-      </div>
-      <div style="padding:14px 18px;background:#f5f4f1;border-top:1px solid #e8e5df">
         <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
           <input type="password" id="restart-pwd" placeholder="Dashboard password"
                  onkeydown="if(event.key==='Enter')doRestart()"
@@ -9440,15 +9364,6 @@ app.get("/", (req, res) => {
           </div>
         </div>
         <div id="audit-log-body" style="font-size:11px;color:#666">Click Load to fetch recent events</div>
-      </div>
-
-      <!-- Wizard Activity -->
-      <div style="padding:14px 18px;background:#faf5ff;border-top:1px solid #e9d5ff">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-          <div style="font-size:12px;font-weight:700;color:#581c87">&#x1FA84; Report Wizard Activity</div>
-          <button onclick="loadWizardLog()" style="padding:4px 12px;background:#7c3aed;color:#fff;border:none;border-radius:4px;font-size:11px;font-weight:600;cursor:pointer">Load</button>
-        </div>
-        <div id="wizard-log-body" style="font-size:11px;color:#666">Click Load to see recent wizard prompts &amp; feedback</div>
       </div>
 
       <!-- Backups -->
@@ -10450,44 +10365,6 @@ app.get("/", (req, res) => {
         });
         html += '</tbody></table></div>';
         html += '<div style="margin-top:6px;color:#999;font-size:10px">' + data.total + ' events (showing ' + Math.min(data.events.length,500) + ')</div>';
-        body.innerHTML = html;
-      } catch(err) {
-        body.innerHTML = '<div style="color:#dc2626;padding:8px">Error: ' + err.message + '</div>';
-      }
-    }
-
-    async function loadWizardLog() {
-      var body = document.getElementById('wizard-log-body');
-      body.innerHTML = '<div style="color:#999;padding:8px">Loading\u2026</div>';
-      try {
-        var resp = await fetch('/api/admin/wizard-log');
-        var events = await resp.json();
-        if (!events.length) {
-          body.innerHTML = '<div style="color:#999;padding:8px">No wizard activity yet</div>';
-          return;
-        }
-        var html = '<div style="max-height:400px;overflow-y:auto;border:1px solid #e9d5ff;border-radius:6px">';
-        html += '<table style="width:100%;border-collapse:collapse;font-size:10.5px">';
-        html += '<thead><tr style="background:#faf5ff;position:sticky;top:0"><th style="padding:6px 8px;text-align:left;border-bottom:1px solid #e9d5ff">Time</th><th style="padding:6px 8px;text-align:left;border-bottom:1px solid #e9d5ff">Org</th><th style="padding:6px 8px;text-align:left;border-bottom:1px solid #e9d5ff">Type</th><th style="padding:6px 8px;text-align:left;border-bottom:1px solid #e9d5ff">Prompt</th><th style="padding:6px 8px;text-align:left;border-bottom:1px solid #e9d5ff">Cost</th><th style="padding:6px 8px;text-align:left;border-bottom:1px solid #e9d5ff">Vote</th></tr></thead><tbody>';
-        events.forEach(function(e) {
-          var t = e.ts ? new Date(e.ts) : null;
-          var timeStr = t ? (t.getMonth()+1) + '/' + t.getDate() + ' ' + t.getHours() + ':' + String(t.getMinutes()).padStart(2,'0') : '\u2014';
-          var isGen = e.action === 'generate';
-          var isFb = e.action === 'feedback';
-          var typeBadge = isGen ? '<span style="background:#7c3aed;color:#fff;padding:1px 6px;border-radius:8px;font-size:9px;font-weight:600">generate</span>' : '<span style="background:' + ((e.extra||{}).vote === 'up' ? '#16a34a' : '#dc2626') + ';color:#fff;padding:1px 6px;border-radius:8px;font-size:9px;font-weight:600">' + ((e.extra||{}).vote === 'up' ? '\uD83D\uDC4D up' : '\uD83D\uDC4E down') + '</span>';
-          var prompt = (e.extra||{}).prompt || (e.extra||{}).title || '\u2014';
-          var cost = isGen && (e.extra||{}).costUsd ? '$' + (e.extra.costUsd).toFixed(3) : '\u2014';
-          html += '<tr style="border-bottom:1px solid #f5f0ff">';
-          html += '<td style="padding:4px 8px;white-space:nowrap;color:#999">' + timeStr + '</td>';
-          html += '<td style="padding:4px 8px;font-weight:600">' + (e.org||'\u2014') + '</td>';
-          html += '<td style="padding:4px 8px">' + typeBadge + '</td>';
-          html += '<td style="padding:4px 8px;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + prompt.replace(/"/g,'&quot;') + '">' + prompt + '</td>';
-          html += '<td style="padding:4px 8px;font-family:monospace;font-size:9.5px;color:#999">' + cost + '</td>';
-          html += '<td style="padding:4px 8px">' + (isFb ? ((e.extra||{}).vote === 'up' ? '\uD83D\uDC4D' : '\uD83D\uDC4E') : '\u2014') + '</td>';
-          html += '</tr>';
-        });
-        html += '</tbody></table></div>';
-        html += '<div style="margin-top:6px;color:#999;font-size:10px">' + events.length + ' events</div>';
         body.innerHTML = html;
       } catch(err) {
         body.innerHTML = '<div style="color:#dc2626;padding:8px">Error: ' + err.message + '</div>';
@@ -12112,62 +11989,6 @@ app.get("/", (req, res) => {
 
   </script>
 <script>
-  // ── Partner quotes ─────────────────────────────────────────────────
-  function pqRender(quotes) {
-    var track = document.getElementById('pq-track');
-    if (!track) return; // showcase hero removed — nothing to render
-    if (!quotes.length) { track.innerHTML = ''; track.style.animation = 'none'; return; }
-    // Build cards, duplicate set for seamless loop
-    var cards = quotes.map(function(q, i) {
-      return '<div class="pq-card">'
-        + '<button class="pq-del" onclick="event.stopPropagation();pqDel(' + i + ')" title="Remove">&times;</button>'
-        + '<div class="pq-text">' + q.text.replace(/</g,'&lt;') + '</div>'
-        + '<div class="pq-author">&mdash; ' + q.author.replace(/</g,'&lt;') + '</div>'
-        + '</div>';
-    }).join('');
-    track.innerHTML = cards + cards;
-    // Scale animation duration with quote count (8s per quote, minimum 24s)
-    var dur = Math.max(quotes.length * 10, 24);
-    track.style.animation = 'none';
-    track.offsetHeight;
-    track.style.animation = 'pq-scroll ' + dur + 's linear infinite';
-  }
-  function pqLoad() {
-    fetch('/api/admin/quotes').then(function(r){return r.json();}).then(pqRender).catch(function(){});
-  }
-  function pqAdd() {
-    var input = document.getElementById('pq-input');
-    var raw = (input.value || '').trim();
-    if (!raw) return;
-    // Parse "quote text - Author, Org" format
-    // Try splitting on last " - " pattern
-    var dashIdx = raw.lastIndexOf(' - ');
-    var text, author;
-    if (dashIdx > 0) {
-      text = raw.substring(0, dashIdx).replace(/^[\u201C\u201D"']+|[\u201C\u201D"']+$/g, '').trim();
-      author = raw.substring(dashIdx + 3).trim();
-    } else {
-      text = raw.replace(/^[\u201C\u201D"']+|[\u201C\u201D"']+$/g, '').trim();
-      author = 'Partner';
-    }
-    if (!text) return;
-    fetch('/api/admin/quotes', {
-      method: 'POST', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ text: text, author: author })
-    }).then(function() { input.value = ''; pqLoad(); }).catch(function(e) { alert('Failed: ' + e.message); });
-  }
-  function pqDel(idx) {
-    if (!confirm('Remove this quote?')) return;
-    fetch('/api/admin/quotes/' + idx, { method: 'DELETE' })
-      .then(function() { pqLoad(); }).catch(function(e) { alert('Failed: ' + e.message); });
-  }
-  // Enter key in input
-  document.addEventListener('DOMContentLoaded', function() {
-    var inp = document.getElementById('pq-input');
-    if (inp) inp.addEventListener('keydown', function(e) { if (e.key === 'Enter') pqAdd(); });
-    pqLoad();
-  });
-
   // Showcase gallery — server-persisted via /api/admin/showcase
   function sgRemove(idx) {
     if (!confirm('Remove this image?')) return;
