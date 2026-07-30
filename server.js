@@ -4754,34 +4754,32 @@ app.get("/:org/facilities", (req, res) => {
 });
 
 // ── GET /:org/facilities/api/campsites — campsite geo for the Camping tab map ──
-// Merges the org's campmap seed sites (name, area, kind, GPS, price, photo) with
-// any admin-dragged position overrides saved via the campmap editor. Returns an
-// empty sites list when the org has no campmap seed — the Camping tab simply
-// hides its map section.
+// One entry per campsite location (an org can run several distinct campgrounds;
+// campmapLocations already normalizes single-location seeds into a one-element
+// list). Each location's sites merge the seed (name, area, kind, GPS, price,
+// photo) with any admin-dragged position overrides — the same store the campmap
+// editor and the Camping tab's embedded editor write to. Empty locations list
+// when the org has no campmap seed — the tab hides its map section.
 app.get("/:org/facilities/api/campsites", (req, res) => {
   const slug = req.params.org;
   const org = ORGS[slug];
   if (!org) return res.status(404).json({ error: "Unknown org" });
   const seed = CAMPMAP_SEEDS[slug];
-  if (!seed) return res.json({ locationName: "", center: null, sites: [] });
-  const locs = campmapLocations(slug, seed, org);
-  const sites = [];
-  let center = null, locationName = "";
-  for (const loc of locs) {
-    if (!center) { center = loc.center; locationName = loc.locationName; }
+  if (!seed) return res.json({ locations: [] });
+  const locations = campmapLocations(slug, seed, org).map(loc => {
     const overrides = campmapPositions[campmapStoreKey(slug, loc.id)] || {};
-    for (const s of (loc.sites || [])) {
+    const sites = (loc.sites || []).map(s => {
       const pos = overrides[s.id] || { lat: s.lat, lng: s.lng };
-      if (typeof pos.lat !== "number" || typeof pos.lng !== "number") continue;
-      sites.push({
+      if (typeof pos.lat !== "number" || typeof pos.lng !== "number") return null;
+      return {
         id: s.id, name: s.name || ("Site " + (s.n || "")), area: s.area || loc.locationName || "",
         kind: s.kind || "", lat: pos.lat, lng: pos.lng,
         price: (typeof s.price === "number") ? s.price : null, photo: s.photo || "",
-        location: loc.locationName || locationName,
-      });
-    }
-  }
-  res.json({ locationName, center, sites });
+      };
+    }).filter(Boolean);
+    return { id: loc.id, name: loc.locationName || "", center: loc.center, address: loc.address || "", sites };
+  }).filter(l => l.sites.length);
+  res.json({ locations });
 });
 
 // ── GET /:org/facilities/api/summary — Facilities hub Summary data ──
