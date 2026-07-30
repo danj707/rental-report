@@ -264,6 +264,7 @@
     .camp-site-lbl::before { display:none; }
     .camp-dot { width:24px; height:24px; border-radius:50%; border:2px solid #155f36; display:flex; align-items:center; justify-content:center; font-size:10px; font-weight:800; box-shadow:0 1px 5px rgba(0,0,0,.55); cursor:grab; }
     .camp-dot:active { cursor:grabbing; }
+    .camp-lm { font-size:15px; line-height:20px; text-align:center; text-shadow:0 1px 3px rgba(0,0,0,.6); }
   </style>
 </head>
 <body>
@@ -1070,11 +1071,18 @@
         const map = L.map(el, { scrollWheelZoom: editing });
         // Same Google hybrid imagery as the public campmap page, so the two maps match.
         L.tileLayer('https://mt{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', { subdomains: ['0', '1', '2', '3'], maxZoom: 21, attribution: 'Imagery ©2026 Google' }).addTo(map);
-        const maxD = Math.max(1, ...loc.sites.map(s => { const st = findStat(s.name, loc.name); return st ? st.days : 0; }));
+        const maxD = Math.max(1, ...loc.sites.map(s => { const st = findStat(s, loc.name); return st ? st.days : 0; }));
         const markers = {};
         const pts = [];
+        (loc.landmarks || []).forEach(lm => {
+          const m = L.marker([lm.lat, lm.lng], {
+            interactive: !!lm.l, keyboard: false,
+            icon: L.divIcon({ className: '', iconSize: [20, 20], iconAnchor: [10, 10], html: '<div class="camp-lm">' + lm.e + '</div>' }),
+          }).addTo(map);
+          if (lm.l) m.bindTooltip(lm.l, { direction: 'top' });
+        });
         loc.sites.forEach(s => {
-          const st = findStat(s.name, loc.name);
+          const st = findStat(s, loc.name);
           const d = st ? st.days : 0;
           const fill = d ? CAMP_RAMP[Math.min(4, Math.floor(d / maxD * 4.999))] : '#ffffff';
           const num = String(s.name).replace(/^Site\s*0?/i, '');
@@ -1117,7 +1125,7 @@
         });
         const q = '?token=' + encodeURIComponent(CFG.token || '') +
           (loc.id && loc.id !== 'default' ? '&location=' + encodeURIComponent(loc.id) : '');
-        fetch('/' + CFG.slug + '/campmap/api/positions' + q, {
+        fetch('/' + CFG.slug + '/facilities/api/campsite-positions' + q, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ positions, token: CFG.token || '' }),
         }).then(r => r.json()).then(j => {
@@ -1190,11 +1198,10 @@
         for (let d = new Date(start + 'T00:00:00'); d <= endD && days.length < 1100; d.setDate(d.getDate() + 1)) days.push(fmtDate(d)); }
       const weekly = days.length > 95;
 
-      // Per-site, per-day occupancy + per-site stats. Keys pair the reservation
-      // Location with the short site name so same-named sites at different
-      // campsite locations stay separate; find* helpers match a mapped site to
-      // its stats by (name, location) with a name-only fallback.
-      const occByKey = {}, statByKey = {}, occIdx = {}, statIdx = {};
+      // Per-site stats + per-day occupancy, one entry per (reservation Location,
+      // short site name) so same-named sites at different campsite locations
+      // stay separate. Each entry carries its own occ day-map.
+      const statByKey = {}, statIdx = {};
       rows.forEach(r => {
         const site = shortSite(r['Facility']);
         const locName = r['Location'] || '';
@@ -1202,36 +1209,51 @@
         const d = String(r['Date'] || '').slice(0, 10);
         const n = dayNum(r), t = totDays(r);
         const cls = (t <= 1 || !n) ? 'one' : n === 1 ? 'arr' : n === t ? 'dep' : 'occ';
-        let oc = occByKey[key];
-        if (!oc) { oc = occByKey[key] = { location: locName, days: {} }; (occIdx[site] = occIdx[site] || []).push(oc); }
-        oc.days[d] = {
+        let st = statByKey[key];
+        if (!st) { st = statByKey[key] = { site, location: locName, stays: 0, days: 0, rev: 0, guests: 0, occ: {} }; (statIdx[site] = statIdx[site] || []).push(st); }
+        st.occ[d] = {
           cls,
           tip: (r['Reservee'] || 'Booked') + (t > 1 ? ' · day ' + n + ' of ' + t : '') + (r['Purpose'] ? ' · ' + r['Purpose'] : ''),
         };
-        let st = statByKey[key];
-        if (!st) { st = statByKey[key] = { site, location: locName, stays: 0, days: 0, rev: 0, guests: 0 }; (statIdx[site] = statIdx[site] || []).push(st); }
         st.days++;
         if (isArrival(r)) { st.stays++; st.rev += Number(r['Total']) || 0; st.guests += Number(r['Head Cnt']) || 0; }
       });
-      const pick = (idx, name, locName) => {
-        const list = idx[name];
-        if (!list) return null;
-        return list.find(x => x.location === locName) || (list.length === 1 ? list[0] : null);
+      const statList = Object.keys(statByKey).map(k => statByKey[k]);
+      // Fuzzy matcher — reservation site names don't always equal seed names.
+      // Douglas: 'Topaz Lake Recreation Area - Site 01' shortens to 'Site 01',
+      // the seed name (exact match). Pleasant Hill: the feed says
+      // "10 Brown's Arm" for seed 'Site 10' in area "Brown's Arm". Order:
+      // exact name (location tiebreak) → same site number + area/name text
+      // overlap → unambiguous number-only.
+      const normTxt = s => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+      const numOf = s => { const m = /\d+/.exec(String(s || '')); return m ? parseInt(m[0], 10) : null; };
+      const matchStat = (site, locName) => {   // site: { name, area } from geo
+        const exact = statIdx[site.name];
+        if (exact) return exact.find(x => x.location === locName) || (exact.length === 1 ? exact[0] : null);
+        const num = numOf(site.name);
+        if (num == null) return null;
+        const areaN = normTxt(site.area), nameN = normTxt(site.name);
+        const cands = statList.filter(st => numOf(st.site) === num);
+        const byText = cands.filter(st => {
+          const restN = normTxt(String(st.site).replace(/\d+/g, ' '));
+          return restN && ((areaN && (areaN.indexOf(restN) !== -1 || restN.indexOf(areaN) !== -1)) || nameN.indexOf(restN) !== -1);
+        });
+        if (byText.length) return byText.find(x => x.location === locName) || byText[0];
+        return cands.length === 1 ? cands[0] : null;
       };
-      const findStat = (name, locName) => pick(statIdx, name, locName);
-      const findOcc  = (name, locName) => { const o = pick(occIdx, name, locName); return o ? o.days : null; };
 
       const locs = geo.locations || [];
       const geoSitesAll = locs.reduce((a, l) => a.concat(l.sites), []);
-      const statList = Object.keys(statByKey).map(k => statByKey[k]);
-      // Calendar groups: one per mapped campsite location, plus booked sites
-      // that aren't on any map ("Other sites").
+      // Calendar groups: one per mapped campsite location (each site row keeps a
+      // ref to its matched stats), plus booked sites not on any map ("Other sites").
       const claimed = new Set();
-      locs.forEach(l => l.sites.forEach(s => { const st = findStat(s.name, l.name); if (st) claimed.add(st); }));
-      const leftovers = statList.filter(st => !claimed.has(st));
       const byNum = (a, b) => a.n.localeCompare(b.n, undefined, { numeric: true });
-      const calGroups = locs.map(l => ({ name: l.name, sites: l.sites.map(s => ({ n: s.name, loc: l.name })).sort(byNum) }));
-      if (leftovers.length) calGroups.push({ name: locs.length ? 'Other sites' : '', sites: leftovers.map(st => ({ n: st.site, loc: st.location })).sort(byNum) });
+      const calGroups = locs.map(l => ({
+        name: l.name,
+        sites: l.sites.map(s => { const st = matchStat(s, l.name); if (st) claimed.add(st); return { n: s.name, loc: l.name, st }; }).sort(byNum),
+      }));
+      const leftovers = statList.filter(st => !claimed.has(st));
+      if (leftovers.length) calGroups.push({ name: locs.length ? 'Other sites' : '', sites: leftovers.map(st => ({ n: st.site, loc: st.location, st })).sort(byNum) });
       const sitesTotal  = geoSitesAll.length ? geoSitesAll.length + leftovers.length : statList.length;
       const sitesBooked = statList.length;
       const siteDays = rows.length;
@@ -1282,7 +1304,7 @@
       ];
 
       const calCell = (site, dList, key) => {
-        const od = findOcc(site.n, site.loc) || {};
+        const od = (site.st && site.st.occ) || {};
         if (weekly) {
           const n = dList.reduce((s, d) => s + (od[d] ? 1 : 0), 0);
           const idx = !n ? 0 : Math.min(5, 1 + Math.floor((n - 1) / dList.length * 5));
@@ -1316,7 +1338,7 @@
         // One sub-grid per campsite location when the org runs more than one.
         (() => {
           const groups = calGroups.map(g => ({
-            name: g.name, all: g.sites, booked: g.sites.filter(s => findStat(s.n, s.loc)),
+            name: g.name, all: g.sites, booked: g.sites.filter(s => s.st),
           })).filter(g => g.all.length);
           const totalAll = groups.reduce((n, g) => n + g.all.length, 0);
           const hidden = totalAll - groups.reduce((n, g) => n + g.booked.length, 0);
@@ -1357,7 +1379,7 @@
             (locs.length > 1 ? locs.length + ' campsite locations' : (locs[0].name || 'sites')) + ' — deeper green = more days booked')),
           locs.map((l, i) => e('div', { className: 'aqua-panel', key: l.id || i, style: i ? { marginTop: 12 } : null },
             locs.length > 1 ? e('h4', null, l.name || ('Location ' + (i + 1)), e('span', { className: 'n' }, l.sites.length + ' site' + (l.sites.length === 1 ? '' : 's'))) : null,
-            e(CampMap, { loc: l, findStat, editable: !!CFG.token }),
+            e(CampMap, { loc: l, findStat: matchStat, editable: !!CFG.token }),
             e('div', { className: 'camp-map-legend' },
               e('span', null, e('i', { style: { background: '#fff', borderColor: '#94a3b8' } }), ' No bookings'),
               CAMP_RAMP.map((c, ci) => e('i', { key: ci, style: { background: c } })),
