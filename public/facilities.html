@@ -1055,7 +1055,8 @@
       React.useEffect(() => {
         if (!mapRef.current || !geo || !geo.sites.length || typeof L === 'undefined') return;
         const map = L.map(mapRef.current, { scrollWheelZoom: false });
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap', maxZoom: 19 }).addTo(map);
+        // Same Google hybrid imagery as the public campmap page, so the two maps match.
+        L.tileLayer('https://mt{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', { subdomains: ['0', '1', '2', '3'], maxZoom: 21, attribution: 'Imagery ©2026 Google' }).addTo(map);
         const maxD = Math.max(1, ...geo.sites.map(s => (statBySite[s.name] || {}).days || 0));
         const RAMP = ['#dcedd6', '#a4d3a0', '#5fae70', '#2c8a50', '#155f36'];
         const pts = [];
@@ -1084,6 +1085,7 @@
     function CampingView({ start, end }) {
       const [data, setData] = React.useState({ rows: null, err: null });
       const [geo, setGeo] = React.useState(null);
+      const [allSites, setAllSites] = React.useState(false);
 
       React.useEffect(() => {
         let dead = false;
@@ -1229,16 +1231,25 @@
             e('div', { className: 'sc-val ' + c.cls }, c.val),
             e('div', { className: 'sc-sub' }, c.sub)))),
 
-        // Site × day occupancy calendar
-        calSites.length ? e('div', { className: 'aqua-sec' },
+        // Site × day occupancy calendar — booked sites only by default; empty
+        // rows are noise at campgrounds with many mapped-but-unbooked sites.
+        (() => {
+          const calShown = allSites ? calSites : calSites.filter(s => statBySite[s]);
+          const hidden = calSites.length - calSites.filter(s => statBySite[s]).length;
+          if (!calShown.length) return null;
+          return e('div', { className: 'aqua-sec' },
           e('h3', null, 'Site occupancy calendar', e('span', { className: 'sub' },
-            weekly ? 'weekly — deeper green = more days booked' : 'green runs are stays — dark cell = check-in day')),
+            weekly ? 'weekly — deeper green = more days booked' : 'green runs are stays — dark cell = check-in day'),
+            hidden > 0 ? e('button', {
+              onClick: () => setAllSites(v => !v),
+              style: { marginLeft: 10, fontSize: 10, fontWeight: 600, color: '#2c8a50', background: 'none', border: '1px solid #a4d3a0', borderRadius: 12, padding: '1px 9px', cursor: 'pointer', textTransform: 'none', letterSpacing: 0 },
+            }, allSites ? 'Hide ' + hidden + ' empty sites' : 'Show all ' + calSites.length + ' sites') : null),
           e('div', { className: 'aqua-panel' },
             e('div', { className: 'camp-cal-wrap' },
               e('div', { className: 'camp-cal', style: { gridTemplateColumns: '110px repeat(' + calCols.length + ', minmax(' + (weekly ? 22 : 14) + 'px, 1fr))' } },
                 e('div', { className: 'cc-site' }, ''),
                 calCols.map((dl, i) => hdFor(dl, i)),
-                calSites.flatMap(site => [
+                calShown.flatMap(site => [
                   e('div', { key: site + 'lbl', className: 'cc-site', title: site }, site),
                   calCols.map((dl, i) => calCell(site, dl, site + '-' + i)),
                 ]))),
@@ -1248,7 +1259,8 @@
                   e('span', null, e('i', { style: { background: '#2c8a50' } }), 'Check-in'),
                   e('span', null, e('i', { style: { background: '#5fae70' } }), 'Occupied'),
                   e('span', null, e('i', { style: { background: '#a4d3a0' } }), 'Checkout'),
-                  e('span', null, e('i', { style: { background: '#f4f3ef', border: '1px solid #e5e3dd' } }), 'Open')))) : null,
+                  e('span', null, e('i', { style: { background: '#f4f3ef', border: '1px solid #e5e3dd' } }), 'Open'))));
+        })(),
 
         // Campground map
         geo.sites.length ? e('div', { className: 'aqua-sec' },
