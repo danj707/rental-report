@@ -212,6 +212,34 @@
     .tennis-pending .tp-head { display: flex; align-items: center; gap: 10px; font-size: 14px; font-weight: 700; color: #14532d; margin-bottom: 5px; }
     .tennis-pending .tp-badge { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; background: #16a34a; color: #fff; border-radius: 10px; padding: 2px 9px; }
     .tennis-pending .tp-body { font-size: 12.5px; color: #3f6212; line-height: 1.5; }
+    /* ── Pool / Aquatics visual view ── */
+    .fac-banner.aqua { border-color:#7dd3fc; box-shadow:0 3px 14px rgba(3,105,161,.18); }
+    .aqua-sec { margin:20px 0; }
+    .aqua-sec > h3 { margin:0 0 10px; font-size:10px; text-transform:uppercase; letter-spacing:.5px; color:#6b7280; font-weight:700; }
+    .aqua-sec > h3 .sub { color:#b6b1a8; font-weight:600; text-transform:none; letter-spacing:0; margin-left:6px; }
+    .aqua-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+    @media (max-width:820px){ .aqua-grid { grid-template-columns:1fr; } }
+    .aqua-panel { background:#fff; border:1px solid #e8e6e0; border-radius:10px; padding:14px 16px; }
+    .aqua-panel h4 { margin:0 0 12px; font-size:12px; font-weight:700; color:#111; display:flex; align-items:baseline; gap:6px; }
+    .aqua-panel h4 .n { font-weight:500; color:#9ca3af; font-size:11px; }
+    .aqua-bars { display:flex; flex-direction:column; gap:7px; }
+    .aqua-bar { display:grid; grid-template-columns:120px 1fr auto; align-items:center; gap:9px; font-size:11.5px; }
+    .aqua-bar .lbl { color:#374151; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .aqua-bar .trk { background:#eef3f5; border-radius:5px; height:16px; overflow:hidden; }
+    .aqua-bar .fil { height:100%; border-radius:5px; min-width:3px; }
+    .aqua-bar .val { color:#111; font-weight:700; font-variant-numeric:tabular-nums; white-space:nowrap; }
+    .aqua-bar .val .mut { color:#9ca3af; font-weight:500; }
+    .aqua-hm { display:grid; gap:4px; }
+    .aqua-hm .hm-cell, .aqua-hm .hm-hd, .aqua-hm .hm-mo { border-radius:4px; height:26px; display:flex; align-items:center; justify-content:center; font-size:11px; font-variant-numeric:tabular-nums; }
+    .aqua-hm .hm-hd { font-size:10px; font-weight:700; color:#9ca3af; text-transform:uppercase; height:18px; }
+    .aqua-hm .hm-mo { justify-content:flex-end; padding-right:8px; color:#6b7280; font-weight:600; }
+    .aqua-hm .hm-cell { color:#0f172a; font-weight:600; cursor:default; }
+    .aqua-hm-legend { display:flex; align-items:center; gap:5px; margin-top:9px; font-size:10px; color:#9ca3af; }
+    .aqua-hm-legend i { width:16px; height:14px; border-radius:3px; display:inline-block; }
+    .aqua-split { display:flex; height:24px; border-radius:5px; overflow:hidden; border:1px solid #e8e6e0; background:#f3f4f6; }
+    .aqua-split .seg { display:flex; align-items:center; justify-content:center; font-size:10px; font-weight:700; color:#fff; white-space:nowrap; overflow:hidden; }
+    .aqua-split-legend { display:flex; gap:14px; margin-top:7px; font-size:11px; color:#6b7280; flex-wrap:wrap; }
+    .aqua-split-legend .dot { width:8px; height:8px; border-radius:50%; display:inline-block; margin-right:5px; }
   </style>
 </head>
 <body>
@@ -688,6 +716,272 @@
           ),
         ),
         e('div', { className: 'section-note' }, vert.label + ' · ' + bookings.toLocaleString() + ' bookings in range · scoped to ' + vert.types.join(', ') + ' site types.'),
+      );
+    }
+
+    // ── Pool / Aquatics — a richer, visual take on the vertical view ─────────
+    // Same facility feed, scoped to pool sites. Adds a pool hero, a weekday×month
+    // booking heatmap, revenue-by-site + party-size bars, and booking-mix splits.
+    const POOL_SCENE = '<svg viewBox="0 0 1200 172" preserveAspectRatio="xMidYMid slice">' +
+      '<defs>' +
+      '<linearGradient id="poSky" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#0369a1"/><stop offset="55%" stop-color="#38bdf8"/><stop offset="100%" stop-color="#e0f7fa"/></linearGradient>' +
+      '<linearGradient id="poWater" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#22d3ee"/><stop offset="100%" stop-color="#0e7490"/></linearGradient>' +
+      '<radialGradient id="poSun" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="#fffbeb"/><stop offset="60%" stop-color="#fde68a"/><stop offset="100%" stop-color="#fde68a" stop-opacity="0"/></radialGradient>' +
+      '<linearGradient id="poScrim" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#083344" stop-opacity="0.62"/><stop offset="55%" stop-color="#083344" stop-opacity="0.12"/><stop offset="100%" stop-color="#083344" stop-opacity="0"/></linearGradient>' +
+      '</defs>' +
+      '<rect x="0" y="0" width="1200" height="172" fill="url(#poSky)"/>' +
+      '<circle cx="150" cy="44" r="82" fill="url(#poSun)"/><circle cx="150" cy="44" r="24" fill="#fffef6"/>' +
+      '<rect x="0" y="94" width="1200" height="78" fill="#e7e5e4"/>' +
+      '<rect x="0" y="108" width="1200" height="64" fill="url(#poWater)"/>' +
+      '<g stroke="#e0f7fa" stroke-width="2" opacity="0.72">' +
+      '<line x1="0" y1="122" x2="1200" y2="122" stroke-dasharray="14 10"/>' +
+      '<line x1="0" y1="140" x2="1200" y2="140" stroke-dasharray="14 10"/>' +
+      '<line x1="0" y1="158" x2="1200" y2="158" stroke-dasharray="14 10"/>' +
+      '</g>' +
+      '<g fill="none" stroke="#a5f3fc" stroke-width="1.5" opacity="0.5">' +
+      '<path d="M60,131 q18,-6 36,0 t36,0"/><path d="M980,151 q18,-6 36,0 t36,0"/><path d="M540,117 q18,-5 36,0 t36,0"/>' +
+      '</g>' +
+      '<rect x="0" y="0" width="1200" height="172" fill="url(#poScrim)"/>' +
+      '</svg>';
+
+    function AquaBanner({ bookings, revenue, guests, avgParty, sites }) {
+      const pills = [
+        ['bookings', bookings.toLocaleString()],
+        ['net revenue', money(revenue)],
+        ['guests', guests.toLocaleString()],
+        ['avg party', avgParty ? avgParty.toFixed(1) : '—'],
+        ['active sites', sites.toLocaleString()],
+      ];
+      return e('div', { className: 'fac-banner aqua' },
+        e('div', { className: 'fb-scene', dangerouslySetInnerHTML: { __html: POOL_SCENE } }),
+        e('div', { className: 'fb-overlay' },
+          e('div', { className: 'fb-kicker' }, CFG.displayName || 'Parks & Recreation'),
+          e('div', { className: 'fb-title' }, '🏊 Pool & Aquatics'),
+          e('div', { className: 'fb-sub' }, 'Lap lanes, rec swim, pool parties & aquatic rentals.'),
+          e('div', { className: 'fb-pills' }, pills.map((p, i) => e('span', { className: 'fb-pill', key: i }, e('b', null, p[1]), ' ' + p[0]))),
+        ),
+      );
+    }
+
+    // Horizontal bar list. data: [{ label, v, valText, sub }]
+    function HBars({ data, color }) {
+      const col = color || '#0891b2';
+      const mx = Math.max(1, ...data.map(d => d.v));
+      return e('div', { className: 'aqua-bars' },
+        data.map((d, i) => e('div', { key: i, className: 'aqua-bar' },
+          e('div', { className: 'lbl', title: d.title || d.label }, d.label),
+          e('div', { className: 'trk' }, e('div', { className: 'fil', style: { width: (d.v / mx * 100) + '%', background: col } })),
+          e('div', { className: 'val' }, d.valText, d.sub ? e('span', { className: 'mut' }, ' · ' + d.sub) : null),
+        )));
+    }
+
+    // Labeled 100%-stacked split bar. parts: [{ label, short, n, color }]
+    function SplitBar({ parts }) {
+      const sum = parts.reduce((s, p) => s + p.n, 0) || 1;
+      return e('div', null,
+        e('div', { className: 'aqua-split' },
+          parts.filter(p => p.n > 0).map((p, i) => e('div', {
+            key: i, className: 'seg',
+            style: { width: (p.n / sum * 100) + '%', background: p.color },
+            title: p.label + ' · ' + p.n.toLocaleString() + ' (' + Math.round(p.n / sum * 100) + '%)',
+          }, (p.n / sum >= 0.1 ? p.short : '')))),
+        e('div', { className: 'aqua-split-legend' },
+          parts.map((p, i) => e('span', { key: i },
+            e('span', { className: 'dot', style: { background: p.color } }), p.label + ' (' + p.n.toLocaleString() + ')'))),
+      );
+    }
+
+    function AquaticsView({ rows, err, statusSel, vert }) {
+      if (err) return e('div', { className: 'empty' },
+        e('div', { className: 'em-icon' }, '⚠️'),
+        e('div', { className: 'em-title' }, 'Could not load facility data'),
+        e('div', { className: 'em-sub' }, String(err)));
+      if (rows === null) return e('div', { className: 'empty' },
+        e('div', { className: 'em-title', style: { color: '#9ca3af' } }, 'Loading Pool / Aquatics data…'),
+        e('div', { className: 'fac-spin' }));
+
+      const types = new Set(vert.types);
+      const ss = new Set(statusSel);
+      const scoped = rows.filter(r => types.has(r['Site Type']) && ss.has(lc(r['Status'])));
+      if (!scoped.length) return e('div', { className: 'empty' },
+        e('div', { className: 'em-icon' }, '🏊'),
+        e('div', { className: 'em-title' }, 'No Pool / Aquatics bookings in this range'),
+        e('div', { className: 'em-sub' }, 'This org may not run pool sites, or none were booked with the current status filter. Try a wider date range.'));
+
+      const isCanceled = r => lc(r['Status']) === 'canceled';
+      const isInstant  = r => lc(r['Booking Type']) === 'instant';
+      const rev        = r => isCanceled(r) ? 0 : (Number(r['Total']) || 0);
+      const headCnt    = r => Number(r['Head Cnt']) || 0;
+
+      const bookings  = scoped.length;
+      const revenue   = scoped.reduce((s, r) => s + rev(r), 0);
+      const canceled  = scoped.filter(isCanceled).length;
+      const confirmed = scoped.filter(r => lc(r['Status']) === 'confirmed').length;
+      const inprog    = scoped.filter(r => lc(r['Status']) === 'in-progress').length;
+      const instant   = scoped.filter(isInstant).length;
+      const managed   = bookings - instant;
+      const instRev   = scoped.filter(isInstant).reduce((s, r) => s + rev(r), 0);
+      const mgdRev    = revenue - instRev;
+      const guests    = scoped.reduce((s, r) => s + headCnt(r), 0);
+      const avgParty  = bookings ? guests / bookings : 0;
+      const sites     = new Set(scoped.map(r => (r['Facility'] || '') + '|' + (r['Location'] || ''))).size;
+
+      // Monthly + weekday×month heatmap
+      const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+      const byMonth = {};
+      const hm = {}; // month -> [7] of { n, rev }
+      scoped.forEach(r => {
+        const s = String(r['Date'] || '');
+        const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s);
+        if (!m) return;
+        const ym = m[1] + '-' + m[2];
+        const dow = new Date(+m[1], +m[2] - 1, +m[3]).getDay();
+        if (!byMonth[ym]) byMonth[ym] = { bookings: 0, revenue: 0, canceled: 0 };
+        byMonth[ym].bookings++; byMonth[ym].revenue += rev(r); if (isCanceled(r)) byMonth[ym].canceled++;
+        if (!hm[ym]) hm[ym] = Array.from({ length: 7 }, () => ({ n: 0, rev: 0 }));
+        hm[ym][dow].n++; hm[ym][dow].rev += rev(r);
+      });
+      const months = Object.keys(byMonth).sort();
+      const maxMonthRev = Math.max(1, ...months.map(m => byMonth[m].revenue));
+      const hmMax = Math.max(1, ...months.flatMap(m => hm[m].map(c => c.n)));
+      const HM_COLORS = ['#eef3f5', '#cbeef6', '#86d6e6', '#38b2ce', '#0e7d97'];
+      const hmLevel = v => !v ? 0 : (v / hmMax <= 0.25 ? 1 : v / hmMax <= 0.5 ? 2 : v / hmMax <= 0.75 ? 3 : 4);
+
+      // Top sites by revenue
+      const bySite = {};
+      scoped.forEach(r => {
+        const key = (r['Facility'] || '—') + '||' + (r['Location'] || '');
+        if (!bySite[key]) bySite[key] = { facility: r['Facility'] || '—', location: r['Location'] || '', bookings: 0, canceled: 0, revenue: 0, guests: 0 };
+        bySite[key].bookings++; bySite[key].revenue += rev(r); bySite[key].guests += headCnt(r); if (isCanceled(r)) bySite[key].canceled++;
+      });
+      const topSites = Object.values(bySite).sort((a, b) => b.revenue - a.revenue).slice(0, 12);
+
+      // Party-size distribution (bookings with a head count)
+      const PARTY = [
+        { lbl: '1–5', lo: 1, hi: 5 }, { lbl: '6–15', lo: 6, hi: 15 }, { lbl: '16–30', lo: 16, hi: 30 },
+        { lbl: '31–60', lo: 31, hi: 60 }, { lbl: '61+', lo: 61, hi: Infinity },
+      ];
+      const withParty = scoped.filter(r => headCnt(r) >= 1);
+      const partyData = PARTY.map(b => {
+        const n = withParty.filter(r => { const h = headCnt(r); return h >= b.lo && h <= b.hi; }).length;
+        return { label: b.lbl + ' guests', v: n, valText: n.toLocaleString() };
+      });
+
+      // Usage category mix
+      const byUse = {};
+      scoped.forEach(r => {
+        const u = (r['Usage Category'] || '').trim();
+        if (!u) return;
+        if (!byUse[u]) byUse[u] = { bookings: 0, revenue: 0 };
+        byUse[u].bookings++; byUse[u].revenue += rev(r);
+      });
+      const useKeys = Object.keys(byUse).sort((a, b) => byUse[b].bookings - byUse[a].bookings).slice(0, 8);
+
+      const kpis = [
+        { label: 'Bookings', val: bookings.toLocaleString(), cls: 'sc-blue', sub: 'pool reservations in view' },
+        { label: 'Net Revenue', val: money(revenue), cls: 'sc-green', sub: 'excludes canceled' },
+        { label: 'Instant-Book', val: pct(instant, bookings), cls: 'sc-purple', sub: instant.toLocaleString() + ' bkgs · ' + money(instRev) },
+        { label: 'Managed', val: pct(managed, bookings), cls: 'sc-amber', sub: managed.toLocaleString() + ' bkgs · ' + money(mgdRev) },
+        { label: 'Cancellation Rate', val: pct(canceled, bookings), cls: 'sc-red', sub: canceled.toLocaleString() + ' of ' + bookings.toLocaleString() + ' canceled' },
+        { label: 'Active Sites', val: sites.toLocaleString(), cls: 'sc-muted', sub: 'with bookings in view' },
+        { label: 'Total Guests', val: guests.toLocaleString(), cls: 'sc-muted', sub: 'sum of head counts' },
+        { label: 'Avg Party', val: avgParty ? avgParty.toFixed(1) : '—', cls: 'sc-muted', sub: 'guests per booking' },
+      ];
+
+      return e('div', null,
+        e(AquaBanner, { bookings, revenue, guests, avgParty, sites }),
+        e('div', { className: 'sum-cards' },
+          kpis.map((c, i) => e('div', { className: 'sum-card', key: i },
+            e('div', { className: 'sc-label' }, c.label),
+            e('div', { className: 'sc-val ' + c.cls }, c.val),
+            e('div', { className: 'sc-sub' }, c.sub)))),
+
+        // Heatmap — when the pools get booked
+        e('div', { className: 'aqua-sec' },
+          e('h3', null, 'When the pools get booked', e('span', { className: 'sub' }, 'bookings by weekday & month — deeper = busier')),
+          e('div', { className: 'aqua-panel' },
+            e('div', { className: 'aqua-hm', style: { gridTemplateColumns: '68px repeat(7, minmax(0,1fr))' } },
+              e('div', { className: 'hm-mo' }, ''),
+              DOW.map((d, i) => e('div', { key: 'h' + i, className: 'hm-hd' }, d)),
+              months.flatMap(m => [
+                e('div', { key: m + 'lbl', className: 'hm-mo' }, monthLabel(m)),
+                hm[m].map((c, d) => {
+                  const lvl = hmLevel(c.n);
+                  return e('div', {
+                    key: m + '-' + d, className: 'hm-cell',
+                    style: { background: HM_COLORS[lvl], color: lvl >= 3 ? '#f0fdff' : (lvl === 0 ? '#cbd5e1' : '#0f172a') },
+                    title: DOW[d] + 's · ' + monthLabel(m) + ' · ' + c.n.toLocaleString() + ' booking' + (c.n === 1 ? '' : 's') + ' · ' + money(c.rev),
+                  }, c.n || '');
+                }),
+              ]),
+            ),
+            e('div', { className: 'aqua-hm-legend' }, 'Fewer',
+              HM_COLORS.map((c, i) => e('i', { key: i, style: { background: c } })), 'More'),
+          )),
+
+        // Revenue by site + party size
+        e('div', { className: 'aqua-sec' },
+          e('div', { className: 'aqua-grid' },
+            e('div', { className: 'aqua-panel' },
+              e('h4', null, 'Revenue by site', e('span', { className: 'n' }, 'top ' + topSites.length)),
+              e(HBars, { data: topSites.map(s => ({ label: s.facility.indexOf(' - ') !== -1 ? s.facility.split(' - ').slice(1).join(' - ') : s.facility, title: s.facility, v: s.revenue, valText: money(s.revenue), sub: s.bookings + ' bkgs' })) })),
+            e('div', { className: 'aqua-panel' },
+              e('h4', null, 'Party size', e('span', { className: 'n' }, withParty.length.toLocaleString() + ' of ' + bookings.toLocaleString() + ' with a head count')),
+              withParty.length
+                ? e(HBars, { data: partyData })
+                : e('div', { style: { fontSize: 12, color: '#9ca3af', padding: '8px 0' } }, 'No head-count data on these bookings.')))),
+
+        // Booking mix + usage category
+        e('div', { className: 'aqua-sec' },
+          e('div', { className: useKeys.length ? 'aqua-grid' : '' },
+            e('div', { className: 'aqua-panel' },
+              e('h4', null, 'Booking mix'),
+              e('div', { style: { fontSize: 10, color: '#888', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.5px', margin: '2px 0 5px' } }, 'Channel'),
+              e(SplitBar, { parts: [
+                { label: 'Instant-book', short: 'Instant', n: instant, color: '#0891b2' },
+                { label: 'Staff-managed', short: 'Managed', n: managed, color: '#d97706' },
+              ] }),
+              e('div', { style: { fontSize: 10, color: '#888', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.5px', margin: '14px 0 5px' } }, 'Status'),
+              e(SplitBar, { parts: [
+                { label: 'Confirmed', short: 'Confirmed', n: confirmed, color: '#16a34a' },
+                { label: 'In-progress', short: 'In-progress', n: inprog, color: '#2563eb' },
+                { label: 'Canceled', short: 'Canceled', n: canceled, color: '#dc2626' },
+              ] })),
+            useKeys.length ? e('div', { className: 'aqua-panel' },
+              e('h4', null, 'Usage type', e('span', { className: 'n' }, 'by bookings')),
+              e(HBars, { data: useKeys.map(u => ({ label: u, v: byUse[u].bookings, valText: byUse[u].bookings.toLocaleString(), sub: money(byUse[u].revenue) })) })) : null)),
+
+        // Monthly seasonality
+        months.length > 1 ? e('div', { className: 'aqua-sec' },
+          e('h3', null, 'Bookings & revenue by month'),
+          e('div', { className: 'vtrend' },
+            months.map((m, i) => e('div', { className: 'vtrend-row', key: i },
+              e('div', { className: 'vtrend-mo' }, monthLabel(m)),
+              e('div', { className: 'vtrend-track' }, e('div', { className: 'vtrend-bar', style: { width: (byMonth[m].revenue / maxMonthRev * 100) + '%' } })),
+              e('div', { className: 'vtrend-rev' }, money(byMonth[m].revenue)),
+              e('div', { className: 'vtrend-bk' }, byMonth[m].bookings.toLocaleString() + ' bkgs')))),
+        ) : null,
+
+        // Detail table
+        e('table', { className: 'sum-cat-table' },
+          e('caption', null, 'Top Pool / Aquatics sites by revenue ',
+            e('span', { style: { fontWeight: 400, color: '#9ca3af', fontSize: 11 } }, '· ', e('span', { className: 'flag' }, '⚠ HIGH CANCEL'), ' ≥' + HIGH_CANCEL + '% canceled')),
+          e('thead', null, e('tr', null,
+            e('th', null, 'Site'), e('th', null, 'Location'),
+            e('th', { className: 'num' }, 'Bookings'), e('th', { className: 'num' }, 'Avg party'),
+            e('th', { className: 'num' }, 'Cancel %'), e('th', { className: 'num' }, 'Net revenue'))),
+          e('tbody', null,
+            topSites.map((s, i) => {
+              const crPct = s.bookings ? (s.canceled / s.bookings) * 100 : 0;
+              return e('tr', { key: i },
+                e('td', null, s.facility, crPct >= HIGH_CANCEL ? e('span', { className: 'flag', style: { marginLeft: 6 } }, '⚠') : null),
+                e('td', null, s.location),
+                e('td', { className: 'num' }, s.bookings),
+                e('td', { className: 'num' }, s.bookings ? (s.guests / s.bookings).toFixed(1) : '—'),
+                e('td', { className: 'num' }, pct(s.canceled, s.bookings)),
+                e('td', { className: 'num' }, money(s.revenue)));
+            }))),
+        e('div', { className: 'section-note' }, 'Pool / Aquatics · ' + bookings.toLocaleString() + ' bookings in range · scoped to ' + vert.types.join(', ') + ' site types.'),
       );
     }
 
@@ -1254,7 +1548,7 @@
               e('div', { className: 'date-range' }, fmtRange(start, end)),
             ),
           ),
-          e(FacilitiesBanner, { a: bannerAgg }),
+          tab === 'aquatics' ? null : e(FacilitiesBanner, { a: bannerAgg }),
           // Filters are context-aware: the site-type filter only makes sense on
           // the Summary (a vertical tab already fixes the type); Court Utilization
           // manages its own filters + dates inside the embed, so no hub filters.
@@ -1285,9 +1579,11 @@
               ? e(CourtUtilizationView, { start, end })
               : tab === 'racket'
                 ? e(RacketSportsView, { start, end })
-                : VERT_CONFIG[tab]
-                  ? e(VerticalView, { rows, err, statusSel, vert: Object.assign({ key: tab }, VERT_CONFIG[tab]) })
-                  : e(SummaryTab, { rows, err, statusSel, typeSel }),
+                : tab === 'aquatics'
+                  ? e(AquaticsView, { rows, err, statusSel, vert: Object.assign({ key: tab }, VERT_CONFIG[tab]) })
+                  : VERT_CONFIG[tab]
+                    ? e(VerticalView, { rows, err, statusSel, vert: Object.assign({ key: tab }, VERT_CONFIG[tab]) })
+                    : e(SummaryTab, { rows, err, statusSel, typeSel }),
         ),
       );
     }
