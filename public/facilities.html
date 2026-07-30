@@ -1262,15 +1262,22 @@
                   e('span', null, e('i', { style: { background: '#f4f3ef', border: '1px solid #e5e3dd' } }), 'Open'))));
         })(),
 
-        // Campground map
+        // Campground map — same site pins as the public campmap page (seed +
+        // admin-dragged positions), so edits made there show up here.
         geo.sites.length ? e('div', { className: 'aqua-sec' },
-          e('h3', null, 'Campground map', e('span', { className: 'sub' }, (geo.locationName || 'sites') + ' — deeper green = more days booked; click a site for details')),
+          e('h3', null, 'Campground map', e('span', { className: 'sub' }, (geo.locationName || 'sites') + ' — deeper green = more days booked; click a site for details'),
+            CFG.token ? e('a', {
+              href: '/' + CFG.slug + '/campmap?token=' + encodeURIComponent(CFG.token),
+              target: '_blank', rel: 'noopener',
+              style: { marginLeft: 10, fontSize: 10, fontWeight: 600, color: '#2c8a50', border: '1px solid #a4d3a0', borderRadius: 12, padding: '1px 9px', textDecoration: 'none', textTransform: 'none', letterSpacing: 0 },
+            }, '✏️ Edit site locations') : null),
           e('div', { className: 'aqua-panel' },
             e(CampMap, { geo, statBySite }),
             e('div', { className: 'camp-map-legend' },
               e('span', null, e('i', { style: { background: '#fff', borderColor: '#94a3b8' } }), ' No bookings'),
               ['#dcedd6', '#a4d3a0', '#5fae70', '#2c8a50', '#155f36'].map((c, i) => e('i', { key: i, style: { background: c } })),
-              'More days booked'))) : null,
+              'More days booked',
+              e('span', { style: { marginLeft: 'auto', color: '#b6b1a8' } }, 'Pins are shared with the campsite map — drag sites there to fix locations here.')))) : null,
 
         // Arrivals by weekday + stay length
         hasStays ? e('div', { className: 'aqua-sec' },
