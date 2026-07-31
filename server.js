@@ -1200,7 +1200,7 @@ const AMENITY_TAGS = {
 
 // Report types that are valid system-wide but should NOT be offered in the
 // dashboard "+ Add report" flow (e.g. not yet ready for self-serve onboarding).
-const NON_ADDABLE_REPORTS = new Set(["program-demographics", "retention", "annual-report", "section-detail", "qoq", "checkins", "program-checkins"]);
+const NON_ADDABLE_REPORTS = new Set(["program-demographics", "retention", "annual-report", "section-detail", "qoq", "checkins", "program-checkins", "selfservice"]);
 // Reports that require extra params (e.g. section_id) and cannot be health-checked with org_id alone
 const HEALTH_SKIP_REPORTS = new Set(["section-detail", "annual-report", "qoq", "qbr-stats", "checkins", "program-checkins", "selfservice"]);
 const RENTAL_CALENDAR_ORGS = new Set(["watertown", "norman", "niagarafalls"]);
@@ -3067,6 +3067,7 @@ app.get("/api/org-visibility/:slug", (req, res) => {
   // Build list of all available report types for this org
   const available = [];
   for (const rt of REPORT_TYPES) {
+    if (NON_ADDABLE_REPORTS.has(rt)) continue; // data feeds, not standalone reports
     const hasPerOrg = org[rt]?.mbUuid;
     const hasShared = SHARED_UUIDS[rt];
     if (hasPerOrg || hasShared) {
@@ -3868,7 +3869,7 @@ async function fetchOrgChatData(orgSlug, orgConfig) {
   if (hit && Date.now() - hit.ts < CHAT_DATA_TTL) return hit.data;
 
   const orgHidden = new Set(getHiddenReports(orgSlug));
-  const CHAT_SKIP = new Set(["section-detail","program-demographics","retention","annual-report","checkins","program-checkins","ice-calendar","qoq"]);
+  const CHAT_SKIP = new Set(["section-detail","program-demographics","retention","annual-report","checkins","program-checkins","ice-calendar","qoq","selfservice"]);
   const reports = REPORT_TYPES.filter(r => !orgHidden.has(r) && !CHAT_SKIP.has(r) && (orgConfig[r]?.mbUuid || SHARED_UUIDS[r]));
   console.log("[chat-data] " + orgSlug + ": fetching " + reports.length + " reports: " + reports.join(", "));
   const results = {};
