@@ -97,7 +97,12 @@ const REPORT_CACHE_TTL = {
   historic: 6 * 60 * 60 * 1000,           // 6 hrs — rarely changes
   "instructor-payout": 4 * 60 * 60 * 1000, // 4 hrs
   "section-detail": 60 * 60 * 1000,       // 1 hr — drill-down still relatively fresh
+  selfservice: 4 * 60 * 60 * 1000,        // 4 hrs — channel mix moves slowly
 };
+// Fully-historical windows (end_date before today) barely change — refunds and
+// edits can back-modify them, but the nightly prewarm catches that drift.
+// Serving them for 24h means prior-period delta fetches rarely hit Metabase twice.
+const HIST_CACHE_TTL = 24 * 60 * 60 * 1000;
 const dataCache = new Map();
 
 // ── Request performance log (ring buffer, last 500 requests) ──
@@ -139,18 +144,18 @@ function getCached(key, orgSlug, reportType) {
     entry = dataCache.get(baseKey);
   }
   if (!entry) { cacheStats.misses++; return null; }
-  const ttl = REPORT_CACHE_TTL[entry.rt] || CACHE_TTL;
+  const ttl = entry.hist ? HIST_CACHE_TTL : (REPORT_CACHE_TTL[entry.rt] || CACHE_TTL);
   if (Date.now() - entry.ts > ttl) { dataCache.delete(key); cacheStats.misses++; return null; }
   cacheStats.hits++;
   return entry.data;
 }
 
-function setCache(key, data, reportType) {
-  const entry = { data, ts: Date.now(), rt: reportType || '' };
+function setCache(key, data, reportType, hist) {
+  const entry = { data, ts: Date.now(), rt: reportType || '', hist: !!hist };
   dataCache.set(key, entry);
   try {
     const fname = Buffer.from(key).toString('base64url').slice(0, 180) + '.json';
-    fs.writeFile(path.join(CACHE_DIR, fname), JSON.stringify({ key, data: entry.data, ts: entry.ts, rt: entry.rt }), 'utf8', () => {});
+    fs.writeFile(path.join(CACHE_DIR, fname), JSON.stringify({ key, data: entry.data, ts: entry.ts, rt: entry.rt, hist: entry.hist }), 'utf8', () => {});
   } catch {}
 }
 
@@ -192,7 +197,7 @@ function getStaleCached(orgSlug, reportType, exactKey) {
           usersCache.set(entry.key.replace('users:', ''), { data: entry.data, ts: entry.ts });
           userLoaded++;
         } else {
-          dataCache.set(entry.key, { data: entry.data, ts: entry.ts, rt: entry.rt || '' });
+          dataCache.set(entry.key, { data: entry.data, ts: entry.ts, rt: entry.rt || '', hist: !!entry.hist });
           loaded++;
         }
       } catch {}
@@ -436,6 +441,18 @@ async function prewarmCache() {
   ];
   const monthParamStr = `?parameters=${encodeURIComponent(JSON.stringify(monthParams))}`;
 
+  // Prior calendar month — warmed for the report types whose pages show
+  // prior-period delta pills, so the default "This Month" view gets its
+  // comparison numbers from cache instead of a live Metabase query.
+  const priorStart = `${new Date(now.getFullYear(), now.getMonth()-1, 1).getFullYear()}-${String(new Date(now.getFullYear(), now.getMonth()-1, 1).getMonth()+1).padStart(2,'0')}-01`;
+  const priorLastDay = new Date(now.getFullYear(), now.getMonth(), 0);
+  const priorEnd = `${priorLastDay.getFullYear()}-${String(priorLastDay.getMonth()+1).padStart(2,'0')}-${String(priorLastDay.getDate()).padStart(2,'0')}`;
+  const priorMonthParams = [
+    { type: "date/single", target: ["variable", ["template-tag", "start_date"]], value: priorStart },
+    { type: "date/single", target: ["variable", ["template-tag", "end_date"]],   value: priorEnd },
+  ];
+  const DELTA_PREWARM_REPORTS = new Set(["programs", "gl", "selfservice"]);
+
   for (const slug of Object.keys(ORGS)) {
     const org = ORGS[slug];
     if (!org.token) continue;
@@ -443,6 +460,29 @@ async function prewarmCache() {
       const useShared = rt === "gl" ? (!org.gl?.mbUuid && !!SHARED_UUIDS.gl) : !!SHARED_UUIDS[rt];
       const mbUuid = useShared ? SHARED_UUIDS[rt] : (org[rt]?.mbUuid || SHARED_UUIDS[rt]);
       if (!mbUuid) continue;
+      // ── Prior-month warm for delta pills (runs even when current month is warm) ──
+      if (DELTA_PREWARM_REPORTS.has(rt) && !NO_DATE_REPORTS.has(rt)) {
+        try {
+          const pParams = [];
+          if (useShared && org.orgId) pParams.push({ type: "string/=", target: ["variable", ["template-tag", "org_id"]], value: org.orgId });
+          pParams.push(...priorMonthParams);
+          const pStr = `?parameters=${encodeURIComponent(JSON.stringify(pParams))}`;
+          const priorKey = `${slug}:${rt}:${pStr}`;
+          if (!getCached(priorKey)) {
+            const resp = await fetch(`${METABASE_URL}/api/public/card/${mbUuid}/query/json${pStr}`, { signal: AbortSignal.timeout(org.healthTimeoutMs || 120000) });
+            if (resp.ok) {
+              const data = await resp.json();
+              setCache(priorKey, {
+                rows: data,
+                meta: { org_slug: slug, org_id: org.orgId, logo_url: org.logoUrl, report_type: rt, generated_at: new Date().toISOString() },
+              }, rt, true);
+              console.log(`[cache] Warmed prior-month ${slug}/${rt} (${data.length} rows)`);
+            }
+          }
+        } catch (e) {
+          console.warn(`[cache] Prior-month warm failed for ${slug}/${rt}: ${e.name === "TimeoutError" || e.name === "AbortError" ? "timeout" : e.message}`);
+        }
+      }
       if (HEALTH_SKIP_REPORTS.has(rt)) continue;
       // Only pre-warm reports with no required params (default = current month)
       const cacheKey = `${slug}:${rt}:`;
@@ -747,7 +787,7 @@ const ORGS = {
   },
 };
 
-const REPORT_TYPES = ["facility", "gl", "historic", "programs", "roster", "products", "memberships", "court-utilization", "calendar", "fasttrack", "users", "program-demographics", "instructor-payout", "retention", "annual-report", "section-detail", "ice-calendar", "qoq", "checkins", "program-checkins"];
+const REPORT_TYPES = ["facility", "gl", "historic", "programs", "roster", "products", "memberships", "court-utilization", "calendar", "fasttrack", "users", "program-demographics", "instructor-payout", "retention", "annual-report", "section-detail", "ice-calendar", "qoq", "checkins", "program-checkins", "selfservice"];
 
 // ── Friendly report directory — label + emoji per report type ──────────
 // Powers the smart Project-Update composer (auto-draft from the changelog):
@@ -770,6 +810,7 @@ const REPORT_DIRECTORY = {
   facilities:          { label: "Facilities",               emoji: "🏞️" },
   "ice-calendar":      { label: "Ice Participant Calendar", emoji: "❄️" },
   qoq:                 { label: "QoQ Revenue Comparison",   emoji: "📉" },
+  selfservice:         { label: "Self-Service Mix",         emoji: "🖱️" },
 };
 
 // ── Shared Metabase UUIDs (one query per report type, parameterized by org_id) ──
@@ -794,6 +835,9 @@ const SHARED_UUIDS = {
   "section-detail": "bbb347c8-9e2d-446d-b014-a86a9d14115a",
   checkins: "574324e0-b5a1-46c5-8770-8c466631fdcf",
   "program-checkins": "cb6fd909-72d3-446b-930b-c0382da02d62",
+  // Metabase question #19174 ("✅ Self-Service Mix Report") — powers the
+  // Self-Service & Staff Workload band on the Program Summary tab.
+  selfservice: "358f6b85-8af3-429e-ba24-ad2cd3207ac9",
 };
 
 // Facilities hub — Summary tab data source. This is a dedicated public card
@@ -1156,9 +1200,9 @@ const AMENITY_TAGS = {
 
 // Report types that are valid system-wide but should NOT be offered in the
 // dashboard "+ Add report" flow (e.g. not yet ready for self-serve onboarding).
-const NON_ADDABLE_REPORTS = new Set(["program-demographics", "retention", "annual-report", "section-detail", "qoq", "checkins", "program-checkins"]);
+const NON_ADDABLE_REPORTS = new Set(["program-demographics", "retention", "annual-report", "section-detail", "qoq", "checkins", "program-checkins", "selfservice"]);
 // Reports that require extra params (e.g. section_id) and cannot be health-checked with org_id alone
-const HEALTH_SKIP_REPORTS = new Set(["section-detail", "annual-report", "qoq", "qbr-stats", "checkins", "program-checkins"]);
+const HEALTH_SKIP_REPORTS = new Set(["section-detail", "annual-report", "qoq", "qbr-stats", "checkins", "program-checkins", "selfservice"]);
 const RENTAL_CALENDAR_ORGS = new Set(["watertown", "norman", "niagarafalls"]);
 // Reports HIDDEN by default for every org (opt-in to show), for WIP reports not
 // yet launched. For these, presence in an org's visibility list means SHOWN —
@@ -3023,6 +3067,7 @@ app.get("/api/org-visibility/:slug", (req, res) => {
   // Build list of all available report types for this org
   const available = [];
   for (const rt of REPORT_TYPES) {
+    if (NON_ADDABLE_REPORTS.has(rt)) continue; // data feeds, not standalone reports
     const hasPerOrg = org[rt]?.mbUuid;
     const hasShared = SHARED_UUIDS[rt];
     if (hasPerOrg || hasShared) {
@@ -3824,7 +3869,7 @@ async function fetchOrgChatData(orgSlug, orgConfig) {
   if (hit && Date.now() - hit.ts < CHAT_DATA_TTL) return hit.data;
 
   const orgHidden = new Set(getHiddenReports(orgSlug));
-  const CHAT_SKIP = new Set(["section-detail","program-demographics","retention","annual-report","checkins","program-checkins","ice-calendar","qoq"]);
+  const CHAT_SKIP = new Set(["section-detail","program-demographics","retention","annual-report","checkins","program-checkins","ice-calendar","qoq","selfservice"]);
   const reports = REPORT_TYPES.filter(r => !orgHidden.has(r) && !CHAT_SKIP.has(r) && (orgConfig[r]?.mbUuid || SHARED_UUIDS[r]));
   console.log("[chat-data] " + orgSlug + ": fetching " + reports.length + " reports: " + reports.join(", "));
   const results = {};
@@ -4514,7 +4559,10 @@ app.get("/:org/:report/api/data", resolveOrg, async (req, res) => {
       },
     };
 
-    setCache(cacheKey, result, reportType);
+    // Fully-historical windows get the long TTL — a prior-period delta fetch
+    // for an unchanged past range shouldn't re-query Metabase all day.
+    const isHistorical = !!req.query.end_date && String(req.query.end_date) < new Date().toISOString().slice(0, 10);
+    setCache(cacheKey, result, reportType, isHistorical);
     // Also populate the daily users cache for subsequent requests
     if (reportType === "users") setCacheUsers(orgSlug, result);
     console.log(`[cache] STORE ${orgSlug}/${reportType} (${data.length} rows, ${dataCache.size} entries)`);
