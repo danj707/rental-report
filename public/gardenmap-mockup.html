@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Community Garden — Plot Map (mockup)</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Inter', -apple-system, "Segoe UI", sans-serif; background: #f3f4ee; color: #1f2937; }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 14px 16px 40px; }
+
+  /* Mockup ribbon */
+  .ribbon { position: fixed; top: 12px; right: -46px; transform: rotate(45deg); background: #b45309; color: #fff; font-size: 10px; font-weight: 800; letter-spacing: 1.5px; padding: 5px 60px; z-index: 1200; box-shadow: 0 2px 8px rgba(0,0,0,.25); }
+
+  /* Hero */
+  .hero { position: relative; overflow: hidden; border-radius: 14px; padding: 20px 24px; color: #fff;
+    background: linear-gradient(120deg, #14532d 0%, #15803d 52%, #4d7c0f 100%); box-shadow: 0 4px 18px rgba(20,83,45,.28); }
+  .hero .sun { position: absolute; top: -40px; right: 60px; width: 150px; height: 150px; border-radius: 50%; background: radial-gradient(circle, rgba(253,224,71,.55), rgba(253,224,71,0) 70%); }
+  .hero h1 { font-size: 24px; font-weight: 800; letter-spacing: -.02em; display: flex; align-items: center; gap: 10px; }
+  .hero .kick { font-size: 11px; letter-spacing: 2px; text-transform: uppercase; font-weight: 700; opacity: .85; }
+  .hero .sub { font-size: 12.5px; opacity: .92; margin-top: 3px; max-width: 620px; }
+  .hero .pills { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+  .hero .pill { background: rgba(255,255,255,.16); border: 1px solid rgba(255,255,255,.22); border-radius: 20px; padding: 5px 12px; font-size: 12px; backdrop-filter: blur(2px); }
+  .hero .pill b { font-size: 13px; }
+
+  /* Control bar */
+  .controls { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 14px 0 10px; }
+  .chip { border: 1px solid #d1d5db; background: #fff; border-radius: 20px; padding: 5px 12px; font-size: 12px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; font-family: inherit; }
+  .chip .dot { width: 10px; height: 10px; border-radius: 50%; }
+  .chip.active { border-color: #15803d; background: #f0fdf4; color: #14532d; font-weight: 700; box-shadow: 0 0 0 1px #15803d inset; }
+  .spacer { flex: 1; }
+  .toggle { border: 1px solid #d1d5db; background: #fff; border-radius: 8px; padding: 5px 10px; font-size: 12px; cursor: pointer; font-family: inherit; display: inline-flex; align-items: center; gap: 6px; }
+  .toggle.on { background: #14532d; color: #fff; border-color: #14532d; }
+  .seg { display: inline-flex; border: 1px solid #d1d5db; border-radius: 8px; overflow: hidden; }
+  .seg button { border: none; background: #fff; padding: 5px 11px; font-size: 12px; cursor: pointer; font-family: inherit; }
+  .seg button.active { background: #15803d; color: #fff; }
+
+  /* Main layout */
+  .main { display: grid; grid-template-columns: 1fr 350px; gap: 14px; }
+  @media (max-width: 880px) { .main { grid-template-columns: 1fr; } }
+  .map-card { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,.06); }
+  #map { height: 560px; }
+  .legend { display: flex; gap: 14px; align-items: center; padding: 9px 14px; font-size: 11.5px; color: #4b5563; border-top: 1px solid #eef0eb; flex-wrap: wrap; }
+  .legend .lg { display: inline-flex; align-items: center; gap: 5px; }
+  .legend .sw { width: 12px; height: 12px; border-radius: 3px; }
+  .legend .live { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; color: #15803d; font-weight: 600; }
+  .legend .live .beat { width: 8px; height: 8px; border-radius: 50%; background: #22c55e; box-shadow: 0 0 0 0 rgba(34,197,94,.5); animation: beat 1.8s infinite; }
+  @keyframes beat { 0%{box-shadow:0 0 0 0 rgba(34,197,94,.5)} 70%{box-shadow:0 0 0 7px rgba(34,197,94,0)} 100%{box-shadow:0 0 0 0 rgba(34,197,94,0)} }
+
+  /* Sidebar */
+  .side { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 16px 18px; box-shadow: 0 1px 4px rgba(0,0,0,.06); align-self: start; min-height: 560px; }
+  .side .empty { color: #9ca3af; font-size: 13px; text-align: center; padding: 40px 8px; line-height: 1.6; }
+  .side .empty .big { font-size: 34px; display: block; margin-bottom: 8px; }
+  .p-id { font-size: 20px; font-weight: 800; color: #14532d; }
+  .p-sec { font-size: 11px; color: #6b7280; text-transform: uppercase; letter-spacing: .5px; }
+  .status-badge { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; padding: 4px 11px; border-radius: 20px; margin: 10px 0; }
+  .attrs { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 12px; margin: 12px 0; }
+  .attr .k { font-size: 10px; text-transform: uppercase; letter-spacing: .5px; color: #9ca3af; font-weight: 700; }
+  .attr .v { font-size: 13px; font-weight: 600; color: #1f2937; }
+  .blurb { font-size: 12.5px; color: #4b5563; line-height: 1.5; margin: 8px 0 14px; }
+  .req-btn { width: 100%; background: #15803d; color: #fff; border: none; border-radius: 9px; padding: 11px; font-size: 14px; font-weight: 700; cursor: pointer; font-family: inherit; }
+  .req-btn:hover { background: #166534; }
+  .req-btn:disabled { background: #d1d5db; cursor: not-allowed; }
+  .note-line { font-size: 12px; color: #6b7280; text-align: center; padding: 10px; background: #f9fafb; border-radius: 8px; }
+
+  /* Admin panel */
+  .admin-box { margin-top: 14px; border: 1px dashed #f59e0b; background: #fffbeb; border-radius: 9px; padding: 11px 13px; }
+  .admin-box .hd { font-size: 11px; font-weight: 800; color: #92400e; text-transform: uppercase; letter-spacing: .6px; margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
+  .admin-box .row { display: flex; gap: 6px; }
+  .admin-box button { flex: 1; border: 1px solid #e5e7eb; background: #fff; border-radius: 7px; padding: 7px 4px; font-size: 11px; font-weight: 600; cursor: pointer; font-family: inherit; }
+  .admin-box button.sel { color: #fff; border-color: transparent; }
+
+  /* Modal */
+  .ov { position: fixed; inset: 0; background: rgba(17,24,39,.5); display: flex; align-items: center; justify-content: center; z-index: 1100; padding: 16px; }
+  .modal { background: #fff; border-radius: 14px; width: 100%; max-width: 440px; overflow: hidden; box-shadow: 0 24px 70px rgba(0,0,0,.3); }
+  .modal .mh { background: linear-gradient(120deg,#15803d,#4d7c0f); color: #fff; padding: 16px 20px; }
+  .modal .mh h3 { font-size: 17px; font-weight: 800; }
+  .modal .mh p { font-size: 12px; opacity: .9; margin-top: 2px; }
+  .modal .mb { padding: 16px 20px; }
+  .fld { margin-bottom: 11px; }
+  .fld label { font-size: 11px; font-weight: 700; color: #374151; display: block; margin-bottom: 4px; }
+  .fld input, .fld select, .fld textarea { width: 100%; border: 1px solid #d1d5db; border-radius: 8px; padding: 8px 10px; font-size: 13px; font-family: inherit; }
+  .fld textarea { resize: vertical; min-height: 56px; }
+  .modal .mf { display: flex; gap: 8px; padding: 0 20px 18px; }
+  .modal .mf button { flex: 1; border-radius: 9px; padding: 10px; font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; border: 1px solid #d1d5db; background: #fff; }
+  .modal .mf .go { background: #15803d; color: #fff; border-color: #15803d; }
+  .done { text-align: center; padding: 26px 20px; }
+  .done .ck { font-size: 44px; }
+  .done h3 { font-size: 18px; font-weight: 800; color: #14532d; margin: 8px 0 4px; }
+  .done p { font-size: 13px; color: #4b5563; line-height: 1.5; }
+
+  .plot-num { font-size: 11px; font-weight: 800; color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,.6); text-align: center; }
+  .leaflet-container { background: #dfe4d8; }
+</style>
+</head>
+<body>
+<div class="ribbon">SAMPLE DATA · MOCKUP</div>
+<div id="root"></div>
+
+<script type="text/babel">
+const { useState, useEffect, useRef, useMemo } = React;
+
+// ── Sample garden config ────────────────────────────────────────────
+const GARDEN = {
+  name: 'Willow Creek Community Garden',
+  kicker: 'Parks & Recreation · Community Gardens',
+  address: '2500 Greenway Ln · sample location',
+  center: { lat: 38.53980, lng: -121.76130 },
+  season: '2026 Growing Season (Mar–Oct)',
+};
+
+const STATUS = {
+  available:     { label: 'Available',    color: '#16a34a', chip: '#dcfce7', text: '#166534' },
+  'coming-soon': { label: 'Coming Soon',  color: '#f59e0b', chip: '#fef3c7', text: '#92400e' },
+  unavailable:   { label: 'Leased',       color: '#94a3b8', chip: '#f1f5f9', text: '#475569' },
+  requested:     { label: 'Request sent', color: '#6366f1', chip: '#e0e7ff', text: '#3730a3' },
+};
+
+// Grid geometry (deltas in degrees). row → south, col → east.
+const G = { lat0: 38.54055, lng0: -121.76235, dLat: 0.000085, dLng: 0.000150, gapRow: 0.000042, gapCol: 0.000060, cols: 6 };
+function plotBounds(row, col) {
+  const latTop = G.lat0 - row * (G.dLat + G.gapRow);
+  const latBot = latTop - G.dLat;
+  const lngLeft = G.lng0 + col * (G.dLng + G.gapCol);
+  const lngRight = lngLeft + G.dLng;
+  return { bounds: [[latBot, lngLeft], [latTop, lngRight]], center: [(latTop + latBot) / 2, (lngLeft + lngRight) / 2] };
+}
+
+// Build 24 plots deterministically (no random — stable mockup data).
+const STAT_PATTERN = ['available','available','coming-soon','available','unavailable','available','available','unavailable','available','available','coming-soon','available','available','available','available','unavailable','available','coming-soon','unavailable','available','available','available','coming-soon','available'];
+const WATER = ['Spigot ~15 ft', 'Spigot ~25 ft', 'Spigot ~10 ft', 'Drip line at bed'];
+function buildPlots() {
+  const arr = [];
+  for (let i = 0; i < 24; i++) {
+    const row = Math.floor(i / G.cols), col = i % G.cols;
+    const raised = i % 3 === 0;
+    const ada = raised && (col <= 1) && row <= 1;
+    const shade = (i % 5 === 0);
+    const sqft = raised ? 100 : 200;
+    const fee = raised ? 55 : (shade ? 65 : 80);
+    const st = STAT_PATTERN[i];
+    arr.push({
+      id: 'Plot ' + (i + 1),
+      n: i + 1, row, col,
+      section: row < 2 ? 'North Beds' : 'South Beds',
+      size: raised ? "4 × 8 ft raised" : "10 × 20 ft",
+      sqft,
+      bed: raised ? 'Raised bed' : 'In-ground',
+      sun: shade ? 'Partial shade' : 'Full sun',
+      water: WATER[i % WATER.length],
+      ada,
+      fee,
+      waitlist: st === 'unavailable' ? (2 + (i % 4)) : 0,
+      blurb: (raised ? 'Accessible raised bed' : 'Standard in-ground plot') + ' in the ' + (row < 2 ? 'North' : 'South') + ' block' + (shade ? ', afternoon shade from the oak row' : ', open sun all day') + '.',
+      status: st,
+    });
+  }
+  return arr;
+}
+
+// Amenity landmarks, positioned around the grid.
+const AMENITIES = [
+  { e: '🚪', l: 'Main Gate',           lat: G.lat0 + 0.00020, lng: G.lng0 + 0.00030 },
+  { e: '🚰', l: 'Water Spigot',        lat: G.lat0 - 0.00010, lng: G.lng0 - 0.00010 },
+  { e: '🚰', l: 'Water Spigot',        lat: G.lat0 - 0.00040, lng: G.lng0 + 0.00095 },
+  { e: '🧰', l: 'Tool Shed',           lat: G.lat0 + 0.00012, lng: G.lng0 + 0.00135 },
+  { e: '♻️', l: 'Compost Bins',        lat: G.lat0 - 0.00062, lng: G.lng0 - 0.00012 },
+  { e: '🌻', l: 'Pollinator Bed',      lat: G.lat0 - 0.00060, lng: G.lng0 + 0.00140 },
+  { e: '🪑', l: 'Gathering Area',      lat: G.lat0 + 0.00010, lng: G.lng0 + 0.00070 },
+];
+
+const FILTERS = [
+  { k: 'all',          label: 'All plots' },
+  { k: 'available',    label: 'Available' },
+  { k: 'coming-soon',  label: 'Coming Soon' },
+  { k: 'unavailable',  label: 'Leased' },
+];
+
+function App() {
+  const [plots, setPlots] = useState(buildPlots);
+  const [sel, setSel] = useState(null);      // plot n
+  const [admin, setAdmin] = useState(false);
+  const [filter, setFilter] = useState('all');
+  const [base, setBase] = useState('sat');
+  const [reqPlot, setReqPlot] = useState(null);
+  const [reqSent, setReqSent] = useState(false);
+
+  const mapRef = useRef(null);
+  const mapInst = useRef(null);
+  const layerRef = useRef(null);
+  const baseRef = useRef(null);
+
+  const counts = useMemo(() => {
+    const c = { available: 0, 'coming-soon': 0, unavailable: 0, requested: 0 };
+    plots.forEach(p => { c[p.status] = (c[p.status] || 0) + 1; });
+    return c;
+  }, [plots]);
+
+  const selPlot = sel == null ? null : plots.find(p => p.n === sel);
+
+  // Init map once
+  useEffect(() => {
+    if (typeof L === 'undefined' || !mapRef.current) return;
+    const map = L.map(mapRef.current, { zoomControl: true, attributionControl: false }).setView([GARDEN.center.lat, GARDEN.center.lng], 19);
+    mapInst.current = map;
+    layerRef.current = L.layerGroup().addTo(map);
+    // amenity markers
+    AMENITIES.forEach(a => {
+      L.marker([a.lat, a.lng], { icon: L.divIcon({ className: '', html: '<div style="font-size:17px;filter:drop-shadow(0 1px 2px rgba(0,0,0,.5))">' + a.e + '</div>', iconSize: [20, 20], iconAnchor: [10, 10] }) })
+        .addTo(map).bindTooltip(a.l, { direction: 'top' });
+    });
+    // fit to plots
+    const all = [];
+    for (let i = 0; i < 24; i++) { const b = plotBounds(Math.floor(i / G.cols), i % G.cols).bounds; all.push(b[0], b[1]); }
+    map.fitBounds(L.latLngBounds(all).pad(0.35));
+    return () => { map.remove(); mapInst.current = null; };
+  }, []);
+
+  // Base layer swap
+  useEffect(() => {
+    const map = mapInst.current; if (!map) return;
+    if (baseRef.current) map.removeLayer(baseRef.current);
+    baseRef.current = base === 'sat'
+      ? L.tileLayer('https://{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', { subdomains: ['mt0','mt1','mt2','mt3'], maxZoom: 21 })
+      : L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 });
+    baseRef.current.addTo(map).bringToBack();
+  }, [base]);
+
+  // Draw / redraw plots on state change
+  useEffect(() => {
+    const lg = layerRef.current; if (!lg) return;
+    lg.clearLayers();
+    plots.forEach(p => {
+      const dim = filter !== 'all' && p.status !== filter && !(filter === 'unavailable' && p.status === 'requested');
+      const s = STATUS[p.status];
+      const { bounds, center } = plotBounds(p.row, p.col);
+      const isSel = p.n === sel;
+      const rect = L.rectangle(bounds, {
+        color: isSel ? '#111827' : '#ffffff',
+        weight: isSel ? 3 : 1.5,
+        fillColor: s.color,
+        fillOpacity: dim ? 0.18 : 0.82,
+        opacity: dim ? 0.3 : 1,
+      });
+      rect.on('click', () => { setSel(p.n); setReqSent(false); });
+      rect.on('mouseover', () => rect.setStyle({ fillOpacity: 0.95 }));
+      rect.on('mouseout', () => rect.setStyle({ fillOpacity: dim ? 0.18 : 0.82 }));
+      rect.bindTooltip(p.id + ' · ' + s.label, { direction: 'top', sticky: true });
+      rect.addTo(lg);
+      L.marker(center, { interactive: false, icon: L.divIcon({ className: '', html: '<div class="plot-num">' + p.n + '</div>', iconSize: [22, 14], iconAnchor: [11, 7] }) }).addTo(lg);
+    });
+  }, [plots, sel, filter]);
+
+  function setStatus(n, status) {
+    setPlots(ps => ps.map(p => p.n === n ? Object.assign({}, p, { status }) : p));
+  }
+  function submitRequest() {
+    if (reqPlot) setStatus(reqPlot.n, 'requested');
+    setReqSent(true);
+  }
+
+  return (
+    <div className="wrap">
+      {/* Hero */}
+      <div className="hero">
+        <div className="sun" />
+        <div className="kick">{GARDEN.kicker}</div>
+        <h1><span>🌱</span> {GARDEN.name}</h1>
+        <div className="sub">Live plot availability for the {GARDEN.season}. Click a bed to see its details and request it — availability updates in real time as plots are claimed or an admin opens them up.</div>
+        <div className="pills">
+          <span className="pill"><b>{plots.length}</b> plots</span>
+          <span className="pill"><b>{counts.available}</b> available now</span>
+          <span className="pill"><b>{counts['coming-soon']}</b> coming soon</span>
+          <span className="pill"><b>{counts.unavailable}</b> leased</span>
+        </div>
+      </div>
+
+      {/* Controls */}
+      <div className="controls">
+        {FILTERS.map(f => (
+          <button key={f.k} className={'chip' + (filter === f.k ? ' active' : '')} onClick={() => setFilter(f.k)}>
+            {f.k !== 'all' && <span className="dot" style={{ background: STATUS[f.k].color }} />}
+            {f.label}
+          </button>
+        ))}
+        <span className="spacer" />
+        <div className="seg">
+          <button className={base === 'sat' ? 'active' : ''} onClick={() => setBase('sat')}>Satellite</button>
+          <button className={base === 'streets' ? 'active' : ''} onClick={() => setBase('streets')}>Streets</button>
+        </div>
+        <button className={'toggle' + (admin ? ' on' : '')} onClick={() => setAdmin(a => !a)} title="Toggle coordinator mode">
+          {admin ? '🔑 Admin: ON' : '🔒 Admin mode'}
+        </button>
+      </div>
+
+      {/* Map + sidebar */}
+      <div className="main">
+        <div className="map-card">
+          <div id="map" ref={mapRef} />
+          <div className="legend">
+            {['available','coming-soon','unavailable'].map(k => (
+              <span className="lg" key={k}><span className="sw" style={{ background: STATUS[k].color }} />{STATUS[k].label}</span>
+            ))}
+            <span className="lg"><span className="sw" style={{ background: STATUS.requested.color }} />Request sent</span>
+            <span className="live"><span className="beat" /> Availability updates live</span>
+          </div>
+        </div>
+
+        <div className="side">
+          {!selPlot ? (
+            <div className="empty">
+              <span className="big">🥕</span>
+              Click any plot on the map to see its size, sun, water access, seasonal fee, and to send a plot request.
+              {admin && <div style={{ marginTop: 14, color: '#92400e', fontSize: 12 }}>Admin mode is on — selecting a plot lets you set it Available / Coming Soon / Leased.</div>}
+            </div>
+          ) : (
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+                <div className="p-id">{selPlot.id}</div>
+                <div className="p-sec">{selPlot.section}</div>
+              </div>
+              <div className="status-badge" style={{ background: STATUS[selPlot.status].chip, color: STATUS[selPlot.status].text }}>
+                <span style={{ width: 8, height: 8, borderRadius: '50%', background: STATUS[selPlot.status].color, display: 'inline-block' }} />
+                {STATUS[selPlot.status].label}
+              </div>
+
+              <div className="attrs">
+                <div className="attr"><div className="k">Size</div><div className="v">{selPlot.size}</div></div>
+                <div className="attr"><div className="k">Bed type</div><div className="v">{selPlot.bed}</div></div>
+                <div className="attr"><div className="k">Sun</div><div className="v">{selPlot.sun}</div></div>
+                <div className="attr"><div className="k">Water</div><div className="v">{selPlot.water}</div></div>
+                <div className="attr"><div className="k">Accessible</div><div className="v">{selPlot.ada ? '♿ ADA raised' : '—'}</div></div>
+                <div className="attr"><div className="k">Season fee</div><div className="v">${selPlot.fee}</div></div>
+              </div>
+              <div className="blurb">{selPlot.blurb}</div>
+
+              {selPlot.status === 'available' && (
+                <button className="req-btn" onClick={() => { setReqPlot(selPlot); setReqSent(false); }}>🌱 Request this plot</button>
+              )}
+              {selPlot.status === 'coming-soon' && (
+                <div className="note-line">Opening soon — <b>join the waitlist</b> and you'll be notified when it's released.
+                  <button className="req-btn" style={{ marginTop: 10 }} onClick={() => { setReqPlot(selPlot); setReqSent(false); }}>🔔 Join waitlist</button>
+                </div>
+              )}
+              {selPlot.status === 'unavailable' && (
+                <div className="note-line">Currently leased for the season · <b>{selPlot.waitlist}</b> on the waitlist.</div>
+              )}
+              {selPlot.status === 'requested' && (
+                <div className="note-line" style={{ color: STATUS.requested.text, background: STATUS.requested.chip }}>✓ Your request is in — the garden coordinator will follow up by email.</div>
+              )}
+
+              {admin && (
+                <div className="admin-box">
+                  <div className="hd">🔑 Coordinator — set availability</div>
+                  <div className="row">
+                    {['available','coming-soon','unavailable'].map(k => (
+                      <button key={k} onClick={() => setStatus(selPlot.n, k)}
+                        className={selPlot.status === k ? 'sel' : ''}
+                        style={selPlot.status === k ? { background: STATUS[k].color } : {}}>
+                        {STATUS[k].label}
+                      </button>
+                    ))}
+                  </div>
+                  <div style={{ fontSize: 10.5, color: '#92400e', marginTop: 7 }}>Changes recolor the map instantly — this is the "admin marks a plot" path until the realtime availability feed is wired.</div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Request modal */}
+      {reqPlot && (
+        <div className="ov" onClick={() => setReqPlot(null)}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            {!reqSent ? (
+              <React.Fragment>
+                <div className="mh">
+                  <h3>Request {reqPlot.id}</h3>
+                  <p>{reqPlot.size} · {reqPlot.sun} · ${reqPlot.fee} / season</p>
+                </div>
+                <div className="mb">
+                  <div className="fld"><label>Full name</label><input placeholder="Jordan Gardener" /></div>
+                  <div className="fld"><label>Email</label><input placeholder="you@email.com" /></div>
+                  <div className="fld"><label>Gardening experience</label>
+                    <select defaultValue="Some"><option>First-timer</option><option>Some</option><option>Experienced</option></select>
+                  </div>
+                  <div className="fld"><label>Anything the coordinator should know?</label><textarea placeholder="Preferred crops, accessibility needs, etc." /></div>
+                </div>
+                <div className="mf">
+                  <button onClick={() => setReqPlot(null)}>Cancel</button>
+                  <button className="go" onClick={submitRequest}>Submit request</button>
+                </div>
+              </React.Fragment>
+            ) : (
+              <div className="done">
+                <div className="ck">✅</div>
+                <h3>Request submitted</h3>
+                <p>Your request for <b>{reqPlot.id}</b> is in. The garden coordinator reviews applications and will email you to confirm. The plot now shows as <b>Request sent</b> on the map.</p>
+                <div className="mf" style={{ padding: '16px 0 0' }}>
+                  <button className="go" onClick={() => setReqPlot(null)}>Done</button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      <div style={{ fontSize: 11, color: '#9ca3af', textAlign: 'center', marginTop: 16 }}>
+        Sample data — clickable mockup of a community-garden plot map. Google-satellite base layer, real-time availability, and a Request-Plot application flow. Not wired to live data.
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
