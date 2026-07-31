@@ -1269,6 +1269,9 @@ const EVENTS_FILE = path.join(DATA_DIR, "events.jsonl");
 const SHOWCASE_FILE = path.join(DATA_DIR, "showcase.json");
 const VISIBILITY_FILE = path.join(DATA_DIR, "report-visibility.json");
 const ANNOUNCEMENTS_FILE = path.join(DATA_DIR, "announcements.json");
+// Pasted screenshots attached to project updates live on the persistent volume
+const ANNOUNCE_IMG_DIR = path.join(DATA_DIR, "announce-images");
+fs.mkdirSync(ANNOUNCE_IMG_DIR, { recursive: true });
 const PUBLIC_MODE_FILE = path.join(DATA_DIR, "public-mode.json");
 const GOALS_DIR = path.join(DATA_DIR, "goals");
 fs.mkdirSync(GOALS_DIR, { recursive: true });
@@ -7088,8 +7091,8 @@ app.get("/:org", async (req, res, next) => {
     publicMode: getPublicMode(slug),
     emailEnabled: EMAIL_ENABLED_ORGS.has(slug),
     announcements: activeAnnouncementsForOrg(slug).map(a => a.smart
-      ? { id: a.id, title: a.title, smart: true, items: (a.items || []).map(it => ({ text: it.text, emoji: it.emoji || "" })) }
-      : { id: a.id, title: a.title, body: a.body }),
+      ? { id: a.id, title: a.title, smart: true, items: (a.items || []).map(it => ({ text: it.text, emoji: it.emoji || "" })), images: a.images || [] }
+      : { id: a.id, title: a.title, body: a.body, images: a.images || [] }),
   };
   // Attach latest health-check results for this org's reports
   const hc = loadHealthResults();
@@ -7160,6 +7163,44 @@ app.get("/api/admin/announcements", (req, res) => {
   res.json({ announcements, orgs, visibility, reports });
 });
 // Create a new announcement (password-gated).
+// ── Pasted image upload for project updates ──────────────────────────
+// Body: { password, dataUrl: "data:image/png;base64,..." }. Stored on the
+// persistent volume; returns a /api/announce-image/ URL to reference in an
+// announcement's images[]. /api/* is whitelisted past the org token gate,
+// so org admins can load the images from their dashboard popup.
+const ANNOUNCE_IMG_MIMES = { "image/png": "png", "image/jpeg": "jpg", "image/gif": "gif", "image/webp": "webp" };
+app.post("/api/admin/announcements/image", express.json({ limit: "8mb" }), (req, res) => {
+  if (dashboardPasswordBlocked(req, res)) return;
+  const dataUrl = String((req.body && req.body.dataUrl) || "");
+  const m = dataUrl.match(/^data:(image\/(?:png|jpeg|gif|webp));base64,(.+)$/);
+  if (!m) return res.status(400).json({ error: "Expected a base64 image data URL (png/jpeg/gif/webp)" });
+  let buf;
+  try { buf = Buffer.from(m[2], "base64"); } catch { return res.status(400).json({ error: "Invalid base64 payload" }); }
+  if (!buf.length) return res.status(400).json({ error: "Empty image" });
+  if (buf.length > 4 * 1024 * 1024) return res.status(413).json({ error: "Image too large (max 4MB) — crop or downscale the screenshot" });
+  const name = `img_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}.${ANNOUNCE_IMG_MIMES[m[1]]}`;
+  try { fs.writeFileSync(path.join(ANNOUNCE_IMG_DIR, name), buf); }
+  catch (e) { return res.status(500).json({ error: "Failed to store image: " + e.message }); }
+  console.log(`[announce] image stored ${name} (${Math.round(buf.length / 1024)}kb)`);
+  res.json({ ok: true, url: `/api/announce-image/${name}` });
+});
+app.get("/api/announce-image/:name", (req, res) => {
+  const name = String(req.params.name || "");
+  if (!/^[A-Za-z0-9_.-]+$/.test(name) || name.includes("..")) return res.status(400).end();
+  const file = path.join(ANNOUNCE_IMG_DIR, name);
+  if (!fs.existsSync(file)) return res.status(404).end();
+  const ext = name.split(".").pop().toLowerCase();
+  const mime = { png: "image/png", jpg: "image/jpeg", gif: "image/gif", webp: "image/webp" }[ext] || "application/octet-stream";
+  res.set("Content-Type", mime);
+  res.set("Cache-Control", "public, max-age=86400, immutable");
+  res.send(fs.readFileSync(file));
+});
+// Keep only image refs our upload endpoint minted (defends the popup's <img src>)
+function cleanAnnounceImages(images) {
+  if (!Array.isArray(images)) return [];
+  return images.filter(u => typeof u === "string" && /^\/api\/announce-image\/[A-Za-z0-9_.-]+$/.test(u)).slice(0, 6);
+}
+
 app.post("/api/admin/announcements", express.json(), (req, res) => {
   if (dashboardPasswordBlocked(req, res)) return;
   const { title, body, orgs, allOrgs } = req.body || {};
@@ -7172,6 +7213,7 @@ app.post("/api/admin/announcements", express.json(), (req, res) => {
     id: "upd_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
     title: title.trim(),
     body: (body || "").trim(),
+    images: cleanAnnounceImages(req.body.images),
     allOrgs: !!allOrgs,
     orgs: allOrgs ? [] : orgs.filter(s => ORGS[s]),
     active: true,
@@ -7215,6 +7257,7 @@ app.post("/api/admin/announcements/from-updates", express.json(), (req, res) => 
     smart: true,
     title: title.trim(),
     items: cleaned,
+    images: cleanAnnounceImages(req.body.images),
     active: true,
     createdAt: Date.now(),
     createdISO: new Date().toISOString(),
@@ -8850,6 +8893,36 @@ app.get("/", (req, res) => {
   function updEsc(s){ return (s==null?'':String(s)).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
   function openUpd(){ document.getElementById('upd-overlay').style.display='block'; loadUpd(); }
   function closeUpd(){ document.getElementById('upd-overlay').style.display='none'; }
+  // ── Pasted screenshots: Ctrl/Cmd+V anywhere in the composer attaches the image ──
+  var updImages=[];
+  function renderUpdImgs(){
+    var s=document.getElementById('upd-imgs'); if(!s) return;
+    s.innerHTML=updImages.map(function(u,i){
+      return '<span style="position:relative;display:inline-block"><img src="'+updEsc(u)+'" style="height:64px;border:1px solid #ddd;border-radius:6px;display:block" />'
+        +'<span onclick="removeUpdImg('+i+')" title="Remove image" style="position:absolute;top:-6px;right:-6px;background:#333;color:#fff;border-radius:50%;width:16px;height:16px;font-size:10px;line-height:16px;text-align:center;cursor:pointer">&times;</span></span>';
+    }).join('');
+    s.style.display=updImages.length?'flex':'none';
+  }
+  function removeUpdImg(i){ updImages.splice(i,1); renderUpdImgs(); }
+  async function uploadUpdImage(file){
+    var pwd=getDashPwd('Attach image to update'); if(!pwd) return;
+    if(file.size>6*1024*1024){ mbToast('Image too large — crop or downscale the screenshot'); return; }
+    var dataUrl=await new Promise(function(resolve,reject){ var r=new FileReader(); r.onload=function(){resolve(r.result);}; r.onerror=reject; r.readAsDataURL(file); });
+    try{
+      var r=await fetch('/api/admin/announcements/image',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:pwd,dataUrl:dataUrl})});
+      var d=await r.json();
+      if(!r.ok||!d.ok){ if(r.status===401)clearDashPwd(); mbToast(d.error||'Image upload failed'); return; }
+      updImages.push(d.url); renderUpdImgs(); mbToast('🖼️ Screenshot attached');
+    }catch(e){ mbToast('Image upload failed: '+e.message); }
+  }
+  document.addEventListener('paste',function(e){
+    var ov=document.getElementById('upd-overlay');
+    if(!ov||ov.style.display==='none') return;
+    var items=(e.clipboardData&&e.clipboardData.items)||[];
+    for(var i=0;i<items.length;i++){
+      if(items[i].type&&items[i].type.indexOf('image/')===0){ e.preventDefault(); uploadUpdImage(items[i].getAsFile()); break; }
+    }
+  });
   function updToggleAll(){
     var on=document.getElementById('upd-all').checked;
     var box=document.getElementById('upd-orgs');
@@ -9037,9 +9110,10 @@ app.get("/", (req, res) => {
     if(!title){ err.textContent='Give the update a title'; err.style.display='block'; return; }
     if(!items.length){ err.textContent='Tick at least one change (with a report tag) to include'; err.style.display='block'; return; }
     try {
-      var r=await fetch('/api/admin/announcements/from-updates',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:pwd,title:title,items:items})});
+      var r=await fetch('/api/admin/announcements/from-updates',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:pwd,title:title,items:items,images:updImages})});
       var d=await r.json();
       if(!r.ok||!d.ok){ if(r.status===401)clearDashPwd(); err.textContent=d.error||'Failed'; err.style.display='block'; return; }
+      updImages=[]; renderUpdImgs();
       mbToast('🚀 Update published to '+(d.audience||0)+' org'+((d.audience)===1?'':'s')); loadUpd();
     } catch(e){ err.textContent='Error: '+e.message; err.style.display='block'; }
   }
@@ -9053,10 +9127,11 @@ app.get("/", (req, res) => {
     if(!title){ err.textContent='Title is required'; err.style.display='block'; return; }
     if(!allOrgs && !orgs.length){ err.textContent='Select at least one org (or All orgs)'; err.style.display='block'; return; }
     try {
-      var r=await fetch('/api/admin/announcements',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:pwd,title:title,body:body,orgs:orgs,allOrgs:allOrgs})});
+      var r=await fetch('/api/admin/announcements',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:pwd,title:title,body:body,orgs:orgs,allOrgs:allOrgs,images:updImages})});
       var d=await r.json();
       if(!r.ok||!d.ok){ if(r.status===401)clearDashPwd(); err.textContent=d.error||'Failed'; err.style.display='block'; return; }
       document.getElementById('upd-title').value=''; document.getElementById('upd-body').value=''; document.getElementById('upd-all').checked=false;
+      updImages=[]; renderUpdImgs();
       mbToast('Update published to '+(allOrgs?'all orgs':orgs.length+' org'+(orgs.length===1?'':'s'))); loadUpd();
     } catch(e){ err.textContent='Error: '+e.message; err.style.display='block'; }
   }
@@ -9155,6 +9230,8 @@ app.get("/", (req, res) => {
         <input id="upd-title" type="text" placeholder="e.g. New Facilities report is live" style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:5px;font-size:13px" />
         <label style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:#888;display:block;margin:16px 0 6px">Message <span style="font-weight:400;text-transform:none;letter-spacing:0;color:#aaa">— markdown ok: **bold**, [links](https://…), - bullets</span></label>
         <textarea id="upd-body" rows="5" placeholder="What's new…" style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:5px;font-size:13px;font-family:inherit;resize:vertical"></textarea>
+        <div id="upd-imgs" style="display:none;flex-wrap:wrap;gap:10px;margin-top:8px"></div>
+        <div style="font-size:10.5px;color:#aaa;margin-top:4px">&#128203; Paste a screenshot (Ctrl/Cmd+V) anywhere in this composer to attach it &mdash; it ships with either publish path</div>
         <div style="display:flex;align-items:center;justify-content:space-between;margin:16px 0 8px">
           <label style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:#888">Publish to</label>
           <label style="font-size:12px;display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="upd-all" onchange="updToggleAll()" /> All orgs <span style="color:#aaa">(incl. future)</span></label>
