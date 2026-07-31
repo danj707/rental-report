@@ -178,6 +178,16 @@
     .sum-card .sc-val { font-size: 24px; font-weight: 800; line-height: 1.1; font-variant-numeric: tabular-nums; }
     .sum-card .sc-sub { font-size: 11px; color: #999; margin-top: 3px; }
     .sc-green { color: #16a34a; } .sc-blue { color: #2563eb; } .sc-amber { color: #d97706; } .sc-red { color: #dc2626; } .sc-purple { color: #7c3aed; }
+
+    /* ── Prior-period delta pill ── */
+    .delta-pill { display:inline-flex; align-items:center; gap:3px; font-size:10.5px; font-weight:700; padding:2px 7px; border-radius:10px; margin-top:6px; font-variant-numeric:tabular-nums; white-space:nowrap; animation:pillIn .25s ease; }
+    .delta-pill.good { background:#dcfce7; color:#166534; }
+    .delta-pill.bad  { background:#fee2e2; color:#991b1b; }
+    .delta-pill.flat { background:#f3f4f6; color:#6b7280; }
+    .delta-pill .dvs { font-weight:500; opacity:.75; }
+    @keyframes pillIn { from { opacity:0; transform:translateY(2px); } to { opacity:1; transform:none; } }
+    .compare-chip { font-size:11px; padding:4px 11px; border-radius:13px; border:1px solid #d1d5db; background:#fff; color:#6b7280; font-weight:600; cursor:pointer; user-select:none; }
+    .compare-chip.on { background:#eef2ff; border-color:#c7d2fe; color:#3730a3; }
     .sum-bar-wrap { margin: 16px 0; }
     .sum-bar-label { font-size: 10px; color: #888; font-weight: 600; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 4px; }
     .sum-bar { display: flex; height: 24px; border-radius: 4px; overflow: hidden; border: 1px solid #e8e6e0; }
@@ -565,6 +575,60 @@ function StaleCacheBanner({ meta }) {
   );
 }
 
+// ── Prior-period comparison helpers ─────────────────────────────────
+// The prior window is always the immediately preceding window of EQUAL
+// length to the report's selected range (Jul 1-31 → vs Jun 1-30;
+// May 1 – Jul 31 → vs Feb 1 – Apr 30). Deltas are scoped to whatever
+// timeframe the report is currently showing.
+function priorWindow(sd, ed) {
+  if (!sd || !ed) return null;
+  try {
+    const s = new Date(sd + 'T12:00:00'), e = new Date(ed + 'T12:00:00');
+    if (isNaN(s) || isNaN(e) || e < s) return null;
+    // Whole calendar month(s) selected → previous calendar month(s), so
+    // "July" compares to "June" (not May 31 – Jun 30). Same for whole years.
+    const isMonthStart = s.getDate() === 1;
+    const isMonthEnd = e.getDate() === new Date(e.getFullYear(), e.getMonth() + 1, 0).getDate();
+    if (isMonthStart && isMonthEnd) {
+      const monthSpan = (e.getFullYear() - s.getFullYear()) * 12 + (e.getMonth() - s.getMonth()) + 1;
+      const ps = new Date(s.getFullYear(), s.getMonth() - monthSpan, 1, 12);
+      const pe = new Date(s.getFullYear(), s.getMonth(), 0, 12);
+      return { start: toISO(ps), end: toISO(pe) };
+    }
+    const days = Math.round((e - s) / 86400000) + 1;
+    const pe = new Date(s); pe.setDate(pe.getDate() - 1);
+    const ps = new Date(pe); ps.setDate(ps.getDate() - (days - 1));
+    return { start: toISO(ps), end: toISO(pe) };
+  } catch { return null; }
+}
+
+function fmtRangeShort(sd, ed) {
+  try {
+    const s = new Date(sd + 'T12:00:00'), e = new Date(ed + 'T12:00:00');
+    const sm = s.toLocaleDateString('en-US', { month: 'short' });
+    const em = e.toLocaleDateString('en-US', { month: 'short' });
+    if (sm === em && s.getFullYear() === e.getFullYear()) return `${sm} ${s.getDate()}–${e.getDate()}`;
+    return `${sm} ${s.getDate()} – ${em} ${e.getDate()}`;
+  } catch { return 'prior period'; }
+}
+
+// Delta pill: % change vs the prior window. goodWhenDown flips the
+// color logic for metrics where a decrease is the win (cancellations).
+function DeltaPill({ cur, prev, goodWhenDown, label }) {
+  if (prev == null || (prev === 0 && cur === 0)) return null;
+  const diff = cur - prev;
+  if (diff === 0) return <span className="delta-pill flat">— 0% <span className="dvs">{label}</span></span>;
+  const up = diff > 0;
+  const pct = prev !== 0 ? Math.round(Math.abs(diff) / Math.abs(prev) * 100) : null;
+  const txt = (pct != null && pct <= 999) ? pct + '%' : Math.abs(diff).toLocaleString();
+  const good = goodWhenDown ? !up : up;
+  return (
+    <span className={'delta-pill ' + (good ? 'good' : 'bad')}>
+      {up ? '▲ +' : '▼ −'}{txt} <span className="dvs">{label}</span>
+    </span>
+  );
+}
+
 function normalizeRow(raw) {
   const pick = (...keys) => { for (const k of keys) { if (raw[k] != null && raw[k] !== '') return raw[k]; } return null; };
   const sectionName = raw['Section'] ?? raw['section'] ?? '';
@@ -907,6 +971,13 @@ function App() {
   const [pdfLoading,  setPdfLoading]  = useState(false);
   const [loadedStart, setLoadedStart] = useState(null);
   const [loadedEnd,   setLoadedEnd]   = useState(null);
+
+  // ── Prior-period comparison (lazy — never blocks the main render) ──
+  const [priorStats, setPriorStats] = useState(null); // { enrolled, net, cancelled, start, end }
+  const [compareOn,  setCompareOn]  = useState(() => { try { return localStorage.getItem('rr_compare') !== 'false'; } catch { return true; } });
+  const toggleCompare = () => setCompareOn(v => { try { localStorage.setItem('rr_compare', String(!v)); } catch {} return !v; });
+  // ── Self-service / staff workload (orders by channel) ──
+  const [ssData, setSsData] = useState(null);
 
   // Share Link: expose the live applied filter state so the floating Share
   // widget copies a URL that reproduces the on-screen view (mirrors the PDF).
@@ -1376,6 +1447,74 @@ function App() {
   }, [basePath, fetchCheckins]);
 
   useEffect(() => { fetchData(startDate, endDate); }, []);
+
+  // ── Prior-period fetch: same report, immediately preceding equal-length
+  // window. Fires AFTER the main load completes (keyed on loadedStart/End),
+  // so the report renders instantly and pills fade in when this returns.
+  useEffect(() => {
+    setPriorStats(null);
+    if (!compareOn || !loadedStart || !loadedEnd) return;
+    const w = priorWindow(loadedStart, loadedEnd);
+    if (!w) return;
+    let alive = true;
+    const qs = new URLSearchParams({ start_date: w.start, end_date: w.end });
+    fetch(withToken(`${basePath}/api/data?${qs}`))
+      .then(r => r.ok ? r.json() : null)
+      .then(json => {
+        if (!alive || !json || !Array.isArray(json.rows)) return;
+        const normalized = json.rows.map(normalizeRow);
+        const isSec = normalized.some(r => r.isSection);
+        const progRows = isSec ? rollupToPrograms(normalized) : normalized;
+        let enrolled = 0, net = 0, cancelled = 0;
+        progRows.forEach(r => {
+          enrolled += fmtNum(r.enrollments);
+          net      += fmtNum(r.netRevenue);
+          const secs = r._sections || [r];
+          cancelled += secs.filter(s => s.status === 'Canceled' || s.status === 'Cancelled').length;
+        });
+        setPriorStats({ enrolled, net, cancelled, start: w.start, end: w.end });
+      })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [loadedStart, loadedEnd, compareOn, basePath]);
+
+  // ── Self-service split: orders by channel for the current + prior window.
+  // Hidden gracefully when the org has no selfservice card configured.
+  useEffect(() => {
+    setSsData(null);
+    if (!loadedStart || !loadedEnd) return;
+    let alive = true;
+    const w = priorWindow(loadedStart, loadedEnd);
+    const get = (sd, ed) =>
+      fetch(withToken(`/${orgSlug}/selfservice/api/data?start_date=${encodeURIComponent(sd)}&end_date=${encodeURIComponent(ed)}`))
+        .then(r => r.ok ? r.json() : null).catch(() => null);
+    Promise.all([get(loadedStart, loadedEnd), w ? get(w.start, w.end) : Promise.resolve(null)]).then(([curJ, prevJ]) => {
+      if (!alive || !curJ || !Array.isArray(curJ.rows)) return;
+      const parse = (json, isPrior) => {
+        const byMonth = {}; let self = 0, staff = 0, staffD = 0;
+        ((json && json.rows) || []).forEach(r => {
+          const m = String(r.month || r.Month || '').slice(0, 7);
+          const ch = String(r.channel || r.Channel || '').toLowerCase() === 'staff' ? 'staff' : 'self';
+          const n = fmtNum(r.orders ?? r.Orders);
+          const d = fmtNum(r.dollars ?? r.Dollars);
+          if (!m) return;
+          if (!byMonth[m]) byMonth[m] = { key: m, self: 0, staff: 0, prior: isPrior };
+          byMonth[m][ch] += n;
+          if (ch === 'staff') staff += n; else self += n;
+          if (ch === 'staff') staffD += d;
+        });
+        return { byMonth, self, staff, staffD };
+      };
+      const c = parse(curJ, false);
+      if (c.self + c.staff === 0) return;
+      const p = parse(prevJ, true);
+      const merged = Object.assign({}, p.byMonth);
+      Object.values(c.byMonth).forEach(m => { merged[m.key] = m; }); // current wins on overlap
+      const months = Object.values(merged).sort((a, b) => a.key < b.key ? -1 : 1).slice(-6);
+      setSsData({ months, cur: c, prev: prevJ ? p : null });
+    });
+    return () => { alive = false; };
+  }, [loadedStart, loadedEnd, orgSlug]);
 
   function setMonth(offset) {
     const now = new Date();
@@ -1994,15 +2133,76 @@ function App() {
           var ciPctColor = function(p) { return p == null ? '#ccc' : p >= 85 ? '#16a34a' : p <= 25 ? '#dc2626' : '#333'; };
           return (
             <div style={{maxWidth:1100,margin:'0 auto'}}>
+              {/* ── Compare toggle — prior window mirrors the report's timeframe ── */}
+              <div style={{display:'flex',justifyContent:'flex-end',margin:'12px 0 -6px'}}>
+                <span className={'compare-chip' + (compareOn ? ' on' : '')} onClick={toggleCompare}>
+                  {compareOn ? '✓ ' : ''}Compare vs prior period{compareOn && priorStats ? ' (' + fmtRangeShort(priorStats.start, priorStats.end) + ')' : ''}
+                </span>
+              </div>
               {/* ── Summary Cards ── */}
               <div className="sum-cards">
                 <div className="sum-card"><div className="sc-label">Programs</div><div className="sc-val sc-blue">{progs.length}</div><div className="sc-sub">{totalSections} sections{cancelledSections > 0 ? ' (' + (totalSections - cancelledSections) + ' ran, ' + cancelledSections + ' cancelled)' : ''}</div></div>
-                <div className="sum-card"><div className="sc-label">Participants</div><div className="sc-val sc-green">{totalEnrolled.toLocaleString()}</div><div className="sc-sub">{avgFill > 0 ? avgFill + '% avg fill rate' : ''}</div></div>
-                <div className="sum-card"><div className="sc-label">Net Revenue</div><div className="sc-val sc-amber">{fmt$(totalRev)}</div><div className="sc-sub">{ranProgs.length > 0 ? fmt$(Math.round(totalRev / ranProgs.length)) + ' avg/program' : ''}</div></div>
+                <div className="sum-card"><div className="sc-label">Participants</div><div className="sc-val sc-green">{totalEnrolled.toLocaleString()}</div><div className="sc-sub">{avgFill > 0 ? avgFill + '% avg fill rate' : ''}</div>{compareOn && priorStats && <div><DeltaPill cur={totalEnrolled} prev={priorStats.enrolled} label={'vs ' + fmtRangeShort(priorStats.start, priorStats.end)} /></div>}</div>
+                <div className="sum-card"><div className="sc-label">Net Revenue</div><div className="sc-val sc-amber">{fmt$(totalRev)}</div><div className="sc-sub">{ranProgs.length > 0 ? fmt$(Math.round(totalRev / ranProgs.length)) + ' avg/program' : ''}</div>{compareOn && priorStats && <div><DeltaPill cur={totalRev} prev={priorStats.net} label={'vs ' + fmtRangeShort(priorStats.start, priorStats.end)} /></div>}</div>
                 <div className="sum-card"><div className="sc-label">Ran / Active</div><div className="sc-val sc-green">{ranProgs.length}</div><div className="sc-sub">{ranPct}% of programs</div></div>
-                <div className="sum-card"><div className="sc-label">Cancelled</div><div className="sc-val sc-red">{cancelledSections}</div><div className="sc-sub">{cancelledSections === 1 ? '1 section' : cancelledSections + ' sections'}{cancelledProgs.length > 0 ? ' (' + cancelledProgs.length + ' full programs)' : ''}</div></div>
+                <div className="sum-card"><div className="sc-label">Cancelled</div><div className="sc-val sc-red">{cancelledSections}</div><div className="sc-sub">{cancelledSections === 1 ? '1 section' : cancelledSections + ' sections'}{cancelledProgs.length > 0 ? ' (' + cancelledProgs.length + ' full programs)' : ''}</div>{compareOn && priorStats && <div><DeltaPill cur={cancelledSections} prev={priorStats.cancelled} goodWhenDown={true} label={'vs ' + fmtRangeShort(priorStats.start, priorStats.end)} /></div>}</div>
                 <div className="sum-card"><div className="sc-label">Upcoming</div><div className="sc-val sc-purple">{upcomingProgs.length}</div><div className="sc-sub">Not yet started</div></div>
               </div>
+
+              {/* ── Self-Service & Staff Workload — orders by channel ── */}
+              {ssData && (() => {
+                const rate = ssData.cur.self + ssData.cur.staff > 0 ? Math.round(ssData.cur.self / (ssData.cur.self + ssData.cur.staff) * 1000) / 10 : null;
+                const prevRate = ssData.prev && (ssData.prev.self + ssData.prev.staff > 0) ? Math.round(ssData.prev.self / (ssData.prev.self + ssData.prev.staff) * 1000) / 10 : null;
+                const hoursSaved = Math.round(ssData.cur.self * 5 / 60);
+                const maxTotal = Math.max(...ssData.months.map(m => m.self + m.staff), 1);
+                const monthLabel = k => { try { return new Date(k + '-15T12:00:00').toLocaleDateString('en-US', { month: 'short' }); } catch { return k; } };
+                return (
+                  <div style={{margin:'0 0 16px',padding:'14px 18px',border:'1px solid #dbeafe',background:'linear-gradient(135deg,#eff6ff,#ffffff)',borderRadius:12}}>
+                    <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:12,flexWrap:'wrap'}}>
+                      <span style={{fontSize:12,fontWeight:700,color:'#1e40af',textTransform:'uppercase',letterSpacing:'0.05em'}}>🖱️ Self-Service &amp; Staff Workload</span>
+                      <span style={{fontSize:11,color:'#94a3b8'}}>resident self-serve online vs. processed by staff (front desk, phone, cash/check/terminal)</span>
+                    </div>
+                    <div style={{display:'flex',gap:28,flexWrap:'wrap',alignItems:'flex-start'}}>
+                      <div>
+                        <div style={{fontSize:22,fontWeight:800,color:'#16a34a',lineHeight:1.1}}>{rate != null ? rate + '%' : '—'}</div>
+                        <div style={{fontSize:11,color:'#64748b'}}>Self-service rate</div>
+                        {compareOn && prevRate != null && rate != null && <DeltaPill cur={rate} prev={prevRate} label="vs prior" />}
+                      </div>
+                      <div>
+                        <div style={{fontSize:22,fontWeight:800,color:'#2563eb',lineHeight:1.1}}>{ssData.cur.staff.toLocaleString()}</div>
+                        <div style={{fontSize:11,color:'#64748b'}}>Staff-assisted orders{ssData.cur.staffD > 0 ? ' · $' + Math.round(ssData.cur.staffD).toLocaleString() : ''}</div>
+                        {compareOn && ssData.prev && <DeltaPill cur={ssData.cur.staff} prev={ssData.prev.staff} goodWhenDown={true} label="vs prior" />}
+                      </div>
+                      <div>
+                        <div style={{fontSize:22,fontWeight:800,color:'#334155',lineHeight:1.1}}>~{hoursSaved.toLocaleString()} hrs</div>
+                        <div style={{fontSize:11,color:'#64748b'}}>Staff time saved (self-serve × 5 min)</div>
+                      </div>
+                      <div style={{flex:1,minWidth:220,maxWidth:380}}>
+                        <div style={{display:'flex',alignItems:'flex-end',gap:10,height:64}}>
+                          {ssData.months.map(m => {
+                            const h = (m.self + m.staff) / maxTotal * 56;
+                            const selfH = Math.max((m.self + m.staff) > 0 ? h * m.self / (m.self + m.staff) : 0, m.self > 0 ? 2 : 0);
+                            const staffH = Math.max(h - selfH, m.staff > 0 ? 2 : 0);
+                            return (
+                              <div key={m.key} title={monthLabel(m.key) + ': ' + m.self.toLocaleString() + ' self / ' + m.staff.toLocaleString() + ' staff'} style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'flex-end',height:'100%'}}>
+                                <div style={{width:'70%',maxWidth:26,display:'flex',flexDirection:'column',opacity:m.prior ? 0.38 : 1}}>
+                                  {staffH > 0 && <div style={{height:staffH,background:'#2563eb',borderRadius:'3px 3px 0 0'}} />}
+                                  {selfH > 0 && <div style={{height:selfH,background:'#16a34a',marginTop:staffH > 0 ? 2 : 0,borderRadius:staffH > 0 ? 0 : '3px 3px 0 0'}} />}
+                                </div>
+                                <div style={{fontSize:9,color:m.prior ? '#b7b3aa' : '#64748b',marginTop:3,fontWeight:600}}>{monthLabel(m.key)}</div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                        <div style={{display:'flex',gap:12,marginTop:4,fontSize:9.5,color:'#64748b'}}>
+                          <span><span style={{display:'inline-block',width:7,height:7,borderRadius:2,background:'#16a34a',marginRight:3}} />Self-service</span>
+                          <span><span style={{display:'inline-block',width:7,height:7,borderRadius:2,background:'#2563eb',marginRight:3}} />Staff-assisted</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* ── Attendance / Check-In rollup ── */}
               {checkinSummary && checkinSummary.totalCheckIns > 0 && (
