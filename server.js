@@ -835,11 +835,9 @@ const SHARED_UUIDS = {
   "section-detail": "bbb347c8-9e2d-446d-b014-a86a9d14115a",
   checkins: "574324e0-b5a1-46c5-8770-8c466631fdcf",
   "program-checkins": "cb6fd909-72d3-446b-930b-c0382da02d62",
-  // selfservice: Metabase question #19174 ("✅ Self-Service Mix Report").
-  // To activate the Self-Service & Staff Workload band on the Program Summary
-  // tab: open the question, set the start_date/end_date variable types to
-  // "Date" if needed, create a public link, and paste its UUID here.
-  // The band hides itself until this is configured.
+  // Metabase question #19174 ("✅ Self-Service Mix Report") — powers the
+  // Self-Service & Staff Workload band on the Program Summary tab.
+  selfservice: "358f6b85-8af3-429e-ba24-ad2cd3207ac9",
 };
 
 // Facilities hub — Summary tab data source. This is a dedicated public card
