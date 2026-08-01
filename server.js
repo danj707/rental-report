@@ -10775,6 +10775,13 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  { date: '2026-08-01', title: 'Programs: Period-Scoped Revenue', items: [
+    'Added period_received, period_refunds, period_net columns from SQL scoped to payments and refunds within the selected date range',
+    'Summary tab: Collected in Period card alongside lifetime Net Revenue, program and activity tables show period net',
+    'Revenue tab: cards restructured with Total Net + Collected in Period + Period Refunds + Period Net, blue-highlighted Period Net column in detail table',
+    'Excel export adds Period Received, Period Refunds, Period Net columns; AI Insights payload includes period data',
+    'Prior-period comparison tracks periodNet for delta pills; chart tooltip shows period net',
+  ]},
   { date: '2026-07-30', text: 'QBR org dropdown now merges locally-configured ORGS into the MCP search results so unpublished orgs (e.g. Joplin) appear in the Generate picker instead of being silently excluded' },
   { date: '2026-07-29', text: 'Rec Insights: added the AI insights button to the Facility Schedule, Historic Buildings, Class Roster, QoQ Comparison, and Annual Report pages (with tailored prompts), and a Slack ping now fires whenever anyone generates insights on any report' },
   { date: '2026-07-29', text: 'Instructor Payout: simplified the pay slip check graphic to a generic check - removed the decorative routing and account numbers (MICR line) and the check number' },
