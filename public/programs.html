@@ -657,6 +657,9 @@ function normalizeRow(raw) {
     received:      raw['Received'] ?? raw['received'] ?? 0,
     outstanding:   raw['Outstanding'] ?? raw['outstanding'] ?? 0,
     netRevenue:    raw['Net Revenue'] ?? raw['Net Total'] ?? raw['net_total'] ?? 0,
+    periodReceived: raw['Period Received'] ?? raw['period_received'] ?? 0,
+    periodRefunds:  raw['Period Refunds'] ?? raw['period_refunds'] ?? 0,
+    periodNet:      raw['Period Net'] ?? raw['period_net'] ?? 0,
     activityName:  raw['Activity Name'] ?? raw['activity_name'] ?? '',
   };
 }
@@ -672,7 +675,7 @@ function rollupToPrograms(secRows) {
       isSection:false, programId:key, programName:r.programName, season:r.season, activityName:r.activityName||'',
       regMode:'', startDate:null, endDate:null, sections:0, enrollments:0,
       _util:0, _cap:0, waitlist:0, cancellations:0,
-      charged:0, received:0, outstanding:0, refunds:0, netRevenue:0, _sections:[],
+      charged:0, received:0, outstanding:0, refunds:0, netRevenue:0, periodReceived:0, periodRefunds:0, periodNet:0, _sections:[],
     });
     const g = map.get(key);
     g._sections.push(r);
@@ -687,6 +690,9 @@ function rollupToPrograms(secRows) {
     g.outstanding  += fmtNum(r.outstanding);
     g.refunds      += fmtNum(r.refunds);
     g.netRevenue   += fmtNum(r.netRevenue);
+    g.periodReceived += fmtNum(r.periodReceived);
+    g.periodRefunds  += fmtNum(r.periodRefunds);
+    g.periodNet      += fmtNum(r.periodNet);
     if (r.startDate && (!g.startDate || r.startDate < g.startDate)) g.startDate = r.startDate;
     if (r.endDate   && (!g.endDate   || r.endDate   > g.endDate))   g.endDate   = r.endDate;
   }
@@ -1465,14 +1471,15 @@ function App() {
         const normalized = json.rows.map(normalizeRow);
         const isSec = normalized.some(r => r.isSection);
         const progRows = isSec ? rollupToPrograms(normalized) : normalized;
-        let enrolled = 0, net = 0, cancelled = 0;
+        let enrolled = 0, net = 0, cancelled = 0, periodNet = 0;
         progRows.forEach(r => {
           enrolled += fmtNum(r.enrollments);
           net      += fmtNum(r.netRevenue);
+          periodNet += fmtNum(r.periodNet);
           const secs = r._sections || [r];
           cancelled += secs.filter(s => s.status === 'Canceled' || s.status === 'Cancelled').length;
         });
-        setPriorStats({ enrolled, net, cancelled, start: w.start, end: w.end });
+        setPriorStats({ enrolled, net, cancelled, periodNet, start: w.start, end: w.end });
       })
       .catch(() => {});
     return () => { alive = false; };
@@ -1559,7 +1566,7 @@ function App() {
       'Start Date','End Date','Sections','Enrollments','Utilization','Fill %',
       ...(showWaitlist ? ['Waitlist'] : []),
       ...(showCancelsCol ? ['Cancellations','Cancellation %'] : []),
-      'Charged','Received','Outstanding','Refunds','Net Revenue'
+      'Charged','Received','Outstanding','Refunds','Net Revenue','Period Received','Period Refunds','Period Net'
     ];
     const data = rows.map(r => {
       const cp  = cancelPct(r.cancellations, r.enrollments);
@@ -1573,6 +1580,7 @@ function App() {
         ...(showCancelsCol ? [fmtNum(r.cancellations), cp != null ? `${Math.round(cp)}%` : ''] : []),
         fmtNum(r.charged), fmtNum(r.received), fmtNum(r.outstanding),
         fmtNum(r.refunds), fmtNum(r.netRevenue),
+        fmtNum(r.periodReceived), fmtNum(r.periodRefunds), fmtNum(r.periodNet),
       ];
     });
     const ws = XLSX.utils.aoa_to_sheet([headers, ...data], { cellDates: true });
@@ -1640,11 +1648,14 @@ function App() {
       outstanding:        acc.outstanding        + fmtNum(r.outstanding),
       refunds:            acc.refunds            + fmtNum(r.refunds),
       netRevenue:         acc.netRevenue         + fmtNum(r.netRevenue),
+      periodReceived:     acc.periodReceived     + fmtNum(r.periodReceived),
+      periodRefunds:      acc.periodRefunds      + fmtNum(r.periodRefunds),
+      periodNet:          acc.periodNet           + fmtNum(r.periodNet),
       enrollments:        acc.enrollments        + fmtNum(r.enrollments),
       sections:           acc.sections           + fmtNum(r.sections),
       waitlist:           acc.waitlist           + fmtNum(r.waitlist),
       cancellations:      acc.cancellations      + fmtNum(r.cancellations),
-    }), { charged:0, received:0, outstanding:0, refunds:0, netRevenue:0, enrollments:0, sections:0, waitlist:0, cancellations:0 });
+    }), { charged:0, received:0, outstanding:0, refunds:0, netRevenue:0, periodReceived:0, periodRefunds:0, periodNet:0, enrollments:0, sections:0, waitlist:0, cancellations:0 });
   }, [filteredRows]);
 
   const programCount = grouped ? Object.keys(grouped).length : 0;
@@ -1735,6 +1746,9 @@ function App() {
         cancellationRate: fmtNum(r.enrollments) > 0 ? Math.round((fmtNum(r.cancellations)/fmtNum(r.enrollments))*100) : null,
         refunds: r2(fmtNum(r.refunds)),
         netRevenue: r2(fmtNum(r.netRevenue)),
+        periodReceived: r2(fmtNum(r.periodReceived)),
+        periodRefunds: r2(fmtNum(r.periodRefunds)),
+        periodNet: r2(fmtNum(r.periodNet)),
       }));
     return {
       period: { start: loadedStart, end: loadedEnd },
@@ -1750,6 +1764,9 @@ function App() {
         totalCancellations: totals.cancellations || 0,
         totalRefunds: r2(totals.refunds),
         netRevenue: r2(totals.netRevenue),
+        periodReceived: r2(totals.periodReceived),
+        periodRefunds: r2(totals.periodRefunds),
+        periodNet: r2(totals.periodNet),
         overallCancellationPct: totals.enrollments > 0
           ? Math.round(((totals.cancellations||0)/totals.enrollments)*100) : null,
       },
@@ -2075,6 +2092,7 @@ function App() {
               cancellations: fmtNum(r.cancellations),
               charged: fmtNum(r.charged), received: fmtNum(r.received),
               refunds: fmtNum(r.refunds), netRevenue: fmtNum(r.netRevenue),
+              periodReceived: fmtNum(r.periodReceived), periodRefunds: fmtNum(r.periodRefunds), periodNet: fmtNum(r.periodNet),
               status: progStatus, startDate: startDate, endDate: endDate
             };
             // Per-program attendance rollup (only sections that track check-ins)
@@ -2104,6 +2122,7 @@ function App() {
           var totalCancellations = progs.reduce(function(s,p) { return s + (p.cancellations || 0); }, 0);
           var totalCapacity = progs.reduce(function(s,p) { return s + (p.capacity || 0); }, 0);
           var totalRev = progs.reduce(function(s,p){ return s + p.netRevenue; }, 0);
+          var periodTotalRev = progs.reduce(function(s,p){ return s + p.periodNet; }, 0);
           var totalEnrolled = progs.reduce(function(s,p){ return s + p.enrolled; }, 0);
           var totalSections = progs.reduce(function(s,p){ return s + p.sections.length; }, 0);
           var ranPct = (ranProgs.length + cancelledProgs.length) > 0 ? Math.round(ranProgs.length / (ranProgs.length + cancelledProgs.length) * 100) : 100;
@@ -2116,18 +2135,19 @@ function App() {
           var byAct = {};
           progs.forEach(function(p) {
             var a = p.activity || 'Uncategorized';
-            if (!byAct[a]) byAct[a] = { count: 0, enrolled: 0, revenue: 0, cancelled: 0, sections: 0 };
+            if (!byAct[a]) byAct[a] = { count: 0, enrolled: 0, revenue: 0, periodRev: 0, cancelled: 0, sections: 0 };
             byAct[a].count++;
             byAct[a].enrolled += p.enrolled;
             byAct[a].revenue += p.netRevenue;
+            byAct[a].periodRev += p.periodNet;
             byAct[a].sections += p.sections.length;
             if (p.status === 'Canceled') byAct[a].cancelled++;
             byAct[a].cancelledSections = (byAct[a].cancelledSections || 0) + p.sections.filter(function(s){ return s.status === 'Canceled' || s.status === 'Cancelled'; }).length;
           });
-          var actEntries = Object.entries(byAct).sort(function(a,b){ return b[1].revenue - a[1].revenue; });
+          var actEntries = Object.entries(byAct).sort(function(a,b){ return b[1].periodRev - a[1].periodRev; });
           var actByEnrolled = actEntries.slice().sort(function(a,b){ return b[1].enrolled - a[1].enrolled; });
           // Sorted programs
-          var progsSorted = progs.slice().sort(function(a,b){ return b.netRevenue - a.netRevenue; });
+          var progsSorted = progs.slice().sort(function(a,b){ return b.periodNet - a.periodNet; });
           // Show attendance columns only when this org tracks check-ins
           var showCi = !!(checkinSummary && checkinSummary.totalCheckIns > 0);
           var ciPctColor = function(p) { return p == null ? '#ccc' : p >= 85 ? '#16a34a' : p <= 25 ? '#dc2626' : '#333'; };
@@ -2143,7 +2163,8 @@ function App() {
               <div className="sum-cards">
                 <div className="sum-card"><div className="sc-label">Programs</div><div className="sc-val sc-blue">{progs.length}</div><div className="sc-sub">{totalSections} sections{cancelledSections > 0 ? ' (' + (totalSections - cancelledSections) + ' ran, ' + cancelledSections + ' cancelled)' : ''}</div></div>
                 <div className="sum-card"><div className="sc-label">Participants</div><div className="sc-val sc-green">{totalEnrolled.toLocaleString()}</div><div className="sc-sub">{avgFill > 0 ? avgFill + '% avg fill rate' : ''}</div>{compareOn && priorStats && <div><DeltaPill cur={totalEnrolled} prev={priorStats.enrolled} label={'vs ' + fmtRangeShort(priorStats.start, priorStats.end)} /></div>}</div>
-                <div className="sum-card"><div className="sc-label">Net Revenue</div><div className="sc-val sc-amber">{fmt$(totalRev)}</div><div className="sc-sub">{ranProgs.length > 0 ? fmt$(Math.round(totalRev / ranProgs.length)) + ' avg/program' : ''}</div>{compareOn && priorStats && <div><DeltaPill cur={totalRev} prev={priorStats.net} label={'vs ' + fmtRangeShort(priorStats.start, priorStats.end)} /></div>}</div>
+                <div className="sum-card"><div className="sc-label">Net Revenue</div><div className="sc-val sc-amber">{fmt$(totalRev)}</div><div className="sc-sub">total for these programs</div>{compareOn && priorStats && <div><DeltaPill cur={totalRev} prev={priorStats.net} label={'vs ' + fmtRangeShort(priorStats.start, priorStats.end)} /></div>}</div>
+                <div className="sum-card"><div className="sc-label">Collected in Period</div><div className="sc-val sc-green">{fmt$(periodTotalRev)}</div><div className="sc-sub">payments received in date range</div>{compareOn && priorStats && priorStats.periodNet != null && <div><DeltaPill cur={periodTotalRev} prev={priorStats.periodNet} label={'vs ' + fmtRangeShort(priorStats.start, priorStats.end)} /></div>}</div>
                 <div className="sum-card"><div className="sc-label">Ran / Active</div><div className="sc-val sc-green">{ranProgs.length}</div><div className="sc-sub">{ranPct}% of programs</div></div>
                 <div className="sum-card"><div className="sc-label">Cancelled</div><div className="sc-val sc-red">{cancelledSections}</div><div className="sc-sub">{cancelledSections === 1 ? '1 section' : cancelledSections + ' sections'}{cancelledProgs.length > 0 ? ' (' + cancelledProgs.length + ' full programs)' : ''}</div>{compareOn && priorStats && <div><DeltaPill cur={cancelledSections} prev={priorStats.cancelled} goodWhenDown={true} label={'vs ' + fmtRangeShort(priorStats.start, priorStats.end)} /></div>}</div>
                 <div className="sum-card"><div className="sc-label">Upcoming</div><div className="sc-val sc-purple">{upcomingProgs.length}</div><div className="sc-sub">Not yet started</div></div>
@@ -2306,7 +2327,7 @@ function App() {
               <div style={{background:'#fff',border:'1px solid #e8e6e0',borderRadius:8,overflow:'hidden',marginBottom:20}}>
                 <div style={{maxHeight:700,overflow:'auto'}}>
                   <table className="sum-prog-table">
-                    <thead><tr><th>Program</th><th style={{textAlign:'center'}}>Status</th><th style={{textAlign:'center'}}>Sections</th><th style={{textAlign:'right'}}>Utilization</th><th style={{textAlign:'right'}}>Fill %</th>{showCi && <th style={{textAlign:'right'}}>Check-In %</th>}{showCi && <th style={{textAlign:'right'}}>Check-Out %</th>}<th style={{textAlign:'right'}}>Net Revenue</th><th>Dates</th></tr></thead>
+                    <thead><tr><th>Program</th><th style={{textAlign:'center'}}>Status</th><th style={{textAlign:'center'}}>Sections</th><th style={{textAlign:'right'}}>Utilization</th><th style={{textAlign:'right'}}>Fill %</th>{showCi && <th style={{textAlign:'right'}}>Check-In %</th>}{showCi && <th style={{textAlign:'right'}}>Check-Out %</th>}<th style={{textAlign:'right'}}>Collected</th><th>Dates</th></tr></thead>
                     <tbody>
                       {progsSorted.map(function(p) {
                         var isCancelled = p.status === 'Canceled';
@@ -2320,11 +2341,11 @@ function App() {
                           <td style={{textAlign:'right',color:p.fillPct!=null?(p.fillPct>=85?'#16a34a':p.fillPct<=25?'#dc2626':'#333'):'#ccc',fontWeight:p.fillPct!=null&&(p.fillPct>=85||p.fillPct<=25)?700:400}}>{p.fillPct != null ? p.fillPct + '%' : '\u2014'}</td>
                           {showCi && <td style={{textAlign:'right',fontWeight:p.checkInPct!=null?700:400,color:ciPctColor(p.checkInPct)}}>{p.checkInPct != null ? p.checkInPct + '%' : '\u2014'}</td>}
                           {showCi && <td style={{textAlign:'right',color:p.checkOutPct!=null?'#475569':'#ccc'}}>{p.checkOutPct != null ? p.checkOutPct + '%' : '\u2014'}</td>}
-                          <td style={{textAlign:'right',fontWeight:500}}>{p.netRevenue > 0 ? fmt$(p.netRevenue) : '\u2014'}</td>
+                          <td style={{textAlign:'right',fontWeight:500}}>{p.periodNet > 0 ? fmt$(p.periodNet) : '\u2014'}</td>
                           <td style={{fontSize:10,color:'#888',whiteSpace:'nowrap'}}>{fmtD(p.startDate)}{fmtD(p.endDate) ? ' \u2013 ' + fmtD(p.endDate) : ''}</td>
                         </tr>;
                       })}
-                      <tr className="totals-row"><td>Total</td><td /><td style={{textAlign:'center'}}>{cancelledSections > 0 ? <span>{totalSections - cancelledSections} ran<span style={{color:'#dc2626',fontSize:10}}> / {cancelledSections} canc.</span></span> : totalSections}</td><td style={{textAlign:'right',whiteSpace:'nowrap'}}>{totalEnrolled.toLocaleString()} <span style={{color:'#888'}}>/ {totalCapacity > 0 ? totalCapacity.toLocaleString() : '\u2014'}</span>{totalCancellations > 0 && <span style={{color:'#dc2626'}}> / {totalCancellations.toLocaleString()}</span>}</td><td style={{textAlign:'right',color:'#888'}}>{avgFill > 0 ? avgFill + '%' : ''}</td>{showCi && <td style={{textAlign:'right',fontWeight:700}}>{checkinSummary.checkInPct != null ? checkinSummary.checkInPct + '%' : '\u2014'}</td>}{showCi && <td style={{textAlign:'right',fontWeight:700}}>{checkinSummary.checkOutPct != null ? checkinSummary.checkOutPct + '%' : '\u2014'}</td>}<td style={{textAlign:'right',fontWeight:700}}>{fmt$(totalRev)}</td><td /></tr>
+                      <tr className="totals-row"><td>Total</td><td /><td style={{textAlign:'center'}}>{cancelledSections > 0 ? <span>{totalSections - cancelledSections} ran<span style={{color:'#dc2626',fontSize:10}}> / {cancelledSections} canc.</span></span> : totalSections}</td><td style={{textAlign:'right',whiteSpace:'nowrap'}}>{totalEnrolled.toLocaleString()} <span style={{color:'#888'}}>/ {totalCapacity > 0 ? totalCapacity.toLocaleString() : '\u2014'}</span>{totalCancellations > 0 && <span style={{color:'#dc2626'}}> / {totalCancellations.toLocaleString()}</span>}</td><td style={{textAlign:'right',color:'#888'}}>{avgFill > 0 ? avgFill + '%' : ''}</td>{showCi && <td style={{textAlign:'right',fontWeight:700}}>{checkinSummary.checkInPct != null ? checkinSummary.checkInPct + '%' : '\u2014'}</td>}{showCi && <td style={{textAlign:'right',fontWeight:700}}>{checkinSummary.checkOutPct != null ? checkinSummary.checkOutPct + '%' : '\u2014'}</td>}<td style={{textAlign:'right',fontWeight:700}}>{fmt$(periodTotalRev)}</td><td /></tr>
                     </tbody>
                   </table>
                 </div>
@@ -2336,12 +2357,12 @@ function App() {
                   <div style={{fontSize:13,fontWeight:700,color:'#333',marginBottom:6}}>By Activity ({actEntries.length})</div>
                   <div style={{background:'#fff',border:'1px solid #e8e6e0',borderRadius:8,overflow:'hidden',marginBottom:16}}>
                     <table className="sum-cat-table">
-                      <thead><tr><th>Activity</th><th style={{textAlign:'center'}}>Programs</th><th style={{textAlign:'center'}}>Sections</th><th style={{textAlign:'center'}}>Cancelled</th><th style={{textAlign:'right'}}>Participants</th><th style={{textAlign:'right'}}>Net Revenue</th><th style={{textAlign:'right'}}>% of Rev</th></tr></thead>
+                      <thead><tr><th>Activity</th><th style={{textAlign:'center'}}>Programs</th><th style={{textAlign:'center'}}>Sections</th><th style={{textAlign:'center'}}>Cancelled</th><th style={{textAlign:'right'}}>Participants</th><th style={{textAlign:'right'}}>Collected</th><th style={{textAlign:'right'}}>% of Rev</th></tr></thead>
                       <tbody>
                         {actEntries.map(function(e) {
-                          return <tr key={e[0]}><td style={{fontWeight:500}}>{e[0]}</td><td style={{textAlign:'center'}}>{e[1].count}</td><td style={{textAlign:'center'}}>{e[1].sections}</td><td style={{textAlign:'center',color:(e[1].cancelledSections||0)>0?'#dc2626':'#ccc'}}>{e[1].cancelledSections||0}</td><td style={{textAlign:'right'}}>{e[1].enrolled.toLocaleString()}</td><td style={{textAlign:'right',fontWeight:500}}>{fmt$(e[1].revenue)}</td><td style={{textAlign:'right',color:'#888'}}>{totalRev>0?Math.round(e[1].revenue/totalRev*100)+'%':'\u2014'}</td></tr>;
+                          return <tr key={e[0]}><td style={{fontWeight:500}}>{e[0]}</td><td style={{textAlign:'center'}}>{e[1].count}</td><td style={{textAlign:'center'}}>{e[1].sections}</td><td style={{textAlign:'center',color:(e[1].cancelledSections||0)>0?'#dc2626':'#ccc'}}>{e[1].cancelledSections||0}</td><td style={{textAlign:'right'}}>{e[1].enrolled.toLocaleString()}</td><td style={{textAlign:'right',fontWeight:500}}>{fmt$(e[1].periodRev)}</td><td style={{textAlign:'right',color:'#888'}}>{periodTotalRev>0?Math.round(e[1].periodRev/periodTotalRev*100)+'%':'\u2014'}</td></tr>;
                         })}
-                        <tr className="totals-row"><td>Total</td><td style={{textAlign:'center'}}>{progs.length}</td><td style={{textAlign:'center'}}>{totalSections}</td><td style={{textAlign:'center',color:cancelledSections>0?'#dc2626':'#ccc'}}>{cancelledSections}</td><td style={{textAlign:'right'}}>{totalEnrolled.toLocaleString()}</td><td style={{textAlign:'right'}}>{fmt$(totalRev)}</td><td style={{textAlign:'right'}}>100%</td></tr>
+                        <tr className="totals-row"><td>Total</td><td style={{textAlign:'center'}}>{progs.length}</td><td style={{textAlign:'center'}}>{totalSections}</td><td style={{textAlign:'center',color:cancelledSections>0?'#dc2626':'#ccc'}}>{cancelledSections}</td><td style={{textAlign:'right'}}>{totalEnrolled.toLocaleString()}</td><td style={{textAlign:'right'}}>{fmt$(periodTotalRev)}</td><td style={{textAlign:'right'}}>100%</td></tr>
                       </tbody>
                     </table>
                   </div>
@@ -2354,36 +2375,36 @@ function App() {
                 {(tab === 'revenue' || (isPrint && tab !== 'participants')) && (<React.Fragment>
         {/* Info blurb */}
         <div className="report-blurb">
-          <strong>How revenue is calculated:</strong> Revenue is transaction-based. <em>Received</em> is cash actually collected — succeeded payments plus any canceled-status payment that is the sole or partial collection on an item (reversed or retried charges already covered by a successful payment are excluded, so nothing is double-counted); for payment plans, only paid installments count. <em>Charged</em> is the invoiced amount after discounts. <em>Outstanding</em> is the balance still collectible — unpaid, un-waived installments for payment-plan registrations, or the uncollected balance otherwise; waived installments and canceled registrations are excluded. <em>Net Rev</em> = Received minus Refunds. <em>Fill %</em> compares filled seats to capacity (a section registration counts across all of its sessions; session-based programs sum each session's bookings).
+          <strong>Two views of revenue:</strong> <em>Total</em> columns (Charged, Received, Outstanding, Refunds, Net Rev) show the lifetime financials for programs running in this date range. <em>Period Net</em> shows only cash that moved during the selected dates — this matches the Transactions page in Rec. <em>Fill %</em> compares filled seats to capacity (section registrations count across all sessions; session-based programs sum each session individually).
         </div>
 
         {/* Summary cards */}
         {totals && (
           <div className="summary-cards">
-            <div className="summary-card">
-              <div className="card-label">Charged</div>
-              <div className="card-value green">{fmtMoney(totals.charged)}</div>
-              <div className="card-sub">Total amount billed to registrants</div>
+            <div className="summary-card" style={{borderLeft:'3px solid #16a34a'}}>
+              <div className="card-label">Total Net Revenue</div>
+              <div className="card-value green">{fmtMoney(totals.netRevenue)}</div>
+              <div className="card-sub">lifetime value of these programs</div>
+            </div>
+            <div className="summary-card" style={{borderLeft:'3px solid #2563eb'}}>
+              <div className="card-label">Collected in Period</div>
+              <div className="card-value blue">{fmtMoney(totals.periodReceived)}</div>
+              <div className="card-sub">payments received in date range</div>
             </div>
             <div className="summary-card">
-              <div className="card-label">Received</div>
-              <div className="card-value green">{fmtMoney(totals.received)}</div>
-              <div className="card-sub">Payments collected to date</div>
+              <div className="card-label">Period Refunds</div>
+              <div className="card-value red">{fmtMoney(totals.periodRefunds)}</div>
+              <div className="card-sub">refunds processed in date range</div>
+            </div>
+            <div className="summary-card" style={{borderLeft:'3px solid #16a34a'}}>
+              <div className="card-label">Period Net</div>
+              <div className={`card-value ${fmtNum(totals.periodNet) < 0 ? 'red' : 'green'}`}>{fmtMoney(totals.periodNet)}</div>
+              <div className="card-sub">collected minus refunds for period</div>
             </div>
             <div className="summary-card">
               <div className="card-label">Outstanding</div>
               <div className={`card-value ${fmtNum(totals.outstanding) > 0 ? 'red' : ''}`}>{fmtMoney(totals.outstanding)}</div>
-              <div className="card-sub">Charged minus received — unpaid balance</div>
-            </div>
-            <div className="summary-card">
-              <div className="card-label">Refunds</div>
-              <div className="card-value red">{fmtMoney(totals.refunds)}</div>
-              <div className="card-sub">Total refunded back to registrants</div>
-            </div>
-            <div className="summary-card">
-              <div className="card-label">Net Revenue</div>
-              <div className={`card-value ${totals.netRevenue < 0 ? 'red' : 'green'}`}>{fmtMoney(totals.netRevenue)}</div>
-              <div className="card-sub">Received minus refunds</div>
+              <div className="card-sub">unpaid balance across all programs</div>
             </div>
             <div className="summary-card">
               <div className="card-label">Enrollments</div>
@@ -2486,6 +2507,7 @@ function App() {
                       {w > 0.005 && <div className="tt-row"><span className="tt-k">Waived/adj.</span><span>{fmtMoney(w)}</span></div>}
                       {ref > 0.005 && <div className="tt-row"><span className="tt-k">Refunds</span><span>{fmtMoney(ref)}</span></div>}
                       <div className="tt-row"><span className="tt-k">Net revenue</span><span>{fmtMoney(net)}</span></div>
+                      <div className="tt-row" style={{borderTop:'1px solid #e5e7eb',paddingTop:4,marginTop:2}}><span className="tt-k" style={{color:'#1d4ed8'}}>Period net</span><span style={{color:'#1d4ed8',fontWeight:600}}>{fmtMoney(fmtNum(chartHover.r.periodNet))}</span></div>
                     </>);
                   })() : (<>
                     <div className="tt-row"><span className="tt-k">Fill rate</span><span>{fmtNum(chartHover.r.fillPct)}%</span></div>
@@ -2582,6 +2604,7 @@ function App() {
                 <th style={{width:90}}>Outstanding</th>
                 <th style={{width:90}}>Refunds</th>
                 <th style={{width:90}}>Net Rev</th>
+                <th style={{width:100,background:'#eff6ff'}}>Period Net</th>
               </tr>
             </thead>
             <tbody>
@@ -2611,6 +2634,7 @@ function App() {
                     <td className={`money ${fmtNum(r.outstanding) === 0 ? 'zero' : ''}`}>{fmtMoney(r.outstanding)}</td>
                     <td className={`money ${fmtNum(r.refunds) === 0 ? 'zero' : ''}`}>{fmtMoney(r.refunds)}</td>
                     <td className="money" style={fmtNum(r.netRevenue) < 0 ? {color:'#b91c1c'} : {}}>{fmtMoney(r.netRevenue)}</td>
+                    <td className="money" style={{background:'#f0f7ff',fontWeight:600,...(fmtNum(r.periodNet) < 0 ? {color:'#b91c1c'} : {color:'#1d4ed8'})}}>{fmtMoney(r.periodNet)}</td>
                   </tr>
                   {isOpen && r._sections.map((sx, j) => {
                     const scp = cancelPct(sx.cancellations, sx.enrollments);
@@ -2635,6 +2659,7 @@ function App() {
                         <td className={`money ${fmtNum(sx.outstanding) === 0 ? 'zero' : ''}`}>{fmtMoney(sx.outstanding)}</td>
                         <td className={`money ${fmtNum(sx.refunds) === 0 ? 'zero' : ''}`}>{fmtMoney(sx.refunds)}</td>
                         <td className="money" style={fmtNum(sx.netRevenue) < 0 ? {color:'#b91c1c'} : {}}>{fmtMoney(sx.netRevenue)}</td>
+                        <td className="money" style={{background:'#f0f7ff',fontWeight:500,...(fmtNum(sx.periodNet) < 0 ? {color:'#b91c1c'} : {color:'#1d4ed8'})}}>{fmtMoney(sx.periodNet)}</td>
                       </tr>
                     );
                   })}
@@ -2662,6 +2687,7 @@ function App() {
                   <td>{fmtMoney(totals.outstanding)}</td>
                   <td>{fmtMoney(totals.refunds)}</td>
                   <td>{fmtMoney(totals.netRevenue)}</td>
+                  <td style={{background:'#f0f7ff',fontWeight:700,color:'#1d4ed8'}}>{fmtMoney(totals.periodNet)}</td>
                 </tr>
               </tfoot>
             )}
@@ -3295,3 +3321,4 @@ ReactDOM.createRoot(document.getElementById('root')).render(<App />);
     <script src="/juice-loader.js" defer></script>
   </body>
 </html>
+
