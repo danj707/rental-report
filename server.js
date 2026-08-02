@@ -1311,6 +1311,7 @@ const ANNOUNCEMENTS_FILE = path.join(DATA_DIR, "announcements.json");
 const ANNOUNCE_IMG_DIR = path.join(DATA_DIR, "announce-images");
 fs.mkdirSync(ANNOUNCE_IMG_DIR, { recursive: true });
 const PUBLIC_MODE_FILE = path.join(DATA_DIR, "public-mode.json");
+const TYLER_ORGS_FILE  = path.join(DATA_DIR, "tyler-orgs.json");
 const GOALS_DIR = path.join(DATA_DIR, "goals");
 fs.mkdirSync(GOALS_DIR, { recursive: true });
 const VOTES_FILE = path.join(DATA_DIR, "votes.json");
@@ -1779,6 +1780,27 @@ function setPublicMode(slug, enabled) {
 }
 function getAllPublicModes() {
   return readJSON(PUBLIC_MODE_FILE, {});
+}
+
+// ── Tyler/Munis turnover orgs (per-org toggle on the admin dashboard) ─
+// Controls whether the GL report shows the "→ Tyler" treasurer-turnover view.
+// tyler-orgs.json stores explicit booleans by slug; when a slug has no stored
+// flag, a code-level ORGS[slug].tyler block (e.g. Littleton, which carries the
+// short-code map) acts as the default. Toggling ON an org with no code config
+// gets a minimal config — cover sheets render with a blank Account Code column
+// until a short-code map is added to the org's ORGS entry.
+function getTylerConfig(slug) {
+  const org = ORGS[slug];
+  if (!org) return null;
+  const flags = readJSON(TYLER_ORGS_FILE, {});
+  const enabled = (slug in flags) ? !!flags[slug] : !!org.tyler;
+  if (!enabled) return null;
+  return org.tyler || { entityName: org.displayName || slug, department: "", shortCodes: {} };
+}
+function setTylerOrg(slug, enabled) {
+  const all = readJSON(TYLER_ORGS_FILE, {});
+  all[slug] = !!enabled;
+  writeJSON(TYLER_ORGS_FILE, all);
 }
 
 // ── Goal targets (per-org KPI goals) ──────────────────────────────────────────
@@ -5009,7 +5031,7 @@ app.get("/:org/gl", (req, res) => {
   const slug = req.params.org;
   if (!ORGS[slug]) return res.status(404).send("Unknown org");
   logEvent(slug, "gl", "view", req);
-  const orgConfig = { emailEnabled: EMAIL_ENABLED_ORGS.has(slug), tyler: ORGS[slug].tyler || null };
+  const orgConfig = { emailEnabled: EMAIL_ENABLED_ORGS.has(slug), tyler: getTylerConfig(slug) };
   const html = require("fs").readFileSync(path.join(__dirname, "public", "gl.html"), "utf8");
   res.send(html.replace("<head>", `<head><script>window.ORG_CONFIG=${JSON.stringify(orgConfig)};</script>`));
 });
@@ -7338,6 +7360,17 @@ app.post("/api/admin/toggle-public-mode", express.json(), (req, res) => {
   res.json({ ok: true, publicMode: !current });
 });
 
+// ── POST /api/admin/toggle-tyler-org — GL "→ Tyler" turnover view per org ──
+app.post("/api/admin/toggle-tyler-org", express.json(), (req, res) => {
+  if (dashboardPasswordBlocked(req, res)) return;
+  const { org: slug } = req.body || {};
+  if (!ORGS[slug]) return res.status(404).json({ error: "Unknown org" });
+  const current = !!getTylerConfig(slug);
+  setTylerOrg(slug, !current);
+  console.log(`[tyler] ${slug} Tyler turnover ${!current ? "enabled" : "disabled"} via dashboard`);
+  res.json({ ok: true, tylerOrg: !current });
+});
+
 // ── GET /api/health-check — latest health check results ──────────────
 app.get("/api/health-check", (req, res) => {
   const results = loadHealthResults();
@@ -8391,7 +8424,11 @@ app.get("/", (req, res) => {
       <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M8 3C3 3 1 8 1 8s2 5 7 5 7-5 7-5-2-5-7-5z" stroke="currentColor" stroke-width="1.5" fill="none"/><circle cx="8" cy="8" r="2" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>
       <span>${isPublic ? 'Public' : 'Full'}</span>
     </button>`;
-    const headerActions = `<div class="org-header-actions">${adminLink}${pubToggle}</div>`;
+    const isTylerOrg = !!getTylerConfig(slug);
+    const tylerToggle = `<button type="button" class="pub-toggle tyler-toggle${isTylerOrg ? ' tyler-on' : ''}" onclick="event.stopPropagation();toggleTylerOrg('${slug}',this)" title="${isTylerOrg ? 'Tyler org ON \u2014 GL report shows the \u2192 Tyler treasurer turnover view' : 'Tyler org OFF \u2014 no \u2192 Tyler button on the GL report'}">
+      <span>\u2192 Tyler</span>
+    </button>`;
+    const headerActions = `<div class="org-header-actions">${adminLink}${tylerToggle}${pubToggle}</div>`;
 
     // Inline metrics toggle (only for orgs with orgId)
     const metricsToggle = org.orgId ? `
@@ -8749,6 +8786,7 @@ app.get("/", (req, res) => {
     .pub-toggle { font-size: 11px; display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; border: 1px solid #ddd; border-radius: 5px; background: #fff; color: #888; cursor: pointer; transition: all .15s; white-space: nowrap; }
     .pub-toggle:hover { background: #f0f0f0; color: #333; }
     .pub-toggle.pub-on { background: #ecfdf5; border-color: #6ee7b7; color: #059669; }
+    .pub-toggle.tyler-on { background: #fffbeb; border-color: #fcd34d; color: #b45309; }
     .vis-toggle { background: none; border: none; cursor: pointer; padding: 4px; border-radius: 4px; flex-shrink: 0; opacity: 0.35; transition: opacity .15s; color: #999; line-height: 0; }
     .report-card:hover .vis-toggle { opacity: 0.6; }
     .report-card-hidden .vis-toggle { opacity: 0.7; color: #dc2626; }
@@ -10324,6 +10362,32 @@ app.get("/", (req, res) => {
       btn.style.opacity = '';
     }
 
+    async function toggleTylerOrg(slug, btn) {
+      if (!mbPwd) {
+        mbPwd = getDashPwd();
+        if (!mbPwd) return;
+      }
+      btn.style.opacity = '0.3';
+      try {
+        const res = await fetch('/api/admin/toggle-tyler-org', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ password: mbPwd, org: slug }),
+        });
+        const data = await res.json().catch(function(){ return {}; });
+        if (!res.ok || !data.ok) {
+          if (res.status === 401) { mbPwd = ''; clearDashPwd(); }
+          throw new Error(data.error || 'Failed');
+        }
+        btn.classList.toggle('tyler-on', data.tylerOrg);
+        btn.title = data.tylerOrg ? 'Tyler org ON — GL report shows the → Tyler treasurer turnover view' : 'Tyler org OFF — no → Tyler button on the GL report';
+        mbToast(data.tylerOrg ? slug + ': Tyler turnover ON — → Tyler button now on the GL report' : slug + ': Tyler turnover OFF');
+      } catch (e) {
+        alert('Toggle failed: ' + e.message);
+      }
+      btn.style.opacity = '';
+    }
+
         function openAddReport(slug) {
       const info = ADD_REPORT_ORGS[slug];
       if (!info || !info.missing || !info.missing.length) return;
@@ -10824,6 +10888,7 @@ app.get("/", (req, res) => {
     'Unmapped GL receipts (e.g. card-processing fees with no GL code) surface as a flagged "(no GL account)" line — Munis rejects blank-GL turnovers, so it’s a fix-upstream signal, never folded into a program account.',
     'Tyler short codes (RESPCA, RECAMP, …) come from a per-org map in app config; -427001-NY* deferred codes resolve to their NY* suffix automatically.',
     'PDF export in Tyler mode produces portrait Letter cover sheets (one per page) via the existing Puppeteer pipeline.',
+    'Admin dashboard: per-org "→ Tyler" toggle on each org card flips the GL report’s Tyler view on or off (persisted to the data volume). Orgs toggled on without a configured short-code map render cover sheets with a blank Account Code column until the map is added.',
   ]},
   { date: '2026-08-01', title: 'Programs: Period-Scoped Revenue', items: [
     'Added period_received, period_refunds, period_net columns from SQL scoped to payments and refunds within the selected date range',
