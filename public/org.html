@@ -362,6 +362,7 @@
     <span class="pulse-ts" id="pulse-ts"></span>
   </div>
   <div class="pulse-grid" id="pulse-grid"></div>
+  <div id="pulse-legend" style="display:none;font-size:9px;color:rgba(165,180,252,0.55);padding:8px 4px 2px;line-height:1.4;text-align:center">Pace = projected month-end total at current daily rate. Delta compares your daily rate this month vs the full prior month.</div>
 </div>
 
 
@@ -508,6 +509,8 @@
     var grid = document.getElementById('pulse-grid');
     var ts = document.getElementById('pulse-ts');
     panel.style.display = 'block';
+    var legend = document.getElementById('pulse-legend');
+    if (legend) legend.style.display = 'block';
     if (p.generated) {
       var d = new Date(p.generated);
       ts.textContent = 'Updated ' + d.toLocaleTimeString([], {hour:'numeric',minute:'2-digit'});
@@ -526,7 +529,8 @@
       if (it.delta) {
         var color = it.direction === 'up' ? '#4ade80' : it.direction === 'down' ? '#f87171' : '#a5b4fc';
         var arrow = it.direction === 'up' ? '↑' : it.direction === 'down' ? '↓' : '';
-        deltaHtml = '<div style="font-size:11px;color:' + color + ';margin-top:3px;font-weight:600">' + arrow + ' ' + it.delta + ' vs prior pace</div>';
+        var priorMo = (cfg.pulse && cfg.pulse.priorMonth) || 'prior mo';
+        deltaHtml = '<div style="font-size:11px;color:' + color + ';margin-top:3px;font-weight:600">' + arrow + ' ' + it.delta + ' vs ' + priorMo + ' daily rate</div>';
       }
       var sparkHtml = sparkSVG(it.trail);
       var goalHtml = '';

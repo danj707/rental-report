@@ -289,7 +289,7 @@ async function refreshOrgPulse(slug, force) {
   const curMonthShort = now.toLocaleString('en-US', { month: 'short' });
   const curYear = now.getFullYear();
   const pulseDateRange = curMonthShort + ' 1\u2013' + daysElapsed + ', ' + curYear;
-  const pulse = { items: [], generated: new Date().toISOString(), month: monthLabel, dateRange: pulseDateRange, trailLabels: trailMonths.map(m => m.label) };
+  const pulse = { items: [], generated: new Date().toISOString(), month: monthLabel, dateRange: pulseDateRange, trailLabels: trailMonths.map(m => m.label), priorMonth: trailMonths[4].label };
 
   // ── Fetch all report types × 6 months in parallel for sparklines ──
   const [glAll, pgAll, facAll, prodAll] = await Promise.all([
@@ -10818,6 +10818,11 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  { date: '2026-08-02', title: 'Daily Pulse clarity: named comparison periods', items: [
+    'Pulse delta labels now name the comparison month explicitly (e.g. vs Jul daily rate instead of vs prior pace) so directors know exactly what is being compared',
+    'Added methodology annotation under Daily Pulse header explaining pace projection and daily-rate comparison logic',
+    'Server now pipes priorMonth label through to client via pulse.priorMonth field',
+  ] },
   { date: '2026-08-02', title: '→ Tyler: Munis Treasurer Turnover Cover Sheets', items: [
     'NEW: "→ Tyler" toggle on the GL Code Report (Tyler/Munis orgs only — first: Littleton, MA). Re-renders the loaded GL rows as the "Schedule of Departmental Payments to the Treasurer" cover sheets: one Credit turnover, one Cash & Check turnover, same date range.',
     'Pure client-side pivot — no new query or route. Gross receipts by tender (refunds stay on the AP warrant), non-cash tenders (Free, Org Credit, Scholarship, Gift Card) excluded.',
