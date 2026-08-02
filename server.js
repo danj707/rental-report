@@ -3268,7 +3268,11 @@ app.get("/:org/metrics/api/data", (req, res) => {
 });
 
 // ── GET /:org/api/calendar-conversion — calendar views (fast, events only) ──
-// Enrollment + revenue data fetched client-side for instant render
+// Enrollment + revenue data fetched client-side for instant render.
+// Returns views AND "View Session →" clicks (the real intent signal the
+// program calendar tracks per section), for the current window and the
+// prior same-length window, plus per-section first-click dates so the
+// client can attribute enrollments to clicked sections.
 app.get("/:org/api/calendar-conversion", (req, res) => {
   res.set("Cache-Control", "no-store");
   const slug = req.params.org;
@@ -3276,28 +3280,56 @@ app.get("/:org/api/calendar-conversion", (req, res) => {
   if (!orgConfig) return res.status(404).json({ error: "Unknown org" });
 
   const days = parseInt(req.query.days) || 30;
-  const cutoff = new Date(Date.now() - days * 86400000);
-  const cutoffStr = cutoff.toISOString().substring(0, 10);
+  const cutoffStr      = new Date(Date.now() - days * 86400000).toISOString().substring(0, 10);
+  const priorCutoffStr = new Date(Date.now() - days * 2 * 86400000).toISOString().substring(0, 10);
 
-  // Calendar views per day from events.jsonl (instant)
-  const events = readEvents(days).filter(e => e.org === slug && e.report === "calendar" && e.event === "view");
-  const viewsByDay = {};
+  // Views + section clicks per day from events.jsonl (instant); read 2x the
+  // window so the prior period is available for deltas.
+  const events = readEvents(days * 2).filter(e => e.org === slug && e.report === "calendar");
+  const viewsByDay = {}, clicksByDay = {};
+  let priorViews = 0, priorClicks = 0;
+  // section name → { clicks, firstClick } per window
+  const curSections = {}, priorSections = {};
+
   events.forEach(e => {
     const day = e.ts.substring(0, 10);
-    viewsByDay[day] = (viewsByDay[day] || 0) + 1;
+    const inCurrent = day >= cutoffStr;
+    const inPrior   = day >= priorCutoffStr && day < cutoffStr;
+    if (e.event === "view") {
+      if (inCurrent) viewsByDay[day] = (viewsByDay[day] || 0) + 1;
+      else if (inPrior) priorViews++;
+    } else if (e.event === "click") {
+      if (inCurrent) clicksByDay[day] = (clicksByDay[day] || 0) + 1;
+      else if (inPrior) priorClicks++;
+      const sec = (e.section || "").trim();
+      if (!sec) return;
+      const bucket = inCurrent ? curSections : inPrior ? priorSections : null;
+      if (!bucket) return;
+      if (!bucket[sec]) bucket[sec] = { clicks: 0, firstClick: day };
+      bucket[sec].clicks++;
+      if (day < bucket[sec].firstClick) bucket[sec].firstClick = day;
+    }
   });
 
-  const daily = Object.keys(viewsByDay).filter(d => d >= cutoffStr).sort().map(d => ({
+  const allDays = new Set([...Object.keys(viewsByDay), ...Object.keys(clicksByDay)]);
+  const daily = Array.from(allDays).sort().map(d => ({
     date: d,
     views: viewsByDay[d] || 0,
+    clicks: clicksByDay[d] || 0,
   }));
 
-  const totalViews = daily.reduce((s, d) => s + d.views, 0);
+  const totalViews  = daily.reduce((s, d) => s + d.views, 0);
+  const totalClicks = daily.reduce((s, d) => s + d.clicks, 0);
+  const toList = (m) => Object.entries(m).map(([section, v]) => ({ section, clicks: v.clicks, firstClick: v.firstClick }));
 
   res.json({
     period: days + "d",
     totalViews,
+    totalClicks,
     daily,
+    prior: { views: priorViews, clicks: priorClicks },
+    clickedSections: toList(curSections),
+    priorClickedSections: toList(priorSections),
   });
 });
 
@@ -10882,6 +10914,13 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  { date: '2026-08-02', title: 'Registration Funnel: click-attributed revenue', items: [
+    'Calendar View → Registration Funnel (metrics page) now attributes enrollments to actual calendar activity instead of estimating revenue as views × conversion × avg ticket.',
+    'New Session Clicks KPI — real "View Session" click-throughs from the program calendar, tracked per section, with click-through rate vs views.',
+    'Attributed Enrollments = enrollments in sections a visitor clicked, dated on/after that section’s first click. Attributed Revenue prices each at the section’s own average ticket (programs net revenue ÷ enrollments), not the org-wide average.',
+    'Attribution is section-level (visitors aren’t tracked through rec.us checkout) so it remains an upper bound — but it is grounded in real clicks and real section pricing. The old estimated-revenue KPI and fake conversion rate are gone.',
+    'Prior-period deltas now cover views, clicks, and attributed metrics; daily chart adds a clicks bar between views and enrollments.',
+  ]},
   { date: '2026-08-02', title: 'Daily Pulse clarity: named comparison periods', items: [
     'Pulse delta labels now name the comparison month explicitly (e.g. vs Jul daily rate instead of vs prior pace) so directors know exactly what is being compared',
     'Added methodology annotation under Daily Pulse header explaining pace projection and daily-rate comparison logic',
