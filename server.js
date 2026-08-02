@@ -760,6 +760,44 @@ const ORGS = {
     orgId:   "992ee322-4927-4558-827d-7f8768580b85",
     logoUrl: "https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2Forganization-992ee322-4927-4558-827d-7f8768580b85%2FfullLogo.jpeg%3F1776960415666&w=2048&q=75",
     displayName: "Littleton PRCE",
+    // Tyler/Munis treasurer turnover — enables the "→ Tyler" toggle on the GL
+    // report. Short codes exist only in the town's Tyler chart, not in rec.us,
+    // so they're mapped here by full account number. -427001-NY* (next-year
+    // deferred) codes resolve to their NY* suffix in the client, not this map.
+    tyler: {
+      entityName: "Town of Littleton",
+      department: "Recreation (630)",
+      shortCodes: {
+        "21464200-432000": "LKSFEE",
+        "0001-258700": "HLDOTH",
+        "20104700-484000": "GFTHOL",
+        "10414800-484000": "UNITED",
+        "20344700-484000": "PRDOCK",
+        "20214700-484000": "GFTYOU",
+        "20714200-432000": "COAREC",
+        "21054200-427000-ADLT": "CEADFT",
+        "21054200-427000-AFTR": "AFTERP",
+        "21054200-427000-ALEG": "READBB",
+        "21054200-427000-BEAC": "REBEAC",
+        "21054200-427000-BSKT": "BASKET",
+        "21054200-427000-CAMP": "RECAMP",
+        "21054200-427000-CE ADS": "CEADS",
+        "21054200-427000-C ED": "CEADUL",
+        "21054200-427000-CELP": "CELEAP",
+        "21054200-427000-CLUB": "RETASK",
+        "21054200-427000-CRFT": "CEART",
+        "21054200-427000-FIELD": "REFIEL",
+        "21054200-427000-PRE": "REPRES",
+        "21054200-427000-REC": "RECREV",
+        "21054200-427000-SKI": "RECSKI",
+        "21054200-427000-SPEC": "RESPAC",
+        "21054200-427000-SPRT": "RESPCA",
+        "21054200-427000-TENN": "RECTEN",
+        "21054200-427000-TRAC": "RETRAC",
+        "21054200-427000-TRIP": "RETRIP",
+        "21054200-427000-VAC": "REVACA",
+      },
+    },
   },
   "town-of-clarkstown": {
     token:   "Ac2HSGmYm3yb2eVP",
@@ -2357,7 +2395,7 @@ async function generatePdf(orgSlug, reportType, startDate, endDate, filters = {}
   // server-side Metabase filters. The print page initializes its filter state
   // from these params before emitting #report-ready, so Puppeteer captures the
   // filtered render rather than the full dataset.
-  ["locations", "sites", "location_name", "site_type", "desks", "by_desk", "by_item", "hide_zero", "chart_net", "metric", "programs", "closures", "hrs", "section_name", "section_id", "status", "questions", "cols", "search", "tab", "instructor", "split", "book_type", "addons", "participant", "view"].forEach(k => {
+  ["locations", "sites", "location_name", "site_type", "desks", "by_desk", "by_item", "hide_zero", "chart_net", "metric", "programs", "closures", "hrs", "section_name", "section_id", "status", "questions", "cols", "search", "tab", "instructor", "split", "book_type", "addons", "participant", "view", "tyler"].forEach(k => {
     if (filters[k]) qsObj[k] = filters[k];
   });
   if (orgTok) qsObj.token = orgTok;
@@ -2365,7 +2403,12 @@ async function generatePdf(orgSlug, reportType, startDate, endDate, filters = {}
   const url = `http://localhost:${PORT}/${orgSlug}/${reportType}?${qs}`;
   console.log(`[pdf] Generating for ${orgSlug}/${reportType}: ${url}`);
 
-  const reportLabel = reportType === "gl"
+  // Tyler turnover mode: the GL report re-rendered as the Munis treasurer
+  // cover sheets — portrait Letter at normal scale, unlike the extra-wide GL.
+  const isTyler = reportType === "gl" && filters.tyler === "1";
+  const reportLabel = isTyler
+    ? "GL Code Rollup, formatted as Tyler"
+    : reportType === "gl"
     ? "GL Code Rollup"
     : reportType === "historic"
       ? "Facility Reservations by Date"
@@ -2384,7 +2427,7 @@ async function generatePdf(orgSlug, reportType, startDate, endDate, filters = {}
   });
   try {
     const page = await browser.newPage();
-    const isGL = reportType === "gl";
+    const isGL = reportType === "gl" && !isTyler;
     // GL is extra-wide with 2x DPI + scale-down. Everything else gets a standard
     // viewport that matches Letter landscape — each report's HTML handles its
     // own print layout via CSS (hide columns, compact fonts, etc.).
@@ -2420,7 +2463,7 @@ async function generatePdf(orgSlug, reportType, startDate, endDate, filters = {}
     });
     return await page.pdf({
       format: "Letter",
-      landscape: true,
+      landscape: !isTyler,
       printBackground: true,
       scale: isGL ? 0.6 : 1.0,
       margin: { top: "0.4in", bottom: "0.5in", left: "0.4in", right: "0.4in" },
@@ -4966,7 +5009,7 @@ app.get("/:org/gl", (req, res) => {
   const slug = req.params.org;
   if (!ORGS[slug]) return res.status(404).send("Unknown org");
   logEvent(slug, "gl", "view", req);
-  const orgConfig = { emailEnabled: EMAIL_ENABLED_ORGS.has(slug) };
+  const orgConfig = { emailEnabled: EMAIL_ENABLED_ORGS.has(slug), tyler: ORGS[slug].tyler || null };
   const html = require("fs").readFileSync(path.join(__dirname, "public", "gl.html"), "utf8");
   res.send(html.replace("<head>", `<head><script>window.ORG_CONFIG=${JSON.stringify(orgConfig)};</script>`));
 });
@@ -10775,6 +10818,13 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  { date: '2026-08-02', title: '→ Tyler: Munis Treasurer Turnover Cover Sheets', items: [
+    'NEW: "→ Tyler" toggle on the GL Code Report (Tyler/Munis orgs only — first: Littleton, MA). Re-renders the loaded GL rows as the "Schedule of Departmental Payments to the Treasurer" cover sheets: one Credit turnover, one Cash & Check turnover, same date range.',
+    'Pure client-side pivot — no new query or route. Gross receipts by tender (refunds stay on the AP warrant), non-cash tenders (Free, Org Credit, Scholarship, Gift Card) excluded.',
+    'Unmapped GL receipts (e.g. card-processing fees with no GL code) surface as a flagged "(no GL account)" line — Munis rejects blank-GL turnovers, so it’s a fix-upstream signal, never folded into a program account.',
+    'Tyler short codes (RESPCA, RECAMP, …) come from a per-org map in app config; -427001-NY* deferred codes resolve to their NY* suffix automatically.',
+    'PDF export in Tyler mode produces portrait Letter cover sheets (one per page) via the existing Puppeteer pipeline.',
+  ]},
   { date: '2026-08-01', title: 'Programs: Period-Scoped Revenue', items: [
     'Added period_received, period_refunds, period_net columns from SQL scoped to payments and refunds within the selected date range',
     'Summary tab: Collected in Period card alongside lifetime Net Revenue, program and activity tables show period net',

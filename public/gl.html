@@ -342,6 +342,100 @@
       line-height: 1.5;
     }
 
+    /* ── Tyler turnover cover sheets ── */
+    .tyler-sheet { max-width: 720px; margin: 0 auto; padding: 10px 4px 30px; }
+    .tyler-sheet + .tyler-sheet { border-top: 1px dashed #bbb; padding-top: 30px; }
+    .tyler-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 20px;
+      border-bottom: 2.5px solid #111;
+      padding-bottom: 10px;
+      margin-bottom: 16px;
+    }
+    .tyler-head .town { font-size: 16px; font-weight: 700; }
+    .tyler-head .sched-title { font-size: 13px; font-weight: 600; margin-top: 1px; }
+    .tyler-head .sub { font-size: 9.5px; color: #888; margin-top: 4px; }
+    .tyler-head .meta { text-align: right; font-size: 11px; white-space: nowrap; }
+    .tyler-head .meta .turnover-type { font-weight: 700; letter-spacing: .6px; font-size: 12px; }
+    .tyler-head .meta .meta-line { margin-top: 2px; color: #333; }
+    /* fully reset the global GL-table styling (grey header band, right-aligned
+       monospace cells) — the cover sheet mimics the town's pre-printed form */
+    .tyler-table { width: 100%; border-collapse: collapse; font-size: 11.5px; margin-bottom: 20px; }
+    .tyler-table thead th {
+      background: none;
+      border: none;
+      border-bottom: 1.5px solid #111;
+      text-align: left;
+      padding: 4px 6px;
+      font-size: 9.5px;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      color: #333;
+    }
+    .tyler-table thead th.num { text-align: right; }
+    .tyler-table tbody td {
+      padding: 5px 6px;
+      border: none;
+      border-bottom: 1px solid #e8e8e4;
+      text-align: left;
+      font-family: 'Inter', system-ui, sans-serif;
+      font-size: 11.5px;
+      white-space: normal;
+    }
+    .tyler-table tbody tr:nth-child(even) { background: none; }
+    .tyler-table tbody tr:hover { background: none; }
+    .tyler-table td.num { text-align: right !important; font-family: 'IBM Plex Mono', monospace !important; white-space: nowrap; }
+    .tyler-table td.code { font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; }
+    .tyler-table tbody tr.unmapped td { background: #fef3c7; }
+    .tyler-table tbody tr.unmapped td.code { color: #92400e; font-family: 'Inter', sans-serif; font-style: italic; }
+    .tyler-table tfoot td {
+      background: none;
+      border: none;
+      border-top: 2px solid #111;
+      padding: 5px 6px;
+      text-align: left;
+      font-family: 'Inter', system-ui, sans-serif;
+      font-size: 11.5px;
+      font-weight: 700;
+      white-space: normal;
+    }
+    .tyler-empty {
+      text-align: center;
+      color: #888;
+      padding: 26px 0;
+      font-size: 12px;
+      border-top: 1.5px solid #111;
+      border-bottom: 1px solid #e8e8e4;
+      margin-bottom: 20px;
+    }
+    .tyler-sigs { font-size: 11px; margin-top: 26px; }
+    .tyler-sigs p { margin-bottom: 4px; color: #333; }
+    .tyler-sig-row { display: flex; gap: 36px; margin: 30px 0 22px; }
+    .tyler-sig-row .sig { flex: 2.5; border-top: 1px solid #111; padding-top: 3px; font-size: 10px; color: #555; }
+    .tyler-sig-row .date { flex: 1; border-top: 1px solid #111; padding-top: 3px; font-size: 10px; color: #555; }
+    .tyler-summary {
+      margin-left: auto;
+      width: 280px;
+      font-size: 11.5px;
+      margin-top: 10px;
+      border-top: 1.5px solid #111;
+      padding-top: 6px;
+    }
+    .tyler-summary .srow { display: flex; justify-content: space-between; padding: 2px 0; }
+    .tyler-summary .srow.indent { padding-left: 14px; font-size: 10.5px; color: #92400e; }
+    .tyler-summary .srow.total { border-top: 1px solid #111; margin-top: 4px; padding-top: 4px; font-weight: 700; }
+    .tyler-summary .amt { font-family: 'IBM Plex Mono', monospace; }
+    @media print {
+      .tyler-sheet { page-break-after: always; max-width: 100%; }
+      .tyler-sheet:last-child { page-break-after: auto; }
+      .tyler-sheet + .tyler-sheet { border-top: none; padding-top: 10px; }
+    }
+    body.print-mode .tyler-sheet { page-break-after: always; max-width: 100%; }
+    body.print-mode .tyler-sheet:last-child { page-break-after: auto; }
+    body.print-mode .tyler-sheet + .tyler-sheet { border-top: none; padding-top: 10px; }
+
     /* ── Print ── */
     @media print {
       .toolbar, .mode-bar { display: none !important; }
@@ -476,7 +570,7 @@ const NO_DESK_LABEL = '(No desk location)';
 // ── Params / date helpers ────────────────────────────────────────────
 function getParams() {
   const p = new URLSearchParams(window.location.search);
-  return { start_date: p.get('start_date'), end_date: p.get('end_date'), _print: p.get('_print') };
+  return { start_date: p.get('start_date'), end_date: p.get('end_date'), _print: p.get('_print'), tyler: p.get('tyler') };
 }
 
 function toISO(d) {
@@ -740,6 +834,183 @@ function GlChart({ rows, viewMode, hasCCSplit }) {
   );
 }
 
+// ── Tyler/Munis treasurer turnover ("→ Tyler" toggle) ─────────────────
+// Client-side pivot of the GL rows already on screen into the Munis
+// "Schedule of Departmental Payments to the Treasurer" cover sheets:
+// one for credit-card receipts, one for cash + check. Gross receipts only —
+// refunds run separately through the AP warrant and never appear here.
+// Org Credit / Free / Scholarship / Gift Card are non-cash and stay off.
+
+function fmtMDY(iso) {
+  if (!iso) return '';
+  const [y, m, d] = iso.split('-');
+  return `${m}/${d}/${y}`;
+}
+
+// Short code: -427001-NY* (next-year deferred) codes ARE their NY* suffix;
+// everything else comes from the per-org map (rec.us doesn't store them).
+function tylerShortCode(fullNumber, shortCodes) {
+  if (!fullNumber) return '';
+  const ny = fullNumber.match(/-427001-(NY[\w-]*)$/i);
+  if (ny) return ny[1].toUpperCase();
+  return (shortCodes || {})[fullNumber] || '';
+}
+
+// Pivot loaded GL rows into one turnover's line items (version B: active only).
+function buildTurnover(rows, amountOf, shortCodes) {
+  const lines = [];
+  let unmappedTotal = 0;
+  for (const r of rows) {
+    // Littleton's junk test account — never belongs on a treasurer sheet
+    if (r.glCode === '001' || (r.accountName || '').trim().toUpperCase() === 'TEST - GL') continue;
+    const amt = amountOf(r);
+    if (!amt) continue;
+    // Blank/none GL must surface as its own flagged line — Munis rejects a
+    // turnover with an unmapped GL row, so it's a fix-upstream signal.
+    const unmapped = !r.glCode || String(r.glCode).toLowerCase() === 'none';
+    const fullNumber = unmapped ? '' : (r.accountNumber || r.glCode || '');
+    if (unmapped) unmappedTotal += amt;
+    lines.push({
+      name: r.accountName || (unmapped ? 'Unmapped receipts' : r.glCode),
+      code: unmapped ? '' : tylerShortCode(fullNumber, shortCodes),
+      number: fullNumber,
+      unmapped,
+      amount: amt > 0 ? amt : 0,
+      fee: amt < 0 ? amt : 0,   // negative amounts land in the Fees column
+    });
+  }
+  lines.sort((a, b) => (a.unmapped - b.unmapped) || a.number.localeCompare(b.number) || a.name.localeCompare(b.name));
+  return {
+    lines,
+    amountTotal: lines.reduce((s, l) => s + l.amount, 0),
+    feeTotal:    lines.reduce((s, l) => s + l.fee, 0),
+    unmappedTotal,
+  };
+}
+
+function TylerSheet({ typeLabel, data, summaryRows, emptyText, cfg, orgName, startDate, endDate }) {
+  const hasFees = data.lines.some(l => l.fee !== 0);
+  const grand = data.amountTotal + data.feeTotal;
+  return (
+    <div className="tyler-sheet">
+      <div className="tyler-head">
+        <div>
+          <div className="town">{cfg.entityName || orgName}</div>
+          <div className="sched-title">Schedule of Departmental Payments to the Treasurer</div>
+          <div className="sub">rec.us live data (GL Code Rollup, formatted as Tyler) · active accounts only</div>
+        </div>
+        <div className="meta">
+          <div className="turnover-type">{typeLabel}</div>
+          {cfg.department && <div className="meta-line">Department: {cfg.department}</div>}
+          <div className="meta-line">Date: {fmtMDY(endDate)}</div>
+          <div className="meta-line">{fmtMDY(startDate)} – {fmtMDY(endDate)}</div>
+        </div>
+      </div>
+
+      {data.lines.length === 0 ? (
+        <div className="tyler-empty">{emptyText}</div>
+      ) : (
+        <table className="tyler-table">
+          <thead>
+            <tr>
+              <th>Account Name</th>
+              <th>Account Code</th>
+              <th>Account Number</th>
+              <th className="num">Amount</th>
+              <th className="num">Fees (negative)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {data.lines.map((l, i) => (
+              <tr key={i} className={l.unmapped ? 'unmapped' : ''}>
+                <td>{l.name}</td>
+                <td className="code">{l.unmapped ? '(no GL account)' : l.code}</td>
+                <td className="code">{l.number}</td>
+                <td className="num">{l.amount ? fmtMoneyStr(l.amount) : ''}</td>
+                <td className="num cell-neg">{l.fee ? fmtMoneyStr(l.fee) : ''}</td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr>
+              <td>TOTAL</td>
+              <td></td>
+              <td></td>
+              <td className="num">{fmtMoneyStr(data.amountTotal)}</td>
+              <td className="num">{fmtMoneyStr(hasFees ? data.feeTotal : 0)}</td>
+            </tr>
+          </tfoot>
+        </table>
+      )}
+
+      <div className="tyler-sigs">
+        <p>The above listed receipts, collected by the Committee/Department have been turned over to the Treasurer.</p>
+        <div className="tyler-sig-row">
+          <div className="sig">Committee/Department Signature</div>
+          <div className="date">Date</div>
+        </div>
+        <p>Received from the Committee/Department the total as listed above.</p>
+        <div className="tyler-sig-row">
+          <div className="sig">Treasurer's Office Signature</div>
+          <div className="date">Date</div>
+        </div>
+      </div>
+
+      <div className="tyler-summary">
+        {summaryRows.map(([label, val], i) => (
+          <div key={i} className="srow">
+            <span>{label}</span>
+            <span className="amt">{fmtMoneyStr(val)}</span>
+          </div>
+        ))}
+        {data.unmappedTotal !== 0 && (
+          <div className="srow indent">
+            <span>of which unmapped GL</span>
+            <span className="amt">{fmtMoneyStr(data.unmappedTotal)}</span>
+          </div>
+        )}
+        <div className="srow">
+          <span>Less Fees</span>
+          <span className="amt">{fmtMoneyStr(Math.abs(data.feeTotal))}</span>
+        </div>
+        <div className="srow total">
+          <span>Total</span>
+          <span className="amt">{fmtMoneyStr(grand)}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function TylerSheets({ rows, orgName, startDate, endDate }) {
+  const cfg = window.ORG_CONFIG?.tyler || {};
+  const shortCodes = cfg.shortCodes || {};
+  // Credit turnover = Credit Card column; Cash & Check turnover = Cash + Check.
+  const credit    = buildTurnover(rows, r => pf(r.ccPayments), shortCodes);
+  const cashCheck = buildTurnover(rows, r => pf(r.cashPayments) + pf(r.checkPayments), shortCodes);
+  const cashOnly  = buildTurnover(rows, r => pf(r.cashPayments), shortCodes);
+  const checkOnly = buildTurnover(rows, r => pf(r.checkPayments), shortCodes);
+  const common = { cfg, orgName, startDate, endDate };
+  return (
+    <div>
+      <TylerSheet
+        {...common}
+        typeLabel="CREDIT TURNOVER"
+        data={credit}
+        summaryRows={[['Credit Cards', credit.amountTotal]]}
+        emptyText="No credit card receipts recorded for this period."
+      />
+      <TylerSheet
+        {...common}
+        typeLabel="CASH & CHECK TURNOVER"
+        data={cashCheck}
+        summaryRows={[['Cash', cashOnly.amountTotal], ['Checks', checkOnly.amountTotal]]}
+        emptyText="No cash or check receipts recorded for this period."
+      />
+    </div>
+  );
+}
+
 // ── Desk-location multi-select filter ────────────────────────────────
 function DeskFilter({ allDesks, selectedDesks, onChange }) {
   const [open, setOpen] = useState(false);
@@ -826,6 +1097,14 @@ function App() {
 
   const [startDate, setStartDate] = useState(params.start_date || defaults.start);
   const [endDate,   setEndDate]   = useState(params.end_date   || defaults.end);
+
+  // "→ Tyler" toggle — re-renders the loaded rows as Munis treasurer cover
+  // sheets. Only offered when the org has a tyler config; the URL param keeps
+  // the Puppeteer print render in sync with the on-screen toggle.
+  const tylerEnabled = !!window.ORG_CONFIG?.tyler;
+  const [tylerView, setTylerView] = useState(() => tylerEnabled && params.tyler === '1');
+  // Belt-and-suspenders for print mode: trust the URL, not React state.
+  const isTylerActive = tylerEnabled && (params._print === '1' ? params.tyler === '1' : tylerView);
 
   const [rows,    setRows]    = useState(null);
   const [orgName, setOrgName] = useState('');
@@ -962,11 +1241,12 @@ function App() {
       const qs = new URLSearchParams();
       qs.set('start_date', loadedStart || startDate);
       qs.set('end_date',   loadedEnd   || endDate);
+      if (isTylerActive) qs.set('tyler', '1');
       if (URL_TOKEN) qs.set('token', URL_TOKEN);
       return `${window.location.pathname}?${qs.toString()}`;
     };
     return () => { try { delete window.recShareLink; } catch (e) { window.recShareLink = undefined; } };
-  }, [loadedStart, loadedEnd, startDate, endDate]);
+  }, [loadedStart, loadedEnd, startDate, endDate, isTylerActive]);
 
   const [showRefunds,   setShowRefunds]   = useState(
     () => localStorage.getItem(LS_REFUND) === 'true'
@@ -1303,6 +1583,8 @@ function App() {
     if (hasDesk && selectedDesks && selectedDesks.size < allDesks.length) {
       qs.set('desks', [...selectedDesks].join(','));
     }
+    // Tyler mode → portrait Munis cover sheets instead of the landscape rollup
+    if (isTylerActive) qs.set('tyler', '1');
     const pdfUrl = parts.length >= 2
       ? `/${parts[0]}/${parts[1]}/api/pdf?${qs}`
       : '/api/pdf';
@@ -1311,7 +1593,7 @@ function App() {
       .then(blob => {
         const a = document.createElement('a');
         a.href = URL.createObjectURL(blob);
-        a.download = `report-${loadedStart || 'export'}.pdf`;
+        a.download = isTylerActive ? `tyler-turnover-${loadedStart || 'export'}.pdf` : `report-${loadedStart || 'export'}.pdf`;
         a.click(); URL.revokeObjectURL(a.href);
       })
       .catch(err => alert('PDF generation failed: ' + err.message))
@@ -1349,21 +1631,25 @@ function App() {
 
         <div className="divider" />
 
-        <button
-          className={showRefunds ? 'active' : ''}
-          style={{fontSize:11, padding:'4px 10px'}}
-          onClick={() => setShowRefunds(v => !v)}
-        >
-          {showRefunds ? '▾' : '▸'} Refund Detail
-        </button>
+        {!isTylerActive && (
+          <button
+            className={showRefunds ? 'active' : ''}
+            style={{fontSize:11, padding:'4px 10px'}}
+            onClick={() => setShowRefunds(v => !v)}
+          >
+            {showRefunds ? '▾' : '▸'} Refund Detail
+          </button>
+        )}
 
-        <button
-          className={showLocations ? 'active' : ''}
-          style={{fontSize:11, padding:'4px 10px'}}
-          onClick={() => setShowLocations(v => !v)}
-        >
-          {showLocations ? '▾' : '▸'} Locations
-        </button>
+        {!isTylerActive && (
+          <button
+            className={showLocations ? 'active' : ''}
+            style={{fontSize:11, padding:'4px 10px'}}
+            onClick={() => setShowLocations(v => !v)}
+          >
+            {showLocations ? '▾' : '▸'} Locations
+          </button>
+        )}
 
         {hasDesk && selectedDesks && (
           <DeskFilter
@@ -1375,7 +1661,7 @@ function App() {
 
         <div className="divider" />
 
-        {['table','bar','pie'].map(mode => (
+        {!isTylerActive && ['table','bar','pie'].map(mode => (
           <button
             key={mode}
             className={viewMode === mode ? 'active' : ''}
@@ -1385,6 +1671,17 @@ function App() {
             {mode === 'table' ? '☰ Table' : mode === 'bar' ? '▐ Bar' : '◉ Pie'}
           </button>
         ))}
+
+        {tylerEnabled && (
+          <button
+            className={tylerView ? 'active' : ''}
+            style={{fontSize:11, padding:'4px 10px', ...(tylerView ? {borderColor:'#f59e0b', color:'#fde68a'} : {})}}
+            onClick={() => setTylerView(v => !v)}
+            title="Re-render this report as the Tyler/Munis treasurer turnover cover sheets"
+          >
+            → Tyler
+          </button>
+        )}
 
         <div className="toolbar-spacer" />
 
@@ -1402,11 +1699,13 @@ function App() {
           onClick={downloadPdf}
           disabled={pdfLoading || !rows || rows.length === 0}
         >{pdfLoading ? 'Generating…' : '📄 PDF'}</button>
-        <button
-          className="btn-excel"
-          onClick={exportExcel}
-          disabled={!rows || rows.length === 0}
-        >📥 Excel</button>
+        {!isTylerActive && (
+          <button
+            className="btn-excel"
+            onClick={exportExcel}
+            disabled={!rows || rows.length === 0}
+          >📥 Excel</button>
+        )}
 
         {window.ORG_CONFIG?.emailEnabled && !isPrint && (
           <button className="btn-email" onClick={() => setShowEmailModal(true)}>
@@ -1715,24 +2014,37 @@ function App() {
 
       <div className="page" style={loading ? { opacity: 0.5, pointerEvents: 'none' } : {}}>
 
-        {/* Report header */}
-        <div className="report-header">
-          <div>
-            {logoUrl && <img src={logoUrl} alt="" className="report-header-logo" onError={e => e.target.style.display='none'} />}
-            <div className="org-label">{displayOrg}</div>
-            <div className="title">GL Code Rollup</div>
-          </div>
-          <div className="date-range">{dateRangeLabel}</div>
-        </div>
+        {isTylerActive ? (
+          /* Tyler/Munis turnover — the loaded rows re-rendered as the two
+             treasurer cover sheets (credit, then cash & check) */
+          <TylerSheets
+            rows={displayRows}
+            orgName={displayOrg}
+            startDate={loadedStart || startDate}
+            endDate={loadedEnd || endDate}
+          />
+        ) : (
+          <>
+            {/* Report header */}
+            <div className="report-header">
+              <div>
+                {logoUrl && <img src={logoUrl} alt="" className="report-header-logo" onError={e => e.target.style.display='none'} />}
+                <div className="org-label">{displayOrg}</div>
+                <div className="title">GL Code Rollup</div>
+              </div>
+              <div className="date-range">{dateRangeLabel}</div>
+            </div>
 
-        {/* Summary cards */}
-        {renderSummaryCards()}
+            {/* Summary cards */}
+            {renderSummaryCards()}
 
-        {/* Content: table or chart */}
-        {viewMode === 'table'
-          ? renderTable()
-          : <GlChart rows={displayRows} viewMode={viewMode} hasCCSplit={hasCCSplit} />
-        }
+            {/* Content: table or chart */}
+            {viewMode === 'table'
+              ? renderTable()
+              : <GlChart rows={displayRows} viewMode={viewMode} hasCCSplit={hasCCSplit} />
+            }
+          </>
+        )}
 
         {/* Footer */}
         <div className="report-footer">
