@@ -3363,8 +3363,8 @@ app.get("/:org/metrics/api/data", (req, res) => {
 // Enrollment + revenue data fetched client-side for instant render.
 // Returns views AND "View Session →" clicks (the real intent signal the
 // program calendar tracks per section), for the current window and the
-// prior same-length window, plus per-section first-click dates so the
-// client can attribute enrollments to clicked sections.
+// prior same-length window, plus per-section click dates so the client
+// can attribute enrollments that land within a window after a click.
 app.get("/:org/api/calendar-conversion", (req, res) => {
   res.set("Cache-Control", "no-store");
   const slug = req.params.org;
@@ -3397,9 +3397,9 @@ app.get("/:org/api/calendar-conversion", (req, res) => {
       if (!sec) return;
       const bucket = inCurrent ? curSections : inPrior ? priorSections : null;
       if (!bucket) return;
-      if (!bucket[sec]) bucket[sec] = { clicks: 0, firstClick: day };
+      if (!bucket[sec]) bucket[sec] = { clicks: 0, days: new Set() };
       bucket[sec].clicks++;
-      if (day < bucket[sec].firstClick) bucket[sec].firstClick = day;
+      bucket[sec].days.add(day);
     }
   });
 
@@ -3412,7 +3412,9 @@ app.get("/:org/api/calendar-conversion", (req, res) => {
 
   const totalViews  = daily.reduce((s, d) => s + d.views, 0);
   const totalClicks = daily.reduce((s, d) => s + d.clicks, 0);
-  const toList = (m) => Object.entries(m).map(([section, v]) => ({ section, clicks: v.clicks, firstClick: v.firstClick }));
+  // clickDays feeds the client's attribution window — an enrollment counts
+  // only if it lands within N days after one of these per-section click days.
+  const toList = (m) => Object.entries(m).map(([section, v]) => ({ section, clicks: v.clicks, clickDays: Array.from(v.days).sort() }));
 
   res.json({
     period: days + "d",
@@ -11014,6 +11016,11 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  { date: '2026-08-02', title: 'Registration Funnel: 7-day attribution window', items: [
+    'Attributed enrollments now require the enrollment to land within 7 days after a "View Session" click on that section — a single early click no longer claims a whole season of later enrollments (which could push attribution above 100% of clicks).',
+    'The attributed sub-label reads "≈N per click" instead of a percentage — over 1.0 is natural when one click leads to multiple registrations (e.g. several kids in one household).',
+    'The "Correlation, not causation" framing is back in the methodology note, now describing the click-window model.',
+  ]},
   { date: '2026-08-02', title: 'Cache: fixed disk hydration + replica-aware pre-warm', items: [
     'FIXED: disk-cache hydration never actually ran — it referenced CACHE_DIR before initialization and the error was silently swallowed, so every deploy booted with a cold cache and the pre-warm re-queried Metabase for every org. Restarts now serve the persisted cache from the data volume immediately.',
     'Startup pre-warm is skipped when a full warm completed within the last 6 hours — redeploys no longer fire a warm stampede at the read replica. The 15-minute top-up and 4:50am comprehensive warm continue as before.',
