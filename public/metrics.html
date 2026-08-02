@@ -386,8 +386,10 @@ function App() {
     // Phase 2: fetch enrollment + revenue data (async, may be slow).
     // Attribution model: an enrollment counts as calendar-attributed when its
     // section was clicked ("View Session →") in the window AND the enrollment
-    // date is on/after that section's first click. Revenue uses the section's
-    // own avg ticket (programs card net_total / enrolled), falling back to the
+    // lands within ATTRIB_WINDOW_DAYS after one of that section's click days —
+    // a stale click can't claim a whole season's enrollments, so attributed
+    // stays anchored to recent, real interest. Revenue uses the section's own
+    // avg ticket (programs card net_total / enrolled), falling back to the
     // org-wide avg ticket for sections missing revenue data. Day-level section
     // attribution — not per-visitor tracking — so still an upper bound, but a
     // far tighter one than views x conversion x avg ticket.
@@ -425,9 +427,14 @@ function App() {
           return (s && s.enr > 0 && s.rev > 0) ? s.rev / s.enr : avgTicket;
         };
 
+        const ATTRIB_WINDOW_DAYS = 7;
+        const addDaysISO = (iso, n) => new Date(new Date(iso + 'T12:00:00Z').getTime() + n * 86400000).toISOString().slice(0, 10);
+        const withinWindow = (clickDays, day) =>
+          !!clickDays && clickDays.some(c => day >= c && day <= addDaysISO(c, ATTRIB_WINDOW_DAYS));
+
         const clickMap = {}, priorClickMap = {};
-        (views.clickedSections || []).forEach(c => { clickMap[c.section] = c.firstClick; });
-        (views.priorClickedSections || []).forEach(c => { priorClickMap[c.section] = c.firstClick; });
+        (views.clickedSections || []).forEach(c => { clickMap[c.section] = c.clickDays || []; });
+        (views.priorClickedSections || []).forEach(c => { priorClickMap[c.section] = c.clickDays || []; });
 
         const byDay = {};
         let total = 0, priorTotal = 0;
@@ -440,13 +447,13 @@ function App() {
           if (day >= cutoff) {
             byDay[day] = (byDay[day] || 0) + 1;
             total++;
-            if (sec && clickMap[sec] && day >= clickMap[sec]) {
+            if (sec && withinWindow(clickMap[sec], day)) {
               attributed++;
               attributedRev += secTicket(sec);
             }
           } else if (day >= priorCutoff && day < cutoff) {
             priorTotal++;
-            if (sec && priorClickMap[sec] && day >= priorClickMap[sec]) {
+            if (sec && withinWindow(priorClickMap[sec], day)) {
               priorAttributed++;
               priorAttributedRev += secTicket(sec);
             }
@@ -475,7 +482,7 @@ function App() {
     const totalClicks = views.totalClicks || 0;
     const hasClicks = totalClicks > 0;
     const ctr = views.totalViews > 0 ? ((totalClicks / views.totalViews) * 100).toFixed(1) : '0';
-    const clickEnrollRate = hasClicks && haveEnroll ? ((enroll.attributed / totalClicks) * 100).toFixed(1) : null;
+    const perClick = hasClicks && haveEnroll ? (enroll.attributed / totalClicks) : null;
     const fmtK = (v) => v >= 1000 ? '$' + (v / 1000).toFixed(1) + 'k' : '$' + Math.round(v);
     const delta = (cur, prior) => {
       if (!prior || prior <= 0) return null;
@@ -505,7 +512,7 @@ function App() {
           <div className={'conv-kpi' + shimCls}>
             <div className="conv-kpi-val" style={{color:'#0d9488'}}>{loading ? '…' : (haveEnroll && hasClicks ? enroll.attributed : '—')}</div>
             <div className="conv-kpi-label">Attributed Enrollments</div>
-            {haveEnroll && hasClicks && clickEnrollRate !== null && <div style={{fontSize:10,color:'#999'}}>{clickEnrollRate}% of clicks</div>}
+            {haveEnroll && hasClicks && perClick !== null && <div style={{fontSize:10,color:'#999'}}>{'≈' + perClick.toFixed(1) + ' per click'}</div>}
             {haveEnroll && hasClicks && delta(enroll.attributed, enroll.priorAttributed)}
           </div>
           <div className={'conv-kpi' + shimCls}>
@@ -534,7 +541,7 @@ function App() {
           {unavailable
             ? 'Enrollment data is temporarily unavailable (the reporting database is busy) — views and clicks above are live, and enrollment metrics will fill in once the database recovers. Refresh in a few minutes.'
             : hasClicks
-            ? 'Attributed = enrollments in sections a visitor clicked "View Session" on from this calendar, dated on/after that section’s first click, priced at each section’s own average ticket. Attribution is section-level (visitors aren’t tracked through rec.us checkout), so treat it as an upper bound — but one grounded in real clicks and real section pricing.'
+            ? 'Correlation, not causation — attributed = enrollments in sections a visitor clicked "View Session" on from this calendar, landing within 7 days after a click on that section, priced at each section’s own average ticket. Attribution is section-level (visitors aren’t tracked through rec.us checkout), so treat it as an upper bound — but one grounded in real clicks and real section pricing.'
             : 'No "View Session" clicks tracked in this window — attributed enrollment and revenue need visitors to click through from the program calendar. Enrollments shown are org-wide for the period.'}
         </div>
         <div className="conv-bars">
