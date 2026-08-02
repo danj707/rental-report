@@ -113,7 +113,36 @@ function logRequest(entry) {
   if (REQUEST_LOG.length > REQUEST_LOG_MAX) REQUEST_LOG.length = REQUEST_LOG_MAX;
 }
 
-const cacheStats = { hits: 0, misses: 0, prewarms: 0, healthCacheHits: 0, healthProbes: 0 };
+const cacheStats = { hits: 0, misses: 0, prewarms: 0, prewarmSkips: 0, prewarmAborts: 0, healthCacheHits: 0, healthProbes: 0 };
+
+// ── Metabase / read-replica health tracker ───────────────────────────
+// Every Metabase fetch (live proxy + pre-warm) records its duration and
+// whether it timed out. The pre-warm consults this before each query and
+// paces itself — or backs off entirely — when the replica is struggling,
+// instead of piling scheduled warm queries onto an already-slow database.
+const MB_HEALTH_WINDOW_MS = 10 * 60 * 1000;
+const mbHealthSamples = []; // { ts, ms, timeout }
+function recordMbSample(ms, timedOut) {
+  mbHealthSamples.push({ ts: Date.now(), ms, timeout: !!timedOut });
+  if (mbHealthSamples.length > 300) mbHealthSamples.splice(0, 150);
+}
+function mbHealth() {
+  const cutoff = Date.now() - MB_HEALTH_WINDOW_MS;
+  const recent = mbHealthSamples.filter(s => s.ts >= cutoff);
+  const timeouts = recent.filter(s => s.timeout).length;
+  const avgMs = recent.length ? Math.round(recent.reduce((a, s) => a + s.ms, 0) / recent.length) : 0;
+  return { samples: recent.length, timeouts, avgMs };
+}
+// Pace for the next pre-warm query: healthy → short gap, degraded → long
+// gap, unhealthy → abort the rest of the cycle (user requests keep their
+// stale-cache fallback; the next cycle retries when the replica recovers).
+function prewarmPace() {
+  const h = mbHealth();
+  if (h.timeouts >= 2 || h.avgMs > 30000) return { abort: true, delayMs: 0, ...h };
+  if (h.timeouts === 1 || h.avgMs > 15000) return { abort: false, delayMs: 12000, ...h };
+  return { abort: false, delayMs: 3000, ...h };
+}
+const sleepMs = (ms) => new Promise(r => setTimeout(r, ms));
 
 // Long-lived cache for users report (refreshed daily by cron)
 const USERS_CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
@@ -178,7 +207,12 @@ function getStaleCached(orgSlug, reportType, exactKey) {
 }
 
 // ── Hydrate cache from disk on startup ──
-(function hydrateCache() {
+// NOTE: called from below the CACHE_DIR declaration, NOT at module load —
+// as an IIFE here it threw "Cannot access 'CACHE_DIR' before initialization"
+// into its own catch on every boot, so the disk cache never hydrated and
+// every restart started cold (which is what made the post-deploy pre-warm
+// hammer the read replica).
+function hydrateCacheFromDisk() {
   try {
     const files = fs.readdirSync(CACHE_DIR).filter(f => f.endsWith('.json'));
     let loaded = 0, expired = 0, userLoaded = 0;
@@ -206,7 +240,7 @@ function getStaleCached(orgSlug, reportType, exactKey) {
   } catch (err) {
     console.log('[cache] No disk cache to hydrate: ' + err.message);
   }
-})();
+}
 
 // Prune expired entries every 60 minutes — keep 2x TTL grace for stale fallback
 setInterval(() => {
@@ -425,10 +459,54 @@ async function refreshOrgPulse(slug, force) {
 }
 
 // ── Cache pre-warm on startup ─────────────────────────────────────────
-async function prewarmCache() {
+async function prewarmCache(reason = 'interval') {
   if (!getFlags().cachingEnabled) { console.log('[cache] Pre-warm skipped — caching is OFF'); return; }
-  console.log(`[cache] Pre-warming default reports…`);
+  // After a restart, don't re-warm the world if a cycle completed recently —
+  // the disk-hydrated cache already covers it. The 15-min interval and the
+  // 4:50am cron keep freshness; this only suppresses the boot-time stampede
+  // (each deploy used to fire a full warm against the read replica).
+  if (reason === 'startup') {
+    try {
+      const state = readJSON(PREWARM_STATE_FILE, {});
+      const age = state.lastCompletedAt ? Date.now() - new Date(state.lastCompletedAt).getTime() : Infinity;
+      if (age < PREWARM_STARTUP_SKIP_MS) {
+        cacheStats.prewarmSkips++;
+        console.log(`[cache] Startup pre-warm skipped — last full warm ${Math.round(age / 60000)}m ago, serving hydrated disk cache`);
+        return;
+      }
+    } catch {}
+  }
+  console.log(`[cache] Pre-warming default reports… (${reason})`);
   let warmed = 0;
+
+  // Adaptive pacing: consult replica health before each Metabase query, wait
+  // between queries, and abort the remainder of the cycle if the replica is
+  // degraded. Aborted cycles don't stamp completion, so the next cycle retries.
+  let prewarmFetches = 0;
+  let prewarmAborted = false;
+  async function paceOk() {
+    const pace = prewarmPace();
+    if (pace.abort) {
+      prewarmAborted = true;
+      cacheStats.prewarmAborts++;
+      console.warn(`[cache] Pre-warm aborted — replica degraded (${pace.timeouts} timeouts, avg ${pace.avgMs}ms over last 10m); will retry next cycle`);
+      return false;
+    }
+    if (prewarmFetches > 0) await sleepMs(pace.delayMs);
+    prewarmFetches++;
+    return true;
+  }
+  async function timedWarmFetch(url, timeoutMs) {
+    const t0 = Date.now();
+    try {
+      const resp = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
+      recordMbSample(Date.now() - t0, false);
+      return resp;
+    } catch (e) {
+      recordMbSample(Date.now() - t0, e.name === "TimeoutError" || e.name === "AbortError");
+      throw e;
+    }
+  }
 
   // Build "this month" parameterized cache key so explicit date requests also hit cache
   const now = new Date();
@@ -453,6 +531,7 @@ async function prewarmCache() {
   ];
   const DELTA_PREWARM_REPORTS = new Set(["programs", "gl", "selfservice"]);
 
+  outer:
   for (const slug of Object.keys(ORGS)) {
     const org = ORGS[slug];
     if (!org.token) continue;
@@ -469,7 +548,8 @@ async function prewarmCache() {
           const pStr = `?parameters=${encodeURIComponent(JSON.stringify(pParams))}`;
           const priorKey = `${slug}:${rt}:${pStr}`;
           if (!getCached(priorKey)) {
-            const resp = await fetch(`${METABASE_URL}/api/public/card/${mbUuid}/query/json${pStr}`, { signal: AbortSignal.timeout(org.healthTimeoutMs || 120000) });
+            if (!await paceOk()) break outer;
+            const resp = await timedWarmFetch(`${METABASE_URL}/api/public/card/${mbUuid}/query/json${pStr}`, org.healthTimeoutMs || 120000);
             if (resp.ok) {
               const data = await resp.json();
               setCache(priorKey, {
@@ -497,7 +577,8 @@ async function prewarmCache() {
         if (!NO_DATE_REPORTS.has(rt)) fetchParams.push(...monthParams);
         const paramStr = fetchParams.length > 0 ? `?parameters=${encodeURIComponent(JSON.stringify(fetchParams))}` : '';
         const url = `${METABASE_URL}/api/public/card/${mbUuid}/query/json${paramStr}`;
-        const resp = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
+        if (!await paceOk()) break outer;
+        const resp = await timedWarmFetch(url, timeoutMs);
         if (resp.ok) {
           let data = await resp.json();
           // Strip PII for calendar
@@ -535,6 +616,11 @@ async function prewarmCache() {
     }
   }
   cacheStats.prewarms++;
+  if (prewarmAborted) {
+    console.log(`[cache] Pre-warm cycle aborted after ${warmed} report(s) cached (cycle #${cacheStats.prewarms})`);
+    return;
+  }
+  try { writeJSON(PREWARM_STATE_FILE, { lastCompletedAt: new Date().toISOString() }); } catch {}
   console.log(`[cache] Pre-warm complete: ${warmed} reports cached (cycle #${cacheStats.prewarms})`);
 }
 
@@ -1265,6 +1351,12 @@ const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "data");
 fs.mkdirSync(DATA_DIR, { recursive: true });
 const CACHE_DIR = path.join(DATA_DIR, "cache");
 fs.mkdirSync(CACHE_DIR, { recursive: true });
+hydrateCacheFromDisk();
+// Pre-warm bookkeeping — records when a full warm cycle last completed so a
+// restart shortly after one can serve the hydrated disk cache instead of
+// re-querying Metabase for every org.
+const PREWARM_STATE_FILE = path.join(DATA_DIR, "prewarm-state.json");
+const PREWARM_STARTUP_SKIP_MS = 6 * 60 * 60 * 1000;
 // Persistence check: confirm campsite-map positions + other state land on a durable
 // disk. In Railway, attach a Volume and set DATA_DIR to its mount path (e.g. /data).
 console.log("[data] DATA_DIR=" + DATA_DIR +
@@ -2697,7 +2789,7 @@ async function prewarmUsersCache() {
   }
   console.log("[users-cache] Pre-warm complete");
 }
-cron.schedule("50 4 * * *", () => { console.log("[cache] 4:50am daily warm starting\u2026"); prewarmCache(); }); // 4:50am comprehensive warm
+cron.schedule("50 4 * * *", () => { console.log("[cache] 4:50am daily warm starting\u2026"); prewarmCache('cron'); }); // 4:50am comprehensive warm
 cron.schedule("0 5 * * *", prewarmUsersCache); // 5am daily
 cron.schedule("10 5 * * *", prewarmPulseCache); // 5:10am daily (after users cache is warm)
 cron.schedule("5 * * * *", () => runHealthCheck());  // every hour at :05, checks only what's due per tier
@@ -4597,11 +4689,19 @@ app.get("/:org/:report/api/data", resolveOrg, async (req, res) => {
       const isTimeout = firstErr.name === "TimeoutError" || firstErr.name === "AbortError";
       if (!isTimeout) throw firstErr;
       const elapsed1 = Date.now() - fetchStart;
+      recordMbSample(elapsed1, true);
       console.log(`[proxy] ${orgSlug}/${reportType} timed out after ${Math.round(elapsed1/1000)}s — retrying with ${RETRY_TIMEOUT/1000}s timeout...`);
       attempt = 2;
-      response = await fetch(url, { signal: AbortSignal.timeout(RETRY_TIMEOUT) });
+      const retryStart = Date.now();
+      try {
+        response = await fetch(url, { signal: AbortSignal.timeout(RETRY_TIMEOUT) });
+      } catch (retryErr) {
+        recordMbSample(Date.now() - retryStart, retryErr.name === "TimeoutError" || retryErr.name === "AbortError");
+        throw retryErr;
+      }
     }
     const fetchMs = Date.now() - fetchStart;
+    if (attempt === 1) recordMbSample(fetchMs, false);
 
     if (!response.ok) {
       const body = await response.text();
@@ -10914,6 +11014,12 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  { date: '2026-08-02', title: 'Cache: fixed disk hydration + replica-aware pre-warm', items: [
+    'FIXED: disk-cache hydration never actually ran — it referenced CACHE_DIR before initialization and the error was silently swallowed, so every deploy booted with a cold cache and the pre-warm re-queried Metabase for every org. Restarts now serve the persisted cache from the data volume immediately.',
+    'Startup pre-warm is skipped when a full warm completed within the last 6 hours — redeploys no longer fire a warm stampede at the read replica. The 15-minute top-up and 4:50am comprehensive warm continue as before.',
+    'Pre-warm now watches read-replica health (rolling 10-minute window of every Metabase fetch): healthy → 3s between warm queries, degraded → 12s, unhealthy (2+ timeouts or >30s average) → the rest of the cycle is aborted and retried next cycle. User-facing requests are never throttled and keep their stale-cache fallback.',
+    'Registration Funnel: when the enrollment query fails (busy replica), the card now shows an explicit "temporarily unavailable" note instead of rendering zeros as if they were data. Views and Session Clicks stay live — they come from the persistent events log, not the database, and survive restarts.',
+  ]},
   { date: '2026-08-02', title: 'Registration Funnel: click-attributed revenue', items: [
     'Calendar View → Registration Funnel (metrics page) now attributes enrollments to actual calendar activity instead of estimating revenue as views × conversion × avg ticket.',
     'New Session Clicks KPI — real "View Session" click-throughs from the program calendar, tracked per section, with click-through rate vs views.',
@@ -12331,14 +12437,18 @@ app.listen(PORT, () => {
   console.log(`  📧 Resend: ${RESEND_API_KEY ? "configured" : "NOT CONFIGURED (stub mode)"}\n`);
   console.log(`  📊 Analytics: ${EVENTS_FILE}\n`);
 
-  // Pre-warm cache after a brief delay to let startup complete
-  setTimeout(prewarmCache, 3000);
+  // Pre-warm cache after a brief delay to let startup complete.
+  // 'startup' is skipped entirely when a full warm finished within the last
+  // 6h — the disk-hydrated cache covers a redeploy without re-querying
+  // Metabase for every org.
+  setTimeout(() => prewarmCache('startup'), 3000);
 
   // Run initial health check on startup (after cache is warm)
   if (!loadHealthResults()) setTimeout(runHealthCheck, 60000);
 
-  // Re-warm every 15 minutes to keep cache perpetually hot
-  setInterval(prewarmCache, 15 * 60 * 1000);
+  // Re-warm every 15 minutes to keep cache perpetually hot (mostly cache
+  // hits; paces itself and backs off when the read replica is degraded)
+  setInterval(() => prewarmCache('interval'), 15 * 60 * 1000);
 
   // Promote any orgs from data/orgs.json into server.js on GitHub.
   // Runs after listen() so startup isn't blocked by GitHub latency.

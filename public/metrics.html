@@ -400,6 +400,9 @@ function App() {
         fetch(withToken(`/${orgSlug}/program-demographics/api/data`)).then(r => r.ok ? r.json() : null),
         fetch(withToken(`/${orgSlug}/programs/api/data`)).then(r => r.ok ? r.json() : null),
       ]).then(([demoJ, progJ]) => {
+        // Distinguish "the enrollment query failed" (busy replica, 504) from a
+        // real zero — rendering fetch failures as 0 enrollments reads as data.
+        if (!demoJ && !progJ) { setEnroll({ unavailable: true }); return; }
         const demoRows = demoJ?.rows || demoJ || [];
         const progRows = progJ?.rows || progJ || [];
 
@@ -455,22 +458,24 @@ function App() {
           attributed, attributedRev: Math.round(attributedRev * 100) / 100,
           priorAttributed, priorAttributedRev: Math.round(priorAttributedRev * 100) / 100,
         });
-      }).catch(() => setEnroll({ byDay: {}, total: 0, priorTotal: 0, avgTicket: 0, attributed: 0, attributedRev: 0, priorAttributed: 0, priorAttributedRev: 0 }));
+      }).catch(() => setEnroll({ unavailable: true }));
     }, [views, days]);
 
     if (!views) return null;
 
     const loading = !enroll;
+    const unavailable = !!(enroll && enroll.unavailable);
+    const haveEnroll = !loading && !unavailable;
     const shimCls = loading ? ' conv-loading' : '';
     const daily = views.daily.map(d => ({
       date: d.date, views: d.views, clicks: d.clicks || 0,
-      enrollments: enroll ? (enroll.byDay[d.date] || 0) : 0,
+      enrollments: haveEnroll ? (enroll.byDay[d.date] || 0) : 0,
     }));
     const maxVal = Math.max(...daily.map(d => Math.max(d.views, d.clicks, d.enrollments)), 1);
     const totalClicks = views.totalClicks || 0;
     const hasClicks = totalClicks > 0;
     const ctr = views.totalViews > 0 ? ((totalClicks / views.totalViews) * 100).toFixed(1) : '0';
-    const clickEnrollRate = hasClicks && enroll ? ((enroll.attributed / totalClicks) * 100).toFixed(1) : null;
+    const clickEnrollRate = hasClicks && haveEnroll ? ((enroll.attributed / totalClicks) * 100).toFixed(1) : null;
     const fmtK = (v) => v >= 1000 ? '$' + (v / 1000).toFixed(1) + 'k' : '$' + Math.round(v);
     const delta = (cur, prior) => {
       if (!prior || prior <= 0) return null;
@@ -493,23 +498,23 @@ function App() {
             <div style={{fontSize:10,color:'#999'}}>{ctr}% of views</div>
           </div>
           <div className={'conv-kpi' + shimCls}>
-            <div className="conv-kpi-val" style={{color:'#22c55e'}}>{loading ? '…' : enroll.total}</div>
+            <div className="conv-kpi-val" style={{color:'#22c55e'}}>{loading ? '…' : (haveEnroll ? enroll.total : '—')}</div>
             <div className="conv-kpi-label">Enrollments</div>
-            {!loading && delta(enroll.total, enroll.priorTotal)}
+            {haveEnroll && delta(enroll.total, enroll.priorTotal)}
           </div>
           <div className={'conv-kpi' + shimCls}>
-            <div className="conv-kpi-val" style={{color:'#0d9488'}}>{loading ? '…' : (hasClicks ? enroll.attributed : '—')}</div>
+            <div className="conv-kpi-val" style={{color:'#0d9488'}}>{loading ? '…' : (haveEnroll && hasClicks ? enroll.attributed : '—')}</div>
             <div className="conv-kpi-label">Attributed Enrollments</div>
-            {!loading && hasClicks && clickEnrollRate !== null && <div style={{fontSize:10,color:'#999'}}>{clickEnrollRate}% of clicks</div>}
-            {!loading && hasClicks && delta(enroll.attributed, enroll.priorAttributed)}
+            {haveEnroll && hasClicks && clickEnrollRate !== null && <div style={{fontSize:10,color:'#999'}}>{clickEnrollRate}% of clicks</div>}
+            {haveEnroll && hasClicks && delta(enroll.attributed, enroll.priorAttributed)}
           </div>
           <div className={'conv-kpi' + shimCls}>
-            <div className="conv-kpi-val" style={{color:'#16a34a',fontSize:26}}>{loading ? '…' : (hasClicks && enroll.attributedRev > 0 ? fmtK(enroll.attributedRev) : '—')}</div>
+            <div className="conv-kpi-val" style={{color:'#16a34a',fontSize:26}}>{loading ? '…' : (haveEnroll && hasClicks && enroll.attributedRev > 0 ? fmtK(enroll.attributedRev) : '—')}</div>
             <div className="conv-kpi-label">Attributed Revenue</div>
-            {!loading && hasClicks && delta(enroll.attributedRev, enroll.priorAttributedRev)}
+            {haveEnroll && hasClicks && delta(enroll.attributedRev, enroll.priorAttributedRev)}
           </div>
         </div>
-        {!loading && (enroll.priorTotal > 0 || (views.prior && views.prior.clicks > 0)) && (
+        {haveEnroll && (enroll.priorTotal > 0 || (views.prior && views.prior.clicks > 0)) && (
           <div className="conv-prior-row">
             <span>Prior {days}d:</span>
             <span style={{fontWeight:600}}>{(views.prior && views.prior.views) || 0} views</span>
@@ -526,22 +531,24 @@ function App() {
           </div>
         )}
         <div style={{fontSize:10,color:'#999',marginBottom:8,lineHeight:1.4}}>
-          {hasClicks
+          {unavailable
+            ? 'Enrollment data is temporarily unavailable (the reporting database is busy) — views and clicks above are live, and enrollment metrics will fill in once the database recovers. Refresh in a few minutes.'
+            : hasClicks
             ? 'Attributed = enrollments in sections a visitor clicked "View Session" on from this calendar, dated on/after that section’s first click, priced at each section’s own average ticket. Attribution is section-level (visitors aren’t tracked through rec.us checkout), so treat it as an upper bound — but one grounded in real clicks and real section pricing.'
             : 'No "View Session" clicks tracked in this window — attributed enrollment and revenue need visitors to click through from the program calendar. Enrollments shown are org-wide for the period.'}
         </div>
         <div className="conv-bars">
           {daily.map((d, i) => (
-            <div className="conv-bar-group" key={i} title={d.date + ': ' + d.views + ' views, ' + d.clicks + ' clicks' + (loading ? '' : ', ' + d.enrollments + ' enrollments')}>
+            <div className="conv-bar-group" key={i} title={d.date + ': ' + d.views + ' views, ' + d.clicks + ' clicks' + (haveEnroll ? ', ' + d.enrollments + ' enrollments' : '')}>
               <div className="conv-bar-view" style={{height: Math.max((d.views / maxVal) * 60, d.views > 0 ? 2 : 0) + 'px'}} />
               <div className="conv-bar-click" style={{height: Math.max((d.clicks / maxVal) * 60, d.clicks > 0 ? 2 : 0) + 'px'}} />
-              {!loading && <div className="conv-bar-enroll" style={{height: Math.max((d.enrollments / maxVal) * 60, d.enrollments > 0 ? 2 : 0) + 'px'}} />}
+              {haveEnroll && <div className="conv-bar-enroll" style={{height: Math.max((d.enrollments / maxVal) * 60, d.enrollments > 0 ? 2 : 0) + 'px'}} />}
             </div>
           ))}
         </div>
         <div className="sparkline-dates">
           <span>{daily[0]?.date?.slice(5)}</span>
-          <span style={{fontSize:9,color:'#bbb'}}>{'🟧'} views {'🟨'} clicks{!loading && ' 🟩 enrollments'}</span>
+          <span style={{fontSize:9,color:'#bbb'}}>{'🟧'} views {'🟨'} clicks{haveEnroll && ' 🟩 enrollments'}</span>
           <span>{daily[daily.length - 1]?.date?.slice(5)}</span>
         </div>
       </div>
