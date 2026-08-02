@@ -142,6 +142,7 @@
     .conv-bars { display: flex; align-items: flex-end; gap: 2px; height: 60px; }
     .conv-bar-group { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 1px; }
     .conv-bar-view { width: 100%; border-radius: 2px 2px 0 0; background: #fb923c; opacity: 0.5; min-height: 1px; }
+    .conv-bar-click { width: 100%; border-radius: 2px 2px 0 0; background: #f59e0b; min-height: 0; }
     .conv-bar-enroll { width: 100%; border-radius: 2px 2px 0 0; background: #22c55e; min-height: 0; }
 
     /* ── Subscriptions section ── */
@@ -382,44 +383,79 @@ function App() {
         .catch(() => {});
     }, [days]);
 
-    // Phase 2: fetch enrollment + revenue data (async, may be slow)
+    // Phase 2: fetch enrollment + revenue data (async, may be slow).
+    // Attribution model: an enrollment counts as calendar-attributed when its
+    // section was clicked ("View Session →") in the window AND the enrollment
+    // date is on/after that section's first click. Revenue uses the section's
+    // own avg ticket (programs card net_total / enrolled), falling back to the
+    // org-wide avg ticket for sections missing revenue data. Day-level section
+    // attribution — not per-visitor tracking — so still an upper bound, but a
+    // far tighter one than views x conversion x avg ticket.
     React.useEffect(() => {
       if (!views) return;
       setEnroll(null);
       const cutoff = new Date(Date.now() - days * 86400000).toISOString().substring(0, 10);
+      const priorCutoff = new Date(Date.now() - days * 2 * 86400000).toISOString().substring(0, 10);
       Promise.all([
         fetch(withToken(`/${orgSlug}/program-demographics/api/data`)).then(r => r.ok ? r.json() : null),
         fetch(withToken(`/${orgSlug}/programs/api/data`)).then(r => r.ok ? r.json() : null),
       ]).then(([demoJ, progJ]) => {
         const demoRows = demoJ?.rows || demoJ || [];
         const progRows = progJ?.rows || progJ || [];
-        const byDay = {};
-        demoRows.forEach(r => {
-          const d = r['Enrolled Date'] || r['enrolled_date'] || '';
-          if (!d) return;
-          const day = String(d).substring(0, 10);
-          if (day >= cutoff) byDay[day] = (byDay[day] || 0) + 1;
-        });
-        const total = Object.values(byDay).reduce((s, v) => s + v, 0);
+
+        // Per-section economics: actual avg ticket per section from programs data
+        const secStats = {};
         let totalRev = 0, totalEnr = 0;
         progRows.forEach(r => {
-          totalRev += parseFloat(r['net_total'] || r['Net Revenue'] || r['Net Total'] || 0) || 0;
-          totalEnr += parseInt(r['enrolled'] || r['Enrollments'] || r['Enrolled'] || 0) || 0;
+          const rev = parseFloat(r['net_total'] || r['Net Revenue'] || r['Net Total'] || 0) || 0;
+          const enr = parseInt(r['enrolled'] || r['Enrollments'] || r['Enrolled'] || 0) || 0;
+          totalRev += rev; totalEnr += enr;
+          const sec = (r['section'] || r['Section'] || '').trim();
+          if (!sec) return;
+          if (!secStats[sec]) secStats[sec] = { rev: 0, enr: 0 };
+          secStats[sec].rev += rev;
+          secStats[sec].enr += enr;
         });
         const avgTicket = totalEnr > 0 ? totalRev / totalEnr : 0;
-        // Prior period: same window length immediately before
-        const priorCutoff = new Date(Date.now() - days * 2 * 86400000).toISOString().substring(0, 10);
-        const priorByDay = {};
+        const secTicket = (sec) => {
+          const s = secStats[sec];
+          return (s && s.enr > 0 && s.rev > 0) ? s.rev / s.enr : avgTicket;
+        };
+
+        const clickMap = {}, priorClickMap = {};
+        (views.clickedSections || []).forEach(c => { clickMap[c.section] = c.firstClick; });
+        (views.priorClickedSections || []).forEach(c => { priorClickMap[c.section] = c.firstClick; });
+
+        const byDay = {};
+        let total = 0, priorTotal = 0;
+        let attributed = 0, attributedRev = 0, priorAttributed = 0, priorAttributedRev = 0;
         demoRows.forEach(r => {
           const d = r['Enrolled Date'] || r['enrolled_date'] || '';
           if (!d) return;
           const day = String(d).substring(0, 10);
-          if (day >= priorCutoff && day < cutoff) priorByDay[day] = (priorByDay[day] || 0) + 1;
+          const sec = (r['Section'] || r['section'] || '').trim();
+          if (day >= cutoff) {
+            byDay[day] = (byDay[day] || 0) + 1;
+            total++;
+            if (sec && clickMap[sec] && day >= clickMap[sec]) {
+              attributed++;
+              attributedRev += secTicket(sec);
+            }
+          } else if (day >= priorCutoff && day < cutoff) {
+            priorTotal++;
+            if (sec && priorClickMap[sec] && day >= priorClickMap[sec]) {
+              priorAttributed++;
+              priorAttributedRev += secTicket(sec);
+            }
+          }
         });
-        const priorTotal = Object.values(priorByDay).reduce((s, v) => s + v, 0);
-        const priorRevenue = Math.round(priorTotal * avgTicket * 100) / 100;
-        setEnroll({ byDay, total, avgTicket, revenue: Math.round(total * avgTicket * 100) / 100, priorTotal, priorRevenue });
-      }).catch(() => setEnroll({ byDay: {}, total: 0, avgTicket: 0, revenue: 0 }));
+
+        setEnroll({
+          byDay, total, priorTotal, avgTicket,
+          attributed, attributedRev: Math.round(attributedRev * 100) / 100,
+          priorAttributed, priorAttributedRev: Math.round(priorAttributedRev * 100) / 100,
+        });
+      }).catch(() => setEnroll({ byDay: {}, total: 0, priorTotal: 0, avgTicket: 0, attributed: 0, attributedRev: 0, priorAttributed: 0, priorAttributedRev: 0 }));
     }, [views, days]);
 
     if (!views) return null;
@@ -427,68 +463,85 @@ function App() {
     const loading = !enroll;
     const shimCls = loading ? ' conv-loading' : '';
     const daily = views.daily.map(d => ({
-      date: d.date, views: d.views,
+      date: d.date, views: d.views, clicks: d.clicks || 0,
       enrollments: enroll ? (enroll.byDay[d.date] || 0) : 0,
     }));
-    const maxVal = Math.max(...daily.map(d => Math.max(d.views, d.enrollments)), 1);
-    const convRate = enroll && views.totalViews > 0 ? ((enroll.total / views.totalViews) * 100).toFixed(1) : null;
+    const maxVal = Math.max(...daily.map(d => Math.max(d.views, d.clicks, d.enrollments)), 1);
+    const totalClicks = views.totalClicks || 0;
+    const hasClicks = totalClicks > 0;
+    const ctr = views.totalViews > 0 ? ((totalClicks / views.totalViews) * 100).toFixed(1) : '0';
+    const clickEnrollRate = hasClicks && enroll ? ((enroll.attributed / totalClicks) * 100).toFixed(1) : null;
+    const fmtK = (v) => v >= 1000 ? '$' + (v / 1000).toFixed(1) + 'k' : '$' + Math.round(v);
+    const delta = (cur, prior) => {
+      if (!prior || prior <= 0) return null;
+      const pct = Math.round(((cur - prior) / prior) * 100);
+      return <div className={'conv-delta ' + (pct >= 0 ? 'conv-delta-up' : 'conv-delta-down')}>{pct >= 0 ? '↑' : '↓'}{Math.abs(pct)}% vs prior</div>;
+    };
 
     return (
       <div className="conv-card">
-        <div className="section-title">{'\u{1F4C5}'} Calendar View {'\u2192'} Registration Funnel</div>
+        <div className="section-title">{'\u{1F4C5}'} Calendar View {'→'} Registration Funnel</div>
         <div className="conv-kpis">
           <div className="conv-kpi">
             <div className="conv-kpi-val" style={{color:'#fb923c'}}>{views.totalViews}</div>
             <div className="conv-kpi-label">Calendar Views</div>
+            {delta(views.totalViews, views.prior?.views)}
+          </div>
+          <div className="conv-kpi">
+            <div className="conv-kpi-val" style={{color:'#d97706'}}>{totalClicks}</div>
+            <div className="conv-kpi-label">Session Clicks</div>
+            <div style={{fontSize:10,color:'#999'}}>{ctr}% of views</div>
           </div>
           <div className={'conv-kpi' + shimCls}>
-            <div className="conv-kpi-val" style={{color:'#22c55e'}}>{loading ? '\u2026' : enroll.total}</div>
+            <div className="conv-kpi-val" style={{color:'#22c55e'}}>{loading ? '…' : enroll.total}</div>
             <div className="conv-kpi-label">Enrollments</div>
-            {!loading && enroll.priorTotal > 0 && (() => {
-              const pct = Math.round(((enroll.total - enroll.priorTotal) / enroll.priorTotal) * 100);
-              return <div className={'conv-delta ' + (pct >= 0 ? 'conv-delta-up' : 'conv-delta-down')}>{pct >= 0 ? '\u2191' : '\u2193'}{Math.abs(pct)}% vs prior</div>;
-            })()}
+            {!loading && delta(enroll.total, enroll.priorTotal)}
           </div>
           <div className={'conv-kpi' + shimCls}>
-            <div className="conv-kpi-val" style={{color:'#3b82f6'}}>{loading ? '\u2026' : (convRate || '0') + '%'}</div>
-            <div className="conv-kpi-label">Conversion Rate</div>
+            <div className="conv-kpi-val" style={{color:'#0d9488'}}>{loading ? '…' : (hasClicks ? enroll.attributed : '—')}</div>
+            <div className="conv-kpi-label">Attributed Enrollments</div>
+            {!loading && hasClicks && clickEnrollRate !== null && <div style={{fontSize:10,color:'#999'}}>{clickEnrollRate}% of clicks</div>}
+            {!loading && hasClicks && delta(enroll.attributed, enroll.priorAttributed)}
           </div>
           <div className={'conv-kpi' + shimCls}>
-            <div className="conv-kpi-val" style={{color:'#666'}}>{loading ? '\u2026' : (enroll.avgTicket > 0 ? '$' + Math.round(enroll.avgTicket) : '\u2014')}</div>
-            <div className="conv-kpi-label">Avg Ticket</div>
-          </div>
-          <div className={'conv-kpi' + shimCls}>
-            <div className="conv-kpi-val" style={{color:'#16a34a',fontSize:26}}>{loading ? '\u2026' : (enroll.revenue > 0 ? '$' + (enroll.revenue >= 1000 ? (enroll.revenue / 1000).toFixed(1) + 'k' : Math.round(enroll.revenue)) : '\u2014')}</div>
-            <div className="conv-kpi-label">Enrollment Revenue</div>
-            {!loading && enroll.priorRevenue > 0 && (() => {
-              const pct = Math.round(((enroll.revenue - enroll.priorRevenue) / enroll.priorRevenue) * 100);
-              return <div className={'conv-delta ' + (pct >= 0 ? 'conv-delta-up' : 'conv-delta-down')}>{pct >= 0 ? '\u2191' : '\u2193'}{Math.abs(pct)}% vs prior</div>;
-            })()}
+            <div className="conv-kpi-val" style={{color:'#16a34a',fontSize:26}}>{loading ? '…' : (hasClicks && enroll.attributedRev > 0 ? fmtK(enroll.attributedRev) : '—')}</div>
+            <div className="conv-kpi-label">Attributed Revenue</div>
+            {!loading && hasClicks && delta(enroll.attributedRev, enroll.priorAttributedRev)}
           </div>
         </div>
-        {!loading && enroll.priorTotal > 0 && (
+        {!loading && (enroll.priorTotal > 0 || (views.prior && views.prior.clicks > 0)) && (
           <div className="conv-prior-row">
             <span>Prior {days}d:</span>
-            <span style={{fontWeight:600}}>{enroll.priorTotal} enrollments</span>
+            <span style={{fontWeight:600}}>{(views.prior && views.prior.views) || 0} views</span>
             <span style={{color:'#aaa'}}>{'·'}</span>
-            <span style={{fontWeight:600}}>{enroll.priorRevenue >= 1000 ? '$' + (enroll.priorRevenue / 1000).toFixed(1) + 'k' : '$' + Math.round(enroll.priorRevenue)} est. revenue</span>
-            <span style={{color:'#aaa',fontSize:10}}>(avg ticket applied)</span>
+            <span style={{fontWeight:600}}>{(views.prior && views.prior.clicks) || 0} clicks</span>
+            <span style={{color:'#aaa'}}>{'·'}</span>
+            <span style={{fontWeight:600}}>{enroll.priorTotal} enrollments</span>
+            {hasClicks && <>
+              <span style={{color:'#aaa'}}>{'·'}</span>
+              <span style={{fontWeight:600}}>{enroll.priorAttributed} attributed</span>
+              <span style={{color:'#aaa'}}>{'·'}</span>
+              <span style={{fontWeight:600}}>{fmtK(enroll.priorAttributedRev)} attributed revenue</span>
+            </>}
           </div>
         )}
         <div style={{fontSize:10,color:'#999',marginBottom:8,lineHeight:1.4}}>
-          Correlation, not causation — enrollment revenue reflects registrations that occurred on days the program calendar was viewed. Not all enrollments are directly attributable to calendar views.
+          {hasClicks
+            ? 'Attributed = enrollments in sections a visitor clicked "View Session" on from this calendar, dated on/after that section’s first click, priced at each section’s own average ticket. Attribution is section-level (visitors aren’t tracked through rec.us checkout), so treat it as an upper bound — but one grounded in real clicks and real section pricing.'
+            : 'No "View Session" clicks tracked in this window — attributed enrollment and revenue need visitors to click through from the program calendar. Enrollments shown are org-wide for the period.'}
         </div>
         <div className="conv-bars">
           {daily.map((d, i) => (
-            <div className="conv-bar-group" key={i} title={d.date + ': ' + d.views + ' views' + (loading ? '' : ', ' + d.enrollments + ' enrollments')}>
+            <div className="conv-bar-group" key={i} title={d.date + ': ' + d.views + ' views, ' + d.clicks + ' clicks' + (loading ? '' : ', ' + d.enrollments + ' enrollments')}>
               <div className="conv-bar-view" style={{height: Math.max((d.views / maxVal) * 60, d.views > 0 ? 2 : 0) + 'px'}} />
+              <div className="conv-bar-click" style={{height: Math.max((d.clicks / maxVal) * 60, d.clicks > 0 ? 2 : 0) + 'px'}} />
               {!loading && <div className="conv-bar-enroll" style={{height: Math.max((d.enrollments / maxVal) * 60, d.enrollments > 0 ? 2 : 0) + 'px'}} />}
             </div>
           ))}
         </div>
         <div className="sparkline-dates">
           <span>{daily[0]?.date?.slice(5)}</span>
-          <span style={{fontSize:9,color:'#bbb'}}>{'\uD83D\uDFE7'} views{!loading && ' \uD83D\uDFE9 enrollments'}</span>
+          <span style={{fontSize:9,color:'#bbb'}}>{'🟧'} views {'🟨'} clicks{!loading && ' 🟩 enrollments'}</span>
           <span>{daily[daily.length - 1]?.date?.slice(5)}</span>
         </div>
       </div>
