@@ -56,8 +56,9 @@
     .toolbar .btn-pdf { background: #3b82f6; border-color: #3b82f6; font-weight: 600; }
     .toolbar .btn-pdf:hover { background: #2563eb; }
     .toolbar .btn-pdf:disabled { opacity: .5; cursor: not-allowed; }
-    .toolbar .btn-excel { background: #0e7c45; border-color: #0e7c45; }
-    .toolbar .btn-excel:hover { background: #0a6236; }
+    .toolbar .btn-excel { background: #16803c; border-color: #16803c; font-weight: 600; }
+    .toolbar .btn-excel:hover { background: #15692f; }
+    .toolbar .btn-excel:disabled { opacity: .5; cursor: not-allowed; }
     .toolbar .row-count { font-size: 11px; color: #aaa; }
 
     /* status filter pills */
@@ -109,7 +110,7 @@
 
     /* ── Page ── */
     .page {
-      max-width: 1300px; margin: 16px auto; padding: 24px 28px;
+      max-width: 1400px; margin: 16px auto; padding: 24px 28px;
       background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.08);
     }
 
@@ -960,7 +961,6 @@ function App() {
         {rows && <span className="row-count">{displayRows.length} of {counts.all}</span>}
         <div className="toolbar-divider" />
         <button onClick={() => window.print()}>🖨️ Print</button>
-        <button className="btn-excel" onClick={exportExcel} disabled={!rows || !rows.length}>📊 Excel</button>
         <button
           className="btn-pdf"
           onClick={downloadPdf}
@@ -968,6 +968,7 @@ function App() {
         >
           {pdfLoading ? 'Generating…' : '📄 PDF'}
         </button>
+        <button className="btn-excel" onClick={exportExcel} disabled={!rows || !rows.length}>📊 Excel</button>
 
       </div>
     );

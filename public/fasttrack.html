@@ -23,6 +23,10 @@
     .toolbar button:hover { background: rgba(255,255,255,.18); }
     .toolbar .btn-pdf { background: #3b82f6; border-color: #3b82f6; font-weight: 600; }
     .toolbar .btn-pdf:hover { background: #2563eb; }
+    .toolbar .btn-pdf:disabled { opacity: .5; cursor: not-allowed; }
+    .toolbar .btn-excel { background: #16803c; border-color: #16803c; font-weight: 600; }
+    .toolbar .btn-excel:hover { background: #15692f; }
+    .toolbar .btn-excel:disabled { opacity: .5; cursor: not-allowed; }
 
     /* ── Print ── */
     .print-mode .toolbar, .print-mode .no-print { display: none !important; }
@@ -30,7 +34,7 @@
     @media print { .toolbar, .no-print { display: none !important; } }
 
     /* ── Report body ── */
-    .report { max-width: 1200px; margin: 16px auto; padding: 24px 28px 48px; background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
+    .report { max-width: 1400px; margin: 16px auto; padding: 24px 28px 48px; background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
     .report-header { display: flex; align-items: center; gap: 18px; margin-bottom: 24px; }
     .report-header-logo { max-height: 48px; max-width: 120px; object-fit: contain; }
     .org-label { font-size: 14px; font-weight: 700; color: #333; }
@@ -1532,8 +1536,9 @@ function App() {
       ),
       programs.length > 0 && React.createElement('button', { onClick: toggleAll }, allOpen ? '⊟ Collapse' : '⊞ Expand'),
       React.createElement('div', { className: 'toolbar-spacer' }),
-      React.createElement('button', { onClick: handleExcel }, '📊 Excel'),
-      React.createElement('button', { className: 'btn-pdf', onClick: handlePdf, disabled: pdfLoading }, pdfLoading ? 'Generating…' : '📄 PDF')
+      React.createElement('button', { onClick: function() { window.print(); } }, '🖨️ Print'),
+      React.createElement('button', { className: 'btn-pdf', onClick: handlePdf, disabled: pdfLoading }, pdfLoading ? 'Generating…' : '📄 PDF'),
+      React.createElement('button', { className: 'btn-excel', onClick: handleExcel }, '📊 Excel')
     ),
 
     React.createElement('div', { className: 'report' },

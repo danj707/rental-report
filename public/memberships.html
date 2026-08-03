@@ -63,6 +63,10 @@
     .toolbar button.active { background: rgba(255,255,255,.22); border-color: rgba(255,255,255,.55); }
     .toolbar .btn-pdf { background: #3b82f6; border-color: #3b82f6; font-weight: 600; }
     .toolbar .btn-pdf:hover { background: #2563eb; }
+    .toolbar .btn-pdf:disabled { opacity: .5; cursor: not-allowed; }
+    .toolbar .btn-excel { background: #16803c; border-color: #16803c; font-weight: 600; }
+    .toolbar .btn-excel:hover { background: #15692f; }
+    .toolbar .btn-excel:disabled { opacity: .5; cursor: not-allowed; }
     .toolbar input[type="date"] {
       padding: 4px 8px;
       border: 1px solid rgba(255,255,255,.25);
@@ -1665,8 +1669,8 @@ function normalizeRow(raw) {
               {(activeTab === 'checkins' || activeTab === 'retention') && <span className="toolbar-spacer" />}
 
               <button onClick={printPage} title="Print">🖨️ Print</button>
-              <button onClick={exportExcel} title="Excel">📊 Excel</button>
               <button className="btn-pdf" onClick={downloadPdf} disabled={pdfLoading} title="PDF">{pdfLoading ? "Generating…" : "📄 PDF"}</button>
+              <button className="btn-excel" onClick={exportExcel} title="Excel">📊 Excel</button>
             </div>
           )}
 

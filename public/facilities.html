@@ -26,8 +26,10 @@
     .toolbar .btn-run { background: #16a34a; border-color: #16a34a; font-weight: 600; }
     .toolbar .btn-run:hover { background: #15803d; }
     .toolbar .btn-pdf { background: #3b82f6; border-color: #3b82f6; font-weight: 600; }
+    .toolbar .btn-pdf:hover { background: #2563eb; }
     .toolbar .btn-excel { background: #16803c; border-color: #16803c; font-weight: 600; }
-    .toolbar .btn-pdf:disabled, .toolbar .btn-excel:disabled { opacity: .45; cursor: not-allowed; }
+    .toolbar .btn-excel:hover { background: #15692f; }
+    .toolbar .btn-pdf:disabled, .toolbar .btn-excel:disabled { opacity: .5; cursor: not-allowed; }
 
     /* Print button + Puppeteer PDF capture (_print=1): hide the chrome, keep the report */
     @media print {
@@ -498,8 +500,8 @@
         e('span', { className: 'row-count' }, props.loading ? 'loading…' :
           (props.count == null ? '' : props.count.toLocaleString() + ' bookings · ' + props.sites.toLocaleString() + ' sites')),
         e('button', { onClick: () => window.print(), title: 'Print this view' }, '🖨️ Print'),
-        e('button', { className: 'btn-pdf', disabled: !props.count || props.pdfLoading, onClick: props.onPdf, title: 'Download this view as a PDF' }, props.pdfLoading ? 'Generating…' : 'PDF'),
-        e('button', { className: 'btn-excel', disabled: !props.count, onClick: props.onExcel, title: 'Download the bookings in view as Excel' }, 'Excel'),
+        e('button', { className: 'btn-pdf', disabled: !props.count || props.pdfLoading, onClick: props.onPdf, title: 'Download this view as a PDF' }, props.pdfLoading ? 'Generating…' : '📄 PDF'),
+        e('button', { className: 'btn-excel', disabled: !props.count, onClick: props.onExcel, title: 'Download the bookings in view as Excel' }, '📊 Excel'),
       );
     }
 

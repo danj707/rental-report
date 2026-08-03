@@ -75,8 +75,10 @@
     .toolbar .btn-run:hover:not(:disabled)   { background: #15803d; }
     .toolbar .btn-pdf   { background: #3b82f6; border-color: #3b82f6; font-weight: 600; }
     .toolbar .btn-pdf:hover:not(:disabled)   { background: #2563eb; }
-    .toolbar .btn-excel { background: #166534; border-color: #166534; font-weight: 600; }
-    .toolbar .btn-excel:hover:not(:disabled) { background: #14532d; }
+    .toolbar .btn-pdf:disabled { opacity: .5; cursor: not-allowed; }
+    .toolbar .btn-excel { background: #16803c; border-color: #16803c; font-weight: 600; }
+    .toolbar .btn-excel:hover:not(:disabled) { background: #15692f; }
+    .toolbar .btn-excel:disabled { opacity: .5; cursor: not-allowed; }
     .toolbar .divider { width: 1px; height: 28px; background: rgba(255,255,255,.15); margin: 0 4px; }
     .toolbar .row-count { font-size: 11px; color: #aaa; }
 
@@ -133,7 +135,7 @@
 
     /* ── Page body ── */
     .page {
-      max-width: 1280px;
+      max-width: 1400px;
       margin: 18px auto;
       padding: 22px 26px;
       background: #fff;
@@ -1426,9 +1428,9 @@ function App() {
         <div className="toolbar-spacer" />
         <span className="row-count">{rows.length.toLocaleString()} rows</span>
         <div className="divider" />
-        <button onClick={() => window.print()}>🖨 Print</button>
+        <button onClick={() => window.print()}>🖨️ Print</button>
         <button className="btn-pdf"   onClick={exportPdf}    disabled={pdfLoading || grouped.length === 0}>
-          {pdfLoading ? '…' : '📄 PDF'}
+          {pdfLoading ? 'Generating…' : '📄 PDF'}
         </button>
         <button className="btn-excel" onClick={exportExcel} disabled={grouped.length === 0}>📊 Excel</button>
       </div>
