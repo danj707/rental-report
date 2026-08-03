@@ -2158,10 +2158,12 @@ function App() {
             if (p.status === 'Canceled') byAct[a].cancelled++;
             byAct[a].cancelledSections = (byAct[a].cancelledSections || 0) + p.sections.filter(function(s){ return s.status === 'Canceled' || s.status === 'Cancelled'; }).length;
           });
-          var actEntries = Object.entries(byAct).sort(function(a,b){ return b[1].periodRev - a[1].periodRev; });
+          var actEntries = Object.entries(byAct).sort(function(a,b){ return (b[1].periodRev - a[1].periodRev) || (b[1].revenue - a[1].revenue); });
           var actByEnrolled = actEntries.slice().sort(function(a,b){ return b[1].enrolled - a[1].enrolled; });
           // Sorted programs
-          var progsSorted = progs.slice().sort(function(a,b){ return b.periodNet - a.periodNet; });
+          // Sort by cash collected in the period, then lifetime net — early in a
+          // month period figures are mostly $0 and the tiebreak keeps order stable
+          var progsSorted = progs.slice().sort(function(a,b){ return (b.periodNet - a.periodNet) || (b.netRevenue - a.netRevenue); });
           // Show attendance columns only when this org tracks check-ins
           var showCi = !!(checkinSummary && checkinSummary.totalCheckIns > 0);
           var ciPctColor = function(p) { return p == null ? '#ccc' : p >= 85 ? '#16a34a' : p <= 25 ? '#dc2626' : '#333'; };
@@ -2390,7 +2392,7 @@ function App() {
               <div style={{background:'#fff',border:'1px solid #e8e6e0',borderRadius:8,overflow:'hidden',marginBottom:20}}>
                 <div style={{maxHeight:700,overflow:'auto'}}>
                   <table className="sum-prog-table">
-                    <thead><tr><th>Program</th><th style={{textAlign:'center'}}>Status</th><th style={{textAlign:'center'}}>Sections</th><th style={{textAlign:'right'}}>Utilization</th><th style={{textAlign:'right'}}>Fill %</th>{showCi && <th style={{textAlign:'right'}}>Check-In %</th>}{showCi && <th style={{textAlign:'right'}}>Check-Out %</th>}<th style={{textAlign:'right'}}>Collected</th><th>Dates</th></tr></thead>
+                    <thead><tr><th>Program</th><th style={{textAlign:'center'}}>Status</th><th style={{textAlign:'center'}}>Sections</th><th style={{textAlign:'right'}}>Utilization</th><th style={{textAlign:'right'}}>Fill %</th>{showCi && <th style={{textAlign:'right'}}>Check-In %</th>}{showCi && <th style={{textAlign:'right'}}>Check-Out %</th>}<th style={{textAlign:'right'}} title="Payments received within the selected date range">Collected</th><th style={{textAlign:'right'}} title="Lifetime net revenue for these programs (received minus refunds)">Net Rev</th><th>Dates</th></tr></thead>
                     <tbody>
                       {progsSorted.map(function(p) {
                         var isCancelled = p.status === 'Canceled';
@@ -2405,10 +2407,11 @@ function App() {
                           {showCi && <td style={{textAlign:'right',fontWeight:p.checkInPct!=null?700:400,color:ciPctColor(p.checkInPct)}}>{p.checkInPct != null ? p.checkInPct + '%' : '\u2014'}</td>}
                           {showCi && <td style={{textAlign:'right',color:p.checkOutPct!=null?'#475569':'#ccc'}}>{p.checkOutPct != null ? p.checkOutPct + '%' : '\u2014'}</td>}
                           <td style={{textAlign:'right',fontWeight:500}}>{p.periodNet > 0 ? fmt$(p.periodNet) : '\u2014'}</td>
+                          <td style={{textAlign:'right',color:'#475569'}}>{p.netRevenue > 0 ? fmt$(p.netRevenue) : '\u2014'}</td>
                           <td style={{fontSize:10,color:'#888',whiteSpace:'nowrap'}}>{fmtD(p.startDate)}{fmtD(p.endDate) ? ' \u2013 ' + fmtD(p.endDate) : ''}</td>
                         </tr>;
                       })}
-                      <tr className="totals-row"><td>Total</td><td /><td style={{textAlign:'center'}}>{cancelledSections > 0 ? <span>{totalSections - cancelledSections} ran<span style={{color:'#dc2626',fontSize:10}}> / {cancelledSections} canc.</span></span> : totalSections}</td><td style={{textAlign:'right',whiteSpace:'nowrap'}}>{totalEnrolled.toLocaleString()} <span style={{color:'#888'}}>/ {totalCapacity > 0 ? totalCapacity.toLocaleString() : '\u2014'}</span>{totalCancellations > 0 && <span style={{color:'#dc2626'}}> / {totalCancellations.toLocaleString()}</span>}</td><td style={{textAlign:'right',color:'#888'}}>{avgFill > 0 ? avgFill + '%' : ''}</td>{showCi && <td style={{textAlign:'right',fontWeight:700}}>{checkinSummary.checkInPct != null ? checkinSummary.checkInPct + '%' : '\u2014'}</td>}{showCi && <td style={{textAlign:'right',fontWeight:700}}>{checkinSummary.checkOutPct != null ? checkinSummary.checkOutPct + '%' : '\u2014'}</td>}<td style={{textAlign:'right',fontWeight:700}}>{fmt$(periodTotalRev)}</td><td /></tr>
+                      <tr className="totals-row"><td>Total</td><td /><td style={{textAlign:'center'}}>{cancelledSections > 0 ? <span>{totalSections - cancelledSections} ran<span style={{color:'#dc2626',fontSize:10}}> / {cancelledSections} canc.</span></span> : totalSections}</td><td style={{textAlign:'right',whiteSpace:'nowrap'}}>{totalEnrolled.toLocaleString()} <span style={{color:'#888'}}>/ {totalCapacity > 0 ? totalCapacity.toLocaleString() : '\u2014'}</span>{totalCancellations > 0 && <span style={{color:'#dc2626'}}> / {totalCancellations.toLocaleString()}</span>}</td><td style={{textAlign:'right',color:'#888'}}>{avgFill > 0 ? avgFill + '%' : ''}</td>{showCi && <td style={{textAlign:'right',fontWeight:700}}>{checkinSummary.checkInPct != null ? checkinSummary.checkInPct + '%' : '\u2014'}</td>}{showCi && <td style={{textAlign:'right',fontWeight:700}}>{checkinSummary.checkOutPct != null ? checkinSummary.checkOutPct + '%' : '\u2014'}</td>}<td style={{textAlign:'right',fontWeight:700}}>{fmt$(periodTotalRev)}</td><td style={{textAlign:'right',fontWeight:700}}>{fmt$(totalRev)}</td><td /></tr>
                     </tbody>
                   </table>
                 </div>
@@ -2420,12 +2423,14 @@ function App() {
                   <div style={{fontSize:13,fontWeight:700,color:'#333',marginBottom:6}}>By Activity ({actEntries.length})</div>
                   <div style={{background:'#fff',border:'1px solid #e8e6e0',borderRadius:8,overflow:'hidden',marginBottom:16}}>
                     <table className="sum-cat-table">
-                      <thead><tr><th>Activity</th><th style={{textAlign:'center'}}>Programs</th><th style={{textAlign:'center'}}>Sections</th><th style={{textAlign:'center'}}>Cancelled</th><th style={{textAlign:'right'}}>Participants</th><th style={{textAlign:'right'}}>Collected</th><th style={{textAlign:'right'}}>% of Rev</th></tr></thead>
+                      <thead><tr><th>Activity</th><th style={{textAlign:'center'}}>Programs</th><th style={{textAlign:'center'}}>Sections</th><th style={{textAlign:'center'}}>Cancelled</th><th style={{textAlign:'right'}}>Participants</th><th style={{textAlign:'right'}} title="Payments received within the selected date range">Collected</th><th style={{textAlign:'right'}} title="Lifetime net revenue (received minus refunds)">Net Rev</th><th style={{textAlign:'right'}}>% of Rev</th></tr></thead>
                       <tbody>
                         {actEntries.map(function(e) {
-                          return <tr key={e[0]}><td style={{fontWeight:500}}>{e[0]}</td><td style={{textAlign:'center'}}>{e[1].count}</td><td style={{textAlign:'center'}}>{e[1].sections}</td><td style={{textAlign:'center',color:(e[1].cancelledSections||0)>0?'#dc2626':'#ccc'}}>{e[1].cancelledSections||0}</td><td style={{textAlign:'right'}}>{e[1].enrolled.toLocaleString()}</td><td style={{textAlign:'right',fontWeight:500}}>{fmt$(e[1].periodRev)}</td><td style={{textAlign:'right',color:'#888'}}>{periodTotalRev>0?Math.round(e[1].periodRev/periodTotalRev*100)+'%':'\u2014'}</td></tr>;
+                          var revPct = periodTotalRev > 0 ? Math.round(e[1].periodRev / periodTotalRev * 100) + '%'
+                                     : totalRev > 0 ? Math.round(e[1].revenue / totalRev * 100) + '%' : '\u2014';
+                          return <tr key={e[0]}><td style={{fontWeight:500}}>{e[0]}</td><td style={{textAlign:'center'}}>{e[1].count}</td><td style={{textAlign:'center'}}>{e[1].sections}</td><td style={{textAlign:'center',color:(e[1].cancelledSections||0)>0?'#dc2626':'#ccc'}}>{e[1].cancelledSections||0}</td><td style={{textAlign:'right'}}>{e[1].enrolled.toLocaleString()}</td><td style={{textAlign:'right',fontWeight:500}}>{fmt$(e[1].periodRev)}</td><td style={{textAlign:'right',color:'#475569'}}>{fmt$(e[1].revenue)}</td><td style={{textAlign:'right',color:'#888'}}>{revPct}</td></tr>;
                         })}
-                        <tr className="totals-row"><td>Total</td><td style={{textAlign:'center'}}>{progs.length}</td><td style={{textAlign:'center'}}>{totalSections}</td><td style={{textAlign:'center',color:cancelledSections>0?'#dc2626':'#ccc'}}>{cancelledSections}</td><td style={{textAlign:'right'}}>{totalEnrolled.toLocaleString()}</td><td style={{textAlign:'right'}}>{fmt$(periodTotalRev)}</td><td style={{textAlign:'right'}}>100%</td></tr>
+                        <tr className="totals-row"><td>Total</td><td style={{textAlign:'center'}}>{progs.length}</td><td style={{textAlign:'center'}}>{totalSections}</td><td style={{textAlign:'center',color:cancelledSections>0?'#dc2626':'#ccc'}}>{cancelledSections}</td><td style={{textAlign:'right'}}>{totalEnrolled.toLocaleString()}</td><td style={{textAlign:'right'}}>{fmt$(periodTotalRev)}</td><td style={{textAlign:'right'}}>{fmt$(totalRev)}</td><td style={{textAlign:'right'}}>{(periodTotalRev>0||totalRev>0)?'100%':'\u2014'}</td></tr>
                       </tbody>
                     </table>
                   </div>

@@ -11016,6 +11016,11 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  { date: '2026-08-03', title: 'Programs Summary: Net Rev column alongside period Collected', items: [
+    'The Summary tab tables showed only period-scoped Collected (cash received inside the selected date range), so early in a month — the default range — every program showed a dash and the org looked revenue-less.',
+    'All Programs and By Activity tables now also show lifetime Net Rev (received minus refunds), with hover tooltips explaining each column; % of Rev falls back to lifetime shares when no cash moved in the period.',
+    'Program ordering now tiebreaks on lifetime net so the table stays meaningfully sorted when period figures are $0.',
+  ]},
   { date: '2026-08-03', title: 'Programs: Waitlist Demand metrics', items: [
     'New Waitlist Demand band on the Summary tab: residents waitlisted right now, waitlist → enrolled conversion rate, unmet demand dollars (waitlisted × program price), and the highest-pressure programs — a direct "add capacity here" signal.',
     'Waitlist column returns to the Revenue tab (and Excel export), now auto-shown whenever the data is present instead of hidden behind a removed toolbar checkbox.',
