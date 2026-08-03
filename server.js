@@ -2524,6 +2524,8 @@ async function generatePdf(orgSlug, reportType, startDate, endDate, filters = {}
     ? "GL Code Rollup, formatted as Tyler"
     : reportType === "gl"
     ? "GL Code Rollup"
+    : reportType === "facilities"
+      ? "Facilities"
     : reportType === "historic"
       ? "Facility Reservations by Date"
       : reportType === "programs"
@@ -4814,6 +4816,25 @@ app.get("/api/admin/request-log", (req, res) => {
     p99: times.length > 0 ? times[Math.floor(times.length * 0.99)] : 0,
   };
   res.json({ stats, entries });
+});
+
+// Facilities hub isn't in REPORT_TYPES (it has its own page + summary API), so
+// it gets an explicit PDF route ahead of the generic :report matcher, whose
+// resolveOrg would 404 it. Same Puppeteer pipeline; the page reads _print=1 +
+// status/site_type/tab back into its filter state and emits #report-ready.
+app.get("/:org/facilities/api/pdf", async (req, res) => {
+  const slug = req.params.org;
+  if (!ORGS[slug]) return res.status(404).send(`Unknown org: "${slug}"`);
+  try {
+    logEvent(slug, "facilities", "pdf", req);
+    const pdf = await generatePdf(slug, "facilities", req.query.start_date, req.query.end_date, req.query);
+    const filename = `facilities-report-${req.query.start_date || "report"}.pdf`;
+    res.set({ "Content-Type": "application/pdf", "Content-Disposition": `inline; filename="${filename}"`, "Content-Length": pdf.length });
+    res.send(pdf);
+  } catch (err) {
+    console.error("[pdf] Error:", err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.get("/:org/:report/api/pdf", resolveOrg, async (req, res) => {
