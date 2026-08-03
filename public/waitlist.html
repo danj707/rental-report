@@ -291,21 +291,7 @@ function App() {
   const updatedAt = meta.generated_at ? new Date(meta.generated_at).toLocaleString() : 'live';
 
   const backHref = '/' + orgSlug + (URL_TOKEN ? '?token=' + encodeURIComponent(URL_TOKEN) : '');
-  const BareToolbar = () => (
-    <div className="toolbar">
-      <a className="toolbar-back" href={backHref}>←</a>
-      <span className="toolbar-title">Waitlist Demand</span>
-      <span className="toolbar-spacer" />
-    </div>
-  );
-  if (loading) return (
-    <div><BareToolbar /><div className="page"><div className="loading-wrap">
-      <div className="juice-loader"></div>
-      <div className="juice-msg">Squeezing waitlist data…</div>
-    </div></div></div>
-  );
-  if (error) return <div><BareToolbar /><div className="page"><div className="err">Couldn't load waitlist data: {error}. Try refreshing — if it persists, the report may not be configured for this org yet.</div></div></div>;
-  if (!rows || rows.length === 0) return <div><BareToolbar /><div className="page"><div className="err">No section data returned for this org.</div></div></div>;
+  const bodyState = loading ? 'loading' : error ? 'error' : (!rows || rows.length === 0) ? 'empty' : 'ready';
 
   const histMax = Math.max(agg.c1h, agg.c4h, agg.c8h, agg.c24h, agg.c48h, agg.cMore, 1);
   const buckets = [
@@ -350,7 +336,7 @@ function App() {
           </select>
         </label>
         <span className="toolbar-spacer" />
-        <span className="row-count">{tableRows.length.toLocaleString()} section{tableRows.length !== 1 ? 's' : ''} · {fmtInt(agg.waitlisted)} waitlisted</span>
+        <span className="row-count">{bodyState !== 'ready' ? '…' : tableRows.length.toLocaleString() + ' section' + (tableRows.length !== 1 ? 's' : '') + ' · ' + fmtInt(agg.waitlisted) + ' waitlisted'}</span>
         <button onClick={() => window.print()} title="Print this view">🖨️ Print</button>
         <button className="btn-excel" onClick={exportXlsx} disabled={tableRows.length === 0} title="Download the sections in view as Excel">📊 Excel</button>
       </div>
@@ -369,6 +355,19 @@ function App() {
         </div>
       </div>
 
+      {bodyState === 'loading' && (
+        <div className="loading-wrap">
+          <div className="juice-loader"></div>
+          <div className="juice-msg">Squeezing waitlist data…</div>
+        </div>
+      )}
+      {bodyState === 'error' && (
+        <div className="err">Couldn't load waitlist data: {error}. Try refreshing — if it persists, the report may not be configured for this org yet.</div>
+      )}
+      {bodyState === 'empty' && (
+        <div className="err">No section data returned for this org.</div>
+      )}
+      {bodyState === 'ready' && (<React.Fragment>
       <div className="report-blurb">
         <strong>Who's waiting for a spot, and what that demand is worth.</strong> Waitlist counts are live people
         (not canceled) on each section's waitlist. Conversion is all-time: joiners who later enrolled in the same
@@ -532,6 +531,7 @@ function App() {
           <li><b>Est. demand</b> — waitlisted × the section's default price. An estimate: assumes everyone waiting would enroll at list price if a seat existed.</li>
         </ul>
       </div>
+      </React.Fragment>)}
       </div>
     </div>
   );
