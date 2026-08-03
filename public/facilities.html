@@ -26,16 +26,21 @@
     .toolbar .btn-run { background: #16a34a; border-color: #16a34a; font-weight: 600; }
     .toolbar .btn-run:hover { background: #15803d; }
     .toolbar .btn-pdf { background: #3b82f6; border-color: #3b82f6; font-weight: 600; }
+    .toolbar .btn-pdf:hover { background: #2563eb; }
     .toolbar .btn-excel { background: #16803c; border-color: #16803c; font-weight: 600; }
-    .toolbar .btn-pdf:disabled, .toolbar .btn-excel:disabled { opacity: .45; cursor: not-allowed; }
+    .toolbar .btn-excel:hover { background: #15692f; }
+    .toolbar .btn-pdf:disabled, .toolbar .btn-excel:disabled { opacity: .5; cursor: not-allowed; }
 
-    /* PDF = print this view: hide the chrome, keep the report */
+    /* Print button + Puppeteer PDF capture (_print=1): hide the chrome, keep the report */
     @media print {
       .rec-banner, .toolbar, .fb-overlay, .leaflet-control-container { display: none !important; }
       body { background: #fff; }
       .page { padding: 0; }
       .sum-card, .fac-banner, .court-native .heatmap-grid { break-inside: avoid; }
     }
+    body.print-mode .rec-banner, body.print-mode .fb-overlay { display: none !important; }
+    body.print-mode { background: #fff; }
+    body.print-mode .page { padding: 0; }
     .toolbar .row-count { font-size: 11px; color: #aaa; }
     .toolbar .divider { width: 1px; height: 28px; background: rgba(255,255,255,.15); margin: 0 2px; }
     .toolbar .chk { flex-direction: row; align-items: center; gap: 6px; color: #ddd; text-transform: none; letter-spacing: 0; font-size: 12px; cursor: pointer; }
@@ -494,8 +499,9 @@
         e('span', { className: 'toolbar-spacer' }),
         e('span', { className: 'row-count' }, props.loading ? 'loading…' :
           (props.count == null ? '' : props.count.toLocaleString() + ' bookings · ' + props.sites.toLocaleString() + ' sites')),
-        e('button', { className: 'btn-pdf', disabled: !props.count, onClick: props.onPdf, title: 'Print or save this view as a PDF' }, 'PDF'),
-        e('button', { className: 'btn-excel', disabled: !props.count, onClick: props.onExcel, title: 'Download the bookings in view as Excel' }, 'Excel'),
+        e('button', { onClick: () => window.print(), title: 'Print this view' }, '🖨️ Print'),
+        e('button', { className: 'btn-pdf', disabled: !props.count || props.pdfLoading, onClick: props.onPdf, title: 'Download this view as a PDF' }, props.pdfLoading ? 'Generating…' : '📄 PDF'),
+        e('button', { className: 'btn-excel', disabled: !props.count, onClick: props.onExcel, title: 'Download the bookings in view as Excel' }, '📊 Excel'),
       );
     }
 
@@ -2010,16 +2016,22 @@
 
     function App() {
       const now = new Date();
-      const [start, setStart] = React.useState(fmtDate(monthStart(now)));
-      const [end, setEnd] = React.useState(fmtDate(monthEnd(now)));
-      const [tab, setTab] = React.useState(() => {
-        const qs = new URLSearchParams(window.location.search);
-        return qs.get('tab') || 'summary';
-      });
-      const [statusSel, setStatusSel] = React.useState(['confirmed', 'in-progress', 'canceled']);
-      const [typeSel, setTypeSel] = React.useState([]); // [] = all site types
+      // Print mode (Puppeteer PDF): /facilities?_print=1&start_date=&end_date=&
+      // status=&site_type=&tab= — hydrate the exact on-screen state from the
+      // URL so the captured PDF matches the filtered view that requested it.
+      const PQS = new URLSearchParams(window.location.search);
+      const isPrint = PQS.get('_print') === '1';
+      const [start, setStart] = React.useState(PQS.get('start_date') || fmtDate(monthStart(now)));
+      const [end, setEnd] = React.useState(PQS.get('end_date') || fmtDate(monthEnd(now)));
+      const [tab, setTab] = React.useState(() => PQS.get('tab') || 'summary');
+      const [statusSel, setStatusSel] = React.useState(() =>
+        PQS.get('status') ? PQS.get('status').split(',').filter(Boolean) : ['confirmed', 'in-progress', 'canceled']);
+      const [typeSel, setTypeSel] = React.useState(() =>
+        PQS.get('site_type') ? PQS.get('site_type').split(',').filter(Boolean) : []); // [] = all site types
       const [rows, setRows] = React.useState(null);      // null = loading
       const [err, setErr] = React.useState(null);
+      const [pdfLoading, setPdfLoading] = React.useState(false);
+      React.useEffect(() => { if (isPrint) document.body.classList.add('print-mode'); }, []);
 
       function load(s, en) {
         const sd = s || start, ed = en || end;
@@ -2085,10 +2097,31 @@
         const tabSuffix = (tab !== 'summary' && tab !== 'utilization') ? '-' + tab : '';
         XLSX.writeFile(wb, CFG.slug + '-facilities' + tabSuffix + '-' + start + '-to-' + end + '.xlsx');
       }
-      const exportPdf = () => window.print();
+      // PDF: server-side Puppeteer render of this page in print mode with the
+      // current filters — same mechanism as the Facility Rental Schedule report.
+      function downloadPdf() {
+        setPdfLoading(true);
+        const qs = new URLSearchParams({ start_date: start, end_date: end });
+        if (statusSel.length && statusSel.length < 3) qs.set('status', statusSel.join(','));
+        if (typeSel.length) qs.set('site_type', typeSel.join(','));
+        if (tab && tab !== 'summary') qs.set('tab', tab);
+        if (CFG.token) qs.set('token', CFG.token);
+        fetch('/' + CFG.slug + '/facilities/api/pdf?' + qs.toString())
+          .then(r => { if (!r.ok) throw new Error('Server returned ' + r.status); return r.blob(); })
+          .then(blob => {
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = CFG.slug + '-facilities-' + start + '.pdf';
+            a.click();
+            URL.revokeObjectURL(a.href);
+          })
+          .catch(er => alert('PDF generation failed: ' + er.message))
+          .finally(() => setPdfLoading(false));
+      }
 
       return e(React.Fragment, null,
-        e(Toolbar, { start, end, setStart, setEnd, thisMonth: setThisMonth, lastMonth: setLastMonth, thisYear: setThisYear, run: () => load(), loading: rows === null, count, sites: siteCount, onPdf: exportPdf, onExcel: exportExcel }),
+        isPrint ? null : e(Toolbar, { start, end, setStart, setEnd, thisMonth: setThisMonth, lastMonth: setLastMonth, thisYear: setThisYear, run: () => load(), loading: rows === null, count, sites: siteCount, onPdf: downloadPdf, onExcel: exportExcel, pdfLoading }),
+        rows !== null ? e('div', { id: 'report-ready', 'data-ready': 'true', style: { display: 'none' } }) : null,
         e('div', { className: 'page' },
           e('div', { className: 'report-header' },
             e('div', { className: 'report-header-left' },

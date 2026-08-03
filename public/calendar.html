@@ -15,7 +15,7 @@
   }
   *{box-sizing:border-box}
   body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
-  .wrap{max-width:1280px;margin:16px auto;padding:24px 28px;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.08);border-radius:2px}
+  .wrap{max-width:1400px;margin:16px auto;padding:24px 28px;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.08);border-radius:2px}
   .toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;background:transparent;
     padding:0 0 16px;margin-bottom:0;border:none;box-shadow:none}
   .toolbar .grow{flex:1}
@@ -835,7 +835,7 @@ function DayDetailPopup({date,events,onEv,onClose}){
             <div className="dp-count">{sorted.length} session{sorted.length!==1?'s':''}</div>
           </div>
           <div className="dp-actions">
-            <button onClick={handlePrint} title="Print this day">Print</button>
+            <button onClick={handlePrint} title="Print this day">🖨️ Print</button>
             <button onClick={onClose}>&#10005;</button>
           </div>
         </div>
@@ -1238,7 +1238,7 @@ function App(){
         )}
         <span className="range">{rangeLabel}</span>
         <span className="grow"></span>
-        <button onClick={()=>window.print()}>Print</button>
+        <button onClick={()=>window.print()}>🖨️ Print</button>
         <button onClick={()=>{const u=new URL(window.location.href);u.searchParams.set('present','1');if(actFilter)u.searchParams.set('activity',actFilter);if(locFilter)u.searchParams.set('location',locFilter);if(availFilter)u.searchParams.set('avail',availFilter);u.searchParams.set('week',fmtISO(weekStart));window.open(u.toString(),'_blank');}}>Present ▶</button>
         <select className="filter-sel" value={actFilter} onChange={e=>setActFilter(e.target.value)}>
           <option value="">All Activities</option>

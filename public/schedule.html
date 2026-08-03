@@ -14,7 +14,7 @@
   }
   *{box-sizing:border-box}
   body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
-  .wrap{max-width:1280px;margin:0 auto;padding:20px}
+  .wrap{max-width:1400px;margin:0 auto;padding:20px}
   .toolbar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;background:var(--card);
     border:1px solid var(--line);border-radius:12px;padding:12px 14px;box-shadow:var(--shadow);margin-bottom:16px}
   .toolbar .grow{flex:1}
@@ -335,7 +335,7 @@ function App(){
         <button onClick={()=>setWeekStart(addDays(weekStart,7))}>Next ›</button>
         <span className="range">{rangeLabel}</span>
         <span className="grow"></span>
-        <button onClick={()=>window.print()}>Print</button>
+        <button onClick={()=>window.print()}>🖨️ Print</button>
       </div>
 
       <div className="hdr">

@@ -25,7 +25,6 @@
     .toolbar .btn-pdf { background: #3b82f6; border-color: #3b82f6; font-weight: 600; }
     .toolbar .btn-pdf:hover { background: #2563eb; }
     .toolbar .btn-pdf:disabled { opacity: .5; cursor: not-allowed; }
-    .toolbar .btn-print { background: rgba(255,255,255,.08); font-weight: 500; }
     .toolbar .divider { width: 1px; height: 28px; background: rgba(255,255,255,.15); margin: 0 4px; }
     .toolbar .row-count { font-size: 11px; color: #aaa; }
 
@@ -37,7 +36,7 @@
     .split-bar button:hover:not(.active) { background: rgba(255,255,255,.14); color: #ddd; }
 
     /* ── Page ── */
-    .page { max-width: 1320px; margin: 16px auto; padding: 24px 28px; background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
+    .page { max-width: 1400px; margin: 16px auto; padding: 24px 28px; background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
 
     /* ── Report header ── */
     .report-header { display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 2.5px solid #111; padding-bottom: 8px; margin-bottom: 16px; }
@@ -683,9 +682,9 @@ function App() {
         <span className="toolbar-spacer"></span>
         <span className="row-count">{filtered.length} section{filtered.length !== 1 ? 's' : ''} · {kpis.uInstr} instructor{kpis.uInstr !== 1 ? 's' : ''}</span>
         <span className="divider"></span>
+        <button onClick={() => window.print()}>🖨️ Print</button>
         <button className="btn-pdf" onClick={downloadPdf} disabled={pdfLoading || !rows || rows.length === 0}>{pdfLoading ? 'Generating…' : '📄 PDF'}</button>
-        <button className="btn-excel" onClick={exportExcel}>⬇ Excel</button>
-        <button className="btn-print" onClick={() => window.print()}>🖨 Print</button>
+        <button className="btn-excel" onClick={exportExcel}>📊 Excel</button>
       </div>
 
       {/* ── Page ── */}
