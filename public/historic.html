@@ -91,32 +91,13 @@
     }
 
     /* ── Report header ── */
-    .report-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      border-bottom: 2.5px solid #111;
-      padding-bottom: 10px;
-      margin-bottom: 18px;
-      gap: 16px;
-    }
-    .report-header-left { display: flex; align-items: center; gap: 14px; }
-    .report-header-logo {
-      height: 42px;
-      max-width: 140px;
-      object-fit: contain;
-      object-position: left center;
-    }
-    .report-header .org-label {
-      font-size: 10px;
-      letter-spacing: 1.6px;
-      text-transform: uppercase;
-      color: #777;
-      font-weight: 600;
-    }
-    .report-header .title { font-size: 17px; font-weight: 700; margin-top: 1px; }
-    .report-header-right { text-align: right; }
-    .report-header .date-range { font-size: 11px; color: #666; }
+    .report-header { display:flex; justify-content:space-between; align-items:center; border-bottom:2.5px solid #111; padding-bottom:10px; margin-bottom:18px; gap:16px; }
+    .report-header-left { display:flex; align-items:center; gap:14px; }
+    .report-header-logo { height:42px; max-width:140px; object-fit:contain; object-position:left center; }
+    .report-header .org-label { font-size:10px; letter-spacing:1.6px; text-transform:uppercase; color:#777; font-weight:600; }
+    .report-header .title { font-size:17px; font-weight:700; margin-top:1px; color:#111827; }
+    .report-header-right { text-align:right; }
+    .report-header .rh-meta { font-size:11px; color:#666; }
 
     /* ── Date group ── */
     .date-group { margin-bottom: 20px; }
@@ -968,7 +949,7 @@ function App() {
 
   const now     = new Date();
   const runDate = `${String(now.getMonth()+1).padStart(2,'0')}/${String(now.getDate()).padStart(2,'0')}/${now.getFullYear()} @ ${now.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',hour12:true}).toLowerCase()}`;
-  const orgName = (rows.length > 0 && rows[0].orgName) ? rows[0].orgName : (meta.org_name || 'rec.us');
+  const orgName = (rows.length > 0 && rows[0].orgName) ? rows[0].orgName : (meta.org_name || orgSlug);
   const logoUrl = meta.logo_url || null;
   const dateRangeLabel = [loadedStart && formatDisplayDate(loadedStart), loadedEnd && formatDisplayDate(loadedEnd)].filter(Boolean).join(' – ') || 'Current Month';
 
@@ -986,7 +967,7 @@ function App() {
             </div>
           </div>
           <div className="report-header-right">
-            <div className="date-range">{dateRangeLabel}</div>
+            <div className="rh-meta" style={{fontWeight:600,marginBottom:2}}>{dateRangeLabel}</div>
           </div>
         </div>
 

@@ -35,11 +35,13 @@
 
     /* ── Report body ── */
     .report { max-width: 1400px; margin: 16px auto; padding: 24px 28px 48px; background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
-    .report-header { display: flex; align-items: center; gap: 18px; margin-bottom: 24px; }
-    .report-header-logo { max-height: 48px; max-width: 120px; object-fit: contain; }
-    .org-label { font-size: 14px; font-weight: 700; color: #333; }
-    .title { font-size: 19px; font-weight: 700; color: #111; margin-top: 2px; }
-    .subtitle { font-size: 12px; color: #888; margin-top: 3px; }
+    .report-header { display:flex; justify-content:space-between; align-items:center; border-bottom:2.5px solid #111; padding-bottom:10px; margin-bottom:18px; gap:16px; }
+    .report-header-left { display:flex; align-items:center; gap:14px; }
+    .report-header-logo { height:42px; max-width:140px; object-fit:contain; object-position:left center; }
+    .report-header .org-label { font-size:10px; letter-spacing:1.6px; text-transform:uppercase; color:#777; font-weight:600; }
+    .report-header .title { font-size:17px; font-weight:700; margin-top:1px; color:#111827; }
+    .report-header-right { text-align:right; }
+    .report-header .rh-meta { font-size:11px; color:#666; }
 
     /* ── Loading / Error ── */
     .loading { display: flex; flex-direction: column; align-items: center; padding: 48px 0; gap: 14px; }
@@ -1544,14 +1546,20 @@ function App() {
     React.createElement('div', { className: 'report' },
       /* Header */
       React.createElement('div', { className: 'report-header' },
-        logoUrl ? React.createElement('img', { className: 'report-header-logo', src: logoUrl, alt: '' }) : null,
-        React.createElement('div', null,
-          React.createElement('div', { className: 'org-label' }, displayOrg),
-          React.createElement('div', { className: 'title' }, 'Fast Track Report'),
-          React.createElement('div', { className: 'subtitle' },
+        React.createElement('div', { className: 'report-header-left' },
+          logoUrl ? React.createElement('img', { className: 'report-header-logo', src: logoUrl, alt: '', onError: e => { e.target.style.display = 'none'; } }) : null,
+          React.createElement('div', null,
+            React.createElement('div', { className: 'org-label' }, displayOrg),
+            React.createElement('div', { className: 'title' }, 'Fast Track Report')
+          )
+        ),
+        React.createElement('div', { className: 'report-header-right' },
+          React.createElement('div', { className: 'rh-meta', style: { fontWeight: 600, marginBottom: 2 } },
             seasonFilter ? 'Season: ' + seasonFilter : 'All Seasons',
-            searchTerm.trim() ? ' · search: "' + searchTerm.trim() + '"' : '',
-            ' · ', programs.length, ' program', programs.length !== 1 ? 's' : '', ' · ', filtered.length, ' section', filtered.length !== 1 ? 's' : ''
+            searchTerm.trim() ? ' · search: "' + searchTerm.trim() + '"' : ''
+          ),
+          React.createElement('div', { className: 'rh-meta' },
+            programs.length, ' program', programs.length !== 1 ? 's' : '', ' · ', filtered.length, ' section', filtered.length !== 1 ? 's' : ''
           )
         )
       ),
