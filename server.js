@@ -8885,16 +8885,16 @@ app.get("/", (req, res) => {
 
         .org-section { background: #fff; border: 1px solid #d4d0ca; border-radius: 10px; margin-bottom: 20px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
     .org-header { display: flex; align-items: center; gap: 14px; padding: 16px 20px; background: #f9f8f6; border-bottom: 1px solid #e8e5df; }
-    .org-pulse-strip { display: flex; gap: 0; background: linear-gradient(135deg, #312e81 0%, #4338ca 50%, #4f46e5 100%); padding: 0; overflow-x: auto; }
+    .org-pulse-strip { display: flex; gap: 0; background: linear-gradient(135deg, #14532d 0%, #15803d 50%, #16a34a 100%); padding: 0; overflow-x: auto; }
     .pulse-item { flex: 1; min-width: 0; padding: 12px 16px; text-align: center; border-right: 1px solid rgba(255,255,255,0.1); }
     .pulse-item:last-child { border-right: none; }
     .pulse-val { font-size: 18px; font-weight: 700; color: #fff; white-space: nowrap; }
-    .pulse-label { font-size: 11px; font-weight: 600; color: #a5b4fc; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 2px; }
-    .pulse-sub { font-size: 10px; color: rgba(165,180,252,0.7); margin-top: 1px; white-space: nowrap; }
+    .pulse-label { font-size: 11px; font-weight: 600; color: #bbf7d0; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 2px; }
+    .pulse-sub { font-size: 10px; color: rgba(187,247,208,0.7); margin-top: 1px; white-space: nowrap; }
     .pulse-delta { font-size: 10px; font-weight: 600; margin-top: 2px; white-space: nowrap; }
-    .pulse-date-label { font-size: 10px; font-weight: 600; color: #a5b4fc; text-transform: uppercase; letter-spacing: 0.5px; padding: 4px 16px 0; background: linear-gradient(135deg, #312e81 0%, #4338ca 50%, #4f46e5 100%); }
-    .delta-up { color: #4ade80; }
-    .delta-down { color: #f87171; }
+    .pulse-date-label { font-size: 10px; font-weight: 600; color: #bbf7d0; text-transform: uppercase; letter-spacing: 0.5px; padding: 4px 16px 0; background: linear-gradient(135deg, #14532d 0%, #15803d 50%, #16a34a 100%); }
+    .delta-up { color: #d9f99d; }
+    .delta-down { color: #fecaca; }
     .org-logo { height: 32px; width: auto; object-fit: contain; flex-shrink: 0; }
     .org-header-text { flex: 1; }
     .org-name { font-weight: 700; font-size: 14px; }
