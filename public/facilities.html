@@ -2059,19 +2059,31 @@
 
       const bannerAgg = rows ? aggregate(rows, statusSel, typeSel) : null;
 
-      // Excel: the bookings currently in view (date range + status + site-type
-      // filters), every column the card provides. PDF: print-styled window.print.
+      // Exports mirror exactly what's on screen, like the other reports:
+      // date range + status + site-type filters, and the active tab's scope
+      // (vertical tabs export only their sites; racket matches courts by name).
+      // PDF prints the current view, so it is view-scoped by construction.
       function exportExcel() {
         if (!rows || rows.length === 0 || typeof XLSX === 'undefined') return;
         const ts = new Set(typeSel), ss = new Set(statusSel);
-        const scoped = rows.filter(r => (ts.size === 0 || ts.has(r['Site Type'])) && ss.has(lc(r['Status'])));
+        let scoped = rows.filter(r => (ts.size === 0 || ts.has(r['Site Type'])) && ss.has(lc(r['Status'])));
+        let scopeLabel = 'Facility Bookings';
+        if (tab === 'racket') {
+          scoped = scoped.filter(r => isRacketCourt(r['Facility'], r['Location']));
+          scopeLabel = 'Racket Sports';
+        } else if (VERT_CONFIG[tab]) {
+          const vt = new Set(VERT_CONFIG[tab].types);
+          scoped = scoped.filter(r => vt.has(r['Site Type']));
+          scopeLabel = VERT_CONFIG[tab].label;
+        }
         if (scoped.length === 0) return;
         const cols = Object.keys(rows[0]);
         const ws = XLSX.utils.json_to_sheet(scoped, { header: cols });
         ws['!cols'] = cols.map(c => ({ wch: Math.min(32, Math.max(10, String(c).length + 4)) }));
         const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, 'Facility Bookings');
-        XLSX.writeFile(wb, CFG.slug + '-facilities-' + start + '-to-' + end + '.xlsx');
+        XLSX.utils.book_append_sheet(wb, ws, scopeLabel.slice(0, 31));
+        const tabSuffix = (tab !== 'summary' && tab !== 'utilization') ? '-' + tab : '';
+        XLSX.writeFile(wb, CFG.slug + '-facilities' + tabSuffix + '-' + start + '-to-' + end + '.xlsx');
       }
       const exportPdf = () => window.print();
 
