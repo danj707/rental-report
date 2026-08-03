@@ -112,10 +112,14 @@ conversion, ~$264,650 unmet demand (active waitlist × default section price).
 - [x] Front-end: Waitlist Demand band + Waitlist column (presence-gated)
 - [x] `ORGS` map: stale per-org calendar references removed (Watertown 16897,
       Apex 16765, Joplin 17161, Shrewsbury 17302)
-- [ ] After PR review: apply `card-17298-*.sql` to Metabase card 17298
-- [ ] After PR review: apply `card-17295-*.sql` to Metabase card 17295
-- [ ] After the ORGS strip deploys: archive Metabase cards 16765 / 16897 /
-      17161 / 17302 (public UUIDs 8a3dac9b…, 70717c4f…, 2b6e6819…, f4e55dd3…)
+- [x] 2026-08-03 (post-merge): applied `card-17298-*.sql` to card 17298 — verified
+      live via public API (Apex, 30 days: 163 'Full - Waitlist Open' + 74
+      'Closed - Full - Waitlist'). NOTE: API updates reset template-tag types to
+      Text; Dan re-set Start/End Date to type Date in the UI (see CLAUDE.md).
+- [x] 2026-08-03 (post-merge): applied `card-17295-*.sql` (v4) to card 17295 —
+      same Date-type flip required before verification passes.
+- [x] 2026-08-03: archived stale Metabase cards 16765 / 16897 / 17161 / 17302
+      after the ORGS strip deployed to production (both envs SUCCESS on d5bef89)
 - [ ] Decide whether reports should honor `waitlist_override` (confirm semantics with eng)
 - [ ] Phase 2 (future): waitlist offer funnel — time-to-claim & expiry rates via
       `temporary_grant` (`created_at`/`expires_at`/`claims` jsonb — claims shape

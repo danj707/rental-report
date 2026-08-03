@@ -5,6 +5,18 @@
 - **Always share the Railway PR-preview URL** whenever I open a PR for this repo,
   without being asked — Dan wants to click through the change before merging.
 
+## Metabase card updates via API/MCP — template-tag types reset (IMPORTANT)
+
+Updating a card's SQL through the Metabase API/MCP (`construct_native_query` +
+`update_question`) regenerates ALL template tags as **Text** — date tags lose
+their Date type, so this server's `date/single` parameters stop matching and the
+public card returns "An error occurred." (the app then serves stale cache).
+**After ANY programmatic card update, Dan must open the card in the Metabase UI
+and flip each date variable (Start Date / End Date) back to type Date.** Batch
+card updates so Dan can do all the flips in one visit, verify with a
+server-style parameterized request afterward, and never assume a card update is
+done until that verification passes.
+
 ## Railway deploys
 
 Railway project **lucid-possibility** (`37e39bf4-114d-446f-b7e3-5a8cedc7fafd`),
