@@ -27,6 +27,15 @@
     .toolbar .btn-run:hover { background: #15803d; }
     .toolbar .btn-pdf { background: #3b82f6; border-color: #3b82f6; font-weight: 600; }
     .toolbar .btn-excel { background: #16803c; border-color: #16803c; font-weight: 600; }
+    .toolbar .btn-pdf:disabled, .toolbar .btn-excel:disabled { opacity: .45; cursor: not-allowed; }
+
+    /* PDF = print this view: hide the chrome, keep the report */
+    @media print {
+      .rec-banner, .toolbar, .fb-overlay, .leaflet-control-container { display: none !important; }
+      body { background: #fff; }
+      .page { padding: 0; }
+      .sum-card, .fac-banner, .court-native .heatmap-grid { break-inside: avoid; }
+    }
     .toolbar .row-count { font-size: 11px; color: #aaa; }
     .toolbar .divider { width: 1px; height: 28px; background: rgba(255,255,255,.15); margin: 0 2px; }
     .toolbar .chk { flex-direction: row; align-items: center; gap: 6px; color: #ddd; text-transform: none; letter-spacing: 0; font-size: 12px; cursor: pointer; }
@@ -282,6 +291,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <script type="text/babel">
     const CFG = window.ORG_CONFIG || {};
     const e = React.createElement;
@@ -484,8 +494,8 @@
         e('span', { className: 'toolbar-spacer' }),
         e('span', { className: 'row-count' }, props.loading ? 'loading…' :
           (props.count == null ? '' : props.count.toLocaleString() + ' bookings · ' + props.sites.toLocaleString() + ' sites')),
-        e('button', { className: 'btn-pdf', disabled: true }, 'PDF'),
-        e('button', { className: 'btn-excel', disabled: true }, 'Excel'),
+        e('button', { className: 'btn-pdf', disabled: !props.count, onClick: props.onPdf, title: 'Print or save this view as a PDF' }, 'PDF'),
+        e('button', { className: 'btn-excel', disabled: !props.count, onClick: props.onExcel, title: 'Download the bookings in view as Excel' }, 'Excel'),
       );
     }
 
@@ -2049,8 +2059,36 @@
 
       const bannerAgg = rows ? aggregate(rows, statusSel, typeSel) : null;
 
+      // Exports mirror exactly what's on screen, like the other reports:
+      // date range + status + site-type filters, and the active tab's scope
+      // (vertical tabs export only their sites; racket matches courts by name).
+      // PDF prints the current view, so it is view-scoped by construction.
+      function exportExcel() {
+        if (!rows || rows.length === 0 || typeof XLSX === 'undefined') return;
+        const ts = new Set(typeSel), ss = new Set(statusSel);
+        let scoped = rows.filter(r => (ts.size === 0 || ts.has(r['Site Type'])) && ss.has(lc(r['Status'])));
+        let scopeLabel = 'Facility Bookings';
+        if (tab === 'racket') {
+          scoped = scoped.filter(r => isRacketCourt(r['Facility'], r['Location']));
+          scopeLabel = 'Racket Sports';
+        } else if (VERT_CONFIG[tab]) {
+          const vt = new Set(VERT_CONFIG[tab].types);
+          scoped = scoped.filter(r => vt.has(r['Site Type']));
+          scopeLabel = VERT_CONFIG[tab].label;
+        }
+        if (scoped.length === 0) return;
+        const cols = Object.keys(rows[0]);
+        const ws = XLSX.utils.json_to_sheet(scoped, { header: cols });
+        ws['!cols'] = cols.map(c => ({ wch: Math.min(32, Math.max(10, String(c).length + 4)) }));
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, scopeLabel.slice(0, 31));
+        const tabSuffix = (tab !== 'summary' && tab !== 'utilization') ? '-' + tab : '';
+        XLSX.writeFile(wb, CFG.slug + '-facilities' + tabSuffix + '-' + start + '-to-' + end + '.xlsx');
+      }
+      const exportPdf = () => window.print();
+
       return e(React.Fragment, null,
-        e(Toolbar, { start, end, setStart, setEnd, thisMonth: setThisMonth, lastMonth: setLastMonth, thisYear: setThisYear, run: () => load(), loading: rows === null, count, sites: siteCount }),
+        e(Toolbar, { start, end, setStart, setEnd, thisMonth: setThisMonth, lastMonth: setLastMonth, thisYear: setThisYear, run: () => load(), loading: rows === null, count, sites: siteCount, onPdf: exportPdf, onExcel: exportExcel }),
         e('div', { className: 'page' },
           e('div', { className: 'report-header' },
             e('div', { className: 'report-header-left' },
