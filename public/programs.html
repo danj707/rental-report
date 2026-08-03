@@ -2274,6 +2274,8 @@ function App() {
                     <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:12,flexWrap:'wrap'}}>
                       <span style={{fontSize:12,fontWeight:700,color:'#92400e',textTransform:'uppercase',letterSpacing:'0.05em'}}>⏳ Waitlist Demand</span>
                       <span style={{fontSize:11,color:'#94a3b8'}}>residents waiting for spots in full sections — a signal to add capacity</span>
+                      <span style={{flex:1}} />
+                      <a href={(function(){ var qs = new URLSearchParams(window.location.search); var t = qs.get('token'); return '/' + orgSlug + '/waitlist' + (t ? '?token=' + encodeURIComponent(t) : ''); })()} style={{fontSize:11,fontWeight:600,color:'#92400e',textDecoration:'none'}}>Full waitlist report →</a>
                     </div>
                     <div style={{display:'flex',gap:28,flexWrap:'wrap',alignItems:'flex-start'}}>
                       <div>

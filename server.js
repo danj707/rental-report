@@ -91,6 +91,7 @@ const REPORT_CACHE_TTL = {
   memberships: 4 * 60 * 60 * 1000,        // 4 hrs
   products: 4 * 60 * 60 * 1000,           // 4 hrs
   fasttrack: 6 * 60 * 60 * 1000,          // 6 hrs — very stable
+  waitlist: 6 * 60 * 60 * 1000,           // 6 hrs — demand shifts slowly
   "court-utilization": 6 * 60 * 60 * 1000, // 6 hrs
   "program-demographics": 6 * 60 * 60 * 1000, // 6 hrs
   calendar: 2 * 60 * 60 * 1000,           // 2 hrs — schedule changes
@@ -911,7 +912,7 @@ const ORGS = {
   },
 };
 
-const REPORT_TYPES = ["facility", "gl", "historic", "programs", "roster", "products", "memberships", "court-utilization", "calendar", "fasttrack", "users", "program-demographics", "instructor-payout", "retention", "annual-report", "section-detail", "ice-calendar", "qoq", "checkins", "program-checkins", "selfservice"];
+const REPORT_TYPES = ["facility", "gl", "historic", "programs", "roster", "products", "memberships", "court-utilization", "calendar", "fasttrack", "waitlist", "users", "program-demographics", "instructor-payout", "retention", "annual-report", "section-detail", "ice-calendar", "qoq", "checkins", "program-checkins", "selfservice"];
 
 // ── Friendly report directory — label + emoji per report type ──────────
 // Powers the smart Project-Update composer (auto-draft from the changelog):
@@ -927,6 +928,7 @@ const REPORT_DIRECTORY = {
   memberships:         { label: "Memberships",              emoji: "🎫" },
   calendar:            { label: "Program Calendar",         emoji: "🗓️" },
   fasttrack:           { label: "Fast Track",               emoji: "⚡" },
+  waitlist:            { label: "Waitlist Demand",          emoji: "⏳" },
   users:               { label: "Community Intel",          emoji: "👥" },
   "instructor-payout": { label: "Instructor Payout",        emoji: "💰" },
   rentalcalendar:      { label: "Rental Calendar",          emoji: "🏟️" },
@@ -947,6 +949,9 @@ const SHARED_UUIDS = {
   calendar: "d77a2171-6cc8-4c11-b014-a6ad45491bf4",
   "court-utilization": "7b0fca20-8fe0-4720-9653-7e15c30176b2",
   fasttrack: "9d38ab95-8562-42ca-b6c2-2582b7452457",
+  // Metabase question #19273 ("✅ Waitlist Demand Report") — standalone Waitlist
+  // report. null until the card's public link is enabled; report stays hidden.
+  waitlist: null,
   roster: "31bdf26f-0b2e-4ac2-ae31-69edbefd894c",
   memberships: "f4496307-d965-4637-b048-ecc703f2d37f",
   products: "b9678f5f-b5fb-48f7-96da-f22a1b4e8d8a",
@@ -983,6 +988,10 @@ const REPORT_DEPENDENCIES = {
   programs: {
     tables: ["program","section","session","booking","order_item","users","profile","program_activity","activity","section_season","season","section_price","location","attendance_event","registration_window","waitlist"],
     columns: { program:["id","name","type","organization_id"], section:["id","name","program_id","capacity","default_capacity","canceled_at","registration_mode","organization_id","section_code","publish_at","gl_account_id","primary_location_id","archived_at"], session:["id","section_id","location_id","starts_at","ends_at","canceled_at","capacity","organization_id"], booking:["id","type","status","section_id","session_id","customer_user_id","participant_user_id","canceled_at","is_fast_track","organization_id","participant_data","created_at"], order_item:["id","booking_id","applied_pricing","name","product_type","organization_id","fully_paid_at"], users:["id","first_name","last_name","email","phone","household_id"], profile:["user_id","date_of_birth","grade","gender"], activity:["id","name","organization_id","category_id"], attendance_event:["id","target_id","target_type","participant_user_id","type","check_in_method_type","organization_id","created_at"], waitlist:["id","section_id","session_id","participant_user_id","created_at","canceled_at","deleted_at","organization_id"] }
+  },
+  waitlist: {
+    tables: ["waitlist","temporary_grant","section","program","session","booking","section_price","section_season","season","class_activity","activity","location","organization"],
+    columns: { waitlist:["id","section_id","session_id","participant_user_id","temporary_grant_id","created_at","canceled_at","deleted_at","organization_id"], temporary_grant:["id","created_at","updated_at","expires_at","claims","participant_user_id","organization_id"], section:["id","name","program_id","capacity","registration_mode","waitlist_config","canceled_at","archived_at","organization_id","class_id"], session:["id","section_id","starts_at","ends_at","canceled_at","waitlist_config","organization_id"], booking:["id","status","section_id","session_id","participant_user_id","canceled_at","created_at","organization_id"], section_price:["id","section_id","type","price"] }
   },
   memberships: {
     tables: ["membership","membership_user","group","group_schema","users","profile","household","order_item","payment","section_price"],
@@ -1333,7 +1342,11 @@ const RENTAL_CALENDAR_ORGS = new Set(["watertown", "norman", "niagarafalls"]);
 // the inverse of the normal opt-out hidden-list semantics. Use reportHiddenForOrg().
 // (Facilities graduated out of here — it's now visible by default, replacing the
 //  retired standalone Court Utilization card.)
-const DEFAULT_HIDDEN_REPORTS = new Set([]);
+const DEFAULT_HIDDEN_REPORTS = new Set([
+  // Waitlist Demand — new report, rolled out per-org: hidden everywhere until
+  // Dan enables it from the admin dashboard toggle (listed = shown).
+  "waitlist",
+]);
 // Reports RETIRED as standalone cards: kept as valid report types + endpoints
 // (so the Facilities hub's native Court Utilization tab, chat, and /api/data all
 // keep working) but no longer rendered as a clickable card on org/admin grids.
@@ -1434,6 +1447,7 @@ const DEFAULT_REPORT_TIER = {
   "court-utilization": "standard",
   users:               "standard",
   fasttrack:           "standard",
+  waitlist:            "standard",
   memberships:         "standard",
   historic:            "low",
   roster:              "low",
@@ -1931,7 +1945,8 @@ function reportHiddenForOrg(slug, rt) {
 function visibleReportsForOrg(slug) {
   const org = ORGS[slug];
   if (!org) return [];
-  const hidden = new Set(getHiddenReports(slug));
+  const hidden = new Set(getHiddenReports(slug).filter(r => !DEFAULT_HIDDEN_REPORTS.has(r)));
+  DEFAULT_HIDDEN_REPORTS.forEach(r => { if (reportHiddenForOrg(slug, r)) hidden.add(r); });
   const out = REPORT_TYPES.filter(r =>
     !NON_ADDABLE_REPORTS.has(r) && !RETIRED_REPORTS.has(r) &&
     (org[r]?.mbUuid || SHARED_UUIDS[r]) && !hidden.has(r));
@@ -3233,7 +3248,7 @@ app.get("/api/org-visibility/:slug", (req, res) => {
     const hasPerOrg = org[rt]?.mbUuid;
     const hasShared = SHARED_UUIDS[rt];
     if (hasPerOrg || hasShared) {
-      available.push({ type: rt, visible: !hidden.has(rt) });
+      available.push({ type: rt, visible: DEFAULT_HIDDEN_REPORTS.has(rt) ? !reportHiddenForOrg(slug, rt) : !hidden.has(rt) });
     }
   }
   // Also check non-REPORT_TYPES that can be toggled (chat, report-wizard, rentalcalendar)
@@ -3299,7 +3314,7 @@ function parseToISO(dateStr) {
 
 // ── Build Metabase parameters array ─────────────────────────────────
 const FORWARD_REPORTS = new Set(["facility", "calendar", "roster", "historic"]);
-const NO_DATE_REPORTS = new Set(["program-demographics", "memberships", "users", "retention", "section-detail", "ice-calendar", "checkins", "fasttrack"]);
+const NO_DATE_REPORTS = new Set(["program-demographics", "memberships", "users", "retention", "section-detail", "ice-calendar", "checkins", "fasttrack", "waitlist"]);
 const DEFAULT_WINDOW_DAYS = 7;
 
 function buildMetabaseParams(query, reportType, orgId) {
@@ -4056,7 +4071,7 @@ const CHAT_REPORT_LABELS = {
   facility: "Facility Rental Schedule", gl: "GL Code Rollup",
   programs: "Programs & Enrollment", products: "Product Sales",
   memberships: "Memberships", "court-utilization": "Court Utilization",
-  roster: "Class Roster", fasttrack: "Fast Track Demand",
+  roster: "Class Roster", fasttrack: "Fast Track Demand", waitlist: "Waitlist Demand",
   historic: "Historic Buildings", calendar: "Calendar",
 };
 
@@ -4367,6 +4382,7 @@ const WIZARD_SOURCE_HINTS = {
   facility: 'Facility rental bookings with dates, times, locations, reservees, totals. Use for utilization, booking patterns, facility revenue.',
   users: 'Community/household-level data: demographics, revenue per household, membership status. Use for community analytics.',
   fasttrack: 'Fast Track (self-service) data: FT wishlists, conversions, demand signals. Use for FT adoption analysis.',
+  waitlist: 'Waitlist demand per section: people waiting now, all-time joiners, waitlist-to-enrollment conversion, unmet demand dollars, claim-time buckets. Use for capacity-planning and "add another section" analysis.',
   products: 'Product sales: daily revenue, units sold, refunds by product. Use for merchandise/concession analysis.',
   memberships: 'Membership/pass data: active members, plan types, renewal dates. Use for membership retention analysis.',
   'court-utilization': 'Court/field utilization: reserved hours, usage percentages. Use for facility utilization rates.',
@@ -6985,6 +7001,15 @@ app.get("/:org/fasttrack", (req, res) => {
   res.type("html").send(require("fs").readFileSync(path.join(__dirname, "public", "fasttrack.html"), "utf8"));
 });
 
+app.get("/:org/waitlist", (req, res) => {
+  const slug = req.params.org;
+  const org  = ORGS[slug];
+  if (!org) return res.status(404).send("Unknown org");
+  if (!org.waitlist?.mbUuid && !SHARED_UUIDS.waitlist) return res.status(404).send("Waitlist report not configured for this org.");
+  logEvent(slug, "waitlist", "view", req);
+  res.type("html").send(require("fs").readFileSync(path.join(__dirname, "public", "waitlist.html"), "utf8"));
+});
+
 app.get("/:org/instructor-payout", (req, res) => {
   const slug = req.params.org;
   const org = ORGS[slug];
@@ -7294,7 +7319,7 @@ app.get("/:org", async (req, res, next) => {
   const slugTitle = slug.charAt(0).toUpperCase() + slug.slice(1);
   const allAvailable = REPORT_TYPES.filter(r => !NON_ADDABLE_REPORTS.has(r) && !RETIRED_REPORTS.has(r) && (org[r]?.mbUuid || SHARED_UUIDS[r]));
   const orgHidden = new Set(getHiddenReports(slug));
-  const available = allAvailable.filter(r => !orgHidden.has(r));
+  const available = allAvailable.filter(r => DEFAULT_HIDDEN_REPORTS.has(r) ? !reportHiddenForOrg(slug, r) : !orgHidden.has(r));
   // Rental calendar — non-Metabase, per-org opt-in
   if (RENTAL_CALENDAR_ORGS.has(slug) && !orgHidden.has('rentalcalendar')) available.push('rentalcalendar');
   if ((org.gl?.mbUuid || SHARED_UUIDS.gl) && !orgHidden.has('qoq')) available.push('qoq');
@@ -8425,6 +8450,7 @@ app.get("/", (req, res) => {
     "court-utilization": { label: "Court Utilization",  icon: "🎾", desc: "Court utilization % or reserved hours by court, split by customer, program, and closure usage", color: "#0d9488", ai: true },
     calendar:    { label: "Program Calendar",               icon: "🗓️", desc: "Public class & rental schedule (week / list view)", color: "#ea580c", ai: true },
     fasttrack:   { label: "Fast Track",             icon: "⚡", desc: "Pre-registration demand signal with conversion tracking", color: "#6366f1", ai: true },
+    waitlist:    { label: "Waitlist Demand",        icon: "⏳", desc: "Waitlist pressure, conversion, and unmet demand — the add-another-section signal", color: "#b45309" },
     users:       { label: "Community Intel",            icon: "👥", desc: "Demographics, revenue, and strategy intelligence across your community", color: "#7c3aed", ai: true },
     "instructor-payout": { label: "Instructor Payout", ai: true, icon: "💰", desc: "Revenue splits and payout calculations by instructor", color: "#6366f1" },
 
@@ -8459,7 +8485,7 @@ app.get("/", (req, res) => {
     const orgHidden = hiddenReports[slug] || [];
     const cards = available.map(r => {
       const m = reportMeta[r] || { label: r, icon: "\u{1F4C4}", desc: "", color: "#888" };
-      const isHidden = orgHidden.indexOf(r) >= 0;
+      const isHidden = DEFAULT_HIDDEN_REPORTS.has(r) ? reportHiddenForOrg(slug, r) : orgHidden.indexOf(r) >= 0;
       const dimCls = isHidden ? ' report-card-hidden' : '';
       return `
         <a href="/${slug}/${r}${tokenQS}" class="report-card${dimCls}" style="--accent:${m.color}" data-org="${slug}" data-report="${r}">
@@ -9217,6 +9243,7 @@ app.get("/", (req, res) => {
     ['memberships',/\\bmembership/i],
     ['roster',/\\broster\\b|class roster/i],
     ['fasttrack',/fast\\s*track/i],
+    ['waitlist',/\\bwait\\s*list/i],
     ['users',/community intel/i],
     ['products',/product sales|\\bproducts?:/i],
     ['programs',/\\bprograms?\\b/i],
@@ -11037,6 +11064,12 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  { date: '2026-08-03', title: 'New report: Waitlist Demand', items: [
+    'A standalone Waitlist report (⏳) — who is waiting for a spot right now, how waitlists convert into enrollments, and which sections have earned another one.',
+    'Summary tiles (waitlisted now, waitlist → enrolled conversion, unmet demand dollars, offers claimed), the offer funnel, time-to-claim distribution with the 8-hour link-expiry marker, waitlist mode mix, and a sortable pressure table (waitlisted ÷ capacity) with Excel export.',
+    'The Programs Summary tab’s Waitlist Demand band now links through to the full report.',
+    'Powered by a dedicated shared Metabase card (#19273), so the heavier demand queries never slow the Programs report.',
+  ]},
   { date: '2026-08-03', title: 'Programs Summary: Net Rev column alongside period Collected', items: [
     'The Summary tab tables showed only period-scoped Collected (cash received inside the selected date range), so early in a month — the default range — every program showed a dash and the org looked revenue-less.',
     'All Programs and By Activity tables now also show lifetime Net Rev (received minus refunds), with hover tooltips explaining each column; % of Rev falls back to lifetime shares when no cash moved in the period.',
