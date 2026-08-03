@@ -91,6 +91,11 @@ demographics, retention, payout, check-ins, self-service, etc.).
 
 ## Status
 
-- [ ] Apply the mode fix to card 17298 (shared Calendar — the one that matters)
-- [ ] Apply the same fix to 16765 / 16897 / 17161 / 17302 (superseded but still public)
+- [x] Corrected SQL for all 5 cards checked into `docs/waitlist-fix/` (this PR) —
+      full card SQL, byte-identical except the mode predicate, ready to paste into
+      Metabase (or to be applied via MCP) once reviewed
+- [ ] After PR review: apply `docs/waitlist-fix/card-17298-*.sql` to card 17298
+      (shared Calendar — the one that matters)
+- [ ] After PR review: apply the matching files to 16765 / 16897 / 17161 / 17302
+      (superseded in this app but still public)
 - [ ] Decide whether reports should honor `waitlist_override` (confirm semantics with eng)
