@@ -1342,7 +1342,11 @@ const RENTAL_CALENDAR_ORGS = new Set(["watertown", "norman", "niagarafalls"]);
 // the inverse of the normal opt-out hidden-list semantics. Use reportHiddenForOrg().
 // (Facilities graduated out of here — it's now visible by default, replacing the
 //  retired standalone Court Utilization card.)
-const DEFAULT_HIDDEN_REPORTS = new Set([]);
+const DEFAULT_HIDDEN_REPORTS = new Set([
+  // Waitlist Demand — new report, rolled out per-org: hidden everywhere until
+  // Dan enables it from the admin dashboard toggle (listed = shown).
+  "waitlist",
+]);
 // Reports RETIRED as standalone cards: kept as valid report types + endpoints
 // (so the Facilities hub's native Court Utilization tab, chat, and /api/data all
 // keep working) but no longer rendered as a clickable card on org/admin grids.
@@ -1941,7 +1945,8 @@ function reportHiddenForOrg(slug, rt) {
 function visibleReportsForOrg(slug) {
   const org = ORGS[slug];
   if (!org) return [];
-  const hidden = new Set(getHiddenReports(slug));
+  const hidden = new Set(getHiddenReports(slug).filter(r => !DEFAULT_HIDDEN_REPORTS.has(r)));
+  DEFAULT_HIDDEN_REPORTS.forEach(r => { if (reportHiddenForOrg(slug, r)) hidden.add(r); });
   const out = REPORT_TYPES.filter(r =>
     !NON_ADDABLE_REPORTS.has(r) && !RETIRED_REPORTS.has(r) &&
     (org[r]?.mbUuid || SHARED_UUIDS[r]) && !hidden.has(r));
@@ -3243,7 +3248,7 @@ app.get("/api/org-visibility/:slug", (req, res) => {
     const hasPerOrg = org[rt]?.mbUuid;
     const hasShared = SHARED_UUIDS[rt];
     if (hasPerOrg || hasShared) {
-      available.push({ type: rt, visible: !hidden.has(rt) });
+      available.push({ type: rt, visible: DEFAULT_HIDDEN_REPORTS.has(rt) ? !reportHiddenForOrg(slug, rt) : !hidden.has(rt) });
     }
   }
   // Also check non-REPORT_TYPES that can be toggled (chat, report-wizard, rentalcalendar)
@@ -7314,7 +7319,7 @@ app.get("/:org", async (req, res, next) => {
   const slugTitle = slug.charAt(0).toUpperCase() + slug.slice(1);
   const allAvailable = REPORT_TYPES.filter(r => !NON_ADDABLE_REPORTS.has(r) && !RETIRED_REPORTS.has(r) && (org[r]?.mbUuid || SHARED_UUIDS[r]));
   const orgHidden = new Set(getHiddenReports(slug));
-  const available = allAvailable.filter(r => !orgHidden.has(r));
+  const available = allAvailable.filter(r => DEFAULT_HIDDEN_REPORTS.has(r) ? !reportHiddenForOrg(slug, r) : !orgHidden.has(r));
   // Rental calendar — non-Metabase, per-org opt-in
   if (RENTAL_CALENDAR_ORGS.has(slug) && !orgHidden.has('rentalcalendar')) available.push('rentalcalendar');
   if ((org.gl?.mbUuid || SHARED_UUIDS.gl) && !orgHidden.has('qoq')) available.push('qoq');
@@ -8480,7 +8485,7 @@ app.get("/", (req, res) => {
     const orgHidden = hiddenReports[slug] || [];
     const cards = available.map(r => {
       const m = reportMeta[r] || { label: r, icon: "\u{1F4C4}", desc: "", color: "#888" };
-      const isHidden = orgHidden.indexOf(r) >= 0;
+      const isHidden = DEFAULT_HIDDEN_REPORTS.has(r) ? reportHiddenForOrg(slug, r) : orgHidden.indexOf(r) >= 0;
       const dimCls = isHidden ? ' report-card-hidden' : '';
       return `
         <a href="/${slug}/${r}${tokenQS}" class="report-card${dimCls}" style="--accent:${m.color}" data-org="${slug}" data-report="${r}">

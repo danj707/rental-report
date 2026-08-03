@@ -7,29 +7,41 @@
 <title>Waitlist Demand</title>
 <style>
   * { box-sizing: border-box; }
-  body { background: #faf9f7; color: #1c1917; margin: 0; padding: 24px 16px 60px;
+  body { background: #faf9f7; color: #1c1917; margin: 0; padding: 0 0 60px;
     font: 13px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
-  .wrap { max-width: 1400px; margin: 0 auto; }
 
-  /* header + toolbar */
-  .rept-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
-  .rept-head img { height: 34px; width: auto; border-radius: 6px; }
-  .rept-head h1 { font-size: 19px; margin: 0; letter-spacing: -0.01em; }
-  .rept-head .sub { color: #57534e; font-size: 12px; }
-  .toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 16px;
-    background: #fff; border: 1px solid #e8e6e0; border-radius: 10px; padding: 9px 12px; }
-  .toolbar input[type="search"] { padding: 6px 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 12px; min-width: 190px; }
-  .toolbar select { padding: 6px 8px; border: 1px solid #ddd; border-radius: 6px; font-size: 12px; background: #fff; }
-  .toolbar .spacer { flex: 1; }
-  .btn { padding: 6px 12px; border: 1px solid #ddd; border-radius: 6px; background: #fff; font-size: 12px;
-    cursor: pointer; font-weight: 600; color: #44403c; }
-  .btn:hover { background: #f5f5f4; }
-  .btn-excel { background: #16803c; border-color: #16803c; color: #fff; font-weight: 600; }
-  .btn-excel:hover { background: #15692f; }
-  .btn-excel:disabled { opacity: .5; cursor: not-allowed; }
+  /* ── Toolbar — standard dark report toolbar ── */
+  .toolbar { position: sticky; top: 0; z-index: 100; display: flex; align-items: center; gap: 10px; padding: 8px 20px; background: #2c2c2c; color: #eee; font-size: 13px; flex-wrap: wrap; }
+  .toolbar-title { font-weight: 600; margin-right: 4px; }
+  .toolbar-back { color: #9ca3af; text-decoration: none; font-size: 12px; }
+  .toolbar-back:hover { color: #fff; }
+  .toolbar-spacer { flex: 1; }
+  .toolbar label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: #aaa; display: flex; flex-direction: column; gap: 2px; }
+  .toolbar input[type="search"] { padding: 5px 9px; border: 1px solid rgba(255,255,255,.25); border-radius: 4px; background: rgba(255,255,255,.1); color: #fff; font-size: 12px; font-family: inherit; outline: none; min-width: 190px; }
+  .toolbar input[type="search"]:focus { border-color: #3b82f6; }
+  .toolbar select { padding: 5px 8px; border: 1px solid rgba(255,255,255,.25); border-radius: 4px; background: #3a3a3a; color: #fff; font-size: 12px; font-family: inherit; }
+  .toolbar button { padding: 6px 14px; border: 1px solid rgba(255,255,255,.25); border-radius: 4px; background: rgba(255,255,255,.08); color: #fff; font-size: 12px; font-family: inherit; cursor: pointer; transition: background .15s; white-space: nowrap; }
+  .toolbar button:hover { background: rgba(255,255,255,.18); }
+  .toolbar .btn-excel { background: #16803c; border-color: #16803c; font-weight: 600; }
+  .toolbar .btn-excel:hover { background: #15692f; }
+  .toolbar .btn-excel:disabled { opacity: .5; cursor: not-allowed; }
+  .toolbar .row-count { font-size: 11px; color: #aaa; }
+  .toolbar .divider { width: 1px; height: 28px; background: rgba(255,255,255,.15); margin: 0 2px; }
+
+  /* ── Page + standard report header ── */
+  .page { max-width: 1400px; margin: 16px auto; padding: 24px 28px; background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
+  .report-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2.5px solid #111; padding-bottom: 10px; margin-bottom: 18px; gap: 16px; }
+  .report-header-left { display: flex; align-items: center; gap: 14px; }
+  .report-header-logo { height: 42px; max-width: 140px; object-fit: contain; object-position: left center; }
+  .report-header .org-label { font-size: 10px; letter-spacing: 1.6px; text-transform: uppercase; color: #777; font-weight: 600; }
+  .report-header .title { font-size: 17px; font-weight: 700; margin-top: 1px; }
+  .report-header-right { text-align: right; }
+  .report-header .date-range { font-size: 11px; color: #666; }
+
   @media print {
     .toolbar, .rec-banner, .fb-overlay { display: none !important; }
     body { background: #fff; }
+    .page { margin: 0; box-shadow: none; padding: 0; }
     .card, .panel, .band { break-inside: avoid; }
   }
 
@@ -278,14 +290,22 @@ function App() {
   const logoUrl = meta.logo_url || '';
   const updatedAt = meta.generated_at ? new Date(meta.generated_at).toLocaleString() : 'live';
 
+  const backHref = '/' + orgSlug + (URL_TOKEN ? '?token=' + encodeURIComponent(URL_TOKEN) : '');
+  const BareToolbar = () => (
+    <div className="toolbar">
+      <a className="toolbar-back" href={backHref}>←</a>
+      <span className="toolbar-title">Waitlist Demand</span>
+      <span className="toolbar-spacer" />
+    </div>
+  );
   if (loading) return (
-    <div className="wrap"><div className="loading-wrap">
+    <div><BareToolbar /><div className="page"><div className="loading-wrap">
       <div className="juice-loader"></div>
       <div className="juice-msg">Squeezing waitlist data…</div>
-    </div></div>
+    </div></div></div>
   );
-  if (error) return <div className="wrap"><div className="err">Couldn't load waitlist data: {error}. Try refreshing — if it persists, the report may not be configured for this org yet.</div></div>;
-  if (!rows || rows.length === 0) return <div className="wrap"><div className="err">No section data returned for this org.</div></div>;
+  if (error) return <div><BareToolbar /><div className="page"><div className="err">Couldn't load waitlist data: {error}. Try refreshing — if it persists, the report may not be configured for this org yet.</div></div></div>;
+  if (!rows || rows.length === 0) return <div><BareToolbar /><div className="page"><div className="err">No section data returned for this org.</div></div></div>;
 
   const histMax = Math.max(agg.c1h, agg.c4h, agg.c8h, agg.c24h, agg.c48h, agg.cMore, 1);
   const buckets = [
@@ -304,28 +324,49 @@ function App() {
   );
 
   return (
-    <div className="wrap">
-      <div className="rept-head">
-        {logoUrl ? <img src={logoUrl} alt="" /> : null}
-        <h1>{orgName} — Waitlist Demand</h1>
-        <span className="sub">demand you couldn't seat · updated {updatedAt}</span>
+    <div>
+      <div className="toolbar">
+        <a className="toolbar-back" href={backHref}>←</a>
+        <span className="toolbar-title">Waitlist Demand</span>
+        <span className="divider" />
+        <label>
+          Search
+          <input type="search" placeholder="Section or program…" value={search} onChange={e => setSearch(e.target.value)} />
+        </label>
+        <label>
+          Season
+          <select value={season} onChange={e => setSeason(e.target.value)}>
+            <option value="">All seasons</option>
+            {seasons.map(s => <option key={s} value={s}>{s}</option>)}
+          </select>
+        </label>
+        <label>
+          Status
+          <select value={status} onChange={e => setStatus(e.target.value)}>
+            <option value="active">Active (In Progress + Upcoming)</option>
+            <option value="inprogress">In Progress only</option>
+            <option value="upcoming">Upcoming only</option>
+            <option value="all">All (incl. Past)</option>
+          </select>
+        </label>
+        <span className="toolbar-spacer" />
+        <span className="row-count">{tableRows.length.toLocaleString()} section{tableRows.length !== 1 ? 's' : ''} · {fmtInt(agg.waitlisted)} waitlisted</span>
+        <button onClick={() => window.print()} title="Print this view">🖨️ Print</button>
+        <button className="btn-excel" onClick={exportXlsx} disabled={tableRows.length === 0} title="Download the sections in view as Excel">📊 Excel</button>
       </div>
 
-      <div className="toolbar">
-        <input type="search" placeholder="Search programs, sections, activities…" value={search} onChange={e => setSearch(e.target.value)} />
-        <select value={season} onChange={e => setSeason(e.target.value)}>
-          <option value="">All seasons</option>
-          {seasons.map(s => <option key={s} value={s}>{s}</option>)}
-        </select>
-        <select value={status} onChange={e => setStatus(e.target.value)}>
-          <option value="active">Active (In Progress + Upcoming)</option>
-          <option value="inprogress">In Progress only</option>
-          <option value="upcoming">Upcoming only</option>
-          <option value="all">All (incl. Past)</option>
-        </select>
-        <span className="spacer" />
-        <button className="btn" onClick={() => window.print()} title="Print this view">🖨️ Print</button>
-        <button className="btn btn-excel" onClick={exportXlsx} disabled={tableRows.length === 0} title="Download the sections in view as Excel">📊 Excel</button>
+      <div className="page">
+      <div className="report-header">
+        <div className="report-header-left">
+          {logoUrl ? <img src={logoUrl} alt="" className="report-header-logo" onError={e => e.target.style.display='none'} /> : null}
+          <div>
+            <div className="org-label">{orgName}</div>
+            <div className="title">Waitlist Demand Report</div>
+          </div>
+        </div>
+        <div className="report-header-right">
+          <div className="date-range">Demand you couldn't seat<br/>updated {updatedAt}</div>
+        </div>
       </div>
 
       <div className="report-blurb">
@@ -490,6 +531,7 @@ function App() {
           <li><b>Offers claimed &amp; time-to-claim</b> — from the claim grants the platform records when someone accepts an open spot; time-to-claim is measured grant creation → claim. Offers that expired unclaimed aren't recorded yet, so the funnel's "offered" stage stays unmeasured until an offer-sent event exists.</li>
           <li><b>Est. demand</b> — waitlisted × the section's default price. An estimate: assumes everyone waiting would enroll at list price if a seat existed.</li>
         </ul>
+      </div>
       </div>
     </div>
   );
