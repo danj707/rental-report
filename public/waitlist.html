@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="robots" content="noindex" />
+<title>Waitlist Demand</title>
+<style>
+  * { box-sizing: border-box; }
+  body { background: #faf9f7; color: #1c1917; margin: 0; padding: 24px 16px 60px;
+    font: 13px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+  .wrap { max-width: 1100px; margin: 0 auto; }
+
+  /* header + toolbar */
+  .rept-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+  .rept-head img { height: 34px; width: auto; border-radius: 6px; }
+  .rept-head h1 { font-size: 19px; margin: 0; letter-spacing: -0.01em; }
+  .rept-head .sub { color: #57534e; font-size: 12px; }
+  .toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 16px;
+    background: #fff; border: 1px solid #e8e6e0; border-radius: 10px; padding: 9px 12px; }
+  .toolbar input[type="search"] { padding: 6px 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 12px; min-width: 190px; }
+  .toolbar select { padding: 6px 8px; border: 1px solid #ddd; border-radius: 6px; font-size: 12px; background: #fff; }
+  .toolbar .spacer { flex: 1; }
+  .btn { padding: 6px 12px; border: 1px solid #ddd; border-radius: 6px; background: #fff; font-size: 12px;
+    cursor: pointer; font-weight: 600; color: #44403c; }
+  .btn:hover { background: #f5f5f4; }
+
+  .report-blurb { background: #fff; border: 1px solid #e8e6e0; border-radius: 8px; padding: 10px 14px;
+    font-size: 12px; color: #57534e; margin-bottom: 16px; }
+  .report-blurb strong { color: #1c1917; }
+
+  /* summary cards */
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(168px, 1fr)); gap: 12px; margin-bottom: 16px; }
+  .card { background: #fff; border: 1px solid #e8e6e0; border-radius: 9px; padding: 12px 14px; position: relative; }
+  .card.planned { border-style: dashed; }
+  .card .lbl { font-size: 9.5px; text-transform: uppercase; letter-spacing: .08em; color: #a8a29e; font-weight: 700; margin-bottom: 4px; }
+  .card .val { font-size: 21px; font-weight: 800; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+  .card .val.amber { color: #92400e; }
+  .card .val.green { color: #15803d; }
+  .card .val.muted { color: #a8a29e; }
+  .card .sub { font-size: 10.5px; color: #a8a29e; margin-top: 3px; }
+
+  /* bands + panels */
+  .band { background: linear-gradient(135deg, #fffbeb, #ffffff); border: 1px solid #fde68a; border-radius: 12px;
+    padding: 15px 18px 17px; margin-bottom: 16px; }
+  .band-h { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; margin-bottom: 13px; }
+  .band-h .t { font-size: 12px; font-weight: 700; color: #92400e; text-transform: uppercase; letter-spacing: .05em; }
+  .band-h .d { font-size: 11px; color: #a8a29e; }
+  .panel { background: #fff; border: 1px solid #e8e6e0; border-radius: 12px; padding: 15px 18px 14px; }
+  .panel-h { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; margin-bottom: 4px; }
+  .panel-h .t { font-size: 13px; font-weight: 700; }
+  .panel-h .d { font-size: 11px; color: #a8a29e; }
+  .twocol { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+  @media (max-width: 860px) { .twocol { grid-template-columns: 1fr; } }
+
+  /* funnel */
+  .funnel { display: flex; flex-direction: column; gap: 8px; }
+  .fstage { display: grid; grid-template-columns: 170px 1fr; gap: 14px; align-items: center; }
+  .fstage .fl { text-align: right; }
+  .fstage .fl .n { font-weight: 700; font-size: 12.5px; }
+  .fstage .fl .s { font-size: 10.5px; color: #a8a29e; }
+  .fbar { height: 26px; border-radius: 4px; min-width: 2px; display: flex; align-items: center; }
+  .fbar .fv { font-weight: 800; font-size: 12px; font-variant-numeric: tabular-nums; padding-left: 9px; color: #1c1917; white-space: nowrap; }
+  .fbar.ghost { border: 1.5px dashed #92400e; background: transparent; }
+  .fbar.ghost .fv { color: #92400e; font-weight: 700; }
+
+  /* histogram */
+  .hist { display: flex; align-items: flex-end; gap: 6px; height: 118px; margin-top: 14px; position: relative; }
+  .hcol { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; height: 100%; }
+  .hbar { width: 100%; max-width: 52px; background: #d97706; border-radius: 4px 4px 0 0; }
+  .hnum { font-size: 10px; font-weight: 700; color: #57534e; margin-bottom: 3px; font-variant-numeric: tabular-nums; }
+  .hlbl { font-size: 9.5px; color: #a8a29e; margin-top: 5px; white-space: nowrap; }
+  .expiry-rule { position: absolute; top: -4px; bottom: 16px; left: 49.6%; border-left: 2px dashed #b91c1c; opacity: .6; }
+  .expiry-tag { position: absolute; top: -7px; left: calc(49.6% + 6px); font-size: 9.5px; color: #b91c1c; font-weight: 700; }
+  .insight { margin-top: 12px; font-size: 11.5px; color: #57534e; border-top: 1px solid #e8e6e0; padding-top: 9px; }
+  .insight b { color: #92400e; }
+
+  /* mode mix */
+  .mix { display: flex; height: 18px; border-radius: 5px; overflow: hidden; margin: 16px 0 8px; }
+  .mix div + div { margin-left: 2px; }
+  .mixleg { display: flex; gap: 14px; flex-wrap: wrap; font-size: 10.5px; color: #57534e; }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 4px; }
+
+  /* table */
+  .tablecard { background: #fff; border: 1px solid #e8e6e0; border-radius: 12px; overflow: hidden; margin-bottom: 16px; }
+  .tablecard .cap { padding: 13px 18px 0; }
+  .tablecard .cap .t { font-size: 13px; font-weight: 700; }
+  .tablecard .cap .d { font-size: 11px; color: #a8a29e; margin-top: 2px; }
+  .tbl-scroll { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; margin-top: 10px; font-variant-numeric: tabular-nums; }
+  th { font-size: 9.5px; text-transform: uppercase; letter-spacing: .07em; color: #a8a29e; font-weight: 700;
+    text-align: left; padding: 7px 10px; border-bottom: 1px solid #e8e6e0; background: #faf9f7; white-space: nowrap; cursor: pointer; user-select: none; }
+  th.r, td.r { text-align: right; }
+  th.sorted { color: #92400e; }
+  td { padding: 8px 10px; border-bottom: 1px solid #f0eee8; font-size: 12.5px; white-space: nowrap; }
+  td.name { white-space: normal; min-width: 220px; }
+  td.name .prog { font-weight: 600; }
+  td.name .sec { font-size: 11px; color: #a8a29e; }
+  tr:hover td { background: #fafaf9; }
+  .press { font-weight: 800; }
+  .press.hot { color: #b91c1c; }
+  .press.warm { color: #92400e; }
+  .pressbar { display: inline-block; height: 7px; border-radius: 3px; background: #d97706; vertical-align: middle; margin-right: 7px; }
+  .pressbar.hot { background: #b91c1c; }
+  .modepill { font-size: 10px; font-weight: 700; border-radius: 999px; padding: 2px 8px; background: #dcfce7; color: #166534; white-space: nowrap; }
+  .modepill.mute { background: #faf9f7; color: #a8a29e; border: 1px solid #e8e6e0; font-weight: 600; }
+  .modepill.off { background: #fee2e2; color: #b91c1c; }
+  .statuspill { font-size: 10px; font-weight: 700; border-radius: 999px; padding: 2px 8px; }
+  .st-prog { background: #dcfce7; color: #166534; }
+  .st-up   { background: #fef3c7; color: #92400e; }
+  .st-past { background: #f5f5f4; color: #78716c; }
+  .totals-row td { font-weight: 700; background: #faf9f7; border-top: 2px solid #e8e6e0; }
+
+  .method { border: 1px solid #e8e6e0; border-radius: 12px; padding: 14px 18px; background: #fff; font-size: 11.5px; color: #57534e; }
+  .method .t { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: #a8a29e; margin-bottom: 8px; }
+  .method ul { margin: 0; padding-left: 16px; display: flex; flex-direction: column; gap: 5px; }
+
+  .err { background: #fee2e2; border: 1px solid #fecaca; color: #991b1b; border-radius: 8px; padding: 12px 16px; margin: 20px 0; }
+  .loading-wrap { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 70px 0; color: #999; }
+  .juice-msg { font-size: 12px; color: #999; }
+</style>
+</head>
+<body>
+
+<div id="root"></div>
+
+<script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
+<script type="text/babel">
+const { useState, useEffect, useMemo } = React;
+
+/* ── Helpers ── */
+const SP = new URLSearchParams(window.location.search);
+const URL_TOKEN = SP.get('token') || '';
+function withToken(url) { if (!URL_TOKEN) return url; const sep = url.includes('?') ? '&' : '?'; return url + sep + 'token=' + encodeURIComponent(URL_TOKEN); }
+
+const parts = window.location.pathname.split('/').filter(Boolean);
+const orgSlug = parts[0] || '';
+const basePath = '/' + parts.slice(0, 2).join('/');
+
+function fmtN(v) { const n = Number(v); return isNaN(n) ? 0 : n; }
+function fmtInt(v) { return fmtN(v).toLocaleString(); }
+function fmt$(v) { return '$' + Math.round(fmtN(v)).toLocaleString(); }
+function fmtD(d) { if (!d || String(d).length < 8) return ''; try { const s = new Date(d + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); return s === 'Invalid Date' ? '' : s; } catch { return ''; } }
+
+function normalizeRow(raw) {
+  return {
+    program:        raw['Program'] ?? '',
+    sectionId:      raw['Section Id'] ?? '',
+    section:        raw['Section'] ?? '',
+    season:         raw['Season'] ?? 'No Season',
+    status:         raw['Section Status'] ?? '',
+    startDate:      raw['Start Date'] ?? '',
+    endDate:        raw['End Date'] ?? '',
+    activity:       raw['Activity'] ?? 'Uncategorized',
+    mode:           raw['Waitlist Mode'] ?? null,
+    modeSource:     raw['Mode Source'] ?? 'none',
+    linkMin:        raw['Link Expiration Min'] != null ? fmtN(raw['Link Expiration Min']) : null,
+    capacity:       raw['Capacity'] != null ? fmtN(raw['Capacity']) : null,
+    enrolled:       fmtN(raw['Enrolled']),
+    price:          fmtN(raw['Price']),
+    waitlisted:     fmtN(raw['Waitlisted']),
+    wlAllTime:      fmtN(raw['Waitlist All-Time']),
+    wlConverted:    fmtN(raw['Waitlist Converted']),
+    demand:         fmtN(raw['Est Demand']),
+    pressure:       raw['Pressure %'] != null ? fmtN(raw['Pressure %']) : null,
+    oldestJoin:     raw['Oldest Active Join'] ?? '',
+    offersClaimed:  fmtN(raw['Offers Claimed']),
+    c1h:            fmtN(raw['Claim 1h']),
+    c4h:            fmtN(raw['Claim 4h']),
+    c8h:            fmtN(raw['Claim 8h']),
+    c24h:           fmtN(raw['Claim 24h']),
+    c48h:           fmtN(raw['Claim 48h']),
+    cMore:          fmtN(raw['Claim 48h Plus']),
+    orgName:        raw['Org Name'] ?? '',
+  };
+}
+
+const SORTS = {
+  waitlisted: (a, b) => b.waitlisted - a.waitlisted,
+  pressure:   (a, b) => (b.pressure ?? -1) - (a.pressure ?? -1),
+  demand:     (a, b) => b.demand - a.demand,
+  program:    (a, b) => (a.program + a.section).localeCompare(b.program + b.section),
+  enrolled:   (a, b) => b.enrolled - a.enrolled,
+};
+
+function App() {
+  const [rows, setRows]       = useState(null);
+  const [meta, setMeta]       = useState({});
+  const [error, setError]     = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch]   = useState('');
+  const [season, setSeason]   = useState('');
+  const [status, setStatus]   = useState('active'); // active = In Progress + Upcoming
+  const [sortKey, setSortKey] = useState('waitlisted');
+
+  useEffect(() => {
+    fetch(withToken(basePath + '/api/data' + ((SP.get('_nocache') === '1' || SP.get('_refresh') === '1') ? '?_nocache=1' : '')))
+      .then(r => { if (!r.ok) throw new Error('Server returned ' + r.status); return r.json(); })
+      .then(json => { setRows((json.rows || []).map(normalizeRow)); setMeta(json.meta || {}); })
+      .catch(e => setError(e.message))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const seasons = useMemo(() => {
+    if (!rows) return [];
+    const s = new Set(rows.map(r => r.season).filter(Boolean));
+    return Array.from(s).sort();
+  }, [rows]);
+
+  // Filtered rows drive everything on the page
+  const fRows = useMemo(() => {
+    if (!rows) return [];
+    const q = search.trim().toLowerCase();
+    return rows.filter(r => {
+      if (season && r.season !== season) return false;
+      if (status === 'active' && r.status === 'Past') return false;
+      if (status === 'inprogress' && r.status !== 'In Progress') return false;
+      if (status === 'upcoming' && r.status !== 'Upcoming') return false;
+      if (q && !(r.program.toLowerCase().includes(q) || r.section.toLowerCase().includes(q) || r.activity.toLowerCase().includes(q))) return false;
+      return true;
+    });
+  }, [rows, search, season, status]);
+
+  const agg = useMemo(() => {
+    const a = { waitlisted: 0, allTime: 0, converted: 0, demand: 0, offersClaimed: 0,
+                c1h: 0, c4h: 0, c8h: 0, c24h: 0, c48h: 0, cMore: 0,
+                modes: { 'remain-active': 0, 'reopen-registration': 0, off: 0, none: 0 },
+                sections: fRows.length };
+    fRows.forEach(r => {
+      a.waitlisted += r.waitlisted; a.allTime += r.wlAllTime; a.converted += r.wlConverted;
+      a.demand += r.demand; a.offersClaimed += r.offersClaimed;
+      a.c1h += r.c1h; a.c4h += r.c4h; a.c8h += r.c8h; a.c24h += r.c24h; a.c48h += r.c48h; a.cMore += r.cMore;
+      const m = r.mode || 'none';
+      if (a.modes[m] == null) a.modes[m] = 0;
+      a.modes[m] += 1;
+    });
+    a.convPct = a.allTime > 0 ? Math.round(a.converted / a.allTime * 1000) / 10 : null;
+    const within8 = a.c1h + a.c4h + a.c8h;
+    a.claimWithin8Pct = a.offersClaimed > 0 ? Math.round(within8 / a.offersClaimed * 100) : null;
+    return a;
+  }, [fRows]);
+
+  const tableRows = useMemo(() => {
+    const withWl = fRows.filter(r => r.waitlisted > 0 || r.wlAllTime > 0);
+    return withWl.sort(SORTS[sortKey] || SORTS.waitlisted);
+  }, [fRows, sortKey]);
+
+  function exportXlsx() {
+    const data = tableRows.map(r => ({
+      Program: r.program, Section: r.section, Season: r.season, Status: r.status,
+      Activity: r.activity, 'Waitlist Mode': r.mode || (r.modeSource === 'none' ? 'not configured' : r.modeSource),
+      Capacity: r.capacity, Enrolled: r.enrolled, Waitlisted: r.waitlisted,
+      'Waitlist All-Time': r.wlAllTime, Converted: r.wlConverted,
+      'Pressure %': r.pressure, 'Est Demand $': r.demand, Price: r.price,
+      'Offers Claimed': r.offersClaimed, 'Oldest Active Join': r.oldestJoin,
+      'Start Date': r.startDate, 'End Date': r.endDate,
+    }));
+    const ws = XLSX.utils.json_to_sheet(data);
+    ws['!cols'] = [{wch:28},{wch:28},{wch:14},{wch:11},{wch:16},{wch:15},{wch:8},{wch:8},{wch:10},{wch:14},{wch:10},{wch:10},{wch:12},{wch:8},{wch:13},{wch:16},{wch:11},{wch:11}];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Waitlist Demand');
+    XLSX.writeFile(wb, orgSlug + '-waitlist-demand.xlsx');
+  }
+
+  const orgName = (rows && rows.length > 0 && rows[0].orgName) || orgSlug;
+  const logoUrl = meta.logo_url || '';
+  const updatedAt = meta.generated_at ? new Date(meta.generated_at).toLocaleString() : 'live';
+
+  if (loading) return (
+    <div className="wrap"><div className="loading-wrap">
+      <div className="juice-loader"></div>
+      <div className="juice-msg">Squeezing waitlist data…</div>
+    </div></div>
+  );
+  if (error) return <div className="wrap"><div className="err">Couldn't load waitlist data: {error}. Try refreshing — if it persists, the report may not be configured for this org yet.</div></div>;
+  if (!rows || rows.length === 0) return <div className="wrap"><div className="err">No section data returned for this org.</div></div>;
+
+  const histMax = Math.max(agg.c1h, agg.c4h, agg.c8h, agg.c24h, agg.c48h, agg.cMore, 1);
+  const buckets = [
+    { k: '≤1h', v: agg.c1h }, { k: '1–4h', v: agg.c4h }, { k: '4–8h', v: agg.c8h },
+    { k: '8–24h', v: agg.c24h }, { k: '24–48h', v: agg.c48h }, { k: '48h+', v: agg.cMore },
+  ];
+  const after8 = agg.c24h + agg.c48h + agg.cMore;
+  const after8Pct = agg.offersClaimed > 0 ? Math.round(after8 / agg.offersClaimed * 100) : null;
+  const totalModes = Math.max(agg.sections, 1);
+  const funnelMax = Math.max(agg.allTime, 1);
+  const pressToBar = p => Math.min(70, Math.max(8, Math.round((p || 0) / 12)));
+
+  const Th = ({ id, children, right }) => (
+    <th className={(right ? 'r ' : '') + (sortKey === id ? 'sorted' : '')}
+        title="Click to sort" onClick={() => SORTS[id] && setSortKey(id)}>{children}{sortKey === id ? ' ↓' : ''}</th>
+  );
+
+  return (
+    <div className="wrap">
+      <div className="rept-head">
+        {logoUrl ? <img src={logoUrl} alt="" /> : null}
+        <h1>{orgName} — Waitlist Demand</h1>
+        <span className="sub">demand you couldn't seat · updated {updatedAt}</span>
+      </div>
+
+      <div className="toolbar">
+        <input type="search" placeholder="Search programs, sections, activities…" value={search} onChange={e => setSearch(e.target.value)} />
+        <select value={season} onChange={e => setSeason(e.target.value)}>
+          <option value="">All seasons</option>
+          {seasons.map(s => <option key={s} value={s}>{s}</option>)}
+        </select>
+        <select value={status} onChange={e => setStatus(e.target.value)}>
+          <option value="active">Active (In Progress + Upcoming)</option>
+          <option value="inprogress">In Progress only</option>
+          <option value="upcoming">Upcoming only</option>
+          <option value="all">All (incl. Past)</option>
+        </select>
+        <span className="spacer" />
+        <button className="btn" onClick={exportXlsx}>⬇ Excel</button>
+      </div>
+
+      <div className="report-blurb">
+        <strong>Who's waiting for a spot, and what that demand is worth.</strong> Waitlist counts are live people
+        (not canceled) on each section's waitlist. Conversion is all-time: joiners who later enrolled in the same
+        section. Est. demand = waitlisted × the section's default price — the revenue on the table if capacity were added.
+      </div>
+
+      <div className="cards">
+        <div className="card">
+          <div className="lbl">Waitlisted now</div>
+          <div className="val amber">{fmtInt(agg.waitlisted)}</div>
+          <div className="sub">people across {fmtInt(fRows.filter(r => r.waitlisted > 0).length)} sections</div>
+        </div>
+        <div className="card">
+          <div className="lbl">Waitlist → enrolled</div>
+          <div className="val green">{agg.convPct != null ? agg.convPct + '%' : '—'}</div>
+          <div className="sub">{fmtInt(agg.converted)} of {fmtInt(agg.allTime)} joiners, all-time</div>
+        </div>
+        <div className="card">
+          <div className="lbl">Unmet demand</div>
+          <div className="val amber">{fmt$(agg.demand)}</div>
+          <div className="sub">waitlisted × program price</div>
+        </div>
+        <div className="card">
+          <div className="lbl">Offers claimed</div>
+          <div className="val">{fmtInt(agg.offersClaimed)}</div>
+          <div className="sub">{agg.claimWithin8Pct != null ? agg.claimWithin8Pct + '% claimed within 8h' : 'spot offers accepted'}</div>
+        </div>
+        <div className="card planned">
+          <div className="lbl">Offers expired unclaimed</div>
+          <div className="val muted">—</div>
+          <div className="sub">needs an offer-sent event; links are only recorded on claim today</div>
+        </div>
+      </div>
+
+      <div className="band">
+        <div className="band-h">
+          <span className="t">⏳ Offer funnel</span>
+          <span className="d">what happens after a resident joins a waitlist — all-time, filtered sections</span>
+        </div>
+        <div className="funnel">
+          <div className="fstage">
+            <div className="fl"><div className="n">Joined a waitlist</div><div className="s">distinct people per section</div></div>
+            <div><div className="fbar" style={{ width: '100%', background: '#fbbf24' }}><span className="fv">{fmtInt(agg.allTime)}</span></div></div>
+          </div>
+          <div className="fstage">
+            <div className="fl"><div className="n">Offered a spot</div><div className="s">claim link sent</div></div>
+            <div><div className="fbar ghost" style={{ width: '88%' }}><span className="fv">not yet measurable</span></div></div>
+          </div>
+          <div className="fstage">
+            <div className="fl"><div className="n">Claimed the spot</div><div className="s">grant recorded</div></div>
+            <div><div className="fbar" style={{ width: Math.max(2, Math.round(agg.offersClaimed / funnelMax * 100)) + '%', background: '#d97706' }}><span className="fv">{fmtInt(agg.offersClaimed)}</span></div></div>
+          </div>
+          <div className="fstage">
+            <div className="fl"><div className="n">Enrolled today</div><div className="s">confirmed in the same section</div></div>
+            <div><div className="fbar" style={{ width: Math.max(2, Math.round(agg.converted / funnelMax * 100)) + '%', background: '#92400e' }}><span className="fv">{fmtInt(agg.converted)}</span></div></div>
+          </div>
+        </div>
+      </div>
+
+      <div className="twocol">
+        <div className="panel">
+          <div className="panel-h"><span className="t">Time to claim an open spot</span><span className="d">{fmtInt(agg.offersClaimed)} claimed offers</span></div>
+          {agg.offersClaimed > 0 ? (
+            <React.Fragment>
+              <div className="hist">
+                <div className="expiry-rule"></div><div className="expiry-tag">8h default link expiry</div>
+                {buckets.map(b => (
+                  <div className="hcol" key={b.k} title={fmtInt(b.v) + ' offers claimed in ' + b.k}>
+                    <div className="hnum">{b.v === histMax || b.k === '48h+' ? fmtInt(b.v) : ' '}</div>
+                    <div className="hbar" style={{ height: Math.max(2, Math.round(b.v / histMax * 100)) + '%' }}></div>
+                    <div className="hlbl">{b.k}</div>
+                  </div>
+                ))}
+              </div>
+              {after8Pct != null && after8Pct > 40 && (
+                <div className="insight"><b>{after8Pct}% of claims land after the 8-hour default expiry.</b> Either staff
+                  routinely extend links or per-section windows vary — worth checking claim-window settings.</div>
+              )}
+            </React.Fragment>
+          ) : <div className="insight">No claimed offers in the filtered sections yet.</div>}
+        </div>
+
+        <div className="panel">
+          <div className="panel-h"><span className="t">Waitlist modes</span><span className="d">{fmtInt(agg.sections)} filtered sections</span></div>
+          <div className="mix" role="img" aria-label={'Mode mix: remain-active ' + agg.modes['remain-active'] + '; reopen-registration ' + agg.modes['reopen-registration'] + '; off ' + agg.modes.off + '; not configured ' + agg.modes.none}>
+            {[['remain-active', '#d97706'], ['reopen-registration', '#92400e'], ['off', '#a8a29e'], ['none', '#e8e6e0']].map(([m, c]) => {
+              const w = (agg.modes[m] || 0) / totalModes * 100;
+              return w > 0 ? <div key={m} style={{ width: Math.max(w, 0.7) + '%', background: c }} title={m + ' · ' + fmtInt(agg.modes[m]) + ' sections'}></div> : null;
+            })}
+          </div>
+          <div className="mixleg">
+            <span><span className="dot" style={{ background: '#d97706' }}></span>remain-active · {fmtInt(agg.modes['remain-active'])}</span>
+            <span><span className="dot" style={{ background: '#92400e' }}></span>reopen-registration · {fmtInt(agg.modes['reopen-registration'])}</span>
+            <span><span className="dot" style={{ background: '#a8a29e' }}></span>off · {fmtInt(agg.modes.off)}</span>
+            <span><span className="dot" style={{ background: '#e8e6e0' }}></span>not configured · {fmtInt(agg.modes.none)}</span>
+          </div>
+          {agg.modes.none / totalModes > 0.3 && (
+            <div className="insight"><b>{Math.round(agg.modes.none / totalModes * 100)}% of these sections have no waitlist configured.</b> A
+              full section without a waitlist is invisible demand — residents hit "Full" and walk away uncounted.</div>
+          )}
+        </div>
+      </div>
+
+      <div className="tablecard">
+        <div className="cap">
+          <div className="t">Waitlist pressure by section</div>
+          <div className="d">Sections with waitlist history, honoring the filters above. Pressure = waitlisted ÷ capacity. Click headers to sort.</div>
+        </div>
+        <div className="tbl-scroll">
+          <table>
+            <thead><tr>
+              <Th id="program">Program / Section</Th>
+              <th>Season</th><th>Status</th><th>Mode</th>
+              <Th id="enrolled" right>Enrolled / Cap</Th>
+              <Th id="waitlisted" right>Waitlisted</Th>
+              <Th id="pressure" right>Pressure</Th>
+              <Th id="demand" right>Est. demand</Th>
+              <th className="r">Oldest join</th>
+            </tr></thead>
+            <tbody>
+              {tableRows.slice(0, 200).map(r => {
+                const hot = (r.pressure ?? 0) >= 100;
+                return (
+                  <tr key={r.sectionId}>
+                    <td className="name"><div className="prog">{r.program}</div>{r.section !== r.program && <div className="sec">{r.section}</div>}</td>
+                    <td style={{ fontSize: 11, color: '#78716c' }}>{r.season}</td>
+                    <td><span className={'statuspill ' + (r.status === 'In Progress' ? 'st-prog' : r.status === 'Upcoming' ? 'st-up' : 'st-past')}>{r.status}</span></td>
+                    <td>{r.mode
+                      ? <span className={'modepill' + (r.mode === 'off' ? ' off' : '')}>{r.mode}{r.modeSource === 'session' ? ' (session)' : ''}</span>
+                      : <span className="modepill mute">not configured</span>}</td>
+                    <td className="r">{fmtInt(r.enrolled)} <span style={{ color: '#a8a29e' }}>/ {r.capacity != null ? fmtInt(r.capacity) : '—'}</span></td>
+                    <td className="r" style={{ fontWeight: 700 }}>{fmtInt(r.waitlisted)}</td>
+                    <td className="r">{r.pressure != null
+                      ? <span><span className={'pressbar' + (hot ? ' hot' : '')} style={{ width: pressToBar(r.pressure) + 'px' }}></span><span className={'press ' + (hot ? 'hot' : r.pressure >= 40 ? 'warm' : '')}>{fmtInt(r.pressure)}%</span></span>
+                      : '—'}</td>
+                    <td className="r">{r.demand > 0 ? fmt$(r.demand) : (r.waitlisted > 0 && r.price === 0 ? 'free' : '—')}</td>
+                    <td className="r" style={{ fontSize: 11, color: '#78716c' }}>{fmtD(r.oldestJoin) || '—'}</td>
+                  </tr>
+                );
+              })}
+              <tr className="totals-row">
+                <td>Total ({fmtInt(tableRows.length)} sections{tableRows.length > 200 ? ', top 200 shown' : ''})</td>
+                <td /><td /><td />
+                <td className="r">{fmtInt(tableRows.reduce((s, r) => s + r.enrolled, 0))}</td>
+                <td className="r">{fmtInt(tableRows.reduce((s, r) => s + r.waitlisted, 0))}</td>
+                <td />
+                <td className="r">{fmt$(tableRows.reduce((s, r) => s + r.demand, 0))}</td>
+                <td />
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className="method">
+        <div className="t">How this works</div>
+        <ul>
+          <li><b>Waitlisted now</b> — live entries (not canceled, not deleted) on each section's waitlist; session-level waitlists roll up to their section. Scope: sections that aren't deleted, canceled, or archived.</li>
+          <li><b>Waitlist → enrolled</b> — a joiner who later holds a confirmed booking in the same section, booked at/after their waitlist join.</li>
+          <li><b>Offers claimed &amp; time-to-claim</b> — from the claim grants the platform records when someone accepts an open spot; time-to-claim is measured grant creation → claim. Offers that expired unclaimed aren't recorded yet, so the funnel's "offered" stage stays unmeasured until an offer-sent event exists.</li>
+          <li><b>Est. demand</b> — waitlisted × the section's default price. An estimate: assumes everyone waiting would enroll at list price if a seat existed.</li>
+        </ul>
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+<script src="/juice-loader.js" defer></script>
+</body>
+</html>
