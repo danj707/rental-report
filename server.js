@@ -950,8 +950,8 @@ const SHARED_UUIDS = {
   "court-utilization": "7b0fca20-8fe0-4720-9653-7e15c30176b2",
   fasttrack: "9d38ab95-8562-42ca-b6c2-2582b7452457",
   // Metabase question #19273 ("✅ Waitlist Demand Report") — standalone Waitlist
-  // report. null until the card's public link is enabled; report stays hidden.
-  waitlist: null,
+  // report, shared across all orgs.
+  waitlist: "fff0027f-be52-4f99-adfa-b21dd5605634",
   roster: "31bdf26f-0b2e-4ac2-ae31-69edbefd894c",
   memberships: "f4496307-d965-4637-b048-ecc703f2d37f",
   products: "b9678f5f-b5fb-48f7-96da-f22a1b4e8d8a",
@@ -1342,11 +1342,7 @@ const RENTAL_CALENDAR_ORGS = new Set(["watertown", "norman", "niagarafalls"]);
 // the inverse of the normal opt-out hidden-list semantics. Use reportHiddenForOrg().
 // (Facilities graduated out of here — it's now visible by default, replacing the
 //  retired standalone Court Utilization card.)
-const DEFAULT_HIDDEN_REPORTS = new Set([
-  // Waitlist Demand — new report, rolled out per-org: hidden everywhere until
-  // Dan enables it from the admin dashboard toggle (listed = shown).
-  "waitlist",
-]);
+const DEFAULT_HIDDEN_REPORTS = new Set([]);
 // Reports RETIRED as standalone cards: kept as valid report types + endpoints
 // (so the Facilities hub's native Court Utilization tab, chat, and /api/data all
 // keep working) but no longer rendered as a clickable card on org/admin grids.
