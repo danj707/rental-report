@@ -373,6 +373,148 @@ function openPaySlip(opts) {
   w.document.close();
 }
 
+// Period label for slips + header: "Aug 1 – Aug 31, 2026"
+function fmtPeriod(startIso, endIso) {
+  try {
+    var s = new Date(startIso + 'T12:00:00'), e = new Date(endIso + 'T12:00:00');
+    var sTxt = s.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    var eTxt = e.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    return sTxt + ' – ' + eTxt;
+  } catch (e2) { return startIso + ' – ' + endIso; }
+}
+
+// Period pay slip: one instructor, every section in the selected pay period.
+// Same check + slip document as openPaySlip (CSS mirrored from there), but the
+// enrollments table is replaced by a per-section breakdown and the memo/fields
+// carry the pay period instead of a single section.
+function openPeriodPaySlip(opts) {
+  var w = window.open('', '_blank');
+  if (!w) return;
+  var secRows = (opts.sections || []).map(function(s, i) {
+    return '<tr><td style="padding:6px 10px;border-bottom:1px solid #e5e7eb;">' + (i+1) + '</td>'
+      + '<td style="padding:6px 10px;border-bottom:1px solid #e5e7eb;">' + s.section + '</td>'
+      + '<td style="padding:6px 10px;border-bottom:1px solid #e5e7eb;color:#666;">' + s.program + '</td>'
+      + '<td style="padding:6px 10px;border-bottom:1px solid #e5e7eb;text-align:center;">' + s.enrolled + '</td>'
+      + '<td style="padding:6px 10px;border-bottom:1px solid #e5e7eb;text-align:right;">' + opts.fmtFn(s.amount) + '</td></tr>';
+  }).join('');
+  var canceledNote = opts.canceledCount > 0
+    ? '<div style="margin-top:16px;font-size:11px;color:#dc2626;">' + opts.canceledCount + ' canceled enrollment(s) across the period not included in payout</div>'
+    : '';
+  var today = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+  var amtVal = Number(opts.amount) || 0;
+  var amtNumeric = amtVal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  var amtWords = amountToWords(amtVal);
+  var html = '<!DOCTYPE html><html><head><title>Pay Slip - ' + opts.instructor + ' - ' + opts.periodLabel + '</title>'
+    + '<style>'
+    + 'body { font-family: Georgia, "Times New Roman", serif; margin: 0; padding: 40px; background: #f5f4f1; color: #1a1a1a; }'
+    + '.slip { max-width: 680px; margin: 0 auto; background: #fff; border: 2px solid #1a1a1a; padding: 0; }'
+    + '.slip-header { display: flex; justify-content: space-between; align-items: flex-start; padding: 28px 32px 20px; border-bottom: 2px solid #1a1a1a; }'
+    + '.slip-header .org { font-size: 18px; font-weight: 700; letter-spacing: 0.5px; }'
+    + '.slip-header .org-sub { font-size: 11px; color: #666; margin-top: 2px; }'
+    + '.slip-header .doc-type { text-align: right; }'
+    + '.slip-header .doc-type .label { font-size: 22px; font-weight: 700; text-transform: uppercase; letter-spacing: 2px; }'
+    + '.slip-header .doc-type .date { font-size: 11px; color: #666; margin-top: 4px; }'
+    + '.pay-to { padding: 20px 32px; border-bottom: 1px solid #e5e7eb; display: flex; gap: 40px; }'
+    + '.pay-to .field-label { font-size: 9px; text-transform: uppercase; letter-spacing: 1.5px; color: #999; font-family: Inter, system-ui, sans-serif; font-weight: 600; margin-bottom: 3px; }'
+    + '.pay-to .field-value { font-size: 16px; font-weight: 600; }'
+    + '.detail { padding: 20px 32px; border-bottom: 1px solid #e5e7eb; }'
+    + '.detail-row { display: flex; justify-content: space-between; padding: 5px 0; font-size: 13px; }'
+    + '.detail-row .label { color: #666; }'
+    + '.detail-row .value { font-weight: 600; }'
+    + 'table { width: 100%; border-collapse: collapse; font-size: 12px; font-family: Inter, system-ui, sans-serif; }'
+    + 'th { background: #f8f7f4; padding: 8px 10px; text-align: left; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: #666; border-bottom: 2px solid #e5e7eb; }'
+    + 'th:last-child { text-align: right; }'
+    + '.amount-box { padding: 24px 32px; background: #fafaf8; border-top: 2px solid #1a1a1a; display: flex; justify-content: space-between; align-items: center; }'
+    + '.amount-box .total-label { font-size: 12px; text-transform: uppercase; letter-spacing: 1.5px; color: #666; font-family: Inter, system-ui, sans-serif; font-weight: 600; }'
+    + '.amount-box .total-amount { font-size: 32px; font-weight: 700; }'
+    + '.footer { padding: 16px 32px; font-size: 10px; color: #999; text-align: center; font-family: Inter, system-ui, sans-serif; border-top: 1px solid #e5e7eb; }'
+    + '.sig-area { padding: 28px 32px; display: flex; gap: 40px; }'
+    + '.sig-line { flex: 1; border-bottom: 1px solid #999; padding-bottom: 4px; font-size: 10px; color: #999; text-transform: uppercase; letter-spacing: 1px; font-family: Inter, system-ui, sans-serif; }'
+    + '.check { max-width: 720px; margin: 0 auto 26px; background-color: #f3f6f1; background-image: repeating-linear-gradient(45deg, rgba(90,120,90,0.045) 0, rgba(90,120,90,0.045) 1px, transparent 1px, transparent 7px), repeating-linear-gradient(-45deg, rgba(90,120,90,0.045) 0, rgba(90,120,90,0.045) 1px, transparent 1px, transparent 7px); border: 1px solid #b9c2b3; border-radius: 5px; padding: 26px 30px 20px; position: relative; box-shadow: 0 1px 4px rgba(0,0,0,0.10); }'
+    + '.check::before { content: ""; position: absolute; inset: 6px; border: 1px solid rgba(120,140,120,0.30); border-radius: 3px; pointer-events: none; }'
+    + '.check-top { display: flex; justify-content: space-between; align-items: flex-start; position: relative; }'
+    + '.check .drawer-name { font-size: 15px; font-weight: 700; letter-spacing: 0.3px; }'
+    + '.check .drawer-sub { font-size: 9px; color: #5a6b57; text-transform: uppercase; letter-spacing: 1px; margin-top: 2px; font-family: Inter, system-ui, sans-serif; }'
+    + '.check-meta { text-align: right; }'
+    + '.check-date { margin-top: 0; font-size: 12px; white-space: nowrap; }'
+    + '.check-date .k { font-size: 8px; color: #5a6b57; letter-spacing: 1px; font-family: Inter, system-ui, sans-serif; }'
+    + '.check-date .v { border-bottom: 1px solid #7a8a77; padding: 0 10px 1px; margin-left: 6px; font-weight: 600; }'
+    + '.pay-line { display: flex; align-items: flex-end; gap: 16px; margin-top: 22px; position: relative; }'
+    + '.pay-order { flex: 1; display: flex; align-items: flex-end; gap: 12px; }'
+    + '.pay-order .ptoo { font-size: 8px; line-height: 1.15; color: #5a6b57; letter-spacing: 1px; font-family: Inter, system-ui, sans-serif; font-weight: 600; white-space: nowrap; padding-bottom: 3px; }'
+    + '.pay-order .payee { flex: 1; border-bottom: 1.5px solid #3a4a37; font-size: 18px; font-weight: 700; padding: 0 6px 3px; }'
+    + '.amt-box { display: flex; align-items: center; justify-content: space-between; border: 2px solid #3a4a37; border-radius: 3px; background: rgba(255,255,255,0.65); padding: 6px 12px; font-size: 20px; font-weight: 700; min-width: 140px; }'
+    + '.amt-box .cur { color: #5a6b57; margin-right: 10px; font-size: 16px; }'
+    + '.words-line { display: flex; align-items: flex-end; gap: 10px; margin-top: 16px; position: relative; }'
+    + '.words-line .words { flex: 1; border-bottom: 1px solid #7a8a77; font-size: 14px; font-style: italic; padding: 0 6px 3px; }'
+    + '.words-line .dollars { font-size: 9px; color: #5a6b57; letter-spacing: 1px; font-family: Inter, system-ui, sans-serif; font-weight: 600; padding-bottom: 3px; }'
+    + '.check-bottom { display: flex; justify-content: space-between; align-items: flex-end; margin-top: 26px; gap: 30px; position: relative; }'
+    + '.check-bottom .memo { flex: 1; }'
+    + '.check-bottom .memo .k { font-size: 8px; color: #5a6b57; letter-spacing: 1px; font-family: Inter, system-ui, sans-serif; font-weight: 600; display: block; margin-bottom: 4px; }'
+    + '.check-bottom .memo .memo-val { display: block; border-bottom: 1px solid #7a8a77; font-size: 11px; padding: 0 4px 3px; color: #333; }'
+    + '.check-bottom .sig { width: 240px; text-align: center; }'
+    + '.check-bottom .sig .sig-line-c { border-bottom: 1.5px solid #3a4a37; height: 22px; }'
+    + '.check-bottom .sig .sig-label { font-size: 8px; color: #5a6b57; letter-spacing: 1px; font-family: Inter, system-ui, sans-serif; font-weight: 600; margin-top: 4px; }'
+    + '.actionbar { max-width: 720px; margin: 0 auto 18px; display: flex; align-items: center; justify-content: flex-end; gap: 14px; font-family: Inter, system-ui, sans-serif; }'
+    + '.actionbar .hint { font-size: 11px; color: #999; }'
+    + '.pdf-btn { display: inline-flex; align-items: center; gap: 8px; background: #1a1a1a; color: #fff; border: none; border-radius: 6px; padding: 10px 18px; font-size: 13px; font-weight: 600; letter-spacing: 0.3px; cursor: pointer; font-family: Inter, system-ui, sans-serif; }'
+    + '.pdf-btn:hover { background: #333; }'
+    + '@media print { body { background: #fff; padding: 20px; } .slip { border: 1px solid #ccc; } .check { break-inside: avoid; box-shadow: none; } .no-print { display: none !important; } }'
+    + '</style></head><body>'
+    + '<div class="actionbar no-print">'
+    + '<span class="hint">Opens your print dialog &mdash; choose Save as PDF</span>'
+    + '<button class="pdf-btn" onclick="window.print()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>Generate PDF</button>'
+    + '</div>'
+    + '<div class="check">'
+    + '<div class="check-top">'
+    + '<div class="drawer"><div class="drawer-name">' + opts.orgName + '</div><div class="drawer-sub">Instructor Compensation</div><div class="drawer-sub">Payroll Account</div></div>'
+    + '<div class="check-meta"><div class="check-date"><span class="k">DATE</span><span class="v">' + today + '</span></div></div>'
+    + '</div>'
+    + '<div class="pay-line">'
+    + '<div class="pay-order"><span class="ptoo">PAY TO THE<br>ORDER OF</span><span class="payee">' + opts.instructor + '</span></div>'
+    + '<div class="amt-box"><span class="cur">$</span><span>' + amtNumeric + '</span></div>'
+    + '</div>'
+    + '<div class="words-line"><span class="words">' + amtWords + '</span><span class="dollars">DOLLARS</span></div>'
+    + '<div class="check-bottom">'
+    + '<div class="memo"><span class="k">MEMO</span><span class="memo-val">Pay period ' + opts.periodLabel + ' &middot; ' + (opts.sections || []).length + ' section(s) &middot; ' + opts.splitPct + '% split</span></div>'
+    + '<div class="sig"><div class="sig-line-c"></div><div class="sig-label">Authorized Signature</div></div>'
+    + '</div>'
+    + '</div>'
+    + '<div class="slip">'
+    + '<div class="slip-header">'
+    + '<div><div class="org">' + opts.orgName + '</div><div class="org-sub">Instructor Compensation</div></div>'
+    + '<div class="doc-type"><div class="label">Pay Slip</div><div class="date">' + today + '</div></div>'
+    + '</div>'
+    + '<div class="pay-to">'
+    + '<div class="field"><div class="field-label">Pay To</div><div class="field-value">' + opts.instructor + '</div></div>'
+    + '<div class="field"><div class="field-label">Pay Period</div><div class="field-value">' + opts.periodLabel + '</div></div>'
+    + '<div class="field"><div class="field-label">Split</div><div class="field-value">' + opts.splitPct + '%</div></div>'
+    + '</div>'
+    + '<div class="detail">'
+    + '<div class="detail-row"><span class="label">Sections</span><span class="value">' + (opts.sections || []).length + '</span></div>'
+    + '<div class="detail-row"><span class="label">Active Enrollments</span><span class="value">' + (opts.totalEnrolled || 0) + '</span></div>'
+    + '<div class="detail-row"><span class="label">Pricing Mode</span><span class="value">' + (opts.basePriceOnly ? 'Resident Base Rate' : 'Net Revenue') + '</span></div>'
+    + '</div>'
+    + '<div style="padding:16px 32px 0;">'
+    + '<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#666;margin-bottom:8px;font-family:Inter,system-ui,sans-serif;">Sections in Period</div>'
+    + '<table><thead><tr><th style="width:30px;">#</th><th>Section</th><th>Program</th><th style="text-align:center;">Enrolled</th><th style="text-align:right;">Instructor Share</th></tr></thead>'
+    + '<tbody>' + secRows + '</tbody></table>'
+    + canceledNote
+    + '</div>'
+    + '<div class="amount-box">'
+    + '<div class="total-label">Instructor Payout (' + opts.splitPct + '%) &middot; ' + opts.periodLabel + '</div>'
+    + '<div class="total-amount">' + opts.fmtFn(opts.amount) + '</div>'
+    + '</div>'
+    + '<div class="sig-area">'
+    + '<div class="sig-line">Authorized Signature</div>'
+    + '<div class="sig-line">Date</div>'
+    + '</div>'
+    + '<div class="footer">Generated by rec.us Enhanced Reports &middot; ' + today + '</div>'
+    + '</div></body></html>';
+  w.document.write(html);
+  w.document.close();
+}
+
 function App() {
   const [rows, setRows]       = useState(null);
   const [loading, setLoading] = useState(true);
@@ -384,6 +526,12 @@ function App() {
   }); // 70/30 default
   const [search, setSearch]     = useState(_initParams.get('search') || '');
   const [instrFilter, setInstrFilter] = useState(_initParams.get('instructor') || '');
+  // Pay period — defaults to the current month; the card SQL already accepts
+  // start_date/end_date, this just finally passes them through.
+  const _iso = (d) => d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+  const _now = new Date();
+  const [startDate, setStartDate] = useState(_initParams.get('start_date') || _iso(new Date(_now.getFullYear(), _now.getMonth(), 1)));
+  const [endDate, setEndDate]     = useState(_initParams.get('end_date')   || _iso(new Date(_now.getFullYear(), _now.getMonth() + 1, 0)));
   const [pdfLoading, setPdfLoading] = useState(false);
   const [orgName, setOrgName] = useState('');
   const [logoUrl, setLogoUrl] = useState(null);
@@ -406,10 +554,10 @@ function App() {
     if (new URLSearchParams(window.location.search).get('_print') === '1') document.body.classList.add('print-mode');
   }, []);
 
-  // Fetch
+  // Fetch — refetches whenever the pay period changes
   useEffect(() => {
     setLoading(true);
-    fetch(withToken(`/${orgSlug}/${reportType}/api/data`))
+    fetch(withToken(`/${orgSlug}/${reportType}/api/data?start_date=${startDate}&end_date=${endDate}`))
       .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
       .then(json => {
         const data = json.rows || json;
@@ -420,7 +568,7 @@ function App() {
         document.getElementById('report-ready').style.display = 'block';
       })
       .catch(e => { setError(e.message); setLoading(false); });
-  }, []);
+  }, [startDate, endDate]);
 
   // Normalize — aggregate participant rows into sections
   const normalized = useMemo(() => {
@@ -563,6 +711,8 @@ function App() {
   const downloadPdf = useCallback(() => {
     setPdfLoading(true);
     const qs = new URLSearchParams();
+    qs.set('start_date', startDate);
+    qs.set('end_date', endDate);
     if (splitIdx !== 2) qs.set('split', splitIdx);
     if (instrFilter) qs.set('instructor', instrFilter);
     if (search) qs.set('search', search);
@@ -578,7 +728,7 @@ function App() {
       .catch(err => alert('PDF generation failed: ' + err.message))
       .finally(() => setPdfLoading(false));
     fetch(withToken(`/${orgSlug}/${reportType}/api/log`), { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({action:'pdf',rows:filtered.length}) }).catch(()=>{});
-  }, [splitIdx, instrFilter, search, filtered]);
+  }, [splitIdx, instrFilter, search, filtered, startDate, endDate]);
 
   const fillColor = (p) => p >= 0.8 ? '#16a34a' : p >= 0.5 ? '#d97706' : '#ef4444';
   const v = (n) => n === 0 ? 'zero' : n < 0 ? 'neg' : '';
@@ -655,6 +805,17 @@ function App() {
         <span className="toolbar-title">Instructor Payout</span>
         <span className="divider"></span>
         <label>
+          Period
+          <span style={{display:'flex', alignItems:'center', gap:6}}>
+            <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} />
+            <span style={{color:'#888'}}>–</span>
+            <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} />
+            <button onClick={() => { const n = new Date(); setStartDate(_iso(new Date(n.getFullYear(), n.getMonth(), 1))); setEndDate(_iso(new Date(n.getFullYear(), n.getMonth() + 1, 0))); }}>This Month</button>
+            <button onClick={() => { const n = new Date(); setStartDate(_iso(new Date(n.getFullYear(), n.getMonth() - 1, 1))); setEndDate(_iso(new Date(n.getFullYear(), n.getMonth(), 0))); }}>Last Month</button>
+          </span>
+        </label>
+        <span className="divider"></span>
+        <label>
           Split
           <div className="split-bar">
             {SPLITS.map((s, i) => (
@@ -696,7 +857,7 @@ function App() {
             <div className="org-label">{displayOrg}</div>
             <div className="title">Instructor Payout Report</div>
           </div>
-          <div className="date-range">{iPct}% Instructor / {oPct}% Organization</div>
+          <div className="date-range">Pay period: {fmtPeriod(startDate, endDate)}<br/>{iPct}% Instructor / {oPct}% Organization</div>
         </div>
 
         {/* Summary cards */}
@@ -944,7 +1105,21 @@ function App() {
                         <td>{fmt(sub.paid)}</td>
                         <td style={{color: sub.ref > 0 ? '#dc2626' : undefined}} className={v(sub.ref)}>{fmt(sub.ref)}</td>
                         <td>{fmt(subSplitAmt)}</td>
-                        <td>{fmt(subSplitAmt * split.i)}</td>
+                        <td>
+                          {fmt(subSplitAmt * split.i)}
+                          <span onClick={(e) => { e.stopPropagation(); openPeriodPaySlip({
+                            instructor: instr,
+                            orgName: orgName,
+                            splitPct: iPct,
+                            basePriceOnly: basePriceOnly,
+                            fmtFn: fmt,
+                            periodLabel: fmtPeriod(startDate, endDate),
+                            amount: subSplitAmt * split.i,
+                            totalEnrolled: sub.enr,
+                            canceledCount: sections.reduce((n, r) => n + (r.participants || []).filter(p => p.canceled).length, 0),
+                            sections: sections.map(r => ({ section: r.section, program: r.program, enrolled: r.enrolled, amount: (basePriceOnly ? r.baseTotal : r.net) * split.i })),
+                          }); }} style={{marginLeft:6, fontSize:9, color:'#3b82f6', cursor:'pointer', textDecoration:'underline', fontWeight:600}} title="Open a pay slip for this instructor covering the entire pay period">slip</span>
+                        </td>
                         <td>{fmt(subSplitAmt * (1-split.i))}</td>
                       </tr>
                     </React.Fragment>
