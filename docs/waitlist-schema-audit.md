@@ -89,13 +89,34 @@ only) and never touch `waitlist_config`. Unaffected.
 No waitlist reference at all (facility, GL, roster, products, memberships, users,
 demographics, retention, payout, check-ins, self-service, etc.).
 
-## Status
+## Plan (settled with Dan, 2026-08-03)
 
-- [x] Corrected SQL for all 5 cards checked into `docs/waitlist-fix/` (this PR) —
-      full card SQL, byte-identical except the mode predicate, ready to paste into
-      Metabase (or to be applied via MCP) once reviewed
-- [ ] After PR review: apply `docs/waitlist-fix/card-17298-*.sql` to card 17298
-      (shared Calendar — the one that matters)
-- [ ] After PR review: apply the matching files to 16765 / 16897 / 17161 / 17302
-      (superseded in this app but still public)
+Every org's Calendar is served by the single shared card 17298, so that is the
+only card that gets the fix. The 4 stale per-org copies get **archived**, not
+fixed — their `mbUuid` entries are removed from `ORGS` in this PR (required
+first: `qbrFetch` preferred the per-org override, so QBR was reading the broken
+cards; after the strip everything falls back to the shared card).
+
+Phase 1 waitlist metrics ship in this PR too: v4 of the shared Programs card
+(`card-17295-programs-report-shared.sql`, additive columns `waitlist_active`,
+`waitlist_total`, `waitlist_converted`, `waitlist_demand`) plus a Waitlist
+Demand band on the Programs Summary tab and an auto-shown Waitlist column —
+all presence-gated, so nothing renders until the card SQL is applied.
+
+Validated against the prod replica (Apex): 646 sections with waitlist history,
+2,914 actively waitlisted participants, 36.3% all-time waitlist→enrolled
+conversion, ~$264,650 unmet demand (active waitlist × default section price).
+
+- [x] Corrected shared-Calendar SQL in `docs/waitlist-fix/card-17298-*.sql`
+- [x] Programs card v4 SQL in `docs/waitlist-fix/card-17295-*.sql`
+- [x] Front-end: Waitlist Demand band + Waitlist column (presence-gated)
+- [x] `ORGS` map: stale per-org calendar references removed (Watertown 16897,
+      Apex 16765, Joplin 17161, Shrewsbury 17302)
+- [ ] After PR review: apply `card-17298-*.sql` to Metabase card 17298
+- [ ] After PR review: apply `card-17295-*.sql` to Metabase card 17295
+- [ ] After the ORGS strip deploys: archive Metabase cards 16765 / 16897 /
+      17161 / 17302 (public UUIDs 8a3dac9b…, 70717c4f…, 2b6e6819…, f4e55dd3…)
 - [ ] Decide whether reports should honor `waitlist_override` (confirm semantics with eng)
+- [ ] Phase 2 (future): waitlist offer funnel — time-to-claim & expiry rates via
+      `temporary_grant` (`created_at`/`expires_at`/`claims` jsonb — claims shape
+      needs validation before we promise these numbers)

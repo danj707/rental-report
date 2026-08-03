@@ -701,7 +701,7 @@ const ORGS = {
     facility: { mbUuid: "4b64af10-d57f-41af-aad8-b16d12a8f7b8" },
     programs: { mbUuid: "d3a3554f-1232-4803-9cc7-5b0f611360b0" },
     roster:   { mbUuid: "4f9861ef-e8ac-4447-bf88-3648c1e54a8b" },
-    calendar: { mbUuid: "70717c4f-9395-4c50-95ac-0622d95567f6" },
+    // calendar served by SHARED_UUIDS.calendar; stale per-org card 16897 slated for archive
     "court-utilization": { mbUuid: "35862f6e-6494-4e6e-89a1-40fee8fbc872" },
     users: { mbUuid: "aa678f93-0099-4677-a2ad-b6eb7724e2d7" },
     fasttrack: { mbUuid: "27005b9e-47c9-42be-9c14-fa2d31099651" },
@@ -716,7 +716,7 @@ const ORGS = {
     facility: { mbUuid: "c641a437-49c7-49f8-82bd-3417a7e3754b", defaultDateRange: 8, defaultLocationFilter: "Apex Center" },
     programs: { mbUuid: "dee5b922-303f-47d9-abe3-75597410ad67" },
     "court-utilization": { mbUuid: "82d14a94-78ad-48d6-9531-11e72f53e285" },
-    calendar: { mbUuid: "8a3dac9b-6c34-45e1-a7d0-3a177477fe17" },
+    // calendar served by SHARED_UUIDS.calendar; stale per-org card 16765 slated for archive
     products: { mbUuid: "b7d1ed06-6df2-4d74-aea2-68d4e2428aec" },
     memberships: { mbUuid: "1e539837-b437-4a12-b1bb-11498b12808b" },
     fasttrack: { mbUuid: "10e8dcdd-2913-4880-b093-d407fc357d76" },
@@ -740,7 +740,7 @@ const ORGS = {
     logoUrl: "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSiZe2Rt3BvXmkRLhW9EzhogtTSXY3SkiaVzA&s",
     displayName: "Joplin",
     products: { mbUuid: "2a38a516-a618-40ad-8b30-a26081548389" },
-    calendar: { mbUuid: "2b6e6819-2fe5-420e-af6f-4cb39b5736cc" },
+    // calendar served by SHARED_UUIDS.calendar; stale per-org card 17161 slated for archive
   },
   shrewsbury: {
     token:   "17hO58KgKgNVauE5",
@@ -752,7 +752,7 @@ const ORGS = {
     facility: { mbUuid: "9a027e73-cd3b-49ff-8b02-49e09a6ceeeb" },
     programs: { mbUuid: "f7863975-f44c-4143-abe8-2ca8c6cdfa07" },
     roster  : { mbUuid: "f79ce808-e7ab-48dc-b2b9-56491f3b01fc" },
-    calendar: { mbUuid: "f4e55dd3-f16d-4da7-9112-de0515980ae4" },
+    // calendar served by SHARED_UUIDS.calendar; stale per-org card 17302 slated for archive
     users   : { mbUuid: "d081b9cc-b47e-443c-b97a-dbac97bab249" },
     fasttrack: { mbUuid: "337487eb-7d8d-4def-afec-7ba27f152478" },
     memberships: { mbUuid: "0e5fdd43-c44f-44ec-bb36-73d9306fd61f" },
@@ -981,8 +981,8 @@ const REPORT_DEPENDENCIES = {
     columns: { gl_entry:["id","date","amount_cents","gl_entry_type","gl_account_id","payment_id","refund_id","order_item_id","organization_id","order_item_transaction_id"], gl_account:["id","name","gl_code","organization_id"], order_item:["id","name","applied_pricing","product_type","gl_code","organization_id"], order_item_transaction:["id","order_item_id","amount","type","organization_id"], payment:["id","amount","payment_method_type","gateway","status","transaction_event_id","organization_id"], refund:["id","amount","organization_id"], transaction_event:["id","type","source","desk_location_id","settled_at","organization_id"], desk_location:["id","name","organization_id"] }
   },
   programs: {
-    tables: ["program","section","session","booking","order_item","users","profile","program_activity","activity","section_season","season","section_price","location","attendance_event","registration_window"],
-    columns: { program:["id","name","type","organization_id"], section:["id","name","program_id","capacity","default_capacity","canceled_at","registration_mode","organization_id","section_code","publish_at","gl_account_id","primary_location_id","archived_at"], session:["id","section_id","location_id","starts_at","ends_at","canceled_at","capacity","organization_id"], booking:["id","type","status","section_id","session_id","customer_user_id","participant_user_id","canceled_at","is_fast_track","organization_id","participant_data","created_at"], order_item:["id","booking_id","applied_pricing","name","product_type","organization_id","fully_paid_at"], users:["id","first_name","last_name","email","phone","household_id"], profile:["user_id","date_of_birth","grade","gender"], activity:["id","name","organization_id","category_id"], attendance_event:["id","target_id","target_type","participant_user_id","type","check_in_method_type","organization_id","created_at"] }
+    tables: ["program","section","session","booking","order_item","users","profile","program_activity","activity","section_season","season","section_price","location","attendance_event","registration_window","waitlist"],
+    columns: { program:["id","name","type","organization_id"], section:["id","name","program_id","capacity","default_capacity","canceled_at","registration_mode","organization_id","section_code","publish_at","gl_account_id","primary_location_id","archived_at"], session:["id","section_id","location_id","starts_at","ends_at","canceled_at","capacity","organization_id"], booking:["id","type","status","section_id","session_id","customer_user_id","participant_user_id","canceled_at","is_fast_track","organization_id","participant_data","created_at"], order_item:["id","booking_id","applied_pricing","name","product_type","organization_id","fully_paid_at"], users:["id","first_name","last_name","email","phone","household_id"], profile:["user_id","date_of_birth","grade","gender"], activity:["id","name","organization_id","category_id"], attendance_event:["id","target_id","target_type","participant_user_id","type","check_in_method_type","organization_id","created_at"], waitlist:["id","section_id","session_id","participant_user_id","created_at","canceled_at","deleted_at","organization_id"] }
   },
   memberships: {
     tables: ["membership","membership_user","group","group_schema","users","profile","household","order_item","payment","section_price"],
@@ -11016,6 +11016,16 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  { date: '2026-08-03', title: 'Programs: Waitlist Demand metrics', items: [
+    'New Waitlist Demand band on the Summary tab: residents waitlisted right now, waitlist → enrolled conversion rate, unmet demand dollars (waitlisted × program price), and the highest-pressure programs — a direct "add capacity here" signal.',
+    'Waitlist column returns to the Revenue tab (and Excel export), now auto-shown whenever the data is present instead of hidden behind a removed toolbar checkbox.',
+    'All powered by the schema-changed waitlist tables; the band and column stay hidden until the shared Programs card SQL is updated (docs/waitlist-fix/card-17295-programs-report-shared.sql), so un-updated environments see no empty widgets.',
+  ]},
+  { date: '2026-08-03', title: 'Calendar: waitlist status fix (Metabase card)', items: [
+    'The upstream waitlist_config schema changed shape and silently broke the "Full - Waitlist Open" / "Closed - Full - Waitlist" statuses on the shared Calendar card — every full session showed plain "Full" and the Waitlist Available filter matched nothing.',
+    'Corrected card SQL is staged in docs/waitlist-fix/ and applied to the shared Calendar card after review; no app code change needed.',
+    'Removed 4 stale per-org calendar card references (Watertown, Apex, Joplin, Shrewsbury) so every consumer — including QBR, which preferred the per-org override — uses the single shared, fixed card. The stale Metabase cards will be archived.',
+  ]},
   { date: '2026-08-02', title: 'Registration Funnel: 7-day attribution window', items: [
     'Attributed enrollments now require the enrollment to land within 7 days after a "View Session" click on that section — a single early click no longer claims a whole season of later enrollments (which could push attribution above 100% of clicks).',
     'The attributed sub-label reads "≈N per click" instead of a percentage — over 1.0 is natural when one click leads to multiple registrations (e.g. several kids in one household).',
