@@ -125,7 +125,7 @@
   .fstage .fl { text-align: right; }
   .fstage .fl .n { font-weight: 700; font-size: 12.5px; }
   .fstage .fl .s { font-size: 10.5px; color: #a8a29e; }
-  .fbar { height: 26px; border-radius: 4px; min-width: 2px; display: flex; align-items: center; }
+  .fbar { height: 26px; border-radius: 4px; min-width: 2px; max-width: 100%; display: flex; align-items: center; }
   .fbar .fv { font-weight: 800; font-size: 12px; font-variant-numeric: tabular-nums; padding-left: 9px; color: #1c1917; white-space: nowrap; }
   .fbar.ghost { border: 1.5px dashed #92400e; background: transparent; }
   .fbar.ghost .fv { color: #92400e; font-weight: 700; }
@@ -210,6 +210,20 @@ function fmtN(v) { const n = Number(v); return isNaN(n) ? 0 : n; }
 function fmtInt(v) { return fmtN(v).toLocaleString(); }
 function fmt$(v) { return '$' + Math.round(fmtN(v)).toLocaleString(); }
 function fmtD(d) { if (!d || String(d).length < 8) return ''; try { const s = new Date(d + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); return s === 'Invalid Date' ? '' : s; } catch { return ''; } }
+
+// Rec's waitlist_config "mode" values, translated to plain English. The raw
+// value describes what happens when a seat opens up in a full section.
+const MODE_LABELS = {
+  'remain-active': 'offers go to the list',
+  'reopen-registration': 'reopens to everyone',
+  'off': 'waitlist off',
+};
+const MODE_HELP = {
+  'remain-active': 'When a seat opens up, people on the waitlist get a claim link to take it. (Rec setting: remain-active)',
+  'reopen-registration': 'When a seat opens up, registration reopens to the public — first come, first served; the waitlist does not hold your place. (Rec setting: reopen-registration)',
+  'off': 'Waitlist is turned off — a full section just shows "Full". (Rec setting: off)',
+};
+const MODE_NONE_HELP = 'No waitlist behavior configured — a full section just shows "Full" and interest goes uncounted.';
 
 function normalizeRow(raw) {
   return {
@@ -413,7 +427,7 @@ function App() {
   function exportXlsx() {
     const data = tableRows.map(r => ({
       Program: r.program, Section: r.section, Season: r.season, Status: r.status,
-      Activity: r.activity, 'Waitlist Mode': r.mode || (r.modeSource === 'none' ? 'not configured' : r.modeSource),
+      Activity: r.activity, 'When a Seat Opens': r.mode ? (MODE_LABELS[r.mode] || r.mode) : 'no waitlist set up',
       Capacity: r.capacity, Enrolled: r.enrolled, Waitlisted: r.waitlisted,
       'Waitlist All-Time': r.wlAllTime, Converted: r.wlConverted,
       'Pressure %': r.pressure, 'Est Demand $': r.demand, Price: r.price,
@@ -442,7 +456,7 @@ function App() {
   const after8 = agg.c24h + agg.c48h + agg.cMore;
   const after8Pct = agg.offersClaimed > 0 ? Math.round(after8 / agg.offersClaimed * 100) : null;
   const totalModes = Math.max(agg.sections, 1);
-  const funnelMax = Math.max(agg.allTime, 1);
+  const funnelMax = Math.max(agg.allTime, agg.offersClaimed, agg.converted, 1);
   const pressToBar = p => Math.min(70, Math.max(8, Math.round((p || 0) / 12)));
 
   const Th = ({ id, children, right }) => (
@@ -616,27 +630,31 @@ function App() {
 
       <div className="band">
         <div className="band-h">
-          <span className="t">⏳ Offer funnel</span>
-          <span className="d">what happens after a resident joins a waitlist — all-time, filtered sections</span>
+          <span className="t">⏳ From waitlist to enrolled</span>
+          <span className="d">the journey after someone puts their name on a waitlist — all-time, for the sections in view</span>
         </div>
         <div className="funnel">
           <div className="fstage">
-            <div className="fl"><div className="n">Joined a waitlist</div><div className="s">distinct people per section</div></div>
-            <div><div className="fbar" style={{ width: '100%', background: '#fbbf24' }}><span className="fv">{fmtInt(agg.allTime)}</span></div></div>
+            <div className="fl"><div className="n">Put their name on a list</div><div className="s">everyone who's ever joined one of these waitlists</div></div>
+            <div><div className="fbar" style={{ width: Math.max(2, Math.round(agg.allTime / funnelMax * 100)) + '%', background: '#fbbf24' }}><span className="fv">{fmtInt(agg.allTime)}</span></div></div>
           </div>
           <div className="fstage">
-            <div className="fl"><div className="n">Offered a spot</div><div className="s">claim link sent</div></div>
-            <div><div className="fbar ghost" style={{ width: '88%' }}><span className="fv">not yet measurable</span></div></div>
+            <div className="fl"><div className="n">Told a seat opened up</div><div className="s">sent a link to claim the open seat</div></div>
+            <div><div className="fbar ghost" style={{ width: '88%' }}><span className="fv">not yet measurable — only claims are recorded</span></div></div>
           </div>
           <div className="fstage">
-            <div className="fl"><div className="n">Claimed the spot</div><div className="s">grant recorded</div></div>
+            <div className="fl"><div className="n">Claimed the seat</div><div className="s">clicked their link and took the open spot</div></div>
             <div><div className="fbar" style={{ width: Math.max(2, Math.round(agg.offersClaimed / funnelMax * 100)) + '%', background: '#d97706' }}><span className="fv">{fmtInt(agg.offersClaimed)}</span></div></div>
           </div>
           <div className="fstage">
-            <div className="fl"><div className="n">Enrolled today</div><div className="s">confirmed in the same section</div></div>
+            <div className="fl"><div className="n">Enrolled in that section</div><div className="s">holds a confirmed spot there today</div></div>
             <div><div className="fbar" style={{ width: Math.max(2, Math.round(agg.converted / funnelMax * 100)) + '%', background: '#92400e' }}><span className="fv">{fmtInt(agg.converted)}</span></div></div>
           </div>
         </div>
+        {agg.offersClaimed > agg.allTime && (
+          <div className="insight">Seats claimed can outnumber people on the list — someone who joins, claims a seat, and later
+            rejoins the same waitlist counts once per claim.</div>
+        )}
       </div>
 
       <div className="twocol">
@@ -663,18 +681,18 @@ function App() {
         </div>
 
         <div className="panel">
-          <div className="panel-h"><span className="t">Waitlist modes</span><span className="d">{fmtInt(agg.sections)} filtered sections</span></div>
-          <div className="mix" role="img" aria-label={'Mode mix: remain-active ' + agg.modes['remain-active'] + '; reopen-registration ' + agg.modes['reopen-registration'] + '; off ' + agg.modes.off + '; not configured ' + agg.modes.none}>
+          <div className="panel-h"><span className="t">What happens when a seat opens up</span><span className="d">each section's waitlist setting · {fmtInt(agg.sections)} sections in view</span></div>
+          <div className="mix" role="img" aria-label={'Waitlist settings: offers go to the list ' + agg.modes['remain-active'] + '; reopens to everyone ' + agg.modes['reopen-registration'] + '; waitlist off ' + agg.modes.off + '; no waitlist set up ' + agg.modes.none}>
             {[['remain-active', '#d97706'], ['reopen-registration', '#92400e'], ['off', '#a8a29e'], ['none', '#e8e6e0']].map(([m, c]) => {
               const w = (agg.modes[m] || 0) / totalModes * 100;
-              return w > 0 ? <div key={m} style={{ width: Math.max(w, 0.7) + '%', background: c }} title={m + ' · ' + fmtInt(agg.modes[m]) + ' sections'}></div> : null;
+              return w > 0 ? <div key={m} style={{ width: Math.max(w, 0.7) + '%', background: c }} title={(m === 'none' ? 'no waitlist set up' : MODE_LABELS[m]) + ' · ' + fmtInt(agg.modes[m]) + ' sections'}></div> : null;
             })}
           </div>
           <div className="mixleg">
-            <span><span className="dot" style={{ background: '#d97706' }}></span>remain-active · {fmtInt(agg.modes['remain-active'])}</span>
-            <span><span className="dot" style={{ background: '#92400e' }}></span>reopen-registration · {fmtInt(agg.modes['reopen-registration'])}</span>
-            <span><span className="dot" style={{ background: '#a8a29e' }}></span>off · {fmtInt(agg.modes.off)}</span>
-            <span><span className="dot" style={{ background: '#e8e6e0' }}></span>not configured · {fmtInt(agg.modes.none)}</span>
+            <span title={MODE_HELP['remain-active']}><span className="dot" style={{ background: '#d97706' }}></span>offers go to the list · {fmtInt(agg.modes['remain-active'])}</span>
+            <span title={MODE_HELP['reopen-registration']}><span className="dot" style={{ background: '#92400e' }}></span>reopens to everyone · {fmtInt(agg.modes['reopen-registration'])}</span>
+            <span title={MODE_HELP['off']}><span className="dot" style={{ background: '#a8a29e' }}></span>waitlist off · {fmtInt(agg.modes.off)}</span>
+            <span title={MODE_NONE_HELP}><span className="dot" style={{ background: '#e8e6e0' }}></span>no waitlist set up · {fmtInt(agg.modes.none)}</span>
           </div>
           {agg.modes.none / totalModes > 0.3 && (
             <div className="insight"><b>{Math.round(agg.modes.none / totalModes * 100)}% of these sections have no waitlist configured.</b> A
@@ -692,7 +710,7 @@ function App() {
           <table>
             <thead><tr>
               <Th id="program">Program / Section</Th>
-              <th>Season</th><th>Status</th><th>Mode</th>
+              <th>Season</th><th>Status</th><th title="What happens when a seat opens up in a full section — hover a pill for details">When a seat opens</th>
               <Th id="enrolled" right>Enrolled / Cap</Th>
               <Th id="waitlisted" right>Waitlisted</Th>
               <Th id="pressure" right>Pressure</Th>
@@ -708,8 +726,11 @@ function App() {
                     <td style={{ fontSize: 11, color: '#78716c' }}>{r.season}</td>
                     <td><span className={'statuspill ' + (r.status === 'In Progress' ? 'st-prog' : r.status === 'Upcoming' ? 'st-up' : 'st-past')}>{r.status}</span></td>
                     <td>{r.mode
-                      ? <span className={'modepill' + (r.mode === 'off' ? ' off' : '')}>{r.mode}{r.modeSource === 'session' ? ' (session)' : ''}</span>
-                      : <span className="modepill mute">not configured</span>}</td>
+                      ? <span className={'modepill' + (r.mode === 'off' ? ' off' : '')}
+                              title={(MODE_HELP[r.mode] || r.mode) + (r.modeSource === 'session' ? ' Set on this section’s sessions.' : ' Set on the section.')}>
+                          {MODE_LABELS[r.mode] || r.mode}
+                        </span>
+                      : <span className="modepill mute" title={MODE_NONE_HELP}>no waitlist set up</span>}</td>
                     <td className="r">{fmtInt(r.enrolled)} <span style={{ color: '#a8a29e' }}>/ {r.capacity != null ? fmtInt(r.capacity) : '—'}</span></td>
                     <td className="r" style={{ fontWeight: 700 }}>{fmtInt(r.waitlisted)}</td>
                     <td className="r">{r.pressure != null
@@ -741,6 +762,7 @@ function App() {
           <li><b>Waitlist → enrolled</b> — a joiner who later holds a confirmed booking in the same section, booked at/after their waitlist join.</li>
           <li><b>Offers claimed &amp; time-to-claim</b> — from the claim grants the platform records when someone accepts an open spot; time-to-claim is measured grant creation → claim. Offers that expired unclaimed aren't recorded yet, so the funnel's "offered" stage stays unmeasured until an offer-sent event exists.</li>
           <li><b>Est. demand</b> — waitlisted × the section's default price. An estimate: assumes everyone waiting would enroll at list price if a seat existed.</li>
+          <li><b>"When a seat opens"</b> — each section's waitlist setting (Rec calls it the waitlist "mode"): <b>offers go to the list</b> (remain-active) sends waitlisted people a claim link; <b>reopens to everyone</b> (reopen-registration) makes the seat first-come-first-served; <b>waitlist off</b> / <b>no waitlist set up</b> means a full section just shows "Full". Settings can live on the section or its sessions.</li>
         </ul>
       </div>
       </React.Fragment>)}
