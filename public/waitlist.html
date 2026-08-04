@@ -351,7 +351,9 @@ function App() {
           </div>
         </div>
         <div className="report-header-right">
-          <div className="rh-meta" style={{fontWeight:600,marginBottom:2}}>Demand you couldn't seat</div>
+          {bodyState === 'ready' && (
+            <div className="rh-meta" style={{fontWeight:600,marginBottom:2}}>{fmtInt(agg.waitlisted)} waitlisted · {fmt$(agg.demand)} est. demand</div>
+          )}
           <div className="rh-meta">updated {updatedAt}</div>
         </div>
       </div>
