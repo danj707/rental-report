@@ -94,6 +94,10 @@
   .report-blurb { background: #fff; border: 1px solid #e8e6e0; border-radius: 8px; padding: 10px 14px;
     font-size: 12px; color: #57534e; margin-bottom: 16px; }
   .report-blurb strong { color: #1c1917; }
+  .glossary { display: grid; grid-template-columns: 1fr 1fr; gap: 7px 22px; margin: 10px 0 2px; }
+  @media (max-width: 860px) { .glossary { grid-template-columns: 1fr; } }
+  .glossary .g { font-size: 11.5px; color: #57534e; line-height: 1.45; }
+  .glossary .g b { color: #1c1917; }
 
   /* summary cards */
   .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(168px, 1fr)); gap: 12px; margin-bottom: 16px; }
@@ -248,6 +252,8 @@ function normalizeRow(raw) {
     pressure:       raw['Pressure %'] != null ? fmtN(raw['Pressure %']) : null,
     oldestJoin:     raw['Oldest Active Join'] ?? '',
     offersClaimed:  fmtN(raw['Offers Claimed']),
+    claimants:      fmtN(raw['Claimants'] ?? raw['Offers Claimed']), // Claimants added in card v2; fall back on stale cache
+
     c1h:            fmtN(raw['Claim 1h']),
     c4h:            fmtN(raw['Claim 4h']),
     c8h:            fmtN(raw['Claim 8h']),
@@ -323,13 +329,13 @@ function App() {
   }, [rows, search, season, status]);
 
   const agg = useMemo(() => {
-    const a = { waitlisted: 0, allTime: 0, converted: 0, demand: 0, offersClaimed: 0,
+    const a = { waitlisted: 0, allTime: 0, converted: 0, demand: 0, offersClaimed: 0, claimants: 0,
                 c1h: 0, c4h: 0, c8h: 0, c24h: 0, c48h: 0, cMore: 0,
                 modes: { 'remain-active': 0, 'reopen-registration': 0, off: 0, none: 0 },
                 sections: fRows.length };
     fRows.forEach(r => {
       a.waitlisted += r.waitlisted; a.allTime += r.wlAllTime; a.converted += r.wlConverted;
-      a.demand += r.demand; a.offersClaimed += r.offersClaimed;
+      a.demand += r.demand; a.offersClaimed += r.offersClaimed; a.claimants += r.claimants;
       a.c1h += r.c1h; a.c4h += r.c4h; a.c8h += r.c8h; a.c24h += r.c24h; a.c48h += r.c48h; a.cMore += r.cMore;
       const m = r.mode || 'none';
       if (a.modes[m] == null) a.modes[m] = 0;
@@ -360,6 +366,7 @@ function App() {
         conversionPct: agg.convPct,
         unmetDemandUsd: Math.round(agg.demand),
         offersClaimed: agg.offersClaimed,
+        distinctPeopleWhoClaimed: agg.claimants,
         claimWithin8hPct: agg.claimWithin8Pct,
         timeToClaimBuckets: { within1h: agg.c1h, h1to4: agg.c4h, h4to8: agg.c8h, h8to24: agg.c24h, h24to48: agg.c48h, over48h: agg.cMore },
         waitlistModeMix: agg.modes,
@@ -431,11 +438,11 @@ function App() {
       Capacity: r.capacity, Enrolled: r.enrolled, Waitlisted: r.waitlisted,
       'Waitlist All-Time': r.wlAllTime, Converted: r.wlConverted,
       'Pressure %': r.pressure, 'Est Demand $': r.demand, Price: r.price,
-      'Offers Claimed': r.offersClaimed, 'Oldest Active Join': r.oldestJoin,
+      'Seats Claimed (events)': r.offersClaimed, 'People Who Claimed': r.claimants, 'Oldest Active Join': r.oldestJoin,
       'Start Date': r.startDate, 'End Date': r.endDate,
     }));
     const ws = XLSX.utils.json_to_sheet(data);
-    ws['!cols'] = [{wch:28},{wch:28},{wch:14},{wch:11},{wch:16},{wch:15},{wch:8},{wch:8},{wch:10},{wch:14},{wch:10},{wch:10},{wch:12},{wch:8},{wch:13},{wch:16},{wch:11},{wch:11}];
+    ws['!cols'] = [{wch:28},{wch:28},{wch:14},{wch:11},{wch:16},{wch:20},{wch:8},{wch:8},{wch:10},{wch:14},{wch:10},{wch:10},{wch:12},{wch:8},{wch:18},{wch:16},{wch:16},{wch:11},{wch:11}];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Waitlist Demand');
     XLSX.writeFile(wb, orgSlug + '-waitlist-demand.xlsx');
@@ -456,7 +463,7 @@ function App() {
   const after8 = agg.c24h + agg.c48h + agg.cMore;
   const after8Pct = agg.offersClaimed > 0 ? Math.round(after8 / agg.offersClaimed * 100) : null;
   const totalModes = Math.max(agg.sections, 1);
-  const funnelMax = Math.max(agg.allTime, agg.offersClaimed, agg.converted, 1);
+  const funnelMax = Math.max(agg.allTime, agg.claimants, agg.converted, 1);
   const pressToBar = p => Math.min(70, Math.max(8, Math.round((p || 0) / 12)));
 
   const Th = ({ id, children, right }) => (
@@ -541,9 +548,17 @@ function App() {
       )}
       {bodyState === 'ready' && (<React.Fragment>
       <div className="report-blurb">
-        <strong>Who's waiting for a spot, and what that demand is worth.</strong> Waitlist counts are live people
-        (not canceled) on each section's waitlist. Conversion is all-time: joiners who later enrolled in the same
-        section. Est. demand = waitlisted × the section's default price — the revenue on the table if capacity were added.
+        <strong>Who's waiting for a spot, and what that demand is worth.</strong> When a section fills up, residents
+        can put their name on its waitlist; when a seat opens back up, the platform can send them a link to claim it.
+        This report counts that demand. Key terms:
+        <div className="glossary">
+          <div className="g"><b>Waitlisted now</b> — people on a waitlist at this moment (canceled entries don't count). Someone waiting on three different sections counts once for each.</div>
+          <div className="g"><b>Waitlist → enrolled</b> — of everyone who has <i>ever</i> joined one of these waitlists, the share who now holds a confirmed spot in that same section.</div>
+          <div className="g"><b>Unmet demand</b> — waitlisted now × the section's list price: the revenue sitting on the table if seats existed.</div>
+          <div className="g"><b>Seats claimed</b> — every time someone used a claim link to take an open seat. One person waiting on several sessions of the same program can claim more than once, so this counts <i>claims</i>; the funnel below counts <i>people</i>.</div>
+          <div className="g"><b>Offers that expired unclaimed</b> — blank on purpose: Rec records a claim link only when it's <i>used</i>. Links that were sent but never clicked leave no trace, so nobody can count them until the platform starts logging offers when they go out.</div>
+          <div className="g"><b>When a seat opens</b> — each section's waitlist setting: <b>offers go to the list</b> (waitlisted people get a claim link) · <b>reopens to everyone</b> (the seat goes back to public first-come-first-served) · <b>waitlist off / not set up</b> (a full section just shows "Full" — that interest is invisible demand).</div>
+        </div>
       </div>
 
       {/* AI Insights */}
@@ -617,14 +632,14 @@ function App() {
           <div className="sub">waitlisted × program price</div>
         </div>
         <div className="card">
-          <div className="lbl">Offers claimed</div>
+          <div className="lbl">Seats claimed from the list</div>
           <div className="val">{fmtInt(agg.offersClaimed)}</div>
-          <div className="sub">{agg.claimWithin8Pct != null ? agg.claimWithin8Pct + '% claimed within 8h' : 'spot offers accepted'}</div>
+          <div className="sub">by {fmtInt(agg.claimants)} people{agg.claimWithin8Pct != null ? ' · ' + agg.claimWithin8Pct + '% within 8h' : ''}</div>
         </div>
         <div className="card planned">
-          <div className="lbl">Offers expired unclaimed</div>
-          <div className="val muted">—</div>
-          <div className="sub">needs an offer-sent event; links are only recorded on claim today</div>
+          <div className="lbl">Offers that expired unclaimed</div>
+          <div className="val muted" style={{ fontSize: 14, paddingTop: 5 }}>can't count yet</div>
+          <div className="sub">Rec only writes a record when a claim link is used — links sent but never clicked leave no trace</div>
         </div>
       </div>
 
@@ -643,23 +658,22 @@ function App() {
             <div><div className="fbar ghost" style={{ width: '88%' }}><span className="fv">not yet measurable — only claims are recorded</span></div></div>
           </div>
           <div className="fstage">
-            <div className="fl"><div className="n">Claimed the seat</div><div className="s">clicked their link and took the open spot</div></div>
-            <div><div className="fbar" style={{ width: Math.max(2, Math.round(agg.offersClaimed / funnelMax * 100)) + '%', background: '#d97706' }}><span className="fv">{fmtInt(agg.offersClaimed)}</span></div></div>
+            <div className="fl"><div className="n">Claimed a seat</div><div className="s">people who clicked a claim link and took a spot</div></div>
+            <div><div className="fbar" style={{ width: Math.max(2, Math.round(agg.claimants / funnelMax * 100)) + '%', background: '#d97706' }}><span className="fv">{fmtInt(agg.claimants)}</span></div></div>
           </div>
           <div className="fstage">
             <div className="fl"><div className="n">Enrolled in that section</div><div className="s">holds a confirmed spot there today</div></div>
             <div><div className="fbar" style={{ width: Math.max(2, Math.round(agg.converted / funnelMax * 100)) + '%', background: '#92400e' }}><span className="fv">{fmtInt(agg.converted)}</span></div></div>
           </div>
         </div>
-        {agg.offersClaimed > agg.allTime && (
-          <div className="insight">Seats claimed can outnumber people on the list — someone who joins, claims a seat, and later
-            rejoins the same waitlist counts once per claim.</div>
-        )}
+        <div className="insight">Every count here is <b>people</b>, so the stages compare fairly. {agg.converted > agg.claimants
+          ? 'Enrolled can exceed claimed-a-seat: a claim link is only one way in — seats that reopen to everyone, staff enrollments, and re-registration count too.'
+          : 'People can also get in without a claim link (seats that reopen to everyone, staff enrollments), so the last two stages overlap rather than nest perfectly.'}</div>
       </div>
 
       <div className="twocol">
         <div className="panel">
-          <div className="panel-h"><span className="t">Time to claim an open spot</span><span className="d">{fmtInt(agg.offersClaimed)} claimed offers</span></div>
+          <div className="panel-h"><span className="t">Time to claim an open spot</span><span className="d">{fmtInt(agg.offersClaimed)} seat claims by {fmtInt(agg.claimants)} people</span></div>
           {agg.offersClaimed > 0 ? (
             <React.Fragment>
               <div className="hist">
@@ -760,7 +774,7 @@ function App() {
         <ul>
           <li><b>Waitlisted now</b> — live entries (not canceled, not deleted) on each section's waitlist; session-level waitlists roll up to their section. Scope: sections that aren't deleted, canceled, or archived.</li>
           <li><b>Waitlist → enrolled</b> — a joiner who later holds a confirmed booking in the same section, booked at/after their waitlist join.</li>
-          <li><b>Offers claimed &amp; time-to-claim</b> — from the claim grants the platform records when someone accepts an open spot; time-to-claim is measured grant creation → claim. Offers that expired unclaimed aren't recorded yet, so the funnel's "offered" stage stays unmeasured until an offer-sent event exists.</li>
+          <li><b>Seats claimed &amp; time-to-claim</b> — from the claim records the platform writes when someone uses a claim link; time-to-claim is measured from link creation to claim. "Seats claimed" counts <i>events</i> and can exceed the number of people: waitlists are often kept per session, so one person waiting on a 10-session program can hold (and claim) several entries. The funnel's "Claimed a seat" stage counts distinct <i>people</i> instead. Offers that expired unclaimed aren't recorded at all, so the "told a seat opened up" stage stays unmeasured until an offer-sent event exists.</li>
           <li><b>Est. demand</b> — waitlisted × the section's default price. An estimate: assumes everyone waiting would enroll at list price if a seat existed.</li>
           <li><b>"When a seat opens"</b> — each section's waitlist setting (Rec calls it the waitlist "mode"): <b>offers go to the list</b> (remain-active) sends waitlisted people a claim link; <b>reopens to everyone</b> (reopen-registration) makes the seat first-come-first-served; <b>waitlist off</b> / <b>no waitlist set up</b> means a full section just shows "Full". Settings can live on the section or its sessions.</li>
         </ul>
