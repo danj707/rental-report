@@ -257,6 +257,8 @@ function normalizeRow(raw) {
     peopleOffered:     fmtN(raw['People Offered']),     // zero until cached rows refresh
     offersExpired:     fmtN(raw['Offers Expired']),
     offersOutstanding: fmtN(raw['Offers Outstanding']),
+    avgClaimH: raw['Avg Claim Hours'] != null ? Number(raw['Avg Claim Hours']) : null,     // v4, null when no claims
+    medClaimH: raw['Median Claim Hours'] != null ? Number(raw['Median Claim Hours']) : null,
 
     c1h:            fmtN(raw['Claim 1h']),
     c4h:            fmtN(raw['Claim 4h']),
@@ -274,7 +276,34 @@ const SORTS = {
   demand:     (a, b) => b.demand - a.demand,
   program:    (a, b) => (a.program + a.section).localeCompare(b.program + b.section),
   enrolled:   (a, b) => b.enrolled - a.enrolled,
+  claimtime:  (a, b) => (b.medClaimH ?? -1) - (a.medClaimH ?? -1),
 };
+
+// Hours → friendly duration ("45m", "3.5h", "6d")
+function fmtHrs(h) {
+  if (h == null || isNaN(h)) return '—';
+  if (h < 1) return Math.round(h * 60) + 'm';
+  if (h < 48) return (Math.round(h * 10) / 10) + 'h';
+  return Math.round(h / 24) + 'd';
+}
+
+// Approximate median from the claim-time buckets (linear interpolation inside
+// the median bucket; 48h+ treated as 48–96h). Marked ≈ in the UI.
+function bucketMedian(a) {
+  const bounds = [[0, 1], [1, 4], [4, 8], [8, 24], [24, 48], [48, 96]];
+  const counts = [a.c1h, a.c4h, a.c8h, a.c24h, a.c48h, a.cMore];
+  const total = counts.reduce((s, v) => s + v, 0);
+  if (!total) return null;
+  let need = total / 2, acc = 0;
+  for (let i = 0; i < 6; i++) {
+    if (counts[i] > 0 && acc + counts[i] >= need) {
+      const frac = (need - acc) / counts[i];
+      return bounds[i][0] + frac * (bounds[i][1] - bounds[i][0]);
+    }
+    acc += counts[i];
+  }
+  return null;
+}
 
 function App() {
   const [rows, setRows]       = useState(null);
@@ -335,6 +364,7 @@ function App() {
   const agg = useMemo(() => {
     const a = { waitlisted: 0, allTime: 0, converted: 0, demand: 0, offersClaimed: 0, claimants: 0,
                 offersSent: 0, peopleOffered: 0, offersExpired: 0, offersOutstanding: 0,
+                _claimHrsWeighted: 0, _claimsWithStats: 0,
                 c1h: 0, c4h: 0, c8h: 0, c24h: 0, c48h: 0, cMore: 0,
                 modes: { 'remain-active': 0, 'reopen-registration': 0, off: 0, none: 0 },
                 sections: fRows.length };
@@ -343,6 +373,10 @@ function App() {
       a.demand += r.demand; a.offersClaimed += r.offersClaimed; a.claimants += r.claimants;
       a.offersSent += r.offersSent; a.peopleOffered += r.peopleOffered;
       a.offersExpired += r.offersExpired; a.offersOutstanding += r.offersOutstanding;
+      if (r.avgClaimH != null && r.offersClaimed > 0) {
+        a._claimHrsWeighted += r.avgClaimH * r.offersClaimed;
+        a._claimsWithStats += r.offersClaimed;
+      }
       a.c1h += r.c1h; a.c4h += r.c4h; a.c8h += r.c8h; a.c24h += r.c24h; a.c48h += r.c48h; a.cMore += r.cMore;
       const m = r.mode || 'none';
       if (a.modes[m] == null) a.modes[m] = 0;
@@ -351,6 +385,8 @@ function App() {
     a.convPct = a.allTime > 0 ? Math.round(a.converted / a.allTime * 1000) / 10 : null;
     const within8 = a.c1h + a.c4h + a.c8h;
     a.claimWithin8Pct = a.offersClaimed > 0 ? Math.round(within8 / a.offersClaimed * 100) : null;
+    a.avgClaimH = a._claimsWithStats > 0 ? a._claimHrsWeighted / a._claimsWithStats : null; // exact weighted mean
+    a.medClaimH = bucketMedian(a); // ≈ interpolated from buckets for the filtered view
     return a;
   }, [fRows]);
 
@@ -378,6 +414,8 @@ function App() {
         distinctPeopleWhoClaimed: agg.claimants,
         offersExpiredUnclaimed: agg.offersExpired,
         offersStillOpen: agg.offersOutstanding,
+        avgTimeToClaimHours: agg.avgClaimH != null ? Math.round(agg.avgClaimH * 10) / 10 : null,
+        approxMedianTimeToClaimHours: agg.medClaimH != null ? Math.round(agg.medClaimH * 10) / 10 : null,
         claimWithin8hPct: agg.claimWithin8Pct,
         timeToClaimBuckets: { within1h: agg.c1h, h1to4: agg.c4h, h4to8: agg.c8h, h8to24: agg.c24h, h24to48: agg.c48h, over48h: agg.cMore },
         waitlistModeMix: agg.modes,
@@ -388,6 +426,7 @@ function App() {
         mode: r.mode || 'not configured', capacity: r.capacity, enrolled: r.enrolled,
         waitlisted: r.waitlisted, joinersAllTime: r.wlAllTime, converted: r.wlConverted,
         pressurePct: r.pressure, estDemandUsd: Math.round(r.demand),
+        medianClaimHours: r.medClaimH, offersSent: r.offersSent, offersExpired: r.offersExpired,
       })),
     };
   }, [tableRows, agg, season, status, search, startDate, endDate]);
@@ -450,11 +489,12 @@ function App() {
       'Waitlist All-Time': r.wlAllTime, Converted: r.wlConverted,
       'Pressure %': r.pressure, 'Est Demand $': r.demand, Price: r.price,
       'Offers Sent': r.offersSent, 'Seats Claimed': r.offersClaimed, 'People Who Claimed': r.claimants,
-      'Offers Expired Unclaimed': r.offersExpired, 'Oldest Active Join': r.oldestJoin,
+      'Offers Expired Unclaimed': r.offersExpired,
+      'Median Claim Hours': r.medClaimH, 'Avg Claim Hours': r.avgClaimH, 'Oldest Active Join': r.oldestJoin,
       'Start Date': r.startDate, 'End Date': r.endDate,
     }));
     const ws = XLSX.utils.json_to_sheet(data);
-    ws['!cols'] = [{wch:28},{wch:28},{wch:14},{wch:11},{wch:16},{wch:20},{wch:8},{wch:8},{wch:10},{wch:14},{wch:10},{wch:10},{wch:12},{wch:8},{wch:12},{wch:13},{wch:16},{wch:20},{wch:16},{wch:11},{wch:11}];
+    ws['!cols'] = [{wch:28},{wch:28},{wch:14},{wch:11},{wch:16},{wch:20},{wch:8},{wch:8},{wch:10},{wch:14},{wch:10},{wch:10},{wch:12},{wch:8},{wch:12},{wch:13},{wch:16},{wch:20},{wch:16},{wch:14},{wch:16},{wch:11},{wch:11}];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Waitlist Demand');
     XLSX.writeFile(wb, orgSlug + '-waitlist-demand.xlsx');
@@ -686,6 +726,12 @@ function App() {
       <div className="twocol">
         <div className="panel">
           <div className="panel-h"><span className="t">Time to claim an open spot</span><span className="d">{fmtInt(agg.offersClaimed)} seat claims by {fmtInt(agg.claimants)} people</span></div>
+          {agg.offersClaimed > 0 && (
+            <div style={{ fontSize: 12.5, color: '#57534e', margin: '2px 0 4px' }}>
+              median <b>{agg.medClaimH != null ? '≈' + fmtHrs(agg.medClaimH) : '—'}</b> · average <b>{fmtHrs(agg.avgClaimH)}</b> from offer to claim
+              {agg.avgClaimH != null && agg.medClaimH != null && agg.avgClaimH > agg.medClaimH * 3 ? ' — a few very slow claims pull the average up' : ''}
+            </div>
+          )}
           {agg.offersClaimed > 0 ? (
             <React.Fragment>
               <div className="hist">
@@ -741,6 +787,7 @@ function App() {
               <Th id="waitlisted" right>Waitlisted</Th>
               <Th id="pressure" right>Pressure</Th>
               <Th id="demand" right>Est. demand</Th>
+              <Th id="claimtime" right>Typical claim</Th>
               <th className="r">Oldest join</th>
             </tr></thead>
             <tbody>
@@ -763,6 +810,7 @@ function App() {
                       ? <span><span className={'pressbar' + (hot ? ' hot' : '')} style={{ width: pressToBar(r.pressure) + 'px' }}></span><span className={'press ' + (hot ? 'hot' : r.pressure >= 40 ? 'warm' : '')}>{fmtInt(r.pressure)}%</span></span>
                       : '—'}</td>
                     <td className="r">{r.demand > 0 ? fmt$(r.demand) : (r.waitlisted > 0 && r.price === 0 ? 'free' : '—')}</td>
+                    <td className="r" title={r.medClaimH != null ? 'Median time from offer to claim (avg ' + fmtHrs(r.avgClaimH) + ', ' + fmtInt(r.offersClaimed) + ' claims)' : 'No claims yet'}>{r.medClaimH != null ? fmtHrs(r.medClaimH) : '—'}</td>
                     <td className="r" style={{ fontSize: 11, color: '#78716c' }}>{fmtD(r.oldestJoin) || '—'}</td>
                   </tr>
                 );
@@ -774,7 +822,7 @@ function App() {
                 <td className="r">{fmtInt(tableRows.reduce((s, r) => s + r.waitlisted, 0))}</td>
                 <td />
                 <td className="r">{fmt$(tableRows.reduce((s, r) => s + r.demand, 0))}</td>
-                <td />
+                <td /><td />
               </tr>
             </tbody>
           </table>
@@ -786,7 +834,7 @@ function App() {
         <ul>
           <li><b>Waitlisted now</b> — live entries (not canceled, not deleted) on each section's waitlist; session-level waitlists roll up to their section. Scope: sections that aren't deleted, canceled, or archived.</li>
           <li><b>Waitlist → enrolled</b> — a joiner who later holds a confirmed booking in the same section, booked at/after their waitlist join.</li>
-          <li><b>Offer lifecycle</b> — the platform creates a claim-link record the moment an offer goes out (that's "offers sent") and stamps the record when the link is used (that's a claim — 71% are followed within minutes by a confirmed booking in the same section; the rest are claims that didn't finish checkout). A link never used before its window closed counts as "expired unclaimed". Time-to-claim measures offer-sent → claim. Offers and claims count <i>links</i>, and one person waiting on several sessions of a program can hold several links — the funnel counts distinct <i>people</i> instead. A small slice of link records (~7%) show other activity (e.g. staff extending a window) and are counted as neither claimed nor expired.</li>
+          <li><b>Offer lifecycle</b> — the platform creates a claim-link record the moment an offer goes out (that's "offers sent") and stamps the record when the link is used (that's a claim — 71% are followed within minutes by a confirmed booking in the same section; the rest are claims that didn't finish checkout). A link never used before its window closed counts as "expired unclaimed". Time-to-claim measures offer-sent → claim. Offers and claims count <i>links</i>, and one person waiting on several sessions of a program can hold several links — the funnel counts distinct <i>people</i> instead. A small slice of link records (~7%) show other activity (e.g. staff extending a window) and are counted as neither claimed nor expired. Per-section average and median claim times are exact; the page-level average is an exact claim-weighted mean, while the page-level median is interpolated from the hourly buckets (shown with ≈).</li>
           <li><b>Est. demand</b> — waitlisted × the section's default price. An estimate: assumes everyone waiting would enroll at list price if a seat existed.</li>
           <li><b>"When a seat opens"</b> — each section's waitlist setting (Rec calls it the waitlist "mode"): <b>offers go to the list</b> (remain-active) sends waitlisted people a claim link; <b>reopens to everyone</b> (reopen-registration) makes the seat first-come-first-served; <b>waitlist off</b> / <b>no waitlist set up</b> means a full section just shows "Full". Settings can live on the section or its sessions.</li>
         </ul>
