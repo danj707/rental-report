@@ -60,6 +60,21 @@
       color: #aaa;
       margin-bottom: 12px;
     }
+    /* ── Director's Report hero band ── */
+    .dir-hero { display: block; position: relative; border-radius: 14px; overflow: hidden;
+      margin-bottom: 26px; text-decoration: none; color: #fff; background: #1f2937;
+      box-shadow: 0 2px 10px rgba(0,0,0,.12); min-height: 132px; }
+    .dir-hero .dh-bg { position: absolute; inset: 0; background-size: cover; background-position: center; }
+    .dir-hero .dh-shade { position: absolute; inset: 0; background: linear-gradient(90deg, rgba(15,23,42,.88) 0%, rgba(15,23,42,.72) 45%, rgba(15,23,42,.35) 100%); }
+    .dir-hero .dh-body { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 22px 26px; flex-wrap: wrap; }
+    .dir-hero .dh-eyebrow { font-size: 10px; font-weight: 800; letter-spacing: 1.6px; text-transform: uppercase; color: #fbbf24; margin-bottom: 5px; }
+    .dir-hero .dh-title { font-size: 21px; font-weight: 800; line-height: 1.2; text-shadow: 0 1px 4px rgba(0,0,0,.4); }
+    .dir-hero .dh-sub { font-size: 12.5px; color: rgba(255,255,255,.85); margin-top: 6px; max-width: 640px; line-height: 1.5; }
+    .dir-hero .dh-cta { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+    .dir-hero .dh-btn { background: #fff; color: #111827; font-weight: 800; font-size: 13.5px; padding: 10px 22px; border-radius: 8px; white-space: nowrap; box-shadow: 0 2px 8px rgba(0,0,0,.25); transition: transform .12s; }
+    .dir-hero:hover .dh-btn { transform: translateY(-1px); }
+    .dir-hero .dh-meta { font-size: 10.5px; color: rgba(255,255,255,.75); }
+    @media (max-width: 720px) { .dir-hero .dh-body { padding: 16px 18px; } .dir-hero .dh-title { font-size: 17px; } }
 
     /* ── Report cards ── */
     .cards {
@@ -377,6 +392,7 @@
 </div>
 
 <main class="main">
+  <div id="directors-hero" style="display:none"></div>
   <div class="section-label">Reports</div>
   <div class="cards" id="cards">
     <div class="empty">No reports configured.</div>
@@ -408,6 +424,7 @@
     users:     { label: 'Community Intel',            icon: '👥',  desc: 'Demographics, revenue, and strategy intelligence across your community', ai: true },
     'instructor-payout': { label: 'Instructor Payout', icon: '💰', desc: 'Revenue splits and payout calculations by instructor' },
     'rentalcalendar':    { label: 'Rental Calendar', icon: '🏟️', desc: 'Real-time facility availability with live booking data' },
+    'directors-report':  { label: "Director's Report", icon: '📰', desc: 'Quarterly executive summary — revenue, enrollment, demand, facilities, and staff workload', ai: true },
     'campmap':           { label: 'Campsite Map', icon: '🏕️', desc: 'Interactive campground map with per-night availability overlay' },
     'facilities':        { label: 'Facilities', icon: '🏞️', desc: 'Facility hub — summary + camping, golf, aquatics & court utilization' },
     'ice-calendar':      { label: 'Ice Participant Calendar', icon: '❄️', desc: 'Participant-filtered monthly ice program calendar' },
@@ -644,6 +661,33 @@
     list.innerHTML = p.narrative.map(function(insight) {
       return '<li>' + insight + '</li>';
     }).join('');
+  })();
+
+  /* ── Director's Report hero band (above the report cards) ── */
+  (function directorsHero() {
+    var dr = cfg.directorsReport;
+    if (!dr) return;
+    var el = document.getElementById('directors-hero');
+    if (!el) return;
+    var meta = dr.stored && dr.generatedAt
+      ? 'Generated ' + new Date(dr.generatedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) + ' · past quarters archived inside'
+      : 'Generates on first open · past quarters archived inside';
+    el.innerHTML = '<a class="dir-hero" href="/' + slug + '/directors-report' + tokenQS + '">'
+      + (dr.bannerUrl ? '<div class="dh-bg" style="background-image:url(\'' + dr.bannerUrl.replace(/'/g, '%27') + '\')"></div>' : '')
+      + '<div class="dh-shade"></div>'
+      + '<div class="dh-body">'
+        + '<div>'
+          + '<div class="dh-eyebrow">\u{1F4F0} Quarterly Executive Summary</div>'
+          + '<div class="dh-title">Your ' + dr.label + ' Director’s Report is available</div>'
+          + '<div class="dh-sub">Revenue with quarter-over-quarter deltas, enrollment, waitlist demand, facility rentals, community growth, and staff workload — with Rec Insights, ready to print for council.</div>'
+        + '</div>'
+        + '<div class="dh-cta">'
+          + '<span class="dh-btn">Open report →</span>'
+          + '<span class="dh-meta">' + meta + '</span>'
+        + '</div>'
+      + '</div>'
+    + '</a>';
+    el.style.display = 'block';
   })();
 
   /* Render cards */

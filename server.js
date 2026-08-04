@@ -699,6 +699,8 @@ const ORGS = {
     coords:  { lat: 42.3709, lon: -71.1828 },
     calendarPublicUrl: "https://www.watertown-ma.gov/1425/Recreation",
     logoUrl: "https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2Forganization-d781690b-c5a0-43c5-8443-9ae43899528c%2FfullLogo.png%3F1750270261391&w=1920&q=75",
+    // Hero banner from their live rec.us org page (rec.us/organizations/watertown)
+    bannerUrl: "https://prod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com/organization-d781690b-c5a0-43c5-8443-9ae43899528c/headerImage.png?1755282213181",
     facility: { mbUuid: "4b64af10-d57f-41af-aad8-b16d12a8f7b8" },
     programs: { mbUuid: "d3a3554f-1232-4803-9cc7-5b0f611360b0" },
     roster:   { mbUuid: "4f9861ef-e8ac-4447-bf88-3648c1e54a8b" },
@@ -932,6 +934,7 @@ const REPORT_DIRECTORY = {
   users:               { label: "Community Intel",          emoji: "👥" },
   "instructor-payout": { label: "Instructor Payout",        emoji: "💰" },
   rentalcalendar:      { label: "Rental Calendar",          emoji: "🏟️" },
+  "directors-report":  { label: "Director's Report",        emoji: "📰" },
   campmap:             { label: "Campsite Map",             emoji: "🏕️" },
   facilities:          { label: "Facilities",               emoji: "🏞️" },
   "ice-calendar":      { label: "Ice Participant Calendar", emoji: "❄️" },
@@ -1337,6 +1340,11 @@ const NON_ADDABLE_REPORTS = new Set(["program-demographics", "retention", "annua
 // Reports that require extra params (e.g. section_id) and cannot be health-checked with org_id alone
 const HEALTH_SKIP_REPORTS = new Set(["section-detail", "annual-report", "qoq", "qbr-stats", "checkins", "program-checkins", "selfservice"]);
 const RENTAL_CALENDAR_ORGS = new Set(["watertown", "norman", "niagarafalls"]);
+// Director's Report (quarterly executive summary) — per-org pilot rollout.
+// Watertown first; to go org-wide later, either add slugs here or move the
+// report into DEFAULT_HIDDEN_REPORTS-style opt-in. Route + API work for any
+// org already; this set only controls the dashboard card.
+const DIRECTORS_REPORT_ORGS = new Set(["watertown"]);
 // Reports HIDDEN by default for every org (opt-in to show), for WIP reports not
 // yet launched. For these, presence in an org's visibility list means SHOWN —
 // the inverse of the normal opt-out hidden-list semantics. Use reportHiddenForOrg().
@@ -1947,6 +1955,7 @@ function visibleReportsForOrg(slug) {
     !NON_ADDABLE_REPORTS.has(r) && !RETIRED_REPORTS.has(r) &&
     (org[r]?.mbUuid || SHARED_UUIDS[r]) && !hidden.has(r));
   if (RENTAL_CALENDAR_ORGS.has(slug) && !hidden.has("rentalcalendar")) out.push("rentalcalendar");
+  if (DIRECTORS_REPORT_ORGS.has(slug) && !hidden.has("directors-report")) out.push("directors-report");
   if ((org.gl?.mbUuid || SHARED_UUIDS.gl) && !hidden.has("qoq")) out.push("qoq");
   if (!reportHiddenForOrg(slug, "facilities")) out.push("facilities");
   return out;
@@ -2413,6 +2422,7 @@ function buildMetrics(org, daysBack) {
   const configuredReports = REPORT_TYPES.filter(r => ORGS[org]?.[r]?.mbUuid || SHARED_UUIDS[r]);
   // Include non-Metabase reports that have their own routes (e.g. rentalcalendar)
   if (RENTAL_CALENDAR_ORGS.has(org)) configuredReports.push('rentalcalendar');
+  if (DIRECTORS_REPORT_ORGS.has(org)) configuredReports.push('directors-report');
   return { summary, daily, subCounts, subByCadence, totalSubscribers: allSubs.length, insights, configuredReports };
 }
 
@@ -3248,8 +3258,8 @@ app.get("/api/org-visibility/:slug", (req, res) => {
       available.push({ type: rt, visible: DEFAULT_HIDDEN_REPORTS.has(rt) ? !reportHiddenForOrg(slug, rt) : !hidden.has(rt) });
     }
   }
-  // Also check non-REPORT_TYPES that can be toggled (chat, report-wizard, rentalcalendar)
-  for (const rt of ["chat", "report-wizard", "rentalcalendar"]) {
+  // Also check non-REPORT_TYPES that can be toggled (chat, report-wizard, rentalcalendar, directors-report)
+  for (const rt of ["chat", "report-wizard", "rentalcalendar", "directors-report"]) {
     if (RETIRED_REPORTS.has(rt)) continue; // globally not surfaced
     available.push({ type: rt, visible: !hidden.has(rt) });
   }
@@ -3653,17 +3663,21 @@ Respond ONLY with a valid JSON array of 4\u20136 objects. Each object: {"type":"
 
 Focus on: household composition patterns (family size, age mix between parents and children), youth vs adult programming balance based on actual member ages, data quality issues worth addressing, growth patterns, residency implications for pricing, grade-level program opportunities (which grades are most represented), geographic reach, and underserved demographic segments. Be specific with numbers from the data. Do not invent numbers not in the input.`;
 
-const DIRECTORS_SYS_PROMPT = `You are an executive analyst for US municipal parks & recreation departments. You receive a JSON summary of one month's operational metrics: revenue, program enrollment, community demographics, and self-service (Fast Track) adoption.
+const DIRECTORS_SYS_PROMPT = `You are an executive analyst for US municipal parks & recreation departments. You receive one quarter's pre-computed operational metrics for one department: GL revenue with prior-quarter comparison, program enrollment with top and low-fill programs, waitlist demand and the offer funnel, facility rentals and court usage, community demographics, self-service vs staff order mix, and instructor-led program figures. Some metric families may be absent — never mention missing data.
 
-Return a JSON array of 3-4 insight objects. Each object has:
-- "type": one of "positive", "warning", "action", "neutral"
-- "title": bold 4-8 word headline
-- "body": 1-2 sentence explanation with specific numbers from the data
+Return EXACTLY 4 insights as a JSON array and nothing else — no prose, no preamble, no markdown code fences. Each element is an object with exactly these keys:
+{
+  "type": "opportunity" | "risk" | "signal",
+  "title": short label, 7 words or fewer,
+  "detail": 1-2 sentences, 40 words or fewer, citing specific numbers or program names from the data,
+  "action": one concrete next step, 12 words or fewer
+}
 
-Focus on: standout achievements worth celebrating, areas needing attention, and one concrete recommended action. Be specific — cite the exact numbers. Write for a department director who will share this with their city council.
-
-Example output:
-[{"type":"positive","title":"Strong enrollment momentum","body":"575 enrollments across 51 programs shows healthy community engagement, with a 41.5% overall fill rate leaving room to grow."},{"type":"action","title":"Boost Fast Track promotion","body":"Only 8.2% of enrollments come through self-service. Increasing FT adoption for high-demand programs like Swim Lessons could reduce front-desk workload by 15+ hours/month."}]`;
+Rules:
+- Ground EVERY figure in the data provided. Never invent numbers; only name programs, sections, or parks that appear in the data.
+- This is a quarterly executive report a director may hand to a city council: lead with what changed vs the prior quarter, quantify unmet demand (waitlist pressure, offers claimed), and flag operational wins (self-service share, facility revenue) or risks (under-filled programs, refund spikes, data-completeness gaps).
+- If "partial" is true the quarter is still in progress — do not compare its totals against the full prior quarter.
+- Be terse. No filler. Vary "type" across the four insights where the data supports it.`;
 
 
 const GL_SYS_PROMPT = `You are a municipal finance analyst for US parks & recreation departments. You are given GL (General Ledger) code rollup data showing payment and refund totals by GL code for a reporting period.
@@ -5272,12 +5286,385 @@ app.get("/:org/directors-report", (req, res) => {
     slug,
     displayName: org.displayName || (slug.charAt(0).toUpperCase() + slug.slice(1) + " Parks & Recreation"),
     logoUrl: org.logoUrl || "",
+    bannerUrl: org.bannerUrl || "",
     token: org.token || "",
   };
   const html = require("fs").readFileSync(path.join(__dirname, "public", "directors-report.html"), "utf8");
   const inject = `<script>window.ORG_CONFIG=${JSON.stringify(orgConfig)};</script>`;
   res.type("html").send(html.replace("</head>", inject + "</head>"));
 });
+
+// ━━ Director's Report — quarterly aggregate API + snapshot archive ━━━━
+// Each completed quarter is generated once (metrics + AI insights baked in),
+// persisted to disk, and served from that snapshot forever after — the report
+// is a read-mostly artifact, regenerated quarter by quarter, with older
+// quarters kept selectable as an archive. A background job auto-generates the
+// just-ended quarter shortly after each quarter rolls over.
+const DIRECTORS_SNAPSHOTS_FILE = path.join(DATA_DIR, "directors-snapshots.json");
+function loadDirectorsSnapshots() { return readJSON(DIRECTORS_SNAPSHOTS_FILE, {}); }
+function saveDirectorsSnapshots(s) { writeJSON(DIRECTORS_SNAPSHOTS_FILE, s); }
+const _directorsPartialCache = new Map(); // slug|Y-Qn → { ts, data } for in-progress quarters
+const DIRECTORS_PARTIAL_TTL = 30 * 60 * 1000;
+
+const dnum = (v) => { const n = parseFloat(String(v ?? "").replace(/,/g, "")); return isNaN(n) ? 0 : n; };
+function dirLastCompletedQuarter(now) {
+  const d = now || new Date();
+  const curQ = Math.floor(d.getMonth() / 3) + 1;
+  return curQ === 1 ? { year: d.getFullYear() - 1, q: 4 } : { year: d.getFullYear(), q: curQ - 1 };
+}
+
+function dirSumGL(rows) {
+  if (!Array.isArray(rows) || !rows.length) return null;
+  let gross = 0, refunds = 0, net = 0, payments = 0, refundCount = 0;
+  const byAccount = {};
+  for (const r of rows) {
+    gross += dnum(r["Total Payments"]); refunds += dnum(r["Total Refunds"]); net += dnum(r["Net Amount"]);
+    payments += dnum(r["Number of Payments"]); refundCount += dnum(r["Number of Refunds"]);
+    let k = String(r["Account Name"] || r["GL Code"] || "Unassigned").trim() || "Unassigned";
+    if (/^none$/i.test(k)) k = "Unassigned";
+    byAccount[k] = (byAccount[k] || 0) + dnum(r["Net Amount"]);
+  }
+  return { gross, refunds, net, payments, refundCount, byAccount };
+}
+
+function dirPrograms(rows) {
+  if (!Array.isArray(rows) || !rows.length) return null;
+  const progs = {};
+  let enroll = 0, cap = 0, periodNet = 0;
+  for (const r of rows) {
+    enroll += dnum(r.enrolled); cap += dnum(r.capacity); periodNet += dnum(r.period_net);
+    const k = r.program || "Unknown";
+    if (!progs[k]) progs[k] = { name: k, enrolled: 0, capacity: 0, net: 0, sections: 0, wl: 0 };
+    progs[k].enrolled += dnum(r.enrolled); progs[k].capacity += dnum(r.capacity);
+    progs[k].net += dnum(r.period_net); progs[k].sections++; progs[k].wl += dnum(r.waitlist_active);
+  }
+  const list = Object.values(progs).map(p => ({ ...p, fill: p.capacity > 0 ? Math.round(p.enrolled / p.capacity * 100) : null }));
+  return {
+    enroll, cap, sections: rows.length, count: list.length, periodNet: Math.round(periodNet),
+    top: [...list].sort((a, b) => b.enrolled - a.enrolled).slice(0, 6),
+    low: list.filter(p => p.capacity > 10 && p.enrolled > 0 && p.fill !== null && p.fill < 50)
+      .sort((a, b) => a.fill - b.fill).slice(0, 5),
+  };
+}
+
+function dirWaitlist(rows) {
+  if (!Array.isArray(rows) || !rows.length) return null;
+  let waiting = 0, offers = 0, people = 0, claimed = 0, expired = 0;
+  const medians = [], top = [];
+  for (const r of rows) {
+    waiting += dnum(r.Waitlisted); offers += dnum(r["Offers Sent"]); people += dnum(r["People Offered"]);
+    claimed += dnum(r["Offers Claimed"]); expired += dnum(r["Offers Expired"]);
+    if (dnum(r["Median Claim Hours"]) > 0) medians.push(dnum(r["Median Claim Hours"]));
+    if (dnum(r.Waitlisted) > 0) top.push({
+      program: r.Program, section: r.Section, waitlisted: dnum(r.Waitlisted),
+      capacity: dnum(r.Capacity), enrolled: dnum(r.Enrolled), pressure: Math.round(dnum(r["Pressure %"])),
+    });
+  }
+  medians.sort((a, b) => a - b);
+  return {
+    sections: rows.length, waiting, offers, people, claimed, expired,
+    claimRate: offers > 0 ? Math.round(claimed / offers * 100) : null,
+    medianClaimH: medians.length ? Math.round(medians[Math.floor(medians.length / 2)] * 10) / 10 : null,
+    top: top.sort((a, b) => (b.pressure || 0) - (a.pressure || 0) || b.waitlisted - a.waitlisted).slice(0, 6),
+  };
+}
+
+function dirFacility(rows) {
+  if (!Array.isArray(rows) || !rows.length) return null;
+  const locs = {}; let rev = 0, resident = 0, managed = 0, instant = 0;
+  for (const r of rows) {
+    rev += dnum(r.Total);
+    const l = r.Location || "?";
+    if (!locs[l]) locs[l] = { name: l, n: 0, rev: 0 };
+    locs[l].n++; locs[l].rev += dnum(r.Total);
+    if (String(r["Resident?"] || "").toLowerCase().startsWith("y")) resident++;
+    const t = String(r["Booking Type"] || "").toLowerCase();
+    if (t === "instant") instant++; else managed++;
+  }
+  return {
+    n: rows.length, rev: Math.round(rev),
+    residentPct: Math.round(resident / rows.length * 1000) / 10,
+    managed, instant,
+    topLocs: Object.values(locs).sort((a, b) => b.rev - a.rev).slice(0, 6)
+      .map(l => ({ name: l.name, n: l.n, rev: Math.round(l.rev) })),
+  };
+}
+
+function dirCourt(rows, days) {
+  if (!Array.isArray(rows) || !rows.length) return null;
+  const courts = new Set(); let hours = 0;
+  for (const r of rows) {
+    courts.add((r.location_name || "") + "|" + (r.court_name || ""));
+    hours += dnum(r.duration_hours);
+  }
+  const available = courts.size * (days || 0) * QBR_COURT_HRS_PER_DAY;
+  return {
+    hours: Math.round(hours), courts: courts.size,
+    util: available > 0 ? Math.min(100, Math.round(hours / available * 100)) : null,
+    hrsPerDay: QBR_COURT_HRS_PER_DAY,
+  };
+}
+
+function dirUsers(rows, cur) {
+  if (!Array.isArray(rows) || !rows.length) return null;
+  // Mirror users.html / qbrSumUsers exclusions: drop staff + guest accounts.
+  const clean = rows.filter(r => {
+    const fn = String(r["First Name"] || "").trim().toLowerCase();
+    const em = String(r.Email || "").trim().toLowerCase();
+    const staff = em.includes("@rec.us") && !em.startsWith("guest-user+");
+    const guest = fn === "guest" || em.startsWith("guest-user+guest-");
+    return !staff && !guest;
+  });
+  if (!clean.length) return null;
+  const hh = new Set(); let newPeople = 0; const newHH = new Set();
+  const ages = []; let res = 0, hasAge = 0, hasGender = 0, hasPhone = 0;
+  const revMix = { program: 0, facility: 0, fee: 0, product: 0 };
+  const spend = []; const cities = {};
+  for (const r of clean) {
+    if (r["Household ID"]) hh.add(r["Household ID"]);
+    const created = qbrUserYmd(r["Created At"]);
+    const isNew = created && created >= cur.start && created <= cur.end;
+    if (isNew) newPeople++;
+    const a = parseInt(r.Age); if (a > 0 && a < 120) { ages.push(a); hasAge++; }
+    const g = String(r.Gender || "").trim().toLowerCase(); if (g && g !== "unknown") hasGender++;
+    if (String(r.Phone || "").trim()) hasPhone++;
+    if (String(r["Residency?"] || "").toLowerCase().startsWith("y")) res++;
+    const c = String(r.City || "").trim(); if (c) cities[c] = (cities[c] || 0) + 1;
+    if (r.Role === "Head of Household") {
+      if (isNew && r["Household ID"]) newHH.add(r["Household ID"]);
+      revMix.program += dnum(r["Program Revenue"]); revMix.facility += dnum(r["Facility Revenue"]);
+      revMix.fee += dnum(r["Fee Revenue"]); revMix.product += dnum(r["Product Revenue"]);
+      const nr = dnum(r["Net Revenue"]); if (nr > 0) spend.push(nr);
+    }
+  }
+  ages.sort((a, b) => a - b);
+  const n = clean.length;
+  return {
+    people: n, households: hh.size, newPeople, newHH: newHH.size,
+    medianAge: ages.length ? ages[Math.floor(ages.length / 2)] : null,
+    resPct: Math.round(res / n * 1000) / 10,
+    avgHHSpend: spend.length ? Math.round(spend.reduce((s, v) => s + v, 0) / spend.length) : 0,
+    revMix: { program: Math.round(revMix.program), facility: Math.round(revMix.facility), fee: Math.round(revMix.fee), product: Math.round(revMix.product) },
+    topCities: Object.entries(cities).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([name, count]) => ({ name, count })),
+    comp: { age: Math.round(hasAge / n * 100), gender: Math.round(hasGender / n * 100), phone: Math.round(hasPhone / n * 100) },
+    missingAge: n - hasAge,
+  };
+}
+
+function dirSelfService(rows) {
+  if (!Array.isArray(rows) || !rows.length) return null;
+  const months = {}; const tot = { self: { orders: 0, dollars: 0 }, staff: { orders: 0, dollars: 0 } };
+  for (const r of rows) {
+    const m = String(r.month || "").slice(0, 7);
+    const ch = r.channel === "self" ? "self" : "staff";
+    if (!months[m]) months[m] = { month: m, selfOrders: 0, staffOrders: 0, selfDollars: 0, staffDollars: 0 };
+    months[m][ch + "Orders"] += dnum(r.orders); months[m][ch + "Dollars"] += Math.round(dnum(r.dollars));
+    tot[ch].orders += dnum(r.orders); tot[ch].dollars += Math.round(dnum(r.dollars));
+  }
+  return { months: Object.values(months).sort((a, b) => a.month.localeCompare(b.month)), self: tot.self, staff: tot.staff };
+}
+
+function dirPayout(rows) {
+  if (!Array.isArray(rows) || !rows.length) return null;
+  const instr = {}; let paid = 0;
+  for (const r of rows) {
+    const name = String(r.instructor || "").trim();
+    if (!name) continue;
+    if (!instr[name]) instr[name] = { name, regs: 0, paid: 0, sections: new Set() };
+    instr[name].regs++; instr[name].paid += dnum(r.amount_paid);
+    if (r.section_id) instr[name].sections.add(r.section_id);
+    paid += dnum(r.amount_paid);
+  }
+  const list = Object.values(instr);
+  if (!list.length) return null;
+  return {
+    instructors: list.length, paid: Math.round(paid), regs: rows.length,
+    top: list.sort((a, b) => b.paid - a.paid).slice(0, 5)
+      .map(i => ({ name: i.name, regs: i.regs, paid: Math.round(i.paid), sections: i.sections.size })),
+  };
+}
+
+function dirFastTrack(rows) {
+  if (!Array.isArray(rows) || !rows.length) return null;
+  const secs = rows.filter(r => (r["Row Type"] || "section") === "section");
+  let total = 0, converted = 0, revenue = 0;
+  for (const r of secs) { total += dnum(r["FT Total"]); converted += dnum(r["FT Converted"]); revenue += dnum(r["FT Revenue"]); }
+  if (!total) return null;
+  return { total, converted, rate: Math.round(converted / total * 1000) / 10, revenue: Math.round(revenue) };
+}
+
+function dirRetention(rows) {
+  if (!Array.isArray(rows) || !rows.length) return null;
+  let part = 0, ret = 0, loyal = 0;
+  for (const r of rows) { part += dnum(r["Total Participants"]); ret += dnum(r["Returners (2+)"]); loyal += dnum(r["Loyal (3+)"]); }
+  if (!part) return null;
+  return { participants: part, returners: ret, loyal, rate: Math.round(ret / part * 1000) / 10 };
+}
+
+async function buildDirectorsQuarter(slug, year, q) {
+  const cur = qbrQuarterRange(year, q);
+  const pv = qbrPrevQuarter(year, q);
+  const prev = qbrQuarterRange(pv.year, pv.q);
+  const todayISO = new Date().toISOString().slice(0, 10);
+  const partial = cur.end >= todayISO;
+  const safe = (p) => p.catch(e => { console.warn("[directors-report] fetch failed: " + e.message); return null; });
+  const [glC, glP, stC, stP, pgC, pgP, facC, facP, wl, court, ss, pay, usr, ft, ret] = await Promise.all([
+    safe(fetchMBDirect(slug, "gl", cur.start, cur.end)),
+    safe(fetchMBDirect(slug, "gl", prev.start, prev.end)),
+    safe(fetchMBDirect(slug, "qbr-stats", cur.start, cur.end)),
+    safe(fetchMBDirect(slug, "qbr-stats", prev.start, prev.end)),
+    safe(fetchMBDirect(slug, "programs", cur.start, cur.end)),
+    safe(fetchMBDirect(slug, "programs", prev.start, prev.end)),
+    safe(fetchMBDirect(slug, "facility", cur.start, cur.end)),
+    safe(fetchMBDirect(slug, "facility", prev.start, prev.end)),
+    safe(fetchMBDirect(slug, "waitlist", cur.start, cur.end)),
+    safe(fetchMBDirect(slug, "court-utilization", cur.start, cur.end)),
+    safe(fetchMBDirect(slug, "selfservice", cur.start, cur.end)),
+    safe(fetchMBDirect(slug, "instructor-payout", cur.start, cur.end)),
+    safe(fetchMBDirect(slug, "users", null, null)),
+    safe(fetchMBDirect(slug, "fasttrack", null, null)),
+    safe(fetchMBDirect(slug, "retention", null, null)),
+  ]);
+  const gl = dirSumGL(glC), glPrev = dirSumGL(glP);
+  const pg = dirPrograms(pgC), pgPrev = dirPrograms(pgP);
+  const fac = dirFacility(facC), facPrev = dirFacility(facP);
+  const accounts = gl ? Object.entries(gl.byAccount).sort((a, b) => b[1] - a[1]).slice(0, 6)
+    .map(([name, net]) => ({ name, net: Math.round(net), prevNet: glPrev ? Math.round(glPrev.byAccount[name] || 0) : null })) : [];
+  return {
+    quarter: { year, q, label: cur.label, start: cur.start, end: cur.end, partial },
+    prevLabel: prev.label,
+    generatedAt: new Date().toISOString(),
+    gl: gl ? {
+      gross: Math.round(gl.gross), refunds: Math.round(gl.refunds), net: Math.round(gl.net),
+      payments: gl.payments, refundCount: gl.refundCount, accounts,
+      prev: glPrev ? { gross: Math.round(glPrev.gross), refunds: Math.round(glPrev.refunds), net: Math.round(glPrev.net), payments: glPrev.payments } : null,
+    } : null,
+    transactions: { cur: qbrStats(stC) ? qbrStats(stC).transactions : null, prev: qbrStats(stP) ? qbrStats(stP).transactions : null },
+    programs: pg ? { ...pg, prevEnroll: pgPrev ? pgPrev.enroll : null } : null,
+    waitlist: dirWaitlist(wl),
+    facility: fac ? { ...fac, prevN: facPrev ? facPrev.n : null, prevRev: facPrev ? facPrev.rev : null } : null,
+    court: dirCourt(court, qbrDaysBetween(cur.start, cur.end)),
+    users: dirUsers(usr, cur),
+    selfservice: dirSelfService(ss),
+    payout: dirPayout(pay),
+    fasttrack: dirFastTrack(ft),
+    retention: dirRetention(ret),
+  };
+}
+
+async function directorsInsightsFor(slug, payload) {
+  if (!anthropic) return null;
+  try {
+    const resp = await anthropic.messages.create({
+      model: INSIGHTS_MODEL, max_tokens: 900,
+      system: DIRECTORS_SYS_PROMPT,
+      messages: [{ role: "user", content: JSON.stringify(payload) }],
+    });
+    const text = (resp.content || []).filter(c => c.type === "text").map(c => c.text).join("");
+    const u = resp.usage || {};
+    logEvent(slug, "directors-report", "ai-generate", null, {
+      inTok: u.input_tokens || 0, outTok: u.output_tokens || 0,
+      costUsd: insightsCostUsd(resp.model || INSIGHTS_MODEL, u.input_tokens || 0, u.output_tokens || 0),
+    });
+    const ins = salvageInsights(text);
+    return ins.length ? ins : null;
+  } catch (e) {
+    console.warn("[directors-report] insights failed: " + e.message);
+    return null;
+  }
+}
+
+// Generate (or return the stored snapshot of) one org-quarter. Completed
+// quarters persist to disk with insights baked in; in-progress quarters are
+// built fresh (short in-memory TTL) and never persisted.
+async function ensureDirectorsSnapshot(slug, year, q, opts) {
+  const key = year + "-Q" + q;
+  const refresh = !!(opts && opts.refresh);
+  const snaps = loadDirectorsSnapshots();
+  if (!refresh && snaps[slug] && snaps[slug][key] && !snaps[slug][key].quarter.partial) {
+    return { ...snaps[slug][key], fromSnapshot: true };
+  }
+  const partialKey = slug + "|" + key;
+  if (!refresh) {
+    const hit = _directorsPartialCache.get(partialKey);
+    if (hit && Date.now() - hit.ts < DIRECTORS_PARTIAL_TTL) return hit.data;
+  }
+  const payload = await buildDirectorsQuarter(slug, year, q);
+  payload.insights = await directorsInsightsFor(slug, payload);
+  if (payload.quarter.partial) {
+    _directorsPartialCache.set(partialKey, { ts: Date.now(), data: payload });
+    if (_directorsPartialCache.size > 40) _directorsPartialCache.delete(_directorsPartialCache.keys().next().value);
+  } else {
+    const all = loadDirectorsSnapshots();
+    if (!all[slug]) all[slug] = {};
+    all[slug][key] = payload;
+    saveDirectorsSnapshots(all);
+    console.log("[directors-report] snapshot saved: " + slug + " " + key);
+  }
+  return payload;
+}
+
+// Quarter payload — ?year=&q= for a specific quarter (defaults to the last
+// completed one); ?refresh=1 rebuilds a stored snapshot.
+app.get("/:org/directors-report/api/quarter", async (req, res) => {
+  const slug = req.params.org;
+  if (!ORGS[slug]) return res.status(404).json({ ok: false, error: "Unknown org" });
+  let year = parseInt(req.query.year), q = parseInt(req.query.q);
+  if (!year || !(q >= 1 && q <= 4)) ({ year, q } = dirLastCompletedQuarter());
+  try {
+    logEvent(slug, "directors-report", "generate", req, { quarter: year + "-Q" + q });
+    const data = await ensureDirectorsSnapshot(slug, year, q, { refresh: req.query.refresh === "1" });
+    res.json({ ok: true, ...data });
+  } catch (e) {
+    console.error("[directors-report] " + slug + " " + year + "-Q" + q + ": " + e.message);
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// Archive index — which quarters exist (stored snapshots + the selectable
+// default range), powering the page's quarter picker.
+app.get("/:org/directors-report/api/quarters", (req, res) => {
+  const slug = req.params.org;
+  if (!ORGS[slug]) return res.status(404).json({ ok: false, error: "Unknown org" });
+  const snaps = loadDirectorsSnapshots()[slug] || {};
+  const last = dirLastCompletedQuarter();
+  const list = [];
+  let y = last.year, qq = last.q;
+  for (let i = 0; i < 8; i++) {
+    const key = y + "-Q" + qq;
+    list.push({ year: y, q: qq, key, label: "Q" + qq + " " + y, stored: !!snaps[key] });
+    qq--; if (qq === 0) { qq = 4; y--; }
+  }
+  // Older stored snapshots beyond the 8-quarter window stay selectable too.
+  for (const key of Object.keys(snaps)) {
+    if (!list.some(e => e.key === key)) {
+      const m = key.match(/^(\d{4})-Q([1-4])$/);
+      if (m) list.push({ year: +m[1], q: +m[2], key, label: "Q" + m[2] + " " + m[1], stored: true });
+    }
+  }
+  list.sort((a, b) => b.year - a.year || b.q - a.q);
+  res.json({ ok: true, quarters: list, current: dirLastCompletedQuarter() });
+});
+
+// Auto-generation: shortly after boot and every 6 hours, make sure the last
+// completed quarter has a stored snapshot for every pilot org — so when a new
+// quarter starts, the fresh report exists without anyone clicking anything.
+async function directorsQuarterlyJob() {
+  const { year, q } = dirLastCompletedQuarter();
+  const key = year + "-Q" + q;
+  for (const slug of DIRECTORS_REPORT_ORGS) {
+    try {
+      const snaps = loadDirectorsSnapshots();
+      if (snaps[slug] && snaps[slug][key]) continue;
+      console.log("[directors-report] auto-generating " + slug + " " + key);
+      await ensureDirectorsSnapshot(slug, year, q);
+    } catch (e) {
+      console.warn("[directors-report] auto-generate " + slug + " " + key + " failed: " + e.message);
+    }
+  }
+}
+setTimeout(() => { directorsQuarterlyJob().catch(() => {}); }, 2 * 60 * 1000);
+setInterval(() => { directorsQuarterlyJob().catch(() => {}); }, 6 * 60 * 60 * 1000);
 
 // overview route removed — report dormant, may revisit later
 
@@ -7355,6 +7742,19 @@ app.get("/:org", async (req, res, next) => {
       ? { id: a.id, title: a.title, smart: true, items: (a.items || []).map(it => ({ text: it.text, emoji: it.emoji || "" })), images: a.images || [] }
       : { id: a.id, title: a.title, body: a.body, images: a.images || [] }),
   };
+  // Director's Report — rendered as a hero band above the report cards, not a
+  // card in the grid. Same hidden-toggle escape hatch as any report.
+  if (DIRECTORS_REPORT_ORGS.has(slug) && !orgHidden.has('directors-report')) {
+    const lastQ = dirLastCompletedQuarter();
+    const snap = (loadDirectorsSnapshots()[slug] || {})[lastQ.year + "-Q" + lastQ.q];
+    orgConfig.directorsReport = {
+      label: "Q" + lastQ.q + " " + lastQ.year,
+      year: lastQ.year, q: lastQ.q,
+      stored: !!snap,
+      generatedAt: snap ? snap.generatedAt : null,
+      bannerUrl: org.bannerUrl || "",
+    };
+  }
   // Attach latest health-check results for this org's reports
   const hc = loadHealthResults();
   if (hc && hc.reports && hc.reports[slug]) {
@@ -7387,7 +7787,7 @@ app.post("/api/admin/toggle-report", express.json(), (req, res) => {
   if (dashboardPasswordBlocked(req, res)) return;
   const { org: slug, report } = req.body || {};
   if (!ORGS[slug]) return res.status(404).json({ error: "Unknown org" });
-  if (!REPORT_TYPES.includes(report) && report !== "chat" && report !== "report-wizard" && report !== "rentalcalendar" && report !== "facilities") return res.status(400).json({ error: "Unknown report type" });
+  if (!REPORT_TYPES.includes(report) && report !== "chat" && report !== "report-wizard" && report !== "rentalcalendar" && report !== "facilities" && report !== "directors-report") return res.status(400).json({ error: "Unknown report type" });
   const hidden = getHiddenReports(slug);
   const idx = hidden.indexOf(report);
   if (idx >= 0) hidden.splice(idx, 1); else hidden.push(report);
@@ -8483,6 +8883,7 @@ app.get("/", (req, res) => {
     "instructor-payout": { label: "Instructor Payout", ai: true, icon: "💰", desc: "Revenue splits and payout calculations by instructor", color: "#6366f1" },
 
     "rentalcalendar":    { label: "Rental Calendar", icon: "🏟️", desc: "Real-time facility availability with live booking data", color: "#059669" },
+    "directors-report":  { label: "Director's Report", ai: true, icon: "📰", desc: "Quarterly executive summary — revenue, enrollment, demand, facilities, and staff workload with QoQ deltas", color: "#0f766e" },
     "campmap":           { label: "Campsite Map", icon: "🏕️", desc: "Interactive campground map with per-night availability overlay", color: "#15803d" },
     "facilities":        { label: "Facilities", icon: "🏞️", desc: "Facility hub — summary + camping, golf, aquatics & court utilization", color: "#0d9488" },
     "ice-calendar":      { label: "Ice Participant Calendar", icon: "❄️", desc: "Participant-filtered monthly ice program calendar", color: "#0ea5e9" },
@@ -11103,6 +11504,11 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  { date: '2026-08-04', title: "📰 Director's Report is back — quarterly, Watertown pilot", items: [
+    "The Director's Report returns as a quarterly executive summary: revenue with QoQ deltas, enrollment with top/low-fill programs, the waitlist offer funnel and pressure ranking, facility rental revenue and court usage, community growth, self-service order mix, and instructor-led figures — with Rec Insights baked in.",
+    'Each completed quarter is generated once (auto, shortly after the quarter ends), stored as a snapshot, and kept selectable as an archive; the in-progress quarter is viewable to-date with deltas hidden.',
+    "Header now uses the org's live rec.us banner image. Piloting on Watertown (DIRECTORS_REPORT_ORGS) — flip to more orgs or all-orgs-hidden after review.",
+  ]},
   { date: '2026-08-04', title: 'Project updates can now expire', items: [
     'The Add Update composer (both publish paths) has an optional Expires date — after that day the popup stops showing on org dashboards and the internal dashboard automatically.',
     'The Published updates list shows each update’s expiry and flags ones that have already lapsed; pause/delete still work as before.',
