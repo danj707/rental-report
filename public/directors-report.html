@@ -373,13 +373,13 @@ function App() {
                 <div className="panel">
                   <div className="panel-h">Quarter at a glance</div>
                   <table className="mini">
-                    <thead><tr><th></th><th className="r">{d.quarter.label}</th>{!partial && d.gl.prev && <th className="r">{d.prevLabel}</th>}</tr></thead>
+                    <thead><tr><th></th><th className="r">{d.quarter.label}</th>{!partial && d.gl.prev && <th className="r">{d.prevLabel}</th>}{!partial && d.gl.prev && <th className="r">&Delta;</th>}</tr></thead>
                     <tbody>
-                      <tr><td className="b">Gross payments</td><td className="r">{fmtMoney(d.gl.gross)}</td>{!partial && d.gl.prev && <td className="r">{fmtMoney(d.gl.prev.gross)}</td>}</tr>
-                      <tr><td className="b">Refunds</td><td className="r">{fmtMoney(d.gl.refunds)}</td>{!partial && d.gl.prev && <td className="r">{fmtMoney(d.gl.prev.refunds)}</td>}</tr>
-                      <tr><td className="b">Net revenue</td><td className="r">{fmtMoney(d.gl.net)}</td>{!partial && d.gl.prev && <td className="r">{fmtMoney(d.gl.prev.net)}</td>}</tr>
-                      {d.transactions.cur != null && <tr><td className="b">Transactions</td><td className="r">{fmtNum(d.transactions.cur)}</td>{!partial && d.gl.prev && <td className="r">{fmtNum(d.transactions.prev)}</td>}</tr>}
-                      <tr><td className="b">Payments recorded</td><td className="r">{fmtNum(d.gl.payments)}</td>{!partial && d.gl.prev && <td className="r">{fmtNum(d.gl.prev.payments)}</td>}</tr>
+                      <tr><td className="b">Gross payments</td><td className="r">{fmtMoney(d.gl.gross)}</td>{!partial && d.gl.prev && <td className="r">{fmtMoney(d.gl.prev.gross)}</td>}{!partial && d.gl.prev && <td className="r"><Delta cur={d.gl.gross} prev={d.gl.prev.gross} /></td>}</tr>
+                      <tr><td className="b">Refunds</td><td className="r">{fmtMoney(d.gl.refunds)}</td>{!partial && d.gl.prev && <td className="r">{fmtMoney(d.gl.prev.refunds)}</td>}{!partial && d.gl.prev && <td className="r"><Delta cur={d.gl.refunds} prev={d.gl.prev.refunds} downIsGood /></td>}</tr>
+                      <tr><td className="b">Net revenue</td><td className="r">{fmtMoney(d.gl.net)}</td>{!partial && d.gl.prev && <td className="r">{fmtMoney(d.gl.prev.net)}</td>}{!partial && d.gl.prev && <td className="r"><Delta cur={d.gl.net} prev={d.gl.prev.net} /></td>}</tr>
+                      {d.transactions.cur != null && <tr><td className="b">Transactions</td><td className="r">{fmtNum(d.transactions.cur)}</td>{!partial && d.gl.prev && <td className="r">{fmtNum(d.transactions.prev)}</td>}{!partial && d.gl.prev && <td className="r"><Delta cur={d.transactions.cur} prev={d.transactions.prev} /></td>}</tr>}
+                      <tr><td className="b">Payments recorded</td><td className="r">{fmtNum(d.gl.payments)}</td>{!partial && d.gl.prev && <td className="r">{fmtNum(d.gl.prev.payments)}</td>}{!partial && d.gl.prev && <td className="r"><Delta cur={d.gl.payments} prev={d.gl.prev.payments} /></td>}</tr>
                     </tbody>
                   </table>
                 </div>
@@ -452,6 +452,17 @@ function App() {
                     <div className="card"><div className="lbl">Median claim</div><div className="val" style={{ fontSize: 19 }}>{d.waitlist.medianClaimH != null ? d.waitlist.medianClaimH + "h" : "—"}</div><div className="sub">{fmtNum(d.waitlist.expired)} offers expired</div></div>
                   </div>
                   <div className="panel-note">People queued with no offer possible until capacity opens. See the Waitlist Demand report for section-level detail.</div>
+                  {d.fasttrack && (
+                    <div style={{ borderTop: "1px solid #f5f4f1", marginTop: 12, paddingTop: 12 }}>
+                      <div className="panel-h">&#9889; Fast Track pre-registration <span className="tiny" style={{ textTransform: "none", letterSpacing: 0 }}>all-time demand signal</span></div>
+                      <div className="cards" style={{ marginBottom: 0, gridTemplateColumns: "repeat(auto-fit,minmax(120px,1fr))" }}>
+                        <div className="card"><div className="lbl">Signups</div><div className="val" style={{ fontSize: 19 }}>{fmtNum(d.fasttrack.total)}</div><div className="sub">pre-registered interest</div></div>
+                        <div className="card"><div className="lbl">Converted</div><div className="val" style={{ fontSize: 19 }}>{fmtNum(d.fasttrack.converted)}</div><div className="sub">became enrollments</div></div>
+                        <div className="card"><div className="lbl">Conversion</div><div className="val" style={{ fontSize: 19 }}>{d.fasttrack.rate}%</div><div className="sub">signup &rarr; enrolled</div></div>
+                        {d.fasttrack.revenue > 0 && <div className="card"><div className="lbl">FT Revenue</div><div className="val" style={{ fontSize: 19 }}>{fmtMoney(d.fasttrack.revenue)}</div><div className="sub">from converted signups</div></div>}
+                      </div>
+                    </div>
+                  )}
                 </div>
                 {d.waitlist.top.length > 0 && (
                   <div className="panel">
@@ -567,7 +578,7 @@ function App() {
           )}
 
           {/* ── Operations ── */}
-          {(d.selfservice || d.payout || d.fasttrack) && (
+          {(d.selfservice || d.payout) && (
             <div>
               <div className="vsec">
                 <div className="vsec-t"><span>&#9881;&#65039;</span> Operations &amp; Staff Workload</div>
@@ -597,7 +608,7 @@ function App() {
                     </div>
                   </div>
                 )}
-                {(d.payout || d.fasttrack) && (
+                {d.payout && (
                   <div className="panel">
                     {d.payout && (
                       <div>
@@ -612,13 +623,6 @@ function App() {
                         </table>
                         <div className="panel-note">{d.payout.instructors} instructors led paid programming this quarter, collecting {fmtMoney(d.payout.paid)} across {fmtNum(d.payout.regs)} registrations. &ldquo;Collected&rdquo; is participant payments on instructor-led sections, not instructor compensation.</div>
                       </div>
-                    )}
-                    {d.fasttrack && (
-                      <table className="mini" style={{ marginTop: d.payout ? 10 : 0 }}>
-                        <tbody>
-                          <tr><td className="b">&#9889; Fast Track adoption <span className="tiny">all-time</span></td><td className="r">{fmtNum(d.fasttrack.converted)} of {fmtNum(d.fasttrack.total)} converted ({d.fasttrack.rate}%)</td></tr>
-                        </tbody>
-                      </table>
                     )}
                   </div>
                 )}
