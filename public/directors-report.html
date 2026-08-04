@@ -180,6 +180,22 @@ function App() {
   const [data, setData] = useState(null);
   const [state, setState] = useState("loading"); // loading | done | error
   const [errMsg, setErrMsg] = useState("");
+  const [pdfLoading, setPdfLoading] = useState(false);
+
+  function downloadPdf() {
+    setPdfLoading(true);
+    fetch(withToken("/" + slug + "/directors-report/api/pdf?quarter=" + encodeURIComponent(sel)))
+      .then(r => { if (!r.ok) throw new Error("HTTP " + r.status); return r.blob(); })
+      .then(blob => {
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = "directors-report-" + slug + "-" + sel + ".pdf";
+        a.click();
+        URL.revokeObjectURL(a.href);
+      })
+      .catch(e => alert("PDF failed: " + e.message))
+      .finally(() => setPdfLoading(false));
+  }
 
   function withToken(url) {
     return token ? url + (url.includes("?") ? "&" : "?") + "token=" + encodeURIComponent(token) : url;
@@ -238,7 +254,10 @@ function App() {
             {quarters.map(x => <option key={x.key} value={x.key}>{x.label}{x.stored ? " · archived" : ""}</option>)}
           </select>
         </label>
-        <button className="btn-pdf" onClick={() => window.print()}>&#128196; Print / PDF</button>
+        <button onClick={() => window.print()} title="Print this view">&#128424;&#65039; Print</button>
+        <button className="btn-pdf" onClick={downloadPdf} disabled={state !== "done" || pdfLoading} title="Download this quarter as a PDF">
+          {pdfLoading ? "Generating…" : "\u{1F4C4} PDF"}
+        </button>
       </div>
 
       {state === "loading" && <div style={{ paddingTop: 80 }}><JuiceLoader /></div>}
@@ -643,6 +662,8 @@ function App() {
             <span>Powered by Rec Technologies &middot; rec.us</span>
             <span>Confidential &mdash; {orgName} &middot; {d.quarter.label} Director's Report</span>
           </div>
+
+          <div id="report-ready" style={{ display: "none" }} />
         </div>
       )}
     </div>
