@@ -1340,11 +1340,16 @@ const NON_ADDABLE_REPORTS = new Set(["program-demographics", "retention", "annua
 // Reports that require extra params (e.g. section_id) and cannot be health-checked with org_id alone
 const HEALTH_SKIP_REPORTS = new Set(["section-detail", "annual-report", "qoq", "qbr-stats", "checkins", "program-checkins", "selfservice"]);
 const RENTAL_CALENDAR_ORGS = new Set(["watertown", "norman", "niagarafalls"]);
-// Director's Report (quarterly executive summary) — per-org pilot rollout.
-// Watertown first; to go org-wide later, either add slugs here or move the
-// report into DEFAULT_HIDDEN_REPORTS-style opt-in. Route + API work for any
-// org already; this set only controls the dashboard card.
+// Director's Report (quarterly executive summary) — org-wide since 2026-08-04
+// (piloted on Watertown earlier the same day). With ALL_ORGS true every org
+// gets the dashboard hero + auto-generated quarterly snapshots; individual
+// orgs can still be switched off via the normal hidden-report toggle. Flip
+// ALL_ORGS to false to fall back to the explicit pilot set below.
+const DIRECTORS_REPORT_ALL_ORGS = true;
 const DIRECTORS_REPORT_ORGS = new Set(["watertown"]);
+const DIRECTORS_REPORT_EXCLUDED = new Set(["apex"]); // per Dan 2026-08-04 — everyone except Apex
+const directorsReportEnabled = (slug) =>
+  !DIRECTORS_REPORT_EXCLUDED.has(slug) && (DIRECTORS_REPORT_ALL_ORGS || DIRECTORS_REPORT_ORGS.has(slug));
 // Reports HIDDEN by default for every org (opt-in to show), for WIP reports not
 // yet launched. For these, presence in an org's visibility list means SHOWN —
 // the inverse of the normal opt-out hidden-list semantics. Use reportHiddenForOrg().
@@ -1955,7 +1960,7 @@ function visibleReportsForOrg(slug) {
     !NON_ADDABLE_REPORTS.has(r) && !RETIRED_REPORTS.has(r) &&
     (org[r]?.mbUuid || SHARED_UUIDS[r]) && !hidden.has(r));
   if (RENTAL_CALENDAR_ORGS.has(slug) && !hidden.has("rentalcalendar")) out.push("rentalcalendar");
-  if (DIRECTORS_REPORT_ORGS.has(slug) && !hidden.has("directors-report")) out.push("directors-report");
+  if (directorsReportEnabled(slug) && !hidden.has("directors-report")) out.push("directors-report");
   if ((org.gl?.mbUuid || SHARED_UUIDS.gl) && !hidden.has("qoq")) out.push("qoq");
   if (!reportHiddenForOrg(slug, "facilities")) out.push("facilities");
   return out;
@@ -2422,7 +2427,7 @@ function buildMetrics(org, daysBack) {
   const configuredReports = REPORT_TYPES.filter(r => ORGS[org]?.[r]?.mbUuid || SHARED_UUIDS[r]);
   // Include non-Metabase reports that have their own routes (e.g. rentalcalendar)
   if (RENTAL_CALENDAR_ORGS.has(org)) configuredReports.push('rentalcalendar');
-  if (DIRECTORS_REPORT_ORGS.has(org)) configuredReports.push('directors-report');
+  if (directorsReportEnabled(org)) configuredReports.push('directors-report');
   return { summary, daily, subCounts, subByCadence, totalSubscribers: allSubs.length, insights, configuredReports };
 }
 
@@ -2531,7 +2536,7 @@ async function generatePdf(orgSlug, reportType, startDate, endDate, filters = {}
   // server-side Metabase filters. The print page initializes its filter state
   // from these params before emitting #report-ready, so Puppeteer captures the
   // filtered render rather than the full dataset.
-  ["locations", "sites", "location_name", "site_type", "desks", "by_desk", "by_item", "hide_zero", "chart_net", "metric", "programs", "closures", "hrs", "section_name", "section_id", "status", "questions", "cols", "search", "tab", "instructor", "split", "book_type", "addons", "participant", "view", "tyler"].forEach(k => {
+  ["locations", "sites", "location_name", "site_type", "desks", "by_desk", "by_item", "hide_zero", "chart_net", "metric", "programs", "closures", "hrs", "section_name", "section_id", "status", "questions", "cols", "search", "tab", "instructor", "split", "book_type", "addons", "participant", "view", "tyler", "quarter"].forEach(k => {
     if (filters[k]) qsObj[k] = filters[k];
   });
   if (orgTok) qsObj.token = orgTok;
@@ -2548,6 +2553,8 @@ async function generatePdf(orgSlug, reportType, startDate, endDate, filters = {}
     ? "GL Code Rollup"
     : reportType === "facilities"
       ? "Facilities"
+    : reportType === "directors-report"
+      ? "Director's Report"
     : reportType === "historic"
       ? "Facility Reservations by Date"
       : reportType === "programs"
@@ -4883,6 +4890,24 @@ app.get("/:org/facilities/api/pdf", async (req, res) => {
   }
 });
 
+// Director's Report is likewise outside REPORT_TYPES — explicit PDF route
+// ahead of the generic matcher. The page reads ?quarter= back into its state
+// and emits #report-ready once the snapshot payload has rendered.
+app.get("/:org/directors-report/api/pdf", async (req, res) => {
+  const slug = req.params.org;
+  if (!ORGS[slug]) return res.status(404).send(`Unknown org: "${slug}"`);
+  try {
+    logEvent(slug, "directors-report", "pdf", req);
+    const pdf = await generatePdf(slug, "directors-report", null, null, req.query);
+    const filename = `directors-report-${slug}-${req.query.quarter || "latest"}.pdf`;
+    res.set({ "Content-Type": "application/pdf", "Content-Disposition": `inline; filename="${filename}"`, "Content-Length": pdf.length });
+    res.send(pdf);
+  } catch (err) {
+    console.error("[pdf] Error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get("/:org/:report/api/pdf", resolveOrg, async (req, res) => {
   try {
     const { orgSlug, reportType } = req;
@@ -5652,7 +5677,8 @@ app.get("/:org/directors-report/api/quarters", (req, res) => {
 async function directorsQuarterlyJob() {
   const { year, q } = dirLastCompletedQuarter();
   const key = year + "-Q" + q;
-  for (const slug of DIRECTORS_REPORT_ORGS) {
+  const slugs = (DIRECTORS_REPORT_ALL_ORGS ? Object.keys(ORGS) : [...DIRECTORS_REPORT_ORGS]).filter(directorsReportEnabled);
+  for (const slug of slugs) {
     try {
       const snaps = loadDirectorsSnapshots();
       if (snaps[slug] && snaps[slug][key]) continue;
@@ -7744,7 +7770,7 @@ app.get("/:org", async (req, res, next) => {
   };
   // Director's Report — rendered as a hero band above the report cards, not a
   // card in the grid. Same hidden-toggle escape hatch as any report.
-  if (DIRECTORS_REPORT_ORGS.has(slug) && !orgHidden.has('directors-report')) {
+  if (directorsReportEnabled(slug) && !orgHidden.has('directors-report')) {
     const lastQ = dirLastCompletedQuarter();
     const snap = (loadDirectorsSnapshots()[slug] || {})[lastQ.year + "-Q" + lastQ.q];
     orgConfig.directorsReport = {
@@ -11504,6 +11530,11 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  { date: '2026-08-04', title: "📰 Director's Report: live for all orgs + real PDF export", items: [
+    "The quarterly Director's Report is now on every org's dashboard (except Apex, per Dan) — hero band, auto-generated quarterly snapshots with Rec Insights, and the quarter archive. Individual orgs can still be switched off with the normal report toggle.",
+    'Print and PDF are now separate buttons: Print opens the browser print dialog; PDF downloads a server-rendered Letter-landscape PDF of the selected quarter (same Puppeteer pipeline as Facilities/GL).',
+    'Quarter-at-a-glance table gained a green/red Δ column (refund drops read green), and Fast Track pre-registration tiles now fill out the Waitlist & Unmet Demand section.',
+  ]},
   { date: '2026-08-04', title: "📰 Director's Report is back — quarterly, Watertown pilot", items: [
     "The Director's Report returns as a quarterly executive summary: revenue with QoQ deltas, enrollment with top/low-fill programs, the waitlist offer funnel and pressure ranking, facility rental revenue and court usage, community growth, self-service order mix, and instructor-led figures — with Rec Insights baked in.",
     'Each completed quarter is generated once (auto, shortly after the quarter ends), stored as a snapshot, and kept selectable as an archive; the in-progress quarter is viewable to-date with deltas hidden.',
