@@ -114,24 +114,13 @@
     }
 
     /* ── Report header ── */
-    .report-header-logo { height: 42px; max-width: 140px; object-fit: contain; object-position: left center; }
-    .report-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-end;
-      border-bottom: 2.5px solid #111;
-      padding-bottom: 8px;
-      margin-bottom: 16px;
-    }
-    .report-header .org-label {
-      font-size: 10.5px;
-      letter-spacing: 1.6px;
-      text-transform: uppercase;
-      color: #777;
-      font-weight: 600;
-    }
-    .report-header .title { font-size: 17px; font-weight: 700; margin-top: 1px; }
-    .report-header .date-range { font-size: 11px; color: #666; text-align: right; }
+    .report-header { display:flex; justify-content:space-between; align-items:center; border-bottom:2.5px solid #111; padding-bottom:10px; margin-bottom:18px; gap:16px; }
+    .report-header-left { display:flex; align-items:center; gap:14px; }
+    .report-header-logo { height:42px; max-width:140px; object-fit:contain; object-position:left center; }
+    .report-header .org-label { font-size:10px; letter-spacing:1.6px; text-transform:uppercase; color:#777; font-weight:600; }
+    .report-header .title { font-size:17px; font-weight:700; margin-top:1px; color:#111827; }
+    .report-header-right { text-align:right; }
+    .report-header .rh-meta { font-size:11px; color:#666; }
 
     /* ── Summary cards ── */
     .summary-cards {
@@ -892,7 +881,7 @@ function App() {
     XLSX.writeFile(wb, `products-daily-${loadedStart || 'all'}_${loadedEnd || 'all'}.xlsx`);
   }
 
-  const displayOrg = orgName || 'rec.us';
+  const displayOrg = orgName || orgSlug;
   const rangeLabel = `${formatDisplayDate(loadedStart)} — ${formatDisplayDate(loadedEnd)}`;
   const deskBtnLabel = selectedDesks.size === 0 ? 'All desks' : `${selectedDesks.size} desk${selectedDesks.size > 1 ? 's' : ''}`;
 
@@ -957,11 +946,16 @@ function App() {
 
       <div className="page">
         <div className="report-header">
-          {logoUrl ? <img className="report-header-logo" src={logoUrl} alt="" /> : null}
-          <div>
-            <div className="org-label">{displayOrg}</div>
-            <div className="title">{byItem ? 'Product Sales — Total by Item' : 'Product Sales — Daily Detail'}</div>
-            <div className="date-range">{rangeLabel}{byDesk ? ' · by desk location' : ''}{byItem ? ' · aggregated' : ''}{searchTerm.trim() ? ` · search: "${searchTerm.trim()}"` : ''}</div>
+          <div className="report-header-left">
+            {logoUrl ? <img className="report-header-logo" src={logoUrl} alt="" onError={e => e.target.style.display='none'} /> : null}
+            <div>
+              <div className="org-label">{displayOrg}</div>
+              <div className="title">{byItem ? 'Product Sales — Total by Item' : 'Product Sales — Daily Detail'}</div>
+            </div>
+          </div>
+          <div className="report-header-right">
+            <div className="rh-meta" style={{fontWeight:600,marginBottom:2}}>{rangeLabel}</div>
+            {(byDesk || byItem || searchTerm.trim()) ? <div className="rh-meta">{[byDesk ? 'by desk location' : null, byItem ? 'aggregated' : null, searchTerm.trim() ? `search: "${searchTerm.trim()}"` : null].filter(Boolean).join(' · ')}</div> : null}
           </div>
         </div>
 
