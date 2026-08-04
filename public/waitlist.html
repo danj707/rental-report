@@ -20,6 +20,9 @@
   .toolbar input[type="search"] { padding: 5px 9px; border: 1px solid rgba(255,255,255,.25); border-radius: 4px; background: rgba(255,255,255,.1); color: #fff; font-size: 12px; font-family: inherit; outline: none; min-width: 190px; }
   .toolbar input[type="search"]:focus { border-color: #3b82f6; }
   .toolbar select { padding: 5px 8px; border: 1px solid rgba(255,255,255,.25); border-radius: 4px; background: #3a3a3a; color: #fff; font-size: 12px; font-family: inherit; }
+  .toolbar input[type="date"] { padding: 4px 6px; border: 1px solid rgba(255,255,255,.25); border-radius: 4px; background: #3a3a3a; color: #fff; font-size: 11.5px; font-family: inherit; color-scheme: dark; }
+  .toolbar .date-row { display: flex; gap: 4px; align-items: center; }
+  .toolbar .date-clear { padding: 3px 7px !important; font-size: 11px !important; }
   .toolbar button { padding: 6px 14px; border: 1px solid rgba(255,255,255,.25); border-radius: 4px; background: rgba(255,255,255,.08); color: #fff; font-size: 12px; font-family: inherit; cursor: pointer; transition: background .15s; white-space: nowrap; }
   .toolbar button:hover { background: rgba(255,255,255,.18); }
   .toolbar .btn-excel { background: #16803c; border-color: #16803c; font-weight: 600; }
@@ -38,8 +41,51 @@
   .report-header-right { text-align:right; }
   .report-header .rh-meta { font-size:11px; color:#666; }
 
+  /* ── AI Insights ── */
+  .insights-section { margin: 0 0 16px; padding: 4px 0 0; }
+  .insights-head { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+  .insights-btn { background: linear-gradient(135deg, #6366f1, #8b5cf6); color: #fff; border: none; border-radius: 8px; padding: 8px 18px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit;
+    position: relative; overflow: visible;
+    box-shadow: 0 2px 12px rgba(99,102,241,.3);
+  }
+  .insights-btn:hover { filter: brightness(1.08); }
+  .insights-btn:disabled { opacity: .6; cursor: wait; }
+  .insights-btn .sparkle { position: absolute; pointer-events: none; font-size: 10px; opacity: 0; animation: sparkle-float 2.5s ease-in-out infinite; }
+  .insights-btn .sparkle:nth-child(1) { top: -8px; left: 8%; animation-delay: 0s; }
+  .insights-btn .sparkle:nth-child(2) { top: -6px; right: 12%; animation-delay: 0.7s; font-size: 8px; }
+  .insights-btn .sparkle:nth-child(3) { bottom: -7px; left: 25%; animation-delay: 1.4s; font-size: 7px; }
+  .insights-btn .sparkle:nth-child(4) { top: -5px; left: 50%; animation-delay: 0.3s; font-size: 6px; }
+  .insights-btn .sparkle:nth-child(5) { bottom: -6px; right: 20%; animation-delay: 1.1s; font-size: 9px; }
+  .insights-btn .sparkle:nth-child(6) { top: -9px; right: 3%; animation-delay: 1.9s; font-size: 7px; }
+  @keyframes sparkle-float {
+    0%,100% { opacity: 0; transform: translateY(0) scale(0.5); }
+    15% { opacity: 1; transform: translateY(-3px) scale(1.1); }
+    30% { opacity: 0.7; transform: translateY(-7px) scale(0.9); }
+    50% { opacity: 0.3; transform: translateY(-11px) scale(0.6); }
+    70% { opacity: 0; transform: translateY(-15px) scale(0.3); }
+  }
+  .insights-sub { font-size: 12px; color: #888; }
+  .insights-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; }
+  .insight-card { border: 1px solid #e5e7eb; border-left-width: 4px; border-radius: 8px; padding: 14px 16px; background: #fff; }
+  .insight-opportunity { border-left-color: #10b981; } .insight-opportunity .insight-type { color: #059669; }
+  .insight-risk { border-left-color: #ef4444; } .insight-risk .insight-type { color: #dc2626; }
+  .insight-signal { border-left-color: #3b82f6; } .insight-signal .insight-type { color: #2563eb; }
+  .insight-type { font-size: 10px; font-weight: 700; letter-spacing: .6px; text-transform: uppercase; margin-bottom: 6px; }
+  .insight-title { font-size: 14px; font-weight: 700; color: #111827; margin-bottom: 5px; line-height: 1.3; }
+  .insight-detail { font-size: 13px; color: #4b5563; line-height: 1.5; }
+  .insight-action { font-size: 12px; color: #6b7280; margin-top: 8px; font-weight: 500; }
+  .insights-feedback { display:flex; align-items:center; gap:8px; margin-top:12px; padding:8px 4px; font-size:13px; color:#666; }
+  .insights-feedback button { background:none; border:1px solid #e5e7eb; border-radius:6px; padding:4px 10px; cursor:pointer; font-size:13px; transition:all .15s; }
+  .insights-feedback button:hover { background:#f3f4f6; border-color:#d1d5db; }
+  .insights-feedback .fb-label { color:#888; font-size:12px; }
+  .insights-feedback .fb-thanks { color:#10b981; font-weight:600; font-size:13px; }
+  .insights-feedback .fb-down-form { display:flex; align-items:center; gap:6px; flex:1; }
+  .insights-feedback .fb-down-form input { flex:1; border:1px solid #d1d5db; border-radius:6px; padding:5px 10px; font-size:13px; font-family:inherit; outline:none; }
+  .insights-feedback .fb-down-form input:focus { border-color:#6366f1; box-shadow:0 0 0 2px rgba(99,102,241,.15); }
+  .insights-feedback .fb-send { background:#6366f1!important; color:#fff!important; border-color:#6366f1!important; font-weight:600; }
+
   @media print {
-    .toolbar, .rec-banner, .fb-overlay { display: none !important; }
+    .toolbar, .rec-banner, .fb-overlay, .no-print { display: none !important; }
     body { background: #fff; }
     .page { margin: 0; box-shadow: none; padding: 0; }
     .card, .panel, .band { break-inside: avoid; }
@@ -150,7 +196,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 
 <script type="text/babel">
-const { useState, useEffect, useMemo } = React;
+const { useState, useEffect, useMemo, useCallback } = React;
 
 /* ── Helpers ── */
 const SP = new URLSearchParams(window.location.search);
@@ -216,14 +262,32 @@ function App() {
   const [season, setSeason]   = useState('');
   const [status, setStatus]   = useState('active'); // active = In Progress + Upcoming
   const [sortKey, setSortKey] = useState('waitlisted');
+  const [startDate, setStartDate] = useState(SP.get('start_date') || '');
+  const [endDate, setEndDate]     = useState(SP.get('end_date') || '');
+
+  // AI Insights
+  const [insights,        setInsights]        = useState(null);
+  const [insightsMeta,    setInsightsMeta]    = useState(null); // { sectionCount, key }
+  const [insightsLoading, setInsightsLoading] = useState(false);
+  const [insightsError,   setInsightsError]   = useState(null);
+  const [insightsTraceId, setInsightsTraceId] = useState(null);
+  const [fbSent, setFbSent] = useState(false);
+  const [fbMode, setFbMode] = useState(null);
+  const [fbComment, setFbComment] = useState('');
 
   useEffect(() => {
-    fetch(withToken(basePath + '/api/data' + ((SP.get('_nocache') === '1' || SP.get('_refresh') === '1') ? '?_nocache=1' : '')))
+    setLoading(true); setError(null);
+    const qs = new URLSearchParams();
+    if (SP.get('_nocache') === '1' || SP.get('_refresh') === '1') qs.set('_nocache', '1');
+    if (startDate) qs.set('start_date', startDate);
+    if (endDate) qs.set('end_date', endDate);
+    const q = qs.toString();
+    fetch(withToken(basePath + '/api/data' + (q ? '?' + q : '')))
       .then(r => { if (!r.ok) throw new Error('Server returned ' + r.status); return r.json(); })
       .then(json => { setRows((json.rows || []).map(normalizeRow)); setMeta(json.meta || {}); })
       .catch(e => setError(e.message))
       .finally(() => setLoading(false));
-  }, []);
+  }, [startDate, endDate]);
 
   const seasons = useMemo(() => {
     if (!rows) return [];
@@ -268,6 +332,84 @@ function App() {
     const withWl = fRows.filter(r => r.waitlisted > 0 || r.wlAllTime > 0);
     return withWl.sort(SORTS[sortKey] || SORTS.waitlisted);
   }, [fRows, sortKey]);
+
+  // ── AI Insights ──
+  const buildInsightsBlob = useCallback(() => {
+    const sectionNames = tableRows.slice(0, 30).map(r => r.program + ' — ' + r.section);
+    return {
+      filters: { season: season || 'all', status, search: search.trim() || null,
+                 sessionStart: startDate || null, sessionEnd: endDate || null },
+      summary: {
+        sectionsInView: agg.sections,
+        waitlistedNow: agg.waitlisted,
+        waitlistJoinersAllTime: agg.allTime,
+        convertedToEnrolled: agg.converted,
+        conversionPct: agg.convPct,
+        unmetDemandUsd: Math.round(agg.demand),
+        offersClaimed: agg.offersClaimed,
+        claimWithin8hPct: agg.claimWithin8Pct,
+        timeToClaimBuckets: { within1h: agg.c1h, h1to4: agg.c4h, h4to8: agg.c8h, h8to24: agg.c24h, h24to48: agg.c48h, over48h: agg.cMore },
+        waitlistModeMix: agg.modes,
+      },
+      sectionNames,
+      topPressureSections: tableRows.slice(0, 30).map(r => ({
+        program: r.program, section: r.section, season: r.season, status: r.status,
+        mode: r.mode || 'not configured', capacity: r.capacity, enrolled: r.enrolled,
+        waitlisted: r.waitlisted, joinersAllTime: r.wlAllTime, converted: r.wlConverted,
+        pressurePct: r.pressure, estDemandUsd: Math.round(r.demand),
+      })),
+    };
+  }, [tableRows, agg, season, status, search, startDate, endDate]);
+
+  const sendInsightsFeedback = useCallback((score) => {
+    if (!insightsTraceId) return;
+    fetch(withToken(basePath + '/api/insights/score'), {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ traceId: insightsTraceId, score, comment: score === 0 ? fbComment : '' }),
+    }).catch(() => {});
+    setFbSent(true); setFbMode(null);
+  }, [insightsTraceId, fbComment]);
+
+  // Fingerprint of the visible data — drives insights invalidation on any filter change.
+  const filteredKey = useMemo(
+    () => [season, status, search.trim(), startDate, endDate, fRows.length, agg.waitlisted].join('|'),
+    [season, status, search, startDate, endDate, fRows, agg]
+  );
+
+  const getInsights = useCallback(async () => {
+    setInsightsLoading(true);
+    setInsightsError(null);
+    setInsights(null);
+    setInsightsMeta(null);
+    try {
+      const blob = buildInsightsBlob();
+      const resp = await fetch(withToken(basePath + '/api/insights'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(blob),
+      });
+      const json = await resp.json().catch(() => ({}));
+      if (!resp.ok || !json.ok) throw new Error(json.error || ('Request failed (' + resp.status + ')'));
+      setInsights(json.insights || []);
+      setInsightsTraceId(json.traceId || null);
+      setFbSent(false); setFbMode(null); setFbComment('');
+      setInsightsMeta({ sectionCount: tableRows.length, key: filteredKey });
+    } catch (err) {
+      setInsightsError(err.message || 'Could not generate insights');
+    } finally {
+      setInsightsLoading(false);
+    }
+  }, [buildInsightsBlob, tableRows, filteredKey]);
+
+  // Invalidate insights whenever the visible data changes.
+  useEffect(() => { setInsights(null); setInsightsMeta(null); setInsightsError(null); }, [filteredKey]);
+
+  // Never render insights generated for a different view.
+  const activeInsights = useMemo(() => {
+    if (!insights || !insightsMeta) return insights;
+    if (insightsMeta.key !== filteredKey) return null;
+    return insights;
+  }, [insights, insightsMeta, filteredKey]);
 
   function exportXlsx() {
     const data = tableRows.map(r => ({
@@ -335,6 +477,18 @@ function App() {
             <option value="all">All (incl. Past)</option>
           </select>
         </label>
+        <label>
+          Sessions between
+          <span className="date-row">
+            <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} />
+            <span style={{ color: '#777' }}>–</span>
+            <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} />
+            {(startDate || endDate) && (
+              <button type="button" className="date-clear" title="Clear dates — back to all-time"
+                      onClick={() => { setStartDate(''); setEndDate(''); }}>✕</button>
+            )}
+          </span>
+        </label>
         <span className="toolbar-spacer" />
         <span className="row-count">{bodyState !== 'ready' ? '…' : tableRows.length.toLocaleString() + ' section' + (tableRows.length !== 1 ? 's' : '') + ' · ' + fmtInt(agg.waitlisted) + ' waitlisted'}</span>
         <button onClick={() => window.print()} title="Print this view">🖨️ Print</button>
@@ -353,6 +507,9 @@ function App() {
         <div className="report-header-right">
           {bodyState === 'ready' && (
             <div className="rh-meta" style={{fontWeight:600,marginBottom:2}}>{fmtInt(agg.waitlisted)} waitlisted · {fmt$(agg.demand)} est. demand</div>
+          )}
+          {(startDate || endDate) && (
+            <div className="rh-meta">sessions {startDate ? fmtD(startDate) : '…'} – {endDate ? fmtD(endDate) : '…'}</div>
           )}
           <div className="rh-meta">updated {updatedAt}</div>
         </div>
@@ -375,6 +532,65 @@ function App() {
         <strong>Who's waiting for a spot, and what that demand is worth.</strong> Waitlist counts are live people
         (not canceled) on each section's waitlist. Conversion is all-time: joiners who later enrolled in the same
         section. Est. demand = waitlisted × the section's default price — the revenue on the table if capacity were added.
+      </div>
+
+      {/* AI Insights */}
+      <div className="insights-section no-print">
+        <div className="insights-head">
+          <button type="button" className="insights-btn" onClick={getInsights} disabled={insightsLoading}>
+            <span className="sparkle">✦</span><span className="sparkle">✧</span><span className="sparkle">✦</span><span className="sparkle">✧</span><span className="sparkle">✦</span><span className="sparkle">✧</span>
+            {insightsLoading ? 'Analyzing…' : (activeInsights ? '↻ Refresh insights' : '✨ Rec Insights')}
+          </button>
+          {activeInsights && !insightsLoading && (
+            <span className="insights-sub">Generated from {insightsMeta ? insightsMeta.sectionCount : tableRows.length} section{(insightsMeta ? insightsMeta.sectionCount : tableRows.length) !== 1 ? 's' : ''} with waitlist history</span>
+          )}
+        </div>
+        {insightsLoading && (
+          <div className="loading-wrap" style={{ padding: '26px 0' }}>
+            <div className="juice-loader"></div>
+            <div className="juice-msg">Reading the waitlists…</div>
+          </div>
+        )}
+        {insightsError && !insightsLoading && (
+          <div className="err"><strong>Insights unavailable:</strong> {insightsError}</div>
+        )}
+        {activeInsights && !insightsLoading && (
+          <div className="insights-grid">
+            {activeInsights.map((ins, i) => (
+              <div key={i} className={'insight-card insight-' + (ins.type || 'signal')}>
+                <div className="insight-type">{ins.type || 'signal'}</div>
+                <div className="insight-title">{ins.title}</div>
+                <div className="insight-detail">{ins.detail}</div>
+                {ins.action && <div className="insight-action">→ {ins.action}</div>}
+              </div>
+            ))}
+          </div>
+        )}
+        {activeInsights && !insightsLoading && (
+          <div className="insights-feedback">
+            {fbSent ? (
+              <span className="fb-thanks">✅ Thanks for the feedback!</span>
+            ) : fbMode === 'down' ? (
+              <div className="fb-down-form">
+                <input
+                  placeholder="What could be better?"
+                  value={fbComment}
+                  onChange={e => setFbComment(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && sendInsightsFeedback(0)}
+                  autoFocus maxLength={500}
+                />
+                <button className="fb-send" onClick={() => sendInsightsFeedback(0)}>Send</button>
+                <button onClick={() => setFbMode(null)}>Cancel</button>
+              </div>
+            ) : (
+              <React.Fragment>
+                <span className="fb-label">Were these insights helpful?</span>
+                <button onClick={() => sendInsightsFeedback(1)} title="Yes, helpful">👍</button>
+                <button onClick={() => setFbMode('down')} title="Not helpful">👎</button>
+              </React.Fragment>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="cards">
