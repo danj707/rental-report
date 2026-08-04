@@ -182,8 +182,7 @@
   .method ul { margin: 0; padding-left: 16px; display: flex; flex-direction: column; gap: 5px; }
 
   .err { background: #fee2e2; border: 1px solid #fecaca; color: #991b1b; border-radius: 8px; padding: 12px 16px; margin: 20px 0; }
-  .loading-wrap { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 70px 0; color: #999; }
-  .juice-msg { font-size: 12px; color: #999; }
+  .loading-wrap { padding: 40px 0; }
 </style>
 </head>
 <body>
@@ -517,8 +516,7 @@ function App() {
 
       {bodyState === 'loading' && (
         <div className="loading-wrap">
-          <div className="juice-loader"></div>
-          <div className="juice-msg">Squeezing waitlist data…</div>
+          <JuiceLoader />
         </div>
       )}
       {bodyState === 'error' && (
@@ -545,12 +543,7 @@ function App() {
             <span className="insights-sub">Generated from {insightsMeta ? insightsMeta.sectionCount : tableRows.length} section{(insightsMeta ? insightsMeta.sectionCount : tableRows.length) !== 1 ? 's' : ''} with waitlist history</span>
           )}
         </div>
-        {insightsLoading && (
-          <div className="loading-wrap" style={{ padding: '26px 0' }}>
-            <div className="juice-loader"></div>
-            <div className="juice-msg">Reading the waitlists…</div>
-          </div>
-        )}
+        {insightsLoading && <JuiceLoader style={{ padding: '20px 16px' }} />}
         {insightsError && !insightsLoading && (
           <div className="err"><strong>Insights unavailable:</strong> {insightsError}</div>
         )}
