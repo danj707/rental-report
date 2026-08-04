@@ -3840,8 +3840,8 @@ Return EXACTLY 4 insights as a JSON array and nothing else — no prose, no prea
 Rules:
 - Ground EVERY figure in the data provided. Never invent numbers or section names.
 - ONLY reference sections listed in "sectionNames". If a section is not in that array, do not mention it.
-- Focus on: high-pressure sections worth adding capacity or another section (cite est. demand dollars), low waitlist→enrolled conversion, claims landing after the link-expiry window (staff may need longer claim windows), sections with demand but waitlist mode off/not configured (invisible demand), and mode-mix gaps.
-- "Offered a spot" is not measurable in this data — never claim to know how many offers were sent; claims are the only recorded signal.
+- Focus on: high-pressure sections worth adding capacity or another section (cite est. demand dollars), low waitlist→enrolled conversion, the offer claim rate (offers sent vs claimed vs expired unclaimed — many expired offers means seats went unfilled or windows are too short), slow time-to-claim, sections with demand but waitlist mode off/not configured (invisible demand), and mode-mix gaps.
+- Offers and claims count claim links (one person can hold several); "distinctPeople..." fields count people. Do not mix the two grains in one comparison.
 - Be terse. No filler. Vary the "type" across the four insights where the data supports it.`;
 
 const SYS_PROMPTS = { programs: PROGRAMS_SYS_PROMPT, fasttrack: FASTTRACK_SYS_PROMPT, users: USERS_SYS_PROMPT, gl: GL_SYS_PROMPT, historic: HISTORIC_SYS_PROMPT, roster: ROSTER_SYS_PROMPT, products: PRODUCTS_SYS_PROMPT, memberships: MEMBERSHIPS_SYS_PROMPT, "instructor-payout": INSTRUCTOR_PAYOUT_SYS_PROMPT, facility: FACILITY_SYS_PROMPT, qoq: QOQ_SYS_PROMPT, "annual-report": ANNUAL_REPORT_SYS_PROMPT, waitlist: WAITLIST_SYS_PROMPT };
