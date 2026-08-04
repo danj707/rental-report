@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="robots" content="noindex" />
+<title>Director's Report — Q2 2026 (mockup)</title>
+<style>
+  * { box-sizing: border-box; }
+  body { background: #faf9f7; color: #1c1917; margin: 0; padding: 0 0 60px;
+    font: 13px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+
+  /* ── Standard dark report toolbar ── */
+  .toolbar { position: sticky; top: 0; z-index: 100; display: flex; align-items: center; gap: 10px; padding: 8px 20px; background: #2c2c2c; color: #eee; font-size: 13px; flex-wrap: wrap; }
+  .toolbar-title { font-weight: 600; margin-right: 4px; }
+  .toolbar-back { color: #9ca3af; text-decoration: none; font-size: 12px; }
+  .toolbar-back:hover { color: #fff; }
+  .toolbar-spacer { flex: 1; }
+  .toolbar select { padding: 5px 8px; border: 1px solid rgba(255,255,255,.25); border-radius: 4px; background: #3a3a3a; color: #fff; font-size: 12px; font-family: inherit; }
+  .toolbar button { padding: 6px 14px; border: 1px solid rgba(255,255,255,.25); border-radius: 4px; background: rgba(255,255,255,.08); color: #fff; font-size: 12px; font-family: inherit; cursor: pointer; white-space: nowrap; }
+  .toolbar button:hover { background: rgba(255,255,255,.18); }
+  .toolbar .btn-pdf { background: #374151; border-color: #4b5563; font-weight: 600; }
+  .mock-chip { background: #f59e0b; color: #451a03; font-size: 10px; font-weight: 800; letter-spacing: .08em; padding: 3px 8px; border-radius: 4px; text-transform: uppercase; }
+
+  /* ── Page + standard report header ── */
+  .page { max-width: 1400px; margin: 16px auto; padding: 24px 28px; background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
+  .report-header { display:flex; justify-content:space-between; align-items:center; border-bottom:2.5px solid #111; padding-bottom:10px; margin-bottom:14px; gap:16px; }
+  .report-header-left { display:flex; align-items:center; gap:14px; }
+  .report-header-logo { height:42px; max-width:140px; object-fit:contain; object-position:left center; }
+  .report-header .org-label { font-size:10px; letter-spacing:1.6px; text-transform:uppercase; color:#777; font-weight:600; }
+  .report-header .title { font-size:17px; font-weight:700; margin-top:1px; color:#111827; }
+  .report-header-right { text-align:right; }
+  .report-header .rh-meta { font-size:11px; color:#666; }
+  .report-header .rh-period { font-size:13px; font-weight:700; color:#111827; }
+
+  .sample-ribbon { background: #fffbeb; border: 1px solid #fde68a; border-left: 3px solid #f59e0b; color: #92400e; padding: 9px 14px; margin-bottom: 16px; border-radius: 4px; font-size: 12.5px; line-height: 1.55; }
+  .sample-ribbon strong { color: #78350f; }
+
+  .new-tag { display:inline-block; background:#ecfdf5; color:#047857; border:1px solid #a7f3d0; font-size:9px; font-weight:800; letter-spacing:.07em; padding:1px 6px; border-radius:99px; text-transform:uppercase; vertical-align:2px; }
+
+  /* KPI cards */
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(168px, 1fr)); gap: 12px; margin-bottom: 16px; }
+  .card { background: #fff; border: 1px solid #e8e6e0; border-radius: 9px; padding: 12px 14px; }
+  .card .lbl { font-size: 9.5px; text-transform: uppercase; letter-spacing: .08em; color: #a8a29e; font-weight: 700; margin-bottom: 4px; }
+  .card .val { font-size: 22px; font-weight: 800; letter-spacing: -0.01em; }
+  .card .sub { font-size: 10.5px; color: #a8a29e; margin-top: 3px; }
+  .delta-up { color:#15803d; font-weight:700; }
+  .delta-down { color:#b91c1c; font-weight:700; }
+  .delta-flat { color:#a8a29e; font-weight:600; }
+
+  /* Rec Insights (static sample in the live format) */
+  .insights-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; margin-bottom: 6px; }
+  .insight-card { border: 1px solid #e5e7eb; border-left-width: 4px; border-radius: 8px; padding: 13px 15px; background: #fff; }
+  .insight-opportunity { border-left-color: #10b981; } .insight-opportunity .insight-type { color: #059669; }
+  .insight-risk { border-left-color: #ef4444; } .insight-risk .insight-type { color: #dc2626; }
+  .insight-signal { border-left-color: #3b82f6; } .insight-signal .insight-type { color: #2563eb; }
+  .insight-type { font-size: 10px; font-weight: 700; letter-spacing: .6px; text-transform: uppercase; margin-bottom: 6px; }
+  .insight-title { font-size: 13.5px; font-weight: 700; color: #111827; margin-bottom: 5px; line-height: 1.3; }
+  .insight-detail { font-size: 12.5px; color: #4b5563; line-height: 1.5; }
+
+  .exec-summary { background:#fff; border:1px solid #e8e6e0; border-radius:10px; padding:13px 16px; font-size:12.8px; color:#374151; line-height:1.65; margin-bottom:16px; }
+  .exec-summary strong { color:#111827; }
+
+  /* Sections */
+  .vsec { margin: 24px 0 10px; }
+  .vsec-t { font-size: 13.5px; font-weight: 800; color: #111827; display:flex; align-items:center; gap:8px; }
+  .vsec-t .em { font-size:14px; }
+  .vsec-s { font-size: 11px; color: #9ca3af; margin-top:1px; margin-bottom: 10px; }
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; align-items: start; }
+  .two-col.w { grid-template-columns: 1.25fr .75fr; }
+  @media (max-width: 950px) { .two-col, .two-col.w { grid-template-columns: 1fr; } }
+  .panel { background: #fff; border: 1px solid #e8e6e0; border-radius: 12px; padding: 14px 17px 13px; }
+  .panel-h { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color:#57534e; margin-bottom: 10px; display:flex; align-items:center; gap:7px; }
+  .panel-note { font-size: 11px; color: #9ca3af; margin-top: 9px; line-height:1.5; }
+
+  /* Tables */
+  table.mini { width:100%; border-collapse:collapse; font-size:12px; }
+  table.mini thead th { text-align:left; font-size:9.5px; text-transform:uppercase; letter-spacing:.05em; color:#a8a29e; font-weight:700; padding:4px 7px; border-bottom:1px solid #e8e6e0; }
+  table.mini thead th.r, table.mini td.r { text-align:right; font-variant-numeric: tabular-nums; }
+  table.mini tbody td { padding:6px 7px; border-bottom:1px solid #f5f4f1; vertical-align:middle; }
+  table.mini tbody tr:hover { background:#faf9f7; }
+  table.mini td.b { font-weight:600; color:#1c1917; }
+  .tiny { font-size:10.5px; color:#a8a29e; }
+
+  /* Bar list (single measure, sequential blue) */
+  .bar-row { display:grid; grid-template-columns: 170px 1fr 86px; gap:9px; align-items:center; padding:4px 0; border-radius:5px; }
+  .bar-row:hover { background:#faf9f7; }
+  .bar-row .bl { font-size:12px; color:#1c1917; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .bar-row .bv { font-size:12px; text-align:right; font-variant-numeric: tabular-nums; color:#1c1917; font-weight:600; }
+  .bar-row .bv .bd { font-size:10.5px; font-weight:700; display:block; }
+  .track { height:14px; background:#f5f4f1; border-radius:4px; position:relative; overflow:hidden; }
+  .fill { position:absolute; left:0; top:0; bottom:0; background:#2a78d6; border-radius:0 4px 4px 0; min-width:2px; }
+
+  /* Stacked mix bars */
+  .stack { display:flex; height:22px; border-radius:5px; overflow:hidden; }
+  .stack .seg { min-width:2px; }
+  .stack .seg + .seg { margin-left:2px; }
+  .seg-1 { background:#2a78d6; } .seg-2 { background:#eb6834; } .seg-3 { background:#1baf7a; } .seg-4 { background:#eda100; }
+  .legend { display:flex; gap:5px 16px; margin-top:8px; font-size:11px; color:#57534e; flex-wrap:wrap; }
+  .legend b { color:#1c1917; }
+  .dot { width:9px; height:9px; border-radius:3px; display:inline-block; margin-right:5px; vertical-align:-1px; }
+
+  /* Monthly grouped rows */
+  .mrow { display:grid; grid-template-columns: 42px 1fr 130px; gap:10px; align-items:center; padding:5px 0; }
+  .mrow .ml { font-size:11px; font-weight:700; color:#57534e; text-transform:uppercase; letter-spacing:.04em; }
+  .mrow .mv { font-size:11px; text-align:right; color:#57534e; font-variant-numeric: tabular-nums; }
+  .mrow .mv b { color:#1c1917; }
+
+  /* Pressure bars (waitlist) */
+  .press-row { display:grid; grid-template-columns: 1fr 120px 64px; gap:10px; align-items:center; padding:5px 0; border-bottom:1px solid #f5f4f1; }
+  .press-row:hover { background:#faf9f7; }
+  .press-row .pl { font-size:12px; font-weight:600; color:#1c1917; }
+  .press-row .pl .tiny { display:block; font-weight:400; }
+  .press-row .pv { font-size:12px; font-weight:800; text-align:right; font-variant-numeric: tabular-nums; }
+  .press-amber { color:#92400e; } .press-red { color:#b91c1c; }
+
+  /* Completeness meters */
+  .meter-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:14px; }
+  .meter .mh { display:flex; justify-content:space-between; font-size:11px; color:#57534e; margin-bottom:4px; }
+  .meter .mh b { font-variant-numeric: tabular-nums; }
+
+  .report-footer { border-top:1px solid #e8e6e0; margin-top:24px; padding-top:10px; display:flex; justify-content:space-between; font-size:10.5px; color:#a8a29e; }
+
+  @media print {
+    .toolbar, .no-print { display: none !important; }
+    body { background: #fff; }
+    .page { margin: 0; box-shadow: none; padding: 0; max-width:none; }
+    .panel, .card, .insight-card, .vsec { break-inside: avoid; }
+  }
+</style>
+</head>
+<body>
+
+  <div class="toolbar no-print">
+    <a class="toolbar-back" href="/watertown">&larr; Reports</a>
+    <span class="toolbar-title">Director's Report</span>
+    <span class="mock-chip">Mockup</span>
+    <div class="toolbar-spacer"></div>
+    <select disabled title="Quarter picker (static in mockup)"><option>Q2 2026 (Apr–Jun)</option></select>
+    <button class="btn-pdf" onclick="window.print()">📄 Print / PDF</button>
+  </div>
+
+  <div class="page">
+
+    <div class="report-header">
+      <div class="report-header-left">
+        <img class="report-header-logo" alt="Watertown Recreation"
+          src="https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2Forganization-d781690b-c5a0-43c5-8443-9ae43899528c%2FfullLogo.png%3F1750270261391&w=1920&q=75"
+          onerror="this.style.display='none'" />
+        <div>
+          <div class="org-label">Watertown Recreation</div>
+          <div class="title">Director's Report — Quarterly Executive Summary</div>
+        </div>
+      </div>
+      <div class="report-header-right">
+        <div class="rh-period">Q2 2026 &middot; April 1 – June 30</div>
+        <div class="rh-meta">Generated August 4, 2026 &middot; compared against Q1 2026</div>
+      </div>
+    </div>
+
+    <div class="sample-ribbon no-print">
+      <strong>Mockup — proposed revival of the Director's Report.</strong>
+      Layout and metrics are the proposal; the numbers are <strong>real Watertown Q2 2026 data</strong> pulled
+      from the live report cards (GL, Programs, Waitlist, Facilities, Court Utilization, Community Intel,
+      Self-Service Mix, Instructor Payout) on Aug 4, 2026 — static snapshot, nothing is wired up yet.
+      Sections tagged <span class="new-tag">New</span> use metrics that did not exist when the old monthly report was retired in July.
+    </div>
+
+    <!-- ── Executive KPI strip ── -->
+    <div class="cards">
+      <div class="card">
+        <div class="lbl">Net Revenue</div>
+        <div class="val">$374,769</div>
+        <div class="sub"><span class="delta-up">▲ 7.8%</span> vs Q1 ($347,572)</div>
+      </div>
+      <div class="card">
+        <div class="lbl">Transactions</div>
+        <div class="val">3,005</div>
+        <div class="sub"><span class="delta-up">▲ 58%</span> vs Q1 (1,903)</div>
+      </div>
+      <div class="card">
+        <div class="lbl">Program Enrollments</div>
+        <div class="val">1,771</div>
+        <div class="sub"><span class="delta-up">▲ 68%</span> vs Q1 &middot; 78 programs</div>
+      </div>
+      <div class="card">
+        <div class="lbl">Facility Reservations</div>
+        <div class="val">3,211</div>
+        <div class="sub"><span class="delta-up">▲ 14.7×</span> vs Q1 (219) &middot; seasonal</div>
+      </div>
+      <div class="card">
+        <div class="lbl">New Households</div>
+        <div class="val">+1,006</div>
+        <div class="sub">1,414 new people this quarter</div>
+      </div>
+      <div class="card">
+        <div class="lbl">Self-Service Orders</div>
+        <div class="val">75.4%</div>
+        <div class="sub">1,570 of 2,083 orders placed online</div>
+      </div>
+    </div>
+
+    <!-- ── Executive summary + Rec Insights ── -->
+    <div class="exec-summary">
+      <strong>Q2 in one paragraph:</strong> Watertown Recreation collected <strong>$374,769 net</strong> this quarter,
+      up 7.8% over Q1 on 58% more transactions — growth came from volume, not price. Summer registration drove
+      <strong>1,771 enrollments</strong> across 78 programs, and outdoor season took facility rentals from a winter
+      trickle (219) to <strong>3,211 reservations</strong>, with Arsenal Park alone generating $22.3K.
+      <strong>1,006 new households</strong> joined the platform — a third of the entire community base arrived this
+      quarter. Demand is now visibly outrunning supply in adult racquet sports: Adult Tennis Beginner carries a
+      waitlist 2.3× its capacity.
+    </div>
+
+    <div class="insights-grid">
+      <div class="insight-card insight-opportunity">
+        <div class="insight-type">Opportunity</div>
+        <div class="insight-title">Adult tennis &amp; pickleball demand is 2×+ capacity</div>
+        <div class="insight-detail">Adult Tennis Beginner has 53 people waiting on 28 seats across two sections (229% and 150% pressure). Offers sent this quarter were claimed in a median of <b>6.7 hours</b> — the demand is real and fast. One added section per level would convert an estimated 40+ waitlisted adults at ~$120/seat.</div>
+      </div>
+      <div class="insight-card insight-signal">
+        <div class="insight-type">Signal</div>
+        <div class="insight-title">Facility rentals just became a real revenue line</div>
+        <div class="insight-detail">Rental revenue grew from $527 in Q1 to <b>$38,973</b> in Q2 — Arsenal Park Facility Rentals is now the #3 GL account. 75% of reservations come from verified residents; 20% booked instantly with no staff touch.</div>
+      </div>
+      <div class="insight-card insight-opportunity">
+        <div class="insight-type">Opportunity</div>
+        <div class="insight-title">Self-service absorbed the volume spike</div>
+        <div class="insight-detail">Transactions rose 58% QoQ, but staff-entered orders rose only marginally — online self-service took <b>75% of orders</b> ($180.9K). The counter didn't feel the summer rush; that's capacity you can reinvest in programming.</div>
+      </div>
+      <div class="insight-card insight-risk">
+        <div class="insight-type">Risk</div>
+        <div class="insight-title">Special events are launching far under capacity</div>
+        <div class="insight-detail">Five programs filled below 10% — the two Community Paddle events sold 10 of 400 seats, and Popcorn &amp; Pajamas sold 10 of 150. Capacity settings may be aspirational, but if not, these need marketing or consolidation before they run.</div>
+      </div>
+    </div>
+
+    <!-- ── Revenue ── -->
+    <div class="vsec">
+      <div class="vsec-t"><span class="em">📊</span> Revenue &amp; Financial <span class="new-tag">QoQ deltas new</span></div>
+      <div class="vsec-s">GL Code Rollup, Apr 1 – Jun 30 vs Jan 1 – Mar 31 &middot; gross $408,939 &middot; refunds $34,170 (8.4% of gross, 329 refunds)</div>
+    </div>
+    <div class="two-col w">
+      <div class="panel">
+        <div class="panel-h">Net revenue by GL account</div>
+        <div class="bar-row" title="Pequossette Revolving Account — $215,247 net (Q1: $212,548)">
+          <div class="bl">Pequossette Revolving</div>
+          <div class="track"><div class="fill" style="width:100%"></div></div>
+          <div class="bv">$215,247 <span class="bd delta-up">▲ 1%</span></div>
+        </div>
+        <div class="bar-row" title="General Revolving Account — $122,590 net (Q1: $111,949)">
+          <div class="bl">General Revolving</div>
+          <div class="track"><div class="fill" style="width:57%"></div></div>
+          <div class="bv">$122,590 <span class="bd delta-up">▲ 10%</span></div>
+        </div>
+        <div class="bar-row" title="Arsenal Park Facility Rentals — $24,545 net (Q1: $5,433)">
+          <div class="bl">Arsenal Park Rentals</div>
+          <div class="track"><div class="fill" style="width:11.4%"></div></div>
+          <div class="bv">$24,545 <span class="bd delta-up">▲ 352%</span></div>
+        </div>
+        <div class="bar-row" title="Payments with no GL account assigned — $12,763 net (Q1: $13,333)">
+          <div class="bl">Unassigned GL</div>
+          <div class="track"><div class="fill" style="width:5.9%"></div></div>
+          <div class="bv">$12,763 <span class="bd delta-down">▼ 4%</span></div>
+        </div>
+        <div class="panel-note">Bars scaled to the largest account. “Unassigned GL” is revenue with no GL code — worth cleaning up before the FY27 budget cycle.</div>
+      </div>
+      <div class="panel">
+        <div class="panel-h">Quarter at a glance</div>
+        <table class="mini">
+          <thead><tr><th></th><th class="r">Q2 2026</th><th class="r">Q1 2026</th><th class="r">Δ</th></tr></thead>
+          <tbody>
+            <tr><td class="b">Gross payments</td><td class="r">$408,939</td><td class="r">$383,757</td><td class="r delta-up">▲ 6.6%</td></tr>
+            <tr><td class="b">Refunds</td><td class="r">$34,170</td><td class="r">$36,185</td><td class="r delta-up">▼ 5.6%</td></tr>
+            <tr><td class="b">Net revenue</td><td class="r">$374,769</td><td class="r">$347,572</td><td class="r delta-up">▲ 7.8%</td></tr>
+            <tr><td class="b">Transactions</td><td class="r">3,005</td><td class="r">1,903</td><td class="r delta-up">▲ 58%</td></tr>
+            <tr><td class="b">Payments recorded</td><td class="r">4,915</td><td class="r">3,047</td><td class="r delta-up">▲ 61%</td></tr>
+          </tbody>
+        </table>
+        <div class="panel-note">Average net per transaction fell from $183 to $125 — summer volume is many small registrations rather than fewer large ones.</div>
+      </div>
+    </div>
+
+    <!-- ── Programs ── -->
+    <div class="vsec">
+      <div class="vsec-t"><span class="em">🎯</span> Programs &amp; Enrollment</div>
+      <div class="vsec-s">238 sections &middot; 78 programs active in Q2 &middot; 1,771 enrollments on 4,471 capacity (40% overall fill) &middot; $73,505 collected in-period on these sections</div>
+    </div>
+    <div class="two-col w">
+      <div class="panel">
+        <div class="panel-h">Top programs by enrollment</div>
+        <table class="mini">
+          <thead><tr><th>Program</th><th class="r">Enrolled</th><th class="r">Fill</th><th class="r">Waitlist</th><th class="r">Net (Q2)</th></tr></thead>
+          <tbody>
+            <tr><td class="b">Pequossette Summer — Week 2 <span class="tiny">9 sections</span></td><td class="r">396</td><td class="r">51%</td><td class="r">8</td><td class="r">$30,583</td></tr>
+            <tr><td class="b">Adult Pickleball Open Play <span class="tiny">13 sections</span></td><td class="r">148</td><td class="r press-amber">92%</td><td class="r press-amber">21</td><td class="r">$2,536</td></tr>
+            <tr><td class="b">Summer Parks Program <span class="tiny">free, 2 sections</span></td><td class="r">125</td><td class="r">63%</td><td class="r">—</td><td class="r">$0</td></tr>
+            <tr><td class="b">Junior All Sports <span class="tiny">7 sections</span></td><td class="r">115</td><td class="r">77%</td><td class="r">—</td><td class="r">$1,410</td></tr>
+            <tr><td class="b">All Sports <span class="tiny">8 sections</span></td><td class="r">92</td><td class="r">74%</td><td class="r">1</td><td class="r">$1,155</td></tr>
+            <tr><td class="b">April Vacation Program <span class="tiny">3 sections</span></td><td class="r">58</td><td class="r">48%</td><td class="r">2</td><td class="r">$3,575</td></tr>
+          </tbody>
+        </table>
+        <div class="panel-note">“Net (Q2)” is money received in-quarter on these sections; Pequossette summer weeks 3+ collect in Q3. Highest-revenue single section: Men’s Basketball Papas Elite ($6,900).</div>
+      </div>
+      <div class="panel">
+        <div class="panel-h">⚠️ Filling slowest <span class="tiny" style="text-transform:none;letter-spacing:0;">capacity &gt; 10, lowest fill</span></div>
+        <table class="mini">
+          <thead><tr><th>Program</th><th class="r">Enrolled / Cap</th><th class="r">Fill</th></tr></thead>
+          <tbody>
+            <tr><td class="b">Community Paddle — Cookie Chase</td><td class="r">2 / 200</td><td class="r press-red">1%</td></tr>
+            <tr><td class="b">Girls in Gear</td><td class="r">1 / 40</td><td class="r press-red">3%</td></tr>
+            <tr><td class="b">Community Paddle — NECKRA 5-Mile</td><td class="r">8 / 200</td><td class="r press-red">4%</td></tr>
+            <tr><td class="b">Popcorn &amp; Pajamas Party Week</td><td class="r">10 / 150</td><td class="r press-red">7%</td></tr>
+            <tr><td class="b">Challenger Soccer Camp (April Vac.)</td><td class="r">10 / 100</td><td class="r press-amber">10%</td></tr>
+          </tbody>
+        </table>
+        <div class="panel-note">Consider right-sizing event capacities so fill rates stay meaningful — or treat these as the Q3 marketing list.</div>
+      </div>
+    </div>
+
+    <!-- ── Waitlist ── -->
+    <div class="vsec">
+      <div class="vsec-t"><span class="em">⏳</span> Waitlist &amp; Unmet Demand <span class="new-tag">New</span></div>
+      <div class="vsec-s">Sections with Q2 sessions &middot; full offer lifecycle now tracked (Waitlist Demand report, added June)</div>
+    </div>
+    <div class="two-col">
+      <div class="panel">
+        <div class="panel-h">Offer funnel, Q2</div>
+        <div class="cards" style="margin-bottom:8px; grid-template-columns:repeat(auto-fit,minmax(120px,1fr));">
+          <div class="card"><div class="lbl">Waiting now</div><div class="val" style="font-size:19px;">167</div><div class="sub">across 141 sections</div></div>
+          <div class="card"><div class="lbl">Offers sent</div><div class="val" style="font-size:19px;">64</div><div class="sub">to 64 people</div></div>
+          <div class="card"><div class="lbl">Claimed</div><div class="val" style="font-size:19px;">28</div><div class="sub">44% claim rate</div></div>
+          <div class="card"><div class="lbl">Median claim</div><div class="val" style="font-size:19px;">6.7h</div><div class="sub">21 offers expired</div></div>
+        </div>
+        <div class="panel-note">People claim fast when offered — the bottleneck is seats, not interest. 167 people are queued with no offer possible until capacity opens.</div>
+      </div>
+      <div class="panel">
+        <div class="panel-h">Highest-pressure sections <span class="tiny" style="text-transform:none;letter-spacing:0;">waiting ÷ capacity</span></div>
+        <div class="press-row" title="Adult Tennis Beginner — 32 waiting, 14 enrolled / 14 capacity">
+          <div class="pl">Adult Tennis Beginner <span class="tiny">14/14 enrolled &middot; 32 waiting</span></div>
+          <div class="track"><div class="fill" style="width:100%; background:#b91c1c;"></div></div>
+          <div class="pv press-red">229%</div>
+        </div>
+        <div class="press-row" title="Adult Tennis Beginner (2nd session) — 21 waiting, 14/14">
+          <div class="pl">Adult Tennis Beginner (sess. 2) <span class="tiny">14/14 enrolled &middot; 21 waiting</span></div>
+          <div class="track"><div class="fill" style="width:66%; background:#b91c1c;"></div></div>
+          <div class="pv press-red">150%</div>
+        </div>
+        <div class="press-row" title="Adult Tennis Intermediate — 17 waiting, 14/14">
+          <div class="pl">Adult Tennis Intermediate <span class="tiny">14/14 enrolled &middot; 17 waiting</span></div>
+          <div class="track"><div class="fill" style="width:53%; background:#b91c1c;"></div></div>
+          <div class="pv press-red">121%</div>
+        </div>
+        <div class="press-row" title="Adult Pickleball Intermediate Skills — 9 waiting, 8/8">
+          <div class="pl">Pickleball Intermediate Skills <span class="tiny">8/8 enrolled &middot; 9 waiting</span></div>
+          <div class="track"><div class="fill" style="width:49%; background:#b91c1c;"></div></div>
+          <div class="pv press-red">113%</div>
+        </div>
+        <div class="press-row" style="border-bottom:none;" title="Adult Pickleball Open Play — 12 waiting, 23/24">
+          <div class="pl">Adult Pickleball Open Play <span class="tiny">23/24 enrolled &middot; 12 waiting</span></div>
+          <div class="track"><div class="fill" style="width:22%; background:#d97706;"></div></div>
+          <div class="pv press-amber">50%</div>
+        </div>
+        <div class="panel-note">All five are adult racquet programs. Pressure &gt;100% means more people are waiting than the section can hold even if it emptied.</div>
+      </div>
+    </div>
+
+    <!-- ── Facilities ── -->
+    <div class="vsec">
+      <div class="vsec-t"><span class="em">🏞️</span> Facilities &amp; Rentals <span class="new-tag">Revenue detail new</span></div>
+      <div class="vsec-s">3,211 reservations &middot; $38,973 rental revenue &middot; 75.2% by verified residents &middot; Q1 was 219 reservations / $527 (winter)</div>
+    </div>
+    <div class="two-col">
+      <div class="panel">
+        <div class="panel-h">Rental revenue by park</div>
+        <div class="bar-row" title="Arsenal Park — $22,268 across 1,084 reservations">
+          <div class="bl">Arsenal Park</div>
+          <div class="track"><div class="fill" style="width:100%"></div></div>
+          <div class="bv">$22,268</div>
+        </div>
+        <div class="bar-row" title="Filippello Park — $6,818 across 407 reservations">
+          <div class="bl">Filippello Park</div>
+          <div class="track"><div class="fill" style="width:30.6%"></div></div>
+          <div class="bv">$6,818</div>
+        </div>
+        <div class="bar-row" title="O'Connell Park / Hosmer School — $4,125 across 266 reservations">
+          <div class="bl">O'Connell / Hosmer</div>
+          <div class="track"><div class="fill" style="width:18.5%"></div></div>
+          <div class="bv">$4,125</div>
+        </div>
+        <div class="bar-row" title="Casey Park — $3,935 across 410 reservations">
+          <div class="bl">Casey Park</div>
+          <div class="track"><div class="fill" style="width:17.7%"></div></div>
+          <div class="bv">$3,935</div>
+        </div>
+        <div class="bar-row" title="Victory Field Complex — $913 across 240 reservations">
+          <div class="bl">Victory Field</div>
+          <div class="track"><div class="fill" style="width:4.1%"></div></div>
+          <div class="bv">$913</div>
+        </div>
+        <div class="panel-note">Victory Field hosts heavy volume (240 reservations) at little revenue — mostly internal/league use. Arsenal Park is the paid-rental engine.</div>
+      </div>
+      <div class="panel">
+        <div class="panel-h">How bookings arrive &middot; court usage</div>
+        <div class="stack" title="Managed (staff-scheduled): 2,580 · Instant (self-serve): 631">
+          <div class="seg seg-1" style="width:80.3%"></div>
+          <div class="seg seg-2" style="width:19.7%"></div>
+        </div>
+        <div class="legend">
+          <span><span class="dot" style="background:#2a78d6"></span>Managed <b>2,580</b> (80%)</span>
+          <span><span class="dot" style="background:#eb6834"></span>Instant self-serve <b>631</b> (20%)</span>
+        </div>
+        <table class="mini" style="margin-top:12px;">
+          <tbody>
+            <tr><td class="b">Court hours booked (13 courts)</td><td class="r">1,676 hrs</td></tr>
+            <tr><td class="b">Share of open court time <span class="tiny">est. 11 hrs/day</span></td><td class="r">~13%</td></tr>
+            <tr><td class="b">Resident share of reservations</td><td class="r">75.2%</td></tr>
+          </tbody>
+        </table>
+        <div class="panel-note">Court utilization at 13% of open hours says supply isn’t the constraint on courts — scheduling desirable evening/weekend blocks for the waitlisted tennis programs is feasible.</div>
+      </div>
+    </div>
+
+    <!-- ── Community ── -->
+    <div class="vsec">
+      <div class="vsec-t"><span class="em">👥</span> Community</div>
+      <div class="vsec-s">Community Intel &middot; all-time platform base with Q2 growth &middot; retention metrics added since the last Director's Report <span class="new-tag">Retention new</span></div>
+    </div>
+    <div class="two-col">
+      <div class="panel">
+        <div class="panel-h">Who we serve</div>
+        <table class="mini">
+          <tbody>
+            <tr><td class="b">People on platform</td><td class="r">5,110</td><td class="tiny r">in 3,031 households</td></tr>
+            <tr><td class="b">New this quarter</td><td class="r delta-up">+1,414 people</td><td class="tiny r">+1,006 households</td></tr>
+            <tr><td class="b">Verified residents</td><td class="r">74.7%</td><td class="tiny r">top cities: Watertown, Boston, Waltham</td></tr>
+            <tr><td class="b">Median participant age</td><td class="r">10</td><td class="tiny r">youth-centered community</td></tr>
+            <tr><td class="b">Avg household spend</td><td class="r">$496</td><td class="tiny r">all-time, spending households</td></tr>
+            <tr><td class="b">Returning participants (2+ programs)</td><td class="r">34.1%</td><td class="tiny r">333 in 3+ programs</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="panel">
+        <div class="panel-h">Where household dollars go <span class="tiny" style="text-transform:none;letter-spacing:0;">all-time, $1.12M</span></div>
+        <div class="stack" title="Programs $1,016,442 · Facility $68,794 · Fees $35,734 · Products $500">
+          <div class="seg seg-1" style="width:90.6%"></div>
+          <div class="seg seg-2" style="width:6.1%"></div>
+          <div class="seg seg-3" style="width:3.2%"></div>
+        </div>
+        <div class="legend">
+          <span><span class="dot" style="background:#2a78d6"></span>Programs <b>$1.02M</b> (91%)</span>
+          <span><span class="dot" style="background:#eb6834"></span>Facility <b>$68.8K</b> (6%)</span>
+          <span><span class="dot" style="background:#1baf7a"></span>Fees <b>$35.7K</b> (3%)</span>
+        </div>
+        <div class="panel-note" style="margin-top:10px;">Products are &lt;0.1% ($500) — a POS/merchandise opportunity if desired. Facility’s share will grow: this quarter alone added $39K of rentals.</div>
+        <div class="panel-h" style="margin-top:14px;">Data completeness</div>
+        <div class="meter-grid">
+          <div class="meter"><div class="mh"><span>Age / DOB</span><b>47%</b></div><div class="track"><div class="fill" style="width:47%; background:#d97706;"></div></div></div>
+          <div class="meter"><div class="mh"><span>Gender</span><b>37%</b></div><div class="track"><div class="fill" style="width:37%; background:#d97706;"></div></div></div>
+          <div class="meter"><div class="mh"><span>Phone</span><b>100%</b></div><div class="track"><div class="fill" style="width:100%; background:#15803d;"></div></div></div>
+        </div>
+        <div class="panel-note">2,718 people are missing age data — grant applications and program targeting both get easier if registration prompts for DOB.</div>
+      </div>
+    </div>
+
+    <!-- ── Operations ── -->
+    <div class="vsec">
+      <div class="vsec-t"><span class="em">⚙️</span> Operations &amp; Staff Workload <span class="new-tag">New</span></div>
+      <div class="vsec-s">Self-Service Mix + Instructor Payout reports &middot; both added since the old Director's Report was retired</div>
+    </div>
+    <div class="two-col">
+      <div class="panel">
+        <div class="panel-h">Orders by channel, monthly</div>
+        <div class="mrow" title="April — self 405 ($66,043) · staff 161 ($17,626)">
+          <div class="ml">Apr</div>
+          <div class="stack" style="height:18px;"><div class="seg seg-1" style="width:71.6%"></div><div class="seg seg-2" style="width:28.4%"></div></div>
+          <div class="mv"><b>566</b> orders &middot; 72% self</div>
+        </div>
+        <div class="mrow" title="May — self 516 ($53,221) · staff 164 ($29,122)">
+          <div class="ml">May</div>
+          <div class="stack" style="height:18px;"><div class="seg seg-1" style="width:75.9%"></div><div class="seg seg-2" style="width:24.1%"></div></div>
+          <div class="mv"><b>680</b> orders &middot; 76% self</div>
+        </div>
+        <div class="mrow" title="June — self 649 ($61,610) · staff 188 ($28,625)">
+          <div class="ml">Jun</div>
+          <div class="stack" style="height:18px;"><div class="seg seg-1" style="width:77.5%"></div><div class="seg seg-2" style="width:22.5%"></div></div>
+          <div class="mv"><b>837</b> orders &middot; 78% self</div>
+        </div>
+        <div class="legend">
+          <span><span class="dot" style="background:#2a78d6"></span>Self-service <b>1,570</b> orders / $180.9K</span>
+          <span><span class="dot" style="background:#eb6834"></span>Staff-entered <b>513</b> orders / $75.4K</span>
+        </div>
+        <div class="panel-note">Self-service share climbed every month (72% → 78%) even as total volume grew 48% — the June registration rush was absorbed online.</div>
+      </div>
+      <div class="panel">
+        <div class="panel-h">Instructor-led programs, Q2</div>
+        <table class="mini">
+          <thead><tr><th>Instructor</th><th class="r">Sections</th><th class="r">Registrations</th><th class="r">Collected</th></tr></thead>
+          <tbody>
+            <tr><td class="b">Stacy Vachon</td><td class="r">14</td><td class="r">81</td><td class="r">$35,800</td></tr>
+            <tr><td class="b">Hunter Weissman</td><td class="r">17</td><td class="r">67</td><td class="r">$6,350</td></tr>
+            <tr><td class="b">Eric Kevorkian</td><td class="r">4</td><td class="r">34</td><td class="r">$5,610</td></tr>
+            <tr><td class="b">Daniel D'Amico</td><td class="r">4</td><td class="r">17</td><td class="r">$4,800</td></tr>
+            <tr><td class="b">Vartan Chilingaryan</td><td class="r">2</td><td class="r">27</td><td class="r">$3,120</td></tr>
+          </tbody>
+        </table>
+        <div class="panel-note">18 instructors led paid programming in Q2, collecting $65.8K across 341 registrations. Vartan’s two adult tennis sections are 96% full with 9 waiting — the supply constraint behind the tennis waitlist may be instructor hours, not courts.</div>
+        <table class="mini" style="margin-top:10px;">
+          <tbody>
+            <tr><td class="b">⚡ Fast Track adoption <span class="tiny">all-time</span></td><td class="r">1,253 of 1,451 converted (86.4%)</td></tr>
+            <tr><td class="b">🎫 Memberships</td><td class="r"><span class="tiny">1 test record — not yet in use</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ── Data notes ── -->
+    <div class="panel" style="margin-top:20px; background:#faf9f7;">
+      <div class="panel-h">📋 Data notes</div>
+      <div class="panel-note" style="margin-top:0;">
+        Revenue and transactions from GL Code Rollup (payment date basis). Enrollment counts sections with Q2 2026 sessions; program revenue is in-period receipts. Waitlist funnel covers offers sent in Q2. Facility figures exclude canceled reservations; court utilization assumes 11 open hrs/day per court. Community demographics are all-time; “new” = accounts created Apr 1 – Jun 30. Fast Track and retention are all-time cumulative. Instructor “collected” is participant payments on instructor-led sections, not instructor compensation.
+      </div>
+    </div>
+
+    <div class="report-footer">
+      <span>Powered by Rec Technologies &middot; rec.us</span>
+      <span>Confidential — Watertown Recreation &middot; Q2 2026 Director's Report (mockup)</span>
+    </div>
+  </div>
+
+</body>
+</html>

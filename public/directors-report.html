@@ -1,514 +1,654 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Director's Report</title>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: 'IBM Plex Sans', -apple-system, sans-serif; background: #f5f4f1; color: #111; }
-    .print-mode .no-print { display: none !important; }
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="robots" content="noindex" />
+<title>Director's Report</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  body { background: #faf9f7; color: #1c1917; margin: 0; padding: 0 0 60px;
+    font: 13px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
 
-    /* ── Generator UI ── */
-    .gen-wrapper { max-width: 680px; margin: 60px auto; text-align: center; padding: 0 20px; }
-    .gen-logo { height: 56px; margin-bottom: 16px; border-radius: 8px; }
-    .gen-title { font-size: 24px; font-weight: 700; margin-bottom: 6px; }
-    .gen-sub { font-size: 14px; color: #6b7280; margin-bottom: 28px; }
-    .gen-btn { padding: 14px 36px; background: #16a34a; color: #fff; border: none; border-radius: 8px; font-size: 15px; font-weight: 700; cursor: pointer; transition: background .15s; }
-    .gen-btn:hover { background: #15803d; }
-    .gen-btn:disabled { background: #9ca3af; cursor: default; }
-    .gen-range { margin-top: 16px; font-size: 13px; color: #9ca3af; }
+  /* ── Standard dark report toolbar ── */
+  .toolbar { position: sticky; top: 0; z-index: 100; display: flex; align-items: center; gap: 10px; padding: 8px 20px; background: #2c2c2c; color: #eee; font-size: 13px; flex-wrap: wrap; }
+  .toolbar-title { font-weight: 600; margin-right: 4px; }
+  .toolbar-back { color: #9ca3af; text-decoration: none; font-size: 12px; }
+  .toolbar-back:hover { color: #fff; }
+  .toolbar-spacer { flex: 1; }
+  .toolbar label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: #aaa; display: flex; flex-direction: column; gap: 2px; }
+  .toolbar select { padding: 5px 8px; border: 1px solid rgba(255,255,255,.25); border-radius: 4px; background: #3a3a3a; color: #fff; font-size: 12px; font-family: inherit; }
+  .toolbar button { padding: 6px 14px; border: 1px solid rgba(255,255,255,.25); border-radius: 4px; background: rgba(255,255,255,.08); color: #fff; font-size: 12px; font-family: inherit; cursor: pointer; white-space: nowrap; }
+  .toolbar button:hover { background: rgba(255,255,255,.18); }
+  .toolbar .btn-pdf { background: #374151; border-color: #4b5563; font-weight: 600; }
 
-    /* ── Report layout ── */
-    .report-page { max-width: 1040px; margin: 0 auto; padding: 0 20px 40px; }
-    .report-page .header { display: flex; justify-content: space-between; align-items: flex-start; padding: 24px 0 16px; border-bottom: 3px solid #16a34a; margin-bottom: 20px; }
-    .header-left { display: flex; gap: 14px; align-items: center; }
-    .header-logo { height: 44px; border-radius: 6px; }
-    .header-org { font-size: 10px; letter-spacing: 1.5px; color: #6b7280; text-transform: uppercase; font-weight: 600; }
-    .header-title { font-size: 20px; font-weight: 700; }
-    .header-right { text-align: right; font-size: 12px; color: #6b7280; }
+  /* ── Page + banner + standard report header ── */
+  .page { max-width: 1400px; margin: 16px auto; padding: 24px 28px; background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
+  .banner { margin: -24px -28px 18px; height: 170px; overflow: hidden; position: relative; background: #e8e6e0; }
+  .banner img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .banner .banner-shade { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(0,0,0,0) 45%, rgba(0,0,0,.38)); }
+  .banner .banner-cap { position: absolute; left: 22px; bottom: 12px; color: #fff; text-shadow: 0 1px 6px rgba(0,0,0,.55); }
+  .banner .banner-cap .bc-org { font-size: 11px; letter-spacing: 1.8px; text-transform: uppercase; font-weight: 700; opacity: .92; }
+  .banner .banner-cap .bc-title { font-size: 21px; font-weight: 800; margin-top: 1px; }
+  .report-header { display:flex; justify-content:space-between; align-items:center; border-bottom:2.5px solid #111; padding-bottom:10px; margin-bottom:14px; gap:16px; }
+  .report-header-left { display:flex; align-items:center; gap:14px; }
+  .report-header-logo { height:42px; max-width:140px; object-fit:contain; object-position:left center; }
+  .report-header .org-label { font-size:10px; letter-spacing:1.6px; text-transform:uppercase; color:#777; font-weight:600; }
+  .report-header .title { font-size:17px; font-weight:700; margin-top:1px; color:#111827; }
+  .report-header-right { text-align:right; }
+  .report-header .rh-meta { font-size:11px; color:#666; }
+  .report-header .rh-period { font-size:13px; font-weight:700; color:#111827; }
 
-    /* KPI strip */
-    .kpi-strip { display: flex; gap: 10px; margin-bottom: 18px; flex-wrap: wrap; }
-    .kpi-card { flex: 1; min-width: 110px; background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px 14px; }
-    .kpi-card .kl { font-size: 9.5px; text-transform: uppercase; letter-spacing: .6px; font-weight: 600; margin-bottom: 3px; }
-    .kpi-card .kv { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
-    .kpi-card .ks { font-size: 10.5px; color: #9ca3af; margin-top: 2px; }
+  .partial-ribbon { background: #fffbeb; border: 1px solid #fde68a; border-left: 3px solid #f59e0b; color: #92400e; padding: 9px 14px; margin-bottom: 16px; border-radius: 4px; font-size: 12.5px; line-height: 1.55; }
 
-    /* Two-column body */
-    .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 18px; }
-    @media (max-width: 700px) { .two-col { grid-template-columns: 1fr; } }
-    .section { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; }
-    .section-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .6px; margin-bottom: 10px; display: flex; align-items: center; gap: 6px; }
-    .section p { font-size: 12.5px; line-height: 1.65; color: #374151; }
-    .mini-table { width: 100%; border-collapse: collapse; font-size: 11.5px; margin-top: 8px; }
-    .mini-table thead th { text-align: left; font-size: 9.5px; text-transform: uppercase; letter-spacing: .4px; color: #9ca3af; padding: 4px 6px; border-bottom: 1px solid #e5e7eb; }
-    .mini-table thead th.r { text-align: right; }
-    .mini-table tbody td { padding: 5px 6px; border-bottom: 1px solid #f3f4f6; }
-    .mini-table tbody td.r { text-align: right; font-variant-numeric: tabular-nums; }
-    .mini-table tbody td.bold { font-weight: 600; }
+  /* KPI cards */
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(168px, 1fr)); gap: 12px; margin-bottom: 16px; }
+  .card { background: #fff; border: 1px solid #e8e6e0; border-radius: 9px; padding: 12px 14px; }
+  .card .lbl { font-size: 9.5px; text-transform: uppercase; letter-spacing: .08em; color: #a8a29e; font-weight: 700; margin-bottom: 4px; }
+  .card .val { font-size: 22px; font-weight: 800; letter-spacing: -0.01em; }
+  .card .sub { font-size: 10.5px; color: #a8a29e; margin-top: 3px; }
+  .delta-up { color:#15803d; font-weight:700; }
+  .delta-down { color:#b91c1c; font-weight:700; }
 
-    /* Footer */
-    .report-footer { border-top: 1px solid #ddd; padding-top: 10px; display: flex; justify-content: space-between; font-size: 10.5px; color: #9ca3af; }
+  /* Rec Insights */
+  .insights-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; margin-bottom: 16px; }
+  .insight-card { border: 1px solid #e5e7eb; border-left-width: 4px; border-radius: 8px; padding: 13px 15px; background: #fff; }
+  .insight-opportunity { border-left-color: #10b981; } .insight-opportunity .insight-type { color: #059669; }
+  .insight-risk { border-left-color: #ef4444; } .insight-risk .insight-type { color: #dc2626; }
+  .insight-signal { border-left-color: #3b82f6; } .insight-signal .insight-type { color: #2563eb; }
+  .insight-type { font-size: 10px; font-weight: 700; letter-spacing: .6px; text-transform: uppercase; margin-bottom: 6px; }
+  .insight-title { font-size: 13.5px; font-weight: 700; color: #111827; margin-bottom: 5px; line-height: 1.3; }
+  .insight-detail { font-size: 12.5px; color: #4b5563; line-height: 1.5; }
+  .insight-action { font-size: 11.5px; color: #6b7280; margin-top: 7px; font-weight: 600; }
+  .insights-head { display:flex; align-items:baseline; gap:9px; margin-bottom:9px; }
+  .insights-head .t { font-size: 12px; font-weight: 800; color:#4338ca; }
+  .insights-head .d { font-size: 11px; color:#a8a29e; }
 
-    /* Actions bar */
-    .actions { display: flex; gap: 10px; margin-bottom: 20px; }
-    .btn-action { padding: 8px 20px; border: 1px solid #d1d5db; background: #fff; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; }
-    .btn-action:hover { background: #f9fafb; }
-    .btn-pdf { padding: 8px 20px; background: #374151; color: #fff; border: none; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; }
-    .btn-pdf:hover { background: #1f2937; }
+  /* Sections */
+  .vsec { margin: 24px 0 10px; }
+  .vsec-t { font-size: 13.5px; font-weight: 800; color: #111827; display:flex; align-items:center; gap:8px; }
+  .vsec-s { font-size: 11px; color: #9ca3af; margin-top:1px; margin-bottom: 10px; }
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; align-items: start; }
+  .two-col.w { grid-template-columns: 1.25fr .75fr; }
+  @media (max-width: 950px) { .two-col, .two-col.w { grid-template-columns: 1fr; } }
+  .panel { background: #fff; border: 1px solid #e8e6e0; border-radius: 12px; padding: 14px 17px 13px; }
+  .panel-h { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color:#57534e; margin-bottom: 10px; display:flex; align-items:center; gap:7px; }
+  .panel-note { font-size: 11px; color: #9ca3af; margin-top: 9px; line-height:1.5; }
 
-    @media print { .no-print { display: none !important; } body { background: #fff; } }
-  </style>
+  /* Tables */
+  table.mini { width:100%; border-collapse:collapse; font-size:12px; }
+  table.mini thead th { text-align:left; font-size:9.5px; text-transform:uppercase; letter-spacing:.05em; color:#a8a29e; font-weight:700; padding:4px 7px; border-bottom:1px solid #e8e6e0; }
+  table.mini thead th.r, table.mini td.r { text-align:right; font-variant-numeric: tabular-nums; }
+  table.mini tbody td { padding:6px 7px; border-bottom:1px solid #f5f4f1; vertical-align:middle; }
+  table.mini tbody tr:hover { background:#faf9f7; }
+  table.mini td.b { font-weight:600; color:#1c1917; }
+  .tiny { font-size:10.5px; color:#a8a29e; }
+
+  /* Bar lists + stacks */
+  .bar-row { display:grid; grid-template-columns: 170px 1fr 92px; gap:9px; align-items:center; padding:4px 0; border-radius:5px; }
+  .bar-row:hover { background:#faf9f7; }
+  .bar-row .bl { font-size:12px; color:#1c1917; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .bar-row .bv { font-size:12px; text-align:right; font-variant-numeric: tabular-nums; color:#1c1917; font-weight:600; }
+  .bar-row .bv .bd { font-size:10.5px; font-weight:700; display:block; }
+  .track { height:14px; background:#f5f4f1; border-radius:4px; position:relative; overflow:hidden; }
+  .fill { position:absolute; left:0; top:0; bottom:0; background:#2a78d6; border-radius:0 4px 4px 0; min-width:2px; }
+  .stack { display:flex; height:22px; border-radius:5px; overflow:hidden; }
+  .stack .seg { min-width:2px; }
+  .stack .seg + .seg { margin-left:2px; }
+  .seg-1 { background:#2a78d6; } .seg-2 { background:#eb6834; } .seg-3 { background:#1baf7a; } .seg-4 { background:#eda100; }
+  .legend { display:flex; gap:5px 16px; margin-top:8px; font-size:11px; color:#57534e; flex-wrap:wrap; }
+  .legend b { color:#1c1917; }
+  .dot { width:9px; height:9px; border-radius:3px; display:inline-block; margin-right:5px; vertical-align:-1px; }
+  .mrow { display:grid; grid-template-columns: 42px 1fr 130px; gap:10px; align-items:center; padding:5px 0; }
+  .mrow .ml { font-size:11px; font-weight:700; color:#57534e; text-transform:uppercase; letter-spacing:.04em; }
+  .mrow .mv { font-size:11px; text-align:right; color:#57534e; font-variant-numeric: tabular-nums; }
+  .mrow .mv b { color:#1c1917; }
+  .press-row { display:grid; grid-template-columns: 1fr 120px 64px; gap:10px; align-items:center; padding:5px 0; border-bottom:1px solid #f5f4f1; }
+  .press-row:hover { background:#faf9f7; }
+  .press-row .pl { font-size:12px; font-weight:600; color:#1c1917; }
+  .press-row .pl .tiny { display:block; font-weight:400; }
+  .press-row .pv { font-size:12px; font-weight:800; text-align:right; font-variant-numeric: tabular-nums; }
+  .press-amber { color:#92400e; } .press-red { color:#b91c1c; }
+  .meter-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:14px; }
+  .meter .mh { display:flex; justify-content:space-between; font-size:11px; color:#57534e; margin-bottom:4px; }
+  .meter .mh b { font-variant-numeric: tabular-nums; }
+
+  .report-footer { border-top:1px solid #e8e6e0; margin-top:24px; padding-top:10px; display:flex; justify-content:space-between; font-size:10.5px; color:#a8a29e; }
+  .gen-wrapper { max-width: 680px; margin: 60px auto; text-align: center; padding: 0 20px; }
+
+  @media print {
+    .toolbar, .no-print, .rec-banner, .fb-overlay { display: none !important; }
+    body { background: #fff; }
+    .page { margin: 0; box-shadow: none; padding: 0 10px; max-width: none; }
+    .banner { margin: 0 -10px 18px; }
+    .panel, .card, .insight-card, .vsec { break-inside: avoid; }
+  }
+</style>
 </head>
 <body>
   <div id="root"></div>
   <script type="text/babel">
-const { useState, useMemo, useCallback, useEffect } = React;
+const { useState, useEffect, useMemo } = React;
 
-function App() {
-  const cfg = window.ORG_CONFIG || {};
-  const slug = cfg.slug || '';
-  const orgName = cfg.displayName || slug;
-  const logoUrl = cfg.logoUrl || '';
-  const token = cfg.token || '';
-  const isPrint = new URLSearchParams(window.location.search).get('_print') === '1';
+const fmtMoney = (n) => "$" + Math.round(n || 0).toLocaleString();
+const fmtNum = (n) => (n == null ? "—" : Math.round(n).toLocaleString());
 
-  const [state, setState] = useState('idle'); // idle | loading | done | error
-  const [metrics, setMetrics] = useState(null);
-  const [errMsg, setErrMsg] = useState('');
-  const [pdfLoading, setPdfLoading] = useState(false);
-  const [aiInsights, setAiInsights] = useState(null);
-  const [aiLoading, setAiLoading] = useState(false);
-
-  // Compute last month date range
-  const lastMonth = useMemo(() => {
-    var now = new Date();
-    var end = new Date(now.getFullYear(), now.getMonth(), 0);
-    var start = new Date(end.getFullYear(), end.getMonth(), 1);
-    var fmt = d => d.toISOString().slice(0,10);
-    var monthName = start.toLocaleString('default', { month: 'long', year: 'numeric' });
-    return { start: fmt(start), end: fmt(end), label: monthName };
-  }, []);
-
-  function withToken(url) {
-    return token ? url + (url.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(token) : url;
-  }
-
-  async function fetchData(report, params) {
-    var qs = new URLSearchParams(params || {}).toString();
-    var url = withToken('/' + slug + '/' + report + '/api/data' + (qs ? '?' + qs : ''));
-    var resp = await fetch(url);
-    if (!resp.ok) throw new Error(report + ': HTTP ' + resp.status);
-    var json = await resp.json();
-    return json.rows || json.data || json || [];
-  }
-
-  function fmtMoney(n) { return '$' + Math.round(n).toLocaleString(); }
-  function pct(a,b) { return b > 0 ? ((a/b)*100).toFixed(1) + '%' : '—'; }
-
-  const generate = useCallback(async () => {
-    setState('loading');
-    setErrMsg('');
-    try {
-      // Fetch data in parallel
-      var [glRows, progRows, userRows, ftRows] = await Promise.all([
-        fetchData('gl', { start_date: lastMonth.start, end_date: lastMonth.end }).catch(() => []),
-        fetchData('programs', { start_date: lastMonth.start, end_date: lastMonth.end }).catch(() => []),
-        fetchData('users').catch(() => []),
-        fetchData('fasttrack').catch(() => []),
-      ]);
-
-      // ── GL Revenue metrics ──
-      var glNet = 0, glGross = 0, glRefunds = 0;
-      glRows.forEach(r => {
-        var net = parseFloat(r['Net Amount'] || r['Net Revenue'] || r['net_amount'] || 0);
-        var gross = parseFloat(r['Gross Amount'] || r['Gross Revenue'] || r['Total Payments'] || r['gross_amount'] || 0);
-        var ref = Math.abs(parseFloat(r['Total Refunds'] || r['Refund Amount'] || r['Refunds'] || r['refunds'] || 0));
-        if (!isNaN(net)) glNet += net;
-        if (!isNaN(gross)) glGross += gross;
-        if (!isNaN(ref)) glRefunds += ref;
-      });
-
-      // ── Programs metrics ──
-      var progMap = {};
-      progRows.forEach(r => {
-        var name = r['Program'] || r['program'] || 'Unknown';
-        if (!progMap[name]) progMap[name] = { name, enrolled: 0, capacity: 0, received: 0, sections: 0, netRev: 0 };
-        var p = progMap[name];
-        p.enrolled += parseInt(r['Enrollments'] || r['Enrolled'] || r['enrolled'] || 0) || 0;
-        p.capacity += parseInt(r['Capacity'] || r['capacity'] || 0) || 0;
-        p.received += parseFloat(r['Received'] || r['received'] || 0) || 0;
-        p.netRev += parseFloat(r['Net Revenue'] || r['Net Total'] || r['net_total'] || 0) || 0;
-        p.sections += parseInt(r['Sections'] || 1) || 0;
-      });
-      var programs = Object.values(progMap).sort((a,b) => b.enrolled - a.enrolled);
-      var totalEnroll = programs.reduce((s,p) => s + p.enrolled, 0);
-      var totalCap = programs.reduce((s,p) => s + p.capacity, 0);
-      var progRevenue = programs.reduce((s,p) => s + p.received, 0);
-      if (progRevenue === 0) progRevenue = programs.reduce((s,p) => s + p.netRev, 0);
-
-      // ── Users/CI metrics ──
-      var hohs = userRows.filter(r => r['Role'] === 'Head of Household');
-      var members = userRows.filter(r => r['Role'] === 'Member');
-      var totalHH = hohs.length;
-      var totalPeople = userRows.length;
-      var thirtyDaysAgo = new Date(Date.now() - 30 * 86400000).toISOString();
-      var newHH = hohs.filter(r => r['Created At'] && new Date(r['Created At']).toISOString() >= thirtyDaysAgo).length;
-      var ages = userRows.map(r => parseInt(r['Age'])).filter(a => a > 0 && a < 120);
-      var medianAge = ages.length > 0 ? (a => { a.sort((x,y) => x-y); return a[Math.floor(a.length/2)]; })(ages.slice()) : null;
-      var residents = userRows.filter(r => r['Residency?'] === 'Yes').length;
-      var resRate = totalPeople > 0 ? ((residents/totalPeople)*100).toFixed(1) : '0';
-      var netRevArr = hohs.map(r => parseFloat(String(r['Net Revenue'] || 0).replace(/,/g,'')) || 0).filter(v => v > 0);
-      var avgHHSpend = netRevArr.length > 0 ? Math.round(netRevArr.reduce((s,v) => s+v, 0) / netRevArr.length) : 0;
-      var topCity = {};
-      userRows.forEach(r => { var c = (r['City']||'').trim(); if (c) topCity[c] = (topCity[c]||0)+1; });
-      var topCityName = Object.entries(topCity).sort((a,b) => b[1]-a[1])[0];
-
-      // Revenue mix (from HoH revenue breakdowns)
-      var revMix = { program: 0, facility: 0, fee: 0, product: 0 };
-      hohs.forEach(r => {
-        revMix.program  += parseFloat(String(r['Program Revenue']||0).replace(/,/g,''))||0;
-        revMix.facility += parseFloat(String(r['Facility Revenue']||0).replace(/,/g,''))||0;
-        revMix.fee      += parseFloat(String(r['Fee Revenue']||0).replace(/,/g,''))||0;
-        revMix.product  += parseFloat(String(r['Product Revenue']||0).replace(/,/g,''))||0;
-      });
-      var revTotal = revMix.program + revMix.facility + revMix.fee + revMix.product;
-
-      // Data completeness
-      var hasAge = userRows.filter(r => { var a = parseInt(r['Age']); return a > 0 && a < 120; }).length;
-      var hasGender = userRows.filter(r => { var g = (r['Gender']||'').trim(); return g && g.toLowerCase() !== 'unknown'; }).length;
-      var hasGrade = userRows.filter(r => { var g = (r['Grade']||'').trim(); return g !== ''; }).length;
-      var hasPhone = userRows.filter(r => { var p = (r['Phone']||'').trim(); return p !== ''; }).length;
-      var dataComp = {
-        age: totalPeople > 0 ? ((hasAge/totalPeople)*100).toFixed(0) : '0',
-        gender: totalPeople > 0 ? ((hasGender/totalPeople)*100).toFixed(0) : '0',
-        grade: totalPeople > 0 ? ((hasGrade/totalPeople)*100).toFixed(0) : '0',
-        phone: totalPeople > 0 ? ((hasPhone/totalPeople)*100).toFixed(0) : '0',
-        missingAge: totalPeople - hasAge,
-        missingGender: totalPeople - hasGender,
-      };
-
-      // Bottom programs (low fill rate with meaningful capacity)
-      var bottomProgs = Object.values(progMap)
-        .filter(p => p.capacity > 10 && p.enrolled > 0)
-        .map(p => ({ name: p.name, enrolled: p.enrolled, capacity: p.capacity, fill: p.capacity > 0 ? ((p.enrolled/p.capacity)*100).toFixed(1) : 0 }))
-        .sort((a,b) => parseFloat(a.fill) - parseFloat(b.fill))
-        .slice(0, 5);
-
-      // ── Fast Track metrics ──
-      var ftSection = ftRows.filter(r => (r['Row Type']||'section') !== 'user');
-      var ftSignups = ftSection.reduce((s,r) => s + (parseInt(r['FT Signups'])||0), 0);
-      var ftConverted = ftSection.reduce((s,r) => s + (parseInt(r['FT Converted'])||0), 0);
-      var ftConvRate = ftSignups > 0 ? ((ftConverted/ftSignups)*100).toFixed(1) : '0';
-      var ftPrograms = new Set(ftSection.map(r => r['Program']).filter(Boolean)).size;
-
-      var allMetrics = {
-        gl: { net: glNet, gross: glGross, refunds: glRefunds },
-        prog: { total: totalEnroll, capacity: totalCap, revenue: progRevenue, count: programs.length, top5: programs.slice(0,5), bottom5: bottomProgs },
-        users: { hh: totalHH, people: totalPeople, newHH, medianAge, resRate, avgHHSpend, topCity: topCityName ? topCityName[0] : '—', hohCount: hohs.length, memCount: members.length },
-        ft: { signups: ftSignups, converted: ftConverted, convRate: ftConvRate, programs: ftPrograms },
-        revMix: revMix,
-        revTotal: revTotal,
-        dataComp: dataComp,
-      };
-
-      setMetrics(allMetrics);
-      setState('done');
-      // Kick off AI narrative in background
-      setAiLoading(true);
-      fetch(withToken('/' + slug + '/directors-report/api/insights'), {
-        method: 'POST', headers: {'Content-Type':'application/json'},
-        body: JSON.stringify(allMetrics),
-      }).then(r => r.json()).then(j => {
-        if (j.ok && j.insights) setAiInsights(j.insights);
-      }).catch(() => {}).finally(() => setAiLoading(false));
-    } catch (err) {
-      setErrMsg(err.message);
-      setState('error');
-    }
-  }, [slug, token, lastMonth]);
-
-  // Auto-generate in print mode
-  useEffect(() => { if (isPrint) generate(); }, []);
-
-  function downloadPdf() {
-    setPdfLoading(true);
-    fetch(withToken('/' + slug + '/directors-report/api/pdf'))
-      .then(r => r.blob())
-      .then(blob => {
-        var a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        a.download = 'directors-report-' + slug + '-' + lastMonth.start.slice(0,7) + '.pdf';
-        a.click(); URL.revokeObjectURL(a.href);
-      })
-      .catch(e => alert('PDF failed: ' + e.message))
-      .finally(() => setPdfLoading(false));
-  }
-
-  var m = metrics;
-
-  // ── Idle state: show generate button ──
-  if (state === 'idle') return (
-    <div className="gen-wrapper no-print">
-      {logoUrl && <img src={logoUrl} className="gen-logo" alt="" />}
-      <div className="gen-title">{orgName}</div>
-      <div className="gen-sub">Monthly Director's Report</div>
-      <button className="gen-btn" onClick={generate}>Generate Report</button>
-      <div className="gen-range">{lastMonth.label}</div>
-    </div>
-  );
-
-  if (state === 'loading') return (
-    <div style={{paddingTop:80}}><JuiceLoader /></div>
-  );
-
-  if (state === 'error') return (
-    <div className="gen-wrapper">
-      <div style={{color:'#dc2626',marginBottom:16}}>Error: {errMsg}</div>
-      <button className="gen-btn" onClick={generate}>Retry</button>
-    </div>
-  );
-
-  // ── Report render ──
+function Delta({ cur, prev, hidden, downIsGood }) {
+  if (hidden || prev == null || cur == null || prev <= 0) return null;
+  const p = Math.round((cur - prev) / Math.abs(prev) * 100);
+  if (!isFinite(p)) return null;
+  const up = p >= 0;
+  const good = downIsGood ? !up : up;
+  // Seasonal explosions read better as a multiplier than "▲ 1310%"
+  const label = p > 400 ? (Math.round(cur / prev * 10) / 10) + "×" : Math.abs(p) + "%";
   return (
-    <div className="report-page">
-      <div className="actions no-print">
-        <button className="btn-action" onClick={() => { setState('idle'); setMetrics(null); }}>&larr; Back</button>
-        <button className="btn-pdf" onClick={downloadPdf} disabled={pdfLoading}>
-          {pdfLoading ? 'Generating PDF…' : '📄 Download PDF'}
-        </button>
-      </div>
+    <span className={good ? "delta-up" : "delta-down"}>
+      {up ? "▲" : "▼"} {label}
+    </span>
+  );
+}
 
-      <div className="header">
-        <div className="header-left">
-          {logoUrl && <img src={logoUrl} className="header-logo" alt="" onError={e => e.target.style.display='none'} />}
-          <div>
-            <div className="header-org">{orgName}</div>
-            <div className="header-title">Monthly Director's Report</div>
+function BarList({ rows, money }) {
+  const max = Math.max(1, ...rows.map(r => Math.abs(r.value)));
+  return (
+    <div>
+      {rows.map((r, i) => (
+        <div className="bar-row" key={i} title={r.title || r.label}>
+          <div className="bl">{r.label}</div>
+          <div className="track"><div className="fill" style={{ width: Math.max(2, Math.abs(r.value) / max * 100) + "%" }} /></div>
+          <div className="bv">
+            {money ? fmtMoney(r.value) : fmtNum(r.value)}
+            {r.delta != null && <span className={"bd " + (r.delta >= 0 ? "delta-up" : "delta-down")}>{r.delta >= 0 ? "▲" : "▼"} {Math.abs(r.delta)}%</span>}
           </div>
         </div>
-        <div className="header-right">
-          <div style={{fontWeight:600,color:'#111'}}>{lastMonth.label}</div>
-          <div>Generated {new Date().toLocaleDateString()}</div>
-        </div>
-      </div>
-
-      {/* Executive KPI strip */}
-      <div className="kpi-strip">
-        <div className="kpi-card"><div className="kl" style={{color:'#16a34a'}}>Net Revenue</div><div className="kv">{fmtMoney(m.gl.net)}</div>{m.gl.refunds > 0 && <div className="ks">{fmtMoney(m.gl.refunds)} refunded</div>}</div>
-        <div className="kpi-card"><div className="kl" style={{color:'#6366f1'}}>Enrollments</div><div className="kv">{m.prog.total.toLocaleString()}</div><div className="ks">{m.prog.count} programs</div></div>
-        <div className="kpi-card"><div className="kl" style={{color:'#d97706'}}>Households</div><div className="kv">{m.users.hh.toLocaleString()}</div><div className="ks">+{m.users.newHH} new (30d)</div></div>
-        <div className="kpi-card"><div className="kl" style={{color:'#2563eb'}}>Avg HH Spend</div><div className="kv">{fmtMoney(m.users.avgHHSpend)}</div><div className="ks">per spending HH</div></div>
-        <div className="kpi-card"><div className="kl" style={{color:'#10b981'}}>Fast Track</div><div className="kv">{m.ft.converted.toLocaleString()}</div><div className="ks">{m.ft.convRate}% conversion</div></div>
-        {m.users.medianAge && <div className="kpi-card"><div className="kl" style={{color:'#db2777'}}>Median Age</div><div className="kv">{m.users.medianAge}</div><div className="ks">{m.users.resRate}% residents</div></div>}
-      </div>
-
-      {/* AI Executive Insights */}
-      {(aiInsights || aiLoading) && (
-        <div style={{background:'linear-gradient(135deg,#f0fdf4,#ecfdf5)',border:'1px solid #bbf7d0',borderRadius:10,padding:18,marginBottom:18}}>
-          <div style={{fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:'.6px',color:'#065f46',marginBottom:aiInsights?10:0,display:'flex',alignItems:'center',gap:6}}>
-            <span>✨</span> Executive Insights
-            {aiLoading && <span style={{fontWeight:400,textTransform:'none',color:'#6b7280',letterSpacing:0}}> — analyzing...</span>}
-          </div>
-          {aiInsights && (
-            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
-              {aiInsights.map((ins, i) => {
-                var colors = {positive:'#059669',warning:'#d97706',action:'#2563eb',neutral:'#6b7280'};
-                var icons = {positive:'↗',warning:'⚠',action:'→',neutral:'•'};
-                return (
-                  <div key={i} style={{background:'#fff',borderRadius:6,padding:'10px 12px',borderLeft:'3px solid '+(colors[ins.type]||'#ccc')}}>
-                    <div style={{fontSize:12,fontWeight:700,color:colors[ins.type]||'#111',marginBottom:3}}>{icons[ins.type]||'•'} {ins.title}</div>
-                    <div style={{fontSize:11.5,color:'#374151',lineHeight:1.55}}>{ins.body}</div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      )}
-
-      <div className="two-col">
-        {/* Left column */}
-        <div style={{display:'flex',flexDirection:'column',gap:16}}>
-          {/* Revenue summary */}
-          <div className="section">
-            <div className="section-title"><span style={{color:'#16a34a'}}>💰</span> Revenue Summary</div>
-            <p>
-              Net revenue of <strong>{fmtMoney(m.gl.net)}</strong> for {lastMonth.label}
-              {m.gl.refunds > 0 ? ' with ' + fmtMoney(m.gl.refunds) + ' in refunds (' + pct(m.gl.refunds, m.gl.gross) + ' of gross)' : ''}.
-              {m.prog.revenue > 0 ? ' Program registrations contributed ' + fmtMoney(m.prog.revenue) + '.' : ''}
-            </p>
-          </div>
-
-          {/* Top programs */}
-          <div className="section">
-            <div className="section-title"><span style={{color:'#6366f1'}}>🎯</span> Top Programs</div>
-            {m.prog.top5.length > 0 ? (
-              <React.Fragment>
-              <table className="mini-table">
-                <thead><tr><th>Program</th><th className="r">Enrolled</th><th className="r">Fill %</th><th className="r">Revenue</th></tr></thead>
-                <tbody>
-                  {m.prog.top5.map((p,i) => {
-                    var maxEnroll = m.prog.top5[0].enrolled || 1;
-                    return (
-                    <tr key={i}>
-                      <td className="bold">{p.name}</td>
-                      <td className="r" style={{position:'relative'}}>
-                        <div style={{position:'absolute',right:0,top:2,bottom:2,width:pct(p.enrolled,maxEnroll),background:'#c7d2fe',borderRadius:3,opacity:.4}} />
-                        <span style={{position:'relative'}}>{p.enrolled}</span>
-                      </td>
-                      <td className="r">{p.capacity > 0 ? pct(p.enrolled, p.capacity) : '—'}</td>
-                      <td className="r">{p.received > 0 ? fmtMoney(p.received) : (p.netRev > 0 ? fmtMoney(p.netRev) : '—')}</td>
-                    </tr>
-                  );})}
-                </tbody>
-              </table>
-              {m.prog.total > 0 && m.prog.capacity > 0 && (
-                <div style={{marginTop:8,fontSize:11,color:'#6b7280'}}>Overall fill rate: <strong>{pct(m.prog.total, m.prog.capacity)}</strong> across {m.prog.count} programs</div>
-              )}
-              </React.Fragment>
-            ) : <p style={{color:'#9ca3af'}}>No program data for this period</p>}
-          </div>
-        </div>
-
-        {/* Right column */}
-        <div style={{display:'flex',flexDirection:'column',gap:16}}>
-          {/* Community profile */}
-          <div className="section">
-            <div className="section-title"><span style={{color:'#d97706'}}>👥</span> Community Profile</div>
-            <p>
-              <strong>{m.users.people.toLocaleString()}</strong> people across <strong>{m.users.hh.toLocaleString()}</strong> households
-              ({m.users.hohCount.toLocaleString()} HoH + {m.users.memCount.toLocaleString()} members).
-              {m.users.medianAge ? ' Median age ' + m.users.medianAge + '.' : ''}
-              {' '}{m.users.resRate}% are verified residents.
-              {m.users.topCity !== '—' ? ' Top city: ' + m.users.topCity + '.' : ''}
-            </p>
-            <p style={{marginTop:8}}>
-              <strong>+{m.users.newHH}</strong> new households in the last 30 days.
-              {m.users.avgHHSpend > 0 ? ' Average household spend: ' + fmtMoney(m.users.avgHHSpend) + '.' : ''}
-            </p>
-          </div>
-
-          {/* Fast Track */}
-          <div className="section">
-            <div className="section-title"><span style={{color:'#10b981'}}>⚡</span> Fast Track Adoption</div>
-            <p>
-              <strong>{m.ft.signups.toLocaleString()}</strong> Fast Track signups across <strong>{m.ft.programs}</strong> programs.
-              {' '}<strong>{m.ft.converted.toLocaleString()}</strong> confirmed enrollments ({m.ft.convRate}% conversion rate).
-              {m.ft.converted > 0 ? ' Self-service registrations save staff time and capture revenue 24/7.' : ''}
-            </p>
-          </div>
-
-          {/* Data quality note */}
-          <div className="section" style={{background:'#f9fafb'}}>
-            <div className="section-title"><span style={{color:'#6b7280'}}>📋</span> Data Notes</div>
-            <p style={{fontSize:11.5,color:'#6b7280'}}>
-              Revenue figures from GL Code Rollup. Enrollment data from confirmed program registrations.
-              Community demographics from all-time household data (not date-filtered).
-              Fast Track metrics are all-time cumulative.
-            </p>
-          </div>
-        </div>
-      </div>
-
-      {/* Revenue Mix + Programs Needing Attention */}
-      <div className="two-col">
-        {/* Revenue Mix */}
-        {m.revTotal > 0 && (
-          <div className="section">
-            <div className="section-title"><span style={{color:'#6366f1'}}>📊</span> Revenue Mix (All-Time)</div>
-            {(() => {
-              var segs = [
-                { label: 'Programs', val: m.revMix.program, color: '#6366f1' },
-                { label: 'Facility', val: m.revMix.facility, color: '#059669' },
-                { label: 'Products', val: m.revMix.product, color: '#d97706' },
-                { label: 'Fees', val: m.revMix.fee, color: '#dc2626' },
-              ].filter(s => s.val > 0);
-              return (<div>
-                <div style={{display:'flex',height:20,borderRadius:6,overflow:'hidden',marginBottom:10}}>
-                  {segs.map((s,i) => <div key={i} style={{width:((s.val/m.revTotal)*100)+'%',background:s.color,minWidth:2}} title={s.label+': '+fmtMoney(s.val)} />)}
-                </div>
-                <div style={{display:'flex',flexWrap:'wrap',gap:'4px 14px',fontSize:11}}>
-                  {segs.map((s,i) => <span key={i}><span style={{display:'inline-block',width:8,height:8,borderRadius:2,background:s.color,marginRight:4}} />{s.label} <strong>{fmtMoney(s.val)}</strong> <span style={{color:'#9ca3af'}}>({((s.val/m.revTotal)*100).toFixed(0)}%)</span></span>)}
-                </div>
-              </div>);
-            })()}
-          </div>
-        )}
-
-        {/* Programs Needing Attention */}
-        {m.prog.bottom5 && m.prog.bottom5.length > 0 && (
-          <div className="section">
-            <div className="section-title"><span style={{color:'#d97706'}}>⚠️</span> Programs Needing Attention</div>
-            <table className="mini-table">
-              <thead><tr><th>Program</th><th className="r">Enrolled</th><th className="r">Capacity</th><th className="r">Fill %</th></tr></thead>
-              <tbody>
-                {m.prog.bottom5.map((p,i) => (
-                  <tr key={i}>
-                    <td className="bold">{p.name}</td>
-                    <td className="r">{p.enrolled}</td>
-                    <td className="r">{p.capacity}</td>
-                    <td className="r" style={{color: parseFloat(p.fill) < 25 ? '#dc2626' : '#d97706', fontWeight: 600}}>{p.fill}%</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            <div style={{marginTop:8,fontSize:11,color:'#6b7280'}}>Programs with capacity &gt;10 and lowest fill rates. Consider marketing, rescheduling, or consolidating.</div>
-          </div>
-        )}
-      </div>
-
-      {/* Data Completeness */}
-      {m.dataComp && (
-        <div className="section" style={{marginBottom:18}}>
-          <div className="section-title"><span style={{color:'#7c3aed'}}>📋</span> Data Completeness</div>
-          <div style={{display:'flex',gap:16,flexWrap:'wrap'}}>
-            {[
-              { label: 'Age/DOB', pct: m.dataComp.age, color: '#6366f1' },
-              { label: 'Gender', pct: m.dataComp.gender, color: '#db2777' },
-              { label: 'Grade', pct: m.dataComp.grade, color: '#059669' },
-              { label: 'Phone', pct: m.dataComp.phone, color: '#d97706' },
-            ].map((d,i) => (
-              <div key={i} style={{flex:1,minWidth:100}}>
-                <div style={{display:'flex',justifyContent:'space-between',fontSize:11,marginBottom:3}}>
-                  <span style={{color:'#6b7280'}}>{d.label}</span>
-                  <span style={{fontWeight:600,color:parseInt(d.pct)<50?'#dc2626':'#374151'}}>{d.pct}%</span>
-                </div>
-                <div style={{height:8,background:'#f3f4f6',borderRadius:4,overflow:'hidden'}}>
-                  <div style={{height:'100%',width:d.pct+'%',background:d.color,borderRadius:4}} />
-                </div>
-              </div>
-            ))}
-          </div>
-          {(parseInt(m.dataComp.age) < 60 || parseInt(m.dataComp.gender) < 60) && (
-            <div style={{marginTop:10,fontSize:11.5,color:'#6b7280',lineHeight:1.5}}>
-              {m.dataComp.missingAge > 0 && <span><strong style={{color:'#dc2626'}}>{m.dataComp.missingAge.toLocaleString()}</strong> people missing age data. </span>}
-              {m.dataComp.missingGender > 0 && <span><strong style={{color:'#dc2626'}}>{m.dataComp.missingGender.toLocaleString()}</strong> missing gender. </span>}
-              Improving completeness strengthens compliance reporting and program targeting.
-            </div>
-          )}
-        </div>
-      )}
-
-      <div className="report-footer">
-        <span>Powered by Rec Technologies &middot; rec.us</span>
-        <span>Confidential &mdash; {orgName}</span>
-      </div>
-
-      {m && <div id="report-ready" style={{display:'none'}} />}
+      ))}
     </div>
   );
 }
 
-ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+function App() {
+  const cfg = window.ORG_CONFIG || {};
+  const slug = cfg.slug || "";
+  const orgName = cfg.displayName || slug;
+  const token = cfg.token || "";
+
+  const [quarters, setQuarters] = useState([]);
+  const [sel, setSel] = useState("");       // "YYYY-Qn"
+  const [data, setData] = useState(null);
+  const [state, setState] = useState("loading"); // loading | done | error
+  const [errMsg, setErrMsg] = useState("");
+
+  function withToken(url) {
+    return token ? url + (url.includes("?") ? "&" : "?") + "token=" + encodeURIComponent(token) : url;
+  }
+
+  // In-progress quarter (selectable "to date" view)
+  const inProgress = useMemo(() => {
+    const now = new Date();
+    const q = Math.floor(now.getMonth() / 3) + 1;
+    return { year: now.getFullYear(), q, key: now.getFullYear() + "-Q" + q, label: "Q" + q + " " + now.getFullYear() + " (in progress)" };
+  }, []);
+
+  useEffect(() => {
+    fetch(withToken("/" + slug + "/directors-report/api/quarters"))
+      .then(r => r.json())
+      .then(j => {
+        if (j.ok) {
+          setQuarters(j.quarters || []);
+          const def = (j.quarters && j.quarters[0]) ? j.quarters[0].key : inProgress.key;
+          const fromUrl = new URLSearchParams(window.location.search).get("quarter");
+          setSel(fromUrl && /^\d{4}-Q[1-4]$/.test(fromUrl) ? fromUrl : def);
+        } else { setSel(inProgress.key); }
+      })
+      .catch(() => setSel(inProgress.key));
+  }, []);
+
+  useEffect(() => {
+    if (!sel) return;
+    const m = sel.match(/^(\d{4})-Q([1-4])$/);
+    if (!m) return;
+    setState("loading");
+    fetch(withToken("/" + slug + "/directors-report/api/quarter?year=" + m[1] + "&q=" + m[2]))
+      .then(r => r.json())
+      .then(j => {
+        if (!j.ok) throw new Error(j.error || "Failed to load");
+        setData(j); setState("done");
+      })
+      .catch(e => { setErrMsg(e.message); setState("error"); });
+  }, [sel]);
+
+  const d = data;
+  const partial = d && d.quarter && d.quarter.partial;
+  const ssTotal = d && d.selfservice ? d.selfservice.self.orders + d.selfservice.staff.orders : 0;
+  const ssPct = ssTotal > 0 ? Math.round(d.selfservice.self.orders / ssTotal * 1000) / 10 : null;
+  const revMixTotal = d && d.users ? d.users.revMix.program + d.users.revMix.facility + d.users.revMix.fee + d.users.revMix.product : 0;
+
+  return (
+    <div>
+      <div className="toolbar no-print">
+        <a className="toolbar-back" href={withToken("/" + slug)}>&larr; Reports</a>
+        <span className="toolbar-title">Director's Report</span>
+        <div className="toolbar-spacer"></div>
+        <label>Quarter
+          <select value={sel} onChange={e => setSel(e.target.value)}>
+            {!quarters.some(x => x.key === inProgress.key) && <option value={inProgress.key}>{inProgress.label}</option>}
+            {quarters.map(x => <option key={x.key} value={x.key}>{x.label}{x.stored ? " · archived" : ""}</option>)}
+          </select>
+        </label>
+        <button className="btn-pdf" onClick={() => window.print()}>&#128196; Print / PDF</button>
+      </div>
+
+      {state === "loading" && <div style={{ paddingTop: 80 }}><JuiceLoader /></div>}
+      {state === "error" && (
+        <div className="gen-wrapper">
+          <div style={{ color: "#dc2626", marginBottom: 16 }}>Error: {errMsg}</div>
+          <button className="btn-pdf" style={{ background: "#374151", color: "#fff", border: "none", borderRadius: 6, padding: "8px 20px", cursor: "pointer" }}
+            onClick={() => setSel(s => s)}>Retry</button>
+        </div>
+      )}
+
+      {state === "done" && d && (
+        <div className="page">
+          {cfg.bannerUrl && (
+            <div className="banner">
+              <img src={cfg.bannerUrl} alt="" onError={e => { e.target.closest(".banner").style.display = "none"; }} />
+              <div className="banner-shade"></div>
+              <div className="banner-cap">
+                <div className="bc-org">{orgName}</div>
+                <div className="bc-title">Director's Report &mdash; {d.quarter.label}</div>
+              </div>
+            </div>
+          )}
+
+          <div className="report-header">
+            <div className="report-header-left">
+              {cfg.logoUrl && <img className="report-header-logo" src={cfg.logoUrl} alt="" onError={e => { e.target.style.display = "none"; }} />}
+              <div>
+                <div className="org-label">{orgName}</div>
+                <div className="title">Director's Report &mdash; Quarterly Executive Summary</div>
+              </div>
+            </div>
+            <div className="report-header-right">
+              <div className="rh-period">{d.quarter.label} &middot; {d.quarter.start} &ndash; {d.quarter.end}</div>
+              <div className="rh-meta">
+                Generated {new Date(d.generatedAt).toLocaleDateString()}
+                {d.fromSnapshot ? " · archived snapshot" : ""}
+                {!partial && d.prevLabel ? " · compared against " + d.prevLabel : ""}
+              </div>
+            </div>
+          </div>
+
+          {partial && (
+            <div className="partial-ribbon">
+              <strong>Quarter in progress</strong> &mdash; figures run through today. Quarter-over-quarter deltas are hidden until the quarter completes; the final report is generated automatically at quarter end.
+            </div>
+          )}
+
+          {/* ── Executive KPI strip ── */}
+          <div className="cards">
+            {d.gl && (
+              <div className="card">
+                <div className="lbl">Net Revenue</div>
+                <div className="val">{fmtMoney(d.gl.net)}</div>
+                <div className="sub"><Delta cur={d.gl.net} prev={d.gl.prev && d.gl.prev.net} hidden={partial} />{!partial && d.gl.prev ? " vs " + d.prevLabel : "gross " + fmtMoney(d.gl.gross)}</div>
+              </div>
+            )}
+            {d.transactions && d.transactions.cur != null && (
+              <div className="card">
+                <div className="lbl">Transactions</div>
+                <div className="val">{fmtNum(d.transactions.cur)}</div>
+                <div className="sub"><Delta cur={d.transactions.cur} prev={d.transactions.prev} hidden={partial} />{!partial && d.transactions.prev != null ? " vs " + fmtNum(d.transactions.prev) : ""}</div>
+              </div>
+            )}
+            {d.programs && (
+              <div className="card">
+                <div className="lbl">Program Enrollments</div>
+                <div className="val">{fmtNum(d.programs.enroll)}</div>
+                <div className="sub"><Delta cur={d.programs.enroll} prev={d.programs.prevEnroll} hidden={partial} /> {d.programs.count} programs</div>
+              </div>
+            )}
+            {d.facility && (
+              <div className="card">
+                <div className="lbl">Facility Reservations</div>
+                <div className="val">{fmtNum(d.facility.n)}</div>
+                <div className="sub"><Delta cur={d.facility.n} prev={d.facility.prevN} hidden={partial} /> {fmtMoney(d.facility.rev)} rental revenue</div>
+              </div>
+            )}
+            {d.users && (
+              <div className="card">
+                <div className="lbl">New Households</div>
+                <div className="val">+{fmtNum(d.users.newHH)}</div>
+                <div className="sub">{fmtNum(d.users.newPeople)} new people this quarter</div>
+              </div>
+            )}
+            {ssPct != null && (
+              <div className="card">
+                <div className="lbl">Self-Service Orders</div>
+                <div className="val">{ssPct}%</div>
+                <div className="sub">{fmtNum(d.selfservice.self.orders)} of {fmtNum(ssTotal)} orders placed online</div>
+              </div>
+            )}
+          </div>
+
+          {/* ── Rec Insights (baked into the snapshot) ── */}
+          {d.insights && d.insights.length > 0 && (
+            <div>
+              <div className="insights-head">
+                <span className="t">&#10024; Rec Insights</span>
+                <span className="d">generated {new Date(d.generatedAt).toLocaleDateString()} from this quarter's data</span>
+              </div>
+              <div className="insights-grid">
+                {d.insights.map((ins, i) => (
+                  <div key={i} className={"insight-card insight-" + (ins.type || "signal")}>
+                    <div className="insight-type">{ins.type}</div>
+                    <div className="insight-title">{ins.title}</div>
+                    <div className="insight-detail">{ins.detail || ins.body}</div>
+                    {ins.action && <div className="insight-action">&rarr; {ins.action}</div>}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* ── Revenue ── */}
+          {d.gl && (
+            <div>
+              <div className="vsec">
+                <div className="vsec-t"><span>&#128202;</span> Revenue &amp; Financial</div>
+                <div className="vsec-s">GL Code Rollup &middot; gross {fmtMoney(d.gl.gross)} &middot; refunds {fmtMoney(d.gl.refunds)} ({d.gl.gross > 0 ? (d.gl.refunds / d.gl.gross * 100).toFixed(1) : 0}% of gross, {fmtNum(d.gl.refundCount)} refunds)</div>
+              </div>
+              <div className="two-col w">
+                <div className="panel">
+                  <div className="panel-h">Net revenue by GL account</div>
+                  <BarList money rows={d.gl.accounts.map(a => ({
+                    label: a.name, value: a.net,
+                    title: a.name + " — " + fmtMoney(a.net) + " net" + (a.prevNet != null && !partial ? " (prior quarter: " + fmtMoney(a.prevNet) + ")" : ""),
+                    delta: (!partial && a.prevNet != null && a.prevNet > 0) ? Math.round((a.net - a.prevNet) / Math.abs(a.prevNet) * 100) : null,
+                  }))} />
+                  <div className="panel-note">Bars scaled to the largest account. Payments with no GL code appear as &ldquo;Unassigned&rdquo;.</div>
+                </div>
+                <div className="panel">
+                  <div className="panel-h">Quarter at a glance</div>
+                  <table className="mini">
+                    <thead><tr><th></th><th className="r">{d.quarter.label}</th>{!partial && d.gl.prev && <th className="r">{d.prevLabel}</th>}</tr></thead>
+                    <tbody>
+                      <tr><td className="b">Gross payments</td><td className="r">{fmtMoney(d.gl.gross)}</td>{!partial && d.gl.prev && <td className="r">{fmtMoney(d.gl.prev.gross)}</td>}</tr>
+                      <tr><td className="b">Refunds</td><td className="r">{fmtMoney(d.gl.refunds)}</td>{!partial && d.gl.prev && <td className="r">{fmtMoney(d.gl.prev.refunds)}</td>}</tr>
+                      <tr><td className="b">Net revenue</td><td className="r">{fmtMoney(d.gl.net)}</td>{!partial && d.gl.prev && <td className="r">{fmtMoney(d.gl.prev.net)}</td>}</tr>
+                      {d.transactions.cur != null && <tr><td className="b">Transactions</td><td className="r">{fmtNum(d.transactions.cur)}</td>{!partial && d.gl.prev && <td className="r">{fmtNum(d.transactions.prev)}</td>}</tr>}
+                      <tr><td className="b">Payments recorded</td><td className="r">{fmtNum(d.gl.payments)}</td>{!partial && d.gl.prev && <td className="r">{fmtNum(d.gl.prev.payments)}</td>}</tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ── Programs ── */}
+          {d.programs && (
+            <div>
+              <div className="vsec">
+                <div className="vsec-t"><span>&#127919;</span> Programs &amp; Enrollment</div>
+                <div className="vsec-s">{d.programs.sections} sections &middot; {d.programs.count} programs with sessions this quarter &middot; {fmtNum(d.programs.enroll)} enrollments on {fmtNum(d.programs.cap)} capacity ({d.programs.cap > 0 ? Math.round(d.programs.enroll / d.programs.cap * 100) : 0}% overall fill) &middot; {fmtMoney(d.programs.periodNet)} collected in-period</div>
+              </div>
+              <div className="two-col w">
+                <div className="panel">
+                  <div className="panel-h">Top programs by enrollment</div>
+                  <table className="mini">
+                    <thead><tr><th>Program</th><th className="r">Enrolled</th><th className="r">Fill</th><th className="r">Waitlist</th><th className="r">Net (qtr)</th></tr></thead>
+                    <tbody>
+                      {d.programs.top.map((p, i) => (
+                        <tr key={i}>
+                          <td className="b">{p.name} <span className="tiny">{p.sections} section{p.sections !== 1 ? "s" : ""}</span></td>
+                          <td className="r">{fmtNum(p.enrolled)}</td>
+                          <td className={"r" + (p.fill != null && p.fill >= 90 ? " press-amber" : "")}>{p.fill != null ? p.fill + "%" : "—"}</td>
+                          <td className={"r" + (p.wl > 10 ? " press-amber" : "")}>{p.wl > 0 ? fmtNum(p.wl) : "—"}</td>
+                          <td className="r">{fmtMoney(p.net)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  <div className="panel-note">&ldquo;Net (qtr)&rdquo; is money received in-quarter on these sections &mdash; programs collecting across quarters show partial revenue here.</div>
+                </div>
+                {d.programs.low.length > 0 && (
+                  <div className="panel">
+                    <div className="panel-h">&#9888;&#65039; Filling slowest <span className="tiny" style={{ textTransform: "none", letterSpacing: 0 }}>capacity &gt; 10, lowest fill</span></div>
+                    <table className="mini">
+                      <thead><tr><th>Program</th><th className="r">Enrolled / Cap</th><th className="r">Fill</th></tr></thead>
+                      <tbody>
+                        {d.programs.low.map((p, i) => (
+                          <tr key={i}>
+                            <td className="b">{p.name}</td>
+                            <td className="r">{fmtNum(p.enrolled)} / {fmtNum(p.capacity)}</td>
+                            <td className={"r " + (p.fill < 10 ? "press-red" : "press-amber")}>{p.fill}%</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    <div className="panel-note">Marketing candidates &mdash; or capacities worth right-sizing so fill rates stay meaningful.</div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* ── Waitlist ── */}
+          {d.waitlist && d.waitlist.waiting > 0 && (
+            <div>
+              <div className="vsec">
+                <div className="vsec-t"><span>&#8987;</span> Waitlist &amp; Unmet Demand</div>
+                <div className="vsec-s">Sections with sessions this quarter &middot; full offer lifecycle from the Waitlist Demand report</div>
+              </div>
+              <div className="two-col">
+                <div className="panel">
+                  <div className="panel-h">Offer funnel</div>
+                  <div className="cards" style={{ marginBottom: 8, gridTemplateColumns: "repeat(auto-fit,minmax(120px,1fr))" }}>
+                    <div className="card"><div className="lbl">Waiting now</div><div className="val" style={{ fontSize: 19 }}>{fmtNum(d.waitlist.waiting)}</div><div className="sub">across {d.waitlist.sections} sections</div></div>
+                    <div className="card"><div className="lbl">Offers sent</div><div className="val" style={{ fontSize: 19 }}>{fmtNum(d.waitlist.offers)}</div><div className="sub">to {fmtNum(d.waitlist.people)} people</div></div>
+                    <div className="card"><div className="lbl">Claimed</div><div className="val" style={{ fontSize: 19 }}>{fmtNum(d.waitlist.claimed)}</div><div className="sub">{d.waitlist.claimRate != null ? d.waitlist.claimRate + "% claim rate" : "—"}</div></div>
+                    <div className="card"><div className="lbl">Median claim</div><div className="val" style={{ fontSize: 19 }}>{d.waitlist.medianClaimH != null ? d.waitlist.medianClaimH + "h" : "—"}</div><div className="sub">{fmtNum(d.waitlist.expired)} offers expired</div></div>
+                  </div>
+                  <div className="panel-note">People queued with no offer possible until capacity opens. See the Waitlist Demand report for section-level detail.</div>
+                </div>
+                {d.waitlist.top.length > 0 && (
+                  <div className="panel">
+                    <div className="panel-h">Highest-pressure sections <span className="tiny" style={{ textTransform: "none", letterSpacing: 0 }}>waiting &divide; capacity</span></div>
+                    {(() => {
+                      const maxP = Math.max(1, ...d.waitlist.top.map(t => t.pressure || 0));
+                      return d.waitlist.top.map((t, i) => (
+                        <div className="press-row" key={i} style={i === d.waitlist.top.length - 1 ? { borderBottom: "none" } : null}
+                          title={t.program + " — " + t.waitlisted + " waiting, " + t.enrolled + "/" + t.capacity + " enrolled"}>
+                          <div className="pl">{t.section || t.program} <span className="tiny">{fmtNum(t.enrolled)}/{fmtNum(t.capacity)} enrolled &middot; {fmtNum(t.waitlisted)} waiting</span></div>
+                          <div className="track"><div className="fill" style={{ width: Math.max(4, (t.pressure || 0) / maxP * 100) + "%", background: (t.pressure || 0) >= 100 ? "#b91c1c" : "#d97706" }} /></div>
+                          <div className={"pv " + ((t.pressure || 0) >= 100 ? "press-red" : "press-amber")}>{t.pressure != null ? t.pressure + "%" : "—"}</div>
+                        </div>
+                      ));
+                    })()}
+                    <div className="panel-note">Pressure &gt;100% means more people are waiting than the section could hold even if it emptied.</div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* ── Facilities ── */}
+          {d.facility && (
+            <div>
+              <div className="vsec">
+                <div className="vsec-t"><span>&#127966;&#65039;</span> Facilities &amp; Rentals</div>
+                <div className="vsec-s">{fmtNum(d.facility.n)} reservations &middot; {fmtMoney(d.facility.rev)} rental revenue &middot; {d.facility.residentPct}% by verified residents{!partial && d.facility.prevN != null ? " · " + d.prevLabel + " was " + fmtNum(d.facility.prevN) + " / " + fmtMoney(d.facility.prevRev || 0) : ""}</div>
+              </div>
+              <div className="two-col">
+                <div className="panel">
+                  <div className="panel-h">Rental revenue by location</div>
+                  <BarList money rows={d.facility.topLocs.map(l => ({ label: l.name, value: l.rev, title: l.name + " — " + fmtMoney(l.rev) + " across " + fmtNum(l.n) + " reservations" }))} />
+                </div>
+                <div className="panel">
+                  <div className="panel-h">How bookings arrive{d.court ? " · court usage" : ""}</div>
+                  {(d.facility.managed + d.facility.instant) > 0 && (
+                    <div>
+                      <div className="stack" title={"Managed (staff-scheduled): " + fmtNum(d.facility.managed) + " · Instant (self-serve): " + fmtNum(d.facility.instant)}>
+                        <div className="seg seg-1" style={{ width: (d.facility.managed / (d.facility.managed + d.facility.instant) * 100) + "%" }} />
+                        <div className="seg seg-2" style={{ width: (d.facility.instant / (d.facility.managed + d.facility.instant) * 100) + "%" }} />
+                      </div>
+                      <div className="legend">
+                        <span><span className="dot" style={{ background: "#2a78d6" }}></span>Managed <b>{fmtNum(d.facility.managed)}</b></span>
+                        <span><span className="dot" style={{ background: "#eb6834" }}></span>Instant self-serve <b>{fmtNum(d.facility.instant)}</b></span>
+                      </div>
+                    </div>
+                  )}
+                  <table className="mini" style={{ marginTop: 12 }}>
+                    <tbody>
+                      {d.court && <tr><td className="b">Court hours booked ({d.court.courts} courts)</td><td className="r">{fmtNum(d.court.hours)} hrs</td></tr>}
+                      {d.court && d.court.util != null && <tr><td className="b">Share of open court time <span className="tiny">est. {d.court.hrsPerDay} hrs/day</span></td><td className="r">~{d.court.util}%</td></tr>}
+                      <tr><td className="b">Resident share of reservations</td><td className="r">{d.facility.residentPct}%</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ── Community ── */}
+          {d.users && (
+            <div>
+              <div className="vsec">
+                <div className="vsec-t"><span>&#128101;</span> Community</div>
+                <div className="vsec-s">Community Intel &middot; all-time platform base with this quarter's growth</div>
+              </div>
+              <div className="two-col">
+                <div className="panel">
+                  <div className="panel-h">Who we serve</div>
+                  <table className="mini">
+                    <tbody>
+                      <tr><td className="b">People on platform</td><td className="r">{fmtNum(d.users.people)}</td><td className="tiny r">in {fmtNum(d.users.households)} households</td></tr>
+                      <tr><td className="b">New this quarter</td><td className="r delta-up">+{fmtNum(d.users.newPeople)} people</td><td className="tiny r">+{fmtNum(d.users.newHH)} households</td></tr>
+                      <tr><td className="b">Verified residents</td><td className="r">{d.users.resPct}%</td><td className="tiny r">{d.users.topCities.length ? "top cities: " + d.users.topCities.map(c => c.name).join(", ") : ""}</td></tr>
+                      {d.users.medianAge != null && <tr><td className="b">Median participant age</td><td className="r">{d.users.medianAge}</td><td className="tiny r"></td></tr>}
+                      {d.users.avgHHSpend > 0 && <tr><td className="b">Avg household spend</td><td className="r">{fmtMoney(d.users.avgHHSpend)}</td><td className="tiny r">all-time, spending households</td></tr>}
+                      {d.retention && <tr><td className="b">Returning participants (2+ programs)</td><td className="r">{d.retention.rate}%</td><td className="tiny r">{fmtNum(d.retention.loyal)} in 3+ programs</td></tr>}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="panel">
+                  {revMixTotal > 0 && (
+                    <div>
+                      <div className="panel-h">Where household dollars go <span className="tiny" style={{ textTransform: "none", letterSpacing: 0 }}>all-time</span></div>
+                      <div className="stack" title={"Programs " + fmtMoney(d.users.revMix.program) + " · Facility " + fmtMoney(d.users.revMix.facility) + " · Fees " + fmtMoney(d.users.revMix.fee) + " · Products " + fmtMoney(d.users.revMix.product)}>
+                        {[["program", "seg-1"], ["facility", "seg-2"], ["fee", "seg-3"], ["product", "seg-4"]].map(([k, cls]) =>
+                          d.users.revMix[k] > 0 ? <div key={k} className={"seg " + cls} style={{ width: (d.users.revMix[k] / revMixTotal * 100) + "%" }} /> : null)}
+                      </div>
+                      <div className="legend">
+                        {d.users.revMix.program > 0 && <span><span className="dot" style={{ background: "#2a78d6" }}></span>Programs <b>{fmtMoney(d.users.revMix.program)}</b></span>}
+                        {d.users.revMix.facility > 0 && <span><span className="dot" style={{ background: "#eb6834" }}></span>Facility <b>{fmtMoney(d.users.revMix.facility)}</b></span>}
+                        {d.users.revMix.fee > 0 && <span><span className="dot" style={{ background: "#1baf7a" }}></span>Fees <b>{fmtMoney(d.users.revMix.fee)}</b></span>}
+                        {d.users.revMix.product > 0 && <span><span className="dot" style={{ background: "#eda100" }}></span>Products <b>{fmtMoney(d.users.revMix.product)}</b></span>}
+                      </div>
+                    </div>
+                  )}
+                  <div className="panel-h" style={{ marginTop: revMixTotal > 0 ? 14 : 0 }}>Data completeness</div>
+                  <div className="meter-grid">
+                    {[["Age / DOB", d.users.comp.age], ["Gender", d.users.comp.gender], ["Phone", d.users.comp.phone]].map(([label, pct], i) => (
+                      <div className="meter" key={i}>
+                        <div className="mh"><span>{label}</span><b>{pct}%</b></div>
+                        <div className="track"><div className="fill" style={{ width: pct + "%", background: pct >= 80 ? "#15803d" : "#d97706" }} /></div>
+                      </div>
+                    ))}
+                  </div>
+                  {d.users.missingAge > 0 && d.users.comp.age < 60 && (
+                    <div className="panel-note">{fmtNum(d.users.missingAge)} people are missing age data &mdash; prompting for DOB at registration strengthens reporting and program targeting.</div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ── Operations ── */}
+          {(d.selfservice || d.payout || d.fasttrack) && (
+            <div>
+              <div className="vsec">
+                <div className="vsec-t"><span>&#9881;&#65039;</span> Operations &amp; Staff Workload</div>
+                <div className="vsec-s">Self-service order mix and instructor-led programming</div>
+              </div>
+              <div className="two-col">
+                {d.selfservice && (
+                  <div className="panel">
+                    <div className="panel-h">Orders by channel, monthly</div>
+                    {d.selfservice.months.map((m, i) => {
+                      const tot = m.selfOrders + m.staffOrders;
+                      const monthName = new Date(m.month + "-15").toLocaleString("default", { month: "short" });
+                      return tot > 0 ? (
+                        <div className="mrow" key={i} title={monthName + " — self " + fmtNum(m.selfOrders) + " (" + fmtMoney(m.selfDollars) + ") · staff " + fmtNum(m.staffOrders) + " (" + fmtMoney(m.staffDollars) + ")"}>
+                          <div className="ml">{monthName}</div>
+                          <div className="stack" style={{ height: 18 }}>
+                            <div className="seg seg-1" style={{ width: (m.selfOrders / tot * 100) + "%" }} />
+                            <div className="seg seg-2" style={{ width: (m.staffOrders / tot * 100) + "%" }} />
+                          </div>
+                          <div className="mv"><b>{fmtNum(tot)}</b> orders &middot; {Math.round(m.selfOrders / tot * 100)}% self</div>
+                        </div>
+                      ) : null;
+                    })}
+                    <div className="legend">
+                      <span><span className="dot" style={{ background: "#2a78d6" }}></span>Self-service <b>{fmtNum(d.selfservice.self.orders)}</b> orders / {fmtMoney(d.selfservice.self.dollars)}</span>
+                      <span><span className="dot" style={{ background: "#eb6834" }}></span>Staff-entered <b>{fmtNum(d.selfservice.staff.orders)}</b> orders / {fmtMoney(d.selfservice.staff.dollars)}</span>
+                    </div>
+                  </div>
+                )}
+                {(d.payout || d.fasttrack) && (
+                  <div className="panel">
+                    {d.payout && (
+                      <div>
+                        <div className="panel-h">Instructor-led programs</div>
+                        <table className="mini">
+                          <thead><tr><th>Instructor</th><th className="r">Sections</th><th className="r">Registrations</th><th className="r">Collected</th></tr></thead>
+                          <tbody>
+                            {d.payout.top.map((p, i) => (
+                              <tr key={i}><td className="b">{p.name}</td><td className="r">{fmtNum(p.sections)}</td><td className="r">{fmtNum(p.regs)}</td><td className="r">{fmtMoney(p.paid)}</td></tr>
+                            ))}
+                          </tbody>
+                        </table>
+                        <div className="panel-note">{d.payout.instructors} instructors led paid programming this quarter, collecting {fmtMoney(d.payout.paid)} across {fmtNum(d.payout.regs)} registrations. &ldquo;Collected&rdquo; is participant payments on instructor-led sections, not instructor compensation.</div>
+                      </div>
+                    )}
+                    {d.fasttrack && (
+                      <table className="mini" style={{ marginTop: d.payout ? 10 : 0 }}>
+                        <tbody>
+                          <tr><td className="b">&#9889; Fast Track adoption <span className="tiny">all-time</span></td><td className="r">{fmtNum(d.fasttrack.converted)} of {fmtNum(d.fasttrack.total)} converted ({d.fasttrack.rate}%)</td></tr>
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* ── Data notes ── */}
+          <div className="panel" style={{ marginTop: 20, background: "#faf9f7" }}>
+            <div className="panel-h">&#128203; Data notes</div>
+            <div className="panel-note" style={{ marginTop: 0 }}>
+              Revenue and transactions from GL Code Rollup (payment-date basis). Enrollment counts sections with sessions in the quarter; program revenue is in-period receipts. Waitlist funnel covers offers sent in the quarter. Facility figures exclude canceled reservations; court utilization assumes {d.court ? d.court.hrsPerDay : 11} open hrs/day per court. Community demographics are all-time; &ldquo;new&rdquo; means accounts created inside the quarter. Fast Track and retention are all-time cumulative.
+              {d.fromSnapshot ? " This report is an archived snapshot generated at quarter close." : ""}
+            </div>
+          </div>
+
+          <div className="report-footer">
+            <span>Powered by Rec Technologies &middot; rec.us</span>
+            <span>Confidential &mdash; {orgName} &middot; {d.quarter.label} Director's Report</span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
   </script>
   <script src="/juice-loader.js" defer></script>
   <script src="/nav-breadcrumb.js" defer></script>
-<script src="/feedback-widget.js" defer></script>
+  <script src="/feedback-widget.js" defer></script>
 </body>
 </html>
