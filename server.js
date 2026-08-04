@@ -1986,6 +1986,7 @@ function activeAnnouncementsForOrg(slug) {
   const out = [];
   for (const a of getAnnouncements()) {
     if (a.active === false) continue;
+    if (a.expiresAt && Date.now() > a.expiresAt) continue; // past its end date — popup no longer shows
     if (a.smart && Array.isArray(a.items)) {
       const items = a.items.filter(it =>
         Array.isArray(it.reports) && it.reports.some(r => visible.has(r)));
@@ -7460,6 +7461,14 @@ function cleanAnnounceImages(images) {
   if (!Array.isArray(images)) return [];
   return images.filter(u => typeof u === "string" && /^\/api\/announce-image\/[A-Za-z0-9_.-]+$/.test(u)).slice(0, 6);
 }
+// Optional expiration date ('YYYY-MM-DD') → epoch ms at end of that day.
+// Anchored to UTC-8 so "expires Aug 15" keeps showing through the evening of
+// the 15th everywhere in the US, then stops. Returns null if absent/invalid.
+function parseAnnounceExpiry(dateStr) {
+  if (!dateStr || !/^\d{4}-\d{2}-\d{2}$/.test(String(dateStr))) return null;
+  const ms = Date.parse(dateStr + "T23:59:59.999-08:00");
+  return isNaN(ms) ? null : ms;
+}
 
 app.post("/api/admin/announcements", express.json(), (req, res) => {
   if (dashboardPasswordBlocked(req, res)) return;
@@ -7479,6 +7488,8 @@ app.post("/api/admin/announcements", express.json(), (req, res) => {
     active: true,
     createdAt: Date.now(),
     createdISO: new Date().toISOString(),
+    expiresAt: parseAnnounceExpiry(req.body.expires),
+    expiresISO: parseAnnounceExpiry(req.body.expires) ? String(req.body.expires) : null,
   };
   list.push(ann);
   saveAnnouncements(list);
@@ -7521,6 +7532,8 @@ app.post("/api/admin/announcements/from-updates", express.json(), (req, res) => 
     active: true,
     createdAt: Date.now(),
     createdISO: new Date().toISOString(),
+    expiresAt: parseAnnounceExpiry(req.body.expires),
+    expiresISO: parseAnnounceExpiry(req.body.expires) ? String(req.body.expires) : null,
   };
   const list = getAnnouncements();
   list.push(ann);
@@ -9223,10 +9236,11 @@ app.get("/", (req, res) => {
         ? ('🎯 '+(a.audience||0)+' org'+((a.audience)===1?'':'s')+' · '+((a.items||[]).length)+' item'+(((a.items||[]).length)===1?'':'s'))
         : (a.allOrgs?'All orgs':((a.orgs||[]).length+' org'+((a.orgs||[]).length===1?'':'s')));
       var when=a.createdAt?new Date(a.createdAt).toLocaleDateString():'';
+      var exp=a.expiresAt?(Date.now()>a.expiresAt?' · <span style="color:#b91c1c;font-weight:600">expired '+updEsc(a.expiresISO||'')+'</span>':' · expires '+updEsc(a.expiresISO||'')):'';
       var badge=a.smart?'<span style="font-size:9.5px;font-weight:700;color:#6d28d9;background:#f5f3ff;border:1px solid #ddd6fe;border-radius:4px;padding:1px 5px;margin-left:6px;vertical-align:middle">SMART</span>':'';
       return '<div data-uid="'+updEsc(a.id)+'" style="border:1px solid #eee;border-radius:6px;padding:10px 12px;display:flex;justify-content:space-between;gap:8px;'+(a.active===false?'opacity:.5':'')+'">'
         +'<div style="min-width:0"><div style="font-weight:600;font-size:13px">'+updEsc(a.title)+badge+'</div>'
-        +'<div style="font-size:11px;color:#999;margin-top:2px">'+tgt+' · '+when+(a.active===false?' · paused':'')+'</div></div>'
+        +'<div style="font-size:11px;color:#999;margin-top:2px">'+tgt+' · '+when+exp+(a.active===false?' · paused':'')+'</div></div>'
         +'<div style="display:flex;gap:6px;flex-shrink:0;align-items:flex-start">'
         +'<button data-act="toggle" style="font-size:11px;padding:4px 9px;background:#f3f4f6;border:1px solid #e5e7eb;border-radius:4px;cursor:pointer">'+(a.active===false?'Activate':'Pause')+'</button>'
         +'<button data-act="del" style="font-size:11px;padding:4px 9px;background:#fef2f2;color:#b91c1c;border:1px solid #fecaca;border-radius:4px;cursor:pointer">Delete</button>'
@@ -9388,10 +9402,10 @@ app.get("/", (req, res) => {
     if(!title){ err.textContent='Give the update a title'; err.style.display='block'; return; }
     if(!items.length){ err.textContent='Tick at least one change (with a report tag) to include'; err.style.display='block'; return; }
     try {
-      var r=await fetch('/api/admin/announcements/from-updates',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:pwd,title:title,items:items,images:updImages})});
+      var r=await fetch('/api/admin/announcements/from-updates',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:pwd,title:title,items:items,images:updImages,expires:document.getElementById('upd-s-expires').value||null})});
       var d=await r.json();
       if(!r.ok||!d.ok){ if(r.status===401)clearDashPwd(); err.textContent=d.error||'Failed'; err.style.display='block'; return; }
-      updImages=[]; renderUpdImgs();
+      updImages=[]; renderUpdImgs(); document.getElementById('upd-s-expires').value='';
       mbToast('🚀 Update published to '+(d.audience||0)+' org'+((d.audience)===1?'':'s')); loadUpd();
     } catch(e){ err.textContent='Error: '+e.message; err.style.display='block'; }
   }
@@ -9405,10 +9419,10 @@ app.get("/", (req, res) => {
     if(!title){ err.textContent='Title is required'; err.style.display='block'; return; }
     if(!allOrgs && !orgs.length){ err.textContent='Select at least one org (or All orgs)'; err.style.display='block'; return; }
     try {
-      var r=await fetch('/api/admin/announcements',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:pwd,title:title,body:body,orgs:orgs,allOrgs:allOrgs,images:updImages})});
+      var r=await fetch('/api/admin/announcements',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:pwd,title:title,body:body,orgs:orgs,allOrgs:allOrgs,images:updImages,expires:document.getElementById('upd-expires').value||null})});
       var d=await r.json();
       if(!r.ok||!d.ok){ if(r.status===401)clearDashPwd(); err.textContent=d.error||'Failed'; err.style.display='block'; return; }
-      document.getElementById('upd-title').value=''; document.getElementById('upd-body').value=''; document.getElementById('upd-all').checked=false;
+      document.getElementById('upd-title').value=''; document.getElementById('upd-body').value=''; document.getElementById('upd-all').checked=false; document.getElementById('upd-expires').value='';
       updImages=[]; renderUpdImgs();
       mbToast('Update published to '+(allOrgs?'all orgs':orgs.length+' org'+(orgs.length===1?'':'s'))); loadUpd();
     } catch(e){ err.textContent='Error: '+e.message; err.style.display='block'; }
@@ -9495,6 +9509,11 @@ app.get("/", (req, res) => {
           </div>
           <div id="upd-s-list" style="display:flex;flex-direction:column;gap:10px;max-height:340px;overflow:auto;border:1px solid #eee;border-radius:8px;padding:12px;background:#fafafa"></div>
           <div id="upd-s-audience" style="margin-top:14px;font-size:13px;color:#374151;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:8px;padding:10px 13px;display:none"></div>
+          <div style="margin-top:14px;display:flex;align-items:center;gap:8px">
+            <label style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:#888">Expires</label>
+            <input id="upd-s-expires" type="date" style="padding:6px 9px;border:1px solid #ddd;border-radius:5px;font-size:12.5px;font-family:inherit" />
+            <span style="font-size:11px;color:#aaa">optional &mdash; the popup stops showing after this day</span>
+          </div>
           <div id="upd-s-error" style="margin-top:12px;color:#e55;font-size:12px;display:none"></div>
           <div style="margin-top:20px;display:flex;justify-content:flex-end;gap:8px">
             <button onclick="closeUpd()" style="padding:9px 18px;background:#f3f4f6;color:#444;border:none;border-radius:5px;font-size:13px;font-weight:600;cursor:pointer">Cancel</button>
@@ -9515,6 +9534,11 @@ app.get("/", (req, res) => {
           <label style="font-size:12px;display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="upd-all" onchange="updToggleAll()" /> All orgs <span style="color:#aaa">(incl. future)</span></label>
         </div>
         <div id="upd-orgs" style="display:flex;flex-wrap:wrap;gap:6px;max-height:170px;overflow:auto;border:1px solid #eee;border-radius:6px;padding:10px"></div>
+        <div style="margin-top:14px;display:flex;align-items:center;gap:8px">
+          <label style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:#888">Expires</label>
+          <input id="upd-expires" type="date" style="padding:6px 9px;border:1px solid #ddd;border-radius:5px;font-size:12.5px;font-family:inherit" />
+          <span style="font-size:11px;color:#aaa">optional &mdash; the popup stops showing after this day</span>
+        </div>
         <div id="upd-error" style="margin-top:12px;color:#e55;font-size:12px;display:none"></div>
         <div style="margin-top:20px;display:flex;justify-content:flex-end;gap:8px">
           <button onclick="closeUpd()" style="padding:9px 18px;background:#f3f4f6;color:#444;border:none;border-radius:5px;font-size:13px;font-weight:600;cursor:pointer">Cancel</button>
@@ -11079,6 +11103,10 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  { date: '2026-08-04', title: 'Project updates can now expire', items: [
+    'The Add Update composer (both publish paths) has an optional Expires date — after that day the popup stops showing on org dashboards and the internal dashboard automatically.',
+    'The Published updates list shows each update’s expiry and flags ones that have already lapsed; pause/delete still work as before.',
+  ]},
   { date: '2026-08-03', title: 'New report: Waitlist Demand', items: [
     'A standalone Waitlist report (⏳) — who is waiting for a spot right now, how waitlists convert into enrollments, and which sections have earned another one.',
     'Summary tiles (waitlisted now, waitlist → enrolled conversion, unmet demand dollars, offers claimed), the offer funnel, time-to-claim distribution with the 8-hour link-expiry marker, waitlist mode mix, and a sortable pressure table (waitlisted ÷ capacity) with Excel export.',
@@ -12253,7 +12281,7 @@ app.get("/", (req, res) => {
     (function adminWhatsNew(){
       function run(){
         fetch('/api/admin/announcements').then(function(r){ return r.json(); }).then(function(d){
-          var anns=((d&&d.announcements)||[]).filter(function(a){ return a.active!==false; });
+          var anns=((d&&d.announcements)||[]).filter(function(a){ return a.active!==false && !(a.expiresAt && Date.now()>a.expiresAt); });
           if(!anns.length) return;
           var seen; try{ seen=JSON.parse(localStorage.getItem('rec_admin_seen_updates')||'[]'); }catch(e){ seen=[]; }
           if(!Array.isArray(seen)) seen=[];
