@@ -1356,6 +1356,29 @@ const DIRECTORS_REPORT_ORGS = new Set(["watertown"]);
 const DIRECTORS_REPORT_EXCLUDED = new Set(["apex"]); // per Dan 2026-08-04 — everyone except Apex
 const directorsReportEnabled = (slug) =>
   !DIRECTORS_REPORT_EXCLUDED.has(slug) && (DIRECTORS_REPORT_ALL_ORGS || DIRECTORS_REPORT_ORGS.has(slug));
+
+// ── Org banner for report heroes ────────────────────────────────────
+// Explicit ORGS.bannerUrl override → the org's own rec.us headerImage (if
+// they've uploaded one) → the same default hero asset rec.us itself falls
+// back to. headerImage existence is HEAD-checked once per org per day so a
+// newly uploaded banner shows up without a deploy.
+const REC_DEFAULT_BANNER = "https://prod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com/assets/images/rec-tennis.jpg";
+const _bannerCache = new Map(); // orgId → { url, ts }
+const BANNER_CACHE_TTL = 24 * 60 * 60 * 1000;
+async function resolveBannerUrl(org) {
+  if (org.bannerUrl) return org.bannerUrl;
+  if (!org.orgId) return REC_DEFAULT_BANNER;
+  const hit = _bannerCache.get(org.orgId);
+  if (hit && Date.now() - hit.ts < BANNER_CACHE_TTL) return hit.url;
+  const candidate = "https://prod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com/organization-" + org.orgId + "/headerImage.png";
+  let url = REC_DEFAULT_BANNER;
+  try {
+    const r = await fetch(candidate, { method: "HEAD", signal: AbortSignal.timeout(4000) });
+    if (r.ok) url = candidate;
+  } catch (_) { /* keep default */ }
+  _bannerCache.set(org.orgId, { url, ts: Date.now() });
+  return url;
+}
 // Reports HIDDEN by default for every org (opt-in to show), for WIP reports not
 // yet launched. For these, presence in an org's visibility list means SHOWN —
 // the inverse of the normal opt-out hidden-list semantics. Use reportHiddenForOrg().
@@ -5308,7 +5331,7 @@ app.get("/:org/roster", (req, res) => {
   res.type("html").send(require("fs").readFileSync(path.join(__dirname, "public", "roster.html"), "utf8"));
 });
 
-app.get("/:org/directors-report", (req, res) => {
+app.get("/:org/directors-report", async (req, res) => {
   const slug = req.params.org;
   const org  = ORGS[slug];
   if (!org) return res.status(404).send("Unknown org");
@@ -5317,7 +5340,7 @@ app.get("/:org/directors-report", (req, res) => {
     slug,
     displayName: org.displayName || (slug.charAt(0).toUpperCase() + slug.slice(1) + " Parks & Recreation"),
     logoUrl: org.logoUrl || "",
-    bannerUrl: org.bannerUrl || "",
+    bannerUrl: await resolveBannerUrl(org),
     token: org.token || "",
   };
   const html = require("fs").readFileSync(path.join(__dirname, "public", "directors-report.html"), "utf8");
@@ -7784,7 +7807,7 @@ app.get("/:org", async (req, res, next) => {
       year: lastQ.year, q: lastQ.q,
       stored: !!snap,
       generatedAt: snap ? snap.generatedAt : null,
-      bannerUrl: org.bannerUrl || "",
+      bannerUrl: await resolveBannerUrl(org),
     };
   }
   // Attach latest health-check results for this org's reports
