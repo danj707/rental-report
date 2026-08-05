@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="robots" content="noindex" />
+<title>Instructor Lessons — SF (mockup)</title>
+<style>
+  * { box-sizing: border-box; }
+  body { background: #faf9f7; color: #1c1917; margin: 0; padding: 0 0 60px;
+    font: 13px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+  .toolbar { position: sticky; top: 0; z-index: 100; display: flex; align-items: center; gap: 10px; padding: 8px 20px; background: #2c2c2c; color: #eee; font-size: 13px; }
+  .toolbar-title { font-weight: 600; }
+  .mock-chip { background: #f59e0b; color: #451a03; font-size: 10px; font-weight: 800; letter-spacing: .08em; padding: 3px 8px; border-radius: 4px; text-transform: uppercase; }
+  .toolbar-spacer { flex: 1; }
+  .toolbar select, .toolbar button { padding: 6px 12px; border: 1px solid rgba(255,255,255,.25); border-radius: 4px; background: rgba(255,255,255,.08); color: #fff; font-size: 12px; font-family: inherit; cursor: pointer; }
+
+  .page { max-width: 1300px; margin: 16px auto; padding: 24px 28px; background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
+  .banner { margin: -24px -28px 18px; height: 160px; overflow: hidden; position: relative; background: #e8e6e0; }
+  .banner img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .banner .shade { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(0,0,0,0) 40%, rgba(0,0,0,.42)); }
+  .banner .cap { position: absolute; left: 22px; bottom: 12px; color: #fff; text-shadow: 0 1px 6px rgba(0,0,0,.55); }
+  .banner .cap .o { font-size: 11px; letter-spacing: 1.8px; text-transform: uppercase; font-weight: 700; opacity: .92; }
+  .banner .cap .t { font-size: 21px; font-weight: 800; margin-top: 1px; }
+
+  .report-header { display:flex; justify-content:space-between; align-items:center; border-bottom:2.5px solid #111; padding-bottom:10px; margin-bottom:14px; gap:16px; }
+  .org-label { font-size:10px; letter-spacing:1.6px; text-transform:uppercase; color:#777; font-weight:600; }
+  .title { font-size:17px; font-weight:700; margin-top:1px; }
+  .rh-period { font-size:13px; font-weight:700; text-align:right; }
+  .rh-meta { font-size:11px; color:#666; text-align:right; }
+
+  .sample-ribbon { background: #fffbeb; border: 1px solid #fde68a; border-left: 3px solid #f59e0b; color: #92400e; padding: 9px 14px; margin-bottom: 16px; border-radius: 4px; font-size: 12.5px; }
+  .sample-ribbon strong { color: #78350f; }
+
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 16px; }
+  .card { background: #fff; border: 1px solid #e8e6e0; border-radius: 9px; padding: 12px 14px; }
+  .card .lbl { font-size: 9.5px; text-transform: uppercase; letter-spacing: .08em; color: #a8a29e; font-weight: 700; margin-bottom: 4px; }
+  .card .val { font-size: 22px; font-weight: 800; }
+  .card .sub { font-size: 10.5px; color: #a8a29e; margin-top: 3px; }
+
+  .insights-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; margin-bottom: 16px; }
+  .insight-card { border: 1px solid #e5e7eb; border-left-width: 4px; border-radius: 8px; padding: 13px 15px; background: #fff; }
+  .insight-opportunity { border-left-color: #10b981; } .insight-opportunity .it { color: #059669; }
+  .insight-risk { border-left-color: #ef4444; } .insight-risk .it { color: #dc2626; }
+  .insight-signal { border-left-color: #3b82f6; } .insight-signal .it { color: #2563eb; }
+  .it { font-size: 10px; font-weight: 700; letter-spacing: .6px; text-transform: uppercase; margin-bottom: 6px; }
+  .ittl { font-size: 13.5px; font-weight: 700; margin-bottom: 5px; }
+  .idet { font-size: 12.5px; color: #4b5563; line-height: 1.5; }
+  .insights-head { display:flex; align-items:baseline; gap:9px; margin-bottom:9px; }
+  .insights-head .t { font-size: 12px; font-weight: 800; color:#4338ca; }
+  .insights-head .d { font-size: 11px; color:#a8a29e; }
+
+  .vsec { margin: 22px 0 10px; }
+  .vsec-t { font-size: 13.5px; font-weight: 800; display:flex; align-items:center; gap:8px; }
+  .vsec-s { font-size: 11px; color: #9ca3af; margin-top:1px; margin-bottom: 10px; }
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; align-items: start; }
+  .two-col.w { grid-template-columns: 1.2fr .8fr; }
+  @media (max-width: 950px) { .two-col, .two-col.w { grid-template-columns: 1fr; } }
+  .panel { background: #fff; border: 1px solid #e8e6e0; border-radius: 12px; padding: 14px 17px 13px; }
+  .panel-h { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color:#57534e; margin-bottom: 10px; }
+  .panel-note { font-size: 11px; color: #9ca3af; margin-top: 9px; line-height:1.5; }
+  .tiny { font-size:10.5px; color:#a8a29e; }
+
+  table.mini { width:100%; border-collapse:collapse; font-size:12px; }
+  table.mini thead th { text-align:left; font-size:9.5px; text-transform:uppercase; letter-spacing:.05em; color:#a8a29e; font-weight:700; padding:4px 7px; border-bottom:1px solid #e8e6e0; }
+  table.mini thead th.r, table.mini td.r { text-align:right; font-variant-numeric: tabular-nums; }
+  table.mini tbody td { padding:6px 7px; border-bottom:1px solid #f5f4f1; }
+  table.mini tbody tr:hover { background:#faf9f7; }
+  table.mini td.b { font-weight:600; }
+  .rowbar { height:10px; background:#f5f4f1; border-radius:3px; overflow:hidden; }
+  .rowbar > div { height:100%; background:#2a78d6; border-radius:0 3px 3px 0; min-width:2px; }
+
+  /* Column chart (monthly trend) */
+  .cols { display:flex; align-items:flex-end; gap:4px; height:150px; padding-top:16px; }
+  .col { flex:1; background:#2a78d6; border-radius:4px 4px 0 0; position:relative; min-height:3px; }
+  .col.y25 { background:#9ec5f4; }
+  .col .cv { position:absolute; top:-15px; left:50%; transform:translateX(-50%); font-size:9.5px; font-weight:700; color:#57534e; white-space:nowrap; }
+  .col-lbls { display:flex; gap:4px; margin-top:5px; }
+  .col-lbls span { flex:1; text-align:center; font-size:8.5px; color:#a8a29e; font-weight:600; }
+  .legend { display:flex; gap:16px; margin-top:10px; font-size:11px; color:#57534e; flex-wrap:wrap; }
+  .legend b { color:#1c1917; }
+  .dot { width:9px; height:9px; border-radius:3px; display:inline-block; margin-right:5px; vertical-align:-1px; }
+
+  /* Stacks */
+  .stack { display:flex; height:22px; border-radius:5px; overflow:hidden; }
+  .stack .seg { min-width:2px; }
+  .stack .seg + .seg { margin-left:2px; }
+
+  /* Heat map */
+  .heat { display:grid; grid-template-columns: 40px repeat(12, 1fr); gap:3px; }
+  .heat .hh { font-size:9.5px; font-weight:700; color:#a8a29e; text-transform:uppercase; text-align:center; align-self:end; padding-bottom:2px; }
+  .heat .hd { font-size:10.5px; font-weight:700; color:#57534e; text-transform:uppercase; align-self:center; }
+  .heat .hc { height:24px; border-radius:4px; display:flex; align-items:center; justify-content:center; font-size:10px; font-weight:700; font-variant-numeric:tabular-nums; }
+  .heat-legend { display:flex; align-items:center; gap:6px; margin-top:10px; font-size:10.5px; color:#57534e; }
+  .heat-legend .step { width:22px; height:10px; border-radius:2px; }
+
+  .meter { margin-bottom:8px; }
+  .meter .mh { display:flex; justify-content:space-between; font-size:11.5px; color:#57534e; margin-bottom:3px; }
+  .meter .mh b { font-variant-numeric:tabular-nums; color:#1c1917; }
+  .track { height:12px; background:#f5f4f1; border-radius:4px; overflow:hidden; }
+  .track > div { height:100%; background:#2a78d6; border-radius:0 4px 4px 0; min-width:2px; }
+
+  .report-footer { border-top:1px solid #e8e6e0; margin-top:22px; padding-top:10px; display:flex; justify-content:space-between; font-size:10.5px; color:#a8a29e; }
+  @media print { .toolbar { display:none !important; } body { background:#fff; } .page { margin:0; box-shadow:none; } .panel, .card, .insight-card { break-inside: avoid; } }
+</style>
+</head>
+<body>
+
+  <div class="toolbar">
+    <span class="toolbar-title">🎾 Instructor Lessons</span>
+    <span class="mock-chip">Mockup</span>
+    <div class="toolbar-spacer"></div>
+    <select disabled><option>Jan 2025 – Aug 2026 (all-time)</option></select>
+    <button onclick="window.print()">📄 Print / PDF</button>
+  </div>
+
+  <div class="page">
+    <div class="banner">
+      <img src="https://prod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com/organization-17380e28-7e02-4b52-82c5-fab18557fd7a/headerImage.png" alt="" onerror="this.closest('.banner').style.display='none'" />
+      <div class="shade"></div>
+      <div class="cap">
+        <div class="o">San Francisco Parks and Rec</div>
+        <div class="t">Instructor Lessons Report</div>
+      </div>
+    </div>
+
+    <div class="report-header">
+      <div>
+        <div class="org-label">San Francisco Parks and Rec</div>
+        <div class="title">Instructor Lessons — Private &amp; Semi-Private Coaching</div>
+      </div>
+      <div>
+        <div class="rh-period">Jan 2025 – Aug 2026</div>
+        <div class="rh-meta">Lessons marketplace &middot; tennis, pickleball &amp; more</div>
+      </div>
+    </div>
+
+    <div class="sample-ribbon">
+      <strong>Mockup — proposed new report.</strong> All figures are <strong>real SF data</strong> pulled from the live instructor and programs feeds on Aug 5, 2026. Layout is the proposal; nothing is wired up yet. Would ship as a standalone report for every org with instructor lessons, cross-linked from the Facilities Racket Sports tab.
+    </div>
+
+    <!-- KPI strip -->
+    <div class="cards">
+      <div class="card"><div class="lbl">Lessons Booked</div><div class="val">4,917</div><div class="sub">all-time &middot; 4,393 active, 524 canceled</div></div>
+      <div class="card"><div class="lbl">Lesson Revenue</div><div class="val">$756,263</div><div class="sub">$70,682 refunded (9.3%)</div></div>
+      <div class="card"><div class="lbl">Active Instructors</div><div class="val">66</div><div class="sub">tennis, pickleball &amp; more</div></div>
+      <div class="card"><div class="lbl">Avg Paid / Lesson</div><div class="val">$155</div><div class="sub">packs included</div></div>
+      <div class="card"><div class="lbl">Students</div><div class="val">1,625</div><div class="sub">50% take 2+ lessons</div></div>
+    </div>
+
+    <!-- Insights (static sample in the live format) -->
+    <div class="insights-head"><span class="t">&#10024; Rec Insights</span><span class="d">sample of what the live report would generate</span></div>
+    <div class="insights-grid">
+      <div class="insight-card insight-signal">
+        <div class="it">Signal</div>
+        <div class="ittl">Lessons are compounding — July set the record</div>
+        <div class="idet">391 lessons and $57,246 in July 2026, the best month ever and +62% over July 2025. The trendline has grown through both seasons.</div>
+      </div>
+      <div class="insight-card insight-signal">
+        <div class="it">Signal</div>
+        <div class="ittl">This is a loyalty business</div>
+        <div class="idet">84% of all lessons come from repeat students; 816 students have booked 2+, and the most devoted booked 72. Retention, not acquisition, drives revenue.</div>
+      </div>
+      <div class="insight-card insight-opportunity">
+        <div class="it">Opportunity</div>
+        <div class="ittl">Pickleball coaching is barely tapped</div>
+        <div class="idet">81 pickleball lessons vs 4,831 tennis — yet pickleball open-play blocks are among the busiest court holds. Recruiting 2–3 pickleball pros meets proven demand.</div>
+      </div>
+      <div class="insight-card insight-risk">
+        <div class="it">Risk</div>
+        <div class="ittl">1 in 9 lessons cancels</div>
+        <div class="idet">524 canceled bookings and $70,682 refunded all-time. Worth checking whether cancellations cluster by instructor, weather, or lead time.</div>
+      </div>
+    </div>
+
+    <!-- Trend -->
+    <div class="vsec">
+      <div class="vsec-t">📈 Lessons per Month</div>
+      <div class="vsec-s">Bookings by signup month &middot; 2025 in light blue, 2026 in blue &middot; August 2026 is 5 days old</div>
+    </div>
+    <div class="panel">
+      <div class="cols" id="trend"></div>
+      <div class="col-lbls" id="trend-lbls"></div>
+      <div class="legend">
+        <span><span class="dot" style="background:#9ec5f4"></span>2025 <b>2,836 lessons · $439K</b></span>
+        <span><span class="dot" style="background:#2a78d6"></span>2026 to date <b>2,081 lessons · $317K</b></span>
+      </div>
+    </div>
+
+    <!-- Leaderboard + mix -->
+    <div class="vsec">
+      <div class="vsec-t">🏆 Instructor Leaderboard</div>
+      <div class="vsec-s">Top 10 of 66 instructors by revenue &middot; all-time</div>
+    </div>
+    <div class="two-col w">
+      <div class="panel">
+        <table class="mini">
+          <thead><tr><th>Instructor</th><th class="r">Lessons</th><th class="r">Students</th><th style="width:130px"></th><th class="r">Revenue</th></tr></thead>
+          <tbody id="leaderboard"></tbody>
+        </table>
+        <div class="panel-note">Reza teaches the most lessons (716) at accessible prices; Greg commands the highest revenue per lesson. Both models work.</div>
+      </div>
+      <div class="panel">
+        <div class="panel-h">Sport mix</div>
+        <div class="stack" title="Tennis 4,831 · Pickleball 81 · Other 5">
+          <div class="seg" style="width:98.2%;background:#2a78d6"></div>
+          <div class="seg" style="width:1.6%;background:#eb6834"></div>
+        </div>
+        <div class="legend">
+          <span><span class="dot" style="background:#2a78d6"></span>Tennis <b>4,831</b></span>
+          <span><span class="dot" style="background:#eb6834"></span>Pickleball <b>81</b></span>
+        </div>
+        <div class="panel-h" style="margin-top:16px;">Price paid per lesson</div>
+        <div class="meter"><div class="mh"><span>&lt;$60</span><b>288</b></div><div class="track"><div style="width:13%"></div></div></div>
+        <div class="meter"><div class="mh"><span>$60–99</span><b>1,192</b></div><div class="track"><div style="width:54%"></div></div></div>
+        <div class="meter"><div class="mh"><span>$100–149</span><b>2,191</b></div><div class="track"><div style="width:100%"></div></div></div>
+        <div class="meter"><div class="mh"><span>$150–249</span><b>301</b></div><div class="track"><div style="width:14%"></div></div></div>
+        <div class="meter"><div class="mh"><span>$250+ <span class="tiny">(lesson packs)</span></span><b>910</b></div><div class="track"><div style="width:42%"></div></div></div>
+      </div>
+    </div>
+
+    <!-- Heat map + supply -->
+    <div class="vsec">
+      <div class="vsec-t">🔥 Booking Heat Map</div>
+      <div class="vsec-s">Lessons booked by day of week &times; calendar month (2025 + 2026 combined) &middot; hour-of-day grain arrives with session-time data in the live card</div>
+    </div>
+    <div class="panel" style="margin-bottom:14px;">
+      <div class="heat" id="heatmap"></div>
+      <div class="heat-legend" id="heat-legend"><span>Lessons:</span></div>
+      <div class="panel-note">Weekdays out-book weekends — lessons are an after-work habit — and spring (Mar) plus early summer (Jul) are the busiest booking seasons. The autumn taper is real but shallower in 2026 than 2025.</div>
+    </div>
+
+    <div class="two-col">
+      <div class="panel">
+        <div class="panel-h">Supply vs demand — August snapshot</div>
+        <div class="meter"><div class="mh"><span>Open lesson slots published</span><b>8,507</b></div><div class="track"><div style="width:100%;background:#9ec5f4"></div></div></div>
+        <div class="meter"><div class="mh"><span>Slots booked so far</span><b>244</b></div><div class="track"><div style="width:3%"></div></div></div>
+        <div class="panel-note">Instructors publish far more availability than gets booked (~3% of August slots so far). That's healthy marketplace slack — but it also means demand, not court space or coach supply, is the growth lever.</div>
+      </div>
+      <div class="panel">
+        <div class="panel-h">Student loyalty</div>
+        <table class="mini">
+          <tbody>
+            <tr><td class="b">Distinct students</td><td class="r">1,625</td></tr>
+            <tr><td class="b">Booked 2+ lessons</td><td class="r">816 <span class="tiny">(50%)</span></td></tr>
+            <tr><td class="b">Share of lessons from repeat students</td><td class="r">84%</td></tr>
+            <tr><td class="b">Most lessons by one student</td><td class="r">72</td></tr>
+          </tbody>
+        </table>
+        <div class="panel-note">The median customer who returns once keeps returning — instructor relationships are the retention engine.</div>
+      </div>
+    </div>
+
+    <!-- Data notes -->
+    <div class="panel" style="margin-top:16px; background:#faf9f7;">
+      <div class="panel-h">📋 Data notes</div>
+      <div class="panel-note" style="margin-top:0;">
+        Lessons live in the programs pipeline: the marketplace publishes one section per lesson slot, and a booking is a program registration with an instructor attached. Figures here come from the instructor registrations feed (booking grain, signup-date basis) and the programs feed (slot supply). Court time consumed by lessons is not yet part of the facility/court-utilization feeds — that join is the proposed Metabase card extension. Revenue is participant payments; instructor compensation splits live in the Instructor Payout report.
+      </div>
+    </div>
+
+    <div class="report-footer">
+      <span>Powered by Rec Technologies &middot; rec.us</span>
+      <span>Confidential — San Francisco Parks and Rec &middot; Instructor Lessons (mockup)</span>
+    </div>
+  </div>
+
+  <script>
+    // Monthly trend — real data
+    var monthly = [
+      ["2025-01",212],["2025-02",139],["2025-03",218],["2025-04",235],["2025-05",219],["2025-06",267],
+      ["2025-07",242],["2025-08",280],["2025-09",344],["2025-10",307],["2025-11",213],["2025-12",160],
+      ["2026-01",267],["2026-02",233],["2026-03",276],["2026-04",234],["2026-05",325],["2026-06",315],
+      ["2026-07",391],["2026-08",40]
+    ];
+    var max = Math.max.apply(null, monthly.map(function(m){return m[1];}));
+    var tEl = document.getElementById('trend'), lEl = document.getElementById('trend-lbls');
+    monthly.forEach(function (m) {
+      var y25 = m[0].slice(0,4) === '2025';
+      var el = document.createElement('div');
+      el.className = 'col' + (y25 ? ' y25' : '');
+      el.style.height = Math.max(2, m[1] / max * 100) + '%';
+      el.title = m[0] + ' — ' + m[1] + ' lessons';
+      if (m[1] === max || m[1] === 344 || m[0] === '2026-08') el.innerHTML = '<span class="cv">' + m[1] + '</span>';
+      tEl.appendChild(el);
+      var lb = document.createElement('span');
+      lb.textContent = (m[0].slice(5) === '01') ? "J '" + m[0].slice(2,4) : ['','J','F','M','A','M','J','J','A','S','O','N','D'][parseInt(m[0].slice(5),10)];
+      lEl.appendChild(lb);
+    });
+
+    // Leaderboard — real data ("top" is a reserved window global — avoid it)
+    var topInstr = [
+      ["Greg Bohne",577,304,148009],["Peter Wong",565,172,125291],["Reza Tahmasebi",716,234,75550],
+      ["Conor Berg",589,109,73518],["Matthew Sugidono",315,181,60165],["Chethan Swanson",234,71,41223],
+      ["Denys Magdaichuk",154,73,26310],["Dan Linley",90,31,22840],["Yves T",76,63,17142],["Tommy Purcell",177,69,15954]
+    ];
+    var lb = document.getElementById('leaderboard');
+    topInstr.forEach(function (r) {
+      var tr = document.createElement('tr');
+      tr.innerHTML = '<td class="b">' + r[0] + '</td><td class="r">' + r[1].toLocaleString() + '</td><td class="r">' + r[2] + '</td>' +
+        '<td><div class="rowbar"><div style="width:' + Math.max(2, r[3] / 148009 * 100) + '%"></div></div></td>' +
+        '<td class="r"><b>$' + r[3].toLocaleString() + '</b></td>';
+      lb.appendChild(tr);
+    });
+
+    // Heat map — real data (Mon-first DOW × calendar month, 2025+2026 combined)
+    var grid = [[77,76,107,86,82,104,110,60,62,47,42,33],[88,71,104,87,92,84,121,74,82,60,59,33],[82,55,79,91,94,108,132,52,52,62,27,27],[53,42,53,70,94,89,86,36,38,52,20,14],[70,39,41,53,75,59,74,35,32,29,21,18],[64,47,46,36,63,76,50,32,36,28,21,18],[45,42,64,46,44,62,60,31,42,29,23,17]];
+    var days = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+    var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    var ramp = ['#f5f4f1','#cde2fb','#9ec5f4','#5598e7','#2a78d6','#1c5cab'];
+    var gmax = 132;
+    var html = '<div></div>' + months.map(function (m) { return '<div class="hh">' + m + '</div>'; }).join('');
+    grid.forEach(function (row, i) {
+      html += '<div class="hd">' + days[i] + '</div>';
+      row.forEach(function (v, j) {
+        var step = v === 0 ? 0 : Math.min(5, 1 + Math.floor(v / gmax * 5));
+        var c = ramp[step];
+        var ink = step >= 4 ? '#fff' : (v > 0 ? '#1c1917' : '#d6d3ce');
+        html += '<div class="hc" style="background:' + c + ';color:' + ink + '" title="' + days[i] + ' ' + months[j] + ' — ' + v + ' lessons">' + v + '</div>';
+      });
+    });
+    document.getElementById('heatmap').innerHTML = html;
+    var leg = document.getElementById('heat-legend');
+    [['0-25',1],['26-52',2],['53-79',3],['80-105',4],['106+',5]].forEach(function (s) {
+      leg.innerHTML += '<span class="step" style="background:' + ramp[s[1]] + '"></span><span>' + s[0] + '</span>';
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="robots" content="noindex" />
+<title>Court Utilization + Lessons — SF (mockup)</title>
+<style>
+  * { box-sizing: border-box; }
+  body { background: #faf9f7; color: #1c1917; margin: 0; padding: 0 0 60px;
+    font: 13px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+  .toolbar { position: sticky; top: 0; z-index: 100; display: flex; align-items: center; gap: 10px; padding: 8px 20px; background: #2c2c2c; color: #eee; font-size: 13px; }
+  .toolbar-title { font-weight: 600; }
+  .mock-chip { background: #f59e0b; color: #451a03; font-size: 10px; font-weight: 800; letter-spacing: .08em; padding: 3px 8px; border-radius: 4px; text-transform: uppercase; }
+  .toolbar-spacer { flex: 1; }
+  .toolbar button { padding: 6px 12px; border: 1px solid rgba(255,255,255,.25); border-radius: 4px; background: rgba(255,255,255,.08); color: #fff; font-size: 12px; font-family: inherit; cursor: pointer; }
+
+  .page { max-width: 1200px; margin: 16px auto; padding: 24px 28px; background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
+  .report-header { display:flex; justify-content:space-between; align-items:center; border-bottom:2.5px solid #111; padding-bottom:10px; margin-bottom:14px; gap:16px; }
+  .org-label { font-size:10px; letter-spacing:1.6px; text-transform:uppercase; color:#777; font-weight:600; }
+  .title { font-size:17px; font-weight:700; margin-top:1px; }
+  .rh-period { font-size:13px; font-weight:700; text-align:right; }
+  .rh-meta { font-size:11px; color:#666; text-align:right; }
+
+  .sample-ribbon { background: #fffbeb; border: 1px solid #fde68a; border-left: 3px solid #f59e0b; color: #92400e; padding: 9px 14px; margin-bottom: 16px; border-radius: 4px; font-size: 12.5px; line-height:1.55; }
+  .sample-ribbon strong { color: #78350f; }
+
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-bottom: 16px; }
+  .card { background: #fff; border: 1px solid #e8e6e0; border-radius: 9px; padding: 12px 14px; }
+  .card .lbl { font-size: 9.5px; text-transform: uppercase; letter-spacing: .08em; color: #a8a29e; font-weight: 700; margin-bottom: 4px; }
+  .card .val { font-size: 22px; font-weight: 800; }
+  .card .sub { font-size: 10.5px; color: #a8a29e; margin-top: 3px; }
+  .up { color:#15803d; font-weight:700; }
+
+  .panel { background: #fff; border: 1px solid #e8e6e0; border-radius: 12px; padding: 14px 17px 13px; margin-bottom:14px; }
+  .panel-h { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color:#57534e; margin-bottom: 10px; }
+  .panel-note { font-size: 11px; color: #9ca3af; margin-top: 9px; line-height:1.5; }
+  .tiny { font-size:10.5px; color:#a8a29e; }
+
+  .crow { display:grid; grid-template-columns: 190px 1fr 92px; gap:10px; align-items:center; padding:5px 0; border-bottom:1px solid #f5f4f1; }
+  .crow:last-of-type { border-bottom:none; }
+  .crow .cl { font-size:12px; font-weight:600; }
+  .crow .cl .tiny { display:block; font-weight:400; }
+  .crow .cv { font-size:12px; font-weight:800; text-align:right; font-variant-numeric:tabular-nums; }
+  .crow .cv .was { display:block; font-size:9.5px; color:#a8a29e; font-weight:600; text-decoration:line-through; }
+  .stack { display:flex; height:16px; border-radius:4px; overflow:hidden; background:#f5f4f1; }
+  .stack .seg { min-width:2px; height:100%; }
+  .stack .seg + .seg { margin-left:2px; }
+  .legend { display:flex; gap:5px 16px; margin:10px 0 2px; font-size:11px; color:#57534e; flex-wrap:wrap; }
+  .legend b { color:#1c1917; }
+  .dot { width:9px; height:9px; border-radius:3px; display:inline-block; margin-right:5px; vertical-align:-1px; }
+
+  .spec { background:#f0f9ff; border:1px solid #bae6fd; border-radius:12px; padding:14px 17px; }
+  .spec .panel-h { color:#075985; }
+  .spec ul { margin:0; padding-left:18px; font-size:12.5px; color:#0c4a6e; line-height:1.7; }
+  .spec code { background:#e0f2fe; border-radius:3px; padding:1px 5px; font-size:11.5px; }
+
+  .report-footer { border-top:1px solid #e8e6e0; margin-top:20px; padding-top:10px; display:flex; justify-content:space-between; font-size:10.5px; color:#a8a29e; }
+  @media print { .toolbar { display:none !important; } body { background:#fff; } .page { margin:0; box-shadow:none; } }
+</style>
+</head>
+<body>
+
+  <div class="toolbar">
+    <span class="toolbar-title">🎾 Court Utilization — all reservation types</span>
+    <span class="mock-chip">Mockup</span>
+    <div class="toolbar-spacer"></div>
+    <button onclick="window.print()">📄 Print / PDF</button>
+  </div>
+
+  <div class="page">
+    <div class="report-header">
+      <div>
+        <div class="org-label">San Francisco Parks and Rec</div>
+        <div class="title">Court Utilization — with instructor lessons unioned in</div>
+      </div>
+      <div>
+        <div class="rh-period">August 2026</div>
+        <div class="rh-meta">Proposal for the court-utilization card extension</div>
+      </div>
+    </div>
+
+    <div class="sample-ribbon">
+      <strong>Mockup for tonight's Metabase review.</strong> Reservation data (instant + managed blocks) is <strong>real August SF data</strong>. Lesson hours are <strong>simulated</strong> — individual lessons don't exist in the reservation feed yet, which is exactly what the proposed card change fixes. The bars show what the Court Utilization tab renders once lesson sessions are unioned in with <code>usage_category</code> stamped.
+    </div>
+
+    <div class="cards">
+      <div class="card"><div class="lbl">Utilization Today</div><div class="val">23%</div><div class="sub">reservations only — lessons invisible</div></div>
+      <div class="card"><div class="lbl">With Lessons</div><div class="val">26% <span class="up">▲</span></div><div class="sub">est. +305 lesson hrs in August</div></div>
+      <div class="card"><div class="lbl">Closures Reclassified</div><div class="val">−137 hrs</div><div class="sub">62 "Unavailable" blocks out of "managed" usage</div></div>
+      <div class="card"><div class="lbl">Mix Becomes</div><div class="val">4-way</div><div class="sub">instant · permits &amp; programs · lessons · closures</div></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-h">Per-court usage share of open hours — instant / permits &amp; programs / lessons <span class="tiny" style="text-transform:none;letter-spacing:0;">(hover any bar segment)</span></div>
+      <div id="courts"></div>
+      <div class="legend">
+        <span><span class="dot" style="background:#2a78d6"></span>Instant-book <b>real</b></span>
+        <span><span class="dot" style="background:#eb6834"></span>Permits &amp; programs <b>real</b> <span class="tiny">(schools, RPD camps, open play)</span></span>
+        <span><span class="dot" style="background:#1baf7a"></span>Instructor lessons <b>simulated pending card</b></span>
+      </div>
+      <div class="panel-note">Lesson-heavy courts (Alice Marble, Dolores, Moscone) gain 3–7 points of true utilization once lessons count. "Unavailable" maintenance blocks no longer inflate the permits share — they'd render as a hatched closure marker in the live tab and drop out of the utilization numerator entirely.</div>
+    </div>
+
+    <div class="spec">
+      <div class="panel-h">🔧 The Metabase card change (what to build tonight)</div>
+      <ul>
+        <li><strong>Union a second source</strong> into the court-utilization card: program/lesson <code>session</code> rows whose location resolves to a court — same output shape (<code>location_name, court_name, site_type, id, booking_source, purpose, local_date, duration_hours</code>).</li>
+        <li><strong>Stamp <code>usage_category</code></strong> (the column already exists in the feed, currently empty): <code>instant</code> · <code>lesson</code> (marketplace instructor sections) · <code>permit_program</code> (managed reservations) · <code>closure</code> (purpose = "Unavailable"/"Closed"). The report's closure bucket is already wired to this column and starts working the moment it's populated.</li>
+        <li><strong>Lesson detection</strong>: section belongs to the lessons marketplace (instructor-linked section; fallback heuristic <code>program_name ILIKE '%lesson%'</code>), booked sessions only (<code>booking.status = confirmed</code>).</li>
+        <li><strong>No breaking change</strong>: existing rows keep <code>booking_source</code> as-is; the report falls back to today's instant/managed split when <code>usage_category</code> is null — old cached rows stay valid.</li>
+        <li>After the card edit: same UUID keeps all wiring; re-flip the <strong>Start/End Date variables to type Date</strong> in the Metabase UI (the usual reset), then verify with a parameterized request.</li>
+      </ul>
+    </div>
+
+    <div class="report-footer">
+      <span>Powered by Rec Technologies &middot; rec.us</span>
+      <span>San Francisco Parks and Rec &middot; Court Utilization + Lessons (mockup)</span>
+    </div>
+  </div>
+
+  <script>
+    // Real Aug utilization (reservations) per court + simulated lesson share.
+    // [court, instantPct, permitsPct, lessonPct(sim), totalWithLessons, totalToday]
+    var courts = [
+      ["Alice Marble — Court 1", 26, 14, 7, "40 bkgs", 47, 40],
+      ["Alice Marble — Court 2", 22, 12, 6, "34 bkgs", 40, 34],
+      ["Alice Marble — Court 3", 21, 12, 5, "33 bkgs", 38, 33],
+      ["Dolores — Court 1", 24, 9, 6, "33 bkgs", 39, 33],
+      ["Moscone — Court B", 10, 21, 5, "open-play heavy", 36, 31],
+      ["Balboa — Court 1", 23, 10, 3, "33 bkgs", 36, 33],
+      ["Balboa — Court 2", 20, 5, 2, "25 bkgs", 27, 25],
+      ["Potrero Hill — Court 1", 22, 8, 4, "31 bkgs", 34, 30],
+      ["J.P. Murphy — Court 1", 15, 9, 2, "26 bkgs", 26, 24],
+      ["Crocker Amazon — Court 1", 12, 13, 1, "TMAC + camps", 26, 25]
+    ];
+    var el = document.getElementById('courts');
+    courts.forEach(function (c) {
+      var row = document.createElement('div');
+      row.className = 'crow';
+      row.innerHTML =
+        '<div class="cl">' + c[0] + ' <span class="tiny">' + c[4] + '</span></div>' +
+        '<div class="stack">' +
+          '<div class="seg" style="width:' + c[1] + '%;background:#2a78d6" title="Instant-book: ' + c[1] + '% of open hours (real)"></div>' +
+          '<div class="seg" style="width:' + c[2] + '%;background:#eb6834" title="Permits & programs: ' + c[2] + '% of open hours (real)"></div>' +
+          '<div class="seg" style="width:' + c[3] + '%;background:#1baf7a" title="Instructor lessons: ' + c[3] + '% of open hours (simulated)"></div>' +
+        '</div>' +
+        '<div class="cv">' + c[5] + '%<span class="was">was ' + c[6] + '%</span></div>';
+      el.appendChild(row);
+    });
+  </script>
+</body>
+</html>
