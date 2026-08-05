@@ -11593,6 +11593,10 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  { date: '2026-08-05', title: '🎾 Facilities Summary: instructor lessons join the reservation mix', items: [
+    'The Reservation Mix band is now three-way: instant-book vs. staff-managed vs. instructor lessons. Lessons book through the Lessons product on the same courts but never appear as facility reservations — the Summary now counts them from instructor registrations, so orgs like SF stop reading "100% instant, 0% managed" while running a large lessons operation.',
+    'Shows lesson count + lesson revenue for the selected date range; hidden automatically for orgs without instructor lessons.',
+  ]},
   { date: '2026-08-05', title: 'Schema migration: section_price removed', items: [
     'Removed section_price table references from AI Report Wizard schema hints (programs, waitlist, memberships)',
     'Added pricing_policy column to section schema in programs and waitlist contexts',

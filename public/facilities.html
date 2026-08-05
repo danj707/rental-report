@@ -524,7 +524,7 @@
       );
     }
 
-    function SummaryTab({ rows, err, statusSel, typeSel }) {
+    function SummaryTab({ rows, err, statusSel, typeSel, lessons }) {
       if (err) return e('div', { className: 'empty' },
         e('div', { className: 'em-icon' }, '⚠️'),
         e('div', { className: 'em-title' }, 'Could not load facility data'),
@@ -544,17 +544,25 @@
 
       return e('div', null,
         e(KpiCards, { a }),
-        // Reservation mix band (the marquee split)
+        // Reservation mix band (the marquee split). Instructor lessons book
+        // through the Lessons product — they use the same courts but are NOT
+        // facility reservations, so they get their own component in the mix
+        // instead of hiding inside (or being absent from) "managed".
         e('div', { className: 'band' },
           e('div', { className: 'band-head' },
-            e('div', { className: 'band-title' }, '⚙️ RESERVATION MIX ', e('span', { className: 'sub' }, 'instant-book vs. staff-managed')),
+            e('div', { className: 'band-title' }, '⚙️ RESERVATION MIX ', e('span', { className: 'sub' },
+              lessons && lessons.n > 0 ? 'instant-book vs. staff-managed vs. instructor lessons' : 'instant-book vs. staff-managed')),
           ),
           e('div', { className: 'band-metrics' },
             e('div', { className: 'band-metric' }, e('div', { className: 'bm-val sc-purple' }, pct(a.instant, a.bookings)), e('div', { className: 'bm-lbl' }, 'Instant-book')),
-            e('div', { className: 'band-metric' }, e('div', { className: 'bm-val sc-amber' }, pct(a.managed, a.bookings)), e('div', { className: 'bm-lbl' }, 'Managed')),
+            e('div', { className: 'band-metric' }, e('div', { className: 'bm-val sc-amber' }, pct(a.managed, a.bookings)), e('div', { className: 'bm-lbl' }, 'Staff-managed')),
             e('div', { className: 'band-metric' }, e('div', { className: 'bm-val sc-green' }, money(a.instRev)), e('div', { className: 'bm-lbl' }, 'Instant-book revenue')),
-            e('div', { className: 'band-metric' }, e('div', { className: 'bm-val sc-green' }, money(a.mgdRev)), e('div', { className: 'bm-lbl' }, 'Managed revenue')),
+            e('div', { className: 'band-metric' }, e('div', { className: 'bm-val sc-green' }, money(a.mgdRev)), e('div', { className: 'bm-lbl' }, 'Staff-managed revenue')),
+            lessons && lessons.n > 0 ? e('div', { className: 'band-metric' }, e('div', { className: 'bm-val sc-blue' }, lessons.n.toLocaleString()), e('div', { className: 'bm-lbl' }, 'Instructor lessons')) : null,
+            lessons && lessons.n > 0 ? e('div', { className: 'band-metric' }, e('div', { className: 'bm-val sc-green' }, money(lessons.rev)), e('div', { className: 'bm-lbl' }, 'Lesson revenue')) : null,
           ),
+          lessons && lessons.n > 0 ? e('div', { style: { fontSize: 11, color: '#78716c', marginTop: 6 } },
+            'Lessons are booked through the Lessons product on the same courts — counted here from instructor registrations, not facility reservations.') : null,
         ),
         // Booking mix bar (instant vs managed)
         e('div', { className: 'sum-bar-wrap' },
@@ -2032,6 +2040,7 @@
         PQS.get('site_type') ? PQS.get('site_type').split(',').filter(Boolean) : []); // [] = all site types
       const [rows, setRows] = React.useState(null);      // null = loading
       const [err, setErr] = React.useState(null);
+      const [lessons, setLessons] = React.useState(null); // { n, rev } from the instructor-payout feed
       const [pdfLoading, setPdfLoading] = React.useState(false);
       React.useEffect(() => { if (isPrint) document.body.classList.add('print-mode'); }, []);
 
@@ -2043,6 +2052,18 @@
           .then(r => r.json())
           .then(d => { if (d && d.error) { setErr(d.error); setRows([]); } else { setRows((d && d.rows) || []); } })
           .catch(er => { setErr(er.message); setRows([]); });
+        // Instructor lessons happen on these same courts but book through the
+        // Lessons product (programs pipeline) — they never appear as facility
+        // reservations, so the Summary fetches them separately for the mix.
+        setLessons(null);
+        fetch('/' + CFG.slug + '/instructor-payout/api/data?start_date=' + sd + '&end_date=' + ed + tok)
+          .then(r => r.json())
+          .then(d => {
+            const lrows = (d && d.rows) || [];
+            const active = lrows.filter(r => String(r.booking_status || '').toLowerCase() !== 'canceled');
+            setLessons({ n: active.length, rev: active.reduce((s, r) => s + (Number(r.amount_paid) || 0), 0) });
+          })
+          .catch(() => setLessons(null));
       }
       React.useEffect(() => { load(); }, []); // initial
 
@@ -2175,7 +2196,7 @@
             }),
           ),
           tab === 'summary'
-            ? e(SummaryTab, { rows, err, statusSel, typeSel })
+            ? e(SummaryTab, { rows, err, statusSel, typeSel, lessons })
             : tab === 'utilization'
               ? e(CourtUtilizationView, { start, end })
               : tab === 'racket'
@@ -2186,7 +2207,7 @@
                   ? e(AquaticsView, { rows, err, statusSel, vert: Object.assign({ key: tab }, VERT_CONFIG[tab]) })
                   : VERT_CONFIG[tab]
                     ? e(VerticalView, { rows, err, statusSel, vert: Object.assign({ key: tab }, VERT_CONFIG[tab]) })
-                    : e(SummaryTab, { rows, err, statusSel, typeSel }),
+                    : e(SummaryTab, { rows, err, statusSel, typeSel, lessons }),
         ),
       );
     }
