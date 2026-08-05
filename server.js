@@ -912,6 +912,12 @@ const ORGS = {
     logoUrl: "https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2Forganization-9cc33597-701d-440f-a12f-f73643b7d229%2FfullLogo.png%3F1741134162485&w=2048&q=75",
     displayName: "City of Pawnee",
   },
+  "san-francisco-rec-park": {
+    token:   "3U9JURrf6TXXbRPE",
+    orgId:   "17380e28-7e02-4b52-82c5-fab18557fd7a",
+    logoUrl: "https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2Forganization-17380e28-7e02-4b52-82c5-fab18557fd7a%2FfullLogo.png%3F1712696824645&w=1920&q=75",
+    displayName: "San Francisco Parks and Rec",
+  },
 };
 
 const REPORT_TYPES = ["facility", "gl", "historic", "programs", "roster", "products", "memberships", "court-utilization", "calendar", "fasttrack", "waitlist", "users", "program-demographics", "instructor-payout", "retention", "annual-report", "section-detail", "ice-calendar", "qoq", "checkins", "program-checkins", "selfservice"];
