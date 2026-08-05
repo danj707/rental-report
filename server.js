@@ -1358,11 +1358,14 @@ const directorsReportEnabled = (slug) =>
   !DIRECTORS_REPORT_EXCLUDED.has(slug) && (DIRECTORS_REPORT_ALL_ORGS || DIRECTORS_REPORT_ORGS.has(slug));
 
 // ── Org banner for report heroes ────────────────────────────────────
-// Explicit ORGS.bannerUrl override → the org's own rec.us headerImage (if
-// they've uploaded one) → the same default hero asset rec.us itself falls
-// back to. headerImage existence is HEAD-checked once per org per day so a
-// newly uploaded banner shows up without a deploy.
+// Explicit ORGS.bannerUrl override → the org's own rec.us headerImage → the
+// same default hero asset rec.us itself falls back to. rec.us stores the
+// upload with its ORIGINAL extension (headerImage.jpeg is as common as .png —
+// every current org has one), so probe the common extensions. Existence is
+// HEAD-checked once per org per day so a newly uploaded banner shows up
+// without a deploy.
 const REC_DEFAULT_BANNER = "https://prod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com/assets/images/rec-tennis.jpg";
+const BANNER_EXTS = ["png", "jpeg", "jpg", "webp"];
 const _bannerCache = new Map(); // orgId → { url, ts }
 const BANNER_CACHE_TTL = 24 * 60 * 60 * 1000;
 async function resolveBannerUrl(org) {
@@ -1370,12 +1373,14 @@ async function resolveBannerUrl(org) {
   if (!org.orgId) return REC_DEFAULT_BANNER;
   const hit = _bannerCache.get(org.orgId);
   if (hit && Date.now() - hit.ts < BANNER_CACHE_TTL) return hit.url;
-  const candidate = "https://prod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com/organization-" + org.orgId + "/headerImage.png";
   let url = REC_DEFAULT_BANNER;
-  try {
-    const r = await fetch(candidate, { method: "HEAD", signal: AbortSignal.timeout(4000) });
-    if (r.ok) url = candidate;
-  } catch (_) { /* keep default */ }
+  for (const ext of BANNER_EXTS) {
+    const candidate = "https://prod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com/organization-" + org.orgId + "/headerImage." + ext;
+    try {
+      const r = await fetch(candidate, { method: "HEAD", signal: AbortSignal.timeout(4000) });
+      if (r.ok) { url = candidate; break; }
+    } catch (_) { /* try next extension */ }
+  }
   _bannerCache.set(org.orgId, { url, ts: Date.now() });
   return url;
 }
