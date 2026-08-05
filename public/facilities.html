@@ -1998,7 +1998,7 @@
       emptyMsg: 'No racket-sport courts found for this organization in the selected date range. Courts are detected by name (tennis, pickleball, padel, racquetball, squash, badminton) — if you expect courts here, they may be recorded under a different name, or there were no bookings in this window.',
     };
 
-    function RacketSportsView({ start, end }) {
+    function RacketSportsView({ start, end, fallback }) {
       return e('div', { className: 'tennis-wrap' },
         e('div', { className: 'tennis-hero' },
           e('div', { className: 'th-emoji' }, '🎾'),
@@ -2006,7 +2006,9 @@
             e('div', { className: 'th-title' }, 'Racket Sports'),
             e('div', { className: 'th-sub' }, 'Utilization, demand, and instant-vs-managed mix across ' + (CFG.displayName || 'your') + ' racket-sport courts — tennis, pickleball, padel & more — drawn from your facility reservations, with a court map and day-of-week heatmap.')),
         ),
-        e(CourtUtilizationView, { start, end, courtFilter: isRacketCourt, theme: RACKET_THEME }),
+        fallback ? e('div', { style: { background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: 6, padding: '9px 14px', margin: '0 0 12px', fontSize: 12, color: '#075985' } },
+          'Court names here don’t indicate a sport (e.g. “Court 1”), so this tab is showing all court-type sites instead of keyword-matched racket courts.') : null,
+        e(CourtUtilizationView, { start, end, courtFilter: fallback ? (() => true) : isRacketCourt, theme: RACKET_THEME }),
         e('div', { className: 'tennis-pending' },
           e('div', { className: 'tp-head' }, '🎾 Private Instructor Lessons', e('span', { className: 'tp-badge' }, 'Coming soon')),
           e('div', { className: 'tp-body' }, 'Private lessons and instructor-led sessions (tennis, pickleball & more) — enrollments, revenue, and instructor utilization — will appear here. This needs instructor-level booking data (who taught, private lesson vs. open court), which isn’t part of the current facility feed. It lights up as soon as the data source is wired.'),
@@ -2056,6 +2058,12 @@
       const active = TABS.find(t => t.key === tab) || TABS[0];
       const count = rows ? rows.length : null;
       const siteCount = rows ? new Set(rows.map(r => (r['Facility'] || '') + '|' + (r['Location'] || ''))).size : 0;
+      // SF-style orgs name courts plainly ("Alice Marble — Court 1") with no
+      // sport keyword; when nothing name-matches but court-type rows exist,
+      // fall back to Site Type so the Racket tab shows the org's courts
+      // instead of a false empty state.
+      const racketFallback = !!(rows && rows.length && !rows.some(r => isRacketCourt(r['Facility'], r['Location'])) && rows.some(r => r['Site Type'] === 'court'));
+      const racketRowMatch = r => racketFallback ? r['Site Type'] === 'court' : isRacketCourt(r['Facility'], r['Location']);
       // Per-vertical booking counts for the tab badges (respect the status filter)
       const vertCounts = {};
       if (rows) {
@@ -2066,7 +2074,7 @@
         });
         // Racket has no site type — courts are matched by name, same rule the
         // Racket Sports view uses to scope the feed.
-        vertCounts.racket = rows.filter(r => isRacketCourt(r['Facility'], r['Location']) && ss.has(lc(r['Status']))).length;
+        vertCounts.racket = rows.filter(r => racketRowMatch(r) && ss.has(lc(r['Status']))).length;
       }
 
       const bannerAgg = rows ? aggregate(rows, statusSel, typeSel) : null;
@@ -2081,7 +2089,7 @@
         let scoped = rows.filter(r => (ts.size === 0 || ts.has(r['Site Type'])) && ss.has(lc(r['Status'])));
         let scopeLabel = 'Facility Bookings';
         if (tab === 'racket') {
-          scoped = scoped.filter(r => isRacketCourt(r['Facility'], r['Location']));
+          scoped = scoped.filter(r => racketRowMatch(r));
           scopeLabel = 'Racket Sports';
         } else if (VERT_CONFIG[tab]) {
           const vt = new Set(VERT_CONFIG[tab].types);
@@ -2135,6 +2143,12 @@
               e('div', { className: 'rh-meta', style: { fontWeight: 600, marginBottom: 2 } }, fmtRange(start, end)),
             ),
           ),
+          // A failed fetch is not "0 bookings" — say so and offer a retry
+          // instead of letting the zero-state hero present itself as data.
+          err ? e('div', { style: { background: '#fef2f2', border: '1px solid #fecaca', borderLeft: '3px solid #dc2626', color: '#991b1b', padding: '11px 15px', borderRadius: 6, margin: '0 0 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', fontSize: 13 } },
+            e('span', null, e('strong', null, "Couldn't load facility data"), ' — ' + err + '. The counts below are a loading failure, not real numbers.'),
+            e('button', { onClick: () => load(), style: { padding: '6px 18px', border: 'none', background: '#dc2626', color: '#fff', borderRadius: 6, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', fontSize: 12.5 } }, 'Retry'),
+          ) : null,
           (tab === 'aquatics' || tab === 'camping') ? null : e(FacilitiesBanner, { a: bannerAgg }),
           // Filters are context-aware: the site-type filter only makes sense on
           // the Summary (a vertical tab already fixes the type); Court Utilization
@@ -2165,7 +2179,7 @@
             : tab === 'utilization'
               ? e(CourtUtilizationView, { start, end })
               : tab === 'racket'
-                ? e(RacketSportsView, { start, end })
+                ? e(RacketSportsView, { start, end, fallback: racketFallback })
                 : tab === 'camping'
                   ? e(CampingView, { start, end })
                 : tab === 'aquatics'

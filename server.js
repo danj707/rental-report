@@ -615,6 +615,33 @@ async function prewarmCache(reason = 'interval') {
         console.warn(`[cache] Pre-warm failed for ${slug}/${rt}: ${label}`);
       }
     }
+    // ── Facilities hub summary — not in REPORT_TYPES, so the loop above never
+    // warms it. Big orgs' summary card can take 60-100s cold (SF), which times
+    // out browser-initiated fetches and renders the hub as "0 bookings"; warm
+    // the default current-month view so the page hits cache instead.
+    if (org.orgId) {
+      const facParams = [
+        { type: "string/=", target: ["variable", ["template-tag", "org_id"]], value: org.orgId },
+        ...monthParams,
+      ];
+      const facStr = `?parameters=${encodeURIComponent(JSON.stringify(facParams))}`;
+      const facKey = `${slug}:facilities:${facStr}`;
+      if (!getCached(facKey, slug, "facilities")) {
+        try {
+          if (!await paceOk()) break outer;
+          const resp = await timedWarmFetch(`${METABASE_URL}/api/public/card/${FACILITIES_SUMMARY_UUID}/query/json${facStr}`, org.healthTimeoutMs || 180000);
+          if (resp.ok) {
+            const data = await resp.json();
+            const result = { rows: Array.isArray(data) ? data : [], meta: { org_slug: slug, org_id: org.orgId, report_type: "facilities", generated_at: new Date().toISOString() } };
+            setCache(facKey, result, "facilities");
+            warmed++;
+            console.log(`[cache] Warmed ${slug}/facilities (${result.rows.length} rows)`);
+          }
+        } catch (e) {
+          console.warn(`[cache] Pre-warm failed for ${slug}/facilities: ${e.name === "TimeoutError" || e.name === "AbortError" ? "timeout" : e.message}`);
+        }
+      }
+    }
   }
   cacheStats.prewarms++;
   if (prewarmAborted) {
@@ -5249,13 +5276,15 @@ app.get("/:org/facilities/api/summary", async (req, res) => {
     const fetchStart = Date.now();
     let response, attempt = 1;
     try {
-      response = await fetch(url, { signal: AbortSignal.timeout(60000) });
+      // 120s first attempt — big orgs' summary card (SF) sits at 55-100s cold,
+      // and a 60s budget was aborting queries that were about to succeed.
+      response = await fetch(url, { signal: AbortSignal.timeout(120000) });
     } catch (firstErr) {
       const isTimeout = firstErr.name === "TimeoutError" || firstErr.name === "AbortError";
       if (!isTimeout) throw firstErr;
-      console.log(`[proxy] ${slug}/facilities timed out — retrying with 120s timeout...`);
+      console.log(`[proxy] ${slug}/facilities timed out — retrying with 180s timeout...`);
       attempt = 2;
-      response = await fetch(url, { signal: AbortSignal.timeout(120000) });
+      response = await fetch(url, { signal: AbortSignal.timeout(180000) });
     }
     const fetchMs = Date.now() - fetchStart;
 
@@ -11564,6 +11593,11 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  { date: '2026-08-05', title: '🔧 Fix sweep: new-org QoQ baselines, Facilities cold-load, racket-court detection', items: [
+    "Director's Report: orgs in their first quarter on Rec no longer see absurd comparisons against a pre-onboarding quarter (Smyrna showed ▲3765×) — the comparison hides behind a 'First full quarter on Rec' note until a real baseline exists.",
+    'Facilities hub: the summary card is now pre-warmed for every org and gets a bigger query budget, so big orgs (SF) stop rendering as "0 bookings" on a cold cache; a failed load now shows an explicit retry banner instead of posing as zero data.',
+    'Racket Sports tab: orgs whose courts are named plainly ("Court 1") fall back to court-type matching instead of a false empty state — SF now shows its 3,500+ court reservations.',
+  ]},
   { date: '2026-08-04', title: "📰 Director's Report: live for all orgs + real PDF export", items: [
     "The quarterly Director's Report is now on every org's dashboard (except Apex, per Dan) — hero band, auto-generated quarterly snapshots with Rec Insights, and the quarter archive. Individual orgs can still be switched off with the normal report toggle.",
     'Print and PDF are now separate buttons: Print opens the browser print dialog; PDF downloads a server-rendered Letter-landscape PDF of the selected quarter (same Puppeteer pipeline as Facilities/GL).',

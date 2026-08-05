@@ -238,6 +238,11 @@ function App() {
 
   const d = data;
   const partial = d && d.quarter && d.quarter.partial;
+  // A prior quarter that predates the org's onboarding (near-zero revenue and
+  // a handful of stray transactions) is no baseline — comparing against it
+  // yields absurd deltas (e.g. ▲3765×), so hide the comparison entirely.
+  const noBaseline = !!(d && d.gl && d.gl.prev && d.gl.prev.net < 100 && ((d.transactions && d.transactions.prev) || 0) < 20);
+  const hideCmp = partial || noBaseline;
   const ssTotal = d && d.selfservice ? d.selfservice.self.orders + d.selfservice.staff.orders : 0;
   const ssPct = ssTotal > 0 ? Math.round(d.selfservice.self.orders / ssTotal * 1000) / 10 : null;
   const revMixTotal = d && d.users ? d.users.revMix.program + d.users.revMix.facility + d.users.revMix.fee + d.users.revMix.product : 0;
@@ -295,7 +300,7 @@ function App() {
               <div className="rh-meta">
                 Generated {new Date(d.generatedAt).toLocaleDateString()}
                 {d.fromSnapshot ? " · archived snapshot" : ""}
-                {!partial && d.prevLabel ? " · compared against " + d.prevLabel : ""}
+                {!hideCmp && d.prevLabel ? " · compared against " + d.prevLabel : ""}
               </div>
             </div>
           </div>
@@ -305,6 +310,11 @@ function App() {
               <strong>Quarter in progress</strong> &mdash; figures run through today. Quarter-over-quarter deltas are hidden until the quarter completes; the final report is generated automatically at quarter end.
             </div>
           )}
+          {!partial && noBaseline && (
+            <div className="partial-ribbon">
+              <strong>First full quarter on Rec</strong> &mdash; {d.prevLabel} predates this organization's onboarding, so quarter-over-quarter comparisons are hidden. They'll appear automatically next quarter.
+            </div>
+          )}
 
           {/* ── Executive KPI strip ── */}
           <div className="cards">
@@ -312,28 +322,28 @@ function App() {
               <div className="card">
                 <div className="lbl">Net Revenue</div>
                 <div className="val">{fmtMoney(d.gl.net)}</div>
-                <div className="sub"><Delta cur={d.gl.net} prev={d.gl.prev && d.gl.prev.net} hidden={partial} />{!partial && d.gl.prev ? " vs " + d.prevLabel : "gross " + fmtMoney(d.gl.gross)}</div>
+                <div className="sub"><Delta cur={d.gl.net} prev={d.gl.prev && d.gl.prev.net} hidden={hideCmp} />{!hideCmp && d.gl.prev ? " vs " + d.prevLabel : "gross " + fmtMoney(d.gl.gross)}</div>
               </div>
             )}
             {d.transactions && d.transactions.cur != null && (
               <div className="card">
                 <div className="lbl">Transactions</div>
                 <div className="val">{fmtNum(d.transactions.cur)}</div>
-                <div className="sub"><Delta cur={d.transactions.cur} prev={d.transactions.prev} hidden={partial} />{!partial && d.transactions.prev != null ? " vs " + fmtNum(d.transactions.prev) : ""}</div>
+                <div className="sub"><Delta cur={d.transactions.cur} prev={d.transactions.prev} hidden={hideCmp} />{!hideCmp && d.transactions.prev != null ? " vs " + fmtNum(d.transactions.prev) : ""}</div>
               </div>
             )}
             {d.programs && (
               <div className="card">
                 <div className="lbl">Program Enrollments</div>
                 <div className="val">{fmtNum(d.programs.enroll)}</div>
-                <div className="sub"><Delta cur={d.programs.enroll} prev={d.programs.prevEnroll} hidden={partial} /> {d.programs.count} programs</div>
+                <div className="sub"><Delta cur={d.programs.enroll} prev={d.programs.prevEnroll} hidden={hideCmp} /> {d.programs.count} programs</div>
               </div>
             )}
             {d.facility && (
               <div className="card">
                 <div className="lbl">Facility Reservations</div>
                 <div className="val">{fmtNum(d.facility.n)}</div>
-                <div className="sub"><Delta cur={d.facility.n} prev={d.facility.prevN} hidden={partial} /> {fmtMoney(d.facility.rev)} rental revenue</div>
+                <div className="sub"><Delta cur={d.facility.n} prev={d.facility.prevN} hidden={hideCmp} /> {fmtMoney(d.facility.rev)} rental revenue</div>
               </div>
             )}
             {d.users && (
@@ -384,21 +394,21 @@ function App() {
                   <div className="panel-h">Net revenue by GL account</div>
                   <BarList money rows={d.gl.accounts.map(a => ({
                     label: a.name, value: a.net,
-                    title: a.name + " — " + fmtMoney(a.net) + " net" + (a.prevNet != null && !partial ? " (prior quarter: " + fmtMoney(a.prevNet) + ")" : ""),
-                    delta: (!partial && a.prevNet != null && a.prevNet > 0) ? Math.round((a.net - a.prevNet) / Math.abs(a.prevNet) * 100) : null,
+                    title: a.name + " — " + fmtMoney(a.net) + " net" + (a.prevNet != null && !hideCmp ? " (prior quarter: " + fmtMoney(a.prevNet) + ")" : ""),
+                    delta: (!hideCmp && a.prevNet != null && a.prevNet > 0) ? Math.round((a.net - a.prevNet) / Math.abs(a.prevNet) * 100) : null,
                   }))} />
                   <div className="panel-note">Bars scaled to the largest account. Payments with no GL code appear as &ldquo;Unassigned&rdquo;.</div>
                 </div>
                 <div className="panel">
                   <div className="panel-h">Quarter at a glance</div>
                   <table className="mini">
-                    <thead><tr><th></th><th className="r">{d.quarter.label}</th>{!partial && d.gl.prev && <th className="r">{d.prevLabel}</th>}{!partial && d.gl.prev && <th className="r">&Delta;</th>}</tr></thead>
+                    <thead><tr><th></th><th className="r">{d.quarter.label}</th>{!hideCmp && d.gl.prev && <th className="r">{d.prevLabel}</th>}{!hideCmp && d.gl.prev && <th className="r">&Delta;</th>}</tr></thead>
                     <tbody>
-                      <tr><td className="b">Gross payments</td><td className="r">{fmtMoney(d.gl.gross)}</td>{!partial && d.gl.prev && <td className="r">{fmtMoney(d.gl.prev.gross)}</td>}{!partial && d.gl.prev && <td className="r"><Delta cur={d.gl.gross} prev={d.gl.prev.gross} /></td>}</tr>
-                      <tr><td className="b">Refunds</td><td className="r">{fmtMoney(d.gl.refunds)}</td>{!partial && d.gl.prev && <td className="r">{fmtMoney(d.gl.prev.refunds)}</td>}{!partial && d.gl.prev && <td className="r"><Delta cur={d.gl.refunds} prev={d.gl.prev.refunds} downIsGood /></td>}</tr>
-                      <tr><td className="b">Net revenue</td><td className="r">{fmtMoney(d.gl.net)}</td>{!partial && d.gl.prev && <td className="r">{fmtMoney(d.gl.prev.net)}</td>}{!partial && d.gl.prev && <td className="r"><Delta cur={d.gl.net} prev={d.gl.prev.net} /></td>}</tr>
-                      {d.transactions.cur != null && <tr><td className="b">Transactions</td><td className="r">{fmtNum(d.transactions.cur)}</td>{!partial && d.gl.prev && <td className="r">{fmtNum(d.transactions.prev)}</td>}{!partial && d.gl.prev && <td className="r"><Delta cur={d.transactions.cur} prev={d.transactions.prev} /></td>}</tr>}
-                      <tr><td className="b">Payments recorded</td><td className="r">{fmtNum(d.gl.payments)}</td>{!partial && d.gl.prev && <td className="r">{fmtNum(d.gl.prev.payments)}</td>}{!partial && d.gl.prev && <td className="r"><Delta cur={d.gl.payments} prev={d.gl.prev.payments} /></td>}</tr>
+                      <tr><td className="b">Gross payments</td><td className="r">{fmtMoney(d.gl.gross)}</td>{!hideCmp && d.gl.prev && <td className="r">{fmtMoney(d.gl.prev.gross)}</td>}{!hideCmp && d.gl.prev && <td className="r"><Delta cur={d.gl.gross} prev={d.gl.prev.gross} /></td>}</tr>
+                      <tr><td className="b">Refunds</td><td className="r">{fmtMoney(d.gl.refunds)}</td>{!hideCmp && d.gl.prev && <td className="r">{fmtMoney(d.gl.prev.refunds)}</td>}{!hideCmp && d.gl.prev && <td className="r"><Delta cur={d.gl.refunds} prev={d.gl.prev.refunds} downIsGood /></td>}</tr>
+                      <tr><td className="b">Net revenue</td><td className="r">{fmtMoney(d.gl.net)}</td>{!hideCmp && d.gl.prev && <td className="r">{fmtMoney(d.gl.prev.net)}</td>}{!hideCmp && d.gl.prev && <td className="r"><Delta cur={d.gl.net} prev={d.gl.prev.net} /></td>}</tr>
+                      {d.transactions.cur != null && <tr><td className="b">Transactions</td><td className="r">{fmtNum(d.transactions.cur)}</td>{!hideCmp && d.gl.prev && <td className="r">{fmtNum(d.transactions.prev)}</td>}{!hideCmp && d.gl.prev && <td className="r"><Delta cur={d.transactions.cur} prev={d.transactions.prev} /></td>}</tr>}
+                      <tr><td className="b">Payments recorded</td><td className="r">{fmtNum(d.gl.payments)}</td>{!hideCmp && d.gl.prev && <td className="r">{fmtNum(d.gl.prev.payments)}</td>}{!hideCmp && d.gl.prev && <td className="r"><Delta cur={d.gl.payments} prev={d.gl.prev.payments} /></td>}</tr>
                     </tbody>
                   </table>
                 </div>
@@ -509,7 +519,7 @@ function App() {
             <div>
               <div className="vsec">
                 <div className="vsec-t"><span>&#127966;&#65039;</span> Facilities &amp; Rentals</div>
-                <div className="vsec-s">{fmtNum(d.facility.n)} reservations &middot; {fmtMoney(d.facility.rev)} rental revenue &middot; {d.facility.residentPct}% by verified residents{!partial && d.facility.prevN != null ? " · " + d.prevLabel + " was " + fmtNum(d.facility.prevN) + " / " + fmtMoney(d.facility.prevRev || 0) : ""}</div>
+                <div className="vsec-s">{fmtNum(d.facility.n)} reservations &middot; {fmtMoney(d.facility.rev)} rental revenue &middot; {d.facility.residentPct}% by verified residents{!hideCmp && d.facility.prevN != null ? " · " + d.prevLabel + " was " + fmtNum(d.facility.prevN) + " / " + fmtMoney(d.facility.prevRev || 0) : ""}</div>
               </div>
               <div className="two-col">
                 <div className="panel">
