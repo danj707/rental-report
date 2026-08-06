@@ -968,6 +968,7 @@ const REPORT_DIRECTORY = {
   "instructor-payout": { label: "Instructor Payout",        emoji: "💰" },
   rentalcalendar:      { label: "Rental Calendar",          emoji: "🏟️" },
   "directors-report":  { label: "Director's Report",        emoji: "📰" },
+  lessons:             { label: "Instructor Lessons",       emoji: "🎾" },
   campmap:             { label: "Campsite Map",             emoji: "🏕️" },
   facilities:          { label: "Facilities",               emoji: "🏞️" },
   "ice-calendar":      { label: "Ice Participant Calendar", emoji: "❄️" },
@@ -1378,6 +1379,12 @@ const RENTAL_CALENDAR_ORGS = new Set(["watertown", "norman", "niagarafalls"]);
 // gets the dashboard hero + auto-generated quarterly snapshots; individual
 // orgs can still be switched off via the normal hidden-report toggle. Flip
 // ALL_ORGS to false to fall back to the explicit pilot set below.
+// Instructor Lessons report — pilot: SF only (their marketplace runs 60+
+// instructors). Add slugs to expand; the page works for any org whose
+// instructor-payout feed has lesson registrations.
+const LESSONS_REPORT_ORGS = new Set(["san-francisco-rec-park"]);
+const lessonsReportEnabled = (slug) => LESSONS_REPORT_ORGS.has(slug);
+
 const DIRECTORS_REPORT_ALL_ORGS = true;
 const DIRECTORS_REPORT_ORGS = new Set(["watertown"]);
 const DIRECTORS_REPORT_EXCLUDED = new Set(["apex"]); // per Dan 2026-08-04 — everyone except Apex
@@ -2022,6 +2029,7 @@ function visibleReportsForOrg(slug) {
     (org[r]?.mbUuid || SHARED_UUIDS[r]) && !hidden.has(r));
   if (RENTAL_CALENDAR_ORGS.has(slug) && !hidden.has("rentalcalendar")) out.push("rentalcalendar");
   if (directorsReportEnabled(slug) && !hidden.has("directors-report")) out.push("directors-report");
+  if (lessonsReportEnabled(slug) && !hidden.has("lessons")) out.push("lessons");
   if ((org.gl?.mbUuid || SHARED_UUIDS.gl) && !hidden.has("qoq")) out.push("qoq");
   if (!reportHiddenForOrg(slug, "facilities")) out.push("facilities");
   return out;
@@ -2489,6 +2497,7 @@ function buildMetrics(org, daysBack) {
   // Include non-Metabase reports that have their own routes (e.g. rentalcalendar)
   if (RENTAL_CALENDAR_ORGS.has(org)) configuredReports.push('rentalcalendar');
   if (directorsReportEnabled(org)) configuredReports.push('directors-report');
+  if (lessonsReportEnabled(org)) configuredReports.push('lessons');
   return { summary, daily, subCounts, subByCadence, totalSubscribers: allSubs.length, insights, configuredReports };
 }
 
@@ -2597,7 +2606,7 @@ async function generatePdf(orgSlug, reportType, startDate, endDate, filters = {}
   // server-side Metabase filters. The print page initializes its filter state
   // from these params before emitting #report-ready, so Puppeteer captures the
   // filtered render rather than the full dataset.
-  ["locations", "sites", "location_name", "site_type", "desks", "by_desk", "by_item", "hide_zero", "chart_net", "metric", "programs", "closures", "hrs", "section_name", "section_id", "status", "questions", "cols", "search", "tab", "instructor", "split", "book_type", "addons", "participant", "view", "tyler", "quarter"].forEach(k => {
+  ["locations", "sites", "location_name", "site_type", "desks", "by_desk", "by_item", "hide_zero", "chart_net", "metric", "programs", "closures", "hrs", "section_name", "section_id", "status", "questions", "cols", "search", "tab", "instructor", "split", "book_type", "addons", "participant", "view", "tyler", "quarter", "insights"].forEach(k => {
     if (filters[k]) qsObj[k] = filters[k];
   });
   if (orgTok) qsObj.token = orgTok;
@@ -2616,6 +2625,8 @@ async function generatePdf(orgSlug, reportType, startDate, endDate, filters = {}
       ? "Facilities"
     : reportType === "directors-report"
       ? "Director's Report"
+    : reportType === "lessons"
+      ? "Instructor Lessons"
     : reportType === "historic"
       ? "Facility Reservations by Date"
       : reportType === "programs"
@@ -3327,7 +3338,7 @@ app.get("/api/org-visibility/:slug", (req, res) => {
     }
   }
   // Also check non-REPORT_TYPES that can be toggled (chat, report-wizard, rentalcalendar, directors-report)
-  for (const rt of ["chat", "report-wizard", "rentalcalendar", "directors-report"]) {
+  for (const rt of ["chat", "report-wizard", "rentalcalendar", "directors-report", "lessons"]) {
     if (RETIRED_REPORTS.has(rt)) continue; // globally not surfaced
     available.push({ type: rt, visible: !hidden.has(rt) });
   }
@@ -3927,7 +3938,23 @@ Rules:
 - Offers and claims count claim links (one person can hold several); "distinctPeople..." fields count people. Do not mix the two grains in one comparison.
 - Be terse. No filler. Vary the "type" across the four insights where the data supports it.`;
 
-const SYS_PROMPTS = { programs: PROGRAMS_SYS_PROMPT, fasttrack: FASTTRACK_SYS_PROMPT, users: USERS_SYS_PROMPT, gl: GL_SYS_PROMPT, historic: HISTORIC_SYS_PROMPT, roster: ROSTER_SYS_PROMPT, products: PRODUCTS_SYS_PROMPT, memberships: MEMBERSHIPS_SYS_PROMPT, "instructor-payout": INSTRUCTOR_PAYOUT_SYS_PROMPT, facility: FACILITY_SYS_PROMPT, qoq: QOQ_SYS_PROMPT, "annual-report": ANNUAL_REPORT_SYS_PROMPT, waitlist: WAITLIST_SYS_PROMPT };
+const LESSONS_SYS_PROMPT = `You are a parks & recreation programming analyst for US municipal departments. You are given private/semi-private instructor lesson data from a lessons marketplace: booking counts, revenue, cancellations, per-instructor totals (lessons, distinct students, revenue), monthly trend, sport mix, price bands, and student-loyalty stats — all pre-computed.
+
+Return EXACTLY 4 insights as a JSON array and nothing else — no prose, no preamble, no markdown code fences. Each element is an object with exactly these keys:
+{
+  "type": "opportunity" | "risk" | "signal",
+  "title": short label, 7 words or fewer,
+  "detail": one sentence, 26 words or fewer, citing specific numbers or instructor names from the data,
+  "action": one concrete next step, 12 words or fewer
+}
+
+Rules:
+- Ground EVERY figure in the data provided. Never invent numbers or instructor names.
+- Focus on: growth or decline in the monthly trend, instructor concentration (is revenue dependent on one or two coaches?), under-served sports where demand exists, cancellation/refund rate, repeat-student loyalty, and pricing spread.
+- Volume leaders and revenue leaders are different stories — say which is which when it matters.
+- Be terse. No filler. Vary "type" across the four insights where the data supports it.`;
+
+const SYS_PROMPTS = { lessons: LESSONS_SYS_PROMPT, programs: PROGRAMS_SYS_PROMPT, fasttrack: FASTTRACK_SYS_PROMPT, users: USERS_SYS_PROMPT, gl: GL_SYS_PROMPT, historic: HISTORIC_SYS_PROMPT, roster: ROSTER_SYS_PROMPT, products: PRODUCTS_SYS_PROMPT, memberships: MEMBERSHIPS_SYS_PROMPT, "instructor-payout": INSTRUCTOR_PAYOUT_SYS_PROMPT, facility: FACILITY_SYS_PROMPT, qoq: QOQ_SYS_PROMPT, "annual-report": ANNUAL_REPORT_SYS_PROMPT, waitlist: WAITLIST_SYS_PROMPT };
 
 // ── Program Finder AI ────────────────────────────────────────────────
 const RECOMMEND_SYS_PROMPT = `You are a friendly, helpful recreation program advisor for a municipal parks & recreation department. A resident has described what they're looking for, and you have the department's upcoming schedule of programs and activities.
@@ -4748,6 +4775,165 @@ app.post("/:org/report-wizard/api/feedback", (req, res) => {
   console.log(`[wizard] ${slug}: feedback ${vote} for "${(title || "").slice(0, 60)}"`);
   res.json({ ok: true });
 });
+
+// ━━ Instructor Lessons report ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Lessons live in the PROGRAMS pipeline, not facility reservations: the
+// marketplace publishes one section per lesson slot and a booking is a
+// program registration with an instructor attached. Everything here comes
+// from the shared instructor-payout card (booking grain) — no new card.
+app.get("/:org/lessons", (req, res) => {
+  const slug = req.params.org;
+  const org  = ORGS[slug];
+  if (!org) return res.status(404).send("Unknown org");
+  if (!lessonsReportEnabled(slug)) return res.status(404).send("Lessons report not enabled for this organization.");
+  logEvent(slug, "lessons", "view", req);
+  const orgConfig = {
+    slug,
+    displayName: org.displayName || (slug.charAt(0).toUpperCase() + slug.slice(1) + " Parks & Recreation"),
+    logoUrl: org.logoUrl || "",
+    token: org.token || "",
+  };
+  const html = require("fs").readFileSync(path.join(__dirname, "public", "lessons.html"), "utf8");
+  res.type("html").send(html.replace("</head>", `<script>window.ORG_CONFIG=${JSON.stringify(orgConfig)};</script></head>`));
+});
+
+const lnum = (v) => { const n = parseFloat(String(v ?? "").replace(/,/g, "")); return isNaN(n) ? 0 : n; };
+const LESSON_RE = /lesson|clinic|coaching|private/i;
+function lessonYMD(v) {
+  if (!v) return null;
+  const s = String(v).trim();
+  let m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);            // ISO
+  if (m) return m[1] + "-" + m[2] + "-" + m[3];
+  m = s.match(/^(\d{2})\/(\d{2})\/(\d{4})/);              // MM/DD/YYYY
+  if (m) return m[3] + "-" + m[1] + "-" + m[2];
+  const d = new Date(s);
+  return isNaN(d.getTime()) ? null : d.toISOString().slice(0, 10);
+}
+
+app.get("/:org/lessons/api/data", async (req, res) => {
+  const slug = req.params.org;
+  const org  = ORGS[slug];
+  if (!org) return res.status(404).json({ ok: false, error: "Unknown org" });
+  const start = req.query.start_date || "2025-01-01";
+  const end   = req.query.end_date   || new Date().toISOString().slice(0, 10);
+  try {
+    logEvent(slug, "lessons", "fetch", req);
+    const rows = (await fetchMBDirect(slug, "instructor-payout", start, end)) || [];
+    const lessons = rows.filter(r => LESSON_RE.test(String(r.program_name || "") + " " + String(r.section_name || "")));
+    const active = lessons.filter(r => String(r.booking_status || "").toLowerCase() !== "canceled");
+
+    let paid = 0, refunded = 0;
+    const byInstr = {}, byMonth = {}, byStudent = {}, priceBands = {};
+    const sport = { Tennis: 0, Pickleball: 0, Other: 0 };
+    const heat = {}; // "dow|hour-bucket" → count (dow 0=Mon)
+    const bandOf = (p) => p < 60 ? "<$60" : p < 100 ? "$60–99" : p < 150 ? "$100–149" : p < 250 ? "$150–249" : "$250+";
+
+    for (const r of lessons) {
+      const amt = lnum(r.amount_paid), ref = lnum(r.amount_refunded);
+      const canceled = String(r.booking_status || "").toLowerCase() === "canceled";
+      paid += amt; refunded += ref;
+      const name = String(r.instructor || "").trim() || "Unassigned";
+      if (!byInstr[name]) byInstr[name] = { name, lessons: 0, paid: 0, students: new Set(), canceled: 0 };
+      byInstr[name].lessons++; byInstr[name].paid += amt;
+      if (canceled) byInstr[name].canceled++;
+      if (r.participant_name) byInstr[name].students.add(r.participant_name);
+      const pn = String(r.program_name || "").toLowerCase();
+      sport[pn.includes("pickle") ? "Pickleball" : pn.includes("tennis") ? "Tennis" : "Other"]++;
+      if (amt > 0) priceBands[bandOf(amt)] = (priceBands[bandOf(amt)] || 0) + 1;
+      const ymd = lessonYMD(r.signup_date);
+      if (ymd) {
+        const mk = ymd.slice(0, 7);
+        if (!byMonth[mk]) byMonth[mk] = { month: mk, n: 0, rev: 0 };
+        byMonth[mk].n++; byMonth[mk].rev += amt;
+        const dt = new Date(ymd + "T12:00:00");
+        const dow = (dt.getDay() + 6) % 7;                 // Mon=0
+        heat[dow + "|" + dt.getMonth()] = (heat[dow + "|" + dt.getMonth()] || 0) + 1;
+      }
+      if (r.participant_name) byStudent[r.participant_name] = (byStudent[r.participant_name] || 0) + 1;
+    }
+
+    const instructors = Object.values(byInstr).map(i => ({
+      name: i.name, lessons: i.lessons, paid: Math.round(i.paid), students: i.students.size, canceled: i.canceled,
+    })).sort((a, b) => b.paid - a.paid);
+    const counts = Object.values(byStudent);
+    const repeat = counts.filter(n => n >= 2);
+    const paidRows = lessons.filter(r => lnum(r.amount_paid) > 0);
+
+    res.json({
+      ok: true,
+      range: { start, end },
+      totals: {
+        lessons: lessons.length, active: active.length, canceled: lessons.length - active.length,
+        paid: Math.round(paid), refunded: Math.round(refunded),
+        instructors: instructors.length,
+        avgPrice: paidRows.length ? Math.round(paidRows.reduce((s, r) => s + lnum(r.amount_paid), 0) / paidRows.length) : 0,
+        students: counts.length,
+        repeatStudents: repeat.length,
+        repeatShare: counts.length ? Math.round(repeat.reduce((s, n) => s + n, 0) / lessons.length * 100) : 0,
+        maxByOneStudent: counts.length ? Math.max(...counts) : 0,
+      },
+      instructors: instructors.slice(0, 15),
+      monthly: Object.values(byMonth).sort((a, b) => a.month.localeCompare(b.month)).map(m => ({ ...m, rev: Math.round(m.rev) })),
+      sport, priceBands, heat,
+    });
+  } catch (e) {
+    console.error("[lessons] " + slug + ": " + e.message);
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// Insights — "lessons" isn't in REPORT_TYPES, so resolveOrg would 404 the
+// shared /:org/:report/api/insights route; this thin wrapper reuses the same
+// model call + cache with the lessons prompt.
+app.post("/:org/lessons/api/insights", express.json(), async (req, res) => {
+  const slug = req.params.org;
+  if (!ORGS[slug]) return res.status(404).json({ ok: false, error: "Unknown org" });
+  if (!anthropic) return res.status(503).json({ ok: false, error: "AI insights not configured" });
+  const blob = req.body;
+  if (!blob || typeof blob !== "object") return res.status(400).json({ ok: false, error: "Missing stats payload" });
+  const key = crypto.createHash("sha256").update(slug + "|lessons|" + JSON.stringify(blob)).digest("hex");
+  const hit = _insightsCache.get(key);
+  if (hit && Date.now() - hit.ts < INSIGHTS_TTL_MS) {
+    logEvent(slug, "lessons", "insights", req, { cached: true });
+    return res.json({ ok: true, insights: hit.insights, cached: true });
+  }
+  try {
+    const data = await anthropic.messages.create({
+      model: INSIGHTS_MODEL, max_tokens: 800,
+      system: LESSONS_SYS_PROMPT + "\n\n" + SCHEMA_CONTEXT,
+      messages: [{ role: "user", content: JSON.stringify(blob) }],
+    });
+    const text = (data.content || []).filter(c => c.type === "text").map(c => c.text).join("");
+    const insights = salvageInsights(text);
+    if (!insights.length) return res.status(502).json({ ok: false, error: "Could not parse AI response" });
+    const u = data.usage || {};
+    _insightsCache.set(key, { ts: Date.now(), insights });
+    if (_insightsCache.size > INSIGHTS_CACHE_MAX) _insightsCache.delete(_insightsCache.keys().next().value);
+    logEvent(slug, "lessons", "insights", req, {
+      inTok: u.input_tokens || 0, outTok: u.output_tokens || 0,
+      costUsd: insightsCostUsd(data.model || INSIGHTS_MODEL, u.input_tokens || 0, u.output_tokens || 0),
+    });
+    res.json({ ok: true, insights });
+  } catch (e) {
+    console.error("[lessons] insights: " + e.message);
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+app.get("/:org/lessons/api/pdf", async (req, res) => {
+  const slug = req.params.org;
+  if (!ORGS[slug]) return res.status(404).send(`Unknown org: "${slug}"`);
+  try {
+    logEvent(slug, "lessons", "pdf", req);
+    const pdf = await generatePdf(slug, "lessons", req.query.start_date, req.query.end_date, req.query);
+    res.set({ "Content-Type": "application/pdf", "Content-Disposition": `inline; filename="lessons-${slug}.pdf"`, "Content-Length": pdf.length });
+    res.send(pdf);
+  } catch (err) {
+    console.error("[pdf] lessons error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 
 app.get("/:org/:report/api/data", resolveOrg, async (req, res) => {
   try {
@@ -5678,7 +5864,11 @@ async function ensureDirectorsSnapshot(slug, year, q, opts) {
     if (hit && Date.now() - hit.ts < DIRECTORS_PARTIAL_TTL) return hit.data;
   }
   const payload = await buildDirectorsQuarter(slug, year, q);
-  payload.insights = await directorsInsightsFor(slug, payload);
+  // Insights are NOT generated here — they're opt-in per Dan (2026-08-05):
+  // the reader clicks "Generate Rec Insights", and only then do they persist
+  // into the snapshot and appear in exports. Saves a model call per org-quarter
+  // for reports nobody opens.
+  payload.insights = payload.insights || null;
   if (payload.quarter.partial) {
     _directorsPartialCache.set(partialKey, { ts: Date.now(), data: payload });
     if (_directorsPartialCache.size > 40) _directorsPartialCache.delete(_directorsPartialCache.keys().next().value);
@@ -5705,6 +5895,34 @@ app.get("/:org/directors-report/api/quarter", async (req, res) => {
     res.json({ ok: true, ...data });
   } catch (e) {
     console.error("[directors-report] " + slug + " " + year + "-Q" + q + ": " + e.message);
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// Insights on demand — generated when the reader asks, then persisted into
+// the stored snapshot so the next visit (and any export) has them instantly.
+app.post("/:org/directors-report/api/insights", express.json(), async (req, res) => {
+  const slug = req.params.org;
+  if (!ORGS[slug]) return res.status(404).json({ ok: false, error: "Unknown org" });
+  if (!anthropic) return res.status(503).json({ ok: false, error: "AI insights not configured" });
+  let year = parseInt(req.query.year), q = parseInt(req.query.q);
+  if (!year || !(q >= 1 && q <= 4)) ({ year, q } = dirLastCompletedQuarter());
+  const key = year + "-Q" + q;
+  try {
+    const snaps = loadDirectorsSnapshots();
+    const stored = snaps[slug] && snaps[slug][key];
+    if (stored && stored.insights && stored.insights.length && req.query.refresh !== "1") {
+      return res.json({ ok: true, insights: stored.insights, cached: true });
+    }
+    const payload = stored || await ensureDirectorsSnapshot(slug, year, q);
+    const insights = await directorsInsightsFor(slug, payload);
+    if (!insights) return res.status(502).json({ ok: false, error: "Could not generate insights" });
+    // Persist into the snapshot when this quarter is archived
+    const all = loadDirectorsSnapshots();
+    if (all[slug] && all[slug][key]) { all[slug][key].insights = insights; saveDirectorsSnapshots(all); }
+    res.json({ ok: true, insights });
+  } catch (e) {
+    console.error("[directors-report] insights " + slug + " " + key + ": " + e.message);
     res.status(500).json({ ok: false, error: e.message });
   }
 });
@@ -7817,6 +8035,8 @@ app.get("/:org", async (req, res, next) => {
   if ((org.gl?.mbUuid || SHARED_UUIDS.gl) && !orgHidden.has('qoq')) available.push('qoq');
   // Facilities hub — hidden by default for all orgs; shows only when opted in
   if (!reportHiddenForOrg(slug, 'facilities')) available.push('facilities');
+  // Instructor Lessons — programs-pipeline report, per-org pilot (SF)
+  if (lessonsReportEnabled(slug) && !orgHidden.has('lessons')) available.push('lessons');
   const orgConfig = {
     slug,
     displayName: org.displayName || `${slugTitle} Parks & Recreation`,
@@ -7876,7 +8096,7 @@ app.post("/api/admin/toggle-report", express.json(), (req, res) => {
   if (dashboardPasswordBlocked(req, res)) return;
   const { org: slug, report } = req.body || {};
   if (!ORGS[slug]) return res.status(404).json({ error: "Unknown org" });
-  if (!REPORT_TYPES.includes(report) && report !== "chat" && report !== "report-wizard" && report !== "rentalcalendar" && report !== "facilities" && report !== "directors-report") return res.status(400).json({ error: "Unknown report type" });
+  if (!REPORT_TYPES.includes(report) && report !== "chat" && report !== "report-wizard" && report !== "rentalcalendar" && report !== "facilities" && report !== "directors-report" && report !== "lessons") return res.status(400).json({ error: "Unknown report type" });
   const hidden = getHiddenReports(slug);
   const idx = hidden.indexOf(report);
   if (idx >= 0) hidden.splice(idx, 1); else hidden.push(report);
@@ -8973,6 +9193,7 @@ app.get("/", (req, res) => {
 
     "rentalcalendar":    { label: "Rental Calendar", icon: "🏟️", desc: "Real-time facility availability with live booking data", color: "#059669" },
     "directors-report":  { label: "Director's Report", ai: true, icon: "📰", desc: "Quarterly executive summary — revenue, enrollment, demand, facilities, and staff workload with QoQ deltas", color: "#0f766e" },
+    lessons:             { label: "Instructor Lessons", ai: true, icon: "🎾", desc: "Private & semi-private coaching — instructor leaderboard, booking trends, and student loyalty", color: "#0369a1" },
     "campmap":           { label: "Campsite Map", icon: "🏕️", desc: "Interactive campground map with per-night availability overlay", color: "#15803d" },
     "facilities":        { label: "Facilities", icon: "🏞️", desc: "Facility hub — summary + camping, golf, aquatics & court utilization", color: "#0d9488" },
     "ice-calendar":      { label: "Ice Participant Calendar", icon: "❄️", desc: "Participant-filtered monthly ice program calendar", color: "#0ea5e9" },
@@ -11593,6 +11814,12 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  { date: '2026-08-05', title: '🎾 New report: Instructor Lessons (SF pilot)', items: [
+    "Private and semi-private coaching gets its own report: lessons booked, revenue, active instructors, an instructor leaderboard, monthly booking trend, day×month heat map, sport and price mix, cancellations, and student-loyalty stats — with a date filter, Print, and PDF export.",
+    'Lessons live in the programs pipeline (one marketplace section per lesson slot), so they never appeared in facility reservations. The Facilities Racket Sports tab now links straight to the new report instead of showing a "coming soon" placeholder.',
+    'Rec Insights on both the Lessons and Director’s Reports are now generated on demand — click to run, and they only appear in printed/PDF exports if you generated them. Piloting on San Francisco.',
+    'Court Utilization heat map now shows the location with each court name, so a dozen courts named "Court 1" are finally distinguishable.',
+  ]},
   { date: '2026-08-05', title: '🎾 Facilities Summary: instructor lessons join the reservation mix', items: [
     'The Reservation Mix band is now three-way: instant-book vs. staff-managed vs. instructor lessons. Lessons book through the Lessons product on the same courts but never appear as facility reservations — the Summary now counts them from instructor registrations, so orgs like SF stop reading "100% instant, 0% managed" while running a large lessons operation.',
     'Shows lesson count + lesson revenue for the selected date range; hidden automatically for orgs without instructor lessons.',

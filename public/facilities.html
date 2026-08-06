@@ -1964,7 +1964,11 @@
                   dowHeatmap.map(row => e(React.Fragment, { key: row.label },
                     e('div', { className: 'heatmap-label', title: row.label },
                       row.demand === 'hot' ? '🔥🔥' : row.demand === 'warm' ? '🔥' : '',
-                      e('span', { style: { overflow: 'hidden', textOverflow: 'ellipsis' } }, row.court),
+                      // SF has "Court 1" at a dozen parks — the location is the
+                      // distinguishing half of the name, so show it (muted).
+                      e('span', { style: { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } },
+                        row.location ? e('span', { style: { color: '#94a3b8', fontWeight: 500 } }, row.location + ' — ') : null,
+                        row.court),
                       row.utilPct != null ? e('span', { style: { marginLeft: 'auto', color: '#999', fontSize: 10, flexShrink: 0 } }, Math.round(row.utilPct) + '%') : null),
                     row.cells.map(c => {
                       let bg, fg;
@@ -2018,8 +2022,10 @@
           'Court names here don’t indicate a sport (e.g. “Court 1”), so this tab is showing all court-type sites instead of keyword-matched racket courts.') : null,
         e(CourtUtilizationView, { start, end, courtFilter: fallback ? (() => true) : isRacketCourt, theme: RACKET_THEME }),
         e('div', { className: 'tennis-pending' },
-          e('div', { className: 'tp-head' }, '🎾 Private Instructor Lessons', e('span', { className: 'tp-badge' }, 'Coming soon')),
-          e('div', { className: 'tp-body' }, 'Private lessons and instructor-led sessions (tennis, pickleball & more) — enrollments, revenue, and instructor utilization — will appear here. This needs instructor-level booking data (who taught, private lesson vs. open court), which isn’t part of the current facility feed. It lights up as soon as the data source is wired.'),
+          e('div', { className: 'tp-head' }, '🎾 Private Instructor Lessons'),
+          e('div', { className: 'tp-body' },
+            'Lessons book through the Lessons product (programs pipeline), not facility reservations — instructor leaderboard, booking trends, price mix, and student loyalty live in their own report. ',
+            e('a', { href: '/' + CFG.slug + '/lessons' + (CFG.token ? '?token=' + encodeURIComponent(CFG.token) : ''), style: { fontWeight: 700, color: '#047857' } }, 'Open the Instructor Lessons report →')),
         ),
       );
     }
