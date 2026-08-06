@@ -164,7 +164,13 @@ function App() {
       priceBands: data.priceBands, instructors: data.instructors.slice(0, 10) };
     fetch(withToken("/" + slug + "/lessons/api/insights"), {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(blob),
-    }).then(r => r.json())
+    }).then(async r => {
+        // Non-JSON body = route/middleware error (e.g. a plain-text 404);
+        // report it verbatim rather than as a JSON parse failure.
+        const t = await r.text();
+        try { return JSON.parse(t); }
+        catch { throw new Error("HTTP " + r.status + " — " + t.slice(0, 120)); }
+      })
       .then(j => { if (j.ok && j.insights) setInsights(j.insights); else throw new Error(j.error || "no insights"); })
       .catch(err => alert("Insights failed: " + err.message))
       .finally(() => setAiLoading(false));
@@ -268,7 +274,7 @@ function App() {
             {!insights && (
               <div className="insights-head no-print" style={{ marginBottom: 16 }}>
                 <button className="insights-btn" onClick={genInsights} disabled={aiLoading}>
-                  {aiLoading ? "Analyzing…" : "✨ Generate Rec Insights"}
+                  {aiLoading ? "Analyzing…" : "✨ Rec Insights"}
                 </button>
                 <span className="d">AI read on this range — optional, and only included in exports if you generate it</span>
               </div>

@@ -193,7 +193,13 @@ function App() {
     if (!m) return;
     setAiLoading(true);
     fetch(withToken("/" + slug + "/directors-report/api/insights?year=" + m[1] + "&q=" + m[2]), { method: "POST" })
-      .then(r => r.json())
+      // A non-JSON body means a route/middleware error (e.g. a plain-text
+      // 404) — surface it as itself instead of a JSON parse error.
+      .then(async r => {
+        const t = await r.text();
+        try { return JSON.parse(t); }
+        catch { throw new Error("HTTP " + r.status + " — " + t.slice(0, 120)); }
+      })
       .then(j => { if (j.ok && j.insights) setInsights(j.insights); else throw new Error(j.error || "no insights"); })
       .catch(e => alert("Insights failed: " + e.message))
       .finally(() => setAiLoading(false));
@@ -388,7 +394,7 @@ function App() {
           {!insights && !isPrint && (
             <div className="insights-head no-print" style={{ marginBottom: 16 }}>
               <button style={{ background: "linear-gradient(135deg,#6366f1,#8b5cf6)", border: "none", color: "#fff", borderRadius: 8, padding: "8px 18px", fontSize: 13, fontWeight: 600, cursor: aiLoading ? "wait" : "pointer", fontFamily: "inherit", opacity: aiLoading ? .6 : 1 }}
-                onClick={genInsights} disabled={aiLoading}>{aiLoading ? "Analyzing…" : "✨ Generate Rec Insights"}</button>
+                onClick={genInsights} disabled={aiLoading}>{aiLoading ? "Analyzing…" : "✨ Rec Insights"}</button>
               <span className="d">AI read on this quarter &mdash; optional, and only included in exports if you generate it</span>
             </div>
           )}

@@ -4038,6 +4038,77 @@ const _insightsCache = new Map();
 const INSIGHTS_TTL_MS = 10 * 60 * 1000;
 const INSIGHTS_CACHE_MAX = 200;
 
+// ── Report-specific insights routes ──────────────────────────────────
+// MUST be registered BEFORE the generic /:org/:report/api/insights route:
+// Express matches in order, and resolveOrg there rejects any report not in
+// REPORT_TYPES with a PLAIN-TEXT 404 that the pages cannot parse as JSON.
+
+// Insights — "lessons" isn't in REPORT_TYPES, so resolveOrg would 404 the
+// shared /:org/:report/api/insights route; this thin wrapper reuses the same
+// model call + cache with the lessons prompt.
+app.post("/:org/lessons/api/insights", express.json(), async (req, res) => {
+  const slug = req.params.org;
+  if (!ORGS[slug]) return res.status(404).json({ ok: false, error: "Unknown org" });
+  if (!anthropic) return res.status(503).json({ ok: false, error: "AI insights not configured" });
+  const blob = req.body;
+  if (!blob || typeof blob !== "object") return res.status(400).json({ ok: false, error: "Missing stats payload" });
+  const key = crypto.createHash("sha256").update(slug + "|lessons|" + JSON.stringify(blob)).digest("hex");
+  const hit = _insightsCache.get(key);
+  if (hit && Date.now() - hit.ts < INSIGHTS_TTL_MS) {
+    logEvent(slug, "lessons", "insights", req, { cached: true });
+    return res.json({ ok: true, insights: hit.insights, cached: true });
+  }
+  try {
+    const data = await anthropic.messages.create({
+      model: INSIGHTS_MODEL, max_tokens: 800,
+      system: LESSONS_SYS_PROMPT + "\n\n" + SCHEMA_CONTEXT,
+      messages: [{ role: "user", content: JSON.stringify(blob) }],
+    });
+    const text = (data.content || []).filter(c => c.type === "text").map(c => c.text).join("");
+    const insights = salvageInsights(text);
+    if (!insights.length) return res.status(502).json({ ok: false, error: "Could not parse AI response" });
+    const u = data.usage || {};
+    _insightsCache.set(key, { ts: Date.now(), insights });
+    if (_insightsCache.size > INSIGHTS_CACHE_MAX) _insightsCache.delete(_insightsCache.keys().next().value);
+    logEvent(slug, "lessons", "insights", req, {
+      inTok: u.input_tokens || 0, outTok: u.output_tokens || 0,
+      costUsd: insightsCostUsd(data.model || INSIGHTS_MODEL, u.input_tokens || 0, u.output_tokens || 0),
+    });
+    res.json({ ok: true, insights });
+  } catch (e) {
+    console.error("[lessons] insights: " + e.message);
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// Insights on demand — generated when the reader asks, then persisted into
+// the stored snapshot so the next visit (and any export) has them instantly.
+app.post("/:org/directors-report/api/insights", express.json(), async (req, res) => {
+  const slug = req.params.org;
+  if (!ORGS[slug]) return res.status(404).json({ ok: false, error: "Unknown org" });
+  if (!anthropic) return res.status(503).json({ ok: false, error: "AI insights not configured" });
+  let year = parseInt(req.query.year), q = parseInt(req.query.q);
+  if (!year || !(q >= 1 && q <= 4)) ({ year, q } = dirLastCompletedQuarter());
+  const key = year + "-Q" + q;
+  try {
+    const snaps = loadDirectorsSnapshots();
+    const stored = snaps[slug] && snaps[slug][key];
+    if (stored && stored.insights && stored.insights.length && req.query.refresh !== "1") {
+      return res.json({ ok: true, insights: stored.insights, cached: true });
+    }
+    const payload = stored || await ensureDirectorsSnapshot(slug, year, q);
+    const insights = await directorsInsightsFor(slug, payload);
+    if (!insights) return res.status(502).json({ ok: false, error: "Could not generate insights" });
+    // Persist into the snapshot when this quarter is archived
+    const all = loadDirectorsSnapshots();
+    if (all[slug] && all[slug][key]) { all[slug][key].insights = insights; saveDirectorsSnapshots(all); }
+    res.json({ ok: true, insights });
+  } catch (e) {
+    console.error("[directors-report] insights " + slug + " " + key + ": " + e.message);
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
 app.post("/:org/:report/api/insights", resolveOrg, async (req, res) => {
   const { orgSlug, reportType } = req;
   const blob = req.body;
@@ -4871,43 +4942,6 @@ app.get("/:org/lessons/api/data", async (req, res) => {
   }
 });
 
-// Insights — "lessons" isn't in REPORT_TYPES, so resolveOrg would 404 the
-// shared /:org/:report/api/insights route; this thin wrapper reuses the same
-// model call + cache with the lessons prompt.
-app.post("/:org/lessons/api/insights", express.json(), async (req, res) => {
-  const slug = req.params.org;
-  if (!ORGS[slug]) return res.status(404).json({ ok: false, error: "Unknown org" });
-  if (!anthropic) return res.status(503).json({ ok: false, error: "AI insights not configured" });
-  const blob = req.body;
-  if (!blob || typeof blob !== "object") return res.status(400).json({ ok: false, error: "Missing stats payload" });
-  const key = crypto.createHash("sha256").update(slug + "|lessons|" + JSON.stringify(blob)).digest("hex");
-  const hit = _insightsCache.get(key);
-  if (hit && Date.now() - hit.ts < INSIGHTS_TTL_MS) {
-    logEvent(slug, "lessons", "insights", req, { cached: true });
-    return res.json({ ok: true, insights: hit.insights, cached: true });
-  }
-  try {
-    const data = await anthropic.messages.create({
-      model: INSIGHTS_MODEL, max_tokens: 800,
-      system: LESSONS_SYS_PROMPT + "\n\n" + SCHEMA_CONTEXT,
-      messages: [{ role: "user", content: JSON.stringify(blob) }],
-    });
-    const text = (data.content || []).filter(c => c.type === "text").map(c => c.text).join("");
-    const insights = salvageInsights(text);
-    if (!insights.length) return res.status(502).json({ ok: false, error: "Could not parse AI response" });
-    const u = data.usage || {};
-    _insightsCache.set(key, { ts: Date.now(), insights });
-    if (_insightsCache.size > INSIGHTS_CACHE_MAX) _insightsCache.delete(_insightsCache.keys().next().value);
-    logEvent(slug, "lessons", "insights", req, {
-      inTok: u.input_tokens || 0, outTok: u.output_tokens || 0,
-      costUsd: insightsCostUsd(data.model || INSIGHTS_MODEL, u.input_tokens || 0, u.output_tokens || 0),
-    });
-    res.json({ ok: true, insights });
-  } catch (e) {
-    console.error("[lessons] insights: " + e.message);
-    res.status(500).json({ ok: false, error: e.message });
-  }
-});
 
 app.get("/:org/lessons/api/pdf", async (req, res) => {
   const slug = req.params.org;
@@ -5888,33 +5922,6 @@ app.get("/:org/directors-report/api/quarter", async (req, res) => {
   }
 });
 
-// Insights on demand — generated when the reader asks, then persisted into
-// the stored snapshot so the next visit (and any export) has them instantly.
-app.post("/:org/directors-report/api/insights", express.json(), async (req, res) => {
-  const slug = req.params.org;
-  if (!ORGS[slug]) return res.status(404).json({ ok: false, error: "Unknown org" });
-  if (!anthropic) return res.status(503).json({ ok: false, error: "AI insights not configured" });
-  let year = parseInt(req.query.year), q = parseInt(req.query.q);
-  if (!year || !(q >= 1 && q <= 4)) ({ year, q } = dirLastCompletedQuarter());
-  const key = year + "-Q" + q;
-  try {
-    const snaps = loadDirectorsSnapshots();
-    const stored = snaps[slug] && snaps[slug][key];
-    if (stored && stored.insights && stored.insights.length && req.query.refresh !== "1") {
-      return res.json({ ok: true, insights: stored.insights, cached: true });
-    }
-    const payload = stored || await ensureDirectorsSnapshot(slug, year, q);
-    const insights = await directorsInsightsFor(slug, payload);
-    if (!insights) return res.status(502).json({ ok: false, error: "Could not generate insights" });
-    // Persist into the snapshot when this quarter is archived
-    const all = loadDirectorsSnapshots();
-    if (all[slug] && all[slug][key]) { all[slug][key].insights = insights; saveDirectorsSnapshots(all); }
-    res.json({ ok: true, insights });
-  } catch (e) {
-    console.error("[directors-report] insights " + slug + " " + key + ": " + e.message);
-    res.status(500).json({ ok: false, error: e.message });
-  }
-});
 
 // Archive index — which quarters exist (stored snapshots + the selectable
 // default range), powering the page's quarter picker.
