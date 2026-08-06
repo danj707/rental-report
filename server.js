@@ -689,7 +689,6 @@ const ORGS = {
     products: { mbUuid: "b9cae7d1-ea23-4dca-8854-d8689bc2b247" },
     programs: { mbUuid: "776bb123-3109-48d6-b50b-7f1fd161285f" },
     users   : { mbUuid: "4c0f0103-6614-4917-b5da-f09e6a9bef38" },
-    memberships: { mbUuid: "df1b17fa-8eee-441a-91f2-97206cbc76b1" },
   },
   norman: {
     token:   "RfuFOIz6KrFnSxBK",
@@ -699,13 +698,10 @@ const ORGS = {
     logoUrl: "https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2Forganization-574923bd-9e7b-43e0-9e5f-7ce256189cbf%2FfullLogo.png%3F1763816879340&w=256&q=75",
     facility:    { mbUuid: "81c43b6d-1776-4a13-9fec-cb6f9e9895bb" },
     gl:          { mbUuid: "46b7e83b-f8ac-4d84-8c5c-4c72ca57cea4" },
-    programs:    { mbUuid: "73af7196-84c3-4aad-959e-571c39dc23b9" },
-    roster:      { mbUuid: "b4fb3c1b-b096-4865-8c32-3dc2635d1264" },
     overview:    { mbUuid: null },
     products:    { mbUuid: '3d0da465-12d7-4009-8cf1-cbf49e166bd2' },
     memberships: { mbUuid: 'c0579813-d8f0-4b0c-8248-ff975129fd31' },
     users   : { mbUuid: "d41e6819-ad60-4709-9323-6f6b5bb32268" },
-    fasttrack: { mbUuid: "22aede50-381f-4c0f-935b-730bb3ca35b4" },
   },
   smyrna: {
     token:   "PeNSGslScErlGLyY",
@@ -716,9 +712,7 @@ const ORGS = {
     facility: { mbUuid: "d541c91e-bb92-4103-abc5-940b3edb61b9" },
     historic: { mbUuid: "66e39b77-199e-4c6f-947d-588ab472720f" },
     roster:   { mbUuid: "462000f0-6be1-4e73-b983-0375668c1a1f" },
-    programs: { mbUuid: "ebe20297-455d-4603-aa22-b5560bd5c502" },
     users   : { mbUuid: "f6defe8c-a7bd-418c-8089-160c5fd0cccc" },
-    fasttrack: { mbUuid: "9dd20df0-62a7-4016-bbef-51949874431b" },
   },
   watertown: {
     token:   "7qNNXDFo4HGpOh5B",
@@ -729,12 +723,7 @@ const ORGS = {
     // Hero banner from their live rec.us org page (rec.us/organizations/watertown)
     bannerUrl: "https://prod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com/organization-d781690b-c5a0-43c5-8443-9ae43899528c/headerImage.png?1755282213181",
     facility: { mbUuid: "4b64af10-d57f-41af-aad8-b16d12a8f7b8" },
-    programs: { mbUuid: "d3a3554f-1232-4803-9cc7-5b0f611360b0" },
-    roster:   { mbUuid: "4f9861ef-e8ac-4447-bf88-3648c1e54a8b" },
     // calendar served by SHARED_UUIDS.calendar; stale per-org card 16897 slated for archive
-    "court-utilization": { mbUuid: "35862f6e-6494-4e6e-89a1-40fee8fbc872" },
-    users: { mbUuid: "aa678f93-0099-4677-a2ad-b6eb7724e2d7" },
-    fasttrack: { mbUuid: "27005b9e-47c9-42be-9c14-fa2d31099651" },
   },
   apex: {
     token:   "pcj5Qf0Wts7Wzc7P",
