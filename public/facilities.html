@@ -162,8 +162,11 @@
     .court-native .cu-tab.active { color: #0d9488; border-bottom-color: #0d9488; }
     /* Per-court utilization bars (replaces Chart.js) */
     .court-native .cu-bars { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
-    .court-native .cu-bar-row { display: grid; grid-template-columns: minmax(150px, 260px) 1fr 74px; align-items: center; gap: 10px; font-size: 12px; }
-    .court-native .cu-bar-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #374151; }
+    .court-native .cu-bar-row { display: grid; grid-template-columns: minmax(160px, 280px) 1fr 74px; align-items: center; gap: 10px; font-size: 12px; }
+    /* Wrap long court names ("Marquardt-Miles Outdoor Pickleball Courts — Court 07")
+       instead of truncating — the distinguishing tail (the court number) was the
+       part getting cut off, leaving every row looking identical. */
+    .court-native .cu-bar-name { overflow-wrap: anywhere; word-break: break-word; line-height: 1.25; color: #374151; }
     .court-native .cu-bar-track { position: relative; background: #f1efe9; border-radius: 4px; height: 18px; overflow: hidden; display: flex; }
     .court-native .cu-bar-seg { height: 100%; }
     .court-native .cu-bar-val { text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; color: #111827; }
@@ -307,6 +310,7 @@
       { key: 'camping',     label: 'Camping',        icon: '🏕️' },
       { key: 'golf',        label: 'Golf',           icon: '⛳' },
       { key: 'aquatics',    label: 'Pool / Aquatics', icon: '🏊' },
+      { key: 'ice',         label: 'Ice',            icon: '⛸️' },
       { key: 'racket',      label: 'Racket Sports',   icon: '🎾' },
     ];
 
@@ -333,8 +337,52 @@
     ];
     const VERTICALS = ['Camping', 'Golf', 'Pool / Aquatics', 'Courts & Fields', 'Pavilions & Spaces'];
     const TYPE_VERTICAL = {};
-    REC_SITE_TYPES.forEach(t => { TYPE_VERTICAL[t.v] = t.grp; });
+    const TYPE_LABEL = {};
+    REC_SITE_TYPES.forEach(t => { TYPE_VERTICAL[t.v] = t.grp; TYPE_LABEL[t.v] = t.l; });
     const verticalOf = raw => TYPE_VERTICAL[raw] || 'Pavilions & Spaces';
+    // The specific Rec site type, title-cased ("court" → "Court"). The Top-sites
+    // badge shows THIS, not the vertical grouping — otherwise filtering to "Court"
+    // still labelled every row "Courts & Fields", which read like the filter had
+    // been ignored.
+    const siteTypeLabel = raw => TYPE_LABEL[raw] ||
+      (raw ? String(raw).replace(/[-_]/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) : '—');
+
+    // ── Recover the *real* site type from the site name ──────────────────
+    // Some orgs (Apex is the clear case) deliberately type their rinks, pools,
+    // gyms, etc. ALL as `court`, because Rec only surfaces `court`-typed sites
+    // in the consumer app's instant-book "Pools, Rinks & Courts" section —
+    // anything typed otherwise routes to "Facility Rentals" instead. So
+    // court.type genuinely can't tell an ice rink from a tennis court, and a
+    // naive "court rentals" total sweeps in rinks + pools + gyms (for Apex,
+    // ~$591K of "court" revenue is really only ~$88K of actual courts).
+    //
+    // We recover the true type from the SITE name only — never the location —
+    // so a court that merely sits at, say, "Aquatic Park" isn't miscast as a
+    // pool. Only rows Rec typed `court` are ever reconsidered; anything already
+    // typed specifically (field, room, pool…) is left exactly as Rec has it.
+    function refineSiteType(rawType, facility) {
+      if (rawType !== 'court') return rawType;
+      const n = String(facility == null ? '' : facility).toLowerCase();
+      if (/\b(ice|rink)\b/.test(n)) return 'rink';
+      if (/\b(pool|aquatics?|natatorium|swim)\b/.test(n)) return 'pool';
+      // "Gymnasium" is a gym; but several orgs name basketball/volleyball courts
+      // inside a gym "Gym Court 1" — those the org explicitly called courts, so
+      // leave them as courts. Only reclassify a gym site that isn't named a court.
+      if (/\bgym(nasium)?\b/.test(n) && !/\bcourt\b/.test(n)) return 'gym';
+      return 'court';
+    }
+    // Rewrite each row's Site Type to the recovered value once, at ingestion,
+    // so every downstream reader (filter, verticals, badges, racket match,
+    // exports) sees the corrected type. Idempotent — re-running only ever
+    // reclassifies rows still typed `court`. Refined rows keep the exact same
+    // column set as the originals, so the Excel export is unaffected.
+    function refineRows(rows) {
+      return (rows || []).map(r => {
+        const refined = refineSiteType(r['Site Type'], r['Facility']);
+        if (refined === r['Site Type']) return r;
+        return Object.assign({}, r, { 'Site Type': refined });
+      });
+    }
     const HIGH_CANCEL = 20; // % → flag site as at-risk
 
     // Per-vertical sub-tab config — each is a scoped view of the SAME facility
@@ -343,6 +391,10 @@
       camping:  { label: 'Camping',          icon: '🏕️', types: ['campsite'] },
       golf:     { label: 'Golf',             icon: '⛳',  types: ['golf'] },
       aquatics: { label: 'Pool / Aquatics',  icon: '🏊', types: ['pool'] },
+      // Ice — mostly orgs type these 'rink', but some (Apex) type them 'court';
+      // refineSiteType() recovers those from the site name, so this vertical
+      // catches both the correctly-typed rinks and the reclassified outliers.
+      ice:      { label: 'Ice',              icon: '⛸️', types: ['rink'] },
     };
     const monthLabel = ym => {
       const p = String(ym).split('-');
@@ -396,6 +448,34 @@
       );
     }
 
+    // Location filter — [] = all. Options are the locations actually present in
+    // the loaded rows, so a big org with tennis, pickleball, ice, and pool sites
+    // at separate venues can scope the whole report to just theirs (Brad wants
+    // the Marquardt-Miles pickleball courts; Tim wants the Apex Tennis Center).
+    function LocationFilter({ locations, sel, setSel }) {
+      const [open, setOpen] = React.useState(false);
+      const all = locations || [];
+      const label = (sel.length === 0 || sel.length === all.length) ? 'All locations'
+        : (sel.length === 1 ? sel[0] : sel.length + ' locations');
+      const toggle = v => {
+        const base = sel.length === 0 ? all.slice() : sel;
+        const next = base.includes(v) ? base.filter(x => x !== v) : base.concat(v);
+        setSel(next.length === all.length ? [] : next);
+      };
+      if (!all.length) return null;
+      return e('div', { className: 'dd' },
+        e('button', { className: 'dd-btn', onClick: () => setOpen(o => !o) }, '📍 ' + label, e('span', null, '▾')),
+        open ? e('div', { className: 'dd-panel' },
+          all.map(loc => e('label', { className: 'dd-opt', key: loc },
+            e('input', { type: 'checkbox', checked: sel.length === 0 || sel.includes(loc), onChange: () => toggle(loc) }),
+            loc)),
+          e('div', { className: 'dd-actions' },
+            e('button', { onClick: () => setSel([]) }, 'Select all'),
+            e('button', { onClick: () => setOpen(false) }, 'Done')),
+        ) : null,
+      );
+    }
+
     function fmtDate(d) { return d.toISOString().slice(0, 10); }
     function monthStart(d) { return new Date(d.getFullYear(), d.getMonth(), 1); }
     function monthEnd(d) { return new Date(d.getFullYear(), d.getMonth() + 1, 0); }
@@ -427,6 +507,7 @@
       };
 
       VERTICALS.forEach(v => a.byV[v] = { bookings: 0, canceled: 0, revenue: 0, instant: 0, sites: new Set() });
+      a.byType = {}; // keyed by specific site-type label ("Court", "Rink", "Pool"…) — the real breakdown
       const bySite = {};
       scoped.forEach(r => {
         const v = verticalOf(r['Site Type']);
@@ -437,12 +518,24 @@
         if (isInstant(r)) g.instant++;
         g.sites.add((r['Facility'] || '') + '|' + (r['Location'] || ''));
 
+        // Specific-type rollup — this is what separates real courts from the
+        // rinks/pools/gyms Rec lumps into `court` (see refineSiteType).
+        const tl = siteTypeLabel(r['Site Type']);
+        if (!a.byType[tl]) a.byType[tl] = { bookings: 0, canceled: 0, revenue: 0, instant: 0, sites: new Set() };
+        const tg = a.byType[tl];
+        tg.bookings++; tg.revenue += rev(r);
+        if (isCanceled(r)) tg.canceled++;
+        if (isInstant(r)) tg.instant++;
+        tg.sites.add((r['Facility'] || '') + '|' + (r['Location'] || ''));
+
         const key = (r['Facility'] || '—') + '||' + (r['Location'] || '');
         if (!bySite[key]) bySite[key] = { facility: r['Facility'] || '—', location: r['Location'] || '', type: r['Site Type'] || '', bookings: 0, canceled: 0, revenue: 0 };
         bySite[key].bookings++; bySite[key].revenue += rev(r);
         if (isCanceled(r)) bySite[key].canceled++;
       });
-      a.topType = Object.keys(a.byV).filter(v => a.byV[v].bookings).sort((x, y) => a.byV[y].revenue - a.byV[x].revenue)[0] || '—';
+      // Top type reported by the specific type, not the vertical — "Rink" is far
+      // more useful to an Apex than "Courts & Fields".
+      a.topType = Object.keys(a.byType).filter(t => a.byType[t].bookings).sort((x, y) => a.byType[y].revenue - a.byType[x].revenue)[0] || '—';
       a.topSites = Object.values(bySite).sort((x, y) => y.revenue - x.revenue).slice(0, 10);
       return a;
     }
@@ -581,7 +674,9 @@
             e('span', null, e('span', { className: 'sum-dot', style: { background: '#2563eb' } }), 'In-progress (' + a.inprog + ')'),
             e('span', null, e('span', { className: 'sum-dot', style: { background: '#dc2626' } }), 'Canceled (' + a.canceled + ')')),
         ),
-        // Revenue by site type (verticals)
+        // Revenue by site type — the SPECIFIC type (Court, Rink, Pool, Gym…),
+        // not the broad vertical, so real court rentals read separately from
+        // the rinks/pools/gyms Rec files under `court`.
         e('table', { className: 'sum-cat-table' },
           e('caption', null, 'Revenue by site type'),
           e('thead', null, e('tr', null,
@@ -593,10 +688,10 @@
             e('th', { className: 'num' }, '% instant-book'),
           )),
           e('tbody', null,
-            VERTICALS.filter(v => a.byV[v] && a.byV[v].bookings).map((v, i) => {
-              const g = a.byV[v];
+            Object.keys(a.byType).sort((x, y) => a.byType[y].revenue - a.byType[x].revenue).map((t, i) => {
+              const g = a.byType[t];
               return e('tr', { key: i },
-                e('td', null, v),
+                e('td', null, t),
                 e('td', { className: 'num' }, g.sites.size),
                 e('td', { className: 'num' }, g.bookings),
                 e('td', { className: 'num' }, pct(g.canceled, g.bookings)),
@@ -631,7 +726,7 @@
               const crPct = s.bookings ? (s.canceled / s.bookings) * 100 : 0;
               return e('tr', { key: i },
                 e('td', null, s.facility, crPct >= HIGH_CANCEL ? e('span', { className: 'flag', style: { marginLeft: 6 } }, '⚠') : null),
-                e('td', null, e('span', { className: 'sum-badge' }, verticalOf(s.type))),
+                e('td', null, e('span', { className: 'sum-badge' }, siteTypeLabel(s.type))),
                 e('td', null, s.location),
                 e('td', { className: 'num' }, s.bookings),
                 e('td', { className: 'num' }, pct(s.canceled, s.bookings)),
@@ -2044,6 +2139,8 @@
         PQS.get('status') ? PQS.get('status').split(',').filter(Boolean) : ['confirmed', 'in-progress', 'canceled']);
       const [typeSel, setTypeSel] = React.useState(() =>
         PQS.get('site_type') ? PQS.get('site_type').split(',').filter(Boolean) : []); // [] = all site types
+      const [locSel, setLocSel] = React.useState(() =>
+        PQS.get('location') ? PQS.get('location').split('~~').filter(Boolean) : []); // [] = all locations
       const [rows, setRows] = React.useState(null);      // null = loading
       const [err, setErr] = React.useState(null);
       const [lessons, setLessons] = React.useState(null); // { n, rev } from the instructor-payout feed
@@ -2056,7 +2153,7 @@
         const tok = CFG.token ? '&token=' + encodeURIComponent(CFG.token) : '';
         fetch('/' + CFG.slug + '/facilities/api/summary?start_date=' + sd + '&end_date=' + ed + tok)
           .then(r => r.json())
-          .then(d => { if (d && d.error) { setErr(d.error); setRows([]); } else { setRows((d && d.rows) || []); } })
+          .then(d => { if (d && d.error) { setErr(d.error); setRows([]); } else { setRows(refineRows((d && d.rows) || [])); } })
           .catch(er => { setErr(er.message); setRows([]); });
         // Instructor lessons happen on these same courts but book through the
         // Lessons product (programs pipeline) — they never appear as facility
@@ -2083,37 +2180,52 @@
         return new Date(s + 'T00:00:00').toLocaleDateString('en-US', o) + ' – ' + new Date(en + 'T00:00:00').toLocaleDateString('en-US', o);
       };
       const active = TABS.find(t => t.key === tab) || TABS[0];
-      const count = rows ? rows.length : null;
-      const siteCount = rows ? new Set(rows.map(r => (r['Facility'] || '') + '|' + (r['Location'] || ''))).size : 0;
+
+      // All locations present in the feed (the filter's options).
+      const allLocations = React.useMemo(
+        () => rows ? Array.from(new Set(rows.map(r => r['Location']).filter(Boolean))).sort() : [],
+        [rows]);
+      // Location filter is a pre-filter on the shared rows: every rows-driven
+      // view (Summary + the Golf/Aquatics/Ice vertical tabs) sees only the
+      // selected locations, so their internals need no change. [] = all.
+      const viewRows = React.useMemo(() => {
+        if (!rows || !locSel.length) return rows;
+        const set = new Set(locSel);
+        return rows.filter(r => set.has(r['Location'] || ''));
+      }, [rows, locSel]);
+
+      const count = viewRows ? viewRows.length : null;
+      const siteCount = viewRows ? new Set(viewRows.map(r => (r['Facility'] || '') + '|' + (r['Location'] || ''))).size : 0;
       // SF-style orgs name courts plainly ("Alice Marble — Court 1") with no
       // sport keyword; when nothing name-matches but court-type rows exist,
       // fall back to Site Type so the Racket tab shows the org's courts
       // instead of a false empty state.
       const racketFallback = !!(rows && rows.length && !rows.some(r => isRacketCourt(r['Facility'], r['Location'])) && rows.some(r => r['Site Type'] === 'court'));
       const racketRowMatch = r => racketFallback ? r['Site Type'] === 'court' : isRacketCourt(r['Facility'], r['Location']);
-      // Per-vertical booking counts for the tab badges (respect the status filter)
+      // Per-vertical booking counts for the tab badges — computed from the
+      // location-filtered rows so the badges track the location selection.
       const vertCounts = {};
-      if (rows) {
+      if (viewRows) {
         const ss = new Set(statusSel);
         Object.keys(VERT_CONFIG).forEach(k => {
           const t = new Set(VERT_CONFIG[k].types);
-          vertCounts[k] = rows.filter(r => t.has(r['Site Type']) && ss.has(lc(r['Status']))).length;
+          vertCounts[k] = viewRows.filter(r => t.has(r['Site Type']) && ss.has(lc(r['Status']))).length;
         });
         // Racket has no site type — courts are matched by name, same rule the
         // Racket Sports view uses to scope the feed.
-        vertCounts.racket = rows.filter(r => racketRowMatch(r) && ss.has(lc(r['Status']))).length;
+        vertCounts.racket = viewRows.filter(r => racketRowMatch(r) && ss.has(lc(r['Status']))).length;
       }
 
-      const bannerAgg = rows ? aggregate(rows, statusSel, typeSel) : null;
+      const bannerAgg = viewRows ? aggregate(viewRows, statusSel, typeSel) : null;
 
       // Exports mirror exactly what's on screen, like the other reports:
       // date range + status + site-type filters, and the active tab's scope
       // (vertical tabs export only their sites; racket matches courts by name).
       // PDF prints the current view, so it is view-scoped by construction.
       function exportExcel() {
-        if (!rows || rows.length === 0 || typeof XLSX === 'undefined') return;
+        if (!viewRows || viewRows.length === 0 || typeof XLSX === 'undefined') return;
         const ts = new Set(typeSel), ss = new Set(statusSel);
-        let scoped = rows.filter(r => (ts.size === 0 || ts.has(r['Site Type'])) && ss.has(lc(r['Status'])));
+        let scoped = viewRows.filter(r => (ts.size === 0 || ts.has(r['Site Type'])) && ss.has(lc(r['Status'])));
         let scopeLabel = 'Facility Bookings';
         if (tab === 'racket') {
           scoped = scoped.filter(r => racketRowMatch(r));
@@ -2124,7 +2236,7 @@
           scopeLabel = VERT_CONFIG[tab].label;
         }
         if (scoped.length === 0) return;
-        const cols = Object.keys(rows[0]);
+        const cols = Object.keys(viewRows[0]);
         const ws = XLSX.utils.json_to_sheet(scoped, { header: cols });
         ws['!cols'] = cols.map(c => ({ wch: Math.min(32, Math.max(10, String(c).length + 4)) }));
         const wb = XLSX.utils.book_new();
@@ -2139,6 +2251,7 @@
         const qs = new URLSearchParams({ start_date: start, end_date: end });
         if (statusSel.length && statusSel.length < 3) qs.set('status', statusSel.join(','));
         if (typeSel.length) qs.set('site_type', typeSel.join(','));
+        if (locSel.length) qs.set('location', locSel.join('~~'));
         if (tab && tab !== 'summary') qs.set('tab', tab);
         if (CFG.token) qs.set('token', CFG.token);
         fetch('/' + CFG.slug + '/facilities/api/pdf?' + qs.toString())
@@ -2186,6 +2299,13 @@
               e('span', { className: 'filter-lbl' }, 'Site type'),
               e(SiteTypeFilter, { sel: typeSel, setSel: setTypeSel }),
             ) : null,
+            // Location filter — on the Summary and every vertical tab, so a
+            // manager can scope to just their venue (e.g. the pickleball courts
+            // vs the tennis center, both 'court' at different locations).
+            allLocations.length > 1 ? e('div', { className: 'filter-group' },
+              e('span', { className: 'filter-lbl' }, 'Location'),
+              e(LocationFilter, { locations: allLocations, sel: locSel, setSel: setLocSel }),
+            ) : null,
           ),
           e('div', { className: 'tabs' },
             TABS.map(t => {
@@ -2202,7 +2322,7 @@
             }),
           ),
           tab === 'summary'
-            ? e(SummaryTab, { rows, err, statusSel, typeSel, lessons })
+            ? e(SummaryTab, { rows: viewRows, err, statusSel, typeSel, lessons })
             : tab === 'utilization'
               ? e(CourtUtilizationView, { start, end })
               : tab === 'racket'
@@ -2210,10 +2330,10 @@
                 : tab === 'camping'
                   ? e(CampingView, { start, end })
                 : tab === 'aquatics'
-                  ? e(AquaticsView, { rows, err, statusSel, vert: Object.assign({ key: tab }, VERT_CONFIG[tab]) })
+                  ? e(AquaticsView, { rows: viewRows, err, statusSel, vert: Object.assign({ key: tab }, VERT_CONFIG[tab]) })
                   : VERT_CONFIG[tab]
-                    ? e(VerticalView, { rows, err, statusSel, vert: Object.assign({ key: tab }, VERT_CONFIG[tab]) })
-                    : e(SummaryTab, { rows, err, statusSel, typeSel, lessons }),
+                    ? e(VerticalView, { rows: viewRows, err, statusSel, vert: Object.assign({ key: tab }, VERT_CONFIG[tab]) })
+                    : e(SummaryTab, { rows: viewRows, err, statusSel, typeSel, lessons }),
         ),
       );
     }
