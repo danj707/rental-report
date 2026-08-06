@@ -1805,7 +1805,7 @@
             const avail = hrsForDay * (dowCounts[d] || 0);
             cells.push({ dow: d, used, avail, pct: avail > 0 ? (used / avail) * 100 : 0 });
           }
-          return { label: g.label, court: g.court, demand: g.demand, utilPct: g.utilPct, cells };
+          return { label: g.label, court: g.court, location: g.location, demand: g.demand, utilPct: g.utilPct, cells };
         });
       }, [grouped, filtered, schedules, dowCounts, hrsPerDay]);
 

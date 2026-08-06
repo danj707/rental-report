@@ -9309,6 +9309,40 @@ app.get("/", (req, res) => {
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style="display:${facHidden ? 'block' : 'none'}"><path d="M8 3C3 3 1 8 1 8s2 5 7 5 7-5 7-5-2-5-7-5z" stroke="currentColor" stroke-width="1.5" fill="none"/><circle cx="8" cy="8" r="2" stroke="currentColor" stroke-width="1.5" fill="none"/><line x1="2" y1="14" x2="14" y2="2" stroke="currentColor" stroke-width="1.5"/></svg>
           </button>
         </a>`);
+
+      // Director's Report — quarterly exec summary (org-wide except excluded)
+      if (directorsReportEnabled(slug)) {
+        const drHidden = orgHidden.indexOf('directors-report') >= 0;
+        cards.push(`
+        <a href="/${slug}/directors-report${tokenQS}" class="report-card${drHidden ? ' report-card-hidden' : ''}" style="--accent:#0f766e" data-org="${slug}" data-report="directors-report">
+          <span class="report-icon">\u{1F4F0}</span>
+          <div class="report-body">
+            <div class="report-label">Director's Report <span class="ai-pill-inline">AI</span></div>
+            <div class="report-desc">Quarterly executive summary — revenue, enrollment, demand, facilities</div>
+          </div>
+          <button type="button" class="vis-toggle" onclick="event.preventDefault();event.stopPropagation();toggleVis('${slug}','directors-report',this)" title="${drHidden ? 'Hidden from org page' : 'Visible on org page'}">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style="display:${drHidden ? 'none' : 'block'}"><path d="M8 3C3 3 1 8 1 8s2 5 7 5 7-5 7-5-2-5-7-5z" stroke="currentColor" stroke-width="1.5" fill="none"/><circle cx="8" cy="8" r="2" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style="display:${drHidden ? 'block' : 'none'}"><path d="M8 3C3 3 1 8 1 8s2 5 7 5 7-5 7-5-2-5-7-5z" stroke="currentColor" stroke-width="1.5" fill="none"/><circle cx="8" cy="8" r="2" stroke="currentColor" stroke-width="1.5" fill="none"/><line x1="2" y1="14" x2="14" y2="2" stroke="currentColor" stroke-width="1.5"/></svg>
+          </button>
+        </a>`);
+      }
+
+      // Instructor Lessons — programs-pipeline report, per-org pilot
+      if (lessonsReportEnabled(slug)) {
+        const lsHidden = orgHidden.indexOf('lessons') >= 0;
+        cards.push(`
+        <a href="/${slug}/lessons${tokenQS}" class="report-card${lsHidden ? ' report-card-hidden' : ''}" style="border-left:3px solid #0369a1;background:linear-gradient(135deg,#f0f9ff 0%,#ecfeff 100%)" data-org="${slug}" data-report="lessons">
+          <span class="report-icon">\u{1F3BE}</span>
+          <div class="report-body">
+            <div class="report-label" style="color:#075985">Instructor Lessons <span class="ai-pill-inline">AI</span> <span class="ai-pill-inline" style="background:#bae6fd;color:#075985">NEW</span></div>
+            <div class="report-desc">Private &amp; semi-private coaching — leaderboard, trends, loyalty</div>
+          </div>
+          <button type="button" class="vis-toggle" onclick="event.preventDefault();event.stopPropagation();toggleVis('${slug}','lessons',this)" title="${lsHidden ? 'Hidden from org page' : 'Visible on org page'}">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style="display:${lsHidden ? 'none' : 'block'}"><path d="M8 3C3 3 1 8 1 8s2 5 7 5 7-5 7-5-2-5-7-5z" stroke="currentColor" stroke-width="1.5" fill="none"/><circle cx="8" cy="8" r="2" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style="display:${lsHidden ? 'block' : 'none'}"><path d="M8 3C3 3 1 8 1 8s2 5 7 5 7-5 7-5-2-5-7-5z" stroke="currentColor" stroke-width="1.5" fill="none"/><circle cx="8" cy="8" r="2" stroke="currentColor" stroke-width="1.5" fill="none"/><line x1="2" y1="14" x2="14" y2="2" stroke="currentColor" stroke-width="1.5"/></svg>
+          </button>
+        </a>`);
+      }
     }
 
     // Append a dashed "add report" tile for any report types this org lacks.
