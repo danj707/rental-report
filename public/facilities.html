@@ -345,6 +345,43 @@
     // been ignored.
     const siteTypeLabel = raw => TYPE_LABEL[raw] ||
       (raw ? String(raw).replace(/[-_]/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) : '—');
+
+    // ── Recover the *real* site type from the site name ──────────────────
+    // Some orgs (Apex is the clear case) deliberately type their rinks, pools,
+    // gyms, etc. ALL as `court`, because Rec only surfaces `court`-typed sites
+    // in the consumer app's instant-book "Pools, Rinks & Courts" section —
+    // anything typed otherwise routes to "Facility Rentals" instead. So
+    // court.type genuinely can't tell an ice rink from a tennis court, and a
+    // naive "court rentals" total sweeps in rinks + pools + gyms (for Apex,
+    // ~$591K of "court" revenue is really only ~$88K of actual courts).
+    //
+    // We recover the true type from the SITE name only — never the location —
+    // so a court that merely sits at, say, "Aquatic Park" isn't miscast as a
+    // pool. Only rows Rec typed `court` are ever reconsidered; anything already
+    // typed specifically (field, room, pool…) is left exactly as Rec has it.
+    function refineSiteType(rawType, facility) {
+      if (rawType !== 'court') return rawType;
+      const n = String(facility == null ? '' : facility).toLowerCase();
+      if (/\b(ice|rink)\b/.test(n)) return 'rink';
+      if (/\b(pool|aquatics?|natatorium|swim)\b/.test(n)) return 'pool';
+      // "Gymnasium" is a gym; but several orgs name basketball/volleyball courts
+      // inside a gym "Gym Court 1" — those the org explicitly called courts, so
+      // leave them as courts. Only reclassify a gym site that isn't named a court.
+      if (/\bgym(nasium)?\b/.test(n) && !/\bcourt\b/.test(n)) return 'gym';
+      return 'court';
+    }
+    // Rewrite each row's Site Type to the recovered value once, at ingestion,
+    // so every downstream reader (filter, verticals, badges, racket match,
+    // exports) sees the corrected type. Idempotent — re-running only ever
+    // reclassifies rows still typed `court`. Refined rows keep the exact same
+    // column set as the originals, so the Excel export is unaffected.
+    function refineRows(rows) {
+      return (rows || []).map(r => {
+        const refined = refineSiteType(r['Site Type'], r['Facility']);
+        if (refined === r['Site Type']) return r;
+        return Object.assign({}, r, { 'Site Type': refined });
+      });
+    }
     const HIGH_CANCEL = 20; // % → flag site as at-risk
 
     // Per-vertical sub-tab config — each is a scoped view of the SAME facility
@@ -437,6 +474,7 @@
       };
 
       VERTICALS.forEach(v => a.byV[v] = { bookings: 0, canceled: 0, revenue: 0, instant: 0, sites: new Set() });
+      a.byType = {}; // keyed by specific site-type label ("Court", "Rink", "Pool"…) — the real breakdown
       const bySite = {};
       scoped.forEach(r => {
         const v = verticalOf(r['Site Type']);
@@ -447,12 +485,24 @@
         if (isInstant(r)) g.instant++;
         g.sites.add((r['Facility'] || '') + '|' + (r['Location'] || ''));
 
+        // Specific-type rollup — this is what separates real courts from the
+        // rinks/pools/gyms Rec lumps into `court` (see refineSiteType).
+        const tl = siteTypeLabel(r['Site Type']);
+        if (!a.byType[tl]) a.byType[tl] = { bookings: 0, canceled: 0, revenue: 0, instant: 0, sites: new Set() };
+        const tg = a.byType[tl];
+        tg.bookings++; tg.revenue += rev(r);
+        if (isCanceled(r)) tg.canceled++;
+        if (isInstant(r)) tg.instant++;
+        tg.sites.add((r['Facility'] || '') + '|' + (r['Location'] || ''));
+
         const key = (r['Facility'] || '—') + '||' + (r['Location'] || '');
         if (!bySite[key]) bySite[key] = { facility: r['Facility'] || '—', location: r['Location'] || '', type: r['Site Type'] || '', bookings: 0, canceled: 0, revenue: 0 };
         bySite[key].bookings++; bySite[key].revenue += rev(r);
         if (isCanceled(r)) bySite[key].canceled++;
       });
-      a.topType = Object.keys(a.byV).filter(v => a.byV[v].bookings).sort((x, y) => a.byV[y].revenue - a.byV[x].revenue)[0] || '—';
+      // Top type reported by the specific type, not the vertical — "Rink" is far
+      // more useful to an Apex than "Courts & Fields".
+      a.topType = Object.keys(a.byType).filter(t => a.byType[t].bookings).sort((x, y) => a.byType[y].revenue - a.byType[x].revenue)[0] || '—';
       a.topSites = Object.values(bySite).sort((x, y) => y.revenue - x.revenue).slice(0, 10);
       return a;
     }
@@ -591,7 +641,9 @@
             e('span', null, e('span', { className: 'sum-dot', style: { background: '#2563eb' } }), 'In-progress (' + a.inprog + ')'),
             e('span', null, e('span', { className: 'sum-dot', style: { background: '#dc2626' } }), 'Canceled (' + a.canceled + ')')),
         ),
-        // Revenue by site type (verticals)
+        // Revenue by site type — the SPECIFIC type (Court, Rink, Pool, Gym…),
+        // not the broad vertical, so real court rentals read separately from
+        // the rinks/pools/gyms Rec files under `court`.
         e('table', { className: 'sum-cat-table' },
           e('caption', null, 'Revenue by site type'),
           e('thead', null, e('tr', null,
@@ -603,10 +655,10 @@
             e('th', { className: 'num' }, '% instant-book'),
           )),
           e('tbody', null,
-            VERTICALS.filter(v => a.byV[v] && a.byV[v].bookings).map((v, i) => {
-              const g = a.byV[v];
+            Object.keys(a.byType).sort((x, y) => a.byType[y].revenue - a.byType[x].revenue).map((t, i) => {
+              const g = a.byType[t];
               return e('tr', { key: i },
-                e('td', null, v),
+                e('td', null, t),
                 e('td', { className: 'num' }, g.sites.size),
                 e('td', { className: 'num' }, g.bookings),
                 e('td', { className: 'num' }, pct(g.canceled, g.bookings)),
@@ -2066,7 +2118,7 @@
         const tok = CFG.token ? '&token=' + encodeURIComponent(CFG.token) : '';
         fetch('/' + CFG.slug + '/facilities/api/summary?start_date=' + sd + '&end_date=' + ed + tok)
           .then(r => r.json())
-          .then(d => { if (d && d.error) { setErr(d.error); setRows([]); } else { setRows((d && d.rows) || []); } })
+          .then(d => { if (d && d.error) { setErr(d.error); setRows([]); } else { setRows(refineRows((d && d.rows) || [])); } })
           .catch(er => { setErr(er.message); setRows([]); });
         // Instructor lessons happen on these same courts but book through the
         // Lessons product (programs pipeline) — they never appear as facility
