@@ -162,8 +162,11 @@
     .court-native .cu-tab.active { color: #0d9488; border-bottom-color: #0d9488; }
     /* Per-court utilization bars (replaces Chart.js) */
     .court-native .cu-bars { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
-    .court-native .cu-bar-row { display: grid; grid-template-columns: minmax(150px, 260px) 1fr 74px; align-items: center; gap: 10px; font-size: 12px; }
-    .court-native .cu-bar-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #374151; }
+    .court-native .cu-bar-row { display: grid; grid-template-columns: minmax(160px, 280px) 1fr 74px; align-items: center; gap: 10px; font-size: 12px; }
+    /* Wrap long court names ("Marquardt-Miles Outdoor Pickleball Courts — Court 07")
+       instead of truncating — the distinguishing tail (the court number) was the
+       part getting cut off, leaving every row looking identical. */
+    .court-native .cu-bar-name { overflow-wrap: anywhere; word-break: break-word; line-height: 1.25; color: #374151; }
     .court-native .cu-bar-track { position: relative; background: #f1efe9; border-radius: 4px; height: 18px; overflow: hidden; display: flex; }
     .court-native .cu-bar-seg { height: 100%; }
     .court-native .cu-bar-val { text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; color: #111827; }
@@ -333,8 +336,15 @@
     ];
     const VERTICALS = ['Camping', 'Golf', 'Pool / Aquatics', 'Courts & Fields', 'Pavilions & Spaces'];
     const TYPE_VERTICAL = {};
-    REC_SITE_TYPES.forEach(t => { TYPE_VERTICAL[t.v] = t.grp; });
+    const TYPE_LABEL = {};
+    REC_SITE_TYPES.forEach(t => { TYPE_VERTICAL[t.v] = t.grp; TYPE_LABEL[t.v] = t.l; });
     const verticalOf = raw => TYPE_VERTICAL[raw] || 'Pavilions & Spaces';
+    // The specific Rec site type, title-cased ("court" → "Court"). The Top-sites
+    // badge shows THIS, not the vertical grouping — otherwise filtering to "Court"
+    // still labelled every row "Courts & Fields", which read like the filter had
+    // been ignored.
+    const siteTypeLabel = raw => TYPE_LABEL[raw] ||
+      (raw ? String(raw).replace(/[-_]/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) : '—');
     const HIGH_CANCEL = 20; // % → flag site as at-risk
 
     // Per-vertical sub-tab config — each is a scoped view of the SAME facility
@@ -631,7 +641,7 @@
               const crPct = s.bookings ? (s.canceled / s.bookings) * 100 : 0;
               return e('tr', { key: i },
                 e('td', null, s.facility, crPct >= HIGH_CANCEL ? e('span', { className: 'flag', style: { marginLeft: 6 } }, '⚠') : null),
-                e('td', null, e('span', { className: 'sum-badge' }, verticalOf(s.type))),
+                e('td', null, e('span', { className: 'sum-badge' }, siteTypeLabel(s.type))),
                 e('td', null, s.location),
                 e('td', { className: 'num' }, s.bookings),
                 e('td', { className: 'num' }, pct(s.canceled, s.bookings)),
