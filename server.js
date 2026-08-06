@@ -1000,7 +1000,9 @@ const SHARED_UUIDS = {
 // rental revenue) that — unlike the base `facility` card — INCLUDES canceled
 // reservations so the Summary can surface cancellation rate as an at-risk flag.
 // Row-level output is aggregated client-side in public/facilities.html.
-const FACILITIES_SUMMARY_UUID = "4defd1b6-9415-465b-9474-babf5cac1771";
+// v2 feed (card 19570): per-reservation grain + invoice_v2 manual items unioned
+// in + Billed/Collected/Refunded/Source. Old card 4defd1b6 kept for rollback.
+const FACILITIES_SUMMARY_UUID = "4c070d95-ab02-4b9d-ac43-ac86257162d5";
 
 const REPORT_DEPENDENCIES = {
   facility: {
