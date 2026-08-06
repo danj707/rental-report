@@ -249,10 +249,11 @@ function App() {
       .then(j => {
         if (!j.ok) throw new Error(j.error || "Failed to load");
         setData(j); setState("done");
-        // Show already-generated insights automatically; in print mode only
-        // when the export asked for them (?insights=1).
+        // Insights are always opt-in: even when the snapshot already has them,
+        // the reader clicks Generate (which returns the stored set instantly).
+        // Print mode shows them only when the export asked for them.
         const has = j.insights && j.insights.length ? j.insights : null;
-        setInsights(isPrint ? (wantInsights ? has : null) : has);
+        setInsights(isPrint && wantInsights ? has : null);
       })
       .catch(e => { setErrMsg(e.message); setState("error"); });
   }, [sel]);
