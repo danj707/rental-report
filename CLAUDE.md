@@ -43,6 +43,41 @@ org admins see) — it is EMPTY until at least one update is published, and each
 preview is a fresh environment with its own (empty) data store. So a brand-new
 preview shows no popup until you publish an update in it first.
 
+## Facility report undercounts revenue — invoice_v2 gap (OPEN, spec'd 2026-08-06)
+
+The facility report (`FACILITIES_SUMMARY` card + `public/facilities.html`) only
+counts `order_item`s joined by `reservation_id`. Every **manual invoice line
+item** — tournament flat fees, event-space rentals, deposits, janitorial/
+security/timing fees billed through **invoice_v2** — has no `reservation_id`, so
+the report silently drops it. Verified against prod (db 4): **$2.57M missed
+across 74 orgs** ($1.61M paid, **$964K unpaid A/R**). Some orgs show a *minority*
+of true facility revenue (Chico 84% missed, Jurupa 80%). Apex misses $91K
+(NJST rental $66K, tournament flat fees, service fees).
+
+- **Correct charge field is `applied_pricing->'result'->>'finalCents'`**, NOT
+  `order_item.price` (rate-card; comped-to-$0 bookings keep a price → a fictitious
+  ~$95K Apex "unpaid balance" that does not exist). Collected/refunded come from
+  `order_item_transaction` gated on `confirmed_at IS NOT NULL`.
+- **Second bug in the same card**: `DISTINCT ON (fr.id)` collapses each booking to
+  its earliest reservation — drops recurring-date revenue and mis-attributes
+  court/location/date. So per-site/per-location filtering isn't robust for
+  recurring/multi-court managed rentals (fine for Apex single-court instant).
+- **The fix (approved, not yet built):** rebuild the card to (1) per-reservation
+  grain, (2) union in invoice_v2 manual items (`finalCents>0`, no reservation)
+  attributed to the rental's location, (3) show **billed vs collected** side by
+  side. Goal per Dan: an *authoritative* facility-revenue view — instant +
+  managed + invoiced/paid + invoiced/unpaid — sliceable by site type, location,
+  and date range (Brad@Marquardt-Miles pickleball vs Tim@Apex Tennis Center).
+  It's a prod card touching all 74 orgs → per-org before/after validation + the
+  Metabase date-tag re-flip (see above) before shipping.
+- Full write-up artifact:
+  https://claude.ai/code/artifact/b7b77323-5b23-463a-8f04-480f528effbe
+
+Already shipped (PR #75, live on `main`): name-based site-type recovery so
+"court" excludes rinks/pools/gyms, specific-type revenue breakdown, Location
+filter, Ice sub-tab, court-name wrap. Display/scoping only — did not change the
+revenue math, so the gap above predates and survives it.
+
 ## Dev branch
 
 Feature work for these tasks lives on `claude/facility-report-line-removal-1d0c8k`
