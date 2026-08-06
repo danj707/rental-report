@@ -489,7 +489,17 @@
       );
       const isCanceled = r => lc(r['Status']) === 'canceled';
       const isInstant = r => lc(r['Booking Type']) === 'instant';
-      const rev = r => isCanceled(r) ? 0 : (Number(r['Total']) || 0);
+      const num = v => Number(v) || 0;
+      const rev = r => isCanceled(r) ? 0 : num(r['Total']);
+      // Billed vs collected — only present when the v2 card is live. On the
+      // legacy card there's no Billed/Collected column, so both fall back to
+      // Total (billed == collected, no outstanding) and the authoritative view
+      // stays hidden behind hasBilled.
+      const hasBilled = scoped.some(r => r['Billed'] != null) || rows.some(r => r['Billed'] != null);
+      const billedOf = r => isCanceled(r) ? 0 : (r['Billed'] != null ? num(r['Billed']) : num(r['Total']));
+      const collectedOf = r => r['Collected'] != null ? num(r['Collected']) : (isCanceled(r) ? 0 : num(r['Total']));
+      const refundedOf = r => num(r['Refunded']);
+      const isInvoice = r => r['Source'] === 'Invoice';
 
       const a = {
         bookings: scoped.length,
@@ -502,9 +512,18 @@
         instRev: scoped.filter(isInstant).reduce((s, r) => s + rev(r), 0),
         mgdRev: scoped.filter(r => !isInstant(r)).reduce((s, r) => s + rev(r), 0),
         sites: new Set(scoped.map(r => (r['Facility'] || '') + '|' + (r['Location'] || ''))).size,
+        // Authoritative revenue: billed (charged), collected (confirmed
+        // payments), refunded, and outstanding A/R = billed − collected.
+        hasBilled,
+        billed: scoped.reduce((s, r) => s + billedOf(r), 0),
+        collected: scoped.reduce((s, r) => s + collectedOf(r), 0),
+        refunded: scoped.reduce((s, r) => s + refundedOf(r), 0),
+        invoicedN: scoped.filter(isInvoice).length,
+        invoicedRev: scoped.filter(isInvoice).reduce((s, r) => s + billedOf(r), 0),
         byV: {},
         topSites: [],
       };
+      a.outstanding = Math.max(0, a.billed - a.collected);
 
       VERTICALS.forEach(v => a.byV[v] = { bookings: 0, canceled: 0, revenue: 0, instant: 0, sites: new Set() });
       a.byType = {}; // keyed by specific site-type label ("Court", "Rink", "Pool"…) — the real breakdown
@@ -521,9 +540,9 @@
         // Specific-type rollup — this is what separates real courts from the
         // rinks/pools/gyms Rec lumps into `court` (see refineSiteType).
         const tl = siteTypeLabel(r['Site Type']);
-        if (!a.byType[tl]) a.byType[tl] = { bookings: 0, canceled: 0, revenue: 0, instant: 0, sites: new Set() };
+        if (!a.byType[tl]) a.byType[tl] = { bookings: 0, canceled: 0, revenue: 0, collected: 0, instant: 0, sites: new Set() };
         const tg = a.byType[tl];
-        tg.bookings++; tg.revenue += rev(r);
+        tg.bookings++; tg.revenue += rev(r); tg.collected += collectedOf(r);
         if (isCanceled(r)) tg.canceled++;
         if (isInstant(r)) tg.instant++;
         tg.sites.add((r['Facility'] || '') + '|' + (r['Location'] || ''));
@@ -599,9 +618,19 @@
     }
 
     function KpiCards({ a }) {
+      // Authoritative revenue view (v2 card): Billed / Collected / Outstanding
+      // side by side, so invoiced-but-unpaid facility use is visible instead of
+      // hidden. Falls back to a single "Net Revenue" tile on the legacy card.
+      const revCards = a.hasBilled ? [
+        { label: 'Billed', val: money(a.billed), cls: 'sc-green', sub: 'charged, excludes canceled' + (a.invoicedRev > 0 ? ' · incl. ' + money(a.invoicedRev) + ' invoiced' : '') },
+        { label: 'Collected', val: money(a.collected), cls: 'sc-blue', sub: a.billed ? pct(a.collected, a.billed) + ' of billed received' : 'confirmed payments' },
+        { label: 'Outstanding', val: money(a.outstanding), cls: a.outstanding > 0 ? 'sc-amber' : 'sc-muted', sub: 'billed, not yet collected (A/R)' },
+      ] : [
+        { label: 'Net Revenue', val: money(a.revenue), cls: 'sc-green', sub: 'excludes canceled' },
+      ];
       const cards = [
         { label: 'Bookings', val: a.bookings.toLocaleString(), cls: 'sc-blue', sub: 'facility reservations in view' },
-        { label: 'Net Revenue', val: money(a.revenue), cls: 'sc-green', sub: 'excludes canceled' },
+        ...revCards,
         { label: 'Instant-Book', val: a.bookings ? pct(a.instant, a.bookings) : '—', cls: 'sc-purple', sub: a.instant.toLocaleString() + ' bkgs · ' + money(a.instRev) },
         { label: 'Managed', val: a.bookings ? pct(a.managed, a.bookings) : '—', cls: 'sc-amber', sub: a.managed.toLocaleString() + ' bkgs · ' + money(a.mgdRev) },
         { label: 'Cancellation Rate', val: a.bookings ? pct(a.canceled, a.bookings) : '—', cls: 'sc-red', sub: a.canceled.toLocaleString() + ' of ' + a.bookings.toLocaleString() + ' canceled' },
@@ -656,6 +685,8 @@
           ),
           lessons && lessons.n > 0 ? e('div', { style: { fontSize: 11, color: '#78716c', marginTop: 6 } },
             'Lessons are booked through the Lessons product on the same courts — counted here from instructor registrations, not facility reservations.') : null,
+          a.hasBilled && a.invoicedN > 0 ? e('div', { style: { fontSize: 11, color: '#78716c', marginTop: 6 } },
+            'Includes ' + a.invoicedN.toLocaleString() + ' invoiced line item' + (a.invoicedN === 1 ? '' : 's') + ' — tournaments, event rentals, deposits & service fees billed through invoices — worth ' + money(a.invoicedRev) + ' billed. These have no court reservation, so earlier versions of this report dropped them.') : null,
         ),
         // Booking mix bar (instant vs managed)
         e('div', { className: 'sum-bar-wrap' },
@@ -684,7 +715,8 @@
             e('th', { className: 'num' }, 'Sites'),
             e('th', { className: 'num' }, 'Bookings'),
             e('th', { className: 'num' }, 'Cancel %'),
-            e('th', { className: 'num' }, 'Net revenue'),
+            e('th', { className: 'num' }, a.hasBilled ? 'Billed' : 'Net revenue'),
+            a.hasBilled ? e('th', { className: 'num' }, 'Collected') : null,
             e('th', { className: 'num' }, '% instant-book'),
           )),
           e('tbody', null,
@@ -696,6 +728,7 @@
                 e('td', { className: 'num' }, g.bookings),
                 e('td', { className: 'num' }, pct(g.canceled, g.bookings)),
                 e('td', { className: 'num' }, money(g.revenue)),
+                a.hasBilled ? e('td', { className: 'num' }, money(g.collected)) : null,
                 e('td', { className: 'num' }, pct(g.instant, g.bookings)),
               );
             }),
@@ -704,7 +737,8 @@
               e('td', { className: 'num' }, a.sites),
               e('td', { className: 'num' }, a.bookings),
               e('td', { className: 'num' }, pct(a.canceled, a.bookings)),
-              e('td', { className: 'num' }, money(a.revenue)),
+              e('td', { className: 'num' }, money(a.hasBilled ? a.billed : a.revenue)),
+              a.hasBilled ? e('td', { className: 'num' }, money(a.collected)) : null,
               e('td', { className: 'num' }, pct(a.instant, a.bookings)),
             ),
           ),
