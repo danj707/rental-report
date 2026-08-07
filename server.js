@@ -964,6 +964,12 @@ const ORGS = {
     logoUrl: "https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2Forganization-17380e28-7e02-4b52-82c5-fab18557fd7a%2FfullLogo.png%3F1712696824645&w=1920&q=75",
     displayName: "San Francisco Parks and Rec",
   },
+  "city-of-lakeland": {
+    token:   "ntMmcvAJSYwAYqqy",
+    orgId:   "f2f03a2b-82b8-4cd6-be40-ae94aea6480b",
+    logoUrl: "https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2Forganization-f2f03a2b-82b8-4cd6-be40-ae94aea6480b%2FfullLogo.png%3F1776292864596&w=1920&q=75",
+    displayName: "City of Lakeland",
+  },
 };
 
 const REPORT_TYPES = ["facility", "gl", "historic", "programs", "roster", "products", "memberships", "court-utilization", "calendar", "fasttrack", "waitlist", "users", "program-demographics", "instructor-payout", "retention", "annual-report", "section-detail", "ice-calendar", "qoq", "checkins", "program-checkins", "selfservice"];
