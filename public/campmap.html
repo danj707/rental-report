@@ -250,7 +250,6 @@ body{font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica
         <div class="row"><span class="dot" style="background:var(--avail)"></span> Open this night</div>
         <div class="row"><span class="dot" style="background:var(--booked)"></span> Booked</div>
         <div class="row"><span class="dot" style="background:var(--blocked)"></span> Unavailable — booking restriction</div>
-        <div class="row"><span class="dot" style="background:var(--unknown)"></span> Unknown</div>
         <div class="div" id="legKindDiv"></div>
         <h4 id="legKindH" style="display:none">Site type</h4>
         <div id="legKinds"></div>
@@ -444,6 +443,10 @@ var DOW=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 var MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 var TODAY = new Date(); TODAY.setHours(0,0,0,0);
 var TODAY_ISO = iso(TODAY);
+// Availability window: rec.us returns ~30 days of check-in data and the date
+// strip spans 30 days, so we only claim a verdict inside this range. Dates beyond
+// it aren't "unknown" to show off — they're just outside the schedule we have.
+var MAX_ISO = iso(addDays(TODAY, 29));
 
 /* ── availability state: { siteId: { 'YYYY-MM-DD': 'avail'|'booked'|'blocked' } } ──
    'booked'  = an actual reservation conflict on that night
@@ -511,7 +514,7 @@ function addMarker(site){
   var icon=L.divIcon({className:'', html:markerHtml(site,status), iconSize:[34,34], iconAnchor:[17,17]});
   var m=L.marker([site.lat,site.lng],{icon:icon, riseOnHover:true, zIndexOffset:400, draggable:true}).addTo(map);
   if(m.dragging && !EDIT) m.dragging.disable();
-  m.bindTooltip(function(){ var st=statusOn(site,SELECTED); var lbl=st==='avail'?'Open':st==='booked'?'Booked':st==='blocked'?'Unavailable — booking restriction':'Unknown'; var ki=kindInfo(sKind(site));
+  m.bindTooltip(function(){ var st=statusOn(site,SELECTED); var lbl=st==='avail'?'Open':st==='booked'?'Booked':st==='blocked'?'Unavailable — booking restriction':'Check rec.us'; var ki=kindInfo(sKind(site));
     return '<span class="st">'+shortName(site)+'</span><br>'+ ki.e+' '+ki.label +' · '+lbl; },
     {className:'site-tip', direction:'top', offset:[0,-14]});
   m.on('click', function(){ if(!EDIT) openSite(site); else { openSite(site); } });
@@ -602,9 +605,10 @@ function setDate(ds){
   fetchWeather();
 }
 document.getElementById('prevDay').onclick=function(){ var d=addDays(new Date(SELECTED+'T00:00:00'),-1); if(iso(d)>=TODAY_ISO) setDate(iso(d)); };
-document.getElementById('nextDay').onclick=function(){ setDate(iso(addDays(new Date(SELECTED+'T00:00:00'),1))); };
+document.getElementById('nextDay').onclick=function(){ var d=addDays(new Date(SELECTED+'T00:00:00'),1); if(iso(d)<=MAX_ISO) setDate(iso(d)); };
 document.getElementById('datePick').onchange=function(){ if(this.value) setDate(this.value); };
 document.getElementById('datePick').min=TODAY_ISO;
+document.getElementById('datePick').max=MAX_ISO;   // only offer dates we have availability for
 
 /* ── detail drawer ── */
 var galleryIdx=0, calMonth=null;
@@ -643,7 +647,7 @@ function renderBody(site){
   var stPill= st==='avail'?'<span class="stat-pill avail">● Open this night</span>'
             : st==='booked'?'<span class="stat-pill booked">● Booked this night</span>'
             : st==='blocked'?'<span class="stat-pill blocked">● Unavailable — booking restriction</span>'
-            : '<span class="stat-pill unknown">● Availability unknown</span>';
+            : '<span class="stat-pill unknown">● Availability — see rec.us</span>';
   var d=new Date(SELECTED+'T00:00:00'); var human=DOW[d.getDay()]+', '+MON[d.getMonth()]+' '+d.getDate();
   var amens=sAmen(site).map(function(a){ return '<span class="a">'+a.e+' '+a.l+'</span>'; }).join('');
   var ki=kindInfo(sKind(site));
@@ -694,7 +698,9 @@ function miniCalHtml(site){
   for(var day=1;day<=days;day++){
     var ds=y+'-'+pad(mo+1)+'-'+pad(day);
     var cls='mc-cell';
-    if(ds<TODAY_ISO){ cls+=' past'; }
+    // Outside our availability window (past, or beyond the ~30-day feed) → render
+    // as a faint, non-interactive out-of-range cell rather than an "unknown" verdict.
+    if(ds<TODAY_ISO || ds>MAX_ISO){ cls+=' past'; }
     else { var st=statusOn(site,ds); cls+= st==='avail'?' av':st==='booked'?' bk':st==='blocked'?' bl':' un'; }
     if(ds===TODAY_ISO) cls+=' today';
     if(ds===SELECTED) cls+=' sel';
