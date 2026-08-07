@@ -189,8 +189,8 @@
     .court-native .heatmap-title .subtitle { font-weight: 400; color: #888; font-size: 11px; }
     .court-native .heatmap-grid { display: grid; grid-template-columns: minmax(180px, 1fr) repeat(7, 1fr); gap: 2px; font-size: 11px; }
     .court-native .heatmap-hdr { text-align: center; font-weight: 700; font-size: 10px; text-transform: uppercase; letter-spacing: .5px; color: #888; padding: 4px 2px; }
-    .court-native .heatmap-label { padding: 5px 8px; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; gap: 4px; border-radius: 3px; background: #f8f8f6; }
-    .court-native .heatmap-cell { text-align: center; padding: 5px 2px; border-radius: 3px; font-family: 'IBM Plex Mono', monospace; font-size: 10px; font-weight: 600; }
+    .court-native .heatmap-label { padding: 5px 8px; font-size: 11px; white-space: normal; overflow-wrap: anywhere; line-height: 1.25; display: flex; align-items: center; gap: 4px; border-radius: 3px; background: #f8f8f6; }
+    .court-native .heatmap-cell { display: flex; align-items: center; justify-content: center; text-align: center; padding: 5px 2px; border-radius: 3px; font-family: 'IBM Plex Mono', monospace; font-size: 10px; font-weight: 600; }
     .court-native .heatmap-legend { display: flex; align-items: center; gap: 12px; margin-top: 8px; font-size: 10px; color: #888; flex-wrap: wrap; }
     .court-native .heatmap-legend-swatch { display: inline-block; width: 14px; height: 14px; border-radius: 3px; vertical-align: middle; margin-right: 3px; }
     /* Loading / error */
@@ -419,15 +419,22 @@
       );
     }
 
-    // Site-type filter — Rec's real types, grouped by vertical. [] = All.
+    // Sentinel for an explicit "none selected" state. [] already means "all", so
+    // an empty array can't also mean "none" — this distinct value lets the filter
+    // render every box unchecked and show zero rows until the user picks a few.
+    const NONE_SEL = '\x00none';
+
+    // Site-type filter — Rec's real types, grouped by vertical. [] = All, [NONE_SEL] = None.
     function SiteTypeFilter({ sel, setSel }) {
       const [open, setOpen] = React.useState(false);
       const allV = REC_SITE_TYPES.map(t => t.v);
-      const label = (sel.length === 0 || sel.length === allV.length) ? 'All site types' : (sel.length + ' selected');
+      const isNone = sel.length === 1 && sel[0] === NONE_SEL;
+      const label = isNone ? 'None selected'
+        : (sel.length === 0 || sel.length === allV.length) ? 'All site types' : (sel.length + ' selected');
       const toggle = v => {
-        const base = sel.length === 0 ? allV : sel;
+        const base = isNone ? [] : (sel.length === 0 ? allV : sel);
         const next = base.includes(v) ? base.filter(x => x !== v) : base.concat(v);
-        setSel(next.length === allV.length ? [] : next);
+        setSel(next.length === 0 ? [NONE_SEL] : (next.length === allV.length ? [] : next));
       };
       const groups = [];
       REC_SITE_TYPES.forEach(t => { if (!groups.includes(t.grp)) groups.push(t.grp); });
@@ -438,11 +445,12 @@
             e('div', { className: 'dd-grp' }, g),
             REC_SITE_TYPES.filter(t => t.grp === g).map(t =>
               e('label', { className: 'dd-opt', key: t.v },
-                e('input', { type: 'checkbox', checked: sel.length === 0 || sel.includes(t.v), onChange: () => toggle(t.v) }),
+                e('input', { type: 'checkbox', checked: !isNone && (sel.length === 0 || sel.includes(t.v)), onChange: () => toggle(t.v) }),
                 t.l)),
           )),
           e('div', { className: 'dd-actions' },
             e('button', { onClick: () => setSel([]) }, 'Select all'),
+            e('button', { onClick: () => setSel([NONE_SEL]) }, 'Unselect all'),
             e('button', { onClick: () => setOpen(false) }, 'Done')),
         ) : null,
       );
@@ -455,22 +463,25 @@
     function LocationFilter({ locations, sel, setSel }) {
       const [open, setOpen] = React.useState(false);
       const all = locations || [];
-      const label = (sel.length === 0 || sel.length === all.length) ? 'All locations'
+      const isNone = sel.length === 1 && sel[0] === NONE_SEL;
+      const label = isNone ? 'None selected'
+        : (sel.length === 0 || sel.length === all.length) ? 'All locations'
         : (sel.length === 1 ? sel[0] : sel.length + ' locations');
       const toggle = v => {
-        const base = sel.length === 0 ? all.slice() : sel;
+        const base = isNone ? [] : (sel.length === 0 ? all.slice() : sel);
         const next = base.includes(v) ? base.filter(x => x !== v) : base.concat(v);
-        setSel(next.length === all.length ? [] : next);
+        setSel(next.length === 0 ? [NONE_SEL] : (next.length === all.length ? [] : next));
       };
       if (!all.length) return null;
       return e('div', { className: 'dd' },
         e('button', { className: 'dd-btn', onClick: () => setOpen(o => !o) }, '📍 ' + label, e('span', null, '▾')),
         open ? e('div', { className: 'dd-panel' },
           all.map(loc => e('label', { className: 'dd-opt', key: loc },
-            e('input', { type: 'checkbox', checked: sel.length === 0 || sel.includes(loc), onChange: () => toggle(loc) }),
+            e('input', { type: 'checkbox', checked: !isNone && (sel.length === 0 || sel.includes(loc)), onChange: () => toggle(loc) }),
             loc)),
           e('div', { className: 'dd-actions' },
             e('button', { onClick: () => setSel([]) }, 'Select all'),
+            e('button', { onClick: () => setSel([NONE_SEL]) }, 'Unselect all'),
             e('button', { onClick: () => setOpen(false) }, 'Done')),
         ) : null,
       );
@@ -646,7 +657,7 @@
       );
     }
 
-    function SummaryTab({ rows, err, statusSel, typeSel, lessons }) {
+    function SummaryTab({ rows, err, statusSel, typeSel, lessons, filtersActive }) {
       if (err) return e('div', { className: 'empty' },
         e('div', { className: 'em-icon' }, '⚠️'),
         e('div', { className: 'em-title' }, 'Could not load facility data'),
@@ -664,6 +675,15 @@
         className: 'seg', style: { width: (n / a.bookings * 100) + '%', background: color }
       }, (n / a.bookings >= 0.08 ? label : '')) : null;
 
+      // Lessons come from the org-wide Lessons/programs pipeline (all programs,
+      // all locations — the feed has no court/location dimension), so they can't
+      // be scoped to the site-type or location filter. Showing that org-wide
+      // total next to filtered facility numbers reads as though $Xm of lessons
+      // happened at the one filtered venue — so hide it whenever a filter is
+      // active, and badge it as org-wide when shown.
+      const showLessons = !filtersActive && lessons && lessons.n > 0;
+      const orgBadge = e('span', { style: { display: 'inline-block', marginLeft: 5, padding: '1px 6px', fontSize: 8, fontWeight: 800, letterSpacing: '.6px', color: '#1d4ed8', background: '#dbeafe', borderRadius: 4, verticalAlign: 'middle' } }, 'ORG-WIDE · ALL PROGRAMS');
+
       return e('div', null,
         e(KpiCards, { a }),
         // Reservation mix band (the marquee split). Instructor lessons book
@@ -673,18 +693,19 @@
         e('div', { className: 'band' },
           e('div', { className: 'band-head' },
             e('div', { className: 'band-title' }, '⚙️ RESERVATION MIX ', e('span', { className: 'sub' },
-              lessons && lessons.n > 0 ? 'instant-book vs. staff-managed vs. instructor lessons' : 'instant-book vs. staff-managed')),
+              showLessons ? 'instant-book vs. staff-managed vs. instructor lessons' : 'instant-book vs. staff-managed')),
           ),
           e('div', { className: 'band-metrics' },
             e('div', { className: 'band-metric' }, e('div', { className: 'bm-val sc-purple' }, pct(a.instant, a.bookings)), e('div', { className: 'bm-lbl' }, 'Instant-book')),
             e('div', { className: 'band-metric' }, e('div', { className: 'bm-val sc-amber' }, pct(a.managed, a.bookings)), e('div', { className: 'bm-lbl' }, 'Staff-managed')),
             e('div', { className: 'band-metric' }, e('div', { className: 'bm-val sc-green' }, money(a.instRev)), e('div', { className: 'bm-lbl' }, 'Instant-book revenue')),
             e('div', { className: 'band-metric' }, e('div', { className: 'bm-val sc-green' }, money(a.mgdRev)), e('div', { className: 'bm-lbl' }, 'Staff-managed revenue')),
-            lessons && lessons.n > 0 ? e('div', { className: 'band-metric' }, e('div', { className: 'bm-val sc-blue' }, lessons.n.toLocaleString()), e('div', { className: 'bm-lbl' }, 'Instructor lessons')) : null,
-            lessons && lessons.n > 0 ? e('div', { className: 'band-metric' }, e('div', { className: 'bm-val sc-green' }, money(lessons.rev)), e('div', { className: 'bm-lbl' }, 'Lesson revenue')) : null,
+            showLessons ? e('div', { className: 'band-metric' }, e('div', { className: 'bm-val sc-blue' }, lessons.n.toLocaleString()), e('div', { className: 'bm-lbl' }, 'Instructor lessons', orgBadge)) : null,
+            showLessons ? e('div', { className: 'band-metric' }, e('div', { className: 'bm-val sc-green' }, money(lessons.rev)), e('div', { className: 'bm-lbl' }, 'Lesson revenue', orgBadge)) : null,
           ),
-          lessons && lessons.n > 0 ? e('div', { style: { fontSize: 11, color: '#78716c', marginTop: 6 } },
-            'Lessons are booked through the Lessons product on the same courts — counted here from instructor registrations, not facility reservations.') : null,
+          showLessons ? e('div', { style: { fontSize: 11, color: '#78716c', marginTop: 6 } },
+            e('strong', { style: { color: '#1d4ed8' } }, 'Org-wide, all programs · '),
+            'these come from the Lessons/programs pipeline (every program & location, for the selected dates) — not facility reservations, and NOT scoped by the site-type or location filters. Hidden while a filter is active so it can’t be mistaken for the filtered venue’s revenue.') : null,
           a.hasBilled && a.invoicedN > 0 ? e('div', { style: { fontSize: 11, color: '#78716c', marginTop: 6 } },
             'Includes ' + a.invoicedN.toLocaleString() + ' invoiced line item' + (a.invoicedN === 1 ? '' : 's') + ' — tournaments, event rentals, deposits & service fees billed through invoices — worth ' + money(a.invoicedRev) + ' billed. These have no court reservation, so earlier versions of this report dropped them.') : null,
         ),
@@ -2095,7 +2116,7 @@
                       row.demand === 'hot' ? '🔥🔥' : row.demand === 'warm' ? '🔥' : '',
                       // SF has "Court 1" at a dozen parks — the location is the
                       // distinguishing half of the name, so show it (muted).
-                      e('span', { style: { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } },
+                      e('span', { style: { overflowWrap: 'anywhere', minWidth: 0 } },
                         row.location ? e('span', { style: { color: '#94a3b8', fontWeight: 500 } }, row.location + ' — ') : null,
                         row.court),
                       row.utilPct != null ? e('span', { style: { marginLeft: 'auto', color: '#999', fontSize: 10, flexShrink: 0 } }, Math.round(row.utilPct) + '%') : null),
@@ -2356,7 +2377,7 @@
             }),
           ),
           tab === 'summary'
-            ? e(SummaryTab, { rows: viewRows, err, statusSel, typeSel, lessons })
+            ? e(SummaryTab, { rows: viewRows, err, statusSel, typeSel, lessons, filtersActive: (locSel.length > 0 || typeSel.length > 0) })
             : tab === 'utilization'
               ? e(CourtUtilizationView, { start, end })
               : tab === 'racket'
@@ -2367,7 +2388,7 @@
                   ? e(AquaticsView, { rows: viewRows, err, statusSel, vert: Object.assign({ key: tab }, VERT_CONFIG[tab]) })
                   : VERT_CONFIG[tab]
                     ? e(VerticalView, { rows: viewRows, err, statusSel, vert: Object.assign({ key: tab }, VERT_CONFIG[tab]) })
-                    : e(SummaryTab, { rows: viewRows, err, statusSel, typeSel, lessons }),
+                    : e(SummaryTab, { rows: viewRows, err, statusSel, typeSel, lessons, filtersActive: (locSel.length > 0 || typeSel.length > 0) }),
         ),
       );
     }

@@ -703,6 +703,15 @@ function normalizeRow(raw) {
     totalRefunds:       pf(raw['Total Refunds']),
     numRefunds:         pf(raw['Number of Refunds']),
 
+    // True distinct transaction counts at desk grain (org/date-scoped). One
+    // payment fans out across multiple GL codes, so the per-GL "Number of
+    // Payments" above is NOT additive — summing it double-counts. These per-desk
+    // distinct counts ARE additive across desks (a transaction_event_id has
+    // exactly one desk), so the app sums them once per desk for a correct TOTAL.
+    // Present only after card 17293 exposes them; null on the old card.
+    deskDistinctPayments: raw['Desk Distinct Payments'] != null ? pf(raw['Desk Distinct Payments']) : null,
+    deskDistinctRefunds:  raw['Desk Distinct Refunds']  != null ? pf(raw['Desk Distinct Refunds'])  : null,
+
     netAmount:          pf(raw['Net Amount']),
   };
 }
@@ -1383,11 +1392,36 @@ function App() {
 
   const totals = useMemo(() => {
     if (!displayRows) return {};
+    // # payments / # refunds are DISTINCT transaction counts and don't sum across
+    // GL codes — one payment fans out across item + card-fee GLs, so summing the
+    // per-GL column overstates the total (Lewisburg Jul'26: 1,993 vs true 1,281).
+    // The card's per-desk distinct counts ARE additive across desks (each
+    // transaction_event_id has exactly one desk), so sum them once per desk over
+    // the desk-filtered set. This stays correct under the desk filter; the count
+    // is a desk/date concept that legitimately spans GL codes, so it isn't
+    // narrowed by the GL text filter. Falls back to the old (inflated) row sum
+    // only until card 17293 is updated to expose the per-desk columns.
+    const deskScoped = hasDesk
+      ? (rows || []).filter(r => (selectedDesks || new Set(allDesks)).has(r.deskLocation || NO_DESK_LABEL))
+      : (rows || []);
+    let numPayments, numRefunds;
+    if (deskScoped.some(r => r.deskDistinctPayments != null)) {
+      const byDesk = new Map();
+      for (const r of deskScoped) {
+        const k = r.deskLocation || NO_DESK_LABEL;
+        if (!byDesk.has(k)) byDesk.set(k, { p: r.deskDistinctPayments || 0, rf: r.deskDistinctRefunds || 0 });
+      }
+      numPayments = 0; numRefunds = 0;
+      for (const v of byDesk.values()) { numPayments += v.p; numRefunds += v.rf; }
+    } else {
+      numPayments = sumField(displayRows, 'numPayments');
+      numRefunds  = sumField(displayRows, 'numRefunds');
+    }
     return {
       totalPayments:      sumField(displayRows, 'totalPayments'),
-      numPayments:        sumField(displayRows, 'numPayments'),
+      numPayments,
       totalRefunds:       sumField(displayRows, 'totalRefunds'),
-      numRefunds:         sumField(displayRows, 'numRefunds'),
+      numRefunds,
       netAmount:          sumField(displayRows, 'netAmount'),
       ccPayments:         sumField(displayRows, 'ccPayments'),
       ccOnlinePayments:   sumField(displayRows, 'ccOnlinePayments'),
@@ -1397,7 +1431,7 @@ function App() {
       orgCreditPayments:  sumField(displayRows, 'orgCreditPayments'),
       scholarshipPayments: sumField(displayRows, 'scholarshipPayments'),
     };
-  }, [displayRows]);
+  }, [displayRows, rows, hasDesk, selectedDesks, allDesks]);
 
   // ── AI Insights ────────────────────────────────────────────────────────────
   const buildInsightsBlob = useCallback(() => {
@@ -1801,7 +1835,7 @@ function App() {
               {!showRefunds && hasOtherPmts   && <th>Other</th>}
 
               <th>Total Pmts</th>
-              <th># Pmts</th>
+              <th title="Distinct payment transactions for this GL code. A single payment can post to multiple GL codes (e.g. item + card fee), so the TOTALS row counts each transaction once rather than summing this column."># Pmts</th>
 
               {showRefunds
                 ? hasCCSplit
@@ -1810,7 +1844,7 @@ function App() {
                 : <th>Total Rfnds</th>
               }
 
-              <th># Rfnds</th>
+              <th title="Distinct refund transactions for this GL code. A single refund can post to multiple GL codes, so the TOTALS row counts each transaction once rather than summing this column."># Rfnds</th>
               <th>Net Amount</th>
             </tr>
           </thead>
