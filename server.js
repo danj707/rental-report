@@ -3406,7 +3406,7 @@ app.use((req, res, next) => {
 
   // Calendar + rental calendar + campsite map are public — no token required
   const segs = req.path.split("/").filter(Boolean);
-  if (segs[1] === "calendar" || segs[1] === "rentalcalendar") return next();
+  if (segs[1] === "calendar" || segs[1] === "rentalcalendar" || segs[1] === "campmap") return next();
   if (segs[1] === "api" && (segs[2] === "track" || segs[2] === "calendar-analytics")) return next();
 
   if (!org.token) {                                 // fail closed: tokenless org must not be public
@@ -7399,10 +7399,114 @@ function campmapStoreKey(slug, locationId) {
   return (!locationId || locationId === "default") ? slug : (slug + "::" + locationId);
 }
 
-// The standalone /:org/campmap page (public viewer + admin editor) is retired —
-// campsite maps and site-position editing live in the Facilities hub's Camping
-// tab now (see /:org/facilities/api/campsites and /api/campsite-positions).
-// The seeds, positions store, and saved custom markers are kept and served there.
+// ── Standalone /:org/campmap page ──
+// Public campsite-map viewer for direct-link / QR-code sharing (customers, no
+// token) — the org's campmap seed, admin-saved pin positions, and custom markers
+// on a Leaflet map with a per-night availability overlay (live data via
+// /:org/rentalcalendar/api/availability-batch + /api/sites).
+// Editing (drag-to-place pins, add/name/color/delete custom markers) is unlocked
+// ONLY when the org token is supplied (?token=…) — admin-only for now, customers
+// get the read-only view. Edits save through the token-gated POST endpoints below
+// and write to the SAME per-location store as the Facilities Camping tab
+// (campmapPositions / campmapMarkers via campmapStoreKey), so the two stay in sync.
+app.get("/:org/campmap", (req, res) => {
+  const slug = req.params.org;
+  const org = ORGS[slug];
+  if (!org) return res.status(404).send("Unknown org");
+  if (!org.orgId) return res.status(404).send("Campsite map requires orgId configuration.");
+  logEvent(slug, "campmap", "view", req);
+  const slugTitle = slug.charAt(0).toUpperCase() + slug.slice(1);
+  const seed = CAMPMAP_SEEDS[slug] || {};
+  const locList = campmapLocations(slug, seed, org);
+  const activeId = req.query.location || (locList[0] && locList[0].id) || "default";
+  const active = locList.find(l => l.id === activeId) || locList[0] || {};
+  // Normalize center to {lat, lon} — seed centers store `lng`, org.coords stores
+  // `lon`; the page reads `.lon` (map center + weather lookup).
+  const rawCoords = active.center || org.coords || null;
+  const coords = rawCoords
+    ? { lat: rawCoords.lat, lon: (rawCoords.lon != null ? rawCoords.lon : rawCoords.lng) }
+    : null;
+  const meta = {
+    slug,
+    orgId: org.orgId,
+    displayName: org.displayName || slugTitle + " Parks & Recreation",
+    logoUrl: org.logoUrl || "",
+    coords,
+    locationName: active.locationName || org.campLocationName || "",
+    address: active.address || org.campAddress || "",
+    sites: active.sites || null,
+    landmarks: active.landmarks || null,
+    defaults: active.defaults || {},
+    areaDefaults: active.areaDefaults || {},
+    // Multi-location: the switcher list + which one is active.
+    locations: locList.map(l => ({ id: l.id, name: l.locationName })),
+    activeLocation: active.id || "default",
+    // Editing (drag-to-place + marker editor) is unlocked only when the org
+    // token is supplied and matches — admin-only; customers get the read-only view.
+    canEdit: !!(org.token && req.query.token && req.query.token === org.token),
+  };
+  const html = fs.readFileSync(path.join(__dirname, "public", "campmap.html"), "utf-8");
+  const inject = '<script>window.__CM__=' + JSON.stringify(meta) + ';</script>';
+  res.type("html").send(html.replace("</head>", inject + "</head>"));
+});
+
+// Campsite map positions + custom markers.
+// GET is public (viewers see the admin's saved layout); POST requires the org
+// token (admin edit). Both use the same per-location store as the Camping tab.
+app.get("/:org/campmap/api/positions", (req, res) => {
+  const slug = req.params.org;
+  if (!ORGS[slug]) return res.status(404).json({ positions: {} });
+  res.json({ positions: campmapPositions[campmapStoreKey(slug, req.query.location)] || {} });
+});
+app.post("/:org/campmap/api/positions", express.json(), (req, res) => {
+  const slug = req.params.org;
+  const org = ORGS[slug];
+  if (!org) return res.status(404).json({ error: "Unknown org" });
+  const token = req.query.token || (req.body && req.body.token) || "";
+  if (!org.token || token !== org.token) return res.status(403).json({ error: "Forbidden — valid org token required to edit." });
+  const positions = (req.body && req.body.positions) || {};
+  const clean = {};
+  for (const [id, p] of Object.entries(positions)) {
+    if (p && typeof p.lat === "number" && typeof p.lng === "number" &&
+        Math.abs(p.lat) <= 90 && Math.abs(p.lng) <= 180) {
+      clean[id] = { lat: p.lat, lng: p.lng };
+    }
+  }
+  campmapPositions[campmapStoreKey(slug, req.query.location)] = clean;
+  saveCampmapPositions();
+  logEvent(slug, "campmap", "save-positions", req, { count: Object.keys(clean).length });
+  res.json({ ok: true, saved: Object.keys(clean).length });
+});
+app.get("/:org/campmap/api/markers", (req, res) => {
+  const slug = req.params.org;
+  if (!ORGS[slug]) return res.status(404).json({ markers: [] });
+  res.json({ markers: campmapMarkers[campmapStoreKey(slug, req.query.location)] || [] });
+});
+app.post("/:org/campmap/api/markers", express.json(), (req, res) => {
+  const slug = req.params.org;
+  const org = ORGS[slug];
+  if (!org) return res.status(404).json({ error: "Unknown org" });
+  const token = req.query.token || (req.body && req.body.token) || "";
+  if (!org.token || token !== org.token) return res.status(403).json({ error: "Forbidden — valid org token required to edit." });
+  const markers = (req.body && req.body.markers) || [];
+  const clean = [];
+  for (const m of Array.isArray(markers) ? markers : []) {
+    if (!m || typeof m.lat !== "number" || typeof m.lng !== "number") continue;
+    if (Math.abs(m.lat) > 90 || Math.abs(m.lng) > 180) continue;
+    clean.push({
+      id: String(m.id || "").slice(0, 40) || ("m" + clean.length),
+      label: String(m.label || "").slice(0, 80),
+      text: String(m.text || "").slice(0, 500),
+      color: /^#[0-9a-fA-F]{3,8}$/.test(m.color || "") ? m.color : "#38bdf8",
+      lat: m.lat, lng: m.lng,
+    });
+    if (clean.length >= 100) break; // sane cap
+  }
+  campmapMarkers[campmapStoreKey(slug, req.query.location)] = clean;
+  saveCampmapMarkers();
+  logEvent(slug, "campmap", "save-markers", req, { count: clean.length });
+  res.json({ ok: true, saved: clean.length });
+});
 
 // Cached site data for Arsenal Park (Watertown) — fetched via rec.us MCP 2026-06-22
 const RC_SITES_CACHE = {}; // Live MCP fetch for all orgs (provides rich data: photos, pricing, duration)
