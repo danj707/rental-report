@@ -419,15 +419,22 @@
       );
     }
 
-    // Site-type filter — Rec's real types, grouped by vertical. [] = All.
+    // Sentinel for an explicit "none selected" state. [] already means "all", so
+    // an empty array can't also mean "none" — this distinct value lets the filter
+    // render every box unchecked and show zero rows until the user picks a few.
+    const NONE_SEL = '\x00none';
+
+    // Site-type filter — Rec's real types, grouped by vertical. [] = All, [NONE_SEL] = None.
     function SiteTypeFilter({ sel, setSel }) {
       const [open, setOpen] = React.useState(false);
       const allV = REC_SITE_TYPES.map(t => t.v);
-      const label = (sel.length === 0 || sel.length === allV.length) ? 'All site types' : (sel.length + ' selected');
+      const isNone = sel.length === 1 && sel[0] === NONE_SEL;
+      const label = isNone ? 'None selected'
+        : (sel.length === 0 || sel.length === allV.length) ? 'All site types' : (sel.length + ' selected');
       const toggle = v => {
-        const base = sel.length === 0 ? allV : sel;
+        const base = isNone ? [] : (sel.length === 0 ? allV : sel);
         const next = base.includes(v) ? base.filter(x => x !== v) : base.concat(v);
-        setSel(next.length === allV.length ? [] : next);
+        setSel(next.length === 0 ? [NONE_SEL] : (next.length === allV.length ? [] : next));
       };
       const groups = [];
       REC_SITE_TYPES.forEach(t => { if (!groups.includes(t.grp)) groups.push(t.grp); });
@@ -438,11 +445,12 @@
             e('div', { className: 'dd-grp' }, g),
             REC_SITE_TYPES.filter(t => t.grp === g).map(t =>
               e('label', { className: 'dd-opt', key: t.v },
-                e('input', { type: 'checkbox', checked: sel.length === 0 || sel.includes(t.v), onChange: () => toggle(t.v) }),
+                e('input', { type: 'checkbox', checked: !isNone && (sel.length === 0 || sel.includes(t.v)), onChange: () => toggle(t.v) }),
                 t.l)),
           )),
           e('div', { className: 'dd-actions' },
             e('button', { onClick: () => setSel([]) }, 'Select all'),
+            e('button', { onClick: () => setSel([NONE_SEL]) }, 'Unselect all'),
             e('button', { onClick: () => setOpen(false) }, 'Done')),
         ) : null,
       );
@@ -455,22 +463,25 @@
     function LocationFilter({ locations, sel, setSel }) {
       const [open, setOpen] = React.useState(false);
       const all = locations || [];
-      const label = (sel.length === 0 || sel.length === all.length) ? 'All locations'
+      const isNone = sel.length === 1 && sel[0] === NONE_SEL;
+      const label = isNone ? 'None selected'
+        : (sel.length === 0 || sel.length === all.length) ? 'All locations'
         : (sel.length === 1 ? sel[0] : sel.length + ' locations');
       const toggle = v => {
-        const base = sel.length === 0 ? all.slice() : sel;
+        const base = isNone ? [] : (sel.length === 0 ? all.slice() : sel);
         const next = base.includes(v) ? base.filter(x => x !== v) : base.concat(v);
-        setSel(next.length === all.length ? [] : next);
+        setSel(next.length === 0 ? [NONE_SEL] : (next.length === all.length ? [] : next));
       };
       if (!all.length) return null;
       return e('div', { className: 'dd' },
         e('button', { className: 'dd-btn', onClick: () => setOpen(o => !o) }, '📍 ' + label, e('span', null, '▾')),
         open ? e('div', { className: 'dd-panel' },
           all.map(loc => e('label', { className: 'dd-opt', key: loc },
-            e('input', { type: 'checkbox', checked: sel.length === 0 || sel.includes(loc), onChange: () => toggle(loc) }),
+            e('input', { type: 'checkbox', checked: !isNone && (sel.length === 0 || sel.includes(loc)), onChange: () => toggle(loc) }),
             loc)),
           e('div', { className: 'dd-actions' },
             e('button', { onClick: () => setSel([]) }, 'Select all'),
+            e('button', { onClick: () => setSel([NONE_SEL]) }, 'Unselect all'),
             e('button', { onClick: () => setOpen(false) }, 'Done')),
         ) : null,
       );
