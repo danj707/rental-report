@@ -2106,7 +2106,7 @@
                       row.demand === 'hot' ? '🔥🔥' : row.demand === 'warm' ? '🔥' : '',
                       // SF has "Court 1" at a dozen parks — the location is the
                       // distinguishing half of the name, so show it (muted).
-                      e('span', { style: { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } },
+                      e('span', { style: { overflowWrap: 'anywhere', minWidth: 0 } },
                         row.location ? e('span', { style: { color: '#94a3b8', fontWeight: 500 } }, row.location + ' — ') : null,
                         row.court),
                       row.utilPct != null ? e('span', { style: { marginLeft: 'auto', color: '#999', fontSize: 10, flexShrink: 0 } }, Math.round(row.utilPct) + '%') : null),
