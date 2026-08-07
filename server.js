@@ -820,6 +820,11 @@ const ORGS = {
     coords:  { lat: 43.0962, lon: -79.0377 },
     mapCity: "Niagara Falls, NY",
     logoUrl: "https://prod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com/organization-a976a11a-5303-4785-838a-1b281ca77678/fullLogo.png",
+    // rec.us serves the org hero from config.images.headerImage = the .jpeg (the
+    // Niagara Falls sunset). The .png at the same path is a stale blue-gradient
+    // placeholder, and resolveBannerUrl() probes .png first — so pin the real
+    // banner explicitly instead of letting the probe grab the blue one.
+    bannerUrl: "https://prod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com/organization-a976a11a-5303-4785-838a-1b281ca77678/headerImage.jpeg?1782250313850",
     displayName: "City of Niagara Falls",
     facility:            { mbUuid: null },
     gl:                  { mbUuid: null },
