@@ -243,6 +243,36 @@ function hydrateCacheFromDisk() {
   }
 }
 
+// ── One-shot facilities cache invalidation on card-UUID change ──
+// The facilities cache key is UUID-agnostic (slug:facilities:params), so when
+// FACILITIES_SUMMARY_UUID is re-pointed at a different Metabase card the disk-
+// hydrated entries still hold the OLD card's rows — and prewarm skips entries
+// that are still fresh (< 4h TTL), so it would never replace them. That would
+// serve stale/undercounted numbers for up to 4h after a cutover. Detect the
+// change against a persisted marker and drop the stale facilities entries
+// (memory + disk) once, so v2 repopulates through the serial, self-throttling
+// prewarm (and lazy per-org live fetches) — no thundering herd on Metabase.
+// Must run AFTER hydrateCacheFromDisk() and AFTER CACHE_DIR is defined.
+function invalidateFacilitiesCacheOnUuidChange() {
+  const marker = path.join(DATA_DIR, "facilities-card-uuid.json");
+  let prev = null;
+  try { prev = readJSON(marker, {}).uuid || null; } catch {}
+  if (prev === FACILITIES_SUMMARY_UUID) return;
+  let dropped = 0;
+  for (const [key, entry] of dataCache) {
+    if (entry.rt === "facilities") {
+      dataCache.delete(key);
+      try {
+        const fname = Buffer.from(key).toString("base64url").slice(0, 180) + ".json";
+        fs.unlink(path.join(CACHE_DIR, fname), () => {});
+      } catch {}
+      dropped++;
+    }
+  }
+  try { writeJSON(marker, { uuid: FACILITIES_SUMMARY_UUID, changedAt: new Date().toISOString() }); } catch {}
+  console.log(`[cache] Facilities card UUID changed (${prev ? prev.slice(0, 8) : "none"} → ${FACILITIES_SUMMARY_UUID.slice(0, 8)}) — dropped ${dropped} stale facilities entr${dropped === 1 ? "y" : "ies"}; v2 will repopulate via prewarm`);
+}
+
 // Prune expired entries every 60 minutes — keep 2x TTL grace for stale fallback
 setInterval(() => {
   const now = Date.now();
@@ -1000,11 +1030,16 @@ const SHARED_UUIDS = {
 // rental revenue) that — unlike the base `facility` card — INCLUDES canceled
 // reservations so the Summary can surface cancellation rate as an at-risk flag.
 // Row-level output is aggregated client-side in public/facilities.html.
-// ROLLED BACK to the original card: the v2 feed (19570 / 4c070d95) is too slow
-// under load — per-reservation grain + invoice_v2 union + order_item_transaction
-// join timed out at the edge (502 "upstream error"). Re-ship after optimizing
-// the v2 SQL. v2 public UUID for reference: 4c070d95-ab02-4b9d-ac43-ac86257162d5.
-const FACILITIES_SUMMARY_UUID = "4defd1b6-9415-465b-9474-babf5cac1771";
+// v2 authoritative feed (card 19570): per-reservation grain + invoice_v2 manual
+// items unioned in + Billed/Collected/Refunded, all from applied_pricing
+// finalCents (not order_item.price). The rebuild first 502'd under load; the SQL
+// was then optimized (date window pushed into the reservation scan, payments
+// scoped to emitted items) — Watertown full-year 54s→6s, Apex YTD →~37s, both
+// safely under the 60s live-fetch timeout. On cutover, invalidateFacilitiesCache
+// OnUuidChange() drops the old card's cached rows so v2 repopulates via the
+// serial, self-throttling prewarm rather than serving stale numbers for 4h.
+// Old card (pre-v2), kept for reference/rollback: 4defd1b6-9415-465b-9474-babf5cac1771.
+const FACILITIES_SUMMARY_UUID = "4c070d95-ab02-4b9d-ac43-ac86257162d5";
 
 const REPORT_DEPENDENCIES = {
   facility: {
@@ -1435,6 +1470,7 @@ fs.mkdirSync(DATA_DIR, { recursive: true });
 const CACHE_DIR = path.join(DATA_DIR, "cache");
 fs.mkdirSync(CACHE_DIR, { recursive: true });
 hydrateCacheFromDisk();
+invalidateFacilitiesCacheOnUuidChange();
 // Pre-warm bookkeeping — records when a full warm cycle last completed so a
 // restart shortly after one can serve the hydrated disk cache instead of
 // re-querying Metabase for every org.
