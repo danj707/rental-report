@@ -657,7 +657,7 @@
       );
     }
 
-    function SummaryTab({ rows, err, statusSel, typeSel, lessons }) {
+    function SummaryTab({ rows, err, statusSel, typeSel, lessons, filtersActive }) {
       if (err) return e('div', { className: 'empty' },
         e('div', { className: 'em-icon' }, '⚠️'),
         e('div', { className: 'em-title' }, 'Could not load facility data'),
@@ -675,6 +675,15 @@
         className: 'seg', style: { width: (n / a.bookings * 100) + '%', background: color }
       }, (n / a.bookings >= 0.08 ? label : '')) : null;
 
+      // Lessons come from the org-wide Lessons/programs pipeline (all programs,
+      // all locations — the feed has no court/location dimension), so they can't
+      // be scoped to the site-type or location filter. Showing that org-wide
+      // total next to filtered facility numbers reads as though $Xm of lessons
+      // happened at the one filtered venue — so hide it whenever a filter is
+      // active, and badge it as org-wide when shown.
+      const showLessons = !filtersActive && lessons && lessons.n > 0;
+      const orgBadge = e('span', { style: { display: 'inline-block', marginLeft: 5, padding: '1px 6px', fontSize: 8, fontWeight: 800, letterSpacing: '.6px', color: '#1d4ed8', background: '#dbeafe', borderRadius: 4, verticalAlign: 'middle' } }, 'ORG-WIDE · ALL PROGRAMS');
+
       return e('div', null,
         e(KpiCards, { a }),
         // Reservation mix band (the marquee split). Instructor lessons book
@@ -684,18 +693,19 @@
         e('div', { className: 'band' },
           e('div', { className: 'band-head' },
             e('div', { className: 'band-title' }, '⚙️ RESERVATION MIX ', e('span', { className: 'sub' },
-              lessons && lessons.n > 0 ? 'instant-book vs. staff-managed vs. instructor lessons' : 'instant-book vs. staff-managed')),
+              showLessons ? 'instant-book vs. staff-managed vs. instructor lessons' : 'instant-book vs. staff-managed')),
           ),
           e('div', { className: 'band-metrics' },
             e('div', { className: 'band-metric' }, e('div', { className: 'bm-val sc-purple' }, pct(a.instant, a.bookings)), e('div', { className: 'bm-lbl' }, 'Instant-book')),
             e('div', { className: 'band-metric' }, e('div', { className: 'bm-val sc-amber' }, pct(a.managed, a.bookings)), e('div', { className: 'bm-lbl' }, 'Staff-managed')),
             e('div', { className: 'band-metric' }, e('div', { className: 'bm-val sc-green' }, money(a.instRev)), e('div', { className: 'bm-lbl' }, 'Instant-book revenue')),
             e('div', { className: 'band-metric' }, e('div', { className: 'bm-val sc-green' }, money(a.mgdRev)), e('div', { className: 'bm-lbl' }, 'Staff-managed revenue')),
-            lessons && lessons.n > 0 ? e('div', { className: 'band-metric' }, e('div', { className: 'bm-val sc-blue' }, lessons.n.toLocaleString()), e('div', { className: 'bm-lbl' }, 'Instructor lessons')) : null,
-            lessons && lessons.n > 0 ? e('div', { className: 'band-metric' }, e('div', { className: 'bm-val sc-green' }, money(lessons.rev)), e('div', { className: 'bm-lbl' }, 'Lesson revenue')) : null,
+            showLessons ? e('div', { className: 'band-metric' }, e('div', { className: 'bm-val sc-blue' }, lessons.n.toLocaleString()), e('div', { className: 'bm-lbl' }, 'Instructor lessons', orgBadge)) : null,
+            showLessons ? e('div', { className: 'band-metric' }, e('div', { className: 'bm-val sc-green' }, money(lessons.rev)), e('div', { className: 'bm-lbl' }, 'Lesson revenue', orgBadge)) : null,
           ),
-          lessons && lessons.n > 0 ? e('div', { style: { fontSize: 11, color: '#78716c', marginTop: 6 } },
-            'Lessons are booked through the Lessons product on the same courts — counted here from instructor registrations, not facility reservations.') : null,
+          showLessons ? e('div', { style: { fontSize: 11, color: '#78716c', marginTop: 6 } },
+            e('strong', { style: { color: '#1d4ed8' } }, 'Org-wide, all programs · '),
+            'these come from the Lessons/programs pipeline (every program & location, for the selected dates) — not facility reservations, and NOT scoped by the site-type or location filters. Hidden while a filter is active so it can’t be mistaken for the filtered venue’s revenue.') : null,
           a.hasBilled && a.invoicedN > 0 ? e('div', { style: { fontSize: 11, color: '#78716c', marginTop: 6 } },
             'Includes ' + a.invoicedN.toLocaleString() + ' invoiced line item' + (a.invoicedN === 1 ? '' : 's') + ' — tournaments, event rentals, deposits & service fees billed through invoices — worth ' + money(a.invoicedRev) + ' billed. These have no court reservation, so earlier versions of this report dropped them.') : null,
         ),
@@ -2367,7 +2377,7 @@
             }),
           ),
           tab === 'summary'
-            ? e(SummaryTab, { rows: viewRows, err, statusSel, typeSel, lessons })
+            ? e(SummaryTab, { rows: viewRows, err, statusSel, typeSel, lessons, filtersActive: (locSel.length > 0 || typeSel.length > 0) })
             : tab === 'utilization'
               ? e(CourtUtilizationView, { start, end })
               : tab === 'racket'
@@ -2378,7 +2388,7 @@
                   ? e(AquaticsView, { rows: viewRows, err, statusSel, vert: Object.assign({ key: tab }, VERT_CONFIG[tab]) })
                   : VERT_CONFIG[tab]
                     ? e(VerticalView, { rows: viewRows, err, statusSel, vert: Object.assign({ key: tab }, VERT_CONFIG[tab]) })
-                    : e(SummaryTab, { rows: viewRows, err, statusSel, typeSel, lessons }),
+                    : e(SummaryTab, { rows: viewRows, err, statusSel, typeSel, lessons, filtersActive: (locSel.length > 0 || typeSel.length > 0) }),
         ),
       );
     }
