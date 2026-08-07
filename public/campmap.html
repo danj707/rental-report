@@ -10,7 +10,7 @@
 :root{
   --bg:#0f172a;--panel:#ffffff;--ink:#1f2937;--muted:#6b7280;--line:#e5e7eb;
   --avail:#16a34a;--avail-bg:#dcfce7;--booked:#dc2626;--booked-bg:#fee2e2;
-  --unknown:#9ca3af;--unknown-bg:#f3f4f6;--accent:#0f766e;--sel:#f59e0b;
+  --unknown:#9ca3af;--unknown-bg:#f3f4f6;--blocked:#64748b;--blocked-bg:#e2e8f0;--accent:#0f766e;--sel:#f59e0b;
   --shadow:0 1px 3px rgba(16,24,40,.12),0 1px 2px rgba(16,24,40,.08);
   --shadow-lg:0 12px 40px rgba(16,24,40,.28);
 }
@@ -99,6 +99,7 @@ body{font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica
 .dbody .stat-pill.avail{background:var(--avail-bg);color:#166534}
 .dbody .stat-pill.booked{background:var(--booked-bg);color:#991b1b}
 .dbody .stat-pill.unknown{background:var(--unknown-bg);color:#374151}
+.dbody .stat-pill.blocked{background:var(--blocked-bg);color:#334155}
 .dbody h2{margin:2px 0 2px;font-size:20px}
 .dbody .area{font-size:12.5px;color:var(--muted);margin-bottom:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .dbody .tag{font-size:11px;font-weight:700;padding:2px 8px;border-radius:6px}
@@ -123,6 +124,7 @@ body{font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica
 .mc-cell.pad{cursor:default}
 .mc-cell.av{background:var(--avail-bg);color:#166534;font-weight:600}
 .mc-cell.bk{background:var(--booked-bg);color:#991b1b;text-decoration:line-through;opacity:.85}
+.mc-cell.bl{background:var(--blocked-bg);color:#334155;font-weight:600}
 .mc-cell.un{background:#f9fafb;color:#9ca3af}
 .mc-cell.past{opacity:.35;cursor:default}
 .mc-cell.today{outline:2px solid var(--accent);outline-offset:-2px}
@@ -247,6 +249,7 @@ body{font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica
         <h4>Availability</h4>
         <div class="row"><span class="dot" style="background:var(--avail)"></span> Open this night</div>
         <div class="row"><span class="dot" style="background:var(--booked)"></span> Booked</div>
+        <div class="row"><span class="dot" style="background:var(--blocked)"></span> Not open for booking</div>
         <div class="row"><span class="dot" style="background:var(--unknown)"></span> Unknown</div>
         <div class="div" id="legKindDiv"></div>
         <h4 id="legKindH" style="display:none">Site type</h4>
@@ -442,8 +445,11 @@ var MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'
 var TODAY = new Date(); TODAY.setHours(0,0,0,0);
 var TODAY_ISO = iso(TODAY);
 
-/* ── availability state: { siteId: { 'YYYY-MM-DD': true } } ── */
-var AVAIL = {};          // date -> available? (true)
+/* ── availability state: { siteId: { 'YYYY-MM-DD': 'avail'|'booked'|'blocked' } } ──
+   'booked'  = an actual reservation conflict on that night
+   'blocked' = not bookable for a non-reservation reason (booking-window rule,
+               blackout, etc.) — NOT a booking, so it must not read as "Booked". */
+var AVAIL = {};          // siteId -> { date: 'avail'|'booked'|'blocked' }
 var LIVE = false;        // did we get live data?
 
 /* deterministic pseudo-random 0..1 from a string (offline fallback) */
@@ -456,21 +462,20 @@ function fallbackAvail(site, dateStr){
   var d=new Date(dateStr+'T00:00:00');
   var dow=d.getDay();
   var booked = 0.20 + (dow===5||dow===6?0.34:0) + hash01(site.id)*0.18; // weekends busier
-  return hash01(site.id+'|'+dateStr) > booked;   // true = available
+  return hash01(site.id+'|'+dateStr) > booked ? 'avail' : 'booked';   // demo: open vs booked
 }
-/* build 120 days of availability for a site from fallback */
+/* build 160 days of availability for a site from fallback */
 function seedFallback(site){
   var m={};
-  for(var i=0;i<160;i++){ var ds=iso(addDays(TODAY,i)); if(fallbackAvail(site,ds)) m[ds]=true; }
+  for(var i=0;i<160;i++){ var ds=iso(addDays(TODAY,i)); m[ds]=fallbackAvail(site,ds); }
   return m;
 }
 
-/* status of a site on a date: 'avail' | 'booked' | 'unknown' */
+/* status of a site on a date: 'avail' | 'booked' | 'blocked' | 'unknown' */
 function statusOn(site, dateStr){
   var a=AVAIL[site.id];
-  if(!a) return 'unknown';
-  if(a.__empty) return 'unknown';
-  return a[dateStr] ? 'avail' : 'booked';
+  if(!a || a.__empty) return 'unknown';
+  return a[dateStr] || 'unknown';
 }
 
 /* ── map setup ── */
@@ -486,7 +491,7 @@ document.getElementById('btSat').onclick=function(){ if(map.hasLayer(streetLayer
 document.getElementById('btStreet').onclick=function(){ if(map.hasLayer(satLayer))map.removeLayer(satLayer); streetLayer.addTo(map); this.classList.add('on'); document.getElementById('btSat').classList.remove('on'); };
 
 /* markers */
-var COLORS={avail:'#16a34a',booked:'#dc2626',unknown:'#9ca3af'};
+var COLORS={avail:'#16a34a',booked:'#dc2626',blocked:'#64748b',unknown:'#9ca3af'};
 var markers={};   // siteId -> L.marker
 var selectedId=null;
 /* ── admin edit state ── */
@@ -506,7 +511,7 @@ function addMarker(site){
   var icon=L.divIcon({className:'', html:markerHtml(site,status), iconSize:[34,34], iconAnchor:[17,17]});
   var m=L.marker([site.lat,site.lng],{icon:icon, riseOnHover:true, zIndexOffset:400, draggable:true}).addTo(map);
   if(m.dragging && !EDIT) m.dragging.disable();
-  m.bindTooltip(function(){ var st=statusOn(site,SELECTED); var lbl=st==='avail'?'Open':st==='booked'?'Booked':'Unknown'; var ki=kindInfo(sKind(site));
+  m.bindTooltip(function(){ var st=statusOn(site,SELECTED); var lbl=st==='avail'?'Open':st==='booked'?'Booked':st==='blocked'?'Not bookable':'Unknown'; var ki=kindInfo(sKind(site));
     return '<span class="st">'+shortName(site)+'</span><br>'+ ki.e+' '+ki.label +' · '+lbl; },
     {className:'site-tip', direction:'top', offset:[0,-14]});
   m.on('click', function(){ if(!EDIT) openSite(site); else { openSite(site); } });
@@ -637,6 +642,7 @@ function renderBody(site){
   var st=statusOn(site,SELECTED);
   var stPill= st==='avail'?'<span class="stat-pill avail">● Open this night</span>'
             : st==='booked'?'<span class="stat-pill booked">● Booked this night</span>'
+            : st==='blocked'?'<span class="stat-pill blocked">● Not open for booking</span>'
             : '<span class="stat-pill unknown">● Availability unknown</span>';
   var d=new Date(SELECTED+'T00:00:00'); var human=DOW[d.getDay()]+', '+MON[d.getMonth()]+' '+d.getDate();
   var amens=sAmen(site).map(function(a){ return '<span class="a">'+a.e+' '+a.l+'</span>'; }).join('');
@@ -689,12 +695,12 @@ function miniCalHtml(site){
     var ds=y+'-'+pad(mo+1)+'-'+pad(day);
     var cls='mc-cell';
     if(ds<TODAY_ISO){ cls+=' past'; }
-    else { var st=statusOn(site,ds); cls+= st==='avail'?' av':st==='booked'?' bk':' un'; }
+    else { var st=statusOn(site,ds); cls+= st==='avail'?' av':st==='booked'?' bk':st==='blocked'?' bl':' un'; }
     if(ds===TODAY_ISO) cls+=' today';
     if(ds===SELECTED) cls+=' sel';
     h+='<div class="'+cls+'" data-ds="'+ds+'">'+day+'</div>';
   }
-  h+='</div><div style="font-size:10.5px;color:var(--muted);margin-top:7px;display:flex;gap:12px"><span>🟩 Open</span><span>🟥 Booked</span></div></div>';
+  h+='</div><div style="font-size:10.5px;color:var(--muted);margin-top:7px;display:flex;gap:12px;flex-wrap:wrap"><span>🟩 Open</span><span>🟥 Booked</span><span style="color:var(--blocked)">◼ Not open</span></div></div>';
   return h;
 }
 function wireMiniCal(site){
@@ -878,20 +884,31 @@ function loadAvailability(){
       var data=res.data||{}; var any=false;
       SEED.forEach(function(s){
         var d=data[s.id];
-        // Nightly sites nest available dates under `checkInDates`; hourly sites are date→slots.
+        // Nightly sites nest per-date availability under `checkInDates`; hourly sites are date→slots.
         var src = (d && d.checkInDates && typeof d.checkInDates==='object') ? d.checkInDates : d;
         if(src && typeof src==='object' && Object.keys(src).length){
-          var m={}; Object.keys(src).forEach(function(dateStr){
+          var m={}; var haveDate=false;
+          Object.keys(src).forEach(function(dateStr){
             if(!/^\d{4}-\d{2}-\d{2}/.test(dateStr)) return;   // skip non-date keys
             var v=src[dateStr];
-            var open = v && (v.available===true || (typeof v==='object' && v.available===undefined && Object.keys(v).length>0));
-            if(open) m[dateStr]=true;
+            var state;
+            if(v && v.available===true) state='avail';
+            // available:false → 'booked' ONLY for a real reservation conflict.
+            // Any other reason (outside-window, blackout, min/max-stay, closed…)
+            // is a booking-rule restriction, not a reservation → 'blocked'.
+            else if(v && v.available===false) state=(v.reason==='conflict' ? 'booked' : 'blocked');
+            // hourly slots: an object of time slots with no `available` flag = open
+            else if(v && typeof v==='object' && Object.keys(v).length>0) state='avail';
+            else state='blocked';
+            m[dateStr]=state; haveDate=true;
           });
-          if(Object.keys(m).length){ AVAIL[s.id]=m; any=true; } else { AVAIL[s.id]={__empty:true}; }
+          if(haveDate){ AVAIL[s.id]=m; any=true; } else { AVAIL[s.id]={__empty:true}; }
         } else {
           AVAIL[s.id]={__empty:true};
         }
       });
+      // LIVE as long as we parsed real date info for any site (even fully-booked/
+      // blocked ones) — a campground with no open nights must not fall back to demo.
       if(any){ LIVE=true; }
       else { throw new Error('empty'); }
       updateLegFoot();
