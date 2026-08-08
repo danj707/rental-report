@@ -43,7 +43,14 @@ org admins see) — it is EMPTY until at least one update is published, and each
 preview is a fresh environment with its own (empty) data store. So a brand-new
 preview shows no popup until you publish an update in it first.
 
-## Facility report undercounts revenue — invoice_v2 gap (OPEN, spec'd 2026-08-06)
+## Facility report undercounts revenue — invoice_v2 gap (RESOLVED, shipped PR #78 2026-08-07)
+
+**STATUS: DONE & LIVE.** The fix is on `main` and serving. Verified 2026-08-08
+via a server-style parameterized request to the live v2 card (Clarksville,
+2026-07-01→08-08): HTTP 200 in ~12s, date tags intact (`date/single` matched, no
+Text-reset breakage), 97 rows = 83 `Reservation` + **14 `Invoice`** (invoice_v2
+manual items unioned in), billed $62,164 vs collected $24,510. The rest of this
+section is kept as reference/history — do NOT re-open it as a task.
 
 The facility report (`FACILITIES_SUMMARY` card + `public/facilities.html`) only
 counts `order_item`s joined by `reservation_id`. Every **manual invoice line
@@ -62,27 +69,27 @@ of true facility revenue (Chico 84% missed, Jurupa 80%). Apex misses $91K
   its earliest reservation — drops recurring-date revenue and mis-attributes
   court/location/date. So per-site/per-location filtering isn't robust for
   recurring/multi-court managed rentals (fine for Apex single-court instant).
-- **The fix (BUILT, shipped in PR #76, then ROLLED BACK in #77 — perf):**
+- **The fix (BUILT #76 → ROLLED BACK #77 for perf → RE-SHIPPED #78):**
   rebuilt the card to (1) per-reservation grain, (2) union in invoice_v2 manual
   items (`finalCents>0`, no reservation) attributed to the rental's location,
   (3) show **billed vs collected** side by side. Goal per Dan: an *authoritative*
   facility-revenue view — instant + managed + invoiced/paid + invoiced/unpaid —
   sliceable by site type, location, date range (Brad@Marquardt-Miles pickleball
   vs Tim@Apex Tennis Center).
-- **Current state:** `sql/facilities-summary-v2.sql` = the rebuilt query, saved
-  as Metabase card **19570** (public UUID `4c070d95-ab02-4b9d-ac43-ac86257162d5`,
-  date tags flipped, sharing on). `public/facilities.html` already has the
-  billed/collected UI, gated on a `hasBilled` flag → **dormant** because
-  `FACILITIES_SUMMARY_UUID` in server.js points back at the original card
-  `4defd1b6…`. Flipping that one line re-activates it.
-- **Why rolled back:** the v2 card is ~24s warm vs the old card's ~18s — not the
-  real problem. The 502 "upstream error" came from the post-deploy **cold-cache +
-  prewarm storm**: prewarm fires the heavy query for all ~74 orgs at once, and
-  cold that query is far slower (60s+), so Metabase queued and edge requests
-  timed out. **Before re-shipping: optimize the v2 SQL cold time** — the `oit`
-  CTE aggregates the org's *entire* order_item_transaction ledger (not windowed)
-  and there are several full-org order_item scans; scope those to the feed's item
-  set. Then re-point the UUID and re-warm off-peak / stagger prewarm.
+- **Current state (LIVE):** `sql/facilities-summary-v2.sql` = the rebuilt query,
+  saved as Metabase card **19570** (public UUID
+  `4c070d95-ab02-4b9d-ac43-ac86257162d5`, date tags Date-typed, sharing on).
+  `FACILITIES_SUMMARY_UUID` in server.js (~line 1059) points at this v2 card, so
+  `public/facilities.html`'s billed/collected UI (`hasBilled` flag) is **active**.
+- **How the perf blocker was cleared (PR #78):** the 502 came from the post-deploy
+  **cold-cache + prewarm storm** (heavy query fired cold for ~74 orgs at once,
+  60s+ each). PR #78 optimized the v2 SQL — pushed the date window into the
+  reservation scan and scoped the payment/refund aggregation (`oit`) to the
+  emitted item set instead of the org's whole ledger: **Watertown 54s→6s, Apex
+  YTD 54s→37s**, identical result rows, safely under the 60s live-fetch timeout.
+  It also added `invalidateFacilitiesCacheOnUuidChange()` (server.js ~248–273): a
+  one-shot boot check that drops stale facilities cache on a UUID flip, so the
+  cutover didn't serve up to 4h of the old card's undercounted numbers.
 - Full write-up artifact:
   https://claude.ai/code/artifact/b7b77323-5b23-463a-8f04-480f528effbe
 
