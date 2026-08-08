@@ -975,6 +975,12 @@ const ORGS = {
     logoUrl: "https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2Forganization-f2f03a2b-82b8-4cd6-be40-ae94aea6480b%2FfullLogo.png%3F1776292864596&w=1920&q=75",
     displayName: "City of Lakeland",
   },
+  "glenview-sandbox": {
+    token:   "MarDOkpRPLKLsbjm",
+    orgId:   "d2e83fdf-5f32-4ece-829c-82704587e120",
+    logoUrl: "https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2Forganization-d2e83fdf-5f32-4ece-829c-82704587e120%2FfullLogo.png%3F1781530248731&w=1920&q=75",
+    displayName: "Glenview Sandbox",
+  },
 };
 
 const REPORT_TYPES = ["facility", "gl", "historic", "programs", "roster", "products", "memberships", "court-utilization", "calendar", "fasttrack", "waitlist", "users", "program-demographics", "instructor-payout", "retention", "annual-report", "section-detail", "ice-calendar", "qoq", "checkins", "program-checkins", "selfservice"];
