@@ -10494,7 +10494,12 @@ app.get("/", (req, res) => {
           </div>
         </div>
         <div style="margin-top:20px">
-          <label style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:#888;display:block;margin-bottom:10px">Reports to Enable *</label>
+          <label style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:#888;display:block;margin-bottom:8px">Standard Reports</label>
+          <div id="shared-reports-note" style="padding:10px 14px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px;font-size:12px;color:#065f46"></div>
+        </div>
+        <div style="margin-top:20px">
+          <label style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:#888;display:block;margin-bottom:4px">Special Reports</label>
+          <div style="font-size:11px;color:#aaa;margin-bottom:10px">One-off reports that need a dedicated per-org Metabase card. Leave unchecked unless this org has one.</div>
           <div id="report-checkboxes" style="display:flex;flex-wrap:wrap;gap:8px"></div>
         </div>
         <div id="metabase-inputs" style="margin-top:20px;display:flex;flex-direction:column;gap:12px"></div>
@@ -11167,8 +11172,21 @@ app.get("/", (req, res) => {
     });
 
     function buildReportCheckboxes() {
+      // Shared reports are enabled automatically for every new org — the shared
+      // base query injects org_id, so no per-org Metabase link is needed. They
+      // are shown as an informational list, not as things to pick. Only "one-off"
+      // reports that require a dedicated per-org card (Historic Buildings, Ice
+      // Participant Calendar, …) are offered as checkboxes.
+      const shared = Object.entries(REPORT_META).filter(([k]) => SHARED_UUIDS_CLIENT[k]);
+      const oneOff = Object.entries(REPORT_META).filter(([k]) => !SHARED_UUIDS_CLIENT[k]);
+
+      document.getElementById('shared-reports-note').innerHTML =
+        '<strong>\\u2705 ' + shared.length + ' reports enabled automatically:</strong> '
+        + shared.map(([, m]) => m.icon + ' ' + m.label).join(', ')
+        + '<br><span style="font-size:11px;color:#6b7280">Shared base query \\u2014 org_id injected automatically, no Metabase link needed.</span>';
+
       const box = document.getElementById('report-checkboxes');
-      box.innerHTML = Object.entries(REPORT_META).map(([key, m]) => \`
+      box.innerHTML = oneOff.map(([key, m]) => \`
         <label style="display:flex;align-items:center;gap:6px;padding:7px 12px;border:1px solid #ddd;border-radius:5px;cursor:pointer;font-size:13px;user-select:none">
           <input type="checkbox" value="\${key}" onchange="updateMetabaseInputs()" style="cursor:pointer;accent-color:#16a34a" />
           \${m.icon} \${m.label}
@@ -11177,17 +11195,14 @@ app.get("/", (req, res) => {
     }
 
     function updateMetabaseInputs() {
+      // Every checkbox here is a one-off report (shared reports aren't listed),
+      // so each checked report needs its own per-org Metabase link.
       const checked = [...document.querySelectorAll('#report-checkboxes input:checked')].map(i => i.value);
       const wrap = document.getElementById('metabase-inputs');
-      const needsUuid = checked.filter(r => !SHARED_UUIDS_CLIENT[r]);
-      const shared = checked.filter(r => SHARED_UUIDS_CLIENT[r]);
       let html = '';
-      if (shared.length) {
-        html += '<div style="margin-top:4px;padding:10px 14px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px;font-size:12px;color:#065f46"><strong>\\u2705 Shared base query:</strong> ' + shared.map(r => REPORT_META[r].icon + ' ' + REPORT_META[r].label).join(', ') + '<br><span style="font-size:11px;color:#6b7280">No Metabase link needed \\u2014 org_id injected automatically</span></div>';
-      }
-      if (needsUuid.length) {
-        html += '<div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:#888;margin-top:12px;margin-bottom:4px">Per-Org Metabase Links (required)</div>';
-        needsUuid.forEach(r => { html += '<div><label style="font-size:12px;color:#555;display:block;margin-bottom:4px">' + REPORT_META[r].icon + ' ' + REPORT_META[r].label + '</label><input type="text" id="mb-' + r + '" placeholder="https://rec.metabaseapp.com/public/question/..." style="width:100%;padding:7px 10px;border:1px solid #ddd;border-radius:5px;font-size:12px;font-family:monospace" /></div>'; });
+      if (checked.length) {
+        html += '<div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:#888;margin-bottom:4px">Per-Org Metabase Links (required)</div>';
+        checked.forEach(r => { html += '<div><label style="font-size:12px;color:#555;display:block;margin-bottom:4px">' + REPORT_META[r].icon + ' ' + REPORT_META[r].label + '</label><input type="text" id="mb-' + r + '" placeholder="https://rec.metabaseapp.com/public/question/..." style="width:100%;padding:7px 10px;border:1px solid #ddd;border-radius:5px;font-size:12px;font-family:monospace" /></div>'; });
       }
       wrap.innerHTML = html;
     }
@@ -11208,25 +11223,30 @@ app.get("/", (req, res) => {
       if (!slug)    return showErr(err, 'Org slug is required');
       if (!orgId)   return showErr(err, 'Org UUID is required');
       if (!logoUrl) return showErr(err, 'Logo URL is required');
-      if (!checked.length) return showErr(err, 'Select at least one report');
-      const reports = {};
+      // Shared reports are always enabled — the only selections here are one-off
+      // reports, each of which needs a per-org Metabase link.
+      const oneOff = {};
       for (const r of checked) {
-        if (SHARED_UUIDS_CLIENT[r]) { reports[r] = null; continue; }
         const uuid = extractMbUuid(document.getElementById(\`mb-\${r}\`)?.value || '');
         if (!uuid) return showErr(err, \`Metabase link required for \${REPORT_META[r].label}\`);
-        reports[r] = uuid;
+        oneOff[r] = uuid;
       }
       // Build confirmation summary
       const displayName = document.getElementById('f-name').value.trim() || \`\${slug.charAt(0).toUpperCase()+slug.slice(1)} Parks & Recreation\`;
+      const sharedMeta = Object.keys(REPORT_META).filter(k => SHARED_UUIDS_CLIENT[k]);
       const rows = [
         \`<div><strong>Slug:</strong> \${slug}</div>\`,
         \`<div><strong>Display Name:</strong> \${displayName}</div>\`,
         \`<div><strong>Org UUID:</strong> <code style="font-size:11px">\${orgId}</code></div>\`,
         \`<div><strong>Logo:</strong> <img src="\${logoUrl}" style="height:24px;vertical-align:middle;margin-left:6px" onerror="this.style.display='none'" /></div>\`,
-        \`<div style="margin-top:6px"><strong>Reports:</strong></div>\`,
-        ...Object.entries(reports).map(([r, uuid]) =>
-          \`<div style="margin-left:12px;font-size:12px">\${REPORT_META[r].icon} \${REPORT_META[r].label} — \${uuid ? '<code style="font-size:11px">' + uuid + '</code>' : '<span style="color:#059669;font-weight:600">shared base query</span>'}</div>\`)
+        \`<div style="margin-top:6px"><strong>Standard reports (auto-enabled):</strong> \${sharedMeta.length}</div>\`,
+        \`<div style="margin-left:12px;font-size:12px;color:#059669">\${sharedMeta.map(r => REPORT_META[r].icon + ' ' + REPORT_META[r].label).join(', ')}</div>\`,
       ];
+      if (Object.keys(oneOff).length) {
+        rows.push(\`<div style="margin-top:6px"><strong>Special reports:</strong></div>\`);
+        rows.push(...Object.entries(oneOff).map(([r, uuid]) =>
+          \`<div style="margin-left:12px;font-size:12px">\${REPORT_META[r].icon} \${REPORT_META[r].label} — <code style="font-size:11px">\${uuid}</code></div>\`));
+      }
       document.getElementById('confirm-summary').innerHTML = rows.join('');
       document.getElementById('step1').style.display = 'none';
       document.getElementById('step2').style.display = 'block';
@@ -11250,17 +11270,16 @@ app.get("/", (req, res) => {
       var displayName = document.getElementById('f-name').value.trim() || null;
       var orgId     = document.getElementById('f-orgid').value.trim();
       var logoUrl   = document.getElementById('f-logo').value.trim();
-      // gl/historic inputs only exist when that report isn't shared (gl is shared,
-      // so mb-gl is never rendered). Guard against null — reading .value on a
-      // missing element threw a TypeError that aborted every org creation.
-      var glEl      = document.getElementById('mb-gl');
-      var histEl    = document.getElementById('mb-historic');
-      var glUuid    = glEl   ? extractMbUuid(glEl.value   || '') : '';
-      var histUuid  = histEl ? extractMbUuid(histEl.value || '') : '';
+      // Every shared report is enabled automatically (null → served via the
+      // shared base query). The only per-org links are the one-off reports the
+      // admin checked in step 1 (Historic Buildings, Ice Participant Calendar, …).
       var reports   = {};
       Object.keys(SHARED_UUIDS_CLIENT).forEach(function(r) { reports[r] = null; });
-      if (glUuid) reports['gl'] = glUuid;
-      if (histUuid) reports['historic'] = histUuid;
+      [...document.querySelectorAll('#report-checkboxes input:checked')].forEach(function(cb) {
+        var el = document.getElementById('mb-' + cb.value);
+        var uuid = el ? extractMbUuid(el.value || '') : '';
+        if (uuid) reports[cb.value] = uuid;
+      });
       try {
         var res  = await fetch('/api/admin/new-org', {
           method: 'POST',
