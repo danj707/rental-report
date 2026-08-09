@@ -81,6 +81,94 @@ const FROM_EMAIL     = process.env.FROM_EMAIL     || "reports@rec.us";
 const FROM_NAME      = process.env.FROM_NAME      || "rec.us Reports";
 
 
+// ── Metabase public-card parameter `id` resolution (2026-08-09 incident) ──
+// Metabase's public /api/public/card/:uuid/query/json endpoint now REQUIRES
+// each supplied parameter to carry the card's own registered parameter `id`.
+// A parameter with only {type,target,value} (or target/slug) is rejected with
+// HTTP 400 "An error occurred." — verified 2026-08-09 across the fasttrack,
+// roster, and calendar cards, so it is a Metabase-side change, not any one card
+// edit. Every param builder in this file (buildMetabaseParams + the prewarm /
+// health / pulse inline builders) emits id-less params, so once the Metabase
+// change landed EVERY live and prewarm fetch started 400ing: reports with a warm
+// cache silently served stale data, reports without one (e.g. Watertown
+// fasttrack) hard-failed with "Could not load report: HTTP 400".
+//
+// Rather than thread the id through ~17 scattered call sites, we resolve each
+// card's parameter ids from its public definition (cached 1h) and stamp them
+// onto the outbound URL through a single guarded fetch wrapper below. Cache keys
+// are still built from the id-less params elsewhere and are intentionally left
+// unchanged — the id is derived from the card uuid, so it carries no extra
+// information and existing cache entries stay valid.
+const _origFetch = globalThis.fetch.bind(globalThis);
+const _cardParamMeta = new Map();            // mbUuid -> { ts, byTag: Map(tag|slug -> id) }
+const CARD_PARAM_META_TTL = 60 * 60 * 1000;  // 1h — picks up new ids if a card is re-saved
+
+async function getCardParamMeta(mbUuid) {
+  const hit = _cardParamMeta.get(mbUuid);
+  if (hit && Date.now() - hit.ts < CARD_PARAM_META_TTL) return hit.byTag;
+  try {
+    const resp = await _origFetch(`${METABASE_URL}/api/public/card/${mbUuid}`, { signal: AbortSignal.timeout(15000) });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const def = await resp.json();
+    const byTag = new Map();
+    for (const p of (def.parameters || [])) {
+      if (!p || !p.id) continue;
+      const tag = Array.isArray(p.target) && Array.isArray(p.target[1]) ? p.target[1][1] : null;
+      if (tag) byTag.set(tag, p.id);
+      if (p.slug) byTag.set(p.slug, p.id);
+    }
+    _cardParamMeta.set(mbUuid, { ts: Date.now(), byTag });
+    return byTag;
+  } catch (e) {
+    console.warn(`[mb-params] param-id lookup failed for card ${String(mbUuid).slice(0, 8)}: ${e.message}`);
+    return hit ? hit.byTag : null;           // fall back to any prior meta
+  }
+}
+
+// Rewrite a Metabase public-card query URL to stamp the required `id` onto each
+// parameter. Never throws — returns the URL unchanged on any problem so a lookup
+// failure degrades to prior behavior rather than breaking the request.
+async function enrichMetabaseCardUrl(url) {
+  try {
+    const m = /\/api\/public\/card\/([^/?]+)\/query\/json\?parameters=(.+)$/.exec(url);
+    if (!m) return url;
+    const mbUuid = m[1];
+    const params = JSON.parse(decodeURIComponent(m[2]));
+    if (!Array.isArray(params) || params.length === 0) return url;
+    if (params.every(p => p && p.id)) return url;   // already stamped
+    const byTag = await getCardParamMeta(mbUuid);
+    if (!byTag) return url;
+    let changed = false;
+    const stamped = params.map(p => {
+      if (!p || p.id) return p;
+      const tag = Array.isArray(p.target) && Array.isArray(p.target[1]) ? p.target[1][1] : p.slug;
+      const id = tag ? byTag.get(tag) : null;
+      if (!id) return p;
+      changed = true;
+      return { id, ...p };
+    });
+    if (!changed) return url;
+    return `${url.slice(0, m.index)}/api/public/card/${mbUuid}/query/json?parameters=${encodeURIComponent(JSON.stringify(stamped))}`;
+  } catch (e) {
+    console.warn(`[mb-params] URL enrich failed: ${e.message}`);
+    return url;
+  }
+}
+
+// Guarded global fetch wrapper: transparently stamps parameter ids onto Metabase
+// public-card QUERY requests only. Every other fetch — including card-definition
+// reads (/api/public/card/:uuid with no /query/json) used above — passes through
+// untouched, so there is no recursion and no effect on non-Metabase traffic.
+globalThis.fetch = async function (resource, init) {
+  if (typeof resource === "string"
+      && resource.includes("/api/public/card/")
+      && resource.includes("/query/json?parameters=")) {
+    resource = await enrichMetabaseCardUrl(resource);
+  }
+  return _origFetch(resource, init);
+};
+
+
 // ── Metabase response cache ───────────────────────────────────────────
 const CACHE_TTL = 4 * 60 * 60 * 1000;  // 4-hour default TTL — warmed at 5am, serves all day
 const REPORT_CACHE_TTL = {
