@@ -47,6 +47,8 @@
     .loading { display: flex; flex-direction: column; align-items: center; padding: 48px 0; gap: 14px; }
     .spinner { width: 30px; height: 30px; border: 3px solid #ddd; border-top-color: #3b82f6; border-radius: 50%; animation: spin .7s linear infinite; }
     @keyframes spin { to { transform: rotate(360deg); } }
+    @keyframes ftPulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(220,38,38,.55); } 50% { box-shadow: 0 0 0 7px rgba(220,38,38,0); } }
+    .ft-pulse { animation: ftPulse 1.5s ease-in-out infinite; }
     .juice-msg { font-size: 12px; color: #999; }
     .juice-msg span { display: none; }
     .juice-msg span:first-child { display: inline; }
@@ -443,13 +445,24 @@ function PipelineLaunchCard(props) {
         (p.sections || []).length ? ' · ' + p.sections.length + ' section' + (p.sections.length !== 1 ? 's' : '') : '',
         p._spotsLeft != null ? ' · ' + fmtInt(p._spotsLeft) + ' spots' : ''
       ),
+      (function () {
+        var cap = p.capacity || 0;
+        if (!cap) return null;
+        var pct = Math.round(p.ftSignups / cap * 100);
+        var over = pct > 100;
+        return React.createElement('div', { style: { marginTop: 7, maxWidth: 340 } },
+          React.createElement('div', { style: { height: 6, borderRadius: 3, background: '#eef0f2', overflow: 'hidden' } },
+            React.createElement('div', { style: { height: '100%', width: Math.min(100, pct) + '%', background: over ? '#dc2626' : accent, borderRadius: 3 } })),
+          React.createElement('div', { style: { fontSize: 10.5, marginTop: 2, fontWeight: over ? 700 : 400, color: over ? '#dc2626' : '#6b7280' } },
+            over ? ('🔥 ' + pct + '% of capacity already fast-tracked — oversubscribed before it opens') : (pct + '% of capacity fast-tracked pre-launch')));
+      })(),
       p.programId && React.createElement('a', {
         href: adminProgramUrl(p.orgId, p.programId), target: '_blank', rel: 'noopener',
         style: { display: 'inline-block', marginTop: 5, fontSize: 11, fontWeight: 600, color: '#3b82f6', textDecoration: 'none' }
       }, 'Manage Program →')
     ),
     React.createElement('div', { style: { textAlign: 'right', minWidth: 128 } },
-      React.createElement('div', { style: { display: 'inline-block', background: accent, color: '#fff', fontWeight: 800, fontSize: 12, letterSpacing: 0.5, padding: '6px 12px', borderRadius: 999, boxShadow: '0 2px 8px ' + accent + '4d' } }, '🔥 ' + countdown),
+      React.createElement('div', { className: (d != null && d <= 1) ? 'ft-pulse' : undefined, style: { display: 'inline-block', background: accent, color: '#fff', fontWeight: 800, fontSize: 12, letterSpacing: 0.5, padding: '6px 12px', borderRadius: 999, boxShadow: '0 2px 8px ' + accent + '4d' } }, '🔥 ' + countdown),
       rt.nextOpen && React.createElement('div', { style: { fontSize: 11, color: '#6b7280', marginTop: 5 } }, 'Reg opens ' + fmtDateShort(rt.nextOpen)),
       rt.nextClose && React.createElement('div', { style: { fontSize: 10, color: '#9ca3af', marginTop: 1 } }, 'closes ' + fmtDateShort(rt.nextClose))
     )
@@ -652,7 +665,7 @@ function DemandLeaderboard(props) {
         var spotsLeft = p.capacity > 0 ? Math.max(0, p.capacity - p.totalEnrolled) : null;
         var secCount = p.sections ? p.sections.length : 0;
         return React.createElement('div', { key: p.program, className: 'lb-row' },
-          React.createElement('div', { className: 'lb-rank' }, i + 1),
+          React.createElement('div', { className: 'lb-rank', style: i < 3 ? { fontSize: 22 } : null }, i < 3 ? ['🥇', '🥈', '🥉'][i] : (i + 1)),
           React.createElement('div', { className: 'lb-info' },
             React.createElement('div', { className: 'lb-name' }, p.program),
             React.createElement('div', { className: 'lb-meta' },
