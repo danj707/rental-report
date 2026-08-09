@@ -375,6 +375,106 @@ function rollupToPrograms(rows) {
   return out.sort(function(a, b) { return b.ftSignups - a.ftSignups; });
 }
 
+/* Registration timing for a program: soonest upcoming open, open-now, or closed.
+   Powers the "going live soonest" sort + the per-row reg-date chip so a director
+   can prioritize what's about to open. Anchored on the section's registration
+   OPEN date (when people can start signing up). */
+function fmtDateShort(d) { return d ? d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : ''; }
+function regTiming(p) {
+  var now = new Date();
+  var nextOpen = null, openNow = false, anyReg = false, nextClose = null;
+  (p.sections || []).forEach(function(s) {
+    if (!s.regOpens) return;
+    anyReg = true;
+    var o = new Date(s.regOpens);
+    if (o > now) { if (!nextOpen || o < nextOpen) nextOpen = o; return; }
+    var c = s.regCloses ? new Date(s.regCloses) : null;      // already opened
+    if (!c || c >= now) { openNow = true; if (c && (!nextClose || c < nextClose)) nextClose = c; }
+  });
+  var daysUntilOpen = nextOpen ? Math.ceil((nextOpen - now) / 86400000) : null;
+  // Sort key for "going live soonest": future opens by date, then open-now, then closed/none.
+  var soonestKey = nextOpen ? nextOpen.getTime() : (openNow ? 8.64e15 : (anyReg ? 9.0e15 : 9.5e15));
+  return { nextOpen: nextOpen, daysUntilOpen: daysUntilOpen, openNow: openNow, nextClose: nextClose, anyReg: anyReg, soonestKey: soonestKey };
+}
+function RegChip(props) {
+  var rt = props.rt;
+  if (rt.daysUntilOpen != null) {
+    var soon = rt.daysUntilOpen <= 7;
+    return React.createElement('div', { style: { marginTop: 4, fontSize: 11, fontWeight: 700, color: soon ? '#dc2626' : '#2563eb' } },
+      (soon ? '🔴 ' : '📅 ') + 'Reg opens ' + fmtDateShort(rt.nextOpen) + ' · ' + rt.daysUntilOpen + (rt.daysUntilOpen === 1 ? ' day' : ' days'));
+  }
+  if (rt.openNow) return React.createElement('div', { style: { marginTop: 4, fontSize: 11, fontWeight: 700, color: '#16a34a' } },
+    '🟢 Registration open' + (rt.nextClose ? (' · closes ' + fmtDateShort(rt.nextClose)) : ''));
+  if (rt.anyReg) return React.createElement('div', { style: { marginTop: 4, fontSize: 11, color: '#9ca3af' } }, '⚪ Registration closed');
+  return null;
+}
+
+/* ── "Launching Soon" pipeline card — high-energy view of pent-up FT demand
+   about to go live. Hero FT number + urgency countdown that escalates (blue →
+   amber → orange → red) as the registration-open date nears. ── */
+function PipelineLaunchCard(props) {
+  var p = props.p;
+  var rt = regTiming(p);
+  var d = rt.daysUntilOpen;
+  var accent = (d != null && d <= 1) ? '#dc2626'
+             : (d != null && d <= 3) ? '#ea580c'
+             : (d != null && d <= 7) ? '#f59e0b' : '#6366f1';
+  var countdown = d == null ? 'OPENS SOON'
+                : d === 0 ? 'OPENS TODAY'
+                : d === 1 ? 'OPENS TOMORROW'
+                : 'OPENS IN ' + d + ' DAYS';
+  return React.createElement('div', {
+    style: {
+      display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap',
+      background: 'linear-gradient(90deg, ' + accent + '14, transparent 55%)',
+      border: '1px solid ' + accent + '33', borderLeft: '5px solid ' + accent,
+      borderRadius: 12, padding: '14px 18px', marginBottom: 10
+    }
+  },
+    React.createElement('div', { style: { textAlign: 'center', minWidth: 84 } },
+      React.createElement('div', { style: { fontSize: 44, fontWeight: 800, lineHeight: 1, color: accent } }, fmtInt(p.ftSignups)),
+      React.createElement('div', { style: { fontSize: 10, fontWeight: 700, letterSpacing: 0.6, color: '#6b7280', textTransform: 'uppercase', marginTop: 3 } }, 'Fast Tracked')
+    ),
+    React.createElement('div', { style: { flex: 1, minWidth: 200 } },
+      React.createElement('div', { style: { fontSize: 15, fontWeight: 700, color: '#111', marginBottom: 4 } }, p.program),
+      React.createElement('div', { style: { fontSize: 12.5, color: '#555' } },
+        React.createElement('strong', { style: { color: accent } }, fmtInt(p.ftPending) + ' waiting to register'),
+        p.ftFamilies > 0 ? ' · ' + fmtInt(p.ftFamilies) + ' families' : '',
+        (p.sections || []).length ? ' · ' + p.sections.length + ' section' + (p.sections.length !== 1 ? 's' : '') : '',
+        p._spotsLeft != null ? ' · ' + fmtInt(p._spotsLeft) + ' spots' : ''
+      ),
+      p.programId && React.createElement('a', {
+        href: adminProgramUrl(p.orgId, p.programId), target: '_blank', rel: 'noopener',
+        style: { display: 'inline-block', marginTop: 5, fontSize: 11, fontWeight: 600, color: '#3b82f6', textDecoration: 'none' }
+      }, 'Manage Program →')
+    ),
+    React.createElement('div', { style: { textAlign: 'right', minWidth: 128 } },
+      React.createElement('div', { style: { display: 'inline-block', background: accent, color: '#fff', fontWeight: 800, fontSize: 12, letterSpacing: 0.5, padding: '6px 12px', borderRadius: 999, boxShadow: '0 2px 8px ' + accent + '4d' } }, '🔥 ' + countdown),
+      rt.nextOpen && React.createElement('div', { style: { fontSize: 11, color: '#6b7280', marginTop: 5 } }, 'Reg opens ' + fmtDateShort(rt.nextOpen)),
+      rt.nextClose && React.createElement('div', { style: { fontSize: 10, color: '#9ca3af', marginTop: 1 } }, 'closes ' + fmtDateShort(rt.nextClose))
+    )
+  );
+}
+function PipelineLaunchSection(props) {
+  var items = (props.items || []).slice().sort(function(a, b) { return b.ftSignups - a.ftSignups; });
+  if (!items.length) return null;
+  var totalFt = items.reduce(function(s, p) { return s + p.ftSignups; }, 0);
+  var soonest = items.reduce(function(m, p) { var d = regTiming(p).daysUntilOpen; return (d != null && (m == null || d < m)) ? d : m; }, null);
+  return React.createElement('div', { style: { marginBottom: 22 } },
+    React.createElement('div', {
+      style: { display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap',
+        background: 'linear-gradient(90deg,#fff7ed,#ffffff)', borderRadius: 10, padding: '11px 14px', marginBottom: 12, borderLeft: '5px solid #ea580c' }
+    },
+      React.createElement('span', { style: { fontSize: 17, fontWeight: 800, color: '#9a3412' } }, '🚀 Launching Soon'),
+      React.createElement('span', { style: { fontSize: 13, fontWeight: 700, color: '#ea580c' } },
+        fmtInt(totalFt) + ' fast-trackers primed across ' + items.length + ' program' + (items.length !== 1 ? 's' : '')),
+      soonest != null && React.createElement('span', { style: { fontSize: 12, color: '#9a3412' } },
+        '— first opens ' + (soonest <= 0 ? 'today' : soonest === 1 ? 'tomorrow' : 'in ' + soonest + ' days'))
+    ),
+    items.map(function(p) { return React.createElement(PipelineLaunchCard, { key: p.program, p: p }); })
+  );
+}
+
 
 /* ── Actionable Triage Panel ── */
 function TriagePanel(props) {
@@ -460,16 +560,7 @@ function TriagePanel(props) {
   return React.createElement('div', { className: 'triage-panel' },
     /* ── Pipeline (reg not yet open) ── */
     buckets.readyToOpen.length > 0 &&
-    React.createElement('div', { style: { marginBottom: 20 } },
-      React.createElement('div', { className: 'triage-section-head' },
-        React.createElement('span', { className: 'triage-section-icon', style: { background: '#2563eb' } }, '⏳'),
-        ' Pipeline — Registration Not Yet Open',
-        React.createElement('span', { style: { fontSize: 12, fontWeight: 400, color: '#888', marginLeft: 8 } },
-          'FT demand building before registration opens'
-        )
-      ),
-      React.createElement(BucketSection, { icon: '📋', label: 'FT Demand Building', cls: 'ready', items: buckets.readyToOpen })
-    ),
+    React.createElement(PipelineLaunchSection, { items: buckets.readyToOpen }),
 
     /* ── Active Programs (reg open) ── */
     (buckets.needsCapacity.length > 0 || buckets.stalled.length > 0 || buckets.convertingWell.length > 0) &&
@@ -496,7 +587,13 @@ function TriagePanel(props) {
 /* ── Demand Leaderboard component ── */
 function DemandLeaderboard(props) {
   var programs = props.programs || [];
-  var top = programs.slice(0, 8);
+  var sortState = React.useState('demand');   // 'demand' | 'soonest'
+  var sortMode = sortState[0], setSortMode = sortState[1];
+  programs.forEach(function(p) { if (!p._rt) p._rt = regTiming(p); });
+  var ranked = sortMode === 'soonest'
+    ? programs.slice().sort(function(a, b) { return a._rt.soonestKey - b._rt.soonestKey; })
+    : programs;   // default: already ranked by FT demand (ftSignups desc)
+  var top = ranked.slice(0, 8);
   if (top.length === 0) return null;
 
   /* Build action alerts */
@@ -530,6 +627,20 @@ function DemandLeaderboard(props) {
       'Ranked by Fast Track (pre-registration) demand \u2014 pending + converted sign-ups. This is a fast-track lens: a program with no fast-track activity won\u2019t appear here even if it has plenty of regular enrollments \u2014 see the Programs report for full enrollment. Enrolled counts are shown per program below for context.'
     ),
 
+    /* Sort toggle: most demand vs going live soonest */
+    React.createElement('div', { style: { display: 'flex', gap: 8, alignItems: 'center', margin: '0 2px 14px' } },
+      React.createElement('span', { style: { fontSize: 12, color: '#888', fontWeight: 600 } }, 'Sort by'),
+      [['demand', '\ud83d\udd25 Most FT demand'], ['soonest', '\u23f3 Going live soonest']].map(function(opt) {
+        var active = sortMode === opt[0];
+        return React.createElement('button', {
+          key: opt[0], onClick: function() { setSortMode(opt[0]); },
+          style: { cursor: 'pointer', border: '1px solid ' + (active ? '#6366f1' : '#d1d5db'),
+            background: active ? '#6366f1' : '#fff', color: active ? '#fff' : '#555',
+            borderRadius: 7, padding: '4px 11px', fontSize: 12, fontWeight: 600 }
+        }, opt[1]);
+      })
+    ),
+
     /* Alerts */
 
 
@@ -555,7 +666,8 @@ function DemandLeaderboard(props) {
               p.totalEnrolled > 0 ? (' \u00B7 ' + fmtInt(p.totalEnrolled) + ' enrolled') : '',
               spotsLeft != null ? (' \u00B7 ' + fmtInt(spotsLeft) + ' spots left') : '',
               p.ftPending > 0 ? (' \u00B7 ' + fmtInt(p.ftPending) + ' pending') : ''
-            )
+            ),
+            React.createElement(RegChip, { rt: p._rt || regTiming(p) })
           ),
           React.createElement('div', { className: 'lb-stat' },
             React.createElement('div', { className: 'lb-stat-val' }, fmtInt(p.ftSignups)),
