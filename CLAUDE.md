@@ -17,6 +17,35 @@ card updates so Dan can do all the flips in one visit, verify with a
 server-style parameterized request afterward, and never assume a card update is
 done until that verification passes.
 
+## Card sign-off — a report MUST return live results before you call it done (IMPORTANT)
+
+Learned the hard way (2026-08-06 → 2026-08-09): the shared Fast Track card was
+edited and started **timing out** for large orgs (`canceling statement due to
+statement timeout`). The app silently fell back to stale cache, so the report
+kept *looking* fine while every live refresh failed — and the daily health
+check was fooled the same way (it saw a warm cache hit and never re-probed
+Metabase). **Nobody noticed for 3 days.** A warm/stale cache masks a card that
+no longer returns fresh data, so "it still renders" is NOT proof it works.
+
+**Rule: after ANY card edit (SQL, template tags, or a Metabase upgrade), confirm
+the card actually returns fresh, non-empty rows via a cache-independent live
+request — for the HEAVIEST org (biggest = worst case for timeouts), not a small
+one.** Never sign off on a warm-cache render alone.
+
+Tooling for this:
+
+```
+node scripts/verify-report-live.js --manifest scripts/report-cards.manifest.json
+```
+
+It hits the Metabase **public** card endpoint directly (same URL + parameter
+shape server.js uses, incl. the required parameter `id`), so no app cache can
+hide a broken card. It **fails (exit 1)** on error, empty result, or timeout.
+Add a `{card, org}` row to `scripts/report-cards.manifest.json` whenever a new
+shared card or large org is onboarded, and run it as the last step of every card
+change. Single-card form:
+`node scripts/verify-report-live.js --card <uuid> --org <orgId> [--start --end --timeout --min-rows]`.
+
 ## Railway deploys
 
 Railway project **lucid-possibility** (`37e39bf4-114d-446f-b7e3-5a8cedc7fafd`),
