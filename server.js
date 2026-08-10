@@ -2831,9 +2831,152 @@ async function generatePdf(orgSlug, reportType, startDate, endDate, filters = {}
   }
 }
 
+// ── Fast Track email digest ──────────────────────────────────────────
+// "Email me the top sections building FT / converting" — an inline HTML
+// digest built from the org's Fast Track feed (cache-first; live fetch via
+// the app's own data route otherwise, so caching/param logic stays in one
+// place). Heat bands mirror public/fasttrack.html: HOT >=50%, WARMING >=25%,
+// COOL >0%, COLD 0%.
+function ftHeat(convPct) {
+  const v = convPct == null ? 0 : Number(convPct) || 0;
+  if (v >= 50) return { color: "#b91c1c", label: "HOT" };
+  if (v >= 25) return { color: "#f97316", label: "WARMING" };
+  if (v > 0)  return { color: "#0369a1", label: "COOL" };
+  return { color: "#6b7280", label: "COLD" };
+}
+async function sendFastTrackDigest(orgSlug, email, schedule) {
+  const orgConfig = ORGS[orgSlug];
+  if (!orgConfig) return { ok: false, error: "unknown org" };
+  const periodDays = schedule === "daily" ? 1 : schedule === "weekly" ? 7 : 30;
+  const periodLabel = schedule === "daily" ? "last 24 hours" : schedule === "weekly" ? "last 7 days" : "last 30 days";
+
+  // Feed: prefer the report cache; fall back to the app's own data route.
+  let rows = null;
+  const cached = getCached(`${orgSlug}:fasttrack:`);
+  if (cached && Array.isArray(cached.rows)) rows = cached.rows;
+  if (!rows) {
+    try {
+      const resp = await fetch(`http://localhost:${PORT}/${orgSlug}/fasttrack/api/data`, { signal: AbortSignal.timeout(240000) });
+      if (resp.ok) { const j = await resp.json(); rows = Array.isArray(j) ? j : (j.rows || null); }
+    } catch (e) {
+      console.warn(`[ft-digest] feed fetch failed for ${orgSlug}: ${e.message}`);
+    }
+  }
+  if (!rows || !rows.length) {
+    db.appendLog(orgSlug, email, "fasttrack-digest", schedule, "error", "no feed data available");
+    return { ok: false, error: "no feed data" };
+  }
+
+  const secs = rows.filter(r => (r["Row Type"] || "section") === "section");
+  const secById = {};
+  secs.forEach(r => { if (r["Section ID"]) secById[r["Section ID"]] = r; });
+
+  // 1) Builders: FT signups added in the period, from ft_daily rows.
+  const cutoff = Date.now() - periodDays * 86400000;
+  const buildBySection = {};
+  rows.filter(r => r["Row Type"] === "ft_daily").forEach(r => {
+    const d = r["Signup Date"] ? new Date(r["Signup Date"]).getTime() : 0;
+    if (d < cutoff) return;
+    const sid = r["Section ID"] || "";
+    buildBySection[sid] = (buildBySection[sid] || 0) + (Number(r["Daily FT"] ?? r["Daily Signups"]) || 0);
+  });
+  const builders = Object.entries(buildBySection)
+    .filter(([sid, n]) => n > 0 && secById[sid])
+    .sort((a, b) => b[1] - a[1]).slice(0, 5)
+    .map(([sid, n]) => ({ sec: secById[sid], added: n }));
+
+  // 2) Hottest recent launches: reg open/closed, opened in the last 30 days.
+  const now = Date.now();
+  const launched = secs.filter(r => {
+    const st = r["Reg Status"];
+    if (st !== "open" && st !== "closed") return false;
+    const o = r["Reg Opens"] ? new Date(r["Reg Opens"]).getTime() : 0;
+    return o > 0 && o <= now && (now - o) <= 30 * 86400000;
+  });
+  const hottest = launched.slice()
+    .sort((a, b) => (Number(b["Conversion %"]) || 0) - (Number(a["Conversion %"]) || 0))
+    .slice(0, 5);
+  const totalPending = launched.reduce((a, r) => a + (Number(r["FT Pending"]) || 0), 0);
+  const stalled = launched.filter(r => (Number(r["FT Total"]) || 0) >= 3 && !(Number(r["FT Converted"]) > 0)).length;
+
+  const tokenQs = orgConfig.token ? `?token=${encodeURIComponent(orgConfig.token)}` : "";
+  const pageUrl = `${BASE_URL}/${orgSlug}/fasttrack${tokenQs}`;
+  const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const secLine = (r) => `${esc(r["Section"] || r["Program"])}<span style="color:#999"> · ${esc(r["Program"])}</span>`;
+
+  const buildersHtml = builders.length ? `
+    <h3 style="font-size:14px;margin:24px 0 8px;color:#111">📈 Building fastest (${periodLabel})</h3>
+    <table style="width:100%;border-collapse:collapse;font-size:13px">
+      ${builders.map(b => `<tr>
+        <td style="padding:6px 0;border-bottom:1px solid #eee">${secLine(b.sec)}</td>
+        <td style="padding:6px 0;border-bottom:1px solid #eee;text-align:right;font-weight:700">+${b.added} FT</td>
+        <td style="padding:6px 0 6px 12px;border-bottom:1px solid #eee;text-align:right;color:#666">${Number(b.sec["FT Total"]) || 0} total</td>
+      </tr>`).join("")}
+    </table>` : "";
+
+  const hottestHtml = hottest.length ? `
+    <h3 style="font-size:14px;margin:24px 0 8px;color:#111">🔥 Post-launch conversion (last 30 days)</h3>
+    <table style="width:100%;border-collapse:collapse;font-size:13px">
+      ${hottest.map(r => { const h = ftHeat(r["Conversion %"]); return `<tr>
+        <td style="padding:6px 0;border-bottom:1px solid #eee">${secLine(r)}</td>
+        <td style="padding:6px 0;border-bottom:1px solid #eee;text-align:right;white-space:nowrap">
+          <span style="color:${h.color};font-weight:800">${r["Conversion %"] != null ? r["Conversion %"] + "%" : "0%"}</span>
+          <span style="font-size:10px;font-weight:700;color:${h.color}"> ${h.label}</span>
+        </td>
+        <td style="padding:6px 0 6px 12px;border-bottom:1px solid #eee;text-align:right;color:#666;white-space:nowrap">${Number(r["FT Converted"]) || 0}/${Number(r["FT Total"]) || 0} conv · ${Number(r["FT Pending"]) || 0} pending</td>
+      </tr>`; }).join("")}
+    </table>` : `<p style="font-size:13px;color:#888">No sections launched in the last 30 days.</p>`;
+
+  const resend = getResendClient();
+  if (!resend) {
+    console.log(`[ft-digest] STUB — would send FT digest to ${email} (${orgSlug}, ${schedule})`);
+    db.appendLog(orgSlug, email, "fasttrack-digest", schedule, "sent", "RESEND_API_KEY not configured — stub send");
+    return { ok: true, stub: true };
+  }
+  let status, message;
+  try {
+    const { error } = await resend.emails.send({
+      from: `${FROM_NAME} <${FROM_EMAIL}>`,
+      to: email,
+      subject: `🔥 Fast Track Digest — ${orgSlug} — ${new Date().toLocaleDateString("en-US", { month: "short", day: "numeric" })}`,
+      html: `
+        <div style="font-family:sans-serif;max-width:560px;margin:0 auto;padding:32px 24px">
+          <img src="${orgConfig.logoUrl}" style="height:40px;margin-bottom:16px;display:block" />
+          <div style="background:linear-gradient(90deg,#7f1d1d,#b91c1c 45%,#ea580c);border-radius:10px;padding:14px 18px;color:#fff;margin-bottom:8px">
+            <div style="font-size:17px;font-weight:800">🔥 Fast Track Digest</div>
+            <div style="font-size:12px;opacity:.92">${esc(periodLabel)} · <strong>${totalPending}</strong> pending holds on recently launched sections${stalled ? ` · <strong>${stalled}</strong> stalled` : ""}</div>
+          </div>
+          ${buildersHtml}
+          ${hottestHtml}
+          <a href="${pageUrl}" style="display:inline-block;background:#b91c1c;color:#fff;padding:11px 20px;border-radius:6px;text-decoration:none;font-weight:700;font-size:13px;margin-top:20px">Open the Fast Track report →</a>
+          <p style="margin-top:10px;font-size:11px;color:#999">Pending families and copy-ready email lists live on the 🔥 Conversions tab.</p>
+          <hr style="border:none;border-top:1px solid #eee;margin:28px 0" />
+          <p style="font-size:11px;color:#bbb;margin:0">
+            You're receiving this because you subscribed on the Fast Track report.
+            To unsubscribe, visit <a href="${BASE_URL}/${orgSlug}/admin${tokenQs}" style="color:#bbb">${BASE_URL}/${orgSlug}/admin</a> and remove your email.
+          </p>
+        </div>`,
+    });
+    if (error) throw new Error(error.message);
+    status = "sent"; message = null;
+    console.log(`[ft-digest] Sent to ${email} (${orgSlug}, ${schedule}) — ${builders.length} builders, ${hottest.length} launches`);
+  } catch (err) {
+    status = "error"; message = err.message;
+    console.error(`[ft-digest] Failed to send to ${email}: ${err.message}`);
+  }
+  db.appendLog(orgSlug, email, "fasttrack-digest", schedule, status, message);
+  return { ok: status === "sent", error: message };
+}
+
 // ── Send report email ────────────────────────────────────────────────
 async function sendReportEmail(orgSlug, email, reportType, schedule, locationFilter, dateRange, savedParams) {
   const orgConfig = ORGS[orgSlug];
+  // Fast Track digest subscriptions ride the normal subscription records as
+  // reportType 'fasttrack' with savedParams 'digest=1' — no PDF, inline HTML.
+  if (reportType === "fasttrack" && typeof savedParams === "string"
+      && new URLSearchParams(savedParams).get("digest") === "1") {
+    return sendFastTrackDigest(orgSlug, email, schedule);
+  }
   const reportLabel = reportType === "gl"
     ? "GL Code Rollup"
     : reportType === "historic"
@@ -5335,6 +5478,37 @@ app.get("/:org/:report/api/pdf", resolveOrg, async (req, res) => {
     console.error("[pdf] Error:", err);
     res.status(500).json({ error: err.message });
   }
+});
+
+// ── Fast Track pins (shared per-org, persisted to the data volume) ──
+// Pins are team state: any staff member with the org token sees the same
+// pinned sections at the top of the Fast Track Overview.
+const FT_PINS_FILE = path.join(DATA_DIR, "ft-pins.json");
+function ftPinsAuth(req, res) {
+  const org = ORGS[req.params.org];
+  if (!org) { res.status(404).json({ error: "Unknown org" }); return null; }
+  const supplied = req.query.token || req.headers["x-token"] || (req.body && req.body.token) || "";
+  if (org.token && supplied !== org.token) { res.status(403).json({ error: "Invalid token" }); return null; }
+  return org;
+}
+app.get("/:org/fasttrack/api/pins", (req, res) => {
+  if (!ftPinsAuth(req, res)) return;
+  const all = readJSON(FT_PINS_FILE, {});
+  res.json({ pins: Array.isArray(all[req.params.org]) ? all[req.params.org] : [] });
+});
+app.post("/:org/fasttrack/api/pins", (req, res) => {
+  if (!ftPinsAuth(req, res)) return;
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+  const raw = req.body?.pins;
+  if (!Array.isArray(raw)) return res.status(400).json({ error: "pins must be an array of section ids (max 10)" });
+  const pins = raw.filter(x => typeof x === "string" && UUID_RE.test(x)).slice(0, 10);
+  // A non-empty request where nothing validates is a malformed client, not an
+  // intentional clear — reject rather than silently wiping the team's pins.
+  if (raw.length > 0 && pins.length === 0) return res.status(400).json({ error: "no valid section ids in pins" });
+  const all = readJSON(FT_PINS_FILE, {});
+  all[req.params.org] = pins;
+  writeJSON(FT_PINS_FILE, all);
+  res.json({ ok: true, pins });
 });
 
 // ── Subscription API ─────────────────────────────────────────────────

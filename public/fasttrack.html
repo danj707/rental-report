@@ -184,6 +184,13 @@
     .launch-stats { display: flex; gap: 12px; margin-top: 8px; }
     .launch-stat .ls-v { font-size: 16px; font-weight: 800; font-variant-numeric: tabular-nums; }
     .launch-stat .ls-l { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: #999; }
+    /* Pin toggle + email digest modal */
+    .pin-toggle { border: 1px solid transparent; background: transparent; cursor: pointer; font-size: 13px; line-height: 1; padding: 3px 5px; border-radius: 6px; opacity: .35; transition: opacity .12s, background .12s; font-family: inherit; }
+    .pin-toggle:hover { opacity: 1; background: #f3e8ff; }
+    .pin-toggle.pinned { opacity: 1; background: #f3e8ff; border-color: #d8b4fe; }
+    .pin-toggle:focus-visible { outline: 2px solid #7c3aed; outline-offset: 1px; opacity: 1; }
+    .sub-overlay { position: fixed; inset: 0; background: rgba(17,17,17,.45); z-index: 100; display: flex; align-items: center; justify-content: center; padding: 20px; }
+    .sub-modal { background: #fff; border-radius: 12px; padding: 22px 24px; max-width: 420px; width: 100%; box-shadow: 0 12px 40px rgba(0,0,0,.2); }
     /* ── Tabs ── */
     .tabs { display: flex; gap: 4px; border-bottom: 2px solid #d1d5db; margin-bottom: 20px; padding: 0 4px; align-items: flex-end; }
     .tab-btn { padding: 9px 18px 8px; font-size: 13px; font-weight: 600; font-family: inherit; background: transparent; border: 1px solid transparent; border-bottom: none; border-radius: 8px 8px 0 0; margin-bottom: -2px; cursor: pointer; color: #888; transition: all .15s; position: relative; }
@@ -1292,6 +1299,12 @@ function App() {
   var [aqExpanded, setAqExpanded] = useState({});
   var [aqCopied, setAqCopied] = useState(null);
   var [dataAsOf, setDataAsOf] = useState(null);
+  /* Shared per-org pins (persisted server-side) + email digest modal */
+  var [pins, setPins] = useState([]);
+  var [subOpen, setSubOpen] = useState(false);
+  var [subEmail, setSubEmail] = useState('');
+  var [subCadence, setSubCadence] = useState('weekly');
+  var [subStatus, setSubStatus] = useState(null);
 
   /* Insights state */
   var [insights, setInsights]               = useState(null);
@@ -1393,6 +1406,12 @@ function App() {
     }).sort(function(a, b) { return new Date(b.regOpens) - new Date(a.regOpens); });
   }, [filtered]);
 
+  var rowsById = useMemo(function() {
+    var m = {};
+    rows.forEach(function(r) { if (r.sectionId) m[r.sectionId] = r; });
+    return m;
+  }, [rows]);
+
   /* Pending-FT rosters per section (for the Conversions action queue) */
   var pendingBySection = useMemo(function() {
     var map = {};
@@ -1443,6 +1462,42 @@ function App() {
       try { document.execCommand('copy'); } catch (e) {}
       document.body.removeChild(ta); done();
     }
+  }
+
+  /* ── Pins: load shared per-org pins; toggle persists via the pins API ── */
+  useEffect(function() {
+    fetch(withToken(basePath + '/api/pins'))
+      .then(function(r) { return r.ok ? r.json() : { pins: [] }; })
+      .then(function(j) { setPins(Array.isArray(j.pins) ? j.pins : []); })
+      .catch(function() {});
+  }, []);
+  function togglePin(sectionId) {
+    if (!sectionId) return;
+    var next = pins.indexOf(sectionId) >= 0
+      ? pins.filter(function(p) { return p !== sectionId; })
+      : pins.concat([sectionId]).slice(0, 10);
+    setPins(next);  /* optimistic */
+    fetch(withToken(basePath + '/api/pins'), {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pins: next })
+    }).catch(function() {});
+  }
+  function isPinned(sectionId) { return pins.indexOf(sectionId) >= 0; }
+
+  function submitDigestSub() {
+    var em = (subEmail || '').trim();
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em)) { setSubStatus({ ok: false, msg: 'Enter a valid email address' }); return; }
+    setSubStatus({ ok: true, msg: 'Subscribing…' });
+    fetch(withToken('/' + orgSlug + '/admin/subscribe'), {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: em, reports: ['fasttrack'], schedule: subCadence,
+                             reportParams: { fasttrack: 'digest=1' } })
+    }).then(function(r) { return r.json().then(function(j) { return { ok: r.ok, j: j }; }); })
+      .then(function(res) {
+        if (res.ok && res.j && res.j.ok) setSubStatus({ ok: true, msg: 'Subscribed ✓ — digests send at 7am (' + subCadence + ')' });
+        else setSubStatus({ ok: false, msg: (res.j && res.j.error) || 'Subscription failed' });
+      })
+      .catch(function(e) { setSubStatus({ ok: false, msg: e.message }); });
   }
 
   /* Scroll the deep-linked section into view once the Conversions tab settles
@@ -1842,41 +1897,71 @@ function App() {
 
         activeTab === 'overview' && React.createElement(React.Fragment, null,
 
-        /* ── 🔥 Just Launched: conversion snapshot for sections whose
-           registration opened in the last 3 days. Click → Conversions deep dive. ── */
-        justLaunched.length > 0 && React.createElement('div', { style: { marginBottom: 24 } },
-          React.createElement('div', { style: { display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 10 } },
-            React.createElement('div', { style: { fontSize: 13, fontWeight: 800, color: '#b91c1c', textTransform: 'uppercase', letterSpacing: '.05em' } }, '🔥 Just Launched'),
-            React.createElement('div', { style: { fontSize: 11, color: '#888' } }, 'registration opened in the last 3 days · click a section for the post-launch deep dive')
-          ),
-          React.createElement('div', { className: 'launch-grid' },
-            justLaunched.slice(0, 12).map(function(r) {
-              var hb = heatBand(r.convPct);
-              return React.createElement('button', {
-                key: 'jl' + r.sectionId, className: 'launch-card',
-                style: { borderLeftColor: hb.color },
-                onClick: function() { jumpToConversions(r.sectionId); },
-                title: 'Open the Conversions deep dive for this section'
-              },
-                React.createElement('div', { style: { display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'baseline' } },
-                  React.createElement('div', null,
-                    React.createElement('div', { style: { fontSize: 12, fontWeight: 700, color: '#111' } }, r.section || r.program),
-                    React.createElement('div', { style: { fontSize: 10, color: '#999' } }, r.program, ' · ', hoursAgoLabel(r.regOpens))
-                  ),
-                  React.createElement('span', { className: 'flow-band', style: { background: hb.bg, color: hb.color, flexShrink: 0 } }, hb.icon, ' ', r.convPct != null ? r.convPct + '%' : '0%')
+        /* ── 📌 Pinned + 🔥 Just Launched strips ── */
+        (function() {
+          function sectionCard(r) {
+            var hb = heatBand(r.convPct);
+            var pinned = isPinned(r.sectionId);
+            return React.createElement('div', {
+              key: 'sc' + r.sectionId, className: 'launch-card',
+              style: { borderLeftColor: hb.color },
+              role: 'button', tabIndex: 0,
+              onClick: function() { jumpToConversions(r.sectionId); },
+              onKeyDown: function(e) { if (e.key === 'Enter') jumpToConversions(r.sectionId); },
+              title: 'Open the Conversions deep dive for this section'
+            },
+              React.createElement('div', { style: { display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'baseline' } },
+                React.createElement('div', null,
+                  React.createElement('div', { style: { fontSize: 12, fontWeight: 700, color: '#111' } }, r.section || r.program),
+                  React.createElement('div', { style: { fontSize: 10, color: '#999' } }, r.program, r.regOpens ? ' · ' + hoursAgoLabel(r.regOpens) : '')
                 ),
-                React.createElement('div', { className: 'launch-stats' },
-                  React.createElement('div', { className: 'launch-stat' }, React.createElement('div', { className: 'ls-v' }, fmtInt(r.ftSignups)), React.createElement('div', { className: 'ls-l' }, 'FT holds')),
-                  React.createElement('div', { className: 'launch-stat' }, React.createElement('div', { className: 'ls-v', style: { color: '#059669' } }, fmtInt(r.ftConverted)), React.createElement('div', { className: 'ls-l' }, 'Converted')),
-                  React.createElement('div', { className: 'launch-stat' }, React.createElement('div', { className: 'ls-v', style: { color: r.ftPending > 0 ? '#f97316' : '#999' } }, fmtInt(r.ftPending)), React.createElement('div', { className: 'ls-l' }, 'Pending')),
-                  React.createElement('div', { className: 'launch-stat' }, React.createElement('div', { className: 'ls-v' }, r.fillPct != null ? r.fillPct + '%' : '—'), React.createElement('div', { className: 'ls-l' }, 'Fill'))
+                React.createElement('div', { style: { display: 'flex', gap: 6, alignItems: 'center', flexShrink: 0 } },
+                  React.createElement('span', { className: 'flow-band', style: { background: hb.bg, color: hb.color } }, hb.icon, ' ', r.convPct != null ? r.convPct + '%' : '0%'),
+                  React.createElement('button', {
+                    className: 'pin-toggle' + (pinned ? ' pinned' : ''),
+                    title: pinned ? 'Unpin from top of Overview' : 'Pin to top of Overview (visible to your whole team)',
+                    onClick: function(e) { e.stopPropagation(); togglePin(r.sectionId); }
+                  }, '📌')
                 )
-              );
-            })
-          ),
-          justLaunched.length > 12 && React.createElement('div', { style: { fontSize: 11, color: '#999', marginTop: 4 } },
-            '+ ', justLaunched.length - 12, ' more just-launched sections — see the 🔥 Conversions tab')
-        ),
+              ),
+              React.createElement('div', { className: 'launch-stats' },
+                React.createElement('div', { className: 'launch-stat' }, React.createElement('div', { className: 'ls-v' }, fmtInt(r.ftSignups)), React.createElement('div', { className: 'ls-l' }, 'FT holds')),
+                React.createElement('div', { className: 'launch-stat' }, React.createElement('div', { className: 'ls-v', style: { color: '#059669' } }, fmtInt(r.ftConverted)), React.createElement('div', { className: 'ls-l' }, 'Converted')),
+                React.createElement('div', { className: 'launch-stat' }, React.createElement('div', { className: 'ls-v', style: { color: r.ftPending > 0 ? '#f97316' : '#999' } }, fmtInt(r.ftPending)), React.createElement('div', { className: 'ls-l' }, 'Pending')),
+                React.createElement('div', { className: 'launch-stat' }, React.createElement('div', { className: 'ls-v' }, r.fillPct != null ? r.fillPct + '%' : '—'), React.createElement('div', { className: 'ls-l' }, 'Fill'))
+              )
+            );
+          }
+          var pinnedRows = pins.map(function(sid) { return rowsById[sid] || { sectionId: sid, ghost: true }; });
+          var launchRows = justLaunched.filter(function(r) { return !isPinned(r.sectionId); }).slice(0, 12);
+          return React.createElement(React.Fragment, null,
+            pinnedRows.length > 0 && React.createElement('div', { style: { marginBottom: 20 } },
+              React.createElement('div', { style: { display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 10 } },
+                React.createElement('div', { style: { fontSize: 13, fontWeight: 800, color: '#7c3aed', textTransform: 'uppercase', letterSpacing: '.05em' } }, '📌 Pinned'),
+                React.createElement('div', { style: { fontSize: 11, color: '#888' } }, 'shared with everyone viewing this report')
+              ),
+              React.createElement('div', { className: 'launch-grid' },
+                pinnedRows.map(function(r) {
+                  if (r.ghost) return React.createElement('div', { key: 'gh' + r.sectionId, className: 'launch-card', style: { borderLeftColor: '#d1d5db', cursor: 'default' } },
+                    React.createElement('div', { style: { fontSize: 11, color: '#999' } }, 'Pinned section is no longer in this feed'),
+                    React.createElement('button', { className: 'pin-toggle pinned', style: { marginTop: 6 }, onClick: function() { togglePin(r.sectionId); } }, '📌 Unpin')
+                  );
+                  return sectionCard(r);
+                })
+              )
+            ),
+            justLaunched.length > 0 && React.createElement('div', { style: { marginBottom: 24 } },
+              React.createElement('div', { style: { display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 10 } },
+                React.createElement('div', { style: { fontSize: 13, fontWeight: 800, color: '#b91c1c', textTransform: 'uppercase', letterSpacing: '.05em' } }, '🔥 Just Launched'),
+                React.createElement('div', { style: { fontSize: 11, color: '#888' } }, 'registration opened in the last 3 days · click a section for the post-launch deep dive'),
+                React.createElement('button', { className: 'flow-action', style: { marginLeft: 'auto', background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe' }, onClick: function() { setSubOpen(true); } }, '📬 Email me this')
+              ),
+              React.createElement('div', { className: 'launch-grid' }, launchRows.map(sectionCard)),
+              justLaunched.length > launchRows.length && React.createElement('div', { style: { fontSize: 11, color: '#999', marginTop: 4 } },
+                '+ ', justLaunched.length - launchRows.length, ' more just-launched sections — see the 🔥 Conversions tab')
+            )
+          );
+        })(),
 
                 /* Demand Leaderboard */
         React.createElement(TriagePanel, { programs: programs }),
@@ -2279,7 +2364,14 @@ function App() {
                   React.createElement('span', { className: 'flow-sub' }, r.program,
                     r.regOpens ? ' · ' + hoursAgoLabel(r.regOpens) : '',
                     r.regStatus === 'closed' ? ' · reg closed' : ''),
-                  r.sectionId && React.createElement('a', { href: adminSectionUrl(r.orgId, r.sectionId), target: '_blank', rel: 'noopener', style: { color: '#3b82f6', fontWeight: 600, fontSize: 10, textDecoration: 'none', marginLeft: 'auto' } }, 'Admin →')
+                  React.createElement('span', { style: { marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center' } },
+                    React.createElement('button', {
+                      className: 'pin-toggle' + (isPinned(r.sectionId) ? ' pinned' : ''),
+                      title: isPinned(r.sectionId) ? 'Unpin from top of Overview' : 'Pin to top of Overview (visible to your whole team)',
+                      onClick: function() { togglePin(r.sectionId); }
+                    }, '📌'),
+                    r.sectionId && React.createElement('a', { href: adminSectionUrl(r.orgId, r.sectionId), target: '_blank', rel: 'noopener', style: { color: '#3b82f6', fontWeight: 600, fontSize: 10, textDecoration: 'none' } }, 'Admin →')
+                  )
                 ),
                 /* the flow: FT holds ─▶ converted (+direct) ─▶ enrolled/fill */
                 React.createElement('div', { className: 'flow-row' },
@@ -2347,9 +2439,11 @@ function App() {
               React.createElement('div', { style: { background: 'linear-gradient(90deg,#7f1d1d,#b91c1c 45%,#ea580c)', borderRadius: 12, padding: '16px 20px', marginBottom: 16, color: '#fff' } },
                 React.createElement('div', { style: { display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' } },
                   React.createElement('div', { style: { fontSize: 16, fontWeight: 800, letterSpacing: '-.2px' } }, '🔥 Post-Launch Command Center'),
-                  React.createElement('span', { style: { fontSize: 10, opacity: .8, marginLeft: 'auto' } },
-                    dataAsOf ? 'data as of ' + new Date(dataAsOf).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) + ' · ' : '',
-                    React.createElement('a', { href: '?_nocache=1', style: { color: '#fff', fontWeight: 700 } }, 'refresh live ↻'))
+                  React.createElement('span', { style: { fontSize: 10, opacity: .8, marginLeft: 'auto', display: 'flex', gap: 10, alignItems: 'center' } },
+                    React.createElement('span', null,
+                      dataAsOf ? 'data as of ' + new Date(dataAsOf).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) + ' · ' : '',
+                      React.createElement('a', { href: '?_nocache=1', style: { color: '#fff', fontWeight: 700 } }, 'refresh live ↻')),
+                    React.createElement('button', { className: 'flow-action', style: { background: '#ffffff22', color: '#fff', border: '1px solid #ffffff55' }, onClick: function() { setSubOpen(true); } }, '📬 Email me this'))
                 ),
                 React.createElement('div', { style: { fontSize: 12, opacity: .92, marginTop: 2 } },
                   'How Fast Track performed once registration opened — hottest converters up top, pending families one click away. ',
@@ -2557,6 +2651,34 @@ function App() {
             )
           ),
           React.createElement(PipelineTab, { sections: filtered, pipelineRows: filteredPipeline, programs: programs, totals: totals })
+        ),
+
+                /* 📬 Email digest modal */
+        subOpen && React.createElement('div', { className: 'sub-overlay', onClick: function(e) { if (e.target === e.currentTarget) setSubOpen(false); } },
+          React.createElement('div', { className: 'sub-modal' },
+            React.createElement('div', { style: { fontSize: 15, fontWeight: 800, marginBottom: 4 } }, '📬 Fast Track email digest'),
+            React.createElement('div', { style: { fontSize: 12, color: '#666', marginBottom: 14, lineHeight: 1.5 } },
+              'Get the top sections building Fast Track and the hottest post-launch conversions, delivered at 7am. Manage or unsubscribe anytime at ',
+              React.createElement('a', { href: withToken('/' + orgSlug + '/admin'), target: '_blank', rel: 'noopener' }, orgSlug + '/admin'), '.'),
+            React.createElement('label', { style: { fontSize: 11, fontWeight: 700, color: '#555', display: 'block', marginBottom: 4 } }, 'Email'),
+            React.createElement('input', { type: 'email', value: subEmail, placeholder: 'you@yourcity.gov', autoFocus: true,
+              onChange: function(e) { setSubEmail(e.target.value); },
+              onKeyDown: function(e) { if (e.key === 'Enter') submitDigestSub(); },
+              style: { width: '100%', padding: '9px 12px', border: '1px solid #d1d5db', borderRadius: 6, fontSize: 13, fontFamily: 'inherit', marginBottom: 12, boxSizing: 'border-box' } }),
+            React.createElement('label', { style: { fontSize: 11, fontWeight: 700, color: '#555', display: 'block', marginBottom: 4 } }, 'Cadence'),
+            React.createElement('div', { style: { display: 'flex', gap: 6, marginBottom: 16 } },
+              ['daily', 'weekly', 'monthly'].map(function(c) {
+                return React.createElement('button', { key: c, className: 'flow-action',
+                  style: subCadence === c
+                    ? { background: '#b91c1c', color: '#fff', border: '1px solid #b91c1c', padding: '6px 14px' }
+                    : { background: '#fff', color: '#555', border: '1px solid #d1d5db', padding: '6px 14px' },
+                  onClick: function() { setSubCadence(c); } }, c.charAt(0).toUpperCase() + c.slice(1));
+              })),
+            subStatus && React.createElement('div', { style: { fontSize: 12, fontWeight: 600, marginBottom: 12, color: subStatus.ok ? '#059669' : '#dc2626' } }, subStatus.msg),
+            React.createElement('div', { style: { display: 'flex', gap: 8, justifyContent: 'flex-end' } },
+              React.createElement('button', { className: 'flow-action', style: { background: '#fff', color: '#555', border: '1px solid #d1d5db', padding: '8px 16px' }, onClick: function() { setSubOpen(false); } }, 'Close'),
+              React.createElement('button', { className: 'flow-action', style: { background: '#b91c1c', color: '#fff', border: '1px solid #b91c1c', padding: '8px 16px' }, onClick: submitDigestSub }, 'Subscribe'))
+          )
         ),
 
                 /* Footer */
