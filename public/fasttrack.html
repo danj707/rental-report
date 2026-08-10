@@ -1291,6 +1291,7 @@ function App() {
   var [focusSectionId, setFocusSectionId] = useState(null);
   var [aqExpanded, setAqExpanded] = useState({});
   var [aqCopied, setAqCopied] = useState(null);
+  var [dataAsOf, setDataAsOf] = useState(null);
 
   /* Insights state */
   var [insights, setInsights]               = useState(null);
@@ -1324,6 +1325,7 @@ function App() {
         if (json && json.meta) {
           if (json.meta.org_name) setOrgName(json.meta.org_name);
           if (json.meta.logo_url) setLogoUrl(json.meta.logo_url);
+          if (json.meta.generated_at) setDataAsOf(json.meta.generated_at);
         }
         setLoading(false);
       })
@@ -2341,10 +2343,24 @@ function App() {
             return React.createElement(React.Fragment, null,
               /* 🔥 Command-center banner */
               React.createElement('div', { style: { background: 'linear-gradient(90deg,#7f1d1d,#b91c1c 45%,#ea580c)', borderRadius: 12, padding: '16px 20px', marginBottom: 16, color: '#fff' } },
-                React.createElement('div', { style: { fontSize: 16, fontWeight: 800, letterSpacing: '-.2px' } }, '🔥 Post-Launch Command Center'),
+                React.createElement('div', { style: { display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' } },
+                  React.createElement('div', { style: { fontSize: 16, fontWeight: 800, letterSpacing: '-.2px' } }, '🔥 Post-Launch Command Center'),
+                  React.createElement('span', { style: { fontSize: 10, opacity: .8, marginLeft: 'auto' } },
+                    dataAsOf ? 'data as of ' + new Date(dataAsOf).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) + ' · ' : '',
+                    React.createElement('a', { href: '?_nocache=1', style: { color: '#fff', fontWeight: 700 } }, 'refresh live ↻'))
+                ),
                 React.createElement('div', { style: { fontSize: 12, opacity: .92, marginTop: 2 } },
                   'How Fast Track performed once registration opened — hottest converters up top, pending families one click away. ',
                   React.createElement('strong', null, fmtInt(totalPend)), ' holds still waiting to convert.')
+              ),
+
+              /* Empty snapshot: explain + offer live refresh instead of a wall of zeros */
+              postReg.length === 0 && React.createElement('div', { style: { background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: 10, padding: '18px 20px', marginBottom: 20, fontSize: 13, color: '#78350f' } },
+                React.createElement('div', { style: { fontWeight: 800, marginBottom: 4 } }, '🧊 No launched sections in this data snapshot'),
+                React.createElement('div', { style: { lineHeight: 1.6 } },
+                  'None of the sections in the current feed show registration as open or closed. On a launch day this usually means the report is serving a cached snapshot taken before registration opened. ',
+                  React.createElement('a', { href: '?_nocache=1', style: { fontWeight: 700, color: '#92400e' } }, 'Pull live data now ↻'),
+                  ' (may take a minute for large orgs).')
               ),
               React.createElement('div', { style: { background: '#fff', border: '1px solid #e0ddd8', borderRadius: 10, padding: '14px 20px', marginBottom: 20 } },
                 React.createElement('div', { style: { fontSize: 13, fontWeight: 700, color: '#111', marginBottom: 4 } }, 'How FT conversions work'),
