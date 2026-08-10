@@ -2251,7 +2251,9 @@ function App() {
             var flowFallback = flowSecs.length === 0;
             if (flowFallback) flowSecs = postReg.slice().sort(function(a,b){ return b.ftSignups - a.ftSignups; }).slice(0, 12);
             else flowSecs = flowSecs.slice().sort(function(a, b) {
-              /* actionable first: pending desc, then most recently opened */
+              /* hot to cold: conversion % desc, then pending desc, then recency */
+              var ca = a.convPct == null ? -1 : a.convPct, cb = b.convPct == null ? -1 : b.convPct;
+              if (cb !== ca) return cb - ca;
               if (b.ftPending !== a.ftPending) return b.ftPending - a.ftPending;
               return new Date(b.regOpens) - new Date(a.regOpens);
             });
@@ -2406,7 +2408,7 @@ function App() {
                     '🔥 Conversion Flow ',
                     React.createElement('span', { style: { fontWeight: 400, textTransform: 'none', color: '#9ca3af', letterSpacing: 0 } },
                       flowFallback ? '— top post-launch sections by FT volume (none launched in the last 30 days)'
-                                   : '— sections launched in the last 30 days, most pending first')
+                                   : '— sections launched in the last 30 days, hottest conversion first')
                   ),
                   /* heat legend: band + threshold, never color-alone */
                   React.createElement('div', { style: { display: 'flex', gap: 8, fontSize: 10, fontWeight: 700, marginLeft: 'auto', flexWrap: 'wrap' } },
