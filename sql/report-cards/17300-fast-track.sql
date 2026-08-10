@@ -39,7 +39,7 @@ season_map AS (
 section_base AS (
   SELECT
     s.id                                                 AS section_id,
-    s.class_id,
+    s.program_id,
     s.name                                               AS section_name,
     s.registration_mode,
     s.capacity                                           AS section_capacity,
@@ -357,7 +357,7 @@ SELECT
 
 FROM ft_rollup ft
 JOIN section_base sb    ON sb.section_id = ft.section_id
-JOIN class c            ON c.id = sb.class_id AND c.deleted_at IS NULL
+JOIN program c          ON c.id = sb.program_id AND c.deleted_at IS NULL
 LEFT JOIN season_map sm ON sm.section_id = sb.section_id
 LEFT JOIN organic o     ON o.section_id  = sb.section_id
 LEFT JOIN waitlist wl   ON wl.section_id = sb.section_id
@@ -441,7 +441,7 @@ SELECT
   NULL::text                                             AS "FT Status"
 
 FROM section_base sb
-JOIN class c            ON c.id = sb.class_id AND c.deleted_at IS NULL
+JOIN program c          ON c.id = sb.program_id AND c.deleted_at IS NULL
 JOIN reg_window rw      ON rw.section_id = sb.section_id
 LEFT JOIN season_map sm ON sm.section_id = sb.section_id
 LEFT JOIN organic o     ON o.section_id  = sb.section_id
@@ -493,7 +493,7 @@ SELECT
 
 FROM ft_daily fd
 JOIN section_base sb    ON sb.section_id = fd.section_id
-JOIN class c            ON c.id = sb.class_id AND c.deleted_at IS NULL
+JOIN program c          ON c.id = sb.program_id AND c.deleted_at IS NULL
 LEFT JOIN season_map sm ON sm.section_id = sb.section_id
 
 UNION ALL
@@ -581,7 +581,7 @@ SELECT
 
 FROM ft_raw fr
 JOIN section_base sb    ON sb.section_id = fr.section_id
-JOIN class c            ON c.id = sb.class_id AND c.deleted_at IS NULL
+JOIN program c          ON c.id = sb.program_id AND c.deleted_at IS NULL
 LEFT JOIN season_map sm ON sm.section_id = sb.section_id
 JOIN users cu           ON cu.id = fr.customer_user_id AND cu.deleted_at IS NULL
 LEFT JOIN users pu      ON pu.id = fr.participant_user_id AND pu.deleted_at IS NULL

@@ -83,8 +83,8 @@ LEFT JOIN LATERAL (
   ORDER BY s.starts_at ASC
   LIMIT 1
 ) first_session ON TRUE
-JOIN class c
-  ON c.id = section.class_id
+JOIN program c
+  ON c.id = section.program_id
  AND c.deleted_at IS NULL
 
 /* ── Emergency contacts per participant (pre-aggregated) ───── */

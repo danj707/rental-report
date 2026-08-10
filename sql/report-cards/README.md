@@ -21,12 +21,39 @@ count + order-independent checksum + same-snapshot EXCEPT ALL diffs.
 | 17689-user-report.sql | 17689 | **accuracy fix**: "Has Authorized Pickup" was a copy of the emergency-contact EXISTS; now checks `household_contact_user.type='authorizedPickup'`. Apex: 106 emergency vs 17 pickup (old logic: 111 for both). | — | — |
 | 19141-revenue-by-stream.HOLD.sql | 19141 | **DO NOT DEPLOY YET** — output-identical rewrite that only wins once `payment`/`refund` get an `(organization_id, created_at)` index. | — | — |
 
+## class/class_activity table drop (added 2026-08-10, URGENT)
+
+Platform (Long Nguyen) is dropping `class` and `class_activity` **tonight or
+tomorrow** — replaced by `program` / `program_activity` (`class_id` →
+`program_id`). Verified on the read replica 2026-08-10: `program` is a
+byte-identical copy of `class` (same UUIDs, 6,891 live rows each, zero
+name/description/type/org diffs), `program_activity` ↔ `class_activity` is an
+exact bijection (8,717 live rows each, zero uncovered either direction), and
+`section.program_id` is populated 1:1 wherever `section.class_id` is (zero
+class-only, zero program-only, zero mismatches). So the rename is mechanical
+and output-identical — but **every card below breaks hard the moment the
+tables drop**, so this batch is no longer optional for them.
+
+Migrated in place (already part of the batch): 17296, 17300.
+
+Migration-only files added for live cards that were NOT previously in the
+batch (current card SQL + rename, no other changes — the 17295/17298 speed
+refactors stay withdrawn):
+
+| File | Card | Report |
+|---|---|---|
+| 17295-programs-report.sql | 17295 | Programs Report |
+| 17298-calendar-schedule.sql | 17298 | Calendar Schedule |
+| 17722-participant-demographics.sql | 17722 | Program Participant Demographics |
+| 19273-waitlist-demand.sql | 19273 | Waitlist Demand Report |
+
 ## Deploy runbook (per CLAUDE.md rules)
 
 1. Update each card's SQL — either paste in the Metabase UI (tag types
    preserved), or batch via API/MCP and then **flip every date variable back to
-   type Date in the UI** (API saves reset all template tags to Text). 7 of the
-   8 cards have Start/End Date variables; 17689 is org-only.
+   type Date in the UI** (API saves reset all template tags to Text). Of the 12
+   deployable cards, 10 have Start/End Date variables; 17689 and 17722 are
+   org-only (no date tags to flip).
 2. Verify each card with a cache-independent live request for the heaviest
    org — a warm-cache render is NOT sign-off:
    `node scripts/verify-report-live.js --manifest scripts/report-cards.manifest.json`
