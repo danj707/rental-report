@@ -4,6 +4,8 @@
   "checks": [
     { "label": "fasttrack / apex (biggest — worst case)", "card": "9d38ab95-8562-42ca-b6c2-2582b7452457", "org": "aeba47d0-c97f-49cb-a0e9-93c5af3a68fa" },
     { "label": "fasttrack / westsacramento", "card": "9d38ab95-8562-42ca-b6c2-2582b7452457", "org": "7d22bf62-060a-4881-9821-9dea6a0538d6" },
-    { "label": "fasttrack / theranch", "card": "9d38ab95-8562-42ca-b6c2-2582b7452457", "org": "2d147f38-068c-409e-890d-a8acc88d8079" }
+    { "label": "fasttrack / theranch", "card": "9d38ab95-8562-42ca-b6c2-2582b7452457", "org": "2d147f38-068c-409e-890d-a8acc88d8079" },
+    { "label": "instructor-payout / san-francisco-rec-park (heaviest — 60+ instructor lessons marketplace)", "card": "a8db6d86-eddc-4511-a28c-ad4bf636859e", "org": "17380e28-7e02-4b52-82c5-fab18557fd7a" },
+    { "label": "instructor-payout / douglas-county-nv (drop-in booking regression check)", "card": "a8db6d86-eddc-4511-a28c-ad4bf636859e", "org": "0312ebc8-40de-4fc8-a737-8afa26334e13" }
   ]
 }

@@ -577,6 +577,10 @@ function App() {
     if (!rows) return [];
     var smap = new Map();
     rows.forEach(function(r) {
+      // Roster rows (card v2.1) carry no section/payment data — they exist
+      // only so every org instructor shows in the filter dropdown. Keep
+      // them out of section/participant aggregation entirely.
+      if ((r['booking_status'] || '') === 'Roster') return;
       var sid = r['section_id'] || (r['section_name'] + '|' + r['instructor']);
       if (!smap.has(sid)) {
         smap.set(sid, {
@@ -637,7 +641,17 @@ function App() {
     return d;
   }, [normalized, instrFilter, search]);
 
-  const instructors = useMemo(() => [...new Set(normalized.map(r => r.instr))].sort(), [normalized]);
+  // Dropdown = instructors with sections in the period + the full org
+  // roster (card v2.1 'Roster' rows), so admins always see every
+  // instructor even when they have no payment activity in the window.
+  const instructors = useMemo(() => {
+    const s = new Set(normalized.map(r => r.instr));
+    (rows || []).forEach(r => {
+      if ((r['booking_status'] || '') === 'Roster' && r['instructor']) s.add(String(r['instructor']));
+    });
+    s.delete('');
+    return [...s].sort();
+  }, [normalized, rows]);
 
   const grouped = useMemo(() => {
     const m = new Map();
@@ -741,6 +755,7 @@ function App() {
     if (!rows || !rows.length) return null;
     const byInstructor = {};
     rows.forEach(r => {
+      if ((r.booking_status || '') === 'Roster') return; // dropdown-only rows
       const inst = r.instructor || r.instructorName || 'Unknown';
       if (!byInstructor[inst]) byInstructor[inst] = { participants: 0, revenue: 0, sections: new Set() };
       byInstructor[inst].participants++;
