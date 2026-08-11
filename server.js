@@ -5221,7 +5221,10 @@ app.get("/:org/lessons/api/data", async (req, res) => {
   try {
     logEvent(slug, "lessons", "fetch", req);
     const rows = (await fetchMBDirect(slug, "instructor-payout", start, end)) || [];
-    const lessons = rows.filter(r => LESSON_RE.test(String(r.program_name || "") + " " + String(r.section_name || "")));
+    // Card v2.1 adds per-instructor 'Roster' rows (no section, $0) for the
+    // payout report's dropdown — they are not lesson registrations.
+    const lessons = rows.filter(r => String(r.booking_status || "") !== "Roster"
+      && LESSON_RE.test(String(r.program_name || "") + " " + String(r.section_name || "")));
     const active = lessons.filter(r => String(r.booking_status || "").toLowerCase() !== "canceled");
 
     let paid = 0, refunded = 0;
@@ -6142,8 +6145,10 @@ function dirSelfService(rows) {
 
 function dirPayout(rows) {
   if (!Array.isArray(rows) || !rows.length) return null;
-  const instr = {}; let paid = 0;
+  const instr = {}; let paid = 0, regs = 0;
   for (const r of rows) {
+    if (String(r.booking_status || "") === "Roster") continue; // card v2.1 dropdown-only rows
+    regs++;
     const name = String(r.instructor || "").trim();
     if (!name) continue;
     if (!instr[name]) instr[name] = { name, regs: 0, paid: 0, sections: new Set() };
@@ -6154,7 +6159,7 @@ function dirPayout(rows) {
   const list = Object.values(instr);
   if (!list.length) return null;
   return {
-    instructors: list.length, paid: Math.round(paid), regs: rows.length,
+    instructors: list.length, paid: Math.round(paid), regs,
     top: list.sort((a, b) => b.paid - a.paid).slice(0, 5)
       .map(i => ({ name: i.name, regs: i.regs, paid: Math.round(i.paid), sections: i.sections.size })),
   };
