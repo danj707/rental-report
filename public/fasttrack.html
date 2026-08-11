@@ -155,6 +155,42 @@
     .pct-fill { height: 6px; border-radius: 3px; display: inline-block; }
 
 
+    /* ── Post-launch conversion flow board ──
+       Heat encodes conversion rate (validated palette): HOT ≥50% #b91c1c,
+       WARMING 25–49% #f97316, COOL 1–24% #0369a1, COLD 0% neutral #6b7280.
+       Never color-alone: every card shows the %, a band label and an icon. */
+    .flow-card { background: #fff; border: 1px solid #e0ddd8; border-left-width: 6px; border-radius: 10px; padding: 12px 16px; margin-bottom: 10px; }
+    .flow-card.focused { box-shadow: 0 0 0 3px #f9731655; }
+    .flow-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+    .flow-conv { font-size: 22px; font-weight: 800; font-variant-numeric: tabular-nums; letter-spacing: -.5px; }
+    .flow-band { font-size: 10px; font-weight: 700; letter-spacing: .06em; padding: 2px 8px; border-radius: 10px; }
+    .flow-title { font-size: 13px; font-weight: 700; color: #111; }
+    .flow-sub { font-size: 11px; color: #888; }
+    .flow-row { display: flex; align-items: stretch; gap: 0; overflow-x: auto; padding: 2px 0; }
+    .flow-node { min-width: 92px; border: 1px solid #e0ddd8; border-radius: 8px; padding: 6px 12px; text-align: center; background: #fafaf9; flex-shrink: 0; }
+    .flow-node .fn-val { font-size: 17px; font-weight: 800; font-variant-numeric: tabular-nums; }
+    .flow-node .fn-lbl { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .07em; color: #888; }
+    .flow-arrow { display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 0 6px; flex-shrink: 0; min-width: 54px; }
+    .flow-arrow .fa-line { font-size: 15px; font-weight: 800; line-height: 1; white-space: nowrap; }
+    .flow-arrow .fa-lbl { font-size: 9px; font-weight: 700; color: #999; white-space: nowrap; }
+    .flow-pending { margin-top: 8px; border-top: 1px dashed #e0ddd8; padding-top: 8px; }
+    .flow-action { font-size: 10px; font-weight: 700; padding: 3px 8px; border-radius: 6px; cursor: pointer; border: none; font-family: inherit; }
+    .roster { margin-top: 8px; border: 1px solid #f0ede8; border-radius: 8px; background: #fffdf8; padding: 6px 10px; max-height: 300px; overflow-y: auto; }
+    .roster-row { display: flex; gap: 8px; align-items: baseline; font-size: 11px; padding: 3px 0; border-bottom: 1px solid #f5f2ec; flex-wrap: wrap; }
+    .roster-row:last-child { border-bottom: none; }
+    .launch-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; margin-bottom: 20px; }
+    .launch-card { background: #fff; border: 1px solid #e0ddd8; border-radius: 10px; padding: 12px 14px; cursor: pointer; text-align: left; font-family: inherit; transition: box-shadow .15s, transform .15s; border-left-width: 5px; }
+    .launch-card:hover { box-shadow: 0 3px 10px rgba(0,0,0,.08); transform: translateY(-1px); }
+    .launch-stats { display: flex; gap: 12px; margin-top: 8px; }
+    .launch-stat .ls-v { font-size: 16px; font-weight: 800; font-variant-numeric: tabular-nums; }
+    .launch-stat .ls-l { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: #999; }
+    /* Pin toggle + email digest modal */
+    .pin-toggle { border: 1px solid transparent; background: transparent; cursor: pointer; font-size: 13px; line-height: 1; padding: 3px 5px; border-radius: 6px; opacity: .35; transition: opacity .12s, background .12s; font-family: inherit; }
+    .pin-toggle:hover { opacity: 1; background: #f3e8ff; }
+    .pin-toggle.pinned { opacity: 1; background: #f3e8ff; border-color: #d8b4fe; }
+    .pin-toggle:focus-visible { outline: 2px solid #7c3aed; outline-offset: 1px; opacity: 1; }
+    .sub-overlay { position: fixed; inset: 0; background: rgba(17,17,17,.45); z-index: 100; display: flex; align-items: center; justify-content: center; padding: 20px; }
+    .sub-modal { background: #fff; border-radius: 12px; padding: 22px 24px; max-width: 420px; width: 100%; box-shadow: 0 12px 40px rgba(0,0,0,.2); }
     /* ── Tabs ── */
     .tabs { display: flex; gap: 4px; border-bottom: 2px solid #d1d5db; margin-bottom: 20px; padding: 0 4px; align-items: flex-end; }
     .tab-btn { padding: 9px 18px 8px; font-size: 13px; font-weight: 600; font-family: inherit; background: transparent; border: 1px solid transparent; border-bottom: none; border-radius: 8px 8px 0 0; margin-bottom: -2px; cursor: pointer; color: #888; transition: all .15s; position: relative; }
@@ -324,6 +360,15 @@ function normalizeRow(raw) {
     leftOnTable:   fmtN(raw['Left on Table']),
     overDemand:    fmtN(raw['Over Demand $']),
   };
+}
+/* Heat band for a section's FT conversion rate (validated palette; never
+   color-alone — callers always render the %, the label and the icon too). */
+function heatBand(convPct) {
+  var v = convPct == null ? 0 : convPct;
+  if (v >= 50) return { color: '#b91c1c', bg: '#fef2f2', label: 'HOT',     icon: '🔥' };
+  if (v >= 25) return { color: '#f97316', bg: '#fff7ed', label: 'WARMING', icon: '🌤️' };
+  if (v > 0)   return { color: '#0369a1', bg: '#f0f9ff', label: 'COOL',    icon: '🌧️' };
+  return              { color: '#6b7280', bg: '#f4f4f5', label: 'COLD',    icon: '🧊' };
 }
 function adminSectionUrl(orgId, sectionId) {
   if (!orgId || !sectionId) return null;
@@ -1248,6 +1293,18 @@ function App() {
   var [ciLoading, setCiLoading] = useState(false);
   var [ciError, setCiError] = useState(null);
   var [tooltip, setTooltip]           = useState(null);
+  /* Post-launch action queue: which section is deep-linked from the Overview
+     "Just Launched" snapshot, which rosters are expanded, copy-emails feedback */
+  var [focusSectionId, setFocusSectionId] = useState(null);
+  var [aqExpanded, setAqExpanded] = useState({});
+  var [aqCopied, setAqCopied] = useState(null);
+  var [dataAsOf, setDataAsOf] = useState(null);
+  /* Shared per-org pins (persisted server-side) + email digest modal */
+  var [pins, setPins] = useState([]);
+  var [subOpen, setSubOpen] = useState(false);
+  var [subEmail, setSubEmail] = useState('');
+  var [subCadence, setSubCadence] = useState('weekly');
+  var [subStatus, setSubStatus] = useState(null);
 
   /* Insights state */
   var [insights, setInsights]               = useState(null);
@@ -1281,6 +1338,7 @@ function App() {
         if (json && json.meta) {
           if (json.meta.org_name) setOrgName(json.meta.org_name);
           if (json.meta.logo_url) setLogoUrl(json.meta.logo_url);
+          if (json.meta.generated_at) setDataAsOf(json.meta.generated_at);
         }
         setLoading(false);
       })
@@ -1334,6 +1392,124 @@ function App() {
 
   var overallConvPct = totals.ftSignups > 0 ? Math.round(1000 * totals.ftConverted / totals.ftSignups) / 10 : null;
   var overallFillPct = totals.capacity > 0  ? Math.round(1000 * totals.totalEnrolled / totals.capacity) / 10 : null;
+
+  /* ── Just Launched: sections whose registration opened in the last 3 days.
+     These are the sections where FT flips from "demand forecast" to
+     "conversion outcome" — the Overview snapshot + Conversions deep-dive. ── */
+  var justLaunched = useMemo(function() {
+    var now = new Date();
+    var cutoff = new Date(now.getTime() - 3 * 86400000);
+    return filtered.filter(function(r) {
+      if (!r.regOpens) return false;
+      var o = new Date(r.regOpens);
+      return o <= now && o >= cutoff;
+    }).sort(function(a, b) { return new Date(b.regOpens) - new Date(a.regOpens); });
+  }, [filtered]);
+
+  var rowsById = useMemo(function() {
+    var m = {};
+    rows.forEach(function(r) { if (r.sectionId) m[r.sectionId] = r; });
+    return m;
+  }, [rows]);
+
+  /* Pending-FT rosters per section (for the Conversions action queue) */
+  var pendingBySection = useMemo(function() {
+    var map = {};
+    (ftBookingRows || []).forEach(function(r) {
+      if ((r['FT Status'] || '') !== 'Pending') return;
+      var sid = r['Section ID'] || '';
+      if (!sid) return;
+      if (!map[sid]) map[sid] = [];
+      map[sid].push(r);
+    });
+    Object.keys(map).forEach(function(k) {
+      map[k].sort(function(a, b) { return String(a['User Name'] || '').localeCompare(String(b['User Name'] || '')); });
+    });
+    return map;
+  }, [ftBookingRows]);
+
+  var postRegPendingTotal = useMemo(function() {
+    return filtered.reduce(function(a, r) {
+      return a + ((r.regStatus === 'open' || r.regStatus === 'closed') ? r.ftPending : 0);
+    }, 0);
+  }, [filtered]);
+
+  function hoursAgoLabel(iso) {
+    if (!iso) return '';
+    var ms = Date.now() - new Date(iso).getTime();
+    if (ms < 0) return '';
+    var h = Math.floor(ms / 3600000);
+    if (h < 1) return 'opened <1h ago';
+    if (h < 48) return 'opened ' + h + 'h ago';
+    return 'opened ' + Math.floor(h / 24) + 'd ago';
+  }
+
+  function jumpToConversions(sectionId) {
+    setFocusSectionId(sectionId);
+    setAqExpanded(function(m) { var n = Object.assign({}, m); n[sectionId] = true; return n; });
+    switchTab('conversions');
+  }
+
+  function copyPendingEmails(sectionId, roster) {
+    var emails = roster.map(function(r) { return (r['User Email'] || '').trim(); }).filter(Boolean);
+    var text = Array.from(new Set(emails)).join(', ');
+    function done() { setAqCopied(sectionId); setTimeout(function() { setAqCopied(null); }, 2000); }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done, done);
+    } else {
+      var ta = document.createElement('textarea');
+      ta.value = text; document.body.appendChild(ta); ta.select();
+      try { document.execCommand('copy'); } catch (e) {}
+      document.body.removeChild(ta); done();
+    }
+  }
+
+  /* ── Pins: load shared per-org pins; toggle persists via the pins API ── */
+  useEffect(function() {
+    fetch(withToken(basePath + '/api/pins'))
+      .then(function(r) { return r.ok ? r.json() : { pins: [] }; })
+      .then(function(j) { setPins(Array.isArray(j.pins) ? j.pins : []); })
+      .catch(function() {});
+  }, []);
+  function togglePin(sectionId) {
+    if (!sectionId) return;
+    var next = pins.indexOf(sectionId) >= 0
+      ? pins.filter(function(p) { return p !== sectionId; })
+      : pins.concat([sectionId]).slice(0, 10);
+    setPins(next);  /* optimistic */
+    fetch(withToken(basePath + '/api/pins'), {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pins: next })
+    }).catch(function() {});
+  }
+  function isPinned(sectionId) { return pins.indexOf(sectionId) >= 0; }
+
+  function submitDigestSub() {
+    var em = (subEmail || '').trim();
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em)) { setSubStatus({ ok: false, msg: 'Enter a valid email address' }); return; }
+    setSubStatus({ ok: true, msg: 'Subscribing…' });
+    fetch(withToken('/' + orgSlug + '/admin/subscribe'), {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: em, reports: ['fasttrack'], schedule: subCadence,
+                             reportParams: { fasttrack: 'digest=1' } })
+    }).then(function(r) { return r.json().then(function(j) { return { ok: r.ok, j: j }; }); })
+      .then(function(res) {
+        if (res.ok && res.j && res.j.ok) setSubStatus({ ok: true, msg: 'Subscribed ✓ — digests send at 7am (' + subCadence + ')' });
+        else setSubStatus({ ok: false, msg: (res.j && res.j.error) || 'Subscription failed' });
+      })
+      .catch(function(e) { setSubStatus({ ok: false, msg: e.message }); });
+  }
+
+  /* Scroll the deep-linked section into view once the Conversions tab settles
+     (switchTab shows a ~1.5s loader before content mounts) */
+  useEffect(function() {
+    if (activeTab !== 'conversions' || !focusSectionId) return;
+    var t = setTimeout(function() {
+      var el = document.getElementById('aq-' + focusSectionId);
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 1600);
+    return function() { clearTimeout(t); };
+  }, [activeTab, focusSectionId]);
 
   /* ── Lazy-fetch CI data for demographics tab ── */
   function fetchCiData() {
@@ -1702,7 +1878,10 @@ function App() {
           React.createElement('button', { className: 'tab-btn' + (activeTab === 'revenue' ? ' active' : ''), onClick: function(){ switchTab('revenue'); } },
             '\uD83D\uDCB0 Revenue'
           ),
-          React.createElement('button', { className: 'tab-btn' + (activeTab === 'conversions' ? ' active' : ''), onClick: function(){ switchTab('conversions'); } }, 'Conversions'),
+          React.createElement('button', { className: 'tab-btn' + (activeTab === 'conversions' ? ' active' : ''), onClick: function(){ switchTab('conversions'); } },
+            '🔥 Conversions',
+            postRegPendingTotal > 0 && React.createElement('span', { className: 'tab-badge', style: { background: '#b91c1c18', color: '#b91c1c' } }, fmtInt(postRegPendingTotal))
+          ),
           React.createElement('button', { className: 'tab-btn' + (activeTab === 'demographics' ? ' active' : ''), onClick: function(){ switchTab('demographics'); } },
             '\uD83D\uDC65 Demographics',
             ftUserRows.length > 0 && React.createElement('span', { className: 'tab-badge', style: { background: '#6366f122', color: '#6366f1' } }, ftUserRows.length)
@@ -1717,6 +1896,73 @@ function App() {
         ),
 
         activeTab === 'overview' && React.createElement(React.Fragment, null,
+
+        /* ── 📌 Pinned + 🔥 Just Launched strips ── */
+        (function() {
+          function sectionCard(r) {
+            var hb = heatBand(r.convPct);
+            var pinned = isPinned(r.sectionId);
+            return React.createElement('div', {
+              key: 'sc' + r.sectionId, className: 'launch-card',
+              style: { borderLeftColor: hb.color },
+              role: 'button', tabIndex: 0,
+              onClick: function() { jumpToConversions(r.sectionId); },
+              onKeyDown: function(e) { if (e.key === 'Enter') jumpToConversions(r.sectionId); },
+              title: 'Open the Conversions deep dive for this section'
+            },
+              React.createElement('div', { style: { display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'baseline' } },
+                React.createElement('div', null,
+                  React.createElement('div', { style: { fontSize: 12, fontWeight: 700, color: '#111' } }, r.section || r.program),
+                  React.createElement('div', { style: { fontSize: 10, color: '#999' } }, r.program, r.regOpens ? ' · ' + hoursAgoLabel(r.regOpens) : '')
+                ),
+                React.createElement('div', { style: { display: 'flex', gap: 6, alignItems: 'center', flexShrink: 0 } },
+                  React.createElement('span', { className: 'flow-band', style: { background: hb.bg, color: hb.color } }, hb.icon, ' ', r.convPct != null ? r.convPct + '%' : '0%'),
+                  React.createElement('button', {
+                    className: 'pin-toggle' + (pinned ? ' pinned' : ''),
+                    title: pinned ? 'Unpin from top of Overview' : 'Pin to top of Overview (visible to your whole team)',
+                    onClick: function(e) { e.stopPropagation(); togglePin(r.sectionId); }
+                  }, '📌')
+                )
+              ),
+              React.createElement('div', { className: 'launch-stats' },
+                React.createElement('div', { className: 'launch-stat' }, React.createElement('div', { className: 'ls-v' }, fmtInt(r.ftSignups)), React.createElement('div', { className: 'ls-l' }, 'FT holds')),
+                React.createElement('div', { className: 'launch-stat' }, React.createElement('div', { className: 'ls-v', style: { color: '#059669' } }, fmtInt(r.ftConverted)), React.createElement('div', { className: 'ls-l' }, 'Converted')),
+                React.createElement('div', { className: 'launch-stat' }, React.createElement('div', { className: 'ls-v', style: { color: r.ftPending > 0 ? '#f97316' : '#999' } }, fmtInt(r.ftPending)), React.createElement('div', { className: 'ls-l' }, 'Pending')),
+                React.createElement('div', { className: 'launch-stat' }, React.createElement('div', { className: 'ls-v' }, r.fillPct != null ? r.fillPct + '%' : '—'), React.createElement('div', { className: 'ls-l' }, 'Fill'))
+              )
+            );
+          }
+          var pinnedRows = pins.map(function(sid) { return rowsById[sid] || { sectionId: sid, ghost: true }; });
+          var launchRows = justLaunched.filter(function(r) { return !isPinned(r.sectionId); }).slice(0, 12);
+          return React.createElement(React.Fragment, null,
+            pinnedRows.length > 0 && React.createElement('div', { style: { marginBottom: 20 } },
+              React.createElement('div', { style: { display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 10 } },
+                React.createElement('div', { style: { fontSize: 13, fontWeight: 800, color: '#7c3aed', textTransform: 'uppercase', letterSpacing: '.05em' } }, '📌 Pinned'),
+                React.createElement('div', { style: { fontSize: 11, color: '#888' } }, 'shared with everyone viewing this report')
+              ),
+              React.createElement('div', { className: 'launch-grid' },
+                pinnedRows.map(function(r) {
+                  if (r.ghost) return React.createElement('div', { key: 'gh' + r.sectionId, className: 'launch-card', style: { borderLeftColor: '#d1d5db', cursor: 'default' } },
+                    React.createElement('div', { style: { fontSize: 11, color: '#999' } }, 'Pinned section is no longer in this feed'),
+                    React.createElement('button', { className: 'pin-toggle pinned', style: { marginTop: 6 }, onClick: function() { togglePin(r.sectionId); } }, '📌 Unpin')
+                  );
+                  return sectionCard(r);
+                })
+              )
+            ),
+            justLaunched.length > 0 && React.createElement('div', { style: { marginBottom: 24 } },
+              React.createElement('div', { style: { display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 10 } },
+                React.createElement('div', { style: { fontSize: 13, fontWeight: 800, color: '#b91c1c', textTransform: 'uppercase', letterSpacing: '.05em' } }, '🔥 Just Launched'),
+                React.createElement('div', { style: { fontSize: 11, color: '#888' } }, 'registration opened in the last 3 days · click a section for the post-launch deep dive'),
+                React.createElement('button', { className: 'flow-action', style: { marginLeft: 'auto', background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe' }, onClick: function() { setSubOpen(true); } }, '📬 Email me this')
+              ),
+              React.createElement('div', { className: 'launch-grid' }, launchRows.map(sectionCard)),
+              justLaunched.length > launchRows.length && React.createElement('div', { style: { fontSize: 11, color: '#999', marginTop: 4 } },
+                '+ ', justLaunched.length - launchRows.length, ' more just-launched sections — see the 🔥 Conversions tab')
+            )
+          );
+        })(),
+
                 /* Demand Leaderboard */
         React.createElement(TriagePanel, { programs: programs }),
         React.createElement(DemandLeaderboard, { programs: programs }),
@@ -2071,7 +2317,7 @@ function App() {
             React.createElement('div', { style: { fontSize: 13, color: '#999', marginTop: 12 } }, 'Crunching the numbers...')
           ),
 
-          /* Conversions KPI strip */
+          /* Conversions KPI strip + post-launch flow board */
           (function() {
             var postReg = filtered.filter(function(r){ return r.regStatus === 'open' || r.regStatus === 'closed'; });
             var totalFT = postReg.reduce(function(a,r){ return a + r.ftSignups; }, 0);
@@ -2080,7 +2326,138 @@ function App() {
             var totalDrop = postReg.reduce(function(a,r){ return a + r.ftDropped; }, 0);
             var convRate = totalFT > 0 ? (totalConv / totalFT * 100).toFixed(1) : '0';
             var stalledCount = postReg.filter(function(r){ return r.ftSignups >= 3 && (r.convPct === 0 || r.convPct === null); }).length;
+
+            /* Flow board population: recent launches first (30 days), else the
+               busiest post-reg sections, so the board is never empty. */
+            var now = Date.now();
+            var flowSecs = postReg.filter(function(r) {
+              return r.regOpens && (now - new Date(r.regOpens).getTime()) <= 30 * 86400000 && new Date(r.regOpens).getTime() <= now;
+            });
+            var flowFallback = flowSecs.length === 0;
+            if (flowFallback) flowSecs = postReg.slice().sort(function(a,b){ return b.ftSignups - a.ftSignups; }).slice(0, 12);
+            else flowSecs = flowSecs.slice().sort(function(a, b) {
+              /* hot to cold: conversion % desc, then pending desc, then recency */
+              var ca = a.convPct == null ? -1 : a.convPct, cb = b.convPct == null ? -1 : b.convPct;
+              if (cb !== ca) return cb - ca;
+              if (b.ftPending !== a.ftPending) return b.ftPending - a.ftPending;
+              return new Date(b.regOpens) - new Date(a.regOpens);
+            });
+            var flowTotal = flowSecs.length;
+            flowSecs = flowSecs.slice(0, 30);  /* board cap; the table below has everything */
+
+            function flowCard(r) {
+              var hb = heatBand(r.convPct);
+              var roster = pendingBySection[r.sectionId] || [];
+              var isOpen = !!aqExpanded[r.sectionId];
+              var isFull = r.fillPct != null && r.fillPct >= 100;
+              var enrolledLbl = fmtInt(r.totalEnrolled) + (r.capacity > 0 ? ' / ' + fmtInt(r.capacity) : '');
+              return React.createElement('div', {
+                key: 'fc' + r.sectionId, id: 'aq-' + r.sectionId,
+                className: 'flow-card' + (focusSectionId === r.sectionId ? ' focused' : ''),
+                style: { borderLeftColor: hb.color }
+              },
+                /* header: heat + names + launch recency */
+                React.createElement('div', { className: 'flow-head' },
+                  React.createElement('span', { className: 'flow-conv', style: { color: hb.color } }, r.convPct != null ? r.convPct + '%' : '0%'),
+                  React.createElement('span', { className: 'flow-band', style: { background: hb.bg, color: hb.color } }, hb.icon, ' ', hb.label),
+                  React.createElement('span', { className: 'flow-title' }, r.section || r.program),
+                  React.createElement('span', { className: 'flow-sub' }, r.program,
+                    r.regOpens ? ' · ' + hoursAgoLabel(r.regOpens) : '',
+                    r.regStatus === 'closed' ? ' · reg closed' : ''),
+                  React.createElement('span', { style: { marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center' } },
+                    React.createElement('button', {
+                      className: 'pin-toggle' + (isPinned(r.sectionId) ? ' pinned' : ''),
+                      title: isPinned(r.sectionId) ? 'Unpin from top of Overview' : 'Pin to top of Overview (visible to your whole team)',
+                      onClick: function() { togglePin(r.sectionId); }
+                    }, '📌'),
+                    r.sectionId && React.createElement('a', { href: adminSectionUrl(r.orgId, r.sectionId), target: '_blank', rel: 'noopener', style: { color: '#3b82f6', fontWeight: 600, fontSize: 10, textDecoration: 'none' } }, 'Admin →')
+                  )
+                ),
+                /* the flow: FT holds ─▶ converted (+direct) ─▶ enrolled/fill */
+                React.createElement('div', { className: 'flow-row' },
+                  React.createElement('div', { className: 'flow-node', style: { borderColor: hb.color, background: hb.bg } },
+                    React.createElement('div', { className: 'fn-val', style: { color: hb.color } }, fmtInt(r.ftSignups)),
+                    React.createElement('div', { className: 'fn-lbl' }, 'FT holds')
+                  ),
+                  React.createElement('div', { className: 'flow-arrow' },
+                    React.createElement('div', { className: 'fa-line', style: { color: hb.color } }, '━━▶'),
+                    React.createElement('div', { className: 'fa-lbl' }, 'converted')
+                  ),
+                  React.createElement('div', { className: 'flow-node' },
+                    React.createElement('div', { className: 'fn-val', style: { color: '#059669' } }, fmtInt(r.ftConverted)),
+                    React.createElement('div', { className: 'fn-lbl' }, 'Registered')
+                  ),
+                  React.createElement('div', { className: 'flow-arrow' },
+                    React.createElement('div', { className: 'fa-line', style: { color: '#c9c4bc' } }, '＋'),
+                    React.createElement('div', { className: 'fa-lbl' }, 'direct')
+                  ),
+                  React.createElement('div', { className: 'flow-node' },
+                    React.createElement('div', { className: 'fn-val', style: { color: '#4b5563' } }, fmtInt(r.directEnrolled)),
+                    React.createElement('div', { className: 'fn-lbl' }, 'Direct')
+                  ),
+                  React.createElement('div', { className: 'flow-arrow' },
+                    React.createElement('div', { className: 'fa-line', style: { color: '#c9c4bc' } }, '━━▶'),
+                    React.createElement('div', { className: 'fa-lbl' }, 'enrolled')
+                  ),
+                  React.createElement('div', { className: 'flow-node', style: isFull ? { borderColor: '#059669', background: '#ecfdf5' } : null },
+                    React.createElement('div', { className: 'fn-val', style: { color: isFull ? '#059669' : '#111' } }, enrolledLbl),
+                    React.createElement('div', { className: 'fn-lbl' }, r.fillPct != null ? r.fillPct + '% full' : 'Enrolled')
+                  )
+                ),
+                /* pending branch: the actionable part */
+                r.ftPending > 0 && React.createElement('div', { className: 'flow-pending' },
+                  React.createElement('div', { style: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' } },
+                    React.createElement('span', { style: { fontSize: 12, fontWeight: 800, color: '#f97316' } }, '⏳ ', fmtInt(r.ftPending), ' still pending'),
+                    React.createElement('span', { style: { fontSize: 11, color: '#888' } },
+                      isFull ? '→ section is full: offer waitlist or transfer to a sibling section'
+                             : '→ open spots remain: nudge these families to finish registration'),
+                    roster.length > 0 && React.createElement('button', {
+                      className: 'flow-action', style: { background: '#fff7ed', color: '#c2410c', border: '1px solid #fed7aa' },
+                      onClick: function() { setAqExpanded(function(m) { var n = Object.assign({}, m); n[r.sectionId] = !isOpen; return n; }); }
+                    }, isOpen ? 'Hide families' : 'Show ' + roster.length + ' famil' + (roster.length === 1 ? 'y' : 'ies')),
+                    roster.length > 0 && React.createElement('button', {
+                      className: 'flow-action', style: { background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe' },
+                      onClick: function() { copyPendingEmails(r.sectionId, roster); }
+                    }, aqCopied === r.sectionId ? 'Copied ✓' : 'Copy emails')
+                  ),
+                  isOpen && roster.length > 0 && React.createElement('div', { className: 'roster' },
+                    roster.map(function(p, i) {
+                      return React.createElement('div', { key: 'ro' + i, className: 'roster-row' },
+                        React.createElement('a', { href: adminUserUrl(r.orgId, p['User ID']), target: '_blank', rel: 'noopener', style: { fontWeight: 700, color: '#1d4ed8', textDecoration: 'none' } }, p['User Name'] || '(no name)'),
+                        React.createElement('span', { style: { color: '#888' } }, p['User Email'] || ''),
+                        p['Participant Name'] && p['Participant Name'] !== p['User Name'] && React.createElement('span', { style: { color: '#a8a29e', fontStyle: 'italic' } }, 'for ' + p['Participant Name']),
+                        React.createElement('span', { style: { color: '#c9c4bc', marginLeft: 'auto' } }, p['Signup Date'] || '')
+                      );
+                    })
+                  )
+                )
+              );
+            }
+
             return React.createElement(React.Fragment, null,
+              /* 🔥 Command-center banner */
+              React.createElement('div', { style: { background: 'linear-gradient(90deg,#7f1d1d,#b91c1c 45%,#ea580c)', borderRadius: 12, padding: '16px 20px', marginBottom: 16, color: '#fff' } },
+                React.createElement('div', { style: { display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' } },
+                  React.createElement('div', { style: { fontSize: 16, fontWeight: 800, letterSpacing: '-.2px' } }, '🔥 Post-Launch Command Center'),
+                  React.createElement('span', { style: { fontSize: 10, opacity: .8, marginLeft: 'auto', display: 'flex', gap: 10, alignItems: 'center' } },
+                    React.createElement('span', null,
+                      dataAsOf ? 'data as of ' + new Date(dataAsOf).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) + ' · ' : '',
+                      React.createElement('a', { href: '?_nocache=1', style: { color: '#fff', fontWeight: 700 } }, 'refresh live ↻')),
+                    React.createElement('button', { className: 'flow-action', style: { background: '#ffffff22', color: '#fff', border: '1px solid #ffffff55' }, onClick: function() { setSubOpen(true); } }, '📬 Email me this'))
+                ),
+                React.createElement('div', { style: { fontSize: 12, opacity: .92, marginTop: 2 } },
+                  'How Fast Track performed once registration opened — hottest converters up top, pending families one click away. ',
+                  React.createElement('strong', null, fmtInt(totalPend)), ' holds still waiting to convert.')
+              ),
+
+              /* Empty snapshot: explain + offer live refresh instead of a wall of zeros */
+              postReg.length === 0 && React.createElement('div', { style: { background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: 10, padding: '18px 20px', marginBottom: 20, fontSize: 13, color: '#78350f' } },
+                React.createElement('div', { style: { fontWeight: 800, marginBottom: 4 } }, '🧊 No launched sections in this data snapshot'),
+                React.createElement('div', { style: { lineHeight: 1.6 } },
+                  'None of the sections in the current feed show registration as open or closed. On a launch day this usually means the report is serving a cached snapshot taken before registration opened. ',
+                  React.createElement('a', { href: '?_nocache=1', style: { fontWeight: 700, color: '#92400e' } }, 'Pull live data now ↻'),
+                  ' (may take a minute for large orgs).')
+              ),
               React.createElement('div', { style: { background: '#fff', border: '1px solid #e0ddd8', borderRadius: 10, padding: '14px 20px', marginBottom: 20 } },
                 React.createElement('div', { style: { fontSize: 13, fontWeight: 700, color: '#111', marginBottom: 4 } }, 'How FT conversions work'),
                 React.createElement('div', { style: { fontSize: 12, color: '#666', lineHeight: 1.6 } },
@@ -2117,6 +2494,30 @@ function App() {
                 React.createElement('strong', null, '⚡ ' + stalledCount + ' section' + (stalledCount !== 1 ? 's' : '') + ' stalled'),
                 ' — have 3+ FT interests but 0 registrations. Review pricing or registration barriers.'
               ),
+
+              /* ── Conversion flow board ── */
+              flowSecs.length > 0 && React.createElement(React.Fragment, null,
+                React.createElement('div', { style: { display: 'flex', alignItems: 'baseline', gap: 12, flexWrap: 'wrap', marginBottom: 10 } },
+                  React.createElement('div', { style: { fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: '#b91c1c' } },
+                    '🔥 Conversion Flow ',
+                    React.createElement('span', { style: { fontWeight: 400, textTransform: 'none', color: '#9ca3af', letterSpacing: 0 } },
+                      flowFallback ? '— top post-launch sections by FT volume (none launched in the last 30 days)'
+                                   : '— sections launched in the last 30 days, hottest conversion first')
+                  ),
+                  /* heat legend: band + threshold, never color-alone */
+                  React.createElement('div', { style: { display: 'flex', gap: 8, fontSize: 10, fontWeight: 700, marginLeft: 'auto', flexWrap: 'wrap' } },
+                    React.createElement('span', { className: 'flow-band', style: { background: '#fef2f2', color: '#b91c1c' } }, '🔥 HOT ≥50%'),
+                    React.createElement('span', { className: 'flow-band', style: { background: '#fff7ed', color: '#f97316' } }, '🌤️ WARMING 25–49%'),
+                    React.createElement('span', { className: 'flow-band', style: { background: '#f0f9ff', color: '#0369a1' } }, '🌧️ COOL 1–24%'),
+                    React.createElement('span', { className: 'flow-band', style: { background: '#f4f4f5', color: '#6b7280' } }, '🧊 COLD 0%')
+                  )
+                ),
+                flowSecs.map(flowCard),
+                flowTotal > flowSecs.length && React.createElement('div', { style: { fontSize: 11, color: '#999', margin: '4px 0 8px' } },
+                  '+ ', flowTotal - flowSecs.length, ' more launched sections in the Conversion Detail table below'),
+                React.createElement('div', { style: { height: 12 } })
+              ),
+
               /* Conversion funnel table */
               React.createElement('div', { style: { fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: '#059669', marginBottom: 12, marginTop: 8 } },
                 'Conversion Detail ', React.createElement('span', { style: { fontWeight: 400, textTransform: 'none', color: '#9ca3af', letterSpacing: 0 } }, '— sections where registration is open or closed')
@@ -2250,6 +2651,34 @@ function App() {
             )
           ),
           React.createElement(PipelineTab, { sections: filtered, pipelineRows: filteredPipeline, programs: programs, totals: totals })
+        ),
+
+                /* 📬 Email digest modal */
+        subOpen && React.createElement('div', { className: 'sub-overlay', onClick: function(e) { if (e.target === e.currentTarget) setSubOpen(false); } },
+          React.createElement('div', { className: 'sub-modal' },
+            React.createElement('div', { style: { fontSize: 15, fontWeight: 800, marginBottom: 4 } }, '📬 Fast Track email digest'),
+            React.createElement('div', { style: { fontSize: 12, color: '#666', marginBottom: 14, lineHeight: 1.5 } },
+              'Get the top sections building Fast Track and the hottest post-launch conversions, delivered at 7am. Manage or unsubscribe anytime at ',
+              React.createElement('a', { href: withToken('/' + orgSlug + '/admin'), target: '_blank', rel: 'noopener' }, orgSlug + '/admin'), '.'),
+            React.createElement('label', { style: { fontSize: 11, fontWeight: 700, color: '#555', display: 'block', marginBottom: 4 } }, 'Email'),
+            React.createElement('input', { type: 'email', value: subEmail, placeholder: 'you@yourcity.gov', autoFocus: true,
+              onChange: function(e) { setSubEmail(e.target.value); },
+              onKeyDown: function(e) { if (e.key === 'Enter') submitDigestSub(); },
+              style: { width: '100%', padding: '9px 12px', border: '1px solid #d1d5db', borderRadius: 6, fontSize: 13, fontFamily: 'inherit', marginBottom: 12, boxSizing: 'border-box' } }),
+            React.createElement('label', { style: { fontSize: 11, fontWeight: 700, color: '#555', display: 'block', marginBottom: 4 } }, 'Cadence'),
+            React.createElement('div', { style: { display: 'flex', gap: 6, marginBottom: 16 } },
+              ['daily', 'weekly', 'monthly'].map(function(c) {
+                return React.createElement('button', { key: c, className: 'flow-action',
+                  style: subCadence === c
+                    ? { background: '#b91c1c', color: '#fff', border: '1px solid #b91c1c', padding: '6px 14px' }
+                    : { background: '#fff', color: '#555', border: '1px solid #d1d5db', padding: '6px 14px' },
+                  onClick: function() { setSubCadence(c); } }, c.charAt(0).toUpperCase() + c.slice(1));
+              })),
+            subStatus && React.createElement('div', { style: { fontSize: 12, fontWeight: 600, marginBottom: 12, color: subStatus.ok ? '#059669' : '#dc2626' } }, subStatus.msg),
+            React.createElement('div', { style: { display: 'flex', gap: 8, justifyContent: 'flex-end' } },
+              React.createElement('button', { className: 'flow-action', style: { background: '#fff', color: '#555', border: '1px solid #d1d5db', padding: '8px 16px' }, onClick: function() { setSubOpen(false); } }, 'Close'),
+              React.createElement('button', { className: 'flow-action', style: { background: '#b91c1c', color: '#fff', border: '1px solid #b91c1c', padding: '8px 16px' }, onClick: submitDigestSub }, 'Subscribe'))
+          )
         ),
 
                 /* Footer */
