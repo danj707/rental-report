@@ -559,7 +559,11 @@ function App() {
   // Fetch — refetches whenever the pay period changes
   useEffect(() => {
     setLoading(true);
-    fetch(withToken(`/${orgSlug}/${reportType}/api/data?start_date=${startDate}&end_date=${endDate}`))
+    // ?_refresh=1 (or _nocache=1) on the PAGE url forwards to the API call so
+    // admins can bypass the server's report cache — without this the param
+    // only works when hitting /api/data directly.
+    const refreshQS = (_initParams.get('_refresh') === '1' || _initParams.get('_nocache') === '1') ? '&_refresh=1' : '';
+    fetch(withToken(`/${orgSlug}/${reportType}/api/data?start_date=${startDate}&end_date=${endDate}${refreshQS}`))
       .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
       .then(json => {
         const data = json.rows || json;
