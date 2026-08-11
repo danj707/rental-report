@@ -195,27 +195,27 @@
     .court-native .heatmap-legend-swatch { display: inline-block; width: 14px; height: 14px; border-radius: 3px; vertical-align: middle; margin-right: 3px; }
     /* Loading / error */
     .court-native .cu-loading { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; color: #9ca3af; padding: 60px 16px; font-size: 13px; }
-    .court-native .cu-error { color: #b91c1c; background: #fef2f2; border: 1px solid #fecaca; padding: 10px 14px; border-radius: 5px; font-size: 12px; margin: 10px 0; }
-    /* AI insights */
-    .court-native .insights-section { margin: 14px 0 18px; }
-    .court-native .insights-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
-    .court-native .insights-btn { display: inline-flex; align-items: center; gap: 6px; background: linear-gradient(135deg, #6366f1, #8b5cf6); color: #fff; border: none; border-radius: 8px; padding: 10px 20px; font-size: 13px; font-weight: 600; font-family: inherit; cursor: pointer; box-shadow: 0 2px 12px rgba(99,102,241,.3); }
-    .court-native .insights-btn:hover:not(:disabled) { background: linear-gradient(135deg, #4f46e5, #7c3aed); }
-    .court-native .insights-btn:disabled { opacity: .6; cursor: default; }
-    .court-native .insights-sub { font-size: 11.5px; color: #9ca3af; }
-    .court-native .insights-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; }
-    .court-native .insight-card { border: 1px solid #e5e7eb; border-left-width: 4px; border-radius: 8px; padding: 14px 16px; background: #fff; }
-    .court-native .insight-type { font-size: 10px; font-weight: 700; letter-spacing: .6px; text-transform: uppercase; margin-bottom: 6px; }
-    .court-native .insight-title { font-size: 14px; font-weight: 700; color: #111827; margin-bottom: 5px; line-height: 1.3; }
-    .court-native .insight-detail { font-size: 12.5px; color: #374151; line-height: 1.45; }
-    .court-native .insight-action { font-size: 12px; color: #6b7280; margin-top: 8px; font-weight: 500; }
-    .court-native .insight-opportunity { border-left-color: #10b981; } .court-native .insight-opportunity .insight-type { color: #059669; }
-    .court-native .insight-risk { border-left-color: #f59e0b; } .court-native .insight-risk .insight-type { color: #d97706; }
-    .court-native .insight-signal { border-left-color: #6366f1; } .court-native .insight-signal .insight-type { color: #4f46e5; }
-    .court-native .insights-feedback { display: flex; align-items: center; gap: 8px; margin-top: 12px; padding: 8px 4px; font-size: 13px; color: #666; }
-    .court-native .insights-feedback button { background: none; border: 1px solid #e5e7eb; border-radius: 6px; padding: 4px 10px; cursor: pointer; font-size: 13px; }
-    .court-native .insights-feedback button:hover { background: #f3f4f6; }
-    .court-native .insights-feedback .fb-thanks { color: #10b981; font-weight: 600; }
+    .cu-error { color: #b91c1c; background: #fef2f2; border: 1px solid #fecaca; padding: 10px 14px; border-radius: 5px; font-size: 12px; margin: 10px 0; }
+    /* AI insights — shared by the Court Utilization and Camping tabs */
+    .insights-section { margin: 14px 0 18px; }
+    .insights-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+    .insights-btn { display: inline-flex; align-items: center; gap: 6px; background: linear-gradient(135deg, #6366f1, #8b5cf6); color: #fff; border: none; border-radius: 8px; padding: 10px 20px; font-size: 13px; font-weight: 600; font-family: inherit; cursor: pointer; box-shadow: 0 2px 12px rgba(99,102,241,.3); }
+    .insights-btn:hover:not(:disabled) { background: linear-gradient(135deg, #4f46e5, #7c3aed); }
+    .insights-btn:disabled { opacity: .6; cursor: default; }
+    .insights-sub { font-size: 11.5px; color: #9ca3af; }
+    .insights-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; }
+    .insight-card { border: 1px solid #e5e7eb; border-left-width: 4px; border-radius: 8px; padding: 14px 16px; background: #fff; }
+    .insight-type { font-size: 10px; font-weight: 700; letter-spacing: .6px; text-transform: uppercase; margin-bottom: 6px; }
+    .insight-title { font-size: 14px; font-weight: 700; color: #111827; margin-bottom: 5px; line-height: 1.3; }
+    .insight-detail { font-size: 12.5px; color: #374151; line-height: 1.45; }
+    .insight-action { font-size: 12px; color: #6b7280; margin-top: 8px; font-weight: 500; }
+    .insight-opportunity { border-left-color: #10b981; } .insight-opportunity .insight-type { color: #059669; }
+    .insight-risk { border-left-color: #f59e0b; } .insight-risk .insight-type { color: #d97706; }
+    .insight-signal { border-left-color: #6366f1; } .insight-signal .insight-type { color: #4f46e5; }
+    .insights-feedback { display: flex; align-items: center; gap: 8px; margin-top: 12px; padding: 8px 4px; font-size: 13px; color: #666; }
+    .insights-feedback button { background: none; border: 1px solid #e5e7eb; border-radius: 6px; padding: 4px 10px; cursor: pointer; font-size: 13px; }
+    .insights-feedback button:hover { background: #f3f4f6; }
+    .insights-feedback .fb-thanks { color: #10b981; font-weight: 600; }
     .court-native .cu-schedule-badge { background: #dcfce7; color: #166534; border-radius: 10px; padding: 1px 8px; font-weight: 600; font-size: 10px; }
     .court-native .cu-empty { padding: 44px 20px; text-align: center; color: #6b7280; font-size: 13px; line-height: 1.6; background: #fafaf8; border: 1px solid #eee; border-radius: 8px; margin-top: 6px; }
 
@@ -1396,6 +1396,9 @@
       const [data, setData] = React.useState({ rows: null, err: null });
       const [geo, setGeo] = React.useState(null);
       const [allSites, setAllSites] = React.useState(false);
+      const [insights, setInsights] = React.useState(null);
+      const [insLoading, setInsLoading] = React.useState(false);
+      const [insError, setInsError] = React.useState(null);
 
       React.useEffect(() => {
         let dead = false;
@@ -1433,8 +1436,16 @@
       const stays    = arrivals.length;
       const nights   = arrivals.reduce((s, r) => s + Math.max((totDays(r) || 1) - 1, 1), 0);
       const revenue  = arrivals.reduce((s, r) => s + (Number(r['Total']) || 0), 0);
-      const guests   = arrivals.reduce((s, r) => s + (Number(r['Head Cnt']) || 0), 0);
       const avgStay  = stays ? nights / stays : 0;
+
+      // Weekend vs weekday split of occupied nights: each day-row is a night
+      // except a multi-day checkout day; Fri/Sat dates are weekend nights.
+      const dowOf = r => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(r['Date'] || '')); return m ? new Date(+m[1], +m[2] - 1, +m[3]).getDay() : null; };
+      const isNightRow  = r => { const t = totDays(r); return t <= 1 || dayNum(r) < t; };
+      const isWkndNight = r => { const dw = dowOf(r); return dw === 5 || dw === 6; };
+      const nightRows  = rows.filter(isNightRow);
+      const wkndNights = nightRows.filter(isWkndNight).length;
+      const wkndPct    = nightRows.length ? (wkndNights / nightRows.length) * 100 : null;
 
       // Day list for the range (daily cells up to ~3 months, weekly buckets beyond)
       const days = [];
@@ -1454,13 +1465,14 @@
         const n = dayNum(r), t = totDays(r);
         const cls = (t <= 1 || !n) ? 'one' : n === 1 ? 'arr' : n === t ? 'dep' : 'occ';
         let st = statByKey[key];
-        if (!st) { st = statByKey[key] = { site, location: locName, stays: 0, days: 0, rev: 0, guests: 0, occ: {} }; (statIdx[site] = statIdx[site] || []).push(st); }
+        if (!st) { st = statByKey[key] = { site, location: locName, stays: 0, days: 0, rev: 0, nights: 0, wknd: 0, occ: {} }; (statIdx[site] = statIdx[site] || []).push(st); }
         st.occ[d] = {
           cls,
           tip: (r['Reservee'] || 'Booked') + (t > 1 ? ' · day ' + n + ' of ' + t : '') + (r['Purpose'] ? ' · ' + r['Purpose'] : ''),
         };
         st.days++;
-        if (isArrival(r)) { st.stays++; st.rev += Number(r['Total']) || 0; st.guests += Number(r['Head Cnt']) || 0; }
+        if (isNightRow(r)) { st.nights++; if (isWkndNight(r)) st.wknd++; }
+        if (isArrival(r)) { st.stays++; st.rev += Number(r['Total']) || 0; }
       });
       const statList = Object.keys(statByKey).map(k => statByKey[k]);
       // Fuzzy matcher — reservation site names don't always equal seed names.
@@ -1544,7 +1556,7 @@
         { label: 'Avg Stay', val: avgStay ? avgStay.toFixed(1) : '—', cls: 'sc-amber', sub: 'nights per stay' },
         { label: 'Net Revenue', val: money(revenue), cls: 'sc-green', sub: 'base rental, excl. add-ons' },
         { label: 'Sites Booked', val: sitesBooked.toLocaleString() + (sitesTotal ? ' / ' + sitesTotal : ''), cls: 'sc-muted', sub: 'of mapped campsites' },
-        { label: 'Total Guests', val: guests.toLocaleString(), cls: 'sc-muted', sub: 'sum of head counts' },
+        { label: 'Weekend Nights', val: wkndPct == null ? '—' : Math.round(wkndPct) + '%', cls: 'sc-muted', sub: wkndPct == null ? 'no nights in range' : wkndNights.toLocaleString() + ' Fri/Sat vs ' + (nightRows.length - wkndNights).toLocaleString() + ' weekday' },
       ];
 
       const calCell = (site, dList, key) => {
@@ -1569,6 +1581,31 @@
 
       const hasStays = stays > 0;
 
+      // Rec Insights — compact aggregate blob for the camping insights endpoint
+      const nightsByDow = [0, 0, 0, 0, 0, 0, 0];
+      nightRows.forEach(r => { const dw = dowOf(r); if (dw != null) nightsByDow[dw]++; });
+      const buildCampBlob = () => ({
+        dateRange: { start, end, daysInRange: days.length },
+        totals: { stays, nightsBooked: nights, netRevenueUsd: Math.round(revenue), avgStayNights: +avgStay.toFixed(1), sitesBooked, sitesMapped: sitesTotal, bookedSiteDays: siteDays, occupancyPct: occPct == null ? null : Math.round(occPct) },
+        weekendVsWeekday: { weekendNights: wkndNights, weekdayNights: nightRows.length - wkndNights, weekendPct: wkndPct == null ? null : Math.round(wkndPct) },
+        occupiedNightsByDayOfWeek: Object.fromEntries(DOW.map((d, i) => [d, nightsByDow[i]])),
+        checkinsByDayOfWeek: Object.fromEntries(DOW.map((d, i) => [d, dowCounts[i]])),
+        stayLengthMix: lenData.map(b => ({ bucket: b.label, stays: b.v })),
+        monthly: months.map(m => ({ month: m, stays: byMonth[m].stays, revenueUsd: Math.round(byMonth[m].revenue) })),
+        topSitesByRevenue: topSites.map(s => ({ site: s.site, location: s.location, stays: s.stays, daysBooked: s.days, weekendPct: s.nights ? Math.round(s.wknd / s.nights * 100) : null, revenueUsd: Math.round(s.rev) })),
+      });
+      const getCampInsights = async () => {
+        setInsLoading(true); setInsError(null);
+        try {
+          const tok = CFG.token ? '?token=' + encodeURIComponent(CFG.token) : '';
+          const resp = await fetch('/' + CFG.slug + '/camping/api/insights' + tok, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(buildCampBlob()) });
+          const j = await resp.json();
+          if (!resp.ok || !j.ok) throw new Error(j.error || 'Server returned ' + resp.status);
+          setInsights(j.insights || []);
+        } catch (er) { setInsError(er.message || 'Could not generate insights'); }
+        setInsLoading(false);
+      };
+
       return e('div', null,
         e(CampBanner, { stays, nights, occPct, revenue, sitesBooked, sitesTotal }),
         e('div', { className: 'sum-cards' },
@@ -1576,6 +1613,19 @@
             e('div', { className: 'sc-label' }, c.label),
             e('div', { className: 'sc-val ' + c.cls }, c.val),
             e('div', { className: 'sc-sub' }, c.sub)))),
+
+        // AI insights (shared endpoint pattern with the Court Utilization tab)
+        hasStays ? e('div', { className: 'insights-section' },
+          e('div', { className: 'insights-head' },
+            e('button', { type: 'button', className: 'insights-btn', onClick: getCampInsights, disabled: insLoading }, insLoading ? 'Analyzing…' : (insights ? '↻ Refresh insights' : '✨ Rec Insights')),
+            insights && !insLoading ? e('span', { className: 'insights-sub' }, 'Generated from the ' + stays.toLocaleString() + ' stays shown') : null),
+          insError && !insLoading ? e('div', { className: 'cu-error' }, e('strong', null, 'Insights unavailable: '), insError) : null,
+          insights && !insLoading ? e('div', { className: 'insights-grid' },
+            insights.map((ins, i) => e('div', { key: i, className: 'insight-card insight-' + (ins.type || 'signal') },
+              e('div', { className: 'insight-type' }, ins.type || 'signal'),
+              e('div', { className: 'insight-title' }, ins.title),
+              e('div', { className: 'insight-detail' }, ins.detail),
+              ins.action ? e('div', { className: 'insight-action' }, '→ ' + ins.action) : null))) : null) : null,
 
         // Site × day occupancy calendar — booked sites only by default; empty
         // rows are noise at campgrounds with many mapped-but-unbooked sites.
@@ -1656,14 +1706,14 @@
           e('thead', null, e('tr', null,
             e('th', null, 'Site'), e('th', null, 'Location'),
             e('th', { className: 'num' }, 'Stays'), e('th', { className: 'num' }, 'Days booked'),
-            e('th', { className: 'num' }, 'Guests'), e('th', { className: 'num' }, 'Net revenue'))),
+            e('th', { className: 'num' }, 'Weekend %'), e('th', { className: 'num' }, 'Net revenue'))),
           e('tbody', null,
             topSites.map((s, i) => e('tr', { key: i },
               e('td', null, s.site),
               e('td', null, s.location),
               e('td', { className: 'num' }, s.stays),
               e('td', { className: 'num' }, s.days),
-              e('td', { className: 'num' }, s.guests || '—'),
+              e('td', { className: 'num' }, s.nights ? Math.round(s.wknd / s.nights * 100) + '%' : '—'),
               e('td', { className: 'num' }, money(s.rev)))))) : e('div', { className: 'empty' },
             e('div', { className: 'em-icon' }, '🏕️'),
             e('div', { className: 'em-title' }, 'No camping stays in this range'),

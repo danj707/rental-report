@@ -4231,6 +4231,23 @@ Rules:
 - Volume leaders and revenue leaders are different stories — say which is which when it matters.
 - Be terse. No filler. Vary "type" across the four insights where the data supports it.`;
 
+const CAMPING_SYS_PROMPT = `You are a campground operations analyst for US municipal parks & recreation departments. You are given aggregate campsite reservation data for a single reporting period — stays, occupied nights, occupancy rate, weekend (Fri/Sat) vs weekday night split, occupied nights by day of week, check-ins by day of week, stay-length mix, monthly trend, and per-site totals with net revenue, all pre-computed.
+
+Return EXACTLY 4 insights as a JSON array and nothing else — no prose, no preamble, no markdown code fences. Each element is an object with exactly these keys:
+{
+  "type": "opportunity" | "risk" | "signal",
+  "title": short label, 7 words or fewer,
+  "detail": one sentence, 22 words or fewer, citing specific numbers, sites, days, or months drawn from the data,
+  "action": one concrete next step, 12 words or fewer
+}
+
+Rules:
+- Ground EVERY figure in the data provided. Never invent numbers, sites, or locations.
+- Fri+Sat are 2 of 7 nights (~29% baseline). A weekendPct well above 29% means weekday nights sit empty — consider mid-week discounts or promotions; well below means weekday demand is already strong.
+- Revenue figures are net base-rental dollars and fine to cite; many municipal campgrounds run $0 or nominal rates, so zero revenue is a pricing setup, not a failure.
+- Prefer non-obvious observations: day-of-week gaps, stay-length patterns vs any max-stay policy, sites that fill vs sites that never book, seasonality turns.
+- Be terse. No filler. Vary the "type" across the four insights where the data supports it.`;
+
 const SYS_PROMPTS = { lessons: LESSONS_SYS_PROMPT, programs: PROGRAMS_SYS_PROMPT, fasttrack: FASTTRACK_SYS_PROMPT, users: USERS_SYS_PROMPT, gl: GL_SYS_PROMPT, historic: HISTORIC_SYS_PROMPT, roster: ROSTER_SYS_PROMPT, products: PRODUCTS_SYS_PROMPT, memberships: MEMBERSHIPS_SYS_PROMPT, "instructor-payout": INSTRUCTOR_PAYOUT_SYS_PROMPT, facility: FACILITY_SYS_PROMPT, qoq: QOQ_SYS_PROMPT, "annual-report": ANNUAL_REPORT_SYS_PROMPT, waitlist: WAITLIST_SYS_PROMPT };
 
 // ── Program Finder AI ────────────────────────────────────────────────
@@ -4365,6 +4382,43 @@ app.post("/:org/lessons/api/insights", express.json(), async (req, res) => {
     res.json({ ok: true, insights });
   } catch (e) {
     console.error("[lessons] insights: " + e.message);
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// Insights — "camping" is a facilities-hub tab, not a REPORT_TYPES entry, so
+// resolveOrg would 404 the shared route; thin wrapper like lessons above.
+app.post("/:org/camping/api/insights", express.json(), async (req, res) => {
+  const slug = req.params.org;
+  if (!ORGS[slug]) return res.status(404).json({ ok: false, error: "Unknown org" });
+  if (!anthropic) return res.status(503).json({ ok: false, error: "AI insights not configured" });
+  const blob = req.body;
+  if (!blob || typeof blob !== "object") return res.status(400).json({ ok: false, error: "Missing stats payload" });
+  const key = crypto.createHash("sha256").update(slug + "|camping|" + JSON.stringify(blob)).digest("hex");
+  const hit = _insightsCache.get(key);
+  if (hit && Date.now() - hit.ts < INSIGHTS_TTL_MS) {
+    logEvent(slug, "camping", "insights", req, { cached: true });
+    return res.json({ ok: true, insights: hit.insights, cached: true });
+  }
+  try {
+    const data = await anthropic.messages.create({
+      model: INSIGHTS_MODEL, max_tokens: 800,
+      system: CAMPING_SYS_PROMPT + "\n\n" + SCHEMA_CONTEXT,
+      messages: [{ role: "user", content: JSON.stringify(blob) }],
+    });
+    const text = (data.content || []).filter(c => c.type === "text").map(c => c.text).join("");
+    const insights = salvageInsights(text);
+    if (!insights.length) return res.status(502).json({ ok: false, error: "Could not parse AI response" });
+    const u = data.usage || {};
+    _insightsCache.set(key, { ts: Date.now(), insights });
+    if (_insightsCache.size > INSIGHTS_CACHE_MAX) _insightsCache.delete(_insightsCache.keys().next().value);
+    logEvent(slug, "camping", "insights", req, {
+      inTok: u.input_tokens || 0, outTok: u.output_tokens || 0,
+      costUsd: insightsCostUsd(data.model || INSIGHTS_MODEL, u.input_tokens || 0, u.output_tokens || 0),
+    });
+    res.json({ ok: true, insights });
+  } catch (e) {
+    console.error("[camping] insights: " + e.message);
     res.status(500).json({ ok: false, error: e.message });
   }
 });
