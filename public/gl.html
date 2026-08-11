@@ -1340,6 +1340,14 @@ function App() {
   // Only worth showing the filter when the data actually splits across >1 desk.
   const hasDesk = useMemo(() => allDesks.length > 1, [allDesks]);
 
+  // Only Norman's custom GL card returns a "Locations" column (a hand-mapped
+  // gl_code → facility list); the shared card has no such column, so every
+  // other org gets empty locations. Hide the toggle unless the data has any.
+  const hasLocData = useMemo(
+    () => !!rows && rows.some(r => r.locations && r.locations.trim()),
+    [rows]
+  );
+
   // Reset desk selection to "all" whenever a fresh dataset loads — except on the
   // first load, where a `desks` URL param (PDF/print, share link) pins a subset.
   const urlDesksApplied = useRef(false);
@@ -1668,7 +1676,7 @@ function App() {
           </button>
         )}
 
-        {!isTylerActive && (
+        {!isTylerActive && hasLocData && (
           <button
             className={showLocations ? 'active' : ''}
             style={{fontSize:11, padding:'4px 10px'}}

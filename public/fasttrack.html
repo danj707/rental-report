@@ -534,6 +534,93 @@ function PipelineLaunchSection(props) {
   );
 }
 
+/* ── Cold pipeline strip — published sections whose registration opens soon
+   but with zero FT interest so far. This is the one signal the retired
+   Pipeline tab uniquely owned: these sections may need better descriptions,
+   pricing, or marketing before registration opens. Sections opening within
+   14 days get a row each; further-out cold sections roll up into a count. ── */
+function ColdPipelineStrip(props) {
+  var sections = props.sections || [];
+  var pipelineRows = props.pipelineRows || [];
+  var now = new Date();
+  var seen = {};
+  var cold = sections.filter(function(r){ return r.regStatus === 'pipeline'; })
+    .concat(pipelineRows)
+    .filter(function(r) {
+      if (r.ftSignups > 0) return false;
+      var key = r.sectionId || (r.program + '|' + r.section);
+      if (seen[key]) return false;
+      seen[key] = true;
+      return true;
+    })
+    .map(function(r) {
+      var d = r.regOpens ? new Date(r.regOpens) : null;
+      var days = d && !isNaN(d.getTime()) && d > now ? Math.ceil((d - now) / 86400000) : null;
+      return { r: r, days: days };
+    })
+    .filter(function(x){ return x.days !== null; })
+    .sort(function(a, b){ return a.days - b.days; });
+  if (!cold.length) return null;
+
+  var soon = cold.filter(function(x){ return x.days <= 14; });
+  var later = cold.length - soon.length;
+  var laterNote = later > 0
+    ? '+ ' + later + ' more cold section' + (later !== 1 ? 's' : '') + ' opening further out (15+ days) — still time for interest to build.'
+    : null;
+
+  return React.createElement('div', { style: { marginBottom: 22 } },
+    React.createElement('div', {
+      style: { display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap',
+        background: 'linear-gradient(90deg,#f0f9ff,#ffffff)', borderRadius: 10, padding: '11px 14px',
+        marginBottom: soon.length ? 10 : 0, borderLeft: '5px solid #0ea5e9' }
+    },
+      React.createElement('span', { style: { fontSize: 15, fontWeight: 800, color: '#0c4a6e' } }, '🥶 Cold Sections'),
+      React.createElement('span', { style: { fontSize: 12.5, color: '#0369a1', fontWeight: 600 } },
+        soon.length
+          ? soon.length + ' section' + (soon.length !== 1 ? 's' : '') + ' opening within 14 days with no Fast Track interest yet'
+          : cold.length + ' published section' + (cold.length !== 1 ? 's' : '') + ' awaiting registration, none with Fast Track interest yet — first opens in ' + cold[0].days + ' day' + (cold[0].days !== 1 ? 's' : '')),
+      React.createElement('span', { style: { fontSize: 11.5, color: '#64748b' } },
+        '— may need better descriptions, pricing, or marketing before registration opens')
+    ),
+    soon.map(function(x, i) {
+      var r = x.r;
+      var urgent = x.days <= 7;
+      var dateLabel = '';
+      if (r.sectionStart) {
+        var sd = new Date(r.sectionStart); var ed = r.sectionEnd ? new Date(r.sectionEnd) : null;
+        var fmt = function(d) { return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); };
+        dateLabel = fmt(sd) + (ed && ed.getTime() !== sd.getTime() ? ' – ' + fmt(ed) : '');
+      }
+      var timeLabel = [r.sectionDay, r.sectionTime].filter(Boolean).join(' ');
+      var schedLabel = [dateLabel, timeLabel].filter(Boolean).join(' · ');
+      return React.createElement('div', {
+        key: 'cold' + i,
+        style: { display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap',
+          border: '1px solid #e0f2fe', borderLeft: '4px solid ' + (urgent ? '#f59e0b' : '#0ea5e9'),
+          borderRadius: 9, padding: '9px 14px', marginBottom: 6, background: '#fff' }
+      },
+        React.createElement('div', { style: { flex: 1, minWidth: 200 } },
+          React.createElement('div', { style: { fontSize: 13, fontWeight: 700, color: '#111' } }, r.program,
+            r.sectionId && React.createElement('a', {
+              href: adminSectionUrl(r.orgId, r.sectionId), target: '_blank', rel: 'noopener',
+              style: { color: '#3b82f6', fontWeight: 600, fontSize: 10, textDecoration: 'none', marginLeft: 8 }
+            }, 'Admin →')
+          ),
+          React.createElement('div', { style: { fontSize: 11, color: '#888' } }, r.section,
+            schedLabel && React.createElement('span', { style: { color: '#aaa' } }, ' · ' + schedLabel))
+        ),
+        r.capacity > 0 && React.createElement('div', { style: { fontSize: 11.5, color: '#64748b', whiteSpace: 'nowrap' } },
+          fmtInt(r.capacity) + ' spots · 0 FT'),
+        React.createElement('div', { style: { fontSize: 11, fontWeight: 700, whiteSpace: 'nowrap',
+          color: urgent ? '#b45309' : '#0369a1', background: urgent ? '#fef3c7' : '#e0f2fe',
+          padding: '4px 10px', borderRadius: 999 } },
+          '📅 Reg opens ' + fmtDateShort(new Date(r.regOpens)) + ' · ' + x.days + 'd')
+      );
+    }),
+    laterNote && React.createElement('div', { style: { fontSize: 11, color: '#94a3b8', marginTop: 2, paddingLeft: 4 } }, laterNote)
+  );
+}
+
 
 /* ── Actionable Triage Panel ── */
 function TriagePanel(props) {
@@ -748,446 +835,6 @@ function DemandLeaderboard(props) {
   );
 }
 
-
-/* ── Pipeline Velocity Chart ── */
-function PipelineVelocityChart(props) {
-  var canvasRef = React.useRef(null);
-  var chartRef = React.useRef(null);
-  var allPipeline = props.allPipeline || [];
-
-  React.useEffect(function() {
-    if (!canvasRef.current || !allPipeline.length) return;
-    if (chartRef.current) chartRef.current.destroy();
-
-    // Only include sections with FT signups and a reg opens date
-    var sections = allPipeline.filter(function(r) {
-      return r.ftSignups > 0;
-    }).sort(function(a, b) { return b.ftSignups - a.ftSignups; }).slice(0, 15);
-
-    if (!sections.length) return;
-
-    // For each section, calculate velocity (signups per day in the FT window)
-    var labels = sections.map(function(r) {
-      var name = r.program;
-      if (name.length > 35) name = name.slice(0, 33) + '\u2026';
-      return name;
-    });
-
-    var signupData = sections.map(function(r) { return r.ftSignups; });
-    var capacities = sections.map(function(r) { return r.capacity || 0; });
-
-    // Demand % for coloring
-    var barColors = sections.map(function(r) {
-      if (!r.capacity) return '#6366f1';
-      var pct = r.ftSignups / r.capacity * 100;
-      if (pct >= 75) return '#dc2626';
-      if (pct >= 40) return '#f59e0b';
-      return '#6366f1';
-    });
-
-    var datasets = [
-      {
-        label: 'FT Wishlists',
-        data: signupData,
-        backgroundColor: barColors,
-        borderColor: barColors.map(function(c) { return c; }),
-        borderWidth: 1,
-        borderRadius: 4,
-        barPercentage: 0.7,
-      }
-    ];
-
-    // Add capacity line if available
-    if (capacities.some(function(c) { return c > 0; })) {
-      datasets.push({
-        label: 'Capacity',
-        data: capacities,
-        type: 'line',
-        borderColor: '#d1d5db',
-        borderWidth: 2,
-        borderDash: [6, 4],
-        pointRadius: 3,
-        pointBackgroundColor: '#d1d5db',
-        fill: false,
-        order: 0,
-      });
-    }
-
-    chartRef.current = new Chart(canvasRef.current, {
-      type: 'bar',
-      data: { labels: labels, datasets: datasets },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        indexAxis: 'y',
-        interaction: { mode: 'index', intersect: false },
-        scales: {
-          x: {
-            grid: { color: '#f1f5f9' },
-            beginAtZero: true,
-            title: { display: true, text: 'Count', font: { size: 10, weight: '600' }, color: '#888' },
-            ticks: { font: { size: 10 } },
-          },
-          y: {
-            grid: { display: false },
-            ticks: { font: { size: 10, weight: '500' }, color: '#555' },
-          },
-        },
-        plugins: {
-          legend: { display: true, position: 'top', labels: { boxWidth: 12, font: { size: 10 } } },
-          tooltip: {
-            callbacks: {
-              afterBody: function(ctx) {
-                var idx = ctx[0].dataIndex;
-                var r = sections[idx];
-                var lines = [];
-                if (r.capacity) lines.push('Demand: ' + Math.round(r.ftSignups / r.capacity * 100) + '% of capacity');
-                if (r.firstFt) lines.push('First FT: ' + r.firstFt);
-                if (r.lastFt) lines.push('Last FT: ' + r.lastFt);
-                if (r.firstFt && r.lastFt) {
-                  var d1 = new Date(r.firstFt); var d2 = new Date(r.lastFt);
-                  var days = Math.max(1, Math.ceil((d2 - d1) / 86400000));
-                  lines.push('Velocity: ' + (r.ftSignups / days).toFixed(1) + ' signups/day over ' + days + 'd');
-                }
-                if (r.regOpens) lines.push('Reg opens: ' + new Date(r.regOpens).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }));
-                return lines;
-              }
-            }
-          }
-        },
-      },
-    });
-
-    return function() { if (chartRef.current) chartRef.current.destroy(); };
-  }, [allPipeline]);
-
-  if (!allPipeline.length || !allPipeline.some(function(r) { return r.ftSignups > 0; })) return null;
-
-  // Compute velocity stats
-  var withDates = allPipeline.filter(function(r) { return r.ftSignups > 0 && r.firstFt && r.lastFt; });
-  var velocities = withDates.map(function(r) {
-    var d1 = new Date(r.firstFt); var d2 = new Date(r.lastFt);
-    var days = Math.max(1, Math.ceil((d2 - d1) / 86400000));
-    return { name: r.program, vel: r.ftSignups / days, days: days, signups: r.ftSignups };
-  }).sort(function(a, b) { return b.vel - a.vel; });
-  var fastest = velocities.length > 0 ? velocities[0] : null;
-  var totalSignups = allPipeline.reduce(function(s, r) { return s + (r.ftSignups || 0); }, 0);
-  var totalCap = allPipeline.reduce(function(s, r) { return s + (r.capacity || 0); }, 0);
-
-  var chartHeight = Math.max(200, allPipeline.filter(function(r) { return r.ftSignups > 0; }).length * 36 + 60);
-
-  return React.createElement('div', { style: { background: '#fff', border: '1px solid #e0ddd8', borderRadius: 10, padding: '16px 20px', marginBottom: 20 } },
-    React.createElement('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 } },
-      React.createElement('div', { style: { fontSize: 13, fontWeight: 700, color: '#111827' } }, 'Pipeline Demand Buildup'),
-      fastest && React.createElement('div', { style: { fontSize: 11, color: '#888', display: 'flex', gap: 16 } },
-        React.createElement('span', null, '\u26A1 Fastest: ',
-          React.createElement('strong', { style: { color: '#111' } }, fastest.vel.toFixed(1) + '/day'),
-          ' \u2014 ' + (fastest.name.length > 25 ? fastest.name.slice(0, 23) + '\u2026' : fastest.name)
-        ),
-        totalCap > 0 && React.createElement('span', null, 'Overall demand: ',
-          React.createElement('strong', { style: { color: totalSignups / totalCap > 0.5 ? '#dc2626' : '#111' } }, Math.round(totalSignups / totalCap * 100) + '%')
-        )
-      )
-    ),
-    React.createElement('div', { style: { height: chartHeight } },
-      React.createElement('canvas', { ref: canvasRef })
-    )
-  );
-}
-
-
-/* ── FT Fill Rate Over Time (cumulative line chart) ── */
-function FillRateChart(props) {
-  var dailyRows = props.dailyRows || [];
-  var canvasRef = useRef(null);
-  var chartRef = useRef(null);
-
-  var byProgram = {};
-  dailyRows.forEach(function(d) {
-    var key = d.program;
-    if (!byProgram[key]) byProgram[key] = {};
-    if (!byProgram[key][d.date]) byProgram[key][d.date] = 0;
-    byProgram[key][d.date] += d.daily;
-  });
-
-  var programs = Object.keys(byProgram);
-  if (programs.length === 0) return null;
-
-  var progTotals = programs.map(function(p) {
-    var total = 0; Object.values(byProgram[p]).forEach(function(v) { total += v; });
-    return { name: p, total: total };
-  }).sort(function(a, b) { return b.total - a.total; });
-  var topProgs = progTotals.slice(0, 8).map(function(p) { return p.name; });
-
-  var allDates = new Set();
-  topProgs.forEach(function(p) { Object.keys(byProgram[p]).forEach(function(d) { allDates.add(d); }); });
-  var sortedDates = Array.from(allDates).sort();
-  if (sortedDates.length < 2) return null;
-
-  var colors = ['#6366f1','#f59e0b','#059669','#dc2626','#8b5cf6','#0ea5e9','#ec4899','#84cc16'];
-
-  var datasets = topProgs.map(function(prog, i) {
-    var cumul = 0;
-    var data = sortedDates.map(function(date) { cumul += (byProgram[prog][date] || 0); return cumul; });
-    return {
-      label: prog.length > 30 ? prog.slice(0, 28) + '...' : prog,
-      data: data, borderColor: colors[i % colors.length], backgroundColor: colors[i % colors.length] + '15',
-      fill: false, tension: 0.3, pointRadius: 1, pointHoverRadius: 4, borderWidth: 2
-    };
-  });
-
-  useEffect(function() {
-    if (!canvasRef.current || !datasets.length) return;
-    if (chartRef.current) chartRef.current.destroy();
-    chartRef.current = new Chart(canvasRef.current, {
-      type: 'line',
-      data: {
-        labels: sortedDates.map(function(d) { var dt = new Date(d); return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); }),
-        datasets: datasets
-      },
-      options: {
-        responsive: true, maintainAspectRatio: false,
-        interaction: { mode: 'index', intersect: false },
-        plugins: {
-          legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 }, padding: 12 } },
-          tooltip: { callbacks: {
-            title: function(items) { return items[0].label; },
-            label: function(item) { return item.dataset.label + ': ' + item.parsed.y.toLocaleString() + ' FT'; }
-          }}
-        },
-        scales: {
-          x: { grid: { display: false }, ticks: { font: { size: 10 }, maxRotation: 45 } },
-          y: { beginAtZero: true, title: { display: true, text: 'Cumulative FT', font: { size: 11 } }, ticks: { font: { size: 10 } } }
-        }
-      }
-    });
-    return function() { if (chartRef.current) chartRef.current.destroy(); };
-  }, [dailyRows.length]);
-
-  return React.createElement('div', { style: { background: '#fff', border: '1px solid #e0ddd8', borderRadius: 10, padding: '16px 20px', marginBottom: 20 } },
-    React.createElement('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 } },
-      React.createElement('div', { style: { fontSize: 13, fontWeight: 700, color: '#111827' } }, 'FT Interest Over Time'),
-      React.createElement('div', { style: { fontSize: 11, color: '#888' } }, 'Cumulative Fast Track interest by program')
-    ),
-    React.createElement('div', { style: { height: 300 } },
-      React.createElement('canvas', { ref: canvasRef })
-    )
-  );
-}
-
-/* ── Pipeline Tab component ── */
-function PipelineTab(props) {
-  var sections = props.sections || [];
-  var pipelineRows = props.pipelineRows || [];
-  var dailyRows = props.dailyRows || [];
-
-  // Combine: sections with regStatus=pipeline + zero-FT pipeline rows
-  var ftPipeline = sections.filter(function(r){ return r.regStatus === 'pipeline'; });
-  var allPipeline = ftPipeline.concat(pipelineRows);
-
-  // Also show scheduled sections (publish_at in the future)
-  var scheduled = sections.filter(function(r){ return r.regStatus === 'scheduled'; });
-
-  // Sort pipeline by reg opens date
-  allPipeline.sort(function(a,b){
-    var da = a.regOpens ? new Date(a.regOpens) : new Date('2099-01-01');
-    var db = b.regOpens ? new Date(b.regOpens) : new Date('2099-01-01');
-    return da - db;
-  });
-
-  function daysUntil(dateStr) {
-    if (!dateStr) return null;
-    var d = new Date(dateStr);
-    if (isNaN(d.getTime())) return null;
-    var now = new Date();
-    var diff = Math.ceil((d - now) / 86400000);
-    return diff;
-  }
-
-  function fmtDate(dateStr) {
-    if (!dateStr) return '\u2014';
-    var d = new Date(dateStr);
-    if (isNaN(d.getTime())) return dateStr;
-    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-  }
-
-  function demandHeat(signups, capacity) {
-    if (!capacity || capacity === 0) return { color: '#9ca3af', label: '\u2014' };
-    var pct = (signups / capacity) * 100;
-    if (pct >= 100) return { color: '#dc2626', label: pct.toFixed(0) + '% \uD83D\uDD25' };
-    if (pct >= 50) return { color: '#f59e0b', label: pct.toFixed(0) + '%' };
-    if (pct > 0) return { color: '#22c55e', label: pct.toFixed(0) + '%' };
-    return { color: '#d1d5db', label: '0%' };
-  }
-
-  var totalPipeline = allPipeline.length;
-  var totalScheduled = scheduled.length;
-  var pipelineSignups = allPipeline.reduce(function(a,r){ return a + (r.ftSignups||0); }, 0);
-  var pipelinePending = allPipeline.reduce(function(a,r){ return a + (r.ftPending||0); }, 0);
-  var pipelineCap = allPipeline.reduce(function(a,r){ return a + (r.capacity||0); }, 0);
-
-  if (totalPipeline === 0 && totalScheduled === 0) {
-    return React.createElement('div', { style: { textAlign: 'center', padding: '60px 20px' } },
-      React.createElement('div', { style: { fontSize: 48, marginBottom: 16 } }, '\uD83D\uDE80'),
-      React.createElement('div', { style: { fontSize: 16, fontWeight: 600, color: '#333', marginBottom: 8 } }, 'No pipeline sections right now'),
-      React.createElement('div', { style: { fontSize: 13, color: '#888', maxWidth: 420, margin: '0 auto', lineHeight: 1.6 } },
-        'Pipeline sections appear when a program is published but registration hasn\u2019t opened yet. This is the presale window where Fast Track wishlists build up before registration goes live.',
-        React.createElement('br'), React.createElement('br'),
-        'Check back as new seasons are configured \u2014 fall programs typically publish weeks before registration opens.'
-      )
-    );
-  }
-
-  return React.createElement(React.Fragment, null,
-    /* KPI strip */
-    React.createElement('div', { className: 'kpi-row' },
-      React.createElement('div', { className: 'kpi', style: { '--accent': '#f59e0b' } },
-        React.createElement('div', { className: 'kpi-label' }, React.createElement(KpiLabel, { label: 'Pipeline Sections', tip: 'Sections that are published and visible to the community but registration hasn\u2019t opened yet. FT wishlists can accumulate during this window.' })),
-        React.createElement('div', { className: 'kpi-val' }, totalPipeline),
-        React.createElement('div', { className: 'kpi-sub' }, 'published, reg not yet open')
-      ),
-      pipelineSignups > 0 && React.createElement('div', { className: 'kpi', style: { '--accent': '#6366f1' } },
-        React.createElement('div', { className: 'kpi-label' }, React.createElement(KpiLabel, { label: 'FT Wishlists', tip: 'Fast Track pre-registrations on pipeline sections \u2014 demand signal before registration opens.' })),
-        React.createElement('div', { className: 'kpi-val' }, pipelineSignups.toLocaleString()),
-        React.createElement('div', { className: 'kpi-sub' }, 'Fast Track interests')
-      ),
-      pipelineCap > 0 && React.createElement('div', { className: 'kpi', style: { '--accent': '#2563eb' } },
-        React.createElement('div', { className: 'kpi-label' }, 'Total Capacity'),
-        React.createElement('div', { className: 'kpi-val' }, pipelineCap.toLocaleString()),
-        React.createElement('div', { className: 'kpi-sub' }, pipelineSignups > 0 ? (pipelineSignups / pipelineCap * 100).toFixed(0) + '% demand vs supply' : 'across pipeline sections')
-      ),
-      totalScheduled > 0 && React.createElement('div', { className: 'kpi', style: { '--accent': '#9ca3af' } },
-        React.createElement('div', { className: 'kpi-label' }, 'Scheduled'),
-        React.createElement('div', { className: 'kpi-val' }, totalScheduled),
-        React.createElement('div', { className: 'kpi-sub' }, 'not yet published')
-      )
-    ),
-
-    /* Pipeline velocity chart */
-    React.createElement(PipelineVelocityChart, { allPipeline: allPipeline }),
-    dailyRows.length > 0 && React.createElement(FillRateChart, { dailyRows: dailyRows, sections: allPipeline }),
-
-    /* Pipeline sections table */
-    allPipeline.length > 0 && React.createElement(React.Fragment, null,
-      React.createElement('div', { style: { fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: '#d97706', marginBottom: 12, marginTop: 8 } },
-        'Pipeline ', React.createElement('span', { style: { fontWeight: 400, textTransform: 'none', color: '#9ca3af', letterSpacing: 0 } }, '\u2014 published programs awaiting registration')
-      ),
-      React.createElement('div', { className: 'table-scroll' },
-        React.createElement('table', { className: 'ft-table' },
-          React.createElement('thead', null,
-            React.createElement('tr', null,
-              React.createElement('th', { className: 'left', style: { minWidth: 240 } }, 'Program / Section'),
-              React.createElement('th', null, 'FT Wishlists'),
-              React.createElement('th', null, 'Capacity'),
-              React.createElement('th', null, 'Demand'),
-              React.createElement('th', null, 'Reg Opens'),
-              React.createElement('th', null, 'Countdown'),
-              React.createElement('th', null, 'Early Access')
-            )
-          ),
-          React.createElement('tbody', null,
-            allPipeline.map(function(r, i) {
-              var days = daysUntil(r.regOpens);
-              var heat = demandHeat(r.ftSignups, r.capacity);
-              var hasFT = r.ftSignups > 0;
-              var dateLabel = '';
-              if (r.sectionStart) {
-                var sd = new Date(r.sectionStart); var ed = r.sectionEnd ? new Date(r.sectionEnd) : null;
-                var fmt = function(d) { return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); };
-                dateLabel = fmt(sd) + (ed && ed.getTime() !== sd.getTime() ? ' \u2013 ' + fmt(ed) : '');
-              }
-              var timeLabel = '';
-              if (r.sectionDay) timeLabel += r.sectionDay;
-              if (r.sectionTime) timeLabel += (timeLabel ? ' ' : '') + r.sectionTime;
-              var schedLabel = [dateLabel, timeLabel].filter(Boolean).join(' \u00b7 ');
-              return React.createElement('tr', { key: 'p' + i, style: { background: hasFT ? '#fefce8' : '#fff' } },
-                React.createElement('td', { className: 'left' },
-                  React.createElement('div', { style: { fontWeight: 600, color: '#111' } }, r.program,
-                    r.sectionId && React.createElement('a', {
-                      href: adminSectionUrl(r.orgId, r.sectionId),
-                      target: '_blank', rel: 'noopener',
-                      style: { color: '#3b82f6', fontWeight: 600, fontSize: 10, textDecoration: 'none', marginLeft: 8 },
-                      onClick: function(e) { e.stopPropagation(); }
-                    }, 'Admin →')
-                  ),
-                  React.createElement('div', { style: { fontSize: 11, color: '#888' } }, r.section,
-                    React.createElement('span', { style: { marginLeft: 6, color: '#bbb', fontSize: 10 } }, r.regMode === 'per-session' ? 'per-session' : 'section')
-                  ),
-                  schedLabel && React.createElement('div', { style: { fontSize: 10, color: '#999', marginTop: 1 } }, schedLabel)
-                ),
-                React.createElement('td', { style: { fontWeight: hasFT ? 700 : 400, color: hasFT ? '#6366f1' : '#ccc' } }, hasFT ? r.ftSignups : '\u2014'),
-                React.createElement('td', null, r.capacity > 0 ? r.capacity.toLocaleString() : '\u2014'),
-                React.createElement('td', null,
-                  React.createElement('span', { style: { color: heat.color, fontWeight: 600 } }, heat.label)
-                ),
-                React.createElement('td', null, fmtDate(r.regOpens)),
-                React.createElement('td', null,
-                  days !== null && days > 0
-                    ? React.createElement('span', { style: { fontWeight: 700, color: days <= 7 ? '#dc2626' : days <= 14 ? '#f59e0b' : '#22c55e' } }, days + 'd')
-                    : days !== null && days <= 0
-                      ? React.createElement('span', { style: { color: '#22c55e' } }, 'Open')
-                      : '\u2014'
-                ),
-                React.createElement('td', { style: { fontSize: 11, color: '#888' } }, r.earlyAccess ? fmtDate(r.earlyAccess) : '\u2014')
-              );
-            })
-          )
-        )
-      )
-    ),
-
-    /* Scheduled sections (not yet published) */
-    scheduled.length > 0 && React.createElement(React.Fragment, null,
-      React.createElement('div', { style: { fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: '#9ca3af', marginBottom: 12, marginTop: 24, borderTop: '1px solid #e5e7eb', paddingTop: 16 } },
-        'Scheduled ', React.createElement('span', { style: { fontWeight: 400, textTransform: 'none', letterSpacing: 0 } }, '\u2014 not yet published, FT activity detected')
-      ),
-      React.createElement('div', { className: 'table-scroll' },
-        React.createElement('table', { className: 'ft-table' },
-          React.createElement('thead', null,
-            React.createElement('tr', null,
-              React.createElement('th', { className: 'left', style: { minWidth: 240 } }, 'Program / Section'),
-              React.createElement('th', null, 'Total FT'),
-              React.createElement('th', null, 'Capacity'),
-              React.createElement('th', null, 'Publishes'),
-              React.createElement('th', null, 'Countdown')
-            )
-          ),
-          React.createElement('tbody', null,
-            scheduled.map(function(r, i) {
-              var days = daysUntil(r.publishDate);
-              var dateLabel = '';
-              if (r.sectionStart) {
-                var sd = new Date(r.sectionStart); var ed = r.sectionEnd ? new Date(r.sectionEnd) : null;
-                var fmt = function(d) { return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); };
-                dateLabel = fmt(sd) + (ed && ed.getTime() !== sd.getTime() ? ' \u2013 ' + fmt(ed) : '');
-              }
-              var timeLabel = '';
-              if (r.sectionDay) timeLabel += r.sectionDay;
-              if (r.sectionTime) timeLabel += (timeLabel ? ' ' : '') + r.sectionTime;
-              var schedLabel = [dateLabel, timeLabel].filter(Boolean).join(' \u00b7 ');
-              return React.createElement('tr', { key: 's' + i },
-                React.createElement('td', { className: 'left' },
-                  React.createElement('div', { style: { fontWeight: 600, color: '#111' } }, r.program),
-                  React.createElement('div', { style: { fontSize: 11, color: '#888' } }, r.section),
-                  schedLabel && React.createElement('div', { style: { fontSize: 10, color: '#999', marginTop: 1 } }, schedLabel)
-                ),
-                React.createElement('td', { style: { color: r.ftSignups > 0 ? '#6366f1' : '#ccc' } }, r.ftSignups > 0 ? r.ftSignups : '\u2014'),
-                React.createElement('td', null, r.capacity > 0 ? r.capacity.toLocaleString() : '\u2014'),
-                React.createElement('td', null, fmtDate(r.publishDate)),
-                React.createElement('td', null,
-                  days !== null && days > 0
-                    ? React.createElement('span', { style: { fontWeight: 700, color: days <= 3 ? '#dc2626' : days <= 7 ? '#f59e0b' : '#9ca3af' } }, days + 'd')
-                    : '\u2014'
-                )
-              );
-            })
-          )
-        )
-      )
-    )
-  );
-}
-
 /* ── Tooltip helper for KPI labels ── */
 function KpiLabel(props) {
   if (!props.tip) return props.label;
@@ -1289,7 +936,6 @@ function App() {
   var [ftUserRows, setFtUserRows] = useState([]);
   var [ftBookingRows, setFtBookingRows] = useState([]);
   var [pipelineRows, setPipelineRows] = useState([]);
-  var [dailyRows, setDailyRows] = useState([]);
   var [ciData, setCiData]   = useState(null);
   var [ciLoading, setCiLoading] = useState(false);
   var [ciError, setCiError] = useState(null);
@@ -1330,11 +976,6 @@ function App() {
         setFtBookingRows(raw.filter(function(r){ return r['Row Type'] === 'ft_booking'; }));
         var pipeR = raw.filter(function(r){ return r['Row Type'] === 'pipeline'; }).map(normalizeRow);
         setPipelineRows(pipeR);
-        var dailyR = raw.filter(function(r){ return r['Row Type'] === 'ft_daily'; }).map(function(r){
-          return { sectionId: r['Section ID']||'', program: r['Program']||'', section: r['Section']||'',
-                   date: r['Signup Date']||'', daily: fmtN(r['Daily Signups']), cumulative: fmtN(r['Cumulative Signups']) };
-        });
-        setDailyRows(dailyR);
         setRows(raw.filter(function(r){ return (r['Row Type']||'section') === 'section'; }).map(normalizeRow));
         if (json && json.meta) {
           if (json.meta.org_name) setOrgName(json.meta.org_name);
@@ -1886,13 +1527,6 @@ function App() {
           React.createElement('button', { className: 'tab-btn' + (activeTab === 'demographics' ? ' active' : ''), onClick: function(){ switchTab('demographics'); } },
             '\uD83D\uDC65 Demographics',
             ftUserRows.length > 0 && React.createElement('span', { className: 'tab-badge', style: { background: '#6366f122', color: '#6366f1' } }, ftUserRows.length)
-          ),
-          React.createElement('button', { className: 'tab-btn' + (activeTab === 'pipeline' ? ' active' : ''), onClick: function(){ switchTab('pipeline'); } },
-            '\uD83D\uDE80 Pipeline',
-            (function(){
-              var ct = filteredPipeline.length + filtered.filter(function(r){return r.regStatus==='pipeline';}).length;
-              return ct > 0 ? React.createElement('span', { className: 'tab-badge', style: { background: '#f59e0b22', color: '#d97706' } }, ct) : null;
-            })()
           )
         ),
 
@@ -1966,6 +1600,7 @@ function App() {
 
                 /* Demand Leaderboard */
         React.createElement(TriagePanel, { programs: programs }),
+        React.createElement(ColdPipelineStrip, { sections: filtered, pipelineRows: filteredPipeline }),
         React.createElement(DemandLeaderboard, { programs: programs }),
 
                 /* Summary cards */
@@ -2639,19 +2274,6 @@ function App() {
               React.createElement(BarChart, { title: 'FT Users by City', data: ftAnalytics.demo.topCities, labelKey: 'city', valKey: 'count', color: '#059669' })
             )
           )
-        ),
-
-                activeTab === 'pipeline' && React.createElement(React.Fragment, null,
-          React.createElement('div', { style: { background: '#fff', border: '1px solid #e0ddd8', borderRadius: 10, padding: '14px 20px', marginBottom: 20 } },
-            React.createElement('div', { style: { fontSize: 13, fontWeight: 700, color: '#111', marginBottom: 4 } }, 'Pre-registration pipeline'),
-            React.createElement('div', { style: { fontSize: 12, color: '#666', lineHeight: 1.6 } },
-              'These are sections that are ', React.createElement('strong', null, 'published and visible'), ' to the community but registration hasn’t opened yet. ',
-              'Families can add them to Fast Track to express interest before registration opens. ',
-              React.createElement('strong', null, 'Hot sections'), ' (high FT count relative to capacity) signal strong demand — consider adding capacity before registration opens. ',
-              React.createElement('strong', null, 'Cold sections'), ' (published but no FT interest) may need better descriptions, pricing adjustments, or marketing.'
-            )
-          ),
-          React.createElement(PipelineTab, { sections: filtered, pipelineRows: filteredPipeline, programs: programs, totals: totals })
         ),
 
                 /* 📬 Email digest modal */
