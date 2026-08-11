@@ -1319,6 +1319,21 @@ function formatDateHeader(dateStr) {
   return `${days[d.getDay()]}, ${months[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
 }
 
+function multiDayRange(r) {
+  const days = parseInt(r.multiDayDays, 10);
+  const num  = parseInt(r.multiDayNum, 10) || 1;
+  if (!days || days < 2 || !r.date) return '';
+  const dateStr = String(r.date);
+  const d = new Date(dateStr + (dateStr.includes('T') ? '' : 'T12:00:00'));
+  if (isNaN(d.getTime())) return '';
+  const start = new Date(d);
+  start.setDate(start.getDate() - (num - 1));
+  const end = new Date(start);
+  end.setDate(end.getDate() + (days - 1));
+  const fmt = x => `${x.getMonth() + 1}/${x.getDate()}`;
+  return `${fmt(start)}-${fmt(end)}`;
+}
+
 function formatMoney(v) {
   if (v == null || v === '') return '';
   const n = typeof v === 'string' ? parseFloat(v) : v;
@@ -3138,8 +3153,8 @@ function App() {
                               <span className="cell col-end">{formatTime(r.end)}</span>
                               <span className="cell col-site">
                                 {r.site}
-                                {r.multiDayDays && r.multiDayNum == 1 && <span style={{display:'block',fontSize:'10px',fontWeight:700,color:'#d97706',marginTop:2}}>Multi-Day Rental ({r.multiDayDays} days)</span>}
-                                {r.multiDayDays && r.multiDayNum > 1 && <span style={{display:'block',fontSize:'10px',color:'#888',marginTop:2}}>Day {r.multiDayNum} of {r.multiDayDays}</span>}
+                                {r.multiDayDays && r.multiDayNum == 1 && <span style={{display:'block',fontSize:'10px',fontWeight:700,color:'#d97706',marginTop:2}}>Multi-Day Rental ({r.multiDayDays} days){multiDayRange(r) ? ` ${multiDayRange(r)}` : ''}</span>}
+                                {r.multiDayDays && r.multiDayNum > 1 && <span style={{display:'block',fontSize:'10px',color:'#888',marginTop:2}}>Day {r.multiDayNum} of {r.multiDayDays}{multiDayRange(r) ? ` (${multiDayRange(r)})` : ''}</span>}
                               </span>
                               <span className="cell col-reservee">{r.reservee}</span>
                               <span className="cell col-phone">{formatPhone(r.phone)}</span>
