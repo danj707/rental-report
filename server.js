@@ -252,7 +252,7 @@ function setCacheUsers(orgSlug, data) {
   } catch {}
 }
 
-function getCached(key, orgSlug, reportType) {
+function getCachedEntry(key, orgSlug, reportType) {
   let entry = dataCache.get(key);
   // Fall back to base prewarm key ONLY if this request has no custom params.
   // If the key contains query params (date filters, etc.), don't fall back —
@@ -265,7 +265,12 @@ function getCached(key, orgSlug, reportType) {
   const ttl = entry.hist ? HIST_CACHE_TTL : (REPORT_CACHE_TTL[entry.rt] || CACHE_TTL);
   if (Date.now() - entry.ts > ttl) { dataCache.delete(key); cacheStats.misses++; return null; }
   cacheStats.hits++;
-  return entry.data;
+  return entry;
+}
+
+function getCached(key, orgSlug, reportType) {
+  const entry = getCachedEntry(key, orgSlug, reportType);
+  return entry ? entry.data : null;
 }
 
 function setCache(key, data, reportType, hist) {
@@ -5325,6 +5330,13 @@ app.get("/:org/:report/api/data", resolveOrg, async (req, res) => {
     const cacheKey = `${orgSlug}:${reportType}:${paramStr}`;
     console.log(`[data] ${orgSlug}/${reportType} | dates: ${req.query.start_date || '(none)'} → ${req.query.end_date || '(none)'} | uuid: ${mbUuid.slice(0,8)}${useShared ? ' (shared)' : ' (per-org)'} | key: ${cacheKey.slice(0, 80)}...`);
 
+    // Freshness headers — report-refresh.js reads these to render the
+    // "Data as of HH:MM · Refresh" badge on every report page.
+    const setFreshness = (ts, state) => {
+      res.set("X-Report-Data-As-Of", new Date(ts).toISOString());
+      res.set("X-Report-Cache", state);
+    };
+
     // Users report: check daily pre-warmed cache first
     const forceRefresh = req.query._nocache === "1" || req.query._refresh === "1";
     if (reportType === "users" && !forceRefresh) {
@@ -5333,15 +5345,18 @@ app.get("/:org/:report/api/data", resolveOrg, async (req, res) => {
         console.log(`[users-cache] HIT ${orgSlug}/users (${uc.data.rows.length} rows, cached ${new Date(uc.ts).toISOString()})`);
         const result = Object.assign({}, uc.data, { meta: Object.assign({}, uc.data.meta, { cached_at: new Date(uc.ts).toISOString() }) });
         logRequest({ ts: new Date().toISOString(), org: orgSlug, report: reportType, status: 200, ms: 0, rows: uc.data.rows?.length || 0, cache: "users-cache" });
+        setFreshness(uc.ts, "cached");
         return res.json(result);
       }
     }
 
     if (!forceRefresh) {
-      const cached = getCached(cacheKey, orgSlug, reportType);
-      if (cached) {
+      const cachedEntry = getCachedEntry(cacheKey, orgSlug, reportType);
+      if (cachedEntry) {
+        const cached = cachedEntry.data;
         console.log(`[cache] HIT ${orgSlug}/${reportType} | ${cached.rows?.length || 0} rows | key: ${cacheKey.slice(0, 60)}...`);
         logRequest({ ts: new Date().toISOString(), org: orgSlug, report: reportType, status: 200, ms: 0, rows: cached.rows?.length || 0, cache: "hit" });
+        setFreshness(cachedEntry.ts, "cached");
         return res.json(cached);
       }
       console.log(`[cache] MISS ${orgSlug}/${reportType} — fetching from Metabase`);
@@ -5386,6 +5401,7 @@ app.get("/:org/:report/api/data", resolveOrg, async (req, res) => {
           meta: Object.assign({}, stale.data.meta, { stale_cache: true, cached_at: new Date(stale.ts).toISOString() })
         });
         logRequest({ ts: new Date().toISOString(), org: orgSlug, report: reportType, status: 200, ms: fetchMs, rows: stale.data.rows?.length || 0, cache: "stale-fallback", attempt });
+        setFreshness(stale.ts, "stale");
         return res.json(result);
       }
       return res.status(response.status).json({ error: body });
@@ -5440,6 +5456,7 @@ app.get("/:org/:report/api/data", resolveOrg, async (req, res) => {
     console.log(`[cache] STORE ${orgSlug}/${reportType} (${data.length} rows, ${dataCache.size} entries)`);
     logRequest({ ts: new Date().toISOString(), org: orgSlug, report: reportType, status: 200, ms: fetchMs, rows: data.length, cache: "miss", attempt });
 
+    setFreshness(Date.now(), "live");
     res.json(result);
   } catch (err) {
     const isTimeout = err.name === "TimeoutError" || err.name === "AbortError";
@@ -5452,6 +5469,8 @@ app.get("/:org/:report/api/data", resolveOrg, async (req, res) => {
       const result = Object.assign({}, stale.data, {
         meta: Object.assign({}, stale.data.meta, { stale_cache: true, cached_at: new Date(stale.ts).toISOString() })
       });
+      res.set("X-Report-Data-As-Of", new Date(stale.ts).toISOString());
+      res.set("X-Report-Cache", "stale");
       return res.json(result);
     }
     logRequest({ ts: new Date().toISOString(), org: req.orgSlug, report: req.reportType, status: isTimeout ? 504 : 500, ms: 0, rows: 0, cache: "miss", error: err.message.slice(0, 200) });
