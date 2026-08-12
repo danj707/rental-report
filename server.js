@@ -194,6 +194,132 @@ const REPORT_CACHE_TTL = {
 const HIST_CACHE_TTL = 24 * 60 * 60 * 1000;
 const dataCache = new Map();
 
+// ── Adaptive cache governor ────────────────────────────────────────────
+// Keeps resident memory bounded and biased toward reports people actually
+// open. Big report payloads (e.g. full user exports) are the memory hogs but
+// are rarely the hot path, so by default they are NOT held resident — they
+// live on the disk cache (cheap on Railway) and are served from there. Any
+// report that starts getting opened often is *learned* to be hot, pinned in
+// memory, and kept fresh by prewarm. Set CACHE_ADAPTIVE=0 to disable and fall
+// back to the previous "keep everything resident" behavior.
+const CACHE_ADAPTIVE     = process.env.CACHE_ADAPTIVE !== "0";
+const MAX_MEMORY_ENTRIES = Number(process.env.CACHE_MAX_MEMORY_ENTRIES || 300);
+const HEAVY_ENTRY_BYTES  = Number(process.env.CACHE_HEAVY_BYTES || 1500000); // ~1.5 MB serialized
+const HOT_WINDOW_MS      = Number(process.env.CACHE_HOT_WINDOW_MS || 7 * 24 * 60 * 60 * 1000);
+const HOT_MIN_HITS       = Number(process.env.CACHE_HOT_MIN_HITS || 3); // opens within window ⇒ "hot"
+// Small, high-traffic reports we always keep warm for every configured org.
+const ALWAYS_WARM_REPORTS = new Set(["calendar", "gl", "facility"]);
+// Large extracts we never prewarm or hold resident unless they're learned-hot.
+const HEAVY_REPORTS       = new Set(["users", "ice-calendar"]);
+
+// baseKey "slug:rt" → recent user-open timestamps (rolling HOT_WINDOW_MS).
+const accessLog = new Map();
+let _accessDirty = false;
+const cacheBaseKey = (orgSlug, reportType) => `${orgSlug}:${reportType}`;
+
+// Record a user-initiated report open. NOT called from prewarm/health probes,
+// so learned popularity reflects real usage only.
+function recordAccess(orgSlug, reportType) {
+  if (!CACHE_ADAPTIVE || !orgSlug || !reportType) return;
+  const bk = cacheBaseKey(orgSlug, reportType);
+  const now = Date.now();
+  const arr = (accessLog.get(bk) || []).filter(ts => now - ts < HOT_WINDOW_MS);
+  arr.push(now);
+  accessLog.set(bk, arr);
+  _accessDirty = true;
+}
+
+// Opened often enough recently to be worth keeping warm/pinned?
+function isReportHot(orgSlug, reportType) {
+  const arr = accessLog.get(cacheBaseKey(orgSlug, reportType));
+  if (!arr || !arr.length) return false;
+  const now = Date.now();
+  let n = 0;
+  for (const ts of arr) if (now - ts < HOT_WINDOW_MS) n++;
+  return n >= HOT_MIN_HITS;
+}
+
+// Should this (org, report) be prewarmed and held resident?
+function isWarmTarget(orgSlug, reportType) {
+  if (!CACHE_ADAPTIVE) return true;
+  if (ALWAYS_WARM_REPORTS.has(reportType)) return true;
+  if (HEAVY_REPORTS.has(reportType)) return isReportHot(orgSlug, reportType);
+  return true; // light reports are cheap — keep warming them
+}
+
+// A resident entry is "pinned" (never LRU-evicted) if it's always-warm or
+// learned-hot. Light-but-cold reports stay evictable — under memory pressure
+// they fall to the disk cache (L2), which still serves them fast.
+function isPinnedKey(key) {
+  const parts = key.split(":");
+  return ALWAYS_WARM_REPORTS.has(parts[1]) || isReportHot(parts[0], parts[1]);
+}
+
+// Evict least-recently-used, non-pinned entries until under the cap. Evicted
+// entries remain on the disk cache, so they're still served fast (L2).
+function enforceMemoryCap() {
+  if (!CACHE_ADAPTIVE || dataCache.size <= MAX_MEMORY_ENTRIES) return;
+  const evictable = [];
+  for (const [k, v] of dataCache) {
+    if (isPinnedKey(k)) continue;
+    evictable.push([k, v.lastRead || v.ts]);
+  }
+  evictable.sort((a, b) => a[1] - b[1]); // oldest-touched first
+  let i = 0;
+  while (dataCache.size > MAX_MEMORY_ENTRIES && i < evictable.length) {
+    dataCache.delete(evictable[i++][0]);
+  }
+}
+
+// L2: read an entry straight from the disk cache (fast local read) when it's
+// not resident in memory. Repopulates memory only for warm targets, so a big
+// cold report opened once doesn't re-bloat RAM.
+async function getDiskCached(key, orgSlug, reportType) {
+  try {
+    const fname = Buffer.from(key).toString('base64url').slice(0, 180) + '.json';
+    const raw = await fs.promises.readFile(path.join(CACHE_DIR, fname), 'utf8');
+    const entry = JSON.parse(raw);
+    if (!entry || !entry.data || !entry.ts) return null;
+    const ttl = entry.rt === "users" ? USERS_CACHE_TTL
+      : (entry.hist ? HIST_CACHE_TTL : (REPORT_CACHE_TTL[entry.rt] || CACHE_TTL));
+    if (Date.now() - entry.ts > ttl) return null; // too stale for a normal hit
+    cacheStats.hits++;
+    if (isWarmTarget(orgSlug, reportType)) {
+      dataCache.set(key, { data: entry.data, ts: entry.ts, rt: entry.rt || '', hist: !!entry.hist, lastRead: Date.now() });
+      enforceMemoryCap();
+    }
+    return { data: entry.data, ts: entry.ts };
+  } catch { return null; }
+}
+
+// Persist / restore learned popularity so a hot report stays hot across
+// deploys (each PR preview / restart otherwise starts cold).
+function accessStateFile() { return path.join(DATA_DIR, "cache-access.json"); }
+function saveAccessStats() {
+  if (!_accessDirty) return;
+  _accessDirty = false;
+  try {
+    const now = Date.now(), obj = {};
+    for (const [bk, arr] of accessLog) {
+      const recent = arr.filter(ts => now - ts < HOT_WINDOW_MS);
+      if (recent.length) obj[bk] = recent;
+    }
+    fs.writeFile(accessStateFile(), JSON.stringify(obj), "utf8", () => {});
+  } catch {}
+}
+function loadAccessStats() {
+  try {
+    const obj = readJSON(accessStateFile(), {});
+    const now = Date.now();
+    for (const bk of Object.keys(obj)) {
+      const recent = (obj[bk] || []).filter(ts => now - ts < HOT_WINDOW_MS);
+      if (recent.length) accessLog.set(bk, recent);
+    }
+    console.log("[cache] Loaded access stats for " + accessLog.size + " report(s)");
+  } catch {}
+}
+setInterval(saveAccessStats, 5 * 60 * 1000);
+
 // ── Request performance log (ring buffer, last 500 requests) ──
 const REQUEST_LOG = [];
 const REQUEST_LOG_MAX = 500;
@@ -265,6 +391,7 @@ function getCachedEntry(key, orgSlug, reportType) {
   const ttl = entry.hist ? HIST_CACHE_TTL : (REPORT_CACHE_TTL[entry.rt] || CACHE_TTL);
   if (Date.now() - entry.ts > ttl) { dataCache.delete(key); cacheStats.misses++; return null; }
   cacheStats.hits++;
+  entry.lastRead = Date.now(); // for LRU recency
   return entry;
 }
 
@@ -274,12 +401,25 @@ function getCached(key, orgSlug, reportType) {
 }
 
 function setCache(key, data, reportType, hist) {
-  const entry = { data, ts: Date.now(), rt: reportType || '', hist: !!hist };
-  dataCache.set(key, entry);
+  const rt = reportType || '';
+  const entry = { data, ts: Date.now(), rt, hist: !!hist, lastRead: Date.now() };
+  // Always persist to the disk cache (the durable L2 — disk is ~$0.60/mo).
+  let serialized = null;
   try {
+    serialized = JSON.stringify({ key, data: entry.data, ts: entry.ts, rt: entry.rt, hist: entry.hist });
     const fname = Buffer.from(key).toString('base64url').slice(0, 180) + '.json';
-    fs.writeFile(path.join(CACHE_DIR, fname), JSON.stringify({ key, data: entry.data, ts: entry.ts, rt: entry.rt, hist: entry.hist }), 'utf8', () => {});
+    fs.writeFile(path.join(CACHE_DIR, fname), serialized, 'utf8', () => {});
   } catch {}
+  // Memory policy: hold resident unless it's a big payload for a report that
+  // isn't a warm target (those serve from disk instead). Then LRU-cap the set.
+  const heavy = serialized ? serialized.length > HEAVY_ENTRY_BYTES : false;
+  const keepResident = !CACHE_ADAPTIVE || !heavy || isWarmTarget(key.split(":")[0], rt);
+  if (keepResident) {
+    dataCache.set(key, entry);
+    enforceMemoryCap();
+  } else {
+    dataCache.delete(key); // don't let a prior resident copy linger
+  }
 }
 
 // Return cached data even if TTL-expired (for fallback when Metabase is down).
@@ -660,6 +800,10 @@ async function prewarmCache(reason = 'interval') {
     const org = ORGS[slug];
     if (!org.token) continue;
     for (const rt of REPORT_TYPES) {
+      // Skip big extracts (e.g. users, ice-calendar) for orgs where nobody
+      // opens them — cuts both resident memory and Metabase egress. They stay
+      // on-demand (live → disk L2) and auto-promote once opened often enough.
+      if (!isWarmTarget(slug, rt)) continue;
       const useShared = rt === "gl" ? (!org.gl?.mbUuid && !!SHARED_UUIDS.gl) : !!SHARED_UUIDS[rt];
       const mbUuid = useShared ? SHARED_UUIDS[rt] : (org[rt]?.mbUuid || SHARED_UUIDS[rt]);
       if (!mbUuid) continue;
@@ -1580,6 +1724,7 @@ fs.mkdirSync(DATA_DIR, { recursive: true });
 const CACHE_DIR = path.join(DATA_DIR, "cache");
 fs.mkdirSync(CACHE_DIR, { recursive: true });
 hydrateCacheFromDisk();
+loadAccessStats();
 invalidateFacilitiesCacheOnUuidChange();
 // Pre-warm bookkeeping — records when a full warm cycle last completed so a
 // restart shortly after one can serve the hydrated disk cache instead of
@@ -3156,6 +3301,9 @@ async function prewarmUsersCache() {
   for (const slug of Object.keys(ORGS)) {
     const org = ORGS[slug];
     if (!org.token || !org.users?.mbUuid) continue;
+    // Only pre-load the (large) users export into memory for orgs whose users
+    // report is actually opened often. Others serve on-demand from disk L2.
+    if (CACHE_ADAPTIVE && !isReportHot(slug, "users")) continue;
     try {
       const url = `${METABASE_URL}/api/public/card/${org.users.mbUuid}/query/json`;
       console.log(`[users-cache] Fetching ${slug}/users…`);
@@ -5320,6 +5468,7 @@ app.get("/:org/:report/api/data", resolveOrg, async (req, res) => {
     if (!mbUuid) return res.status(404).json({ error: `No Metabase question configured for ${orgSlug}/${reportType}` });
 
     logEvent(orgSlug, reportType, "fetch", req);
+    recordAccess(orgSlug, reportType); // learn popularity → adaptive warm set
 
     const orgId = useShared ? orgConfig.orgId : null;
     if (useShared && !orgId) return res.status(400).json({ error: "Missing org_id for shared report — org config may be incomplete" });
@@ -5360,6 +5509,15 @@ app.get("/:org/:report/api/data", resolveOrg, async (req, res) => {
         return res.json(cached);
       }
       console.log(`[cache] MISS ${orgSlug}/${reportType} — fetching from Metabase`);
+      // L2: serve from the disk cache before hitting Metabase. This keeps
+      // load times fast for reports that aren't held resident in memory.
+      const disk = await getDiskCached(cacheKey, orgSlug, reportType);
+      if (disk) {
+        console.log(`[cache] DISK ${orgSlug}/${reportType} | ${disk.data.rows?.length || 0} rows`);
+        logRequest({ ts: new Date().toISOString(), org: orgSlug, report: reportType, status: 200, ms: 0, rows: disk.data.rows?.length || 0, cache: "disk" });
+        setFreshness(disk.ts, "cached");
+        return res.json(disk.data);
+      }
     }
 
     const url = `${METABASE_URL}/api/public/card/${mbUuid}/query/json${paramStr}`;
