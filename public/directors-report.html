@@ -52,6 +52,14 @@
   .card .sub { font-size: 10.5px; color: #a8a29e; margin-top: 3px; }
   .delta-up { color:#15803d; font-weight:700; }
   .delta-down { color:#b91c1c; font-weight:700; }
+  /* Quarter-over-quarter delta pills — tinted chips so QoQ change reads at a glance */
+  .dpill { display:inline-flex; align-items:center; gap:3px; padding:2px 8px; border-radius:999px;
+    font-weight:800; font-size:11.5px; line-height:1.3; letter-spacing:.01em; white-space:nowrap;
+    border:1px solid transparent; vertical-align:middle;
+    -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+  .dpill .arw { font-size:8.5px; line-height:1; }
+  .dpill.dp-up   { color:#065f46; background:#d1fae5; border-color:#6ee7b7; }
+  .dpill.dp-down { color:#9f1239; background:#ffe4e6; border-color:#fda4af; }
 
   /* Rec Insights */
   .insights-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; margin-bottom: 16px; }
@@ -92,7 +100,7 @@
   .bar-row:hover { background:#faf9f7; }
   .bar-row .bl { font-size:12px; color:#1c1917; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .bar-row .bv { font-size:12px; text-align:right; font-variant-numeric: tabular-nums; color:#1c1917; font-weight:600; }
-  .bar-row .bv .bd { font-size:10.5px; font-weight:700; display:block; }
+  .bar-row .bv .bd { display:block; margin-top:3px; }
   .track { height:14px; background:#f5f4f1; border-radius:4px; position:relative; overflow:hidden; }
   .fill { position:absolute; left:0; top:0; bottom:0; background:#2a78d6; border-radius:0 4px 4px 0; min-width:2px; }
   .stack { display:flex; height:22px; border-radius:5px; overflow:hidden; }
@@ -145,8 +153,8 @@ function Delta({ cur, prev, hidden, downIsGood }) {
   // Seasonal explosions read better as a multiplier than "▲ 1310%"
   const label = p > 400 ? (Math.round(cur / prev * 10) / 10) + "×" : Math.abs(p) + "%";
   return (
-    <span className={good ? "delta-up" : "delta-down"}>
-      {up ? "▲" : "▼"} {label}
+    <span className={"dpill " + (good ? "dp-up" : "dp-down")}>
+      <span className="arw">{up ? "▲" : "▼"}</span>{label}
     </span>
   );
 }
@@ -161,7 +169,7 @@ function BarList({ rows, money }) {
           <div className="track"><div className="fill" style={{ width: Math.max(2, Math.abs(r.value) / max * 100) + "%" }} /></div>
           <div className="bv">
             {money ? fmtMoney(r.value) : fmtNum(r.value)}
-            {r.delta != null && <span className={"bd " + (r.delta >= 0 ? "delta-up" : "delta-down")}>{r.delta >= 0 ? "▲" : "▼"} {Math.abs(r.delta)}%</span>}
+            {r.delta != null && <span className="bd"><span className={"dpill " + (r.delta >= 0 ? "dp-up" : "dp-down")}><span className="arw">{r.delta >= 0 ? "▲" : "▼"}</span>{Math.abs(r.delta)}%</span></span>}
           </div>
         </div>
       ))}
