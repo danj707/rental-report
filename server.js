@@ -274,9 +274,19 @@ function enforceMemoryCap() {
 // L2: read an entry straight from the disk cache (fast local read) when it's
 // not resident in memory. Repopulates memory only for warm targets, so a big
 // cold report opened once doesn't re-bloat RAM.
+// Disk-cache filename for a cache key. Hash the FULL key — do NOT truncate it.
+// Report keys embed their Metabase params (dates, filters) as a long encoded
+// JSON string, so a fixed-length prefix collides across date ranges: the
+// differing dates sit past the cutoff, so every range mapped to the same file
+// and read back whichever window was written last (e.g. a 7-day request served
+// the 30-day pre-warm/seed data). A sha256 is fixed-length and collision-free.
+function cacheFileName(key) {
+  return crypto.createHash('sha256').update(key).digest('hex') + '.json';
+}
+
 async function getDiskCached(key, orgSlug, reportType) {
   try {
-    const fname = Buffer.from(key).toString('base64url').slice(0, 180) + '.json';
+    const fname = cacheFileName(key);
     const raw = await fs.promises.readFile(path.join(CACHE_DIR, fname), 'utf8');
     const entry = JSON.parse(raw);
     if (!entry || !entry.data || !entry.ts) return null;
@@ -407,7 +417,7 @@ function setCache(key, data, reportType, hist) {
   let serialized = null;
   try {
     serialized = JSON.stringify({ key, data: entry.data, ts: entry.ts, rt: entry.rt, hist: entry.hist });
-    const fname = Buffer.from(key).toString('base64url').slice(0, 180) + '.json';
+    const fname = cacheFileName(key);
     fs.writeFile(path.join(CACHE_DIR, fname), serialized, 'utf8', () => {});
   } catch {}
   // Memory policy: hold resident unless it's a big payload for a report that
@@ -496,7 +506,7 @@ function invalidateFacilitiesCacheOnUuidChange() {
     if (entry.rt === "facilities") {
       dataCache.delete(key);
       try {
-        const fname = Buffer.from(key).toString("base64url").slice(0, 180) + ".json";
+        const fname = cacheFileName(key);
         fs.unlink(path.join(CACHE_DIR, fname), () => {});
       } catch {}
       dropped++;
