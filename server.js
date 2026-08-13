@@ -2687,7 +2687,7 @@ function logEvent(org, report, event, reqOrIp, extra) {
 // Inert if the env var is unset. Fire-and-forget — never blocks or breaks logging.
 // To change what pings Slack, edit SLACK_NOTIFY. High-frequency events (view/fetch)
 // are debounced per org+report so Slack isn't a firehose.
-const SLACK_NOTIFY = new Set(["created", "pdf", "excel", "print", "view", "insights", "insights-feedback", "chat-feedback", "feedback", "vote"]);
+const SLACK_NOTIFY = new Set(["created", "pdf", "excel", "print", "view", "insights", "insights-feedback", "chat-feedback", "feedback", "vote", "email"]);
 const SLACK_DEBOUNCE_MS = { view: 30 * 60 * 1000, fetch: 30 * 60 * 1000 };
 const SLACK_DEFAULT_DEBOUNCE_MS = 60 * 1000; // dedup rapid double-fires of one-off events
 const slackLastSent = new Map();
@@ -2698,10 +2698,15 @@ const SLACK_EVENT_META = {
   print:   { emoji: "🖨️", verb: "printed" },
   view:    { emoji: "👀", verb: "viewed" },
   insights: { emoji: "✨", verb: "generated AI insights for" },
+  email:   { emoji: "📧", verb: "emailed" },
 };
 function notifySlack(rec) {
   if (!SLACK_WEBHOOK_URL || !rec || !SLACK_NOTIFY.has(rec.event)) return;
-  const key = `${rec.org}|${rec.report}|${rec.event}`;
+  // Email sends key by recipient (+ status) so a daily run to several
+  // subscribers posts each send, instead of collapsing them into one line.
+  const key = rec.event === "email"
+    ? `${rec.org}|${rec.report}|${rec.email}|${rec.status || ""}`
+    : `${rec.org}|${rec.report}|${rec.event}`;
   const now = Date.now();
   const cooldown = SLACK_DEBOUNCE_MS[rec.event] || SLACK_DEFAULT_DEBOUNCE_MS;
   if (now - (slackLastSent.get(key) || 0) < cooldown) return; // debounced
@@ -2711,6 +2716,12 @@ function notifySlack(rec) {
   let text;
   if (rec.event === "created") {
     text = `${meta.emoji} *New org created:* ${orgName} (\`${rec.org}\`)${rec.reports ? " \u2014 reports: " + rec.reports : ""}`;
+  } else if (rec.event === "email") {
+    const to = rec.email ? ` to \`${rec.email}\`` : "";
+    const trig = rec.trigger === "manual" ? " · manual send" : ` · ${rec.schedule || "scheduled"} queue`;
+    text = (rec.status && rec.status !== "sent")
+      ? `⚠️ ${orgName} (\`${rec.org}\`) email FAILED for *${rec.report}*${to}${trig}`
+      : `${meta.emoji} ${orgName} (\`${rec.org}\`) ${meta.verb} *${rec.report}*${to}${trig}`;
   } else if (rec.event === "insights-feedback" || rec.event === "chat-feedback" || rec.event === "feedback" || rec.event === "vote") {
     const thumbs = (rec.score === 1 || rec.vote === "up" || rec.sentiment === "up") ? "\uD83D\uDC4D" : "\uD83D\uDC4E";
     const label = rec.event === "vote"          ? "Report"
@@ -3293,7 +3304,8 @@ async function runSchedule(scheduleType) {
     for (const report of reports) {
       const savedParams = (sub.reportParams && typeof sub.reportParams === "object") ? (sub.reportParams[report] || null) : null;
       const perReportDateRange = (sub.reportDateRanges && sub.reportDateRanges[report]) || sub.dateRange;
-      await sendReportEmail(sub.org, sub.email, report, scheduleType, sub.locationFilter, perReportDateRange, savedParams);
+      const _res = await sendReportEmail(sub.org, sub.email, report, scheduleType, sub.locationFilter, perReportDateRange, savedParams);
+      logEvent(sub.org, report, "email", null, { email: sub.email, schedule: scheduleType, trigger: "scheduled", status: _res && _res.ok ? "sent" : "error" });
     }
   }
   console.log(`[cron] ${scheduleType} sends complete — ${subs.length} subscribers`);
@@ -5887,6 +5899,7 @@ app.post("/:org/admin/test-send", async (req, res) => {
   const locationFilter = sub?.locationFilter || null;
   res.json({ ok: true, message: "Sending in background — check the log in a moment" });
   sendReportEmail(slug, email, report, schedule, locationFilter, dateRange, savedParams)
+    .then(_res => logEvent(slug, report, "email", req, { email, schedule, trigger: "manual", status: _res && _res.ok ? "sent" : "error" }))
     .catch(err => console.error("[test-send] Error:", err));
 });
 
