@@ -1218,6 +1218,55 @@
     .metrics-toggle:hover { background: #eee; }
     .metrics-toggle.active { background: #2c2c2c; color: #fff; border-color: #2c2c2c; }
     body.print-mode .metrics-toggle { display: none; }
+
+    /* ── Animated facility hero (fh-) ── */
+    .fh-rpt { position: relative; overflow: hidden; border-radius: 14px; min-height: 150px; display: flex; align-items: center; padding: 20px 24px; margin-bottom: 18px; color: #fff; isolation: isolate; background: linear-gradient(120deg, #0c3b3a 0%, #0f4b40 46%, #146b46 100%); box-shadow: 0 1px 3px rgba(0,0,0,.08), 0 10px 30px rgba(0,0,0,.10); }
+    .fh-scene { position: absolute; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; }
+    .fh-body { position: relative; z-index: 2; max-width: 74%; text-shadow: 0 1px 10px rgba(0,0,0,.35); }
+    .fh-brandline { display: flex; align-items: center; gap: 9px; margin-bottom: 5px; }
+    .fh-logoimg { height: 26px; max-width: 120px; object-fit: contain; filter: drop-shadow(0 1px 4px rgba(0,0,0,.35)); }
+    .fh-logo { width: 24px; height: 24px; border-radius: 6px; background: #f7b500; color: #1c1400; font-weight: 800; font-size: 9px; display: grid; place-items: center; box-shadow: 0 2px 8px rgba(0,0,0,.3); }
+    .fh-eyebrow { font-size: 10.5px; letter-spacing: .16em; text-transform: uppercase; font-weight: 700; opacity: .9; }
+    .fh-title { font-size: clamp(20px, 3.2vw, 27px); font-weight: 800; letter-spacing: -.02em; margin: 0; line-height: 1.06; }
+    .fh-pills { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 11px; }
+    .fh-pill { background: rgba(255,255,255,.14); border: 1px solid rgba(255,255,255,.28); border-radius: 999px; padding: 4px 11px; font-size: 12px; font-weight: 600; }
+    .fh-pill b { font-weight: 800; }
+    /* facilities scene */
+    .fh-sun { position: absolute; right: 15%; top: 20%; width: 70px; height: 70px; border-radius: 50%; background: radial-gradient(circle at 50% 50%, #ffe6a8, #ffb84d 60%, #ff9e3d 100%); box-shadow: 0 0 40px 12px rgba(255,180,80,.55); }
+    .fh-cloud { position: absolute; height: 11px; border-radius: 999px; background: rgba(255,255,255,.16); filter: blur(1px); }
+    .fh-hill { position: absolute; bottom: 0; width: 140%; border-radius: 50% 50% 0 0 / 100% 100% 0 0; }
+    .fh-hill.h1 { height: 62%; left: -20%; background: rgba(10,60,50,.55); }
+    .fh-hill.h2 { height: 44%; left: -10%; background: rgba(12,74,54,.7); }
+    .fh-hill.h3 { height: 30%; left: 30%; width: 120%; background: rgba(16,96,64,.9); }
+    .fh-road { position: absolute; bottom: -4px; left: 46%; width: 3px; height: 42%; background: linear-gradient(#cfe8d8, rgba(207,232,216,.15)); transform-origin: bottom; transform: perspective(120px) rotateX(58deg); }
+    .fh-road::after { content: ""; position: absolute; inset: 0; background: repeating-linear-gradient(rgba(255,255,255,.9) 0 8px, transparent 8px 20px); opacity: .5; }
+    /* play button + pong */
+    .fh-play { position: absolute; top: 12px; right: 14px; z-index: 5; width: 30px; height: 30px; border-radius: 50%; border: 1px solid rgba(255,255,255,.4); background: rgba(255,255,255,.14); color: #fff; cursor: pointer; display: grid; place-items: center; font-size: 12px; padding-left: 2px; transition: background .15s, transform .15s; }
+    .fh-play:hover { background: rgba(255,255,255,.28); transform: scale(1.08); }
+    .fh-play:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+    .fh-pong { position: absolute; inset: 0; z-index: 6; display: none; background: #0b3d24; }
+    .fh-pong.on { display: block; }
+    .fh-pong canvas { width: 100%; height: 100%; display: block; touch-action: none; }
+    .fh-pong-close { position: absolute; top: 10px; right: 12px; z-index: 7; width: 26px; height: 26px; border-radius: 50%; border: 1px solid rgba(255,255,255,.35); background: rgba(0,0,0,.25); color: #fff; cursor: pointer; font-size: 13px; line-height: 1; }
+    .fh-pong-mute { position: absolute; top: 10px; right: 44px; z-index: 7; width: 26px; height: 26px; border-radius: 50%; border: 1px solid rgba(255,255,255,.35); background: rgba(0,0,0,.25); color: #fff; cursor: pointer; font-size: 12px; line-height: 1; padding: 0; }
+    .fh-pong-mute.off { opacity: .5; }
+    .fh-pong-hud { position: absolute; top: 10px; left: 14px; z-index: 7; color: #eafff2; font-size: 12px; font-weight: 700; letter-spacing: .06em; text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+    .fh-pong-tip { position: absolute; left: 0; right: 0; bottom: 10px; z-index: 7; text-align: center; color: rgba(255,255,255,.85); font-size: 11.5px; }
+    @media (prefers-reduced-motion: no-preference) {
+      .fh-sun { animation: fhSunPulse 4.5s ease-in-out infinite; }
+      .fh-cloud { animation: fhDrift linear infinite; }
+      .fh-road::after { animation: fhRoadRun 1.4s linear infinite; }
+    }
+    @keyframes fhSunPulse { 50% { box-shadow: 0 0 56px 20px rgba(255,180,80,.7); } }
+    @keyframes fhDrift { from { transform: translateX(-120px); } to { transform: translateX(760px); } }
+    @keyframes fhRoadRun { to { background-position: 0 -28px; } }
+    @media print {
+      .fh-play, .fh-pong { display: none !important; }
+      .fh-rpt { box-shadow: none; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      .fh-sun, .fh-cloud, .fh-road::after { animation: none !important; }
+    }
+    body.print-mode .fh-play, body.print-mode .fh-pong { display: none !important; }
+    body.print-mode .fh-rpt { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   </style>
   <script>
     // ── Token auth (injected) ────────────────────────────────────────
@@ -1901,6 +1950,138 @@ function renderNotes(text) {
   // Clean up multiple spaces
   s = s.replace(/\s{2,}/g, ' ').trim();
   return s;
+}
+
+function FacilityHero({ orgName, logoUrl, title, dateLabel, reservations, locations, isPrint }) {
+  const bandRef = useRef(null), canvasRef = useRef(null), pongRef = useRef(null);
+  const hudRef = useRef(null), tipRef = useRef(null), muteRef = useRef(null);
+  const playRef = useRef(null), closeRef = useRef(null);
+
+  useEffect(() => {
+    if (isPrint) return;
+    const band = bandRef.current, canvas = canvasRef.current, pong = pongRef.current;
+    const hud = hudRef.current, tip = tipRef.current, muteBtn = muteRef.current;
+    const playBtn = playRef.current, closeBtn = closeRef.current;
+    if (!band || !canvas || !pong) return;
+    const ctx = canvas.getContext('2d');
+    let raf = null, keyRaf = null, running = false;
+    let W = 0, H = 0; const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    let PADH; const PADW = 9, BALLR = 7;
+    let player, cpu, ball, scoreP, scoreC, over, winner, last = 0;
+
+    // procedural arcade sound (Web Audio, no assets)
+    let AC = null, muted = false;
+    function audio() { if (muted) return null; if (!AC) { const C = window.AudioContext || window.webkitAudioContext; if (!C) return null; AC = new C(); } if (AC.state === 'suspended') AC.resume(); return AC; }
+    function blip(freq, dur, type, vol) { const a = audio(); if (!a) return; const t = a.currentTime; const o = a.createOscillator(), g = a.createGain(); o.type = type || 'square'; o.frequency.setValueAtTime(freq, t); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol || 0.16, t + 0.006); g.gain.exponentialRampToValueAtTime(0.0001, t + (dur || 0.07)); o.connect(g); g.connect(a.destination); o.start(t); o.stop(t + (dur || 0.07) + 0.02); }
+    const sndPaddle = () => blip(440, 0.06, 'square', 0.18);
+    const sndWall = () => blip(240, 0.05, 'square', 0.13);
+    const sndScore = () => blip(150, 0.22, 'sawtooth', 0.16);
+    function sndWin(you) { const notes = you ? [523, 659, 784, 1047] : [392, 330, 262]; notes.forEach((f, i) => setTimeout(() => blip(f, 0.14, 'square', 0.16), i * 110)); }
+
+    function resize() { const r = band.getBoundingClientRect(); W = r.width; H = r.height; canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); PADH = Math.max(30, H * 0.26); if (player) { player.h = PADH; cpu.h = PADH; } }
+    function reset(dir) { ball = { x: W / 2, y: H / 2, vx: (dir || (Math.random() < .5 ? -1 : 1)) * (W * 0.34), vy: (Math.random() * 2 - 1) * (H * 0.25) }; }
+    function updateHud() { hud.textContent = 'You ' + scoreP + ' · ' + scoreC + ' CPU'; }
+    function start() { resize(); player = { x: 14, y: H / 2 - PADH / 2, h: PADH }; cpu = { x: W - 14 - PADW, y: H / 2 - PADH / 2, h: PADH }; scoreP = 0; scoreC = 0; over = false; winner = ''; reset(); updateHud(); running = true; last = performance.now(); loop(last); }
+    function loop(t) { if (!running) return; const dt = Math.min(0.033, (t - last) / 1000); last = t; if (!over) step(dt); draw(); raf = requestAnimationFrame(loop); }
+    function step(dt) {
+      ball.x += ball.vx * dt; ball.y += ball.vy * dt;
+      if (ball.y < BALLR) { ball.y = BALLR; ball.vy *= -1; sndWall(); }
+      if (ball.y > H - BALLR) { ball.y = H - BALLR; ball.vy *= -1; sndWall(); }
+      const target = ball.y - cpu.h / 2; const maxv = H * 0.62 * dt;
+      if (target < cpu.y) cpu.y -= Math.min(maxv, cpu.y - target); else cpu.y += Math.min(maxv, target - cpu.y);
+      cpu.y = Math.max(0, Math.min(H - cpu.h, cpu.y));
+      if (ball.vx < 0 && ball.x - BALLR < player.x + PADW && ball.x > player.x && ball.y > player.y && ball.y < player.y + player.h) { ball.x = player.x + PADW + BALLR; ball.vx = Math.abs(ball.vx) * 1.06; ball.vy = ((ball.y - (player.y + player.h / 2)) / (player.h / 2)) * (H * 0.42); sndPaddle(); }
+      if (ball.vx > 0 && ball.x + BALLR > cpu.x && ball.x < cpu.x + PADW && ball.y > cpu.y && ball.y < cpu.y + cpu.h) { ball.x = cpu.x - BALLR; ball.vx = -Math.abs(ball.vx) * 1.06; ball.vy = ((ball.y - (cpu.y + cpu.h / 2)) / (cpu.h / 2)) * (H * 0.42); sndPaddle(); }
+      const max = W * 0.85; if (ball.vx > max) ball.vx = max; if (ball.vx < -max) ball.vx = -max;
+      if (ball.x < -BALLR) { scoreC++; updateHud(); endOrServe(1); }
+      else if (ball.x > W + BALLR) { scoreP++; updateHud(); endOrServe(-1); }
+    }
+    function endOrServe(dir) { if (scoreP >= 5 || scoreC >= 5) { over = true; winner = scoreP >= 5 ? 'You win! 🏆' : 'CPU wins'; tip.textContent = winner + ' — click to rematch'; sndWin(scoreP >= 5); } else { sndScore(); reset(dir); } }
+    function draw() {
+      ctx.clearRect(0, 0, W, H); ctx.fillStyle = '#0b3d24'; ctx.fillRect(0, 0, W, H);
+      ctx.strokeStyle = 'rgba(255,255,255,.28)'; ctx.lineWidth = 2; ctx.setLineDash([6, 8]);
+      ctx.beginPath(); ctx.moveTo(W / 2, 6); ctx.lineTo(W / 2, H - 6); ctx.stroke(); ctx.setLineDash([]);
+      ctx.fillStyle = '#eafff2'; rr(player.x, player.y, PADW, player.h, 4); ctx.fill(); rr(cpu.x, cpu.y, PADW, cpu.h, 4); ctx.fill();
+      ctx.fillStyle = '#e9ff5c'; ctx.beginPath(); ctx.arc(ball.x, ball.y, BALLR, 0, Math.PI * 2); ctx.fill();
+    }
+    function rr(x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
+
+    function movePlayerTo(clientY) { const r = canvas.getBoundingClientRect(); const y = clientY - r.top - player.h / 2; player.y = Math.max(0, Math.min(H - player.h, y)); }
+    const onMouse = e => { if (running) movePlayerTo(e.clientY); };
+    const onTouch = e => { if (running && e.touches[0]) { e.preventDefault(); movePlayerTo(e.touches[0].clientY); } };
+    canvas.addEventListener('mousemove', onMouse);
+    canvas.addEventListener('touchmove', onTouch, { passive: false });
+    const keys = {};
+    const onKeyDown = e => { if (!running) return; if (e.key === 'ArrowUp' || e.key === 'ArrowDown') { keys[e.key] = true; e.preventDefault(); } if (e.key === 'Escape') close(); };
+    const onKeyUp = e => { keys[e.key] = false; };
+    window.addEventListener('keydown', onKeyDown); window.addEventListener('keyup', onKeyUp);
+    function keyLoop() { if (running && player) { const sp = H * 0.012; if (keys.ArrowUp) player.y = Math.max(0, player.y - sp); if (keys.ArrowDown) player.y = Math.min(H - player.h, player.y + sp); } keyRaf = requestAnimationFrame(keyLoop); }
+    keyLoop();
+    const onCanvasClick = () => { if (over) start(); };
+    canvas.addEventListener('click', onCanvasClick);
+
+    function open() { audio(); pong.classList.add('on'); start(); tip.textContent = 'Mouse or ↑ ↓ to move · first to 5'; }
+    function close() { running = false; if (raf) cancelAnimationFrame(raf); pong.classList.remove('on'); }
+    const onMute = () => { muted = !muted; muteBtn.textContent = muted ? '🔇' : '🔊'; muteBtn.classList.toggle('off', muted); muteBtn.setAttribute('aria-label', muted ? 'Unmute sound' : 'Mute sound'); if (!muted) audio(); };
+    if (playBtn) playBtn.addEventListener('click', open);
+    if (closeBtn) closeBtn.addEventListener('click', close);
+    if (muteBtn) muteBtn.addEventListener('click', onMute);
+    const onResize = () => { if (running) resize(); };
+    window.addEventListener('resize', onResize);
+
+    return () => {
+      running = false;
+      if (raf) cancelAnimationFrame(raf);
+      if (keyRaf) cancelAnimationFrame(keyRaf);
+      canvas.removeEventListener('mousemove', onMouse);
+      canvas.removeEventListener('touchmove', onTouch);
+      canvas.removeEventListener('click', onCanvasClick);
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+      window.removeEventListener('resize', onResize);
+      if (playBtn) playBtn.removeEventListener('click', open);
+      if (closeBtn) closeBtn.removeEventListener('click', close);
+      if (muteBtn) muteBtn.removeEventListener('click', onMute);
+      if (AC) { try { AC.close(); } catch (e) {} }
+    };
+  }, [isPrint]);
+
+  const pills = [];
+  if (reservations != null) pills.push(<span key="r" className="fh-pill"><b>{reservations.toLocaleString()}</b> reservations</span>);
+  if (locations) pills.push(<span key="l" className="fh-pill"><b>{locations}</b> locations</span>);
+  if (dateLabel) pills.push(<span key="d" className="fh-pill">{dateLabel}</span>);
+
+  return (
+    <div className="fh-rpt" ref={bandRef}>
+      <div className="fh-scene" aria-hidden="true">
+        <div className="fh-cloud" style={{ top: '20%', left: '10%', width: 60, animationDuration: '34s' }}></div>
+        <div className="fh-cloud" style={{ top: '34%', left: 0, width: 40, animationDuration: '46s', animationDelay: '-12s' }}></div>
+        <div className="fh-sun"></div>
+        <div className="fh-hill h1"></div><div className="fh-hill h2"></div><div className="fh-hill h3"></div>
+        <div className="fh-road"></div>
+      </div>
+      {!isPrint && <button type="button" className="fh-play" ref={playRef} aria-label="Play a hidden game" title="Play">▶</button>}
+      <div className="fh-body">
+        <div className="fh-brandline">
+          {logoUrl
+            ? <img className="fh-logoimg" src={logoUrl} alt="" onError={e => { e.target.style.display = 'none'; }} />
+            : <span className="fh-logo">rec</span>}
+          <span className="fh-eyebrow">{orgName}</span>
+        </div>
+        <div className="fh-title">{title}</div>
+        {pills.length > 0 && <div className="fh-pills">{pills}</div>}
+      </div>
+      {!isPrint && (
+        <div className="fh-pong" ref={pongRef}>
+          <div className="fh-pong-hud" ref={hudRef}>You 0 · 0 CPU</div>
+          <button type="button" className="fh-pong-mute" ref={muteRef} aria-label="Mute sound" title="Sound on/off">🔊</button>
+          <button type="button" className="fh-pong-close" ref={closeRef} aria-label="Close game">✕</button>
+          <canvas ref={canvasRef}></canvas>
+          <div className="fh-pong-tip" ref={tipRef}>Mouse or ↑ ↓ to move · first to 5</div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function App() {
@@ -2936,19 +3117,16 @@ function App() {
 
 
       <div className="page" style={loading ? {opacity:0.5,pointerEvents:'none'} : {}}>
-        {/* Report header */}
-        <div className="report-header">
-          <div className="report-header-left">
-            {logoUrl && <img src={logoUrl} alt="" className="report-header-logo" onError={e => e.target.style.display='none'} />}
-            <div>
-              <div className="org-label">{orgName}</div>
-              <div className="title">Weekly Rental Schedule</div>
-            </div>
-          </div>
-          <div className="report-header-right">
-            <div className="rh-meta" style={{fontWeight:600,marginBottom:2}}>{dateRangeLabel}</div>
-          </div>
-        </div>
+        {/* Report header — animated facility hero (with a hidden game) */}
+        <FacilityHero
+          orgName={orgName}
+          logoUrl={logoUrl}
+          title="Weekly Rental Schedule"
+          dateLabel={dateRangeLabel}
+          reservations={filteredRows ? filteredRows.length : (rows ? rows.length : null)}
+          locations={locationColors ? Object.keys(locationColors).length : 0}
+          isPrint={isPrint}
+        />
 
         {/* AI Insights */}
         {!isPrint && !loading && filteredRows && filteredRows.length > 0 && (
