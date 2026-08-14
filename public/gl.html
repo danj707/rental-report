@@ -720,6 +720,56 @@ function normalizeRow(raw) {
   };
 }
 
+// ── Payment-method (tender) filter ────────────────────────────────────
+// Each GL row already carries every tender as its own column, so "show only
+// these payment methods" is a pure client-side recompute: keep the selected
+// tenders, zero the rest, and re-sum each row's Payments / Refunds / Net from
+// what remains. `payTotal`/`refTotal` name the canonical fields that feed the
+// row total (never the split CC sub-fields — that would double-count); `zero`
+// names every column to blank so the on-screen breakdown stays consistent with
+// the recomputed total. Distinct transaction counts (# Payments / # Refunds)
+// aren't available per tender, so they intentionally stay whole-report.
+const GL_PAY_METHODS = [
+  { key: 'cc',          label: 'Credit Card', payTotal: ['ccPayments'],          refTotal: ['ccRefunds'],
+    zero: ['ccPayments','ccOnlinePayments','ccInPersonPayments','ccRefunds','ccOnlineRefunds','ccInPersonRefunds'] },
+  { key: 'cash',        label: 'Cash',        payTotal: ['cashPayments'],        refTotal: ['cashRefunds'],      zero: ['cashPayments','cashRefunds'] },
+  { key: 'check',       label: 'Check',       payTotal: ['checkPayments'],       refTotal: ['checkRefunds'],     zero: ['checkPayments','checkRefunds'] },
+  { key: 'giftcard',    label: 'Gift Card',   payTotal: ['giftCardPayments'],    refTotal: [],                   zero: ['giftCardPayments'] },
+  { key: 'orgcredit',   label: 'Org Credit',  payTotal: ['orgCreditPayments'],   refTotal: ['orgCreditRefunds'], zero: ['orgCreditPayments','orgCreditRefunds'] },
+  { key: 'scholarship', label: 'Scholarship', payTotal: ['scholarshipPayments'], refTotal: [],                   zero: ['scholarshipPayments'] },
+  { key: 'free',        label: 'Free',        payTotal: ['freePayments'],        refTotal: [],                   zero: ['freePayments'] },
+  { key: 'other',       label: 'Other',       payTotal: ['otherPayments'],       refTotal: ['otherRefunds'],     zero: ['otherPayments','otherRefunds'] },
+];
+
+// Which tenders actually have activity in this dataset, so the picker lists
+// only the methods the org uses instead of a wall of always-$0 rows.
+function availableMethodsFor(rows) {
+  if (!rows || !rows.length) return [];
+  return GL_PAY_METHODS.filter(m => rows.some(r =>
+    m.payTotal.some(f => pf(r[f]) !== 0) || m.refTotal.some(f => pf(r[f]) !== 0)
+  ));
+}
+
+// Recompute one row against a selected-tender set: zero the deselected tenders
+// and re-sum Payments / Refunds / Net from what's left. Returns a fresh object
+// (never mutates the source row).
+function applyMethodFilter(r, sel) {
+  const nr = { ...r };
+  let tp = 0, tr = 0;
+  for (const m of GL_PAY_METHODS) {
+    if (sel.has(m.key)) {
+      for (const f of m.payTotal) tp += pf(r[f]);
+      for (const f of m.refTotal) tr += pf(r[f]);
+    } else {
+      for (const f of m.zero) if (nr[f] != null) nr[f] = 0;
+    }
+  }
+  nr.totalPayments = tp;
+  nr.totalRefunds  = tr;
+  nr.netAmount     = tp - tr;
+  return nr;
+}
+
 // ── Summary card ─────────────────────────────────────────────────────
 function SummaryCard({ label, value, color = 'blue' }) {
   const n = pf(value);
@@ -1092,6 +1142,70 @@ function DeskFilter({ allDesks, selectedDesks, onChange }) {
   );
 }
 
+// Payment-method picker — same dropdown chrome as DeskFilter, but toggles
+// tenders (Cash / Check / Credit Card / …) rather than desk locations.
+function MethodFilter({ methods, selected, onChange }) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef(null);
+
+  useEffect(() => {
+    function onDocClick(e) {
+      if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false);
+    }
+    document.addEventListener('mousedown', onDocClick);
+    return () => document.removeEventListener('mousedown', onDocClick);
+  }, []);
+
+  const allSelected  = selected.size === methods.length;
+  const noneSelected = selected.size === 0;
+
+  function toggle(key) {
+    const next = new Set(selected);
+    if (next.has(key)) next.delete(key); else next.add(key);
+    onChange(next);
+  }
+  const selectAll = () => onChange(new Set(methods.map(m => m.key)));
+  const clearAll  = () => onChange(new Set());
+
+  const badgeCount = allSelected ? null : selected.size;
+
+  return (
+    <div className="loc-filter-wrap" ref={wrapRef}>
+      <button
+        className={'btn-loc-filter' + (allSelected ? '' : ' active')}
+        style={{fontSize:11, padding:'4px 10px', ...(allSelected ? {} : {borderColor:'#f59e0b', color:'#fde68a'})}}
+        onClick={() => setOpen(o => !o)}
+      >
+        💳 Method
+        {badgeCount !== null && <span className="badge">{badgeCount}/{methods.length}</span>}
+      </button>
+      {open && (
+        <div className="loc-dropdown">
+          <div className="loc-dropdown-header">
+            <span>Payment Method</span>
+            <div className="loc-dropdown-header-actions">
+              <button onClick={selectAll} disabled={allSelected}>All</button>
+              <button onClick={clearAll} disabled={noneSelected}>None</button>
+            </div>
+          </div>
+          <div className="loc-dropdown-list">
+            {methods.map(m => (
+              <label className="loc-item" key={m.key}>
+                <input
+                  type="checkbox"
+                  checked={selected.has(m.key)}
+                  onChange={() => toggle(m.key)}
+                />
+                <span>{m.label}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Main App ──────────────────────────────────────────────────────────
 function App() {
   const params   = useMemo(() => getParams(), []);
@@ -1131,10 +1245,15 @@ function App() {
     if (selectedDesks && allDesks.length > 1 && selectedDesks.size < allDesks.length) {
       activeFilters.push([...selectedDesks].length + ' of ' + allDesks.length + ' desk locations');
     }
+    if (selectedMethods && availableMethods.length > 1 && selectedMethods.size < availableMethods.length) {
+      const names = availableMethods.filter(m => selectedMethods.has(m.key)).map(m => m.label);
+      activeFilters.push(names.join(', ') + ' only');
+    }
 
     function buildFilterParams() {
       const p = new URLSearchParams();
       if (selectedDesks && allDesks.length > 1 && selectedDesks.size < allDesks.length) p.set('desks', [...selectedDesks].join(','));
+      if (selectedMethods && availableMethods.length > 1 && selectedMethods.size < availableMethods.length) p.set('methods', [...selectedMethods].join(','));
       return p.toString();
     }
 
@@ -1247,12 +1366,14 @@ function App() {
       const qs = new URLSearchParams();
       qs.set('start_date', loadedStart || startDate);
       qs.set('end_date',   loadedEnd   || endDate);
+      if (hasDesk && selectedDesks && selectedDesks.size < allDesks.length) qs.set('desks', [...selectedDesks].join(','));
+      if (availableMethods.length > 1 && selectedMethods && selectedMethods.size < availableMethods.length) qs.set('methods', [...selectedMethods].join(','));
       if (isTylerActive) qs.set('tyler', '1');
       if (URL_TOKEN) qs.set('token', URL_TOKEN);
       return `${window.location.pathname}?${qs.toString()}`;
     };
     return () => { try { delete window.recShareLink; } catch (e) { window.recShareLink = undefined; } };
-  }, [loadedStart, loadedEnd, startDate, endDate, isTylerActive]);
+  }, [loadedStart, loadedEnd, startDate, endDate, isTylerActive, hasDesk, selectedDesks, allDesks, selectedMethods, availableMethods]);
 
   const [showRefunds,   setShowRefunds]   = useState(
     () => localStorage.getItem(LS_REFUND) === 'true'
@@ -1271,6 +1392,7 @@ function App() {
   const [emailDateRange, setEmailDateRange] = useState('lastMonth');
   const [emailStatus, setEmailStatus] = useState(null);
   const [selectedDesks, setSelectedDesks] = useState(null);
+  const [selectedMethods, setSelectedMethods] = useState(null);
   const [glFilter, setGlFilter] = useState('');
   const [insights, setInsights] = useState(null);
   const [insightsLoading, setInsightsLoading] = useState(false);
@@ -1330,6 +1452,9 @@ function App() {
     [rows]
   );
 
+  // Tenders present in the loaded data (drives the Method picker).
+  const availableMethods = useMemo(() => availableMethodsFor(rows), [rows]);
+
   // Distinct desk locations present in the data ('' bucketed as "(No desk location)").
   const allDesks = useMemo(() => {
     if (!rows) return [];
@@ -1379,6 +1504,30 @@ function App() {
     }
   }, [rows, hasDesk, allDesks]);
 
+  // Payment-method selection: reset to "all" on fresh data, honor a `methods`
+  // URL param on first load (PDF / print / share link), and prune tenders that
+  // drop out of the data across date changes. Mirrors the desk-filter effect.
+  const urlMethodsApplied = useRef(false);
+  useEffect(() => {
+    if (rows && availableMethods.length > 1) {
+      const keys = availableMethods.map(m => m.key);
+      const urlMethods = new URLSearchParams(window.location.search).get('methods');
+      if (!urlMethodsApplied.current && urlMethods) {
+        urlMethodsApplied.current = true;
+        const want = new Set(urlMethods.split(',').map(s => s.trim()).filter(Boolean));
+        const valid = keys.filter(k => want.has(k));
+        setSelectedMethods(new Set(valid.length ? valid : keys));
+      } else if (selectedMethods) {
+        const kept = new Set(keys.filter(k => selectedMethods.has(k)));
+        setSelectedMethods(kept.size > 0 ? kept : new Set(keys));
+      } else {
+        setSelectedMethods(new Set(keys));
+      }
+    } else {
+      setSelectedMethods(null);
+    }
+  }, [rows, availableMethods]);
+
   // Rows actually rendered: desk-filtered then re-collapsed to one row per GL code.
   // For orgs without a desk dimension this is a no-op (displayRows === rows).
   const displayRows = useMemo(() => {
@@ -1404,8 +1553,21 @@ function App() {
                (r.accountName || '').toLowerCase().indexOf(q) !== -1;
       });
     }
+    // Payment-method filter: recompute each row from the selected tenders.
+    // Interactive uses React state; print/PDF reconstructs it from the URL.
+    let methodSel = selectedMethods;
+    if (params._print === '1') {
+      const urlM = new URLSearchParams(window.location.search).get('methods');
+      if (urlM) {
+        const allow = new Set(urlM.split(',').map(s => s.trim()).filter(Boolean));
+        methodSel = new Set(availableMethods.map(m => m.key).filter(k => allow.has(k)));
+      }
+    }
+    if (methodSel && availableMethods.length > 1 && methodSel.size < availableMethods.length) {
+      base = base.map(r => applyMethodFilter(r, methodSel));
+    }
     return base;
-  }, [rows, hasDesk, selectedDesks, allDesks, glFilter]);
+  }, [rows, hasDesk, selectedDesks, allDesks, glFilter, selectedMethods, availableMethods]);
 
   const totals = useMemo(() => {
     if (!displayRows) return {};
@@ -1626,6 +1788,10 @@ function App() {
     if (hasDesk && selectedDesks && selectedDesks.size < allDesks.length) {
       qs.set('desks', [...selectedDesks].join(','));
     }
+    // Respect the on-screen payment-method filter so the PDF matches the view.
+    if (availableMethods.length > 1 && selectedMethods && selectedMethods.size < availableMethods.length) {
+      qs.set('methods', [...selectedMethods].join(','));
+    }
     // Tyler mode → portrait Munis cover sheets instead of the landscape rollup
     if (isTylerActive) qs.set('tyler', '1');
     const pdfUrl = parts.length >= 2
@@ -1702,6 +1868,14 @@ function App() {
           />
         )}
 
+        {availableMethods.length > 1 && selectedMethods && (
+          <MethodFilter
+            methods={availableMethods}
+            selected={selectedMethods}
+            onChange={setSelectedMethods}
+          />
+        )}
+
         <div className="divider" />
 
         {!isTylerActive && ['table','bar','pie'].map(mode => (
@@ -1773,7 +1947,9 @@ function App() {
   // ── Summary cards ────────────────────────────────────────────────────
   function renderSummaryCards() {
     if (!rows) return null;
+    const methodSubset = selectedMethods && availableMethods.length > 1 && selectedMethods.size < availableMethods.length;
     return (
+      <>
       <div className="summary-cards">
         <SummaryCard label="Net Amount"     value={totals.netAmount}     color="green"  />
         <SummaryCard label="Total Payments" value={totals.totalPayments} color="blue"   />
@@ -1791,6 +1967,13 @@ function App() {
         <SummaryCard label="Acct Credit" value={totals.orgCreditPayments} color="teal" />
         {totals.scholarshipPayments > 0 && <SummaryCard label="Scholarship" value={totals.scholarshipPayments} color="purple" />}
       </div>
+      {methodSubset && (
+        <div style={{margin:'-4px 0 10px', fontSize:12, color:'#b45309', display:'flex', alignItems:'center', gap:6}}>
+          <span>💳 Filtered to {availableMethods.filter(m => selectedMethods.has(m.key)).map(m => m.label).join(', ')}.</span>
+          <span style={{color:'#9ca3af'}}>Dollar totals reflect the selected tenders; transaction counts (# Payments / # Refunds) remain whole-report.</span>
+        </div>
+      )}
+      </>
     );
   }
 
