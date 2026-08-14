@@ -696,7 +696,7 @@
     const GAME_META = {
       pong:   { title: 'Pong',       tip: 'Mouse or ↑ ↓ to move · first to 5' },
       hockey: { title: 'Slapshot',   tip: 'Aim with the mouse · click to shoot · 5 shots' },
-      swim:   { title: 'Lane Swim',  tip: 'Mouse or ↑ ↓ · stay between the ropes' },
+      swim:   { title: 'Pool Catch', tip: 'Move the tube · catch the pool toys · 3 misses' },
       golf:   { title: 'Putt',       tip: 'Pull back from the ball & release · sink it' },
       bear:   { title: 'Berry Run',  tip: 'Click / Space to hop · eat berries, dodge rocks' },
     };
@@ -786,37 +786,54 @@
         return g;
       },
 
-      // ── Pool / Aquatics: Lane Swim — keep the swimmer between the ropes ──
+      // ── Pool / Aquatics: Pool Catch — slide the tube to catch falling toys ──
       swim: (api) => {
-        let sy, dist, speed, laneH;
-        const cx = () => api.W * 0.2;
-        function center(x) { return api.H / 2 + Math.sin((dist + x) / 120) * (api.H * 0.24); }
+        let tubeX, items, spawnT, score, misses, speed;
+        const tubeW = () => Math.max(46, api.W * 0.09);
+        const catchY = () => api.H - 22;
+        function spawn() { const W = api.W, duck = Math.random() < 0.18; items.push({ x: 18 + Math.random() * (W - 36), y: -16, r: duck ? 11 : 10, vy: Math.random() * api.H * 0.12, pts: duck ? 3 : 1, duck, hue: Math.floor(Math.random() * 360) }); }
         const g = {
           tip: GAME_META.swim.tip, over: false,
-          reset() { sy = api.H / 2; dist = 0; speed = api.W * 0.55; laneH = Math.max(26, api.H * 0.26); },
+          reset() { tubeX = api.W * 0.5; items = []; spawnT = 0.3; score = 0; misses = 0; speed = api.H * 0.55; },
           step(dt, input) {
-            const H = api.H;
-            if (input.keys.ArrowUp) sy -= H * 0.95 * dt;
-            if (input.keys.ArrowDown) sy += H * 0.95 * dt;
-            if (input.y) sy = input.y;
-            sy = Math.max(6, Math.min(H - 6, sy));
-            dist += speed * dt; speed += dt * api.W * 0.03;
-            if (Math.abs(sy - center(cx())) > laneH / 2) { g.over = true; api.snd.lose(); api.setTip('Splash! ' + Math.floor(dist / 10) + ' m — click to swim again'); }
+            const W = api.W, H = api.H;
+            if (input.keys.ArrowLeft) tubeX -= W * 0.95 * dt;
+            if (input.keys.ArrowRight) tubeX += W * 0.95 * dt;
+            if (input.x) tubeX = input.x;
+            tubeX = Math.max(tubeW() / 2, Math.min(W - tubeW() / 2, tubeX));
+            speed += dt * H * 0.035;
+            spawnT -= dt; if (spawnT <= 0) { spawn(); spawnT = 0.55 + Math.random() * 0.5; }
+            for (const it of items) it.y += (speed + it.vy) * dt;
+            for (const it of items) {
+              if (it.done) continue;
+              if (it.y >= catchY() && Math.abs(it.x - tubeX) < tubeW() / 2 + it.r) { it.done = true; score += it.pts; api.snd.good(); }
+              else if (it.y > H + 20) { it.done = true; misses++; api.snd.wall(); if (misses >= 3) { g.over = true; api.snd.lose(); api.setTip('Game over · ' + score + ' caught — click to play again'); } }
+            }
+            items = items.filter(it => !it.done);
           },
           draw(ctx) {
             const W = api.W, H = api.H;
-            const wg = ctx.createLinearGradient(0, 0, 0, H); wg.addColorStop(0, '#0e6fa8'); wg.addColorStop(1, '#0a4f7a'); ctx.fillStyle = wg; ctx.fillRect(0, 0, W, H);
-            ctx.lineWidth = 3;
-            [[-laneH / 2, 'rgba(255,90,90,.9)'], [laneH / 2, 'rgba(255,215,80,.9)']].forEach(([off, col]) => {
-              ctx.strokeStyle = col; ctx.beginPath();
-              for (let x = 0; x <= W; x += 8) { const y = center(x) + off; if (x === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); }
-              ctx.stroke();
-            });
-            ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(cx(), sy, 8, 0, Math.PI * 2); ctx.fill();
-            ctx.fillStyle = '#e5484d'; ctx.beginPath(); ctx.arc(cx() + 2, sy - 2, 4.5, 0, Math.PI * 2); ctx.fill();
+            const wg = ctx.createLinearGradient(0, 0, 0, H); wg.addColorStop(0, '#12a0d8'); wg.addColorStop(1, '#0a4f7a'); ctx.fillStyle = wg; ctx.fillRect(0, 0, W, H);
+            ctx.strokeStyle = 'rgba(255,255,255,.08)'; ctx.lineWidth = 2; for (let i = 1; i < 4; i++) { ctx.beginPath(); ctx.moveTo(0, H * 0.22 * i); ctx.lineTo(W, H * 0.22 * i); ctx.stroke(); }
+            for (const it of items) {
+              if (it.done) continue;
+              if (it.duck) {
+                ctx.fillStyle = '#ffd34d'; ctx.beginPath(); ctx.ellipse(it.x, it.y + 1, it.r, it.r * 0.8, 0, 0, Math.PI * 2); ctx.fill();
+                ctx.beginPath(); ctx.arc(it.x - it.r * 0.55, it.y - it.r * 0.5, it.r * 0.6, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = '#f59e0b'; ctx.beginPath(); ctx.moveTo(it.x - it.r * 1.05, it.y - it.r * 0.55); ctx.lineTo(it.x - it.r * 1.7, it.y - it.r * 0.4); ctx.lineTo(it.x - it.r * 1.05, it.y - it.r * 0.2); ctx.fill();
+                ctx.fillStyle = '#222'; ctx.beginPath(); ctx.arc(it.x - it.r * 0.7, it.y - it.r * 0.6, 1.4, 0, Math.PI * 2); ctx.fill();
+              } else {
+                ctx.fillStyle = 'hsl(' + it.hue + ',85%,60%)'; ctx.beginPath(); ctx.arc(it.x, it.y, it.r, 0, Math.PI * 2); ctx.fill();
+                ctx.strokeStyle = 'rgba(255,255,255,.75)'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(it.x, it.y, it.r, -0.5, 2.1); ctx.stroke();
+              }
+            }
+            const tw = tubeW(), ty = catchY();
+            ctx.fillStyle = '#fb7137'; api.rr(tubeX - tw / 2, ty, tw, 15, 8); ctx.fill();
+            ctx.fillStyle = '#ffd9c2'; api.rr(tubeX - tw / 2, ty, tw, 5, 3); ctx.fill();
+            ctx.fillStyle = '#0d6ea0'; api.rr(tubeX - tw / 2 + 9, ty + 4, tw - 18, 8, 4); ctx.fill();
             api.textScrim();
           },
-          hud() { return '🏊 ' + Math.floor(dist / 10) + ' m'; },
+          hud() { return '🏖️ ' + score + '   ' + (misses >= 3 ? '' : '💛'.repeat(3 - misses)); },
         };
         return g;
       },
