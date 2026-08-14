@@ -681,117 +681,338 @@
     const FBX_THEME = {
       summary:     { cls: 'fbx-facilities', scene: 'facilities', title: '🏟️ Facilities',       sub: 'Courts, fields, picnic areas & more.' },
       utilization: { cls: 'fbx-facilities', scene: 'facilities', title: '🏟️ Court Utilization', sub: 'How hard your courts are working.' },
-      golf:        { cls: 'fbx-facilities', scene: 'facilities', title: '⛳ Golf',              sub: 'Tee sheets, rounds & revenue.' },
+      golf:        { cls: 'fbx-facilities', scene: 'facilities', title: '⛳ Golf',              sub: 'Tee sheets, rounds & revenue.', game: 'golf' },
       camping:     { cls: 'fbx-camp',       scene: 'camp',       title: '🏕️ Camping',          sub: 'Campsite reservations & occupancy.' },
       aquatics:    { cls: 'fbx-pool',       scene: 'pool',       title: '🏊 Pool / Aquatics',   sub: 'Lap swim, lessons & open-swim.' },
-      ice:         { cls: 'fbx-ice',        scene: 'ice',        title: '⛸️ Ice',               sub: 'Rink schedule & public skate.' },
-      racket:      { cls: 'fbx-racket',     scene: 'racket',     title: '🎾 Racket Sports',     sub: 'Tennis, pickleball & padel demand.', pong: true },
+      ice:         { cls: 'fbx-ice',        scene: 'ice',        title: '⛸️ Ice',               sub: 'Rink schedule & public skate.', game: 'hockey' },
+      racket:      { cls: 'fbx-racket',     scene: 'racket',     title: '🎾 Racket Sports',     sub: 'Tennis, pickleball & padel demand.', game: 'pong' },
     };
+
+    // ── Banner minigames ────────────────────────────────────────────────
+    // One shared engine (audio + canvas sizing + RAF loop + input + mute +
+    // open/close) drives a pluggable per-tab game. Each game is a factory
+    // (api) => { reset, step(dt,input), draw(ctx), hud?, tip?, press?, release?,
+    // resize?, over }. All canvas + Web Audio, no assets.
+    const GAME_META = {
+      pong:   { title: 'Pong',       tip: 'Mouse or ↑ ↓ to move · first to 5' },
+      hockey: { title: 'Slapshot',   tip: 'Aim with the mouse · click to shoot · 5 shots' },
+      swim:   { title: 'Lane Swim',  tip: 'Mouse or ↑ ↓ · stay between the ropes' },
+      golf:   { title: 'Putt',       tip: 'Pull back from the ball & release · sink it' },
+      bear:   { title: 'Berry Run',  tip: 'Click / Space to hop · eat berries, dodge rocks' },
+    };
+
+    const GAME_FACTORIES = {
+      // ── Racket Sports: Pong ──
+      pong: (api) => {
+        const PADW = 9, BALLR = 7; let PADH = Math.max(30, api.H * 0.26);
+        let player, cpu, ball, sP = 0, sC = 0;
+        function serve(dir) { ball = { x: api.W / 2, y: api.H / 2, vx: (dir || (Math.random() < .5 ? -1 : 1)) * (api.W * 0.34), vy: (Math.random() * 2 - 1) * (api.H * 0.25) }; }
+        function done(dir) { if (sP >= 5 || sC >= 5) { g.over = true; api.setTip((sP >= 5 ? 'You win! 🏆' : 'CPU wins') + ' — click to rematch'); (sP >= 5 ? api.snd.win() : api.snd.lose()); } else { api.snd.score(); serve(dir); } }
+        const g = {
+          tip: GAME_META.pong.tip, over: false,
+          resize() { PADH = Math.max(30, api.H * 0.26); if (player) { player.h = PADH; cpu.h = PADH; cpu.x = api.W - 14 - PADW; } },
+          reset() { PADH = Math.max(30, api.H * 0.26); player = { x: 14, y: api.H / 2 - PADH / 2, h: PADH }; cpu = { x: api.W - 14 - PADW, y: api.H / 2 - PADH / 2, h: PADH }; sP = 0; sC = 0; serve(); },
+          step(dt, input) {
+            const W = api.W, H = api.H;
+            if (input.keys.ArrowUp) player.y -= H * 0.95 * dt;
+            if (input.keys.ArrowDown) player.y += H * 0.95 * dt;
+            if (input.y) player.y = input.y - player.h / 2;
+            player.y = Math.max(0, Math.min(H - player.h, player.y));
+            ball.x += ball.vx * dt; ball.y += ball.vy * dt;
+            if (ball.y < BALLR) { ball.y = BALLR; ball.vy *= -1; api.snd.wall(); }
+            if (ball.y > H - BALLR) { ball.y = H - BALLR; ball.vy *= -1; api.snd.wall(); }
+            const tgt = ball.y - cpu.h / 2, mv = H * 0.62 * dt;
+            if (tgt < cpu.y) cpu.y -= Math.min(mv, cpu.y - tgt); else cpu.y += Math.min(mv, tgt - cpu.y);
+            cpu.y = Math.max(0, Math.min(H - cpu.h, cpu.y));
+            if (ball.vx < 0 && ball.x - BALLR < player.x + PADW && ball.x > player.x && ball.y > player.y && ball.y < player.y + player.h) { ball.x = player.x + PADW + BALLR; ball.vx = Math.abs(ball.vx) * 1.06; ball.vy = ((ball.y - (player.y + player.h / 2)) / (player.h / 2)) * (H * 0.42); api.snd.hit(); }
+            if (ball.vx > 0 && ball.x + BALLR > cpu.x && ball.x < cpu.x + PADW && ball.y > cpu.y && ball.y < cpu.y + cpu.h) { ball.x = cpu.x - BALLR; ball.vx = -Math.abs(ball.vx) * 1.06; ball.vy = ((ball.y - (cpu.y + cpu.h / 2)) / (cpu.h / 2)) * (H * 0.42); api.snd.hit(); }
+            const mx = W * 0.85; ball.vx = Math.max(-mx, Math.min(mx, ball.vx));
+            if (ball.x < -BALLR) { sC++; done(1); } else if (ball.x > W + BALLR) { sP++; done(-1); }
+          },
+          draw(ctx) {
+            const W = api.W, H = api.H;
+            ctx.fillStyle = '#0b3d24'; ctx.fillRect(0, 0, W, H);
+            ctx.strokeStyle = 'rgba(255,255,255,.28)'; ctx.lineWidth = 2; ctx.setLineDash([6, 8]);
+            ctx.beginPath(); ctx.moveTo(W / 2, 6); ctx.lineTo(W / 2, H - 6); ctx.stroke(); ctx.setLineDash([]);
+            ctx.fillStyle = '#eafff2'; api.rr(player.x, player.y, PADW, player.h, 4); ctx.fill(); api.rr(cpu.x, cpu.y, PADW, cpu.h, 4); ctx.fill();
+            ctx.fillStyle = '#e9ff5c'; ctx.beginPath(); ctx.arc(ball.x, ball.y, BALLR, 0, Math.PI * 2); ctx.fill();
+            api.textScrim();
+          },
+          hud() { return 'You ' + sP + ' · ' + sC + ' CPU'; },
+        };
+        return g;
+      },
+
+      // ── Ice: Slapshot — aim & shoot the puck past the goalie into the net ──
+      hockey: (api) => {
+        let puck, goalie, shots = 0, goals = 0, state = 'aim', aim = null;
+        const gTop = () => api.H * 0.30, gBot = () => api.H * 0.70;
+        function newPuck() { if (shots >= 5) { g.over = true; api.setTip('Final: ' + goals + '/5 goals — click to play again'); return; } puck = { x: api.W * 0.16, y: api.H / 2, vx: 0, vy: 0, r: 7 }; state = 'aim'; }
+        function shoot(input) { const dx = input.x - puck.x, dy = input.y - puck.y, d = Math.hypot(dx, dy) || 1; const pw = api.W * 1.05; puck.vx = dx / d * pw; puck.vy = dy / d * pw; state = 'shot'; shots++; api.snd.tone(320, 0.09, 'square', 0.18); }
+        const g = {
+          tip: GAME_META.hockey.tip, over: false,
+          reset() { shots = 0; goals = 0; goalie = { y: api.H / 2, t: 0 }; newPuck(); },
+          press(input) { if (state === 'aim' && !g.over) shoot(input); },
+          step(dt, input) {
+            const W = api.W, H = api.H;
+            goalie.t += dt * 2.3; goalie.y = H / 2 + Math.sin(goalie.t) * (H * 0.16);
+            aim = { x: input.x, y: input.y };
+            if (state === 'shot') {
+              puck.x += puck.vx * dt; puck.y += puck.vy * dt; puck.vx *= 0.992; puck.vy *= 0.992;
+              if (puck.y < 9) { puck.y = 9; puck.vy *= -1; api.snd.wall(); }
+              if (puck.y > H - 9) { puck.y = H - 9; puck.vy *= -1; api.snd.wall(); }
+              if (puck.x < 9) { puck.x = 9; puck.vx *= -1; }
+              const gx = W - 24;
+              if (puck.vx > 0 && puck.x > gx - 8 && Math.abs(puck.y - goalie.y) < H * 0.11) { puck.vx = -Math.abs(puck.vx) * 0.55; puck.x = gx - 9; api.snd.hit(); }
+              if (puck.x > W - 12) { if (puck.y > gTop() && puck.y < gBot()) { goals++; api.snd.win(); } else { api.snd.lose(); } return newPuck(); }
+              if (Math.hypot(puck.vx, puck.vy) < 10) return newPuck();
+            }
+          },
+          draw(ctx) {
+            const W = api.W, H = api.H;
+            ctx.fillStyle = '#cfe4f5'; ctx.fillRect(0, 0, W, H);
+            ctx.strokeStyle = 'rgba(70,120,180,.30)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(W * 0.5, 0); ctx.lineTo(W * 0.5, H); ctx.stroke();
+            ctx.fillStyle = 'rgba(120,170,220,.28)'; ctx.beginPath(); ctx.arc(W - 12, H / 2, H * 0.34, Math.PI * 0.5, Math.PI * 1.5, true); ctx.fill();
+            ctx.strokeStyle = 'rgba(90,90,90,.5)'; ctx.lineWidth = 1;
+            for (let yy = gTop(); yy <= gBot(); yy += 8) { ctx.beginPath(); ctx.moveTo(W - 12, yy); ctx.lineTo(W - 2, yy - 4); ctx.stroke(); }
+            ctx.strokeStyle = '#d33'; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(W - 12, gTop()); ctx.lineTo(W - 12, gBot()); ctx.stroke();
+            ctx.fillStyle = '#1e5fa8'; api.rr(W - 22, goalie.y - H * 0.10, 8, H * 0.20, 3); ctx.fill();
+            if (state === 'aim' && aim) { ctx.strokeStyle = 'rgba(20,50,80,.55)'; ctx.setLineDash([4, 5]); ctx.beginPath(); ctx.moveTo(puck.x, puck.y); ctx.lineTo(aim.x, aim.y); ctx.stroke(); ctx.setLineDash([]); }
+            ctx.fillStyle = '#111'; ctx.beginPath(); ctx.arc(puck.x, puck.y, puck.r, 0, Math.PI * 2); ctx.fill();
+            api.textScrim();
+          },
+          hud() { return '🥅 ' + goals + ' · ' + shots + '/5 shots'; },
+        };
+        return g;
+      },
+
+      // ── Pool / Aquatics: Lane Swim — keep the swimmer between the ropes ──
+      swim: (api) => {
+        let sy, dist, speed, laneH;
+        const cx = () => api.W * 0.2;
+        function center(x) { return api.H / 2 + Math.sin((dist + x) / 120) * (api.H * 0.24); }
+        const g = {
+          tip: GAME_META.swim.tip, over: false,
+          reset() { sy = api.H / 2; dist = 0; speed = api.W * 0.55; laneH = Math.max(26, api.H * 0.26); },
+          step(dt, input) {
+            const H = api.H;
+            if (input.keys.ArrowUp) sy -= H * 0.95 * dt;
+            if (input.keys.ArrowDown) sy += H * 0.95 * dt;
+            if (input.y) sy = input.y;
+            sy = Math.max(6, Math.min(H - 6, sy));
+            dist += speed * dt; speed += dt * api.W * 0.03;
+            if (Math.abs(sy - center(cx())) > laneH / 2) { g.over = true; api.snd.lose(); api.setTip('Splash! ' + Math.floor(dist / 10) + ' m — click to swim again'); }
+          },
+          draw(ctx) {
+            const W = api.W, H = api.H;
+            const wg = ctx.createLinearGradient(0, 0, 0, H); wg.addColorStop(0, '#0e6fa8'); wg.addColorStop(1, '#0a4f7a'); ctx.fillStyle = wg; ctx.fillRect(0, 0, W, H);
+            ctx.lineWidth = 3;
+            [[-laneH / 2, 'rgba(255,90,90,.9)'], [laneH / 2, 'rgba(255,215,80,.9)']].forEach(([off, col]) => {
+              ctx.strokeStyle = col; ctx.beginPath();
+              for (let x = 0; x <= W; x += 8) { const y = center(x) + off; if (x === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); }
+              ctx.stroke();
+            });
+            ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(cx(), sy, 8, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = '#e5484d'; ctx.beginPath(); ctx.arc(cx() + 2, sy - 2, 4.5, 0, Math.PI * 2); ctx.fill();
+            api.textScrim();
+          },
+          hud() { return '🏊 ' + Math.floor(dist / 10) + ' m'; },
+        };
+        return g;
+      },
+
+      // ── Golf: Putt — pull back from the ball & release to sink it ──
+      golf: (api) => {
+        let ball, hole, strokes = 0, aiming = false, aimPos = null;
+        const g = {
+          tip: GAME_META.golf.tip, over: false,
+          reset() { ball = { x: api.W * 0.12, y: api.H / 2, vx: 0, vy: 0, r: 6, moving: false }; hole = { x: api.W * 0.9, y: api.H / 2, r: 12 }; strokes = 0; aiming = false; },
+          press(input) { if (!ball.moving) { aiming = true; aimPos = { x: input.x, y: input.y }; } },
+          release(input) {
+            if (!aiming) return; aiming = false;
+            const dx = ball.x - input.x, dy = ball.y - input.y, d = Math.hypot(dx, dy);
+            if (d < 6) return;
+            const p = Math.min(1, d / (api.W * 0.4)), power = api.W * 1.5 * p;
+            ball.vx = dx / d * power; ball.vy = dy / d * power; ball.moving = true; strokes++; api.snd.hit();
+          },
+          step(dt, input) {
+            const W = api.W, H = api.H;
+            if (aiming) aimPos = { x: input.x, y: input.y };
+            if (ball.moving) {
+              ball.x += ball.vx * dt; ball.y += ball.vy * dt; ball.vx *= 0.985; ball.vy *= 0.985;
+              if (ball.y < ball.r) { ball.y = ball.r; ball.vy *= -1; } if (ball.y > H - ball.r) { ball.y = H - ball.r; ball.vy *= -1; }
+              if (ball.x < ball.r) { ball.x = ball.r; ball.vx *= -1; } if (ball.x > W - ball.r) { ball.x = W - ball.r; ball.vx *= -1; }
+              const d = Math.hypot(ball.x - hole.x, ball.y - hole.y), sp = Math.hypot(ball.vx, ball.vy);
+              if (d < hole.r && sp < api.W * 0.5) { g.over = true; ball.moving = false; api.snd.win(); api.setTip('Sunk it in ' + strokes + '! — click to play again'); }
+              else if (sp < 7) { ball.moving = false; ball.vx = 0; ball.vy = 0; if (d < hole.r) { g.over = true; api.snd.win(); api.setTip('Sunk it in ' + strokes + '! — click to play again'); } }
+            }
+          },
+          draw(ctx) {
+            const W = api.W, H = api.H;
+            ctx.fillStyle = '#16833f'; ctx.fillRect(0, 0, W, H);
+            ctx.fillStyle = 'rgba(255,255,255,.05)'; for (let x = 0; x < W; x += 44) ctx.fillRect(x, 0, 22, H);
+            ctx.fillStyle = '#0a3d1e'; ctx.beginPath(); ctx.ellipse(hole.x, hole.y, hole.r, hole.r * 0.72, 0, 0, Math.PI * 2); ctx.fill();
+            ctx.strokeStyle = '#f4f4f4'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(hole.x, hole.y - 4); ctx.lineTo(hole.x, hole.y - 40); ctx.stroke();
+            ctx.fillStyle = '#e5484d'; ctx.beginPath(); ctx.moveTo(hole.x, hole.y - 40); ctx.lineTo(hole.x + 18, hole.y - 34); ctx.lineTo(hole.x, hole.y - 28); ctx.fill();
+            if (aiming && aimPos) { const dx = ball.x - aimPos.x, dy = ball.y - aimPos.y; ctx.strokeStyle = 'rgba(255,255,255,.75)'; ctx.setLineDash([4, 4]); ctx.beginPath(); ctx.moveTo(ball.x, ball.y); ctx.lineTo(ball.x + dx * 0.8, ball.y + dy * 0.8); ctx.stroke(); ctx.setLineDash([]); }
+            ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI * 2); ctx.fill();
+            api.textScrim();
+          },
+          hud() { return '⛳ ' + strokes + ' stroke' + (strokes === 1 ? '' : 's'); },
+        };
+        return g;
+      },
+
+      // ── Camping: Berry Run — hop the bear to eat berries, dodge rocks ──
+      bear: (api) => {
+        let by, vy, grounded, items, spawnT, score, speed, groundY;
+        const bx = () => api.W * 0.18;
+        function spawnItem() {
+          const W = api.W;
+          if (Math.random() < 0.72) { const y = groundY - (34 + Math.random() * 78); items.push({ type: 'berry', x: W + 20, y, dead: false }); }
+          else { items.push({ type: 'rock', x: W + 20, y: groundY - 4 }); }
+        }
+        const g = {
+          tip: GAME_META.bear.tip, over: false,
+          reset() { groundY = api.H * 0.74; by = groundY; vy = 0; grounded = true; items = []; spawnT = 0.4; score = 0; speed = api.W * 0.5; },
+          press() { if (grounded) { vy = -api.H * 1.75; grounded = false; api.snd.tone(520, 0.08, 'square', 0.15); } },
+          step(dt) {
+            const W = api.W, H = api.H;
+            vy += H * 5.2 * dt; by += vy * dt; if (by >= groundY) { by = groundY; vy = 0; grounded = true; }
+            speed += dt * api.W * 0.02;
+            spawnT -= dt; if (spawnT <= 0) { spawnItem(); spawnT = 0.65 + Math.random() * 0.5; }
+            for (const it of items) it.x -= speed * dt;
+            items = items.filter(it => it.x > -30);
+            const cxp = bx(), cyp = by - 12;
+            for (const it of items) {
+              if (it.dead) continue;
+              if (Math.abs(it.x - cxp) < 18 && Math.abs(it.y - cyp) < 17) {
+                if (it.type === 'berry') { it.dead = true; score++; api.snd.good(); }
+                else { g.over = true; api.snd.lose(); api.setTip('Ouch! ' + score + ' berries — click to run again'); }
+              }
+            }
+          },
+          draw(ctx) {
+            const W = api.W, H = api.H;
+            const sg = ctx.createLinearGradient(0, 0, 0, H); sg.addColorStop(0, '#241a4d'); sg.addColorStop(1, '#3b2a63'); ctx.fillStyle = sg; ctx.fillRect(0, 0, W, H);
+            ctx.fillStyle = '#16281a'; ctx.fillRect(0, groundY + 14, W, H - groundY);
+            ctx.strokeStyle = 'rgba(255,255,255,.14)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(0, groundY + 14); ctx.lineTo(W, groundY + 14); ctx.stroke();
+            for (const it of items) {
+              if (it.dead) continue;
+              if (it.type === 'berry') { ctx.fillStyle = '#c060e0'; ctx.beginPath(); ctx.arc(it.x, it.y, 6, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = '#3a7d2c'; ctx.fillRect(it.x - 1, it.y - 10, 2, 4); }
+              else { ctx.fillStyle = '#6b6b6b'; ctx.beginPath(); ctx.ellipse(it.x, it.y, 12, 8, 0, 0, Math.PI * 2); ctx.fill(); }
+            }
+            const x = bx(), y = by;
+            ctx.fillStyle = '#3b2417';
+            ctx.beginPath(); ctx.ellipse(x, y - 11, 16, 11, 0, 0, Math.PI * 2); ctx.fill();
+            ctx.beginPath(); ctx.arc(x - 13, y - 17, 8, 0, Math.PI * 2); ctx.fill();
+            ctx.beginPath(); ctx.arc(x - 17, y - 24, 3, 0, Math.PI * 2); ctx.arc(x - 9, y - 24, 3, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = '#7a5535'; ctx.beginPath(); ctx.ellipse(x - 19, y - 15, 4, 3, 0, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = '#160d06'; ctx.beginPath(); ctx.arc(x - 22, y - 15, 1.5, 0, Math.PI * 2); ctx.fill();
+            api.textScrim();
+          },
+          hud() { return '🫐 ' + score; },
+        };
+        return g;
+      },
+    };
+
+    function startBannerGame(gameKey, els) {
+      const { canvas, overlay, hud, tip, muteBtn, playBtn, closeBtn } = els;
+      const band = canvas.closest('.fac-banner');
+      const ctx = canvas.getContext('2d');
+      let raf = null, running = false, last = 0, game = null;
+      let W = 0, H = 0; const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      let AC = null, muted = false;
+      function audio() { if (muted) return null; if (!AC) { const C = window.AudioContext || window.webkitAudioContext; if (!C) return null; AC = new C(); } if (AC.state === 'suspended') AC.resume(); return AC; }
+      function beep(freq, dur, type, vol) { const aa = audio(); if (!aa) return; const t = aa.currentTime; const o = aa.createOscillator(), g = aa.createGain(); o.type = type || 'square'; o.frequency.setValueAtTime(freq, t); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol || 0.16, t + 0.006); g.gain.exponentialRampToValueAtTime(0.0001, t + (dur || 0.07)); o.connect(g); g.connect(aa.destination); o.start(t); o.stop(t + (dur || 0.07) + 0.02); }
+      function jingle(notes) { notes.forEach((f, i) => setTimeout(() => beep(f, 0.14, 'square', 0.16), i * 110)); }
+      const snd = { hit: () => beep(440, 0.06, 'square', 0.18), wall: () => beep(240, 0.05, 'square', 0.13), score: () => beep(150, 0.22, 'sawtooth', 0.16), good: () => beep(720, 0.07, 'square', 0.16), win: () => jingle([523, 659, 784, 1047]), lose: () => jingle([392, 330, 262]), tone: (f, d, t, v) => beep(f, d, t, v) };
+      const api = {
+        get W() { return W; }, get H() { return H; }, snd,
+        setTip: (t) => { if (tip) tip.textContent = t; },
+        setHud: (t) => { if (hud) hud.textContent = t; },
+        rr(x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); },
+        textScrim() { const gt = ctx.createLinearGradient(0, 0, 0, 44); gt.addColorStop(0, 'rgba(0,0,0,.32)'); gt.addColorStop(1, 'rgba(0,0,0,0)'); ctx.fillStyle = gt; ctx.fillRect(0, 0, W, 44); const gb = ctx.createLinearGradient(0, H - 38, 0, H); gb.addColorStop(0, 'rgba(0,0,0,0)'); gb.addColorStop(1, 'rgba(0,0,0,.36)'); ctx.fillStyle = gb; ctx.fillRect(0, H - 38, W, 38); },
+      };
+      function resize() { const r = band.getBoundingClientRect(); W = Math.round(r.width); H = Math.round(r.height); canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); if (game && game.resize) game.resize(); }
+      const input = { x: 0, y: 0, down: false, keys: {} };
+      function newGame() { resize(); game = GAME_FACTORIES[gameKey](api); game.over = false; if (game.reset) game.reset(); if (game.tip) api.setTip(game.tip); if (game.hud) api.setHud(game.hud()); running = true; last = performance.now(); loop(last); }
+      function loop(t) { if (!running) return; const dt = Math.min(0.033, (t - last) / 1000); last = t; if (game) { if (!game.over) game.step(dt, input); ctx.clearRect(0, 0, W, H); game.draw(ctx); if (game.hud) api.setHud(game.hud()); } raf = requestAnimationFrame(loop); }
+      function local(cx, cy) { const r = canvas.getBoundingClientRect(); input.x = cx - r.left; input.y = cy - r.top; }
+      const onMove = e => local(e.clientX, e.clientY);
+      const onTouchMove = e => { if (e.touches[0]) { e.preventDefault(); local(e.touches[0].clientX, e.touches[0].clientY); } };
+      const onDown = e => { if (e.touches && e.touches[0]) local(e.touches[0].clientX, e.touches[0].clientY); else if (e.clientX != null) local(e.clientX, e.clientY); input.down = true; audio(); if (!game) return; if (game.over) newGame(); else if (game.press) game.press(input); };
+      const onUp = () => { input.down = false; if (game && !game.over && game.release) game.release(input); };
+      canvas.addEventListener('mousemove', onMove);
+      canvas.addEventListener('touchmove', onTouchMove, { passive: false });
+      canvas.addEventListener('mousedown', onDown);
+      canvas.addEventListener('touchstart', onDown, { passive: false });
+      window.addEventListener('mouseup', onUp);
+      canvas.addEventListener('touchend', onUp);
+      const onKeyDown = e => { if (!running) return; const k = e.key; if (k === 'ArrowUp' || k === 'ArrowDown' || k === 'ArrowLeft' || k === 'ArrowRight' || k === ' ') { input.keys[k] = true; e.preventDefault(); if (k === ' ') { if (game && game.over) newGame(); else if (game && game.press) game.press(input); } } if (k === 'Escape') close(); };
+      const onKeyUp = e => { input.keys[e.key] = false; };
+      window.addEventListener('keydown', onKeyDown); window.addEventListener('keyup', onKeyUp);
+      function open() { audio(); overlay.classList.add('on'); newGame(); }
+      function close() { running = false; if (raf) cancelAnimationFrame(raf); overlay.classList.remove('on'); }
+      const onMute = () => { muted = !muted; muteBtn.textContent = muted ? '🔇' : '🔊'; muteBtn.classList.toggle('off', muted); muteBtn.setAttribute('aria-label', muted ? 'Unmute sound' : 'Mute sound'); if (!muted) audio(); };
+      if (playBtn) playBtn.addEventListener('click', open);
+      if (closeBtn) closeBtn.addEventListener('click', close);
+      if (muteBtn) muteBtn.addEventListener('click', onMute);
+      const onResize = () => { if (running) resize(); };
+      window.addEventListener('resize', onResize);
+      return () => {
+        running = false; if (raf) cancelAnimationFrame(raf);
+        canvas.removeEventListener('mousemove', onMove); canvas.removeEventListener('touchmove', onTouchMove);
+        canvas.removeEventListener('mousedown', onDown); canvas.removeEventListener('touchstart', onDown);
+        window.removeEventListener('mouseup', onUp); canvas.removeEventListener('touchend', onUp);
+        window.removeEventListener('keydown', onKeyDown); window.removeEventListener('keyup', onKeyUp); window.removeEventListener('resize', onResize);
+        if (playBtn) playBtn.removeEventListener('click', open); if (closeBtn) closeBtn.removeEventListener('click', close); if (muteBtn) muteBtn.removeEventListener('click', onMute);
+        if (AC) { try { AC.close(); } catch (e) {} }
+      };
+    }
+
+    // Renders the ▶ launcher + game overlay for a banner and mounts the engine.
+    function BannerGame({ game }) {
+      const canvasRef = React.useRef(null), overlayRef = React.useRef(null), playRef = React.useRef(null);
+      const hudRef = React.useRef(null), tipRef = React.useRef(null), muteRef = React.useRef(null), closeRef = React.useRef(null);
+      React.useEffect(() => {
+        if (!game) return;
+        const canvas = canvasRef.current, overlay = overlayRef.current;
+        if (!canvas || !overlay || !canvas.closest('.fac-banner')) return;
+        return startBannerGame(game, { canvas, overlay, hud: hudRef.current, tip: tipRef.current, muteBtn: muteRef.current, playBtn: playRef.current, closeBtn: closeRef.current });
+      }, [game]);
+      if (!game) return null;
+      const meta = GAME_META[game] || {};
+      return e(React.Fragment, null,
+        e('button', { className: 'fb-play', ref: playRef, type: 'button', 'aria-label': 'Play a hidden game', title: meta.title || 'Play' }, '▶'),
+        e('div', { className: 'fb-pong', ref: overlayRef },
+          e('div', { className: 'fb-pong-hud', ref: hudRef }, ''),
+          e('button', { className: 'fb-pong-mute', ref: muteRef, type: 'button', 'aria-label': 'Mute sound', title: 'Sound on/off' }, '🔊'),
+          e('button', { className: 'fb-pong-close', ref: closeRef, type: 'button', 'aria-label': 'Close game' }, '✕'),
+          e('canvas', { ref: canvasRef }),
+          e('div', { className: 'fb-pong-tip', ref: tipRef }, meta.tip || ''),
+        ),
+      );
+    }
 
     function FacilitiesBanner({ a, tab }) {
       const theme = FBX_THEME[tab] || FBX_THEME.summary;
-      const pong = !!theme.pong;
-      const bandRef = React.useRef(null), canvasRef = React.useRef(null), pongRef = React.useRef(null);
-      const hudRef = React.useRef(null), tipRef = React.useRef(null), muteRef = React.useRef(null);
-      const playRef = React.useRef(null), closeRef = React.useRef(null);
-
-      React.useEffect(() => {
-        if (!pong) return;
-        const band = bandRef.current, canvas = canvasRef.current, pongEl = pongRef.current;
-        const hud = hudRef.current, tip = tipRef.current, muteBtn = muteRef.current;
-        const playBtn = playRef.current, closeBtn = closeRef.current;
-        if (!band || !canvas || !pongEl) return;
-        const ctx = canvas.getContext('2d');
-        let raf = null, keyRaf = null, running = false;
-        let W = 0, H = 0; const dpr = Math.min(window.devicePixelRatio || 1, 2);
-        let PADH; const PADW = 9, BALLR = 7;
-        let player, cpu, ball, scoreP, scoreC, over, last = 0;
-        let AC = null, muted = false;
-        function audio() { if (muted) return null; if (!AC) { const C = window.AudioContext || window.webkitAudioContext; if (!C) return null; AC = new C(); } if (AC.state === 'suspended') AC.resume(); return AC; }
-        function blip(freq, dur, type, vol) { const aa = audio(); if (!aa) return; const t = aa.currentTime; const o = aa.createOscillator(), g = aa.createGain(); o.type = type || 'square'; o.frequency.setValueAtTime(freq, t); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol || 0.16, t + 0.006); g.gain.exponentialRampToValueAtTime(0.0001, t + (dur || 0.07)); o.connect(g); g.connect(aa.destination); o.start(t); o.stop(t + (dur || 0.07) + 0.02); }
-        const sndPaddle = () => blip(440, 0.06, 'square', 0.18);
-        const sndWall = () => blip(240, 0.05, 'square', 0.13);
-        const sndScore = () => blip(150, 0.22, 'sawtooth', 0.16);
-        function sndWin(you) { const notes = you ? [523, 659, 784, 1047] : [392, 330, 262]; notes.forEach((f, i) => setTimeout(() => blip(f, 0.14, 'square', 0.16), i * 110)); }
-        function resize() { const r = band.getBoundingClientRect(); W = r.width; H = r.height; canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); PADH = Math.max(30, H * 0.26); if (player) { player.h = PADH; cpu.h = PADH; } }
-        function reset(dir) { ball = { x: W / 2, y: H / 2, vx: (dir || (Math.random() < .5 ? -1 : 1)) * (W * 0.34), vy: (Math.random() * 2 - 1) * (H * 0.25) }; }
-        function updateHud() { hud.textContent = 'You ' + scoreP + ' · ' + scoreC + ' CPU'; }
-        function startGame() { resize(); player = { x: 14, y: H / 2 - PADH / 2, h: PADH }; cpu = { x: W - 14 - PADW, y: H / 2 - PADH / 2, h: PADH }; scoreP = 0; scoreC = 0; over = false; reset(); updateHud(); running = true; last = performance.now(); loop(last); }
-        function loop(t) { if (!running) return; const dt = Math.min(0.033, (t - last) / 1000); last = t; if (!over) step(dt); draw(); raf = requestAnimationFrame(loop); }
-        function step(dt) {
-          ball.x += ball.vx * dt; ball.y += ball.vy * dt;
-          if (ball.y < BALLR) { ball.y = BALLR; ball.vy *= -1; sndWall(); }
-          if (ball.y > H - BALLR) { ball.y = H - BALLR; ball.vy *= -1; sndWall(); }
-          const target = ball.y - cpu.h / 2; const maxv = H * 0.62 * dt;
-          if (target < cpu.y) cpu.y -= Math.min(maxv, cpu.y - target); else cpu.y += Math.min(maxv, target - cpu.y);
-          cpu.y = Math.max(0, Math.min(H - cpu.h, cpu.y));
-          if (ball.vx < 0 && ball.x - BALLR < player.x + PADW && ball.x > player.x && ball.y > player.y && ball.y < player.y + player.h) { ball.x = player.x + PADW + BALLR; ball.vx = Math.abs(ball.vx) * 1.06; ball.vy = ((ball.y - (player.y + player.h / 2)) / (player.h / 2)) * (H * 0.42); sndPaddle(); }
-          if (ball.vx > 0 && ball.x + BALLR > cpu.x && ball.x < cpu.x + PADW && ball.y > cpu.y && ball.y < cpu.y + cpu.h) { ball.x = cpu.x - BALLR; ball.vx = -Math.abs(ball.vx) * 1.06; ball.vy = ((ball.y - (cpu.y + cpu.h / 2)) / (cpu.h / 2)) * (H * 0.42); sndPaddle(); }
-          const mx = W * 0.85; if (ball.vx > mx) ball.vx = mx; if (ball.vx < -mx) ball.vx = -mx;
-          if (ball.x < -BALLR) { scoreC++; updateHud(); endOrServe(1); }
-          else if (ball.x > W + BALLR) { scoreP++; updateHud(); endOrServe(-1); }
-        }
-        function endOrServe(dir) { if (scoreP >= 5 || scoreC >= 5) { over = true; tip.textContent = (scoreP >= 5 ? 'You win! 🏆' : 'CPU wins') + ' — click to rematch'; sndWin(scoreP >= 5); } else { sndScore(); reset(dir); } }
-        function draw() {
-          ctx.clearRect(0, 0, W, H); ctx.fillStyle = '#0b3d24'; ctx.fillRect(0, 0, W, H);
-          ctx.strokeStyle = 'rgba(255,255,255,.28)'; ctx.lineWidth = 2; ctx.setLineDash([6, 8]);
-          ctx.beginPath(); ctx.moveTo(W / 2, 6); ctx.lineTo(W / 2, H - 6); ctx.stroke(); ctx.setLineDash([]);
-          ctx.fillStyle = '#eafff2'; rr(player.x, player.y, PADW, player.h, 4); ctx.fill(); rr(cpu.x, cpu.y, PADW, cpu.h, 4); ctx.fill();
-          ctx.fillStyle = '#e9ff5c'; ctx.beginPath(); ctx.arc(ball.x, ball.y, BALLR, 0, Math.PI * 2); ctx.fill();
-        }
-        function rr(x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
-        function movePlayerTo(clientY) { const r = canvas.getBoundingClientRect(); const y = clientY - r.top - player.h / 2; player.y = Math.max(0, Math.min(H - player.h, y)); }
-        const onMouse = ev => { if (running) movePlayerTo(ev.clientY); };
-        const onTouch = ev => { if (running && ev.touches[0]) { ev.preventDefault(); movePlayerTo(ev.touches[0].clientY); } };
-        canvas.addEventListener('mousemove', onMouse);
-        canvas.addEventListener('touchmove', onTouch, { passive: false });
-        const keys = {};
-        const onKeyDown = ev => { if (!running) return; if (ev.key === 'ArrowUp' || ev.key === 'ArrowDown') { keys[ev.key] = true; ev.preventDefault(); } if (ev.key === 'Escape') closeGame(); };
-        const onKeyUp = ev => { keys[ev.key] = false; };
-        window.addEventListener('keydown', onKeyDown); window.addEventListener('keyup', onKeyUp);
-        function keyLoop() { if (running && player) { const sp = H * 0.012; if (keys.ArrowUp) player.y = Math.max(0, player.y - sp); if (keys.ArrowDown) player.y = Math.min(H - player.h, player.y + sp); } keyRaf = requestAnimationFrame(keyLoop); }
-        keyLoop();
-        const onCanvasClick = () => { if (over) startGame(); };
-        canvas.addEventListener('click', onCanvasClick);
-        function openGame() { audio(); pongEl.classList.add('on'); startGame(); tip.textContent = 'Mouse or ↑ ↓ to move · first to 5'; }
-        function closeGame() { running = false; if (raf) cancelAnimationFrame(raf); pongEl.classList.remove('on'); }
-        const onMute = () => { muted = !muted; muteBtn.textContent = muted ? '🔇' : '🔊'; muteBtn.classList.toggle('off', muted); muteBtn.setAttribute('aria-label', muted ? 'Unmute sound' : 'Mute sound'); if (!muted) audio(); };
-        if (playBtn) playBtn.addEventListener('click', openGame);
-        if (closeBtn) closeBtn.addEventListener('click', closeGame);
-        if (muteBtn) muteBtn.addEventListener('click', onMute);
-        const onResize = () => { if (running) resize(); };
-        window.addEventListener('resize', onResize);
-        return () => {
-          running = false; if (raf) cancelAnimationFrame(raf); if (keyRaf) cancelAnimationFrame(keyRaf);
-          canvas.removeEventListener('mousemove', onMouse); canvas.removeEventListener('touchmove', onTouch); canvas.removeEventListener('click', onCanvasClick);
-          window.removeEventListener('keydown', onKeyDown); window.removeEventListener('keyup', onKeyUp); window.removeEventListener('resize', onResize);
-          if (playBtn) playBtn.removeEventListener('click', openGame); if (closeBtn) closeBtn.removeEventListener('click', closeGame); if (muteBtn) muteBtn.removeEventListener('click', onMute);
-          if (AC) { try { AC.close(); } catch (e) {} }
-        };
-      }, [pong, tab]);
-
       const pills = a ? [
         ['bookings', a.bookings.toLocaleString()],
         ['net revenue', money(a.revenue)],
         ['active sites', a.sites.toLocaleString()],
         ['cancellation', a.bookings ? pct(a.canceled, a.bookings) : '—'],
       ] : [];
-      return e('div', { className: 'fac-banner ' + theme.cls, ref: bandRef },
+      return e('div', { className: 'fac-banner ' + theme.cls },
         e('div', { className: 'fb-scene', key: 'scene-' + tab, dangerouslySetInnerHTML: { __html: FBX_SCENES[theme.scene] } }),
-        pong ? e('button', { className: 'fb-play', key: 'play', type: 'button', ref: playRef, 'aria-label': 'Play a hidden game', title: 'Play' }, '▶') : null,
+        theme.game ? e(BannerGame, { game: theme.game, key: 'game-' + theme.game }) : null,
         e('div', { className: 'fb-overlay', key: 'overlay' },
           e('div', { className: 'fb-kicker' }, CFG.displayName || 'Parks & Recreation'),
           e('div', { className: 'fb-title' }, theme.title),
           e('div', { className: 'fb-sub' }, theme.sub),
           a ? e('div', { className: 'fb-pills' }, pills.map((p, i) => e('span', { className: 'fb-pill', key: i }, e('b', null, p[1]), ' ' + p[0]))) : null,
         ),
-        pong ? e('div', { className: 'fb-pong', key: 'pong', ref: pongRef },
-          e('div', { className: 'fb-pong-hud', ref: hudRef }, 'You 0 · 0 CPU'),
-          e('button', { className: 'fb-pong-mute', type: 'button', ref: muteRef, 'aria-label': 'Mute sound', title: 'Sound on/off' }, '🔊'),
-          e('button', { className: 'fb-pong-close', type: 'button', ref: closeRef, 'aria-label': 'Close game' }, '✕'),
-          e('canvas', { ref: canvasRef }),
-          e('div', { className: 'fb-pong-tip', ref: tipRef }, 'Mouse or ↑ ↓ to move · first to 5'),
-        ) : null,
       );
     }
 
@@ -1146,8 +1367,9 @@
         ['avg party', avgParty ? avgParty.toFixed(1) : '—'],
         ['active sites', sites.toLocaleString()],
       ];
-      return e('div', { className: 'fac-banner aqua' },
-        e('div', { className: 'fb-scene', dangerouslySetInnerHTML: { __html: POOL_SCENE } }),
+      return e('div', { className: 'fac-banner aqua fbx-pool' },
+        e('div', { className: 'fb-scene', dangerouslySetInnerHTML: { __html: FBX_SCENES.pool } }),
+        e(BannerGame, { game: 'swim', key: 'game-swim' }),
         e('div', { className: 'fb-overlay' },
           e('div', { className: 'fb-kicker' }, CFG.displayName || 'Parks & Recreation'),
           e('div', { className: 'fb-title' }, '🏊 Pool & Aquatics'),
@@ -1410,8 +1632,9 @@
         ['net revenue', money(revenue)],
         ['sites booked', sitesBooked.toLocaleString() + (sitesTotal ? ' of ' + sitesTotal : '')],
       ];
-      return e('div', { className: 'fac-banner camp' },
-        e('div', { className: 'fb-scene', dangerouslySetInnerHTML: { __html: CAMP_SCENE } }),
+      return e('div', { className: 'fac-banner camp fbx-camp' },
+        e('div', { className: 'fb-scene', dangerouslySetInnerHTML: { __html: FBX_SCENES.camp } }),
+        e(BannerGame, { game: 'bear', key: 'game-bear' }),
         e('div', { className: 'fb-overlay' },
           e('div', { className: 'fb-kicker' }, CFG.displayName || 'Parks & Recreation'),
           e('div', { className: 'fb-title' }, '🏕️ Camping'),
@@ -2581,7 +2804,10 @@
             e('span', null, e('strong', null, "Couldn't load facility data"), ' — ' + err + '. The counts below are a loading failure, not real numbers.'),
             e('button', { onClick: () => load(), style: { padding: '6px 18px', border: 'none', background: '#dc2626', color: '#fff', borderRadius: 6, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', fontSize: 12.5 } }, 'Retry'),
           ) : null,
-          e(FacilitiesBanner, { a: bannerAgg, tab }),
+          // Camping & Aquatics render their own dedicated per-vertical banner
+          // (CampBanner / AquaBanner) with vertical-specific stats — so the
+          // shared themed banner is suppressed there to avoid stacking two.
+          (tab === 'aquatics' || tab === 'camping') ? null : e(FacilitiesBanner, { a: bannerAgg, tab }),
           // Filters are context-aware: the site-type filter only makes sense on
           // the Summary (a vertical tab already fixes the type); Court Utilization
           // manages its own filters + dates inside the embed, so no hub filters.
