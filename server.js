@@ -173,7 +173,7 @@ globalThis.fetch = async function (resource, init) {
 const CACHE_TTL = 4 * 60 * 60 * 1000;  // 4-hour default TTL — warmed at 5am, serves all day
 const REPORT_CACHE_TTL = {
   facility: 4 * 60 * 60 * 1000,            // 4 hrs — warmed at 5am
-  gl: 2 * 60 * 60 * 1000,                 // 2 hrs — transactions update more often
+  gl: 15 * 60 * 1000,                     // 15 min — financials need to be near-live; the GL report also shows a "Data as of · Refresh" stamp for on-demand realtime
   roster: 2 * 60 * 60 * 1000,             // 2 hrs — enrollments change
   programs: 4 * 60 * 60 * 1000,           // 4 hrs
   memberships: 4 * 60 * 60 * 1000,        // 4 hrs
