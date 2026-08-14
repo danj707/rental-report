@@ -99,6 +99,7 @@
     .fbx-tent::after { content: ""; position: absolute; left: -2px; top: 6px; width: 4px; height: 20px; background: #7a3d22; }
     .fbx-fire { position: absolute; bottom: 21%; width: 12px; height: 18px; border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%; background: radial-gradient(circle at 50% 70%, #ffe27a, #ff8a1e 60%, #e8451c); transform-origin: bottom; box-shadow: 0 0 18px 5px rgba(255,140,40,.5); }
     .fbx-bear { position: absolute; bottom: 22%; left: -60px; width: 54px; height: 34px; }
+    .fbx-bear svg { transform: scaleX(-1); transform-origin: center; }  /* face the direction of travel (rightward) */
     /* pool: shimmer, lanes, swimmer */
     .fbx-lane { position: absolute; left: 0; right: 0; height: 2px; background: repeating-linear-gradient(90deg, rgba(255,255,255,.35) 0 12px, rgba(255,255,255,.08) 12px 24px); }
     .fbx-shimmer { position: absolute; inset: 0; background: repeating-linear-gradient(115deg, transparent 0 26px, rgba(255,255,255,.10) 26px 30px); }
@@ -2943,7 +2944,13 @@
           // Camping & Aquatics render their own dedicated per-vertical banner
           // (CampBanner / AquaBanner) with vertical-specific stats — so the
           // shared themed banner is suppressed there to avoid stacking two.
-          (tab === 'aquatics' || tab === 'camping') ? null : e(FacilitiesBanner, { a: bannerAgg, tab }),
+          // Activity-specific headers (ice / golf / racket) are hidden when the
+          // org has none of that type in view — no ice header for an org with
+          // no rinks, matching the tab badge count. Summary & Court Utilization
+          // are org-wide and always show.
+          (tab === 'aquatics' || tab === 'camping') ? null
+            : ((tab === 'ice' || tab === 'golf' || tab === 'racket') && vertCounts[tab] === 0) ? null
+            : e(FacilitiesBanner, { a: bannerAgg, tab }),
           // Filters are context-aware: the site-type filter only makes sense on
           // the Summary (a vertical tab already fixes the type); Court Utilization
           // manages its own filters + dates inside the embed, so no hub filters.
