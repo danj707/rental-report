@@ -679,8 +679,8 @@
     };
     // tab key → theme (scene class, scene html, title, subtitle, pong?)
     const FBX_THEME = {
-      summary:     { cls: 'fbx-facilities', scene: 'facilities', title: '🏟️ Facilities',       sub: 'Courts, fields, picnic areas & more.' },
-      utilization: { cls: 'fbx-facilities', scene: 'facilities', title: '🏟️ Court Utilization', sub: 'How hard your courts are working.' },
+      summary:     { cls: 'fbx-facilities', scene: 'facilities', title: '🏟️ Facilities',       sub: 'Courts, fields, picnic areas & more.', game: 'invaders' },
+      utilization: { cls: 'fbx-facilities', scene: 'facilities', title: '🏟️ Court Utilization', sub: 'How hard your courts are working.', game: 'breakout' },
       golf:        { cls: 'fbx-facilities', scene: 'facilities', title: '⛳ Golf',              sub: 'Tee sheets, rounds & revenue.', game: 'golf' },
       camping:     { cls: 'fbx-camp',       scene: 'camp',       title: '🏕️ Camping',          sub: 'Campsite reservations & occupancy.' },
       aquatics:    { cls: 'fbx-pool',       scene: 'pool',       title: '🏊 Pool / Aquatics',   sub: 'Lap swim, lessons & open-swim.' },
@@ -699,6 +699,8 @@
       swim:   { title: 'Pool Catch', tip: 'Move the tube · catch the pool toys · 3 misses' },
       golf:   { title: 'Putt',       tip: 'Pull back from the ball & release · sink it' },
       bear:   { title: 'Berry Run',  tip: 'Click / Space to hop · eat berries, dodge rocks' },
+      invaders: { title: 'Invaders', tip: 'Move ← → · click / Space to fire · clear the wave' },
+      breakout: { title: 'Court Breaker', tip: 'Move the paddle · click / Space to launch' },
     };
 
     const GAME_FACTORIES = {
@@ -929,6 +931,123 @@
             api.textScrim();
           },
           hud() { return '🫐 ' + score; },
+        };
+        return g;
+      },
+
+      // ── Summary: Invaders — clear the descending formation, dodge the bombs ──
+      invaders: (api) => {
+        let ship, bullets, inv, bombs, dir, score, lives, wave, fireCd, stars, hurt;
+        function build() {
+          inv = []; const cols = 8, rows = 3, W = api.W;
+          const x0 = W * 0.12, x1 = W * 0.88, dx = (x1 - x0) / (cols - 1);
+          for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) inv.push({ x: x0 + c * dx, y: 24 + r * 17, row: r, alive: true });
+          dir = 1;
+        }
+        function fire() { if (fireCd > 0) return; bullets.push({ x: ship.x, y: api.H - 20 }); fireCd = 0.32; api.snd.tone(880, 0.05, 'square', 0.12); }
+        const g = {
+          tip: GAME_META.invaders.tip, over: false,
+          reset() {
+            ship = { x: api.W / 2 }; bullets = []; bombs = []; score = 0; lives = 3; wave = 1; fireCd = 0; hurt = 0;
+            stars = []; for (let i = 0; i < 40; i++) stars.push({ x: Math.random() * api.W, y: Math.random() * api.H, s: Math.random() < 0.3 ? 1.6 : 1 });
+            build();
+          },
+          press() { fire(); },
+          step(dt, input) {
+            const W = api.W, H = api.H, sw = W * 0.6;
+            if (input.keys.ArrowLeft) ship.x -= sw * dt;
+            if (input.keys.ArrowRight) ship.x += sw * dt;
+            if (input.x) ship.x = input.x;
+            ship.x = Math.max(14, Math.min(W - 14, ship.x));
+            if (fireCd > 0) fireCd -= dt;
+            if (input.keys[' ']) fire();
+            const alive = inv.filter(v => v.alive);
+            if (!alive.length) { wave++; api.snd.win(); build(); return; }
+            const speed = (W * 0.06) * (1 + (24 - alive.length) * 0.05) * (1 + (wave - 1) * 0.25);
+            let minx = 1e9, maxx = -1e9, maxy = -1e9;
+            for (const v of alive) { v.x += dir * speed * dt; minx = Math.min(minx, v.x); maxx = Math.max(maxx, v.x); }
+            if (maxx > W - 12 || minx < 12) { dir *= -1; for (const v of alive) v.y += 8; api.snd.tone(160, 0.05, 'square', 0.1); }
+            for (const v of alive) maxy = Math.max(maxy, v.y);
+            if (maxy > H - 28) { g.over = true; api.snd.lose(); api.setTip('Overrun · score ' + score + ' — click to play again'); return; }
+            // enemy bombs
+            if (Math.random() < dt * (0.9 + wave * 0.25) && alive.length) { const s = alive[Math.floor(Math.random() * alive.length)]; bombs.push({ x: s.x, y: s.y + 6 }); }
+            for (const b of bombs) b.y += H * 1.1 * dt;
+            // bullets
+            for (const b of bullets) b.y -= H * 2.4 * dt;
+            for (const b of bullets) { if (b.hit) continue; for (const v of alive) { if (v.alive && Math.abs(b.x - v.x) < 10 && Math.abs(b.y - v.y) < 8) { v.alive = false; b.hit = true; score += (3 - v.row) * 10; api.snd.hit(); break; } } }
+            bullets = bullets.filter(b => !b.hit && b.y > -8);
+            // bombs vs ship
+            if (hurt > 0) hurt -= dt;
+            for (const b of bombs) { if (!b.done && b.y > H - 22 && Math.abs(b.x - ship.x) < 14) { b.done = true; if (hurt <= 0) { lives--; hurt = 1.2; api.snd.lose(); if (lives <= 0) { g.over = true; api.setTip('Game over · score ' + score + ' — click to play again'); } } } }
+            bombs = bombs.filter(b => !b.done && b.y < H + 8);
+          },
+          draw(ctx) {
+            const W = api.W, H = api.H;
+            ctx.fillStyle = '#0a0e24'; ctx.fillRect(0, 0, W, H);
+            ctx.fillStyle = 'rgba(255,255,255,.7)'; for (const s of stars) ctx.fillRect(s.x, s.y, s.s, s.s);
+            const cols = ['#ff5d73', '#ffb14e', '#7cf5a0'];
+            for (const v of inv) { if (!v.alive) continue; ctx.fillStyle = cols[v.row] || '#7cf5a0'; ctx.fillRect(v.x - 8, v.y - 5, 16, 9); ctx.fillRect(v.x - 10, v.y - 1, 3, 5); ctx.fillRect(v.x + 7, v.y - 1, 3, 5); ctx.fillStyle = '#0a0e24'; ctx.fillRect(v.x - 5, v.y - 2, 3, 3); ctx.fillRect(v.x + 2, v.y - 2, 3, 3); }
+            ctx.fillStyle = '#fff'; for (const b of bullets) ctx.fillRect(b.x - 1, b.y - 6, 2, 6);
+            ctx.fillStyle = '#ff6b6b'; for (const b of bombs) ctx.fillRect(b.x - 1.5, b.y, 3, 6);
+            if (!(hurt > 0 && Math.floor(hurt * 12) % 2)) { ctx.fillStyle = '#8befb0'; const sx = ship.x, sy = H - 16; ctx.fillRect(sx - 12, sy, 24, 7); ctx.fillRect(sx - 4, sy - 6, 8, 6); }
+            api.textScrim();
+          },
+          hud() { return '👾 ' + score + '   ' + (lives > 0 ? '❤'.repeat(lives) : '') + '   W' + wave; },
+        };
+        return g;
+      },
+
+      // ── Court Utilization: Breakout — smash the busy-court grid ──
+      breakout: (api) => {
+        let paddle, ball, bricks, score, lives, level;
+        const RAMP = ['#e31a1c', '#fd8d3c', '#fecc5c', '#41b6c4', '#2c7fb8'];
+        function build() {
+          bricks = []; const cols = 10, rows = 3, W = api.W;
+          const pad = 6, bw = (W - pad * 2 - (cols - 1) * 4) / cols, bh = 11;
+          for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) bricks.push({ x: pad + c * (bw + 4), y: 16 + r * (bh + 5), w: bw, h: bh, row: r, alive: true });
+        }
+        function serve() { ball = { x: paddle.x, y: api.H - 26, vx: 0, vy: 0, r: 6, stuck: true }; }
+        const g = {
+          tip: GAME_META.breakout.tip, over: false,
+          resize() { if (paddle) paddle.w = Math.max(56, api.W * 0.13); },
+          reset() { paddle = { x: api.W / 2, w: Math.max(56, api.W * 0.13) }; score = 0; lives = 3; level = 1; build(); serve(); },
+          press() { if (ball.stuck) { const sp = api.H * 1.7; ball.vy = -sp; ball.vx = (api.W * 0.5) * (Math.random() < .5 ? -1 : 1) * 0.4; ball.stuck = false; api.snd.tone(660, 0.05, 'square', 0.12); } },
+          step(dt, input) {
+            const W = api.W, H = api.H;
+            if (input.keys.ArrowLeft) paddle.x -= W * 0.9 * dt;
+            if (input.keys.ArrowRight) paddle.x += W * 0.9 * dt;
+            if (input.x) paddle.x = input.x;
+            paddle.x = Math.max(paddle.w / 2, Math.min(W - paddle.w / 2, paddle.x));
+            const py = H - 14;
+            if (ball.stuck) { ball.x = paddle.x; ball.y = py - 10; return; }
+            ball.x += ball.vx * dt; ball.y += ball.vy * dt;
+            if (ball.x < ball.r) { ball.x = ball.r; ball.vx = Math.abs(ball.vx); api.snd.wall(); }
+            if (ball.x > W - ball.r) { ball.x = W - ball.r; ball.vx = -Math.abs(ball.vx); api.snd.wall(); }
+            if (ball.y < ball.r) { ball.y = ball.r; ball.vy = Math.abs(ball.vy); api.snd.wall(); }
+            if (ball.vy > 0 && ball.y > py - 4 && ball.y < py + 6 && Math.abs(ball.x - paddle.x) < paddle.w / 2 + ball.r) { ball.y = py - 4; ball.vy = -Math.abs(ball.vy); ball.vx = ((ball.x - paddle.x) / (paddle.w / 2)) * (W * 0.55); api.snd.hit(); }
+            if (ball.y > H + 12) { lives--; api.snd.lose(); if (lives <= 0) { g.over = true; api.setTip('Game over · ' + score + ' — click to play again'); } else serve(); return; }
+            for (const bk of bricks) {
+              if (!bk.alive) continue;
+              if (ball.x > bk.x - ball.r && ball.x < bk.x + bk.w + ball.r && ball.y > bk.y - ball.r && ball.y < bk.y + bk.h + ball.r) {
+                bk.alive = false; score += (3 - bk.row) * 5; api.snd.good();
+                const ox = Math.min(Math.abs(ball.x - bk.x), Math.abs(ball.x - (bk.x + bk.w)));
+                const oy = Math.min(Math.abs(ball.y - bk.y), Math.abs(ball.y - (bk.y + bk.h)));
+                if (oy < ox) ball.vy *= -1; else ball.vx *= -1;
+                break;
+              }
+            }
+            if (!bricks.some(b => b.alive)) { level++; api.snd.win(); build(); serve(); const k = 1 + level * 0.08; ball.vx *= k; }
+          },
+          draw(ctx) {
+            const W = api.W, H = api.H;
+            ctx.fillStyle = '#0f3b2e'; ctx.fillRect(0, 0, W, H);
+            ctx.strokeStyle = 'rgba(255,255,255,.06)'; ctx.lineWidth = 1; ctx.strokeRect(3, 3, W - 6, H - 6); ctx.beginPath(); ctx.moveTo(W / 2, 3); ctx.lineTo(W / 2, H - 3); ctx.stroke();
+            for (const bk of bricks) { if (!bk.alive) continue; ctx.fillStyle = RAMP[bk.row] || '#41b6c4'; api.rr(bk.x, bk.y, bk.w, bk.h, 2); ctx.fill(); }
+            ctx.fillStyle = '#eafff2'; const py = H - 14; api.rr(paddle.x - paddle.w / 2, py, paddle.w, 8, 4); ctx.fill();
+            ctx.fillStyle = '#fde68a'; ctx.beginPath(); ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI * 2); ctx.fill();
+            api.textScrim();
+          },
+          hud() { return '🧱 ' + score + '   ' + (lives > 0 ? '❤'.repeat(lives) : '') + '   L' + level; },
         };
         return g;
       },
