@@ -68,6 +68,98 @@
     .fac-banner .fb-pills { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
     .fac-banner .fb-pill { background: rgba(255,255,255,.2); border: 1px solid rgba(255,255,255,.4); color: #fff; font-size: 12px; font-weight: 600; padding: 4px 12px; border-radius: 20px; text-shadow: 0 1px 2px rgba(0,0,0,.3); }
     .fac-banner .fb-pill b { font-weight: 800; }
+
+    /* ── Themed animated banner scenes (per vertical) ── */
+    .fac-banner .fb-scene { z-index: 0; overflow: hidden; }
+    .fac-banner.fbx-facilities { background: linear-gradient(120deg, #0c3b3a 0%, #0f4b40 46%, #146b46 100%); }
+    .fac-banner.fbx-racket     { background: linear-gradient(115deg, #0c4a2b 0%, #12703e 60%, #1a844a 100%); }
+    .fac-banner.fbx-camp       { background: linear-gradient(180deg, #221a4d 0%, #3b2a63 55%, #6b3f5e 100%); }
+    .fac-banner.fbx-pool       { background: linear-gradient(160deg, #073b63 0%, #0e6fa8 55%, #17a0c4 100%); }
+    .fac-banner.fbx-ice        { background: linear-gradient(165deg, #2a5b86 0%, #5b93bd 55%, #a9d3e8 100%); }
+    .fac-banner .fb-scene svg { position: static; }
+    /* facilities: sun, clouds, hills, road */
+    .fbx-sun { position: absolute; right: 15%; top: 18%; width: 74px; height: 74px; border-radius: 50%; background: radial-gradient(circle at 50% 50%, #ffe6a8, #ffb84d 60%, #ff9e3d 100%); box-shadow: 0 0 42px 13px rgba(255,180,80,.55); }
+    .fbx-cloud { position: absolute; height: 11px; border-radius: 999px; background: rgba(255,255,255,.16); filter: blur(1px); }
+    .fbx-hill { position: absolute; bottom: 0; width: 140%; border-radius: 50% 50% 0 0 / 100% 100% 0 0; }
+    .fbx-hill.h1 { height: 62%; left: -20%; background: rgba(10,60,50,.55); }
+    .fbx-hill.h2 { height: 44%; left: -10%; background: rgba(12,74,54,.7); }
+    .fbx-hill.h3 { height: 30%; left: 30%; width: 120%; background: rgba(16,96,64,.9); }
+    .fbx-road { position: absolute; bottom: -4px; left: 46%; width: 3px; height: 42%; background: linear-gradient(#cfe8d8, rgba(207,232,216,.15)); transform-origin: bottom; transform: perspective(120px) rotateX(58deg); }
+    .fbx-road::after { content: ""; position: absolute; inset: 0; background: repeating-linear-gradient(rgba(255,255,255,.9) 0 8px, transparent 8px 20px); opacity: .5; }
+    /* racket: net + rallying ball */
+    .fbx-court-net { position: absolute; left: 50%; top: 18%; bottom: 18%; width: 2px; background: repeating-linear-gradient(rgba(255,255,255,.5) 0 5px, transparent 5px 9px); }
+    .fbx-ball-x { position: absolute; left: 8%; top: 50%; width: 20px; height: 20px; }
+    .fbx-ball { width: 20px; height: 20px; border-radius: 50%; background: radial-gradient(circle at 35% 32%, #f2ff7a, #cfe70e 65%, #a9c400); box-shadow: 0 3px 8px rgba(0,0,0,.35); position: relative; }
+    .fbx-ball::after { content: ""; position: absolute; inset: 3px; border-radius: 50%; border: 1px solid rgba(255,255,255,.7); border-left-color: transparent; border-right-color: transparent; }
+    /* camp: stars, pines, tent, fire, bear */
+    .fbx-stars i { position: absolute; width: 2px; height: 2px; border-radius: 50%; background: #fff; opacity: .5; }
+    .fbx-pine { position: absolute; bottom: 20%; width: 0; height: 0; border-left: 16px solid transparent; border-right: 16px solid transparent; border-bottom: 44px solid #16311f; }
+    .fbx-ground-c { position: absolute; left: 0; right: 0; bottom: 0; height: 24%; background: #16281a; }
+    .fbx-tent { position: absolute; bottom: 20%; width: 0; height: 0; border-left: 20px solid transparent; border-right: 20px solid transparent; border-bottom: 26px solid #d8794a; }
+    .fbx-tent::after { content: ""; position: absolute; left: -2px; top: 6px; width: 4px; height: 20px; background: #7a3d22; }
+    .fbx-fire { position: absolute; bottom: 21%; width: 12px; height: 18px; border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%; background: radial-gradient(circle at 50% 70%, #ffe27a, #ff8a1e 60%, #e8451c); transform-origin: bottom; box-shadow: 0 0 18px 5px rgba(255,140,40,.5); }
+    .fbx-bear { position: absolute; bottom: 22%; left: -60px; width: 54px; height: 34px; }
+    /* pool: shimmer, lanes, swimmer */
+    .fbx-lane { position: absolute; left: 0; right: 0; height: 2px; background: repeating-linear-gradient(90deg, rgba(255,255,255,.35) 0 12px, rgba(255,255,255,.08) 12px 24px); }
+    .fbx-shimmer { position: absolute; inset: 0; background: repeating-linear-gradient(115deg, transparent 0 26px, rgba(255,255,255,.10) 26px 30px); }
+    .fbx-swimmer { position: absolute; top: 46%; left: -70px; width: 66px; height: 26px; }
+    .fbx-splash { position: absolute; width: 5px; height: 5px; border-radius: 50%; background: rgba(255,255,255,.7); }
+    /* ice: floor, skater, trail, snow */
+    .fbx-ice-floor { position: absolute; left: 0; right: 0; bottom: 0; height: 40%; background: linear-gradient(#ffffff22, #ffffff05); }
+    .fbx-skater { position: absolute; bottom: 34%; left: -50px; width: 30px; height: 46px; }
+    .fbx-trail { position: absolute; bottom: 34%; height: 2px; background: linear-gradient(90deg, transparent, rgba(255,255,255,.6)); }
+    .fbx-snow i { position: absolute; top: -6px; width: 4px; height: 4px; border-radius: 50%; background: #fff; opacity: .85; }
+    /* play button + pong overlay */
+    .fac-banner .fb-play { position: absolute; top: 12px; right: 14px; z-index: 5; width: 30px; height: 30px; border-radius: 50%; border: 1px solid rgba(255,255,255,.4); background: rgba(255,255,255,.14); color: #fff; cursor: pointer; display: grid; place-items: center; font-size: 12px; padding-left: 2px; transition: background .15s, transform .15s; }
+    .fac-banner .fb-play:hover { background: rgba(255,255,255,.28); transform: scale(1.08); }
+    .fac-banner .fb-play:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+    .fac-banner .fb-pong { position: absolute; inset: 0; z-index: 6; display: none; background: #0b3d24; }
+    .fac-banner .fb-pong.on { display: block; }
+    .fac-banner .fb-pong canvas { width: 100%; height: 100%; display: block; touch-action: none; }
+    .fac-banner .fb-pong-close { position: absolute; top: 10px; right: 12px; z-index: 7; width: 26px; height: 26px; border-radius: 50%; border: 1px solid rgba(255,255,255,.35); background: rgba(0,0,0,.25); color: #fff; cursor: pointer; font-size: 13px; line-height: 1; }
+    .fac-banner .fb-pong-mute { position: absolute; top: 10px; right: 44px; z-index: 7; width: 26px; height: 26px; border-radius: 50%; border: 1px solid rgba(255,255,255,.35); background: rgba(0,0,0,.25); color: #fff; cursor: pointer; font-size: 12px; line-height: 1; padding: 0; }
+    .fac-banner .fb-pong-mute.off { opacity: .5; }
+    .fac-banner .fb-pong-hud { position: absolute; top: 10px; left: 14px; z-index: 7; color: #eafff2; font-size: 12px; font-weight: 700; letter-spacing: .06em; text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+    .fac-banner .fb-pong-tip { position: absolute; left: 0; right: 0; bottom: 10px; z-index: 7; text-align: center; color: rgba(255,255,255,.85); font-size: 11.5px; }
+    @media (prefers-reduced-motion: no-preference) {
+      .fbx-sun { animation: fbxSunPulse 4.5s ease-in-out infinite; }
+      .fbx-cloud { animation: fbxDrift linear infinite; }
+      .fbx-road::after { animation: fbxRoadRun 1.4s linear infinite; }
+      .fbx-ball-x { animation: fbxRallyX 2.6s cubic-bezier(.45,0,.55,1) infinite alternate; }
+      .fbx-ball { animation: fbxRallyY .65s cubic-bezier(.3,0,.7,1) infinite alternate, fbxSpin 1s linear infinite; }
+      .fbx-stars i { animation: fbxTwinkle ease-in-out infinite; }
+      .fbx-fire { animation: fbxFlicker .28s ease-in-out infinite alternate; }
+      .fbx-bear { animation: fbxAmble 15s linear infinite; }
+      .fbx-bear .body { animation: fbxWaddle .5s ease-in-out infinite alternate; transform-origin: center bottom; }
+      .fbx-swimmer { animation: fbxSwim 6.5s linear infinite; }
+      .fbx-swimmer .arm { animation: fbxStroke .9s linear infinite; transform-origin: 14px 13px; }
+      .fbx-shimmer { animation: fbxShim 7s linear infinite; }
+      .fbx-splash { animation: fbxSplashUp 6.5s linear infinite; }
+      .fbx-skater { animation: fbxGlide 5.5s ease-in-out infinite; }
+      .fbx-skater .body { animation: fbxLean 5.5s ease-in-out infinite; transform-origin: bottom; }
+      .fbx-trail { animation: fbxTrailGrow 5.5s ease-in-out infinite; }
+      .fbx-snow i { animation: fbxFall linear infinite; }
+    }
+    @keyframes fbxSunPulse { 50% { box-shadow: 0 0 58px 21px rgba(255,180,80,.7); } }
+    @keyframes fbxDrift { from { transform: translateX(-120px); } to { transform: translateX(1300px); } }
+    @keyframes fbxRoadRun { to { background-position: 0 -28px; } }
+    @keyframes fbxRallyX { from { left: 8%; } to { left: calc(92% - 20px); } }
+    @keyframes fbxRallyY { from { transform: translateY(-24px); } to { transform: translateY(24px); } }
+    @keyframes fbxSpin { to { transform: rotate(360deg); } }
+    @keyframes fbxTwinkle { 50% { opacity: 1; } }
+    @keyframes fbxFlicker { from { transform: scaleY(1) scaleX(1) rotate(-2deg); opacity: .92; } to { transform: scaleY(1.25) scaleX(.9) rotate(2deg); opacity: 1; } }
+    @keyframes fbxAmble { to { transform: translateX(1320px); } }
+    @keyframes fbxWaddle { to { transform: translateY(-3px) rotate(1.5deg); } }
+    @keyframes fbxSwim { to { transform: translateX(1360px); } }
+    @keyframes fbxStroke { to { transform: rotate(360deg); } }
+    @keyframes fbxShim { to { transform: translateX(-30px); } }
+    @keyframes fbxSplashUp { 0%,100% { transform: translate(0,0); opacity: 0; } 50% { opacity: .8; } }
+    @keyframes fbxGlide { 0% { left: -50px; } 100% { left: 100%; } }
+    @keyframes fbxLean { 0%,100% { transform: rotate(-8deg); } 50% { transform: rotate(8deg); } }
+    @keyframes fbxTrailGrow { 0% { left: 0; width: 0; opacity: 0; } 30% { opacity: .6; } 100% { left: 100%; width: 90px; opacity: 0; } }
+    @keyframes fbxFall { to { transform: translateY(150px); } }
+    @media print { .fac-banner .fb-play, .fac-banner .fb-pong { display: none !important; } .fbx-sun, .fbx-cloud, .fbx-ball, .fbx-ball-x, .fbx-bear, .fbx-swimmer, .fbx-skater, .fbx-snow i, .fbx-stars i, .fbx-fire, .fbx-shimmer, .fbx-trail, .fbx-road::after { animation: none !important; } }
+    body.print-mode .fac-banner .fb-play, body.print-mode .fac-banner .fb-pong { display: none !important; }
     .fac-banner .fb-badge { position: absolute; top: 14px; right: 16px; z-index: 2; font-size: 10px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase; color: #065f46; background: #d1fae5; border: 1px solid #6ee7b7; padding: 3px 9px; border-radius: 6px; }
 
     /* ── Tabs (matches Programs) ── */
@@ -571,41 +663,135 @@
       return a;
     }
 
-    // Facilities hero banner — self-contained SVG scene (parks & rec at golden
-    // hour: sky, sun, field, a court), with live facility stat pills.
-    const FAC_SCENE = '<svg viewBox="0 0 1200 172" preserveAspectRatio="xMidYMid slice">' +
-      '<defs>' +
-      '<linearGradient id="fbSky" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#0d9488"/><stop offset="55%" stop-color="#5eead4"/><stop offset="100%" stop-color="#fef3c7"/></linearGradient>' +
-      '<radialGradient id="fbSun" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="#fffbeb"/><stop offset="55%" stop-color="#fde68a"/><stop offset="100%" stop-color="#fde68a" stop-opacity="0"/></radialGradient>' +
-      '<linearGradient id="fbScrim" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#052e2b" stop-opacity="0.62"/><stop offset="55%" stop-color="#052e2b" stop-opacity="0.13"/><stop offset="100%" stop-color="#052e2b" stop-opacity="0"/></linearGradient>' +
-      '</defs>' +
-      '<rect x="0" y="0" width="1200" height="172" fill="url(#fbSky)"/>' +
-      '<circle cx="800" cy="50" r="82" fill="url(#fbSun)"/><circle cx="800" cy="50" r="28" fill="#fffef6"/>' +
-      '<path d="M0,104 Q120,84 260,98 T560,92 T880,100 T1200,90 L1200,172 L0,172 Z" fill="#0f766e" opacity="0.5"/>' +
-      '<path d="M0,132 Q200,116 480,128 T1000,124 T1200,130 L1200,172 L0,172 Z" fill="#22c55e"/>' +
-      '<path d="M0,172 L0,150 Q300,138 620,150 T1200,146 L1200,172 Z" fill="#16a34a"/>' +
-      '<polygon points="470,172 720,172 1120,120 900,120" fill="#0e7490" opacity="0.85"/>' +
-      '<line x1="595" y1="172" x2="1010" y2="120" stroke="#e0f2fe" stroke-width="2" opacity="0.7"/>' +
-      '<line x1="470" y1="172" x2="900" y2="120" stroke="#e0f2fe" stroke-width="1.5" opacity="0.5"/>' +
-      '<line x1="720" y1="172" x2="1120" y2="120" stroke="#e0f2fe" stroke-width="1.5" opacity="0.5"/>' +
-      '<rect x="0" y="0" width="1200" height="172" fill="url(#fbScrim)"/>' +
-      '</svg>';
+    // Facilities hero banner — a little themed scene per vertical (sunset fields
+    // for the hub, a bear at the campground, a swimmer in the pool, a skater on
+    // the ice, a rally on the courts). Corny on purpose. All CSS + inline SVG,
+    // frozen for reduced-motion. The Racket Sports header hides a game of Pong.
+    function fbxStars() { let s = ''; for (let i = 0; i < 20; i++) s += '<i style="left:' + (Math.random() * 100).toFixed(1) + '%;top:' + (Math.random() * 60).toFixed(1) + '%;animation-duration:' + (1.6 + Math.random() * 2.6).toFixed(2) + 's;animation-delay:-' + (Math.random() * 3).toFixed(2) + 's"></i>'; return s; }
+    function fbxSnow() { let s = ''; for (let i = 0; i < 16; i++) s += '<i style="left:' + (Math.random() * 100).toFixed(1) + '%;animation-duration:' + (3 + Math.random() * 4).toFixed(2) + 's;animation-delay:-' + (Math.random() * 5).toFixed(2) + 's;opacity:' + (0.4 + Math.random() * 0.5).toFixed(2) + ';transform:scale(' + (0.6 + Math.random() * 1.1).toFixed(2) + ')"></i>'; return s; }
 
-    function FacilitiesBanner({ a }) {
+    const FBX_SCENES = {
+      facilities: '<div class="fbx-cloud" style="top:20%;left:10%;width:60px;animation-duration:34s"></div><div class="fbx-cloud" style="top:34%;left:0;width:40px;animation-duration:46s;animation-delay:-12s"></div><div class="fbx-sun"></div><div class="fbx-hill h1"></div><div class="fbx-hill h2"></div><div class="fbx-hill h3"></div><div class="fbx-road"></div>',
+      racket: '<div class="fbx-court-net"></div><div class="fbx-ball-x"><div class="fbx-ball"></div></div>',
+      camp: '<div class="fbx-stars">' + fbxStars() + '</div><div class="fbx-ground-c"></div><div class="fbx-pine" style="left:6%"></div><div class="fbx-pine" style="left:16%;transform:scale(.8)"></div><div class="fbx-pine" style="right:10%;transform:scale(1.1)"></div><div class="fbx-tent" style="right:26%"></div><div class="fbx-fire" style="right:20%"></div><div class="fbx-bear"><svg viewBox="0 0 54 34"><g class="body" fill="#3b2417"><rect x="21" y="25" width="6" height="9" rx="2.5" fill="#2b1a0f"/><rect x="41" y="25" width="6" height="9" rx="2.5" fill="#2b1a0f"/><ellipse cx="32" cy="19" rx="16" ry="10"/><circle cx="41" cy="12" r="7"/><rect x="15" y="25" width="6" height="9" rx="2.5"/><rect x="35" y="25" width="6" height="9" rx="2.5"/><circle cx="13" cy="16" r="8.5"/><circle cx="8" cy="8" r="2.8"/><circle cx="17" cy="8" r="2.8"/><circle cx="8" cy="8" r="1.2" fill="#6b4a2e"/><circle cx="17" cy="8" r="1.2" fill="#6b4a2e"/><ellipse cx="5.5" cy="18.5" rx="5" ry="3.6" fill="#7a5535"/><ellipse cx="2.6" cy="18" rx="1.8" ry="1.5" fill="#160d06"/><circle cx="12" cy="14" r="1.2" fill="#160d06"/></g></svg></div>',
+      pool: '<div class="fbx-shimmer"></div><div class="fbx-lane" style="top:32%"></div><div class="fbx-lane" style="top:58%"></div><div class="fbx-lane" style="top:82%"></div><div class="fbx-splash" style="top:48%;left:0"></div><div class="fbx-swimmer"><svg viewBox="0 0 66 26"><g fill="#08324a"><ellipse cx="34" cy="16" rx="22" ry="6"/><circle cx="12" cy="13" r="6"/></g><line class="arm" x1="14" y1="13" x2="30" y2="4" stroke="#08324a" stroke-width="4" stroke-linecap="round"/></svg></div>',
+      ice: '<div class="fbx-snow">' + fbxSnow() + '</div><div class="fbx-ice-floor"></div><div class="fbx-trail"></div><div class="fbx-skater"><svg viewBox="0 0 30 46"><g class="body"><circle cx="15" cy="7" r="5" fill="#0f2f4a"/><rect x="12" y="11" width="6" height="20" rx="3" fill="#0f2f4a"/><line x1="15" y1="30" x2="7" y2="42" stroke="#0f2f4a" stroke-width="4" stroke-linecap="round"/><line x1="15" y1="30" x2="23" y2="40" stroke="#0f2f4a" stroke-width="4" stroke-linecap="round"/><line x1="4" y1="43" x2="10" y2="43" stroke="#cfe9f7" stroke-width="2"/></g></svg></div>',
+    };
+    // tab key → theme (scene class, scene html, title, subtitle, pong?)
+    const FBX_THEME = {
+      summary:     { cls: 'fbx-facilities', scene: 'facilities', title: '🏟️ Facilities',       sub: 'Courts, fields, picnic areas & more.' },
+      utilization: { cls: 'fbx-facilities', scene: 'facilities', title: '🏟️ Court Utilization', sub: 'How hard your courts are working.' },
+      golf:        { cls: 'fbx-facilities', scene: 'facilities', title: '⛳ Golf',              sub: 'Tee sheets, rounds & revenue.' },
+      camping:     { cls: 'fbx-camp',       scene: 'camp',       title: '🏕️ Camping',          sub: 'Campsite reservations & occupancy.' },
+      aquatics:    { cls: 'fbx-pool',       scene: 'pool',       title: '🏊 Pool / Aquatics',   sub: 'Lap swim, lessons & open-swim.' },
+      ice:         { cls: 'fbx-ice',        scene: 'ice',        title: '⛸️ Ice',               sub: 'Rink schedule & public skate.' },
+      racket:      { cls: 'fbx-racket',     scene: 'racket',     title: '🎾 Racket Sports',     sub: 'Tennis, pickleball & padel demand.', pong: true },
+    };
+
+    function FacilitiesBanner({ a, tab }) {
+      const theme = FBX_THEME[tab] || FBX_THEME.summary;
+      const pong = !!theme.pong;
+      const bandRef = React.useRef(null), canvasRef = React.useRef(null), pongRef = React.useRef(null);
+      const hudRef = React.useRef(null), tipRef = React.useRef(null), muteRef = React.useRef(null);
+      const playRef = React.useRef(null), closeRef = React.useRef(null);
+
+      React.useEffect(() => {
+        if (!pong) return;
+        const band = bandRef.current, canvas = canvasRef.current, pongEl = pongRef.current;
+        const hud = hudRef.current, tip = tipRef.current, muteBtn = muteRef.current;
+        const playBtn = playRef.current, closeBtn = closeRef.current;
+        if (!band || !canvas || !pongEl) return;
+        const ctx = canvas.getContext('2d');
+        let raf = null, keyRaf = null, running = false;
+        let W = 0, H = 0; const dpr = Math.min(window.devicePixelRatio || 1, 2);
+        let PADH; const PADW = 9, BALLR = 7;
+        let player, cpu, ball, scoreP, scoreC, over, last = 0;
+        let AC = null, muted = false;
+        function audio() { if (muted) return null; if (!AC) { const C = window.AudioContext || window.webkitAudioContext; if (!C) return null; AC = new C(); } if (AC.state === 'suspended') AC.resume(); return AC; }
+        function blip(freq, dur, type, vol) { const aa = audio(); if (!aa) return; const t = aa.currentTime; const o = aa.createOscillator(), g = aa.createGain(); o.type = type || 'square'; o.frequency.setValueAtTime(freq, t); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol || 0.16, t + 0.006); g.gain.exponentialRampToValueAtTime(0.0001, t + (dur || 0.07)); o.connect(g); g.connect(aa.destination); o.start(t); o.stop(t + (dur || 0.07) + 0.02); }
+        const sndPaddle = () => blip(440, 0.06, 'square', 0.18);
+        const sndWall = () => blip(240, 0.05, 'square', 0.13);
+        const sndScore = () => blip(150, 0.22, 'sawtooth', 0.16);
+        function sndWin(you) { const notes = you ? [523, 659, 784, 1047] : [392, 330, 262]; notes.forEach((f, i) => setTimeout(() => blip(f, 0.14, 'square', 0.16), i * 110)); }
+        function resize() { const r = band.getBoundingClientRect(); W = r.width; H = r.height; canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); PADH = Math.max(30, H * 0.26); if (player) { player.h = PADH; cpu.h = PADH; } }
+        function reset(dir) { ball = { x: W / 2, y: H / 2, vx: (dir || (Math.random() < .5 ? -1 : 1)) * (W * 0.34), vy: (Math.random() * 2 - 1) * (H * 0.25) }; }
+        function updateHud() { hud.textContent = 'You ' + scoreP + ' · ' + scoreC + ' CPU'; }
+        function startGame() { resize(); player = { x: 14, y: H / 2 - PADH / 2, h: PADH }; cpu = { x: W - 14 - PADW, y: H / 2 - PADH / 2, h: PADH }; scoreP = 0; scoreC = 0; over = false; reset(); updateHud(); running = true; last = performance.now(); loop(last); }
+        function loop(t) { if (!running) return; const dt = Math.min(0.033, (t - last) / 1000); last = t; if (!over) step(dt); draw(); raf = requestAnimationFrame(loop); }
+        function step(dt) {
+          ball.x += ball.vx * dt; ball.y += ball.vy * dt;
+          if (ball.y < BALLR) { ball.y = BALLR; ball.vy *= -1; sndWall(); }
+          if (ball.y > H - BALLR) { ball.y = H - BALLR; ball.vy *= -1; sndWall(); }
+          const target = ball.y - cpu.h / 2; const maxv = H * 0.62 * dt;
+          if (target < cpu.y) cpu.y -= Math.min(maxv, cpu.y - target); else cpu.y += Math.min(maxv, target - cpu.y);
+          cpu.y = Math.max(0, Math.min(H - cpu.h, cpu.y));
+          if (ball.vx < 0 && ball.x - BALLR < player.x + PADW && ball.x > player.x && ball.y > player.y && ball.y < player.y + player.h) { ball.x = player.x + PADW + BALLR; ball.vx = Math.abs(ball.vx) * 1.06; ball.vy = ((ball.y - (player.y + player.h / 2)) / (player.h / 2)) * (H * 0.42); sndPaddle(); }
+          if (ball.vx > 0 && ball.x + BALLR > cpu.x && ball.x < cpu.x + PADW && ball.y > cpu.y && ball.y < cpu.y + cpu.h) { ball.x = cpu.x - BALLR; ball.vx = -Math.abs(ball.vx) * 1.06; ball.vy = ((ball.y - (cpu.y + cpu.h / 2)) / (cpu.h / 2)) * (H * 0.42); sndPaddle(); }
+          const mx = W * 0.85; if (ball.vx > mx) ball.vx = mx; if (ball.vx < -mx) ball.vx = -mx;
+          if (ball.x < -BALLR) { scoreC++; updateHud(); endOrServe(1); }
+          else if (ball.x > W + BALLR) { scoreP++; updateHud(); endOrServe(-1); }
+        }
+        function endOrServe(dir) { if (scoreP >= 5 || scoreC >= 5) { over = true; tip.textContent = (scoreP >= 5 ? 'You win! 🏆' : 'CPU wins') + ' — click to rematch'; sndWin(scoreP >= 5); } else { sndScore(); reset(dir); } }
+        function draw() {
+          ctx.clearRect(0, 0, W, H); ctx.fillStyle = '#0b3d24'; ctx.fillRect(0, 0, W, H);
+          ctx.strokeStyle = 'rgba(255,255,255,.28)'; ctx.lineWidth = 2; ctx.setLineDash([6, 8]);
+          ctx.beginPath(); ctx.moveTo(W / 2, 6); ctx.lineTo(W / 2, H - 6); ctx.stroke(); ctx.setLineDash([]);
+          ctx.fillStyle = '#eafff2'; rr(player.x, player.y, PADW, player.h, 4); ctx.fill(); rr(cpu.x, cpu.y, PADW, cpu.h, 4); ctx.fill();
+          ctx.fillStyle = '#e9ff5c'; ctx.beginPath(); ctx.arc(ball.x, ball.y, BALLR, 0, Math.PI * 2); ctx.fill();
+        }
+        function rr(x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
+        function movePlayerTo(clientY) { const r = canvas.getBoundingClientRect(); const y = clientY - r.top - player.h / 2; player.y = Math.max(0, Math.min(H - player.h, y)); }
+        const onMouse = ev => { if (running) movePlayerTo(ev.clientY); };
+        const onTouch = ev => { if (running && ev.touches[0]) { ev.preventDefault(); movePlayerTo(ev.touches[0].clientY); } };
+        canvas.addEventListener('mousemove', onMouse);
+        canvas.addEventListener('touchmove', onTouch, { passive: false });
+        const keys = {};
+        const onKeyDown = ev => { if (!running) return; if (ev.key === 'ArrowUp' || ev.key === 'ArrowDown') { keys[ev.key] = true; ev.preventDefault(); } if (ev.key === 'Escape') closeGame(); };
+        const onKeyUp = ev => { keys[ev.key] = false; };
+        window.addEventListener('keydown', onKeyDown); window.addEventListener('keyup', onKeyUp);
+        function keyLoop() { if (running && player) { const sp = H * 0.012; if (keys.ArrowUp) player.y = Math.max(0, player.y - sp); if (keys.ArrowDown) player.y = Math.min(H - player.h, player.y + sp); } keyRaf = requestAnimationFrame(keyLoop); }
+        keyLoop();
+        const onCanvasClick = () => { if (over) startGame(); };
+        canvas.addEventListener('click', onCanvasClick);
+        function openGame() { audio(); pongEl.classList.add('on'); startGame(); tip.textContent = 'Mouse or ↑ ↓ to move · first to 5'; }
+        function closeGame() { running = false; if (raf) cancelAnimationFrame(raf); pongEl.classList.remove('on'); }
+        const onMute = () => { muted = !muted; muteBtn.textContent = muted ? '🔇' : '🔊'; muteBtn.classList.toggle('off', muted); muteBtn.setAttribute('aria-label', muted ? 'Unmute sound' : 'Mute sound'); if (!muted) audio(); };
+        if (playBtn) playBtn.addEventListener('click', openGame);
+        if (closeBtn) closeBtn.addEventListener('click', closeGame);
+        if (muteBtn) muteBtn.addEventListener('click', onMute);
+        const onResize = () => { if (running) resize(); };
+        window.addEventListener('resize', onResize);
+        return () => {
+          running = false; if (raf) cancelAnimationFrame(raf); if (keyRaf) cancelAnimationFrame(keyRaf);
+          canvas.removeEventListener('mousemove', onMouse); canvas.removeEventListener('touchmove', onTouch); canvas.removeEventListener('click', onCanvasClick);
+          window.removeEventListener('keydown', onKeyDown); window.removeEventListener('keyup', onKeyUp); window.removeEventListener('resize', onResize);
+          if (playBtn) playBtn.removeEventListener('click', openGame); if (closeBtn) closeBtn.removeEventListener('click', closeGame); if (muteBtn) muteBtn.removeEventListener('click', onMute);
+          if (AC) { try { AC.close(); } catch (e) {} }
+        };
+      }, [pong, tab]);
+
       const pills = a ? [
         ['bookings', a.bookings.toLocaleString()],
         ['net revenue', money(a.revenue)],
         ['active sites', a.sites.toLocaleString()],
         ['cancellation', a.bookings ? pct(a.canceled, a.bookings) : '—'],
       ] : [];
-      return e('div', { className: 'fac-banner' },
-        e('div', { className: 'fb-scene', dangerouslySetInnerHTML: { __html: FAC_SCENE } }),
-        e('div', { className: 'fb-overlay' },
+      return e('div', { className: 'fac-banner ' + theme.cls, ref: bandRef },
+        e('div', { className: 'fb-scene', key: 'scene-' + tab, dangerouslySetInnerHTML: { __html: FBX_SCENES[theme.scene] } }),
+        pong ? e('button', { className: 'fb-play', key: 'play', type: 'button', ref: playRef, 'aria-label': 'Play a hidden game', title: 'Play' }, '▶') : null,
+        e('div', { className: 'fb-overlay', key: 'overlay' },
           e('div', { className: 'fb-kicker' }, CFG.displayName || 'Parks & Recreation'),
-          e('div', { className: 'fb-title' }, '🏟️ Facilities'),
-          e('div', { className: 'fb-sub' }, 'Courts, fields, picnic areas & more.'),
+          e('div', { className: 'fb-title' }, theme.title),
+          e('div', { className: 'fb-sub' }, theme.sub),
           a ? e('div', { className: 'fb-pills' }, pills.map((p, i) => e('span', { className: 'fb-pill', key: i }, e('b', null, p[1]), ' ' + p[0]))) : null,
         ),
+        pong ? e('div', { className: 'fb-pong', key: 'pong', ref: pongRef },
+          e('div', { className: 'fb-pong-hud', ref: hudRef }, 'You 0 · 0 CPU'),
+          e('button', { className: 'fb-pong-mute', type: 'button', ref: muteRef, 'aria-label': 'Mute sound', title: 'Sound on/off' }, '🔊'),
+          e('button', { className: 'fb-pong-close', type: 'button', ref: closeRef, 'aria-label': 'Close game' }, '✕'),
+          e('canvas', { ref: canvasRef }),
+          e('div', { className: 'fb-pong-tip', ref: tipRef }, 'Mouse or ↑ ↓ to move · first to 5'),
+        ) : null,
       );
     }
 
@@ -2395,7 +2581,7 @@
             e('span', null, e('strong', null, "Couldn't load facility data"), ' — ' + err + '. The counts below are a loading failure, not real numbers.'),
             e('button', { onClick: () => load(), style: { padding: '6px 18px', border: 'none', background: '#dc2626', color: '#fff', borderRadius: 6, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', fontSize: 12.5 } }, 'Retry'),
           ) : null,
-          (tab === 'aquatics' || tab === 'camping') ? null : e(FacilitiesBanner, { a: bannerAgg }),
+          e(FacilitiesBanner, { a: bannerAgg, tab }),
           // Filters are context-aware: the site-type filter only makes sense on
           // the Summary (a vertical tab already fixes the type); Court Utilization
           // manages its own filters + dates inside the embed, so no hub filters.
