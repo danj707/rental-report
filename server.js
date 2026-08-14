@@ -2114,17 +2114,22 @@ function checkSchemaDrift(reportType, rows, orgSlug) {
     const currentCols = extractColumns(rows);
     if (!currentCols) return null;
     const baselines = loadSchemaBaselines();
-    const baseline = baselines[reportType];
+    // Baseline is keyed per org+report — orgs legitimately have different column
+    // sets for the same report, so a single shared baseline flip-flops and fires
+    // a false "drift" on every org fetch. Comparing each org to its own last
+    // schema means drift only fires on a real change for that org.
+    const key = orgSlug ? reportType + "::" + orgSlug : reportType;
+    const baseline = baselines[key];
 
     if (!baseline) {
-      baselines[reportType] = {
+      baselines[key] = {
         columns: currentCols,
         seededAt: new Date().toISOString(),
         lockedAt: null,
         source: "auto",
       };
       saveSchemaBaselines(baselines);
-      console.log(`[schema] Auto-seeded baseline for ${reportType} (${currentCols.length} cols)`);
+      console.log(`[schema] Auto-seeded baseline for ${key} (${currentCols.length} cols)`);
       return null;
     }
 
@@ -2158,9 +2163,9 @@ function checkSchemaDrift(reportType, rows, orgSlug) {
     appendDriftLog(drift);
 
     if (!baseline.lockedAt) {
-      baselines[reportType].columns = currentCols;
-      baselines[reportType].seededAt = new Date().toISOString();
-      baselines[reportType].source = "auto-updated-after-drift";
+      baselines[key].columns = currentCols;
+      baselines[key].seededAt = new Date().toISOString();
+      baselines[key].source = "auto-updated-after-drift";
       saveSchemaBaselines(baselines);
     }
 
@@ -9097,9 +9102,11 @@ app.post("/api/admin/schema-baseline", express.json(), (req, res) => {
     return res.json({ ok: true, message: `Unlocked ${reportType} baseline` });
   }
   if (action === "reseed" && reportType) {
-    delete baselines[reportType];
+    // Clear the bare key and all per-org keys (reportType::orgSlug) for this report.
+    let n = 0;
+    Object.keys(baselines).forEach(k => { if (k === reportType || k.startsWith(reportType + "::")) { delete baselines[k]; n++; } });
     saveSchemaBaselines(baselines);
-    return res.json({ ok: true, message: "Cleared " + reportType + " baseline — will re-seed on next fetch" });
+    return res.json({ ok: true, message: "Cleared " + n + " " + reportType + " baseline(s) — will re-seed on next fetch" });
   }
   if (action === "reseed-all") {
     saveSchemaBaselines({});
@@ -9118,6 +9125,16 @@ app.post("/api/admin/schema-drift/ack", express.json(), (req, res) => {
   log[index].acknowledgedAt = new Date().toISOString();
   writeJSON(SCHEMA_DRIFT_LOG_FILE, log);
   res.json({ ok: true, message: "Acknowledged" });
+});
+
+// Acknowledge every active drift warning in one shot.
+app.post("/api/admin/schema-drift/clear-all", express.json(), (req, res) => {
+  const log = loadDriftLog();
+  const now = new Date().toISOString();
+  let n = 0;
+  log.forEach(e => { if (!e.acknowledged) { e.acknowledged = true; e.acknowledgedAt = now; n++; } });
+  writeJSON(SCHEMA_DRIFT_LOG_FILE, log);
+  res.json({ ok: true, cleared: n, message: "Cleared " + n + " warning" + (n === 1 ? "" : "s") });
 });
 
 // ── GET /api/admin/report-dependencies — upstream DB dependency manifest ──
@@ -10174,8 +10191,13 @@ app.get("/", (req, res) => {
       // Per-org daily sparkline (30 days)
       const sparkDays = [];
       for (let i = 29; i >= 0; i--) { const d = new Date(Date.now() - i * 86400000).toISOString().substring(0, 10); const dayData = m.daily[d] || {}; sparkDays.push(Object.values(dayData).reduce((a, b) => a + b, 0)); }
-      const _hid = new Set(getHiddenReports(slug)); const _act = reports - _hid.size; return { slug, name: org.displayName || slug, views, exports, aiCalls, reports, active: _act > 0 ? _act : reports, subscribers, emailsSent, sparkDays };
-    } catch(e) { return { slug, name: org.displayName || slug, views: 0, exports: 0, aiCalls: 0, reports: 0, active: 0, subscribers: 0, emailsSent: 0, sparkDays: new Array(30).fill(0) }; }
+      // Usage momentum: last 15 days vs the prior 15. Small deltas read as flat.
+      const _recent = sparkDays.slice(15).reduce((a, b) => a + b, 0);
+      const _earlier = sparkDays.slice(0, 15).reduce((a, b) => a + b, 0);
+      const trend = _recent - _earlier;
+      const trendDir = Math.abs(trend) < Math.max(2, _earlier * 0.1) ? 0 : (trend > 0 ? 1 : -1);
+      const _hid = new Set(getHiddenReports(slug)); const _act = reports - _hid.size; return { slug, name: org.displayName || slug, views, exports, aiCalls, reports, active: _act > 0 ? _act : reports, subscribers, emailsSent, sparkDays, trend, trendDir };
+    } catch(e) { return { slug, name: org.displayName || slug, views: 0, exports: 0, aiCalls: 0, reports: 0, active: 0, subscribers: 0, emailsSent: 0, sparkDays: new Array(30).fill(0), trend: 0, trendDir: 0 }; }
   }).sort((a, b) => b.views - a.views);
   const maxViews = Math.max(...usageRows.map(r => r.views), 1);
   // Daily usage sparkline (last 30 days)
@@ -10195,15 +10217,16 @@ app.get("/", (req, res) => {
     <div class="usage-table-wrap">
       <div style="padding:10px 14px;display:flex;align-items:center;gap:12px;border-bottom:1px solid #e8e5df"><span style="font-size:11px;color:#9ca3af">30-day trend</span><svg viewBox="0 0 200 32" style="width:180px;height:28px"><polyline points="${sparkPts}" fill="none" stroke="#6d28d9" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg><span style="font-size:11px;font-weight:600;color:#6d28d9">${sparkTotal.toLocaleString()} views</span></div>
       <table class="usage-table">
-        <thead><tr><th>Organization</th><th class="num">Views</th><th class="num">Exports</th><th class="num">AI Insights</th><th class="num">Subscribers</th><th class="num">Emails Sent</th><th class="num">Reports</th><th style="width:30px"></th></tr></thead>
+        <thead><tr><th onclick="sortUsage(this,0)" style="cursor:pointer">Organization<span class="usort"></span></th><th class="num" onclick="sortUsage(this,1)" style="cursor:pointer">Views<span class="usort"></span></th><th class="num" onclick="sortUsage(this,2)" style="cursor:pointer" title="Last 15 days vs the prior 15">Trend<span class="usort"></span></th><th class="num" onclick="sortUsage(this,3)" style="cursor:pointer">Exports<span class="usort"></span></th><th class="num" onclick="sortUsage(this,4)" style="cursor:pointer">AI Insights<span class="usort"></span></th><th class="num" onclick="sortUsage(this,5)" style="cursor:pointer">Subscribers<span class="usort"></span></th><th class="num" onclick="sortUsage(this,6)" style="cursor:pointer">Emails Sent<span class="usort"></span></th><th class="num" onclick="sortUsage(this,7)" style="cursor:pointer">Reports<span class="usort"></span></th><th style="width:30px"></th></tr></thead>
         <tbody>${usageRows.map(r => `<tr>
-          <td><a href="#org-${r.slug}" class="usage-org-name" style="text-decoration:none;color:#1e1b4b" onclick="event.preventDefault();var el=document.getElementById('org-'+'${r.slug}');if(el){el.scrollIntoView({behavior:'smooth',block:'start'});var body=el.querySelector('.org-body');if(body&&body.style.display==='none'){body.style.display='';var chev=el.querySelector('.org-collapse-chevron');if(chev)chev.style.transform='rotate(90deg)'}}">${r.name}</a><div style="display:flex;align-items:center;gap:4px;margin-top:1px"><svg viewBox="0 0 90 18" style="width:90px;height:14px;flex-shrink:0">${(() => { const mx = Math.max(...r.sparkDays, 1); const pts = r.sparkDays.map((v, i) => (i / 29 * 88 + 1).toFixed(1) + ',' + (16 - v / mx * 14 + 1).toFixed(1)).join(' '); return '<polyline points="' + pts + '" fill="none" stroke="#6d28d9" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>'; })()}</svg><div class="usage-bar" style="width:${Math.round(r.views / maxViews * 100)}%;flex-shrink:0"></div></div></td>
-          <td class="num${r.views === 0 ? ' usage-zero' : ''}">${r.views.toLocaleString()}</td>
-          <td class="num${r.exports === 0 ? ' usage-zero' : ''}">${r.exports}</td>
-          <td class="num${r.aiCalls === 0 ? ' usage-zero' : ''}">${r.aiCalls}</td>
-          <td class="num${r.subscribers === 0 ? ' usage-zero' : ''}">${r.subscribers}</td>
-          <td class="num${r.emailsSent === 0 ? ' usage-zero' : ''}">${r.emailsSent}</td>
-          <td class="num">${r.active}/${r.reports}</td>
+          <td data-sort="${(r.name || '').toLowerCase().replace(/"/g, '')}"><a href="#org-${r.slug}" class="usage-org-name" style="text-decoration:none;color:#1e1b4b" onclick="event.preventDefault();var el=document.getElementById('org-'+'${r.slug}');if(el){el.scrollIntoView({behavior:'smooth',block:'start'});var body=el.querySelector('.org-body');if(body&&body.style.display==='none'){body.style.display='';var chev=el.querySelector('.org-collapse-chevron');if(chev)chev.style.transform='rotate(90deg)'}}">${r.name}</a><div style="display:flex;align-items:center;gap:4px;margin-top:1px"><svg viewBox="0 0 90 18" style="width:90px;height:14px;flex-shrink:0">${(() => { const mx = Math.max(...r.sparkDays, 1); const pts = r.sparkDays.map((v, i) => (i / 29 * 88 + 1).toFixed(1) + ',' + (16 - v / mx * 14 + 1).toFixed(1)).join(' '); return '<polyline points="' + pts + '" fill="none" stroke="#6d28d9" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>'; })()}</svg><div class="usage-bar" style="width:${Math.round(r.views / maxViews * 100)}%;flex-shrink:0"></div></div></td>
+          <td class="num${r.views === 0 ? ' usage-zero' : ''}" data-sort="${r.views}">${r.views.toLocaleString()}</td>
+          <td class="num" data-sort="${r.trend}" style="text-align:center" title="${r.trendDir > 0 ? 'Trending up' : r.trendDir < 0 ? 'Trending down' : 'Flat'} (30d)">${r.trendDir > 0 ? '<i class="ph ph-caret-up" style="color:#16a34a"></i>' : r.trendDir < 0 ? '<i class="ph ph-caret-down" style="color:#dc2626"></i>' : '<span style="color:#cbd5e1">&#8211;</span>'}</td>
+          <td class="num${r.exports === 0 ? ' usage-zero' : ''}" data-sort="${r.exports}">${r.exports}</td>
+          <td class="num${r.aiCalls === 0 ? ' usage-zero' : ''}" data-sort="${r.aiCalls}">${r.aiCalls}</td>
+          <td class="num${r.subscribers === 0 ? ' usage-zero' : ''}" data-sort="${r.subscribers}">${r.subscribers}</td>
+          <td class="num${r.emailsSent === 0 ? ' usage-zero' : ''}" data-sort="${r.emailsSent}">${r.emailsSent}</td>
+          <td class="num" data-sort="${r.active}">${r.active}/${r.reports}</td>
           <td style="text-align:center"><a href="/${r.slug}?token=${ORGS[r.slug]?.token || ''}" target="_blank" title="Open ${r.name} reports" style="color:#9ca3af;text-decoration:none"><i class="ph ph-arrow-square-out" style="font-size:14px"></i></a></td>
         </tr>`).join('')}</tbody>
       </table>
@@ -11254,12 +11277,13 @@ app.get("/", (req, res) => {
                   + '</div>'
                   + '<div style="font-family:monospace;font-size:12px;color:#555;margin-top:4px">' + detail + '</div>'
                   + '<div style="margin-top:6px;display:flex;gap:8px">'
-                  + '<button onclick="ackDrift(' + i + ',this)" style="font-size:10px;padding:2px 10px;background:#16a34a;color:#fff;border:none;border-radius:4px;cursor:pointer">Acknowledge</button>'
+                  + '<button onclick="ackDrift(' + driftData.log.indexOf(d) + ',this)" style="font-size:10px;padding:2px 10px;background:#16a34a;color:#fff;border:none;border-radius:4px;cursor:pointer">Acknowledge</button>'
                   + '<button onclick="reseedBaseline(\x27' + d.reportType + '\x27,this)" style="font-size:10px;padding:2px 10px;background:#3b82f6;color:#fff;border:none;border-radius:4px;cursor:pointer">Reseed Baseline</button>'
                   + '</div></div>';
               }).join('')
           }
           <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+            ${driftActive.length > 0 ? '<button onclick="clearAllDrift(this)" style="font-size:11px;padding:4px 12px;background:#dc2626;color:#fff;border:none;border-radius:4px;cursor:pointer">Clear all (' + driftActive.length + ')</button>' : ''}
             <button onclick="reseedAllBaselines(this)" style="font-size:11px;padding:4px 12px;background:none;border:1px solid #d1d5db;border-radius:4px;cursor:pointer;color:#6b7280">Reseed All</button>
             <span style="font-size:11px;color:#999;padding-top:6px">Baselines: ${Object.keys(driftData.baselines).length} seeded &#183; ${Object.values(driftData.baselines).filter(b => b.lockedAt).length} locked</span>
           </div>
@@ -12469,6 +12493,39 @@ app.get("/", (req, res) => {
       fetch('/api/admin/schema-baseline', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'reseed-all' }) })
         .then(r => r.json()).then(d => { btn.textContent = d.ok ? '\u2713 All cleared' : 'Error'; })
         .catch(() => { btn.textContent = 'Error'; });
+    }
+    function clearAllDrift(btn) {
+      if (!confirm('Acknowledge and clear all active drift warnings?')) return;
+      btn.disabled = true; btn.textContent = '...';
+      fetch('/api/admin/schema-drift/clear-all', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
+        .then(r => r.json()).then(d => {
+          if (d.ok) {
+            btn.textContent = '\u2713 Cleared ' + d.cleared;
+            var body = btn.closest('.how-body');
+            if (body) body.querySelectorAll('div[style*="border-left:4px solid"]').forEach(function (el) { el.style.opacity = '0.35'; });
+          } else { btn.textContent = 'Error'; }
+        })
+        .catch(() => { btn.textContent = 'Error'; });
+    }
+
+    // ── Platform Usage sortable columns ─────────────────────────────────
+    function sortUsage(th, col) {
+      var table = th.closest('table'); if (!table) return;
+      var tb = table.tBodies[0]; if (!tb) return;
+      var rows = Array.prototype.slice.call(tb.rows);
+      var dir = th.getAttribute('data-dir') === 'desc' ? 'asc' : 'desc';
+      var heads = th.parentNode.children;
+      for (var j = 0; j < heads.length; j++) { heads[j].removeAttribute('data-dir'); var s = heads[j].querySelector('.usort'); if (s) s.textContent = ''; }
+      th.setAttribute('data-dir', dir);
+      var mark = th.querySelector('.usort'); if (mark) mark.textContent = dir === 'desc' ? ' ▾' : ' ▴';
+      rows.sort(function (a, b) {
+        var av = a.cells[col] ? a.cells[col].getAttribute('data-sort') : '';
+        var bv = b.cells[col] ? b.cells[col].getAttribute('data-sort') : '';
+        var an = parseFloat(av), bn = parseFloat(bv), cmp;
+        if (!isNaN(an) && !isNaN(bn)) cmp = an - bn; else cmp = String(av).localeCompare(String(bv));
+        return dir === 'desc' ? -cmp : cmp;
+      });
+      rows.forEach(function (r) { tb.appendChild(r); });
     }
 
     // ── Updates log ───────────────────────────────────────────────────────
