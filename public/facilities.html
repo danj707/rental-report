@@ -704,6 +704,24 @@
       breakout: { title: 'Court Breaker', tip: 'Move the paddle · click / Space to launch' },
     };
 
+    // Games that feed the seasonal arcade leaderboard (score-accumulation only;
+    // pong/hockey are first-to-5 matches and excluded). `lower` ⇒ ranked by the
+    // fewest (Putt's strokes); `unit` labels the score in the panel.
+    const LB_GAMES = {
+      swim:     { label: 'Pool Catch',    emoji: '🏖️', lower: false, unit: 'caught' },
+      bear:     { label: 'Berry Run',     emoji: '🫐',       lower: false, unit: 'berries' },
+      invaders: { label: 'Invaders',      emoji: '👾',       lower: false, unit: 'pts' },
+      breakout: { label: 'Court Breaker', emoji: '🧱',       lower: false, unit: 'pts' },
+      golf:     { label: 'Putt',          emoji: '⛳',             lower: true,  unit: 'strokes' },
+    };
+    // Build a token-aware /:org/api/games/* URL for score submit + board fetch.
+    function lbUrl(path, params) {
+      const qs = new URLSearchParams(params || {});
+      if (CFG.token) qs.set('token', CFG.token);
+      const q = qs.toString();
+      return '/' + CFG.slug + '/api/games' + path + (q ? '?' + q : '');
+    }
+
     const GAME_FACTORIES = {
       // ── Racket Sports: Pong ──
       pong: (api) => {
@@ -837,6 +855,7 @@
             api.textScrim();
           },
           hud() { return '🏖️ ' + score + '   ' + (misses >= 3 ? '' : '💛'.repeat(3 - misses)); },
+          score() { return score; },
         };
         return g;
       },
@@ -879,6 +898,7 @@
             api.textScrim();
           },
           hud() { return '⛳ ' + strokes + ' stroke' + (strokes === 1 ? '' : 's'); },
+          score() { return strokes; },
         };
         return g;
       },
@@ -932,6 +952,7 @@
             api.textScrim();
           },
           hud() { return '🫐 ' + score; },
+          score() { return score; },
         };
         return g;
       },
@@ -994,6 +1015,7 @@
             api.textScrim();
           },
           hud() { return '👾 ' + score + '   ' + (lives > 0 ? '❤'.repeat(lives) : '') + '   W' + wave; },
+          score() { return score; },
         };
         return g;
       },
@@ -1049,6 +1071,7 @@
             api.textScrim();
           },
           hud() { return '🧱 ' + score + '   ' + (lives > 0 ? '❤'.repeat(lives) : '') + '   L' + level; },
+          score() { return score; },
         };
         return g;
       },
@@ -1058,7 +1081,7 @@
       const { canvas, overlay, hud, tip, muteBtn, playBtn, closeBtn } = els;
       const band = canvas.closest('.fac-banner');
       const ctx = canvas.getContext('2d');
-      let raf = null, running = false, last = 0, game = null;
+      let raf = null, running = false, last = 0, game = null, awaitingScore = false, wasOver = false;
       let W = 0, H = 0; const dpr = Math.min(window.devicePixelRatio || 1, 2);
       let AC = null, muted = false;
       function audio() { if (muted) return null; if (!AC) { const C = window.AudioContext || window.webkitAudioContext; if (!C) return null; AC = new C(); } if (AC.state === 'suspended') AC.resume(); return AC; }
@@ -1074,12 +1097,26 @@
       };
       function resize() { const r = band.getBoundingClientRect(); W = Math.round(r.width); H = Math.round(r.height); canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); if (game && game.resize) game.resize(); }
       const input = { x: 0, y: 0, down: false, keys: {} };
-      function newGame() { resize(); game = GAME_FACTORIES[gameKey](api); game.over = false; if (game.reset) game.reset(); if (game.tip) api.setTip(game.tip); if (game.hud) api.setHud(game.hud()); running = true; last = performance.now(); loop(last); }
-      function loop(t) { if (!running) return; const dt = Math.min(0.033, (t - last) / 1000); last = t; if (game) { if (!game.over) game.step(dt, input); ctx.clearRect(0, 0, W, H); game.draw(ctx); if (game.hud) api.setHud(game.hud()); } raf = requestAnimationFrame(loop); }
+      function newGame() { resize(); game = GAME_FACTORIES[gameKey](api); game.over = false; awaitingScore = false; wasOver = false; if (game.reset) game.reset(); if (game.tip) api.setTip(game.tip); if (game.hud) api.setHud(game.hud()); running = true; last = performance.now(); loop(last); }
+      function loop(t) { if (!running) return; const dt = Math.min(0.033, (t - last) / 1000); last = t; if (game) { if (!game.over) game.step(dt, input); ctx.clearRect(0, 0, W, H); game.draw(ctx); if (game.hud) api.setHud(game.hud()); if (game.over && !wasOver) { wasOver = true; onGameEnd(); } } raf = requestAnimationFrame(loop); }
+      // On the game-over edge, offer the leaderboard for score games with a score
+      // to submit. awaitingScore suppresses click/Space "play again" until the
+      // panel is dismissed, so a stray click can't skip past the submit prompt.
+      function onGameEnd() {
+        const cfg = LB_GAMES[gameKey];
+        if (!cfg || !game || typeof game.score !== 'function') return;
+        const sc = Math.floor(game.score() || 0);
+        if (!(sc > 0)) return;
+        awaitingScore = true;
+        if (els.onScore) els.onScore(gameKey, sc, {
+          dismiss: () => { awaitingScore = false; },
+          replay:  () => { awaitingScore = false; newGame(); },
+        });
+      }
       function local(cx, cy) { const r = canvas.getBoundingClientRect(); input.x = cx - r.left; input.y = cy - r.top; }
       const onMove = e => local(e.clientX, e.clientY);
       const onTouchMove = e => { if (e.touches[0]) { e.preventDefault(); local(e.touches[0].clientX, e.touches[0].clientY); } };
-      const onDown = e => { if (e.touches && e.touches[0]) local(e.touches[0].clientX, e.touches[0].clientY); else if (e.clientX != null) local(e.clientX, e.clientY); input.down = true; audio(); if (!game) return; if (game.over) newGame(); else if (game.press) game.press(input); };
+      const onDown = e => { if (e.touches && e.touches[0]) local(e.touches[0].clientX, e.touches[0].clientY); else if (e.clientX != null) local(e.clientX, e.clientY); input.down = true; audio(); if (!game) return; if (game.over) { if (!awaitingScore) newGame(); } else if (game.press) game.press(input); };
       const onUp = () => { input.down = false; if (game && !game.over && game.release) game.release(input); };
       canvas.addEventListener('mousemove', onMove);
       canvas.addEventListener('touchmove', onTouchMove, { passive: false });
@@ -1087,7 +1124,7 @@
       canvas.addEventListener('touchstart', onDown, { passive: false });
       window.addEventListener('mouseup', onUp);
       canvas.addEventListener('touchend', onUp);
-      const onKeyDown = e => { if (!running) return; const k = e.key; if (k === 'ArrowUp' || k === 'ArrowDown' || k === 'ArrowLeft' || k === 'ArrowRight' || k === ' ') { input.keys[k] = true; e.preventDefault(); if (k === ' ') { if (game && game.over) newGame(); else if (game && game.press) game.press(input); } } if (k === 'Escape') close(); };
+      const onKeyDown = e => { if (!running) return; const k = e.key; if (k === 'ArrowUp' || k === 'ArrowDown' || k === 'ArrowLeft' || k === 'ArrowRight' || k === ' ') { input.keys[k] = true; e.preventDefault(); if (k === ' ') { if (game && game.over) { if (!awaitingScore) newGame(); } else if (game && game.press) game.press(input); } } if (k === 'Escape') close(); };
       const onKeyUp = e => { input.keys[e.key] = false; };
       window.addEventListener('keydown', onKeyDown); window.addEventListener('keyup', onKeyUp);
       function open() { audio(); overlay.classList.add('on'); newGame(); }
@@ -1109,26 +1146,80 @@
       };
     }
 
+    // Arcade high-score panel — shown over the canvas on a score game's game-over.
+    // Fetches the current-season board, takes 3-char initials, submits, shows rank.
+    function LeaderboardPanel({ game, score, ctl, onClose }) {
+      const meta = LB_GAMES[game] || {};
+      const [board, setBoard] = React.useState(null);
+      const [initials, setInitials] = React.useState('');
+      const [phase, setPhase] = React.useState('enter'); // enter → sent
+      const [result, setResult] = React.useState(null);
+      const [busy, setBusy] = React.useState(false);
+      const inRef = React.useRef(null);
+      React.useEffect(() => {
+        fetch(lbUrl('/leaderboard', { game })).then(r => r.json()).then(setBoard).catch(() => {});
+        const t = setTimeout(() => { if (inRef.current) inRef.current.focus(); }, 40);
+        return () => clearTimeout(t);
+      }, [game]);
+      function submit() {
+        if (busy) return; setBusy(true);
+        fetch(lbUrl('/score'), { method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ game, score, initials: initials || 'AAA' }) })
+          .then(r => r.json())
+          .then(d => { setResult(d); if (d && d.top) setBoard({ season: d.season, top: d.top }); setPhase('sent'); })
+          .catch(() => setPhase('sent')).finally(() => setBusy(false));
+      }
+      const top = (board && board.top) ? board.top : [];
+      return e('div', { style: { position: 'absolute', inset: 0, zIndex: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(6,10,20,.62)', backdropFilter: 'blur(2px)' } },
+        e('div', { style: { width: 'min(300px,86%)', background: '#12172a', border: '1px solid rgba(255,255,255,.14)', borderRadius: 12, padding: '16px 18px', color: '#eef', boxShadow: '0 18px 50px rgba(0,0,0,.5)', fontFamily: 'inherit' } },
+          e('div', { style: { fontSize: 15, fontWeight: 800, marginBottom: 2 } }, (meta.emoji || '🎮') + ' ' + (meta.label || 'Game')),
+          e('div', { style: { fontSize: 11, textTransform: 'uppercase', letterSpacing: '.08em', color: '#8ea0c8', marginBottom: 12 } }, (board && board.season ? board.season + ' · ' : '') + 'Leaderboard'),
+          e('div', { style: { display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 12 } },
+            e('span', { style: { fontSize: 30, fontWeight: 800, fontVariantNumeric: 'tabular-nums' } }, score.toLocaleString()),
+            e('span', { style: { fontSize: 12, color: '#9fb0d6' } }, (meta.unit || '') + (phase === 'sent' && result ? (result.made ? ' · you’re #' + result.rank : ' · keep trying!') : ''))),
+          phase === 'enter'
+            ? e('div', { style: { display: 'flex', gap: 8, marginBottom: 14 } },
+                e('input', { ref: inRef, value: initials, maxLength: 3, placeholder: 'AAA', 'aria-label': 'Your initials',
+                  onChange: ev => setInitials(ev.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '')),
+                  onKeyDown: ev => { ev.stopPropagation(); if (ev.key === 'Enter') submit(); },
+                  style: { flex: '0 0 88px', textAlign: 'center', letterSpacing: '.35em', fontWeight: 800, fontSize: 20, padding: '8px 6px', background: '#0b0f1e', color: '#ffd76a', border: '1px solid rgba(255,255,255,.18)', borderRadius: 8, outline: 'none', fontFamily: 'inherit', textTransform: 'uppercase' } }),
+                e('button', { onClick: submit, disabled: busy, style: { flex: 1, background: '#f59e0b', color: '#1a1200', border: 'none', borderRadius: 8, fontWeight: 800, fontSize: 13, cursor: 'pointer', opacity: busy ? .6 : 1 } }, busy ? 'Saving…' : 'Submit ▶'))
+            : null,
+          e('div', { style: { borderTop: '1px solid rgba(255,255,255,.1)', paddingTop: 10, marginBottom: 12 } },
+            top.length
+              ? top.slice(0, 5).map((s, i) => e('div', { key: i, style: { display: 'flex', justifyContent: 'space-between', gap: 10, padding: '2px 0', fontSize: 12.5, color: i === 0 ? '#ffd76a' : '#c7d2ea' } },
+                  e('span', { style: { fontWeight: i === 0 ? 800 : 600 } }, (i + 1) + '. ' + s.initials),
+                  e('span', { style: { fontVariantNumeric: 'tabular-nums', fontWeight: 700 } }, s.score.toLocaleString())))
+              : e('div', { style: { fontSize: 12, color: '#8ea0c8', fontStyle: 'italic' } }, 'Be the first on the board!')),
+          e('div', { style: { display: 'flex', gap: 8, justifyContent: 'flex-end' } },
+            e('button', { onClick: () => { ctl.dismiss(); onClose(); }, style: { background: 'none', border: '1px solid rgba(255,255,255,.2)', color: '#c7d2ea', borderRadius: 7, padding: '7px 12px', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' } }, 'Close'),
+            e('button', { onClick: () => { ctl.replay(); onClose(); }, style: { background: '#22c55e', border: 'none', color: '#04120a', borderRadius: 7, padding: '7px 14px', fontWeight: 800, fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' } }, 'Play again ↻')))
+      );
+    }
+
     // Renders the ▶ launcher + game overlay for a banner and mounts the engine.
     function BannerGame({ game }) {
       const canvasRef = React.useRef(null), overlayRef = React.useRef(null), playRef = React.useRef(null);
       const hudRef = React.useRef(null), tipRef = React.useRef(null), muteRef = React.useRef(null), closeRef = React.useRef(null);
+      const [lb, setLb] = React.useState(null);
       React.useEffect(() => {
         if (!game) return;
         const canvas = canvasRef.current, overlay = overlayRef.current;
         if (!canvas || !overlay || !canvas.closest('.fac-banner')) return;
-        return startBannerGame(game, { canvas, overlay, hud: hudRef.current, tip: tipRef.current, muteBtn: muteRef.current, playBtn: playRef.current, closeBtn: closeRef.current });
+        return startBannerGame(game, { canvas, overlay, hud: hudRef.current, tip: tipRef.current, muteBtn: muteRef.current, playBtn: playRef.current, closeBtn: closeRef.current,
+          onScore: (g, sc, ctl) => setLb({ game: g, score: sc, ctl }) });
       }, [game]);
       if (!game) return null;
       const meta = GAME_META[game] || {};
       return e(React.Fragment, null,
-        e('button', { className: 'fb-play', ref: playRef, type: 'button', 'aria-label': 'Play a hidden game', title: meta.title || 'Play' }, '▶'),
+        e('button', { className: 'fb-play', ref: playRef, type: 'button', 'aria-label': 'Play a hidden game', title: meta.title || 'Play', onClick: () => setLb(null) }, '▶'),
         e('div', { className: 'fb-pong', ref: overlayRef },
           e('div', { className: 'fb-pong-hud', ref: hudRef }, ''),
           e('button', { className: 'fb-pong-mute', ref: muteRef, type: 'button', 'aria-label': 'Mute sound', title: 'Sound on/off' }, '🔊'),
-          e('button', { className: 'fb-pong-close', ref: closeRef, type: 'button', 'aria-label': 'Close game' }, '✕'),
+          e('button', { className: 'fb-pong-close', ref: closeRef, type: 'button', 'aria-label': 'Close game', onClick: () => setLb(null) }, '✕'),
           e('canvas', { ref: canvasRef }),
           e('div', { className: 'fb-pong-tip', ref: tipRef }, meta.tip || ''),
+          lb ? e(LeaderboardPanel, { key: 'lb', game: lb.game, score: lb.score, ctl: lb.ctl, onClose: () => setLb(null) }) : null,
         ),
       );
     }
