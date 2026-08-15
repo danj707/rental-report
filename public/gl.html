@@ -1455,6 +1455,20 @@ function App() {
   // Tenders present in the loaded data (drives the Method picker).
   const availableMethods = useMemo(() => availableMethodsFor(rows), [rows]);
 
+  // Shared payment-method visibility: sub = a strict subset is active; sM(key)
+  // ⇒ show that tender's column/card. Print/PDF reconstructs from the URL so the
+  // rendered PDF hides the same columns as the on-screen view. Used by both the
+  // table (hide deselected columns) and the summary cards (hide deselected cards).
+  const methodVis = useMemo(() => {
+    let eff = selectedMethods;
+    if (params._print === '1') {
+      const urlM = new URLSearchParams(window.location.search).get('methods');
+      if (urlM) { const allow = new Set(urlM.split(',').map(s => s.trim()).filter(Boolean)); eff = new Set(availableMethods.map(m => m.key).filter(k => allow.has(k))); }
+    }
+    const sub = eff && availableMethods.length > 1 && eff.size < availableMethods.length;
+    return { sub, sM: k => !sub || eff.has(k) };
+  }, [selectedMethods, availableMethods, params._print]);
+
   // Distinct desk locations present in the data ('' bucketed as "(No desk location)").
   const allDesks = useMemo(() => {
     if (!rows) return [];
@@ -1948,24 +1962,25 @@ function App() {
   function renderSummaryCards() {
     if (!rows) return null;
     const methodSubset = selectedMethods && availableMethods.length > 1 && selectedMethods.size < availableMethods.length;
+    const sM = methodVis.sM;   // hide deselected tenders' cards, matching the table
     return (
       <>
       <div className="summary-cards">
         <SummaryCard label="Net Amount"     value={totals.netAmount}     color="green"  />
         <SummaryCard label="Total Payments" value={totals.totalPayments} color="blue"   />
         <SummaryCard label="Total Refunds"  value={totals.totalRefunds}  color="red"    />
-        {hasCCSplit ? (
+        {sM('cc') && (hasCCSplit ? (
           <>
             <SummaryCard label="CC Online"    value={totals.ccOnlinePayments}   color="indigo" />
             <SummaryCard label="CC In-Person" value={totals.ccInPersonPayments} color="violet" />
           </>
         ) : (
           <SummaryCard label="Credit Card" value={totals.ccPayments} color="violet" />
-        )}
-        <SummaryCard label="Cash"  value={totals.cashPayments}  color="amber" />
-        <SummaryCard label="Check" value={totals.checkPayments} color="slate" />
-        <SummaryCard label="Acct Credit" value={totals.orgCreditPayments} color="teal" />
-        {totals.scholarshipPayments > 0 && <SummaryCard label="Scholarship" value={totals.scholarshipPayments} color="purple" />}
+        ))}
+        {sM('cash')  && <SummaryCard label="Cash"  value={totals.cashPayments}  color="amber" />}
+        {sM('check') && <SummaryCard label="Check" value={totals.checkPayments} color="slate" />}
+        {sM('orgcredit') && <SummaryCard label="Acct Credit" value={totals.orgCreditPayments} color="teal" />}
+        {sM('scholarship') && totals.scholarshipPayments > 0 && <SummaryCard label="Scholarship" value={totals.scholarshipPayments} color="purple" />}
       </div>
       {methodSubset && (
         <div style={{margin:'-4px 0 10px', fontSize:12, color:'#b45309', display:'flex', alignItems:'center', gap:6}}>
@@ -1985,17 +2000,26 @@ function App() {
 
     const hasAcctName = displayRows.some(r => r.accountName);
     const hasAcctNum  = displayRows.some(r => r.accountNumber);
-    const hasScholarship = displayRows.some(r => r.scholarshipPayments > 0);
-    const hasGiftCard    = displayRows.some(r => r.giftCardPayments > 0);
-    const hasOtherPmts   = displayRows.some(r => r.otherPayments > 0);
+    // Payment-method column visibility (shared with the summary cards): when a
+    // tender subset is selected, hide the deselected tenders' columns entirely
+    // rather than rendering zeros.
+    const sM = methodVis.sM;
+    const sCC = sM('cc'), sCash = sM('cash'), sChk = sM('check'), sOrg = sM('orgcredit'), sFree = sM('free'), sOth = sM('other');
+
+    const hasScholarship = sM('scholarship') && displayRows.some(r => r.scholarshipPayments > 0);
+    const hasGiftCard    = sM('giftcard')    && displayRows.some(r => r.giftCardPayments > 0);
+    const hasOtherPmts   = sOth              && displayRows.some(r => r.otherPayments > 0);
     const hasLocs     = (showLocations || isPrint) && displayRows.some(r => r.locations && r.locations.trim());
 
-    // colspan helpers
+    // colspan helpers — a tender group collapses to 0 cols when it's hidden
     const idCols       = 1 + (hasAcctName ? 1 : 0) + (hasLocs ? 1 : 0) + (hasAcctNum ? 1 : 0);
-    const ccCols       = hasCCSplit ? 2 : 1;
-    const otherPmtCols = showRefunds ? 2 : 0;   // free + org credit
-    const ccRfndCols   = hasCCSplit ? 2 : 1;
-    const refundCols   = showRefunds ? (ccRfndCols + 4) : 1; // + cash/check/orgcredit/other
+    const ccCols       = sCC ? (hasCCSplit ? 2 : 1) : 0;
+    // "Other Pmts" group (refund view) = Free + Org Credit + Scholarship? + Gift Card? + Other?
+    const otherPmtsGroupCols = (sFree ? 1 : 0) + (sOrg ? 1 : 0) + (hasScholarship ? 1 : 0) + (hasGiftCard ? 1 : 0) + (hasOtherPmts ? 1 : 0);
+    // Refund columns (refund view) = CC(1-2) + Cash + Check + Org Crd + Other, each gated
+    const refundCols   = showRefunds
+      ? ((sCC ? (hasCCSplit ? 2 : 1) : 0) + (sCash ? 1 : 0) + (sChk ? 1 : 0) + (sOrg ? 1 : 0) + (sOth ? 1 : 0))
+      : 1;
 
     return (
       <div className="table-wrapper">
@@ -2004,11 +2028,11 @@ function App() {
             {/* ── Group header ── */}
             <tr>
               <th className="group left" colSpan={idCols}></th>
-              <th className="group" colSpan={ccCols}>Credit Card</th>
-              <th className="group" colSpan={1}>Cash</th>
-              <th className="group" colSpan={1}>Check</th>
-              {!showRefunds && <th className="group" colSpan={1}>Acct Credit</th>}
-              {showRefunds && <th className="group" colSpan={2 + (hasScholarship ? 1 : 0) + (hasGiftCard ? 1 : 0) + (hasOtherPmts ? 1 : 0)}>Other Pmts</th>}
+              {sCC   && <th className="group" colSpan={ccCols}>Credit Card</th>}
+              {sCash && <th className="group" colSpan={1}>Cash</th>}
+              {sChk  && <th className="group" colSpan={1}>Check</th>}
+              {!showRefunds && sOrg && <th className="group" colSpan={1}>Acct Credit</th>}
+              {showRefunds && otherPmtsGroupCols > 0 && <th className="group" colSpan={otherPmtsGroupCols}>Other Pmts</th>}
               {!showRefunds && hasScholarship && <th className="group" colSpan={1}>Scholarship</th>}
               {!showRefunds && hasGiftCard    && <th className="group" colSpan={1}>Gift Card</th>}
               {!showRefunds && hasOtherPmts   && <th className="group" colSpan={1}>Other</th>}
@@ -2026,20 +2050,20 @@ function App() {
               {hasLocs     && <th className="left">Locations</th>}
               {hasAcctNum  && <th className="left">Acct #</th>}
 
-              {hasCCSplit ? (
+              {sCC && (hasCCSplit ? (
                 <>
                   <th>CC Online</th>
                   <th>CC In-Person</th>
                 </>
               ) : (
                 <th>Credit Card</th>
-              )}
+              ))}
 
-              <th>Cash</th>
-              <th>Check</th>
+              {sCash && <th>Cash</th>}
+              {sChk  && <th>Check</th>}
 
-              {!showRefunds && <th>Acct Credit</th>}
-              {showRefunds && <><th>Free</th><th>Org Credit</th>{hasScholarship && <th>Schlrshp</th>}{hasGiftCard && <th>Gift Card</th>}{hasOtherPmts && <th>Other</th>}</>}
+              {!showRefunds && sOrg && <th>Acct Credit</th>}
+              {showRefunds && <>{sFree && <th>Free</th>}{sOrg && <th>Org Credit</th>}{hasScholarship && <th>Schlrshp</th>}{hasGiftCard && <th>Gift Card</th>}{hasOtherPmts && <th>Other</th>}</>}
               {!showRefunds && hasScholarship && <th>Scholarship</th>}
               {!showRefunds && hasGiftCard    && <th>Gift Card</th>}
               {!showRefunds && hasOtherPmts   && <th>Other</th>}
@@ -2049,8 +2073,8 @@ function App() {
 
               {showRefunds
                 ? hasCCSplit
-                  ? <><th className="refund-col">CC Online</th><th className="refund-col">CC In-Prn</th><th className="refund-col">Cash</th><th className="refund-col">Check</th><th className="refund-col">Org Crd</th><th className="refund-col">Other</th></>
-                  : <><th className="refund-col">CC</th><th className="refund-col">Cash</th><th className="refund-col">Check</th><th className="refund-col">Org Crd</th><th className="refund-col">Other</th></>
+                  ? <>{sCC && <><th className="refund-col">CC Online</th><th className="refund-col">CC In-Prn</th></>}{sCash && <th className="refund-col">Cash</th>}{sChk && <th className="refund-col">Check</th>}{sOrg && <th className="refund-col">Org Crd</th>}{sOth && <th className="refund-col">Other</th>}</>
+                  : <>{sCC && <th className="refund-col">CC</th>}{sCash && <th className="refund-col">Cash</th>}{sChk && <th className="refund-col">Check</th>}{sOrg && <th className="refund-col">Org Crd</th>}{sOth && <th className="refund-col">Other</th>}</>
                 : <th>Total Rfnds</th>
               }
 
@@ -2077,26 +2101,26 @@ function App() {
                 )}
                 {hasAcctNum  && <td className="left" style={{fontFamily:'IBM Plex Mono,monospace',fontSize:10}}>{r.accountNumber}</td>}
 
-                {hasCCSplit ? (
+                {sCC && (hasCCSplit ? (
                   <>
                     <td><MoneyCell v={r.ccOnlinePayments}   /></td>
                     <td><MoneyCell v={r.ccInPersonPayments} /></td>
                   </>
                 ) : (
                   <td><MoneyCell v={r.ccPayments} /></td>
-                )}
+                ))}
 
-                <td><MoneyCell v={r.cashPayments}  /></td>
-                <td><MoneyCell v={r.checkPayments} /></td>
+                {sCash && <td><MoneyCell v={r.cashPayments}  /></td>}
+                {sChk  && <td><MoneyCell v={r.checkPayments} /></td>}
 
-                {!showRefunds && <td><MoneyCell v={r.orgCreditPayments} /></td>}
+                {!showRefunds && sOrg && <td><MoneyCell v={r.orgCreditPayments} /></td>}
                 {!showRefunds && hasScholarship && <td><MoneyCell v={r.scholarshipPayments} /></td>}
                 {!showRefunds && hasGiftCard    && <td><MoneyCell v={r.giftCardPayments}    /></td>}
                 {!showRefunds && hasOtherPmts   && <td><MoneyCell v={r.otherPayments}       /></td>}
                 {showRefunds && (
                   <>
-                    <td><MoneyCell v={r.freePayments}      /></td>
-                    <td><MoneyCell v={r.orgCreditPayments} /></td>
+                    {sFree && <td><MoneyCell v={r.freePayments}      /></td>}
+                    {sOrg  && <td><MoneyCell v={r.orgCreditPayments} /></td>}
                     {hasScholarship && <td><MoneyCell v={r.scholarshipPayments} /></td>}
                     {hasGiftCard    && <td><MoneyCell v={r.giftCardPayments}    /></td>}
                     {hasOtherPmts   && <td><MoneyCell v={r.otherPayments}       /></td>}
@@ -2109,19 +2133,21 @@ function App() {
                 {showRefunds
                   ? hasCCSplit
                     ? <>
-                        <td className="refund-col"><MoneyCell v={r.ccOnlineRefunds}    /></td>
-                        <td className="refund-col"><MoneyCell v={r.ccInPersonRefunds}  /></td>
-                        <td className="refund-col"><MoneyCell v={r.cashRefunds}        /></td>
-                        <td className="refund-col"><MoneyCell v={r.checkRefunds}       /></td>
-                        <td className="refund-col"><MoneyCell v={r.orgCreditRefunds}   /></td>
-                        <td className="refund-col"><MoneyCell v={r.otherRefunds}       /></td>
+                        {sCC && <>
+                          <td className="refund-col"><MoneyCell v={r.ccOnlineRefunds}    /></td>
+                          <td className="refund-col"><MoneyCell v={r.ccInPersonRefunds}  /></td>
+                        </>}
+                        {sCash && <td className="refund-col"><MoneyCell v={r.cashRefunds}        /></td>}
+                        {sChk  && <td className="refund-col"><MoneyCell v={r.checkRefunds}       /></td>}
+                        {sOrg  && <td className="refund-col"><MoneyCell v={r.orgCreditRefunds}   /></td>}
+                        {sOth  && <td className="refund-col"><MoneyCell v={r.otherRefunds}       /></td>}
                       </>
                     : <>
-                        <td className="refund-col"><MoneyCell v={r.ccRefunds}          /></td>
-                        <td className="refund-col"><MoneyCell v={r.cashRefunds}        /></td>
-                        <td className="refund-col"><MoneyCell v={r.checkRefunds}       /></td>
-                        <td className="refund-col"><MoneyCell v={r.orgCreditRefunds}   /></td>
-                        <td className="refund-col"><MoneyCell v={r.otherRefunds}       /></td>
+                        {sCC   && <td className="refund-col"><MoneyCell v={r.ccRefunds}          /></td>}
+                        {sCash && <td className="refund-col"><MoneyCell v={r.cashRefunds}        /></td>}
+                        {sChk  && <td className="refund-col"><MoneyCell v={r.checkRefunds}       /></td>}
+                        {sOrg  && <td className="refund-col"><MoneyCell v={r.orgCreditRefunds}   /></td>}
+                        {sOth  && <td className="refund-col"><MoneyCell v={r.otherRefunds}       /></td>}
                       </>
                   : <td style={{fontWeight:600}}><MoneyCell v={r.totalRefunds} /></td>
                 }
@@ -2142,26 +2168,26 @@ function App() {
               {hasLocs     && <td></td>}
               {hasAcctNum  && <td></td>}
 
-              {hasCCSplit ? (
+              {sCC && (hasCCSplit ? (
                 <>
                   <td>{fmtMoneyStr(totals.ccOnlinePayments)}</td>
                   <td>{fmtMoneyStr(totals.ccInPersonPayments)}</td>
                 </>
               ) : (
                 <td>{fmtMoneyStr(totals.ccPayments)}</td>
-              )}
+              ))}
 
-              <td>{fmtMoneyStr(totals.cashPayments)}</td>
-              <td>{fmtMoneyStr(totals.checkPayments)}</td>
+              {sCash && <td>{fmtMoneyStr(totals.cashPayments)}</td>}
+              {sChk  && <td>{fmtMoneyStr(totals.checkPayments)}</td>}
 
-              {!showRefunds && <td>{fmtMoneyStr(totals.orgCreditPayments)}</td>}
+              {!showRefunds && sOrg && <td>{fmtMoneyStr(totals.orgCreditPayments)}</td>}
               {!showRefunds && hasScholarship && <td>{fmtMoneyStr(totals.scholarshipPayments)}</td>}
               {!showRefunds && hasGiftCard    && <td>{fmtMoneyStr(sumField(displayRows, 'giftCardPayments'))}</td>}
               {!showRefunds && hasOtherPmts   && <td>{fmtMoneyStr(sumField(displayRows, 'otherPayments'))}</td>}
               {showRefunds && (
                 <>
-                  <td>{fmtMoneyStr(sumField(displayRows, 'freePayments'))}</td>
-                  <td>{fmtMoneyStr(sumField(displayRows, 'orgCreditPayments'))}</td>
+                  {sFree && <td>{fmtMoneyStr(sumField(displayRows, 'freePayments'))}</td>}
+                  {sOrg  && <td>{fmtMoneyStr(sumField(displayRows, 'orgCreditPayments'))}</td>}
                   {hasScholarship && <td>{fmtMoneyStr(totals.scholarshipPayments)}</td>}
                   {hasGiftCard    && <td>{fmtMoneyStr(sumField(displayRows, 'giftCardPayments'))}</td>}
                   {hasOtherPmts   && <td>{fmtMoneyStr(sumField(displayRows, 'otherPayments'))}</td>}
@@ -2174,19 +2200,21 @@ function App() {
               {showRefunds
                 ? hasCCSplit
                   ? <>
-                      <td className="refund-col">{fmtMoneyStr(sumField(displayRows,'ccOnlineRefunds'))}</td>
-                      <td className="refund-col">{fmtMoneyStr(sumField(displayRows,'ccInPersonRefunds'))}</td>
-                      <td className="refund-col">{fmtMoneyStr(sumField(displayRows,'cashRefunds'))}</td>
-                      <td className="refund-col">{fmtMoneyStr(sumField(displayRows,'checkRefunds'))}</td>
-                      <td className="refund-col">{fmtMoneyStr(sumField(displayRows,'orgCreditRefunds'))}</td>
-                      <td className="refund-col">{fmtMoneyStr(sumField(displayRows,'otherRefunds'))}</td>
+                      {sCC && <>
+                        <td className="refund-col">{fmtMoneyStr(sumField(displayRows,'ccOnlineRefunds'))}</td>
+                        <td className="refund-col">{fmtMoneyStr(sumField(displayRows,'ccInPersonRefunds'))}</td>
+                      </>}
+                      {sCash && <td className="refund-col">{fmtMoneyStr(sumField(displayRows,'cashRefunds'))}</td>}
+                      {sChk  && <td className="refund-col">{fmtMoneyStr(sumField(displayRows,'checkRefunds'))}</td>}
+                      {sOrg  && <td className="refund-col">{fmtMoneyStr(sumField(displayRows,'orgCreditRefunds'))}</td>}
+                      {sOth  && <td className="refund-col">{fmtMoneyStr(sumField(displayRows,'otherRefunds'))}</td>}
                     </>
                   : <>
-                      <td className="refund-col">{fmtMoneyStr(sumField(displayRows,'ccRefunds'))}</td>
-                      <td className="refund-col">{fmtMoneyStr(sumField(displayRows,'cashRefunds'))}</td>
-                      <td className="refund-col">{fmtMoneyStr(sumField(displayRows,'checkRefunds'))}</td>
-                      <td className="refund-col">{fmtMoneyStr(sumField(displayRows,'orgCreditRefunds'))}</td>
-                      <td className="refund-col">{fmtMoneyStr(sumField(displayRows,'otherRefunds'))}</td>
+                      {sCC   && <td className="refund-col">{fmtMoneyStr(sumField(displayRows,'ccRefunds'))}</td>}
+                      {sCash && <td className="refund-col">{fmtMoneyStr(sumField(displayRows,'cashRefunds'))}</td>}
+                      {sChk  && <td className="refund-col">{fmtMoneyStr(sumField(displayRows,'checkRefunds'))}</td>}
+                      {sOrg  && <td className="refund-col">{fmtMoneyStr(sumField(displayRows,'orgCreditRefunds'))}</td>}
+                      {sOth  && <td className="refund-col">{fmtMoneyStr(sumField(displayRows,'otherRefunds'))}</td>}
                     </>
                 : <td>{fmtMoneyStr(totals.totalRefunds)}</td>
               }
