@@ -2093,6 +2093,43 @@ function writeJSON(file, data) {
   fs.writeFileSync(file, JSON.stringify(data, null, 2));
 }
 
+// ── Arcade leaderboard (hidden banner mini-games) ────────────────────
+// Score-accumulation games only; the match games (pong/hockey) are excluded.
+// Putt ranks by FEWEST strokes, so it's flagged lower-is-better.
+const LEADERBOARD_GAMES = {
+  swim:     { label: "Pool Catch",    emoji: "🏖️", lower: false },
+  bear:     { label: "Berry Run",     emoji: "🫐",       lower: false },
+  invaders: { label: "Invaders",      emoji: "👾",       lower: false },
+  breakout: { label: "Court Breaker", emoji: "🧱",       lower: false },
+  golf:     { label: "Putt",          emoji: "⛳",             lower: true  },
+};
+const GAME_SCORES_FILE = path.join(DATA_DIR, "game_scores.json");
+const SCORES_PER_BOARD = 20;        // top-N kept per game per season
+const MAX_GAME_SCORE   = 1000000;   // sanity clamp on submitted scores
+
+// Meteorological seasons. The board "resets" each season by partitioning the
+// store under a season id, so only the active season shows by default; past
+// seasons stay archived under their own id. Winter is anchored to the year it
+// ends in (Dec 2026 → "Winter 2027", grouped with Jan/Feb 2027).
+function seasonForDate(d) {
+  d = d || new Date();
+  const m = d.getMonth(), y = d.getFullYear();
+  let name, idx, syear = y;
+  if (m === 11)      { name = "Winter"; idx = 1; syear = y + 1; }
+  else if (m <= 1)   { name = "Winter"; idx = 1; }
+  else if (m <= 4)   { name = "Spring"; idx = 2; }
+  else if (m <= 7)   { name = "Summer"; idx = 3; }
+  else               { name = "Fall";   idx = 4; }
+  return { id: `${syear}-${idx}-${name}`, label: `${name} ${syear}`, name, year: syear };
+}
+function loadGameScores() { return readJSON(GAME_SCORES_FILE, { seasons: {} }); }
+function saveGameScores(d) { try { writeJSON(GAME_SCORES_FILE, d); } catch (e) { console.error("[arcade] save failed:", e.message); } }
+// Sort a board in ranked order (direction-aware), ties broken by earliest set.
+function sortBoard(list, lower) {
+  return list.slice().sort((a, b) =>
+    (lower ? a.score - b.score : b.score - a.score) || (new Date(a.ts) - new Date(b.ts)));
+}
+
 // ── Schema Drift Detection Functions ─────────────────────────────────
 function loadSchemaBaselines() { return readJSON(SCHEMA_BASELINES_FILE, {}); }
 function saveSchemaBaselines(b) { writeJSON(SCHEMA_BASELINES_FILE, b); }
@@ -8552,6 +8589,55 @@ app.get("/admin/votes", (req, res) => {
   res.json(loadVotes());
 });
 
+// ── Arcade leaderboard: hidden banner mini-games ─────────────────────
+// Scores pool across all orgs (a platform-wide board); the org in the path is
+// just for routing/token consistency. Board resets each season (server-authored
+// season id — the client can't spoof which season it lands in).
+// POST /:org/api/games/score  { game, score, initials } → { ok, season, rank, made, top }
+app.post("/:org/api/games/score", (req, res) => {
+  try {
+    const body = req.body || {};
+    const game = body.game;
+    const meta = LEADERBOARD_GAMES[game];
+    if (!meta) return res.status(400).json({ error: "unknown game" });
+    let score = Math.floor(Number(body.score));
+    if (!isFinite(score) || score < 0) return res.status(400).json({ error: "bad score" });
+    score = Math.min(score, MAX_GAME_SCORE);
+    const initials = String(body.initials || "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 3) || "AAA";
+    const season = seasonForDate();
+    const store = loadGameScores();
+    store.seasons[season.id] = store.seasons[season.id] || {};
+    const entry = { initials, score, org: String(req.params.org || "").slice(0, 40), ts: new Date().toISOString() };
+    const list = (store.seasons[season.id][game] || []).concat(entry);
+    const ranked = sortBoard(list, meta.lower).slice(0, SCORES_PER_BOARD);
+    store.seasons[season.id][game] = ranked;
+    saveGameScores(store);
+    const pos = ranked.indexOf(entry);
+    res.json({
+      ok: true, season: season.label,
+      rank: pos >= 0 ? pos + 1 : null, made: pos >= 0,
+      top: ranked.slice(0, 10).map(s => ({ initials: s.initials, score: s.score })),
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /:org/api/games/leaderboard[?game=x] → current-season board(s)
+app.get("/:org/api/games/leaderboard", (req, res) => {
+  try {
+    const season = seasonForDate();
+    const data = (loadGameScores().seasons || {})[season.id] || {};
+    const pick = g => (data[g] || []).slice(0, 10).map(s => ({ initials: s.initials, score: s.score }));
+    if (req.query.game) {
+      const meta = LEADERBOARD_GAMES[req.query.game];
+      if (!meta) return res.status(400).json({ error: "unknown game" });
+      return res.json({ season: season.label, game: req.query.game, label: meta.label, lower: !!meta.lower, top: pick(req.query.game) });
+    }
+    const games = {};
+    for (const g of Object.keys(LEADERBOARD_GAMES)) games[g] = pick(g);
+    res.json({ season: season.label, games });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ── POST /api/feedback — user feedback → dan@rec.us ─────────────────
 // Whitelisted by the org token gate (all /api/* paths pass through).
 // Body: { message: string, email?: string, page?: string, userAgent?: string }
@@ -10232,6 +10318,26 @@ app.get("/", (req, res) => {
       </table>
     </div>`;
 
+  // Arcade leaderboard (current season) — top scores from the hidden banner games
+  const arcadeSeason = seasonForDate();
+  const arcadeData = (loadGameScores().seasons || {})[arcadeSeason.id] || {};
+  const arcadeTotal = Object.keys(LEADERBOARD_GAMES).reduce((n, g) => n + (arcadeData[g] || []).length, 0);
+  const leaderboardHtml = `
+    <div class="usage-table-wrap" style="padding:0">
+      <div style="padding:10px 14px;border-bottom:1px solid #e8e5df;font-size:11px;color:#9ca3af">${arcadeSeason.label} · ${arcadeTotal} score${arcadeTotal === 1 ? "" : "s"} this season · board resets when the season turns</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr))">
+        ${Object.entries(LEADERBOARD_GAMES).map(([key, m]) => {
+          const top = (arcadeData[key] || []).slice(0, 5);
+          return `<div style="padding:12px 14px;border-right:1px solid #f0efec;border-bottom:1px solid #f0efec">
+            <div style="font-size:12px;font-weight:700;color:#1e1b4b;margin-bottom:8px">${m.emoji} ${m.label}${m.lower ? ' <span style="font-weight:500;color:#9ca3af">· fewest</span>' : ""}</div>
+            ${top.length
+              ? `<ol style="list-style:none;margin:0;padding:0;font-size:12px">${top.map((s, i) => `<li style="display:flex;justify-content:space-between;gap:8px;padding:2px 0;color:${i === 0 ? "#b45309" : "#444"}"><span style="font-weight:${i === 0 ? 700 : 500}">${i + 1}. ${s.initials}</span><span style="font-variant-numeric:tabular-nums;font-weight:600">${s.score.toLocaleString()}</span></li>`).join("")}</ol>`
+              : `<div style="font-size:11px;color:#c7c4bd;font-style:italic">No scores yet</div>`}
+          </div>`;
+        }).join("")}
+      </div>
+    </div>`;
+
   // Org navigation bar (alphabetical, matching orgSections sort order)
   const orgNav = Object.entries(ORGS).sort((a, b) => {
     const nameA = (a[1].displayName || a[0]).toLowerCase();
@@ -11082,6 +11188,19 @@ app.get("/", (req, res) => {
       </div>
       <div class="how-body open">
         ${usageTableHtml}
+      </div>
+    </div>
+
+    <div class="org-section">
+      <div class="org-header" onclick="toggleHow(this)" style="cursor:pointer;user-select:none">
+        <div class="org-header-text">
+          <div class="org-name">&#127942; Arcade Leaderboard</div>
+          <div class="org-slug">${arcadeSeason.label} · hidden banner mini-games</div>
+        </div>
+        <span class="how-chevron open"><i class="ph ph-caret-right" style="font-size:14px"></i></span>
+      </div>
+      <div class="how-body open">
+        ${leaderboardHtml}
       </div>
     </div>
 
