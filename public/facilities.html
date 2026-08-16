@@ -29,7 +29,9 @@
     .toolbar .btn-pdf:hover { background: #2563eb; }
     .toolbar .btn-excel { background: #16803c; border-color: #16803c; font-weight: 600; }
     .toolbar .btn-excel:hover { background: #15692f; }
-    .toolbar .btn-pdf:disabled, .toolbar .btn-excel:disabled { opacity: .5; cursor: not-allowed; }
+    .toolbar .btn-pdf:disabled, .toolbar .btn-excel:disabled, .toolbar .btn-lite:disabled { opacity: .5; cursor: not-allowed; }
+    .toolbar .btn-lite { background: #0d9488; border-color: #0d9488; font-weight: 600; }
+    .toolbar .btn-lite:hover { background: #0f766e; }
 
     /* Print button + Puppeteer PDF capture (_print=1): hide the chrome, keep the report */
     @media print {
@@ -623,6 +625,8 @@
         billed: scoped.reduce((s, r) => s + billedOf(r), 0),
         collected: scoped.reduce((s, r) => s + collectedOf(r), 0),
         refunded: scoped.reduce((s, r) => s + refundedOf(r), 0),
+        instRefund: scoped.filter(isInstant).reduce((s, r) => s + refundedOf(r), 0),
+        mgdRefund: scoped.filter(r => !isInstant(r)).reduce((s, r) => s + refundedOf(r), 0),
         invoicedN: scoped.filter(isInvoice).length,
         invoicedRev: scoped.filter(isInvoice).reduce((s, r) => s + billedOf(r), 0),
         byV: {},
@@ -1169,6 +1173,7 @@
           (props.count == null ? '' : props.count.toLocaleString() + ' bookings · ' + props.sites.toLocaleString() + ' sites')),
         e('button', { onClick: () => window.print(), title: 'Print this view' }, '🖨️ Print'),
         e('button', { className: 'btn-pdf', disabled: !props.count || props.pdfLoading, onClick: props.onPdf, title: 'Download this view as a PDF' }, props.pdfLoading ? 'Generating…' : '📄 PDF'),
+        e('button', { className: 'btn-lite', disabled: !props.count, onClick: props.onLite, title: 'Open a plain one-page revenue summary to print or save as PDF' }, '🧾 Summary'),
         e('button', { className: 'btn-excel', disabled: !props.count, onClick: props.onExcel, title: 'Download the bookings in view as Excel' }, '📊 Excel'),
       );
     }
@@ -2919,8 +2924,103 @@
           .finally(() => setPdfLoading(false));
       }
 
+      // Lite export — a plain, print-first one-page revenue summary (no dashboard
+      // chrome) built from the SAME aggregate that feeds the tiles, so its numbers
+      // match the current view exactly and honor the active filters. Opens in a new
+      // window; the user prints / saves as PDF (like the standalone Charged Revenue
+      // Report). Mirrors the Charged / Collected / Outstanding / Refunds ladder.
+      function exportLite() {
+        const a = bannerAgg;
+        if (!a) return;
+        const money = n => '$' + (Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        const pct = (n, d) => d ? (n / d * 100).toFixed(1) + '%' : '0%';
+        const charged = a.billed, inst = a.instRev, mgd = a.mgdRev;
+        const collected = a.collected, outstanding = a.outstanding, refunded = a.refunded, net = collected - refunded;
+        const org = CFG.displayName || CFG.slug || 'Parks & Recreation';
+        const loc = locSel.length ? locSel.join(', ') : 'All locations';
+        const genDate = now.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+        const range = fmtRange(start, end);
+        const statusLabel = statusSel.length >= 3 ? 'All statuses' : statusSel.map(s => s.replace(/(^|[- ])\w/g, c => c.toUpperCase())).join(', ');
+        const invNote = a.invoicedRev > 0
+          ? ' Includes ' + money(a.invoicedRev) + ' billed through ' + a.invoicedN + ' manual invoice line' + (a.invoicedN === 1 ? '' : 's') + ' (no court reservation attached).'
+          : '';
+        const findings = [
+          '<li><b>Instant Bookings (Customer Self-Service): ' + money(inst) + '</b> — ' + pct(inst, charged) + ' of all charged revenue, booked and paid directly through the online storefront.</li>',
+          '<li><b>Admin-Initiated &amp; Managed Events: ' + money(mgd) + '</b> — ' + pct(mgd, charged) + ' of all charged revenue: admin-initiated rentals, managed events, leagues, and programs.' + invNote + '</li>',
+          outstanding > 0 ? '<li><b>Outstanding balance: ' + money(outstanding) + '</b> — ' + pct(outstanding, charged) + ' of charged revenue is billed but not yet collected (accounts receivable), typical for in-progress recurring bookings.</li>' : '',
+          refunded > 0 ? '<li><b>Refunds: ' + money(refunded) + '</b> returned to customers during the period; net revenue received after refunds is ' + money(net) + '.</li>' : '',
+        ].join('');
+        const css = ':root{--ink:#111;--rule:#111;--muted:#555;--faint:#888}*{box-sizing:border-box}'
+          + "body{background:#fff;color:var(--ink);font:15px/1.5 Georgia,'Times New Roman',serif;max-width:760px;margin:0 auto;padding:40px 32px 64px}"
+          + 'header{display:flex;justify-content:space-between;align-items:baseline;font-size:12px;color:var(--muted)}'
+          + 'h1{font-size:20px;line-height:1.25;margin:.35em 0 .1em}h2{font-size:15px;margin:1.9em 0 .5em}'
+          + 'h3{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:1.4em 0 .4em}'
+          + '.lead{color:var(--muted);font-size:13px;margin:.2em 0 0}hr{border:0;border-top:1px solid var(--rule);margin:16px 0 0}'
+          + 'table{width:100%;border-collapse:collapse;margin:.3em 0 .2em;font-size:14px}'
+          + 'th,td{text-align:left;padding:8px 6px;border-bottom:1px solid #ccc;vertical-align:top}'
+          + 'th{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);border-bottom:1.5px solid var(--rule);font-weight:400}'
+          + 'td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}'
+          + 'tr.total td{border-top:1.5px solid var(--rule);border-bottom:none;font-weight:bold}'
+          + 'ul{margin:.3em 0;padding-left:1.1em}li{margin:.35em 0}.details p{margin:.2em 0;font-size:13px}'
+          + '.note{font-size:12px;color:var(--muted);margin:.5em 0 0;font-style:italic}'
+          + '.foot{margin-top:2.4em;font-size:11px;color:var(--faint);border-top:1px solid #ddd;padding-top:8px}'
+          + '.printbar{position:fixed;top:12px;right:12px}.printbar button{font:600 13px Georgia,serif;padding:8px 16px;border:1px solid #0d9488;background:#0d9488;color:#fff;border-radius:6px;cursor:pointer}'
+          + '@media print{body{padding:0}.printbar{display:none}}';
+        const doc = '<!doctype html><html><head><meta charset="utf-8"><title>' + org + ' — Charged Revenue</title><style>' + css + '</style></head><body>'
+          + '<div class="printbar"><button onclick="window.print()">🖨️ Print / Save as PDF</button></div>'
+          + '<header><span>' + org + '</span><span>Generated ' + genDate + '</span></header>'
+          + '<h1>' + loc + ' — Charged Revenue Report</h1><hr>'
+          + '<h2>Charged Revenue Report: ' + range + '</h2>'
+          + '<h3>Executive Summary</h3><table><thead><tr><th>Metric</th><th class="num">Amount</th></tr></thead><tbody>'
+          + '<tr><td>Grand Total Charged</td><td class="num">' + money(charged) + '</td></tr>'
+          + '<tr><td>Instant Bookings (Customer Self-Service)</td><td class="num">' + money(inst) + '</td></tr>'
+          + '<tr><td>Admin-Initiated &amp; Managed Events</td><td class="num">' + money(mgd) + '</td></tr>'
+          + '<tr><td>Period</td><td class="num">' + range + '</td></tr>'
+          + '<tr><td>Location</td><td class="num">' + loc + '</td></tr></tbody></table>'
+          + '<h2>Revenue Breakdown</h2><h3>By Booking Type</h3>'
+          + '<table><thead><tr><th>Booking Type</th><th class="num">Charged</th><th class="num">% of Total</th></tr></thead><tbody>'
+          + '<tr><td>Instant Bookings</td><td class="num">' + money(inst) + '</td><td class="num">' + pct(inst, charged) + '</td></tr>'
+          + '<tr><td>Admin-Initiated &amp; Managed Events</td><td class="num">' + money(mgd) + '</td><td class="num">' + pct(mgd, charged) + '</td></tr>'
+          + '<tr class="total"><td>TOTAL</td><td class="num">' + money(charged) + '</td><td class="num">100%</td></tr></tbody></table>'
+          + '<h3>By Payment Status</h3>'
+          + '<table><thead><tr><th>Status</th><th class="num">Amount</th><th class="num">% of Charged</th></tr></thead><tbody>'
+          + '<tr><td>Collected (received)</td><td class="num">' + money(collected) + '</td><td class="num">' + pct(collected, charged) + '</td></tr>'
+          + '<tr><td>Outstanding (billed, not yet collected)</td><td class="num">' + money(outstanding) + '</td><td class="num">' + pct(outstanding, charged) + '</td></tr>'
+          + '<tr class="total"><td>TOTAL CHARGED</td><td class="num">' + money(charged) + '</td><td class="num">100%</td></tr></tbody></table>'
+          + '<h2>Refunds</h2><p class="lead">Amounts returned to customers during the reporting period. Refunds are paid back out of Collected revenue — shown separately and not subtracted from Charged or Collected above.</p>'
+          + '<table><thead><tr><th>Booking Type</th><th class="num">Refunded</th></tr></thead><tbody>'
+          + '<tr><td>Instant Bookings</td><td class="num">' + money(a.instRefund) + '</td></tr>'
+          + '<tr><td>Admin-Initiated &amp; Managed Events</td><td class="num">' + money(a.mgdRefund) + '</td></tr>'
+          + '<tr class="total"><td>TOTAL REFUNDED</td><td class="num">' + money(refunded) + '</td></tr></tbody></table>'
+          + '<table><tbody><tr><td>Collected (gross)</td><td class="num">' + money(collected) + '</td></tr>'
+          + '<tr><td>Less: Refunds</td><td class="num">−' + money(refunded) + '</td></tr>'
+          + '<tr class="total"><td>Net Received (after refunds)</td><td class="num">' + money(net) + '</td></tr></tbody></table>'
+          + (findings ? '<h2>Key Findings</h2><ul>' + findings + '</ul>' : '')
+          + '<h2>What Each Metric Counts</h2><table><thead><tr><th>Metric</th><th>Definition</th></tr></thead><tbody>'
+          + '<tr><td><b>Charged (Billed)</b></td><td>The full amount invoiced for court time and events during the period — every booking at its actual charged price, each session of a recurring booking counted separately. Included whether or not it has been paid. Canceled bookings excluded.</td></tr>'
+          + '<tr><td><b>Instant Bookings</b></td><td>Reservations customers booked and paid for themselves through the online storefront.</td></tr>'
+          + '<tr><td><b>Admin-Initiated &amp; Managed Events</b></td><td>Bookings created or managed by staff — rentals, leagues, programs, tournaments, events, and manual invoice line items.</td></tr>'
+          + '<tr><td><b>Collected</b></td><td>Money actually received (confirmed payments) against these charges as of the report date.</td></tr>'
+          + '<tr><td><b>Outstanding (A/R)</b></td><td>Charged amounts not yet collected — accounts receivable. Normal for ongoing leagues and programs until each session is billed and paid.</td></tr>'
+          + '<tr><td><b>Refunds</b></td><td>Amounts paid back to customers during the period. Shown separately and not subtracted from Charged or Collected.</td></tr>'
+          + '<tr><td><b>Net Received</b></td><td>Collected minus Refunds — the cash retained after refunds.</td></tr></tbody></table>'
+          + '<h2>Report Details</h2><div class="details">'
+          + '<p><b>Scope:</b> ' + loc + '.</p>'
+          + '<p><b>Time Period:</b> ' + range + '.</p>'
+          + '<p><b>Booking Status:</b> ' + statusLabel + '.</p>'
+          + '<p><b>Revenue Type:</b> Charged (total billed), regardless of payment status.</p>'
+          + '<p><b>Basis:</b> Each booking counted at its actual charged amount, per session for recurring bookings. Cancellations excluded from Charged. Collected reflects confirmed payments; Refunds reflect confirmed amounts returned; Outstanding is Charged less Collected.</p>'
+          + '<p><b>Snapshot:</b> Figures reflect live records as of ' + genDate + ' and will move as bookings, payments, and refunds are processed.</p></div>'
+          + '<div class="foot">' + org + ' · generated from the Rec facility report on ' + genDate + '.</div>'
+          + '</body></html>';
+        const w = window.open('', '_blank');
+        if (!w) { alert('Please allow pop-ups to open the summary report.'); return; }
+        w.document.write(doc);
+        w.document.close();
+      }
+
       return e(React.Fragment, null,
-        isPrint ? null : e(Toolbar, { start, end, setStart, setEnd, thisMonth: setThisMonth, lastMonth: setLastMonth, thisYear: setThisYear, run: () => load(), loading: rows === null, count, sites: siteCount, onPdf: downloadPdf, onExcel: exportExcel, pdfLoading }),
+        isPrint ? null : e(Toolbar, { start, end, setStart, setEnd, thisMonth: setThisMonth, lastMonth: setLastMonth, thisYear: setThisYear, run: () => load(), loading: rows === null, count, sites: siteCount, onPdf: downloadPdf, onLite: exportLite, onExcel: exportExcel, pdfLoading }),
         rows !== null ? e('div', { id: 'report-ready', 'data-ready': 'true', style: { display: 'none' } }) : null,
         e('div', { className: 'page' },
           e('div', { className: 'report-header' },
