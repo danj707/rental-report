@@ -935,9 +935,15 @@ async function prewarmCache(reason = 'interval') {
 const DASHBOARD_PASSWORD = process.env.DASHBOARD_PASSWORD || '';
 const RECOMMEND_ENABLED  = process.env.RECOMMEND_ENABLED === 'true'; // off until rec.us domain is verified in Resend; set RECOMMEND_ENABLED=true to re-enable
 
+// Internal, cross-org pages that sit behind the same Basic-auth gate as the
+// root dashboard. /remittance lists every org's finance export in one place, so
+// it must never be reachable with only an org token.
+const PROTECTED_PATHS = new Set(['/', '/remittance']);
+
 function dashboardAuth(req, res, next) {
-  // Only protect the root dashboard; all org routes and /hotdog are public
-  if (req.path !== '/') return next();
+  // Only protect the root dashboard + internal cross-org pages; all org routes
+  // and /hotdog are public
+  if (!PROTECTED_PATHS.has(req.path)) return next();
 
   // No password configured → open access (dev/staging fallback)
   if (!DASHBOARD_PASSWORD) return next();
@@ -1230,7 +1236,7 @@ const ORGS = {
   },
 };
 
-const REPORT_TYPES = ["facility", "gl", "historic", "programs", "roster", "products", "memberships", "court-utilization", "calendar", "fasttrack", "waitlist", "users", "program-demographics", "instructor-payout", "retention", "annual-report", "section-detail", "ice-calendar", "qoq", "checkins", "program-checkins", "selfservice"];
+const REPORT_TYPES = ["facility", "gl", "historic", "programs", "roster", "products", "memberships", "court-utilization", "calendar", "fasttrack", "waitlist", "users", "program-demographics", "instructor-payout", "retention", "annual-report", "section-detail", "ice-calendar", "qoq", "checkins", "program-checkins", "selfservice", "itemlog"];
 
 // ── Friendly report directory — label + emoji per report type ──────────
 // Powers the smart Project-Update composer (auto-draft from the changelog):
@@ -1249,6 +1255,7 @@ const REPORT_DIRECTORY = {
   waitlist:            { label: "Waitlist Demand",          emoji: "⏳" },
   users:               { label: "Community Intel",          emoji: "👥" },
   "instructor-payout": { label: "Instructor Payout",        emoji: "💰" },
+  itemlog:             { label: "Item Log",                 emoji: "🧾" },
   rentalcalendar:      { label: "Rental Calendar",          emoji: "🏟️" },
   "directors-report":  { label: "Director's Report",        emoji: "📰" },
   lessons:             { label: "Instructor Lessons",       emoji: "🎾" },
@@ -1258,6 +1265,17 @@ const REPORT_DIRECTORY = {
   qoq:                 { label: "QoQ Revenue Comparison",   emoji: "📉" },
   selfservice:         { label: "Self-Service Mix",         emoji: "🖱️" },
 };
+
+// ── Item Log card ────────────────────────────────────────────────────
+// Metabase question #19900 ("✅ Item Log Report", collection 3532, db 4).
+// SQL source of truth: sql/report-cards/item-log.sql — validated byte-for-byte
+// against a manual product export (CARD, 2026-08-08 → 2026-08-15, 1,180 rows).
+// Paste the card's PUBLIC sharing UUID here once sharing is enabled in the
+// Metabase UI (Share → Enable public link) and its Start/End Date template tags
+// are flipped back to type Date. Until then the key is dropped from
+// SHARED_UUIDS below, so Item Log simply reads as "not configured" everywhere
+// (health probes, dashboards, chat) instead of firing empty-UUID fetches.
+const ITEM_LOG_UUID = "";
 
 // ── Shared Metabase UUIDs (one query per report type, parameterized by org_id) ──
 // When a report type has an entry here, the server uses this UUID + passes the
@@ -1287,7 +1305,79 @@ const SHARED_UUIDS = {
   // Metabase question #19174 ("✅ Self-Service Mix Report") — powers the
   // Self-Service & Staff Workload band on the Program Summary tab.
   selfservice: "358f6b85-8af3-429e-ba24-ad2cd3207ac9",
+  // Metabase question #19900 ("✅ Item Log Report") — the transaction-level
+  // item log finance used to export by hand from the product once per billing
+  // period, per org. Backs /:org/itemlog and the /remittance dashboard.
+  // Set ITEMLOG_UUID in Railway to point at a different card without a deploy.
+  itemlog: process.env.ITEMLOG_UUID || ITEM_LOG_UUID,
 };
+
+// Item Log is inert until its public UUID is set (see ITEM_LOG_UUID above).
+// Dropping the key — rather than leaving it "" — keeps every `SHARED_UUIDS[rt]`
+// truthiness check across the app honest.
+if (!SHARED_UUIDS.itemlog) delete SHARED_UUIDS.itemlog;
+
+// ── Item Log CSV ─────────────────────────────────────────────────────
+// Column order of the product's own Item Log export. Used as the header when a
+// period has no rows at all, so finance still gets a well-formed file instead
+// of an empty one.
+const ITEM_LOG_COLUMNS = [
+  "Date", "Location", "Transaction ID", "Customer Name", "Type", "Method",
+  "Item Value", "Item Type", "Fee Category", "Item Name", "GL Code", "Customer Email",
+];
+
+// Match the product export byte-for-byte: every field quoted, embedded quotes
+// doubled, LF line endings, helper columns (leading "_") dropped.
+function itemLogRowsToCsv(rows) {
+  const cols = rows.length
+    ? Object.keys(rows[0]).filter(k => !k.startsWith("_"))
+    : ITEM_LOG_COLUMNS;
+  const esc = (v) => `"${String(v === null || v === undefined ? "" : v).replace(/"/g, '""')}"`;
+  const out = [cols.map(esc).join(",")];
+  for (const row of rows) out.push(cols.map(c => esc(row[c])).join(","));
+  return out.join("\n") + "\n";
+}
+
+// ── Remittance / payment schedule ────────────────────────────────────
+// Finance reconciles each billing period (1-7, 8-15, 16-22, 23-EOM) against the
+// item log before Rec issues payment. The pay/ACH dates are business-day driven
+// and NOT derivable by rule, so each year is transcribed explicitly into
+// remittance-schedule.json — add next year's column there when finance
+// publishes it.
+let REMITTANCE_SCHEDULE = { years: {} };
+try {
+  REMITTANCE_SCHEDULE = JSON.parse(fs.readFileSync(path.join(__dirname, "remittance-schedule.json"), "utf8"));
+} catch (e) {
+  console.warn("[remittance] schedule load failed:", e.message);
+}
+
+function remittancePeriods(year) {
+  return (REMITTANCE_SCHEDULE.years || {})[String(year)] || [];
+}
+
+// Every period we know about, oldest first, across all transcribed years.
+function allRemittancePeriods() {
+  return Object.keys(REMITTANCE_SCHEDULE.years || {})
+    .sort()
+    .flatMap(y => remittancePeriods(y));
+}
+
+// The period finance is working on *right now*: the most recent one that has
+// already closed. On the day a period closes it is immediately the active one
+// (CARD's 8-15 export was pulled on the 16th), so "closed" means end < today.
+function currentRemittancePeriod(today = new Date().toISOString().slice(0, 10)) {
+  const closed = allRemittancePeriods().filter(p => p.end < today);
+  return closed.length ? closed[closed.length - 1] : null;
+}
+
+// Status drives the dashboard's colour coding.
+//   due      — closed, payment not yet issued (finance needs the export NOW)
+//   paid     — payment date passed; ACH may still be landing
+//   upcoming — period hasn't closed yet
+function remittanceStatus(period, today = new Date().toISOString().slice(0, 10)) {
+  if (period.end >= today) return "upcoming";
+  return period.payBy >= today ? "due" : "paid";
+}
 
 // Facilities hub — Summary tab data source. This is a dedicated public card
 // (org-parameterized, INITCAP booking_type/status, court.type site type, base
@@ -6158,6 +6248,95 @@ app.get("/:org/gl", (req, res) => {
   res.send(html.replace("<head>", `<head><script>window.ORG_CONFIG=${JSON.stringify(orgConfig)};</script>`));
 });
 
+// ── Item Log ─────────────────────────────────────────────────────────
+// The transaction-level log finance used to export by hand from the product,
+// once per billing period, for every org. See /remittance for the cross-org
+// view keyed to the payment schedule.
+app.get("/:org/itemlog", (req, res) => {
+  const slug = req.params.org;
+  const org  = ORGS[slug];
+  if (!org) return res.status(404).send("Unknown org");
+  logEvent(slug, "itemlog", "view", req);
+  const orgConfig = {
+    slug,
+    displayName: org.displayName || (slug.charAt(0).toUpperCase() + slug.slice(1) + " Parks & Recreation"),
+    logoUrl: org.logoUrl || "",
+    token: org.token || "",
+    configured: !!SHARED_UUIDS.itemlog,
+  };
+  const html = require("fs").readFileSync(path.join(__dirname, "public", "itemlog.html"), "utf8");
+  const inject = `<script>window.ORG_CONFIG=${JSON.stringify(orgConfig)};</script>`;
+  res.type("html").send(html.replace("</head>", inject + "</head>"));
+});
+
+// ── GET /:org/itemlog/api/csv — the export itself ────────────────────
+// Streams the same 12 columns, in the same order, with the same value
+// formatting as the product's own Item Log export, so the downloaded file is a
+// drop-in replacement for the manual one. Underscore-prefixed helper columns
+// from the card (sort key, raw cents, raw method) are stripped here — they
+// exist for the on-screen table, not for finance's file.
+// Goes through this instance's own /api/data so the request shares the report
+// cache (and its stale-fallback behavior) with the page view.
+app.get("/:org/itemlog/api/csv", resolveOrg, async (req, res) => {
+  const { orgSlug } = req;
+  try {
+    if (!SHARED_UUIDS.itemlog) {
+      return res.status(503).send("Item Log card is not configured yet (ITEM_LOG_UUID unset).");
+    }
+    const qs = new URLSearchParams();
+    if (req.query.start_date) qs.set("start_date", req.query.start_date);
+    if (req.query.end_date)   qs.set("end_date", req.query.end_date);
+    if (req.query._nocache)   qs.set("_nocache", req.query._nocache);
+    const url = `http://localhost:${PORT}/${orgSlug}/itemlog/api/data?${qs}`;
+    const resp = await fetch(url, { signal: AbortSignal.timeout(180000) });
+    if (!resp.ok) {
+      const body = await resp.text();
+      console.error(`[itemlog-csv] ${orgSlug} upstream ${resp.status}: ${body.slice(0, 200)}`);
+      return res.status(502).send("Could not load Item Log data from Metabase.");
+    }
+    const { rows } = await resp.json();
+    const csv = itemLogRowsToCsv(rows || []);
+    const stamp = `${req.query.start_date || "start"}_to_${req.query.end_date || "end"}`;
+    res.set("Content-Type", "text/csv; charset=utf-8");
+    res.set("Content-Disposition", `attachment; filename="item-log-${orgSlug}-${stamp}.csv"`);
+    logEvent(orgSlug, "itemlog", "export", req);
+    return res.send(csv);
+  } catch (err) {
+    console.error(`[itemlog-csv] ${orgSlug} failed: ${err.message}`);
+    return res.status(500).send("Item Log export failed.");
+  }
+});
+
+// ── GET /remittance — cross-org finance dashboard ────────────────────
+// One page per billing period: every org, with a click-through to its Item Log
+// and a one-click CSV in the exact shape finance used to export by hand.
+// Basic-auth gated via PROTECTED_PATHS (it lists every org and its token), so
+// the org/period data is injected into the HTML rather than served from a
+// separate endpoint that would sit outside that gate.
+// MUST stay registered before the catch-all `/:org` route below, or Express
+// resolves "/remittance" as an org slug and 404s.
+app.get("/remittance", (req, res) => {
+  const periods = allRemittancePeriods();
+  const today = new Date().toISOString().slice(0, 10);
+  const current = currentRemittancePeriod(today);
+  const data = {
+    today,
+    configured: !!SHARED_UUIDS.itemlog,
+    currentPeriodStart: current ? current.start : null,
+    periods: periods.map(p => Object.assign({}, p, { status: remittanceStatus(p, today) })),
+    orgs: Object.entries(ORGS)
+      .map(([slug, org]) => ({
+        slug,
+        displayName: org.displayName || (slug.charAt(0).toUpperCase() + slug.slice(1) + " Parks & Recreation"),
+        token: org.token || "",
+      }))
+      .sort((a, b) => a.displayName.localeCompare(b.displayName)),
+  };
+  const html = require("fs").readFileSync(path.join(__dirname, "public", "remittance.html"), "utf8");
+  const inject = `<script>window.REMITTANCE=${JSON.stringify(data)};</script>`;
+  res.type("html").send(html.replace("</head>", inject + "</head>"));
+});
+
 app.get("/:org/qoq", (req, res) => {
   const slug = req.params.org;
   if (!ORGS[slug]) return res.status(404).send("Unknown org");
@@ -9977,6 +10156,7 @@ app.get("/", (req, res) => {
     waitlist:    { label: "Waitlist Demand",        icon: "⏳", desc: "Waitlist pressure, conversion, and unmet demand — the add-another-section signal", color: "#b45309" },
     users:       { label: "Community Intel",            icon: "👥", desc: "Demographics, revenue, and strategy intelligence across your community", color: "#7c3aed", ai: true },
     "instructor-payout": { label: "Instructor Payout", ai: true, icon: "💰", desc: "Revenue splits and payout calculations by instructor", color: "#6366f1" },
+    itemlog:     { label: "Item Log",               icon: "🧾", desc: "Every payment and refund line for a date range — the finance remittance export", color: "#475569" },
 
     "rentalcalendar":    { label: "Rental Calendar", icon: "🏟️", desc: "Real-time facility availability with live booking data", color: "#059669" },
     "directors-report":  { label: "Director's Report", ai: true, icon: "📰", desc: "Quarterly executive summary — revenue, enrollment, demand, facilities, and staff workload with QoQ deltas", color: "#0f766e" },
@@ -10644,6 +10824,7 @@ app.get("/", (req, res) => {
     <div style="flex:1"></div>
     <a href="/langfuse" style="font-size:12px;padding:6px 14px;background:rgba(124,58,237,.85);border:1px solid rgba(124,58,237,1);border-radius:5px;color:#fff;cursor:pointer;text-decoration:none;margin-right:8px;transition:background .15s" onmouseover="this.style.background='rgba(109,40,217,1)'" onmouseout="this.style.background='rgba(124,58,237,.85)'">&#x1F50D; Langfuse</a>
     <a href="/qbr" style="font-size:12px;padding:6px 14px;background:rgba(31,122,90,.92);border:1px solid rgba(31,122,90,1);border-radius:5px;color:#fff;cursor:pointer;text-decoration:none;margin-right:8px;transition:background .15s" onmouseover="this.style.background='rgba(26,106,78,1)'" onmouseout="this.style.background='rgba(31,122,90,.92)'">📊 QBR Generator</a>
+    <a href="/remittance" style="font-size:12px;padding:6px 14px;background:rgba(71,85,105,.92);border:1px solid rgba(71,85,105,1);border-radius:5px;color:#fff;cursor:pointer;text-decoration:none;margin-right:8px;transition:background .15s" onmouseover="this.style.background='rgba(51,65,85,1)'" onmouseout="this.style.background='rgba(71,85,105,.92)'">🧾 Remittance</a>
     <button onclick="openUpd()" style="font-size:12px;padding:6px 14px;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.2);border-radius:5px;color:#eee;cursor:pointer;margin-right:8px;transition:background .15s" onmouseover="this.style.background='rgba(255,255,255,.22)'" onmouseout="this.style.background='rgba(255,255,255,.12)'">&#128227; Add Update</button>
     <button onclick="openAddOrg()" style="font-size:12px;padding:6px 14px;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.2);border-radius:5px;color:#eee;cursor:pointer;transition:background .15s" onmouseover="this.style.background='rgba(255,255,255,.22)'" onmouseout="this.style.background='rgba(255,255,255,.12)'">➕ Add Org</button>
   </div>
@@ -12727,6 +12908,12 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  { date: '2026-08-16', title: '🧾 New report: Item Log + Remittance dashboard', items: [
+    "Finance re-ran the product's Item Log export by hand once per billing period, for every org. It's now a report: /:org/itemlog gives the transaction-level log for any date range, with filters, payment/refund/net totals, and a one-click CSV.",
+    "The CSV is a drop-in replacement for the manual export — same 12 columns, same order, same value formatting. Validated byte-for-byte against a real manual export (CARD, Aug 8-15: 1,180 rows, identical file).",
+    "New /remittance dashboard (Basic-auth gated, linked from the topbar) lists every org for a chosen billing period — 1-7, 8-15, 16-22, 23-EOM — and opens on whichever period is currently due, showing Rec's payment date and the expected ACH window from the finance schedule. Download CSV per org, no date entry needed.",
+    "Backed by a new shared Metabase card reading materialized.item_log_report — the same view the GL Code Rollup already uses.",
+  ]},
   { date: '2026-08-05', title: '🎾 New report: Instructor Lessons (SF pilot)', items: [
     "Private and semi-private coaching gets its own report: lessons booked, revenue, active instructors, an instructor leaderboard, monthly booking trend, day×month heat map, sport and price mix, cancellations, and student-loyalty stats — with a date filter, Print, and PDF export.",
     'Lessons live in the programs pipeline (one marketplace section per lesson slot), so they never appeared in facility reservations. The Facilities Racket Sports tab now links straight to the new report instead of showing a "coming soon" placeholder.',

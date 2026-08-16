@@ -120,6 +120,45 @@ Already shipped (PR #75, live on `main`): name-based site-type recovery so
 filter, Ice sub-tab, court-name wrap. Display/scoping only — did not change the
 revenue math, so the gap above predates and survives it.
 
+## Item Log + Remittance dashboard (BUILT 2026-08-16 — one manual step left)
+
+Finance was re-running the product's **Item Log** export by hand once per billing
+period, for every org. It's now a report.
+
+- **Source:** `materialized.item_log_report` — the same view the GL Code Rollup
+  already reads. One row per `order_item_transaction`.
+- **SQL source of truth:** `sql/report-cards/item-log.sql` → Metabase card
+  **19900** ("✅ Item Log Report", collection 3532, db 4).
+- **Fidelity:** the query reproduces the product export *byte-for-byte* —
+  validated against CARD's 2026-08-08 → 2026-08-15 manual export (1,180 rows,
+  identical md5 across all 12 columns). Two non-obvious rules make it match, so
+  don't "clean them up":
+  1. **Transaction ID = last 8 hex of `transaction_event_batch_id`**, uppercased
+     — NOT the event id (they coincide for ~99% of rows, then silently diverge).
+  2. **Zero renders as `$0`**, not `$0.00`; everything else is `$#,##0.00`.
+- **App:** `/:org/itemlog` (page + filters + totals), `/:org/itemlog/api/csv`
+  (the export — strips the card's `_`-prefixed helper columns), and
+  **`/remittance`** — the cross-org dashboard, Basic-auth gated via
+  `PROTECTED_PATHS`, linked from the admin topbar. It opens on whichever billing
+  period is currently due and gives every org a one-click CSV.
+- **Billing periods** are 1-7, 8-15, 16-22, 23-EOM. Pay/ACH dates are
+  business-day driven and NOT derivable by rule → transcribed per year in
+  `remittance-schedule.json`. **Add next year's column when finance publishes it**
+  or the dashboard runs out of periods.
+
+**REMAINING MANUAL STEP (Dan, in the Metabase UI — card 19900):**
+1. Flip **Start Date** and **End Date** template tags back to type **Date**
+   (they were regenerated as Text when the card was created via MCP — see the
+   section above).
+2. **Share → Enable public link**, copy the UUID.
+3. Set it as `ITEM_LOG_UUID` in `server.js` (or `ITEMLOG_UUID` in Railway for a
+   no-deploy switch). Until it's set, the key is deleted from `SHARED_UUIDS`, so
+   Item Log reads as "not configured" everywhere instead of firing empty-UUID
+   fetches — the pages render with an explicit banner rather than breaking.
+4. Then add a `{card, org}` row to `scripts/report-cards.manifest.json` and run
+   `node scripts/verify-report-live.js --manifest scripts/report-cards.manifest.json`
+   per the card sign-off rule above (use a heavy org, not CARD).
+
 ## Dev branch
 
 Feature work for these tasks lives on `claude/facility-report-line-removal-1d0c8k`

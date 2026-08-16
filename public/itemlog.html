@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Item Log</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      font-size: 12px;
+      color: #1a1a1a;
+      background: #f5f4f1;
+      line-height: 1.35;
+    }
+
+    /* ── Toolbar ── */
+    .toolbar {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 20px;
+      background: #2c2c2c;
+      color: #eee;
+      font-size: 13px;
+      flex-wrap: wrap;
+    }
+    .toolbar-title { font-weight: 600; margin-right: 8px; }
+    .toolbar-spacer { flex: 1; }
+    .toolbar label {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+      color: #9c9c9c;
+      margin-right: 4px;
+    }
+    .toolbar input[type="date"], .toolbar select {
+      font-family: inherit;
+      font-size: 12px;
+      padding: 4px 6px;
+      border: 1px solid #4a4a4a;
+      border-radius: 4px;
+      background: #3a3a3a;
+      color: #eee;
+    }
+    .btn {
+      font-family: inherit;
+      font-size: 12px;
+      font-weight: 600;
+      padding: 5px 12px;
+      border: 0;
+      border-radius: 4px;
+      background: #475569;
+      color: #fff;
+      cursor: pointer;
+    }
+    .btn:hover { background: #334155; }
+    .btn-primary { background: #16a34a; }
+    .btn-primary:hover { background: #15803d; }
+    .btn[disabled] { opacity: .5; cursor: not-allowed; }
+
+    /* ── Page ── */
+    .wrap { padding: 16px 20px 60px; }
+    .page-head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
+    .page-title { font-size: 19px; font-weight: 700; letter-spacing: -.02em; }
+    .page-sub { color: #6b7280; font-size: 12px; }
+
+    /* ── Summary tiles ── */
+    .tiles { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
+    .tile {
+      background: #fff;
+      border: 1px solid #e6e3dd;
+      border-radius: 6px;
+      padding: 10px 14px;
+      min-width: 130px;
+      border-left: 3px solid #475569;
+    }
+    .tile-label { font-size: 10px; text-transform: uppercase; letter-spacing: .05em; color: #6b7280; margin-bottom: 3px; }
+    .tile-value { font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums; }
+    .tile-refund { border-left-color: #dc2626; }
+    .tile-refund .tile-value { color: #dc2626; }
+    .tile-net { border-left-color: #16a34a; }
+
+    /* ── Filters ── */
+    .filters { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
+    .filters select, .filters input {
+      font-family: inherit; font-size: 12px; padding: 4px 7px;
+      border: 1px solid #d9d5cd; border-radius: 4px; background: #fff; color: #1a1a1a;
+    }
+    .filters input[type="search"] { min-width: 200px; }
+    .filter-note { color: #6b7280; font-size: 11px; }
+
+    /* ── Table ── */
+    .table-wrap { background: #fff; border: 1px solid #e6e3dd; border-radius: 6px; overflow: auto; max-height: 72vh; }
+    table { border-collapse: collapse; width: 100%; font-size: 11.5px; }
+    thead th {
+      position: sticky; top: 0; z-index: 2;
+      background: #f0eeea;
+      text-align: left;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+      color: #4b5563;
+      padding: 7px 9px;
+      border-bottom: 1px solid #ddd8d0;
+      white-space: nowrap;
+      cursor: pointer;
+      user-select: none;
+    }
+    thead th:hover { background: #e8e5e0; }
+    thead th .arrow { color: #9ca3af; font-size: 9px; }
+    tbody td { padding: 6px 9px; border-bottom: 1px solid #f1efe9; vertical-align: top; }
+    tbody tr:hover { background: #fafaf8; }
+    .mono { font-family: 'IBM Plex Mono', monospace; }
+    .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .type-refund { color: #dc2626; font-weight: 600; }
+    .nowrap { white-space: nowrap; }
+    .muted { color: #9ca3af; }
+
+    .state { padding: 40px 20px; text-align: center; color: #6b7280; }
+    .state.error { color: #b91c1c; }
+    .banner {
+      background: #fef3c7; border: 1px solid #fcd34d; color: #78350f;
+      border-radius: 6px; padding: 10px 14px; margin-bottom: 14px; font-size: 12px;
+    }
+    .rowcap { font-size: 11px; color: #6b7280; margin-top: 8px; }
+  </style>
+</head>
+<body>
+
+<div class="toolbar">
+  <span class="toolbar-title">🧾 Item Log</span>
+
+  <label for="period">Billing period</label>
+  <select id="period"><option value="">Custom…</option></select>
+
+  <label for="start">From</label>
+  <input type="date" id="start" />
+  <label for="end">To</label>
+  <input type="date" id="end" />
+
+  <button class="btn" id="apply">Apply</button>
+
+  <span class="toolbar-spacer"></span>
+
+  <button class="btn btn-primary" id="download">⬇ Download CSV</button>
+</div>
+
+<div class="wrap">
+  <div class="page-head">
+    <div class="page-title" id="orgName">Item Log</div>
+    <div class="page-sub" id="rangeLabel"></div>
+  </div>
+
+  <div id="notConfigured" class="banner" style="display:none">
+    The Item Log Metabase card isn’t connected yet — the shared card needs its public link
+    enabled and <code>ITEM_LOG_UUID</code> set in <code>server.js</code>.
+  </div>
+
+  <div class="tiles" id="tiles" style="display:none">
+    <div class="tile"><div class="tile-label">Payments</div><div class="tile-value" id="tPay">—</div></div>
+    <div class="tile tile-refund"><div class="tile-label">Refunds</div><div class="tile-value" id="tRef">—</div></div>
+    <div class="tile tile-net"><div class="tile-label">Net</div><div class="tile-value" id="tNet">—</div></div>
+    <div class="tile"><div class="tile-label">Line items</div><div class="tile-value" id="tRows">—</div></div>
+    <div class="tile"><div class="tile-label">Transactions</div><div class="tile-value" id="tTx">—</div></div>
+  </div>
+
+  <div class="filters" id="filters" style="display:none">
+    <select id="fLocation"><option value="">All locations</option></select>
+    <select id="fMethod"><option value="">All methods</option></select>
+    <select id="fType"><option value="">All item types</option></select>
+    <select id="fKind"><option value="">Payments + refunds</option><option value="payment">Payments only</option><option value="refund">Refunds only</option></select>
+    <input type="search" id="fSearch" placeholder="Search name, item, GL code, email…" />
+    <span class="filter-note" id="filterNote"></span>
+  </div>
+
+  <div class="table-wrap">
+    <table>
+      <thead><tr id="head"></tr></thead>
+      <tbody id="body"></tbody>
+    </table>
+  </div>
+  <div class="rowcap" id="rowcap"></div>
+</div>
+
+<script src="/report-refresh.js" defer></script>
+<script>
+(function () {
+  var CFG = window.ORG_CONFIG || {};
+  var qs = new URLSearchParams(location.search);
+  var orgSlug = location.pathname.split("/")[1];
+
+  // The 12 product-export columns, in the product's order. Helper columns from
+  // the card (leading "_") are used for sorting/summing but never displayed —
+  // and never exported, so the CSV matches the manual export exactly.
+  var COLS = ["Date","Location","Transaction ID","Customer Name","Type","Method",
+              "Item Value","Item Type","Fee Category","Item Name","GL Code","Customer Email"];
+  var NUMERIC = { "Item Value": "_amount_cents", "Date": "_sort_at" };
+
+  var rows = [], view = [], sortCol = "Date", sortDir = -1;
+
+  function el(id) { return document.getElementById(id); }
+  function withToken(url) {
+    if (!CFG.token) return url;
+    return url + (url.indexOf("?") === -1 ? "?" : "&") + "token=" + encodeURIComponent(CFG.token);
+  }
+  function money(cents) {
+    return (cents < 0 ? "-$" : "$") + Math.abs(cents / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
+  if (CFG.displayName) el("orgName").textContent = CFG.displayName + " — Item Log";
+  if (CFG.configured === false) el("notConfigured").style.display = "";
+
+  // ── Billing periods (1-7, 8-15, 16-22, 23-EOM) ─────────────────────
+  // Generated client-side so the picker works for any year; the authoritative
+  // pay/ACH dates live on the /remittance dashboard.
+  function buildPeriods(year) {
+    var out = [], m, eom, spans, i;
+    var MON = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+    for (m = 0; m < 12; m++) {
+      eom = new Date(year, m + 1, 0).getDate();
+      spans = [[1, 7], [8, 15], [16, 22], [23, eom]];
+      for (i = 0; i < spans.length; i++) {
+        out.push({
+          label: MON[m] + " " + spans[i][0] + "-" + spans[i][1],
+          start: iso(year, m + 1, spans[i][0]),
+          end: iso(year, m + 1, spans[i][1])
+        });
+      }
+    }
+    return out;
+  }
+  function iso(y, m, d) { return y + "-" + String(m).padStart(2, "0") + "-" + String(d).padStart(2, "0"); }
+
+  var today = new Date();
+  var periods = buildPeriods(today.getFullYear() - 1).concat(buildPeriods(today.getFullYear()));
+  var sel = el("period");
+  periods.forEach(function (p) {
+    var o = document.createElement("option");
+    o.value = p.start + "|" + p.end;
+    o.textContent = p.label;
+    sel.appendChild(o);
+  });
+
+  // Default range: the URL's, else the most recently closed billing period —
+  // the one finance is reconciling right now.
+  var todayIso = today.toISOString().slice(0, 10);
+  var closed = periods.filter(function (p) { return p.end < todayIso; });
+  var fallback = closed.length ? closed[closed.length - 1] : periods[0];
+  var start = qs.get("start_date") || fallback.start;
+  var end = qs.get("end_date") || fallback.end;
+  el("start").value = start;
+  el("end").value = end;
+  sel.value = start + "|" + end;
+
+  sel.addEventListener("change", function () {
+    if (!sel.value) return;
+    var parts = sel.value.split("|");
+    el("start").value = parts[0];
+    el("end").value = parts[1];
+    load();
+  });
+  el("apply").addEventListener("click", function () { sel.value = el("start").value + "|" + el("end").value; load(); });
+  el("download").addEventListener("click", function () {
+    location.href = withToken("/" + orgSlug + "/itemlog/api/csv?start_date=" + el("start").value + "&end_date=" + el("end").value);
+  });
+
+  // ── Load ───────────────────────────────────────────────────────────
+  function load() {
+    start = el("start").value;
+    end = el("end").value;
+    history.replaceState(null, "", "?start_date=" + start + "&end_date=" + end + (CFG.token ? "&token=" + encodeURIComponent(CFG.token) : ""));
+    el("rangeLabel").textContent = start + " → " + end;
+    el("body").innerHTML = '<tr><td colspan="12"><div class="state">Loading…</div></td></tr>';
+    el("tiles").style.display = "none";
+    el("filters").style.display = "none";
+
+    fetch(withToken("/" + orgSlug + "/itemlog/api/data?start_date=" + start + "&end_date=" + end))
+      .then(function (r) {
+        if (!r.ok) return r.text().then(function (t) { throw new Error(t || ("HTTP " + r.status)); });
+        return r.json();
+      })
+      .then(function (data) {
+        rows = data.rows || [];
+        buildFilters();
+        apply();
+      })
+      .catch(function (err) {
+        el("body").innerHTML = '<tr><td colspan="12"><div class="state error">Could not load the item log.<br>' +
+          String(err.message || err).slice(0, 300) + '</div></td></tr>';
+      });
+  }
+
+  function uniq(key) {
+    var seen = {}, out = [];
+    rows.forEach(function (r) { var v = r[key]; if (v && !seen[v]) { seen[v] = 1; out.push(v); } });
+    return out.sort();
+  }
+  function fill(id, values) {
+    var s = el(id), keep = s.value;
+    s.length = 1;
+    values.forEach(function (v) {
+      var o = document.createElement("option"); o.value = v; o.textContent = v; s.appendChild(o);
+    });
+    s.value = keep;
+  }
+  function buildFilters() {
+    fill("fLocation", uniq("Location"));
+    fill("fMethod", uniq("Method"));
+    fill("fType", uniq("Item Type"));
+  }
+  ["fLocation","fMethod","fType","fKind","fSearch"].forEach(function (id) {
+    el(id).addEventListener("input", apply);
+  });
+
+  function apply() {
+    var loc = el("fLocation").value, meth = el("fMethod").value, typ = el("fType").value,
+        kind = el("fKind").value, q = el("fSearch").value.trim().toLowerCase();
+
+    view = rows.filter(function (r) {
+      if (loc && r["Location"] !== loc) return false;
+      if (meth && r["Method"] !== meth) return false;
+      if (typ && r["Item Type"] !== typ) return false;
+      if (kind && String(r["Type"]).toLowerCase() !== kind) return false;
+      if (q) {
+        var hay = (r["Customer Name"] + " " + r["Item Name"] + " " + r["GL Code"] + " " +
+                   r["Customer Email"] + " " + r["Transaction ID"]).toLowerCase();
+        if (hay.indexOf(q) === -1) return false;
+      }
+      return true;
+    });
+
+    summarize();
+    sortView();
+    render();
+  }
+
+  function summarize() {
+    var pay = 0, ref = 0, tx = {};
+    view.forEach(function (r) {
+      var c = Number(r["_amount_cents"] || 0);
+      if (String(r["Type"]).toLowerCase() === "refund") ref += c; else pay += c;
+      tx[r["Transaction ID"]] = 1;
+    });
+    el("tPay").textContent = money(pay);
+    el("tRef").textContent = money(ref);
+    el("tNet").textContent = money(pay - ref);
+    el("tRows").textContent = view.length.toLocaleString();
+    el("tTx").textContent = Object.keys(tx).length.toLocaleString();
+    el("tiles").style.display = "";
+    el("filters").style.display = "";
+    el("filterNote").textContent = view.length === rows.length
+      ? "" : "showing " + view.length.toLocaleString() + " of " + rows.length.toLocaleString() + " lines";
+  }
+
+  function sortView() {
+    var key = NUMERIC[sortCol] || sortCol;
+    var numeric = !!NUMERIC[sortCol] && sortCol !== "Date";
+    view.sort(function (a, b) {
+      var x = a[key], y = b[key];
+      if (numeric) { x = Number(x || 0); y = Number(y || 0); }
+      else { x = String(x === null || x === undefined ? "" : x); y = String(y === null || y === undefined ? "" : y); }
+      return (x < y ? -1 : x > y ? 1 : 0) * sortDir;
+    });
+  }
+
+  function render() {
+    var head = el("head");
+    head.innerHTML = "";
+    COLS.forEach(function (c) {
+      var th = document.createElement("th");
+      th.textContent = c;
+      if (c === sortCol) {
+        var a = document.createElement("span");
+        a.className = "arrow";
+        a.textContent = sortDir === 1 ? " ▲" : " ▼";
+        th.appendChild(a);
+      }
+      if (c === "Item Value") th.className = "num";
+      th.addEventListener("click", function () {
+        if (sortCol === c) sortDir = -sortDir; else { sortCol = c; sortDir = 1; }
+        sortView(); render();
+      });
+      head.appendChild(th);
+    });
+
+    var body = el("body");
+    if (!view.length) {
+      body.innerHTML = '<tr><td colspan="12"><div class="state">No transactions in this period.</div></td></tr>';
+      el("rowcap").textContent = "";
+      return;
+    }
+
+    // Render in chunks so a heavy period (10k+ lines) doesn't lock the tab.
+    var CAP = 2000;
+    var slice = view.slice(0, CAP);
+    var html = slice.map(function (r) {
+      var isRefund = String(r["Type"]).toLowerCase() === "refund";
+      return "<tr>" + COLS.map(function (c) {
+        var v = r[c] === null || r[c] === undefined ? "" : String(r[c]);
+        var cls = "";
+        if (c === "Item Value") cls = "num mono";
+        else if (c === "Date" || c === "Transaction ID") cls = "nowrap mono";
+        else if (c === "Type" && isRefund) cls = "type-refund";
+        else if (c === "GL Code") cls = "mono nowrap";
+        if (!v) cls += " muted";
+        return '<td class="' + cls.trim() + '">' + esc(v) + "</td>";
+      }).join("") + "</tr>";
+    }).join("");
+    body.innerHTML = html;
+    el("rowcap").textContent = view.length > CAP
+      ? "Showing the first " + CAP.toLocaleString() + " of " + view.length.toLocaleString() +
+        " lines on screen — Download CSV includes all of them."
+      : view.length.toLocaleString() + " lines";
+  }
+
+  function esc(s) {
+    return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+
+  load();
+})();
+</script>
+
+<script src="/share-widget.js" defer></script>
+<script src="/feedback-widget.js" defer></script>
+<script src="/nav-breadcrumb.js" defer></script>
+</body>
+</html>

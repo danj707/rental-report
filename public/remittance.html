@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Remittance — Item Log Exports</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      font-size: 13px; color: #1a1a1a; background: #f5f4f1; line-height: 1.4;
+    }
+
+    .topbar {
+      background: #2c2c2c; color: #eee; padding: 14px 28px;
+      display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    }
+    .topbar-logo { font-size: 17px; font-weight: 800; letter-spacing: -.4px; color: #fff; }
+    .topbar-logo span { color: #4ade80; }
+    .topbar-divider { width: 1px; height: 20px; background: rgba(255,255,255,.2); }
+    .topbar-title { font-size: 14px; font-weight: 600; }
+    .topbar-spacer { flex: 1; }
+    .topbar a { color: #cbd5e1; text-decoration: none; font-size: 12px; }
+    .topbar a:hover { color: #fff; text-decoration: underline; }
+
+    .wrap { max-width: 1180px; margin: 0 auto; padding: 22px 28px 70px; }
+
+    .lede { color: #57534e; margin-bottom: 18px; max-width: 760px; }
+    .lede code { font-family: 'IBM Plex Mono', monospace; font-size: 12px; background: #eceae5; padding: 1px 5px; border-radius: 3px; }
+
+    .banner {
+      background: #fef3c7; border: 1px solid #fcd34d; color: #78350f;
+      border-radius: 6px; padding: 11px 15px; margin-bottom: 18px;
+    }
+
+    /* ── Period picker ── */
+    .period-bar {
+      display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+      margin-bottom: 16px;
+    }
+    .period-bar select {
+      font-family: inherit; font-size: 13px; padding: 6px 9px;
+      border: 1px solid #d9d5cd; border-radius: 5px; background: #fff;
+    }
+    .period-bar label { font-size: 10px; text-transform: uppercase; letter-spacing: .05em; color: #78716c; }
+
+    /* ── Period summary card ── */
+    .period-card {
+      background: #fff; border: 1px solid #e6e3dd; border-radius: 8px;
+      padding: 16px 18px; margin-bottom: 20px;
+      display: flex; gap: 28px; flex-wrap: wrap; align-items: center;
+      border-left: 4px solid #475569;
+    }
+    .period-card.is-due { border-left-color: #d97706; background: #fffbeb; }
+    .period-card.is-paid { border-left-color: #16a34a; }
+    .period-card.is-upcoming { border-left-color: #94a3b8; }
+    .pc-item { }
+    .pc-label { font-size: 10px; text-transform: uppercase; letter-spacing: .05em; color: #78716c; margin-bottom: 3px; }
+    .pc-value { font-size: 15px; font-weight: 600; }
+    .pc-value.big { font-size: 20px; font-weight: 700; letter-spacing: -.02em; }
+    .pc-spacer { flex: 1; }
+
+    .pill {
+      display: inline-block; padding: 3px 10px; border-radius: 999px;
+      font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
+    }
+    .pill-due { background: #fef3c7; color: #92400e; border: 1px solid #fcd34d; }
+    .pill-paid { background: #dcfce7; color: #166534; border: 1px solid #86efac; }
+    .pill-upcoming { background: #f1f5f9; color: #475569; border: 1px solid #cbd5e1; }
+
+    /* ── Org table ── */
+    .toolbar2 { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
+    .toolbar2 input {
+      font-family: inherit; font-size: 13px; padding: 6px 9px; min-width: 240px;
+      border: 1px solid #d9d5cd; border-radius: 5px; background: #fff;
+    }
+    .count { color: #78716c; font-size: 12px; }
+
+    .card { background: #fff; border: 1px solid #e6e3dd; border-radius: 8px; overflow: hidden; }
+    table { border-collapse: collapse; width: 100%; }
+    thead th {
+      background: #f0eeea; text-align: left; padding: 9px 14px;
+      font-size: 10px; text-transform: uppercase; letter-spacing: .05em; color: #57534e;
+      border-bottom: 1px solid #ddd8d0;
+    }
+    tbody td { padding: 9px 14px; border-bottom: 1px solid #f1efe9; }
+    tbody tr:last-child td { border-bottom: 0; }
+    tbody tr:hover { background: #fafaf8; }
+    .org-name { font-weight: 600; }
+    .org-slug { font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #a8a29e; }
+    .actions { text-align: right; white-space: nowrap; }
+
+    .btn {
+      display: inline-block; font-family: inherit; font-size: 12px; font-weight: 600;
+      padding: 5px 12px; border: 1px solid transparent; border-radius: 5px;
+      text-decoration: none; cursor: pointer;
+    }
+    .btn-csv { background: #16a34a; color: #fff; }
+    .btn-csv:hover { background: #15803d; }
+    .btn-view { background: #fff; color: #334155; border-color: #d9d5cd; margin-left: 6px; }
+    .btn-view:hover { background: #f5f4f1; }
+    .btn[disabled], .btn.is-disabled { opacity: .45; pointer-events: none; }
+
+    .footnote { margin-top: 18px; color: #78716c; font-size: 12px; max-width: 780px; }
+  </style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="topbar-logo">rec<span>.</span>us</div>
+  <div class="topbar-divider"></div>
+  <div class="topbar-title">🧾 Remittance — Item Log Exports</div>
+  <div class="topbar-spacer"></div>
+  <a href="/">← Reports dashboard</a>
+</div>
+
+<div class="wrap">
+  <p class="lede">
+    One row per organization for the selected billing period. <strong>Download CSV</strong> gives you the
+    same file the product’s Item Log export produces — same columns, same order, same formatting — for that
+    org and date range. No manual date entry, no per-org navigation.
+  </p>
+
+  <div id="notConfigured" class="banner" style="display:none">
+    <strong>Not connected yet.</strong> The shared Item Log Metabase card needs its public link enabled and
+    <code>ITEM_LOG_UUID</code> set in <code>server.js</code>. Until then the download buttons are disabled.
+  </div>
+
+  <div class="period-bar">
+    <label for="period">Billing period</label>
+    <select id="period"></select>
+    <span class="count" id="todayNote"></span>
+  </div>
+
+  <div class="period-card" id="periodCard">
+    <div class="pc-item">
+      <div class="pc-label">Billing period</div>
+      <div class="pc-value big" id="pcPeriod">—</div>
+    </div>
+    <div class="pc-item">
+      <div class="pc-label">Rec issues payment by</div>
+      <div class="pc-value" id="pcPay">—</div>
+    </div>
+    <div class="pc-item">
+      <div class="pc-label">ACH expected</div>
+      <div class="pc-value" id="pcAch">—</div>
+    </div>
+    <div class="pc-spacer"></div>
+    <div class="pc-item"><span class="pill" id="pcStatus">—</span></div>
+  </div>
+
+  <div class="toolbar2">
+    <input type="search" id="search" placeholder="Filter organizations…" />
+    <span class="count" id="count"></span>
+  </div>
+
+  <div class="card">
+    <table>
+      <thead>
+        <tr>
+          <th>Organization</th>
+          <th>Period</th>
+          <th class="actions">Export</th>
+        </tr>
+      </thead>
+      <tbody id="body"></tbody>
+    </table>
+  </div>
+
+  <p class="footnote">
+    Billing periods run 1–7, 8–15, 16–22, and 23–end of month. Payment and ACH dates come from the finance
+    remittance schedule in <code>remittance-schedule.json</code> — they’re business-day driven rather than
+    formulaic, so each new year has to be added to that file.
+  </p>
+</div>
+
+<script>
+(function () {
+  var D = window.REMITTANCE || { periods: [], orgs: [], today: "", configured: false };
+
+  function el(id) { return document.getElementById(id); }
+  function fmt(iso) {
+    if (!iso) return "—";
+    var p = iso.split("-");
+    var MON = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+    return MON[Number(p[1]) - 1] + " " + Number(p[2]) + ", " + p[0];
+  }
+
+  if (!D.configured) el("notConfigured").style.display = "";
+  el("todayNote").textContent = "Today is " + fmt(D.today);
+
+  // ── Period picker ───────────────────────────────────────────────────
+  var sel = el("period");
+  D.periods.forEach(function (p) {
+    var o = document.createElement("option");
+    o.value = p.start;
+    o.textContent = p.label + "  (" + p.start + " → " + p.end + ")";
+    sel.appendChild(o);
+  });
+
+  // Default to the period finance is reconciling right now — the most recently
+  // closed one — so the page opens on the work that's actually due.
+  var qs = new URLSearchParams(location.search);
+  var want = qs.get("period") || D.currentPeriodStart;
+  if (want) sel.value = want;
+  if (!sel.value && D.periods.length) sel.value = D.periods[0].start;
+
+  sel.addEventListener("change", function () {
+    history.replaceState(null, "", "?period=" + sel.value);
+    render();
+  });
+  el("search").addEventListener("input", render);
+
+  function current() {
+    for (var i = 0; i < D.periods.length; i++) {
+      if (D.periods[i].start === sel.value) return D.periods[i];
+    }
+    return null;
+  }
+
+  function render() {
+    var p = current();
+    if (!p) return;
+
+    var STATUS = {
+      due:      { text: "Export due", cls: "pill-due", card: "is-due" },
+      paid:     { text: "Payment issued", cls: "pill-paid", card: "is-paid" },
+      upcoming: { text: "Period still open", cls: "pill-upcoming", card: "is-upcoming" }
+    };
+    var s = STATUS[p.status] || STATUS.upcoming;
+
+    el("pcPeriod").textContent = p.label;
+    el("pcPay").textContent = fmt(p.payBy);
+    el("pcAch").textContent = fmt(p.achStart) + " – " + fmt(p.achEnd);
+    el("pcStatus").textContent = s.text;
+    el("pcStatus").className = "pill " + s.cls;
+    el("periodCard").className = "period-card " + s.card;
+
+    var q = el("search").value.trim().toLowerCase();
+    var orgs = D.orgs.filter(function (o) {
+      return !q || o.displayName.toLowerCase().indexOf(q) !== -1 || o.slug.indexOf(q) !== -1;
+    });
+
+    el("count").textContent = orgs.length === D.orgs.length
+      ? D.orgs.length + " organizations"
+      : orgs.length + " of " + D.orgs.length + " organizations";
+
+    var dis = D.configured ? "" : " is-disabled";
+    el("body").innerHTML = orgs.map(function (o) {
+      var range = "start_date=" + p.start + "&end_date=" + p.end;
+      var tok = o.token ? "&token=" + encodeURIComponent(o.token) : "";
+      var csv = "/" + o.slug + "/itemlog/api/csv?" + range + tok;
+      var view = "/" + o.slug + "/itemlog?" + range + tok;
+      return "<tr>" +
+        '<td><div class="org-name">' + esc(o.displayName) + "</div>" +
+        '<div class="org-slug">' + esc(o.slug) + "</div></td>" +
+        "<td>" + p.start + " → " + p.end + "</td>" +
+        '<td class="actions">' +
+          '<a class="btn btn-csv' + dis + '" href="' + csv + '">⬇ Download CSV</a>' +
+          '<a class="btn btn-view' + dis + '" href="' + view + '">View</a>' +
+        "</td></tr>";
+    }).join("");
+  }
+
+  function esc(s) {
+    return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+
+  render();
+})();
+</script>
+</body>
+</html>
