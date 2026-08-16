@@ -1131,7 +1131,15 @@
       const onKeyDown = e => { if (!running) return; const k = e.key; if (k === 'ArrowUp' || k === 'ArrowDown' || k === 'ArrowLeft' || k === 'ArrowRight' || k === ' ') { input.keys[k] = true; e.preventDefault(); if (k === ' ') { if (game && game.over) { if (!awaitingScore) newGame(); } else if (game && game.press) game.press(input); } } if (k === 'Escape') close(); };
       const onKeyUp = e => { input.keys[e.key] = false; };
       window.addEventListener('keydown', onKeyDown); window.addEventListener('keyup', onKeyUp);
-      function open() { audio(); overlay.classList.add('on'); newGame(); }
+      function open() {
+        audio(); overlay.classList.add('on'); newGame();
+        // Vanity ping: someone launched a hidden banner game (fire-and-forget).
+        try {
+          const g = encodeURIComponent((GAME_META[gameKey] || {}).title || gameKey);
+          const tok = CFG.token ? '&token=' + encodeURIComponent(CFG.token) : '';
+          fetch('/' + CFG.slug + '/facilities/api/log?event=game&game=' + g + tok, { method: 'POST', keepalive: true }).catch(() => {});
+        } catch (e) { /* never let logging break the game */ }
+      }
       function close() { running = false; if (raf) cancelAnimationFrame(raf); overlay.classList.remove('on'); }
       const onMute = () => { muted = !muted; muteBtn.textContent = muted ? '🔇' : '🔊'; muteBtn.classList.toggle('off', muted); muteBtn.setAttribute('aria-label', muted ? 'Unmute sound' : 'Mute sound'); if (!muted) audio(); };
       if (playBtn) playBtn.addEventListener('click', open);
@@ -3023,6 +3031,11 @@
       function exportLite() {
         const a = bannerAgg;
         if (!a) return;
+        // Log the export to the Slack activity feed (fire-and-forget).
+        try {
+          const tok = CFG.token ? '&token=' + encodeURIComponent(CFG.token) : '';
+          fetch('/' + CFG.slug + '/facilities/api/log?event=summary' + tok, { method: 'POST', keepalive: true }).catch(() => {});
+        } catch (e) { /* never let logging break the export */ }
         const money = n => '$' + (Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
         const pct = (n, d) => d ? (n / d * 100).toFixed(1) + '%' : '0%';
         const charged = a.billed, inst = a.instRev, mgd = a.mgdRev;
