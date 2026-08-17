@@ -2729,7 +2729,7 @@ function logEvent(org, report, event, reqOrIp, extra) {
 // Inert if the env var is unset. Fire-and-forget — never blocks or breaks logging.
 // To change what pings Slack, edit SLACK_NOTIFY. High-frequency events (view/fetch)
 // are debounced per org+report so Slack isn't a firehose.
-const SLACK_NOTIFY = new Set(["created", "pdf", "excel", "print", "view", "insights", "insights-feedback", "chat-feedback", "feedback", "vote", "email"]);
+const SLACK_NOTIFY = new Set(["created", "pdf", "excel", "print", "summary", "game", "view", "insights", "insights-feedback", "chat-feedback", "feedback", "vote", "email"]);
 const SLACK_DEBOUNCE_MS = { view: 30 * 60 * 1000, fetch: 30 * 60 * 1000 };
 const SLACK_DEFAULT_DEBOUNCE_MS = 60 * 1000; // dedup rapid double-fires of one-off events
 const slackLastSent = new Map();
@@ -2737,6 +2737,8 @@ const SLACK_EVENT_META = {
   created: { emoji: "🏢", verb: "New org created" },
   pdf:     { emoji: "📄", verb: "exported a PDF of" },
   excel:   { emoji: "📊", verb: "exported to Excel" },
+  summary: { emoji: "🧾", verb: "exported a Summary of" },
+  game:    { emoji: "🕹️", verb: "is playing a hidden game in" },
   print:   { emoji: "🖨️", verb: "printed" },
   view:    { emoji: "👀", verb: "viewed" },
   insights: { emoji: "✨", verb: "generated AI insights for" },
@@ -2748,7 +2750,9 @@ function notifySlack(rec) {
   // subscribers posts each send, instead of collapsing them into one line.
   const key = rec.event === "email"
     ? `${rec.org}|${rec.report}|${rec.email}|${rec.status || ""}`
-    : `${rec.org}|${rec.report}|${rec.event}`;
+    : rec.event === "game"
+      ? `${rec.org}|${rec.report}|game|${rec.game || ""}`
+      : `${rec.org}|${rec.report}|${rec.event}`;
   const now = Date.now();
   const cooldown = SLACK_DEBOUNCE_MS[rec.event] || SLACK_DEFAULT_DEBOUNCE_MS;
   if (now - (slackLastSent.get(key) || 0) < cooldown) return; // debounced
@@ -2764,6 +2768,8 @@ function notifySlack(rec) {
     text = (rec.status && rec.status !== "sent")
       ? `⚠️ ${orgName} (\`${rec.org}\`) email FAILED for *${rec.report}*${to}${trig}`
       : `${meta.emoji} ${orgName} (\`${rec.org}\`) ${meta.verb} *${rec.report}*${to}${trig}`;
+  } else if (rec.event === "game") {
+    text = `${meta.emoji} ${orgName} (\`${rec.org}\`) — someone is playing *${rec.game || "a hidden game"}* on the facilities report`;
   } else if (rec.event === "insights-feedback" || rec.event === "chat-feedback" || rec.event === "feedback" || rec.event === "vote") {
     const thumbs = (rec.score === 1 || rec.vote === "up" || rec.sentiment === "up") ? "\uD83D\uDC4D" : "\uD83D\uDC4E";
     const label = rec.event === "vote"          ? "Report"
@@ -4060,10 +4066,11 @@ app.get("/metrics/api/data", (req, res) => {
 // excel (SheetJS export) and print (window.print())
 app.post("/:org/:report/api/log", resolveOrg, (req, res) => {
   const { orgSlug, reportType } = req;
-  const { event } = req.query;
-  const ALLOWED = ["excel", "print"];
+  const { event, game } = req.query;
+  const ALLOWED = ["excel", "print", "summary", "game"];
   if (!ALLOWED.includes(event)) return res.status(400).json({ ok: false, error: "Unknown event" });
-  logEvent(orgSlug, reportType, event, req);
+  const extra = event === "game" && game ? { game: String(game).slice(0, 60) } : undefined;
+  logEvent(orgSlug, reportType, event, req, extra);
   res.json({ ok: true });
 });
 

@@ -4,6 +4,39 @@
 
 - **Always share the Railway PR-preview URL** whenever I open a PR for this repo,
   without being asked — Dan wants to click through the change before merging.
+- **Wire a Slack activity notification into every new user-facing surface** —
+  new features, buttons, export/download options, and other notable interactions
+  should ping the Slack activity feed, without being asked. Dan wants visibility
+  into what's being used (and enjoys the vanity of seeing plays/exports roll in).
+  See the section below for the exact mechanism.
+
+## Slack activity notifications — wire every new surface (IMPORTANT)
+
+Standing rule (see Working preferences): any new button, export, download, or
+notable interaction ships WITH a Slack activity ping. Don't wait to be asked.
+
+The mechanism lives in `server.js` under "Slack activity notifications":
+
+- `SLACK_NOTIFY` — the Set of event names that actually post to Slack. Add the
+  new event name here or it stays silent.
+- `SLACK_EVENT_META` — `{ emoji, verb }` per event; the default message reads
+  `${emoji} ${orgName} (\`slug\`) ${verb} *${report}*`. Add a custom branch in
+  `notifySlack()` if you need extra fields (see the `email` / `game` branches).
+- Debounce: `notifySlack()` dedups by `${org}|${report}|${event}` for
+  `SLACK_DEFAULT_DEBOUNCE_MS` (60s). Give an event a custom debounce key there if
+  distinct sub-events (e.g. per-game, per-recipient) should each post.
+- Server-side events (a route the server handles, e.g. the Puppeteer `pdf`) call
+  `logEvent(org, report, event, req, extra?)` directly — it appends to the events
+  JSONL AND calls `notifySlack`.
+- Client-side events (things the server can't see — a client export, a button
+  click, a mini-game) beacon `POST /:org/:report/api/log?event=<name>[&extra=…]`
+  (fire-and-forget, `keepalive: true`), and the event name must be in that route's
+  `ALLOWED` list. Pass extra context as query params and thread them through as the
+  `extra` object into `logEvent`.
+
+Wired so far: `created`, `pdf`, `excel`, `print`, `summary` (🧾 lite export),
+`game` (🕹️ hidden banner mini-game plays), `view`, `insights`, feedback/votes,
+`email`. Inert unless `SLACK_WEBHOOK_URL` is set (prod has it).
 
 ## Metabase card updates via API/MCP — template-tag types reset (IMPORTANT)
 
