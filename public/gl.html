@@ -952,7 +952,7 @@ function TylerSheet({ typeLabel, data, summaryRows, emptyText, cfg, orgName, sta
         <div>
           <div className="town">{cfg.entityName || orgName}</div>
           <div className="sched-title">Schedule of Departmental Payments to the Treasurer</div>
-          <div className="sub">rec.us live data (GL Code Rollup, formatted as Tyler) · active accounts only</div>
+          <div className="sub">rec.us live data (GL Code Rollup, treasurer turnover format) · active accounts only</div>
         </div>
         <div className="meta">
           <div className="turnover-type">{typeLabel}</div>
@@ -1908,7 +1908,7 @@ function App() {
             className={tylerView ? 'active' : ''}
             style={{fontSize:11, padding:'4px 10px', ...(tylerView ? {borderColor:'#f59e0b', color:'#fde68a'} : {})}}
             onClick={() => setTylerView(v => !v)}
-            title="Re-render this report as the Tyler/Munis treasurer turnover cover sheets"
+            title="Re-render this report as the treasurer turnover cover sheets (Credit, then Cash &amp; Check)"
           >
             → Turnover
           </button>

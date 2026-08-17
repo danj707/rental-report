@@ -2301,20 +2301,27 @@ function getAllPublicModes() {
   return readJSON(PUBLIC_MODE_FILE, {});
 }
 
-// ── Tyler/Munis turnover orgs (per-org toggle on the admin dashboard) ─
-// Controls whether the GL report shows the "→ Tyler" treasurer-turnover view.
-// tyler-orgs.json stores explicit booleans by slug; when a slug has no stored
-// flag, a code-level ORGS[slug].tyler block (e.g. Littleton, which carries the
-// short-code map) acts as the default. Toggling ON an org with no code config
-// gets a minimal config — cover sheets render with a blank Account Code column
-// until a short-code map is added to the org's ORGS entry.
+// ── Treasurer-turnover orgs (per-org toggle on the admin dashboard) ───
+// Controls whether the GL report shows the "→ Turnover" treasurer-turnover
+// view. The turnover sheet is a generic municipal form, not a Tyler/Munis-only
+// one, so it is now ON BY DEFAULT for every org; the dashboard toggle is how
+// you turn it OFF for an org that shouldn't have it.
+// tyler-orgs.json stores explicit booleans by slug and still wins — an org
+// toggled off stays off. A code-level ORGS[slug].tyler block (e.g. Littleton)
+// supplies the entity name, department and short-code map; orgs without one
+// get a minimal config derived from their display name, and their cover sheets
+// render with a blank Account Code column until a short-code map is added.
 function getTylerConfig(slug) {
   const org = ORGS[slug];
   if (!org) return null;
   const flags = readJSON(TYLER_ORGS_FILE, {});
-  const enabled = (slug in flags) ? !!flags[slug] : !!org.tyler;
+  const enabled = (slug in flags) ? !!flags[slug] : true;
   if (!enabled) return null;
-  return org.tyler || { entityName: org.displayName || slug, department: "", shortCodes: {} };
+  // No code-level block: fall back to the org's standard display name (same
+  // convention as every other report header) rather than the bare slug — this
+  // string is the entity line at the top of the treasurer's cover sheet.
+  const displayName = org.displayName || (slug.charAt(0).toUpperCase() + slug.slice(1) + " Parks & Recreation");
+  return org.tyler || { entityName: displayName, department: "", shortCodes: {} };
 }
 function setTylerOrg(slug, enabled) {
   const all = readJSON(TYLER_ORGS_FILE, {});
@@ -2965,7 +2972,7 @@ async function generatePdf(orgSlug, reportType, startDate, endDate, filters = {}
   // cover sheets — portrait Letter at normal scale, unlike the extra-wide GL.
   const isTyler = reportType === "gl" && filters.tyler === "1";
   const reportLabel = isTyler
-    ? "GL Code Rollup, formatted as Tyler"
+    ? "GL Code Rollup, Treasurer Turnover"
     : reportType === "gl"
     ? "GL Code Rollup"
     : reportType === "facilities"
@@ -10166,7 +10173,7 @@ app.get("/", (req, res) => {
       <span>${isPublic ? 'Public' : 'Full'}</span>
     </button>`;
     const isTylerOrg = !!getTylerConfig(slug);
-    const tylerToggle = `<button type="button" class="pub-toggle tyler-toggle${isTylerOrg ? ' tyler-on' : ''}" onclick="event.stopPropagation();toggleTylerOrg('${slug}',this)" title="${isTylerOrg ? 'Tyler org ON \u2014 GL report shows the \u2192 Turnover treasurer turnover view' : 'Tyler org OFF \u2014 no \u2192 Turnover button on the GL report'}">
+    const tylerToggle = `<button type="button" class="pub-toggle tyler-toggle${isTylerOrg ? ' tyler-on' : ''}" onclick="event.stopPropagation();toggleTylerOrg('${slug}',this)" title="${isTylerOrg ? 'Turnover ON \u2014 GL report shows the \u2192 Turnover treasurer view (on by default)' : 'Turnover OFF \u2014 no \u2192 Turnover button on the GL report'}">
       <span>\u2192 Turnover</span>
     </button>`;
     const headerActions = `<div class="org-header-actions">${adminLink}${tylerToggle}${pubToggle}</div>`;
@@ -12192,8 +12199,8 @@ app.get("/", (req, res) => {
           throw new Error(data.error || 'Failed');
         }
         btn.classList.toggle('tyler-on', data.tylerOrg);
-        btn.title = data.tylerOrg ? 'Tyler org ON — GL report shows the → Turnover treasurer turnover view' : 'Tyler org OFF — no → Turnover button on the GL report';
-        mbToast(data.tylerOrg ? slug + ': Tyler turnover ON — → Turnover button now on the GL report' : slug + ': Tyler turnover OFF');
+        btn.title = data.tylerOrg ? 'Turnover ON — GL report shows the → Turnover treasurer view (on by default)' : 'Turnover OFF — no → Turnover button on the GL report';
+        mbToast(data.tylerOrg ? slug + ': Turnover ON — → Turnover button now on the GL report' : slug + ': Turnover OFF — button hidden on the GL report');
       } catch (e) {
         alert('Toggle failed: ' + e.message);
       }
