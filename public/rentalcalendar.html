@@ -214,11 +214,13 @@ button.primary:hover{filter:brightness(.95)}
   transform:rotate(-45deg);border:2.5px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.35);cursor:pointer;transition:transform .1s}
 .locpin span{transform:rotate(45deg);font-size:12px;font-weight:700;color:#fff;line-height:1}
 .locpin:hover{transform:rotate(-45deg) scale(1.12)}
-.locpin.sel{outline:3px solid #1e40af;outline-offset:2px}
-.locpin.dim{opacity:.35}
 .locpin.open{background:#16a34a}
 .locpin.booked{background:#c2410c}
 .locpin.closed{background:#6b7280}
+/* Selected location: a distinct colour rather than dimming everything else —
+   unpicked parks stay fully legible with their own availability colour. */
+.locpin.sel{background:#7c3aed;outline:3px solid #ddd6fe;outline-offset:1px;transform:rotate(-45deg) scale(1.15)}
+.locpin.sel:hover{transform:rotate(-45deg) scale(1.22)}
 .locpin.editing{cursor:grab;box-shadow:0 0 0 3px #fde68a,0 2px 6px rgba(0,0,0,.4)}
 .map-pop{font:inherit;min-width:190px}
 .map-pop h4{margin:0 0 3px;font-size:13px}
@@ -1063,8 +1065,11 @@ function LocationMap({sites, filteredSites, allAvail, dateStr, opStart, opEnd, r
     return Object.keys(byId).map(function(k){ return byId[k]; });
   }, [sites, filteredSites]);
 
-  var mapped   = locs.filter(function(l){ return pins[l.id]; });
-  var unmapped = locs.filter(function(l){ return !pins[l.id]; });
+  // Memoised: the redraw effect below depends on `mapped`, so recomputing it on
+  // every render would tear down and rebuild every marker constantly — which
+  // also closes any popup the moment something else re-renders.
+  var mapped   = useMemo(function(){ return locs.filter(function(l){ return pins[l.id]; }); }, [locs, pins]);
+  var unmapped = useMemo(function(){ return locs.filter(function(l){ return !pins[l.id]; }); }, [locs, pins]);
 
   function focusLocation(name) {
     // Clicking a pin filters the list to that location; clicking it again clears.
@@ -1109,16 +1114,18 @@ function LocationMap({sites, filteredSites, allAvail, dateStr, opStart, opEnd, r
     var bounds = [];
     mapped.forEach(function(loc) {
       var p = pins[loc.id];
-      var isShown = loc.shown.length > 0;
-      var av = locAvailability(isShown ? loc.shown : loc.all, allAvail, dateStr, opStart, opEnd, reservationMap);
+      // `shown` here is filtered by type/booking/amenities but NOT by location,
+      // so picking one park never blanks out the other pins' counts.
+      var hasMatches = loc.shown.length > 0;
+      var av = locAvailability(loc.shown, allAvail, dateStr, opStart, opEnd, reservationMap);
       var isOnly = selectedLocs && selectedLocs.size === 1 && selectedLocs.has(loc.name);
-      var cls = 'locpin ' + av.state + (isOnly ? ' sel' : '') + (isShown ? '' : ' dim') + (editMode ? ' editing' : '');
+      var cls = 'locpin ' + (hasMatches ? av.state : 'closed') + (isOnly ? ' sel' : '') + (editMode ? ' editing' : '');
       var marker = L.marker([p.lat, p.lng], {
         draggable: editMode,
         title: loc.name,
         icon: L.divIcon({
           className: '', iconSize: [32, 32], iconAnchor: [16, 30], popupAnchor: [0, -28],
-          html: '<div class="' + cls + '"><span>' + (isShown ? av.open : '–') + '</span></div>'
+          html: '<div class="' + cls + '"><span>' + (hasMatches ? av.open : '0') + '</span></div>'
         })
       });
 
@@ -1126,14 +1133,14 @@ function LocationMap({sites, filteredSites, allAvail, dateStr, opStart, opEnd, r
       var pop = document.createElement('div');
       pop.className = 'map-pop';
       var counts = {};
-      (isShown ? loc.shown : loc.all).forEach(function(s){ counts[s.type] = (counts[s.type] || 0) + 1; });
-      var availLine = !isShown ? 'Hidden by the current filters'
+      (hasMatches ? loc.shown : loc.all).forEach(function(s){ counts[s.type] = (counts[s.type] || 0) + 1; });
+      var availLine = !hasMatches ? 'No facilities match the current filters'
         : av.state === 'open'   ? av.open + ' of ' + av.total + ' available'
         : av.state === 'booked' ? 'Fully booked (' + av.total + ' site' + (av.total === 1 ? '' : 's') + ')'
         : av.dayOver            ? 'Today’s hours have ended'
         :                         'No availability on this date';
       var h = document.createElement('h4'); h.textContent = loc.name; pop.appendChild(h);
-      var a = document.createElement('div'); a.className = 'mp-avail ' + (isShown ? av.state : 'closed');
+      var a = document.createElement('div'); a.className = 'mp-avail ' + (hasMatches ? av.state : 'closed');
       a.textContent = availLine; pop.appendChild(a);
       var chips = document.createElement('div'); chips.className = 'mp-types';
       Object.keys(counts).forEach(function(t) {
@@ -1202,6 +1209,7 @@ function LocationMap({sites, filteredSites, allAvail, dateStr, opStart, opEnd, r
           <span className="lg"><span className="dot" style={{background:'#16a34a'}}></span>Available</span>
           <span className="lg"><span className="dot" style={{background:'#c2410c'}}></span>Fully booked</span>
           <span className="lg"><span className="dot" style={{background:'#6b7280'}}></span>Closed / none left</span>
+          <span className="lg"><span className="dot" style={{background:'#7c3aed'}}></span>Selected</span>
           <span className="lg">Number = sites open · click a pin to filter</span>
           {editMode && <span className="lg" style={{color:'#b45309',fontWeight:600}}>Move mode: drag a pin to reposition it</span>}
         </div>
@@ -1381,6 +1389,24 @@ function App() {
       return true;
     });
   }, [sites, selectedTypes, selectedLocs, selectedAmenities, allTypes, allLocations, allAmenities, bookFilter]);
+
+  // Same filters as the list EXCEPT location. The map keeps showing every park's
+  // availability while one is selected — otherwise picking a pin would zero out
+  // every other pin's count and the map would stop being useful for comparison.
+  var mapSites = useMemo(function() {
+    if (!sites) return [];
+    return sites.filter(function(s) {
+      if (selectedTypes && allTypes.length > 0 && selectedTypes.size < allTypes.length && !selectedTypes.has(s.type)) return false;
+      if (selectedAmenities && allAmenities.length > 0 && selectedAmenities.size < allAmenities.length) {
+        var siteAmenities = s.amenities || [];
+        var hasMatch = false;
+        selectedAmenities.forEach(function(a) { if (siteAmenities.indexOf(a) >= 0) hasMatch = true; });
+        if (!hasMatch) return false;
+      }
+      if (bookFilter !== 'all') { if (bookFilter === 'instant' && !s.isInstantBookable) return false; if (bookFilter === 'request' && s.isInstantBookable) return false; }
+      return true;
+    });
+  }, [sites, selectedTypes, selectedAmenities, allTypes, allAmenities, bookFilter]);
 
   // Precache site thumbnails so they load instantly when groups expand
   useEffect(function() {
@@ -1577,7 +1603,7 @@ function App() {
         </div>
       )}
       {sites && sites.length > 0 && (
-        <LocationMap sites={sites} filteredSites={filteredSites} allAvail={allAvail} dateStr={dateISO}
+        <LocationMap sites={sites} filteredSites={mapSites} allAvail={allAvail} dateStr={dateISO}
           opStart={opHours.start} opEnd={opHours.end} reservationMap={reservationMap}
           selectedLocs={selectedLocs} setSelectedLocs={setSelectedLocs} allLocations={allLocations}/>
       )}
@@ -1590,7 +1616,7 @@ function App() {
         </div>
       )}
       {view === 'day'
-        ? <DayView sites={filteredSites} availMap={dayAvailMap} dateStr={dateISO} opStart={opHours.start} opEnd={opHours.end} allAvail={allAvail} onSiteClick={function(s){setModalSite(s);trackCalendarEvent('facility_view',s.name,{siteId:s.id,type:s.type});}} forceOpen={selectedTypes && selectedTypes.size === 1} toolbar={toolbarEl} reservationMap={reservationMap}/>
+        ? <DayView sites={filteredSites} availMap={dayAvailMap} dateStr={dateISO} opStart={opHours.start} opEnd={opHours.end} allAvail={allAvail} onSiteClick={function(s){setModalSite(s);trackCalendarEvent('facility_view',s.name,{siteId:s.id,type:s.type});}} forceOpen={(selectedTypes && selectedTypes.size === 1) || (selectedLocs && allLocations.length > 1 && selectedLocs.size === 1)} toolbar={toolbarEl} reservationMap={reservationMap}/>
         : null
       }
       {modalSite && <SiteModal site={modalSite} onClose={function(){setModalSite(null);}}/>}
