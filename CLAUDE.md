@@ -120,7 +120,111 @@ Already shipped (PR #75, live on `main`): name-based site-type recovery so
 filter, Ice sub-tab, court-name wrap. Display/scoping only — did not change the
 revenue math, so the gap above predates and survives it.
 
+## Semantic data layer / Metabase exit (CONTEXT ONLY — no work started, 2026-08-17)
+
+Company-level strategy work now overlaps this repo. **Nothing here is a task yet**
+— Dan will scope next steps after the 20 Aug meeting. This section exists so a
+fresh session doesn't re-derive it.
+
+### The company PRD (owns the decision, we don't)
+"Data Strategy & Reporting Recommendations" — Notion, owner Elise, status Draft.
+https://app.notion.com/p/rec-team/Data-Strategy-Reporting-Recommendations-3b3f117be00480be80dec3775db1dcd0
+Meeting **20 Aug** with Birju, Kevin, Bart. An earlier discussion happened 8/14.
+
+Root problem as they frame it: schema tech debt from the courts-era origin (sites
+are still `court` in the model), so data isn't reliably self-serve queryable by
+anyone. Four consumers named: Departments, **Dan's reporting app**, Seb, IT teams.
+
+Three decisions in the PRD:
+1. **Data infrastructure** → recommendation is a **semantic/view layer** (vs.
+   fixing the schema). Build vs. buy TBD (Cube is the buy option, ~3-4mo est from
+   a June project plan; Kevin owes an eng estimate, Eliza owes market research).
+2. **Report builder** — build vs. buy open; committed to departments for 2026.
+3. **What happens to Dan's reporting app** — current recommendation: short term
+   leave as-is, **medium term reposition as a third-party integration**, long term
+   Rec builds native reports like it. Concerns cited: no eng visibility into
+   downstream deps, Metabase performance, UX not Rec-native, Dan as bottleneck.
+
+Their stated requirements that matter to us: *"Semantic layer references our
+databases and does not call metabase"* · field-usage tracking so customer reports
+don't break (the Apex overnight-break incident) · tenant/row-level security in one
+place · automation coverage so the view layer can't drift on new commits · *"anyone
+can build on top: Dan, the report builder, Seb, Partner Success."*
+
+### Rec infrastructure that already exists (we had NOT accounted for this)
+- **Epsio materialized views** — described in the PRD as a partial, ungoverned
+  version of the modeling layer. Refreshes have taken 10+ min locally; views have
+  broken on schema migrations.
+- **A read replica exists** — the 2 Jul incident came from uncoordinated load on
+  the reporting path.
+- Bronze/silver/gold naming convention sketched by George and Kael, unbuilt.
+- Seb currently writes its own SQL against raw tables.
+
+### What we extracted from this repo (evidence, still valid)
+- **257 distinct published fields** across 15 version-controlled queries
+  (`sql/report-cards/*.sql` + `sql/gl-code-report.sql`); ~50 are money.
+- **242 client-side aggregation sites** in shipping report pages (`reduce` /
+  `filter().length`) — facilities.html 48, users.html 47, programs.html 44. Most
+  real business logic lives in the browser, not in SQL.
+- **5 near-identical Metabase fetch paths**: main `/api/data`, `fetchMBDirect`
+  (annual), `qbrFetch` (QBR/director's), `fetchOrgChatData` (chat),
+  `fetchWizardSchemas` (wizard).
+- **No `pg` dependency** — the app has zero direct DB access today.
+- Definition collisions found: `Fill %` computed 5 different ways (2 in SQL, 3 in
+  browser JS, incl. two variants in programs.html alone — see the
+  `raw['Fill %'] ?? raw['fill_pct']` fallback at programs.html:649); ~50 money
+  fields under 6 vocabularies and 2 casing conventions; staff/guest exclusion
+  duplicated between users.html and `qbrSumUsers()` ("Mirrors users.html
+  exclusions exactly" — a comment, not a guarantee).
+- Requirements we've effectively prototyped: `REPORT_DEPENDENCIES` +
+  `getReportsForColumn()` (field lineage/impact), server-side org_id injection
+  (tenant isolation), `checkSchemaDrift()` (shape drift), and the August batch
+  verification method (row count + order-independent checksum + same-snapshot
+  `EXCEPT ALL`).
+
+### The Brad divergence (strongest argument we have)
+Brad asked for a revenue figure; **the reporting app and Seb returned different
+numbers.** Both reading Rec data, no shared definition to adjudicate against, no
+alarm — caught only because Brad noticed. This is the customer-visible cost of two
+consumers doing independent arithmetic, and it gets worse as the report builder and
+a customer API come online. *Specifics still needed: org, question, both figures,
+root cause — Dan to supply.*
+
+### Our position (artifact, option B = consumer input + a stance on decision 3)
+https://claude.ai/code/artifact/f7b7247e-ca1c-433e-b489-9e29d5faee36
+Titled "Notes from Downstream." Agrees with the semantic-layer recommendation;
+contributes the 257-field list as the layer's day-one acceptance test and first
+field-usage registry entry; proposes a testable MVP (**"whatever set of definitions
+makes the 22 existing reports return identical numbers"** + **"Seb and the app
+return the same number for the same question"**); and argues against the
+third-party-integration path — make the app the layer's **first consumer /
+proving ground** instead, since it's the only live consumer and third-party status
+would *institutionalize* the Brad divergence. Concedes: Rec-native is the right
+long-term destination, the maintenance concern is real, build-vs-buy isn't ours.
+
+Two factual corrections to raise: the app is **not** built on batch exports (it's
+live public-card fetches through a caching proxy), and it's iframed into **rec.us
+admin, not Metabase** (verify before asserting).
+
+### Index dependency (blocks any direct-DB path)
+Already filed separately, repeated here because it's on the critical path:
+`materialized.item_log_report` (2.15M rows) and `materialized.transaction_report`
+(964k) have **no usable indexes** — every org-scoped query seq-scans a multi-org
+view. `payment`/`refund` need `(organization_id, created_at)`;
+`order_item_transaction` needs `(organization_id, confirmed_at)`. Metabase's 60s
+timeout is currently the only thing keeping these slow rather than fatal.
+
+### Only pending build item (NOT started, awaiting scope)
+Graduate `scripts/verify-report-live.js` from liveness ("returned non-empty rows")
+to **parity** ("returned these exact rows") — golden snapshots per query ×
+representative org, checksummed, in CI. Decision-independent: satisfies the PRD's
+automation-coverage requirement, is the test behind the MVP proposal, and catches
+ordinary card-edit regressions meanwhile.
+
 ## Dev branch
 
 Feature work for these tasks lives on `claude/facility-report-line-removal-1d0c8k`
 (same branch name in both `rental-report` and `rec-dashboard`).
+
+Semantic-layer / Metabase-exit context above was captured on
+`claude/semantic-data-layer-reporting-756bdw`.
