@@ -10166,8 +10166,8 @@ app.get("/", (req, res) => {
       <span>${isPublic ? 'Public' : 'Full'}</span>
     </button>`;
     const isTylerOrg = !!getTylerConfig(slug);
-    const tylerToggle = `<button type="button" class="pub-toggle tyler-toggle${isTylerOrg ? ' tyler-on' : ''}" onclick="event.stopPropagation();toggleTylerOrg('${slug}',this)" title="${isTylerOrg ? 'Tyler org ON \u2014 GL report shows the \u2192 Tyler treasurer turnover view' : 'Tyler org OFF \u2014 no \u2192 Tyler button on the GL report'}">
-      <span>\u2192 Tyler</span>
+    const tylerToggle = `<button type="button" class="pub-toggle tyler-toggle${isTylerOrg ? ' tyler-on' : ''}" onclick="event.stopPropagation();toggleTylerOrg('${slug}',this)" title="${isTylerOrg ? 'Tyler org ON \u2014 GL report shows the \u2192 Turnover treasurer turnover view' : 'Tyler org OFF \u2014 no \u2192 Turnover button on the GL report'}">
+      <span>\u2192 Turnover</span>
     </button>`;
     const headerActions = `<div class="org-header-actions">${adminLink}${tylerToggle}${pubToggle}</div>`;
 
@@ -12192,8 +12192,8 @@ app.get("/", (req, res) => {
           throw new Error(data.error || 'Failed');
         }
         btn.classList.toggle('tyler-on', data.tylerOrg);
-        btn.title = data.tylerOrg ? 'Tyler org ON — GL report shows the → Tyler treasurer turnover view' : 'Tyler org OFF — no → Tyler button on the GL report';
-        mbToast(data.tylerOrg ? slug + ': Tyler turnover ON — → Tyler button now on the GL report' : slug + ': Tyler turnover OFF');
+        btn.title = data.tylerOrg ? 'Tyler org ON — GL report shows the → Turnover treasurer turnover view' : 'Tyler org OFF — no → Turnover button on the GL report';
+        mbToast(data.tylerOrg ? slug + ': Tyler turnover ON — → Turnover button now on the GL report' : slug + ': Tyler turnover OFF');
       } catch (e) {
         alert('Toggle failed: ' + e.message);
       }
