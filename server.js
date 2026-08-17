@@ -1773,6 +1773,40 @@ function saveCampmapMarkers() {
 let CAMPMAP_SEEDS = {};
 try { CAMPMAP_SEEDS = JSON.parse(fs.readFileSync(path.join(__dirname, "campmap-seeds.json"), "utf8")); }
 catch (e) { console.warn("[campmap] seeds load failed:", e.message); }
+
+// ── Rental Calendar map: per-location pins ───────────────────────────
+// Rec's site data carries no coordinates and no address, so pins come from a
+// committed, pre-geocoded seed keyed by org slug → Rec locationId (stable
+// across renames). See rental-map-seeds.json. Same split as campmap: committed
+// seed for the baseline, a DATA_DIR store for admin drag corrections.
+let RENTAL_MAP_SEEDS = {};
+try { RENTAL_MAP_SEEDS = JSON.parse(fs.readFileSync(path.join(__dirname, "rental-map-seeds.json"), "utf8")); }
+catch (e) { console.warn("[rentalmap] seeds load failed:", e.message); }
+// { slug: { locationId: { lat, lng } } } — set by dragging a pin (token-gated).
+const RENTAL_MAP_POS_FILE = path.join(DATA_DIR, "rental_map_positions.json");
+let rentalMapPositions = {};
+try { rentalMapPositions = JSON.parse(fs.readFileSync(RENTAL_MAP_POS_FILE, "utf8")); } catch { rentalMapPositions = {}; }
+function saveRentalMapPositions() {
+  try { fs.writeFileSync(RENTAL_MAP_POS_FILE, JSON.stringify(rentalMapPositions, null, 2)); }
+  catch (e) { console.error("[rentalmap] save positions failed:", e.message); }
+}
+// Merge committed seed + admin overrides into { locationId: {lat,lng} } for one org.
+// Overrides win; entries without usable numbers are dropped so a bad edit can't
+// put a pin in the ocean — the location just shows as unmapped.
+function rentalMapPins(slug) {
+  const seed = RENTAL_MAP_SEEDS[slug] || {};
+  const over = rentalMapPositions[slug] || {};
+  const out = {};
+  for (const id of new Set([...Object.keys(seed), ...Object.keys(over)])) {
+    if (id.startsWith("_")) continue; // reserved (e.g. _readme in the seed file)
+    const p = over[id] || seed[id] || {};
+    const lat = Number(p.lat), lng = Number(p.lng);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
+    if (lat < -90 || lat > 90 || lng < -180 || lng > 180) continue;
+    out[id] = { lat, lng, moved: !!over[id] };
+  }
+  return out;
+}
 const SUBS_FILE   = path.join(DATA_DIR, "subscriptions.json");
 // Email enabled for all orgs — gate is simply: does the org exist in ORGS?
 const EMAIL_ENABLED_ORGS = { has: (slug) => !!ORGS[slug] }; // duck-typed Set — always checks live ORGS map
@@ -2736,7 +2770,7 @@ function logEvent(org, report, event, reqOrIp, extra) {
 // Inert if the env var is unset. Fire-and-forget — never blocks or breaks logging.
 // To change what pings Slack, edit SLACK_NOTIFY. High-frequency events (view/fetch)
 // are debounced per org+report so Slack isn't a firehose.
-const SLACK_NOTIFY = new Set(["created", "pdf", "excel", "print", "summary", "game", "view", "insights", "insights-feedback", "chat-feedback", "feedback", "vote", "email"]);
+const SLACK_NOTIFY = new Set(["created", "pdf", "excel", "print", "summary", "game", "map", "view", "insights", "insights-feedback", "chat-feedback", "feedback", "vote", "email"]);
 const SLACK_DEBOUNCE_MS = { view: 30 * 60 * 1000, fetch: 30 * 60 * 1000 };
 const SLACK_DEFAULT_DEBOUNCE_MS = 60 * 1000; // dedup rapid double-fires of one-off events
 const slackLastSent = new Map();
@@ -2746,6 +2780,7 @@ const SLACK_EVENT_META = {
   excel:   { emoji: "📊", verb: "exported to Excel" },
   summary: { emoji: "🧾", verb: "exported a Summary of" },
   game:    { emoji: "🕹️", verb: "is playing a hidden game in" },
+  map:     { emoji: "🗺️", verb: "is browsing the facility map for" },
   print:   { emoji: "🖨️", verb: "printed" },
   view:    { emoji: "👀", verb: "viewed" },
   insights: { emoji: "✨", verb: "generated AI insights for" },
@@ -2759,6 +2794,10 @@ function notifySlack(rec) {
     ? `${rec.org}|${rec.report}|${rec.email}|${rec.status || ""}`
     : rec.event === "game"
       ? `${rec.org}|${rec.report}|game|${rec.game || ""}`
+    // Map pin clicks key by location so browsing several parks posts each one,
+    // rather than collapsing a whole session into the first pin opened.
+    : rec.event === "map"
+      ? `${rec.org}|${rec.report}|map|${rec.location || ""}`
       : `${rec.org}|${rec.report}|${rec.event}`;
   const now = Date.now();
   const cooldown = SLACK_DEBOUNCE_MS[rec.event] || SLACK_DEFAULT_DEBOUNCE_MS;
@@ -2777,6 +2816,8 @@ function notifySlack(rec) {
       : `${meta.emoji} ${orgName} (\`${rec.org}\`) ${meta.verb} *${rec.report}*${to}${trig}`;
   } else if (rec.event === "game") {
     text = `${meta.emoji} ${orgName} (\`${rec.org}\`) — someone is playing *${rec.game || "a hidden game"}* on the facilities report`;
+  } else if (rec.event === "map") {
+    text = `${meta.emoji} ${orgName} (\`${rec.org}\`) — someone opened *${rec.location || "a location"}* on the facility rental map`;
   } else if (rec.event === "insights-feedback" || rec.event === "chat-feedback" || rec.event === "feedback" || rec.event === "vote") {
     const thumbs = (rec.score === 1 || rec.vote === "up" || rec.sentiment === "up") ? "\uD83D\uDC4D" : "\uD83D\uDC4E";
     const label = rec.event === "vote"          ? "Report"
@@ -4073,10 +4114,12 @@ app.get("/metrics/api/data", (req, res) => {
 // excel (SheetJS export) and print (window.print())
 app.post("/:org/:report/api/log", resolveOrg, (req, res) => {
   const { orgSlug, reportType } = req;
-  const { event, game } = req.query;
-  const ALLOWED = ["excel", "print", "summary", "game"];
+  const { event, game, location } = req.query;
+  const ALLOWED = ["excel", "print", "summary", "game", "map"];
   if (!ALLOWED.includes(event)) return res.status(400).json({ ok: false, error: "Unknown event" });
-  const extra = event === "game" && game ? { game: String(game).slice(0, 60) } : undefined;
+  const extra = event === "game" && game ? { game: String(game).slice(0, 60) }
+              : event === "map" && location ? { location: String(location).slice(0, 80) }
+              : undefined;
   logEvent(orgSlug, reportType, event, req, extra);
   res.json({ ok: true });
 });
@@ -7938,11 +7981,41 @@ app.get("/:org/rentalcalendar", (req, res) => {
     locationId: req.query.locationId || '',
     locationName: req.query.locationName || '',
     coords: org.coords || null,
+    // Map panel: per-location pins (empty object → the page hides the map).
+    // canEditPins gates the drag-to-place editor on the org token, so a public
+    // viewer can pan and click but never move a pin.
+    mapPins: rentalMapPins(slug),
+    canEditPins: !!org.token && req.query.token === org.token,
   };
   const fs = require("fs");
   const html = fs.readFileSync(path.join(__dirname, "public", "rentalcalendar.html"), "utf-8");
   const inject = '<script>window.__RC__=' + JSON.stringify(meta) + ';</script>';
   res.type("html").send(html.replace("</head>", inject + "</head>"));
+});
+
+// ── POST /:org/rentalcalendar/api/pin — drag-to-place a location pin ──
+// Token-gated (same bar as the campsite marker editor). Body: {locationId, lat, lng}.
+// Sending lat/lng as null clears the override and reverts to the committed seed.
+app.post("/:org/rentalcalendar/api/pin", express.json(), (req, res) => {
+  const slug = req.params.org;
+  const org = ORGS[slug];
+  if (!org) return res.status(404).json({ error: "Unknown org" });
+  const token = req.query.token || (req.body && req.body.token) || "";
+  if (!org.token || token !== org.token) return res.status(403).json({ error: "Forbidden — valid org token required to move pins." });
+  const { locationId } = req.body || {};
+  if (!locationId || typeof locationId !== "string") return res.status(400).json({ error: "locationId required" });
+  if (!rentalMapPositions[slug]) rentalMapPositions[slug] = {};
+  if (req.body.lat === null || req.body.lng === null) {
+    delete rentalMapPositions[slug][locationId];
+  } else {
+    const lat = Number(req.body.lat), lng = Number(req.body.lng);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return res.status(400).json({ error: "lat/lng must be numbers" });
+    if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return res.status(400).json({ error: "lat/lng out of range" });
+    rentalMapPositions[slug][locationId] = { lat, lng };
+  }
+  saveRentalMapPositions();
+  console.log(`[rentalmap] ${slug} pin ${locationId} ${req.body.lat === null ? "reset to seed" : "moved"}`);
+  res.json({ ok: true, pins: rentalMapPins(slug) });
 });
 
 // ── Interactive campsite map (public, no token) ──

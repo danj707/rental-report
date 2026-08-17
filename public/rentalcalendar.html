@@ -7,6 +7,9 @@
 <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
 <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.26.9/babel.min.js"></script>
+<!-- Leaflet for the location map panel (same pinned version the Camping tab uses) -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <style>
 :root{--bg:#f5f4f1;--card:#fff;--ink:#1f2430;--muted:#5b6472;--line:#e5e7eb;
   --accent:#2563eb;--reserved:#fed7aa;--reserved-dark:#c2410c;--closed:#e5e7eb;--closed-dark:#9ca3af;
@@ -193,6 +196,47 @@ button.primary:hover{filter:brightness(.95)}
 .msd-item:hover{background:#f9fafb}
 .msd-item input[type=checkbox]{accent-color:#1e40af;margin:0;cursor:pointer}
 .msd-count{background:#1e40af;color:#fff;font-size:9px;font-weight:700;padding:1px 5px;border-radius:8px;min-width:14px;text-align:center}
+
+/* ── Location map panel ── */
+.map-panel{border:1px solid var(--line);border-radius:10px;margin:0 0 14px;overflow:hidden;background:#fff}
+.map-head{display:flex;align-items:center;gap:10px;padding:8px 12px;background:#fafafa;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.map-head .mh-title{font-size:13px;font-weight:600;display:flex;align-items:center;gap:6px}
+.map-head .mh-sub{font-size:11px;color:var(--muted)}
+.map-head .grow{flex:1}
+.map-head button{font:inherit;font-size:11px;padding:3px 9px;border:1px solid #d1d5db;border-radius:6px;background:#fff;color:#374151;cursor:pointer}
+.map-head button:hover{background:#f3f4f6}
+.map-head button.on{background:#1e40af;border-color:#1e40af;color:#fff}
+.map-canvas{height:340px;width:100%}
+.map-canvas.collapsed{display:none}
+.leaflet-container{font:inherit;background:#eef2f4}
+/* availability-colored pin: count badge sits in the marker itself */
+.locpin{display:flex;align-items:center;justify-content:center;width:32px;height:32px;border-radius:50% 50% 50% 4px;
+  transform:rotate(-45deg);border:2.5px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.35);cursor:pointer;transition:transform .1s}
+.locpin span{transform:rotate(45deg);font-size:12px;font-weight:700;color:#fff;line-height:1}
+.locpin:hover{transform:rotate(-45deg) scale(1.12)}
+.locpin.sel{outline:3px solid #1e40af;outline-offset:2px}
+.locpin.dim{opacity:.35}
+.locpin.open{background:#16a34a}
+.locpin.booked{background:#c2410c}
+.locpin.closed{background:#6b7280}
+.locpin.editing{cursor:grab;box-shadow:0 0 0 3px #fde68a,0 2px 6px rgba(0,0,0,.4)}
+.map-pop{font:inherit;min-width:190px}
+.map-pop h4{margin:0 0 3px;font-size:13px}
+.map-pop .mp-avail{font-size:11px;font-weight:700;margin-bottom:5px}
+.map-pop .mp-avail.open{color:#15803d}
+.map-pop .mp-avail.booked{color:#c2410c}
+.map-pop .mp-avail.closed{color:#6b7280}
+.map-pop .mp-types{display:flex;flex-wrap:wrap;gap:3px;margin-bottom:7px}
+.map-pop .mp-chip{font-size:10px;background:#f3f4f6;border:1px solid var(--line);border-radius:5px;padding:1px 5px;color:#4b5563}
+.map-pop .mp-btn{display:inline-block;font:inherit;font-size:11px;padding:3px 8px;border-radius:6px;border:1px solid #d1d5db;
+  background:#fff;color:#374151;cursor:pointer;text-decoration:none;margin-right:4px}
+.map-pop .mp-btn.primary{background:#1e40af;border-color:#1e40af;color:#fff}
+.map-legend{display:flex;flex-wrap:wrap;gap:12px;align-items:center;padding:6px 12px;border-top:1px solid var(--line);font-size:10.5px;color:var(--muted)}
+.map-legend .lg{display:inline-flex;align-items:center;gap:4px}
+.map-legend .dot{width:9px;height:9px;border-radius:50%;display:inline-block}
+.map-unmapped{padding:6px 12px;border-top:1px solid var(--line);font-size:10.5px;color:var(--muted)}
+@media (max-width:640px){.map-canvas{height:250px}}
+@media print{.map-panel{display:none}}
 </style>
 </head>
 <body>
@@ -203,6 +247,10 @@ const {useState,useEffect,useMemo,useCallback,useRef} = React;
 /* ── config injected by server ── */
 const CFG = window.__RC__ || {};
 const ORG_SLUG = CFG.slug || window.location.pathname.split('/').filter(Boolean)[0] || '';
+// Org token when the page was opened from a staff link. Not injected into CFG
+// (this page is served to the public too) — it only ever comes from the URL,
+// and the server re-checks it on every write, so this is a UI hint, not the gate.
+const RC_TOKEN = (function(){ try { return new URLSearchParams(window.location.search).get('token') || ''; } catch(e){ return ''; } })();
 
 // Analytics tracking — fire-and-forget
 function trackCalendarEvent(type, entity, meta) {
@@ -954,6 +1002,219 @@ function WeekOverview({sites, allAvail, weekStart, onDayClick}) {
 }
 
 /* ── Main App ── */
+/* ── Location map panel ────────────────────────────────────────────────
+   One pin per rental location, colored by live availability for the
+   selected date — so the map answers "where can I play today?", not just
+   "where are the parks?". Pins come from a pre-geocoded seed (server:
+   rental-map-seeds.json) because Rec's site data carries no coordinates;
+   an admin holding the org token can drag a pin to correct it.
+
+   Availability uses the SAME deriveBlocks() the timeline rows use, so a
+   green pin can never disagree with the bars rendered below it. */
+function locAvailability(sitesAtLoc, allAvail, dateStr, opStart, opEnd, reservationMap) {
+  var open = 0, anyReserved = false;
+  sitesAtLoc.forEach(function(site) {
+    var siteAvailAll = (allAvail && allAvail[site.id]) || {};
+    var dates = Object.keys(siteAvailAll);
+    var hasAnyData = dates.length > 0;
+    var mcpMaxDate = hasAnyData ? dates.slice().sort().pop() : null;
+    var dateWithinMcp = !!(hasAnyData && mcpMaxDate && dateStr <= mcpMaxDate);
+    var dayRes = ((reservationMap && reservationMap[site.id]) || {})[dateStr] || [];
+    // Mirror FacRow's call exactly — it passes opStart/opEnd for the site window too.
+    var blocks = deriveBlocks(siteAvailAll[dateStr] || null, dateStr, opStart, opEnd,
+                              opStart, opEnd, hasAnyData, dayRes, dateWithinMcp);
+    if (blocks.some(function(b){ return b.type === 'avail' && b.e > b.s; })) open++;
+    if (blocks.some(function(b){ return b.type === 'reserved'; })) anyReserved = true;
+  });
+  var total = sitesAtLoc.length;
+  // "Fully booked" is only honest when something is actually booked. A day that
+  // has simply ended (every slot in the past) or a closed date is NOT booked —
+  // calling it that would tell a resident the park is busy when it is just shut.
+  var now = new Date();
+  var dayOver = dateStr === fmtISO(now) && (now.getHours() * 60 + now.getMinutes()) >= opEnd;
+  var state = open > 0 ? 'open' : (anyReserved ? 'booked' : 'closed');
+  return { open: open, total: total, state: state, dayOver: dayOver };
+}
+
+function LocationMap({sites, filteredSites, allAvail, dateStr, opStart, opEnd, reservationMap,
+                      selectedLocs, setSelectedLocs, allLocations}) {
+  var PINS = CFG.mapPins || {};
+  var elRef = useRef(null), mapRef = useRef(null), layerRef = useRef(null);
+  var collapsedState = useState(false);
+  var collapsed = collapsedState[0], setCollapsed = collapsedState[1];
+  var editState = useState(false);
+  var editMode = editState[0], setEditMode = editState[1];
+  var pinsState = useState(PINS);
+  var pins = pinsState[0], setPins = pinsState[1];
+
+  // Group every known location once; availability is computed from the FILTERED
+  // sites so the pin reflects what the list is actually showing.
+  var locs = useMemo(function() {
+    if (!sites) return [];
+    var byId = {};
+    sites.forEach(function(s) {
+      if (!s.locationId) return;
+      if (!byId[s.locationId]) byId[s.locationId] = {id: s.locationId, name: s.locationName || '', all: [], shown: []};
+      byId[s.locationId].all.push(s);
+    });
+    (filteredSites || []).forEach(function(s) {
+      if (s.locationId && byId[s.locationId]) byId[s.locationId].shown.push(s);
+    });
+    return Object.keys(byId).map(function(k){ return byId[k]; });
+  }, [sites, filteredSites]);
+
+  var mapped   = locs.filter(function(l){ return pins[l.id]; });
+  var unmapped = locs.filter(function(l){ return !pins[l.id]; });
+
+  function focusLocation(name) {
+    // Clicking a pin filters the list to that location; clicking it again clears.
+    var onlyThis = selectedLocs && selectedLocs.size === 1 && selectedLocs.has(name);
+    setSelectedLocs(onlyThis ? new Set(allLocations) : new Set([name]));
+  }
+
+  function savePin(locId, lat, lng) {
+    var tok = RC_TOKEN ? '?token=' + encodeURIComponent(RC_TOKEN) : '';
+    fetch('/' + ORG_SLUG + '/rentalcalendar/api/pin' + tok, {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({locationId: locId, lat: lat, lng: lng})
+    }).then(function(r){ return r.json(); })
+      .then(function(d){ if (d && d.pins) setPins(d.pins); })
+      .catch(function(){ /* leave the marker where the admin dropped it */ });
+  }
+
+  // Create the map once
+  useEffect(function() {
+    if (!elRef.current || mapRef.current || typeof L === 'undefined') return;
+    var m = L.map(elRef.current, {scrollWheelZoom: false, zoomControl: true});
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+    }).addTo(m);
+    mapRef.current = m;
+    layerRef.current = L.layerGroup().addTo(m);
+    var start = CFG.coords && CFG.coords.lat ? [CFG.coords.lat, CFG.coords.lon] : [42.37, -71.18];
+    m.setView(start, 13);
+    return function(){ m.remove(); mapRef.current = null; };
+  }, []);
+
+  // Leaflet mis-measures a container that was hidden when created
+  useEffect(function() {
+    if (mapRef.current && !collapsed) setTimeout(function(){ mapRef.current.invalidateSize(); }, 60);
+  }, [collapsed]);
+
+  // (Re)draw markers whenever pins, availability, filters or the date change
+  useEffect(function() {
+    var m = mapRef.current, layer = layerRef.current;
+    if (!m || !layer) return;
+    layer.clearLayers();
+    var bounds = [];
+    mapped.forEach(function(loc) {
+      var p = pins[loc.id];
+      var isShown = loc.shown.length > 0;
+      var av = locAvailability(isShown ? loc.shown : loc.all, allAvail, dateStr, opStart, opEnd, reservationMap);
+      var isOnly = selectedLocs && selectedLocs.size === 1 && selectedLocs.has(loc.name);
+      var cls = 'locpin ' + av.state + (isOnly ? ' sel' : '') + (isShown ? '' : ' dim') + (editMode ? ' editing' : '');
+      var marker = L.marker([p.lat, p.lng], {
+        draggable: editMode,
+        title: loc.name,
+        icon: L.divIcon({
+          className: '', iconSize: [32, 32], iconAnchor: [16, 30], popupAnchor: [0, -28],
+          html: '<div class="' + cls + '"><span>' + (isShown ? av.open : '–') + '</span></div>'
+        })
+      });
+
+      // Popup built as a real node so handlers attach without global lookups
+      var pop = document.createElement('div');
+      pop.className = 'map-pop';
+      var counts = {};
+      (isShown ? loc.shown : loc.all).forEach(function(s){ counts[s.type] = (counts[s.type] || 0) + 1; });
+      var availLine = !isShown ? 'Hidden by the current filters'
+        : av.state === 'open'   ? av.open + ' of ' + av.total + ' available'
+        : av.state === 'booked' ? 'Fully booked (' + av.total + ' site' + (av.total === 1 ? '' : 's') + ')'
+        : av.dayOver            ? 'Today’s hours have ended'
+        :                         'No availability on this date';
+      var h = document.createElement('h4'); h.textContent = loc.name; pop.appendChild(h);
+      var a = document.createElement('div'); a.className = 'mp-avail ' + (isShown ? av.state : 'closed');
+      a.textContent = availLine; pop.appendChild(a);
+      var chips = document.createElement('div'); chips.className = 'mp-types';
+      Object.keys(counts).forEach(function(t) {
+        var c = document.createElement('span'); c.className = 'mp-chip';
+        c.textContent = emojiFor(t) + ' ' + counts[t]; chips.appendChild(c);
+      });
+      pop.appendChild(chips);
+      var btn = document.createElement('button');
+      btn.className = 'mp-btn primary';
+      btn.textContent = isOnly ? 'Show all locations' : 'Show only this location';
+      btn.addEventListener('click', function(){ focusLocation(loc.name); m.closePopup(); });
+      pop.appendChild(btn);
+      if (editMode) {
+        var reset = document.createElement('button');
+        reset.className = 'mp-btn';
+        reset.textContent = p.moved ? 'Reset pin' : 'At seed position';
+        reset.disabled = !p.moved;
+        reset.addEventListener('click', function(){ savePin(loc.id, null, null); m.closePopup(); });
+        pop.appendChild(reset);
+      }
+      marker.bindPopup(pop);
+      marker.on('popupopen', function() {
+        // Slack activity ping (fire-and-forget) — see CLAUDE.md standing rule.
+        try {
+          var tok = RC_TOKEN ? '&token=' + encodeURIComponent(RC_TOKEN) : '';
+          fetch('/' + ORG_SLUG + '/rentalcalendar/api/log?event=map&location=' +
+                encodeURIComponent(loc.name) + tok, {method: 'POST', keepalive: true}).catch(function(){});
+        } catch (e) { /* never let logging break the map */ }
+        trackCalendarEvent('map_pin', loc.name, {locationId: loc.id, available: av.open, total: av.total});
+      });
+      marker.on('dragend', function(e) {
+        var ll = e.target.getLatLng();
+        savePin(loc.id, ll.lat, ll.lng);
+      });
+      marker.addTo(layer);
+      bounds.push([p.lat, p.lng]);
+    });
+    if (bounds.length && !mapRef.current._rcFitted) {
+      m.fitBounds(bounds, {padding: [40, 40], maxZoom: 15});
+      mapRef.current._rcFitted = true;   // fit once; don't yank the view on every filter change
+    }
+  }, [pins, mapped, allAvail, dateStr, opStart, opEnd, reservationMap, selectedLocs, editMode]);
+
+  if (mapped.length === 0) return null;   // nothing geocoded yet → no panel
+
+  return (
+    <div className="map-panel">
+      <div className="map-head">
+        <span className="mh-title">🗺️ Facility map</span>
+        <span className="mh-sub">{mapped.length} location{mapped.length === 1 ? '' : 's'} · availability for {dateStr}</span>
+        <div className="grow"></div>
+        {selectedLocs && allLocations.length > 1 && selectedLocs.size < allLocations.length && (
+          <button onClick={function(){setSelectedLocs(new Set(allLocations));}}>Show all</button>
+        )}
+        {CFG.canEditPins && (
+          <button className={editMode ? 'on' : ''} onClick={function(){setEditMode(!editMode);}}
+            title="Drag a pin to correct its position — saved for this org">
+            {editMode ? '✓ Done moving pins' : '✎ Move pins'}
+          </button>
+        )}
+        <button onClick={function(){setCollapsed(!collapsed);}}>{collapsed ? 'Show map' : 'Hide map'}</button>
+      </div>
+      <div ref={elRef} className={'map-canvas' + (collapsed ? ' collapsed' : '')}></div>
+      {!collapsed && (
+        <div className="map-legend">
+          <span className="lg"><span className="dot" style={{background:'#16a34a'}}></span>Available</span>
+          <span className="lg"><span className="dot" style={{background:'#c2410c'}}></span>Fully booked</span>
+          <span className="lg"><span className="dot" style={{background:'#6b7280'}}></span>Closed / none left</span>
+          <span className="lg">Number = sites open · click a pin to filter</span>
+          {editMode && <span className="lg" style={{color:'#b45309',fontWeight:600}}>Move mode: drag a pin to reposition it</span>}
+        </div>
+      )}
+      {!collapsed && unmapped.length > 0 && (
+        <div className="map-unmapped">
+          Not on the map: {unmapped.map(function(l){return l.name;}).join(' · ')}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function App() {
   var dateState = useState(new Date());
   var date = dateState[0], setDate = dateState[1];
@@ -1314,6 +1575,11 @@ function App() {
             </div>
           )}
         </div>
+      )}
+      {sites && sites.length > 0 && (
+        <LocationMap sites={sites} filteredSites={filteredSites} allAvail={allAvail} dateStr={dateISO}
+          opStart={opHours.start} opEnd={opHours.end} reservationMap={reservationMap}
+          selectedLocs={selectedLocs} setSelectedLocs={setSelectedLocs} allLocations={allLocations}/>
       )}
       {filteredSites.length === 0 && sites && sites.length > 0 && (
         <div style={{padding:'40px 20px',textAlign:'center',color:'#6b7280',fontSize:14}}>No facilities match the current filters.</div>

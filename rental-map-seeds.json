@@ -1,0 +1,34 @@
+{
+  "_readme": [
+    "Rental-location map pins for the Rental Calendar's map panel, keyed by org slug",
+    "then by Rec locationId (stable across renames — 'BB&N Turf Fields' was renamed to",
+    "'BB&N Grove Street Athletic Fields' in Rec and the pin followed without a change here).",
+    "",
+    "Coordinates were geocoded once (OpenStreetMap/Nominatim) and committed, so the page",
+    "never depends on a geocoder at runtime — same approach as campmap-seeds.json.",
+    "Park entries use the OSM park feature (the park itself); street-addressed entries use",
+    "the address. Admins can drag any pin to correct it; those overrides are stored per-org",
+    "in DATA_DIR/rental_map_positions.json and win over the values here.",
+    "",
+    "A location with no entry simply gets no pin — the panel lists it as unmapped rather",
+    "than guessing. Watertown's 'Permit Applications' is deliberately omitted: it is an",
+    "administrative pseudo-location for bulk permit requests, not a physical place.",
+    "",
+    "'label' is only a human hint for whoever edits this file; the UI shows Rec's live",
+    "locationName so a rename in Rec is reflected without touching this file."
+  ],
+  "watertown": {
+    "6b644507-f784-4f78-8008-5aebf1177a5b": { "lat": 42.36095,   "lng": -71.16014,   "label": "Arsenal Park" },
+    "1169c2c3-63bd-4a0a-81aa-bb9151e62bfc": { "lat": 42.36646,   "lng": -71.15225,   "label": "Filippello Park" },
+    "2301c6dc-198c-49bc-b940-48b632d00967": { "lat": 42.36297,   "lng": -71.18989,   "label": "Casey (WO. James P.) Park" },
+    "0e3ca2ea-2d63-4b72-98de-19c68660f489": { "lat": 42.36887,   "lng": -71.20487,   "label": "Bemis Park" },
+    "6d9e1f6d-5dd3-4001-bd78-96f2ef9d2a04": { "lat": 42.37139,   "lng": -71.19230,   "label": "Moxley Park" },
+    "da55fd06-cbc8-467b-81f3-6481e2577a63": { "lat": 42.36876,   "lng": -71.18729,   "label": "Saltonstall Park" },
+    "b448f74e-72c9-4e02-a36c-cdf0005186bf": { "lat": 42.37137,   "lng": -71.20067,   "label": "552 Main Street" },
+    "50d1c459-b3ae-43be-9b62-bb63840e1d37": { "lat": 42.368936,  "lng": -71.150207,  "label": "BB&N Grove Street Athletic Fields (183 Grove St)" },
+    "c0958bc4-8258-43e5-b66c-e726464d9f4e": { "lat": 42.36899,   "lng": -71.16881,   "label": "O'Connell Park / Hosmer School" },
+    "3a398052-1838-4dcd-854e-e19786646209": { "lat": 42.37257,   "lng": -71.15675,   "label": "Sullivan Park (Sullivan Playground)" },
+    "7cfb83a4-3eb0-4b21-9c5e-037d05a64097": { "lat": 42.37338,   "lng": -71.18175,   "label": "Victory Field Complex" },
+    "b51ce3f4-5041-42c0-9cef-d4ec6975bb6a": { "lat": 42.376366,  "lng": -71.184655,  "label": "Lowell Elementary School (175 Orchard St)" }
+  }
+}
