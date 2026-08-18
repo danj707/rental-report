@@ -319,8 +319,25 @@
     .insights-section { margin: 14px 0 18px; }
     .insights-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
     .insights-btn { display: inline-flex; align-items: center; gap: 6px; background: linear-gradient(135deg, #6366f1, #8b5cf6); color: #fff; border: none; border-radius: 8px; padding: 10px 20px; font-size: 13px; font-weight: 600; font-family: inherit; cursor: pointer; box-shadow: 0 2px 12px rgba(99,102,241,.3); }
-    .insights-btn:hover:not(:disabled) { background: linear-gradient(135deg, #4f46e5, #7c3aed); }
+    .insights-btn:hover:not(:disabled) { background: linear-gradient(135deg, #4f46e5, #7c3aed); transform: translateY(-1px); box-shadow: 0 4px 20px rgba(99,102,241,.4); filter: none; }
     .insights-btn:disabled { opacity: .6; cursor: default; }
+    /* Rec Insights button — animated sparkle treatment (shared across reports) */
+    .insights-btn { position: relative; overflow: visible; box-shadow: 0 2px 12px rgba(99,102,241,.3); }
+    .insights-btn .sparkle { position: absolute; pointer-events: none; font-size: 10px; opacity: 0; animation: sparkle-float 2.5s ease-in-out infinite; }
+    .insights-btn .sparkle:nth-child(1) { top: -8px; left: 8%; animation-delay: 0s; }
+    .insights-btn .sparkle:nth-child(2) { top: -6px; right: 12%; animation-delay: 0.7s; font-size: 8px; }
+    .insights-btn .sparkle:nth-child(3) { bottom: -7px; left: 25%; animation-delay: 1.4s; font-size: 7px; }
+    .insights-btn .sparkle:nth-child(4) { top: -5px; left: 50%; animation-delay: 0.3s; font-size: 6px; }
+    .insights-btn .sparkle:nth-child(5) { bottom: -6px; right: 20%; animation-delay: 1.1s; font-size: 9px; }
+    .insights-btn .sparkle:nth-child(6) { top: -9px; right: 3%; animation-delay: 1.9s; font-size: 7px; }
+    @keyframes sparkle-float {
+      0%, 100% { opacity: 0; transform: translateY(0) scale(0.5); }
+      15% { opacity: 1; transform: translateY(-3px) scale(1.1); }
+      30% { opacity: 0.7; transform: translateY(-7px) scale(0.9); }
+      50% { opacity: 0.3; transform: translateY(-11px) scale(0.6); }
+      70% { opacity: 0; transform: translateY(-15px) scale(0.3); }
+    }
+    @media (prefers-reduced-motion: reduce) { .insights-btn .sparkle { animation: none; opacity: 0; } .insights-btn:hover:not(:disabled) { transform: none; } }
     .insights-sub { font-size: 11.5px; color: #9ca3af; }
     .insights-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; }
     .insight-card { border: 1px solid #e5e7eb; border-left-width: 4px; border-radius: 8px; padding: 14px 16px; background: #fff; }
@@ -423,6 +440,10 @@
   <script type="text/babel">
     const CFG = window.ORG_CONFIG || {};
     const e = React.createElement;
+
+    // Six drifting sparkles for the Rec Insights button (same treatment everywhere).
+    const sparkles = () => ['✦', '✧', '✦', '✧', '✦', '✧']
+      .map((ch, i) => e('span', { key: 'sp' + i, className: 'sparkle' }, ch));
 
     const TABS = [
       { key: 'summary',     label: 'Summary' },
@@ -2322,7 +2343,7 @@
         // AI insights (shared endpoint pattern with the Court Utilization tab)
         hasStays ? e('div', { className: 'insights-section' },
           e('div', { className: 'insights-head' },
-            e('button', { type: 'button', className: 'insights-btn', onClick: getCampInsights, disabled: insLoading }, insLoading ? 'Analyzing…' : (insights ? '↻ Refresh insights' : '✨ Rec Insights')),
+            e('button', { type: 'button', className: 'insights-btn', onClick: getCampInsights, disabled: insLoading }, sparkles(), insLoading ? 'Analyzing…' : (insights ? '↻ Refresh insights' : '✨ Rec Insights')),
             insights && !insLoading ? e('span', { className: 'insights-sub' }, 'Generated from the ' + stays.toLocaleString() + ' stays shown') : null),
           insError && !insLoading ? e('div', { className: 'cu-error' }, e('strong', null, 'Insights unavailable: '), insError) : null,
           insights && !insLoading ? e('div', { className: 'insights-grid' },
@@ -3066,7 +3087,7 @@
               // AI insights
               grouped.length ? e('div', { className: 'insights-section' },
                 e('div', { className: 'insights-head' },
-                  e('button', { type: 'button', className: 'insights-btn', onClick: getInsights, disabled: insLoading }, insLoading ? 'Analyzing…' : (insights ? '↻ Refresh insights' : '✨ Rec Insights')),
+                  e('button', { type: 'button', className: 'insights-btn', onClick: getInsights, disabled: insLoading }, sparkles(), insLoading ? 'Analyzing…' : (insights ? '↻ Refresh insights' : '✨ Rec Insights')),
                   insights && !insLoading ? e('span', { className: 'insights-sub' }, 'Generated from the ' + selectedLocations.length + ' location' + (selectedLocations.length === 1 ? '' : 's') + ' shown') : null,
                 ),
                 insLoading ? e('div', { className: 'cu-loading', style: { padding: '30px 16px' } }, e('div', { className: 'fac-spin' }), 'Squeezing the oranges…') : null,
