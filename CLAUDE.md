@@ -153,6 +153,34 @@ Already shipped (PR #75, live on `main`): name-based site-type recovery so
 filter, Ice sub-tab, court-name wrap. Display/scoping only — did not change the
 revenue math, so the gap above predates and survives it.
 
+## Rec Instructor Network (RIN) reporting (PARKED 2026-08-18)
+
+Discovery done, build not started. Full write-up: `docs/rin-discovery.md` on
+branch `claude/rin-dashboard-project-jrnl5i`. Artifact:
+https://claude.ai/code/artifact/d254ea9c-6b1c-476e-ac54-4f9a68350f3f
+
+- **The SF Lessons report is accurate — do not rebuild it.** Verified at card
+  17755's grain over 2025-01-01..2026-08-18: 5,032 rows / $776,738 vs the live
+  report's 5,030 / $776,538. It covers BOTH streams, because an instructor or
+  the RIN team creates a section per lesson slot and the player books that
+  section — so instant lessons are section registrations that also carry a
+  `private-lesson` reservation underneath. (An earlier draft claimed the report
+  missed that stream; that was wrong and is retracted.)
+- **Gaps worth building** (need reservation-level facts card 17755 can't give):
+  private-vs-pack split, court utilization vs published instructor hours, slot
+  hygiene (a booking-grain card cannot see unbooked slots), payout preview
+  (75/12.5/12.5), and the cross-org network view — which exists nowhere today.
+- **Metabase debt:** card 467 still references the dropped
+  `order_item_reservation_user` and errors on every run; replacement join is
+  `order_item.booking_id = reservation_user.booking_id`. Dashboard 112 hangs
+  almost entirely off one shared base card with ~7 near-duplicate copies in
+  collection 116 — that's what broke on 2026-08-13.
+- **Trap:** joining order_items to per-session reservation rows fans out lesson
+  packs (SF July: $136.0K naive vs $52.0K deduped). Dedupe to order_item grain,
+  then amortize per session.
+- **Open decision for Dan:** which gap ships first — private/pack split, court
+  utilization, or payout preview.
+
 ## Dev branch
 
 Feature work for these tasks lives on `claude/facility-report-line-removal-1d0c8k`
