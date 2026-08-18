@@ -210,9 +210,76 @@
     document.body.insertBefore(banner, document.body.firstChild);
   }
 
+  // ── Reaction burst ────────────────────────────────────────────
+  // 👍 rains confetti, 👎 rains sad faces. Wired as ONE delegated listener
+  // rather than 15 onClick handlers: the thumbs live in this banner and in
+  // every report's Rec Insights footer, and they are all plain buttons whose
+  // whole label is the emoji. Capture phase, because the insights buttons
+  // rewrite their own label to "👍✔" the moment they are clicked.
+  var BURST_CSS_ID = "rec-burst-css";
+  function injectBurstStyle(){
+    if (document.getElementById(BURST_CSS_ID)) return;
+    var s = document.createElement("style");
+    s.id = BURST_CSS_ID;
+    s.textContent = ""
+      + ".rec-burst{position:fixed;inset:0;pointer-events:none;z-index:2147483000;overflow:hidden;}"
+      + ".rec-burst i{position:absolute;top:-8vh;display:block;will-change:transform,opacity;"
+      + "animation:rec-burst-fall linear forwards;}"
+      + ".rec-burst i.c{width:9px;height:14px;border-radius:2px;}"
+      + ".rec-burst i.s{font-size:26px;line-height:1;font-style:normal;}"
+      + "@keyframes rec-burst-fall{"
+      + "0%{transform:translate3d(0,0,0) rotate(0deg);opacity:1}"
+      + "100%{transform:translate3d(var(--dx),110vh,0) rotate(var(--rot));opacity:.9}}";
+    document.head.appendChild(s);
+  }
+  var CONFETTI = ["#0d9488","#f59e0b","#dc2626","#2563eb","#7c3aed","#16a34a","#ec4899","#facc15"];
+  var SADS = ["😢","😞","☹️","😔","💧"];
+  function burst(kind){
+    // Someone who asked for less motion gets none.
+    if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    injectBurstStyle();
+    var prev = document.querySelector(".rec-burst");
+    if (prev) prev.remove();
+    var wrap = document.createElement("div");
+    wrap.className = "rec-burst";
+    wrap.setAttribute("aria-hidden", "true");
+    var n = kind === "up" ? 90 : 34;
+    for (var i = 0; i < n; i++) {
+      var bit = document.createElement("i");
+      var dur = 2.4 + Math.random() * 2.2;
+      bit.className = kind === "up" ? "c" : "s";
+      if (kind === "up") bit.style.background = CONFETTI[i % CONFETTI.length];
+      else bit.textContent = SADS[i % SADS.length];
+      bit.style.left = (Math.random() * 100).toFixed(2) + "vw";
+      bit.style.animationDuration = dur.toFixed(2) + "s";
+      bit.style.animationDelay = (Math.random() * 0.8).toFixed(2) + "s";
+      bit.style.setProperty("--dx", (Math.random() * 160 - 80).toFixed(0) + "px");
+      bit.style.setProperty("--rot", (Math.random() * 900 - 450).toFixed(0) + "deg");
+      wrap.appendChild(bit);
+    }
+    document.body.appendChild(wrap);
+    setTimeout(function(){ if (wrap.parentNode) wrap.remove(); }, 6000);
+  }
+  window.recReactionBurst = burst;   // so a page can fire it directly
+
+  function wireBursts(){
+    document.addEventListener("click", function(ev){
+      var el = ev.target;
+      var btn = el && el.closest ? el.closest("button,[role=button]") : null;
+      if (!btn) return;
+      var txt = (btn.textContent || "").trim();
+      // Only the bare thumb buttons — not a "👍 Positive" stat label or a
+      // sentence that happens to contain the emoji.
+      if (txt.length > 4) return;
+      if (txt.indexOf("\uD83D\uDC4D") === 0) burst("up");
+      else if (txt.indexOf("\uD83D\uDC4E") === 0) burst("down");
+    }, true);
+  }
+
   function init(){
     injectStyle();
     mountBanner();
+    wireBursts();
   }
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", init);
