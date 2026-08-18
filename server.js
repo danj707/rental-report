@@ -4243,9 +4243,16 @@ Return EXACTLY 4 insights as a JSON array and nothing else — no prose, no prea
   "action": one concrete next step, 12 words or fewer
 }
 
+Hour-of-day data ("hourOfDay", present when the feed carries booking start/end times):
+- "byHour" gives utilisation per hour of day, split weekday vs weekend, with hours booked and hours open.
+- "quietWeekdayBlocks" / "quietWeekendBlocks" are contiguous stretches of OPEN time running under 15% utilisation, with the idle hours already totalled. "peakHours" are the busiest hours.
+- "openWindow" and "basis" state which hours count as open. Hours outside that window are CLOSED, not idle — never describe them as unused, and never suggest filling them.
+- When a quiet block is present, make at least one insight about it: name the days, the hours, the utilisation, and the idle hours, then pair it with a concrete lever — an off-peak or discounted rate, a promotion, an open-play/clinic/learn-to-play slot in that window, or shifting an existing program into it.
+- A quiet block on a court with very few bookings overall is thin evidence, not a pattern — prefer blocks backed by real volume.
+
 Rules:
 - Ground EVERY figure in the data provided. Never invent numbers, courts, or locations.
-- NEVER mention revenue, dollars, money, pricing, or fees — that data is not present and is out of scope.
+- Never state, estimate, or imply revenue, dollar amounts, prices, or fees — no financial data is provided here. You MAY recommend a pricing or promotional lever as an action (off-peak rate, discounted block, promo, bundled hours) as long as it carries no figures and no revenue claim.
 - Prefer non-obvious observations. Name specific courts and locations rather than speaking generally.
 - Be terse. No filler. Vary the "type" across the four insights where the data supports it.`;
 

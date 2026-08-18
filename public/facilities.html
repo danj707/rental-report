@@ -2419,12 +2419,17 @@
         usageCategory:    r.usage_category    || r['Usage Category']    || 'Customer Booking',
         bookingSource:    r.booking_source    || r['Booking Source']    || '',
         localDate:        r.local_date        || '',
+        // Wall-clock start/end. The card has always sent these; they are what
+        // makes hour-of-day analysis possible without a second query.
+        localStart:       r.local_start       || '',
+        localEnd:         r.local_end         || '',
         durationHours:    Number(r.duration_hours || 0),
       })).filter(r => r.courtName);
     }
     const CU_UTIL_COLOR = pct => pct >= 70 ? '#dc2626' : pct >= 50 ? '#ea580c' : pct >= 30 ? '#f59e0b' : pct >= 15 ? '#16a34a' : '#94a3b8';
     const CU_MAP_COLOR  = pct => pct >= 70 ? '#dc2626' : pct >= 40 ? '#f59e0b' : pct >= 15 ? '#22c55e' : '#94a3b8';
     const CU_DOW = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+    const cuHour12 = h => { const x = ((h % 24) + 24) % 24; return ((x % 12) || 12) + (x < 12 ? 'am' : 'pm'); };
 
     // Location multiselect (hub dropdown styling)
     function CourtLocationFilter({ all, selected, onChange }) {
@@ -2690,6 +2695,91 @@
         });
       }, [grouped, filtered, schedules, dowCounts, hrsPerDay]);
 
+      // ── Hour-of-day utilisation ──────────────────────────────────────
+      // Occupied time is split across every hour a booking actually spans
+      // (a 5:30-8:00 rental is 30 min of 5pm and an hour each of 6 and 7),
+      // never credited whole to its start hour. Minutes are capped at 60 per
+      // court/date/hour so overlapping bookings on one court cannot push an
+      // hour past 100%. Denominator is the observed open window — the
+      // earliest start to the latest end seen in the range — since the
+      // schedules feed currently exposes hours-per-day but not the windows
+      // themselves; hours outside it count as closed rather than as 0%.
+      // Closure/maintenance blocks are excluded on both sides.
+      const hourly = React.useMemo(() => {
+        const src = filtered.filter(r => r.localStart && r.localEnd && r.usageCategory !== 'Closure / Block');
+        const courts = grouped.length;
+        if (!src.length || !courts) return null;
+        const perCell = {}, perCourtDate = {};
+        let minHour = 24, maxHour = 0;
+        for (const r of src) {
+          const s = new Date(r.localStart), e = new Date(r.localEnd);
+          if (isNaN(s) || isNaN(e) || e <= s) continue;
+          for (let t = new Date(s.getFullYear(), s.getMonth(), s.getDate(), s.getHours()); t < e; t.setHours(t.getHours() + 1)) {
+            const hourEnd = new Date(t); hourEnd.setHours(hourEnd.getHours() + 1);
+            const mins = (Math.min(e, hourEnd) - Math.max(s, t)) / 60000;
+            if (mins <= 0) continue;
+            const h = t.getHours();
+            const ck = r.locationName + '|' + r.courtName + '|' + t.toDateString() + '|' + h;
+            const prev = perCourtDate[ck] || 0;
+            const add = Math.max(0, Math.min(60 - prev, mins));
+            if (add <= 0) continue;
+            perCourtDate[ck] = prev + add;
+            const jd = t.getDay(), dow = jd === 0 ? 7 : jd;
+            perCell[dow + '|' + h] = (perCell[dow + '|' + h] || 0) + add;
+            if (h < minHour) minHour = h;
+            if (h + 1 > maxHour) maxHour = h + 1;
+          }
+        }
+        if (minHour >= maxHour) return null;
+        const band = (from, to, days) => {   // [from, to) in hours
+          let booked = 0, open = 0;
+          for (let h = from; h < to; h++) for (const d of days) {
+            booked += perCell[d + '|' + h] || 0;
+            open += 60 * (dowCounts[d] || 0) * courts;
+          }
+          return {
+            pct: open ? Math.round(1000 * booked / open) / 10 : null,
+            bookedHours: Math.round(booked / 6) / 10,
+            openHours: Math.round(open / 60),
+            idleHours: Math.round((open - booked) / 60),
+          };
+        };
+        const WD = [1, 2, 3, 4, 5], WE = [6, 7], ALL = [1, 2, 3, 4, 5, 6, 7];
+        const byHour = [];
+        for (let h = minHour; h < maxHour; h++) {
+          const all = band(h, h + 1, ALL);
+          byHour.push({
+            hour: cuHour12(h), utilizationPct: all.pct,
+            weekdayPct: band(h, h + 1, WD).pct, weekendPct: band(h, h + 1, WE).pct,
+            hoursBooked: all.bookedHours, hoursOpen: all.openHours,
+          });
+        }
+        // Contiguous open stretches sitting under 15% — the "dead window"
+        // an operator can act on. Two hours minimum, biggest idle first.
+        const quiet = (days, label) => {
+          const out = []; let run = null;
+          for (let h = minHour; h < maxHour; h++) {
+            const b = band(h, h + 1, days);
+            if (b.pct != null && b.pct < 15) { if (!run) run = { from: h, to: h }; run.to = h + 1; }
+            else if (run) { out.push(run); run = null; }
+          }
+          if (run) out.push(run);
+          return out.filter(x => x.to - x.from >= 2)
+            .map(x => Object.assign({ days: label, from: cuHour12(x.from), to: cuHour12(x.to) }, band(x.from, x.to, days)))
+            .sort((a, b) => b.idleHours - a.idleHours).slice(0, 2);
+        };
+        return {
+          basis: 'Observed open window ' + cuHour12(minHour) + '-' + cuHour12(maxHour) + ' across ' + courts + ' court(s) with activity; hours outside the window are treated as closed, not as 0% utilised. Closure and maintenance blocks excluded.',
+          openWindow: cuHour12(minHour) + '-' + cuHour12(maxHour),
+          courtsCounted: courts,
+          byHour,
+          quietWeekdayBlocks: quiet(WD, 'Mon-Fri'),
+          quietWeekendBlocks: quiet(WE, 'Sat-Sun'),
+          peakHours: byHour.slice().sort((a, b) => (b.utilizationPct || 0) - (a.utilizationPct || 0)).slice(0, 3)
+            .map(x => ({ hour: x.hour, utilizationPct: x.utilizationPct })),
+        };
+      }, [filtered, grouped, dowCounts]);
+
       // Insights (reuse the report's endpoint + a compact aggregate blob)
       const buildBlob = React.useCallback(() => {
         const r1 = n => n == null ? null : Math.round(n * 10) / 10;
@@ -2697,9 +2787,10 @@
           period: { start: loadedStart || start, end: loadedEnd || end, days: daysInRange, hrsPerDayFallback: Number(hrsPerDay) || 0, scheduleSources: { real: scheduleStats.real, fallback: scheduleStats.fallback } },
           overall: { utilizationPct: r1(overallUtil), courtsWithActivity: grouped.length, distinctBookings: stats.distinctFr, reservationRows: stats.reservationRows, totalHours: r1(stats.totalHours) },
           courts: grouped.slice(0, 40).map(g => ({ label: g.label, location: g.location, court: g.court, bookings: g.total, utilizationPct: r1(g.utilPct), hoursUsed: r1(g.usedHrs), availHrs: r1(g.availHrs), availSource: g.availSource, customerBookings: g.customer, programBookings: g.program, closureBookings: g.closure })),
+          hourOfDay: hourly,
           filtersActive: { showManaged, showInstant, locationsShown: selectedLocations.length + ' of ' + allLocations.length },
         };
-      }, [grouped, overallUtil, stats, loadedStart, loadedEnd, start, end, daysInRange, hrsPerDay, scheduleStats, showManaged, showInstant, selectedLocations, allLocations]);
+      }, [grouped, overallUtil, stats, loadedStart, loadedEnd, start, end, daysInRange, hrsPerDay, scheduleStats, hourly, showManaged, showInstant, selectedLocations, allLocations]);
 
       const getInsights = React.useCallback(async () => {
         setInsLoading(true); setInsError(null); setInsights(null);
