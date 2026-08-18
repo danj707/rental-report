@@ -2312,26 +2312,41 @@ function App() {
                         <div style={{fontSize:22,fontWeight:800,color:'#334155',lineHeight:1.1}}>~{hoursSaved.toLocaleString()} hrs</div>
                         <div style={{fontSize:11,color:'#64748b'}}>Staff time saved (self-serve × 5 min)</div>
                       </div>
-                      <div style={{flex:1,minWidth:220,maxWidth:380}}>
-                        <div style={{display:'flex',alignItems:'flex-end',gap:10,height:64}}>
+                      <div style={{flex:'1 1 auto',minWidth:210}}>
+                        {/* Columns keep their width whether there are two months
+                            or six, and sit on a baseline so short bars still
+                            read as bars rather than floating chips. The plot
+                            shrinks to the months it has; the legend below keeps
+                            the full width so it never wraps a word per line. */}
+                        <div style={{maxWidth:Math.min(400, ssData.months.length * 54 + (ssData.months.length - 1) * 8)}}>
+                        <div style={{display:'flex',alignItems:'flex-end',gap:8,height:72,borderBottom:'1px solid #cbd5e1'}}>
                           {ssData.months.map(m => {
-                            const h = (m.self + m.staff) / maxTotal * 56;
-                            const selfH = Math.max((m.self + m.staff) > 0 ? h * m.self / (m.self + m.staff) : 0, m.self > 0 ? 2 : 0);
-                            const staffH = Math.max(h - selfH, m.staff > 0 ? 2 : 0);
+                            const tot = m.self + m.staff;
+                            const h = tot / maxTotal * 52;
+                            const selfH = Math.max(tot > 0 ? h * m.self / tot : 0, m.self > 0 ? 3 : 0);
+                            const staffH = Math.max(h - selfH, m.staff > 0 ? 3 : 0);
                             return (
-                              <div key={m.key} title={monthLabel(m.key) + ': ' + m.self.toLocaleString() + ' self / ' + m.staff.toLocaleString() + ' staff'} style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'flex-end',height:'100%'}}>
-                                <div style={{width:'70%',maxWidth:26,display:'flex',flexDirection:'column',opacity:m.prior ? 0.38 : 1}}>
+                              <div key={m.key} title={monthLabel(m.key) + ': ' + m.self.toLocaleString() + ' self / ' + m.staff.toLocaleString() + ' staff'}
+                                   style={{flex:'1 1 0',minWidth:26,maxWidth:54,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'flex-end',height:'100%'}}>
+                                <div style={{fontSize:9.5,fontWeight:700,color:m.prior ? '#b7b3aa' : '#475569',marginBottom:3,lineHeight:1}}>{tot.toLocaleString()}</div>
+                                <div style={{width:'80%',maxWidth:30,display:'flex',flexDirection:'column',opacity:m.prior ? 0.42 : 1}}>
                                   {staffH > 0 && <div style={{height:staffH,background:'#2563eb',borderRadius:'3px 3px 0 0'}} />}
-                                  {selfH > 0 && <div style={{height:selfH,background:'#16a34a',marginTop:staffH > 0 ? 2 : 0,borderRadius:staffH > 0 ? 0 : '3px 3px 0 0'}} />}
+                                  {selfH > 0 && <div style={{height:selfH,background:'#16a34a',borderRadius:staffH > 0 ? 0 : '3px 3px 0 0'}} />}
                                 </div>
-                                <div style={{fontSize:9,color:m.prior ? '#b7b3aa' : '#64748b',marginTop:3,fontWeight:600}}>{monthLabel(m.key)}</div>
                               </div>
                             );
                           })}
                         </div>
-                        <div style={{display:'flex',gap:12,marginTop:4,fontSize:9.5,color:'#64748b'}}>
+                        <div style={{display:'flex',gap:8,marginTop:4}}>
+                          {ssData.months.map(m => (
+                            <div key={m.key} style={{flex:'1 1 0',minWidth:26,maxWidth:54,textAlign:'center',fontSize:9.5,fontWeight:600,color:m.prior ? '#b7b3aa' : '#64748b'}}>{monthLabel(m.key)}</div>
+                          ))}
+                        </div>
+                        </div>
+                        <div style={{display:'flex',gap:12,marginTop:7,fontSize:9.5,color:'#64748b',whiteSpace:'nowrap'}}>
                           <span><span style={{display:'inline-block',width:7,height:7,borderRadius:2,background:'#16a34a',marginRight:3}} />Self-service</span>
                           <span><span style={{display:'inline-block',width:7,height:7,borderRadius:2,background:'#2563eb',marginRight:3}} />Staff-assisted</span>
+                          {ssData.months.some(m => m.prior) && <span style={{opacity:.7}}>faded = prior period</span>}
                         </div>
                       </div>
                     </div>
