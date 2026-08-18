@@ -286,6 +286,18 @@
     .court-native .heatmap-hdr { text-align: center; font-weight: 700; font-size: 10px; text-transform: uppercase; letter-spacing: .5px; color: #888; padding: 4px 2px; }
     .court-native .heatmap-label { padding: 5px 8px; font-size: 11px; white-space: normal; overflow-wrap: anywhere; line-height: 1.25; display: flex; align-items: center; gap: 4px; border-radius: 3px; background: #f8f8f6; }
     .court-native .heatmap-cell { display: flex; align-items: center; justify-content: center; text-align: center; padding: 5px 2px; border-radius: 3px; font-family: 'IBM Plex Mono', monospace; font-size: 10px; font-weight: 600; }
+    .court-native .heatmap-label.expandable { cursor: pointer; }
+    .court-native .heatmap-label.expandable:hover { background: #eef2f7; }
+    .court-native .heatmap-label.is-open { background: #e6eefb; box-shadow: inset 0 0 0 1px #c3d6f2; }
+    .court-native .heatmap-label:focus-visible { outline: 2px solid #256abf; outline-offset: 1px; }
+    .court-native .hx-chev { color: #94a3b8; font-size: 9px; flex-shrink: 0; width: 9px; }
+    .court-native .hx { grid-column: 1 / -1; background: #fbfcfe; border: 1px solid #e3e9f2; border-radius: 5px; padding: 10px 10px 12px; margin: 2px 0 4px; }
+    .court-native .hx-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; margin-bottom: 8px; }
+    .court-native .hx-title { font-size: 11px; font-weight: 700; }
+    .court-native .hx-sub { font-size: 10px; color: #7c8798; font-family: 'IBM Plex Mono', monospace; }
+    .court-native .hx-grid { display: grid; grid-template-columns: minmax(180px, 1fr) repeat(7, 1fr); gap: 2px; }
+    .court-native .hx-hour { font-size: 10px; color: #7c8798; text-align: right; padding: 4px 10px 4px 0; font-family: 'IBM Plex Mono', monospace; align-self: center; }
+    .court-native .hx-note { font-size: 10px; color: #94a3b8; margin-top: 7px; }
     .court-native .heatmap-legend { display: flex; align-items: center; gap: 12px; margin-top: 8px; font-size: 10px; color: #888; flex-wrap: wrap; }
     .court-native .heatmap-legend-swatch { display: inline-block; width: 14px; height: 14px; border-radius: 3px; vertical-align: middle; margin-right: 3px; }
     /* Loading / error */
@@ -2430,6 +2442,17 @@
     const CU_MAP_COLOR  = pct => pct >= 70 ? '#dc2626' : pct >= 40 ? '#f59e0b' : pct >= 15 ? '#22c55e' : '#94a3b8';
     const CU_DOW = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
     const cuHour12 = h => { const x = ((h % 24) + 24) % 24; return ((x % 12) || 12) + (x < 12 ? 'am' : 'pm'); };
+    // One ramp for every utilisation cell on this tab — the day-of-week grid and
+    // the hourly grid that expands underneath a court must read as one scale.
+    // avail === 0 means the court is closed then: grey, never a 0% reading.
+    const cuHeatCell = (pct, avail) =>
+      avail === 0            ? { bg: '#f3f3f0', fg: '#ccc' } :
+      pct >= 80              ? { bg: '#dc2626', fg: '#fff' } :
+      pct >= 60              ? { bg: '#ea580c', fg: '#fff' } :
+      pct >= 40              ? { bg: '#f59e0b', fg: '#1a1a1a' } :
+      pct >= 20              ? { bg: '#fde68a', fg: '#1a1a1a' } :
+      pct > 0                ? { bg: '#fef9c3', fg: '#666' } :
+                               { bg: '#f8f8f6', fg: '#ccc' };
 
     // Location multiselect (hub dropdown styling)
     function CourtLocationFilter({ all, selected, onChange }) {
@@ -2559,6 +2582,9 @@
       const [hrsPerDay, setHrsPerDay] = React.useState(16);
       const [metric, setMetric] = React.useState('util');
       const [ctab, setCtab] = React.useState('overview');
+      // Which court's hourly grid is open. A single value, not a Set — expanding
+      // one court closes the last, because 26 open grids is 3,000 cells.
+      const [openCourt, setOpenCourt] = React.useState(null);
       // insights
       const [insights, setInsights] = React.useState(null);
       const [insLoading, setInsLoading] = React.useState(false);
@@ -2709,7 +2735,7 @@
         const src = filtered.filter(r => r.localStart && r.localEnd && r.usageCategory !== 'Closure / Block');
         const courts = grouped.length;
         if (!src.length || !courts) return null;
-        const perCell = {}, perCourtDate = {};
+        const perCell = {}, perCourtDate = {}, perCourt = {};
         let minHour = 24, maxHour = 0;
         for (const r of src) {
           const s = new Date(r.localStart), e = new Date(r.localEnd);
@@ -2726,6 +2752,9 @@
             perCourtDate[ck] = prev + add;
             const jd = t.getDay(), dow = jd === 0 ? 7 : jd;
             perCell[dow + '|' + h] = (perCell[dow + '|' + h] || 0) + add;
+            const cl = r.locationName + ' — ' + r.courtName;   // matches the heatmap row label
+            if (!perCourt[cl]) perCourt[cl] = {};
+            perCourt[cl][dow + '|' + h] = (perCourt[cl][dow + '|' + h] || 0) + add;
             if (h < minHour) minHour = h;
             if (h + 1 > maxHour) maxHour = h + 1;
           }
@@ -2769,16 +2798,60 @@
             .sort((a, b) => b.idleHours - a.idleHours).slice(0, 2);
         };
         return {
-          basis: 'Observed open window ' + cuHour12(minHour) + '-' + cuHour12(maxHour) + ' across ' + courts + ' court(s) with activity; hours outside the window are treated as closed, not as 0% utilised. Closure and maintenance blocks excluded.',
-          openWindow: cuHour12(minHour) + '-' + cuHour12(maxHour),
-          courtsCounted: courts,
-          byHour,
-          quietWeekdayBlocks: quiet(WD, 'Mon-Fri'),
-          quietWeekendBlocks: quiet(WE, 'Sat-Sun'),
-          peakHours: byHour.slice().sort((a, b) => (b.utilizationPct || 0) - (a.utilizationPct || 0)).slice(0, 3)
-            .map(x => ({ hour: x.hour, utilizationPct: x.utilizationPct })),
+          // Sent to Rec Insights. Deliberately excludes byCourt — the model
+          // needs the shape of the day, not 69 courts × 126 cells.
+          blob: {
+            basis: 'Observed open window ' + cuHour12(minHour) + '-' + cuHour12(maxHour) + ' across ' + courts + ' court(s) with activity; hours outside the window are treated as closed, not as 0% utilised. Closure and maintenance blocks excluded.',
+            openWindow: cuHour12(minHour) + '-' + cuHour12(maxHour),
+            courtsCounted: courts,
+            byHour,
+            quietWeekdayBlocks: quiet(WD, 'Mon-Fri'),
+            quietWeekendBlocks: quiet(WE, 'Sat-Sun'),
+            peakHours: byHour.slice().sort((a, b) => (b.utilizationPct || 0) - (a.utilizationPct || 0)).slice(0, 3)
+              .map(x => ({ hour: x.hour, utilizationPct: x.utilizationPct })),
+          },
+          fromHour: minHour,
+          toHour: maxHour,
+          // court label -> 'dow|hour' -> booked minutes, for the row a user expands
+          byCourt: perCourt,
         };
       }, [filtered, grouped, dowCounts]);
+
+      // One court's hour × day grid, built on expand rather than for all 26 at
+      // once. Denominator is that court alone: 60 min × the number of that
+      // weekday in range. The open window is the view-wide observed one, so
+      // every expanded court shows the same hour rows and stays comparable.
+      const hourGridFor = React.useCallback((label, parentCells) => {
+        if (!hourly || !hourly.byCourt[label]) return null;
+        const cells = hourly.byCourt[label];
+        // Days the schedule says this court is shut: the day-of-week row above
+        // already renders them grey, so the hours under them must agree.
+        const closedDow = {};
+        (parentCells || []).forEach(c => { if (c.avail === 0) closedDow[c.dow] = true; });
+        const rows = [];
+        for (let h = hourly.fromHour; h < hourly.toHour; h++) {
+          const cs = [];
+          for (let d = 1; d <= 7; d++) {
+            const used = (cells[d + '|' + h] || 0) / 60;
+            const avail = closedDow[d] ? 0 : (dowCounts[d] || 0);   // hours available that weekday
+            cs.push({ dow: d, used, avail, pct: avail > 0 ? (used / avail) * 100 : 0 });
+          }
+          rows.push({ hour: h, cells: cs });
+        }
+        // Busiest hour, and the longest weekday stretch under 15% — the two
+        // sentences a manager actually reads off this panel.
+        let peak = null, quiet = null, run = null;
+        rows.forEach(r => {
+          r.cells.forEach(c => { if (c.avail > 0 && (!peak || c.pct > peak.pct)) peak = { pct: c.pct, dow: c.dow, hour: r.hour }; });
+          const wd = r.cells.filter(c => c.dow <= 5);
+          const used = wd.reduce((a, c) => a + c.used, 0), avail = wd.reduce((a, c) => a + c.avail, 0);
+          const pct = avail > 0 ? (used / avail) * 100 : null;
+          if (pct != null && pct < 15) { if (!run) run = { from: r.hour, to: r.hour, used: 0, avail: 0 }; run.to = r.hour + 1; run.used += used; run.avail += avail; }
+          else { if (run && run.to - run.from >= 2 && (!quiet || run.to - run.from > quiet.to - quiet.from)) quiet = run; run = null; }
+        });
+        if (run && run.to - run.from >= 2 && (!quiet || run.to - run.from > quiet.to - quiet.from)) quiet = run;
+        return { rows, peak, quiet };
+      }, [hourly, dowCounts]);
 
       // Insights (reuse the report's endpoint + a compact aggregate blob)
       const buildBlob = React.useCallback(() => {
@@ -2787,7 +2860,7 @@
           period: { start: loadedStart || start, end: loadedEnd || end, days: daysInRange, hrsPerDayFallback: Number(hrsPerDay) || 0, scheduleSources: { real: scheduleStats.real, fallback: scheduleStats.fallback } },
           overall: { utilizationPct: r1(overallUtil), courtsWithActivity: grouped.length, distinctBookings: stats.distinctFr, reservationRows: stats.reservationRows, totalHours: r1(stats.totalHours) },
           courts: grouped.slice(0, 40).map(g => ({ label: g.label, location: g.location, court: g.court, bookings: g.total, utilizationPct: r1(g.utilPct), hoursUsed: r1(g.usedHrs), availHrs: r1(g.availHrs), availSource: g.availSource, customerBookings: g.customer, programBookings: g.program, closureBookings: g.closure })),
-          hourOfDay: hourly,
+          hourOfDay: hourly ? hourly.blob : null,
           filtersActive: { showManaged, showInstant, locationsShown: selectedLocations.length + ' of ' + allLocations.length },
         };
       }, [grouped, overallUtil, stats, loadedStart, loadedEnd, start, end, daysInRange, hrsPerDay, scheduleStats, hourly, showManaged, showInstant, selectedLocations, allLocations]);
@@ -2934,7 +3007,15 @@
                   e('div', { className: 'heatmap-hdr', style: { textAlign: 'left', paddingLeft: 8 } }, 'Court'),
                   CU_DOW.map(d => e('div', { className: 'heatmap-hdr', key: d }, d)),
                   dowHeatmap.map(row => e(React.Fragment, { key: row.label },
-                    e('div', { className: 'heatmap-label', title: row.label },
+                    e('div', {
+                      className: 'heatmap-label expandable' + (openCourt === row.label ? ' is-open' : ''),
+                      title: 'Show hourly utilization for ' + row.label,
+                      role: 'button', tabIndex: 0,
+                      'aria-expanded': openCourt === row.label,
+                      onClick: () => setOpenCourt(openCourt === row.label ? null : row.label),
+                      onKeyDown: ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); setOpenCourt(openCourt === row.label ? null : row.label); } },
+                    },
+                      e('span', { className: 'hx-chev' }, openCourt === row.label ? '▼' : '▶'),
                       row.demand === 'hot' ? '🔥🔥' : row.demand === 'warm' ? '🔥' : '',
                       // SF has "Court 1" at a dozen parks — the location is the
                       // distinguishing half of the name, so show it (muted).
@@ -2943,17 +3024,37 @@
                         row.court),
                       row.utilPct != null ? e('span', { style: { marginLeft: 'auto', color: '#999', fontSize: 10, flexShrink: 0 } }, Math.round(row.utilPct) + '%') : null),
                     row.cells.map(c => {
-                      let bg, fg;
-                      if (c.avail === 0) { bg = '#f3f3f0'; fg = '#ccc'; }
-                      else if (c.pct >= 80) { bg = '#dc2626'; fg = '#fff'; }
-                      else if (c.pct >= 60) { bg = '#ea580c'; fg = '#fff'; }
-                      else if (c.pct >= 40) { bg = '#f59e0b'; fg = '#1a1a1a'; }
-                      else if (c.pct >= 20) { bg = '#fde68a'; fg = '#1a1a1a'; }
-                      else if (c.pct > 0) { bg = '#fef9c3'; fg = '#666'; }
-                      else { bg = '#f8f8f6'; fg = '#ccc'; }
-                      return e('div', { key: c.dow, className: 'heatmap-cell', style: { background: bg, color: fg }, title: row.court + ' ' + CU_DOW[c.dow - 1] + ': ' + c.used.toFixed(1) + 'h / ' + c.avail.toFixed(0) + 'h (' + c.pct.toFixed(0) + '%)' },
+                      const col = cuHeatCell(c.pct, c.avail);
+                      return e('div', { key: c.dow, className: 'heatmap-cell', style: { background: col.bg, color: col.fg }, title: row.court + ' ' + CU_DOW[c.dow - 1] + ': ' + c.used.toFixed(1) + 'h / ' + c.avail.toFixed(0) + 'h (' + c.pct.toFixed(0) + '%)' },
                         c.avail === 0 ? '—' : c.pct < 1 && c.pct > 0 ? '<1%' : Math.round(c.pct) + '%');
-                    }))),
+                    }),
+                    // Hourly breakdown for the one expanded court. Columns line
+                    // up with the Mon-Sun headers above, so it reads as the same
+                    // grid opened up rather than a second chart.
+                    openCourt === row.label ? (() => {
+                      const hg = hourGridFor(row.label, row.cells);
+                      if (!hg) return e('div', { className: 'hx', key: 'hx' },
+                        e('div', { className: 'hx-note' }, 'No hourly detail — this court has no bookings with start times in range.'));
+                      const bits = [];
+                      if (hg.peak) bits.push('Busiest ' + CU_DOW[hg.peak.dow - 1] + ' ' + cuHour12(hg.peak.hour) + ' · ' + Math.round(hg.peak.pct) + '%');
+                      if (hg.quiet) bits.push('Quietest weekday stretch ' + cuHour12(hg.quiet.from) + '-' + cuHour12(hg.quiet.to) + ' · ' + Math.round(hg.quiet.avail ? (hg.quiet.used / hg.quiet.avail) * 100 : 0) + '%');
+                      return e('div', { className: 'hx', key: 'hx' },
+                        e('div', { className: 'hx-head' },
+                          e('span', { className: 'hx-title' }, 'Hourly utilization — ' + row.court),
+                          bits.length ? e('span', { className: 'hx-sub' }, bits.join('  ·  ')) : null),
+                        e('div', { className: 'hx-grid' },
+                          hg.rows.map(hr => e(React.Fragment, { key: hr.hour },
+                            e('div', { className: 'hx-hour' }, cuHour12(hr.hour)),
+                            hr.cells.map(c => {
+                              const col = cuHeatCell(c.pct, c.avail);
+                              return e('div', {
+                                key: c.dow, className: 'heatmap-cell', style: { background: col.bg, color: col.fg },
+                                title: row.court + ' · ' + CU_DOW[c.dow - 1] + ' ' + cuHour12(hr.hour) + ': ' + c.used.toFixed(1) + 'h booked of ' + c.avail + 'h open (' + Math.round(c.pct) + '%)',
+                              }, c.avail === 0 ? '—' : c.pct < 1 && c.pct > 0 ? '<1' : Math.round(c.pct));
+                            })))),
+                        e('div', { className: 'hx-note' },
+                          'Hours ' + cuHour12(hourly.fromHour) + '-' + cuHour12(hourly.toHour) + ' (observed open window across the courts in view). Time is split across every hour a booking spans; closure and maintenance blocks excluded.'));
+                    })() : null)),
                 ),
                 e('div', { className: 'heatmap-legend' },
                   e('span', null, e('span', { className: 'heatmap-legend-swatch', style: { background: '#f8f8f6', border: '1px solid #e4e4e0' } }), '0%'),
