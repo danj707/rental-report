@@ -3007,15 +3007,16 @@
                   e('div', { className: 'heatmap-hdr', style: { textAlign: 'left', paddingLeft: 8 } }, 'Court'),
                   CU_DOW.map(d => e('div', { className: 'heatmap-hdr', key: d }, d)),
                   dowHeatmap.map(row => e(React.Fragment, { key: row.label },
-                    e('div', {
-                      className: 'heatmap-label expandable' + (openCourt === row.label ? ' is-open' : ''),
-                      title: 'Show hourly utilization for ' + row.label,
-                      role: 'button', tabIndex: 0,
-                      'aria-expanded': openCourt === row.label,
-                      onClick: () => setOpenCourt(openCourt === row.label ? null : row.label),
-                      onKeyDown: ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); setOpenCourt(openCourt === row.label ? null : row.label); } },
-                    },
-                      e('span', { className: 'hx-chev' }, openCourt === row.label ? '▼' : '▶'),
+                    e('div', Object.assign(
+                      { className: 'heatmap-label' + (hourly ? ' expandable' : '') + (openCourt === row.label ? ' is-open' : ''), title: row.label },
+                      hourly ? {
+                        title: 'Show hourly utilization for ' + row.label,
+                        role: 'button', tabIndex: 0,
+                        'aria-expanded': openCourt === row.label,
+                        onClick: () => setOpenCourt(openCourt === row.label ? null : row.label),
+                        onKeyDown: ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); setOpenCourt(openCourt === row.label ? null : row.label); } },
+                      } : null),
+                      hourly ? e('span', { className: 'hx-chev' }, openCourt === row.label ? '▼' : '▶') : null,
                       row.demand === 'hot' ? '🔥🔥' : row.demand === 'warm' ? '🔥' : '',
                       // SF has "Court 1" at a dozen parks — the location is the
                       // distinguishing half of the name, so show it (muted).
@@ -3031,10 +3032,10 @@
                     // Hourly breakdown for the one expanded court. Columns line
                     // up with the Mon-Sun headers above, so it reads as the same
                     // grid opened up rather than a second chart.
-                    openCourt === row.label ? (() => {
+                    hourly && openCourt === row.label ? (() => {
                       const hg = hourGridFor(row.label, row.cells);
                       if (!hg) return e('div', { className: 'hx', key: 'hx' },
-                        e('div', { className: 'hx-note' }, 'No hourly detail — this court has no bookings with start times in range.'));
+                        e('div', { className: 'hx-note' }, 'No hourly detail for this court in range — its bookings are closure or maintenance blocks, which are excluded.'));
                       const bits = [];
                       if (hg.peak) bits.push('Busiest ' + CU_DOW[hg.peak.dow - 1] + ' ' + cuHour12(hg.peak.hour) + ' · ' + Math.round(hg.peak.pct) + '%');
                       if (hg.quiet) bits.push('Quietest weekday stretch ' + cuHour12(hg.quiet.from) + '-' + cuHour12(hg.quiet.to) + ' · ' + Math.round(hg.quiet.avail ? (hg.quiet.used / hg.quiet.avail) * 100 : 0) + '%');
@@ -3050,10 +3051,10 @@
                               return e('div', {
                                 key: c.dow, className: 'heatmap-cell', style: { background: col.bg, color: col.fg },
                                 title: row.court + ' · ' + CU_DOW[c.dow - 1] + ' ' + cuHour12(hr.hour) + ': ' + c.used.toFixed(1) + 'h booked of ' + c.avail + 'h open (' + Math.round(c.pct) + '%)',
-                              }, c.avail === 0 ? '—' : c.pct < 1 && c.pct > 0 ? '<1' : Math.round(c.pct));
+                              }, c.avail === 0 ? '—' : c.pct < 1 && c.pct > 0 ? '<1%' : Math.round(c.pct) + '%');
                             })))),
                         e('div', { className: 'hx-note' },
-                          'Hours ' + cuHour12(hourly.fromHour) + '-' + cuHour12(hourly.toHour) + ' (observed open window across the courts in view). Time is split across every hour a booking spans; closure and maintenance blocks excluded.'));
+                          '% of this court\u2019s open hours booked, ' + cuHour12(hourly.fromHour) + '-' + cuHour12(hourly.toHour) + ' (observed open window across the courts in view). One court divides by the number of that weekday in range \u2014 ' + (dowCounts[1] || 0) + ' Mondays here \u2014 so values step in whole bookings. Time is split across every hour a booking spans; closure and maintenance blocks excluded.'));
                     })() : null)),
                 ),
                 e('div', { className: 'heatmap-legend' },
