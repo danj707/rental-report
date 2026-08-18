@@ -73,6 +73,60 @@
     .report-header .org-label { font-size:10px; letter-spacing:1.6px; text-transform:uppercase; color:#777; font-weight:600; }
     .report-header .title { font-size:17px; font-weight:700; margin-top:1px; color:#111827; }
     .report-header-right { text-align:right; }
+
+    /* ── Animated header ─────────────────────────────────────────────
+       Same idiom as the Facilities banner: a CSS scene under a text
+       overlay. Field-day park at golden hour — bunting, a ball arcing
+       over the grass, drifting seeds. Everything is slow and looping;
+       nothing here should pull the eye away from the numbers below. */
+    .pgm-banner { position: relative; width: 100%; height: 168px; border-radius: 12px; overflow: hidden;
+      margin: 0 0 16px; border: 1px solid #bfe3c9; box-shadow: 0 3px 14px rgba(6,78,59,.14);
+      background: linear-gradient(120deg, #12405c 0%, #1c6b74 48%, #2f9268 100%); }
+    .pgm-banner .pb-scene { position: absolute; inset: 0; z-index: 0; overflow: hidden; }
+    .pgm-banner .pb-overlay { position: absolute; inset: 0; padding: 20px 26px; display: flex; flex-direction: column; justify-content: center; z-index: 2; }
+    .pgm-banner .pb-kicker { font-size: 10.5px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; color: rgba(255,255,255,.92); text-shadow: 0 1px 3px rgba(0,0,0,.4); }
+    .pgm-banner .pb-title { font-size: 30px; font-weight: 800; color: #fff; text-shadow: 0 2px 7px rgba(0,0,0,.42); line-height: 1.04; margin-top: 3px; }
+    .pgm-banner .pb-sub { font-size: 12.5px; color: rgba(255,255,255,.95); text-shadow: 0 1px 4px rgba(0,0,0,.45); margin-top: 6px; max-width: 560px; }
+    .pgm-banner .pb-pills { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+    .pgm-banner .pb-pill { background: rgba(255,255,255,.2); border: 1px solid rgba(255,255,255,.4); color: #fff; font-size: 12px; font-weight: 600; padding: 4px 12px; border-radius: 20px; text-shadow: 0 1px 2px rgba(0,0,0,.3); }
+    .pgm-banner .pb-pill b { font-weight: 800; }
+
+    .pbx-sun { position: absolute; right: 13%; top: 20%; width: 70px; height: 70px; border-radius: 50%;
+      background: radial-gradient(circle at 50% 50%, #fff1c4, #ffc86a 58%, #ff9f45 100%);
+      box-shadow: 0 0 40px 12px rgba(255,190,95,.5); animation: pbxSun 7s ease-in-out infinite alternate; }
+    .pbx-cloud { position: absolute; height: 9px; border-radius: 999px; background: rgba(255,255,255,.10); filter: blur(3px);
+      animation: pbxDrift linear infinite; }
+    .pbx-hill { position: absolute; bottom: 0; width: 150%; border-radius: 50% 50% 0 0 / 100% 100% 0 0; }
+    .pbx-hill.h1 { height: 58%; left: -25%; background: rgba(10,64,58,.5); }
+    .pbx-hill.h2 { height: 40%; left: -6%; background: rgba(13,86,64,.66); }
+    .pbx-hill.h3 { height: 26%; left: 22%; width: 130%; background: rgba(20,110,74,.9); }
+    /* Bunting — the field-day tell. Each flag sways on its own beat. */
+    .pbx-bunting { position: absolute; top: -6px; left: -2%; width: 104%; height: 46px; }
+    .pbx-bunting .cord { position: absolute; left: 0; right: 0; top: 10px; height: 2px; border-radius: 2px;
+      background: rgba(255,255,255,.28); transform-origin: 50% 0; }
+    .pbx-flag { position: absolute; top: 10px; width: 0; height: 0; border-left: 7px solid transparent; border-right: 7px solid transparent;
+      border-top: 15px solid #fff; transform-origin: 50% 0; animation: pbxSway 4.6s ease-in-out infinite alternate; }
+    /* Ball arcing over the grass, then looping back around. */
+    .pbx-ball-x { position: absolute; left: -40px; bottom: 3px; width: 14px; height: 14px; animation: pbxRoll 19s linear infinite; }
+    .pbx-ball { width: 14px; height: 14px; border-radius: 50%; box-shadow: 0 3px 7px rgba(0,0,0,.3);
+      background: radial-gradient(circle at 34% 30%, #fff6d8, #ffd166 62%, #f0a93c);
+      animation: pbxHop 1.9s cubic-bezier(.3,0,.4,1) infinite alternate, pbxSpin 2.4s linear infinite; }
+    .pbx-seed { position: absolute; width: 3px; height: 3px; border-radius: 50%; background: rgba(255,255,255,.55);
+      animation: pbxFloat linear infinite; }
+
+    @keyframes pbxSun   { to { box-shadow: 0 0 54px 18px rgba(255,190,95,.62); } }
+    @keyframes pbxDrift { from { transform: translateX(-140px); } to { transform: translateX(1400px); } }
+    @keyframes pbxSway  { from { transform: rotate(-7deg); } to { transform: rotate(7deg); } }
+    @keyframes pbxRoll  { to { transform: translateX(calc(100vw + 80px)); } }
+    @keyframes pbxHop   { from { transform: translateY(0); } to { transform: translateY(-11px); } }
+    @keyframes pbxSpin  { to { rotate: 360deg; } }
+    @keyframes pbxFloat { from { transform: translate(0, 0); opacity: 0; } 15% { opacity: .8; } to { transform: translate(60px, -70px); opacity: 0; } }
+
+    /* Motion is decoration here — a reduced-motion reader gets the same
+       scene, held still. */
+    @media (prefers-reduced-motion: reduce) {
+      .pgm-banner * { animation: none !important; }
+    }
     .report-header .rh-meta { font-size:11px; color:#666; }
 
     /* ── Info blurb ── */
@@ -335,7 +389,7 @@
       position: relative; overflow: visible;
       box-shadow: 0 2px 12px rgba(99,102,241,.3);
     }
-    .insights-btn:hover:not(:disabled) { background: linear-gradient(135deg, #4f46e5, #7c3aed); transform: translateY(-1px); box-shadow: 0 4px 20px rgba(99,102,241,.4); }
+    .insights-btn:hover:not(:disabled) { background: linear-gradient(135deg, #4f46e5, #7c3aed); transform: translateY(-1px); box-shadow: 0 4px 20px rgba(99,102,241,.4); filter: none; }
     .insights-btn:disabled { opacity: .6; cursor: default; }
     .insights-btn .sparkle {
       position: absolute; pointer-events: none;
@@ -355,6 +409,7 @@
       50% { opacity: 0.3; transform: translateY(-11px) scale(0.6); }
       70% { opacity: 0; transform: translateY(-15px) scale(0.3); }
     }
+    @media (prefers-reduced-motion: reduce) { .insights-btn .sparkle { animation: none; opacity: 0; } .insights-btn:hover:not(:disabled) { transform: none; } }
     .insights-sub { font-size: 11.5px; color: #9ca3af; }
     .insights-section .loading { padding: 36px 16px; }
     .insights-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; }
@@ -398,10 +453,10 @@
 
     @media print {
       body { background: #fff; }
-      .toolbar { display: none !important; }
+      .toolbar, .pgm-banner { display: none !important; }
       .page { box-shadow: none; margin: 0; padding: 12px 16px; max-width: 100%; }
     }
-    body.print-mode .toolbar { display: none !important; }
+    body.print-mode .toolbar, body.print-mode .pgm-banner { display: none !important; }
     body.print-mode { background: #fff; }
     body.print-mode .page { box-shadow: none; margin: 0; padding: 12px 16px; max-width: 100%; }
     body.print-mode .table-scroll { overflow: visible; }
@@ -2004,6 +2059,13 @@ function App() {
   // Column span helpers
   const totalCols  = 13 + (showRegModeCol ? 1 : 0) + (showWaitlist ? 1 : 0) + (showCancelsCol ? 2 : 0);
 
+  // Banner pills — same filtered set the summary cards use. Fill is
+  // seats-taken over seats-offered across every program that caps enrollment
+  // (summed, not an average of percentages), so big programs carry their weight.
+  const bannerCap = (filteredRows || []).reduce((a, r) => a + fmtNum(r._cap), 0);
+  const bannerUtil = (filteredRows || []).reduce((a, r) => a + fmtNum(r._util), 0);
+  const bannerFill = bannerCap > 0 ? Math.round((bannerUtil / bannerCap) * 100) : 0;
+
   return (
     <div>
       {renderToolbar()}
@@ -2022,6 +2084,44 @@ function App() {
             <div className="rh-meta" style={{fontWeight:600,marginBottom:2}}>{dateRangeLabel}</div>
           </div>
         </div>
+
+        {/* Animated header — park at golden hour, scene under the text. */}
+        {!isPrint && (
+          <div className="pgm-banner">
+            <div className="pb-scene" aria-hidden="true">
+              <div className="pbx-cloud" style={{top:'27%',left:'8%',width:62,animationDuration:'38s'}}></div>
+              <div className="pbx-cloud" style={{top:'34%',left:0,width:42,animationDuration:'52s',animationDelay:'-14s'}}></div>
+              <div className="pbx-cloud" style={{top:'23%',left:'40%',width:34,animationDuration:'64s',animationDelay:'-30s'}}></div>
+              <div className="pbx-sun"></div>
+              <div className="pbx-hill h1"></div>
+              <div className="pbx-hill h2"></div>
+              <div className="pbx-hill h3"></div>
+              <div className="pbx-bunting">
+                <div className="cord"></div>
+                {['#ffd166','#ef767a','#8fd694','#7fd1e3','#ffd166','#f4a261','#8fd694','#7fd1e3','#ef767a','#ffd166','#7fd1e3','#8fd694'].map((c,i)=>(
+                  <div key={i} className="pbx-flag"
+                       style={{left:(4+i*8)+'%',borderTopColor:c,animationDelay:(-i*0.36)+'s'}}></div>
+                ))}
+              </div>
+              {[0,1,2,3,4].map(i=>(
+                <div key={i} className="pbx-seed"
+                     style={{left:(12+i*19)+'%',bottom:'18%',animationDuration:(11+i*3)+'s',animationDelay:(-i*4)+'s'}}></div>
+              ))}
+              <div className="pbx-ball-x"><div className="pbx-ball"></div></div>
+            </div>
+            <div className="pb-overlay">
+              <div className="pb-kicker">{orgName}</div>
+              <div className="pb-title">🤸 Programs</div>
+              <div className="pb-sub">Classes, camps, leagues &amp; lessons.</div>
+              <div className="pb-pills">
+                <span className="pb-pill"><b>{programCount.toLocaleString()}</b> programs</span>
+                <span className="pb-pill"><b>{(totals ? totals.sections : 0).toLocaleString()}</b> sections</span>
+                <span className="pb-pill"><b>{(totals ? totals.enrollments : 0).toLocaleString()}</b> participants</span>
+                {bannerFill > 0 && <span className="pb-pill"><b>{bannerFill}%</b> avg fill</span>}
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Tabs */}
         {!isPrint && (
@@ -2212,26 +2312,41 @@ function App() {
                         <div style={{fontSize:22,fontWeight:800,color:'#334155',lineHeight:1.1}}>~{hoursSaved.toLocaleString()} hrs</div>
                         <div style={{fontSize:11,color:'#64748b'}}>Staff time saved (self-serve × 5 min)</div>
                       </div>
-                      <div style={{flex:1,minWidth:220,maxWidth:380}}>
-                        <div style={{display:'flex',alignItems:'flex-end',gap:10,height:64}}>
+                      <div style={{flex:'1 1 auto',minWidth:210}}>
+                        {/* Columns keep their width whether there are two months
+                            or six, and sit on a baseline so short bars still
+                            read as bars rather than floating chips. The plot
+                            shrinks to the months it has; the legend below keeps
+                            the full width so it never wraps a word per line. */}
+                        <div style={{maxWidth:Math.min(400, ssData.months.length * 54 + (ssData.months.length - 1) * 8)}}>
+                        <div style={{display:'flex',alignItems:'flex-end',gap:8,height:72,borderBottom:'1px solid #cbd5e1'}}>
                           {ssData.months.map(m => {
-                            const h = (m.self + m.staff) / maxTotal * 56;
-                            const selfH = Math.max((m.self + m.staff) > 0 ? h * m.self / (m.self + m.staff) : 0, m.self > 0 ? 2 : 0);
-                            const staffH = Math.max(h - selfH, m.staff > 0 ? 2 : 0);
+                            const tot = m.self + m.staff;
+                            const h = tot / maxTotal * 52;
+                            const selfH = Math.max(tot > 0 ? h * m.self / tot : 0, m.self > 0 ? 3 : 0);
+                            const staffH = Math.max(h - selfH, m.staff > 0 ? 3 : 0);
                             return (
-                              <div key={m.key} title={monthLabel(m.key) + ': ' + m.self.toLocaleString() + ' self / ' + m.staff.toLocaleString() + ' staff'} style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'flex-end',height:'100%'}}>
-                                <div style={{width:'70%',maxWidth:26,display:'flex',flexDirection:'column',opacity:m.prior ? 0.38 : 1}}>
+                              <div key={m.key} title={monthLabel(m.key) + ': ' + m.self.toLocaleString() + ' self / ' + m.staff.toLocaleString() + ' staff'}
+                                   style={{flex:'1 1 0',minWidth:26,maxWidth:54,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'flex-end',height:'100%'}}>
+                                <div style={{fontSize:9.5,fontWeight:700,color:m.prior ? '#b7b3aa' : '#475569',marginBottom:3,lineHeight:1}}>{tot.toLocaleString()}</div>
+                                <div style={{width:'80%',maxWidth:30,display:'flex',flexDirection:'column',opacity:m.prior ? 0.42 : 1}}>
                                   {staffH > 0 && <div style={{height:staffH,background:'#2563eb',borderRadius:'3px 3px 0 0'}} />}
-                                  {selfH > 0 && <div style={{height:selfH,background:'#16a34a',marginTop:staffH > 0 ? 2 : 0,borderRadius:staffH > 0 ? 0 : '3px 3px 0 0'}} />}
+                                  {selfH > 0 && <div style={{height:selfH,background:'#16a34a',borderRadius:staffH > 0 ? 0 : '3px 3px 0 0'}} />}
                                 </div>
-                                <div style={{fontSize:9,color:m.prior ? '#b7b3aa' : '#64748b',marginTop:3,fontWeight:600}}>{monthLabel(m.key)}</div>
                               </div>
                             );
                           })}
                         </div>
-                        <div style={{display:'flex',gap:12,marginTop:4,fontSize:9.5,color:'#64748b'}}>
+                        <div style={{display:'flex',gap:8,marginTop:4}}>
+                          {ssData.months.map(m => (
+                            <div key={m.key} style={{flex:'1 1 0',minWidth:26,maxWidth:54,textAlign:'center',fontSize:9.5,fontWeight:600,color:m.prior ? '#b7b3aa' : '#64748b'}}>{monthLabel(m.key)}</div>
+                          ))}
+                        </div>
+                        </div>
+                        <div style={{display:'flex',gap:12,marginTop:7,fontSize:9.5,color:'#64748b',whiteSpace:'nowrap'}}>
                           <span><span style={{display:'inline-block',width:7,height:7,borderRadius:2,background:'#16a34a',marginRight:3}} />Self-service</span>
                           <span><span style={{display:'inline-block',width:7,height:7,borderRadius:2,background:'#2563eb',marginRight:3}} />Staff-assisted</span>
+                          {ssData.months.some(m => m.prior) && <span style={{opacity:.7}}>faded = prior period</span>}
                         </div>
                       </div>
                     </div>

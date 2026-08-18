@@ -99,7 +99,7 @@
       position: relative; overflow: visible;
       box-shadow: 0 2px 12px rgba(99,102,241,.3);
     }
-    .insights-btn:hover:not(:disabled) { background: linear-gradient(135deg, #4f46e5, #7c3aed); transform: translateY(-1px); box-shadow: 0 4px 20px rgba(99,102,241,.4); }
+    .insights-btn:hover:not(:disabled) { background: linear-gradient(135deg, #4f46e5, #7c3aed); transform: translateY(-1px); box-shadow: 0 4px 20px rgba(99,102,241,.4); filter: none; }
     .insights-btn:disabled { opacity: .6; cursor: default; }
     .insights-btn .sparkle {
       position: absolute; pointer-events: none;
@@ -119,6 +119,7 @@
       50% { opacity: 0.3; transform: translateY(-11px) scale(0.6); }
       70% { opacity: 0; transform: translateY(-15px) scale(0.3); }
     }
+    @media (prefers-reduced-motion: reduce) { .insights-btn .sparkle { animation: none; opacity: 0; } .insights-btn:hover:not(:disabled) { transform: none; } }
     .insights-sub { font-size: 11.5px; color: #9ca3af; }
     .insights-section .loading { padding: 36px 16px; }
     .insights-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; }
@@ -1678,6 +1679,7 @@ function App() {
         !loading && programs.length > 0 && React.createElement('div', { className: 'insights-section no-print' },
           React.createElement('div', { className: 'insights-head' },
             React.createElement('button', { type: 'button', className: 'insights-btn', onClick: getInsights, disabled: insightsLoading },
+              ['✦', '✧', '✦', '✧', '✦', '✧'].map((ch, i) => React.createElement('span', { key: 'sp' + i, className: 'sparkle' }, ch)),
               insightsLoading ? 'Analyzing…' : (activeInsights ? '↻ Refresh insights' : '✨ Rec Insights')
             ),
             activeInsights && !insightsLoading && React.createElement('span', { className: 'insights-sub' },

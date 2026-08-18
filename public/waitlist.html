@@ -48,7 +48,7 @@
     position: relative; overflow: visible;
     box-shadow: 0 2px 12px rgba(99,102,241,.3);
   }
-  .insights-btn:hover { filter: brightness(1.08); }
+  .insights-btn:hover:not(:disabled) { background: linear-gradient(135deg, #4f46e5, #7c3aed); transform: translateY(-1px); box-shadow: 0 4px 20px rgba(99,102,241,.4); filter: none; }
   .insights-btn:disabled { opacity: .6; cursor: wait; }
   .insights-btn .sparkle { position: absolute; pointer-events: none; font-size: 10px; opacity: 0; animation: sparkle-float 2.5s ease-in-out infinite; }
   .insights-btn .sparkle:nth-child(1) { top: -8px; left: 8%; animation-delay: 0s; }
@@ -64,6 +64,7 @@
     50% { opacity: 0.3; transform: translateY(-11px) scale(0.6); }
     70% { opacity: 0; transform: translateY(-15px) scale(0.3); }
   }
+  @media (prefers-reduced-motion: reduce) { .insights-btn .sparkle { animation: none; opacity: 0; } .insights-btn:hover:not(:disabled) { transform: none; } }
   .insights-sub { font-size: 12px; color: #888; }
   .insights-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; }
   .insight-card { border: 1px solid #e5e7eb; border-left-width: 4px; border-radius: 8px; padding: 14px 16px; background: #fff; }
@@ -849,5 +850,6 @@ function App() {
 ReactDOM.createRoot(document.getElementById('root')).render(<App />);
 </script>
 <script src="/juice-loader.js" defer></script>
+<script src="/feedback-widget.js" defer></script>
 </body>
 </html>

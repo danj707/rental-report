@@ -238,7 +238,8 @@
     .dd-grp { font-size: 9.5px; text-transform: uppercase; letter-spacing: .5px; color: #9ca3af; font-weight: 700; padding: 8px 8px 3px; }
     .dd-opt { display: flex; align-items: center; gap: 8px; padding: 5px 8px; border-radius: 6px; font-size: 12.5px; color: #374151; cursor: pointer; }
     .dd-opt:hover { background: #f3f4f6; }
-    .dd-actions { display: flex; justify-content: space-between; padding: 7px 8px 3px; border-top: 1px solid #f0f0f0; margin-top: 4px; }
+    .dd-actions { display: flex; justify-content: space-between; padding: 3px 8px 7px; border-bottom: 1px solid #f0f0f0; margin-bottom: 4px;
+      position: sticky; top: -6px; background: #fff; z-index: 1; }
     .dd-actions button { background: none; border: none; color: #0d9488; font-size: 11px; font-weight: 700; cursor: pointer; }
     .flag { display: inline-flex; align-items: center; gap: 3px; font-size: 9px; font-weight: 800; letter-spacing: .3px; padding: 1px 6px; border-radius: 3px; background: #fef2f2; color: #b91c1c; }
 
@@ -291,6 +292,9 @@
     .court-native .cu-day { padding: 4px 9px; font-size: 12px; border: 1px solid #d1d5db; background: #fff; color: #374151;
       border-radius: 999px; cursor: pointer; font-family: inherit; }
     .court-native .cu-day.on { background: #0d9488; border-color: #0d9488; color: #fff; font-weight: 600; }
+    .court-native .cu-day.preset { border-style: dashed; }
+    .court-native .cu-day.preset.on { border-style: solid; }
+    .court-native .cu-slice-sep { width: 1px; height: 18px; background: #e2e5ea; margin: 0 2px; }
     .court-native .cu-slice select { font: inherit; font-size: 12px; padding: 4px 6px; border: 1px solid #d1d5db; border-radius: 6px; background: #fff; }
     .court-native .cu-slice-clear { font-size: 11px; color: #0d9488; background: none; border: none; cursor: pointer; text-decoration: underline; font-family: inherit; }
     .court-native .cu-slice-on { font-size: 11px; color: #92400e; background: #fef3c7; border: 1px solid #fde68a; border-radius: 999px; padding: 3px 9px; }
@@ -315,8 +319,25 @@
     .insights-section { margin: 14px 0 18px; }
     .insights-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
     .insights-btn { display: inline-flex; align-items: center; gap: 6px; background: linear-gradient(135deg, #6366f1, #8b5cf6); color: #fff; border: none; border-radius: 8px; padding: 10px 20px; font-size: 13px; font-weight: 600; font-family: inherit; cursor: pointer; box-shadow: 0 2px 12px rgba(99,102,241,.3); }
-    .insights-btn:hover:not(:disabled) { background: linear-gradient(135deg, #4f46e5, #7c3aed); }
+    .insights-btn:hover:not(:disabled) { background: linear-gradient(135deg, #4f46e5, #7c3aed); transform: translateY(-1px); box-shadow: 0 4px 20px rgba(99,102,241,.4); filter: none; }
     .insights-btn:disabled { opacity: .6; cursor: default; }
+    /* Rec Insights button — animated sparkle treatment (shared across reports) */
+    .insights-btn { position: relative; overflow: visible; box-shadow: 0 2px 12px rgba(99,102,241,.3); }
+    .insights-btn .sparkle { position: absolute; pointer-events: none; font-size: 10px; opacity: 0; animation: sparkle-float 2.5s ease-in-out infinite; }
+    .insights-btn .sparkle:nth-child(1) { top: -8px; left: 8%; animation-delay: 0s; }
+    .insights-btn .sparkle:nth-child(2) { top: -6px; right: 12%; animation-delay: 0.7s; font-size: 8px; }
+    .insights-btn .sparkle:nth-child(3) { bottom: -7px; left: 25%; animation-delay: 1.4s; font-size: 7px; }
+    .insights-btn .sparkle:nth-child(4) { top: -5px; left: 50%; animation-delay: 0.3s; font-size: 6px; }
+    .insights-btn .sparkle:nth-child(5) { bottom: -6px; right: 20%; animation-delay: 1.1s; font-size: 9px; }
+    .insights-btn .sparkle:nth-child(6) { top: -9px; right: 3%; animation-delay: 1.9s; font-size: 7px; }
+    @keyframes sparkle-float {
+      0%, 100% { opacity: 0; transform: translateY(0) scale(0.5); }
+      15% { opacity: 1; transform: translateY(-3px) scale(1.1); }
+      30% { opacity: 0.7; transform: translateY(-7px) scale(0.9); }
+      50% { opacity: 0.3; transform: translateY(-11px) scale(0.6); }
+      70% { opacity: 0; transform: translateY(-15px) scale(0.3); }
+    }
+    @media (prefers-reduced-motion: reduce) { .insights-btn .sparkle { animation: none; opacity: 0; } .insights-btn:hover:not(:disabled) { transform: none; } }
     .insights-sub { font-size: 11.5px; color: #9ca3af; }
     .insights-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; }
     .insight-card { border: 1px solid #e5e7eb; border-left-width: 4px; border-radius: 8px; padding: 14px 16px; background: #fff; }
@@ -419,6 +440,10 @@
   <script type="text/babel">
     const CFG = window.ORG_CONFIG || {};
     const e = React.createElement;
+
+    // Six drifting sparkles for the Rec Insights button (same treatment everywhere).
+    const sparkles = () => ['✦', '✧', '✦', '✧', '✦', '✧']
+      .map((ch, i) => e('span', { key: 'sp' + i, className: 'sparkle' }, ch));
 
     const TABS = [
       { key: 'summary',     label: 'Summary' },
@@ -557,6 +582,10 @@
       return e('div', { className: 'dd' },
         e('button', { className: 'dd-btn', onClick: () => setOpen(o => !o) }, '🏷️ ' + label, e('span', null, '▾')),
         open ? e('div', { className: 'dd-panel' },
+          e('div', { className: 'dd-actions' },
+            e('button', { onClick: () => setSel([]) }, 'Select all'),
+            e('button', { onClick: () => setSel([NONE_SEL]) }, 'Unselect all'),
+            e('button', { onClick: () => setOpen(false) }, 'Done')),
           groups.map(g => e('div', { key: g },
             e('div', { className: 'dd-grp' }, g),
             REC_SITE_TYPES.filter(t => t.grp === g).map(t =>
@@ -564,10 +593,6 @@
                 e('input', { type: 'checkbox', checked: !isNone && (sel.length === 0 || sel.includes(t.v)), onChange: () => toggle(t.v) }),
                 t.l)),
           )),
-          e('div', { className: 'dd-actions' },
-            e('button', { onClick: () => setSel([]) }, 'Select all'),
-            e('button', { onClick: () => setSel([NONE_SEL]) }, 'Unselect all'),
-            e('button', { onClick: () => setOpen(false) }, 'Done')),
         ) : null,
       );
     }
@@ -592,13 +617,13 @@
       return e('div', { className: 'dd' },
         e('button', { className: 'dd-btn', onClick: () => setOpen(o => !o) }, '📍 ' + label, e('span', null, '▾')),
         open ? e('div', { className: 'dd-panel' },
-          all.map(loc => e('label', { className: 'dd-opt', key: loc },
-            e('input', { type: 'checkbox', checked: !isNone && (sel.length === 0 || sel.includes(loc)), onChange: () => toggle(loc) }),
-            loc)),
           e('div', { className: 'dd-actions' },
             e('button', { onClick: () => setSel([]) }, 'Select all'),
             e('button', { onClick: () => setSel([NONE_SEL]) }, 'Unselect all'),
             e('button', { onClick: () => setOpen(false) }, 'Done')),
+          all.map(loc => e('label', { className: 'dd-opt', key: loc },
+            e('input', { type: 'checkbox', checked: !isNone && (sel.length === 0 || sel.includes(loc)), onChange: () => toggle(loc) }),
+            loc)),
         ) : null,
       );
     }
@@ -2318,7 +2343,7 @@
         // AI insights (shared endpoint pattern with the Court Utilization tab)
         hasStays ? e('div', { className: 'insights-section' },
           e('div', { className: 'insights-head' },
-            e('button', { type: 'button', className: 'insights-btn', onClick: getCampInsights, disabled: insLoading }, insLoading ? 'Analyzing…' : (insights ? '↻ Refresh insights' : '✨ Rec Insights')),
+            e('button', { type: 'button', className: 'insights-btn', onClick: getCampInsights, disabled: insLoading }, sparkles(), insLoading ? 'Analyzing…' : (insights ? '↻ Refresh insights' : '✨ Rec Insights')),
             insights && !insLoading ? e('span', { className: 'insights-sub' }, 'Generated from the ' + stays.toLocaleString() + ' stays shown') : null),
           insError && !insLoading ? e('div', { className: 'cu-error' }, e('strong', null, 'Insights unavailable: '), insError) : null,
           insights && !insLoading ? e('div', { className: 'insights-grid' },
@@ -2475,7 +2500,7 @@
       return e('div', { className: 'dd' },
         e('button', { className: 'dd-btn', onClick: () => setOpen(o => !o) }, '📍 ' + label, e('span', null, '▾')),
         open ? e('div', { className: 'dd-panel' },
-          e('div', { className: 'dd-actions', style: { borderTop: 'none', borderBottom: '1px solid #f0f0f0', marginBottom: 4 } },
+          e('div', { className: 'dd-actions' },
             e('button', { onClick: () => onChange(all.slice()) }, 'All'),
             e('button', { onClick: () => onChange([]) }, 'None')),
           all.map(loc => e('label', { className: 'dd-opt', key: loc },
@@ -2685,7 +2710,14 @@
         () => (hourFrom != null && hourTo != null && hourTo > hourFrom) ? { from: hourFrom, to: hourTo } : null,
         [hourFrom, hourTo]);
       const sliceActive = dowSel.length < 7 || !!hourWin;
-      const sliceLabel = (dowSel.length < 7 ? dowSel.slice().sort().map(d => CU_DOW[d - 1]).join(', ') : 'All days')
+      const dowLabel = (() => {
+        const sorted = dowSel.slice().sort((a, b) => a - b);
+        if (sorted.length === 7) return 'All days';
+        if (sorted.join() === '1,2,3,4,5') return 'Weekdays';
+        if (sorted.join() === '6,7') return 'Weekends';
+        return sorted.map(d => CU_DOW[d - 1]).join(', ');
+      })();
+      const sliceLabel = dowLabel
         + (hourWin ? ' · ' + cuHour12(hourWin.from) + '-' + cuHour12(hourWin.to) : '');
       // Dates of each weekday that survive the day filter — the denominator's
       // date count everywhere below.
@@ -3055,7 +3087,7 @@
               // AI insights
               grouped.length ? e('div', { className: 'insights-section' },
                 e('div', { className: 'insights-head' },
-                  e('button', { type: 'button', className: 'insights-btn', onClick: getInsights, disabled: insLoading }, insLoading ? 'Analyzing…' : (insights ? '↻ Refresh insights' : '✨ Rec Insights')),
+                  e('button', { type: 'button', className: 'insights-btn', onClick: getInsights, disabled: insLoading }, sparkles(), insLoading ? 'Analyzing…' : (insights ? '↻ Refresh insights' : '✨ Rec Insights')),
                   insights && !insLoading ? e('span', { className: 'insights-sub' }, 'Generated from the ' + selectedLocations.length + ' location' + (selectedLocations.length === 1 ? '' : 's') + ' shown') : null,
                 ),
                 insLoading ? e('div', { className: 'cu-loading', style: { padding: '30px 16px' } }, e('div', { className: 'fac-spin' }), 'Squeezing the oranges…') : null,
@@ -3109,6 +3141,18 @@
                       : prev.concat(dow)),
                     title: on ? 'Hide ' + d : 'Show ' + d,
                   }, d);
+                }),
+                e('span', { className: 'cu-slice-sep' }),
+                [['Weekdays', [1, 2, 3, 4, 5]], ['Weekends', [6, 7]]].map(([label, days]) => {
+                  // Lit when the current selection IS this preset; clicking it
+                  // again goes back to all days, so the chip is never a dead end.
+                  const on = dowSel.length === days.length && days.every(d => dowSel.includes(d));
+                  return e('button', {
+                    key: label, type: 'button', className: 'cu-day preset' + (on ? ' on' : ''),
+                    'aria-pressed': on,
+                    title: on ? 'Back to all days' : 'Select ' + label.toLowerCase() + ' only',
+                    onClick: () => setDowSel(on ? [1, 2, 3, 4, 5, 6, 7] : days.slice()),
+                  }, label);
                 }),
                 e('span', { className: 'cu-slice-lbl', style: { marginLeft: 8 } }, 'Hours'),
                 e('select', {
