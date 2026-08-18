@@ -238,7 +238,8 @@
     .dd-grp { font-size: 9.5px; text-transform: uppercase; letter-spacing: .5px; color: #9ca3af; font-weight: 700; padding: 8px 8px 3px; }
     .dd-opt { display: flex; align-items: center; gap: 8px; padding: 5px 8px; border-radius: 6px; font-size: 12.5px; color: #374151; cursor: pointer; }
     .dd-opt:hover { background: #f3f4f6; }
-    .dd-actions { display: flex; justify-content: space-between; padding: 7px 8px 3px; border-top: 1px solid #f0f0f0; margin-top: 4px; }
+    .dd-actions { display: flex; justify-content: space-between; padding: 3px 8px 7px; border-bottom: 1px solid #f0f0f0; margin-bottom: 4px;
+      position: sticky; top: -6px; background: #fff; z-index: 1; }
     .dd-actions button { background: none; border: none; color: #0d9488; font-size: 11px; font-weight: 700; cursor: pointer; }
     .flag { display: inline-flex; align-items: center; gap: 3px; font-size: 9px; font-weight: 800; letter-spacing: .3px; padding: 1px 6px; border-radius: 3px; background: #fef2f2; color: #b91c1c; }
 
@@ -560,6 +561,10 @@
       return e('div', { className: 'dd' },
         e('button', { className: 'dd-btn', onClick: () => setOpen(o => !o) }, '🏷️ ' + label, e('span', null, '▾')),
         open ? e('div', { className: 'dd-panel' },
+          e('div', { className: 'dd-actions' },
+            e('button', { onClick: () => setSel([]) }, 'Select all'),
+            e('button', { onClick: () => setSel([NONE_SEL]) }, 'Unselect all'),
+            e('button', { onClick: () => setOpen(false) }, 'Done')),
           groups.map(g => e('div', { key: g },
             e('div', { className: 'dd-grp' }, g),
             REC_SITE_TYPES.filter(t => t.grp === g).map(t =>
@@ -567,10 +572,6 @@
                 e('input', { type: 'checkbox', checked: !isNone && (sel.length === 0 || sel.includes(t.v)), onChange: () => toggle(t.v) }),
                 t.l)),
           )),
-          e('div', { className: 'dd-actions' },
-            e('button', { onClick: () => setSel([]) }, 'Select all'),
-            e('button', { onClick: () => setSel([NONE_SEL]) }, 'Unselect all'),
-            e('button', { onClick: () => setOpen(false) }, 'Done')),
         ) : null,
       );
     }
@@ -595,13 +596,13 @@
       return e('div', { className: 'dd' },
         e('button', { className: 'dd-btn', onClick: () => setOpen(o => !o) }, '📍 ' + label, e('span', null, '▾')),
         open ? e('div', { className: 'dd-panel' },
-          all.map(loc => e('label', { className: 'dd-opt', key: loc },
-            e('input', { type: 'checkbox', checked: !isNone && (sel.length === 0 || sel.includes(loc)), onChange: () => toggle(loc) }),
-            loc)),
           e('div', { className: 'dd-actions' },
             e('button', { onClick: () => setSel([]) }, 'Select all'),
             e('button', { onClick: () => setSel([NONE_SEL]) }, 'Unselect all'),
             e('button', { onClick: () => setOpen(false) }, 'Done')),
+          all.map(loc => e('label', { className: 'dd-opt', key: loc },
+            e('input', { type: 'checkbox', checked: !isNone && (sel.length === 0 || sel.includes(loc)), onChange: () => toggle(loc) }),
+            loc)),
         ) : null,
       );
     }
@@ -2478,7 +2479,7 @@
       return e('div', { className: 'dd' },
         e('button', { className: 'dd-btn', onClick: () => setOpen(o => !o) }, '📍 ' + label, e('span', null, '▾')),
         open ? e('div', { className: 'dd-panel' },
-          e('div', { className: 'dd-actions', style: { borderTop: 'none', borderBottom: '1px solid #f0f0f0', marginBottom: 4 } },
+          e('div', { className: 'dd-actions' },
             e('button', { onClick: () => onChange(all.slice()) }, 'All'),
             e('button', { onClick: () => onChange([]) }, 'None')),
           all.map(loc => e('label', { className: 'dd-opt', key: loc },
