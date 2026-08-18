@@ -286,6 +286,14 @@
     .court-native .heatmap-hdr { text-align: center; font-weight: 700; font-size: 10px; text-transform: uppercase; letter-spacing: .5px; color: #888; padding: 4px 2px; }
     .court-native .heatmap-label { padding: 5px 8px; font-size: 11px; white-space: normal; overflow-wrap: anywhere; line-height: 1.25; display: flex; align-items: center; gap: 4px; border-radius: 3px; background: #f8f8f6; }
     .court-native .heatmap-cell { display: flex; align-items: center; justify-content: center; text-align: center; padding: 5px 2px; border-radius: 3px; font-family: 'IBM Plex Mono', monospace; font-size: 10px; font-weight: 600; }
+    .court-native .cu-slice { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin: 10px 0 2px; }
+    .court-native .cu-slice-lbl { font-size: 11px; color: #666; font-weight: 600; text-transform: uppercase; letter-spacing: .5px; }
+    .court-native .cu-day { padding: 4px 9px; font-size: 12px; border: 1px solid #d1d5db; background: #fff; color: #374151;
+      border-radius: 999px; cursor: pointer; font-family: inherit; }
+    .court-native .cu-day.on { background: #0d9488; border-color: #0d9488; color: #fff; font-weight: 600; }
+    .court-native .cu-slice select { font: inherit; font-size: 12px; padding: 4px 6px; border: 1px solid #d1d5db; border-radius: 6px; background: #fff; }
+    .court-native .cu-slice-clear { font-size: 11px; color: #0d9488; background: none; border: none; cursor: pointer; text-decoration: underline; font-family: inherit; }
+    .court-native .cu-slice-on { font-size: 11px; color: #92400e; background: #fef3c7; border: 1px solid #fde68a; border-radius: 999px; padding: 3px 9px; }
     .court-native .heatmap-label.expandable { cursor: pointer; }
     .court-native .heatmap-label.expandable:hover { background: #eef2f7; }
     .court-native .heatmap-label.is-open { background: #e6eefb; box-shadow: inset 0 0 0 1px #c3d6f2; }
@@ -2585,6 +2593,22 @@
       // Which court's hourly grid is open. A single value, not a Set — expanding
       // one court closes the last, because 26 open grids is 3,000 cells.
       const [openCourt, setOpenCourt] = React.useState(null);
+      // Day-of-week + hour-of-day slice. Days are 1=Mon..7=Sun; the hour window
+      // is [from, to) in 24h, null when off. Both narrow the numerator AND the
+      // denominator — see sliceHours/computeCourtAvail.
+      const [dowSel, setDowSel] = React.useState(() => {
+        const q = new URLSearchParams(window.location.search);
+        const days = (q.get('dow') || '').split(',').map(Number).filter(n => n >= 1 && n <= 7);
+        return days.length ? days : [1, 2, 3, 4, 5, 6, 7];
+      });
+      const [hourFrom, setHourFrom] = React.useState(() => {
+        const v = parseInt(new URLSearchParams(window.location.search).get('from'), 10);
+        return isNaN(v) ? null : v;
+      });
+      const [hourTo, setHourTo] = React.useState(() => {
+        const v = parseInt(new URLSearchParams(window.location.search).get('to'), 10);
+        return isNaN(v) ? null : v;
+      });
       // insights
       const [insights, setInsights] = React.useState(null);
       const [insLoading, setInsLoading] = React.useState(false);
@@ -2623,6 +2647,17 @@
 
       React.useEffect(() => { load(start, end); }, [start, end, load]);
 
+      // Keep the slice in the URL — a filtered view is the thing people want to
+      // send each other ("pickleball courts, Tuesdays 11-2").
+      React.useEffect(() => {
+        const q = new URLSearchParams(window.location.search);
+        if (dowSel.length < 7) q.set('dow', dowSel.slice().sort().join(',')); else q.delete('dow');
+        if (hourFrom != null) q.set('from', String(hourFrom)); else q.delete('from');
+        if (hourTo != null && hourFrom != null) q.set('to', String(hourTo)); else q.delete('to');
+        const next = window.location.pathname + (q.toString() ? '?' + q.toString() : '') + window.location.hash;
+        window.history.replaceState(null, '', next);
+      }, [dowSel, hourFrom, hourTo]);
+
       // ── Derived (verbatim from the standalone report) ──
       const normalized = React.useMemo(() => {
         const all = cuNormalize(rows);
@@ -2645,26 +2680,75 @@
         return counts;
       }, [loadedStart, loadedEnd, start, end]);
 
+      const dowSet = React.useMemo(() => new Set(dowSel), [dowSel]);
+      const hourWin = React.useMemo(
+        () => (hourFrom != null && hourTo != null && hourTo > hourFrom) ? { from: hourFrom, to: hourTo } : null,
+        [hourFrom, hourTo]);
+      const sliceActive = dowSel.length < 7 || !!hourWin;
+      const sliceLabel = (dowSel.length < 7 ? dowSel.slice().sort().map(d => CU_DOW[d - 1]).join(', ') : 'All days')
+        + (hourWin ? ' · ' + cuHour12(hourWin.from) + '-' + cuHour12(hourWin.to) : '');
+      // Dates of each weekday that survive the day filter — the denominator's
+      // date count everywhere below.
+      const selDates = React.useCallback(d => (dowSet.has(d) ? (dowCounts[d] || 0) : 0), [dowSet, dowCounts]);
+      const dowOfRow = r => {
+        const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(r.localDate || ''));
+        if (!m) return null;
+        const jd = new Date(+m[1], +m[2] - 1, +m[3]).getDay();
+        return jd === 0 ? 7 : jd;
+      };
+      // Hours of a booking that fall inside the hour window. A 10:00-12:30
+      // rental contributes 1.5h to an 11-2 window, not 2.5h — without the clip
+      // every filtered number would overcount the edges.
+      const sliceHours = React.useCallback(r => {
+        if (!hourWin) return r.durationHours || 0;
+        if (!r.localStart || !r.localEnd) return 0;
+        const st = new Date(r.localStart), en = new Date(r.localEnd);
+        if (isNaN(st) || isNaN(en) || en <= st) return 0;
+        const ws = new Date(st.getFullYear(), st.getMonth(), st.getDate(), hourWin.from);
+        const we = new Date(st.getFullYear(), st.getMonth(), st.getDate());
+        we.setHours(hourWin.to);
+        const ms = Math.min(en, we) - Math.max(st, ws);
+        return ms > 0 ? ms / 3600000 : 0;
+      }, [hourWin]);
+
       const filtered = React.useMemo(() => {
         const locSet = new Set(selectedLocations);
-        return normalized.filter(r => locSet.has(r.locationName));
-      }, [normalized, selectedLocations]);
+        return normalized.filter(r => {
+          if (!locSet.has(r.locationName)) return false;
+          const d = dowOfRow(r);
+          if (d && !dowSet.has(d)) return false;
+          if (hourWin && sliceHours(r) <= 0) return false;   // nothing inside the window
+          return true;
+        });
+      }, [normalized, selectedLocations, dowSet, hourWin, sliceHours]);
 
       const computeCourtAvail = React.useCallback(label => {
+        // With an hour window the window IS the denominator: "of the 11-2 you
+        // asked about, X% was booked". Schedules expose hours-per-day, not the
+        // windows themselves, so they cannot be intersected with 11-2 — and
+        // dividing a 3-hour slice by a 12-hour day would read as noise.
+        if (hourWin) {
+          const perDay = hourWin.to - hourWin.from;
+          let total = 0;
+          for (let dow = 1; dow <= 7; dow++) total += perDay * selDates(dow);
+          return { availHrs: total, source: 'window' };
+        }
         if (schedules && schedules[label] && schedules[label].dailyHrs) {
           const dh = schedules[label].dailyHrs; let total = 0;
-          for (let dow = 1; dow <= 7; dow++) total += (dh[dow] || 0) * (dowCounts[dow] || 0);
+          for (let dow = 1; dow <= 7; dow++) total += (dh[dow] || 0) * selDates(dow);
           return { availHrs: total, source: 'schedule' };
         }
-        return { availHrs: (Number(hrsPerDay) || 0) * daysInRange, source: 'fallback' };
-      }, [schedules, dowCounts, hrsPerDay, daysInRange]);
+        let days = 0;
+        for (let dow = 1; dow <= 7; dow++) days += selDates(dow);
+        return { availHrs: (Number(hrsPerDay) || 0) * days, source: 'fallback' };
+      }, [schedules, selDates, hrsPerDay, hourWin]);
 
       const grouped = React.useMemo(() => {
         const byCourt = new Map();
         for (const r of filtered) {
           const label = r.locationName + ' — ' + r.courtName;
           if (!byCourt.has(label)) byCourt.set(label, { label, location: r.locationName, court: r.courtName, customer: new Set(), program: new Set(), closure: new Set(), customerHrs: 0, programHrs: 0, closureHrs: 0 });
-          const g = byCourt.get(label); const hrs = r.durationHours || 0;
+          const g = byCourt.get(label); const hrs = sliceHours(r);
           if (r.usageCategory === 'Closure / Block') { g.closure.add(r.facilityRentalId); g.closureHrs += hrs; }
           else if (r.bookingSource === 'instant') { g.customer.add(r.facilityRentalId); g.customerHrs += hrs; }
           else { g.program.add(r.facilityRentalId); g.programHrs += hrs; }
@@ -2677,7 +2761,7 @@
         });
         arr.sort((a, b) => a.label.localeCompare(b.label));
         return arr;
-      }, [filtered, computeCourtAvail]);
+      }, [filtered, computeCourtAvail, sliceHours]);
 
       const overallUtil = React.useMemo(() => {
         if (!grouped.length) return null;
@@ -2695,8 +2779,8 @@
         distinctFr: new Set(filtered.map(r => r.facilityRentalId).filter(Boolean)).size,
         distinctCourts: new Set(filtered.map(r => r.locationName + '|' + r.courtName)).size,
         reservationRows: filtered.length,
-        totalHours: filtered.reduce((s, r) => s + (r.durationHours || 0), 0),
-      }), [filtered]);
+        totalHours: filtered.reduce((s, r) => s + sliceHours(r), 0),
+      }), [filtered, sliceHours]);
 
       const dowHeatmap = React.useMemo(() => {
         if (!grouped.length || !filtered.length) return [];
@@ -2705,7 +2789,7 @@
           if (!r.localDate || !r.durationHours || r.usageCategory === 'Closure / Block') continue;
           const label = r.locationName + ' — ' + r.courtName;
           const jd = new Date(r.localDate + 'T12:00:00').getDay(); const dow = jd === 0 ? 7 : jd;
-          courtDow[label + '|' + dow] = (courtDow[label + '|' + dow] || 0) + r.durationHours;
+          courtDow[label + '|' + dow] = (courtDow[label + '|' + dow] || 0) + sliceHours(r);
         }
         const fb = Number(hrsPerDay) || 12;
         return grouped.map(g => {
@@ -2713,13 +2797,13 @@
           for (let d = 1; d <= 7; d++) {
             const used = courtDow[g.label + '|' + d] || 0;
             const sched = schedules && schedules[g.label] && schedules[g.label].dailyHrs;
-            const hrsForDay = sched ? (sched[d] || 0) : fb;
-            const avail = hrsForDay * (dowCounts[d] || 0);
-            cells.push({ dow: d, used, avail, pct: avail > 0 ? (used / avail) * 100 : 0 });
+            const hrsForDay = hourWin ? (hourWin.to - hourWin.from) : (sched ? (sched[d] || 0) : fb);
+            const avail = hrsForDay * selDates(d);   // 0 for a day the filter excludes
+            cells.push({ dow: d, used, avail, pct: avail > 0 ? (used / avail) * 100 : 0, off: !dowSet.has(d) });
           }
           return { label: g.label, court: g.court, location: g.location, demand: g.demand, utilPct: g.utilPct, cells };
         });
-      }, [grouped, filtered, schedules, dowCounts, hrsPerDay]);
+      }, [grouped, filtered, schedules, selDates, dowSet, hourWin, hrsPerDay, sliceHours]);
 
       // ── Hour-of-day utilisation ──────────────────────────────────────
       // Occupied time is split across every hour a booking actually spans
@@ -2745,6 +2829,7 @@
             const mins = (Math.min(e, hourEnd) - Math.max(s, t)) / 60000;
             if (mins <= 0) continue;
             const h = t.getHours();
+            if (hourWin && (h < hourWin.from || h >= hourWin.to)) continue;
             const ck = r.locationName + '|' + r.courtName + '|' + t.toDateString() + '|' + h;
             const prev = perCourtDate[ck] || 0;
             const add = Math.max(0, Math.min(60 - prev, mins));
@@ -2764,7 +2849,7 @@
           let booked = 0, open = 0;
           for (let h = from; h < to; h++) for (const d of days) {
             booked += perCell[d + '|' + h] || 0;
-            open += 60 * (dowCounts[d] || 0) * courts;
+            open += 60 * selDates(d) * courts;
           }
           return {
             pct: open ? Math.round(1000 * booked / open) / 10 : null,
@@ -2773,7 +2858,9 @@
             idleHours: Math.round((open - booked) / 60),
           };
         };
-        const WD = [1, 2, 3, 4, 5], WE = [6, 7], ALL = [1, 2, 3, 4, 5, 6, 7];
+        const WD = [1, 2, 3, 4, 5].filter(d => dowSet.has(d)),
+              WE = [6, 7].filter(d => dowSet.has(d)),
+              ALL = [1, 2, 3, 4, 5, 6, 7].filter(d => dowSet.has(d));
         const byHour = [];
         for (let h = minHour; h < maxHour; h++) {
           const all = band(h, h + 1, ALL);
@@ -2815,7 +2902,7 @@
           // court label -> 'dow|hour' -> booked minutes, for the row a user expands
           byCourt: perCourt,
         };
-      }, [filtered, grouped, dowCounts]);
+      }, [filtered, grouped, selDates, dowSet, hourWin]);
 
       // One court's hour × day grid, built on expand rather than for all 26 at
       // once. Denominator is that court alone: 60 min × the number of that
@@ -2829,11 +2916,13 @@
         const closedDow = {};
         (parentCells || []).forEach(c => { if (c.avail === 0) closedDow[c.dow] = true; });
         const rows = [];
-        for (let h = hourly.fromHour; h < hourly.toHour; h++) {
+        const lo = hourWin ? Math.max(hourly.fromHour, hourWin.from) : hourly.fromHour;
+        const hi = hourWin ? Math.min(hourly.toHour, hourWin.to) : hourly.toHour;
+        for (let h = lo; h < hi; h++) {
           const cs = [];
           for (let d = 1; d <= 7; d++) {
             const used = (cells[d + '|' + h] || 0) / 60;
-            const avail = closedDow[d] ? 0 : (dowCounts[d] || 0);   // hours available that weekday
+            const avail = closedDow[d] ? 0 : selDates(d);   // hours available that weekday
             cs.push({ dow: d, used, avail, pct: avail > 0 ? (used / avail) * 100 : 0 });
           }
           rows.push({ hour: h, cells: cs });
@@ -2851,7 +2940,7 @@
         });
         if (run && run.to - run.from >= 2 && (!quiet || run.to - run.from > quiet.to - quiet.from)) quiet = run;
         return { rows, peak, quiet };
-      }, [hourly, dowCounts]);
+      }, [hourly, selDates]);
 
       // Insights (reuse the report's endpoint + a compact aggregate blob)
       const buildBlob = React.useCallback(() => {
@@ -2861,9 +2950,14 @@
           overall: { utilizationPct: r1(overallUtil), courtsWithActivity: grouped.length, distinctBookings: stats.distinctFr, reservationRows: stats.reservationRows, totalHours: r1(stats.totalHours) },
           courts: grouped.slice(0, 40).map(g => ({ label: g.label, location: g.location, court: g.court, bookings: g.total, utilizationPct: r1(g.utilPct), hoursUsed: r1(g.usedHrs), availHrs: r1(g.availHrs), availSource: g.availSource, customerBookings: g.customer, programBookings: g.program, closureBookings: g.closure })),
           hourOfDay: hourly ? hourly.blob : null,
+          slice: sliceActive ? {
+            days: dowSel.slice().sort().map(d => CU_DOW[d - 1]),
+            hours: hourWin ? cuHour12(hourWin.from) + '-' + cuHour12(hourWin.to) : 'all open hours',
+            note: 'Every figure here is scoped to this slice; utilisation divides by the sliced window, not the whole day.',
+          } : null,
           filtersActive: { showManaged, showInstant, locationsShown: selectedLocations.length + ' of ' + allLocations.length },
         };
-      }, [grouped, overallUtil, stats, loadedStart, loadedEnd, start, end, daysInRange, hrsPerDay, scheduleStats, hourly, showManaged, showInstant, selectedLocations, allLocations]);
+      }, [grouped, overallUtil, stats, loadedStart, loadedEnd, start, end, daysInRange, hrsPerDay, scheduleStats, hourly, sliceActive, dowSel, hourWin, showManaged, showInstant, selectedLocations, allLocations]);
 
       const getInsights = React.useCallback(async () => {
         setInsLoading(true); setInsError(null); setInsights(null);
@@ -3000,9 +3094,45 @@
                     e('div', null, e('div', { className: 'cu-bar-val' }, b.headline), e('div', { className: 'cu-bar-sub' }, b.sub)));
                 })
               ) : e('div', { className: 'cu-loading' }, 'No bookings match the current filters.'),
+              // Day + hour slice. Narrows the numerator and the denominator
+              // together, so "Tuesdays 11-2" reads as a percentage of that
+              // window rather than of the whole week.
+              e('div', { className: 'cu-slice' },
+                e('span', { className: 'cu-slice-lbl' }, 'Days'),
+                CU_DOW.map((d, i) => {
+                  const dow = i + 1, on = dowSel.includes(dow);
+                  return e('button', {
+                    key: d, type: 'button', className: 'cu-day' + (on ? ' on' : ''),
+                    'aria-pressed': on,
+                    onClick: () => setDowSel(prev => prev.includes(dow)
+                      ? (prev.length === 1 ? prev : prev.filter(x => x !== dow))   // never zero days
+                      : prev.concat(dow)),
+                    title: on ? 'Hide ' + d : 'Show ' + d,
+                  }, d);
+                }),
+                e('span', { className: 'cu-slice-lbl', style: { marginLeft: 8 } }, 'Hours'),
+                e('select', {
+                  value: hourFrom == null ? '' : String(hourFrom),
+                  onChange: ev => { const v = ev.target.value; setHourFrom(v === '' ? null : Number(v)); if (v !== '' && (hourTo == null || hourTo <= Number(v))) setHourTo(Math.min(24, Number(v) + 1)); },
+                }, e('option', { value: '' }, 'All hours'), Array.from({ length: 24 }, (_, h) => e('option', { key: h, value: String(h) }, cuHour12(h)))),
+                e('span', { style: { fontSize: 12, color: '#666' } }, '→'),
+                e('select', {
+                  value: hourTo == null ? '' : String(hourTo),
+                  disabled: hourFrom == null,
+                  onChange: ev => { const v = ev.target.value; setHourTo(v === '' ? null : Number(v)); },
+                }, e('option', { value: '' }, '—'), Array.from({ length: 24 }, (_, i) => i + 1).filter(h => hourFrom == null || h > hourFrom)
+                     .map(h => e('option', { key: h, value: String(h) }, cuHour12(h)))),
+                sliceActive ? e('span', { className: 'cu-slice-on' }, 'Showing ' + sliceLabel) : null,
+                sliceActive ? e('button', {
+                  type: 'button', className: 'cu-slice-clear',
+                  onClick: () => { setDowSel([1, 2, 3, 4, 5, 6, 7]); setHourFrom(null); setHourTo(null); },
+                }, 'reset') : null),
               // Day-of-week heatmap
               dowHeatmap.length ? e('div', { className: 'heatmap-section' },
-                e('div', { className: 'heatmap-title' }, 'Day-of-Week Utilization', e('span', { className: 'subtitle' }, 'Which courts are busiest on which days')),
+                e('div', { className: 'heatmap-title' }, 'Day-of-Week Utilization',
+                  e('span', { className: 'subtitle' }, sliceActive
+                    ? sliceLabel + (hourWin ? ' — % of that window booked' : ' — days outside the filter are greyed')
+                    : 'Which courts are busiest on which days')),
                 e('div', { className: 'heatmap-grid' },
                   e('div', { className: 'heatmap-hdr', style: { textAlign: 'left', paddingLeft: 8 } }, 'Court'),
                   CU_DOW.map(d => e('div', { className: 'heatmap-hdr', key: d }, d)),
@@ -3039,6 +3169,8 @@
                       const bits = [];
                       if (hg.peak) bits.push('Busiest ' + CU_DOW[hg.peak.dow - 1] + ' ' + cuHour12(hg.peak.hour) + ' · ' + Math.round(hg.peak.pct) + '%');
                       if (hg.quiet) bits.push('Quietest weekday stretch ' + cuHour12(hg.quiet.from) + '-' + cuHour12(hg.quiet.to) + ' · ' + Math.round(hg.quiet.avail ? (hg.quiet.used / hg.quiet.avail) * 100 : 0) + '%');
+                      const exDow = dowSel.slice().sort((a, b) => a - b)[0] || 1;
+                      const exCount = (dowCounts[exDow] || 0) + ' ' + CU_DOW[exDow - 1] + 's';
                       return e('div', { className: 'hx', key: 'hx' },
                         e('div', { className: 'hx-head' },
                           e('span', { className: 'hx-title' }, 'Hourly utilization — ' + row.court),
@@ -3058,9 +3190,12 @@
                             })))),
                         e('div', { className: 'hx-note' },
                           (metric === 'hours'
-                            ? 'Hours booked on this court in each hour slot, summed across the range (' + (dowCounts[1] || 0) + ' Mondays, ' + (dowCounts[6] || 0) + ' Saturdays here). Shading still shows utilisation. '
-                            : '% of this court\u2019s open hours booked \u2014 one court divides by the number of that weekday in range (' + (dowCounts[1] || 0) + ' Mondays here), so values step in whole bookings. ')
-                          + 'Window ' + cuHour12(hourly.fromHour) + '-' + cuHour12(hourly.toHour) + ' (observed across the courts in view). Time is split across every hour a booking spans; closure and maintenance blocks excluded.'));
+                            ? 'Hours booked on this court in each hour slot, summed across the range (' + exCount + ' here). Shading still shows utilisation. '
+                            : '% of this court\u2019s open hours booked \u2014 one court divides by the number of that weekday in range (' + exCount + ' here), so values step in whole bookings. ')
+                          + 'Window ' + cuHour12(hourWin ? hourWin.from : hourly.fromHour) + '-' + cuHour12(hourWin ? hourWin.to : hourly.toHour)
+                          + (hourWin ? ' (your filter)' : ' (observed across the courts in view)')
+                          + (dowSel.length < 7 ? ', ' + dowSel.slice().sort().map(d => CU_DOW[d - 1]).join('/') + ' only' : '')
+                          + '. Time is split across every hour a booking spans; closure and maintenance blocks excluded.'));
                     })() : null)),
                 ),
                 e('div', { className: 'heatmap-legend' },
