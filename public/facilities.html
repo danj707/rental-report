@@ -584,6 +584,13 @@
     }
 
     function fmtDate(d) { return d.toISOString().slice(0, 10); }
+    // Local calendar date as YYYY-MM-DD. Not fmtDate(new Date()) — that goes
+    // through UTC and rolls the day over in the evening for US timezones,
+    // which would mis-split charges into "upcoming" on the last day of a range.
+    function todayStr() {
+      const d = new Date(), p = n => String(n).padStart(2, '0');
+      return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
+    }
     function monthStart(d) { return new Date(d.getFullYear(), d.getMonth(), 1); }
     function monthEnd(d) { return new Date(d.getFullYear(), d.getMonth() + 1, 0); }
 
@@ -633,6 +640,17 @@
         topSites: [],
       };
       a.outstanding = Math.max(0, a.billed - a.collected);
+      // Charged-to-date vs upcoming. A range that runs past today bills sessions
+      // that have not happened yet: that money is contracted, not overdue, and
+      // it drags the collected % down for no real reason. Split it so the tiles
+      // can say what is actually due. Ranges wholly in the past have upcoming
+      // = 0 and the tiles fall back to their plain wording.
+      const today = todayStr();
+      const onOrBeforeToday = r => String(r['Date'] || '').slice(0, 10) <= today;
+      a.chargedToDate = scoped.filter(onOrBeforeToday).reduce((s, r) => s + billedOf(r), 0);
+      a.chargedUpcoming = Math.max(0, a.billed - a.chargedToDate);
+      a.dueNow = Math.max(0, Math.min(a.outstanding, a.chargedToDate - a.collected));
+      a.notYetDue = Math.max(0, a.outstanding - a.dueNow);
 
       VERTICALS.forEach(v => a.byV[v] = { bookings: 0, canceled: 0, revenue: 0, instant: 0, sites: new Set() });
       a.byType = {}; // keyed by specific site-type label ("Court", "Rink", "Pool"…) — the real breakdown
@@ -1240,7 +1258,7 @@
       const theme = FBX_THEME[tab] || FBX_THEME.summary;
       const pills = a ? [
         ['bookings', a.bookings.toLocaleString()],
-        ['net revenue', money(a.revenue)],
+        ['charged', money(a.revenue)],
         ['active sites', a.sites.toLocaleString()],
         ['cancellation', a.bookings ? pct(a.canceled, a.bookings) : '—'],
       ] : [];
@@ -1278,15 +1296,27 @@
     }
 
     function KpiCards({ a }) {
-      // Authoritative revenue view (v2 card): Billed / Collected / Outstanding
+      // Authoritative view (v2 card): Charged / Collected / Outstanding
       // side by side, so invoiced-but-unpaid facility use is visible instead of
-      // hidden. Falls back to a single "Net Revenue" tile on the legacy card.
+      // hidden. Falls back to a single "Charged" tile on the legacy card.
+      // Sub-labels are time-aware: when the range reaches past today, Charged
+      // shows the to-date/upcoming split, Collected is measured against what
+      // has actually come due, and Outstanding separates due from not-yet-due.
+      const invNote = a.invoicedRev > 0 ? ' · incl. ' + money(a.invoicedRev) + ' invoiced' : '';
+      const future = a.chargedUpcoming > 0;
       const revCards = a.hasBilled ? [
-        { label: 'Billed', val: money(a.billed), cls: 'sc-green', sub: 'charged, excludes canceled' + (a.invoicedRev > 0 ? ' · incl. ' + money(a.invoicedRev) + ' invoiced' : '') },
-        { label: 'Collected', val: money(a.collected), cls: 'sc-blue', sub: a.billed ? pct(a.collected, a.billed) + ' of billed received' : 'confirmed payments' },
-        { label: 'Outstanding', val: money(a.outstanding), cls: a.outstanding > 0 ? 'sc-amber' : 'sc-muted', sub: 'billed, not yet collected (A/R)' },
+        { label: 'Charged', val: money(a.billed), cls: 'sc-green',
+          sub: (future ? money(a.chargedToDate) + ' to date · ' + money(a.chargedUpcoming) + ' upcoming'
+                       : 'charged, excludes canceled') + invNote },
+        { label: 'Collected', val: money(a.collected), cls: 'sc-blue',
+          sub: future
+            ? (a.chargedToDate ? pct(a.collected, a.chargedToDate) + ' of charged to date' : 'confirmed payments')
+            : (a.billed ? pct(a.collected, a.billed) + ' of charged received' : 'confirmed payments') },
+        { label: 'Outstanding', val: money(a.outstanding), cls: a.outstanding > 0 ? 'sc-amber' : 'sc-muted',
+          sub: a.notYetDue > 0 ? money(a.dueNow) + ' due · ' + money(a.notYetDue) + ' not yet due'
+                               : 'charged, not yet collected (A/R)' },
       ] : [
-        { label: 'Net Revenue', val: money(a.revenue), cls: 'sc-green', sub: 'excludes canceled' },
+        { label: 'Charged', val: money(a.revenue), cls: 'sc-green', sub: 'excludes canceled' },
       ];
       const cards = [
         { label: 'Bookings', val: a.bookings.toLocaleString(), cls: 'sc-blue', sub: 'facility reservations in view' },
@@ -1385,7 +1415,7 @@
             e('th', { className: 'num' }, 'Sites'),
             e('th', { className: 'num' }, 'Bookings'),
             e('th', { className: 'num' }, 'Cancel %'),
-            e('th', { className: 'num' }, a.hasBilled ? 'Billed' : 'Net revenue'),
+            e('th', { className: 'num' }, 'Charged'),
             a.hasBilled ? e('th', { className: 'num' }, 'Collected') : null,
             e('th', { className: 'num' }, '% instant-book'),
           )),
@@ -1423,7 +1453,7 @@
             e('th', null, 'Location'),
             e('th', { className: 'num' }, 'Bookings'),
             e('th', { className: 'num' }, 'Cancel %'),
-            e('th', { className: 'num' }, 'Net revenue'),
+            e('th', { className: 'num' }, 'Charged'),
           )),
           e('tbody', null,
             a.topSites.map((s, i) => {
@@ -1506,7 +1536,7 @@
 
       const cards = [
         { label: 'Bookings', val: bookings.toLocaleString(), cls: 'sc-blue', sub: vert.label + ' reservations in view' },
-        { label: 'Net Revenue', val: money(revenue), cls: 'sc-green', sub: 'excludes canceled' },
+        { label: 'Charged', val: money(revenue), cls: 'sc-green', sub: 'excludes canceled' },
         { label: 'Instant-Book', val: pct(instant, bookings), cls: 'sc-purple', sub: instant.toLocaleString() + ' bkgs · ' + money(instRev) },
         { label: 'Managed', val: pct(managed, bookings), cls: 'sc-amber', sub: managed.toLocaleString() + ' bkgs · ' + money(mgdRev) },
         { label: 'Cancellation Rate', val: pct(canceled, bookings), cls: 'sc-red', sub: canceled.toLocaleString() + ' of ' + bookings.toLocaleString() + ' canceled' },
@@ -1555,7 +1585,7 @@
             e('th', { className: 'num' }, 'Bookings'),
             e('th', { className: 'num' }, 'Avg party'),
             e('th', { className: 'num' }, 'Cancel %'),
-            e('th', { className: 'num' }, 'Net revenue'),
+            e('th', { className: 'num' }, 'Charged'),
           )),
           e('tbody', null,
             topSites.map((s, i) => {
@@ -1603,7 +1633,7 @@
     function AquaBanner({ bookings, revenue, guests, avgParty, sites }) {
       const pills = [
         ['bookings', bookings.toLocaleString()],
-        ['net revenue', money(revenue)],
+        ['charged', money(revenue)],
         ['guests', guests.toLocaleString()],
         ['avg party', avgParty ? avgParty.toFixed(1) : '—'],
         ['active sites', sites.toLocaleString()],
@@ -1736,7 +1766,7 @@
 
       const kpis = [
         { label: 'Bookings', val: bookings.toLocaleString(), cls: 'sc-blue', sub: 'pool reservations in view' },
-        { label: 'Net Revenue', val: money(revenue), cls: 'sc-green', sub: 'excludes canceled' },
+        { label: 'Charged', val: money(revenue), cls: 'sc-green', sub: 'excludes canceled' },
         { label: 'Instant-Book', val: pct(instant, bookings), cls: 'sc-purple', sub: instant.toLocaleString() + ' bkgs · ' + money(instRev) },
         { label: 'Managed', val: pct(managed, bookings), cls: 'sc-amber', sub: managed.toLocaleString() + ' bkgs · ' + money(mgdRev) },
         { label: 'Cancellation Rate', val: pct(canceled, bookings), cls: 'sc-red', sub: canceled.toLocaleString() + ' of ' + bookings.toLocaleString() + ' canceled' },
@@ -1826,7 +1856,7 @@
           e('thead', null, e('tr', null,
             e('th', null, 'Site'), e('th', null, 'Location'),
             e('th', { className: 'num' }, 'Bookings'), e('th', { className: 'num' }, 'Avg party'),
-            e('th', { className: 'num' }, 'Cancel %'), e('th', { className: 'num' }, 'Net revenue'))),
+            e('th', { className: 'num' }, 'Cancel %'), e('th', { className: 'num' }, 'Charged'))),
           e('tbody', null,
             topSites.map((s, i) => {
               const crPct = s.bookings ? (s.canceled / s.bookings) * 100 : 0;
@@ -1870,7 +1900,7 @@
         ['stays', stays.toLocaleString()],
         ['nights booked', nights.toLocaleString()],
         ['occupancy', occPct == null ? '—' : occPct.toFixed(occPct < 10 ? 1 : 0) + '%'],
-        ['net revenue', money(revenue)],
+        ['charged', money(revenue)],
         ['sites booked', sitesBooked.toLocaleString() + (sitesTotal ? ' of ' + sitesTotal : '')],
       ];
       return e('div', { className: 'fac-banner camp fbx-camp' },
@@ -2205,7 +2235,7 @@
         { label: 'Nights Booked', val: nights.toLocaleString(), cls: 'sc-green', sub: 'checkout day not counted' },
         { label: 'Occupancy', val: occPct == null ? '—' : occPct.toFixed(occPct < 10 ? 1 : 0) + '%', cls: 'sc-purple', sub: siteDays.toLocaleString() + ' of ' + (sitesTotal * days.length).toLocaleString() + ' site-days' },
         { label: 'Avg Stay', val: avgStay ? avgStay.toFixed(1) : '—', cls: 'sc-amber', sub: 'nights per stay' },
-        { label: 'Net Revenue', val: money(revenue), cls: 'sc-green', sub: 'base rental, excl. add-ons' },
+        { label: 'Charged', val: money(revenue), cls: 'sc-green', sub: 'base rental, excl. add-ons' },
         { label: 'Sites Booked', val: sitesBooked.toLocaleString() + (sitesTotal ? ' / ' + sitesTotal : ''), cls: 'sc-muted', sub: 'of mapped campsites' },
         { label: 'Weekend Nights', val: wkndPct == null ? '—' : Math.round(wkndPct) + '%', cls: 'sc-muted', sub: wkndPct == null ? 'no nights in range' : wkndNights.toLocaleString() + ' Fri/Sat vs ' + (nightRows.length - wkndNights).toLocaleString() + ' weekday' },
       ];
@@ -2357,7 +2387,7 @@
           e('thead', null, e('tr', null,
             e('th', null, 'Site'), e('th', null, 'Location'),
             e('th', { className: 'num' }, 'Stays'), e('th', { className: 'num' }, 'Days booked'),
-            e('th', { className: 'num' }, 'Weekend %'), e('th', { className: 'num' }, 'Net revenue'))),
+            e('th', { className: 'num' }, 'Weekend %'), e('th', { className: 'num' }, 'Charged'))),
           e('tbody', null,
             topSites.map((s, i) => e('tr', { key: i },
               e('td', null, s.site),
@@ -3040,9 +3070,15 @@
         const pct = (n, d) => d ? (n / d * 100).toFixed(1) + '%' : '0%';
         const charged = a.billed, inst = a.instRev, mgd = a.mgdRev;
         const collected = a.collected, outstanding = a.outstanding, refunded = a.refunded, net = collected - refunded;
+        // Charges for bookings dated after today are contracted, not overdue —
+        // called out here so the Outstanding line is not read as all past-due.
+        const notYetDue = a.notYetDue || 0, dueNow = a.dueNow || 0;
         const org = CFG.displayName || CFG.slug || 'Parks & Recreation';
         const loc = locSel.length ? locSel.join(', ') : 'All locations';
         const genDate = now.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+        const dueNote = notYetDue > 0
+          ? ' Of that, ' + money(notYetDue) + ' covers bookings dated after ' + genDate + ' and is not yet due; ' + money(dueNow) + ' is due now.'
+          : '';
         const range = fmtRange(start, end);
         const statusLabel = statusSel.length >= 3 ? 'All statuses' : statusSel.map(s => s.replace(/(^|[- ])\w/g, c => c.toUpperCase())).join(', ');
         const invNote = a.invoicedRev > 0
@@ -3051,8 +3087,8 @@
         const findings = [
           '<li><b>Instant Bookings (Customer Self-Service): ' + money(inst) + '</b> — ' + pct(inst, charged) + ' of all charged revenue, booked and paid directly through the online storefront.</li>',
           '<li><b>Admin-Initiated &amp; Managed Events: ' + money(mgd) + '</b> — ' + pct(mgd, charged) + ' of all charged revenue: admin-initiated rentals, managed events, leagues, and programs.' + invNote + '</li>',
-          outstanding > 0 ? '<li><b>Outstanding balance: ' + money(outstanding) + '</b> — ' + pct(outstanding, charged) + ' of charged revenue is billed but not yet collected (accounts receivable), typical for in-progress recurring bookings.</li>' : '',
-          refunded > 0 ? '<li><b>Refunds: ' + money(refunded) + '</b> returned to customers during the period; net revenue received after refunds is ' + money(net) + '.</li>' : '',
+          outstanding > 0 ? '<li><b>Outstanding balance: ' + money(outstanding) + '</b> — ' + pct(outstanding, charged) + ' of the amount charged is not yet collected (accounts receivable), typical for in-progress recurring bookings.' + dueNote + '</li>' : '',
+          refunded > 0 ? '<li><b>Refunds: ' + money(refunded) + '</b> returned to customers during the period; net received after refunds is ' + money(net) + '.</li>' : '',
         ].join('');
         const css = ':root{--ink:#111;--rule:#111;--muted:#555;--faint:#888}*{box-sizing:border-box}'
           + "body{background:#fff;color:var(--ink);font:15px/1.5 Georgia,'Times New Roman',serif;max-width:760px;margin:0 auto;padding:40px 32px 64px}"
@@ -3089,7 +3125,11 @@
           + '<h3>By Payment Status</h3>'
           + '<table><thead><tr><th>Status</th><th class="num">Amount</th><th class="num">% of Charged</th></tr></thead><tbody>'
           + '<tr><td>Collected (received)</td><td class="num">' + money(collected) + '</td><td class="num">' + pct(collected, charged) + '</td></tr>'
-          + '<tr><td>Outstanding (billed, not yet collected)</td><td class="num">' + money(outstanding) + '</td><td class="num">' + pct(outstanding, charged) + '</td></tr>'
+          + '<tr><td>Outstanding (charged, not yet collected)</td><td class="num">' + money(outstanding) + '</td><td class="num">' + pct(outstanding, charged) + '</td></tr>'
+          + (notYetDue > 0
+              ? '<tr><td style="padding-left:20px;color:#555">— due now</td><td class="num">' + money(dueNow) + '</td><td class="num">' + pct(dueNow, charged) + '</td></tr>'
+                + '<tr><td style="padding-left:20px;color:#555">— not yet due (bookings after ' + genDate + ')</td><td class="num">' + money(notYetDue) + '</td><td class="num">' + pct(notYetDue, charged) + '</td></tr>'
+              : '')
           + '<tr class="total"><td>TOTAL CHARGED</td><td class="num">' + money(charged) + '</td><td class="num">100%</td></tr></tbody></table>'
           + '<h2>Refunds</h2><p class="lead">Amounts returned to customers during the reporting period. Refunds are paid back out of Collected revenue — shown separately and not subtracted from Charged or Collected above.</p>'
           + '<table><thead><tr><th>Booking Type</th><th class="num">Refunded</th></tr></thead><tbody>'
@@ -3105,14 +3145,14 @@
           + '<tr><td><b>Instant Bookings</b></td><td>Reservations customers booked and paid for themselves through the online storefront.</td></tr>'
           + '<tr><td><b>Admin-Initiated &amp; Managed Events</b></td><td>Bookings created or managed by staff — rentals, leagues, programs, tournaments, events, and manual invoice line items.</td></tr>'
           + '<tr><td><b>Collected</b></td><td>Money actually received (confirmed payments) against these charges as of the report date.</td></tr>'
-          + '<tr><td><b>Outstanding (A/R)</b></td><td>Charged amounts not yet collected — accounts receivable. Normal for ongoing leagues and programs until each session is billed and paid.</td></tr>'
+          + '<tr><td><b>Outstanding (A/R)</b></td><td>Charged amounts not yet collected — accounts receivable. Where the reporting period runs past today, this includes charges for bookings that have not happened yet, which are not yet due; those are shown on their own line. Normal for ongoing leagues and programs until each session is billed and paid.</td></tr>'
           + '<tr><td><b>Refunds</b></td><td>Amounts paid back to customers during the period. Shown separately and not subtracted from Charged or Collected.</td></tr>'
           + '<tr><td><b>Net Received</b></td><td>Collected minus Refunds — the cash retained after refunds.</td></tr></tbody></table>'
           + '<h2>Report Details</h2><div class="details">'
           + '<p><b>Scope:</b> ' + loc + '.</p>'
           + '<p><b>Time Period:</b> ' + range + '.</p>'
           + '<p><b>Booking Status:</b> ' + statusLabel + '.</p>'
-          + '<p><b>Revenue Type:</b> Charged (total billed), regardless of payment status.</p>'
+          + '<p><b>Amount Basis:</b> Charged (the full amount billed), regardless of payment status.</p>'
           + '<p><b>Basis:</b> Each booking counted at its actual charged amount, per session for recurring bookings. Cancellations excluded from Charged. Collected reflects confirmed payments; Refunds reflect confirmed amounts returned; Outstanding is Charged less Collected.</p>'
           + '<p><b>Snapshot:</b> Figures reflect live records as of ' + genDate + ' and will move as bookings, payments, and refunds are processed.</p></div>'
           + '<div class="foot">' + org + ' · generated from the Rec facility report on ' + genDate + '.</div>'
