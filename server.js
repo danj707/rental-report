@@ -171,6 +171,9 @@ globalThis.fetch = async function (resource, init) {
 
 // ── Metabase response cache ───────────────────────────────────────────
 const CACHE_TTL = 4 * 60 * 60 * 1000;  // 4-hour default TTL — warmed at 5am, serves all day
+// Schema version per report feed — see the cacheKey in /:org/:report/api/data.
+// court-utilization v2: card 17297 gained local_start / local_end (2026-08-18).
+const FEED_VERSION = { "court-utilization": 2 };
 const REPORT_CACHE_TTL = {
   facility: 4 * 60 * 60 * 1000,            // 4 hrs — warmed at 5am
   gl: 15 * 60 * 1000,                     // 15 min — financials need to be near-live; the GL report also shows a "Data as of · Refresh" stamp for on-demand realtime
@@ -5604,7 +5607,14 @@ app.get("/:org/:report/api/data", resolveOrg, async (req, res) => {
     const paramStr = params.length > 0 ? `?parameters=${encodeURIComponent(JSON.stringify(params))}` : "";
 
     // ── Cache check (skip with _nocache=1) ──
-    const cacheKey = `${orgSlug}:${reportType}:${paramStr}`;
+    // FEED_VERSION participates in the key so a card COLUMN change invalidates
+    // cached rows. Without it, rows cached under the old schema keep being
+    // served for the full TTL and any feature reading a new column silently
+    // sees nothing — which is exactly what happened when court-utilization
+    // gained local_start/local_end: the grid went quiet for six hours on
+    // already-warm orgs. Bump the number for a report when its card's column
+    // set changes; date-range and org are already in the key.
+    const cacheKey = `${orgSlug}:${reportType}:v${FEED_VERSION[reportType] || 1}:${paramStr}`;
     console.log(`[data] ${orgSlug}/${reportType} | dates: ${req.query.start_date || '(none)'} → ${req.query.end_date || '(none)'} | uuid: ${mbUuid.slice(0,8)}${useShared ? ' (shared)' : ' (per-org)'} | key: ${cacheKey.slice(0, 80)}...`);
 
     // Freshness headers — report-refresh.js reads these to render the
