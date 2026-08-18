@@ -2795,8 +2795,22 @@ const SLACK_EVENT_META = {
   insights: { emoji: "✨", verb: "generated AI insights for" },
   email:   { emoji: "📧", verb: "emailed" },
 };
+// Mutes — an org+report+event pairing that is signal everywhere else but pure
+// noise here. Omit a field to wildcard it. These still land in events.jsonl and
+// still count toward the daily summary; they just stop pinging the channel.
+const SLACK_MUTE = [
+  { org: "watertown", report: "calendar", event: "view" },  // per Dan 2026-08-18 — far too frequent
+];
+function slackMuted(rec) {
+  return SLACK_MUTE.some(m =>
+    (!m.org    || m.org    === rec.org) &&
+    (!m.report || m.report === rec.report) &&
+    (!m.event  || m.event  === rec.event));
+}
+
 function notifySlack(rec) {
   if (!SLACK_WEBHOOK_URL || !rec || !SLACK_NOTIFY.has(rec.event)) return;
+  if (slackMuted(rec)) return;
   // Email sends key by recipient (+ status) so a daily run to several
   // subscribers posts each send, instead of collapsing them into one line.
   const key = rec.event === "email"
@@ -2850,6 +2864,108 @@ function notifySlack(rec) {
 }
 
 // Read events file, optionally filtered to last N days
+// ── Daily Slack activity summary ─────────────────────────────────────────────
+// One digest a day instead of reading the per-event firehose: views, exports,
+// emails, AI runs, feedback and the day's best arcade scores. Posted just after
+// the local day ends so the number is final, not a partial. Muted events still
+// count here — a mute silences the ping, not the record.
+const SLACK_SUMMARY_TZ = process.env.SLACK_SUMMARY_TZ || "America/Los_Angeles";
+const localDayKey = (d, tz) => new Intl.DateTimeFormat("en-CA",
+  { timeZone: tz || SLACK_SUMMARY_TZ, year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
+
+function buildDailyActivity(dayKey) {
+  const day = dayKey || localDayKey(new Date(Date.now() - 86400000));
+  // 3 days back covers the local day plus timezone slop on both ends.
+  const events = readEvents(3).filter(e => localDayKey(new Date(e.ts)) === day);
+  const n = ev => events.filter(e => e.event === ev).length;
+
+  const viewsByOrg = {};
+  events.filter(e => e.event === "view").forEach(e => { viewsByOrg[e.org] = (viewsByOrg[e.org] || 0) + 1; });
+  const topOrgs = Object.entries(viewsByOrg).sort((a, b) => b[1] - a[1]).slice(0, 3);
+
+  const reportsByViews = {};
+  events.filter(e => e.event === "view").forEach(e => { reportsByViews[e.report] = (reportsByViews[e.report] || 0) + 1; });
+  const topReports = Object.entries(reportsByViews).sort((a, b) => b[1] - a[1]).slice(0, 3);
+
+  const emails = events.filter(e => e.event === "email");
+  const recipients = new Set(emails.map(e => e.to || e.recipient).filter(Boolean));
+
+  const votes = events.filter(e => e.event === "vote" || e.event === "feedback" || e.event === "insights-feedback");
+  const up = votes.filter(e => e.sentiment === "up" || e.score === 1).length;
+  const down = votes.filter(e => e.sentiment === "down" || e.score === 0).length;
+
+  // Today's arcade entries, ranked inside each game (Putt ranks by fewest).
+  const season = (loadGameScores().seasons || {})[seasonForDate().id] || {};
+  const bestToday = [];
+  for (const [key, meta] of Object.entries(LEADERBOARD_GAMES)) {
+    const todays = (season[key] || []).filter(sc => sc.ts && localDayKey(new Date(sc.ts)) === day);
+    if (!todays.length) continue;
+    const best = sortBoard(todays, meta.lower)[0];
+    bestToday.push({ game: key, label: meta.label, emoji: meta.emoji, initials: best.initials, score: best.score });
+  }
+  // Keep game order, not score order — Putt ranks by fewest strokes, so
+  // sorting 21 against 4,820 across games would rank nonsense.
+
+  return {
+    day,
+    views: n("view"),
+    orgsActive: Object.keys(viewsByOrg).length,
+    topOrgs, topReports,
+    pdf: n("pdf"), excel: n("excel"), summary: n("summary"), print: n("print"),
+    emails: emails.length, recipients: recipients.size,
+    insights: n("insights"),
+    plays: n("game"), bestToday,
+    created: n("created"),
+    up, down,
+    total: events.length,
+  };
+}
+
+function dailyActivityText(a) {
+  const orgName = slug => (ORGS[slug] && (ORGS[slug].displayName || ORGS[slug].name)) || slug;
+  const pretty = new Date(a.day + "T12:00:00").toLocaleDateString("en-US",
+    { weekday: "short", month: "short", day: "numeric" });
+  if (!a.total) return `📊 *Daily activity — ${pretty}*\nQuiet day: nothing logged.`;
+
+  const lines = [`📊 *Daily activity — ${pretty}*`];
+  if (a.views) {
+    lines.push(`👀 *${a.views}* view${a.views === 1 ? "" : "s"} across ${a.orgsActive} org${a.orgsActive === 1 ? "" : "s"}`
+      + (a.topOrgs.length ? ` — ${a.topOrgs.map(([o, c]) => `${orgName(o)} ${c}`).join(" · ")}` : ""));
+    if (a.topReports.length) lines.push(`   top reports: ${a.topReports.map(([r, c]) => `${r} ${c}`).join(" · ")}`);
+  }
+  const exports = [];
+  if (a.pdf) exports.push(`📄 ${a.pdf} PDF`);
+  if (a.excel) exports.push(`📊 ${a.excel} Excel`);
+  if (a.summary) exports.push(`🧾 ${a.summary} Summary`);
+  if (a.print) exports.push(`🖨️ ${a.print} print`);
+  if (exports.length) lines.push(exports.join(" · "));
+  if (a.emails) lines.push(`📧 *${a.emails}* report email${a.emails === 1 ? "" : "s"}`
+    + (a.recipients ? ` to ${a.recipients} recipient${a.recipients === 1 ? "" : "s"}` : ""));
+  if (a.insights) lines.push(`✨ ${a.insights} AI insight run${a.insights === 1 ? "" : "s"}`);
+  if (a.up || a.down) lines.push(`👍 ${a.up} · 👎 ${a.down}`);
+  if (a.created) lines.push(`🏢 ${a.created} new org${a.created === 1 ? "" : "s"} created`);
+  if (a.plays) {
+    lines.push(`🕹️ ${a.plays} game play${a.plays === 1 ? "" : "s"}`
+      + (a.bestToday.length
+        ? ` — best today: ${a.bestToday.slice(0, 3).map(b => `${b.emoji} ${b.label} ${b.initials} ${b.score.toLocaleString()}`).join(" · ")}`
+        : ""));
+  }
+  return lines.join("\n");
+}
+
+function postDailyActivitySummary(dayKey) {
+  const a = buildDailyActivity(dayKey);
+  const text = dailyActivityText(a);
+  if (!SLACK_WEBHOOK_URL) { console.log("[slack-summary] (no webhook) " + text.replace(/\n/g, " | ")); return a; }
+  fetch(SLACK_WEBHOOK_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text, mrkdwn: true }),
+  }).then(() => console.log(`[slack-summary] posted ${a.day} (${a.total} events)`))
+    .catch(err => console.warn("[slack-summary] post failed:", err.message));
+  return a;
+}
+
 function readEvents(daysBack) {
   try {
     const raw = fs.readFileSync(EVENTS_FILE, "utf8");
@@ -3579,6 +3695,9 @@ async function performBackup(manual = false) {
 
 // Daily backup at 2am
 cron.schedule("0 2 * * *", () => performBackup(false));
+
+// Daily activity digest — 12:05am local, summarising the day that just closed.
+cron.schedule("5 0 * * *", () => postDailyActivitySummary(), { timezone: SLACK_SUMMARY_TZ });
 // Backup on startup (after 45s)
 setTimeout(() => performBackup(false), 45000);
 
@@ -3814,6 +3933,18 @@ app.post("/api/admin/backup", async (req, res) => {
   const result = await performBackup(true);
   res.json(result);
 });
+// GET /api/admin/daily-summary[?day=YYYY-MM-DD][&dry=1] — preview or re-send
+// the digest. dry=1 returns the text without posting to Slack.
+app.get("/api/admin/daily-summary", (req, res) => {
+  const day = /^\d{4}-\d{2}-\d{2}$/.test(req.query.day || "") ? req.query.day : undefined;
+  if (req.query.dry === "1") {
+    const a = buildDailyActivity(day);
+    return res.json({ ok: true, posted: false, day: a.day, text: dailyActivityText(a), counts: a });
+  }
+  const a = postDailyActivitySummary(day);
+  res.json({ ok: true, posted: !!SLACK_WEBHOOK_URL, day: a.day, text: dailyActivityText(a) });
+});
+
 app.get("/api/admin/backup-status", (req, res) => {
   res.json(_lastBackup);
 });
