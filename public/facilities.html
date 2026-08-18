@@ -291,6 +291,9 @@
     .court-native .cu-day { padding: 4px 9px; font-size: 12px; border: 1px solid #d1d5db; background: #fff; color: #374151;
       border-radius: 999px; cursor: pointer; font-family: inherit; }
     .court-native .cu-day.on { background: #0d9488; border-color: #0d9488; color: #fff; font-weight: 600; }
+    .court-native .cu-day.preset { border-style: dashed; }
+    .court-native .cu-day.preset.on { border-style: solid; }
+    .court-native .cu-slice-sep { width: 1px; height: 18px; background: #e2e5ea; margin: 0 2px; }
     .court-native .cu-slice select { font: inherit; font-size: 12px; padding: 4px 6px; border: 1px solid #d1d5db; border-radius: 6px; background: #fff; }
     .court-native .cu-slice-clear { font-size: 11px; color: #0d9488; background: none; border: none; cursor: pointer; text-decoration: underline; font-family: inherit; }
     .court-native .cu-slice-on { font-size: 11px; color: #92400e; background: #fef3c7; border: 1px solid #fde68a; border-radius: 999px; padding: 3px 9px; }
@@ -2685,7 +2688,14 @@
         () => (hourFrom != null && hourTo != null && hourTo > hourFrom) ? { from: hourFrom, to: hourTo } : null,
         [hourFrom, hourTo]);
       const sliceActive = dowSel.length < 7 || !!hourWin;
-      const sliceLabel = (dowSel.length < 7 ? dowSel.slice().sort().map(d => CU_DOW[d - 1]).join(', ') : 'All days')
+      const dowLabel = (() => {
+        const sorted = dowSel.slice().sort((a, b) => a - b);
+        if (sorted.length === 7) return 'All days';
+        if (sorted.join() === '1,2,3,4,5') return 'Weekdays';
+        if (sorted.join() === '6,7') return 'Weekends';
+        return sorted.map(d => CU_DOW[d - 1]).join(', ');
+      })();
+      const sliceLabel = dowLabel
         + (hourWin ? ' · ' + cuHour12(hourWin.from) + '-' + cuHour12(hourWin.to) : '');
       // Dates of each weekday that survive the day filter — the denominator's
       // date count everywhere below.
@@ -3109,6 +3119,18 @@
                       : prev.concat(dow)),
                     title: on ? 'Hide ' + d : 'Show ' + d,
                   }, d);
+                }),
+                e('span', { className: 'cu-slice-sep' }),
+                [['Weekdays', [1, 2, 3, 4, 5]], ['Weekends', [6, 7]]].map(([label, days]) => {
+                  // Lit when the current selection IS this preset; clicking it
+                  // again goes back to all days, so the chip is never a dead end.
+                  const on = dowSel.length === days.length && days.every(d => dowSel.includes(d));
+                  return e('button', {
+                    key: label, type: 'button', className: 'cu-day preset' + (on ? ' on' : ''),
+                    'aria-pressed': on,
+                    title: on ? 'Back to all days' : 'Select ' + label.toLowerCase() + ' only',
+                    onClick: () => setDowSel(on ? [1, 2, 3, 4, 5, 6, 7] : days.slice()),
+                  }, label);
                 }),
                 e('span', { className: 'cu-slice-lbl', style: { marginLeft: 8 } }, 'Hours'),
                 e('select', {
