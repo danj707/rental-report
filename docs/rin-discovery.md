@@ -105,38 +105,54 @@ Verified: `reservation_user.booking_id` is 100% populated (798,588 / 798,588 row
 in the last 90 days). `order_item.reservation_id` exists but is *not* the path for
 lesson bookings — joining on it returns zero SF lesson rows.
 
-### 3.3 Lesson packs fan out and inflate revenue ~4×
+### 3.3 Lesson packs fan out if you query reservations directly
 
-SF lesson packs are sold as one order_item covering many sessions. Joining
-order_items to per-session `reservation_user` rows multiplies the pack price by
-the session count. Measured for SF, July 2026:
+This is a trap for any *new* query, not a defect in the shipped report. SF lesson
+packs are sold as one `order_item` covering many sessions. Joining order items to
+per-session `reservation_user` rows multiplies the pack price by the session
+count. Measured for SF, July 2026 (booked GMV, purchase-date):
 
-| Stream | Session signups | Distinct bookings | Naive per-session sum | Deduped at order_item |
+| Stream | Session signups | Distinct bookings | Naive per-session | Deduped at order_item |
 |---|---|---|---|---|
-| `private-lesson` (instant slots) | 274 | 274 | $23,211 | **$23,211** |
-| `programmed-class-instructor` (packs) | 378 | 108 | $112,784 | **$28,836** |
+| `private-lesson` | 274 | 274 | $23,211 | **$23,211** |
+| `programmed-class-instructor` | 378 | 108 | $112,784 | **$28,836** |
 | **Total** | | | $135,995 | **$52,047** |
 
-$52.0K deduped vs Mike's reported $55.7K — a ~7% gap explained by refunds,
-adjustments/discounts and the exact recognition window. The naive figure is
-2.6× too high. This is why the existing base cards carry a hand-rolled
-**"net price per session"** column: pack price amortized across sessions.
+$52.0K deduped lands within ~7% of the $55.7K reported for July. The naive figure
+is 2.6× too high. This is why the RIN base cards carry a hand-rolled **"net price
+per session"** column.
 
-### 3.4 The rental-report Lessons report misses ~45% of RIN
+Card 17755 does **not** have this problem: it works at `booking` → `order_item`
+grain and never touches `reservation`, so nothing fans out. The hazard applies to
+the cross-org card in §5.3, which does need reservation-level facts (courts,
+locations, slot times).
 
-`server.js:5513` pulls the instructor-payout card (a **programs/sections**
-pipeline) and then filters rows by a regex on the program/section name:
+### 3.4 The rental-report Lessons report is accurate — corrected 2026-08-18
 
-```js
-const LESSON_RE = /lesson|clinic|coaching|private/i;
-```
+An earlier draft of this doc claimed the report missed the entire `private-lesson`
+stream (~45% of SF RIN). **That was wrong.** Verified at card 17755's grain for
+SF over the report's own range (2025-01-01 → 2026-08-18, paid transactions):
 
-Two consequences:
-- The entire `private-lesson` reservation stream — instructor instant-book slots,
-  **$23.2K of SF's $52.0K in July** — is invisible, because those bookings are
-  reservations, not section registrations.
-- Coverage depends on how someone typed a section name. Anything not matching the
-  four keywords silently drops out.
+| Underlying reservation type | Card rows | Paid |
+|---|---|---|
+| `private-lesson` | 3,564 | $334,099 |
+| `programmed-class-instructor` | 1,465 | $441,869 |
+| both | 3 | $770 |
+| **Total** | **5,032** | **$776,738** |
+
+The live report shows **5,030 lessons / $776,538** — a match to within 2 rows.
+
+The reason: in SF an instructor or the RIN team **creates a section per lesson
+slot** and the player books that section. So instant private lessons are section
+registrations *and* carry a `private-lesson` reservation underneath. The programs
+pipeline sees all of it. Both streams are fully counted today.
+
+One latent fragility remains, and it is only latent: `LESSON_RE`
+(`/lesson|clinic|coaching|private/i`, server.js:5493) filters rows by program and
+section name. Today it drops essentially nothing (5,030 of 5,032). But coverage
+depends on how sections are named, so a new naming convention — or a new vertical
+like swim, music or personal training — could silently fall out without any error
+surfacing.
 
 ### 3.5 Performance
 
@@ -203,17 +219,25 @@ amortized per session, and billed / collected / refunded side by side.
 That single card can back **both** deliverables below, and can replace the seven
 duplicate base queries in collection 116.
 
-### 5.2 Per-city RIN report (rental-report, SF first)
+### 5.2 Per-city RIN report — extend, don't rebuild
 
-A real `rin` report type alongside the existing ones — replacing the regex-based
-Lessons report, not sitting next to it:
+The SF Lessons report already delivers the core of this: revenue, refunds, active
+instructors, avg price, students, repeat rate, monthly trend, instructor
+leaderboard, sport mix, price bands. It is accurate (§3.4). **Do not replace it.**
 
-- Revenue: booked vs collected vs refunded, private vs pack split
-- Instructor leaderboard: lessons, distinct students, revenue, cancellation rate
-- Court/facility utilization: booked vs published instructor hours, by location
-- Student loyalty: repeat rate, lessons per student, lesson-pack conversion
-- Slot hygiene: unbooked slots, same-day slot creation, straddling lessons
-- Payout preview: per-instructor gross → 75/12.5/12.5 split, exportable
+What it does not yet have, and what card 17755 alone cannot supply:
+
+- **Private vs pack split** — the two streams are both counted but not
+  distinguished. Needs the reservation join; highest value per unit of work.
+- **Court/facility utilization** — booked vs published instructor hours, by
+  location. Needs reservation + location.
+- **Slot hygiene** — unbooked slots, same-day slot creation, lessons straddling
+  two slots (Mike's 2026-06-29 ask). Needs unbooked reservations, which a
+  booking-grain card cannot see by construction.
+- **Payout preview** — per-instructor gross → 75/12.5/12.5, exportable, to take
+  the Sheets reconciliation off Jimena and Lindsay.
+- **Lesson requests funnel** — request → match → booking, currently only in
+  Metabase cards 159/1688/1689.
 
 ### 5.3 Cross-org RIN dashboard
 
@@ -226,7 +250,8 @@ launch-readiness view against the Notion qualification bar.
 1. Fix card 467 and any sibling still on `order_item_reservation_user`.
 2. Build + verify the shared RIN card against SF (heaviest org) via
    `scripts/verify-report-live.js` — never sign off on a warm cache.
-3. Ship the SF report behind a per-org flag, mirroring `LESSONS_REPORT_ORGS`.
+3. Add the new sections to the existing SF Lessons report rather than shipping a
+   parallel report; widen `LESSONS_REPORT_ORGS` to Torrance once they hold up.
 4. Add Torrance, then the cross-org dashboard.
 5. Consolidate/archive the duplicate base cards in collection 116.
 
@@ -236,8 +261,8 @@ launch-readiness view against the Notion qualification bar.
   purchase-date; payouts are session-date. The report probably needs both.
 - Should the payout split (75/12.5/12.5) be per-org configurable? Torrance and
   SC County terms are not confirmed here.
-- Replace the SF Lessons report outright, or keep it until the RIN report covers
-  every chart it has?
+- Which of the §5.2 gaps is worth the most to ops first — the private/pack split,
+  utilization, or the payout preview?
 
 ---
 
