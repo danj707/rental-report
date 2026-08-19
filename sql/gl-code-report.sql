@@ -165,6 +165,29 @@ agg AS (
     base.desk_location
 ),
 
+-- NEW (2026-08): the check numbers behind each GL row's check receipts, for the
+-- treasurer turnover sheet. Deliberately its own CTE joined on at the end rather
+-- than a join inside `base`: payment currently holds exactly one row per
+-- transaction_event_id, but if that ever stopped being true a join in `base`
+-- would fan out and silently inflate every amount. Aggregating separately makes
+-- that impossible.
+checks AS (
+  SELECT
+    base.gl_code_raw,
+    base.desk_location,
+    STRING_AGG(DISTINCT pay.check_number, ', ' ORDER BY pay.check_number) AS check_numbers,
+    COUNT(DISTINCT pay.check_number)                                      AS check_count
+  FROM base
+  JOIN payment pay
+    ON pay.transaction_event_id = base.transaction_event_id
+  WHERE base.transaction_method ILIKE 'check%'
+    AND base.transaction_type   ILIKE 'payment%'
+    AND NULLIF(BTRIM(pay.check_number), '') IS NOT NULL
+  GROUP BY
+    base.gl_code_raw,
+    base.desk_location
+),
+
 -- NEW: true distinct transaction counts per desk. Additive across desks (each
 -- transaction_event_id has exactly one desk), so the app sums these once per
 -- desk to get the correct grand total instead of summing the per-GL column.
@@ -231,7 +254,13 @@ SELECT
   -- NEW: per-desk true distinct counts (repeated across the desk's GL rows).
   -- The app dedups by desk and sums for the correct TOTALS row / summary boxes.
   td.desk_distinct_payments                            AS "Desk Distinct Payments",
-  td.desk_distinct_refunds                             AS "Desk Distinct Refunds"
+  td.desk_distinct_refunds                             AS "Desk Distinct Refunds",
+
+  -- NEW: check numbers for this GL row's check receipts (comma separated), and
+  -- how many distinct checks they represent. Empty for rows with no check
+  -- payments. One check commonly spans several GL rows, so these do not sum.
+  ck.check_numbers                                     AS "Check Numbers",
+  COALESCE(ck.check_count, 0)                          AS "Check Count"
 
 FROM agg
 LEFT JOIN gl_account gla
@@ -240,6 +269,9 @@ LEFT JOIN gl_account gla
   AND gla.archived_at IS NULL
 LEFT JOIN totals_by_desk td
   ON td.desk_location = agg.desk_location
+LEFT JOIN checks ck
+  ON ck.gl_code_raw  = agg.gl_code_raw
+  AND ck.desk_location = agg.desk_location
 ORDER BY
   agg.gl_code_raw,
   agg.desk_location

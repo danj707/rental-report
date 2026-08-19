@@ -1756,7 +1756,7 @@ function normalizeRow(raw) {
               </div>
             </div>
 
-            {!isPrint && !loading && summary.total > 0 && (
+            {!isPrint && !loading && (
               <div className="mem-banner">
                 <div className="mbb-scene" aria-hidden="true">
                   <div className="mbx-water" />
@@ -1790,6 +1790,7 @@ function normalizeRow(raw) {
                     <span className="mbb-pill"><b>{summary.total.toLocaleString()}</b> total</span>
                     {summary.autoRenewCount > 0 && <span className="mbb-pill"><b>{summary.autoRenewCount.toLocaleString()}</b> auto-renewing</span>}
                     {summary.canceled > 0 && <span className="mbb-pill"><b>{summary.canceled.toLocaleString()}</b> canceled</span>}
+                    {summary.total === 0 && <span className="mbb-pill">none in this range</span>}
                   </div>
                 </div>
               </div>
