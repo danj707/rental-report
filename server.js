@@ -3106,8 +3106,8 @@ function getDateRange(dateRange) {
     const d = new Date(now); d.setDate(d.getDate() - 1);
     return { start: toISO(d), end: toISO(d), label: `Yesterday — ${toISO(d)}` };
   }
-  if (dateRange === "prior6" || dateRange === "prior30") {
-    const days = dateRange === "prior6" ? 6 : 30;
+  if (dateRange === "prior7" || dateRange === "prior30") {
+    const days = dateRange === "prior7" ? 7 : 30;
     const end = new Date(now); end.setDate(end.getDate() - 1);
     const start = new Date(now); start.setDate(start.getDate() - days);
     return { start: toISO(start), end: toISO(end), label: `${toISO(start)} to ${toISO(end)}` };
@@ -3533,7 +3533,7 @@ async function sendReportEmail(orgSlug, email, reportType, schedule, locationFil
 // that actually answers "what posted since I last looked". Enforced when
 // subscribing, honoured again at send time so subscriptions created before
 // this rule stop mailing too.
-const GL_RANGE_REASON = "A GL Code Rollup only looks backwards — Today has no postings yet at 7am, and a future window has none at all. Pick Yesterday, Prior 6 days or Prior 30 days.";
+const GL_RANGE_REASON = "A GL Code Rollup only looks backwards — Today has no postings yet at 7am, and a future window has none at all. Pick Yesterday, Prior 7 days or Prior 30 days.";
 const REPORT_BLOCKED_RANGES = {
   // lastMonth and last7 stay accepted, unlisted: subscriptions predating this
   // rule still hold them and they do return data.
@@ -6087,7 +6087,7 @@ app.post("/:org/admin/subscribe", (req, res) => {
   const validReports = reports.filter(r => REPORT_TYPES.includes(r));
   if (!validReports.length) return res.status(400).json({ error: "No valid report types" });
 
-  const validDateRanges = ["today","yesterday","prior6","prior30","next7","next30","last7","lastMonth"];
+  const validDateRanges = ["today","yesterday","prior7","prior30","next7","next30","last7","lastMonth"];
 
   // The admin form doesn't offer these pairings, but the form is not the only
   // way into this route.

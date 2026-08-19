@@ -1288,7 +1288,7 @@ function App() {
     const cadenceOptions = [['daily','Daily'],['weekly','Weekly'],['monthly','Monthly']];
     // A GL rollup only looks backwards — the email leaves at 7am, so today has
     // no postings yet and a future window has none at all.
-    const rangeOptions = [['yesterday','Yesterday'],['prior6','Prior 6 days'],['prior30','Prior 30 days']];
+    const rangeOptions = [['yesterday','Yesterday'],['prior7','Prior 7 days'],['prior30','Prior 30 days']];
 
     return (
       <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.5)',zIndex:9999,display:'flex',alignItems:'center',justifyContent:'center'}}

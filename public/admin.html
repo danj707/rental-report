@@ -391,7 +391,7 @@ let selectedSchedule = 'weekly';
 const DATE_RANGE_OPTIONS = [
   { value: 'today', label: 'Today' },
   { value: 'yesterday', label: 'Yesterday' },
-  { value: 'prior6', label: 'Prior 6 days' },
+  { value: 'prior7', label: 'Prior 7 days' },
   { value: 'prior30', label: 'Prior 30 days' },
   { value: 'next7', label: 'Next 7 days' },
   { value: 'next30', label: 'Next 30 days' },
@@ -405,7 +405,7 @@ const DATE_RANGE_DEFAULTS = { facility: 'next7', gl: 'prior30' };
 // postings, and one covering the future has nothing at all — blank every
 // morning, whatever the cadence. GL is offered only backward-looking windows;
 // the server rejects the others too.
-const REPORT_RANGE_CHOICES = { gl: ['yesterday', 'prior6', 'prior30'] };
+const REPORT_RANGE_CHOICES = { gl: ['yesterday', 'prior7', 'prior30'] };
 
 function updateLocationVisibility() {
   const hasFacility = !!document.querySelector('#report-checkboxes input[value="facility"]:checked');
