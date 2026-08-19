@@ -122,6 +122,63 @@
     .report-header-right { text-align:right; }
     .report-header .rh-meta { font-size:11px; color:#666; }
 
+    /* ── Animated header — the snack shack on market day. Same construction as
+       the other report banners: a CSS scene under a text overlay, no images,
+       no interaction. pdb-/pdx- prefixes; fb- belongs to the feedback widget. ── */
+    .prod-banner { position:relative; width:100%; height:168px; border-radius:12px; overflow:hidden;
+      margin:0 0 18px; border:1px solid #fed7aa; box-shadow:0 3px 14px rgba(120,53,15,.14);
+      background:linear-gradient(120deg,#1d5b8a 0%,#3f9ac0 34%,#8fc9a4 68%,#f5d98a 100%); }
+    .prod-banner .pdb-scene { position:absolute; inset:0; z-index:0; overflow:hidden; }
+    .prod-banner .pdb-overlay { position:absolute; inset:0; padding:18px 26px 34px; display:flex; flex-direction:column;
+      align-items:flex-start; justify-content:center; text-align:left; z-index:2; }
+    .prod-banner .pdb-kicker { font-size:10.5px; font-weight:700; letter-spacing:2px; text-transform:uppercase; color:rgba(255,255,255,.94); text-shadow:0 1px 3px rgba(0,0,0,.5); }
+    .prod-banner .pdb-title { font-size:30px; font-weight:800; color:#fff; text-shadow:0 2px 7px rgba(0,0,0,.5); line-height:1.04; margin-top:3px; }
+    .prod-banner .pdb-sub { font-size:12.5px; color:rgba(255,255,255,.96); text-shadow:0 1px 4px rgba(0,0,0,.55); margin-top:6px; max-width:560px; }
+    .prod-banner .pdb-pills { display:flex; gap:8px; margin-top:12px; flex-wrap:wrap; }
+    .prod-banner .pdb-pill { background:rgba(255,255,255,.22); border:1px solid rgba(255,255,255,.42); color:#fff; font-size:12px; font-weight:600; padding:4px 12px; border-radius:20px; text-shadow:0 1px 2px rgba(0,0,0,.35); }
+    .prod-banner .pdb-pill b { font-weight:800; }
+
+    .pdx-sun { position:absolute; right:11%; top:16%; width:56px; height:56px; border-radius:50%;
+      background:radial-gradient(circle at 50% 50%, #fff6d8, #ffd97a 56%, #ffb545 100%);
+      box-shadow:0 0 38px 12px rgba(255,200,110,.45); animation:pdxSun 8s ease-in-out infinite alternate; }
+    .pdx-cloud { position:absolute; height:9px; border-radius:999px; background:rgba(255,255,255,.16); filter:blur(3px);
+      animation:pdxDrift linear infinite; }
+    .pdx-ground { position:absolute; left:0; right:0; bottom:0; height:34px;
+      background-image:repeating-linear-gradient(90deg, rgba(0,0,0,.06) 0 1px, transparent 1px 30px), linear-gradient(180deg,#8a7343,#4a3a1d); }
+    /* Market stalls: a striped awning over a counter, with crates on top. */
+    .pdx-stall { position:absolute; bottom:8px; width:104px; height:46px; }
+    .pdx-stall .awning { position:absolute; top:0; left:0; right:0; height:13px; border-radius:3px 3px 0 0;
+      background:repeating-linear-gradient(90deg, var(--c1) 0 11px, #fdf6e6 11px 22px);
+      box-shadow:0 2px 5px rgba(0,0,0,.3); }
+    .pdx-stall .awning::after { content:''; display:block; position:relative; top:13px; height:3px;
+      background:repeating-linear-gradient(90deg, var(--c1) 0 11px, #fdf6e6 11px 22px);
+      clip-path:polygon(0 0,100% 0,94% 100%,88% 0,82% 100%,76% 0,70% 100%,64% 0,58% 100%,52% 0,46% 100%,40% 0,34% 100%,28% 0,22% 100%,16% 0,10% 100%,4% 0); }
+    .pdx-stall .counter { position:absolute; left:5px; right:5px; bottom:0; height:10px; border-radius:2px;
+      background:linear-gradient(180deg,#e3c188,#a9803f); box-shadow:0 1px 3px rgba(0,0,0,.3); }
+    .pdx-stall .post { position:absolute; top:13px; width:2.5px; height:26px; background:rgba(90,62,28,.85); }
+    .pdx-stall .post.l { left:2px; } .pdx-stall .post.r { right:2px; }
+    /* Produce on the counter. */
+    .pdx-crate { position:absolute; width:9px; height:6px; border-radius:1.5px; background:var(--c2); box-shadow:0 1px 2px rgba(0,0,0,.3); }
+    /* Shoppers milling in front of the stalls, tote bags swinging. */
+    .pdx-lane { position:absolute; left:-30px; animation:pdxStroll linear infinite; }
+    .pdx-shopper { position:relative; width:11px; animation:pdxAmble .7s ease-in-out infinite alternate; }
+    .pdx-shopper i { display:block; }
+    .pdx-shopper .head { width:5.5px; height:5.5px; border-radius:50%; margin:0 auto 1px; background:#f6d6b3; }
+    .pdx-shopper .body { width:11px; height:12px; border-radius:4px 4px 2px 2px; background:var(--tee); box-shadow:0 1px 3px rgba(0,0,0,.32); }
+    .pdx-shopper .tote { position:absolute; right:-4px; top:8px; width:5px; height:6px; border-radius:1px 1px 2px 2px; background:#fde68a;
+      transform-origin:50% 0; animation:pdxSwing .7s ease-in-out infinite alternate; }
+
+    @keyframes pdxSun    { to { box-shadow:0 0 50px 16px rgba(255,200,110,.6); } }
+    @keyframes pdxDrift  { from { transform:translateX(-150px); } to { transform:translateX(1500px); } }
+    @keyframes pdxStroll { to { transform:translateX(calc(100vw + 60px)); } }
+    @keyframes pdxAmble  { from { transform:translateY(0); } to { transform:translateY(-1.5px); } }
+    @keyframes pdxSwing  { from { transform:rotate(-9deg); } to { transform:rotate(9deg); } }
+
+    /* Decoration only — a reduced-motion reader gets the same scene, held still. */
+    @media (prefers-reduced-motion: reduce) { .prod-banner * { animation:none !important; } }
+    @media print { .prod-banner { display:none !important; } }
+    body.print-mode .prod-banner { display:none !important; }
+
     /* ── Summary cards ── */
     .summary-cards {
       display: flex;
@@ -960,6 +1017,54 @@ function App() {
             {(byDesk || byItem || searchTerm.trim()) ? <div className="rh-meta">{[byDesk ? 'by desk location' : null, byItem ? 'aggregated' : null, searchTerm.trim() ? `search: "${searchTerm.trim()}"` : null].filter(Boolean).join(' · ')}</div> : null}
           </div>
         </div>
+
+        {!isPrint && !loading && !error && (
+          <div className="prod-banner">
+            <div className="pdb-scene" aria-hidden="true">
+              <div className="pdx-cloud" style={{top:'22%', left:'8%', width:58, animationDuration:'42s'}} />
+              <div className="pdx-cloud" style={{top:'32%', left:0, width:40, animationDuration:'57s', animationDelay:'-19s'}} />
+              <div className="pdx-sun" />
+              <div className="pdx-ground" />
+              {[{l:'46%', c:'#ef767a'}, {l:'65%', c:'#7fd1e3'}, {l:'84%', c:'#8fd694'}].map(st => (
+                <div key={st.l} className="pdx-stall" style={{left:st.l, '--c1':st.c}}>
+                  <div className="awning" />
+                  <div className="post l" /><div className="post r" />
+                  <div className="counter" />
+                </div>
+              ))}
+              {/* two crates on each counter */}
+              {[{l:'48%', c:'#f97316'}, {l:'51%', c:'#a3e635'}, {l:'67%', c:'#f43f5e'},
+                {l:'70%', c:'#fbbf24'}, {l:'86%', c:'#84cc16'}, {l:'89%', c:'#fb7185'}].map(cr => (
+                <div key={cr.l} className="pdx-crate" style={{left:cr.l, bottom:'18px', '--c2':cr.c}} />
+              ))}
+              {[
+                {tee:'#fef3c7', bottom:5,  dur:24, delay:0},
+                {tee:'#93c5fd', bottom:10, dur:31, delay:-6},
+                {tee:'#fca5a5', bottom:3,  dur:27, delay:-12},
+                {tee:'#c4b5fd', bottom:12, dur:36, delay:-18},
+                {tee:'#6ee7b7', bottom:7,  dur:29, delay:-23},
+                {tee:'#fdba74', bottom:9,  dur:34, delay:-29},
+              ].map((sh, i) => (
+                <div key={'s'+i} className="pdx-lane" style={{bottom:sh.bottom+'px', animationDuration:sh.dur+'s', animationDelay:sh.delay+'s'}}>
+                  <div className="pdx-shopper" style={{'--tee':sh.tee, animationDelay:(-i*0.16)+'s'}}>
+                    <i className="head" /><i className="body" /><i className="tote" />
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="pdb-overlay">
+              <div className="pdb-kicker">{displayOrg}</div>
+              <div className="pdb-title">🍿 Product Sales</div>
+              <div className="pdb-sub">Concessions, gear and everything else across the counter.</div>
+              <div className="pdb-pills">
+                <span className="pdb-pill"><b>{totals.qty.toLocaleString()}</b> items sold</span>
+                <span className="pdb-pill"><b>{fmtMoney(showNet ? totals.net : totals.revenue)}</b> {showNet ? 'net' : 'gross'}</span>
+                <span className="pdb-pill"><b>{productCount.toLocaleString()}</b> product{productCount === 1 ? '' : 's'}</span>
+                {bestDay && <span className="pdb-pill">best day <b>{bestDay.label}</b></span>}
+              </div>
+            </div>
+          </div>
+        )}
 
         {loading && <div className="loading"><div className="spinner" /><div className="juice-msg"><span>Squeezing the oranges…</span><span>Juicing!</span><span>Adding the pulp…</span><span>Chilling the glass…</span><span>Pouring it out…</span></div></div>}
         {error && !loading && <div className="error">Couldn’t load report: {error}</div>}
