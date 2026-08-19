@@ -41,6 +41,58 @@
   .report-header-right { text-align:right; }
   .report-header .rh-meta { font-size:11px; color:#666; }
 
+  /* ── Animated header — the queue. Same construction as the other report
+     banners: a CSS scene under a text overlay, no images, no interaction.
+     Classes are wl-prefixed: fb- belongs to the feedback widget. ── */
+  .wl-banner { position:relative; width:100%; height:168px; border-radius:12px; overflow:hidden;
+    margin:0 0 18px; border:1px solid #fde68a; box-shadow:0 3px 14px rgba(120,53,15,.14);
+    background:linear-gradient(118deg,#2c3350 0%,#54406a 38%,#a8692a 76%,#f0b950 100%); }
+  .wl-banner .wlb-scene { position:absolute; inset:0; z-index:0; overflow:hidden; }
+  .wl-banner .wlb-overlay { position:absolute; inset:0; padding:18px 26px 34px; display:flex; flex-direction:column;
+    align-items:flex-start; justify-content:center; text-align:left; z-index:2; }
+  .wl-banner .wlb-kicker { font-size:10.5px; font-weight:700; letter-spacing:2px; text-transform:uppercase; color:rgba(255,255,255,.92); text-shadow:0 1px 3px rgba(0,0,0,.5); }
+  .wl-banner .wlb-title { font-size:30px; font-weight:800; color:#fff; text-shadow:0 2px 7px rgba(0,0,0,.5); line-height:1.04; margin-top:3px; }
+  .wl-banner .wlb-sub { font-size:12.5px; color:rgba(255,255,255,.95); text-shadow:0 1px 4px rgba(0,0,0,.5); margin-top:6px; max-width:560px; }
+  .wl-banner .wlb-pills { display:flex; gap:8px; margin-top:12px; flex-wrap:wrap; }
+  .wl-banner .wlb-pill { background:rgba(255,255,255,.2); border:1px solid rgba(255,255,255,.4); color:#fff; font-size:12px; font-weight:600; padding:4px 12px; border-radius:20px; text-shadow:0 1px 2px rgba(0,0,0,.35); }
+  .wl-banner .wlb-pill b { font-weight:800; }
+
+  /* Waiting-room floor, a service counter on the right, and a rope line. */
+  .wlx-floor { position:absolute; left:0; right:0; bottom:0; height:36px;
+    background-image:repeating-linear-gradient(90deg, rgba(255,255,255,.06) 0 1px, transparent 1px 34px), linear-gradient(180deg,#6d5a3a,#332616);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.14); }
+  .wlx-desk { position:absolute; right:5%; bottom:4px; width:92px; height:26px; border-radius:3px 3px 0 0;
+    background:linear-gradient(180deg,#d7b071,#a97f3d); box-shadow:0 2px 6px rgba(0,0,0,.35); }
+  .wlx-desk::before { content:''; position:absolute; left:-3px; right:-3px; top:-5px; height:6px; border-radius:3px; background:#e8cf9c; }
+  .wlx-clerk { position:absolute; right:10.5%; bottom:26px; width:13px; }
+  .wlx-clerk .head { width:6px; height:6px; border-radius:50%; margin:0 auto 1px; background:#f6d6b3; }
+  .wlx-clerk .body { width:12px; height:12px; border-radius:4px 4px 2px 2px; background:#7dd3fc; }
+  /* NOW SERVING board, blinking over the counter. */
+  .wlx-sign { position:absolute; right:5%; bottom:48px; padding:2px 7px; border-radius:3px;
+    background:rgba(20,12,4,.72); border:1px solid rgba(255,220,140,.5);
+    font-size:8px; font-weight:800; letter-spacing:.8px; color:#fde68a; white-space:nowrap;
+    animation:wlxBlink 2.6s steps(1,end) infinite; }
+  .wlx-post { position:absolute; bottom:4px; width:2.5px; height:16px; border-radius:1px; background:rgba(255,255,255,.4); }
+  .wlx-post::after { content:''; position:absolute; top:-2px; left:-1px; width:4.5px; height:4.5px; border-radius:50%; background:rgba(255,235,190,.75); }
+  .wlx-rope { position:absolute; bottom:16px; height:2px; border-radius:2px; background:rgba(255,235,190,.38); }
+  /* The line itself. Everyone shuffles forward in discrete steps, front first —
+     the stagger is what makes it read as a queue rather than a parade. */
+  .wlx-slot { position:absolute; animation:wlxShuffle 44s steps(22, end) infinite; }
+  .wlx-person { position:relative; width:12px; animation:wlxWeight 3.1s ease-in-out infinite alternate; }
+  .wlx-person i { display:block; }
+  .wlx-person .head { width:5.5px; height:5.5px; border-radius:50%; margin:0 auto 1px; background:#f6d6b3; }
+  .wlx-person .body { width:11px; height:12px; border-radius:4px 4px 2px 2px; background:var(--coat); box-shadow:0 1px 3px rgba(0,0,0,.32); }
+
+  @keyframes wlxShuffle { to { transform:translateX(calc(100vw + 60px)); } }
+  @keyframes wlxWeight  { from { transform:translateY(0)   rotate(-1.2deg); }
+                          to   { transform:translateY(-1px) rotate(1.2deg); } }
+  @keyframes wlxBlink   { 0%, 62% { opacity:1; } 63%, 100% { opacity:.35; } }
+
+  /* Decoration only — a reduced-motion reader gets the same scene, held still. */
+  @media (prefers-reduced-motion: reduce) { .wl-banner * { animation:none !important; } }
+  @media print { .wl-banner { display:none !important; } }
+  body.print-mode .wl-banner { display:none !important; }
+
   /* ── AI Insights ── */
   .insights-section { margin: 0 0 16px; padding: 4px 0 0; }
   .insights-head { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
@@ -588,6 +640,47 @@ function App() {
           <div className="rh-meta">updated {updatedAt}</div>
         </div>
       </div>
+
+      {bodyState === 'ready' && (
+        <div className="wl-banner no-print">
+          <div className="wlb-scene" aria-hidden="true">
+            <div className="wlx-floor" />
+            <div className="wlx-rope" style={{left:'4%', width:'62%'}} />
+            {[6, 20, 34, 48, 62].map(l => <div key={'p'+l} className="wlx-post" style={{left:l+'%'}} />)}
+            <div className="wlx-desk" />
+            <div className="wlx-clerk"><div className="head" /><div className="body" /></div>
+            <div className="wlx-sign">NOW SERVING</div>
+            {/* Front of the line steps off first; the shuffle ripples backwards. */}
+            {[
+              {coat:'#f59e0b', bottom:6,  delay:0},
+              {coat:'#60a5fa', bottom:10, delay:-2},
+              {coat:'#a3e635', bottom:4,  delay:-4},
+              {coat:'#f472b6', bottom:12, delay:-6},
+              {coat:'#c4b5fd', bottom:7,  delay:-8},
+              {coat:'#fbbf24', bottom:5,  delay:-10},
+              {coat:'#5eead4', bottom:11, delay:-12},
+              {coat:'#fca5a5', bottom:8,  delay:-14},
+            ].map((q, i) => (
+              <div key={'q'+i} className="wlx-slot" style={{left:'-30px', bottom:q.bottom+'px', animationDelay:q.delay+'s'}}>
+                <div className="wlx-person" style={{'--coat':q.coat, animationDelay:(-i*0.4)+'s'}}>
+                  <i className="head" /><i className="body" />
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="wlb-overlay">
+            <div className="wlb-kicker">{orgName}</div>
+            <div className="wlb-title">⏳ Waitlist Demand</div>
+            <div className="wlb-sub">Who is waiting for a spot right now — and how the line moves.</div>
+            <div className="wlb-pills">
+              <span className="wlb-pill"><b>{fmtInt(agg.waitlisted)}</b> waiting now</span>
+              <span className="wlb-pill"><b>{fmtInt(agg.sections)}</b> section{agg.sections === 1 ? '' : 's'}</span>
+              {agg.allTime > 0 && <span className="wlb-pill"><b>{Math.round(agg.converted / agg.allTime * 100)}%</b> got a spot</span>}
+              {agg.demand > 0 && <span className="wlb-pill"><b>{fmt$(agg.demand)}</b> unmet demand</span>}
+            </div>
+          </div>
+        </div>
+      )}
 
       {bodyState === 'loading' && (
         <div className="loading-wrap">

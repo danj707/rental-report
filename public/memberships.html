@@ -183,6 +183,62 @@
     .report-header-right { text-align:right; }
     .report-header .rh-meta { font-size:11px; color:#666; }
 
+    /* ── Animated header — the check-in line. Same construction as the other
+       report banners: a CSS scene under a text overlay, no images, no
+       interaction. mbb-/mbx- prefixes: fb- belongs to the feedback widget,
+       mb- is already taken by the scope note below. ── */
+    .mem-banner { position:relative; width:100%; height:168px; border-radius:12px; overflow:hidden;
+      margin:0 0 18px; border:1px solid #bae6fd; box-shadow:0 3px 14px rgba(12,74,110,.16);
+      background:linear-gradient(116deg,#0c2b45 0%,#0e5b6e 42%,#14887f 74%,#5ed0b6 100%); }
+    .mem-banner .mbb-scene { position:absolute; inset:0; z-index:0; overflow:hidden; }
+    .mem-banner .mbb-overlay { position:absolute; inset:0; padding:18px 26px 34px; display:flex; flex-direction:column;
+      align-items:flex-start; justify-content:center; text-align:left; z-index:2; }
+    .mem-banner .mbb-kicker { font-size:10.5px; font-weight:700; letter-spacing:2px; text-transform:uppercase; color:rgba(255,255,255,.92); text-shadow:0 1px 3px rgba(0,0,0,.45); }
+    .mem-banner .mbb-title { font-size:30px; font-weight:800; color:#fff; text-shadow:0 2px 7px rgba(0,0,0,.45); line-height:1.04; margin-top:3px; }
+    .mem-banner .mbb-sub { font-size:12.5px; color:rgba(255,255,255,.95); text-shadow:0 1px 4px rgba(0,0,0,.5); margin-top:6px; max-width:560px; }
+    .mem-banner .mbb-pills { display:flex; gap:8px; margin-top:12px; flex-wrap:wrap; }
+    .mem-banner .mbb-pill { background:rgba(255,255,255,.2); border:1px solid rgba(255,255,255,.4); color:#fff; font-size:12px; font-weight:600; padding:4px 12px; border-radius:20px; text-shadow:0 1px 2px rgba(0,0,0,.35); }
+    .mem-banner .mbb-pill b { font-weight:800; }
+
+    /* Lobby: tiled floor, water light on the far wall, a desk and a scanner. */
+    .mbx-water { position:absolute; left:0; right:0; bottom:36px; height:26px; opacity:.32;
+      background:repeating-linear-gradient(115deg, rgba(255,255,255,.5) 0 2px, transparent 2px 16px);
+      filter:blur(1.5px); animation:mbxRipple 9s linear infinite; }
+    .mbx-floor { position:absolute; left:0; right:0; bottom:0; height:36px;
+      background-image:repeating-linear-gradient(90deg, rgba(255,255,255,.07) 0 1px, transparent 1px 26px), linear-gradient(180deg,#0e4a55,#062b33);
+      box-shadow:inset 0 1px 0 rgba(255,255,255,.16); }
+    .mbx-desk { position:absolute; right:6%; bottom:4px; width:86px; height:24px; border-radius:3px 3px 0 0;
+      background:linear-gradient(180deg,#8fd3d8,#3d8b93); box-shadow:0 2px 6px rgba(0,0,0,.32); }
+    .mbx-desk::before { content:''; position:absolute; left:-3px; right:-3px; top:-5px; height:6px; border-radius:3px; background:#cdeef0; }
+    .mbx-staff { position:absolute; right:11%; bottom:24px; width:13px; }
+    .mbx-staff .head { width:6px; height:6px; border-radius:50%; margin:0 auto 1px; background:#f6d6b3; }
+    .mbx-staff .body { width:12px; height:12px; border-radius:4px 4px 2px 2px; background:#fdba74; }
+    /* Card reader — flashes green as each member taps through. */
+    .mbx-reader { position:absolute; right:24%; bottom:4px; width:9px; height:26px; border-radius:2px;
+      background:linear-gradient(180deg,#cbd5e1,#475569); box-shadow:0 1px 3px rgba(0,0,0,.4); }
+    .mbx-reader::after { content:''; position:absolute; left:1.5px; top:3px; width:6px; height:6px; border-radius:1px;
+      background:#22c55e; animation:mbxBeep 2.2s steps(1,end) infinite; }
+    .mbx-rope { position:absolute; bottom:16px; height:2px; border-radius:2px; background:rgba(255,255,255,.3); }
+    .mbx-post { position:absolute; bottom:4px; width:2.5px; height:16px; border-radius:1px; background:rgba(255,255,255,.38); }
+    /* Members filing in and tapping through. */
+    .mbx-lane { position:absolute; left:-30px; animation:mbxWalk linear infinite; }
+    .mbx-member { position:relative; width:11px; animation:mbxStep .52s ease-in-out infinite alternate; }
+    .mbx-member i { display:block; }
+    .mbx-member .head { width:5.5px; height:5.5px; border-radius:50%; margin:0 auto 1px; background:#f6d6b3; }
+    .mbx-member .body { width:11px; height:12px; border-radius:4px 4px 2px 2px; background:var(--kit); box-shadow:0 1px 3px rgba(0,0,0,.32); }
+    /* The badge each one is holding up. */
+    .mbx-member .card { position:absolute; right:-3px; top:6px; width:4px; height:3px; border-radius:1px; background:#fde68a; }
+
+    @keyframes mbxWalk   { to { transform:translateX(calc(100vw + 60px)); } }
+    @keyframes mbxStep   { from { transform:translateY(0); } to { transform:translateY(-1.5px); } }
+    @keyframes mbxRipple { to { background-position-x:64px; } }
+    @keyframes mbxBeep   { 0%, 78% { background:#166534; } 79%, 100% { background:#4ade80; box-shadow:0 0 6px 2px rgba(74,222,128,.7); } }
+
+    /* Decoration only — a reduced-motion reader gets the same scene, held still. */
+    @media (prefers-reduced-motion: reduce) { .mem-banner * { animation:none !important; } }
+    @media print { .mem-banner { display:none !important; } }
+    body.print-mode .mem-banner { display:none !important; }
+
     /* ── Summary Cards ── */
     .summary-cards { display: flex; gap: 12px; margin-bottom: 18px; flex-wrap: wrap; }
     .summary-card {
@@ -1699,6 +1755,45 @@ function normalizeRow(raw) {
                 </div>
               </div>
             </div>
+
+            {!isPrint && !loading && summary.total > 0 && (
+              <div className="mem-banner">
+                <div className="mbb-scene" aria-hidden="true">
+                  <div className="mbx-water" />
+                  <div className="mbx-floor" />
+                  <div className="mbx-rope" style={{left:'4%', width:'56%'}} />
+                  {[6, 20, 34, 48, 60].map(l => <div key={'mp'+l} className="mbx-post" style={{left:l+'%'}} />)}
+                  <div className="mbx-reader" />
+                  <div className="mbx-desk" />
+                  <div className="mbx-staff"><div className="head" /><div className="body" /></div>
+                  {[
+                    {kit:'#38bdf8', bottom:6,  dur:26, delay:0},
+                    {kit:'#fbbf24', bottom:11, dur:33, delay:-5},
+                    {kit:'#a3e635', bottom:4,  dur:29, delay:-11},
+                    {kit:'#f472b6', bottom:9,  dur:37, delay:-17},
+                    {kit:'#c4b5fd', bottom:7,  dur:31, delay:-23},
+                    {kit:'#fca5a5', bottom:12, dur:41, delay:-28},
+                  ].map((m, i) => (
+                    <div key={'m'+i} className="mbx-lane" style={{bottom:m.bottom+'px', animationDuration:m.dur+'s', animationDelay:m.delay+'s'}}>
+                      <div className="mbx-member" style={{'--kit':m.kit, animationDelay:(-i*0.13)+'s'}}>
+                        <i className="head" /><i className="body" /><i className="card" />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="mbb-overlay">
+                  <div className="mbb-kicker">{orgName}</div>
+                  <div className="mbb-title">🎟️ Memberships</div>
+                  <div className="mbb-sub">Who holds a membership, and who keeps coming back.</div>
+                  <div className="mbb-pills">
+                    <span className="mbb-pill"><b>{summary.active.toLocaleString()}</b> active</span>
+                    <span className="mbb-pill"><b>{summary.total.toLocaleString()}</b> total</span>
+                    {summary.autoRenewCount > 0 && <span className="mbb-pill"><b>{summary.autoRenewCount.toLocaleString()}</b> auto-renewing</span>}
+                    {summary.canceled > 0 && <span className="mbb-pill"><b>{summary.canceled.toLocaleString()}</b> canceled</span>}
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Tab bar */}
             <div className="report-tabs no-print">
