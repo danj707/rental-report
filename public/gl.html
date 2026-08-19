@@ -1286,7 +1286,9 @@ function App() {
     }
 
     const cadenceOptions = [['daily','Daily'],['weekly','Weekly'],['monthly','Monthly']];
-    const rangeOptions = [['last7','Last 7 days'],['lastMonth','Last month'],['next7','Next 7 days'],['next30','Next 30 days']];
+    // A GL rollup only looks backwards — the email leaves at 7am, so today has
+    // no postings yet and a future window has none at all.
+    const rangeOptions = [['yesterday','Yesterday'],['prior7','Prior 7 days'],['prior30','Prior 30 days']];
 
     return (
       <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.5)',zIndex:9999,display:'flex',alignItems:'center',justifyContent:'center'}}
@@ -1389,7 +1391,7 @@ function App() {
   const [showEmailModal, setShowEmailModal] = useState(false);
   const [emailAddr, setEmailAddr] = useState('');
   const [emailCadence, setEmailCadence] = useState('weekly');
-  const [emailDateRange, setEmailDateRange] = useState('lastMonth');
+  const [emailDateRange, setEmailDateRange] = useState('prior30');
   const [emailStatus, setEmailStatus] = useState(null);
   const [selectedDesks, setSelectedDesks] = useState(null);
   const [selectedMethods, setSelectedMethods] = useState(null);

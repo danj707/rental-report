@@ -390,17 +390,28 @@ if (!ADMIN_CFG.emailEnabled) {
 let selectedSchedule = 'weekly';
 const DATE_RANGE_OPTIONS = [
   { value: 'today', label: 'Today' },
+  { value: 'yesterday', label: 'Yesterday' },
+  { value: 'prior7', label: 'Prior 7 days' },
+  { value: 'prior30', label: 'Prior 30 days' },
   { value: 'next7', label: 'Next 7 days' },
   { value: 'next30', label: 'Next 30 days' },
   { value: 'last7', label: 'Last 7 days' },
   { value: 'lastMonth', label: 'Last month' },
 ];
-const DATE_RANGE_DEFAULTS = { facility: 'next7', gl: 'lastMonth' };
+const DATE_RANGE_DEFAULTS = { facility: 'next7', gl: 'prior30' };
+
+// Reports that only make sense over particular windows. Every subscription
+// leaves at 7am, so a GL rollup covering today is sent before the day has any
+// postings, and one covering the future has nothing at all — blank every
+// morning, whatever the cadence. GL is offered only backward-looking windows;
+// the server rejects the others too.
+const REPORT_RANGE_CHOICES = { gl: ['yesterday', 'prior7', 'prior30'] };
 
 function updateLocationVisibility() {
   const hasFacility = !!document.querySelector('#report-checkboxes input[value="facility"]:checked');
   document.getElementById('location-filter-group').style.display = hasFacility ? '' : 'none';
 }
+
 document.querySelectorAll('#schedule-group .radio-btn').forEach(btn => {
   btn.addEventListener('click', () => {
     document.querySelectorAll('#schedule-group .radio-btn').forEach(b => b.classList.remove('selected'));
@@ -419,8 +430,13 @@ async function loadReports() {
     return;
   }
   box.innerHTML = data.reports.map(r => {
-    const def = DATE_RANGE_DEFAULTS[r.key] || 'next7';
-    const opts = DATE_RANGE_OPTIONS.map(o =>
+    const only = REPORT_RANGE_CHOICES[r.key];
+    const choices = only
+      ? only.map(v => DATE_RANGE_OPTIONS.find(o => o.value === v)).filter(Boolean)
+      : DATE_RANGE_OPTIONS;
+    let def = DATE_RANGE_DEFAULTS[r.key] || 'next7';
+    if (!choices.some(o => o.value === def)) def = choices[0].value;
+    const opts = choices.map(o =>
       '<option value="' + o.value + '"' + (o.value === def ? ' selected' : '') + '>' + o.label + '</option>'
     ).join('');
     return '<label class="checkbox-label" style="display:flex;align-items:center;gap:8px">' +
@@ -429,6 +445,7 @@ async function loadReports() {
       '<select class="date-range-select" data-report="' + r.key + '" style="font-size:11px;padding:3px 6px;border:1px solid #ddd;border-radius:4px;background:#fafafa;color:#333">' + opts + '</select>' +
     '</label>';
   }).join('');
+  updateLocationVisibility();
 }
 
 // ── Load subscribers ──────────────────────────────────────────────────
@@ -537,6 +554,12 @@ async function subscribe() {
   if (!email) return showAlert(alert, 'error', 'Please enter an email address.');
   // Domain restriction removed — server validates EMAIL_ENABLED_ORGS + token
   if (!reports.length) return showAlert(alert, 'error', 'Select at least one report.');
+  const badPick = reports.find(r => {
+    const only = REPORT_RANGE_CHOICES[r];
+    const picked = document.querySelector('.date-range-select[data-report="' + r + '"]')?.value;
+    return only && picked && only.indexOf(picked) === -1;
+  });
+  if (badPick) return showAlert(alert, 'error', 'That date range is never populated at 7am for ' + reportLabel(badPick) + '. Pick another.');
 
   const btn = document.getElementById('subscribe-btn');
   btn.disabled = true;

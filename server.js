@@ -3102,6 +3102,16 @@ function getDateRange(dateRange) {
   if (dateRange === "today") {
     return { start: toISO(now), end: toISO(now), label: `Today — ${toISO(now)}` };
   }
+  if (dateRange === "yesterday") {
+    const d = new Date(now); d.setDate(d.getDate() - 1);
+    return { start: toISO(d), end: toISO(d), label: `Yesterday — ${toISO(d)}` };
+  }
+  if (dateRange === "prior7" || dateRange === "prior30") {
+    const days = dateRange === "prior7" ? 7 : 30;
+    const end = new Date(now); end.setDate(end.getDate() - 1);
+    const start = new Date(now); start.setDate(start.getDate() - days);
+    return { start: toISO(start), end: toISO(end), label: `${toISO(start)} to ${toISO(end)}` };
+  }
   if (dateRange === "next7") {
     const end = new Date(now); end.setDate(end.getDate() + 6);
     return { start: toISO(now), end: toISO(end), label: `${toISO(now)} to ${toISO(end)}` };
@@ -3516,6 +3526,24 @@ async function sendReportEmail(orgSlug, email, reportType, schedule, locationFil
 }
 
 // ── Run scheduled sends ──────────────────────────────────────────────
+// ── Report/date-range rules ──────────────────────────────────────────
+// Date ranges a report can never usefully be mailed on. Every subscription
+// leaves at 7am, so a GL rollup scoped to "Today" is posted before the day has
+// any activity — blank every morning, on any cadence. "Yesterday" is the range
+// that actually answers "what posted since I last looked". Enforced when
+// subscribing, honoured again at send time so subscriptions created before
+// this rule stop mailing too.
+const GL_RANGE_REASON = "A GL Code Rollup only looks backwards — Today has no postings yet at 7am, and a future window has none at all. Pick Yesterday, Prior 7 days or Prior 30 days.";
+const REPORT_BLOCKED_RANGES = {
+  // lastMonth and last7 stay accepted, unlisted: subscriptions predating this
+  // rule still hold them and they do return data.
+  gl: { today: GL_RANGE_REASON, next7: GL_RANGE_REASON, next30: GL_RANGE_REASON },
+};
+function rangeBlocked(report, dateRange) {
+  if (!dateRange) return null;
+  return (REPORT_BLOCKED_RANGES[report] || {})[dateRange] || null;
+}
+
 async function runSchedule(scheduleType) {
   if (!getFlags().emailSubscriptions) { console.log(`[cron] ${scheduleType} skipped — emailSubscriptions flag is OFF`); return; }
   console.log(`[cron] Running ${scheduleType} sends...`);
@@ -3525,6 +3553,10 @@ async function runSchedule(scheduleType) {
     for (const report of reports) {
       const savedParams = (sub.reportParams && typeof sub.reportParams === "object") ? (sub.reportParams[report] || null) : null;
       const perReportDateRange = (sub.reportDateRanges && sub.reportDateRanges[report]) || sub.dateRange;
+      if (rangeBlocked(report, perReportDateRange)) {
+        console.log(`[cron] Skipping ${sub.org}/${report} for ${sub.email} — "${perReportDateRange}" is never populated at send time`);
+        continue;
+      }
       const _res = await sendReportEmail(sub.org, sub.email, report, scheduleType, sub.locationFilter, perReportDateRange, savedParams);
       logEvent(sub.org, report, "email", null, { email: sub.email, schedule: scheduleType, trigger: "scheduled", status: _res && _res.ok ? "sent" : "error" });
     }
@@ -6054,7 +6086,15 @@ app.post("/:org/admin/subscribe", (req, res) => {
   if (!["daily","weekly","monthly"].includes(schedule)) return res.status(400).json({ error: "schedule must be daily, weekly, or monthly" });
   const validReports = reports.filter(r => REPORT_TYPES.includes(r));
   if (!validReports.length) return res.status(400).json({ error: "No valid report types" });
-  const validDateRanges = ["today","next7","next30","last7","lastMonth"];
+
+  const validDateRanges = ["today","yesterday","prior7","prior30","next7","next30","last7","lastMonth"];
+
+  // The admin form doesn't offer these pairings, but the form is not the only
+  // way into this route.
+  const blockedPick = validReports
+    .map(r => ({ report: r, why: rangeBlocked(r, (reportDateRanges && reportDateRanges[r]) || dateRange) }))
+    .find(x => x.why);
+  if (blockedPick) return res.status(400).json({ error: blockedPick.why });
 
   // Validate + sanitize reportParams (optional object keyed by report type → URL query string)
   const cleanReportParams = {};

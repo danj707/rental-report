@@ -34,6 +34,15 @@
     .split-bar button:last-child { border-right: none; }
     .split-bar button.active { background: #3b82f6; color: #fff; }
     .split-bar button:hover:not(.active) { background: rgba(255,255,255,.14); color: #ddd; }
+    .custom-split { display: inline-flex; align-items: center; gap: 5px; margin-left: 8px; }
+    .custom-split .cs-lbl { font-size: 9px; letter-spacing: .5px; color: #888; text-transform: uppercase; }
+    .custom-split input { width: 44px; padding: 3px 5px; font-size: 11px; font-weight: 600; text-align: center;
+      border-radius: 4px; border: 1px solid rgba(255,255,255,.25); background: rgba(255,255,255,.08);
+      color: #eee; font-family: inherit; }
+    .custom-split input.bad { border-color: #ef4444; background: rgba(239,68,68,.14); }
+    .custom-split .hint { font-size: 10px; font-weight: 600; white-space: nowrap; }
+    .custom-split .hint.ok  { color: #4ade80; }
+    .custom-split .hint.bad { color: #f87171; }
 
     /* ── Page ── */
     .page { max-width: 1400px; margin: 16px auto; padding: 24px 28px; background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
@@ -216,6 +225,21 @@ const fmtPct = (n) => (n * 100).toFixed(1) + '%';
 const parts = window.location.pathname.split('/').filter(Boolean);
 const orgSlug = parts[0] || '';
 const reportType = parts[1] || 'instructor-payout';
+
+// splitIdx === CUSTOM_SPLIT means the two free-entry boxes are driving the
+// payout rather than one of the presets below. ?split= carries either a preset
+// index or a literal "91/9" pair, so a custom split is still a shareable link
+// (and survives the trip through Puppeteer for the PDF).
+const CUSTOM_SPLIT = -1;
+function parseCustomSplit(raw) {
+  const m = /^(\d{1,3})\s*\/\s*(\d{1,3})$/.exec(String(raw || '').trim());
+  if (!m) return null;
+  const i = Number(m[1]), o = Number(m[2]);
+  return i + o === 100 ? { i: String(i), o: String(o) } : null;
+}
+function splitPairOk(pair) {
+  return /^\d{1,3}$/.test(pair.i) && /^\d{1,3}$/.test(pair.o) && Number(pair.i) + Number(pair.o) === 100;
+}
 
 const SPLITS = [
   { label: '90/10', i: 0.90 },
@@ -541,9 +565,17 @@ function App() {
   const [error, setError]     = useState(null);
   const _initParams = useMemo(() => new URLSearchParams(window.location.search), []);
   const [splitIdx, setSplitIdx] = useState(() => {
+    if (parseCustomSplit(_initParams.get('split'))) return CUSTOM_SPLIT;
     const si = parseInt(_initParams.get('split'));
     return (si >= 0 && si < SPLITS.length) ? si : 2;
   }); // 70/30 default
+  // What is typed in the two boxes, and the last pair that actually added up —
+  // the report keeps paying out on the last valid pair while a number is mid-edit.
+  const [customSplit, setCustomSplit] = useState(() => parseCustomSplit(_initParams.get('split')) || { i: '', o: '' });
+  const [appliedCustom, setAppliedCustom] = useState(() => {
+    const p = parseCustomSplit(_initParams.get('split'));
+    return p ? Number(p.i) : 70;
+  });
   const [search, setSearch]     = useState(_initParams.get('search') || '');
   const [instrFilter, setInstrFilter] = useState(_initParams.get('instructor') || '');
   // Pay period — defaults to the current month; the card SQL already accepts
@@ -565,9 +597,29 @@ function App() {
   const [fbMode, setFbMode] = useState(null);
   const [fbComment, setFbComment] = useState('');
 
-  const split = SPLITS[splitIdx];
+  const isCustomSplit = splitIdx === CUSTOM_SPLIT;
+  const customOk = splitPairOk(customSplit);
+  const split = isCustomSplit
+    ? { label: appliedCustom + '/' + (100 - appliedCustom), i: appliedCustom / 100 }
+    : SPLITS[splitIdx];
   const iPct = Math.round(split.i * 100);
   const oPct = 100 - iPct;
+
+  // Digits only, and apply to the report the moment the pair reaches 100.
+  const setCustomPart = (which, raw) => {
+    const next = Object.assign({}, customSplit, { [which]: String(raw).replace(/[^\d]/g, '').slice(0, 3) });
+    setCustomSplit(next);
+    if (splitPairOk(next)) setAppliedCustom(Number(next.i));
+  };
+  // Seed the boxes from whichever preset is showing, so Custom opens where you were.
+  const pickCustomSplit = () => {
+    if (!customSplit.i && !customSplit.o) {
+      const cur = Math.round((SPLITS[splitIdx] || SPLITS[2]).i * 100);
+      setCustomSplit({ i: String(cur), o: String(100 - cur) });
+      setAppliedCustom(cur);
+    }
+    setSplitIdx(CUSTOM_SPLIT);
+  };
 
   // Print mode
   useEffect(() => {
@@ -751,7 +803,8 @@ function App() {
     const qs = new URLSearchParams();
     qs.set('start_date', startDate);
     qs.set('end_date', endDate);
-    if (splitIdx !== 2) qs.set('split', splitIdx);
+    if (isCustomSplit) qs.set('split', appliedCustom + '/' + (100 - appliedCustom));
+    else if (splitIdx !== 2) qs.set('split', splitIdx);
     if (instrFilter) qs.set('instructor', instrFilter);
     if (search) qs.set('search', search);
     const pdfUrl = `/${orgSlug}/${reportType}/api/pdf?${qs}`;
@@ -766,7 +819,7 @@ function App() {
       .catch(err => alert('PDF generation failed: ' + err.message))
       .finally(() => setPdfLoading(false));
     fetch(withToken(`/${orgSlug}/${reportType}/api/log`), { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({action:'pdf',rows:filtered.length}) }).catch(()=>{});
-  }, [splitIdx, instrFilter, search, filtered, startDate, endDate]);
+  }, [splitIdx, isCustomSplit, appliedCustom, instrFilter, search, filtered, startDate, endDate]);
 
   const fillColor = (p) => p >= 0.8 ? '#16a34a' : p >= 0.5 ? '#d97706' : '#ef4444';
   const v = (n) => n === 0 ? 'zero' : n < 0 ? 'neg' : '';
@@ -860,8 +913,26 @@ function App() {
             {SPLITS.map((s, i) => (
               <button key={i} className={i === splitIdx ? 'active' : ''} onClick={() => setSplitIdx(i)}>{s.label}</button>
             ))}
+            <button className={isCustomSplit ? 'active' : ''} onClick={pickCustomSplit}
+              title="Enter your own split — any two whole numbers that add up to 100">Custom</button>
           </div>
         </label>
+        {isCustomSplit && (
+          <span className="custom-split">
+            <span className="cs-lbl">Instr</span>
+            <input type="text" inputMode="numeric" maxLength={3} aria-label="Instructor percent"
+              className={customOk ? '' : 'bad'} value={customSplit.i}
+              onChange={e => setCustomPart('i', e.target.value)} />
+            <span style={{color:'#888'}}>/</span>
+            <span className="cs-lbl">Org</span>
+            <input type="text" inputMode="numeric" maxLength={3} aria-label="Organization percent"
+              className={customOk ? '' : 'bad'} value={customSplit.o}
+              onChange={e => setCustomPart('o', e.target.value)} />
+            <span className={'hint ' + (customOk ? 'ok' : 'bad')}>
+              {customOk ? '= 100%' : 'must total 100% \u2014 showing ' + appliedCustom + '/' + (100 - appliedCustom)}
+            </span>
+          </span>
+        )}
         <span className="divider"></span>
         <label>
           Instructor
