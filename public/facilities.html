@@ -61,24 +61,24 @@
 
     /* Facilities hero banner (self-contained SVG scene, no external image) */
     .fac-banner { position: relative; width: 100%; height: 172px; border-radius: 12px; overflow: hidden; margin: 0 0 16px; border: 1px solid #a7f3d0; box-shadow: 0 3px 14px rgba(6,95,70,.15); }
-    .fac-banner .fb-scene { position: absolute; inset: 0; }
-    .fac-banner .fb-scene svg { width: 100%; height: 100%; display: block; }
-    .fac-banner .fb-overlay { position: absolute; inset: 0; padding: 20px 26px; display: flex; flex-direction: column; justify-content: center; z-index: 2; }
-    .fac-banner .fb-kicker { font-size: 10.5px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; color: rgba(255,255,255,.92); text-shadow: 0 1px 3px rgba(0,0,0,.4); }
-    .fac-banner .fb-title { font-size: 30px; font-weight: 800; color: #fff; text-shadow: 0 2px 7px rgba(0,0,0,.42); line-height: 1.04; margin-top: 3px; }
-    .fac-banner .fb-sub { font-size: 12.5px; color: rgba(255,255,255,.95); text-shadow: 0 1px 4px rgba(0,0,0,.45); margin-top: 6px; max-width: 560px; }
-    .fac-banner .fb-pills { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
-    .fac-banner .fb-pill { background: rgba(255,255,255,.2); border: 1px solid rgba(255,255,255,.4); color: #fff; font-size: 12px; font-weight: 600; padding: 4px 12px; border-radius: 20px; text-shadow: 0 1px 2px rgba(0,0,0,.3); }
-    .fac-banner .fb-pill b { font-weight: 800; }
+    .fac-banner .fcb-scene { position: absolute; inset: 0; }
+    .fac-banner .fcb-scene svg { width: 100%; height: 100%; display: block; }
+    .fac-banner .fcb-overlay { position: absolute; inset: 0; padding: 20px 26px; display: flex; flex-direction: column; justify-content: center; z-index: 2; }
+    .fac-banner .fcb-kicker { font-size: 10.5px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; color: rgba(255,255,255,.92); text-shadow: 0 1px 3px rgba(0,0,0,.4); }
+    .fac-banner .fcb-title { font-size: 30px; font-weight: 800; color: #fff; text-shadow: 0 2px 7px rgba(0,0,0,.42); line-height: 1.04; margin-top: 3px; }
+    .fac-banner .fcb-sub { font-size: 12.5px; color: rgba(255,255,255,.95); text-shadow: 0 1px 4px rgba(0,0,0,.45); margin-top: 6px; max-width: 560px; }
+    .fac-banner .fcb-pills { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+    .fac-banner .fcb-pill { background: rgba(255,255,255,.2); border: 1px solid rgba(255,255,255,.4); color: #fff; font-size: 12px; font-weight: 600; padding: 4px 12px; border-radius: 20px; text-shadow: 0 1px 2px rgba(0,0,0,.3); }
+    .fac-banner .fcb-pill b { font-weight: 800; }
 
     /* ── Themed animated banner scenes (per vertical) ── */
-    .fac-banner .fb-scene { z-index: 0; overflow: hidden; }
+    .fac-banner .fcb-scene { z-index: 0; overflow: hidden; }
     .fac-banner.fbx-facilities { background: linear-gradient(120deg, #0c3b3a 0%, #0f4b40 46%, #146b46 100%); }
     .fac-banner.fbx-racket     { background: linear-gradient(115deg, #0c4a2b 0%, #12703e 60%, #1a844a 100%); }
     .fac-banner.fbx-camp       { background: linear-gradient(180deg, #221a4d 0%, #3b2a63 55%, #6b3f5e 100%); }
     .fac-banner.fbx-pool       { background: linear-gradient(160deg, #073b63 0%, #0e6fa8 55%, #17a0c4 100%); }
     .fac-banner.fbx-ice        { background: linear-gradient(165deg, #2a5b86 0%, #5b93bd 55%, #a9d3e8 100%); }
-    .fac-banner .fb-scene svg { position: static; }
+    .fac-banner .fcb-scene svg { position: static; }
     /* facilities: sun, clouds, hills, road */
     .fbx-sun { position: absolute; right: 15%; top: 18%; width: 74px; height: 74px; border-radius: 50%; background: radial-gradient(circle at 50% 50%, #ffe6a8, #ffb84d 60%, #ff9e3d 100%); box-shadow: 0 0 42px 13px rgba(255,180,80,.55); }
     .fbx-cloud { position: absolute; height: 11px; border-radius: 999px; background: rgba(255,255,255,.16); filter: blur(1px); }
@@ -1308,13 +1308,13 @@
         ['cancellation', a.bookings ? pct(a.canceled, a.bookings) : '—'],
       ] : [];
       return e('div', { className: 'fac-banner ' + theme.cls },
-        e('div', { className: 'fb-scene', key: 'scene-' + tab, dangerouslySetInnerHTML: { __html: FBX_SCENES[theme.scene] } }),
+        e('div', { className: 'fcb-scene', key: 'scene-' + tab, dangerouslySetInnerHTML: { __html: FBX_SCENES[theme.scene] } }),
         theme.game ? e(BannerGame, { game: theme.game, key: 'game-' + theme.game }) : null,
-        e('div', { className: 'fb-overlay', key: 'overlay' },
-          e('div', { className: 'fb-kicker' }, CFG.displayName || 'Parks & Recreation'),
-          e('div', { className: 'fb-title' }, theme.title),
-          e('div', { className: 'fb-sub' }, theme.sub),
-          a ? e('div', { className: 'fb-pills' }, pills.map((p, i) => e('span', { className: 'fb-pill', key: i }, e('b', null, p[1]), ' ' + p[0]))) : null,
+        e('div', { className: 'fcb-overlay', key: 'overlay' },
+          e('div', { className: 'fcb-kicker' }, CFG.displayName || 'Parks & Recreation'),
+          e('div', { className: 'fcb-title' }, theme.title),
+          e('div', { className: 'fcb-sub' }, theme.sub),
+          a ? e('div', { className: 'fcb-pills' }, pills.map((p, i) => e('span', { className: 'fcb-pill', key: i }, e('b', null, p[1]), ' ' + p[0]))) : null,
         ),
       );
     }
@@ -1684,13 +1684,13 @@
         ['active sites', sites.toLocaleString()],
       ];
       return e('div', { className: 'fac-banner aqua fbx-pool' },
-        e('div', { className: 'fb-scene', dangerouslySetInnerHTML: { __html: FBX_SCENES.pool } }),
+        e('div', { className: 'fcb-scene', dangerouslySetInnerHTML: { __html: FBX_SCENES.pool } }),
         e(BannerGame, { game: 'swim', key: 'game-swim' }),
-        e('div', { className: 'fb-overlay' },
-          e('div', { className: 'fb-kicker' }, CFG.displayName || 'Parks & Recreation'),
-          e('div', { className: 'fb-title' }, '🏊 Pool & Aquatics'),
-          e('div', { className: 'fb-sub' }, 'Lap lanes, rec swim, pool parties & aquatic rentals.'),
-          e('div', { className: 'fb-pills' }, pills.map((p, i) => e('span', { className: 'fb-pill', key: i }, e('b', null, p[1]), ' ' + p[0]))),
+        e('div', { className: 'fcb-overlay' },
+          e('div', { className: 'fcb-kicker' }, CFG.displayName || 'Parks & Recreation'),
+          e('div', { className: 'fcb-title' }, '🏊 Pool & Aquatics'),
+          e('div', { className: 'fcb-sub' }, 'Lap lanes, rec swim, pool parties & aquatic rentals.'),
+          e('div', { className: 'fcb-pills' }, pills.map((p, i) => e('span', { className: 'fcb-pill', key: i }, e('b', null, p[1]), ' ' + p[0]))),
         ),
       );
     }
@@ -1949,13 +1949,13 @@
         ['sites booked', sitesBooked.toLocaleString() + (sitesTotal ? ' of ' + sitesTotal : '')],
       ];
       return e('div', { className: 'fac-banner camp fbx-camp' },
-        e('div', { className: 'fb-scene', dangerouslySetInnerHTML: { __html: FBX_SCENES.camp } }),
+        e('div', { className: 'fcb-scene', dangerouslySetInnerHTML: { __html: FBX_SCENES.camp } }),
         e(BannerGame, { game: 'bear', key: 'game-bear' }),
-        e('div', { className: 'fb-overlay' },
-          e('div', { className: 'fb-kicker' }, CFG.displayName || 'Parks & Recreation'),
-          e('div', { className: 'fb-title' }, '🏕️ Camping'),
-          e('div', { className: 'fb-sub' }, 'Campsite stays, nightly occupancy & where the campground fills up.'),
-          e('div', { className: 'fb-pills' }, pills.map((p, i) => e('span', { className: 'fb-pill', key: i }, e('b', null, p[1]), ' ' + p[0]))),
+        e('div', { className: 'fcb-overlay' },
+          e('div', { className: 'fcb-kicker' }, CFG.displayName || 'Parks & Recreation'),
+          e('div', { className: 'fcb-title' }, '🏕️ Camping'),
+          e('div', { className: 'fcb-sub' }, 'Campsite stays, nightly occupancy & where the campground fills up.'),
+          e('div', { className: 'fcb-pills' }, pills.map((p, i) => e('span', { className: 'fcb-pill', key: i }, e('b', null, p[1]), ' ' + p[0]))),
         ),
       );
     }

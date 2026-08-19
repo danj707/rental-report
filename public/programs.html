@@ -106,11 +106,20 @@
       background: rgba(255,255,255,.28); transform-origin: 50% 0; }
     .pbx-flag { position: absolute; top: 10px; width: 0; height: 0; border-left: 7px solid transparent; border-right: 7px solid transparent;
       border-top: 15px solid #fff; transform-origin: 50% 0; animation: pbxSway 4.6s ease-in-out infinite alternate; }
-    /* Ball arcing over the grass, then looping back around. */
-    .pbx-ball-x { position: absolute; left: -40px; bottom: 3px; width: 14px; height: 14px; animation: pbxRoll 19s linear infinite; }
-    .pbx-ball { width: 14px; height: 14px; border-radius: 50%; box-shadow: 0 3px 7px rgba(0,0,0,.3);
-      background: radial-gradient(circle at 34% 30%, #fff6d8, #ffd166 62%, #f0a93c);
-      animation: pbxHop 1.9s cubic-bezier(.3,0,.4,1) infinite alternate, pbxSpin 2.4s linear infinite; }
+    /* Soccer ball rolling along the grass. The panels are stacked radial
+       gradients — a centre pentagon with five around it — so it reads as a
+       ball rather than a dot once it spins. */
+    .pbx-ball-x { position: absolute; left: -40px; bottom: 3px; width: 16px; height: 16px; animation: pbxRoll 19s linear infinite; }
+    .pbx-ball { width: 16px; height: 16px; border-radius: 50%; box-shadow: 0 2px 5px rgba(0,0,0,.32);
+      background:
+        radial-gradient(circle at 50% 47%, #253046 0 2.7px, transparent 2.9px),
+        radial-gradient(circle at 50% 6%,  #253046 0 1.7px, transparent 1.9px),
+        radial-gradient(circle at 94% 40%, #253046 0 1.7px, transparent 1.9px),
+        radial-gradient(circle at 6%  40%, #253046 0 1.7px, transparent 1.9px),
+        radial-gradient(circle at 26% 92%, #253046 0 1.6px, transparent 1.8px),
+        radial-gradient(circle at 74% 92%, #253046 0 1.6px, transparent 1.8px),
+        radial-gradient(circle at 36% 30%, #ffffff, #eef2f5 62%, #c3cdd6);
+      animation: pbxSpin 1.5s linear infinite; }
     .pbx-seed { position: absolute; width: 3px; height: 3px; border-radius: 50%; background: rgba(255,255,255,.55);
       animation: pbxFloat linear infinite; }
 
@@ -118,7 +127,6 @@
     @keyframes pbxDrift { from { transform: translateX(-140px); } to { transform: translateX(1400px); } }
     @keyframes pbxSway  { from { transform: rotate(-7deg); } to { transform: rotate(7deg); } }
     @keyframes pbxRoll  { to { transform: translateX(calc(100vw + 80px)); } }
-    @keyframes pbxHop   { from { transform: translateY(0); } to { transform: translateY(-11px); } }
     @keyframes pbxSpin  { to { rotate: 360deg; } }
     @keyframes pbxFloat { from { transform: translate(0, 0); opacity: 0; } 15% { opacity: .8; } to { transform: translate(60px, -70px); opacity: 0; } }
 
