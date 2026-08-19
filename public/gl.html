@@ -383,6 +383,7 @@
     .tyler-table tbody tr:hover { background: none; }
     .tyler-table td.num { text-align: right !important; font-family: 'IBM Plex Mono', monospace !important; white-space: nowrap; }
     .tyler-table td.code { font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; }
+    .tyler-table td.checks { white-space: nowrap; color: #333; }
     .tyler-table tbody tr.unmapped td { background: #fef3c7; }
     .tyler-table tbody tr.unmapped td.code { color: #92400e; font-family: 'Inter', sans-serif; font-style: italic; }
     .tyler-table tfoot td {
@@ -623,6 +624,14 @@ const GL_MONEY_FIELDS = [
 ];
 const GL_SPLIT_FIELDS = ['ccOnlinePayments','ccInPersonPayments','ccOnlineRefunds','ccInPersonRefunds'];
 
+// Check numbers are text but almost always digits — sort them as numbers so
+// "9" lands before "104", falling back to string order for anything else.
+function cmpCheckNo(a, b) {
+  const na = Number(a), nb = Number(b);
+  const bothNumeric = Number.isFinite(na) && Number.isFinite(nb);
+  return bothNumeric ? na - nb : String(a).localeCompare(String(b));
+}
+
 function aggregateByGlCode(list) {
   const map = new Map();  // preserves first-seen (gl-code) order
   for (const r of list) {
@@ -635,6 +644,7 @@ function aggregateByGlCode(list) {
         accountNumber: r.accountNumber,
         isSplit:       r.isSplit,
         _locSet:       new Set(),
+        _checkSet:     new Set(),
       };
       GL_MONEY_FIELDS.forEach(f => { a[f] = 0; });
       GL_SPLIT_FIELDS.forEach(f => { a[f] = null; });
@@ -647,10 +657,16 @@ function aggregateByGlCode(list) {
     if (r.locations) {
       r.locations.split(',').map(x => x.trim()).filter(Boolean).forEach(l => a._locSet.add(l));
     }
+    // Text, not money: union across desks rather than sum.
+    if (r.checkNumbers) {
+      r.checkNumbers.split(',').map(x => x.trim()).filter(Boolean).forEach(c => a._checkSet.add(c));
+    }
   }
   return Array.from(map.values()).map(a => {
     a.locations = Array.from(a._locSet).sort().join(', ');
+    a.checkNumbers = Array.from(a._checkSet).sort(cmpCheckNo).join(', ');
     delete a._locSet;
+    delete a._checkSet;
     return a;
   });
 }
@@ -685,6 +701,10 @@ function normalizeRow(raw) {
 
     cashPayments:       pf(raw['Cash Payments']),
     checkPayments:      pf(raw['Check Payments']),
+    // Check numbers behind this row's check receipts, comma separated. Absent
+    // until card 17293 carries the column, so everything downstream treats an
+    // empty string as "we don't know" rather than "there were none".
+    checkNumbers:       String(raw['Check Numbers'] ?? ''),
     freePayments:       pf(raw['Free Payments']),
     orgCreditPayments:  pf(raw['Organization Credit Payments']),
     scholarshipPayments: pf(raw['Scholarship Payments']),
@@ -912,7 +932,7 @@ function tylerShortCode(fullNumber, shortCodes) {
 }
 
 // Pivot loaded GL rows into one turnover's line items (version B: active only).
-function buildTurnover(rows, amountOf, shortCodes) {
+function buildTurnover(rows, amountOf, shortCodes, checksOf) {
   const lines = [];
   let unmappedTotal = 0;
   for (const r of rows) {
@@ -932,6 +952,7 @@ function buildTurnover(rows, amountOf, shortCodes) {
       unmapped,
       amount: amt > 0 ? amt : 0,
       fee: amt < 0 ? amt : 0,   // negative amounts land in the Fees column
+      checks: checksOf ? (checksOf(r) || '') : '',
     });
   }
   lines.sort((a, b) => (a.unmapped - b.unmapped) || a.number.localeCompare(b.number) || a.name.localeCompare(b.name));
@@ -943,8 +964,24 @@ function buildTurnover(rows, amountOf, shortCodes) {
   };
 }
 
-function TylerSheet({ typeLabel, data, summaryRows, emptyText, cfg, orgName, startDate, endDate }) {
+// A check number is only ever a handful of digits, but one GL account can
+// collect a lot of them in a month (median 1, p90 6, worst seen 46). List the
+// first few and count the rest rather than letting one cell wrap forever.
+const CHECKS_SHOWN = 4;
+function formatChecks(str) {
+  // Sort here as well as at aggregation: the turnover sheet can be handed rows
+  // that never went through aggregateByGlCode, and a treasurer reading down the
+  // column wants 6, 9, 12, 104 rather than whatever order the card emitted.
+  const all = String(str || '').split(',').map(x => x.trim()).filter(Boolean).sort(cmpCheckNo);
+  if (all.length === 0) return '';
+  if (all.length <= CHECKS_SHOWN) return all.join(', ');
+  return all.slice(0, CHECKS_SHOWN).join(', ') + ' +' + (all.length - CHECKS_SHOWN) + ' more';
+}
+
+function TylerSheet({ typeLabel, data, summaryRows, emptyText, cfg, orgName, startDate, endDate, showChecks }) {
   const hasFees = data.lines.some(l => l.fee !== 0);
+  // Absent until the card carries the column — don't print an empty column.
+  const withChecks = !!showChecks && data.lines.some(l => l.checks);
   const grand = data.amountTotal + data.feeTotal;
   return (
     <div className="tyler-sheet">
@@ -971,6 +1008,7 @@ function TylerSheet({ typeLabel, data, summaryRows, emptyText, cfg, orgName, sta
               <th>Account Name</th>
               <th>Account Code</th>
               <th>Account Number</th>
+              {withChecks && <th>Check #</th>}
               <th className="num">Amount</th>
               <th className="num">Fees (negative)</th>
             </tr>
@@ -981,6 +1019,7 @@ function TylerSheet({ typeLabel, data, summaryRows, emptyText, cfg, orgName, sta
                 <td>{l.name}</td>
                 <td className="code">{l.unmapped ? '(no GL account)' : l.code}</td>
                 <td className="code">{l.number}</td>
+                {withChecks && <td className="code checks" title={l.checks || ''}>{formatChecks(l.checks)}</td>}
                 <td className="num">{l.amount ? fmtMoneyStr(l.amount) : ''}</td>
                 <td className="num cell-neg">{l.fee ? fmtMoneyStr(l.fee) : ''}</td>
               </tr>
@@ -991,6 +1030,7 @@ function TylerSheet({ typeLabel, data, summaryRows, emptyText, cfg, orgName, sta
               <td>TOTAL</td>
               <td></td>
               <td></td>
+              {withChecks && <td></td>}
               <td className="num">{fmtMoneyStr(data.amountTotal)}</td>
               <td className="num">{fmtMoneyStr(hasFees ? data.feeTotal : 0)}</td>
             </tr>
@@ -1042,7 +1082,7 @@ function TylerSheets({ rows, orgName, startDate, endDate }) {
   const shortCodes = cfg.shortCodes || {};
   // Credit turnover = Credit Card column; Cash & Check turnover = Cash + Check.
   const credit    = buildTurnover(rows, r => pf(r.ccPayments), shortCodes);
-  const cashCheck = buildTurnover(rows, r => pf(r.cashPayments) + pf(r.checkPayments), shortCodes);
+  const cashCheck = buildTurnover(rows, r => pf(r.cashPayments) + pf(r.checkPayments), shortCodes, r => r.checkNumbers);
   const cashOnly  = buildTurnover(rows, r => pf(r.cashPayments), shortCodes);
   const checkOnly = buildTurnover(rows, r => pf(r.checkPayments), shortCodes);
   const common = { cfg, orgName, startDate, endDate };
@@ -1059,6 +1099,7 @@ function TylerSheets({ rows, orgName, startDate, endDate }) {
         {...common}
         typeLabel="CASH & CHECK TURNOVER"
         data={cashCheck}
+        showChecks
         summaryRows={[['Cash', cashOnly.amountTotal], ['Checks', checkOnly.amountTotal]]}
         emptyText="No cash or check receipts recorded for this period."
       />

@@ -146,6 +146,68 @@
 
     /* ── Print ── */
     @media print { .toolbar { display: none !important; } body { background: #fff; } .page { margin: 0; padding: 10px; box-shadow: none; max-width: 100%; } }
+
+    /* ── Animated header — a coach running a session. Same construction as the
+       other report banners: a CSS scene under a text overlay, no images, no
+       interaction. ipb-/ipx- prefixes; fb- belongs to the feedback widget. ── */
+    .ip-banner { position:relative; width:100%; height:168px; border-radius:12px; overflow:hidden;
+      margin:0 0 18px; border:1px solid #c7d2fe; box-shadow:0 3px 14px rgba(49,46,129,.16);
+      background:linear-gradient(116deg,#1e2a63 0%,#4338ca 40%,#6d28d9 66%,#f0a35e 100%); }
+    .ip-banner .ipb-scene { position:absolute; inset:0; z-index:0; overflow:hidden; }
+    .ip-banner .ipb-overlay { position:absolute; inset:0; padding:18px 26px 34px; display:flex; flex-direction:column;
+      align-items:flex-start; justify-content:center; text-align:left; z-index:2; }
+    .ip-banner .ipb-kicker { font-size:10.5px; font-weight:700; letter-spacing:2px; text-transform:uppercase; color:rgba(255,255,255,.92); text-shadow:0 1px 3px rgba(0,0,0,.45); }
+    .ip-banner .ipb-title { font-size:30px; font-weight:800; color:#fff; text-shadow:0 2px 7px rgba(0,0,0,.45); line-height:1.04; margin-top:3px; }
+    .ip-banner .ipb-sub { font-size:12.5px; color:rgba(255,255,255,.95); text-shadow:0 1px 4px rgba(0,0,0,.5); margin-top:6px; max-width:560px; }
+    .ip-banner .ipb-pills { display:flex; gap:8px; margin-top:12px; flex-wrap:wrap; }
+    .ip-banner .ipb-pill { background:rgba(255,255,255,.2); border:1px solid rgba(255,255,255,.4); color:#fff; font-size:12px; font-weight:600; padding:4px 12px; border-radius:20px; text-shadow:0 1px 2px rgba(0,0,0,.35); }
+    .ip-banner .ipb-pill b { font-weight:800; }
+
+    .ipx-sun { position:absolute; right:12%; top:20%; width:56px; height:56px; border-radius:50%;
+      background:radial-gradient(circle at 50% 50%, #fff3d2, #ffd07a 56%, #ff9d3d 100%);
+      box-shadow:0 0 38px 12px rgba(255,170,80,.42); animation:ipxSun 8s ease-in-out infinite alternate; }
+    .ipx-haze { position:absolute; height:8px; border-radius:999px; background:rgba(255,255,255,.11); filter:blur(3px);
+      animation:ipxDrift linear infinite; }
+    .ipx-court { position:absolute; left:0; right:0; bottom:0; height:38px;
+      background:linear-gradient(180deg,#2f7d5c,#1a4d39); box-shadow:inset 0 1px 0 rgba(255,255,255,.18); }
+    /* Court markings — a centre line and a coaching circle. */
+    .ipx-court::before { content:''; position:absolute; left:0; right:0; top:11px; height:1.5px; background:rgba(255,255,255,.22); }
+    .ipx-circle { position:absolute; left:24%; bottom:2px; width:74px; height:20px; border-radius:50%;
+      border:1.5px solid rgba(255,255,255,.28); }
+    /* The coach: whistle out, arm up, calling the drill. Stays put. */
+    .ipx-coach { position:absolute; left:15%; bottom:3px; width:15px; }
+    .ipx-coach i { display:block; }
+    .ipx-coach .head { width:6.5px; height:6.5px; border-radius:50%; margin:0 auto 1px; background:#f6d6b3; }
+    .ipx-coach .cap { position:absolute; left:3.5px; top:-1px; width:8px; height:3px; border-radius:2px 2px 0 0; background:#f43f5e; }
+    .ipx-coach .body { width:13px; height:15px; border-radius:4px 4px 2px 2px; background:#f8fafc; box-shadow:0 1px 3px rgba(0,0,0,.32); }
+    .ipx-coach .arm { position:absolute; right:-4px; top:8px; width:2.6px; height:9px; border-radius:2px; background:#f8fafc;
+      transform-origin:50% 100%; animation:ipxCall 1.5s ease-in-out infinite alternate; }
+    .ipx-coach .whistle { position:absolute; left:-3px; top:11px; width:4px; height:4px; border-radius:50%; background:#fbbf24;
+      animation:ipxToot 3.4s steps(1,end) infinite; }
+    /* The squad, lined up in front, jumping through the drill on a stagger. */
+    .ipx-player { position:absolute; width:11px; animation:ipxDrill .82s ease-in-out infinite alternate; }
+    .ipx-player i { display:block; }
+    .ipx-player .head { width:5px; height:5px; border-radius:50%; margin:0 auto 1px; background:#f6d6b3; }
+    .ipx-player .body { width:10px; height:11px; border-radius:4px 4px 2px 2px; background:var(--kit); box-shadow:0 1px 3px rgba(0,0,0,.3); }
+    /* A ball arcing between them. */
+    .ipx-ball { position:absolute; width:8px; height:8px; border-radius:50%;
+      background:radial-gradient(circle at 34% 30%, #fff6d8, #fbbf24 60%, #ea8c1c);
+      animation:ipxToss 2.6s ease-in-out infinite alternate; }
+    /* A cone or two, because there are always cones. */
+    .ipx-cone { position:absolute; width:0; height:0; border-left:4px solid transparent; border-right:4px solid transparent;
+      border-bottom:8px solid #fb923c; }
+
+    @keyframes ipxSun   { to { box-shadow:0 0 50px 16px rgba(255,170,80,.58); } }
+    @keyframes ipxDrift { from { transform:translateX(-160px); } to { transform:translateX(1500px); } }
+    @keyframes ipxCall  { from { transform:rotate(-58deg); } to { transform:rotate(-12deg); } }
+    @keyframes ipxToot  { 0%, 88% { opacity:.55; transform:scale(1); } 89%, 100% { opacity:1; transform:scale(1.4); } }
+    @keyframes ipxDrill { from { transform:translateY(0); }  to { transform:translateY(-5px); } }
+    @keyframes ipxToss  { from { transform:translate(0,0); } to { transform:translate(46px,-16px); } }
+
+    /* Decoration only — a reduced-motion reader gets the same scene, held still. */
+    @media (prefers-reduced-motion: reduce) { .ip-banner * { animation:none !important; } }
+    @media print { .ip-banner { display:none !important; } }
+    body.print-mode .ip-banner { display:none !important; }
     body.print-mode .toolbar { display: none !important; }
     body.print-mode { background: #fff; }
     body.print-mode .page { margin: 0; padding: 10px; box-shadow: none; max-width: 100%; }
@@ -972,6 +1034,48 @@ function App() {
           <div className="report-header-right">
             <div className="rh-meta" style={{fontWeight:600,marginBottom:2}}>Pay period: {fmtPeriod(startDate, endDate)}</div>
             <div className="rh-meta">{iPct}% Instructor / {oPct}% Organization</div>
+          </div>
+        </div>
+
+        {/* Animated header — the coach and the squad mid-drill. */}
+        <div className="ip-banner">
+          <div className="ipx-scene ipb-scene" aria-hidden="true">
+            <div className="ipx-haze" style={{top:'28%', left:'6%', width:54, animationDuration:'40s'}} />
+            <div className="ipx-haze" style={{top:'36%', left:0, width:38, animationDuration:'55s', animationDelay:'-17s'}} />
+            <div className="ipx-sun" />
+            <div className="ipx-court" />
+            <div className="ipx-circle" />
+            <div className="ipx-cone" style={{left:'62%', bottom:'30px'}} />
+            <div className="ipx-cone" style={{left:'88%', bottom:'30px'}} />
+            <div className="ipx-coach">
+              <i className="cap" /><i className="head" /><i className="body" /><i className="arm" /><i className="whistle" />
+            </div>
+            {[
+              {kit:'#38bdf8', left:'34%', bottom:10, delay:0},
+              {kit:'#fbbf24', left:'42%', bottom:14, delay:-0.2},
+              {kit:'#a3e635', left:'50%', bottom:8,  delay:-0.4},
+              {kit:'#f472b6', left:'58%', bottom:15, delay:-0.15},
+              {kit:'#c4b5fd', left:'68%', bottom:11, delay:-0.55},
+              {kit:'#fca5a5', left:'76%', bottom:9,  delay:-0.3},
+              {kit:'#5eead4', left:'85%', bottom:13, delay:-0.45},
+            ].map((pl, i) => (
+              <div key={'pl'+i} className="ipx-player"
+                   style={{left:pl.left, bottom:pl.bottom+'px', '--kit':pl.kit, animationDelay:pl.delay+'s'}}>
+                <i className="head" /><i className="body" />
+              </div>
+            ))}
+            <div className="ipx-ball" style={{left:'46%', bottom:'26px'}} />
+          </div>
+          <div className="ipb-overlay">
+            <div className="ipb-kicker">{displayOrg}</div>
+            <div className="ipb-title">🏅 Instructor Payout</div>
+            <div className="ipb-sub">What each instructor earned, and what the department kept.</div>
+            <div className="ipb-pills">
+              <span className="ipb-pill"><b>{kpis.uInstr.toLocaleString()}</b> instructor{kpis.uInstr === 1 ? '' : 's'}</span>
+              <span className="ipb-pill"><b>{kpis.cnt.toLocaleString()}</b> section{kpis.cnt === 1 ? '' : 's'}</span>
+              <span className="ipb-pill"><b>{fmt(kpis.iPay)}</b> to instructors</span>
+              <span className="ipb-pill"><b>{iPct}/{oPct}</b> split</span>
+            </div>
           </div>
         </div>
 
