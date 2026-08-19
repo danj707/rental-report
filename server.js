@@ -3516,6 +3516,19 @@ async function sendReportEmail(orgSlug, email, reportType, schedule, locationFil
 }
 
 // ── Run scheduled sends ──────────────────────────────────────────────
+// ── Report/cadence rules ─────────────────────────────────────────────
+// Reports a given cadence cannot carry, with the reason surfaced to admins.
+// GL is an accounting rollup and the mail leaves at 7am, before the day has
+// any postings — a daily GL subscription would deliver an empty report every
+// morning. Enforced when subscribing, honoured again at send time so any
+// subscription created before this rule existed stops sending too.
+const SCHEDULE_BLOCKED_REPORTS = {
+  daily: { gl: "The GL Code Rollup can't be sent daily — the 7am send would go out before the day has any postings, so the report would always be empty. Choose Weekly or Monthly." },
+};
+function scheduleBlocks(scheduleType, report) {
+  return (SCHEDULE_BLOCKED_REPORTS[scheduleType] || {})[report] || null;
+}
+
 async function runSchedule(scheduleType) {
   if (!getFlags().emailSubscriptions) { console.log(`[cron] ${scheduleType} skipped — emailSubscriptions flag is OFF`); return; }
   console.log(`[cron] Running ${scheduleType} sends...`);
@@ -3523,6 +3536,10 @@ async function runSchedule(scheduleType) {
   for (const sub of subs) {
     const reports = Array.isArray(sub.reports) ? sub.reports : JSON.parse(sub.reports);
     for (const report of reports) {
+      if (scheduleBlocks(scheduleType, report)) {
+        console.log(`[cron] Skipping ${sub.org}/${report} for ${sub.email} — not sendable on the ${scheduleType} cadence`);
+        continue;
+      }
       const savedParams = (sub.reportParams && typeof sub.reportParams === "object") ? (sub.reportParams[report] || null) : null;
       const perReportDateRange = (sub.reportDateRanges && sub.reportDateRanges[report]) || sub.dateRange;
       const _res = await sendReportEmail(sub.org, sub.email, report, scheduleType, sub.locationFilter, perReportDateRange, savedParams);
@@ -6054,6 +6071,11 @@ app.post("/:org/admin/subscribe", (req, res) => {
   if (!["daily","weekly","monthly"].includes(schedule)) return res.status(400).json({ error: "schedule must be daily, weekly, or monthly" });
   const validReports = reports.filter(r => REPORT_TYPES.includes(r));
   if (!validReports.length) return res.status(400).json({ error: "No valid report types" });
+
+  // The admin form greys these out, but the form is not the only way in here.
+  const blockedReport = validReports.find(r => scheduleBlocks(schedule, r));
+  if (blockedReport) return res.status(400).json({ error: scheduleBlocks(schedule, blockedReport) });
+
   const validDateRanges = ["today","next7","next30","last7","lastMonth"];
 
   // Validate + sanitize reportParams (optional object keyed by report type → URL query string)

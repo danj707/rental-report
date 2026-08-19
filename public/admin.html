@@ -96,6 +96,11 @@
       font-size: 13px;
     }
     .checkbox-label input { width: 15px; height: 15px; cursor: pointer; accent-color: #16a34a; }
+    .checkbox-label.unavailable { opacity: .45; cursor: not-allowed; }
+    .checkbox-label.unavailable input,
+    .checkbox-label.unavailable select { cursor: not-allowed; }
+    .cadence-note { font-size: 11px; color: #b45309; background: #fffbeb;
+      border: 1px solid #fde68a; border-radius: 5px; padding: 6px 9px; margin-top: 7px; line-height: 1.45; }
 
     .radio-group { display: flex; gap: 8px; flex-wrap: wrap; }
     .radio-btn {
@@ -296,6 +301,7 @@
         <div class="checkboxes" id="report-checkboxes">
           <div style="color:#aaa;font-size:11px">Loading…</div>
         </div>
+        <div class="cadence-note" id="daily-note" style="display:none"></div>
       </div>
 
       <div class="form-group" id="location-filter-group" style="display:none">
@@ -397,15 +403,59 @@ const DATE_RANGE_OPTIONS = [
 ];
 const DATE_RANGE_DEFAULTS = { facility: 'next7', gl: 'lastMonth' };
 
+// Reports that can't go out on a given cadence, with the reason shown to the
+// admin. GL is an accounting rollup: a daily send leaves at 7am, before the
+// day has any postings, so the email would always be empty. The server
+// enforces this too — this only keeps the form from offering it.
+const CADENCE_BLOCKED = {
+  daily: { gl: 'The GL Code Rollup goes out at 7am, before the day has any postings — a daily GL email would always be empty. Pick Weekly or Monthly to include it.' },
+};
+
 function updateLocationVisibility() {
   const hasFacility = !!document.querySelector('#report-checkboxes input[value="facility"]:checked');
   document.getElementById('location-filter-group').style.display = hasFacility ? '' : 'none';
 }
+
+// Reports switched off by the cadence rather than by the admin — remembered so
+// they come back if the cadence moves to one that can carry them.
+const autoUnchecked = new Set();
+
+// Grey out (and uncheck) any report the selected cadence can't carry.
+function syncCadenceAvailability() {
+  const blocked = CADENCE_BLOCKED[selectedSchedule] || {};
+  const reasons = [];
+  document.querySelectorAll('#report-checkboxes .checkbox-label').forEach(label => {
+    const cb = label.querySelector('input[type="checkbox"]');
+    if (!cb) return;
+    const sel = label.querySelector('select');
+    const why = blocked[cb.value];
+    if (why) {
+      if (cb.checked) { cb.checked = false; autoUnchecked.add(cb.value); }
+      cb.disabled = true;
+      label.classList.add('unavailable');
+      label.title = why;
+      if (sel) sel.disabled = true;
+      reasons.push(why);
+    } else {
+      if (autoUnchecked.has(cb.value)) { cb.checked = true; autoUnchecked.delete(cb.value); }
+      cb.disabled = false;
+      label.classList.remove('unavailable');
+      label.removeAttribute('title');
+      if (sel) sel.disabled = false;
+    }
+  });
+  const note = document.getElementById('daily-note');
+  note.innerHTML = reasons.join('<br>');
+  note.style.display = reasons.length ? '' : 'none';
+  updateLocationVisibility();
+}
+
 document.querySelectorAll('#schedule-group .radio-btn').forEach(btn => {
   btn.addEventListener('click', () => {
     document.querySelectorAll('#schedule-group .radio-btn').forEach(b => b.classList.remove('selected'));
     btn.classList.add('selected');
     selectedSchedule = btn.dataset.value;
+    syncCadenceAvailability();
   });
 });
 
@@ -429,6 +479,7 @@ async function loadReports() {
       '<select class="date-range-select" data-report="' + r.key + '" style="font-size:11px;padding:3px 6px;border:1px solid #ddd;border-radius:4px;background:#fafafa;color:#333">' + opts + '</select>' +
     '</label>';
   }).join('');
+  syncCadenceAvailability();
 }
 
 // ── Load subscribers ──────────────────────────────────────────────────
@@ -537,6 +588,9 @@ async function subscribe() {
   if (!email) return showAlert(alert, 'error', 'Please enter an email address.');
   // Domain restriction removed — server validates EMAIL_ENABLED_ORGS + token
   if (!reports.length) return showAlert(alert, 'error', 'Select at least one report.');
+  const blockedNow = CADENCE_BLOCKED[selectedSchedule] || {};
+  const offending = reports.find(r => blockedNow[r]);
+  if (offending) return showAlert(alert, 'error', blockedNow[offending]);
 
   const btn = document.getElementById('subscribe-btn');
   btn.disabled = true;
