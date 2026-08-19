@@ -1414,14 +1414,18 @@ function normalizeRow(raw) {
   };
 }
 
-// Green tick when the booking is fully paid, red cross when it isn't. A blank
-// (rather than a cross) when the card doesn't say — an older card without the
-// column, or a reservation with no order item to pay for. Comped $0 bookings
-// come back as paid, so they get the tick.
+// Paid in full, part paid, or nothing taken. A blank (rather than a cross)
+// when the card doesn't say — an older card without the column, or a
+// reservation with no order item to pay for. Comped $0 bookings come back as
+// paid, so they get the tick. Partial covers a booking whose add-ons are still
+// outstanding while the room itself is settled, which is the common shape.
 function paidMark(paid) {
   const v = String(paid || '').trim().toLowerCase();
   if (v === 'yes' || v === 'true' || v === 'y') {
     return <span title="Paid in full">✅</span>;
+  }
+  if (v === 'partial' || v === 'part') {
+    return <span title="Part paid — a balance is still outstanding">🟡</span>;
   }
   if (v === 'no' || v === 'false' || v === 'n') {
     return <span title="Not paid">❌</span>;
