@@ -513,6 +513,7 @@
     .col-booktype{ width: 72px; text-align: center; font-size: 10px; }
     .col-total   { width: 62px; text-align: right; }
     .col-addon-fees { width: 72px; text-align: right; }
+    .col-paid { width: 46px; text-align: center; font-size: 13px; }
     .col-rec-link { width: 28px; text-align: center; }
 
     /* ═══════════════════════════════════════════════════════════════
@@ -1395,6 +1396,9 @@ function normalizeRow(raw) {
     instructions: raw['Instructions'] || raw['instructions'] || raw['admin_instructions_md'] || '',
     addons:    raw['Add Ons?']  || raw['Add Ons']   || raw['addons']     || '',
     addonFees: raw['Add-On Fees'] || raw['addon_fees'] || raw['addonFees'] || null,
+    // 'Yes' / 'No' from the card; '' when the card predates the column or the
+    // booking has no order item to pay for, which renders as neither tick nor cross.
+    paid:      raw['Paid?']     || raw['Paid']      || raw['paid']       || '',
     resident:  raw['Resident?'] || raw['Resident']  || raw['resident']   || '',
     bookingType: raw['Booking Type'] || raw['booking_type'] || raw['bookingType'] || '',
     total:     raw['Total']     || raw['total']      || null,
@@ -1407,6 +1411,21 @@ function normalizeRow(raw) {
     multiDayDays: raw['Multi-Day Days'] || null,
     multiDayNum:  raw['Multi-Day Day#'] || null,
   };
+}
+
+// Green tick when the booking is fully paid, red cross when it isn't. A blank
+// (rather than a cross) when the card doesn't say — an older card without the
+// column, or a reservation with no order item to pay for. Comped $0 bookings
+// come back as paid, so they get the tick.
+function paidMark(paid) {
+  const v = String(paid || '').trim().toLowerCase();
+  if (v === 'yes' || v === 'true' || v === 'y') {
+    return <span title="Paid in full" style={{color:'#16a34a',fontWeight:700}}>✓</span>;
+  }
+  if (v === 'no' || v === 'false' || v === 'n') {
+    return <span title="Not paid" style={{color:'#dc2626',fontWeight:700}}>✕</span>;
+  }
+  return '';
 }
 
 // ── Location color helpers ───────────────────────────────────────────
@@ -1967,6 +1986,9 @@ function App() {
   const [showAddonFees, setShowAddonFees] = useState(() => {
     try { return localStorage.getItem('col_addon_fees') !== 'false'; } catch { return true; }
   });
+  const [showPaid, setShowPaid] = useState(() => {
+    try { return localStorage.getItem('col_paid') !== 'false'; } catch { return true; }
+  });
   const [showNotes, setShowNotes] = useState(() => {
     try { return localStorage.getItem('col_notes') !== 'false'; } catch { return true; }
   });
@@ -1996,6 +2018,7 @@ function App() {
   useEffect(() => { try { localStorage.setItem('col_headcount', showHeadCount); } catch {} }, [showHeadCount]);
   useEffect(() => { try { localStorage.setItem('col_total',     showTotal);     } catch {} }, [showTotal]);
   useEffect(() => { try { localStorage.setItem('col_addon_fees', showAddonFees); } catch {} }, [showAddonFees]);
+  useEffect(() => { try { localStorage.setItem('col_paid',       showPaid);       } catch {} }, [showPaid]);
   useEffect(() => { try { localStorage.setItem('col_notes',     showNotes);     } catch {} }, [showNotes]);
   useEffect(() => { try { localStorage.setItem('col_link',      showLink);      } catch {} }, [showLink]);
   useEffect(() => { try { localStorage.setItem('col_resident',  showResident);  } catch {} }, [showResident]);
@@ -2614,6 +2637,7 @@ function App() {
     if (showHeadCount) headers.push('Head Cnt');
     if (showTotal)     headers.push('Total');
     if (showAddonFees) headers.push('Add-On Fees');
+    if (showPaid)      headers.push('Paid?');
     if (showNotes)     headers.push('Instructions', 'Notes', 'Add-ons');
     if (showResident)  headers.push('Resident?');
     if (showBookType)  headers.push('Booking Type');
@@ -2630,6 +2654,7 @@ function App() {
       if (showHeadCount) row.push(r.headCount !== '' ? Number(r.headCount) || r.headCount : '');
       if (showTotal) { const n = parseFloat(r.total); row.push(!isNaN(n) && n !== 0 ? n : ''); }
       if (showAddonFees) { const n = parseFloat(r.addonFees); row.push(!isNaN(n) && n !== 0 ? n : ''); }
+      if (showPaid) row.push(r.paid || '');
       if (showNotes) { row.push(r.instructions || ''); row.push(r.notes || ''); row.push(r.addons || ''); }
       if (showResident) row.push(r.resident || '');
       if (showBookType) row.push(r.bookingType || '');
@@ -2650,6 +2675,7 @@ function App() {
       ...(showHeadCount?[{wch:8}]:[]),
       ...(showTotal?[{wch:10}]:[]),
       ...(showAddonFees?[{wch:12}]:[]),
+      ...(showPaid?[{wch:8}]:[]),
       ...(showNotes?[{wch:30},{wch:30},{wch:30}]:[]),
       ...(showResident?[{wch:10}]:[]),
       ...(showBookType?[{wch:14}]:[]),
@@ -2824,6 +2850,10 @@ function App() {
               <label>
                 <input type="checkbox" checked={showNotes} onChange={e => setShowNotes(e.target.checked)} />
                 Notes
+              </label>
+              <label style={{display:'flex',alignItems:'center',gap:4,cursor:'pointer',fontSize:11}}>
+                <input type="checkbox" checked={showPaid} onChange={e => setShowPaid(e.target.checked)} />
+                Paid?
               </label>
               <label style={{display:'flex',alignItems:'center',gap:4,cursor:'pointer',fontSize:11}}>
                 <input type="checkbox" checked={showLink} onChange={e => setShowLink(e.target.checked)} />
@@ -3146,6 +3176,7 @@ function App() {
                           {showHeadCount && <span className="col-hcnt">Cnt</span>}
                           {showTotal     && <span className="col-total">Total</span>}
                           {showAddonFees && <span className="col-addon-fees">Add-On $</span>}
+                          {showPaid && <span className="col-paid">Paid?</span>}
                           {showLink && <span className="col-rec-link">↗</span>}
                         </div>
                         {locRows.map((r, i) => (
@@ -3171,6 +3202,7 @@ function App() {
                               {showHeadCount && <span className="cell col-hcnt">{r.headCount}</span>}
                               {showTotal     && <span className="cell col-total">{formatMoney(r.total)}</span>}
                               {showAddonFees && <span className="cell col-addon-fees">{formatMoney(r.addonFees)}</span>}
+                              {showPaid && <span className="cell col-paid">{paidMark(r.paid)}</span>}
                               {showLink && <span className="cell col-rec-link">{r.resId ? <a href={`https://www.rec.us/admin/o/${meta.org_id}/facility-rentals/${r.resId}`} target="_blank" rel="noopener noreferrer" title="Open in Rec" style={{color:'#2563eb',textDecoration:'none',fontSize:13}}>↗️</a> : ''}</span>}
                             </div>
                             {showNotes && (() => {
