@@ -513,7 +513,8 @@
     .col-booktype{ width: 72px; text-align: center; font-size: 10px; }
     .col-total   { width: 62px; text-align: right; }
     .col-addon-fees { width: 72px; text-align: right; }
-    .col-paid { width: 46px; text-align: center; font-size: 13px; }
+    .col-paid { width: 50px; text-align: center; }
+    .cell.col-paid { font-size: 12px; }
     .col-rec-link { width: 28px; text-align: center; }
 
     /* ═══════════════════════════════════════════════════════════════
@@ -1420,10 +1421,10 @@ function normalizeRow(raw) {
 function paidMark(paid) {
   const v = String(paid || '').trim().toLowerCase();
   if (v === 'yes' || v === 'true' || v === 'y') {
-    return <span title="Paid in full" style={{color:'#16a34a',fontWeight:700}}>✓</span>;
+    return <span title="Paid in full">✅</span>;
   }
   if (v === 'no' || v === 'false' || v === 'n') {
-    return <span title="Not paid" style={{color:'#dc2626',fontWeight:700}}>✕</span>;
+    return <span title="Not paid">❌</span>;
   }
   return '';
 }
