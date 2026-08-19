@@ -3102,6 +3102,10 @@ function getDateRange(dateRange) {
   if (dateRange === "today") {
     return { start: toISO(now), end: toISO(now), label: `Today — ${toISO(now)}` };
   }
+  if (dateRange === "yesterday") {
+    const d = new Date(now); d.setDate(d.getDate() - 1);
+    return { start: toISO(d), end: toISO(d), label: `Yesterday — ${toISO(d)}` };
+  }
   if (dateRange === "next7") {
     const end = new Date(now); end.setDate(end.getDate() + 6);
     return { start: toISO(now), end: toISO(end), label: `${toISO(now)} to ${toISO(end)}` };
@@ -3516,17 +3520,19 @@ async function sendReportEmail(orgSlug, email, reportType, schedule, locationFil
 }
 
 // ── Run scheduled sends ──────────────────────────────────────────────
-// ── Report/cadence rules ─────────────────────────────────────────────
-// Reports a given cadence cannot carry, with the reason surfaced to admins.
-// GL is an accounting rollup and the mail leaves at 7am, before the day has
-// any postings — a daily GL subscription would deliver an empty report every
-// morning. Enforced when subscribing, honoured again at send time so any
-// subscription created before this rule existed stops sending too.
-const SCHEDULE_BLOCKED_REPORTS = {
-  daily: { gl: "The GL Code Rollup can't be sent daily — the 7am send would go out before the day has any postings, so the report would always be empty. Choose Weekly or Monthly." },
+// ── Report/date-range rules ──────────────────────────────────────────
+// Date ranges a report can never usefully be mailed on. Every subscription
+// leaves at 7am, so a GL rollup scoped to "Today" is posted before the day has
+// any activity — blank every morning, on any cadence. "Yesterday" is the range
+// that actually answers "what posted since I last looked". Enforced when
+// subscribing, honoured again at send time so subscriptions created before
+// this rule stop mailing too.
+const REPORT_BLOCKED_RANGES = {
+  gl: { today: "A GL Code Rollup for Today is empty at 7am — the day has no postings yet. Pick Yesterday for a full day, or Last month." },
 };
-function scheduleBlocks(scheduleType, report) {
-  return (SCHEDULE_BLOCKED_REPORTS[scheduleType] || {})[report] || null;
+function rangeBlocked(report, dateRange) {
+  if (!dateRange) return null;
+  return (REPORT_BLOCKED_RANGES[report] || {})[dateRange] || null;
 }
 
 async function runSchedule(scheduleType) {
@@ -3536,12 +3542,12 @@ async function runSchedule(scheduleType) {
   for (const sub of subs) {
     const reports = Array.isArray(sub.reports) ? sub.reports : JSON.parse(sub.reports);
     for (const report of reports) {
-      if (scheduleBlocks(scheduleType, report)) {
-        console.log(`[cron] Skipping ${sub.org}/${report} for ${sub.email} — not sendable on the ${scheduleType} cadence`);
-        continue;
-      }
       const savedParams = (sub.reportParams && typeof sub.reportParams === "object") ? (sub.reportParams[report] || null) : null;
       const perReportDateRange = (sub.reportDateRanges && sub.reportDateRanges[report]) || sub.dateRange;
+      if (rangeBlocked(report, perReportDateRange)) {
+        console.log(`[cron] Skipping ${sub.org}/${report} for ${sub.email} — "${perReportDateRange}" is never populated at send time`);
+        continue;
+      }
       const _res = await sendReportEmail(sub.org, sub.email, report, scheduleType, sub.locationFilter, perReportDateRange, savedParams);
       logEvent(sub.org, report, "email", null, { email: sub.email, schedule: scheduleType, trigger: "scheduled", status: _res && _res.ok ? "sent" : "error" });
     }
@@ -6072,11 +6078,14 @@ app.post("/:org/admin/subscribe", (req, res) => {
   const validReports = reports.filter(r => REPORT_TYPES.includes(r));
   if (!validReports.length) return res.status(400).json({ error: "No valid report types" });
 
-  // The admin form greys these out, but the form is not the only way in here.
-  const blockedReport = validReports.find(r => scheduleBlocks(schedule, r));
-  if (blockedReport) return res.status(400).json({ error: scheduleBlocks(schedule, blockedReport) });
+  const validDateRanges = ["today","yesterday","next7","next30","last7","lastMonth"];
 
-  const validDateRanges = ["today","next7","next30","last7","lastMonth"];
+  // The admin form doesn't offer these pairings, but the form is not the only
+  // way into this route.
+  const blockedPick = validReports
+    .map(r => ({ report: r, why: rangeBlocked(r, (reportDateRanges && reportDateRanges[r]) || dateRange) }))
+    .find(x => x.why);
+  if (blockedPick) return res.status(400).json({ error: blockedPick.why });
 
   // Validate + sanitize reportParams (optional object keyed by report type → URL query string)
   const cleanReportParams = {};
