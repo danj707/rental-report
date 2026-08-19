@@ -43,6 +43,70 @@
     .report-header-right { text-align:right; }
     .report-header .rh-meta { font-size:11px; color:#666; }
 
+  /* ── Animated header — a 5k in progress. Same construction as the Programs
+     and Community Intelligence banners: a CSS scene under a text overlay, no
+     images, no interaction. ── */
+  .ft-banner { position:relative; width:100%; height:168px; border-radius:12px; overflow:hidden;
+    margin:0 0 18px; border:1px solid #fed7aa; box-shadow:0 3px 14px rgba(124,45,18,.16);
+    background:linear-gradient(112deg,#312e81 0%,#9d174d 45%,#ea580c 78%,#fbbf24 100%); }
+  .ft-banner .ftb-scene { position:absolute; inset:0; z-index:0; overflow:hidden; }
+  .ft-banner .ftb-overlay { position:absolute; inset:0; padding:18px 26px 34px; display:flex; flex-direction:column;
+    align-items:flex-start; justify-content:center; text-align:left; z-index:2; }
+  .ft-banner .ftb-kicker { font-size:10.5px; font-weight:700; letter-spacing:2px; text-transform:uppercase; color:rgba(255,255,255,.92); text-shadow:0 1px 3px rgba(0,0,0,.45); }
+  .ft-banner .ftb-title { font-size:30px; font-weight:800; color:#fff; text-shadow:0 2px 7px rgba(0,0,0,.45); line-height:1.04; margin-top:3px; }
+  .ft-banner .ftb-sub { font-size:12.5px; color:rgba(255,255,255,.95); text-shadow:0 1px 4px rgba(0,0,0,.5); margin-top:6px; max-width:560px; }
+  .ft-banner .ftb-pills { display:flex; gap:8px; margin-top:12px; flex-wrap:wrap; }
+  .ft-banner .ftb-pill { background:rgba(255,255,255,.2); border:1px solid rgba(255,255,255,.4); color:#fff; font-size:12px; font-weight:600; padding:4px 12px; border-radius:20px; text-shadow:0 1px 2px rgba(0,0,0,.35); }
+  .ft-banner .ftb-pill b { font-weight:800; }
+
+  .ftx-sun { position:absolute; right:13%; top:19%; width:66px; height:66px; border-radius:50%;
+    background:radial-gradient(circle at 50% 50%, #fff2c9, #ffc86a 52%, #ff8f2e 100%);
+    box-shadow:0 0 46px 14px rgba(255,160,60,.5); animation:ftxSun 7s ease-in-out infinite alternate; }
+  .ftx-haze { position:absolute; height:8px; border-radius:999px; background:rgba(255,255,255,.10); filter:blur(3px); animation:ftxDrift linear infinite; }
+  .ftx-hill { position:absolute; bottom:0; width:150%; border-radius:50% 50% 0 0 / 100% 100% 0 0; }
+  .ftx-hill.h1 { height:44%; left:-26%; background:rgba(30,18,58,.3); }
+  .ftx-hill.h2 { height:30%; left:-6%;  background:rgba(20,12,38,.38); }
+  /* The road, with lane dashes streaming past to sell the pace. */
+  .ftx-road { position:absolute; left:0; right:0; bottom:0; height:30px; background:linear-gradient(180deg,#5a3624,#331d13); }
+  .ftx-road::before { content:''; position:absolute; left:0; right:0; top:0; height:2px; background:rgba(255,255,255,.18); }
+  .ftx-dashes { position:absolute; left:0; right:0; bottom:5px; height:3px;
+    background:repeating-linear-gradient(90deg, rgba(255,255,255,.55) 0 16px, transparent 16px 40px);
+    animation:ftxDash 1.05s linear infinite; }
+  /* Runners: the wrapper travels, the figure strides. */
+  .ftx-lane { position:absolute; left:-40px; animation:ftxRun linear infinite; }
+  .ftx-runner { position:relative; width:13px; height:20px; transform-origin:50% 100%;
+    filter:drop-shadow(0 1px 2px rgba(0,0,0,.45));
+    animation:ftxBob .3s ease-in-out infinite alternate; }
+  .ftx-runner i { position:absolute; display:block; }
+  .ftx-runner .head { width:5.5px; height:5.5px; border-radius:50%; background:#fbdcb8; top:0; left:5px; }
+  .ftx-runner .torso { top:5px; left:2px; width:8.5px; height:9px; border-radius:3px 3px 2px 2px;
+    background:var(--kit); transform:rotate(-10deg); }
+  .ftx-runner .arm { top:6.5px; left:0; width:2.4px; height:6.5px; border-radius:2px; background:var(--kit);
+    transform-origin:50% 0; animation:ftxSwing .3s linear infinite alternate-reverse; }
+  .ftx-runner .leg { bottom:0; left:4.6px; width:2.6px; height:8px; border-radius:2px; background:#e7e2da;
+    transform-origin:50% 0; animation:ftxSwing .3s linear infinite alternate; }
+  .ftx-runner .leg.back { animation-direction:alternate-reverse; background:#a8a196; }
+  /* Bunting over the start, and a marker cone or two. */
+  .ftx-bunting { position:absolute; top:-6px; left:-2%; width:104%; height:40px; }
+  .ftx-bunting .cord { position:absolute; left:0; right:0; top:9px; height:2px; border-radius:2px; background:rgba(255,255,255,.26); }
+  .ftx-pennant { position:absolute; top:9px; width:0; height:0; border-left:6px solid transparent; border-right:6px solid transparent;
+    border-top:13px solid #fff; transform-origin:50% 0; animation:ftxSway 4.2s ease-in-out infinite alternate; }
+  .ftx-cone { position:absolute; width:0; height:0; border-left:4px solid transparent; border-right:4px solid transparent;
+    border-bottom:8px solid #fb923c; filter:drop-shadow(0 1px 2px rgba(0,0,0,.4)); }
+
+  @keyframes ftxSun   { to { box-shadow:0 0 52px 18px rgba(255,170,80,.58); } }
+  @keyframes ftxDrift { from { transform:translateX(-160px); } to { transform:translateX(1500px); } }
+  @keyframes ftxDash  { to { background-position-x:-40px; } }
+  @keyframes ftxRun   { to { transform:translateX(calc(100vw + 70px)); } }
+  @keyframes ftxBob   { from { transform:translateY(0) rotate(-1deg); } to { transform:translateY(-2px) rotate(1deg); } }
+  @keyframes ftxSwing { from { transform:rotate(-32deg); } to { transform:rotate(30deg); } }
+  @keyframes ftxSway  { from { transform:rotate(-6deg); } to { transform:rotate(6deg); } }
+
+  /* Decoration only — a reduced-motion reader gets the same scene, held still. */
+  @media (prefers-reduced-motion: reduce) { .ft-banner * { animation:none !important; } }
+  @media print { .ft-banner { display:none !important; } }
+  body.print-mode .ft-banner { display:none !important; }
+
     /* ── Loading / Error ── */
     .loading { display: flex; flex-direction: column; align-items: center; padding: 48px 0; gap: 14px; }
     .spinner { width: 30px; height: 30px; border: 3px solid #ddd; border-top-color: #3b82f6; border-radius: 50%; animation: spin .7s linear infinite; }
@@ -1515,6 +1579,61 @@ function App() {
       error && !loading && React.createElement('div', { className: 'error' }, 'Could not load report: ', error),
 
       !loading && !error && React.createElement(React.Fragment, null,
+      /* Animated header — race morning, the field already moving. */
+      !isPrint && React.createElement('div', { className: 'ft-banner' },
+        React.createElement('div', { className: 'ftb-scene', 'aria-hidden': 'true' },
+          React.createElement('div', { className: 'ftx-haze', style: { top: '30%', left: '6%', width: 56, animationDuration: '39s' } }),
+          React.createElement('div', { className: 'ftx-haze', style: { top: '38%', left: 0, width: 38, animationDuration: '54s', animationDelay: '-16s' } }),
+          React.createElement('div', { className: 'ftx-sun' }),
+          React.createElement('div', { className: 'ftx-hill h1' }),
+          React.createElement('div', { className: 'ftx-hill h2' }),
+          React.createElement('div', { className: 'ftx-bunting' },
+            React.createElement('div', { className: 'cord' }),
+            ['#ffd166', '#fb7185', '#8fd694', '#7fd1e3', '#ffd166', '#fdba74', '#8fd694', '#7fd1e3', '#fb7185', '#ffd166', '#7fd1e3', '#fdba74']
+              .map(function(c, i) {
+                return React.createElement('div', { key: 'p' + i, className: 'ftx-pennant',
+                  style: { left: (4 + i * 8) + '%', borderTopColor: c, animationDelay: (-i * 0.33) + 's' } });
+              })
+          ),
+          React.createElement('div', { className: 'ftx-road' }),
+          React.createElement('div', { className: 'ftx-dashes' }),
+          React.createElement('div', { className: 'ftx-cone', style: { left: '47%', bottom: '26px' } }),
+          React.createElement('div', { className: 'ftx-cone', style: { left: '78%', bottom: '26px' } }),
+          /* The field: front-runners quicker and larger, the pack strung out behind. */
+          [
+            { kit: '#fb923c', dur: 13, delay: 0,     scale: 1.06, bottom: 3 },
+            { kit: '#38bdf8', dur: 16, delay: -4.5,  scale: 0.94, bottom: 8 },
+            { kit: '#a3e635', dur: 19, delay: -9,    scale: 0.86, bottom: 13 },
+            { kit: '#f472b6', dur: 15, delay: -12.5, scale: 1,    bottom: 5 },
+            { kit: '#fcd34d', dur: 22, delay: -17,   scale: 0.78, bottom: 16 },
+            { kit: '#c4b5fd', dur: 18, delay: -20.5, scale: 0.9,  bottom: 10 },
+          ].map(function(r, i) {
+            return React.createElement('div', { key: 'r' + i, className: 'ftx-lane',
+              style: { bottom: r.bottom + 'px', animationDuration: r.dur + 's', animationDelay: r.delay + 's' } },
+              React.createElement('div', { className: 'ftx-runner',
+                style: { transform: 'scale(' + r.scale + ')', '--kit': r.kit, animationDelay: (-i * 0.07) + 's' } },
+                React.createElement('i', { className: 'head' }),
+                React.createElement('i', { className: 'arm' }),
+                React.createElement('i', { className: 'torso' }),
+                React.createElement('i', { className: 'leg back' }),
+                React.createElement('i', { className: 'leg' })
+              )
+            );
+          })
+        ),
+        React.createElement('div', { className: 'ftb-overlay' },
+          React.createElement('div', { className: 'ftb-kicker' }, displayOrg),
+          React.createElement('div', { className: 'ftb-title' }, '⚡ Fast Track'),
+          React.createElement('div', { className: 'ftb-sub' }, 'Who is lined up before registration opens — and who crosses the line.'),
+          React.createElement('div', { className: 'ftb-pills' },
+            React.createElement('span', { className: 'ftb-pill' }, React.createElement('b', null, totals.ftSignups.toLocaleString()), ' fast-tracked'),
+            React.createElement('span', { className: 'ftb-pill' }, React.createElement('b', null, programs.length.toLocaleString()), ' program', programs.length !== 1 ? 's' : ''),
+            React.createElement('span', { className: 'ftb-pill' }, React.createElement('b', null, totals.ftConverted.toLocaleString()), ' converted'),
+            totals.ftPending > 0 && React.createElement('span', { className: 'ftb-pill' }, React.createElement('b', null, totals.ftPending.toLocaleString()), ' still waiting')
+          )
+        )
+      ),
+
         /* Tab bar */
         React.createElement('div', { className: 'tabs no-print' },
           React.createElement('button', { className: 'tab-btn' + (activeTab === 'overview' ? ' active' : ''), onClick: function(){ switchTab('overview'); } }, '\u26A1 Overview'),
