@@ -2668,8 +2668,8 @@ function App() {
   // row → that one rental's sheet (the row chip), which is what someone wants
   // when they are about to walk one permit out to a pavilion.
   function exportPermits(rows) {
-    const src = rows || filteredRows || [];
-    setPermitLoading(rows ? (rows[0] && rows[0].resId) : 'all');
+    const src = Array.isArray(rows) ? rows : (filteredRows || []);
+    setPermitLoading(Array.isArray(rows) && rows[0] ? rows[0].resId : 'all');
     const parts = window.location.pathname.split('/').filter(Boolean);
     const payload = { rows: src.filter(r => r.resId && permits && permits[r.resId]).map(permitRowPayload) };
     fetch(withToken(`/${parts[0]}/facility/permits.pdf`), {
@@ -2965,7 +2965,7 @@ function App() {
           if (!n) return null;   // nothing to print → no button, rather than a dead one
           return (
             <button
-              onClick={exportPermits}
+              onClick={() => exportPermits()}
               disabled={permitLoading === 'all'}
               title="Print one posting sheet per rental with an issued permit, for the rentals shown"
               style={{background:'#7c3aed',color:'#fff',borderColor:'#7c3aed'}}
