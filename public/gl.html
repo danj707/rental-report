@@ -1978,6 +1978,22 @@ function App() {
             → Turnover
           </button>
         )}
+        {munisEnabled && (
+          <button
+            onClick={() => downloadMunis('pdf')}
+            disabled={!!munisLoading || !rows || rows.length === 0}
+            title="Download the Tyler/Munis GL Account Detail (glgatddt) for this date range — line-level, cash-receipts basis"
+            style={{background:'#0f766e',color:'#fff',borderColor:'#0f766e'}}
+          >{munisLoading === 'pdf' ? 'Building…' : '🏛️ Tyler'}</button>
+        )}
+        {munisEnabled && (
+          <button
+            onClick={() => downloadMunis('csv')}
+            disabled={!!munisLoading || !rows || rows.length === 0}
+            title="The same GL Account Detail as a flat CSV for loading into Munis"
+            style={{fontSize:11, padding:'4px 8px'}}
+          >{munisLoading === 'csv' ? '…' : '.csv'}</button>
+        )}
 
         <div className="toolbar-spacer" />
 
@@ -2005,22 +2021,6 @@ function App() {
           onClick={downloadPdf}
           disabled={pdfLoading || !rows || rows.length === 0}
         >{pdfLoading ? 'Generating…' : '📄 PDF'}</button>
-        {munisEnabled && !isTylerActive && (
-          <button
-            onClick={() => downloadMunis('pdf')}
-            disabled={!!munisLoading || !rows || rows.length === 0}
-            title="Download the Tyler/Munis GL Account Detail (glgatddt) for this date range — line-level, cash-receipts basis"
-            style={{background:'#0f766e',color:'#fff',borderColor:'#0f766e'}}
-          >{munisLoading === 'pdf' ? 'Building…' : '🏛️ Tyler'}</button>
-        )}
-        {munisEnabled && !isTylerActive && (
-          <button
-            onClick={() => downloadMunis('csv')}
-            disabled={!!munisLoading || !rows || rows.length === 0}
-            title="The same GL Account Detail as a flat CSV for loading into Munis"
-            style={{fontSize:11, padding:'4px 8px'}}
-          >{munisLoading === 'csv' ? '…' : '.csv'}</button>
-        )}
         {!isTylerActive && (
           <button
             className="btn-excel"
