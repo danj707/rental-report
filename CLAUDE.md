@@ -79,6 +79,36 @@ shared card or large org is onboarded, and run it as the last step of every card
 change. Single-card form:
 `node scripts/verify-report-live.js --card <uuid> --org <orgId> [--start --end --timeout --min-rows]`.
 
+## Tyler/Munis "GL Account Detail" export (card 20197)
+
+The 🏛️ **Tyler** button on the GL report (Pawnee only) streams a Munis-format
+`glgatddt` account detail — PDF for reading, `.csv` for loading. Server-rendered:
+`lib/munis.js` (pure transform + layout) → `renderHtmlPdf()` → Puppeteer
+`setContent`. No report page is visited, so the export cannot be affected by
+page state.
+
+- **Separate card from the GL rollup.** 17293 aggregates to one row per
+  gl_code + desk; this needs one row per transaction. Both read
+  `materialized.item_log_report`. Nothing here touches 17293, so no other org's
+  GL reporting is affected.
+- **Tag types don't matter for this one.** The route reads the card's own
+  registered parameter types from its public definition and echoes them back, so
+  Date or Text both match, and the SQL casts the dates either way. An API edit to
+  THIS card needs no re-flip in the UI — unlike every other card in this repo.
+  (Metabase auto-typed `start_date`/`end_date` as Date on creation, from their
+  names — worth knowing if you ever expect a new tag to default to Text.)
+- **Not cached.** An export is pulled rarely and must be exact; a 4-hour-old
+  ledger handed to a finance office is worse than a slow one.
+- **Three GL states, not two:** code + account name; code with no `gl_account`
+  row (`(no account name on file)` — Pawnee has two, 3334 and 886554); and no
+  code at all (`(none)` → UNMAPPED, sorts last, flagged for review). Collapsing
+  the middle case into UNMAPPED would misreport coded revenue as uncoded.
+- **Enable a new org** by adding its slug to `MUNIS_EXPORT_ORGS` in server.js.
+  Entity/department on the header come from the existing `getTylerConfig(slug)`;
+  add `fiscalYearStartMonth` there if the org isn't on a July FY.
+- `MB_GL_DETAIL_UUID` (Railway env) holds the card's public UUID. Unset ⇒ the
+  button is hidden and the route 503s.
+
 ## Railway deploys
 
 Railway project **lucid-possibility** (`37e39bf4-114d-446f-b7e3-5a8cedc7fafd`),
@@ -152,6 +182,37 @@ Already shipped (PR #75, live on `main`): name-based site-type recovery so
 "court" excludes rinks/pools/gyms, specific-type revenue breakdown, Location
 filter, Ice sub-tab, court-name wrap. Display/scoping only — did not change the
 revenue math, so the gap above predates and survives it.
+
+## PINNED IDEA — printable "posting sheet" for the rented location (not built)
+
+Dan, 2026-08-20. A sheet maintenance can print and hang **at the facility** so
+anyone walking up knows what is booked: rental name, group/reservee, date and
+times, facility/site, and a **scannable QR code** to the permit or rental.
+
+Why it is worth doing: staff on site have no way to answer "who has this field
+right now, and are they supposed to?" without calling the office. Today the only
+artifact is the whole weekly schedule, which is the wrong shape for a fence post.
+
+What already exists that this can lean on:
+
+- `renderHtmlPdf(html)` in server.js — server-rendered HTML → PDF via Puppeteer
+  `setContent`, no page visit, added for the Munis export. A posting sheet is the
+  same shape of job: fetch rows → lay out → stream a PDF.
+- The facility card already returns `Reservation ID`, rental name, reservee,
+  location, facility/court and begin/end times — no card change needed.
+- The deep link is already used by the Rec-link column in `public/facility.html`:
+  `https://www.rec.us/admin/o/{orgId}/facility-rentals/{resId}` — that is the
+  natural QR target for staff. **A public/permit-facing target would need a
+  different, non-admin URL** — worth settling before building, since a QR taped
+  to a fence is world-readable.
+- QR generation is not in the repo yet; needs a dependency (e.g. `qrcode` to a
+  data URI) or a server-rendered SVG.
+
+Open questions for Dan: one sheet per reservation or one per site per day?
+Does the QR go to the admin record (staff) or a public permit view (anyone)?
+Per-org opt-in like the Munis export, or on for everyone?
+
+Per the standing rule, ship it with a Slack activity ping when it is built.
 
 ## Dev branch
 

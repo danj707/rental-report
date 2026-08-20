@@ -66,6 +66,7 @@ const fs         = require("fs");
 const cron       = require("node-cron");
 const { Resend } = require("resend");
 const crypto     = require("crypto");
+const munis      = require("./lib/munis");   // Tyler/Munis GL Account Detail export
 
 // Catch anything that slips through
 process.on("uncaughtException", err => console.error("[uncaught]", err));
@@ -1314,6 +1315,56 @@ const SHARED_UUIDS = {
 // Old card (pre-v2), kept for reference/rollback: 4defd1b6-9415-465b-9474-babf5cac1771.
 const FACILITIES_SUMMARY_UUID = "4c070d95-ab02-4b9d-ac43-ac86257162d5";
 
+// ── Tyler/Munis "GL Account Detail" export (card 20197) ──────────────────────
+// Line-level GL detail — one row per transaction — behind the "Tyler" button on
+// the GL report. This is a SEPARATE card from the GL Code Rollup (17293), which
+// aggregates to one row per gl_code + desk and so cannot produce detail lines.
+// Both read materialized.item_log_report; nothing here touches the rollup, so no
+// other org's GL reporting is affected by this feed.
+//
+// The export reads the card's OWN registered parameter types out of its public
+// definition rather than hardcoding them. That is what makes this feed immune
+// to the hazard in CLAUDE.md: whether a tag is Date today or gets reset to Text
+// by the next API edit, the request matches it either way and no re-flip in the
+// Metabase UI is needed. See sql/gl-account-detail.sql.
+const GL_DETAIL_UUID = process.env.MB_GL_DETAIL_UUID || "ef065f39-504f-487a-9181-5bd415a19a58";
+// Per-org opt-in: the export only means something for an org running a real
+// general ledger, and its layout is a municipal form, not a rec-department one.
+const MUNIS_EXPORT_ORGS = new Set(["pawnee"]);
+const munisExportEnabled = slug => MUNIS_EXPORT_ORGS.has(slug) && !!GL_DETAIL_UUID;
+
+// Fetch the detail rows straight from the public card. Deliberately NOT routed
+// through the report cache: an export is pulled rarely and must be exact, and a
+// 4-hour-old ledger handed to a finance office is worse than a slow one.
+let _glDetailParamDefs = null;   // { ts, params } — the card's own parameter list, cached 1h
+async function glDetailParamDefs() {
+  if (_glDetailParamDefs && Date.now() - _glDetailParamDefs.ts < 60 * 60 * 1000) return _glDetailParamDefs.params;
+  const resp = await fetch(`${METABASE_URL}/api/public/card/${GL_DETAIL_UUID}`, { signal: AbortSignal.timeout(15000) });
+  if (!resp.ok) throw new Error(`card definition HTTP ${resp.status}`);
+  const def = await resp.json();
+  const params = Array.isArray(def.parameters) ? def.parameters : [];
+  _glDetailParamDefs = { ts: Date.now(), params };
+  return params;
+}
+
+async function fetchGlDetailRows(orgId, startDate, endDate) {
+  // Values matched onto the card's registered parameters by slug, keeping each
+  // one's own id AND type. Sending a type we guessed is how a card silently
+  // starts 400ing after someone re-saves it.
+  const values = { org_id: orgId, start_date: startDate, end_date: endDate };
+  const params = (await glDetailParamDefs())
+    .filter(p => values[p.slug] != null && values[p.slug] !== "")
+    .map(p => ({ id: p.id, type: p.type, target: p.target, slug: p.slug, value: values[p.slug] }));
+  if (!params.some(p => p.slug === "org_id")) throw new Error("GL detail card has no org_id parameter");
+  const url = `${METABASE_URL}/api/public/card/${GL_DETAIL_UUID}/query/json?parameters=${encodeURIComponent(JSON.stringify(params))}`;
+  const resp = await fetch(url, { signal: AbortSignal.timeout(90000) });
+  if (!resp.ok) throw new Error(`Metabase HTTP ${resp.status}`);
+  const rows = await resp.json();
+  // A card error comes back 200 with an object, not an array.
+  if (!Array.isArray(rows)) throw new Error("Metabase returned an error for the GL detail card");
+  return rows;
+}
+
 const REPORT_DEPENDENCIES = {
   facility: {
     tables: ["reservation","reservation_court","reservation_user","court","location","facility_rental","order_item","users"],
@@ -1905,6 +1956,27 @@ function recordVote(org, report, sentiment) {
   else if (sentiment === "down") votes[key].down++;
   saveVotes(votes);
   return votes[key];
+}
+
+// ── What's-New popup votes ────────────────────────────────────────────
+// Thumbs on a published project update. Kept in its own file rather than the
+// report VOTES_FILE: those are keyed org:report and feed the admin votes panel,
+// and an announcement is neither. Counts are per announcement, across orgs —
+// the question being answered is "did people like this update", not "did this
+// org like it"; the per-org detail is in events.jsonl either way.
+const UPDATE_VOTES_FILE = path.join(DATA_DIR, "update-votes.json");
+function loadUpdateVotes() {
+  try { return JSON.parse(fs.readFileSync(UPDATE_VOTES_FILE, "utf8")); } catch { return {}; }
+}
+function recordUpdateVote(updateId, sentiment) {
+  const votes = loadUpdateVotes();
+  if (!votes[updateId]) votes[updateId] = { up: 0, down: 0 };
+  if (sentiment === "up") votes[updateId].up++;
+  else if (sentiment === "down") votes[updateId].down++;
+  try { fs.writeFileSync(UPDATE_VOTES_FILE, JSON.stringify(votes, null, 2)); } catch (e) {
+    console.warn("[update-vote] could not persist:", e.message);
+  }
+  return votes[updateId];
 }
 
 // ── Health check system ──────────────────────────────────────────────
@@ -2779,7 +2851,7 @@ function logEvent(org, report, event, reqOrIp, extra) {
 // Inert if the env var is unset. Fire-and-forget — never blocks or breaks logging.
 // To change what pings Slack, edit SLACK_NOTIFY. High-frequency events (view/fetch)
 // are debounced per org+report so Slack isn't a firehose.
-const SLACK_NOTIFY = new Set(["created", "pdf", "excel", "print", "summary", "game", "map", "view", "insights", "insights-feedback", "chat-feedback", "feedback", "vote", "email"]);
+const SLACK_NOTIFY = new Set(["created", "pdf", "excel", "print", "summary", "game", "map", "view", "insights", "insights-feedback", "chat-feedback", "feedback", "vote", "update-vote", "munis", "email"]);
 const SLACK_DEBOUNCE_MS = { view: 30 * 60 * 1000, fetch: 30 * 60 * 1000 };
 const SLACK_DEFAULT_DEBOUNCE_MS = 60 * 1000; // dedup rapid double-fires of one-off events
 const slackLastSent = new Map();
@@ -2791,6 +2863,7 @@ const SLACK_EVENT_META = {
   game:    { emoji: "🕹️", verb: "is playing a hidden game in" },
   map:     { emoji: "🗺️", verb: "is browsing the facility map for" },
   print:   { emoji: "🖨️", verb: "printed" },
+  munis:   { emoji: "🏛️", verb: "pulled the Tyler/Munis GL Account Detail for" },
   view:    { emoji: "👀", verb: "viewed" },
   insights: { emoji: "✨", verb: "generated AI insights for" },
   email:   { emoji: "📧", verb: "emailed" },
@@ -2819,6 +2892,10 @@ function notifySlack(rec) {
       ? `${rec.org}|${rec.report}|game|${rec.game || ""}`
     // Map pin clicks key by location so browsing several parks posts each one,
     // rather than collapsing a whole session into the first pin opened.
+    // A vote on an update keys by update + direction so a reader who flips
+    // their mind posts both, and two different updates never collapse together.
+    : rec.event === "update-vote"
+      ? `${rec.org}|update|${rec.updateId || ""}|${rec.sentiment || ""}`
     : rec.event === "map"
       ? `${rec.org}|${rec.report}|map|${rec.location || ""}`
       : `${rec.org}|${rec.report}|${rec.event}`;
@@ -2839,6 +2916,15 @@ function notifySlack(rec) {
       : `${meta.emoji} ${orgName} (\`${rec.org}\`) ${meta.verb} *${rec.report}*${to}${trig}`;
   } else if (rec.event === "game") {
     text = `${meta.emoji} ${orgName} (\`${rec.org}\`) — someone is playing *${rec.game || "a hidden game"}* on the facilities report`;
+  } else if (rec.event === "munis") {
+    // The unmapped count is the whole point of watching this one — an export
+    // that is mostly uncoded revenue is a conversation to have with the org.
+    const un = rec.unmapped ? ` · ⚠️ ${rec.unmapped} unmapped` : "";
+    text = `${meta.emoji} ${orgName} (\`${rec.org}\`) ${meta.verb} *${String(rec.fmt || "pdf").toUpperCase()}* — ${rec.rows || 0} lines${un}`;
+  } else if (rec.event === "update-vote") {
+    const thumbs = rec.sentiment === "up" ? "\uD83D\uDC4D" : "\uD83D\uDC4E";
+    const mention = SLACK_MENTION_USER_ID ? ` <@${SLACK_MENTION_USER_ID}>` : "";
+    text = `${thumbs} ${orgName} (\`${rec.org}\`) rated the *${rec.updateTitle || "What's New"}* update${mention}`;
   } else if (rec.event === "map") {
     text = `${meta.emoji} ${orgName} (\`${rec.org}\`) — someone opened *${rec.location || "a location"}* on the facility rental map`;
   } else if (rec.event === "insights-feedback" || rec.event === "chat-feedback" || rec.event === "feedback" || rec.event === "vote") {
@@ -3129,6 +3215,34 @@ function getDateRange(dateRange) {
   const start = new Date(y, m - 1, 1);
   const end   = new Date(y, m, 0);
   return { start: toISO(start), end: toISO(end), label: start.toLocaleString("default",{month:"long",year:"numeric"}) };
+}
+
+// Render a self-contained HTML string to PDF. Unlike generatePdf() this never
+// visits a URL — there is no report page to load, no token to pass and no React
+// to wait on, so the export cannot be affected by page state or a slow render.
+async function renderHtmlPdf(html, opts = {}) {
+  const puppeteer = require("puppeteer");
+  const browser = await puppeteer.launch({
+    headless: true,
+    executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
+    args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--disable-gpu"],
+  });
+  try {
+    const page = await browser.newPage();
+    await page.setContent(html, { waitUntil: "load", timeout: 60000 });
+    return await page.pdf({
+      format: "Letter",
+      landscape: opts.landscape !== false,
+      printBackground: true,
+      margin: { top: "0.4in", bottom: "0.55in", left: "0.45in", right: "0.45in" },
+      displayHeaderFooter: true,
+      headerTemplate: `<div style="font-size:8px;width:100%;padding:0 0.45in;text-align:right;font-family:'Courier New',monospace;color:#000">Page <span class="pageNumber"></span></div>`,
+      footerTemplate: `<div style="font-size:8px;width:100%;padding:0 0.45in;display:flex;justify-content:space-between;font-family:'Courier New',monospace;color:#000">`
+        + `<span>${munis.TYLER_VERSION}</span><span>${munis.PROGRAM_ID} \u2014 GL Account Detail  (cash-receipts basis)</span></div>`,
+    });
+  } finally {
+    await browser.close();
+  }
 }
 
 // ── PDF generation ───────────────────────────────────────────────────
@@ -6404,9 +6518,66 @@ app.get("/:org/gl", (req, res) => {
   const slug = req.params.org;
   if (!ORGS[slug]) return res.status(404).send("Unknown org");
   logEvent(slug, "gl", "view", req);
-  const orgConfig = { emailEnabled: EMAIL_ENABLED_ORGS.has(slug), tyler: getTylerConfig(slug) };
+  const orgConfig = { emailEnabled: EMAIL_ENABLED_ORGS.has(slug), tyler: getTylerConfig(slug), munis: munisExportEnabled(slug) };
   const html = require("fs").readFileSync(path.join(__dirname, "public", "gl.html"), "utf8");
   res.send(html.replace("<head>", `<head><script>window.ORG_CONFIG=${JSON.stringify(orgConfig)};</script>`));
+});
+
+// ── GET /:org/gl/tyler.:fmt — Munis "GL Account Detail" export ───────────────
+// pdf  → the print-style account detail (program glgatddt), Courier, landscape
+// csv  → the flat file, column order fixed by the format contract
+//
+// Behind the org token gate like every other /:org/ path. Enabled per org
+// (MUNIS_EXPORT_ORGS) because the layout is a municipal GL form — an org
+// without a real general ledger has no use for it and shouldn't see the button.
+app.get("/:org/gl/tyler.:fmt", async (req, res) => {
+  const slug = req.params.org;
+  const fmt  = String(req.params.fmt || "").toLowerCase();
+  const org  = ORGS[slug];
+  if (!org) return res.status(404).type("text/plain").send("Not found");
+  if (!MUNIS_EXPORT_ORGS.has(slug)) return res.status(404).type("text/plain").send("Not found");
+  // Format check before the config check: an unknown extension is a 404 whether
+  // or not the card happens to be wired up yet.
+  if (fmt !== "pdf" && fmt !== "csv") return res.status(404).type("text/plain").send("Not found");
+  if (!GL_DETAIL_UUID) {
+    return res.status(503).type("text/plain").send("GL detail card is not configured yet — set MB_GL_DETAIL_UUID.");
+  }
+
+  const startDate = parseToISO(req.query.start_date) || null;
+  const endDate   = parseToISO(req.query.end_date)   || null;
+
+  try {
+    const rows = await fetchGlDetailRows(org.orgId, startDate, endDate);
+    const stampDay = (endDate || new Date().toISOString().slice(0, 10)).replace(/-/g, "");
+    const filename = `${slug}-gl-account-detail-${stampDay}.${fmt}`;
+    const un = munis.unmappedSummary(rows);
+    logEvent(slug, "gl", "munis", req, { fmt, rows: rows.length, unmapped: un.count });
+
+    if (fmt === "csv") {
+      res.setHeader("Content-Type", "text/csv; charset=utf-8");
+      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+      return res.send(munis.toCsv(rows));
+    }
+
+    const tyler = getTylerConfig(slug) || {};
+    const html = munis.toHtml(rows, {
+      entity:     tyler.entityName || org.displayName || slug,
+      department: tyler.department || "Parks & Recreation Department",
+      fromDate:   startDate,
+      toDate:     endDate,
+      fiscalYear: munis.fiscalYearOf(endDate || new Date().toISOString().slice(0, 10), tyler.fiscalYearStartMonth) || "",
+      user:       "rec.us",
+      generatedAt: new Date(),
+    });
+    const pdf = await renderHtmlPdf(html);
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    return res.send(pdf);
+  } catch (err) {
+    console.error(`[munis] ${slug} ${fmt} export failed: ${err.message}`);
+    // Never echo the Metabase URL or card id back to the browser.
+    return res.status(502).type("text/plain").send("Could not build the GL Account Detail export. Try a shorter date range.");
+  }
 });
 
 app.get("/:org/qoq", (req, res) => {
@@ -8848,6 +9019,28 @@ app.post("/:org/:report/api/vote", (req, res) => {
   const counts = recordVote(org, report, sentiment);
   console.log(`[vote] ${org}/${report} ${sentiment} → ${JSON.stringify(counts)}`);
   logEvent(org, report, "vote", req, { sentiment });
+  res.json({ ok: true, counts });
+});
+
+// ── POST /:org/api/update-vote — thumbs on a "What's New" popup ─────
+// Was this update worth shipping? The popup is the one moment a partner is
+// looking straight at a new feature, so it is the cheapest honest signal we
+// get. Fire-and-forget from the client — a failed vote must never sit in front
+// of the reader, so the popup dismisses regardless.
+app.post("/:org/api/update-vote", express.json(), (req, res) => {
+  const org = req.params.org;
+  const { sentiment, updateId, updateTitle } = req.body || {};
+  if (!ORGS[org]) return res.status(404).json({ error: "Unknown org" });
+  if (!["up", "down"].includes(sentiment)) return res.status(400).json({ error: "sentiment must be up or down" });
+  const id = String(updateId || "").slice(0, 64);
+  if (!id) return res.status(400).json({ error: "updateId required" });
+  const counts = recordUpdateVote(id, sentiment);
+  console.log(`[update-vote] ${org} ${id} ${sentiment} → ${JSON.stringify(counts)}`);
+  logEvent(org, "project-update", "update-vote", req, {
+    sentiment,
+    updateId: id,
+    updateTitle: String(updateTitle || "").slice(0, 120),
+  });
   res.json({ ok: true, counts });
 });
 
