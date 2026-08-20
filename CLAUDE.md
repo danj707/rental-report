@@ -183,36 +183,54 @@ Already shipped (PR #75, live on `main`): name-based site-type recovery so
 filter, Ice sub-tab, court-name wrap. Display/scoping only — did not change the
 revenue math, so the gap above predates and survives it.
 
-## PINNED IDEA — printable "posting sheet" for the rented location (not built)
+## Facility rental "posting sheet" — BUILT (PRs #118, #120, #121)
 
-Dan, 2026-08-20. A sheet maintenance can print and hang **at the facility** so
-anyone walking up knows what is booked: rental name, group/reservee, date and
-times, facility/site, and a **scannable QR code** to the permit or rental.
+The one-pager maintenance prints and hangs **at the facility** so anyone walking
+up knows what is booked, with a **scannable QR** to the live permit.
 
-Why it is worth doing: staff on site have no way to answer "who has this field
-right now, and are they supposed to?" without calling the office. Today the only
-artifact is the whole weekly schedule, which is the wrong shape for a fence post.
+- `lib/permit.js` — pure layout (no Express, no Metabase, no fs). `toHtml(sheets)`
+  → one `.sheet` per page; the caller supplies each QR as a data URI.
+- Server: `POST /:org/facility/permits.pdf` (client posts the rows it is showing,
+  so the export honours on-screen filters) → `renderHtmlPdf(html, {plain:true})`.
+  `GET /:org/facility/api/permits` feeds the per-row chip a thin `{code, url}`
+  map. Slack event: `permits`.
+- UI: `public/facility.html` — a per-row chip (own `showPermit` column toggle,
+  default ON — do NOT gate it on `showLink`, which defaults off) and an
+  "Export Permits" toolbar button over the filtered view.
+- **The QR target is `https://www.rec.us/permits/{permitId}`** — no auth, which
+  is what makes it safe taped to a fence. Confirmed by decoding the QR out of
+  Rec's own permit PDF. The admin `/admin/o/{orgId}/facility-rentals/{resId}`
+  URL is NOT usable here.
+- Card **20230** (`sql/facility-permits.sql`, public UUID
+  `6771e2fe-1d9c-41c1-a921-7d875115305e`, env `MB_PERMITS_UUID`). Issued permits
+  only — a draft or revoked permit has no working public page, so a sheet for one
+  sends staff to a dead link. Tag types don't matter for this card (the route
+  echoes the card's own registered types back), so an API edit needs no re-flip.
+- The permit code Rec prints is the **LAST** 8 hex of the permit id.
+- Exports re-fetch permits live so a permit revoked since the last page load can
+  never be printed; `PERMIT_LIVE_MAX_AGE` (60s) keeps back-to-back exports from
+  each paying the full card time (Watertown's card is ~25s).
 
-What already exists that this can lean on:
+**Multi-day permits (2026-08-20).** A permit covers the WHOLE rental, and the
+sheet goes up once at the start of a run and stays up — so printing only the
+exported row's date tells a parks crew the field is booked for one afternoon when
+it is actually booked every Friday until September. Card 20230 therefore emits
+`Schedule` (JSON `{d,s,e,site}` per occurrence, **multi-date permits only**),
+`Date Count`, `First/Last Date`, `Capacity`, `Attendees` and `Add Ons`, and the
+sheet:
 
-- `renderHtmlPdf(html)` in server.js — server-rendered HTML → PDF via Puppeteer
-  `setContent`, no page visit, added for the Munis export. A posting sheet is the
-  same shape of job: fetch rows → lay out → stream a PDF.
-- The facility card already returns `Reservation ID`, rental name, reservee,
-  location, facility/court and begin/end times — no card change needed.
-- The deep link is already used by the Rec-link column in `public/facility.html`:
-  `https://www.rec.us/admin/o/{orgId}/facility-rentals/{resId}` — that is the
-  natural QR target for staff. **A public/permit-facing target would need a
-  different, non-admin URL** — worth settling before building, since a QR taped
-  to a fence is world-readable.
-- QR generation is not in the repo yet; needs a dependency (e.g. `qrcode` to a
-  data URI) or a server-rendered SVG.
+- **scopes the dates to the site it is hung at** — the Multipurpose Field's sheet
+  must not list the same permit's Kitchen booking. Site key = `court.court_number`
+  = card 17294's "Facility" column. No match ⇒ fall back to the whole run.
+- prints **one sheet per permit per site**, not per row, once a permit is
+  multi-date — otherwise a week of a recurring rental yields five identical pages.
+- caps the date list at 32 **in JS**, not by CSS clipping, and says "+N more" — a
+  sheet that quietly loses rows to overflow looks complete and is not.
+- carries add-ons **without quantities**: they are billed per occurrence, so a
+  40-date permit holds 79 rows of "Alcohol Permit".
 
-Open questions for Dan: one sheet per reservation or one per site per day?
-Does the QR go to the admin record (staff) or a public permit view (anyone)?
-Per-org opt-in like the Munis export, or on for everyone?
-
-Per the standing rule, ship it with a Slack activity ping when it is built.
+Open, if it ever comes up: no per-org opt-in — the chip only appears where a
+permit exists, so orgs that don't issue permits never see it.
 
 ## Dev branch
 

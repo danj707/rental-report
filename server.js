@@ -3281,6 +3281,12 @@ async function renderHtmlPdf(html, opts = {}) {
 //                       not be answered from a 4-hour-old list.
 const PERMITS_UUID = process.env.MB_PERMITS_UUID || "6771e2fe-1d9c-41c1-a921-7d875115305e";
 const PERMIT_CACHE_TTL = 5 * 60 * 1000;
+// Exports ask for live data so a revoked permit can never reach a fence post,
+// but "live" does not have to mean "re-run the card for every click": printing
+// three rows in a row would be three full-card fetches (Watertown's is ~25s).
+// A minute-old read still cannot print a permit revoked before this session
+// started, which is the case that matters.
+const PERMIT_LIVE_MAX_AGE = 60 * 1000;
 const _permitCache = new Map();      // orgId -> { ts, byReservation }
 let _permitParamDefs = null;
 
@@ -3299,7 +3305,8 @@ async function permitParamDefs() {
 async function fetchPermits(orgId, { live = false } = {}) {
   if (!PERMITS_UUID) return new Map();
   const hit = _permitCache.get(orgId);
-  if (!live && hit && Date.now() - hit.ts < PERMIT_CACHE_TTL) return hit.byReservation;
+  const maxAge = live ? PERMIT_LIVE_MAX_AGE : PERMIT_CACHE_TTL;
+  if (hit && Date.now() - hit.ts < maxAge) return hit.byReservation;
   const params = (await permitParamDefs())
     .filter(p => p.slug === "org_id")
     .map(p => ({ id: p.id, type: p.type, target: p.target, slug: p.slug, value: orgId }));
@@ -6670,23 +6677,52 @@ app.post("/:org/facility/permits.pdf", express.json({ limit: "2mb" }), async (re
       || (slug.charAt(0).toUpperCase() + slug.slice(1) + " Parks & Recreation");
     const dept = tyler.department || "Parks & Recreation Department";
 
-    const QRCode = require("qrcode");
-    const sheets = [];
+    // ONE SHEET PER PERMIT PER SITE, not per row, once a permit is multi-date.
+    // A recurring rental appears in the filtered view once per date, and a
+    // multi-date sheet already carries the whole run — printing it per row would
+    // hand a crew ten identical pages for one fence post. Single-date permits
+    // are untouched (they only ever have one row per site anyway). Where rows
+    // collapse, the earliest date in view wins, since the sheet goes up at the
+    // start of the run.
+    const normSite = v => String(v == null ? "" : v).replace(/\s+/g, " ").trim().toLowerCase();
+    const picked = [];
+    const seen = new Map();
     for (const r of rows) {
       const p = byRes.get(String(r.resId || ""));
       if (!p) continue;                     // no issued permit → no sheet
+      if (!p["Permit URL"]) continue;
+      const key = Number(p["Date Count"] || 0) > 1
+        ? `${p["Permit ID"] || p["Permit Code"]}|${normSite(r.site)}`
+        : null;
+      if (key && seen.has(key)) {
+        const i = seen.get(key);
+        if (String(r.date || "") < String(picked[i].r.date || "")) picked[i] = { r, p };
+        continue;
+      }
+      if (key) seen.set(key, picked.length);
+      picked.push({ r, p });
+    }
+
+    const QRCode = require("qrcode");
+    const sheets = [];
+    for (const { r, p } of picked) {
       const url = p["Permit URL"];
-      if (!url) continue;
       sheets.push({
         org: orgName, dept, logo,
         title: r.title || p["Rental Name"] || "Facility Rental",
         holder: p["Permit Holder"] || r.reservee || "",
         site: r.site || "", location: r.location || "",
         date: r.date, begin: r.begin, end: r.end,
-        headcount: r.headcount || "",
+        headcount: r.headcount || p["Attendees"] || "",
+        capacity: p["Capacity"] || "",
+        addons: p["Add Ons"] || "",
         purpose: p["Purpose"] || "",
         details: p["Details"] || "",
         code: p["Permit Code"] || "",
+        // The permit's whole run. lib/permit scopes it to this sheet's site and
+        // only renders it when there is more than one date — a single-date
+        // permit sends no schedule at all (see sql/facility-permits.sql).
+        schedule: p["Schedule"] || null,
         qr: await QRCode.toDataURL(url, { errorCorrectionLevel: "M", margin: 1, width: 300 }),
       });
     }
@@ -6695,7 +6731,10 @@ app.post("/:org/facility/permits.pdf", express.json({ limit: "2mb" }), async (re
         .send("None of the rentals in this view have an issued permit.");
     }
 
-    logEvent(slug, "facility", "permits", req, { sheets: sheets.length, rows: rows.length });
+    logEvent(slug, "facility", "permits", req, {
+      sheets: sheets.length, rows: rows.length,
+      multi: sheets.filter(x => x.schedule).length,
+    });
     const pdf = await renderHtmlPdf(permitLib.toHtml(sheets), { landscape: false, plain: true });
     const day = (rows[0] && rows[0].date ? String(rows[0].date) : new Date().toISOString().slice(0, 10)).replace(/-/g, "");
     res.setHeader("Content-Type", "application/pdf");
