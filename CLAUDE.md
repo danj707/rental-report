@@ -183,6 +183,37 @@ Already shipped (PR #75, live on `main`): name-based site-type recovery so
 filter, Ice sub-tab, court-name wrap. Display/scoping only — did not change the
 revenue math, so the gap above predates and survives it.
 
+## PINNED IDEA — printable "posting sheet" for the rented location (not built)
+
+Dan, 2026-08-20. A sheet maintenance can print and hang **at the facility** so
+anyone walking up knows what is booked: rental name, group/reservee, date and
+times, facility/site, and a **scannable QR code** to the permit or rental.
+
+Why it is worth doing: staff on site have no way to answer "who has this field
+right now, and are they supposed to?" without calling the office. Today the only
+artifact is the whole weekly schedule, which is the wrong shape for a fence post.
+
+What already exists that this can lean on:
+
+- `renderHtmlPdf(html)` in server.js — server-rendered HTML → PDF via Puppeteer
+  `setContent`, no page visit, added for the Munis export. A posting sheet is the
+  same shape of job: fetch rows → lay out → stream a PDF.
+- The facility card already returns `Reservation ID`, rental name, reservee,
+  location, facility/court and begin/end times — no card change needed.
+- The deep link is already used by the Rec-link column in `public/facility.html`:
+  `https://www.rec.us/admin/o/{orgId}/facility-rentals/{resId}` — that is the
+  natural QR target for staff. **A public/permit-facing target would need a
+  different, non-admin URL** — worth settling before building, since a QR taped
+  to a fence is world-readable.
+- QR generation is not in the repo yet; needs a dependency (e.g. `qrcode` to a
+  data URI) or a server-rendered SVG.
+
+Open questions for Dan: one sheet per reservation or one per site per day?
+Does the QR go to the admin record (staff) or a public permit view (anyone)?
+Per-org opt-in like the Munis export, or on for everyone?
+
+Per the standing rule, ship it with a Slack activity ping when it is built.
+
 ## Dev branch
 
 Feature work for these tasks lives on `claude/facility-report-line-removal-1d0c8k`
