@@ -79,6 +79,33 @@ shared card or large org is onboarded, and run it as the last step of every card
 change. Single-card form:
 `node scripts/verify-report-live.js --card <uuid> --org <orgId> [--start --end --timeout --min-rows]`.
 
+## Tyler/Munis "GL Account Detail" export (card 20197)
+
+The 🏛️ **Tyler** button on the GL report (Pawnee only) streams a Munis-format
+`glgatddt` account detail — PDF for reading, `.csv` for loading. Server-rendered:
+`lib/munis.js` (pure transform + layout) → `renderHtmlPdf()` → Puppeteer
+`setContent`. No report page is visited, so the export cannot be affected by
+page state.
+
+- **Separate card from the GL rollup.** 17293 aggregates to one row per
+  gl_code + desk; this needs one row per transaction. Both read
+  `materialized.item_log_report`. Nothing here touches 17293, so no other org's
+  GL reporting is affected.
+- **Its template tags are Text ON PURPOSE** (`sql/gl-account-detail.sql`), with
+  the dates cast in SQL and the route sending `category` params. An API edit to
+  THIS card needs no date-tag re-flip — unlike every other card in this repo.
+- **Not cached.** An export is pulled rarely and must be exact; a 4-hour-old
+  ledger handed to a finance office is worse than a slow one.
+- **Three GL states, not two:** code + account name; code with no `gl_account`
+  row (`(no account name on file)` — Pawnee has two, 3334 and 886554); and no
+  code at all (`(none)` → UNMAPPED, sorts last, flagged for review). Collapsing
+  the middle case into UNMAPPED would misreport coded revenue as uncoded.
+- **Enable a new org** by adding its slug to `MUNIS_EXPORT_ORGS` in server.js.
+  Entity/department on the header come from the existing `getTylerConfig(slug)`;
+  add `fiscalYearStartMonth` there if the org isn't on a July FY.
+- `MB_GL_DETAIL_UUID` (Railway env) holds the card's public UUID. Unset ⇒ the
+  button is hidden and the route 503s.
+
 ## Railway deploys
 
 Railway project **lucid-possibility** (`37e39bf4-114d-446f-b7e3-5a8cedc7fafd`),

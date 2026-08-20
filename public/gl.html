@@ -1262,6 +1262,7 @@ function App() {
   // sheets. Only offered when the org has a tyler config; the URL param keeps
   // the Puppeteer print render in sync with the on-screen toggle.
   const tylerEnabled = !!window.ORG_CONFIG?.tyler;
+  const munisEnabled = !!window.ORG_CONFIG?.munis;
   const [tylerView, setTylerView] = useState(() => tylerEnabled && params.tyler === '1');
   // Belt-and-suspenders for print mode: trust the URL, not React state.
   const isTylerActive = tylerEnabled && (params._print === '1' ? params.tyler === '1' : tylerView);
@@ -1275,6 +1276,7 @@ function App() {
   const [error,   setError]   = useState(null);
   const [loading, setLoading] = useState(false);
 
+  const [munisLoading, setMunisLoading] = useState(null);
   const [loadedStart, setLoadedStart] = useState(null);
   const [loadedEnd,   setLoadedEnd]   = useState(null);
 
@@ -1866,6 +1868,26 @@ function App() {
       .finally(() => setPdfLoading(false));
   }
 
+  // ── Tyler/Munis GL Account Detail ───────────────────────────────────
+  // Server-rendered from its own line-level card (one row per transaction), not
+  // from the rollup on screen — the rollup has already summed away the detail a
+  // Munis account-detail page is made of. Same date range as the loaded report.
+  function downloadMunis(fmt) {
+    setMunisLoading(fmt);
+    const parts = window.location.pathname.split('/').filter(Boolean);
+    const qs = new URLSearchParams({ start_date: loadedStart || '', end_date: loadedEnd || '' });
+    fetch(withToken(`/${parts[0]}/gl/tyler.${fmt}?${qs}`))
+      .then(r => { if (!r.ok) return r.text().then(t => { throw new Error(t || ('HTTP ' + r.status)); }); return r.blob(); })
+      .then(blob => {
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `gl-account-detail-${loadedStart || 'export'}.${fmt}`;
+        a.click(); URL.revokeObjectURL(a.href);
+      })
+      .catch(err => alert('Tyler export failed: ' + err.message))
+      .finally(() => setMunisLoading(null));
+  }
+
   // ── Toolbar ─────────────────────────────────────────────────────────
   function renderToolbar() {
     if (isPrint) return null;
@@ -1983,6 +2005,22 @@ function App() {
           onClick={downloadPdf}
           disabled={pdfLoading || !rows || rows.length === 0}
         >{pdfLoading ? 'Generating…' : '📄 PDF'}</button>
+        {munisEnabled && !isTylerActive && (
+          <button
+            onClick={() => downloadMunis('pdf')}
+            disabled={!!munisLoading || !rows || rows.length === 0}
+            title="Download the Tyler/Munis GL Account Detail (glgatddt) for this date range — line-level, cash-receipts basis"
+            style={{background:'#0f766e',color:'#fff',borderColor:'#0f766e'}}
+          >{munisLoading === 'pdf' ? 'Building…' : '🏛️ Tyler'}</button>
+        )}
+        {munisEnabled && !isTylerActive && (
+          <button
+            onClick={() => downloadMunis('csv')}
+            disabled={!!munisLoading || !rows || rows.length === 0}
+            title="The same GL Account Detail as a flat CSV for loading into Munis"
+            style={{fontSize:11, padding:'4px 8px'}}
+          >{munisLoading === 'csv' ? '…' : '.csv'}</button>
+        )}
         {!isTylerActive && (
           <button
             className="btn-excel"

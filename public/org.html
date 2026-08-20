@@ -859,12 +859,43 @@
     ov.innerHTML = '<div role="dialog" aria-modal="true" style="background:#fff;border-radius:14px;max-width:520px;width:100%;box-shadow:0 24px 70px rgba(0,0,0,.3);overflow:hidden;display:flex;flex-direction:column;max-height:85vh">'
       + '<div style="background:linear-gradient(135deg,#7c3aed,#4f46e5);color:#fff;padding:16px 22px;font-weight:700;font-size:15px;display:flex;align-items:center;gap:8px">&#128227; ' + esc(next.title) + '</div>'
       + '<div style="padding:20px 22px;font-size:14px;line-height:1.6;color:#333;overflow-y:auto">' + (mdToHtml(bodySrc) || '') + imgsHtml + '</div>'
-      + '<div style="padding:12px 22px 20px;text-align:right"><button id="rec-upd-ok" style="background:#7c3aed;color:#fff;border:none;border-radius:8px;padding:9px 22px;font-size:13px;font-weight:600;cursor:pointer">Got it</button></div>'
+      + '<div style="padding:12px 22px 20px;display:flex;align-items:center;gap:10px">'
+        + '<span id="rec-upd-rate" style="display:flex;align-items:center;gap:8px;font-size:12px;color:#666">'
+          + 'Useful?'
+          + '<button class="upd-vote" data-vote="up" title="Yes, useful" aria-label="Useful" style="background:#fff;border:1px solid #ddd;border-radius:8px;padding:5px 10px;font-size:15px;line-height:1;cursor:pointer">&#128077;</button>'
+          + '<button class="upd-vote" data-vote="down" title="Not useful" aria-label="Not useful" style="background:#fff;border:1px solid #ddd;border-radius:8px;padding:5px 10px;font-size:15px;line-height:1;cursor:pointer">&#128078;</button>'
+        + '</span>'
+        + '<span style="flex:1"></span>'
+        + '<button id="rec-upd-ok" style="background:#7c3aed;color:#fff;border:none;border-radius:8px;padding:9px 22px;font-size:13px;font-weight:600;cursor:pointer">Got it</button>'
+      + '</div>'
       + '</div>';
     document.body.appendChild(ov);
     function dismiss() { seen.push(next.id); try { localStorage.setItem('rec_seen_updates', JSON.stringify(seen)); } catch (e) {} ov.remove(); }
     ov.querySelector('#rec-upd-ok').addEventListener('click', dismiss);
     ov.addEventListener('click', function(e) { if (e.target === ov) dismiss(); });
+
+    // Thumbs. Fire-and-forget: a vote that fails to reach the server must never
+    // put an error in front of someone who was only being helpful, so the
+    // thank-you shows either way and the popup still dismisses normally.
+    var voted = false;
+    Array.prototype.forEach.call(ov.querySelectorAll('.upd-vote'), function(btn) {
+      btn.addEventListener('click', function() {
+        if (voted) return;
+        voted = true;
+        var sentiment = btn.getAttribute('data-vote');
+        try {
+          fetch('/' + slug + '/api/update-vote' + (cfg.token ? '?token=' + encodeURIComponent(cfg.token) : ''), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sentiment: sentiment, updateId: next.id, updateTitle: next.title }),
+            keepalive: true
+          }).catch(function(){});
+        } catch (e) {}
+        var slot = ov.querySelector('#rec-upd-rate');
+        if (slot) slot.innerHTML = '<span style="font-size:12px;color:#16a34a;font-weight:600">'
+          + (sentiment === 'up' ? '&#128077; Thanks!' : '&#128078; Thanks &mdash; noted.') + '</span>';
+      });
+    });
   })();
 
   /* ── Footer ── */
