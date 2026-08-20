@@ -1781,11 +1781,18 @@ const DEFAULT_HIDDEN_REPORTS = new Set([]);
 // (so the Facilities hub's native Court Utilization tab, chat, and /api/data all
 // keep working) but no longer rendered as a clickable card on org/admin grids.
 // Globally not-surfaced reports. Routes/code stay intact; they just aren't shown
-// anywhere. chat + report-wizard are deprecated in favor of Rec's "Seb" AI skill.
+// anywhere. chat is deprecated in favor of Rec's "Seb" AI skill.
 // campmap (the standalone campsite map page) is retired in favor of the
 // Facilities hub's Camping tab, which serves the same map + editing for any
 // org with a campmap seed.
-const RETIRED_REPORTS = new Set(["court-utilization", "chat", "report-wizard", "campmap"]);
+//
+// report-wizard is UN-retired (Dan, 2026-08-20). It was shelved alongside chat
+// as "deprecated in favor of Seb", but unlike chat it does something Seb does
+// not: it builds a saved, shareable report config against the org's own report
+// schemas. Nothing was deleted when it was retired — the page, the generate
+// route and the feedback route all stayed — so bringing it back is removing it
+// from this Set, not a rebuild.
+const RETIRED_REPORTS = new Set(["court-utilization", "chat", "campmap"]);
 
 // ── Dynamic orgs (added via dashboard UI) ────────────────────────────
 // Loaded at startup and merged into ORGS; also updated at runtime.
