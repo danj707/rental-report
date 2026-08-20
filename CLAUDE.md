@@ -91,9 +91,12 @@ page state.
   gl_code + desk; this needs one row per transaction. Both read
   `materialized.item_log_report`. Nothing here touches 17293, so no other org's
   GL reporting is affected.
-- **Its template tags are Text ON PURPOSE** (`sql/gl-account-detail.sql`), with
-  the dates cast in SQL and the route sending `category` params. An API edit to
-  THIS card needs no date-tag re-flip — unlike every other card in this repo.
+- **Tag types don't matter for this one.** The route reads the card's own
+  registered parameter types from its public definition and echoes them back, so
+  Date or Text both match, and the SQL casts the dates either way. An API edit to
+  THIS card needs no re-flip in the UI — unlike every other card in this repo.
+  (Metabase auto-typed `start_date`/`end_date` as Date on creation, from their
+  names — worth knowing if you ever expect a new tag to default to Text.)
 - **Not cached.** An export is pulled rarely and must be exact; a 4-hour-old
   ledger handed to a finance office is worse than a slow one.
 - **Three GL states, not two:** code + account name; code with no `gl_account`

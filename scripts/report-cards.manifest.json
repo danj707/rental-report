@@ -49,6 +49,11 @@
       "label": "facility / smyrna (weekly rental schedule + Paid? column)",
       "card": "f6787f45-3a36-4501-8a5f-b0f647451a85",
       "org": "efc0724c-8f32-481a-bab3-fc19c724f3a7"
+    },
+    {
+      "label": "gl-account-detail / pawnee (Munis export card — the only org it is enabled for)",
+      "card": "ef065f39-504f-487a-9181-5bd415a19a58",
+      "org": "9cc33597-701d-440f-a12f-f73643b7d229"
     }
   ]
 }

@@ -1322,10 +1322,12 @@ const FACILITIES_SUMMARY_UUID = "4c070d95-ab02-4b9d-ac43-ac86257162d5";
 // Both read materialized.item_log_report; nothing here touches the rollup, so no
 // other org's GL reporting is affected by this feed.
 //
-// Its org_id / start_date / end_date tags are all TEXT (cast in SQL), so the
-// params below go out as `category` and an API edit to the card never needs a
-// date-tag re-flip in the Metabase UI. See sql/gl-account-detail.sql.
-const GL_DETAIL_UUID = process.env.MB_GL_DETAIL_UUID || "";
+// The export reads the card's OWN registered parameter types out of its public
+// definition rather than hardcoding them. That is what makes this feed immune
+// to the hazard in CLAUDE.md: whether a tag is Date today or gets reset to Text
+// by the next API edit, the request matches it either way and no re-flip in the
+// Metabase UI is needed. See sql/gl-account-detail.sql.
+const GL_DETAIL_UUID = process.env.MB_GL_DETAIL_UUID || "ef065f39-504f-487a-9181-5bd415a19a58";
 // Per-org opt-in: the export only means something for an org running a real
 // general ledger, and its layout is a municipal form, not a rec-department one.
 const MUNIS_EXPORT_ORGS = new Set(["pawnee"]);
@@ -1334,10 +1336,26 @@ const munisExportEnabled = slug => MUNIS_EXPORT_ORGS.has(slug) && !!GL_DETAIL_UU
 // Fetch the detail rows straight from the public card. Deliberately NOT routed
 // through the report cache: an export is pulled rarely and must be exact, and a
 // 4-hour-old ledger handed to a finance office is worse than a slow one.
+let _glDetailParamDefs = null;   // { ts, params } — the card's own parameter list, cached 1h
+async function glDetailParamDefs() {
+  if (_glDetailParamDefs && Date.now() - _glDetailParamDefs.ts < 60 * 60 * 1000) return _glDetailParamDefs.params;
+  const resp = await fetch(`${METABASE_URL}/api/public/card/${GL_DETAIL_UUID}`, { signal: AbortSignal.timeout(15000) });
+  if (!resp.ok) throw new Error(`card definition HTTP ${resp.status}`);
+  const def = await resp.json();
+  const params = Array.isArray(def.parameters) ? def.parameters : [];
+  _glDetailParamDefs = { ts: Date.now(), params };
+  return params;
+}
+
 async function fetchGlDetailRows(orgId, startDate, endDate) {
-  const params = [{ type: "category", target: ["variable", ["template-tag", "org_id"]], value: orgId }];
-  if (startDate) params.push({ type: "category", target: ["variable", ["template-tag", "start_date"]], value: startDate });
-  if (endDate)   params.push({ type: "category", target: ["variable", ["template-tag", "end_date"]],   value: endDate });
+  // Values matched onto the card's registered parameters by slug, keeping each
+  // one's own id AND type. Sending a type we guessed is how a card silently
+  // starts 400ing after someone re-saves it.
+  const values = { org_id: orgId, start_date: startDate, end_date: endDate };
+  const params = (await glDetailParamDefs())
+    .filter(p => values[p.slug] != null && values[p.slug] !== "")
+    .map(p => ({ id: p.id, type: p.type, target: p.target, slug: p.slug, value: values[p.slug] }));
+  if (!params.some(p => p.slug === "org_id")) throw new Error("GL detail card has no org_id parameter");
   const url = `${METABASE_URL}/api/public/card/${GL_DETAIL_UUID}/query/json?parameters=${encodeURIComponent(JSON.stringify(params))}`;
   const resp = await fetch(url, { signal: AbortSignal.timeout(90000) });
   if (!resp.ok) throw new Error(`Metabase HTTP ${resp.status}`);

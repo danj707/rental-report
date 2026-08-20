@@ -1,17 +1,19 @@
 /* ============================================================
    GL Account Detail (Munis / Tyler "glgatddt" format)
    Metabase card <TBD> — collection 3532, database 4 (Rec-Prod-ReadReplica).
-   Variables: {{org_id}} Text, {{start_date}} Text, {{end_date}} Text
+   Variables: {{org_id}}, {{start_date}}, {{end_date}}
+   (Metabase auto-typed the two date tags as Date on creation, from their names.)
 
    THIS FILE is the source of truth for the card SQL.
 
-   WHY ALL THREE TAGS ARE **TEXT**, NOT DATE (deliberate):
+   WHY THE TAG TYPES DO NOT MATTER HERE:
    applying a card through the Metabase API regenerates every template tag as
    Text, which breaks any card whose params the server sends as `date/single`
    (see CLAUDE.md — it has bitten the facility and GL cards). This card sidesteps
-   that permanently: the tags are Text by design, the dates are cast here in SQL,
-   and the export route sends them as `category` params. Editing this card via
-   the API therefore needs NO follow-up flip in the Metabase UI.
+   that: the export route reads the card's OWN registered parameter types out of
+   its public definition and echoes them back, so Date or Text both match, and
+   the dates are cast below regardless. Editing this card via the API therefore
+   needs NO follow-up flip in the Metabase UI.
 
    Grain: ONE ROW PER TRANSACTION (cash-receipts basis — actual payment dates).
    That is the difference from card 17293 ("GL Code Report"), which aggregates to
@@ -36,7 +38,9 @@ WITH base AS (
   FROM materialized.item_log_report ilr
   WHERE ilr.organization_id = {{org_id}}::uuid
     AND ilr.order_item_transaction_amount <> 0
-    -- datetime_at_primary_timezone is ALREADY localized — cast bare, never AT TIME ZONE
+    -- datetime_at_primary_timezone is ALREADY localized — cast bare, never AT TIME ZONE.
+    -- The ::date on the bound value is a no-op for a Date tag and the actual
+    -- conversion for a Text one, so the filter holds under either tag type.
     [[ AND ilr.datetime_at_primary_timezone::date >= {{start_date}}::date ]]
     [[ AND ilr.datetime_at_primary_timezone::date <= {{end_date}}::date ]]
 ),
