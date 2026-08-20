@@ -2655,7 +2655,7 @@ function App() {
   function exportPermits() {
     setPermitLoading(true);
     const parts = window.location.pathname.split('/').filter(Boolean);
-    const payload = { rows: filteredRows.filter(r => r.resId && permits && permits[r.resId]).map(r => ({
+    const payload = { rows: (filteredRows || []).filter(r => r.resId && permits && permits[r.resId]).map(r => ({
       resId: r.resId, title: r.purpose || r.rentalName || '', reservee: r.reservee || '',
       site: r.facility || '', location: r.location || '',
       date: r.date, begin: r.begin, end: r.end, headcount: r.headCount || '',
@@ -2942,7 +2942,7 @@ function App() {
           {pdfLoading ? 'Generating…' : '📄 PDF'}
         </button>
         {(() => {
-          if (!permits) return null;
+          if (!permits || !filteredRows || !filteredRows.length) return null;
           const n = filteredRows.filter(r => r.resId && permits[r.resId]).length;
           if (!n) return null;   // nothing to print → no button, rather than a dead one
           return (
