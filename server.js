@@ -67,6 +67,7 @@ const cron       = require("node-cron");
 const { Resend } = require("resend");
 const crypto     = require("crypto");
 const munis      = require("./lib/munis");   // Tyler/Munis GL Account Detail export
+const permitLib  = require("./lib/permit");  // facility rental posting sheets
 
 // Catch anything that slips through
 process.on("uncaughtException", err => console.error("[uncaught]", err));
@@ -1780,11 +1781,18 @@ const DEFAULT_HIDDEN_REPORTS = new Set([]);
 // (so the Facilities hub's native Court Utilization tab, chat, and /api/data all
 // keep working) but no longer rendered as a clickable card on org/admin grids.
 // Globally not-surfaced reports. Routes/code stay intact; they just aren't shown
-// anywhere. chat + report-wizard are deprecated in favor of Rec's "Seb" AI skill.
+// anywhere. chat is deprecated in favor of Rec's "Seb" AI skill.
 // campmap (the standalone campsite map page) is retired in favor of the
 // Facilities hub's Camping tab, which serves the same map + editing for any
 // org with a campmap seed.
-const RETIRED_REPORTS = new Set(["court-utilization", "chat", "report-wizard", "campmap"]);
+//
+// report-wizard is UN-retired (Dan, 2026-08-20). It was shelved alongside chat
+// as "deprecated in favor of Seb", but unlike chat it does something Seb does
+// not: it builds a saved, shareable report config against the org's own report
+// schemas. Nothing was deleted when it was retired — the page, the generate
+// route and the feedback route all stayed — so bringing it back is removing it
+// from this Set, not a rebuild.
+const RETIRED_REPORTS = new Set(["court-utilization", "chat", "campmap"]);
 
 // ── Dynamic orgs (added via dashboard UI) ────────────────────────────
 // Loaded at startup and merged into ORGS; also updated at runtime.
@@ -2851,7 +2859,7 @@ function logEvent(org, report, event, reqOrIp, extra) {
 // Inert if the env var is unset. Fire-and-forget — never blocks or breaks logging.
 // To change what pings Slack, edit SLACK_NOTIFY. High-frequency events (view/fetch)
 // are debounced per org+report so Slack isn't a firehose.
-const SLACK_NOTIFY = new Set(["created", "pdf", "excel", "print", "summary", "game", "map", "view", "insights", "insights-feedback", "chat-feedback", "feedback", "vote", "update-vote", "munis", "email"]);
+const SLACK_NOTIFY = new Set(["created", "pdf", "excel", "print", "summary", "game", "map", "view", "insights", "insights-feedback", "chat-feedback", "feedback", "vote", "update-vote", "munis", "permits", "email"]);
 const SLACK_DEBOUNCE_MS = { view: 30 * 60 * 1000, fetch: 30 * 60 * 1000 };
 const SLACK_DEFAULT_DEBOUNCE_MS = 60 * 1000; // dedup rapid double-fires of one-off events
 const slackLastSent = new Map();
@@ -2864,6 +2872,7 @@ const SLACK_EVENT_META = {
   map:     { emoji: "🗺️", verb: "is browsing the facility map for" },
   print:   { emoji: "🖨️", verb: "printed" },
   munis:   { emoji: "🏛️", verb: "pulled the Tyler/Munis GL Account Detail for" },
+  permits: { emoji: "📋", verb: "printed rental permit sheets from" },
   view:    { emoji: "👀", verb: "viewed" },
   insights: { emoji: "✨", verb: "generated AI insights for" },
   email:   { emoji: "📧", verb: "emailed" },
@@ -2916,6 +2925,10 @@ function notifySlack(rec) {
       : `${meta.emoji} ${orgName} (\`${rec.org}\`) ${meta.verb} *${rec.report}*${to}${trig}`;
   } else if (rec.event === "game") {
     text = `${meta.emoji} ${orgName} (\`${rec.org}\`) — someone is playing *${rec.game || "a hidden game"}* on the facilities report`;
+  } else if (rec.event === "permits") {
+    const skipped = (rec.rows || 0) - (rec.sheets || 0);
+    text = `${meta.emoji} ${orgName} (\`${rec.org}\`) ${meta.verb} *${rec.report}* — ${rec.sheets || 0} sheet${rec.sheets === 1 ? "" : "s"}`
+         + (skipped > 0 ? ` (${skipped} row${skipped === 1 ? "" : "s"} had no issued permit)` : "");
   } else if (rec.event === "munis") {
     // The unmapped count is the whole point of watching this one — an export
     // that is mostly uncoded revenue is a conversation to have with the org.
@@ -3230,6 +3243,17 @@ async function renderHtmlPdf(html, opts = {}) {
   try {
     const page = await browser.newPage();
     await page.setContent(html, { waitUntil: "load", timeout: 60000 });
+    // `plain` documents carry their own @page margins and footer (the permit
+    // posting sheets), so Chrome must not stamp the Munis running header over
+    // them. Everything else keeps the Tyler footer.
+    if (opts.plain) {
+      return await page.pdf({
+        format: "Letter",
+        landscape: !!opts.landscape,
+        printBackground: true,
+        margin: { top: "0.5in", bottom: "0.5in", left: "0.5in", right: "0.5in" },
+      });
+    }
     return await page.pdf({
       format: "Letter",
       landscape: opts.landscape !== false,
@@ -3243,6 +3267,84 @@ async function renderHtmlPdf(html, opts = {}) {
   } finally {
     await browser.close();
   }
+}
+
+// ── Facility rental permits → printable posting sheets ──────────────────────
+// Card 20230 lists an org's ISSUED permits keyed by Reservation ID, the same id
+// the facility feed already emits — so permits attach to schedule rows without
+// touching card 17294. Two consumers, deliberately cached differently:
+//
+//   the per-row chip  → cached; it only needs to know a permit exists, and it
+//                       loads on every view of the schedule.
+//   Export Permits    → live; a revoked permit printed onto a sheet taped to a
+//                       fence is a dead QR in the real world, so this one must
+//                       not be answered from a 4-hour-old list.
+const PERMITS_UUID = process.env.MB_PERMITS_UUID || "6771e2fe-1d9c-41c1-a921-7d875115305e";
+const PERMIT_CACHE_TTL = 5 * 60 * 1000;
+const _permitCache = new Map();      // orgId -> { ts, byReservation }
+let _permitParamDefs = null;
+
+async function permitParamDefs() {
+  if (_permitParamDefs && Date.now() - _permitParamDefs.ts < 60 * 60 * 1000) return _permitParamDefs.params;
+  const resp = await fetch(`${METABASE_URL}/api/public/card/${PERMITS_UUID}`, { signal: AbortSignal.timeout(15000) });
+  if (!resp.ok) throw new Error(`permit card definition HTTP ${resp.status}`);
+  const def = await resp.json();
+  const params = Array.isArray(def.parameters) ? def.parameters : [];
+  _permitParamDefs = { ts: Date.now(), params };
+  return params;
+}
+
+// Reservation ID -> permit row. Same param handling as the Munis export: echo
+// the card's own registered types back so a tag reset can never break it.
+async function fetchPermits(orgId, { live = false } = {}) {
+  if (!PERMITS_UUID) return new Map();
+  const hit = _permitCache.get(orgId);
+  if (!live && hit && Date.now() - hit.ts < PERMIT_CACHE_TTL) return hit.byReservation;
+  const params = (await permitParamDefs())
+    .filter(p => p.slug === "org_id")
+    .map(p => ({ id: p.id, type: p.type, target: p.target, slug: p.slug, value: orgId }));
+  if (!params.length) throw new Error("permit card has no org_id parameter");
+  const url = `${METABASE_URL}/api/public/card/${PERMITS_UUID}/query/json?parameters=${encodeURIComponent(JSON.stringify(params))}`;
+  const resp = await fetch(url, { signal: AbortSignal.timeout(60000) });
+  if (!resp.ok) throw new Error(`Metabase HTTP ${resp.status}`);
+  const rows = await resp.json();
+  if (!Array.isArray(rows)) throw new Error("Metabase returned an error for the permit card");
+  const byReservation = new Map();
+  for (const r of rows) {
+    const key = String(r["Reservation ID"] || "");
+    if (key) byReservation.set(key, r);
+  }
+  _permitCache.set(orgId, { ts: Date.now(), byReservation });
+  return byReservation;
+}
+
+// The org logo, inlined as a data URI. Fetched once per process rather than
+// left as a remote <img>: Puppeteer would otherwise race the network on every
+// export, and a logo that silently fails to load is a permit that looks fake.
+const _logoCache = new Map();
+async function orgLogoDataUri(slug) {
+  if (_logoCache.has(slug)) return _logoCache.get(slug);
+  let src = ORGS[slug] && ORGS[slug].logoUrl;
+  let out = "";
+  if (src) {
+    // These are Next.js image URLs carrying their own width. Left at w=1920 the
+    // logo is ~85KB and gets embedded on EVERY page — a 110-sheet export came
+    // out at 9.6MB, far too heavy to ever attach to an email. The sheet renders
+    // it at 46px tall, so ask the resizer for a printable width instead.
+    src = src.replace(/([?&]w=)\d+/, "$1384");
+    try {
+      const resp = await fetch(src, { signal: AbortSignal.timeout(10000) });
+      if (resp.ok) {
+        const buf = Buffer.from(await resp.arrayBuffer());
+        const type = resp.headers.get("content-type") || "image/png";
+        if (buf.length && buf.length < 2 * 1024 * 1024) out = `data:${type};base64,${buf.toString("base64")}`;
+      }
+    } catch (e) {
+      console.warn(`[permits] logo fetch failed for ${slug}: ${e.message}`);
+    }
+  }
+  _logoCache.set(slug, out);
+  return out;
 }
 
 // ── PDF generation ───────────────────────────────────────────────────
@@ -6521,6 +6623,88 @@ app.get("/:org/gl", (req, res) => {
   const orgConfig = { emailEnabled: EMAIL_ENABLED_ORGS.has(slug), tyler: getTylerConfig(slug), munis: munisExportEnabled(slug) };
   const html = require("fs").readFileSync(path.join(__dirname, "public", "gl.html"), "utf8");
   res.send(html.replace("<head>", `<head><script>window.ORG_CONFIG=${JSON.stringify(orgConfig)};</script>`));
+});
+
+// ── GET /:org/facility/api/permits — which rows have an issued permit ───────
+// Loaded once per view of the schedule, AFTER the rows render, so the main feed
+// keeps its current speed. Returns a thin map, not the whole permit: the chip
+// only needs a link and a code.
+app.get("/:org/facility/api/permits", async (req, res) => {
+  const slug = req.params.org;
+  const org = ORGS[slug];
+  if (!org) return res.status(404).json({ error: "Unknown org" });
+  if (!PERMITS_UUID) return res.json({ permits: {} });
+  try {
+    const byRes = await fetchPermits(org.orgId);
+    const permits = {};
+    for (const [resId, r] of byRes) {
+      permits[resId] = { code: r["Permit Code"] || "", url: r["Permit URL"] || "" };
+    }
+    res.json({ permits, count: Object.keys(permits).length });
+  } catch (err) {
+    console.warn(`[permits] ${slug} chip feed failed: ${err.message}`);
+    // Soft-fail: no chips is a degraded schedule, not a broken one.
+    res.json({ permits: {}, error: true });
+  }
+});
+
+// ── POST /:org/facility/permits.pdf — printable posting sheets ──────────────
+// One page per rental-day in the CURRENT FILTERED VIEW. The client posts the
+// rows it is showing, which is the only way the export can honour on-screen
+// filters; the permit half is re-fetched live here so a revoked permit can
+// never be printed onto a sheet that ends up taped to a fence.
+app.post("/:org/facility/permits.pdf", express.json({ limit: "2mb" }), async (req, res) => {
+  const slug = req.params.org;
+  const org = ORGS[slug];
+  if (!org) return res.status(404).type("text/plain").send("Not found");
+  if (!PERMITS_UUID) return res.status(503).type("text/plain").send("Permit card is not configured yet.");
+
+  const rows = Array.isArray(req.body && req.body.rows) ? req.body.rows.slice(0, 400) : [];
+  if (!rows.length) return res.status(400).type("text/plain").send("No rows to print.");
+
+  try {
+    const byRes = await fetchPermits(org.orgId, { live: true });
+    const logo = await orgLogoDataUri(slug);
+    const tyler = getTylerConfig(slug) || {};
+    const orgName = tyler.entityName || org.displayName
+      || (slug.charAt(0).toUpperCase() + slug.slice(1) + " Parks & Recreation");
+    const dept = tyler.department || "Parks & Recreation Department";
+
+    const QRCode = require("qrcode");
+    const sheets = [];
+    for (const r of rows) {
+      const p = byRes.get(String(r.resId || ""));
+      if (!p) continue;                     // no issued permit → no sheet
+      const url = p["Permit URL"];
+      if (!url) continue;
+      sheets.push({
+        org: orgName, dept, logo,
+        title: r.title || p["Rental Name"] || "Facility Rental",
+        holder: p["Permit Holder"] || r.reservee || "",
+        site: r.site || "", location: r.location || "",
+        date: r.date, begin: r.begin, end: r.end,
+        headcount: r.headcount || "",
+        purpose: p["Purpose"] || "",
+        details: p["Details"] || "",
+        code: p["Permit Code"] || "",
+        qr: await QRCode.toDataURL(url, { errorCorrectionLevel: "M", margin: 1, width: 300 }),
+      });
+    }
+    if (!sheets.length) {
+      return res.status(404).type("text/plain")
+        .send("None of the rentals in this view have an issued permit.");
+    }
+
+    logEvent(slug, "facility", "permits", req, { sheets: sheets.length, rows: rows.length });
+    const pdf = await renderHtmlPdf(permitLib.toHtml(sheets), { landscape: false, plain: true });
+    const day = (rows[0] && rows[0].date ? String(rows[0].date) : new Date().toISOString().slice(0, 10)).replace(/-/g, "");
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `attachment; filename="${slug}-permits-${day}.pdf"`);
+    res.send(pdf);
+  } catch (err) {
+    console.error(`[permits] ${slug} export failed: ${err.message}`);
+    res.status(502).type("text/plain").send("Could not build the permit sheets.");
+  }
 });
 
 // ── GET /:org/gl/tyler.:fmt — Munis "GL Account Detail" export ───────────────

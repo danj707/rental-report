@@ -54,6 +54,11 @@
       "label": "gl-account-detail / pawnee (Munis export card — the only org it is enabled for)",
       "card": "ef065f39-504f-487a-9181-5bd415a19a58",
       "org": "9cc33597-701d-440f-a12f-f73643b7d229"
+    },
+    {
+      "label": "facility-permits / watertown (largest permit list — 1,412 issued)",
+      "card": "6771e2fe-1d9c-41c1-a921-7d875115305e",
+      "org": "d781690b-c5a0-43c5-8443-9ae43899528c"
     }
   ]
 }

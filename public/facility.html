@@ -515,6 +515,7 @@
     .col-addon-fees { width: 72px; text-align: right; }
     .col-paid { width: 50px; text-align: center; }
     .cell.col-paid { font-size: 12px; }
+    .col-permit { width: 26px; text-align: center; }
     .col-rec-link { width: 28px; text-align: center; }
 
     /* ═══════════════════════════════════════════════════════════════
@@ -1991,6 +1992,10 @@ function App() {
   const [showAddonFees, setShowAddonFees] = useState(() => {
     try { return localStorage.getItem('col_addon_fees') !== 'false'; } catch { return true; }
   });
+  // Issued permits keyed by Reservation ID. Loaded AFTER the schedule renders
+  // so the main feed keeps its speed — the chips simply appear a moment later.
+  const [permits, setPermits] = useState(null);
+  const [permitLoading, setPermitLoading] = useState(false);
   const [showPaid, setShowPaid] = useState(() => {
     try { return localStorage.getItem('col_paid') !== 'false'; } catch { return true; }
   });
@@ -2024,6 +2029,17 @@ function App() {
   useEffect(() => { try { localStorage.setItem('col_total',     showTotal);     } catch {} }, [showTotal]);
   useEffect(() => { try { localStorage.setItem('col_addon_fees', showAddonFees); } catch {} }, [showAddonFees]);
   useEffect(() => { try { localStorage.setItem('col_paid',       showPaid);       } catch {} }, [showPaid]);
+
+  // One request per view of the schedule. Soft-fails to no chips rather than
+  // surfacing an error: a missing permit link must not look like a broken report.
+  useEffect(() => {
+    const parts = window.location.pathname.split('/').filter(Boolean);
+    if (!parts.length) return;
+    fetch(withToken(`/${parts[0]}/facility/api/permits`))
+      .then(r => r.json())
+      .then(d => setPermits(d && d.permits ? d.permits : {}))
+      .catch(() => setPermits({}));
+  }, []);
   useEffect(() => { try { localStorage.setItem('col_notes',     showNotes);     } catch {} }, [showNotes]);
   useEffect(() => { try { localStorage.setItem('col_link',      showLink);      } catch {} }, [showLink]);
   useEffect(() => { try { localStorage.setItem('col_resident',  showResident);  } catch {} }, [showResident]);
@@ -2633,6 +2649,31 @@ function App() {
       .finally(() => setPdfLoading(false));
   }
 
+  // ── Export Permits ──────────────────────────────────────────────────
+  // Posts the rows currently on screen so the sheets honour the active filters,
+  // and lets the server re-check each permit live before printing it.
+  function exportPermits() {
+    setPermitLoading(true);
+    const parts = window.location.pathname.split('/').filter(Boolean);
+    const payload = { rows: filteredRows.filter(r => r.resId && permits && permits[r.resId]).map(r => ({
+      resId: r.resId, title: r.purpose || r.rentalName || '', reservee: r.reservee || '',
+      site: r.facility || '', location: r.location || '',
+      date: r.date, begin: r.begin, end: r.end, headcount: r.headCount || '',
+    })) };
+    fetch(withToken(`/${parts[0]}/facility/permits.pdf`), {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+    })
+      .then(r => { if (!r.ok) return r.text().then(t => { throw new Error(t || ('HTTP ' + r.status)); }); return r.blob(); })
+      .then(blob => {
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `permits-${loadedStart || 'export'}.pdf`;
+        a.click(); URL.revokeObjectURL(a.href);
+      })
+      .catch(err => alert('Permit export failed: ' + err.message))
+      .finally(() => setPermitLoading(false));
+  }
+
   function downloadExcel() {
     if (!filteredRows || filteredRows.length === 0) return;
     const headers = [
@@ -2900,6 +2941,19 @@ function App() {
         >
           {pdfLoading ? 'Generating…' : '📄 PDF'}
         </button>
+        {(() => {
+          if (!permits) return null;
+          const n = filteredRows.filter(r => r.resId && permits[r.resId]).length;
+          if (!n) return null;   // nothing to print → no button, rather than a dead one
+          return (
+            <button
+              onClick={exportPermits}
+              disabled={permitLoading}
+              title="Print one posting sheet per rental with an issued permit, for the rentals shown"
+              style={{background:'#7c3aed',color:'#fff',borderColor:'#7c3aed'}}
+            >{permitLoading ? 'Building…' : `📋 Export Permits (${n})`}</button>
+          );
+        })()}
         <button
           className="btn-excel"
           onClick={downloadExcel}
@@ -3182,6 +3236,7 @@ function App() {
                           {showTotal     && <span className="col-total">Total</span>}
                           {showAddonFees && <span className="col-addon-fees">Add-On $</span>}
                           {showPaid && <span className="col-paid">Paid?</span>}
+                          {showLink && <span className="col-permit" title="Permit">🔑</span>}
                           {showLink && <span className="col-rec-link">↗</span>}
                         </div>
                         {locRows.map((r, i) => (
@@ -3208,6 +3263,11 @@ function App() {
                               {showTotal     && <span className="cell col-total">{formatMoney(r.total)}</span>}
                               {showAddonFees && <span className="cell col-addon-fees">{formatMoney(r.addonFees)}</span>}
                               {showPaid && <span className="cell col-paid">{paidMark(r.paid)}</span>}
+                              {showLink && <span className="cell col-permit">{r.resId && permits && permits[r.resId]
+                                ? <a href={permits[r.resId].url} target="_blank" rel="noopener noreferrer"
+                                     title={'Permit ' + permits[r.resId].code + ' — opens the public permit in Rec'}
+                                     style={{color:'#7c3aed',textDecoration:'none',fontSize:13}}>🔗</a>
+                                : ''}</span>}
                               {showLink && <span className="cell col-rec-link">{r.resId ? <a href={`https://www.rec.us/admin/o/${meta.org_id}/facility-rentals/${r.resId}`} target="_blank" rel="noopener noreferrer" title="Open in Rec" style={{color:'#2563eb',textDecoration:'none',fontSize:13}}>↗️</a> : ''}</span>}
                             </div>
                             {showNotes && (() => {
