@@ -2002,6 +2002,9 @@ function App() {
   const [showNotes, setShowNotes] = useState(() => {
     try { return localStorage.getItem('col_notes') !== 'false'; } catch { return true; }
   });
+  const [showPermit, setShowPermit] = useState(() => {
+    try { return localStorage.getItem('col_permit') !== 'false'; } catch { return true; }
+  });
   const [showLink, setShowLink] = useState(() => {
     try { return localStorage.getItem('col_link') === 'true'; } catch { return false; }
   });
@@ -2041,6 +2044,7 @@ function App() {
       .catch(() => setPermits({}));
   }, []);
   useEffect(() => { try { localStorage.setItem('col_notes',     showNotes);     } catch {} }, [showNotes]);
+  useEffect(() => { try { localStorage.setItem('col_permit',    showPermit);    } catch {} }, [showPermit]);
   useEffect(() => { try { localStorage.setItem('col_link',      showLink);      } catch {} }, [showLink]);
   useEffect(() => { try { localStorage.setItem('col_resident',  showResident);  } catch {} }, [showResident]);
   useEffect(() => { try { localStorage.setItem('col_booktype',  showBookType);  } catch {} }, [showBookType]);
@@ -2652,14 +2656,22 @@ function App() {
   // ── Export Permits ──────────────────────────────────────────────────
   // Posts the rows currently on screen so the sheets honour the active filters,
   // and lets the server re-check each permit live before printing it.
-  function exportPermits() {
-    setPermitLoading(true);
-    const parts = window.location.pathname.split('/').filter(Boolean);
-    const payload = { rows: (filteredRows || []).filter(r => r.resId && permits && permits[r.resId]).map(r => ({
+  function permitRowPayload(r) {
+    return {
       resId: r.resId, title: r.purpose || r.rentalName || '', reservee: r.reservee || '',
       site: r.facility || '', location: r.location || '',
       date: r.date, begin: r.begin, end: r.end, headcount: r.headCount || '',
-    })) };
+    };
+  }
+
+  // `rows` omitted → the whole filtered view (toolbar button). Passed a single
+  // row → that one rental's sheet (the row chip), which is what someone wants
+  // when they are about to walk one permit out to a pavilion.
+  function exportPermits(rows) {
+    const src = rows || filteredRows || [];
+    setPermitLoading(rows ? (rows[0] && rows[0].resId) : 'all');
+    const parts = window.location.pathname.split('/').filter(Boolean);
+    const payload = { rows: src.filter(r => r.resId && permits && permits[r.resId]).map(permitRowPayload) };
     fetch(withToken(`/${parts[0]}/facility/permits.pdf`), {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
     })
@@ -2667,7 +2679,9 @@ function App() {
       .then(blob => {
         const a = document.createElement('a');
         a.href = URL.createObjectURL(blob);
-        a.download = `permits-${loadedStart || 'export'}.pdf`;
+        a.download = (payload.rows.length === 1
+          ? `permit-${(payload.rows[0].title || 'rental').replace(/[^a-z0-9]+/gi, '-').toLowerCase().slice(0, 40)}-${payload.rows[0].date || ''}`
+          : `permits-${loadedStart || 'export'}`) + '.pdf';
         a.click(); URL.revokeObjectURL(a.href);
       })
       .catch(err => alert('Permit export failed: ' + err.message))
@@ -2902,6 +2916,10 @@ function App() {
                 Paid?
               </label>
               <label style={{display:'flex',alignItems:'center',gap:4,cursor:'pointer',fontSize:11}}>
+                <input type="checkbox" checked={showPermit} onChange={e => setShowPermit(e.target.checked)} />
+                Permit
+              </label>
+              <label style={{display:'flex',alignItems:'center',gap:4,cursor:'pointer',fontSize:11}}>
                 <input type="checkbox" checked={showLink} onChange={e => setShowLink(e.target.checked)} />
                 Rec Link
               </label>
@@ -2948,10 +2966,10 @@ function App() {
           return (
             <button
               onClick={exportPermits}
-              disabled={permitLoading}
+              disabled={permitLoading === 'all'}
               title="Print one posting sheet per rental with an issued permit, for the rentals shown"
               style={{background:'#7c3aed',color:'#fff',borderColor:'#7c3aed'}}
-            >{permitLoading ? 'Building…' : `📋 Export Permits (${n})`}</button>
+            >{permitLoading === 'all' ? 'Building…' : `📋 Export Permits (${n})`}</button>
           );
         })()}
         <button
@@ -3236,7 +3254,7 @@ function App() {
                           {showTotal     && <span className="col-total">Total</span>}
                           {showAddonFees && <span className="col-addon-fees">Add-On $</span>}
                           {showPaid && <span className="col-paid">Paid?</span>}
-                          {showLink && <span className="col-permit" title="Permit">🔑</span>}
+                          {showPermit && <span className="col-permit" title="Posting sheet">📋</span>}
                           {showLink && <span className="col-rec-link">↗</span>}
                         </div>
                         {locRows.map((r, i) => (
@@ -3263,10 +3281,12 @@ function App() {
                               {showTotal     && <span className="cell col-total">{formatMoney(r.total)}</span>}
                               {showAddonFees && <span className="cell col-addon-fees">{formatMoney(r.addonFees)}</span>}
                               {showPaid && <span className="cell col-paid">{paidMark(r.paid)}</span>}
-                              {showLink && <span className="cell col-permit">{r.resId && permits && permits[r.resId]
-                                ? <a href={permits[r.resId].url} target="_blank" rel="noopener noreferrer"
-                                     title={'Permit ' + permits[r.resId].code + ' — opens the public permit in Rec'}
-                                     style={{color:'#7c3aed',textDecoration:'none',fontSize:13}}>🔗</a>
+                              {showPermit && <span className="cell col-permit">{r.resId && permits && permits[r.resId]
+                                ? <button onClick={() => exportPermits([r])}
+                                     disabled={permitLoading === r.resId}
+                                     title={'Print the posting sheet for permit ' + permits[r.resId].code}
+                                     style={{background:'none',border:'none',padding:0,cursor:'pointer',fontSize:13,lineHeight:1,color:'#7c3aed'}}
+                                  >{permitLoading === r.resId ? '…' : '📋'}</button>
                                 : ''}</span>}
                               {showLink && <span className="cell col-rec-link">{r.resId ? <a href={`https://www.rec.us/admin/o/${meta.org_id}/facility-rentals/${r.resId}`} target="_blank" rel="noopener noreferrer" title="Open in Rec" style={{color:'#2563eb',textDecoration:'none',fontSize:13}}>↗️</a> : ''}</span>}
                             </div>
