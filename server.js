@@ -1337,6 +1337,28 @@ const munisExportEnabled = slug => MUNIS_EXPORT_ORGS.has(slug) && !!GL_DETAIL_UU
 // Fetch the detail rows straight from the public card. Deliberately NOT routed
 // through the report cache: an export is pulled rarely and must be exact, and a
 // 4-hour-old ledger handed to a finance office is worse than a slow one.
+//
+// THIS CARD IS SLOW, AND STRUCTURALLY SO (measured 2026-08-21). Its only index
+// on materialized.item_log_report is the primary key on epsio_id — there is
+// none on organization_id and none on the date column — so every run is a
+// parallel seq scan of the whole multi-org table:
+//
+//   Parallel Seq Scan on item_log_report  (cost=0.00..153217.93 rows=3)
+//
+// Pawnee for one month is 27-48s on a quiet network for 171 rows, and longer
+// while a deploy is prewarming. No rewrite of the SQL fixes that; the durable
+// fix is an index on (organization_id, datetime_at_primary_timezone), which is
+// a change to the Epsio-managed view rather than to this repo. Until then the
+// two mitigations below keep the button working:
+//
+//   - the request budget is 150s, not 90s. 90s sat inside the observed range,
+//     so a normal month-end pull could and did fail outright.
+//   - identical pulls inside GL_DETAIL_CACHE_TTL reuse the rows. Pulling the
+//     PDF and then the .csv for the same range is the common flow and used to
+//     cost two full scans; a minute-old ledger is not the staleness the "must
+//     be exact" rule above is guarding against.
+const GL_DETAIL_CACHE_TTL = 60 * 1000;
+const _glDetailCache = new Map();   // `${orgId}|${start}|${end}` -> { ts, rows }
 let _glDetailParamDefs = null;   // { ts, params } — the card's own parameter list, cached 1h
 async function glDetailParamDefs() {
   if (_glDetailParamDefs && Date.now() - _glDetailParamDefs.ts < 60 * 60 * 1000) return _glDetailParamDefs.params;
@@ -1349,6 +1371,9 @@ async function glDetailParamDefs() {
 }
 
 async function fetchGlDetailRows(orgId, startDate, endDate) {
+  const key = `${orgId}|${startDate || ""}|${endDate || ""}`;
+  const hit = _glDetailCache.get(key);
+  if (hit && Date.now() - hit.ts < GL_DETAIL_CACHE_TTL) return hit.rows;
   // Values matched onto the card's registered parameters by slug, keeping each
   // one's own id AND type. Sending a type we guessed is how a card silently
   // starts 400ing after someone re-saves it.
@@ -1358,11 +1383,18 @@ async function fetchGlDetailRows(orgId, startDate, endDate) {
     .map(p => ({ id: p.id, type: p.type, target: p.target, slug: p.slug, value: values[p.slug] }));
   if (!params.some(p => p.slug === "org_id")) throw new Error("GL detail card has no org_id parameter");
   const url = `${METABASE_URL}/api/public/card/${GL_DETAIL_UUID}/query/json?parameters=${encodeURIComponent(JSON.stringify(params))}`;
-  const resp = await fetch(url, { signal: AbortSignal.timeout(90000) });
+  const resp = await fetch(url, { signal: AbortSignal.timeout(150000) });
   if (!resp.ok) throw new Error(`Metabase HTTP ${resp.status}`);
   const rows = await resp.json();
   // A card error comes back 200 with an object, not an array.
   if (!Array.isArray(rows)) throw new Error("Metabase returned an error for the GL detail card");
+  // Bounded: one entry per org+range would otherwise accumulate for the life of
+  // the process. Anything past its TTL is dead weight, so sweep on write.
+  if (_glDetailCache.size > 16) {
+    const now = Date.now();
+    for (const [k, v] of _glDetailCache) if (now - v.ts >= GL_DETAIL_CACHE_TTL) _glDetailCache.delete(k);
+  }
+  _glDetailCache.set(key, { ts: Date.now(), rows });
   return rows;
 }
 
