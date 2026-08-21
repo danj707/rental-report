@@ -2656,11 +2656,20 @@ function App() {
   // ── Export Permits ──────────────────────────────────────────────────
   // Posts the rows currently on screen so the sheets honour the active filters,
   // and lets the server re-check each permit live before printing it.
+  //
+  // FIELD NAMES COME FROM normalizeRow, NOT FROM THE CARD. Three of these were
+  // wrong and each failed silently, because every one of them has a server-side
+  // fallback or an empty-string default:
+  //   r.begin    -> r.start    the sheet printed "9:00pm" instead of
+  //                            "8:00pm - 9:00pm" (timeRange drops a blank end)
+  //   r.facility -> r.site     the big LOCATION line was blank, and multi-date
+  //                            sheets could not scope their dates to the site
+  //   r.purpose  -> r.resName  masked by the server falling back to Rental Name
   function permitRowPayload(r) {
     return {
-      resId: r.resId, title: r.purpose || r.rentalName || '', reservee: r.reservee || '',
-      site: r.facility || '', location: r.location || '',
-      date: r.date, begin: r.begin, end: r.end, headcount: r.headCount || '',
+      resId: r.resId, title: r.resName || '', reservee: r.reservee || '',
+      site: r.site || '', location: r.location || '',
+      date: r.date, begin: r.start, end: r.end, headcount: r.headCount || '',
     };
   }
 
