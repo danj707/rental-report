@@ -57,10 +57,9 @@
       "org": "d781690b-c5a0-43c5-8443-9ae43899528c"
     },
     {
-      "label": "facility-permits / douglas-county-nv (permits go live 2026-08-22 \u2014 raise minRows to 1 once issued)",
+      "label": "facility-permits / douglas-county-nv (campsite stays \u2014 permits issued 2026-08-21)",
       "card": "6771e2fe-1d9c-41c1-a921-7d875115305e",
-      "org": "0312ebc8-40de-4fc8-a737-8afa26334e13",
-      "minRows": 0
+      "org": "0312ebc8-40de-4fc8-a737-8afa26334e13"
     }
   ]
 }

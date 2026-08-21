@@ -396,16 +396,17 @@ sheet:
 **No per-org opt-in, by design** — the chip only appears where a permit exists,
 so orgs that don't issue permits never see it. Nothing has to be "turned on"
 for a new org: Douglas County was verified 2026-08-21 with zero issued permits
-and behaves correctly already (facility report 200, chip feed `{permits:{}}`,
-export returns a clean 404 rather than an empty PDF). Their campsite data is
-ready for the stay layout too — 370 multi-day reservations in the next 30 days,
-up to 12 nights, and **zero** missing site names or capacities, so site scoping
-and the capacity line will both resolve when permits are issued.
+and behaved correctly before it had any (facility report 200, chip feed
+`{permits:{}}`, export a clean 404 rather than an empty PDF), then lit up on
+its own once permits were pushed through the same day. Their campsite data
+suited the stay layout — 370 multi-day reservations in the next 30 days, up to
+12 nights, and **zero** missing site names or capacities, so site scoping and
+the capacity line both resolve.
 
-The manifest carries a `facility-permits / douglas-county-nv` row with
-`minRows: 0`, which checks the card does not error or time out for their org
-while they have no permits. **Raise it to 1 once permits are issued** — an
-empty result is exactly what that check exists to catch everywhere else.
+The manifest carries a `facility-permits / douglas-county-nv` row. It ran at
+`minRows: 0` while they had none; permits were issued 2026-08-21, so the
+override is gone and it uses the default of 1 like every other row — an empty
+result now fails, which is the point of the check.
 
 How these are actually used (Dan, 2026-08-21): permits cover essentially ALL
 facility reservations, and multi-day is mostly campsites though not exclusively.
