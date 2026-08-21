@@ -139,6 +139,18 @@
        section's two panels together. */
     .vsec { break-after: avoid; }
     .two-col { break-inside: avoid; }
+    /* A section is one unbreakable ~330px block against a ~1042px page box, so
+       three fit per page with almost nothing to spare — Programs & Enrollment
+       was overshooting the first page by EIGHT pixels and taking a third of the
+       page with it. Rather than shave those 8px (which any other org's data
+       would undo), reclaim the decoration: the hero banner is worth 170px on
+       screen and much less on a printed executive summary, and the gaps
+       between sections can afford to be tighter on paper. ~130px back, which
+       is real slack rather than a lucky fit. */
+    .banner { height: 96px; }
+    .banner .banner-cap { bottom: 8px; }
+    .vsec { margin: 14px 0 8px; }
+    .report-footer { margin-top: 16px; }
     table.mini thead { display: table-header-group; }
     table.mini tr { break-inside: avoid; }
   }
