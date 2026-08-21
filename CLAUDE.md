@@ -109,7 +109,13 @@ page state.
 - `MB_GL_DETAIL_UUID` (Railway env) holds the card's public UUID. Unset ⇒ the
   button is hidden and the route 503s.
 
-## GL detail card is a full table scan (OPEN, spec'd 2026-08-21)
+## The `materialized` schema has no secondary indexes (OPEN, spec'd 2026-08-21)
+
+**DECISION (Dan, 2026-08-21): the fix is an index on the materialized table. Do
+NOT rebuild the card on base tables** — that re-derives finance logic the item
+log already encodes, and any divergence would be silent, in a document handed to
+a finance office. The base-table numbers below stay only as evidence for how
+much an index buys.
 
 The Tyler export failed on a normal month-end pull. `materialized.item_log_report`
 carries **exactly one index** — the primary key on `epsio_id`. Nothing on
@@ -138,9 +144,48 @@ no index, "restrict" means "read every row and discard the misses"; a join just
 puts a nested loop on top of the same scan. Same reason a sargable date
 predicate buys nothing here — there is no index for it to use.
 
-### The fix: rebuild card 20197 on base tables
+### This is systemic, not one table
 
-The base tables are indexed, and one index is named for this exact job:
+EVERY table in the `materialized` schema has exactly one index — its primary
+key. Nothing is indexed on `organization_id`:
+
+| table | rows | size | indexes |
+|---|---|---|---|
+| `booking_report` | 1,349,340 | 1560 MB | 1 (pkey) |
+| `item_log_report` | 2,259,449 | 1230 MB | 1 (pkey) |
+| `transaction_report` | 1,005,767 | 976 MB | 1 (pkey) |
+| `membership_and_pass_purchases_report` | 120,963 | 132 MB | 1 (pkey) |
+
+So every card reading them scans the whole thing for one org, and the app's
+4-hour cache is the only reason that is survivable. Card 17293 (the GL rollup
+every org loads) has the same problem and is simply hidden by its cache — the
+exact failure mode the card sign-off rule above exists to catch.
+
+### The ask (platform / whoever owns the Epsio pipeline)
+
+```sql
+CREATE INDEX CONCURRENTLY item_log_report_org_period_index
+  ON materialized.item_log_report (organization_id, datetime_at_primary_timezone);
+```
+
+- These are **ordinary tables** (`relkind = 'r'`), not Postgres materialized
+  views, so `CREATE INDEX` behaves normally — no REFRESH semantics to work
+  around.
+- Selectivity is the whole argument: Pawnee is **1,682 of 2,259,449 rows
+  (0.07%)**. Today every pull reads 1.23 GB to return 171.
+- **Caveat worth raising with them:** the pkey is named
+  `population_temp_<uuid>_pkey`, which suggests the table is built under a temp
+  name and renamed on repopulation. If so, a hand-added index would be dropped
+  on the next full rebuild — so the index needs to belong to the Epsio
+  definition, not be bolted on afterwards.
+- Indexes must be created on the primary; the read replica Metabase uses cannot
+  carry its own.
+- The same argument applies to `booking_report` and `transaction_report`.
+
+### Rejected: rebuild card 20197 on base tables
+
+Kept for the measurement only — see the decision at the top. The base tables
+are indexed, and one index is named for this exact job:
 
 ```
 order_item_transaction_item_log_period_index
@@ -149,9 +194,9 @@ order_item_transaction_item_log_period_index
   WHERE deleted_at IS NULL AND confirmed_at IS NOT NULL AND credit_id IS NULL
 ```
 
-Measured against it, same org + month: **464ms, identical 171 rows.** ~60-100x.
-Its WHERE clause is almost certainly Epsio's own row-inclusion rule for the
-view — reuse it verbatim.
+Measured against it, same org + month: **464ms, identical 171 rows** — versus
+27-48s. That is the size of the prize an index on the materialized table would
+also capture, without re-deriving anything.
 
 Field mapping (mat-view column → base source):
 
@@ -195,11 +240,10 @@ side, zero field-level diffs on date/amount/gl_code/type/method/batch/customer,
 and debit/credit/net totals equal to the cent. Anything less is not sign-off —
 see the card sign-off rule above.
 
-Alternative fix, if the rebuild ever looks too risky: an index on
-`(organization_id, datetime_at_primary_timezone)` on the Epsio-managed view.
-Cheaper and exact, but it is a platform-side change rather than a card edit —
-and it would also speed up card 17293, which reads the same table and is only
-hidden today by its 4-hour cache.
+Why this was rejected: the two unknowns above are both places where a wrong
+guess is silent and wrong in a finance document, and the sign-off gate needed to
+retire that risk is most of the cost of the work. An index gets the same speed
+while the numbers keep coming from the definition finance already trusts.
 
 ## Railway deploys
 
