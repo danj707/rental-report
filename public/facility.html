@@ -2673,9 +2673,33 @@ function App() {
     };
   }
 
+  // How many SHEETS a set of rows will produce — which is not how many rows it
+  // contains. A multi-day permit shows one row per calendar day but prints a
+  // single sheet covering the whole run, so counting rows promised "Export
+  // Permits (7)" and delivered 3. This mirrors the collapse in the
+  // permits.pdf route (permit + site, multi-day only); change one, change both.
+  function permitSheetCount(rows) {
+    if (!rows || !permits) return 0;
+    const seen = new Set();
+    let n = 0;
+    for (const r of rows) {
+      const p = r.resId && permits[r.resId];
+      if (!p) continue;
+      if (p.multi) {
+        const key = (p.id || p.code) + '|' + String(r.site || '').replace(/\s+/g, ' ').trim().toLowerCase();
+        if (seen.has(key)) continue;
+        seen.add(key);
+      }
+      n++;
+    }
+    return n;
+  }
+
   // `rows` omitted → the whole filtered view (toolbar button). Passed a single
   // row → that one rental's sheet (the row chip), which is what someone wants
-  // when they are about to walk one permit out to a pavilion.
+  // when they are about to walk one permit out to a pavilion. Clicking the chip
+  // on day 2 of a stay is fine: the server prints the same one sheet for the
+  // whole run, not a sheet for that day.
   function exportPermits(rows) {
     const src = Array.isArray(rows) ? rows : (filteredRows || []);
     setPermitLoading(Array.isArray(rows) && rows[0] ? rows[0].resId : 'all');
@@ -2970,7 +2994,7 @@ function App() {
         </button>
         {(() => {
           if (!permits || !filteredRows || !filteredRows.length) return null;
-          const n = filteredRows.filter(r => r.resId && permits[r.resId]).length;
+          const n = permitSheetCount(filteredRows);
           if (!n) return null;   // nothing to print → no button, rather than a dead one
           return (
             <button
@@ -3273,8 +3297,16 @@ function App() {
                               <span className="cell col-end">{formatTime(r.end)}</span>
                               <span className="cell col-site">
                                 {r.site}
-                                {r.multiDayDays && r.multiDayNum == 1 && <span style={{display:'block',fontSize:'10px',fontWeight:700,color:'#d97706',marginTop:2}}>Multi-Day Rental ({r.multiDayDays} days){multiDayRange(r) ? ` ${multiDayRange(r)}` : ''}</span>}
-                                {r.multiDayDays && r.multiDayNum > 1 && <span style={{display:'block',fontSize:'10px',color:'#888',marginTop:2}}>Day {r.multiDayNum} of {r.multiDayDays}{multiDayRange(r) ? ` (${multiDayRange(r)})` : ''}</span>}
+                                {/* The multi-day callout goes on EVERY day of the run, not just the
+                                    first. Day 2 used to drop to grey "Day 2 of 3" text, so scrolling
+                                    to a Wednesday gave no hint the site was booked either side of it
+                                    — and the run's dates are the thing someone scanning the schedule
+                                    is looking for. Day 1 reads exactly as before; later days append
+                                    their position. */}
+                                {r.multiDayDays && <span style={{display:'block',fontSize:'10px',fontWeight:700,color:'#d97706',marginTop:2}}>
+                                  Multi-Day Rental ({r.multiDayDays} days){multiDayRange(r) ? ` ${multiDayRange(r)}` : ''}
+                                  {r.multiDayNum > 1 ? ` \u00b7 Day ${r.multiDayNum} of ${r.multiDayDays}` : ''}
+                                </span>}
                               </span>
                               <span className="cell col-reservee">{r.reservee}</span>
                               <span className="cell col-phone">{formatPhone(r.phone)}</span>

@@ -6703,7 +6703,17 @@ app.get("/:org/facility/api/permits", async (req, res) => {
     const byRes = await fetchPermits(org.orgId);
     const permits = {};
     for (const [resId, r] of byRes) {
-      permits[resId] = { code: r["Permit Code"] || "", url: r["Permit URL"] || "" };
+      permits[resId] = {
+        code: r["Permit Code"] || "",
+        url: r["Permit URL"] || "",
+        // `id` and `multi` exist so the toolbar can count SHEETS rather than
+        // rows. A multi-day permit occupies one row per calendar day in the
+        // feed but prints one sheet, so a straight row count told you
+        // "Export Permits (7)" and then handed you 3. The client applies the
+        // same permit+site collapse this route does — keep the two in step.
+        id: r["Permit ID"] || r["Permit Code"] || "",
+        multi: Number(r["Date Count"] || 0) > 1,
+      };
     }
     res.json({ permits, count: Object.keys(permits).length });
   } catch (err) {
