@@ -79,7 +79,25 @@ shared card or large org is onboarded, and run it as the last step of every card
 change. Single-card form:
 `node scripts/verify-report-live.js --card <uuid> --org <orgId> [--start --end --timeout --min-rows]`.
 
-## Tyler/Munis "GL Account Detail" export (card 20197)
+## Tyler/Munis "GL Account Detail" export (card 20197) — PARKED, button off
+
+**Status 2026-08-21 (Dan): switched OFF for every org.** `MUNIS_EXPORT_ORGS` in
+server.js is now empty, which hides the button and 404s the route. The manifest
+row for the card came out too, so the daily check stops paying for a 1.23 GB
+scan on a report nobody is pulling.
+
+Not broken — parked. Every pull is a full seq scan of
+`materialized.item_log_report` (27-48s; see the section below), the export is
+not in real use yet, and the table view eng is building may remove the need for
+this card altogether. Revisit when someone actually needs a Munis file, or when
+that table view lands.
+
+**Nothing was deleted**: `lib/munis.js`, the route, `sql/gl-account-detail.sql`
+and card 20197 are all intact. To switch back on, add the slug to
+`MUNIS_EXPORT_ORGS` and re-add the `{card, org}` row to
+`scripts/report-cards.manifest.json`.
+
+Everything below describes how it works when enabled.
 
 The 🏛️ **Tyler** button on the GL report (Pawnee only) streams a Munis-format
 `glgatddt` account detail — PDF for reading, `.csv` for loading. Server-rendered:
@@ -109,10 +127,20 @@ page state.
 - `MB_GL_DETAIL_UUID` (Railway env) holds the card's public UUID. Unset ⇒ the
   button is hidden and the route 503s.
 
-## The `materialized` schema has no secondary indexes (OPEN, spec'd 2026-08-21)
+## The `materialized` schema has no secondary indexes (PINNED, spec'd 2026-08-21)
 
-**DECISION (Dan, 2026-08-21): the fix is an index on the materialized table. Do
-NOT rebuild the card on base tables** — that re-derives finance logic the item
+**PINNED, not being worked (Dan, 2026-08-21).** The table view eng is building
+may make this moot, and the one surface that felt the pain — the Tyler export —
+is switched off, so nothing is pulling this data today. Do not start on it
+without checking in; the write-up below is here so the diagnosis does not have
+to be redone.
+
+Still worth passing to whoever owns the Epsio pipeline whenever it next comes
+up, because **card 17293 has the same problem** and is hidden only by its
+4-hour cache.
+
+**DECISION (Dan, 2026-08-21): if it is ever fixed, the fix is an index on the
+materialized table. Do NOT rebuild the card on base tables** — that re-derives finance logic the item
 log already encodes, and any divergence would be silent, in a document handed to
 a finance office. The base-table numbers below stay only as evidence for how
 much an index buys.

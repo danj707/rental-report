@@ -1331,7 +1331,19 @@ const FACILITIES_SUMMARY_UUID = "4c070d95-ab02-4b9d-ac43-ac86257162d5";
 const GL_DETAIL_UUID = process.env.MB_GL_DETAIL_UUID || "ef065f39-504f-487a-9181-5bd415a19a58";
 // Per-org opt-in: the export only means something for an org running a real
 // general ledger, and its layout is a municipal form, not a rec-department one.
-const MUNIS_EXPORT_ORGS = new Set(["pawnee"]);
+// PARKED 2026-08-21 (Dan). Empty on purpose — this hides the Tyler button and
+// 404s the export route, org by org. Pawnee was the only entry.
+//
+// Not because it is broken: it works, but each pull is a full seq scan of
+// materialized.item_log_report (27-48s, 1.23 GB read to return ~171 rows — see
+// CLAUDE.md), and nobody is using the export yet. Not worth that read against
+// prod for a report on the shelf, especially when the table view eng is
+// building may remove the reason for this card entirely.
+//
+// To switch it back on: put the slug back in the Set, and re-add the
+// {card, org} row to scripts/report-cards.manifest.json. Nothing else was
+// removed — lib/munis.js, the route, and card 20197 are all still here.
+const MUNIS_EXPORT_ORGS = new Set([]);
 const munisExportEnabled = slug => MUNIS_EXPORT_ORGS.has(slug) && !!GL_DETAIL_UUID;
 
 // Fetch the detail rows straight from the public card. Deliberately NOT routed
