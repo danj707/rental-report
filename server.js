@@ -6723,7 +6723,10 @@ app.post("/:org/facility/permits.pdf", express.json({ limit: "2mb" }), async (re
         // only renders it when there is more than one date — a single-date
         // permit sends no schedule at all (see sql/facility-permits.sql).
         schedule: p["Schedule"] || null,
-        qr: await QRCode.toDataURL(url, { errorCorrectionLevel: "M", margin: 1, width: 300 }),
+        // Level H (30% recoverable) rather than M, because the sheet lays the
+        // org's mark over the middle of the code. Rendered at 600px so the
+        // 2.4in printed square still has clean module edges for a phone camera.
+        qr: await QRCode.toDataURL(url, { errorCorrectionLevel: "H", margin: 2, width: 600 }),
       });
     }
     if (!sheets.length) {
