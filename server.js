@@ -3420,6 +3420,16 @@ async function generatePdf(orgSlug, reportType, startDate, endDate, filters = {}
   // Tyler turnover mode: the GL report re-rendered as the Munis treasurer
   // cover sheets — portrait Letter at normal scale, unlike the extra-wide GL.
   const isTyler = reportType === "gl" && filters.tyler === "1";
+  // The Director's Report is a dashboard, not a table: its grids are
+  // `repeat(auto-fit, minmax(...))`, so the column count is a function of the
+  // available width. Printed at scale 1 the page gets 979px (landscape Letter
+  // less margins) against the 1400px it is designed at, and every grid reflows
+  // — the six KPI cards break 5 + 1, the offer funnel 3 + 1, data completeness
+  // 2 + 1. Scaling instead of restyling hands the layout the same 1400px the
+  // screen has (979 / 0.7 ≈ 1399), so the PDF is the screen, printed smaller.
+  // Doing it per-grid in print CSS would have to be redone for every grid
+  // anyone adds later.
+  const isDirectors = reportType === "directors-report";
   const reportLabel = isTyler
     ? "GL Code Rollup, Treasurer Turnover"
     : reportType === "gl"
@@ -3453,7 +3463,11 @@ async function generatePdf(orgSlug, reportType, startDate, endDate, filters = {}
     // own print layout via CSS (hide columns, compact fonts, etc.).
     await page.setViewport(isGL
       ? { width: 1600, height: 900, deviceScaleFactor: 2 }
-      : { width: 1100, height: 900, deviceScaleFactor: 1 });
+      : isDirectors
+        // Match the width the print layout will get, so the on-screen render
+        // Puppeteer waits on is the one that ends up on the page.
+        ? { width: 1400, height: 900, deviceScaleFactor: 2 }
+        : { width: 1100, height: 900, deviceScaleFactor: 1 });
     console.log(`[pdf] navigating to ${url.replace(/token=[^&]+/, "token=***")}`);
     const t0 = Date.now();
     await page.goto(url, { waitUntil: "networkidle0", timeout: 120000 });
@@ -3485,7 +3499,7 @@ async function generatePdf(orgSlug, reportType, startDate, endDate, filters = {}
       format: "Letter",
       landscape: !isTyler,
       printBackground: true,
-      scale: isGL ? 0.6 : 1.0,
+      scale: isGL ? 0.6 : isDirectors ? 0.7 : 1.0,
       margin: { top: "0.4in", bottom: "0.5in", left: "0.4in", right: "0.4in" },
       displayHeaderFooter: true,
       headerTemplate: "<span></span>",
