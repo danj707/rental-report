@@ -393,8 +393,26 @@ sheet:
 - carries add-ons **without quantities**: they are billed per occurrence, so a
   40-date permit holds 79 rows of "Alcohol Permit".
 
-Open, if it ever comes up: no per-org opt-in — the chip only appears where a
-permit exists, so orgs that don't issue permits never see it.
+**No per-org opt-in, by design** — the chip only appears where a permit exists,
+so orgs that don't issue permits never see it. Nothing has to be "turned on"
+for a new org: Douglas County was verified 2026-08-21 with zero issued permits
+and behaves correctly already (facility report 200, chip feed `{permits:{}}`,
+export returns a clean 404 rather than an empty PDF). Their campsite data is
+ready for the stay layout too — 370 multi-day reservations in the next 30 days,
+up to 12 nights, and **zero** missing site names or capacities, so site scoping
+and the capacity line will both resolve when permits are issued.
+
+The manifest carries a `facility-permits / douglas-county-nv` row with
+`minRows: 0`, which checks the card does not error or time out for their org
+while they have no permits. **Raise it to 1 once permits are issued** — an
+empty result is exactly what that check exists to catch everywhere else.
+
+How these are actually used (Dan, 2026-08-21): permits cover essentially ALL
+facility reservations, and multi-day is mostly campsites though not exclusively.
+Campsite sheets generally will NOT be printed and posted at the site — so for
+that segment the per-row chip matters more than the bulk export, and the stay
+layout is there to be correct rather than because a crew is hanging it on a
+post.
 
 ## Dev branch
 
