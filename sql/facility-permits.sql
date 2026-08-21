@@ -44,6 +44,13 @@
    share a time. The site key matches card 17294's "Facility" column — both are
    court.court_number.
 
+   TWO SHAPES OF MULTI-DAY, and they are not the same thing:
+     recurring — many occurrences of one day each (every Friday until September)
+     stay      — ONE occurrence spanning days (campsite, 9/15 3:00pm → 9/17 11:00am)
+   Each schedule entry therefore carries both ends, `d`/`ed` plus `s`/`e`, and
+   "Date Count" counts calendar days COVERED rather than occurrences. Gating on
+   occurrences is what made overnight sites print as single-day bookings.
+
    ORDERING MATTERS AND IS EASY TO GET WRONG: aggregating formatted labels with
    string_agg(DISTINCT …) sorts them as TEXT, which yields
    "Aug 13, Aug 20, Aug 27, Aug 6, Jul 16" — chronological nonsense on a printed
@@ -64,12 +71,20 @@ WITH permits AS (
     AND frp.deleted_at IS NULL
     AND frp.revoked_at IS NULL
 ),
--- One row per (permit, date, times, site): the grain a posting sheet lists.
+-- One row per (permit, occurrence, site): the grain a posting sheet lists.
 -- DISTINCT collapses the multi-court fan-out of a single booking.
+--
+-- occ_end_date is NOT decoration. A campsite or shelter booked overnight is ONE
+-- reservation whose range spans days — Pawnee's Kumeyaay Lake site runs
+-- 9/15 3:00pm to 9/17 11:00am as a single row, and Douglas County's campsites
+-- are all like this. Reading only the start date counts that as a single-day
+-- booking, which is how these sheets ended up printing one date and a lone
+-- check-in time. Nightly sites need both ends of the stay.
 occ AS (
   SELECT DISTINCT
     p.id                                                         AS permit_id,
     date(lower(r.reservation_timestamp_range))                   AS occ_date,
+    date(upper(r.reservation_timestamp_range))                   AS occ_end_date,
     to_char(lower(r.reservation_timestamp_range), 'FMHH12:MIam') AS starts,
     to_char(upper(r.reservation_timestamp_range), 'FMHH12:MIam') AS ends,
     ct.court_number                                              AS site,
@@ -82,23 +97,40 @@ occ AS (
   LEFT JOIN reservation_court rc ON rc.reservation_id = r.id
   LEFT JOIN court ct             ON ct.id = rc.court_id
 ),
+-- Every calendar day any occurrence touches, so "how many days is this permit
+-- good for" is one number whether the permit is a weekly recurrence (many
+-- one-day occurrences) or one continuous stay (one occurrence, many days).
+covered AS (
+  SELECT DISTINCT o.permit_id, g.d::date AS day
+  FROM occ o,
+       LATERAL generate_series(o.occ_date::timestamp,
+                               o.occ_end_date::timestamp,
+                               interval '1 day') g(d)
+),
+day_counts AS (
+  SELECT permit_id, COUNT(*) AS date_count FROM covered GROUP BY permit_id
+),
 sched AS (
   SELECT
-    permit_id,
-    COUNT(DISTINCT occ_date)                                    AS date_count,
-    MIN(occ_date)                                               AS first_date,
-    MAX(occ_date)                                               AS last_date,
-    MAX(site_capacity)                                          AS capacity,
-    -- Only multi-date permits need a schedule; a single-date permit's sheet
-    -- already shows its one date, and emitting the array anyway would ship a
-    -- JSON blob per permit for the ~99% of permits that cannot use it
-    -- (Watertown: 17 of 1,212).
-    CASE WHEN COUNT(DISTINCT occ_date) > 1
-      THEN json_agg(json_build_object('d', occ_date, 's', starts, 'e', ends, 'site', site)
-                    ORDER BY occ_date, starts)
+    o.permit_id,
+    dc.date_count                                               AS date_count,
+    MIN(o.occ_date)                                             AS first_date,
+    MAX(o.occ_end_date)                                         AS last_date,
+    MAX(o.site_capacity)                                        AS capacity,
+    -- Only permits covering more than one day need a schedule; a single-day
+    -- permit's sheet already shows its one date, and emitting the array anyway
+    -- would ship a JSON blob per permit for the ~99% that cannot use it
+    -- (Watertown: 17 of 1,212). Gated on days COVERED, not on the number of
+    -- occurrences, so a single overnight stay still gets one.
+    CASE WHEN dc.date_count > 1
+      THEN json_agg(json_build_object('d',  o.occ_date, 'ed', o.occ_end_date,
+                                      's',  o.starts,   'e',  o.ends,
+                                      'site', o.site)
+                    ORDER BY o.occ_date, o.starts)
     END                                                         AS schedule
-  FROM occ
-  GROUP BY permit_id
+  FROM occ o
+  JOIN day_counts dc ON dc.permit_id = o.permit_id
+  GROUP BY o.permit_id, dc.date_count
 ),
 -- Add-ons hang off the rental's order_item as children, exactly as card 17294
 -- reads them (parent_order_item_id + product_type 'product').
