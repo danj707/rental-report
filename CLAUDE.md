@@ -109,6 +109,98 @@ page state.
 - `MB_GL_DETAIL_UUID` (Railway env) holds the card's public UUID. Unset ⇒ the
   button is hidden and the route 503s.
 
+## GL detail card is a full table scan (OPEN, spec'd 2026-08-21)
+
+The Tyler export failed on a normal month-end pull. `materialized.item_log_report`
+carries **exactly one index** — the primary key on `epsio_id`. Nothing on
+`organization_id`, nothing on the date column. So every read is a parallel seq
+scan of the whole multi-org table:
+
+```
+Parallel Seq Scan on item_log_report  (cost=0.00..153217.93 rows=3)
+```
+
+Pawnee for one month: **27-48s on a quiet network to return 171 rows**, longer
+while a deploy prewarms ~28 orgs into the same Metabase. Shipped mitigations
+(PR #121) only buy headroom: request budget 90s → 150s, and a 60s result cache
+so PDF-then-.csv is one scan instead of two.
+
+**A join does NOT fix this** — asked and answered, with EXPLAIN:
+
+```
+Nested Loop  (cost=1000.14..147177.30)
+  ->  Index Only Scan on organization       (1 row)
+  ->  Parallel Seq Scan on item_log_report  ← unchanged
+```
+
+`WHERE organization_id = X` is already the tightest restriction there is. With
+no index, "restrict" means "read every row and discard the misses"; a join just
+puts a nested loop on top of the same scan. Same reason a sargable date
+predicate buys nothing here — there is no index for it to use.
+
+### The fix: rebuild card 20197 on base tables
+
+The base tables are indexed, and one index is named for this exact job:
+
+```
+order_item_transaction_item_log_period_index
+  ON order_item_transaction (organization_id, confirmed_at)
+  INCLUDE (payment_id, refund_id, gl_code)
+  WHERE deleted_at IS NULL AND confirmed_at IS NOT NULL AND credit_id IS NULL
+```
+
+Measured against it, same org + month: **464ms, identical 171 rows.** ~60-100x.
+Its WHERE clause is almost certainly Epsio's own row-inclusion rule for the
+view — reuse it verbatim.
+
+Field mapping (mat-view column → base source):
+
+| view column | base source |
+|---|---|
+| `order_item_transaction_{id,amount,gl_code,confirmed_at}` | `order_item_transaction` |
+| `transaction_type` | `payment_id IS NOT NULL` → payment, `refund_id` → refund |
+| `transaction_method` | `payment.payment_method_type` / `refund.payment_method_type` |
+| `transaction_event_batch_id` | payment/refund `.transaction_event_id` → `transaction_event` |
+| `order_item_{name,type,fee_category}` | `order_item` |
+| `desk_location_name` | `transaction_event.desk_location_id` → `desk_location` |
+| `customer_*` | `users` — **path not yet confirmed** |
+| `datetime_at_primary_timezone` | `confirmed_at AT TIME ZONE <org tz>` — **rule not confirmed** |
+
+**Keep the date filter sargable.** Convert the local bounds to instants:
+
+```sql
+oit.confirmed_at >= ( {{start_date}}::timestamp        AT TIME ZONE tz)
+AND oit.confirmed_at <  (({{end_date}}::date + 1)::timestamp AT TIME ZONE tz)
+```
+
+NOT `(oit.confirmed_at AT TIME ZONE tz)::date BETWEEN …` — wrapping the column
+is exactly the mistake that makes the current card unable to use an index even
+if one existed.
+
+### Two things to settle before writing it
+
+1. **Timezone.** The view stamps ONE timezone per org — Pawnee is
+   `America/Los_Angeles` for all 1,682 rows even though it has a location in
+   `America/Chicago`. Majority-location-timezone reproduces that for Pawnee,
+   Smyrna and Watertown, but that is an inference about Epsio's rule, not a
+   reading of it. Picking wrong slides transactions across midnight in a
+   finance document. `organization.config` holds no timezone key.
+2. **Customer name path.** `order_item` → order → customer user, unverified.
+
+### Sign-off gate (this is a finance document)
+
+FULL OUTER JOIN new against old on `order_item_transaction_id` over **at least
+12 months** for the heaviest org, and require: zero rows present in only one
+side, zero field-level diffs on date/amount/gl_code/type/method/batch/customer,
+and debit/credit/net totals equal to the cent. Anything less is not sign-off —
+see the card sign-off rule above.
+
+Alternative fix, if the rebuild ever looks too risky: an index on
+`(organization_id, datetime_at_primary_timezone)` on the Epsio-managed view.
+Cheaper and exact, but it is a platform-side change rather than a card edit —
+and it would also speed up card 17293, which reads the same table and is only
+hidden today by its 4-hour cache.
+
 ## Railway deploys
 
 Railway project **lucid-possibility** (`37e39bf4-114d-446f-b7e3-5a8cedc7fafd`),
