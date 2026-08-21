@@ -3297,8 +3297,16 @@ function App() {
                               <span className="cell col-end">{formatTime(r.end)}</span>
                               <span className="cell col-site">
                                 {r.site}
-                                {r.multiDayDays && r.multiDayNum == 1 && <span style={{display:'block',fontSize:'10px',fontWeight:700,color:'#d97706',marginTop:2}}>Multi-Day Rental ({r.multiDayDays} days){multiDayRange(r) ? ` ${multiDayRange(r)}` : ''}</span>}
-                                {r.multiDayDays && r.multiDayNum > 1 && <span style={{display:'block',fontSize:'10px',color:'#888',marginTop:2}}>Day {r.multiDayNum} of {r.multiDayDays}{multiDayRange(r) ? ` (${multiDayRange(r)})` : ''}</span>}
+                                {/* The multi-day callout goes on EVERY day of the run, not just the
+                                    first. Day 2 used to drop to grey "Day 2 of 3" text, so scrolling
+                                    to a Wednesday gave no hint the site was booked either side of it
+                                    — and the run's dates are the thing someone scanning the schedule
+                                    is looking for. Day 1 reads exactly as before; later days append
+                                    their position. */}
+                                {r.multiDayDays && <span style={{display:'block',fontSize:'10px',fontWeight:700,color:'#d97706',marginTop:2}}>
+                                  Multi-Day Rental ({r.multiDayDays} days){multiDayRange(r) ? ` ${multiDayRange(r)}` : ''}
+                                  {r.multiDayNum > 1 ? ` \u00b7 Day ${r.multiDayNum} of ${r.multiDayDays}` : ''}
+                                </span>}
                               </span>
                               <span className="cell col-reservee">{r.reservee}</span>
                               <span className="cell col-phone">{formatPhone(r.phone)}</span>
