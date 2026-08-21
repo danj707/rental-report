@@ -79,7 +79,25 @@ shared card or large org is onboarded, and run it as the last step of every card
 change. Single-card form:
 `node scripts/verify-report-live.js --card <uuid> --org <orgId> [--start --end --timeout --min-rows]`.
 
-## Tyler/Munis "GL Account Detail" export (card 20197)
+## Tyler/Munis "GL Account Detail" export (card 20197) — PARKED, button off
+
+**Status 2026-08-21 (Dan): switched OFF for every org.** `MUNIS_EXPORT_ORGS` in
+server.js is now empty, which hides the button and 404s the route. The manifest
+row for the card came out too, so the daily check stops paying for a 1.23 GB
+scan on a report nobody is pulling.
+
+Not broken — parked. Every pull is a full seq scan of
+`materialized.item_log_report` (27-48s; see the section below), the export is
+not in real use yet, and the table view eng is building may remove the need for
+this card altogether. Revisit when someone actually needs a Munis file, or when
+that table view lands.
+
+**Nothing was deleted**: `lib/munis.js`, the route, `sql/gl-account-detail.sql`
+and card 20197 are all intact. To switch back on, add the slug to
+`MUNIS_EXPORT_ORGS` and re-add the `{card, org}` row to
+`scripts/report-cards.manifest.json`.
+
+Everything below describes how it works when enabled.
 
 The 🏛️ **Tyler** button on the GL report (Pawnee only) streams a Munis-format
 `glgatddt` account detail — PDF for reading, `.csv` for loading. Server-rendered:
@@ -108,6 +126,152 @@ page state.
   add `fiscalYearStartMonth` there if the org isn't on a July FY.
 - `MB_GL_DETAIL_UUID` (Railway env) holds the card's public UUID. Unset ⇒ the
   button is hidden and the route 503s.
+
+## The `materialized` schema has no secondary indexes (PINNED, spec'd 2026-08-21)
+
+**PINNED, not being worked (Dan, 2026-08-21).** The table view eng is building
+may make this moot, and the one surface that felt the pain — the Tyler export —
+is switched off, so nothing is pulling this data today. Do not start on it
+without checking in; the write-up below is here so the diagnosis does not have
+to be redone.
+
+Still worth passing to whoever owns the Epsio pipeline whenever it next comes
+up, because **card 17293 has the same problem** and is hidden only by its
+4-hour cache.
+
+**DECISION (Dan, 2026-08-21): if it is ever fixed, the fix is an index on the
+materialized table. Do NOT rebuild the card on base tables** — that re-derives finance logic the item
+log already encodes, and any divergence would be silent, in a document handed to
+a finance office. The base-table numbers below stay only as evidence for how
+much an index buys.
+
+The Tyler export failed on a normal month-end pull. `materialized.item_log_report`
+carries **exactly one index** — the primary key on `epsio_id`. Nothing on
+`organization_id`, nothing on the date column. So every read is a parallel seq
+scan of the whole multi-org table:
+
+```
+Parallel Seq Scan on item_log_report  (cost=0.00..153217.93 rows=3)
+```
+
+Pawnee for one month: **27-48s on a quiet network to return 171 rows**, longer
+while a deploy prewarms ~28 orgs into the same Metabase. Shipped mitigations
+(PR #121) only buy headroom: request budget 90s → 150s, and a 60s result cache
+so PDF-then-.csv is one scan instead of two.
+
+**A join does NOT fix this** — asked and answered, with EXPLAIN:
+
+```
+Nested Loop  (cost=1000.14..147177.30)
+  ->  Index Only Scan on organization       (1 row)
+  ->  Parallel Seq Scan on item_log_report  ← unchanged
+```
+
+`WHERE organization_id = X` is already the tightest restriction there is. With
+no index, "restrict" means "read every row and discard the misses"; a join just
+puts a nested loop on top of the same scan. Same reason a sargable date
+predicate buys nothing here — there is no index for it to use.
+
+### This is systemic, not one table
+
+EVERY table in the `materialized` schema has exactly one index — its primary
+key. Nothing is indexed on `organization_id`:
+
+| table | rows | size | indexes |
+|---|---|---|---|
+| `booking_report` | 1,349,340 | 1560 MB | 1 (pkey) |
+| `item_log_report` | 2,259,449 | 1230 MB | 1 (pkey) |
+| `transaction_report` | 1,005,767 | 976 MB | 1 (pkey) |
+| `membership_and_pass_purchases_report` | 120,963 | 132 MB | 1 (pkey) |
+
+So every card reading them scans the whole thing for one org, and the app's
+4-hour cache is the only reason that is survivable. Card 17293 (the GL rollup
+every org loads) has the same problem and is simply hidden by its cache — the
+exact failure mode the card sign-off rule above exists to catch.
+
+### The ask (platform / whoever owns the Epsio pipeline)
+
+```sql
+CREATE INDEX CONCURRENTLY item_log_report_org_period_index
+  ON materialized.item_log_report (organization_id, datetime_at_primary_timezone);
+```
+
+- These are **ordinary tables** (`relkind = 'r'`), not Postgres materialized
+  views, so `CREATE INDEX` behaves normally — no REFRESH semantics to work
+  around.
+- Selectivity is the whole argument: Pawnee is **1,682 of 2,259,449 rows
+  (0.07%)**. Today every pull reads 1.23 GB to return 171.
+- **Caveat worth raising with them:** the pkey is named
+  `population_temp_<uuid>_pkey`, which suggests the table is built under a temp
+  name and renamed on repopulation. If so, a hand-added index would be dropped
+  on the next full rebuild — so the index needs to belong to the Epsio
+  definition, not be bolted on afterwards.
+- Indexes must be created on the primary; the read replica Metabase uses cannot
+  carry its own.
+- The same argument applies to `booking_report` and `transaction_report`.
+
+### Rejected: rebuild card 20197 on base tables
+
+Kept for the measurement only — see the decision at the top. The base tables
+are indexed, and one index is named for this exact job:
+
+```
+order_item_transaction_item_log_period_index
+  ON order_item_transaction (organization_id, confirmed_at)
+  INCLUDE (payment_id, refund_id, gl_code)
+  WHERE deleted_at IS NULL AND confirmed_at IS NOT NULL AND credit_id IS NULL
+```
+
+Measured against it, same org + month: **464ms, identical 171 rows** — versus
+27-48s. That is the size of the prize an index on the materialized table would
+also capture, without re-deriving anything.
+
+Field mapping (mat-view column → base source):
+
+| view column | base source |
+|---|---|
+| `order_item_transaction_{id,amount,gl_code,confirmed_at}` | `order_item_transaction` |
+| `transaction_type` | `payment_id IS NOT NULL` → payment, `refund_id` → refund |
+| `transaction_method` | `payment.payment_method_type` / `refund.payment_method_type` |
+| `transaction_event_batch_id` | payment/refund `.transaction_event_id` → `transaction_event` |
+| `order_item_{name,type,fee_category}` | `order_item` |
+| `desk_location_name` | `transaction_event.desk_location_id` → `desk_location` |
+| `customer_*` | `users` — **path not yet confirmed** |
+| `datetime_at_primary_timezone` | `confirmed_at AT TIME ZONE <org tz>` — **rule not confirmed** |
+
+**Keep the date filter sargable.** Convert the local bounds to instants:
+
+```sql
+oit.confirmed_at >= ( {{start_date}}::timestamp        AT TIME ZONE tz)
+AND oit.confirmed_at <  (({{end_date}}::date + 1)::timestamp AT TIME ZONE tz)
+```
+
+NOT `(oit.confirmed_at AT TIME ZONE tz)::date BETWEEN …` — wrapping the column
+is exactly the mistake that makes the current card unable to use an index even
+if one existed.
+
+### Two things to settle before writing it
+
+1. **Timezone.** The view stamps ONE timezone per org — Pawnee is
+   `America/Los_Angeles` for all 1,682 rows even though it has a location in
+   `America/Chicago`. Majority-location-timezone reproduces that for Pawnee,
+   Smyrna and Watertown, but that is an inference about Epsio's rule, not a
+   reading of it. Picking wrong slides transactions across midnight in a
+   finance document. `organization.config` holds no timezone key.
+2. **Customer name path.** `order_item` → order → customer user, unverified.
+
+### Sign-off gate (this is a finance document)
+
+FULL OUTER JOIN new against old on `order_item_transaction_id` over **at least
+12 months** for the heaviest org, and require: zero rows present in only one
+side, zero field-level diffs on date/amount/gl_code/type/method/batch/customer,
+and debit/credit/net totals equal to the cent. Anything less is not sign-off —
+see the card sign-off rule above.
+
+Why this was rejected: the two unknowns above are both places where a wrong
+guess is silent and wrong in a finance document, and the sign-off gate needed to
+retire that risk is most of the cost of the work. An index gets the same speed
+while the numbers keep coming from the definition finance already trusts.
 
 ## Railway deploys
 
@@ -183,36 +347,72 @@ Already shipped (PR #75, live on `main`): name-based site-type recovery so
 filter, Ice sub-tab, court-name wrap. Display/scoping only — did not change the
 revenue math, so the gap above predates and survives it.
 
-## PINNED IDEA — printable "posting sheet" for the rented location (not built)
+## Facility rental "posting sheet" — BUILT (PRs #118, #120, #121)
 
-Dan, 2026-08-20. A sheet maintenance can print and hang **at the facility** so
-anyone walking up knows what is booked: rental name, group/reservee, date and
-times, facility/site, and a **scannable QR code** to the permit or rental.
+The one-pager maintenance prints and hangs **at the facility** so anyone walking
+up knows what is booked, with a **scannable QR** to the live permit.
 
-Why it is worth doing: staff on site have no way to answer "who has this field
-right now, and are they supposed to?" without calling the office. Today the only
-artifact is the whole weekly schedule, which is the wrong shape for a fence post.
+- `lib/permit.js` — pure layout (no Express, no Metabase, no fs). `toHtml(sheets)`
+  → one `.sheet` per page; the caller supplies each QR as a data URI.
+- Server: `POST /:org/facility/permits.pdf` (client posts the rows it is showing,
+  so the export honours on-screen filters) → `renderHtmlPdf(html, {plain:true})`.
+  `GET /:org/facility/api/permits` feeds the per-row chip a thin `{code, url}`
+  map. Slack event: `permits`.
+- UI: `public/facility.html` — a per-row chip (own `showPermit` column toggle,
+  default ON — do NOT gate it on `showLink`, which defaults off) and an
+  "Export Permits" toolbar button over the filtered view.
+- **The QR target is `https://www.rec.us/permits/{permitId}`** — no auth, which
+  is what makes it safe taped to a fence. Confirmed by decoding the QR out of
+  Rec's own permit PDF. The admin `/admin/o/{orgId}/facility-rentals/{resId}`
+  URL is NOT usable here.
+- Card **20230** (`sql/facility-permits.sql`, public UUID
+  `6771e2fe-1d9c-41c1-a921-7d875115305e`, env `MB_PERMITS_UUID`). Issued permits
+  only — a draft or revoked permit has no working public page, so a sheet for one
+  sends staff to a dead link. Tag types don't matter for this card (the route
+  echoes the card's own registered types back), so an API edit needs no re-flip.
+- The permit code Rec prints is the **LAST** 8 hex of the permit id.
+- Exports re-fetch permits live so a permit revoked since the last page load can
+  never be printed; `PERMIT_LIVE_MAX_AGE` (60s) keeps back-to-back exports from
+  each paying the full card time (Watertown's card is ~25s).
 
-What already exists that this can lean on:
+**Multi-day permits (2026-08-20).** A permit covers the WHOLE rental, and the
+sheet goes up once at the start of a run and stays up — so printing only the
+exported row's date tells a parks crew the field is booked for one afternoon when
+it is actually booked every Friday until September. Card 20230 therefore emits
+`Schedule` (JSON `{d,s,e,site}` per occurrence, **multi-date permits only**),
+`Date Count`, `First/Last Date`, `Capacity`, `Attendees` and `Add Ons`, and the
+sheet:
 
-- `renderHtmlPdf(html)` in server.js — server-rendered HTML → PDF via Puppeteer
-  `setContent`, no page visit, added for the Munis export. A posting sheet is the
-  same shape of job: fetch rows → lay out → stream a PDF.
-- The facility card already returns `Reservation ID`, rental name, reservee,
-  location, facility/court and begin/end times — no card change needed.
-- The deep link is already used by the Rec-link column in `public/facility.html`:
-  `https://www.rec.us/admin/o/{orgId}/facility-rentals/{resId}` — that is the
-  natural QR target for staff. **A public/permit-facing target would need a
-  different, non-admin URL** — worth settling before building, since a QR taped
-  to a fence is world-readable.
-- QR generation is not in the repo yet; needs a dependency (e.g. `qrcode` to a
-  data URI) or a server-rendered SVG.
+- **scopes the dates to the site it is hung at** — the Multipurpose Field's sheet
+  must not list the same permit's Kitchen booking. Site key = `court.court_number`
+  = card 17294's "Facility" column. No match ⇒ fall back to the whole run.
+- prints **one sheet per permit per site**, not per row, once a permit is
+  multi-date — otherwise a week of a recurring rental yields five identical pages.
+- caps the date list at 32 **in JS**, not by CSS clipping, and says "+N more" — a
+  sheet that quietly loses rows to overflow looks complete and is not.
+- carries add-ons **without quantities**: they are billed per occurrence, so a
+  40-date permit holds 79 rows of "Alcohol Permit".
 
-Open questions for Dan: one sheet per reservation or one per site per day?
-Does the QR go to the admin record (staff) or a public permit view (anyone)?
-Per-org opt-in like the Munis export, or on for everyone?
+**No per-org opt-in, by design** — the chip only appears where a permit exists,
+so orgs that don't issue permits never see it. Nothing has to be "turned on"
+for a new org: Douglas County was verified 2026-08-21 with zero issued permits
+and behaves correctly already (facility report 200, chip feed `{permits:{}}`,
+export returns a clean 404 rather than an empty PDF). Their campsite data is
+ready for the stay layout too — 370 multi-day reservations in the next 30 days,
+up to 12 nights, and **zero** missing site names or capacities, so site scoping
+and the capacity line will both resolve when permits are issued.
 
-Per the standing rule, ship it with a Slack activity ping when it is built.
+The manifest carries a `facility-permits / douglas-county-nv` row with
+`minRows: 0`, which checks the card does not error or time out for their org
+while they have no permits. **Raise it to 1 once permits are issued** — an
+empty result is exactly what that check exists to catch everywhere else.
+
+How these are actually used (Dan, 2026-08-21): permits cover essentially ALL
+facility reservations, and multi-day is mostly campsites though not exclusively.
+Campsite sheets generally will NOT be printed and posted at the site — so for
+that segment the per-row chip matters more than the bulk export, and the stay
+layout is there to be correct rather than because a crew is hanging it on a
+post.
 
 ## Dev branch
 

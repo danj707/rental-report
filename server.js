@@ -1331,12 +1331,46 @@ const FACILITIES_SUMMARY_UUID = "4c070d95-ab02-4b9d-ac43-ac86257162d5";
 const GL_DETAIL_UUID = process.env.MB_GL_DETAIL_UUID || "ef065f39-504f-487a-9181-5bd415a19a58";
 // Per-org opt-in: the export only means something for an org running a real
 // general ledger, and its layout is a municipal form, not a rec-department one.
-const MUNIS_EXPORT_ORGS = new Set(["pawnee"]);
+// PARKED 2026-08-21 (Dan). Empty on purpose — this hides the Tyler button and
+// 404s the export route, org by org. Pawnee was the only entry.
+//
+// Not because it is broken: it works, but each pull is a full seq scan of
+// materialized.item_log_report (27-48s, 1.23 GB read to return ~171 rows — see
+// CLAUDE.md), and nobody is using the export yet. Not worth that read against
+// prod for a report on the shelf, especially when the table view eng is
+// building may remove the reason for this card entirely.
+//
+// To switch it back on: put the slug back in the Set, and re-add the
+// {card, org} row to scripts/report-cards.manifest.json. Nothing else was
+// removed — lib/munis.js, the route, and card 20197 are all still here.
+const MUNIS_EXPORT_ORGS = new Set([]);
 const munisExportEnabled = slug => MUNIS_EXPORT_ORGS.has(slug) && !!GL_DETAIL_UUID;
 
 // Fetch the detail rows straight from the public card. Deliberately NOT routed
 // through the report cache: an export is pulled rarely and must be exact, and a
 // 4-hour-old ledger handed to a finance office is worse than a slow one.
+//
+// THIS CARD IS SLOW, AND STRUCTURALLY SO (measured 2026-08-21). Its only index
+// on materialized.item_log_report is the primary key on epsio_id — there is
+// none on organization_id and none on the date column — so every run is a
+// parallel seq scan of the whole multi-org table:
+//
+//   Parallel Seq Scan on item_log_report  (cost=0.00..153217.93 rows=3)
+//
+// Pawnee for one month is 27-48s on a quiet network for 171 rows, and longer
+// while a deploy is prewarming. No rewrite of the SQL fixes that; the durable
+// fix is an index on (organization_id, datetime_at_primary_timezone), which is
+// a change to the Epsio-managed view rather than to this repo. Until then the
+// two mitigations below keep the button working:
+//
+//   - the request budget is 150s, not 90s. 90s sat inside the observed range,
+//     so a normal month-end pull could and did fail outright.
+//   - identical pulls inside GL_DETAIL_CACHE_TTL reuse the rows. Pulling the
+//     PDF and then the .csv for the same range is the common flow and used to
+//     cost two full scans; a minute-old ledger is not the staleness the "must
+//     be exact" rule above is guarding against.
+const GL_DETAIL_CACHE_TTL = 60 * 1000;
+const _glDetailCache = new Map();   // `${orgId}|${start}|${end}` -> { ts, rows }
 let _glDetailParamDefs = null;   // { ts, params } — the card's own parameter list, cached 1h
 async function glDetailParamDefs() {
   if (_glDetailParamDefs && Date.now() - _glDetailParamDefs.ts < 60 * 60 * 1000) return _glDetailParamDefs.params;
@@ -1349,6 +1383,9 @@ async function glDetailParamDefs() {
 }
 
 async function fetchGlDetailRows(orgId, startDate, endDate) {
+  const key = `${orgId}|${startDate || ""}|${endDate || ""}`;
+  const hit = _glDetailCache.get(key);
+  if (hit && Date.now() - hit.ts < GL_DETAIL_CACHE_TTL) return hit.rows;
   // Values matched onto the card's registered parameters by slug, keeping each
   // one's own id AND type. Sending a type we guessed is how a card silently
   // starts 400ing after someone re-saves it.
@@ -1358,11 +1395,18 @@ async function fetchGlDetailRows(orgId, startDate, endDate) {
     .map(p => ({ id: p.id, type: p.type, target: p.target, slug: p.slug, value: values[p.slug] }));
   if (!params.some(p => p.slug === "org_id")) throw new Error("GL detail card has no org_id parameter");
   const url = `${METABASE_URL}/api/public/card/${GL_DETAIL_UUID}/query/json?parameters=${encodeURIComponent(JSON.stringify(params))}`;
-  const resp = await fetch(url, { signal: AbortSignal.timeout(90000) });
+  const resp = await fetch(url, { signal: AbortSignal.timeout(150000) });
   if (!resp.ok) throw new Error(`Metabase HTTP ${resp.status}`);
   const rows = await resp.json();
   // A card error comes back 200 with an object, not an array.
   if (!Array.isArray(rows)) throw new Error("Metabase returned an error for the GL detail card");
+  // Bounded: one entry per org+range would otherwise accumulate for the life of
+  // the process. Anything past its TTL is dead weight, so sweep on write.
+  if (_glDetailCache.size > 16) {
+    const now = Date.now();
+    for (const [k, v] of _glDetailCache) if (now - v.ts >= GL_DETAIL_CACHE_TTL) _glDetailCache.delete(k);
+  }
+  _glDetailCache.set(key, { ts: Date.now(), rows });
   return rows;
 }
 
@@ -3281,6 +3325,12 @@ async function renderHtmlPdf(html, opts = {}) {
 //                       not be answered from a 4-hour-old list.
 const PERMITS_UUID = process.env.MB_PERMITS_UUID || "6771e2fe-1d9c-41c1-a921-7d875115305e";
 const PERMIT_CACHE_TTL = 5 * 60 * 1000;
+// Exports ask for live data so a revoked permit can never reach a fence post,
+// but "live" does not have to mean "re-run the card for every click": printing
+// three rows in a row would be three full-card fetches (Watertown's is ~25s).
+// A minute-old read still cannot print a permit revoked before this session
+// started, which is the case that matters.
+const PERMIT_LIVE_MAX_AGE = 60 * 1000;
 const _permitCache = new Map();      // orgId -> { ts, byReservation }
 let _permitParamDefs = null;
 
@@ -3299,7 +3349,8 @@ async function permitParamDefs() {
 async function fetchPermits(orgId, { live = false } = {}) {
   if (!PERMITS_UUID) return new Map();
   const hit = _permitCache.get(orgId);
-  if (!live && hit && Date.now() - hit.ts < PERMIT_CACHE_TTL) return hit.byReservation;
+  const maxAge = live ? PERMIT_LIVE_MAX_AGE : PERMIT_CACHE_TTL;
+  if (hit && Date.now() - hit.ts < maxAge) return hit.byReservation;
   const params = (await permitParamDefs())
     .filter(p => p.slug === "org_id")
     .map(p => ({ id: p.id, type: p.type, target: p.target, slug: p.slug, value: orgId }));
@@ -6670,23 +6721,51 @@ app.post("/:org/facility/permits.pdf", express.json({ limit: "2mb" }), async (re
       || (slug.charAt(0).toUpperCase() + slug.slice(1) + " Parks & Recreation");
     const dept = tyler.department || "Parks & Recreation Department";
 
-    const QRCode = require("qrcode");
-    const sheets = [];
+    // ONE SHEET PER PERMIT PER SITE, not per row, once a permit is multi-date.
+    // A recurring rental appears in the filtered view once per date, and a
+    // multi-date sheet already carries the whole run — printing it per row would
+    // hand a crew ten identical pages for one fence post. Single-date permits
+    // are untouched (they only ever have one row per site anyway). Where rows
+    // collapse, the earliest date in view wins, since the sheet goes up at the
+    // start of the run.
+    const normSite = v => String(v == null ? "" : v).replace(/\s+/g, " ").trim().toLowerCase();
+    const picked = [];
+    const seen = new Map();
     for (const r of rows) {
       const p = byRes.get(String(r.resId || ""));
       if (!p) continue;                     // no issued permit → no sheet
+      if (!p["Permit URL"]) continue;
+      const key = Number(p["Date Count"] || 0) > 1
+        ? `${p["Permit ID"] || p["Permit Code"]}|${normSite(r.site)}`
+        : null;
+      if (key && seen.has(key)) {
+        const i = seen.get(key);
+        if (String(r.date || "") < String(picked[i].r.date || "")) picked[i] = { r, p };
+        continue;
+      }
+      if (key) seen.set(key, picked.length);
+      picked.push({ r, p });
+    }
+
+    const QRCode = require("qrcode");
+    const sheets = [];
+    for (const { r, p } of picked) {
       const url = p["Permit URL"];
-      if (!url) continue;
       sheets.push({
         org: orgName, dept, logo,
         title: r.title || p["Rental Name"] || "Facility Rental",
         holder: p["Permit Holder"] || r.reservee || "",
         site: r.site || "", location: r.location || "",
         date: r.date, begin: r.begin, end: r.end,
-        headcount: r.headcount || "",
+        headcount: r.headcount || p["Attendees"] || "",
+        capacity: p["Capacity"] || "",
+        addons: p["Add Ons"] || "",
         purpose: p["Purpose"] || "",
-        details: p["Details"] || "",
         code: p["Permit Code"] || "",
+        // The permit's whole run. lib/permit scopes it to this sheet's site and
+        // only renders it when there is more than one date — a single-date
+        // permit sends no schedule at all (see sql/facility-permits.sql).
+        schedule: p["Schedule"] || null,
         qr: await QRCode.toDataURL(url, { errorCorrectionLevel: "M", margin: 1, width: 300 }),
       });
     }
@@ -6695,7 +6774,10 @@ app.post("/:org/facility/permits.pdf", express.json({ limit: "2mb" }), async (re
         .send("None of the rentals in this view have an issued permit.");
     }
 
-    logEvent(slug, "facility", "permits", req, { sheets: sheets.length, rows: rows.length });
+    logEvent(slug, "facility", "permits", req, {
+      sheets: sheets.length, rows: rows.length,
+      multi: sheets.filter(x => x.schedule).length,
+    });
     const pdf = await renderHtmlPdf(permitLib.toHtml(sheets), { landscape: false, plain: true });
     const day = (rows[0] && rows[0].date ? String(rows[0].date) : new Date().toISOString().slice(0, 10)).replace(/-/g, "");
     res.setHeader("Content-Type", "application/pdf");

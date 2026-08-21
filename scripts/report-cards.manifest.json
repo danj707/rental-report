@@ -1,14 +1,15 @@
 {
-  "_comment": "Sign-off smoke test for shared Metabase report cards. After editing ANY card, run: node scripts/verify-report-live.js --manifest scripts/report-cards.manifest.json — every entry must return live, non-empty results or the edit is NOT signed off. Test the heaviest org for each card (biggest = worst case for timeouts). Add a card+org row here whenever a new shared card or large org is onboarded. org_ids come from the ORGS map in server.js; card UUIDs are the public UUIDs (SHARED_UUIDS / per-org mbUuid).",
+  "_comment": "Sign-off smoke test for shared Metabase report cards. After editing ANY card, run: node scripts/verify-report-live.js --manifest scripts/report-cards.manifest.json \u2014 every entry must return live, non-empty results or the edit is NOT signed off. Test the heaviest org for each card (biggest = worst case for timeouts). Add a card+org row here whenever a new shared card or large org is onboarded. org_ids come from the ORGS map in server.js; card UUIDs are the public UUIDs (SHARED_UUIDS / per-org mbUuid). TIMEOUTS: the default 60s is a tripwire, but the APP's real budget is 60s then a 120s retry (see FIRST_TIMEOUT/RETRY_TIMEOUT in server.js), so a card between those two still serves live data. Rows carrying an explicit timeout of 120 are pinned to the app's true ceiling, with the measurement in the label \u2014 a failure there means the card has passed what the app itself can survive, not that it was slow once. Do NOT raise a timeout without recording the measured number and the date.",
   "defaults": {
     "timeout": 60,
     "minRows": 1
   },
   "checks": [
     {
-      "label": "fasttrack / apex (biggest — worst case)",
+      "label": "fasttrack / apex (biggest \u2014 worst case; measured 78s on a quiet network 2026-08-21, so 60s cries wolf. The app absorbs it: 60s first try, 120s retry. If THIS fails, the card has passed what the app itself can survive)",
       "card": "9d38ab95-8562-42ca-b6c2-2582b7452457",
-      "org": "aeba47d0-c97f-49cb-a0e9-93c5af3a68fa"
+      "org": "aeba47d0-c97f-49cb-a0e9-93c5af3a68fa",
+      "timeout": 120
     },
     {
       "label": "fasttrack / westsacramento",
@@ -21,7 +22,7 @@
       "org": "2d147f38-068c-409e-890d-a8acc88d8079"
     },
     {
-      "label": "instructor-payout / san-francisco-rec-park (heaviest — 60+ instructor lessons marketplace)",
+      "label": "instructor-payout / san-francisco-rec-park (heaviest \u2014 60+ instructor lessons marketplace)",
       "card": "a8db6d86-eddc-4511-a28c-ad4bf636859e",
       "org": "17380e28-7e02-4b52-82c5-fab18557fd7a"
     },
@@ -31,7 +32,7 @@
       "org": "0312ebc8-40de-4fc8-a737-8afa26334e13"
     },
     {
-      "label": "gl / apex (heaviest GL feed — worst case for the check-number CTE)",
+      "label": "gl / apex (heaviest GL feed \u2014 worst case for the check-number CTE)",
       "card": "4374b344-06a7-42c5-996c-e1845bda3ff1",
       "org": "aeba47d0-c97f-49cb-a0e9-93c5af3a68fa"
     },
@@ -41,7 +42,7 @@
       "org": "992ee322-4927-4558-827d-7f8768580b85"
     },
     {
-      "label": "facility / apex (heaviest rental schedule — worst case)",
+      "label": "facility / apex (heaviest rental schedule \u2014 worst case)",
       "card": "f6787f45-3a36-4501-8a5f-b0f647451a85",
       "org": "aeba47d0-c97f-49cb-a0e9-93c5af3a68fa"
     },
@@ -51,14 +52,15 @@
       "org": "efc0724c-8f32-481a-bab3-fc19c724f3a7"
     },
     {
-      "label": "gl-account-detail / pawnee (Munis export card — the only org it is enabled for)",
-      "card": "ef065f39-504f-487a-9181-5bd415a19a58",
-      "org": "9cc33597-701d-440f-a12f-f73643b7d229"
-    },
-    {
-      "label": "facility-permits / watertown (largest permit list — 1,412 issued)",
+      "label": "facility-permits / watertown (largest permit list \u2014 1,412 issued)",
       "card": "6771e2fe-1d9c-41c1-a921-7d875115305e",
       "org": "d781690b-c5a0-43c5-8443-9ae43899528c"
+    },
+    {
+      "label": "facility-permits / douglas-county-nv (permits go live 2026-08-22 \u2014 raise minRows to 1 once issued)",
+      "card": "6771e2fe-1d9c-41c1-a921-7d875115305e",
+      "org": "0312ebc8-40de-4fc8-a737-8afa26334e13",
+      "minRows": 0
     }
   ]
 }
