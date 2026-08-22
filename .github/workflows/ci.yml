@@ -16,11 +16,22 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
+          cache: 'npm'
 
       - name: Syntax-check root JS (node --check)
         run: |
           shopt -s nullglob
           for f in *.js; do echo "→ node --check $f"; node --check "$f"; done
+
+      # The boot check needs the real modules — server.js requires
+      # @opentelemetry/sdk-node and friends at the top. Puppeteer's Chromium is
+      # skipped: it is ~150MB and every require("puppeteer") in server.js is
+      # lazy, inside the function that renders a PDF, so booting never needs it.
+      - name: Install dependencies (for the boot check)
+        run: npm ci --no-audit --no-fund
+        env:
+          PUPPETEER_SKIP_DOWNLOAD: 'true'
+          PUPPETEER_SKIP_CHROMIUM_DOWNLOAD: 'true'
 
       - name: Boot the server and confirm it answers
         run: node scripts/ci-boot-check.js
