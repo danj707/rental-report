@@ -222,6 +222,24 @@ test("the alert clock survives a recovery, so a flapping card cannot re-alert", 
     "a healthy entry must carry the clock forward too");
 });
 
+test("the health probe sends the same parameters the report route sends", () => {
+  // org_id alone meant a card with REQUIRED date tags failed every single run
+  // (_shared/programs, `missing-required-parameter`) and a card with optional
+  // ones scanned the whole table instead of one window.
+  const body = slice("      const timeout = setTimeout(", "      const resp = await fetch(url");
+  assert.ok(body.includes("buildMetabaseParams({}, rt, useSharedHC ? org.orgId : null)"),
+    "the probe must build its parameters the same way the data route does");
+  assert.ok(!body.includes("orgIdParamHC"), "the org_id-only probe must be gone");
+});
+
+test("stale _shared rows are purged, including HEALTH_SKIP report types", () => {
+  // _shared was exempt from the purge, so qbr-stats sat in the failure count as
+  // `error` for 47 days after the check stopped probing it.
+  const purge = slice("  // Purge stale entries from old check strategy", "  // Rebuild global failures");
+  assert.ok(purge.includes("if (!SHARED_UUIDS[rt] || HEALTH_SKIP_REPORTS.has(rt)) delete existing.reports._shared[rt];"),
+    "_shared rows for skipped or no-longer-shared reports must be cleared");
+});
+
 test("a shared card is probed once, not once per org", () => {
   // #134 pointed 28 shadowed per-org rows at the real shared cards, adding ~28
   // heavy Metabase queries per run — which pushed those same cards over their

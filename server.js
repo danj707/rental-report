@@ -2295,10 +2295,27 @@ async function runHealthCheck(forceAll, failuresOnly) {
       const controller = new AbortController();
       const timeoutMs = org.healthTimeoutMs || 60000;
       const timeout = setTimeout(() => controller.abort(), timeoutMs);
-      const orgIdParamHC = useSharedHC && org.orgId
-        ? `?parameters=${encodeURIComponent(JSON.stringify([{ type: "string/=", target: ["variable", ["template-tag", "org_id"]], value: org.orgId }]))}`
+      // Probe with the SAME parameters the report route sends — org_id plus the
+      // default date window — via buildMetabaseParams. Sending org_id alone was
+      // wrong in two ways that both showed up as "the report is down":
+      //
+      //   * a card whose date tags are REQUIRED rejects the query outright, so
+      //     _shared/programs and _shared/qbr-stats failed on every single run
+      //     with `missing-required-parameter`. A permanent false alarm, and one
+      //     no amount of flap protection would ever silence. Both return 200
+      //     with rows the moment the dates are passed.
+      //   * a card whose date tags are optional ran with NO date filter, i.e.
+      //     the whole table instead of one window — which is a large part of
+      //     why these probes sat on the 60s timeout at all.
+      //
+      // chat-data already fixed exactly this ("the old path used stale per-org
+      // UUIDs with no dates/org_id → cards errored → empty"); the health check
+      // still had the old shape.
+      const hcParams = buildMetabaseParams({}, rt, useSharedHC ? org.orgId : null);
+      const hcQuery = hcParams.length
+        ? `?parameters=${encodeURIComponent(JSON.stringify(hcParams))}`
         : '';
-      const url = `${METABASE_URL}/api/public/card/${mbUuid}/query/json${orgIdParamHC}`;
+      const url = `${METABASE_URL}/api/public/card/${mbUuid}/query/json${hcQuery}`;
       const resp = await fetch(url, { signal: controller.signal });
       clearTimeout(timeout);
 
@@ -2384,7 +2401,17 @@ async function runHealthCheck(forceAll, failuresOnly) {
   existing.timestamp = ts;
   // Purge stale entries from old check strategy (shared-UUID-only combos per org)
   for (const slug of Object.keys(existing.reports)) {
-    if (slug === "_shared") continue;  // shared probes are valid
+    if (slug === "_shared") {
+      // `_shared` was exempt from this sweep, so a row for a report type that
+      // later joined HEALTH_SKIP_REPORTS (or left SHARED_UUIDS) was never
+      // re-probed and never cleared. qbr-stats sat here as `error` from
+      // 2026-07-06 to 2026-08-22 — 47 days in the failure count for a report
+      // the check had long since stopped looking at.
+      for (const rt of Object.keys(existing.reports._shared)) {
+        if (!SHARED_UUIDS[rt] || HEALTH_SKIP_REPORTS.has(rt)) delete existing.reports._shared[rt];
+      }
+      continue;
+    }
     const org = ORGS[slug];
     if (!org) { delete existing.reports[slug]; continue; }
     for (const rt of Object.keys(existing.reports[slug])) {

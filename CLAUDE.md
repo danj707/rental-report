@@ -378,6 +378,25 @@ shadowed entries defeated that, so each run fired ~28 extra heavy Metabase
 queries against the same cards the shared loop already probes once, which pushed
 those cards over their own timeouts. Watchdog as its own load source.
 
+**And two of the ten were never slow — they were health-check bugs.** Probing
+with the error body captured showed:
+
+- `_shared/programs` → `missing-required-parameter: end_date, start_date`. The
+  probe sent **org_id only, never dates**, so any card with REQUIRED date tags
+  failed on *every* run. A permanent false alarm no flap protection can silence
+  — and it returns 200 with 15 rows the moment the dates are passed. Cards with
+  *optional* date tags were worse in a quieter way: they ran with no date filter
+  at all, i.e. the whole table instead of one window, which is a large part of
+  why these probes sat on the 60s timeout. `chat-data` fixed exactly this bug
+  ("the old path used stale per-org UUIDs with no dates/org_id → cards errored →
+  empty"); the health check still had the old shape. It now calls
+  `buildMetabaseParams({}, rt, orgId)` like the report route does.
+- `_shared/qbr-stats` → last actually checked **2026-07-06**. `_shared` was
+  exempt from the stale-entry purge, so when qbr-stats joined
+  `HEALTH_SKIP_REPORTS` its `error` row was never re-probed and never cleared —
+  47 days in the failure count for a report nothing was looking at. The purge
+  now sweeps `_shared` for report types that are skipped or no longer shared.
+
 Three guards, all in `runHealthCheck`:
 
 1. **One probe per card.** The per-org loop skips anything
@@ -394,9 +413,12 @@ Three guards, all in `runHealthCheck`:
    dropped table from a slow card — opposite problems, opposite fixes. The body
    (160 chars) is now in `entry.error`, and timeouts set `entry.slow`.
 
-Worth knowing separately: **several shared cards genuinely run near 60s under
-load** (roster, fasttrack, ice-calendar). That is a real performance problem the
-guards only stop shouting about — see the `materialized` index section.
+Worth knowing separately: **several cards genuinely run near or past 60s under
+load.** Measured 2026-08-22 with the app's own parameters: shared `roster` 46s,
+shared `programs` 52s, `qbr-stats` >70s, and `apex/fasttrack` and
+`apex/ice-calendar` both >70s (both in `NO_DATE_REPORTS`, so they get no window
+to narrow them). That is a real performance problem the guards only stop
+shouting about — see the `materialized` index section.
 
 ## Per-org card entries a shared card shadows (know this before trusting ORGS)
 
