@@ -147,4 +147,152 @@ test("no report page downloads a PDF through a blob + <a download> any more", ()
   assert.deepStrictEqual(unexpected, [], "these still use the blocked download path");
 });
 
+// ── Excel ────────────────────────────────────────────────────────────
+// Same root cause as the PDF, but a spreadsheet cannot be rendered, so this
+// path must end in a download and the popup is the only place with a chance of
+// being allowed to start one. A blocked download is undetectable from script,
+// so the popup must always leave the reader a way through — that is what these
+// assertions protect.
+
+function mockXLSX() {
+  return {
+    write: (wb, o) => { mockXLSX.lastOpts = o; return new Uint8Array([1, 2, 3]); },
+    utils: { sheet_to_csv: (sheet, o) => (o && o.FS === "\t" ? "a\tb\nc\td" : "a,b") },
+  };
+}
+const WB = { SheetNames: ["Sheet1"], Sheets: { Sheet1: { "!ref": "A1:B2" } } };
+
+test("Excel: opens the popup FIRST, before building anything", () => {
+  const h = load();
+  h.win.saveWorkbookViaPopup(mockXLSX(), WB, "gl-report.xlsx");
+  assert.strictEqual(h.calls[0][0], "open", "window.open must come first — building bytes takes time and loses the gesture");
+  assert.deepStrictEqual(h.calls[0].slice(1), ["", "_blank"]);
+});
+
+test("Excel: hands the popup the bytes, a filename, and a TSV fallback", () => {
+  const h = load();
+  assert.strictEqual(h.win.saveWorkbookViaPopup(mockXLSX(), WB, "gl-report.xlsx"), true);
+  const p = h.popup.__recExport;
+  assert.ok(p, "the popup should receive a payload");
+  assert.strictEqual(p.filename, "gl-report.xlsx");
+  assert.ok(p.bytes && p.bytes.length, "file bytes");
+  assert.strictEqual(p.tsv, "a\tb\nc\td", "tab-separated, so it pastes into cells rather than one column");
+  assert.match(p.mime, /spreadsheetml/);
+});
+
+test("Excel: writes an xlsx array, not a browser-side writeFile", () => {
+  const h = load();
+  const X = mockXLSX();
+  h.win.saveWorkbookViaPopup(X, WB, "x.xlsx");
+  // Compared field-by-field: the options object is created inside the VM realm,
+  // so deepStrictEqual would fail on prototypes alone.
+  assert.strictEqual(mockXLSX.lastOpts.bookType, "xlsx");
+  assert.strictEqual(mockXLSX.lastOpts.type, "array");
+});
+
+test("Excel: a blocked popup returns false and says so", () => {
+  const h = load({ blocked: true });
+  assert.strictEqual(h.win.saveWorkbookViaPopup(mockXLSX(), WB, "x.xlsx"), false);
+  assert.ok(h.calls.some(c => c[0] === "alert"));
+});
+
+test("Excel: a build failure closes the popup instead of leaving a blank window", () => {
+  const h = load();
+  h.popup.close = () => h.calls.push(["close-window"]);
+  const broken = { write: () => { throw new Error("boom"); }, utils: { sheet_to_csv: () => "" } };
+  assert.strictEqual(h.win.saveWorkbookViaPopup(broken, WB, "x.xlsx"), false);
+  assert.ok(h.calls.some(c => c[0] === "close-window"), "no orphaned blank popup");
+  assert.ok(h.calls.some(c => c[0] === "alert" && /Could not build/.test(c[1])));
+});
+
+test("Excel: loading the helper twice does not clobber it", () => {
+  const h = load();
+  const first = h.win.saveWorkbookViaPopup;
+  vm.runInContext(SRC, h.win);
+  assert.strictEqual(h.win.saveWorkbookViaPopup, first);
+});
+
+// ── The popup's own script ────────────────────────────────────────────
+// It ships to production and nothing else exercises it, so run it here against
+// a stub DOM. A typo in this string is otherwise invisible until someone clicks.
+function runPopupScript(payload) {
+  const h = load();
+  h.win.saveWorkbookViaPopup(mockXLSX(), WB, payload.filename || "x.xlsx");
+  const html = h.popup._html;
+  assert.ok(html, "the popup should have been written to");
+  // The helper writes the closing tag as "<\\/script>" in its own source so the
+  // literal sequence never appears inside a JS string; what reaches the popup is
+  // an ordinary closing tag.
+  const m = /<script>([\s\S]*?)<\/script>/.exec(html);
+  assert.ok(m, "the popup document should carry one inline script");
+  assert.ok(m[1].includes("__recExportStart"), "and that script defines the entry point");
+
+  const els = {};
+  const mk = id => (els[id] = { id, textContent: "", value: "", href: "", download: "",
+                               clicked: 0, click() { this.clicked++; }, select() { this.selected = 1; }, onclick: null });
+  ["fname", "tsv", "dl", "copy", "hint", "note"].forEach(mk);
+  const clip = { written: null };
+  const ctx = {
+    window: null,
+    document: { getElementById: id => els[id] || null },
+    URL: { createObjectURL: () => "blob:mock" },
+    Blob: function (parts, o) { this.parts = parts; this.type = o && o.type; },
+    navigator: { clipboard: { writeText: t => { clip.written = t; return Promise.resolve(); } } },
+    setTimeout: () => {},
+  };
+  ctx.window = ctx;
+  vm.createContext(ctx);
+  vm.runInContext(m[1], ctx);
+  ctx.window.__recExport = h.popup.__recExport;
+  ctx.window.__recStarted = 0;
+  ctx.window.__recExportStart();
+  return { els, clip, ctx };
+}
+
+test("popup script: labels the file, arms the link, and attempts the save once", () => {
+  const { els } = runPopupScript({ filename: "gl-report.xlsx" });
+  assert.strictEqual(els.fname.textContent, "gl-report.xlsx", "the reader can see what they are getting");
+  assert.strictEqual(els.dl.download, "gl-report.xlsx");
+  assert.strictEqual(els.dl.href, "blob:mock");
+  assert.strictEqual(els.dl.clicked, 1, "exactly one automatic attempt");
+});
+
+test("popup script: the link stays clickable, so a blocked auto-save is recoverable", () => {
+  const { els } = runPopupScript({});
+  // The whole point: even after the scripted click is dropped, the anchor is a
+  // real download link the user can press themselves.
+  assert.ok(els.dl.href && els.dl.download, "link must remain armed after the attempt");
+});
+
+test("popup script: Copy for Excel puts tab-separated rows on the clipboard", () => {
+  const { els, clip } = runPopupScript({});
+  assert.strictEqual(typeof els.copy.onclick, "function", "the copy button must be wired");
+  els.copy.onclick();
+  assert.strictEqual(clip.written, "a\tb\nc\td");
+  assert.strictEqual(els.tsv.value, "a\tb\nc\td", "and the textarea holds it for the manual path");
+});
+
+// ── No page may still write the file from the frame ──────────────────
+test("no report page calls XLSX.writeFile directly any more", () => {
+  const offenders = [];
+  fs.readdirSync(path.join(__dirname, "..", "public"))
+    .filter(f => f.endsWith(".html"))
+    .forEach(f => {
+      const html = fs.readFileSync(path.join(__dirname, "..", "public", f), "utf8");
+      if (/XLSX\.writeFile\(/.test(html)) offenders.push(f);
+    });
+  assert.deepStrictEqual(offenders, [], "these still save from inside the sandboxed frame");
+});
+
+test("every page that exports a workbook loads the helper", () => {
+  const missing = [];
+  fs.readdirSync(path.join(__dirname, "..", "public"))
+    .filter(f => f.endsWith(".html"))
+    .forEach(f => {
+      const html = fs.readFileSync(path.join(__dirname, "..", "public", f), "utf8");
+      if (/saveWorkbookViaPopup\(/.test(html) && !/<script src="\/open-pdf\.js"/.test(html)) missing.push(f);
+    });
+  assert.deepStrictEqual(missing, []);
+});
+
 console.log(`\n${passed}/${passed} passing`);

@@ -2237,7 +2237,9 @@ function App() {
 
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'GL Rollup');
-    XLSX.writeFile(wb, `gl-report-${loadedStart || 'export'}.xlsx`);
+    // Handed to a popup to save rather than written straight from here — a
+    // download started by a sandboxed iframe is silently dropped. See open-pdf.js.
+    saveWorkbookViaPopup(XLSX, wb, `gl-report-${loadedStart || 'export'}.xlsx`);
     logClientEvent('excel');
   }
 

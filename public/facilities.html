@@ -3407,7 +3407,9 @@
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, scopeLabel.slice(0, 31));
         const tabSuffix = (tab !== 'summary' && tab !== 'utilization') ? '-' + tab : '';
-        XLSX.writeFile(wb, CFG.slug + '-facilities' + tabSuffix + '-' + start + '-to-' + end + '.xlsx');
+        // Handed to a popup to save rather than written straight from here — a
+        // download started by a sandboxed iframe is silently dropped. See open-pdf.js.
+        saveWorkbookViaPopup(XLSX, wb, CFG.slug + '-facilities' + tabSuffix + '-' + start + '-to-' + end + '.xlsx');
       }
       // PDF: server-side Puppeteer render of this page in print mode with the
       // current filters — same mechanism as the Facility Rental Schedule report.

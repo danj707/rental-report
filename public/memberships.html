@@ -1229,7 +1229,9 @@ function normalizeRow(raw) {
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, 'Memberships');
         const fname = `${orgSlug}-memberships-${new Date().toISOString().slice(0,10)}.xlsx`;
-        XLSX.writeFile(wb, fname);
+        // Handed to a popup to save rather than written straight from here — a
+        // download started by a sandboxed iframe is silently dropped. See open-pdf.js.
+        saveWorkbookViaPopup(XLSX, wb, fname);
         // log
         fetch(withToken(`/${orgSlug}/${reportType}/api/log`), {
           method: 'POST',

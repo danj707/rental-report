@@ -1461,7 +1461,9 @@ function App() {
     var ws = XLSX.utils.aoa_to_sheet(data);
     var wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Fast Track');
-    XLSX.writeFile(wb, 'fast-track-report.xlsx');
+    // Handed to a popup to save rather than written straight from here — a
+    // download started by a sandboxed iframe is silently dropped. See open-pdf.js.
+    saveWorkbookViaPopup(XLSX, wb, 'fast-track-report.xlsx');
   }
 
   /* Insights */

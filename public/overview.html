@@ -327,6 +327,7 @@
     }
   </script>
 <script src="/report-refresh.js" defer></script>
+<script src="/open-pdf.js" defer></script>
 </head>
 <body>
 <div id="root"></div>
@@ -610,7 +611,9 @@ function App() {
     const ws = XLSX.utils.aoa_to_sheet([headers, ...data]);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Overview');
-    XLSX.writeFile(wb, `facility-overview-${startDate}-${endDate}.xlsx`);
+    // Handed to a popup to save rather than written straight from here — a
+    // download started by a sandboxed iframe is silently dropped. See open-pdf.js.
+    saveWorkbookViaPopup(XLSX, wb, `facility-overview-${startDate}-${endDate}.xlsx`);
   }
 
   /* ── Location list (all locations from data) ── */
