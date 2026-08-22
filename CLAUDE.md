@@ -317,6 +317,143 @@ EMPTY until at least one update is published, and each PR preview is a fresh
 environment with its own (empty) data store — a brand-new preview shows no popup
 until you publish an update in it first.
 
+## Alerts only fire for reports that are actually used (Dan, 2026-08-22)
+
+**Rule: don't alert on a report nobody uses; once it's used, it joins the alert
+set on its own.** Nothing to configure and nothing to remember — the events log
+already knows, so the watchdogs ask it. `getReportActivity()` in server.js reads
+`events.jsonl` over `REPORT_ACTIVITY_WINDOW_DAYS` (default **45**, cached 1h) and
+answers `isReportActive(slug, rt)` / `isReportTypeActive(rt)`.
+
+What that gates:
+
+- **Health check** — inactive org/report pairs are not probed at all (saves the
+  Metabase time too) and are recorded as `status: "inactive"` so the panel says
+  *why* rather than showing a stale tick. An inactive failure never enters the
+  failures list, the count, or the email.
+- **`schema-break`** — fires only if a dropped table/column breaks an **active**
+  report, and the message names only those. Full diff stays in the state file.
+- **`param-drift`** — fires only for a card serving an active report.
+
+Three traps this is built around, all of which fail silently if you get them
+wrong:
+
+1. **Activity counts EVERY usage event, not just `view`.** The six Program
+   Summary bands (`selfservice`, `program-checkins`, `program-demographics`,
+   `retention`, `checkins`, `section-detail`) have **zero** `view` events by
+   design — they're fetched by `programs.html` for 15 orgs apiece. View-only
+   activity would stop watching the most-used reports on the platform.
+2. **`report-down` must not count as usage.** It's logged against the real
+   org/report, so counting it would let a broken unused report alert once,
+   qualify itself as active, and keep alerting forever. `NON_USAGE_EVENTS` is a
+   denylist (not an allowlist) so a new export counts as usage the day it ships.
+3. **An empty log means watch everything.** A missing events file, a fresh
+   volume, or a new PR preview is not evidence that 22 reports went unused.
+   `/api/admin/report-activity` reports `failsafe: true` when that's in effect.
+
+`/api/admin/report-activity` is the first place to look when an alert did NOT
+fire. Deliberately not the cache's `isReportHot()` (3+ opens in 7 days) — right
+question for holding rows in memory, wrong one for "does anyone rely on this".
+
+Usage as of 2026-08-22 (log starts 2026-05-22, so ~3 months): dead are
+`overview` (8 opens ever, none in 90d, orphaned page — still in
+REPORT_DEPENDENCIES) and `annual-report` (3 opens, last 51d). `court-utilization`
+as a *page* is dead (2 views/30d) but its **card is load-bearing** —
+`facilities.html` pulls it 174x/30d across 13 orgs, so don't retire the card with
+the page. `campmap` is in `RETIRED_REPORTS` yet has 24 views/30d across 2 orgs,
+so it's more alive than the other two retired reports.
+
+## Health-check alert noise — what caused it, and the three guards (2026-08-22)
+
+Dan got ~20 `report-down` alerts in an afternoon for reports that were all still
+serving. Diagnosis, cache-independent: the cards were **slow, not broken**.
+`clarksville/roster` returned its 1337 rows in **7.7s one hour and 59.8s the
+next** against a 60s budget; `apex/fasttrack` and `apex/ice-calendar` both blew
+past 70s. Every marginal miss was one Slack message.
+
+**Partly self-inflicted.** PR #134 pointed the 28 shadowed per-org rows at the
+real shared cards (correct for *which* card, wrong about *how many times*). The
+per-org loop's comment always said "only reports with a per-org mbUuid" — the
+shadowed entries defeated that, so each run fired ~28 extra heavy Metabase
+queries against the same cards the shared loop already probes once, which pushed
+those cards over their own timeouts. Watchdog as its own load source.
+
+**And two of the ten were never slow — they were health-check bugs.** Probing
+with the error body captured showed:
+
+- `_shared/programs` → `missing-required-parameter: end_date, start_date`. The
+  probe sent **org_id only, never dates**, so any card with REQUIRED date tags
+  failed on *every* run. A permanent false alarm no flap protection can silence
+  — and it returns 200 with 15 rows the moment the dates are passed. Cards with
+  *optional* date tags were worse in a quieter way: they ran with no date filter
+  at all, i.e. the whole table instead of one window, which is a large part of
+  why these probes sat on the 60s timeout. `chat-data` fixed exactly this bug
+  ("the old path used stale per-org UUIDs with no dates/org_id → cards errored →
+  empty"); the health check still had the old shape. It now calls
+  `buildMetabaseParams({}, rt, orgId)` like the report route does.
+- `_shared/qbr-stats` → last actually checked **2026-07-06**. `_shared` was
+  exempt from the stale-entry purge, so when qbr-stats joined
+  `HEALTH_SKIP_REPORTS` its `error` row was never re-probed and never cleared —
+  47 days in the failure count for a report nothing was looking at. The purge
+  now sweeps `_shared` for report types that are skipped or no longer shared.
+
+**Slow is not broken, and only broken alerts (Dan, 2026-08-22).**
+`classifyProbeFailure()` splits the two:
+
+- **slow** — a client-side timeout, a Metabase 5xx, or a `statement timeout` /
+  `canceling statement` behind an HTTP 400. It could not answer in time *this
+  time*; the app serves those from cache anyway. Status `slow`, amber on the
+  panel, never a failure, never an alert, and a slow round **resets** the broken
+  streak rather than feeding it.
+- **error** — the card cannot answer because of what it IS: a dropped table or
+  column (`relation "class" does not exist`), a renamed or newly-required
+  parameter, an unshared or deleted card (404), a SQL error. These do not fix
+  themselves, so they alert — after two consecutive rounds, and only for reports
+  in use.
+
+Four guards, all in `runHealthCheck`:
+
+1. **One probe per card.** The per-org loop skips anything
+   `resolveReportCard(slug, rt).shared` — the `_shared` row covers that card.
+   Per-org probes **31 → 3** (only `norman/gl`, `smyrna/historic`,
+   `apex/ice-calendar` have genuinely per-org cards), so a full sweep is
+   **45 → 17** probes. Stale per-org rows are purged, or the panel keeps showing
+   their old failures forever. Note this is where essentially all of the load
+   reduction comes from — activity gating currently removes no probes at all,
+   because the 3 surviving per-org combos and all 14 shared types are in use. Its
+   value is suppressing `schema-break`/`param-drift` on dead reports and covering
+   reports that fall out of use later.
+2. **`HEALTH_ALERT_AFTER` (default 2) consecutive failures** before a report is
+   called down. One miss is load; two rounds in a row is evidence. `failCount`
+   resets on any success, and `lastAlertedAt` is carried across recoveries so a
+   card flapping either side of its timeout cannot re-alert every few hours.
+3. **The error says what Metabase said.** A statement timeout comes back as HTTP
+   400 with the reason in the body, so bare `HTTP 400` could not distinguish a
+   dropped table from a slow card — opposite problems, opposite fixes. The body
+   (160 chars) is now in `entry.error`, and it is what `classifyProbeFailure()`
+   reads.
+4. **Slow never alerts** — see above. This is the guard doing most of the work,
+   since most of what was firing was cards sitting near their timeout.
+
+Worth knowing separately: **several cards genuinely run near or past 60s, and
+how near is wildly variable.** Shared `roster`, same card and same 7-day window,
+measured four times on 2026-08-22: **7.7s → 32.9s → 46.3s → 59.8s** (the 59.8s
+run was undated — see the probe bug above). Shared `programs` came in at 52s
+once and **timed out past 90s** on a quiet retry. `qbr-stats`, `apex/fasttrack`
+and `apex/ice-calendar` all exceed 70s (the latter two are in `NO_DATE_REPORTS`,
+so no window narrows them).
+
+**Caveat on any timing taken from this sandbox:** a local `node server.js` boot
+prewarms ~28 orgs and generates annual-report snapshots against the *production*
+Metabase, so measurements taken while one is running are inflated by your own
+load. Kill local servers before timing anything.
+
+That spread is the argument for the slow/broken split: the same card, unchanged,
+can answer in 8s or not at all depending on ambient load, so a single timeout is
+not evidence of anything. It is a real performance problem, deliberately NOT
+alerted on — see the `materialized` index section. Amber on the admin panel and
+nowhere else.
+
 ## Per-org card entries a shared card shadows (know this before trusting ORGS)
 
 `ORGS[slug][report].mbUuid` is NOT necessarily the card the app queries. A

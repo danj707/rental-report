@@ -1815,6 +1815,9 @@ const AMENITY_TAGS = {
 // dashboard "+ Add report" flow (e.g. not yet ready for self-serve onboarding).
 const NON_ADDABLE_REPORTS = new Set(["program-demographics", "retention", "annual-report", "section-detail", "qoq", "checkins", "program-checkins", "selfservice"]);
 // Reports that require extra params (e.g. section_id) and cannot be health-checked with org_id alone
+// How many consecutive failed probes before a report is called down. One is
+// load; two in a row is a report. See the flap note in checkOne().
+const HEALTH_ALERT_AFTER = Number(process.env.HEALTH_ALERT_AFTER || 2);
 const HEALTH_SKIP_REPORTS = new Set(["section-detail", "annual-report", "qoq", "qbr-stats", "checkins", "program-checkins", "selfservice"]);
 const RENTAL_CALENDAR_ORGS = new Set(["watertown", "norman", "niagarafalls"]);
 // Director's Report (quarterly executive summary) — org-wide since 2026-08-04
@@ -2100,6 +2103,88 @@ async function runChunked(items, concurrency, fn, delayMs) {
   return results;
 }
 
+// ── Which reports are actually in use ────────────────────────────────────────
+// Dan's rule (2026-08-22): do not alert on a report nobody uses; once it is
+// used, it joins the alert set on its own. Nothing to configure and nothing to
+// remember — the events log already knows, so the watchdogs ask it.
+//
+// This exists because the alerts were spending their credibility on reports
+// with no audience. `overview` has had 8 opens ever (none in three months) and
+// `annual-report` 3; a dropped table under either would page someone about a
+// page nobody visits. Meanwhile the six Program Summary bands
+// (selfservice, program-checkins, program-demographics, retention, checkins,
+// section-detail) have ZERO `view` events by design and are fetched by 15 orgs
+// — which is why activity counts every kind of usage event, not just `view`.
+//
+// Deliberately NOT the cache's isReportHot(): that asks "3+ opens in 7 days",
+// which is the right question for holding rows in memory and the wrong one for
+// "does anyone rely on this". A report pulled once a month is in use.
+const ACTIVITY_WINDOW_DAYS = Number(process.env.REPORT_ACTIVITY_WINDOW_DAYS || 45);
+const ACTIVITY_TTL_MS = 60 * 60 * 1000;
+
+// Events that are NOT a human using a report. `report-down` matters most: it is
+// logged against the real org/report, so counting it would make a broken,
+// unused report alert once and thereby qualify itself as active forever.
+// A denylist rather than an allowlist so a new export or button counts as usage
+// the day it ships, without anyone having to remember this line.
+const NON_USAGE_EVENTS = new Set([
+  "report-down", "schema-break", "param-drift", "created", "org-deleted",
+]);
+
+let _activity = null;   // { ts, combos:Set("slug|rt"), types:Set(rt), events }
+
+function getReportActivity(force) {
+  if (_activity && !force && Date.now() - _activity.ts < ACTIVITY_TTL_MS) return _activity;
+  const combos = new Set();
+  const types = new Set();
+  let events = 0;
+  for (const e of readEvents(ACTIVITY_WINDOW_DAYS)) {
+    if (!e || !e.org || !e.report || NON_USAGE_EVENTS.has(e.event)) continue;
+    combos.add(e.org + "|" + e.report);
+    types.add(e.report);
+    events++;
+  }
+  _activity = { ts: Date.now(), combos, types, events, windowDays: ACTIVITY_WINDOW_DAYS };
+  return _activity;
+}
+
+// An empty log is not evidence that 22 reports went unused — it is a missing
+// events file, a fresh volume, or a brand-new PR preview. Watch everything.
+function isReportActive(slug, rt) {
+  const a = getReportActivity();
+  return a.events === 0 ? true : a.combos.has(slug + "|" + rt);
+}
+
+// Card- and schema-level checks are not per-org: a shared card is either serving
+// somebody or it is not.
+function isReportTypeActive(rt) {
+  const a = getReportActivity();
+  return a.events === 0 ? true : a.types.has(rt);
+}
+
+// Broken or just slow? Dan's rule: only broken reports are worth an alert.
+//
+// "Broken" means the card cannot answer because of what it IS — a dropped table
+// or column, a renamed or newly-required parameter, an unshared or deleted card,
+// a SQL error. Those do not fix themselves and the report is wrong until someone
+// acts.
+//
+// "Slow" means it could not answer in time THIS time. Several of these cards
+// genuinely run near 60s under load (shared programs 52s, apex/fasttrack and
+// apex/ice-calendar >70s), so a timeout says the platform is busy, not that the
+// report is broken — the app serves those from cache anyway. A Metabase 5xx is
+// the same story: load, not a card defect.
+//
+// Kept separate from the flap counter on purpose: two strikes stops a broken
+// report being called down on one bad probe, and this stops a slow one being
+// called down at all.
+function classifyProbeFailure({ httpStatus, body, timedOut }) {
+  if (timedOut) return "slow";
+  if (httpStatus >= 500) return "slow";
+  if (/statement timeout|canceling statement|timed? ?out/i.test(body || "")) return "slow";
+  return "error";
+}
+
 async function runHealthCheck(forceAll, failuresOnly) {
   if (!getFlags().cachingEnabled) { console.log('[health] Health check skipped — caching is OFF'); return null; }
   const now = Date.now();
@@ -2108,6 +2193,24 @@ async function runHealthCheck(forceAll, failuresOnly) {
 
   // Build list of (slug, report) pairs that are due for a check
   const toCheck = [];
+
+  // Record an unused report as inactive rather than dropping it silently: the
+  // admin panel should say "nobody uses this" instead of showing a stale green
+  // tick or a red one from before it went quiet.
+  let inactiveMarked = 0;
+  function markInactive(storeSlug, rt) {
+    inactiveMarked++;
+    if (!existing.reports[storeSlug]) existing.reports[storeSlug] = {};
+    existing.reports[storeSlug][rt] = {
+      status: "inactive",
+      rows: 0,
+      checkedAt: ts,
+      source: "activity",
+      tier: getTier(storeSlug, rt),
+      reason: `no usage in ${ACTIVITY_WINDOW_DAYS}d`,
+    };
+  }
+
   // Per-org: only reports with a per-org mbUuid (skip shared-only)
   for (const slug of Object.keys(ORGS)) {
     const org = ORGS[slug];
@@ -2115,7 +2218,18 @@ async function runHealthCheck(forceAll, failuresOnly) {
     for (const rt of REPORT_TYPES) {
       if (!org[rt]?.mbUuid) continue;
       if (HEALTH_SKIP_REPORTS.has(rt)) continue;
+      // "Only reports with a per-org mbUuid" was always the intent of this loop,
+      // but 28 of those entries are shadowed by a shared card, so this ran 28
+      // extra probes of the SAME heavy shared cards the loop below already
+      // probes once. Cheap while they hit dead legacy cards; after #134 pointed
+      // them at the real cards it became ~28 extra heavy Metabase queries per
+      // run, which pushed those cards over their own timeouts and turned each
+      // marginal miss into a Slack alert. One probe per card is enough.
+      if (resolveReportCard(slug, rt).shared) continue;
       if (forceAll) { toCheck.push({ slug, rt }); continue; }
+      // Nobody has opened this in the activity window — do not probe it and do
+      // not alert on it. It rejoins on its own the moment someone uses it.
+      if (!isReportActive(slug, rt)) { markInactive(slug, rt); continue; }
       const prev = existing.reports?.[slug]?.[rt];
       const tier = getTier(slug, rt);
       const intervalMs = getTierMinutes(tier) * 60000;
@@ -2130,6 +2244,7 @@ async function runHealthCheck(forceAll, failuresOnly) {
     for (const rt of Object.keys(SHARED_UUIDS)) {
       if (HEALTH_SKIP_REPORTS.has(rt)) continue;
       if (forceAll) { toCheck.push({ slug: probeSlug, rt, shared: true }); continue; }
+      if (!isReportTypeActive(rt)) { markInactive("_shared", rt); continue; }
       const prev = existing.reports?.["_shared"]?.[rt];
       const tier = getTier("_shared", rt);
       const intervalMs = getTierMinutes(tier) * 60000;
@@ -2146,10 +2261,24 @@ async function runHealthCheck(forceAll, failuresOnly) {
     toCheck.push(...filtered);
   }
 
-  if (toCheck.length === 0) return existing;
+  if (toCheck.length === 0) {
+    // Nothing due, but reports may have just gone quiet — persist that and drop
+    // them out of the failures list, or a report that went unused while broken
+    // would keep the panel red and the count wrong forever.
+    if (inactiveMarked) {
+      existing.failures = (existing.failures || []).filter(f =>
+        existing.reports[f.org]?.[f.report]?.status === "error"
+        && !existing.reports[f.org][f.report].inactive);
+      existing.timestamp = ts;
+      saveHealthResults(existing);
+      console.log(`[health] Nothing due — ${inactiveMarked} report(s) marked inactive (no usage in ${ACTIVITY_WINDOW_DAYS}d)`);
+    }
+    return existing;
+  }
 
   const tierLabel = failuresOnly ? "retry-failures" : forceAll ? "manual-all" : [...new Set(toCheck.map(t => t.tier || "all"))].join("/");
-  console.log(`[health] Checking ${toCheck.length} report(s) [${tierLabel}]…`);
+  console.log(`[health] Checking ${toCheck.length} report(s) [${tierLabel}]`
+    + (inactiveMarked ? ` — skipped ${inactiveMarked} inactive (no usage in ${ACTIVITY_WINDOW_DAYS}d)` : "") + "…");
 
   const newFailures = [];
   healthCheckRunning = true;
@@ -2189,16 +2318,38 @@ async function runHealthCheck(forceAll, failuresOnly) {
       const controller = new AbortController();
       const timeoutMs = org.healthTimeoutMs || 60000;
       const timeout = setTimeout(() => controller.abort(), timeoutMs);
-      const orgIdParamHC = useSharedHC && org.orgId
-        ? `?parameters=${encodeURIComponent(JSON.stringify([{ type: "string/=", target: ["variable", ["template-tag", "org_id"]], value: org.orgId }]))}`
+      // Probe with the SAME parameters the report route sends — org_id plus the
+      // default date window — via buildMetabaseParams. Sending org_id alone was
+      // wrong in two ways that both showed up as "the report is down":
+      //
+      //   * a card whose date tags are REQUIRED rejects the query outright, so
+      //     _shared/programs and _shared/qbr-stats failed on every single run
+      //     with `missing-required-parameter`. A permanent false alarm, and one
+      //     no amount of flap protection would ever silence. Both return 200
+      //     with rows the moment the dates are passed.
+      //   * a card whose date tags are optional ran with NO date filter, i.e.
+      //     the whole table instead of one window — which is a large part of
+      //     why these probes sat on the 60s timeout at all.
+      //
+      // chat-data already fixed exactly this ("the old path used stale per-org
+      // UUIDs with no dates/org_id → cards errored → empty"); the health check
+      // still had the old shape.
+      const hcParams = buildMetabaseParams({}, rt, useSharedHC ? org.orgId : null);
+      const hcQuery = hcParams.length
+        ? `?parameters=${encodeURIComponent(JSON.stringify(hcParams))}`
         : '';
-      const url = `${METABASE_URL}/api/public/card/${mbUuid}/query/json${orgIdParamHC}`;
+      const url = `${METABASE_URL}/api/public/card/${mbUuid}/query/json${hcQuery}`;
       const resp = await fetch(url, { signal: controller.signal });
       clearTimeout(timeout);
 
       if (!resp.ok) {
-        entry.status = "error";
-        entry.error = `HTTP ${resp.status}`;
+        // Metabase answers a statement timeout with HTTP 400 and the reason in
+        // the body. "HTTP 400" on its own cannot tell a dropped table from a
+        // slow card — opposite problems, and only one of them is an alert.
+        let why = "";
+        try { why = (await resp.text()).replace(/\s+/g, " ").slice(0, 160); } catch (_) {}
+        entry.status = classifyProbeFailure({ httpStatus: resp.status, body: why });
+        entry.error = `HTTP ${resp.status}${why ? ": " + why : ""}`;
       } else {
         const data = await resp.json();
         entry.rows = Array.isArray(data) ? data.length : 0;
@@ -2216,8 +2367,9 @@ async function runHealthCheck(forceAll, failuresOnly) {
       entry.source = "probe";
       cacheStats.healthProbes++;
     } catch (err) {
-      entry.status = "error";
-      entry.error = err.name === "AbortError" ? `Timeout (${(org.healthTimeoutMs||60000)/1000}s)` : err.message;
+      const timedOut = err.name === "AbortError" || err.name === "TimeoutError";
+      entry.status = classifyProbeFailure({ body: err.message, timedOut });
+      entry.error = timedOut ? `Timeout (${(org.healthTimeoutMs||60000)/1000}s)` : err.message;
       entry.source = "probe";
       cacheStats.healthProbes++;
     }
@@ -2226,20 +2378,43 @@ async function runHealthCheck(forceAll, failuresOnly) {
 
     if (entry.status === "error") {
       const prev = existing.reports[storeSlug]?.[rt];
-      const prevWasError = prev?.status === "error";
       const lastAlerted = prev?.lastAlertedAt ? new Date(prev.lastAlertedAt).getTime() : 0;
       const suppressWindow = 6 * 3600000;
-      if (!prevWasError || (now - lastAlerted >= suppressWindow)) {
-        newFailures.push({ org: slug, report: rt, error: entry.error, tier: entry.tier });
+      // A forced run probes everything, including reports nobody uses — record
+      // the error, but never alert on one. Belt and braces: the scheduled runs
+      // already skip inactive reports before they get here.
+      const alertable = shared ? isReportTypeActive(rt) : isReportActive(slug, rt);
+      if (!alertable) entry.inactive = true;
+
+      // Consecutive failures, not one. These cards sit close to their timeout:
+      // clarksville/roster returned its 1337 rows in 7.7s one hour and 59.8s
+      // the next, against a 60s budget. A single miss is load, not a broken
+      // report, and alerting on it produced ~20 messages in an afternoon for
+      // reports that were all still serving. Two rounds in a row is evidence.
+      // Only broken rounds count, and any other outcome (ok, empty, slow) resets
+      // the streak — a slow probe must never help a report toward being called
+      // down, it is not evidence of anything being broken.
+      entry.failCount = (prev?.status === "error" ? (prev.failCount || 1) : 0) + 1;
+      // Carried across recovery too, so a card flapping either side of its
+      // timeout cannot re-alert every couple of hours.
+      if (prev?.lastAlertedAt) entry.lastAlertedAt = prev.lastAlertedAt;
+
+      const ripe = entry.failCount >= HEALTH_ALERT_AFTER;
+      const quiet = now - lastAlerted < suppressWindow;
+      if (alertable && ripe && !quiet) {
+        newFailures.push({ org: slug, report: rt, error: entry.error, tier: entry.tier, failCount: entry.failCount });
         // A card that stopped answering IS a broken report — the cause (dropped
         // table, changed enum, timeout) matters less than someone knowing. The
         // ice-calendar outage in August 2026 sat unnoticed for three days
         // because this only ever went to email, behind a feature flag.
-        logEvent(slug, rt, "report-down", null, { error: entry.error });
+        logEvent(slug, rt, "report-down", null, { error: entry.error, failCount: entry.failCount });
         entry.lastAlertedAt = ts;
-      } else {
-        entry.lastAlertedAt = prev.lastAlertedAt;
       }
+    }
+    // Keep the alert clock on a healthy entry too, so a recovery followed by a
+    // fresh wobble is still inside the suppression window.
+    else if (existing.reports[storeSlug]?.[rt]?.lastAlertedAt) {
+      entry.lastAlertedAt = existing.reports[storeSlug][rt].lastAlertedAt;
     }
 
     existing.reports[storeSlug][rt] = entry;
@@ -2250,11 +2425,25 @@ async function runHealthCheck(forceAll, failuresOnly) {
   existing.timestamp = ts;
   // Purge stale entries from old check strategy (shared-UUID-only combos per org)
   for (const slug of Object.keys(existing.reports)) {
-    if (slug === "_shared") continue;  // shared probes are valid
+    if (slug === "_shared") {
+      // `_shared` was exempt from this sweep, so a row for a report type that
+      // later joined HEALTH_SKIP_REPORTS (or left SHARED_UUIDS) was never
+      // re-probed and never cleared. qbr-stats sat here as `error` from
+      // 2026-07-06 to 2026-08-22 — 47 days in the failure count for a report
+      // the check had long since stopped looking at.
+      for (const rt of Object.keys(existing.reports._shared)) {
+        if (!SHARED_UUIDS[rt] || HEALTH_SKIP_REPORTS.has(rt)) delete existing.reports._shared[rt];
+      }
+      continue;
+    }
     const org = ORGS[slug];
     if (!org) { delete existing.reports[slug]; continue; }
     for (const rt of Object.keys(existing.reports[slug])) {
-      if (!org[rt]?.mbUuid) delete existing.reports[slug][rt];
+      if (!org[rt]?.mbUuid) { delete existing.reports[slug][rt]; continue; }
+      // A per-org row for a report a shared card serves is no longer probed —
+      // the `_shared` row covers that card. Leaving the old row behind would
+      // keep a stale failure (or a stale tick) on the panel forever.
+      if (resolveReportCard(slug, rt).shared) delete existing.reports[slug][rt];
     }
   }
 
@@ -2262,7 +2451,9 @@ async function runHealthCheck(forceAll, failuresOnly) {
   existing.failures = [];
   for (const [slug, reports] of Object.entries(existing.reports)) {
     for (const [rt, e] of Object.entries(reports)) {
-      if (e.status === "error") existing.failures.push({ org: slug, report: rt, error: e.error });
+      // `inactive` errors stay on the entry for the panel but are not failures:
+      // they must not inflate the "N total failing" count or the email.
+      if (e.status === "error" && !e.inactive) existing.failures.push({ org: slug, report: rt, error: e.error });
     }
   }
 
@@ -3024,6 +3215,26 @@ function diffCatalogAgainstDependencies(catalog, deps) {
   return { missingTables, missingColumns };
 }
 
+// Split a breakage by whether anyone actually uses the reports it breaks.
+// Pure and separate from checkCatalogDrift() so the gate is testable without a
+// live catalog: `overview` (8 opens ever) and `annual-report` (3) are both in
+// REPORT_DEPENDENCIES, and a dropped table under either must not page anyone.
+function splitBreakageByActivity(drift) {
+  const reports = [...new Set([
+    ...drift.missingTables.flatMap(t => t.reports),
+    ...drift.missingColumns.flatMap(c => c.reports),
+  ])].sort();
+  const isLive = (rs) => (rs || []).some(isReportTypeActive);
+  return {
+    reports,
+    active: reports.filter(isReportTypeActive),
+    // Scoped to what an active report reads, so the message does not list a
+    // dropped table only a dead page ever touched.
+    missingTables: drift.missingTables.filter(t => isLive(t.reports)).map(t => t.table),
+    missingColumns: drift.missingColumns.filter(c => isLive(c.reports)).map(c => c.table + "." + c.column),
+  };
+}
+
 // A stable identity for "the same breakage", so a daily check does not re-alert
 // every morning about a table that is still gone.
 function catalogDriftFingerprint(d) {
@@ -3086,21 +3297,28 @@ async function checkCatalogDrift(opts) {
     return { ok: true, breaking: 0, state };
   }
 
-  console.error(`[catalog] BREAKING: ${drift.missingTables.length} table(s), ${drift.missingColumns.length} column(s) missing`);
+  // A dropped table only matters if it breaks a report someone uses. The full
+  // diff stays in the state file either way.
+  const live = splitBreakageByActivity(drift);
+  state.reportsAffected = live.reports;
+  state.reportsAffectedActive = live.active;
+  writeJSON(CATALOG_DRIFT_FILE, state);
+
+  console.error(`[catalog] BREAKING: ${drift.missingTables.length} table(s), ${drift.missingColumns.length} column(s) missing`
+    + ` — affects ${live.reports.length} report(s), ${live.active.length} of them active`);
   // Only shout when the breakage is NEW (or on an explicit manual run). A table
   // that is still gone tomorrow is not news; the admin panel carries the state.
-  if (changed || opts.force) {
-    const affected = [...new Set([
-      ...drift.missingTables.flatMap(t => t.reports),
-      ...drift.missingColumns.flatMap(c => c.reports),
-    ])].sort();
+  if (live.active.length > 0 && (changed || opts.force)) {
     logEvent("_platform", "schema", "schema-break", null, {
-      missingTables: drift.missingTables.map(t => t.table),
-      missingColumns: drift.missingColumns.map(c => c.table + "." + c.column),
-      reports: affected,
+      missingTables: live.missingTables,
+      missingColumns: live.missingColumns,
+      reports: live.active,
     });
   }
-  return { ok: true, breaking, state, alerted: changed || !!opts.force };
+  return {
+    ok: true, breaking, state,
+    alerted: live.active.length > 0 && (changed || !!opts.force),
+  };
 }
 
 // Hourly is pointless for a schema — nothing changes that fast, and a failed
@@ -3138,19 +3356,23 @@ const CARD_PARAM_DRIFT_FILE = path.join(DATA_DIR, "card-param-drift.json");
 const DATE_PARAM_TAGS = new Set(["start_date", "end_date"]);
 
 // Every card the app actually serves a report from, and who it serves.
-// Deduped by uuid — a shared card is one fetch, not 28.
+// Deduped by uuid — a shared card is one fetch, not 28. Entries are structured
+// rather than plain labels so the caller can ask whether each one is in use.
+function servedLabel(e) { return e.shared ? e.rt + " (shared)" : e.slug + "/" + e.rt; }
+function servedIsActive(e) { return e.shared ? isReportTypeActive(e.rt) : isReportActive(e.slug, e.rt); }
+
 function collectServedCards() {
   const byUuid = new Map();
-  const add = (mbUuid, label) => {
+  const add = (mbUuid, entry) => {
     if (!mbUuid) return;
     if (!byUuid.has(mbUuid)) byUuid.set(mbUuid, []);
-    byUuid.get(mbUuid).push(label);
+    byUuid.get(mbUuid).push(entry);
   };
-  for (const rt of Object.keys(SHARED_UUIDS)) add(SHARED_UUIDS[rt], rt + " (shared)");
+  for (const rt of Object.keys(SHARED_UUIDS)) add(SHARED_UUIDS[rt], { rt, shared: true });
   for (const slug of Object.keys(ORGS)) {
     for (const rt of REPORT_TYPES) {
       const { mbUuid, shared } = resolveReportCard(slug, rt);
-      if (!shared) add(mbUuid, slug + "/" + rt);
+      if (!shared) add(mbUuid, { slug, rt, shared: false });
     }
   }
   return byUuid;
@@ -3186,7 +3408,10 @@ function diffCardParamTypes(defs) {
       if (!tag || !DATE_PARAM_TAGS.has(tag)) continue;
       const type = String(p.type || "");
       if (type.startsWith("date/")) continue;
-      wrongType.push({ mbUuid: d.mbUuid, tag, type: type || "(none)", served: d.served });
+      wrongType.push({
+        mbUuid: d.mbUuid, tag, type: type || "(none)",
+        served: d.served, servedActive: d.servedActive || [],
+      });
     }
   }
   return { wrongType };
@@ -3204,15 +3429,17 @@ async function checkCardParamTypes(opts) {
   const unreadable = [];
 
   for (let i = 0; i < entries.length; i += 4) {
-    await Promise.all(entries.slice(i, i + 4).map(async ([mbUuid, labels]) => {
+    await Promise.all(entries.slice(i, i + 4).map(async ([mbUuid, serves]) => {
+      const served = serves.map(servedLabel);
+      const servedActive = serves.filter(servedIsActive).map(servedLabel);
       try {
         const resp = await _origFetch(`${METABASE_URL}/api/public/card/${mbUuid}`,
           { signal: AbortSignal.timeout(20000) });
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
         const def = await resp.json();
-        defs.push({ mbUuid, served: labels, parameters: def.parameters || [] });
+        defs.push({ mbUuid, served, servedActive, parameters: def.parameters || [] });
       } catch (e) {
-        unreadable.push({ mbUuid, served: labels, error: e.message });
+        unreadable.push({ mbUuid, served, servedActive, error: e.message });
       }
     }));
   }
@@ -3242,14 +3469,21 @@ async function checkCardParamTypes(opts) {
     return { ok: true, wrongType: 0, state };
   }
 
-  console.error(`[params] ${drift.wrongType.length} date tag(s) are no longer typed Date`);
-  if (changed || opts.force) {
+  // Only a card serving a report someone actually uses is worth an alert. The
+  // rest stay in the state file, visible on /api/admin/param-drift.
+  const live = drift.wrongType.filter(w => w.servedActive.length > 0);
+  console.error(`[params] ${drift.wrongType.length} date tag(s) are no longer typed Date`
+    + ` (${live.length} on cards serving active reports)`);
+  if (live.length > 0 && (changed || opts.force)) {
     logEvent("_platform", "schema", "param-drift", null, {
-      tags: drift.wrongType.map(w => w.mbUuid.slice(0, 8) + " " + w.tag + "=" + w.type),
-      reports: [...new Set(drift.wrongType.flatMap(w => w.served))].sort(),
+      tags: live.map(w => w.mbUuid.slice(0, 8) + " " + w.tag + "=" + w.type),
+      reports: [...new Set(live.flatMap(w => w.servedActive))].sort(),
     });
   }
-  return { ok: true, wrongType: drift.wrongType.length, state, alerted: changed || !!opts.force };
+  return {
+    ok: true, wrongType: drift.wrongType.length, onActiveReports: live.length,
+    state, alerted: live.length > 0 && (changed || !!opts.force),
+  };
 }
 
 // Same cadence and the same reasoning as the catalog check — a few minutes
@@ -10950,6 +11184,44 @@ app.get("/api/admin/param-drift", (req, res) => {
   });
 });
 
+// GET /api/admin/report-activity — what the watchdogs consider in use, and so
+// what can raise an alert. The first place to look when an alert did NOT fire.
+app.get("/api/admin/report-activity", (req, res) => {
+  const a = getReportActivity(req.query.refresh === "1");
+  const perOrg = {};
+  let pairsInactive = 0;
+  // What the health check actually enumerates per-org: a report with its own
+  // mbUuid that is not param-gated. This is the count that turns into skipped
+  // Metabase probes, as opposed to every org/report pair that could resolve.
+  let watched = 0, watchedInactive = 0;
+  for (const slug of Object.keys(ORGS)) {
+    for (const rt of REPORT_TYPES) {
+      const { mbUuid } = resolveReportCard(slug, rt);
+      if (!mbUuid) continue;
+      const active = isReportActive(slug, rt);
+      (perOrg[slug] = perOrg[slug] || { active: [], inactive: [] })[active ? "active" : "inactive"].push(rt);
+      if (!active) pairsInactive++;
+      if (ORGS[slug][rt]?.mbUuid && !HEALTH_SKIP_REPORTS.has(rt)) {
+        watched++;
+        if (!active) watchedInactive++;
+      }
+    }
+  }
+  res.json({
+    windowDays: a.windowDays,
+    usageEvents: a.events,
+    // events === 0 means the log is missing or the volume is fresh, and every
+    // report is treated as active rather than silently unwatched.
+    failsafe: a.events === 0,
+    computedAt: new Date(a.ts).toISOString(),
+    activeReportTypes: [...a.types].sort(),
+    inactiveReportTypes: REPORT_TYPES.filter(rt => !isReportTypeActive(rt)),
+    inactiveOrgReportPairs: pairsInactive,
+    healthCheckPerOrgProbes: { total: watched, skippedInactive: watchedInactive },
+    perOrg,
+  });
+});
+
 app.post("/api/admin/param-drift/check", express.json(), async (req, res) => {
   const pw = req.body && req.body.password;
   if (!DASHBOARD_PASSWORD) return res.status(503).json({ error: "Set DASHBOARD_PASSWORD to run this on demand" });
@@ -11830,6 +12102,12 @@ app.get("/", (req, res) => {
                 const d = new Date(h.checkedAt); const ds = d.toLocaleDateString('en-US',{month:'short',day:'numeric'});
                 if (h.status === 'ok') { dotCls += ' dot-ok'; tipParts.unshift('Verified ' + ds + ' (' + h.rows + ' rows)'); }
                 else if (h.status === 'empty') { dotCls += ' dot-warn'; tipParts.unshift('Empty ' + ds); }
+                // Slow is not broken and never alerts, so it must not read as
+                // red on the panel either — amber, with the reason.
+                else if (h.status === 'slow') { dotCls += ' dot-warn'; tipParts.unshift('Slow ' + ds + (h.error ? ': ' + h.error : '')); }
+                // Nobody has used this in the activity window, so it is not
+                // being probed. Grey, not a judgement about whether it works.
+                else if (h.status === 'inactive') { dotCls += ' dot-none'; tipParts.unshift('Not monitored — ' + (h.reason || 'unused')); }
                 else { dotCls += ' dot-err'; tipParts.unshift('Failed ' + ds + (h.error ? ': ' + h.error : '')); }
               } else { dotCls += ' dot-none'; }
               return '<span class="' + dotCls + '" title="' + tipParts.join('\n') + '" data-org="' + slug + '" data-report="' + r + '" data-tier="' + tier + '" onclick="event.preventDefault();event.stopPropagation();cycleTier(this)"></span>';
