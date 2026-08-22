@@ -43,7 +43,8 @@ function loadClientHelpers() {
     fetch: () => Promise.resolve({ ok: false, json: () => ({}) }),
     URL_TOKEN: "", ORG_CONFIG: {},
   };
-  const exposed = ["resolveSavedRange", "parseViewParams", "viewFilterSummary", "viewDateLabel", "SAVED_VIEW_RANGES"];
+  const exposed = ["resolveSavedRange", "parseViewParams", "viewFilterSummary", "viewDateLabel",
+                   "SAVED_VIEW_RANGES", "reconcileFilterSelection"];
   const names = Object.keys(stubs);
   return new Function(...names, code + "\nreturn {" + exposed.join(",") + "};")(...names.map(n => stubs[n]));
 }
@@ -160,6 +161,81 @@ function clientBuild({ desks, methods, glq, tyler }) {
 test("the allowlist drops report plumbing a client might smuggle in", () => {
   const cleaned = serverClean("desks=A&token=secret&_print=1&_nocache=1&evil=1&start_date=2026-01-01");
   assert.strictEqual(cleaned, "desks=A");
+});
+
+// ── Filter reconcile ─────────────────────────────────────────────────
+// Regression tests for a live bug: the "None" button did nothing and unchecking
+// the last box re-checked everything. The reconcile below runs on data changes
+// and has an "if nothing overlaps, show everything" fallback, which is right
+// for new data. It was also running on every checkbox click, so an empty
+// selection was instantly widened back to all.
+const DESKS = ["Front Desk", "Ice Arena", "Simms St"];
+const asSet = (a) => new Set(a);
+const sorted = (s) => [...s].sort();
+
+test("a plain checkbox click is left alone — this is the None-button bug", () => {
+  // Cleared everything, data unchanged: the selection must stay empty.
+  assert.strictEqual(
+    H.reconcileFilterSelection({ available: DESKS, previous: asSet([]), requested: null, dataChanged: false }),
+    null, "null means 'leave the selection exactly as it is'"
+  );
+});
+
+test("a partial selection also survives a click when the data has not changed", () => {
+  assert.strictEqual(
+    H.reconcileFilterSelection({ available: DESKS, previous: asSet(["Ice Arena"]), requested: null, dataChanged: false }),
+    null
+  );
+});
+
+test("first load with nothing selected yet selects everything", () => {
+  const out = H.reconcileFilterSelection({ available: DESKS, previous: null, requested: null, dataChanged: true });
+  assert.deepStrictEqual(sorted(out), sorted(asSet(DESKS)));
+});
+
+test("a data change keeps the selection and prunes what is gone", () => {
+  const out = H.reconcileFilterSelection({
+    available: ["Front Desk", "Simms St"], previous: asSet(["Front Desk", "Ice Arena"]),
+    requested: null, dataChanged: true,
+  });
+  assert.deepStrictEqual(sorted(out), ["Front Desk"]);
+});
+
+test("a data change with no overlap falls back to all rather than a blank report", () => {
+  const out = H.reconcileFilterSelection({
+    available: ["Pool", "Gym"], previous: asSet(["Front Desk"]), requested: null, dataChanged: true,
+  });
+  assert.deepStrictEqual(sorted(out), ["Gym", "Pool"]);
+});
+
+test("an empty selection is NOT widened just because a click happened", () => {
+  // The same empty set, the only difference being dataChanged. This pair is the
+  // bug: both used to take the widening branch.
+  const onClick = H.reconcileFilterSelection({ available: DESKS, previous: asSet([]), requested: null, dataChanged: false });
+  const onNewData = H.reconcileFilterSelection({ available: DESKS, previous: asSet([]), requested: null, dataChanged: true });
+  assert.strictEqual(onClick, null, "click: untouched");
+  assert.deepStrictEqual(sorted(onNewData), sorted(asSet(DESKS)), "new data: widened");
+});
+
+test("a requested set from a saved view wins, even on a click-shaped call", () => {
+  const out = H.reconcileFilterSelection({
+    available: DESKS, previous: asSet(DESKS), requested: ["Ice Arena"], dataChanged: false,
+  });
+  assert.deepStrictEqual(sorted(out), ["Ice Arena"]);
+});
+
+test("a requested set that resolves to nothing shows all — the warned-about case", () => {
+  const out = H.reconcileFilterSelection({
+    available: DESKS, previous: null, requested: ["Somewhere Else"], dataChanged: true,
+  });
+  assert.deepStrictEqual(sorted(out), sorted(asSet(DESKS)));
+});
+
+test("a requested set is intersected with what the data offers", () => {
+  const out = H.reconcileFilterSelection({
+    available: DESKS, previous: null, requested: ["Ice Arena", "Somewhere Else"], dataChanged: true,
+  });
+  assert.deepStrictEqual(sorted(out), ["Ice Arena"]);
 });
 
 console.log(`\n${passed}/${passed} passing`);

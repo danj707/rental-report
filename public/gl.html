@@ -1332,6 +1332,33 @@ function MethodFilter({ methods, selected, onChange }) {
   );
 }
 
+// Decide what a multi-select filter's selection should become. Returns a Set,
+// or null meaning "leave the current selection exactly alone".
+//
+// The `dataChanged: false` case is the whole point: it is what lets someone
+// clear every checkbox and have it stick. This reconcile used to run on every
+// click, and its empty-overlap fallback re-widened an empty selection back to
+// all — which is what made the None button look broken and unchecking the last
+// box re-check everything.
+//
+//   requested    a set a saved view / URL param asked for, applied once
+//   previous     what is selected now (null on first load)
+//   available    what the loaded data actually offers
+//   dataChanged  whether `available` differs from the last reconcile
+function reconcileFilterSelection({ available, previous, requested, dataChanged }) {
+  if (requested) {
+    const want = new Set(requested);
+    const valid = available.filter(v => want.has(v));
+    // Nothing requested is present — show everything rather than a blank
+    // report. The caller surfaces a warning saying so; it must not be silent.
+    return new Set(valid.length ? valid : available);
+  }
+  if (!dataChanged) return null;              // the user's choice, empty included
+  if (!previous) return new Set(available);   // first load ⇒ everything
+  const kept = new Set(available.filter(v => previous.has(v)));
+  return kept.size > 0 ? kept : new Set(available);
+}
+
 // ── Saved views ───────────────────────────────────────────────────────
 // A saved view is a name + a filter query string + a date intent. It is never a
 // snapshot of rows: applying one sets the same filter state a person could set
@@ -1715,46 +1742,50 @@ function App() {
   // request is pending: a `desks` URL param (PDF/print, share link) or a saved
   // view being applied pins a subset.
   const intentDesksApplied = useRef(-1);
+  // Signature of the desks the loaded data actually contains. The reconcile
+  // below runs ONLY when this changes: it exists to cope with new data, and
+  // running it on every checkbox click is what made "None" impossible — an
+  // empty selection was immediately widened back to all (see the fallback at
+  // the end of this effect, which is deliberate for new data and wrong for a
+  // deliberate choice).
+  const loadedDesksSig = useRef(null);
   useEffect(() => {
-    if (rows && hasDesk) {
-      if (intent.desks && intentDesksApplied.current !== intent.seq) {
-        intentDesksApplied.current = intent.seq;
-        const want = new Set(intent.desks);
-        const valid = allDesks.filter(d => want.has(d));
-        setSelectedDesks(new Set(valid.length ? valid : allDesks));
-      } else if (selectedDesks) {
-        // Preserve existing selection across date changes — only prune desks no longer in data
-        const kept = new Set(allDesks.filter(d => selectedDesks.has(d)));
-        setSelectedDesks(kept.size > 0 ? kept : new Set(allDesks));
-      } else {
-        setSelectedDesks(new Set(allDesks));
-      }
-    } else {
+    if (!rows || !hasDesk) {
       setSelectedDesks(null);
+      loadedDesksSig.current = null;
+      return;
     }
+    const sig = allDesks.join('\u0000');
+    // A saved view or URL param asked for a specific set — applied once.
+    const requested = (intent.desks && intentDesksApplied.current !== intent.seq) ? intent.desks : null;
+    if (requested) intentDesksApplied.current = intent.seq;
+    const dataChanged = loadedDesksSig.current !== sig;
+    if (!requested && !dataChanged) return;   // a plain checkbox click — leave it be
+    loadedDesksSig.current = sig;
+    setSelectedDesks(prev =>
+      reconcileFilterSelection({ available: allDesks, previous: prev, requested, dataChanged }) || prev);
   }, [rows, hasDesk, allDesks, intent]);
 
   // Payment-method selection: reset to "all" on fresh data, honor a `methods`
   // URL param on first load (PDF / print / share link), and prune tenders that
   // drop out of the data across date changes. Mirrors the desk-filter effect.
   const intentMethodsApplied = useRef(-1);
+  const loadedMethodsSig = useRef(null);
   useEffect(() => {
-    if (rows && availableMethods.length > 1) {
-      const keys = availableMethods.map(m => m.key);
-      if (intent.methods && intentMethodsApplied.current !== intent.seq) {
-        intentMethodsApplied.current = intent.seq;
-        const want = new Set(intent.methods);
-        const valid = keys.filter(k => want.has(k));
-        setSelectedMethods(new Set(valid.length ? valid : keys));
-      } else if (selectedMethods) {
-        const kept = new Set(keys.filter(k => selectedMethods.has(k)));
-        setSelectedMethods(kept.size > 0 ? kept : new Set(keys));
-      } else {
-        setSelectedMethods(new Set(keys));
-      }
-    } else {
+    if (!rows || availableMethods.length <= 1) {
       setSelectedMethods(null);
+      loadedMethodsSig.current = null;
+      return;
     }
+    const keys = availableMethods.map(m => m.key);
+    const sig = keys.join('\u0000');
+    const requested = (intent.methods && intentMethodsApplied.current !== intent.seq) ? intent.methods : null;
+    if (requested) intentMethodsApplied.current = intent.seq;
+    const dataChanged = loadedMethodsSig.current !== sig;
+    if (!requested && !dataChanged) return;   // a plain checkbox click — leave it be
+    loadedMethodsSig.current = sig;
+    setSelectedMethods(prev =>
+      reconcileFilterSelection({ available: keys, previous: prev, requested, dataChanged }) || prev);
   }, [rows, availableMethods, intent]);
 
   // ── Saved views: current state, dirty check, and the CRUD calls ─────
@@ -1998,8 +2029,17 @@ function App() {
 
   // Manual filter changes drop the pending request for that dimension: once you
   // have taken the wheel, "2 of 3 saved desks are missing" is no longer news.
-  function handleDesksChange(next)   { setSelectedDesks(next);   setIntent(p => ({ ...p, desks: null })); }
-  function handleMethodsChange(next) { setSelectedMethods(next); setIntent(p => ({ ...p, methods: null })); }
+  // Returning the SAME object when there is nothing to clear matters: `intent`
+  // is a dependency of the reconcile effects above, so a fresh object on every
+  // checkbox click re-ran them needlessly.
+  function handleDesksChange(next) {
+    setSelectedDesks(next);
+    setIntent(p => (p.desks === null ? p : { ...p, desks: null }));
+  }
+  function handleMethodsChange(next) {
+    setSelectedMethods(next);
+    setIntent(p => (p.methods === null ? p : { ...p, methods: null }));
+  }
 
   // Rows actually rendered: desk-filtered then re-collapsed to one row per GL code.
   // For orgs without a desk dimension this is a no-op (displayRows === rows).
