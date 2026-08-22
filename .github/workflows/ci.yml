@@ -36,3 +36,6 @@ jobs:
 
       - name: Delete-org source surgery spec (never push an unparseable server.js)
         run: node scripts/delete-org.spec.js
+
+      - name: Breaking schema-drift spec (dropped tables/columns, no noise)
+        run: node scripts/schema-break.spec.js
