@@ -415,9 +415,14 @@ Four guards, all in `runHealthCheck`:
 
 1. **One probe per card.** The per-org loop skips anything
    `resolveReportCard(slug, rt).shared` — the `_shared` row covers that card.
-   Per-org probes 31 → 3 (only `norman/gl`, `smyrna/historic`,
-   `apex/ice-calendar` have genuinely per-org cards). Stale per-org rows are
-   purged, or the panel keeps showing their old failures forever.
+   Per-org probes **31 → 3** (only `norman/gl`, `smyrna/historic`,
+   `apex/ice-calendar` have genuinely per-org cards), so a full sweep is
+   **45 → 17** probes. Stale per-org rows are purged, or the panel keeps showing
+   their old failures forever. Note this is where essentially all of the load
+   reduction comes from — activity gating currently removes no probes at all,
+   because the 3 surviving per-org combos and all 14 shared types are in use. Its
+   value is suppressing `schema-break`/`param-drift` on dead reports and covering
+   reports that fall out of use later.
 2. **`HEALTH_ALERT_AFTER` (default 2) consecutive failures** before a report is
    called down. One miss is load; two rounds in a row is evidence. `failCount`
    resets on any success, and `lastAlertedAt` is carried across recoveries so a
