@@ -326,6 +326,7 @@
     }
   </script>
 <script src="/report-refresh.js" defer></script>
+<script src="/open-pdf.js" defer></script>
 </head>
 <body>
 <div id="root"></div>
@@ -693,7 +694,6 @@ function App() {
   const dateRangeLabel = [loadedStart && formatDisplayDate(loadedStart), loadedEnd && formatDisplayDate(loadedEnd)].filter(Boolean).join(' – ') || 'Current Month';
 
   function downloadPdf() {
-    setPdfLoading(true);
     const parts = window.location.pathname.split('/').filter(Boolean);
     const pdfParams = new URLSearchParams({ start_date: loadedStart||'', end_date: loadedEnd||'' });
     // Use the LIVE section filter — typing in the box narrows the on-screen
@@ -707,16 +707,9 @@ function App() {
     const pdfUrl = parts.length >= 2
       ? `/${parts[0]}/${parts[1]}/api/pdf?${pdfParams}`
       : '/api/pdf';
-    fetch(withToken(pdfUrl))
-      .then(r => r.blob())
-      .then(blob => {
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        a.download = `report-${loadedStart || 'export'}.pdf`;
-        a.click(); URL.revokeObjectURL(a.href);
-      })
-      .catch(err => alert('PDF generation failed: ' + err.message))
-      .finally(() => setPdfLoading(false));
+    // Opened in its own window rather than downloaded — a download started by a
+    // sandboxed iframe is silently dropped. See open-pdf.js.
+    openReportPdf(withToken(pdfUrl), { label: 'Class Roster' });
   }
 
   function renderToolbar() {

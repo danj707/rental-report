@@ -367,6 +367,7 @@
     }
   </script>
 <script src="/report-refresh.js" defer></script>
+<script src="/open-pdf.js" defer></script>
 </head>
 <body>
 <div id="root"></div>
@@ -698,22 +699,13 @@ function App() {
   }
 
   function downloadPdf() {
-    setPdfLoading(true);
     const qs = new URLSearchParams();
     if (loadedStart) qs.set('start_date', loadedStart);
     if (loadedEnd)   qs.set('end_date',   loadedEnd);
     if (params.site_type) qs.set('site_type', params.site_type);
-    fetch(withToken(`${basePath}/api/pdf?${qs}`))
-      .then(r => r.blob())
-      .then(blob => {
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        a.download = `historic-reservations-${loadedStart || 'report'}.pdf`;
-        a.click();
-        URL.revokeObjectURL(a.href);
-      })
-      .catch(err => alert('PDF failed: ' + err.message))
-      .finally(() => setPdfLoading(false));
+    // Opened in its own window rather than downloaded — a download started by a
+    // sandboxed iframe is silently dropped. See open-pdf.js.
+    openReportPdf(withToken(`${basePath}/api/pdf?${qs}`), { label: 'Historic Buildings' });
   }
 
   const isPrint      = params._print === '1';

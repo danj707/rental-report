@@ -1239,6 +1239,12 @@ const ORGS = {
     logoUrl: "https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2Forganization-7da3c5d0-0c96-4beb-9ac5-5752c01db8bf%2FfullLogo.png%3F1782747987261&w=1920&q=75",
     displayName: "Brookline Recreation",
   },
+  "bloomington-finance-sandbox": {
+    token:   "e0CprlQMvtugpnBJ",
+    orgId:   "99c78528-0481-4a80-b475-f96557cd348c",
+    logoUrl: "https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2F14ddfb2b-c28d-40db-9a43-47619be87c11%2Forganization%2F5017798b-0418-461d-899b-94f88e91b2f5.png%3F1787084951199&w=1920&q=75",
+    displayName: "Bloomington Finance Sandbox",
+  },
 };
 
 const REPORT_TYPES = ["facility", "gl", "historic", "programs", "roster", "products", "memberships", "court-utilization", "calendar", "fasttrack", "waitlist", "users", "program-demographics", "instructor-payout", "retention", "annual-report", "section-detail", "ice-calendar", "qoq", "checkins", "program-checkins", "selfservice"];

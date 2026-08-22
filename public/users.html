@@ -252,6 +252,7 @@
   .map-loading { display:flex; align-items:center; justify-content:center; height:420px; color:#6b7280; font-size:13px; }
 </style>
 <script src="/report-refresh.js" defer></script>
+<script src="/open-pdf.js" defer></script>
 </head>
 <body>
 <div id="root"></div>
@@ -1322,17 +1323,9 @@ function App() {
   }
 
   function downloadPdf() {
-    setPdfLoading(true);
-    fetch(withToken('/'+orgSlug+'/'+reportType+'/api/pdf'))
-      .then(function(r){return r.blob();})
-      .then(function(blob){
-        var a=document.createElement('a');
-        a.href=URL.createObjectURL(blob);
-        a.download='users-report-'+orgSlug+'.pdf';
-        document.body.appendChild(a);a.click();a.remove();
-      })
-      .catch(function(e){alert('PDF generation failed: '+e.message);})
-      .finally(function(){setPdfLoading(false);});
+    // Opened in its own window rather than downloaded — a download started by a
+    // sandboxed iframe is silently dropped. See open-pdf.js.
+    openReportPdf(withToken('/'+orgSlug+'/'+reportType+'/api/pdf'), { label: 'Users' });
   }
 
   useEffect(function(){window.recShareLink=function(){return window.location.href;};}, []);

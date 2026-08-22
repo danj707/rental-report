@@ -629,6 +629,7 @@
     }
   </script>
 <script src="/report-refresh.js" defer></script>
+<script src="/open-pdf.js" defer></script>
 </head>
 <body>
 <div id="root"></div>
@@ -2254,7 +2255,6 @@ function App() {
   const isPrint = params._print === '1';
 
   function downloadPdf() {
-    setPdfLoading(true);
     const parts = window.location.pathname.split('/').filter(Boolean);
     const qs = new URLSearchParams({ start_date: loadedStart||'', end_date: loadedEnd||'' });
     // Respect the on-screen desk filter so the PDF matches the displayed rollup.
@@ -2273,16 +2273,9 @@ function App() {
     const pdfUrl = parts.length >= 2
       ? `/${parts[0]}/${parts[1]}/api/pdf?${qs}`
       : '/api/pdf';
-    fetch(withToken(pdfUrl))
-      .then(r => r.blob())
-      .then(blob => {
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        a.download = isTylerActive ? `tyler-turnover-${loadedStart || 'export'}.pdf` : `report-${loadedStart || 'export'}.pdf`;
-        a.click(); URL.revokeObjectURL(a.href);
-      })
-      .catch(err => alert('PDF generation failed: ' + err.message))
-      .finally(() => setPdfLoading(false));
+    // Opened in its own window rather than downloaded — a download started by a
+    // sandboxed iframe is silently dropped. See open-pdf.js.
+    openReportPdf(withToken(pdfUrl), { label: isTylerActive ? 'Treasurer Turnover' : 'GL Code Rollup' });
   }
 
   // ── Tyler/Munis GL Account Detail ───────────────────────────────────

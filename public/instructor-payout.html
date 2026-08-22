@@ -270,6 +270,7 @@
 <script src="/nav-breadcrumb.js" defer></script>
 <script src="/feedback-widget.js" defer></script>
 <script src="/report-refresh.js" defer></script>
+<script src="/open-pdf.js" defer></script>
 </head>
 <body>
 <div id="root"></div>
@@ -861,7 +862,6 @@ function App() {
 
   // PDF download
   const downloadPdf = useCallback(() => {
-    setPdfLoading(true);
     const qs = new URLSearchParams();
     qs.set('start_date', startDate);
     qs.set('end_date', endDate);
@@ -870,16 +870,10 @@ function App() {
     if (instrFilter) qs.set('instructor', instrFilter);
     if (search) qs.set('search', search);
     const pdfUrl = `/${orgSlug}/${reportType}/api/pdf?${qs}`;
-    fetch(withToken(pdfUrl))
-      .then(r => { if (!r.ok) throw new Error(r.status); return r.blob(); })
-      .then(blob => {
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        a.download = `instructor-payout-${orgSlug}-${new Date().toISOString().slice(0,10)}.pdf`;
-        a.click(); URL.revokeObjectURL(a.href);
-      })
-      .catch(err => alert('PDF generation failed: ' + err.message))
-      .finally(() => setPdfLoading(false));
+    // Opened in its own window rather than downloaded — a download started by a
+    // sandboxed iframe is silently dropped. This is the same trick the pay-slip
+    // windows below have always used. See open-pdf.js.
+    openReportPdf(withToken(pdfUrl), { label: 'Instructor Payout' });
     fetch(withToken(`/${orgSlug}/${reportType}/api/log`), { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({action:'pdf',rows:filtered.length}) }).catch(()=>{});
   }, [splitIdx, isCustomSplit, appliedCustom, instrFilter, search, filtered, startDate, endDate]);
 
