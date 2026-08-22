@@ -63,3 +63,6 @@ jobs:
 
       - name: Watchdog switches spec (OFF means off everywhere)
         run: node scripts/watchdog-flags.spec.js
+
+      - name: Admin dashboard JS (inline blocks parse; every on*= handler resolves)
+        run: node scripts/ci-check-admin-js.js

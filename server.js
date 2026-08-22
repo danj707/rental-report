@@ -14719,7 +14719,7 @@ app.get("/", (req, res) => {
           caching: ['Enabled — background pre-warming, health checks, and polling active', 'Disabled — all background Metabase requests paused'],
           maintenance: ['ON — every org page is showing the "Down for Maintenance" splash', 'Off — platform is live for all orgs'],
           schemabreak: ['Watching — alerts if a table or column a live report depends on disappears', 'OFF — a dropped table will NOT be reported'],
-          paramdrift: ['Watching — alerts if a card\'s Start/End Date tag is no longer type Date', 'OFF — a tag reset to Text will NOT be reported'],
+          paramdrift: ['Watching — alerts if a Start/End Date tag is no longer type Date', 'OFF — a tag reset to Text will NOT be reported'],
           reportdown: ['Watching — alerts after 2 consecutive rounds where a card cannot answer', 'OFF — a broken report will NOT be reported']
         };
         var pair = labels[name] || ['Enabled', 'Disabled'];

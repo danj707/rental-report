@@ -317,6 +317,54 @@ EMPTY until at least one update is published, and each PR preview is a fresh
 environment with its own (empty) data store — a brand-new preview shows no popup
 until you publish an update in it first.
 
+## The admin dashboard is a template literal — check its JS before shipping (IMPORTANT)
+
+**The trap, and it has now bitten twice.** The whole admin dashboard is one giant
+JS template literal inside `server.js`. That means every character destined for
+the browser passes through TWO parsers: server.js's literal first, the browser
+second. The literal eats one level of escaping.
+
+2026-08-22, shipped to production in PR #137: a status string written as
+
+```js
+'Watching — alerts if a card\'s Start/End Date tag …'
+```
+
+The `\'` collapsed to a bare `'` on the way out, so the browser received an
+unterminated string, threw a SyntaxError, and **discarded the entire 201KB
+`<script>` block**. Every function declared in it was undefined and *every button
+on the admin dashboard silently did nothing*. The only visible symptom was
+`Uncaught ReferenceError: clearAllDrift is not defined` on whichever button was
+clicked first — which points at an innocent function that was defined correctly.
+
+**Nothing in CI could see it.** `node --check server.js` passes (server.js is
+valid — the broken code is a *string* inside it). The specs pass (none render the
+page). `ci-boot-check` passes (the server boots and serves the page happily).
+The bug existed only in the browser, in generated code, which nothing looked at.
+The earlier backtick incident in this same literal was the first bite.
+
+**Now guarded: `node scripts/ci-check-admin-js.js`** (in CI). It boots the
+server, fetches `/`, and checks the generated HTML two ways:
+
+1. every inline `<script>` block parses (catches the escaping class), and
+2. every inline `on*="handler()"` names a function that is actually declared
+   (catches a button wired to a renamed or deleted function).
+
+Verified against the real bug: reintroducing that apostrophe makes it report the
+syntax error **plus 20 orphaned handlers** — i.e. it reproduces the symptom Dan
+saw, not just the cause.
+
+**Rules for any change to the admin dashboard:**
+
+- Run `node scripts/ci-check-admin-js.js` before pushing. `node --check` is not
+  enough and never was.
+- **Prefer rewording over escaping.** Inside this literal, an apostrophe in
+  emitted JS needs `\\'`, a backtick needs escaping, and `${` needs care. The
+  fix here removed the apostrophe rather than double-escaping it, because the
+  next person editing the line would have to re-derive the same reasoning.
+- A single broken string takes out EVERY button in its block, so the blast
+  radius of a typo here is the whole panel, not one feature.
+
 ## Watchdog switches in the admin dashboard (Dan, 2026-08-22)
 
 Three toggles in the admin **Feature Flags** block, same switch as the existing
