@@ -3131,6 +3131,15 @@ function slackMuted(rec) {
     (!m.event  || m.event  === rec.event));
 }
 
+// A direct, openable link to one org's report. Returns "" when the org has no
+// token, because a tokenless link just 404s and a dead link in an alert is worse
+// than no link.
+function reportUrl(slug, reportType) {
+  const org = ORGS[slug];
+  if (!org || !org.token || !reportType) return "";
+  return `${BASE_URL}/${slug}/${reportType}?token=${encodeURIComponent(org.token)}`;
+}
+
 function notifySlack(rec) {
   if (!SLACK_WEBHOOK_URL || !rec || !SLACK_NOTIFY.has(rec.event)) return;
   if (slackMuted(rec)) return;
@@ -3184,7 +3193,13 @@ function notifySlack(rec) {
   } else if (rec.event === "report-down") {
     const mention = SLACK_MENTION_USER_ID ? ` <@${SLACK_MENTION_USER_ID}>` : "";
     const why = rec.error ? ` — _${String(rec.error).slice(0, 160)}_` : "";
-    text = `${meta.emoji} ${orgName} (\`${rec.org}\`) *${rec.report}* is failing${why}${mention}`;
+    // Link straight to the broken report. The alert is only useful if the next
+    // step is one click, not "go find which org that slug is and paste a token".
+    // The token has to be in the link or it 404s — same as the tokenised links
+    // the scheduled emails already send, and the same channel Dan reads.
+    const link = reportUrl(rec.org, rec.report);
+    const label = link ? `<${link}|${rec.report}>` : `*${rec.report}*`;
+    text = `${meta.emoji} ${orgName} (\`${rec.org}\`) ${label} is failing${why}${mention}`;
   } else if (rec.event === "email") {
     const to = rec.email ? ` to \`${rec.email}\`` : "";
     const trig = rec.trigger === "manual" ? " · manual send" : ` · ${rec.schedule || "scheduled"} queue`;
@@ -15647,46 +15662,12 @@ app.get("/", (req, res) => {
     // Expose the changelog so the smart Project-Update composer can auto-draft from it.
     try { window.RECS_CHANGELOG = UPDATES; } catch(e) {}
 
-    // ── Admin "What's New" popup ──────────────────────────────────────
-    // Same published project-updates the org admins see, surfaced once (per
-    // browser) on the internal dashboard. Admins see every item; partners only
-    // see the lines for the reports they actually have.
-    (function adminWhatsNew(){
-      function run(){
-        fetch('/api/admin/announcements').then(function(r){ return r.json(); }).then(function(d){
-          var anns=((d&&d.announcements)||[]).filter(function(a){ return a.active!==false && !(a.expiresAt && Date.now()>a.expiresAt); });
-          if(!anns.length) return;
-          var seen; try{ seen=JSON.parse(localStorage.getItem('rec_admin_seen_updates')||'[]'); }catch(e){ seen=[]; }
-          if(!Array.isArray(seen)) seen=[];
-          var next=anns.filter(function(a){ return seen.indexOf(a.id)<0; })[0];
-          if(!next) return;
-          function esc(s){ return (s==null?'':String(s)).replace(/[&<>"]/g,function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
-          var inner;
-          if(next.smart && next.items && next.items.length){
-            inner='<ul style="margin:6px 0 0;padding:0;list-style:none">'+next.items.map(function(it){
-              return '<li style="margin:0 0 12px;padding-left:30px;position:relative;line-height:1.5">'
-                +'<span style="position:absolute;left:0;top:0;font-size:16px">'+esc(it.emoji||'✨')+'</span>'
-                +esc(it.text)+'</li>';
-            }).join('')+'</ul>';
-          } else {
-            inner='<div style="line-height:1.6">'+esc(next.body||'').replace(/\\n/g,'<br>')+'</div>';
-          }
-          var note=next.smart?'<div style="font-size:11px;color:#8b5cf6;margin-bottom:12px;font-weight:600;background:#f5f3ff;border:1px solid #ddd6fe;border-radius:6px;padding:7px 10px">👀 Admin preview — each partner sees only the lines for the reports they have</div>':'';
-          var ov=document.createElement('div');
-          ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:100000;display:flex;align-items:center;justify-content:center;padding:20px';
-          ov.innerHTML='<div style="background:#fff;border-radius:14px;max-width:540px;width:100%;box-shadow:0 24px 70px rgba(0,0,0,.3);overflow:hidden">'
-            +'<div style="background:linear-gradient(135deg,#7c3aed,#4f46e5);color:#fff;padding:16px 22px;font-weight:700;font-size:15px">📣 '+esc(next.title)+'</div>'
-            +'<div style="padding:20px 22px;font-size:14px;color:#333">'+note+inner+'</div>'
-            +'<div style="padding:0 22px 20px;text-align:right"><button id="rec-admin-upd-ok" style="background:#7c3aed;color:#fff;border:none;border-radius:8px;padding:9px 22px;font-size:13px;font-weight:600;cursor:pointer">Got it 🎉</button></div>'
-            +'</div>';
-          document.body.appendChild(ov);
-          function dismiss(){ seen.push(next.id); try{ localStorage.setItem('rec_admin_seen_updates',JSON.stringify(seen)); }catch(e){} ov.remove(); }
-          ov.querySelector('#rec-admin-upd-ok').addEventListener('click',dismiss);
-          ov.addEventListener('click',function(e){ if(e.target===ov) dismiss(); });
-        }).catch(function(){});
-      }
-      if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',run); else run();
-    })();
+    // No "What's New" popup on this dashboard, by design (Dan, 2026-08-22):
+    // feature updates are for ORG dashboards, where the audience is the partner
+    // who benefits from them. Here they interrupted the platform-usage view for
+    // an audience that wrote the update. Published updates are still authored
+    // and reviewed in the Project Updates panel below, and org admins still get
+    // the popup from public/org.html.
 
     function renderUpdates() {
       const countEl = document.getElementById('updates-count');
