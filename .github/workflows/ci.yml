@@ -22,6 +22,9 @@ jobs:
           shopt -s nullglob
           for f in *.js; do echo "→ node --check $f"; node --check "$f"; done
 
+      - name: Boot the server and confirm it answers
+        run: node scripts/ci-boot-check.js
+
       - name: Install @babel/standalone (for JSX parse check)
         run: npm install --no-save @babel/standalone@7.23.9
 
