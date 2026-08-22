@@ -3076,28 +3076,10 @@ async function checkCatalogDrift(opts) {
 // read would retry 24 times a day. Once a morning, after the caches warm.
 cron.schedule("30 5 * * *", () => { checkCatalogDrift().catch(() => {}); });
 
-// GET /api/admin/schema-break — current state, for the admin panel.
-// POST /api/admin/schema-break/check — run it now (password-gated, since it
-// hits Metabase and can post to Slack).
-app.get("/api/admin/schema-break", (req, res) => {
-  res.json({
-    configured: !!SCHEMA_CATALOG_UUID,
-    watchedTables: getWatchedTables().length,
-    reportsCovered: Object.keys(REPORT_DEPENDENCIES).length,
-    uncoveredReports: REPORT_TYPES.filter(r => !REPORT_DEPENDENCIES[r]),
-    last: readJSON(CATALOG_DRIFT_FILE, null),
-  });
-});
-app.post("/api/admin/schema-break/check", express.json(), async (req, res) => {
-  const pw = req.body && req.body.password;
-  if (!DASHBOARD_PASSWORD) return res.status(503).json({ error: "Set DASHBOARD_PASSWORD to run this on demand" });
-  if (pw !== DASHBOARD_PASSWORD) return res.status(403).json({ error: "Invalid password" });
-  try {
-    res.json(await checkCatalogDrift({ force: true }));
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
+// The two /api/admin/schema-break routes live with the other admin endpoints,
+// further down: `app` does not exist yet at this point in the file, and
+// registering a route above it is a boot crash, not a syntax error — which
+// means node --check and the specs both pass and only the deploy fails.
 
 // ── Slack activity notifications ─────────────────────────────────────────────
 // Posts high-signal events to a Slack Incoming Webhook (env SLACK_WEBHOOK_URL).
@@ -10723,6 +10705,32 @@ app.post("/api/admin/links", (req, res) => {
 app.get("/api/admin/flags", (req, res) => { res.json(getFlags()); });
 
 // ── Schema Drift admin API ───────────────────────────────────────────
+// ── Breaking schema drift (catalog watchdog) ──
+// Defined here rather than beside checkCatalogDrift() because `app` is not
+// initialised until later in the file.
+// GET /api/admin/schema-break — current state, for the admin panel.
+// POST /api/admin/schema-break/check — run it now (password-gated, since it
+// hits Metabase and can post to Slack).
+app.get("/api/admin/schema-break", (req, res) => {
+  res.json({
+    configured: !!SCHEMA_CATALOG_UUID,
+    watchedTables: getWatchedTables().length,
+    reportsCovered: Object.keys(REPORT_DEPENDENCIES).length,
+    uncoveredReports: REPORT_TYPES.filter(r => !REPORT_DEPENDENCIES[r]),
+    last: readJSON(CATALOG_DRIFT_FILE, null),
+  });
+});
+app.post("/api/admin/schema-break/check", express.json(), async (req, res) => {
+  const pw = req.body && req.body.password;
+  if (!DASHBOARD_PASSWORD) return res.status(503).json({ error: "Set DASHBOARD_PASSWORD to run this on demand" });
+  if (pw !== DASHBOARD_PASSWORD) return res.status(403).json({ error: "Invalid password" });
+  try {
+    res.json(await checkCatalogDrift({ force: true }));
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 app.get("/api/admin/schema-drift", (req, res) => {
   const baselines = loadSchemaBaselines();
   const driftLog = loadDriftLog();
