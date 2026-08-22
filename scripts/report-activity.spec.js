@@ -190,8 +190,48 @@ test("an inactive report can never raise report-down, even on a forced run", () 
   const body = slice("    if (entry.status === \"error\") {", "    existing.reports[storeSlug][rt] = entry;");
   assert.ok(body.includes("const alertable = shared ? isReportTypeActive(rt) : isReportActive(slug, rt)"),
     "the alert branch needs its own activity gate");
-  assert.ok(/if \(alertable && \(!prevWasError/.test(body),
+  assert.ok(/if \(alertable && ripe && !quiet\)/.test(body),
     "newFailures and the report-down event must both be behind `alertable`");
+});
+
+test("one failed probe is not a report down — two in a row is", () => {
+  // The ~20-alert afternoon: these cards sit close to their 60s budget, so a
+  // single miss is load. Alerting on the first miss is the noise.
+  const body = slice("    if (entry.status === \"error\") {", "    existing.reports[storeSlug][rt] = entry;");
+  assert.ok(body.includes('entry.failCount = (prev?.status === "error" ? (prev.failCount || 1) : 0) + 1'),
+    "consecutive failures must be counted, and reset by a success");
+  assert.ok(body.includes("const ripe = entry.failCount >= HEALTH_ALERT_AFTER"),
+    "the alert must wait for HEALTH_ALERT_AFTER consecutive failures");
+  assert.ok(/HEALTH_ALERT_AFTER = Number\(process\.env\.HEALTH_ALERT_AFTER \|\| 2\)/.test(src),
+    "two by default, overridable");
+});
+
+test("a slow card is labelled slow, and the error says what Metabase said", () => {
+  // "HTTP 400" alone cannot distinguish a dropped table from a statement
+  // timeout, which are opposite problems with opposite fixes.
+  assert.ok(src.includes('entry.error = `HTTP ${resp.status}${why ? ": " + why : ""}`'),
+    "the response body must reach the alert");
+  assert.ok(src.includes('if (/statement timeout|timed? ?out/i.test(why)) entry.slow = true;'));
+  assert.ok(src.includes("if (timedOut) entry.slow = true;"), "a client-side timeout counts as slow too");
+});
+
+test("the alert clock survives a recovery, so a flapping card cannot re-alert", () => {
+  const body = slice("    if (entry.status === \"error\") {", "  await runChunked(");
+  assert.ok(body.includes("if (prev?.lastAlertedAt) entry.lastAlertedAt = prev.lastAlertedAt;"));
+  assert.ok(body.includes("else if (existing.reports[storeSlug]?.[rt]?.lastAlertedAt)"),
+    "a healthy entry must carry the clock forward too");
+});
+
+test("a shared card is probed once, not once per org", () => {
+  // #134 pointed 28 shadowed per-org rows at the real shared cards, adding ~28
+  // heavy Metabase queries per run — which pushed those same cards over their
+  // timeouts and generated the alerts. One probe per card is enough.
+  const enumeration = slice("  // Per-org: only reports with a per-org mbUuid", "  // If failuresOnly");
+  assert.ok(enumeration.includes("if (resolveReportCard(slug, rt).shared) continue;"),
+    "per-org enumeration must skip reports a shared card serves");
+  const purge = slice("  // Purge stale entries from old check strategy", "  // Rebuild global failures");
+  assert.ok(purge.includes("if (resolveReportCard(slug, rt).shared) delete existing.reports[slug][rt];"),
+    "stale per-org rows must be purged or the panel keeps showing their failures");
 });
 
 test("an inactive failure is recorded but kept out of the failures list", () => {

@@ -363,6 +363,41 @@ as a *page* is dead (2 views/30d) but its **card is load-bearing** —
 the page. `campmap` is in `RETIRED_REPORTS` yet has 24 views/30d across 2 orgs,
 so it's more alive than the other two retired reports.
 
+## Health-check alert noise — what caused it, and the three guards (2026-08-22)
+
+Dan got ~20 `report-down` alerts in an afternoon for reports that were all still
+serving. Diagnosis, cache-independent: the cards were **slow, not broken**.
+`clarksville/roster` returned its 1337 rows in **7.7s one hour and 59.8s the
+next** against a 60s budget; `apex/fasttrack` and `apex/ice-calendar` both blew
+past 70s. Every marginal miss was one Slack message.
+
+**Partly self-inflicted.** PR #134 pointed the 28 shadowed per-org rows at the
+real shared cards (correct for *which* card, wrong about *how many times*). The
+per-org loop's comment always said "only reports with a per-org mbUuid" — the
+shadowed entries defeated that, so each run fired ~28 extra heavy Metabase
+queries against the same cards the shared loop already probes once, which pushed
+those cards over their own timeouts. Watchdog as its own load source.
+
+Three guards, all in `runHealthCheck`:
+
+1. **One probe per card.** The per-org loop skips anything
+   `resolveReportCard(slug, rt).shared` — the `_shared` row covers that card.
+   Per-org probes 31 → 3 (only `norman/gl`, `smyrna/historic`,
+   `apex/ice-calendar` have genuinely per-org cards). Stale per-org rows are
+   purged, or the panel keeps showing their old failures forever.
+2. **`HEALTH_ALERT_AFTER` (default 2) consecutive failures** before a report is
+   called down. One miss is load; two rounds in a row is evidence. `failCount`
+   resets on any success, and `lastAlertedAt` is carried across recoveries so a
+   card flapping either side of its timeout cannot re-alert every few hours.
+3. **The error says what Metabase said.** A statement timeout comes back as HTTP
+   400 with the reason in the body, so bare `HTTP 400` could not distinguish a
+   dropped table from a slow card — opposite problems, opposite fixes. The body
+   (160 chars) is now in `entry.error`, and timeouts set `entry.slow`.
+
+Worth knowing separately: **several shared cards genuinely run near 60s under
+load** (roster, fasttrack, ice-calendar). That is a real performance problem the
+guards only stop shouting about — see the `materialized` index section.
+
 ## Per-org card entries a shared card shadows (know this before trusting ORGS)
 
 `ORGS[slug][report].mbUuid` is NOT necessarily the card the app queries. A

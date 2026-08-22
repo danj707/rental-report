@@ -1815,6 +1815,9 @@ const AMENITY_TAGS = {
 // dashboard "+ Add report" flow (e.g. not yet ready for self-serve onboarding).
 const NON_ADDABLE_REPORTS = new Set(["program-demographics", "retention", "annual-report", "section-detail", "qoq", "checkins", "program-checkins", "selfservice"]);
 // Reports that require extra params (e.g. section_id) and cannot be health-checked with org_id alone
+// How many consecutive failed probes before a report is called down. One is
+// load; two in a row is a report. See the flap note in checkOne().
+const HEALTH_ALERT_AFTER = Number(process.env.HEALTH_ALERT_AFTER || 2);
 const HEALTH_SKIP_REPORTS = new Set(["section-detail", "annual-report", "qoq", "qbr-stats", "checkins", "program-checkins", "selfservice"]);
 const RENTAL_CALENDAR_ORGS = new Set(["watertown", "norman", "niagarafalls"]);
 // Director's Report (quarterly executive summary) — org-wide since 2026-08-04
@@ -2192,6 +2195,14 @@ async function runHealthCheck(forceAll, failuresOnly) {
     for (const rt of REPORT_TYPES) {
       if (!org[rt]?.mbUuid) continue;
       if (HEALTH_SKIP_REPORTS.has(rt)) continue;
+      // "Only reports with a per-org mbUuid" was always the intent of this loop,
+      // but 28 of those entries are shadowed by a shared card, so this ran 28
+      // extra probes of the SAME heavy shared cards the loop below already
+      // probes once. Cheap while they hit dead legacy cards; after #134 pointed
+      // them at the real cards it became ~28 extra heavy Metabase queries per
+      // run, which pushed those cards over their own timeouts and turned each
+      // marginal miss into a Slack alert. One probe per card is enough.
+      if (resolveReportCard(slug, rt).shared) continue;
       if (forceAll) { toCheck.push({ slug, rt }); continue; }
       // Nobody has opened this in the activity window — do not probe it and do
       // not alert on it. It rejoins on its own the moment someone uses it.
@@ -2293,7 +2304,13 @@ async function runHealthCheck(forceAll, failuresOnly) {
 
       if (!resp.ok) {
         entry.status = "error";
-        entry.error = `HTTP ${resp.status}`;
+        // Metabase answers a statement timeout with HTTP 400 and the reason in
+        // the body. "HTTP 400" on its own sent every reader to guess whether a
+        // card was broken or merely slow — they are different problems.
+        let why = "";
+        try { why = (await resp.text()).replace(/\s+/g, " ").slice(0, 160); } catch (_) {}
+        entry.error = `HTTP ${resp.status}${why ? ": " + why : ""}`;
+        if (/statement timeout|timed? ?out/i.test(why)) entry.slow = true;
       } else {
         const data = await resp.json();
         entry.rows = Array.isArray(data) ? data.length : 0;
@@ -2312,7 +2329,9 @@ async function runHealthCheck(forceAll, failuresOnly) {
       cacheStats.healthProbes++;
     } catch (err) {
       entry.status = "error";
-      entry.error = err.name === "AbortError" ? `Timeout (${(org.healthTimeoutMs||60000)/1000}s)` : err.message;
+      const timedOut = err.name === "AbortError" || err.name === "TimeoutError";
+      entry.error = timedOut ? `Timeout (${(org.healthTimeoutMs||60000)/1000}s)` : err.message;
+      if (timedOut) entry.slow = true;
       entry.source = "probe";
       cacheStats.healthProbes++;
     }
@@ -2321,7 +2340,6 @@ async function runHealthCheck(forceAll, failuresOnly) {
 
     if (entry.status === "error") {
       const prev = existing.reports[storeSlug]?.[rt];
-      const prevWasError = prev?.status === "error";
       const lastAlerted = prev?.lastAlertedAt ? new Date(prev.lastAlertedAt).getTime() : 0;
       const suppressWindow = 6 * 3600000;
       // A forced run probes everything, including reports nobody uses — record
@@ -2329,17 +2347,33 @@ async function runHealthCheck(forceAll, failuresOnly) {
       // already skip inactive reports before they get here.
       const alertable = shared ? isReportTypeActive(rt) : isReportActive(slug, rt);
       if (!alertable) entry.inactive = true;
-      if (alertable && (!prevWasError || (now - lastAlerted >= suppressWindow))) {
-        newFailures.push({ org: slug, report: rt, error: entry.error, tier: entry.tier });
+
+      // Consecutive failures, not one. These cards sit close to their timeout:
+      // clarksville/roster returned its 1337 rows in 7.7s one hour and 59.8s
+      // the next, against a 60s budget. A single miss is load, not a broken
+      // report, and alerting on it produced ~20 messages in an afternoon for
+      // reports that were all still serving. Two rounds in a row is evidence.
+      entry.failCount = (prev?.status === "error" ? (prev.failCount || 1) : 0) + 1;
+      // Carried across recovery too, so a card flapping either side of its
+      // timeout cannot re-alert every couple of hours.
+      if (prev?.lastAlertedAt) entry.lastAlertedAt = prev.lastAlertedAt;
+
+      const ripe = entry.failCount >= HEALTH_ALERT_AFTER;
+      const quiet = now - lastAlerted < suppressWindow;
+      if (alertable && ripe && !quiet) {
+        newFailures.push({ org: slug, report: rt, error: entry.error, tier: entry.tier, failCount: entry.failCount });
         // A card that stopped answering IS a broken report — the cause (dropped
         // table, changed enum, timeout) matters less than someone knowing. The
         // ice-calendar outage in August 2026 sat unnoticed for three days
         // because this only ever went to email, behind a feature flag.
-        logEvent(slug, rt, "report-down", null, { error: entry.error });
+        logEvent(slug, rt, "report-down", null, { error: entry.error, failCount: entry.failCount });
         entry.lastAlertedAt = ts;
-      } else {
-        entry.lastAlertedAt = prev.lastAlertedAt;
       }
+    }
+    // Keep the alert clock on a healthy entry too, so a recovery followed by a
+    // fresh wobble is still inside the suppression window.
+    else if (existing.reports[storeSlug]?.[rt]?.lastAlertedAt) {
+      entry.lastAlertedAt = existing.reports[storeSlug][rt].lastAlertedAt;
     }
 
     existing.reports[storeSlug][rt] = entry;
@@ -2354,7 +2388,11 @@ async function runHealthCheck(forceAll, failuresOnly) {
     const org = ORGS[slug];
     if (!org) { delete existing.reports[slug]; continue; }
     for (const rt of Object.keys(existing.reports[slug])) {
-      if (!org[rt]?.mbUuid) delete existing.reports[slug][rt];
+      if (!org[rt]?.mbUuid) { delete existing.reports[slug][rt]; continue; }
+      // A per-org row for a report a shared card serves is no longer probed —
+      // the `_shared` row covers that card. Leaving the old row behind would
+      // keep a stale failure (or a stale tick) on the panel forever.
+      if (resolveReportCard(slug, rt).shared) delete existing.reports[slug][rt];
     }
   }
 
