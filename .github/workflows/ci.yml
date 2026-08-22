@@ -54,3 +54,6 @@ jobs:
 
       - name: Breaking schema-drift spec (dropped tables/columns, no noise)
         run: node scripts/schema-break.spec.js
+
+      - name: Card-drift spec (probe the served card; catch a Date tag reset to Text)
+        run: node scripts/card-drift.spec.js
