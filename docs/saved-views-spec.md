@@ -1,6 +1,6 @@
-# Saved views ("saved searches") — spec, GL report first
+# Saved views ("saved searches") — spec, GL report only
 
-Status: spec / not built. Written 2026-08-22.
+Status: spec / not built. Written 2026-08-22, decisions folded in the same day.
 Model: the Rec app's per-page view picker (Default view / named views in the
 header, chips for active filters, a `Save view` button that lights up when the
 current filters differ from the saved one).
@@ -8,9 +8,18 @@ current filters differ from the saved one).
 Goal, in Dan's words: set a group of desk locations or GL codes, save it, name
 it, and jump back to it from the header later.
 
+## Decisions (Dan, 2026-08-22)
+
+| Question | Decision |
+|---|---|
+| Org-shared list or per-browser? | **Org-shared.** True multi-tenant (per-user) comes later — see the forward-compat note in §4. |
+| Does a view capture chart mode? | **No — filters only.** The chart modes are likely being dropped; a view assumes the table. |
+| Roll out to other reports? | **GL only for now**, until there's real feedback. Routes stay report-shaped so a later rollout is cheap, but nothing else gets wired. |
+| Slack ping? | **No Slack ping** for this surface — a deliberate exception to the standing rule. Still written to `events.jsonl`. See §7. |
+
 ---
 
-## 1. The unit of saving is a named URL, not a snapshot
+## 1. The unit of saving is a named URL
 
 The GL report already keeps most of its filter state in the URL and rebuilds
 from it on load — `start_date`, `end_date`, `desks`, `methods`, `tyler` — and
@@ -26,7 +35,7 @@ So a saved view is just:
   dateMode: "current",     // current | relative | fixed
   relativeRange: null,     // e.g. "lastMonth" when dateMode = relative
   params: "desks=Community%20Recreation%20Center&methods=cash,check",
-  display: { view: "table" },   // optional, see §2
+  owner: null,             // reserved for multi-tenant; always null in v1 (§4)
   createdAt: "2026-08-22T18:04:11.402Z",
   updatedAt: null,
   deletedAt: null
@@ -38,29 +47,30 @@ work. Nothing in the report needs to learn a second way to be filtered, and
 **PDF / print / Excel / email subscriptions inherit saved-view fidelity for
 free**, because they already read the same params.
 
-### Fidelity gaps to close first
+### One prerequisite
 
-Four pieces of GL filter/display state are *not* in the URL today:
+The GL code / account text filter (`glFilter`) is React state with no URL param,
+so it can't round-trip. Add a `glq` param and include it in the view. A saved
+view that quietly loses the text filter is worse than one that refuses to save
+it. That is the only fidelity work Phase 1 needs.
 
-| State | Where it lives now | Treat as |
-|---|---|---|
-| GL code / account text filter (`glFilter`) | React state only | **Filter** → add a `glq` URL param, save it |
-| Chart mode table/bar/pie (`viewMode`) | `localStorage gl_view_mode_v2` | Display → save in `display` (see §2) |
-| Refund detail expanded (`showRefunds`) | `localStorage gl_refund_breakdown_v2` | Display, keep localStorage-only in v1 |
-| Locations column (`showLocations`, Norman only) | `localStorage gl_show_locations_v1` | Display, keep localStorage-only in v1 |
+## 2. Filters only
 
-Adding `glq` to the URL is a prerequisite — a saved view that quietly loses the
-text filter is worse than one that refuses to save it.
+A saved view stores **filters** — what rows are in scope — and nothing else:
+`desks`, `methods`, `glq`, `tyler`, and (optionally) dates.
 
-## 2. Filters vs display
+Display state is explicitly **not** saved:
 
-A saved view stores **filters** (what rows are in scope) and, optionally, the
-**chart mode** — a pie of the same rows is legitimately a different "view".
-Refund-detail and Locations toggles stay per-browser preferences; they don't
-change the numbers, and folding every toggle in makes "is this view dirty?"
-noisy for no benefit. Revisit if anyone asks.
+| State | Where it stays |
+|---|---|
+| Chart mode table/bar/pie (`viewMode`) | `localStorage`, unsaved — the chart modes are likely being retired, so a view assumes the table |
+| Refund detail expanded (`showRefunds`) | `localStorage`, per-browser |
+| Locations column (`showLocations`, Norman only) | `localStorage`, per-browser |
 
-## 3. Dates — the open question, answered
+This also keeps the dirty-state check honest: only a filter change marks a view
+edited, so `Save view` never lights up because someone collapsed a column.
+
+## 3. Dates
 
 Three modes, chosen in the save dialog:
 
@@ -81,24 +91,24 @@ Specific answers to "what happens when the date range passes":
   no date at all, so it's obvious the dates on screen are yours, not the view's.
 - **Default to `current`.** Dan's own example is a filter set, not a period —
   making dates opt-in means the common case cannot go stale.
-- Optional v1.1 nudge: a fixed view whose `end_date` is >13 months old renders
+- Optional later nudge: a fixed view whose `end_date` is >13 months old renders
   muted with an "archived" hint. A hint, never an auto-delete.
 
 Reuse the server's existing relative vocabulary — `getDateRange()`
 (`server.js:3242`) and the `validDateRanges` list at `server.js:6371` — rather
-than inventing a second one. That is what makes §7 Phase 3 cheap: the same
-token can be handed to `POST /:org/admin/subscribe`, and `rangeBlocked()`
-already refuses nonsense pairings (a future range on a backwards-looking GL
-report).
+than inventing a second one. That also keeps the deferred "email me this view"
+idea (§8) cheap: the same token can be handed to `POST /:org/admin/subscribe`,
+and `rangeBlocked()` already refuses nonsense pairings (a future range on a
+backwards-looking GL report).
 
 ## 4. Storage and scope — org-shared, on the volume
 
 Auth is one shared token per org (`ORGS[slug].token`, gate at
-`server.js:4351`). **There is no per-user identity anywhere in this app**, so:
+`server.js:4351`). There is no per-user identity in the app today, and the
+decision is org-shared regardless: these are **team state**, like Fast Track
+pins — "any staff member with the org token sees the same". Follow that
+precedent directly: `FT_PINS_FILE` + `ftPinsAuth()` at `server.js:6306-6332`.
 
-- Saved views are **team state**, exactly like Fast Track pins — "any staff
-  member with the org token sees the same". Follow that precedent directly:
-  `FT_PINS_FILE` + `ftPinsAuth()` at `server.js:6306-6332`.
 - File: `DATA_DIR/saved-views.json`, shape
   `{ [orgSlug]: { [reportType]: SavedView[] } }`, through the existing
   `readJSON` / `writeJSON` helpers (`server.js:2256-2261`).
@@ -106,9 +116,11 @@ Auth is one shared token per org (`ORGS[slug].token`, gate at
   are both set on the `rental-report` service, so views survive deploys.
   **A PR preview is a fresh environment with an empty store** (same caveat as
   the "What's New" popup), so views must be created inside the preview to test.
-- "My views" vs "our views" is not buildable without identity. Recommendation:
-  org-shared list in v1, plus a **per-browser default view** in localStorage —
-  which view you land on is a personal habit, the list itself is shared.
+- **Forward-compat for true multi-tenant.** Keep the org → report → views
+  nesting and carry an `owner` field that is always `null` in v1. When real
+  users exist, `owner` gets a user id and the list is filtered to
+  `owner === me || owner === null` — org-shared views stay visible as the
+  shared set, and nothing needs a shape migration. Don't build any of that now.
 - A shared token means anyone can delete anyone's view. Mitigate:
   **soft delete** (`deletedAt`, filtered on read) with a 10-second "Undo"
   toast, and an `events.jsonl` line on create / rename / delete. Compact
@@ -118,10 +130,14 @@ Auth is one shared token per org (`ORGS[slug].token`, gate at
 
 ```
 GET    /:org/:report/api/views        → { views: [...] }        (excludes tombstones)
-POST   /:org/:report/api/views        → create   { name, dateMode, relativeRange?, params, display? }
+POST   /:org/:report/api/views        → create   { name, dateMode, relativeRange?, params }
 PATCH  /:org/:report/api/views/:id    → rename | update-to-current | restore
 DELETE /:org/:report/api/views/:id    → soft delete
 ```
+
+Report-shaped from the start because it costs nothing, but **only `gl` is
+registered in `SAVED_VIEW_PARAMS`** — any other `:report` 404s until someone
+asks for it.
 
 `/:org/:report/api/*` is **not** in the token-gate whitelist (only top-level
 `/api/*` is), so the gate already covers these. Add a `viewsAuth(req, res)`
@@ -155,7 +171,7 @@ Header, mirroring the Rec pattern in the screenshot:
   then saved views A–Z, ✓ on the active one, 📌 on fixed-date ones, with a
   second muted line per row summarising date intent + filters
   ("Last month · 3 desks · cash, check"). Footer row `＋ Save current view…`;
-  per-row `⋯` → Rename / Update to current filters / Set as my default / Delete.
+  per-row `⋯` → Rename / Update to current filters / Delete.
 - **Dirty state**: as soon as filters diverge from the applied view the label
   reads `Front desk cash · edited` and the `Save view` button enables — greyed
   out otherwise, exactly as in the screenshot. Two actions:
@@ -173,6 +189,9 @@ Header, mirroring the Rec pattern in the screenshot:
   resolved and show an inline warning —
   `⚠ 2 of 3 saved desk locations aren't in this date range` — with
   "show anyway / change dates". **Never widen a financial filter silently.**
+- **No "set as default" in v1.** The picker remembers the last applied view per
+  browser (`localStorage`), so returning to the report lands where you left off.
+  An explicit org-wide or personal default is a follow-on if anyone asks.
 - **Print/PDF**: picker and chips hide in `print-mode` (same as `.nav-crumb`),
   but the view name goes into the PDF header line, so an exported page says
   which saved view produced it.
@@ -182,45 +201,48 @@ Header, mirroring the Rec pattern in the screenshot:
   plus `view=<id>`, so a copied link reproduces the filters *and* names the
   view for whoever opens it.
 
-## 7. Slack activity ping (standing rule)
+## 7. Activity logging — no Slack ping
 
-- `view-save` → add to `SLACK_NOTIFY` and `SLACK_EVENT_META`
-  (`💾`, "saved a view of"), with a custom branch in `notifySlack()` so the
-  message carries the name: `💾 Norman (norman) saved a view of *GL* —
-  "Front desk cash"`. Fire it server-side with `logEvent()` inside the POST
-  route — the server sees the create, so no beacon is needed.
-- `view-apply` → `events.jsonl` only at first. A picker gets clicked all day;
-  if Dan wants the signal in Slack, add it with a `view`-style 30-minute
-  debounce and it needs adding to the `ALLOWED` list at `server.js:4571`.
+**Deliberate exception to the standing "wire Slack into every new surface"
+rule** (Dan, 2026-08-22): saved views do not ping Slack. A view picker is a
+high-frequency internal convenience, not a play or an export worth a feed post.
 
-## 8. Phasing
+- Do **not** add anything to `SLACK_NOTIFY` or `SLACK_EVENT_META`.
+- Still log `view-save` / `view-apply` / `view-delete` to `events.jsonl` via
+  `logEvent()` so `/metrics` can answer "is anyone using this?" — which is the
+  actual question that decides whether this rolls out to other reports.
+- `view-save` and `view-delete` fire server-side from their routes (the server
+  sees them). `view-apply` is client-side, so it needs adding to the `ALLOWED`
+  list at `server.js:4571` — and because that route calls `notifySlack` via
+  `logEvent`, the ping stays off purely by absence from `SLACK_NOTIFY`. That's
+  the existing mechanism; nothing extra needed.
+- If the usage data later makes a Slack ping interesting, adding `view-save` to
+  `SLACK_NOTIFY` plus a `SLACK_EVENT_META` entry is a two-line change.
 
-- **Phase 1 — GL only.** Store + 4 routes, `glq` URL param, header picker +
-  save dialog + dirty state, unresolved-filter warning, `view-save` ping.
-  Dates default to `current`.
-- **Phase 2 — generalize.** Extract `public/saved-views.js` as a
-  self-injecting widget (the `nav-breadcrumb.js` pattern) and a
-  `SAVED_VIEW_PARAMS` map per report in `server.js`; the routes are already
-  `:report`-shaped. Facility, products, memberships and users are the natural
-  next ones — each already has URL-driven filters.
-- **Phase 3 — views as subscriptions.** "Email me this view" in the picker →
-  existing `POST /:org/admin/subscribe` with the view's `params` as
-  `reportParams` and its `relativeRange` as `reportDateRanges`. Offer it only
-  for `current` / `relative` views: a fixed range mailed weekly is the same
-  report forever, and the UI should say so rather than let someone set it up.
+## 8. Scope and what comes after
 
-## 9. Decisions for Dan
+**Phase 1 — GL only, then stop and listen.** Store + 4 routes, `glq` URL param,
+header picker + save dialog + dirty state, unresolved-filter warning,
+`events.jsonl` logging. Dates default to `current`. Nothing else gets wired.
 
-1. **Org-shared or per-browser?** Recommend org-shared — matches the shared
-   token and the "easy team reference" goal.
-2. **Does a view capture chart mode, or filters only?** Recommend filters +
-   chart mode; refund/Locations toggles stay per-browser.
-3. **Should applying a view ping Slack?** Recommend no — events only, it's a
-   high-frequency click.
-4. **One org-wide default view everyone lands on?** Recommend per-browser
-   default in v1; an org default is a Phase-2 admin toggle if wanted.
+Deferred until there's real feedback, and explicitly **not** part of this build:
 
-## 10. Sign-off checks
+- **Other reports.** The routes are `:report`-shaped and the params allowlist is
+  a map, so adding facility / products / memberships / users later is a
+  registration plus a client hookup — most of the cost would be extracting
+  `public/saved-views.js` as a self-injecting widget (the `nav-breadcrumb.js`
+  pattern). Don't extract it until there's a second consumer.
+- **Views as subscriptions.** "Email me this view" → the existing
+  `POST /:org/admin/subscribe` with the view's `params` as `reportParams` and
+  its `relativeRange` as `reportDateRanges`. Would only ever be offered for
+  `current` / `relative` views — a fixed range mailed weekly is the same report
+  forever.
+- **Per-user views.** See the `owner` note in §4. Nothing to build now.
+
+The decision gate for all three is the same: `/metrics` shows people actually
+saving and re-applying views on GL.
+
+## 9. Sign-off checks
 
 - Round trip: create → reload → apply → export PDF; the PDF rows must match the
   screen exactly (really a test that the allowlist dropped nothing).
@@ -231,6 +253,8 @@ Header, mirroring the Rec pattern in the screenshot:
 - Persistence across a deploy: create a view in prod, redeploy, confirm it
   survives — otherwise the failure is discovered by a user losing their views.
 - Validation: the 26th view is rejected; `token=` inside `params` is stripped;
-  another org's slug cannot read or write the list.
+  another org's slug cannot read or write the list; a non-`gl` `:report` 404s.
+- Nothing new appears in the Slack feed after saving and applying views, and
+  the events show up in `/metrics`.
 - No Metabase card changes here, so the card sign-off rule and
   `scripts/report-cards.manifest.json` are untouched.
