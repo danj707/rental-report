@@ -33,3 +33,6 @@ jobs:
 
       - name: Saved-view helpers spec (client/server date vocabulary + param allowlist)
         run: node scripts/saved-views.spec.js
+
+      - name: Delete-org source surgery spec (never push an unparseable server.js)
+        run: node scripts/delete-org.spec.js

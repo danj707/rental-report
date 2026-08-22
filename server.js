@@ -2252,6 +2252,12 @@ async function runHealthCheck(forceAll, failuresOnly) {
   return existing;
 }
 
+// Slugs that live in the server.js ORGS literal — captured BEFORE data/orgs.json
+// is merged in, which is the only moment the two are distinguishable. This is
+// the difference between an org a deploy would resurrect and one it would not,
+// and the delete-org route below depends on knowing which is which.
+const ORG_SLUGS_IN_CODE = new Set(Object.keys(ORGS));
+
 // Merge any dynamically-added orgs from data/orgs.json into ORGS
 try {
   const dynamic = JSON.parse(fs.readFileSync(ORGS_FILE, "utf8"));
@@ -2909,12 +2915,13 @@ function logEvent(org, report, event, reqOrIp, extra) {
 // Inert if the env var is unset. Fire-and-forget — never blocks or breaks logging.
 // To change what pings Slack, edit SLACK_NOTIFY. High-frequency events (view/fetch)
 // are debounced per org+report so Slack isn't a firehose.
-const SLACK_NOTIFY = new Set(["created", "pdf", "excel", "print", "summary", "game", "map", "view", "insights", "insights-feedback", "chat-feedback", "feedback", "vote", "update-vote", "munis", "permits", "email"]);
+const SLACK_NOTIFY = new Set(["created", "org-deleted", "pdf", "excel", "print", "summary", "game", "map", "view", "insights", "insights-feedback", "chat-feedback", "feedback", "vote", "update-vote", "munis", "permits", "email"]);
 const SLACK_DEBOUNCE_MS = { view: 30 * 60 * 1000, fetch: 30 * 60 * 1000 };
 const SLACK_DEFAULT_DEBOUNCE_MS = 60 * 1000; // dedup rapid double-fires of one-off events
 const slackLastSent = new Map();
 const SLACK_EVENT_META = {
   created: { emoji: "🏢", verb: "New org created" },
+  "org-deleted": { emoji: "🗑️", verb: "DELETED from the reporting project" },
   pdf:     { emoji: "📄", verb: "exported a PDF of" },
   excel:   { emoji: "📊", verb: "exported to Excel" },
   summary: { emoji: "🧾", verb: "exported a Summary of" },
@@ -2967,6 +2974,19 @@ function notifySlack(rec) {
   let text;
   if (rec.event === "created") {
     text = `${meta.emoji} *New org created:* ${orgName} (\`${rec.org}\`)${rec.reports ? " \u2014 reports: " + rec.reports : ""}`;
+  } else if (rec.event === "org-deleted") {
+    // The org is already out of the ORGS map by the time this posts, so the
+    // display name has to come from the event, not a lookup. Say out loud
+    // whether the deletion is permanent yet — a runtime-only removal comes
+    // back on the next deploy, and that is the thing worth noticing.
+    const who = rec.displayName || rec.org;
+    const mention = SLACK_MENTION_USER_ID ? ` <@${SLACK_MENTION_USER_ID}>` : "";
+    const state = !rec.inCode
+      ? "dynamic org, nothing left to merge"
+      : rec.pr
+        ? `merge <${rec.pr}|the removal PR> to make it stick`
+        : "\u26A0\uFE0F still in server.js \u2014 it WILL return on the next deploy";
+    text = `${meta.emoji} *${who}* (\`${rec.org}\`) ${meta.verb} \u2014 ${state}${mention}`;
   } else if (rec.event === "email") {
     const to = rec.email ? ` to \`${rec.email}\`` : "";
     const trig = rec.trigger === "manual" ? " · manual send" : ` · ${rec.schedule || "scheduled"} queue`;
@@ -4327,6 +4347,349 @@ app.post("/api/admin/add-org", express.json(), (req, res) => {
   console.log(`[orgs] Added org via API: ${slug} (${orgId})`);
   res.json({ ok: true, action: "created", slug });
 });
+
+// ── Delete org ───────────────────────────────────────────────────────
+// The mirror of add-org, and deliberately harder to fire. An org lives in two
+// places, so deleting one is two separate things:
+//
+//   1. AT RUNTIME — the in-memory ORGS map and data/orgs.json. Removing it
+//      there is instant: the dashboard stops listing the org and every
+//      /:org/* route 404s on the next request. That is what the button does.
+//   2. IN CODE — the ORGS literal in server.js. Until that entry is gone, the
+//      next deploy brings the org straight back. So the button also opens a
+//      PULL REQUEST removing it, for a human to merge.
+//
+// Nothing here pushes to main. Deleting an org must never be a live release to
+// every other org, which is exactly what a push to main is (see the Railway
+// notes in CLAUDE.md). The PR is the permanence; the runtime removal is the
+// immediate effect.
+//
+// Everything removed is snapshotted to data/deleted-orgs/<slug>-<ts>.json
+// BEFORE anything is deleted, so a mis-click is recoverable. events.jsonl is
+// deliberately left alone: it is the audit log, and rewriting an append-only
+// log to erase a deletion is the opposite of what an audit log is for.
+const DELETED_ORGS_DIR = path.join(DATA_DIR, "deleted-orgs");
+
+// Anchored, single-occurrence excision of one org block from server.js source.
+// Same shape as patchReportUuid: isolate `\n  <key>: {` through its closing
+// `\n  },` and throw on anything ambiguous. A loose regex here produces a
+// server.js that does not parse, and a boot crash takes down every org.
+function removeOrgEntrySource(content, slug) {
+  const key = /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(slug)
+    ? escapeRegExp(slug)
+    : `"${escapeRegExp(slug)}"`;
+  const blockRe = new RegExp(`\\n  ${key}:\\s*\\{[\\s\\S]*?\\n  \\},`, "g");
+  const matches = content.match(blockRe);
+  if (!matches) {
+    throw new Error(`"${slug}" is not in the server.js ORGS map — nothing to remove in code`);
+  }
+  if (matches.length > 1) {
+    throw new Error(`Found ${matches.length} blocks for "${slug}" in server.js — refusing to guess which one`);
+  }
+  const out = content.replace(blockRe, "");
+  // SAFETY NET, same as the add path: never propose a server.js that will not
+  // parse. Parse only, no execution.
+  try {
+    new (require("vm").Script)(out, { filename: "server.js:pre-pr-check" });
+  } catch (e) {
+    throw new Error(`Generated server.js failed its syntax check — refusing to open the PR: ${e.message}`);
+  }
+  return out;
+}
+
+// Open a PR that removes the org from the ORGS literal. Branch + commit + PR,
+// never a direct push to main.
+async function openOrgRemovalPR(slug, orgEntry, snapshotFile) {
+  const token = process.env.GITHUB_TOKEN;
+  if (!token) throw new Error("GITHUB_TOKEN not configured on the server");
+  const headers = { Authorization: `token ${token}`, Accept: "application/vnd.github.v3+json" };
+  const jsonHeaders = { ...headers, "Content-Type": "application/json" };
+  const api = (p) => `https://api.github.com/repos/${GITHUB_REPO}${p}`;
+
+  // 1. Current server.js + its blob sha
+  const getRes = await fetch(GITHUB_API, { headers });
+  if (!getRes.ok) throw new Error(`GitHub GET server.js ${getRes.status}: ${await getRes.text()}`);
+  const file = await getRes.json();
+  const before = Buffer.from(file.content, "base64").toString("utf8");
+  const after = removeOrgEntrySource(before, slug);   // throws before anything is created
+
+  // 2. Branch off the current default-branch head
+  const refRes = await fetch(api("/git/ref/heads/main"), { headers });
+  if (!refRes.ok) throw new Error(`GitHub GET ref ${refRes.status}: ${await refRes.text()}`);
+  const baseSha = (await refRes.json()).object.sha;
+  const branch = `remove-org-${slug}-${new Date().toISOString().slice(0, 10)}-${Math.random().toString(36).slice(2, 7)}`;
+  const mkRef = await fetch(api("/git/refs"), {
+    method: "POST", headers: jsonHeaders,
+    body: JSON.stringify({ ref: `refs/heads/${branch}`, sha: baseSha }),
+  });
+  if (!mkRef.ok) throw new Error(`GitHub create branch ${mkRef.status}: ${await mkRef.text()}`);
+
+  // 3. Commit the excision onto that branch
+  const put = await fetch(GITHUB_API, {
+    method: "PUT", headers: jsonHeaders,
+    body: JSON.stringify({
+      message: `Remove ${slug} from the ORGS map\n\nDeleted from the reporting project via the admin dashboard.`,
+      content: Buffer.from(after).toString("base64"),
+      sha: file.sha,
+      branch,
+    }),
+  });
+  if (!put.ok) throw new Error(`GitHub PUT ${put.status}: ${await put.text()}`);
+
+  // 4. Open the PR
+  const displayName = (orgEntry && (orgEntry.displayName || orgEntry.name)) || slug;
+  const body = [
+    `Removes **${displayName}** (\`${slug}\`) from the \`ORGS\` map in server.js.`,
+    "",
+    "Opened by the admin dashboard's Delete Org action. The org has **already**",
+    "been removed at runtime — it is gone from the dashboard and every",
+    `\`/${slug}/*\` route 404s. Merging this makes that survive the next deploy;`,
+    "until then a deploy would bring the org back.",
+    "",
+    `Its data was archived to \`${snapshotFile}\` on the data volume before`,
+    "anything was purged, so this is reversible: restore that file and revert",
+    "this PR.",
+    "",
+    "`events.jsonl` was left untouched on purpose — it is the audit log.",
+  ].join("\n");
+  const pr = await fetch(api("/pulls"), {
+    method: "POST", headers: jsonHeaders,
+    body: JSON.stringify({ title: `Remove org: ${slug}`, head: branch, base: "main", body }),
+  });
+  if (!pr.ok) throw new Error(`GitHub create PR ${pr.status}: ${await pr.text()}`);
+  const prData = await pr.json();
+  return { prUrl: prData.html_url, prNumber: prData.number, branch };
+}
+
+// Snapshot every trace of an org, then remove it. Returns what was taken so the
+// caller (and the admin UI) can report it honestly rather than claiming success.
+function archiveAndPurgeOrgData(slug) {
+  const snapshot = { slug, archivedAt: new Date().toISOString(), org: ORGS[slug] || null, data: {} };
+  const removed = {};
+  const note = (label, value, count) => {
+    if (count) { snapshot.data[label] = value; removed[label] = count; }
+  };
+
+  // Small helpers over the JSON stores. Every one is best-effort: a missing or
+  // unreadable file must not abort a delete half-way through.
+  const dropKeys = (file, label, match) => {
+    try {
+      const all = readJSON(file, null);
+      if (!all || typeof all !== "object" || Array.isArray(all)) return;
+      const taken = {};
+      for (const k of Object.keys(all)) if (match(k)) { taken[k] = all[k]; delete all[k]; }
+      const n = Object.keys(taken).length;
+      if (n) writeJSON(file, all);
+      note(label, taken, n);
+    } catch (e) { console.warn(`[delete-org] ${label}: ${e.message}`); }
+  };
+  const dropRows = (file, label, match) => {
+    try {
+      const all = readJSON(file, null);
+      if (!Array.isArray(all)) return;
+      const taken = all.filter(match);
+      if (taken.length) writeJSON(file, all.filter(r => !match(r)));
+      note(label, taken, taken.length);
+    } catch (e) { console.warn(`[delete-org] ${label}: ${e.message}`); }
+  };
+
+  const exact  = (k) => k === slug;
+  const prefix = (k) => k === slug || k.startsWith(slug + ":") || k.startsWith(slug + "::");
+
+  // Org definition + per-org settings
+  dropKeys(ORGS_FILE,          "orgs.json",             exact);
+  dropKeys(VISIBILITY_FILE,    "report-visibility",     exact);
+  dropKeys(PUBLIC_MODE_FILE,   "public-mode",           exact);
+  dropKeys(TYLER_ORGS_FILE,    "tyler-orgs",            exact);
+  dropKeys(FT_PINS_FILE,       "fasttrack-pins",        exact);
+  dropKeys(path.join(DATA_DIR, "saved-views.json"), "saved-views", exact);
+  dropKeys(CAMPMAP_POS_FILE,     "campmap-positions",   prefix);
+  dropKeys(CAMPMAP_MARKERS_FILE, "campmap-markers",     prefix);
+  dropKeys(RENTAL_MAP_POS_FILE,  "rental-map-positions", prefix);
+  // votes.json is keyed `${org}:${report}`; schema baselines `${report}::${slug}`
+  dropKeys(VOTES_FILE,            "report-votes",       prefix);
+  dropKeys(SCHEMA_BASELINES_FILE, "schema-baselines",   (k) => k.endsWith("::" + slug));
+  dropKeys(path.join(DATA_DIR, "cache-access.json"), "cache-access", prefix);
+
+  // Row-shaped stores
+  dropRows(SUBS_FILE,             "subscriptions",  (r) => r && r.org === slug);
+  dropRows(LOG_FILE,              "send-log",       (r) => r && r.org === slug);
+  dropRows(SCHEMA_DRIFT_LOG_FILE, "schema-drift",   (r) => r && r.orgSlug === slug);
+
+  // Goals live in their own file per org
+  try {
+    const gf = path.join(GOALS_DIR, slug + ".json");
+    if (fs.existsSync(gf)) {
+      snapshot.data.goals = readJSON(gf, null);
+      fs.unlinkSync(gf);
+      removed.goals = 1;
+    }
+  } catch (e) { console.warn(`[delete-org] goals: ${e.message}`); }
+
+  // Health results: a map of org -> report, plus a flat failures array
+  try {
+    const h = readJSON(HEALTH_FILE, null);
+    if (h && typeof h === "object") {
+      let n = 0;
+      const taken = {};
+      if (h.reports && h.reports[slug]) { taken.reports = h.reports[slug]; delete h.reports[slug]; n++; }
+      if (Array.isArray(h.failures)) {
+        const mine = h.failures.filter(f => f && f.org === slug);
+        if (mine.length) { taken.failures = mine; h.failures = h.failures.filter(f => !(f && f.org === slug)); n += mine.length; }
+      }
+      if (n) writeJSON(HEALTH_FILE, h);
+      note("health-check", taken, n);
+    }
+  } catch (e) { console.warn(`[delete-org] health: ${e.message}`); }
+
+  // Announcements are shared documents targeted AT orgs — drop the org from the
+  // targeting, never the announcement itself.
+  try {
+    const list = readJSON(ANNOUNCEMENTS_FILE, null);
+    if (Array.isArray(list)) {
+      let n = 0;
+      list.forEach(a => {
+        if (a && Array.isArray(a.orgs) && a.orgs.includes(slug)) { a.orgs = a.orgs.filter(o => o !== slug); n++; }
+      });
+      if (n) writeJSON(ANNOUNCEMENTS_FILE, list);
+      if (n) removed["announcement-targets"] = n;
+    }
+  } catch (e) { console.warn(`[delete-org] announcements: ${e.message}`); }
+
+  // Arcade leaderboard entries carry the org they were played from
+  try {
+    const store = readJSON(GAME_SCORES_FILE, null);
+    if (store && store.seasons) {
+      const taken = []; let n = 0;
+      for (const [sid, games] of Object.entries(store.seasons)) {
+        for (const [game, list] of Object.entries(games || {})) {
+          if (!Array.isArray(list)) continue;
+          const mine = list.filter(e => e && e.org === slug);
+          if (mine.length) {
+            taken.push({ season: sid, game, entries: mine });
+            games[game] = list.filter(e => !(e && e.org === slug));
+            n += mine.length;
+          }
+        }
+      }
+      if (n) writeJSON(GAME_SCORES_FILE, store);
+      note("game-scores", taken, n);
+    }
+  } catch (e) { console.warn(`[delete-org] game scores: ${e.message}`); }
+
+  // Cached report payloads. Disk filenames are sha256 hashes of the cache key,
+  // so they cannot be matched by name — each file carries its own `key`.
+  let cacheFiles = 0;
+  try {
+    for (const f of fs.readdirSync(CACHE_DIR)) {
+      if (!f.endsWith(".json")) continue;
+      const full = path.join(CACHE_DIR, f);
+      let key = null;
+      if (f === `users_${slug}.json`) key = `users:${slug}`;
+      else {
+        try { key = JSON.parse(fs.readFileSync(full, "utf8")).key; } catch { continue; }
+      }
+      if (typeof key === "string" && (key.startsWith(slug + ":") || key === `users:${slug}`)) {
+        fs.unlinkSync(full); cacheFiles++;
+      }
+    }
+  } catch (e) { console.warn(`[delete-org] cache files: ${e.message}`); }
+  if (cacheFiles) removed["cache-files"] = cacheFiles;
+
+  // In-memory caches, so the org is gone before any restart
+  let memKeys = 0;
+  try {
+    for (const k of [...dataCache.keys()]) if (k.startsWith(slug + ":")) { dataCache.delete(k); memKeys++; }
+    for (const k of [...accessLog.keys()]) if (k.startsWith(slug + ":")) accessLog.delete(k);
+  } catch (e) { console.warn(`[delete-org] memory caches: ${e.message}`); }
+  if (memKeys) removed["cache-memory"] = memKeys;
+
+  // Write the snapshot LAST so it captures everything that was taken, but
+  // return its path either way — a delete with no recoverable snapshot is
+  // something the operator needs told about.
+  let snapshotFile = null;
+  try {
+    fs.mkdirSync(DELETED_ORGS_DIR, { recursive: true });
+    const name = `${slug}-${new Date().toISOString().replace(/[:.]/g, "-")}.json`;
+    snapshotFile = path.join(DELETED_ORGS_DIR, name);
+    snapshot.removedCounts = removed;
+    fs.writeFileSync(snapshotFile, JSON.stringify(snapshot, null, 2));
+  } catch (e) {
+    console.error(`[delete-org] SNAPSHOT FAILED for ${slug}: ${e.message}`);
+    snapshotFile = null;
+  }
+  return { snapshotFile, removed };
+}
+
+// ── POST /api/admin/delete-org ───────────────────────────────────────
+// Password + typed-slug confirmation, both re-checked here. The UI asks for
+// them, but the UI is not the only way into this route.
+app.post("/api/admin/delete-org", express.json(), async (req, res) => {
+  const { slug, password, confirm } = req.body || {};
+  if (!DASHBOARD_PASSWORD) {
+    return res.status(503).json({ error: "Set DASHBOARD_PASSWORD in Railway before an org can be deleted" });
+  }
+  if (!password || password !== DASHBOARD_PASSWORD) {
+    return res.status(403).json({ error: "Invalid password" });
+  }
+  if (!slug || typeof slug !== "string") return res.status(400).json({ error: "slug is required" });
+  if (!ORGS[slug]) return res.status(404).json({ error: `Unknown org: "${slug}"` });
+  // Typing the slug is the confirmation. Checked server-side so a scripted
+  // caller has to be as deliberate as someone clicking.
+  if (confirm !== slug) {
+    return res.status(400).json({ error: `Confirmation did not match — type "${slug}" exactly to delete it` });
+  }
+
+  const orgEntry = ORGS[slug];
+  const inCode = ORG_SLUGS_IN_CODE.has(slug);
+
+  // 1. Archive + purge. Snapshot first so nothing is unrecoverable.
+  const { snapshotFile, removed } = archiveAndPurgeOrgData(slug);
+
+  // 2. Runtime removal — immediate, and independent of whether GitHub answers.
+  delete ORGS[slug];
+  console.log(`[delete-org] ${slug} removed at runtime (snapshot: ${snapshotFile || "NONE"})`);
+
+  // 3. Permanence: a PR, never a push to main. A failure here is not a failed
+  //    delete — the org is already gone at runtime — so it is reported, not thrown.
+  let pr = null, prError = null;
+  if (inCode) {
+    try {
+      pr = await openOrgRemovalPR(slug, orgEntry, snapshotFile);
+      console.log(`[delete-org] ${slug} removal PR: ${pr.prUrl}`);
+    } catch (e) {
+      prError = e.message;
+      console.error(`[delete-org] PR for ${slug} failed: ${e.message}`);
+    }
+  }
+
+  logEvent(slug, "admin", "org-deleted", req, {
+    displayName: orgEntry.displayName || slug,
+    inCode,
+    pr: pr ? pr.prUrl : null,
+    snapshot: snapshotFile ? path.basename(snapshotFile) : null,
+  });
+
+  res.json({
+    ok: true,
+    slug,
+    removedAtRuntime: true,
+    inCode,
+    snapshot: snapshotFile,
+    removed,
+    pr,
+    prError,
+    // Say plainly what is still outstanding rather than letting the UI imply
+    // the delete is finished when a deploy would undo it.
+    permanent: !inCode || !!pr,
+    note: inCode
+      ? (pr
+          ? `Merge ${pr.prUrl} to make this survive the next deploy.`
+          : "This org is still in server.js — it WILL come back on the next deploy until its ORGS entry is removed.")
+      : "This org was dynamic only (not in server.js), so nothing else is needed.",
+  });
+});
+
 
 // ── GET /api/org-visibility/:slug — report visibility for cross-project sync ──
 app.get("/api/org-visibility/:slug", (req, res) => {
@@ -11627,6 +11990,7 @@ app.get("/", (req, res) => {
     <a href="/qbr" style="font-size:12px;padding:6px 14px;background:rgba(31,122,90,.92);border:1px solid rgba(31,122,90,1);border-radius:5px;color:#fff;cursor:pointer;text-decoration:none;margin-right:8px;transition:background .15s" onmouseover="this.style.background='rgba(26,106,78,1)'" onmouseout="this.style.background='rgba(31,122,90,.92)'">📊 QBR Generator</a>
     <button onclick="openUpd()" style="font-size:12px;padding:6px 14px;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.2);border-radius:5px;color:#eee;cursor:pointer;margin-right:8px;transition:background .15s" onmouseover="this.style.background='rgba(255,255,255,.22)'" onmouseout="this.style.background='rgba(255,255,255,.12)'">&#128227; Add Update</button>
     <button onclick="openAddOrg()" style="font-size:12px;padding:6px 14px;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.2);border-radius:5px;color:#eee;cursor:pointer;transition:background .15s" onmouseover="this.style.background='rgba(255,255,255,.22)'" onmouseout="this.style.background='rgba(255,255,255,.12)'">➕ Add Org</button>
+    <button onclick="openDeleteOrg()" title="Remove an organization from the reporting project" style="font-size:12px;padding:6px 14px;background:rgba(220,38,38,.15);border:1px solid rgba(220,38,38,.45);border-radius:5px;color:#fca5a5;cursor:pointer;margin-left:8px;transition:background .15s" onmouseover="this.style.background='rgba(220,38,38,.3)'" onmouseout="this.style.background='rgba(220,38,38,.15)'">🗑 Delete Org</button>
   </div>
   <!-- Railway Status Bar -->
   <div id="railway-bar" style="background:#1e1e1e;border-bottom:1px solid #333;padding:6px 20px;display:flex;align-items:center;gap:16px;font-size:11px;color:#999;min-height:28px">
@@ -12089,6 +12453,39 @@ app.get("/", (req, res) => {
           <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:#888">Published updates</div>
           <div id="upd-list" style="margin-top:10px;display:flex;flex-direction:column;gap:8px"></div>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Delete Org Modal ── -->
+  <div id="del-org-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1000;overflow-y:auto;padding:40px 16px">
+    <div style="background:#fff;border-radius:10px;max-width:540px;margin:0 auto;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.4)">
+      <div style="padding:20px 24px;background:#7f1d1d;color:#fff;display:flex;align-items:center;justify-content:space-between">
+        <div>
+          <div style="font-weight:700;font-size:15px">Delete Organization</div>
+          <div style="font-size:11px;color:#fecaca;margin-top:2px">Removes an org from the reporting project</div>
+        </div>
+        <button onclick="closeDeleteOrg()" style="background:none;border:none;color:#fecaca;font-size:20px;cursor:pointer;padding:4px">✕</button>
+      </div>
+      <div style="padding:22px 24px">
+        <label style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:#888;display:block;margin-bottom:6px">Organization</label>
+        <select id="del-slug" onchange="renderDeletePlan()" style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:6px;font-size:14px;font-family:inherit;color:#111;margin-bottom:16px">
+          <option value="">Select an org…</option>
+        </select>
+
+        <div id="del-plan" style="display:none;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:12px 14px;margin-bottom:16px;font-size:12.5px;color:#7f1d1d;line-height:1.55"></div>
+
+        <label style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:#888;display:block;margin-bottom:6px">Type the slug to confirm</label>
+        <input id="del-confirm" oninput="renderDeletePlan()" autocomplete="off" placeholder="" style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:6px;font-size:14px;font-family:ui-monospace,monospace;color:#111;margin-bottom:16px">
+
+        <label style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:#888;display:block;margin-bottom:6px">Dashboard password</label>
+        <input id="del-pw" type="password" oninput="renderDeletePlan()" autocomplete="off" style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:6px;font-size:14px;font-family:inherit;color:#111;margin-bottom:6px">
+
+        <div id="del-result" style="display:none;margin-top:14px;font-size:12.5px;line-height:1.6;border-radius:8px;padding:12px 14px"></div>
+      </div>
+      <div style="padding:14px 24px;background:#fafafa;border-top:1px solid #eee;display:flex;justify-content:flex-end;gap:10px">
+        <button onclick="closeDeleteOrg()" style="padding:8px 16px;border:1px solid #ddd;border-radius:6px;background:#fff;font-size:13px;font-family:inherit;cursor:pointer;color:#555">Cancel</button>
+        <button id="del-go" onclick="submitDeleteOrg()" disabled style="padding:8px 18px;border:none;border-radius:6px;background:#e5e7eb;color:#9ca3af;font-size:13px;font-weight:600;font-family:inherit;cursor:default">Delete org</button>
       </div>
     </div>
   </div>
@@ -12794,6 +13191,115 @@ app.get("/", (req, res) => {
     // ── Add Org modal ────────────────────────────────────────────────
     const REPORT_META = ${JSON.stringify(addOrgReportMeta)};
     const SHARED_UUIDS_CLIENT = ${JSON.stringify(SHARED_UUIDS)};
+
+    // ── Delete Org modal ───────────────────────────────────
+    // inCode is the difference between a delete that survives a deploy and
+    // one that quietly comes back, so the plan panel says which it is BEFORE
+    // the button is armed rather than after the fact.
+    const DELETE_ORGS = ${JSON.stringify(
+      Object.keys(ORGS).sort().map(sl => ({
+        slug: sl,
+        name: ORGS[sl].displayName || sl,
+        inCode: ORG_SLUGS_IN_CODE.has(sl),
+      }))
+    )};
+
+    function openDeleteOrg() {
+      const sel = document.getElementById('del-slug');
+      sel.innerHTML = '<option value="">Select an org\u2026</option>'
+        + DELETE_ORGS.map(o => '<option value="' + o.slug + '">' + o.name + ' (' + o.slug + ')</option>').join('');
+      document.getElementById('del-confirm').value = '';
+      document.getElementById('del-pw').value = '';
+      document.getElementById('del-result').style.display = 'none';
+      document.getElementById('del-org-overlay').style.display = 'block';
+      document.body.style.overflow = 'hidden';
+      renderDeletePlan();
+    }
+    function closeDeleteOrg() {
+      document.getElementById('del-org-overlay').style.display = 'none';
+      document.body.style.overflow = '';
+    }
+    document.getElementById('del-org-overlay').addEventListener('click', e => {
+      if (e.target === document.getElementById('del-org-overlay')) closeDeleteOrg();
+    });
+
+    function renderDeletePlan() {
+      const slug = document.getElementById('del-slug').value;
+      const org = DELETE_ORGS.find(o => o.slug === slug);
+      const plan = document.getElementById('del-plan');
+      const confirmEl = document.getElementById('del-confirm');
+      const btn = document.getElementById('del-go');
+      confirmEl.placeholder = slug || '';
+      if (!org) {
+        plan.style.display = 'none';
+        btn.disabled = true;
+        btn.style.background = '#e5e7eb'; btn.style.color = '#9ca3af'; btn.style.cursor = 'default';
+        return;
+      }
+      plan.style.display = 'block';
+      plan.innerHTML =
+        '<div style="font-weight:700;margin-bottom:6px">This will, right now:</div>'
+        + '<div>\u2022 Remove <code>' + org.slug + '</code> from the live org list \u2014 the dashboard stops showing it and every <code>/' + org.slug + '/*</code> report 404s.</div>'
+        + '<div>\u2022 Archive its subscriptions, report visibility, goals, pins, saved views and cached data to <code>data/deleted-orgs/</code>, then purge them.</div>'
+        + '<div style="margin-top:6px">' + (org.inCode
+            ? '\u2022 Open a <b>pull request</b> removing it from <code>server.js</code>. Nothing is pushed to <code>main</code> \u2014 until that PR is merged, the next deploy brings this org back.'
+            : '\u2022 This org is dynamic only (not in <code>server.js</code>), so no PR is needed \u2014 the removal is already permanent.')
+        + '</div>'
+        + '<div style="margin-top:8px;color:#991b1b">Usage history in <code>events.jsonl</code> is kept \u2014 it is the audit log.</div>';
+      const ready = confirmEl.value === org.slug && document.getElementById('del-pw').value.length > 0;
+      btn.disabled = !ready;
+      btn.style.background = ready ? '#dc2626' : '#e5e7eb';
+      btn.style.color = ready ? '#fff' : '#9ca3af';
+      btn.style.cursor = ready ? 'pointer' : 'default';
+    }
+
+    async function submitDeleteOrg() {
+      const slug = document.getElementById('del-slug').value;
+      const btn = document.getElementById('del-go');
+      const out = document.getElementById('del-result');
+      btn.disabled = true; btn.textContent = 'Deleting\u2026';
+      try {
+        const resp = await fetch('/api/admin/delete-org', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            slug,
+            confirm: document.getElementById('del-confirm').value,
+            password: document.getElementById('del-pw').value,
+          }),
+        });
+        const d = await resp.json();
+        out.style.display = 'block';
+        if (!resp.ok) {
+          out.style.background = '#fef2f2'; out.style.border = '1px solid #fecaca'; out.style.color = '#991b1b';
+          out.innerHTML = '<b>Not deleted.</b> ' + (d.error || ('HTTP ' + resp.status));
+          btn.textContent = 'Delete org'; renderDeletePlan();
+          return;
+        }
+        const counts = Object.entries(d.removed || {}).map(([k, v]) => k + ': ' + v).join(' \u00b7 ') || 'nothing stored';
+        // Green only when it is actually finished. A runtime-only removal that
+        // still needs a merge is amber, because a deploy would undo it.
+        const done = d.permanent;
+        out.style.background = done ? '#f0fdf4' : '#fffbeb';
+        out.style.border = '1px solid ' + (done ? '#bbf7d0' : '#fde68a');
+        out.style.color = done ? '#166534' : '#92400e';
+        out.innerHTML = '<b>' + slug + ' removed at runtime.</b>'
+          + '<div style="margin-top:4px">Purged \u2014 ' + counts + '</div>'
+          + (d.snapshot ? '<div>Archived to <code>' + d.snapshot + '</code></div>'
+                        : '<div style="color:#991b1b"><b>No snapshot was written</b> \u2014 this delete is not recoverable from disk.</div>')
+          + (d.pr ? '<div style="margin-top:6px">PR opened: <a href="' + d.pr.prUrl + '" target="_blank" rel="noopener">#' + d.pr.prNumber + '</a> \u2014 merge it to make this survive the next deploy.</div>' : '')
+          + (d.prError ? '<div style="margin-top:6px;color:#991b1b">Could not open the removal PR: ' + d.prError + '</div>' : '')
+          + '<div style="margin-top:6px">' + (d.note || '') + '</div>';
+        btn.textContent = 'Deleted';
+        // The org list this page rendered is now stale.
+        setTimeout(() => location.reload(), 4000);
+      } catch (e) {
+        out.style.display = 'block';
+        out.style.background = '#fef2f2'; out.style.border = '1px solid #fecaca'; out.style.color = '#991b1b';
+        out.innerHTML = '<b>Request failed.</b> ' + e.message;
+        btn.textContent = 'Delete org'; renderDeletePlan();
+      }
+    }
 
     function openAddOrg() {
       document.getElementById('add-org-overlay').style.display = 'block';
