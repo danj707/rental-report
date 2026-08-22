@@ -30,3 +30,6 @@ jobs:
 
       - name: PDF export helper spec (popup, not a sandboxed download)
         run: node scripts/open-pdf.spec.js
+
+      - name: Saved-view helpers spec (client/server date vocabulary + param allowlist)
+        run: node scripts/saved-views.spec.js
