@@ -2162,6 +2162,29 @@ function isReportTypeActive(rt) {
   return a.events === 0 ? true : a.types.has(rt);
 }
 
+// Broken or just slow? Dan's rule: only broken reports are worth an alert.
+//
+// "Broken" means the card cannot answer because of what it IS — a dropped table
+// or column, a renamed or newly-required parameter, an unshared or deleted card,
+// a SQL error. Those do not fix themselves and the report is wrong until someone
+// acts.
+//
+// "Slow" means it could not answer in time THIS time. Several of these cards
+// genuinely run near 60s under load (shared programs 52s, apex/fasttrack and
+// apex/ice-calendar >70s), so a timeout says the platform is busy, not that the
+// report is broken — the app serves those from cache anyway. A Metabase 5xx is
+// the same story: load, not a card defect.
+//
+// Kept separate from the flap counter on purpose: two strikes stops a broken
+// report being called down on one bad probe, and this stops a slow one being
+// called down at all.
+function classifyProbeFailure({ httpStatus, body, timedOut }) {
+  if (timedOut) return "slow";
+  if (httpStatus >= 500) return "slow";
+  if (/statement timeout|canceling statement|timed? ?out/i.test(body || "")) return "slow";
+  return "error";
+}
+
 async function runHealthCheck(forceAll, failuresOnly) {
   if (!getFlags().cachingEnabled) { console.log('[health] Health check skipped — caching is OFF'); return null; }
   const now = Date.now();
@@ -2320,14 +2343,13 @@ async function runHealthCheck(forceAll, failuresOnly) {
       clearTimeout(timeout);
 
       if (!resp.ok) {
-        entry.status = "error";
         // Metabase answers a statement timeout with HTTP 400 and the reason in
-        // the body. "HTTP 400" on its own sent every reader to guess whether a
-        // card was broken or merely slow — they are different problems.
+        // the body. "HTTP 400" on its own cannot tell a dropped table from a
+        // slow card — opposite problems, and only one of them is an alert.
         let why = "";
         try { why = (await resp.text()).replace(/\s+/g, " ").slice(0, 160); } catch (_) {}
+        entry.status = classifyProbeFailure({ httpStatus: resp.status, body: why });
         entry.error = `HTTP ${resp.status}${why ? ": " + why : ""}`;
-        if (/statement timeout|timed? ?out/i.test(why)) entry.slow = true;
       } else {
         const data = await resp.json();
         entry.rows = Array.isArray(data) ? data.length : 0;
@@ -2345,10 +2367,9 @@ async function runHealthCheck(forceAll, failuresOnly) {
       entry.source = "probe";
       cacheStats.healthProbes++;
     } catch (err) {
-      entry.status = "error";
       const timedOut = err.name === "AbortError" || err.name === "TimeoutError";
+      entry.status = classifyProbeFailure({ body: err.message, timedOut });
       entry.error = timedOut ? `Timeout (${(org.healthTimeoutMs||60000)/1000}s)` : err.message;
-      if (timedOut) entry.slow = true;
       entry.source = "probe";
       cacheStats.healthProbes++;
     }
@@ -2370,6 +2391,9 @@ async function runHealthCheck(forceAll, failuresOnly) {
       // the next, against a 60s budget. A single miss is load, not a broken
       // report, and alerting on it produced ~20 messages in an afternoon for
       // reports that were all still serving. Two rounds in a row is evidence.
+      // Only broken rounds count, and any other outcome (ok, empty, slow) resets
+      // the streak — a slow probe must never help a report toward being called
+      // down, it is not evidence of anything being broken.
       entry.failCount = (prev?.status === "error" ? (prev.failCount || 1) : 0) + 1;
       // Carried across recovery too, so a card flapping either side of its
       // timeout cannot re-alert every couple of hours.
@@ -12078,6 +12102,12 @@ app.get("/", (req, res) => {
                 const d = new Date(h.checkedAt); const ds = d.toLocaleDateString('en-US',{month:'short',day:'numeric'});
                 if (h.status === 'ok') { dotCls += ' dot-ok'; tipParts.unshift('Verified ' + ds + ' (' + h.rows + ' rows)'); }
                 else if (h.status === 'empty') { dotCls += ' dot-warn'; tipParts.unshift('Empty ' + ds); }
+                // Slow is not broken and never alerts, so it must not read as
+                // red on the panel either — amber, with the reason.
+                else if (h.status === 'slow') { dotCls += ' dot-warn'; tipParts.unshift('Slow ' + ds + (h.error ? ': ' + h.error : '')); }
+                // Nobody has used this in the activity window, so it is not
+                // being probed. Grey, not a judgement about whether it works.
+                else if (h.status === 'inactive') { dotCls += ' dot-none'; tipParts.unshift('Not monitored — ' + (h.reason || 'unused')); }
                 else { dotCls += ' dot-err'; tipParts.unshift('Failed ' + ds + (h.error ? ': ' + h.error : '')); }
               } else { dotCls += ' dot-none'; }
               return '<span class="' + dotCls + '" title="' + tipParts.join('\n') + '" data-org="' + slug + '" data-report="' + r + '" data-tier="' + tier + '" onclick="event.preventDefault();event.stopPropagation();cycleTier(this)"></span>';

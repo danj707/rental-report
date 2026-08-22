@@ -206,13 +206,73 @@ test("one failed probe is not a report down — two in a row is", () => {
     "two by default, overridable");
 });
 
-test("a slow card is labelled slow, and the error says what Metabase said", () => {
+test("a slow card is classified slow, and the error says what Metabase said", () => {
   // "HTTP 400" alone cannot distinguish a dropped table from a statement
   // timeout, which are opposite problems with opposite fixes.
   assert.ok(src.includes('entry.error = `HTTP ${resp.status}${why ? ": " + why : ""}`'),
-    "the response body must reach the alert");
-  assert.ok(src.includes('if (/statement timeout|timed? ?out/i.test(why)) entry.slow = true;'));
-  assert.ok(src.includes("if (timedOut) entry.slow = true;"), "a client-side timeout counts as slow too");
+    "the response body must reach the entry");
+  assert.ok(src.includes('entry.status = classifyProbeFailure({ httpStatus: resp.status, body: why })'));
+  assert.ok(src.includes('entry.status = classifyProbeFailure({ body: err.message, timedOut })'));
+});
+
+// ── slow is not broken: only broken reports alert ───────────────────────────
+
+const classify = (() => {
+  const fn = new Function(slice("function classifyProbeFailure", "async function runHealthCheck")
+    + "\nreturn classifyProbeFailure;")();
+  return fn;
+})();
+
+test("a timeout is slow, never broken", () => {
+  assert.strictEqual(classify({ timedOut: true }), "slow");
+  assert.strictEqual(classify({ timedOut: true, httpStatus: 0 }), "slow");
+});
+
+test("a Metabase statement timeout behind HTTP 400 is slow", () => {
+  // The exact shape Metabase returns: 400, with the reason only in the body.
+  assert.strictEqual(classify({
+    httpStatus: 400,
+    body: '{"status":"failed","error":"canceling statement due to statement timeout"}',
+  }), "slow");
+  assert.strictEqual(classify({ httpStatus: 400, body: "Query timed out" }), "slow");
+});
+
+test("a Metabase 5xx is load, not a card defect", () => {
+  for (const st of [500, 502, 503, 504]) assert.strictEqual(classify({ httpStatus: st }), "slow", String(st));
+});
+
+test("a dropped table, a missing parameter and a gone card are all broken", () => {
+  // The failures that do not fix themselves — the only kind worth an alert.
+  assert.strictEqual(classify({
+    httpStatus: 400,
+    body: '{"error":"ERROR: relation \\"class\\" does not exist","error_type":"invalid-query"}',
+  }), "error", "the dropped `class` table must still alert");
+  assert.strictEqual(classify({
+    httpStatus: 400,
+    body: '{"error":"Cannot run the query: missing required parameters: #{\\"end_date\\"}"}',
+  }), "error", "a card that changed its required parameters is broken");
+  assert.strictEqual(classify({ httpStatus: 404, body: '"Not found."' }), "error",
+    "an unshared or deleted card is broken");
+});
+
+test("only a broken report reaches the failures list and the alert", () => {
+  const body = slice("    if (entry.status === \"error\") {", "    existing.reports[storeSlug][rt] = entry;");
+  assert.ok(body.length > 0, "the alert branch is gated on status error, so slow can never enter it");
+  assert.ok(src.includes('if (e.status === "error" && !e.inactive) existing.failures.push'),
+    "a slow entry must not be counted as a failure");
+});
+
+test("a slow round resets the broken streak rather than feeding it", () => {
+  const body = slice("    if (entry.status === \"error\") {", "    existing.reports[storeSlug][rt] = entry;");
+  assert.ok(body.includes('(prev?.status === "error" ? (prev.failCount || 1) : 0) + 1'),
+    "only a previous *broken* round may carry the streak forward");
+});
+
+test("slow and inactive do not render as red on the admin panel", () => {
+  assert.ok(src.includes("else if (h.status === 'slow') { dotCls += ' dot-warn'"),
+    "slow must be amber, not red — it never alerts, so it must not look like a failure");
+  assert.ok(src.includes("else if (h.status === 'inactive') { dotCls += ' dot-none'"),
+    "unmonitored is not a judgement about whether the report works");
 });
 
 test("the alert clock survives a recovery, so a flapping card cannot re-alert", () => {
