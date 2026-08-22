@@ -3409,7 +3409,7 @@ async function generatePdf(orgSlug, reportType, startDate, endDate, filters = {}
   // server-side Metabase filters. The print page initializes its filter state
   // from these params before emitting #report-ready, so Puppeteer captures the
   // filtered render rather than the full dataset.
-  ["locations", "location", "sites", "location_name", "site_type", "desks", "methods", "by_desk", "by_item", "hide_zero", "chart_net", "metric", "programs", "closures", "hrs", "section_name", "section_id", "status", "questions", "cols", "search", "tab", "instructor", "split", "book_type", "addons", "participant", "view", "tyler", "quarter", "insights"].forEach(k => {
+  ["locations", "location", "sites", "location_name", "site_type", "desks", "methods", "by_desk", "by_item", "hide_zero", "chart_net", "metric", "programs", "closures", "hrs", "section_name", "section_id", "status", "questions", "cols", "search", "tab", "instructor", "split", "book_type", "addons", "participant", "view", "tyler", "glq", "quarter", "insights"].forEach(k => {
     if (filters[k]) qsObj[k] = filters[k];
   });
   if (orgTok) qsObj.token = orgTok;
@@ -4567,11 +4567,14 @@ app.get("/metrics/api/data", (req, res) => {
 // excel (SheetJS export) and print (window.print())
 app.post("/:org/:report/api/log", resolveOrg, (req, res) => {
   const { orgSlug, reportType } = req;
-  const { event, game, location } = req.query;
-  const ALLOWED = ["excel", "print", "summary", "game", "map"];
+  const { event, game, location, view } = req.query;
+  // view-apply is events.jsonl-only by design — it is not in SLACK_NOTIFY, so
+  // logEvent records it without pinging the feed (see the saved-views block).
+  const ALLOWED = ["excel", "print", "summary", "game", "map", "view-apply"];
   if (!ALLOWED.includes(event)) return res.status(400).json({ ok: false, error: "Unknown event" });
   const extra = event === "game" && game ? { game: String(game).slice(0, 60) }
               : event === "map" && location ? { location: String(location).slice(0, 80) }
+              : event === "view-apply" && view ? { view: String(view).slice(0, 60) }
               : undefined;
   logEvent(orgSlug, reportType, event, req, extra);
   res.json({ ok: true });
@@ -6331,6 +6334,214 @@ app.post("/:org/fasttrack/api/pins", (req, res) => {
   all[req.params.org] = pins;
   writeJSON(FT_PINS_FILE, all);
   res.json({ ok: true, pins });
+});
+
+// ── Saved views (per-org, per-report; team state on the data volume) ──
+// A saved view is a NAME + a validated filter query string + a date intent —
+// never a snapshot of rows. Applying one is a query-string swap on the report
+// page, so the PDF / print / Excel / email paths inherit it without needing to
+// know saved views exist.
+//
+// Shared per org, like the Fast Track pins above: auth is one token per org, so
+// there is no per-user list to build yet. `owner` is reserved for that day
+// (always null today) so a per-user model can land without a shape migration.
+//
+// Deliberately NOT wired into SLACK_NOTIFY: a view picker is a high-frequency
+// internal convenience, not feed-worthy. The logEvent calls below still write
+// events.jsonl so /metrics can answer whether anyone actually uses this — which
+// is the gate on rolling saved views out to other reports.
+const SAVED_VIEWS_FILE = path.join(DATA_DIR, "saved-views.json");
+// Registry: report → the query params one of its saved views may carry. Only
+// `gl` is registered; every other report 404s until someone asks for it. Dates
+// are NOT in here — they travel as a date intent (see normalizeViewInput), so
+// there is exactly one source of truth for a view's range.
+const SAVED_VIEW_PARAMS = { gl: ["desks", "methods", "glq", "tyler"] };
+// Same relative-range vocabulary the email subscriptions use (getDateRange).
+const SAVED_VIEW_RELATIVE = ["today", "yesterday", "prior7", "prior30", "last7", "lastMonth"];
+const SAVED_VIEW_DATE_MODES = ["current", "relative", "fixed"];
+const SAVED_VIEWS_MAX = 25;          // per org + report
+const SAVED_VIEW_MAX_BYTES = 4096;   // per view, serialized
+const SAVED_VIEW_TOMBSTONE_MS = 30 * 24 * 60 * 60 * 1000;
+const SAVED_VIEW_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+function savedViewsGate(req, res) {
+  const org = ORGS[req.params.org];
+  if (!org) { res.status(404).json({ error: "Unknown org" }); return null; }
+  const supplied = req.query.token || req.headers["x-token"] || (req.body && req.body.token) || "";
+  if (org.token && supplied !== org.token) { res.status(403).json({ error: "Invalid token" }); return null; }
+  if (!SAVED_VIEW_PARAMS[req.params.report]) {
+    res.status(404).json({ error: `Saved views aren't enabled for the "${req.params.report}" report` });
+    return null;
+  }
+  return org;
+}
+
+function readSavedViews() { return readJSON(SAVED_VIEWS_FILE, {}); }
+function listSavedViews(all, org, report) {
+  const rows = all[org] && all[org][report];
+  return Array.isArray(rows) ? rows : [];
+}
+const liveViews = rows => rows.filter(v => !v.deletedAt);
+function writeSavedViews(all, org, report, rows) {
+  // Compact tombstones on the way out — a deleted view is recoverable for 30
+  // days (that's what the Undo toast restores), not forever.
+  const cutoff = Date.now() - SAVED_VIEW_TOMBSTONE_MS;
+  const kept = rows.filter(v => !v.deletedAt || Date.parse(v.deletedAt) > cutoff);
+  if (!all[org]) all[org] = {};
+  all[org][report] = kept;
+  writeJSON(SAVED_VIEWS_FILE, all);
+  return kept;
+}
+function sortViews(rows) {
+  return rows.slice().sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
+}
+
+// `params` is the one field a client controls end-to-end AND that ends up in a
+// Puppeteer URL via generatePdf, so allowlist hard: parse it, keep only the
+// registered keys for this report, and drop the report plumbing outright.
+function cleanViewParams(report, raw) {
+  const allow = SAVED_VIEW_PARAMS[report] || [];
+  const supplied = new URLSearchParams(String(raw || ""));
+  const out = new URLSearchParams();
+  for (const key of allow) {
+    const v = supplied.get(key);
+    if (v === null) continue;
+    const val = String(v).trim();
+    if (!val || val === "null" || val === "undefined") continue;
+    out.set(key, val.slice(0, 600));
+  }
+  return out.toString();
+}
+
+// Build a complete stored view from a request body, falling back to `existing`
+// for any field the caller left out (so PATCH can send just a name).
+// Returns { view } or { error }.
+function normalizeViewInput(report, body, existing) {
+  const name = String(body.name !== undefined ? body.name : (existing ? existing.name : "")).trim();
+  if (!name) return { error: "Give the view a name." };
+  if (name.length > 60) return { error: "Name must be 60 characters or fewer." };
+
+  const dateMode = body.dateMode !== undefined ? String(body.dateMode)
+                 : (existing ? existing.dateMode : "current");
+  if (!SAVED_VIEW_DATE_MODES.includes(dateMode)) {
+    return { error: "dateMode must be current, relative or fixed." };
+  }
+
+  let relativeRange = null, fixedStart = null, fixedEnd = null;
+  if (dateMode === "relative") {
+    relativeRange = String(body.relativeRange !== undefined ? body.relativeRange
+                         : (existing ? existing.relativeRange : "") || "");
+    if (!SAVED_VIEW_RELATIVE.includes(relativeRange)) return { error: "Unknown date range." };
+    // A range that is never populated at send time is never populated on open
+    // either — the same rule the email subscriptions apply.
+    const why = rangeBlocked(report, relativeRange);
+    if (why) return { error: why };
+  }
+  if (dateMode === "fixed") {
+    fixedStart = String(body.fixedStart !== undefined ? body.fixedStart
+                      : (existing ? existing.fixedStart : "") || "");
+    fixedEnd   = String(body.fixedEnd   !== undefined ? body.fixedEnd
+                      : (existing ? existing.fixedEnd : "") || "");
+    if (!SAVED_VIEW_DATE_RE.test(fixedStart) || !SAVED_VIEW_DATE_RE.test(fixedEnd)) {
+      return { error: "Pinned dates must both be YYYY-MM-DD." };
+    }
+    if (fixedStart > fixedEnd) return { error: "The start date is after the end date." };
+  }
+
+  const params = body.params === undefined
+    ? (existing ? existing.params : "")
+    : cleanViewParams(report, body.params);
+
+  const view = {
+    id: existing ? existing.id : "v_" + crypto.randomBytes(8).toString("hex"),
+    name, dateMode, relativeRange, fixedStart, fixedEnd, params,
+    owner: existing && existing.owner !== undefined ? existing.owner : null,
+    createdAt: existing ? existing.createdAt : new Date().toISOString(),
+    updatedAt: existing ? new Date().toISOString() : null,
+    deletedAt: null,
+  };
+  if (JSON.stringify(view).length > SAVED_VIEW_MAX_BYTES) {
+    return { error: "That view carries too many filters to save." };
+  }
+  return { view };
+}
+
+app.get("/:org/:report/api/views", (req, res) => {
+  if (!savedViewsGate(req, res)) return;
+  const rows = liveViews(listSavedViews(readSavedViews(), req.params.org, req.params.report));
+  res.json({ views: sortViews(rows), max: SAVED_VIEWS_MAX });
+});
+
+app.post("/:org/:report/api/views", (req, res) => {
+  if (!savedViewsGate(req, res)) return;
+  const { org, report } = req.params;
+  const body = req.body || {};
+  const all = readSavedViews();
+  const rows = listSavedViews(all, org, report);
+  const name = String(body.name || "").trim();
+  // A name collision is the "Update this view" path, but only when the client
+  // says so — otherwise two people saving "Front desk" would silently clobber.
+  const clash = liveViews(rows).find(v => v.name.toLowerCase() === name.toLowerCase());
+  if (clash && !body.replace) {
+    return res.status(409).json({ error: `A view named "${clash.name}" already exists.`, existingId: clash.id });
+  }
+  if (!clash && liveViews(rows).length >= SAVED_VIEWS_MAX) {
+    return res.status(400).json({ error: `This report already has ${SAVED_VIEWS_MAX} saved views — delete one first.` });
+  }
+  const { view, error } = normalizeViewInput(report, body, clash || null);
+  if (error) return res.status(400).json({ error });
+  const next = clash ? rows.map(v => (v.id === clash.id ? view : v)) : rows.concat([view]);
+  writeSavedViews(all, org, report, next);
+  logEvent(org, report, "view-save", req, { view: view.name, dateMode: view.dateMode, replaced: !!clash });
+  res.json({ ok: true, view });
+});
+
+app.patch("/:org/:report/api/views/:id", (req, res) => {
+  if (!savedViewsGate(req, res)) return;
+  const { org, report, id } = req.params;
+  const body = req.body || {};
+  const all = readSavedViews();
+  const rows = listSavedViews(all, org, report);
+  const idx = rows.findIndex(v => v.id === id);
+  if (idx < 0) return res.status(404).json({ error: "No such view" });
+
+  // Undo path: bring a tombstone back, subject to the same cap as a new save.
+  if (body.restore) {
+    if (rows[idx].deletedAt && liveViews(rows).length >= SAVED_VIEWS_MAX) {
+      return res.status(400).json({ error: `This report already has ${SAVED_VIEWS_MAX} saved views — delete one first.` });
+    }
+    const restored = Object.assign({}, rows[idx], { deletedAt: null });
+    rows[idx] = restored;
+    writeSavedViews(all, org, report, rows);
+    logEvent(org, report, "view-restore", req, { view: restored.name });
+    return res.json({ ok: true, view: restored });
+  }
+
+  if (rows[idx].deletedAt) return res.status(404).json({ error: "That view was deleted" });
+  const name = body.name !== undefined ? String(body.name).trim() : rows[idx].name;
+  const clash = liveViews(rows).find(v => v.id !== id && v.name.toLowerCase() === name.toLowerCase());
+  if (clash) return res.status(409).json({ error: `A view named "${clash.name}" already exists.` });
+  const { view, error } = normalizeViewInput(report, body, rows[idx]);
+  if (error) return res.status(400).json({ error });
+  rows[idx] = view;
+  writeSavedViews(all, org, report, rows);
+  logEvent(org, report, "view-save", req, { view: view.name, dateMode: view.dateMode, updated: true });
+  res.json({ ok: true, view });
+});
+
+// Soft delete — the list is shared, so a mis-click has to be recoverable.
+app.delete("/:org/:report/api/views/:id", (req, res) => {
+  if (!savedViewsGate(req, res)) return;
+  const { org, report, id } = req.params;
+  const all = readSavedViews();
+  const rows = listSavedViews(all, org, report);
+  const idx = rows.findIndex(v => v.id === id && !v.deletedAt);
+  if (idx < 0) return res.status(404).json({ error: "No such view" });
+  const gone = Object.assign({}, rows[idx], { deletedAt: new Date().toISOString() });
+  rows[idx] = gone;
+  writeSavedViews(all, org, report, rows);
+  logEvent(org, report, "view-delete", req, { view: gone.name });
+  res.json({ ok: true, view: gone });
 });
 
 // ── Subscription API ─────────────────────────────────────────────────

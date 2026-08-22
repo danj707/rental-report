@@ -27,3 +27,6 @@ jobs:
 
       - name: Validate public/*.html JSX blocks
         run: node scripts/ci-check-html.js
+
+      - name: Saved-view helpers spec (client/server date vocabulary + param allowlist)
+        run: node scripts/saved-views.spec.js
