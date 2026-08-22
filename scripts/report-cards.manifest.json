@@ -66,6 +66,12 @@
       "card": "6f02d09d-6694-462f-9471-7a4cb8b90d01",
       "org": "aeba47d0-c97f-49cb-a0e9-93c5af3a68fa",
       "timeout": 120
+    },
+    {
+      "label": "schema-catalog (card 20263 — the breaking-drift watchdog's own card; parameterless, org-independent, measured ~1s. If THIS goes dark the watchdog goes quiet without saying so)",
+      "card": "926cefe5-78dd-4bdd-a1c9-58aef3f45827",
+      "org": "aeba47d0-c97f-49cb-a0e9-93c5af3a68fa",
+      "timeout": 30
     }
   ]
 }
