@@ -317,6 +317,52 @@ EMPTY until at least one update is published, and each PR preview is a fresh
 environment with its own (empty) data store — a brand-new preview shows no popup
 until you publish an update in it first.
 
+## Alerts only fire for reports that are actually used (Dan, 2026-08-22)
+
+**Rule: don't alert on a report nobody uses; once it's used, it joins the alert
+set on its own.** Nothing to configure and nothing to remember — the events log
+already knows, so the watchdogs ask it. `getReportActivity()` in server.js reads
+`events.jsonl` over `REPORT_ACTIVITY_WINDOW_DAYS` (default **45**, cached 1h) and
+answers `isReportActive(slug, rt)` / `isReportTypeActive(rt)`.
+
+What that gates:
+
+- **Health check** — inactive org/report pairs are not probed at all (saves the
+  Metabase time too) and are recorded as `status: "inactive"` so the panel says
+  *why* rather than showing a stale tick. An inactive failure never enters the
+  failures list, the count, or the email.
+- **`schema-break`** — fires only if a dropped table/column breaks an **active**
+  report, and the message names only those. Full diff stays in the state file.
+- **`param-drift`** — fires only for a card serving an active report.
+
+Three traps this is built around, all of which fail silently if you get them
+wrong:
+
+1. **Activity counts EVERY usage event, not just `view`.** The six Program
+   Summary bands (`selfservice`, `program-checkins`, `program-demographics`,
+   `retention`, `checkins`, `section-detail`) have **zero** `view` events by
+   design — they're fetched by `programs.html` for 15 orgs apiece. View-only
+   activity would stop watching the most-used reports on the platform.
+2. **`report-down` must not count as usage.** It's logged against the real
+   org/report, so counting it would let a broken unused report alert once,
+   qualify itself as active, and keep alerting forever. `NON_USAGE_EVENTS` is a
+   denylist (not an allowlist) so a new export counts as usage the day it ships.
+3. **An empty log means watch everything.** A missing events file, a fresh
+   volume, or a new PR preview is not evidence that 22 reports went unused.
+   `/api/admin/report-activity` reports `failsafe: true` when that's in effect.
+
+`/api/admin/report-activity` is the first place to look when an alert did NOT
+fire. Deliberately not the cache's `isReportHot()` (3+ opens in 7 days) — right
+question for holding rows in memory, wrong one for "does anyone rely on this".
+
+Usage as of 2026-08-22 (log starts 2026-05-22, so ~3 months): dead are
+`overview` (8 opens ever, none in 90d, orphaned page — still in
+REPORT_DEPENDENCIES) and `annual-report` (3 opens, last 51d). `court-utilization`
+as a *page* is dead (2 views/30d) but its **card is load-bearing** —
+`facilities.html` pulls it 174x/30d across 13 orgs, so don't retire the card with
+the page. `campmap` is in `RETIRED_REPORTS` yet has 24 views/30d across 2 orgs,
+so it's more alive than the other two retired reports.
+
 ## Per-org card entries a shared card shadows (know this before trusting ORGS)
 
 `ORGS[slug][report].mbUuid` is NOT necessarily the card the app queries. A

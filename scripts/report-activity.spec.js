@@ -1,0 +1,283 @@
+// Spec for activity-gated alerting.
+//
+// Dan's rule (2026-08-22): do not alert on a report nobody uses; once it is
+// used, it joins the alert set on its own. The alerts had been spending their
+// credibility on reports with no audience — `overview` has 8 opens ever (none
+// in three months) and `annual-report` 3, and both sit in REPORT_DEPENDENCIES,
+// so a dropped table under either would page someone about a page nobody
+// visits.
+//
+// The two properties that matter most here are the ones that fail silently:
+//
+//   1. Activity must count EVERY usage event, not just `view`. The six Program
+//      Summary bands (selfservice, program-checkins, program-demographics,
+//      retention, checkins, section-detail) have zero `view` events by design
+//      and are fetched by 15 orgs apiece. Counting views alone would quietly
+//      stop watching the most-used reports on the platform.
+//
+//   2. `report-down` must NOT count as usage. It is logged against the real
+//      org/report, so a broken unused report would alert once, qualify itself
+//      as active, and keep alerting forever.
+//
+// Run: node scripts/report-activity.spec.js
+"use strict";
+const assert = require("assert");
+const fs = require("fs");
+const path = require("path");
+
+const SERVER = path.join(__dirname, "..", "server.js");
+const src = fs.readFileSync(SERVER, "utf8");
+
+function slice(start, end) {
+  const a = src.indexOf(start);
+  assert.ok(a > 0, `server.js should contain: ${start}`);
+  const b = src.indexOf(end, a);
+  assert.ok(b > a, `could not find the end of: ${start}`);
+  return src.slice(a, b);
+}
+
+// Lift the real activity block, with readEvents injected so the spec can hand
+// it any event stream it likes.
+function build(events) {
+  const body = slice("const ACTIVITY_WINDOW_DAYS", "async function runHealthCheck");
+  return new Function("readEvents", "process",
+    body + "\nreturn { getReportActivity, isReportActive, isReportTypeActive,"
+         + " ACTIVITY_WINDOW_DAYS, NON_USAGE_EVENTS };"
+  )(() => events, { env: {} });
+}
+
+// The catalog gate, lifted with the same injected event stream, so the filter
+// itself is exercised rather than just asserted to exist in the source.
+function buildSplit(events) {
+  const body = slice("const ACTIVITY_WINDOW_DAYS", "async function runHealthCheck")
+    + "\n" + slice("function splitBreakageByActivity", "// A stable identity");
+  return new Function("readEvents", "process",
+    body + "\nreturn splitBreakageByActivity;")(() => events, { env: {} });
+}
+
+let passed = 0;
+function test(name, fn) { fn(); console.log(`  ✓ ${name}`); passed++; }
+
+const ev = (org, report, event) => ({ org, report, event });
+
+// ── what counts as usage ────────────────────────────────────────────────────
+
+test("a viewed report is active", () => {
+  const a = build([ev("apex", "gl", "view")]);
+  assert.strictEqual(a.isReportActive("apex", "gl"), true);
+  assert.strictEqual(a.isReportTypeActive("gl"), true);
+});
+
+test("a fetched-but-never-viewed report is active — the Program Summary bands", () => {
+  // The whole reason activity is not view-only. These six have zero `view`
+  // events across the entire log and are fetched by 15 orgs.
+  const bands = ["selfservice", "program-checkins", "program-demographics",
+                 "retention", "checkins", "section-detail"];
+  const a = build(bands.map(rt => ev("watertown", rt, "fetch")));
+  for (const rt of bands) {
+    assert.strictEqual(a.isReportActive("watertown", rt), true, `${rt} must count as active`);
+    assert.strictEqual(a.isReportTypeActive(rt), true, rt);
+  }
+});
+
+test("an export counts as usage even with no view", () => {
+  for (const e of ["pdf", "excel", "print", "summary", "email", "permits", "munis"]) {
+    const a = build([ev("pawnee", "facility", e)]);
+    assert.strictEqual(a.isReportActive("pawnee", "facility"), true, e);
+  }
+});
+
+test("a brand-new export event counts without anyone editing this file", () => {
+  // NON_USAGE_EVENTS is a denylist on purpose: whatever ships next is usage.
+  const a = build([ev("apex", "gl", "some-future-export-2027")]);
+  assert.strictEqual(a.isReportActive("apex", "gl"), true);
+});
+
+// ── what must NOT count ─────────────────────────────────────────────────────
+
+test("report-down does not make a broken unused report look active", () => {
+  // The self-sustaining-alert bug: report-down is logged against the real
+  // org/report, so counting it would qualify the report as active forever.
+  // Real usage elsewhere is needed so the empty-log failsafe is not what is
+  // being measured here.
+  const a = build([
+    ev("apex", "gl", "view"),
+    ev("norman", "products", "report-down"),
+    ev("norman", "products", "report-down"),
+  ]);
+  assert.strictEqual(a.getReportActivity().events, 1, "only the real view counts");
+  assert.strictEqual(a.isReportActive("norman", "products"), false);
+  assert.strictEqual(a.isReportTypeActive("products"), false);
+});
+
+test("the platform alerts and org lifecycle events are not usage", () => {
+  for (const e of ["report-down", "schema-break", "param-drift", "created", "org-deleted"]) {
+    assert.ok(build([]).NON_USAGE_EVENTS.has(e), `${e} must not count as usage`);
+  }
+});
+
+test("a log of nothing but alerts falls back to watching everything", () => {
+  const a = build([
+    ev("norman", "products", "report-down"),
+    ev("clarksville", "roster", "report-down"),
+  ]);
+  assert.strictEqual(a.getReportActivity().events, 0);
+  // events === 0 is the failsafe below — which is correct here too: a log with
+  // no real usage in it is indistinguishable from a missing log.
+  assert.strictEqual(a.isReportActive("apex", "gl"), true);
+});
+
+// ── the failsafe ────────────────────────────────────────────────────────────
+
+test("an empty log watches everything rather than silently watching nothing", () => {
+  // A missing events file, a fresh volume, or a new PR preview must not mean
+  // "22 reports went unused" — that would disable every alert at once.
+  const a = build([]);
+  assert.strictEqual(a.getReportActivity().events, 0);
+  assert.strictEqual(a.isReportActive("anything", "at-all"), true);
+  assert.strictEqual(a.isReportTypeActive("at-all"), true);
+});
+
+test("once there is real usage, unused reports go inactive", () => {
+  const a = build([ev("apex", "gl", "view")]);
+  assert.strictEqual(a.isReportActive("apex", "overview"), false);
+  assert.strictEqual(a.isReportTypeActive("annual-report"), false);
+});
+
+// ── per-org vs per-type ─────────────────────────────────────────────────────
+
+test("activity is per org AND report, so one org's use does not cover another's", () => {
+  const a = build([ev("apex", "historic", "view")]);
+  assert.strictEqual(a.isReportActive("apex", "historic"), true);
+  assert.strictEqual(a.isReportActive("smyrna", "historic"), false);
+  // …but a shared card serving anyone at all is still worth watching.
+  assert.strictEqual(a.isReportTypeActive("historic"), true);
+});
+
+test("malformed rows are skipped without throwing", () => {
+  const a = build([null, {}, { org: "a" }, { report: "gl" }, ev("apex", "gl", "view")]);
+  assert.strictEqual(a.getReportActivity().events, 1);
+  assert.strictEqual(a.isReportActive("apex", "gl"), true);
+});
+
+test("the result is cached, so a health run does not re-read the log per report", () => {
+  let calls = 0;
+  const body = slice("const ACTIVITY_WINDOW_DAYS", "async function runHealthCheck");
+  const a = new Function("readEvents", "process",
+    body + "\nreturn { isReportActive };")(
+      () => { calls++; return [ev("apex", "gl", "view")]; }, { env: {} });
+  for (let i = 0; i < 50; i++) a.isReportActive("apex", "gl");
+  assert.strictEqual(calls, 1, "the events log should be read once, not 50 times");
+});
+
+test("the window is 45 days by default — a monthly report is not 'unused'", () => {
+  // 30 would make a month-end pull borderline on the 31st.
+  assert.strictEqual(build([]).ACTIVITY_WINDOW_DAYS, 45);
+  assert.ok(src.includes("process.env.REPORT_ACTIVITY_WINDOW_DAYS"), "window must be overridable");
+});
+
+// ── wiring: the gates have to be where the alerts are ───────────────────────
+
+test("the health check skips inactive reports instead of probing them", () => {
+  const enumeration = slice("  // Per-org: only reports with a per-org mbUuid", "  // If failuresOnly");
+  assert.ok(enumeration.includes("if (!isReportActive(slug, rt)) { markInactive(slug, rt); continue; }"),
+    "per-org enumeration must skip inactive reports");
+  assert.ok(enumeration.includes('if (!isReportTypeActive(rt)) { markInactive("_shared", rt); continue; }'),
+    "the shared probe must skip report types nobody uses");
+});
+
+test("an inactive report can never raise report-down, even on a forced run", () => {
+  const body = slice("    if (entry.status === \"error\") {", "    existing.reports[storeSlug][rt] = entry;");
+  assert.ok(body.includes("const alertable = shared ? isReportTypeActive(rt) : isReportActive(slug, rt)"),
+    "the alert branch needs its own activity gate");
+  assert.ok(/if \(alertable && \(!prevWasError/.test(body),
+    "newFailures and the report-down event must both be behind `alertable`");
+});
+
+test("an inactive failure is recorded but kept out of the failures list", () => {
+  // Otherwise it inflates the 'N total failing' count and the failure email.
+  assert.ok(src.includes('if (e.status === "error" && !e.inactive) existing.failures.push'),
+    "the failures rebuild must exclude inactive entries");
+  assert.ok(src.includes("if (!alertable) entry.inactive = true;"),
+    "the entry must be flagged so the panel can explain itself");
+});
+
+test("a report that goes quiet while broken stops showing as a failure", () => {
+  // The early-return path: nothing due to check, but reports just went
+  // inactive. Without this the panel stays red forever.
+  const early = slice("  if (toCheck.length === 0) {", "  const tierLabel");
+  assert.ok(early.includes("saveHealthResults(existing)"), "inactive marks must persist");
+  assert.ok(early.includes("existing.failures"), "the failures list must be re-filtered");
+});
+
+test("a breakage that only hits dead reports names nothing to alert on", () => {
+  // The real filter, over a fabricated drift. `gl` is used, `overview` and
+  // `annual-report` are not.
+  const split = buildSplit([ev("apex", "gl", "view")]);
+  const deadOnly = split({
+    missingTables: [{ table: "legacy_kpi", reports: ["overview"] }],
+    missingColumns: [{ table: "users", column: "nickname", reports: ["annual-report"] }],
+  });
+  assert.deepStrictEqual(deadOnly.active, [],
+    "nothing active is affected, so there is nothing to alert about");
+  assert.deepStrictEqual(deadOnly.reports, ["annual-report", "overview"],
+    "the full list is still reported for the state file");
+  assert.deepStrictEqual(deadOnly.missingTables, []);
+  assert.deepStrictEqual(deadOnly.missingColumns, []);
+});
+
+test("a breakage hitting a used report alerts, and names only the live parts", () => {
+  const split = buildSplit([ev("apex", "gl", "view")]);
+  const mixed = split({
+    missingTables: [
+      { table: "legacy_kpi", reports: ["overview"] },
+      { table: "order_item_transaction", reports: ["gl", "overview"] },
+    ],
+    missingColumns: [{ table: "users", column: "nickname", reports: ["annual-report"] }],
+  });
+  assert.deepStrictEqual(mixed.active, ["gl"]);
+  assert.deepStrictEqual(mixed.missingTables, ["order_item_transaction"],
+    "legacy_kpi is read only by a dead page — it must not be in the alert");
+  assert.deepStrictEqual(mixed.missingColumns, []);
+});
+
+test("a table shared by a live and a dead report still counts as live", () => {
+  const split = buildSplit([ev("apex", "gl", "view")]);
+  const r = split({
+    missingTables: [{ table: "order_item", reports: ["overview", "gl"] }],
+    missingColumns: [],
+  });
+  assert.deepStrictEqual(r.missingTables, ["order_item"]);
+  assert.deepStrictEqual(r.active, ["gl"]);
+});
+
+test("schema-break only fires when an ACTIVE report is affected", () => {
+  const body = slice("  // A dropped table only matters if it breaks a report", "  return {\n    ok: true, breaking");
+  assert.ok(body.includes("splitBreakageByActivity(drift)"), "the gate must be applied");
+  assert.ok(/if \(live\.active\.length > 0 && \(changed \|\| opts\.force\)\)/.test(body),
+    "the schema-break event must be gated on an active report");
+  assert.ok(body.includes("state.reportsAffected = live.reports"),
+    "the full unfiltered list must stay in the state file");
+});
+
+test("param-drift only fires for cards serving an active report", () => {
+  const body = slice("  // Only a card serving a report someone actually uses", "  return {\n    ok: true, wrongType");
+  assert.ok(body.includes("drift.wrongType.filter(w => w.servedActive.length > 0)"));
+  assert.ok(/if \(live\.length > 0 && \(changed \|\| opts\.force\)\)/.test(body));
+  assert.ok(body.includes("w.servedActive"), "the message must name the active reports, not all of them");
+});
+
+test("served entries carry enough to answer 'is this in use'", () => {
+  assert.ok(src.includes("function servedIsActive(e) { return e.shared ? isReportTypeActive(e.rt) : isReportActive(e.slug, e.rt); }"),
+    "a shared card is checked per report type, a per-org card per org+report");
+  assert.ok(src.includes("const servedActive = serves.filter(servedIsActive).map(servedLabel);"));
+});
+
+test("the activity set is inspectable, so a missing alert can be explained", () => {
+  assert.ok(src.includes('app.get("/api/admin/report-activity"'), "needs an admin endpoint");
+  assert.ok(src.includes("failsafe: a.events === 0"), "the endpoint must say when the failsafe is on");
+  assert.ok(src.includes("healthCheckPerOrgProbes:"),
+    "it must report how many probes activity actually removes, not just how many pairs exist");
+});
+
+console.log(`\n${passed}/${passed} passing`);

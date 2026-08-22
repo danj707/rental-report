@@ -57,3 +57,6 @@ jobs:
 
       - name: Card-drift spec (probe the served card; catch a Date tag reset to Text)
         run: node scripts/card-drift.spec.js
+
+      - name: Report-activity spec (only alert on reports someone actually uses)
+        run: node scripts/report-activity.spec.js
