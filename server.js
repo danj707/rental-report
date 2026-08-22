@@ -1929,19 +1929,12 @@ const DEFAULT_HIDDEN_REPORTS = new Set([]);
 // keep working) but no longer rendered as a clickable card on org/admin grids.
 // Globally not-surfaced reports. Routes/code stay intact; they just aren't shown
 // anywhere. chat is deprecated in favor of Rec's "Seb" AI skill.
-// campmap is UN-RETIRED (Dan, 2026-08-22) — "bring back the DC camping public
-// map for users". It was retired in favour of the Facilities hub's Camping tab,
-// which is the right call for ADMINS but not for campers: the Camping tab lives
-// behind the org token, and the standalone page is the only public, no-token
-// view of a campground. Nothing was deleted when it was retired, and it never
-// stopped working — /:org/campmap has been serving 200s to ~24 visitors a month
-// via direct links the whole time. Bringing it back is surfacing it, not
-// rebuilding it.
-//
-// Surfaced ONLY for orgs with a campmap seed (see the org landing route), the
-// same no-per-org-opt-in shape as the facility permit chip: the card appears
-// where there is a map to show and nowhere else, so the other ~26 orgs never
-// see a link to an empty map.
+// campmap stays retired as a REPORT — it is not one. It is a public artifact,
+// and the way in is a direct link from the Facilities hub's Camping tab, which
+// is where admins already manage the pins (Dan, 2026-08-22). The page itself
+// never stopped working: /:org/campmap has been serving 200s to ~24 visitors a
+// month through direct links the whole time it has been listed here, because
+// this Set only controls whether it is SURFACED, not whether it works.
 //
 // report-wizard is UN-retired (Dan, 2026-08-20). It was shelved alongside chat
 // as "deprecated in favor of Seb", but unlike chat it does something Seb does
@@ -1949,7 +1942,7 @@ const DEFAULT_HIDDEN_REPORTS = new Set([]);
 // schemas. Nothing was deleted when it was retired — the page, the generate
 // route and the feedback route all stayed — so bringing it back is removing it
 // from this Set, not a rebuild.
-const RETIRED_REPORTS = new Set(["court-utilization", "chat"]);
+const RETIRED_REPORTS = new Set(["court-utilization", "chat", "campmap"]);
 
 // ── Dynamic orgs (added via dashboard UI) ────────────────────────────
 // Loaded at startup and merged into ORGS; also updated at runtime.
@@ -3717,6 +3710,9 @@ function notifySlack(rec) {
     const who = (rec.reports || []).length ? ` — breaks *${(rec.reports || []).join("*, *")}*` : "";
     text = `${meta.emoji} *SCHEMA BREAK* — ${gone.slice(0, 8).join(", ")}`
          + (gone.length > 8 ? ` and ${gone.length - 8} more` : "") + who + mention;
+  } else if (rec.event === "campmap-share") {
+    const what = rec.kind === "embed" ? "embed code" : "link";
+    text = `${meta.emoji} ${orgName} (\`${rec.org}\`) copied the public campsite map ${what}`;
   } else if (rec.event === "watchdog") {
     // Muting a safety net is worth a line in the channel — most of the cost of
     // an off switch is forgetting you flipped it. Deliberately NOT in
@@ -5471,10 +5467,6 @@ app.get("/api/org-visibility/:slug", (req, res) => {
     if (RETIRED_REPORTS.has(rt)) continue; // globally not surfaced
     available.push({ type: rt, visible: !hidden.has(rt) });
   }
-  // campmap is offered only where the org has a seed, so it is only toggleable
-  // there — listing it for every org would put a switch on the panel that
-  // controls nothing.
-  if (CAMPMAP_SEEDS[slug]) available.push({ type: "campmap", visible: !hidden.has("campmap") });
   // Default-hidden WIP reports use inverted visibility semantics
   available.push({ type: "facilities", visible: !reportHiddenForOrg(slug, "facilities") });
   res.json({ slug, available, hiddenCount: hidden.size });
@@ -5702,7 +5694,7 @@ app.post("/:org/:report/api/log", resolveOrg, (req, res) => {
   const { event, game, location, view } = req.query;
   // view-apply is events.jsonl-only by design — it is not in SLACK_NOTIFY, so
   // logEvent records it without pinging the feed (see the saved-views block).
-  const ALLOWED = ["excel", "print", "summary", "game", "map", "view-apply", "campmap-share"];
+  const ALLOWED = ["excel", "print", "summary", "game", "map", "view-apply"];
   if (!ALLOWED.includes(event)) return res.status(400).json({ ok: false, error: "Unknown event" });
   const extra = event === "game" && game ? { game: String(game).slice(0, 60) }
               : event === "map" && location ? { location: String(location).slice(0, 80) }
@@ -10115,6 +10107,18 @@ app.get("/:org/campmap", (req, res) => {
 // Campsite map positions + custom markers.
 // GET is public (viewers see the admin's saved layout); POST requires the org
 // token (admin edit). Both use the same per-location store as the Camping tab.
+// POST /:org/campmap/api/share — the Facilities Camping tab copied the public
+// link (or its embed snippet). Its own route rather than the shared
+// /:org/:report/api/log, because resolveOrg 404s any report outside
+// REPORT_TYPES and campmap is deliberately not one.
+app.post("/:org/campmap/api/share", (req, res) => {
+  const slug = req.params.org;
+  if (!ORGS[slug]) return res.status(404).json({ ok: false, error: "Unknown org" });
+  const kind = req.query.kind === "embed" ? "embed" : "link";
+  logEvent(slug, "campmap", "campmap-share", req, { kind });
+  res.json({ ok: true });
+});
+
 app.get("/:org/campmap/api/positions", (req, res) => {
   const slug = req.params.org;
   if (!ORGS[slug]) return res.status(404).json({ positions: {} });
@@ -10927,11 +10931,6 @@ app.get("/:org", async (req, res, next) => {
   if (!reportHiddenForOrg(slug, 'facilities')) available.push('facilities');
   // Instructor Lessons — programs-pipeline report, per-org pilot (SF)
   if (lessonsReportEnabled(slug) && !orgHidden.has('lessons')) available.push('lessons');
-  // Campsite map — a PUBLIC page (no token), so it is offered wherever the org
-  // has a campmap seed and nowhere else. Seed presence is the whole gate: an org
-  // without one has no sites to plot, and a card linking to an empty map is
-  // worse than no card.
-  if (CAMPMAP_SEEDS[slug] && !orgHidden.has('campmap')) available.push('campmap');
   const orgConfig = {
     slug,
     displayName: org.displayName || `${slugTitle} Parks & Recreation`,
