@@ -27,3 +27,6 @@ jobs:
 
       - name: Validate public/*.html JSX blocks
         run: node scripts/ci-check-html.js
+
+      - name: PDF export helper spec (popup, not a sandboxed download)
+        run: node scripts/open-pdf.spec.js

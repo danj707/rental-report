@@ -1233,6 +1233,7 @@
     }
   </script>
 <script src="/report-refresh.js" defer></script>
+<script src="/open-pdf.js" defer></script>
 </head>
 <body>
 
@@ -2620,7 +2621,6 @@ function App() {
   }
 
   function downloadPdf() {
-    setPdfLoading(true);
     const qs = new URLSearchParams();
     if (loadedStart) qs.set('start_date', loadedStart);
     if (loadedEnd)   qs.set('end_date',   loadedEnd);
@@ -2639,18 +2639,9 @@ function App() {
       ? `/${pathParts[1]}/${pathParts[2]}/api/pdf`
       : '/api/pdf';
 
-    fetch(withToken(`${pdfBase}?${qs.toString()}`))
-
-      .then(r => r.blob())
-      .then(blob => {
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        a.download = `rental-schedule-${loadedStart || 'report'}.pdf`;
-        a.click();
-        URL.revokeObjectURL(a.href);
-      })
-      .catch(err => alert('PDF generation failed: ' + err.message))
-      .finally(() => setPdfLoading(false));
+    // Opened in its own window rather than downloaded — a download started by a
+    // sandboxed iframe is silently dropped. See open-pdf.js.
+    openReportPdf(withToken(`${pdfBase}?${qs.toString()}`), { label: 'Facility Rental Schedule' });
   }
 
   // ── Export Permits ──────────────────────────────────────────────────

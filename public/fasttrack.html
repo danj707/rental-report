@@ -360,6 +360,7 @@
     .insights-feedback .fb-send:hover { background:#4f46e5!important; }
   </style>
 <script src="/report-refresh.js" defer></script>
+<script src="/open-pdf.js" defer></script>
 </head>
 <body>
 
@@ -1430,15 +1431,12 @@ function App() {
 
   /* PDF */
   function handlePdf() {
-    setPdfLoading(true);
     var p = new URLSearchParams();
     if (seasonFilter) p.set('season', seasonFilter);
     if (searchTerm.trim()) p.set('search', searchTerm.trim());
-    fetch(withToken(basePath + '/api/pdf?' + p.toString()))
-      .then(function(r) { if (!r.ok) throw new Error('PDF generation failed'); return r.blob(); })
-      .then(function(blob) { var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'fast-track-report.pdf'; a.click(); })
-      .catch(function(e) { alert(e.message); })
-      .finally(function() { setPdfLoading(false); });
+    // Opened in its own window rather than downloaded — a download started by a
+    // sandboxed iframe is silently dropped. See open-pdf.js.
+    openReportPdf(withToken(basePath + '/api/pdf?' + p.toString()), { label: 'Fast Track' });
   }
 
   /* Excel */

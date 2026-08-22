@@ -463,6 +463,7 @@
     }
   </script>
 <script src="/report-refresh.js" defer></script>
+<script src="/open-pdf.js" defer></script>
 </head>
 <body>
 <div id="root"></div>
@@ -822,7 +823,6 @@ function App() {
   function collapseAll() { setExpanded(new Set()); }
 
   function downloadPdf() {
-    setPdfLoading(true);
     logClientEvent('pdf');
     const p = new URLSearchParams();
     if (loadedStart) p.set('start_date', loadedStart);
@@ -833,16 +833,9 @@ function App() {
     p.set('chart_net', showNet ? '1' : '0');
     if (selectedDesks.size > 0) p.set('desks', Array.from(selectedDesks).join(','));
     if (searchTerm.trim()) p.set('search', searchTerm.trim());
-    fetch(withToken(`/${orgSlug}/products/api/pdf?${p.toString()}`))
-      .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.blob(); })
-      .then(blob => {
-        const link = document.createElement('a');
-        link.href = URL.createObjectURL(blob);
-        link.download = `products-daily-${loadedStart || 'export'}_${loadedEnd || ''}.pdf`;
-        link.click(); URL.revokeObjectURL(link.href);
-      })
-      .catch(err => alert('PDF generation failed: ' + err.message))
-      .finally(() => setPdfLoading(false));
+    // Opened in its own window rather than downloaded — a download started by a
+    // sandboxed iframe is silently dropped. See open-pdf.js.
+    openReportPdf(withToken(`/${orgSlug}/products/api/pdf?${p.toString()}`), { label: 'Daily Products' });
   }
 
 

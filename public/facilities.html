@@ -428,6 +428,7 @@
     .camp-mk-form button.mk-del { font-size:10.5px; color:#dc2626; background:none; border:1px solid #fca5a5; border-radius:10px; padding:2px 8px; cursor:pointer; }
   </style>
 <script src="/report-refresh.js" defer></script>
+<script src="/open-pdf.js" defer></script>
 </head>
 <body>
   <div id="root"></div>
@@ -3411,24 +3412,15 @@
       // PDF: server-side Puppeteer render of this page in print mode with the
       // current filters — same mechanism as the Facility Rental Schedule report.
       function downloadPdf() {
-        setPdfLoading(true);
         const qs = new URLSearchParams({ start_date: start, end_date: end });
         if (statusSel.length && statusSel.length < 3) qs.set('status', statusSel.join(','));
         if (typeSel.length) qs.set('site_type', typeSel.join(','));
         if (locSel.length) qs.set('location', locSel.join('~~'));
         if (tab && tab !== 'summary') qs.set('tab', tab);
         if (CFG.token) qs.set('token', CFG.token);
-        fetch('/' + CFG.slug + '/facilities/api/pdf?' + qs.toString())
-          .then(r => { if (!r.ok) throw new Error('Server returned ' + r.status); return r.blob(); })
-          .then(blob => {
-            const a = document.createElement('a');
-            a.href = URL.createObjectURL(blob);
-            a.download = CFG.slug + '-facilities-' + start + '.pdf';
-            a.click();
-            URL.revokeObjectURL(a.href);
-          })
-          .catch(er => alert('PDF generation failed: ' + er.message))
-          .finally(() => setPdfLoading(false));
+        // Opened in its own window rather than downloaded — a download started by
+        // a sandboxed iframe is silently dropped. See open-pdf.js.
+        openReportPdf('/' + CFG.slug + '/facilities/api/pdf?' + qs.toString(), { label: 'Facilities' });
       }
 
       // Lite export — a plain, print-first one-page revenue summary (no dashboard
