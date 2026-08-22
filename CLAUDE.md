@@ -397,7 +397,21 @@ with the error body captured showed:
   47 days in the failure count for a report nothing was looking at. The purge
   now sweeps `_shared` for report types that are skipped or no longer shared.
 
-Three guards, all in `runHealthCheck`:
+**Slow is not broken, and only broken alerts (Dan, 2026-08-22).**
+`classifyProbeFailure()` splits the two:
+
+- **slow** — a client-side timeout, a Metabase 5xx, or a `statement timeout` /
+  `canceling statement` behind an HTTP 400. It could not answer in time *this
+  time*; the app serves those from cache anyway. Status `slow`, amber on the
+  panel, never a failure, never an alert, and a slow round **resets** the broken
+  streak rather than feeding it.
+- **error** — the card cannot answer because of what it IS: a dropped table or
+  column (`relation "class" does not exist`), a renamed or newly-required
+  parameter, an unshared or deleted card (404), a SQL error. These do not fix
+  themselves, so they alert — after two consecutive rounds, and only for reports
+  in use.
+
+Four guards, all in `runHealthCheck`:
 
 1. **One probe per card.** The per-org loop skips anything
    `resolveReportCard(slug, rt).shared` — the `_shared` row covers that card.
@@ -411,14 +425,18 @@ Three guards, all in `runHealthCheck`:
 3. **The error says what Metabase said.** A statement timeout comes back as HTTP
    400 with the reason in the body, so bare `HTTP 400` could not distinguish a
    dropped table from a slow card — opposite problems, opposite fixes. The body
-   (160 chars) is now in `entry.error`, and timeouts set `entry.slow`.
+   (160 chars) is now in `entry.error`, and it is what `classifyProbeFailure()`
+   reads.
+4. **Slow never alerts** — see above. This is the guard doing most of the work,
+   since most of what was firing was cards sitting near their timeout.
 
 Worth knowing separately: **several cards genuinely run near or past 60s under
 load.** Measured 2026-08-22 with the app's own parameters: shared `roster` 46s,
 shared `programs` 52s, `qbr-stats` >70s, and `apex/fasttrack` and
 `apex/ice-calendar` both >70s (both in `NO_DATE_REPORTS`, so they get no window
-to narrow them). That is a real performance problem the guards only stop
-shouting about — see the `materialized` index section.
+to narrow them). That is a real performance problem, deliberately NOT alerted on
+— see the `materialized` index section. It shows as amber on the admin panel and
+nowhere else.
 
 ## Per-org card entries a shared card shadows (know this before trusting ORGS)
 
