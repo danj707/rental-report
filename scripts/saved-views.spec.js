@@ -231,6 +231,28 @@ test("a requested set that resolves to nothing shows all — the warned-about ca
   assert.deepStrictEqual(sorted(out), sorted(asSet(DESKS)));
 });
 
+// ── Applying a view RESETS; it does not merge ────────────────────────
+// "Default view" is a view that requests nothing, so it has to come back as
+// everything. Passing previous:null is how the effects express "this is an
+// apply" — a merge here is what left the old filter in place when someone
+// switched back to Default view, or applied a view that filters only tenders.
+test("Default view (an apply requesting nothing) resets to everything", () => {
+  const out = H.reconcileFilterSelection({
+    available: DESKS, previous: null, requested: null, dataChanged: true,
+  });
+  assert.deepStrictEqual(sorted(out), sorted(asSet(DESKS)), "no filters means all of them");
+});
+
+test("an apply ignores what was selected before rather than intersecting it", () => {
+  // Same call shape the effects use on apply. If this ever honoured `previous`,
+  // switching from a filtered view to Default view would keep the filter.
+  const asApply = (requested) => H.reconcileFilterSelection({
+    available: DESKS, previous: null, requested, dataChanged: true,
+  });
+  assert.deepStrictEqual(sorted(asApply(null)), sorted(asSet(DESKS)));
+  assert.deepStrictEqual(sorted(asApply(["Ice Arena"])), ["Ice Arena"]);
+});
+
 test("a requested set is intersected with what the data offers", () => {
   const out = H.reconcileFilterSelection({
     available: DESKS, previous: null, requested: ["Ice Arena", "Somewhere Else"], dataChanged: true,
