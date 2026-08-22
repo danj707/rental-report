@@ -430,12 +430,23 @@ Four guards, all in `runHealthCheck`:
 4. **Slow never alerts** — see above. This is the guard doing most of the work,
    since most of what was firing was cards sitting near their timeout.
 
-Worth knowing separately: **several cards genuinely run near or past 60s under
-load.** Measured 2026-08-22 with the app's own parameters: shared `roster` 46s,
-shared `programs` 52s, `qbr-stats` >70s, and `apex/fasttrack` and
-`apex/ice-calendar` both >70s (both in `NO_DATE_REPORTS`, so they get no window
-to narrow them). That is a real performance problem, deliberately NOT alerted on
-— see the `materialized` index section. It shows as amber on the admin panel and
+Worth knowing separately: **several cards genuinely run near or past 60s, and
+how near is wildly variable.** Shared `roster`, same card and same 7-day window,
+measured four times on 2026-08-22: **7.7s → 32.9s → 46.3s → 59.8s** (the 59.8s
+run was undated — see the probe bug above). Shared `programs` came in at 52s
+once and **timed out past 90s** on a quiet retry. `qbr-stats`, `apex/fasttrack`
+and `apex/ice-calendar` all exceed 70s (the latter two are in `NO_DATE_REPORTS`,
+so no window narrows them).
+
+**Caveat on any timing taken from this sandbox:** a local `node server.js` boot
+prewarms ~28 orgs and generates annual-report snapshots against the *production*
+Metabase, so measurements taken while one is running are inflated by your own
+load. Kill local servers before timing anything.
+
+That spread is the argument for the slow/broken split: the same card, unchanged,
+can answer in 8s or not at all depending on ambient load, so a single timeout is
+not evidence of anything. It is a real performance problem, deliberately NOT
+alerted on — see the `materialized` index section. Amber on the admin panel and
 nowhere else.
 
 ## Per-org card entries a shared card shadows (know this before trusting ORGS)
