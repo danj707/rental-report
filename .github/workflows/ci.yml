@@ -16,7 +16,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'npm'
 
       - name: Syntax-check root JS (node --check)
         run: |
@@ -27,8 +26,10 @@ jobs:
       # @opentelemetry/sdk-node and friends at the top. Puppeteer's Chromium is
       # skipped: it is ~150MB and every require("puppeteer") in server.js is
       # lazy, inside the function that renders a PDF, so booting never needs it.
+      # `npm install`, not `npm ci`: package-lock.json is gitignored in this
+      # repo, and npm ci requires a lockfile.
       - name: Install dependencies (for the boot check)
-        run: npm ci --no-audit --no-fund
+        run: npm install --no-audit --no-fund
         env:
           PUPPETEER_SKIP_DOWNLOAD: 'true'
           PUPPETEER_SKIP_CHROMIUM_DOWNLOAD: 'true'
