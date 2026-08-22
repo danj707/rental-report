@@ -1419,11 +1419,11 @@ async function fetchGlDetailRows(orgId, startDate, endDate) {
 const REPORT_DEPENDENCIES = {
   facility: {
     tables: ["reservation","reservation_court","reservation_user","court","location","facility_rental","order_item","users"],
-    columns: { reservation:["id","starts_at","ends_at","location_id","reservation_type","canceled_at","facility_rental_id","session_id","organization_id"], court:["id","name","court_number","type","location_id","organization_id"], location:["id","name","organization_id","timezone"], facility_rental:["id","name","attendee_count","organization_id"], order_item:["id","booking_id","reservation_id","applied_pricing","name","product_type","organization_id","parent_order_item_id"], users:["id","first_name","last_name","email","phone"] }
+    columns: { reservation:["id","starts_at","ends_at","location_id","reservation_type","canceled_at","facility_rental_id","session_id","organization_id"], court:["id","court_number","type","location_id","organization_id"], location:["id","name","organization_id","timezone"], facility_rental:["id","name","attendee_count","organization_id"], order_item:["id","booking_id","reservation_id","applied_pricing","name","product_type","organization_id","parent_order_item_id"], users:["id","first_name","last_name","email","phone"] }
   },
   gl: {
     tables: ["gl_entry","gl_account","order_item","order_item_transaction","payment","refund","transaction_event","desk_location"],
-    columns: { gl_entry:["id","date","amount_cents","gl_entry_type","gl_account_id","payment_id","refund_id","order_item_id","organization_id","order_item_transaction_id"], gl_account:["id","name","gl_code","organization_id"], order_item:["id","name","applied_pricing","product_type","gl_code","organization_id"], order_item_transaction:["id","order_item_id","amount","type","organization_id"], payment:["id","amount","payment_method_type","gateway","status","transaction_event_id","organization_id"], refund:["id","amount","organization_id"], transaction_event:["id","type","source","desk_location_id","settled_at","organization_id"], desk_location:["id","name","organization_id"] }
+    columns: { gl_entry:["id","date","amount_cents","gl_entry_type","gl_account_id","payment_id","refund_id","order_item_id","organization_id","order_item_transaction_id"], gl_account:["id","name","gl_code","organization_id"], order_item:["id","name","applied_pricing","product_type","gl_code","organization_id"], order_item_transaction:["id","order_item_id","amount","payment_id","refund_id","confirmed_at","organization_id"], payment:["id","amount","payment_method_type","gateway","status","transaction_event_id","organization_id"], refund:["id","amount","organization_id"], transaction_event:["id","type","source","desk_location_id","settled_at","organization_id"], desk_location:["id","name","organization_id"] }
   },
   programs: {
     tables: ["program","section","session","booking","order_item","users","profile","program_activity","activity","section_season","season","location","attendance_event","registration_window","waitlist"],
@@ -1439,7 +1439,7 @@ const REPORT_DEPENDENCIES = {
   },
   "court-utilization": {
     tables: ["reservation","reservation_court","court","court_slot","location","court_sport"],
-    columns: { reservation:["id","starts_at","ends_at","reservation_type","canceled_at","location_id","organization_id"], reservation_court:["reservation_id","court_id"], court:["id","name","court_number","type","location_id","organization_id"], court_slot:["id","court_id","day_of_week","open_from","open_to","type","organization_id"], location:["id","name","timezone","organization_id"] }
+    columns: { reservation:["id","starts_at","ends_at","reservation_type","canceled_at","location_id","organization_id"], reservation_court:["reservation_id","court_id"], court:["id","court_number","type","location_id","organization_id"], court_slot:["id","court_id","day_of_week","open_from","open_to","type","organization_id"], location:["id","name","timezone","organization_id"] }
   },
   fasttrack: {
     tables: ["booking","section","session","program","users","order_item","registration_window"],
@@ -1467,7 +1467,7 @@ const REPORT_DEPENDENCIES = {
   },
   rentalcalendar: {
     tables: ["reservation","reservation_court","court","location","facility_rental","session","section","program","activity","program_activity"],
-    columns: { reservation:["id","starts_at","ends_at","reservation_type","canceled_at","location_id","facility_rental_id","session_id","organization_id"], court:["id","name","court_number","type","location_id"], location:["id","name","timezone"], session:["id","section_id","starts_at","ends_at"] }
+    columns: { reservation:["id","starts_at","ends_at","reservation_type","canceled_at","location_id","facility_rental_id","session_id","organization_id"], court:["id","court_number","type","location_id"], location:["id","name","timezone"], session:["id","section_id","starts_at","ends_at"] }
   },
   overview: {
     tables: ["booking","membership","payment","refund","order_item","reservation","attendance_event","users","organization_association","gl_entry"],
@@ -1477,7 +1477,22 @@ const REPORT_DEPENDENCIES = {
     tables: ["booking","payment","order_item","membership","reservation","gl_entry","gl_account"],
     columns: { booking:["id","status","created_at","canceled_at","organization_id"], payment:["id","amount","status","created_at","organization_id"], gl_entry:["id","date","amount_cents","gl_entry_type","gl_account_id","organization_id"] }
   },
+  // Added 2026-08-22 after this report broke and nothing noticed: the product
+  // dropped the `class` model, taking class_activity and section.class_id with
+  // it, and the card returned HTTP 400 for days. The activity gate is now
+  // section.program_id -> program -> program_activity -> activity, so those are
+  // the names worth watching.
+  "ice-calendar": {
+    tables: ["booking","organization","users","session","section","location","program","program_activity","activity"],
+    columns: { booking:["id","type","status","session_id","section_id","customer_user_id","participant_user_id","canceled_at","deleted_at","organization_id"], session:["id","section_id","location_id","starts_at","ends_at","deleted_at"], section:["id","name","program_id","is_rec_managed","deleted_at"], program:["id","deleted_at"], program_activity:["program_id","activity_id","deleted_at"], activity:["id","name","deleted_at"], location:["id","name"], organization:["id","name","config"], users:["id","first_name","last_name","email"] }
+  },
 };
+// COVERAGE IS NOT COMPLETE, and the gap is the point of this comment. The
+// catalog watchdog can only warn about tables and columns declared above, so
+// any report missing from this map is invisible to it — which is exactly how
+// the ice-calendar break got through. `GET /api/admin/schema-break` lists the
+// report types with no entry here; add one whenever you learn a report's real
+// dependencies (writing or fixing its card is the moment you know them).
 // Helper: all unique tables across all report types
 function getWatchedTables() { const s = new Set(); for (const r of Object.values(REPORT_DEPENDENCIES)) r.tables.forEach(t => s.add(t)); return [...s].sort(); }
 // Helper: which report types depend on a specific table.column
@@ -2185,6 +2200,11 @@ async function runHealthCheck(forceAll, failuresOnly) {
       const suppressWindow = 6 * 3600000;
       if (!prevWasError || (now - lastAlerted >= suppressWindow)) {
         newFailures.push({ org: slug, report: rt, error: entry.error, tier: entry.tier });
+        // A card that stopped answering IS a broken report — the cause (dropped
+        // table, changed enum, timeout) matters less than someone knowing. The
+        // ice-calendar outage in August 2026 sat unnoticed for three days
+        // because this only ever went to email, behind a feature flag.
+        logEvent(slug, rt, "report-down", null, { error: entry.error });
         entry.lastAlertedAt = ts;
       } else {
         entry.lastAlertedAt = prev.lastAlertedAt;
@@ -2910,18 +2930,192 @@ function logEvent(org, report, event, reqOrIp, extra) {
   }
 }
 
+// ── Breaking schema drift: the catalog watchdog ───────────────────────
+// The old drift check (checkSchemaDrift, above) diffs the COLUMNS OF A REPORT'S
+// RESULT SET against a stored baseline. Two problems, both learned the hard way:
+//
+//   1. It fires on ADDED columns, which have never broken a report. That noise
+//      is why nobody was reading the drift log.
+//   2. It can only see drift in a query that SUCCEEDS. When the product dropped
+//      the `class` model in August 2026, Apex's ice-calendar card returned HTTP
+//      400 on every request — no rows, so extractColumns() returned null and the
+//      checker returned early. A dropped TABLE is structurally invisible to it.
+//
+// This check works the other way round: it reads the database catalog and asks
+// whether everything the reports DEPEND ON still exists. Additions cannot
+// trigger it, because it only ever asks about things already in
+// REPORT_DEPENDENCIES. Removals are always breaking, and the dependency map
+// says exactly which reports break.
+//
+// Requires MB_SCHEMA_CATALOG_UUID — the public UUID of the parameterless
+// "Schema Catalog" card (Metabase 20263). Unset ⇒ the check is inert, like
+// every other card-backed feature here.
+const SCHEMA_CATALOG_UUID = process.env.MB_SCHEMA_CATALOG_UUID || "";
+const CATALOG_DRIFT_FILE = path.join(DATA_DIR, "catalog-drift.json");
+
+// Pure: given the live catalog, what does REPORT_DEPENDENCIES ask for that is
+// no longer there? `catalog` is { tableName: Set<columnName> }.
+// Exported shape is deliberately flat so the Slack message and the admin panel
+// can both render it without re-deriving anything.
+function diffCatalogAgainstDependencies(catalog, deps) {
+  const missingTables = [];
+  const missingColumns = [];
+  const tableReports = (t) => Object.entries(deps)
+    .filter(([, r]) => r.tables && r.tables.includes(t))
+    .map(([name]) => name);
+
+  const watched = new Set();
+  for (const r of Object.values(deps)) (r.tables || []).forEach(t => watched.add(t));
+
+  for (const table of [...watched].sort()) {
+    if (!catalog[table]) {
+      missingTables.push({ table, reports: tableReports(table) });
+      continue;   // its columns are moot — do not report 40 missing columns for one dropped table
+    }
+    // Columns are declared per table inside each report, so walk the reports.
+    const cols = catalog[table];
+    const seen = new Set();
+    for (const [reportName, r] of Object.entries(deps)) {
+      for (const col of (r.columns && r.columns[table]) || []) {
+        if (cols.has(col)) continue;
+        const key = table + "." + col;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        missingColumns.push({
+          table, column: col,
+          reports: Object.entries(deps)
+            .filter(([, rr]) => rr.columns && rr.columns[table] && rr.columns[table].includes(col))
+            .map(([n]) => n),
+        });
+      }
+    }
+  }
+  return { missingTables, missingColumns };
+}
+
+// A stable identity for "the same breakage", so a daily check does not re-alert
+// every morning about a table that is still gone.
+function catalogDriftFingerprint(d) {
+  return [
+    ...d.missingTables.map(t => "T:" + t.table),
+    ...d.missingColumns.map(c => "C:" + c.table + "." + c.column),
+  ].sort().join("|");
+}
+
+async function checkCatalogDrift(opts) {
+  opts = opts || {};
+  if (!SCHEMA_CATALOG_UUID) {
+    return { ok: false, skipped: "MB_SCHEMA_CATALOG_UUID not set" };
+  }
+  let rows;
+  try {
+    const resp = await fetch(`${METABASE_URL}/api/public/card/${SCHEMA_CATALOG_UUID}/query/json`,
+      { signal: AbortSignal.timeout(60000) });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    rows = await resp.json();
+    if (!Array.isArray(rows)) throw new Error("catalog card did not return rows");
+  } catch (e) {
+    console.warn(`[catalog] fetch failed: ${e.message}`);
+    return { ok: false, error: e.message };
+  }
+  if (rows.length === 0) {
+    // An empty catalog would make EVERY dependency look dropped. Never alert on
+    // that — it is a broken read, not 200 dropped tables.
+    console.warn("[catalog] card returned zero rows — treating as a failed read, not as drift");
+    return { ok: false, error: "catalog card returned no rows" };
+  }
+
+  // Bare table names, because REPORT_DEPENDENCIES is written that way. `public`
+  // wins over `materialized` if a name appears in both.
+  const catalog = {};
+  for (const r of rows) {
+    const table = r.Table || r.table;
+    const schema = r.Schema || r.schema;
+    if (!table) continue;
+    const cols = new Set(String(r.Columns || r.columns || "").split(",").map(s => s.trim()).filter(Boolean));
+    if (!catalog[table] || schema === "public") catalog[table] = cols;
+  }
+
+  const drift = diffCatalogAgainstDependencies(catalog, REPORT_DEPENDENCIES);
+  const fingerprint = catalogDriftFingerprint(drift);
+  const previous = readJSON(CATALOG_DRIFT_FILE, {});
+  const changed = previous.fingerprint !== fingerprint;
+  const state = {
+    checkedAt: new Date().toISOString(),
+    tablesInCatalog: Object.keys(catalog).length,
+    fingerprint,
+    missingTables: drift.missingTables,
+    missingColumns: drift.missingColumns,
+  };
+  writeJSON(CATALOG_DRIFT_FILE, state);
+
+  const breaking = drift.missingTables.length + drift.missingColumns.length;
+  if (breaking === 0) {
+    console.log(`[catalog] clean — ${Object.keys(catalog).length} tables, every dependency present`);
+    return { ok: true, breaking: 0, state };
+  }
+
+  console.error(`[catalog] BREAKING: ${drift.missingTables.length} table(s), ${drift.missingColumns.length} column(s) missing`);
+  // Only shout when the breakage is NEW (or on an explicit manual run). A table
+  // that is still gone tomorrow is not news; the admin panel carries the state.
+  if (changed || opts.force) {
+    const affected = [...new Set([
+      ...drift.missingTables.flatMap(t => t.reports),
+      ...drift.missingColumns.flatMap(c => c.reports),
+    ])].sort();
+    logEvent("_platform", "schema", "schema-break", null, {
+      missingTables: drift.missingTables.map(t => t.table),
+      missingColumns: drift.missingColumns.map(c => c.table + "." + c.column),
+      reports: affected,
+    });
+  }
+  return { ok: true, breaking, state, alerted: changed || !!opts.force };
+}
+
+// Hourly is pointless for a schema — nothing changes that fast, and a failed
+// read would retry 24 times a day. Once a morning, after the caches warm.
+cron.schedule("30 5 * * *", () => { checkCatalogDrift().catch(() => {}); });
+
+// GET /api/admin/schema-break — current state, for the admin panel.
+// POST /api/admin/schema-break/check — run it now (password-gated, since it
+// hits Metabase and can post to Slack).
+app.get("/api/admin/schema-break", (req, res) => {
+  res.json({
+    configured: !!SCHEMA_CATALOG_UUID,
+    watchedTables: getWatchedTables().length,
+    reportsCovered: Object.keys(REPORT_DEPENDENCIES).length,
+    uncoveredReports: REPORT_TYPES.filter(r => !REPORT_DEPENDENCIES[r]),
+    last: readJSON(CATALOG_DRIFT_FILE, null),
+  });
+});
+app.post("/api/admin/schema-break/check", express.json(), async (req, res) => {
+  const pw = req.body && req.body.password;
+  if (!DASHBOARD_PASSWORD) return res.status(503).json({ error: "Set DASHBOARD_PASSWORD to run this on demand" });
+  if (pw !== DASHBOARD_PASSWORD) return res.status(403).json({ error: "Invalid password" });
+  try {
+    res.json(await checkCatalogDrift({ force: true }));
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ── Slack activity notifications ─────────────────────────────────────────────
 // Posts high-signal events to a Slack Incoming Webhook (env SLACK_WEBHOOK_URL).
 // Inert if the env var is unset. Fire-and-forget — never blocks or breaks logging.
 // To change what pings Slack, edit SLACK_NOTIFY. High-frequency events (view/fetch)
 // are debounced per org+report so Slack isn't a firehose.
-const SLACK_NOTIFY = new Set(["created", "org-deleted", "pdf", "excel", "print", "summary", "game", "map", "view", "insights", "insights-feedback", "chat-feedback", "feedback", "vote", "update-vote", "munis", "permits", "email"]);
-const SLACK_DEBOUNCE_MS = { view: 30 * 60 * 1000, fetch: 30 * 60 * 1000 };
+const SLACK_NOTIFY = new Set(["created", "org-deleted", "schema-break", "report-down", "pdf", "excel", "print", "summary", "game", "map", "view", "insights", "insights-feedback", "chat-feedback", "feedback", "vote", "update-vote", "munis", "permits", "email"]);
+const SLACK_DEBOUNCE_MS = { view: 30 * 60 * 1000, fetch: 30 * 60 * 1000,
+  // A broken report stays broken. The health check only reports NEW failures,
+  // but a flapping card would otherwise post every hour.
+  "report-down": 6 * 60 * 60 * 1000, "schema-break": 6 * 60 * 60 * 1000 };
 const SLACK_DEFAULT_DEBOUNCE_MS = 60 * 1000; // dedup rapid double-fires of one-off events
 const slackLastSent = new Map();
 const SLACK_EVENT_META = {
   created: { emoji: "🏢", verb: "New org created" },
   "org-deleted": { emoji: "🗑️", verb: "DELETED from the reporting project" },
+  "schema-break": { emoji: "🧨", verb: "schema break" },
+  "report-down": { emoji: "🔴", verb: "report is failing" },
   pdf:     { emoji: "📄", verb: "exported a PDF of" },
   excel:   { emoji: "📊", verb: "exported to Excel" },
   summary: { emoji: "🧾", verb: "exported a Summary of" },
@@ -2987,6 +3181,20 @@ function notifySlack(rec) {
         ? `merge <${rec.pr}|the removal PR> to make it stick`
         : "\u26A0\uFE0F still in server.js \u2014 it WILL return on the next deploy";
     text = `${meta.emoji} *${who}* (\`${rec.org}\`) ${meta.verb} \u2014 ${state}${mention}`;
+  } else if (rec.event === "schema-break") {
+    // The whole value of this alert is naming the dropped thing and who breaks,
+    // so the reader does not have to go and diff a catalog themselves.
+    const mention = SLACK_MENTION_USER_ID ? ` <@${SLACK_MENTION_USER_ID}>` : "";
+    const gone = []
+      .concat((rec.missingTables || []).map(t => "table `" + t + "`"))
+      .concat((rec.missingColumns || []).map(c => "`" + c + "`"));
+    const who = (rec.reports || []).length ? ` — breaks *${(rec.reports || []).join("*, *")}*` : "";
+    text = `${meta.emoji} *SCHEMA BREAK* — ${gone.slice(0, 8).join(", ")}`
+         + (gone.length > 8 ? ` and ${gone.length - 8} more` : "") + who + mention;
+  } else if (rec.event === "report-down") {
+    const mention = SLACK_MENTION_USER_ID ? ` <@${SLACK_MENTION_USER_ID}>` : "";
+    const why = rec.error ? ` — _${String(rec.error).slice(0, 160)}_` : "";
+    text = `${meta.emoji} ${orgName} (\`${rec.org}\`) *${rec.report}* is failing${why}${mention}`;
   } else if (rec.event === "email") {
     const to = rec.email ? ` to \`${rec.email}\`` : "";
     const trig = rec.trigger === "manual" ? " · manual send" : ` · ${rec.schedule || "scheduled"} queue`;
@@ -6541,9 +6749,17 @@ app.get("/:org/:report/api/data", resolveOrg, async (req, res) => {
     }
 
     // ── Schema drift detection (live fetches only) ──
+    // Only REMOVED columns are worth interrupting anyone for: a new column has
+    // never broken a report, and alerting on additions is what made this log
+    // unreadable. Additions are still recorded by checkSchemaDrift for the
+    // admin panel — they just do not page.
     const schemaDrift = checkSchemaDrift(reportType, data, orgSlug);
-    if (schemaDrift) {
+    if (schemaDrift && schemaDrift.severity === "breaking") {
       sendDriftAlert([schemaDrift], orgSlug, reportType).catch(() => {});
+      logEvent(orgSlug, reportType, "schema-break", req, {
+        missingColumns: schemaDrift.removed.map(c => reportType + " result: " + c),
+        reports: [reportType],
+      });
     }
 
     const result = {
