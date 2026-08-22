@@ -352,7 +352,21 @@ wrong:
    `/api/admin/report-activity` reports `failsafe: true` when that's in effect.
 
 `/api/admin/report-activity` is the first place to look when an alert did NOT
-fire. Deliberately not the cache's `isReportHot()` (3+ opens in 7 days) — right
+fire.
+
+**The bands are now in `REPORT_DEPENDENCIES` (2026-08-22).** They were the
+largest hole in that map for exactly the reason above — no `view` events, so they
+looked unused, while ~15 orgs each depend on them. Tables and columns were read
+out of the live card SQL (19174 selfservice, 18547 program-checkins, 17722
+program-demographics, 18151 checkins, 17953 section-detail, 17298 calendar) and
+validated against the schema-catalog card before shipping: **22 reports declared,
+54 tables, 700 column declarations, zero missing.** Only `annual-report` (dead)
+and `qoq` (derived from the GL card, no card of its own) have no entry.
+
+Two of calendar's dependencies have *already* been through the break this map
+exists to catch — `class`/`class_activity` and `section_price` were both dropped
+and the card migrated — which is the argument for declaring the rest before it
+happens again. Deliberately not the cache's `isReportHot()` (3+ opens in 7 days) — right
 question for holding rows in memory, wrong one for "does anyone rely on this".
 
 Usage as of 2026-08-22 (log starts 2026-05-22, so ~3 months): dead are

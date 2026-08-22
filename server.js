@@ -1511,6 +1511,60 @@ const REPORT_DEPENDENCIES = {
     tables: ["booking","organization","users","session","section","location","program","program_activity","activity"],
     columns: { booking:["id","type","status","session_id","section_id","customer_user_id","participant_user_id","canceled_at","deleted_at","organization_id"], session:["id","section_id","location_id","starts_at","ends_at","deleted_at"], section:["id","name","program_id","is_rec_managed","deleted_at"], program:["id","deleted_at"], program_activity:["program_id","activity_id","deleted_at"], activity:["id","name","deleted_at"], location:["id","name"], organization:["id","name","config"], users:["id","first_name","last_name","email"] }
   },
+
+  // Calendar (card 17298) — the most-viewed report on the platform. Already
+  // migrated off the dropped `class`/`class_activity`, and off the dropped
+  // `section_price` (price now comes from section.pricing_policy jsonb), so two
+  // of its dependencies have already been through exactly the break this map
+  // exists to catch. Status labels read capacity_reached_at/waitlist_config off
+  // BOTH session and section; eligibility comes from the three eligibility_rule*
+  // tables. court is joined only to reach its location.
+  calendar: {
+    tables: ["session","section","program","program_activity","activity","registration_window","eligibility_rule_group_lookup","eligibility_rule_group","eligibility_rule","court","location","organization"],
+    columns: { session:["starts_at","ends_at","section_id","location_id","deleted_at","capacity_reached_at","waitlist_config"], section:["id","name","description","program_id","organization_id","deleted_at","canceled_at","section_code","publish_at","pricing_policy","registration_mode","capacity_reached_at","waitlist_config"], program:["id","name","description","deleted_at"], program_activity:["program_id","activity_id","deleted_at"], activity:["id","name","deleted_at"], registration_window:["section_id","opens_at","closes_at","deleted_at","type"], eligibility_rule_group_lookup:["section_id","eligibility_rule_group_id","deleted_at"], eligibility_rule_group:["id","deleted_at","type"], eligibility_rule:["eligibility_rule_group_id","deleted_at","type","attribute_name","attribute_type","attribute_value","comparison_operator"], court:["id","location_id","deleted_at"], location:["id","name","organization_id","deleted_at","timezone"], organization:["id"] }
+  },
+  // ── Program Summary bands (added 2026-08-22) ──────────────────────────────
+  // These six are fetched by public/programs.html for ~15 orgs apiece and have
+  // ZERO `view` events by design, so they look unused and were the largest hole
+  // in this map: a dropped table under any of them would have broken the
+  // most-used surface on the platform with nothing to say so. `retention` was
+  // already declared above. Every table and column below was read out of the
+  // live card SQL and validated against the schema-catalog card before shipping
+  // — 37 tables, 173 columns, zero missing.
+  // Self-Service & Staff Workload band (card 19174). Channel split keys on
+  // users.role LIKE '%external-admin%' and payment.payment_method_type, so
+  // losing either silently reclassifies every order as self-service.
+  selfservice: {
+    tables: ["order","payment","users"],
+    columns: { order:["id","created_at","organization_id","deleted_at","creator_user_id"], payment:["order_id","status","payment_method_type","amount"], users:["id","role"] }
+  },
+  // Program Check-Ins band (card 18547). attendance_event.target_type/target_id
+  // is the polymorphic link to session — the join is invalid without both.
+  "program-checkins": {
+    tables: ["attendance_event","session","section","program"],
+    columns: { attendance_event:["type","target_id","target_type","participant_user_id","organization_id","created_at"], session:["id","section_id","organization_id","deleted_at","canceled_at"], section:["id","name","section_code","program_id","organization_id","deleted_at","canceled_at","archived_at"], program:["id","name","organization_id","deleted_at"] }
+  },
+  // Program Demographics band (card 17722). Already migrated off the dropped
+  // `class`/`class_activity` to program/program_activity; profile carries the
+  // demographic columns (dob, gender, grade) and `users payer` the geography.
+  "program-demographics": {
+    tables: ["booking","session","section","program","program_activity","activity","section_season","season","users","profile"],
+    columns: { booking:["participant_user_id","customer_user_id","session_id","section_id","created_at","is_fast_track","organization_id","deleted_at","canceled_at","status"], session:["id","section_id","deleted_at","organization_id"], section:["id","name","organization_id","deleted_at","program_id","registration_mode"], program:["id","name","deleted_at"], program_activity:["program_id","activity_id","deleted_at"], activity:["id","name","organization_id","deleted_at"], section_season:["id","section_id","season_id","deleted_at","updated_at","created_at"], season:["id","name","deleted_at"], users:["id","first_name","last_name","email","deleted_at","household_id","city","state","zip_code"], profile:["user_id","deleted_at","date_of_birth","gender","grade"] }
+  },
+  // Memberships Check-In band (card 18151). Reads the materialized
+  // membership_and_pass_plans_report for the product name, and resolves
+  // attendance_event.check_in_method_id polymorphically against membership/pass.
+  checkins: {
+    tables: ["attendance_event","users","membership","membership_and_pass_plans_report","pass","pass_schema","desk_location","location"],
+    columns: { attendance_event:["created_at","participant_user_id","creator_user_id","check_in_method_id","check_in_method_type","desk_location_id","organization_id","type"], users:["id","rec_id","first_name","last_name","email","deleted_at"], membership:["id","group_id"], membership_and_pass_plans_report:["group_id","organization_id","product_name"], pass:["id","pass_schema_id"], pass_schema:["id","name"], desk_location:["id","name","organization_id"], location:["organization_id","timezone"] }
+  },
+  // Session Registration Revenue drill-down (card 17953). Charged comes from
+  // order_item.applied_pricing->result->>finalCents (NOT order_item.price) and
+  // outstanding from payment_plan_installment.paid_at/waived_at.
+  "section-detail": {
+    tables: ["organization","location","section","session","booking","order_item","order","order_item_transaction","payment","payment_plan_installment","program","users"],
+    columns: { organization:["id","name"], location:["organization_id","deleted_at","timezone"], section:["id","organization_id","deleted_at","name","registration_mode","program_id"], session:["id","organization_id","section_id","deleted_at","canceled_at","starts_at","ends_at"], booking:["id","organization_id","deleted_at","participant_user_id","type","session_id","section_id","created_at","canceled_at"], order_item:["id","booking_id","organization_id","deleted_at","parent_order_item_id","order_id","payment_plan","applied_pricing"], order:["id","organization_id","deleted_at"], order_item_transaction:["order_item_id","organization_id","deleted_at","amount","payment_id","refund_id"], payment:["id","status"], payment_plan_installment:["order_item_id","organization_id","amount_cents","paid_at","waived_at"], program:["id","name","organization_id"], users:["id","first_name","last_name","email"] }
+  },
 };
 // COVERAGE IS NOT COMPLETE, and the gap is the point of this comment. The
 // catalog watchdog can only warn about tables and columns declared above, so
