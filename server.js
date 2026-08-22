@@ -3076,6 +3076,14 @@ async function checkCatalogDrift(opts) {
 // read would retry 24 times a day. Once a morning, after the caches warm.
 cron.schedule("30 5 * * *", () => { checkCatalogDrift().catch(() => {}); });
 
+// And once shortly after boot. Two reasons, both learned today: a daily cron
+// means a newly-shipped watchdog sits unverified until tomorrow morning, and a
+// deploy is exactly when a schema assumption is most likely to have just been
+// invalidated. It costs one ~1s catalog query per boot, and the fingerprint
+// means a still-broken schema does not re-alert on every restart. Delayed so it
+// does not compete with the startup prewarm.
+setTimeout(() => { checkCatalogDrift().catch(() => {}); }, 90 * 1000).unref?.();
+
 // The two /api/admin/schema-break routes live with the other admin endpoints,
 // further down: `app` does not exist yet at this point in the file, and
 // registering a route above it is a boot crash, not a syntax error — which
