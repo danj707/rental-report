@@ -242,6 +242,7 @@
   .loading-wrap { padding: 40px 0; }
 </style>
 <script src="/report-refresh.js" defer></script>
+<script src="/open-pdf.js" defer></script>
 </head>
 <body>
 
@@ -551,7 +552,9 @@ function App() {
     ws['!cols'] = [{wch:28},{wch:28},{wch:14},{wch:11},{wch:16},{wch:20},{wch:8},{wch:8},{wch:10},{wch:14},{wch:10},{wch:10},{wch:12},{wch:8},{wch:12},{wch:13},{wch:16},{wch:20},{wch:16},{wch:14},{wch:16},{wch:11},{wch:11}];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Waitlist Demand');
-    XLSX.writeFile(wb, orgSlug + '-waitlist-demand.xlsx');
+    // Handed to a popup to save rather than written straight from here — a
+    // download started by a sandboxed iframe is silently dropped. See open-pdf.js.
+    saveWorkbookViaPopup(XLSX, wb, orgSlug + '-waitlist-demand.xlsx');
   }
 
   const orgName = (rows && rows.length > 0 && rows[0].orgName) || orgSlug;

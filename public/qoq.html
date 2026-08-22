@@ -358,6 +358,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <script src="/juice-loader.js" defer></script>
 <script src="/report-refresh.js" defer></script>
+<script src="/open-pdf.js" defer></script>
 </head>
 <body>
   <div id="root"></div>
@@ -792,7 +793,9 @@
         }
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, 'QoQ Comparison');
-        XLSX.writeFile(wb, `qoq-${orgSlug}-${labelA.replace(' ','-')}-vs-${labelB.replace(' ','-')}.xlsx`);
+        // Handed to a popup to save rather than written straight from here — a
+        // download started by a sandboxed iframe is silently dropped. See open-pdf.js.
+        saveWorkbookViaPopup(XLSX, wb, `qoq-${orgSlug}-${labelA.replace(' ','-')}-vs-${labelB.replace(' ','-')}.xlsx`);
       }
 
       /* ── PDF ── */

@@ -472,6 +472,7 @@
     }
 </script>
 <script src="/report-refresh.js" defer></script>
+<script src="/open-pdf.js" defer></script>
 </head>
 <body>
 <div id="root"></div>
@@ -1157,7 +1158,9 @@ function App() {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Court Utilization');
     const fname = `court-utilization_${orgSlug}_${loadedStart || startDate}_${loadedEnd || endDate}.xlsx`;
-    XLSX.writeFile(wb, fname);
+    // Handed to a popup to save rather than written straight from here — a
+    // download started by a sandboxed iframe is silently dropped. See open-pdf.js.
+    saveWorkbookViaPopup(XLSX, wb, fname);
   }, [grouped, orgSlug, loadedStart, loadedEnd, startDate, endDate]);
 
   // ── Export: PDF (via /api/pdf server route) ───────────────────────

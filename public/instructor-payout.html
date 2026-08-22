@@ -854,7 +854,9 @@ function App() {
       const ws = XLSX.utils.aoa_to_sheet([h,...d]);
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, 'Instructor Payout');
-      XLSX.writeFile(wb, `instructor-payout-${orgSlug}-${new Date().toISOString().slice(0,10)}.xlsx`);
+      // Handed to a popup to save rather than written straight from here — a
+      // download started by a sandboxed iframe is silently dropped. See open-pdf.js.
+      saveWorkbookViaPopup(XLSX, wb, `instructor-payout-${orgSlug}-${new Date().toISOString().slice(0,10)}.xlsx`);
       fetch(withToken(`/${orgSlug}/${reportType}/api/log`), { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({action:'excel',rows:filtered.length}) }).catch(()=>{});
     }
     if (typeof XLSX === 'undefined') { const s = document.createElement('script'); s.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'; s.onload=go; document.head.appendChild(s); } else go();

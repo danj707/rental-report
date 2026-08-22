@@ -901,7 +901,9 @@ function App() {
         : [{ wch: 34 }, { wch: 9 }, { wch: 13 }, { wch: 13 }, { wch: 15 }];
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, 'Product Totals');
-      XLSX.writeFile(wb, `products-by-item-${loadedStart || 'all'}_${loadedEnd || 'all'}.xlsx`);
+      // Handed to a popup to save rather than written straight from here — a
+      // download started by a sandboxed iframe is silently dropped. See open-pdf.js.
+      saveWorkbookViaPopup(XLSX, wb, `products-by-item-${loadedStart || 'all'}_${loadedEnd || 'all'}.xlsx`);
       return;
     }
     const header = byDesk
@@ -930,7 +932,9 @@ function App() {
       : [{ wch: 12 }, { wch: 34 }, { wch: 9 }, { wch: 13 }, { wch: 13 }, { wch: 15 }];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Daily Products');
-    XLSX.writeFile(wb, `products-daily-${loadedStart || 'all'}_${loadedEnd || 'all'}.xlsx`);
+    // Handed to a popup to save rather than written straight from here — a
+    // download started by a sandboxed iframe is silently dropped. See open-pdf.js.
+    saveWorkbookViaPopup(XLSX, wb, `products-daily-${loadedStart || 'all'}_${loadedEnd || 'all'}.xlsx`);
   }
 
   const displayOrg = orgName || orgSlug;
