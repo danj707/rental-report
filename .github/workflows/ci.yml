@@ -60,3 +60,6 @@ jobs:
 
       - name: Report-activity spec (only alert on reports someone actually uses)
         run: node scripts/report-activity.spec.js
+
+      - name: Watchdog switches spec (OFF means off everywhere)
+        run: node scripts/watchdog-flags.spec.js
