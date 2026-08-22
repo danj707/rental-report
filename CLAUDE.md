@@ -34,9 +34,14 @@ The mechanism lives in `server.js` under "Slack activity notifications":
   `ALLOWED` list. Pass extra context as query params and thread them through as the
   `extra` object into `logEvent`.
 
-Wired so far: `created`, `pdf`, `excel`, `print`, `summary` (🧾 lite export),
-`game` (🕹️ hidden banner mini-game plays), `view`, `insights`, feedback/votes,
-`email`. Inert unless `SLACK_WEBHOOK_URL` is set (prod has it).
+Wired so far: `created`, `org-deleted`, `pdf`, `excel`, `print`, `summary`
+(🧾 lite export), `game` (🕹️ hidden banner mini-game plays), `view`, `insights`,
+feedback/votes, `email`, `munis`, `permits`, `map`, and three platform alerts —
+`report-down` (a report's card stopped answering, links straight to the report
+with its token), `schema-break` (a table or column the reports depend on is
+gone), `param-drift` (a date template tag is no longer typed Date). The three
+alerts debounce at 6h and @-mention if `SLACK_MENTION_USER_ID` is set. Inert
+unless `SLACK_WEBHOOK_URL` is set (prod has it).
 
 ## Metabase card updates via API/MCP — template-tag types reset (IMPORTANT)
 
@@ -49,6 +54,15 @@ and flip each date variable (Start Date / End Date) back to type Date.** Batch
 card updates so Dan can do all the flips in one visit, verify with a
 server-style parameterized request afterward, and never assume a card update is
 done until that verification passes.
+
+**This is now watched automatically (PR #134).** `checkCardParamTypes()` in
+server.js reads every served card's public definition daily at 5:40 and once
+after boot, and Slack-alerts (`param-drift`) on any `start_date`/`end_date` that
+is not a `date/*` type. It reads definitions only — no query is executed, so it
+cannot time out on a heavy card, and it cannot fix anything: only the Metabase UI
+can flip a tag back to Date. Check it on demand at `/api/admin/param-drift`.
+It does NOT replace the verification above; it is the net for when someone
+forgets.
 
 ## Card sign-off — a report MUST return live results before you call it done (IMPORTANT)
 
@@ -292,12 +306,35 @@ service **rental-report** (`7ee6e149-bd03-41db-bd42-aa8a751b1000`).
   `list-deployments` on the PR environment instead — status `SUCCESS` means it's
   up for Dan's browser even though I can't reach it.
 
-## Admin "What's New" popup
+## Admin "What's New" popup — REMOVED from admin (PR #134)
 
-The dashboard "What's New" popup shows *published* project-updates (the same ones
-org admins see) — it is EMPTY until at least one update is published, and each PR
-preview is a fresh environment with its own (empty) data store. So a brand-new
-preview shows no popup until you publish an update in it first.
+Feature updates are for org admins, not for the person who wrote them, so the
+popup now appears only on the ORG dashboards (`public/org.html`). The
+`adminWhatsNew` block is gone from the admin dashboard in server.js.
+
+Still true of the org-side popup: it shows *published* project-updates, so it is
+EMPTY until at least one update is published, and each PR preview is a fresh
+environment with its own (empty) data store — a brand-new preview shows no popup
+until you publish an update in it first.
+
+## Per-org card entries a shared card shadows (know this before trusting ORGS)
+
+`ORGS[slug][report].mbUuid` is NOT necessarily the card the app queries. A
+`SHARED_UUIDS[report]` card wins for every report **except `gl`**, where a
+per-org card takes precedence. 28 per-org entries are currently shadowed this
+way — dead config the report routes never read, and at least two of them
+(clarksville and smyrna `roster`, cards 15712 and 15709) still JOIN the dropped
+`class` table and fail outright.
+
+**Always ask `resolveReportCard(slug, rt)`** rather than reading `mbUuid`
+directly. The daily health check did not, which is how it reported
+clarksville/roster, smyrna/roster and norman/products as down on 2026-08-22
+while all three loaded fine — it was grading reports against legacy cards.
+Fixed in PR #134; `scripts/card-drift.spec.js` fails if that regresses.
+
+The shadowed list is on `/api/admin/param-drift`. Consequence worth remembering:
+removing a report from `SHARED_UUIDS` will silently start serving whatever stale
+per-org card was hiding underneath it.
 
 ## Facility report undercounts revenue — invoice_v2 gap (OPEN, spec'd 2026-08-06)
 
