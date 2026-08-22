@@ -526,6 +526,7 @@
     }
   </script>
 <script src="/report-refresh.js" defer></script>
+<script src="/open-pdf.js" defer></script>
 </head>
 <body>
 <div id="root"></div>
@@ -1607,24 +1608,15 @@ function App() {
   }
 
   function downloadPdf() {
-    setPdfLoading(true);
     const qs = new URLSearchParams();
     if (loadedStart) qs.set('start_date', loadedStart);
     if (loadedEnd)   qs.set('end_date',   loadedEnd);
     if (search && search.trim()) qs.set('search', search.trim());
     if (tab !== 'summary') qs.set('tab', tab);
     if (tab === 'detail' && detailSectionId) qs.set('section_id', detailSectionId);
-    fetch(withToken(`${basePath}/api/pdf?${qs}`))
-      .then(r => r.blob())
-      .then(blob => {
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        a.download = `programs-${tab === 'detail' ? 'section-detail' : tab === 'participants' ? 'participants' : 'revenue'}-${loadedStart || 'report'}.pdf`;
-        a.click();
-        URL.revokeObjectURL(a.href);
-      })
-      .catch(err => alert('PDF failed: ' + err.message))
-      .finally(() => setPdfLoading(false));
+    // Opened in its own window rather than downloaded — a download started by a
+    // sandboxed iframe is silently dropped. See open-pdf.js.
+    openReportPdf(withToken(`${basePath}/api/pdf?${qs}`), { label: 'Programs' });
   }
 
   function toXlDate(s) { if (!s) return ''; const p = String(s).split('T')[0].split('-'); return p.length === 3 ? new Date(+p[0], +p[1]-1, +p[2]) : s; }
