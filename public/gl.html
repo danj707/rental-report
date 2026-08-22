@@ -1756,14 +1756,26 @@ function App() {
       return;
     }
     const sig = allDesks.join('\u0000');
-    // A saved view or URL param asked for a specific set — applied once.
-    const requested = (intent.desks && intentDesksApplied.current !== intent.seq) ? intent.desks : null;
-    if (requested) intentDesksApplied.current = intent.seq;
-    const dataChanged = loadedDesksSig.current !== sig;
-    if (!requested && !dataChanged) return;   // a plain checkbox click — leave it be
+    // A bumped `seq` means a view was deliberately applied — including "Default
+    // view", which asks for no desks at all. An apply always RESETS this
+    // dimension: to the requested subset if the view names one, otherwise to
+    // everything. Without that, picking Default view (or a view that filters
+    // only tenders) left the previous desk filter silently in place.
+    // `previous` is deliberately not passed: an apply is not a merge.
+    if (intentDesksApplied.current !== intent.seq) {
+      intentDesksApplied.current = intent.seq;
+      loadedDesksSig.current = sig;
+      setSelectedDesks(reconcileFilterSelection({
+        available: allDesks, previous: null, requested: intent.desks, dataChanged: true,
+      }));
+      return;
+    }
+    // No apply, and the same desks as last time ⇒ a plain checkbox click.
+    // Leave the selection exactly as the user set it, empty included.
+    if (loadedDesksSig.current === sig) return;
     loadedDesksSig.current = sig;
     setSelectedDesks(prev =>
-      reconcileFilterSelection({ available: allDesks, previous: prev, requested, dataChanged }) || prev);
+      reconcileFilterSelection({ available: allDesks, previous: prev, requested: null, dataChanged: true }) || prev);
   }, [rows, hasDesk, allDesks, intent]);
 
   // Payment-method selection: reset to "all" on fresh data, honor a `methods`
@@ -1779,13 +1791,19 @@ function App() {
     }
     const keys = availableMethods.map(m => m.key);
     const sig = keys.join('\u0000');
-    const requested = (intent.methods && intentMethodsApplied.current !== intent.seq) ? intent.methods : null;
-    if (requested) intentMethodsApplied.current = intent.seq;
-    const dataChanged = loadedMethodsSig.current !== sig;
-    if (!requested && !dataChanged) return;   // a plain checkbox click — leave it be
+    // As above: an apply resets, a click does not. See the desk effect.
+    if (intentMethodsApplied.current !== intent.seq) {
+      intentMethodsApplied.current = intent.seq;
+      loadedMethodsSig.current = sig;
+      setSelectedMethods(reconcileFilterSelection({
+        available: keys, previous: null, requested: intent.methods, dataChanged: true,
+      }));
+      return;
+    }
+    if (loadedMethodsSig.current === sig) return;
     loadedMethodsSig.current = sig;
     setSelectedMethods(prev =>
-      reconcileFilterSelection({ available: keys, previous: prev, requested, dataChanged }) || prev);
+      reconcileFilterSelection({ available: keys, previous: prev, requested: null, dataChanged: true }) || prev);
   }, [rows, availableMethods, intent]);
 
   // ── Saved views: current state, dirty check, and the CRUD calls ─────
@@ -1907,6 +1925,9 @@ function App() {
     setRowMenu(null);
   }
 
+  // "Default view" is the absence of a saved view: no filters at all. Bumping
+  // `seq` with every dimension null is what makes the effects above reset each
+  // one back to everything.
   function clearView() {
     setIntent(prev => ({ seq: prev.seq + 1, desks: null, methods: null }));
     setGlFilter('');
