@@ -235,12 +235,6 @@
     .cell-zero { color: #c8c8c4; }
     .cell-neg  { color: #dc2626; }
 
-    /* ── Chart ── */
-    .chart-wrap {
-      margin-top: 4px;
-      position: relative;
-    }
-    .chart-wrap canvas { max-width: 100%; }
 
     /* ── Footer ── */
     .report-footer {
@@ -434,7 +428,7 @@
 
     /* ── Print ── */
     @media print {
-      .toolbar, .mode-bar { display: none !important; }
+      .toolbar { display: none !important; }
       body { background: #fff; }
       .page { box-shadow: none; margin: 0; padding: 12px 16px; max-width: 100%; }
       table.compact { font-size: 9px; }
@@ -637,14 +631,16 @@
 <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 
 <script type="text/babel">
 const { useState, useEffect, useMemo, useCallback, useRef } = React;
 
 const LS_REFUND   = 'gl_refund_breakdown_v2';
-const LS_VIEW     = 'gl_view_mode_v2';
+// Bar and pie were retired 2026-08-22 (Dan: permanently). The key is cleared
+// rather than merely ignored, so nobody debugging localStorage later finds a
+// stored 'pie' and goes looking for the mode that would honour it.
+try { localStorage.removeItem('gl_view_mode_v2'); } catch (_) {}
 const LS_LOCS     = 'gl_show_locations_v1';
 const NO_DESK_LABEL = '(No desk location)';
 
@@ -884,112 +880,6 @@ function SummaryCard({ label, value, color = 'blue' }) {
     <div className={`summary-card ${color}`}>
       <div className="card-label">{label}</div>
       <div className="card-value">{display}</div>
-    </div>
-  );
-}
-
-// ── Chart ─────────────────────────────────────────────────────────────
-function GlChart({ rows, viewMode, hasCCSplit }) {
-  const canvasRef = useRef(null);
-  const chartInst = useRef(null);
-
-  useEffect(() => {
-    if (!canvasRef.current || !rows || rows.length === 0) return;
-    if (chartInst.current) { chartInst.current.destroy(); chartInst.current = null; }
-
-    const ctx = canvasRef.current.getContext('2d');
-    const labels = rows.map(r => (r.accountName || r.glCode || '?').replace(/\s+/g, ' ').trim());
-
-    if (viewMode === 'bar') {
-      const datasets = hasCCSplit ? [
-        { label: 'CC Online',    data: rows.map(r => r.ccOnlinePayments),   backgroundColor: '#4f46e5' },
-        { label: 'CC In-Person', data: rows.map(r => r.ccInPersonPayments), backgroundColor: '#7c3aed' },
-        { label: 'Cash',         data: rows.map(r => r.cashPayments),        backgroundColor: '#d97706' },
-        { label: 'Check',        data: rows.map(r => r.checkPayments),       backgroundColor: '#475569' },
-      ] : [
-        { label: 'Credit Card', data: rows.map(r => r.ccPayments),    backgroundColor: '#4f46e5' },
-        { label: 'Cash',        data: rows.map(r => r.cashPayments),  backgroundColor: '#d97706' },
-        { label: 'Check',       data: rows.map(r => r.checkPayments), backgroundColor: '#475569' },
-      ];
-
-      chartInst.current = new Chart(ctx, {
-        type: 'bar',
-        data: { labels, datasets },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          plugins: { legend: { position: 'top' } },
-          scales: {
-            y: { ticks: { callback: v => '$' + Number(v).toLocaleString() } },
-            x: { ticks: { maxRotation: 40, font: { size: 10 } } },
-          },
-        },
-      });
-    } else if (viewMode === 'pie') {
-      const buckets = hasCCSplit
-        ? [
-            ['CC Online',    sumField(rows, 'ccOnlinePayments'),   '#4f46e5'],
-            ['CC In-Person', sumField(rows, 'ccInPersonPayments'), '#7c3aed'],
-            ['Cash',         sumField(rows, 'cashPayments'),        '#d97706'],
-            ['Check',        sumField(rows, 'checkPayments'),       '#475569'],
-            ['Free',         sumField(rows, 'freePayments'),        '#10b981'],
-            ['Org Credit',   sumField(rows, 'orgCreditPayments'),   '#3b82f6'],
-            ['Scholarship',  sumField(rows, 'scholarshipPayments'), '#a855f7'],
-            ['Gift Card',    sumField(rows, 'giftCardPayments'),   '#f59e0b'],
-            ['Other',        sumField(rows, 'otherPayments'),      '#6b7280'],
-          ]
-        : [
-            ['Credit Card',  sumField(rows, 'ccPayments'),          '#4f46e5'],
-            ['Cash',         sumField(rows, 'cashPayments'),         '#d97706'],
-            ['Check',        sumField(rows, 'checkPayments'),        '#475569'],
-            ['Free',         sumField(rows, 'freePayments'),         '#10b981'],
-            ['Org Credit',   sumField(rows, 'orgCreditPayments'),    '#3b82f6'],
-            ['Scholarship',  sumField(rows, 'scholarshipPayments'),  '#a855f7'],
-            ['Gift Card',    sumField(rows, 'giftCardPayments'),     '#f59e0b'],
-            ['Other',        sumField(rows, 'otherPayments'),        '#6b7280'],
-          ];
-
-      const active = buckets.filter(([, v]) => v > 0);
-
-      chartInst.current = new Chart(ctx, {
-        type: 'doughnut',
-        data: {
-          labels: active.map(([k]) => k),
-          datasets: [{
-            data: active.map(([, v]) => v),
-            backgroundColor: active.map(([,, c]) => c),
-            borderWidth: 2,
-            borderColor: '#fff',
-          }],
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          plugins: {
-            legend: { position: 'right' },
-            tooltip: {
-              callbacks: {
-                label: ctx => {
-                  const val = ctx.parsed;
-                  const total = ctx.dataset.data.reduce((a, b) => a + b, 0);
-                  return ` $${val.toFixed(2)} (${((val / total) * 100).toFixed(1)}%)`;
-                },
-              },
-            },
-          },
-        },
-      });
-    }
-
-    return () => { if (chartInst.current) { chartInst.current.destroy(); chartInst.current = null; } };
-  }, [rows, viewMode, hasCCSplit]);
-
-  const height = viewMode === 'pie' ? 340 : 380;
-  const maxWidth = viewMode === 'pie' ? '520px' : '100%';
-
-  return (
-    <div className="chart-wrap" style={{ height, maxWidth, margin: viewMode === 'pie' ? '0 auto' : '0' }}>
-      <canvas ref={canvasRef} />
     </div>
   );
 }
@@ -1603,10 +1493,6 @@ function App() {
   const [showLocations, setShowLocations] = useState(
     () => localStorage.getItem(LS_LOCS) !== 'false'  // default ON
   );
-  const [viewMode, setViewMode] = useState(
-    () => localStorage.getItem(LS_VIEW) || 'table'
-  );
-
   // Desk-location filter (session-only; resets when new data loads)
   const [showEmailModal, setShowEmailModal] = useState(false);
   const [emailAddr, setEmailAddr] = useState('');
@@ -1647,7 +1533,6 @@ function App() {
 
   useEffect(() => { if (params._print === '1') document.body.classList.add('print-mode'); }, []);
   useEffect(() => { localStorage.setItem(LS_REFUND,   showRefunds);   }, [showRefunds]);
-  useEffect(() => { localStorage.setItem(LS_VIEW,     viewMode);      }, [viewMode]);
   useEffect(() => { localStorage.setItem(LS_LOCS,     showLocations); }, [showLocations]);
 
   // ── Fetch ───────────────────────────────────────────────────────────
@@ -2645,18 +2530,10 @@ function App() {
           />
         )}
 
-        <div className="divider" />
-
-        {!isTylerActive && ['table','bar','pie'].map(mode => (
-          <button
-            key={mode}
-            className={viewMode === mode ? 'active' : ''}
-            style={{fontSize:11, padding:'4px 10px'}}
-            onClick={() => setViewMode(mode)}
-          >
-            {mode === 'table' ? '☰ Table' : mode === 'bar' ? '▐ Bar' : '◉ Pie'}
-          </button>
-        ))}
+        {/* The divider rode in with the retired Table/Bar/Pie buttons; keep one
+            here so the Tyler toggle is not jammed against the filters if that
+            export is ever switched back on for an org. */}
+        {tylerEnabled && <div className="divider" />}
 
         {tylerEnabled && (
           <button
@@ -3079,11 +2956,8 @@ function App() {
             {/* Summary cards */}
             {renderSummaryCards()}
 
-            {/* Content: table or chart */}
-            {viewMode === 'table'
-              ? renderTable()
-              : <GlChart rows={displayRows} viewMode={viewMode} hasCCSplit={hasCCSplit} />
-            }
+            {/* Content: the table. Bar and pie were retired 2026-08-22. */}
+            {renderTable()}
           </>
         )}
 
