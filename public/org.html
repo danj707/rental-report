@@ -787,7 +787,55 @@
     return ''; // health badges shown only on admin portal
   }
 
+  // The campsite map is the one PUBLIC report here, and the only one where the
+  // token does more than authenticate: it unlocks drag-to-edit. So this card
+  // must NOT carry tokenQS — a staff member copying the URL out of their
+  // address bar to send to a camper would otherwise hand over an editable map
+  // AND the org token that opens every other report. The link is token-free,
+  // the badge says so, and "Copy link" gives the shareable URL deliberately.
+  function publicMapCardHTML(r, isPinned) {
+    var m = REPORT_META[r] || { label: r, icon: '🏕️', desc: '' };
+    var publicUrl = location.origin + '/' + slug + '/' + r;
+    return '<div class="card' + (isPinned ? ' pinned' : '') + '" style="align-items:flex-start">'
+      + '<a href="/' + slug + '/' + r + '" style="display:flex;flex:1;gap:12px;text-decoration:none;color:inherit;align-items:center">'
+        + '<div class="card-icon">' + m.icon + '</div>'
+        + '<div class="card-body">'
+          + '<div class="card-label">' + m.label
+            + '<span style="margin-left:6px;font-size:10px;font-weight:700;color:#047857;background:#d1fae5;border-radius:9px;padding:1px 7px;vertical-align:middle">PUBLIC</span>'
+          + '</div>'
+          + '<div class="card-desc">' + m.desc + ' &middot; no sign-in needed, safe to share with campers</div>'
+        + '</div>'
+      + '</a>'
+      + '<button type="button" data-map-url="' + publicUrl + '" onclick="copyPublicMapLink(this)" '
+        + 'title="Copy the public link (no token, view-only)" '
+        + 'style="flex:none;margin-left:8px;font-size:11px;padding:5px 9px;border:1px solid #d1d5db;background:#fff;border-radius:6px;cursor:pointer;color:#374151">'
+        + '&#128203; Copy link</button>'
+    + '</div>';
+  }
+
+  function copyPublicMapLink(btn) {
+    var url = btn.getAttribute('data-map-url');
+    var done = function () {
+      var was = btn.innerHTML;
+      btn.innerHTML = '\u2713 Copied';
+      setTimeout(function () { btn.innerHTML = was; }, 1800);
+      // Standing rule: notable interactions ping the Slack activity feed.
+      try {
+        fetch('/' + slug + '/campmap/api/log?event=campmap-share',
+              { method: 'POST', keepalive: true });
+      } catch (_) {}
+    };
+    // navigator.clipboard needs a secure context; fall back to a prompt so the
+    // link is still obtainable over plain http or in an older browser.
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(url).then(done, function () { window.prompt('Public map link:', url); });
+    } else {
+      window.prompt('Public map link:', url);
+    }
+  }
+
   function cardHTML(r, isPinned) {
+    if (r === 'campmap') return publicMapCardHTML(r, isPinned);
     var m = REPORT_META[r] || { label: r, icon: '📄', desc: '' };
     return '<a href="/' + slug + '/' + r + tokenQS + '" class="card' + (isPinned ? ' pinned' : '') + '">'
       + '<div class="card-icon">' + m.icon + '</div>'

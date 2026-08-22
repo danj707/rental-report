@@ -1929,9 +1929,19 @@ const DEFAULT_HIDDEN_REPORTS = new Set([]);
 // keep working) but no longer rendered as a clickable card on org/admin grids.
 // Globally not-surfaced reports. Routes/code stay intact; they just aren't shown
 // anywhere. chat is deprecated in favor of Rec's "Seb" AI skill.
-// campmap (the standalone campsite map page) is retired in favor of the
-// Facilities hub's Camping tab, which serves the same map + editing for any
-// org with a campmap seed.
+// campmap is UN-RETIRED (Dan, 2026-08-22) — "bring back the DC camping public
+// map for users". It was retired in favour of the Facilities hub's Camping tab,
+// which is the right call for ADMINS but not for campers: the Camping tab lives
+// behind the org token, and the standalone page is the only public, no-token
+// view of a campground. Nothing was deleted when it was retired, and it never
+// stopped working — /:org/campmap has been serving 200s to ~24 visitors a month
+// via direct links the whole time. Bringing it back is surfacing it, not
+// rebuilding it.
+//
+// Surfaced ONLY for orgs with a campmap seed (see the org landing route), the
+// same no-per-org-opt-in shape as the facility permit chip: the card appears
+// where there is a map to show and nowhere else, so the other ~26 orgs never
+// see a link to an empty map.
 //
 // report-wizard is UN-retired (Dan, 2026-08-20). It was shelved alongside chat
 // as "deprecated in favor of Seb", but unlike chat it does something Seb does
@@ -1939,7 +1949,7 @@ const DEFAULT_HIDDEN_REPORTS = new Set([]);
 // schemas. Nothing was deleted when it was retired — the page, the generate
 // route and the feedback route all stayed — so bringing it back is removing it
 // from this Set, not a rebuild.
-const RETIRED_REPORTS = new Set(["court-utilization", "chat", "campmap"]);
+const RETIRED_REPORTS = new Set(["court-utilization", "chat"]);
 
 // ── Dynamic orgs (added via dashboard UI) ────────────────────────────
 // Loaded at startup and merged into ORGS; also updated at runtime.
@@ -3602,7 +3612,7 @@ setTimeout(() => { checkCardParamTypes().catch(() => {}); }, 150 * 1000).unref?.
 // Inert if the env var is unset. Fire-and-forget — never blocks or breaks logging.
 // To change what pings Slack, edit SLACK_NOTIFY. High-frequency events (view/fetch)
 // are debounced per org+report so Slack isn't a firehose.
-const SLACK_NOTIFY = new Set(["created", "org-deleted", "watchdog", "schema-break", "param-drift", "report-down", "pdf", "excel", "print", "summary", "game", "map", "view", "insights", "insights-feedback", "chat-feedback", "feedback", "vote", "update-vote", "munis", "permits", "email"]);
+const SLACK_NOTIFY = new Set(["created", "org-deleted", "watchdog", "schema-break", "param-drift", "report-down", "campmap-share", "pdf", "excel", "print", "summary", "game", "map", "view", "insights", "insights-feedback", "chat-feedback", "feedback", "vote", "update-vote", "munis", "permits", "email"]);
 const SLACK_DEBOUNCE_MS = { view: 30 * 60 * 1000, fetch: 30 * 60 * 1000,
   // A broken report stays broken. The health check only reports NEW failures,
   // but a flapping card would otherwise post every hour.
@@ -3616,6 +3626,7 @@ const SLACK_EVENT_META = {
   "schema-break": { emoji: "🧨", verb: "schema break" },
   "param-drift": { emoji: "\uD83D\uDCC5", verb: "date parameter reset to Text" },
   watchdog: { emoji: "\uD83D\uDD07", verb: "watchdog switched" },
+  "campmap-share": { emoji: "\uD83C\uDFD5\uFE0F", verb: "copied the public campsite map link for" },
   "report-down": { emoji: "🔴", verb: "report is failing" },
   pdf:     { emoji: "📄", verb: "exported a PDF of" },
   excel:   { emoji: "📊", verb: "exported to Excel" },
@@ -5460,6 +5471,10 @@ app.get("/api/org-visibility/:slug", (req, res) => {
     if (RETIRED_REPORTS.has(rt)) continue; // globally not surfaced
     available.push({ type: rt, visible: !hidden.has(rt) });
   }
+  // campmap is offered only where the org has a seed, so it is only toggleable
+  // there — listing it for every org would put a switch on the panel that
+  // controls nothing.
+  if (CAMPMAP_SEEDS[slug]) available.push({ type: "campmap", visible: !hidden.has("campmap") });
   // Default-hidden WIP reports use inverted visibility semantics
   available.push({ type: "facilities", visible: !reportHiddenForOrg(slug, "facilities") });
   res.json({ slug, available, hiddenCount: hidden.size });
@@ -5687,7 +5702,7 @@ app.post("/:org/:report/api/log", resolveOrg, (req, res) => {
   const { event, game, location, view } = req.query;
   // view-apply is events.jsonl-only by design — it is not in SLACK_NOTIFY, so
   // logEvent records it without pinging the feed (see the saved-views block).
-  const ALLOWED = ["excel", "print", "summary", "game", "map", "view-apply"];
+  const ALLOWED = ["excel", "print", "summary", "game", "map", "view-apply", "campmap-share"];
   if (!ALLOWED.includes(event)) return res.status(400).json({ ok: false, error: "Unknown event" });
   const extra = event === "game" && game ? { game: String(game).slice(0, 60) }
               : event === "map" && location ? { location: String(location).slice(0, 80) }
@@ -10912,6 +10927,11 @@ app.get("/:org", async (req, res, next) => {
   if (!reportHiddenForOrg(slug, 'facilities')) available.push('facilities');
   // Instructor Lessons — programs-pipeline report, per-org pilot (SF)
   if (lessonsReportEnabled(slug) && !orgHidden.has('lessons')) available.push('lessons');
+  // Campsite map — a PUBLIC page (no token), so it is offered wherever the org
+  // has a campmap seed and nowhere else. Seed presence is the whole gate: an org
+  // without one has no sites to plot, and a card linking to an empty map is
+  // worse than no card.
+  if (CAMPMAP_SEEDS[slug] && !orgHidden.has('campmap')) available.push('campmap');
   const orgConfig = {
     slug,
     displayName: org.displayName || `${slugTitle} Parks & Recreation`,
