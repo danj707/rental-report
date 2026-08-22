@@ -188,8 +188,10 @@ test("the health check skips inactive reports instead of probing them", () => {
 
 test("an inactive report can never raise report-down, even on a forced run", () => {
   const body = slice("    if (entry.status === \"error\") {", "    existing.reports[storeSlug][rt] = entry;");
-  assert.ok(body.includes("const alertable = shared ? isReportTypeActive(rt) : isReportActive(slug, rt)"),
+  assert.ok(body.includes("const active = shared ? isReportTypeActive(rt) : isReportActive(slug, rt)"),
     "the alert branch needs its own activity gate");
+  assert.ok(body.includes('const alertable = active && watchdogEnabled("reportDownAlerts")'),
+    "…and the admin switch is ANDed with it, not a replacement for it");
   assert.ok(/if \(alertable && ripe && !quiet\)/.test(body),
     "newFailures and the report-down event must both be behind `alertable`");
 });
@@ -316,7 +318,7 @@ test("an inactive failure is recorded but kept out of the failures list", () => 
   // Otherwise it inflates the 'N total failing' count and the failure email.
   assert.ok(src.includes('if (e.status === "error" && !e.inactive) existing.failures.push'),
     "the failures rebuild must exclude inactive entries");
-  assert.ok(src.includes("if (!alertable) entry.inactive = true;"),
+  assert.ok(src.includes("if (!active) entry.inactive = true;"),
     "the entry must be flagged so the panel can explain itself");
 });
 

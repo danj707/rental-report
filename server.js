@@ -2437,8 +2437,10 @@ async function runHealthCheck(forceAll, failuresOnly) {
       // A forced run probes everything, including reports nobody uses — record
       // the error, but never alert on one. Belt and braces: the scheduled runs
       // already skip inactive reports before they get here.
-      const alertable = shared ? isReportTypeActive(rt) : isReportActive(slug, rt);
-      if (!alertable) entry.inactive = true;
+      const active = shared ? isReportTypeActive(rt) : isReportActive(slug, rt);
+      if (!active) entry.inactive = true;
+      // Switched off in the admin panel ⇒ record the failure, never announce it.
+      const alertable = active && watchdogEnabled("reportDownAlerts");
 
       // Consecutive failures, not one. These cards sit close to their timeout:
       // clarksville/roster returned its 1337 rows in 7.7s one hour and 59.8s
@@ -2745,9 +2747,45 @@ async function sendDriftAlert(alerts, orgSlug, reportType) {
 }
 
 // ── Feature Flags ────────────────────────────────────────────────────
-const DEFAULT_FLAGS = { emailSubscriptions: true, cachingEnabled: true, maintenanceMode: false };
+const DEFAULT_FLAGS = {
+  emailSubscriptions: true, cachingEnabled: true, maintenanceMode: false,
+  // ── Watchdog switches (added 2026-08-22, at Dan's request) ──────────────
+  // A watchdog you cannot turn off is one you learn to ignore. Each of these
+  // kills BOTH the scheduled check and its alert, so flipping one off is the
+  // whole thing going quiet — not a check that keeps running and keeps a red
+  // mark on the panel. Default ON: a fresh deploy watches by default, and only
+  // a deliberate toggle stops it.
+  schemaBreakAlerts: true,   // dropped table/column watchdog  → `schema-break`
+  paramDriftAlerts: true,    // date tag reset to Text          → `param-drift`
+  reportDownAlerts: true,    // a card that cannot answer       → `report-down`
+};
+
+// The ONLY place an alert event is mapped to its switch. Anything not listed is
+// unswitched and always allowed — activity pings must never be gated by this.
+const ALERT_FLAG_BY_EVENT = {
+  "schema-break": "schemaBreakAlerts",
+  "param-drift":  "paramDriftAlerts",
+  "report-down":  "reportDownAlerts",
+};
+
+// What each switch costs when it is off, in one place — used by the Slack notice
+// and mirrored by the confirm dialog in the dashboard.
+const WATCHDOG_FLAG_META = {
+  schemaBreakAlerts: { label: "Schema Drift", consequence: "a dropped table or column that breaks a live report will not be reported" },
+  paramDriftAlerts:  { label: "Date Tag Drift", consequence: "a card date tag reset to Text will not be reported, and the report will serve stale cache" },
+  reportDownAlerts:  { label: "Report Down", consequence: "a report whose card cannot answer at all will not be reported" },
+};
+
 function getFlags() { return Object.assign({}, DEFAULT_FLAGS, readJSON(FLAGS_FILE, {})); }
 function setFlag(key, value) { const f = getFlags(); f[key] = value; writeJSON(FLAGS_FILE, f); _maintCache.ts = 0; return f; }
+
+// Is this watchdog switched on? Unknown/unswitched events are always on.
+function watchdogEnabled(flagKey) {
+  if (!flagKey) return true;
+  const v = getFlags()[flagKey];
+  return v === undefined ? true : !!v;
+}
+function alertEnabled(event) { return watchdogEnabled(ALERT_FLAG_BY_EVENT[event]); }
 
 // Maintenance mode is checked on every request, so cache the flag-file read
 // for a few seconds; setFlag busts the cache so a toggle applies instantly.
@@ -3303,6 +3341,11 @@ async function checkCatalogDrift(opts) {
   if (!SCHEMA_CATALOG_UUID) {
     return { ok: false, skipped: "MB_SCHEMA_CATALOG_UUID not set" };
   }
+  // Switched off in the admin panel: do not even read the catalog. A manual run
+  // (opts.force) still works as a diagnostic, and notifySlack keeps it silent.
+  if (!watchdogEnabled("schemaBreakAlerts") && !opts.force) {
+    return { ok: false, skipped: "schemaBreakAlerts is switched off" };
+  }
   let rows;
   try {
     const resp = await fetch(`${METABASE_URL}/api/public/card/${SCHEMA_CATALOG_UUID}/query/json`,
@@ -3477,6 +3520,9 @@ function cardParamDriftFingerprint(d) {
 
 async function checkCardParamTypes(opts) {
   opts = opts || {};
+  if (!watchdogEnabled("paramDriftAlerts") && !opts.force) {
+    return { ok: false, skipped: "paramDriftAlerts is switched off" };
+  }
   const served = collectServedCards();
   const entries = [...served.entries()];
   const defs = [];
@@ -3556,7 +3602,7 @@ setTimeout(() => { checkCardParamTypes().catch(() => {}); }, 150 * 1000).unref?.
 // Inert if the env var is unset. Fire-and-forget — never blocks or breaks logging.
 // To change what pings Slack, edit SLACK_NOTIFY. High-frequency events (view/fetch)
 // are debounced per org+report so Slack isn't a firehose.
-const SLACK_NOTIFY = new Set(["created", "org-deleted", "schema-break", "param-drift", "report-down", "pdf", "excel", "print", "summary", "game", "map", "view", "insights", "insights-feedback", "chat-feedback", "feedback", "vote", "update-vote", "munis", "permits", "email"]);
+const SLACK_NOTIFY = new Set(["created", "org-deleted", "watchdog", "schema-break", "param-drift", "report-down", "pdf", "excel", "print", "summary", "game", "map", "view", "insights", "insights-feedback", "chat-feedback", "feedback", "vote", "update-vote", "munis", "permits", "email"]);
 const SLACK_DEBOUNCE_MS = { view: 30 * 60 * 1000, fetch: 30 * 60 * 1000,
   // A broken report stays broken. The health check only reports NEW failures,
   // but a flapping card would otherwise post every hour.
@@ -3569,6 +3615,7 @@ const SLACK_EVENT_META = {
   "org-deleted": { emoji: "🗑️", verb: "DELETED from the reporting project" },
   "schema-break": { emoji: "🧨", verb: "schema break" },
   "param-drift": { emoji: "\uD83D\uDCC5", verb: "date parameter reset to Text" },
+  watchdog: { emoji: "\uD83D\uDD07", verb: "watchdog switched" },
   "report-down": { emoji: "🔴", verb: "report is failing" },
   pdf:     { emoji: "📄", verb: "exported a PDF of" },
   excel:   { emoji: "📊", verb: "exported to Excel" },
@@ -3606,6 +3653,11 @@ function reportUrl(slug, reportType) {
 
 function notifySlack(rec) {
   if (!SLACK_WEBHOOK_URL || !rec || !SLACK_NOTIFY.has(rec.event)) return;
+  // Backstop for the watchdog switches: the scheduled checks already skip when
+  // switched off, but a manual "Check now" is still useful as a diagnostic
+  // while a watchdog is muted — it just must not post. Activity pings have no
+  // entry in ALERT_FLAG_BY_EVENT, so they are never affected.
+  if (!alertEnabled(rec.event)) return;
   if (slackMuted(rec)) return;
   // Email sends key by recipient (+ status) so a daily run to several
   // subscribers posts each send, instead of collapsing them into one line.
@@ -3654,6 +3706,15 @@ function notifySlack(rec) {
     const who = (rec.reports || []).length ? ` — breaks *${(rec.reports || []).join("*, *")}*` : "";
     text = `${meta.emoji} *SCHEMA BREAK* — ${gone.slice(0, 8).join(", ")}`
          + (gone.length > 8 ? ` and ${gone.length - 8} more` : "") + who + mention;
+  } else if (rec.event === "watchdog") {
+    // Muting a safety net is worth a line in the channel — most of the cost of
+    // an off switch is forgetting you flipped it. Deliberately NOT in
+    // ALERT_FLAG_BY_EVENT: the notice that a watchdog went quiet must not be
+    // silenced by the very switch it is reporting.
+    const mention = rec.on ? "" : (SLACK_MENTION_USER_ID ? ` <@${SLACK_MENTION_USER_ID}>` : "");
+    text = rec.on
+      ? `\uD83D\uDD0A *${rec.label}* watchdog switched back ON`
+      : `${meta.emoji} *${rec.label}* watchdog switched OFF — ${rec.consequence}${mention}`;
   } else if (rec.event === "param-drift") {
     // Name the card and the tag, and say the fix out loud: only a human in the
     // Metabase UI can flip a tag back to Date, so an alert that just says
@@ -11210,6 +11271,7 @@ app.get("/api/admin/flags", (req, res) => { res.json(getFlags()); });
 // hits Metabase and can post to Slack).
 app.get("/api/admin/schema-break", (req, res) => {
   res.json({
+    enabled: watchdogEnabled("schemaBreakAlerts"),
     configured: !!SCHEMA_CATALOG_UUID,
     watchedTables: getWatchedTables().length,
     reportsCovered: Object.keys(REPORT_DEPENDENCIES).length,
@@ -11232,6 +11294,7 @@ app.post("/api/admin/schema-break/check", express.json(), async (req, res) => {
 // POST /api/admin/param-drift/check — run it now (password-gated).
 app.get("/api/admin/param-drift", (req, res) => {
   res.json({
+    enabled: watchdogEnabled("paramDriftAlerts"),
     cards: collectServedCards().size,
     shadowed: collectShadowedCards(),
     last: readJSON(CARD_PARAM_DRIFT_FILE, null),
@@ -11262,6 +11325,7 @@ app.get("/api/admin/report-activity", (req, res) => {
     }
   }
   res.json({
+    reportDownAlerts: watchdogEnabled("reportDownAlerts"),
     windowDays: a.windowDays,
     usageEvents: a.events,
     // events === 0 means the log is missing or the volume is fresh, and every
@@ -11414,8 +11478,18 @@ app.post("/api/admin/flags", express.json(), (req, res) => {
   if (!key || typeof value !== "boolean") {
     return res.status(400).json({ error: "Provide key (string) and value (boolean)" });
   }
+  // Allowlist: an unknown key used to "succeed" and write a flag nothing reads,
+  // which looks like a working toggle and is not one.
+  if (!Object.prototype.hasOwnProperty.call(DEFAULT_FLAGS, key)) {
+    return res.status(400).json({ error: `Unknown flag: ${key}` });
+  }
   const flags = setFlag(key, value);
   console.log(`[flags] ${key} set to ${value}`);
+  const wd = WATCHDOG_FLAG_META[key];
+  if (wd) {
+    logEvent("_platform", "watchdog", "watchdog", req,
+      { flag: key, on: value, label: wd.label, consequence: wd.consequence });
+  }
   res.json({ ok: true, flags });
 });
 
@@ -13476,6 +13550,51 @@ app.get("/", (req, res) => {
             <div id="flag-maintenance-status" style="font-size:11px;color:#999">Loading...</div>
           </div>
         </div>
+        <div style="margin-top:16px;padding-top:12px;border-top:1px solid #e8e5df">
+          <div style="font-size:12px;font-weight:700;color:#374151">Watchdogs</div>
+          <div style="font-size:11px;color:#6b7280;margin-top:3px;line-height:1.45">
+            Each switch stops the scheduled check <em>and</em> its Slack alert. Turning one
+            off does not leave a half-running check or a stale red mark on the panel.
+            &#8220;Check now&#8221; on the panels below still works while a watchdog is off,
+            so you can look without being paged.
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:12px;margin-top:12px">
+          <label style="position:relative;display:inline-block;width:44px;height:24px;cursor:pointer">
+            <input type="checkbox" id="flag-schemabreak" onchange="toggleFlag('schemaBreakAlerts',this.checked)"
+                   style="opacity:0;width:0;height:0" />
+            <span id="flag-schemabreak-track" style="position:absolute;top:0;left:0;right:0;bottom:0;background:#cbd5e1;border-radius:12px;transition:background .2s"></span>
+            <span id="flag-schemabreak-thumb" style="position:absolute;top:2px;left:2px;width:20px;height:20px;background:#fff;border-radius:50%;transition:transform .2s;box-shadow:0 1px 3px rgba(0,0,0,.2)"></span>
+          </label>
+          <div>
+            <div style="font-size:13px;font-weight:600;color:#111827">&#129512; Schema Drift &mdash; dropped tables/columns</div>
+            <div id="flag-schemabreak-status" style="font-size:11px;color:#999">Loading...</div>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:12px;margin-top:12px">
+          <label style="position:relative;display:inline-block;width:44px;height:24px;cursor:pointer">
+            <input type="checkbox" id="flag-paramdrift" onchange="toggleFlag('paramDriftAlerts',this.checked)"
+                   style="opacity:0;width:0;height:0" />
+            <span id="flag-paramdrift-track" style="position:absolute;top:0;left:0;right:0;bottom:0;background:#cbd5e1;border-radius:12px;transition:background .2s"></span>
+            <span id="flag-paramdrift-thumb" style="position:absolute;top:2px;left:2px;width:20px;height:20px;background:#fff;border-radius:50%;transition:transform .2s;box-shadow:0 1px 3px rgba(0,0,0,.2)"></span>
+          </label>
+          <div>
+            <div style="font-size:13px;font-weight:600;color:#111827">&#128197; Date Tag Drift &mdash; a Date tag reset to Text</div>
+            <div id="flag-paramdrift-status" style="font-size:11px;color:#999">Loading...</div>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:12px;margin-top:12px">
+          <label style="position:relative;display:inline-block;width:44px;height:24px;cursor:pointer">
+            <input type="checkbox" id="flag-reportdown" onchange="toggleFlag('reportDownAlerts',this.checked)"
+                   style="opacity:0;width:0;height:0" />
+            <span id="flag-reportdown-track" style="position:absolute;top:0;left:0;right:0;bottom:0;background:#cbd5e1;border-radius:12px;transition:background .2s"></span>
+            <span id="flag-reportdown-thumb" style="position:absolute;top:2px;left:2px;width:20px;height:20px;background:#fff;border-radius:50%;transition:transform .2s;box-shadow:0 1px 3px rgba(0,0,0,.2)"></span>
+          </label>
+          <div>
+            <div style="font-size:13px;font-weight:600;color:#111827">&#128201; Report Down &mdash; a card that cannot answer</div>
+            <div id="flag-reportdown-status" style="font-size:11px;color:#999">Loading...</div>
+          </div>
+        </div>
       </div>
       <div style="padding:14px 18px;background:#f5f4f1;border-top:1px solid #e8e5df">
         <div style="font-size:12px;font-weight:700;color:#374151;margin-bottom:10px">&#128279; Metabase Links</div>
@@ -14573,10 +14692,16 @@ app.get("/", (req, res) => {
       try {
         const r = await fetch('/api/admin/flags');
         const flags = await r.json();
-        updateFlagUI('email', flags.emailSubscriptions);
-        updateFlagUI('caching', flags.cachingEnabled);
-        updateFlagUI('maintenance', flags.maintenanceMode);
+        applyFlags(flags);
       } catch(e) { console.warn('[flags] load failed', e); }
+    }
+    function applyFlags(flags) {
+      updateFlagUI('email', flags.emailSubscriptions);
+      updateFlagUI('caching', flags.cachingEnabled);
+      updateFlagUI('maintenance', flags.maintenanceMode);
+      updateFlagUI('schemabreak', flags.schemaBreakAlerts);
+      updateFlagUI('paramdrift', flags.paramDriftAlerts);
+      updateFlagUI('reportdown', flags.reportDownAlerts);
     }
     function updateFlagUI(name, on) {
       const cb = document.getElementById('flag-'+name);
@@ -14592,14 +14717,29 @@ app.get("/", (req, res) => {
         var labels = {
           email: ['Enabled — email signups and subscriptions are active', 'Disabled — email features are hidden from all orgs'],
           caching: ['Enabled — background pre-warming, health checks, and polling active', 'Disabled — all background Metabase requests paused'],
-          maintenance: ['ON — every org page is showing the "Down for Maintenance" splash', 'Off — platform is live for all orgs']
+          maintenance: ['ON — every org page is showing the "Down for Maintenance" splash', 'Off — platform is live for all orgs'],
+          schemabreak: ['Watching — alerts if a table or column a live report depends on disappears', 'OFF — a dropped table will NOT be reported'],
+          paramdrift: ['Watching — alerts if a card\'s Start/End Date tag is no longer type Date', 'OFF — a tag reset to Text will NOT be reported'],
+          reportdown: ['Watching — alerts after 2 consecutive rounds where a card cannot answer', 'OFF — a broken report will NOT be reported']
         };
         var pair = labels[name] || ['Enabled', 'Disabled'];
         status.textContent = on ? pair[0] : pair[1];
         status.style.color = on ? onColor : '#999';
       }
     }
+    var WATCHDOG_FLAGS = {
+      schemaBreakAlerts: 'a dropped table or column that breaks a live report',
+      paramDriftAlerts: 'a card date tag silently reset to Text (the report then serves stale cache)',
+      reportDownAlerts: 'a report whose card can no longer answer at all'
+    };
     async function toggleFlag(key, value) {
+      // Say out loud what stops being noticed. Turning a watchdog off is a
+      // reasonable thing to do; doing it without knowing the cost is not.
+      if (WATCHDOG_FLAGS[key] && !value &&
+          !confirm('Turn this watchdog OFF?\\n\\nNothing will alert you to ' + WATCHDOG_FLAGS[key] +
+                   '.\\n\\nThe scheduled check stops too, so the panel will not quietly go red either. You can still run it on demand.')) {
+        loadFlags(); return;
+      }
       if (key === 'maintenanceMode' && value &&
           !confirm('Put the ENTIRE platform in maintenance mode?\\n\\nEvery org page will show the "Down for Maintenance" splash until you turn this back off. This admin panel stays reachable.')) {
         loadFlags(); return;
@@ -14612,7 +14752,7 @@ app.get("/", (req, res) => {
           body: JSON.stringify({ password: pwd, key: key, value: value })
         });
         const j = await r.json();
-        if (j.ok) { updateFlagUI('email', j.flags.emailSubscriptions); updateFlagUI('caching', j.flags.cachingEnabled); updateFlagUI('maintenance', j.flags.maintenanceMode); }
+        if (j.ok) { applyFlags(j.flags); }
         else { alert(j.error || 'Failed'); loadFlags(); }
       } catch(e) { alert('Error: ' + e.message); loadFlags(); }
     }

@@ -317,6 +317,42 @@ EMPTY until at least one update is published, and each PR preview is a fresh
 environment with its own (empty) data store — a brand-new preview shows no popup
 until you publish an update in it first.
 
+## Watchdog switches in the admin dashboard (Dan, 2026-08-22)
+
+Three toggles in the admin **Feature Flags** block, same switch as the existing
+flags and the same `DASHBOARD_PASSWORD` gate:
+
+| flag | stops |
+|---|---|
+| `schemaBreakAlerts` | the catalog check + `schema-break` |
+| `paramDriftAlerts` | the card date-tag check + `param-drift` |
+| `reportDownAlerts` | the `report-down` alert (health check still runs) |
+
+**OFF means off everywhere.** Each flag kills the scheduled check AND its alert,
+so flipping one does not leave a check burning Metabase time and painting the
+panel red. The gates live in three places on purpose: the scheduled entry point
+(`checkCatalogDrift` / `checkCardParamTypes` return `{skipped}`), the alert site
+(`alertable = active && watchdogEnabled(...)`), and `notifySlack()` as a
+backstop. All default **ON**, and a missing/unreadable flag file means watching
+— the failure direction must never be silence.
+
+- **A manual run still works while muted** (`opts.force` bypasses the scheduled
+  gate; `notifySlack` keeps it quiet). Looking without being paged is the point.
+- **`report-down` is different from the other two**: the health check keeps
+  running and the panel still shows the failure — only the announcement stops.
+  A card that cannot answer is worth seeing on the panel either way.
+- **Toggling posts to Slack** (`watchdog` event) with what stops being noticed,
+  and @-mentions on OFF. Deliberately NOT in `ALERT_FLAG_BY_EVENT` — the notice
+  that a watchdog went quiet must not be silenced by the switch it reports.
+  `WATCHDOG_FLAG_META` holds the label/consequence copy; the dashboard confirm
+  dialog says the same thing before the switch flips.
+- `/api/admin/flags` **POST now rejects an unknown key.** It used to accept any
+  key and write a flag nothing reads, which looks like a working toggle and is
+  not one. Only `DEFAULT_FLAGS` keys are settable.
+- State is readable on `/api/admin/schema-break` (`enabled`),
+  `/api/admin/param-drift` (`enabled`) and `/api/admin/report-activity`
+  (`reportDownAlerts`) — check these first when an alert did not fire.
+
 ## Alerts only fire for reports that are actually used (Dan, 2026-08-22)
 
 **Rule: don't alert on a report nobody uses; once it's used, it joins the alert
