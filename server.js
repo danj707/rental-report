@@ -1306,6 +1306,31 @@ const SHARED_UUIDS = {
   selfservice: "358f6b85-8af3-429e-ba24-ad2cd3207ac9",
 };
 
+// Which card does the app ACTUALLY query for a given org + report?
+//
+// This mirrors the resolution the data routes do: a shared card wins over a
+// per-org `mbUuid` for every report EXCEPT `gl`, where a per-org card takes
+// precedence. It matters because ORGS still carries per-org `mbUuid`s for
+// reports that were later moved to a shared card — 28 of them as of today.
+// Those entries are dead config: the report route never reads them.
+//
+// The health check used to probe `org[rt].mbUuid` directly, so for those 28 it
+// was probing cards nothing serves. That is how clarksville/roster,
+// smyrna/roster and norman/products came up as failures while the reports
+// themselves loaded fine — the legacy cards are genuinely broken (two still
+// JOIN the dropped `class` table), but the app has not read them in months.
+// Anything that wants to know whether a REPORT works has to ask this.
+function resolveReportCard(slug, rt) {
+  const org = ORGS[slug] || {};
+  const shared = rt === "gl"
+    ? (!org.gl?.mbUuid && !!SHARED_UUIDS.gl)
+    : !!SHARED_UUIDS[rt];
+  return {
+    mbUuid: shared ? SHARED_UUIDS[rt] : (org[rt]?.mbUuid || SHARED_UUIDS[rt]),
+    shared,
+  };
+}
+
 // Facilities hub — Summary tab data source. This is a dedicated public card
 // (org-parameterized, INITCAP booking_type/status, court.type site type, base
 // rental revenue) that — unlike the base `facility` card — INCLUDES canceled
@@ -2132,8 +2157,14 @@ async function runHealthCheck(forceAll, failuresOnly) {
 
   async function checkOne({ slug, rt, shared }) {
     const org = ORGS[slug];
-    const mbUuid = shared ? SHARED_UUIDS[rt] : org[rt]?.mbUuid;
-    const useSharedHC = !!shared;
+    // Probe the card the app actually serves this report from, not whatever
+    // `mbUuid` happens to sit in ORGS — see resolveReportCard(). Probing a
+    // shadowed legacy card reports a report as down while it loads fine.
+    const resolved = shared
+      ? { mbUuid: SHARED_UUIDS[rt], shared: true }
+      : resolveReportCard(slug, rt);
+    const mbUuid = resolved.mbUuid;
+    const useSharedHC = resolved.shared;
     if (!mbUuid) return;
     const storeSlug = shared ? "_shared" : slug;
     if (!existing.reports[storeSlug]) existing.reports[storeSlug] = {};
@@ -3084,6 +3115,149 @@ cron.schedule("30 5 * * *", () => { checkCatalogDrift().catch(() => {}); });
 // does not compete with the startup prewarm.
 setTimeout(() => { checkCatalogDrift().catch(() => {}); }, 90 * 1000).unref?.();
 
+// ── Card parameter-type drift ────────────────────────────────────────────────
+// The other half of "something changed under the reports". The catalog check
+// above catches the DATABASE moving (dropped table, dropped column). This one
+// catches the CARD moving — specifically the failure mode CLAUDE.md has warned
+// about for months and that nothing was actually watching for:
+//
+//   Updating a card's SQL through the Metabase API/MCP regenerates ALL template
+//   tags as **Text**. A `start_date` tag that was type Date silently becomes
+//   type Text, this server's `date/single` parameters stop matching, and the
+//   public card answers "An error occurred." The app then serves stale cache,
+//   so the report keeps rendering yesterday's numbers and nobody notices.
+//
+// Cheap to check: the card's own public definition states each parameter's
+// type. No query is executed, so this costs one small GET per card and cannot
+// time out a heavy report. Read-only — it never re-flips a type, because only
+// the Metabase UI can do that (see CLAUDE.md).
+const CARD_PARAM_DRIFT_FILE = path.join(DATA_DIR, "card-param-drift.json");
+
+// The tags this server sends as `date/single`. If one of these is not a date
+// type on the card, every request carrying it fails.
+const DATE_PARAM_TAGS = new Set(["start_date", "end_date"]);
+
+// Every card the app actually serves a report from, and who it serves.
+// Deduped by uuid — a shared card is one fetch, not 28.
+function collectServedCards() {
+  const byUuid = new Map();
+  const add = (mbUuid, label) => {
+    if (!mbUuid) return;
+    if (!byUuid.has(mbUuid)) byUuid.set(mbUuid, []);
+    byUuid.get(mbUuid).push(label);
+  };
+  for (const rt of Object.keys(SHARED_UUIDS)) add(SHARED_UUIDS[rt], rt + " (shared)");
+  for (const slug of Object.keys(ORGS)) {
+    for (const rt of REPORT_TYPES) {
+      const { mbUuid, shared } = resolveReportCard(slug, rt);
+      if (!shared) add(mbUuid, slug + "/" + rt);
+    }
+  }
+  return byUuid;
+}
+
+// The mirror image: per-org `mbUuid`s that a shared card now shadows, so nothing
+// reads them. Not an alert — it is dead config, and dead config is only a
+// problem when someone trusts it. Two of these (clarksville and smyrna roster,
+// cards 15712 and 15709) still JOIN the dropped `class` table, so removing a
+// report from SHARED_UUIDS would quietly start serving a broken card. Surfaced
+// on /api/admin/param-drift so the list is somewhere other than a grep.
+function collectShadowedCards() {
+  const out = [];
+  for (const slug of Object.keys(ORGS)) {
+    for (const rt of REPORT_TYPES) {
+      const own = ORGS[slug][rt]?.mbUuid;
+      if (!own) continue;
+      const { mbUuid, shared } = resolveReportCard(slug, rt);
+      if (shared && mbUuid !== own) out.push({ org: slug, report: rt, unused: own, servedBy: mbUuid });
+    }
+  }
+  return out;
+}
+
+// Pure: given fetched card definitions, which date tags are no longer dates?
+// `defs` is [{ mbUuid, served, parameters }]. A card that could not be read is
+// not drift — it is a failed read, and is reported separately.
+function diffCardParamTypes(defs) {
+  const wrongType = [];
+  for (const d of defs) {
+    for (const p of (d.parameters || [])) {
+      const tag = (Array.isArray(p.target) && Array.isArray(p.target[1]) ? p.target[1][1] : null) || p.slug;
+      if (!tag || !DATE_PARAM_TAGS.has(tag)) continue;
+      const type = String(p.type || "");
+      if (type.startsWith("date/")) continue;
+      wrongType.push({ mbUuid: d.mbUuid, tag, type: type || "(none)", served: d.served });
+    }
+  }
+  return { wrongType };
+}
+
+function cardParamDriftFingerprint(d) {
+  return d.wrongType.map(w => w.mbUuid + ":" + w.tag + ":" + w.type).sort().join("|");
+}
+
+async function checkCardParamTypes(opts) {
+  opts = opts || {};
+  const served = collectServedCards();
+  const entries = [...served.entries()];
+  const defs = [];
+  const unreadable = [];
+
+  for (let i = 0; i < entries.length; i += 4) {
+    await Promise.all(entries.slice(i, i + 4).map(async ([mbUuid, labels]) => {
+      try {
+        const resp = await _origFetch(`${METABASE_URL}/api/public/card/${mbUuid}`,
+          { signal: AbortSignal.timeout(20000) });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const def = await resp.json();
+        defs.push({ mbUuid, served: labels, parameters: def.parameters || [] });
+      } catch (e) {
+        unreadable.push({ mbUuid, served: labels, error: e.message });
+      }
+    }));
+  }
+
+  if (defs.length === 0) {
+    // Metabase unreachable, or every read failed. Never alert on that — a
+    // zero-definition run would make every card look mistyped.
+    console.warn(`[params] could not read any of ${entries.length} card definition(s) — treating as a failed read`);
+    return { ok: false, error: "no card definitions could be read", unreadable: unreadable.length };
+  }
+
+  const drift = diffCardParamTypes(defs);
+  const fingerprint = cardParamDriftFingerprint(drift);
+  const previous = readJSON(CARD_PARAM_DRIFT_FILE, {});
+  const changed = previous.fingerprint !== fingerprint;
+  const state = {
+    checkedAt: new Date().toISOString(),
+    cardsChecked: defs.length,
+    cardsUnreadable: unreadable,
+    fingerprint,
+    wrongType: drift.wrongType,
+  };
+  writeJSON(CARD_PARAM_DRIFT_FILE, state);
+
+  if (drift.wrongType.length === 0) {
+    console.log(`[params] clean — ${defs.length} card(s), every date tag still typed Date`);
+    return { ok: true, wrongType: 0, state };
+  }
+
+  console.error(`[params] ${drift.wrongType.length} date tag(s) are no longer typed Date`);
+  if (changed || opts.force) {
+    logEvent("_platform", "schema", "param-drift", null, {
+      tags: drift.wrongType.map(w => w.mbUuid.slice(0, 8) + " " + w.tag + "=" + w.type),
+      reports: [...new Set(drift.wrongType.flatMap(w => w.served))].sort(),
+    });
+  }
+  return { ok: true, wrongType: drift.wrongType.length, state, alerted: changed || !!opts.force };
+}
+
+// Same cadence and the same reasoning as the catalog check — a few minutes
+// later so the two do not contend for Metabase, and once after boot because a
+// deploy is exactly when a card was most likely just edited.
+cron.schedule("40 5 * * *", () => { checkCardParamTypes().catch(() => {}); });
+setTimeout(() => { checkCardParamTypes().catch(() => {}); }, 150 * 1000).unref?.();
+
 // The two /api/admin/schema-break routes live with the other admin endpoints,
 // further down: `app` does not exist yet at this point in the file, and
 // registering a route above it is a boot crash, not a syntax error — which
@@ -3094,17 +3268,19 @@ setTimeout(() => { checkCatalogDrift().catch(() => {}); }, 90 * 1000).unref?.();
 // Inert if the env var is unset. Fire-and-forget — never blocks or breaks logging.
 // To change what pings Slack, edit SLACK_NOTIFY. High-frequency events (view/fetch)
 // are debounced per org+report so Slack isn't a firehose.
-const SLACK_NOTIFY = new Set(["created", "org-deleted", "schema-break", "report-down", "pdf", "excel", "print", "summary", "game", "map", "view", "insights", "insights-feedback", "chat-feedback", "feedback", "vote", "update-vote", "munis", "permits", "email"]);
+const SLACK_NOTIFY = new Set(["created", "org-deleted", "schema-break", "param-drift", "report-down", "pdf", "excel", "print", "summary", "game", "map", "view", "insights", "insights-feedback", "chat-feedback", "feedback", "vote", "update-vote", "munis", "permits", "email"]);
 const SLACK_DEBOUNCE_MS = { view: 30 * 60 * 1000, fetch: 30 * 60 * 1000,
   // A broken report stays broken. The health check only reports NEW failures,
   // but a flapping card would otherwise post every hour.
-  "report-down": 6 * 60 * 60 * 1000, "schema-break": 6 * 60 * 60 * 1000 };
+  "report-down": 6 * 60 * 60 * 1000, "schema-break": 6 * 60 * 60 * 1000,
+  "param-drift": 6 * 60 * 60 * 1000 };
 const SLACK_DEFAULT_DEBOUNCE_MS = 60 * 1000; // dedup rapid double-fires of one-off events
 const slackLastSent = new Map();
 const SLACK_EVENT_META = {
   created: { emoji: "🏢", verb: "New org created" },
   "org-deleted": { emoji: "🗑️", verb: "DELETED from the reporting project" },
   "schema-break": { emoji: "🧨", verb: "schema break" },
+  "param-drift": { emoji: "\uD83D\uDCC5", verb: "date parameter reset to Text" },
   "report-down": { emoji: "🔴", verb: "report is failing" },
   pdf:     { emoji: "📄", verb: "exported a PDF of" },
   excel:   { emoji: "📊", verb: "exported to Excel" },
@@ -3129,6 +3305,15 @@ function slackMuted(rec) {
     (!m.org    || m.org    === rec.org) &&
     (!m.report || m.report === rec.report) &&
     (!m.event  || m.event  === rec.event));
+}
+
+// A direct, openable link to one org's report. Returns "" when the org has no
+// token, because a tokenless link just 404s and a dead link in an alert is worse
+// than no link.
+function reportUrl(slug, reportType) {
+  const org = ORGS[slug];
+  if (!org || !org.token || !reportType) return "";
+  return `${BASE_URL}/${slug}/${reportType}?token=${encodeURIComponent(org.token)}`;
 }
 
 function notifySlack(rec) {
@@ -3181,10 +3366,26 @@ function notifySlack(rec) {
     const who = (rec.reports || []).length ? ` — breaks *${(rec.reports || []).join("*, *")}*` : "";
     text = `${meta.emoji} *SCHEMA BREAK* — ${gone.slice(0, 8).join(", ")}`
          + (gone.length > 8 ? ` and ${gone.length - 8} more` : "") + who + mention;
+  } else if (rec.event === "param-drift") {
+    // Name the card and the tag, and say the fix out loud: only a human in the
+    // Metabase UI can flip a tag back to Date, so an alert that just says
+    // "drift" sends the reader to CLAUDE.md to work out what to do.
+    const mention = SLACK_MENTION_USER_ID ? ` <@${SLACK_MENTION_USER_ID}>` : "";
+    const tags = rec.tags || [];
+    const who = (rec.reports || []).length ? ` — breaks *${(rec.reports || []).slice(0, 6).join("*, *")}*` : "";
+    text = `${meta.emoji} *DATE TAG RESET TO TEXT* — ${tags.slice(0, 6).join(", ")}`
+         + (tags.length > 6 ? ` and ${tags.length - 6} more` : "") + who
+         + ` · flip it back to Date in the Metabase UI${mention}`;
   } else if (rec.event === "report-down") {
     const mention = SLACK_MENTION_USER_ID ? ` <@${SLACK_MENTION_USER_ID}>` : "";
     const why = rec.error ? ` — _${String(rec.error).slice(0, 160)}_` : "";
-    text = `${meta.emoji} ${orgName} (\`${rec.org}\`) *${rec.report}* is failing${why}${mention}`;
+    // Link straight to the broken report. The alert is only useful if the next
+    // step is one click, not "go find which org that slug is and paste a token".
+    // The token has to be in the link or it 404s — same as the tokenised links
+    // the scheduled emails already send, and the same channel Dan reads.
+    const link = reportUrl(rec.org, rec.report);
+    const label = link ? `<${link}|${rec.report}>` : `*${rec.report}*`;
+    text = `${meta.emoji} ${orgName} (\`${rec.org}\`) ${label} is failing${why}${mention}`;
   } else if (rec.event === "email") {
     const to = rec.email ? ` to \`${rec.email}\`` : "";
     const trig = rec.trigger === "manual" ? " · manual send" : ` · ${rec.schedule || "scheduled"} queue`;
@@ -10739,6 +10940,27 @@ app.post("/api/admin/schema-break/check", express.json(), async (req, res) => {
   }
 });
 
+// GET /api/admin/param-drift — are the reports' date tags still typed Date?
+// POST /api/admin/param-drift/check — run it now (password-gated).
+app.get("/api/admin/param-drift", (req, res) => {
+  res.json({
+    cards: collectServedCards().size,
+    shadowed: collectShadowedCards(),
+    last: readJSON(CARD_PARAM_DRIFT_FILE, null),
+  });
+});
+
+app.post("/api/admin/param-drift/check", express.json(), async (req, res) => {
+  const pw = req.body && req.body.password;
+  if (!DASHBOARD_PASSWORD) return res.status(503).json({ error: "Set DASHBOARD_PASSWORD to run this on demand" });
+  if (pw !== DASHBOARD_PASSWORD) return res.status(403).json({ error: "Invalid password" });
+  try {
+    res.json(await checkCardParamTypes({ force: true }));
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 app.get("/api/admin/schema-drift", (req, res) => {
   const baselines = loadSchemaBaselines();
   const driftLog = loadDriftLog();
@@ -15647,46 +15869,12 @@ app.get("/", (req, res) => {
     // Expose the changelog so the smart Project-Update composer can auto-draft from it.
     try { window.RECS_CHANGELOG = UPDATES; } catch(e) {}
 
-    // ── Admin "What's New" popup ──────────────────────────────────────
-    // Same published project-updates the org admins see, surfaced once (per
-    // browser) on the internal dashboard. Admins see every item; partners only
-    // see the lines for the reports they actually have.
-    (function adminWhatsNew(){
-      function run(){
-        fetch('/api/admin/announcements').then(function(r){ return r.json(); }).then(function(d){
-          var anns=((d&&d.announcements)||[]).filter(function(a){ return a.active!==false && !(a.expiresAt && Date.now()>a.expiresAt); });
-          if(!anns.length) return;
-          var seen; try{ seen=JSON.parse(localStorage.getItem('rec_admin_seen_updates')||'[]'); }catch(e){ seen=[]; }
-          if(!Array.isArray(seen)) seen=[];
-          var next=anns.filter(function(a){ return seen.indexOf(a.id)<0; })[0];
-          if(!next) return;
-          function esc(s){ return (s==null?'':String(s)).replace(/[&<>"]/g,function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
-          var inner;
-          if(next.smart && next.items && next.items.length){
-            inner='<ul style="margin:6px 0 0;padding:0;list-style:none">'+next.items.map(function(it){
-              return '<li style="margin:0 0 12px;padding-left:30px;position:relative;line-height:1.5">'
-                +'<span style="position:absolute;left:0;top:0;font-size:16px">'+esc(it.emoji||'✨')+'</span>'
-                +esc(it.text)+'</li>';
-            }).join('')+'</ul>';
-          } else {
-            inner='<div style="line-height:1.6">'+esc(next.body||'').replace(/\\n/g,'<br>')+'</div>';
-          }
-          var note=next.smart?'<div style="font-size:11px;color:#8b5cf6;margin-bottom:12px;font-weight:600;background:#f5f3ff;border:1px solid #ddd6fe;border-radius:6px;padding:7px 10px">👀 Admin preview — each partner sees only the lines for the reports they have</div>':'';
-          var ov=document.createElement('div');
-          ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:100000;display:flex;align-items:center;justify-content:center;padding:20px';
-          ov.innerHTML='<div style="background:#fff;border-radius:14px;max-width:540px;width:100%;box-shadow:0 24px 70px rgba(0,0,0,.3);overflow:hidden">'
-            +'<div style="background:linear-gradient(135deg,#7c3aed,#4f46e5);color:#fff;padding:16px 22px;font-weight:700;font-size:15px">📣 '+esc(next.title)+'</div>'
-            +'<div style="padding:20px 22px;font-size:14px;color:#333">'+note+inner+'</div>'
-            +'<div style="padding:0 22px 20px;text-align:right"><button id="rec-admin-upd-ok" style="background:#7c3aed;color:#fff;border:none;border-radius:8px;padding:9px 22px;font-size:13px;font-weight:600;cursor:pointer">Got it 🎉</button></div>'
-            +'</div>';
-          document.body.appendChild(ov);
-          function dismiss(){ seen.push(next.id); try{ localStorage.setItem('rec_admin_seen_updates',JSON.stringify(seen)); }catch(e){} ov.remove(); }
-          ov.querySelector('#rec-admin-upd-ok').addEventListener('click',dismiss);
-          ov.addEventListener('click',function(e){ if(e.target===ov) dismiss(); });
-        }).catch(function(){});
-      }
-      if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',run); else run();
-    })();
+    // No "What's New" popup on this dashboard, by design (Dan, 2026-08-22):
+    // feature updates are for ORG dashboards, where the audience is the partner
+    // who benefits from them. Here they interrupted the platform-usage view for
+    // an audience that wrote the update. Published updates are still authored
+    // and reviewed in the Project Updates panel below, and org admins still get
+    // the popup from public/org.html.
 
     function renderUpdates() {
       const countEl = document.getElementById('updates-count');
