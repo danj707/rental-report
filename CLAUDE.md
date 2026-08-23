@@ -327,6 +327,94 @@ EMPTY until at least one update is published, and each PR preview is a fresh
 environment with its own (empty) data store — a brand-new preview shows no popup
 until you publish an update in it first.
 
+## Campsite map availability — 30 days is the ceiling, and it is not ours (2026-08-23)
+
+**Dan expected >30 days for a properly configured site. It is not a configuration
+issue.** `get_site_availability` takes ONLY a `siteId` — no range parameter
+exists — and its own description says "the next 30 days". Probed three ways, all
+returning an identical 31 keys ending 2026-09-22: public tool on Topaz Site 01,
+public tool on Site 04, and the STAFF-scoped tool on Site 04. Site 04 carried
+`nights.maximum = 180` at the time and the window did not move, so the horizon is
+independent of the site's settings.
+
+Two config red herrings, both worth knowing:
+
+- **The "180" in the admin panel is a STAY DURATION, not a booking window.**
+  40 of the 41 Topaz campsites allow 14 nights; Site 04 alone said 180, which Dan
+  then corrected. "Default nights per stay" sits directly above "Default days in
+  advance" in that panel, and both read 180 — a data-entry slip.
+- `court.default_reservation_window_days` is **NULL on all 41** sites, and the
+  largest value anywhere on the platform is **21**. No 180-day window is stored at
+  site or org level.
+
+`latestCheckout` DOES reach past the 30-day window (a 22 Sep arrival could check
+out 6 Oct under the old 14-night rule), so **the cap is on arrival dates only** —
+never bound the checkout picker to the strip's length. And never take the longest
+window any single site offers: one mis-set site would offer a 180-night stay for
+the whole park. Cap by the org's configured max stay first.
+
+### Beyond 30 days: the rentalcalendar pattern exists, and it drops nightly bookings
+
+`public/rentalcalendar.html` (Watertown, Norman, Niagara Falls) shows dates past
+30 days — `MAX_DAYS_AHEAD = 30`, no `max` on the date pickers, and a
+`beyondRealtime` disclaimer saying availability out there is "based on confirmed
+facility bookings and may not reflect all holds". Verified live: 257 booking rows
+across 28 November dates.
+
+**But the overlay that feeds it drops every nightly booking.** In
+`/:org/rentalcalendar/api/reservations`:
+
+```js
+.filter(r => r.date && r.start && r.end && r.site);
+```
+
+Nightly rows have no `End` — they are nights, not time slots (`Begin "01:00pm",
+End null`). Measured on October at Douglas: **campsite 0 of 46 survive, room 180
+of 180 survive.** Latent where it runs (Watertown 65 sites and Norman 182 are
+100% hourly) and live but small at Niagara Falls (2 nightly + 3 daily). Douglas is
+47% nightly, so this is why campmap could not simply reuse that endpoint to go
+past 30 days: a booked campsite would have read as free on a public page.
+
+Decision (Dan, 2026-08-23): **stay at 30 days.** The strip ends with a per-org
+hand-off card (`bookAhead` in `campmap-seeds.json`: the org's rec.us
+facility-rentals URL + the department to name) rather than rendering nights we
+cannot answer for.
+
+### The three flavours of "no", and why the labels matter
+
+A staff-entered hold awaiting payment **blocks the site** (Dan). rec.us reports
+those nights as `available:false, reason:"outside-window"` — NOT `conflict`. The
+first version of this code binned every non-`conflict` reason as "booking
+restriction", which told a camper to try a different stay length for a site that
+is simply taken. Now three buckets:
+
+| rec.us reason | shown as | what the camper should do |
+|---|---|---|
+| `conflict` | Not available | another site or another week |
+| min/max-stay | Free, but not for a stay this long | same site, different length |
+| anything else (`outside-window`, blackout, closed) | Not available | another site or another week |
+
+### Backtest: `node scripts/campmap-availability-backtest.js`
+
+Checks the map's nights against the reservation ledger in db 4, which knows
+nothing about the availability endpoint. Site ids in `campmap-seeds.json` ARE
+court ids, so the two sides join on identity — no display-name matching, which is
+what makes the rentalcalendar overlay fragile. Needs `MB_API_KEY`; without it the
+script fails rather than reporting a pass it cannot back.
+
+Result 2026-08-23, 1,271 site-nights at Topaz Lake: **99.45% agreement, and ZERO
+nights offered while a live reservation covers them.** The 7 diffs are all in the
+safe direction (map says unavailable, ledger free) — two on the last enumerated
+night where no checkout exists inside the window, the rest same-day/release-time
+cutoffs. An unpaid hold counts as occupied by default; `--ignore-unpaid-holds`
+measures how much of any gap they are.
+
+**Correction worth remembering:** an earlier pass reported "3 dangerous diffs"
+where the map supposedly offered held nights. That was a classification error on
+my side — non-`conflict` blocks had been lumped in with "free". The map blocked
+those nights all along. Check what `available:false` actually says before calling
+a diff dangerous.
+
 ## Campsite map — public, un-retired, seed-scoped (Dan, 2026-08-22)
 
 `campmap` is out of `RETIRED_REPORTS`. It was retired in favour of the Facilities

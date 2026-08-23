@@ -286,8 +286,8 @@ body{font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica
         <h4>Availability</h4>
         <div class="row"><span class="dot" style="background:var(--avail)"></span> Open every night of the stay</div>
         <div class="row"><span class="dot" style="background:var(--partial)"></span> Open some nights — open the site to see which</div>
-        <div class="row"><span class="dot" style="background:var(--booked)"></span> Booked</div>
-        <div class="row"><span class="dot" style="background:var(--blocked)"></span> Unavailable — booking restriction</div>
+        <div class="row"><span class="dot" style="background:var(--booked)"></span> Not available</div>
+        <div class="row"><span class="dot" style="background:var(--blocked)"></span> Free, but not for a stay this long</div>
         <div class="div" id="legKindDiv"></div>
         <h4 id="legKindH" style="display:none">Site type</h4>
         <div id="legKinds"></div>
@@ -559,7 +559,11 @@ function rangeStatus(site){
   ns.forEach(function(n){
     var st=statusOn(site, n);
     if(st==='avail') open.push(n);
-    else if(st==='booked') booked.push(n);
+    // 'closed' rides with 'booked' for the verdict: both mean the camper cannot
+    // have this night, and neither is fixed by shortening the stay. Only a
+    // genuine min/max-stay rejection goes in `blocked`, which is the one the UI
+    // tells them to try a different length for.
+    else if(st==='booked' || st==='closed') booked.push(n);
     else if(st==='blocked') blocked.push(n);
     else unknown.push(n);
   });
@@ -568,18 +572,27 @@ function rangeStatus(site){
   else if(open.length===ns.length) state='avail';
   else if(open.length===0) state=(booked.length ? 'booked' : (blocked.length ? 'blocked' : 'unknown'));
   else state='partial';
+  var w=(AVAIL_WINDOW[site.id]||{})[SELECTED];
   return { state:state, nights:ns, open:open, booked:booked, blocked:blocked, unknown:unknown,
-           total:ns.length, openCount:open.length };
+           total:ns.length, openCount:open.length,
+           win: (w && w.earliest && w.latest) ? { min:w.earliest, max:w.latest } : null };
 }
 // Short human reason for a stay that does not fully fit.
 function rangeWhy(r){
   if(r.state==='avail')   return 'Open all ' + r.total + (r.total===1?' night':' nights');
   if(r.state==='unknown') return 'Availability — see rec.us';
-  if(r.state==='blocked') return 'Unavailable — booking restriction';
-  if(r.state==='booked')  return r.total===1 ? 'Booked' : 'Booked every night';
+  // 'blocked' now means only a stay-LENGTH rejection, so it can say the useful
+  // thing: the site is free, the trip is the wrong shape.
+  if(r.state==='blocked') return r.win
+    ? (function(){ var a=new Date(SELECTED+'T00:00:00');
+        var mn=Math.round((new Date(r.win.min+'T00:00:00')-a)/86400000);
+        var mx=Math.round((new Date(r.win.max+'T00:00:00')-a)/86400000);
+        return 'Not for '+r.total+' nights — this arrival takes '+mn+'–'+mx; })()
+    : 'Not available for a stay this long';
+  if(r.state==='booked')  return r.total===1 ? 'Not available' : 'Not available on these nights';
   var parts=['Open ' + r.openCount + ' of ' + r.total + ' nights'];
-  if(r.booked.length)  parts.push(nightList(r.booked) + ' booked');
-  if(r.blocked.length) parts.push(nightList(r.blocked) + ' restricted');
+  if(r.booked.length)  parts.push(nightList(r.booked) + ' unavailable');
+  if(r.blocked.length) parts.push(nightList(r.blocked) + ' stay-length');
   if(r.unknown.length) parts.push(nightList(r.unknown) + ' unknown');
   return parts.join(' · ');
 }
@@ -601,7 +614,7 @@ document.getElementById('btSat').onclick=function(){ if(map.hasLayer(streetLayer
 document.getElementById('btStreet').onclick=function(){ if(map.hasLayer(satLayer))map.removeLayer(satLayer); streetLayer.addTo(map); this.classList.add('on'); document.getElementById('btSat').classList.remove('on'); };
 
 /* markers */
-var COLORS={avail:'#16a34a',partial:'#d97706',booked:'#dc2626',blocked:'#6b7280',unknown:'#9ca3af'};
+var COLORS={avail:'#16a34a',partial:'#d97706',booked:'#dc2626',blocked:'#6b7280',closed:'#dc2626',unknown:'#9ca3af'};
 var markers={};   // siteId -> L.marker
 var selectedId=null;
 /* ── admin edit state ── */
@@ -983,7 +996,7 @@ function miniCalHtml(site){
     if(ds===SELECTED) cls+=' sel';
     h+='<div class="'+cls+'" data-ds="'+ds+'">'+day+'</div>';
   }
-  h+='</div><div style="font-size:10.5px;color:var(--muted);margin-top:7px;display:flex;gap:12px;flex-wrap:wrap"><span>🟩 Open</span><span>🟥 Booked</span><span><span style="color:var(--blocked)">◼</span> Booking restriction</span></div></div>';
+  h+='</div><div style="font-size:10.5px;color:var(--muted);margin-top:7px;display:flex;gap:12px;flex-wrap:wrap"><span>🟩 Open</span><span>🟥 Not available</span><span><span style="color:var(--blocked)">◼</span> Stay length</span></div></div>';
   return h;
 }
 function wireMiniCal(site){
@@ -1179,10 +1192,23 @@ function loadAvailability(){
             }
             var state;
             if(v && v.available===true) state='avail';
-            // available:false → 'booked' ONLY for a real reservation conflict.
-            // Any other reason (outside-window, blackout, min/max-stay, closed…)
-            // is a booking-rule restriction, not a reservation → 'blocked'.
-            else if(v && v.available===false) state=(v.reason==='conflict' ? 'booked' : 'blocked');
+            // available:false splits three ways, because they lead a camper to
+            // three different actions and two of them used to read the same:
+            //   conflict           → taken. Pick another site or another week.
+            //   min/max-stay       → the site is free, this STAY LENGTH is not.
+            //                        Worth saying, because a shorter trip works.
+            //   everything else    → not available (outside-window, blackout,
+            //                        closed). Verified 2026-08-23: a staff hold
+            //                        awaiting payment comes back as
+            //                        `outside-window`, and it genuinely blocks
+            //                        the site — calling that a "booking
+            //                        restriction" invited a camper to retry with
+            //                        a different length that will also fail.
+            else if(v && v.available===false){
+              state = v.reason==='conflict' ? 'booked'
+                    : /stay|night|duration/i.test(String(v.reason||'')) ? 'blocked'
+                    : 'closed';
+            }
             // hourly slots: an object of time slots with no `available` flag = open
             else if(v && typeof v==='object' && Object.keys(v).length>0) state='avail';
             else state='blocked';
