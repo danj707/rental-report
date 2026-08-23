@@ -1262,30 +1262,89 @@
           .catch(() => setPhase('sent')).finally(() => setBusy(false));
       }
       const top = (board && board.top) ? board.top : [];
-      return e('div', { style: { position: 'absolute', inset: 0, zIndex: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(6,10,20,.62)', backdropFilter: 'blur(2px)' } },
-        e('div', { style: { width: 'min(300px,86%)', background: '#12172a', border: '1px solid rgba(255,255,255,.14)', borderRadius: 12, padding: '16px 18px', color: '#eef', boxShadow: '0 18px 50px rgba(0,0,0,.5)', fontFamily: 'inherit' } },
-          e('div', { style: { fontSize: 15, fontWeight: 800, marginBottom: 2 } }, (meta.emoji || '🎮') + ' ' + (meta.label || 'Game')),
-          e('div', { style: { fontSize: 11, textTransform: 'uppercase', letterSpacing: '.08em', color: '#8ea0c8', marginBottom: 12 } }, (board && board.season ? board.season + ' · ' : '') + 'Leaderboard'),
-          e('div', { style: { display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 12 } },
-            e('span', { style: { fontSize: 30, fontWeight: 800, fontVariantNumeric: 'tabular-nums' } }, score.toLocaleString()),
-            e('span', { style: { fontSize: 12, color: '#9fb0d6' } }, (meta.unit || '') + (phase === 'sent' && result ? (result.made ? ' · you’re #' + result.rank : ' · keep trying!') : ''))),
-          phase === 'enter'
-            ? e('div', { style: { display: 'flex', gap: 8, marginBottom: 14 } },
-                e('input', { ref: inRef, value: initials, maxLength: 3, placeholder: 'AAA', 'aria-label': 'Your initials',
-                  onChange: ev => setInitials(ev.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '')),
-                  onKeyDown: ev => { ev.stopPropagation(); if (ev.key === 'Enter') submit(); },
-                  style: { flex: '0 0 88px', textAlign: 'center', letterSpacing: '.35em', fontWeight: 800, fontSize: 20, padding: '8px 6px', background: '#0b0f1e', color: '#ffd76a', border: '1px solid rgba(255,255,255,.18)', borderRadius: 8, outline: 'none', fontFamily: 'inherit', textTransform: 'uppercase' } }),
-                e('button', { onClick: submit, disabled: busy, style: { flex: 1, background: '#f59e0b', color: '#1a1200', border: 'none', borderRadius: 8, fontWeight: 800, fontSize: 13, cursor: 'pointer', opacity: busy ? .6 : 1 } }, busy ? 'Saving…' : 'Submit ▶'))
-            : null,
-          e('div', { style: { borderTop: '1px solid rgba(255,255,255,.1)', paddingTop: 10, marginBottom: 12 } },
+
+      // Laid out to fit the banner it lives in. .fac-banner is 172px tall with
+      // overflow:hidden, and the old single-column card stacked title + season +
+      // score + initials + five board rows + two buttons plus 32px of padding —
+      // about 290px. It could never fit, so the heading clipped off the top, the
+      // Close / Play again buttons were cut off the bottom, and the card spilled
+      // over the game's tip line ("Ouch! 18 berries") for a wall of overlapping
+      // text. Two columns roughly halves the height: score and initials on the
+      // left, the board on the right, actions under the score.
+      //
+      // maxHeight + overflow are a backstop, not the plan: if a future banner is
+      // shorter, or a season label wraps, this scrolls instead of clipping.
+      const sty = {
+        // NEVER wraps. A 172px-tall banner has no room for a second row: wrapping
+        // pushed the board out of sight and clipped the buttons, which is a worse
+        // failure than a narrow board column. So the columns stay side by side and
+        // the board shrinks and truncates instead.
+        card: { width: 'min(470px,94%)', maxHeight: '96%', overflow: 'hidden', boxSizing: 'border-box',
+                display: 'flex', flexWrap: 'nowrap', gap: 12,
+                background: '#12172a', border: '1px solid rgba(255,255,255,.14)', borderRadius: 12,
+                padding: '11px 13px', color: '#eef', boxShadow: '0 18px 50px rgba(0,0,0,.5)', fontFamily: 'inherit' },
+        colL: { flex: '1 1 auto', minWidth: 168, display: 'flex', flexDirection: 'column', gap: 7 },
+        colR: { flex: '0 1 136px', minWidth: 0, borderLeft: '1px solid rgba(255,255,255,.1)', paddingLeft: 11,
+                display: 'flex', flexDirection: 'column', gap: 0, overflow: 'hidden' },
+        // Title and season share ONE line. Stacked they cost ~14px, and the four
+        // rows plus padding were 165px against 163px of usable height — which is
+        // precisely why the buttons were being clipped.
+        // flexShrink:0 is not cosmetic. In a height-constrained column flex
+        // container, flex items shrink before they clip — so when the buttons
+        // wrapped to two lines on a narrow banner, flexbox silently crushed this
+        // heading to height 0 and the panel simply had no title. Pinning it means
+        // an overflow shows up as a clipped edge you can see, not a row that
+        // quietly disappears.
+        head: { flex: '0 0 auto', fontSize: 12, fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
+        season: { fontSize: 9.5, textTransform: 'uppercase', letterSpacing: '.07em', color: '#8ea0c8',
+                  whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
+        // nowrap: "Play again ↻" and "Submit ▶" were breaking onto two lines at
+        // phone width, which is what overflowed the column in the first place.
+        btn: { border: 'none', borderRadius: 7, fontWeight: 800, fontSize: 12, cursor: 'pointer',
+               fontFamily: 'inherit', padding: '6px 11px', whiteSpace: 'nowrap' },
+      };
+      return e('div', { style: { position: 'absolute', inset: 0, zIndex: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(6,10,20,.72)', backdropFilter: 'blur(2px)', padding: 8, boxSizing: 'border-box' } },
+        e('div', { style: sty.card },
+
+          // ── left: what you scored, and getting it on the board ──
+          e('div', { style: sty.colL },
+            e('div', { style: sty.head },
+              (meta.emoji || '🎮') + ' ' + (meta.label || 'Game'),
+              e('span', { style: { fontWeight: 600, fontSize: 9.5, letterSpacing: '.07em', textTransform: 'uppercase', color: '#8ea0c8', marginLeft: 6 } },
+                board && board.season ? board.season : 'Leaderboard')),
+            e('div', { style: { flex: '0 0 auto', display: 'flex', alignItems: 'baseline', gap: 6 } },
+              e('span', { style: { fontSize: 26, lineHeight: 1, fontWeight: 800, fontVariantNumeric: 'tabular-nums' } }, score.toLocaleString()),
+              e('span', { style: { fontSize: 11, color: '#9fb0d6', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } },
+                (meta.unit || '') + (phase === 'sent' && result ? (result.made ? ' · you’re #' + result.rank : ' · keep trying!') : ''))),
+            phase === 'enter'
+              ? e('div', { style: { flex: '0 0 auto', display: 'flex', gap: 8 } },
+                  // size + minWidth:0 both matter. A flex item defaults to
+                  // min-width:auto, and an input's intrinsic width comes from its
+                  // `size` attribute (~20 chars), so `flex: 0 0 88px` alone let it
+                  // inflate and shove the Submit button outside the card — which is
+                  // exactly what it was doing.
+                  e('input', { ref: inRef, value: initials, maxLength: 3, size: 3, placeholder: 'AAA', 'aria-label': 'Your initials',
+                    onChange: ev => setInitials(ev.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '')),
+                    onKeyDown: ev => { ev.stopPropagation(); if (ev.key === 'Enter') submit(); },
+                    style: { flex: '0 0 84px', minWidth: 0, width: 84, boxSizing: 'border-box', textAlign: 'center',
+                             letterSpacing: '.28em', textIndent: '.28em', fontWeight: 800, fontSize: 17, padding: '6px 4px',
+                             background: '#0b0f1e', color: '#ffd76a', border: '1px solid rgba(255,255,255,.18)',
+                             borderRadius: 8, outline: 'none', fontFamily: 'inherit', textTransform: 'uppercase' } }),
+                  e('button', { onClick: submit, disabled: busy, style: Object.assign({}, sty.btn, { flex: '1 1 auto', minWidth: 0, background: '#f59e0b', color: '#1a1200', opacity: busy ? .6 : 1 }) },
+                    busy ? 'Saving…' : 'Submit ▶'))
+              : null,
+            e('div', { style: { flex: '0 0 auto', display: 'flex', gap: 8, marginTop: 'auto' } },
+              e('button', { onClick: () => { ctl.replay(); onClose(); }, style: Object.assign({}, sty.btn, { background: '#22c55e', color: '#04120a' }) }, 'Play again ↻'),
+              e('button', { onClick: () => { ctl.dismiss(); onClose(); }, style: Object.assign({}, sty.btn, { background: 'none', border: '1px solid rgba(255,255,255,.2)', color: '#c7d2ea', fontWeight: 600 }) }, 'Close'))),
+
+          // ── right: the board itself ──
+          e('div', { style: sty.colR },
+            e('div', { style: Object.assign({}, sty.season, { marginBottom: 2 }) }, top.length ? 'Top ' + Math.min(5, top.length) : 'Top scores'),
             top.length
-              ? top.slice(0, 5).map((s, i) => e('div', { key: i, style: { display: 'flex', justifyContent: 'space-between', gap: 10, padding: '2px 0', fontSize: 12.5, color: i === 0 ? '#ffd76a' : '#c7d2ea' } },
-                  e('span', { style: { fontWeight: i === 0 ? 800 : 600 } }, (i + 1) + '. ' + s.initials),
-                  e('span', { style: { fontVariantNumeric: 'tabular-nums', fontWeight: 700 } }, s.score.toLocaleString())))
-              : e('div', { style: { fontSize: 12, color: '#8ea0c8', fontStyle: 'italic' } }, 'Be the first on the board!')),
-          e('div', { style: { display: 'flex', gap: 8, justifyContent: 'flex-end' } },
-            e('button', { onClick: () => { ctl.dismiss(); onClose(); }, style: { background: 'none', border: '1px solid rgba(255,255,255,.2)', color: '#c7d2ea', borderRadius: 7, padding: '7px 12px', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' } }, 'Close'),
-            e('button', { onClick: () => { ctl.replay(); onClose(); }, style: { background: '#22c55e', border: 'none', color: '#04120a', borderRadius: 7, padding: '7px 14px', fontWeight: 800, fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' } }, 'Play again ↻')))
+              ? top.slice(0, 5).map((s, i) => e('div', { key: i, style: { display: 'flex', justifyContent: 'space-between', gap: 8, fontSize: 11.5, lineHeight: 1.45, color: i === 0 ? '#ffd76a' : '#c7d2ea' } },
+                  e('span', { style: { fontWeight: i === 0 ? 800 : 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, (i + 1) + '. ' + s.initials),
+                  e('span', { style: { fontVariantNumeric: 'tabular-nums', fontWeight: 700, flex: 'none' } }, s.score.toLocaleString())))
+              : e('div', { style: { fontSize: 11.5, color: '#8ea0c8', fontStyle: 'italic', lineHeight: 1.45 } }, 'Be the first on the board!')))
       );
     }
 
