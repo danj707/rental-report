@@ -33,13 +33,21 @@ body{font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica
 .datebar{display:flex;align-items:center;gap:8px;padding:8px 12px;background:#fff;border-bottom:1px solid var(--line);z-index:600}
 .datebar .summ{font-size:13px;font-weight:600;white-space:nowrap;padding-right:4px}
 .datebar .summ .cnt{color:var(--avail)}
-.datebar .stay{display:flex;align-items:center;gap:6px;flex:0 0 auto}
-.datebar .stay .sl{display:flex;flex-direction:column;font-size:9.5px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);font-weight:700;gap:2px}
-.datebar .stay .sl input{font:inherit;font-size:12px;padding:3px 6px;border:1px solid var(--line);border-radius:7px;color:#374151;background:#fff;cursor:pointer}
-.datebar .stay .arrow{color:var(--muted);font-size:13px;align-self:flex-end;padding-bottom:4px}
-.datebar .stay .nights{align-self:flex-end;padding-bottom:4px;font-size:11.5px;font-weight:700;color:var(--accent);white-space:nowrap}
+.datebar .stayhead{flex:0 0 auto;display:flex;flex-direction:column;gap:1px;padding-right:6px;border-right:1px solid var(--line);margin-right:2px}
+.datebar .stayline{display:flex;align-items:center;gap:7px;font-size:11.5px;color:var(--muted);white-space:nowrap}
+.datebar .nights{font-weight:700;color:var(--accent)}
+.datebar .reset{font:inherit;font-size:10.5px;font-weight:700;padding:2px 7px;border:1px solid var(--line);border-radius:999px;background:#fff;color:var(--muted);cursor:pointer}
+.datebar .reset:hover{border-color:var(--accent);color:var(--accent)}
 .datebar .summ .part{color:var(--partial);font-weight:700}
+/* The stay, drawn on the strip: arrival, the nights between, and the checkout
+   morning (dashed — you are not occupying the site that night). */
 .chip.inrange{background:var(--avail-bg);border-color:var(--avail)}
+.chip.checkout{border-style:dashed;border-color:var(--accent);background:#fff}
+.chip.preview{background:var(--avail-bg);border-color:var(--avail);opacity:.72}
+.chip.picking{cursor:crosshair}
+.chip .fill{height:3px;border-radius:2px;margin:4px 1px 0}
+.chip.on .fill{background:rgba(255,255,255,.35)!important}
+.datebar.awaiting .chips{box-shadow:inset 0 0 0 2px var(--accent-soft, #ccfbf1);border-radius:12px}
 .chips{display:flex;gap:6px;overflow-x:auto;flex:1;scrollbar-width:thin;padding-bottom:2px}
 .chips::-webkit-scrollbar{height:6px}
 .chips::-webkit-scrollbar-thumb{background:#d1d5db;border-radius:3px}
@@ -49,7 +57,7 @@ body{font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica
 .chip .dow{font-size:10px;font-weight:600;text-transform:uppercase;opacity:.75}
 .chip .dnum{font-size:15px;font-weight:700}
 .chip .mo{font-size:9px;opacity:.7}
-.datebar input[type=date]{border:1px solid var(--line);border-radius:8px;padding:6px 8px;font:inherit;color:#374151;cursor:pointer}
+
 .datebar .nav{border:1px solid var(--line);background:#fff;border-radius:8px;width:30px;height:30px;cursor:pointer;font-size:15px;color:#374151;flex:0 0 auto}
 .datebar .nav:hover{background:#f3f4f6}
 
@@ -108,6 +116,18 @@ body{font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica
 .dbody .stat-pill.booked{background:var(--booked-bg);color:#991b1b}
 .dbody .stat-pill.unknown{background:var(--unknown-bg);color:#374151}
 .dbody .stat-pill.blocked{background:var(--blocked-bg);color:#334155}
+.dbody .staybox{background:#f9fafb;border:1px solid var(--line);border-radius:10px;padding:8px 10px;margin-bottom:10px}
+.dbody .staybox .sb-when{font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);font-weight:700}
+.dbody .staybox .sb-cnt{font-size:13px;margin-top:2px}
+.dbody .staybox .sb-cnt b{color:var(--avail)}
+.dbody .staybox .sb-part{color:var(--partial);font-weight:700}
+.dbody .nightrow{display:flex;gap:4px;flex-wrap:wrap;margin:2px 0 12px}
+.dbody .ncell{min-width:48px;text-align:center;border-radius:7px;padding:4px 6px;font-size:10px;font-weight:600;line-height:1.25}
+.dbody .ncell b{display:block;font-size:12.5px}
+.dbody .ncell.av{background:var(--avail-bg);color:#166534}
+.dbody .ncell.bk{background:var(--booked-bg);color:#991b1b}
+.dbody .ncell.bl{background:var(--blocked-bg);color:#334155}
+.dbody .ncell.un{background:var(--unknown-bg);color:#374151}
 .dbody .stat-pill.partial{background:var(--partial-bg);color:#92400e}
 .dbody h2{margin:2px 0 2px;font-size:20px}
 .dbody .area{font-size:12.5px;color:var(--muted);margin-bottom:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
@@ -210,16 +230,14 @@ body{font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica
   </div>
 
   <div class="datebar">
-    <button class="nav" id="prevDay" title="Shift the stay a day earlier">‹</button>
-    <div class="stay">
-      <label class="sl">Arrive<input type="date" id="arrivePick"/></label>
-      <span class="arrow">→</span>
-      <label class="sl">Depart<input type="date" id="departPick"/></label>
-      <span class="nights" id="nights">1 night</span>
+    <div class="stayhead">
+      <div class="summ" id="summ">—</div>
+      <div class="stayline"><span id="stayWhen">—</span><span class="nights" id="nights">1 night</span>
+        <button class="reset" id="resetStay" hidden>Change dates</button></div>
     </div>
-    <div class="summ" id="summ">—</div>
+    <button class="nav" id="prevDay" title="Scroll back">‹</button>
     <div class="chips" id="chips"></div>
-    <button class="nav" id="nextDay" title="Shift the stay a day later">›</button>
+    <button class="nav" id="nextDay" title="Scroll forward">›</button>
   </div>
 
   <div class="mapwrap">
@@ -655,18 +673,69 @@ function buildChips(){
   for(var i=0;i<30;i++){
     (function(i){
       var d=addDays(TODAY,i); var ds=iso(d);
-      var c=document.createElement('div');
-      c.className='chip'+(ds===SELECTED?' on':'');
+      var c=document.createElement('button');
+      c.type='button';
+      c.className='chip';
       c.dataset.ds=ds;
-      c.innerHTML='<div class="dow">'+DOW[d.getDay()]+'</div><div class="dnum">'+d.getDate()+'</div><div class="mo">'+MON[d.getMonth()]+'</div>';
-      // Clicking a night moves the stay to start there and KEEPS its length, so
-      // browsing "my 3 nights, a week later" is one click rather than two edits.
-      c.onclick=function(){ setStay(ds, iso(addDays(new Date(ds+'T00:00:00'), stayNights().length))); };
+      c.innerHTML='<div class="dow">'+DOW[d.getDay()]+'</div><div class="dnum">'+d.getDate()+'</div><div class="mo">'+MON[d.getMonth()]+'</div>'
+                 +'<div class="fill"></div>';
+      // Two clicks, no fields: arrival, then checkout. Clicking on or before the
+      // arrival starts a new stay instead of producing a negative one, so there
+      // is no order to get wrong and no invalid state to guard against later.
+      c.onclick=function(){
+        if(AWAITING && ds > SELECTED) setStay(SELECTED, ds, false);   // checkout lands
+        else setStay(ds, iso(addDays(d,1)), true);                    // new arrival
+      };
+      // While the checkout is still being chosen, hovering shows the stay it
+      // would make — the map stays on the committed stay until the click lands.
+      c.onmouseenter=function(){ if(AWAITING && ds > SELECTED) previewTo(ds); };
+      c.onmouseleave=function(){ if(AWAITING) previewTo(null); };
+      c.onfocus=function(){ if(AWAITING && ds > SELECTED) previewTo(ds); };
       wrap.appendChild(c);
     })(i);
   }
 }
-function updateSummary(){
+/* How many of the sites are free on one night — the bar under each chip. It is
+ * the shape of the month at a glance, which a one-night-at-a-time strip could
+ * never show. */
+function freeOn(dateStr){
+  var n=0; SEED.forEach(function(s){ if(statusOn(s,dateStr)==='avail') n++; });
+  return n;
+}
+// siteId -> { 'YYYY-MM-DD': {earliest, latest} } — the legal checkout range for
+// an arrival on that night, as stated by rec.us.
+var AVAIL_WINDOW={};
+var AWAITING=false;     // arrival chosen, waiting for the checkout click
+var PREVIEW=null;       // hovered checkout while AWAITING
+
+function previewTo(ds){ PREVIEW=ds; paintChips(); }
+
+function paintChips(){
+  var nights={}, stay=stayNights();
+  stay.forEach(function(n){ nights[n]=true; });
+  var pv={};
+  if(AWAITING && PREVIEW){ nightsOf(SELECTED, PREVIEW).forEach(function(n){ pv[n]=true; }); }
+  document.querySelectorAll('.chip').forEach(function(c){
+    var ds=c.dataset.ds;
+    c.classList.toggle('on', ds===SELECTED);
+    c.classList.toggle('inrange', !!nights[ds] && ds!==SELECTED);
+    c.classList.toggle('checkout', ds===DEPART);
+    c.classList.toggle('preview', !!pv[ds] && ds!==SELECTED);
+    c.classList.toggle('picking', AWAITING);
+    var free=freeOn(ds), pct=SEED.length ? Math.round(free/SEED.length*100) : 0;
+    var fill=c.querySelector('.fill');
+    if(fill){
+      fill.style.background='linear-gradient(90deg,var(--avail) '+pct+'%,var(--line) '+pct+'%)';
+      c.title=DOW[new Date(ds+'T00:00:00').getDay()]+' '+ds+' — '+free+' of '+SEED.length+' sites free this night';
+    }
+  });
+  var bar=document.querySelector('.datebar');
+  if(bar) bar.classList.toggle('awaiting', AWAITING);
+  var rs=document.getElementById('resetStay');
+  if(rs) rs.hidden = !(stay.length>1 || AWAITING);
+}
+
+function stayTally(){
   var full=0, part=0, known=0;
   SEED.forEach(function(s){
     var r=rangeStatus(s);
@@ -674,69 +743,88 @@ function updateSummary(){
     known++;
     if(r.state==='avail') full++; else if(r.state==='partial') part++;
   });
-  var ns=stayNights(), n=ns.length;
-  var a=new Date(SELECTED+'T00:00:00'), b=new Date(DEPART+'T00:00:00');
-  var fmt=function(d){ return DOW[d.getDay()]+' '+MON[d.getMonth()]+' '+d.getDate(); };
-  var human = n===1 ? fmt(a) : fmt(a)+' → '+fmt(b);
-  var el=document.getElementById('summ');
-  if(known===0){ el.innerHTML='<span>Loading availability…</span> · '+human; return; }
-  var txt='<span class="cnt">'+full+'</span> of '+SEED.length+' sites open'
-        + (n===1 ? '' : ' for all '+n+' nights');
-  // A partial count is worth its own clause: a camper who cannot get four nights
-  // will usually take three, and the old single-night view could not say so.
-  if(part) txt+=' · <span class="part">'+part+'</span> open some nights';
-  el.innerHTML=txt+' · '+human;
+  return { full:full, part:part, known:known };
 }
-// setStay is the only way the stay changes. Both ends are clamped to the window
-// the feed actually covers: a depart date past MAX_ISO+1 would ask about nights
-// nobody has data for, and rendering those as anything but unknown would be a
-// guess shown to a camper as fact.
-var MAX_DEPART = iso(addDays(TODAY, 30));       // checkout after the last known night
-function setStay(arrive, depart){
+function fmtDay(d){ return DOW[d.getDay()]+' '+MON[d.getMonth()]+' '+d.getDate(); }
+function stayLabel(){
+  var n=stayNights().length;
+  return n===1 ? fmtDay(new Date(SELECTED+'T00:00:00'))
+               : fmtDay(new Date(SELECTED+'T00:00:00'))+' → '+fmtDay(new Date(DEPART+'T00:00:00'));
+}
+function updateSummary(){
+  var t=stayTally(), n=stayNights().length;
+  var el=document.getElementById('summ');
+  if(t.known===0){ el.innerHTML='<span>Loading availability…</span>'; }
+  else {
+    var txt='<span class="cnt">'+t.full+'</span> of '+SEED.length+' sites open'
+          + (n===1 ? (SELECTED===TODAY_ISO ? ' tonight' : ' that night') : ' for all '+n+' nights');
+    // The partial count earns its own clause: a camper who cannot get four
+    // nights will usually take three, and a single-night view cannot say so.
+    if(t.part) txt+=' · <span class="part">'+t.part+'</span> open some nights';
+    el.innerHTML=txt;
+  }
+  document.getElementById('stayWhen').textContent =
+    AWAITING ? 'Now click your checkout night' : stayLabel();
+  if(selectedId){ var site=SEED.filter(function(x){return x.id===selectedId;})[0]; if(site) renderBody(site); }
+}
+// How late this arrival is allowed to check out, straight from rec.us. The feed
+// enumerates 30 days of ARRIVALS, but latestCheckout runs past them — Topaz
+// campsites allow up to 14 nights, so a 22 Sep arrival may legally check out 6
+// Oct, well beyond the last chip. Capping the checkout at the strip's end would
+// refuse a stay rec.us would accept. Falls back to the strip when the feed has
+// no window for that night.
+function latestCheckoutFrom(dateStr){
+  var best=null;
+  SEED.forEach(function(s){
+    var w=(AVAIL_WINDOW[s.id]||{})[dateStr];
+    if(w && w.latest && (!best || w.latest > best)) best=w.latest;
+  });
+  if(best) return best;
+  // No window from the feed for that night (it enumerates only ~30 days of
+  // arrivals). Fall back to the org's configured maximum stay — 14 nights at
+  // Topaz, 5 at Pleasant Hill — rather than to a single night, which would
+  // refuse stays the org actually allows.
+  var mx=null;
+  for(var i=0;i<SEED.length && mx===null;i++){ var m=siteMeta(SEED[i]); if(m && m.maxNights) mx=m.maxNights; }
+  return iso(addDays(new Date(dateStr+'T00:00:00'), mx || 1));
+}
+// setStay is the only way the stay changes. The arrival is clamped to the nights
+// the feed actually enumerates; a night with no data must read as unknown rather
+// than be guessed at in either direction.
+function setStay(arrive, depart, awaiting){
+  AWAITING = !!awaiting;
   if(arrive < TODAY_ISO) arrive = TODAY_ISO;
   if(arrive > MAX_ISO)   arrive = MAX_ISO;
   if(!depart || depart <= arrive) depart = iso(addDays(new Date(arrive+'T00:00:00'), 1));
-  if(depart > MAX_DEPART) depart = MAX_DEPART;
+  var cap = latestCheckoutFrom(arrive);
+  if(depart > cap) depart = cap;
   SELECTED=arrive; DEPART=depart;
 
-  var nights=stayNights(), inRange={};
-  nights.forEach(function(n){ inRange[n]=true; });
-  document.querySelectorAll('.chip').forEach(function(c){
-    c.classList.toggle('on', c.dataset.ds===arrive);
-    c.classList.toggle('inrange', !!inRange[c.dataset.ds] && c.dataset.ds!==arrive);
-  });
-  var picked=document.querySelector('.chip[data-ds="'+arrive+'"]');
-  if(picked) picked.scrollIntoView({behavior:'smooth',block:'nearest',inline:'center'});
-
-  var ai=document.getElementById('arrivePick'), di=document.getElementById('departPick');
-  ai.value=arrive; di.value=depart;
-  di.min=iso(addDays(new Date(arrive+'T00:00:00'),1));   // at least one night
-  di.max=MAX_DEPART;
-  var n=nights.length;
+  PREVIEW=null;
+  paintChips();
+  var n=stayNights().length;
   document.getElementById('nights').textContent = n + (n===1 ? ' night' : ' nights');
 
   refreshMarkers(); updateSummary();
-  if(selectedId){ var site=SEED.filter(function(s){return s.id===selectedId;})[0]; if(site) renderBody(site); }
   fetchWeather();
 }
-// Kept so older callers (and the deep-link handler) still work: move the stay to
-// this arrival date, holding its length.
-function setDate(ds){ setStay(ds, iso(addDays(new Date(ds+'T00:00:00'), stayNights().length))); }
+// Kept so older callers (the mini-calendar cells, the deep-link handler) still
+// work: start a one-night stay on this date and wait for a checkout click.
+function setDate(ds){ setStay(ds, iso(addDays(new Date(ds+'T00:00:00'),1)), true); }
 
-// The arrows shift the WHOLE stay, which is what someone comparing weekends
-// wants; nudging only the arrival date would silently lengthen the stay.
-function shiftStay(delta){
-  var n=stayNights().length;
-  var a=iso(addDays(new Date(SELECTED+'T00:00:00'), delta));
-  if(a < TODAY_ISO || a > MAX_ISO) return;
-  setStay(a, iso(addDays(new Date(a+'T00:00:00'), n)));
+// The arrows scroll the strip. They are not a second way to change the stay:
+// nudging dates with arrows is the block-shifting interaction we dropped, and
+// with 30 nights in a horizontal scroller reaching the far end is what they are
+// actually needed for.
+function scrollStrip(dir){
+  var el=document.getElementById('chips');
+  el.scrollBy({left: dir * Math.max(160, el.clientWidth * 0.7), behavior:'smooth'});
 }
-document.getElementById('prevDay').onclick=function(){ shiftStay(-1); };
-document.getElementById('nextDay').onclick=function(){ shiftStay(1); };
-document.getElementById('arrivePick').onchange=function(){ if(this.value) setStay(this.value, DEPART); };
-document.getElementById('departPick').onchange=function(){ if(this.value) setStay(SELECTED, this.value); };
-document.getElementById('arrivePick').min=TODAY_ISO;
-document.getElementById('arrivePick').max=MAX_ISO;   // only offer dates we have availability for
+document.getElementById('prevDay').onclick=function(){ scrollStrip(-1); };
+document.getElementById('nextDay').onclick=function(){ scrollStrip(1); };
+document.getElementById('resetStay').onclick=function(){
+  setStay(SELECTED, iso(addDays(new Date(SELECTED+'T00:00:00'),1)), true);
+};
 
 /* ── detail drawer ── */
 var galleryIdx=0, calMonth=null;
@@ -772,7 +860,15 @@ function renderGallery(site){
 function renderBody(site){
   var meta=siteMeta(site);
   var r=rangeStatus(site);
-  var stPill='<span class="stat-pill '+r.state+'">● '+rangeWhy(r)+'</span>';
+  var stPill='<span class="stat-pill '+(r.state==='partial'?'partial':r.state)+'">● '+rangeWhy(r)+'</span>';
+  // Park-wide context, in the sidebar where someone comparing sites is looking:
+  // this site's answer means more next to how many others could take the stay.
+  var t=stayTally();
+  var ctx='<div class="staybox">'
+        + '<div class="sb-when">'+stayLabel()+' · <b>'+r.total+(r.total===1?' night':' nights')+'</b></div>'
+        + '<div class="sb-cnt"><b>'+t.full+'</b> of '+SEED.length+' sites free for these dates'
+        + (t.part ? ' · <span class="sb-part">'+t.part+'</span> free some nights' : '')
+        + '</div></div>';
   var d=new Date(SELECTED+'T00:00:00');
   var human = r.total===1
     ? DOW[d.getDay()]+', '+MON[d.getMonth()]+' '+d.getDate()
@@ -786,8 +882,17 @@ function renderBody(site){
   var locName = (CFG.locationName||'Pleasant Hill City Lake');
   var rate=sRate(site), resRate=sResRate(site), cap=sCap(site);
   var body='';
+  body+=ctx;
   body+=stPill+' <span style="font-size:12px;color:var(--muted)">'+human+'</span>';
   body+='<h2>Site '+pad(site.n)+'</h2>';
+  if(r.total>1){
+    body+='<div class="nightrow">'+r.nights.map(function(nd){
+      var st=statusOn(site,nd), d2=new Date(nd+'T00:00:00');
+      var cls=st==='avail'?'av':st==='booked'?'bk':st==='blocked'?'bl':'un';
+      var lbl=st==='avail'?'free':st==='booked'?'booked':st==='blocked'?'rules':'?';
+      return '<span class="ncell '+cls+'"><b>'+d2.getDate()+'</b>'+DOW[d2.getDay()].charAt(0)+' · '+lbl+'</span>';
+    }).join('')+'</div>';
+  }
   body+='<div class="area">'+kindTag+'<span>📍 '+site.area+' · '+locName+'</span></div>';
   if(EDIT){ body+='<div class="pin-edit"><b>Edit mode</b> — drag this pin on the map to move it.<br><button id="pinReset">⟲ Reset this pin to default</button></div>'; }
   body+='<p class="blurb">'+sBlurb(site)+'</p>';
@@ -1023,10 +1128,13 @@ function loadAvailability(){
         // Nightly sites nest per-date availability under `checkInDates`; hourly sites are date→slots.
         var src = (d && d.checkInDates && typeof d.checkInDates==='object') ? d.checkInDates : d;
         if(src && typeof src==='object' && Object.keys(src).length){
-          var m={}; var haveDate=false;
+          var m={}; var win={}; var haveDate=false;
           Object.keys(src).forEach(function(dateStr){
             if(!/^\d{4}-\d{2}-\d{2}/.test(dateStr)) return;   // skip non-date keys
             var v=src[dateStr];
+            if(v && v.earliestCheckout && v.latestCheckout){
+              win[dateStr]={ earliest:v.earliestCheckout, latest:v.latestCheckout };
+            }
             var state;
             if(v && v.available===true) state='avail';
             // available:false → 'booked' ONLY for a real reservation conflict.
@@ -1038,7 +1146,7 @@ function loadAvailability(){
             else state='blocked';
             m[dateStr]=state; haveDate=true;
           });
-          if(haveDate){ AVAIL[s.id]=m; any=true; } else { AVAIL[s.id]={__empty:true}; }
+          if(haveDate){ AVAIL[s.id]=m; AVAIL_WINDOW[s.id]=win; any=true; } else { AVAIL[s.id]={__empty:true}; }
         } else {
           AVAIL[s.id]={__empty:true};
         }
@@ -1119,7 +1227,7 @@ buildChips();
 buildMarkers();
 // Populates both inputs, the nights label, the in-range chips and the summary in
 // one place, so the initial paint cannot disagree with what a later change draws.
-setStay(TODAY_ISO, iso(addDays(TODAY, 1)));
+setStay(TODAY_ISO, iso(addDays(TODAY, 1)), false);
 loadPositions();   // apply any admin-saved pin positions
 loadMarkers();     // load admin custom markers (Boat Ramp, etc.)
 loadSites();       // live site data → then availability (with offline fallbacks)

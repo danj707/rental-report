@@ -182,11 +182,11 @@ const CASES = [
   { name: "gl report",             path: "/{org}/gl",                     needs: ".toolbar" },
   // The public campground map. No token on purpose — this is the one view a
   // camper reaches, so a blank page here is the most costly of the lot.
-  // `#departPick[min]` rather than `.chip`: chips are built (and the first one
-  // marked `on`) before the stay is set, so either of those would still be there
-  // if setStay() threw. The depart input's `min` is written only inside setStay,
-  // so it is the cheapest proof that the stay logic actually ran.
-  { name: "campmap · stay search", path: "/{org}/campmap",                needs: "#departPick[min]" },
+  // `.chip.on` rather than `.chip`: buildChips() emits every night with no
+  // selected class, and the arrival highlight is applied only by paintChips(),
+  // which runs from setStay(). So the bare class would still be there if the
+  // stay logic threw, and this would not.
+  { name: "campmap · stay search", path: "/{org}/campmap",                needs: ".chip.on" },
 ];
 
 const child = spawn(process.execPath, [path.join(__dirname, "..", "server.js")], {
