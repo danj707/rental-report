@@ -62,6 +62,17 @@
       "org": "0312ebc8-40de-4fc8-a737-8afa26334e13"
     },
     {
+      "label": "facilities-summary / apex (heaviest — the Summary tab's own card, which had NO manifest row until 2026-08-23; measured 74.8s live that day, above the app's 60s first try and inside its 120s retry)",
+      "card": "4c070d95-ab02-4b9d-ac43-ac86257162d5",
+      "org": "aeba47d0-c97f-49cb-a0e9-93c5af3a68fa",
+      "timeout": 120
+    },
+    {
+      "label": "facilities-summary / douglas-county-nv (campsite + invoice_v2 KPI regression: 206 rows / 198 live / 41 sites / $2,900 for Aug 2026; measured 15.5s 2026-08-23)",
+      "card": "4c070d95-ab02-4b9d-ac43-ac86257162d5",
+      "org": "0312ebc8-40de-4fc8-a737-8afa26334e13"
+    },
+    {
       "label": "ice-calendar / apex (per-org card 18052 — the `class` model was dropped 2026-08-22 and this card 400'd for days with nothing catching it; measured 60.5s with the date filter, so pinned to the app's 120s ceiling)",
       "card": "6f02d09d-6694-462f-9471-7a4cb8b90d01",
       "org": "aeba47d0-c97f-49cb-a0e9-93c5af3a68fa",

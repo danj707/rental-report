@@ -4,6 +4,9 @@
 
 - **Always share the Railway PR-preview URL** whenever I open a PR for this repo,
   without being asked — Dan wants to click through the change before merging.
+- **Always hand over the direct Metabase card link** whenever a card needs Dan to
+  touch it (the date-tag flip after any programmatic save, most often) —
+  `https://rec.metabaseapp.com/question/<id>`. Don't just name the card id.
 - **Wire a Slack activity notification into every new user-facing surface** —
   new features, buttons, export/download options, and other notable interactions
   should ping the Slack activity feed, without being asked. Dan wants visibility
@@ -54,6 +57,13 @@ and flip each date variable (Start Date / End Date) back to type Date.** Batch
 card updates so Dan can do all the flips in one visit, verify with a
 server-style parameterized request afterward, and never assume a card update is
 done until that verification passes.
+
+**Read the live card BEFORE writing to it (learned 2026-08-23).** The repo's
+`sql/*.sql` file is a mirror, not the source of truth, and it drifts: card 19570
+carried a v2.1 speed refactor the repo file did not, so pushing the repo copy
+would have silently reverted it — the same shape as the perf regression that got
+v2 rolled back in PR #77. Fetch the card's SQL, apply the change to *that*, save,
+then mirror the result back into the repo file.
 
 **This is now watched automatically (PR #134).** `checkCardParamTypes()` in
 server.js reads every served card's public definition daily at 5:40 and once
@@ -691,12 +701,14 @@ of true facility revenue (Chico 84% missed, Jurupa 80%). Apex misses $91K
   facility-revenue view — instant + managed + invoiced/paid + invoiced/unpaid —
   sliceable by site type, location, date range (Brad@Marquardt-Miles pickleball
   vs Tim@Apex Tennis Center).
-- **Current state:** `sql/facilities-summary-v2.sql` = the rebuilt query, saved
-  as Metabase card **19570** (public UUID `4c070d95-ab02-4b9d-ac43-ac86257162d5`,
-  date tags flipped, sharing on). `public/facilities.html` already has the
-  billed/collected UI, gated on a `hasBilled` flag → **dormant** because
-  `FACILITIES_SUMMARY_UUID` in server.js points back at the original card
-  `4defd1b6…`. Flipping that one line re-activates it.
+- **Current state (corrected 2026-08-23): v2 IS LIVE.** `FACILITIES_SUMMARY_UUID`
+  in server.js is `4c070d95-ab02-4b9d-ac43-ac86257162d5` = card **19570** =
+  `sql/facilities-summary-v2.sql`, with the cold-time optimizations in the header
+  of that file (Watertown full-year 54s → 6s). This note used to say the UUID
+  pointed back at the original `4defd1b6…` and v2 was dormant; that was stale and
+  it cost real time — a handoff diagnosed the Summary against the wrong card, and
+  I repeated it. **Read line 1348 of server.js before reasoning about which card
+  the Summary uses.** The old card is kept for rollback only.
 - **Why rolled back:** the v2 card is ~24s warm vs the old card's ~18s — not the
   real problem. The 502 "upstream error" came from the post-deploy **cold-cache +
   prewarm storm**: prewarm fires the heavy query for all ~74 orgs at once, and
@@ -707,6 +719,54 @@ of true facility revenue (Chico 84% missed, Jurupa 80%). Apex misses $91K
   set. Then re-point the UUID and re-warm off-peak / stagger prewarm.
 - Full write-up artifact:
   https://claude.ai/code/artifact/b7b77323-5b23-463a-8f04-480f528effbe
+
+## Summary KPIs vs the Camping tab — a fee line is not a booking (2026-08-23)
+
+Dan: "the filters on our facility summary are incorrect." Summary read
+**254 bookings / 46 sites / $2,960**; the Camping tab read **198 / 41 / $2,520**
+off the *same feed*. Decomposed against prod (db 4, Douglas County, campsite +
+Topaz Lake, Aug 2026) — every number ties exactly:
+
+```
+254 bookings = 198 live reservations + 8 canceled + 48 invoice_v2 fee lines
+ 46 sites    =  41 campsite courts   +  5 distinct FEE NAMES
+$2,960       = $2,520 live + $60 canceled-night charges + $380 invoiced
+```
+
+**The chips were never the problem.** Location IS applied (`viewRows`), site type
+and status are applied in `aggregate()`. The handoff's premise — that the Summary
+runs an unfiltered org-wide query — was wrong, and I relayed it before checking.
+
+**Cause 1 — an invoice row is money, not a booking.** Card 19570 unions
+invoice_v2 manual lines (Part B) into the reservation feed, shaped like
+reservations without being any: `Reservation ID` = an `order_item` id, `Facility`
+= **the fee's NAME**, `Status` hard-coded `'Confirmed'`, `Site Type` **inherited**
+from a representative court of the rental. So the chips cannot exclude them: a
+tournament fee passes a Campsite filter. Anything counting feed ROWS counts fees
+as bookings; anything counting `Facility` strings counts fee names as sites (the
+5 phantom "campsites", which is why 46 exceeded even the 43 courts that exist
+across both Topaz locations). Fixed client-side: counts and site sets come from
+`resRows` (non-invoice) only, amounts still come from every row.
+
+**Cause 2 — `Status` came from `fr.status`, so a canceled night looked live.** A
+reservation can be canceled on its own while the RENTAL stays Confirmed or
+In-progress (one night dropped from a recurring stay). 8 such reservations in
+window; **6 were labelled Confirmed/In-Progress** and $60 of canceled charges sat
+in Charged. Fixed in the SQL: `CASE WHEN r.canceled_at IS NOT NULL THEN
+'Canceled' ELSE INITCAP(fr.status) END`. The client already zeroes a row whose
+Status says Canceled, so the $60 leaves on its own — no client change needed.
+Requires a card update to take effect.
+
+**Also added to the SQL: a `Site ID` column** (`ct.id`, NULL on invoice rows), so
+counting sites is counting identities rather than display names. `siteKey()`
+prefers it and falls back to `Facility|Location` for the legacy card.
+
+Guarded by `scripts/facility-summary.spec.js` (11 assertions, in CI) — verified to
+fail on the pre-fix page. Correct answer after both fixes: **198 bookings
+(206 incl. canceled) / 41 sites / $2,900 Charged**, of which $380 is invoiced and
+labelled as such. `$2,900 ≠ $2,520` is not a bug — the Camping tab is explicitly
+"base rental, excl. add-ons" while Charged includes the invoiced money v2 exists
+to surface.
 
 Already shipped (PR #75, live on `main`): name-based site-type recovery so
 "court" excludes rinks/pools/gyms, specific-type revenue breakdown, Location

@@ -677,17 +677,36 @@
       const refundedOf = r => num(r['Refunded']);
       const isInvoice = r => r['Source'] === 'Invoice';
 
+      // Invoice rows are MONEY, not bookings. The card unions invoice_v2 manual
+      // lines (tournament fees, deposits, service fees) into the same feed, and
+      // they are shaped like reservations without being any: "Reservation ID" is
+      // an order_item id, "Facility" is the FEE'S NAME, "Status" is hard-coded
+      // Confirmed, and "Site Type" is inherited from a representative court of
+      // the rental — so the chips cannot exclude them either.
+      // Counting them cost Douglas County 254 bookings instead of 198 and 46
+      // sites instead of 41: 48 fee lines under 5 distinct fee names, each name
+      // read as a campsite. Every count and every site set is therefore taken
+      // from reservation rows only; every amount still comes from all of them,
+      // so Charged keeps including the invoiced money v2 exists to surface.
+      const resRows = scoped.filter(r => !isInvoice(r));
+      // Prefer the card's site identifier; fall back to name+location for the
+      // legacy card, which has no "Site ID" column. Never a bare name — two
+      // locations can both have a "Site 01".
+      const siteKey = r => r['Site ID'] != null && r['Site ID'] !== ''
+        ? 'id:' + r['Site ID']
+        : (r['Facility'] || '') + '|' + (r['Location'] || '');
+
       const a = {
-        bookings: scoped.length,
-        canceled: scoped.filter(isCanceled).length,
-        confirmed: scoped.filter(r => lc(r['Status']) === 'confirmed').length,
-        inprog: scoped.filter(r => lc(r['Status']) === 'in-progress').length,
+        bookings: resRows.length,
+        canceled: resRows.filter(isCanceled).length,
+        confirmed: resRows.filter(r => lc(r['Status']) === 'confirmed').length,
+        inprog: resRows.filter(r => lc(r['Status']) === 'in-progress').length,
         revenue: scoped.reduce((s, r) => s + rev(r), 0),
-        instant: scoped.filter(isInstant).length,
-        managed: scoped.filter(r => !isInstant(r)).length,
+        instant: resRows.filter(isInstant).length,
+        managed: resRows.filter(r => !isInstant(r)).length,
         instRev: scoped.filter(isInstant).reduce((s, r) => s + rev(r), 0),
         mgdRev: scoped.filter(r => !isInstant(r)).reduce((s, r) => s + rev(r), 0),
-        sites: new Set(scoped.map(r => (r['Facility'] || '') + '|' + (r['Location'] || ''))).size,
+        sites: new Set(resRows.map(siteKey)).size,
         // Authoritative revenue: billed (charged), collected (confirmed
         // payments), refunded, and outstanding A/R = billed − collected.
         hasBilled,
@@ -721,22 +740,29 @@
         const v = verticalOf(r['Site Type']);
         if (!a.byV[v]) a.byV[v] = { bookings: 0, canceled: 0, revenue: 0, instant: 0, sites: new Set() };
         const g = a.byV[v];
-        g.bookings++; g.revenue += rev(r);
-        if (isCanceled(r)) g.canceled++;
-        if (isInstant(r)) g.instant++;
-        g.sites.add((r['Facility'] || '') + '|' + (r['Location'] || ''));
+        g.revenue += rev(r);
+        if (!isInvoice(r)) {
+          g.bookings++;
+          if (isCanceled(r)) g.canceled++;
+          if (isInstant(r)) g.instant++;
+          g.sites.add(siteKey(r));
+        }
 
         // Specific-type rollup — this is what separates real courts from the
         // rinks/pools/gyms Rec lumps into `court` (see refineSiteType).
         const tl = siteTypeLabel(r['Site Type']);
         if (!a.byType[tl]) a.byType[tl] = { bookings: 0, canceled: 0, revenue: 0, collected: 0, instant: 0, sites: new Set() };
         const tg = a.byType[tl];
-        tg.bookings++; tg.revenue += rev(r); tg.collected += collectedOf(r);
-        if (isCanceled(r)) tg.canceled++;
-        if (isInstant(r)) tg.instant++;
-        tg.sites.add((r['Facility'] || '') + '|' + (r['Location'] || ''));
+        tg.revenue += rev(r); tg.collected += collectedOf(r);
+        if (!isInvoice(r)) {
+          tg.bookings++;
+          if (isCanceled(r)) tg.canceled++;
+          if (isInstant(r)) tg.instant++;
+          tg.sites.add(siteKey(r));
+        }
 
-        const key = (r['Facility'] || '—') + '||' + (r['Location'] || '');
+        if (isInvoice(r)) return;
+        const key = siteKey(r);
         if (!bySite[key]) bySite[key] = { facility: r['Facility'] || '—', location: r['Location'] || '', type: r['Site Type'] || '', bookings: 0, canceled: 0, revenue: 0 };
         bySite[key].bookings++; bySite[key].revenue += rev(r);
         if (isCanceled(r)) bySite[key].canceled++;
@@ -3708,8 +3734,6 @@
         return rows.filter(r => set.has(r['Location'] || ''));
       }, [rows, locSel]);
 
-      const count = viewRows ? viewRows.length : null;
-      const siteCount = viewRows ? new Set(viewRows.map(r => (r['Facility'] || '') + '|' + (r['Location'] || ''))).size : 0;
       // SF-style orgs name courts plainly ("Alice Marble — Court 1") with no
       // sport keyword; when nothing name-matches but court-type rows exist,
       // fall back to Site Type so the Racket tab shows the org's courts
@@ -3723,14 +3747,20 @@
         const ss = new Set(statusSel);
         Object.keys(VERT_CONFIG).forEach(k => {
           const t = new Set(VERT_CONFIG[k].types);
-          vertCounts[k] = viewRows.filter(r => t.has(r['Site Type']) && ss.has(lc(r['Status']))).length;
+          vertCounts[k] = viewRows.filter(r => r['Source'] !== 'Invoice' && t.has(r['Site Type']) && ss.has(lc(r['Status']))).length;
         });
         // Racket has no site type — courts are matched by name, same rule the
         // Racket Sports view uses to scope the feed.
-        vertCounts.racket = viewRows.filter(r => racketRowMatch(r) && ss.has(lc(r['Status']))).length;
+        vertCounts.racket = viewRows.filter(r => r['Source'] !== 'Invoice' && racketRowMatch(r) && ss.has(lc(r['Status']))).length;
       }
 
       const bannerAgg = viewRows ? aggregate(viewRows, statusSel, typeSel) : null;
+      // The toolbar readout is the SAME aggregate the banner and the KPI cards
+      // use — it used to be counted separately off the raw rows, which is how it
+      // could agree with a wrong number and disagree with a right one. Declared
+      // here, below bannerAgg, not above it.
+      const count = bannerAgg ? bannerAgg.bookings : null;
+      const siteCount = bannerAgg ? bannerAgg.sites : 0;
 
       // Exports mirror exactly what's on screen, like the other reports:
       // date range + status + site-type filters, and the active tab's scope
