@@ -2362,111 +2362,6 @@
       // authoritative doing it. So the split happens inside the settled part of
       // the range, and when too little of the range has elapsed there is no
       // arrow at all rather than a confident wrong one.
-      // ── Add-ons: what people actually buy, and what it earns ──────────────
-      // "Add Ons" is a display string, e.g. "Topaz Holiday Surcharge ($10.00)"
-      // and occasionally several separated by commas. The price in the label is
-      // per-add-on list price; "Add-On Fees" is the charged total for the row,
-      // so counts come from the label and money from the numeric column. Counted
-      // on ARRIVAL rows only — a multi-day stay repeats its add-ons on every
-      // night row, which would multiply a 5-night stay's alcohol permit by five.
-      const addOnStats = (() => {
-        const byName = {};
-        let withAny = 0, feeTotal = 0;
-        arrivals.forEach(r => {
-          const raw = String(r['Add Ons'] || '').trim();
-          const fee = Number(r['Add-On Fees']) || 0;
-          feeTotal += fee;
-          if (!raw) return;
-          withAny++;
-          // Split on commas that are not inside the trailing ($x.xx).
-          raw.split(/,(?![^(]*\))/).forEach(part => {
-            const t = part.trim();
-            if (!t) return;
-            const m = /^(.*?)\s*\(\$?([\d,.]+)\)\s*$/.exec(t);
-            const name = (m ? m[1] : t).trim();
-            const listed = m ? Number(String(m[2]).replace(/,/g, '')) : null;
-            if (!name) return;
-            const b = byName[name] || (byName[name] = { name, n: 0, listed: null });
-            b.n++;
-            if (listed != null && !isNaN(listed)) b.listed = listed;
-          });
-        });
-        const list = Object.keys(byName).map(k => byName[k]).sort((a, b) => b.n - a.n);
-        return { list, withAny, feeTotal, arrivals: arrivals.length };
-      })();
-
-      // ── Day-of-week demand spread ─────────────────────────────────────────
-      // Occupied nights per weekday, normalised by how many of that weekday the
-      // range actually contains — a range with five Saturdays and four Tuesdays
-      // would otherwise make Saturday look busier than it is.
-      const dowSpread = (() => {
-        const dayCount = [0, 0, 0, 0, 0, 0, 0];
-        days.forEach(d => { dayCount[new Date(d + 'T00:00:00').getDay()]++; });
-        // Counted here from nightRows rather than reusing `nightsByDow`, which is
-        // declared ~150 lines below this point: an IIFE reading it would hit the
-        // temporal dead zone and take out the whole tab render. Deriving it from
-        // inputs that already exist keeps this independent of declaration order,
-        // so a future reshuffle cannot reintroduce that.
-        const byDow = [0, 0, 0, 0, 0, 0, 0];
-        nightRows.forEach(r => { const dw = dowOf(r); if (dw != null) byDow[dw]++; });
-        const rows_ = DOW.map((name, i) => ({
-          i, name,
-          nights: byDow[i],
-          occurrences: dayCount[i],
-          perDay: dayCount[i] ? byDow[i] / dayCount[i] : null,
-        })).filter(r => r.occurrences > 0);
-        const rated = rows_.filter(r => r.perDay != null);
-        if (rated.length < 2) return null;
-        const sorted = rated.slice().sort((a, b) => b.perDay - a.perDay);
-        return { rows: rows_, busiest: sorted[0], quietest: sorted[sorted.length - 1] };
-      })();
-
-      // ── Stay-length mix ───────────────────────────────────────────────────
-      const stayMix = (() => {
-        if (!arrivals.length) return null;
-        let one = 0, short_ = 0, week = 0, longest = 0;
-        arrivals.forEach(r => {
-          const n = Math.max(1, Number(r['Multi-Day Days']) || 1);
-          if (n > longest) longest = n;
-          if (n <= 1) one++; else if (n <= 3) short_++; else week++;
-        });
-        return { one, short: short_, week, longest, total: arrivals.length };
-      })();
-
-      const TODAY = todayStr();
-      const pastDays = days.filter(d => d <= TODAY);
-      const trendHalf = Math.floor(pastDays.length / 2);
-      // Need a fortnight of settled days to say anything: a 3-day sample flips
-      // direction on one booking.
-      const trendReady = !weekly && pastDays.length >= 14;
-      const trendFor = st => {
-        if (!trendReady || !st) return null;
-        const early = pastDays.slice(0, trendHalf);
-        const late  = pastDays.slice(pastDays.length - trendHalf);
-        const occIn = list => list.reduce((n, d) => n + (st.occ[d] ? 1 : 0), 0);
-        const a = occIn(early), b = occIn(late);
-        if (a + b < 2) return null;              // barely booked either way
-        const ra = a / early.length, rb = b / late.length;
-        const delta = rb - ra;
-        const dir = Math.abs(delta) < 0.12 ? 'flat' : (delta > 0 ? 'up' : 'down');
-        return { dir, delta, ra, rb, nights: trendHalf };
-      };
-      const TREND_META = {
-        up:   { glyph: '\u25B2', cls: 'up',   word: 'heating up' },
-        down: { glyph: '\u25BC', cls: 'down', word: 'cooling off' },
-        flat: { glyph: '\u2013', cls: 'flat', word: 'steady' },
-      };
-      const trendChip = t => {
-        if (!t) return null;
-        const m = TREND_META[t.dir];
-        const pct = v => Math.round(v * 100) + '%';
-        return e('span', {
-          className: 'cc-trend ' + m.cls,
-          title: 'Occupancy ' + m.word + ' \u2014 ' + pct(t.ra) + ' \u2192 ' + pct(t.rb)
-               + ' over the last two ' + t.nights + '-day stretches (settled days only)',
-        }, m.glyph);
-      };
-
       const locs = geo.locations || [];
       const geoSitesAll = locs.reduce((a, l) => a.concat(l.sites), []);
       // Calendar groups: one per mapped campsite location (each site row keeps a
@@ -2584,6 +2479,123 @@
         } catch (er) { setInsError(er.message || 'Could not generate insights'); }
         setInsLoading(false);
       };
+
+      // ── Derived signals for the panels below ──────────────────────────────
+      // Placed HERE, immediately before the render, and not up with the other
+      // derivations — on purpose.
+      //
+      // These blocks are IIFEs, so they run the moment they are defined. Sitting
+      // higher up, `dowSpread` referenced `DOW`, which is declared ~80 lines
+      // further down this same function. In source that is a temporal dead zone,
+      // but Babel compiles `const` to `var`, so it did not throw a clean
+      // ReferenceError — `DOW` was simply `undefined` and `DOW.map` blew up with
+      // "Cannot read properties of undefined", crashing the whole tab to a blank
+      // page in production. Defining derived values after everything they read
+      // removes the class of bug rather than patching one instance of it.
+      // ── Add-ons: what people actually buy, and what it earns ──────────────
+      // "Add Ons" is a display string, e.g. "Topaz Holiday Surcharge ($10.00)"
+      // and occasionally several separated by commas. The price in the label is
+      // per-add-on list price; "Add-On Fees" is the charged total for the row,
+      // so counts come from the label and money from the numeric column. Counted
+      // on ARRIVAL rows only — a multi-day stay repeats its add-ons on every
+      // night row, which would multiply a 5-night stay's alcohol permit by five.
+      const addOnStats = (() => {
+        const byName = {};
+        let withAny = 0, feeTotal = 0;
+        arrivals.forEach(r => {
+          const raw = String(r['Add Ons'] || '').trim();
+          const fee = Number(r['Add-On Fees']) || 0;
+          feeTotal += fee;
+          if (!raw) return;
+          withAny++;
+          // Split on commas that are not inside the trailing ($x.xx).
+          raw.split(/,(?![^(]*\))/).forEach(part => {
+            const t = part.trim();
+            if (!t) return;
+            const m = /^(.*?)\s*\(\$?([\d,.]+)\)\s*$/.exec(t);
+            const name = (m ? m[1] : t).trim();
+            const listed = m ? Number(String(m[2]).replace(/,/g, '')) : null;
+            if (!name) return;
+            const b = byName[name] || (byName[name] = { name, n: 0, listed: null });
+            b.n++;
+            if (listed != null && !isNaN(listed)) b.listed = listed;
+          });
+        });
+        const list = Object.keys(byName).map(k => byName[k]).sort((a, b) => b.n - a.n);
+        return { list, withAny, feeTotal, arrivals: arrivals.length };
+      })();
+
+      // ── Day-of-week demand spread ─────────────────────────────────────────
+      // Occupied nights per weekday, normalised by how many of that weekday the
+      // range actually contains — a range with five Saturdays and four Tuesdays
+      // would otherwise make Saturday look busier than it is.
+      const dowSpread = (() => {
+        const dayCount = [0, 0, 0, 0, 0, 0, 0];
+        days.forEach(d => { dayCount[new Date(d + 'T00:00:00').getDay()]++; });
+        // Counted locally rather than reusing `nightsByDow`. It is declared above
+        // this point now, so either would work — but deriving from `nightRows`
+        // keeps this block independent of declaration order, which is the thing
+        // that broke it once already.
+        const byDow = [0, 0, 0, 0, 0, 0, 0];
+        nightRows.forEach(r => { const dw = dowOf(r); if (dw != null) byDow[dw]++; });
+        const rows_ = DOW.map((name, i) => ({
+          i, name,
+          nights: byDow[i],
+          occurrences: dayCount[i],
+          perDay: dayCount[i] ? byDow[i] / dayCount[i] : null,
+        })).filter(r => r.occurrences > 0);
+        const rated = rows_.filter(r => r.perDay != null);
+        if (rated.length < 2) return null;
+        const sorted = rated.slice().sort((a, b) => b.perDay - a.perDay);
+        return { rows: rows_, busiest: sorted[0], quietest: sorted[sorted.length - 1] };
+      })();
+
+      // ── Stay-length mix ───────────────────────────────────────────────────
+      const stayMix = (() => {
+        if (!arrivals.length) return null;
+        let one = 0, short_ = 0, week = 0, longest = 0;
+        arrivals.forEach(r => {
+          const n = Math.max(1, Number(r['Multi-Day Days']) || 1);
+          if (n > longest) longest = n;
+          if (n <= 1) one++; else if (n <= 3) short_++; else week++;
+        });
+        return { one, short: short_, week, longest, total: arrivals.length };
+      })();
+
+      const TODAY = todayStr();
+      const pastDays = days.filter(d => d <= TODAY);
+      const trendHalf = Math.floor(pastDays.length / 2);
+      // Need a fortnight of settled days to say anything: a 3-day sample flips
+      // direction on one booking.
+      const trendReady = !weekly && pastDays.length >= 14;
+      const trendFor = st => {
+        if (!trendReady || !st) return null;
+        const early = pastDays.slice(0, trendHalf);
+        const late  = pastDays.slice(pastDays.length - trendHalf);
+        const occIn = list => list.reduce((n, d) => n + (st.occ[d] ? 1 : 0), 0);
+        const a = occIn(early), b = occIn(late);
+        if (a + b < 2) return null;              // barely booked either way
+        const ra = a / early.length, rb = b / late.length;
+        const delta = rb - ra;
+        const dir = Math.abs(delta) < 0.12 ? 'flat' : (delta > 0 ? 'up' : 'down');
+        return { dir, delta, ra, rb, nights: trendHalf };
+      };
+      const TREND_META = {
+        up:   { glyph: '\u25B2', cls: 'up',   word: 'heating up' },
+        down: { glyph: '\u25BC', cls: 'down', word: 'cooling off' },
+        flat: { glyph: '\u2013', cls: 'flat', word: 'steady' },
+      };
+      const trendChip = t => {
+        if (!t) return null;
+        const m = TREND_META[t.dir];
+        const pct = v => Math.round(v * 100) + '%';
+        return e('span', {
+          className: 'cc-trend ' + m.cls,
+          title: 'Occupancy ' + m.word + ' \u2014 ' + pct(t.ra) + ' \u2192 ' + pct(t.rb)
+               + ' over the last two ' + t.nights + '-day stretches (settled days only)',
+        }, m.glyph);
+      };
+
 
       return e('div', null,
         e(CampBanner, { stays, nights, occPct, revenue, sitesBooked, sitesTotal }),
