@@ -346,6 +346,58 @@ it back was surfacing it, not rebuilding it.
   even while the report was retired.
 - Editing still works for admins exactly as before — open the page WITH `?token=`.
 
+## Never ship a page without rendering it (IMPORTANT — cost us two blank pages)
+
+**The rule: if a change touches a `public/*.html` React page, render that page in
+a browser before pushing. Run `node scripts/ci-check-render.js`.** Every other
+check in this repo can pass on a page that shows the user nothing.
+
+**Both blank-page incidents had the same shape** (2026-08-22 and 2026-08-23, both
+in `facilities.html`'s Camping tab):
+
+A derived value was computed in an **IIFE** that referenced a `const` declared
+*further down the same function*. In source that is a temporal dead zone. But
+these pages run through **in-browser Babel, which compiles `const` to `var`** —
+so instead of a tidy `ReferenceError: Cannot access 'DOW' before initialization`,
+the identifier was silently `undefined` and the next line threw:
+
+```
+TypeError: Cannot read properties of undefined (reading 'map')
+    at CampingView
+```
+
+React unmounted the tree. The page still returned **HTTP 200 with a complete HTML
+document** and rendered a blank white area under the banner. The second time, it
+reached production.
+
+**Why nothing caught it — this is the part to internalise:**
+
+| check | why it passed |
+|---|---|
+| `node --check server.js` | the file is syntactically valid |
+| `ci-check-html.js` | the block *parses*; it only throws when **run** |
+| `ci-boot-check.js` | the server boots and serves the page happily |
+| `ci-check-admin-js.js` | checks the ADMIN page, not the report pages |
+| all seven spec files | none of them mount a component |
+
+Parsing is not running. A page can only be proven to render by rendering it.
+
+**The guard: `node scripts/ci-check-render.js`** (in CI). It boots the server,
+drives a real Chromium at each page, and fails on any uncaught exception **or** a
+page that comes up empty — the `needs` selector per case is what turns "no errors
+thrown" into "actually rendered something". Hermetic: every `/api/` request is
+intercepted and answered from fixtures in the script, so it never touches
+Metabase, never varies with live data, and cannot fail because a card is slow.
+Adding a page is one line in `CASES`; adding a feed is one line in `STUBS`.
+
+**And the coding rule that removes the class:** in these page components, define
+derived values *after* everything they read — the safest place is immediately
+before the `return`. Do not scatter IIFEs above their inputs and rely on
+declaration order, because Babel turns the error you would want (a throw naming
+the identifier) into the error you get (`undefined` two lines later, naming
+nothing useful). If a derivation must sit high in the function, compute its
+inputs locally instead of reaching down the file for them.
+
 ## The admin dashboard is a template literal — check its JS before shipping (IMPORTANT)
 
 **The trap, and it has now bitten twice.** The whole admin dashboard is one giant

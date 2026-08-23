@@ -66,3 +66,6 @@ jobs:
 
       - name: Admin dashboard JS (inline blocks parse; every on*= handler resolves)
         run: node scripts/ci-check-admin-js.js
+
+      - name: Page render check (real browser; a blank page fails the build)
+        run: node scripts/ci-check-render.js
