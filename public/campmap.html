@@ -11,6 +11,7 @@
   --bg:#0f172a;--panel:#ffffff;--ink:#1f2937;--muted:#6b7280;--line:#e5e7eb;
   --avail:#16a34a;--avail-bg:#dcfce7;--booked:#dc2626;--booked-bg:#fee2e2;
   --unknown:#9ca3af;--unknown-bg:#f3f4f6;--blocked:#6b7280;--blocked-bg:#e5e7eb;--accent:#0f766e;--sel:#f59e0b;
+  --partial:#d97706;--partial-bg:#fef3c7;
   --shadow:0 1px 3px rgba(16,24,40,.12),0 1px 2px rgba(16,24,40,.08);
   --shadow-lg:0 12px 40px rgba(16,24,40,.28);
 }
@@ -32,26 +33,76 @@ body{font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica
 .datebar{display:flex;align-items:center;gap:8px;padding:8px 12px;background:#fff;border-bottom:1px solid var(--line);z-index:600}
 .datebar .summ{font-size:13px;font-weight:600;white-space:nowrap;padding-right:4px}
 .datebar .summ .cnt{color:var(--avail)}
-.chips{display:flex;gap:6px;overflow-x:auto;flex:1;scrollbar-width:thin;padding-bottom:2px}
-.chips::-webkit-scrollbar{height:6px}
-.chips::-webkit-scrollbar-thumb{background:#d1d5db;border-radius:3px}
-.chip{flex:0 0 auto;min-width:46px;text-align:center;padding:5px 8px;border:1px solid var(--line);border-radius:10px;background:#fff;cursor:pointer;transition:all .12s;line-height:1.15}
-.chip:hover{border-color:#9ca3af;background:#f9fafb}
-.chip.on{background:var(--accent);border-color:var(--accent);color:#fff}
-.chip .dow{font-size:10px;font-weight:600;text-transform:uppercase;opacity:.75}
-.chip .dnum{font-size:15px;font-weight:700}
-.chip .mo{font-size:9px;opacity:.7}
-.datebar input[type=date]{border:1px solid var(--line);border-radius:8px;padding:6px 8px;font:inherit;color:#374151;cursor:pointer}
-.datebar .nav{border:1px solid var(--line);background:#fff;border-radius:8px;width:30px;height:30px;cursor:pointer;font-size:15px;color:#374151;flex:0 0 auto}
-.datebar .nav:hover{background:#f3f4f6}
+/* Two rows, not one crammed line: the fields and the count read first, the
+   strip is a browse aid underneath. */
+.datebar{display:block;padding:0}
+.datebar .dbrow{display:flex;align-items:center;gap:12px;padding:9px 14px}
+.datebar .dbrow-top{flex-wrap:wrap}
+.datebar .listtog.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.datebar .fld{display:flex;flex-direction:column;gap:3px;flex:0 0 auto}
+.datebar .fld span{font-size:9.5px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);font-weight:700}
+.datebar .fld input{font:inherit;font-size:13.5px;padding:6px 9px;border:1px solid var(--line);border-radius:9px;color:#374151;background:#fff;cursor:pointer}
+.datebar .fld input:focus{outline:2px solid var(--accent);outline-offset:1px}
+/* The campsite-type filter sits in the same row as the dates: "which sites fit
+   my rig" is part of the same question as "which nights", not a separate mode. */
+.datebar .fld select{font:inherit;font-size:13.5px;padding:6px 9px;border:1px solid var(--line);border-radius:9px;color:#374151;background:#fff;cursor:pointer;max-width:200px}
+.datebar .fld select:focus{outline:2px solid var(--accent);outline-offset:1px}
+.datebar .fld-type.on select{border-color:var(--accent);color:var(--accent);font-weight:700}
+.datebar .fld-arrow{color:var(--muted);align-self:flex-end;padding-bottom:7px}
+.datebar .nights{align-self:flex-end;padding-bottom:7px;font-size:12.5px;font-weight:700;color:var(--accent);white-space:nowrap}
+.datebar .listtog{margin-left:auto;font:inherit;font-size:11.5px;font-weight:700;padding:5px 10px;border:1px solid var(--line);border-radius:999px;background:#fff;color:var(--muted);cursor:pointer;flex:0 0 auto}
+.datebar .listtog:hover{border-color:var(--accent);color:var(--accent)}
+/* ── the site list beside the map ─────────────────────────────────────────── */
+.sitelist{position:absolute;top:0;right:0;bottom:0;width:288px;background:#fff;border-left:1px solid var(--line);z-index:500;display:flex;flex-direction:column;overflow:hidden}
+.mapwrap.nolist .sitelist{display:none}
+.sitelist .sl-head{padding:11px 13px 9px;border-bottom:1px solid var(--line);flex:0 0 auto}
+.sitelist .sl-title{font-size:13px;font-weight:800}
+.sitelist .sl-sub{font-size:11.5px;color:var(--muted);margin-top:2px}
+.sitelist .sl-body{flex:1;overflow-y:auto;padding:6px}
+.sl-item{display:flex;align-items:center;gap:9px;width:100%;text-align:left;font:inherit;padding:7px 8px;border:1px solid transparent;border-radius:9px;background:none;cursor:pointer}
+.sl-item:hover{background:#f9fafb;border-color:var(--line)}
+.sl-item.sel{background:var(--avail-bg);border-color:var(--avail)}
+.sl-item .dot{width:9px;height:9px;border-radius:50%;flex:0 0 9px}
+.sl-item .nm{font-size:13px;font-weight:700;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sl-item .rt{font-size:11.5px;color:var(--muted);flex:0 0 auto;font-variant-numeric:tabular-nums}
+.sl-item .wh{display:block;font-size:10.5px;color:var(--muted);font-weight:500}
+.sl-group{font-size:9.5px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);font-weight:800;padding:9px 8px 4px}
+.sl-empty{font-size:12.5px;color:var(--muted);padding:12px 8px;line-height:1.45}
+@media (max-width:900px){
+  .sitelist{top:auto;left:0;right:0;height:42%;width:auto;border-left:none;border-top:1px solid var(--line)}
+}
+.datebar .summ .part{color:var(--partial);font-weight:700}
+/* The stay, drawn on the strip: arrival, the nights between, and the checkout
+   morning (dashed — you are not occupying the site that night). */
+/* The hand-off at the foot of the list — see renderFoot(). */
+.sitelist .sl-foot{flex:0 0 auto;padding:8px;border-top:1px solid var(--line)}
+.sl-more{display:block;text-decoration:none;padding:9px 11px;border:1px solid var(--accent);border-radius:10px;
+  background:var(--accent-soft,#ecfdf5);color:#0f766e}
+.sl-more:hover{background:#d7ebe8}
+.sl-more .m-h{display:block;font-size:11.5px;font-weight:800}
+.sl-more .m-b{display:block;font-size:11px;line-height:1.35;margin-top:2px;color:#374151}
+
 
 /* ── Map ── */
 .mapwrap{position:relative;flex:1;min-height:0}
 #map{position:absolute;inset:0;background:#aadaff}
+/* The map yields to the list rather than sitting under it. Overriding `right`
+   on the absolute box, after the inset:0 above, so there is one source of truth
+   for the map's geometry. */
+.mapwrap:not(.nolist) #map{right:288px}
+@media (max-width:900px){
+  /* narrow: the list becomes a bottom band, so the map gives up height not width */
+  .mapwrap:not(.nolist) #map{right:0;bottom:42%}
+}
 .leaflet-container{font:inherit}
 
 /* control cluster */
-.mapctl{position:absolute;top:12px;right:12px;z-index:500;display:flex;flex-direction:column;gap:8px;align-items:flex-end}
+/* Sits inside the map, not over the list. The list occupies the right 288px of
+   .mapwrap, and this control is positioned against .mapwrap — so without the
+   offset it lands on top of the list header. */
+.mapctl{position:absolute;top:12px;right:300px;z-index:600;display:flex;flex-direction:column;gap:8px;align-items:flex-end}
+.mapwrap.nolist .mapctl{right:12px}
+@media (max-width:900px){.mapctl,.mapwrap.nolist .mapctl{right:12px}}
 .basetoggle{display:inline-flex;border:1px solid var(--line);border-radius:9px;overflow:hidden;box-shadow:var(--shadow);background:#fff}
 .basetoggle button{border:none;background:#fff;padding:7px 12px;font-size:12px;font-weight:600;cursor:pointer;color:#374151}
 .basetoggle button.on{background:var(--accent);color:#fff}
@@ -100,6 +151,19 @@ body{font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica
 .dbody .stat-pill.booked{background:var(--booked-bg);color:#991b1b}
 .dbody .stat-pill.unknown{background:var(--unknown-bg);color:#374151}
 .dbody .stat-pill.blocked{background:var(--blocked-bg);color:#334155}
+.dbody .staybox{background:#f9fafb;border:1px solid var(--line);border-radius:10px;padding:8px 10px;margin-bottom:10px}
+.dbody .staybox .sb-when{font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);font-weight:700}
+.dbody .staybox .sb-cnt{font-size:13px;margin-top:2px}
+.dbody .staybox .sb-cnt b{color:var(--avail)}
+.dbody .staybox .sb-part{color:var(--partial);font-weight:700}
+.dbody .nightrow{display:flex;gap:4px;flex-wrap:wrap;margin:2px 0 12px}
+.dbody .ncell{min-width:48px;text-align:center;border-radius:7px;padding:4px 6px;font-size:10px;font-weight:600;line-height:1.25}
+.dbody .ncell b{display:block;font-size:12.5px}
+.dbody .ncell.av{background:var(--avail-bg);color:#166534}
+.dbody .ncell.bk{background:var(--booked-bg);color:#991b1b}
+.dbody .ncell.bl{background:var(--blocked-bg);color:#334155}
+.dbody .ncell.un{background:var(--unknown-bg);color:#374151}
+.dbody .stat-pill.partial{background:var(--partial-bg);color:#92400e}
 .dbody h2{margin:2px 0 2px;font-size:20px}
 .dbody .area{font-size:12.5px;color:var(--muted);margin-bottom:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .dbody .tag{font-size:11px;font-weight:700;padding:2px 8px;border-radius:6px}
@@ -113,23 +177,6 @@ body{font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica
 .amen-list{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px}
 .amen-list .a{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;background:#f3f4f6;border-radius:7px;padding:4px 9px;color:#374151}
 .sec-h{font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);font-weight:700;margin:6px 0 8px}
-.mini-cal{border:1px solid var(--line);border-radius:10px;padding:10px;margin-bottom:16px}
-.mini-cal .mc-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
-.mini-cal .mc-head b{font-size:13px}
-.mini-cal .mc-nav{background:none;border:1px solid var(--line);border-radius:6px;width:26px;height:26px;cursor:pointer;color:#374151}
-.mini-cal .mc-nav:hover{background:#f3f4f6}
-.mc-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:3px}
-.mc-grid .wd{font-size:9.5px;text-align:center;color:var(--muted);font-weight:600;padding-bottom:2px}
-.mc-cell{aspect-ratio:1;display:flex;align-items:center;justify-content:center;font-size:11px;border-radius:6px;cursor:pointer;position:relative}
-.mc-cell.pad{cursor:default}
-.mc-cell.av{background:var(--avail-bg);color:#166534;font-weight:600}
-.mc-cell.bk{background:var(--booked-bg);color:#991b1b;text-decoration:line-through;opacity:.85}
-.mc-cell.bl{background:var(--blocked-bg);color:#334155;font-weight:600}
-.mc-cell.un{background:#f9fafb;color:#9ca3af}
-.mc-cell.past{opacity:.35;cursor:default}
-.mc-cell.today{outline:2px solid var(--accent);outline-offset:-2px}
-.mc-cell.sel{outline:2px solid var(--sel);outline-offset:-2px;font-weight:800}
-.mc-cell:not(.pad):not(.past):hover{filter:brightness(.94)}
 .book-btn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;padding:13px;background:var(--accent);color:#fff;text-decoration:none;border-radius:10px;font-size:15px;font-weight:700;transition:filter .12s}
 .book-btn:hover{filter:brightness(1.08)}
 .book-note{font-size:11px;color:var(--muted);text-align:center;margin-top:8px}
@@ -201,15 +248,27 @@ body{font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica
   </div>
 
   <div class="datebar">
-    <button class="nav" id="prevDay" title="Previous day">‹</button>
-    <div class="summ" id="summ">—</div>
-    <div class="chips" id="chips"></div>
-    <input type="date" id="datePick"/>
-    <button class="nav" id="nextDay" title="Next day">›</button>
+    <div class="dbrow dbrow-top">
+      <label class="fld"><span>Arrive</span><input type="date" id="arrivePick"/></label>
+      <span class="fld-arrow">→</span>
+      <label class="fld"><span>Depart</span><input type="date" id="departPick"/></label>
+      <span class="nights" id="nights">1 night</span>
+      <label class="fld fld-type" id="typeFld" hidden><span>Campsite type</span><select id="typePick"></select></label>
+      <div class="summ" id="summ">—</div>
+      <button class="listtog" id="listTog" title="Show or hide the list of sites">Hide list</button>
+    </div>
   </div>
 
   <div class="mapwrap">
     <div id="map"></div>
+    <aside class="sitelist" id="sitelist">
+      <div class="sl-head">
+        <div class="sl-title" id="slTitle">Available sites</div>
+        <div class="sl-sub" id="slSub">—</div>
+      </div>
+      <div class="sl-body" id="slBody"></div>
+      <div class="sl-foot" id="slFoot"></div>
+    </aside>
     <div class="editbar" id="editbar">
       <span class="msg" id="editMsg">Drag campsite pins to place them.</span>
       <span class="sep"></span>
@@ -247,9 +306,10 @@ body{font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica
       <button class="collapse" id="legToggle">▾</button>
       <div class="legend-body">
         <h4>Availability</h4>
-        <div class="row"><span class="dot" style="background:var(--avail)"></span> Open this night</div>
-        <div class="row"><span class="dot" style="background:var(--booked)"></span> Booked</div>
-        <div class="row"><span class="dot" style="background:var(--blocked)"></span> Unavailable — booking restriction</div>
+        <div class="row"><span class="dot" style="background:var(--avail)"></span> Open every night of the stay</div>
+        <div class="row"><span class="dot" style="background:var(--partial)"></span> Open some nights — open the site to see which</div>
+        <div class="row"><span class="dot" style="background:var(--booked)"></span> Not available</div>
+        <div class="row"><span class="dot" style="background:var(--blocked)"></span> Free, but not for a stay this long</div>
         <div class="div" id="legKindDiv"></div>
         <h4 id="legKindH" style="display:none">Site type</h4>
         <div id="legKinds"></div>
@@ -370,14 +430,35 @@ function siteMeta(s){
     blurb:    pick(ad.blurb,    def.blurb,    haveCfg?null:fb.blurb),
   };
 }
-/* site-type (sub_type/kind) → marker emoji + human label */
+/* site-type (sub_type/kind) → marker emoji + human label.
+ *
+ * The four canonical values are rec.us's own, enforced by a CHECK constraint on
+ * court.sub_type: tent | rv | tent-and-rv | lodging — the exact four options in
+ * the admin's "Campsite Type" dropdown. They are matched EXACTLY and first,
+ * because the substring rules below cannot tell 'rv' from 'tent-and-rv' and used
+ * to label an RV-only site "Tent & RV" — the one reading a tent camper must not
+ * be given.
+ *
+ * electric / primitive are ours, not Rec's: Pleasant Hill's 12 campsites carry
+ * sub_type NULL, so those two are derived from the site description (see sKind).
+ * They stay because they are how those sites genuinely differ.
+ */
+var CANON_KINDS = {
+  'tent':        { e:'⛺',       label:'Tent only' },
+  'rv':          { e:'🚐', label:'RV only' },
+  'tent-and-rv': { e:'🏕️', label:'Tent & RV' },
+  'lodging':     { e:'🛖', label:'Lodging' },
+  'electric':    { e:'⚡',       label:'Electric' },
+  'primitive':   { e:'⛺',       label:'Primitive' }
+};
 function kindInfo(k){
   k = (k||'').toString().toLowerCase();
-  if(k==='electric' || k.indexOf('electric')>=0) return {e:'⚡', label:'Electric'};
-  if(k==='primitive' || k.indexOf('primitive')>=0) return {e:'⛺', label:'Primitive'};
-  if(k.indexOf('rv')>=0) return {e:'🚐', label:'Tent & RV'};
-  if(k.indexOf('tent')>=0) return {e:'⛺', label:'Tent'};
-  if(k.indexOf('cabin')>=0) return {e:'🛖', label:'Cabin'};
+  if(CANON_KINDS[k]) return CANON_KINDS[k];
+  if(k.indexOf('electric')>=0) return CANON_KINDS.electric;
+  if(k.indexOf('primitive')>=0) return CANON_KINDS.primitive;
+  if(k.indexOf('rv')>=0) return CANON_KINDS['tent-and-rv'];
+  if(k.indexOf('tent')>=0) return CANON_KINDS.tent;
+  if(k.indexOf('cabin')>=0 || k.indexOf('lodg')>=0) return CANON_KINDS.lodging;
   if(!k) return {e:'🏕️', label:'Campsite'};
   return {e:'🏕️', label: k.replace(/-/g,' ').replace(/\b\w/g,function(c){return c.toUpperCase();})};
 }
@@ -390,6 +471,11 @@ var SITES_LIVE = false;
 function L_(s){ return LIVE_BY_ID[s.id] || null; }
 function shortName(s){ return 'Site '+pad(s.n); }
 function sName(s){ var l=L_(s); return (l && (l.courtNumber||l.name)) || s.name; }
+/* NOTE (verified on the PR #143 preview, 2026-08-23): the live /api/sites payload
+   carries NO subType — Rec's list_sites omits the field, even though court.sub_type
+   is populated in the database. So in practice this falls through to the seed's
+   own `kind`, and varying Campsite Type in the rec.us admin will not move this
+   map until the seed is updated (or the API starts returning it). */
 function sKind(s){ var l=L_(s);
   if(l){ if(l.subType) return l.subType; if(l.description){ if(/primitive/i.test(l.description)) return 'primitive'; if(/electric/i.test(l.description)) return 'electric'; } }
   return s.kind || 'campsite';
@@ -446,13 +532,24 @@ var TODAY_ISO = iso(TODAY);
 // Availability window: rec.us returns ~30 days of check-in data and the date
 // strip spans 30 days, so we only claim a verdict inside this range. Dates beyond
 // it aren't "unknown" to show off — they're just outside the schedule we have.
-var MAX_ISO = iso(addDays(TODAY, 29));
+// How many nights the strip shows. rec.us's get_site_availability enumerates 30
+// days of check-in dates and takes no range parameter (verified 2026-08-23 on
+// two sites, public and staff scopes: 31 keys, today .. +30, identical), so this
+// is the horizon of what can be CONFIRMED — not the horizon of what rec.us will
+// accept, which is months longer. Hence the hand-off card at the end of the strip.
+var DAYS_SHOWN = 30;
+var MAX_ISO = iso(addDays(TODAY, DAYS_SHOWN - 1));
 
 /* ── availability state: { siteId: { 'YYYY-MM-DD': 'avail'|'booked'|'blocked' } } ──
    'booked'  = an actual reservation conflict on that night
    'blocked' = not bookable for a non-reservation reason (booking-window rule,
                blackout, etc.) — NOT a booking, so it must not read as "Booked". */
-var AVAIL = {};          // siteId -> { date: 'avail'|'booked'|'blocked' }
+var AVAIL = {};          // siteId -> { date: 'avail'|'booked'|'blocked'|'closed' }
+// siteId -> { 'YYYY-MM-DD': {earliest, latest} } — the legal checkout range for an
+// arrival on that night, as stated by rec.us. Declared beside AVAIL because the
+// two are filled from the same response and read together; it previously sat next
+// to the night strip and was deleted with it.
+var AVAIL_WINDOW = {};
 var LIVE = false;        // did we get live data?
 
 /* deterministic pseudo-random 0..1 from a string (offline fallback) */
@@ -475,10 +572,147 @@ function seedFallback(site){
 }
 
 /* status of a site on a date: 'avail' | 'booked' | 'blocked' | 'unknown' */
+/* One night of rec.us's answer → one of our states. Extracted so it can be
+ * tested: this mapping decides what a camper is TOLD TO DO about a night they
+ * cannot have, and it has been wrong once already.
+ *
+ *   conflict         → 'booked'  taken. Another site, or another week.
+ *   min/max-stay     → 'blocked' the site is free, the STAY LENGTH is not.
+ *                                Worth saying: a shorter trip works.
+ *   anything else    → 'closed'  not available (outside-window, blackout,
+ *                                closed). Verified 2026-08-23: a staff hold
+ *                                awaiting payment comes back as
+ *                                `outside-window`, and it genuinely blocks the
+ *                                site. Calling that a "booking restriction" told
+ *                                the camper to retry with a length that also
+ *                                fails.
+ */
+function nightStateFrom(v){
+  if(v && v.available===true) return 'avail';
+  if(v && v.available===false){
+    if(v.reason==='conflict') return 'booked';
+    return /stay|night|duration/i.test(String(v.reason||'')) ? 'blocked' : 'closed';
+  }
+  // hourly sites: an object of time slots, no `available` flag = open
+  if(v && typeof v==='object' && Object.keys(v).length>0) return 'avail';
+  return 'blocked';
+}
+
+/* ── the campsite-type filter ────────────────────────────────────────────────
+ * Every site in a campground is set up a bit differently, and the difference a
+ * camper actually filters on is what they are arriving in. rec.us stores that
+ * per site as court.sub_type, one of tent | rv | tent-and-rv | lodging.
+ *
+ * TYPE_FILTER is 'all' or one of those keys, and VIEW() is the set of sites the
+ * page is talking about. Everything that counts, lists, or paints reads VIEW()
+ * rather than SEED, so the map, the list and the "N of M open" line can never
+ * disagree about which sites are in scope — the failure that made the Facilities
+ * Summary read 46 sites where the Camping tab read 41.
+ *
+ * The filter is NOT remembered between visits (unlike the list toggle): it is a
+ * search intent, not a layout preference, and a camper returning to a silently
+ * narrowed map would read a subset of the campground as the whole of it.
+ */
+var TYPE_FILTER = 'all';
+function typeKey(site){
+  var k=(sKind(site)||'').toString().toLowerCase();
+  if(CANON_KINDS[k]) return k;
+  if(k.indexOf('electric')>=0) return 'electric';
+  if(k.indexOf('primitive')>=0) return 'primitive';
+  if(k.indexOf('rv')>=0) return 'tent-and-rv';
+  if(k.indexOf('tent')>=0) return 'tent';
+  if(k.indexOf('cabin')>=0 || k.indexOf('lodg')>=0) return 'lodging';
+  return k || 'campsite';
+}
+function inView(site){
+  if(TYPE_FILTER==='all') return true;
+  // Editing places pins for the WHOLE campground, so a filter must not hide the
+  // ones an admin came to move.
+  if(typeof EDIT!=='undefined' && EDIT) return true;
+  return typeKey(site)===TYPE_FILTER;
+}
+function VIEW(){ return SEED.filter(inView); }
+
 function statusOn(site, dateStr){
   var a=AVAIL[site.id];
   if(!a || a.__empty) return 'unknown';
   return a[dateStr] || 'unknown';
+}
+
+/* ── Availability across the whole stay ──────────────────────────────────────
+ * A camper picks arrive + depart, not a night at a time. The nights that have
+ * to be free are arrive .. depart-1: you do not occupy the site on the night
+ * you check out, and counting it would report a 3-night stay as unavailable
+ * because of a booking that starts the morning you leave.
+ *
+ * No new request: loadAvailability() already fetched every night for every site
+ * in one call, so this is a reduction over AVAIL, not a fetch.
+ *
+ * Three distinctions this keeps, all of which read the same if you collapse
+ * them and all of which mean different things to whoever is looking:
+ *   booked   — a real reservation conflicts. Someone else has it.
+ *   blocked  — a booking RULE says no (min/max stay, blackout, closed, outside
+ *              the window). Nobody has it; the rules do not allow this stay.
+ *              Painting these red says "full" when the truth is "ask for a
+ *              different stay", so a 10-night search against a 7-night max
+ *              would report a campground with 41 free sites as sold out.
+ *   unknown  — past the end of the feed. Never guess in either direction.
+ * partial is the one campers actually want: 3 of 4 nights free is a stay most
+ * people will take, and the single-night view could not express it at all.
+ */
+function nightsOf(a, b){
+  var out=[], d=new Date(a+'T00:00:00'), end=new Date(b+'T00:00:00');
+  while(d < end && out.length < 370){ out.push(iso(d)); d=addDays(d,1); }
+  if(!out.length) out.push(a);          // depart <= arrive: treat as one night
+  return out;
+}
+function stayNights(){ return nightsOf(SELECTED, DEPART); }
+
+function rangeStatus(site){
+  var ns=stayNights(), open=[], booked=[], blocked=[], unknown=[];
+  ns.forEach(function(n){
+    var st=statusOn(site, n);
+    if(st==='avail') open.push(n);
+    // 'closed' rides with 'booked' for the verdict: both mean the camper cannot
+    // have this night, and neither is fixed by shortening the stay. Only a
+    // genuine min/max-stay rejection goes in `blocked`, which is the one the UI
+    // tells them to try a different length for.
+    else if(st==='booked' || st==='closed') booked.push(n);
+    else if(st==='blocked') blocked.push(n);
+    else unknown.push(n);
+  });
+  var state;
+  if(unknown.length===ns.length) state='unknown';
+  else if(open.length===ns.length) state='avail';
+  else if(open.length===0) state=(booked.length ? 'booked' : (blocked.length ? 'blocked' : 'unknown'));
+  else state='partial';
+  var w=(AVAIL_WINDOW[site.id]||{})[SELECTED];
+  return { state:state, nights:ns, open:open, booked:booked, blocked:blocked, unknown:unknown,
+           total:ns.length, openCount:open.length,
+           win: (w && w.earliest && w.latest) ? { min:w.earliest, max:w.latest } : null };
+}
+// Short human reason for a stay that does not fully fit.
+function rangeWhy(r){
+  if(r.state==='avail')   return 'Open all ' + r.total + (r.total===1?' night':' nights');
+  if(r.state==='unknown') return 'Availability — see rec.us';
+  // 'blocked' now means only a stay-LENGTH rejection, so it can say the useful
+  // thing: the site is free, the trip is the wrong shape.
+  if(r.state==='blocked') return r.win
+    ? (function(){ var a=new Date(SELECTED+'T00:00:00');
+        var mn=Math.round((new Date(r.win.min+'T00:00:00')-a)/86400000);
+        var mx=Math.round((new Date(r.win.max+'T00:00:00')-a)/86400000);
+        return 'Not for '+r.total+' nights — this arrival takes '+mn+'–'+mx; })()
+    : 'Not available for a stay this long';
+  if(r.state==='booked')  return r.total===1 ? 'Not available' : 'Not available on these nights';
+  var parts=['Open ' + r.openCount + ' of ' + r.total + ' nights'];
+  if(r.booked.length)  parts.push(nightList(r.booked) + ' unavailable');
+  if(r.blocked.length) parts.push(nightList(r.blocked) + ' stay-length');
+  if(r.unknown.length) parts.push(nightList(r.unknown) + ' unknown');
+  return parts.join(' · ');
+}
+function nightList(ds){
+  var shown=ds.slice(0,3).map(function(x){ var d=new Date(x+'T00:00:00'); return DOW[d.getDay()]+' '+d.getDate(); });
+  return shown.join(', ') + (ds.length>3 ? ' +'+(ds.length-3) : '');
 }
 
 /* ── map setup ── */
@@ -494,7 +728,7 @@ document.getElementById('btSat').onclick=function(){ if(map.hasLayer(streetLayer
 document.getElementById('btStreet').onclick=function(){ if(map.hasLayer(satLayer))map.removeLayer(satLayer); streetLayer.addTo(map); this.classList.add('on'); document.getElementById('btSat').classList.remove('on'); };
 
 /* markers */
-var COLORS={avail:'#16a34a',booked:'#dc2626',blocked:'#6b7280',unknown:'#9ca3af'};
+var COLORS={avail:'#16a34a',partial:'#d97706',booked:'#dc2626',blocked:'#6b7280',closed:'#dc2626',unknown:'#9ca3af'};
 var markers={};   // siteId -> L.marker
 var selectedId=null;
 /* ── admin edit state ── */
@@ -510,12 +744,12 @@ function markerHtml(site, status){
 }
 function addMarker(site){
   if(!(site.id in DEFAULT_COORDS)) DEFAULT_COORDS[site.id]={lat:site.lat,lng:site.lng};
-  var status=statusOn(site, SELECTED);
+  var status=rangeStatus(site).state;
   var icon=L.divIcon({className:'', html:markerHtml(site,status), iconSize:[34,34], iconAnchor:[17,17]});
   var m=L.marker([site.lat,site.lng],{icon:icon, riseOnHover:true, zIndexOffset:400, draggable:true}).addTo(map);
   if(m.dragging && !EDIT) m.dragging.disable();
-  m.bindTooltip(function(){ var st=statusOn(site,SELECTED); var lbl=st==='avail'?'Open':st==='booked'?'Booked':st==='blocked'?'Unavailable — booking restriction':'Check rec.us'; var ki=kindInfo(sKind(site));
-    return '<span class="st">'+shortName(site)+'</span><br>'+ ki.e+' '+ki.label +' · '+lbl; },
+  m.bindTooltip(function(){ var ki=kindInfo(sKind(site));
+    return '<span class="st">'+shortName(site)+'</span><br>'+ ki.e+' '+ki.label +' · '+rangeWhy(rangeStatus(site)); },
     {className:'site-tip', direction:'top', offset:[0,-14]});
   m.on('click', function(){ if(!EDIT) openSite(site); else { openSite(site); } });
   m.on('dragend', function(){ var ll=m.getLatLng(); site.lat=ll.lat; site.lng=ll.lng; site.placed=true; site.approx=false; refreshDirty(); if(selectedId===site.id) renderBody(site); });
@@ -565,63 +799,314 @@ function buildLegendDynamic(){
 function refreshMarkers(){
   SEED.forEach(function(site){
     var m=markers[site.id]; if(!m) return;
-    m.setIcon(L.divIcon({className:'', html:markerHtml(site,statusOn(site, SELECTED)), iconSize:[34,34], iconAnchor:[17,17]}));
+    // Filtered-out pins come OFF the map rather than being dimmed: "filter" has
+    // one honest reading, and a greyed pin on a campground map is indistinguishable
+    // from a site that is merely unavailable. The open drawer's own site stays on
+    // so the card can never point at nothing.
+    var show = inView(site) || site.id===selectedId;
+    if(show && !map.hasLayer(m)) m.addTo(map);
+    else if(!show && map.hasLayer(m)) map.removeLayer(m);
+    if(show) m.setIcon(L.divIcon({className:'', html:markerHtml(site,rangeStatus(site).state), iconSize:[34,34], iconAnchor:[17,17]}));
   });
 }
 
 /* ── date bar ── */
-var SELECTED = TODAY_ISO;
-function buildChips(){
-  var wrap=document.getElementById('chips'); wrap.innerHTML='';
-  for(var i=0;i<30;i++){
-    (function(i){
-      var d=addDays(TODAY,i); var ds=iso(d);
-      var c=document.createElement('div');
-      c.className='chip'+(ds===SELECTED?' on':'');
-      c.dataset.ds=ds;
-      c.innerHTML='<div class="dow">'+DOW[d.getDay()]+'</div><div class="dnum">'+d.getDate()+'</div><div class="mo">'+MON[d.getMonth()]+'</div>';
-      c.onclick=function(){ setDate(ds); };
-      wrap.appendChild(c);
-    })(i);
+var SELECTED = TODAY_ISO;                       // arrive
+var DEPART   = iso(addDays(TODAY, 1));          // checkout (exclusive)
+/* The hand-off, at the foot of the list. rec.us takes bookings months out; this
+ * map can only CONFIRM the ~30 nights its availability feed enumerates, so when
+ * a camper cannot find dates the honest move is to hand them off rather than
+ * pretend. It used to live at the end of the night strip; the strip is gone, and
+ * the foot of the list is where someone who has not found a site is already
+ * looking. */
+function renderFoot(){
+  var el=document.getElementById('slFoot'); if(!el) return;
+  var ba=CFG.bookAhead;
+  if(!ba || !ba.url){ el.innerHTML=''; return; }
+  el.innerHTML='<a class="sl-more" id="bookAhead" href="'+ba.url+'" target="_blank" rel="noopener noreferrer">'
+    +'<span class="m-h">Looking for campsite dates more than '+DAYS_SHOWN+' days out?</span>'
+    +'<span class="m-b">Click to book directly on rec.us'
+    +(ba.contact ? ', or call the '+ba.contact : '')+'.</span></a>';
+  var a=document.getElementById('bookAhead');
+  if(a) a.onclick=function(){ ping('campmap-book', { kind:'later-dates' }); };
+}
+
+/* ── the campsite-type control ───────────────────────────────────────────────
+ * Options come from the sites actually present, in rec.us's own order, so a
+ * campground never offers a type it does not have — and a type Rec adds later
+ * appears on its own without a code change.
+ *
+ * When a campground is all one type the control is DISABLED rather than hidden:
+ * it still tells a camper what the sites are, without implying a choice that
+ * does not exist. Topaz Lake is that case today — all 41 sites are tent-and-rv
+ * in Rec, so there is one type to show until the county varies them.
+ */
+function typeCounts(){
+  var order=['tent','rv','tent-and-rv','lodging','electric','primitive'];
+  var seen={};
+  SEED.forEach(function(s){ var k=typeKey(s); if(k) seen[k]=(seen[k]||0)+1; });
+  return Object.keys(seen).sort(function(a,b){
+    var ia=order.indexOf(a), ib=order.indexOf(b);
+    if(ia<0) ia=99; if(ib<0) ib=99;
+    return ia===ib ? (a<b?-1:1) : ia-ib;
+  }).map(function(k){ return { key:k, n:seen[k], info:kindInfo(k) }; });
+}
+function buildTypeFilter(){
+  var fld=document.getElementById('typeFld'), sel=document.getElementById('typePick');
+  if(!fld || !sel) return;
+  var tc=typeCounts();
+  if(!tc.length){ fld.hidden=true; return; }
+  fld.hidden=false;
+  var one = tc.length===1;
+  sel.disabled = one;
+  sel.title = one ? ('Every site here is ' + tc[0].info.label.toLowerCase()) : 'Show only sites of one type';
+  var html = one ? '' : '<option value="all">All types ('+SEED.length+')</option>';
+  html += tc.map(function(t){
+    return '<option value="'+t.key+'">'+t.info.e+' '+t.info.label+' ('+t.n+')</option>';
+  }).join('');
+  sel.innerHTML = html;
+  // A filter that survives a rebuild it no longer has an option for would leave
+  // the page showing nothing, so fall back to 'all' when the type has gone.
+  var keys = tc.map(function(t){ return t.key; });
+  if(TYPE_FILTER!=='all' && keys.indexOf(TYPE_FILTER)<0) TYPE_FILTER='all';
+  sel.value = one ? tc[0].key : TYPE_FILTER;
+  // With one type the control cannot narrow anything, so it must not narrow
+  // anything: the selected option is a label, and the filter stays 'all'.
+  if(one) TYPE_FILTER='all';
+  fld.classList.toggle('on', TYPE_FILTER!=='all');
+}
+function setTypeFilter(key){
+  TYPE_FILTER = key || 'all';
+  document.getElementById('typeFld').classList.toggle('on', TYPE_FILTER!=='all');
+  // A drawer left open on a site the filter excludes would describe a pin that
+  // is no longer on the map.
+  if(selectedId){
+    var cur=SEED.filter(function(x){ return x.id===selectedId; })[0];
+    if(cur && !inView(cur)) closeDrawer();
   }
+  // Re-run setStay rather than repainting: the checkout bound is derived from the
+  // sites in view, so narrowing the type can legitimately shorten the longest
+  // stay on offer, and the Depart field has to agree with it.
+  setStay(SELECTED, DEPART);
+  var t=stayTally();
+  ping('campmap-filter', { type:TYPE_FILTER, sites:VIEW().length, open:t.full });
 }
+
+function stayTally(){
+  var full=0, part=0, known=0;
+  VIEW().forEach(function(s){
+    var r=rangeStatus(s);
+    if(r.state==='unknown') return;
+    known++;
+    if(r.state==='avail') full++; else if(r.state==='partial') part++;
+  });
+  return { full:full, part:part, known:known };
+}
+function fmtDay(d){ return DOW[d.getDay()]+' '+MON[d.getMonth()]+' '+d.getDate(); }
+function stayLabel(){
+  var n=stayNights().length;
+  return n===1 ? fmtDay(new Date(SELECTED+'T00:00:00'))
+               : fmtDay(new Date(SELECTED+'T00:00:00'))+' → '+fmtDay(new Date(DEPART+'T00:00:00'));
+}
+/* The list beside the map. The map answers "where"; a list answers "which ones
+ * can I have", which is the question someone arrives with — and it is readable
+ * without hunting for green pins among 41. Grouped by verdict so the answer is
+ * the first thing, not a colour to decode. */
+// Panel state is a per-viewer convenience, so it lives in localStorage and every
+// read/write is guarded — a private window or blocked site data must not break
+// the map, it just means the defaults apply.
+function prefGet(k, dflt){
+  try{ var v=localStorage.getItem('campmap_'+k); return v===null ? dflt : v==='1'; }catch(_){ return dflt; }
+}
+function prefSet(k, on){ try{ localStorage.setItem('campmap_'+k, on?'1':'0'); }catch(_){} }
+
+// The list is expanded by default: on a camper-facing page "which sites can I
+// have" is the question, and the list is the answer.
+var LIST_ON = prefGet('list', true);
+
+// Leaflet sizes itself to its container, so it must be told when the box moved.
+function remap(){ setTimeout(function(){ map.invalidateSize(); }, 60); }
+
+function applyPanels(){
+  document.querySelector('.mapwrap').classList.toggle('nolist', !LIST_ON);
+  document.getElementById('listTog').textContent = LIST_ON ? 'Hide list' : 'Show list';
+  remap();
+}
+function toggleList(){ LIST_ON = !LIST_ON; prefSet('list', LIST_ON); applyPanels(); }
+
+
+function renderList(){
+  var body=document.getElementById('slBody'); if(!body) return;
+  var n=stayNights().length;
+  var full=[], part=[], view=VIEW();
+  view.forEach(function(site){
+    var r=rangeStatus(site);
+    if(r.state==='avail') full.push({site:site, r:r});
+    else if(r.state==='partial') part.push({site:site, r:r});
+  });
+  var byNum=function(a,b){ return (a.site.n||0)-(b.site.n||0); };
+  full.sort(byNum); part.sort(byNum);
+
+  document.getElementById('slTitle').textContent = n===1 ? 'Open tonight' : 'Open for all '+n+' nights';
+  document.getElementById('slSub').textContent =
+    full.length + ' of ' + view.length + (TYPE_FILTER==='all' ? ' sites' : ' ' + kindInfo(TYPE_FILTER).label.toLowerCase() + ' sites')
+    + (part.length ? ' · '+part.length+' open some nights' : '');
+
+  var html='';
+  var row=function(x, colour){
+    var m=siteMeta(x.site), rate=m && m.rate!=null ? '$'+m.rate : '';
+    return '<button class="sl-item'+(selectedId===x.site.id?' sel':'')+'" data-id="'+x.site.id+'">'
+      +'<span class="dot" style="background:'+colour+'"></span>'
+      +'<span class="nm">'+shortName(x.site)
+      + (x.r.state==='partial' ? '<span class="wh">'+x.r.openCount+' of '+x.r.total+' nights</span>' : '')
+      +'</span>'
+      +'<span class="rt">'+rate+(rate && n>1 && x.r.state==='avail' ? '<span class="wh">'+(m.rate*n)+' total</span>' : '')+'</span>'
+      +'</button>';
+  };
+  if(full.length){ html+=full.map(function(x){ return row(x, COLORS.avail); }).join(''); }
+  if(part.length){
+    html+='<div class="sl-group">Open some nights</div>'
+       +  part.map(function(x){ return row(x, COLORS.partial); }).join('');
+  }
+  if(!full.length && !part.length){
+    html='<div class="sl-empty">No '+(TYPE_FILTER==='all' ? 'site' : kindInfo(TYPE_FILTER).label.toLowerCase()+' site')
+      +' is free for these dates. Try a shorter stay, shift the nights'
+      +(TYPE_FILTER==='all' ? '' : ', or widen the campsite type')+'.</div>';
+  }
+  body.innerHTML=html;
+  body.querySelectorAll('.sl-item').forEach(function(b){
+    b.onclick=function(){
+      var site=SEED.filter(function(x){ return x.id===b.dataset.id; })[0];
+      if(site) openSite(site);
+    };
+  });
+}
+
 function updateSummary(){
-  var open=0, known=0;
-  SEED.forEach(function(s){ var st=statusOn(s,SELECTED); if(st!=='unknown'){known++; if(st==='avail')open++;} });
-  var d=new Date(SELECTED+'T00:00:00');
-  var human=DOW[d.getDay()]+', '+MON[d.getMonth()]+' '+d.getDate();
+  var t=stayTally(), n=stayNights().length;
   var el=document.getElementById('summ');
-  if(known===0){ el.innerHTML='<span>Loading availability…</span> · '+human; }
-  else { el.innerHTML='<span class="cnt">'+open+'</span> of '+SEED.length+' sites open · '+human; }
+  if(t.known===0){ el.innerHTML='<span>Loading availability…</span>'; }
+  else {
+    var txt='<span class="cnt">'+t.full+'</span> of '+VIEW().length
+          + (TYPE_FILTER==='all' ? ' sites open' : ' ' + kindInfo(TYPE_FILTER).label.toLowerCase() + ' sites open')
+          + (n===1 ? (SELECTED===TODAY_ISO ? ' tonight' : ' that night') : ' for all '+n+' nights');
+    // The partial count earns its own clause: a camper who cannot get four
+    // nights will usually take three, and a single-night view cannot say so.
+    if(t.part) txt+=' · <span class="part">'+t.part+'</span> open some nights';
+    el.innerHTML=txt;
+  }
+
+  if(selectedId){ var site=SEED.filter(function(x){return x.id===selectedId;})[0]; if(site) renderBody(site); }
 }
-function setDate(ds){
-  SELECTED=ds;
-  document.querySelectorAll('.chip').forEach(function(c){ c.classList.toggle('on', c.dataset.ds===ds); });
-  var picked=document.querySelector('.chip[data-ds="'+ds+'"]');
-  if(picked) picked.scrollIntoView({behavior:'smooth',block:'nearest',inline:'center'});
-  document.getElementById('datePick').value=ds;
-  refreshMarkers(); updateSummary();
-  if(selectedId){ var site=SEED.filter(function(s){return s.id===selectedId;})[0]; if(site) renderBody(site); }
+// How late this arrival is allowed to check out, straight from rec.us. The feed
+// enumerates 30 days of ARRIVALS, but latestCheckout runs past them — Topaz
+// campsites allow up to 14 nights, so a 22 Sep arrival may legally check out 6
+// Oct, well beyond the last chip. Capping the checkout at the strip's end would
+// refuse a stay rec.us would accept. Falls back to the strip when the feed has
+// no window for that night.
+function latestCheckoutFrom(dateStr){
+  // Cap by the campground's configured maximum stay before taking the longest
+  // window any single site offers. At Topaz 40 of the 41 sites allow 14 nights
+  // and Site 04 alone says 180 — a data-entry slip ("nights per stay" sits right
+  // above "days in advance", and both read 180). Taking the max across sites let
+  // that one row offer a 180-night stay for the whole park, so one bad value
+  // would distort the picker for every camper.
+  // Scoped to VIEW(): with a campsite type selected, the checkout bound must come
+  // from the sites on screen, or the picker offers a stay only a site the camper
+  // has filtered out could take.
+  var view=VIEW();
+  var cap=null;
+  for(var i=0;i<view.length && cap===null;i++){ var m=siteMeta(view[i]); if(m && m.maxNights) cap=m.maxNights; }
+  var ceiling = cap ? iso(addDays(new Date(dateStr+'T00:00:00'), cap)) : null;
+  var best=null;
+  view.forEach(function(s){
+    var w=(AVAIL_WINDOW[s.id]||{})[dateStr];
+    if(!w || !w.latest) return;
+    var l = (ceiling && w.latest > ceiling) ? ceiling : w.latest;
+    if(!best || l > best) best=l;
+  });
+  if(best) return best;
+  // No window from the feed for that night (it enumerates only ~30 days of
+  // arrivals). Fall back to the org's configured maximum stay — 14 nights at
+  // Topaz, 5 at Pleasant Hill — rather than to a single night, which would
+  // refuse stays the org actually allows.
+  var mx=null;
+  for(var i=0;i<view.length && mx===null;i++){ var m=siteMeta(view[i]); if(m && m.maxNights) mx=m.maxNights; }
+  return iso(addDays(new Date(dateStr+'T00:00:00'), mx || 1));
+}
+// setStay is the only way the stay changes. The arrival is clamped to the nights
+// the feed actually enumerates; a night with no data must read as unknown rather
+// than be guessed at in either direction.
+function setStay(arrive, depart){
+  if(arrive < TODAY_ISO) arrive = TODAY_ISO;
+  if(arrive > MAX_ISO)   arrive = MAX_ISO;
+  if(!depart || depart <= arrive) depart = iso(addDays(new Date(arrive+'T00:00:00'), 1));
+  var cap = latestCheckoutFrom(arrive);
+  if(depart > cap) depart = cap;
+  SELECTED=arrive; DEPART=depart;
+
+  var n=stayNights().length;
+  document.getElementById('nights').textContent = n + (n===1 ? ' night' : ' nights');
+  var ai=document.getElementById('arrivePick'), di=document.getElementById('departPick');
+  if(ai){ ai.value=SELECTED; ai.min=TODAY_ISO; ai.max=MAX_ISO; }
+  if(di){ di.value=DEPART; di.min=iso(addDays(new Date(SELECTED+'T00:00:00'),1)); di.max=latestCheckoutFrom(SELECTED); }
+
+  refreshMarkers(); updateSummary(); renderList();
   fetchWeather();
 }
-document.getElementById('prevDay').onclick=function(){ var d=addDays(new Date(SELECTED+'T00:00:00'),-1); if(iso(d)>=TODAY_ISO) setDate(iso(d)); };
-document.getElementById('nextDay').onclick=function(){ var d=addDays(new Date(SELECTED+'T00:00:00'),1); if(iso(d)<=MAX_ISO) setDate(iso(d)); };
-document.getElementById('datePick').onchange=function(){ if(this.value) setDate(this.value); };
-document.getElementById('datePick').min=TODAY_ISO;
-document.getElementById('datePick').max=MAX_ISO;   // only offer dates we have availability for
+// Kept for the deep-link handler (?date=): start a stay on this date, holding the
+// current trip length. The drawer's month grid used to call it too; that grid is
+// gone — the per-night strip above the site's details answers the same question
+// for the stay actually in the bar, and two calendars could disagree.
+function setDate(ds){ setStay(ds, iso(addDays(new Date(ds+'T00:00:00'), stayNights().length))); }
+
+// The arrows scroll the strip. They are not a second way to change the stay:
+// nudging dates with arrows is the block-shifting interaction we dropped, and
+// with 30 nights in a horizontal scroller reaching the far end is what they are
+// actually needed for.
+document.getElementById('arrivePick').onchange=function(){
+  if(!this.value) return;
+  // Moving the arrival keeps the trip length rather than collapsing it to one
+  // night — someone editing "arrive" on a 4-night stay still wants 4 nights.
+  setStay(this.value, iso(addDays(new Date(this.value+'T00:00:00'), stayNights().length)));
+};
+document.getElementById('departPick').onchange=function(){
+  if(this.value) setStay(SELECTED, this.value);
+};
+document.getElementById('listTog').onclick=function(){ toggleList(); };
+document.getElementById('typePick').onchange=function(){ setTypeFilter(this.value); };
 
 /* ── detail drawer ── */
-var galleryIdx=0, calMonth=null;
+var galleryIdx=0;
+// Fire-and-forget activity beacon. Same shape as the rentalcalendar's map-pin
+// ping (keepalive, errors swallowed) — logging must never break the map, and a
+// camper closing the tab must not lose the event.
+function ping(event, params){
+  try{
+    var qs = Object.keys(params||{}).filter(function(k){ return params[k]!=null && params[k]!==''; })
+      .map(function(k){ return k+'='+encodeURIComponent(params[k]); }).join('&');
+    fetch('/'+CFG.slug+'/campmap/api/log?event='+event+(qs?'&'+qs:''),
+          { method:'POST', keepalive:true }).catch(function(){});
+  }catch(_){ /* never let logging break the map */ }
+}
+
 function openSite(site){
+  // What a camper opened, and whether it could actually take the stay they were
+  // looking at. "Opened Site 12" is trivia; "opened Site 12, free for their 3
+  // nights" says whether the map is answering the question.
+  var r = rangeStatus(site);
+  ping('campmap-site', { site: shortName(site), state: r.state, nights: r.total });
+
   selectedId=site.id; refreshMarkers();
-  galleryIdx=0; calMonth=new Date(SELECTED+'T00:00:00'); calMonth.setDate(1);
+  galleryIdx=0;
   renderGallery(site); renderBody(site);
   document.getElementById('drawer').classList.add('open');
   document.getElementById('scrim').classList.add('on');
   map.panTo([site.lat,site.lng],{animate:true});
+  renderList();   // move the highlight in the list to match
 }
 function closeDrawer(){
-  selectedId=null; refreshMarkers();
+  selectedId=null; refreshMarkers(); renderList();
   document.getElementById('drawer').classList.remove('open');
   document.getElementById('scrim').classList.remove('on');
 }
@@ -643,12 +1128,22 @@ function renderGallery(site){
 
 function renderBody(site){
   var meta=siteMeta(site);
-  var st=statusOn(site,SELECTED);
-  var stPill= st==='avail'?'<span class="stat-pill avail">● Open this night</span>'
-            : st==='booked'?'<span class="stat-pill booked">● Booked this night</span>'
-            : st==='blocked'?'<span class="stat-pill blocked">● Unavailable — booking restriction</span>'
-            : '<span class="stat-pill unknown">● Availability — see rec.us</span>';
-  var d=new Date(SELECTED+'T00:00:00'); var human=DOW[d.getDay()]+', '+MON[d.getMonth()]+' '+d.getDate();
+  var r=rangeStatus(site);
+  var stPill='<span class="stat-pill '+(r.state==='partial'?'partial':r.state)+'">● '+rangeWhy(r)+'</span>';
+  // Park-wide context, in the sidebar where someone comparing sites is looking:
+  // this site's answer means more next to how many others could take the stay.
+  var t=stayTally();
+  var ctx='<div class="staybox">'
+        + '<div class="sb-when">'+stayLabel()+' · <b>'+r.total+(r.total===1?' night':' nights')+'</b></div>'
+        + '<div class="sb-cnt"><b>'+t.full+'</b> of '+SEED.length+' sites free for these dates'
+        + (t.part ? ' · <span class="sb-part">'+t.part+'</span> free some nights' : '')
+        + '</div></div>';
+  var d=new Date(SELECTED+'T00:00:00');
+  var human = r.total===1
+    ? DOW[d.getDay()]+', '+MON[d.getMonth()]+' '+d.getDate()
+    : DOW[d.getDay()]+' '+MON[d.getMonth()]+' '+d.getDate()+' → '+(function(){
+        var b=new Date(DEPART+'T00:00:00'); return DOW[b.getDay()]+' '+MON[b.getMonth()]+' '+b.getDate(); })()
+      + ' · ' + r.total + ' nights';
   var amens=sAmen(site).map(function(a){ return '<span class="a">'+a.e+' '+a.l+'</span>'; }).join('');
   var ki=kindInfo(sKind(site));
   var kindCls = ki.label==='Electric'?'elec':(ki.label==='Primitive'?'prim':'gen');
@@ -656,8 +1151,17 @@ function renderBody(site){
   var locName = (CFG.locationName||'Pleasant Hill City Lake');
   var rate=sRate(site), resRate=sResRate(site), cap=sCap(site);
   var body='';
+  body+=ctx;
   body+=stPill+' <span style="font-size:12px;color:var(--muted)">'+human+'</span>';
   body+='<h2>Site '+pad(site.n)+'</h2>';
+  if(r.total>1){
+    body+='<div class="nightrow">'+r.nights.map(function(nd){
+      var st=statusOn(site,nd), d2=new Date(nd+'T00:00:00');
+      var cls=st==='avail'?'av':st==='booked'?'bk':st==='blocked'?'bl':'un';
+      var lbl=st==='avail'?'free':st==='booked'?'booked':st==='blocked'?'rules':'?';
+      return '<span class="ncell '+cls+'"><b>'+d2.getDate()+'</b>'+DOW[d2.getDay()].charAt(0)+' · '+lbl+'</span>';
+    }).join('')+'</div>';
+  }
   body+='<div class="area">'+kindTag+'<span>📍 '+site.area+' · '+locName+'</span></div>';
   if(EDIT){ body+='<div class="pin-edit"><b>Edit mode</b> — drag this pin on the map to move it.<br><button id="pinReset">⟲ Reset this pin to default</button></div>'; }
   body+='<p class="blurb">'+sBlurb(site)+'</p>';
@@ -673,50 +1177,24 @@ function renderBody(site){
   if(site.maxTrailer) body+='<div><div class="k">Max trailer</div><div class="v">'+site.maxTrailer+' ft</div></div>';
   if(meta.maxNights) body+='<div><div class="k">Max stay</div><div class="v">'+meta.maxNights+' nights</div></div>';
   body+='</div>';
-  body+='<div class="sec-h">Amenities</div><div class="amen-list">'+amens+'</div>';
-  body+='<div class="sec-h">Availability</div>'+miniCalHtml(site);
-  body+='<a class="book-btn" href="'+sBook(site)+'" target="_blank" rel="noopener">🏕️ Book on rec.us</a>';
+  // With the month grid gone, Amenities is the last section before the Book
+  // button — so an empty one would leave a bare heading sitting on top of it.
+  if(amens) body+='<div class="sec-h">Amenities</div><div class="amen-list">'+amens+'</div>';
+  body+='<a class="book-btn" id="bookBtn" href="'+sBook(site)+'" target="_blank" rel="noopener">🏕️ Book on rec.us</a>';
   var noteTxt = EDIT ? 'Drag the pin on the map to reposition it; unsaved changes show in the edit bar.'
-    : site.placed ? 'Pin position set by admin.'
-    : site.approx ? 'Approximate position — not yet placed on the map.'
-    : 'Location from rec.us.';
-  body+='<div class="book-note">'+noteTxt+'</div>';
+    : (site.approx && !site.placed) ? 'Approximate position — not yet placed on the map.'
+    : '';
+  if(noteTxt) body+='<div class="book-note">'+noteTxt+'</div>';
   var el=document.getElementById('dbody');
   el.innerHTML=body;
   var pr=document.getElementById('pinReset');
   if(pr) pr.onclick=function(){ var b=DEFAULT_COORDS[site.id]; if(b){ site.lat=b.lat; site.lng=b.lng; site.placed=false; if(markers[site.id]) markers[site.id].setLatLng([b.lat,b.lng]); } refreshDirty(); refreshMarkers(); renderBody(site); };
-  wireMiniCal(site);
-}
-
-function miniCalHtml(site){
-  var y=calMonth.getFullYear(), mo=calMonth.getMonth();
-  var first=new Date(y,mo,1), startDow=first.getDay();
-  var days=new Date(y,mo+1,0).getDate();
-  var h='<div class="mini-cal"><div class="mc-head"><button class="mc-nav" data-d="-1">‹</button><b>'+MON[mo]+' '+y+'</b><button class="mc-nav" data-d="1">›</button></div><div class="mc-grid">';
-  ['S','M','T','W','T','F','S'].forEach(function(w){ h+='<div class="wd">'+w+'</div>'; });
-  for(var p=0;p<startDow;p++) h+='<div class="mc-cell pad"></div>';
-  for(var day=1;day<=days;day++){
-    var ds=y+'-'+pad(mo+1)+'-'+pad(day);
-    var cls='mc-cell';
-    // Outside our availability window (past, or beyond the ~30-day feed) → render
-    // as a faint, non-interactive out-of-range cell rather than an "unknown" verdict.
-    if(ds<TODAY_ISO || ds>MAX_ISO){ cls+=' past'; }
-    else { var st=statusOn(site,ds); cls+= st==='avail'?' av':st==='booked'?' bk':st==='blocked'?' bl':' un'; }
-    if(ds===TODAY_ISO) cls+=' today';
-    if(ds===SELECTED) cls+=' sel';
-    h+='<div class="'+cls+'" data-ds="'+ds+'">'+day+'</div>';
-  }
-  h+='</div><div style="font-size:10.5px;color:var(--muted);margin-top:7px;display:flex;gap:12px;flex-wrap:wrap"><span>🟩 Open</span><span>🟥 Booked</span><span><span style="color:var(--blocked)">◼</span> Booking restriction</span></div></div>';
-  return h;
-}
-function wireMiniCal(site){
-  document.querySelectorAll('.mini-cal .mc-nav').forEach(function(b){
-    b.onclick=function(){ calMonth.setMonth(calMonth.getMonth()+parseInt(this.dataset.d)); renderBody(site); };
-  });
-  document.querySelectorAll('.mini-cal .mc-cell').forEach(function(c){
-    if(c.classList.contains('pad')||c.classList.contains('past'))return;
-    c.onclick=function(){ setDate(this.dataset.ds); };
-  });
+  // Rewired on every render, because this function replaces the drawer's HTML —
+  // a handler attached once would be lost the moment the stay changed.
+  var bk=document.getElementById('bookBtn');
+  if(bk) bk.onclick=function(){
+    ping('campmap-book', { site: shortName(site), nights: stayNights().length });
+  };
 }
 
 /* ── weather (best-effort, weather.gov) ── */
@@ -893,22 +1371,17 @@ function loadAvailability(){
         // Nightly sites nest per-date availability under `checkInDates`; hourly sites are date→slots.
         var src = (d && d.checkInDates && typeof d.checkInDates==='object') ? d.checkInDates : d;
         if(src && typeof src==='object' && Object.keys(src).length){
-          var m={}; var haveDate=false;
+          var m={}; var win={}; var haveDate=false;
           Object.keys(src).forEach(function(dateStr){
             if(!/^\d{4}-\d{2}-\d{2}/.test(dateStr)) return;   // skip non-date keys
             var v=src[dateStr];
-            var state;
-            if(v && v.available===true) state='avail';
-            // available:false → 'booked' ONLY for a real reservation conflict.
-            // Any other reason (outside-window, blackout, min/max-stay, closed…)
-            // is a booking-rule restriction, not a reservation → 'blocked'.
-            else if(v && v.available===false) state=(v.reason==='conflict' ? 'booked' : 'blocked');
-            // hourly slots: an object of time slots with no `available` flag = open
-            else if(v && typeof v==='object' && Object.keys(v).length>0) state='avail';
-            else state='blocked';
+            if(v && v.earliestCheckout && v.latestCheckout){
+              win[dateStr]={ earliest:v.earliestCheckout, latest:v.latestCheckout };
+            }
+            var state=nightStateFrom(v);
             m[dateStr]=state; haveDate=true;
           });
-          if(haveDate){ AVAIL[s.id]=m; any=true; } else { AVAIL[s.id]={__empty:true}; }
+          if(haveDate){ AVAIL[s.id]=m; AVAIL_WINDOW[s.id]=win; any=true; } else { AVAIL[s.id]={__empty:true}; }
         } else {
           AVAIL[s.id]={__empty:true};
         }
@@ -918,13 +1391,20 @@ function loadAvailability(){
       if(any){ LIVE=true; }
       else { throw new Error('empty'); }
       updateLegFoot();
-      refreshMarkers(); updateSummary(); if(selectedId){var s=SEED.filter(function(x){return x.id===selectedId;})[0]; if(s)renderBody(s);}
+      // Re-run setStay rather than just repainting. The Depart field's `max` is
+      // rec.us's own latestCheckout for the chosen arrival, and until this reply
+      // landed there was none — so the picker was showing the fallback (the org's
+      // configured maximum stay, 14 nights at Topaz). Leaving it there would offer
+      // a checkout rec.us has already said it will refuse, which is the exact
+      // "but it said it was free" the bound exists to prevent.
+      setStay(SELECTED, DEPART);
+      if(selectedId){var s=SEED.filter(function(x){return x.id===selectedId;})[0]; if(s)renderBody(s);}
     })
     .catch(function(){
       // offline / standalone fallback — deterministic demo availability
       SEED.forEach(function(s){ AVAIL[s.id]=seedFallback(s); });
       LIVE=false; updateLegFoot();
-      refreshMarkers(); updateSummary(); if(selectedId){var s2=SEED.filter(function(x){return x.id===selectedId;})[0]; if(s2)renderBody(s2);}
+      refreshMarkers(); updateSummary(); renderList(); if(selectedId){var s2=SEED.filter(function(x){return x.id===selectedId;})[0]; if(s2)renderBody(s2);}
     });
 }
 function updateLegFoot(){
@@ -936,7 +1416,10 @@ function updateLegFoot(){
 }
 /* fetch the live site list and overlay it onto the baked seed, then load availability */
 function loadSites(){
-  fetch('/'+SLUG+'/rentalcalendar/api/sites')
+  // types=campsite: this page only ever plots campsites, and asking for the org's
+  // whole facility list truncated them away entirely at Douglas County (194
+  // courts, one page) — see the route.
+  fetch('/'+SLUG+'/rentalcalendar/api/sites?types=campsite')
     .then(function(r){ if(!r.ok) throw new Error('http '+r.status); return r.json(); })
     .then(function(res){
       var all=(res.sites||[]); var used=0;
@@ -958,7 +1441,9 @@ function loadSites(){
         }
       });
       if(!used) throw new Error('no live sites matched');
-      SITES_LIVE=true; updateLegFoot(); refreshMarkers();
+      // Rec's own sub_type has arrived, so the type options are rebuilt from it
+      // rather than from the baked seed's guess.
+      SITES_LIVE=true; updateLegFoot(); buildTypeFilter(); refreshMarkers(); renderList(); updateSummary();
       if(selectedId){ var s=SEED.filter(function(x){return x.id===selectedId;})[0]; if(s){ renderGallery(s); renderBody(s); } }
     })
     .catch(function(){ /* keep baked seed — still fully usable */ })
@@ -985,9 +1470,13 @@ document.getElementById('editDone').onclick=function(){
 };
 
 applyConfig();
-buildChips();
 buildMarkers();
-updateSummary();
+// Populates both inputs, the nights label, the in-range chips and the summary in
+// one place, so the initial paint cannot disagree with what a later change draws.
+buildTypeFilter();   // before setStay: the checkout bound is derived from VIEW()
+setStay(TODAY_ISO, iso(addDays(TODAY, 1)));
+renderFoot();
+applyPanels();   // honour the viewer's remembered panel choice
 loadPositions();   // apply any admin-saved pin positions
 loadMarkers();     // load admin custom markers (Boat Ramp, etc.)
 loadSites();       // live site data → then availability (with offline fallbacks)

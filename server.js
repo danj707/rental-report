@@ -3605,7 +3605,7 @@ setTimeout(() => { checkCardParamTypes().catch(() => {}); }, 150 * 1000).unref?.
 // Inert if the env var is unset. Fire-and-forget — never blocks or breaks logging.
 // To change what pings Slack, edit SLACK_NOTIFY. High-frequency events (view/fetch)
 // are debounced per org+report so Slack isn't a firehose.
-const SLACK_NOTIFY = new Set(["created", "org-deleted", "watchdog", "schema-break", "param-drift", "report-down", "campmap-share", "pdf", "excel", "print", "summary", "game", "map", "view", "insights", "insights-feedback", "chat-feedback", "feedback", "vote", "update-vote", "munis", "permits", "email"]);
+const SLACK_NOTIFY = new Set(["created", "org-deleted", "watchdog", "schema-break", "param-drift", "report-down", "campmap-share", "campmap-site", "campmap-book", "campmap-filter", "pdf", "excel", "print", "summary", "game", "map", "view", "insights", "insights-feedback", "chat-feedback", "feedback", "vote", "update-vote", "munis", "permits", "email"]);
 const SLACK_DEBOUNCE_MS = { view: 30 * 60 * 1000, fetch: 30 * 60 * 1000,
   // A broken report stays broken. The health check only reports NEW failures,
   // but a flapping card would otherwise post every hour.
@@ -3620,6 +3620,13 @@ const SLACK_EVENT_META = {
   "param-drift": { emoji: "\uD83D\uDCC5", verb: "date parameter reset to Text" },
   watchdog: { emoji: "\uD83D\uDD07", verb: "watchdog switched" },
   "campmap-share": { emoji: "\uD83C\uDFD5\uFE0F", verb: "copied the public campsite map link for" },
+  "campmap-site": { emoji: "\uD83D\uDCCC", verb: "opened a campsite on the public map" },
+  // Booking intent is the one campmap event worth its own emoji: it is the last
+  // thing we can see before the camper leaves for rec.us.
+  "campmap-book": { emoji: "\uD83C\uDFDD\uFE0F", verb: "clicked through to book" },
+  // Which campsite type a camper narrows to is the one signal that says what
+  // they arrived in — a park reading "RV only" all summer is a planning fact.
+  "campmap-filter": { emoji: "\uD83D\uDD0E", verb: "filtered the campsite map by type" },
   "report-down": { emoji: "🔴", verb: "report is failing" },
   pdf:     { emoji: "📄", verb: "exported a PDF of" },
   excel:   { emoji: "📊", verb: "exported to Excel" },
@@ -3677,6 +3684,15 @@ function notifySlack(rec) {
       ? `${rec.org}|update|${rec.updateId || ""}|${rec.sentiment || ""}`
     : rec.event === "map"
       ? `${rec.org}|${rec.report}|map|${rec.location || ""}`
+    // Campsite opens and book-throughs key by SITE for the same reason map pins
+    // key by location: a camper comparing six sites should read as six, not as
+    // whichever one they happened to open first.
+    : (rec.event === "campmap-site" || rec.event === "campmap-book")
+      ? `${rec.org}|campmap|${rec.event}|${rec.site || rec.kind || ""}`
+    // Keyed by the type chosen, same reasoning: someone trying tent-only then
+    // RV-only is telling us two things, not one.
+    : rec.event === "campmap-filter"
+      ? `${rec.org}|campmap|filter|${rec.filterType || ""}`
       : `${rec.org}|${rec.report}|${rec.event}`;
   const now = Date.now();
   const cooldown = SLACK_DEBOUNCE_MS[rec.event] || SLACK_DEFAULT_DEBOUNCE_MS;
@@ -3710,6 +3726,35 @@ function notifySlack(rec) {
     const who = (rec.reports || []).length ? ` — breaks *${(rec.reports || []).join("*, *")}*` : "";
     text = `${meta.emoji} *SCHEMA BREAK* — ${gone.slice(0, 8).join(", ")}`
          + (gone.length > 8 ? ` and ${gone.length - 8} more` : "") + who + mention;
+  } else if (rec.event === "campmap-site") {
+    // Say whether the site was actually free for the stay they were looking at —
+    // "opened Site 12" is trivia; "opened Site 12, free for their 3 nights" is a
+    // signal about whether the map is answering the question.
+    const stay = rec.nights ? ` \u00B7 ${rec.nights} night${rec.nights === 1 ? "" : "s"}` : "";
+    const verdict = rec.state === "avail" ? " \u2014 free for the whole stay"
+                  : rec.state === "partial" ? " \u2014 free some nights"
+                  : rec.state === "booked" ? " \u2014 not available"
+                  : rec.state === "blocked" ? " \u2014 wrong stay length"
+                  : "";
+    text = `${meta.emoji} ${orgName} (\`${rec.org}\`) opened *${rec.site || "a campsite"}*${stay}${verdict}`;
+  } else if (rec.event === "campmap-book") {
+    // Two ways to leave for rec.us: a site's Book button, or the hand-off card
+    // past the end of the 30-night strip. The second one is the more interesting
+    // of the two — it means the dates they wanted are outside what we can show.
+    if (rec.kind === "later-dates") {
+      text = `${meta.emoji} ${orgName} (\`${rec.org}\`) went to rec.us for dates *beyond the 30-night window*`;
+    } else {
+      const stay = rec.nights ? ` for ${rec.nights} night${rec.nights === 1 ? "" : "s"}` : "";
+      text = `${meta.emoji} ${orgName} (\`${rec.org}\`) clicked *Book on rec.us* \u2014 ${rec.site || "a campsite"}${stay}`;
+    }
+  } else if (rec.event === "campmap-filter") {
+    // "Filtered to all types" is someone clearing the filter — worth saying
+    // plainly rather than as an empty type.
+    const label = !rec.filterType || rec.filterType === "all" ? "all campsite types" : `*${rec.filterType}*`;
+    const found = rec.sites != null
+      ? ` \u2014 ${rec.sites} site${rec.sites === 1 ? "" : "s"}${rec.open != null ? `, ${rec.open} open` : ""}`
+      : "";
+    text = `${meta.emoji} ${orgName} (\`${rec.org}\`) narrowed the campsite map to ${label}${found}`;
   } else if (rec.event === "campmap-share") {
     const what = rec.kind === "embed" ? "embed code" : "link";
     text = `${meta.emoji} ${orgName} (\`${rec.org}\`) copied the public campsite map ${what}`;
@@ -5689,6 +5734,60 @@ app.get("/metrics/api/data", (req, res) => {
 // ── POST /:org/:report/api/log — log client-side events ──────────────
 // Called by report HTML pages for events the server can't see:
 // excel (SheetJS export) and print (window.print())
+// ── Campmap activity beacons — MUST be registered before the generic
+// /:org/:report/api/* routes below ────────────────────────────────────────────
+// Express matches in registration order and `/:org/:report/api/log` matches
+// `/douglas-county-nv/campmap/api/log`, so a campmap route declared further down
+// the file never runs: resolveOrg rejects any report outside REPORT_TYPES and
+// campmap is deliberately not one. That is not hypothetical — the share beacon
+// shipped in PR #140 sat ~4,400 lines below this point and returned
+// `404 Unknown report: "campmap"` for every call from the day it merged, so the
+// Copy-link ping it claimed to send has never reached Slack. Anything
+// campmap-specific goes HERE.
+
+// POST /:org/campmap/api/share — the Facilities Camping tab copied the public
+// link (or its embed snippet). Its own route rather than the shared
+// /:org/:report/api/log, because resolveOrg 404s any report outside
+// REPORT_TYPES and campmap is deliberately not one.
+app.post("/:org/campmap/api/share", (req, res) => {
+  const slug = req.params.org;
+  if (!ORGS[slug]) return res.status(404).json({ ok: false, error: "Unknown org" });
+  const kind = req.query.kind === "embed" ? "embed" : "link";
+  logEvent(slug, "campmap", "campmap-share", req, { kind });
+  res.json({ ok: true });
+});
+
+// POST /:org/campmap/api/log — camper activity on the public map. Its own route
+// for the same reason as /share above: resolveOrg 404s any report outside
+// REPORT_TYPES and campmap is deliberately not one.
+//
+// This page is PUBLIC and un-tokened, so treat every field as hostile: the event
+// name is allowlisted and every string is clamped. Nothing here is personal —
+// which site was opened, whether it was free, how long a stay was being looked
+// at — so it is safe to put in the feed.
+app.post("/:org/campmap/api/log", (req, res) => {
+  const slug = req.params.org;
+  if (!ORGS[slug]) return res.status(404).json({ ok: false, error: "Unknown org" });
+  const event = req.query.event;
+  const ALLOWED = ["campmap-site", "campmap-book", "campmap-filter"];
+  if (!ALLOWED.includes(event)) return res.status(400).json({ ok: false, error: "Unknown event" });
+  const clamp = (v, n) => (v == null ? undefined : String(v).slice(0, n));
+  const nights = Number(req.query.nights);
+  const count = (v, max) => { const n = Number(v); return Number.isFinite(n) && n >= 0 && n <= max ? Math.round(n) : undefined; };
+  const extra = {
+    site:   clamp(req.query.site, 80),
+    state:  clamp(req.query.state, 20),
+    kind:   clamp(req.query.kind, 20),
+    nights: Number.isFinite(nights) && nights > 0 && nights < 400 ? Math.round(nights) : undefined,
+    // campmap-filter: which campsite type was chosen, and what it found.
+    filterType: clamp(req.query.type, 24),
+    sites:  count(req.query.sites, 5000),
+    open:   count(req.query.open, 5000),
+  };
+  logEvent(slug, "campmap", event, req, extra);
+  res.json({ ok: true });
+});
+
 app.post("/:org/:report/api/log", resolveOrg, (req, res) => {
   const { orgSlug, reportType } = req;
   const { event, game, location, view } = req.query;
@@ -10088,6 +10187,13 @@ app.get("/:org/campmap", (req, res) => {
     coords,
     locationName: active.locationName || org.campLocationName || "",
     address: active.address || org.campAddress || "",
+    // Where to send someone who wants dates the map cannot answer for. rec.us
+    // takes bookings ~180 days out but get_site_availability only enumerates 30,
+    // so the strip runs out long before the booking window does. Per-org and
+    // optional: the URL carries the org's slug and location id, and the contact
+    // names that org's department, so there is no sane default to fall back on —
+    // an org without it simply shows no referral rather than the wrong one.
+    bookAhead: active.bookAhead || seed.bookAhead || null,
     sites: active.sites || null,
     landmarks: active.landmarks || null,
     defaults: active.defaults || {},
@@ -10107,18 +10213,6 @@ app.get("/:org/campmap", (req, res) => {
 // Campsite map positions + custom markers.
 // GET is public (viewers see the admin's saved layout); POST requires the org
 // token (admin edit). Both use the same per-location store as the Camping tab.
-// POST /:org/campmap/api/share — the Facilities Camping tab copied the public
-// link (or its embed snippet). Its own route rather than the shared
-// /:org/:report/api/log, because resolveOrg 404s any report outside
-// REPORT_TYPES and campmap is deliberately not one.
-app.post("/:org/campmap/api/share", (req, res) => {
-  const slug = req.params.org;
-  if (!ORGS[slug]) return res.status(404).json({ ok: false, error: "Unknown org" });
-  const kind = req.query.kind === "embed" ? "embed" : "link";
-  logEvent(slug, "campmap", "campmap-share", req, { kind });
-  res.json({ ok: true });
-});
-
 app.get("/:org/campmap/api/positions", (req, res) => {
   const slug = req.params.org;
   if (!ORGS[slug]) return res.status(404).json({ positions: {} });
@@ -10186,11 +10280,23 @@ app.get("/:org/rentalcalendar/api/sites", async (req, res) => {
   const org = ORGS[slug];
   if (!org || !org.orgId) return res.status(404).json({ error: "Unknown org" });
   const locationId = req.query.locationId || '';
-  const cacheKey = org.orgId + ':' + locationId;
+  // ?types=campsite — ask Rec for one kind of site instead of the org's whole
+  // facility list. This is not an optimisation: Douglas County has 194 courts and
+  // this route asked for a single page, so its 41 campsites fell off the end and
+  // /douglas-county-nv/campmap got NO live data at all (no sub_type, price,
+  // capacity or amenities) — loadSites() threw "no live sites matched" and the
+  // page ran entirely on its baked seed. The page size below is raised for the
+  // same reason.
+  const VALID_TYPES = new Set(["court", "picnic-table", "room", "pool", "rink", "golf",
+                               "field", "outdoor-event-space", "bounce-house", "campsite", "other", "gym"]);
+  const types = String(req.query.types || '').split(',').map(t => t.trim().toLowerCase())
+    .filter(t => VALID_TYPES.has(t));
+  const cacheKey = org.orgId + ':' + locationId + ':' + types.join('+');
   // Check hardcoded cache first
   const orgSites = RC_SITES_CACHE[org.orgId];
   if (orgSites) {
-    const sites = locationId && orgSites[locationId] ? orgSites[locationId] : Object.values(orgSites).flat();
+    let sites = locationId && orgSites[locationId] ? orgSites[locationId] : Object.values(orgSites).flat();
+    if (types.length) sites = sites.filter(x => types.includes(String(x.type || '').toLowerCase()));
     return res.json({ sites });
   }
   // Check live MCP response cache (1 hour TTL)
@@ -10202,7 +10308,9 @@ app.get("/:org/rentalcalendar/api/sites", async (req, res) => {
   try {
     const client = await getRecMcpClient();
     if (!client) throw new Error('MCP client not available');
-    const result = await client.callTool({ name: 'list_sites', arguments: { organizationId: org.orgId, pageSize: 100 } });
+    const result = await client.callTool({ name: 'list_sites', arguments: Object.assign(
+      { organizationId: org.orgId, pageSize: 250 },
+      types.length ? { siteTypes: types } : {}) });
     let sites = [];
     for (const block of (result.content || [])) {
       if (block.type === 'text' && block.text) {

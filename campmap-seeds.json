@@ -231,6 +231,10 @@
     },
     "locationName": "Topaz Lake Recreation Area",
     "address": "3800 Topaz Park Rd, Gardnerville, NV 89410",
+    "bookAhead": {
+      "url": "https://www.rec.us/organizations/douglas-county-nv?tab=facilityRentals&siteType=campsite",
+      "contact": "Douglas County Parks and Recreation Department"
+    },
     "landmarks": [],
     "defaults": {
       "checkIn": "1:00 PM",

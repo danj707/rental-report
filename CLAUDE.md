@@ -311,10 +311,12 @@ service **rental-report** (`7ee6e149-bd03-41db-bd42-aa8a751b1000`).
   `https://rental-report-rental-report-pr-<PR#>.up.railway.app`
   (e.g. PR #29 → https://rental-report-rental-report-pr-29.up.railway.app)
 - After opening a PR, confirm the preview actually boots and hand Dan the URL.
-  NOTE: the session sandbox's outbound proxy blocks `*.up.railway.app` (CONNECT
-  403), so I cannot curl the preview to verify it. Verify boot via Railway
-  `list-deployments` on the PR environment instead — status `SUCCESS` means it's
-  up for Dan's browser even though I can't reach it.
+  **The sandbox CAN curl `*.up.railway.app` — fetch the preview and check the
+  served HTML.** This note used to claim the proxy blocked it (CONNECT 403); that
+  was wrong, and believing it meant skipping live verification more than once.
+  Railway `list-deployments` on the PR environment tells you WHICH commit is
+  serving (a `SUCCESS` for an older commit looks identical to one for yours), so
+  use both: deployments for the commit, curl for the behaviour.
 
 ## Admin "What's New" popup — REMOVED from admin (PR #134)
 
@@ -326,6 +328,165 @@ Still true of the org-side popup: it shows *published* project-updates, so it is
 EMPTY until at least one update is published, and each PR preview is a fresh
 environment with its own (empty) data store — a brand-new preview shows no popup
 until you publish an update in it first.
+
+## Campsite map availability — 30 days is the ceiling, and it is not ours (2026-08-23)
+
+**Dan expected >30 days for a properly configured site. It is not a configuration
+issue.** `get_site_availability` takes ONLY a `siteId` — no range parameter
+exists — and its own description says "the next 30 days". Probed three ways, all
+returning an identical 31 keys ending 2026-09-22: public tool on Topaz Site 01,
+public tool on Site 04, and the STAFF-scoped tool on Site 04. Site 04 carried
+`nights.maximum = 180` at the time and the window did not move, so the horizon is
+independent of the site's settings.
+
+Two config red herrings, both worth knowing:
+
+- **The "180" in the admin panel is a STAY DURATION, not a booking window.**
+  40 of the 41 Topaz campsites allow 14 nights; Site 04 alone said 180, which Dan
+  then corrected. "Default nights per stay" sits directly above "Default days in
+  advance" in that panel, and both read 180 — a data-entry slip.
+- `court.default_reservation_window_days` is **NULL on all 41** sites, and the
+  largest value anywhere on the platform is **21**. No 180-day window is stored at
+  site or org level.
+
+`latestCheckout` DOES reach past the 30-day window (a 22 Sep arrival could check
+out 6 Oct under the old 14-night rule), so **the cap is on arrival dates only** —
+never bound the checkout picker to the strip's length. And never take the longest
+window any single site offers: one mis-set site would offer a 180-night stay for
+the whole park. Cap by the org's configured max stay first.
+
+### Beyond 30 days: the rentalcalendar pattern exists, and it drops nightly bookings
+
+`public/rentalcalendar.html` (Watertown, Norman, Niagara Falls) shows dates past
+30 days — `MAX_DAYS_AHEAD = 30`, no `max` on the date pickers, and a
+`beyondRealtime` disclaimer saying availability out there is "based on confirmed
+facility bookings and may not reflect all holds". Verified live: 257 booking rows
+across 28 November dates.
+
+**But the overlay that feeds it drops every nightly booking.** In
+`/:org/rentalcalendar/api/reservations`:
+
+```js
+.filter(r => r.date && r.start && r.end && r.site);
+```
+
+Nightly rows have no `End` — they are nights, not time slots (`Begin "01:00pm",
+End null`). Measured on October at Douglas: **campsite 0 of 46 survive, room 180
+of 180 survive.** Latent where it runs (Watertown 65 sites and Norman 182 are
+100% hourly) and live but small at Niagara Falls (2 nightly + 3 daily). Douglas is
+47% nightly, so this is why campmap could not simply reuse that endpoint to go
+past 30 days: a booked campsite would have read as free on a public page.
+
+Decision (Dan, 2026-08-23): **stay at 30 days.** The strip ends with a per-org
+hand-off card (`bookAhead` in `campmap-seeds.json`: the org's rec.us
+facility-rentals URL + the department to name) rather than rendering nights we
+cannot answer for.
+
+### The three flavours of "no", and why the labels matter
+
+A staff-entered hold awaiting payment **blocks the site** (Dan). rec.us reports
+those nights as `available:false, reason:"outside-window"` — NOT `conflict`. The
+first version of this code binned every non-`conflict` reason as "booking
+restriction", which told a camper to try a different stay length for a site that
+is simply taken. Now three buckets:
+
+| rec.us reason | shown as | what the camper should do |
+|---|---|---|
+| `conflict` | Not available | another site or another week |
+| min/max-stay | Free, but not for a stay this long | same site, different length |
+| anything else (`outside-window`, blackout, closed) | Not available | another site or another week |
+
+### Tested both ways: cap the checkout at 30 days, or let it run? (2026-08-23)
+
+Dan's question: is it safer to cap everything at 30 days and avoid a "but it said
+it was free", or allow wiggle room. Tested without creating a booking, because
+`latestCheckout` IS rec.us's assertion about nights past its own window.
+
+**rec.us is conflict-aware beyond the window.** It truncates `latestCheckout`
+exactly at the next real booking, including bookings in October:
+
+| site | ledger bookings past the window | cap for a 20 Sep arrival |
+|---|---|---|
+| Site 21 | Sep 24-27 | **Sep 24** — stops at it |
+| Site 04 | Sep 25-26 | **Sep 25** |
+| Site 22 | **Oct 2-4** | **Oct 2** — 12 nights out |
+| Site 27 | Oct 7+ | Oct 4 (full 14 nights, nothing in the way) |
+
+**37 boundary-crossing arrivals, 37 ledger-clear, 0 clashes.**
+
+**Capping the checkout would cost real bookings and fix nothing:**
+
+```
+arrival       now: sites / max nights   capped: sites / max nights
+2026-09-14         38 / 14                   38 /  8
+2026-09-17         33 / 14                   33 /  5
+2026-09-20         34 / 14                   34 /  2
+2026-09-22         39 / 14                    0 /  0   ← all 39 unbookable
+```
+
+The longest stay decays 14 → 8 → 5 → 2 → 1 → 0 across the final week, and the
+last arrival night becomes unbookable outright (any stay needs a checkout the cap
+forbids).
+
+**DECISION: arrivals capped at 30 nights, checkouts NOT.** The Arrive field's
+`max` is the 30th night; the Depart field's `max` is rec.us's own `latestCheckout`
+for the chosen arrival, so the picker cannot offer a stay the engine would refuse
+nor refuse one it would accept. The asymmetry is
+principled — past day 30 there is no arrival data, so offering one would be our
+guess, while the checkout bound is not our guess but rec.us's answer. Guarded by
+`scripts/campmap-stay.spec.js`.
+
+The residual "but it said it was free" risk is **staleness, not the horizon**:
+`RC_AVAIL_TTL` is 15 minutes, so a night can be taken between our fetch and a
+camper's click. That is identical inside and outside 30 days. The lever is the
+TTL.
+
+### Guard: `node scripts/campmap-stay.spec.js` (12 assertions, in CI)
+
+Slices the pure reducer out of `campmap.html` (the page builds a Leaflet map at
+module scope, so the whole block cannot be evaluated) and pins the decisions
+above. **Mutation-tested**, and the first version FAILED that test: reverting the
+reason→state mapping left all 11 assertions passing, because the mapping lived
+inside the fetch callback where the slice could not reach it. It is now
+`nightStateFrom(v)`, a named function next to `statusOn`, and both mutations —
+lumping non-conflict reasons back into `blocked`, and capping the checkout at the
+window — now fail on the right assertion. A spec that has not been seen to fail
+on the regression it names is not a guard.
+
+### Backtest: `node scripts/campmap-availability-backtest.js`
+
+Checks the map's nights against the reservation ledger in db 4, which knows
+nothing about the availability endpoint. Site ids in `campmap-seeds.json` ARE
+court ids, so the two sides join on identity — no display-name matching, which is
+what makes the rentalcalendar overlay fragile. Needs `MB_API_KEY`; without it the
+script fails rather than reporting a pass it cannot back.
+
+Result 2026-08-23 (PR #143 preview, Dan's pre-merge gate), 1,271 site-nights at
+Topaz Lake: **100.00% agreement — 1,271 of 1,271, zero diffs in EITHER
+direction.** All 456 site-nights the ledger calls unbookable are blocked on the
+map, and no night the map offers is covered by a live reservation. 13 random
+sample ranges (8 fully bookable, 5 partial) were all clear, and in every partial
+case each withheld night was backed by a real reservation. An unpaid hold counts
+as occupied by default (386 of the 456 are holds); `--ignore-unpaid-holds`
+measures how much of any gap they are.
+
+**THE NIGHT RULE IS THE WHOLE MEASUREMENT — get it wrong and you invent diffs.**
+An earlier run of this script reported 99.45% and 7 "safe" diffs (map blocks,
+ledger free). That was not the map: the script used
+`lower::date .. upper::date - 1`, and Topaz has reservations ending at **23:00**
+rather than the 11:00 checkout, so the final DAY is still occupied and nobody else
+can arrive on it. rec.us was right both times. The rule is now the arrival window
+— a night N is unbookable if a reservation overlaps
+`[N + checkIn .. N+1 + checkOut)` — with `--check-in-hour` / `--check-out-hour`
+for orgs on other times. That is the second measurement error in this backtest to
+survive being reported as a finding; check what a diff *means* before calling it
+one.
+
+**Correction worth remembering:** an earlier pass reported "3 dangerous diffs"
+where the map supposedly offered held nights. That was a classification error on
+my side — non-`conflict` blocks had been lumped in with "free". The map blocked
+those nights all along. Check what `available:false` actually says before calling
+a diff dangerous.
 
 ## Campsite map — public, un-retired, seed-scoped (Dan, 2026-08-22)
 
@@ -354,6 +515,182 @@ it back was surfacing it, not rebuilding it.
 - Copying the link fires `campmap-share` (Slack), per the standing activity rule.
   Public page views already logged `view`, so camper traffic was pinging Slack
   even while the report was retired.
+- **CORRECTION (2026-08-23): that share ping never actually fired.** The route was
+  declared ~4,400 lines BELOW the generic `/:org/:report/api/log|share`, and
+  Express matches in registration order — so every call hit the generic route,
+  which runs `resolveOrg` and 404s any report outside `REPORT_TYPES`. campmap is
+  deliberately not one, which is the very reason the dedicated route exists. It
+  returned `404 Unknown report: "campmap"` from the day PR #140 merged. Nothing
+  caught it: server.js parses, the server boots, the page renders, the client code
+  is correct, and a fire-and-forget beacon never complains.
+
+## The campmap site drawer had TWO calendars — one is gone (Dan, 2026-08-23)
+
+The drawer showed a per-night strip for the stay in the bar AND a whole-month
+mini-calendar under "Availability". Dan: "the bottom one isn't needed. remove
+it." It is gone (`miniCalHtml`, `wireMiniCal`, `calMonth` and their CSS), and the
+per-night strip stays — it answers the question for the stay actually being
+searched, and two calendars in one panel are two things that can disagree.
+
+`setDate()` survives for the `?date=` deep link, which was its other caller.
+And Amenities is now the last section before the Book button, so it is skipped
+when a site has no amenity tags rather than leaving a bare heading on top of it.
+
+**Also gone: the "Pin position set by admin." caption**, which Dan flagged as
+strange — because it is plumbing talk on a camper-facing page, and so was
+"Location from rec.us." A pin in the right place needs no caption. The note now
+appears only in EDIT mode, or when the position is genuinely approximate
+(`approx && !placed`), which is the one case a camper benefits from knowing.
+
+**The hand-off link is per-org in `campmap-seeds.json` (`bookAhead`) and it is
+worth pointing at the campsite-filtered tab**, not the location-filtered one:
+Douglas is now
+`https://www.rec.us/organizations/douglas-county-nv?tab=facilityRentals&siteType=campsite`
+(verified 200). Copy reads "Looking for campsite dates more than 30 days out? /
+Click to book directly on rec.us, or call the …" — the day count comes from
+`DAYS_SHOWN`, so it stays true if the horizon ever moves.
+
+### Kill stray local servers before driving a page (cost me a wrong "verified")
+
+The drive scripts used a FIXED port, and a leftover `node server.js` from an
+earlier run answered on it — so a run that reported the hand-off href showed the
+**old** URL, minutes after the seed had been changed, and a fresh boot proved the
+new one. A stale server is indistinguishable from a code failure in the output.
+Bind a per-run port (or `pkill -f "node .*server.js"` first) and re-check
+anything a leftover could have answered. This is the same warning as the timing
+caveat in the health-check section, with teeth.
+
+## Campsite type filter — rec.us's four values, and where they actually live (2026-08-23)
+
+The public map's top bar carries a **Campsite Type** control beside the dates.
+The four options are rec.us's own, and they are not a guess — `court.sub_type`
+carries a CHECK constraint:
+
+```sql
+CHECK (sub_type = ANY (ARRAY['tent','rv','tent-and-rv','lodging']))
+```
+
+which is exactly the admin dropdown (Tent Only / RV Only / Tent & RV / Lodging).
+**Match them EXACTLY, and before the substring rules.** The old `kindInfo` tested
+`k.indexOf('rv')>=0` first, so an **RV-only** site was labelled "Tent & RV" — the
+one answer a tent camper must never be given. `typeKey()` and `CANON_KINDS` now
+match exact values first; `scripts/campmap-stay.spec.js` fails on the revert.
+
+Platform-wide today (db 4, `type='campsite'`, 64 sites):
+
+| sub_type | sites | orgs |
+|---|---|---|
+| `tent-and-rv` | 42 | 2 (all 41 of Douglas/Topaz + 1 test) |
+| NULL | 16 | 3 (incl. **all 12 Pleasant Hill**) |
+| `tent` | 5 | 4 |
+| `lodging` | 1 | 1 |
+| `rv` | **0** | — |
+
+Two consequences worth knowing before reading the control as broken:
+
+- **Topaz Lake is uniformly `tent-and-rv`, so the control shows ONE type there.**
+  When a campground is all one type the select renders **disabled**, naming what
+  the sites are rather than implying a choice. **It does NOT light up on its own
+  when someone varies the types in the admin** — see the next section; the seed
+  has to be updated too. What actually varies at Topaz is
+  **max trailer length (26–60 ft, 18 distinct values)** and rate ($30 ×26 / $40
+  ×15); a rig-length filter is the natural companion and is not built.
+- **`electric` / `primitive` are OURS, not Rec's.** Pleasant Hill's 12 campsites
+  carry `sub_type` NULL, so `sKind()` derives those two from the site
+  description. They stay in the canonical table because they are how those sites
+  genuinely differ — but do not mistake them for rec.us values.
+
+`TYPE_FILTER` + `VIEW()` are the whole mechanism: **everything that counts, lists
+or paints reads `VIEW()`, never `SEED`** — markers, the site list, the "N of M
+open" line, and `latestCheckoutFrom()`. That last one matters: scoped to the
+filter, so picking "tent only" cannot offer a checkout only a lodging unit
+allows. Filtered-out pins come OFF the map rather than being dimmed (a greyed pin
+is indistinguishable from an unavailable one); the open drawer's own site stays
+on. The filter is deliberately **not** persisted — it is a search intent, not a
+layout preference, and a camper returning to a silently narrowed map would read a
+subset as the whole campground. `EDIT` mode ignores it entirely.
+
+### The filter reads the SEED, because Rec's API does not expose sub_type
+
+Verified on the PR #143 preview, 2026-08-23: `/douglas-county-nv/rentalcalendar/api/sites?types=campsite`
+returns **41 campsites, `subType: null` on every one** (and `bookingUnit: null`),
+while `court.sub_type` in db 4 says `tent-and-rv` for all 41. The MCP
+`list_sites` payload has **no `subType` key at all** — `sKind()` prefers
+`l.subType` and it is simply never there.
+
+So the filter's options come from `campmap-seeds.json`'s hand-maintained `kind`,
+which happens to agree with the database today (Douglas `tent-and-rv` ×41;
+Pleasant Hill's real value is NULL, so our derived electric/primitive is the only
+signal that exists for it). **Consequence to say out loud: changing Campsite Type
+in the rec.us admin will NOT change this map.** Either the seed's `kind` is
+updated to match, or the platform starts returning `subType` from `list_sites`.
+Worth raising with whoever owns the sites API — `capacity`, `priceCents` and the
+nightly policy all come through, so the field is an omission rather than a
+limitation. Nothing in the app can detect the drift: there is no runtime DB
+access, and a wrong `kind` renders perfectly.
+
+### The live site feed was truncating campsites away entirely
+
+`/:org/rentalcalendar/api/sites` asked the Rec MCP for **one page of 100**.
+Douglas County has **194 courts**, so its 41 campsites fell off the end:
+`loadSites()` threw `no live sites matched` and `/douglas-county-nv/campmap` ran
+**entirely on its baked seed** — no live `sub_type`, price, capacity, amenities or
+nightly policy, ever. Nothing complained; the page renders fine on the seed.
+
+Fixed two ways: the route accepts `?types=campsite` (forwarded as the MCP's
+`siteTypes`, validated against the tool's enum) and its page size is 250. campmap
+asks for `types=campsite` because it only ever plots campsites. Guarded by the
+`campmap · type filter` case in `ci-check-render.js`, whose fixture assigns
+sub_types the seed does not have — so the case passes only if the LIVE overlay
+landed and rebuilt the options from it. Note that is the code PATH being covered:
+in production the real feed omits `subType` (above), so the seed's `kind` is what
+the options are actually built from.
+
+### And the Depart picker was stale until you touched it
+
+Same session, same area: `setStay()` derives the Depart field's `max` from
+rec.us's `latestCheckout`, but `loadAvailability()` only repainted — it never
+re-ran `setStay`. So between boot and the first interaction the picker offered the
+**fallback** bound (the org's configured max stay, 14 nights at Topaz) instead of
+rec.us's answer, i.e. a checkout rec.us had already said it would refuse. That is
+the "but it said it was free" the asymmetric cap exists to prevent. It now re-runs
+`setStay(SELECTED, DEPART)` when availability lands.
+
+Activity: `campmap-filter` (🔎) posts the type chosen plus what it found
+(`sites`, `open`), debounced **by type** — someone trying tent-only then RV-only
+is telling us two things. Covered by `scripts/campmap-beacons.spec.js`.
+
+## Campmap activity tracking — route order is the whole trap (2026-08-23)
+
+**Anything campmap-specific must be registered BEFORE the generic
+`/:org/:report/api/*` routes**, not near the other campmap handlers further down
+server.js. See the correction above for what happens otherwise.
+
+Events, all on `POST /:org/campmap/api/log?event=…` (allowlisted, every string
+clamped — the page is public and un-tokened):
+
+| event | fired by | extra |
+|---|---|---|
+| `campmap-site` | opening a campsite | `site`, `state` (avail/partial/booked/blocked), `nights` |
+| `campmap-book` | the site's **Book on rec.us** button | `site`, `nights` |
+| `campmap-book` | the hand-off card at the foot of the site list | `kind: "later-dates"` |
+| `campmap-share` | Copy link / Copy embed on the Camping tab | `kind: link|embed` |
+
+Both debounce **by site**, the same decision as the rentalcalendar's map pins: a
+camper comparing six sites should read as six in the feed, not as whichever one
+they opened first.
+
+`campmap-site` carries the stay verdict on purpose — "opened Site 12" is trivia;
+"opened Site 12, free for their 3 nights" says whether the map is answering the
+question. And the hand-off card is its own `kind`: it used to POST
+`/api/share?kind=book-ahead`, which normalises kind to `embed|link`, so a booking
+hand-off was recorded as a link copy.
+
+Guarded by `scripts/campmap-beacons.spec.js` (7 assertions, in CI), which checks
+the source registration order AND boots the server to require a 200 *plus* a row
+in events.jsonl — a 200 alone would not have caught the original bug, since the
+generic route's 404 was the only symptom. Mutation-tested: moving the routes back
+below the generic ones fails it by name.
 - Editing still works for admins exactly as before — open the page WITH `?token=`.
 
 ## Never ship a page without rendering it (IMPORTANT — cost us two blank pages)

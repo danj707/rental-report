@@ -3759,8 +3759,13 @@
       // use — it used to be counted separately off the raw rows, which is how it
       // could agree with a wrong number and disagree with a right one. Declared
       // here, below bannerAgg, not above it.
-      const count = bannerAgg ? bannerAgg.bookings : null;
-      const siteCount = bannerAgg ? bannerAgg.sites : 0;
+      // When the feed FAILED, the counts must read as unknown, not as zero. On
+      // error the loader sets rows to [] (it cannot use null — that is the
+      // loading state), so the aggregate honestly reports 0 of an empty array and
+      // the toolbar said "0 bookings · 0 sites" next to a 502. Zero is a claim
+      // about the campground; blank is the truth about our knowledge of it.
+      const count = (err || !bannerAgg) ? null : bannerAgg.bookings;
+      const siteCount = (err || !bannerAgg) ? 0 : bannerAgg.sites;
 
       // Exports mirror exactly what's on screen, like the other reports:
       // date range + status + site-type filters, and the active tab's scope

@@ -82,12 +82,58 @@ const campsitesGeo = {
   }],
 };
 
+// The campmap availability feed: { data: { siteId: { checkInDates: {...} } } }.
+// Keyed by CHECK-IN date and carrying the allowed checkout window, same as
+// rec.us — a flat "available" map would let the stay reducer pass while the
+// window logic went unexercised. siteIds come off the query string so the reply
+// covers exactly the sites the page asked about.
+function availabilityFor(url) {
+  const m = /siteIds=([^&]*)/.exec(url);
+  const ids = m ? decodeURIComponent(m[1]).split(",").filter(Boolean) : [];
+  const day = n => { const t = new Date(Date.now() + n * 86400000); return t.toISOString().slice(0, 10); };
+  const data = {};
+  ids.forEach((id, i) => {
+    const checkInDates = {};
+    for (let n = 0; n < 30; n++) {
+      // A deterministic mix so every branch is hit: free nights, a real booking
+      // conflict, and a stay-rule block that must NOT read as booked.
+      const slot = (i + n) % 7;
+      if (slot === 3) checkInDates[day(n)] = { available: false, reason: "conflict" };
+      else if (slot === 5) checkInDates[day(n)] = { available: false, reason: "minimum-stay" };
+      else checkInDates[day(n)] = { available: true, earliestCheckout: day(n + 1), latestCheckout: day(n + 4) };
+    }
+    data[id] = { checkInDates };
+  });
+  return { data };
+}
+
+// The campmap's live site feed. Ids come from the campmap seed so the overlay
+// actually matches (loadSites() discards a reply that matches nothing), and each
+// site is given one of rec.us's real sub_type values — the field the Campsite
+// Type filter is built from. Deliberately DIFFERENT from the seed's own `kind`,
+// so the check proves Rec's value wins over the seed's guess rather than merely
+// that some options rendered.
+const SUB_TYPES = ["tent", "rv", "tent-and-rv"];
+function campmapSites(org) {
+  const seeds = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "campmap-seeds.json"), "utf8"));
+  const sites = ((seeds[org] || {}).sites || []);
+  return sites.map((x, i) => ({
+    id: x.id, name: x.name, courtNumber: x.name, type: "campsite",
+    capacity: 6, locationId: "loc", locationName: (seeds[org] || {}).locationName || "Campground",
+    bookingUrl: "https://www.rec.us/sites/" + x.id, description: "",
+    imageUrl: null, gallery: [], priceCents: 2500, residentPriceCents: 2000,
+    durationMinutes: null, pricingType: "perNight", bookingUnit: "nightly",
+    subType: SUB_TYPES[i % SUB_TYPES.length], amenities: [],
+  }));
+}
+
 // Anything under /api/ that a page fetches. `match` is tested against the path.
 const STUBS = [
   { match: /\/facilities\/api\/campsites/, body: () => campsitesGeo },
   { match: /\/facility\/api\/data/,        body: () => ({ rows: campsiteRows(), meta: {} }) },
   { match: /\/api\/permits/,               body: () => ({ permits: {} }) },
-  { match: /\/api\/availability-batch/,     body: () => ({ availability: {} }) },
+  { match: /\/api\/availability-batch/,     body: url => availabilityFor(url) },
+  { match: /\/rentalcalendar\/api\/sites/, body: (url, org) => ({ sites: campmapSites(org) }) },
   { match: /\/api\/sites/,                  body: () => ({ sites: [] }) },
   { match: /\/api\/data/,                   body: () => ({ rows: campsiteRows(), meta: {} }) },
   { match: /\/api\/pulse/,                  body: () => ({ items: [], generated: null }) },
@@ -155,6 +201,20 @@ const CASES = [
   { name: "facilities · summary",  path: "/{org}/facilities?tab=summary", needs: ".sum-cards, .aqua-sec, .fac-banner" },
   { name: "org landing",           path: "/{org}",                        needs: ".card" },
   { name: "gl report",             path: "/{org}/gl",                     needs: ".toolbar" },
+  // The public campground map. No token on purpose — this is the one view a
+  // camper reaches, so a blank page here is the most costly of the lot.
+  // `#departPick[max]` rather than the input itself: the element is in the static
+  // HTML, but its `max` is written only inside setStay(), from rec.us's own
+  // latestCheckout. So this fails if the stay logic throws, which a selector for
+  // the markup would not. (The night strip this used to assert on is gone — the
+  // date fields replaced it.)
+  { name: "campmap · stay search", path: "/{org}/campmap",                needs: "#departPick[max]" },
+  // The Campsite Type filter. `option[value="tent-and-rv"]` is only there if the
+  // LIVE site feed landed and buildTypeFilter() re-ran off its subType — the
+  // seed's own kinds are electric/primitive — so this covers the overlay path as
+  // well as the control rendering at all. It is the code path being covered: the
+  // real Rec feed omits subType, so in production the options come from the seed.
+  { name: "campmap · type filter", path: "/{org}/campmap",                needs: "#typePick option[value=\"tent-and-rv\"]" },
 ];
 
 const child = spawn(process.execPath, [path.join(__dirname, "..", "server.js")], {
@@ -264,7 +324,7 @@ function waitForServer(started) {
       if (u.includes("/api/")) {
         const stub = STUBS.find(s => s.match.test(u));
         return req.respond({ status: 200, contentType: "application/json",
-                             body: JSON.stringify(stub ? stub.body() : { ok: true }) });
+                             body: JSON.stringify(stub ? stub.body(u, org) : { ok: true }) });
       }
       if (!u.startsWith(`http://127.0.0.1:${PORT}`)) return serveVendored(req);
       req.continue();
