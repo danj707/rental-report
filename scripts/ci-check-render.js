@@ -82,12 +82,37 @@ const campsitesGeo = {
   }],
 };
 
+// The campmap availability feed: { data: { siteId: { checkInDates: {...} } } }.
+// Keyed by CHECK-IN date and carrying the allowed checkout window, same as
+// rec.us — a flat "available" map would let the stay reducer pass while the
+// window logic went unexercised. siteIds come off the query string so the reply
+// covers exactly the sites the page asked about.
+function availabilityFor(url) {
+  const m = /siteIds=([^&]*)/.exec(url);
+  const ids = m ? decodeURIComponent(m[1]).split(",").filter(Boolean) : [];
+  const day = n => { const t = new Date(Date.now() + n * 86400000); return t.toISOString().slice(0, 10); };
+  const data = {};
+  ids.forEach((id, i) => {
+    const checkInDates = {};
+    for (let n = 0; n < 30; n++) {
+      // A deterministic mix so every branch is hit: free nights, a real booking
+      // conflict, and a stay-rule block that must NOT read as booked.
+      const slot = (i + n) % 7;
+      if (slot === 3) checkInDates[day(n)] = { available: false, reason: "conflict" };
+      else if (slot === 5) checkInDates[day(n)] = { available: false, reason: "minimum-stay" };
+      else checkInDates[day(n)] = { available: true, earliestCheckout: day(n + 1), latestCheckout: day(n + 4) };
+    }
+    data[id] = { checkInDates };
+  });
+  return { data };
+}
+
 // Anything under /api/ that a page fetches. `match` is tested against the path.
 const STUBS = [
   { match: /\/facilities\/api\/campsites/, body: () => campsitesGeo },
   { match: /\/facility\/api\/data/,        body: () => ({ rows: campsiteRows(), meta: {} }) },
   { match: /\/api\/permits/,               body: () => ({ permits: {} }) },
-  { match: /\/api\/availability-batch/,     body: () => ({ availability: {} }) },
+  { match: /\/api\/availability-batch/,     body: url => availabilityFor(url) },
   { match: /\/api\/sites/,                  body: () => ({ sites: [] }) },
   { match: /\/api\/data/,                   body: () => ({ rows: campsiteRows(), meta: {} }) },
   { match: /\/api\/pulse/,                  body: () => ({ items: [], generated: null }) },
@@ -155,6 +180,13 @@ const CASES = [
   { name: "facilities · summary",  path: "/{org}/facilities?tab=summary", needs: ".sum-cards, .aqua-sec, .fac-banner" },
   { name: "org landing",           path: "/{org}",                        needs: ".card" },
   { name: "gl report",             path: "/{org}/gl",                     needs: ".toolbar" },
+  // The public campground map. No token on purpose — this is the one view a
+  // camper reaches, so a blank page here is the most costly of the lot.
+  // `#departPick[min]` rather than `.chip`: chips are built (and the first one
+  // marked `on`) before the stay is set, so either of those would still be there
+  // if setStay() threw. The depart input's `min` is written only inside setStay,
+  // so it is the cheapest proof that the stay logic actually ran.
+  { name: "campmap · stay search", path: "/{org}/campmap",                needs: "#departPick[min]" },
 ];
 
 const child = spawn(process.execPath, [path.join(__dirname, "..", "server.js")], {
@@ -264,7 +296,7 @@ function waitForServer(started) {
       if (u.includes("/api/")) {
         const stub = STUBS.find(s => s.match.test(u));
         return req.respond({ status: 200, contentType: "application/json",
-                             body: JSON.stringify(stub ? stub.body() : { ok: true }) });
+                             body: JSON.stringify(stub ? stub.body(u) : { ok: true }) });
       }
       if (!u.startsWith(`http://127.0.0.1:${PORT}`)) return serveVendored(req);
       req.continue();
