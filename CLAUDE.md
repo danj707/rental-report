@@ -317,6 +317,35 @@ EMPTY until at least one update is published, and each PR preview is a fresh
 environment with its own (empty) data store — a brand-new preview shows no popup
 until you publish an update in it first.
 
+## Campsite map — public, un-retired, seed-scoped (Dan, 2026-08-22)
+
+`campmap` is out of `RETIRED_REPORTS`. It was retired in favour of the Facilities
+hub's Camping tab, which is right for ADMINS and wrong for campers: the Camping
+tab is behind the org token, and `/:org/campmap` is the only **public, no-token**
+view of a campground. It never stopped working — it has been quietly serving
+~24 visitors a month via direct links the whole time it was "retired". Bringing
+it back was surfacing it, not rebuilding it.
+
+- **Seed presence is the whole gate.** The org landing route pushes `campmap`
+  only when `CAMPMAP_SEEDS[slug]` exists, same shape as the facility permit chip:
+  the card appears where there is a map and nowhere else, so the other ~26 orgs
+  never see a link to an empty map. Two orgs qualify today — `douglas-county-nv`
+  (Topaz Lake, 41 sites) and `pleasant-hill`. Nothing to configure for a new org
+  beyond adding its seed.
+- **The card link deliberately omits the token, and that is load-bearing.**
+  `org.html` appends `?token=` to every other card, but on THIS page the token
+  does more than authenticate — it unlocks drag-to-edit. A staff member copying
+  the address bar to send to a camper would otherwise hand over an editable map
+  *and* the org token that opens every other report for that org. `cardHTML()`
+  routes `campmap` to `publicMapCardHTML()`, which renders a token-free href, a
+  PUBLIC badge, and a "Copy link" button so sharing is deliberate. Verified in a
+  real browser: the campmap href is `/{slug}/campmap` while a normal card is
+  `/{slug}/gl?token=…`.
+- Copying the link fires `campmap-share` (Slack), per the standing activity rule.
+  Public page views already logged `view`, so camper traffic was pinging Slack
+  even while the report was retired.
+- Editing still works for admins exactly as before — open the page WITH `?token=`.
+
 ## The admin dashboard is a template literal — check its JS before shipping (IMPORTANT)
 
 **The trap, and it has now bitten twice.** The whole admin dashboard is one giant

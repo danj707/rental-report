@@ -398,6 +398,14 @@
     .camp-map { height:380px; border-radius:8px; overflow:hidden; border:1px solid #e8e6e0; }
     .camp-map-legend { display:flex; align-items:center; gap:6px; margin-top:9px; font-size:10.5px; color:#6b7280; flex-wrap:wrap; }
     .camp-map-legend i { width:14px; height:14px; border-radius:50%; display:inline-block; border:1.5px solid rgba(0,0,0,.15); }
+    .camp-public-link { display:flex; align-items:center; flex-wrap:wrap; gap:6px; margin-top:10px; padding:8px 10px;
+      background:#f8fafc; border:1px solid #e5e7eb; border-radius:8px; font-size:10.5px; color:#6b7280; }
+    .camp-public-link .cpl-tag { font-size:9px; font-weight:800; letter-spacing:.04em; color:#047857;
+      background:#d1fae5; border-radius:9px; padding:1px 7px; }
+    .camp-public-link .cpl-note { color:#9ca3af; }
+    .camp-public-link .cpl-url { color:#2563eb; text-decoration:none; font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+      font-size:10px; overflow-wrap:anywhere; }
+    .camp-public-link .cpl-url:hover { text-decoration:underline; }
     .camp-popup { font-size:12px; line-height:1.5; }
     .camp-popup b { font-size:13px; }
     .camp-popup img { width:100%; max-width:200px; border-radius:6px; margin-top:6px; display:block; }
@@ -406,6 +414,14 @@
     .camp-cal .cc-site { position:sticky; left:0; background:#fff; z-index:2; display:flex; align-items:center; justify-content:flex-end; padding-right:9px; color:#374151; font-weight:600; font-size:11px; white-space:nowrap; }
     .camp-cal .cc-hd { color:#9ca3af; font-weight:700; text-align:center; font-size:9px; display:flex; flex-direction:column; align-items:center; justify-content:flex-end; line-height:1.25; }
     .camp-cal .cc-hd.we { color:#b45309; }
+    .camp-cal .cc-hd .cc-dow { font-size:8.5px; font-weight:700; opacity:.62; letter-spacing:.03em; }
+    .camp-note { margin-top:8px; font-size:10.5px; line-height:1.5; color:#6b7280; }
+    .camp-note b { color:#374151; }
+    .camp-bignum { font-size:26px; font-weight:700; color:#111827; letter-spacing:-.01em; margin-top:2px; }
+    .camp-cal .cc-site .cc-trend { font-size:9px; margin-right:4px; line-height:1; }
+    .cc-trend.up { color:#c2410c; }
+    .cc-trend.down { color:#2563eb; }
+    .cc-trend.flat { color:#cbd5e1; }
     .camp-cal .cc-cell { height:20px; border-radius:3px; background:#f4f3ef; cursor:default; }
     .camp-cal .cc-cell.occ { background:#5fae70; }
     .camp-cal .cc-cell.arr { background:#2c8a50; border-top-left-radius:8px; border-bottom-left-radius:8px; }
@@ -1246,30 +1262,89 @@
           .catch(() => setPhase('sent')).finally(() => setBusy(false));
       }
       const top = (board && board.top) ? board.top : [];
-      return e('div', { style: { position: 'absolute', inset: 0, zIndex: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(6,10,20,.62)', backdropFilter: 'blur(2px)' } },
-        e('div', { style: { width: 'min(300px,86%)', background: '#12172a', border: '1px solid rgba(255,255,255,.14)', borderRadius: 12, padding: '16px 18px', color: '#eef', boxShadow: '0 18px 50px rgba(0,0,0,.5)', fontFamily: 'inherit' } },
-          e('div', { style: { fontSize: 15, fontWeight: 800, marginBottom: 2 } }, (meta.emoji || '🎮') + ' ' + (meta.label || 'Game')),
-          e('div', { style: { fontSize: 11, textTransform: 'uppercase', letterSpacing: '.08em', color: '#8ea0c8', marginBottom: 12 } }, (board && board.season ? board.season + ' · ' : '') + 'Leaderboard'),
-          e('div', { style: { display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 12 } },
-            e('span', { style: { fontSize: 30, fontWeight: 800, fontVariantNumeric: 'tabular-nums' } }, score.toLocaleString()),
-            e('span', { style: { fontSize: 12, color: '#9fb0d6' } }, (meta.unit || '') + (phase === 'sent' && result ? (result.made ? ' · you’re #' + result.rank : ' · keep trying!') : ''))),
-          phase === 'enter'
-            ? e('div', { style: { display: 'flex', gap: 8, marginBottom: 14 } },
-                e('input', { ref: inRef, value: initials, maxLength: 3, placeholder: 'AAA', 'aria-label': 'Your initials',
-                  onChange: ev => setInitials(ev.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '')),
-                  onKeyDown: ev => { ev.stopPropagation(); if (ev.key === 'Enter') submit(); },
-                  style: { flex: '0 0 88px', textAlign: 'center', letterSpacing: '.35em', fontWeight: 800, fontSize: 20, padding: '8px 6px', background: '#0b0f1e', color: '#ffd76a', border: '1px solid rgba(255,255,255,.18)', borderRadius: 8, outline: 'none', fontFamily: 'inherit', textTransform: 'uppercase' } }),
-                e('button', { onClick: submit, disabled: busy, style: { flex: 1, background: '#f59e0b', color: '#1a1200', border: 'none', borderRadius: 8, fontWeight: 800, fontSize: 13, cursor: 'pointer', opacity: busy ? .6 : 1 } }, busy ? 'Saving…' : 'Submit ▶'))
-            : null,
-          e('div', { style: { borderTop: '1px solid rgba(255,255,255,.1)', paddingTop: 10, marginBottom: 12 } },
+
+      // Laid out to fit the banner it lives in. .fac-banner is 172px tall with
+      // overflow:hidden, and the old single-column card stacked title + season +
+      // score + initials + five board rows + two buttons plus 32px of padding —
+      // about 290px. It could never fit, so the heading clipped off the top, the
+      // Close / Play again buttons were cut off the bottom, and the card spilled
+      // over the game's tip line ("Ouch! 18 berries") for a wall of overlapping
+      // text. Two columns roughly halves the height: score and initials on the
+      // left, the board on the right, actions under the score.
+      //
+      // maxHeight + overflow are a backstop, not the plan: if a future banner is
+      // shorter, or a season label wraps, this scrolls instead of clipping.
+      const sty = {
+        // NEVER wraps. A 172px-tall banner has no room for a second row: wrapping
+        // pushed the board out of sight and clipped the buttons, which is a worse
+        // failure than a narrow board column. So the columns stay side by side and
+        // the board shrinks and truncates instead.
+        card: { width: 'min(470px,94%)', maxHeight: '96%', overflow: 'hidden', boxSizing: 'border-box',
+                display: 'flex', flexWrap: 'nowrap', gap: 12,
+                background: '#12172a', border: '1px solid rgba(255,255,255,.14)', borderRadius: 12,
+                padding: '11px 13px', color: '#eef', boxShadow: '0 18px 50px rgba(0,0,0,.5)', fontFamily: 'inherit' },
+        colL: { flex: '1 1 auto', minWidth: 168, display: 'flex', flexDirection: 'column', gap: 7 },
+        colR: { flex: '0 1 136px', minWidth: 0, borderLeft: '1px solid rgba(255,255,255,.1)', paddingLeft: 11,
+                display: 'flex', flexDirection: 'column', gap: 0, overflow: 'hidden' },
+        // Title and season share ONE line. Stacked they cost ~14px, and the four
+        // rows plus padding were 165px against 163px of usable height — which is
+        // precisely why the buttons were being clipped.
+        // flexShrink:0 is not cosmetic. In a height-constrained column flex
+        // container, flex items shrink before they clip — so when the buttons
+        // wrapped to two lines on a narrow banner, flexbox silently crushed this
+        // heading to height 0 and the panel simply had no title. Pinning it means
+        // an overflow shows up as a clipped edge you can see, not a row that
+        // quietly disappears.
+        head: { flex: '0 0 auto', fontSize: 12, fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
+        season: { fontSize: 9.5, textTransform: 'uppercase', letterSpacing: '.07em', color: '#8ea0c8',
+                  whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
+        // nowrap: "Play again ↻" and "Submit ▶" were breaking onto two lines at
+        // phone width, which is what overflowed the column in the first place.
+        btn: { border: 'none', borderRadius: 7, fontWeight: 800, fontSize: 12, cursor: 'pointer',
+               fontFamily: 'inherit', padding: '6px 11px', whiteSpace: 'nowrap' },
+      };
+      return e('div', { style: { position: 'absolute', inset: 0, zIndex: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(6,10,20,.72)', backdropFilter: 'blur(2px)', padding: 8, boxSizing: 'border-box' } },
+        e('div', { style: sty.card },
+
+          // ── left: what you scored, and getting it on the board ──
+          e('div', { style: sty.colL },
+            e('div', { style: sty.head },
+              (meta.emoji || '🎮') + ' ' + (meta.label || 'Game'),
+              e('span', { style: { fontWeight: 600, fontSize: 9.5, letterSpacing: '.07em', textTransform: 'uppercase', color: '#8ea0c8', marginLeft: 6 } },
+                board && board.season ? board.season : 'Leaderboard')),
+            e('div', { style: { flex: '0 0 auto', display: 'flex', alignItems: 'baseline', gap: 6 } },
+              e('span', { style: { fontSize: 26, lineHeight: 1, fontWeight: 800, fontVariantNumeric: 'tabular-nums' } }, score.toLocaleString()),
+              e('span', { style: { fontSize: 11, color: '#9fb0d6', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } },
+                (meta.unit || '') + (phase === 'sent' && result ? (result.made ? ' · you’re #' + result.rank : ' · keep trying!') : ''))),
+            phase === 'enter'
+              ? e('div', { style: { flex: '0 0 auto', display: 'flex', gap: 8 } },
+                  // size + minWidth:0 both matter. A flex item defaults to
+                  // min-width:auto, and an input's intrinsic width comes from its
+                  // `size` attribute (~20 chars), so `flex: 0 0 88px` alone let it
+                  // inflate and shove the Submit button outside the card — which is
+                  // exactly what it was doing.
+                  e('input', { ref: inRef, value: initials, maxLength: 3, size: 3, placeholder: 'AAA', 'aria-label': 'Your initials',
+                    onChange: ev => setInitials(ev.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '')),
+                    onKeyDown: ev => { ev.stopPropagation(); if (ev.key === 'Enter') submit(); },
+                    style: { flex: '0 0 84px', minWidth: 0, width: 84, boxSizing: 'border-box', textAlign: 'center',
+                             letterSpacing: '.28em', textIndent: '.28em', fontWeight: 800, fontSize: 17, padding: '6px 4px',
+                             background: '#0b0f1e', color: '#ffd76a', border: '1px solid rgba(255,255,255,.18)',
+                             borderRadius: 8, outline: 'none', fontFamily: 'inherit', textTransform: 'uppercase' } }),
+                  e('button', { onClick: submit, disabled: busy, style: Object.assign({}, sty.btn, { flex: '1 1 auto', minWidth: 0, background: '#f59e0b', color: '#1a1200', opacity: busy ? .6 : 1 }) },
+                    busy ? 'Saving…' : 'Submit ▶'))
+              : null,
+            e('div', { style: { flex: '0 0 auto', display: 'flex', gap: 8, marginTop: 'auto' } },
+              e('button', { onClick: () => { ctl.replay(); onClose(); }, style: Object.assign({}, sty.btn, { background: '#22c55e', color: '#04120a' }) }, 'Play again ↻'),
+              e('button', { onClick: () => { ctl.dismiss(); onClose(); }, style: Object.assign({}, sty.btn, { background: 'none', border: '1px solid rgba(255,255,255,.2)', color: '#c7d2ea', fontWeight: 600 }) }, 'Close'))),
+
+          // ── right: the board itself ──
+          e('div', { style: sty.colR },
+            e('div', { style: Object.assign({}, sty.season, { marginBottom: 2 }) }, top.length ? 'Top ' + Math.min(5, top.length) : 'Top scores'),
             top.length
-              ? top.slice(0, 5).map((s, i) => e('div', { key: i, style: { display: 'flex', justifyContent: 'space-between', gap: 10, padding: '2px 0', fontSize: 12.5, color: i === 0 ? '#ffd76a' : '#c7d2ea' } },
-                  e('span', { style: { fontWeight: i === 0 ? 800 : 600 } }, (i + 1) + '. ' + s.initials),
-                  e('span', { style: { fontVariantNumeric: 'tabular-nums', fontWeight: 700 } }, s.score.toLocaleString())))
-              : e('div', { style: { fontSize: 12, color: '#8ea0c8', fontStyle: 'italic' } }, 'Be the first on the board!')),
-          e('div', { style: { display: 'flex', gap: 8, justifyContent: 'flex-end' } },
-            e('button', { onClick: () => { ctl.dismiss(); onClose(); }, style: { background: 'none', border: '1px solid rgba(255,255,255,.2)', color: '#c7d2ea', borderRadius: 7, padding: '7px 12px', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' } }, 'Close'),
-            e('button', { onClick: () => { ctl.replay(); onClose(); }, style: { background: '#22c55e', border: 'none', color: '#04120a', borderRadius: 7, padding: '7px 14px', fontWeight: 800, fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' } }, 'Play again ↻')))
+              ? top.slice(0, 5).map((s, i) => e('div', { key: i, style: { display: 'flex', justifyContent: 'space-between', gap: 8, fontSize: 11.5, lineHeight: 1.45, color: i === 0 ? '#ffd76a' : '#c7d2ea' } },
+                  e('span', { style: { fontWeight: i === 0 ? 800 : 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, (i + 1) + '. ' + s.initials),
+                  e('span', { style: { fontVariantNumeric: 'tabular-nums', fontWeight: 700, flex: 'none' } }, s.score.toLocaleString())))
+              : e('div', { style: { fontSize: 11.5, color: '#8ea0c8', fontStyle: 'italic', lineHeight: 1.45 } }, 'Be the first on the board!')))
       );
     }
 
@@ -2119,6 +2194,56 @@
         e('div', { className: 'camp-map', ref: mapRef }));
     }
 
+    // ── Public map link ─────────────────────────────────────────────────────
+    // The map above is the ADMIN interface (drag pins, add markers, save). This
+    // is the same campground rendered for the public at /:org/campmap, which
+    // takes NO token — that is what makes it safe to hand to a camper, tape to a
+    // noticeboard as a QR, or drop in an iframe on a parks website.
+    //
+    // The token is deliberately absent from this URL and must stay absent. On
+    // the campmap page a token does more than authenticate: it unlocks editing.
+    // Pasting an address-bar URL that still carries ?token= would hand a camper
+    // an editable map AND the org token that opens every other report for that
+    // org. So the URL is built here from origin + slug, never from location.href.
+    function PublicMapLink({ locId, multi }) {
+      const [copied, setCopied] = React.useState('');
+      const url = window.location.origin + '/' + CFG.slug + '/campmap'
+        + (multi && locId ? '?location=' + encodeURIComponent(locId) : '');
+      const embed = '<iframe src="' + url + '" width="100%" height="520" style="border:0" '
+        + 'title="Campground map" loading="lazy"></iframe>';
+
+      const copy = (text, label) => {
+        const ping = () => {
+          setCopied(label);
+          setTimeout(() => setCopied(''), 1800);
+          // Standing rule: notable interactions ping the Slack activity feed.
+          // Dedicated route, not /:org/:report/api/log — resolveOrg 404s any
+          // report outside REPORT_TYPES, and campmap is not one.
+          try {
+            fetch('/' + CFG.slug + '/campmap/api/share?kind=' + encodeURIComponent(label),
+                  { method: 'POST', keepalive: true }).catch(() => {});
+          } catch (_) {}
+        };
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(text).then(ping, () => window.prompt('Copy:', text));
+        } else {
+          window.prompt('Copy:', text);
+        }
+      };
+
+      const btn = { fontSize: 10, fontWeight: 600, borderRadius: 12, padding: '2px 9px', cursor: 'pointer',
+                    marginLeft: 6, background: 'none', border: '1px solid #cbd5e1', color: '#475569' };
+      return e('div', { className: 'camp-public-link' },
+        e('span', { className: 'cpl-tag' }, 'PUBLIC'),
+        e('span', { className: 'cpl-note' }, 'No sign-in \u2014 safe to share or embed'),
+        e('a', { href: url, target: '_blank', rel: 'noopener', className: 'cpl-url', title: 'Open the public map in a new tab' }, url),
+        e('span', { style: { marginLeft: 'auto', whiteSpace: 'nowrap' } },
+          e('button', { onClick: () => copy(url, 'link'), style: btn },
+            copied === 'link' ? '\u2713 Copied' : 'Copy link'),
+          e('button', { onClick: () => copy(embed, 'embed'), style: btn, title: 'Copy an <iframe> snippet for a website' },
+            copied === 'embed' ? '\u2713 Copied' : 'Copy embed')));
+    }
+
     function CampingView({ start, end }) {
       const [data, setData] = React.useState({ rows: null, err: null });
       const [geo, setGeo] = React.useState(null);
@@ -2225,6 +2350,123 @@
         return cands.length === 1 ? cands[0] : null;
       };
 
+      // ── Per-site momentum: heating up, cooling off, or steady ──────────────
+      // Realized occupancy in the recent half of the ELAPSED window vs the
+      // earlier half.
+      //
+      // Only PAST days count, and that is the whole trick. A campground
+      // calendar usually runs into the future, and future days are
+      // systematically emptier simply because those bookings have not been made
+      // yet — booking lead time, not falling demand. Splitting the whole window
+      // would therefore stamp "cooling" on every site in the park and look
+      // authoritative doing it. So the split happens inside the settled part of
+      // the range, and when too little of the range has elapsed there is no
+      // arrow at all rather than a confident wrong one.
+      // ── Add-ons: what people actually buy, and what it earns ──────────────
+      // "Add Ons" is a display string, e.g. "Topaz Holiday Surcharge ($10.00)"
+      // and occasionally several separated by commas. The price in the label is
+      // per-add-on list price; "Add-On Fees" is the charged total for the row,
+      // so counts come from the label and money from the numeric column. Counted
+      // on ARRIVAL rows only — a multi-day stay repeats its add-ons on every
+      // night row, which would multiply a 5-night stay's alcohol permit by five.
+      const addOnStats = (() => {
+        const byName = {};
+        let withAny = 0, feeTotal = 0;
+        arrivals.forEach(r => {
+          const raw = String(r['Add Ons'] || '').trim();
+          const fee = Number(r['Add-On Fees']) || 0;
+          feeTotal += fee;
+          if (!raw) return;
+          withAny++;
+          // Split on commas that are not inside the trailing ($x.xx).
+          raw.split(/,(?![^(]*\))/).forEach(part => {
+            const t = part.trim();
+            if (!t) return;
+            const m = /^(.*?)\s*\(\$?([\d,.]+)\)\s*$/.exec(t);
+            const name = (m ? m[1] : t).trim();
+            const listed = m ? Number(String(m[2]).replace(/,/g, '')) : null;
+            if (!name) return;
+            const b = byName[name] || (byName[name] = { name, n: 0, listed: null });
+            b.n++;
+            if (listed != null && !isNaN(listed)) b.listed = listed;
+          });
+        });
+        const list = Object.keys(byName).map(k => byName[k]).sort((a, b) => b.n - a.n);
+        return { list, withAny, feeTotal, arrivals: arrivals.length };
+      })();
+
+      // ── Day-of-week demand spread ─────────────────────────────────────────
+      // Occupied nights per weekday, normalised by how many of that weekday the
+      // range actually contains — a range with five Saturdays and four Tuesdays
+      // would otherwise make Saturday look busier than it is.
+      const dowSpread = (() => {
+        const dayCount = [0, 0, 0, 0, 0, 0, 0];
+        days.forEach(d => { dayCount[new Date(d + 'T00:00:00').getDay()]++; });
+        // Counted here from nightRows rather than reusing `nightsByDow`, which is
+        // declared ~150 lines below this point: an IIFE reading it would hit the
+        // temporal dead zone and take out the whole tab render. Deriving it from
+        // inputs that already exist keeps this independent of declaration order,
+        // so a future reshuffle cannot reintroduce that.
+        const byDow = [0, 0, 0, 0, 0, 0, 0];
+        nightRows.forEach(r => { const dw = dowOf(r); if (dw != null) byDow[dw]++; });
+        const rows_ = DOW.map((name, i) => ({
+          i, name,
+          nights: byDow[i],
+          occurrences: dayCount[i],
+          perDay: dayCount[i] ? byDow[i] / dayCount[i] : null,
+        })).filter(r => r.occurrences > 0);
+        const rated = rows_.filter(r => r.perDay != null);
+        if (rated.length < 2) return null;
+        const sorted = rated.slice().sort((a, b) => b.perDay - a.perDay);
+        return { rows: rows_, busiest: sorted[0], quietest: sorted[sorted.length - 1] };
+      })();
+
+      // ── Stay-length mix ───────────────────────────────────────────────────
+      const stayMix = (() => {
+        if (!arrivals.length) return null;
+        let one = 0, short_ = 0, week = 0, longest = 0;
+        arrivals.forEach(r => {
+          const n = Math.max(1, Number(r['Multi-Day Days']) || 1);
+          if (n > longest) longest = n;
+          if (n <= 1) one++; else if (n <= 3) short_++; else week++;
+        });
+        return { one, short: short_, week, longest, total: arrivals.length };
+      })();
+
+      const TODAY = todayStr();
+      const pastDays = days.filter(d => d <= TODAY);
+      const trendHalf = Math.floor(pastDays.length / 2);
+      // Need a fortnight of settled days to say anything: a 3-day sample flips
+      // direction on one booking.
+      const trendReady = !weekly && pastDays.length >= 14;
+      const trendFor = st => {
+        if (!trendReady || !st) return null;
+        const early = pastDays.slice(0, trendHalf);
+        const late  = pastDays.slice(pastDays.length - trendHalf);
+        const occIn = list => list.reduce((n, d) => n + (st.occ[d] ? 1 : 0), 0);
+        const a = occIn(early), b = occIn(late);
+        if (a + b < 2) return null;              // barely booked either way
+        const ra = a / early.length, rb = b / late.length;
+        const delta = rb - ra;
+        const dir = Math.abs(delta) < 0.12 ? 'flat' : (delta > 0 ? 'up' : 'down');
+        return { dir, delta, ra, rb, nights: trendHalf };
+      };
+      const TREND_META = {
+        up:   { glyph: '\u25B2', cls: 'up',   word: 'heating up' },
+        down: { glyph: '\u25BC', cls: 'down', word: 'cooling off' },
+        flat: { glyph: '\u2013', cls: 'flat', word: 'steady' },
+      };
+      const trendChip = t => {
+        if (!t) return null;
+        const m = TREND_META[t.dir];
+        const pct = v => Math.round(v * 100) + '%';
+        return e('span', {
+          className: 'cc-trend ' + m.cls,
+          title: 'Occupancy ' + m.word + ' \u2014 ' + pct(t.ra) + ' \u2192 ' + pct(t.rb)
+               + ' over the last two ' + t.nights + '-day stretches (settled days only)',
+        }, m.glyph);
+      };
+
       const locs = geo.locations || [];
       const geoSitesAll = locs.reduce((a, l) => a.concat(l.sites), []);
       // Calendar groups: one per mapped campsite location (each site row keeps a
@@ -2298,12 +2540,22 @@
         return e('div', { key, className: 'cc-cell' + (c ? ' ' + c.cls : ''), title: site.n + ' · ' + dList[0] + (c ? ' · ' + c.tip : ' · open') });
       };
       const calCols = weekly ? weeks : days.map(d => [d]);
+      // Single-letter day of week above the date. Without it you cannot tell a
+      // busy Saturday from a busy Tuesday, which is most of what this calendar
+      // is for. Daily columns only — a weekly column spans every weekday, so a
+      // single letter there would be a lie. The amber weekend colour stays; the
+      // letter is what makes the pattern readable at a glance.
+      const DOW1 = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
       const hdFor = (dList, i) => {
         const d = new Date(dList[0] + 'T00:00:00');
         const we = !weekly && (d.getDay() === 0 || d.getDay() === 6);
         const lbl = weekly ? ((d.getMonth() + 1) + '/' + d.getDate())
           : (d.getDate() === 1 || i === 0 ? monthLabel(dList[0].slice(0, 7)).split(' ')[0] + ' ' + d.getDate() : String(d.getDate()));
-        return e('div', { key: 'h' + i, className: 'cc-hd' + (we ? ' we' : ''), title: dList[0] }, lbl);
+        // Full name in the tooltip, since S/T/S are ambiguous on their own.
+        const ttl = weekly ? dList[0] : DOW[d.getDay()] + ' ' + dList[0];
+        return e('div', { key: 'h' + i, className: 'cc-hd' + (we ? ' we' : ''), title: ttl },
+          weekly ? null : e('span', { className: 'cc-dow' }, DOW1[d.getDay()]),
+          lbl);
       };
 
       const hasStays = stays > 0;
@@ -2354,6 +2606,82 @@
               e('div', { className: 'insight-detail' }, ins.detail),
               ins.action ? e('div', { className: 'insight-action' }, '→ ' + ins.action) : null))) : null) : null,
 
+        // ── Demand & pricing read ─────────────────────────────────────────
+        // Deliberately leads with OCCUPANCY, not money. Occupancy is a count of
+        // nights and is trustworthy; campsite revenue here is not, for three
+        // reasons worth keeping in front of the reader rather than in a commit
+        // message: `Total` is only summed on arrival rows, comped and test
+        // bookings sit in the data at $0, and this feed has the known invoice_v2
+        // gap (manual invoice lines carry no reservation_id, so they are missing
+        // entirely — see the facility-revenue write-up). So the rate figure is
+        // labelled indicative and the pricing conclusion rests on the occupancy
+        // spread, which is the part that holds up.
+        hasStays ? e('div', { className: 'aqua-sec' },
+          e('h3', null, 'Demand & pricing signals', e('span', { className: 'sub' },
+            'what the ' + stays.toLocaleString() + ' stays in range suggest')),
+          e('div', { className: 'aqua-grid' },
+
+            // Busiest / quietest weekday, per-occurrence so an uneven range
+            // does not fake a winner.
+            dowSpread ? e('div', { className: 'aqua-panel' },
+              e('h4', null, 'Demand by day of week', e('span', { className: 'n' }, 'nights per occurrence')),
+              e(HBars, { color: '#2c8a50', data: dowSpread.rows.map(r => ({
+                label: r.name, v: r.perDay || 0,
+                valText: (r.perDay || 0).toFixed(1) + ' / ' + r.occurrences + 'd',
+              })) }),
+              e('div', { className: 'camp-note' },
+                'Busiest ', e('b', null, dowSpread.busiest.name),
+                ' at ', e('b', null, dowSpread.busiest.perDay.toFixed(1)), ' site-nights per ',
+                dowSpread.busiest.name, '; quietest ', e('b', null, dowSpread.quietest.name),
+                ' at ', e('b', null, dowSpread.quietest.perDay.toFixed(1)), '.',
+                dowSpread.quietest.perDay > 0 && dowSpread.busiest.perDay / dowSpread.quietest.perDay >= 1.5
+                  ? e('span', null, ' That is a ',
+                      e('b', null, (dowSpread.busiest.perDay / dowSpread.quietest.perDay).toFixed(1) + '\u00D7'),
+                      ' spread \u2014 the gap a weekday discount or a peak-night premium would work on.')
+                  : e('span', null, ' Demand is fairly even across the week, so day-of-week pricing has little to bite on.')) ) : null,
+
+            // Add-ons: what sells, and whether a surcharge is actually landing.
+            addOnStats.list.length ? e('div', { className: 'aqua-panel' },
+              e('h4', null, 'Add-ons attached', e('span', { className: 'n' },
+                addOnStats.withAny.toLocaleString() + ' of ' + addOnStats.arrivals.toLocaleString() + ' stays')),
+              e(HBars, { color: '#7c3aed', data: addOnStats.list.slice(0, 6).map(a => ({
+                label: a.name, v: a.n,
+                valText: a.n.toLocaleString() + (a.listed != null ? ' \u00B7 $' + a.listed.toFixed(2) : ''),
+              })) }),
+              e('div', { className: 'camp-note' },
+                e('b', null, Math.round(addOnStats.withAny / Math.max(1, addOnStats.arrivals) * 100) + '%'),
+                ' of stays carry at least one add-on',
+                addOnStats.feeTotal > 0
+                  ? e('span', null, ', ', e('b', null, money(addOnStats.feeTotal)), ' in add-on fees booked')
+                  : null,
+                '. A surcharge attached to only a slice of stays is a pricing lever that is not being pulled.')) : null,
+
+            // Stay-length mix — the turnover picture behind the occupancy number.
+            stayMix ? e('div', { className: 'aqua-panel' },
+              e('h4', null, 'Stay length mix', e('span', { className: 'n' }, 'avg ' + avgStay.toFixed(1) + ' nights')),
+              e(HBars, { color: '#0369a1', data: [
+                { label: '1 night',    v: stayMix.one,   valText: stayMix.one.toLocaleString() },
+                { label: '2\u20133 nights', v: stayMix.short, valText: stayMix.short.toLocaleString() },
+                { label: '4+ nights',  v: stayMix.week,  valText: stayMix.week.toLocaleString() },
+              ] }),
+              e('div', { className: 'camp-note' },
+                e('b', null, Math.round(stayMix.one / stayMix.total * 100) + '%'),
+                ' are single nights (longest in range: ', e('b', null, stayMix.longest + ' nights'), '). ',
+                stayMix.one / stayMix.total > 0.5
+                  ? 'Single-night churn is the cost centre \u2014 a 2-night minimum on peak weekends is the usual lever.'
+                  : 'Multi-night stays dominate, so minimum-stay rules would mostly just turn away business.')) : null,
+
+            // Realized rate, explicitly labelled as indicative.
+            nights > 0 ? e('div', { className: 'aqua-panel' },
+              e('h4', null, 'Realized rate', e('span', { className: 'n' }, 'indicative only')),
+              e('div', { className: 'camp-bignum' }, money(revenue / nights)),
+              e('div', { className: 'camp-note' },
+                'Booked revenue \u00F7 ', nights.toLocaleString(), ' site-nights. ',
+                e('b', null, 'Treat as a floor, not a rate card'), ' \u2014 this feed counts revenue only on '
+                + 'the arrival row, comped and test bookings sit in it at $0, and manual invoice lines are '
+                + 'missing from it entirely. Occupancy above is the reliable half of this panel.')) : null))
+          : null,
+
         // Site × day occupancy calendar — booked sites only by default; empty
         // rows are noise at campgrounds with many mapped-but-unbooked sites.
         // One sub-grid per campsite location when the org runs more than one.
@@ -2381,7 +2709,8 @@
                   e('div', { className: 'cc-site' }, ''),
                   calCols.map((dl, i) => hdFor(dl, i)),
                   g.sites.flatMap(site => [
-                    e('div', { key: site.n + 'lbl', className: 'cc-site', title: site.n + (site.loc ? ' · ' + site.loc : '') }, site.n),
+                    e('div', { key: site.n + 'lbl', className: 'cc-site', title: site.n + (site.loc ? ' · ' + site.loc : '') },
+                      trendChip(trendFor(site.st)), site.n),
                     calCols.map((dl, i) => calCell(site, dl, site.n + '-' + i)),
                   ]))))),
             weekly
@@ -2390,7 +2719,14 @@
                   e('span', null, e('i', { style: { background: '#2c8a50' } }), 'Check-in'),
                   e('span', null, e('i', { style: { background: '#5fae70' } }), 'Occupied'),
                   e('span', null, e('i', { style: { background: '#a4d3a0' } }), 'Checkout'),
-                  e('span', null, e('i', { style: { background: '#f4f3ef', border: '1px solid #e5e3dd' } }), 'Open'))));
+                  e('span', null, e('i', { style: { background: '#f4f3ef', border: '1px solid #e5e3dd' } }), 'Open'),
+                  trendReady
+                    ? e('span', { style: { marginLeft: 6 } },
+                        e('b', { className: 'cc-trend up' }, '\u25B2'), 'heating\u00A0',
+                        e('b', { className: 'cc-trend down' }, '\u25BC'), 'cooling',
+                        e('span', { style: { color: '#b8b5ad', marginLeft: 4 } }, '(settled days only)'))
+                    : e('span', { style: { color: '#b8b5ad', marginLeft: 6 } },
+                        'trend arrows need 14+ elapsed days in range'))));
         })(),
 
         // Campground maps — one per campsite location, with embedded editing
@@ -2404,7 +2740,8 @@
             e('div', { className: 'camp-map-legend' },
               e('span', null, e('i', { style: { background: '#fff', borderColor: '#94a3b8' } }), ' No bookings'),
               CAMP_RAMP.map((c, ci) => e('i', { key: ci, style: { background: c } })),
-              'More days booked')))) : null,
+              'More days booked'),
+            e(PublicMapLink, { locId: l.id, multi: locs.length > 1 })))) : null,
 
         // Arrivals by weekday + stay length
         hasStays ? e('div', { className: 'aqua-sec' },

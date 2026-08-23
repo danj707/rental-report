@@ -1929,9 +1929,12 @@ const DEFAULT_HIDDEN_REPORTS = new Set([]);
 // keep working) but no longer rendered as a clickable card on org/admin grids.
 // Globally not-surfaced reports. Routes/code stay intact; they just aren't shown
 // anywhere. chat is deprecated in favor of Rec's "Seb" AI skill.
-// campmap (the standalone campsite map page) is retired in favor of the
-// Facilities hub's Camping tab, which serves the same map + editing for any
-// org with a campmap seed.
+// campmap stays retired as a REPORT — it is not one. It is a public artifact,
+// and the way in is a direct link from the Facilities hub's Camping tab, which
+// is where admins already manage the pins (Dan, 2026-08-22). The page itself
+// never stopped working: /:org/campmap has been serving 200s to ~24 visitors a
+// month through direct links the whole time it has been listed here, because
+// this Set only controls whether it is SURFACED, not whether it works.
 //
 // report-wizard is UN-retired (Dan, 2026-08-20). It was shelved alongside chat
 // as "deprecated in favor of Seb", but unlike chat it does something Seb does
@@ -3602,7 +3605,7 @@ setTimeout(() => { checkCardParamTypes().catch(() => {}); }, 150 * 1000).unref?.
 // Inert if the env var is unset. Fire-and-forget — never blocks or breaks logging.
 // To change what pings Slack, edit SLACK_NOTIFY. High-frequency events (view/fetch)
 // are debounced per org+report so Slack isn't a firehose.
-const SLACK_NOTIFY = new Set(["created", "org-deleted", "watchdog", "schema-break", "param-drift", "report-down", "pdf", "excel", "print", "summary", "game", "map", "view", "insights", "insights-feedback", "chat-feedback", "feedback", "vote", "update-vote", "munis", "permits", "email"]);
+const SLACK_NOTIFY = new Set(["created", "org-deleted", "watchdog", "schema-break", "param-drift", "report-down", "campmap-share", "pdf", "excel", "print", "summary", "game", "map", "view", "insights", "insights-feedback", "chat-feedback", "feedback", "vote", "update-vote", "munis", "permits", "email"]);
 const SLACK_DEBOUNCE_MS = { view: 30 * 60 * 1000, fetch: 30 * 60 * 1000,
   // A broken report stays broken. The health check only reports NEW failures,
   // but a flapping card would otherwise post every hour.
@@ -3616,6 +3619,7 @@ const SLACK_EVENT_META = {
   "schema-break": { emoji: "🧨", verb: "schema break" },
   "param-drift": { emoji: "\uD83D\uDCC5", verb: "date parameter reset to Text" },
   watchdog: { emoji: "\uD83D\uDD07", verb: "watchdog switched" },
+  "campmap-share": { emoji: "\uD83C\uDFD5\uFE0F", verb: "copied the public campsite map link for" },
   "report-down": { emoji: "🔴", verb: "report is failing" },
   pdf:     { emoji: "📄", verb: "exported a PDF of" },
   excel:   { emoji: "📊", verb: "exported to Excel" },
@@ -3706,6 +3710,9 @@ function notifySlack(rec) {
     const who = (rec.reports || []).length ? ` — breaks *${(rec.reports || []).join("*, *")}*` : "";
     text = `${meta.emoji} *SCHEMA BREAK* — ${gone.slice(0, 8).join(", ")}`
          + (gone.length > 8 ? ` and ${gone.length - 8} more` : "") + who + mention;
+  } else if (rec.event === "campmap-share") {
+    const what = rec.kind === "embed" ? "embed code" : "link";
+    text = `${meta.emoji} ${orgName} (\`${rec.org}\`) copied the public campsite map ${what}`;
   } else if (rec.event === "watchdog") {
     // Muting a safety net is worth a line in the channel — most of the cost of
     // an off switch is forgetting you flipped it. Deliberately NOT in
@@ -10100,6 +10107,18 @@ app.get("/:org/campmap", (req, res) => {
 // Campsite map positions + custom markers.
 // GET is public (viewers see the admin's saved layout); POST requires the org
 // token (admin edit). Both use the same per-location store as the Camping tab.
+// POST /:org/campmap/api/share — the Facilities Camping tab copied the public
+// link (or its embed snippet). Its own route rather than the shared
+// /:org/:report/api/log, because resolveOrg 404s any report outside
+// REPORT_TYPES and campmap is deliberately not one.
+app.post("/:org/campmap/api/share", (req, res) => {
+  const slug = req.params.org;
+  if (!ORGS[slug]) return res.status(404).json({ ok: false, error: "Unknown org" });
+  const kind = req.query.kind === "embed" ? "embed" : "link";
+  logEvent(slug, "campmap", "campmap-share", req, { kind });
+  res.json({ ok: true });
+});
+
 app.get("/:org/campmap/api/positions", (req, res) => {
   const slug = req.params.org;
   if (!ORGS[slug]) return res.status(404).json({ positions: {} });
