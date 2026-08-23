@@ -519,6 +519,32 @@ function seedFallback(site){
 }
 
 /* status of a site on a date: 'avail' | 'booked' | 'blocked' | 'unknown' */
+/* One night of rec.us's answer → one of our states. Extracted so it can be
+ * tested: this mapping decides what a camper is TOLD TO DO about a night they
+ * cannot have, and it has been wrong once already.
+ *
+ *   conflict         → 'booked'  taken. Another site, or another week.
+ *   min/max-stay     → 'blocked' the site is free, the STAY LENGTH is not.
+ *                                Worth saying: a shorter trip works.
+ *   anything else    → 'closed'  not available (outside-window, blackout,
+ *                                closed). Verified 2026-08-23: a staff hold
+ *                                awaiting payment comes back as
+ *                                `outside-window`, and it genuinely blocks the
+ *                                site. Calling that a "booking restriction" told
+ *                                the camper to retry with a length that also
+ *                                fails.
+ */
+function nightStateFrom(v){
+  if(v && v.available===true) return 'avail';
+  if(v && v.available===false){
+    if(v.reason==='conflict') return 'booked';
+    return /stay|night|duration/i.test(String(v.reason||'')) ? 'blocked' : 'closed';
+  }
+  // hourly sites: an object of time slots, no `available` flag = open
+  if(v && typeof v==='object' && Object.keys(v).length>0) return 'avail';
+  return 'blocked';
+}
+
 function statusOn(site, dateStr){
   var a=AVAIL[site.id];
   if(!a || a.__empty) return 'unknown';
@@ -1190,28 +1216,7 @@ function loadAvailability(){
             if(v && v.earliestCheckout && v.latestCheckout){
               win[dateStr]={ earliest:v.earliestCheckout, latest:v.latestCheckout };
             }
-            var state;
-            if(v && v.available===true) state='avail';
-            // available:false splits three ways, because they lead a camper to
-            // three different actions and two of them used to read the same:
-            //   conflict           → taken. Pick another site or another week.
-            //   min/max-stay       → the site is free, this STAY LENGTH is not.
-            //                        Worth saying, because a shorter trip works.
-            //   everything else    → not available (outside-window, blackout,
-            //                        closed). Verified 2026-08-23: a staff hold
-            //                        awaiting payment comes back as
-            //                        `outside-window`, and it genuinely blocks
-            //                        the site — calling that a "booking
-            //                        restriction" invited a camper to retry with
-            //                        a different length that will also fail.
-            else if(v && v.available===false){
-              state = v.reason==='conflict' ? 'booked'
-                    : /stay|night|duration/i.test(String(v.reason||'')) ? 'blocked'
-                    : 'closed';
-            }
-            // hourly slots: an object of time slots with no `available` flag = open
-            else if(v && typeof v==='object' && Object.keys(v).length>0) state='avail';
-            else state='blocked';
+            var state=nightStateFrom(v);
             m[dateStr]=state; haveDate=true;
           });
           if(haveDate){ AVAIL[s.id]=m; AVAIL_WINDOW[s.id]=win; any=true; } else { AVAIL[s.id]={__empty:true}; }

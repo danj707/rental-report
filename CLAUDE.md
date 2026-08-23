@@ -394,6 +394,60 @@ is simply taken. Now three buckets:
 | min/max-stay | Free, but not for a stay this long | same site, different length |
 | anything else (`outside-window`, blackout, closed) | Not available | another site or another week |
 
+### Tested both ways: cap the checkout at 30 days, or let it run? (2026-08-23)
+
+Dan's question: is it safer to cap everything at 30 days and avoid a "but it said
+it was free", or allow wiggle room. Tested without creating a booking, because
+`latestCheckout` IS rec.us's assertion about nights past its own window.
+
+**rec.us is conflict-aware beyond the window.** It truncates `latestCheckout`
+exactly at the next real booking, including bookings in October:
+
+| site | ledger bookings past the window | cap for a 20 Sep arrival |
+|---|---|---|
+| Site 21 | Sep 24-27 | **Sep 24** — stops at it |
+| Site 04 | Sep 25-26 | **Sep 25** |
+| Site 22 | **Oct 2-4** | **Oct 2** — 12 nights out |
+| Site 27 | Oct 7+ | Oct 4 (full 14 nights, nothing in the way) |
+
+**37 boundary-crossing arrivals, 37 ledger-clear, 0 clashes.**
+
+**Capping the checkout would cost real bookings and fix nothing:**
+
+```
+arrival       now: sites / max nights   capped: sites / max nights
+2026-09-14         38 / 14                   38 /  8
+2026-09-17         33 / 14                   33 /  5
+2026-09-20         34 / 14                   34 /  2
+2026-09-22         39 / 14                    0 /  0   ← all 39 unbookable
+```
+
+The longest stay decays 14 → 8 → 5 → 2 → 1 → 0 across the final week, and the
+last arrival night becomes unbookable outright (any stay needs a checkout the cap
+forbids).
+
+**DECISION: arrivals capped at 30 nights, checkouts NOT.** The asymmetry is
+principled — past day 30 there is no arrival data, so offering one would be our
+guess, while the checkout bound is not our guess but rec.us's answer. Guarded by
+`scripts/campmap-stay.spec.js`.
+
+The residual "but it said it was free" risk is **staleness, not the horizon**:
+`RC_AVAIL_TTL` is 15 minutes, so a night can be taken between our fetch and a
+camper's click. That is identical inside and outside 30 days. The lever is the
+TTL.
+
+### Guard: `node scripts/campmap-stay.spec.js` (12 assertions, in CI)
+
+Slices the pure reducer out of `campmap.html` (the page builds a Leaflet map at
+module scope, so the whole block cannot be evaluated) and pins the decisions
+above. **Mutation-tested**, and the first version FAILED that test: reverting the
+reason→state mapping left all 11 assertions passing, because the mapping lived
+inside the fetch callback where the slice could not reach it. It is now
+`nightStateFrom(v)`, a named function next to `statusOn`, and both mutations —
+lumping non-conflict reasons back into `blocked`, and capping the checkout at the
+window — now fail on the right assertion. A spec that has not been seen to fail
+on the regression it names is not a guard.
+
 ### Backtest: `node scripts/campmap-availability-backtest.js`
 
 Checks the map's nights against the reservation ledger in db 4, which knows
