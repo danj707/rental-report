@@ -390,6 +390,19 @@ intercepted and answered from fixtures in the script, so it never touches
 Metabase, never varies with live data, and cannot fail because a card is slow.
 Adding a page is one line in `CASES`; adding a feed is one line in `STUBS`.
 
+Nothing leaves the browser either: React, Babel, Leaflet and xlsx come from
+cdnjs on every report page, so a blocked or flaky egress would blank all four
+pages — the exact symptom the check looks for, read as a code defect. They are
+served from `node_modules/.cache/render-check`, fetched once with `curl` (which
+honours the sandbox proxy; Chromium's own requests do not get through). If a
+fetch fails the check says *"this check proves nothing without them"* rather than
+reporting blank pages. First run needs network; later runs are offline.
+
+Verified in both directions on 2026-08-23 — the fixed page renders (exit 0) and
+`main`'s version reproduces the production console error (exit 1):
+`facilities · camping: Cannot read properties of undefined (reading 'map')`.
+A guard that has not been seen to fail on the real bug is not a guard.
+
 **And the coding rule that removes the class:** in these page components, define
 derived values *after* everything they read — the safest place is immediately
 before the `return`. Do not scatter IIFEs above their inputs and rely on
