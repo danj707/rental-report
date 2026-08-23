@@ -28,9 +28,16 @@ WITH res AS (                         -- one row per in-window reservation, repr
     r.id                                        AS reservation_id,
     fr.attendee_count                           AS head_count,
     INITCAP(fr.booking_type)                    AS booking_type,   -- Instant / Managed
-    INITCAP(fr.status)                          AS status,         -- Confirmed / In-progress / Canceled
+    -- A reservation can be canceled on its own while the RENTAL is still
+    -- Confirmed or In-progress — one night dropped out of a recurring stay.
+    -- fr.status alone reported those 6 (of 8, Douglas County Aug 2026) as live
+    -- bookings and let $60 of canceled charges into Charged, because the client
+    -- only zeroes a row whose Status says Canceled. Read the reservation first.
+    CASE WHEN r.canceled_at IS NOT NULL THEN 'Canceled'
+         ELSE INITCAP(fr.status) END            AS status,         -- Confirmed / In-progress / Canceled
     lower(r.reservation_timestamp_range)::date  AS local_date,
     l.name                                      AS location,
+    ct.id                                       AS site_id,
     ct.court_number                             AS facility,
     ct.type                                     AS site_type
   FROM facility_rental fr
@@ -107,6 +114,8 @@ feed AS (
     res.reservation_id                                     AS "Reservation ID",
     res.local_date                                         AS "Date",
     res.location                                           AS "Location",
+    -- The identity of the site, so a count of sites cannot be a count of names.
+    res.site_id::text                                      AS "Site ID",
     res.facility                                           AS "Facility",
     res.site_type                                          AS "Site Type",
     res.booking_type                                       AS "Booking Type",
@@ -128,6 +137,10 @@ feed AS (
     inv.order_item_id                                      AS "Reservation ID",
     COALESCE(fl.local_date, inv.created_date)              AS "Date",
     COALESCE(fl.location, '—')                             AS "Location",
+    -- Deliberately NULL: an invoice line is money, not a site. "Facility" below
+    -- is the fee's NAME, which is why counting sites by name read 5 tournament
+    -- and service fees as 5 campsites.
+    NULL::text                                             AS "Site ID",
     inv.facility                                           AS "Facility",
     fl.site_type                                           AS "Site Type",
     'Managed'                                              AS "Booking Type",

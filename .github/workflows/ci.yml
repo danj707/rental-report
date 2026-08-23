@@ -64,6 +64,9 @@ jobs:
       - name: Watchdog switches spec (OFF means off everywhere)
         run: node scripts/watchdog-flags.spec.js
 
+      - name: Facility summary KPI spec (a fee line is money, not a booking or a site)
+        run: node scripts/facility-summary.spec.js
+
       - name: Admin dashboard JS (inline blocks parse; every on*= handler resolves)
         run: node scripts/ci-check-admin-js.js
 
