@@ -198,7 +198,37 @@ function waitForServer(started) {
 
   let puppeteer;
   try { puppeteer = require("puppeteer"); }
-  catch (_) { return stop(true, "puppeteer not installed — render check skipped"); }
+  catch (_) { return stop(false, "puppeteer is not installed — run npm install"); }
+
+  // A browser binary, without downloading one. CI installs puppeteer with
+  // PUPPETEER_SKIP_DOWNLOAD (server.js only needs it lazily, for PDFs), so
+  // puppeteer's own Chrome is usually absent — but the runner and this sandbox
+  // both already ship one. Deliberately NOT a skip if none is found: a check
+  // that can quietly opt out of running is the failure mode this exists to stop.
+  const chrome = (() => {
+    const tried = [];
+    const ok = p_ => { if (!p_) return false; tried.push(p_); return fs.existsSync(p_); };
+    if (ok(process.env.CHROME_PATH)) return process.env.CHROME_PATH;
+    let bundled = null;
+    try { bundled = puppeteer.executablePath(); } catch (_) {}
+    if (ok(bundled)) return bundled;
+    for (const c of ["/usr/bin/google-chrome", "/usr/bin/google-chrome-stable",
+                     "/usr/bin/chromium", "/usr/bin/chromium-browser",
+                     "/opt/pw-browsers/chromium", "/snap/bin/chromium"]) {
+      if (ok(c)) return c;
+    }
+    for (const dir of ["/opt/pw-browsers"]) {
+      let kids = [];
+      try { kids = fs.readdirSync(dir); } catch (_) {}
+      for (const k of kids) {
+        const c = path.join(dir, k, "chrome-linux", "chrome");
+        if (ok(c)) return c;
+      }
+    }
+    stop(false, "no browser to render with — set CHROME_PATH or run: npx puppeteer browsers install chrome",
+      "looked at:\n" + tried.map(t => "  " + t).join("\n"));
+    return null;
+  })();
 
   // First org with a token, so the pages are reachable and campsite-seeded.
   let org = null;
@@ -212,7 +242,8 @@ function waitForServer(started) {
     var token = ORGS[org].token;
   } catch (e) { return stop(false, "could not resolve a test org: " + e.message); }
 
-  const browser = await puppeteer.launch({ headless: true, args: ["--no-sandbox", "--disable-dev-shm-usage"] });
+  const browser = await puppeteer.launch({ headless: true, executablePath: chrome,
+                                           args: ["--no-sandbox", "--disable-dev-shm-usage"] });
   const failures = [];
 
   for (const c of CASES) {

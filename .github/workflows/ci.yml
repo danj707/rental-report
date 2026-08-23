@@ -10,7 +10,7 @@ on:
 jobs:
   validate:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -66,6 +66,17 @@ jobs:
 
       - name: Admin dashboard JS (inline blocks parse; every on*= handler resolves)
         run: node scripts/ci-check-admin-js.js
+
+      # The runner image already ships Google Chrome, so this normally prints a
+      # path and stops. The fallback is here so the check can never be skipped
+      # for want of a browser — that would defeat its entire purpose.
+      - name: Ensure a browser for the render check
+        run: |
+          for c in /usr/bin/google-chrome /usr/bin/google-chrome-stable /usr/bin/chromium /usr/bin/chromium-browser; do
+            if [ -x "$c" ]; then echo "CHROME_PATH=$c" >> "$GITHUB_ENV"; echo "using $c"; exit 0; fi
+          done
+          echo "no system Chrome — installing puppeteer's"
+          npx puppeteer browsers install chrome
 
       - name: Page render check (real browser; a blank page fails the build)
         run: node scripts/ci-check-render.js
