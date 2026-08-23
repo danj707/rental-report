@@ -426,7 +426,10 @@ The longest stay decays 14 → 8 → 5 → 2 → 1 → 0 across the final week, 
 last arrival night becomes unbookable outright (any stay needs a checkout the cap
 forbids).
 
-**DECISION: arrivals capped at 30 nights, checkouts NOT.** The asymmetry is
+**DECISION: arrivals capped at 30 nights, checkouts NOT.** The Arrive field's
+`max` is the 30th night; the Depart field's `max` is rec.us's own `latestCheckout`
+for the chosen arrival, so the picker cannot offer a stay the engine would refuse
+nor refuse one it would accept. The asymmetry is
 principled — past day 30 there is no arrival data, so offering one would be our
 guess, while the checkout bound is not our guess but rec.us's answer. Guarded by
 `scripts/campmap-stay.spec.js`.
@@ -518,7 +521,7 @@ clamped — the page is public and un-tokened):
 |---|---|---|
 | `campmap-site` | opening a campsite | `site`, `state` (avail/partial/booked/blocked), `nights` |
 | `campmap-book` | the site's **Book on rec.us** button | `site`, `nights` |
-| `campmap-book` | the hand-off card past the 30-night strip | `kind: "later-dates"` |
+| `campmap-book` | the hand-off card at the foot of the site list | `kind: "later-dates"` |
 | `campmap-share` | Copy link / Copy embed on the Camping tab | `kind: link|embed` |
 
 Both debounce **by site**, the same decision as the rentalcalendar's map pins: a

@@ -182,11 +182,12 @@ const CASES = [
   { name: "gl report",             path: "/{org}/gl",                     needs: ".toolbar" },
   // The public campground map. No token on purpose — this is the one view a
   // camper reaches, so a blank page here is the most costly of the lot.
-  // `.chip.on` rather than `.chip`: buildChips() emits every night with no
-  // selected class, and the arrival highlight is applied only by paintChips(),
-  // which runs from setStay(). So the bare class would still be there if the
-  // stay logic threw, and this would not.
-  { name: "campmap · stay search", path: "/{org}/campmap",                needs: ".chip.on" },
+  // `#departPick[max]` rather than the input itself: the element is in the static
+  // HTML, but its `max` is written only inside setStay(), from rec.us's own
+  // latestCheckout. So this fails if the stay logic throws, which a selector for
+  // the markup would not. (The night strip this used to assert on is gone — the
+  // date fields replaced it.)
+  { name: "campmap · stay search", path: "/{org}/campmap",                needs: "#departPick[max]" },
 ];
 
 const child = spawn(process.execPath, [path.join(__dirname, "..", "server.js")], {

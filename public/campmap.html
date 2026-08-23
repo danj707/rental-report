@@ -37,8 +37,8 @@ body{font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica
    strip is a browse aid underneath. */
 .datebar{display:block;padding:0}
 .datebar .dbrow{display:flex;align-items:center;gap:12px;padding:9px 14px}
-.datebar .dbrow-top{border-bottom:1px solid var(--line-2,#f1f3f2);flex-wrap:wrap}
-.datebar .dbrow-strip{gap:8px;padding-top:7px;padding-bottom:9px}
+.datebar .dbrow-top{flex-wrap:wrap}
+.datebar .listtog.on{background:var(--accent);border-color:var(--accent);color:#fff}
 .datebar .fld{display:flex;flex-direction:column;gap:3px;flex:0 0 auto}
 .datebar .fld span{font-size:9.5px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);font-weight:700}
 .datebar .fld input{font:inherit;font-size:13.5px;padding:6px 9px;border:1px solid var(--line);border-radius:9px;color:#374151;background:#fff;cursor:pointer}
@@ -69,27 +69,14 @@ body{font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica
 .datebar .summ .part{color:var(--partial);font-weight:700}
 /* The stay, drawn on the strip: arrival, the nights between, and the checkout
    morning (dashed — you are not occupying the site that night). */
-.chip.inrange{background:var(--avail-bg);border-color:var(--avail)}
-.chip.checkout{border-style:dashed;border-color:var(--accent);background:#fff}
-.chip .fill{height:3px;border-radius:2px;margin:4px 1px 0}
-.chip.more{min-width:210px;max-width:230px;text-align:left;padding:6px 10px;text-decoration:none;
-  background:var(--accent-soft,#ecfdf5);border-color:var(--accent);color:#0f766e;white-space:normal}
-.chip.more:hover{background:#d7ebe8}
-.chip.more .m-h{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.4px}
-.chip.more .m-b{font-size:10.5px;line-height:1.3;margin-top:2px;color:#374151}
-.chip.on .fill{background:rgba(255,255,255,.35)!important}
-.chips{display:flex;gap:6px;overflow-x:auto;flex:1;scrollbar-width:thin;padding-bottom:2px}
-.chips::-webkit-scrollbar{height:6px}
-.chips::-webkit-scrollbar-thumb{background:#d1d5db;border-radius:3px}
-.chip{flex:0 0 auto;min-width:46px;text-align:center;padding:5px 8px;border:1px solid var(--line);border-radius:10px;background:#fff;cursor:pointer;transition:all .12s;line-height:1.15}
-.chip:hover{border-color:#9ca3af;background:#f9fafb}
-.chip.on{background:var(--accent);border-color:var(--accent);color:#fff}
-.chip .dow{font-size:10px;font-weight:600;text-transform:uppercase;opacity:.75}
-.chip .dnum{font-size:15px;font-weight:700}
-.chip .mo{font-size:9px;opacity:.7}
+/* The hand-off at the foot of the list — see renderFoot(). */
+.sitelist .sl-foot{flex:0 0 auto;padding:8px;border-top:1px solid var(--line)}
+.sl-more{display:block;text-decoration:none;padding:9px 11px;border:1px solid var(--accent);border-radius:10px;
+  background:var(--accent-soft,#ecfdf5);color:#0f766e}
+.sl-more:hover{background:#d7ebe8}
+.sl-more .m-h{display:block;font-size:11.5px;font-weight:800}
+.sl-more .m-b{display:block;font-size:11px;line-height:1.35;margin-top:2px;color:#374151}
 
-.datebar .nav{border:1px solid var(--line);background:#fff;border-radius:8px;width:30px;height:30px;cursor:pointer;font-size:15px;color:#374151;flex:0 0 auto}
-.datebar .nav:hover{background:#f3f4f6}
 
 /* ── Map ── */
 .mapwrap{position:relative;flex:1;min-height:0}
@@ -281,11 +268,6 @@ body{font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica
       <div class="summ" id="summ">—</div>
       <button class="listtog" id="listTog" title="Show or hide the list of sites">Hide list</button>
     </div>
-    <div class="dbrow dbrow-strip">
-      <button class="nav" id="prevDay" title="Scroll back">‹</button>
-      <div class="chips" id="chips"></div>
-      <button class="nav" id="nextDay" title="Scroll forward">›</button>
-    </div>
   </div>
 
   <div class="mapwrap">
@@ -296,6 +278,7 @@ body{font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica
         <div class="sl-sub" id="slSub">—</div>
       </div>
       <div class="sl-body" id="slBody"></div>
+      <div class="sl-foot" id="slFoot"></div>
     </aside>
     <div class="editbar" id="editbar">
       <span class="msg" id="editMsg">Drag campsite pins to place them.</span>
@@ -546,7 +529,12 @@ var MAX_ISO = iso(addDays(TODAY, DAYS_SHOWN - 1));
    'booked'  = an actual reservation conflict on that night
    'blocked' = not bookable for a non-reservation reason (booking-window rule,
                blackout, etc.) — NOT a booking, so it must not read as "Booked". */
-var AVAIL = {};          // siteId -> { date: 'avail'|'booked'|'blocked' }
+var AVAIL = {};          // siteId -> { date: 'avail'|'booked'|'blocked'|'closed' }
+// siteId -> { 'YYYY-MM-DD': {earliest, latest} } — the legal checkout range for an
+// arrival on that night, as stated by rec.us. Declared beside AVAIL because the
+// two are filled from the same response and read together; it previously sat next
+// to the night strip and was deleted with it.
+var AVAIL_WINDOW = {};
 var LIVE = false;        // did we get live data?
 
 /* deterministic pseudo-random 0..1 from a string (offline fallback) */
@@ -768,75 +756,22 @@ function refreshMarkers(){
 /* ── date bar ── */
 var SELECTED = TODAY_ISO;                       // arrive
 var DEPART   = iso(addDays(TODAY, 1));          // checkout (exclusive)
-function buildChips(){
-  var wrap=document.getElementById('chips'); wrap.innerHTML='';
-  for(var i=0;i<DAYS_SHOWN;i++){
-    (function(i){
-      var d=addDays(TODAY,i); var ds=iso(d);
-      var c=document.createElement('button');
-      c.type='button';
-      c.className='chip';
-      c.dataset.ds=ds;
-      c.innerHTML='<div class="dow">'+DOW[d.getDay()]+'</div><div class="dnum">'+d.getDate()+'</div><div class="mo">'+MON[d.getMonth()]+'</div>'
-                 +'<div class="fill"></div>';
-      // Two clicks, no fields: arrival, then checkout. Clicking on or before the
-      // arrival starts a new stay instead of producing a negative one, so there
-      // is no order to get wrong and no invalid state to guard against later.
-      // Clicking a night moves the stay to start there and KEEPS its length, so
-      // browsing "my 3 nights, a week later" is one click. The two-click
-      // arrival-then-checkout mode is gone: the fields above do that job, and its
-      // "now click your checkout night" prompt was what crowded this bar.
-      c.onclick=function(){ setStay(ds, iso(addDays(d, stayNights().length))); };
-      // While the checkout is still being chosen, hovering shows the stay it
-      // would make — the map stays on the committed stay until the click lands.
-      c.setAttribute('aria-label', DOW[d.getDay()]+' '+MON[d.getMonth()]+' '+d.getDate());
-      wrap.appendChild(c);
-    })(i);
-  }
-  // Past the last night, say what to do instead of just stopping. rec.us takes
-  // bookings months out; this map can only CONFIRM the ~30 nights the
-  // availability feed enumerates, so the honest move is to hand the camper off
-  // rather than render dates we cannot answer for.
-  var ba = CFG.bookAhead;
-  if(ba && ba.url){
-    var more=document.createElement('a');
-    more.className='chip more';
-    more.href=ba.url; more.target='_blank'; more.rel='noopener noreferrer';
-    more.innerHTML='<div class="m-h">Later dates?</div>'
-      +'<div class="m-b">We can show '+DAYS_SHOWN+' nights. Book further ahead on rec.us'
-      +(ba.contact ? ', or call the '+ba.contact : '')+'.</div>';
-    // Leaving for rec.us because the dates they want are past what we can show.
-    // This used to post to /api/share?kind=book-ahead, which normalises kind to
-    // embed|link — so a booking hand-off was recorded as a link copy.
-    more.onclick=function(){ ping('campmap-book', { kind:'later-dates' }); };
-    wrap.appendChild(more);
-  }
-}
-/* How many of the sites are free on one night — the bar under each chip. It is
- * the shape of the month at a glance, which a one-night-at-a-time strip could
- * never show. */
-function freeOn(dateStr){
-  var n=0; SEED.forEach(function(s){ if(statusOn(s,dateStr)==='avail') n++; });
-  return n;
-}
-// siteId -> { 'YYYY-MM-DD': {earliest, latest} } — the legal checkout range for
-// an arrival on that night, as stated by rec.us.
-var AVAIL_WINDOW={};
-function paintChips(){
-  var nights={}, stay=stayNights();
-  stay.forEach(function(n){ nights[n]=true; });
-  document.querySelectorAll('.chip').forEach(function(c){
-    var ds=c.dataset.ds;
-    c.classList.toggle('on', ds===SELECTED);
-    c.classList.toggle('inrange', !!nights[ds] && ds!==SELECTED);
-    c.classList.toggle('checkout', ds===DEPART);
-    var free=freeOn(ds), pct=SEED.length ? Math.round(free/SEED.length*100) : 0;
-    var fill=c.querySelector('.fill');
-    if(fill){
-      fill.style.background='linear-gradient(90deg,var(--avail) '+pct+'%,var(--line) '+pct+'%)';
-      c.title=DOW[new Date(ds+'T00:00:00').getDay()]+' '+ds+' — '+free+' of '+SEED.length+' sites free this night';
-    }
-  });
+/* The hand-off, at the foot of the list. rec.us takes bookings months out; this
+ * map can only CONFIRM the ~30 nights its availability feed enumerates, so when
+ * a camper cannot find dates the honest move is to hand them off rather than
+ * pretend. It used to live at the end of the night strip; the strip is gone, and
+ * the foot of the list is where someone who has not found a site is already
+ * looking. */
+function renderFoot(){
+  var el=document.getElementById('slFoot'); if(!el) return;
+  var ba=CFG.bookAhead;
+  if(!ba || !ba.url){ el.innerHTML=''; return; }
+  el.innerHTML='<a class="sl-more" id="bookAhead" href="'+ba.url+'" target="_blank" rel="noopener noreferrer">'
+    +'<span class="m-h">Looking further ahead?</span>'
+    +'<span class="m-b">We can show the next '+DAYS_SHOWN+' nights. Book later dates on rec.us'
+    +(ba.contact ? ', or call the '+ba.contact : '')+'.</span></a>';
+  var a=document.getElementById('bookAhead');
+  if(a) a.onclick=function(){ ping('campmap-book', { kind:'later-dates' }); };
 }
 
 function stayTally(){
@@ -859,14 +794,28 @@ function stayLabel(){
  * can I have", which is the question someone arrives with — and it is readable
  * without hunting for green pins among 41. Grouped by verdict so the answer is
  * the first thing, not a colour to decode. */
-var LIST_ON = true;
-function toggleList(){
-  LIST_ON = !LIST_ON;
+// Panel state is a per-viewer convenience, so it lives in localStorage and every
+// read/write is guarded — a private window or blocked site data must not break
+// the map, it just means the defaults apply.
+function prefGet(k, dflt){
+  try{ var v=localStorage.getItem('campmap_'+k); return v===null ? dflt : v==='1'; }catch(_){ return dflt; }
+}
+function prefSet(k, on){ try{ localStorage.setItem('campmap_'+k, on?'1':'0'); }catch(_){} }
+
+// The list is expanded by default: on a camper-facing page "which sites can I
+// have" is the question, and the list is the answer.
+var LIST_ON = prefGet('list', true);
+
+// Leaflet sizes itself to its container, so it must be told when the box moved.
+function remap(){ setTimeout(function(){ map.invalidateSize(); }, 60); }
+
+function applyPanels(){
   document.querySelector('.mapwrap').classList.toggle('nolist', !LIST_ON);
   document.getElementById('listTog').textContent = LIST_ON ? 'Hide list' : 'Show list';
-  // Leaflet sizes itself to its container, so it has to be told the box moved.
-  setTimeout(function(){ map.invalidateSize(); }, 60);
+  remap();
 }
+function toggleList(){ LIST_ON = !LIST_ON; prefSet('list', LIST_ON); applyPanels(); }
+
 
 function renderList(){
   var body=document.getElementById('slBody'); if(!body) return;
@@ -970,7 +919,6 @@ function setStay(arrive, depart){
   if(depart > cap) depart = cap;
   SELECTED=arrive; DEPART=depart;
 
-  paintChips();
   var n=stayNights().length;
   document.getElementById('nights').textContent = n + (n===1 ? ' night' : ' nights');
   var ai=document.getElementById('arrivePick'), di=document.getElementById('departPick');
@@ -988,12 +936,6 @@ function setDate(ds){ setStay(ds, iso(addDays(new Date(ds+'T00:00:00'), stayNigh
 // nudging dates with arrows is the block-shifting interaction we dropped, and
 // with 30 nights in a horizontal scroller reaching the far end is what they are
 // actually needed for.
-function scrollStrip(dir){
-  var el=document.getElementById('chips');
-  el.scrollBy({left: dir * Math.max(160, el.clientWidth * 0.7), behavior:'smooth'});
-}
-document.getElementById('prevDay').onclick=function(){ scrollStrip(-1); };
-document.getElementById('nextDay').onclick=function(){ scrollStrip(1); };
 document.getElementById('arrivePick').onchange=function(){
   if(!this.value) return;
   // Moving the arrival keeps the trip length rather than collapsing it to one
@@ -1419,11 +1361,12 @@ document.getElementById('editDone').onclick=function(){
 };
 
 applyConfig();
-buildChips();
 buildMarkers();
 // Populates both inputs, the nights label, the in-range chips and the summary in
 // one place, so the initial paint cannot disagree with what a later change draws.
 setStay(TODAY_ISO, iso(addDays(TODAY, 1)));
+renderFoot();
+applyPanels();   // honour the viewer's remembered panel choice
 loadPositions();   // apply any admin-saved pin positions
 loadMarkers();     // load admin custom markers (Boat Ramp, etc.)
 loadSites();       // live site data → then availability (with offline fallbacks)
