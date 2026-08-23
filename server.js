@@ -3605,7 +3605,7 @@ setTimeout(() => { checkCardParamTypes().catch(() => {}); }, 150 * 1000).unref?.
 // Inert if the env var is unset. Fire-and-forget — never blocks or breaks logging.
 // To change what pings Slack, edit SLACK_NOTIFY. High-frequency events (view/fetch)
 // are debounced per org+report so Slack isn't a firehose.
-const SLACK_NOTIFY = new Set(["created", "org-deleted", "watchdog", "schema-break", "param-drift", "report-down", "campmap-share", "campmap-site", "campmap-book", "pdf", "excel", "print", "summary", "game", "map", "view", "insights", "insights-feedback", "chat-feedback", "feedback", "vote", "update-vote", "munis", "permits", "email"]);
+const SLACK_NOTIFY = new Set(["created", "org-deleted", "watchdog", "schema-break", "param-drift", "report-down", "campmap-share", "campmap-site", "campmap-book", "campmap-filter", "pdf", "excel", "print", "summary", "game", "map", "view", "insights", "insights-feedback", "chat-feedback", "feedback", "vote", "update-vote", "munis", "permits", "email"]);
 const SLACK_DEBOUNCE_MS = { view: 30 * 60 * 1000, fetch: 30 * 60 * 1000,
   // A broken report stays broken. The health check only reports NEW failures,
   // but a flapping card would otherwise post every hour.
@@ -3624,6 +3624,9 @@ const SLACK_EVENT_META = {
   // Booking intent is the one campmap event worth its own emoji: it is the last
   // thing we can see before the camper leaves for rec.us.
   "campmap-book": { emoji: "\uD83C\uDFDD\uFE0F", verb: "clicked through to book" },
+  // Which campsite type a camper narrows to is the one signal that says what
+  // they arrived in — a park reading "RV only" all summer is a planning fact.
+  "campmap-filter": { emoji: "\uD83D\uDD0E", verb: "filtered the campsite map by type" },
   "report-down": { emoji: "🔴", verb: "report is failing" },
   pdf:     { emoji: "📄", verb: "exported a PDF of" },
   excel:   { emoji: "📊", verb: "exported to Excel" },
@@ -3686,6 +3689,10 @@ function notifySlack(rec) {
     // whichever one they happened to open first.
     : (rec.event === "campmap-site" || rec.event === "campmap-book")
       ? `${rec.org}|campmap|${rec.event}|${rec.site || rec.kind || ""}`
+    // Keyed by the type chosen, same reasoning: someone trying tent-only then
+    // RV-only is telling us two things, not one.
+    : rec.event === "campmap-filter"
+      ? `${rec.org}|campmap|filter|${rec.filterType || ""}`
       : `${rec.org}|${rec.report}|${rec.event}`;
   const now = Date.now();
   const cooldown = SLACK_DEBOUNCE_MS[rec.event] || SLACK_DEFAULT_DEBOUNCE_MS;
@@ -3740,6 +3747,14 @@ function notifySlack(rec) {
       const stay = rec.nights ? ` for ${rec.nights} night${rec.nights === 1 ? "" : "s"}` : "";
       text = `${meta.emoji} ${orgName} (\`${rec.org}\`) clicked *Book on rec.us* \u2014 ${rec.site || "a campsite"}${stay}`;
     }
+  } else if (rec.event === "campmap-filter") {
+    // "Filtered to all types" is someone clearing the filter — worth saying
+    // plainly rather than as an empty type.
+    const label = !rec.filterType || rec.filterType === "all" ? "all campsite types" : `*${rec.filterType}*`;
+    const found = rec.sites != null
+      ? ` \u2014 ${rec.sites} site${rec.sites === 1 ? "" : "s"}${rec.open != null ? `, ${rec.open} open` : ""}`
+      : "";
+    text = `${meta.emoji} ${orgName} (\`${rec.org}\`) narrowed the campsite map to ${label}${found}`;
   } else if (rec.event === "campmap-share") {
     const what = rec.kind === "embed" ? "embed code" : "link";
     text = `${meta.emoji} ${orgName} (\`${rec.org}\`) copied the public campsite map ${what}`;
@@ -5754,15 +5769,20 @@ app.post("/:org/campmap/api/log", (req, res) => {
   const slug = req.params.org;
   if (!ORGS[slug]) return res.status(404).json({ ok: false, error: "Unknown org" });
   const event = req.query.event;
-  const ALLOWED = ["campmap-site", "campmap-book"];
+  const ALLOWED = ["campmap-site", "campmap-book", "campmap-filter"];
   if (!ALLOWED.includes(event)) return res.status(400).json({ ok: false, error: "Unknown event" });
   const clamp = (v, n) => (v == null ? undefined : String(v).slice(0, n));
   const nights = Number(req.query.nights);
+  const count = (v, max) => { const n = Number(v); return Number.isFinite(n) && n >= 0 && n <= max ? Math.round(n) : undefined; };
   const extra = {
     site:   clamp(req.query.site, 80),
     state:  clamp(req.query.state, 20),
     kind:   clamp(req.query.kind, 20),
     nights: Number.isFinite(nights) && nights > 0 && nights < 400 ? Math.round(nights) : undefined,
+    // campmap-filter: which campsite type was chosen, and what it found.
+    filterType: clamp(req.query.type, 24),
+    sites:  count(req.query.sites, 5000),
+    open:   count(req.query.open, 5000),
   };
   logEvent(slug, "campmap", event, req, extra);
   res.json({ ok: true });
@@ -10260,11 +10280,23 @@ app.get("/:org/rentalcalendar/api/sites", async (req, res) => {
   const org = ORGS[slug];
   if (!org || !org.orgId) return res.status(404).json({ error: "Unknown org" });
   const locationId = req.query.locationId || '';
-  const cacheKey = org.orgId + ':' + locationId;
+  // ?types=campsite — ask Rec for one kind of site instead of the org's whole
+  // facility list. This is not an optimisation: Douglas County has 194 courts and
+  // this route asked for a single page, so its 41 campsites fell off the end and
+  // /douglas-county-nv/campmap got NO live data at all (no sub_type, price,
+  // capacity or amenities) — loadSites() threw "no live sites matched" and the
+  // page ran entirely on its baked seed. The page size below is raised for the
+  // same reason.
+  const VALID_TYPES = new Set(["court", "picnic-table", "room", "pool", "rink", "golf",
+                               "field", "outdoor-event-space", "bounce-house", "campsite", "other", "gym"]);
+  const types = String(req.query.types || '').split(',').map(t => t.trim().toLowerCase())
+    .filter(t => VALID_TYPES.has(t));
+  const cacheKey = org.orgId + ':' + locationId + ':' + types.join('+');
   // Check hardcoded cache first
   const orgSites = RC_SITES_CACHE[org.orgId];
   if (orgSites) {
-    const sites = locationId && orgSites[locationId] ? orgSites[locationId] : Object.values(orgSites).flat();
+    let sites = locationId && orgSites[locationId] ? orgSites[locationId] : Object.values(orgSites).flat();
+    if (types.length) sites = sites.filter(x => types.includes(String(x.type || '').toLowerCase()));
     return res.json({ sites });
   }
   // Check live MCP response cache (1 hour TTL)
@@ -10276,7 +10308,9 @@ app.get("/:org/rentalcalendar/api/sites", async (req, res) => {
   try {
     const client = await getRecMcpClient();
     if (!client) throw new Error('MCP client not available');
-    const result = await client.callTool({ name: 'list_sites', arguments: { organizationId: org.orgId, pageSize: 100 } });
+    const result = await client.callTool({ name: 'list_sites', arguments: Object.assign(
+      { organizationId: org.orgId, pageSize: 250 },
+      types.length ? { siteTypes: types } : {}) });
     let sites = [];
     for (const block of (result.content || [])) {
       if (block.type === 'text' && block.text) {

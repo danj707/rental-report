@@ -107,12 +107,33 @@ function availabilityFor(url) {
   return { data };
 }
 
+// The campmap's live site feed. Ids come from the campmap seed so the overlay
+// actually matches (loadSites() discards a reply that matches nothing), and each
+// site is given one of rec.us's real sub_type values — the field the Campsite
+// Type filter is built from. Deliberately DIFFERENT from the seed's own `kind`,
+// so the check proves Rec's value wins over the seed's guess rather than merely
+// that some options rendered.
+const SUB_TYPES = ["tent", "rv", "tent-and-rv"];
+function campmapSites(org) {
+  const seeds = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "campmap-seeds.json"), "utf8"));
+  const sites = ((seeds[org] || {}).sites || []);
+  return sites.map((x, i) => ({
+    id: x.id, name: x.name, courtNumber: x.name, type: "campsite",
+    capacity: 6, locationId: "loc", locationName: (seeds[org] || {}).locationName || "Campground",
+    bookingUrl: "https://www.rec.us/sites/" + x.id, description: "",
+    imageUrl: null, gallery: [], priceCents: 2500, residentPriceCents: 2000,
+    durationMinutes: null, pricingType: "perNight", bookingUnit: "nightly",
+    subType: SUB_TYPES[i % SUB_TYPES.length], amenities: [],
+  }));
+}
+
 // Anything under /api/ that a page fetches. `match` is tested against the path.
 const STUBS = [
   { match: /\/facilities\/api\/campsites/, body: () => campsitesGeo },
   { match: /\/facility\/api\/data/,        body: () => ({ rows: campsiteRows(), meta: {} }) },
   { match: /\/api\/permits/,               body: () => ({ permits: {} }) },
   { match: /\/api\/availability-batch/,     body: url => availabilityFor(url) },
+  { match: /\/rentalcalendar\/api\/sites/, body: (url, org) => ({ sites: campmapSites(org) }) },
   { match: /\/api\/sites/,                  body: () => ({ sites: [] }) },
   { match: /\/api\/data/,                   body: () => ({ rows: campsiteRows(), meta: {} }) },
   { match: /\/api\/pulse/,                  body: () => ({ items: [], generated: null }) },
@@ -188,6 +209,11 @@ const CASES = [
   // the markup would not. (The night strip this used to assert on is gone — the
   // date fields replaced it.)
   { name: "campmap · stay search", path: "/{org}/campmap",                needs: "#departPick[max]" },
+  // The Campsite Type filter. `option[value="tent-and-rv"]` is only there if the
+  // LIVE site feed landed and buildTypeFilter() re-ran off Rec's sub_type — the
+  // seed's own kinds are electric/primitive — so this covers the overlay path as
+  // well as the control rendering at all.
+  { name: "campmap · type filter", path: "/{org}/campmap",                needs: "#typePick option[value=\"tent-and-rv\"]" },
 ];
 
 const child = spawn(process.execPath, [path.join(__dirname, "..", "server.js")], {
@@ -297,7 +323,7 @@ function waitForServer(started) {
       if (u.includes("/api/")) {
         const stub = STUBS.find(s => s.match.test(u));
         return req.respond({ status: 200, contentType: "application/json",
-                             body: JSON.stringify(stub ? stub.body(u) : { ok: true }) });
+                             body: JSON.stringify(stub ? stub.body(u, org) : { ok: true }) });
       }
       if (!u.startsWith(`http://127.0.0.1:${PORT}`)) return serveVendored(req);
       req.continue();

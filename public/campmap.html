@@ -43,6 +43,11 @@ body{font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica
 .datebar .fld span{font-size:9.5px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);font-weight:700}
 .datebar .fld input{font:inherit;font-size:13.5px;padding:6px 9px;border:1px solid var(--line);border-radius:9px;color:#374151;background:#fff;cursor:pointer}
 .datebar .fld input:focus{outline:2px solid var(--accent);outline-offset:1px}
+/* The campsite-type filter sits in the same row as the dates: "which sites fit
+   my rig" is part of the same question as "which nights", not a separate mode. */
+.datebar .fld select{font:inherit;font-size:13.5px;padding:6px 9px;border:1px solid var(--line);border-radius:9px;color:#374151;background:#fff;cursor:pointer;max-width:200px}
+.datebar .fld select:focus{outline:2px solid var(--accent);outline-offset:1px}
+.datebar .fld-type.on select{border-color:var(--accent);color:var(--accent);font-weight:700}
 .datebar .fld-arrow{color:var(--muted);align-self:flex-end;padding-bottom:7px}
 .datebar .nights{align-self:flex-end;padding-bottom:7px;font-size:12.5px;font-weight:700;color:var(--accent);white-space:nowrap}
 .datebar .listtog{margin-left:auto;font:inherit;font-size:11.5px;font-weight:700;padding:5px 10px;border:1px solid var(--line);border-radius:999px;background:#fff;color:var(--muted);cursor:pointer;flex:0 0 auto}
@@ -265,6 +270,7 @@ body{font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica
       <span class="fld-arrow">→</span>
       <label class="fld"><span>Depart</span><input type="date" id="departPick"/></label>
       <span class="nights" id="nights">1 night</span>
+      <label class="fld fld-type" id="typeFld" hidden><span>Campsite type</span><select id="typePick"></select></label>
       <div class="summ" id="summ">—</div>
       <button class="listtog" id="listTog" title="Show or hide the list of sites">Hide list</button>
     </div>
@@ -441,14 +447,35 @@ function siteMeta(s){
     blurb:    pick(ad.blurb,    def.blurb,    haveCfg?null:fb.blurb),
   };
 }
-/* site-type (sub_type/kind) → marker emoji + human label */
+/* site-type (sub_type/kind) → marker emoji + human label.
+ *
+ * The four canonical values are rec.us's own, enforced by a CHECK constraint on
+ * court.sub_type: tent | rv | tent-and-rv | lodging — the exact four options in
+ * the admin's "Campsite Type" dropdown. They are matched EXACTLY and first,
+ * because the substring rules below cannot tell 'rv' from 'tent-and-rv' and used
+ * to label an RV-only site "Tent & RV" — the one reading a tent camper must not
+ * be given.
+ *
+ * electric / primitive are ours, not Rec's: Pleasant Hill's 12 campsites carry
+ * sub_type NULL, so those two are derived from the site description (see sKind).
+ * They stay because they are how those sites genuinely differ.
+ */
+var CANON_KINDS = {
+  'tent':        { e:'⛺',       label:'Tent only' },
+  'rv':          { e:'🚐', label:'RV only' },
+  'tent-and-rv': { e:'🏕️', label:'Tent & RV' },
+  'lodging':     { e:'🛖', label:'Lodging' },
+  'electric':    { e:'⚡',       label:'Electric' },
+  'primitive':   { e:'⛺',       label:'Primitive' }
+};
 function kindInfo(k){
   k = (k||'').toString().toLowerCase();
-  if(k==='electric' || k.indexOf('electric')>=0) return {e:'⚡', label:'Electric'};
-  if(k==='primitive' || k.indexOf('primitive')>=0) return {e:'⛺', label:'Primitive'};
-  if(k.indexOf('rv')>=0) return {e:'🚐', label:'Tent & RV'};
-  if(k.indexOf('tent')>=0) return {e:'⛺', label:'Tent'};
-  if(k.indexOf('cabin')>=0) return {e:'🛖', label:'Cabin'};
+  if(CANON_KINDS[k]) return CANON_KINDS[k];
+  if(k.indexOf('electric')>=0) return CANON_KINDS.electric;
+  if(k.indexOf('primitive')>=0) return CANON_KINDS.primitive;
+  if(k.indexOf('rv')>=0) return CANON_KINDS['tent-and-rv'];
+  if(k.indexOf('tent')>=0) return CANON_KINDS.tent;
+  if(k.indexOf('cabin')>=0 || k.indexOf('lodg')>=0) return CANON_KINDS.lodging;
   if(!k) return {e:'🏕️', label:'Campsite'};
   return {e:'🏕️', label: k.replace(/-/g,' ').replace(/\b\w/g,function(c){return c.toUpperCase();})};
 }
@@ -582,6 +609,41 @@ function nightStateFrom(v){
   if(v && typeof v==='object' && Object.keys(v).length>0) return 'avail';
   return 'blocked';
 }
+
+/* ── the campsite-type filter ────────────────────────────────────────────────
+ * Every site in a campground is set up a bit differently, and the difference a
+ * camper actually filters on is what they are arriving in. rec.us stores that
+ * per site as court.sub_type, one of tent | rv | tent-and-rv | lodging.
+ *
+ * TYPE_FILTER is 'all' or one of those keys, and VIEW() is the set of sites the
+ * page is talking about. Everything that counts, lists, or paints reads VIEW()
+ * rather than SEED, so the map, the list and the "N of M open" line can never
+ * disagree about which sites are in scope — the failure that made the Facilities
+ * Summary read 46 sites where the Camping tab read 41.
+ *
+ * The filter is NOT remembered between visits (unlike the list toggle): it is a
+ * search intent, not a layout preference, and a camper returning to a silently
+ * narrowed map would read a subset of the campground as the whole of it.
+ */
+var TYPE_FILTER = 'all';
+function typeKey(site){
+  var k=(sKind(site)||'').toString().toLowerCase();
+  if(CANON_KINDS[k]) return k;
+  if(k.indexOf('electric')>=0) return 'electric';
+  if(k.indexOf('primitive')>=0) return 'primitive';
+  if(k.indexOf('rv')>=0) return 'tent-and-rv';
+  if(k.indexOf('tent')>=0) return 'tent';
+  if(k.indexOf('cabin')>=0 || k.indexOf('lodg')>=0) return 'lodging';
+  return k || 'campsite';
+}
+function inView(site){
+  if(TYPE_FILTER==='all') return true;
+  // Editing places pins for the WHOLE campground, so a filter must not hide the
+  // ones an admin came to move.
+  if(typeof EDIT!=='undefined' && EDIT) return true;
+  return typeKey(site)===TYPE_FILTER;
+}
+function VIEW(){ return SEED.filter(inView); }
 
 function statusOn(site, dateStr){
   var a=AVAIL[site.id];
@@ -749,7 +811,14 @@ function buildLegendDynamic(){
 function refreshMarkers(){
   SEED.forEach(function(site){
     var m=markers[site.id]; if(!m) return;
-    m.setIcon(L.divIcon({className:'', html:markerHtml(site,rangeStatus(site).state), iconSize:[34,34], iconAnchor:[17,17]}));
+    // Filtered-out pins come OFF the map rather than being dimmed: "filter" has
+    // one honest reading, and a greyed pin on a campground map is indistinguishable
+    // from a site that is merely unavailable. The open drawer's own site stays on
+    // so the card can never point at nothing.
+    var show = inView(site) || site.id===selectedId;
+    if(show && !map.hasLayer(m)) m.addTo(map);
+    else if(!show && map.hasLayer(m)) map.removeLayer(m);
+    if(show) m.setIcon(L.divIcon({className:'', html:markerHtml(site,rangeStatus(site).state), iconSize:[34,34], iconAnchor:[17,17]}));
   });
 }
 
@@ -774,9 +843,70 @@ function renderFoot(){
   if(a) a.onclick=function(){ ping('campmap-book', { kind:'later-dates' }); };
 }
 
+/* ── the campsite-type control ───────────────────────────────────────────────
+ * Options come from the sites actually present, in rec.us's own order, so a
+ * campground never offers a type it does not have — and a type Rec adds later
+ * appears on its own without a code change.
+ *
+ * When a campground is all one type the control is DISABLED rather than hidden:
+ * it still tells a camper what the sites are, without implying a choice that
+ * does not exist. Topaz Lake is that case today — all 41 sites are tent-and-rv
+ * in Rec, so there is one type to show until the county varies them.
+ */
+function typeCounts(){
+  var order=['tent','rv','tent-and-rv','lodging','electric','primitive'];
+  var seen={};
+  SEED.forEach(function(s){ var k=typeKey(s); if(k) seen[k]=(seen[k]||0)+1; });
+  return Object.keys(seen).sort(function(a,b){
+    var ia=order.indexOf(a), ib=order.indexOf(b);
+    if(ia<0) ia=99; if(ib<0) ib=99;
+    return ia===ib ? (a<b?-1:1) : ia-ib;
+  }).map(function(k){ return { key:k, n:seen[k], info:kindInfo(k) }; });
+}
+function buildTypeFilter(){
+  var fld=document.getElementById('typeFld'), sel=document.getElementById('typePick');
+  if(!fld || !sel) return;
+  var tc=typeCounts();
+  if(!tc.length){ fld.hidden=true; return; }
+  fld.hidden=false;
+  var one = tc.length===1;
+  sel.disabled = one;
+  sel.title = one ? ('Every site here is ' + tc[0].info.label.toLowerCase()) : 'Show only sites of one type';
+  var html = one ? '' : '<option value="all">All types ('+SEED.length+')</option>';
+  html += tc.map(function(t){
+    return '<option value="'+t.key+'">'+t.info.e+' '+t.info.label+' ('+t.n+')</option>';
+  }).join('');
+  sel.innerHTML = html;
+  // A filter that survives a rebuild it no longer has an option for would leave
+  // the page showing nothing, so fall back to 'all' when the type has gone.
+  var keys = tc.map(function(t){ return t.key; });
+  if(TYPE_FILTER!=='all' && keys.indexOf(TYPE_FILTER)<0) TYPE_FILTER='all';
+  sel.value = one ? tc[0].key : TYPE_FILTER;
+  // With one type the control cannot narrow anything, so it must not narrow
+  // anything: the selected option is a label, and the filter stays 'all'.
+  if(one) TYPE_FILTER='all';
+  fld.classList.toggle('on', TYPE_FILTER!=='all');
+}
+function setTypeFilter(key){
+  TYPE_FILTER = key || 'all';
+  document.getElementById('typeFld').classList.toggle('on', TYPE_FILTER!=='all');
+  // A drawer left open on a site the filter excludes would describe a pin that
+  // is no longer on the map.
+  if(selectedId){
+    var cur=SEED.filter(function(x){ return x.id===selectedId; })[0];
+    if(cur && !inView(cur)) closeDrawer();
+  }
+  // Re-run setStay rather than repainting: the checkout bound is derived from the
+  // sites in view, so narrowing the type can legitimately shorten the longest
+  // stay on offer, and the Depart field has to agree with it.
+  setStay(SELECTED, DEPART);
+  var t=stayTally();
+  ping('campmap-filter', { type:TYPE_FILTER, sites:VIEW().length, open:t.full });
+}
+
 function stayTally(){
   var full=0, part=0, known=0;
-  SEED.forEach(function(s){
+  VIEW().forEach(function(s){
     var r=rangeStatus(s);
     if(r.state==='unknown') return;
     known++;
@@ -820,8 +950,8 @@ function toggleList(){ LIST_ON = !LIST_ON; prefSet('list', LIST_ON); applyPanels
 function renderList(){
   var body=document.getElementById('slBody'); if(!body) return;
   var n=stayNights().length;
-  var full=[], part=[];
-  SEED.forEach(function(site){
+  var full=[], part=[], view=VIEW();
+  view.forEach(function(site){
     var r=rangeStatus(site);
     if(r.state==='avail') full.push({site:site, r:r});
     else if(r.state==='partial') part.push({site:site, r:r});
@@ -831,7 +961,8 @@ function renderList(){
 
   document.getElementById('slTitle').textContent = n===1 ? 'Open tonight' : 'Open for all '+n+' nights';
   document.getElementById('slSub').textContent =
-    full.length + ' of ' + SEED.length + ' sites' + (part.length ? ' · '+part.length+' open some nights' : '');
+    full.length + ' of ' + view.length + (TYPE_FILTER==='all' ? ' sites' : ' ' + kindInfo(TYPE_FILTER).label.toLowerCase() + ' sites')
+    + (part.length ? ' · '+part.length+' open some nights' : '');
 
   var html='';
   var row=function(x, colour){
@@ -850,7 +981,9 @@ function renderList(){
        +  part.map(function(x){ return row(x, COLORS.partial); }).join('');
   }
   if(!full.length && !part.length){
-    html='<div class="sl-empty">No site is free for these dates. Try a shorter stay, or shift the nights — the bar under each night on the strip shows how full the campground is.</div>';
+    html='<div class="sl-empty">No '+(TYPE_FILTER==='all' ? 'site' : kindInfo(TYPE_FILTER).label.toLowerCase()+' site')
+      +' is free for these dates. Try a shorter stay, shift the nights'
+      +(TYPE_FILTER==='all' ? '' : ', or widen the campsite type')+'.</div>';
   }
   body.innerHTML=html;
   body.querySelectorAll('.sl-item').forEach(function(b){
@@ -866,7 +999,8 @@ function updateSummary(){
   var el=document.getElementById('summ');
   if(t.known===0){ el.innerHTML='<span>Loading availability…</span>'; }
   else {
-    var txt='<span class="cnt">'+t.full+'</span> of '+SEED.length+' sites open'
+    var txt='<span class="cnt">'+t.full+'</span> of '+VIEW().length
+          + (TYPE_FILTER==='all' ? ' sites open' : ' ' + kindInfo(TYPE_FILTER).label.toLowerCase() + ' sites open')
           + (n===1 ? (SELECTED===TODAY_ISO ? ' tonight' : ' that night') : ' for all '+n+' nights');
     // The partial count earns its own clause: a camper who cannot get four
     // nights will usually take three, and a single-night view cannot say so.
@@ -889,11 +1023,15 @@ function latestCheckoutFrom(dateStr){
   // above "days in advance", and both read 180). Taking the max across sites let
   // that one row offer a 180-night stay for the whole park, so one bad value
   // would distort the picker for every camper.
+  // Scoped to VIEW(): with a campsite type selected, the checkout bound must come
+  // from the sites on screen, or the picker offers a stay only a site the camper
+  // has filtered out could take.
+  var view=VIEW();
   var cap=null;
-  for(var i=0;i<SEED.length && cap===null;i++){ var m=siteMeta(SEED[i]); if(m && m.maxNights) cap=m.maxNights; }
+  for(var i=0;i<view.length && cap===null;i++){ var m=siteMeta(view[i]); if(m && m.maxNights) cap=m.maxNights; }
   var ceiling = cap ? iso(addDays(new Date(dateStr+'T00:00:00'), cap)) : null;
   var best=null;
-  SEED.forEach(function(s){
+  view.forEach(function(s){
     var w=(AVAIL_WINDOW[s.id]||{})[dateStr];
     if(!w || !w.latest) return;
     var l = (ceiling && w.latest > ceiling) ? ceiling : w.latest;
@@ -905,7 +1043,7 @@ function latestCheckoutFrom(dateStr){
   // Topaz, 5 at Pleasant Hill — rather than to a single night, which would
   // refuse stays the org actually allows.
   var mx=null;
-  for(var i=0;i<SEED.length && mx===null;i++){ var m=siteMeta(SEED[i]); if(m && m.maxNights) mx=m.maxNights; }
+  for(var i=0;i<view.length && mx===null;i++){ var m=siteMeta(view[i]); if(m && m.maxNights) mx=m.maxNights; }
   return iso(addDays(new Date(dateStr+'T00:00:00'), mx || 1));
 }
 // setStay is the only way the stay changes. The arrival is clamped to the nights
@@ -946,6 +1084,7 @@ document.getElementById('departPick').onchange=function(){
   if(this.value) setStay(SELECTED, this.value);
 };
 document.getElementById('listTog').onclick=function(){ toggleList(); };
+document.getElementById('typePick').onchange=function(){ setTypeFilter(this.value); };
 
 /* ── detail drawer ── */
 var galleryIdx=0, calMonth=null;
@@ -1294,7 +1433,14 @@ function loadAvailability(){
       if(any){ LIVE=true; }
       else { throw new Error('empty'); }
       updateLegFoot();
-      refreshMarkers(); updateSummary(); renderList(); if(selectedId){var s=SEED.filter(function(x){return x.id===selectedId;})[0]; if(s)renderBody(s);}
+      // Re-run setStay rather than just repainting. The Depart field's `max` is
+      // rec.us's own latestCheckout for the chosen arrival, and until this reply
+      // landed there was none — so the picker was showing the fallback (the org's
+      // configured maximum stay, 14 nights at Topaz). Leaving it there would offer
+      // a checkout rec.us has already said it will refuse, which is the exact
+      // "but it said it was free" the bound exists to prevent.
+      setStay(SELECTED, DEPART);
+      if(selectedId){var s=SEED.filter(function(x){return x.id===selectedId;})[0]; if(s)renderBody(s);}
     })
     .catch(function(){
       // offline / standalone fallback — deterministic demo availability
@@ -1312,7 +1458,10 @@ function updateLegFoot(){
 }
 /* fetch the live site list and overlay it onto the baked seed, then load availability */
 function loadSites(){
-  fetch('/'+SLUG+'/rentalcalendar/api/sites')
+  // types=campsite: this page only ever plots campsites, and asking for the org's
+  // whole facility list truncated them away entirely at Douglas County (194
+  // courts, one page) — see the route.
+  fetch('/'+SLUG+'/rentalcalendar/api/sites?types=campsite')
     .then(function(r){ if(!r.ok) throw new Error('http '+r.status); return r.json(); })
     .then(function(res){
       var all=(res.sites||[]); var used=0;
@@ -1334,7 +1483,9 @@ function loadSites(){
         }
       });
       if(!used) throw new Error('no live sites matched');
-      SITES_LIVE=true; updateLegFoot(); refreshMarkers();
+      // Rec's own sub_type has arrived, so the type options are rebuilt from it
+      // rather than from the baked seed's guess.
+      SITES_LIVE=true; updateLegFoot(); buildTypeFilter(); refreshMarkers(); renderList(); updateSummary();
       if(selectedId){ var s=SEED.filter(function(x){return x.id===selectedId;})[0]; if(s){ renderGallery(s); renderBody(s); } }
     })
     .catch(function(){ /* keep baked seed — still fully usable */ })
@@ -1364,6 +1515,7 @@ applyConfig();
 buildMarkers();
 // Populates both inputs, the nights label, the in-range chips and the summary in
 // one place, so the initial paint cannot disagree with what a later change draws.
+buildTypeFilter();   // before setStay: the checkout bound is derived from VIEW()
 setStay(TODAY_ISO, iso(addDays(TODAY, 1)));
 renderFoot();
 applyPanels();   // honour the viewer's remembered panel choice

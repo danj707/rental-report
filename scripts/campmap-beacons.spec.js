@@ -130,6 +130,16 @@ const CAMPMAP = [
       assert.strictEqual(rec.kind, "later-dates");
     });
 
+    await test("a campsite-type filter is recorded with what it narrowed to", async () => {
+      const r = await post("log?event=campmap-filter&type=rv&sites=5&open=3");
+      assert.strictEqual(r.status, 200, r.body);
+      const rec = events().find(x => x.event === "campmap-filter");
+      assert.ok(rec, "filter not recorded");
+      assert.strictEqual(rec.filterType, "rv");
+      assert.strictEqual(rec.sites, 5);
+      assert.strictEqual(rec.open, 3);
+    });
+
     await test("the share beacon works — it 404'd from PR #140 until the routes moved", async () => {
       const r = await post("share?kind=embed");
       assert.strictEqual(r.status, 200, r.body);
@@ -152,6 +162,15 @@ const CAMPMAP = [
       assert.ok(rec.site.length <= 80, `site not clamped: ${rec.site.length}`);
       assert.ok(rec.state.length <= 20, `state not clamped: ${rec.state.length}`);
       assert.strictEqual(rec.nights, undefined, "an absurd stay length is dropped, not recorded");
+    });
+
+    await test("filter counts are bounded too — they come from the page, not from us", async () => {
+      const r = await post(`log?event=campmap-filter&type=${"y".repeat(200)}&sites=-4&open=999999`);
+      assert.strictEqual(r.status, 200, r.body);
+      const rec = events().filter(x => x.event === "campmap-filter").pop();
+      assert.ok(rec.filterType.length <= 24, `type not clamped: ${rec.filterType.length}`);
+      assert.strictEqual(rec.sites, undefined, "a negative count is dropped");
+      assert.strictEqual(rec.open, undefined, "an absurd count is dropped");
     });
 
     console.log(`\n${passed}/${passed} passing`);

@@ -53,6 +53,7 @@ function slice(from, to) {
 
 const src = [
   slice("function iso(d){", "var MON="),
+  slice("var CANON_KINDS = {", "function kindInfo(k){"),
   slice("function nightStateFrom(v){", "/* ── map setup ── */"),
   slice("function latestCheckoutFrom(dateStr){", "// setStay is the only way"),
 ].join("\n");
@@ -60,18 +61,25 @@ const src = [
 // The globals the sliced code reads. Everything else it needs is in the slice.
 const harness = `
   var SEED = [], AVAIL = {}, AVAIL_WINDOW = {}, SELECTED = null, DEPART = null;
-  var MAX_META_NIGHTS = 14;
-  function siteMeta(){ return { maxNights: MAX_META_NIGHTS }; }
+  var MAX_META_NIGHTS = 14, META_BY_ID = {};
+  // Per-site maxNights when the test sets one, else the org default — siteMeta in
+  // the page resolves area overrides the same way.
+  function siteMeta(s){ return META_BY_ID[s && s.id] || { maxNights: MAX_META_NIGHTS }; }
   function pad(n){ return String(n).padStart(2,'0'); }
+  // sKind reads the live /api/sites overlay in the page; the type it resolves to
+  // is all typeKey needs, so the seed value stands in for it here.
+  function sKind(s){ return s.kind; }
   ${src}
   return {
     nightsOf: nightsOf, stayNights: stayNights, statusOn: statusOn,
-    nightStateFrom: nightStateFrom,
+    nightStateFrom: nightStateFrom, typeKey: typeKey, inView: inView, VIEW: VIEW,
     rangeStatus: rangeStatus, rangeWhy: rangeWhy, latestCheckoutFrom: latestCheckoutFrom,
     set: function(o){ if(o.SEED) SEED = o.SEED; if(o.AVAIL) AVAIL = o.AVAIL;
                       if(o.AVAIL_WINDOW) AVAIL_WINDOW = o.AVAIL_WINDOW;
                       if(o.SELECTED) SELECTED = o.SELECTED; if(o.DEPART) DEPART = o.DEPART;
-                      if(o.maxNights != null) MAX_META_NIGHTS = o.maxNights; },
+                      if(o.maxNights != null) MAX_META_NIGHTS = o.maxNights;
+                      if(o.meta) META_BY_ID = o.meta;
+                      if(o.type !== undefined) TYPE_FILTER = o.type; },
   };
 `;
 const M = new Function(harness)();
@@ -83,6 +91,7 @@ function test(name, fn) { fn(); console.log(`  ✓ ${name}`); passed++; }
 const SITE = { id: "s1", n: 1 };
 function stay(arrive, depart, nights, win) {
   M.set({
+    type: "all",
     SEED: [SITE],
     AVAIL: { s1: nights },
     AVAIL_WINDOW: { s1: win || {} },
@@ -201,7 +210,48 @@ test("with no window in the feed, it falls back to the configured max stay", () 
   assert.strictEqual(M.latestCheckoutFrom("2026-09-01"), "2026-09-06");
 });
 
-// ── 5. a whole-stay verdict needs every night ───────────────────────────────
+// ── 5. the campsite-type filter ─────────────────────────────────────────────
+test("rec.us's four campsite types are matched exactly, not by substring", () => {
+  // 'rv' contains no 'tent', but 'tent-and-rv' contains 'rv' — the substring
+  // rules this replaced answered "Tent & RV" for an RV-only site, which is the
+  // one answer a tent camper must never be given.
+  const k = s => M.typeKey({ id: "x", kind: s });
+  assert.strictEqual(k("rv"), "rv");
+  assert.strictEqual(k("tent-and-rv"), "tent-and-rv");
+  assert.strictEqual(k("tent"), "tent");
+  assert.strictEqual(k("lodging"), "lodging");
+  // Ours, not Rec's: Pleasant Hill's campsites carry sub_type NULL, so these are
+  // derived from the description and must survive.
+  assert.strictEqual(k("electric"), "electric");
+  assert.strictEqual(k("primitive"), "primitive");
+});
+
+test("a selected type narrows the set every count and list reads from", () => {
+  const tent = { id: "t", n: 1, kind: "tent" };
+  const rv   = { id: "r", n: 2, kind: "rv" };
+  M.set({ type: "all", SEED: [tent, rv], AVAIL: {}, AVAIL_WINDOW: {} });
+  assert.strictEqual(M.VIEW().length, 2);
+  M.set({ type: "rv" });
+  assert.deepStrictEqual(M.VIEW().map(x => x.id), ["r"]);
+  assert.strictEqual(M.inView(tent), false);
+  assert.strictEqual(M.inView(rv), true);
+});
+
+test("the checkout bound comes from the sites in view, not the ones filtered out", () => {
+  // Otherwise picking "tent only" still offers the 14-night checkout that only
+  // the lodging units allow, and rec.us then refuses the stay the picker offered.
+  const tent = { id: "t", n: 1, kind: "tent" };
+  const lodge = { id: "l", n: 2, kind: "lodging" };
+  M.set({ type: "all", SEED: [tent, lodge], AVAIL: {}, AVAIL_WINDOW: {},
+          meta: { t: { maxNights: 3 }, l: { maxNights: 14 } } });
+  M.set({ type: "lodging" });
+  assert.strictEqual(M.latestCheckoutFrom("2026-09-01"), "2026-09-15");
+  M.set({ type: "tent" });
+  assert.strictEqual(M.latestCheckoutFrom("2026-09-01"), "2026-09-04",
+    "3 nights — the tent sites' own limit, not the lodging units'");
+});
+
+// ── 6. a whole-stay verdict needs every night ───────────────────────────────
 test("one unavailable night is enough to stop calling the stay open", () => {
   const nights = {};
   for (let i = 1; i <= 14; i++) nights["2026-09-" + String(i).padStart(2, "0")] = "avail";

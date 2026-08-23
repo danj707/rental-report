@@ -508,6 +508,84 @@ it back was surfacing it, not rebuilding it.
   caught it: server.js parses, the server boots, the page renders, the client code
   is correct, and a fire-and-forget beacon never complains.
 
+## Campsite type filter — rec.us's four values, and where they actually live (2026-08-23)
+
+The public map's top bar carries a **Campsite Type** control beside the dates.
+The four options are rec.us's own, and they are not a guess — `court.sub_type`
+carries a CHECK constraint:
+
+```sql
+CHECK (sub_type = ANY (ARRAY['tent','rv','tent-and-rv','lodging']))
+```
+
+which is exactly the admin dropdown (Tent Only / RV Only / Tent & RV / Lodging).
+**Match them EXACTLY, and before the substring rules.** The old `kindInfo` tested
+`k.indexOf('rv')>=0` first, so an **RV-only** site was labelled "Tent & RV" — the
+one answer a tent camper must never be given. `typeKey()` and `CANON_KINDS` now
+match exact values first; `scripts/campmap-stay.spec.js` fails on the revert.
+
+Platform-wide today (db 4, `type='campsite'`, 64 sites):
+
+| sub_type | sites | orgs |
+|---|---|---|
+| `tent-and-rv` | 42 | 2 (all 41 of Douglas/Topaz + 1 test) |
+| NULL | 16 | 3 (incl. **all 12 Pleasant Hill**) |
+| `tent` | 5 | 4 |
+| `lodging` | 1 | 1 |
+| `rv` | **0** | — |
+
+Two consequences worth knowing before reading the control as broken:
+
+- **Topaz Lake is uniformly `tent-and-rv`, so the control shows ONE type there.**
+  When a campground is all one type the select renders **disabled**, naming what
+  the sites are rather than implying a choice. It lights up on its own the day
+  the county varies them — nothing to configure. What actually varies at Topaz is
+  **max trailer length (26–60 ft, 18 distinct values)** and rate ($30 ×26 / $40
+  ×15); a rig-length filter is the natural companion and is not built.
+- **`electric` / `primitive` are OURS, not Rec's.** Pleasant Hill's 12 campsites
+  carry `sub_type` NULL, so `sKind()` derives those two from the site
+  description. They stay in the canonical table because they are how those sites
+  genuinely differ — but do not mistake them for rec.us values.
+
+`TYPE_FILTER` + `VIEW()` are the whole mechanism: **everything that counts, lists
+or paints reads `VIEW()`, never `SEED`** — markers, the site list, the "N of M
+open" line, and `latestCheckoutFrom()`. That last one matters: scoped to the
+filter, so picking "tent only" cannot offer a checkout only a lodging unit
+allows. Filtered-out pins come OFF the map rather than being dimmed (a greyed pin
+is indistinguishable from an unavailable one); the open drawer's own site stays
+on. The filter is deliberately **not** persisted — it is a search intent, not a
+layout preference, and a camper returning to a silently narrowed map would read a
+subset as the whole campground. `EDIT` mode ignores it entirely.
+
+### The live site feed was truncating campsites away entirely
+
+`/:org/rentalcalendar/api/sites` asked the Rec MCP for **one page of 100**.
+Douglas County has **194 courts**, so its 41 campsites fell off the end:
+`loadSites()` threw `no live sites matched` and `/douglas-county-nv/campmap` ran
+**entirely on its baked seed** — no live `sub_type`, price, capacity, amenities or
+nightly policy, ever. Nothing complained; the page renders fine on the seed.
+
+Fixed two ways: the route accepts `?types=campsite` (forwarded as the MCP's
+`siteTypes`, validated against the tool's enum) and its page size is 250. campmap
+asks for `types=campsite` because it only ever plots campsites. Guarded by the
+`campmap · type filter` case in `ci-check-render.js`, whose fixture assigns
+sub_types the seed does not have — so the case passes only if the LIVE overlay
+landed and rebuilt the options from Rec's value.
+
+### And the Depart picker was stale until you touched it
+
+Same session, same area: `setStay()` derives the Depart field's `max` from
+rec.us's `latestCheckout`, but `loadAvailability()` only repainted — it never
+re-ran `setStay`. So between boot and the first interaction the picker offered the
+**fallback** bound (the org's configured max stay, 14 nights at Topaz) instead of
+rec.us's answer, i.e. a checkout rec.us had already said it would refuse. That is
+the "but it said it was free" the asymmetric cap exists to prevent. It now re-runs
+`setStay(SELECTED, DEPART)` when availability lands.
+
+Activity: `campmap-filter` (🔎) posts the type chosen plus what it found
+(`sites`, `open`), debounced **by type** — someone trying tent-only then RV-only
+is telling us two things. Covered by `scripts/campmap-beacons.spec.js`.
+
 ## Campmap activity tracking — route order is the whole trap (2026-08-23)
 
 **Anything campmap-specific must be registered BEFORE the generic
