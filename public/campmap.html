@@ -177,23 +177,6 @@ body{font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica
 .amen-list{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px}
 .amen-list .a{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;background:#f3f4f6;border-radius:7px;padding:4px 9px;color:#374151}
 .sec-h{font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);font-weight:700;margin:6px 0 8px}
-.mini-cal{border:1px solid var(--line);border-radius:10px;padding:10px;margin-bottom:16px}
-.mini-cal .mc-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
-.mini-cal .mc-head b{font-size:13px}
-.mini-cal .mc-nav{background:none;border:1px solid var(--line);border-radius:6px;width:26px;height:26px;cursor:pointer;color:#374151}
-.mini-cal .mc-nav:hover{background:#f3f4f6}
-.mc-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:3px}
-.mc-grid .wd{font-size:9.5px;text-align:center;color:var(--muted);font-weight:600;padding-bottom:2px}
-.mc-cell{aspect-ratio:1;display:flex;align-items:center;justify-content:center;font-size:11px;border-radius:6px;cursor:pointer;position:relative}
-.mc-cell.pad{cursor:default}
-.mc-cell.av{background:var(--avail-bg);color:#166534;font-weight:600}
-.mc-cell.bk{background:var(--booked-bg);color:#991b1b;text-decoration:line-through;opacity:.85}
-.mc-cell.bl{background:var(--blocked-bg);color:#334155;font-weight:600}
-.mc-cell.un{background:#f9fafb;color:#9ca3af}
-.mc-cell.past{opacity:.35;cursor:default}
-.mc-cell.today{outline:2px solid var(--accent);outline-offset:-2px}
-.mc-cell.sel{outline:2px solid var(--sel);outline-offset:-2px;font-weight:800}
-.mc-cell:not(.pad):not(.past):hover{filter:brightness(.94)}
 .book-btn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;padding:13px;background:var(--accent);color:#fff;text-decoration:none;border-radius:10px;font-size:15px;font-weight:700;transition:filter .12s}
 .book-btn:hover{filter:brightness(1.08)}
 .book-note{font-size:11px;color:var(--muted);text-align:center;margin-top:8px}
@@ -841,8 +824,8 @@ function renderFoot(){
   var ba=CFG.bookAhead;
   if(!ba || !ba.url){ el.innerHTML=''; return; }
   el.innerHTML='<a class="sl-more" id="bookAhead" href="'+ba.url+'" target="_blank" rel="noopener noreferrer">'
-    +'<span class="m-h">Looking further ahead?</span>'
-    +'<span class="m-b">We can show the next '+DAYS_SHOWN+' nights. Book later dates on rec.us'
+    +'<span class="m-h">Looking for campsite dates more than '+DAYS_SHOWN+' days out?</span>'
+    +'<span class="m-b">Click to book directly on rec.us'
     +(ba.contact ? ', or call the '+ba.contact : '')+'.</span></a>';
   var a=document.getElementById('bookAhead');
   if(a) a.onclick=function(){ ping('campmap-book', { kind:'later-dates' }); };
@@ -1071,8 +1054,10 @@ function setStay(arrive, depart){
   refreshMarkers(); updateSummary(); renderList();
   fetchWeather();
 }
-// Kept so older callers (the mini-calendar cells, the deep-link handler) still
-// work: start a one-night stay on this date and wait for a checkout click.
+// Kept for the deep-link handler (?date=): start a stay on this date, holding the
+// current trip length. The drawer's month grid used to call it too; that grid is
+// gone — the per-night strip above the site's details answers the same question
+// for the stay actually in the bar, and two calendars could disagree.
 function setDate(ds){ setStay(ds, iso(addDays(new Date(ds+'T00:00:00'), stayNights().length))); }
 
 // The arrows scroll the strip. They are not a second way to change the stay:
@@ -1092,7 +1077,7 @@ document.getElementById('listTog').onclick=function(){ toggleList(); };
 document.getElementById('typePick').onchange=function(){ setTypeFilter(this.value); };
 
 /* ── detail drawer ── */
-var galleryIdx=0, calMonth=null;
+var galleryIdx=0;
 // Fire-and-forget activity beacon. Same shape as the rentalcalendar's map-pin
 // ping (keepalive, errors swallowed) — logging must never break the map, and a
 // camper closing the tab must not lose the event.
@@ -1113,7 +1098,7 @@ function openSite(site){
   ping('campmap-site', { site: shortName(site), state: r.state, nights: r.total });
 
   selectedId=site.id; refreshMarkers();
-  galleryIdx=0; calMonth=new Date(SELECTED+'T00:00:00'); calMonth.setDate(1);
+  galleryIdx=0;
   renderGallery(site); renderBody(site);
   document.getElementById('drawer').classList.add('open');
   document.getElementById('scrim').classList.add('on');
@@ -1192,14 +1177,14 @@ function renderBody(site){
   if(site.maxTrailer) body+='<div><div class="k">Max trailer</div><div class="v">'+site.maxTrailer+' ft</div></div>';
   if(meta.maxNights) body+='<div><div class="k">Max stay</div><div class="v">'+meta.maxNights+' nights</div></div>';
   body+='</div>';
-  body+='<div class="sec-h">Amenities</div><div class="amen-list">'+amens+'</div>';
-  body+='<div class="sec-h">Availability</div>'+miniCalHtml(site);
+  // With the month grid gone, Amenities is the last section before the Book
+  // button — so an empty one would leave a bare heading sitting on top of it.
+  if(amens) body+='<div class="sec-h">Amenities</div><div class="amen-list">'+amens+'</div>';
   body+='<a class="book-btn" id="bookBtn" href="'+sBook(site)+'" target="_blank" rel="noopener">🏕️ Book on rec.us</a>';
   var noteTxt = EDIT ? 'Drag the pin on the map to reposition it; unsaved changes show in the edit bar.'
-    : site.placed ? 'Pin position set by admin.'
-    : site.approx ? 'Approximate position — not yet placed on the map.'
-    : 'Location from rec.us.';
-  body+='<div class="book-note">'+noteTxt+'</div>';
+    : (site.approx && !site.placed) ? 'Approximate position — not yet placed on the map.'
+    : '';
+  if(noteTxt) body+='<div class="book-note">'+noteTxt+'</div>';
   var el=document.getElementById('dbody');
   el.innerHTML=body;
   var pr=document.getElementById('pinReset');
@@ -1210,38 +1195,6 @@ function renderBody(site){
   if(bk) bk.onclick=function(){
     ping('campmap-book', { site: shortName(site), nights: stayNights().length });
   };
-  wireMiniCal(site);
-}
-
-function miniCalHtml(site){
-  var y=calMonth.getFullYear(), mo=calMonth.getMonth();
-  var first=new Date(y,mo,1), startDow=first.getDay();
-  var days=new Date(y,mo+1,0).getDate();
-  var h='<div class="mini-cal"><div class="mc-head"><button class="mc-nav" data-d="-1">‹</button><b>'+MON[mo]+' '+y+'</b><button class="mc-nav" data-d="1">›</button></div><div class="mc-grid">';
-  ['S','M','T','W','T','F','S'].forEach(function(w){ h+='<div class="wd">'+w+'</div>'; });
-  for(var p=0;p<startDow;p++) h+='<div class="mc-cell pad"></div>';
-  for(var day=1;day<=days;day++){
-    var ds=y+'-'+pad(mo+1)+'-'+pad(day);
-    var cls='mc-cell';
-    // Outside our availability window (past, or beyond the ~30-day feed) → render
-    // as a faint, non-interactive out-of-range cell rather than an "unknown" verdict.
-    if(ds<TODAY_ISO || ds>MAX_ISO){ cls+=' past'; }
-    else { var st=statusOn(site,ds); cls+= st==='avail'?' av':st==='booked'?' bk':st==='blocked'?' bl':' un'; }
-    if(ds===TODAY_ISO) cls+=' today';
-    if(ds===SELECTED) cls+=' sel';
-    h+='<div class="'+cls+'" data-ds="'+ds+'">'+day+'</div>';
-  }
-  h+='</div><div style="font-size:10.5px;color:var(--muted);margin-top:7px;display:flex;gap:12px;flex-wrap:wrap"><span>🟩 Open</span><span>🟥 Not available</span><span><span style="color:var(--blocked)">◼</span> Stay length</span></div></div>';
-  return h;
-}
-function wireMiniCal(site){
-  document.querySelectorAll('.mini-cal .mc-nav').forEach(function(b){
-    b.onclick=function(){ calMonth.setMonth(calMonth.getMonth()+parseInt(this.dataset.d)); renderBody(site); };
-  });
-  document.querySelectorAll('.mini-cal .mc-cell').forEach(function(c){
-    if(c.classList.contains('pad')||c.classList.contains('past'))return;
-    c.onclick=function(){ setDate(this.dataset.ds); };
-  });
 }
 
 /* ── weather (best-effort, weather.gov) ── */

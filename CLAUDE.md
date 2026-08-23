@@ -510,6 +510,42 @@ it back was surfacing it, not rebuilding it.
   caught it: server.js parses, the server boots, the page renders, the client code
   is correct, and a fire-and-forget beacon never complains.
 
+## The campmap site drawer had TWO calendars — one is gone (Dan, 2026-08-23)
+
+The drawer showed a per-night strip for the stay in the bar AND a whole-month
+mini-calendar under "Availability". Dan: "the bottom one isn't needed. remove
+it." It is gone (`miniCalHtml`, `wireMiniCal`, `calMonth` and their CSS), and the
+per-night strip stays — it answers the question for the stay actually being
+searched, and two calendars in one panel are two things that can disagree.
+
+`setDate()` survives for the `?date=` deep link, which was its other caller.
+And Amenities is now the last section before the Book button, so it is skipped
+when a site has no amenity tags rather than leaving a bare heading on top of it.
+
+**Also gone: the "Pin position set by admin." caption**, which Dan flagged as
+strange — because it is plumbing talk on a camper-facing page, and so was
+"Location from rec.us." A pin in the right place needs no caption. The note now
+appears only in EDIT mode, or when the position is genuinely approximate
+(`approx && !placed`), which is the one case a camper benefits from knowing.
+
+**The hand-off link is per-org in `campmap-seeds.json` (`bookAhead`) and it is
+worth pointing at the campsite-filtered tab**, not the location-filtered one:
+Douglas is now
+`https://www.rec.us/organizations/douglas-county-nv?tab=facilityRentals&siteType=campsite`
+(verified 200). Copy reads "Looking for campsite dates more than 30 days out? /
+Click to book directly on rec.us, or call the …" — the day count comes from
+`DAYS_SHOWN`, so it stays true if the horizon ever moves.
+
+### Kill stray local servers before driving a page (cost me a wrong "verified")
+
+The drive scripts used a FIXED port, and a leftover `node server.js` from an
+earlier run answered on it — so a run that reported the hand-off href showed the
+**old** URL, minutes after the seed had been changed, and a fresh boot proved the
+new one. A stale server is indistinguishable from a code failure in the output.
+Bind a per-run port (or `pkill -f "node .*server.js"` first) and re-check
+anything a leftover could have answered. This is the same warning as the timing
+caveat in the health-check section, with teeth.
+
 ## Campsite type filter — rec.us's four values, and where they actually live (2026-08-23)
 
 The public map's top bar carries a **Campsite Type** control beside the dates.
