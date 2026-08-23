@@ -461,12 +461,26 @@ court ids, so the two sides join on identity — no display-name matching, which
 what makes the rentalcalendar overlay fragile. Needs `MB_API_KEY`; without it the
 script fails rather than reporting a pass it cannot back.
 
-Result 2026-08-23, 1,271 site-nights at Topaz Lake: **99.45% agreement, and ZERO
-nights offered while a live reservation covers them.** The 7 diffs are all in the
-safe direction (map says unavailable, ledger free) — two on the last enumerated
-night where no checkout exists inside the window, the rest same-day/release-time
-cutoffs. An unpaid hold counts as occupied by default; `--ignore-unpaid-holds`
+Result 2026-08-23 (PR #143 preview, Dan's pre-merge gate), 1,271 site-nights at
+Topaz Lake: **100.00% agreement — 1,271 of 1,271, zero diffs in EITHER
+direction.** All 456 site-nights the ledger calls unbookable are blocked on the
+map, and no night the map offers is covered by a live reservation. 13 random
+sample ranges (8 fully bookable, 5 partial) were all clear, and in every partial
+case each withheld night was backed by a real reservation. An unpaid hold counts
+as occupied by default (386 of the 456 are holds); `--ignore-unpaid-holds`
 measures how much of any gap they are.
+
+**THE NIGHT RULE IS THE WHOLE MEASUREMENT — get it wrong and you invent diffs.**
+An earlier run of this script reported 99.45% and 7 "safe" diffs (map blocks,
+ledger free). That was not the map: the script used
+`lower::date .. upper::date - 1`, and Topaz has reservations ending at **23:00**
+rather than the 11:00 checkout, so the final DAY is still occupied and nobody else
+can arrive on it. rec.us was right both times. The rule is now the arrival window
+— a night N is unbookable if a reservation overlaps
+`[N + checkIn .. N+1 + checkOut)` — with `--check-in-hour` / `--check-out-hour`
+for orgs on other times. That is the second measurement error in this backtest to
+survive being reported as a finding; check what a diff *means* before calling it
+one.
 
 **Correction worth remembering:** an earlier pass reported "3 dangerous diffs"
 where the map supposedly offered held nights. That was a classification error on

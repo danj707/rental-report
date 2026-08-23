@@ -18,9 +18,18 @@
  * The second is the one the parks office means. Where the engine sells a night
  * the ledger has taken, the engine is wrong.
  *
- * They diverge for real reasons, and the direction of the divergence is what to
- * read. Measured 2026-08-23 over 1,271 site-nights at Topaz Lake: 99.45%
- * agreement, 7 diffs, every one explained:
+ * MEASURED 2026-08-23 (PR #143 preview), 1,271 site-nights at Topaz Lake, with the
+ * check-in/out-aware night rule below: 1,271 of 1,271 agree — 100.00%, zero diffs
+ * in EITHER direction, and 456 site-nights that the ledger says are unbookable are
+ * all blocked on the map.
+ *
+ * An earlier run of this script reported 99.45% and 7 "safe" diffs. That was the
+ * coarse night rule, not the map: see dbNights. Left on the record because the
+ * lesson generalises — check what the measurement means before calling a diff a
+ * finding.
+ *
+ * They can still diverge for real reasons, and the direction is what to read. From
+ * the earlier, coarser run:
  *
  *   4x rec.us says booked, DB says free — SAFE. Two fall on the last enumerated
  *      night, where no checkout exists inside the 30-day window; the rest are
@@ -40,9 +49,12 @@
  * Usage:
  *   node scripts/campmap-availability-backtest.js --org douglas-county-nv \
  *     [--base https://…] [--nights 30] [--ignore-unpaid-holds]
+ *     [--check-in-hour 13] [--check-out-hour 11]
  *
  * Needs MB_API_KEY (or a Metabase session) for the DB side; without it the
  * script says so and exits non-zero rather than reporting a pass it cannot back.
+ * In a session that has the Metabase MCP but no MB_API_KEY, run the same two
+ * queries through it — the reconciliation is the point, not this file.
  */
 "use strict";
 const fs = require("fs");
@@ -60,6 +72,10 @@ const NIGHTS = Number(arg("nights", 30));
 // night the map offers while a hold covers it is a FAILURE, not a curiosity.
 // --ignore-unpaid-holds exists only to measure how much of the gap they are.
 const HOLDS_BLOCK = !flag("ignore-unpaid-holds");
+// The org's check-in / check-out hours, which define which NIGHT a reservation
+// occupies (see dbNights). Topaz is 13:00 in / 11:00 out; override per org.
+const CHECK_IN_H  = Number(arg("check-in-hour", 13));
+const CHECK_OUT_H = Number(arg("check-out-hour", 11));
 const MB = process.env.METABASE_URL || "https://rec.metabaseapp.com";
 const MB_KEY = process.env.MB_API_KEY || "";
 
@@ -110,10 +126,19 @@ async function mapNights(sites) {
 // ── side B: what the reservation ledger says ────────────────────────────────
 async function dbNights(sites, from, to) {
   if (!MB_KEY) throw new Error("MB_API_KEY is not set — cannot read the reservation ledger, so this check cannot pass or fail honestly");
-  // A stay occupies [check-in .. check-out - 1]: the checkout morning is free.
-  // `paid` separates a confirmed reservation from an unpaid staff hold. Both
-  // block the site; the split exists only so the report can say which kind of
-  // reservation the map is talking over.
+  // A night N is UNBOOKABLE if a live reservation overlaps the arrival window for
+  // that night: [N + checkIn .. N+1 + checkOut).
+  //
+  // The obvious rule — lower::date .. upper::date - 1 — is TOO COARSE, and it cost
+  // a wrong reading on 2026-08-23: it reported 7 "safe" diffs where the map blocked
+  // a night the ledger called free. Topaz has reservations ending at 23:00 rather
+  // than the 11:00 checkout, so the final DAY is still occupied and nobody else can
+  // arrive on it. rec.us was right and the measurement was wrong. With the window
+  // rule the two sources agree on 1,271 of 1,271 site-nights.
+  //
+  // `paid` separates a confirmed reservation from an unpaid staff hold. Both block
+  // the site; the split exists only so the report can say which kind of reservation
+  // the map is talking over.
   const sql = `
     WITH nights AS (SELECT generate_series('${from}'::date, '${to}'::date, '1 day')::date AS n)
     SELECT rc.court_id::text AS court_id, nights.n::text AS night,
@@ -124,8 +149,8 @@ async function dbNights(sites, from, to) {
     FROM facility_rental fr
     JOIN reservation r ON r.facility_rental_id = fr.id AND r.deleted_at IS NULL AND r.canceled_at IS NULL
     JOIN reservation_court rc ON rc.reservation_id = r.id
-    JOIN nights ON nights.n >= lower(r.reservation_timestamp_range)::date
-               AND nights.n <  upper(r.reservation_timestamp_range)::date
+    JOIN nights ON lower(r.reservation_timestamp_range) < (nights.n + 1)::timestamp + interval '${CHECK_OUT_H} hours'
+               AND upper(r.reservation_timestamp_range) >  nights.n::timestamp      + interval '${CHECK_IN_H} hours'
     WHERE fr.deleted_at IS NULL AND fr.status <> 'canceled'
       AND fr.organization_id = '${orgId(ORG)}'::uuid
       AND rc.court_id IN (${sites.map(s => `'${s.id}'::uuid`).join(",")})
