@@ -311,10 +311,12 @@ service **rental-report** (`7ee6e149-bd03-41db-bd42-aa8a751b1000`).
   `https://rental-report-rental-report-pr-<PR#>.up.railway.app`
   (e.g. PR #29 → https://rental-report-rental-report-pr-29.up.railway.app)
 - After opening a PR, confirm the preview actually boots and hand Dan the URL.
-  NOTE: the session sandbox's outbound proxy blocks `*.up.railway.app` (CONNECT
-  403), so I cannot curl the preview to verify it. Verify boot via Railway
-  `list-deployments` on the PR environment instead — status `SUCCESS` means it's
-  up for Dan's browser even though I can't reach it.
+  **The sandbox CAN curl `*.up.railway.app` — fetch the preview and check the
+  served HTML.** This note used to claim the proxy blocked it (CONNECT 403); that
+  was wrong, and believing it meant skipping live verification more than once.
+  Railway `list-deployments` on the PR environment tells you WHICH commit is
+  serving (a `SUCCESS` for an older commit looks identical to one for yours), so
+  use both: deployments for the commit, curl for the behaviour.
 
 ## Admin "What's New" popup — REMOVED from admin (PR #134)
 
@@ -538,8 +540,9 @@ Two consequences worth knowing before reading the control as broken:
 
 - **Topaz Lake is uniformly `tent-and-rv`, so the control shows ONE type there.**
   When a campground is all one type the select renders **disabled**, naming what
-  the sites are rather than implying a choice. It lights up on its own the day
-  the county varies them — nothing to configure. What actually varies at Topaz is
+  the sites are rather than implying a choice. **It does NOT light up on its own
+  when someone varies the types in the admin** — see the next section; the seed
+  has to be updated too. What actually varies at Topaz is
   **max trailer length (26–60 ft, 18 distinct values)** and rate ($30 ×26 / $40
   ×15); a rig-length filter is the natural companion and is not built.
 - **`electric` / `primitive` are OURS, not Rec's.** Pleasant Hill's 12 campsites
@@ -557,6 +560,25 @@ on. The filter is deliberately **not** persisted — it is a search intent, not 
 layout preference, and a camper returning to a silently narrowed map would read a
 subset as the whole campground. `EDIT` mode ignores it entirely.
 
+### The filter reads the SEED, because Rec's API does not expose sub_type
+
+Verified on the PR #143 preview, 2026-08-23: `/douglas-county-nv/rentalcalendar/api/sites?types=campsite`
+returns **41 campsites, `subType: null` on every one** (and `bookingUnit: null`),
+while `court.sub_type` in db 4 says `tent-and-rv` for all 41. The MCP
+`list_sites` payload has **no `subType` key at all** — `sKind()` prefers
+`l.subType` and it is simply never there.
+
+So the filter's options come from `campmap-seeds.json`'s hand-maintained `kind`,
+which happens to agree with the database today (Douglas `tent-and-rv` ×41;
+Pleasant Hill's real value is NULL, so our derived electric/primitive is the only
+signal that exists for it). **Consequence to say out loud: changing Campsite Type
+in the rec.us admin will NOT change this map.** Either the seed's `kind` is
+updated to match, or the platform starts returning `subType` from `list_sites`.
+Worth raising with whoever owns the sites API — `capacity`, `priceCents` and the
+nightly policy all come through, so the field is an omission rather than a
+limitation. Nothing in the app can detect the drift: there is no runtime DB
+access, and a wrong `kind` renders perfectly.
+
 ### The live site feed was truncating campsites away entirely
 
 `/:org/rentalcalendar/api/sites` asked the Rec MCP for **one page of 100**.
@@ -570,7 +592,9 @@ Fixed two ways: the route accepts `?types=campsite` (forwarded as the MCP's
 asks for `types=campsite` because it only ever plots campsites. Guarded by the
 `campmap · type filter` case in `ci-check-render.js`, whose fixture assigns
 sub_types the seed does not have — so the case passes only if the LIVE overlay
-landed and rebuilt the options from Rec's value.
+landed and rebuilt the options from it. Note that is the code PATH being covered:
+in production the real feed omits `subType` (above), so the seed's `kind` is what
+the options are actually built from.
 
 ### And the Depart picker was stale until you touched it
 

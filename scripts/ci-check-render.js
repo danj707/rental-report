@@ -210,9 +210,10 @@ const CASES = [
   // date fields replaced it.)
   { name: "campmap · stay search", path: "/{org}/campmap",                needs: "#departPick[max]" },
   // The Campsite Type filter. `option[value="tent-and-rv"]` is only there if the
-  // LIVE site feed landed and buildTypeFilter() re-ran off Rec's sub_type — the
+  // LIVE site feed landed and buildTypeFilter() re-ran off its subType — the
   // seed's own kinds are electric/primitive — so this covers the overlay path as
-  // well as the control rendering at all.
+  // well as the control rendering at all. It is the code path being covered: the
+  // real Rec feed omits subType, so in production the options come from the seed.
   { name: "campmap · type filter", path: "/{org}/campmap",                needs: "#typePick option[value=\"tent-and-rv\"]" },
 ];
 

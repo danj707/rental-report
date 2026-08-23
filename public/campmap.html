@@ -488,6 +488,11 @@ var SITES_LIVE = false;
 function L_(s){ return LIVE_BY_ID[s.id] || null; }
 function shortName(s){ return 'Site '+pad(s.n); }
 function sName(s){ var l=L_(s); return (l && (l.courtNumber||l.name)) || s.name; }
+/* NOTE (verified on the PR #143 preview, 2026-08-23): the live /api/sites payload
+   carries NO subType — Rec's list_sites omits the field, even though court.sub_type
+   is populated in the database. So in practice this falls through to the seed's
+   own `kind`, and varying Campsite Type in the rec.us admin will not move this
+   map until the seed is updated (or the API starts returning it). */
 function sKind(s){ var l=L_(s);
   if(l){ if(l.subType) return l.subType; if(l.description){ if(/primitive/i.test(l.description)) return 'primitive'; if(/electric/i.test(l.description)) return 'electric'; } }
   return s.kind || 'campsite';
