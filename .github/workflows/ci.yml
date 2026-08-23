@@ -64,6 +64,9 @@ jobs:
       - name: Watchdog switches spec (OFF means off everywhere)
         run: node scripts/watchdog-flags.spec.js
 
+      - name: Campmap beacon spec (routes registered before the generic ones; events recorded)
+        run: node scripts/campmap-beacons.spec.js
+
       - name: Campmap stay spec (checkout night is free; arrivals capped, checkouts not)
         run: node scripts/campmap-stay.spec.js
 

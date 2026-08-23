@@ -757,11 +757,10 @@ function buildChips(){
     more.innerHTML='<div class="m-h">Later dates?</div>'
       +'<div class="m-b">We can show '+DAYS_SHOWN+' nights. Book further ahead on rec.us'
       +(ba.contact ? ', or call the '+ba.contact : '')+'.</div>';
-    more.onclick=function(){
-      // Same fire-and-forget beacon the Copy-link button uses, so the handoff
-      // shows up in the Slack activity feed like every other surface.
-      try{ fetch('/'+CFG.slug+'/campmap/api/share?kind=book-ahead',{method:'POST',keepalive:true}); }catch(_){}
-    };
+    // Leaving for rec.us because the dates they want are past what we can show.
+    // This used to post to /api/share?kind=book-ahead, which normalises kind to
+    // embed|link — so a booking hand-off was recorded as a link copy.
+    more.onclick=function(){ ping('campmap-book', { kind:'later-dates' }); };
     wrap.appendChild(more);
   }
 }
@@ -909,7 +908,25 @@ document.getElementById('resetStay').onclick=function(){
 
 /* ── detail drawer ── */
 var galleryIdx=0, calMonth=null;
+// Fire-and-forget activity beacon. Same shape as the rentalcalendar's map-pin
+// ping (keepalive, errors swallowed) — logging must never break the map, and a
+// camper closing the tab must not lose the event.
+function ping(event, params){
+  try{
+    var qs = Object.keys(params||{}).filter(function(k){ return params[k]!=null && params[k]!==''; })
+      .map(function(k){ return k+'='+encodeURIComponent(params[k]); }).join('&');
+    fetch('/'+CFG.slug+'/campmap/api/log?event='+event+(qs?'&'+qs:''),
+          { method:'POST', keepalive:true }).catch(function(){});
+  }catch(_){ /* never let logging break the map */ }
+}
+
 function openSite(site){
+  // What a camper opened, and whether it could actually take the stay they were
+  // looking at. "Opened Site 12" is trivia; "opened Site 12, free for their 3
+  // nights" says whether the map is answering the question.
+  var r = rangeStatus(site);
+  ping('campmap-site', { site: shortName(site), state: r.state, nights: r.total });
+
   selectedId=site.id; refreshMarkers();
   galleryIdx=0; calMonth=new Date(SELECTED+'T00:00:00'); calMonth.setDate(1);
   renderGallery(site); renderBody(site);
@@ -991,7 +1008,7 @@ function renderBody(site){
   body+='</div>';
   body+='<div class="sec-h">Amenities</div><div class="amen-list">'+amens+'</div>';
   body+='<div class="sec-h">Availability</div>'+miniCalHtml(site);
-  body+='<a class="book-btn" href="'+sBook(site)+'" target="_blank" rel="noopener">🏕️ Book on rec.us</a>';
+  body+='<a class="book-btn" id="bookBtn" href="'+sBook(site)+'" target="_blank" rel="noopener">🏕️ Book on rec.us</a>';
   var noteTxt = EDIT ? 'Drag the pin on the map to reposition it; unsaved changes show in the edit bar.'
     : site.placed ? 'Pin position set by admin.'
     : site.approx ? 'Approximate position — not yet placed on the map.'
@@ -1001,6 +1018,12 @@ function renderBody(site){
   el.innerHTML=body;
   var pr=document.getElementById('pinReset');
   if(pr) pr.onclick=function(){ var b=DEFAULT_COORDS[site.id]; if(b){ site.lat=b.lat; site.lng=b.lng; site.placed=false; if(markers[site.id]) markers[site.id].setLatLng([b.lat,b.lng]); } refreshDirty(); refreshMarkers(); renderBody(site); };
+  // Rewired on every render, because this function replaces the drawer's HTML —
+  // a handler attached once would be lost the moment the stay changed.
+  var bk=document.getElementById('bookBtn');
+  if(bk) bk.onclick=function(){
+    ping('campmap-book', { site: shortName(site), nights: stayNights().length });
+  };
   wireMiniCal(site);
 }
 

@@ -496,6 +496,46 @@ it back was surfacing it, not rebuilding it.
 - Copying the link fires `campmap-share` (Slack), per the standing activity rule.
   Public page views already logged `view`, so camper traffic was pinging Slack
   even while the report was retired.
+- **CORRECTION (2026-08-23): that share ping never actually fired.** The route was
+  declared ~4,400 lines BELOW the generic `/:org/:report/api/log|share`, and
+  Express matches in registration order — so every call hit the generic route,
+  which runs `resolveOrg` and 404s any report outside `REPORT_TYPES`. campmap is
+  deliberately not one, which is the very reason the dedicated route exists. It
+  returned `404 Unknown report: "campmap"` from the day PR #140 merged. Nothing
+  caught it: server.js parses, the server boots, the page renders, the client code
+  is correct, and a fire-and-forget beacon never complains.
+
+## Campmap activity tracking — route order is the whole trap (2026-08-23)
+
+**Anything campmap-specific must be registered BEFORE the generic
+`/:org/:report/api/*` routes**, not near the other campmap handlers further down
+server.js. See the correction above for what happens otherwise.
+
+Events, all on `POST /:org/campmap/api/log?event=…` (allowlisted, every string
+clamped — the page is public and un-tokened):
+
+| event | fired by | extra |
+|---|---|---|
+| `campmap-site` | opening a campsite | `site`, `state` (avail/partial/booked/blocked), `nights` |
+| `campmap-book` | the site's **Book on rec.us** button | `site`, `nights` |
+| `campmap-book` | the hand-off card past the 30-night strip | `kind: "later-dates"` |
+| `campmap-share` | Copy link / Copy embed on the Camping tab | `kind: link|embed` |
+
+Both debounce **by site**, the same decision as the rentalcalendar's map pins: a
+camper comparing six sites should read as six in the feed, not as whichever one
+they opened first.
+
+`campmap-site` carries the stay verdict on purpose — "opened Site 12" is trivia;
+"opened Site 12, free for their 3 nights" says whether the map is answering the
+question. And the hand-off card is its own `kind`: it used to POST
+`/api/share?kind=book-ahead`, which normalises kind to `embed|link`, so a booking
+hand-off was recorded as a link copy.
+
+Guarded by `scripts/campmap-beacons.spec.js` (7 assertions, in CI), which checks
+the source registration order AND boots the server to require a 200 *plus* a row
+in events.jsonl — a 200 alone would not have caught the original bug, since the
+generic route's 404 was the only symptom. Mutation-tested: moving the routes back
+below the generic ones fails it by name.
 - Editing still works for admins exactly as before — open the page WITH `?token=`.
 
 ## Never ship a page without rendering it (IMPORTANT — cost us two blank pages)
