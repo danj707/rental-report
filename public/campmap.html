@@ -33,18 +33,44 @@ body{font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica
 .datebar{display:flex;align-items:center;gap:8px;padding:8px 12px;background:#fff;border-bottom:1px solid var(--line);z-index:600}
 .datebar .summ{font-size:13px;font-weight:600;white-space:nowrap;padding-right:4px}
 .datebar .summ .cnt{color:var(--avail)}
-.datebar .stayhead{flex:0 0 auto;display:flex;flex-direction:column;gap:1px;padding-right:6px;border-right:1px solid var(--line);margin-right:2px}
-.datebar .stayline{display:flex;align-items:center;gap:7px;font-size:11.5px;color:var(--muted);white-space:nowrap}
-.datebar .nights{font-weight:700;color:var(--accent)}
-.datebar .reset{font:inherit;font-size:10.5px;font-weight:700;padding:2px 7px;border:1px solid var(--line);border-radius:999px;background:#fff;color:var(--muted);cursor:pointer}
-.datebar .reset:hover{border-color:var(--accent);color:var(--accent)}
+/* Two rows, not one crammed line: the fields and the count read first, the
+   strip is a browse aid underneath. */
+.datebar{display:block;padding:0}
+.datebar .dbrow{display:flex;align-items:center;gap:12px;padding:9px 14px}
+.datebar .dbrow-top{border-bottom:1px solid var(--line-2,#f1f3f2);flex-wrap:wrap}
+.datebar .dbrow-strip{gap:8px;padding-top:7px;padding-bottom:9px}
+.datebar .fld{display:flex;flex-direction:column;gap:3px;flex:0 0 auto}
+.datebar .fld span{font-size:9.5px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);font-weight:700}
+.datebar .fld input{font:inherit;font-size:13.5px;padding:6px 9px;border:1px solid var(--line);border-radius:9px;color:#374151;background:#fff;cursor:pointer}
+.datebar .fld input:focus{outline:2px solid var(--accent);outline-offset:1px}
+.datebar .fld-arrow{color:var(--muted);align-self:flex-end;padding-bottom:7px}
+.datebar .nights{align-self:flex-end;padding-bottom:7px;font-size:12.5px;font-weight:700;color:var(--accent);white-space:nowrap}
+.datebar .listtog{margin-left:auto;font:inherit;font-size:11.5px;font-weight:700;padding:5px 10px;border:1px solid var(--line);border-radius:999px;background:#fff;color:var(--muted);cursor:pointer;flex:0 0 auto}
+.datebar .listtog:hover{border-color:var(--accent);color:var(--accent)}
+/* ── the site list beside the map ─────────────────────────────────────────── */
+.sitelist{position:absolute;top:0;right:0;bottom:0;width:288px;background:#fff;border-left:1px solid var(--line);z-index:500;display:flex;flex-direction:column;overflow:hidden}
+.mapwrap.nolist .sitelist{display:none}
+.sitelist .sl-head{padding:11px 13px 9px;border-bottom:1px solid var(--line);flex:0 0 auto}
+.sitelist .sl-title{font-size:13px;font-weight:800}
+.sitelist .sl-sub{font-size:11.5px;color:var(--muted);margin-top:2px}
+.sitelist .sl-body{flex:1;overflow-y:auto;padding:6px}
+.sl-item{display:flex;align-items:center;gap:9px;width:100%;text-align:left;font:inherit;padding:7px 8px;border:1px solid transparent;border-radius:9px;background:none;cursor:pointer}
+.sl-item:hover{background:#f9fafb;border-color:var(--line)}
+.sl-item.sel{background:var(--avail-bg);border-color:var(--avail)}
+.sl-item .dot{width:9px;height:9px;border-radius:50%;flex:0 0 9px}
+.sl-item .nm{font-size:13px;font-weight:700;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sl-item .rt{font-size:11.5px;color:var(--muted);flex:0 0 auto;font-variant-numeric:tabular-nums}
+.sl-item .wh{display:block;font-size:10.5px;color:var(--muted);font-weight:500}
+.sl-group{font-size:9.5px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);font-weight:800;padding:9px 8px 4px}
+.sl-empty{font-size:12.5px;color:var(--muted);padding:12px 8px;line-height:1.45}
+@media (max-width:900px){
+  .sitelist{top:auto;left:0;right:0;height:42%;width:auto;border-left:none;border-top:1px solid var(--line)}
+}
 .datebar .summ .part{color:var(--partial);font-weight:700}
 /* The stay, drawn on the strip: arrival, the nights between, and the checkout
    morning (dashed — you are not occupying the site that night). */
 .chip.inrange{background:var(--avail-bg);border-color:var(--avail)}
 .chip.checkout{border-style:dashed;border-color:var(--accent);background:#fff}
-.chip.preview{background:var(--avail-bg);border-color:var(--avail);opacity:.72}
-.chip.picking{cursor:crosshair}
 .chip .fill{height:3px;border-radius:2px;margin:4px 1px 0}
 .chip.more{min-width:210px;max-width:230px;text-align:left;padding:6px 10px;text-decoration:none;
   background:var(--accent-soft,#ecfdf5);border-color:var(--accent);color:#0f766e;white-space:normal}
@@ -52,7 +78,6 @@ body{font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica
 .chip.more .m-h{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.4px}
 .chip.more .m-b{font-size:10.5px;line-height:1.3;margin-top:2px;color:#374151}
 .chip.on .fill{background:rgba(255,255,255,.35)!important}
-.datebar.awaiting .chips{box-shadow:inset 0 0 0 2px var(--accent-soft, #ccfbf1);border-radius:12px}
 .chips{display:flex;gap:6px;overflow-x:auto;flex:1;scrollbar-width:thin;padding-bottom:2px}
 .chips::-webkit-scrollbar{height:6px}
 .chips::-webkit-scrollbar-thumb{background:#d1d5db;border-radius:3px}
@@ -69,10 +94,23 @@ body{font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica
 /* ── Map ── */
 .mapwrap{position:relative;flex:1;min-height:0}
 #map{position:absolute;inset:0;background:#aadaff}
+/* The map yields to the list rather than sitting under it. Overriding `right`
+   on the absolute box, after the inset:0 above, so there is one source of truth
+   for the map's geometry. */
+.mapwrap:not(.nolist) #map{right:288px}
+@media (max-width:900px){
+  /* narrow: the list becomes a bottom band, so the map gives up height not width */
+  .mapwrap:not(.nolist) #map{right:0;bottom:42%}
+}
 .leaflet-container{font:inherit}
 
 /* control cluster */
-.mapctl{position:absolute;top:12px;right:12px;z-index:500;display:flex;flex-direction:column;gap:8px;align-items:flex-end}
+/* Sits inside the map, not over the list. The list occupies the right 288px of
+   .mapwrap, and this control is positioned against .mapwrap — so without the
+   offset it lands on top of the list header. */
+.mapctl{position:absolute;top:12px;right:300px;z-index:600;display:flex;flex-direction:column;gap:8px;align-items:flex-end}
+.mapwrap.nolist .mapctl{right:12px}
+@media (max-width:900px){.mapctl,.mapwrap.nolist .mapctl{right:12px}}
 .basetoggle{display:inline-flex;border:1px solid var(--line);border-radius:9px;overflow:hidden;box-shadow:var(--shadow);background:#fff}
 .basetoggle button{border:none;background:#fff;padding:7px 12px;font-size:12px;font-weight:600;cursor:pointer;color:#374151}
 .basetoggle button.on{background:var(--accent);color:#fff}
@@ -235,18 +273,30 @@ body{font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica
   </div>
 
   <div class="datebar">
-    <div class="stayhead">
+    <div class="dbrow dbrow-top">
+      <label class="fld"><span>Arrive</span><input type="date" id="arrivePick"/></label>
+      <span class="fld-arrow">→</span>
+      <label class="fld"><span>Depart</span><input type="date" id="departPick"/></label>
+      <span class="nights" id="nights">1 night</span>
       <div class="summ" id="summ">—</div>
-      <div class="stayline"><span id="stayWhen">—</span><span class="nights" id="nights">1 night</span>
-        <button class="reset" id="resetStay" hidden>Change dates</button></div>
+      <button class="listtog" id="listTog" title="Show or hide the list of sites">Hide list</button>
     </div>
-    <button class="nav" id="prevDay" title="Scroll back">‹</button>
-    <div class="chips" id="chips"></div>
-    <button class="nav" id="nextDay" title="Scroll forward">›</button>
+    <div class="dbrow dbrow-strip">
+      <button class="nav" id="prevDay" title="Scroll back">‹</button>
+      <div class="chips" id="chips"></div>
+      <button class="nav" id="nextDay" title="Scroll forward">›</button>
+    </div>
   </div>
 
   <div class="mapwrap">
     <div id="map"></div>
+    <aside class="sitelist" id="sitelist">
+      <div class="sl-head">
+        <div class="sl-title" id="slTitle">Available sites</div>
+        <div class="sl-sub" id="slSub">—</div>
+      </div>
+      <div class="sl-body" id="slBody"></div>
+    </aside>
     <div class="editbar" id="editbar">
       <span class="msg" id="editMsg">Drag campsite pins to place them.</span>
       <span class="sep"></span>
@@ -732,15 +782,13 @@ function buildChips(){
       // Two clicks, no fields: arrival, then checkout. Clicking on or before the
       // arrival starts a new stay instead of producing a negative one, so there
       // is no order to get wrong and no invalid state to guard against later.
-      c.onclick=function(){
-        if(AWAITING && ds > SELECTED) setStay(SELECTED, ds, false);   // checkout lands
-        else setStay(ds, iso(addDays(d,1)), true);                    // new arrival
-      };
+      // Clicking a night moves the stay to start there and KEEPS its length, so
+      // browsing "my 3 nights, a week later" is one click. The two-click
+      // arrival-then-checkout mode is gone: the fields above do that job, and its
+      // "now click your checkout night" prompt was what crowded this bar.
+      c.onclick=function(){ setStay(ds, iso(addDays(d, stayNights().length))); };
       // While the checkout is still being chosen, hovering shows the stay it
       // would make — the map stays on the committed stay until the click lands.
-      c.onmouseenter=function(){ if(AWAITING && ds > SELECTED) previewTo(ds); };
-      c.onmouseleave=function(){ if(AWAITING) previewTo(null); };
-      c.onfocus=function(){ if(AWAITING && ds > SELECTED) previewTo(ds); };
       c.setAttribute('aria-label', DOW[d.getDay()]+' '+MON[d.getMonth()]+' '+d.getDate());
       wrap.appendChild(c);
     })(i);
@@ -774,23 +822,14 @@ function freeOn(dateStr){
 // siteId -> { 'YYYY-MM-DD': {earliest, latest} } — the legal checkout range for
 // an arrival on that night, as stated by rec.us.
 var AVAIL_WINDOW={};
-var AWAITING=false;     // arrival chosen, waiting for the checkout click
-var PREVIEW=null;       // hovered checkout while AWAITING
-
-function previewTo(ds){ PREVIEW=ds; paintChips(); }
-
 function paintChips(){
   var nights={}, stay=stayNights();
   stay.forEach(function(n){ nights[n]=true; });
-  var pv={};
-  if(AWAITING && PREVIEW){ nightsOf(SELECTED, PREVIEW).forEach(function(n){ pv[n]=true; }); }
   document.querySelectorAll('.chip').forEach(function(c){
     var ds=c.dataset.ds;
     c.classList.toggle('on', ds===SELECTED);
     c.classList.toggle('inrange', !!nights[ds] && ds!==SELECTED);
     c.classList.toggle('checkout', ds===DEPART);
-    c.classList.toggle('preview', !!pv[ds] && ds!==SELECTED);
-    c.classList.toggle('picking', AWAITING);
     var free=freeOn(ds), pct=SEED.length ? Math.round(free/SEED.length*100) : 0;
     var fill=c.querySelector('.fill');
     if(fill){
@@ -798,10 +837,6 @@ function paintChips(){
       c.title=DOW[new Date(ds+'T00:00:00').getDay()]+' '+ds+' — '+free+' of '+SEED.length+' sites free this night';
     }
   });
-  var bar=document.querySelector('.datebar');
-  if(bar) bar.classList.toggle('awaiting', AWAITING);
-  var rs=document.getElementById('resetStay');
-  if(rs) rs.hidden = !(stay.length>1 || AWAITING);
 }
 
 function stayTally(){
@@ -820,6 +855,63 @@ function stayLabel(){
   return n===1 ? fmtDay(new Date(SELECTED+'T00:00:00'))
                : fmtDay(new Date(SELECTED+'T00:00:00'))+' → '+fmtDay(new Date(DEPART+'T00:00:00'));
 }
+/* The list beside the map. The map answers "where"; a list answers "which ones
+ * can I have", which is the question someone arrives with — and it is readable
+ * without hunting for green pins among 41. Grouped by verdict so the answer is
+ * the first thing, not a colour to decode. */
+var LIST_ON = true;
+function toggleList(){
+  LIST_ON = !LIST_ON;
+  document.querySelector('.mapwrap').classList.toggle('nolist', !LIST_ON);
+  document.getElementById('listTog').textContent = LIST_ON ? 'Hide list' : 'Show list';
+  // Leaflet sizes itself to its container, so it has to be told the box moved.
+  setTimeout(function(){ map.invalidateSize(); }, 60);
+}
+
+function renderList(){
+  var body=document.getElementById('slBody'); if(!body) return;
+  var n=stayNights().length;
+  var full=[], part=[];
+  SEED.forEach(function(site){
+    var r=rangeStatus(site);
+    if(r.state==='avail') full.push({site:site, r:r});
+    else if(r.state==='partial') part.push({site:site, r:r});
+  });
+  var byNum=function(a,b){ return (a.site.n||0)-(b.site.n||0); };
+  full.sort(byNum); part.sort(byNum);
+
+  document.getElementById('slTitle').textContent = n===1 ? 'Open tonight' : 'Open for all '+n+' nights';
+  document.getElementById('slSub').textContent =
+    full.length + ' of ' + SEED.length + ' sites' + (part.length ? ' · '+part.length+' open some nights' : '');
+
+  var html='';
+  var row=function(x, colour){
+    var m=siteMeta(x.site), rate=m && m.rate!=null ? '$'+m.rate : '';
+    return '<button class="sl-item'+(selectedId===x.site.id?' sel':'')+'" data-id="'+x.site.id+'">'
+      +'<span class="dot" style="background:'+colour+'"></span>'
+      +'<span class="nm">'+shortName(x.site)
+      + (x.r.state==='partial' ? '<span class="wh">'+x.r.openCount+' of '+x.r.total+' nights</span>' : '')
+      +'</span>'
+      +'<span class="rt">'+rate+(rate && n>1 && x.r.state==='avail' ? '<span class="wh">'+(m.rate*n)+' total</span>' : '')+'</span>'
+      +'</button>';
+  };
+  if(full.length){ html+=full.map(function(x){ return row(x, COLORS.avail); }).join(''); }
+  if(part.length){
+    html+='<div class="sl-group">Open some nights</div>'
+       +  part.map(function(x){ return row(x, COLORS.partial); }).join('');
+  }
+  if(!full.length && !part.length){
+    html='<div class="sl-empty">No site is free for these dates. Try a shorter stay, or shift the nights — the bar under each night on the strip shows how full the campground is.</div>';
+  }
+  body.innerHTML=html;
+  body.querySelectorAll('.sl-item').forEach(function(b){
+    b.onclick=function(){
+      var site=SEED.filter(function(x){ return x.id===b.dataset.id; })[0];
+      if(site) openSite(site);
+    };
+  });
+}
+
 function updateSummary(){
   var t=stayTally(), n=stayNights().length;
   var el=document.getElementById('summ');
@@ -832,8 +924,7 @@ function updateSummary(){
     if(t.part) txt+=' · <span class="part">'+t.part+'</span> open some nights';
     el.innerHTML=txt;
   }
-  document.getElementById('stayWhen').textContent =
-    AWAITING ? 'Now click your checkout night' : stayLabel();
+
   if(selectedId){ var site=SEED.filter(function(x){return x.id===selectedId;})[0]; if(site) renderBody(site); }
 }
 // How late this arrival is allowed to check out, straight from rec.us. The feed
@@ -871,8 +962,7 @@ function latestCheckoutFrom(dateStr){
 // setStay is the only way the stay changes. The arrival is clamped to the nights
 // the feed actually enumerates; a night with no data must read as unknown rather
 // than be guessed at in either direction.
-function setStay(arrive, depart, awaiting){
-  AWAITING = !!awaiting;
+function setStay(arrive, depart){
   if(arrive < TODAY_ISO) arrive = TODAY_ISO;
   if(arrive > MAX_ISO)   arrive = MAX_ISO;
   if(!depart || depart <= arrive) depart = iso(addDays(new Date(arrive+'T00:00:00'), 1));
@@ -880,17 +970,19 @@ function setStay(arrive, depart, awaiting){
   if(depart > cap) depart = cap;
   SELECTED=arrive; DEPART=depart;
 
-  PREVIEW=null;
   paintChips();
   var n=stayNights().length;
   document.getElementById('nights').textContent = n + (n===1 ? ' night' : ' nights');
+  var ai=document.getElementById('arrivePick'), di=document.getElementById('departPick');
+  if(ai){ ai.value=SELECTED; ai.min=TODAY_ISO; ai.max=MAX_ISO; }
+  if(di){ di.value=DEPART; di.min=iso(addDays(new Date(SELECTED+'T00:00:00'),1)); di.max=latestCheckoutFrom(SELECTED); }
 
-  refreshMarkers(); updateSummary();
+  refreshMarkers(); updateSummary(); renderList();
   fetchWeather();
 }
 // Kept so older callers (the mini-calendar cells, the deep-link handler) still
 // work: start a one-night stay on this date and wait for a checkout click.
-function setDate(ds){ setStay(ds, iso(addDays(new Date(ds+'T00:00:00'),1)), true); }
+function setDate(ds){ setStay(ds, iso(addDays(new Date(ds+'T00:00:00'), stayNights().length))); }
 
 // The arrows scroll the strip. They are not a second way to change the stay:
 // nudging dates with arrows is the block-shifting interaction we dropped, and
@@ -902,9 +994,16 @@ function scrollStrip(dir){
 }
 document.getElementById('prevDay').onclick=function(){ scrollStrip(-1); };
 document.getElementById('nextDay').onclick=function(){ scrollStrip(1); };
-document.getElementById('resetStay').onclick=function(){
-  setStay(SELECTED, iso(addDays(new Date(SELECTED+'T00:00:00'),1)), true);
+document.getElementById('arrivePick').onchange=function(){
+  if(!this.value) return;
+  // Moving the arrival keeps the trip length rather than collapsing it to one
+  // night — someone editing "arrive" on a 4-night stay still wants 4 nights.
+  setStay(this.value, iso(addDays(new Date(this.value+'T00:00:00'), stayNights().length)));
 };
+document.getElementById('departPick').onchange=function(){
+  if(this.value) setStay(SELECTED, this.value);
+};
+document.getElementById('listTog').onclick=function(){ toggleList(); };
 
 /* ── detail drawer ── */
 var galleryIdx=0, calMonth=null;
@@ -933,9 +1032,10 @@ function openSite(site){
   document.getElementById('drawer').classList.add('open');
   document.getElementById('scrim').classList.add('on');
   map.panTo([site.lat,site.lng],{animate:true});
+  renderList();   // move the highlight in the list to match
 }
 function closeDrawer(){
-  selectedId=null; refreshMarkers();
+  selectedId=null; refreshMarkers(); renderList();
   document.getElementById('drawer').classList.remove('open');
   document.getElementById('scrim').classList.remove('on');
 }
@@ -1252,13 +1352,13 @@ function loadAvailability(){
       if(any){ LIVE=true; }
       else { throw new Error('empty'); }
       updateLegFoot();
-      refreshMarkers(); updateSummary(); if(selectedId){var s=SEED.filter(function(x){return x.id===selectedId;})[0]; if(s)renderBody(s);}
+      refreshMarkers(); updateSummary(); renderList(); if(selectedId){var s=SEED.filter(function(x){return x.id===selectedId;})[0]; if(s)renderBody(s);}
     })
     .catch(function(){
       // offline / standalone fallback — deterministic demo availability
       SEED.forEach(function(s){ AVAIL[s.id]=seedFallback(s); });
       LIVE=false; updateLegFoot();
-      refreshMarkers(); updateSummary(); if(selectedId){var s2=SEED.filter(function(x){return x.id===selectedId;})[0]; if(s2)renderBody(s2);}
+      refreshMarkers(); updateSummary(); renderList(); if(selectedId){var s2=SEED.filter(function(x){return x.id===selectedId;})[0]; if(s2)renderBody(s2);}
     });
 }
 function updateLegFoot(){
@@ -1323,7 +1423,7 @@ buildChips();
 buildMarkers();
 // Populates both inputs, the nights label, the in-range chips and the summary in
 // one place, so the initial paint cannot disagree with what a later change draws.
-setStay(TODAY_ISO, iso(addDays(TODAY, 1)), false);
+setStay(TODAY_ISO, iso(addDays(TODAY, 1)));
 loadPositions();   // apply any admin-saved pin positions
 loadMarkers();     // load admin custom markers (Boat Ramp, etc.)
 loadSites();       // live site data → then availability (with offline fallbacks)
