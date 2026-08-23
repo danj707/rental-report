@@ -4,6 +4,9 @@
 
 - **Always share the Railway PR-preview URL** whenever I open a PR for this repo,
   without being asked — Dan wants to click through the change before merging.
+- **Always hand over the direct Metabase card link** whenever a card needs Dan to
+  touch it (the date-tag flip after any programmatic save, most often) —
+  `https://rec.metabaseapp.com/question/<id>`. Don't just name the card id.
 - **Wire a Slack activity notification into every new user-facing surface** —
   new features, buttons, export/download options, and other notable interactions
   should ping the Slack activity feed, without being asked. Dan wants visibility
@@ -54,6 +57,13 @@ and flip each date variable (Start Date / End Date) back to type Date.** Batch
 card updates so Dan can do all the flips in one visit, verify with a
 server-style parameterized request afterward, and never assume a card update is
 done until that verification passes.
+
+**Read the live card BEFORE writing to it (learned 2026-08-23).** The repo's
+`sql/*.sql` file is a mirror, not the source of truth, and it drifts: card 19570
+carried a v2.1 speed refactor the repo file did not, so pushing the repo copy
+would have silently reverted it — the same shape as the perf regression that got
+v2 rolled back in PR #77. Fetch the card's SQL, apply the change to *that*, save,
+then mirror the result back into the repo file.
 
 **This is now watched automatically (PR #134).** `checkCardParamTypes()` in
 server.js reads every served card's public definition daily at 5:40 and once
