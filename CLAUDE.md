@@ -301,10 +301,16 @@ service **rental-report** (`7ee6e149-bd03-41db-bd42-aa8a751b1000`).
   `https://rental-report-rental-report-pr-<PR#>.up.railway.app`
   (e.g. PR #29 → https://rental-report-rental-report-pr-29.up.railway.app)
 - After opening a PR, confirm the preview actually boots and hand Dan the URL.
-  NOTE: the session sandbox's outbound proxy blocks `*.up.railway.app` (CONNECT
-  403), so I cannot curl the preview to verify it. Verify boot via Railway
-  `list-deployments` on the PR environment instead — status `SUCCESS` means it's
-  up for Dan's browser even though I can't reach it.
+  **The sandbox proxy DOES reach `*.up.railway.app` (re-tested 2026-08-23** —
+  production root answered `401` from the app's own password gate, and a
+  torn-down preview answered Railway's edge `Application not found`). An earlier
+  note here said it was blocked with a CONNECT 403 and told me to skip the check;
+  that was wrong and cost a live verification. So: curl the preview, and curl
+  production after a merge — a served page can be diffed against the source that
+  was supposed to ship, which is how the Camping-tab fix was confirmed live.
+  Railway `list-deployments` on the PR environment is the fallback, not the
+  method. Chromium's own requests still do not get through the proxy; `curl`
+  does.
 
 ## Admin "What's New" popup — REMOVED from admin (PR #134)
 
