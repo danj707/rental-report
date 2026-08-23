@@ -10088,6 +10088,13 @@ app.get("/:org/campmap", (req, res) => {
     coords,
     locationName: active.locationName || org.campLocationName || "",
     address: active.address || org.campAddress || "",
+    // Where to send someone who wants dates the map cannot answer for. rec.us
+    // takes bookings ~180 days out but get_site_availability only enumerates 30,
+    // so the strip runs out long before the booking window does. Per-org and
+    // optional: the URL carries the org's slug and location id, and the contact
+    // names that org's department, so there is no sane default to fall back on —
+    // an org without it simply shows no referral rather than the wrong one.
+    bookAhead: active.bookAhead || seed.bookAhead || null,
     sites: active.sites || null,
     landmarks: active.landmarks || null,
     defaults: active.defaults || {},
