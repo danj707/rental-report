@@ -96,6 +96,57 @@ const STUBS = [
   { match: /\/api\//,                       body: () => ({ ok: true, rows: [] }) },
 ];
 
+// ── Off-host assets (React, Babel, Leaflet, xlsx) ───────────────────────────
+// Every report page loads React and compiles JSX in the browser via
+// babel-standalone from cdnjs. If those scripts do not arrive, EVERY page comes
+// up blank — which looks exactly like the bug this check exists to catch, so a
+// network hiccup would read as a code defect (and a blocked egress makes the
+// check useless rather than red). So: no request leaves the browser. Off-host
+// assets are served out of a local cache, fetched once with curl (which honours
+// the proxy env) and reused on every later run.
+const VENDOR_DIR = path.join(__dirname, "..", "node_modules", ".cache", "render-check");
+const vendorMisses = [];
+
+function vendorPath(url) {
+  return path.join(VENDOR_DIR, url.replace(/^https?:\/\//, "").replace(/[^A-Za-z0-9._-]/g, "_"));
+}
+
+function vendorFetch(url) {
+  const dest = vendorPath(url);
+  if (fs.existsSync(dest) && fs.statSync(dest).size > 0) return dest;
+  fs.mkdirSync(VENDOR_DIR, { recursive: true });
+  const r = require("child_process").spawnSync("curl",
+    ["-sSfL", "--max-time", "60", "-o", dest + ".part", url], { encoding: "utf8" });
+  if (r.status !== 0 || !fs.existsSync(dest + ".part") || fs.statSync(dest + ".part").size === 0) {
+    try { fs.rmSync(dest + ".part", { force: true }); } catch (_) {}
+    return null;
+  }
+  fs.renameSync(dest + ".part", dest);
+  return dest;
+}
+
+const CTYPE = { js: "application/javascript", css: "text/css", json: "application/json",
+                png: "image/png", jpg: "image/jpeg", svg: "image/svg+xml", woff2: "font/woff2" };
+
+function serveVendored(req) {
+  const url = req.url();
+  const ext = (url.split("?")[0].match(/\.([A-Za-z0-9]+)$/) || [, ""])[1].toLowerCase();
+  // Only code matters for rendering; images and fonts can be blanked safely.
+  // Some pages load these with `crossorigin`, so the reply needs CORS headers or
+  // the browser rejects the script before it runs.
+  const cors = { "access-control-allow-origin": "*" };
+  if (!/^(js|css|json)$/.test(ext)) {
+    return req.respond({ status: 200, contentType: "text/plain", headers: cors, body: "" });
+  }
+  const file = vendorFetch(url);
+  if (!file) {
+    vendorMisses.push(url);
+    return req.respond({ status: 502, contentType: "text/plain", headers: cors, body: "" });
+  }
+  return req.respond({ status: 200, contentType: CTYPE[ext] || "application/octet-stream",
+                       headers: cors, body: fs.readFileSync(file) });
+}
+
 // ── Pages to prove ──────────────────────────────────────────────────────────
 // `needs` is a selector that only exists once the page has really rendered, so
 // a blank page fails instead of passing on "no errors thrown".
@@ -177,13 +228,14 @@ function waitForServer(started) {
       errs.push("console: " + t.slice(0, 200));
     });
     await page.setRequestInterception(true);
-    page.on("request", req => {
+    page.on("request", async req => {
       const u = req.url();
       if (u.includes("/api/")) {
         const stub = STUBS.find(s => s.match.test(u));
         return req.respond({ status: 200, contentType: "application/json",
                              body: JSON.stringify(stub ? stub.body() : { ok: true }) });
       }
+      if (!u.startsWith(`http://127.0.0.1:${PORT}`)) return serveVendored(req);
       req.continue();
     });
 
@@ -205,6 +257,10 @@ function waitForServer(started) {
   }
 
   await browser.close();
+  if (vendorMisses.length) {
+    return stop(false, "could not fetch the pages' own libraries — this check proves nothing without them",
+      [...new Set(vendorMisses)].map(u => "  " + u).join("\n"));
+  }
   if (failures.length) {
     return stop(false, `${failures.length} of ${CASES.length} page(s) did not render`,
       failures.map((f, i) => `  ${i + 1}. ${f}`).join("\n"));
