@@ -68,16 +68,27 @@ function lift(name, endMarker) {
 }
 
 const parseCardDate = lift("parseCardDate", "function fmtDateShort");
-const sectionGoLive = (function () {
-  // sectionGoLive is declared right after fmtDateShort and needs it in scope.
+const dateBlock = (function () {
+  // fmtDateShort → sectionGoLive → calDaysUntil / dayPhrase / dayShort all sit
+  // between these two markers; slice the lot, since sectionGoLive needs
+  // fmtDateShort in scope anyway.
   const a = src.indexOf("function fmtDateShort");
   const b = src.indexOf("function regTiming");
-  assert.ok(b > a, "could not slice sectionGoLive");
+  assert.ok(b > a, "could not slice the date helpers");
   const ctx = { console };
   vm.createContext(ctx);
-  vm.runInContext(src.slice(a, b) + "\nthis.sectionGoLive = sectionGoLive;", ctx);
-  return ctx.sectionGoLive;
+  vm.runInContext(src.slice(a, b) + `
+    this.sectionGoLive = sectionGoLive;
+    this.calDaysUntil = calDaysUntil;
+    this.dayPhrase = dayPhrase;
+    this.dayShort = dayShort;
+  `, ctx);
+  return ctx;
 })();
+const sectionGoLive = dateBlock.sectionGoLive;
+const calDaysUntil = dateBlock.calDaysUntil;
+const dayPhrase = dateBlock.dayPhrase;
+const dayShort = dateBlock.dayShort;
 
 let passed = 0;
 function test(name, fn) { fn(); console.log(`  ✓ ${name}`); passed++; }
@@ -220,6 +231,91 @@ test("every date-only column goes through parseCardDate", () => {
 test("timestamps are deliberately NOT routed through it", () => {
   assert.ok(/new Date\(s\.regOpens\)/.test(src),
     "Reg Opens is an instant; routing it through a date-only parser would shift countdowns");
+});
+
+// ── "today" is today ────────────────────────────────────────────────────────
+//
+// Reported 2026-08-24 (Dan), at 9:45am ET: the report said "OPENS TOMORROW" and
+// "early access Aug 24 (tomorrow)" about a window opening THAT DAY. Every
+// countdown used Math.ceil((then - now) / 86400000), which counts 24-hour spans
+// rather than calendar days — so anything later the same day came back as 1, and
+// the "OPENS TODAY" branch sitting right there in the code was unreachable.
+//
+// These run under TZ=America/New_York (see the top of this file), which is both
+// Smyrna's zone and the reader's, so "today" means what Dan means by it.
+
+const AT = (y, mo, d, h, mi) => new Date(y, mo - 1, d, h, mi || 0);
+const NOW = AT(2026, 8, 24, 9, 45);          // 9:45am ET on the 24th
+
+test("something opening later today is today, not tomorrow", () => {
+  assert.strictEqual(calDaysUntil(AT(2026, 8, 24, 14, 0), NOW), 0, "2pm today");
+  assert.strictEqual(calDaysUntil(AT(2026, 8, 24, 23, 59), NOW), 0, "one minute before midnight");
+  // The bug, reproduced: ms/24h arithmetic makes both of those "tomorrow".
+  assert.strictEqual(Math.ceil((AT(2026, 8, 24, 14, 0) - NOW) / 86400000), 1,
+    "this is what the page was doing, and why it said tomorrow");
+});
+
+test("tomorrow is tomorrow, however few hours away it is", () => {
+  assert.strictEqual(calDaysUntil(AT(2026, 8, 25, 0, 5), NOW), 1,
+    "14 hours away, but it is the next calendar day");
+  assert.strictEqual(calDaysUntil(AT(2026, 8, 25, 10, 45), NOW), 1,
+    "25 hours away — ceil calls this 2 days");
+  assert.strictEqual(Math.ceil((AT(2026, 8, 25, 10, 45) - NOW) / 86400000), 2,
+    "the old math overcounted in this direction too");
+});
+
+test("the further-out dates on the reported card land where Rec says", () => {
+  // Smyrna's four birthday-concert tables, from the screenshot: early access
+  // Aug 24, 25, 26, 27 — read at 9:45am on the 24th.
+  assert.strictEqual(calDaysUntil(AT(2026, 8, 24, 12, 0), NOW), 0);
+  assert.strictEqual(calDaysUntil(AT(2026, 8, 25, 12, 0), NOW), 1);
+  assert.strictEqual(calDaysUntil(AT(2026, 8, 26, 12, 0), NOW), 2);
+  assert.strictEqual(calDaysUntil(AT(2026, 8, 27, 12, 0), NOW), 3);
+});
+
+test("a window that already opened reads as past, not as today", () => {
+  assert.strictEqual(calDaysUntil(AT(2026, 8, 23, 12, 0), NOW), -1);
+  assert.strictEqual(calDaysUntil(AT(2026, 8, 17, 9, 45), NOW), -7);
+});
+
+test("a span crossing a DST boundary does not drift", () => {
+  // US DST ends 1 Nov 2026, so 31 Oct → 1 Nov is a 25-hour day in Eastern.
+  // Calendar arithmetic cannot notice; 24-hour arithmetic can.
+  const from = AT(2026, 10, 31, 9, 0);
+  assert.strictEqual(calDaysUntil(AT(2026, 11, 1, 9, 0), from), 1);
+  assert.strictEqual(calDaysUntil(AT(2026, 11, 5, 9, 0), from), 5);
+});
+
+test("a missing date has no countdown rather than a wrong one", () => {
+  assert.strictEqual(calDaysUntil(null, NOW), null);
+  assert.strictEqual(dayPhrase(null), "");
+  assert.strictEqual(dayShort(null), "");
+});
+
+test("zero never reaches the page as \"in 0 days\"", () => {
+  assert.strictEqual(dayPhrase(0), "today");
+  assert.strictEqual(dayPhrase(1), "tomorrow");
+  assert.strictEqual(dayPhrase(6), "in 6 days");
+  assert.strictEqual(dayPhrase(-3), "today", "a past date is not negative days away on screen");
+  assert.strictEqual(dayShort(0), "today");
+  assert.strictEqual(dayShort(1), "tomorrow");
+  assert.strictEqual(dayShort(9), "9d");
+});
+
+test("no countdown on the page is computed by dividing milliseconds", () => {
+  // The two remaining /86400000 uses are backward-looking windows (a 3-day
+  // recency cutoff and a 30-day "opened recently" filter), where elapsed time
+  // genuinely is the question. A forward-looking one is the bug returning.
+  // Comments are stripped first — this file's own explanation of the bug quotes
+  // the broken expression, and a guard that trips on its own documentation is
+  // worse than no guard.
+  const code = src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+  const forward = code.match(/Math\.ceil\(\([^)]*\)\s*\/\s*86400000\)/g) || [];
+  assert.deepStrictEqual(forward, [],
+    "found a countdown still using 24-hour spans: " + forward.join(", "));
+  assert.ok(/function calDaysUntil/.test(src), "and the helper must exist");
+  const uses = (src.match(/calDaysUntil\(/g) || []).length;
+  assert.ok(uses >= 7, "every countdown should go through it (found " + uses + ")");
 });
 
 console.log(`\n${passed}/${passed} passing`);
