@@ -3935,19 +3935,92 @@ function postDailyActivitySummary(dayKey) {
   return a;
 }
 
-function readEvents(daysBack) {
-  try {
-    const raw = fs.readFileSync(EVENTS_FILE, "utf8");
-    const cutoff = daysBack
-      ? new Date(Date.now() - daysBack * 86400000).toISOString()
-      : null;
-    return raw.trim().split("\n")
-      .filter(Boolean)
-      .map(line => { try { return JSON.parse(line); } catch { return null; } })
-      .filter(e => e && (!cutoff || e.ts >= cutoff));
-  } catch {
-    return [];
+// ── Event log cache ──────────────────────────────────────────────────
+// events.jsonl is 82k lines / ~23MB and grows ~600 lines a day. readEvents used
+// to read the whole file and JSON.parse every line on EVERY call, applying the
+// date cutoff only afterwards — so readEvents(1) cost the same as readEvents(null).
+//
+// The admin dashboard calls it 89 times to render one page: once for all-time AI
+// spend, once for the platform trend, and three times per org (sidebar metrics,
+// the org sparkline, and buildMetrics inside the usage table). That was ~2GB of
+// synchronous file reads and ~7.3M JSON.parse calls per page load, ~10s of
+// blocked event loop, and it stalled every other request while it ran.
+//
+// So the parse is memoized: only bytes appended since the last read are parsed.
+// The log has exactly one writer (logEvent, appendFileSync with a trailing
+// newline), so it is append-only and chronological, which also means a date
+// window is a suffix and can be found by binary search instead of a full scan.
+// Retaining the parsed array costs ~30MB.
+const eventCache = { events: [], bytes: 0, sorted: true };
+
+function resetEventCache() {
+  eventCache.events = [];
+  eventCache.bytes = 0;
+  eventCache.sorted = true;
+}
+
+// Parse whole lines and append them, tracking whether timestamps stay in order.
+// If anything is out of order or missing a ts, the binary search below is not
+// valid any more and readEvents falls back to a linear filter — which is what
+// the old code always did, so the answer stays the same either way.
+function appendEventCache(text) {
+  const evts = eventCache.events;
+  let last = evts.length ? (evts[evts.length - 1].ts || "") : "";
+  for (const line of text.split("\n")) {
+    if (!line) continue;
+    let e;
+    try { e = JSON.parse(line); } catch { continue; }
+    if (!e) continue;
+    if (!e.ts) eventCache.sorted = false;
+    else { if (e.ts < last) eventCache.sorted = false; last = e.ts; }
+    evts.push(e);
   }
+}
+
+function loadEventCache() {
+  let st;
+  try { st = fs.statSync(EVENTS_FILE); }
+  catch { resetEventCache(); return eventCache.events; }        // no log yet
+  if (st.size === eventCache.bytes) return eventCache.events;   // nothing appended
+  // Shrank or was replaced — rotation, a hand edit, a fresh volume. The tail
+  // offset means nothing now, so re-read from the top.
+  if (st.size < eventCache.bytes) resetEventCache();
+  let fd;
+  try {
+    fd = fs.openSync(EVENTS_FILE, "r");
+    const start = eventCache.bytes;
+    const buf = Buffer.allocUnsafe(st.size - start);
+    const read = fs.readSync(fd, buf, 0, buf.length, start);
+    // Consume up to the last newline only: an append can be caught half-written,
+    // and a multi-byte character can straddle the end of the read. Byte offsets
+    // come from the buffer, never from the decoded string, so the next call
+    // resumes exactly where this one stopped.
+    let cut = -1;
+    for (let i = read - 1; i >= 0; i--) if (buf[i] === 0x0a) { cut = i; break; }
+    if (cut < 0) return eventCache.events;                      // no complete line yet
+    appendEventCache(buf.toString("utf8", 0, cut));
+    eventCache.bytes = start + cut + 1;
+  } catch {
+    resetEventCache();
+  } finally {
+    if (fd !== undefined) { try { fs.closeSync(fd); } catch {} }
+  }
+  return eventCache.events;
+}
+
+function readEvents(daysBack) {
+  const events = loadEventCache();
+  // Always hand back a copy — callers filter, map and (at the audit log) reverse
+  // the result in place, and the cache must not be mutated under them.
+  if (!daysBack) return events.slice();
+  const cutoff = new Date(Date.now() - daysBack * 86400000).toISOString();
+  if (!eventCache.sorted) return events.filter(e => e.ts >= cutoff);
+  let lo = 0, hi = events.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (events[mid].ts < cutoff) lo = mid + 1; else hi = mid;
+  }
+  return events.slice(lo);
 }
 
 // Aggregate events into metrics for one org
