@@ -387,6 +387,79 @@ Windham, Watertown, Norman, Apex.
   not start times) and `[data-oe-timed="4"]` (multi-day excluded). Both attribute
   cases were seen to fail on the real regression in a real browser.
 
+## Memberships Check-Ins tab — one filter, two member ids (2026-08-24)
+
+Five changes Dan asked for on the check-in report, all client-side except the
+member link, which needs one column added to card **18151**.
+
+- **The desk-location filter lives in the toolbar and scopes the WHOLE tab.**
+  Options are built from the feed's own `Desk Location` values (busiest first),
+  so a desk that falls out of use disappears on its own. The invariant that
+  matters: **every panel reads `ciView`, never `ciRows`** — the facility Summary
+  shipped chips that scoped some panels and not others and the numbers disagreed
+  across the page for a week. `scripts/checkins-view.spec.js` fails if a single
+  `ciRows` appears inside the derivation block. Not persisted (a search intent,
+  not a layout preference) but it IS in the URL as `?ci_loc=`, so a link lands on
+  the desk the sender was looking at — and `?tab=checkins|retention` does the
+  same for the tab.
+- **`Member ID` is NOT a user id.** Card 18151 emits `u.rec_id` as `Member ID` —
+  a 6-character code (`5OLLPM`) staff read out at the desk. The Rec admin URL
+  (`https://www.rec.us/admin/o/<orgId>/users/<id>`) takes `users.id`, the uuid, so
+  the card now also emits `u.id::text AS "User ID"`. A link built from the rec_id
+  looks identical and 404s, which is why the render check asserts the href ends
+  in the uuid rather than merely that an anchor exists. `ciUserUrl()` returns null
+  without both ids and the cell falls back to plain text — so the page is correct
+  before AND after the card ships the column.
+- **Check-Ins by Time of Day** is one series at a time (All / Weekdays /
+  Weekends). Deliberately not two curves on one axis: there are five weekdays to
+  two weekend days, so a weekend total always looks quiet next to a weekday one —
+  different denominators, not different demand. The caption carries the per-day
+  figure for the slice being shown. This replaced the Hourly Distribution bar
+  list, which asked the same question with less.
+- **Weekday letters on Daily Check-Ins**, plus shaded weekend columns. Built from
+  `ciDow()`, which reads the date string's parts: `new Date("2026-08-24")` is UTC
+  midnight, so Monday the 24th renders as Sunday the 23rd in every US timezone —
+  the same bug as the Fast Track dates. **`checkins-view.spec.js` re-execs itself
+  under `TZ=America/New_York`** for exactly this reason: in UTC (this sandbox and
+  GitHub Actions) the broken parse passes every assertion.
+- **Top Members monthly bars are buttons.** Clicking one highlights that month
+  across every member and names it in a caption ("August 2026 highlighted · 312
+  check-ins from 11 of these 15 members"); the column header carries a clickable
+  month initial per bar, so which month a bar refers to is readable without
+  hovering. The old header printed "Aug / Sep / Oct" as free text beside bars it
+  was not aligned with.
+
+### The Memberships beacons had NEVER fired — third instance of the same trap
+
+Found while wiring the ping for the location filter. `public/memberships.html`
+(Excel, Print) and `public/instructor-payout.html` (Excel, PDF) POSTed a JSON
+**body** — `{action:'excel'}` — to `/:org/:report/api/log`, which reads
+`req.query.event`. So every call came back `400 Unknown event` and nothing
+reached `events.jsonl` or Slack, since the day each shipped. Nothing caught it:
+server.js parses, the server boots, the page renders, the export works, and a
+fire-and-forget beacon never complains. This is the campmap bug and the
+Facilities-hub bug a third time — **the convention is `?event=<name>` in the
+query string**, and `instructor-payout`'s `pdf` beacon was also redundant (the
+PDF route logs `pdf` server-side).
+
+**Consequence to expect: Slack starts getting Memberships/Instructor-Payout
+`excel` and `print` pings it has never had** — they were being dropped, not
+muted.
+
+New events, both on the generic log route's ALLOWED list:
+
+| event | fired by | extra |
+|---|---|---|
+| `checkin-loc` (🏢) | picking a desk in the Location filter | `location`, `checkins` |
+| `checkin-member` (👤) | clicking a member through to their Rec account | — |
+
+`checkin-loc` debounces **by desk** (comparing the north branch then the south is
+two looks, not one); `checkin-member` deliberately does NOT key by member, so a
+staff member working down a list of regulars is one ping rather than twenty.
+Guarded by `scripts/checkin-beacons.spec.js` (12 assertions, in CI), which boots
+the server and requires a 200 **plus** a row in events.jsonl — and asserts the
+old body-only shape is still rejected, since that is what was shipping.
+
 ## Fields tab — leagues, lights, and staff-booked (2026-08-24)
 
 The last facility type with nothing of its own: **1,903 field sites across 74

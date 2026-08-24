@@ -3607,7 +3607,7 @@ setTimeout(() => { checkCardParamTypes().catch(() => {}); }, 150 * 1000).unref?.
 // Inert if the env var is unset. Fire-and-forget — never blocks or breaks logging.
 // To change what pings Slack, edit SLACK_NOTIFY. High-frequency events (view/fetch)
 // are debounced per org+report so Slack isn't a firehose.
-const SLACK_NOTIFY = new Set(["created", "org-deleted", "watchdog", "schema-break", "param-drift", "report-down", "campmap-share", "campmap-site", "campmap-book", "campmap-filter", "pdf", "excel", "print", "summary", "game", "map", "outdoor", "fields", "view", "insights", "insights-feedback", "chat-feedback", "feedback", "vote", "update-vote", "munis", "permits", "email"]);
+const SLACK_NOTIFY = new Set(["created", "org-deleted", "watchdog", "schema-break", "param-drift", "report-down", "campmap-share", "campmap-site", "campmap-book", "campmap-filter", "pdf", "excel", "print", "summary", "game", "map", "outdoor", "fields", "view", "insights", "insights-feedback", "chat-feedback", "feedback", "vote", "update-vote", "munis", "permits", "email", "checkin-loc", "checkin-member"]);
 const SLACK_DEBOUNCE_MS = { view: 30 * 60 * 1000, fetch: 30 * 60 * 1000,
   // A broken report stays broken. The health check only reports NEW failures,
   // but a flapping card would otherwise post every hour.
@@ -3645,6 +3645,12 @@ const SLACK_EVENT_META = {
   // Ball fields, soccer pitches and multipurpose turf — leagues and tournaments,
   // a different question from the pavilion rentals `outdoor` covers.
   fields:  { emoji: "⚾", verb: "opened Fields on the facilities report" },
+  // Which desk someone narrows the check-in report to is a planning fact about
+  // that building, not just a click — so the location travels with the ping.
+  "checkin-loc":    { emoji: "\uD83C\uDFE2", verb: "filtered check-ins by location on" },
+  // A staff member jumping from a check-in row into that member's Rec account is
+  // the report handing off to the product, which is the whole point of the link.
+  "checkin-member": { emoji: "\uD83D\uDC64", verb: "opened a member in Rec from" },
   insights: { emoji: "✨", verb: "generated AI insights for" },
   email:   { emoji: "📧", verb: "emailed" },
 };
@@ -3701,6 +3707,11 @@ function notifySlack(rec) {
     // RV-only is telling us two things, not one.
     : rec.event === "campmap-filter"
       ? `${rec.org}|campmap|filter|${rec.filterType || ""}`
+    // Keyed by desk, so comparing the north branch against the south reads as
+    // two looks. `checkin-member` deliberately does NOT key by member: a staff
+    // member working down a list of regulars is one session, not twenty pings.
+    : rec.event === "checkin-loc"
+      ? `${rec.org}|${rec.report}|checkin-loc|${rec.location || ""}`
       : `${rec.org}|${rec.report}|${rec.event}`;
   const now = Date.now();
   const cooldown = SLACK_DEBOUNCE_MS[rec.event] || SLACK_DEFAULT_DEBOUNCE_MS;
@@ -3734,6 +3745,10 @@ function notifySlack(rec) {
     const who = (rec.reports || []).length ? ` — breaks *${(rec.reports || []).join("*, *")}*` : "";
     text = `${meta.emoji} *SCHEMA BREAK* — ${gone.slice(0, 8).join(", ")}`
          + (gone.length > 8 ? ` and ${gone.length - 8} more` : "") + who + mention;
+  } else if (rec.event === "checkin-loc") {
+    const where = rec.location ? `*${rec.location}*` : "*all locations*";
+    const n = Number.isFinite(rec.checkins) ? ` \u00B7 ${rec.checkins.toLocaleString()} check-in${rec.checkins === 1 ? "" : "s"}` : "";
+    text = `${meta.emoji} ${orgName} (\`${rec.org}\`) filtered check-ins to ${where}${n}`;
   } else if (rec.event === "campmap-site") {
     // Say whether the site was actually free for the stay they were looking at —
     // "opened Site 12" is trivia; "opened Site 12, free for their 3 nights" is a
@@ -5922,11 +5937,15 @@ app.post("/:org/:report/api/log", resolveOrg, (req, res) => {
   const { event, game, location, view } = req.query;
   // view-apply is events.jsonl-only by design — it is not in SLACK_NOTIFY, so
   // logEvent records it without pinging the feed (see the saved-views block).
-  const ALLOWED = ["excel", "print", "summary", "game", "map", "view-apply"];
+  const ALLOWED = ["excel", "print", "summary", "game", "map", "view-apply", "checkin-loc", "checkin-member"];
   if (!ALLOWED.includes(event)) return res.status(400).json({ ok: false, error: "Unknown event" });
+  const ciN = Number(req.query.n);
   const extra = event === "game" && game ? { game: String(game).slice(0, 60) }
               : event === "map" && location ? { location: String(location).slice(0, 80) }
               : event === "view-apply" && view ? { view: String(view).slice(0, 60) }
+              : event === "checkin-loc"
+                ? { location: location ? String(location).slice(0, 80) : "",
+                    checkins: Number.isFinite(ciN) && ciN >= 0 && ciN <= 9999999 ? Math.round(ciN) : undefined }
               : undefined;
   logEvent(orgSlug, reportType, event, req, extra);
   res.json({ ok: true });

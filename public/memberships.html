@@ -505,6 +505,24 @@
     @media (max-width: 700px) { .ci-charts { grid-template-columns: 1fr; } }
     .ci-chart-box { background: #fff; border: 1px solid #e8e6e0; border-radius: 6px; padding: 14px 16px; }
     .ci-chart-title { font-size: 12px; font-weight: 700; color: #333; margin-bottom: 10px; }
+    /* Desk-location filter (Check-Ins tab). Styled a touch heavier than the other
+       toolbar controls because it scopes the whole tab, not one panel. */
+    .ci-loc-filter { flex-shrink: 0; }
+    .ci-loc-filter select { font-size: 11px; padding: 3px 6px; border: 1px solid #c9c6bf; border-radius: 4px; background: #fff; max-width: 240px; }
+    /* The toolbar is dark — the label inherits its #eee, so do NOT colour it. */
+    .ci-loc-filter span { font-weight: 600; flex-shrink: 0; }
+    /* Weekday / weekend slice switch on the time-of-day chart. */
+    .ci-slice-group { display: inline-flex; border: 1px solid #d8d5cf; border-radius: 5px; overflow: hidden; }
+    .ci-slice-group button { border: 0; background: #fff; color: #555; font-size: 10px; font-weight: 600; padding: 4px 9px; cursor: pointer; border-left: 1px solid #eceae5; }
+    .ci-slice-group button:first-child { border-left: 0; }
+    .ci-slice-group button.active { background: #111; color: #fff; }
+    /* Top Members monthly bars — clickable columns, so they read as controls. */
+    .ci-mo-bar { width: 16px; padding: 0; border: 0; border-radius: 2px 2px 0 0; cursor: pointer; transition: height .2s, opacity .15s; }
+    .ci-mo-bar:hover { filter: brightness(1.15); }
+    .ci-mo-head { width: 16px; padding: 0; height: 14px; border: 0; border-radius: 2px; cursor: pointer;
+                  background: rgba(255,255,255,.18); color: #fff; font-size: 9px; font-weight: 700; line-height: 14px; }
+    .ci-mo-head:hover { background: rgba(255,255,255,.34); }
+    .ci-mo-head.on { background: #fff; color: #111; }
     .ci-bar-row { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
     .ci-bar-label { font-size: 11px; color: #666; width: 48px; text-align: right; flex-shrink: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .ci-bar-track { flex: 1; height: 14px; background: #f0eeea; border-radius: 3px; overflow: hidden; }
@@ -611,7 +629,8 @@
 
     function getParams() {
       const p = new URLSearchParams(window.location.search);
-      return { start_date: p.get('start_date'), end_date: p.get('end_date'), _print: p.get('_print') };
+      return { start_date: p.get('start_date'), end_date: p.get('end_date'), _print: p.get('_print'),
+               tab: p.get('tab'), ci_loc: p.get('ci_loc') };
     }
 
     function defaultDates() {
@@ -630,6 +649,39 @@
     </div>
   );
 }
+
+    // ── Check-in helpers ──────────────────────────────────────────────────
+    // Module scope on purpose: the Check-Ins tab derives its charts inside render
+    // IIFEs, and Babel compiles const→var, so anything they read has to be
+    // declared above them rather than further down the component.
+    const CI_DOW1 = ['S','M','T','W','T','F','S'];
+    const CI_DOW3 = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+    // "2026-08-24" through new Date() is UTC midnight, which formats as the 23rd
+    // in every US timezone — build the date from its parts instead.
+    function ciDow(v) {
+      var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(v == null ? '' : v));
+      return m ? new Date(+m[1], +m[2] - 1, +m[3]).getDay() : null;
+    }
+    function ciIsWeekend(v) { var d = ciDow(v); return d === 0 || d === 6; }
+    function ciHourShort(h) { var x = ((h % 24) + 24) % 24; return x === 0 ? '12a' : x === 12 ? '12p' : x > 12 ? (x - 12) + 'p' : x + 'a'; }
+    function ciHourLong(h)  { var x = ((h % 24) + 24) % 24; return x === 0 ? '12am' : x === 12 ? '12pm' : x > 12 ? (x - 12) + 'pm' : x + 'am'; }
+    function ciMonthKey(v)  { var m = /^(\d{4})-(\d{2})/.exec(String(v == null ? '' : v)); return m ? m[1] + '-' + m[2] : ''; }
+    function ciMonthShort(mo) { var q = String(mo || '').split('-'); return q.length < 2 ? String(mo || '') : new Date(+q[0], +q[1] - 1, 1).toLocaleDateString('en-US', {month:'short'}); }
+    function ciMonthLong(mo)  { var q = String(mo || '').split('-'); return q.length < 2 ? String(mo || '') : new Date(+q[0], +q[1] - 1, 1).toLocaleDateString('en-US', {month:'long', year:'numeric'}); }
+    function ciDateLabel(v) {
+      var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(v == null ? '' : v));
+      if (!m) return String(v == null ? '' : v);
+      return new Date(+m[1], +m[2] - 1, +m[3]).toLocaleDateString('en-US', {month:'short', day:'numeric'});
+    }
+    // A member's Rec account. The check-in card emits BOTH ids: "Member ID" is
+    // users.rec_id (the 6-character code staff read out at the desk) and "User
+    // ID" is users.id, the uuid the admin URL takes. Only the uuid can be linked,
+    // so the cell degrades to plain text rather than building a URL out of a
+    // rec_id that would 404.
+    function ciUserUrl(orgId, userId) {
+      if (!orgId || !userId) return null;
+      return 'https://www.rec.us/admin/o/' + orgId + '/users/' + userId;
+    }
 
 function normalizeRow(raw) {
       return {
@@ -907,9 +959,25 @@ function normalizeRow(raw) {
       const [meta, setMeta]       = useState({});
       const [loading, setLoading] = useState(true);
       const [error, setError]     = useState(null);
-      const [activeTab, setActiveTab] = useState('memberships');
+      const [activeTab, setActiveTab] = useState(() => {
+        const t = params.tab;
+        return (t === 'checkins' || t === 'retention' || t === 'memberships') ? t : 'memberships';
+      });
       const [ciRows, setCiRows] = useState(null);
+      const [ciMeta, setCiMeta] = useState({});
       const [ciLoading, setCiLoading] = useState(false);
+      // Desk-location filter for the Check-Ins tab. Deliberately NOT persisted:
+      // it is a question being asked ("how is the north branch doing?"), not a
+      // layout preference, and someone returning to a silently narrowed report
+      // would read one desk as the whole organization.
+      const [ciLoc, setCiLoc] = useState(() => params.ci_loc || 'all');
+      // Month column selected in Top Members (null = none).
+      const [ciMonthSel, setCiMonthSel] = useState(null);
+      // Which slice the time-of-day curve shows. One series at a time on purpose:
+      // a weekend total plotted beside a weekday total always looks quiet, because
+      // there are five of one and two of the other — different denominators, not
+      // different demand.
+      const [ciHourSlice, setCiHourSlice] = useState('all');
       // Window the check-in data was loaded for ("sd|ed"), so the Check-Ins tab
       // refetches when the report's date range changes instead of going stale.
       const [ciWin, setCiWin] = useState(null);
@@ -963,9 +1031,11 @@ function normalizeRow(raw) {
         const qs = new URLSearchParams(window.location.search);
         qs.set('start_date', loadedStart);
         qs.set('end_date',   loadedEnd);
+        if (activeTab === 'memberships') qs.delete('tab'); else qs.set('tab', activeTab);
+        if (activeTab === 'checkins' && ciLoc !== 'all') qs.set('ci_loc', ciLoc); else qs.delete('ci_loc');
         const newUrl = window.location.pathname + '?' + qs.toString();
         window.history.replaceState(null, '', newUrl);
-      }, [loadedStart, loadedEnd]);
+      }, [loadedStart, loadedEnd, activeTab, ciLoc]);
 
       // ── Fetch ──
       const fetchData = useCallback((sd, ed) => {
@@ -1002,7 +1072,7 @@ function normalizeRow(raw) {
         setCiWin(sd + '|' + ed);
         fetch(withToken('/' + orgSlug + '/checkins/api/data?start_date=' + sd + '&end_date=' + ed))
           .then(function(r){ return r.json(); })
-          .then(function(json) { setCiRows(json.rows || []); setCiLoading(false); })
+          .then(function(json) { setCiRows(json.rows || []); setCiMeta(json.meta || {}); setCiLoading(false); })
           .catch(function(e) { console.error('checkin fetch error', e); setCiLoading(false); });
       }
 
@@ -1013,6 +1083,44 @@ function normalizeRow(raw) {
       function ensureCheckins(sd, ed) {
         if (!ciRows || ciWin !== (sd + '|' + ed)) fetchCheckins(sd, ed);
       }
+
+      // Deep link straight to a tab (?tab=checkins), so a shared link lands where
+      // the sender was looking instead of on Memberships.
+      useEffect(() => { if (activeTab === 'checkins') fetchCheckins(startDate, endDate); }, []);
+
+      // Activity pings for the Check-Ins tab. Fire-and-forget, and the event name
+      // has to be in the log route's ALLOWED list or the beacon 400s silently.
+      const ciBeacon = useCallback((event, extra) => {
+        const qs = new URLSearchParams({ event: event });
+        Object.keys(extra || {}).forEach(function(k){ if (extra[k] != null && extra[k] !== '') qs.set(k, String(extra[k])); });
+        fetch(withToken('/' + orgSlug + '/' + reportType + '/api/log?' + qs.toString()),
+              { method: 'POST', keepalive: true }).catch(function(){});
+      }, [orgSlug]);
+
+      // The desk locations present in the loaded window, busiest first. Built from
+      // the feed rather than a configured list, so a desk that stopped being used
+      // drops out on its own and a new one appears without a deploy.
+      const ciLocations = useMemo(() => {
+        const n = {};
+        (ciRows || []).forEach(function(r) { const d = r['Desk Location'] || 'Unknown'; n[d] = (n[d] || 0) + 1; });
+        return Object.keys(n).map(function(k){ return { name: k, n: n[k] }; })
+                     .sort(function(a, b){ return b.n - a.n || a.name.localeCompare(b.name); });
+      }, [ciRows]);
+
+      // EVERY figure on the Check-Ins tab reads ciView, never ciRows — that is
+      // what stops the filter from being applied to some panels and missed by
+      // others (the bug the facility Summary chips had).
+      const ciView = useMemo(() => {
+        if (!ciRows) return [];
+        if (ciLoc === 'all') return ciRows;
+        return ciRows.filter(function(r) { return (r['Desk Location'] || 'Unknown') === ciLoc; });
+      }, [ciRows, ciLoc]);
+
+      // A new window can contain no check-ins at the selected desk. Holding the
+      // selection would show an empty tab with nothing saying why.
+      useEffect(() => {
+        if (ciLoc !== 'all' && ciRows && !ciLocations.some(function(l){ return l.name === ciLoc; })) setCiLoc('all');
+      }, [ciRows, ciLocations, ciLoc]);
 
       function handleRunReport() {
         fetchData(startDate, endDate);
@@ -1106,21 +1214,23 @@ function normalizeRow(raw) {
   // ── AI Insights ──
   const buildInsightsBlob = useCallback(() => {
     if (activeTab === 'checkins') {
-      if (!ciRows || !ciRows.length) return null;
+      if (!ciView || !ciView.length) return null;
       var hourCts = {}; var dayCts = {}; var deskCts = {}; var prodCts = {}; var uniqM = new Set();
-      ciRows.forEach(function(r) {
+      ciView.forEach(function(r) {
         uniqM.add(r['Member ID']);
         var h = parseInt(r['Hour']); hourCts[h] = (hourCts[h]||0)+1;
         var dow = (r['Day of Week']||'').trim(); dayCts[dow] = (dayCts[dow]||0)+1;
         var desk = r['Desk Location']||'Unknown'; deskCts[desk] = (deskCts[desk]||0)+1;
         var prod = r['Product Name']||'Unknown'; prodCts[prod] = (prodCts[prod]||0)+1;
       });
-      var memCt = ciRows.filter(function(r){return r['Check-In Type']==='membership';}).length;
-      var passCt = ciRows.filter(function(r){return r['Check-In Type']==='pass';}).length;
-      var uniqueDts = new Set(ciRows.map(function(r){ return r['Date']; }));
-      return { reportContext: 'check-ins', totalCheckIns: ciRows.length, uniqueMembers: uniqM.size, days: uniqueDts.size,
-        avgPerDay: uniqueDts.size > 0 ? Math.round(ciRows.length / uniqueDts.size) : 0,
+      var memCt = ciView.filter(function(r){return r['Check-In Type']==='membership';}).length;
+      var passCt = ciView.filter(function(r){return r['Check-In Type']==='pass';}).length;
+      var uniqueDts = new Set(ciView.map(function(r){ return r['Date']; }));
+      return { reportContext: 'check-ins', totalCheckIns: ciView.length, uniqueMembers: uniqM.size, days: uniqueDts.size,
+        avgPerDay: uniqueDts.size > 0 ? Math.round(ciView.length / uniqueDts.size) : 0,
         membershipVsPass: { membership: memCt, pass: passCt },
+        // Named so the model never describes one desk's numbers as the org's.
+        deskLocationFilter: ciLoc === 'all' ? 'all locations' : ciLoc,
         byHour: hourCts, byDayOfWeek: dayCts, byDeskLocation: deskCts, byProduct: prodCts };
     }
     if (activeTab === 'retention') {
@@ -1133,7 +1243,7 @@ function normalizeRow(raw) {
       byType[r.membershipName||r.type||'unknown'] = (byType[r.membershipName||r.type||'unknown']||0)+1; });
     return { reportContext: 'memberships', totalMembers: data.length, byStatus, byType,
       sample: data.slice(0,20).map(r => ({ type: r.membershipName||r.type, status: r.status, revenue: r.revenue||r.amount })) };
-  }, [data, ciRows, activeTab]);
+  }, [data, ciView, ciLoc, activeTab]);
 
   const sendInsightsFeedback = useCallback((score) => {
     if (!insightsTraceId) return;
@@ -1233,19 +1343,11 @@ function normalizeRow(raw) {
         // download started by a sandboxed iframe is silently dropped. See open-pdf.js.
         saveWorkbookViaPopup(XLSX, wb, fname);
         // log
-        fetch(withToken(`/${orgSlug}/${reportType}/api/log`), {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({ action: 'excel' })
-        }).catch(()=>{});
+        fetch(withToken(`/${orgSlug}/${reportType}/api/log?event=excel`), { method: 'POST', keepalive: true }).catch(()=>{});
       };
 
       const printPage = () => {
-        fetch(withToken(`/${orgSlug}/${reportType}/api/log`), {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({ action: 'print' })
-        }).catch(()=>{});
+        fetch(withToken(`/${orgSlug}/${reportType}/api/log?event=print`), { method: 'POST', keepalive: true }).catch(()=>{});
         window.print();
       };
 
@@ -1712,6 +1814,22 @@ function normalizeRow(raw) {
                 ))}
               </div>
               </React.Fragment>}
+              {activeTab === 'checkins' && ciLocations.length > 1 && (
+                <label className="ci-loc-filter" title="Scope every figure on this tab to one desk location">
+                  <span>Location</span>
+                  <select id="ciLocPick" value={ciLoc} onChange={e => {
+                    const v = e.target.value;
+                    setCiLoc(v); setCiMonthSel(null);
+                    const hit = ciLocations.filter(function(l){ return l.name === v; })[0];
+                    if (v !== 'all') ciBeacon('checkin-loc', { location: v, n: hit ? hit.n : undefined });
+                  }}>
+                    <option value="all">{'All locations (' + (ciRows ? ciRows.length.toLocaleString() : '0') + ')'}</option>
+                    {ciLocations.map(function(l) {
+                      return <option key={l.name} value={l.name}>{l.name + ' (' + l.n.toLocaleString() + ')'}</option>;
+                    })}
+                  </select>
+                </label>
+              )}
               {(activeTab === 'checkins' || activeTab === 'retention') && <span className="toolbar-spacer" />}
 
               <button onClick={printPage} title="Print">🖨️ Print</button>
@@ -1741,7 +1859,7 @@ function normalizeRow(raw) {
                 )}
                 <div className="rh-meta">
                   {activeTab === 'memberships' && <span>{filtered.length.toLocaleString()} memberships · {summary.total.toLocaleString()} after filters</span>}
-                  {activeTab === 'checkins' && ciRows && <span>{ciRows.length.toLocaleString()} check-ins</span>}
+                  {activeTab === 'checkins' && ciRows && <span>{ciView.length.toLocaleString()} check-ins{ciLoc !== 'all' ? ' · ' + ciLoc : ''}</span>}
                   {activeTab === 'retention' && <span>Cohort retention analysis</span>}
                 </div>
               </div>
@@ -1794,7 +1912,7 @@ function normalizeRow(raw) {
               </button>
               <button className={'tab-btn' + (activeTab === 'checkins' ? ' active' : '')} onClick={function(){ setActiveTab('checkins'); ensureCheckins(loadedStart || startDate, loadedEnd || endDate); }}>
                 ✅ Check-Ins
-                {ciRows && ciRows.length > 0 && <span className="tab-badge">{ciRows.length.toLocaleString()}</span>}
+                {ciRows && ciRows.length > 0 && <span className="tab-badge">{ciView.length.toLocaleString()}</span>}
               </button>
               <button className={'tab-btn' + (activeTab === 'retention' ? ' active' : '')} onClick={function(){
                   setActiveTab('retention');
@@ -1818,10 +1936,19 @@ function normalizeRow(raw) {
           {activeTab === 'checkins' && (
             <div style={{maxWidth:1100,margin:'0 auto',padding:'0'}}>
               {ciLoading && <div className="loading"><div className="spinner" /><div className="juice-msg"><span>Squeezing the oranges…</span><span>Counting check-ins…</span><span>Sorting the data…</span><span>Almost there…</span><span>Pouring it out…</span></div></div>}
-              {!ciLoading && ciRows && ciRows.length > 0 && (() => {
+              {!ciLoading && ciRows && ciRows.length > 0 && ciView.length === 0 && (
+                <div style={{textAlign:'center',padding:40,color:'#999'}}>
+                  No check-ins at <b>{ciLoc}</b> in this window. {ciRows.length.toLocaleString()} across all locations —{' '}
+                  <a href="#" onClick={function(e){ e.preventDefault(); setCiLoc('all'); }} style={{color:'#2563eb'}}>show every location</a>.
+                </div>
+              )}
+              {!ciLoading && ciRows && ciRows.length > 0 && ciView.length > 0 && (() => {
                 var uniqueMembers = new Set(); var hourCounts = {}; var dayCounts = {}; var deskCounts = {}; var prodCounts = {};
                 var dayTypeCounts = {}; var heatGrid = {}; var dailyCounts = {};
-                ciRows.forEach(function(r) {
+                // Hour of day split by weekday/weekend — the two curves answer
+                // different staffing questions and the combined one hides both.
+                var hourWk = {}; var hourWe = {};
+                ciView.forEach(function(r) {
                   uniqueMembers.add(r['Member ID']);
                   var h = parseInt(r['Hour']); hourCounts[h] = (hourCounts[h]||0)+1;
                   var dow = (r['Day of Week']||'').trim(); dayCounts[dow] = (dayCounts[dow]||0)+1;
@@ -1830,28 +1957,105 @@ function normalizeRow(raw) {
                   var dt = (r['Day Type']||'').trim(); if (dt) dayTypeCounts[dt] = (dayTypeCounts[dt]||0)+1;
                   if (dow && !isNaN(h)) { if (!heatGrid[dow]) heatGrid[dow] = {}; heatGrid[dow][h] = (heatGrid[dow][h]||0)+1; }
                   var dateKey = r['Date']||''; if (dateKey) dailyCounts[dateKey] = (dailyCounts[dateKey]||0)+1;
+                  if (!isNaN(h)) { if (dt === 'Weekend') hourWe[h] = (hourWe[h]||0)+1; else hourWk[h] = (hourWk[h]||0)+1; }
                 });
-                var uniqueDates = new Set(ciRows.map(function(r){ return r['Date']; }));
-                var avgPerDay = uniqueDates.size > 0 ? Math.round(ciRows.length / uniqueDates.size) : 0;
+                var uniqueDates = new Set(ciView.map(function(r){ return r['Date']; }));
+                var avgPerDay = uniqueDates.size > 0 ? Math.round(ciView.length / uniqueDates.size) : 0;
                 var peakEntry = Object.entries(hourCounts).sort(function(a,b){return b[1]-a[1];})[0];
                 var pH = peakEntry ? parseInt(peakEntry[0]) : 0;
                 var peakLabel = peakEntry ? (pH === 0 ? '12am' : pH === 12 ? '12pm' : pH > 12 ? (pH-12)+'pm' : pH+'am') : 'N/A';
-                var maxH = Math.max.apply(null, Object.values(hourCounts).concat([1]));
                 var maxDk = Math.max.apply(null, Object.values(deskCounts).concat([1]));
                 var maxPr = Math.max.apply(null, Object.values(prodCounts).concat([1]));
                 var dayOrd = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
                 var maxDy = Math.max.apply(null, dayOrd.map(function(d){return dayCounts[d]||0;}).concat([1]));
-                var memCount = ciRows.filter(function(r){return r['Check-In Type']==='membership';}).length;
-                var passCount = ciRows.filter(function(r){return r['Check-In Type']==='pass';}).length;
+                var memCount = ciView.filter(function(r){return r['Check-In Type']==='membership';}).length;
+                var passCount = ciView.filter(function(r){return r['Check-In Type']==='pass';}).length;
+                var recOrgId = ciMeta.org_id || meta.org_id || '';
                 return (
                   <React.Fragment>
                     <div className="ci-kpis">
-                      <div className="ci-kpi" style={{borderLeft:'3px solid #3b82f6'}}><div className="kl">Total Check-Ins</div><div className="kv">{ciRows.length.toLocaleString()}</div><div className="ks">{uniqueDates.size} days</div></div>
-                      <div className="ci-kpi" style={{borderLeft:'3px solid #10b981'}}><div className="kl">Unique Members</div><div className="kv">{uniqueMembers.size.toLocaleString()}</div><div className="ks">{(ciRows.length / Math.max(uniqueMembers.size,1)).toFixed(1)} visits/member</div></div>
+                      <div className="ci-kpi" style={{borderLeft:'3px solid #3b82f6'}}><div className="kl">Total Check-Ins</div><div className="kv" data-ci-total={ciView.length}>{ciView.length.toLocaleString()}</div><div className="ks">{uniqueDates.size} days{ciLoc !== 'all' ? ' · ' + ciLoc : ''}</div></div>
+                      <div className="ci-kpi" style={{borderLeft:'3px solid #10b981'}}><div className="kl">Unique Members</div><div className="kv">{uniqueMembers.size.toLocaleString()}</div><div className="ks">{(ciView.length / Math.max(uniqueMembers.size,1)).toFixed(1)} visits/member</div></div>
                       <div className="ci-kpi" style={{borderLeft:'3px solid #f59e0b'}}><div className="kl">Avg per Day</div><div className="kv">{avgPerDay.toLocaleString()}</div><div className="ks">{dayTypeCounts['Weekday']||0} weekday / {dayTypeCounts['Weekend']||0} weekend</div></div>
                       <div className="ci-kpi" style={{borderLeft:'3px solid #8b5cf6'}}><div className="kl">Peak Hour</div><div className="kv">{peakLabel}</div><div className="ks">{peakEntry ? peakEntry[1]+' check-ins' : ''}</div></div>
-                      <div className="ci-kpi" style={{borderLeft:'3px solid #06b6d4'}}><div className="kl">Membership vs Pass</div><div className="kv">{Math.round(memCount/Math.max(ciRows.length,1)*100)}% / {Math.round(passCount/Math.max(ciRows.length,1)*100)}%</div><div className="ks">{memCount.toLocaleString()} / {passCount.toLocaleString()}</div></div>
+                      <div className="ci-kpi" style={{borderLeft:'3px solid #06b6d4'}}><div className="kl">Membership vs Pass</div><div className="kv">{Math.round(memCount/Math.max(ciView.length,1)*100)}% / {Math.round(passCount/Math.max(ciView.length,1)*100)}%</div><div className="ks">{memCount.toLocaleString()} / {passCount.toLocaleString()}</div></div>
                     </div>
+                    {/* ── Check-ins by time of day ── */}
+                    {(() => {
+                      var srcH = ciHourSlice === 'Weekday' ? hourWk : ciHourSlice === 'Weekend' ? hourWe : hourCounts;
+                      var present = Object.keys(srcH).map(Number).filter(function(h){ return !isNaN(h); });
+                      if (!present.length) return null;
+                      var lo = Math.min.apply(null, present), hi = Math.max.apply(null, present);
+                      if (hi - lo < 5) { lo = Math.max(0, lo - 2); hi = Math.min(23, hi + 2); }
+                      var hrs = []; for (var qh = lo; qh <= hi; qh++) hrs.push(qh);
+                      var sliceTotal = 0; hrs.forEach(function(h){ sliceTotal += (srcH[h] || 0); });
+                      // Distinct DATES in the slice, so the caption can give a
+                      // per-day figure the eye can compare across slices.
+                      var sliceDays = new Set();
+                      ciView.forEach(function(r) {
+                        var dt = (r['Day Type'] || '').trim();
+                        if (ciHourSlice !== 'all' && dt !== ciHourSlice) return;
+                        if (r['Date']) sliceDays.add(r['Date']);
+                      });
+                      var maxV = Math.max.apply(null, hrs.map(function(h){ return srcH[h] || 0; }).concat([1]));
+                      var peakH = hrs[0], peakV = -1;
+                      hrs.forEach(function(h){ var v = srcH[h] || 0; if (v > peakV) { peakV = v; peakH = h; } });
+                      var W = 1060, H = 190, padL = 42, padR = 14, padT = 12, padB = 30;
+                      var plotW = W - padL - padR, plotH = H - padT - padB;
+                      var xOf = function(i) { return padL + (i / Math.max(hrs.length - 1, 1)) * plotW; };
+                      var yOf = function(v) { return padT + plotH - (v / maxV) * plotH; };
+                      var pts = hrs.map(function(h, i) { return { x: xOf(i), y: yOf(srcH[h] || 0), h: h, v: srcH[h] || 0 }; });
+                      var line = pts.map(function(q){ return q.x + ',' + q.y; }).join(' ');
+                      var area = padL + ',' + (padT + plotH) + ' ' + line + ' ' + pts[pts.length - 1].x + ',' + (padT + plotH);
+                      var yTicks = [0, Math.round(maxV / 2), maxV].filter(function(v, i, a){ return a.indexOf(v) === i; });
+                      var stroke = ciHourSlice === 'Weekend' ? '#f59e0b' : ciHourSlice === 'Weekday' ? '#10b981' : '#3b82f6';
+                      var fill = ciHourSlice === 'Weekend' ? 'rgba(245,158,11,0.12)' : ciHourSlice === 'Weekday' ? 'rgba(16,185,129,0.12)' : 'rgba(59,130,246,0.12)';
+                      var SLICES = [{k:'all',label:'All days'},{k:'Weekday',label:'Weekdays'},{k:'Weekend',label:'Weekends'}];
+                      return (
+                        <div className="ci-trend-wrap" data-ci-hour-line={ciHourShort(peakH)}>
+                          <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:12,flexWrap:'wrap'}}>
+                            <div>
+                              <div className="ci-chart-title">Check-Ins by Time of Day</div>
+                              <div style={{fontSize:11,color:'#9ca3af',marginBottom:8,marginTop:-6}}>
+                                {'Busiest at ' + ciHourLong(peakH) + ' · ' + sliceTotal.toLocaleString() + ' check-ins over ' + sliceDays.size + ' ' +
+                                 (ciHourSlice === 'all' ? 'day' : ciHourSlice.toLowerCase() + ' day') + (sliceDays.size === 1 ? '' : 's') +
+                                 (sliceDays.size ? ' (' + (Math.round(sliceTotal / sliceDays.size * 10) / 10).toLocaleString() + ' a day)' : '')}
+                              </div>
+                            </div>
+                            <div className="ci-slice-group no-print">
+                              {SLICES.map(function(sl) {
+                                return <button key={sl.k} className={ciHourSlice === sl.k ? 'active' : ''}
+                                               onClick={function(){ setCiHourSlice(sl.k); }}>{sl.label}</button>;
+                              })}
+                            </div>
+                          </div>
+                          <svg viewBox={'0 0 ' + W + ' ' + H} className="ci-trend-svg" style={{height:200}}>
+                            {yTicks.map(function(v) {
+                              var y = yOf(v);
+                              return <React.Fragment key={v}>
+                                <line x1={padL} x2={W - padR} y1={y} y2={y} stroke="#e8e6e0" strokeWidth="1" />
+                                <text x={padL - 4} y={y + 3} textAnchor="end" fontSize="9" fill="#999">{v.toLocaleString()}</text>
+                              </React.Fragment>;
+                            })}
+                            <polygon points={area} fill={fill} />
+                            <polyline points={line} fill="none" stroke={stroke} strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />
+                            {pts.map(function(q, i) {
+                              var isPeak = q.h === peakH && peakV > 0;
+                              return <circle key={i} cx={q.x} cy={q.y} r={isPeak ? 5 : 3} fill={isPeak ? '#fff' : stroke}
+                                             stroke={stroke} strokeWidth={isPeak ? 3 : 1.5}>
+                                <title>{ciHourLong(q.h) + ': ' + q.v.toLocaleString() + ' check-in' + (q.v === 1 ? '' : 's')}</title>
+                              </circle>;
+                            })}
+                            {pts.map(function(q, i) {
+                              // Label every hour when they fit, every other one when they don't.
+                              if (hrs.length > 14 && i % 2 === 1) return null;
+                              return <text key={'l' + i} x={q.x} y={H - 12} textAnchor="middle" fontSize="9"
+                                           fill={q.h === peakH ? '#111' : '#999'} fontWeight={q.h === peakH ? 700 : 400}>{ciHourShort(q.h)}</text>;
+                            })}
+                          </svg>
+                        </div>
+                      );
+                    })()}
                     {/* ── Hour x Day Heatmap ── */}
                     {(() => {
                       var hmHours = []; for (var hh=5; hh<=21; hh++) hmHours.push(hh);
@@ -1896,21 +2100,33 @@ function normalizeRow(raw) {
                       var sortedDays = Object.entries(dailyCounts).sort(function(a,b){ return a[0].localeCompare(b[0]); });
                       if (sortedDays.length < 2) return null;
                       var maxDay = Math.max.apply(null, sortedDays.map(function(e){ return e[1]; }));
-                      var W = 1060; var H = 160; var padL = 40; var padR = 10; var padT = 10; var padB = 24;
+                      var W = 1060; var H = 182; var padL = 40; var padR = 10; var padT = 10; var padB = 46;
                       var plotW = W - padL - padR; var plotH = H - padT - padB;
                       var pts = sortedDays.map(function(e, i) {
                         var x = padL + (i / Math.max(sortedDays.length - 1, 1)) * plotW;
                         var y = padT + plotH - (e[1] / maxDay) * plotH;
-                        return { x: x, y: y, date: e[0], count: e[1] };
+                        return { x: x, y: y, date: e[0], count: e[1], dow: ciDow(e[0]) };
                       });
                       var line = pts.map(function(p){ return p.x + ',' + p.y; }).join(' ');
                       var area = padL + ',' + (padT + plotH) + ' ' + line + ' ' + pts[pts.length-1].x + ',' + (padT + plotH);
                       var yTicks = [0, Math.round(maxDay/2), maxDay];
                       var xLabels = sortedDays.length <= 14 ? sortedDays : sortedDays.filter(function(_,i){ return i % Math.ceil(sortedDays.length/10) === 0 || i === sortedDays.length-1; });
+                      // Weekday letters go under every point while they still fit;
+                      // past that the letters would overlap and say nothing, so the
+                      // weekend shading carries the rhythm on its own.
+                      var showDow = pts.length <= 45;
+                      var halfStep = pts.length > 1 ? (pts[1].x - pts[0].x) / 2 : plotW / 2;
+                      var weekendBands = pts.filter(function(p){ return p.dow === 0 || p.dow === 6; }).map(function(p) {
+                        var x0 = Math.max(padL, p.x - halfStep), x1 = Math.min(W - padR, p.x + halfStep);
+                        return { key: p.date, x: x0, w: Math.max(x1 - x0, 1) };
+                      });
                       return (
                         <div className="ci-trend-wrap">
-                          <div className="ci-chart-title">Daily Check-Ins</div><div style={{fontSize:11,color:'#9ca3af',marginBottom:8,marginTop:-6}}>Total check-ins per day for the selected date range.</div>
-                          <svg viewBox={'0 0 ' + W + ' ' + H} className="ci-trend-svg" style={{height: 180}}>
+                          <div className="ci-chart-title">Daily Check-Ins</div><div style={{fontSize:11,color:'#9ca3af',marginBottom:8,marginTop:-6}}>Total check-ins per day for the selected date range. Weekends are shaded.</div>
+                          <svg viewBox={'0 0 ' + W + ' ' + H} className="ci-trend-svg" style={{height: 200}}>
+                            {weekendBands.map(function(b) {
+                              return <rect key={'wb'+b.key} x={b.x} y={padT} width={b.w} height={plotH} fill="#f4f1ea" />;
+                            })}
                             {yTicks.map(function(v) {
                               var y = padT + plotH - (v / maxDay) * plotH;
                               return <React.Fragment key={v}><line x1={padL} x2={W-padR} y1={y} y2={y} stroke="#e8e6e0" strokeWidth="1" /><text x={padL-4} y={y+3} textAnchor="end" fontSize="9" fill="#999">{v.toLocaleString()}</text></React.Fragment>;
@@ -1918,13 +2134,21 @@ function normalizeRow(raw) {
                             <polygon points={area} fill="rgba(59,130,246,0.12)" />
                             <polyline points={line} fill="none" stroke="#3b82f6" strokeWidth="2" strokeLinejoin="round" />
                             {pts.map(function(p, i) {
-                              var fmtD = (function(){ try { var d = new Date(p.date + 'T12:00:00'); return d.toLocaleDateString('en-US',{month:'short',day:'numeric'}); } catch(e){ return p.date; } })();
-                              return <circle key={i} cx={p.x} cy={p.y} r="3.5" fill="#3b82f6" stroke="#fff" strokeWidth="1.5" style={{cursor:'default'}}><title>{fmtD + ': ' + p.count.toLocaleString() + ' check-ins'}</title></circle>;
+                              var isWe = p.dow === 0 || p.dow === 6;
+                              return <circle key={i} cx={p.x} cy={p.y} r="3.5" fill={isWe ? '#f59e0b' : '#3b82f6'} stroke="#fff" strokeWidth="1.5" style={{cursor:'default'}}>
+                                <title>{(p.dow == null ? '' : CI_DOW3[p.dow] + ' ') + ciDateLabel(p.date) + ': ' + p.count.toLocaleString() + ' check-ins'}</title>
+                              </circle>;
+                            })}
+                            {showDow && pts.map(function(p, i) {
+                              if (p.dow == null) return null;
+                              var isWe = p.dow === 0 || p.dow === 6;
+                              return <text key={'d'+i} x={p.x} y={H - 20} textAnchor="middle" fontSize="9"
+                                           fill={isWe ? '#b45309' : '#6b7280'} fontWeight={isWe ? 700 : 600}
+                                           data-ci-dow={CI_DOW1[p.dow]}>{CI_DOW1[p.dow]}</text>;
                             })}
                             {xLabels.map(function(e) {
                               var idx = sortedDays.indexOf(e); var x = padL + (idx / Math.max(sortedDays.length - 1, 1)) * plotW;
-                              var fmtD = (function(){ try { var d = new Date(e[0] + 'T12:00:00'); return d.toLocaleDateString('en-US',{month:'short',day:'numeric'}); } catch(ex){ return e[0]; } })();
-                              return <text key={e[0]} x={x} y={H - 4} textAnchor="middle" fontSize="9" fill="#999">{fmtD}</text>;
+                              return <text key={e[0]} x={x} y={H - 6} textAnchor="middle" fontSize="9" fill="#999">{ciDateLabel(e[0])}</text>;
                             })}
                           </svg>
                         </div>
@@ -1933,20 +2157,20 @@ function normalizeRow(raw) {
                     {/* ── Top Members ── */}
                     {(() => {
                       var memberMap = {};
-                      ciRows.forEach(function(r) {
+                      ciView.forEach(function(r) {
                         var mid = r['Member ID'];
                         if (!mid) return;
-                        if (!memberMap[mid]) memberMap[mid] = { name: ((r['First Name']||'') + ' ' + (r['Last Name']||'')).trim(), total: 0, products: {}, months: {}, type: r['Check-In Type']||'' };
+                        if (!memberMap[mid]) memberMap[mid] = { name: ((r['First Name']||'') + ' ' + (r['Last Name']||'')).trim(),
+                          memberId: mid, userId: r['User ID'] || '', email: r['Email'] || '',
+                          total: 0, products: {}, months: {}, type: r['Check-In Type']||'' };
+                        // The uuid can arrive on any of a member's rows, so take the
+                        // first one that has it rather than only the earliest row.
+                        if (!memberMap[mid].userId && r['User ID']) memberMap[mid].userId = r['User ID'];
                         memberMap[mid].total++;
                         var prod = r['Product Name']||'Unknown';
                         memberMap[mid].products[prod] = (memberMap[mid].products[prod]||0)+1;
-                        var dateStr = r['Date']||'';
-                        if (dateStr) {
-                          var mo;
-                          try { var dd = new Date(dateStr + 'T12:00:00'); mo = dd.getFullYear() + '-' + String(dd.getMonth()+1).padStart(2,'0'); }
-                          catch(ex) { mo = dateStr.slice(0,7); }
-                          memberMap[mid].months[mo] = (memberMap[mid].months[mo]||0)+1;
-                        }
+                        var mo = ciMonthKey(r['Date']);
+                        if (mo) memberMap[mid].months[mo] = (memberMap[mid].months[mo]||0)+1;
                       });
                       var topList = Object.values(memberMap).sort(function(a,b){ return b.total - a.total; }).slice(0,15);
                       if (topList.length === 0) return null;
@@ -1960,7 +2184,13 @@ function normalizeRow(raw) {
                         Object.entries(m.products).forEach(function(e){ if (e[1] > bestCt) { best = e[0]; bestCt = e[1]; } });
                         m.topProduct = best;
                       });
-                      var fmtMo = function(mo) { try { var parts = mo.split('-'); var d = new Date(parseInt(parts[0]), parseInt(parts[1])-1, 1); return d.toLocaleDateString('en-US',{month:'short'}); } catch(e){ return mo; } };
+                      var fmtMo = ciMonthShort;
+                      // A selected month is only meaningful while it is on screen;
+                      // a narrower date range or a location filter can take it away.
+                      var selMo = ciMonthSel && moList.indexOf(ciMonthSel) !== -1 ? ciMonthSel : null;
+                      var selTotal = 0, selMembers = 0;
+                      if (selMo) topList.forEach(function(m){ var v = m.months[selMo] || 0; if (v) { selTotal += v; selMembers++; } });
+                      var pickMo = function(mo) { setCiMonthSel(ciMonthSel === mo ? null : mo); };
                       return (
                         <div className="ci-heatmap-wrap">
                           <div className="ci-chart-title">Top Members</div>
@@ -1972,10 +2202,17 @@ function normalizeRow(raw) {
                                   <th style={{width:32,textAlign:'center'}}>#</th>
                                   <th>Name</th>
                                   <th style={{textAlign:'right',width:56}}>Visits</th>
-                                  <th style={{minWidth: Math.max(moList.length * 20, 80)}}>
-                                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                                  <th style={{minWidth: Math.max(moList.length * 20, 96)}}>
+                                    <div style={{display:'flex',alignItems:'center',gap:8}}>
                                       <span>Monthly</span>
-                                      <span style={{fontWeight:400,fontSize:9,opacity:.7}}>{moList.map(fmtMo).join(' / ')}</span>
+                                      <div style={{display:'flex',gap:2}}>
+                                        {moList.map(function(mo) {
+                                          var on = selMo === mo;
+                                          return <button key={mo} type="button" data-ci-mo-head={mo} onClick={function(){ pickMo(mo); }}
+                                            title={ciMonthLong(mo) + (on ? ' — click to clear' : ' — click to highlight')}
+                                            className={'ci-mo-head' + (on ? ' on' : '')}>{fmtMo(mo).slice(0,1)}</button>;
+                                        })}
+                                      </div>
                                     </div>
                                   </th>
                                   <th style={{maxWidth:200}}>Membership / Pass</th>
@@ -1991,14 +2228,32 @@ function normalizeRow(raw) {
                                         {isTop3 ? <span style={{display:'inline-flex',alignItems:'center',justifyContent:'center',width:22,height:22,borderRadius:'50%',background:rankColors[idx],color:'#fff',fontWeight:700,fontSize:11}}>{idx+1}</span>
                                                  : <span style={{color:'#999',fontWeight:600,fontSize:11}}>{idx+1}</span>}
                                       </td>
-                                      <td style={{fontWeight: isTop3 ? 700 : 400, fontSize: isTop3 ? 13 : 12}}>{m.name || 'Unknown'}</td>
+                                      <td style={{fontWeight: isTop3 ? 700 : 400, fontSize: isTop3 ? 13 : 12}}>
+                                        {(function() {
+                                          var url = ciUserUrl(recOrgId, m.userId);
+                                          if (!url) return <span title={m.memberId ? 'Member ' + m.memberId : ''}>{m.name || 'Unknown'}</span>;
+                                          return <a href={url} target="_blank" rel="noopener noreferrer" data-ci-user-link="1"
+                                                    onClick={function(){ ciBeacon('checkin-member'); }}
+                                                    title={'Open ' + (m.name || 'this member') + ' in Rec'}
+                                                    style={{color:'inherit',textDecoration:'none',borderBottom:'1px dotted #9ca3af'}}>
+                                            {m.name || 'Unknown'}<span style={{fontSize:10,color:'#2563eb',marginLeft:4}}>↗</span>
+                                          </a>;
+                                        })()}
+                                      </td>
                                       <td style={{textAlign:'right',fontWeight:700,fontVariantNumeric:'tabular-nums',fontSize:14,color:'#111'}}>{m.total.toLocaleString()}</td>
                                       <td>
                                         <div style={{display:'flex',alignItems:'flex-end',gap:2,height:26,paddingTop:2}}>
                                           {moList.map(function(mo){
                                             var v = m.months[mo]||0;
                                             var h = sparkMax > 0 ? Math.max(v / sparkMax * 22, v > 0 ? 3 : 0) : 0;
-                                            return <div key={mo} style={{width:16,height:h,background: v > 0 ? (m.type === 'pass' ? '#8b5cf6' : '#3b82f6') : '#eee',borderRadius:'2px 2px 0 0',cursor:'default',transition:'height .2s'}} title={fmtMo(mo) + ': ' + v + ' check-ins'} />;
+                                            var base = m.type === 'pass' ? '#8b5cf6' : '#3b82f6';
+                                            var dim = selMo && selMo !== mo;
+                                            return <button key={mo} type="button" className="ci-mo-bar" data-ci-mo={mo}
+                                              onClick={function(){ pickMo(mo); }}
+                                              title={ciMonthLong(mo) + ': ' + v.toLocaleString() + ' check-in' + (v === 1 ? '' : 's') + ' · ' + (m.name || 'Unknown') + (selMo === mo ? ' — click to clear' : '')}
+                                              style={{height: Math.max(h, 2), background: v > 0 ? base : '#eee',
+                                                      opacity: dim ? 0.3 : 1,
+                                                      outline: selMo === mo ? '2px solid #111' : 'none'}} />;
                                           })}
                                         </div>
                                       </td>
@@ -2012,31 +2267,35 @@ function normalizeRow(raw) {
                               </tbody>
                             </table>
                           </div>
+                          {selMo ? (
+                            <div style={{marginTop:10,fontSize:11,color:'#374151',background:'#f9fafb',border:'1px solid #e8e6e0',borderRadius:4,padding:'6px 10px'}}>
+                              <b>{ciMonthLong(selMo)}</b> highlighted · {selTotal.toLocaleString()} check-in{selTotal === 1 ? '' : 's'} from {selMembers} of these {topList.length} members ·{' '}
+                              <a href="#" onClick={function(e){ e.preventDefault(); setCiMonthSel(null); }} style={{color:'#2563eb'}}>clear</a>
+                            </div>
+                          ) : (
+                            <div style={{marginTop:8,fontSize:10,color:'#9ca3af'}}>Click a bar to highlight that month across every member.</div>
+                          )}
                         </div>
                       );
                     })()}
                     <div className="ci-charts">
-                      <div className="ci-chart-box">
-                        <div className="ci-chart-title">Hourly Distribution</div><div style={{fontSize:11,color:'#9ca3af',marginBottom:8,marginTop:-6}}>Check-ins grouped by hour of day across all dates.</div>
-                        {Array.from({length:17}, function(_,i){ var h=i+5; var c=hourCounts[h]||0; return (
-                          <div key={h} className="ci-bar-row"><span className="ci-bar-label">{h===0?'12am':h===12?'12pm':h>12?(h-12)+'pm':h+'am'}</span><div className="ci-bar-track"><div className="ci-bar-fill" style={{width:(c/maxH*100)+'%',background:'#3b82f6'}}/></div><span className="ci-bar-val">{c||''}</span></div>
-                        );})}
-                      </div>
                       <div className="ci-chart-box">
                         <div className="ci-chart-title">Day of Week</div><div style={{fontSize:11,color:'#9ca3af',marginBottom:8,marginTop:-6}}>Total check-ins by day of the week.</div>
                         {dayOrd.map(function(d){ var c=dayCounts[d]||0; return (
                           <div key={d} className="ci-bar-row"><span className="ci-bar-label">{d.slice(0,3)}</span><div className="ci-bar-track"><div className="ci-bar-fill" style={{width:(c/maxDy*100)+'%',background:'#10b981'}}/></div><span className="ci-bar-val">{c||''}</span></div>
                         );})}
                       </div>
-                    </div>
-                    <div className="ci-charts">
                       <div className="ci-chart-box">
-                        <div className="ci-chart-title">Desk Locations</div><div style={{fontSize:11,color:'#9ca3af',marginBottom:8,marginTop:-6}}>Check-ins by point-of-sale or entry location.</div>
+                        <div className="ci-chart-title">Desk Locations</div>
+                        <div style={{fontSize:11,color:'#9ca3af',marginBottom:8,marginTop:-6}}>
+                          {ciLoc === 'all' ? 'Check-ins by point-of-sale or entry location. Pick one in the Location filter to scope the whole tab to it.'
+                                           : 'Filtered to ' + ciLoc + ' — one row, by definition.'}
+                        </div>
                         {Object.entries(deskCounts).sort(function(a,b){return b[1]-a[1];}).map(function(e){ return (
                           <div key={e[0]} className="ci-bar-row"><span className="ci-bar-label" title={e[0]}>{e[0]}</span><div className="ci-bar-track"><div className="ci-bar-fill" style={{width:(e[1]/maxDk*100)+'%',background:'#f59e0b'}}/></div><span className="ci-bar-val">{e[1]}</span></div>
                         );})}
                       </div>
-                      <div className="ci-chart-box">
+                      <div className="ci-chart-box" style={{gridColumn:'1 / -1'}}>
                         <div className="ci-chart-title">Top Membership / Pass Types</div><div style={{fontSize:11,color:'#9ca3af',marginBottom:8,marginTop:-6}}>Most frequently used membership and pass types at check-in.</div>
                         {Object.entries(prodCounts).sort(function(a,b){return b[1]-a[1];}).slice(0,10).map(function(e){ return (
                           <div key={e[0]} className="ci-bar-row"><span className="ci-bar-label" style={{width:180}} title={e[0]}>{e[0].length>28?e[0].slice(0,26)+'...':e[0]}</span><div className="ci-bar-track"><div className="ci-bar-fill" style={{width:(e[1]/maxPr*100)+'%',background:e[0].toLowerCase().indexOf('pass')!==-1?'#8b5cf6':'#06b6d4'}}/></div><span className="ci-bar-val">{e[1]}</span></div>
@@ -2044,14 +2303,27 @@ function normalizeRow(raw) {
                       </div>
                     </div>
                     <div style={{background:'#fff',border:'1px solid #e8e6e0',borderRadius:6,padding:16,boxShadow:'0 1px 3px rgba(0,0,0,.05)'}}>
-                      <div className="ci-chart-title" style={{marginBottom:8}}>Recent Check-Ins ({ciRows.length.toLocaleString()} total)</div>
+                      <div className="ci-chart-title" style={{marginBottom:8}}>Recent Check-Ins ({ciView.length.toLocaleString()} total{ciLoc !== 'all' ? ' at ' + ciLoc : ''})</div>
                       <div style={{maxHeight:400,overflow:'auto'}}>
-                        <table className="ci-table"><thead><tr><th>Date</th><th>Time</th><th>Member</th><th>Product</th><th>Type</th><th>Desk</th><th>Recorded By</th></tr></thead>
-                          <tbody>{ciRows.slice(0,200).map(function(r,i){ return (
-                            <tr key={i}><td>{r['Date']}</td><td>{r['Time']}</td><td>{(r['First Name']||'')+' '+(r['Last Name']||'')}</td><td style={{maxWidth:200,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title={r['Product Name']}>{r['Product Name']}</td><td><span style={{fontSize:9,fontWeight:600,padding:'2px 6px',borderRadius:3,background:r['Check-In Type']==='membership'?'#dbeafe':'#ede9fe',color:r['Check-In Type']==='membership'?'#1e40af':'#5b21b6'}}>{r['Check-In Type']}</span></td><td>{r['Desk Location']}</td><td>{r['Recorded By']}</td></tr>
+                        <table className="ci-table"><thead><tr><th>Date</th><th>Time</th><th>Member</th><th>Member ID</th><th>Product</th><th>Type</th><th>Desk</th><th>Recorded By</th></tr></thead>
+                          <tbody>{ciView.slice(0,200).map(function(r,i){
+                            var nm = ((r['First Name']||'') + ' ' + (r['Last Name']||'')).trim();
+                            var url = ciUserUrl(recOrgId, r['User ID']);
+                            return (
+                            <tr key={i}><td>{r['Date']}</td><td>{r['Time']}</td>
+                              <td>{url
+                                ? <a href={url} target="_blank" rel="noopener noreferrer" data-ci-user-link="1"
+                                     onClick={function(){ ciBeacon('checkin-member'); }}
+                                     title={'Open ' + (nm || 'this member') + ' in Rec' + (r['Email'] ? ' · ' + r['Email'] : '')}
+                                     style={{color:'#1f2937',textDecoration:'none',borderBottom:'1px dotted #9ca3af'}}>
+                                    {nm || 'Unknown'}<span style={{fontSize:9,color:'#2563eb',marginLeft:3}}>↗</span>
+                                  </a>
+                                : <span title={r['Email'] || ''}>{nm || 'Unknown'}</span>}</td>
+                              <td style={{fontVariantNumeric:'tabular-nums',color:'#6b7280'}}>{r['Member ID']}</td>
+                              <td style={{maxWidth:200,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title={r['Product Name']}>{r['Product Name']}</td><td><span style={{fontSize:9,fontWeight:600,padding:'2px 6px',borderRadius:3,background:r['Check-In Type']==='membership'?'#dbeafe':'#ede9fe',color:r['Check-In Type']==='membership'?'#1e40af':'#5b21b6'}}>{r['Check-In Type']}</span></td><td>{r['Desk Location']}</td><td>{r['Recorded By']}</td></tr>
                           );})}</tbody>
                         </table>
-                        {ciRows.length > 200 && <div style={{textAlign:'center',padding:8,color:'#999',fontSize:11}}>Showing 200 of {ciRows.length.toLocaleString()}</div>}
+                        {ciView.length > 200 && <div style={{textAlign:'center',padding:8,color:'#999',fontSize:11}}>Showing 200 of {ciView.length.toLocaleString()}</div>}
                       </div>
                     </div>
                   </React.Fragment>
@@ -2169,7 +2441,7 @@ function normalizeRow(raw) {
 
 
         {/* AI Insights */}
-        {((activeTab === 'memberships' && data && data.length > 0) || (activeTab === 'checkins' && ciRows && ciRows.length > 0) || (activeTab === 'retention' && data && data.length > 0)) && (
+        {((activeTab === 'memberships' && data && data.length > 0) || (activeTab === 'checkins' && ciView.length > 0) || (activeTab === 'retention' && data && data.length > 0)) && (
           <div className="insights-section no-print">
             <div className="insights-head">
               <button type="button" className="insights-btn" onClick={getInsights} disabled={insightsLoading}>
@@ -2177,7 +2449,7 @@ function normalizeRow(raw) {
 {insightsLoading ? 'Analyzing\u2026' : (insights ? '\u21BB Refresh' : '\u2728 Rec Insights')}
               </button>
               {insights && !insightsLoading && (
-                <span className="insights-sub">{'Analyzed ' + (activeTab === 'checkins' ? (ciRows||[]).length.toLocaleString() + ' check-ins' : data.length.toLocaleString() + ' memberships')}</span>
+                <span className="insights-sub">{'Analyzed ' + (activeTab === 'checkins' ? ciView.length.toLocaleString() + ' check-ins' + (ciLoc !== 'all' ? ' at ' + ciLoc : '') : data.length.toLocaleString() + ' memberships')}</span>
               )}
             </div>
             {insightsLoading && <div className="ai-loading"><div className="ai-spinner" /></div>}

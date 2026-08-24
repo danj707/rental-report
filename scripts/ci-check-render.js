@@ -290,6 +290,64 @@ function fasttrackRows() {
   ];
 }
 
+// ── Memberships check-in fixture ────────────────────────────────────────────
+// Shaped to pin the three things the Check-Ins tab can get wrong silently:
+//   · the time-of-day curve's peak (5pm carries four check-ins, more than any
+//     other hour, so a peak read off the wrong series or the wrong key moves),
+//   · the weekday letters on the daily chart (Sat 22nd, Sun 23rd, Mon 24th of
+//     August 2026 — a UTC parse of "2026-08-24" slides Monday back to Sunday in
+//     any US timezone, which is why the letters are asserted and not just drawn),
+//   · and the desk-location filter, which needs more than one desk to exist at
+//     all. Every row carries BOTH ids: "Member ID" is users.rec_id (the code read
+//     out at the desk) and "User ID" is users.id, the only one the Rec admin URL
+//     accepts.
+function checkinRows() {
+  const at = (date, hour, min, who, desk, type) => ({
+    "Member ID": who.rec, "User ID": who.id, "First Name": who.first, "Last Name": who.last,
+    "Email": who.first.toLowerCase() + "@example.com",
+    "Date": date, "Time": ((hour % 12) || 12) + ":" + String(min).padStart(2, "0") + (hour < 12 ? "am" : "pm"),
+    "Hour": hour, "Day of Week": ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"][new Date(
+      +date.slice(0, 4), +date.slice(5, 7) - 1, +date.slice(8, 10)).getDay()],
+    "Day Type": [0, 6].includes(new Date(+date.slice(0, 4), +date.slice(5, 7) - 1, +date.slice(8, 10)).getDay()) ? "Weekend" : "Weekday",
+    "Desk Location": desk, "Check-In Type": type,
+    "Product Name": type === "pass" ? "10-Visit Pool Pass" : "Annual Family Membership",
+    "Recorded By": "Front Desk",
+  });
+  const ada  = { rec: "5OLLPM", id: "24d709e5-675b-4d7e-91e3-f7b18daeb41c", first: "Ada",  last: "Lovelace" };
+  const emmy = { rec: "O0H6B3", id: "a37fea14-be38-46db-96da-40e61ccca25a", first: "Emmy", last: "Noether" };
+  const alan = { rec: "5773E2", id: "7faca1c4-d409-4bf7-b29a-f675b6369a73", first: "Alan", last: "Turing" };
+  return [
+    at("2026-08-24", 17, 5,  ada,  "North Desk", "membership"),
+    at("2026-08-24", 17, 22, emmy, "North Desk", "membership"),
+    at("2026-08-24", 17, 41, alan, "South Desk", "pass"),
+    at("2026-08-24",  8, 12, ada,  "North Desk", "membership"),
+    at("2026-08-24", 12, 30, emmy, "South Desk", "membership"),
+    at("2026-08-23", 10, 15, ada,  "North Desk", "membership"),
+    at("2026-08-23", 16, 40, alan, "North Desk", "pass"),
+    at("2026-08-22", 17, 8,  ada,  "North Desk", "membership"),
+    at("2026-08-22",  9, 55, emmy, "North Desk", "membership"),
+  ];
+}
+
+// Enough of the memberships feed for the tab underneath to render; the Check-Ins
+// tab is what the cases assert on.
+function membershipRows() {
+  return [
+    { "User ID": "24d709e5-675b-4d7e-91e3-f7b18daeb41c", "First Name": "Ada", "Last Name": "Lovelace",
+      "Email": "ada@example.com", "Membership ID": "m-1", "Membership Type": "Annual Family",
+      "Group / Plan": "Family", "Status": "active", "Renewal Type": "Auto-renew",
+      "Price": 240, "Paid": 240, "Refunded": 0, "Net Collected": 240,
+      "Start Date": "2026-01-01", "End Date": "2026-12-31", "Created At": "2026-01-01",
+      "Usage Count": 12, "Attendance Count": 12 },
+    { "User ID": "a37fea14-be38-46db-96da-40e61ccca25a", "First Name": "Emmy", "Last Name": "Noether",
+      "Email": "emmy@example.com", "Membership ID": "m-2", "Membership Type": "Adult",
+      "Group / Plan": "Adult", "Status": "active", "Renewal Type": "One-time",
+      "Price": 120, "Paid": 120, "Refunded": 0, "Net Collected": 120,
+      "Start Date": "2026-03-01", "End Date": "2027-02-28", "Created At": "2026-03-01",
+      "Usage Count": 4, "Attendance Count": 4 },
+  ];
+}
+
 const STUBS = [
   { match: /\/facilities\/api\/campsites/, body: () => campsitesGeo },
   // One feed, both tabs: Camping filters it to campsite rows and Outdoor Events
@@ -301,6 +359,10 @@ const STUBS = [
   { match: /\/api\/sites/,                  body: () => ({ sites: [] }) },
   { match: /\/fasttrack\/api\/data/,       body: () => ({ rows: fasttrackRows(), meta: {} }) },
   { match: /\/court-utilization\/api\/data/, body: () => ({ rows: racketRows(), meta: {} }) },
+  // org_id is what the member links are built from — without it the cells fall
+  // back to plain text, which is the behaviour before the card ships the uuid.
+  { match: /\/checkins\/api\/data/,     body: () => ({ rows: checkinRows(), meta: { org_id: "org-uuid-1" } }) },
+  { match: /\/memberships\/api\/data/,  body: () => ({ rows: membershipRows(), meta: { org_id: "org-uuid-1" } }) },
   { match: /\/api\/data/,                   body: () => ({ rows: campsiteRows(), meta: {} }) },
   { match: /\/api\/pulse/,                  body: () => ({ items: [], generated: null }) },
   { match: /\/api\/goals/,                  body: () => ({}) },
@@ -429,6 +491,29 @@ const CASES = [
   { name: "facilities · fields peak hour", path: "/{org}/facilities?tab=fields",  needs: "[data-fld-peak=\"7p\"]" },
   { name: "facilities · fields sport note", path: "/{org}/facilities?tab=fields", needs: "[data-fld-sport-note]" },
   { name: "facilities · racket sports",    path: "/{org}/facilities?tab=racket",  needs: ".court-native .sum-cards" },
+  // Memberships → Check-Ins. Six things, none of which "the page rendered"
+  // would cover: the time-of-day curve exists and peaks where the data does; the
+  // daily chart carries weekday letters (Monday the 24th must read M — a UTC
+  // parse of the date string makes it S); the desk filter was built from the feed;
+  // a member's name links to their Rec account; and the monthly bars carry a
+  // clickable month header.
+  { name: "memberships · check-ins",      path: "/{org}/memberships?tab=checkins", needs: "[data-ci-hour-line]" },
+  { name: "memberships · peak hour",      path: "/{org}/memberships?tab=checkins", needs: "[data-ci-hour-line=\"5p\"]" },
+  { name: "memberships · weekday marks",  path: "/{org}/memberships?tab=checkins", needs: "[data-ci-dow=\"M\"]" },
+  { name: "memberships · location filter", path: "/{org}/memberships?tab=checkins", needs: "#ciLocPick option[value=\"South Desk\"]" },
+  // ...and the filter must be APPLIED, not merely offered: South Desk holds 2 of
+  // the fixture's 9 check-ins, so a tab that renders every panel off the
+  // unfiltered rows reports 9 here and fails. This is the facility-Summary bug
+  // (chips that scope some panels and not others) asserted in a browser.
+  { name: "memberships · location applied", path: "/{org}/memberships?tab=checkins&ci_loc=South%20Desk",
+    needs: "[data-ci-total=\"2\"]" },
+  // The link has to carry users.id. Building it from "Member ID" (users.rec_id,
+  // the code read out at the desk) renders an identical-looking link to a 404,
+  // so the case pins the uuid rather than the anchor.
+  { name: "memberships · rec user link",  path: "/{org}/memberships?tab=checkins",
+    needs: "a[data-ci-user-link][href$=\"/users/24d709e5-675b-4d7e-91e3-f7b18daeb41c\"]" },
+  { name: "memberships · month bars",     path: "/{org}/memberships?tab=checkins", needs: "[data-ci-mo=\"2026-08\"]" },
+  { name: "memberships · month header",   path: "/{org}/memberships?tab=checkins", needs: "[data-ci-mo-head=\"2026-08\"]" },
   { name: "campmap · stay search", path: "/{org}/campmap",                needs: "#departPick[max]" },
   // The Campsite Type filter. `option[value="tent-and-rv"]` is only there if the
   // LIVE site feed landed and buildTypeFilter() re-ran off its subType — the
