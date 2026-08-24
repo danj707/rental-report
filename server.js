@@ -4756,6 +4756,23 @@ const REPORT_BLOCKED_RANGES = {
   // rule still hold them and they do return data.
   gl: { today: GL_RANGE_REASON, next7: GL_RANGE_REASON, next30: GL_RANGE_REASON },
 };
+// A report's saved filters travel as a URL query string ("desks=a,b&methods=cash").
+// Strip the things that are page state rather than filter state, and drop empty
+// values so an unfiltered report never carries "desks=" and looks filtered.
+const VALID_DATE_RANGES = ["today", "yesterday", "prior7", "prior30", "next7", "next30", "last7", "lastMonth"];
+function cleanReportParamString(val) {
+  if (typeof val !== "string" || !val) return "";
+  const p = new URLSearchParams(val.slice(0, 4000));
+  p.delete("token");
+  p.delete("_print");
+  const filtered = new URLSearchParams();
+  for (const [k, v] of p) {
+    if (v === "" || v === "null" || v === "undefined") continue;
+    filtered.set(k, v);
+  }
+  return filtered.toString();
+}
+
 function rangeBlocked(report, dateRange) {
   if (!dateRange) return null;
   return (REPORT_BLOCKED_RANGES[report] || {})[dateRange] || null;
@@ -8073,7 +8090,7 @@ app.post("/:org/admin/subscribe", (req, res) => {
   const validReports = reports.filter(r => REPORT_TYPES.includes(r));
   if (!validReports.length) return res.status(400).json({ error: "No valid report types" });
 
-  const validDateRanges = ["today","yesterday","prior7","prior30","next7","next30","last7","lastMonth"];
+  const validDateRanges = VALID_DATE_RANGES;
 
   // The admin form doesn't offer these pairings, but the form is not the only
   // way into this route.
@@ -8087,16 +8104,7 @@ app.post("/:org/admin/subscribe", (req, res) => {
   if (reportParams && typeof reportParams === "object" && !Array.isArray(reportParams)) {
     for (const [key, val] of Object.entries(reportParams)) {
       if (!REPORT_TYPES.includes(key)) continue;
-      if (typeof val !== "string") continue;
-      const p = new URLSearchParams(val);
-      p.delete("token");
-      p.delete("_print");
-      const filtered = new URLSearchParams();
-      for (const [k, v] of p) {
-        if (v === "" || v === "null" || v === "undefined") continue;
-        filtered.set(k, v);
-      }
-      const out = filtered.toString();
+      const out = cleanReportParamString(val);
       if (out.length) cleanReportParams[key] = out;
     }
   }
@@ -8165,18 +8173,69 @@ app.post("/:org/admin/test-email", async (req, res) => {
   }
 });
 
+// Send one report immediately, without waiting for a schedule. Two callers:
+// the Test button beside an existing subscriber, and the Send Test button in the
+// subscribe modal on a report page — where there is NO subscription yet.
+//
+// That second case is the whole reason this route takes overrides. Reading the
+// scope only from a saved subscription would send an unfiltered, default-window
+// email and report success: a test that passes without testing what is about to
+// be saved is worse than no test at all. So an explicit reportParams/dateRange
+// wins, and it is cleaned by the SAME helper /admin/subscribe uses, so the test
+// email and the subscription that follows it are built from identical filters.
 app.post("/:org/admin/test-send", async (req, res) => {
   const slug = req.params.org;
   if (!ORGS[slug]) return res.status(404).json({ error: "Unknown org" });
   const { email, report, schedule, subId } = req.body;
   if (!email || !report || !schedule) return res.status(400).json({ error: "email, report, and schedule required" });
+  // A test send is an outbound email to whatever address was typed, so it gets
+  // the same validation the subscribe route applies. The org gate is a no-op
+  // today (EMAIL_ENABLED_ORGS is duck-typed to every known org) and is here so
+  // that if it ever becomes a real allowlist, this route stops sending too
+  // rather than quietly becoming the way around it.
+  if (!EMAIL_ENABLED_ORGS.has(slug)) return res.status(403).json({ error: "Email subscriptions are not enabled for this organization" });
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email).trim())) return res.status(400).json({ error: "A valid email address is required" });
+  if (!REPORT_TYPES.includes(report)) return res.status(400).json({ error: "Unknown report type" });
+  if (!["daily", "weekly", "monthly"].includes(schedule)) return res.status(400).json({ error: "schedule must be daily, weekly, or monthly" });
+
   // Look up the specific subscription by ID (or fall back to email match)
   const subs = db.getSubscriptions(slug);
   const sub = subId ? subs.find(s => String(s.id) === String(subId)) : subs.find(s => s.email === email);
-  const savedParams = (sub?.reportParams && typeof sub.reportParams === "object") ? (sub.reportParams[report] || null) : null;
-  const dateRange = (sub?.reportDateRanges && sub.reportDateRanges[report]) || sub?.dateRange || null;
+  const subParams = (sub?.reportParams && typeof sub.reportParams === "object") ? (sub.reportParams[report] || null) : null;
+  const subRange = (sub?.reportDateRanges && sub.reportDateRanges[report]) || sub?.dateRange || null;
+
+  // Overrides from the modal: the filters as they stand on screen right now.
+  // reportParams arrives as a plain string (this route sends one report) or as
+  // the keyed object /admin/subscribe takes, so the page can hand over the same
+  // shape either way.
+  const rawOverride = typeof req.body.reportParams === "string"
+    ? req.body.reportParams
+    : (req.body.reportParams && typeof req.body.reportParams === "object" && !Array.isArray(req.body.reportParams))
+      ? req.body.reportParams[report]
+      : null;
+  const overrideParams = rawOverride != null ? cleanReportParamString(rawOverride) : null;
+  const rawRange = typeof req.body.dateRange === "string" ? req.body.dateRange
+    : (req.body.reportDateRanges && typeof req.body.reportDateRanges === "object") ? req.body.reportDateRanges[report]
+    : null;
+  const overrideRange = VALID_DATE_RANGES.includes(rawRange) ? rawRange : null;
+
+  const savedParams = overrideParams != null ? (overrideParams || null) : subParams;
+  const dateRange = overrideRange || subRange;
   const locationFilter = sub?.locationFilter || null;
-  res.json({ ok: true, message: "Sending in background — check the log in a moment" });
+
+  // A GL rollup covering today leaves before the day has any postings. The
+  // scheduler already refuses that pairing; a test that ignored it would send a
+  // blank email and teach the reader the report is broken.
+  const blocked = rangeBlocked(report, dateRange);
+  if (blocked) return res.status(400).json({ error: blocked });
+
+  res.json({
+    ok: true,
+    message: "Sending in background — check your inbox in a moment",
+    // Echo the scope actually used, so the caller can say what it sent rather
+    // than claiming a filtered test it did not run.
+    scope: { report, schedule, dateRange: dateRange || null, filters: savedParams || null },
+  });
   sendReportEmail(slug, email, report, schedule, locationFilter, dateRange, savedParams)
     .then(_res => logEvent(slug, report, "email", req, { email, schedule, trigger: "manual", status: _res && _res.ok ? "sent" : "error" }))
     .catch(err => console.error("[test-send] Error:", err));

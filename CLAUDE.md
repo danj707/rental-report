@@ -387,6 +387,46 @@ Windham, Watertown, Norman, Apex.
   not start times) and `[data-oe-timed="4"]` (multi-day excluded). Both attribute
   cases were seen to fail on the real regression in a real browser.
 
+## Send Test in the subscribe modal — one payload, two buttons (2026-08-24)
+
+Dan: "add a 'Send Test' button to the email subscription option on reports that
+offer emails… you'd click to send a test, check the test email, then subscribe."
+Requires a real email address, and is scoped to the filters set at the moment it
+is pressed.
+
+**The trap this is built around.** `/:org/admin/test-send` already existed for
+the Test button beside an EXISTING subscriber, so it read the report's filters
+and date range out of the saved subscription. The modal has no subscription yet
+— that is the point of the button — so wiring it straight to the old route would
+have sent an **unfiltered, default-window** email and reported success. A test
+that passes without testing the thing is worse than none: you check your inbox,
+see a report, subscribe, and get a different one every morning.
+
+- The route now takes an explicit `reportParams` (a plain string, or the keyed
+  object `/admin/subscribe` takes) and `dateRange`, which **beat** the saved
+  subscription; with neither, the saved one still wins, so the admin Test button
+  is unchanged.
+- Both are cleaned by `cleanReportParamString()`, the **same helper**
+  `/admin/subscribe` uses — `test-send.spec.js` asserts only one copy of that
+  loop exists, because two would drift by a stripped parameter nobody looks at.
+- The route echoes the `scope` it used, so the caller can say what it sent
+  rather than claiming a filtered test it did not run. That echo is also what
+  makes the behaviour observable to the spec without a Resend key.
+- **The pages build ONE payload for both buttons** (`subscribePayload()` in
+  gl/facility, `digestPayload()` in fasttrack). On Fast Track that matters more
+  than it looks: `digest=1` is what makes the email a digest instead of a PDF, so
+  a test that dropped it would preview an entirely different email.
+- Validation a real outbound email needs: a valid address (both buttons are
+  disabled until then), a known report type, a real cadence, and **no date range
+  the scheduler itself refuses** — a GL rollup covering today leaves before the
+  day has any postings, and sending that as a "test" teaches the reader the
+  report is broken.
+
+Guarded by `scripts/test-send.spec.js` (12 assertions, in CI), mutation-tested
+four ways: ignoring the override (the original bug), dropping email validation,
+allowing a blocked range, and the page rebuilding its filters instead of reusing
+the payload. All four fail by name.
+
 ## The new verticals reach the Director's Report and the org cards (2026-08-24)
 
 A tab nobody can find is a tab nobody uses, and a quarterly report that stops at

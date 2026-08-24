@@ -2098,21 +2098,55 @@ function App() {
       return p.toString();
     }
 
+    // Send Test and Subscribe build ONE payload. If they built two, the test
+    // email could be scoped differently from the subscription it is meant to
+    // preview — a test that passes without testing the thing.
+    function subscribePayload() {
+      const filterStr = buildFilterParams();
+      const body = {
+        email: emailAddr.trim(),
+        reports: ['facility'],
+        schedule: emailCadence,
+        reportDateRanges: { facility: emailDateRange },
+      };
+      if (filterStr) body.reportParams = { facility: filterStr };
+      return body;
+    }
+    const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test((emailAddr || '').trim());
+
+    async function handleSendTest() {
+      if (!emailValid) return;
+      setEmailStatus('testing');
+      try {
+        const segs = window.location.pathname.split('/').filter(Boolean);
+        const org = segs[0];
+        const token = new URLSearchParams(window.location.search).get('token') || '';
+        const body = subscribePayload();
+        const resp = await fetch('/' + org + '/admin/test-send?token=' + token, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: body.email, report: 'facility', schedule: body.schedule,
+            dateRange: emailDateRange,
+            reportParams: (body.reportParams && body.reportParams.facility) || '',
+          }),
+        });
+        const data = await resp.json();
+        if (!resp.ok) throw new Error(data.error || 'Failed');
+        setEmailStatus('tested');
+      } catch (e) {
+        setEmailStatus('error: ' + e.message);
+      }
+    }
+
     async function handleSubscribe() {
-      if (!emailAddr) return;
+      if (!emailValid) return;
       setEmailStatus('sending');
       try {
         const segs = window.location.pathname.split('/').filter(Boolean);
         const org = segs[0];
         const token = new URLSearchParams(window.location.search).get('token') || '';
-        const filterStr = buildFilterParams();
-        const body = {
-          email: emailAddr,
-          reports: ['facility'],
-          schedule: emailCadence,
-          reportDateRanges: { facility: emailDateRange },
-        };
-        if (filterStr) body.reportParams = { facility: filterStr };
+        const body = subscribePayload();
         const resp = await fetch('/' + org + '/admin/subscribe?token=' + token, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -2141,8 +2175,12 @@ function App() {
             </div>
           )}
           {activeFilters.length === 0 && (
-            <p style={{color:'#888',fontSize:13,margin:'4px 0 16px'}}>No filters active. You will receive the full report.</p>
+            <p style={{color:'#888',fontSize:13,margin:'4px 0 8px'}}>No filters active. You will receive the full report.</p>
           )}
+          <p style={{color:'#666',fontSize:12,margin:'0 0 16px',lineHeight:1.5}}>
+            Send yourself a test first, check it lands the way you want, then subscribe.
+            The test uses the filters and date range set right here.
+          </p>
 
           {emailStatus === 'success' ? (
             <div style={{textAlign:'center',padding:'20px 0'}}>
@@ -2185,12 +2223,24 @@ function App() {
               <div style={{display:'flex',gap:10,justifyContent:'flex-end'}}>
                 <button onClick={() => { setShowEmailModal(false); setEmailStatus(null); }}
                   style={{padding:'8px 16px',background:'#f3f4f6',border:'none',borderRadius:6,cursor:'pointer',fontSize:13}}>Cancel</button>
-                <button onClick={handleSubscribe} disabled={!emailAddr || emailStatus === 'sending'}
-                  style={{padding:'8px 20px',background:'#16a34a',color:'#fff',border:'none',borderRadius:6,cursor:'pointer',fontWeight:600,fontSize:13,
-                  opacity: (!emailAddr || emailStatus === 'sending') ? 0.5 : 1}}>
+                <button data-send-test onClick={handleSendTest} disabled={!emailValid || emailStatus === 'testing' || emailStatus === 'sending'}
+                  title={emailValid ? 'Send this exact report to that address now' : 'Enter an email address first'}
+                  style={{padding:'8px 16px',background:'#fff',color:'#166534',border:'1px solid #86efac',borderRadius:6,fontSize:13,fontWeight:600,
+                  cursor: emailValid ? 'pointer' : 'not-allowed', opacity: (!emailValid || emailStatus === 'testing') ? 0.5 : 1}}>
+                  {emailStatus === 'testing' ? 'Sending…' : '📨 Send Test'}
+                </button>
+                <button onClick={handleSubscribe} disabled={!emailValid || emailStatus === 'sending' || emailStatus === 'testing'}
+                  style={{padding:'8px 20px',background:'#16a34a',color:'#fff',border:'none',borderRadius:6,fontWeight:600,fontSize:13,
+                  cursor: emailValid ? 'pointer' : 'not-allowed',
+                  opacity: (!emailValid || emailStatus === 'sending') ? 0.5 : 1}}>
                   {emailStatus === 'sending' ? 'Subscribing...' : 'Subscribe'}
                 </button>
               </div>
+              {emailStatus === 'tested' && (
+                <div style={{color:'#166534',background:'#f0fdf4',border:'1px solid #bbf7d0',borderRadius:6,padding:'8px 10px',fontSize:12,marginTop:10}}>
+                  Test sent to <b>{emailAddr.trim()}</b> — it takes a moment to build. Check it, then subscribe.
+                </div>
+              )}
               {emailStatus && emailStatus.startsWith('error') && (
                 <div style={{color:'#ef4444',fontSize:12,marginTop:8}}>{emailStatus.replace('error: ','')}</div>
               )}
