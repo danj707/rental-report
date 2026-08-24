@@ -164,6 +164,14 @@ function fasttrackRows() {
     "FT Converted": conv, "FT Pending": 0, "Conversion %": 71.4,
     "Section Start": "2026-07-11", "Section End": "2026-07-11",
   });
+  // The cold end of the heat scale: Smyrna's Girls Night Out — 3 fast-trackers
+  // against 400 spots, opening in 29 days. It used to get the same flame
+  // treatment as the concert; it must now render banked and silent.
+  const cold = Object.assign(table("Girls Night Out", 3, 3, 400, 29), {
+    "Program": "Girls Night Out", "Program ID": "prog-gno",
+    "Section ID": "sec-girls-night-out", "FT Families": 3,
+    "Demand %": 0.8,
+  });
   return [
     table("Premier Table", 54, 54, 25, 1),
     table("Select Table", 18, 18, 45, 2),
@@ -171,6 +179,7 @@ function fasttrackRows() {
     table("General Table", 21, 21, 50, 4),
     past("Summer Concert: Yacht Rock Schooner", 14, 10),
     past("Summer Concert: Guardian of the Jukebox", 8, 6),
+    cold,
   ];
 }
 
@@ -266,6 +275,12 @@ const CASES = [
   // which is how the report came to say "opens in 8 days" about a section going
   // live the next morning.
   { name: "fasttrack · early access",   path: "/{org}/fasttrack",         needs: "[data-golive=\"early\"]" },
+  // Both ends of the heat scale in one render: the concert (76% of capacity,
+  // opening tomorrow) must be inferno, and Girls Night Out (3 of 400 spots, 29
+  // days out) must be banked. The old clock-only ladder gave the second one an
+  // amber rail and a flame, which is what made the panel unreadable.
+  { name: "fasttrack · heat: inferno",  path: "/{org}/fasttrack",         needs: "[data-heat=\"inferno\"]" },
+  { name: "fasttrack · heat: banked",   path: "/{org}/fasttrack",         needs: "[data-heat=\"banked\"]" },
   { name: "campmap · stay search", path: "/{org}/campmap",                needs: "#departPick[max]" },
   // The Campsite Type filter. `option[value="tent-and-rv"]` is only there if the
   // LIVE site feed landed and buildTypeFilter() re-ran off its subType — the
