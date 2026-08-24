@@ -12319,7 +12319,7 @@ app.get("/", (req, res) => {
   const driftData = { log: loadDriftLog(), baselines: loadSchemaBaselines() };
   const driftActive = driftData.log.filter(e => !e.acknowledged);
 
-  const orgSections = Object.entries(ORGS).sort((a, b) => {
+  const orgEntries = Object.entries(ORGS).sort((a, b) => {
     const nameA = (a[1].displayName || a[0]).toLowerCase();
     const nameB = (b[1].displayName || b[0]).toLowerCase();
     return nameA < nameB ? -1 : nameA > nameB ? 1 : 0;
@@ -12538,16 +12538,34 @@ app.get("/", (req, res) => {
         ${(sideFbUp + sideFbDown) > 0 ? `<div class="org-sidebar-row"><span class="org-sidebar-label">Feedback</span><span class="org-sidebar-val">\uD83D\uDC4D${sideFbUp} \uD83D\uDC4E${sideFbDown}</span></div>` : ''}
       </div>`;
 
-    // Build pulse metrics strip from cached data
+    // Build pulse metrics strip from cached data.
+    // Flattened 2026-08-24: label above value, delta inline with the value, pace on
+    // the sub-line. The separate date bar is gone — the date now rides on the org
+    // subtitle in the header, so it is stated once per card instead of twice.
     const pulse = getCachedPulse(slug);
+    const pulseDate = (pulse && (pulse.dateRange || pulse.month)) || "";
+    // The flattened cell is ~100px wide, so the pace line has to fit in it. The
+    // date is already in the org subtitle, so "day 24" comes off, and "pace X"
+    // becomes "\u2192 X" — read as "on pace for". Display only: the pulse data is
+    // shared with org.html and is not modified, and the full text stays on hover.
+    const shortPulseSub = (sub) => String(sub || "")
+      .replace(/^day \d+ \u2022 /, "")
+      .replace(/ \u2022 pace /, " \u2192 ")
+      .replace(/^pace /, "\u2192 ")
+      .replace(/ programs?\b/, " progs")
+      .replace(/ locations?\b/, " locs");
     const pulseStrip = (pulse && pulse.items.length > 0)
-      ? `<div class="pulse-date-label">${pulse.dateRange || pulse.month}</div><div class="org-pulse-strip">${pulse.items.map(it => {
+      ? `<div class="org-pulse-strip">${pulse.items.map(it => {
           const deltaHtml = it.delta
-            ? `<div class="pulse-delta ${it.direction === 'up' ? 'delta-up' : it.direction === 'down' ? 'delta-down' : ''}">${it.direction === 'up' ? '\u2191' : it.direction === 'down' ? '\u2193' : ''} ${it.delta}</div>`
+            ? `<span class="pulse-delta ${it.direction === 'up' ? 'delta-up' : it.direction === 'down' ? 'delta-down' : ''}">${it.direction === 'up' ? '\u2191' : it.direction === 'down' ? '\u2193' : ''}${it.delta}</span>`
             : '';
-          const sparkHtml = pulseSparkSVG(it.trail);
-          return `<div class="pulse-item"><div class="pulse-val">${it.value}</div><div class="pulse-label">${it.label}</div><div class="pulse-sub">${it.sub}</div>${deltaHtml}${sparkHtml}</div>`;
+          return `<div class="pulse-item" title="${it.label} \u2014 ${it.sub}"><div class="pulse-label">${it.label}</div><div class="pulse-val">${it.value}${deltaHtml}</div><div class="pulse-sub">${shortPulseSub(it.sub)}</div></div>`;
         }).join("")}</div>` : "";
+    // Dormant = the pulse card actually reported, and every figure on it is zero,
+    // and nobody looked at the org in 30 days. A missing pulse is a cold cache,
+    // NOT evidence of dormancy, so it keeps a full card.
+    const pulseAllZero = !!(pulse && pulse.items.length > 0)
+      && pulse.items.every(it => String(it.value).replace(/[^0-9]/g, "").replace(/0/g, "") === "");
 
     const tokenRow = org.token ? `
         <div class="token-row">
@@ -12561,24 +12579,29 @@ app.get("/", (req, res) => {
     const orgByDay = {};
     orgEvts.forEach(e => { const d = e.ts.substring(0, 10); orgByDay[d] = (orgByDay[d] || 0) + 1; });
     const orgDaily = []; for (let i = 29; i >= 0; i--) { const d = new Date(Date.now() - i * 86400000).toISOString().substring(0, 10); orgDaily.push(orgByDay[d] || 0); }
-    const oSpkMax = Math.max(...orgDaily, 1);
-    const oSpkPts = orgDaily.map((v, i) => `${(i / 29 * 100).toFixed(1)},${(20 - v / oSpkMax * 18).toFixed(1)}`).join(' ');
     const oViews = orgDaily.reduce((a, b) => a + b, 0);
     const oHidden = new Set(getHiddenReports(slug));
     const oActive = available.filter(r => !oHidden.has(r)).length;
 
-    return `
-      <div class="org-section" id="org-${slug}">
+    // Dormant orgs collapse to a single row: no pulse strip, compact header. The
+    // section, its id and its expandable body are unchanged, so the usage table
+    // can still scroll to it and open it.
+    const isDormant = pulseAllZero && oViews === 0;
+    // The header sparkline retired here — the usage table above already draws one
+    // per org, and this was the second copy of the same 30 days.
+    const orgSlugLine = pulseDate ? `${slug} \u00b7 ${pulseDate}` : slug;
+    const html = `
+      <div class="org-section${isDormant ? ' org-dormant' : ''}" id="org-${slug}">
         <div class="org-header" onclick="toggleOrgBody(this)" style="cursor:pointer;user-select:none">
           ${org.logoUrl ? `<img src="${org.logoUrl}" class="org-logo" alt="" onerror="this.style.display='none'" />` : ""}
           <div class="org-header-text">
             ${orgNameHtml}
-            <div class="org-slug">${slug}</div>
+            <div class="org-slug">${orgSlugLine}</div>
           </div>
           ${headerActions}
-          <div style="display:flex;align-items:center;gap:8px;margin-left:auto;padding:0 8px"><span style="font-size:10px;color:#9ca3af;white-space:nowrap" title="Active / total reports">${oActive}/${available.length}</span><svg viewBox="0 0 100 22" style="width:60px;height:16px;flex-shrink:0"><polyline points="${oSpkPts}" fill="none" stroke="#6d28d9" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg><span style="font-size:10px;font-weight:600;color:#6d28d9;white-space:nowrap">${oViews}</span><span class="how-chevron org-collapse-chevron" style="color:#9ca3af"><i class="ph ph-caret-right" style="font-size:14px"></i></span></div>
+          <div style="display:flex;align-items:center;gap:7px;margin-left:auto;padding:0 4px"><span style="font-size:10px;font-weight:600;color:#6d28d9;white-space:nowrap" title="Views, last 30 days">${oViews.toLocaleString()}</span><span style="font-size:10px;color:#9ca3af;white-space:nowrap" title="Active / total reports">${oActive}/${available.length}</span><span class="how-chevron org-collapse-chevron" style="color:#9ca3af"><i class="ph ph-caret-right" style="font-size:14px"></i></span></div>
         </div>
-        ${pulseStrip}
+        ${isDormant ? "" : pulseStrip}
         <div class="org-body" style="display:none">
           ${sidebarHtml}
           <div style="flex:1;min-width:0">
@@ -12588,7 +12611,16 @@ app.get("/", (req, res) => {
           </div>
         </div>
       </div>`;
-  }).join("");
+    return { slug, isDormant, html };
+  });
+
+  // Active orgs two-up in alphabetical order, then the dormant rows in one block.
+  const activeOrgHtml  = orgEntries.filter(o => !o.isDormant).map(o => o.html).join("");
+  const dormantEntries = orgEntries.filter(o => o.isDormant);
+  const dormantHtml = dormantEntries.length
+    ? `<div class="org-dormant-head">Dormant \u00b7 no revenue or traffic in 30 days \u00b7 ${dormantEntries.length} org${dormantEntries.length === 1 ? "" : "s"}</div>${dormantEntries.map(o => o.html).join("")}`
+    : "";
+  const orgSections = `<div class="org-grid">${activeOrgHtml}${dormantHtml}</div>`;
 
   // ── Per-org usage metrics for admin table ──
   // Read send log once for email metrics
@@ -12630,22 +12662,41 @@ app.get("/", (req, res) => {
   const sparkPts = usageDaily.map((v, i) => `${(i / 29 * 200).toFixed(1)},${(30 - v / sparkMax * 28).toFixed(1)}`).join(' ');
   const sparkTotal = usageDaily.reduce((a, b) => a + b, 0);
 
+  // Platform-wide totals, so the headline numbers do not require reading a table.
+  const usageTotals = usageRows.reduce((t, r) => ({
+    views: t.views + r.views, exports: t.exports + r.exports,
+    ai: t.ai + r.aiCalls, emails: t.emails + r.emailsSent,
+  }), { views: 0, exports: 0, ai: 0, emails: 0 });
+  const USAGE_VISIBLE_ROWS = 8;
+  const usageWithTraffic = usageRows.filter(r => r.views > 0).length;
+  const usageTailRows  = Math.max(0, usageRows.length - USAGE_VISIBLE_ROWS);
+  const usageTailViews = usageRows.slice(USAGE_VISIBLE_ROWS).reduce((n, r) => n + r.views, 0);
+  // A zero renders as a faint dot: most orgs are zero in most columns, and a grid
+  // of 0s reads as data when the truth is that there is none.
+  const uNum = v => v === 0 ? '<span class="usage-dot">·</span>' : v.toLocaleString();
+
   const usageTableHtml = `
     <div class="usage-table-wrap">
-      <div style="padding:10px 14px;display:flex;align-items:center;gap:12px;border-bottom:1px solid #e8e5df"><span style="font-size:11px;color:#9ca3af">30-day trend</span><svg viewBox="0 0 200 32" style="width:180px;height:28px"><polyline points="${sparkPts}" fill="none" stroke="#6d28d9" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg><span style="font-size:11px;font-weight:600;color:#6d28d9">${sparkTotal.toLocaleString()} views</span></div>
+      <div class="usage-kpis">
+        <div class="usage-kpi"><div class="usage-kpi-v">${usageTotals.views.toLocaleString()}</div><div class="usage-kpi-l">Views</div></div>
+        <div class="usage-kpi"><div class="usage-kpi-v">${usageTotals.exports.toLocaleString()}</div><div class="usage-kpi-l">Exports</div></div>
+        <div class="usage-kpi"><div class="usage-kpi-v">${usageTotals.ai.toLocaleString()}</div><div class="usage-kpi-l">AI insights</div></div>
+        <div class="usage-kpi"><div class="usage-kpi-v">${usageTotals.emails.toLocaleString()}</div><div class="usage-kpi-l">Emails sent</div></div>
+        <div class="usage-kpi usage-kpi-spark"><span style="font-size:11px;color:#9ca3af">30-day trend</span><svg viewBox="0 0 200 32" style="width:180px;height:28px"><polyline points="${sparkPts}" fill="none" stroke="#6d28d9" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+      </div>
       <table class="usage-table">
-        <thead><tr><th onclick="sortUsage(this,0)" style="cursor:pointer">Organization<span class="usort"></span></th><th class="num" onclick="sortUsage(this,1)" style="cursor:pointer">Views<span class="usort"></span></th><th class="num" onclick="sortUsage(this,2)" style="cursor:pointer" title="Last 15 days vs the prior 15">Trend<span class="usort"></span></th><th class="num" onclick="sortUsage(this,3)" style="cursor:pointer">Exports<span class="usort"></span></th><th class="num" onclick="sortUsage(this,4)" style="cursor:pointer">AI Insights<span class="usort"></span></th><th class="num" onclick="sortUsage(this,5)" style="cursor:pointer">Subscribers<span class="usort"></span></th><th class="num" onclick="sortUsage(this,6)" style="cursor:pointer">Emails Sent<span class="usort"></span></th><th class="num" onclick="sortUsage(this,7)" style="cursor:pointer">Reports<span class="usort"></span></th><th style="width:30px"></th></tr></thead>
-        <tbody>${usageRows.map(r => `<tr>
-          <td data-sort="${(r.name || '').toLowerCase().replace(/"/g, '')}"><a href="#org-${r.slug}" class="usage-org-name" style="text-decoration:none;color:#1e1b4b" onclick="event.preventDefault();var el=document.getElementById('org-'+'${r.slug}');if(el){el.scrollIntoView({behavior:'smooth',block:'start'});var body=el.querySelector('.org-body');if(body&&body.style.display==='none'){body.style.display='';var chev=el.querySelector('.org-collapse-chevron');if(chev)chev.style.transform='rotate(90deg)'}}">${r.name}</a><div style="display:flex;align-items:center;gap:4px;margin-top:1px"><svg viewBox="0 0 90 18" style="width:90px;height:14px;flex-shrink:0">${(() => { const mx = Math.max(...r.sparkDays, 1); const pts = r.sparkDays.map((v, i) => (i / 29 * 88 + 1).toFixed(1) + ',' + (16 - v / mx * 14 + 1).toFixed(1)).join(' '); return '<polyline points="' + pts + '" fill="none" stroke="#6d28d9" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>'; })()}</svg><div class="usage-bar" style="width:${Math.round(r.views / maxViews * 100)}%;flex-shrink:0"></div></div></td>
-          <td class="num${r.views === 0 ? ' usage-zero' : ''}" data-sort="${r.views}">${r.views.toLocaleString()}</td>
-          <td class="num" data-sort="${r.trend}" style="text-align:center" title="${r.trendDir > 0 ? 'Trending up' : r.trendDir < 0 ? 'Trending down' : 'Flat'} (30d)">${r.trendDir > 0 ? '<i class="ph ph-caret-up" style="color:#16a34a"></i>' : r.trendDir < 0 ? '<i class="ph ph-caret-down" style="color:#dc2626"></i>' : '<span style="color:#cbd5e1">&#8211;</span>'}</td>
-          <td class="num${r.exports === 0 ? ' usage-zero' : ''}" data-sort="${r.exports}">${r.exports}</td>
-          <td class="num${r.aiCalls === 0 ? ' usage-zero' : ''}" data-sort="${r.aiCalls}">${r.aiCalls}</td>
-          <td class="num${r.subscribers === 0 ? ' usage-zero' : ''}" data-sort="${r.subscribers}">${r.subscribers}</td>
-          <td class="num${r.emailsSent === 0 ? ' usage-zero' : ''}" data-sort="${r.emailsSent}">${r.emailsSent}</td>
+        <thead><tr><th onclick="sortUsage(this,0)" style="cursor:pointer">Organization<span class="usort"></span></th><th style="width:76px">30d</th><th class="num" onclick="sortUsage(this,2)" style="cursor:pointer;width:118px" title="Views, with the last 15 days against the prior 15">Views<span class="usort"></span></th><th class="num" onclick="sortUsage(this,3)" style="cursor:pointer">Exports<span class="usort"></span></th><th class="num" onclick="sortUsage(this,4)" style="cursor:pointer" title="AI insights">AI<span class="usort"></span></th><th class="num" onclick="sortUsage(this,5)" style="cursor:pointer" title="Subscribers and emails sent, sorted on the two together">Subs &middot; Email<span class="usort"></span></th><th class="num" onclick="sortUsage(this,6)" style="cursor:pointer">Reports<span class="usort"></span></th><th style="width:28px"></th></tr></thead>
+        <tbody id="usage-tbody">${usageRows.map((r, i) => `<tr${i >= USAGE_VISIBLE_ROWS ? ' class="usage-tail" style="display:none"' : ''}>
+          <td data-sort="${(r.name || '').toLowerCase().replace(/"/g, '')}"><a href="#org-${r.slug}" class="usage-org-name" style="text-decoration:none;color:#1e1b4b" onclick="event.preventDefault();var el=document.getElementById('org-'+'${r.slug}');if(el){el.scrollIntoView({behavior:'smooth',block:'start'});var body=el.querySelector('.org-body');if(body&&body.style.display==='none'){body.style.display='';var chev=el.querySelector('.org-collapse-chevron');if(chev)chev.style.transform='rotate(90deg)'}}">${r.name}</a><span class="usage-slug">${r.slug}</span></td>
+          <td><svg viewBox="0 0 64 16" style="width:64px;height:14px;display:block">${(() => { const mx = Math.max(...r.sparkDays, 1); const pts = r.sparkDays.map((v, i2) => (i2 / 29 * 62 + 1).toFixed(1) + ',' + (14 - v / mx * 12 + 1).toFixed(1)).join(' '); return '<polyline points="' + pts + '" fill="none" stroke="#6d28d9" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"/>'; })()}</svg></td>
+          <td class="num usage-views" data-sort="${r.views}"><span class="usage-views-fill" style="width:${Math.max(6, Math.round(r.views / maxViews * 96))}%"></span><span class="usage-views-num">${r.views === 0 ? '<span class="usage-dot">·</span>' : r.views.toLocaleString()}</span>${r.trendDir > 0 ? '<span class="usage-delta" style="color:#16a34a" title="Trending up">▲</span>' : r.trendDir < 0 ? '<span class="usage-delta" style="color:#dc2626" title="Trending down">▼</span>' : '<span class="usage-delta usage-dot" title="Flat">–</span>'}</td>
+          <td class="num" data-sort="${r.exports}">${uNum(r.exports)}</td>
+          <td class="num" data-sort="${r.aiCalls}">${uNum(r.aiCalls)}</td>
+          <td class="num usage-pair" data-sort="${r.subscribers + r.emailsSent}" title="${r.subscribers} subscriber${r.subscribers === 1 ? '' : 's'}, ${r.emailsSent} email${r.emailsSent === 1 ? '' : 's'} sent">${(r.subscribers || r.emailsSent) ? '<b>' + r.subscribers + '</b> &middot; <b>' + r.emailsSent + '</b>' : '<span class="usage-dot">·</span>'}</td>
           <td class="num" data-sort="${r.active}">${r.active}/${r.reports}</td>
           <td style="text-align:center"><a href="/${r.slug}?token=${ORGS[r.slug]?.token || ''}" target="_blank" title="Open ${r.name} reports" style="color:#9ca3af;text-decoration:none"><i class="ph ph-arrow-square-out" style="font-size:14px"></i></a></td>
         </tr>`).join('')}</tbody>
+        ${usageTailRows > 0 ? `<tfoot><tr class="usage-more" id="usage-more-row"><td colspan="8" onclick="showAllUsage()">Show all ${usageRows.length} organizations &mdash; ${usageTailRows} more, ${usageTailViews.toLocaleString()} view${usageTailViews === 1 ? '' : 's'} between them &#9662;</td></tr></tfoot>` : ''}
       </table>
     </div>`;
 
@@ -12718,7 +12769,10 @@ app.get("/", (req, res) => {
     .topbar-logo span { color: #4ade80; }
     .topbar-divider { width: 1px; height: 20px; background: rgba(255,255,255,.2); }
     .topbar-sub { font-size: 12px; color: #aaa; text-transform: uppercase; letter-spacing: 1px; }
-    .main { flex: 1; max-width: 860px; margin: 0 auto; padding: 40px 24px; width: 100%; }
+    /* The usage table is the widest thing on this page and used to be capped at
+       860px, which cramped nine columns while leaving ~200px dead on each side of
+       a normal laptop screen. 1280 gives the table room and the org cards two-up. */
+    .main { flex: 1; max-width: 1280px; margin: 0 auto; padding: 40px 24px; width: 100%; }
     /* ── Org Usage Table ── */
     .usage-table-wrap { margin-bottom: 24px; background: #fff; border: 1px solid #e0ddd8; border-radius: 10px; overflow: hidden; }
     .usage-header { padding: 14px 20px; border-bottom: 1px solid #e8e5df; display: flex; justify-content: space-between; align-items: center; }
@@ -12727,13 +12781,41 @@ app.get("/", (req, res) => {
     .usage-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
     .usage-table th { text-align: left; padding: 8px 14px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: #9ca3af; border-bottom: 1px solid #e8e5df; }
     .usage-table th.num { text-align: right; }
-    .usage-table td { padding: 7px 14px; border-bottom: 1px solid #f3f2ef; color: #374151; }
+    .usage-table td { padding: 6px 14px; border-bottom: 1px solid #f3f2ef; color: #374151; white-space: nowrap; }
     .usage-table td.num { text-align: right; font-family: 'Inter', monospace; font-size: 12px; font-variant-numeric: tabular-nums; }
     .usage-table tr:last-child td { border-bottom: none; }
     .usage-table tr:hover { background: #faf9f7; }
     .usage-bar { height: 4px; border-radius: 2px; background: linear-gradient(90deg, #6d28d9, #0d9488); margin-top: 3px; }
     .usage-org-name { font-weight: 600; color: #1e1b4b; }
     .usage-zero { color: #d1d5db; }
+    /* ── Platform Usage, denser ──
+       One line per row: the sparkline gets its own narrow column and the usage
+       bar sits BEHIND the views number instead of stacking under the org name. */
+    .usage-slug { color: #9ca3af; font-weight: 400; font-size: 11px; margin-left: 6px; }
+    .usage-views { position: relative; }
+    .usage-views-fill {
+      position: absolute; right: 14px; top: 50%; transform: translateY(-50%);
+      height: 15px; border-radius: 3px;
+      background: linear-gradient(90deg, rgba(109,40,217,.10), rgba(13,148,136,.16));
+    }
+    .usage-views-num { position: relative; font-weight: 600; color: #1e1b4b; }
+    .usage-delta { font-size: 10px; font-weight: 600; margin-left: 6px; }
+    .usage-pair { color: #6b7280; }
+    .usage-pair b { color: #374151; font-weight: 600; }
+    /* A grid of 0s reads as data. Most orgs are zero in most columns, so an
+       absent number should look absent. */
+    .usage-dot { color: #d8d5d0; }
+    .usage-kpis { display: flex; flex-wrap: wrap; border-bottom: 1px solid #e8e5df; }
+    .usage-kpi { padding: 11px 18px; border-right: 1px solid #f0efec; min-width: 128px; }
+    .usage-kpi:last-child { border-right: none; }
+    .usage-kpi-v { font-size: 17px; font-weight: 700; color: #1e1b4b; font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
+    .usage-kpi-l { font-size: 9.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: #9ca3af; margin-top: 2px; }
+    .usage-kpi-spark { margin-left: auto; display: flex; align-items: center; gap: 10px; border-right: none; }
+    .usage-more td {
+      padding: 8px 14px; background: #fbfaf8; font-size: 11.5px; font-weight: 600;
+      color: #6d28d9; cursor: pointer; white-space: nowrap;
+    }
+    .usage-more td:hover { background: #f5f2fd; }
     .page-title { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.2px; color: #888; margin-bottom: 24px; }
     /* ── Showcase hero card ── */
     .showcase-card {
@@ -12827,23 +12909,61 @@ app.get("/", (req, res) => {
       color: #fff; font-size: 14px; font-weight: 600; text-shadow: 0 2px 8px rgba(0,0,0,.6); }
 
         .org-section { background: #fff; border: 1px solid #d4d0ca; border-radius: 10px; margin-bottom: 20px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
-    .org-header { display: flex; align-items: center; gap: 14px; padding: 16px 20px; background: #f9f8f6; border-bottom: 1px solid #e8e5df; }
-    .org-pulse-strip { display: flex; gap: 0; background: linear-gradient(135deg, #14532d 0%, #15803d 50%, #16a34a 100%); padding: 0; overflow-x: auto; }
-    .pulse-item { flex: 1; min-width: 0; padding: 12px 16px; text-align: center; border-right: 1px solid rgba(255,255,255,0.1); }
+    .org-header { display: flex; align-items: center; gap: 10px; padding: 9px 12px; background: #f9f8f6; border-bottom: 1px solid #e8e5df; }
+    /* ── Org pulse strip, flattened ──
+       Was a 107px full-bleed gradient block plus a 20px date bar, 29 times over,
+       for five numbers that fit on one line. Same five metrics, same pace figures
+       and deltas; label above value, pace on the sub-line, and the date folded
+       into the org subtitle. Green survives as the ground tint and the top rule. */
+    .org-pulse-strip {
+      display: flex; align-items: stretch; overflow-x: auto;
+      border-top: 1px solid #edebe7;
+      background: linear-gradient(180deg, #f7fbf8, #f2f9f4);
+      box-shadow: inset 0 2px 0 -1px #16a34a;
+    }
+    .pulse-item {
+      flex: 1 1 0; min-width: 0; overflow: hidden;
+      padding: 7px 11px 8px; text-align: left;
+      border-right: 1px solid rgba(22,163,74,0.09);
+    }
+    .pulse-item:first-child { flex: 1.3 1 0; }
     .pulse-item:last-child { border-right: none; }
-    .pulse-val { font-size: 18px; font-weight: 700; color: #fff; white-space: nowrap; }
-    .pulse-label { font-size: 11px; font-weight: 600; color: #bbf7d0; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 2px; }
-    .pulse-sub { font-size: 10px; color: rgba(187,247,208,0.7); margin-top: 1px; white-space: nowrap; }
-    .pulse-delta { font-size: 10px; font-weight: 600; margin-top: 2px; white-space: nowrap; }
-    .pulse-date-label { font-size: 10px; font-weight: 600; color: #bbf7d0; text-transform: uppercase; letter-spacing: 0.5px; padding: 4px 16px 0; background: linear-gradient(135deg, #14532d 0%, #15803d 50%, #16a34a 100%); }
-    .delta-up { color: #d9f99d; }
-    .delta-down { color: #fecaca; }
-    .org-logo { height: 32px; width: auto; object-fit: contain; flex-shrink: 0; }
-    .org-header-text { flex: 1; }
-    .org-name { font-weight: 700; font-size: 14px; }
-    .org-slug { font-size: 11px; color: #999; margin-top: 1px; }
-    .org-header-actions { display: flex; gap: 6px; flex-shrink: 0; }
-    .org-action-link { font-size: 12px; color: #888; text-decoration: none; padding: 5px 10px; border: 1px solid #ddd; border-radius: 5px; white-space: nowrap; transition: background .15s, color .15s; }
+    .pulse-label {
+      font-size: 8.5px; font-weight: 700; color: #4d7c5f; text-transform: uppercase;
+      letter-spacing: .05em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .pulse-val {
+      font-size: 13.5px; font-weight: 700; color: #14532d; letter-spacing: -.02em;
+      font-variant-numeric: tabular-nums; margin-top: 1px; white-space: nowrap;
+    }
+    .pulse-sub { font-size: 9px; color: #7c9a86; margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .pulse-delta { font-size: 9.5px; font-weight: 600; margin-left: 3px; white-space: nowrap; }
+    .delta-up { color: #15803d; }
+    .delta-down { color: #b91c1c; }
+    /* Two org cards per row at the wider column; one below that. */
+    .org-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-items: start; }
+    .org-grid > .org-section { margin-bottom: 0; display: flex; flex-direction: column; }
+    .org-grid > .org-section .org-pulse-strip { margin-top: auto; }
+    @media (max-width: 1080px) { .org-grid { grid-template-columns: 1fr; } }
+    /* An org with no revenue and no traffic still cost a full 223px card. It gets
+       a row instead — same section, same anchor, same expand. */
+    .org-grid > .org-section.org-dormant { grid-column: 1 / -1; }
+    .org-section.org-dormant .org-header { padding: 6px 14px; background: #fff; border-bottom: none; }
+    .org-section.org-dormant .org-logo { height: 18px; }
+    .org-section.org-dormant .org-name { font-size: 12.5px; }
+    .org-section.org-dormant .org-slug { display: inline; margin-left: 6px; font-size: 10.5px; }
+    .org-section.org-dormant .org-header-text { flex: 0 1 auto; }
+    .org-section.org-dormant .org-header-actions { display: none; }
+    .org-dormant-head {
+      grid-column: 1 / -1; font-size: 10px; font-weight: 700; letter-spacing: .07em;
+      text-transform: uppercase; color: #9ca3af; padding: 10px 2px 0;
+    }
+    .org-logo { height: 26px; width: auto; object-fit: contain; flex-shrink: 0; }
+    .org-header-text { flex: 1; min-width: 0; overflow: hidden; }
+    .org-name { font-weight: 700; font-size: 13px; line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .org-slug { font-size: 10.5px; color: #999; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .org-header-actions { display: flex; gap: 4px; flex-shrink: 0; }
+    .org-action-link { font-size: 10.5px; color: #888; text-decoration: none; padding: 3px 7px; border: 1px solid #ddd; border-radius: 4px; white-space: nowrap; transition: background .15s, color .15s; }
     .org-action-link:hover { background: #f0f0f0; color: #333; }
     .token-row { display: flex; align-items: center; gap: 10px; padding: 10px 16px; border-top: 1px solid #f0ede8; background: #fafaf8; font-size: 11px; flex-wrap: wrap; }
     .token-label { color: #888; font-weight: 600; text-transform: uppercase; letter-spacing: .8px; flex-shrink: 0; }
@@ -12881,7 +13001,7 @@ app.get("/", (req, res) => {
     .report-card-hidden { background: #f0eeeb; opacity: 0.6; }
     .report-card-hidden:hover { opacity: 0.8; }
     .report-card-hidden .report-label { text-decoration: line-through; }
-    .pub-toggle { font-size: 11px; display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; border: 1px solid #ddd; border-radius: 5px; background: #fff; color: #888; cursor: pointer; transition: all .15s; white-space: nowrap; }
+    .pub-toggle { font-size: 10.5px; display: inline-flex; align-items: center; gap: 3px; padding: 3px 7px; border: 1px solid #ddd; border-radius: 4px; background: #fff; color: #888; cursor: pointer; transition: all .15s; white-space: nowrap; }
     .pub-toggle:hover { background: #f0f0f0; color: #333; }
     .pub-toggle.pub-on { background: #ecfdf5; border-color: #6ee7b7; color: #059669; }
     .pub-toggle.tyler-on { background: #fffbeb; border-color: #fcd34d; color: #b45309; }
@@ -13547,7 +13667,7 @@ app.get("/", (req, res) => {
       <div class="org-header" onclick="toggleHow(this)" style="cursor:pointer;user-select:none">
         <div class="org-header-text">
           <div class="org-name">&#128202; Platform Usage</div>
-          <div class="org-slug">Last 30 days \u00b7 all organizations</div>
+          <div class="org-slug">Last 30 days \u00b7 ${usageRows.length} organizations \u00b7 ${usageWithTraffic} with traffic</div>
         </div>
         <span class="how-chevron open"><i class="ph ph-caret-right" style="font-size:14px"></i></span>
       </div>
@@ -15168,9 +15288,20 @@ app.get("/", (req, res) => {
     }
 
     // ── Platform Usage sortable columns ─────────────────────────────────
+    // The table shows its top rows by default. Reveal the rest.
+    function showAllUsage() {
+      var rows = document.querySelectorAll('#usage-tbody tr.usage-tail');
+      for (var i = 0; i < rows.length; i++) rows[i].style.display = '';
+      var more = document.getElementById('usage-more-row');
+      if (more) more.style.display = 'none';
+    }
     function sortUsage(th, col) {
       var table = th.closest('table'); if (!table) return;
       var tb = table.tBodies[0]; if (!tb) return;
+      // Sorting a partly hidden table would leave whichever of the original top
+      // rows happened to rank highest on screen, which reads as the real top of
+      // the new ordering and is not. So a sort always shows everything first.
+      showAllUsage();
       var rows = Array.prototype.slice.call(tb.rows);
       var dir = th.getAttribute('data-dir') === 'desc' ? 'asc' : 'desc';
       var heads = th.parentNode.children;
@@ -15267,6 +15398,13 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  { date: '2026-08-24', title: '📐 Admin dashboard: same numbers, a third of the scroll', items: [
+    'The content column goes 860px → 1280px. It was capped at 860 on a screen twice that wide, which cramped the nine-column usage table and left ~200px dead on each side at the same time.',
+    'Platform Usage is one line per row instead of two: the sparkline gets its own narrow column and the usage bar moved behind the views number. Nine columns became six — Trend is now a ±arrow beside Views, and Subscribers and Emails share one cell. A zero renders as a faint dot, because most orgs are zero in most columns and a grid of 0s reads as data. Top 8 by default (they are 96% of all views) with Show all; a totals row up top carries views, exports, AI insights and emails for the whole platform.',
+    'Org cards are two per row, and the green pulse strip is flattened: label above value, delta beside it, pace on the sub-line where "→ $1.67M" reads as on pace for. Same five metrics, same pace figures, same deltas — 107px plus a 20px date bar becomes 54px, and the date moved onto the org subtitle so it is stated once. The header sparkline retired; the usage table above already draws one per org.',
+    'Orgs with no revenue and no traffic in 30 days collapse to one row under a Dormant heading, and still expand. A missing pulse is a cold cache, not dormancy, so it keeps a full card.',
+    'Measured on a 1280px viewport: Platform Usage 1716px → 408px, the 29 org cards ~6470px → ~1760px.',
+  ]},
   { date: '2026-08-05', title: '🎾 New report: Instructor Lessons (SF pilot)', items: [
     "Private and semi-private coaching gets its own report: lessons booked, revenue, active instructors, an instructor leaderboard, monthly booking trend, day×month heat map, sport and price mix, cancellations, and student-loyalty stats — with a date filter, Print, and PDF export.",
     'Lessons live in the programs pipeline (one marketplace section per lesson slot), so they never appeared in facility reservations. The Facilities Racket Sports tab now links straight to the new report instead of showing a "coming soon" placeholder.',
