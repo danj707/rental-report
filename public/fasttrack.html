@@ -381,7 +381,12 @@ function normalizeRow(raw) {
     ftFamilies:    fmtN(raw['FT Families']),
     ftPending:     fmtN(raw['FT Pending']),
     ftDropped:     fmtN(raw['FT Dropped']),
-    convPct:       raw['Conversion %'] != null ? fmtN(raw['Conversion %']) : null,
+    /* Capacity-aware (see ftConvPct). The card's own "Conversion %" is holds-
+       based and is kept as convPctOfHolds so a tooltip can still show it —
+       "25 of 140 held" is worth saying, it just is not the conversion rate. */
+    convPct:       ftConvPct(fmtN(raw['FT Total']), fmtN(raw['FT Converted']),
+                             fmtN(raw['Capacity']), fmtN(raw['Direct Enrolled'])),
+    convPctOfHolds: raw['Conversion %'] != null ? fmtN(raw['Conversion %']) : null,
     directEnrolled:fmtN(raw['Direct Enrolled']),
     totalEnrolled: fmtN(raw['Total Enrolled']),
     capacity:      fmtN(raw['Capacity']),
@@ -409,6 +414,68 @@ function normalizeRow(raw) {
     leftOnTable:   fmtN(raw['Left on Table']),
     overDemand:    fmtN(raw['Over Demand $']),
   };
+}
+/* ── FT conversion, measured against the spots FT could actually win ───────
+   Dan, 2026-08-24, on Smyrna's 154th Birthday Concert Premier Table: 140 FT
+   holds, 25 spots, 25 FT registrations, ZERO direct ones — the section sold out
+   to Fast Track families in about three hours, and there is no waitlist behind
+   it. The card reported 17.9% (25 / 140 holds) and the page painted it
+   "WARMING".
+
+   But 17.9% WAS the ceiling. With 140 holds chasing 25 spots, conversion could
+   never exceed 25/140 however well it went, so measuring against raw holds
+   grades a sellout against a target that does not exist. Every one of the four
+   concert tables is capacity-bound this way: their ceilings are 17.9%, 31.2%,
+   75.0% and 75.8%, and nothing on screen said so.
+
+   So the denominator is the achievable one — the spots that were open to FT,
+   limited by the holds actually held:
+
+     available = capacity - direct enrolments      what FT could win
+     denom     = min(holds, available)             ...and had holds for
+
+   25 of 25 → 100%. Demand beyond capacity is not a conversion failure; it is
+   the Demand % figure, which is the one that says 140 people wanted 25 seats.
+
+   Falls back to holds when capacity is unknown or zero, because an uncapped
+   section has no ceiling to measure against. Returns null when FT never had a
+   spot to win — a section whose seats all went to direct registrations gave FT
+   no chance, and 0% would read as an FT failure rather than a setup choice. */
+/* What the conversion figure is measuring, in words, for a title tooltip. */
+function convExplain(r) {
+  if (!r || r.convPct == null) {
+    return r && r.capacity > 0 && (r.capacity - (r.directEnrolled || 0)) <= 0
+      ? 'No spots were available to Fast Track — every seat went to direct registrations'
+      : 'No Fast Track holds on this section yet';
+  }
+  var avail = r.capacity > 0 ? Math.max(0, r.capacity - (r.directEnrolled || 0)) : null;
+  var denom = avail == null ? r.ftSignups : Math.min(r.ftSignups, avail);
+  var t = 'Fast Track \u2192 registered: ' + r.ftConverted + ' of ' + denom + ' spot'
+        + (denom === 1 ? '' : 's') + ' that were open to Fast Track';
+  if (avail != null && r.ftSignups > avail) {
+    t += '. ' + r.ftSignups + ' families held for ' + avail + ' spot' + (avail === 1 ? '' : 's')
+       + ' \u2014 demand past capacity is the Demand figure, not a conversion miss';
+  } else if (r.convPctOfHolds != null && r.convPctOfHolds !== r.convPct) {
+    t += ' (' + r.convPctOfHolds + '% of all ' + r.ftSignups + ' holds)';
+  }
+  return t;
+}
+function ftConvPct(holds, converted, capacity, direct) {
+  var h = holds || 0, c = converted || 0;
+  if (h <= 0) return null;
+  var cap = capacity || 0;
+  var denom;
+  if (cap <= 0) {
+    denom = h;                                  /* uncapped: no ceiling to hit */
+  } else {
+    var available = cap - (direct || 0);
+    if (available <= 0) return null;            /* FT never had a seat to win */
+    denom = Math.min(h, available);
+  }
+  if (denom <= 0) return null;
+  /* Clamp: a capacity lowered after the fact, or a waitlist promotion, can put
+     more conversions on the books than seats we believe were available. */
+  return Math.min(100, Math.round(1000 * c / denom) / 10);
 }
 /* Heat band for a section's FT conversion rate (validated palette; never
    color-alone — callers always render the %, the label and the icon too). */
@@ -463,7 +530,11 @@ function rollupToPrograms(rows) {
   });
   var out = [];
   map.forEach(function(g) {
-    g.convPct   = g.ftSignups > 0 ? Math.round(1000 * g.ftConverted / g.ftSignups) / 10 : null;
+    /* Same denominator as a section's, summed: the seats this program's
+       sections had open to FT. A program of four sold-out tables reads 100%,
+       not "17.9% because more families wanted in than there were seats". */
+    g.convPct   = ftConvPct(g.ftSignups, g.ftConverted, g.capacity, g.directEnrolled);
+    g.convPctOfHolds = g.ftSignups > 0 ? Math.round(1000 * g.ftConverted / g.ftSignups) / 10 : null;
     g.fillPct   = g.capacity > 0  ? Math.round(1000 * g.totalEnrolled / g.capacity) / 10 : null;
     g.demandPct = g.capacity > 0  ? Math.round(1000 * g.ftSignups / g.capacity) / 10 : null;
     out.push(g);
@@ -981,7 +1052,7 @@ function TriagePanel(props) {
           p.totalEnrolled > 0 ? ' · ' + fmtInt(p.totalEnrolled) + ' enrolled' : '',
           p.ftFamilies > 0 ? ' · ' + fmtInt(p.ftFamilies) + ' families' : '',
           p._spotsLeft != null ? ' · ' + fmtInt(p._spotsLeft) + (p._spotsLeft === 1 ? ' spot left' : ' spots left') : '',
-          p.convPct != null ? ' · ' + p.convPct + '% FT→converted' : ''
+          p.convPct != null ? ' · ' + p.convPct + '% of FT-available spots won' : ''
         )
       ),
       React.createElement('div', { className: 'triage-row-action' }, '→ ', p._triageAction || ''),
@@ -1609,7 +1680,9 @@ function App() {
   /* Excel */
   function handleExcel() {
     if (typeof XLSX === 'undefined') return;
-    var header = ['Program','Section','Season','Date Range','Day','Time','Reg Mode','Total FT','FT Converted','FT Pending','Conversion %','Demand %'];
+    /* "of FT-available spots" so a spreadsheet cannot be read as a share of all
+       holds — the export carries the same capacity-aware figure the page does. */
+    var header = ['Program','Section','Season','Date Range','Day','Time','Reg Mode','Total FT','FT Converted','FT Pending','Conversion % (of FT-available spots)','Demand %'];
     var data = [header];
     programs.forEach(function(p) {
       p.sections.forEach(function(s) {
@@ -1842,6 +1915,9 @@ function App() {
                  early-access window, which is the regression these guard. */
               'data-just-launched': r._openedAt ? 'true' : null,
               'data-launched-kind': r._openedKind || null,
+              /* The conversion figure the card renders, so the render check can
+                 assert the capacity-aware denominator rather than the raw one. */
+              'data-conv-pct': r.convPct != null ? String(r.convPct) : null,
               'data-section-id': r.sectionId || null,
               style: { borderLeftColor: hb.color },
               role: 'button', tabIndex: 0,
@@ -1871,7 +1947,9 @@ function App() {
                        cold section, it is a section with nothing to convert yet. */
                     ? React.createElement('span', { className: 'flow-band', style: { background: '#f5f3ff', color: '#6d28d9' } },
                         '🚀 ', dayShort(preDays))
-                    : React.createElement('span', { className: 'flow-band', style: { background: hb.bg, color: hb.color } }, hb.icon, ' ', r.convPct != null ? r.convPct + '%' : '0%'),
+                    : React.createElement('span', { className: 'flow-band', title: convExplain(r),
+                        style: { background: hb.bg, color: hb.color } },
+                        hb.icon, ' ', (r.convPct != null ? r.convPct : 0) + '% FT'),
                   /* Pinning is offered where an admin would want to START
                      watching something — the pre-launch strips — and on the
                      Pinned strip itself so it can be undone. NOT on a
@@ -1994,7 +2072,7 @@ function App() {
           React.createElement('div', { className: 'tt-name' }, tooltip.p.program),
           tooltip.seg === 'converted' && React.createElement(React.Fragment, null,
             React.createElement('span', { style: { color: '#4ade80' } }, '● Converted: ', fmtInt(tooltip.p.ftConverted)),
-            tooltip.p.convPct != null ? ' (' + tooltip.p.convPct + '% of FT)' : '',
+            tooltip.p.convPct != null ? ' (' + tooltip.p.convPct + '% of the spots open to FT)' : '',
             React.createElement('br'),
             'Total Enrolled: ', fmtInt(tooltip.p.totalEnrolled),
             tooltip.p.fillPct != null ? ' · ' + tooltip.p.fillPct + '% fill' : ''
@@ -2064,7 +2142,7 @@ function App() {
                     React.createElement('th', null, 'Total FT'),
                     React.createElement('th', null, 'Registered'),
                     React.createElement('th', null, 'Pending'),
-                    React.createElement('th', null, 'Conv %'),
+                    React.createElement('th', { title: 'Fast Track registrations as a share of the spots that were open to Fast Track (capacity minus direct registrations, capped by holds) \u2014 not a share of all holds' }, 'Conv %'),
                     React.createElement('th', null, 'Demand %')
                   )
                 ),
@@ -2334,7 +2412,7 @@ function App() {
               },
                 /* header: heat + names + launch recency */
                 React.createElement('div', { className: 'flow-head' },
-                  React.createElement('span', { className: 'flow-conv', style: { color: hb.color } }, r.convPct != null ? r.convPct + '%' : '0%'),
+                  React.createElement('span', { className: 'flow-conv', title: convExplain(r), style: { color: hb.color } }, r.convPct != null ? r.convPct + '%' : '0%'),
                   React.createElement('span', { className: 'flow-band', style: { background: hb.bg, color: hb.color } }, hb.icon, ' ', hb.label),
                   React.createElement('span', { className: 'flow-title' }, r.section || r.program),
                   React.createElement('span', { className: 'flow-sub' }, r.program,
@@ -2507,7 +2585,7 @@ function App() {
                       React.createElement('th', null, 'Registered'),
                       React.createElement('th', null, 'Pending'),
                       React.createElement('th', null, 'Dropped'),
-                      React.createElement('th', null, 'Conv %'),
+                      React.createElement('th', { title: 'Fast Track registrations as a share of the spots that were open to Fast Track (capacity minus direct registrations, capped by holds) \u2014 not a share of all holds' }, 'Conv %'),
                       React.createElement('th', null, 'Fill %'),
                       React.createElement('th', null, 'Status'),
                       React.createElement('th', null, '')
@@ -2530,7 +2608,7 @@ function App() {
                         React.createElement('td', { style: { fontWeight: 600, color: '#059669' } }, fmtInt(r.ftConverted)),
                         React.createElement('td', { style: { fontWeight: 600, color: r.ftPending > 0 ? '#f59e0b' : '#999' } }, fmtInt(r.ftPending)),
                         React.createElement('td', { style: { color: '#999' } }, fmtInt(r.ftDropped)),
-                        React.createElement('td', null, React.createElement('span', { style: { fontWeight: 600, color: convColor } }, r.convPct != null ? r.convPct + '%' : '—')),
+                        React.createElement('td', { title: convExplain(r) }, React.createElement('span', { style: { fontWeight: 600, color: convColor } }, r.convPct != null ? r.convPct + '%' : '—')),
                         React.createElement('td', null, React.createElement('span', { style: { fontWeight: 600, color: fillColor } }, r.fillPct != null ? r.fillPct + '%' : '—')),
                         React.createElement('td', null, React.createElement('span', { style: { fontSize: 11, fontWeight: 600, color: statusColor } }, statusLabel)),
                         React.createElement('td', null,

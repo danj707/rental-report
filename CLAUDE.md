@@ -894,6 +894,46 @@ status from the two windows in the page or editing the card. A card edit means
 the usual API/date-tag re-flip dance plus heaviest-org sign-off, so it is Dan's
 call rather than a drive-by.
 
+## FT conversion is measured against the spots FT could win (2026-08-24)
+
+Dan, on Smyrna's 154th Birthday Concert Premier Table three hours after its
+early-access window opened — live card figures: **140 FT holds, 25 converted,
+115 pending, capacity 25, direct enrolled 0, fill 100%, waitlist 0, $325/seat.**
+The section sold out to Fast Track families with zero organic registrations, and
+the report showed **17.9% in a 🌤️ WARMING band**, because the card computes
+`Conversion % = ft_converted / ft_total`.
+
+**17.9% was the ceiling.** 140 holds chasing 25 seats cannot convert above
+25/140 however well it goes, so holds-as-denominator grades a sellout against a
+target that does not exist. Dan: *"If there are only 25 spots, and 25 FT
+conversions, that's 100% FT conversions."*
+
+`ftConvPct(holds, converted, capacity, direct)` in `public/fasttrack.html` is now
+the only source of `convPct`, for sections and for the program rollup:
+
+```
+available = capacity - direct enrolments      what FT could win
+denom     = min(holds, available)             ...and had holds for
+```
+
+- **Client-side on purpose.** The card already emits FT Total, FT Converted,
+  Capacity and Direct Enrolled, so no card edit, no date-tag re-flip, and every
+  surface that reads `convPct` (heat bands, triage buckets, the Conversions tab,
+  the flow board, both tables, the Excel export) changes together.
+- The card's holds-based column is kept as `convPctOfHolds` and appears only in
+  the tooltip — "25 of 140 held" is worth saying, it just is not the rate.
+- **Uncapped section ⇒ falls back to holds** (no ceiling to measure against).
+  **No seats left for FT ⇒ null, not 0%** — a section whose seats all went to
+  direct registrations gave FT no chance, and 0% would read as an FT failure.
+  Over-conversion (capacity lowered later, waitlist promotion) clamps at 100.
+- Demand past capacity is the **Demand %** figure's job, not a conversion miss.
+  All four concert tables are capacity-bound: old ceilings 17.9%, 31.3%, 75%,
+  75.8%, and nothing on screen said so.
+- Guards: `scripts/fasttrack-conv.spec.js` (15 assertions, in CI) plus the
+  `fasttrack · conv vs capacity` render case (`[data-conv-pct="100"]`) over a
+  fixture carrying the real shape. Mutation-tested — reverting the denominator
+  to holds fails the spec at the first assertion and the render case by name.
+
 ## "Launching Soon" is a section question, not a program question (2026-08-24)
 
 The bucket test was `p._allFutureReg && p.ftSignups > 0` — *every* section in the
