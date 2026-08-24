@@ -374,10 +374,6 @@
 
     /* ── Tennis tab ── */
     .tennis-wrap { margin-top: 4px; }
-    .tennis-hero { display: flex; align-items: center; gap: 16px; background: linear-gradient(135deg, #14532d, #16a34a); color: #fff; border-radius: 12px; padding: 18px 22px; margin-bottom: 10px; box-shadow: 0 3px 14px rgba(21,128,61,.22); }
-    .tennis-hero .th-emoji { font-size: 40px; line-height: 1; filter: drop-shadow(0 2px 3px rgba(0,0,0,.25)); }
-    .tennis-hero .th-title { font-size: 22px; font-weight: 800; letter-spacing: -.01em; }
-    .tennis-hero .th-sub { font-size: 12.5px; opacity: .93; margin-top: 3px; max-width: 660px; line-height: 1.45; }
     .tennis-pending { border: 1px dashed #86efac; background: #f0fdf4; border-radius: 10px; padding: 14px 18px; margin: 20px 0 6px; }
     .tennis-pending .tp-head { display: flex; align-items: center; gap: 10px; font-size: 14px; font-weight: 700; color: #14532d; margin-bottom: 5px; }
     .tennis-pending .tp-badge { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; background: #16a34a; color: #fff; border-radius: 10px; padding: 2px 9px; }
@@ -4521,13 +4517,12 @@
     };
 
     function RacketSportsView({ start, end, fallback }) {
+      // No hero here on purpose. This tab shows the shared themed banner
+      // (FBX_THEME.racket) directly above it — same 🎾, same title, same green —
+      // so an inner hero was the second copy of one header. The banner is the
+      // one that carries the org name and the animated scene, so it stays and
+      // this goes; the sections below label themselves.
       return e('div', { className: 'tennis-wrap' },
-        e('div', { className: 'tennis-hero' },
-          e('div', { className: 'th-emoji' }, '🎾'),
-          e('div', null,
-            e('div', { className: 'th-title' }, 'Racket Sports'),
-            e('div', { className: 'th-sub' }, 'Utilization, demand, and instant-vs-managed mix across ' + (CFG.displayName || 'your') + ' racket-sport courts — tennis, pickleball, padel & more — drawn from your facility reservations, with a court map and day-of-week heatmap.')),
-        ),
         fallback ? e('div', { style: { background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: 6, padding: '9px 14px', margin: '0 0 12px', fontSize: 12, color: '#075985' } },
           'Court names here don’t indicate a sport (e.g. “Court 1”), so this tab is showing all court-type sites instead of keyword-matched racket courts.') : null,
         e(CourtUtilizationView, { start, end, courtFilter: fallback ? (() => true) : isRacketCourt, theme: RACKET_THEME }),
@@ -4819,12 +4814,20 @@
           // Camping, Aquatics & Outdoor Events render their own dedicated
           // per-vertical banner with vertical-specific stats — so the
           // shared themed banner is suppressed there to avoid stacking two.
-          // Activity-specific headers (ice / golf / racket) are hidden when the
-          // org has none of that type in view — no ice header for an org with
-          // no rinks, matching the tab badge count. Summary & Court Utilization
-          // are org-wide and always show.
+          // Activity-specific headers (ice / golf) are hidden when the org has
+          // none of that type in view — no ice header for an org with no rinks,
+          // matching the tab badge count. Summary & Court Utilization are
+          // org-wide and always show.
+          //
+          // Racket is NOT in that list, deliberately. Its badge counts rows in
+          // the hub's summary feed, but the tab itself reads the court feed,
+          // which also carries league/program time that never appears as a
+          // facility reservation — so a badge of 0 does not mean the tab is
+          // empty. It used to render its own hero, which covered for that; now
+          // that the duplicate hero is gone, suppressing the banner too would
+          // leave the tab with no header at all over real data.
           (tab === 'aquatics' || tab === 'camping' || tab === 'outdoor') ? null
-            : ((tab === 'ice' || tab === 'golf' || tab === 'racket') && vertCounts[tab] === 0) ? null
+            : ((tab === 'ice' || tab === 'golf') && vertCounts[tab] === 0) ? null
             : e(FacilitiesBanner, { a: bannerAgg, tab }),
           // Filters are context-aware: the site-type filter only makes sense on
           // the Summary (a vertical tab already fixes the type); Court Utilization
