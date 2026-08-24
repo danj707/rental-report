@@ -493,29 +493,81 @@ function rollupToPrograms(rows) {
    Powers the "going live soonest" sort + the per-row reg-date chip so a director
    can prioritize what's about to open. Anchored on the section's registration
    OPEN date (when people can start signing up). */
+/* The card's date-only columns — "Section Start", "Section End", "First FT
+   Date", "First Any Booking", "Signup Date" — are ::date in SQL, so Metabase
+   sends a bare YYYY-MM-DD. new Date('2026-10-03') is parsed as UTC midnight,
+   which every US browser then formats as Oct 2: the Smyrna birthday concert
+   read "Oct 2" against Rec's Oct 3. Build the date from its parts so a
+   calendar date stays that calendar date. Timestamps (Reg Opens, Reg Closes,
+   Publish Date) are real instants and must keep going through new Date(). */
+function parseCardDate(v) {
+  if (!v) return null;
+  var str = String(v).trim();
+  var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(str);
+  if (m) {
+    var y = +m[1], mo = +m[2] - 1, day = +m[3];
+    var ld = new Date(y, mo, day);
+    // new Date(2026, 12, 45) rolls forward to 2027-02-14 rather than failing, so
+    // an impossible date would come back as a plausible wrong one. Round-trip it.
+    if (ld.getFullYear() !== y || ld.getMonth() !== mo || ld.getDate() !== day) return null;
+    return ld;
+  }
+  var d = new Date(str);
+  return isNaN(d.getTime()) ? null : d;
+}
 function fmtDateShort(d) { return d ? d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : ''; }
+/* When can anyone actually register for this section?
+   A section can carry TWO registration windows: an early-access one (card 17300
+   emits it as "Early Access Opens", a `group` window scoped to a member group)
+   and the general one ("Reg Opens", the `default` window). Smyrna's birthday
+   concert tables each have both, with early access a full week ahead:
+
+     Premier Table    early Aug 24   general Aug 31
+     Preferred Table  early Aug 25   general Sep 1
+
+   The report read only "Reg Opens", so it announced "Reg opens Aug 31 · 8 days"
+   for a section whose first families could register the next morning. Early
+   access IS registration — it just is not open to everyone — so go-live is the
+   earlier of the two, and the label has to say which one it is or "opens
+   tomorrow" becomes its own kind of wrong. */
+function sectionGoLive(s) {
+  var general = s.regOpens ? new Date(s.regOpens) : null;
+  var early   = s.earlyAccess ? new Date(s.earlyAccess) : null;
+  if (general && isNaN(general.getTime())) general = null;
+  if (early && isNaN(early.getTime())) early = null;
+  var at = null, kind = null;
+  if (early && general) { at = early < general ? early : general; kind = early < general ? 'early' : 'general'; }
+  else if (early)       { at = early;   kind = 'early'; }
+  else if (general)     { at = general; kind = 'general'; }
+  return { at: at, kind: kind, early: early, general: general };
+}
 function regTiming(p) {
   var now = new Date();
   var nextOpen = null, openNow = false, anyReg = false, nextClose = null;
+  var nextOpenKind = null;
   (p.sections || []).forEach(function(s) {
-    if (!s.regOpens) return;
+    var gl = sectionGoLive(s);
+    if (!gl.at) return;
     anyReg = true;
-    var o = new Date(s.regOpens);
-    if (o > now) { if (!nextOpen || o < nextOpen) nextOpen = o; return; }
+    if (gl.at > now) {
+      if (!nextOpen || gl.at < nextOpen) { nextOpen = gl.at; nextOpenKind = gl.kind; }
+      return;
+    }
     var c = s.regCloses ? new Date(s.regCloses) : null;      // already opened
     if (!c || c >= now) { openNow = true; if (c && (!nextClose || c < nextClose)) nextClose = c; }
   });
   var daysUntilOpen = nextOpen ? Math.ceil((nextOpen - now) / 86400000) : null;
   // Sort key for "going live soonest": future opens by date, then open-now, then closed/none.
   var soonestKey = nextOpen ? nextOpen.getTime() : (openNow ? 8.64e15 : (anyReg ? 9.0e15 : 9.5e15));
-  return { nextOpen: nextOpen, daysUntilOpen: daysUntilOpen, openNow: openNow, nextClose: nextClose, anyReg: anyReg, soonestKey: soonestKey };
+  return { nextOpen: nextOpen, nextOpenKind: nextOpenKind, daysUntilOpen: daysUntilOpen, openNow: openNow, nextClose: nextClose, anyReg: anyReg, soonestKey: soonestKey };
 }
 function RegChip(props) {
   var rt = props.rt;
   if (rt.daysUntilOpen != null) {
     var soon = rt.daysUntilOpen <= 7;
     return React.createElement('div', { style: { marginTop: 4, fontSize: 11, fontWeight: 700, color: soon ? '#dc2626' : '#2563eb' } },
-      (soon ? '🔴 ' : '📅 ') + 'Reg opens ' + fmtDateShort(rt.nextOpen) + ' · ' + rt.daysUntilOpen + (rt.daysUntilOpen === 1 ? ' day' : ' days'));
+      (soon ? '🔴 ' : '📅 ') + (rt.nextOpenKind === 'early' ? 'Early access opens ' : 'Reg opens ')
+        + fmtDateShort(rt.nextOpen) + ' · ' + rt.daysUntilOpen + (rt.daysUntilOpen === 1 ? ' day' : ' days'));
   }
   if (rt.openNow) return React.createElement('div', { style: { marginTop: 4, fontSize: 11, fontWeight: 700, color: '#16a34a' } },
     '🟢 Registration open' + (rt.nextClose ? (' · closes ' + fmtDateShort(rt.nextClose)) : ''));
@@ -528,8 +580,12 @@ function RegChip(props) {
    amber → orange → red) as the registration-open date nears. ── */
 function PipelineLaunchCard(props) {
   var p = props.p;
-  var rt = regTiming(p);
-  var d = rt.daysUntilOpen;
+  var launch = p._launch || [];
+  var ft = p._launchFt != null ? p._launchFt : p.ftSignups;
+  var pending = p._launchPending != null ? p._launchPending : p.ftPending;
+  var cap = p._launchCapacity || 0;
+  var opens = p._launchOpens || null;
+  var d = p._launchDays != null ? p._launchDays : regTiming(p).daysUntilOpen;
   var accent = (d != null && d <= 1) ? '#dc2626'
              : (d != null && d <= 3) ? '#ea580c'
              : (d != null && d <= 7) ? '#f59e0b' : '#6366f1';
@@ -546,21 +602,47 @@ function PipelineLaunchCard(props) {
     }
   },
     React.createElement('div', { style: { textAlign: 'center', minWidth: 84 } },
-      React.createElement('div', { style: { fontSize: 44, fontWeight: 800, lineHeight: 1, color: accent } }, fmtInt(p.ftSignups)),
+      React.createElement('div', { style: { fontSize: 44, fontWeight: 800, lineHeight: 1, color: accent } }, fmtInt(ft)),
       React.createElement('div', { style: { fontSize: 10, fontWeight: 700, letterSpacing: 0.6, color: '#6b7280', textTransform: 'uppercase', marginTop: 3 } }, 'Fast Tracked')
     ),
     React.createElement('div', { style: { flex: 1, minWidth: 200 } },
       React.createElement('div', { style: { fontSize: 15, fontWeight: 700, color: '#111', marginBottom: 4 } }, p.program),
       React.createElement('div', { style: { fontSize: 12.5, color: '#555' } },
-        React.createElement('strong', { style: { color: accent } }, fmtInt(p.ftPending) + ' waiting to register'),
-        p.ftFamilies > 0 ? ' · ' + fmtInt(p.ftFamilies) + ' families' : '',
-        (p.sections || []).length ? ' · ' + p.sections.length + ' section' + (p.sections.length !== 1 ? 's' : '') : '',
-        p._spotsLeft != null ? ' · ' + fmtInt(p._spotsLeft) + ' spots' : ''
+        React.createElement('strong', { style: { color: accent } }, fmtInt(pending) + ' waiting to register'),
+        /* Families is a per-section distinct count, so summing it across several
+           sections would double-count anyone on two lists. Only shown when the
+           figure is exact. */
+        (launch.length === 1 && launch[0].ftFamilies > 0) ? ' · ' + fmtInt(launch[0].ftFamilies) + ' families' : '',
+        launch.length ? ' · ' + launch.length + ' section' + (launch.length !== 1 ? 's' : '') + ' launching' : '',
+        cap > 0 ? ' · ' + fmtInt(cap) + ' spots' : ''
+      ),
+      /* Name the sections. "Launching Soon" that names only the program leaves
+         you hunting for which of six sections is the one going live. */
+      launch.length > 0 && React.createElement('div', { style: { marginTop: 6, display: 'flex', flexDirection: 'column', gap: 3 } },
+        launch.slice().sort(function (a, b) { return sectionGoLive(a).at - sectionGoLive(b).at; }).slice(0, 4).map(function (s2, i2) {
+          var gl2 = sectionGoLive(s2);
+          var od = gl2.at;
+          var dd = Math.ceil((od - new Date()) / 86400000);
+          return React.createElement('div', { key: 'ls' + i2, 'data-launch-section': s2.sectionId || s2.section,
+            'data-golive': gl2.kind,
+            style: { fontSize: 11.5, color: '#374151', display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'baseline' } },
+            React.createElement('strong', { style: { color: accent, fontVariantNumeric: 'tabular-nums' } }, fmtInt(s2.ftSignups)),
+            React.createElement('span', null, s2.section),
+            React.createElement('span', { style: { color: '#9ca3af' } },
+              '\u00b7 ' + (gl2.kind === 'early' ? 'early access ' : 'opens ') + fmtDateShort(od)
+              + (dd <= 0 ? ' (today)' : dd === 1 ? ' (tomorrow)' : ' (' + dd + 'd)')
+              + (gl2.kind === 'early' && gl2.general ? ', general ' + fmtDateShort(gl2.general) : '')),
+            s2.sectionId && React.createElement('a', {
+              href: adminSectionUrl(p.orgId, s2.sectionId), target: '_blank', rel: 'noopener',
+              style: { color: '#3b82f6', fontWeight: 600, fontSize: 10, textDecoration: 'none' }
+            }, 'Admin \u2192'));
+        }),
+        launch.length > 4 && React.createElement('div', { style: { fontSize: 11, color: '#9ca3af' } },
+          '+ ' + (launch.length - 4) + ' more section' + (launch.length - 4 !== 1 ? 's' : '') + ' launching')
       ),
       (function () {
-        var cap = p.capacity || 0;
         if (!cap) return null;
-        var pct = Math.round(p.ftSignups / cap * 100);
+        var pct = Math.round(ft / cap * 100);
         var over = pct > 100;
         return React.createElement('div', { style: { marginTop: 7, maxWidth: 340 } },
           React.createElement('div', { style: { height: 6, borderRadius: 3, background: '#eef0f2', overflow: 'hidden' } },
@@ -575,16 +657,24 @@ function PipelineLaunchCard(props) {
     ),
     React.createElement('div', { style: { textAlign: 'right', minWidth: 128 } },
       React.createElement('div', { className: (d != null && d <= 1) ? 'ft-pulse' : undefined, style: { display: 'inline-block', background: accent, color: '#fff', fontWeight: 800, fontSize: 12, letterSpacing: 0.5, padding: '6px 12px', borderRadius: 999, boxShadow: '0 2px 8px ' + accent + '4d' } }, '🔥 ' + countdown),
-      rt.nextOpen && React.createElement('div', { style: { fontSize: 11, color: '#6b7280', marginTop: 5 } }, 'Reg opens ' + fmtDateShort(rt.nextOpen)),
-      rt.nextClose && React.createElement('div', { style: { fontSize: 10, color: '#9ca3af', marginTop: 1 } }, 'closes ' + fmtDateShort(rt.nextClose))
+      opens && React.createElement('div', { style: { fontSize: 11, color: '#6b7280', marginTop: 5 } },
+        (p._launchKind === 'early' ? 'Early access ' : 'Reg opens ') + fmtDateShort(opens))
     )
   );
 }
 function PipelineLaunchSection(props) {
-  var items = (props.items || []).slice().sort(function(a, b) { return b.ftSignups - a.ftSignups; });
+  /* Soonest first. What is about to go live is the reason to look at this panel;
+     the biggest number is the tie-break, not the ranking. */
+  var items = (props.items || []).slice().sort(function(a, b) {
+    var ad = a._launchDays == null ? 1e9 : a._launchDays;
+    var bd = b._launchDays == null ? 1e9 : b._launchDays;
+    if (ad !== bd) return ad - bd;
+    return (b._launchFt || 0) - (a._launchFt || 0);
+  });
   if (!items.length) return null;
-  var totalFt = items.reduce(function(s, p) { return s + p.ftSignups; }, 0);
-  var soonest = items.reduce(function(m, p) { var d = regTiming(p).daysUntilOpen; return (d != null && (m == null || d < m)) ? d : m; }, null);
+  var totalFt = items.reduce(function(s, p) { return s + (p._launchFt || 0); }, 0);
+  var totalSections = items.reduce(function(s, p) { return s + ((p._launch || []).length); }, 0);
+  var soonest = items.reduce(function(m, p) { var d = p._launchDays; return (d != null && (m == null || d < m)) ? d : m; }, null);
   return React.createElement('div', { style: { marginBottom: 22 } },
     React.createElement('div', {
       style: { display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap',
@@ -592,7 +682,8 @@ function PipelineLaunchSection(props) {
     },
       React.createElement('span', { style: { fontSize: 17, fontWeight: 800, color: '#9a3412' } }, '🚀 Launching Soon'),
       React.createElement('span', { style: { fontSize: 13, fontWeight: 700, color: '#ea580c' } },
-        fmtInt(totalFt) + ' fast-trackers primed across ' + items.length + ' program' + (items.length !== 1 ? 's' : '')),
+        fmtInt(totalFt) + ' fast-trackers primed across ' + totalSections + ' section' + (totalSections !== 1 ? 's' : '')
+        + ' in ' + items.length + ' program' + (items.length !== 1 ? 's' : '')),
       soonest != null && React.createElement('span', { style: { fontSize: 12, color: '#9a3412' } },
         '— first opens ' + (soonest <= 0 ? 'today' : soonest === 1 ? 'tomorrow' : 'in ' + soonest + ' days'))
     ),
@@ -620,9 +711,10 @@ function ColdPipelineStrip(props) {
       return true;
     })
     .map(function(r) {
-      var d = r.regOpens ? new Date(r.regOpens) : null;
-      var days = d && !isNaN(d.getTime()) && d > now ? Math.ceil((d - now) / 86400000) : null;
-      return { r: r, days: days };
+      var gl = sectionGoLive(r);
+      var d = gl.at;
+      var days = d && d > now ? Math.ceil((d - now) / 86400000) : null;
+      return { r: r, days: days, kind: gl.kind };
     })
     .filter(function(x){ return x.days !== null; })
     .sort(function(a, b){ return a.days - b.days; });
@@ -653,7 +745,7 @@ function ColdPipelineStrip(props) {
       var urgent = x.days <= 7;
       var dateLabel = '';
       if (r.sectionStart) {
-        var sd = new Date(r.sectionStart); var ed = r.sectionEnd ? new Date(r.sectionEnd) : null;
+        var sd = parseCardDate(r.sectionStart); var ed = parseCardDate(r.sectionEnd);
         var fmt = function(d) { return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); };
         dateLabel = fmt(sd) + (ed && ed.getTime() !== sd.getTime() ? ' – ' + fmt(ed) : '');
       }
@@ -680,7 +772,8 @@ function ColdPipelineStrip(props) {
         React.createElement('div', { style: { fontSize: 11, fontWeight: 700, whiteSpace: 'nowrap',
           color: urgent ? '#b45309' : '#0369a1', background: urgent ? '#fef3c7' : '#e0f2fe',
           padding: '4px 10px', borderRadius: 999 } },
-          '📅 Reg opens ' + fmtDateShort(new Date(r.regOpens)) + ' · ' + x.days + 'd')
+          '📅 ' + (x.kind === 'early' ? 'Early access ' : 'Reg opens ')
+            + fmtDateShort(sectionGoLive(r).at) + ' · ' + x.days + 'd')
       );
     }),
     laterNote && React.createElement('div', { style: { fontSize: 11, color: '#94a3b8', marginTop: 2, paddingLeft: 4 } }, laterNote)
@@ -705,10 +798,37 @@ function TriagePanel(props) {
     p._daysUntilRegOpens = regOpensDate && regOpensDate > now ? Math.ceil((regOpensDate - now) / 86400000) : null;
     p._daysUntilRegCloses = regClosesDate && regClosesDate > now ? Math.ceil((regClosesDate - now) / 86400000) : null;
     p._allFutureReg = allFutureReg && hasRegOpens;
+    /* Sections whose registration has NOT opened yet and that already have Fast
+       Track interest. This replaces a program-level "every section is in the
+       future" test, which hid exactly the case that matters most: Smyrna's
+       Concert Series had 120 pending fast-trackers opening the next morning and
+       never appeared, because the same program also ran two summer concerts that
+       had already happened. Launching Soon is a section question, not a program
+       question — so the figures on the card are scoped to the launching sections
+       too, or a program's spent history inflates its pre-launch demand. */
+    var launching = (p.sections || []).filter(function (s2) {
+      if (!(s2.ftSignups > 0)) return false;
+      var gl2 = sectionGoLive(s2);
+      return gl2.at != null && gl2.at > now;
+    });
+    p._launch = launching;
+    p._launchFt = launching.reduce(function (n, s2) { return n + (s2.ftSignups || 0); }, 0);
+    p._launchPending = launching.reduce(function (n, s2) { return n + (s2.ftPending || 0); }, 0);
+    p._launchCapacity = launching.reduce(function (n, s2) { return n + (s2.capacity || 0); }, 0);
+    p._launchOpens = launching.reduce(function (m, s2) {
+      var o2 = sectionGoLive(s2).at;
+      return (!m || o2 < m) ? o2 : m;
+    }, null);
+    p._launchKind = launching.reduce(function (k, s2) {
+      var gl2 = sectionGoLive(s2);
+      return (gl2.at && p._launchOpens && gl2.at.getTime() === p._launchOpens.getTime()) ? gl2.kind : k;
+    }, null);
+    p._launchDays = p._launchOpens ? Math.ceil((p._launchOpens - now) / 86400000) : null;
     // Skip programs where all sections have already ended
     var allPast = (p.sections || []).every(function(s) {
       if (!s.sectionEnd) return false;
-      return new Date(s.sectionEnd) < now;
+      var se = parseCardDate(s.sectionEnd);
+      return se != null && se < now;
     });
     if (allPast && (p.sections || []).length > 0) return;
 
@@ -718,8 +838,10 @@ function TriagePanel(props) {
     } else if (p.demandPct != null && p.demandPct > 90 && spotsLeft != null && spotsLeft < p.ftPending) {
       p._triageAction = 'Demand at ' + Math.round(p.demandPct) + '% of capacity with ' + fmtInt(p.ftPending) + ' pending FT. May need more spots.';
       buckets.needsCapacity.push(p);
-    } else if (p._allFutureReg && p.ftSignups > 0) {
-      p._triageAction = p._daysUntilRegOpens ? 'Registration opens in ' + p._daysUntilRegOpens + ' day' + (p._daysUntilRegOpens !== 1 ? 's' : '') + '. ' + fmtInt(p.ftSignups) + ' FT pending. ' : 'Registration not yet open. ' + fmtInt(p.ftSignups) + ' wishlists waiting.';
+    } else if (p._launch.length > 0) {
+      p._triageAction = p._launchDays != null
+        ? 'Registration opens in ' + p._launchDays + ' day' + (p._launchDays !== 1 ? 's' : '') + '. ' + fmtInt(p._launchFt) + ' fast-tracked, ' + fmtInt(p._launchPending) + ' still waiting. '
+        : 'Registration not yet open. ' + fmtInt(p._launchFt) + ' wishlists waiting.';
       buckets.readyToOpen.push(p);
     } else if (p.ftSignups >= 3 && (p.convPct === 0 || p.convPct === null)) {
       p._triageAction = fmtInt(p.ftSignups) + ' FT interests but 0 registrations. Check pricing, description, or registration barriers.';
@@ -799,7 +921,9 @@ function TriagePanel(props) {
 /* ── Demand Leaderboard component ── */
 function DemandLeaderboard(props) {
   var programs = props.programs || [];
-  var sortState = React.useState('demand');   // 'demand' | 'soonest'
+  /* Defaults to what is going live soonest, not the biggest all-time number:
+     the leaderboard is read to decide what needs attention this week. */
+  var sortState = React.useState('soonest');   // 'soonest' | 'demand'
   var sortMode = sortState[0], setSortMode = sortState[1];
   programs.forEach(function(p) { if (!p._rt) p._rt = regTiming(p); });
   var ranked = sortMode === 'soonest'
@@ -842,7 +966,7 @@ function DemandLeaderboard(props) {
     /* Sort toggle: most demand vs going live soonest */
     React.createElement('div', { style: { display: 'flex', gap: 8, alignItems: 'center', margin: '0 2px 14px' } },
       React.createElement('span', { style: { fontSize: 12, color: '#888', fontWeight: 600 } }, 'Sort by'),
-      [['demand', '\ud83d\udd25 Most FT demand'], ['soonest', '\u23f3 Going live soonest']].map(function(opt) {
+      [['soonest', '\u23f3 Going live soonest'], ['demand', '\ud83d\udd25 Most FT demand']].map(function(opt) {
         var active = sortMode === opt[0];
         return React.createElement('button', {
           key: opt[0], onClick: function() { setSortMode(opt[0]); },
@@ -1294,8 +1418,8 @@ function App() {
       else demo.spendBuckets['$1000+']++;
       var _bc = parseInt(ur['FT Booking Count'])||0;
       if(_bc>0) demo.ftBookingCounts.push(_bc);
-      var _ftd = ur['First FT Date'] ? new Date(ur['First FT Date']) : null;
-      var _fab = ur['First Any Booking'] ? new Date(ur['First Any Booking']) : null;
+      var _ftd = parseCardDate(ur['First FT Date']);
+      var _fab = parseCardDate(ur['First Any Booking']);
       if (_ftd && _fab && !isNaN(_ftd.getTime()) && !isNaN(_fab.getTime()) && Math.abs(_ftd - _fab) < 172800000) {
         demo.ftFirstTouch++;
         if (hhNet > 0) { demo.ftFirstTouchRev += hhNet; demo.ftFirstTouchHHs++; }
@@ -1448,7 +1572,7 @@ function App() {
       p.sections.forEach(function(s) {
         var dr = '';
         if (s.sectionStart) {
-          var sd = new Date(s.sectionStart); var ed = s.sectionEnd ? new Date(s.sectionEnd) : null;
+          var sd = parseCardDate(s.sectionStart); var ed = parseCardDate(s.sectionEnd);
           var fmt = function(d) { return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); };
           dr = fmt(sd) + (ed && ed.getTime() !== sd.getTime() ? ' - ' + fmt(ed) : '');
         }
@@ -1869,8 +1993,8 @@ function App() {
                       isOpen && p.sections.map(function(s, i) {
                         var dateLabel = '';
                         if (s.sectionStart) {
-                          var sd = new Date(s.sectionStart);
-                          var ed = s.sectionEnd ? new Date(s.sectionEnd) : null;
+                          var sd = parseCardDate(s.sectionStart);
+                          var ed = parseCardDate(s.sectionEnd);
                           var fmt = function(d) { return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); };
                           dateLabel = fmt(sd) + (ed && ed.getTime() !== sd.getTime() ? ' – ' + fmt(ed) : '');
                         }

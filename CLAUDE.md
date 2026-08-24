@@ -693,6 +693,99 @@ generic route's 404 was the only symptom. Mutation-tested: moving the routes bac
 below the generic ones fails it by name.
 - Editing still works for admins exactly as before — open the page WITH `?token=`.
 
+## Metabase renders every timestamp in PACIFIC — and dates are not instants (2026-08-24)
+
+Two independent bugs stacked up in the Fast Track report and made Smyrna's 154th
+Birthday Concert read **"Oct 2 · Sat 02:00pm–07:00pm"** when Rec's own admin says
+**Oct 3, 5:00–10:00pm**. Both are general traps, not fast-track ones.
+
+**1. The Metabase report timezone is `America/Los_Angeles`.** Confirmed with
+`current_setting('TimeZone')` on db 4 — every query response also carries
+`"results_timezone":"America/Los_Angeles"`. So `to_char(ts, ...)` and `ts::date`
+on a `timestamptz` are evaluated in **Pacific**, whatever the org's own timezone
+is. Card 17300 does exactly that:
+
+```sql
+MIN(sess.starts_at)::date                                AS section_start,
+(ARRAY_AGG(to_char(sess.starts_at, 'Dy') ...))[1]        AS section_day,
+(ARRAY_AGG(to_char(sess.starts_at, 'HH12:MIam') ...))[1] AS section_time
+```
+
+Ground truth for those sections: `starts_at` = `2026-10-03 21:00 UTC` =
+**17:00 America/New_York** (what Rec shows) = 14:00 America/Los_Angeles (what we
+printed). A Pacific org would look fine, which is why this survived.
+
+**The fix, when it is applied, must convert first** — `location.timezone` is
+populated on **all 3,099 locations across all 151 orgs** (Smyrna: uniformly
+`America/New_York`), so it is a reliable join, unlike `organization.config`
+which holds no timezone key:
+
+```sql
+(sess.starts_at AT TIME ZONE loc.timezone)::date            -- not sess.starts_at::date
+to_char(sess.starts_at AT TIME ZONE loc.timezone, 'Dy')     -- etc
+```
+
+Note `timestamptz AT TIME ZONE 'X'` yields a `timestamp` in that zone, which
+`to_char`/`::date` then read literally — no session-timezone dependency left.
+**NOT YET APPLIED to card 17300** (needs the Date-tag re-flip + heaviest-org
+verification below). The date is right in Pacific for this section, but an
+early-morning Eastern event still slips a day, so this is a correctness fix and
+not only a cosmetic one.
+
+**2. `::date` columns come back as bare `YYYY-MM-DD`, and `new Date()` parses
+that as UTC midnight.** So a US browser formats `"2026-10-03"` as **Oct 2** —
+which is why the row printed the card's own (correct) `Sat` next to a Friday
+date, and how the two bugs were told apart. `parseCardDate()` in
+`public/fasttrack.html` builds the date from its parts; real timestamps
+(`Reg Opens`, `Reg Closes`, `Publish Date`) must keep going through
+`new Date()`, or every countdown on the page shifts.
+
+**The guard has to force a timezone.** `scripts/fasttrack-dates.spec.js`
+re-execs itself under `TZ=America/New_York`, because this sandbox AND GitHub
+Actions both run UTC — where the broken parse looks correct. Reverting the fix
+passed every assertion until the timezone was pinned. A UTC-only date spec is
+decorative.
+
+## A section can have TWO registration windows, and the early one is still registration (2026-08-24)
+
+`registration_window` carries a `default` window and, often, a `group` one
+(early access, `group_id` set). Card 17300 emits both — `Reg Opens` and
+`Early Access Opens` — but `public/fasttrack.html` mapped `earlyAccess` and then
+**never read it**, so "when does this go live" came only from the general window.
+
+Smyrna's four birthday-concert tables each have both, a week apart:
+
+| section | early access | general |
+|---|---|---|
+| Premier Table | Aug 24 | Aug 31 |
+| Preferred Table | Aug 25 | Sep 1 |
+| Select Table | Aug 26 | Sep 2 |
+| General Table | Aug 27 | Sep 3 |
+
+So the report announced *"Reg opens Aug 31 · 8 days"* for sections whose first
+families could register the next morning. `sectionGoLive(s)` now returns the
+earlier of the two **and which one it is**, because "opens tomorrow" without
+saying it is early-access-only is its own kind of wrong. Every go-live question
+on the page reads it: the countdown chip, the leaderboard's soonest sort, the
+Launching Soon bucket, and Cold Sections.
+
+## "Launching Soon" is a section question, not a program question (2026-08-24)
+
+The bucket test was `p._allFutureReg && p.ftSignups > 0` — *every* section in the
+program still in the future. Smyrna's Concert Series has four tables opening
+within days with 114 fast-trackers **and** two summer concerts that already
+happened, so the program with 120 people waiting was excluded while a program
+with 3 fast-trackers opening in 29 days was featured. It is now
+`p._launch.length > 0` (sections with FT interest whose go-live is ahead), and
+every figure on the card is scoped to those sections — a program's spent history
+would otherwise inflate its pre-launch demand. Ordered soonest-first, and the
+Demand Leaderboard defaults to "Going live soonest".
+
+Guarded by two `ci-check-render.js` cases whose fixture is Smyrna's real shape —
+`[data-launch-section]` (the program reached the bucket) and
+`[data-golive="early"]` (go-live came from the early window). Both were seen to
+fail on the reverted logic.
+
 ## Never ship a page without rendering it (IMPORTANT — cost us two blank pages)
 
 **The rule: if a change touches a `public/*.html` React page, render that page in
