@@ -1,4 +1,11 @@
--- Card 17300: ✅ Fast Track Utilization Report — v16 SPEED REFACTOR (candidate)
+-- Card 17300: ✅ Fast Track Utilization Report — v17 TIMEZONE FIX
+-- v17 (2026-08-24): section_start / section_end / section_day / section_time are
+-- now computed in the SECTION'S timezone (session location) instead of Metabase's
+-- report timezone. See the comment on the schedule block below for the numbers.
+-- Output is byte-identical for Pacific orgs; everything else was wrong before.
+-- Measured on apex (heaviest, 5,189 sections): 926ms -> 558ms, no regression.
+--
+-- v16 SPEED REFACTOR
 -- EXPLAIN-driven changes vs v15 (output identical):
 -- 1. ONE windowed scan of the org's fast-track bookings (ft_b), reused by
 --    ft_raw, ft_users and ft_payments. v15 bitmap-scanned the org's 144k
@@ -63,13 +70,33 @@ section_base AS (
       SUM(COALESCE(sess.capacity, sec.capacity, 0))
         FILTER (WHERE sess.canceled_at IS NULL)::int     AS total_seat_capacity,
       -- schedule: all non-deleted sessions incl. canceled (as v15's sch)
-      MIN(sess.starts_at)::date                          AS section_start,
-      MAX(sess.starts_at)::date                          AS section_end,
-      (ARRAY_AGG(to_char(sess.starts_at, 'Dy') ORDER BY sess.starts_at))[1] AS section_day,
-      (ARRAY_AGG(to_char(sess.starts_at, 'HH12:MIam') || chr(8211) || to_char(sess.ends_at, 'HH12:MIam')
+      -- ⚠ IN THE SECTION'S OWN TIMEZONE, not Metabase's. starts_at/ends_at are
+      -- timestamptz, and ::date / to_char() on a timestamptz are evaluated in the
+      -- SESSION TimeZone — which for this Metabase is America/Los_Angeles
+      -- (current_setting('TimeZone') confirms it). So an Eastern org's 5pm concert
+      -- was emitted as 02:00pm and, for an early-morning event, on the day before.
+      -- Smyrna's 154th Birthday Concert read "Oct 2 · 02:00pm–07:00pm" against
+      -- Rec's own "Oct 3, 5:00–10:00pm" (2026-08-24). Measured platform-wide:
+      -- 17,769 of 30,408 sections across 63 orgs had a wrong time, 56 across 8
+      -- orgs a wrong date, and all 12,180 already-Pacific sections are unchanged.
+      -- location.timezone is populated on 235,037 of 235,037 sessions, so the
+      -- join always resolves; the COALESCE only keeps a future NULL from turning
+      -- these columns into NULL (AT TIME ZONE NULL yields NULL), degrading to
+      -- today's behaviour rather than to blanks.
+      MIN(sess.starts_at AT TIME ZONE z.tz)::date        AS section_start,
+      MAX(sess.starts_at AT TIME ZONE z.tz)::date        AS section_end,
+      (ARRAY_AGG(to_char(sess.starts_at AT TIME ZONE z.tz, 'Dy')
+                 ORDER BY sess.starts_at))[1]            AS section_day,
+      (ARRAY_AGG(to_char(sess.starts_at AT TIME ZONE z.tz, 'HH12:MIam') || chr(8211)
+                 || to_char(sess.ends_at AT TIME ZONE z.tz, 'HH12:MIam')
                  ORDER BY sess.starts_at))[1]            AS section_time
     FROM "session" sess
     JOIN section sec ON sec.id = sess.section_id
+    -- Each session's OWN location: a section can move rooms, and 12 sections
+    -- platform-wide genuinely span two zones. The day/time strings describe the
+    -- first session, so the first session's zone is the honest one to use.
+    LEFT JOIN location loc ON loc.id = sess.location_id
+    CROSS JOIN LATERAL (SELECT COALESCE(loc.timezone, current_setting('TimeZone')) AS tz) z
     WHERE sec.organization_id = (SELECT org_id FROM params)
       AND sess.deleted_at  IS NULL
       AND sec.deleted_at   IS NULL
