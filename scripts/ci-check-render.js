@@ -70,6 +70,37 @@ function campsiteRows() {
   return rows;
 }
 
+// Outdoor event spaces — the Outdoor Events tab's fixture. Shaped to exercise
+// the three things that tab gets wrong if the hour math regresses:
+//   · two same-day bookings that OVERLAP at 10am (10a–2p and 8a–12p), so the
+//     peak hour is 10am by coverage and 8am if only start times are counted;
+//   · a multi-day booking carrying Begin on day 1 and End on day 2, which must
+//     be excluded from every hour figure (4 timed bookings, not 5);
+//   · an add-on, a head count, and two locations, so the panels have content.
+function outdoorRows() {
+  const rows = [];
+  const push = (site, type, loc, date, begin, endT, dayNum, totDays, addOns, total, head) => rows.push({
+    "Org Name": "Test Parks", "Reservation ID": site + "-" + date, "Date": date,
+    "Day": "Saturday", "Begin": begin, "End": endT,
+    "Location": loc, "Facility": loc + " - " + site,
+    "Site Type": type, "Purpose": "Birthday party", "Head Cnt": head,
+    "Reservee": "Test Renter", "Email": "t@example.com", "Phone": null, "Resident?": "Yes",
+    "Booking Type": "Managed", "Instructions": null, "Notes": null,
+    "Add Ons": addOns, "Add-On Fees": addOns ? 25 : 0, "Total": total, "Paid?": "Paid",
+    "Multi-Day Days": totDays, "Multi-Day Day#": dayNum,
+    "Lighting": null, "Lit From": null, "Lit Until": null, "Lighting Sync": null,
+  });
+  const d = n => { const t = new Date(Date.now() - n * 86400000); return t.toISOString().slice(0, 10); };
+  push("Oak Pavilion",  "outdoor-event-space", "Riverside Park", d(21), "10:00am", "02:00pm", 1, 1, "Alcohol Permit ($25.00)", 120, 60);
+  push("Oak Pavilion",  "outdoor-event-space", "Riverside Park", d(14), "08:00am", "12:00pm", 1, 1, "", 120, 40);
+  push("Elm Shelter",   "outdoor-event-space", "Riverside Park", d(10), "09:00am", "05:00pm", 1, 1, "Alcohol Permit ($25.00)", 200, 90);
+  push("Picnic Area 3", "picnic-table",        "Lakeview Park",  d(7),  "11:00am", "01:00pm", 1, 1, "", 45, 12);
+  // Multi-day: hours are unknowable per day, so this must not reach the grid.
+  push("Big Field Tent", "bounce-house",       "Lakeview Park",  d(5),  "08:00am", null,     1, 2, "", 300, 150);
+  push("Big Field Tent", "bounce-house",       "Lakeview Park",  d(4),  null,      "06:00pm", 2, 2, "", 0, 150);
+  return rows;
+}
+
 const campsitesGeo = {
   locations: [{
     id: "topaz", name: "Topaz Lake Recreation Area",
@@ -185,7 +216,9 @@ function fasttrackRows() {
 
 const STUBS = [
   { match: /\/facilities\/api\/campsites/, body: () => campsitesGeo },
-  { match: /\/facility\/api\/data/,        body: () => ({ rows: campsiteRows(), meta: {} }) },
+  // One feed, both tabs: Camping filters it to campsite rows and Outdoor Events
+  // to its three types, so each tab has to do its own scoping.
+  { match: /\/facility\/api\/data/,        body: () => ({ rows: campsiteRows().concat(outdoorRows()), meta: {} }) },
   { match: /\/api\/permits/,               body: () => ({ permits: {} }) },
   { match: /\/api\/availability-batch/,     body: url => availabilityFor(url) },
   { match: /\/rentalcalendar\/api\/sites/, body: (url, org) => ({ sites: campmapSites(org) }) },
@@ -281,6 +314,14 @@ const CASES = [
   // amber rail and a flame, which is what made the panel unreadable.
   { name: "fasttrack · heat: inferno",  path: "/{org}/fasttrack",         needs: "[data-heat=\"inferno\"]" },
   { name: "fasttrack · heat: banked",   path: "/{org}/fasttrack",         needs: "[data-heat=\"banked\"]" },
+  // Outdoor Event Spaces. Three cases, because "the tab rendered" is the weakest
+  // claim available: the peak hour must come from hour COVERAGE — the fixture's
+  // four bookings each start in a different hour and overlap at 11am, so
+  // start-times-only reports 8a instead of 11a — and the timed count must exclude
+  // the multi-day booking (5 instead of 4 if it leaks in).
+  { name: "facilities · outdoor events",   path: "/{org}/facilities?tab=outdoor", needs: "[data-oe-heat]" },
+  { name: "facilities · outdoor peak hour", path: "/{org}/facilities?tab=outdoor", needs: "[data-oe-peak=\"11a\"]" },
+  { name: "facilities · outdoor multi-day", path: "/{org}/facilities?tab=outdoor", needs: "[data-oe-timed=\"4\"]" },
   { name: "campmap · stay search", path: "/{org}/campmap",                needs: "#departPick[max]" },
   // The Campsite Type filter. `option[value="tent-and-rv"]` is only there if the
   // LIVE site feed landed and buildTypeFilter() re-ran off its subType — the

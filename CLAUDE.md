@@ -38,7 +38,8 @@ The mechanism lives in `server.js` under "Slack activity notifications":
   `extra` object into `logEvent`.
 
 Wired so far: `created`, `org-deleted`, `pdf`, `excel`, `print`, `summary`
-(🧾 lite export), `game` (🕹️ hidden banner mini-game plays), `view`, `insights`,
+(🧾 lite export), `game` (🕹️ hidden banner mini-game plays),
+`outdoor` (🎪 Outdoor Event Spaces tab opened, with the booking count), `view`, `insights`,
 feedback/votes, `email`, `munis`, `permits`, `map`, and three platform alerts —
 `report-down` (a report's card stopped answering, links straight to the report
 with its token), `schema-break` (a table or column the reports depend on is
@@ -328,6 +329,87 @@ Still true of the org-side popup: it shows *published* project-updates, so it is
 EMPTY until at least one update is published, and each PR preview is a fresh
 environment with its own (empty) data store — a brand-new preview shows no popup
 until you publish an update in it first.
+
+## Outdoor Event Spaces tab — hourly, not nightly (2026-08-24)
+
+A tab on the Facilities hub for **pavilions, shelters, picnic areas and bounce
+houses** — `court.type` in `('outdoor-event-space','picnic-table','bounce-house')`,
+all three real values behind a CHECK constraint, so no name-matching recovery is
+needed the way courts need `refineSiteType()`. **Fields are deliberately out**
+(Dan): a big enough segment, and a different question — leagues, not parties.
+
+Volume platform-wide, last 365 days: outdoor-event-space **12,987** bookings /
+1,195 sites, picnic-table **10,047** / 901, bounce-house **929** / 38. Biggest
+users are Easton, Torrance (all three types), Chicorec, Sacramento County,
+Windham, Watertown, Norman, Apex.
+
+- **No new SQL.** `OutdoorEventsView` re-fetches card **17294**
+  (`/:org/facility/api/data`), the same feed the Camping tab uses, because only
+  that card carries the wall-clock `Begin`/`End`. The hub's own feed (19570) does
+  not.
+- **These are HOURLY or all-day rentals.** Median block is **9h**
+  (outdoor-event-space), 8h (picnic-table), 15h (bounce-house); ~54% run 8h+;
+  **99.2% are same-day**. So the unit of the tab is the booked HOUR and the
+  day-part, and the word "night" appears nowhere on it.
+- **`reservation_timestamp_range` is a `tsrange`** — timestamp WITHOUT time zone,
+  i.e. already local wall clock. So `Begin`/`End` need no timezone handling and
+  Metabase's Pacific report timezone has nothing to shift here. That is the
+  OPPOSITE of card 17300, where the column is a `timestamptz` (see the Pacific
+  section below) — worth checking the column type before assuming either way.
+- **The day-part heat map counts hours COVERED, not hours started.** An 11am–4pm
+  shelter rental fills five cells. Start-times-only still renders, still has a
+  peak, and answers a different question (when paperwork begins, ~8am, instead of
+  when the shelters are full, late morning).
+- **A multi-day booking has no per-day hours and must not be given any.** Card
+  17294 prints `Begin` on the first day and `End` on the last, so a multi-day row
+  carries at most one of them. `oeRowHours()` returns null for those; they are
+  counted as day-spans, excluded from every hour figure, shaded their own colour
+  on the calendar, and called out on screen. The tempting "repair" — defaulting a
+  missing End to end-of-day — invents a ten-hour booking out of a day boundary.
+- **"Days used", not occupancy.** The feed only contains sites that were booked at
+  least once, so a pavilion nobody reserved is invisible. Every denominator on the
+  tab is *booked* sites, "Quietest spaces" says out loud that it means least-used
+  of the ones in play, and no total inventory is ever claimed (the AI prompt says
+  so too). `/:org/facilities/api/campsites` is campmap-seed-only and cannot supply
+  outdoor-space inventory.
+- Ranking is by hours, with **days used** as the tiebreak before revenue —
+  otherwise a space whose bookings are all multi-day has no hours to rank on and
+  sinks to the bottom as though nobody booked it.
+- Own banner (`fbx-pavilion` scene) and its own minigame, **Bounce House**
+  (`bounce`, 🎈, score = balloons popped) — in `GAME_FACTORIES`, `LB_GAMES` and
+  the server's `LEADERBOARD_GAMES`. A one-sided entry means a player sees a Submit
+  button that always fails; `facilities-beacons.spec.js` checks both sides.
+- Own AI insights route `POST /:org/outdoor/api/insights` with its own prompt.
+- Guards: `scripts/outdoor-hours.spec.js` (19 assertions, in CI) pins the hour
+  math — mutation-tested against start-times-only, against dropping the multi-day
+  guard, and against defaulting a missing End. Plus three
+  `ci-check-render.js` cases: the tab renders, `[data-oe-peak="11a"]` (coverage,
+  not start times) and `[data-oe-timed="4"]` (multi-day excluded). Both attribute
+  cases were seen to fail on the real regression in a real browser.
+
+## Every Facilities-hub beacon was 404ing — same trap as campmap (2026-08-24)
+
+Found while wiring the Outdoor Events ping. The hub lives at `/:org/facilities`,
+but **`facilities` is NOT in `REPORT_TYPES`** (the report type is `facility`, the
+rental schedule). So every beacon `public/facilities.html` sends was matching the
+generic `/:org/:report/api/log` and coming back
+`404 Unknown report: "facilities"` — the **hidden banner game** ping and the
+**lite Summary export** ping included, since the day each shipped. Nothing caught
+it: server.js parses, the server boots, the page renders, the client code is
+correct, and a fire-and-forget beacon never complains.
+
+This is the campmap bug verbatim (see the campmap activity section). Fixed the
+same way: a dedicated `POST /:org/facilities/api/log` registered **above** the
+generic routes, allowlisting `game`, `summary`, `outdoor`. Events are logged
+against `facility` — the hub reads that card, and it keeps `getReportActivity()`
+looking at a report type that exists.
+
+**Consequence to expect: Slack gets pings it never got before** — game plays and
+Summary exports on the Facilities hub start arriving, because they were being
+dropped, not muted. Guarded by `scripts/facilities-beacons.spec.js` (11
+assertions, in CI), which checks source registration order AND boots the server to
+require a 200 *plus* a row in events.jsonl. Mutation-tested: moving the route back
+below the generic ones fails both halves independently.
 
 ## Campsite map availability — 30 days is the ceiling, and it is not ours (2026-08-23)
 

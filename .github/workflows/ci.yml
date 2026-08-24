@@ -82,6 +82,12 @@ jobs:
       - name: Event log cache spec (fresh on append; never re-parses the whole log)
         run: node scripts/event-cache.spec.js
 
+      - name: Outdoor events hour spec (hours covered, not hours started; multi-day excluded)
+        run: node scripts/outdoor-hours.spec.js
+
+      - name: Facilities hub beacons (hub log route above the generic one; 200 AND a logged row)
+        run: node scripts/facilities-beacons.spec.js
+
       - name: Admin dashboard JS (inline blocks parse; every on*= handler resolves)
         run: node scripts/ci-check-admin-js.js
 
