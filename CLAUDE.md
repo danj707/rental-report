@@ -870,6 +870,30 @@ saying it is early-access-only is its own kind of wrong. Every go-live question
 on the page reads it: the countdown chip, the leaderboard's soonest sort, the
 Launching Soon bucket, and Cold Sections.
 
+**The same bug was still in "Just Launched" (fixed 2026-08-24, PR #152).** That
+bucket filtered on `r.regOpens` alone, so a section whose early-access window
+opened stayed out of it for the entire week before its general window — the
+week it is actually converting. It now keys on `sectionGoLive()` and labels the
+row `· early access` so the bucket never implies general registration is open.
+Guarded by the `fasttrack · just launched` render case
+(`[data-launched-kind="early"]`), mutation-tested against the old filter.
+
+**STILL OPEN, and it is in the CARD, not the client.** Card 17300's
+`Reg Status` is computed from `rw.default_opens` only:
+
+```sql
+WHEN rw.default_opens > now() THEN 'pipeline'
+```
+
+so a section in early access is reported as `pipeline`. **486 sections across 7
+orgs are in that state right now** (measured 2026-08-24). Consequence: the
+Conversions tab's `postReg` set is gated on `regStatus === 'open' || 'closed'`,
+so those sections are missing from the tab whose entire job is watching Fast
+Track convert — and no client-side fix reaches it without either re-deriving
+status from the two windows in the page or editing the card. A card edit means
+the usual API/date-tag re-flip dance plus heaviest-org sign-off, so it is Dan's
+call rather than a drive-by.
+
 ## "Launching Soon" is a section question, not a program question (2026-08-24)
 
 The bucket test was `p._allFutureReg && p.ftSignups > 0` — *every* section in the

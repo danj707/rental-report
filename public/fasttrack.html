@@ -1223,15 +1223,30 @@ function App() {
 
   /* ── Just Launched: sections whose registration opened in the last 3 days.
      These are the sections where FT flips from "demand forecast" to
-     "conversion outcome" — the Overview snapshot + Conversions deep-dive. ── */
+     "conversion outcome" — the Overview snapshot + Conversions deep-dive.
+
+     Keyed on sectionGoLive(), i.e. the EARLIER of the early-access and general
+     windows — not on "Reg Opens" alone. Reported 2026-08-24 (Dan): Smyrna's
+     Concert Series tables open early access a week before their general window,
+     so the first one launched to its early-access families that morning while
+     "Reg Opens" still said Aug 31. Reading only the general window kept the
+     section out of Just Launched for the entire week it was actually converting
+     — the same mistake, in a different place, as the one Launching Soon had.
+     Each row carries which window opened, so "just launched" never implies
+     general registration is open when only early access is. ── */
   var justLaunched = useMemo(function() {
     var now = new Date();
     var cutoff = new Date(now.getTime() - 3 * 86400000);
     return filtered.filter(function(r) {
-      if (!r.regOpens) return false;
-      var o = new Date(r.regOpens);
-      return o <= now && o >= cutoff;
-    }).sort(function(a, b) { return new Date(b.regOpens) - new Date(a.regOpens); });
+      var at = sectionGoLive(r).at;
+      return at && at <= now && at >= cutoff;
+    }).map(function(r) {
+      var gl = sectionGoLive(r);
+      /* Attached rather than wrapped so sectionCard keeps taking a plain row. */
+      r._openedAt = gl.at;
+      r._openedKind = gl.kind;
+      return r;
+    }).sort(function(a, b) { return b._openedAt - a._openedAt; });
   }, [filtered]);
 
   var rowsById = useMemo(function() {
@@ -1779,6 +1794,11 @@ function App() {
             var pinned = isPinned(r.sectionId);
             return React.createElement('div', {
               key: 'sc' + r.sectionId, className: 'launch-card',
+              /* Render-check hooks: a card in this grid at all, and which window
+                 put it there. `early` only appears if Just Launched counts the
+                 early-access window, which is the regression these guard. */
+              'data-just-launched': r._openedAt ? 'true' : null,
+              'data-launched-kind': r._openedKind || null,
               style: { borderLeftColor: hb.color },
               role: 'button', tabIndex: 0,
               onClick: function() { jumpToConversions(r.sectionId); },
@@ -1788,7 +1808,16 @@ function App() {
               React.createElement('div', { style: { display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'baseline' } },
                 React.createElement('div', null,
                   React.createElement('div', { style: { fontSize: 12, fontWeight: 700, color: '#111' } }, r.section || r.program),
-                  React.createElement('div', { style: { fontSize: 10, color: '#999' } }, r.program, r.regOpens ? ' · ' + hoursAgoLabel(r.regOpens) : '')
+                  React.createElement('div', { style: { fontSize: 10, color: '#999' } }, r.program,
+                    /* Count from the window that actually opened. Using regOpens
+                       here printed nothing at all for an early-access launch,
+                       because that timestamp is still in the future. */
+                    (r._openedAt || r.regOpens) ? ' · ' + hoursAgoLabel(r._openedAt || r.regOpens) : '',
+                    r._openedKind === 'early' && React.createElement('span', {
+                      style: { marginLeft: 5, fontWeight: 700, color: '#7c3aed' },
+                      title: 'Early access is open; general registration opens '
+                        + (r.regOpens ? fmtDateShort(new Date(r.regOpens)) : 'later')
+                    }, '· early access'))
                 ),
                 React.createElement('div', { style: { display: 'flex', gap: 6, alignItems: 'center', flexShrink: 0 } },
                   React.createElement('span', { className: 'flow-band', style: { background: hb.bg, color: hb.color } }, hb.icon, ' ', r.convPct != null ? r.convPct + '%' : '0%'),
@@ -1828,7 +1857,7 @@ function App() {
             justLaunched.length > 0 && React.createElement('div', { style: { marginBottom: 24 } },
               React.createElement('div', { style: { display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 10 } },
                 React.createElement('div', { style: { fontSize: 13, fontWeight: 800, color: '#b91c1c', textTransform: 'uppercase', letterSpacing: '.05em' } }, '🔥 Just Launched'),
-                React.createElement('div', { style: { fontSize: 11, color: '#888' } }, 'registration opened in the last 3 days · click a section for the post-launch deep dive'),
+                React.createElement('div', { style: { fontSize: 11, color: '#888' } }, 'registration opened in the last 3 days, early access included · click a section for the post-launch deep dive'),
                 React.createElement('button', { className: 'flow-action', style: { marginLeft: 'auto', background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe' }, onClick: function() { setSubOpen(true); } }, '📬 Email me this')
               ),
               React.createElement('div', { className: 'launch-grid' }, launchRows.map(sectionCard)),

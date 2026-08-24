@@ -222,7 +222,19 @@ function fasttrackRows() {
     "Section ID": "sec-girls-night-out", "FT Families": 3,
     "Demand %": 0.8,
   });
+  // Just Launched's case: early access opened YESTERDAY, general registration is
+  // still a week out. Reading only "Reg Opens" leaves this section out of the
+  // bucket for the whole week it is actually converting — which is what Dan hit
+  // on 2026-08-24. Dates are relative, so it can never drift into a different
+  // bucket with the clock.
+  const launchedEarly = Object.assign(table("Premier Table Early", 62, 40, 25, -1), {
+    "Section ID": "sec-premier-early",
+    "Early Access Opens": iso(-1), "Reg Opens": iso(6), "Reg Closes": iso(45),
+    "Reg Status": "pipeline",     // exactly what the card reports for this shape
+    "FT Converted": 22, "Conversion %": 35.5,
+  });
   return [
+    launchedEarly,
     table("Premier Table", 54, 54, 25, 1),
     table("Select Table", 18, 18, 45, 2),
     table("Preferred Table", 21, 21, 30, 3),
@@ -334,6 +346,10 @@ const CASES = [
   // amber rail and a flame, which is what made the panel unreadable.
   { name: "fasttrack · heat: inferno",  path: "/{org}/fasttrack",         needs: "[data-heat=\"inferno\"]" },
   { name: "fasttrack · heat: banked",   path: "/{org}/fasttrack",         needs: "[data-heat=\"banked\"]" },
+  // Just Launched must count a section whose EARLY-ACCESS window opened, not
+  // only one whose general window did. `[data-launched-kind="early"]` exists
+  // solely on that path, so reading "Reg Opens" alone fails this case.
+  { name: "fasttrack · just launched",  path: "/{org}/fasttrack",         needs: "[data-launched-kind=\"early\"]" },
   // Outdoor Event Spaces. Three cases, because "the tab rendered" is the weakest
   // claim available: the peak hour must come from hour COVERAGE — the fixture's
   // four bookings each start in a different hour and overlap at 11am, so
