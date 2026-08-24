@@ -2581,6 +2581,7 @@ const LEADERBOARD_GAMES = {
   bear:     { label: "Berry Run",     emoji: "🫐",       lower: false },
   invaders: { label: "Invaders",      emoji: "👾",       lower: false },
   breakout: { label: "Court Breaker", emoji: "🧱",       lower: false },
+  bounce:   { label: "Bounce House",  emoji: "🎈",       lower: false },
   golf:     { label: "Putt",          emoji: "⛳",             lower: true  },
 };
 const GAME_SCORES_FILE = path.join(DATA_DIR, "game_scores.json");
@@ -3605,7 +3606,7 @@ setTimeout(() => { checkCardParamTypes().catch(() => {}); }, 150 * 1000).unref?.
 // Inert if the env var is unset. Fire-and-forget — never blocks or breaks logging.
 // To change what pings Slack, edit SLACK_NOTIFY. High-frequency events (view/fetch)
 // are debounced per org+report so Slack isn't a firehose.
-const SLACK_NOTIFY = new Set(["created", "org-deleted", "watchdog", "schema-break", "param-drift", "report-down", "campmap-share", "campmap-site", "campmap-book", "campmap-filter", "pdf", "excel", "print", "summary", "game", "map", "view", "insights", "insights-feedback", "chat-feedback", "feedback", "vote", "update-vote", "munis", "permits", "email"]);
+const SLACK_NOTIFY = new Set(["created", "org-deleted", "watchdog", "schema-break", "param-drift", "report-down", "campmap-share", "campmap-site", "campmap-book", "campmap-filter", "pdf", "excel", "print", "summary", "game", "map", "outdoor", "view", "insights", "insights-feedback", "chat-feedback", "feedback", "vote", "update-vote", "munis", "permits", "email"]);
 const SLACK_DEBOUNCE_MS = { view: 30 * 60 * 1000, fetch: 30 * 60 * 1000,
   // A broken report stays broken. The health check only reports NEW failures,
   // but a flapping card would otherwise post every hour.
@@ -3637,6 +3638,9 @@ const SLACK_EVENT_META = {
   munis:   { emoji: "🏛️", verb: "pulled the Tyler/Munis GL Account Detail for" },
   permits: { emoji: "📋", verb: "printed rental permit sheets from" },
   view:    { emoji: "👀", verb: "viewed" },
+  // Pavilions, shelters, picnic areas and bounce houses — a new tab on the
+  // Facilities hub, so its own event rather than a bare `view` of `facilities`.
+  outdoor: { emoji: "🎪", verb: "opened Outdoor Event Spaces on the facilities report" },
   insights: { emoji: "✨", verb: "generated AI insights for" },
   email:   { emoji: "📧", verb: "emailed" },
 };
@@ -3810,6 +3814,16 @@ function notifySlack(rec) {
     text = `${thumbs} ${orgName} (\`${rec.org}\`) rated the *${rec.updateTitle || "What's New"}* update${mention}`;
   } else if (rec.event === "map") {
     text = `${meta.emoji} ${orgName} (\`${rec.org}\`) — someone opened *${rec.location || "a location"}* on the facility rental map`;
+  } else if (rec.event === "outdoor") {
+    // Carry what the tab had to show. An org opening it on zero bookings is a
+    // different fact from one opening it on 400 — the first says the pavilions
+    // are not being rented, the second says the tab is earning its place.
+    // Deliberately does not print rec.report: this is logged against `facility`
+    // (see the facilities log route), and "on *facility*" would read as the
+    // rental schedule rather than the hub tab someone actually opened.
+    const n = rec.bookings;
+    const on = n == null ? "" : ` — ${n.toLocaleString()} pavilion/shelter booking${n === 1 ? "" : "s"} in range`;
+    text = `${meta.emoji} ${orgName} (\`${rec.org}\`) opened *Outdoor Event Spaces* on the facilities report${on}`;
   } else if (rec.event === "insights-feedback" || rec.event === "chat-feedback" || rec.event === "feedback" || rec.event === "vote") {
     const thumbs = (rec.score === 1 || rec.vote === "up" || rec.sentiment === "up") ? "\uD83D\uDC4D" : "\uD83D\uDC4E";
     const label = rec.event === "vote"          ? "Report"
@@ -5830,6 +5844,39 @@ app.post("/:org/campmap/api/share", (req, res) => {
   res.json({ ok: true });
 });
 
+// ── POST /:org/facilities/api/log — activity on the Facilities hub ────
+// Its own route for exactly the same reason as the campmap ones: the hub lives
+// at /:org/facilities, and `facilities` is NOT in REPORT_TYPES (the report type
+// is `facility`, the rental schedule). So every beacon this page sends was
+// matching the generic /:org/:report/api/log below and coming back
+// `404 Unknown report: "facilities"` — the hidden banner game and the lite
+// Summary export included, since the day each shipped. Fire-and-forget beacons
+// never complain, which is why nothing caught it; the campmap section of
+// CLAUDE.md describes the identical trap.
+//
+// Registered HERE, above the generic route, because Express matches in
+// registration order. Moving it below is the regression, and
+// scripts/facilities-beacons.spec.js fails on it by name.
+//
+// Events are logged against the `facility` report type: the hub reads the
+// facility card, so that is what the activity genuinely belongs to, and it keeps
+// getReportActivity() looking at a report type that exists.
+app.post("/:org/facilities/api/log", (req, res) => {
+  const slug = req.params.org;
+  if (!ORGS[slug]) return res.status(404).json({ ok: false, error: "Unknown org" });
+  const event = req.query.event;
+  const ALLOWED = ["game", "summary", "outdoor"];
+  if (!ALLOWED.includes(event)) return res.status(400).json({ ok: false, error: "Unknown event" });
+  // How much the Outdoor Events tab had to show. "Someone opened it" is trivia;
+  // "opened it on 412 bookings" says whether the tab is answering anything.
+  const n = Number(req.query.n);
+  const extra = event === "game" && req.query.game ? { game: String(req.query.game).slice(0, 60) }
+              : event === "outdoor" ? { bookings: Number.isFinite(n) && n >= 0 && n <= 999999 ? Math.round(n) : undefined }
+              : undefined;
+  logEvent(slug, "facility", event, req, extra);
+  res.json({ ok: true });
+});
+
 // POST /:org/campmap/api/log — camper activity on the public map. Its own route
 // for the same reason as /share above: resolveOrg 404s any report outside
 // REPORT_TYPES and campmap is deliberately not one.
@@ -6281,6 +6328,24 @@ Rules:
 - Prefer non-obvious observations: day-of-week gaps, stay-length patterns vs any max-stay policy, sites that fill vs sites that never book, seasonality turns.
 - Be terse. No filler. Vary the "type" across the four insights where the data supports it.`;
 
+const OUTDOOR_SYS_PROMPT = `You are a facility operations analyst for US municipal parks & recreation departments. You are given aggregate reservation data for a single reporting period covering OUTDOOR EVENT SPACES only — pavilions, shelters, picnic areas/tables and bounce houses. These are booked by the HOUR or by the DAY (not nightly like campsites): totals, hours booked, day-fill, site-day usage, booked hours by hour-of-day and day-of-week, block-length mix, per-type and per-location splits, per-site totals with revenue, add-on attach rates and monthly trend, all pre-computed.
+
+Return EXACTLY 4 insights as a JSON array and nothing else — no prose, no preamble, no markdown code fences. Each element is an object with exactly these keys:
+{
+  "type": "opportunity" | "risk" | "signal",
+  "title": short label, 7 words or fewer,
+  "detail": one sentence, 22 words or fewer, citing specific numbers, sites, hours, days or months drawn from the data,
+  "action": one concrete next step, 12 words or fewer
+}
+
+Rules:
+- Ground EVERY figure in the data provided. Never invent numbers, sites or locations.
+- These spaces are overwhelmingly weekend daytime rentals, and a median block is most of a day. A weekday-heavy or evening pattern is the non-obvious finding, not the baseline.
+- Site counts cover only sites that were BOOKED at least once in range — the data cannot see a pavilion that nobody reserved, so never claim a total inventory or an unused-site count.
+- Revenue is net base-rental dollars on the first day of each booking; comped and $0 bookings are real and common in municipal parks, so zero revenue is a pricing setup, not a failure. Hours exclude multi-day bookings, whose per-day hours are not recorded.
+- Prefer non-obvious observations: a day-part sitting empty, a shelter that never books beside one that always does, add-ons attached to only a slice of bookings, seasonality turns.
+- Be terse. No filler. Vary the "type" across the four insights where the data supports it.`;
+
 const SYS_PROMPTS = { lessons: LESSONS_SYS_PROMPT, programs: PROGRAMS_SYS_PROMPT, fasttrack: FASTTRACK_SYS_PROMPT, users: USERS_SYS_PROMPT, gl: GL_SYS_PROMPT, historic: HISTORIC_SYS_PROMPT, roster: ROSTER_SYS_PROMPT, products: PRODUCTS_SYS_PROMPT, memberships: MEMBERSHIPS_SYS_PROMPT, "instructor-payout": INSTRUCTOR_PAYOUT_SYS_PROMPT, facility: FACILITY_SYS_PROMPT, qoq: QOQ_SYS_PROMPT, "annual-report": ANNUAL_REPORT_SYS_PROMPT, waitlist: WAITLIST_SYS_PROMPT };
 
 // ── Program Finder AI ────────────────────────────────────────────────
@@ -6452,6 +6517,43 @@ app.post("/:org/camping/api/insights", express.json(), async (req, res) => {
     res.json({ ok: true, insights });
   } catch (e) {
     console.error("[camping] insights: " + e.message);
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// Outdoor Event Spaces insights — same shape as the camping route above, its
+// own prompt and its own cache key (the payload is hours/day-parts, not nights).
+app.post("/:org/outdoor/api/insights", express.json(), async (req, res) => {
+  const slug = req.params.org;
+  if (!ORGS[slug]) return res.status(404).json({ ok: false, error: "Unknown org" });
+  if (!anthropic) return res.status(503).json({ ok: false, error: "AI insights not configured" });
+  const blob = req.body;
+  if (!blob || typeof blob !== "object") return res.status(400).json({ ok: false, error: "Missing stats payload" });
+  const key = crypto.createHash("sha256").update(slug + "|outdoor|" + JSON.stringify(blob)).digest("hex");
+  const hit = _insightsCache.get(key);
+  if (hit && Date.now() - hit.ts < INSIGHTS_TTL_MS) {
+    logEvent(slug, "outdoor", "insights", req, { cached: true });
+    return res.json({ ok: true, insights: hit.insights, cached: true });
+  }
+  try {
+    const data = await anthropic.messages.create({
+      model: INSIGHTS_MODEL, max_tokens: 800,
+      system: OUTDOOR_SYS_PROMPT + "\n\n" + SCHEMA_CONTEXT,
+      messages: [{ role: "user", content: JSON.stringify(blob) }],
+    });
+    const text = (data.content || []).filter(c => c.type === "text").map(c => c.text).join("");
+    const insights = salvageInsights(text);
+    if (!insights.length) return res.status(502).json({ ok: false, error: "Could not parse AI response" });
+    const u = data.usage || {};
+    _insightsCache.set(key, { ts: Date.now(), insights });
+    if (_insightsCache.size > INSIGHTS_CACHE_MAX) _insightsCache.delete(_insightsCache.keys().next().value);
+    logEvent(slug, "outdoor", "insights", req, {
+      inTok: u.input_tokens || 0, outTok: u.output_tokens || 0,
+      costUsd: insightsCostUsd(data.model || INSIGHTS_MODEL, u.input_tokens || 0, u.output_tokens || 0),
+    });
+    res.json({ ok: true, insights });
+  } catch (e) {
+    console.error("[outdoor] insights: " + e.message);
     res.status(500).json({ ok: false, error: e.message });
   }
 });

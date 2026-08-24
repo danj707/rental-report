@@ -78,6 +78,7 @@
     .fac-banner.fbx-camp       { background: linear-gradient(180deg, #221a4d 0%, #3b2a63 55%, #6b3f5e 100%); }
     .fac-banner.fbx-pool       { background: linear-gradient(160deg, #073b63 0%, #0e6fa8 55%, #17a0c4 100%); }
     .fac-banner.fbx-ice        { background: linear-gradient(165deg, #2a5b86 0%, #5b93bd 55%, #a9d3e8 100%); }
+    .fac-banner.fbx-pavilion   { background: linear-gradient(170deg, #1e6f9e 0%, #56a8cd 48%, #8fd08a 100%); }
     .fac-banner .fcb-scene svg { position: static; }
     /* facilities: sun, clouds, hills, road */
     .fbx-sun { position: absolute; right: 15%; top: 18%; width: 74px; height: 74px; border-radius: 50%; background: radial-gradient(circle at 50% 50%, #ffe6a8, #ffb84d 60%, #ff9e3d 100%); box-shadow: 0 0 42px 13px rgba(255,180,80,.55); }
@@ -112,6 +113,16 @@
     .fbx-skater { position: absolute; bottom: 34%; left: -50px; width: 30px; height: 46px; }
     .fbx-trail { position: absolute; bottom: 34%; height: 2px; background: linear-gradient(90deg, transparent, rgba(255,255,255,.6)); }
     .fbx-snow i { position: absolute; top: -6px; width: 4px; height: 4px; border-radius: 50%; background: #fff; opacity: .85; }
+    /* pavilion: lawn, bunting, shelter, balloons, frisbee (Outdoor Event Spaces) */
+    .fbx-lawn { position: absolute; left: 0; right: 0; bottom: 0; height: 27%; background: linear-gradient(#3f8f4a, #2c6f38); }
+    .fbx-lawn::after { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 3px; background: rgba(255,255,255,.18); }
+    .fbx-bunting { position: absolute; left: 0; right: 0; top: 8%; height: 18px; }
+    .fbx-bunting i { position: absolute; top: 0; width: 0; height: 0; border-left: 6px solid transparent; border-right: 6px solid transparent; border-top: 13px solid #fff; transform-origin: top center; }
+    .fbx-bunting::before { content: ""; position: absolute; left: 2%; right: 2%; top: 0; height: 1px; background: rgba(255,255,255,.45); }
+    .fbx-shelter { position: absolute; right: 14%; bottom: 22%; width: 132px; height: 76px; }
+    .fbx-balloon { position: absolute; bottom: 24%; width: 15px; height: 19px; border-radius: 50% 50% 48% 48% / 55% 55% 45% 45%; box-shadow: inset -3px -3px 6px rgba(0,0,0,.18); }
+    .fbx-balloon::after { content: ""; position: absolute; left: 50%; top: 100%; width: 1px; height: 15px; background: rgba(255,255,255,.5); }
+    .fbx-frisbee { position: absolute; left: -40px; top: 42%; width: 22px; height: 7px; border-radius: 50%; background: linear-gradient(#ffe066, #f59e0b); box-shadow: 0 2px 5px rgba(0,0,0,.3); }
     /* play button + pong overlay */
     .fac-banner .fb-play { position: absolute; top: 12px; right: 14px; z-index: 5; width: 30px; height: 30px; border-radius: 50%; border: 1px solid rgba(255,255,255,.4); background: rgba(255,255,255,.14); color: #fff; cursor: pointer; display: grid; place-items: center; font-size: 12px; padding-left: 2px; transition: background .15s, transform .15s; }
     .fac-banner .fb-play:hover { background: rgba(255,255,255,.28); transform: scale(1.08); }
@@ -142,6 +153,9 @@
       .fbx-skater .body { animation: fbxLean 5.5s ease-in-out infinite; transform-origin: bottom; }
       .fbx-trail { animation: fbxTrailGrow 5.5s ease-in-out infinite; }
       .fbx-snow i { animation: fbxFall linear infinite; }
+      .fbx-bunting i { animation: fbxFlagSway 2.4s ease-in-out infinite alternate; }
+      .fbx-balloon { animation: fbxBalloonUp linear infinite; }
+      .fbx-frisbee { animation: fbxFrisbee 6s linear infinite; }
     }
     @keyframes fbxSunPulse { 50% { box-shadow: 0 0 58px 21px rgba(255,180,80,.7); } }
     @keyframes fbxDrift { from { transform: translateX(-120px); } to { transform: translateX(1300px); } }
@@ -161,7 +175,10 @@
     @keyframes fbxLean { 0%,100% { transform: rotate(-8deg); } 50% { transform: rotate(8deg); } }
     @keyframes fbxTrailGrow { 0% { left: 0; width: 0; opacity: 0; } 30% { opacity: .6; } 100% { left: 100%; width: 90px; opacity: 0; } }
     @keyframes fbxFall { to { transform: translateY(150px); } }
-    @media print { .fac-banner .fb-play, .fac-banner .fb-pong { display: none !important; } .fbx-sun, .fbx-cloud, .fbx-ball, .fbx-ball-x, .fbx-bear, .fbx-swimmer, .fbx-skater, .fbx-snow i, .fbx-stars i, .fbx-fire, .fbx-shimmer, .fbx-trail, .fbx-road::after { animation: none !important; } }
+    @keyframes fbxFlagSway { from { transform: rotate(-7deg); } to { transform: rotate(7deg); } }
+    @keyframes fbxBalloonUp { 0% { transform: translateY(30px); opacity: 0; } 12% { opacity: .95; } 88% { opacity: .95; } 100% { transform: translateY(-150px); opacity: 0; } }
+    @keyframes fbxFrisbee { 0% { left: -40px; transform: translateY(0) rotate(0deg); } 50% { transform: translateY(-16px) rotate(540deg); } 100% { left: 100%; transform: translateY(4px) rotate(1080deg); } }
+    @media print { .fac-banner .fb-play, .fac-banner .fb-pong { display: none !important; } .fbx-sun, .fbx-cloud, .fbx-ball, .fbx-ball-x, .fbx-bear, .fbx-swimmer, .fbx-skater, .fbx-snow i, .fbx-stars i, .fbx-fire, .fbx-shimmer, .fbx-trail, .fbx-road::after, .fbx-bunting i, .fbx-balloon, .fbx-frisbee { animation: none !important; } }
     body.print-mode .fac-banner .fb-play, body.print-mode .fac-banner .fb-pong { display: none !important; }
     .fac-banner .fb-badge { position: absolute; top: 14px; right: 16px; z-index: 2; font-size: 10px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase; color: #065f46; background: #d1fae5; border: 1px solid #6ee7b7; padding: 3px 9px; border-radius: 6px; }
 
@@ -409,6 +426,12 @@
     .camp-popup { font-size:12px; line-height:1.5; }
     .camp-popup b { font-size:13px; }
     .camp-popup img { width:100%; max-width:200px; border-radius:6px; margin-top:6px; display:block; }
+    /* Outdoor Events day-part heat map */
+    .oe-heat-wrap { overflow-x:auto; padding-bottom:4px; }
+    .oe-heat { display:grid; gap:2px; min-width:100%; width:max-content; font-size:9.5px; }
+    .oe-heat .oe-h-lbl { display:flex; align-items:center; justify-content:flex-end; padding-right:8px; color:#374151; font-weight:600; font-size:10.5px; white-space:nowrap; }
+    .oe-heat .oe-h-hd { color:#9ca3af; font-weight:700; text-align:center; font-size:9px; padding-bottom:2px; }
+    .oe-heat .oe-h-cell { height:20px; border-radius:3px; display:flex; align-items:center; justify-content:center; font-weight:700; font-variant-numeric:tabular-nums; cursor:default; }
     .camp-cal-wrap { overflow-x:auto; padding-bottom:4px; }
     .camp-cal { display:grid; gap:2px 1px; font-size:10px; min-width:100%; width:max-content; }
     .camp-cal .cc-site { position:sticky; left:0; background:#fff; z-index:2; display:flex; align-items:center; justify-content:flex-end; padding-right:9px; color:#374151; font-weight:600; font-size:11px; white-space:nowrap; }
@@ -466,6 +489,7 @@
       { key: 'summary',     label: 'Summary' },
       { key: 'utilization', label: 'Court Utilization' },
       { key: 'camping',     label: 'Camping',        icon: '🏕️' },
+      { key: 'outdoor',     label: 'Outdoor Events', icon: '🎪' },
       { key: 'golf',        label: 'Golf',           icon: '⛳' },
       { key: 'aquatics',    label: 'Pool / Aquatics', icon: '🏊' },
       { key: 'ice',         label: 'Ice',            icon: '⛸️' },
@@ -541,12 +565,107 @@
         return Object.assign({}, r, { 'Site Type': refined });
       });
     }
+    // The Outdoor Events tab's scope. All three are real court.type values with a
+    // CHECK constraint behind them, so no name-matching recovery is needed the
+    // way courts need refineSiteType().
+    const OUTDOOR_TYPES = ['outdoor-event-space', 'picnic-table', 'bounce-house'];
+    const OE_DOW   = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const OE_DOW1  = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+    const OE_RAMP  = ['#faf8f2', '#fef3c7', '#fde68a', '#fcd34d', '#f59e0b', '#d97706'];
+    const OE_MULTI = '#a5b4fc';   // booked, but with no per-day hours to shade by
+    const oePlural = (n, w) => n.toLocaleString() + ' ' + w + (n === 1 ? '' : 's');
+    // Short labels for the narrow bar chart. siteTypeLabel()'s full names
+    // ("Outdoor Event Space") ellipsize in a 100px label column, and a truncated
+    // label is a label you have to hover to read.
+    const OE_TYPE_SHORT = {
+      'outdoor-event-space': 'Event space',
+      'picnic-table': 'Picnic area',
+      'bounce-house': 'Bounce house',
+    };
+    const dowOfStr = v => {
+      const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(v == null ? '' : v));
+      return m ? new Date(+m[1], +m[2] - 1, +m[3]).getDay() : null;
+    };
+    // ── Outdoor-events hour math, at module scope on purpose ─────────────
+    // These are the load-bearing derivations of the Outdoor Events tab, and they
+    // are pure, so they live out here where `scripts/outdoor-hours.spec.js` can
+    // lift and pin them. Inside the component they would only be reachable by
+    // rendering the whole tab.
+    const OE_CLOCK = /^(\d{1,2}):(\d{2})\s*(am|pm)$/i;
+    // "01:00pm" → 780. The card emits to_char(…, 'HH12:MIam').
+    const oeClockMin = v => {
+      const m = OE_CLOCK.exec(String(v == null ? '' : v).trim());
+      if (!m) return null;
+      const h = parseInt(m[1], 10) % 12;
+      return (h + (/pm/i.test(m[3]) ? 12 : 0)) * 60 + parseInt(m[2], 10);
+    };
+    const oeDayNum    = r => Number(r['Multi-Day Day#']) || 0;
+    const oeTotDays   = r => Number(r['Multi-Day Days']) || 0;
+    const oeIsArrival = r => oeDayNum(r) <= 1;
+    const oeIsMulti   = r => oeTotDays(r) > 1;
+    // Hours on one row, or null when they cannot be known. Card 17294 prints
+    // Begin on a booking's FIRST day and End on its LAST, so a same-day booking
+    // carries both and a multi-day one carries neither on any single day. Those
+    // return null and are kept out of every hour figure rather than divided into
+    // a guess — 99% of these bookings are same-day platform-wide, so the hour
+    // figures cover nearly all of them, and the exclusion is stated on screen.
+    const oeRowHours = r => {
+      if (oeIsMulti(r)) return null;
+      const a = oeClockMin(r['Begin']), b = oeClockMin(r['End']);
+      if (a == null || b == null) return null;
+      let d = b - a;
+      if (d <= 0) d += 1440;                    // an evening block ending after midnight
+      return Math.min(d, 1440) / 60;
+    };
+    const oeFmtHrs = h => (h >= 9.95 ? Math.round(h) : (Math.round(h * 10) / 10)) + 'h';
+    const oeHour12 = h => { const x = ((h % 24) + 24) % 24; return ((x % 12) || 12) + (x < 12 ? 'a' : 'p'); };
+    // Day-part grid — bookings COVERING each hour, by weekday. A booking counts
+    // in every hour it covers, so an 11am–4pm shelter rental reads as five hours
+    // of demand rather than one 11am tick: which part of the day is spoken for is
+    // the question, not when the paperwork starts. Pass arrival rows.
+    function oeHeatGrid(rows) {
+      const heat = [];
+      for (let i = 0; i < 7; i++) heat.push(new Array(24).fill(0));
+      let timed = 0;
+      (rows || []).forEach(r => {
+        const h = oeRowHours(r); if (h == null) return;
+        const dw = dowOfStr(r['Date']); if (dw == null) return;
+        const a = oeClockMin(r['Begin']); if (a == null) return;
+        timed++;
+        const startH = Math.floor(a / 60), span = Math.max(1, Math.min(24, Math.ceil(h)));
+        for (let k = 0; k < span; k++) heat[dw][(startH + k) % 24]++;
+      });
+      const hourTotals = new Array(24).fill(0);
+      for (let i = 0; i < 7; i++) for (let hh = 0; hh < 24; hh++) hourTotals[hh] += heat[i][hh];
+      let peak = -1, peakBookings = 0;
+      hourTotals.forEach((v, i) => { if (v > peakBookings) { peakBookings = v; peak = i; } });
+      let h0 = 24, h1 = -1;
+      hourTotals.forEach((v, i) => { if (v > 0) { if (i < h0) h0 = i; if (i > h1) h1 = i; } });
+      if (h1 < h0) { h0 = 8; h1 = 20; }         // nothing timed — show a plausible day
+      const hours = [];
+      for (let hh = h0; hh <= h1; hh++) hours.push(hh);
+      let max = 1;
+      for (let i = 0; i < 7; i++) for (let k = 0; k < hours.length; k++) max = Math.max(max, heat[i][hours[k]]);
+      return { heat, hourTotals, hours, max, timed, peak, peakBookings };
+    }
+    // Calendar cell shade. A day with hours shades by them (capped at 12, which
+    // is already a whole-day rental); a day booked with UNKNOWN hours gets its
+    // own colour rather than the lightest amber, because "booked all day" and
+    // "barely booked" must not look the same.
+    const oeShade = c => !c || !c.n ? OE_RAMP[0]
+      : !c.hours ? OE_MULTI
+      : OE_RAMP[Math.min(5, 1 + Math.floor(Math.min(c.hours, 12) / 12 * 4.999))];
     const HIGH_CANCEL = 20; // % → flag site as at-risk
 
     // Per-vertical sub-tab config — each is a scoped view of the SAME facility
     // data the Summary already fetched (site types → vertical). No new SQL.
     const VERT_CONFIG = {
       camping:  { label: 'Camping',          icon: '🏕️', types: ['campsite'] },
+      // Outdoor event spaces — Rec's three real types for rentable outdoor
+      // gathering space. `field` is deliberately OUT: fields are a big enough
+      // segment (and a different question — leagues, not parties) to deserve
+      // their own tab, and folding them in here would swamp every average.
+      outdoor:  { label: 'Outdoor Event Spaces', icon: '🎪', types: OUTDOOR_TYPES },
       golf:     { label: 'Golf',             icon: '⛳',  types: ['golf'] },
       aquatics: { label: 'Pool / Aquatics',  icon: '🏊', types: ['pool'] },
       // Ice — mostly orgs type these 'rink', but some (Apex) type them 'court';
@@ -781,11 +900,28 @@
     function fbxStars() { let s = ''; for (let i = 0; i < 20; i++) s += '<i style="left:' + (Math.random() * 100).toFixed(1) + '%;top:' + (Math.random() * 60).toFixed(1) + '%;animation-duration:' + (1.6 + Math.random() * 2.6).toFixed(2) + 's;animation-delay:-' + (Math.random() * 3).toFixed(2) + 's"></i>'; return s; }
     function fbxSnow() { let s = ''; for (let i = 0; i < 16; i++) s += '<i style="left:' + (Math.random() * 100).toFixed(1) + '%;animation-duration:' + (3 + Math.random() * 4).toFixed(2) + 's;animation-delay:-' + (Math.random() * 5).toFixed(2) + 's;opacity:' + (0.4 + Math.random() * 0.5).toFixed(2) + ';transform:scale(' + (0.6 + Math.random() * 1.1).toFixed(2) + ')"></i>'; return s; }
 
+    // Bunting across the top of the shelter scene, and a few balloons rising off
+    // the lawn. Random placement is fine here (decor, not data) — the same
+    // treatment as fbxStars/fbxSnow above.
+    function fbxBunting() { const c = ['#fca5a5', '#fcd34d', '#a7f3d0', '#bfdbfe', '#fbcfe8']; let s = ''; for (let i = 0; i < 18; i++) s += '<i style="left:' + (3 + i * 5.3).toFixed(1) + '%;border-top-color:' + c[i % c.length] + ';animation-delay:-' + (i * 0.13).toFixed(2) + 's"></i>'; return s; }
+    function fbxBalloons() { const c = ['#f87171', '#fbbf24', '#60a5fa', '#f472b6', '#34d399']; let s = ''; for (let i = 0; i < 5; i++) s += '<div class="fbx-balloon" style="left:' + (6 + i * 7).toFixed(1) + '%;background:' + c[i % c.length] + ';animation-duration:' + (7 + i * 1.4).toFixed(1) + 's;animation-delay:-' + (i * 2.1).toFixed(1) + 's"></div>'; return s; }
+    // A picnic shelter: gable roof on four posts, table underneath. Drawn once as
+    // static SVG — everything that moves in this scene moves in CSS.
+    const FBX_SHELTER_SVG = '<svg viewBox="0 0 132 76">'
+      + '<path d="M4 30 L66 2 L128 30 Z" fill="#8b4a2f"/><path d="M66 2 L128 30 L120 30 L66 8 Z" fill="#6d3821"/>'
+      + '<rect x="8" y="30" width="116" height="5" rx="2" fill="#a8603c"/>'
+      + '<rect x="14" y="35" width="6" height="34" fill="#7c4a30"/><rect x="112" y="35" width="6" height="34" fill="#7c4a30"/>'
+      + '<rect x="40" y="35" width="5" height="34" fill="#6b3f28"/><rect x="88" y="35" width="5" height="34" fill="#6b3f28"/>'
+      + '<rect x="46" y="52" width="42" height="4" rx="1.5" fill="#c98a5b"/>'
+      + '<rect x="52" y="56" width="4" height="13" fill="#a56f47"/><rect x="78" y="56" width="4" height="13" fill="#a56f47"/>'
+      + '<rect x="44" y="60" width="16" height="3" rx="1" fill="#b87c50"/><rect x="74" y="60" width="16" height="3" rx="1" fill="#b87c50"/>'
+      + '<rect x="0" y="69" width="132" height="7" fill="rgba(0,0,0,.16)"/></svg>';
     const FBX_SCENES = {
       facilities: '<div class="fbx-cloud" style="top:20%;left:10%;width:60px;animation-duration:34s"></div><div class="fbx-cloud" style="top:34%;left:0;width:40px;animation-duration:46s;animation-delay:-12s"></div><div class="fbx-sun"></div><div class="fbx-hill h1"></div><div class="fbx-hill h2"></div><div class="fbx-hill h3"></div><div class="fbx-road"></div>',
       racket: '<div class="fbx-court-net"></div><div class="fbx-ball-x"><div class="fbx-ball"></div></div>',
       camp: '<div class="fbx-stars">' + fbxStars() + '</div><div class="fbx-ground-c"></div><div class="fbx-pine" style="left:6%"></div><div class="fbx-pine" style="left:16%;transform:scale(.8)"></div><div class="fbx-pine" style="right:10%;transform:scale(1.1)"></div><div class="fbx-tent" style="right:26%"></div><div class="fbx-fire" style="right:20%"></div><div class="fbx-bear"><svg viewBox="0 0 54 34"><g class="body" fill="#3b2417"><rect x="21" y="25" width="6" height="9" rx="2.5" fill="#2b1a0f"/><rect x="41" y="25" width="6" height="9" rx="2.5" fill="#2b1a0f"/><ellipse cx="32" cy="19" rx="16" ry="10"/><circle cx="41" cy="12" r="7"/><rect x="15" y="25" width="6" height="9" rx="2.5"/><rect x="35" y="25" width="6" height="9" rx="2.5"/><circle cx="13" cy="16" r="8.5"/><circle cx="8" cy="8" r="2.8"/><circle cx="17" cy="8" r="2.8"/><circle cx="8" cy="8" r="1.2" fill="#6b4a2e"/><circle cx="17" cy="8" r="1.2" fill="#6b4a2e"/><ellipse cx="5.5" cy="18.5" rx="5" ry="3.6" fill="#7a5535"/><ellipse cx="2.6" cy="18" rx="1.8" ry="1.5" fill="#160d06"/><circle cx="12" cy="14" r="1.2" fill="#160d06"/></g></svg></div>',
       pool: '<div class="fbx-shimmer"></div><div class="fbx-lane" style="top:32%"></div><div class="fbx-lane" style="top:58%"></div><div class="fbx-lane" style="top:82%"></div><div class="fbx-splash" style="top:48%;left:0"></div><div class="fbx-swimmer"><svg viewBox="0 0 66 26"><g fill="#08324a"><ellipse cx="34" cy="16" rx="22" ry="6"/><circle cx="12" cy="13" r="6"/></g><line class="arm" x1="14" y1="13" x2="30" y2="4" stroke="#08324a" stroke-width="4" stroke-linecap="round"/></svg></div>',
+      pavilion: '<div class="fbx-cloud" style="top:14%;left:8%;width:58px;animation-duration:40s"></div><div class="fbx-cloud" style="top:26%;left:0;width:38px;animation-duration:54s;animation-delay:-16s"></div><div class="fbx-sun" style="right:8%;top:12%"></div><div class="fbx-lawn"></div><div class="fbx-bunting">' + fbxBunting() + '</div><div class="fbx-shelter">' + FBX_SHELTER_SVG + '</div>' + fbxBalloons() + '<div class="fbx-frisbee"></div>',
       ice: '<div class="fbx-snow">' + fbxSnow() + '</div><div class="fbx-ice-floor"></div><div class="fbx-trail"></div><div class="fbx-skater"><svg viewBox="0 0 30 46"><g class="body"><circle cx="15" cy="7" r="5" fill="#0f2f4a"/><rect x="12" y="11" width="6" height="20" rx="3" fill="#0f2f4a"/><line x1="15" y1="30" x2="7" y2="42" stroke="#0f2f4a" stroke-width="4" stroke-linecap="round"/><line x1="15" y1="30" x2="23" y2="40" stroke="#0f2f4a" stroke-width="4" stroke-linecap="round"/><line x1="4" y1="43" x2="10" y2="43" stroke="#cfe9f7" stroke-width="2"/></g></svg></div>',
     };
     // tab key → theme (scene class, scene html, title, subtitle, pong?)
@@ -795,6 +931,7 @@
       golf:        { cls: 'fbx-facilities', scene: 'facilities', title: '⛳ Golf',              sub: 'Tee sheets, rounds & revenue.', game: 'golf' },
       camping:     { cls: 'fbx-camp',       scene: 'camp',       title: '🏕️ Camping',          sub: 'Campsite reservations & occupancy.' },
       aquatics:    { cls: 'fbx-pool',       scene: 'pool',       title: '🏊 Pool / Aquatics',   sub: 'Lap swim, lessons & open-swim.' },
+      outdoor:     { cls: 'fbx-pavilion',   scene: 'pavilion',   title: '🎪 Outdoor Event Spaces', sub: 'Pavilions, shelters, picnic areas & bounce houses.' },
       ice:         { cls: 'fbx-ice',        scene: 'ice',        title: '⛸️ Ice',               sub: 'Rink schedule & public skate.', game: 'hockey' },
       racket:      { cls: 'fbx-racket',     scene: 'racket',     title: '🎾 Racket Sports',     sub: 'Tennis, pickleball & padel demand.', game: 'pong' },
     };
@@ -812,6 +949,7 @@
       bear:   { title: 'Berry Run',  tip: 'Click / Space to hop · eat berries, dodge rocks' },
       invaders: { title: 'Invaders', tip: 'Move ← → · click / Space to fire · clear the wave' },
       breakout: { title: 'Court Breaker', tip: 'Move the paddle · click / Space to launch' },
+      bounce:   { title: 'Bounce House', tip: 'Move \u2190 \u2192 \u00B7 click / Space to bounce higher \u00B7 pop the balloons' },
     };
 
     // Games that feed the seasonal arcade leaderboard (score-accumulation only;
@@ -822,6 +960,7 @@
       bear:     { label: 'Berry Run',     emoji: '🫐',       lower: false, unit: 'berries' },
       invaders: { label: 'Invaders',      emoji: '👾',       lower: false, unit: 'pts' },
       breakout: { label: 'Court Breaker', emoji: '🧱',       lower: false, unit: 'pts' },
+      bounce:   { label: 'Bounce House',  emoji: '🎈',       lower: false, unit: 'balloons' },
       golf:     { label: 'Putt',          emoji: '⛳',             lower: true,  unit: 'strokes' },
     };
     // Build a token-aware /:org/api/games/* URL for score submit + board fetch.
@@ -1181,6 +1320,151 @@
             api.textScrim();
           },
           hud() { return '🧱 ' + score + '   ' + (lives > 0 ? '❤'.repeat(lives) : '') + '   L' + level; },
+          score() { return score; },
+        };
+        return g;
+      },
+
+      // ── Outdoor Event Spaces: Bounce House ──
+      // Walk the inflatable, time a click as you land for a bigger bounce, and
+      // pop the balloons overhead. Two ways to end it: come down off the mat, or
+      // meet a wasp. Deliberately the one game here where you do NOT control
+      // your own height directly — the timing window is the whole skill.
+      bounce: (api) => {
+        let px, py, vy, tuck, squash, score, balloons, wasps, spawnT, waspT, matY, matL, matR;
+        const R = 11;                                     // half-width of the jumper
+        const HEAD = () => 22;                            // head sits this far above the feet
+        const BASE  = () => api.H * 1.55;                 // an ordinary bounce
+        const BOOST = () => api.H * 2.15;                 // a well-timed one
+        const BCOL = ['#f87171', '#fbbf24', '#60a5fa', '#f472b6', '#34d399', '#c084fc'];
+        // The banner is ~172px tall, so the inflatable needs two thirds of the
+        // way down to read as a bounce house rather than a red beam — and the
+        // jumper still clears the balloons from there (a plain bounce rises ~45px,
+        // a charged one ~85px, and the lowest balloons sit at 10% of the height).
+        function mat() { matY = api.H * 0.67; matL = api.W * 0.10; matR = api.W * 0.90; }
+        function spawnBalloon() {
+          const W = api.W, H = api.H, fromLeft = Math.random() < 0.5;
+          balloons.push({ x: fromLeft ? -16 : W + 16, y: H * (0.10 + Math.random() * 0.50),
+            vx: (fromLeft ? 1 : -1) * W * (0.07 + Math.random() * 0.09),
+            bob: Math.random() * 6.28, c: BCOL[Math.floor(Math.random() * BCOL.length)] });
+        }
+        function spawnWasp() {
+          const W = api.W, H = api.H, fromLeft = Math.random() < 0.5;
+          wasps.push({ x: fromLeft ? -16 : W + 16, y: H * (0.22 + Math.random() * 0.40),
+            vx: (fromLeft ? 1 : -1) * W * (0.26 + Math.random() * 0.14), bob: Math.random() * 6.28 });
+        }
+        function ended(msg) {
+          g.over = true; api.snd.lose();
+          api.setTip(msg + ' ' + score + ' balloon' + (score === 1 ? '' : 's') + ' \u2014 click to bounce again');
+        }
+        const g = {
+          tip: GAME_META.bounce.tip, over: false,
+          resize() { mat(); px = Math.max(R, Math.min(api.W - R, px || api.W / 2)); },
+          reset() { mat(); px = (matL + matR) / 2; py = matY; vy = -BASE(); tuck = false; squash = 0; score = 0; balloons = []; wasps = []; spawnT = 0.3; waspT = 4; },
+          // Only a press while FALLING and close to the mat converts into height.
+          // A mistimed one gets a dull thud rather than nothing, so the window
+          // teaches itself instead of feeling broken.
+          press() {
+            if (g.over) return;
+            if (vy > 0 && py > matY - api.H * 0.26) { tuck = true; api.snd.tone(540, 0.05, 'square', 0.12); }
+            else api.snd.tone(190, 0.04, 'sine', 0.07);
+          },
+          step(dt, input) {
+            const W = api.W, H = api.H;
+            if (input.keys.ArrowLeft)  px -= W * 0.85 * dt;
+            if (input.keys.ArrowRight) px += W * 0.85 * dt;
+            if (input.x) { const lim = W * 1.4 * dt; px += Math.max(-lim, Math.min(lim, input.x - px)); }
+            px = Math.max(R, Math.min(W - R, px));
+
+            vy += H * 4.6 * dt; py += vy * dt;
+            if (squash > 0) squash = Math.max(0, squash - dt * 4.5);
+            if (py - HEAD() < 6) { py = HEAD() + 6; vy = Math.abs(vy) * 0.35; }
+            if (py >= matY) {
+              if (px < matL || px > matR) return ended('Off the mat!');
+              py = matY; vy = -(tuck ? BOOST() : BASE());
+              if (tuck) { api.snd.good(); tuck = false; } else api.snd.wall();
+              squash = 1;
+            }
+
+            spawnT -= dt;
+            if (spawnT <= 0 && balloons.length < 7) { spawnBalloon(); spawnT = 0.7 + Math.random() * 0.7; }
+            // Wasps only after the player has the hang of it — an instant loss on
+            // the first bounce reads as a broken game, not a hard one.
+            if (score >= 4) { waspT -= dt; if (waspT <= 0 && wasps.length < 3) { spawnWasp(); waspT = 2.6 + Math.random() * 2.4; } }
+            for (const b of balloons) { b.x += b.vx * dt; b.bob += dt * 2.2; }
+            for (const w of wasps) { w.x += w.vx * dt; w.bob += dt * 9; }
+            balloons = balloons.filter(b => b.x > -34 && b.x < W + 34);
+            wasps    = wasps.filter(w => w.x > -34 && w.x < W + 34);
+
+            const hx = px, hy = py - HEAD();
+            for (const b of balloons) {
+              if (Math.abs(b.x - hx) < 16 && Math.abs((b.y + Math.sin(b.bob) * 5) - hy) < 18) { b.pop = true; score++; api.snd.tone(880, 0.07, 'square', 0.16); }
+            }
+            if (balloons.some(b => b.pop)) balloons = balloons.filter(b => !b.pop);
+            for (const w of wasps) {
+              if (Math.abs(w.x - hx) < 13 && Math.abs((w.y + Math.sin(w.bob) * 4) - hy) < 14) return ended('Stung!');
+            }
+          },
+          draw(ctx) {
+            const W = api.W, H = api.H;
+            const sky = ctx.createLinearGradient(0, 0, 0, H);
+            sky.addColorStop(0, '#1e6f9e'); sky.addColorStop(0.55, '#56a8cd'); sky.addColorStop(1, '#9ad6a0');
+            ctx.fillStyle = sky; ctx.fillRect(0, 0, W, H);
+            ctx.fillStyle = '#2c6f38'; ctx.fillRect(0, H * 0.86, W, H);
+
+            // balloons
+            for (const b of balloons) {
+              const by = b.y + Math.sin(b.bob) * 5;
+              ctx.strokeStyle = 'rgba(255,255,255,.55)'; ctx.lineWidth = 1;
+              ctx.beginPath(); ctx.moveTo(b.x, by + 9); ctx.lineTo(b.x, by + 22); ctx.stroke();
+              ctx.fillStyle = b.c; ctx.beginPath(); ctx.ellipse(b.x, by, 9, 11, 0, 0, Math.PI * 2); ctx.fill();
+              ctx.fillStyle = 'rgba(255,255,255,.45)'; ctx.beginPath(); ctx.ellipse(b.x - 3, by - 4, 2.4, 3.2, 0, 0, Math.PI * 2); ctx.fill();
+            }
+            // wasps
+            for (const w of wasps) {
+              const wy = w.y + Math.sin(w.bob) * 4;
+              ctx.fillStyle = 'rgba(255,255,255,.6)'; ctx.beginPath(); ctx.ellipse(w.x, wy - 5, 6, 3, 0, 0, Math.PI * 2); ctx.fill();
+              ctx.fillStyle = '#3a2c08'; ctx.beginPath(); ctx.ellipse(w.x, wy, 8, 5, 0, 0, Math.PI * 2); ctx.fill();
+              ctx.fillStyle = '#fbbf24'; ctx.fillRect(w.x - 3, wy - 4.6, 2.4, 9.2); ctx.fillRect(w.x + 2, wy - 4.2, 2.4, 8.4);
+            }
+            // the inflatable: striped walls, an arch, corner turrets, jumping mat
+            const bw = matR - matL, top = matY, botY = H - 1, wallH = botY - top;
+            ctx.fillStyle = '#3b82f6'; api.rr(matL - 12, top - 24, 24, 30, 9); ctx.fill();
+            api.rr(matR - 12, top - 24, 24, 30, 9); ctx.fill();
+            ctx.fillStyle = '#fbbf24';
+            ctx.beginPath(); ctx.arc(matL, top - 26, 3, 0, Math.PI * 2); ctx.arc(matR, top - 26, 3, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = '#e0554f'; api.rr(matL - 10, top, bw + 20, wallH, 11); ctx.fill();
+            ctx.save();
+            api.rr(matL - 10, top, bw + 20, wallH, 11); ctx.clip();
+            ctx.fillStyle = '#f8b4b0';
+            for (let x = matL - 10; x < matR + 10; x += 26) ctx.fillRect(x, top, 13, wallH);
+            ctx.restore();
+            // the arch you climb in through — the one detail that says "inflatable"
+            const ax = (matL + matR) / 2, aw = Math.max(26, bw * 0.16);
+            ctx.fillStyle = '#7f1d1d';
+            ctx.beginPath();
+            ctx.moveTo(ax - aw / 2, botY);
+            ctx.lineTo(ax - aw / 2, top + wallH * 0.45);
+            ctx.quadraticCurveTo(ax, top + wallH * 0.10, ax + aw / 2, top + wallH * 0.45);
+            ctx.lineTo(ax + aw / 2, botY);
+            ctx.closePath(); ctx.fill();
+            ctx.fillStyle = '#f2f2ef'; api.rr(matL, top - 6, bw, 11, 5); ctx.fill();
+            ctx.fillStyle = 'rgba(255,255,255,.5)'; ctx.fillRect(matL + 2, top - 4, bw - 4, 2);
+
+            // the jumper — squashes on contact so the bounce reads
+            const sq = squash, fy = py, hh = HEAD();
+            const bodyH = (hh - 6) * (1 - sq * 0.28), wobble = 1 + sq * 0.22;
+            ctx.strokeStyle = '#1f2937'; ctx.lineWidth = 3.4; ctx.lineCap = 'round';
+            ctx.beginPath(); ctx.moveTo(px, fy - bodyH); ctx.lineTo(px - 7 * wobble, fy); ctx.moveTo(px, fy - bodyH); ctx.lineTo(px + 7 * wobble, fy); ctx.stroke();
+            ctx.fillStyle = '#fde68a'; api.rr(px - 6 * wobble, fy - bodyH - 8, 12 * wobble, bodyH + 8, 5); ctx.fill();
+            ctx.strokeStyle = '#fde68a';
+            ctx.beginPath(); ctx.moveTo(px - 4, fy - bodyH - 5); ctx.lineTo(px - 13 * wobble, fy - bodyH - 15);
+            ctx.moveTo(px + 4, fy - bodyH - 5); ctx.lineTo(px + 13 * wobble, fy - bodyH - 15); ctx.stroke();
+            ctx.fillStyle = '#f5c98b'; ctx.beginPath(); ctx.arc(px, fy - hh, 8, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = '#1f2937'; ctx.beginPath(); ctx.arc(px - 3, fy - hh - 1, 1.4, 0, Math.PI * 2); ctx.arc(px + 3, fy - hh - 1, 1.4, 0, Math.PI * 2); ctx.fill();
+            api.textScrim();
+          },
+          hud() { return '🎈 ' + score; },
           score() { return score; },
         };
         return g;
@@ -2824,6 +3108,597 @@
       );
     }
 
+    // ── Outdoor Event Spaces ──────────────────────────────────────────────
+    // Pavilions, shelters, picnic areas and bounce houses — the segment every
+    // parks department rents constantly and nothing here surfaced. Modelled on
+    // the Camping tab (same per-day reservation feed, same panel furniture) with
+    // one deliberate difference running through every figure: these are HOURLY
+    // and occasionally all-day rentals, never nightly. So the unit of this tab
+    // is the booked HOUR and the day-part; the word "night" does not appear.
+    //
+    // Why it re-fetches card 17294 (/facility/api/data) instead of using the
+    // hub's summary rows: only that card carries the wall-clock Begin/End, which
+    // is what makes a day-part heat map possible with no new SQL. Those times
+    // need no timezone care either — reservation_timestamp_range is a `tsrange`
+    // (timestamp WITHOUT time zone), so Begin/End are already local wall clock
+    // and Metabase's Pacific report timezone has nothing to shift. That is the
+    // opposite of the Fast Track card, where the column is a timestamptz.
+    function OutdoorBanner({ bookings, hours, fill, revenue, sitesBooked }) {
+      const pills = [
+        ['bookings', bookings.toLocaleString()],
+        ['hours booked', Math.round(hours).toLocaleString()],
+        ['days used', fill == null ? '—' : Math.round(fill) + '%'],
+        ['charged', money(revenue)],
+        ['sites booked', sitesBooked.toLocaleString()],
+      ];
+      return e('div', { className: 'fac-banner fbx-pavilion' },
+        e('div', { className: 'fcb-scene', dangerouslySetInnerHTML: { __html: FBX_SCENES.pavilion } }),
+        e(BannerGame, { game: 'bounce', key: 'game-bounce' }),
+        e('div', { className: 'fcb-overlay' },
+          e('div', { className: 'fcb-kicker' }, CFG.displayName || 'Parks & Recreation'),
+          e('div', { className: 'fcb-title' }, '🎪 Outdoor Event Spaces'),
+          e('div', { className: 'fcb-sub' }, 'Pavilions, shelters, picnic areas & bounce houses — who books them, when, and for how long.'),
+          e('div', { className: 'fcb-pills' }, pills.map((p, i) => e('span', { className: 'fcb-pill', key: i }, e('b', null, p[1]), ' ' + p[0]))),
+        ),
+      );
+    }
+
+    function OutdoorEventsView({ start, end }) {
+      const [data, setData] = React.useState({ rows: null, err: null });
+      const [locSel, setLocSel] = React.useState([]);      // [] = all locations
+      const [allSites, setAllSites] = React.useState(false);
+      const [insights, setInsights] = React.useState(null);
+      const [insLoading, setInsLoading] = React.useState(false);
+      const [insError, setInsError] = React.useState(null);
+      const pinged = React.useRef(false);
+
+      React.useEffect(() => {
+        let dead = false;
+        setData({ rows: null, err: null });
+        const tok = CFG.token ? '&token=' + encodeURIComponent(CFG.token) : '';
+        fetch('/' + CFG.slug + '/facility/api/data?start_date=' + start + '&end_date=' + end + tok)
+          .then(r => { if (!r.ok) throw new Error('Server returned ' + r.status); return r.json(); })
+          .then(j => { if (!dead) setData({ rows: (j.rows || []).filter(r => OUTDOOR_TYPES.indexOf(r['Site Type']) >= 0), err: null }); })
+          .catch(err => { if (!dead) setData({ rows: null, err: err.message || String(err) }); });
+        return () => { dead = true; };
+      }, [start, end]);
+
+      // Activity ping — one per page load, carrying how much the tab had to show
+      // (see the standing Slack activity rule). Fire-and-forget: a failed beacon
+      // must never be visible to the reader.
+      React.useEffect(() => {
+        if (pinged.current || data.rows === null) return;
+        pinged.current = true;
+        const n = data.rows.filter(r => (Number(r['Multi-Day Day#']) || 0) <= 1).length;
+        const tok = CFG.token ? '&token=' + encodeURIComponent(CFG.token) : '';
+        try {
+          fetch('/' + CFG.slug + '/facilities/api/log?event=outdoor&n=' + n + tok, { method: 'POST', keepalive: true }).catch(() => {});
+        } catch (er) { /* never let logging break the tab */ }
+      }, [data.rows]);
+
+      if (data.err) return e('div', { className: 'empty' },
+        e('div', { className: 'em-icon' }, '⚠️'),
+        e('div', { className: 'em-title' }, 'Could not load outdoor event space data'),
+        e('div', { className: 'em-sub' }, String(data.err)));
+      if (data.rows === null) return e('div', { className: 'empty' },
+        e('div', { className: 'em-title', style: { color: '#9ca3af' } }, 'Loading Outdoor Event Spaces…'),
+        e('div', { className: 'fac-spin' }));
+
+      const allRows = data.rows;
+      const allLocations = Array.from(new Set(allRows.map(r => r['Location'] || '—'))).sort();
+      const rows = locSel.length ? allRows.filter(r => locSel.indexOf(r['Location'] || '—') >= 0) : allRows;
+
+      // Row helpers — the hour math itself lives at module scope (see oeRowHours)
+      // so it can be pinned by a spec without rendering the tab.
+      const dayNum    = oeDayNum;
+      const totDays   = oeTotDays;
+      const isArrival = oeIsArrival;
+      const isMulti   = oeIsMulti;
+      const rowHours  = oeRowHours;
+      const fmtHrs    = oeFmtHrs;
+      const hour12    = oeHour12;
+      const clockMin  = oeClockMin;
+      const typeOf    = r => String(r['Site Type'] || '');
+      const shortSite = f => { f = f || '—'; return f.indexOf(' - ') !== -1 ? f.split(' - ').slice(1).join(' - ') : f; };
+
+      const arrivals   = rows.filter(isArrival);
+      const bookings   = arrivals.length;
+      const hourRows   = arrivals.map(rowHours).filter(h => h != null);
+      const hoursTotal = hourRows.reduce((s, h) => s + h, 0);
+      const avgBlock   = hourRows.length ? hoursTotal / hourRows.length : null;
+      const multiDay   = arrivals.filter(isMulti).length;
+      const revenue    = arrivals.reduce((s, r) => s + (Number(r['Total']) || 0), 0);
+      const addOnFees  = arrivals.reduce((s, r) => s + (Number(r['Add-On Fees']) || 0), 0);
+      const siteDays   = rows.length;                    // one row per site per day
+      const parties    = arrivals.map(r => Number(r['Head Cnt']) || 0).filter(n => n > 0);
+      const avgParty   = parties.length ? parties.reduce((a, b) => a + b, 0) / parties.length : null;
+
+      // Day list for the range (daily cells up to ~3 months, weekly beyond)
+      const days = [];
+      { const endD = new Date(end + 'T00:00:00');
+        for (let d = new Date(start + 'T00:00:00'); d <= endD && days.length < 1100; d.setDate(d.getDate() + 1)) days.push(fmtDate(d)); }
+      const weekly = days.length > 95;
+
+      // ── Per-site stats, with a per-day map for the calendar ───────────────
+      // Keyed by (Location, short site name) so two "Shelter 1"s at different
+      // parks stay separate — the same rule the Camping tab uses.
+      const statByKey = {};
+      rows.forEach(r => {
+        const site = shortSite(r['Facility']);
+        const locName = r['Location'] || '';
+        const key = locName + '||' + site;
+        const d = String(r['Date'] || '').slice(0, 10);
+        let st = statByKey[key];
+        if (!st) st = statByKey[key] = { site, location: locName, type: typeOf(r), bookings: 0, days: 0, hours: 0, rev: 0, party: 0, partyN: 0, wknd: 0, mdDays: 0, occ: {} };
+        const cell = st.occ[d] || (st.occ[d] = { n: 0, hours: 0, multi: false, tips: [] });
+        cell.n++;
+        const h = rowHours(r);
+        if (h != null) { cell.hours += h; st.hours += h; }
+        if (isMulti(r)) { cell.multi = true; st.mdDays++; }
+        if (cell.tips.length < 4) cell.tips.push((r['Reservee'] || 'Booked')
+          + (h != null ? ' · ' + fmtHrs(h) : (isMulti(r) ? ' · day ' + dayNum(r) + ' of ' + totDays(r) : ''))
+          + (r['Purpose'] ? ' · ' + r['Purpose'] : ''));
+        if (isArrival(r)) {
+          st.bookings++;
+          st.rev += Number(r['Total']) || 0;
+          const p = Number(r['Head Cnt']) || 0;
+          if (p > 0) { st.party += p; st.partyN++; }
+          const dw = dowOfStr(r['Date']);
+          if (dw === 0 || dw === 6) st.wknd++;
+        }
+      });
+      const statList = Object.keys(statByKey).map(k => {
+        const st = statByKey[k];
+        st.days = Object.keys(st.occ).length;
+        return st;
+      });
+      const sitesBooked = statList.length;
+      // Day fill, NOT occupancy: the share of (booked site × day) slots that
+      // carry a booking. Honest denominator — the feed only contains sites that
+      // were booked at least once, so a pavilion nobody reserved is invisible
+      // here and cannot be counted against the department.
+      const dayFill = sitesBooked && days.length ? (siteDays / (sitesBooked * days.length)) * 100 : null;
+
+      const kpis = [
+        { label: 'Bookings', val: bookings.toLocaleString(), cls: 'sc-blue', sub: 'reservations starting in range' },
+        { label: 'Hours Booked', val: Math.round(hoursTotal).toLocaleString(), cls: 'sc-green', sub: hourRows.length.toLocaleString() + ' same-day bookings' + (multiDay ? ' · ' + multiDay + ' multi-day excl.' : '') },
+        { label: 'Avg Block', val: avgBlock == null ? '—' : fmtHrs(avgBlock), cls: 'sc-amber', sub: 'hours per booking' },
+        { label: 'Days Used', val: dayFill == null ? '—' : dayFill.toFixed(dayFill < 10 ? 1 : 0) + '%', cls: 'sc-purple', sub: siteDays.toLocaleString() + ' of ' + (sitesBooked * days.length).toLocaleString() + ' site-days' },
+        { label: 'Charged', val: money(revenue), cls: 'sc-green', sub: 'base rental' + (addOnFees ? ' · ' + money(addOnFees) + ' add-ons' : '') },
+        { label: 'Sites Booked', val: sitesBooked.toLocaleString(), cls: 'sc-muted', sub: 'distinct spaces with a booking' },
+        { label: 'Avg Party', val: avgParty == null ? '—' : Math.round(avgParty).toLocaleString(), cls: 'sc-muted', sub: avgParty == null ? 'no head counts recorded' : 'where recorded (' + parties.length + ' of ' + bookings + ')' },
+      ];
+
+      // Day-part grid (see oeHeatGrid — hours covered, not hours started).
+      const hg = oeHeatGrid(arrivals);
+      const heat = hg.heat, heatHours = hg.hours, heatMax = hg.max;
+      const hourTotals = hg.hourTotals, heatBookings = hg.timed, busiestHour = hg.peak;
+
+      // ── Type mix (pavilion vs picnic area vs bounce house) ────────────────
+      const typeAgg = {};
+      arrivals.forEach(r => {
+        const t = typeOf(r) || 'other';
+        const b = typeAgg[t] || (typeAgg[t] = { t, n: 0, hours: 0, rev: 0, sites: {} });
+        b.n++; b.rev += Number(r['Total']) || 0;
+        const h = rowHours(r); if (h != null) b.hours += h;
+        b.sites[(r['Location'] || '') + '||' + shortSite(r['Facility'])] = 1;
+      });
+      const typeList = OUTDOOR_TYPES.filter(t => typeAgg[t]).map(t => typeAgg[t])
+        .concat(Object.keys(typeAgg).filter(t => OUTDOOR_TYPES.indexOf(t) < 0).map(t => typeAgg[t]));
+
+      // ── Locations ─────────────────────────────────────────────────────────
+      const locAgg = {};
+      arrivals.forEach(r => {
+        const l = r['Location'] || '—';
+        const b = locAgg[l] || (locAgg[l] = { l, n: 0, hours: 0, rev: 0, sites: {} });
+        b.n++; b.rev += Number(r['Total']) || 0;
+        const h = rowHours(r); if (h != null) b.hours += h;
+        b.sites[shortSite(r['Facility'])] = 1;
+      });
+      const locList = Object.keys(locAgg).map(k => locAgg[k]).sort((a, b) => b.n - a.n);
+
+      // ── Popular / quiet spaces ────────────────────────────────────────────
+      // Ranked on hours when the org's bookings carry times, on booking count
+      // when they do not — an all-multi-day org would otherwise rank everything
+      // at zero hours and present it as "least popular".
+      const rankByHours = hoursTotal > 0;
+      const rankVal = st => rankByHours ? st.hours : st.bookings;
+      // Days used breaks the tie before revenue does: a space used on five days
+      // is more used than one used on two, and a space whose bookings are all
+      // multi-day has NO hours to rank on, so hours alone would drop it to the
+      // bottom of the list as though nobody had booked it.
+      const ranked = statList.slice().sort((a, b) => rankVal(b) - rankVal(a) || b.days - a.days || b.rev - a.rev);
+      const topSites = ranked.slice(0, 10);
+      // The quietest spaces must not be spaces already listed as the busiest —
+      // with eight sites in view, a naive bottom-6 repeats four of the top rows
+      // and reads as a contradiction.
+      const quietSites = ranked.slice(Math.max(topSites.length, ranked.length - 6)).reverse();
+
+      // ── Block length mix ──────────────────────────────────────────────────
+      const BLOCKS = [
+        { lbl: 'Up to 2 hrs', lo: 0,  hi: 2 },
+        { lbl: '2–4 hrs',     lo: 2,  hi: 4 },
+        { lbl: '4–8 hrs',     lo: 4,  hi: 8 },
+        { lbl: '8 hrs+',      lo: 8,  hi: Infinity },
+      ];
+      const blockData = BLOCKS.map(b => {
+        const n = hourRows.filter(h => h > b.lo && h <= b.hi).length;
+        return { label: b.lbl, v: n, valText: n.toLocaleString() };
+      }).concat(multiDay ? [{ label: 'Multi-day', v: multiDay, valText: multiDay.toLocaleString() }] : []);
+
+      // ── Add-ons ───────────────────────────────────────────────────────────
+      // "Add Ons" is a display string, e.g. "Alcohol Permit ($25.00)", sometimes
+      // several comma-separated. Counted on ARRIVAL rows only — a multi-day
+      // booking repeats its add-ons on every day row, which would multiply a
+      // 3-day permit by three.
+      const addOns = (() => {
+        const byName = {};
+        let withAny = 0;
+        arrivals.forEach(r => {
+          const raw = String(r['Add Ons'] || '').trim();
+          if (!raw) return;
+          withAny++;
+          raw.split(/,(?![^(]*\))/).forEach(part => {
+            const t = part.trim(); if (!t) return;
+            const m = /^(.*?)\s*\(\$?([\d,.]+)\)\s*$/.exec(t);
+            const name = (m ? m[1] : t).trim(); if (!name) return;
+            const listed = m ? Number(String(m[2]).replace(/,/g, '')) : null;
+            const b = byName[name] || (byName[name] = { name, n: 0, listed: null });
+            b.n++;
+            if (listed != null && !isNaN(listed)) b.listed = listed;
+          });
+        });
+        return { list: Object.keys(byName).map(k => byName[k]).sort((a, b) => b.n - a.n), withAny };
+      })();
+
+      // ── Day-of-week demand, per occurrence of that weekday ────────────────
+      // Normalised by how many of each weekday the range actually contains: a
+      // range with five Saturdays and four Tuesdays would otherwise make
+      // Saturday look busier than it is.
+      const dowDemand = (() => {
+        const dayCount = [0, 0, 0, 0, 0, 0, 0], byDow = [0, 0, 0, 0, 0, 0, 0];
+        days.forEach(d => { dayCount[new Date(d + 'T00:00:00').getDay()]++; });
+        arrivals.forEach(r => { const dw = dowOfStr(r['Date']); if (dw != null) byDow[dw]++; });
+        const list = OE_DOW.map((name, i) => ({
+          i, name, n: byDow[i], occurrences: dayCount[i],
+          perDay: dayCount[i] ? byDow[i] / dayCount[i] : null,
+        })).filter(x => x.occurrences > 0);
+        const rated = list.filter(x => x.perDay != null);
+        if (rated.length < 2) return null;
+        const sorted = rated.slice().sort((a, b) => b.perDay - a.perDay);
+        return { list, busiest: sorted[0], quietest: sorted[sorted.length - 1] };
+      })();
+
+      // ── Monthly trend ─────────────────────────────────────────────────────
+      const byMonth = {};
+      arrivals.forEach(r => {
+        const ym = String(r['Date'] || '').slice(0, 7);
+        if (!/^\d{4}-\d{2}$/.test(ym)) return;
+        if (!byMonth[ym]) byMonth[ym] = { n: 0, revenue: 0, hours: 0 };
+        byMonth[ym].n++;
+        byMonth[ym].revenue += Number(r['Total']) || 0;
+        const h = rowHours(r); if (h != null) byMonth[ym].hours += h;
+      });
+      const months = Object.keys(byMonth).sort();
+      const maxMonthRev = Math.max(1, ...months.map(m => byMonth[m].revenue));
+
+      // ── Calendar geometry ─────────────────────────────────────────────────
+      const calCols = weekly ? (() => { const w = []; for (let i = 0; i < days.length; i += 7) w.push(days.slice(i, i + 7)); return w; })()
+                             : days.map(d => [d]);
+      const calGroups = (() => {
+        const byLoc = {};
+        ranked.forEach(st => { (byLoc[st.location] = byLoc[st.location] || []).push(st); });
+        return Object.keys(byLoc).sort().map(name => ({ name, sites: byLoc[name] }));
+      })();
+      const CAL_CAP = 40;                       // rows shown before the toggle
+      const calShown = (() => {
+        if (allSites) return calGroups;
+        let left = CAL_CAP;
+        const out = [];
+        calGroups.forEach(g => {
+          if (left <= 0) return;
+          const take = g.sites.slice(0, left);
+          left -= take.length;
+          out.push({ name: g.name, sites: take });
+        });
+        return out;
+      })();
+      const calHidden = statList.length - calShown.reduce((n, g) => n + g.sites.length, 0);
+
+      const cellFor = (st, dList, key) => {
+        if (weekly) {
+          let n = 0, hrs = 0;
+          dList.forEach(d => { const c = st.occ[d]; if (c) { n++; hrs += c.hours; } });
+          const sh = n ? OE_RAMP[Math.min(5, 1 + Math.floor((n - 1) / dList.length * 4.999))] : OE_RAMP[0];
+          return e('div', { key, className: 'cc-cell', style: { background: sh },
+            title: st.site + ' · wk of ' + dList[0] + ' · ' + n + ' of ' + dList.length + ' days booked'
+                 + (hrs ? ' · ' + fmtHrs(hrs) : '') });
+        }
+        const c = st.occ[dList[0]];
+        return e('div', { key, className: 'cc-cell', style: { background: oeShade(c) },
+          title: st.site + ' · ' + dList[0] + (c ? ' · ' + c.tips.join(' | ') + (c.n > c.tips.length ? ' (+' + (c.n - c.tips.length) + ' more)' : '') : ' · open') });
+      };
+      const hdFor = (dList, i) => {
+        const d = new Date(dList[0] + 'T00:00:00');
+        const we = !weekly && (d.getDay() === 0 || d.getDay() === 6);
+        const lbl = weekly ? ((d.getMonth() + 1) + '/' + d.getDate())
+          : (d.getDate() === 1 || i === 0 ? monthLabel(dList[0].slice(0, 7)).split(' ')[0] + ' ' + d.getDate() : String(d.getDate()));
+        return e('div', { key: 'h' + i, className: 'cc-hd' + (we ? ' we' : ''), title: weekly ? dList[0] : OE_DOW[d.getDay()] + ' ' + dList[0] },
+          weekly ? null : e('span', { className: 'cc-dow' }, OE_DOW1[d.getDay()]), lbl);
+      };
+
+      // ── Rec Insights ──────────────────────────────────────────────────────
+      const buildBlob = () => ({
+        scope: 'outdoor event spaces (pavilions, shelters, picnic areas, bounce houses) — hourly/daily rentals, not nightly',
+        dateRange: { start, end, daysInRange: days.length },
+        totals: { bookings, hoursBooked: Math.round(hoursTotal), sameDayBookings: hourRows.length, multiDayBookings: multiDay,
+                  avgBlockHours: avgBlock == null ? null : +avgBlock.toFixed(1), sitesBooked, bookedSiteDays: siteDays,
+                  dayFillPct: dayFill == null ? null : Math.round(dayFill), netRevenueUsd: Math.round(revenue),
+                  addOnFeesUsd: Math.round(addOnFees), avgPartySize: avgParty == null ? null : Math.round(avgParty) },
+        bookingsCoveringEachHour: Object.fromEntries(heatHours.map(h => [hour12(h), hourTotals[h]])),
+        bookingsByDayOfWeek: dowDemand ? Object.fromEntries(dowDemand.list.map(x => [x.name, { bookings: x.n, perOccurrence: x.perDay == null ? null : +x.perDay.toFixed(2) }])) : null,
+        blockLengthMix: blockData.map(b => ({ bucket: b.label, bookings: b.v })),
+        byType: typeList.map(t => ({ type: t.t, bookings: t.n, hours: Math.round(t.hours), sites: Object.keys(t.sites).length, revenueUsd: Math.round(t.rev) })),
+        byLocation: locList.slice(0, 12).map(l => ({ location: l.l, bookings: l.n, hours: Math.round(l.hours), sites: Object.keys(l.sites).length, revenueUsd: Math.round(l.rev) })),
+        addOns: addOns.list.slice(0, 8).map(a => ({ addOn: a.name, attachedToBookings: a.n, listedPriceUsd: a.listed })),
+        topSites: topSites.map(s => ({ site: s.site, location: s.location, type: s.type, bookings: s.bookings, hours: Math.round(s.hours), daysUsed: s.days, revenueUsd: Math.round(s.rev) })),
+        quietestSites: quietSites.map(s => ({ site: s.site, location: s.location, bookings: s.bookings, hours: Math.round(s.hours) })),
+        monthly: months.map(m => ({ month: m, bookings: byMonth[m].n, hours: Math.round(byMonth[m].hours), revenueUsd: Math.round(byMonth[m].revenue) })),
+      });
+      const getInsights = async () => {
+        setInsLoading(true); setInsError(null);
+        try {
+          const tok = CFG.token ? '?token=' + encodeURIComponent(CFG.token) : '';
+          const resp = await fetch('/' + CFG.slug + '/outdoor/api/insights' + tok, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(buildBlob()) });
+          const j = await resp.json();
+          if (!resp.ok || !j.ok) throw new Error(j.error || 'Server returned ' + resp.status);
+          setInsights(j.insights || []);
+        } catch (er) { setInsError(er.message || 'Could not generate insights'); }
+        setInsLoading(false);
+      };
+
+      const hasBookings = bookings > 0;
+      const perHour = hoursTotal > 0 ? revenue / hoursTotal : null;
+      const perBooking = bookings ? revenue / bookings : null;
+
+      return e('div', null,
+        e(OutdoorBanner, { bookings, hours: hoursTotal, fill: dayFill, revenue, sitesBooked }),
+        allLocations.length > 1 ? e('div', { className: 'filters', style: { marginTop: 12 } },
+          e('div', { className: 'filter-group' },
+            e('span', { className: 'filter-lbl' }, 'Location'),
+            e(LocationFilter, { locations: allLocations, sel: locSel, setSel: setLocSel }))) : null,
+        e('div', { className: 'sum-cards' },
+          kpis.map((c, i) => e('div', { className: 'sum-card', key: i },
+            e('div', { className: 'sc-label' }, c.label),
+            e('div', { className: 'sc-val ' + c.cls }, c.val),
+            e('div', { className: 'sc-sub' }, c.sub)))),
+
+        hasBookings ? e('div', { className: 'insights-section' },
+          e('div', { className: 'insights-head' },
+            e('button', { type: 'button', className: 'insights-btn', onClick: getInsights, disabled: insLoading }, sparkles(), insLoading ? 'Analyzing…' : (insights ? '↻ Refresh insights' : '✨ Rec Insights')),
+            insights && !insLoading ? e('span', { className: 'insights-sub' }, 'Generated from the ' + bookings.toLocaleString() + ' bookings shown') : null),
+          insError && !insLoading ? e('div', { className: 'cu-error' }, e('strong', null, 'Insights unavailable: '), insError) : null,
+          insights && !insLoading ? e('div', { className: 'insights-grid' },
+            insights.map((ins, i) => e('div', { key: i, className: 'insight-card insight-' + (ins.type || 'signal') },
+              e('div', { className: 'insight-type' }, ins.type || 'signal'),
+              e('div', { className: 'insight-title' }, ins.title),
+              e('div', { className: 'insight-detail' }, ins.detail),
+              ins.action ? e('div', { className: 'insight-action' }, '→ ' + ins.action) : null))) : null) : null,
+
+        // ── Day-part heat map ─────────────────────────────────────────────
+        hasBookings ? e('div', { className: 'aqua-sec' },
+          e('h3', null, 'When these spaces are in use', e('span', { className: 'sub' },
+            'bookings covering each hour · ' + heatBookings.toLocaleString() + ' timed booking' + (heatBookings === 1 ? '' : 's'))),
+          e('div', { className: 'aqua-panel' },
+            e('div', { className: 'oe-heat-wrap' },
+              // The data-* hooks are what scripts/ci-check-render.js asserts on:
+              // a grid that rendered proves nothing, but a PEAK derived from
+              // hour COVERAGE (not start times) and a timed count that excludes
+              // multi-day rows both change if that math regresses.
+              e('div', { className: 'oe-heat', 'data-oe-heat': 'true',
+                'data-oe-peak': busiestHour >= 0 ? oeHour12(busiestHour) : 'none',
+                'data-oe-timed': String(heatBookings),
+                style: { gridTemplateColumns: '38px repeat(' + heatHours.length + ', minmax(20px, 1fr))' } },
+                e('div', { className: 'oe-h-lbl' }, ''),
+                heatHours.map((h, i) => e('div', { key: 'hh' + i, className: 'oe-h-hd' }, hour12(h))),
+                OE_DOW.map((dname, dw) => [
+                  e('div', { key: 'd' + dw, className: 'oe-h-lbl' }, dname),
+                  heatHours.map((h, i) => {
+                    const v = heat[dw][h];
+                    return e('div', { key: 'c' + dw + '-' + i, className: 'oe-h-cell',
+                      style: { background: v ? OE_RAMP[Math.min(5, 1 + Math.floor(v / heatMax * 4.999))] : OE_RAMP[0], color: v / heatMax > 0.6 ? '#fff' : '#8a8578' },
+                      title: dname + ' ' + hour12(h) + ' · ' + v + ' booking' + (v === 1 ? '' : 's') + ' in use' },
+                      v ? String(v) : '');
+                  }),
+                ]))),
+            e('div', { className: 'camp-note' },
+              busiestHour >= 0 && hourTotals[busiestHour] > 0
+                ? e('span', null, 'Peak hour is ', e('b', null, hour12(busiestHour) + 'm'),
+                    ' with ', e('b', null, hourTotals[busiestHour].toLocaleString()), ' bookings in use across the range. ')
+                : null,
+              'A booking counts in every hour it covers, so a 10am–4pm rental fills six cells. ',
+              multiDay ? e('span', null, e('b', null, oePlural(multiDay, 'multi-day booking')),
+                multiDay === 1 ? ' is not in this grid' : ' are not in this grid',
+                ' — the feed records a multi-day booking\u2019s start and end times only on its first and last day, '
+                + 'so there are no per-day hours to place.') : null)))
+          : null,
+
+        // ── Demand & pricing read ─────────────────────────────────────────
+        hasBookings ? e('div', { className: 'aqua-sec' },
+          e('h3', null, 'Demand & pricing signals', e('span', { className: 'sub' },
+            'what the ' + bookings.toLocaleString() + ' bookings in range suggest')),
+          e('div', { className: 'aqua-grid' },
+
+            dowDemand ? e('div', { className: 'aqua-panel' },
+              e('h4', null, 'Demand by day of week', e('span', { className: 'n' }, 'bookings per occurrence')),
+              e(HBars, { color: '#0d9488', data: dowDemand.list.map(x => ({
+                label: x.name, v: x.perDay || 0,
+                valText: (x.perDay || 0).toFixed(1) + ' / ' + x.occurrences + 'd',
+              })) }),
+              e('div', { className: 'camp-note' },
+                'Busiest ', e('b', null, dowDemand.busiest.name), ' at ',
+                e('b', null, dowDemand.busiest.perDay.toFixed(1)), ' bookings per ', dowDemand.busiest.name,
+                '; quietest ', e('b', null, dowDemand.quietest.name), ' at ',
+                e('b', null, dowDemand.quietest.perDay.toFixed(1)), '.',
+                dowDemand.quietest.perDay > 0 && dowDemand.busiest.perDay / dowDemand.quietest.perDay >= 1.5
+                  ? e('span', null, ' A ', e('b', null, (dowDemand.busiest.perDay / dowDemand.quietest.perDay).toFixed(1) + '×'),
+                      ' spread — weekday rates and weekday programming are both aimed at this gap.')
+                  : e('span', null, ' Demand is fairly even across the week, so day-of-week pricing has little to bite on.'))) : null,
+
+            e('div', { className: 'aqua-panel' },
+              e('h4', null, 'Booking length', e('span', { className: 'n' }, avgBlock == null ? 'no times recorded' : 'avg ' + fmtHrs(avgBlock))),
+              e(HBars, { color: '#7c3aed', data: blockData }),
+              e('div', { className: 'camp-note' },
+                hourRows.length
+                  ? e('span', null, e('b', null, Math.round(hourRows.filter(h => h > 8).length / hourRows.length * 100) + '%'),
+                      ' of timed bookings run longer than eight hours — most of a day. ',
+                      'An hourly rate card only bites where blocks are short; where they are not, the lever is a day rate.')
+                  : e('span', null, 'No booking on these spaces carries both a start and an end time in range, so length cannot be read.'))),
+
+            typeList.length ? e('div', { className: 'aqua-panel' },
+              e('h4', null, 'By space type', e('span', { className: 'n' }, typeList.length + ' type' + (typeList.length === 1 ? '' : 's'))),
+              e(HBars, { color: '#0369a1', data: typeList.map(t => ({
+                label: OE_TYPE_SHORT[t.t] || siteTypeLabel(t.t), title: siteTypeLabel(t.t), v: t.n,
+                valText: t.n.toLocaleString(),
+                sub: oePlural(Object.keys(t.sites).length, 'site') + ' · ' + money(t.rev),
+              })) }),
+              e('div', { className: 'camp-note' },
+                'Bounce houses and picnic areas are separate rentable sites in Rec, not add-ons on a shelter — '
+                + 'so each one that books is its own booking here.')) : null,
+
+            addOns.list.length ? e('div', { className: 'aqua-panel' },
+              e('h4', null, 'Add-ons attached', e('span', { className: 'n' },
+                addOns.withAny.toLocaleString() + ' of ' + bookings.toLocaleString() + ' bookings')),
+              e(HBars, { color: '#c2410c', data: addOns.list.slice(0, 6).map(a => ({
+                label: a.name, v: a.n,
+                valText: a.n.toLocaleString() + (a.listed != null ? ' · $' + a.listed.toFixed(2) : ''),
+              })) }),
+              e('div', { className: 'camp-note' },
+                e('b', null, Math.round(addOns.withAny / Math.max(1, bookings) * 100) + '%'),
+                ' of bookings carry at least one add-on',
+                addOnFees > 0 ? e('span', null, ', ', e('b', null, money(addOnFees)), ' in add-on fees booked') : null,
+                '. Alcohol permits, tables and power are the usual ones — an add-on attached to a slice of bookings is a pricing lever not being pulled.')) : null,
+
+            perHour != null ? e('div', { className: 'aqua-panel' },
+              e('h4', null, 'Realized rate', e('span', { className: 'n' }, 'indicative only')),
+              e('div', { className: 'camp-bignum' }, money(perHour) + ' / hr'),
+              e('div', { className: 'camp-note' },
+                money(perBooking), ' per booking across ', Math.round(hoursTotal).toLocaleString(), ' booked hours. ',
+                e('b', null, 'Treat as a floor, not a rate card'), ' — comped and $0 bookings are real and common here, '
+                + 'revenue is counted on the booking’s first day only, and manual invoice lines are missing from this '
+                + 'feed entirely. The hour and day-part figures above are the reliable half of this tab.')) : null))
+          : null,
+
+        // ── Most and least booked ─────────────────────────────────────────
+        hasBookings ? e('div', { className: 'aqua-sec' },
+          e('h3', null, quietSites.length ? 'Most and least booked spaces' : 'Busiest spaces',
+            e('span', { className: 'sub' }, rankByHours ? 'ranked by hours booked' : 'ranked by bookings')),
+          e('div', { className: 'aqua-grid' },
+            e('div', { className: 'aqua-panel' },
+              // With no quietest panel beside it there is nothing to tell apart,
+              // and the section heading above already says "Busiest spaces".
+              quietSites.length ? e('h4', null, 'Busiest spaces', e('span', { className: 'n' }, 'top ' + topSites.length)) : null,
+              e(HBars, { color: '#15803d', data: topSites.map(s => ({
+                label: s.site, title: s.site + ' · ' + s.location,
+                v: rankVal(s),
+                valText: rankByHours ? fmtHrs(s.hours) : s.bookings.toLocaleString(),
+                sub: oePlural(s.days, 'day') + ' used · ' + money(s.rev)
+                   + (s.mdDays ? ' · ' + s.mdDays + 'd multi-day' : ''),
+              })) }),
+              statList.some(x => x.mdDays) ? e('div', { className: 'camp-note' },
+                'A space booked across several days shows fewer HOURS than it was used for — '
+                + 'the feed records a multi-day booking\u2019s times only on its first and last day. '
+                + 'Those days are called out on the bar and counted in "days used".') : null),
+            quietSites.length ? e('div', { className: 'aqua-panel' },
+              e('h4', null, 'Quietest spaces', e('span', { className: 'n' }, 'of those booked at all')),
+              e(HBars, { color: '#9ca3af', data: quietSites.map(s => ({
+                label: s.site, title: s.site + ' · ' + s.location,
+                v: rankVal(s),
+                valText: rankByHours ? fmtHrs(s.hours) : s.bookings.toLocaleString(),
+                sub: oePlural(s.days, 'day') + ' used' + (s.mdDays ? ' · ' + s.mdDays + 'd multi-day' : ''),
+              })) }),
+              e('div', { className: 'camp-note' },
+                'These are the quietest spaces ', e('b', null, 'that booked at least once'),
+                '. A pavilion nobody reserved in this range is not in the reservation feed at all, so it cannot appear '
+                + 'here — read this as "least used of the ones in play", never as the full inventory.')) : null)) : null,
+
+        // ── Locations ─────────────────────────────────────────────────────
+        locList.length > 1 ? e('div', { className: 'aqua-sec' },
+          e('h3', null, 'By park / location'),
+          e('div', { className: 'aqua-panel' },
+            e(HBars, { color: '#0891b2', data: locList.slice(0, 12).map(l => ({
+              label: l.l, v: l.n,
+              valText: l.n.toLocaleString(),
+              sub: oePlural(Object.keys(l.sites).length, 'site') + ' · ' + (l.hours ? fmtHrs(l.hours) + ' · ' : '') + money(l.rev),
+            })) }))) : null,
+
+        // ── Site × day calendar ───────────────────────────────────────────
+        statList.length ? e('div', { className: 'aqua-sec' },
+          e('h3', null, 'Space usage calendar', e('span', { className: 'sub' },
+            weekly ? 'weekly — deeper amber = more days booked' : 'deeper amber = more hours booked that day'),
+            calHidden > 0 ? e('button', {
+              onClick: () => setAllSites(v => !v),
+              style: { marginLeft: 10, fontSize: 10, fontWeight: 600, color: '#b45309', background: 'none', border: '1px solid #fcd34d', borderRadius: 12, padding: '1px 9px', cursor: 'pointer', textTransform: 'none', letterSpacing: 0 },
+            }, allSites ? 'Show top ' + CAL_CAP + ' only' : 'Show all ' + statList.length + ' spaces') : null),
+          e('div', { className: 'aqua-panel' },
+            calShown.map((g, gi) => e('div', { key: gi, style: gi ? { marginTop: 16 } : null },
+              calShown.length > 1 ? e('h4', { style: { margin: '0 0 8px', fontSize: 11.5, fontWeight: 700, color: '#374151' } }, g.name || 'Spaces',
+                e('span', { className: 'n', style: { fontWeight: 500, color: '#9ca3af', fontSize: 10.5, marginLeft: 6 } }, g.sites.length + ' space' + (g.sites.length === 1 ? '' : 's'))) : null,
+              e('div', { className: 'camp-cal-wrap' },
+                e('div', { className: 'camp-cal', style: { gridTemplateColumns: '130px repeat(' + calCols.length + ', minmax(' + (weekly ? 22 : 14) + 'px, 1fr))' } },
+                  e('div', { className: 'cc-site' }, ''),
+                  calCols.map((dl, i) => hdFor(dl, i)),
+                  g.sites.flatMap(st => [
+                    e('div', { key: st.site + '|' + st.location + '|lbl', className: 'cc-site', title: st.site + (st.location ? ' · ' + st.location : '') + ' · ' + siteTypeLabel(st.type) }, st.site),
+                    calCols.map((dl, i) => cellFor(st, dl, st.site + '|' + st.location + '-' + i)),
+                  ]))))),
+            e('div', { className: 'camp-cal-legend' },
+              e('span', null, 'Fewer'),
+              OE_RAMP.slice(1).map((c, i) => e('i', { key: i, style: { background: c, marginRight: 0 } })),
+              e('span', null, weekly ? 'More days booked / week' : 'More hours booked'),
+              multiDay ? e('span', { style: { marginLeft: 6 } },
+                e('i', { style: { background: OE_MULTI } }), 'Multi-day (hours not recorded)') : null))) : null,
+
+        // ── Monthly ───────────────────────────────────────────────────────
+        months.length > 1 ? e('div', { className: 'aqua-sec' },
+          e('h3', null, 'Bookings & revenue by month'),
+          e('div', { className: 'vtrend' },
+            months.map((m, i) => e('div', { className: 'vtrend-row', key: i },
+              e('div', { className: 'vtrend-mo' }, monthLabel(m)),
+              e('div', { className: 'vtrend-track' }, e('div', { className: 'vtrend-bar', style: { width: (byMonth[m].revenue / maxMonthRev * 100) + '%', background: '#d97706' } })),
+              e('div', { className: 'vtrend-rev' }, money(byMonth[m].revenue)),
+              e('div', { className: 'vtrend-bk' }, byMonth[m].n.toLocaleString() + ' bookings'))))) : null,
+
+        // ── Detail table ──────────────────────────────────────────────────
+        hasBookings ? e('table', { className: 'sum-cat-table' },
+          e('caption', null, statList.length > topSites.length
+            ? 'Top ' + topSites.length + ' outdoor event spaces by usage — of ' + statList.length + ' booked'
+            : 'Outdoor event spaces by usage'),
+          e('thead', null, e('tr', null,
+            e('th', null, 'Space'), e('th', null, 'Location'), e('th', null, 'Type'),
+            e('th', { className: 'num' }, 'Bookings'), e('th', { className: 'num' }, 'Hours'),
+            e('th', { className: 'num' }, 'Days used'), e('th', { className: 'num' }, 'Weekend %'),
+            e('th', { className: 'num' }, 'Avg party'), e('th', { className: 'num' }, 'Charged'))),
+          e('tbody', null,
+            topSites.map((s, i) => e('tr', { key: i },
+              e('td', null, s.site),
+              e('td', null, s.location),
+              e('td', null, siteTypeLabel(s.type)),
+              e('td', { className: 'num' }, s.bookings),
+              e('td', { className: 'num' }, s.hours ? fmtHrs(s.hours) : '—'),
+              e('td', { className: 'num' }, s.days),
+              e('td', { className: 'num' }, s.bookings ? Math.round(s.wknd / s.bookings * 100) + '%' : '—'),
+              e('td', { className: 'num' }, s.partyN ? Math.round(s.party / s.partyN) : '—'),
+              e('td', { className: 'num' }, money(s.rev)))))) : e('div', { className: 'empty' },
+            e('div', { className: 'em-icon' }, '🎪'),
+            e('div', { className: 'em-title' }, 'No outdoor event space bookings in this range'),
+            e('div', { className: 'em-sub' }, 'Pavilions, shelters, picnic areas and bounce houses are all counted here — try a wider date range, or a summer month.')),
+        e('div', { className: 'section-note' }, 'Outdoor event spaces · ' + bookings.toLocaleString() + ' bookings · '
+          + Math.round(hoursTotal).toLocaleString() + ' hours · ' + siteDays.toLocaleString() + ' booked site-days · '
+          + 'per-day reservation feed (canceled bookings not included). Fields are deliberately excluded.'),
+      );
+    }
+
     // ── Court Utilization — native view (ported from court-utilization.html) ──
     // All metrics/info from the standalone Court Utilization report, rendered
     // natively in the hub's design. Reuses the existing court data endpoints
@@ -3941,20 +4816,20 @@
             e('span', null, e('strong', null, "Couldn't load facility data"), ' — ' + err + '. The counts below are a loading failure, not real numbers.'),
             e('button', { onClick: () => load(), style: { padding: '6px 18px', border: 'none', background: '#dc2626', color: '#fff', borderRadius: 6, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', fontSize: 12.5 } }, 'Retry'),
           ) : null,
-          // Camping & Aquatics render their own dedicated per-vertical banner
-          // (CampBanner / AquaBanner) with vertical-specific stats — so the
+          // Camping, Aquatics & Outdoor Events render their own dedicated
+          // per-vertical banner with vertical-specific stats — so the
           // shared themed banner is suppressed there to avoid stacking two.
           // Activity-specific headers (ice / golf / racket) are hidden when the
           // org has none of that type in view — no ice header for an org with
           // no rinks, matching the tab badge count. Summary & Court Utilization
           // are org-wide and always show.
-          (tab === 'aquatics' || tab === 'camping') ? null
+          (tab === 'aquatics' || tab === 'camping' || tab === 'outdoor') ? null
             : ((tab === 'ice' || tab === 'golf' || tab === 'racket') && vertCounts[tab] === 0) ? null
             : e(FacilitiesBanner, { a: bannerAgg, tab }),
           // Filters are context-aware: the site-type filter only makes sense on
           // the Summary (a vertical tab already fixes the type); Court Utilization
           // manages its own filters + dates inside the embed, so no hub filters.
-          (tab === 'utilization' || tab === 'racket' || tab === 'camping') ? null : e('div', { className: 'filters' },
+          (tab === 'utilization' || tab === 'racket' || tab === 'camping' || tab === 'outdoor') ? null : e('div', { className: 'filters' },
             e(StatusChips, { sel: statusSel, setSel: setStatusSel }),
             tab === 'summary' ? e('div', { className: 'filter-group' },
               e('span', { className: 'filter-lbl' }, 'Site type'),
@@ -3990,6 +4865,8 @@
                 ? e(RacketSportsView, { start, end, fallback: racketFallback })
                 : tab === 'camping'
                   ? e(CampingView, { start, end })
+                : tab === 'outdoor'
+                  ? e(OutdoorEventsView, { start, end })
                 : tab === 'aquatics'
                   ? e(AquaticsView, { rows: viewRows, err, statusSel, vert: Object.assign({ key: tab }, VERT_CONFIG[tab]) })
                   : VERT_CONFIG[tab]
