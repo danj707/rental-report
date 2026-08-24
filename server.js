@@ -2582,6 +2582,7 @@ const LEADERBOARD_GAMES = {
   invaders: { label: "Invaders",      emoji: "👾",       lower: false },
   breakout: { label: "Court Breaker", emoji: "🧱",       lower: false },
   bounce:   { label: "Bounce House",  emoji: "🎈",       lower: false },
+  bases:    { label: "Sandlot",       emoji: "⚾",       lower: false },
   golf:     { label: "Putt",          emoji: "⛳",             lower: true  },
 };
 const GAME_SCORES_FILE = path.join(DATA_DIR, "game_scores.json");
@@ -3606,7 +3607,7 @@ setTimeout(() => { checkCardParamTypes().catch(() => {}); }, 150 * 1000).unref?.
 // Inert if the env var is unset. Fire-and-forget — never blocks or breaks logging.
 // To change what pings Slack, edit SLACK_NOTIFY. High-frequency events (view/fetch)
 // are debounced per org+report so Slack isn't a firehose.
-const SLACK_NOTIFY = new Set(["created", "org-deleted", "watchdog", "schema-break", "param-drift", "report-down", "campmap-share", "campmap-site", "campmap-book", "campmap-filter", "pdf", "excel", "print", "summary", "game", "map", "outdoor", "view", "insights", "insights-feedback", "chat-feedback", "feedback", "vote", "update-vote", "munis", "permits", "email"]);
+const SLACK_NOTIFY = new Set(["created", "org-deleted", "watchdog", "schema-break", "param-drift", "report-down", "campmap-share", "campmap-site", "campmap-book", "campmap-filter", "pdf", "excel", "print", "summary", "game", "map", "outdoor", "fields", "view", "insights", "insights-feedback", "chat-feedback", "feedback", "vote", "update-vote", "munis", "permits", "email"]);
 const SLACK_DEBOUNCE_MS = { view: 30 * 60 * 1000, fetch: 30 * 60 * 1000,
   // A broken report stays broken. The health check only reports NEW failures,
   // but a flapping card would otherwise post every hour.
@@ -3641,6 +3642,9 @@ const SLACK_EVENT_META = {
   // Pavilions, shelters, picnic areas and bounce houses — a new tab on the
   // Facilities hub, so its own event rather than a bare `view` of `facilities`.
   outdoor: { emoji: "🎪", verb: "opened Outdoor Event Spaces on the facilities report" },
+  // Ball fields, soccer pitches and multipurpose turf — leagues and tournaments,
+  // a different question from the pavilion rentals `outdoor` covers.
+  fields:  { emoji: "⚾", verb: "opened Fields on the facilities report" },
   insights: { emoji: "✨", verb: "generated AI insights for" },
   email:   { emoji: "📧", verb: "emailed" },
 };
@@ -3814,6 +3818,10 @@ function notifySlack(rec) {
     text = `${thumbs} ${orgName} (\`${rec.org}\`) rated the *${rec.updateTitle || "What's New"}* update${mention}`;
   } else if (rec.event === "map") {
     text = `${meta.emoji} ${orgName} (\`${rec.org}\`) — someone opened *${rec.location || "a location"}* on the facility rental map`;
+  } else if (rec.event === "fields") {
+    const n = rec.bookings;
+    const on = n == null ? "" : ` — ${n.toLocaleString()} field booking${n === 1 ? "" : "s"} in range`;
+    text = `${meta.emoji} ${orgName} (\`${rec.org}\`) opened *Fields* on the facilities report${on}`;
   } else if (rec.event === "outdoor") {
     // Carry what the tab had to show. An org opening it on zero bookings is a
     // different fact from one opening it on 400 — the first says the pavilions
@@ -5865,13 +5873,14 @@ app.post("/:org/facilities/api/log", (req, res) => {
   const slug = req.params.org;
   if (!ORGS[slug]) return res.status(404).json({ ok: false, error: "Unknown org" });
   const event = req.query.event;
-  const ALLOWED = ["game", "summary", "outdoor"];
+  const ALLOWED = ["game", "summary", "outdoor", "fields"];
   if (!ALLOWED.includes(event)) return res.status(400).json({ ok: false, error: "Unknown event" });
   // How much the Outdoor Events tab had to show. "Someone opened it" is trivia;
   // "opened it on 412 bookings" says whether the tab is answering anything.
   const n = Number(req.query.n);
   const extra = event === "game" && req.query.game ? { game: String(req.query.game).slice(0, 60) }
-              : event === "outdoor" ? { bookings: Number.isFinite(n) && n >= 0 && n <= 999999 ? Math.round(n) : undefined }
+              : (event === "outdoor" || event === "fields")
+                  ? { bookings: Number.isFinite(n) && n >= 0 && n <= 999999 ? Math.round(n) : undefined }
               : undefined;
   logEvent(slug, "facility", event, req, extra);
   res.json({ ok: true });
@@ -6328,6 +6337,26 @@ Rules:
 - Prefer non-obvious observations: day-of-week gaps, stay-length patterns vs any max-stay policy, sites that fill vs sites that never book, seasonality turns.
 - Be terse. No filler. Vary the "type" across the four insights where the data supports it.`;
 
+const FIELDS_SYS_PROMPT = `You are an athletic-field operations analyst for US municipal parks & recreation departments. You are given aggregate reservation data for BALL FIELDS only — baseball/softball diamonds, soccer pitches and multipurpose turf. These are booked by the HOUR or the day and are overwhelmingly STAFF-BOOKED (managed) rather than instant-booked online, because the demand is leagues, tournaments and practices rather than walk-up play: totals, hours booked, day-fill, booked hours by hour-of-day and day-of-week, block-length mix, instant-vs-managed split, add-on attach rates, per-location and per-field totals with revenue, and monthly trend — all pre-computed.
+
+Return EXACTLY 4 insights as a JSON array and nothing else — no prose, no preamble, no markdown code fences. Each element is an object with exactly these keys:
+{
+  "type": "opportunity" | "risk" | "signal",
+  "title": short label, 7 words or fewer,
+  "detail": one sentence, 22 words or fewer, citing specific numbers, fields, hours, days or months drawn from the data,
+  "action": one concrete next step, 12 words or fewer
+}
+
+Rules:
+- Ground EVERY figure in the data provided. Never invent numbers, fields or locations.
+- Field demand is league-shaped: long recurring evening and weekend blocks in season, near-empty middays and off-season. A weekday-midday pattern or a flat week is the non-obvious finding, not the baseline.
+- Instant booking is rare on fields by nature (about 5% platform-wide). A LOW instant share is normal and not a failure; an unusually HIGH one is worth remarking on.
+- LIGHTS are typically the largest add-on and are billed as a line item. Light and staffing/prep add-ons (attendant, field prep, lining, cleaning, restroom supply) are cost-recovery levers — an add-on attached to only a slice of evening bookings is money left on the table.
+- Field counts cover only fields BOOKED at least once in range — the data cannot see a field nobody reserved, so never claim a total inventory or an unused-field count.
+- Revenue is net base-rental dollars on the booking's first day; comped and $0 bookings are common in municipal parks, so zero revenue is a pricing setup, not a failure. Hours exclude multi-day bookings, whose per-day hours are not recorded.
+- Sport labels are inferred from field and park NAMES, so an "unclassified" share is a naming gap, never a real category. Do not draw conclusions about a sport from unclassified rows.
+- Be terse. No filler. Vary the "type" across the four insights where the data supports it.`;
+
 const OUTDOOR_SYS_PROMPT = `You are a facility operations analyst for US municipal parks & recreation departments. You are given aggregate reservation data for a single reporting period covering OUTDOOR EVENT SPACES only — pavilions, shelters, picnic areas/tables and bounce houses. These are booked by the HOUR or by the DAY (not nightly like campsites): totals, hours booked, day-fill, site-day usage, booked hours by hour-of-day and day-of-week, block-length mix, per-type and per-location splits, per-site totals with revenue, add-on attach rates and monthly trend, all pre-computed.
 
 Return EXACTLY 4 insights as a JSON array and nothing else — no prose, no preamble, no markdown code fences. Each element is an object with exactly these keys:
@@ -6517,6 +6546,43 @@ app.post("/:org/camping/api/insights", express.json(), async (req, res) => {
     res.json({ ok: true, insights });
   } catch (e) {
     console.error("[camping] insights: " + e.message);
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// Fields insights — same shape as the outdoor route below, its own prompt
+// (league-shaped demand, managed-not-instant, lights as the add-on story).
+app.post("/:org/fields/api/insights", express.json(), async (req, res) => {
+  const slug = req.params.org;
+  if (!ORGS[slug]) return res.status(404).json({ ok: false, error: "Unknown org" });
+  if (!anthropic) return res.status(503).json({ ok: false, error: "AI insights not configured" });
+  const blob = req.body;
+  if (!blob || typeof blob !== "object") return res.status(400).json({ ok: false, error: "Missing stats payload" });
+  const key = crypto.createHash("sha256").update(slug + "|fields|" + JSON.stringify(blob)).digest("hex");
+  const hit = _insightsCache.get(key);
+  if (hit && Date.now() - hit.ts < INSIGHTS_TTL_MS) {
+    logEvent(slug, "fields", "insights", req, { cached: true });
+    return res.json({ ok: true, insights: hit.insights, cached: true });
+  }
+  try {
+    const data = await anthropic.messages.create({
+      model: INSIGHTS_MODEL, max_tokens: 800,
+      system: FIELDS_SYS_PROMPT + "\n\n" + SCHEMA_CONTEXT,
+      messages: [{ role: "user", content: JSON.stringify(blob) }],
+    });
+    const text = (data.content || []).filter(c => c.type === "text").map(c => c.text).join("");
+    const insights = salvageInsights(text);
+    if (!insights.length) return res.status(502).json({ ok: false, error: "Could not parse AI response" });
+    const u = data.usage || {};
+    _insightsCache.set(key, { ts: Date.now(), insights });
+    if (_insightsCache.size > INSIGHTS_CACHE_MAX) _insightsCache.delete(_insightsCache.keys().next().value);
+    logEvent(slug, "fields", "insights", req, {
+      inTok: u.input_tokens || 0, outTok: u.output_tokens || 0,
+      costUsd: insightsCostUsd(data.model || INSIGHTS_MODEL, u.input_tokens || 0, u.output_tokens || 0),
+    });
+    res.json({ ok: true, insights });
+  } catch (e) {
+    console.error("[fields] insights: " + e.message);
     res.status(500).json({ ok: false, error: e.message });
   }
 });

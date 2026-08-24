@@ -91,6 +91,9 @@ jobs:
       - name: Facilities hub beacons (hub log route above the generic one; 200 AND a logged row)
         run: node scripts/facilities-beacons.spec.js
 
+      - name: Fields classifiers (sport precedence; lights never fall out of their family)
+        run: node scripts/fields-classify.spec.js
+
       - name: Admin dashboard JS (inline blocks parse; every on*= handler resolves)
         run: node scripts/ci-check-admin-js.js
 

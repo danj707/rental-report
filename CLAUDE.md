@@ -387,6 +387,70 @@ Windham, Watertown, Norman, Apex.
   not start times) and `[data-oe-timed="4"]` (multi-day excluded). Both attribute
   cases were seen to fail on the real regression in a real browser.
 
+## Fields tab — leagues, lights, and staff-booked (2026-08-24)
+
+The last facility type with nothing of its own: **1,903 field sites across 74
+orgs, ~57k reservations a year**, second only to courts. `field` is a real
+`court.type`, and the tab is scoped to exactly that.
+
+- **It CANNOT reuse the Court Utilization pipeline.** Card 17297 filters
+  `c.type = 'court'`, so fields are absent from that feed entirely — Racket
+  Sports can wrap `CourtUtilizationView`, Fields cannot. It reads card **17294**
+  like the Outdoor tab and shares the hour helpers (`oeRowHours`, `oeHeatGrid`).
+- **Shape:** median block **4h**, avg 5.9h; 24% ≤2h, 32% 2–4h, 21% 4–8h, **22%
+  over 8h** (tournament days); **99.5% same-day**.
+- **95.5% staff-booked** — only 2,578 of 56,880 are `instant`. A low instant
+  share is the BASELINE for fields, and the panel says so, because reading it as
+  a self-service failure would be wrong.
+- **Lights are the story, and they are an ADD-ON, not the lighting integration.**
+  `reservation_lighting_schedule` has **5** field rows platform-wide, while the
+  four most-attached field add-ons are all light fees ("Field Light Fee" 409,
+  "Field Lights" 226, "LAGSC Lights - Both Fields" 205,
+  "Rental-Athletic Field Light Fee" 109, in 90 days). So the tab reads lights
+  from add-on NAMES and ignores the Lighting columns, and cross-checks the light
+  count against bookings starting after 5pm — evening bookings with no light fee
+  are either daylight or uncollected cost recovery. Staffing/prep add-ons
+  (attendant, park services, restroom supply, cleaning, prep & lining) are the
+  other family.
+- **Sport is inferred from NAMES.** `court.sub_type` is NULL on all 1,903 fields,
+  so there is no structured sport. Field name + PARK name together classify ~48%
+  of bookings (baseball/softball 13,647, soccer 9,215, multipurpose 8,938,
+  football 427, lacrosse 88); **~52% match nothing**. The panel shows the
+  unclassified share and steps aside above 40% rather than implying a mix it
+  cannot see.
+- Own banner (`fbx-ballfield`) and minigame **Sandlot** (`bases`, ⚾, score =
+  total bases) — a full at-bat: timed swing, contact quality sets launch angle
+  and power, the nearest fielder breaks for the landing spot, the runner takes
+  what the retrieve time allows.
+- Guards: `scripts/fields-classify.spec.js` (11 assertions, in CI) plus three
+  `ci-check-render.js` cases — the tab renders, `[data-fld-peak="7p"]` (hour
+  COVERAGE, not start times) and the sport note. The spec caught a real bug on
+  its first run: `/ball ?field/` matches inside "Foot**ball Field**", so every
+  football field was being filed as baseball; it needs `\bball ?field`.
+
+### Tuning a banner minigame is a measurement job, not a vibe
+
+Sandlot took five rounds of tuning, and every round was diagnosed by
+instrumenting `connect()` and printing the actual numbers rather than guessing:
+
+1. **Contact window vs the pitch path.** A window of `H * 0.32` was ~55px of a
+   ~63px path, so a swing was either "too far" (strike) or near-perfect (home
+   run) with nothing in between. It is now half the PATH.
+2. **Hang time was backwards.** `0.42 + power * 0.85` made the hardest hits hang
+   longest and therefore easiest to catch. A mishit is a lazy fly; a well-struck
+   ball is a line drive. Now `0.50 + (1 - q) * 0.55`.
+3. **Catches were measured in SCREEN PIXELS.** The park is projected wide and
+   shallow (x stretched ~2.7x), so pixel distance made every fielder look one
+   stride from everything. Distances are now polar, in field units.
+4. **Five fielders in a 90° wedge leave no gaps** — nearest-fielder distances of
+   0.04–0.21 field units, so everything that stayed in the park was caught. Four
+   fielders at 0.16 units/sec gives real gaps.
+5. **Verify by sweeping the input, not by playing once.** `gametest2.js`-style
+   harness: seed `Math.random`, sweep the swing time in 20ms steps, and require
+   a spread of outcomes. Final distribution over 50 timings: 29 no-pay, 3
+   singles, 13 doubles, 1 triple, 4 home runs. "It felt fine when I clicked it"
+   would have shipped the version where every hit was a home run.
+
 ## Every Facilities-hub beacon was 404ing — same trap as campmap (2026-08-24)
 
 Found while wiring the Outdoor Events ping. The hub lives at `/:org/facilities`,

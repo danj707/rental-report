@@ -120,6 +120,37 @@ function racketRows() {
   return rows;
 }
 
+// Ball fields — the Fields tab's fixture. Built to the shape the platform
+// actually has: staff-booked (only one instant), evening league blocks, a light
+// fee as the top add-on, and one field named for no sport at all.
+function fieldRows() {
+  const rows = [];
+  const d = n => { const t = new Date(Date.now() - n * 86400000); return t.toISOString().slice(0, 10); };
+  const push = (site, loc, day, begin, endT, total, addOns, bookingType, head) => rows.push({
+    "Org Name": "Test Parks", "Reservation ID": site + "-" + day + "-" + begin, "Date": d(day),
+    "Day": "Tuesday", "Begin": begin, "End": endT,
+    "Location": loc, "Facility": loc + " - " + site,
+    "Site Type": "field", "Purpose": "League practice", "Head Cnt": head,
+    "Reservee": "Test League", "Email": "t@example.com", "Phone": null, "Resident?": "Yes",
+    "Booking Type": bookingType || "Managed", "Instructions": null, "Notes": null,
+    "Add Ons": addOns, "Add-On Fees": addOns ? 45 : 0, "Total": total, "Paid?": "Paid",
+    "Multi-Day Days": 1, "Multi-Day Day#": 1,
+    "Lighting": null, "Lit From": null, "Lit Until": null, "Lighting Sync": null,
+  });
+  // Evening league blocks on the diamonds — 6-9pm, overlapping at 7pm.
+  push("Diamond 1", "Riverside Sports Complex", 14, "06:00pm", "09:00pm", 180, "Field Light Fee ($45.00)", "Managed", 24);
+  push("Diamond 1", "Riverside Sports Complex", 7,  "06:00pm", "09:00pm", 180, "Field Light Fee ($45.00)", "Managed", 22);
+  push("Diamond 2", "Riverside Sports Complex", 14, "05:00pm", "08:00pm", 180, "Field Light Fee ($45.00), Field Prep & Lining ($30.00)", "Managed", 18);
+  push("Soccer Field 3", "Riverside Sports Complex", 10, "07:00pm", "09:00pm", 120, "", "Managed", 30);
+  push("Soccer Field 4", "Riverside Sports Complex", 10, "07:00pm", "09:00pm", 120, "", "Managed", 28);
+  // A tournament day: the 8h+ tail.
+  push("Diamond 1", "Riverside Sports Complex", 21, "08:00am", "07:00pm", 600, "Rental-Facility Attendant Fee ($120.00)", "Managed", 150);
+  // The one instant booking, and a field whose name says nothing about a sport.
+  push("Upper Field", "Northside Park", 4, "10:00am", "12:00pm", 60, "", "Instant", 12);
+  push("Upper Field", "Northside Park", 3, "04:00pm", "06:00pm", 60, "", "Managed", 14);
+  return rows;
+}
+
 const campsitesGeo = {
   locations: [{
     id: "topaz", name: "Topaz Lake Recreation Area",
@@ -263,7 +294,7 @@ const STUBS = [
   { match: /\/facilities\/api\/campsites/, body: () => campsitesGeo },
   // One feed, both tabs: Camping filters it to campsite rows and Outdoor Events
   // to its three types, so each tab has to do its own scoping.
-  { match: /\/facility\/api\/data/,        body: () => ({ rows: campsiteRows().concat(outdoorRows()), meta: {} }) },
+  { match: /\/facility\/api\/data/,        body: () => ({ rows: campsiteRows().concat(outdoorRows()).concat(fieldRows()), meta: {} }) },
   { match: /\/api\/permits/,               body: () => ({ permits: {} }) },
   { match: /\/api\/availability-batch/,     body: url => availabilityFor(url) },
   { match: /\/rentalcalendar\/api\/sites/, body: (url, org) => ({ sites: campmapSites(org) }) },
@@ -389,6 +420,14 @@ const CASES = [
   // header went unnoticed. `.court-native .sum-cards` only exists once the
   // Court Utilization pipeline ran inside the tab, so an empty state or a throw
   // fails this rather than passing on "nothing rendered".
+  // Fields. The heat map must peak at 7pm — five evening league blocks are in
+  // use in that hour — and that only holds if hours are counted as COVERED.
+  // Counting start times instead peaks at 6pm on this fixture, so the case
+  // discriminates. The sport note must also render, since it is what keeps a
+  // name-derived sport mix honest.
+  { name: "facilities · fields",           path: "/{org}/facilities?tab=fields",  needs: "[data-fld-heat]" },
+  { name: "facilities · fields peak hour", path: "/{org}/facilities?tab=fields",  needs: "[data-fld-peak=\"7p\"]" },
+  { name: "facilities · fields sport note", path: "/{org}/facilities?tab=fields", needs: "[data-fld-sport-note]" },
   { name: "facilities · racket sports",    path: "/{org}/facilities?tab=racket",  needs: ".court-native .sum-cards" },
   { name: "campmap · stay search", path: "/{org}/campmap",                needs: "#departPick[max]" },
   // The Campsite Type filter. `option[value="tent-and-rv"]` is only there if the
