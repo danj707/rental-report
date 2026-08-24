@@ -410,6 +410,33 @@ member link, which needs one column added to card **18151**.
   in the uuid rather than merely that an anchor exists. `ciUserUrl()` returns null
   without both ids and the cell falls back to plain text — so the page is correct
   before AND after the card ships the column.
+
+### Card 18151 v2 — applied and signed off (2026-08-24)
+
+One column added (`u.id::text AS "User ID"`), pushed via the API, date tags
+re-flipped by Dan, verified in this order:
+
+- read the live card and diffed BEFORE writing (no drift), then diffed the pushed
+  SQL back — landed intact, comment included
+- **the additive claim was measured, not assumed.** Same immutable window
+  (apex, Aug 1–23) before and after: **22,880 rows both times**, and a sha256
+  over the 13 ORIGINAL columns is byte-identical. 6,100 distinct uuids against
+  6,100 distinct rec_ids, so the new column neither collapses nor fans out rows.
+- cache-independent public-endpoint sign-off: apex (heaviest) **23,525 rows in
+  22.3s**; the whole manifest 17/17
+- 215 links rendered in a real browser, every href ending in a uuid
+- `scripts/report-cards.manifest.json` gained a **checkins / apex** row, so a
+  lost column or a re-Texted date tag is caught by the check rather than
+  discovered as a blank tab
+
+**Worth knowing for the next card push:** while the tags were Text the card's
+public definition carried **six** parameters — the three original ids
+(`date/single`) *and* three new ones (`string/=`) for the same slugs. Anything
+that binds every registered parameter by slug then sends two values per variable
+and gets `An error occurred.`, which reads exactly like a broken card;
+`verify-report-live.js` fails that way too. Dan's UI flip cleaned the list back
+to three. So during the push→flip window the app AND the verifier both fail, and
+the verifier's failure carries no extra information.
 - **Check-Ins by Time of Day** is one series at a time (All / Weekdays /
   Weekends). Deliberately not two curves on one axis: there are five weekdays to
   two weekend days, so a weekend total always looks quiet next to a weekday one —
