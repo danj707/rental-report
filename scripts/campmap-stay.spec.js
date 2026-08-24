@@ -25,6 +25,20 @@
 //    site offers let that one row offer a 180-night stay for the whole
 //    campground.
 //
+// 5. A DATE PAST A SITE'S BOOKING WINDOW IS NOT A REFUSAL. Since 2026-08-24 the
+//    page reads rec.us's 210-day nightly-availability feed instead of the 30-day
+//    MCP tool, so for the first time it sees dates a site has not opened yet.
+//    They come back `available:false, reason:"outside-window"` — the SAME shape
+//    as a staff hold awaiting payment, which genuinely blocks the site. Position
+//    is the only thing that tells them apart: the window's end is the run of them
+//    that reaches the END of the feed. Collapsing the two paints ~30 open nights
+//    red at Topaz and sends campers elsewhere for dates the site will take.
+//
+// 6. THE HORIZON IS PER SITE (Dan: "availability should scope to the actual site
+//    availability"). At Topaz 39 of 41 sites take arrivals 180 days out, one
+//    takes 90 and one takes all 210, so any park-wide number is wrong for some
+//    site in one direction or the other.
+//
 // 4. "NOT AVAILABLE" AND "WRONG STAY LENGTH" ARE DIFFERENT ANSWERS. A staff hold
 //    awaiting payment blocks the site and comes back as
 //    `reason:"outside-window"`, NOT `conflict`. Binning every non-conflict reason
@@ -61,6 +75,11 @@ const src = [
 // The globals the sliced code reads. Everything else it needs is in the slice.
 const harness = `
   var SEED = [], AVAIL = {}, AVAIL_WINDOW = {}, SELECTED = null, DEPART = null;
+  var HORIZON = {}, DAYS_SHOWN = 30;
+  // maxArrival falls back to TODAY + DAYS_SHOWN - 1 when no site in view knows
+  // its own horizon. The spec pins that fallback's SHAPE, so TODAY is fixed here
+  // rather than read from the clock.
+  var TODAY = new Date('2026-09-01T00:00:00');
   var MAX_META_NIGHTS = 14, META_BY_ID = {};
   // Per-site maxNights when the test sets one, else the org default — siteMeta in
   // the page resolves area overrides the same way.
@@ -74,12 +93,14 @@ const harness = `
     nightsOf: nightsOf, stayNights: stayNights, statusOn: statusOn,
     nightStateFrom: nightStateFrom, typeKey: typeKey, inView: inView, VIEW: VIEW,
     rangeStatus: rangeStatus, rangeWhy: rangeWhy, latestCheckoutFrom: latestCheckoutFrom,
+    bookingHorizon: bookingHorizon, siteNightStates: siteNightStates, maxArrival: maxArrival,
     set: function(o){ if(o.SEED) SEED = o.SEED; if(o.AVAIL) AVAIL = o.AVAIL;
                       if(o.AVAIL_WINDOW) AVAIL_WINDOW = o.AVAIL_WINDOW;
                       if(o.SELECTED) SELECTED = o.SELECTED; if(o.DEPART) DEPART = o.DEPART;
                       if(o.maxNights != null) MAX_META_NIGHTS = o.maxNights;
                       if(o.meta) META_BY_ID = o.meta;
-                      if(o.type !== undefined) TYPE_FILTER = o.type; },
+                      if(o.type !== undefined) TYPE_FILTER = o.type;
+                      if(o.HORIZON) HORIZON = o.HORIZON; },
   };
 `;
 const M = new Function(harness)();
@@ -261,6 +282,130 @@ test("one unavailable night is enough to stop calling the stay open", () => {
   r = stay("2026-09-01", "2026-09-15", nights);
   assert.strictEqual(r.state, "partial", "one night taken in the middle");
   assert.strictEqual(r.openCount, 13);
+});
+
+// ── 7. where a site's booking window ends ──────────────────────────────────
+// Shaped like the real feed: rec.us answers 210 dates and marks everything past
+// the site's window `outside-window`.
+const OPEN  = { available: true, earliestCheckout: "x", latestCheckout: "y" };
+const OUT   = { available: false, reason: "outside-window" };
+const HELD  = { available: false, reason: "outside-window" };   // identical on the wire
+const TAKEN = { available: false, reason: "conflict" };
+
+test("the horizon is the last date before the trailing outside-window run", () => {
+  assert.deepStrictEqual(M.bookingHorizon({
+    "2026-09-01": OPEN, "2026-09-02": OPEN, "2026-09-03": OPEN,
+    "2026-09-04": OUT, "2026-09-05": OUT,
+  }), { known: true, last: "2026-09-03" });
+});
+
+test("a mid-feed staff hold is NOT a horizon — only the trailing run is", () => {
+  // Same reason string, different meaning. Reading the FIRST outside-window as
+  // the window's end would cut the map off at a hold and hide every open night
+  // after it.
+  assert.deepStrictEqual(M.bookingHorizon({
+    "2026-09-01": OPEN, "2026-09-02": HELD, "2026-09-03": OPEN,
+    "2026-09-04": OPEN, "2026-09-05": OUT,
+  }), { known: true, last: "2026-09-04" });
+});
+
+test("no trailing run means unknown, never 'bookable to the end'", () => {
+  // The 30-day MCP feed always lands here: it stops at day 30 because that is all
+  // it was asked for, which says nothing about the site's window.
+  assert.deepStrictEqual(
+    M.bookingHorizon({ "2026-09-01": OPEN, "2026-09-02": TAKEN, "2026-09-03": OPEN }),
+    { known: false });
+  assert.deepStrictEqual(M.bookingHorizon({}), { known: false });
+});
+
+test("a site with no bookable arrival at all reports known-but-none", () => {
+  assert.deepStrictEqual(
+    M.bookingHorizon({ "2026-09-01": OUT, "2026-09-02": OUT }),
+    { known: true, last: null });
+});
+
+// ── 8. past the window reads as "not open yet", not "taken" ────────────────
+test("dates past the window become 'beyond'; the ones before are untouched", () => {
+  const got = M.siteNightStates({ checkInDates: {
+    "2026-09-01": OPEN, "2026-09-02": TAKEN, "2026-09-03": HELD,
+    "2026-09-04": OPEN, "2026-09-05": OUT, "2026-09-06": OUT,
+  } }, "nightly");
+  assert.strictEqual(got.states["2026-09-01"], "avail");
+  assert.strictEqual(got.states["2026-09-02"], "booked");
+  assert.strictEqual(got.states["2026-09-03"], "closed",
+    "a hold inside the window still blocks the site — it is not 'not open yet'");
+  assert.strictEqual(got.states["2026-09-04"], "avail");
+  assert.strictEqual(got.states["2026-09-05"], "beyond");
+  assert.strictEqual(got.states["2026-09-06"], "beyond");
+  assert.deepStrictEqual(got.horizon, { known: true, last: "2026-09-04" });
+});
+
+test("the 30-day feed never produces 'beyond' — its tail is not a horizon", () => {
+  const got = M.siteNightStates({ checkInDates: {
+    "2026-09-01": OPEN, "2026-09-02": OUT, "2026-09-03": OUT,
+  } }, "mcp");
+  assert.strictEqual(got.states["2026-09-02"], "closed");
+  assert.strictEqual(got.states["2026-09-03"], "closed");
+  assert.deepStrictEqual(got.horizon, { known: false });
+});
+
+test("a stay entirely past the window says so instead of 'not available'", () => {
+  const r = stay("2026-09-05", "2026-09-07",
+    { "2026-09-05": "beyond", "2026-09-06": "beyond" });
+  assert.strictEqual(r.state, "beyond");
+  assert.match(M.rangeWhy(r), /not open for booking/i);
+  assert.doesNotMatch(M.rangeWhy(r), /not available/i,
+    "'Not available' sends a camper to another site for a date this one will take");
+});
+
+test("a stay that straddles the window is partial, and names both reasons", () => {
+  const r = stay("2026-09-01", "2026-09-04",
+    { "2026-09-01": "avail", "2026-09-02": "booked", "2026-09-03": "beyond" });
+  assert.strictEqual(r.state, "partial");
+  assert.deepStrictEqual(r.beyond, ["2026-09-03"]);
+  assert.deepStrictEqual(r.booked, ["2026-09-02"]);
+  const why = M.rangeWhy(r);
+  assert.match(why, /unavailable/);
+  assert.match(why, /not open yet/);
+});
+
+// ── 9. the arrival bound is per site, and scoped to what is on screen ──────
+test("the Arrive bound is the furthest horizon among the sites in view", () => {
+  const a = { id: "a", n: 1, kind: "tent" }, b = { id: "b", n: 2, kind: "tent" };
+  M.set({ type: "all", SEED: [a, b], AVAIL: {}, AVAIL_WINDOW: {},
+          HORIZON: { a: { known: true, last: "2027-02-20" },
+                     b: { known: true, last: "2026-11-22" } } });
+  assert.strictEqual(M.maxArrival(), "2027-02-20",
+    "the 90-day site must not shorten the map for the 180-day ones");
+});
+
+test("the bound is scoped to the type filter, like the checkout bound", () => {
+  const tent  = { id: "t", n: 1, kind: "tent" };
+  const lodge = { id: "l", n: 2, kind: "lodging" };
+  M.set({ type: "all", SEED: [tent, lodge], AVAIL: {}, AVAIL_WINDOW: {},
+          HORIZON: { t: { known: true, last: "2026-10-01" },
+                     l: { known: true, last: "2027-02-20" } } });
+  M.set({ type: "tent" });
+  assert.strictEqual(M.maxArrival(), "2026-10-01",
+    "filtering to tents must not keep offering the lodging unit's dates");
+});
+
+test("one site with an unknown horizon does not shorten the sites that know theirs", () => {
+  // The real mixed case: a park with both nightly and hourly campsites. The
+  // hourly one answers on the 30-day feed and can say nothing about a window;
+  // letting that pull the bound back to 30 days would throw away the 180 days
+  // its nightly neighbours DID report.
+  const nightly = { id: "n", n: 1, kind: "tent" };
+  const hourly  = { id: "h", n: 2, kind: "tent" };
+  M.set({ type: "all", SEED: [nightly, hourly], AVAIL: {}, AVAIL_WINDOW: {},
+          HORIZON: { n: { known: true, last: "2027-02-20" }, h: { known: false } } });
+  assert.strictEqual(M.maxArrival(), "2027-02-20");
+});
+
+test("no known horizon falls back to the 30-day feed, not to nothing", () => {
+  M.set({ type: "all", SEED: [{ id: "a", n: 1, kind: "tent" }], AVAIL: {}, AVAIL_WINDOW: {},
+          HORIZON: { a: { known: false } } });
+  assert.strictEqual(M.maxArrival(), "2026-09-30", "TODAY + 29 — the old behaviour");
 });
 
 console.log(`\n${passed}/${passed} passing`);
