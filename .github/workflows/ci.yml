@@ -94,6 +94,9 @@ jobs:
       - name: Fields classifiers (sport precedence; lights never fall out of their family)
         run: node scripts/fields-classify.spec.js
 
+      - name: Director's Report site slices (server hour math == the tab's; coverage, not start times)
+        run: node scripts/directors-facilities.spec.js
+
       - name: Check-Ins tab (dates read local; every panel reads the filtered rows; link uses the uuid)
         run: node scripts/checkins-view.spec.js
 
