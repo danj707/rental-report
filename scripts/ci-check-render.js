@@ -101,6 +101,25 @@ function outdoorRows() {
   return rows;
 }
 
+// Racket-sport courts — the Court Utilization payload shape (snake_case), used
+// by the Racket Sports tab. Court names carry a racket keyword so isRacketCourt()
+// matches them and the tab does not fall back to "all court-type sites".
+function racketRows() {
+  const rows = [];
+  const d = n => { const t = new Date(Date.now() - n * 86400000); return t.toISOString().slice(0, 10); };
+  const push = (court, loc, day, start, end, hours, cat) => rows.push({
+    court_name: court, location_name: loc, facility_rental_id: court + "-" + day + "-" + start,
+    usage_category: cat || "Customer Booking", booking_source: "Instant",
+    local_date: d(day), local_start: start, local_end: end, duration_hours: hours,
+  });
+  push("Tennis Court 1", "Riverside Park", 12, "09:00", "10:30", 1.5);
+  push("Tennis Court 1", "Riverside Park", 9,  "18:00", "19:00", 1);
+  push("Pickleball Court 2", "Riverside Park", 8, "10:00", "11:00", 1);
+  push("Pickleball Court 2", "Riverside Park", 5, "17:00", "19:00", 2, "Program");
+  push("Padel Court A", "Lakeview Park", 4, "12:00", "13:00", 1);
+  return rows;
+}
+
 const campsitesGeo = {
   locations: [{
     id: "topaz", name: "Topaz Lake Recreation Area",
@@ -224,6 +243,7 @@ const STUBS = [
   { match: /\/rentalcalendar\/api\/sites/, body: (url, org) => ({ sites: campmapSites(org) }) },
   { match: /\/api\/sites/,                  body: () => ({ sites: [] }) },
   { match: /\/fasttrack\/api\/data/,       body: () => ({ rows: fasttrackRows(), meta: {} }) },
+  { match: /\/court-utilization\/api\/data/, body: () => ({ rows: racketRows(), meta: {} }) },
   { match: /\/api\/data/,                   body: () => ({ rows: campsiteRows(), meta: {} }) },
   { match: /\/api\/pulse/,                  body: () => ({ items: [], generated: null }) },
   { match: /\/api\/goals/,                  body: () => ({}) },
@@ -322,6 +342,11 @@ const CASES = [
   { name: "facilities · outdoor events",   path: "/{org}/facilities?tab=outdoor", needs: "[data-oe-heat]" },
   { name: "facilities · outdoor peak hour", path: "/{org}/facilities?tab=outdoor", needs: "[data-oe-peak=\"11a\"]" },
   { name: "facilities · outdoor multi-day", path: "/{org}/facilities?tab=outdoor", needs: "[data-oe-timed=\"4\"]" },
+  // Racket Sports had no render coverage at all, which is how its duplicate
+  // header went unnoticed. `.court-native .sum-cards` only exists once the
+  // Court Utilization pipeline ran inside the tab, so an empty state or a throw
+  // fails this rather than passing on "nothing rendered".
+  { name: "facilities · racket sports",    path: "/{org}/facilities?tab=racket",  needs: ".court-native .sum-cards" },
   { name: "campmap · stay search", path: "/{org}/campmap",                needs: "#departPick[max]" },
   // The Campsite Type filter. `option[value="tent-and-rv"]` is only there if the
   // LIVE site feed landed and buildTypeFilter() re-ran off its subType — the
