@@ -231,7 +231,12 @@ function fasttrackRows() {
     "Section ID": "sec-premier-early",
     "Early Access Opens": iso(-1), "Reg Opens": iso(6), "Reg Closes": iso(45),
     "Reg Status": "pipeline",     // exactly what the card reports for this shape
-    "FT Converted": 22, "Conversion %": 35.5,
+    // Smyrna's real shape: 62 holds chasing 25 seats, all 25 won by Fast Track,
+    // zero direct. The card's own "Conversion %" is holds-based and says 40.3%;
+    // the page must read 100%, because 25 of the 25 seats open to FT went to FT.
+    "FT Converted": 25, "FT Pending": 37, "Capacity": 25,
+    "Direct Enrolled": 0, "Total Enrolled": 25, "Fill %": 100,
+    "Conversion %": 40.3,
   });
   // Smaller and MORE RECENT than launchedEarly. Pure recency ordering puts this
   // first, which is what buried a section with 62 fast-trackers behind sections
@@ -359,6 +364,10 @@ const CASES = [
   // only one whose general window did. `[data-launched-kind="early"]` exists
   // solely on that path, so reading "Reg Opens" alone fails this case.
   { name: "fasttrack · just launched",  path: "/{org}/fasttrack",         needs: "[data-launched-kind=\"early\"]" },
+  // ...and its conversion figure must be measured against the seats that were
+  // open to Fast Track, not against every hold. 25 of 25 seats = 100%; the
+  // card's holds-based column says 40.3%, which is what the page used to show.
+  { name: "fasttrack · conv vs capacity", path: "/{org}/fasttrack",        needs: "[data-conv-pct=\"100\"]" },
   // Just Launched leads with the biggest Fast Track stake, not the most recent
   // open. sec-premier-early carries 62 holds; sec-tiny carries 2 and opened
   // later, so recency ordering makes it first and fails this case.

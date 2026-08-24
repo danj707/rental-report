@@ -82,6 +82,9 @@ jobs:
       - name: Event log cache spec (fresh on append; never re-parses the whole log)
         run: node scripts/event-cache.spec.js
 
+      - name: Fast Track conversion spec (measured against the spots open to FT, not all holds)
+        run: node scripts/fasttrack-conv.spec.js
+
       - name: Outdoor events hour spec (hours covered, not hours started; multi-day excluded)
         run: node scripts/outdoor-hours.spec.js
 
