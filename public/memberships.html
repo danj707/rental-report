@@ -2291,8 +2291,11 @@ function normalizeRow(raw) {
                           {ciLoc === 'all' ? 'Check-ins by point-of-sale or entry location. Pick one in the Location filter to scope the whole tab to it.'
                                            : 'Filtered to ' + ciLoc + ' — one row, by definition.'}
                         </div>
+                        {/* 48px of label is unreadable at Apex's 22 desks ("Apex …",
+                            "Secres…" ×3), and the filter makes this the list someone
+                            goes to to pick one. Same width as the product list below. */}
                         {Object.entries(deskCounts).sort(function(a,b){return b[1]-a[1];}).map(function(e){ return (
-                          <div key={e[0]} className="ci-bar-row"><span className="ci-bar-label" title={e[0]}>{e[0]}</span><div className="ci-bar-track"><div className="ci-bar-fill" style={{width:(e[1]/maxDk*100)+'%',background:'#f59e0b'}}/></div><span className="ci-bar-val">{e[1]}</span></div>
+                          <div key={e[0]} className="ci-bar-row"><span className="ci-bar-label" style={{width:170}} title={e[0]}>{e[0].length > 26 ? e[0].slice(0,24) + '…' : e[0]}</span><div className="ci-bar-track"><div className="ci-bar-fill" style={{width:(e[1]/maxDk*100)+'%',background:'#f59e0b'}}/></div><span className="ci-bar-val">{e[1]}</span></div>
                         );})}
                       </div>
                       <div className="ci-chart-box" style={{gridColumn:'1 / -1'}}>
