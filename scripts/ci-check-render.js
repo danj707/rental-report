@@ -233,7 +233,16 @@ function fasttrackRows() {
     "Reg Status": "pipeline",     // exactly what the card reports for this shape
     "FT Converted": 22, "Conversion %": 35.5,
   });
+  // Smaller and MORE RECENT than launchedEarly. Pure recency ordering puts this
+  // first, which is what buried a section with 62 fast-trackers behind sections
+  // with one or two of them on a busy launch morning.
+  const launchedSmall = Object.assign(table("Tiny Section", 2, 1, 20, -1), {
+    "Section ID": "sec-tiny", "Program": "Tumbling",
+    "Early Access Opens": iso(-0.02), "Reg Opens": iso(6), "Reg Closes": iso(45),
+    "FT Total": 2, "FT Converted": 1, "FT Pending": 1, "Conversion %": 50,
+  });
   return [
+    launchedSmall,
     launchedEarly,
     table("Premier Table", 54, 54, 25, 1),
     table("Select Table", 18, 18, 45, 2),
@@ -350,6 +359,15 @@ const CASES = [
   // only one whose general window did. `[data-launched-kind="early"]` exists
   // solely on that path, so reading "Reg Opens" alone fails this case.
   { name: "fasttrack · just launched",  path: "/{org}/fasttrack",         needs: "[data-launched-kind=\"early\"]" },
+  // Just Launched leads with the biggest Fast Track stake, not the most recent
+  // open. sec-premier-early carries 62 holds; sec-tiny carries 2 and opened
+  // later, so recency ordering makes it first and fails this case.
+  { name: "fasttrack · launch order",   path: "/{org}/fasttrack",
+    needs: ".launch-grid [data-just-launched]:first-child[data-section-id=\"sec-premier-early\"]" },
+  // Pinning belongs on what has NOT launched. The pin lives on the Launching
+  // Soon section rows now; a just-launched card carries none (verified in the
+  // browser — a selector cannot assert an absence).
+  { name: "fasttrack · pin pre-launch", path: "/{org}/fasttrack",         needs: "[data-launch-section] .pin-toggle" },
   // Outdoor Event Spaces. Three cases, because "the tab rendered" is the weakest
   // claim available: the peak hour must come from hour COVERAGE — the fixture's
   // four bookings each start in a different hour and overlap at 11am, so
