@@ -657,6 +657,23 @@ function launchHeat(pct, days, ft) {
 /* ── "Launching Soon" pipeline card — high-energy view of pent-up FT demand
    about to go live. Hero FT number + urgency countdown that escalates (blue →
    amber → orange → red) as the registration-open date nears. ── */
+/* Pin toggle for the PRE-LAUNCH strips. Pinning exists so an admin can keep an
+   eye on something that has not happened yet (Dan, 2026-08-24), so the control
+   belongs here — on Launching Soon and Cold Sections — and not on a card in
+   Just Launched, which by definition already launched. `ctl` is passed down from
+   App because the pin state lives there. */
+function PinBtn(props) {
+  var ctl = props.ctl, id = props.id;
+  if (!ctl || !id) return null;
+  var on = ctl.isPinned(id);
+  return React.createElement('button', {
+    className: 'pin-toggle' + (on ? ' pinned' : ''),
+    style: props.style || { marginLeft: 6 },
+    title: on ? 'Unpin from the top of Overview'
+              : 'Pin to the top of Overview — visible to your whole team',
+    onClick: function(e) { e.stopPropagation(); e.preventDefault(); ctl.togglePin(id); }
+  }, '📌');
+}
 function PipelineLaunchCard(props) {
   var p = props.p;
   var launch = p._launch || [];
@@ -727,7 +744,8 @@ function PipelineLaunchCard(props) {
             s2.sectionId && React.createElement('a', {
               href: adminSectionUrl(p.orgId, s2.sectionId), target: '_blank', rel: 'noopener',
               style: { color: '#3b82f6', fontWeight: 600, fontSize: 10, textDecoration: 'none' }
-            }, 'Admin \u2192'));
+            }, 'Admin \u2192'),
+            React.createElement(PinBtn, { ctl: props.pinCtl, id: s2.sectionId, style: { marginLeft: 2 } }));
         }),
         launch.length > 4 && React.createElement('div', { style: { fontSize: 11, color: '#9ca3af' } },
           '+ ' + (launch.length - 4) + ' more section' + (launch.length - 4 !== 1 ? 's' : '') + ' launching')
@@ -784,7 +802,7 @@ function PipelineLaunchSection(props) {
       soonest != null && React.createElement('span', { style: { fontSize: 12, color: '#9a3412' } },
         '— first opens ' + dayPhrase(soonest))
     ),
-    items.map(function(p) { return React.createElement(PipelineLaunchCard, { key: p.program, p: p }); })
+    items.map(function(p) { return React.createElement(PipelineLaunchCard, { key: p.program, p: p, pinCtl: props.pinCtl }); })
   );
 }
 
@@ -870,7 +888,8 @@ function ColdPipelineStrip(props) {
           color: urgent ? '#b45309' : '#0369a1', background: urgent ? '#fef3c7' : '#e0f2fe',
           padding: '4px 10px', borderRadius: 999 } },
           '📅 ' + (x.kind === 'early' ? 'Early access ' : 'Reg opens ')
-            + fmtDateShort(sectionGoLive(r).at) + ' · ' + dayShort(x.days))
+            + fmtDateShort(sectionGoLive(r).at) + ' · ' + dayShort(x.days)),
+        React.createElement(PinBtn, { ctl: props.pinCtl, id: r.sectionId })
       );
     }),
     laterNote && React.createElement('div', { style: { fontSize: 11, color: '#94a3b8', marginTop: 2, paddingLeft: 4 } }, laterNote)
@@ -991,7 +1010,7 @@ function TriagePanel(props) {
   return React.createElement('div', { className: 'triage-panel' },
     /* ── Pipeline (reg not yet open) ── */
     buckets.readyToOpen.length > 0 &&
-    React.createElement(PipelineLaunchSection, { items: buckets.readyToOpen }),
+    React.createElement(PipelineLaunchSection, { items: buckets.readyToOpen, pinCtl: props.pinCtl }),
 
     /* ── Active Programs (reg open) ── */
     /* Only when there is something to act on: no spots left with people waiting,
@@ -1223,15 +1242,41 @@ function App() {
 
   /* ── Just Launched: sections whose registration opened in the last 3 days.
      These are the sections where FT flips from "demand forecast" to
-     "conversion outcome" — the Overview snapshot + Conversions deep-dive. ── */
+     "conversion outcome" — the Overview snapshot + Conversions deep-dive.
+
+     Keyed on sectionGoLive(), i.e. the EARLIER of the early-access and general
+     windows — not on "Reg Opens" alone. Reported 2026-08-24 (Dan): Smyrna's
+     Concert Series tables open early access a week before their general window,
+     so the first one launched to its early-access families that morning while
+     "Reg Opens" still said Aug 31. Reading only the general window kept the
+     section out of Just Launched for the entire week it was actually converting
+     — the same mistake, in a different place, as the one Launching Soon had.
+     Each row carries which window opened, so "just launched" never implies
+     general registration is open when only early access is. ── */
   var justLaunched = useMemo(function() {
     var now = new Date();
     var cutoff = new Date(now.getTime() - 3 * 86400000);
     return filtered.filter(function(r) {
-      if (!r.regOpens) return false;
-      var o = new Date(r.regOpens);
-      return o <= now && o >= cutoff;
-    }).sort(function(a, b) { return new Date(b.regOpens) - new Date(a.regOpens); });
+      var at = sectionGoLive(r).at;
+      return at && at <= now && at >= cutoff;
+    }).map(function(r) {
+      var gl = sectionGoLive(r);
+      /* Attached rather than wrapped so sectionCard keeps taking a plain row. */
+      r._openedAt = gl.at;
+      r._openedKind = gl.kind;
+      return r;
+    }).sort(function(a, b) {
+      /* Biggest Fast Track stake first, recency as the tie-break — NOT the other
+         way round. Reported 2026-08-24 (Dan): "it should be one of the top
+         items". A busy org launches dozens of sections in a morning, the grid
+         shows 12, and pure recency put sections with one or two FT holds above
+         a concert with 127 people waiting simply because they opened an hour
+         later. What is at stake decides the order; when it ties, the newer one
+         is the more urgent. */
+      var fa = a.ftSignups || 0, fb = b.ftSignups || 0;
+      if (fb !== fa) return fb - fa;
+      return b._openedAt - a._openedAt;
+    });
   }, [filtered]);
 
   var rowsById = useMemo(function() {
@@ -1311,6 +1356,8 @@ function App() {
     }).catch(function() {});
   }
   function isPinned(sectionId) { return pins.indexOf(sectionId) >= 0; }
+  /* Handed to the pre-launch strips, which live outside this closure. */
+  var pinCtl = { isPinned: isPinned, togglePin: togglePin };
 
   function submitDigestSub() {
     var em = (subEmail || '').trim();
@@ -1774,11 +1821,28 @@ function App() {
 
         /* ── 📌 Pinned + 🔥 Just Launched strips ── */
         (function() {
-          function sectionCard(r) {
+          function sectionCard(r, opts) {
+            opts = opts || {};
             var hb = heatBand(r.convPct);
             var pinned = isPinned(r.sectionId);
+            /* A pinned section is usually one that has NOT launched yet (Dan,
+               2026-08-24: that is the whole point of pinning), and the
+               post-launch stats below are all zeroes for one of those. So the
+               card switches: a countdown instead of a conversion rate, spots and
+               demand instead of converted and fill. */
+            var glc = sectionGoLive(r);
+            var pre = !!(glc.at && glc.at > new Date());
+            var preDays = pre ? calDaysUntil(glc.at) : null;
+            var demandPct = (r.capacity > 0 && r.ftSignups != null)
+              ? Math.round(r.ftSignups / r.capacity * 100) : null;
             return React.createElement('div', {
               key: 'sc' + r.sectionId, className: 'launch-card',
+              /* Render-check hooks: a card in this grid at all, and which window
+                 put it there. `early` only appears if Just Launched counts the
+                 early-access window, which is the regression these guard. */
+              'data-just-launched': r._openedAt ? 'true' : null,
+              'data-launched-kind': r._openedKind || null,
+              'data-section-id': r.sectionId || null,
               style: { borderLeftColor: hb.color },
               role: 'button', tabIndex: 0,
               onClick: function() { jumpToConversions(r.sectionId); },
@@ -1788,23 +1852,51 @@ function App() {
               React.createElement('div', { style: { display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'baseline' } },
                 React.createElement('div', null,
                   React.createElement('div', { style: { fontSize: 12, fontWeight: 700, color: '#111' } }, r.section || r.program),
-                  React.createElement('div', { style: { fontSize: 10, color: '#999' } }, r.program, r.regOpens ? ' · ' + hoursAgoLabel(r.regOpens) : '')
+                  React.createElement('div', { style: { fontSize: 10, color: '#999' } }, r.program,
+                    /* Count from the window that actually opened. Using regOpens
+                       here printed nothing at all for an early-access launch,
+                       because that timestamp is still in the future. */
+                    pre
+                      ? ' · ' + (glc.kind === 'early' ? 'early access ' : 'opens ') + fmtDateShort(glc.at)
+                      : ((r._openedAt || r.regOpens) ? ' · ' + hoursAgoLabel(r._openedAt || r.regOpens) : ''),
+                    (!pre && r._openedKind === 'early') && React.createElement('span', {
+                      style: { marginLeft: 5, fontWeight: 700, color: '#7c3aed' },
+                      title: 'Early access is open; general registration opens '
+                        + (r.regOpens ? fmtDateShort(new Date(r.regOpens)) : 'later')
+                    }, '· early access'))
                 ),
                 React.createElement('div', { style: { display: 'flex', gap: 6, alignItems: 'center', flexShrink: 0 } },
-                  React.createElement('span', { className: 'flow-band', style: { background: hb.bg, color: hb.color } }, hb.icon, ' ', r.convPct != null ? r.convPct + '%' : '0%'),
-                  React.createElement('button', {
+                  pre
+                    /* 0% conversion on a section that has not opened is not a
+                       cold section, it is a section with nothing to convert yet. */
+                    ? React.createElement('span', { className: 'flow-band', style: { background: '#f5f3ff', color: '#6d28d9' } },
+                        '🚀 ', dayShort(preDays))
+                    : React.createElement('span', { className: 'flow-band', style: { background: hb.bg, color: hb.color } }, hb.icon, ' ', r.convPct != null ? r.convPct + '%' : '0%'),
+                  /* Pinning is offered where an admin would want to START
+                     watching something — the pre-launch strips — and on the
+                     Pinned strip itself so it can be undone. NOT on a
+                     just-launched card: it has already launched, which is the
+                     opposite of what a pin is for. */
+                  opts.pin && React.createElement('button', {
                     className: 'pin-toggle' + (pinned ? ' pinned' : ''),
                     title: pinned ? 'Unpin from top of Overview' : 'Pin to top of Overview (visible to your whole team)',
                     onClick: function(e) { e.stopPropagation(); togglePin(r.sectionId); }
                   }, '📌')
                 )
               ),
-              React.createElement('div', { className: 'launch-stats' },
-                React.createElement('div', { className: 'launch-stat' }, React.createElement('div', { className: 'ls-v' }, fmtInt(r.ftSignups)), React.createElement('div', { className: 'ls-l' }, 'FT holds')),
-                React.createElement('div', { className: 'launch-stat' }, React.createElement('div', { className: 'ls-v', style: { color: '#059669' } }, fmtInt(r.ftConverted)), React.createElement('div', { className: 'ls-l' }, 'Converted')),
-                React.createElement('div', { className: 'launch-stat' }, React.createElement('div', { className: 'ls-v', style: { color: r.ftPending > 0 ? '#f97316' : '#999' } }, fmtInt(r.ftPending)), React.createElement('div', { className: 'ls-l' }, 'Pending')),
-                React.createElement('div', { className: 'launch-stat' }, React.createElement('div', { className: 'ls-v' }, r.fillPct != null ? r.fillPct + '%' : '—'), React.createElement('div', { className: 'ls-l' }, 'Fill'))
-              )
+              pre
+                ? React.createElement('div', { className: 'launch-stats' },
+                    React.createElement('div', { className: 'launch-stat' }, React.createElement('div', { className: 'ls-v' }, fmtInt(r.ftSignups)), React.createElement('div', { className: 'ls-l' }, 'FT holds')),
+                    React.createElement('div', { className: 'launch-stat' }, React.createElement('div', { className: 'ls-v', style: { color: r.ftPending > 0 ? '#f97316' : '#999' } }, fmtInt(r.ftPending)), React.createElement('div', { className: 'ls-l' }, 'Waiting')),
+                    React.createElement('div', { className: 'launch-stat' }, React.createElement('div', { className: 'ls-v' }, r.capacity > 0 ? fmtInt(r.capacity) : '—'), React.createElement('div', { className: 'ls-l' }, 'Spots')),
+                    React.createElement('div', { className: 'launch-stat' }, React.createElement('div', { className: 'ls-v', style: { color: demandPct != null && demandPct >= 80 ? '#dc2626' : '#111' } }, demandPct != null ? demandPct + '%' : '—'), React.createElement('div', { className: 'ls-l' }, 'Of capacity'))
+                  )
+                : React.createElement('div', { className: 'launch-stats' },
+                    React.createElement('div', { className: 'launch-stat' }, React.createElement('div', { className: 'ls-v' }, fmtInt(r.ftSignups)), React.createElement('div', { className: 'ls-l' }, 'FT holds')),
+                    React.createElement('div', { className: 'launch-stat' }, React.createElement('div', { className: 'ls-v', style: { color: '#059669' } }, fmtInt(r.ftConverted)), React.createElement('div', { className: 'ls-l' }, 'Converted')),
+                    React.createElement('div', { className: 'launch-stat' }, React.createElement('div', { className: 'ls-v', style: { color: r.ftPending > 0 ? '#f97316' : '#999' } }, fmtInt(r.ftPending)), React.createElement('div', { className: 'ls-l' }, 'Pending')),
+                    React.createElement('div', { className: 'launch-stat' }, React.createElement('div', { className: 'ls-v' }, r.fillPct != null ? r.fillPct + '%' : '—'), React.createElement('div', { className: 'ls-l' }, 'Fill'))
+                  )
             );
           }
           var pinnedRows = pins.map(function(sid) { return rowsById[sid] || { sectionId: sid, ghost: true }; });
@@ -1821,14 +1913,14 @@ function App() {
                     React.createElement('div', { style: { fontSize: 11, color: '#999' } }, 'Pinned section is no longer in this feed'),
                     React.createElement('button', { className: 'pin-toggle pinned', style: { marginTop: 6 }, onClick: function() { togglePin(r.sectionId); } }, '📌 Unpin')
                   );
-                  return sectionCard(r);
+                  return sectionCard(r, { pin: true });
                 })
               )
             ),
             justLaunched.length > 0 && React.createElement('div', { style: { marginBottom: 24 } },
               React.createElement('div', { style: { display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 10 } },
                 React.createElement('div', { style: { fontSize: 13, fontWeight: 800, color: '#b91c1c', textTransform: 'uppercase', letterSpacing: '.05em' } }, '🔥 Just Launched'),
-                React.createElement('div', { style: { fontSize: 11, color: '#888' } }, 'registration opened in the last 3 days · click a section for the post-launch deep dive'),
+                React.createElement('div', { style: { fontSize: 11, color: '#888' } }, 'registration opened in the last 3 days, early access included · most Fast Track demand first · click a section for the post-launch deep dive'),
                 React.createElement('button', { className: 'flow-action', style: { marginLeft: 'auto', background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe' }, onClick: function() { setSubOpen(true); } }, '📬 Email me this')
               ),
               React.createElement('div', { className: 'launch-grid' }, launchRows.map(sectionCard)),
@@ -1839,8 +1931,8 @@ function App() {
         })(),
 
                 /* Demand Leaderboard */
-        React.createElement(TriagePanel, { programs: programs }),
-        React.createElement(ColdPipelineStrip, { sections: filtered, pipelineRows: filteredPipeline }),
+        React.createElement(TriagePanel, { programs: programs, pinCtl: pinCtl }),
+        React.createElement(ColdPipelineStrip, { sections: filtered, pipelineRows: filteredPipeline, pinCtl: pinCtl }),
         /* Demand Leaderboard removed (Dan, 2026-08-24): "feels like just noise".
            It was a third ranking of the same programs — Launching Soon already
            leads with what is going live soonest and hottest, and the
