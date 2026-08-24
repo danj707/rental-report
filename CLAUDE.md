@@ -387,6 +387,101 @@ Windham, Watertown, Norman, Apex.
   not start times) and `[data-oe-timed="4"]` (multi-day excluded). Both attribute
   cases were seen to fail on the real regression in a real browser.
 
+## Send Test in the subscribe modal — one payload, two buttons (2026-08-24)
+
+Dan: "add a 'Send Test' button to the email subscription option on reports that
+offer emails… you'd click to send a test, check the test email, then subscribe."
+Requires a real email address, and is scoped to the filters set at the moment it
+is pressed.
+
+**The trap this is built around.** `/:org/admin/test-send` already existed for
+the Test button beside an EXISTING subscriber, so it read the report's filters
+and date range out of the saved subscription. The modal has no subscription yet
+— that is the point of the button — so wiring it straight to the old route would
+have sent an **unfiltered, default-window** email and reported success. A test
+that passes without testing the thing is worse than none: you check your inbox,
+see a report, subscribe, and get a different one every morning.
+
+- The route now takes an explicit `reportParams` (a plain string, or the keyed
+  object `/admin/subscribe` takes) and `dateRange`, which **beat** the saved
+  subscription; with neither, the saved one still wins, so the admin Test button
+  is unchanged.
+- Both are cleaned by `cleanReportParamString()`, the **same helper**
+  `/admin/subscribe` uses — `test-send.spec.js` asserts only one copy of that
+  loop exists, because two would drift by a stripped parameter nobody looks at.
+- The route echoes the `scope` it used, so the caller can say what it sent
+  rather than claiming a filtered test it did not run. That echo is also what
+  makes the behaviour observable to the spec without a Resend key.
+- **The pages build ONE payload for both buttons** (`subscribePayload()` in
+  gl/facility, `digestPayload()` in fasttrack). On Fast Track that matters more
+  than it looks: `digest=1` is what makes the email a digest instead of a PDF, so
+  a test that dropped it would preview an entirely different email.
+- Validation a real outbound email needs: a valid address (both buttons are
+  disabled until then), a known report type, a real cadence, and **no date range
+  the scheduler itself refuses** — a GL rollup covering today leaves before the
+  day has any postings, and sending that as a "test" teaches the reader the
+  report is broken.
+
+Guarded by `scripts/test-send.spec.js` (12 assertions, in CI), mutation-tested
+four ways: ignoring the override (the original bug), dropping email validation,
+allowing a blocked range, and the page rebuilding its filters instead of reusing
+the payload. All four fail by name.
+
+## The new verticals reach the Director's Report and the org cards (2026-08-24)
+
+A tab nobody can find is a tab nobody uses, and a quarterly report that stops at
+"facility rentals" says nothing about the two segments with their own tabs.
+
+- **`dirOutdoor()` / `dirFields()` slice `facC`** — the facility feed
+  `buildDirectorsQuarter()` ALREADY fetches — so both sections cost **zero extra
+  Metabase time**. `scripts/directors-facilities.spec.js` asserts no new
+  `fetchMBDirect` appears for them.
+- **The hour rules are reimplemented server-side, and pinned to the client's.**
+  The spec lifts BOTH the server helpers and `facilities.html`'s own
+  `oeRowHours`/`oeIsArrival`/`OUTDOOR_TYPES` and requires they agree row by row.
+  Two surfaces reporting the same quarter's hours differently is worse than one
+  surface not reporting them — a director reads the PDF, a manager reads the tab.
+- **The peak hour counts hours COVERED, not started**, same as the tabs. The
+  fixture discriminates: starts peak at 10am, coverage at 11am. The panel says
+  which rule it used on screen, because "busiest at 7pm" means two different
+  things otherwise.
+- **Card 17294 repeats a multi-day booking's `Total` on EVERY day of the run** —
+  that is why the arrival guard exists, and the spec's tournament rows carry the
+  same Total three times so removing the guard triples revenue and fails.
+- Mutation-tested five ways: defaulting a missing End to end-of-day, peak from
+  start times, counting every row as a booking, lights not read from add-on
+  names, and an outdoor type dropped. All five fail by name.
+
+### PINNED: the Pulse "Hours Booked" card (Dan, 2026-08-24)
+
+Mocked up and **deliberately not built** — "we've got a lot of reports and would
+prefer to focus on those." Written down so the reasoning does not have to be
+redone when it next comes up:
+
+- `refreshOrgPulse()` already fetches **six months of the facility feed** to draw
+  the Bookings sparkline, and the hourly verticals are a slice of those same rows
+  — so the whole addition is one more `pulse.items.push`, in the same loop, with
+  the same sparkline / delta / pace shape. No new query and no new page.
+- **Hours, not bookings**, is the unit: Bookings is already a card and counts a
+  two-hour picnic table the same as an all-day tournament.
+- It would self-hide like Product Sales does — no pavilions and no fields, no
+  card.
+- If it is ever built, the hour rules must come from the same place as
+  `dirOutdoor`/`dirFields` and be pinned by `directors-facilities.spec.js`, or a
+  third surface starts reporting a different number for the same month.
+
+Mockup: https://claude.ai/code/artifact/b8db8343-588e-4db8-a65a-ba543ae71eaa
+
+**Org dashboard cards now carry tab chips** (`CARD_TABS` in `public/org.html`):
+Facilities → camping / outdoor / fields / racket / golf / aquatics / ice, and
+Memberships → check-ins / retention. Nested `<a>` is invalid, so a card with
+chips renders as `.card-wrap` holding the anchor plus a sibling chip row —
+pinning still works through the wrapper (verified in a browser, not assumed).
+Every tab renders for every org with its own empty state, so a chip is never a
+dead end. Descriptions in **three** places had gone stale and now name the same
+things: `REPORT_META` (org.html), `reportMeta` (the admin dashboard, inside the
+template literal — no apostrophes), and the Director's Report's own blurb.
+
 ## Memberships Check-Ins tab — one filter, two member ids (2026-08-24)
 
 Five changes Dan asked for on the check-in report, all client-side except the

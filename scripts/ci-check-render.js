@@ -348,6 +348,47 @@ function membershipRows() {
   ];
 }
 
+// ── Director's Report fixture ───────────────────────────────────────────────
+// Only what the two new sections need. The AGGREGATION is pinned by
+// scripts/directors-facilities.spec.js against the client's own hour helpers;
+// this case exists because a panel can compute perfectly and still throw while
+// rendering — which is how two Camping tabs shipped blank.
+function directorsQuarter() {
+  return {
+    ok: true,
+    quarter: { year: 2026, q: 2, label: "Q2 2026", start: "2026-04-01", end: "2026-06-30", partial: false },
+    prevLabel: "Q1 2026",
+    generatedAt: "2026-07-01T12:00:00.000Z",
+    gl: { gross: 412000, refunds: 8000, net: 404000, payments: 3100, refundCount: 60,
+          accounts: [{ name: "Facility Rentals", net: 120000, prevNet: 100000 }],
+          prev: { gross: 380000, refunds: 7000, net: 373000, payments: 2900 } },
+    transactions: { cur: 3100, prev: 2900 },
+    facility: { n: 1840, rev: 262000, residentPct: 71.2, managed: 1500, instant: 340,
+                topLocs: [{ name: "Community Park", n: 900, rev: 140000 }],
+                prevN: 1700, prevRev: 240000 },
+    // Hourly rentals, and the panels have to say which peak-hour rule they used.
+    outdoor: { bookings: 312, hours: 2480, timed: 300, multiDay: 12, avgBlock: 8.3,
+               revenue: 41000, addOnFees: 3100, sites: 46,
+               topSites: [{ name: "Oak Pavilion", location: "Community Park", bookings: 60, hours: 520, rev: 9000, days: 48 },
+                          { name: "Picnic Area A", location: "Community Park", bookings: 40, hours: 300, rev: 4000, days: 33 }],
+               types: [{ type: "outdoor-event-space", label: "Pavilions & event spaces", bookings: 220, hours: 1900, rev: 33000 },
+                       { type: "picnic-table", label: "Picnic areas", bookings: 80, hours: 520, rev: 6500 },
+                       { type: "bounce-house", label: "Bounce houses", bookings: 12, hours: 60, rev: 1500 }],
+               peakHour: "11am", peakBookings: 38, instant: 40, managed: 272, managedPct: 87.2,
+               eveningPct: 12.5, lights: { bookings: 0, pct: 0 }, prep: { bookings: 20, pct: 6.4 },
+               withAddOn: 90, addOnPct: 28.8, topAddOns: [{ name: "Alcohol Permit", n: 40 }] },
+    fields: { bookings: 640, hours: 3760, timed: 600, multiDay: 40, avgBlock: 6.3,
+              revenue: 88000, addOnFees: 12000, sites: 22,
+              topSites: [{ name: "Diamond 1", location: "Community Park", bookings: 120, hours: 700, rev: 18000, days: 61 },
+                         { name: "Multipurpose Field", location: "North Park", bookings: 90, hours: 540, rev: 12000, days: 44 }],
+              types: [{ type: "field", label: "field", bookings: 640, hours: 3760, rev: 88000 }],
+              peakHour: "7pm", peakBookings: 96, instant: 29, managed: 611, managedPct: 95.5,
+              eveningPct: 61.4, lights: { bookings: 210, pct: 32.8 }, prep: { bookings: 88, pct: 13.8 },
+              withAddOn: 300, addOnPct: 46.9,
+              topAddOns: [{ name: "Field Light Fee", n: 160 }, { name: "Attendant", n: 60 }] },
+  };
+}
+
 const STUBS = [
   { match: /\/facilities\/api\/campsites/, body: () => campsitesGeo },
   // One feed, both tabs: Camping filters it to campsite rows and Outdoor Events
@@ -362,6 +403,8 @@ const STUBS = [
   // org_id is what the member links are built from — without it the cells fall
   // back to plain text, which is the behaviour before the card ships the uuid.
   { match: /\/checkins\/api\/data/,     body: () => ({ rows: checkinRows(), meta: { org_id: "org-uuid-1" } }) },
+  { match: /\/directors-report\/api\/quarters/, body: () => ({ ok: true, quarters: [{ year: 2026, q: 2, key: "2026-Q2", label: "Q2 2026", stored: true }] }) },
+  { match: /\/directors-report\/api\/quarter/,  body: () => directorsQuarter() },
   { match: /\/memberships\/api\/data/,  body: () => ({ rows: membershipRows(), meta: { org_id: "org-uuid-1" } }) },
   { match: /\/api\/data/,                   body: () => ({ rows: campsiteRows(), meta: {} }) },
   { match: /\/api\/pulse/,                  body: () => ({ items: [], generated: null }) },
@@ -514,6 +557,20 @@ const CASES = [
     needs: "a[data-ci-user-link][href$=\"/users/24d709e5-675b-4d7e-91e3-f7b18daeb41c\"]" },
   { name: "memberships · month bars",     path: "/{org}/memberships?tab=checkins", needs: "[data-ci-mo=\"2026-08\"]" },
   { name: "memberships · month header",   path: "/{org}/memberships?tab=checkins", needs: "[data-ci-mo-head=\"2026-08\"]" },
+  // The Director's Report's two newest sections. Outdoor spaces and fields are
+  // HOURLY rentals sliced out of the same facility feed the report already
+  // fetches, so the panels are free to render — and each must state the rule
+  // behind its peak hour, because "busiest at 7pm" means two different things
+  // depending on whether hours are counted as covered or started.
+  { name: "directors · outdoor panel", path: "/{org}/directors-report", needs: "[data-dr-outdoor]" },
+  { name: "directors · fields panel",  path: "/{org}/directors-report", needs: "[data-dr-fields]" },
+  // The hub's verticals are two clicks deep behind a card that just says
+  // "Facilities". The chips are how Fields and Outdoor Events are findable at
+  // all from the org landing page.
+  { name: "org landing · hub tab chips", path: "/{org}",
+    needs: ".card-tab[href*=\"tab=fields\"]" },
+  { name: "org landing · checkins chip", path: "/{org}",
+    needs: ".card-tab[href*=\"tab=checkins\"]" },
   { name: "campmap · stay search", path: "/{org}/campmap",                needs: "#departPick[max]" },
   // The Campsite Type filter. `option[value="tent-and-rv"]` is only there if the
   // LIVE site feed landed and buildTypeFilter() re-ran off its subType — the

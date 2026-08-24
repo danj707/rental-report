@@ -612,6 +612,97 @@ function App() {
             </div>
           )}
 
+
+          {/* ── Outdoor event spaces & fields ──────────────────────────────
+              Both come off the facility feed the Facilities section already
+              uses, so they cost nothing extra to fetch. They render only when
+              the org actually books them — most orgs book one and not the
+              other, and an empty panel reads as a broken one. Older snapshots
+              predate these keys and simply skip. */}
+          {(d.outdoor || d.fields) && (
+            <div data-dr-sites="1">
+              <div className="vsec">
+                <div className="vsec-t"><span>&#127914;</span> Outdoor Spaces &amp; Fields</div>
+                <div className="vsec-s">
+                  Pavilions, picnic areas and athletic fields &mdash; hourly rentals, so the unit is the booked hour
+                  {d.outdoor && d.outdoor.multiDay + (d.fields ? d.fields.multiDay : 0) > 0
+                    ? " · multi-day bookings carry no per-day hours and are excluded from hour totals"
+                    : ""}
+                </div>
+              </div>
+              <div className="two-col">
+                {d.outdoor && (
+                  <div className="panel" data-dr-outdoor="1">
+                    <div className="panel-h">&#127914; Pavilions, shelters &amp; picnic areas</div>
+                    <table className="mini">
+                      <tbody>
+                        <tr><td className="b">Bookings</td><td className="r">{fmtNum(d.outdoor.bookings)} <span className="tiny">across {fmtNum(d.outdoor.sites)} spaces</span></td></tr>
+                        <tr><td className="b">Hours booked</td><td className="r">{fmtNum(d.outdoor.hours)} hrs <span className="tiny">{fmtNum(d.outdoor.timed)} timed</span></td></tr>
+                        {d.outdoor.avgBlock != null && <tr><td className="b">Average block</td><td className="r">{d.outdoor.avgBlock}h</td></tr>}
+                        {d.outdoor.peakHour && <tr><td className="b">Busiest hour <span className="tiny">hours covered, not started</span></td><td className="r">{d.outdoor.peakHour}</td></tr>}
+                        <tr><td className="b">Charged</td><td className="r">{fmtMoney(d.outdoor.revenue)}{d.outdoor.addOnFees > 0 ? <span className="tiny"> · {fmtMoney(d.outdoor.addOnFees)} add-ons</span> : null}</td></tr>
+                      </tbody>
+                    </table>
+                    {d.outdoor.types.length > 1 && (
+                      <div style={{ marginTop: 10 }}>
+                        <BarList rows={d.outdoor.types.map(t => ({
+                          label: t.label, value: t.bookings,
+                          title: t.label + " — " + fmtNum(t.bookings) + " bookings, " + fmtNum(t.hours) + " hrs",
+                        }))} />
+                      </div>
+                    )}
+                    {d.outdoor.topSites.length > 0 && (
+                      <div style={{ marginTop: 10 }}>
+                        <div className="panel-h" style={{ fontSize: 11 }}>Busiest spaces <span className="tiny">by hours booked</span></div>
+                        <BarList rows={d.outdoor.topSites.map(s => ({
+                          label: s.name, value: s.hours,
+                          title: s.name + (s.location ? " · " + s.location : "") + " — " + fmtNum(s.hours) + " hrs across " + fmtNum(s.bookings) + " bookings, " + fmtNum(s.days) + " days used",
+                        }))} />
+                      </div>
+                    )}
+                  </div>
+                )}
+                {d.fields && (
+                  <div className="panel" data-dr-fields="1">
+                    <div className="panel-h">&#9918; Athletic fields</div>
+                    <table className="mini">
+                      <tbody>
+                        <tr><td className="b">Bookings</td><td className="r">{fmtNum(d.fields.bookings)} <span className="tiny">across {fmtNum(d.fields.sites)} fields</span></td></tr>
+                        <tr><td className="b">Hours booked</td><td className="r">{fmtNum(d.fields.hours)} hrs <span className="tiny">{fmtNum(d.fields.timed)} timed</span></td></tr>
+                        {d.fields.avgBlock != null && <tr><td className="b">Average block</td><td className="r">{d.fields.avgBlock}h</td></tr>}
+                        {d.fields.peakHour && <tr><td className="b">Busiest hour <span className="tiny">hours covered, not started</span></td><td className="r">{d.fields.peakHour}</td></tr>}
+                        {d.fields.managedPct != null && (
+                          <tr title="Leagues come through staff on seasonal permits, so a low instant-book share is the baseline for fields rather than a self-service failure."><td className="b">Staff-booked <span className="tiny">the norm for fields</span></td><td className="r">{d.fields.managedPct}%</td></tr>
+                        )}
+                        {d.fields.eveningPct != null && (
+                          <tr><td className="b">Start after 5pm</td><td className="r">{d.fields.eveningPct}%{d.fields.lights.pct != null ? <span className="tiny"> · {d.fields.lights.pct}% paid a light fee</span> : null}</td></tr>
+                        )}
+                        <tr><td className="b">Charged</td><td className="r">{fmtMoney(d.fields.revenue)}{d.fields.addOnFees > 0 ? <span className="tiny"> · {fmtMoney(d.fields.addOnFees)} add-ons</span> : null}</td></tr>
+                      </tbody>
+                    </table>
+                    {d.fields.topSites.length > 0 && (
+                      <div style={{ marginTop: 10 }}>
+                        <div className="panel-h" style={{ fontSize: 11 }}>Busiest fields <span className="tiny">by hours booked</span></div>
+                        <BarList rows={d.fields.topSites.map(s => ({
+                          label: s.name, value: s.hours,
+                          title: s.name + (s.location ? " · " + s.location : "") + " — " + fmtNum(s.hours) + " hrs across " + fmtNum(s.bookings) + " bookings, " + fmtNum(s.days) + " days used",
+                        }))} />
+                      </div>
+                    )}
+                    {d.fields.topAddOns.length > 0 && (
+                      <div style={{ marginTop: 10 }}>
+                        <div className="panel-h" style={{ fontSize: 11 }}>Most-attached add-ons <span className="tiny">{d.fields.addOnPct}% of bookings carry one</span></div>
+                        <BarList rows={d.fields.topAddOns.map(a => ({
+                          label: a.name, value: a.n, title: a.name + " — on " + fmtNum(a.n) + " bookings",
+                        }))} />
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* ── Community ── */}
           {d.users && (
             <div>

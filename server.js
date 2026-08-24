@@ -4756,6 +4756,23 @@ const REPORT_BLOCKED_RANGES = {
   // rule still hold them and they do return data.
   gl: { today: GL_RANGE_REASON, next7: GL_RANGE_REASON, next30: GL_RANGE_REASON },
 };
+// A report's saved filters travel as a URL query string ("desks=a,b&methods=cash").
+// Strip the things that are page state rather than filter state, and drop empty
+// values so an unfiltered report never carries "desks=" and looks filtered.
+const VALID_DATE_RANGES = ["today", "yesterday", "prior7", "prior30", "next7", "next30", "last7", "lastMonth"];
+function cleanReportParamString(val) {
+  if (typeof val !== "string" || !val) return "";
+  const p = new URLSearchParams(val.slice(0, 4000));
+  p.delete("token");
+  p.delete("_print");
+  const filtered = new URLSearchParams();
+  for (const [k, v] of p) {
+    if (v === "" || v === "null" || v === "undefined") continue;
+    filtered.set(k, v);
+  }
+  return filtered.toString();
+}
+
 function rangeBlocked(report, dateRange) {
   if (!dateRange) return null;
   return (REPORT_BLOCKED_RANGES[report] || {})[dateRange] || null;
@@ -6127,7 +6144,7 @@ Respond ONLY with a valid JSON array of 4\u20136 objects. Each object: {"type":"
 
 Focus on: household composition patterns (family size, age mix between parents and children), youth vs adult programming balance based on actual member ages, data quality issues worth addressing, growth patterns, residency implications for pricing, grade-level program opportunities (which grades are most represented), geographic reach, and underserved demographic segments. Be specific with numbers from the data. Do not invent numbers not in the input.`;
 
-const DIRECTORS_SYS_PROMPT = `You are an executive analyst for US municipal parks & recreation departments. You receive one quarter's pre-computed operational metrics for one department: GL revenue with prior-quarter comparison, program enrollment with top and low-fill programs, waitlist demand and the offer funnel, facility rentals and court usage, community demographics, self-service vs staff order mix, and instructor-led program figures. Some metric families may be absent — never mention missing data.
+const DIRECTORS_SYS_PROMPT = `You are an executive analyst for US municipal parks & recreation departments. You receive one quarter's pre-computed operational metrics for one department: GL revenue with prior-quarter comparison, program enrollment with top and low-fill programs, waitlist demand and the offer funnel, facility rentals and court usage, outdoor event spaces (pavilions, picnic areas, bounce houses) and athletic fields by the hour, community demographics, self-service vs staff order mix, and instructor-led program figures. Some metric families may be absent — never mention missing data.
 
 Return EXACTLY 4 insights as a JSON array and nothing else — no prose, no preamble, no markdown code fences. Each element is an object with exactly these keys:
 {
@@ -6139,6 +6156,9 @@ Return EXACTLY 4 insights as a JSON array and nothing else — no prose, no prea
 
 Rules:
 - Ground EVERY figure in the data provided. Never invent numbers; only name programs, sections, or parks that appear in the data.
+- Outdoor spaces and fields are HOURLY rentals, so their unit is the booked hour and the day-part — the word "night" belongs to camping and never to them. Multi-day bookings carry no per-day hours and are excluded from those hour totals, so never present hours as covering every booking.
+- A low instant-book share on FIELDS is the baseline, not a failure: leagues come through staff on seasonal permits. Do not read it as a self-service problem.
+- Every denominator in these two families is BOOKED sites — a pavilion nobody reserved is not in the data at all — so never describe them as utilization or occupancy of total inventory.
 - This is a quarterly executive report a director may hand to a city council: lead with what changed vs the prior quarter, quantify unmet demand (waitlist pressure, offers claimed), and flag operational wins (self-service share, facility revenue) or risks (under-filled programs, refund spikes, data-completeness gaps).
 - If "partial" is true the quarter is still in progress — do not compare its totals against the full prior quarter.
 - Be terse. No filler. Vary "type" across the four insights where the data supports it.`;
@@ -8070,7 +8090,7 @@ app.post("/:org/admin/subscribe", (req, res) => {
   const validReports = reports.filter(r => REPORT_TYPES.includes(r));
   if (!validReports.length) return res.status(400).json({ error: "No valid report types" });
 
-  const validDateRanges = ["today","yesterday","prior7","prior30","next7","next30","last7","lastMonth"];
+  const validDateRanges = VALID_DATE_RANGES;
 
   // The admin form doesn't offer these pairings, but the form is not the only
   // way into this route.
@@ -8084,16 +8104,7 @@ app.post("/:org/admin/subscribe", (req, res) => {
   if (reportParams && typeof reportParams === "object" && !Array.isArray(reportParams)) {
     for (const [key, val] of Object.entries(reportParams)) {
       if (!REPORT_TYPES.includes(key)) continue;
-      if (typeof val !== "string") continue;
-      const p = new URLSearchParams(val);
-      p.delete("token");
-      p.delete("_print");
-      const filtered = new URLSearchParams();
-      for (const [k, v] of p) {
-        if (v === "" || v === "null" || v === "undefined") continue;
-        filtered.set(k, v);
-      }
-      const out = filtered.toString();
+      const out = cleanReportParamString(val);
       if (out.length) cleanReportParams[key] = out;
     }
   }
@@ -8162,18 +8173,69 @@ app.post("/:org/admin/test-email", async (req, res) => {
   }
 });
 
+// Send one report immediately, without waiting for a schedule. Two callers:
+// the Test button beside an existing subscriber, and the Send Test button in the
+// subscribe modal on a report page — where there is NO subscription yet.
+//
+// That second case is the whole reason this route takes overrides. Reading the
+// scope only from a saved subscription would send an unfiltered, default-window
+// email and report success: a test that passes without testing what is about to
+// be saved is worse than no test at all. So an explicit reportParams/dateRange
+// wins, and it is cleaned by the SAME helper /admin/subscribe uses, so the test
+// email and the subscription that follows it are built from identical filters.
 app.post("/:org/admin/test-send", async (req, res) => {
   const slug = req.params.org;
   if (!ORGS[slug]) return res.status(404).json({ error: "Unknown org" });
   const { email, report, schedule, subId } = req.body;
   if (!email || !report || !schedule) return res.status(400).json({ error: "email, report, and schedule required" });
+  // A test send is an outbound email to whatever address was typed, so it gets
+  // the same validation the subscribe route applies. The org gate is a no-op
+  // today (EMAIL_ENABLED_ORGS is duck-typed to every known org) and is here so
+  // that if it ever becomes a real allowlist, this route stops sending too
+  // rather than quietly becoming the way around it.
+  if (!EMAIL_ENABLED_ORGS.has(slug)) return res.status(403).json({ error: "Email subscriptions are not enabled for this organization" });
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email).trim())) return res.status(400).json({ error: "A valid email address is required" });
+  if (!REPORT_TYPES.includes(report)) return res.status(400).json({ error: "Unknown report type" });
+  if (!["daily", "weekly", "monthly"].includes(schedule)) return res.status(400).json({ error: "schedule must be daily, weekly, or monthly" });
+
   // Look up the specific subscription by ID (or fall back to email match)
   const subs = db.getSubscriptions(slug);
   const sub = subId ? subs.find(s => String(s.id) === String(subId)) : subs.find(s => s.email === email);
-  const savedParams = (sub?.reportParams && typeof sub.reportParams === "object") ? (sub.reportParams[report] || null) : null;
-  const dateRange = (sub?.reportDateRanges && sub.reportDateRanges[report]) || sub?.dateRange || null;
+  const subParams = (sub?.reportParams && typeof sub.reportParams === "object") ? (sub.reportParams[report] || null) : null;
+  const subRange = (sub?.reportDateRanges && sub.reportDateRanges[report]) || sub?.dateRange || null;
+
+  // Overrides from the modal: the filters as they stand on screen right now.
+  // reportParams arrives as a plain string (this route sends one report) or as
+  // the keyed object /admin/subscribe takes, so the page can hand over the same
+  // shape either way.
+  const rawOverride = typeof req.body.reportParams === "string"
+    ? req.body.reportParams
+    : (req.body.reportParams && typeof req.body.reportParams === "object" && !Array.isArray(req.body.reportParams))
+      ? req.body.reportParams[report]
+      : null;
+  const overrideParams = rawOverride != null ? cleanReportParamString(rawOverride) : null;
+  const rawRange = typeof req.body.dateRange === "string" ? req.body.dateRange
+    : (req.body.reportDateRanges && typeof req.body.reportDateRanges === "object") ? req.body.reportDateRanges[report]
+    : null;
+  const overrideRange = VALID_DATE_RANGES.includes(rawRange) ? rawRange : null;
+
+  const savedParams = overrideParams != null ? (overrideParams || null) : subParams;
+  const dateRange = overrideRange || subRange;
   const locationFilter = sub?.locationFilter || null;
-  res.json({ ok: true, message: "Sending in background — check the log in a moment" });
+
+  // A GL rollup covering today leaves before the day has any postings. The
+  // scheduler already refuses that pairing; a test that ignored it would send a
+  // blank email and teach the reader the report is broken.
+  const blocked = rangeBlocked(report, dateRange);
+  if (blocked) return res.status(400).json({ error: blocked });
+
+  res.json({
+    ok: true,
+    message: "Sending in background — check your inbox in a moment",
+    // Echo the scope actually used, so the caller can say what it sent rather
+    // than claiming a filtered test it did not run.
+    scope: { report, schedule, dateRange: dateRange || null, filters: savedParams || null },
+  });
   sendReportEmail(slug, email, report, schedule, locationFilter, dateRange, savedParams)
     .then(_res => logEvent(slug, report, "email", req, { email, schedule, trigger: "manual", status: _res && _res.ok ? "sent" : "error" }))
     .catch(err => console.error("[test-send] Error:", err));
@@ -8725,6 +8787,166 @@ function dirFacility(rows) {
   };
 }
 
+// ── Outdoor event spaces & fields, for the Director's Report ──────────────
+// Both slice the SAME facility feed the report already fetches (card 17294), so
+// these sections cost no extra Metabase time — the rows are in hand.
+//
+// The hour rules are the Facilities hub's, deliberately reimplemented here
+// rather than approximated, because two surfaces reporting the same quarter's
+// hours differently is worse than one surface not reporting them. They are
+// pinned against the client's own numbers by scripts/directors-facilities.spec.js:
+//   · card 17294 prints Begin on a booking's FIRST day and End on its LAST, so a
+//     multi-day booking has no per-day hours and is EXCLUDED from every hour
+//     figure rather than divided into a guess (defaulting a missing End to
+//     end-of-day invents a ten-hour booking out of a day boundary),
+//   · a booking is counted once, on its arrival row,
+//   · the peak hour counts hours COVERED, not hours started — an 11am-4pm
+//     shelter rental fills five hours. Start-times-only peaks at the hour the
+//     paperwork begins, which is a different question.
+const DIR_OUTDOOR_TYPES = ["outdoor-event-space", "picnic-table", "bounce-house"];
+const DIR_OUTDOOR_LABEL = {
+  "outdoor-event-space": "Pavilions & event spaces",
+  "picnic-table": "Picnic areas",
+  "bounce-house": "Bounce houses",
+};
+// Lights on a field are an ADD-ON LINE ITEM, not the lighting integration:
+// reservation_lighting_schedule carries 5 field rows platform-wide while the
+// most-attached field add-ons are all light fees. So they are read from names.
+const DIR_FIELD_LIGHT_RE = /light/i;
+const DIR_FIELD_PREP_RE = /attendant|prep|lining|clean|restroom|supply|park service|trash|maintenance|staff|janitor|security|umpire|scorekeep/i;
+
+const DIR_CLOCK = /^(\d{1,2}):(\d{2})\s*(am|pm)$/i;
+function dirClockMin(v) {
+  const m = DIR_CLOCK.exec(String(v == null ? "" : v).trim());
+  if (!m) return null;
+  const h = parseInt(m[1], 10) % 12;
+  return (h + (/pm/i.test(m[3]) ? 12 : 0)) * 60 + parseInt(m[2], 10);
+}
+const dirTotDays = r => Number(r["Multi-Day Days"]) || 0;
+const dirIsMulti = r => dirTotDays(r) > 1;
+const dirIsArrival = r => (Number(r["Multi-Day Day#"]) || 0) <= 1;
+function dirRowHours(r) {
+  if (dirIsMulti(r)) return null;
+  const a = dirClockMin(r["Begin"]), b = dirClockMin(r["End"]);
+  if (a == null || b == null) return null;
+  let d = b - a;
+  if (d <= 0) d += 1440;
+  return Math.min(d, 1440) / 60;
+}
+function dirHourLabel(h) {
+  const x = ((h % 24) + 24) % 24;
+  return x === 0 ? "12am" : x === 12 ? "12pm" : x > 12 ? (x - 12) + "pm" : x + "am";
+}
+// Add-ons arrive as one display string per row: "Field Light Fee ($25.00),
+// Attendant ($40.00)". The split keeps a comma inside a parenthesised price out
+// of it.
+function dirAddOnNames(raw) {
+  const s = String(raw == null ? "" : raw).trim();
+  if (!s) return [];
+  return s.split(/,(?![^(]*\))/).map(part => {
+    const t = part.trim();
+    if (!t) return null;
+    const m = /^(.*?)\s*\(\$?([\d,.]+)\)\s*$/.exec(t);
+    return ((m ? m[1] : t) || "").trim() || null;
+  }).filter(Boolean);
+}
+
+// Shared aggregation for any site-type slice of the facility feed.
+function dirSiteSlice(rows, types) {
+  if (!Array.isArray(rows) || !rows.length) return null;
+  const want = new Set(types);
+  const scoped = rows.filter(r => want.has(String(r["Site Type"] || "")));
+  if (!scoped.length) return null;
+  const arrivals = scoped.filter(dirIsArrival);
+  if (!arrivals.length) return null;
+
+  let hours = 0, timed = 0, multiDay = 0, revenue = 0, addOnFees = 0, instant = 0, evening = 0, withStart = 0;
+  const cover = {};                       // hour → bookings covering it
+  const sites = {};                       // location||site → per-site rollup
+  const byType = {};
+  const addOns = {};
+  let withAddOn = 0, lightBookings = 0, prepBookings = 0;
+
+  for (const r of scoped) {
+    const site = String(r["Facility"] || "—");
+    const loc = String(r["Location"] || "");
+    const key = loc + "||" + site;
+    const s = sites[key] || (sites[key] = { name: site, location: loc, bookings: 0, hours: 0, rev: 0, days: {} });
+    s.days[String(r["Date"] || "").slice(0, 10)] = 1;
+    const h = dirRowHours(r);
+    if (h != null) { s.hours += h; hours += h; timed++; }
+    if (dirIsMulti(r)) multiDay++;
+    if (!dirIsArrival(r)) continue;
+
+    s.bookings++;
+    s.rev += Number(r["Total"]) || 0;
+    revenue += Number(r["Total"]) || 0;
+    addOnFees += Number(r["Add-On Fees"]) || 0;
+    const t = String(r["Site Type"] || "");
+    const bt = byType[t] || (byType[t] = { type: t, label: DIR_OUTDOOR_LABEL[t] || t, bookings: 0, hours: 0, rev: 0 });
+    bt.bookings++; bt.rev += Number(r["Total"]) || 0;
+    if (h != null) bt.hours += h;
+    if (String(r["Booking Type"] || "").toLowerCase().indexOf("instant") >= 0) instant++;
+    const bm = dirClockMin(r["Begin"]);
+    if (bm != null) {
+      withStart++;
+      if (bm >= 17 * 60) evening++;
+      // Coverage: every hour the booking spans, not just the one it starts in.
+      if (h != null) {
+        const startH = Math.floor(bm / 60);
+        for (let i = 0; i < Math.max(1, Math.ceil(h)); i++) {
+          const hh = (startH + i) % 24;
+          cover[hh] = (cover[hh] || 0) + 1;
+        }
+      }
+    }
+    const names = dirAddOnNames(r["Add Ons"]);
+    if (names.length) withAddOn++;
+    let hitLight = false, hitPrep = false;
+    for (const n of names) {
+      addOns[n] = (addOns[n] || 0) + 1;
+      if (DIR_FIELD_LIGHT_RE.test(n)) hitLight = true;
+      else if (DIR_FIELD_PREP_RE.test(n)) hitPrep = true;
+    }
+    if (hitLight) lightBookings++;
+    if (hitPrep) prepBookings++;
+  }
+
+  const bookings = arrivals.length;
+  const hourKeys = Object.keys(cover).map(Number);
+  let peakH = null, peakN = 0;
+  for (const h of hourKeys.sort((a, b) => a - b)) if (cover[h] > peakN) { peakN = cover[h]; peakH = h; }
+  const siteList = Object.values(sites).map(s => ({
+    name: s.name, location: s.location, bookings: s.bookings,
+    hours: Math.round(s.hours), rev: Math.round(s.rev), days: Object.keys(s.days).length,
+  }));
+
+  return {
+    bookings, hours: Math.round(hours), timed, multiDay,
+    avgBlock: timed ? Math.round(hours / timed * 10) / 10 : null,
+    revenue: Math.round(revenue), addOnFees: Math.round(addOnFees),
+    sites: siteList.length,
+    // Ranked by hours, with days used as the tiebreak BEFORE revenue: a site
+    // whose bookings are all multi-day has no hours to rank on and would
+    // otherwise sink to the bottom as though nobody booked it.
+    topSites: siteList.sort((a, b) => b.hours - a.hours || b.days - a.days || b.rev - a.rev).slice(0, 6),
+    types: Object.values(byType).sort((a, b) => b.bookings - a.bookings),
+    peakHour: peakH == null ? null : dirHourLabel(peakH),
+    peakBookings: peakN || null,
+    instant, managed: bookings - instant,
+    managedPct: bookings ? Math.round((bookings - instant) / bookings * 1000) / 10 : null,
+    eveningPct: withStart ? Math.round(evening / withStart * 1000) / 10 : null,
+    lights: { bookings: lightBookings, pct: bookings ? Math.round(lightBookings / bookings * 1000) / 10 : null },
+    prep: { bookings: prepBookings, pct: bookings ? Math.round(prepBookings / bookings * 1000) / 10 : null },
+    withAddOn, addOnPct: bookings ? Math.round(withAddOn / bookings * 1000) / 10 : null,
+    topAddOns: Object.keys(addOns).map(n => ({ name: n, n: addOns[n] }))
+      .sort((a, b) => b.n - a.n).slice(0, 5),
+  };
+}
+
+const dirOutdoor = rows => dirSiteSlice(rows, DIR_OUTDOOR_TYPES);
+const dirFields = rows => dirSiteSlice(rows, ["field"]);
+
 function dirCourt(rows, days) {
   if (!Array.isArray(rows) || !rows.length) return null;
   const courts = new Set(); let hours = 0;
@@ -8881,6 +9103,9 @@ async function buildDirectorsQuarter(slug, year, q) {
     waitlist: dirWaitlist(wl),
     facility: fac ? { ...fac, prevN: facPrev ? facPrev.n : null, prevRev: facPrev ? facPrev.rev : null } : null,
     court: dirCourt(court, qbrDaysBetween(cur.start, cur.end)),
+    // Both slice facC, the feed already fetched above — no extra Metabase time.
+    outdoor: dirOutdoor(facC),
+    fields: dirFields(facC),
     users: dirUsers(usr, cur),
     selfservice: dirSelfService(ss),
     payout: dirPayout(pay),
@@ -12555,7 +12780,7 @@ app.get("/", (req, res) => {
     historic: { label: "Historic Buildings",        ai: true,        icon: "🏛️",  desc: "Reservations for historic building sites", color: "#d97706" },
     roster:   { label: "Class Roster",              icon: "📋", desc: "Enrolled and cancelled participants by section", color: "#0891b2" },
     products:    { label: "Product Sales",          ai: true,          icon: "🛒", desc: "Daily revenue, refunds, and net by product",           color: "#0891b2" },
-    memberships: { label: "Memberships",                ai: true,                icon: "🎫", desc: "Active and lapsed memberships with renewal tracking",       color: "#db2777" },
+    memberships: { label: "Memberships",                ai: true,                icon: "🎫", desc: "Active and lapsed memberships, renewal tracking, member check-ins and cohort retention",       color: "#db2777" },
     "court-utilization": { label: "Court Utilization",  icon: "🎾", desc: "Court utilization % or reserved hours by court, split by customer, program, and closure usage", color: "#0d9488", ai: true },
     calendar:    { label: "Program Calendar",               icon: "🗓️", desc: "Public class & rental schedule (week / list view)", color: "#ea580c", ai: true },
     fasttrack:   { label: "Fast Track",             icon: "⚡", desc: "Pre-registration demand signal with conversion tracking", color: "#6366f1", ai: true },
@@ -12564,10 +12789,10 @@ app.get("/", (req, res) => {
     "instructor-payout": { label: "Instructor Payout", ai: true, icon: "💰", desc: "Revenue splits and payout calculations by instructor", color: "#6366f1" },
 
     "rentalcalendar":    { label: "Rental Calendar", icon: "🏟️", desc: "Real-time facility availability with live booking data", color: "#059669" },
-    "directors-report":  { label: "Director's Report", ai: true, icon: "📰", desc: "Quarterly executive summary — revenue, enrollment, demand, facilities, and staff workload with QoQ deltas", color: "#0f766e" },
+    "directors-report":  { label: "Director's Report", ai: true, icon: "📰", desc: "Quarterly executive summary — revenue, enrollment, demand, facilities, outdoor spaces and fields, and staff workload with QoQ deltas", color: "#0f766e" },
     lessons:             { label: "Instructor Lessons", ai: true, icon: "🎾", desc: "Private & semi-private coaching — instructor leaderboard, booking trends, and student loyalty", color: "#0369a1" },
     "campmap":           { label: "Campsite Map", icon: "🏕️", desc: "Interactive campground map with per-night availability overlay", color: "#15803d" },
-    "facilities":        { label: "Facilities", icon: "🏞️", desc: "Facility hub — summary + camping, golf, aquatics & court utilization", color: "#0d9488" },
+    "facilities":        { label: "Facilities", icon: "🏞️", desc: "Facility hub — summary plus camping, outdoor event spaces, fields, golf, aquatics, ice and racket sports", color: "#0d9488", ai: true },
     "ice-calendar":      { label: "Ice Participant Calendar", icon: "❄️", desc: "Participant-filtered monthly ice program calendar", color: "#0ea5e9" },
     qoq:                 { label: "QoQ Revenue Comparison", icon: "📉", desc: "Quarter-over-quarter GL revenue comparison with delta analysis", color: "#8b5cf6" },  };
 

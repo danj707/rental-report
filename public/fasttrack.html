@@ -1430,14 +1430,37 @@ function App() {
   /* Handed to the pre-launch strips, which live outside this closure. */
   var pinCtl = { isPinned: isPinned, togglePin: togglePin };
 
+  function digestPayload(em) {
+    return { email: em, reports: ['fasttrack'], schedule: subCadence,
+             reportParams: { fasttrack: 'digest=1' } };
+  }
+
+  function sendDigestTest() {
+    var em = (subEmail || '').trim();
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em)) { setSubStatus({ ok: false, msg: 'Enter a valid email address first' }); return; }
+    setSubStatus({ ok: true, msg: 'Sending test…' });
+    var p = digestPayload(em);
+    fetch(withToken('/' + orgSlug + '/admin/test-send'), {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      // digest=1 is what makes this a digest rather than a PDF, so the test has
+      // to carry it or it previews a different email than the subscription.
+      body: JSON.stringify({ email: em, report: 'fasttrack', schedule: p.schedule,
+                             reportParams: p.reportParams.fasttrack })
+    }).then(function(r) { return r.json().then(function(j) { return { ok: r.ok, j: j }; }); })
+      .then(function(res) {
+        if (res.ok && res.j && res.j.ok) setSubStatus({ ok: true, msg: 'Test sent to ' + em + ' — check it, then subscribe' });
+        else setSubStatus({ ok: false, msg: (res.j && res.j.error) || 'Test send failed' });
+      })
+      .catch(function(e) { setSubStatus({ ok: false, msg: e.message }); });
+  }
+
   function submitDigestSub() {
     var em = (subEmail || '').trim();
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em)) { setSubStatus({ ok: false, msg: 'Enter a valid email address' }); return; }
     setSubStatus({ ok: true, msg: 'Subscribing…' });
     fetch(withToken('/' + orgSlug + '/admin/subscribe'), {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: em, reports: ['fasttrack'], schedule: subCadence,
-                             reportParams: { fasttrack: 'digest=1' } })
+      body: JSON.stringify(digestPayload(em))
     }).then(function(r) { return r.json().then(function(j) { return { ok: r.ok, j: j }; }); })
       .then(function(res) {
         if (res.ok && res.j && res.j.ok) setSubStatus({ ok: true, msg: 'Subscribed ✓ — digests send at 7am (' + subCadence + ')' });
@@ -2718,6 +2741,9 @@ function App() {
             subStatus && React.createElement('div', { style: { fontSize: 12, fontWeight: 600, marginBottom: 12, color: subStatus.ok ? '#059669' : '#dc2626' } }, subStatus.msg),
             React.createElement('div', { style: { display: 'flex', gap: 8, justifyContent: 'flex-end' } },
               React.createElement('button', { className: 'flow-action', style: { background: '#fff', color: '#555', border: '1px solid #d1d5db', padding: '8px 16px' }, onClick: function() { setSubOpen(false); } }, 'Close'),
+              React.createElement('button', { className: 'flow-action', 'data-send-test': '1',
+                style: { background: '#fff', color: '#166534', border: '1px solid #86efac', padding: '8px 16px', fontWeight: 600 },
+                title: 'Send this digest to that address now', onClick: sendDigestTest }, '\uD83D\uDCE8 Send Test'),
               React.createElement('button', { className: 'flow-action', style: { background: '#b91c1c', color: '#fff', border: '1px solid #b91c1c', padding: '8px 16px' }, onClick: submitDigestSub }, 'Subscribe'))
           )
         ),
