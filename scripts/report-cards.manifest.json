@@ -6,6 +6,12 @@
   },
   "checks": [
     {
+      "label": "checkins / apex (biggest — 22,880 rows for Aug 1-23 in 22.3s, measured 2026-08-24 right after the User ID column was added; here so a lost column or a re-Texted date tag is caught rather than discovered by a blank Check-Ins tab)",
+      "card": "574324e0-b5a1-46c5-8770-8c466631fdcf",
+      "org": "aeba47d0-c97f-49cb-a0e9-93c5af3a68fa",
+      "timeout": 120
+    },
+    {
       "label": "fasttrack / apex (biggest — worst case; measured 78s on a quiet network 2026-08-21, so 60s cries wolf. The app absorbs it: 60s first try, 120s retry. If THIS fails, the card has passed what the app itself can survive)",
       "card": "9d38ab95-8562-42ca-b6c2-2582b7452457",
       "org": "aeba47d0-c97f-49cb-a0e9-93c5af3a68fa",

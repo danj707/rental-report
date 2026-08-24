@@ -857,7 +857,7 @@ function App() {
       // Handed to a popup to save rather than written straight from here — a
       // download started by a sandboxed iframe is silently dropped. See open-pdf.js.
       saveWorkbookViaPopup(XLSX, wb, `instructor-payout-${orgSlug}-${new Date().toISOString().slice(0,10)}.xlsx`);
-      fetch(withToken(`/${orgSlug}/${reportType}/api/log`), { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({action:'excel',rows:filtered.length}) }).catch(()=>{});
+      fetch(withToken(`/${orgSlug}/${reportType}/api/log?event=excel`), { method:'POST', keepalive:true }).catch(()=>{});
     }
     if (typeof XLSX === 'undefined') { const s = document.createElement('script'); s.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'; s.onload=go; document.head.appendChild(s); } else go();
   }, [filtered, split, kpis, iPct, oPct]);
@@ -876,7 +876,6 @@ function App() {
     // sandboxed iframe is silently dropped. This is the same trick the pay-slip
     // windows below have always used. See open-pdf.js.
     openReportPdf(withToken(pdfUrl), { label: 'Instructor Payout' });
-    fetch(withToken(`/${orgSlug}/${reportType}/api/log`), { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({action:'pdf',rows:filtered.length}) }).catch(()=>{});
   }, [splitIdx, isCustomSplit, appliedCustom, instrFilter, search, filtered, startDate, endDate]);
 
   const fillColor = (p) => p >= 0.8 ? '#16a34a' : p >= 0.5 ? '#d97706' : '#ef4444';

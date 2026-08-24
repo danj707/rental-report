@@ -387,6 +387,170 @@ Windham, Watertown, Norman, Apex.
   not start times) and `[data-oe-timed="4"]` (multi-day excluded). Both attribute
   cases were seen to fail on the real regression in a real browser.
 
+## Memberships Check-Ins tab — one filter, two member ids (2026-08-24)
+
+Five changes Dan asked for on the check-in report, all client-side except the
+member link, which needs one column added to card **18151**.
+
+- **The desk-location filter lives in the toolbar and scopes the WHOLE tab.**
+  Options are built from the feed's own `Desk Location` values (busiest first),
+  so a desk that falls out of use disappears on its own. The invariant that
+  matters: **every panel reads `ciView`, never `ciRows`** — the facility Summary
+  shipped chips that scoped some panels and not others and the numbers disagreed
+  across the page for a week. `scripts/checkins-view.spec.js` fails if a single
+  `ciRows` appears inside the derivation block. Not persisted (a search intent,
+  not a layout preference) but it IS in the URL as `?ci_loc=`, so a link lands on
+  the desk the sender was looking at — and `?tab=checkins|retention` does the
+  same for the tab.
+- **`Member ID` is NOT a user id.** Card 18151 emits `u.rec_id` as `Member ID` —
+  a 6-character code (`5OLLPM`) staff read out at the desk. The Rec admin URL
+  (`https://www.rec.us/admin/o/<orgId>/users/<id>`) takes `users.id`, the uuid, so
+  the card now also emits `u.id::text AS "User ID"`. A link built from the rec_id
+  looks identical and 404s, which is why the render check asserts the href ends
+  in the uuid rather than merely that an anchor exists. `ciUserUrl()` returns null
+  without both ids and the cell falls back to plain text — so the page is correct
+  before AND after the card ships the column.
+
+### Card 18151 v2 — applied and signed off (2026-08-24)
+
+One column added (`u.id::text AS "User ID"`), pushed via the API, date tags
+re-flipped by Dan, verified in this order:
+
+- read the live card and diffed BEFORE writing (no drift), then diffed the pushed
+  SQL back — landed intact, comment included
+- **the additive claim was measured, not assumed.** Same immutable window
+  (apex, Aug 1–23) before and after: **22,880 rows both times**, and a sha256
+  over the 13 ORIGINAL columns is byte-identical. 6,100 distinct uuids against
+  6,100 distinct rec_ids, so the new column neither collapses nor fans out rows.
+- cache-independent public-endpoint sign-off: apex (heaviest) **23,525 rows in
+  22.3s**; the whole manifest 17/17
+- 215 links rendered in a real browser, every href ending in a uuid
+- `scripts/report-cards.manifest.json` gained a **checkins / apex** row, so a
+  lost column or a re-Texted date tag is caught by the check rather than
+  discovered as a blank tab
+
+**Worth knowing for the next card push:** while the tags were Text the card's
+public definition carried **six** parameters — the three original ids
+(`date/single`) *and* three new ones (`string/=`) for the same slugs. Anything
+that binds every registered parameter by slug then sends two values per variable
+and gets `An error occurred.`, which reads exactly like a broken card;
+`verify-report-live.js` fails that way too. Dan's UI flip cleaned the list back
+to three. So during the push→flip window the app AND the verifier both fail, and
+the verifier's failure carries no extra information.
+- **Check-Ins by Time of Day** is one series at a time (All / Weekdays /
+  Weekends). Deliberately not two curves on one axis: there are five weekdays to
+  two weekend days, so a weekend total always looks quiet next to a weekday one —
+  different denominators, not different demand. The caption carries the per-day
+  figure for the slice being shown. This replaced the Hourly Distribution bar
+  list, which asked the same question with less.
+- **Weekday letters on Daily Check-Ins**, plus shaded weekend columns. Built from
+  `ciDow()`, which reads the date string's parts: `new Date("2026-08-24")` is UTC
+  midnight, so Monday the 24th renders as Sunday the 23rd in every US timezone —
+  the same bug as the Fast Track dates. **`checkins-view.spec.js` re-execs itself
+  under `TZ=America/New_York`** for exactly this reason: in UTC (this sandbox and
+  GitHub Actions) the broken parse passes every assertion.
+- **Top Members monthly bars are buttons.** Clicking one highlights that month
+  across every member and names it in a caption ("August 2026 highlighted · 312
+  check-ins from 11 of these 15 members"); the column header carries a clickable
+  month initial per bar, so which month a bar refers to is readable without
+  hovering. The old header printed "Aug / Sep / Oct" as free text beside bars it
+  was not aligned with.
+
+### The Memberships beacons had NEVER fired — third instance of the same trap
+
+Found while wiring the ping for the location filter. `public/memberships.html`
+(Excel, Print) and `public/instructor-payout.html` (Excel, PDF) POSTed a JSON
+**body** — `{action:'excel'}` — to `/:org/:report/api/log`, which reads
+`req.query.event`. So every call came back `400 Unknown event` and nothing
+reached `events.jsonl` or Slack, since the day each shipped. Nothing caught it:
+server.js parses, the server boots, the page renders, the export works, and a
+fire-and-forget beacon never complains. This is the campmap bug and the
+Facilities-hub bug a third time — **the convention is `?event=<name>` in the
+query string**, and `instructor-payout`'s `pdf` beacon was also redundant (the
+PDF route logs `pdf` server-side).
+
+**Consequence to expect: Slack starts getting Memberships/Instructor-Payout
+`excel` and `print` pings it has never had** — they were being dropped, not
+muted.
+
+New events, both on the generic log route's ALLOWED list:
+
+| event | fired by | extra |
+|---|---|---|
+| `checkin-loc` (🏢) | picking a desk in the Location filter | `location`, `checkins` |
+| `checkin-member` (👤) | clicking a member through to their Rec account | — |
+
+`checkin-loc` debounces **by desk** (comparing the north branch then the south is
+two looks, not one); `checkin-member` deliberately does NOT key by member, so a
+staff member working down a list of regulars is one ping rather than twenty.
+Guarded by `scripts/checkin-beacons.spec.js` (12 assertions, in CI), which boots
+the server and requires a 200 **plus** a row in events.jsonl — and asserts the
+old body-only shape is still rejected, since that is what was shipping.
+
+## Fields tab — leagues, lights, and staff-booked (2026-08-24)
+
+The last facility type with nothing of its own: **1,903 field sites across 74
+orgs, ~57k reservations a year**, second only to courts. `field` is a real
+`court.type`, and the tab is scoped to exactly that.
+
+- **It CANNOT reuse the Court Utilization pipeline.** Card 17297 filters
+  `c.type = 'court'`, so fields are absent from that feed entirely — Racket
+  Sports can wrap `CourtUtilizationView`, Fields cannot. It reads card **17294**
+  like the Outdoor tab and shares the hour helpers (`oeRowHours`, `oeHeatGrid`).
+- **Shape:** median block **4h**, avg 5.9h; 24% ≤2h, 32% 2–4h, 21% 4–8h, **22%
+  over 8h** (tournament days); **99.5% same-day**.
+- **95.5% staff-booked** — only 2,578 of 56,880 are `instant`. A low instant
+  share is the BASELINE for fields, and the panel says so, because reading it as
+  a self-service failure would be wrong.
+- **Lights are the story, and they are an ADD-ON, not the lighting integration.**
+  `reservation_lighting_schedule` has **5** field rows platform-wide, while the
+  four most-attached field add-ons are all light fees ("Field Light Fee" 409,
+  "Field Lights" 226, "LAGSC Lights - Both Fields" 205,
+  "Rental-Athletic Field Light Fee" 109, in 90 days). So the tab reads lights
+  from add-on NAMES and ignores the Lighting columns, and cross-checks the light
+  count against bookings starting after 5pm — evening bookings with no light fee
+  are either daylight or uncollected cost recovery. Staffing/prep add-ons
+  (attendant, park services, restroom supply, cleaning, prep & lining) are the
+  other family.
+- **Sport is inferred from NAMES.** `court.sub_type` is NULL on all 1,903 fields,
+  so there is no structured sport. Field name + PARK name together classify ~48%
+  of bookings (baseball/softball 13,647, soccer 9,215, multipurpose 8,938,
+  football 427, lacrosse 88); **~52% match nothing**. The panel shows the
+  unclassified share and steps aside above 40% rather than implying a mix it
+  cannot see.
+- Own banner (`fbx-ballfield`) and minigame **Sandlot** (`bases`, ⚾, score =
+  total bases) — a full at-bat: timed swing, contact quality sets launch angle
+  and power, the nearest fielder breaks for the landing spot, the runner takes
+  what the retrieve time allows.
+- Guards: `scripts/fields-classify.spec.js` (11 assertions, in CI) plus three
+  `ci-check-render.js` cases — the tab renders, `[data-fld-peak="7p"]` (hour
+  COVERAGE, not start times) and the sport note. The spec caught a real bug on
+  its first run: `/ball ?field/` matches inside "Foot**ball Field**", so every
+  football field was being filed as baseball; it needs `\bball ?field`.
+
+### Tuning a banner minigame is a measurement job, not a vibe
+
+Sandlot took five rounds of tuning, and every round was diagnosed by
+instrumenting `connect()` and printing the actual numbers rather than guessing:
+
+1. **Contact window vs the pitch path.** A window of `H * 0.32` was ~55px of a
+   ~63px path, so a swing was either "too far" (strike) or near-perfect (home
+   run) with nothing in between. It is now half the PATH.
+2. **Hang time was backwards.** `0.42 + power * 0.85` made the hardest hits hang
+   longest and therefore easiest to catch. A mishit is a lazy fly; a well-struck
+   ball is a line drive. Now `0.50 + (1 - q) * 0.55`.
+3. **Catches were measured in SCREEN PIXELS.** The park is projected wide and
+   shallow (x stretched ~2.7x), so pixel distance made every fielder look one
+   stride from everything. Distances are now polar, in field units.
+4. **Five fielders in a 90° wedge leave no gaps** — nearest-fielder distances of
+   0.04–0.21 field units, so everything that stayed in the park was caught. Four
+   fielders at 0.16 units/sec gives real gaps.
+5. **Verify by sweeping the input, not by playing once.** `gametest2.js`-style
+   harness: seed `Math.random`, sweep the swing time in 20ms steps, and require
+   a spread of outcomes. Final distribution over 50 timings: 29 no-pay, 3
+   singles, 13 doubles, 1 triple, 4 home runs. "It felt fine when I clicked it"
+   would have shipped the version where every hit was a home run.
+
 ## Every Facilities-hub beacon was 404ing — same trap as campmap (2026-08-24)
 
 Found while wiring the Outdoor Events ping. The hub lives at `/:org/facilities`,

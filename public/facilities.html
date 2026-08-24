@@ -123,6 +123,23 @@
     .fbx-balloon { position: absolute; bottom: 24%; width: 15px; height: 19px; border-radius: 50% 50% 48% 48% / 55% 55% 45% 45%; box-shadow: inset -3px -3px 6px rgba(0,0,0,.18); }
     .fbx-balloon::after { content: ""; position: absolute; left: 50%; top: 100%; width: 1px; height: 15px; background: rgba(255,255,255,.5); }
     .fbx-frisbee { position: absolute; left: -40px; top: 42%; width: 22px; height: 7px; border-radius: 50%; background: linear-gradient(#ffe066, #f59e0b); box-shadow: 0 2px 5px rgba(0,0,0,.3); }
+    /* ballfield: turf, infield diamond, foul lines, outfield fence, flag (Fields) */
+    .fac-banner.fbx-ballfield  { background: linear-gradient(175deg, #1c5f8a 0%, #4b93b8 40%, #4b8c3f 62%, #2f6b2c 100%); }
+    .fbx-turf { position: absolute; left: 0; right: 0; bottom: 0; height: 46%; background: linear-gradient(#4f9440, #2f6b2c); }
+    .fbx-turf::after { content: ""; position: absolute; inset: 0; background: repeating-linear-gradient(90deg, rgba(255,255,255,.05) 0 26px, transparent 26px 52px); }
+    /* Bottom-RIGHT, clear of the overlay: the title, subtitle and pill row all
+       live on the left, and a diamond under the pills reads as a smudge. */
+    .fbx-diamond { position: absolute; right: 11%; bottom: 3%; width: 112px; height: 62px; transform: perspective(200px) rotateX(54deg); }
+    .fbx-diamond .dm-dirt { position: absolute; inset: 0; background: radial-gradient(ellipse at 50% 100%, #c98a5b 62%, rgba(201,138,91,0) 66%); }
+    .fbx-diamond .dm-base { position: absolute; width: 8px; height: 8px; background: #fff; box-shadow: 0 0 3px rgba(0,0,0,.35); }
+    .fbx-foul { position: absolute; bottom: 3%; right: 17%; width: 2px; height: 30%; background: rgba(255,255,255,.32); transform-origin: bottom; }
+    .fbx-fence { position: absolute; left: 8%; right: 8%; bottom: 40%; height: 8px; border-top: 2px solid rgba(255,255,255,.3);
+                 background: repeating-linear-gradient(90deg, rgba(255,255,255,.16) 0 3px, transparent 3px 8px); }
+    /* Left of the diamond and below the sun — at right:12% it was planted on it. */
+    .fbx-flag { position: absolute; right: 34%; bottom: 42%; width: 2px; height: 24px; background: rgba(255,255,255,.55); }
+    .fbx-flag::after { content: ""; position: absolute; left: 2px; top: 0; width: 13px; height: 9px; background: #e0554f; transform-origin: left center; }
+    .fbx-ballarc { position: absolute; left: 72%; bottom: 20%; width: 9px; height: 9px; border-radius: 50%;
+                   background: radial-gradient(circle at 35% 30%, #fff, #e8e4d8); box-shadow: 0 1px 4px rgba(0,0,0,.35); }
     /* play button + pong overlay */
     .fac-banner .fb-play { position: absolute; top: 12px; right: 14px; z-index: 5; width: 30px; height: 30px; border-radius: 50%; border: 1px solid rgba(255,255,255,.4); background: rgba(255,255,255,.14); color: #fff; cursor: pointer; display: grid; place-items: center; font-size: 12px; padding-left: 2px; transition: background .15s, transform .15s; }
     .fac-banner .fb-play:hover { background: rgba(255,255,255,.28); transform: scale(1.08); }
@@ -156,6 +173,8 @@
       .fbx-bunting i { animation: fbxFlagSway 2.4s ease-in-out infinite alternate; }
       .fbx-balloon { animation: fbxBalloonUp linear infinite; }
       .fbx-frisbee { animation: fbxFrisbee 6s linear infinite; }
+      .fbx-flag::after { animation: fbxFlagWave 1.8s ease-in-out infinite alternate; }
+      .fbx-ballarc { animation: fbxPopFly 4.2s ease-in-out infinite; }
     }
     @keyframes fbxSunPulse { 50% { box-shadow: 0 0 58px 21px rgba(255,180,80,.7); } }
     @keyframes fbxDrift { from { transform: translateX(-120px); } to { transform: translateX(1300px); } }
@@ -178,7 +197,12 @@
     @keyframes fbxFlagSway { from { transform: rotate(-7deg); } to { transform: rotate(7deg); } }
     @keyframes fbxBalloonUp { 0% { transform: translateY(30px); opacity: 0; } 12% { opacity: .95; } 88% { opacity: .95; } 100% { transform: translateY(-150px); opacity: 0; } }
     @keyframes fbxFrisbee { 0% { left: -40px; transform: translateY(0) rotate(0deg); } 50% { transform: translateY(-16px) rotate(540deg); } 100% { left: 100%; transform: translateY(4px) rotate(1080deg); } }
-    @media print { .fac-banner .fb-play, .fac-banner .fb-pong { display: none !important; } .fbx-sun, .fbx-cloud, .fbx-ball, .fbx-ball-x, .fbx-bear, .fbx-swimmer, .fbx-skater, .fbx-snow i, .fbx-stars i, .fbx-fire, .fbx-shimmer, .fbx-trail, .fbx-road::after, .fbx-bunting i, .fbx-balloon, .fbx-frisbee { animation: none !important; } }
+    @keyframes fbxFlagWave { from { transform: skewY(0deg) scaleX(1); } to { transform: skewY(-7deg) scaleX(.86); } }
+    /* A pop fly: up and out to the outfield, then gone. */
+    @keyframes fbxPopFly { 0% { left: 72%; bottom: 20%; opacity: 0; } 10% { opacity: 1; }
+                           50% { left: 84%; bottom: 58%; } 90% { opacity: .9; }
+                           100% { left: 96%; bottom: 34%; opacity: 0; } }
+    @media print { .fac-banner .fb-play, .fac-banner .fb-pong { display: none !important; } .fbx-sun, .fbx-cloud, .fbx-ball, .fbx-ball-x, .fbx-bear, .fbx-swimmer, .fbx-skater, .fbx-snow i, .fbx-stars i, .fbx-fire, .fbx-shimmer, .fbx-trail, .fbx-road::after, .fbx-bunting i, .fbx-balloon, .fbx-frisbee, .fbx-flag::after, .fbx-ballarc { animation: none !important; } }
     body.print-mode .fac-banner .fb-play, body.print-mode .fac-banner .fb-pong { display: none !important; }
     .fac-banner .fb-badge { position: absolute; top: 14px; right: 16px; z-index: 2; font-size: 10px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase; color: #065f46; background: #d1fae5; border: 1px solid #6ee7b7; padding: 3px 9px; border-radius: 6px; }
 
@@ -486,6 +510,7 @@
       { key: 'utilization', label: 'Court Utilization' },
       { key: 'camping',     label: 'Camping',        icon: '🏕️' },
       { key: 'outdoor',     label: 'Outdoor Events', icon: '🎪' },
+      { key: 'fields',      label: 'Fields',         icon: '⚾' },
       { key: 'golf',        label: 'Golf',           icon: '⛳' },
       { key: 'aquatics',    label: 'Pool / Aquatics', icon: '🏊' },
       { key: 'ice',         label: 'Ice',            icon: '⛸️' },
@@ -662,6 +687,9 @@
       // segment (and a different question — leagues, not parties) to deserve
       // their own tab, and folding them in here would swamp every average.
       outdoor:  { label: 'Outdoor Event Spaces', icon: '🎪', types: OUTDOOR_TYPES },
+      // Ball fields, pitches and multipurpose turf. Kept out of Outdoor Event
+      // Spaces on purpose (Dan): leagues and tournaments, not parties.
+      fields:   { label: 'Fields',           icon: '⚾',  types: ['field'] },
       golf:     { label: 'Golf',             icon: '⛳',  types: ['golf'] },
       aquatics: { label: 'Pool / Aquatics',  icon: '🏊', types: ['pool'] },
       // Ice — mostly orgs type these 'rink', but some (Apex) type them 'court';
@@ -917,6 +945,17 @@
       racket: '<div class="fbx-court-net"></div><div class="fbx-ball-x"><div class="fbx-ball"></div></div>',
       camp: '<div class="fbx-stars">' + fbxStars() + '</div><div class="fbx-ground-c"></div><div class="fbx-pine" style="left:6%"></div><div class="fbx-pine" style="left:16%;transform:scale(.8)"></div><div class="fbx-pine" style="right:10%;transform:scale(1.1)"></div><div class="fbx-tent" style="right:26%"></div><div class="fbx-fire" style="right:20%"></div><div class="fbx-bear"><svg viewBox="0 0 54 34"><g class="body" fill="#3b2417"><rect x="21" y="25" width="6" height="9" rx="2.5" fill="#2b1a0f"/><rect x="41" y="25" width="6" height="9" rx="2.5" fill="#2b1a0f"/><ellipse cx="32" cy="19" rx="16" ry="10"/><circle cx="41" cy="12" r="7"/><rect x="15" y="25" width="6" height="9" rx="2.5"/><rect x="35" y="25" width="6" height="9" rx="2.5"/><circle cx="13" cy="16" r="8.5"/><circle cx="8" cy="8" r="2.8"/><circle cx="17" cy="8" r="2.8"/><circle cx="8" cy="8" r="1.2" fill="#6b4a2e"/><circle cx="17" cy="8" r="1.2" fill="#6b4a2e"/><ellipse cx="5.5" cy="18.5" rx="5" ry="3.6" fill="#7a5535"/><ellipse cx="2.6" cy="18" rx="1.8" ry="1.5" fill="#160d06"/><circle cx="12" cy="14" r="1.2" fill="#160d06"/></g></svg></div>',
       pool: '<div class="fbx-shimmer"></div><div class="fbx-lane" style="top:32%"></div><div class="fbx-lane" style="top:58%"></div><div class="fbx-lane" style="top:82%"></div><div class="fbx-splash" style="top:48%;left:0"></div><div class="fbx-swimmer"><svg viewBox="0 0 66 26"><g fill="#08324a"><ellipse cx="34" cy="16" rx="22" ry="6"/><circle cx="12" cy="13" r="6"/></g><line class="arm" x1="14" y1="13" x2="30" y2="4" stroke="#08324a" stroke-width="4" stroke-linecap="round"/></svg></div>',
+      ballfield: '<div class="fbx-cloud" style="top:12%;left:10%;width:54px;animation-duration:42s"></div>'
+        + '<div class="fbx-cloud" style="top:22%;left:0;width:36px;animation-duration:56s;animation-delay:-18s"></div>'
+        + '<div class="fbx-sun" style="right:7%;top:4%"></div>'
+        + '<div class="fbx-turf"></div><div class="fbx-fence"></div><div class="fbx-flag"></div>'
+        + '<div class="fbx-foul" style="transform:rotate(38deg)"></div><div class="fbx-foul" style="transform:rotate(-38deg)"></div>'
+        + '<div class="fbx-diamond"><div class="dm-dirt"></div>'
+        +   '<div class="dm-base" style="left:50%;bottom:0;margin-left:-4px"></div>'
+        +   '<div class="dm-base" style="right:0;bottom:50%;margin-bottom:-4px"></div>'
+        +   '<div class="dm-base" style="left:50%;top:0;margin-left:-4px"></div>'
+        +   '<div class="dm-base" style="left:0;bottom:50%;margin-bottom:-4px"></div></div>'
+        + '<div class="fbx-ballarc"></div>',
       pavilion: '<div class="fbx-cloud" style="top:14%;left:8%;width:58px;animation-duration:40s"></div><div class="fbx-cloud" style="top:26%;left:0;width:38px;animation-duration:54s;animation-delay:-16s"></div><div class="fbx-sun" style="right:8%;top:12%"></div><div class="fbx-lawn"></div><div class="fbx-bunting">' + fbxBunting() + '</div><div class="fbx-shelter">' + FBX_SHELTER_SVG + '</div>' + fbxBalloons() + '<div class="fbx-frisbee"></div>',
       ice: '<div class="fbx-snow">' + fbxSnow() + '</div><div class="fbx-ice-floor"></div><div class="fbx-trail"></div><div class="fbx-skater"><svg viewBox="0 0 30 46"><g class="body"><circle cx="15" cy="7" r="5" fill="#0f2f4a"/><rect x="12" y="11" width="6" height="20" rx="3" fill="#0f2f4a"/><line x1="15" y1="30" x2="7" y2="42" stroke="#0f2f4a" stroke-width="4" stroke-linecap="round"/><line x1="15" y1="30" x2="23" y2="40" stroke="#0f2f4a" stroke-width="4" stroke-linecap="round"/><line x1="4" y1="43" x2="10" y2="43" stroke="#cfe9f7" stroke-width="2"/></g></svg></div>',
     };
@@ -928,6 +967,7 @@
       camping:     { cls: 'fbx-camp',       scene: 'camp',       title: '🏕️ Camping',          sub: 'Campsite reservations & occupancy.' },
       aquatics:    { cls: 'fbx-pool',       scene: 'pool',       title: '🏊 Pool / Aquatics',   sub: 'Lap swim, lessons & open-swim.' },
       outdoor:     { cls: 'fbx-pavilion',   scene: 'pavilion',   title: '🎪 Outdoor Event Spaces', sub: 'Pavilions, shelters, picnic areas & bounce houses.' },
+      fields:      { cls: 'fbx-ballfield',  scene: 'ballfield',  title: '⚾ Fields',            sub: 'Diamonds, pitches & multipurpose turf.' },
       ice:         { cls: 'fbx-ice',        scene: 'ice',        title: '⛸️ Ice',               sub: 'Rink schedule & public skate.', game: 'hockey' },
       racket:      { cls: 'fbx-racket',     scene: 'racket',     title: '🎾 Racket Sports',     sub: 'Tennis, pickleball & padel demand.', game: 'pong' },
     };
@@ -946,6 +986,7 @@
       invaders: { title: 'Invaders', tip: 'Move ← → · click / Space to fire · clear the wave' },
       breakout: { title: 'Court Breaker', tip: 'Move the paddle · click / Space to launch' },
       bounce:   { title: 'Bounce House', tip: 'Move \u2190 \u2192 \u00B7 click / Space to bounce higher \u00B7 pop the balloons' },
+      bases:    { title: 'Sandlot', tip: 'Click / Space to swing \u00B7 time it as the ball crosses the plate' },
     };
 
     // Games that feed the seasonal arcade leaderboard (score-accumulation only;
@@ -957,6 +998,7 @@
       invaders: { label: 'Invaders',      emoji: '👾',       lower: false, unit: 'pts' },
       breakout: { label: 'Court Breaker', emoji: '🧱',       lower: false, unit: 'pts' },
       bounce:   { label: 'Bounce House',  emoji: '🎈',       lower: false, unit: 'balloons' },
+      bases:    { label: 'Sandlot',       emoji: '⚾',       lower: false, unit: 'bases' },
       golf:     { label: 'Putt',          emoji: '⛳',             lower: true,  unit: 'strokes' },
     };
     // Build a token-aware /:org/api/games/* URL for score submit + board fetch.
@@ -1461,6 +1503,327 @@
             api.textScrim();
           },
           hud() { return '🎈 ' + score; },
+          score() { return score; },
+        };
+        return g;
+      },
+
+      // ── Fields: Sandlot ──
+      // A whole at-bat in a 172px band, top-down so the pitch and the base
+      // running share one frame: the pitcher winds up, the ball comes in, you
+      // time ONE swing. Contact quality sets the launch angle and the power;
+      // the ball carries, the nearest fielder breaks for where it will land,
+      // and the runner takes whatever bases the retrieve time allows. Clear the
+      // fence and it is gone.
+      //
+      // Three outs ends it. Score is TOTAL BASES, so a triple beats three
+      // singles' worth of luck, and a home run is worth the swing.
+      bases: (api) => {
+        let st, t, ball, runner, fielders, outs, strikes, score, runs, msg, msgT, shake, swing, windup, bat;
+        const FOUL = Math.PI / 4;                    // 45° either side of straight away
+        // The banner is ~1220x172, so a top-down park has to be WIDE and SHALLOW:
+        // a circular field of any useful radius puts its fence hundreds of pixels
+        // above the top edge. Everything is therefore laid out in field units
+        // (0 = home, 1 = the fence) and projected through separate x/y radii, so
+        // the whole park — fence, foul lines, fielders — is on screen.
+        const geo = () => {
+          const cx = api.W / 2;
+          const plateY = api.H * 0.88;
+          const rxF = Math.min(api.W * 0.33, 340), ryF = api.H * 0.74;
+          const rx = rxF * 0.34, ry = ryF * 0.34;
+          return { cx, plateY, rxF, ryF, rx, ry, moundY: plateY - ry * 0.92 };
+        };
+        // dir: radians from straight-away (0), d: 0..1 field units.
+        const toScreen = (dir, d) => {
+          const g = geo();
+          return { x: g.cx + Math.sin(dir) * d * g.rxF, y: g.plateY - Math.cos(dir) * d * g.ryF };
+        };
+        // Bases, top-down: home bottom, 1st right, 2nd top, 3rd left.
+        function basePos(i) {
+          const g = geo(), k = ((i % 4) + 4) % 4;
+          if (k === 0) return { x: g.cx, y: g.plateY };
+          if (k === 1) return { x: g.cx + g.rx, y: g.plateY - g.ry };
+          if (k === 2) return { x: g.cx, y: g.plateY - g.ry * 2 };
+          return { x: g.cx - g.rx, y: g.plateY - g.ry };
+        }
+        // Three deep, two in. Placed on two rings with a little jitter each pitch,
+        // so the gaps are real and move — at four evenly-spaced fielders on one
+        // ring nothing could drop in, every landing spot was 19-53px from
+        // somebody, and the only hit that paid was one over the fence.
+        // Fielders keep their POLAR home (angle, depth) as well as their pixels:
+        // distances have to be judged in field units, because the projection
+        // stretches x about 2.7x and a pixel measure made a fielder look one
+        // stride from everything.
+        function setFielders() {
+          const jit = () => (Math.random() * 2 - 1) * 0.16;
+          const at = (a, d) => {
+            const ang = (a + jit()) * FOUL, p = toScreen(ang, d);
+            return { a: ang, d, x: p.x, y: p.y, hx: p.x, hy: p.y };
+          };
+          // FOUR, not five: five bodies in a 90-degree wedge left nearest-fielder
+          // distances of 0.04-0.21 field units, i.e. no gaps at all, and every
+          // ball that stayed in the park was caught.
+          fielders = [at(-0.82, 0.84), at(0, 0.88), at(0.82, 0.84), at(0, 0.42)];
+        }
+        // Straight-line distance between two polar points, in field units.
+        const fieldDist = (a1, d1, a2, d2) =>
+          Math.sqrt(Math.max(0, d1 * d1 + d2 * d2 - 2 * d1 * d2 * Math.cos(a1 - a2)));
+        function newPitch() {
+          const g = geo();
+          if (outs >= 3) {
+            g_over('Three outs — ' + score + ' base' + (score === 1 ? '' : 's') + ', ' + runs + ' run' + (runs === 1 ? '' : 's'));
+            return;
+          }
+          st = 'wind'; t = 0; windup = 0; swing = 0; bat = 0;
+          ball = { x: g.cx + (Math.random() * 14 - 7), y: g.moundY, vy: 0, live: false, air: 0, hang: 0, land: null, hr: false };
+          runner = { at: 0, prog: 0, run: false, target: 0 };
+          setFielders();
+        }
+        function g_over(why) {
+          g.over = true; api.snd.lose();
+          api.setTip(why + ' — click to bat again');
+        }
+        function say(m, ms) { msg = m; msgT = ms || 1.2; }
+        function strike(word) {
+          strikes++;
+          api.snd.tone(180, 0.12, 'sawtooth', 0.14);
+          if (strikes >= 3) { strikes = 0; outs++; say(word + ' — you\\u2019re out', 1.3); }
+          else say(word + ' — strike ' + strikes, 1.0);
+          st = 'reset'; t = 0;
+        }
+        // Contact: how close to the plate the swing was decides everything.
+        function connect() {
+          const g = geo();
+          const off = Math.abs(ball.y - g.plateY);        // px from the plate
+          // A wide-ish contact window with a QUADRATIC power curve: it is easy
+          // to make contact and hard to make GOOD contact, so most swings are
+          // grounders and short flies and only a genuinely well-timed one
+          // carries the fence. A narrow window with a linear curve made every
+          // connection a home run, which is no fun twice.
+          // Measured against the PITCH PATH, not the banner height. At 0.32 of the
+          // height the window was ~55px out of a ~63px path, so the ball was
+          // either "too far" or "perfect" with no middle — every connection was a
+          // home run and everything else a strike. Half the path gives the
+          // gradient: late-but-close is a grounder, dead-on carries.
+          const WINDOW = (g.plateY - g.moundY) * 0.5;
+          if (off > WINDOW) return strike('Swung through it');
+          const q = Math.max(0, 1 - off / WINDOW);           // 0..1 contact quality
+          // A mistimed swing pulls or pushes the ball toward the lines.
+          // Spread scales with how badly it was timed, but capped well inside the
+          // lines: at 1.5x FOUL a merely-decent swing fouled off more often than
+          // it put the ball in play, so the middle of the skill curve paid nothing.
+          const dir = (Math.random() * 2 - 1) * (1 - q) * (FOUL * 0.85) + (Math.random() * 2 - 1) * 0.14;
+          if (Math.abs(dir) > FOUL) { say('Foul ball', 0.9); st = 'reset'; t = 0; api.snd.wall(); return; }
+          const power = (0.30 + q * q * 0.85) * (0.9 + Math.random() * 0.2);
+          ball.hr = power >= 1;
+          ball.land = toScreen(dir, Math.min(power, 1.1));
+          ball.from = { x: g.cx, y: g.plateY };
+          const dist = power;
+          // A mishit is a lazy fly that hangs; a well-struck ball is a line drive
+          // that gets out there before anyone can run to it. Hang time therefore
+          // falls as contact improves — the opposite of the first cut, which made
+          // the hardest hits the easiest to catch.
+          ball.hang = 0.50 + (1 - q) * 0.55;
+          ball.air = 0; ball.live = true;
+          st = 'flight'; t = 0;
+          bat = 1;
+          shake = q > 0.72 ? 1 : 0.35;
+          if (ball.hr) { api.snd.win(); say('GONE! 🏟️', 1.8); }
+          else { api.snd.tone(q > 0.7 ? 900 : 520, 0.07, 'square', 0.2); }
+          // How long before the ball is in a fielder's hand and back in.
+          const near = fielders.reduce((b, f) => {
+            const d = fieldDist(f.a, f.d, dir, Math.min(power, 1.1));
+            return (!b || d < b.d) ? { f, d } : b;
+          }, null);
+          // Field units per second. 0.30 means a fielder covers under a third of
+          // the way to the fence in a second, so the gaps between five of them
+          // are real: a ball landing more than ~0.27 units from anybody drops in.
+          const FSPD = 0.16;
+          const caught = !ball.hr && near.d / FSPD <= ball.hang;
+          const retrieve = ball.hang + near.d / FSPD + 0.3;
+          const perBase = 0.95;                     // seconds of retrieve time per base earned
+          runner.target = ball.hr ? 4 : caught ? 0 : Math.max(1, Math.min(3, Math.floor(retrieve / perBase)));
+          ball.caught = caught;
+          ball.chase = near.f;
+          runner.run = true;
+          if (caught) say('Caught — out', 1.3);
+        }
+        const g = {
+          tip: GAME_META.bases.tip, over: false,
+          resize() { setFielders(); },
+          reset() { outs = 0; strikes = 0; score = 0; runs = 0; msg = ''; msgT = 0; shake = 0; setFielders(); newPitch(); },
+          press() {
+            if (g.over) return;
+            if (st === 'pitch') { swing = 1; connect(); }
+          },
+          step(dt) {
+            const g2 = geo();
+            t += dt;
+            if (msgT > 0) msgT = Math.max(0, msgT - dt);
+            if (shake > 0) shake = Math.max(0, shake - dt * 3);
+            if (swing > 0) swing = Math.max(0, swing - dt * 6);
+            if (bat > 0) bat = Math.max(0, bat - dt * 4);
+
+            if (st === 'wind') {
+              windup = Math.min(1, t / 0.55);
+              if (t > 0.55) { st = 'pitch'; t = 0; ball.vy = (g2.plateY - g2.moundY) / (0.72 + Math.random() * 0.36); }
+              return;
+            }
+            if (st === 'pitch') {
+              ball.y += ball.vy * dt;
+              if (ball.y > g2.plateY + api.H * 0.10) return strike('No swing');
+              return;
+            }
+            if (st === 'flight') {
+              ball.air += dt;
+              const p = Math.min(1, ball.air / ball.hang);
+              ball.x = ball.from.x + (ball.land.x - ball.from.x) * p;
+              ball.y = ball.from.y + (ball.land.y - ball.from.y) * p;
+              // the chasing fielder converges on the landing spot
+              if (ball.chase) {
+                const f = ball.chase, dx = ball.land.x - f.x, dy = ball.land.y - f.y, d = Math.hypot(dx, dy);
+                const s = Math.max(api.W, api.H) * 0.34 * dt;
+                if (d > s) { f.x += dx / d * s; f.y += dy / d * s; }
+              }
+              // the runner takes what the ball allows
+              if (runner.run && runner.at < runner.target) {
+                runner.prog += dt / 0.52;
+                if (runner.prog >= 1) {
+                  runner.prog = 0; runner.at++;
+                  score++;
+                  if (runner.at >= 4) { runs++; api.snd.good(); }
+                  else api.snd.tone(760, 0.05, 'square', 0.12);
+                }
+              }
+              const settled = p >= 1 && (runner.at >= runner.target || !runner.run);
+              if (settled && ball.air > ball.hang + 0.5) {
+                if (ball.caught) { strikes = 0; outs++; }
+                else {
+                  strikes = 0;
+                  const label = runner.target >= 4 ? 'Home run!' : runner.target === 3 ? 'Triple!' : runner.target === 2 ? 'Double!' : 'Single';
+                  if (!ball.hr) say(label, 1.1);
+                }
+                st = 'reset'; t = 0;
+              }
+              return;
+            }
+            if (st === 'reset' && t > 0.85) newPitch();
+          },
+          draw(ctx) {
+            const W = api.W, H = api.H, g2 = geo();
+            const sx = shake > 0 ? (Math.random() * 2 - 1) * shake * 3 : 0;
+            const sy = shake > 0 ? (Math.random() * 2 - 1) * shake * 2 : 0;
+            ctx.save(); ctx.translate(sx, sy);
+            // sky + turf
+            const sky = ctx.createLinearGradient(0, 0, 0, H);
+            sky.addColorStop(0, '#12496e'); sky.addColorStop(0.30, '#3f86ad');
+            sky.addColorStop(0.42, '#4b8c3f'); sky.addColorStop(1, '#276023');
+            ctx.fillStyle = sky; ctx.fillRect(-4, -4, W + 8, H + 8);
+            ctx.fillStyle = 'rgba(255,255,255,.045)';
+            for (let x = 0; x < W; x += 54) ctx.fillRect(x, H * 0.34, 27, H);
+            // outfield fence: an ellipse arc between the foul poles
+            ctx.strokeStyle = 'rgba(255,255,255,.34)'; ctx.lineWidth = 2;
+            ctx.beginPath();
+            for (let a = -FOUL; a <= FOUL + 0.001; a += 0.06) {
+              const p = toScreen(a, 1);
+              a === -FOUL ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y);
+            }
+            ctx.stroke();
+            // foul lines, out to the poles
+            ctx.strokeStyle = 'rgba(255,255,255,.3)'; ctx.lineWidth = 1.5;
+            [-1, 1].forEach(sgn => {
+              const p = toScreen(FOUL * sgn, 1);
+              ctx.beginPath(); ctx.moveTo(g2.cx, g2.plateY); ctx.lineTo(p.x, p.y); ctx.stroke();
+            });
+            // infield dirt
+            ctx.fillStyle = 'rgba(196,133,86,.95)';
+            ctx.beginPath();
+            for (let i = 0; i < 4; i++) { const p = basePos(i); i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y); }
+            ctx.closePath(); ctx.fill();
+            ctx.fillStyle = 'rgba(75,140,63,.92)';
+            ctx.beginPath();
+            for (let i = 0; i < 4; i++) {
+              const p = basePos(i), c = { x: g2.cx, y: g2.plateY - g2.ry };
+              const q = { x: c.x + (p.x - c.x) * 0.66, y: c.y + (p.y - c.y) * 0.66 };
+              i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y);
+            }
+            ctx.closePath(); ctx.fill();
+            // mound + plate
+            ctx.fillStyle = 'rgba(196,133,86,.98)';
+            ctx.beginPath(); ctx.ellipse(g2.cx, g2.moundY, 13, 8, 0, 0, Math.PI * 2); ctx.fill();
+            // fielders
+            fielders.forEach(f => {
+              ctx.fillStyle = '#e2e8f0';
+              ctx.beginPath(); ctx.arc(f.x, f.y, 4, 0, Math.PI * 2); ctx.fill();
+              ctx.fillStyle = '#b91c1c';
+              ctx.beginPath(); ctx.arc(f.x, f.y - 3.5, 2, 0, Math.PI * 2); ctx.fill();
+            });
+            // bases
+            for (let i = 1; i < 4; i++) {
+              const p = basePos(i);
+              ctx.fillStyle = (runner.at >= i) ? '#ffe066' : '#f7f7f2';
+              ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(Math.PI / 4); ctx.fillRect(-5, -5, 10, 10); ctx.restore();
+            }
+            // home plate
+            ctx.fillStyle = '#fff';
+            ctx.beginPath();
+            ctx.moveTo(g2.cx - 7, g2.plateY - 3); ctx.lineTo(g2.cx + 7, g2.plateY - 3);
+            ctx.lineTo(g2.cx + 7, g2.plateY + 2); ctx.lineTo(g2.cx, g2.plateY + 6);
+            ctx.lineTo(g2.cx - 7, g2.plateY + 2); ctx.closePath(); ctx.fill();
+            // pitcher: rocks back during the windup
+            const pw = windup || 0;
+            ctx.fillStyle = '#e8eef7';
+            ctx.beginPath(); ctx.arc(g2.cx, g2.moundY - 4 - pw * 3, 5, 0, Math.PI * 2); ctx.fill();
+            ctx.strokeStyle = '#e8eef7'; ctx.lineWidth = 2.5; ctx.lineCap = 'round';
+            ctx.beginPath(); ctx.moveTo(g2.cx, g2.moundY - 2); ctx.lineTo(g2.cx + 6 - pw * 10, g2.moundY - 8 + pw * 4); ctx.stroke();
+            // batter + bat arc
+            const bx = g2.cx - 13, by = g2.plateY - 2;
+            ctx.fillStyle = '#1d4ed8';
+            api.rr(bx - 4, by - 17, 8, 12, 3); ctx.fill();
+            ctx.fillStyle = '#f5c98b'; ctx.beginPath(); ctx.arc(bx, by - 20, 4.5, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = '#1d4ed8'; ctx.beginPath(); ctx.arc(bx, by - 22, 5, Math.PI, 0); ctx.fill();
+            const swingA = swing > 0 ? (1 - swing) * 2.6 - 0.5 : -0.5;
+            ctx.strokeStyle = bat > 0 ? '#fff8c2' : '#c9a227';
+            ctx.lineWidth = bat > 0 ? 4 : 3;
+            ctx.beginPath(); ctx.moveTo(bx + 2, by - 12);
+            ctx.lineTo(bx + 2 + Math.cos(swingA) * 17, by - 12 + Math.sin(swingA) * 17); ctx.stroke();
+            // the runner, when there is one on the paths
+            if (runner.run && runner.at < runner.target) {
+              const from = basePos(runner.at), to = basePos(runner.at + 1);
+              const rx = from.x + (to.x - from.x) * runner.prog, ry = from.y + (to.y - from.y) * runner.prog;
+              const bob = Math.sin(runner.prog * 26) * 2;
+              ctx.strokeStyle = '#fde68a'; ctx.lineWidth = 2.5;
+              ctx.beginPath(); ctx.moveTo(rx, ry - 10); ctx.lineTo(rx - 4, ry + bob); ctx.moveTo(rx, ry - 10); ctx.lineTo(rx + 4, ry - bob); ctx.stroke();
+              ctx.fillStyle = '#1d4ed8'; api.rr(rx - 3.5, ry - 18, 7, 9, 3); ctx.fill();
+              ctx.fillStyle = '#f5c98b'; ctx.beginPath(); ctx.arc(rx, ry - 20, 4, 0, Math.PI * 2); ctx.fill();
+            }
+            // the ball, with a trail on the way in and on the way out
+            if (st === 'flight') {
+              ctx.strokeStyle = 'rgba(255,255,255,.4)'; ctx.lineWidth = 2;
+              ctx.beginPath(); ctx.moveTo(ball.from.x, ball.from.y); ctx.lineTo(ball.x, ball.y); ctx.stroke();
+            } else if (st === 'pitch') {
+              ctx.strokeStyle = 'rgba(255,255,255,.28)'; ctx.lineWidth = 1.5;
+              ctx.beginPath(); ctx.moveTo(ball.x, ball.y - 12); ctx.lineTo(ball.x, ball.y); ctx.stroke();
+            }
+            if (st === 'pitch' || st === 'flight') {
+              // a hit ball rises: draw it a touch bigger mid-flight
+              const lift = st === 'flight' ? Math.sin(Math.min(1, ball.air / ball.hang) * Math.PI) : 0;
+              ctx.fillStyle = '#fffdf5';
+              ctx.beginPath(); ctx.arc(ball.x, ball.y - lift * 6, 4 + lift * 2.5, 0, Math.PI * 2); ctx.fill();
+              ctx.strokeStyle = '#d05a4a'; ctx.lineWidth = 1;
+              ctx.beginPath(); ctx.arc(ball.x, ball.y - lift * 6, 2.6, -0.9, 0.9); ctx.stroke();
+            }
+            ctx.restore();
+            if (msgT > 0) {
+              ctx.globalAlpha = Math.min(1, msgT / 0.5);
+              ctx.fillStyle = '#fff'; ctx.font = '800 17px system-ui, sans-serif'; ctx.textAlign = 'center';
+              ctx.strokeStyle = 'rgba(0,0,0,.45)'; ctx.lineWidth = 3;
+              ctx.strokeText(msg, W / 2, H * 0.24); ctx.fillText(msg, W / 2, H * 0.24);
+              ctx.textAlign = 'left'; ctx.globalAlpha = 1;
+            }
+            api.textScrim();
+          },
+          hud() { return '⚾ ' + score + '   🏃 ' + runs + '   ' + '❌'.repeat(outs) + (strikes ? '   ' + '•'.repeat(strikes) : ''); },
           score() { return score; },
         };
         return g;
@@ -3695,6 +4058,663 @@
       );
     }
 
+    // ── Fields ────────────────────────────────────────────────────────────
+    // Ball diamonds, soccer pitches and multipurpose turf — 1,903 sites across
+    // 74 orgs and ~62k bookings a year, and the only facility type the hub had
+    // nothing for. Deliberately NOT folded into Outdoor Event Spaces: that tab
+    // is parties, this one is leagues.
+    //
+    // Built on card 17294 like the Outdoor tab, and it has to be: the Court
+    // Utilization card (17297) filters `c.type = 'court'`, so fields are absent
+    // from that feed entirely and its utilization pipeline cannot be reused the
+    // way Racket Sports reuses it. The hour helpers are shared (oeRowHours,
+    // oeHeatGrid) because the question — how many hours, covering which part of
+    // the day — is the same one.
+    //
+    // What makes this tab field-specific rather than a copy:
+    //   · INSTANT vs MANAGED. Only ~4.5% of field bookings platform-wide are
+    //     instant; leagues come through staff. A low instant share is the
+    //     baseline here, not a failure, and the panel says so.
+    //   · LIGHTS. Field lighting is billed as an ADD-ON line, not through the
+    //     Musco integration — `reservation_lighting_schedule` has 5 field rows
+    //     platform-wide, while "Field Light Fee" and its siblings are the four
+    //     most-attached add-ons on fields. So lights are read from add-on names,
+    //     and the Lighting columns are deliberately ignored.
+    //   · SPORT is inferred from names, because `court.sub_type` is NULL on all
+    //     1,903 fields. That is a guess, so the unclassified share is shown and
+    //     the panel steps aside when it is too large to read.
+    const FIELD_SPORTS = [
+      // \b before "ball": without it, /ball ?field/ matches inside "FootBALL FIELD"
+      // and every football field is filed as baseball. Caught by
+      // scripts/fields-classify.spec.js the first time it ran.
+      { key: 'baseball', label: 'Baseball / Softball',        re: /baseball|softball|diamond|\bball ?field|little league/i },
+      { key: 'soccer',   label: 'Soccer',                     re: /soccer|futsal|pitch/i },
+      { key: 'football', label: 'Football',                   re: /football|gridiron/i },
+      { key: 'lacrosse', label: 'Lacrosse / Rugby / Cricket', re: /lacrosse|rugby|cricket/i },
+      // Last on purpose: "Athletic Field 3" is only multipurpose if nothing more
+      // specific matched first.
+      { key: 'multi',    label: 'Multipurpose / Turf',        re: /multi|open space|turf|practice|athletic/i },
+    ];
+    // Field and PARK name together — a park called "Smith Soccer Complex" names
+    // the sport its fields do not. Measured platform-wide, adding the location
+    // moves ~4,800 bookings out of unclassified.
+    function fieldSport(facility, location) {
+      const t = String(facility == null ? '' : facility) + ' | ' + String(location == null ? '' : location);
+      for (let i = 0; i < FIELD_SPORTS.length; i++) if (FIELD_SPORTS[i].re.test(t)) return FIELD_SPORTS[i].key;
+      return null;
+    }
+    const FIELD_SPORT_LABEL = {};
+    FIELD_SPORTS.forEach(sp => { FIELD_SPORT_LABEL[sp.key] = sp.label; });
+    // Add-on families. Lights first — they are the biggest add-on on fields by a
+    // distance, and they are the lever an evening-heavy calendar turns on.
+    const FIELD_ADDON_GROUPS = [
+      { key: 'lights', label: 'Lights',           re: /light/i,
+        note: 'billed as a line item, not through the lighting integration' },
+      { key: 'prep',   label: 'Staffing & prep',  re: /attendant|prep|lining|clean|restroom|supply|park service|trash|maintenance|staff|janitor|security|umpire|scorekeep/i,
+        note: 'cost recovery for the crew a rental actually costs' },
+      { key: 'other',  label: 'Other add-ons',    re: null, note: null },
+    ];
+    function fieldAddonGroup(name) {
+      const n = String(name == null ? '' : name);
+      for (let i = 0; i < FIELD_ADDON_GROUPS.length; i++) {
+        const g = FIELD_ADDON_GROUPS[i];
+        if (g.re && g.re.test(n)) return g.key;
+      }
+      return 'other';
+    }
+
+    function FieldsBanner({ bookings, hours, fill, revenue, fieldsBooked, managedPct }) {
+      const pills = [
+        ['bookings', bookings.toLocaleString()],
+        ['hours booked', Math.round(hours).toLocaleString()],
+        ['days used', fill == null ? '—' : Math.round(fill) + '%'],
+        ['charged', money(revenue)],
+        ['fields booked', fieldsBooked.toLocaleString()],
+        ['staff-booked', managedPct == null ? '—' : Math.round(managedPct) + '%'],
+      ];
+      return e('div', { className: 'fac-banner fbx-ballfield' },
+        e('div', { className: 'fcb-scene', dangerouslySetInnerHTML: { __html: FBX_SCENES.ballfield } }),
+        e(BannerGame, { game: 'bases', key: 'game-bases' }),
+        e('div', { className: 'fcb-overlay' },
+          e('div', { className: 'fcb-kicker' }, CFG.displayName || 'Parks & Recreation'),
+          e('div', { className: 'fcb-title' }, '⚾ Fields'),
+          e('div', { className: 'fcb-sub' }, 'Diamonds, pitches & multipurpose turf — who books them, when, for how long, and with what.'),
+          e('div', { className: 'fcb-pills' }, pills.map((p, i) => e('span', { className: 'fcb-pill', key: i }, e('b', null, p[1]), ' ' + p[0]))),
+        ),
+      );
+    }
+
+    function FieldsView({ start, end }) {
+      const [data, setData] = React.useState({ rows: null, err: null });
+      const [locSel, setLocSel] = React.useState([]);
+      const [allSites, setAllSites] = React.useState(false);
+      const [insights, setInsights] = React.useState(null);
+      const [insLoading, setInsLoading] = React.useState(false);
+      const [insError, setInsError] = React.useState(null);
+      const pinged = React.useRef(false);
+
+      React.useEffect(() => {
+        let dead = false;
+        setData({ rows: null, err: null });
+        const tok = CFG.token ? '&token=' + encodeURIComponent(CFG.token) : '';
+        fetch('/' + CFG.slug + '/facility/api/data?start_date=' + start + '&end_date=' + end + tok)
+          .then(r => { if (!r.ok) throw new Error('Server returned ' + r.status); return r.json(); })
+          .then(j => { if (!dead) setData({ rows: (j.rows || []).filter(r => r['Site Type'] === 'field'), err: null }); })
+          .catch(err => { if (!dead) setData({ rows: null, err: err.message || String(err) }); });
+        return () => { dead = true; };
+      }, [start, end]);
+
+      React.useEffect(() => {
+        if (pinged.current || data.rows === null) return;
+        pinged.current = true;
+        const n = data.rows.filter(r => oeIsArrival(r)).length;
+        const tok = CFG.token ? '&token=' + encodeURIComponent(CFG.token) : '';
+        try {
+          fetch('/' + CFG.slug + '/facilities/api/log?event=fields&n=' + n + tok, { method: 'POST', keepalive: true }).catch(() => {});
+        } catch (er) { /* never let logging break the tab */ }
+      }, [data.rows]);
+
+      if (data.err) return e('div', { className: 'empty' },
+        e('div', { className: 'em-icon' }, '⚠️'),
+        e('div', { className: 'em-title' }, 'Could not load field data'),
+        e('div', { className: 'em-sub' }, String(data.err)));
+      if (data.rows === null) return e('div', { className: 'empty' },
+        e('div', { className: 'em-title', style: { color: '#9ca3af' } }, 'Loading Fields…'),
+        e('div', { className: 'fac-spin' }));
+
+      const allRows = data.rows;
+      const allLocations = Array.from(new Set(allRows.map(r => r['Location'] || '—'))).sort();
+      const rows = locSel.length ? allRows.filter(r => locSel.indexOf(r['Location'] || '—') >= 0) : allRows;
+
+      const shortSite = f => { f = f || '—'; return f.indexOf(' - ') !== -1 ? f.split(' - ').slice(1).join(' - ') : f; };
+      const isInstant = r => String(r['Booking Type'] || '').toLowerCase().indexOf('instant') >= 0;
+
+      const arrivals   = rows.filter(oeIsArrival);
+      const bookings   = arrivals.length;
+      const hourList   = arrivals.map(oeRowHours).filter(h => h != null);
+      const hoursTotal = hourList.reduce((s, h) => s + h, 0);
+      const avgBlock   = hourList.length ? hoursTotal / hourList.length : null;
+      const multiDay   = arrivals.filter(oeIsMulti).length;
+      const revenue    = arrivals.reduce((s, r) => s + (Number(r['Total']) || 0), 0);
+      const addOnFees  = arrivals.reduce((s, r) => s + (Number(r['Add-On Fees']) || 0), 0);
+      const siteDays   = rows.length;
+      const parties    = arrivals.map(r => Number(r['Head Cnt']) || 0).filter(n => n > 0);
+      const avgParty   = parties.length ? parties.reduce((a, b) => a + b, 0) / parties.length : null;
+      const instantN   = arrivals.filter(isInstant).length;
+      const managedN   = bookings - instantN;
+      const managedPct = bookings ? (managedN / bookings) * 100 : null;
+
+      const days = [];
+      { const endD = new Date(end + 'T00:00:00');
+        for (let d = new Date(start + 'T00:00:00'); d <= endD && days.length < 1100; d.setDate(d.getDate() + 1)) days.push(fmtDate(d)); }
+      const weekly = days.length > 95;
+
+      // ── Per-field stats ───────────────────────────────────────────────────
+      const statByKey = {};
+      rows.forEach(r => {
+        const site = shortSite(r['Facility']);
+        const locName = r['Location'] || '';
+        const key = locName + '||' + site;
+        const d = String(r['Date'] || '').slice(0, 10);
+        let st = statByKey[key];
+        if (!st) st = statByKey[key] = { site, location: locName, sport: fieldSport(r['Facility'], locName),
+          bookings: 0, days: 0, hours: 0, rev: 0, party: 0, partyN: 0, wknd: 0, mdDays: 0, instant: 0, evening: 0, occ: {} };
+        const cell = st.occ[d] || (st.occ[d] = { n: 0, hours: 0, multi: false, tips: [] });
+        cell.n++;
+        const h = oeRowHours(r);
+        if (h != null) { cell.hours += h; st.hours += h; }
+        if (oeIsMulti(r)) { cell.multi = true; st.mdDays++; }
+        if (cell.tips.length < 4) cell.tips.push((r['Reservee'] || 'Booked')
+          + (h != null ? ' · ' + oeFmtHrs(h) : (oeIsMulti(r) ? ' · day ' + oeDayNum(r) + ' of ' + oeTotDays(r) : ''))
+          + (r['Purpose'] ? ' · ' + r['Purpose'] : ''));
+        if (oeIsArrival(r)) {
+          st.bookings++;
+          st.rev += Number(r['Total']) || 0;
+          const p = Number(r['Head Cnt']) || 0;
+          if (p > 0) { st.party += p; st.partyN++; }
+          const dw = dowOfStr(r['Date']);
+          if (dw === 0 || dw === 6) st.wknd++;
+          if (isInstant(r)) st.instant++;
+          const bm = oeClockMin(r['Begin']);
+          if (bm != null && bm >= 17 * 60) st.evening++;
+        }
+      });
+      const statList = Object.keys(statByKey).map(k => {
+        const st = statByKey[k];
+        st.days = Object.keys(st.occ).length;
+        return st;
+      });
+      const fieldsBooked = statList.length;
+      const dayFill = fieldsBooked && days.length ? (siteDays / (fieldsBooked * days.length)) * 100 : null;
+
+      const kpis = [
+        { label: 'Bookings', val: bookings.toLocaleString(), cls: 'sc-blue', sub: 'reservations starting in range' },
+        { label: 'Hours Booked', val: Math.round(hoursTotal).toLocaleString(), cls: 'sc-green', sub: hourList.length.toLocaleString() + ' timed bookings' + (multiDay ? ' · ' + multiDay + ' multi-day excl.' : '') },
+        { label: 'Avg Block', val: avgBlock == null ? '—' : oeFmtHrs(avgBlock), cls: 'sc-amber', sub: 'hours per booking' },
+        { label: 'Days Used', val: dayFill == null ? '—' : dayFill.toFixed(dayFill < 10 ? 1 : 0) + '%', cls: 'sc-purple', sub: siteDays.toLocaleString() + ' of ' + (fieldsBooked * days.length).toLocaleString() + ' field-days' },
+        { label: 'Charged', val: money(revenue), cls: 'sc-green', sub: 'base rental' + (addOnFees ? ' · ' + money(addOnFees) + ' add-ons' : '') },
+        { label: 'Fields Booked', val: fieldsBooked.toLocaleString(), cls: 'sc-muted', sub: 'distinct fields with a booking' },
+        { label: 'Staff-Booked', val: managedPct == null ? '—' : Math.round(managedPct) + '%', cls: 'sc-muted', sub: instantN ? instantN.toLocaleString() + ' booked instantly online' : 'none booked instantly' },
+      ];
+
+      const hg = oeHeatGrid(arrivals);
+      const heat = hg.heat, heatHours = hg.hours, heatMax = hg.max;
+      const hourTotals = hg.hourTotals, heatBookings = hg.timed, busiestHour = hg.peak;
+      // Evening share: leagues live after 5pm, and it is the number the lights
+      // add-on hangs off.
+      const eveningN = arrivals.filter(r => { const m = oeClockMin(r['Begin']); return m != null && m >= 17 * 60; }).length;
+      const timedWithStart = arrivals.filter(r => oeClockMin(r['Begin']) != null).length;
+      const eveningPct = timedWithStart ? (eveningN / timedWithStart) * 100 : null;
+
+      // ── Sport mix (name-derived) ──────────────────────────────────────────
+      const sportAgg = {};
+      arrivals.forEach(r => {
+        const k = fieldSport(r['Facility'], r['Location']) || '(unknown)';
+        const b = sportAgg[k] || (sportAgg[k] = { k, n: 0, hours: 0, rev: 0, sites: {} });
+        b.n++; b.rev += Number(r['Total']) || 0;
+        const h = oeRowHours(r); if (h != null) b.hours += h;
+        b.sites[(r['Location'] || '') + '||' + shortSite(r['Facility'])] = 1;
+      });
+      const sportList = FIELD_SPORTS.filter(sp => sportAgg[sp.key]).map(sp => sportAgg[sp.key]);
+      const unknownSport = sportAgg['(unknown)'] ? sportAgg['(unknown)'].n : 0;
+      const unknownSportPct = bookings ? (unknownSport / bookings) * 100 : 0;
+
+      // ── Add-ons, grouped ──────────────────────────────────────────────────
+      const addOns = (() => {
+        const byName = {};
+        let withAny = 0;
+        arrivals.forEach(r => {
+          const raw = String(r['Add Ons'] || '').trim();
+          if (!raw) return;
+          withAny++;
+          raw.split(/,(?![^(]*\))/).forEach(part => {
+            const t = part.trim(); if (!t) return;
+            const m = /^(.*?)\s*\(\$?([\d,.]+)\)\s*$/.exec(t);
+            const name = (m ? m[1] : t).trim(); if (!name) return;
+            const listed = m ? Number(String(m[2]).replace(/,/g, '')) : null;
+            const b = byName[name] || (byName[name] = { name, n: 0, listed: null, group: fieldAddonGroup(name) });
+            b.n++;
+            if (listed != null && !isNaN(listed)) b.listed = listed;
+          });
+        });
+        const list = Object.keys(byName).map(k => byName[k]).sort((a, b) => b.n - a.n);
+        const groups = FIELD_ADDON_GROUPS.map(g => {
+          const items = list.filter(x => x.group === g.key);
+          return { g, items, n: items.reduce((s, x) => s + x.n, 0) };
+        }).filter(x => x.items.length);
+        return { list, withAny, groups };
+      })();
+      const lightsGroup = addOns.groups.filter(x => x.g.key === 'lights')[0] || null;
+
+      // ── Locations ─────────────────────────────────────────────────────────
+      const locAgg = {};
+      arrivals.forEach(r => {
+        const l = r['Location'] || '—';
+        const b = locAgg[l] || (locAgg[l] = { l, n: 0, hours: 0, rev: 0, sites: {} });
+        b.n++; b.rev += Number(r['Total']) || 0;
+        const h = oeRowHours(r); if (h != null) b.hours += h;
+        b.sites[shortSite(r['Facility'])] = 1;
+      });
+      const locList = Object.keys(locAgg).map(k => locAgg[k]).sort((a, b) => b.n - a.n);
+
+      // ── Ranking ───────────────────────────────────────────────────────────
+      const rankByHours = hoursTotal > 0;
+      const rankVal = st => rankByHours ? st.hours : st.bookings;
+      const ranked = statList.slice().sort((a, b) => rankVal(b) - rankVal(a) || b.days - a.days || b.rev - a.rev);
+      const topSites = ranked.slice(0, 10);
+      const quietSites = ranked.slice(Math.max(topSites.length, ranked.length - 6)).reverse();
+
+      // ── Block length mix ──────────────────────────────────────────────────
+      const BLOCKS = [
+        { lbl: 'Up to 2 hrs', lo: 0, hi: 2 },
+        { lbl: '2–4 hrs',     lo: 2, hi: 4 },
+        { lbl: '4–8 hrs',     lo: 4, hi: 8 },
+        { lbl: '8 hrs+',      lo: 8, hi: Infinity },
+      ];
+      const blockData = BLOCKS.map(b => {
+        const n = hourList.filter(h => h > b.lo && h <= b.hi).length;
+        return { label: b.lbl, v: n, valText: n.toLocaleString() };
+      }).concat(multiDay ? [{ label: 'Multi-day', v: multiDay, valText: multiDay.toLocaleString() }] : []);
+
+      // ── Day-of-week demand ────────────────────────────────────────────────
+      const dowDemand = (() => {
+        const dayCount = [0, 0, 0, 0, 0, 0, 0], byDow = [0, 0, 0, 0, 0, 0, 0];
+        days.forEach(d => { dayCount[new Date(d + 'T00:00:00').getDay()]++; });
+        arrivals.forEach(r => { const dw = dowOfStr(r['Date']); if (dw != null) byDow[dw]++; });
+        const list = OE_DOW.map((name, i) => ({
+          i, name, n: byDow[i], occurrences: dayCount[i],
+          perDay: dayCount[i] ? byDow[i] / dayCount[i] : null,
+        })).filter(x => x.occurrences > 0);
+        const rated = list.filter(x => x.perDay != null);
+        if (rated.length < 2) return null;
+        const sorted = rated.slice().sort((a, b) => b.perDay - a.perDay);
+        return { list, busiest: sorted[0], quietest: sorted[sorted.length - 1] };
+      })();
+
+      // ── Monthly ───────────────────────────────────────────────────────────
+      const byMonth = {};
+      arrivals.forEach(r => {
+        const ym = String(r['Date'] || '').slice(0, 7);
+        if (!/^\d{4}-\d{2}$/.test(ym)) return;
+        if (!byMonth[ym]) byMonth[ym] = { n: 0, revenue: 0, hours: 0 };
+        byMonth[ym].n++;
+        byMonth[ym].revenue += Number(r['Total']) || 0;
+        const h = oeRowHours(r); if (h != null) byMonth[ym].hours += h;
+      });
+      const months = Object.keys(byMonth).sort();
+      const maxMonthRev = Math.max(1, ...months.map(m => byMonth[m].revenue));
+
+      // ── Calendar ──────────────────────────────────────────────────────────
+      const calCols = weekly ? (() => { const w = []; for (let i = 0; i < days.length; i += 7) w.push(days.slice(i, i + 7)); return w; })()
+                             : days.map(d => [d]);
+      const calGroups = (() => {
+        const byLoc = {};
+        ranked.forEach(st => { (byLoc[st.location] = byLoc[st.location] || []).push(st); });
+        return Object.keys(byLoc).sort().map(name => ({ name, sites: byLoc[name] }));
+      })();
+      const CAL_CAP = 40;
+      const calShown = (() => {
+        if (allSites) return calGroups;
+        let left = CAL_CAP; const out = [];
+        calGroups.forEach(g => {
+          if (left <= 0) return;
+          const take = g.sites.slice(0, left);
+          left -= take.length;
+          out.push({ name: g.name, sites: take });
+        });
+        return out;
+      })();
+      const calHidden = statList.length - calShown.reduce((n, g) => n + g.sites.length, 0);
+      const cellFor = (st, dList, key) => {
+        if (weekly) {
+          let n = 0, hrs = 0;
+          dList.forEach(d => { const c = st.occ[d]; if (c) { n++; hrs += c.hours; } });
+          const sh = n ? OE_RAMP[Math.min(5, 1 + Math.floor((n - 1) / dList.length * 4.999))] : OE_RAMP[0];
+          return e('div', { key, className: 'cc-cell', style: { background: sh },
+            title: st.site + ' · wk of ' + dList[0] + ' · ' + n + ' of ' + dList.length + ' days booked' + (hrs ? ' · ' + oeFmtHrs(hrs) : '') });
+        }
+        const c = st.occ[dList[0]];
+        return e('div', { key, className: 'cc-cell', style: { background: oeShade(c) },
+          title: st.site + ' · ' + dList[0] + (c ? ' · ' + c.tips.join(' | ') + (c.n > c.tips.length ? ' (+' + (c.n - c.tips.length) + ' more)' : '') : ' · open') });
+      };
+      const hdFor = (dList, i) => {
+        const d = new Date(dList[0] + 'T00:00:00');
+        const we = !weekly && (d.getDay() === 0 || d.getDay() === 6);
+        const lbl = weekly ? ((d.getMonth() + 1) + '/' + d.getDate())
+          : (d.getDate() === 1 || i === 0 ? monthLabel(dList[0].slice(0, 7)).split(' ')[0] + ' ' + d.getDate() : String(d.getDate()));
+        return e('div', { key: 'h' + i, className: 'cc-hd' + (we ? ' we' : ''), title: weekly ? dList[0] : OE_DOW[d.getDay()] + ' ' + dList[0] },
+          weekly ? null : e('span', { className: 'cc-dow' }, OE_DOW1[d.getDay()]), lbl);
+      };
+
+      // ── Rec Insights ──────────────────────────────────────────────────────
+      const buildBlob = () => ({
+        scope: 'ball fields (diamonds, soccer pitches, multipurpose turf) — hourly/daily league and tournament rentals',
+        dateRange: { start, end, daysInRange: days.length },
+        totals: { bookings, hoursBooked: Math.round(hoursTotal), timedBookings: hourList.length, multiDayBookings: multiDay,
+                  avgBlockHours: avgBlock == null ? null : +avgBlock.toFixed(1), fieldsBooked, bookedFieldDays: siteDays,
+                  dayFillPct: dayFill == null ? null : Math.round(dayFill), netRevenueUsd: Math.round(revenue),
+                  addOnFeesUsd: Math.round(addOnFees), avgPartySize: avgParty == null ? null : Math.round(avgParty) },
+        bookingChannel: { instant: instantN, staffBooked: managedN, staffBookedPct: managedPct == null ? null : Math.round(managedPct) },
+        eveningShare: { after5pmBookings: eveningN, ofTimedBookings: timedWithStart, pct: eveningPct == null ? null : Math.round(eveningPct) },
+        bookingsCoveringEachHour: Object.fromEntries(heatHours.map(h => [oeHour12(h), hourTotals[h]])),
+        bookingsByDayOfWeek: dowDemand ? Object.fromEntries(dowDemand.list.map(x => [x.name, { bookings: x.n, perOccurrence: x.perDay == null ? null : +x.perDay.toFixed(2) }])) : null,
+        blockLengthMix: blockData.map(b => ({ bucket: b.label, bookings: b.v })),
+        sportMix: sportList.map(sp => ({ sport: FIELD_SPORT_LABEL[sp.k] || sp.k, bookings: sp.n, hours: Math.round(sp.hours), fields: Object.keys(sp.sites).length }))
+          .concat(unknownSport ? [{ sport: 'not named for a sport', bookings: unknownSport, hours: null, fields: null }] : []),
+        addOnsByFamily: addOns.groups.map(x => ({ family: x.g.label, attached: x.n, examples: x.items.slice(0, 4).map(i => i.name) })),
+        topAddOns: addOns.list.slice(0, 8).map(a => ({ addOn: a.name, attachedToBookings: a.n, listedPriceUsd: a.listed })),
+        byLocation: locList.slice(0, 12).map(l => ({ location: l.l, bookings: l.n, hours: Math.round(l.hours), fields: Object.keys(l.sites).length, revenueUsd: Math.round(l.rev) })),
+        topFields: topSites.map(s => ({ field: s.site, location: s.location, sport: FIELD_SPORT_LABEL[s.sport] || null,
+          bookings: s.bookings, hours: Math.round(s.hours), daysUsed: s.days, eveningBookings: s.evening, revenueUsd: Math.round(s.rev) })),
+        quietestFields: quietSites.map(s => ({ field: s.site, location: s.location, bookings: s.bookings, hours: Math.round(s.hours) })),
+        monthly: months.map(m => ({ month: m, bookings: byMonth[m].n, hours: Math.round(byMonth[m].hours), revenueUsd: Math.round(byMonth[m].revenue) })),
+      });
+      const getInsights = async () => {
+        setInsLoading(true); setInsError(null);
+        try {
+          const tok = CFG.token ? '?token=' + encodeURIComponent(CFG.token) : '';
+          const resp = await fetch('/' + CFG.slug + '/fields/api/insights' + tok, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(buildBlob()) });
+          const j = await resp.json();
+          if (!resp.ok || !j.ok) throw new Error(j.error || 'Server returned ' + resp.status);
+          setInsights(j.insights || []);
+        } catch (er) { setInsError(er.message || 'Could not generate insights'); }
+        setInsLoading(false);
+      };
+
+      const hasBookings = bookings > 0;
+      const perHour = hoursTotal > 0 ? revenue / hoursTotal : null;
+      const perBooking = bookings ? revenue / bookings : null;
+
+      return e('div', null,
+        e(FieldsBanner, { bookings, hours: hoursTotal, fill: dayFill, revenue, fieldsBooked, managedPct }),
+        allLocations.length > 1 ? e('div', { className: 'filters', style: { marginTop: 12 } },
+          e('div', { className: 'filter-group' },
+            e('span', { className: 'filter-lbl' }, 'Location'),
+            e(LocationFilter, { locations: allLocations, sel: locSel, setSel: setLocSel }))) : null,
+        e('div', { className: 'sum-cards' },
+          kpis.map((c, i) => e('div', { className: 'sum-card', key: i },
+            e('div', { className: 'sc-label' }, c.label),
+            e('div', { className: 'sc-val ' + c.cls }, c.val),
+            e('div', { className: 'sc-sub' }, c.sub)))),
+
+        hasBookings ? e('div', { className: 'insights-section' },
+          e('div', { className: 'insights-head' },
+            e('button', { type: 'button', className: 'insights-btn', onClick: getInsights, disabled: insLoading }, sparkles(), insLoading ? 'Analyzing…' : (insights ? '↻ Refresh insights' : '✨ Rec Insights')),
+            insights && !insLoading ? e('span', { className: 'insights-sub' }, 'Generated from the ' + bookings.toLocaleString() + ' bookings shown') : null),
+          insError && !insLoading ? e('div', { className: 'cu-error' }, e('strong', null, 'Insights unavailable: '), insError) : null,
+          insights && !insLoading ? e('div', { className: 'insights-grid' },
+            insights.map((ins, i) => e('div', { key: i, className: 'insight-card insight-' + (ins.type || 'signal') },
+              e('div', { className: 'insight-type' }, ins.type || 'signal'),
+              e('div', { className: 'insight-title' }, ins.title),
+              e('div', { className: 'insight-detail' }, ins.detail),
+              ins.action ? e('div', { className: 'insight-action' }, '→ ' + ins.action) : null))) : null) : null,
+
+        // ── Day-part heat map ─────────────────────────────────────────────
+        hasBookings ? e('div', { className: 'aqua-sec' },
+          e('h3', null, 'When the fields are in use', e('span', { className: 'sub' },
+            'bookings covering each hour · ' + heatBookings.toLocaleString() + ' timed booking' + (heatBookings === 1 ? '' : 's'))),
+          e('div', { className: 'aqua-panel' },
+            e('div', { className: 'oe-heat-wrap' },
+              e('div', { className: 'oe-heat', 'data-fld-heat': 'true',
+                'data-fld-peak': busiestHour >= 0 ? oeHour12(busiestHour) : 'none',
+                style: { gridTemplateColumns: '38px repeat(' + heatHours.length + ', minmax(20px, 1fr))' } },
+                e('div', { className: 'oe-h-lbl' }, ''),
+                heatHours.map((h, i) => e('div', { key: 'hh' + i, className: 'oe-h-hd' }, oeHour12(h))),
+                OE_DOW.map((dname, dw) => [
+                  e('div', { key: 'd' + dw, className: 'oe-h-lbl' }, dname),
+                  heatHours.map((h, i) => {
+                    const v = heat[dw][h];
+                    return e('div', { key: 'c' + dw + '-' + i, className: 'oe-h-cell',
+                      style: { background: v ? OE_RAMP[Math.min(5, 1 + Math.floor(v / heatMax * 4.999))] : OE_RAMP[0], color: v / heatMax > 0.6 ? '#fff' : '#8a8578' },
+                      title: dname + ' ' + oeHour12(h) + ' · ' + v + ' booking' + (v === 1 ? '' : 's') + ' in use' },
+                      v ? String(v) : '');
+                  }),
+                ]))),
+            e('div', { className: 'camp-note' },
+              busiestHour >= 0 && hourTotals[busiestHour] > 0
+                ? e('span', null, 'Peak hour is ', e('b', null, oeHour12(busiestHour) + 'm'),
+                    ' with ', e('b', null, hourTotals[busiestHour].toLocaleString()), ' bookings in use. ') : null,
+              eveningPct != null ? e('span', null, e('b', null, Math.round(eveningPct) + '%'),
+                ' of timed bookings start at 5pm or later — the block lights are billed against. ') : null,
+              'A booking counts in every hour it covers, so a 6–9pm practice fills three cells.',
+              multiDay ? e('span', null, ' ', e('b', null, oePlural(multiDay, 'multi-day booking')),
+                ' excluded: the feed records their times only on the first and last day.') : null)))
+          : null,
+
+        // ── How fields get booked ─────────────────────────────────────────
+        hasBookings ? e('div', { className: 'aqua-sec' },
+          e('h3', null, 'How the fields get booked', e('span', { className: 'sub' }, 'channel, block length, and what gets added on')),
+          e('div', { className: 'aqua-grid' },
+
+            e('div', { className: 'aqua-panel' },
+              e('h4', null, 'Instant vs staff-booked', e('span', { className: 'n' }, bookings.toLocaleString() + ' bookings')),
+              e(SplitBar, { parts: [
+                { label: 'Staff-booked', short: 'Staff', n: managedN, color: '#0d9488' },
+                { label: 'Instant online', short: 'Instant', n: instantN, color: '#f59e0b' },
+              ] }),
+              e('div', { className: 'camp-note' },
+                instantN === 0
+                  ? e('span', null, 'Nothing here was booked instantly online. ')
+                  : e('span', null, e('b', null, Math.round(instantN / bookings * 100) + '%'), ' came through instant online booking. '),
+                'Fields are staff-booked almost everywhere — about ',
+                e('b', null, '5%'), ' instant platform-wide — because the demand is leagues and tournaments on ',
+                'seasonal permits, not walk-up play. A low instant share is the baseline here, not a problem; ',
+                'a high one means residents are self-serving, which is worth knowing.')),
+
+            e('div', { className: 'aqua-panel' },
+              e('h4', null, 'Booking length', e('span', { className: 'n' }, avgBlock == null ? 'no times recorded' : 'avg ' + oeFmtHrs(avgBlock))),
+              e(HBars, { color: '#7c3aed', data: blockData }),
+              e('div', { className: 'camp-note' },
+                hourList.length
+                  ? e('span', null, e('b', null, Math.round(hourList.filter(h => h <= 4).length / hourList.length * 100) + '%'),
+                      ' run four hours or less — practices and games. The 8-hour-plus tail is tournament days, ',
+                      'which are worth pricing as a day rate rather than by the hour.')
+                  : e('span', null, 'No field booking in range carries both a start and an end time, so length cannot be read.'))),
+
+            lightsGroup ? e('div', { className: 'aqua-panel' },
+              e('h4', null, '💡 Lights', e('span', { className: 'n' }, lightsGroup.n.toLocaleString() + ' attached')),
+              e(HBars, { color: '#d97706', data: lightsGroup.items.slice(0, 5).map(a => ({
+                label: a.name, v: a.n,
+                valText: a.n.toLocaleString() + (a.listed != null ? ' · $' + a.listed.toFixed(2) : ''),
+              })) }),
+              e('div', { className: 'camp-note' },
+                'Field lighting is billed as an add-on line, not through the lighting integration, so this is ',
+                'where it shows up. ',
+                eveningPct != null && bookings
+                  ? e('span', null, e('b', null, lightsGroup.n.toLocaleString()), ' light add-ons against ',
+                      e('b', null, eveningN.toLocaleString()), ' bookings starting after 5pm',
+                      eveningN > lightsGroup.n
+                        ? e('span', null, ' — ', e('b', null, (eveningN - lightsGroup.n).toLocaleString()),
+                            ' evening bookings with no light fee attached, which is either daylight or money left behind.')
+                        : '.')
+                  : null)) : null,
+
+            addOns.groups.length ? e('div', { className: 'aqua-panel' },
+              e('h4', null, 'Add-ons attached', e('span', { className: 'n' },
+                addOns.withAny.toLocaleString() + ' of ' + bookings.toLocaleString() + ' bookings')),
+              e(HBars, { color: '#c2410c', data: addOns.groups.map(x => ({
+                label: x.g.label, v: x.n,
+                valText: x.n.toLocaleString(),
+                sub: x.items.slice(0, 2).map(i => i.name).join(', '),
+              })) }),
+              e('div', { className: 'camp-note' },
+                e('b', null, Math.round(addOns.withAny / Math.max(1, bookings) * 100) + '%'),
+                ' of bookings carry at least one add-on',
+                addOnFees > 0 ? e('span', null, ', ', e('b', null, money(addOnFees)), ' booked') : null,
+                '. Lights, an attendant, field prep and lining, cleaning — these are the costs a rental ',
+                'actually creates, and an add-on attached to a slice of bookings is cost recovery not being collected.')) : null,
+
+            dowDemand ? e('div', { className: 'aqua-panel' },
+              e('h4', null, 'Demand by day of week', e('span', { className: 'n' }, 'bookings per occurrence')),
+              e(HBars, { color: '#0d9488', data: dowDemand.list.map(x => ({
+                label: x.name, v: x.perDay || 0,
+                valText: (x.perDay || 0).toFixed(1) + ' / ' + x.occurrences + 'd',
+              })) }),
+              e('div', { className: 'camp-note' },
+                'Busiest ', e('b', null, dowDemand.busiest.name), ' at ',
+                e('b', null, dowDemand.busiest.perDay.toFixed(1)), ' bookings per ', dowDemand.busiest.name,
+                '; quietest ', e('b', null, dowDemand.quietest.name), ' at ',
+                e('b', null, dowDemand.quietest.perDay.toFixed(1)), '.')) : null,
+
+            perHour != null ? e('div', { className: 'aqua-panel' },
+              e('h4', null, 'Realized rate', e('span', { className: 'n' }, 'indicative only')),
+              e('div', { className: 'camp-bignum' }, money(perHour) + ' / hr'),
+              e('div', { className: 'camp-note' },
+                money(perBooking), ' per booking across ', Math.round(hoursTotal).toLocaleString(), ' booked hours. ',
+                e('b', null, 'Treat as a floor, not a rate card'), ' — youth-league and resident rates are often ',
+                'nominal or comped, revenue is counted on the booking’s first day only, and manual invoice lines ',
+                'are missing from this feed entirely. The hour and day-part figures are the reliable half.')) : null))
+          : null,
+
+        // ── Sport mix ─────────────────────────────────────────────────────
+        hasBookings && (sportList.length > 1 || unknownSportPct < 40) ? e('div', { className: 'aqua-sec' },
+          e('h3', null, 'Sport mix', e('span', { className: 'sub' }, 'inferred from field and park names')),
+          e('div', { className: 'aqua-panel' },
+            sportList.length ? e(HBars, { color: '#15803d', data: sportList.map(sp => ({
+              label: FIELD_SPORT_LABEL[sp.k] || sp.k, v: sp.n,
+              valText: sp.n.toLocaleString(),
+              sub: oePlural(Object.keys(sp.sites).length, 'field') + (sp.hours ? ' · ' + oeFmtHrs(sp.hours) : ''),
+            })) }) : null,
+            e('div', { className: 'camp-note', 'data-fld-sport-note': 'true' },
+              'Rec stores no sport on a field — ', e('b', null, 'court.sub_type is empty on every one'),
+              ' — so this is read from the field and park names. ',
+              unknownSport > 0
+                ? e('span', null, e('b', null, Math.round(unknownSportPct) + '%'), ' of bookings (',
+                    unknownSport.toLocaleString(), ') are on fields whose names say nothing about a sport',
+                    unknownSportPct >= 40
+                      ? e('span', null, ', so read the mix below as partial at best — for this org the naming does not carry it.')
+                      : '.')
+                : e('span', null, 'Every booked field here is named for a sport, so the mix is complete.'))))
+          : null,
+
+        // ── Most and least booked ─────────────────────────────────────────
+        hasBookings ? e('div', { className: 'aqua-sec' },
+          e('h3', null, quietSites.length ? 'Most and least booked fields' : 'Busiest fields',
+            e('span', { className: 'sub' }, rankByHours ? 'ranked by hours booked' : 'ranked by bookings')),
+          e('div', { className: 'aqua-grid' },
+            e('div', { className: 'aqua-panel' },
+              quietSites.length ? e('h4', null, 'Busiest fields', e('span', { className: 'n' }, 'top ' + topSites.length)) : null,
+              e(HBars, { color: '#15803d', data: topSites.map(s => ({
+                label: s.site, title: s.site + ' · ' + s.location + (s.sport ? ' · ' + FIELD_SPORT_LABEL[s.sport] : ''),
+                v: rankVal(s),
+                valText: rankByHours ? oeFmtHrs(s.hours) : s.bookings.toLocaleString(),
+                sub: oePlural(s.days, 'day') + ' used · ' + money(s.rev) + (s.mdDays ? ' · ' + s.mdDays + 'd multi-day' : ''),
+              })) }),
+              statList.some(x => x.mdDays) ? e('div', { className: 'camp-note' },
+                'A field booked across several days shows fewer HOURS than it was used for — the feed records a '
+                + 'multi-day booking’s times only on its first and last day.') : null),
+            quietSites.length ? e('div', { className: 'aqua-panel' },
+              e('h4', null, 'Quietest fields', e('span', { className: 'n' }, 'of those booked at all')),
+              e(HBars, { color: '#9ca3af', data: quietSites.map(s => ({
+                label: s.site, title: s.site + ' · ' + s.location,
+                v: rankVal(s),
+                valText: rankByHours ? oeFmtHrs(s.hours) : s.bookings.toLocaleString(),
+                sub: oePlural(s.days, 'day') + ' used',
+              })) }),
+              e('div', { className: 'camp-note' },
+                'These are the quietest fields ', e('b', null, 'that booked at least once'),
+                '. A field nobody reserved in this range is not in the reservation feed at all, so it cannot '
+                + 'appear here — read this as "least used of the ones in play", never as the full inventory.')) : null)) : null,
+
+        // ── Locations ─────────────────────────────────────────────────────
+        locList.length > 1 ? e('div', { className: 'aqua-sec' },
+          e('h3', null, 'By park / complex'),
+          e('div', { className: 'aqua-panel' },
+            e(HBars, { color: '#0891b2', data: locList.slice(0, 12).map(l => ({
+              label: l.l, v: l.n,
+              valText: l.n.toLocaleString(),
+              sub: oePlural(Object.keys(l.sites).length, 'field') + ' · ' + (l.hours ? oeFmtHrs(l.hours) + ' · ' : '') + money(l.rev),
+            })) }))) : null,
+
+        // ── Calendar ──────────────────────────────────────────────────────
+        statList.length ? e('div', { className: 'aqua-sec' },
+          e('h3', null, 'Field usage calendar', e('span', { className: 'sub' },
+            weekly ? 'weekly — deeper amber = more days booked' : 'deeper amber = more hours booked that day'),
+            calHidden > 0 ? e('button', {
+              onClick: () => setAllSites(v => !v),
+              style: { marginLeft: 10, fontSize: 10, fontWeight: 600, color: '#b45309', background: 'none', border: '1px solid #fcd34d', borderRadius: 12, padding: '1px 9px', cursor: 'pointer', textTransform: 'none', letterSpacing: 0 },
+            }, allSites ? 'Show top ' + CAL_CAP + ' only' : 'Show all ' + statList.length + ' fields') : null),
+          e('div', { className: 'aqua-panel' },
+            calShown.map((g, gi) => e('div', { key: gi, style: gi ? { marginTop: 16 } : null },
+              calShown.length > 1 ? e('h4', { style: { margin: '0 0 8px', fontSize: 11.5, fontWeight: 700, color: '#374151' } }, g.name || 'Fields',
+                e('span', { className: 'n', style: { fontWeight: 500, color: '#9ca3af', fontSize: 10.5, marginLeft: 6 } }, oePlural(g.sites.length, 'field'))) : null,
+              e('div', { className: 'camp-cal-wrap' },
+                e('div', { className: 'camp-cal', style: { gridTemplateColumns: '130px repeat(' + calCols.length + ', minmax(' + (weekly ? 22 : 14) + 'px, 1fr))' } },
+                  e('div', { className: 'cc-site' }, ''),
+                  calCols.map((dl, i) => hdFor(dl, i)),
+                  g.sites.flatMap(st => [
+                    e('div', { key: st.site + '|' + st.location + '|lbl', className: 'cc-site', title: st.site + (st.location ? ' · ' + st.location : '') + (st.sport ? ' · ' + FIELD_SPORT_LABEL[st.sport] : '') }, st.site),
+                    calCols.map((dl, i) => cellFor(st, dl, st.site + '|' + st.location + '-' + i)),
+                  ]))))),
+            e('div', { className: 'camp-cal-legend' },
+              e('span', null, 'Fewer'),
+              OE_RAMP.slice(1).map((c, i) => e('i', { key: i, style: { background: c, marginRight: 0 } })),
+              e('span', null, weekly ? 'More days booked / week' : 'More hours booked'),
+              multiDay ? e('span', { style: { marginLeft: 6 } },
+                e('i', { style: { background: OE_MULTI } }), 'Multi-day (hours not recorded)') : null))) : null,
+
+        // ── Monthly ───────────────────────────────────────────────────────
+        months.length > 1 ? e('div', { className: 'aqua-sec' },
+          e('h3', null, 'Bookings & revenue by month', e('span', { className: 'sub' }, 'field seasons are short — the shape matters')),
+          e('div', { className: 'vtrend' },
+            months.map((m, i) => e('div', { className: 'vtrend-row', key: i },
+              e('div', { className: 'vtrend-mo' }, monthLabel(m)),
+              e('div', { className: 'vtrend-track' }, e('div', { className: 'vtrend-bar', style: { width: (byMonth[m].revenue / maxMonthRev * 100) + '%', background: '#4f9440' } })),
+              e('div', { className: 'vtrend-rev' }, money(byMonth[m].revenue)),
+              e('div', { className: 'vtrend-bk' }, byMonth[m].n.toLocaleString() + ' bookings'))))) : null,
+
+        // ── Detail table ──────────────────────────────────────────────────
+        hasBookings ? e('table', { className: 'sum-cat-table' },
+          e('caption', null, statList.length > topSites.length
+            ? 'Top ' + topSites.length + ' fields by usage — of ' + statList.length + ' booked'
+            : 'Fields by usage'),
+          e('thead', null, e('tr', null,
+            e('th', null, 'Field'), e('th', null, 'Park'), e('th', null, 'Sport'),
+            e('th', { className: 'num' }, 'Bookings'), e('th', { className: 'num' }, 'Hours'),
+            e('th', { className: 'num' }, 'Days used'), e('th', { className: 'num' }, 'Evening'),
+            e('th', { className: 'num' }, 'Weekend %'), e('th', { className: 'num' }, 'Instant'),
+            e('th', { className: 'num' }, 'Charged'))),
+          e('tbody', null,
+            topSites.map((s, i) => e('tr', { key: i },
+              e('td', null, s.site),
+              e('td', null, s.location),
+              e('td', null, s.sport ? FIELD_SPORT_LABEL[s.sport] : '—'),
+              e('td', { className: 'num' }, s.bookings),
+              e('td', { className: 'num' }, s.hours ? oeFmtHrs(s.hours) : '—'),
+              e('td', { className: 'num' }, s.days),
+              e('td', { className: 'num' }, s.evening || '—'),
+              e('td', { className: 'num' }, s.bookings ? Math.round(s.wknd / s.bookings * 100) + '%' : '—'),
+              e('td', { className: 'num' }, s.instant || '—'),
+              e('td', { className: 'num' }, money(s.rev)))))) : e('div', { className: 'empty' },
+            e('div', { className: 'em-icon' }, '⚾'),
+            e('div', { className: 'em-title' }, 'No field bookings in this range'),
+            e('div', { className: 'em-sub' }, 'Diamonds, pitches and multipurpose turf are all counted here — field seasons are short, so try a spring or summer month.')),
+        e('div', { className: 'section-note' }, 'Fields · ' + bookings.toLocaleString() + ' bookings · '
+          + Math.round(hoursTotal).toLocaleString() + ' hours · ' + siteDays.toLocaleString() + ' booked field-days · '
+          + 'per-day reservation feed (canceled bookings not included). Pavilions and picnic areas are on the Outdoor Events tab.'),
+      );
+    }
+
     // ── Court Utilization — native view (ported from court-utilization.html) ──
     // All metrics/info from the standalone Court Utilization report, rendered
     // natively in the hub's design. Reuses the existing court data endpoints
@@ -4826,13 +5846,13 @@
           // empty. It used to render its own hero, which covered for that; now
           // that the duplicate hero is gone, suppressing the banner too would
           // leave the tab with no header at all over real data.
-          (tab === 'aquatics' || tab === 'camping' || tab === 'outdoor') ? null
+          (tab === 'aquatics' || tab === 'camping' || tab === 'outdoor' || tab === 'fields') ? null
             : ((tab === 'ice' || tab === 'golf') && vertCounts[tab] === 0) ? null
             : e(FacilitiesBanner, { a: bannerAgg, tab }),
           // Filters are context-aware: the site-type filter only makes sense on
           // the Summary (a vertical tab already fixes the type); Court Utilization
           // manages its own filters + dates inside the embed, so no hub filters.
-          (tab === 'utilization' || tab === 'racket' || tab === 'camping' || tab === 'outdoor') ? null : e('div', { className: 'filters' },
+          (tab === 'utilization' || tab === 'racket' || tab === 'camping' || tab === 'outdoor' || tab === 'fields') ? null : e('div', { className: 'filters' },
             e(StatusChips, { sel: statusSel, setSel: setStatusSel }),
             tab === 'summary' ? e('div', { className: 'filter-group' },
               e('span', { className: 'filter-lbl' }, 'Site type'),
@@ -4870,6 +5890,8 @@
                   ? e(CampingView, { start, end })
                 : tab === 'outdoor'
                   ? e(OutdoorEventsView, { start, end })
+                : tab === 'fields'
+                  ? e(FieldsView, { start, end })
                 : tab === 'aquatics'
                   ? e(AquaticsView, { rows: viewRows, err, statusSel, vert: Object.assign({ key: tab }, VERT_CONFIG[tab]) })
                   : VERT_CONFIG[tab]
