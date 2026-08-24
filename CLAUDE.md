@@ -412,6 +412,26 @@ A tab nobody can find is a tab nobody uses, and a quarterly report that stops at
   start times, counting every row as a booking, lights not read from add-on
   names, and an outdoor type dropped. All five fail by name.
 
+### PINNED: the Pulse "Hours Booked" card (Dan, 2026-08-24)
+
+Mocked up and **deliberately not built** — "we've got a lot of reports and would
+prefer to focus on those." Written down so the reasoning does not have to be
+redone when it next comes up:
+
+- `refreshOrgPulse()` already fetches **six months of the facility feed** to draw
+  the Bookings sparkline, and the hourly verticals are a slice of those same rows
+  — so the whole addition is one more `pulse.items.push`, in the same loop, with
+  the same sparkline / delta / pace shape. No new query and no new page.
+- **Hours, not bookings**, is the unit: Bookings is already a card and counts a
+  two-hour picnic table the same as an all-day tournament.
+- It would self-hide like Product Sales does — no pavilions and no fields, no
+  card.
+- If it is ever built, the hour rules must come from the same place as
+  `dirOutdoor`/`dirFields` and be pinned by `directors-facilities.spec.js`, or a
+  third surface starts reporting a different number for the same month.
+
+Mockup: https://claude.ai/code/artifact/b8db8343-588e-4db8-a65a-ba543ae71eaa
+
 **Org dashboard cards now carry tab chips** (`CARD_TABS` in `public/org.html`):
 Facilities → camping / outdoor / fields / racket / golf / aquatics / ice, and
 Memberships → check-ins / retention. Nested `<a>` is invalid, so a card with
