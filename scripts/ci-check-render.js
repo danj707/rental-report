@@ -128,6 +128,52 @@ function campmapSites(org) {
 }
 
 // Anything under /api/ that a page fetches. `match` is tested against the path.
+// ── Fast Track fixture ──────────────────────────────────────────────────────
+// Smyrna's Concert Series, which is what exposed the bug: four birthday-concert
+// tables opening over the next few days with 114 fast-trackers between them, in
+// the SAME program as two summer concerts that already happened. The old
+// "Launching Soon" test asked whether EVERY section in the program was still in
+// the future, so this program — the one with 120 people waiting — was excluded,
+// while a program with 3 fast-trackers opening in 29 days was featured.
+//
+// The dates are deliberately date-only strings (the card emits ::date) so the
+// off-by-one is exercised too: new Date('2026-10-03') is UTC midnight, which a
+// US browser renders as Oct 2.
+function fasttrackRows() {
+  const iso = d => new Date(Date.now() + d * 86400000).toISOString();
+  const table = (name, ft, pending, cap, opensInDays) => ({
+    "Row Type": "section", "Season": "Fall", "Program": "Concert Series", "Section": name,
+    "Reg Mode": "per-section", "Section ID": "sec-" + name.replace(/\W+/g, "-").toLowerCase(),
+    "Org ID": "org-1", "Program ID": "prog-concert",
+    "FT Total": ft, "FT Converted": 0, "FT Pending": pending, "FT Dropped": 0, "FT Families": pending,
+    "Conversion %": 0, "Direct Enrolled": 0, "Total Enrolled": 0,
+    "Capacity": cap, "Sessions": 1, "Fill %": 0, "Demand %": Math.round(ft / cap * 1000) / 10,
+    "Waitlisted": 0, "Publish Date": iso(-30),
+    // Two windows, as Smyrna really has them: a group/early-access window that
+    // opens first, and a general window a week later. The page used to read only
+    // the general one and announce "Reg opens Aug 31" for a section whose first
+    // families could register the next morning.
+    "Early Access Opens": iso(opensInDays), "Reg Opens": iso(opensInDays + 7), "Reg Closes": iso(45),
+    "Reg Status": "pipeline",
+    "Section Start": "2026-10-03", "Section End": "2026-10-03",
+    "Section Day": "Sat", "Section Time": "05:00pm\u201310:00pm",
+    "FT Revenue": 0, "Section Price": 25, "Left on Table": 0, "Over Demand $": 0,
+  });
+  const past = (name, ft, conv) => Object.assign(table(name, ft, 0, 100, -60), {
+    "Early Access Opens": null, "Reg Opens": iso(-90), "Reg Closes": iso(-70), "Reg Status": "closed",
+    "FT Converted": conv, "FT Pending": 0, "Conversion %": 71.4,
+    "Section Start": "2026-07-11", "Section End": "2026-07-11",
+  });
+  return [
+    table("Premier Table", 54, 54, 25, 1),
+    table("Select Table", 18, 18, 45, 2),
+    table("Preferred Table", 21, 21, 30, 3),
+    table("General Table", 21, 21, 50, 4),
+    past("Summer Concert: Yacht Rock Schooner", 14, 10),
+    past("Summer Concert: Guardian of the Jukebox", 8, 6),
+  ];
+}
+
 const STUBS = [
   { match: /\/facilities\/api\/campsites/, body: () => campsitesGeo },
   { match: /\/facility\/api\/data/,        body: () => ({ rows: campsiteRows(), meta: {} }) },
@@ -135,6 +181,7 @@ const STUBS = [
   { match: /\/api\/availability-batch/,     body: url => availabilityFor(url) },
   { match: /\/rentalcalendar\/api\/sites/, body: (url, org) => ({ sites: campmapSites(org) }) },
   { match: /\/api\/sites/,                  body: () => ({ sites: [] }) },
+  { match: /\/fasttrack\/api\/data/,       body: () => ({ rows: fasttrackRows(), meta: {} }) },
   { match: /\/api\/data/,                   body: () => ({ rows: campsiteRows(), meta: {} }) },
   { match: /\/api\/pulse/,                  body: () => ({ items: [], generated: null }) },
   { match: /\/api\/goals/,                  body: () => ({}) },
@@ -208,6 +255,17 @@ const CASES = [
   // latestCheckout. So this fails if the stay logic throws, which a selector for
   // the markup would not. (The night strip this used to assert on is gone — the
   // date fields replaced it.)
+  // Launching Soon must feature the program whose sections open in the next few
+  // days, even though the same program also has sections that already ran.
+  // `[data-launch-section]` exists only if that program reached the bucket AND
+  // the card named its launching sections, so the old program-level test fails
+  // this case rather than passing on "nothing threw".
+  { name: "fasttrack · launching soon", path: "/{org}/fasttrack",         needs: "[data-launch-section]" },
+  // ...and go-live must come from the EARLY-ACCESS window when that is the one
+  // that opens first. Reading only "Reg Opens" yields data-golive="general",
+  // which is how the report came to say "opens in 8 days" about a section going
+  // live the next morning.
+  { name: "fasttrack · early access",   path: "/{org}/fasttrack",         needs: "[data-golive=\"early\"]" },
   { name: "campmap · stay search", path: "/{org}/campmap",                needs: "#departPick[max]" },
   // The Campsite Type filter. `option[value="tent-and-rv"]` is only there if the
   // LIVE site feed landed and buildTypeFilter() re-ran off its subType — the

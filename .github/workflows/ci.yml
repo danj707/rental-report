@@ -73,6 +73,9 @@ jobs:
       - name: Facility summary KPI spec (a fee line is money, not a booking or a site)
         run: node scripts/facility-summary.spec.js
 
+      - name: Fast Track date spec (calendar dates keep their date; early access counts as go-live)
+        run: node scripts/fasttrack-dates.spec.js
+
       - name: Event log cache spec (fresh on append; never re-parses the whole log)
         run: node scripts/event-cache.spec.js
 
