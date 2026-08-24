@@ -523,6 +523,46 @@ function sectionGoLive(s) {
   else if (general)     { at = general; kind = 'general'; }
   return { at: at, kind: kind, early: early, general: general };
 }
+/* ── How many days until something opens ──────────────────────────────────
+   CALENDAR days, in the reader's own timezone — not elapsed 24-hour spans.
+
+   Every countdown on this page used Math.ceil((then - now) / 86400000), which
+   answers a different question: how many 24-hour periods fit in the gap. At
+   9:45am on the 24th, a window opening at 2pm THE SAME DAY is 0.17 of a span
+   away, so ceil made it 1 and the page said "opens tomorrow" about something
+   opening in four hours. The "OPENS TODAY" branch existed and was unreachable,
+   because ceil never returns 0 for a future instant.
+
+   It is also wrong in the other direction: 25 hours away is tomorrow morning,
+   but ceil calls it 2 days. And a span crossing a DST boundary contains 23 or
+   25 hours, so ms-based arithmetic drifts across it while calendar arithmetic
+   cannot.
+
+   Midnight-to-midnight on the local calendar is what a reader means by "today"
+   and "tomorrow", so that is what this measures. 0 = today, 1 = tomorrow,
+   negative = already past. */
+function calDaysUntil(then, from) {
+  if (!then) return null;
+  var b = from || new Date();
+  var d0 = new Date(b.getFullYear(), b.getMonth(), b.getDate());
+  var d1 = new Date(then.getFullYear(), then.getMonth(), then.getDate());
+  return Math.round((d1 - d0) / 86400000);
+}
+/* "today" / "tomorrow" / "in 6 days" — so a 0 never reaches the page as
+   "in 0 days", which is how an off-by-one hides in plain sight. */
+function dayPhrase(d) {
+  if (d == null) return '';
+  if (d <= 0) return 'today';
+  if (d === 1) return 'tomorrow';
+  return 'in ' + d + ' days';
+}
+/* Compact form for a chip or a parenthetical: "today" / "tomorrow" / "6d".
+   The two nearest days get words because that is the difference a reader acts
+   on; past two, a number is shorter and just as clear. */
+function dayShort(d) {
+  if (d == null) return '';
+  return d <= 0 ? 'today' : d === 1 ? 'tomorrow' : d + 'd';
+}
 function regTiming(p) {
   var now = new Date();
   var nextOpen = null, openNow = false, anyReg = false, nextClose = null;
@@ -538,7 +578,7 @@ function regTiming(p) {
     var c = s.regCloses ? new Date(s.regCloses) : null;      // already opened
     if (!c || c >= now) { openNow = true; if (c && (!nextClose || c < nextClose)) nextClose = c; }
   });
-  var daysUntilOpen = nextOpen ? Math.ceil((nextOpen - now) / 86400000) : null;
+  var daysUntilOpen = nextOpen ? calDaysUntil(nextOpen, now) : null;
   // Sort key for "going live soonest": future opens by date, then open-now, then closed/none.
   var soonestKey = nextOpen ? nextOpen.getTime() : (openNow ? 8.64e15 : (anyReg ? 9.0e15 : 9.5e15));
   return { nextOpen: nextOpen, nextOpenKind: nextOpenKind, daysUntilOpen: daysUntilOpen, openNow: openNow, nextClose: nextClose, anyReg: anyReg, soonestKey: soonestKey };
@@ -549,7 +589,7 @@ function RegChip(props) {
     var soon = rt.daysUntilOpen <= 7;
     return React.createElement('div', { style: { marginTop: 4, fontSize: 11, fontWeight: 700, color: soon ? '#dc2626' : '#2563eb' } },
       (soon ? '🔴 ' : '📅 ') + (rt.nextOpenKind === 'early' ? 'Early access opens ' : 'Reg opens ')
-        + fmtDateShort(rt.nextOpen) + ' · ' + rt.daysUntilOpen + (rt.daysUntilOpen === 1 ? ' day' : ' days'));
+        + fmtDateShort(rt.nextOpen) + ' · ' + dayPhrase(rt.daysUntilOpen));
   }
   if (rt.openNow) return React.createElement('div', { style: { marginTop: 4, fontSize: 11, fontWeight: 700, color: '#16a34a' } },
     '🟢 Registration open' + (rt.nextClose ? (' · closes ' + fmtDateShort(rt.nextClose)) : ''));
@@ -674,7 +714,7 @@ function PipelineLaunchCard(props) {
         launch.slice().sort(function (a, b) { return sectionGoLive(a).at - sectionGoLive(b).at; }).slice(0, 4).map(function (s2, i2) {
           var gl2 = sectionGoLive(s2);
           var od = gl2.at;
-          var dd = Math.ceil((od - new Date()) / 86400000);
+          var dd = calDaysUntil(od);
           return React.createElement('div', { key: 'ls' + i2, 'data-launch-section': s2.sectionId || s2.section,
             'data-golive': gl2.kind,
             style: { fontSize: 11.5, color: '#374151', display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'baseline' } },
@@ -682,7 +722,7 @@ function PipelineLaunchCard(props) {
             React.createElement('span', null, s2.section),
             React.createElement('span', { style: { color: '#9ca3af' } },
               '\u00b7 ' + (gl2.kind === 'early' ? 'early access ' : 'opens ') + fmtDateShort(od)
-              + (dd <= 0 ? ' (today)' : dd === 1 ? ' (tomorrow)' : ' (' + dd + 'd)')
+              + ' (' + dayShort(dd) + ')'
               + (gl2.kind === 'early' && gl2.general ? ', general ' + fmtDateShort(gl2.general) : '')),
             s2.sectionId && React.createElement('a', {
               href: adminSectionUrl(p.orgId, s2.sectionId), target: '_blank', rel: 'noopener',
@@ -742,7 +782,7 @@ function PipelineLaunchSection(props) {
         fmtInt(totalFt) + ' fast-trackers primed across ' + totalSections + ' section' + (totalSections !== 1 ? 's' : '')
         + ' in ' + items.length + ' program' + (items.length !== 1 ? 's' : '')),
       soonest != null && React.createElement('span', { style: { fontSize: 12, color: '#9a3412' } },
-        '— first opens ' + (soonest <= 0 ? 'today' : soonest === 1 ? 'tomorrow' : 'in ' + soonest + ' days'))
+        '— first opens ' + dayPhrase(soonest))
     ),
     items.map(function(p) { return React.createElement(PipelineLaunchCard, { key: p.program, p: p }); })
   );
@@ -770,7 +810,7 @@ function ColdPipelineStrip(props) {
     .map(function(r) {
       var gl = sectionGoLive(r);
       var d = gl.at;
-      var days = d && d > now ? Math.ceil((d - now) / 86400000) : null;
+      var days = d && d > now ? calDaysUntil(d, now) : null;
       return { r: r, days: days, kind: gl.kind };
     })
     .filter(function(x){ return x.days !== null; })
@@ -793,7 +833,7 @@ function ColdPipelineStrip(props) {
       React.createElement('span', { style: { fontSize: 12.5, color: '#0369a1', fontWeight: 600 } },
         soon.length
           ? soon.length + ' section' + (soon.length !== 1 ? 's' : '') + ' opening within 14 days with no Fast Track interest yet'
-          : cold.length + ' published section' + (cold.length !== 1 ? 's' : '') + ' awaiting registration, none with Fast Track interest yet — first opens in ' + cold[0].days + ' day' + (cold[0].days !== 1 ? 's' : '')),
+          : cold.length + ' published section' + (cold.length !== 1 ? 's' : '') + ' awaiting registration, none with Fast Track interest yet — first opens ' + dayPhrase(cold[0].days)),
       React.createElement('span', { style: { fontSize: 11.5, color: '#64748b' } },
         '— may need better descriptions, pricing, or marketing before registration opens')
     ),
@@ -830,7 +870,7 @@ function ColdPipelineStrip(props) {
           color: urgent ? '#b45309' : '#0369a1', background: urgent ? '#fef3c7' : '#e0f2fe',
           padding: '4px 10px', borderRadius: 999 } },
           '📅 ' + (x.kind === 'early' ? 'Early access ' : 'Reg opens ')
-            + fmtDateShort(sectionGoLive(r).at) + ' · ' + x.days + 'd')
+            + fmtDateShort(sectionGoLive(r).at) + ' · ' + dayShort(x.days))
       );
     }),
     laterNote && React.createElement('div', { style: { fontSize: 11, color: '#94a3b8', marginTop: 2, paddingLeft: 4 } }, laterNote)
@@ -852,8 +892,8 @@ function TriagePanel(props) {
       if (s.regCloses) { var dc = new Date(s.regCloses); if (!regClosesDate || dc > regClosesDate) regClosesDate = dc; }
     });
     p._spotsLeft = spotsLeft; p._regOpensDate = regOpensDate; p._regClosesDate = regClosesDate;
-    p._daysUntilRegOpens = regOpensDate && regOpensDate > now ? Math.ceil((regOpensDate - now) / 86400000) : null;
-    p._daysUntilRegCloses = regClosesDate && regClosesDate > now ? Math.ceil((regClosesDate - now) / 86400000) : null;
+    p._daysUntilRegOpens = regOpensDate && regOpensDate > now ? calDaysUntil(regOpensDate, now) : null;
+    p._daysUntilRegCloses = regClosesDate && regClosesDate > now ? calDaysUntil(regClosesDate, now) : null;
     p._allFutureReg = allFutureReg && hasRegOpens;
     /* Sections whose registration has NOT opened yet and that already have Fast
        Track interest. This replaces a program-level "every section is in the
@@ -880,7 +920,7 @@ function TriagePanel(props) {
       var gl2 = sectionGoLive(s2);
       return (gl2.at && p._launchOpens && gl2.at.getTime() === p._launchOpens.getTime()) ? gl2.kind : k;
     }, null);
-    p._launchDays = p._launchOpens ? Math.ceil((p._launchOpens - now) / 86400000) : null;
+    p._launchDays = p._launchOpens ? calDaysUntil(p._launchOpens, now) : null;
     // Skip programs where all sections have already ended
     var allPast = (p.sections || []).every(function(s) {
       if (!s.sectionEnd) return false;
@@ -897,7 +937,7 @@ function TriagePanel(props) {
       buckets.needsCapacity.push(p);
     } else if (p._launch.length > 0) {
       p._triageAction = p._launchDays != null
-        ? 'Registration opens in ' + p._launchDays + ' day' + (p._launchDays !== 1 ? 's' : '') + '. ' + fmtInt(p._launchFt) + ' fast-tracked, ' + fmtInt(p._launchPending) + ' still waiting. '
+        ? 'Registration opens ' + dayPhrase(p._launchDays) + '. ' + fmtInt(p._launchFt) + ' fast-tracked, ' + fmtInt(p._launchPending) + ' still waiting. '
         : 'Registration not yet open. ' + fmtInt(p._launchFt) + ' wishlists waiting.';
       buckets.readyToOpen.push(p);
     } else if (p.ftSignups >= 3 && (p.convPct === 0 || p.convPct === null)) {
@@ -932,9 +972,9 @@ function TriagePanel(props) {
           target: '_blank', rel: 'noopener', className: 'triage-admin-link'
         }, 'Manage Program →'),
         p._regOpensDate && React.createElement('span', { className: 'triage-chip' + (p._daysUntilRegOpens != null && p._daysUntilRegOpens <= 7 ? ' soon' : '') },
-          p._daysUntilRegOpens != null ? '📅 Reg opens ' + fmtD(p._regOpensDate) + ' (' + p._daysUntilRegOpens + 'd)' : '📅 Reg opened ' + fmtD(p._regOpensDate)),
+          p._daysUntilRegOpens != null ? '📅 Reg opens ' + fmtD(p._regOpensDate) + ' (' + dayShort(p._daysUntilRegOpens) + ')' : '📅 Reg opened ' + fmtD(p._regOpensDate)),
         p._regClosesDate && p._daysUntilRegCloses != null && React.createElement('span', { className: 'triage-chip' + (p._daysUntilRegCloses <= 3 ? ' urgent' : '') },
-          '⏰ Closes ' + fmtD(p._regClosesDate) + ' (' + p._daysUntilRegCloses + 'd)'),
+          '⏰ Closes ' + fmtD(p._regClosesDate) + ' (' + dayShort(p._daysUntilRegCloses) + ')'),
         (p.sections || []).length > 0 && React.createElement('span', null, p.sections.length + ' section' + (p.sections.length !== 1 ? 's' : '') + ' · ' + fmtInt(p.capacity) + ' total capacity')
       )
     );
