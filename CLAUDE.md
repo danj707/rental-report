@@ -727,10 +727,29 @@ to_char(sess.starts_at AT TIME ZONE loc.timezone, 'Dy')     -- etc
 
 Note `timestamptz AT TIME ZONE 'X'` yields a `timestamp` in that zone, which
 `to_char`/`::date` then read literally — no session-timezone dependency left.
-**NOT YET APPLIED to card 17300** (needs the Date-tag re-flip + heaviest-org
-verification below). The date is right in Pacific for this section, but an
-early-morning Eastern event still slips a day, so this is a correctness fix and
-not only a cosmetic one.
+
+**APPLIED to card 17300 as v17 (2026-08-24), and signed off.** Pushed via the
+API — which reset `start_date` to Text exactly as the warning below says, so Dan
+re-flipped both date tags in the UI immediately after. Verified in that order:
+
+- the live card was re-read and diffed against the repo mirror FIRST (identical,
+  no drift), then the pushed SQL was diffed back against the mirror
+  (byte-identical, 618 lines) — a hand-transcribed 618-line push needs that
+  check, not trust
+- cache-independent live sign-off through the public endpoint: smyrna 10,629
+  rows in 9.0s, apex (heaviest) 46,984 rows in 57.9s
+- the served card now returns `2026-10-03 · Sat · 05:00pm–10:00pm` for all four
+  birthday-concert tables, matching Rec's admin exactly. The two summer concerts
+  were three hours out too, so this was every Smyrna section, not just upcoming
+  ones
+- `scripts/report-cards.manifest.json` gained a **smyrna** fasttrack row as the
+  timezone regression case: apex is the worst case for timeouts but is Pacific,
+  so it structurally cannot catch this class of bug. An Eastern org has to be in
+  the manifest for the daily check to see a regression here.
+
+The date was already right in Pacific for this particular section, but an
+early-morning Eastern event still slips a day (56 sections across 8 orgs did),
+so this was a correctness fix and not only a cosmetic one.
 
 **2. `::date` columns come back as bare `YYYY-MM-DD`, and `new Date()` parses
 that as UTC midnight.** So a US browser formats `"2026-10-03"` as **Oct 2** —

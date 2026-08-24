@@ -22,6 +22,11 @@
       "org": "2d147f38-068c-409e-890d-a8acc88d8079"
     },
     {
+      "label": "fasttrack / smyrna (TIMEZONE regression case — Eastern org. v17 computes the schedule columns in the section's own timezone; before it, Smyrna's 5pm concert was emitted as 02:00pm in Metabase's Pacific report timezone. A Pacific org cannot catch that regression, so an Eastern one is pinned here. Measured 9.0s / 10,629 rows 2026-08-24)",
+      "card": "9d38ab95-8562-42ca-b6c2-2582b7452457",
+      "org": "efc0724c-8f32-481a-bab3-fc19c724f3a7"
+    },
+    {
       "label": "instructor-payout / san-francisco-rec-park (heaviest — 60+ instructor lessons marketplace)",
       "card": "a8db6d86-eddc-4511-a28c-ad4bf636859e",
       "org": "17380e28-7e02-4b52-82c5-fab18557fd7a"
