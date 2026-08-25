@@ -551,6 +551,14 @@ const CASES = [
   // the shorter sites' windows, and this fails by name. "An Arrive field
   // rendered" is the assertion that would not have caught the bug.
   { name: "campmap · 210-day horizon", path: "/{org}/campmap",            needs: "#arrivePick[data-days-ahead=\"119\"]" },
+  // Depart must reach the horizon too (Dan, 2026-08-25): the last bookable
+  // arrival (day 119) PLUS a full stay. The check org is the first campmap seed,
+  // pleasant-hill, whose configured maximum is 5 nights — so 119 + 5 = 124.
+  // Two regressions land elsewhere: reverting to the old rec.us latestCheckout
+  // cap gives a number in the single digits, and bounding at the horizon ITSELF
+  // gives 120, which is the tail-decay bug that makes the final arrival a
+  // one-night stay.
+  { name: "campmap · depart reaches the horizon", path: "/{org}/campmap",  needs: "#departPick[data-days-ahead=\"124\"]" },
 ];
 
 const child = spawn(process.execPath, [path.join(__dirname, "..", "server.js")], {

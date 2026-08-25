@@ -46,6 +46,10 @@ body{font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica
 .datebar .fld span{font-size:9.5px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);font-weight:700}
 .datebar .fld input{font:inherit;font-size:13.5px;padding:6px 9px;border:1px solid var(--line);border-radius:9px;color:#374151;background:#fff;cursor:pointer}
 .datebar .fld input:focus{outline:2px solid var(--accent);outline-offset:1px}
+.datebar .fld input:disabled{background:#f9fafb;color:#9ca3af;cursor:not-allowed}
+/* "Choose an arrival date" — the label carries the instruction, so it reads at
+   the field the camper is looking at rather than as a message elsewhere. */
+.datebar .fld span.prompt{color:var(--accent);letter-spacing:.3px}
 /* The campsite-type filter sits in the same row as the dates: "which sites fit
    my rig" is part of the same question as "which nights", not a separate mode. */
 .datebar .fld select{font:inherit;font-size:13.5px;padding:6px 9px;border:1px solid var(--line);border-radius:9px;color:#374151;background:#fff;cursor:pointer;max-width:200px}
@@ -75,6 +79,9 @@ body{font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica
   .sitelist{top:auto;left:0;right:0;height:42%;width:auto;border-left:none;border-top:1px solid var(--line)}
 }
 .datebar .summ .part{color:var(--partial);font-weight:700}
+/* Says what the Depart picker no longer enforces — see renderStayNote(). */
+.datebar .staynote{font-size:11.5px;font-weight:700;color:#92400e;background:#fef3c7;
+  border:1px solid #fde68a;border-radius:999px;padding:3px 9px;white-space:nowrap}
 /* The stay, drawn on the strip: arrival, the nights between, and the checkout
    morning (dashed — you are not occupying the site that night). */
 
@@ -249,8 +256,9 @@ body{font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica
     <div class="dbrow dbrow-top">
       <label class="fld"><span>Arrive</span><input type="date" id="arrivePick"/></label>
       <span class="fld-arrow">→</span>
-      <label class="fld"><span>Depart</span><input type="date" id="departPick"/></label>
+      <label class="fld"><span id="departLbl">Depart</span><input type="date" id="departPick"/></label>
       <span class="nights" id="nights">1 night</span>
+      <span class="staynote" id="stayNote" hidden></span>
       <label class="fld fld-type" id="typeFld" hidden><span>Campsite type</span><select id="typePick"></select></label>
       <div class="summ" id="summ">—</div>
       <button class="listtog" id="listTog" title="Show or hide the list of sites">Hide list</button>
@@ -689,6 +697,50 @@ function maxArrival(){
     if(!best || h.last>best) best=h.last;
   });
   return best || iso(addDays(TODAY, DAYS_SHOWN - 1));
+}
+
+/* How far the DEPART picker may reach.
+ *
+ * Dan, 2026-08-25: "they should both be bounded by 180 days, otherwise that
+ * makes no sense." This reverses the older rule, which bounded Depart at
+ * rec.us's own `latestCheckout` for the chosen arrival so the picker could never
+ * offer a stay the engine would refuse. The cost of that rule was that the field
+ * looked capped at a week or two — the last arrival at Topaz allows 14 nights,
+ * and a booking in the way cuts it to 10 — so a map that now reaches 180 days
+ * read as though it still stopped in a fortnight.
+ *
+ * The bound is the last bookable arrival PLUS the campground's maximum stay,
+ * not the last arrival itself. The booking window limits when a stay may START,
+ * never how long it runs: rec.us gives an arrival of 2027-02-20 a latestCheckout
+ * of 2027-03-06, fourteen nights later. Bounding at the horizon itself would
+ * make the final arrival a one-night stay and decay the longest stay to nothing
+ * across the last fortnight — measured 2026-08-23 (14 → 8 → 5 → 2 → 1 → 0) and
+ * rejected then, and the same regression however the bound is reached.
+ *
+ * What replaces the old hard stop is `stayCeiling()` below: the page still knows
+ * exactly what rec.us will accept for this arrival, and now SAYS it instead of
+ * silently greying the calendar. A camper can select a longer stay, and the
+ * per-night verdict tells them the truth about it — no site is ever reported
+ * open for nights it cannot take.
+ */
+function maxCheckout(){
+  var a=maxArrival(), view=VIEW(), mx=null;
+  for(var i=0;i<view.length && mx===null;i++){ var m=siteMeta(view[i]); if(m && m.maxNights) mx=m.maxNights; }
+  return iso(addDays(new Date(a+'T00:00:00'), mx || 1));
+}
+
+/* The latest checkout rec.us will actually accept for this arrival, and why it
+ * stops there — `stay` when the campground's own maximum is the binding limit,
+ * `booked` when a reservation truncates it sooner. Returned rather than applied,
+ * so the caption can explain the difference the picker no longer enforces. */
+function stayCeiling(arrive){
+  var accepted=latestCheckoutFrom(arrive);
+  var view=VIEW(), mx=null;
+  for(var i=0;i<view.length && mx===null;i++){ var m=siteMeta(view[i]); if(m && m.maxNights) mx=m.maxNights; }
+  var byRule = mx ? iso(addDays(new Date(arrive+'T00:00:00'), mx)) : null;
+  var nights = Math.round((new Date(accepted+'T00:00:00') - new Date(arrive+'T00:00:00'))/86400000);
+  return { latest:accepted, nights:nights, maxNights:mx,
+           why: (byRule && accepted < byRule) ? 'booked' : 'stay' };
 }
 
 /* ── the campsite-type filter ────────────────────────────────────────────────
@@ -1146,8 +1198,11 @@ function setStay(arrive, depart){
   var maxArr = maxArrival();
   if(arrive > maxArr)    arrive = maxArr;
   if(!depart || depart <= arrive) depart = iso(addDays(new Date(arrive+'T00:00:00'), 1));
-  var cap = latestCheckoutFrom(arrive);
-  if(depart > cap) depart = cap;
+  // The checkout is no longer clamped to what rec.us will accept — see
+  // maxCheckout(). It IS clamped to the horizon, so the stay cannot run past
+  // dates no site has opened.
+  var capMax = maxCheckout();
+  if(depart > capMax) depart = capMax;
   SELECTED=arrive; DEPART=depart;
 
   var n=stayNights().length;
@@ -1160,11 +1215,43 @@ function setStay(arrive, depart){
   if(ai){ ai.value=SELECTED; ai.min=TODAY_ISO; ai.max=maxArr;
           ai.setAttribute('data-days-ahead',
             String(Math.round((new Date(maxArr+'T00:00:00') - TODAY)/86400000))); }
-  if(di){ di.value=DEPART; di.min=iso(addDays(new Date(SELECTED+'T00:00:00'),1)); di.max=latestCheckoutFrom(SELECTED); }
+  if(di){ di.value=DEPART; di.min=iso(addDays(new Date(SELECTED+'T00:00:00'),1)); di.max=maxCheckout();
+          di.setAttribute('data-days-ahead',
+            String(Math.round((new Date(maxCheckout()+'T00:00:00') - TODAY)/86400000))); }
+  renderStayNote();
 
   refreshMarkers(); updateSummary(); renderList();
   fetchWeather();
 }
+/* Depart with no arrival to derive its range from. Disabled and labelled rather
+ * than left showing the last stay's dates, which read as a live selection. */
+function departPrompt(on){
+  var di=document.getElementById('departPick'), lb=document.getElementById('departLbl');
+  var nt=document.getElementById('nights');
+  if(!di || !lb) return;
+  di.disabled=!!on;
+  lb.textContent = on ? 'Choose an arrival date' : 'Depart';
+  lb.classList.toggle('prompt', !!on);
+  if(nt) nt.hidden=!!on;
+  if(on){ var sn=document.getElementById('stayNote'); if(sn){ sn.hidden=true; sn.textContent=''; } }
+}
+
+/* What the greyed-out calendar used to say by refusing to open. A stay longer
+ * than rec.us will accept for this arrival is now SELECTABLE, so it has to be
+ * NAMED — an unexplained "no site is free" on a 20-night search would read as a
+ * full campground rather than as a stay nobody offers. */
+function renderStayNote(){
+  var el=document.getElementById('stayNote'); if(!el) return;
+  var c=stayCeiling(SELECTED);
+  var n=stayNights().length;
+  if(n<=c.nights){ el.textContent=''; el.hidden=true; return; }
+  el.hidden=false;
+  el.textContent = c.why==='booked'
+    ? 'Longer than these dates allow — a booking blocks this arrival after '
+      + c.nights + (c.nights===1?' night':' nights') + '.'
+    : 'Longer than the ' + c.maxNights + '-night maximum stay here.';
+}
+
 // Kept for the deep-link handler (?date=): start a stay on this date, holding the
 // current trip length. The drawer's month grid used to call it too; that grid is
 // gone — the per-night strip above the site's details answers the same question
@@ -1176,7 +1263,12 @@ function setDate(ds){ setStay(ds, iso(addDays(new Date(ds+'T00:00:00'), stayNigh
 // with 30 nights in a horizontal scroller reaching the far end is what they are
 // actually needed for.
 document.getElementById('arrivePick').onchange=function(){
-  if(!this.value) return;
+  // The native date picker has a Clear button, so "no arrival" is a state a
+  // camper can actually reach. Depart has no meaning without one — its range is
+  // derived from the arrival — so it says which field to fill first rather than
+  // sitting there with a bound out of nowhere. Dan, 2026-08-25.
+  if(!this.value){ departPrompt(true); return; }
+  departPrompt(false);
   // Moving the arrival keeps the trip length rather than collapsing it to one
   // night — someone editing "arrive" on a 4-night stay still wants 4 nights.
   setStay(this.value, iso(addDays(new Date(this.value+'T00:00:00'), stayNights().length)));

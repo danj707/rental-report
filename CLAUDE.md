@@ -660,8 +660,34 @@ Consequences wired through the page:
   `latestCheckoutFrom` is. Sites whose horizon is unknown (the 30-day feed,
   hourly sites) contribute nothing rather than dragging the park back; if NO site
   in view knows, it falls back to 30 days, i.e. exactly the old behaviour.
-- **The checkout is still not capped** — see the asymmetry below, which is
-  unchanged and still right.
+- **The checkout picker is bounded by the horizon too** (Dan, 2026-08-25: *"they
+  should both be bounded by 180 days, otherwise that makes no sense"*).
+  `maxCheckout()` is `maxArrival()` **plus the campground's maximum stay**, not
+  the horizon itself: the booking window limits when a stay may START, never how
+  long it runs, and rec.us gives the last bookable arrival a `latestCheckout`
+  fourteen nights later. Bounding at the horizon itself makes that final arrival
+  a one-night stay and decays the longest stay to nothing across the last
+  fortnight — measured 2026-08-23 (14 → 8 → 5 → 2 → 1 → 0) and rejected then; it
+  is the same regression however the bound is reached, and it is easy to
+  reintroduce while "making both fields agree". **This reverses half of the
+  asymmetry described below.** The old rule bounded Depart at rec.us's own `latestCheckout` so the
+  picker could never offer a stay the engine would refuse; the cost was that
+  Depart looked capped at a fortnight (Topaz allows 14 nights, and a booking in
+  the way cuts it to 10), so a map that now reaches 180 days read as though it
+  still stopped in two weeks — which is exactly how it was first reported.
+  What the hard stop used to say by greying the calendar, **`stayCeiling()` now
+  says in words**: a chip beside the night count reads *"Longer than the
+  14-night maximum stay here"* or *"Longer than these dates allow — a booking
+  blocks this arrival after 4 nights"*. The distinction matters: telling a camper
+  "14-night maximum" when the real answer is "someone arrives on the 5th" sends
+  them to change the wrong thing.
+  **The rest of the asymmetry stands** — the checkout still runs one night past
+  the last bookable arrival, and no site is ever reported open for nights it
+  cannot take, because the per-night verdict is untouched.
+- **Clearing the arrival is a state a camper can reach** (the native date picker
+  has a Clear button). Depart has no basis without one — its range is derived
+  from the arrival — so it disables and its label becomes *"Choose an arrival
+  date"* rather than sitting there with a bound out of nowhere.
 - **`sources` on the batch reply** says which feed answered per site. Only the
   nightly one runs past a site's window, so only there does a trailing
   `outside-window` run mean a horizon rather than the end of the request. The
@@ -698,12 +724,15 @@ Mutation-tested against four regressions, including the bug exactly as it was
 first written (always start from UTC today), a local-timezone date derivation,
 an off-by-one span (211 dates is a 400), and ignoring the probe result.
 
-`node scripts/campmap-stay.spec.js` — now **27 assertions**, 12 of them new and
-covering the horizon, the `beyond` state and the arrival bound. Mutation-tested
-against: reading the first `outside-window` instead of the trailing run; treating
-the 30-day feed as if it knew a horizon; collapsing `beyond` back into `booked`;
-taking the shortest horizon in view; a park-wide floor with unknown counted as 30
-days; and ignoring the type filter. All six fail the spec by name.
+`node scripts/campmap-stay.spec.js` — now **33 assertions**, 18 of them new and
+covering the horizon, the `beyond` state, and both pickers' bounds.
+Mutation-tested against ten regressions: reading the first `outside-window`
+instead of the trailing run; treating the 30-day feed as if it knew a horizon;
+collapsing `beyond` back into `booked`; taking the shortest horizon in view; a
+park-wide floor with unknown counted as 30 days; ignoring the type filter;
+reverting Depart to rec.us's `latestCheckout` cap; bounding Depart at the horizon
+itself (the tail decay above); losing the checkout's stay allowance; and blaming
+the stay rule for a truncation a booking caused. All ten fail the spec by name.
 
 Plus the `campmap · 210-day horizon` case in `ci-check-render.js`, which asserts
 `#arrivePick[data-days-ahead="119"]` over a fixture whose site 0 has a 120-day
@@ -830,7 +859,7 @@ The residual "but it said it was free" risk is **staleness, not the horizon**:
 camper's click. That is identical inside and outside 30 days. The lever is the
 TTL.
 
-### Guard: `node scripts/campmap-stay.spec.js` (27 assertions, in CI)
+### Guard: `node scripts/campmap-stay.spec.js` (33 assertions, in CI)
 
 Slices the pure reducer out of `campmap.html` (the page builds a Leaflet map at
 module scope, so the whole block cannot be evaluated) and pins the decisions
