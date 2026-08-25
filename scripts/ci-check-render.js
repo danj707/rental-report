@@ -563,7 +563,6 @@ const CASES = [
   // in red, and the map claims nothing until it has been asked. "A Depart field
   // rendered" passes either way — this pins the prompt itself.
   { name: "campmap · depart prompts first", path: "/{org}/campmap",       needs: "#departLbl.prompt" },
-  { name: "campmap · tonight shortcut",     path: "/{org}/campmap",       needs: "#tonightBtn" },
 ];
 
 const child = spawn(process.execPath, [path.join(__dirname, "..", "server.js")], {

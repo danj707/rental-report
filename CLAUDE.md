@@ -694,11 +694,14 @@ Consequences wired through the page:
   "Choose your dates to see what's open." Routed through `statusOn()` on purpose
   rather than each caller growing its own check — that is the failure that made
   the facility Summary and the Camping tab disagree.
-  **What this costs, and how it is paid back:** the old landing state answered
-  "what is free tonight" for free, which is the walk-up camper's question. That
-  is now the **Tonight** button — one click, and nothing is assumed on their
-  behalf. **`PICKED` is the whole switch**; flip its initial value to `true` and
-  the page loads on tonight exactly as it did before.
+  **What this costs:** the old landing state answered "what is free tonight" for
+  free, which is the walk-up camper's question — that now takes picking a date.
+  A **Tonight** shortcut button was tried and taken back out (Dan: *"tonight
+  button = not good"*): it was a second, competing way to set the stay in a
+  toolbar that already has two date fields, and the ask was for the page to wait
+  for a date rather than to offer a faster way past that. **`PICKED` is the whole
+  switch**; flip its initial value to `true` and the page loads on tonight
+  exactly as it did before.
 - **`sources` on the batch reply** says which feed answered per site. Only the
   nightly one runs past a site's window, so only there does a trailing
   `outside-window` run mean a horizon rather than the end of the request. The

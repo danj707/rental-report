@@ -51,9 +51,6 @@ body{font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica
    the field the camper is looking at rather than as a message elsewhere. */
 .datebar .fld span.prompt{color:var(--booked);letter-spacing:.3px}
 .datebar .fld input.unset{border-color:var(--booked);color:#9ca3af}
-.datebar .tonight{font:inherit;font-size:12px;font-weight:700;padding:6px 11px;border:1px solid var(--accent);
-  border-radius:999px;background:var(--accent);color:#fff;cursor:pointer;flex:0 0 auto}
-.datebar .tonight:hover{filter:brightness(1.08)}
 /* The campsite-type filter sits in the same row as the dates: "which sites fit
    my rig" is part of the same question as "which nights", not a separate mode. */
 .datebar .fld select{font:inherit;font-size:13.5px;padding:6px 9px;border:1px solid var(--line);border-radius:9px;color:#374151;background:#fff;cursor:pointer;max-width:200px}
@@ -266,7 +263,6 @@ body{font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica
       <label class="fld"><span id="departLbl">Depart</span><input type="date" id="departPick"/></label>
       <span class="nights" id="nights">1 night</span>
       <span class="staynote" id="stayNote" hidden></span>
-      <button class="tonight" id="tonightBtn" title="Show what is free tonight">Tonight</button>
       <label class="fld fld-type" id="typeFld" hidden><span>Campsite type</span><select id="typePick"></select></label>
       <div class="summ" id="summ">—</div>
       <button class="listtog" id="listTog" title="Show or hide the list of sites">Hide list</button>
@@ -1310,10 +1306,13 @@ function setStay(arrive, depart){
  *
  * This is the page's LANDING state, not only what happens after the native
  * picker's Clear button: the map no longer claims availability before it has been
- * asked a question. The walk-up glance that used to be the default — "what is
- * free tonight" — is one click away on the Tonight button rather than assumed.
- * PICKED is the whole switch; flip its initial value to true and the page loads
- * on tonight the way it did before. */
+ * asked a question.
+ *
+ * A "Tonight" shortcut was tried here and taken back out (Dan, 2026-08-25) — it
+ * was a second, competing way to set the stay sitting in a toolbar that already
+ * has two date fields, and the ask was for the page to wait for a date, not to
+ * offer a faster way past that. PICKED is the whole switch: flip its initial
+ * value to true and the page loads on tonight the way it did before. */
 var PICKED = false;
 function departPrompt(on){
   var di=document.getElementById('departPick'), lb=document.getElementById('departLbl');
@@ -1369,11 +1368,6 @@ document.getElementById('arrivePick').onchange=function(){
 };
 document.getElementById('departPick').onchange=function(){
   if(this.value){ PICKED=true; setStay(SELECTED, this.value); }
-};
-// The walk-up question the old landing state answered by default. One click, so
-// nothing is lost by not assuming it.
-document.getElementById('tonightBtn').onclick=function(){
-  PICKED=true; setStay(TODAY_ISO, iso(addDays(TODAY,1)));
 };
 document.getElementById('listTog').onclick=function(){ toggleList(); };
 document.getElementById('typePick').onchange=function(){ setTypeFilter(this.value); };
