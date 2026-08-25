@@ -3607,17 +3607,21 @@ setTimeout(() => { checkCardParamTypes().catch(() => {}); }, 150 * 1000).unref?.
 // Inert if the env var is unset. Fire-and-forget — never blocks or breaks logging.
 // To change what pings Slack, edit SLACK_NOTIFY. High-frequency events (view/fetch)
 // are debounced per org+report so Slack isn't a firehose.
-const SLACK_NOTIFY = new Set(["created", "org-deleted", "watchdog", "schema-break", "param-drift", "report-down", "campmap-share", "campmap-site", "campmap-book", "campmap-filter", "pdf", "excel", "print", "summary", "game", "map", "outdoor", "fields", "view", "insights", "insights-feedback", "chat-feedback", "feedback", "vote", "update-vote", "munis", "permits", "email", "checkin-loc", "checkin-member"]);
+const SLACK_NOTIFY = new Set(["created", "org-deleted", "watchdog", "schema-break", "param-drift", "report-down", "campmap-share", "campmap-site", "campmap-book", "campmap-filter", "pdf", "excel", "print", "summary", "game", "map", "outdoor", "fields", "view", "insights", "insights-feedback", "chat-feedback", "feedback", "vote", "update-vote", "munis", "permits", "email", "checkin-loc", "checkin-member", "deadlink"]);
 const SLACK_DEBOUNCE_MS = { view: 30 * 60 * 1000, fetch: 30 * 60 * 1000,
   // A broken report stays broken. The health check only reports NEW failures,
   // but a flapping card would otherwise post every hour.
   "report-down": 6 * 60 * 60 * 1000, "schema-break": 6 * 60 * 60 * 1000,
-  "param-drift": 6 * 60 * 60 * 1000 };
+  "param-drift": 6 * 60 * 60 * 1000,
+  // A dead link stays dead. Someone forwarding an old URL round a parks
+  // department would otherwise post once per recipient.
+  deadlink: 6 * 60 * 60 * 1000 };
 const SLACK_DEFAULT_DEBOUNCE_MS = 60 * 1000; // dedup rapid double-fires of one-off events
 const slackLastSent = new Map();
 const SLACK_EVENT_META = {
   created: { emoji: "🏢", verb: "New org created" },
   "org-deleted": { emoji: "🗑️", verb: "DELETED from the reporting project" },
+  deadlink: { emoji: "\uD83D\uDD17", verb: "dead link" },
   "schema-break": { emoji: "🧨", verb: "schema break" },
   "param-drift": { emoji: "\uD83D\uDCC5", verb: "date parameter reset to Text" },
   watchdog: { emoji: "\uD83D\uDD07", verb: "watchdog switched" },
@@ -3745,6 +3749,15 @@ function notifySlack(rec) {
     const who = (rec.reports || []).length ? ` — breaks *${(rec.reports || []).join("*, *")}*` : "";
     text = `${meta.emoji} *SCHEMA BREAK* — ${gone.slice(0, 8).join(", ")}`
          + (gone.length > 8 ? ` and ${gone.length - 8} more` : "") + who + mention;
+  } else if (rec.event === "deadlink") {
+    // The path matters more than the org here — the org is precisely the thing
+    // that did not resolve. Never print the token: it is a share credential, and
+    // the whole reason we know this link was once real.
+    const why = rec.reason === "unknown-report" ? "no such report" : "no such org";
+    const suggest = rec.suggest ? ` — did they mean \`${rec.suggest}\`?` : "";
+    const ref = rec.ref ? `\n> referred from ${rec.ref}` : "";
+    text = `${meta.emoji} *DEAD LINK* — someone opened \`${rec.path}\` with a valid-looking token`
+         + ` and got a 404 (${why})${suggest}${ref}`;
   } else if (rec.event === "checkin-loc") {
     const where = rec.location ? `*${rec.location}*` : "*all locations*";
     const n = Number.isFinite(rec.checkins) ? ` \u00B7 ${rec.checkins.toLocaleString()} check-in${rec.checkins === 1 ? "" : "s"}` : "";
@@ -5046,6 +5059,58 @@ app.use((req, res, next) => {
 
 app.use(dashboardAuth);
 app.use(express.json({ limit: "50mb" }));
+
+// ── Dead-link watch ──────────────────────────────────────────────────────────
+// A link that used to work and now 404s is invisible to every other check here:
+// the health check probes orgs that EXIST, so an org that was renamed or removed
+// is simply not looked at, while the URL keeps circulating in emails and
+// bookmarks. Found the hard way — /town-of-shrewsbury/users?token=… had been
+// dead since the duplicate slug was removed on 2026-07-20 (the org is served as
+// `shrewsbury`), and nothing noticed until someone clicked it.
+//
+// THE TOKEN IS THE WHOLE DISCRIMINATOR. This server is scanned constantly, so
+// alerting on every 404 would be bot noise and would get muted within a day —
+// which is worse than no alert. A scanner does not know our token shape; a
+// stale internal link carries the token it was minted with. So: a 404 is only
+// interesting if the request brought a token.
+//
+// Hooked on the RESPONSE rather than at each 404 site. There are ~30 places that
+// send a 404 (resolveOrg, plus every page route's own guard), and a middleware
+// that reads the finished status catches all of them — including any added later,
+// which is the point of a guard.
+const DEADLINK_IGNORE = /\.(php|env|git|aspx?|jsp|cgi|ini|ya?ml|sql|bak|zip|tar|gz)$|^\/(wp-|\.well-known|cgi-bin|vendor|admin\/config)/i;
+
+function noteDeadLink(req, res) {
+  try {
+    if (res.statusCode !== 404) return;
+    // No token, no signal — see above.
+    const tok = req.query && req.query.token;
+    if (!tok || typeof tok !== "string" || tok.length < 8) return;
+    const pathOnly = String(req.path || "").slice(0, 120);
+    if (DEADLINK_IGNORE.test(pathOnly)) return;
+    const seg = pathOnly.split("/").filter(Boolean);
+    const slug = seg[0] || "";
+    const report = seg[1] || "";
+    // Which half was wrong decides what the fix is: a renamed org, or a report
+    // that no longer exists for an org that does.
+    const reason = ORGS[slug] ? "unknown-report" : "unknown-org";
+    // A near-miss on the slug is the most useful thing we can say — it is almost
+    // always a rename, and naming the survivor turns the alert into the fix.
+    let suggest;
+    if (reason === "unknown-org" && slug) {
+      const base = slug.replace(/^(town|city|village|county)-of-/, "").replace(/-(ca|ma|nv|mo|tn|nc|ga|ny)$/, "");
+      suggest = Object.keys(ORGS).find(k => k === base || k.indexOf(base) >= 0 || base.indexOf(k) >= 0);
+    }
+    logEvent(slug || "-", report || "-", "deadlink", req, {
+      path: pathOnly, reason, suggest: suggest || undefined,
+      // Deliberately NOT the token itself.
+      hadToken: true,
+    });
+  } catch (e) {
+    console.warn("[deadlink] watch failed:", e.message);
+  }
+}
+app.use((req, res, next) => { res.on("finish", () => noteDeadLink(req, res)); next(); });
 // ── Inter font injection ─ auto-injects into every HTML res.send ─────────────
 const FONT_INJECT = '<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"><style>body,input,select,button,textarea{font-family:\'Inter\',system-ui,-apple-system,sans-serif !important}</style>';
 
@@ -5220,6 +5285,32 @@ app.get("/api/admin/org/:slug", (req, res) => {
   const slug = req.params.slug;
   const org = ORGS[slug];
   if (!org) return res.json({ exists: false });
+  res.json({
+    exists: true,
+    slug,
+    token: org.token,
+    orgId: org.orgId,
+    logoUrl: org.logoUrl,
+    displayName: org.displayName || org.name || slug,
+  });
+});
+
+// ── GET /api/admin/org-by-id/:orgId — look an org up by the identity BOTH
+// projects share ──
+// The slug is each project's own name for an organisation and they can drift: the
+// dashboard was still calling Shrewsbury `town-of-shrewsbury` five weeks after the
+// duplicate slug was removed here, so every report link it rendered 404'd. A
+// by-slug check cannot detect that — it just says "no such org", which is
+// indistinguishable from an org that was never added.
+//
+// The rec.us organisation UUID is stable across both projects, so it is the thing
+// to reconcile on. Given it, this answers "what slug and token do YOU serve this
+// organisation under", which is exactly what the caller needs to repair its links.
+app.get("/api/admin/org-by-id/:orgId", (req, res) => {
+  const orgId = String(req.params.orgId || "");
+  const hit = Object.entries(ORGS).find(([, o]) => o && o.orgId === orgId);
+  if (!hit) return res.json({ exists: false });
+  const [slug, org] = hit;
   res.json({
     exists: true,
     slug,

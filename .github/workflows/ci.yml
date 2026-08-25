@@ -61,6 +61,9 @@ jobs:
       - name: Report-activity spec (only alert on reports someone actually uses)
         run: node scripts/report-activity.spec.js
 
+      - name: Dead-link alert spec (a tokened 404 is a broken link, a bare one is a bot)
+        run: node scripts/deadlink-alert.spec.js
+
       - name: Watchdog switches spec (OFF means off everywhere)
         run: node scripts/watchdog-flags.spec.js
 
