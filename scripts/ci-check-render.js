@@ -225,7 +225,22 @@ function campmapSites(org) {
     bookingUrl: "https://www.rec.us/sites/" + x.id, description: "",
     imageUrl: null, gallery: [], priceCents: 2500, residentPriceCents: 2000,
     durationMinutes: null, pricingType: "perNight", bookingUnit: "nightly",
-    subType: SUB_TYPES[i % SUB_TYPES.length], amenities: [],
+    subType: SUB_TYPES[i % SUB_TYPES.length],
+    // Topaz's real shape, which is what makes the amenity cases discriminating:
+    // two tags on EVERY site (so a tick is a visible no-op with a 'n/n' count),
+    // and two that split the campground with ZERO overlap — the pair that empties
+    // the map under rec.us's AND, and must therefore be named rather than left as
+    // a blank map. `amenities` deliberately omits the unknown tag that
+    // `amenityTags` keeps, so anything zipping those two by index mislabels.
+    amenities: ["Tables", "Fire Pit"].concat(i % 3 === 0 ? ["Tent Site"] : ["Water Hookup"]),
+    amenityTagIds: ["tag-tables", "tag-firepit", "tag-unknown"]
+      .concat(i % 3 === 0 ? ["tag-tent"] : ["tag-water"]),
+    amenityTags: [
+      { id: "tag-tables",  name: "Tables" },
+      { id: "tag-firepit", name: "Fire Pit" },
+      { id: "tag-unknown", name: "Other amenity" },
+    ].concat(i % 3 === 0 ? [{ id: "tag-tent", name: "Tent Site" }]
+                         : [{ id: "tag-water", name: "Water Hookup" }]),
   }));
 }
 
@@ -412,6 +427,14 @@ function directorsQuarter() {
 
 const STUBS = [
   { match: /\/facilities\/api\/campsites/, body: () => campsitesGeo },
+  // Must precede the catch-all /api/ stub. Realistic enough that the case below
+  // asserts a NUMBER off the payload rather than merely that a strip appeared.
+  { match: /\/facilities\/api\/campmap-activity/, body: () => ({
+      days: 30, covers: true, logStartsAt: new Date(Date.now() - 90 * 86400000).toISOString(),
+      totals: { views: 128, sites: 44, books: 11, shares: 3, filters: 9 },
+      prior:  { views: 100, sites: 30, books: 8, shares: 1, filters: 4 },
+      bookKinds: { dated: 7, "site-page": 4 }, shareKinds: { link: 2, embed: 1 },
+      topSite: { name: "Site 12", opens: 9 } }) },
   // One feed, both tabs: Camping filters it to campsite rows and Outdoor Events
   // to its three types, so each tab has to do its own scoping.
   { match: /\/facility\/api\/data/,        body: () => ({ rows: campsiteRows().concat(outdoorRows()).concat(fieldRows()), meta: {} }) },
@@ -608,6 +631,24 @@ const CASES = [
   // the shorter sites' windows, and this fails by name. "An Arrive field
   // rendered" is the assertion that would not have caught the bug.
   { name: "campmap · 210-day horizon", path: "/{org}/campmap",            needs: "#arrivePick[data-days-ahead=\"119\"]" },
+  // The amenity control must be built from the LIVE feed's tags: the baked seed
+  // carries no amenities whatsoever, so any chip at all proves the overlay landed
+  // and was read through the aligned {id,name} pairs. Both cases together are the
+  // discriminating part — a universal amenity (a tick that moves nothing, which
+  // its count exists to explain) AND one that actually narrows the campground.
+  // Either alone would pass on a control that only ever renders one kind.
+  { name: "campmap · amenity chips", path: "/{org}/campmap",
+    needs: "#amenRow .amchk[data-am-universal]" },
+  // Semantic, not numeric: this check runs against whichever seed org is first,
+  // so a hard-coded count would break on a seed reorder rather than on a bug.
+  { name: "campmap · amenity splits", path: "/{org}/campmap",
+    needs: "#amenRow .amchk[data-am-split]" },
+  // The Camping tab hands the org its own public-map traffic. Keyed to the view
+  // count from the payload, so a strip that renders but reads the wrong field —
+  // or throws and unmounts the tab — fails rather than passing on "something
+  // appeared".
+  { name: "facilities · campmap activity", path: "/{org}/facilities?tab=camping",
+    needs: "[data-campmap-stats=\"128\"]" },
   // Depart must reach the horizon too (Dan, 2026-08-25): the last bookable
   // arrival (day 119) PLUS a full stay. The check org is the first campmap seed,
   // pleasant-hill, whose configured maximum is 5 nights — so 119 + 5 = 124.

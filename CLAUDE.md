@@ -670,6 +670,188 @@ assertions, in CI), which checks source registration order AND boots the server 
 require a 200 *plus* a row in events.jsonl. Mutation-tested: moving the route back
 below the generic ones fails both halves independently.
 
+## Campmap pin positions — a failed LOAD must never become a published layout (IMPORTANT, 2026-08-25)
+
+Dan: *"make sure we're saving the place of these map pins, a few times I'd seen
+the map pins reset and then I had to save them on the admin side. Strange."*
+
+Not strange, and not the storage layer — the Railway volume is mounted at `/data`
+and `DATA_DIR` is set, and `campmap_positions.json` had all 41 Topaz pins in it
+the whole time. **The bug was that a failed load looked exactly like an empty
+store, and re-saving is what made it permanent.**
+
+`loadPositions()` mapped a failed response to `{positions:{}}`:
+
+```js
+.then(function(r){ return r.ok ? r.json() : {positions:{}}; })
+```
+
+which is byte-identical to "this org has never placed a pin". So one transient
+failure — a deploy restart, a 502, a dropped connection — rendered every pin on
+its seed coordinate with **nothing on screen to say so**.
+
+**The destructive part is the recovery, which is why this was data loss and not a
+display glitch.** `saveLayout()` publishes EVERY site in `SEED`, so an admin who
+saw the "reset", dragged one pin and hit Save wrote 41 pins of which **40 were
+seed defaults**, over the real layout. Reproduced in a browser against a stored
+41-pin layout, forcing the GET to 500 once:
+
+| | pins render at | `placed` | a Save then writes |
+|---|---|---|---|
+| GET succeeds | the stored layout | `true` | 41 pins, **0** at defaults |
+| GET 500s once | **seed defaults** | `false` | 41 pins, **40 at seed defaults** |
+
+`loadMarkers()` had the identical shape, so the same blip wiped every
+admin-placed marker (Boat Ramp and friends) on the next save.
+
+The fix is `POS_OK` / `MK_OK`, true only when the store actually **answered**:
+
+- **An empty answer from a store that answered is legitimate** — a new org has to
+  be able to place its first pins, so the gate keys on "did it answer", never on
+  how many pins came back. Gating on the count locks a new org out.
+- **Publishing is refused in two places** — the Save button, and inside
+  `saveLayout()` itself, because the button is one way in and not the only one.
+- **One retry** (1.5s), because the usual cause is a restart mid-request that the
+  next request survives; two failures is an outage, not a blip.
+- **The viewer still gets a map** on seed coordinates. That is the right
+  degradation for a public camper-facing page — what must never happen is writing
+  those coordinates back.
+- The edit bar says *"Saved layout could not be loaded… these pins are defaults"*,
+  because an admin who is not told will re-place 41 pins by hand.
+
+Guarded by `node scripts/campmap-pin-persistence.spec.js` (**10 assertions, in
+CI**, after the render check since it drives a real browser and reuses that
+check's CDN cache). It has a source half and a behavioural half, and
+`SKIP_SOURCE=1` disables the source half **so the browser half can be shown to
+catch the bug on its own** — a regex over our own patch is not evidence the page
+behaves. Mutation-tested five ways; the bug exactly as it shipped fails with
+*"a save was published after a failed load — it would have written 41 pins, 40 of
+them seed defaults, over the real layout"*.
+
+**Related trap, still true:** both position writers (`/:org/campmap/api/positions`
+and `/:org/facilities/api/campsite-positions`) **replace the location's whole
+map**, and they share one store via `campmapStoreKey`. That is safe only while
+both clients send every site — the Camping tab sends `loc.sites`, campmap sends
+all of `SEED`, and for Douglas the seed and live id sets are identical (41 = 41,
+no extras). If a client ever sends a subset, it silently drops the rest.
+
+## Public map activity, handed back to the org (2026-08-25)
+
+Dan: *"we need some metrics here, similar to what we're piping to slack. Number
+of total views, clicks, book to rec clicks, etc. Something actionable back to the
+org admins, can keep it to one row."*
+
+The campmap is a PUBLIC page whose traffic only ever surfaced in **our** Slack
+feed. `GET /:org/facilities/api/campmap-activity?days=30` aggregates the same
+events back to the org that owns the campground, and `CampMapStats` in
+`public/facilities.html` renders one `.sum-cards` row on the Camping tab:
+**Map views · Sites opened · Book clicks · Searches narrowed · Link shares**.
+
+- **Per ORG, not per location.** Events carry no location, so the row mounts once
+  at section level. Inside `locs.map(...)` it would render N identical rows and
+  imply each location earned those numbers.
+- **The book-click RATE is the actionable half** (`books / views`), because it
+  says whether the map turns lookers into bookers. Which of the two routes they
+  took is on the endpoint (`bookKinds`) but not on the tile — it is interesting
+  to us, not to a parks department.
+- **No rate on a thin denominator.** `RATE_MIN_VIEWS = 20`: 6 views and 0 clicks
+  is not "0% conversion", it is not enough traffic to say. Same reasoning as this
+  tab's trend arrows refusing to draw under 14 elapsed days.
+- **An empty log is not "nobody uses your map."** A fresh volume, a rotated log
+  or a PR preview would render 0 views over 30 days, which an admin reads as a
+  verdict on their campground. The route returns `covers` / `logStartsAt` and the
+  header says *"since Aug 19"* instead of *"last 30 days"* when it cannot see
+  that far back.
+- **Both filter events are one signal** — `campmap-filter` (type) and
+  `campmap-amenity` count together as "searches narrowed"; splitting makes two
+  thin numbers out of one.
+- **`!d.totals`, not just `!d`.** The strip renders from a network response, and
+  a rewritten route or a stub can answer 200 with the wrong shape; reading
+  `d.totals.views` off that throws inside render and unmounts the whole Camping
+  tab. That is the blank-page class this repo has been bitten by twice, and the
+  render check reproduces it when the guard is removed.
+- **No new gate needed.** The global org-token middleware (search *"do not leak
+  existence of the org"*) already 404s every `/:org/*` path without a token,
+  exempting only calendar, rentalcalendar and campmap. So a tokenless caller sees
+  a generic **404, not a 403** — the in-handler check is a backstop for the day
+  that exemption list grows.
+
+Guards: `scripts/campmap-activity.spec.js` (10 assertions, in CI) whose fixture
+plants every way to be confidently wrong — another org's 99 map views, this org's
+50 `facility` views, 77 views outside both windows — so a dropped filter shows as
+a specific wrong number (90 / 139 / 65) rather than a vague failure. Its
+`topSite` fixture has an unambiguous winner on purpose: a tie made the assertion
+order-dependent. Mutation-tested six ways, all caught. Plus the
+`facilities · campmap activity` render case, keyed to a view count from the stub
+so a strip that renders the wrong field fails too.
+
+## Campmap amenity filter + the book buttons swapped (2026-08-25)
+
+**Amenity checkboxes live in the date toolbar**, on the same reasoning as the
+campsite-type select: "which sites have a fire pit" is part of the same question
+as "which nights", not a separate mode. `AMEN_FILTER` is a list of rec.us amenity
+**tag ids**, and `inView()` ANDs them, so everything that counts, lists or paints
+narrows together through `VIEW()`.
+
+- **AND, not OR — because rec.us ANDs its own amenity filter** and the Book button
+  hands off to that filtered list. An OR here would show sites the hand-off then
+  drops, so the map and rec.us would disagree about the same search.
+- **A ticked filter beats the site's own tags in the hand-off URL.** Same reason.
+  With nothing ticked, a lone site still hands off its own tags ("more like this").
+- **Every amenity is shown and tickable, with its count** (Dan's call). At Topaz
+  the counts are the whole point: **six tags express three facts** — Tables and
+  Fire Pit are on all 41; Power/Electrical Available, Water Hookup and Electricity
+  Hookup cover *exactly the same 15 sites* (21–35, the RV loop); Tent Site is the
+  other 26. So three checkboxes read `15/41` and are the same cut, and `41/41`
+  explains a tick that moves nothing. Hiding universal ones would stop a camper
+  confirming every site has a fire pit.
+- **Tent Site and the hookup tags have ZERO overlap**, so under AND a camper
+  empties the map in two ticks. `amenConflict()` names the offending pair — a
+  blank map alone reads as "this campground is full", which is a different and
+  wrong answer.
+- **Collapsing the three hookup tags into one "Hookups" box was rejected**: it
+  would read better at Topaz and be wrong everywhere else, since `AMENITY_TAGS`
+  only covers tags this repo has seen. That belongs in Rec's tag vocabulary.
+- In the URL as `?amen=` (stale/unknown ids are dropped so a link cannot empty the
+  map) but **not persisted** — a search intent, not a layout preference.
+- Activity: `campmap-amenity` (🧺), debounced by the whole amenity **set** rather
+  than per tag, since ticking a second box refines one search. A zero result is
+  called out in the message, because that is the interesting case.
+
+**`amenityTags` is a new field on `/:org/rentalcalendar/api/sites`, and it is not
+redundant.** `amenities` maps ids through `AMENITY_TAGS` and then
+`.filter(Boolean)`, so an unseen tag makes it **shorter** than `amenityTagIds` —
+anything zipping those two by index mislabels every amenity after the first
+unknown one, silently, on a camper-facing page. `amenityTags` is `{id, name}`
+pairs where an unknown tag keeps its place under a neutral label.
+
+**The two book buttons swapped** (Dan: *"the tiny link at the bottom I suspect
+users will WANT to click, not the big green one"*). Primary is now
+**Book Site NN on rec.us** → the site's own page; secondary is
+**Book alternate sites for the same dates** → the dated, filtered list.
+
+- **The trade is real and deliberate:** `/sites/{id}` reads no search params
+  (rec.us's path builder is `site:({siteId})` with no options and the page never
+  calls `useSearchParams`), so the primary route **cannot carry the dates**. Its
+  sub-line therefore names the dates to re-enter rather than leaving the camper to
+  reconstruct them.
+- **`campmap-book`'s `kind` still describes the ROUTE, not the button position**
+  (`site-page` / `dated`). Keying on position would silently redefine every
+  historical row in the feed.
+- The site list's own group CTA is unchanged — there is no single site to go
+  straight to from a set of results.
+
+**"Powered by rec.us" badge, upper right, links to rec.us.** The wordmark is
+deliberately **text, not an image**: rec.us serves no public logo asset (the
+favicon is an "r" glyph on transparent, and the only inline SVG on the marketing
+site is an arrow icon), so an `<img>` would either 404 on a camper-facing page or
+be a logo redrawn and a brand yellow guessed. **If someone supplies the real
+mark, the markup is already shaped for it** — give `.rec-by .mark` a background
+image. Guarded by the two `campmap · amenity` render cases, which are deliberately
+**semantic** (`[data-am-universal]` / `[data-am-split]`) rather than numeric,
+because `ci-check-render` runs against whichever seed org is first and a
+hard-coded count would break on a seed reorder rather than on a bug.
+
 ## Campsite map availability — 210 days, per site (SUPERSEDES the 30-day ceiling, 2026-08-24)
 
 **The 30-day cap was the MCP TOOL's, not the platform's, and it is gone.** Dan

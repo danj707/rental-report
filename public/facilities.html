@@ -2874,6 +2874,94 @@
     // Pasting an address-bar URL that still carries ?token= would hand a camper
     // an editable map AND the org token that opens every other report for that
     // org. So the URL is built here from origin + slug, never from location.href.
+    /* How campers are using the public map. Same events that go to our Slack
+       feed, handed back to the org that owns the campground — until now the only
+       place this traffic showed up was ours.
+       Per ORG, not per location: events carry no location, so rendering this
+       inside the per-location loop would repeat one identical row N times and
+       imply each location earned it. */
+    function CampMapStats() {
+      const [d, setD] = React.useState(null);
+      const [err, setErr] = React.useState('');
+      React.useEffect(() => {
+        if (!CFG.token) return;                 // read-only viewer: no analytics
+        let live = true;
+        fetch('/' + CFG.slug + '/facilities/api/campmap-activity?days=30&token='
+              + encodeURIComponent(CFG.token))
+          .then(r => r.ok ? r.json() : Promise.reject(new Error('http ' + r.status)))
+          .then(j => { if (live) setD(j); })
+          .catch(e => { if (live) setErr(e.message); });
+        return () => { live = false; };
+      }, []);
+      // `!d.totals` and not just `!d`: this renders from a network response, and a
+      // proxy, a rewritten route or a stub can answer 200 with a body that is not
+      // this shape. Reading d.totals.views off that throws inside render and
+      // unmounts the whole Camping tab — a blank tab because an analytics strip
+      // could not parse is a bad trade.
+      if (!CFG.token || err || !d || !d.totals) return null;
+
+      const t = d.totals, p = d.prior;
+      // A delta needs a prior period to compare against. With none, say nothing
+      // rather than printing a fake +100%.
+      const delta = (now, before) => {
+        if (!before) return null;   // no prior window to compare against
+        const pct = Math.round(((now - before) / before) * 100);
+        if (!pct) return e('span', { className: 'sc-muted' }, '\u2014 flat vs prior 30d');
+        return e('span', { className: pct > 0 ? 'sc-green' : 'sc-red' },
+          (pct > 0 ? '\u25B2 +' : '\u25BC ') + pct + '% vs prior 30d');
+      };
+      // "2 link" reads like a truncation; name the thing and pluralise it.
+      const LABELS = { link: 'link', embed: 'embed', dated: 'dated list', 'site-page': 'site page' };
+      const kinds = obj => Object.keys(obj || {}).length
+        ? Object.entries(obj).sort((a, b) => b[1] - a[1])
+            .map(([k, n]) => n + ' ' + (LABELS[k] || k) + (n === 1 ? '' : 's')).join(' \u00b7 ')
+        : null;
+
+      // Book clicks as a share of views is the actionable number: it says whether
+      // the map turns lookers into bookers. But a rate on a handful of views is
+      // noise dressed as a metric — 6 views and 0 clicks is not "0% conversion",
+      // it is not enough traffic to say. Same reasoning as the trend arrows on
+      // this tab, which refuse to draw under 14 elapsed days.
+      const RATE_MIN_VIEWS = 20;
+      const rate = t.views >= RATE_MIN_VIEWS ? Math.round((t.books / t.views) * 100) : null;
+
+      const cards = [
+        { label: 'Map views', val: t.views.toLocaleString(), cls: '',
+          sub: delta(t.views, p.views) || 'campers who opened the map' },
+        { label: 'Sites opened', val: t.sites.toLocaleString(), cls: 'sc-blue',
+          sub: d.topSite ? ('most opened: ' + d.topSite.name) : (delta(t.sites, p.sites) || 'site detail views') },
+        // The RATE is the actionable half for an org admin — it says whether the
+        // map turns lookers into bookers. Which of the two routes they took
+        // (dated list vs site page) is interesting to us and is on the endpoint,
+        // but it does not tell a parks department anything it can act on.
+        { label: 'Book clicks', val: t.books.toLocaleString(), cls: 'sc-green',
+          sub: rate != null ? (rate + '% of map views') : 'through to rec.us' },
+        { label: 'Searches narrowed', val: t.filters.toLocaleString(), cls: 'sc-amber',
+          sub: 'type or amenity filters used' },
+        { label: 'Link shares', val: t.shares.toLocaleString(), cls: 'sc-purple',
+          sub: kinds(d.shareKinds) || 'staff copied the link or embed' },
+      ];
+
+      // The window has to be honest: a log that does not reach back 30 days would
+      // otherwise render zeros an admin reads as "nobody uses my map".
+      const since = !d.covers && d.logStartsAt
+        ? 'since ' + new Date(d.logStartsAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+        : 'last 30 days';
+
+      return e('div', { style: { marginTop: 14 } },
+        e('div', { style: { fontSize: 11, fontWeight: 700, textTransform: 'uppercase',
+                            letterSpacing: '.5px', color: '#888', marginBottom: 2 } },
+          'Public map activity',
+          e('span', { style: { fontWeight: 600, textTransform: 'none', letterSpacing: 0,
+                               color: '#b8b5ad', marginLeft: 8 } }, since)),
+        e('div', { className: 'sum-cards', style: { marginTop: 8, marginBottom: 0 },
+                   'data-campmap-stats': String(t.views) },
+          cards.map((c, i) => e('div', { className: 'sum-card', key: i },
+            e('div', { className: 'sc-label' }, c.label),
+            e('div', { className: 'sc-val ' + c.cls }, c.val),
+            e('div', { className: 'sc-sub' }, c.sub)))));
+    }
+
     function PublicMapLink({ locId, multi }) {
       const [copied, setCopied] = React.useState('');
       const url = window.location.origin + '/' + CFG.slug + '/campmap'
@@ -3422,7 +3510,8 @@
               e('span', null, e('i', { style: { background: '#fff', borderColor: '#94a3b8' } }), ' No bookings'),
               CAMP_RAMP.map((c, ci) => e('i', { key: ci, style: { background: c } })),
               'More days booked'),
-            e(PublicMapLink, { locId: l.id, multi: locs.length > 1 })))) : null,
+            e(PublicMapLink, { locId: l.id, multi: locs.length > 1 }))),
+          e(CampMapStats, null)) : null,
 
         // Arrivals by weekday + stay length
         hasStays ? e('div', { className: 'aqua-sec' },

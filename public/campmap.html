@@ -30,6 +30,18 @@ body{font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica
 .hdr h1{font-size:17px;margin:0;line-height:1.2;font-weight:700}
 .hdr .sub{font-size:12px;color:var(--muted);margin-top:1px}
 .hdr .mock-tag{font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:#065f46;background:#d1fae5;border:1px solid #a7f3d0;border-radius:999px;padding:3px 9px;white-space:nowrap}
+/* Attribution, upper right. Quiet by default and only reaching full contrast on
+   hover: it is a credit on a page whose job is answering "can I camp here", not
+   a call to action competing with the Book buttons. */
+.hdr .rec-by{display:inline-flex;align-items:center;gap:6px;text-decoration:none;flex:0 0 auto;
+  padding:4px 9px;border:1px solid var(--line);border-radius:999px;background:#fff;
+  transition:border-color .12s,background .12s}
+.hdr .rec-by:hover{border-color:var(--accent);background:#f6fbfa}
+.hdr .rec-by .pb{font-size:9.5px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--muted);white-space:nowrap}
+.hdr .rec-by .mark{font-size:15px;font-weight:800;letter-spacing:-.03em;color:var(--ink);line-height:1}
+.hdr .rec-by:hover .mark{color:var(--accent)}
+.hdr .rec-by:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+@media(max-width:560px){ .hdr .rec-by .pb{display:none} }
 .hdr .wx{font-size:12px;color:#374151;font-weight:600;white-space:nowrap;background:#f3f4f6;border-radius:8px;padding:5px 10px}
 
 /* ── Date bar ── */
@@ -71,6 +83,34 @@ body{font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica
 .datebar .nights{align-self:flex-end;padding-bottom:7px;font-size:12.5px;font-weight:700;color:var(--accent);white-space:nowrap}
 .datebar .listtog{font:inherit;font-size:11.5px;font-weight:700;padding:5px 10px;border:1px solid var(--line);border-radius:999px;background:#fff;color:var(--muted);cursor:pointer;flex:0 0 auto}
 .datebar .listtog:hover{border-color:var(--accent);color:var(--accent)}
+/* Amenities sit with the dates for the same reason the type filter does: "which
+   sites have a fire pit" is part of one question, not a separate mode. Its own
+   row because there can be half a dozen of them and they must not push the date
+   fields around. */
+.datebar .dbrow-amen{padding-top:0;align-items:center;gap:8px;flex-wrap:wrap}
+.datebar .amlbl{font-size:9.5px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);font-weight:700;flex:0 0 auto}
+.datebar .amenrow{display:flex;flex-wrap:wrap;gap:6px;align-items:center;min-width:0}
+.amchk{display:inline-flex;align-items:center;gap:6px;cursor:pointer;font-size:12.5px;font-weight:600;
+  color:#374151;background:#fff;border:1px solid var(--line);border-radius:999px;padding:5px 11px 5px 8px;
+  user-select:none;transition:border-color .12s,background .12s,color .12s}
+.amchk:hover{border-color:var(--accent);color:var(--accent)}
+.amchk input{margin:0;accent-color:var(--accent);cursor:pointer}
+.amchk:focus-within{outline:2px solid var(--accent);outline-offset:1px}
+/* The count is what makes a no-op checkbox honest: at Topaz, Tables and Fire Pit
+   are on all 41 sites and three hookup tags cover the same 15, so "41/41" and
+   three "15/41"s say why ticking them moved nothing. */
+.amchk .ct{font-size:11px;font-weight:700;color:var(--muted);font-variant-numeric:tabular-nums}
+.amchk.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.amchk.on .ct{color:rgba(255,255,255,.8)}
+.amclear{font:inherit;font-size:11.5px;font-weight:700;color:var(--muted);background:none;border:0;
+  cursor:pointer;text-decoration:underline;padding:5px 4px}
+.amclear:hover{color:var(--accent)}
+/* An empty result needs to say WHICH pair cannot coexist. rec.us ANDs amenity
+   tags and some pairs share no site at all, so a camper can empty the map in two
+   ticks; a blank map alone reads as "the campground is full". */
+.amnote{margin:0 14px 9px;padding:8px 11px;border-radius:8px;background:var(--booked-bg);
+  border:1px solid #fecaca;color:#991b1b;font-size:12.5px;font-weight:600;line-height:1.4}
+.amnote b{font-weight:800}
 /* ── the site list beside the map ─────────────────────────────────────────── */
 .sitelist{position:absolute;top:0;right:0;bottom:0;width:288px;background:#fff;border-left:1px solid var(--line);z-index:500;display:flex;flex-direction:column;overflow:hidden}
 .mapwrap.nolist .sitelist{display:none}
@@ -215,6 +255,13 @@ body{font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica
 .book-btn:hover{filter:brightness(1.08)}
 .book-btn small{display:block;font-size:11px;font-weight:600;opacity:.85;margin-top:2px}
 .book-alt{display:block;text-align:center;margin-top:7px;font-size:11.5px;color:var(--muted);text-decoration:underline}
+/* The promoted secondary: a real button rather than a grey link, because it is
+   now the route that keeps the camper's dates and half of them will want it. */
+.book-2nd{display:block;width:100%;margin-top:8px;padding:9px 12px;text-align:center;text-decoration:none;
+  border:1px solid var(--accent);border-radius:10px;color:var(--accent);font-size:12.5px;font-weight:700;
+  line-height:1.35;background:#fff}
+.book-2nd:hover{background:var(--avail-bg);border-color:var(--avail)}
+.book-2nd small{display:block;font-size:10.5px;font-weight:600;color:var(--muted);margin-top:2px}
 .book-alt:hover{color:var(--accent)}
 .book-note{font-size:11px;color:var(--muted);text-align:center;margin-top:8px}
 .scrim{position:absolute;inset:0;background:rgba(15,23,42,.35);z-index:650;opacity:0;pointer-events:none;transition:opacity .22s}
@@ -282,6 +329,17 @@ body{font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica
     <span class="wx" id="wx" style="display:none"></span>
     <button class="edit-btn" id="editBtn" style="display:none">✏️ Edit layout</button>
     <span class="mock-tag" id="mockTag">Live rec.us data</span>
+    <!-- Upper-right attribution, clickable through to rec.us. The wordmark is
+         deliberately TEXT, not an image: rec.us serves no public logo asset (its
+         favicon is an "r" glyph on transparent, and the only inline SVG on the
+         marketing site is an arrow icon), so an <img> here would either 404 on a
+         camper-facing page or be a logo I redrew and a brand yellow I guessed.
+         Swap in the real mark by setting --rec-mark to a url() and giving .rec-by
+         .mark a background — the markup is already shaped for it. -->
+    <a class="rec-by" href="https://www.rec.us" target="_blank" rel="noopener"
+       title="Powered by rec.us — modern recreation software">
+      <span class="pb">Powered by</span><span class="mark">rec</span>
+    </a>
   </div>
 
   <div class="datebar">
@@ -295,6 +353,11 @@ body{font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica
       <div class="summ" id="summ">—</div>
       <button class="listtog" id="listTog" title="Show or hide the list of sites">Hide list</button>
     </div>
+    <div class="dbrow dbrow-amen" id="amenFld" hidden>
+      <span class="amlbl">Amenities</span>
+      <div class="amenrow" id="amenRow"></div>
+    </div>
+    <div class="amnote" id="amNote" hidden></div>
   </div>
 
   <div class="mapwrap">
@@ -624,6 +687,12 @@ function bookUrl(site, group){
     });
     tags=tags || [];
   }
+  // A ticked filter WINS over the site's own tags. Otherwise "book alternate
+  // sites for the same dates" hands rec.us this site's amenities instead of the
+  // camper's search, and the two disagree about the same question — which is the
+  // whole reason the map's filter ANDs the way rec.us does. With nothing ticked
+  // the site's own tags stay, so a lone site still hands off "more like this".
+  if(typeof AMEN_FILTER!=='undefined' && AMEN_FILTER.length) tags=AMEN_FILTER.slice();
   if(tags.length) q.push('amenity='+tags.map(encodeURIComponent).join(','));
   return 'https://www.rec.us/organizations/'+encodeURIComponent(slug)+'?'+q.join('&');
 }
@@ -928,11 +997,51 @@ function typeKey(site){
   if(k.indexOf('cabin')>=0 || k.indexOf('lodg')>=0) return 'lodging';
   return k || 'campsite';
 }
+/* ── the amenity filter ──────────────────────────────────────────────────────
+ * AMEN_FILTER is a list of rec.us amenity TAG IDS, ANDed. AND rather than OR
+ * because rec.us ANDs its own amenity filter, and the Book button hands off to
+ * that filtered list — an OR here would show sites the hand-off then drops, so
+ * the map and rec.us would disagree about the same search.
+ *
+ * Tag ids, not display names: AMENITY_TAGS only covers tags this repo has seen,
+ * so a name round-trip would silently drop anything new. Names are for the label
+ * and for the Slack ping, where a person reads them.
+ *
+ * Not persisted, same reasoning as the type filter: a search intent, not a layout
+ * preference. It IS in the URL (?amen=) so a link lands on the same search.
+ */
+var AMEN_FILTER = [];
+function siteTags(site){ var l=L_(site); return (l && l.amenityTagIds) || []; }
+/* Labels come from `amenityTags` — {id, name} pairs — and never from zipping
+ * `amenities` against `amenityTagIds`. Those two are NOT index-aligned: the names
+ * list drops tags AMENITY_TAGS has not seen, so pairing by index mislabels every
+ * amenity after the first unknown one. */
+function siteTagPairs(site){ var l=L_(site); return (l && l.amenityTags) || []; }
+function amenCounts(){
+  var byId={}, order=[];
+  SEED.forEach(function(s){
+    siteTagPairs(s).forEach(function(t){
+      if(!t || !t.id) return;
+      if(!byId[t.id]){ byId[t.id]={ id:t.id, label:t.name || 'Amenity', n:0 }; order.push(t.id); }
+      byId[t.id].n++;
+    });
+  });
+  return order.map(function(id){ return byId[id]; })
+    .sort(function(a,b){ return b.n-a.n || a.label.localeCompare(b.label); });
+}
+function amenLabels(){
+  var m={}; amenCounts().forEach(function(a){ m[a.id]=a.label; });
+  return AMEN_FILTER.map(function(id){ return m[id]||id; });
+}
 function inView(site){
-  if(TYPE_FILTER==='all') return true;
-  // Editing places pins for the WHOLE campground, so a filter must not hide the
-  // ones an admin came to move.
+  // Editing places pins for the WHOLE campground, so no filter may hide the ones
+  // an admin came to move.
   if(typeof EDIT!=='undefined' && EDIT) return true;
+  if(AMEN_FILTER.length){
+    var tags=siteTags(site);
+    for(var i=0;i<AMEN_FILTER.length;i++){ if(tags.indexOf(AMEN_FILTER[i])<0) return false; }
+  }
+  if(TYPE_FILTER==='all') return true;
   return typeKey(site)===TYPE_FILTER;
 }
 function VIEW(){ return SEED.filter(inView); }
@@ -1202,6 +1311,113 @@ function setTypeFilter(key){
   setStay(SELECTED, DEPART);
   var t=stayTally();
   ping('campmap-filter', { type:TYPE_FILTER, sites:VIEW().length, open:t.full });
+}
+
+function buildAmenFilter(){
+  var fld=document.getElementById('amenFld'), row=document.getElementById('amenRow');
+  if(!fld || !row) return;
+  var list=amenCounts();
+  if(!list.length){ fld.hidden=true; return; }   // no tags on this org's sites
+  fld.hidden=false;
+  var total=SEED.length;
+  // Every amenity is shown and tickable, with its count. A universal one is a
+  // no-op, and "41/41" is what says so — hiding it would stop a camper
+  // confirming that every site here has a fire pit.
+  row.innerHTML = list.map(function(a){
+    var on = AMEN_FILTER.indexOf(a.id)>=0;
+    // The data- attributes are what the render check reads, and they are SEMANTIC
+    // rather than numeric on purpose: the check runs against whichever seed org
+    // comes first, so asserting "41" would break the day the seed is reordered.
+    // `universal` is an amenity every site has — a tick that legitimately moves
+    // nothing, which the count is there to explain; `split` is one that actually
+    // narrows. Requiring both means the control cannot pass by rendering a single
+    // chip, and it cannot pass at all unless the LIVE feed landed, because the
+    // baked seed carries no amenity tags whatsoever.
+    var uni = a.n===total;
+    return '<label class="amchk'+(on?' on':'')+'" data-am-count="'+a.n+'" data-am-of="'+total+'"'
+      + (uni ? ' data-am-universal="1"' : ' data-am-split="1"')+'>'
+      + '<input type="checkbox" data-am="'+esc(a.id)+'"'+(on?' checked':'')+'>'
+      + '<span>'+esc(a.label)+'</span>'
+      + '<span class="ct">'+a.n+'/'+total+'</span></label>';
+  }).join('') + (AMEN_FILTER.length ? '<button type="button" class="amclear" id="amClear">Clear</button>' : '');
+  row.querySelectorAll('input[data-am]').forEach(function(cb){
+    cb.onchange=function(){ toggleAmen(cb.getAttribute('data-am'), cb.checked); };
+  });
+  var c=document.getElementById('amClear');
+  if(c) c.onclick=function(){ AMEN_FILTER=[]; applyAmen(); };
+}
+
+function toggleAmen(id, on){
+  var i=AMEN_FILTER.indexOf(id);
+  if(on && i<0) AMEN_FILTER.push(id);
+  if(!on && i>=0) AMEN_FILTER.splice(i,1);
+  applyAmen();
+}
+
+/* Why a named pair and not just an empty map: rec.us ANDs amenity tags, and some
+ * pairs share no site at all — at Topaz, Tent Site (26 sites) and the three
+ * hookup tags (the other 15) have zero overlap, so two ticks empty the map. A
+ * blank map on its own reads as "this campground is full", which is a different
+ * and wrong answer. */
+function amenConflict(){
+  if(AMEN_FILTER.length<2) return null;
+  var labels=amenLabels();
+  for(var a=0;a<AMEN_FILTER.length;a++){
+    for(var b=a+1;b<AMEN_FILTER.length;b++){
+      var both=SEED.filter(function(s){
+        var t=siteTags(s); return t.indexOf(AMEN_FILTER[a])>=0 && t.indexOf(AMEN_FILTER[b])>=0;
+      });
+      if(!both.length) return { a:labels[a], b:labels[b] };
+    }
+  }
+  return null;
+}
+
+function applyAmen(){
+  buildAmenFilter();
+  // A drawer left open on a site the filter excludes would describe a pin that is
+  // no longer on the map — same reason as the type filter.
+  if(selectedId){
+    var cur=SEED.filter(function(x){ return x.id===selectedId; })[0];
+    if(cur && !inView(cur)) closeDrawer();
+  }
+  var note=document.getElementById('amNote');
+  if(note){
+    var view=VIEW(), c=(!view.length ? amenConflict() : null);
+    if(!view.length && AMEN_FILTER.length){
+      note.hidden=false;
+      note.innerHTML = c
+        ? 'No site here has both <b>'+esc(c.a)+'</b> and <b>'+esc(c.b)+'</b>. Untick one to see sites again.'
+        : 'No site here has all of those amenities. Untick one to see sites again.';
+    } else { note.hidden=true; }
+  }
+  // Same reason as the type filter: the checkout bound comes from the sites in
+  // view, so narrowing can legitimately shorten the longest stay on offer.
+  setStay(SELECTED, DEPART);
+  syncAmenUrl();
+  var t=stayTally();
+  ping('campmap-amenity', { amenities: amenLabels().join(','), sites: VIEW().length, open: t.full });
+}
+
+/* In the URL but not persisted — a link lands on the same search, while a camper
+ * coming back later gets the whole campground rather than a silently narrowed
+ * subset they would read as all of it. */
+function syncAmenUrl(){
+  try{
+    var u=new URL(location.href);
+    if(AMEN_FILTER.length) u.searchParams.set('amen', AMEN_FILTER.join(','));
+    else u.searchParams.delete('amen');
+    history.replaceState(null,'',u.toString());
+  }catch(e){}
+}
+function readAmenUrl(){
+  try{
+    var v=new URLSearchParams(location.search).get('amen');
+    if(!v) return;
+    var known={}; amenCounts().forEach(function(a){ known[a.id]=true; });
+    // Only ids this campground actually has — a stale link must not empty the map.
+    AMEN_FILTER=v.split(',').filter(function(id){ return known[id]; });
+  }catch(e){}
 }
 
 function stayTally(){
@@ -1644,12 +1860,22 @@ function renderBody(site){
   // text is misleading"). The label now says the generic thing that is true —
   // you are going to rec.us to book a site — and the sub-line says what will
   // already be filled in when you get there, so the next step is obvious.
-  body+='<a class="book-btn" id="bookBtn" href="'+sBook(site)+'" target="_blank" rel="noopener">'
-      + '<span>🏕️ Book Sites on rec.us'
+  // THE SITE COMES FIRST (Dan, 2026-08-25): "the tiny link at the bottom I
+  // suspect users will WANT to click, not the big green one." Someone who clicked
+  // a pin came for THAT site, so that is the primary action even though it is the
+  // route that cannot carry their dates — /sites/{id} reads no search params
+  // (rec.us's path builder is site:({siteId}) with no options, and the page never
+  // calls useSearchParams). The trade is deliberate; what the sub-line must then
+  // do is name the dates to re-enter, so the camper is not reconstructing them.
+  body+='<a class="book-btn" id="bookBtn" href="'+sSiteUrl(site)+'" target="_blank" rel="noopener">'
+      + '<span>🏕️ Book ' + esc(shortName(site)) + ' on rec.us'
+      + '<small>Re-enter ' + span + ' \u2014 this page cannot carry dates</small></span></a>';
+  // The filtered list stays one tap away, and it IS dated: same nights, same
+  // capacity, same site type, so it answers "what else is free then".
+  body+='<a class="book-2nd" id="bookAlt" href="'+sBook(site)+'" target="_blank" rel="noopener">'
+      + 'Book alternate sites for the same dates'
       + '<small>' + span + ' \u00b7 ' + bn + (bn===1?' night':' nights')
-      + ' \u00b7 your dates carried over \u2014 pick your site there</small></span></a>';
-  body+='<a class="book-alt" id="bookAlt" href="'+sSiteUrl(site)+'" target="_blank" rel="noopener">'
-      + 'Or go straight to ' + shortName(site) + ' (rec.us will ask for dates again)</a>';
+      + ' \u00b7 dates carried over</small></a>';
   var noteTxt = EDIT ? 'Drag the pin on the map to reposition it; unsaved changes show in the edit bar.'
     : (site.approx && !site.placed) ? 'Approximate position — not yet placed on the map.'
     : '';
@@ -1662,13 +1888,14 @@ function renderBody(site){
   // a handler attached once would be lost the moment the stay changed.
   var bk=document.getElementById('bookBtn');
   if(bk) bk.onclick=function(){
-    // `dated` says which of the two routes was taken, so the feed can show
-    // whether the dated hand-off is the one campers actually use.
-    ping('campmap-book', { site: shortName(site), nights: stayNights().length, kind:'dated' });
+    // `kind` still says which ROUTE was taken, not which button — the two swapped
+    // places on 2026-08-25, so keying on position would silently redefine every
+    // historical row in the feed.
+    ping('campmap-book', { site: shortName(site), nights: stayNights().length, kind:'site-page' });
   };
   var ba=document.getElementById('bookAlt');
   if(ba) ba.onclick=function(){
-    ping('campmap-book', { site: shortName(site), nights: stayNights().length, kind:'site-page' });
+    ping('campmap-book', { site: shortName(site), nights: stayNights().length, kind:'dated' });
   };
 }
 
@@ -1702,8 +1929,17 @@ function snapshotSaved(){ savedCoords={}; SEED.forEach(function(s){ savedCoords[
 function diffCount(){ var n=0; SEED.forEach(function(s){ var b=savedCoords[s.id]||DEFAULT_COORDS[s.id]; if(b && (Math.abs(b.lat-s.lat)>1e-7 || Math.abs(b.lng-s.lng)>1e-7)) n++; }); return n; }
 function refreshDirty(){
   var n=diffCount(); var mk=markersDirty(); DIRTY = n>0 || mk;
-  var sv=document.getElementById('editSave'); if(sv) sv.disabled=!DIRTY;
-  var m=document.getElementById('editMsg'); if(!m) return;
+  var sv=document.getElementById('editSave');
+  var m=document.getElementById('editMsg');
+  if(!POS_OK || !MK_OK){
+    if(sv) sv.disabled=true;
+    if(m) m.innerHTML = LOAD_FAILED
+      ? '<span class="dirty">Saved layout could not be loaded.</span> These pins are defaults, not your layout \u2014 reload before editing, or a Save would overwrite it.'
+      : 'Loading the saved layout\u2026';
+    return;
+  }
+  if(sv) sv.disabled=!DIRTY;
+  if(!m) return;
   if(!DIRTY){ m.innerHTML='Drag pins to reposition, or ➕ add a custom marker.'; return; }
   var parts=[];
   if(n>0) parts.push(n+' pin'+(n===1?'':'s')+' moved');
@@ -1721,6 +1957,12 @@ function setEditMode(on){
   if(selectedId){ var s=SEED.filter(function(x){return x.id===selectedId;})[0]; if(s) renderBody(s); }
 }
 function saveLayout(){
+  // Refused, not merely disabled: the button is one way in, but a stale handler
+  // or a keyboard path must not be able to publish defaults either.
+  if(!POS_OK || !MK_OK){
+    toast('Saved layout was not loaded — reload before editing so a save cannot overwrite it.');
+    return;
+  }
   var positions={}; SEED.forEach(function(s){ positions[s.id]={lat:+s.lat, lng:+s.lng}; });
   var qp=[]; if(TOKEN) qp.push('token='+encodeURIComponent(TOKEN)); var lq=locQS(); if(lq) qp.push(lq);
   var q = qp.length ? ('?'+qp.join('&')) : '';
@@ -1751,18 +1993,54 @@ function resetDefaults(){
 }
 var toastT=null;
 function toast(msg){ var t=document.getElementById('toast'); t.textContent=msg; t.classList.add('on'); if(toastT) clearTimeout(toastT); toastT=setTimeout(function(){ t.classList.remove('on'); }, 2800); }
-function loadPositions(){
+/* WHY THESE FLAGS EXIST — a save used to be able to destroy the layout.
+ *
+ * This fetch used to map a failed response to `{positions:{}}`, which is
+ * byte-identical to "this org has never placed a pin". So one transient failure
+ * (a deploy restart, a 502, a dropped connection) rendered every pin at its seed
+ * default with nothing on screen to say so — indistinguishable from the pins
+ * having "reset". Reproduced 2026-08-25 against a stored 41-pin layout: forcing
+ * this GET to 500 once put every pin back on its seed coordinate, placed:false,
+ * and threw no console error.
+ *
+ * The destructive part was the recovery. saveLayout() publishes EVERY site in
+ * SEED, so an admin who saw the reset, dragged one pin and hit Save wrote 41
+ * pins of which 40 were seed defaults — over the real layout. The glitch was
+ * transient; re-saving is what made it permanent, and re-saving is exactly what
+ * the glitch invites.
+ *
+ * So POS_OK / MK_OK are true only when the store actually answered. Until then
+ * publishing is refused. A viewer still gets the map on its seed coordinates,
+ * which is the right degradation for a public page — but nothing may overwrite
+ * a layout it never read. */
+var POS_OK=false, MK_OK=false, LOAD_FAILED=false;
+
+function loadFail(what){
+  LOAD_FAILED=true;
+  console.warn('[campmap] could not load saved '+what+' — editing is disabled so a save cannot overwrite it');
+  refreshDirty();
+}
+
+function loadPositions(attempt){
   fetch(withLoc('/'+SLUG+'/campmap/api/positions'))
-    .then(function(r){ return r.ok ? r.json() : {positions:{}}; })
+    .then(function(r){ if(!r.ok) throw new Error('http '+r.status); return r.json(); })
     .then(function(res){
       var pos=res.positions||{};
       SEED.forEach(function(s){ var p=pos[s.id];
         if(p && typeof p.lat==='number' && typeof p.lng==='number'){ s.lat=p.lat; s.lng=p.lng; s.placed=true; s.approx=false; if(markers[s.id]) markers[s.id].setLatLng([p.lat,p.lng]); }
       });
-      snapshotSaved(); refreshMarkers(); fitToSites();
+      // An empty answer from a store that ANSWERED is legitimate: this org has
+      // not placed its pins yet, and editing must work so that it can.
+      POS_OK=true;
+      snapshotSaved(); refreshMarkers(); fitToSites(); refreshDirty();
       if(selectedId){var s=SEED.filter(function(x){return x.id===selectedId;})[0]; if(s)renderBody(s);}
     })
-    .catch(function(){ snapshotSaved(); });
+    .catch(function(){
+      // One retry: the usual cause is a restart mid-request, which the next
+      // request survives. Two failures is an outage, not a blip.
+      if(!attempt){ setTimeout(function(){ loadPositions(1); }, 1500); return; }
+      snapshotSaved(); loadFail('pin positions');
+    });
 }
 
 /* ── custom admin markers (Boat Ramp, etc.) ── */
@@ -1810,11 +2088,21 @@ function openMkEditor(id){
   renderAllCustom();
 }
 function closeMkEditor(){ editingMkId=null; document.getElementById('mkEditor').classList.remove('on'); renderAllCustom(); }
-function loadMarkers(){
+function loadMarkers(attempt){
+  // Same shape, same trap: a failed GET used to leave customMarkers empty, and
+  // saveLayout() posts the marker list too — so one blip wiped every
+  // admin-placed marker (Boat Ramp and friends) on the next save.
   fetch(withLoc('/'+SLUG+'/campmap/api/markers'))
-    .then(function(r){ return r.ok ? r.json() : {markers:[]}; })
-    .then(function(res){ customMarkers=(res.markers||[]).map(function(m){ return {id:m.id,label:m.label,text:m.text,color:m.color,lat:m.lat,lng:m.lng}; }); renderAllCustom(); savedMarkers=JSON.stringify(normMk(customMarkers)); })
-    .catch(function(){ savedMarkers=JSON.stringify(normMk(customMarkers)); });
+    .then(function(r){ if(!r.ok) throw new Error('http '+r.status); return r.json(); })
+    .then(function(res){
+      customMarkers=(res.markers||[]).map(function(m){ return {id:m.id,label:m.label,text:m.text,color:m.color,lat:m.lat,lng:m.lng}; });
+      MK_OK=true;
+      renderAllCustom(); savedMarkers=JSON.stringify(normMk(customMarkers)); refreshDirty();
+    })
+    .catch(function(){
+      if(!attempt){ setTimeout(function(){ loadMarkers(1); }, 1500); return; }
+      savedMarkers=JSON.stringify(normMk(customMarkers)); loadFail('map markers');
+    });
 }
 /* wire the marker editor (once) */
 (function wireMkEditor(){
@@ -1914,7 +2202,10 @@ function loadSites(){
       if(!used) throw new Error('no live sites matched');
       // Rec's own sub_type has arrived, so the type options are rebuilt from it
       // rather than from the baked seed's guess.
-      SITES_LIVE=true; updateLegFoot(); buildTypeFilter(); refreshMarkers(); renderList(); updateSummary();
+      // The live feed is where amenity tags arrive at all — the baked seed has
+      // none — so the amenity control can only be built once it lands.
+      SITES_LIVE=true; updateLegFoot(); buildTypeFilter(); readAmenUrl(); buildAmenFilter();
+      refreshMarkers(); renderList(); updateSummary();
       if(selectedId){ var s=SEED.filter(function(x){return x.id===selectedId;})[0]; if(s){ renderGallery(s); renderBody(s); } }
     })
     .catch(function(){ /* keep baked seed — still fully usable */ })
@@ -1945,6 +2236,7 @@ buildMarkers();
 // Populates both inputs, the nights label, the in-range chips and the summary in
 // one place, so the initial paint cannot disagree with what a later change draws.
 buildTypeFilter();   // before setStay: the checkout bound is derived from VIEW()
+buildAmenFilter();   // hidden until the live feed brings tags; same ordering reason
 setStay(TODAY_ISO, iso(addDays(TODAY, 1)));
 applyPanels();   // honour the viewer's remembered panel choice
 loadPositions();   // apply any admin-saved pin positions
