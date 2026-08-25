@@ -427,6 +427,14 @@ function directorsQuarter() {
 
 const STUBS = [
   { match: /\/facilities\/api\/campsites/, body: () => campsitesGeo },
+  // Must precede the catch-all /api/ stub. Realistic enough that the case below
+  // asserts a NUMBER off the payload rather than merely that a strip appeared.
+  { match: /\/facilities\/api\/campmap-activity/, body: () => ({
+      days: 30, covers: true, logStartsAt: new Date(Date.now() - 90 * 86400000).toISOString(),
+      totals: { views: 128, sites: 44, books: 11, shares: 3, filters: 9 },
+      prior:  { views: 100, sites: 30, books: 8, shares: 1, filters: 4 },
+      bookKinds: { dated: 7, "site-page": 4 }, shareKinds: { link: 2, embed: 1 },
+      topSite: { name: "Site 12", opens: 9 } }) },
   // One feed, both tabs: Camping filters it to campsite rows and Outdoor Events
   // to its three types, so each tab has to do its own scoping.
   { match: /\/facility\/api\/data/,        body: () => ({ rows: campsiteRows().concat(outdoorRows()).concat(fieldRows()), meta: {} }) },
@@ -635,6 +643,12 @@ const CASES = [
   // so a hard-coded count would break on a seed reorder rather than on a bug.
   { name: "campmap · amenity splits", path: "/{org}/campmap",
     needs: "#amenRow .amchk[data-am-split]" },
+  // The Camping tab hands the org its own public-map traffic. Keyed to the view
+  // count from the payload, so a strip that renders but reads the wrong field —
+  // or throws and unmounts the tab — fails rather than passing on "something
+  // appeared".
+  { name: "facilities · campmap activity", path: "/{org}/facilities?tab=camping",
+    needs: "[data-campmap-stats=\"128\"]" },
   // Depart must reach the horizon too (Dan, 2026-08-25): the last bookable
   // arrival (day 119) PLUS a full stay. The check org is the first campmap seed,
   // pleasant-hill, whose configured maximum is 5 nights — so 119 + 5 = 124.

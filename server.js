@@ -8490,6 +8490,79 @@ app.post("/:org/facilities/api/campsite-positions", express.json(), (req, res) =
 // reservations incl. canceled) and returns { rows } for client-side
 // aggregation. Same public-card + buildMetabaseParams pattern as /api/data,
 // with the shared cache (reportType "facilities") + stale fallback.
+// ── GET /:org/facilities/api/campmap-activity — how campers use the public map ──
+// The Camping tab's map is an admin view of a PUBLIC page, and until now the only
+// place its traffic showed up was the Slack feed — which is ours, not the org's.
+// This is the same events, aggregated back to the org that owns the campground.
+//
+// Reaching this route already requires the org token: the global gate above
+// (search "do not leak existence of the org") 404s every /:org/* path without
+// one, exempting only calendar, rentalcalendar and campmap. The check below is a
+// backstop in case that exemption list ever grows, not the primary gate — and a
+// 404 rather than a 403 is what a tokenless caller actually sees, by design.
+//
+// Everything here is a COUNT of non-personal events (a site opened, a book button
+// clicked). Nothing identifies a camper, which is why it was safe to log in the
+// first place.
+app.get("/:org/facilities/api/campmap-activity", (req, res) => {
+  const slug = req.params.org;
+  const org = ORGS[slug];
+  if (!org) return res.status(404).json({ error: "Unknown org" });
+  const token = req.query.token || "";
+  if (!org.token || token !== org.token) {
+    return res.status(403).json({ error: "Forbidden — valid org token required." });
+  }
+  const days = Math.min(Math.max(parseInt(req.query.days, 10) || 30, 1), 365);
+  const now = Date.now();
+  const cutoff = new Date(now - days * 86400000).toISOString();
+  const priorCutoff = new Date(now - days * 2 * 86400000).toISOString();
+
+  // 2x the window, so every tile can carry a delta — same shape as the calendar
+  // activity route.
+  const rows = readEvents(days * 2).filter(e => e.org === slug && e.report === "campmap");
+  const blank = () => ({ views: 0, sites: 0, books: 0, shares: 0, filters: 0 });
+  const cur = blank(), prior = blank();
+  const bookKinds = {}, shareKinds = {}, siteHits = {};
+
+  for (const e of rows) {
+    const bucket = e.ts >= cutoff ? cur : (e.ts >= priorCutoff ? prior : null);
+    if (!bucket) continue;
+    switch (e.event) {
+      case "view":            bucket.views++; break;
+      case "campmap-site":    bucket.sites++; break;
+      case "campmap-book":    bucket.books++; break;
+      case "campmap-share":   bucket.shares++; break;
+      // Both filters answer "campers narrowed the map", so they count together —
+      // splitting type from amenity would make two thin numbers out of one signal.
+      case "campmap-filter":
+      case "campmap-amenity": bucket.filters++; break;
+      default: break;
+    }
+    if (bucket !== cur) continue;
+    if (e.event === "campmap-book")  bookKinds[e.kind || "dated"] = (bookKinds[e.kind || "dated"] || 0) + 1;
+    if (e.event === "campmap-share") shareKinds[e.kind || "link"] = (shareKinds[e.kind || "link"] || 0) + 1;
+    if (e.event === "campmap-site" && e.site) siteHits[e.site] = (siteHits[e.site] || 0) + 1;
+  }
+
+  const top = Object.entries(siteHits).sort((a, b) => b[1] - a[1])[0] || null;
+
+  // A LOG THAT DOES NOT REACH BACK 30 DAYS MUST NOT READ AS 30 DAYS OF ZEROS.
+  // A fresh volume, a rotated log or a PR preview would otherwise render "0 views"
+  // — which an admin reads as "nobody opens my map" rather than "we have not been
+  // counting that long". So say when counting actually started and let the tab
+  // label the window honestly.
+  const all = readEvents(null);
+  const logStartsAt = all.length ? all[0].ts : null;
+  const covers = !!(logStartsAt && logStartsAt <= cutoff);
+
+  res.json({
+    days, cutoff, logStartsAt, covers,
+    totals: cur, prior,
+    bookKinds, shareKinds,
+    topSite: top ? { name: top[0], opens: top[1] } : null,
+  });
+});
+
 app.get("/:org/facilities/api/summary", async (req, res) => {
   const slug = req.params.org;
   const org  = ORGS[slug];

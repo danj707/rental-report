@@ -76,6 +76,9 @@ jobs:
       - name: Campmap nightly window spec (the feed's date range)
         run: node scripts/campmap-nightly-window.spec.js
 
+      - name: Campmap activity spec (this org's map traffic only; no rate on a thin denominator)
+        run: node scripts/campmap-activity.spec.js
+
       - name: Facility summary KPI spec (a fee line is money, not a booking or a site)
         run: node scripts/facility-summary.spec.js
 

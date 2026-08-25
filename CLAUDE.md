@@ -735,6 +735,56 @@ both clients send every site — the Camping tab sends `loc.sites`, campmap send
 all of `SEED`, and for Douglas the seed and live id sets are identical (41 = 41,
 no extras). If a client ever sends a subset, it silently drops the rest.
 
+## Public map activity, handed back to the org (2026-08-25)
+
+Dan: *"we need some metrics here, similar to what we're piping to slack. Number
+of total views, clicks, book to rec clicks, etc. Something actionable back to the
+org admins, can keep it to one row."*
+
+The campmap is a PUBLIC page whose traffic only ever surfaced in **our** Slack
+feed. `GET /:org/facilities/api/campmap-activity?days=30` aggregates the same
+events back to the org that owns the campground, and `CampMapStats` in
+`public/facilities.html` renders one `.sum-cards` row on the Camping tab:
+**Map views · Sites opened · Book clicks · Searches narrowed · Link shares**.
+
+- **Per ORG, not per location.** Events carry no location, so the row mounts once
+  at section level. Inside `locs.map(...)` it would render N identical rows and
+  imply each location earned those numbers.
+- **The book-click RATE is the actionable half** (`books / views`), because it
+  says whether the map turns lookers into bookers. Which of the two routes they
+  took is on the endpoint (`bookKinds`) but not on the tile — it is interesting
+  to us, not to a parks department.
+- **No rate on a thin denominator.** `RATE_MIN_VIEWS = 20`: 6 views and 0 clicks
+  is not "0% conversion", it is not enough traffic to say. Same reasoning as this
+  tab's trend arrows refusing to draw under 14 elapsed days.
+- **An empty log is not "nobody uses your map."** A fresh volume, a rotated log
+  or a PR preview would render 0 views over 30 days, which an admin reads as a
+  verdict on their campground. The route returns `covers` / `logStartsAt` and the
+  header says *"since Aug 19"* instead of *"last 30 days"* when it cannot see
+  that far back.
+- **Both filter events are one signal** — `campmap-filter` (type) and
+  `campmap-amenity` count together as "searches narrowed"; splitting makes two
+  thin numbers out of one.
+- **`!d.totals`, not just `!d`.** The strip renders from a network response, and
+  a rewritten route or a stub can answer 200 with the wrong shape; reading
+  `d.totals.views` off that throws inside render and unmounts the whole Camping
+  tab. That is the blank-page class this repo has been bitten by twice, and the
+  render check reproduces it when the guard is removed.
+- **No new gate needed.** The global org-token middleware (search *"do not leak
+  existence of the org"*) already 404s every `/:org/*` path without a token,
+  exempting only calendar, rentalcalendar and campmap. So a tokenless caller sees
+  a generic **404, not a 403** — the in-handler check is a backstop for the day
+  that exemption list grows.
+
+Guards: `scripts/campmap-activity.spec.js` (10 assertions, in CI) whose fixture
+plants every way to be confidently wrong — another org's 99 map views, this org's
+50 `facility` views, 77 views outside both windows — so a dropped filter shows as
+a specific wrong number (90 / 139 / 65) rather than a vague failure. Its
+`topSite` fixture has an unambiguous winner on purpose: a tie made the assertion
+order-dependent. Mutation-tested six ways, all caught. Plus the
+`facilities · campmap activity` render case, keyed to a view count from the stub
+so a strip that renders the wrong field fails too.
+
 ## Campmap amenity filter + the book buttons swapped (2026-08-25)
 
 **Amenity checkboxes live in the date toolbar**, on the same reasoning as the
