@@ -11,6 +11,9 @@
   --bg:#0f172a;--panel:#ffffff;--ink:#1f2937;--muted:#6b7280;--line:#e5e7eb;
   --avail:#16a34a;--avail-bg:#dcfce7;--booked:#dc2626;--booked-bg:#fee2e2;
   --unknown:#9ca3af;--unknown-bg:#f3f4f6;--blocked:#6b7280;--blocked-bg:#e5e7eb;--accent:#0f766e;--sel:#f59e0b;
+  /* past the site's own booking window: nobody has it, it just is not open yet.
+     Deliberately not red — red is taken — and not grey, which reads as unknown. */
+  --beyond:#7c8ba1;--beyond-bg:#e8eef6;
   --partial:#d97706;--partial-bg:#fef3c7;
   --shadow:0 1px 3px rgba(16,24,40,.12),0 1px 2px rgba(16,24,40,.08);
   --shadow-lg:0 12px 40px rgba(16,24,40,.28);
@@ -30,9 +33,20 @@ body{font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica
 .hdr .wx{font-size:12px;color:#374151;font-weight:600;white-space:nowrap;background:#f3f4f6;border-radius:8px;padding:5px 10px}
 
 /* ── Date bar ── */
-.datebar{display:flex;align-items:center;gap:8px;padding:8px 12px;background:#fff;border-bottom:1px solid var(--line);z-index:600}
-.datebar .summ{font-size:13px;font-weight:600;white-space:nowrap;padding-right:4px}
-.datebar .summ .cnt{color:var(--avail)}
+/* Wraps rather than overflows. The verdict pill is the answer on this page, and
+   with 41 sites and a long stay the toolbar gets crowded enough to push it off
+   the right edge — where "more prominent" becomes invisible. It also takes the
+   auto margin, so it sits hard right on a wide screen and drops to its own full
+   line when it cannot fit. */
+.datebar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 12px;background:#fff;border-bottom:1px solid var(--line);z-index:600}
+.datebar .summ{font-size:13.5px;font-weight:700;padding:6px 12px;border-radius:999px;
+  border:1px solid transparent;line-height:1.25;margin-left:auto}
+.datebar .summ b{font-size:15px}
+.datebar .summ.ok{background:var(--avail-bg);border-color:#bbf7d0;color:#166534}
+.datebar .summ.some{background:var(--partial-bg);border-color:#fde68a;color:#92400e}
+.datebar .summ.none{background:var(--booked-bg);border-color:#fecaca;color:#991b1b}
+.datebar .summ.idle{background:none;border-color:transparent;color:var(--muted);font-weight:600}
+.datebar .summ .out{opacity:.75;font-weight:600}
 /* Two rows, not one crammed line: the fields and the count read first, the
    strip is a browse aid underneath. */
 .datebar{display:block;padding:0}
@@ -43,6 +57,11 @@ body{font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica
 .datebar .fld span{font-size:9.5px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);font-weight:700}
 .datebar .fld input{font:inherit;font-size:13.5px;padding:6px 9px;border:1px solid var(--line);border-radius:9px;color:#374151;background:#fff;cursor:pointer}
 .datebar .fld input:focus{outline:2px solid var(--accent);outline-offset:1px}
+.datebar .fld input:disabled{background:#f9fafb;color:#9ca3af;cursor:not-allowed}
+/* "Choose an arrival date" — the label carries the instruction, so it reads at
+   the field the camper is looking at rather than as a message elsewhere. */
+.datebar .fld span.prompt{color:var(--booked);letter-spacing:.3px}
+.datebar .fld input.unset{border-color:var(--booked);color:#9ca3af}
 /* The campsite-type filter sits in the same row as the dates: "which sites fit
    my rig" is part of the same question as "which nights", not a separate mode. */
 .datebar .fld select{font:inherit;font-size:13.5px;padding:6px 9px;border:1px solid var(--line);border-radius:9px;color:#374151;background:#fff;cursor:pointer;max-width:200px}
@@ -50,7 +69,7 @@ body{font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica
 .datebar .fld-type.on select{border-color:var(--accent);color:var(--accent);font-weight:700}
 .datebar .fld-arrow{color:var(--muted);align-self:flex-end;padding-bottom:7px}
 .datebar .nights{align-self:flex-end;padding-bottom:7px;font-size:12.5px;font-weight:700;color:var(--accent);white-space:nowrap}
-.datebar .listtog{margin-left:auto;font:inherit;font-size:11.5px;font-weight:700;padding:5px 10px;border:1px solid var(--line);border-radius:999px;background:#fff;color:var(--muted);cursor:pointer;flex:0 0 auto}
+.datebar .listtog{font:inherit;font-size:11.5px;font-weight:700;padding:5px 10px;border:1px solid var(--line);border-radius:999px;background:#fff;color:var(--muted);cursor:pointer;flex:0 0 auto}
 .datebar .listtog:hover{border-color:var(--accent);color:var(--accent)}
 /* ── the site list beside the map ─────────────────────────────────────────── */
 .sitelist{position:absolute;top:0;right:0;bottom:0;width:288px;background:#fff;border-left:1px solid var(--line);z-index:500;display:flex;flex-direction:column;overflow:hidden}
@@ -59,9 +78,26 @@ body{font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica
 .sitelist .sl-title{font-size:13px;font-weight:800}
 .sitelist .sl-sub{font-size:11.5px;color:var(--muted);margin-top:2px}
 .sitelist .sl-body{flex:1;overflow-y:auto;padding:6px}
+/* The group hand-off. The list IS the search result, so the action that belongs
+   to it is "book one of these", not "book the one you happen to have open". */
+.sitelist .sl-cta{flex:0 0 auto;padding:8px;border-top:1px solid var(--line);background:#fff}
+.sl-go{display:block;text-decoration:none;text-align:center;padding:10px 12px;border-radius:10px;
+  background:var(--accent);color:#fff;font-size:13.5px;font-weight:800;line-height:1.3}
+.sl-go:hover{filter:brightness(1.08)}
+.sl-go small{display:block;font-size:11px;font-weight:600;opacity:.85;margin-top:2px}
 .sl-item{display:flex;align-items:center;gap:9px;width:100%;text-align:left;font:inherit;padding:7px 8px;border:1px solid transparent;border-radius:9px;background:none;cursor:pointer}
+/* The verdict is the row, not a dot on it (Dan, 2026-08-25). A list scanned at
+   arm's length should answer "which of these can I have" from colour alone, and
+   a 9px dot does not carry that far. Sites that cannot be booked for the stay are
+   not dimmed or greyed — they are not in the list at all. */
+.sl-item.full{background:var(--avail-bg);border-color:#bbf7d0}
+.sl-item.full:hover{background:#c9f7d8;border-color:var(--avail)}
+.sl-item.part{background:var(--partial-bg);border-color:#fde68a}
+.sl-item.part:hover{background:#fdeab4;border-color:var(--partial)}
 .sl-item:hover{background:#f9fafb;border-color:var(--line)}
-.sl-item.sel{background:var(--avail-bg);border-color:var(--avail)}
+/* Selection has to read on top of both fills, so it is a ring rather than another
+   background — a green "selected" tint over a green "open" row said nothing. */
+.sl-item.sel{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent) inset}
 .sl-item .dot{width:9px;height:9px;border-radius:50%;flex:0 0 9px}
 .sl-item .nm{font-size:13px;font-weight:700;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .sl-item .rt{font-size:11.5px;color:var(--muted);flex:0 0 auto;font-variant-numeric:tabular-nums}
@@ -72,15 +108,11 @@ body{font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica
   .sitelist{top:auto;left:0;right:0;height:42%;width:auto;border-left:none;border-top:1px solid var(--line)}
 }
 .datebar .summ .part{color:var(--partial);font-weight:700}
+/* Says what the Depart picker no longer enforces — see renderStayNote(). */
+.datebar .staynote{font-size:11.5px;font-weight:700;color:#92400e;background:#fef3c7;
+  border:1px solid #fde68a;border-radius:999px;padding:3px 9px;white-space:nowrap}
 /* The stay, drawn on the strip: arrival, the nights between, and the checkout
    morning (dashed — you are not occupying the site that night). */
-/* The hand-off at the foot of the list — see renderFoot(). */
-.sitelist .sl-foot{flex:0 0 auto;padding:8px;border-top:1px solid var(--line)}
-.sl-more{display:block;text-decoration:none;padding:9px 11px;border:1px solid var(--accent);border-radius:10px;
-  background:var(--accent-soft,#ecfdf5);color:#0f766e}
-.sl-more:hover{background:#d7ebe8}
-.sl-more .m-h{display:block;font-size:11.5px;font-weight:800}
-.sl-more .m-b{display:block;font-size:11px;line-height:1.35;margin-top:2px;color:#374151}
 
 
 /* ── Map ── */
@@ -151,6 +183,7 @@ body{font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica
 .dbody .stat-pill.booked{background:var(--booked-bg);color:#991b1b}
 .dbody .stat-pill.unknown{background:var(--unknown-bg);color:#374151}
 .dbody .stat-pill.blocked{background:var(--blocked-bg);color:#334155}
+.dbody .stat-pill.beyond{background:var(--beyond-bg);color:#33465e}
 .dbody .staybox{background:#f9fafb;border:1px solid var(--line);border-radius:10px;padding:8px 10px;margin-bottom:10px}
 .dbody .staybox .sb-when{font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);font-weight:700}
 .dbody .staybox .sb-cnt{font-size:13px;margin-top:2px}
@@ -163,6 +196,7 @@ body{font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica
 .dbody .ncell.bk{background:var(--booked-bg);color:#991b1b}
 .dbody .ncell.bl{background:var(--blocked-bg);color:#334155}
 .dbody .ncell.un{background:var(--unknown-bg);color:#374151}
+.dbody .ncell.by{background:var(--beyond-bg);color:#33465e}
 .dbody .stat-pill.partial{background:var(--partial-bg);color:#92400e}
 .dbody h2{margin:2px 0 2px;font-size:20px}
 .dbody .area{font-size:12.5px;color:var(--muted);margin-bottom:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
@@ -179,6 +213,9 @@ body{font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica
 .sec-h{font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);font-weight:700;margin:6px 0 8px}
 .book-btn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;padding:13px;background:var(--accent);color:#fff;text-decoration:none;border-radius:10px;font-size:15px;font-weight:700;transition:filter .12s}
 .book-btn:hover{filter:brightness(1.08)}
+.book-btn small{display:block;font-size:11px;font-weight:600;opacity:.85;margin-top:2px}
+.book-alt{display:block;text-align:center;margin-top:7px;font-size:11.5px;color:var(--muted);text-decoration:underline}
+.book-alt:hover{color:var(--accent)}
 .book-note{font-size:11px;color:var(--muted);text-align:center;margin-top:8px}
 .scrim{position:absolute;inset:0;background:rgba(15,23,42,.35);z-index:650;opacity:0;pointer-events:none;transition:opacity .22s}
 .scrim.on{opacity:1;pointer-events:auto}
@@ -251,8 +288,9 @@ body{font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica
     <div class="dbrow dbrow-top">
       <label class="fld"><span>Arrive</span><input type="date" id="arrivePick"/></label>
       <span class="fld-arrow">→</span>
-      <label class="fld"><span>Depart</span><input type="date" id="departPick"/></label>
+      <label class="fld"><span id="departLbl">Depart</span><input type="date" id="departPick"/></label>
       <span class="nights" id="nights">1 night</span>
+      <span class="staynote" id="stayNote" hidden></span>
       <label class="fld fld-type" id="typeFld" hidden><span>Campsite type</span><select id="typePick"></select></label>
       <div class="summ" id="summ">—</div>
       <button class="listtog" id="listTog" title="Show or hide the list of sites">Hide list</button>
@@ -267,7 +305,7 @@ body{font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica
         <div class="sl-sub" id="slSub">—</div>
       </div>
       <div class="sl-body" id="slBody"></div>
-      <div class="sl-foot" id="slFoot"></div>
+      <div class="sl-cta" id="slCta" hidden></div>
     </aside>
     <div class="editbar" id="editbar">
       <span class="msg" id="editMsg">Drag campsite pins to place them.</span>
@@ -310,6 +348,7 @@ body{font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica
         <div class="row"><span class="dot" style="background:var(--partial)"></span> Open some nights — open the site to see which</div>
         <div class="row"><span class="dot" style="background:var(--booked)"></span> Not available</div>
         <div class="row"><span class="dot" style="background:var(--blocked)"></span> Free, but not for a stay this long</div>
+        <div class="row"><span class="dot" style="background:var(--beyond)"></span> Not open for booking this far ahead yet</div>
         <div class="div" id="legKindDiv"></div>
         <h4 id="legKindH" style="display:none">Site type</h4>
         <div id="legKinds"></div>
@@ -481,7 +520,117 @@ function sKind(s){ var l=L_(s);
   return s.kind || 'campsite';
 }
 function sCap(s){ var l=L_(s); return (l && l.capacity) || siteMeta(s).capacity || null; }
-function sBook(s){ var l=L_(s); return (l && l.bookingUrl) || ('https://www.rec.us/sites/'+s.id); }
+/* ── handing a camper over to rec.us with their dates ───────────────────────
+ * Dan, 2026-08-25: "once you choose a time range then click 'book on rec.us',
+ * it seems stupid to have to choose the dates again."
+ *
+ * WHAT REC.US ACCEPTS, established by reading its own bundles and confirmed
+ * against the live site:
+ *
+ *   /sites/{id}                      — takes NO query parameters. rec.us's own
+ *                                      path builder is `site:({siteId})` with no
+ *                                      options, unlike its siblings, and the site
+ *                                      page's chunk never calls useSearchParams.
+ *                                      Dates cannot ride on this URL.
+ *   /organizations/{slug}?tab=facilityRentals
+ *                                    — HAS a validated schema: sports, location,
+ *                                      siteType, checkInDate, checkOutDate,
+ *                                      amenity. Verified live: the values land in
+ *                                      the page's own props, and a bogus date is
+ *                                      dropped rather than echoed.
+ *
+ * So the dates can be carried, at the cost of landing on the campground's filtered
+ * rental list rather than on the one site. That is the better trade: the list is
+ * already narrowed to campsites at this location FOR THESE NIGHTS, so it shows
+ * only what is actually free, and the camper picks their site once instead of
+ * re-entering two dates.
+ *
+ * CAPACITY CANNOT BE CARRIED. The schema has no guests/capacity parameter, so the
+ * "preselect max capacity" half of the ask is not available today — see the
+ * Campsite map section of CLAUDE.md. Nothing is sent for it rather than sending a
+ * parameter that is silently ignored.
+ *
+ * `location` is NOT validated by rec.us (a bogus value passes straight through),
+ * so it is only ever sent when the live site feed actually supplied one — the
+ * baked seed's "default" placeholder must never be used as a location id.
+ */
+// rec.us's own campsite sub_types, the only values its subType filter accepts.
+var REC_SUBTYPES = { 'tent':1, 'rv':1, 'tent-and-rv':1, 'lodging':1 };
+// `group`, when given, is the set of sites the link is meant to cover. A filter
+// taken from one member can exclude the others — a link labelled "Book Site 05 or
+// Site 12" that carries Site 05's sub_type lands on a page without Site 12 on it.
+// So a group narrows only on what every member shares: one sub_type or none, and
+// the SMALLEST capacity rather than any single site's.
+function bookUrl(site, group){
+  var l=L_(site);
+  var slug=CFG.slug;
+  if(!slug) return sSiteUrl(site);
+  var q=['tab=facilityRentals'];
+  // The site TYPE, never the sub_type. rec.us does not validate this parameter
+  // (measured: `campsite`, `tent-and-rv` and even `electric` all pass straight
+  // into the page's props), so a wrong value is not rejected — it just filters
+  // against something the list does not group by. `campsite` is what the
+  // facility-rentals tab groups on; tent/rv are sub_types, and the map's derived
+  // electric/primitive are ours rather than Rec's at all.
+  q.push('siteType=campsite');
+  var loc=(l && l.locationId) || null;
+  if(loc && loc!=='default') q.push('location='+encodeURIComponent(loc));
+  if(SELECTED) q.push('checkInDate='+encodeURIComponent(SELECTED));
+  if(DEPART)   q.push('checkOutDate='+encodeURIComponent(DEPART));
+  // `guests` and `subType` are read by the tab's own useQueryStates, and BOTH are
+  // gated on siteType === 'campsite' — which we always send, so they apply. Read
+  // out of rec.us's client bundle; the route's zod schema lists neither, so the
+  // schema is the validated subset rather than the full set the page honours.
+  var cap=(l && l.capacity!=null) ? l.capacity : (siteMeta(site)||{}).capacity;
+  if(group && group.length){
+    cap=null;
+    group.forEach(function(x){
+      var gl=L_(x.site);
+      var c=(gl && gl.capacity!=null) ? gl.capacity : (siteMeta(x.site)||{}).capacity;
+      if(c!=null && c>0 && (cap===null || c<cap)) cap=c;
+    });
+  }
+  if(cap!=null && cap>0) q.push('guests='+encodeURIComponent(cap));
+  // Only rec.us's own four sub_types. The map's derived electric/primitive are
+  // ours, and would filter the list to nothing. The live /rentalcalendar feed
+  // reports subType null (the MCP tool omits it), so this falls back to the
+  // seed's kind — which for Topaz is the same tent-and-rv the REST site payload
+  // carries.
+  var sub=(l && l.subType) || sKind(site);
+  if(group && group.length){
+    sub=null;
+    for(var gi=0; gi<group.length; gi++){
+      var g=group[gi], glv=L_(g.site);
+      var gs=(glv && glv.subType) || sKind(g.site);
+      if(gi===0) sub=gs; else if(gs!==sub){ sub=null; break; }
+    }
+  }
+  if(sub && REC_SUBTYPES[sub]) q.push('subType='+encodeURIComponent(sub));
+  // Amenities, as rec.us's own tag ids. Dan tested the encodings 2026-08-25:
+  // a single id works, COMMA-SEPARATED ids work, and repeating `amenity=` picks
+  // up only the first — so comma-separated is the multi-value form (nuqs's
+  // default) and repeating it is wrong.
+  //
+  // For a group, only the tags EVERY member has: rec.us treats them as an AND, so
+  // sending one site's Tent Site tag would drop the RV-only sites the button also
+  // names — the same trap as sub_type, one field over.
+  var tags=(l && l.amenityTagIds) || [];
+  if(group && group.length){
+    tags=null;
+    group.forEach(function(x){
+      var gl=L_(x.site), gt=(gl && gl.amenityTagIds) || [];
+      if(tags===null){ tags=gt.slice(); return; }
+      tags=tags.filter(function(t){ return gt.indexOf(t)>=0; });
+    });
+    tags=tags || [];
+  }
+  if(tags.length) q.push('amenity='+tags.map(encodeURIComponent).join(','));
+  return 'https://www.rec.us/organizations/'+encodeURIComponent(slug)+'?'+q.join('&');
+}
+/* The single site's own page — no dates, but it is the exact site. Kept as the
+ * secondary link so the drawer can offer both routes. */
+function sSiteUrl(s){ var l=L_(s); return (l && l.bookingUrl) || ('https://www.rec.us/sites/'+s.id); }
+function sBook(s){ return bookUrl(s); }
 function computeRate(l, resident){
   if(!l) return null;
   var cents = resident ? (l.residentPriceCents!=null?l.residentPriceCents:null) : (l.priceCents!=null?l.priceCents:null);
@@ -529,22 +678,37 @@ var DOW=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 var MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 var TODAY = new Date(); TODAY.setHours(0,0,0,0);
 var TODAY_ISO = iso(TODAY);
-// Availability window: rec.us returns ~30 days of check-in data and the date
-// strip spans 30 days, so we only claim a verdict inside this range. Dates beyond
-// it aren't "unknown" to show off — they're just outside the schedule we have.
-// How many nights the strip shows. rec.us's get_site_availability enumerates 30
-// days of check-in dates and takes no range parameter (verified 2026-08-23 on
-// two sites, public and staff scopes: 31 keys, today .. +30, identical), so this
-// is the horizon of what can be CONFIRMED — not the horizon of what rec.us will
-// accept, which is months longer. Hence the hand-off card at the end of the strip.
+// How far ahead the page asks rec.us to look. 210 is the platform's own ceiling
+// for one nightly-availability request (211 is a 400, not a truncation), so this
+// is "as far as it will answer" rather than a number we picked.
+//
+// It is NOT how far the page offers. Each site's booking window is its own — at
+// Topaz Lake 39 of 41 sites take arrivals 180 days out, one takes 90, and one
+// has no window at all and takes the full 210 — so the horizon is read off each
+// site's own answer (see bookingHorizon) rather than assumed for the park. Dan,
+// 2026-08-24: "availability should scope to the actual site availability."
+var DAYS_AHEAD = 210;
+// The fallback when a site's answer cannot tell us where its window ends: the
+// 30-day MCP feed, which is what this page ran on entirely until 2026-08-24.
+// Not a horizon — just the end of what we asked for.
 var DAYS_SHOWN = 30;
-var MAX_ISO = iso(addDays(TODAY, DAYS_SHOWN - 1));
 
 /* ── availability state: { siteId: { 'YYYY-MM-DD': 'avail'|'booked'|'blocked' } } ──
    'booked'  = an actual reservation conflict on that night
    'blocked' = not bookable for a non-reservation reason (booking-window rule,
                blackout, etc.) — NOT a booking, so it must not read as "Booked". */
-var AVAIL = {};          // siteId -> { date: 'avail'|'booked'|'blocked'|'closed' }
+var AVAIL = {};          // siteId -> { date: 'avail'|'booked'|'blocked'|'closed'|'beyond' }
+// siteId -> the result of bookingHorizon() for that site: where ITS booking
+// window ends. Read by maxArrival() to bound the Arrive picker and by the drawer
+// to say "not open for booking yet" instead of "not available".
+var HORIZON = {};
+// Has an availability reply landed at all? This is NOT the same question as
+// "does any site know its horizon", and conflating them is what capped the
+// Arrive picker at 30 days (Dan, 2026-08-25). Before the feed arrives no site
+// has a horizon, but that is ignorance, not a 30-day window — and a native date
+// picker snapshots min/max when it OPENS, so a camper who clicks Arrive during
+// the cold-cache wait stays capped until they close and reopen it.
+var AVAIL_LOADED = false;
 // siteId -> { 'YYYY-MM-DD': {earliest, latest} } — the legal checkout range for an
 // arrival on that night, as stated by rec.us. Declared beside AVAIL because the
 // two are filled from the same response and read together; it previously sat next
@@ -598,6 +762,146 @@ function nightStateFrom(v){
   return 'blocked';
 }
 
+/* ── where a site's booking window ends ──────────────────────────────────────
+ * rec.us answers 210 days in one request, but a site only takes arrivals inside
+ * its own booking window, and it does not publish that number anywhere we can
+ * read: `defaultReservationWindowDays` is absent from the public site payload
+ * and NULL in the database for all 41 Topaz sites. What it DOES do is answer
+ * `available:false, reason:"outside-window"` for every date past the window —
+ * so the window's end is the last date before the run of them that reaches the
+ * end of the feed.
+ *
+ * THE TRAILING RUN IS THE WHOLE SIGNAL, and it must be the trailing one. The
+ * same `outside-window` reason is also how a staff-entered hold awaiting payment
+ * comes back (verified 2026-08-23 — it genuinely blocks the site), and those
+ * land in the middle of the feed. A hold on the last night of the feed would
+ * shave a day off the horizon; over-trimming by a night is the safe direction,
+ * inventing bookable nights is not.
+ *
+ * Returns:
+ *   { known:false }                — the feed ended before the window did, so
+ *                                    this says nothing. The 30-day MCP fallback
+ *                                    is always this case: it stops at day 30
+ *                                    because that is all it was asked for.
+ *   { known:true, last:'YYYY-MM-DD' } — the last arrival this site can take.
+ *   { known:true, last:null }      — the site can take no arrival at all.
+ */
+function bookingHorizon(checkInDates){
+  var ks=Object.keys(checkInDates||{}).filter(function(k){ return /^\d{4}-\d{2}-\d{2}$/.test(k); }).sort();
+  if(!ks.length) return { known:false };
+  var i=ks.length;
+  while(i>0){
+    var v=checkInDates[ks[i-1]];
+    if(v && v.available===false && v.reason==='outside-window') i--;
+    else break;
+  }
+  if(i===ks.length) return { known:false };   // nothing trailing — feed stopped first
+  return { known:true, last: i===0 ? null : ks[i-1] };
+}
+
+/* One site's answer → the two maps the page reads, plus its horizon.
+ *
+ * Pure on purpose: this is where a night stops being rec.us's JSON and becomes
+ * something a camper is told, and every distinction in it has been wrong once.
+ * `source` is the server's word for which feed answered — only the nightly one
+ * runs past a site's window, so only there does a trailing `outside-window` run
+ * mean a horizon rather than the end of the request.
+ */
+function siteNightStates(raw, source){
+  var src=(raw && raw.checkInDates && typeof raw.checkInDates==='object') ? raw.checkInDates : raw;
+  var out={ states:{}, windows:{}, horizon:{ known:false }, any:false };
+  if(!src || typeof src!=='object') return out;
+  out.horizon = (source==='nightly') ? bookingHorizon(src) : { known:false };
+  var cut = (out.horizon.known && out.horizon.last) ? out.horizon.last : null;
+  var noneBookable = out.horizon.known && !out.horizon.last;
+  Object.keys(src).forEach(function(dateStr){
+    if(!/^\d{4}-\d{2}-\d{2}/.test(dateStr)) return;   // skip non-date keys
+    var v=src[dateStr];
+    if(v && v.earliestCheckout && v.latestCheckout){
+      out.windows[dateStr]={ earliest:v.earliestCheckout, latest:v.latestCheckout };
+    }
+    // Past the site's own window this is not a refusal, it is a date the site
+    // has not opened yet — "Not available" would read as taken and send a camper
+    // looking for another site when the answer is to come back later.
+    out.states[dateStr] = (noneBookable || (cut && dateStr > cut))
+      ? 'beyond'
+      : nightStateFrom(v);
+    out.any=true;
+  });
+  return out;
+}
+
+/* The furthest arrival the sites on screen can actually take.
+ *
+ * Scoped to VIEW() for the same reason latestCheckoutFrom is: with a campsite
+ * type selected, a bound taken from a site the camper has filtered out offers a
+ * date nothing on their map can honour. Sites whose horizon is unknown (the
+ * 30-day feed, hourly sites) contribute nothing rather than dragging the park
+ * back to 30 days — but if NO site in view knows, 30 days is what we have.
+ */
+function maxArrival(){
+  var best=null;
+  VIEW().forEach(function(s){
+    var h=HORIZON[s.id];
+    if(!h || !h.known || !h.last) return;
+    if(!best || h.last>best) best=h.last;
+  });
+  if(best) return best;
+  // Nothing known. WHY nothing is known decides the fallback:
+  //   feed landed  — it genuinely cannot tell us (the 30-day MCP feed, hourly
+  //                  sites), so 30 days is the honest answer and the old one.
+  //   not yet      — we have no idea, so fall back to the platform's own ceiling
+  //                  rather than a number we would have to walk back. Over-
+  //                  offering for a second costs nothing: setStay clamps to the
+  //                  real horizon the moment the feed lands, and the page claims
+  //                  no availability until a stay is picked anyway.
+  return iso(addDays(TODAY, (AVAIL_LOADED ? DAYS_SHOWN : DAYS_AHEAD) - 1));
+}
+
+/* How far the DEPART picker may reach.
+ *
+ * Dan, 2026-08-25: "they should both be bounded by 180 days, otherwise that
+ * makes no sense." This reverses the older rule, which bounded Depart at
+ * rec.us's own `latestCheckout` for the chosen arrival so the picker could never
+ * offer a stay the engine would refuse. The cost of that rule was that the field
+ * looked capped at a week or two — the last arrival at Topaz allows 14 nights,
+ * and a booking in the way cuts it to 10 — so a map that now reaches 180 days
+ * read as though it still stopped in a fortnight.
+ *
+ * The bound is the last bookable arrival PLUS the campground's maximum stay,
+ * not the last arrival itself. The booking window limits when a stay may START,
+ * never how long it runs: rec.us gives an arrival of 2027-02-20 a latestCheckout
+ * of 2027-03-06, fourteen nights later. Bounding at the horizon itself would
+ * make the final arrival a one-night stay and decay the longest stay to nothing
+ * across the last fortnight — measured 2026-08-23 (14 → 8 → 5 → 2 → 1 → 0) and
+ * rejected then, and the same regression however the bound is reached.
+ *
+ * What replaces the old hard stop is `stayCeiling()` below: the page still knows
+ * exactly what rec.us will accept for this arrival, and now SAYS it instead of
+ * silently greying the calendar. A camper can select a longer stay, and the
+ * per-night verdict tells them the truth about it — no site is ever reported
+ * open for nights it cannot take.
+ */
+function maxCheckout(){
+  var a=maxArrival(), view=VIEW(), mx=null;
+  for(var i=0;i<view.length && mx===null;i++){ var m=siteMeta(view[i]); if(m && m.maxNights) mx=m.maxNights; }
+  return iso(addDays(new Date(a+'T00:00:00'), mx || 1));
+}
+
+/* The latest checkout rec.us will actually accept for this arrival, and why it
+ * stops there — `stay` when the campground's own maximum is the binding limit,
+ * `booked` when a reservation truncates it sooner. Returned rather than applied,
+ * so the caption can explain the difference the picker no longer enforces. */
+function stayCeiling(arrive){
+  var accepted=latestCheckoutFrom(arrive);
+  var view=VIEW(), mx=null;
+  for(var i=0;i<view.length && mx===null;i++){ var m=siteMeta(view[i]); if(m && m.maxNights) mx=m.maxNights; }
+  var byRule = mx ? iso(addDays(new Date(arrive+'T00:00:00'), mx)) : null;
+  var nights = Math.round((new Date(accepted+'T00:00:00') - new Date(arrive+'T00:00:00'))/86400000);
+  return { latest:accepted, nights:nights, maxNights:mx,
+           why: (byRule && accepted < byRule) ? 'booked' : 'stay' };
+}
+
 /* ── the campsite-type filter ────────────────────────────────────────────────
  * Every site in a campground is set up a bit differently, and the difference a
  * camper actually filters on is what they are arriving in. rec.us stores that
@@ -634,6 +938,13 @@ function inView(site){
 function VIEW(){ return SEED.filter(inView); }
 
 function statusOn(site, dateStr){
+  // Nothing has been asked yet, so nothing is claimed: every pin neutral, every
+  // count blank. Routed through here rather than through each caller so the map,
+  // the list, the summary and the drawer cannot disagree about it — the failure
+  // that made the facility Summary and the Camping tab report different numbers.
+  // (typeof-guarded: campmap-stay.spec.js slices this function without the page's
+  // globals, and a stay reducer under test is always answering a real question.)
+  if(typeof PICKED!=='undefined' && !PICKED) return 'unknown';
   var a=AVAIL[site.id];
   if(!a || a.__empty) return 'unknown';
   return a[dateStr] || 'unknown';
@@ -669,7 +980,7 @@ function nightsOf(a, b){
 function stayNights(){ return nightsOf(SELECTED, DEPART); }
 
 function rangeStatus(site){
-  var ns=stayNights(), open=[], booked=[], blocked=[], unknown=[];
+  var ns=stayNights(), open=[], booked=[], blocked=[], unknown=[], beyond=[];
   ns.forEach(function(n){
     var st=statusOn(site, n);
     if(st==='avail') open.push(n);
@@ -679,15 +990,21 @@ function rangeStatus(site){
     // tells them to try a different length for.
     else if(st==='booked' || st==='closed') booked.push(n);
     else if(st==='blocked') blocked.push(n);
+    // Past this site's booking window. Deliberately its own bucket and NOT
+    // merged into `booked`: nobody has the night, the site simply has not opened
+    // it yet, and the two answers send a camper to opposite places — another
+    // site, versus this site later.
+    else if(st==='beyond') beyond.push(n);
     else unknown.push(n);
   });
   var state;
   if(unknown.length===ns.length) state='unknown';
+  else if(beyond.length===ns.length) state='beyond';
   else if(open.length===ns.length) state='avail';
-  else if(open.length===0) state=(booked.length ? 'booked' : (blocked.length ? 'blocked' : 'unknown'));
+  else if(open.length===0) state=(booked.length ? 'booked' : (blocked.length ? 'blocked' : (beyond.length ? 'beyond' : 'unknown')));
   else state='partial';
   var w=(AVAIL_WINDOW[site.id]||{})[SELECTED];
-  return { state:state, nights:ns, open:open, booked:booked, blocked:blocked, unknown:unknown,
+  return { state:state, nights:ns, open:open, booked:booked, blocked:blocked, unknown:unknown, beyond:beyond,
            total:ns.length, openCount:open.length,
            win: (w && w.earliest && w.latest) ? { min:w.earliest, max:w.latest } : null };
 }
@@ -695,6 +1012,9 @@ function rangeStatus(site){
 function rangeWhy(r){
   if(r.state==='avail')   return 'Open all ' + r.total + (r.total===1?' night':' nights');
   if(r.state==='unknown') return 'Availability — see rec.us';
+  // Not "Not available": the site is not taken, it is not open for booking this
+  // far ahead yet.
+  if(r.state==='beyond')  return 'Not open for booking this far ahead yet';
   // 'blocked' now means only a stay-LENGTH rejection, so it can say the useful
   // thing: the site is free, the trip is the wrong shape.
   if(r.state==='blocked') return r.win
@@ -707,6 +1027,7 @@ function rangeWhy(r){
   var parts=['Open ' + r.openCount + ' of ' + r.total + ' nights'];
   if(r.booked.length)  parts.push(nightList(r.booked) + ' unavailable');
   if(r.blocked.length) parts.push(nightList(r.blocked) + ' stay-length');
+  if(r.beyond.length)  parts.push(nightList(r.beyond) + ' not open yet');
   if(r.unknown.length) parts.push(nightList(r.unknown) + ' unknown');
   return parts.join(' · ');
 }
@@ -728,7 +1049,7 @@ document.getElementById('btSat').onclick=function(){ if(map.hasLayer(streetLayer
 document.getElementById('btStreet').onclick=function(){ if(map.hasLayer(satLayer))map.removeLayer(satLayer); streetLayer.addTo(map); this.classList.add('on'); document.getElementById('btSat').classList.remove('on'); };
 
 /* markers */
-var COLORS={avail:'#16a34a',partial:'#d97706',booked:'#dc2626',blocked:'#6b7280',closed:'#dc2626',unknown:'#9ca3af'};
+var COLORS={avail:'#16a34a',partial:'#d97706',booked:'#dc2626',blocked:'#6b7280',closed:'#dc2626',unknown:'#9ca3af',beyond:'#7c8ba1'};
 var markers={};   // siteId -> L.marker
 var selectedId=null;
 /* ── admin edit state ── */
@@ -813,23 +1134,14 @@ function refreshMarkers(){
 /* ── date bar ── */
 var SELECTED = TODAY_ISO;                       // arrive
 var DEPART   = iso(addDays(TODAY, 1));          // checkout (exclusive)
-/* The hand-off, at the foot of the list. rec.us takes bookings months out; this
- * map can only CONFIRM the ~30 nights its availability feed enumerates, so when
- * a camper cannot find dates the honest move is to hand them off rather than
- * pretend. It used to live at the end of the night strip; the strip is gone, and
- * the foot of the list is where someone who has not found a site is already
- * looking. */
-function renderFoot(){
-  var el=document.getElementById('slFoot'); if(!el) return;
-  var ba=CFG.bookAhead;
-  if(!ba || !ba.url){ el.innerHTML=''; return; }
-  el.innerHTML='<a class="sl-more" id="bookAhead" href="'+ba.url+'" target="_blank" rel="noopener noreferrer">'
-    +'<span class="m-h">Looking for campsite dates more than '+DAYS_SHOWN+' days out?</span>'
-    +'<span class="m-b">Click to book directly on rec.us'
-    +(ba.contact ? ', or call the '+ba.contact : '')+'.</span></a>';
-  var a=document.getElementById('bookAhead');
-  if(a) a.onclick=function(){ ping('campmap-book', { kind:'later-dates' }); };
-}
+/* The hand-off card that used to sit at the foot of the list is gone
+ * (Dan, 2026-08-24). It existed because the map could only confirm the ~30
+ * nights get_site_availability enumerates, while rec.us took bookings months
+ * further out — so a camper looking past the strip had to be sent away. The
+ * nightly-availability feed now answers to each site's own booking window, so
+ * the map covers the dates the hand-off was covering for, and sending campers
+ * off a page that can answer them would be the wrong move twice over.
+ */
 
 /* ── the campsite-type control ───────────────────────────────────────────────
  * Options come from the sites actually present, in rec.us's own order, so a
@@ -938,24 +1250,28 @@ function toggleList(){ LIST_ON = !LIST_ON; prefSet('list', LIST_ON); applyPanels
 function renderList(){
   var body=document.getElementById('slBody'); if(!body) return;
   var n=stayNights().length;
-  var full=[], part=[], view=VIEW();
+  var full=[], part=[], beyond=0, view=VIEW();
   view.forEach(function(site){
     var r=rangeStatus(site);
     if(r.state==='avail') full.push({site:site, r:r});
     else if(r.state==='partial') part.push({site:site, r:r});
+    else if(r.state==='beyond') beyond++;
   });
   var byNum=function(a,b){ return (a.site.n||0)-(b.site.n||0); };
   full.sort(byNum); part.sort(byNum);
 
-  document.getElementById('slTitle').textContent = n===1 ? 'Open tonight' : 'Open for all '+n+' nights';
-  document.getElementById('slSub').textContent =
-    full.length + ' of ' + view.length + (TYPE_FILTER==='all' ? ' sites' : ' ' + kindInfo(TYPE_FILTER).label.toLowerCase() + ' sites')
-    + (part.length ? ' · '+part.length+' open some nights' : '');
+  document.getElementById('slTitle').textContent = !PICKED ? 'Campsites'
+    : (n===1 ? 'Open tonight' : 'Open for all '+n+' nights');
+  document.getElementById('slSub').textContent = !PICKED
+    ? view.length + (TYPE_FILTER==='all' ? ' sites at this campground' : ' ' + kindInfo(TYPE_FILTER).label.toLowerCase() + ' sites')
+    : full.length + ' of ' + view.length + (TYPE_FILTER==='all' ? ' sites' : ' ' + kindInfo(TYPE_FILTER).label.toLowerCase() + ' sites')
+      + (part.length ? ' · '+part.length+' open some nights' : '');
 
   var html='';
   var row=function(x, colour){
     var m=siteMeta(x.site), rate=m && m.rate!=null ? '$'+m.rate : '';
-    return '<button class="sl-item'+(selectedId===x.site.id?' sel':'')+'" data-id="'+x.site.id+'">'
+    var fill = x.r.state==='avail' ? ' full' : (x.r.state==='partial' ? ' part' : '');
+    return '<button class="sl-item'+fill+(selectedId===x.site.id?' sel':'')+'" data-id="'+x.site.id+'">'
       +'<span class="dot" style="background:'+colour+'"></span>'
       +'<span class="nm">'+shortName(x.site)
       + (x.r.state==='partial' ? '<span class="wh">'+x.r.openCount+' of '+x.r.total+' nights</span>' : '')
@@ -969,11 +1285,24 @@ function renderList(){
        +  part.map(function(x){ return row(x, COLORS.partial); }).join('');
   }
   if(!full.length && !part.length){
-    html='<div class="sl-empty">No '+(TYPE_FILTER==='all' ? 'site' : kindInfo(TYPE_FILTER).label.toLowerCase()+' site')
-      +' is free for these dates. Try a shorter stay, shift the nights'
-      +(TYPE_FILTER==='all' ? '' : ', or widen the campsite type')+'.</div>';
+    // Reachable at the far edge of the map: the arrival is inside the furthest
+    // site's window but the stay runs past it, or every site in view has a
+    // shorter window than the date picked. "Try a shorter stay" is the wrong
+    // advice for that — no length of stay helps a date nobody has opened yet —
+    // so when the whole view is past its window, say that instead.
+    html = !PICKED
+      ? '<div class="sl-empty">Pick an arrival and departure date above, and this list '
+        + 'fills with the sites that are open for them.</div>'
+      : beyond === view.length && view.length
+      ? '<div class="sl-empty">These dates are not open for booking yet. '
+        + 'Campsites here open on a rolling window, so try earlier dates '
+        + '&mdash; or check back closer to the time.</div>'
+      : '<div class="sl-empty">No '+(TYPE_FILTER==='all' ? 'site' : kindInfo(TYPE_FILTER).label.toLowerCase()+' site')
+        +' is free for these dates. Try a shorter stay, shift the nights'
+        +(TYPE_FILTER==='all' ? '' : ', or widen the campsite type')+'.</div>';
   }
   body.innerHTML=html;
+  renderListCta(full, part);
   body.querySelectorAll('.sl-item').forEach(function(b){
     b.onclick=function(){
       var site=SEED.filter(function(x){ return x.id===b.dataset.id; })[0];
@@ -982,17 +1311,39 @@ function renderList(){
   });
 }
 
+/* The answer to the only question on the page, so it is styled like one rather
+ * than like a caption (Dan, 2026-08-25). The state carries the colour:
+ *   ok    something is open for the whole stay        green
+ *   some  nothing whole, but partial nights exist     amber
+ *   none  nothing at all for these dates              red
+ * and the count of what is NOT available is spelled out — "3 of 41 not
+ * available" is the half a camper is actually deciding against. */
 function updateSummary(){
   var t=stayTally(), n=stayNights().length;
   var el=document.getElementById('summ');
-  if(t.known===0){ el.innerHTML='<span>Loading availability…</span>'; }
+  var view=VIEW().length;
+  el.classList.remove('ok','some','none','idle');
+  // Before a stay is chosen the map has not been asked anything, so it must not
+  // answer. Every pin is neutral and the line says what to do instead of
+  // reporting a count for dates nobody picked.
+  if(!PICKED){ el.classList.add('idle'); el.innerHTML='<span>Choose your dates to see what\u2019s open.</span>'; }
+  else if(t.known===0){ el.classList.add('idle'); el.innerHTML='<span>Loading availability…</span>'; }
   else {
-    var txt='<span class="cnt">'+t.full+'</span> of '+VIEW().length
-          + (TYPE_FILTER==='all' ? ' sites open' : ' ' + kindInfo(TYPE_FILTER).label.toLowerCase() + ' sites open')
-          + (n===1 ? (SELECTED===TODAY_ISO ? ' tonight' : ' that night') : ' for all '+n+' nights');
-    // The partial count earns its own clause: a camper who cannot get four
-    // nights will usually take three, and a single-night view cannot say so.
-    if(t.part) txt+=' · <span class="part">'+t.part+'</span> open some nights';
+    el.classList.add(t.full ? 'ok' : (t.part ? 'some' : 'none'));
+    var kind=(TYPE_FILTER==='all' ? ' sites' : ' ' + kindInfo(TYPE_FILTER).label.toLowerCase() + ' sites');
+    var when=(n===1 ? (SELECTED===TODAY_ISO ? ' tonight' : ' that night') : ' for all '+n+' nights');
+    var txt;
+    if(t.full) txt='<b>'+t.full+'</b> of '+view+kind+' open'+when;
+    // "0 of 41 open" reads as a loading state. When nothing fits the whole stay,
+    // lead with what the camper CAN still do.
+    else if(t.part) txt='No'+kind+' open'+when+' — but <b>'+t.part+'</b> can take part of it';
+    else txt='No'+kind+' open'+when;
+    if(t.full && t.part) txt+=' · <span class="part">'+t.part+'</span> open some nights';
+    // Everything the stay cannot have: taken, blocked, or past the site's own
+    // booking window. Counted rather than named, because which of those it is
+    // lives on the pin and in the drawer.
+    var out=view - t.full - t.part;
+    if(out>0) txt+=' · <span class="out">'+out+' of '+view+' not available</span>';
     el.innerHTML=txt;
   }
 
@@ -1039,39 +1390,137 @@ function latestCheckoutFrom(dateStr){
 // than be guessed at in either direction.
 function setStay(arrive, depart){
   if(arrive < TODAY_ISO) arrive = TODAY_ISO;
-  if(arrive > MAX_ISO)   arrive = MAX_ISO;
+  var maxArr = maxArrival();
+  if(arrive > maxArr)    arrive = maxArr;
   if(!depart || depart <= arrive) depart = iso(addDays(new Date(arrive+'T00:00:00'), 1));
-  var cap = latestCheckoutFrom(arrive);
-  if(depart > cap) depart = cap;
+  // The checkout is no longer clamped to what rec.us will accept — see
+  // maxCheckout(). It IS clamped to the horizon, so the stay cannot run past
+  // dates no site has opened.
+  var capMax = maxCheckout();
+  if(depart > capMax) depart = capMax;
   SELECTED=arrive; DEPART=depart;
 
   var n=stayNights().length;
   document.getElementById('nights').textContent = n + (n===1 ? ' night' : ' nights');
   var ai=document.getElementById('arrivePick'), di=document.getElementById('departPick');
-  if(ai){ ai.value=SELECTED; ai.min=TODAY_ISO; ai.max=MAX_ISO; }
-  if(di){ di.value=DEPART; di.min=iso(addDays(new Date(SELECTED+'T00:00:00'),1)); di.max=latestCheckoutFrom(SELECTED); }
+  // data-days-ahead is how far the picker actually reaches, in nights. It exists
+  // for the render check: "an Arrive field rendered" passes just as happily on a
+  // 30-day fallback as on the 180-day answer, and the whole point of this change
+  // is which of the two the camper gets.
+  if(ai){ ai.value=PICKED ? SELECTED : ''; ai.min=TODAY_ISO; ai.max=maxArr;
+          ai.setAttribute('data-days-ahead',
+            String(Math.round((new Date(maxArr+'T00:00:00') - TODAY)/86400000))); }
+  if(di){ di.value=PICKED ? DEPART : ''; di.min=iso(addDays(new Date(SELECTED+'T00:00:00'),1)); di.max=maxCheckout();
+          di.setAttribute('data-days-ahead',
+            String(Math.round((new Date(maxCheckout()+'T00:00:00') - TODAY)/86400000))); }
+  departPrompt(!PICKED);
+  renderStayNote();
 
   refreshMarkers(); updateSummary(); renderList();
   fetchWeather();
 }
+/* The list's own call to action. rec.us cannot be pointed at ONE site with dates
+ * on it, but it can be pointed at everything matching the stay — so the honest
+ * button is the one that names the sites a camper is choosing between and opens
+ * exactly that filtered page (Dan, 2026-08-25: "something like 'book sites 3, 5
+ * or 7' and the button goes to the filtered page on rec").
+ *
+ * Named from the sites that are open for the WHOLE stay; if none are, it falls
+ * back to the partial ones rather than disappearing, because "3 of 4 nights" is
+ * still a trip most people will take. */
+function ctaNames(list){
+  var names=list.map(function(x){ return shortName(x.site); });
+  if(names.length<=3) return names.length===1 ? names[0]
+    : names.slice(0,-1).join(', ')+' or '+names[names.length-1];
+  return names.slice(0,3).join(', ')+' and '+(names.length-3)+' more';
+}
+function renderListCta(full, part){
+  var el=document.getElementById('slCta'); if(!el) return;
+  var list=full.length ? full : part;
+  if(!PICKED || !list.length){ el.hidden=true; el.innerHTML=''; return; }
+  var bd=new Date(SELECTED+'T00:00:00'), bx=new Date(DEPART+'T00:00:00');
+  var span=MON[bd.getMonth()]+' '+bd.getDate()+' – '+MON[bx.getMonth()]+' '+bx.getDate();
+  var url=bookUrl(list[0].site, list);
+  el.hidden=false;
+  el.innerHTML='<a class="sl-go" id="slGo" href="'+url+'" target="_blank" rel="noopener">'
+    + 'Book ' + ctaNames(list)
+    + '<small>' + span + ' on rec.us'
+    + (full.length ? '' : ' \u00b7 part of the stay') + '</small></a>';
+  var a=document.getElementById('slGo');
+  if(a) a.onclick=function(){
+    ping('campmap-book', { kind:'group', nights:stayNights().length, sites:list.length });
+  };
+}
+
+/* Depart has no meaning until there is an arrival to derive its range from — its
+ * bound, its minimum and every night it colours all come from one. So until the
+ * camper picks an arrival it says so, in red, instead of presenting a range out
+ * of nowhere (Dan, 2026-08-25).
+ *
+ * This is the page's LANDING state, not only what happens after the native
+ * picker's Clear button: the map no longer claims availability before it has been
+ * asked a question.
+ *
+ * A "Tonight" shortcut was tried here and taken back out (Dan, 2026-08-25) — it
+ * was a second, competing way to set the stay sitting in a toolbar that already
+ * has two date fields, and the ask was for the page to wait for a date, not to
+ * offer a faster way past that. PICKED is the whole switch: flip its initial
+ * value to true and the page loads on tonight the way it did before. */
+var PICKED = false;
+function departPrompt(on){
+  var di=document.getElementById('departPick'), lb=document.getElementById('departLbl');
+  var nt=document.getElementById('nights'), ai=document.getElementById('arrivePick');
+  if(!di || !lb) return;
+  di.disabled=!!on;
+  lb.textContent = on ? 'Choose arrival date' : 'Depart';
+  lb.classList.toggle('prompt', !!on);
+  if(nt) nt.hidden=!!on;
+  if(ai) ai.classList.toggle('unset', !!on);
+  if(on){
+    di.value=''; if(ai) ai.value='';
+    var sn=document.getElementById('stayNote'); if(sn){ sn.hidden=true; sn.textContent=''; }
+  }
+}
+
+/* What the greyed-out calendar used to say by refusing to open. A stay longer
+ * than rec.us will accept for this arrival is now SELECTABLE, so it has to be
+ * NAMED — an unexplained "no site is free" on a 20-night search would read as a
+ * full campground rather than as a stay nobody offers. */
+function renderStayNote(){
+  var el=document.getElementById('stayNote'); if(!el) return;
+  var c=stayCeiling(SELECTED);
+  var n=stayNights().length;
+  if(n<=c.nights){ el.textContent=''; el.hidden=true; return; }
+  el.hidden=false;
+  el.textContent = c.why==='booked'
+    ? 'Longer than these dates allow — a booking blocks this arrival after '
+      + c.nights + (c.nights===1?' night':' nights') + '.'
+    : 'Longer than the ' + c.maxNights + '-night maximum stay here.';
+}
+
 // Kept for the deep-link handler (?date=): start a stay on this date, holding the
 // current trip length. The drawer's month grid used to call it too; that grid is
 // gone — the per-night strip above the site's details answers the same question
 // for the stay actually in the bar, and two calendars could disagree.
-function setDate(ds){ setStay(ds, iso(addDays(new Date(ds+'T00:00:00'), stayNights().length))); }
+function setDate(ds){ PICKED=true; setStay(ds, iso(addDays(new Date(ds+'T00:00:00'), stayNights().length))); }
 
 // The arrows scroll the strip. They are not a second way to change the stay:
 // nudging dates with arrows is the block-shifting interaction we dropped, and
 // with 30 nights in a horizontal scroller reaching the far end is what they are
 // actually needed for.
 document.getElementById('arrivePick').onchange=function(){
-  if(!this.value) return;
+  // The native date picker has a Clear button, so "no arrival" is a state a
+  // camper can actually reach. Depart has no meaning without one — its range is
+  // derived from the arrival — so it says which field to fill first rather than
+  // sitting there with a bound out of nowhere. Dan, 2026-08-25.
+  if(!this.value){ PICKED=false; departPrompt(true); updateSummary(); renderList(); refreshMarkers(); return; }
+  PICKED=true;
   // Moving the arrival keeps the trip length rather than collapsing it to one
   // night — someone editing "arrive" on a 4-night stay still wants 4 nights.
   setStay(this.value, iso(addDays(new Date(this.value+'T00:00:00'), stayNights().length)));
 };
 document.getElementById('departPick').onchange=function(){
-  if(this.value) setStay(SELECTED, this.value);
+  if(this.value){ PICKED=true; setStay(SELECTED, this.value); }
 };
 document.getElementById('listTog').onclick=function(){ toggleList(); };
 document.getElementById('typePick').onchange=function(){ setTypeFilter(this.value); };
@@ -1157,8 +1606,8 @@ function renderBody(site){
   if(r.total>1){
     body+='<div class="nightrow">'+r.nights.map(function(nd){
       var st=statusOn(site,nd), d2=new Date(nd+'T00:00:00');
-      var cls=st==='avail'?'av':st==='booked'?'bk':st==='blocked'?'bl':'un';
-      var lbl=st==='avail'?'free':st==='booked'?'booked':st==='blocked'?'rules':'?';
+      var cls=st==='avail'?'av':st==='booked'?'bk':st==='blocked'?'bl':st==='beyond'?'by':'un';
+      var lbl=st==='avail'?'free':st==='booked'?'booked':st==='blocked'?'rules':st==='beyond'?'not yet':'?';
       return '<span class="ncell '+cls+'"><b>'+d2.getDate()+'</b>'+DOW[d2.getDay()].charAt(0)+' · '+lbl+'</span>';
     }).join('')+'</div>';
   }
@@ -1180,7 +1629,27 @@ function renderBody(site){
   // With the month grid gone, Amenities is the last section before the Book
   // button — so an empty one would leave a bare heading sitting on top of it.
   if(amens) body+='<div class="sec-h">Amenities</div><div class="amen-list">'+amens+'</div>';
-  body+='<a class="book-btn" id="bookBtn" href="'+sBook(site)+'" target="_blank" rel="noopener">🏕️ Book on rec.us</a>';
+  // WHAT THIS BUTTON OPENS IS A LIST, NOT THIS SITE (Dan, 2026-08-25). rec.us
+  // takes dates on the campground's rental tab but not on a single site's page,
+  // so the dated hand-off lands on every site matching the stay, the capacity and
+  // the site type — this one among them. Saying "Book Site 09" over a link that
+  // opens twelve sites is the kind of small lie that costs a camper their
+  // place: they arrive expecting a checkout and have to re-find the site.
+  // So the button says what it does, and the site's own page keeps its own link.
+  var bd=new Date(SELECTED+'T00:00:00'), bx=new Date(DEPART+'T00:00:00');
+  var bn=stayNights().length;
+  var span = MON[bd.getMonth()]+' '+bd.getDate()+' – '+MON[bx.getMonth()]+' '+bx.getDate();
+  // "See what's open <dates>" read as a promise to show THIS site's availability,
+  // and the link does not go to this site at all (Dan, 2026-08-25: "this button
+  // text is misleading"). The label now says the generic thing that is true —
+  // you are going to rec.us to book a site — and the sub-line says what will
+  // already be filled in when you get there, so the next step is obvious.
+  body+='<a class="book-btn" id="bookBtn" href="'+sBook(site)+'" target="_blank" rel="noopener">'
+      + '<span>🏕️ Book Sites on rec.us'
+      + '<small>' + span + ' \u00b7 ' + bn + (bn===1?' night':' nights')
+      + ' \u00b7 your dates carried over \u2014 pick your site there</small></span></a>';
+  body+='<a class="book-alt" id="bookAlt" href="'+sSiteUrl(site)+'" target="_blank" rel="noopener">'
+      + 'Or go straight to ' + shortName(site) + ' (rec.us will ask for dates again)</a>';
   var noteTxt = EDIT ? 'Drag the pin on the map to reposition it; unsaved changes show in the edit bar.'
     : (site.approx && !site.placed) ? 'Approximate position — not yet placed on the map.'
     : '';
@@ -1193,7 +1662,13 @@ function renderBody(site){
   // a handler attached once would be lost the moment the stay changed.
   var bk=document.getElementById('bookBtn');
   if(bk) bk.onclick=function(){
-    ping('campmap-book', { site: shortName(site), nights: stayNights().length });
+    // `dated` says which of the two routes was taken, so the feed can show
+    // whether the dated hand-off is the one campers actually use.
+    ping('campmap-book', { site: shortName(site), nights: stayNights().length, kind:'dated' });
+  };
+  var ba=document.getElementById('bookAlt');
+  if(ba) ba.onclick=function(){
+    ping('campmap-book', { site: shortName(site), nights: stayNights().length, kind:'site-page' });
   };
 }
 
@@ -1362,34 +1837,27 @@ function applyConfig(){
 }
 function loadAvailability(){
   var ids=SEED.map(function(s){return s.id;}).join(',');
-  var url='/'+SLUG+'/rentalcalendar/api/availability-batch?siteIds='+ids;
+  // days=210 opts into rec.us's nightly-availability feed instead of the 30-day
+  // MCP tool. The server falls back per site, so an hourly campsite (all 12 at
+  // Pleasant Hill) still answers — it just answers for 30 days, and its horizon
+  // comes back unknown.
+  var url='/'+SLUG+'/rentalcalendar/api/availability-batch?siteIds='+ids+'&days='+DAYS_AHEAD;
   fetch(url).then(function(r){ if(!r.ok) throw new Error('http '+r.status); return r.json(); })
     .then(function(res){
-      var data=res.data||{}; var any=false;
+      var data=res.data||{}; var sources=res.sources||{}; var any=false;
       SEED.forEach(function(s){
-        var d=data[s.id];
-        // Nightly sites nest per-date availability under `checkInDates`; hourly sites are date→slots.
-        var src = (d && d.checkInDates && typeof d.checkInDates==='object') ? d.checkInDates : d;
-        if(src && typeof src==='object' && Object.keys(src).length){
-          var m={}; var win={}; var haveDate=false;
-          Object.keys(src).forEach(function(dateStr){
-            if(!/^\d{4}-\d{2}-\d{2}/.test(dateStr)) return;   // skip non-date keys
-            var v=src[dateStr];
-            if(v && v.earliestCheckout && v.latestCheckout){
-              win[dateStr]={ earliest:v.earliestCheckout, latest:v.latestCheckout };
-            }
-            var state=nightStateFrom(v);
-            m[dateStr]=state; haveDate=true;
-          });
-          if(haveDate){ AVAIL[s.id]=m; AVAIL_WINDOW[s.id]=win; any=true; } else { AVAIL[s.id]={__empty:true}; }
+        var got=siteNightStates(data[s.id], sources[s.id]);
+        if(got.any){
+          AVAIL[s.id]=got.states; AVAIL_WINDOW[s.id]=got.windows; HORIZON[s.id]=got.horizon; any=true;
         } else {
-          AVAIL[s.id]={__empty:true};
+          AVAIL[s.id]={__empty:true}; HORIZON[s.id]={ known:false };
         }
       });
       // LIVE as long as we parsed real date info for any site (even fully-booked/
       // blocked ones) — a campground with no open nights must not fall back to demo.
       if(any){ LIVE=true; }
       else { throw new Error('empty'); }
+      AVAIL_LOADED=true;
       updateLegFoot();
       // Re-run setStay rather than just repainting. The Depart field's `max` is
       // rec.us's own latestCheckout for the chosen arrival, and until this reply
@@ -1403,7 +1871,10 @@ function loadAvailability(){
     .catch(function(){
       // offline / standalone fallback — deterministic demo availability
       SEED.forEach(function(s){ AVAIL[s.id]=seedFallback(s); });
-      LIVE=false; updateLegFoot();
+      // The offline demo has no horizons to read, and that IS a settled answer —
+      // so the 30-day fallback applies, exactly as before.
+      LIVE=false; AVAIL_LOADED=true; updateLegFoot();
+      setStay(SELECTED, DEPART);
       refreshMarkers(); updateSummary(); renderList(); if(selectedId){var s2=SEED.filter(function(x){return x.id===selectedId;})[0]; if(s2)renderBody(s2);}
     });
 }
@@ -1475,7 +1946,6 @@ buildMarkers();
 // one place, so the initial paint cannot disagree with what a later change draws.
 buildTypeFilter();   // before setStay: the checkout bound is derived from VIEW()
 setStay(TODAY_ISO, iso(addDays(TODAY, 1)));
-renderFoot();
 applyPanels();   // honour the viewer's remembered panel choice
 loadPositions();   // apply any admin-saved pin positions
 loadMarkers();     // load admin custom markers (Boat Ramp, etc.)

@@ -163,29 +163,50 @@ const campsitesGeo = {
   }],
 };
 
-// The campmap availability feed: { data: { siteId: { checkInDates: {...} } } }.
+// The campmap availability feed: { data: { siteId: { checkInDates: {...} } } },
+// plus the per-site `sources` map that says WHICH feed answered.
 // Keyed by CHECK-IN date and carrying the allowed checkout window, same as
 // rec.us — a flat "available" map would let the stay reducer pass while the
 // window logic went unexercised. siteIds come off the query string so the reply
 // covers exactly the sites the page asked about.
+//
+// Shaped like the real 210-day nightly feed since 2026-08-24, which means it has
+// to carry the thing that only exists out there: a TRAILING RUN of
+// `outside-window` marking where each site's booking window ends. Site 0 stops
+// at day 120, and every later site stops earlier, so the page's "furthest site
+// in view" bound has something to actually choose between — a fixture where
+// every site agreed would pass just as well on a park-wide floor.
+const CAMPMAP_FEED_DAYS = 210;
+const CAMPMAP_HORIZON_DAYS = 120;     // site 0's window; asserted by the render case
 function availabilityFor(url) {
   const m = /siteIds=([^&]*)/.exec(url);
   const ids = m ? decodeURIComponent(m[1]).split(",").filter(Boolean) : [];
+  const nightly = /[?&]days=/.test(url);
+  const span = nightly ? CAMPMAP_FEED_DAYS : 30;
   const day = n => { const t = new Date(Date.now() + n * 86400000); return t.toISOString().slice(0, 10); };
-  const data = {};
+  const data = {}, sources = {};
   ids.forEach((id, i) => {
     const checkInDates = {};
-    for (let n = 0; n < 30; n++) {
+    const horizon = nightly ? Math.max(30, CAMPMAP_HORIZON_DAYS - i * 10) : Infinity;
+    for (let n = 0; n < span; n++) {
+      // Past this site's window rec.us reports `outside-window` — the same string
+      // a staff hold uses, which is why the page may only read the trailing run
+      // as a horizon.
+      if (n >= horizon) { checkInDates[day(n)] = { available: false, reason: "outside-window" }; continue; }
       // A deterministic mix so every branch is hit: free nights, a real booking
       // conflict, and a stay-rule block that must NOT read as booked.
       const slot = (i + n) % 7;
       if (slot === 3) checkInDates[day(n)] = { available: false, reason: "conflict" };
       else if (slot === 5) checkInDates[day(n)] = { available: false, reason: "minimum-stay" };
+      // A mid-feed hold, well inside the window: it must stay "not available"
+      // rather than being swept up as "not open yet".
+      else if (slot === 6 && n > 8) checkInDates[day(n)] = { available: false, reason: "outside-window" };
       else checkInDates[day(n)] = { available: true, earliestCheckout: day(n + 1), latestCheckout: day(n + 4) };
     }
     data[id] = { checkInDates };
+    sources[id] = nightly ? "nightly" : "mcp";
   });
-  return { data };
+  return { data, sources };
 }
 
 // The campmap's live site feed. Ids come from the campmap seed so the overlay
@@ -578,6 +599,27 @@ const CASES = [
   // well as the control rendering at all. It is the code path being covered: the
   // real Rec feed omits subType, so in production the options come from the seed.
   { name: "campmap · type filter", path: "/{org}/campmap",                needs: "#typePick option[value=\"tent-and-rv\"]" },
+  // The 210-day nightly feed, end to end. `data-days-ahead="119"` is site 0's
+  // 120-day window (day 0 .. day 119) surviving the whole path: the page asked
+  // for days=210, the server answered `sources: nightly`, bookingHorizon read the
+  // TRAILING outside-window run rather than the mid-feed hold the fixture also
+  // plants, and maxArrival took the FURTHEST site in view rather than a park-wide
+  // floor. Any of those regressing lands on 29 (the 30-day fallback) or on one of
+  // the shorter sites' windows, and this fails by name. "An Arrive field
+  // rendered" is the assertion that would not have caught the bug.
+  { name: "campmap · 210-day horizon", path: "/{org}/campmap",            needs: "#arrivePick[data-days-ahead=\"119\"]" },
+  // Depart must reach the horizon too (Dan, 2026-08-25): the last bookable
+  // arrival (day 119) PLUS a full stay. The check org is the first campmap seed,
+  // pleasant-hill, whose configured maximum is 5 nights — so 119 + 5 = 124.
+  // Two regressions land elsewhere: reverting to the old rec.us latestCheckout
+  // cap gives a number in the single digits, and bounding at the horizon ITSELF
+  // gives 120, which is the tail-decay bug that makes the final arrival a
+  // one-night stay.
+  { name: "campmap · depart reaches the horizon", path: "/{org}/campmap",  needs: "#departPick[data-days-ahead=\"124\"]" },
+  // The landing state (Dan, 2026-08-25): Depart says which field to fill first,
+  // in red, and the map claims nothing until it has been asked. "A Depart field
+  // rendered" passes either way — this pins the prompt itself.
+  { name: "campmap · depart prompts first", path: "/{org}/campmap",       needs: "#departLbl.prompt" },
 ];
 
 const child = spawn(process.execPath, [path.join(__dirname, "..", "server.js")], {

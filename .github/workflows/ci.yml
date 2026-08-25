@@ -73,6 +73,9 @@ jobs:
       - name: Campmap stay spec (checkout night is free; arrivals capped, checkouts not)
         run: node scripts/campmap-stay.spec.js
 
+      - name: Campmap nightly window spec (the feed's date range)
+        run: node scripts/campmap-nightly-window.spec.js
+
       - name: Facility summary KPI spec (a fee line is money, not a booking or a site)
         run: node scripts/facility-summary.spec.js
 

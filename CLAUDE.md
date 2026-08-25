@@ -670,15 +670,334 @@ assertions, in CI), which checks source registration order AND boots the server 
 require a 200 *plus* a row in events.jsonl. Mutation-tested: moving the route back
 below the generic ones fails both halves independently.
 
-## Campsite map availability — 30 days is the ceiling, and it is not ours (2026-08-23)
+## Campsite map availability — 210 days, per site (SUPERSEDES the 30-day ceiling, 2026-08-24)
 
-**Dan expected >30 days for a properly configured site. It is not a configuration
-issue.** `get_site_availability` takes ONLY a `siteId` — no range parameter
-exists — and its own description says "the next 30 days". Probed three ways, all
-returning an identical 31 keys ending 2026-09-22: public tool on Topaz Site 01,
-public tool on Site 04, and the STAFF-scoped tool on Site 04. Site 04 carried
-`nights.maximum = 180` at the time and the window did not move, so the horizon is
-independent of the site's settings.
+**The 30-day cap was the MCP TOOL's, not the platform's, and it is gone.** Dan
+asked Kevin Liu (eng) why `get_site_availability` stopped at 30 days when a site
+can be configured for 180; the answer is that the tool hardcodes it and takes no
+range parameter, while rec.us's own booking page calls the REST endpoint underneath:
+
+```
+GET https://api.rec.us/v1/sites/{siteId}/nightly-availability?from=YYYY-MM-DD&to=YYYY-MM-DD
+```
+
+Same response shape as the MCP tool (`data.checkInDates[date] =
+{available, earliestCheckout, latestCheckout} | {available:false, reason}`), so
+nothing downstream of the parse had to change. The campmap now runs on it.
+
+**Four things about this endpoint that cost real time to establish:**
+
+1. **It is behind a WAF rule that 403s any request without `sec-fetch-mode`.**
+   The block is from the load balancer (`server: awselb/2.0`, no app headers),
+   *before* the app — so it looks exactly like the route not existing, and
+   `/v1/sites/{id}` answering 200 makes the API look reachable all along.
+   Bisecting the header set showed **`sec-fetch-mode: cors` is the only header
+   that matters** — not User-Agent, not Origin, not Referer — so we send our own
+   honest UA plus that one header rather than impersonating a browser. If that
+   rule ever changes, this path 403s and every site silently falls back to the
+   30-day MCP feed; nothing breaks, the map just gets short again. Check
+   `[rentalcalendar] nightly availability` warnings in the logs.
+2. **The span is capped at 210 dates, and 211 is a 400** — a truncation would be
+   survivable, an error is not, so the ceiling has to be respected on the way out.
+3. **`from` may not be in the past — and "past" is the SITE's local date, not
+   UTC.** This one bit immediately. `new Date().toISOString()` is how every
+   route in server.js computes today, and it is UTC; a Pacific campground is
+   7-8 hours behind, so **from 17:00 local until midnight the UTC date is
+   already tomorrow there**. Measured 2026-08-25 00:02 UTC (17:02 PDT): the MCP
+   feed's first check-in date was `2026-08-24` while a UTC-dated request started
+   `2026-08-25` — i.e. seven hours out of every day where "is anything free
+   tonight" comes back `unknown` on all 41 sites, on a page that renders
+   perfectly throughout. The fix asks from **yesterday-UTC** and lets rec.us
+   decide: it answers 200 while that is still today somewhere west of UTC and
+   400s once it is genuinely past. `nightlyStartsYesterday()` probes that once
+   per batch and memoises for one cache interval — **deliberately not memoised
+   per UTC date, because the answer flips mid-date** (07:00 UTC, when Pacific
+   catches up). An extra leading day the browser has already passed is harmless:
+   the client only reads dates inside the stay, and `bookingHorizon()` reads the
+   far end.
+4. **Not every campsite is nightly.** An hourly one answers 200 with
+   `{siteUnavailable:{reason:"not-nightly"}, checkInDates:{}}` — **all 12 of
+   Pleasant Hill's campsites are `bookingUnit: hourly`**. That is an empty
+   answer, not an error, so it must fall through to the MCP feed rather than
+   empty the map. The fallback is **per site**, not per request: an org can mix
+   the two, and one hourly site must not drag the park back to 30 days.
+
+### The horizon is PER SITE, and it is only readable from the answer
+
+Dan: *"availability should scope to the actual site availability."* Measured at
+Topaz Lake, 2026-08-24: **39 of 41 sites take arrivals 180 days out, one takes
+90, and one has no window at all and takes the full 210.** Any park-wide number
+is wrong for some site in one direction or the other.
+
+**There is nowhere to read the number from.** `defaultReservationWindowDays` is
+absent from the public site payload and `court.default_reservation_window_days`
+is NULL on all 41 rows. What the API *does* do is answer
+`available:false, reason:"outside-window"` for every date past the window — so
+the window's end is the last date before the run of them that reaches the END of
+the feed. That is `bookingHorizon()` in `public/campmap.html`.
+
+**THE TRAILING RUN IS THE WHOLE SIGNAL.** `outside-window` is also how a
+staff-entered hold awaiting payment comes back (established 2026-08-23 — it
+genuinely blocks the site), and those land mid-feed. Reading the FIRST one as the
+window's end cuts the map off at a hold and hides every open night after it. A
+hold on the final night of the feed shaves a day off the horizon; over-trimming
+by a night is the safe direction, inventing bookable nights is not.
+
+Consequences wired through the page:
+
+- **A fourth night state, `beyond`** — past the site's own window. Its own colour
+  (`--beyond`, slate; not red, which means taken, and not grey, which reads as
+  unknown) and its own copy: *"Not open for booking this far ahead yet."*
+  Merging it into `booked` paints ~30 open nights red at Topaz and sends campers
+  to another campground for dates the site will happily take next month.
+- **Before the feed lands, the picker must not assert 30 days** (Dan, 2026-08-25:
+  *"why does the arrival date only go out 30 days?"*). `maxArrival()` fell back to
+  `DAYS_SHOWN` whenever no site had a horizon — correct once a feed has answered
+  and it genuinely cannot tell us (hourly sites, the MCP path), wrong before one
+  has arrived, which is every cold load. **A native date picker snapshots min/max
+  when it OPENS**, so a camper who clicked Arrive during the cold-cache wait
+  stayed capped at today+29 until they closed and reopened it. `AVAIL_LOADED`
+  splits the two cases: not-yet falls back to the platform's own 210-day ceiling
+  (never under-promising, and `setStay` clamps to the real horizon the moment the
+  feed lands), feed-answered still falls back to 30.
+- **THE WINDOW CAPS THE ARRIVAL, NOT THE WHOLE STAY.** Asked twice now, so worth
+  pinning: 180 days does NOT mean the last arrival is day 166 (180 − the 14-night
+  max stay). Measured 2026-08-25 against `/v1/sites?checkInDate&checkOutDate`,
+  which is independent of the nightly feed: **arrive day 179 + 14 nights →
+  checkout day 193 → all 41 Topaz sites bookable**; arrive day 180 → 0. rec.us
+  gives that last arrival a `latestCheckout` a fortnight past its own window.
+  Capping arrivals at 166 would refuse 13 days of arrivals it accepts — the same
+  shape as the tail-decay bug rejected on 2026-08-23, at the other end.
+- **The Arrive picker's bound is `maxArrival()`** — the furthest horizon among
+  the sites **in view**, scoped to the type filter for the same reason
+  `latestCheckoutFrom` is. Sites whose horizon is unknown (the 30-day feed,
+  hourly sites) contribute nothing rather than dragging the park back; if NO site
+  in view knows, it falls back to 30 days, i.e. exactly the old behaviour.
+- **The checkout picker is bounded by the horizon too** (Dan, 2026-08-25: *"they
+  should both be bounded by 180 days, otherwise that makes no sense"*).
+  `maxCheckout()` is `maxArrival()` **plus the campground's maximum stay**, not
+  the horizon itself: the booking window limits when a stay may START, never how
+  long it runs, and rec.us gives the last bookable arrival a `latestCheckout`
+  fourteen nights later. Bounding at the horizon itself makes that final arrival
+  a one-night stay and decays the longest stay to nothing across the last
+  fortnight — measured 2026-08-23 (14 → 8 → 5 → 2 → 1 → 0) and rejected then; it
+  is the same regression however the bound is reached, and it is easy to
+  reintroduce while "making both fields agree". **This reverses half of the
+  asymmetry described below.** The old rule bounded Depart at rec.us's own `latestCheckout` so the
+  picker could never offer a stay the engine would refuse; the cost was that
+  Depart looked capped at a fortnight (Topaz allows 14 nights, and a booking in
+  the way cuts it to 10), so a map that now reaches 180 days read as though it
+  still stopped in two weeks — which is exactly how it was first reported.
+  What the hard stop used to say by greying the calendar, **`stayCeiling()` now
+  says in words**: a chip beside the night count reads *"Longer than the
+  14-night maximum stay here"* or *"Longer than these dates allow — a booking
+  blocks this arrival after 4 nights"*. The distinction matters: telling a camper
+  "14-night maximum" when the real answer is "someone arrives on the 5th" sends
+  them to change the wrong thing.
+  **The rest of the asymmetry stands** — the checkout still runs one night past
+  the last bookable arrival, and no site is ever reported open for nights it
+  cannot take, because the per-night verdict is untouched.
+- **The page lands with no dates chosen** (Dan, 2026-08-25: *"can we have the
+  'depart' calendar just show 'choose arrival date' in red before showing
+  availability"*). Depart has no basis without an arrival — its bound, its
+  minimum and every night it colours all come from one — so until a stay is
+  picked it is disabled and its label reads **"Choose arrival date" in red**.
+  The map claims nothing in that state: `statusOn()` returns `unknown` for every
+  night, so pins are neutral, the list says what to do, and the summary reads
+  "Choose your dates to see what's open." Routed through `statusOn()` on purpose
+  rather than each caller growing its own check — that is the failure that made
+  the facility Summary and the Camping tab disagree.
+  **What this costs:** the old landing state answered "what is free tonight" for
+  free, which is the walk-up camper's question — that now takes picking a date.
+  A **Tonight** shortcut button was tried and taken back out (Dan: *"tonight
+  button = not good"*): it was a second, competing way to set the stay in a
+  toolbar that already has two date fields, and the ask was for the page to wait
+  for a date rather than to offer a faster way past that. **`PICKED` is the whole
+  switch**; flip its initial value to `true` and the page loads on tonight
+  exactly as it did before.
+- **`sources` on the batch reply** says which feed answered per site. Only the
+  nightly one runs past a site's window, so only there does a trailing
+  `outside-window` run mean a horizon rather than the end of the request. The
+  30-day feed must never produce `beyond`.
+
+### Handing a camper to rec.us WITH their dates (2026-08-25)
+
+Dan: *"once you choose a time range then click 'book on rec.us', it seems stupid
+to have to choose the dates again."* Established by reading rec.us's own bundles
+and confirmed against the live site:
+
+| URL | takes dates? |
+|---|---|
+| `/sites/{id}` | **No.** rec.us's own path builder is `site:({siteId})` with no options — unlike its siblings (`organization().index`, `login`, `cartCheckout`), which all take a search-param bag — and the site page's chunk never calls `useSearchParams`. Dates cannot ride on this URL. |
+| `/organizations/{slug}?tab=facilityRentals` | **Yes.** A validated schema: `sports`, `location`, `siteType`, `checkInDate`, `checkOutDate`, `amenity`. Verified live — the values land in the page's own `__PAGE__` props, and a bogus date is dropped rather than echoed. |
+
+So the Book button now carries `siteType`, `location`, `checkInDate` and
+`checkOutDate`, landing on the campground's rental list already filtered to those
+nights — the camper picks their site once instead of re-entering two dates, and
+the list only shows what is genuinely free. A secondary link still opens the
+single site's own page for anyone who wants it, labelled so it is clear that
+route makes them pick dates again. The `campmap-book` ping carries
+`kind: dated | site-page`, so the feed shows which route campers actually take.
+
+**CORRECTION (2026-08-25): capacity CAN be carried — `guests` works.** This
+section first said it could not, on the strength of the route's zod schema, which
+lists only `sports`/`location`/`siteType`/`checkInDate`/`checkOutDate`/`amenity`.
+**That schema is the validated subset, not the full set the page honours.** The
+tab's own `useQueryStates` reads a much longer list, and two more of them are
+useful here:
+
+| param | shape | note |
+|---|---|---|
+| `guests` | integer | **gated on `siteType === 'campsite'`** — which we always send |
+| `subType` | array | same gate; only rec.us's four (`tent`, `rv`, `tent-and-rv`, `lodging`) |
+| `amenity` | array | encoding UNCONFIRMED — see below |
+| `instantBook` | boolean | |
+| `availability`, `reservable`, `time`, `daysOfWeek` | | not useful here |
+
+So the Book URL now also carries `guests` (the site's capacity) and `subType`.
+**Read a page's `useQueryStates` before concluding a parameter does not exist** —
+the route schema said no and the page said yes.
+
+**`amenity` IS wired, and it takes rec.us's tag ids comma-separated** (Dan tested
+the encodings 2026-08-25): a single id works, `?amenity=<uuid>,<uuid>` works, and
+**repeating `amenity=` picks up only the first value** — so comma-separated is the
+multi-value form (nuqs's default) and repeating the parameter is wrong.
+
+No new data source was needed: `/:org/rentalcalendar/api/sites` was already
+reading `amenities.amenityTagIds` and mapping it through `AMENITY_TAGS` to
+display names — it just threw the ids away. The route now returns
+`amenityTagIds` alongside `amenities`, deliberately unmapped, because
+`AMENITY_TAGS` only covers tags this repo has seen and a name round-trip would
+silently drop anything new.
+
+**For a group, only the tags EVERY member has.** rec.us ANDs them, so sending one
+site's `Tent Site` would drop the RV-only sites the same button names — the
+sub_type trap, one field over.
+
+(The id↔name map was already in server.js all along: `0cf5e4e3…` Tables,
+`e67c5b0f…` Fire Pit, `25452762…` Tent Site. Cross-referencing site sets could
+not separate Tables from Fire Pit — they are on all 41 — but `AMENITY_TAGS` names
+both, and Dan's repeated-param test showed the FIRST value wins.)
+
+**A SITE CANNOT BE PRESELECTED.** There is no `site`/`siteId` URL state on the
+tab: a rental card's click handler is a plain
+`router.push(paths.site({siteId}))`. Filters can narrow the list (Site 09's own
+amenity set still leaves the 26 tent sites) but never isolate one. Worth raising
+with Kevin/Ankur alongside the MCP range parameter.
+
+**`subType` IS exposed by the REST site payload, contrary to the note below.**
+`/v1/sites/{id}` returns `subType: "tent-and-rv"` for all 41 Topaz sites — it is
+the MCP `list_sites` tool that omits it, not the platform. The campmap still
+falls back to the seed's `kind` because its site feed goes through the MCP, but
+"Rec's API does not expose sub_type" is too strong: the REST endpoint does.
+
+**Neither `location` nor `siteType` is validated by rec.us.** Measured: a bogus
+`location`, and `siteType` values of `campsite`, `tent-and-rv` and `electric`,
+all pass straight into the page's props — only the DATES are checked (a bogus one
+is dropped). So `location` is only sent when the LIVE site feed supplied one (the
+baked seed's `"default"` placeholder must never be used as a location id), and
+`siteType` is always the site TYPE `campsite` rather than a sub_type or one of
+the map's own derived kinds.
+
+### `GET /v1/sites` — one request that answers a whole stay (2026-08-25)
+
+Found while investigating what the filtered rec.us page queries. The
+facility-rentals tab does not call the per-site feed at all; it calls:
+
+```
+GET https://api.rec.us/v1/sites?organizationId=<uuid>&page=1&pageSize=250
+    [&checkInDate=YYYY-MM-DD&checkOutDate=YYYY-MM-DD]
+    [&amenityTagIds=<uuid>&amenityTagIds=<uuid> …]     (repeated, not comma-joined)
+```
+
+**With dates it returns only the sites bookable for the WHOLE range**, in one
+request, in ~0.5-0.8s. Measured at Douglas:
+
+| range | Topaz campsites returned |
+|---|---|
+| no dates | 41 |
+| 26-30 Sep | 29 |
+| 2-6 Sep | 0 (all taken that week) |
+| Jan 2027 | 41 |
+| Apr 2027 — past the 180-day window | 0 |
+
+**It agrees exactly with the map's own per-night reduction.** Cross-checked our
+`siteNightStates()` verdict against it over three windows: **29/29, 0/0, 41/41,
+zero diffs either way**. That makes it a free correctness oracle for the stay
+reducer — the same role the reservation-ledger backtest plays, but cheap enough
+to run on demand.
+
+**It cannot replace `nightly-availability`.** It answers one yes/no per site for
+one range; the map needs per-night detail for the "3 of 4 nights" partial state,
+the drawer's night strip, `latestCheckout`, and the trailing-`outside-window` run
+the horizon is read from. It is a complement, not a substitute.
+
+**What it WOULD replace is the site feed.** `/:org/rentalcalendar/api/sites` goes
+through the MCP `list_sites` tool, and this endpoint is strictly better for the
+campmap's purposes — one request, and it carries the fields the MCP path drops:
+
+- **`subType`** — `tent-and-rv` on all 41 Topaz sites. This retires the whole
+  "the filter reads the SEED because Rec's API does not expose sub_type" problem
+  documented below: the MCP tool omits it, this endpoint does not.
+- **`amenityTagIds`** — the UUIDs rec.us's own amenity filter takes. Our current
+  feed carries display NAMES only, which is why the `amenity` parameter is not
+  wired into the Book URL yet: we cannot send ids we do not have.
+- `capacity`, `lat`/`lng`, `customMapX`/`customMapY`, `isInstantBookable`,
+  `bookingUnit`, `descriptionMd`, `rulesMd`, images.
+
+**Next step, not yet done:** point the campmap's site feed at this endpoint. It
+fixes sub_type, unlocks the amenity filter on the Book URL, and drops a paged MCP
+call for a single fast one. Needs the org's `organizationId` (already in `ORGS`)
+and the same `sec-fetch-mode: cors` header as the nightly feed.
+
+### The hand-off card is gone (Dan, 2026-08-24)
+
+"Looking for campsite dates more than 30 days out?" existed because the map could
+only confirm the ~30 nights the MCP tool enumerated while rec.us took bookings
+months further out. The map now covers those dates itself, so the card was
+sending campers off a page that can answer them. Removed along with the
+`bookAhead` seed key, its server passthrough, and the `campmap-book`
+`kind: "later-dates"` event — **expect that Slack event to stop arriving**; the
+per-site `campmap-book` ping from the drawer's Book button is untouched.
+
+### Cost, and where it is paid
+
+- Server-side, per site, cached **15 minutes** (`RC_AVAIL_TTL`, shared with the
+  MCP path) keyed by `siteId|days`, concurrency-limited to 10 at a time.
+- 41 sites × 210 days is **~750KB of JSON — 18.6KB on the wire**, because
+  `compression()` is already on and the payload is extremely repetitive. Warm
+  cache serves it in ~15ms.
+- The page does **not** block on it: it renders on the baked seed and upgrades
+  when the feed lands, which is what it always did.
+
+### Guards
+
+`node scripts/campmap-nightly-window.spec.js` — **8 assertions, in CI**, pinning
+the date range the server asks for. **It re-execs itself under
+`TZ=America/Los_Angeles`** and pins fixed instants rather than reading the clock,
+for the same reason `fasttrack-dates.spec.js` does: this sandbox and GitHub
+Actions both run UTC, where the broken version looks right 17 hours a day.
+Mutation-tested against four regressions, including the bug exactly as it was
+first written (always start from UTC today), a local-timezone date derivation,
+an off-by-one span (211 dates is a 400), and ignoring the probe result.
+
+`node scripts/campmap-stay.spec.js` — now **33 assertions**, 18 of them new and
+covering the horizon, the `beyond` state, and both pickers' bounds.
+Mutation-tested against ten regressions: reading the first `outside-window`
+instead of the trailing run; treating the 30-day feed as if it knew a horizon;
+collapsing `beyond` back into `booked`; taking the shortest horizon in view; a
+park-wide floor with unknown counted as 30 days; ignoring the type filter;
+reverting Depart to rec.us's `latestCheckout` cap; bounding Depart at the horizon
+itself (the tail decay above); losing the checkout's stay allowance; and blaming
+the stay rule for a truncation a booking caused. All ten fail the spec by name.
+
+Plus the `campmap · 210-day horizon` case in `ci-check-render.js`, which asserts
+`#arrivePick[data-days-ahead="119"]` over a fixture whose site 0 has a 120-day
+window and which also plants a mid-feed hold. "An Arrive field rendered" passes
+just as happily on the 30-day fallback, which is the assertion that would not
+have caught this.
+
+### What the 30-day investigation established that is STILL true
 
 Two config red herrings, both worth knowing:
 
@@ -688,13 +1007,25 @@ Two config red herrings, both worth knowing:
   advance" in that panel, and both read 180 — a data-entry slip.
 - `court.default_reservation_window_days` is **NULL on all 41** sites, and the
   largest value anywhere on the platform is **21**. No 180-day window is stored at
-  site or org level.
+  site or org level — which is why the horizon has to be read off the answer.
 
-`latestCheckout` DOES reach past the 30-day window (a 22 Sep arrival could check
-out 6 Oct under the old 14-night rule), so **the cap is on arrival dates only** —
-never bound the checkout picker to the strip's length. And never take the longest
-window any single site offers: one mis-set site would offer a 180-night stay for
-the whole park. Cap by the org's configured max stay first.
+`latestCheckout` reaches past the arrival window, so **the cap is on arrival
+dates only** — never bound the checkout picker to the strip's length. And never
+take the longest *stay* any single site offers: one mis-set site would offer a
+180-night stay for the whole park. Cap by the org's configured max stay first.
+(That is about stay LENGTH; the arrival horizon above is deliberately the
+opposite — furthest wins — because it comes from each site's own answer rather
+than from one editable field.)
+
+## The old 30-day investigation, kept for the reasoning (2026-08-23)
+
+Superseded by the section above — the map is no longer capped at 30 days. Kept
+because the reasoning under it still holds and was expensive: the MCP tool really
+does hardcode 30 days (probed three ways, incl. the staff-scoped tool: an
+identical 31 keys every time, and a site carrying `nights.maximum = 180` did not
+move it), the config red herrings above are still red herrings, and the
+asymmetric arrival/checkout cap below is still the right shape — it just runs to
+each site's real horizon now instead of to day 30.
 
 ### Beyond 30 days: the rentalcalendar pattern exists, and it drops nightly bookings
 
@@ -718,10 +1049,13 @@ of 180 survive.** Latent where it runs (Watertown 65 sites and Norman 182 are
 47% nightly, so this is why campmap could not simply reuse that endpoint to go
 past 30 days: a booked campsite would have read as free on a public page.
 
-Decision (Dan, 2026-08-23): **stay at 30 days.** The strip ends with a per-org
-hand-off card (`bookAhead` in `campmap-seeds.json`: the org's rec.us
-facility-rentals URL + the department to name) rather than rendering nights we
-cannot answer for.
+Decision (Dan, 2026-08-23): **stay at 30 days**, with a per-org hand-off card,
+rather than render nights we could not answer for. **SUPERSEDED 2026-08-24** —
+the nightly-availability endpoint answers those nights properly, so the map went
+to each site's real horizon and the hand-off card was removed. This subsection
+still matters for the OTHER page: `/:org/rentalcalendar`'s overlay drops every
+nightly booking (the `r.end` filter below), so it is still not a source a
+campsite map may use, at any horizon.
 
 ### The three flavours of "no", and why the labels matter
 
@@ -782,7 +1116,7 @@ The residual "but it said it was free" risk is **staleness, not the horizon**:
 camper's click. That is identical inside and outside 30 days. The lever is the
 TTL.
 
-### Guard: `node scripts/campmap-stay.spec.js` (12 assertions, in CI)
+### Guard: `node scripts/campmap-stay.spec.js` (33 assertions, in CI)
 
 Slices the pure reducer out of `campmap.html` (the page builds a Leaflet map at
 module scope, so the whole block cannot be evaluated) and pins the decisions
@@ -1014,7 +1348,7 @@ clamped — the page is public and un-tokened):
 |---|---|---|
 | `campmap-site` | opening a campsite | `site`, `state` (avail/partial/booked/blocked), `nights` |
 | `campmap-book` | the site's **Book on rec.us** button | `site`, `nights` |
-| `campmap-book` | the hand-off card at the foot of the site list | `kind: "later-dates"` |
+| ~~`campmap-book`~~ | ~~the hand-off card at the foot of the site list~~ — **removed 2026-08-24** with the card itself; the map now answers those dates | ~~`kind: "later-dates"`~~ |
 | `campmap-share` | Copy link / Copy embed on the Camping tab | `kind: link|embed` |
 
 Both debounce **by site**, the same decision as the rentalcalendar's map pins: a

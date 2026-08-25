@@ -25,6 +25,32 @@
 //    site offers let that one row offer a 180-night stay for the whole
 //    campground.
 //
+// 7. THE CHECKOUT PICKER IS NOW BOUNDED BY THE HORIZON TOO (Dan, 2026-08-25:
+//    "they should both be bounded by 180 days, otherwise that makes no sense").
+//    This REVERSES half of decision 2 below. The old rule bounded Depart at
+//    rec.us's own latestCheckout so the picker could never offer a stay the
+//    engine would refuse — correct, but it made a map that reaches 180 days look
+//    like it still stopped in a fortnight, because Topaz's maximum stay is 14
+//    nights and a booking in the way cuts it to 10. What the hard stop used to
+//    say by greying the calendar, stayCeiling() now says in words. The rest of
+//    decision 2 stands: the checkout may still run one night PAST the last
+//    bookable arrival, and no site is ever reported open for nights it cannot
+//    take — the per-night verdict is unchanged.
+//
+// 5. A DATE PAST A SITE'S BOOKING WINDOW IS NOT A REFUSAL. Since 2026-08-24 the
+//    page reads rec.us's 210-day nightly-availability feed instead of the 30-day
+//    MCP tool, so for the first time it sees dates a site has not opened yet.
+//    They come back `available:false, reason:"outside-window"` — the SAME shape
+//    as a staff hold awaiting payment, which genuinely blocks the site. Position
+//    is the only thing that tells them apart: the window's end is the run of them
+//    that reaches the END of the feed. Collapsing the two paints ~30 open nights
+//    red at Topaz and sends campers elsewhere for dates the site will take.
+//
+// 6. THE HORIZON IS PER SITE (Dan: "availability should scope to the actual site
+//    availability"). At Topaz 39 of 41 sites take arrivals 180 days out, one
+//    takes 90 and one takes all 210, so any park-wide number is wrong for some
+//    site in one direction or the other.
+//
 // 4. "NOT AVAILABLE" AND "WRONG STAY LENGTH" ARE DIFFERENT ANSWERS. A staff hold
 //    awaiting payment blocks the site and comes back as
 //    `reason:"outside-window"`, NOT `conflict`. Binning every non-conflict reason
@@ -61,6 +87,14 @@ const src = [
 // The globals the sliced code reads. Everything else it needs is in the slice.
 const harness = `
   var SEED = [], AVAIL = {}, AVAIL_WINDOW = {}, SELECTED = null, DEPART = null;
+  var HORIZON = {}, DAYS_SHOWN = 30, DAYS_AHEAD = 210;
+  // Whether an availability reply has landed. Defaults true here: the reducer
+  // under test is always answering about a feed it has.
+  var AVAIL_LOADED = true;
+  // maxArrival falls back to TODAY + DAYS_SHOWN - 1 when no site in view knows
+  // its own horizon. The spec pins that fallback's SHAPE, so TODAY is fixed here
+  // rather than read from the clock.
+  var TODAY = new Date('2026-09-01T00:00:00');
   var MAX_META_NIGHTS = 14, META_BY_ID = {};
   // Per-site maxNights when the test sets one, else the org default — siteMeta in
   // the page resolves area overrides the same way.
@@ -74,12 +108,16 @@ const harness = `
     nightsOf: nightsOf, stayNights: stayNights, statusOn: statusOn,
     nightStateFrom: nightStateFrom, typeKey: typeKey, inView: inView, VIEW: VIEW,
     rangeStatus: rangeStatus, rangeWhy: rangeWhy, latestCheckoutFrom: latestCheckoutFrom,
+    bookingHorizon: bookingHorizon, siteNightStates: siteNightStates, maxArrival: maxArrival,
+    maxCheckout: maxCheckout, stayCeiling: stayCeiling,
     set: function(o){ if(o.SEED) SEED = o.SEED; if(o.AVAIL) AVAIL = o.AVAIL;
                       if(o.AVAIL_WINDOW) AVAIL_WINDOW = o.AVAIL_WINDOW;
                       if(o.SELECTED) SELECTED = o.SELECTED; if(o.DEPART) DEPART = o.DEPART;
                       if(o.maxNights != null) MAX_META_NIGHTS = o.maxNights;
                       if(o.meta) META_BY_ID = o.meta;
-                      if(o.type !== undefined) TYPE_FILTER = o.type; },
+                      if(o.type !== undefined) TYPE_FILTER = o.type;
+                      if(o.HORIZON) HORIZON = o.HORIZON;
+                      if(o.loaded !== undefined) AVAIL_LOADED = o.loaded; },
   };
 `;
 const M = new Function(harness)();
@@ -261,6 +299,235 @@ test("one unavailable night is enough to stop calling the stay open", () => {
   r = stay("2026-09-01", "2026-09-15", nights);
   assert.strictEqual(r.state, "partial", "one night taken in the middle");
   assert.strictEqual(r.openCount, 13);
+});
+
+// ── 7. where a site's booking window ends ──────────────────────────────────
+// Shaped like the real feed: rec.us answers 210 dates and marks everything past
+// the site's window `outside-window`.
+const OPEN  = { available: true, earliestCheckout: "x", latestCheckout: "y" };
+const OUT   = { available: false, reason: "outside-window" };
+const HELD  = { available: false, reason: "outside-window" };   // identical on the wire
+const TAKEN = { available: false, reason: "conflict" };
+
+test("the horizon is the last date before the trailing outside-window run", () => {
+  assert.deepStrictEqual(M.bookingHorizon({
+    "2026-09-01": OPEN, "2026-09-02": OPEN, "2026-09-03": OPEN,
+    "2026-09-04": OUT, "2026-09-05": OUT,
+  }), { known: true, last: "2026-09-03" });
+});
+
+test("a mid-feed staff hold is NOT a horizon — only the trailing run is", () => {
+  // Same reason string, different meaning. Reading the FIRST outside-window as
+  // the window's end would cut the map off at a hold and hide every open night
+  // after it.
+  assert.deepStrictEqual(M.bookingHorizon({
+    "2026-09-01": OPEN, "2026-09-02": HELD, "2026-09-03": OPEN,
+    "2026-09-04": OPEN, "2026-09-05": OUT,
+  }), { known: true, last: "2026-09-04" });
+});
+
+test("no trailing run means unknown, never 'bookable to the end'", () => {
+  // The 30-day MCP feed always lands here: it stops at day 30 because that is all
+  // it was asked for, which says nothing about the site's window.
+  assert.deepStrictEqual(
+    M.bookingHorizon({ "2026-09-01": OPEN, "2026-09-02": TAKEN, "2026-09-03": OPEN }),
+    { known: false });
+  assert.deepStrictEqual(M.bookingHorizon({}), { known: false });
+});
+
+test("a site with no bookable arrival at all reports known-but-none", () => {
+  assert.deepStrictEqual(
+    M.bookingHorizon({ "2026-09-01": OUT, "2026-09-02": OUT }),
+    { known: true, last: null });
+});
+
+// ── 8. past the window reads as "not open yet", not "taken" ────────────────
+test("dates past the window become 'beyond'; the ones before are untouched", () => {
+  const got = M.siteNightStates({ checkInDates: {
+    "2026-09-01": OPEN, "2026-09-02": TAKEN, "2026-09-03": HELD,
+    "2026-09-04": OPEN, "2026-09-05": OUT, "2026-09-06": OUT,
+  } }, "nightly");
+  assert.strictEqual(got.states["2026-09-01"], "avail");
+  assert.strictEqual(got.states["2026-09-02"], "booked");
+  assert.strictEqual(got.states["2026-09-03"], "closed",
+    "a hold inside the window still blocks the site — it is not 'not open yet'");
+  assert.strictEqual(got.states["2026-09-04"], "avail");
+  assert.strictEqual(got.states["2026-09-05"], "beyond");
+  assert.strictEqual(got.states["2026-09-06"], "beyond");
+  assert.deepStrictEqual(got.horizon, { known: true, last: "2026-09-04" });
+});
+
+test("the 30-day feed never produces 'beyond' — its tail is not a horizon", () => {
+  const got = M.siteNightStates({ checkInDates: {
+    "2026-09-01": OPEN, "2026-09-02": OUT, "2026-09-03": OUT,
+  } }, "mcp");
+  assert.strictEqual(got.states["2026-09-02"], "closed");
+  assert.strictEqual(got.states["2026-09-03"], "closed");
+  assert.deepStrictEqual(got.horizon, { known: false });
+});
+
+test("a stay entirely past the window says so instead of 'not available'", () => {
+  const r = stay("2026-09-05", "2026-09-07",
+    { "2026-09-05": "beyond", "2026-09-06": "beyond" });
+  assert.strictEqual(r.state, "beyond");
+  assert.match(M.rangeWhy(r), /not open for booking/i);
+  assert.doesNotMatch(M.rangeWhy(r), /not available/i,
+    "'Not available' sends a camper to another site for a date this one will take");
+});
+
+test("a stay that straddles the window is partial, and names both reasons", () => {
+  const r = stay("2026-09-01", "2026-09-04",
+    { "2026-09-01": "avail", "2026-09-02": "booked", "2026-09-03": "beyond" });
+  assert.strictEqual(r.state, "partial");
+  assert.deepStrictEqual(r.beyond, ["2026-09-03"]);
+  assert.deepStrictEqual(r.booked, ["2026-09-02"]);
+  const why = M.rangeWhy(r);
+  assert.match(why, /unavailable/);
+  assert.match(why, /not open yet/);
+});
+
+// ── 9. the arrival bound is per site, and scoped to what is on screen ──────
+test("the Arrive bound is the furthest horizon among the sites in view", () => {
+  const a = { id: "a", n: 1, kind: "tent" }, b = { id: "b", n: 2, kind: "tent" };
+  M.set({ type: "all", SEED: [a, b], AVAIL: {}, AVAIL_WINDOW: {},
+          HORIZON: { a: { known: true, last: "2027-02-20" },
+                     b: { known: true, last: "2026-11-22" } } });
+  assert.strictEqual(M.maxArrival(), "2027-02-20",
+    "the 90-day site must not shorten the map for the 180-day ones");
+});
+
+test("the bound is scoped to the type filter, like the checkout bound", () => {
+  const tent  = { id: "t", n: 1, kind: "tent" };
+  const lodge = { id: "l", n: 2, kind: "lodging" };
+  M.set({ type: "all", SEED: [tent, lodge], AVAIL: {}, AVAIL_WINDOW: {},
+          HORIZON: { t: { known: true, last: "2026-10-01" },
+                     l: { known: true, last: "2027-02-20" } } });
+  M.set({ type: "tent" });
+  assert.strictEqual(M.maxArrival(), "2026-10-01",
+    "filtering to tents must not keep offering the lodging unit's dates");
+});
+
+test("one site with an unknown horizon does not shorten the sites that know theirs", () => {
+  // The real mixed case: a park with both nightly and hourly campsites. The
+  // hourly one answers on the 30-day feed and can say nothing about a window;
+  // letting that pull the bound back to 30 days would throw away the 180 days
+  // its nightly neighbours DID report.
+  const nightly = { id: "n", n: 1, kind: "tent" };
+  const hourly  = { id: "h", n: 2, kind: "tent" };
+  M.set({ type: "all", SEED: [nightly, hourly], AVAIL: {}, AVAIL_WINDOW: {},
+          HORIZON: { n: { known: true, last: "2027-02-20" }, h: { known: false } } });
+  assert.strictEqual(M.maxArrival(), "2027-02-20");
+});
+
+test("no known horizon falls back to the 30-day feed, not to nothing", () => {
+  M.set({ type: "all", SEED: [{ id: "a", n: 1, kind: "tent" }], AVAIL: {}, AVAIL_WINDOW: {},
+          HORIZON: { a: { known: false } } });
+  assert.strictEqual(M.maxArrival(), "2026-09-30", "TODAY + 29 — the old behaviour");
+});
+
+// ── 10. both pickers reach the horizon ────────────────────────────────────
+function withHorizon(last, maxNights) {
+  const a = { id: "a", n: 1, kind: "tent" };
+  M.set({ type: "all", SEED: [a], AVAIL: {}, AVAIL_WINDOW: {},
+          HORIZON: { a: { known: true, last } },
+          maxNights: maxNights == null ? 14 : maxNights });
+  return a;
+}
+
+test("Depart reaches the last arrival PLUS a full stay, not the horizon itself", () => {
+  withHorizon("2027-02-20", 14);
+  assert.strictEqual(M.maxArrival(), "2027-02-20");
+  assert.strictEqual(M.maxCheckout(), "2027-03-06",
+    "the booking window limits when a stay may START, never how long it runs");
+});
+
+test("the last bookable arrival still gets a full stay", () => {
+  // Bounding Depart at the horizon itself makes the final arrival a one-night
+  // stay and decays the longest stay to nothing across the last fortnight —
+  // measured 2026-08-23 as 14 -> 8 -> 5 -> 2 -> 1 -> 0, and rejected then.
+  withHorizon("2027-02-20", 14);
+  const nights = (Date.parse(M.maxCheckout() + "T00:00:00Z")
+                - Date.parse(M.maxArrival() + "T00:00:00Z")) / 86400000;
+  assert.strictEqual(nights, 14, "not 1 — that is the tail-decay regression");
+});
+
+test("Depart is no longer pinned to a fortnight out", () => {
+  withHorizon("2027-02-20");
+  // The old rule put the bound at arrive + 14 (or less). That is what made a
+  // 180-day map look 30-day-capped in the only field a camper opens a calendar on.
+  const fortnight = "2026-09-15";
+  assert.ok(M.maxCheckout() > fortnight,
+    `Depart bound ${M.maxCheckout()} must reach the horizon, not the stay limit`);
+});
+
+test("both pickers move together with the horizon", () => {
+  withHorizon("2026-12-01", 14);
+  assert.strictEqual(M.maxCheckout(), "2026-12-15");
+  withHorizon("2027-02-20", 14);
+  assert.strictEqual(M.maxCheckout(), "2027-03-06", "Depart follows Arrive, always");
+});
+
+test("with no known horizon both still fall back to the 30-day feed", () => {
+  const a = { id: "a", n: 1, kind: "tent" };
+  M.set({ type: "all", SEED: [a], AVAIL: {}, AVAIL_WINDOW: {}, HORIZON: { a: { known: false } },
+          maxNights: 14 });
+  assert.strictEqual(M.maxArrival(), "2026-09-30");
+  assert.strictEqual(M.maxCheckout(), "2026-10-14", "still a full stay from the last arrival");
+});
+
+// ── 11. what the picker stopped enforcing, the caption must say ───────────
+test("the stay limit is still known, and named, once it is not enforced", () => {
+  withHorizon("2027-02-20", 14);
+  const c = M.stayCeiling("2026-09-01");
+  assert.strictEqual(c.nights, 14, "the campground's own maximum");
+  assert.strictEqual(c.why, "stay");
+  assert.strictEqual(c.latest, "2026-09-15");
+});
+
+test("a booking that truncates the stay is reported as a booking, not a rule", () => {
+  // rec.us truncates latestCheckout at the next real reservation. Telling a
+  // camper "14-night maximum" when the real answer is "someone arrives on the
+  // 5th" sends them to change the wrong thing.
+  const a = { id: "a", n: 1, kind: "tent" };
+  M.set({ type: "all", SEED: [a],
+          AVAIL: {}, AVAIL_WINDOW: { a: { "2026-09-01": { earliest: "2026-09-02", latest: "2026-09-05" } } },
+          HORIZON: { a: { known: true, last: "2027-02-20" } }, maxNights: 14 });
+  const c = M.stayCeiling("2026-09-01");
+  assert.strictEqual(c.latest, "2026-09-05");
+  assert.strictEqual(c.nights, 4);
+  assert.strictEqual(c.why, "booked", "a reservation cut it short, not the 14-night rule");
+});
+
+// ── 12. "we do not know yet" is not "thirty days" ──────────────────────────
+test("before the feed lands, the picker is not capped at 30 days", () => {
+  // The bug, exactly as reported: the Arrive calendar offered today+29 on a cold
+  // load. maxArrival() fell back to DAYS_SHOWN whenever no site had a horizon,
+  // which is right once a feed has answered and wrong before one has — and a
+  // native date picker snapshots min/max when it opens, so the camper stays
+  // capped until they reopen it.
+  const a = { id: "a", n: 1, kind: "tent" };
+  M.set({ type: "all", SEED: [a], AVAIL: {}, AVAIL_WINDOW: {}, HORIZON: {},
+          maxNights: 14, loaded: false });
+  assert.strictEqual(M.maxArrival(), "2027-03-29",
+    "TODAY + 209 — the platform's own ceiling, not a 30-day claim");
+});
+
+test("once the feed has answered and still knows nothing, 30 days is correct", () => {
+  // Pleasant Hill's hourly campsites land here: the reply arrived, it just
+  // cannot say where a booking window ends. That IS the old behaviour.
+  const a = { id: "a", n: 1, kind: "tent" };
+  M.set({ type: "all", SEED: [a], AVAIL: {}, AVAIL_WINDOW: {},
+          HORIZON: { a: { known: false } }, maxNights: 14, loaded: true });
+  assert.strictEqual(M.maxArrival(), "2026-09-30", "TODAY + 29");
+});
+
+test("a real horizon always wins over either fallback", () => {
+  const a = { id: "a", n: 1, kind: "tent" };
+  for (const loaded of [true, false]) {
+    M.set({ type: "all", SEED: [a], AVAIL: {}, AVAIL_WINDOW: {},
+            HORIZON: { a: { known: true, last: "2027-02-20" } }, maxNights: 14, loaded });
+    assert.strictEqual(M.maxArrival(), "2027-02-20");
+  }
 });
 
 console.log(`\n${passed}/${passed} passing`);
