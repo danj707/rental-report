@@ -672,6 +672,13 @@ var AVAIL = {};          // siteId -> { date: 'avail'|'booked'|'blocked'|'closed
 // window ends. Read by maxArrival() to bound the Arrive picker and by the drawer
 // to say "not open for booking yet" instead of "not available".
 var HORIZON = {};
+// Has an availability reply landed at all? This is NOT the same question as
+// "does any site know its horizon", and conflating them is what capped the
+// Arrive picker at 30 days (Dan, 2026-08-25). Before the feed arrives no site
+// has a horizon, but that is ignorance, not a 30-day window — and a native date
+// picker snapshots min/max when it OPENS, so a camper who clicks Arrive during
+// the cold-cache wait stays capped until they close and reopen it.
+var AVAIL_LOADED = false;
 // siteId -> { 'YYYY-MM-DD': {earliest, latest} } — the legal checkout range for an
 // arrival on that night, as stated by rec.us. Declared beside AVAIL because the
 // two are filled from the same response and read together; it previously sat next
@@ -809,7 +816,16 @@ function maxArrival(){
     if(!h || !h.known || !h.last) return;
     if(!best || h.last>best) best=h.last;
   });
-  return best || iso(addDays(TODAY, DAYS_SHOWN - 1));
+  if(best) return best;
+  // Nothing known. WHY nothing is known decides the fallback:
+  //   feed landed  — it genuinely cannot tell us (the 30-day MCP feed, hourly
+  //                  sites), so 30 days is the honest answer and the old one.
+  //   not yet      — we have no idea, so fall back to the platform's own ceiling
+  //                  rather than a number we would have to walk back. Over-
+  //                  offering for a second costs nothing: setStay clamps to the
+  //                  real horizon the moment the feed lands, and the page claims
+  //                  no availability until a stay is picked anyway.
+  return iso(addDays(TODAY, (AVAIL_LOADED ? DAYS_SHOWN : DAYS_AHEAD) - 1));
 }
 
 /* How far the DEPART picker may reach.
@@ -1788,6 +1804,7 @@ function loadAvailability(){
       // blocked ones) — a campground with no open nights must not fall back to demo.
       if(any){ LIVE=true; }
       else { throw new Error('empty'); }
+      AVAIL_LOADED=true;
       updateLegFoot();
       // Re-run setStay rather than just repainting. The Depart field's `max` is
       // rec.us's own latestCheckout for the chosen arrival, and until this reply
@@ -1801,7 +1818,10 @@ function loadAvailability(){
     .catch(function(){
       // offline / standalone fallback — deterministic demo availability
       SEED.forEach(function(s){ AVAIL[s.id]=seedFallback(s); });
-      LIVE=false; updateLegFoot();
+      // The offline demo has no horizons to read, and that IS a settled answer —
+      // so the 30-day fallback applies, exactly as before.
+      LIVE=false; AVAIL_LOADED=true; updateLegFoot();
+      setStay(SELECTED, DEPART);
       refreshMarkers(); updateSummary(); renderList(); if(selectedId){var s2=SEED.filter(function(x){return x.id===selectedId;})[0]; if(s2)renderBody(s2);}
     });
 }

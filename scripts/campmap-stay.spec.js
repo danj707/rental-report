@@ -87,7 +87,10 @@ const src = [
 // The globals the sliced code reads. Everything else it needs is in the slice.
 const harness = `
   var SEED = [], AVAIL = {}, AVAIL_WINDOW = {}, SELECTED = null, DEPART = null;
-  var HORIZON = {}, DAYS_SHOWN = 30;
+  var HORIZON = {}, DAYS_SHOWN = 30, DAYS_AHEAD = 210;
+  // Whether an availability reply has landed. Defaults true here: the reducer
+  // under test is always answering about a feed it has.
+  var AVAIL_LOADED = true;
   // maxArrival falls back to TODAY + DAYS_SHOWN - 1 when no site in view knows
   // its own horizon. The spec pins that fallback's SHAPE, so TODAY is fixed here
   // rather than read from the clock.
@@ -113,7 +116,8 @@ const harness = `
                       if(o.maxNights != null) MAX_META_NIGHTS = o.maxNights;
                       if(o.meta) META_BY_ID = o.meta;
                       if(o.type !== undefined) TYPE_FILTER = o.type;
-                      if(o.HORIZON) HORIZON = o.HORIZON; },
+                      if(o.HORIZON) HORIZON = o.HORIZON;
+                      if(o.loaded !== undefined) AVAIL_LOADED = o.loaded; },
   };
 `;
 const M = new Function(harness)();
@@ -492,6 +496,38 @@ test("a booking that truncates the stay is reported as a booking, not a rule", (
   assert.strictEqual(c.latest, "2026-09-05");
   assert.strictEqual(c.nights, 4);
   assert.strictEqual(c.why, "booked", "a reservation cut it short, not the 14-night rule");
+});
+
+// ── 12. "we do not know yet" is not "thirty days" ──────────────────────────
+test("before the feed lands, the picker is not capped at 30 days", () => {
+  // The bug, exactly as reported: the Arrive calendar offered today+29 on a cold
+  // load. maxArrival() fell back to DAYS_SHOWN whenever no site had a horizon,
+  // which is right once a feed has answered and wrong before one has — and a
+  // native date picker snapshots min/max when it opens, so the camper stays
+  // capped until they reopen it.
+  const a = { id: "a", n: 1, kind: "tent" };
+  M.set({ type: "all", SEED: [a], AVAIL: {}, AVAIL_WINDOW: {}, HORIZON: {},
+          maxNights: 14, loaded: false });
+  assert.strictEqual(M.maxArrival(), "2027-03-29",
+    "TODAY + 209 — the platform's own ceiling, not a 30-day claim");
+});
+
+test("once the feed has answered and still knows nothing, 30 days is correct", () => {
+  // Pleasant Hill's hourly campsites land here: the reply arrived, it just
+  // cannot say where a booking window ends. That IS the old behaviour.
+  const a = { id: "a", n: 1, kind: "tent" };
+  M.set({ type: "all", SEED: [a], AVAIL: {}, AVAIL_WINDOW: {},
+          HORIZON: { a: { known: false } }, maxNights: 14, loaded: true });
+  assert.strictEqual(M.maxArrival(), "2026-09-30", "TODAY + 29");
+});
+
+test("a real horizon always wins over either fallback", () => {
+  const a = { id: "a", n: 1, kind: "tent" };
+  for (const loaded of [true, false]) {
+    M.set({ type: "all", SEED: [a], AVAIL: {}, AVAIL_WINDOW: {},
+            HORIZON: { a: { known: true, last: "2027-02-20" } }, maxNights: 14, loaded });
+    assert.strictEqual(M.maxArrival(), "2027-02-20");
+  }
 });
 
 console.log(`\n${passed}/${passed} passing`);

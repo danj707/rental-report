@@ -655,6 +655,24 @@ Consequences wired through the page:
   unknown) and its own copy: *"Not open for booking this far ahead yet."*
   Merging it into `booked` paints ~30 open nights red at Topaz and sends campers
   to another campground for dates the site will happily take next month.
+- **Before the feed lands, the picker must not assert 30 days** (Dan, 2026-08-25:
+  *"why does the arrival date only go out 30 days?"*). `maxArrival()` fell back to
+  `DAYS_SHOWN` whenever no site had a horizon — correct once a feed has answered
+  and it genuinely cannot tell us (hourly sites, the MCP path), wrong before one
+  has arrived, which is every cold load. **A native date picker snapshots min/max
+  when it OPENS**, so a camper who clicked Arrive during the cold-cache wait
+  stayed capped at today+29 until they closed and reopened it. `AVAIL_LOADED`
+  splits the two cases: not-yet falls back to the platform's own 210-day ceiling
+  (never under-promising, and `setStay` clamps to the real horizon the moment the
+  feed lands), feed-answered still falls back to 30.
+- **THE WINDOW CAPS THE ARRIVAL, NOT THE WHOLE STAY.** Asked twice now, so worth
+  pinning: 180 days does NOT mean the last arrival is day 166 (180 − the 14-night
+  max stay). Measured 2026-08-25 against `/v1/sites?checkInDate&checkOutDate`,
+  which is independent of the nightly feed: **arrive day 179 + 14 nights →
+  checkout day 193 → all 41 Topaz sites bookable**; arrive day 180 → 0. rec.us
+  gives that last arrival a `latestCheckout` a fortnight past its own window.
+  Capping arrivals at 166 would refuse 13 days of arrivals it accepts — the same
+  shape as the tail-decay bug rejected on 2026-08-23, at the other end.
 - **The Arrive picker's bound is `maxArrival()`** — the furthest horizon among
   the sites **in view**, scoped to the type filter for the same reason
   `latestCheckoutFrom` is. Sites whose horizon is unknown (the 30-day feed,
