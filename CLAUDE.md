@@ -1359,6 +1359,52 @@ backstop. All default **ON**, and a missing/unreadable flag file means watching
   `/api/admin/param-drift` (`enabled`) and `/api/admin/report-activity`
   (`reportDownAlerts`) — check these first when an alert did not fire.
 
+## A link that used to work is invisible to every other check (2026-08-25)
+
+Dan: */town-of-shrewsbury/users?token=…* → **"Unknown org"**. Not a regression —
+the duplicate `town-of-shrewsbury` entry was removed on 2026-07-20 and the org is
+served as **`shrewsbury`** (token `17hO58KgKgNVauE5`). The URL had been dead for
+five weeks and nothing noticed, because **the health check probes orgs that
+EXIST**: an org that is renamed or removed is not looked at at all, while its URL
+keeps circulating in emails and bookmarks. It was found by a human clicking it.
+
+Neither the old slug nor that token is anywhere in this repo's history — only the
+changelog line recording the removal — so the link predates 2026-07-20.
+
+`noteDeadLink()` in server.js now watches for it, and two decisions are the whole
+design:
+
+- **THE TOKEN IS THE DISCRIMINATOR.** This server is scanned constantly. Alerting
+  on every 404 would fire on bot traffic, get muted inside a day, and leave us
+  worse off than with no alert at all. A scanner does not know our token shape; a
+  stale internal link carries the token it was minted with. So a 404 is only
+  interesting **if the request brought a token** — plus a denylist for the usual
+  scanner paths (`.php`, `.env`, `wp-*`) in case one ever guesses.
+- **THE TOKEN IS NEVER RECORDED.** It is a share credential and `events.jsonl` is
+  read by the admin dashboard and echoed to Slack, so logging the thing that
+  proves the link was real would leak it into both. The record carries
+  `hadToken: true` and nothing more.
+
+Hooked on the RESPONSE (`res.on("finish")`) rather than at each 404 site: about 30
+places send a 404 — `resolveOrg` plus every page route's own guard — and a
+middleware reading the finished status catches all of them, including ones added
+later. It also **names the surviving slug** (`town-of-shrewsbury` → `shrewsbury`)
+by stripping `town-of-`/state suffixes and matching against `ORGS`, because a
+rename is the usual cause and naming the survivor turns the alert into the fix.
+
+Debounced **6h** — one forwarded email would otherwise post once per recipient.
+
+Guarded by `scripts/deadlink-alert.spec.js` (10 assertions, in CI), which boots
+the server and drives the real failing URL. Mutation-tested against five
+regressions: the middleware removed, the token gate dropped (so bots alert), the
+token logged beside the path, the suggestion dropped, and `deadlink` missing from
+`SLACK_NOTIFY` (logged but never posted). All five fail it by name.
+
+**What this does NOT do:** it does not rewrite or alias the old URL. The dead link
+still 404s — this watches, it does not redirect. If old `town-of-shrewsbury` links
+need to keep working, that is a slug alias plus a decision about honouring the
+retired token, and it has not been made.
+
 ## Alerts only fire for reports that are actually used (Dan, 2026-08-22)
 
 **Rule: don't alert on a report nobody uses; once it's used, it joins the alert
