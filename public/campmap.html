@@ -33,9 +33,20 @@ body{font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica
 .hdr .wx{font-size:12px;color:#374151;font-weight:600;white-space:nowrap;background:#f3f4f6;border-radius:8px;padding:5px 10px}
 
 /* ── Date bar ── */
-.datebar{display:flex;align-items:center;gap:8px;padding:8px 12px;background:#fff;border-bottom:1px solid var(--line);z-index:600}
-.datebar .summ{font-size:13px;font-weight:600;white-space:nowrap;padding-right:4px}
-.datebar .summ .cnt{color:var(--avail)}
+/* Wraps rather than overflows. The verdict pill is the answer on this page, and
+   with 41 sites and a long stay the toolbar gets crowded enough to push it off
+   the right edge — where "more prominent" becomes invisible. It also takes the
+   auto margin, so it sits hard right on a wide screen and drops to its own full
+   line when it cannot fit. */
+.datebar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 12px;background:#fff;border-bottom:1px solid var(--line);z-index:600}
+.datebar .summ{font-size:13.5px;font-weight:700;padding:6px 12px;border-radius:999px;
+  border:1px solid transparent;line-height:1.25;margin-left:auto}
+.datebar .summ b{font-size:15px}
+.datebar .summ.ok{background:var(--avail-bg);border-color:#bbf7d0;color:#166534}
+.datebar .summ.some{background:var(--partial-bg);border-color:#fde68a;color:#92400e}
+.datebar .summ.none{background:var(--booked-bg);border-color:#fecaca;color:#991b1b}
+.datebar .summ.idle{background:none;border-color:transparent;color:var(--muted);font-weight:600}
+.datebar .summ .out{opacity:.75;font-weight:600}
 /* Two rows, not one crammed line: the fields and the count read first, the
    strip is a browse aid underneath. */
 .datebar{display:block;padding:0}
@@ -58,7 +69,7 @@ body{font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica
 .datebar .fld-type.on select{border-color:var(--accent);color:var(--accent);font-weight:700}
 .datebar .fld-arrow{color:var(--muted);align-self:flex-end;padding-bottom:7px}
 .datebar .nights{align-self:flex-end;padding-bottom:7px;font-size:12.5px;font-weight:700;color:var(--accent);white-space:nowrap}
-.datebar .listtog{margin-left:auto;font:inherit;font-size:11.5px;font-weight:700;padding:5px 10px;border:1px solid var(--line);border-radius:999px;background:#fff;color:var(--muted);cursor:pointer;flex:0 0 auto}
+.datebar .listtog{font:inherit;font-size:11.5px;font-weight:700;padding:5px 10px;border:1px solid var(--line);border-radius:999px;background:#fff;color:var(--muted);cursor:pointer;flex:0 0 auto}
 .datebar .listtog:hover{border-color:var(--accent);color:var(--accent)}
 /* ── the site list beside the map ─────────────────────────────────────────── */
 .sitelist{position:absolute;top:0;right:0;bottom:0;width:288px;background:#fff;border-left:1px solid var(--line);z-index:500;display:flex;flex-direction:column;overflow:hidden}
@@ -1300,21 +1311,39 @@ function renderList(){
   });
 }
 
+/* The answer to the only question on the page, so it is styled like one rather
+ * than like a caption (Dan, 2026-08-25). The state carries the colour:
+ *   ok    something is open for the whole stay        green
+ *   some  nothing whole, but partial nights exist     amber
+ *   none  nothing at all for these dates              red
+ * and the count of what is NOT available is spelled out — "3 of 41 not
+ * available" is the half a camper is actually deciding against. */
 function updateSummary(){
   var t=stayTally(), n=stayNights().length;
   var el=document.getElementById('summ');
+  var view=VIEW().length;
+  el.classList.remove('ok','some','none','idle');
   // Before a stay is chosen the map has not been asked anything, so it must not
   // answer. Every pin is neutral and the line says what to do instead of
   // reporting a count for dates nobody picked.
-  if(!PICKED){ el.innerHTML='<span>Choose your dates to see what\u2019s open.</span>'; }
-  else if(t.known===0){ el.innerHTML='<span>Loading availability…</span>'; }
+  if(!PICKED){ el.classList.add('idle'); el.innerHTML='<span>Choose your dates to see what\u2019s open.</span>'; }
+  else if(t.known===0){ el.classList.add('idle'); el.innerHTML='<span>Loading availability…</span>'; }
   else {
-    var txt='<span class="cnt">'+t.full+'</span> of '+VIEW().length
-          + (TYPE_FILTER==='all' ? ' sites open' : ' ' + kindInfo(TYPE_FILTER).label.toLowerCase() + ' sites open')
-          + (n===1 ? (SELECTED===TODAY_ISO ? ' tonight' : ' that night') : ' for all '+n+' nights');
-    // The partial count earns its own clause: a camper who cannot get four
-    // nights will usually take three, and a single-night view cannot say so.
-    if(t.part) txt+=' · <span class="part">'+t.part+'</span> open some nights';
+    el.classList.add(t.full ? 'ok' : (t.part ? 'some' : 'none'));
+    var kind=(TYPE_FILTER==='all' ? ' sites' : ' ' + kindInfo(TYPE_FILTER).label.toLowerCase() + ' sites');
+    var when=(n===1 ? (SELECTED===TODAY_ISO ? ' tonight' : ' that night') : ' for all '+n+' nights');
+    var txt;
+    if(t.full) txt='<b>'+t.full+'</b> of '+view+kind+' open'+when;
+    // "0 of 41 open" reads as a loading state. When nothing fits the whole stay,
+    // lead with what the camper CAN still do.
+    else if(t.part) txt='No'+kind+' open'+when+' — but <b>'+t.part+'</b> can take part of it';
+    else txt='No'+kind+' open'+when;
+    if(t.full && t.part) txt+=' · <span class="part">'+t.part+'</span> open some nights';
+    // Everything the stay cannot have: taken, blocked, or past the site's own
+    // booking window. Counted rather than named, because which of those it is
+    // lives on the pin and in the drawer.
+    var out=view - t.full - t.part;
+    if(out>0) txt+=' · <span class="out">'+out+' of '+view+' not available</span>';
     el.innerHTML=txt;
   }
 
@@ -1610,10 +1639,15 @@ function renderBody(site){
   var bd=new Date(SELECTED+'T00:00:00'), bx=new Date(DEPART+'T00:00:00');
   var bn=stayNights().length;
   var span = MON[bd.getMonth()]+' '+bd.getDate()+' – '+MON[bx.getMonth()]+' '+bx.getDate();
+  // "See what's open <dates>" read as a promise to show THIS site's availability,
+  // and the link does not go to this site at all (Dan, 2026-08-25: "this button
+  // text is misleading"). The label now says the generic thing that is true —
+  // you are going to rec.us to book a site — and the sub-line says what will
+  // already be filled in when you get there, so the next step is obvious.
   body+='<a class="book-btn" id="bookBtn" href="'+sBook(site)+'" target="_blank" rel="noopener">'
-      + '<span>🏕️ See what\u2019s open ' + span
-      + '<small>' + bn + (bn===1?' night':' nights') + ' at ' + (CFG.locationName||'this campground')
-      + ' \u00b7 your dates carried over</small></span></a>';
+      + '<span>🏕️ Book Sites on rec.us'
+      + '<small>' + span + ' \u00b7 ' + bn + (bn===1?' night':' nights')
+      + ' \u00b7 your dates carried over \u2014 pick your site there</small></span></a>';
   body+='<a class="book-alt" id="bookAlt" href="'+sSiteUrl(site)+'" target="_blank" rel="noopener">'
       + 'Or go straight to ' + shortName(site) + ' (rec.us will ask for dates again)</a>';
   var noteTxt = EDIT ? 'Drag the pin on the map to reposition it; unsaved changes show in the edit bar.'
