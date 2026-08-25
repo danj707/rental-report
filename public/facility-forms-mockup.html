@@ -1,0 +1,988 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Rental Forms on the Schedule</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <style>
+  /* ─── Tokens ───────────────────────────────────────────────
+     Chrome tokens follow the viewer's theme. Paper tokens deliberately
+     do not: each preview is a replica of a printed schedule, so it keeps
+     its own light ground in both themes.                        */
+  :root {
+    --ink:#14181f; --ink-soft:#4a5260; --ink-faint:#7b8493;
+    --ground:#f7f8f9; --surface:#ffffff; --rule:#dfe3e8; --rule-soft:#ebeef1;
+    --accent:#1f4b8f; --accent-dim:#eaf0f9;
+
+    --paper:#ffffff; --paper-ground:#f5f4f1; --paper-ink:#1a1a1a;
+    --paper-rule:#eeeeee; --paper-colhd:#e4e4e4; --paper-sechd:#edeae4;
+    --paper-toolbar:#2c2c2c;
+
+    --amber-fg:#92400e; --amber-bg:#fef3c7; --amber-br:#f7d98c;
+    --viol-fg:#5b21b6;  --viol-bg:#ede9fe;  --viol-br:#cfc2f5;
+    --red-fg:#9f1239;   --red-bg:#fee2e2;   --red-br:#f6b8b8;
+    --slate-fg:#475569; --slate-bg:#eef1f4; --slate-br:#dbe1e7;
+    --green-fg:#14653a; --green-bg:#dcfce7; --green-br:#a7e0bd;
+
+    --mono:'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+    --sans:'Inter', system-ui, -apple-system, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ink:#e8ecf1; --ink-soft:#a8b2c0; --ink-faint:#78828f;
+      --ground:#10141a; --surface:#171c24; --rule:#2a323d; --rule-soft:#212832;
+      --accent:#86b0e8; --accent-dim:#1b2534;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ink:#e8ecf1; --ink-soft:#a8b2c0; --ink-faint:#78828f;
+    --ground:#10141a; --surface:#171c24; --rule:#2a323d; --rule-soft:#212832;
+    --accent:#86b0e8; --accent-dim:#1b2534;
+  }
+
+  body { background:var(--ground); color:var(--ink); font-family:var(--sans);
+         font-size:15px; line-height:1.6; -webkit-font-smoothing:antialiased; }
+  .wrap { max-width:1180px; margin:0 auto; padding:44px 24px 96px; }
+  .col { max-width:68ch; }
+
+  h1 { font-size:clamp(28px,4vw,40px); line-height:1.12; font-weight:700;
+       letter-spacing:-.02em; text-wrap:balance; margin-bottom:14px; }
+  h2 { font-size:22px; font-weight:650; letter-spacing:-.01em; text-wrap:balance; margin-bottom:10px; }
+  h3 { font-size:15.5px; font-weight:650; margin-bottom:6px; }
+  p { color:var(--ink-soft); }
+  strong, b { color:var(--ink); font-weight:600; }
+  em { font-style:normal; color:var(--ink); font-weight:600; }
+  code { font-family:var(--mono); font-size:.88em; background:var(--accent-dim);
+         color:var(--ink); padding:1px 5px; border-radius:3px; }
+
+  .eyebrow { font-family:var(--mono); font-size:11px; font-weight:600; letter-spacing:.14em;
+             text-transform:uppercase; color:var(--ink-faint); margin-bottom:12px; }
+  .lede { font-size:18px; line-height:1.55; color:var(--ink-soft); }
+  section { margin-top:52px; }
+  hr.div { border:0; border-top:1px solid var(--rule); margin:52px 0 0; }
+
+  /* ── Recommendation callout ── */
+  .rec { margin-top:26px; border:1px solid var(--rule); border-left:3px solid var(--accent);
+         border-radius:0 8px 8px 0; background:var(--surface); padding:18px 22px; }
+  .rec h2 { font-size:18px; margin-bottom:8px; }
+  .rec p { font-size:14.5px; }
+  .rec p + p { margin-top:9px; }
+
+  /* ── Stat strip ── */
+  .stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(148px,1fr)); gap:1px;
+           background:var(--rule); border:1px solid var(--rule); border-radius:6px;
+           overflow:hidden; margin-top:22px; }
+  .stat { background:var(--surface); padding:13px 15px; }
+  .stat b { display:block; font-size:23px; font-weight:650; letter-spacing:-.02em;
+            font-variant-numeric:tabular-nums; line-height:1.1; }
+  .stat span { display:block; font-size:11.5px; color:var(--ink-faint); margin-top:4px; line-height:1.35; }
+
+  /* ── Option header ── */
+  .opt-hd { display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; margin-bottom:8px; }
+  .opt-tag { font-family:var(--mono); font-size:10.5px; font-weight:600; letter-spacing:.1em;
+             text-transform:uppercase; padding:2px 8px; border-radius:3px;
+             background:var(--slate-bg); color:var(--slate-fg); border:1px solid var(--slate-br); }
+  .opt-tag.pick { background:var(--green-bg); color:var(--green-fg); border-color:var(--green-br); }
+  .verdict { display:grid; grid-template-columns:auto 1fr; gap:5px 10px; margin-top:16px;
+             font-size:13.5px; max-width:70ch; }
+  .verdict dt { font-family:var(--mono); font-size:11px; font-weight:600; letter-spacing:.04em;
+                text-transform:uppercase; padding-top:3px; }
+  .verdict dt.good { color:var(--green-fg); }
+  .verdict dt.bad  { color:var(--red-fg); }
+  .verdict dd { color:var(--ink-soft); }
+
+  /* ── Preview surface ── */
+  .preview { margin-top:20px; border:1px solid var(--rule); border-radius:8px; overflow:hidden;
+             background:var(--paper-ground); box-shadow:0 1px 3px rgba(0,0,0,.10); }
+  .preview-cap { display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding:7px 12px;
+                 background:var(--surface); border-bottom:1px solid var(--rule);
+                 font-family:var(--mono); font-size:10.5px; font-weight:500; letter-spacing:.06em;
+                 text-transform:uppercase; color:var(--ink-faint); }
+  .tag-real { font-family:var(--mono); font-size:9.5px; font-weight:600; letter-spacing:.06em;
+              padding:1px 6px; border-radius:3px; background:var(--green-bg); color:var(--green-fg);
+              border:1px solid var(--green-br); text-transform:uppercase; }
+  .scroller { overflow-x:auto; }
+
+  /* ── Report replica: mirrors public/facility.html ── */
+  .rep { min-width:1080px; font-family:var(--sans); font-size:12px; color:var(--paper-ink); line-height:1.35; }
+  .rep-toolbar { display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding:8px 14px;
+                 background:var(--paper-toolbar); color:#eee; font-size:12px; }
+  .rep-toolbar .tb-lbl { font-size:10px; text-transform:uppercase; letter-spacing:.5px; color:#aaa; }
+  .rep-toolbar .tb-btn { padding:4px 10px; border:1px solid rgba(255,255,255,.25); border-radius:4px;
+                         background:rgba(255,255,255,.08); color:#fff; font-size:11px; }
+  .rep-page { margin:12px; padding:16px 18px; background:var(--paper); box-shadow:0 1px 4px rgba(0,0,0,.08); }
+  .rep-head { display:flex; justify-content:space-between; align-items:flex-end;
+              border-bottom:2.5px solid #111; padding-bottom:8px; }
+  .rep-head .org { font-size:9.5px; letter-spacing:1.6px; text-transform:uppercase; color:#777; font-weight:600; }
+  .rep-head .ttl { font-size:15.5px; font-weight:700; color:#111827; }
+  .rep-head .meta { font-size:10.5px; color:#666; }
+
+  .sec-hd { display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; padding:7px 8px 4px;
+            margin-top:8px; background:var(--paper-sechd); border-bottom:1px solid #ccc; }
+  .sec-hd .date-label { font-weight:700; font-size:12.5px; }
+  .sec-hd .loc-label { font-weight:600; font-size:11.5px; color:#444; }
+  .sec-hd .rollup { margin-left:auto; font-family:var(--mono); font-size:10px; color:#6b7280; }
+  .sec-hd .rollup b { color:#92400e; font-weight:600; }
+
+  .col-hd { display:flex; gap:6px; padding:5px 8px; background:var(--paper-colhd);
+            border-top:1px solid #bbb; border-bottom:1px solid #bbb; font-weight:600;
+            font-size:9.5px; text-transform:uppercase; letter-spacing:.4px; color:#333; }
+  .row { display:flex; gap:6px; padding:4px 8px; border-bottom:1px solid var(--paper-rule);
+         align-items:baseline; font-size:11.5px; }
+  .row.alt { background:#fafaf8; }
+  .row .cell { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .row.clickable { cursor:pointer; }
+  .row.clickable:hover { background:#f0f6ff; }
+  .row.open { background:#eaf1fb; }
+
+  .c-beg,.c-end { width:60px; flex:none; font-variant-numeric:tabular-nums; }
+  .c-fac { width:164px; flex:none; font-weight:600; }
+  .c-res { width:116px; flex:none; }
+  .c-pur { flex:1 1 auto; min-width:88px; }
+  .c-cnt { width:32px; flex:none; text-align:right; font-variant-numeric:tabular-nums; }
+  .c-tot { width:56px; flex:none; text-align:right; font-variant-numeric:tabular-nums; }
+  .c-paid{ width:30px; flex:none; text-align:center; }
+  .c-req { width:190px; flex:none; }
+
+  /* ── Option A: always-on inline sub-row (reuses .sub-row) ── */
+  .sub-row { padding:0 8px 3px 172px; font-size:10px; color:#888; font-family:var(--mono); line-height:1.5; }
+  .sub-row .k { color:#6b7280; }
+  .sub-row .v { color:#374151; }
+  .sub-row .hot { color:#92400e; font-weight:600; }
+  .sub-row .quiet { color:#adb3bb; }
+  .sub-row.wrapme { white-space:normal; }
+
+  /* ── Chips ── */
+  .chips { display:flex; gap:3px; flex-wrap:wrap; align-items:center; }
+  .chip { display:inline-flex; align-items:center; gap:3px; font-family:var(--mono); font-size:9.5px;
+          font-weight:600; letter-spacing:.02em; padding:1px 5px; border-radius:3px;
+          border:1px solid transparent; white-space:nowrap; }
+  .chip.amber { background:var(--amber-bg); color:var(--amber-fg); border-color:var(--amber-br); }
+  .chip.viol  { background:var(--viol-bg);  color:var(--viol-fg);  border-color:var(--viol-br); }
+  .chip.red   { background:var(--red-bg);   color:var(--red-fg);   border-color:var(--red-br); }
+  .chip.note  { background:var(--slate-bg); color:var(--slate-fg); border-color:var(--slate-br); }
+  .chip.quiet { background:transparent; color:#9aa1ab; border-color:#e3e5e9; font-weight:500; }
+  .caret { font-size:8px; color:#9aa1ab; margin-left:2px; }
+
+  /* ── Expanded panel ── */
+  .panel { display:none; padding:0 8px 12px; background:#f7faff; border-bottom:1px solid #dbe6f5; }
+  .panel.open { display:block; }
+  .panel-inner { border-left:2px solid #93b4e0; padding:10px 0 2px 14px; margin-left:122px; }
+  @media (max-width:900px) { .panel-inner { margin-left:0; } }
+
+  .form-card + .form-card { margin-top:12px; padding-top:12px; border-top:1px dashed #cdd9e8; }
+  .form-name { display:flex; align-items:baseline; gap:8px; flex-wrap:wrap; font-size:11.5px;
+               font-weight:700; color:#1f3a63; margin-bottom:7px; }
+  .form-name .when { font-family:var(--mono); font-size:9.5px; font-weight:500; color:#7b8493; }
+
+  dl.qa { display:grid; grid-template-columns:minmax(148px,232px) 1fr; gap:3px 14px; font-size:11px; }
+  dl.qa dt { color:#6b7280; text-align:right; line-height:1.4; }
+  dl.qa dd { color:#14181f; font-weight:500; line-height:1.4; }
+  @media (max-width:700px) {
+    dl.qa { grid-template-columns:1fr; }
+    dl.qa dt { text-align:left; margin-top:7px; font-size:10px; text-transform:uppercase; letter-spacing:.04em; }
+  }
+  dd .yes { color:#14653a; font-weight:600; }
+  dd .no { color:#9aa1ab; font-weight:500; }
+  dd .flag { color:#92400e; font-weight:700; }
+  dd .conflict { font-family:var(--mono); font-size:9.5px; color:#92400e; background:var(--amber-bg);
+                 border:1px solid var(--amber-br); padding:0 4px; border-radius:3px; margin-left:5px; }
+  dd .dup { font-family:var(--mono); font-size:9.5px; color:#9aa1ab; margin-left:5px; }
+  dd.blob { white-space:pre-wrap; font-family:var(--mono); font-size:10px; line-height:1.45;
+            max-height:3.9em; overflow:hidden; background:#fff; border:1px solid #e3e8ef;
+            border-radius:4px; padding:5px 7px; }
+  dd.blob.shown { max-height:none; }
+  .more-btn { font-family:var(--mono); font-size:9.5px; font-weight:600; color:#1f4b8f;
+              background:none; border:0; padding:2px 0 0; cursor:pointer; letter-spacing:.04em; }
+  .more-btn:hover { text-decoration:underline; }
+  .file-chip { display:inline-flex; align-items:center; gap:4px; font-family:var(--mono); font-size:9.5px;
+               font-weight:500; color:#475569; background:#fff; border:1px solid #dbe1e7;
+               border-radius:3px; padding:1px 5px; margin-right:4px; }
+  .waiver-line { display:flex; align-items:baseline; gap:8px; flex-wrap:wrap; font-size:11px; }
+  .waiver-line .ok { color:#14653a; font-weight:600; }
+  .terms { display:none; margin-top:6px; font-size:10px; line-height:1.5; color:#5b6472; background:#fff;
+           border:1px solid #e3e8ef; border-radius:4px; padding:8px 10px; max-height:150px; overflow-y:auto; }
+  .terms.open { display:block; }
+  .unans { font-family:var(--mono); font-size:9.5px; color:#9aa1ab; margin-top:7px; }
+
+  /* ── Filters ── */
+  .fbar { display:flex; gap:5px; align-items:center; flex-wrap:wrap; }
+  .fchip { font-family:var(--mono); font-size:10px; font-weight:600; letter-spacing:.03em;
+           padding:3px 8px; border-radius:12px; cursor:pointer; border:1px solid rgba(255,255,255,.25);
+           background:rgba(255,255,255,.07); color:#dfe3e8; }
+  .fchip:hover { background:rgba(255,255,255,.16); }
+  .fchip[aria-pressed="true"] { background:#f7d98c; border-color:#f7d98c; color:#4a2f04; }
+  .row.hidden, .panel.hidden, .sub-row.hidden { display:none; }
+
+  /* ── Traps ── */
+  .traps { display:flex; flex-direction:column; gap:1px; background:var(--rule);
+           border:1px solid var(--rule); border-radius:6px; overflow:hidden; margin-top:20px; }
+  .trap { background:var(--surface); padding:14px 16px; display:grid;
+          grid-template-columns:26px 1fr; gap:0 12px; }
+  .trap .n { font-family:var(--mono); font-size:11px; font-weight:600; color:var(--ink-faint); padding-top:2px; }
+  .trap h3 { margin-bottom:3px; }
+  .trap p { font-size:13.5px; margin:0; }
+  .trap .ev { font-family:var(--mono); font-size:10.5px; color:var(--ink-faint); margin-top:6px;
+              display:block; line-height:1.5; }
+  .trap .ev b { color:var(--ink-soft); font-weight:600; }
+
+  ul.plain { list-style:none; display:flex; flex-direction:column; gap:9px; margin-top:12px; }
+  ul.plain li { display:grid; grid-template-columns:16px 1fr; gap:0 10px; font-size:14px; color:var(--ink-soft); }
+  ul.plain li::before { content:"▪"; color:var(--ink-faint); font-size:11px; line-height:1.7; }
+
+  .note-box { margin-top:20px; border:1px solid var(--rule); border-left:3px solid var(--accent);
+              border-radius:0 6px 6px 0; background:var(--surface); padding:14px 18px; }
+  .note-box .eyebrow { margin-bottom:6px; }
+  .note-box p { font-size:13.5px; }
+  .note-box p + p { margin-top:8px; }
+
+  @media (prefers-reduced-motion:reduce) { * { transition:none !important; animation:none !important; } }
+  :focus-visible { outline:2px solid var(--accent); outline-offset:2px; border-radius:3px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="col">
+    <div class="eyebrow">Facility rentals · design decision</div>
+    <h1>Rental forms on the schedule</h1>
+    <p class="lede">Three ways to put form answers on a rental, mocked at real density with
+      Watertown's real submissions — so the choice can be made by looking rather than by
+      imagining.</p>
+  </header>
+
+  <div class="rec col">
+    <h2>Recommendation: ship B, with A as a column toggle</h2>
+    <p><b>B — chips in the row, answers inline on click.</b> The row keeps one line and carries
+      only the answers that change what staff do; clicking opens the full Q&amp;A in place. This is
+      the default because 98% of Watertown's rentals carry <em>two</em> forms and 9 answers, and
+      because only a handful of those answers are ever actionable.</p>
+    <p><b>A — the always-on inline sub-row — is worth having, but as a toggle, not a default.</b>
+      It's the treatment a parks crew wants on paper, and the report already has the mechanism
+      (<code>.sub-row</code>, used today for Notes and Add-Ons). But it triples the height of a day
+      section, and it cannot survive the 1.4 KB answer further down this page. So: a
+      <code>Show answers</code> checkbox beside the existing column toggles, off by default,
+      honoured by Print and PDF.</p>
+    <p>The one thing I would <em>not</em> do is a column per question. Watertown's rentals draw on
+      <b>9 different forms</b> with disjoint question sets — that's roughly 40 columns at 38% fill
+      for one week, and a waiver's question is 3,257 characters long, so it can't be a column
+      header at any width. That's why the Programs pulldown doesn't transfer: a roster has one form
+      per section, and this doesn't.</p>
+  </div>
+
+  <div class="stats">
+    <div class="stat"><b>2.08</b><span>forms per rental — 98% carry two or more</span></div>
+    <div class="stat"><b>9.0</b><span>answers per rental, average (max 20)</span></div>
+    <div class="stat"><b>38%</b><span>of the Sept 6 week's rentals have any form</span></div>
+    <div class="stat"><b>39%</b><span>of picnic rentals want a grill</span></div>
+    <div class="stat"><b>15%</b><span>have a form head count that disagrees with the booking</span></div>
+    <div class="stat"><b>3,257</b><span>characters in the waiver's one question</span></div>
+  </div>
+
+  <hr class="div" />
+
+  <!-- ══════════ OPTION A ══════════ -->
+  <section>
+    <div class="col">
+      <div class="opt-hd">
+        <span class="opt-tag">Option A</span>
+        <h2 style="margin:0">Inline sub-row, always on</h2>
+      </div>
+      <p>Every answer printed under its rental, no interaction, reusing the mono sub-row the report
+        already uses for Notes. This is the literal reading of “show the questions and answers
+        inline” — and the point of mocking it at full density is that you can see exactly where it
+        stops working.</p>
+    </div>
+
+    <div class="preview">
+      <div class="preview-cap">
+        <span>Option A · always-on</span>
+        <span class="tag-real">Real production data</span>
+        <span style="text-transform:none;letter-spacing:0">Watertown · Sun Sep 6, 2026 · Arsenal Park</span>
+      </div>
+      <div class="scroller">
+        <div class="rep">
+          <div class="rep-page">
+            <div class="rep-head">
+              <div><div class="org">Watertown Recreation</div><div class="ttl">Weekly Rental Schedule</div></div>
+              <div class="meta">September 6, 2026</div>
+            </div>
+            <div class="sec-hd">
+              <span class="date-label">Sunday, September 6, 2026</span>
+              <span class="loc-label">— Arsenal Park</span>
+            </div>
+            <div class="col-hd">
+              <span class="c-beg">Begin</span><span class="c-end">End</span>
+              <span class="c-fac">Facility / Site</span><span class="c-res">Reservee</span>
+              <span class="c-pur">Purpose</span><span class="c-cnt">Cnt</span>
+              <span class="c-tot">Total</span><span class="c-paid">Paid</span>
+            </div>
+
+            <div class="row">
+              <span class="cell c-beg">10:00am</span><span class="cell c-end">2:00pm</span>
+              <span class="cell c-fac">Picnic Table 11</span><span class="cell c-res">Lucie Zenker</span>
+              <span class="cell c-pur">Bday party</span><span class="cell c-cnt">10</span>
+              <span class="cell c-tot">$30.00</span><span class="cell c-paid" style="color:#16a34a">✓</span>
+            </div>
+            <div class="sub-row wrapme"><span class="k">Picnic Permit ·</span>
+              <span class="v">Birthday party · 10 attendees</span> ·
+              <span class="k">public</span> <span class="quiet">no</span> ·
+              <span class="k">catered</span> <span class="quiet">no</span> ·
+              <span class="k">grill</span> <span class="quiet">no</span> ·
+              <span class="k">alt date</span> <span class="quiet">n/a</span> ·
+              <span class="v">“Two tables side by side if possible, thank you!”</span> ·
+              <span class="k">ID on file (1)</span> &nbsp;|&nbsp;
+              <span class="k">Disclaimer ·</span> <span class="v">agreed</span></div>
+
+            <div class="row alt">
+              <span class="cell c-beg">10:00am</span><span class="cell c-end">4:00pm</span>
+              <span class="cell c-fac">Pavilion A</span><span class="cell c-res">Elizabeth Grande-Rodri…</span>
+              <span class="cell c-pur">Helena's 1st Birthday</span><span class="cell c-cnt">50</span>
+              <span class="cell c-tot">$420.00</span><span class="cell c-paid" style="color:#16a34a">✓</span>
+            </div>
+            <div class="sub-row wrapme"><span class="k">Picnic Permit ·</span>
+              <span class="v">1st Birthday Party · 50 attendees</span> ·
+              <span class="k">public</span> <span class="quiet">no</span> ·
+              <span class="k">catered</span> <span class="quiet">no</span> ·
+              <span class="k">grill</span> <span class="hot">YES</span> ·
+              <span class="k">alt date</span> <span class="quiet">N/A</span> ·
+              <span class="k">ID on file (2)</span> &nbsp;|&nbsp;
+              <span class="k">Disclaimer ·</span> <span class="v">agreed</span></div>
+
+            <div class="row">
+              <span class="cell c-beg">10:00am</span><span class="cell c-end">2:00pm</span>
+              <span class="cell c-fac">Picnic Table 12</span><span class="cell c-res">Lucie Zenker</span>
+              <span class="cell c-pur">Bday party</span><span class="cell c-cnt">10</span>
+              <span class="cell c-tot">$30.00</span><span class="cell c-paid" style="color:#16a34a">✓</span>
+            </div>
+            <div class="sub-row wrapme"><span class="k">Picnic Permit ·</span>
+              <span class="v">Birthday party · 10 attendees</span> ·
+              <span class="k">public</span> <span class="quiet">no</span> ·
+              <span class="k">catered</span> <span class="quiet">no</span> ·
+              <span class="k">grill</span> <span class="quiet">no</span> ·
+              <span class="k">ID on file (1)</span> &nbsp;|&nbsp;
+              <span class="k">Disclaimer ·</span> <span class="v">agreed</span></div>
+
+            <div class="row alt">
+              <span class="cell c-beg">12:00pm</span><span class="cell c-end">2:00pm</span>
+              <span class="cell c-fac">Pavilion C <span style="font-weight:400;color:#888">(near splash pad)</span></span>
+              <span class="cell c-res">Emily McCarthy</span>
+              <span class="cell c-pur">Gabby's Birthday</span><span class="cell c-cnt">40</span>
+              <span class="cell c-tot">$50.00</span><span class="cell c-paid" style="color:#dc2626">✕</span>
+            </div>
+            <div class="sub-row wrapme"><span class="k">Picnic Permit ·</span>
+              <span class="v">birthday party · 40 attendees</span> ·
+              <span class="k">public</span> <span class="quiet">no</span> ·
+              <span class="k">catered</span> <span class="quiet">no</span> ·
+              <span class="k">grill</span> <span class="quiet">no</span> ·
+              <span class="k">alt date</span> <span class="quiet">n/a</span> ·
+              <span class="v">“no additional requests or notes”</span> ·
+              <span class="k">ID on file (1)</span> &nbsp;|&nbsp;
+              <span class="k">Disclaimer ·</span> <span class="v">agreed</span></div>
+
+            <div class="row">
+              <span class="cell c-beg">2:30pm</span><span class="cell c-end">4:30pm</span>
+              <span class="cell c-fac">Pavilion B</span><span class="cell c-res">Alicia Rosales</span>
+              <span class="cell c-pur">12th Birthday Party</span><span class="cell c-cnt">30</span>
+              <span class="cell c-tot">$100.00</span><span class="cell c-paid" style="color:#16a34a">✓</span>
+            </div>
+            <div class="sub-row wrapme"><span class="k">Picnic Permit ·</span>
+              <span class="v">Quinceañera · 45 attendees</span>
+              <span class="hot">(booking says 30)</span> ·
+              <span class="k">public</span> <span class="hot">YES</span> ·
+              <span class="k">catered</span> <span class="hot">YES</span> ·
+              <span class="k">grill</span> <span class="hot">YES</span> ·
+              <span class="v">“Please add Tables X, Y and Z for a total of 4 tables. We will bring one
+              pop-up tent for the food table only.”</span> ·
+              <span class="k">ID on file (2)</span> &nbsp;|&nbsp;
+              <span class="k">Disclaimer ·</span> <span class="v">agreed</span></div>
+
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <dl class="verdict">
+      <dt class="good">Works</dt>
+      <dd>Nothing to click, prints as-is, and a crew reading the page sees everything. Compressed to
+        one mono line it is more legible than you'd expect — the answers are short (notes average
+        41 characters).</dd>
+      <dt class="bad">Breaks</dt>
+      <dd>Five rentals became eleven lines. Across the 47-rental week that's a document roughly
+        <b>2.5× longer</b>, and the exceptions — one grill, one catered — are now buried in prose
+        rather than standing out. The three unremarkable rentals cost as much vertical space as the
+        one that needs attention.</dd>
+      <dt class="bad">Fails</dt>
+      <dd>The 1.4 KB pasted schedule further down this page. There is no compression of that answer
+        that fits a table row.</dd>
+    </dl>
+  </section>
+
+  <hr class="div" />
+
+  <!-- ══════════ OPTION B ══════════ -->
+  <section>
+    <div class="col">
+      <div class="opt-hd">
+        <span class="opt-tag pick">Option B · recommended</span>
+        <h2 style="margin:0">Chips in the row, answers inline on click</h2>
+      </div>
+      <p>The row gets one narrow column of <em>verdicts</em>, not answers. Click a row and the
+        full Q&amp;A opens inline underneath — same page, no modal, no second request. Everything
+        below is live: click any row, toggle the column, use the filters.</p>
+    </div>
+
+    <div class="preview">
+      <div class="preview-cap">
+        <span>Option B · interactive</span>
+        <span class="tag-real">Real production data</span>
+        <span style="text-transform:none;letter-spacing:0">Click a row to open its forms</span>
+      </div>
+      <div class="scroller">
+        <div class="rep">
+
+          <div class="rep-toolbar">
+            <span class="tb-lbl">Show only</span>
+            <div class="fbar" id="fbar">
+              <button class="fchip" data-f="grill" aria-pressed="false" type="button">🔥 Grill</button>
+              <button class="fchip" data-f="catered" aria-pressed="false" type="button">🍽 Catered</button>
+              <button class="fchip" data-f="public" aria-pressed="false" type="button">📣 Public</button>
+              <button class="fchip" data-f="mismatch" aria-pressed="false" type="button">👥 Count off</button>
+              <button class="fchip" data-f="note" aria-pressed="false" type="button">📝 Has note</button>
+            </div>
+            <span style="flex:1"></span>
+            <label style="display:flex;align-items:center;gap:5px;font-size:10px;text-transform:uppercase;
+                          letter-spacing:.5px;color:#aaa;cursor:pointer">
+              <input type="checkbox" id="tgReq" checked /> Requests
+            </label>
+            <button class="tb-btn" type="button">Print</button>
+          </div>
+
+          <div class="rep-page">
+            <div class="rep-head">
+              <div><div class="org">Watertown Recreation</div><div class="ttl">Weekly Rental Schedule</div></div>
+              <div class="meta">September 6, 2026</div>
+            </div>
+
+            <div class="sec-hd">
+              <span class="date-label">Sunday, September 6, 2026</span>
+              <span class="loc-label">— Arsenal Park</span>
+              <span class="rollup" id="rollup">5 rentals · <b>2 grills</b> · <b>1 catered</b> · <b>1 count mismatch</b></span>
+            </div>
+
+            <div class="col-hd">
+              <span class="c-beg">Begin</span><span class="c-end">End</span>
+              <span class="c-fac">Facility / Site</span><span class="c-res">Reservee</span>
+              <span class="c-pur">Purpose</span><span class="c-cnt">Cnt</span>
+              <span class="c-tot">Total</span><span class="c-paid">Paid</span>
+              <span class="c-req colreq">Requests</span>
+            </div>
+
+            <div class="row clickable" data-row="1" data-tags="note" tabindex="0" role="button" aria-expanded="false">
+              <span class="cell c-beg">10:00am</span><span class="cell c-end">2:00pm</span>
+              <span class="cell c-fac">Picnic Table 11</span><span class="cell c-res">Lucie Zenker</span>
+              <span class="cell c-pur">Bday party</span><span class="cell c-cnt">10</span>
+              <span class="cell c-tot">$30.00</span><span class="cell c-paid" style="color:#16a34a">✓</span>
+              <span class="cell c-req colreq"><span class="chips">
+                <span class="chip quiet">✓ 2 forms</span>
+                <span class="chip note">📝 note</span><span class="caret">▸</span></span></span>
+            </div>
+            <div class="panel" data-panel="1"><div class="panel-inner">
+              <div class="form-card">
+                <div class="form-name">Picnic Table Permit Requests <span class="when">submitted Aug 14</span></div>
+                <dl class="qa">
+                  <dt>Type of Event</dt><dd>Birthday party <span class="dup">= Purpose</span></dd>
+                  <dt>Attendees</dt><dd>10 <span class="dup">= Cnt</span></dd>
+                  <dt>Public event?</dt><dd><span class="no">No</span></dd>
+                  <dt>Catered?</dt><dd><span class="no">No</span></dd>
+                  <dt>Grill request</dt><dd><span class="no">No</span></dd>
+                  <dt>Additional requests</dt><dd>Two tables side by side if possible, thank you!</dd>
+                  <dt>Photo ID</dt><dd><span class="file-chip">📎 ID on file · 1 file</span></dd>
+                </dl>
+                <div class="unans">1 question not answered — Organization (optional)</div>
+              </div>
+              <div class="form-card">
+                <div class="form-name">Picnic / Pavilion Permit Disclaimer, Release</div>
+                <div class="waiver-line"><span class="ok">✍️ Agreed — “I Agree”</span>
+                  <button class="more-btn" type="button" data-terms="t1">Show terms ▾</button></div>
+                <div class="terms" id="t1">The person whose name appears below is deemed the permit holder
+                  and is responsible for the actions of all persons using the site in association with this
+                  permit. This includes responsibility for the removal of all litter and all damage to the
+                  site. The permit holder shall be responsible for inspecting the site subject to the permit
+                  prior to each use… <em>(3,257 characters — collapsed by default, because a waiver's only
+                  information is that it was accepted.)</em></div>
+              </div>
+            </div></div>
+
+            <div class="row clickable alt" data-row="2" data-tags="grill" tabindex="0" role="button" aria-expanded="false">
+              <span class="cell c-beg">10:00am</span><span class="cell c-end">4:00pm</span>
+              <span class="cell c-fac">Pavilion A</span><span class="cell c-res">Elizabeth Grande-Rodri…</span>
+              <span class="cell c-pur">Helena's 1st Birthday</span><span class="cell c-cnt">50</span>
+              <span class="cell c-tot">$420.00</span><span class="cell c-paid" style="color:#16a34a">✓</span>
+              <span class="cell c-req colreq"><span class="chips">
+                <span class="chip amber">🔥 Grill</span><span class="caret">▸</span></span></span>
+            </div>
+            <div class="panel" data-panel="2"><div class="panel-inner">
+              <div class="form-card">
+                <div class="form-name">Picnic Table Permit Requests <span class="when">submitted Jun 30</span></div>
+                <dl class="qa">
+                  <dt>Type of Event</dt><dd>1st Birthday Party</dd>
+                  <dt>Attendees</dt><dd>50 <span class="dup">= Cnt</span></dd>
+                  <dt>Public event?</dt><dd><span class="no">No</span></dd>
+                  <dt>Catered?</dt><dd><span class="no">No</span></dd>
+                  <dt>Grill request</dt><dd><span class="flag">Yes</span></dd>
+                  <dt>Alternate date</dt><dd><span class="no">N/A</span></dd>
+                  <dt>Photo ID</dt><dd><span class="file-chip">📎 ID on file · 2 files</span></dd>
+                </dl>
+              </div>
+              <div class="form-card">
+                <div class="form-name">Picnic / Pavilion Permit Disclaimer, Release</div>
+                <div class="waiver-line"><span class="ok">✍️ Agreed — “I Agree”</span></div>
+              </div>
+            </div></div>
+
+            <div class="row clickable" data-row="3" data-tags="" tabindex="0" role="button" aria-expanded="false">
+              <span class="cell c-beg">10:00am</span><span class="cell c-end">2:00pm</span>
+              <span class="cell c-fac">Picnic Table 12</span><span class="cell c-res">Lucie Zenker</span>
+              <span class="cell c-pur">Bday party</span><span class="cell c-cnt">10</span>
+              <span class="cell c-tot">$30.00</span><span class="cell c-paid" style="color:#16a34a">✓</span>
+              <span class="cell c-req colreq"><span class="chips">
+                <span class="chip quiet">✓ 2 forms</span><span class="caret">▸</span></span></span>
+            </div>
+            <div class="panel" data-panel="3"><div class="panel-inner">
+              <div class="form-card">
+                <div class="form-name">Picnic Table Permit Requests <span class="when">submitted Aug 14</span></div>
+                <dl class="qa">
+                  <dt>Type of Event</dt><dd>Birthday party</dd>
+                  <dt>Attendees</dt><dd>10</dd>
+                  <dt>Public event?</dt><dd><span class="no">No</span></dd>
+                  <dt>Catered?</dt><dd><span class="no">No</span></dd>
+                  <dt>Grill request</dt><dd><span class="no">No</span></dd>
+                  <dt>Photo ID</dt><dd><span class="file-chip">📎 ID on file · 1 file</span></dd>
+                </dl>
+                <div class="unans">Every answer here is unremarkable, which is why the row carries no
+                  loud chip — the quiet <code>✓ 2 forms</code> says the paperwork is in.</div>
+              </div>
+            </div></div>
+
+            <div class="row clickable alt" data-row="4" data-tags="note" tabindex="0" role="button" aria-expanded="false">
+              <span class="cell c-beg">12:00pm</span><span class="cell c-end">2:00pm</span>
+              <span class="cell c-fac">Pavilion C <span style="font-weight:400;color:#888">(near splash pad)</span></span>
+              <span class="cell c-res">Emily McCarthy</span>
+              <span class="cell c-pur">Gabby's Birthday</span><span class="cell c-cnt">40</span>
+              <span class="cell c-tot">$50.00</span><span class="cell c-paid" style="color:#dc2626">✕</span>
+              <span class="cell c-req colreq"><span class="chips">
+                <span class="chip quiet">✓ 2 forms</span>
+                <span class="chip note">📝 note</span><span class="caret">▸</span></span></span>
+            </div>
+            <div class="panel" data-panel="4"><div class="panel-inner">
+              <div class="form-card">
+                <div class="form-name">Picnic Table Permit Requests
+                  <span class="when">the rental in your screenshot</span>
+                  <span class="tag-real">verbatim</span></div>
+                <dl class="qa">
+                  <dt>Type of Event</dt><dd>birthday party <span class="dup">≈ Purpose “Gabby's Birthday”</span></dd>
+                  <dt>Attendees</dt><dd>40 <span class="dup">= Cnt</span></dd>
+                  <dt>Public event?</dt><dd><span class="no">No</span></dd>
+                  <dt>Catered?</dt><dd><span class="no">No</span></dd>
+                  <dt>Grill request</dt><dd><span class="no">No</span></dd>
+                  <dt>Alternate date</dt><dd><span class="no">n/a</span></dd>
+                  <dt>Additional requests</dt><dd>no additional requests or notes</dd>
+                  <dt>Photo ID</dt><dd><span class="file-chip">📎 ID on file · 1 file · 1.04 MB</span></dd>
+                </dl>
+                <div class="unans">1 question not answered — Organization (optional)</div>
+              </div>
+              <div class="form-card">
+                <div class="form-name">Picnic / Pavilion Permit Disclaimer, Release
+                  <span class="tag-real">verbatim</span></div>
+                <div class="waiver-line"><span class="ok">✍️ Agreed — “I Agree”</span>
+                  <button class="more-btn" type="button" data-terms="t4">Show terms ▾</button></div>
+                <div class="terms" id="t4">Disclaimer, Release — The person whose name appears below is
+                  deemed the permit holder and is responsible for the actions of all persons using the site
+                  in association with this permit… The permit will immediately be revoked for the use of
+                  alcohol or any illegal substance, any violation of the law and any behavior deemed
+                  inappropriate by the Director of Recreation… <em>(3,257 characters, stored as the
+                  question's title — not as an answer.)</em></div>
+              </div>
+            </div></div>
+
+            <div class="row clickable" data-row="5" data-tags="grill catered public mismatch note" tabindex="0" role="button" aria-expanded="false">
+              <span class="cell c-beg">2:30pm</span><span class="cell c-end">4:30pm</span>
+              <span class="cell c-fac">Pavilion B</span><span class="cell c-res">Alicia Rosales</span>
+              <span class="cell c-pur">12th Birthday Party</span><span class="cell c-cnt">30</span>
+              <span class="cell c-tot">$100.00</span><span class="cell c-paid" style="color:#16a34a">✓</span>
+              <span class="cell c-req colreq"><span class="chips">
+                <span class="chip amber">🔥 Grill</span>
+                <span class="chip viol">🍽 Catered</span>
+                <span class="chip red">📣 Public</span>
+                <span class="chip amber">👥 45≠30</span><span class="caret">▸</span></span></span>
+            </div>
+            <div class="panel" data-panel="5"><div class="panel-inner">
+              <div class="form-card">
+                <div class="form-name">Picnic Table Permit Requests <span class="when">submitted Jul 22</span></div>
+                <dl class="qa">
+                  <dt>Type of Event</dt><dd>Quinceañera</dd>
+                  <dt>Attendees</dt><dd>45 <span class="conflict">booking says 30</span></dd>
+                  <dt>Public event?</dt><dd><span class="flag">Yes</span></dd>
+                  <dt>Catered?</dt><dd><span class="flag">Yes</span> — needs a Health Dept catering permit</dd>
+                  <dt>Grill request</dt><dd><span class="flag">Yes</span></dd>
+                  <dt>Additional requests</dt><dd>Please add Tables X, Y and Z for a total of 4 tables.
+                    We will bring one pop-up tent for the food table only.</dd>
+                  <dt>Photo ID</dt><dd><span class="file-chip">📎 ID on file · 2 files</span></dd>
+                </dl>
+              </div>
+              <div class="form-card">
+                <div class="form-name">Picnic / Pavilion Permit Disclaimer, Release</div>
+                <div class="waiver-line"><span class="ok">✍️ Agreed — “I Agree”</span></div>
+              </div>
+            </div></div>
+
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <dl class="verdict">
+      <dt class="good">Works</dt>
+      <dd>The day reads at a glance: four of five rentals are routine, one needs a Health Dept
+        permit and a bigger setup. The section header rolls the day up
+        (<b>2 grills · 1 catered · 1 count mismatch</b>) so a crew doesn't have to open anything,
+        and the filters answer the actual operational question — “which pavilions need grills
+        Sunday?”</dd>
+      <dt class="good">Scales</dt>
+      <dd>A 25-question stage application and the 113-question form elsewhere on the platform cost
+        the same one line until someone asks for them.</dd>
+      <dt class="bad">Costs</dt>
+      <dd>Answers are behind a click, so they don't print unless expanded — which is exactly why
+        Option A survives as a toggle.</dd>
+    </dl>
+
+    <div class="col" style="margin-top:22px">
+      <h3>The rule that keeps the column quiet: chip the exception, not the norm</h3>
+      <p>484 of 485 picnic rentals uploaded an ID, and 484 signed the waiver. A chip on
+        <em>every</em> row is decoration, so “ID on file” and “waiver signed” collapse into one grey
+        <code>✓ 2 forms</code> and only their <strong>absence</strong> goes loud. Grill (39%),
+        catered (5%), public (4%) and a head-count mismatch (15%) are common enough to be worth
+        scanning and rare enough to stand out.</p>
+    </div>
+  </section>
+
+  <hr class="div" />
+
+  <!-- ══════════ OPTION C ══════════ -->
+  <section>
+    <div class="col">
+      <div class="opt-hd">
+        <span class="opt-tag">Option C</span>
+        <h2 style="margin:0">Chips only — full form on the posting sheet</h2>
+      </div>
+      <p>Same row as B, but no expansion at all: the answers live on the permit posting sheet
+        instead. Worth naming because <code>lib/permit.js</code> already prints one page per rental
+        and hangs at the facility, and grill / attendees / catered is precisely what a crew standing
+        at a pavilion needs. It is the right <em>print</em> home for the detail regardless of which
+        option wins — but it can't be the only one, because the office staff answering the phone
+        need the answers on screen, and not every rental has a permit.</p>
+      <p><b>My read:</b> not an alternative to B, an addition to it. Ship B, then put the same
+        answers on the sheet.</p>
+    </div>
+  </section>
+
+  <hr class="div" />
+
+  <!-- ══════════ The hard case ══════════ -->
+  <section>
+    <div class="col">
+      <div class="eyebrow">The case that decides it</div>
+      <h2>When someone pastes a spreadsheet into a text box</h2>
+      <p>This row is in your screenshot — Watertown Youth Soccer, Filippello (Arlington). Its
+        “Additional Comments” answer is <strong>1,400 characters of tab-delimited schedule</strong>
+        covering five fields and three months. Option A cannot render this. Option B can, because a
+        clamped monospace block can't stretch a table.</p>
+    </div>
+
+    <div class="preview">
+      <div class="preview-cap">
+        <span>The 1.4 KB answer</span>
+        <span class="tag-real">Real production data</span>
+      </div>
+      <div class="scroller">
+        <div class="rep">
+          <div class="rep-page">
+            <div class="row" style="border-bottom:1px solid #ddd">
+              <span class="cell c-beg">12:30pm</span><span class="cell c-end">9:15pm</span>
+              <span class="cell c-fac">Filippello Field (Arlington)</span>
+              <span class="cell c-res">Will Stirling</span>
+              <span class="cell c-pur">WYS/ARL/SEPT'26</span>
+              <span class="cell c-cnt">—</span><span class="cell c-tot"></span>
+              <span class="cell c-paid" style="color:#16a34a">✓</span>
+              <span class="cell c-req"><span class="chips">
+                <span class="chip quiet">✓ 2 forms</span>
+                <span class="chip note">📝 long note</span></span></span>
+            </div>
+            <div class="panel open" style="border-bottom:0"><div class="panel-inner">
+              <div class="form-card">
+                <div class="form-name">Field / Court / Track / Rink Permit Application 2026
+                  <span class="tag-real">verbatim</span></div>
+                <dl class="qa">
+                  <dt>Organization Name</dt><dd>Watertown Youth Soccer</dd>
+                  <dt>Name</dt><dd>Will Stirling <span class="dup">= Reservee</span></dd>
+                  <dt>Cell Phone #</dt><dd>617-899-6503 <span class="dup">= Phone</span></dd>
+                  <dt>Email Address</dt><dd>wyspermits@gmail.com <span class="dup">= Email</span></dd>
+                  <dt>Sport or Event</dt><dd>Soccer</dd>
+                  <dt>Youth or Adult</dt><dd>Youth</dd>
+                  <dt>Group / Customer</dt><dd>Watertown Youth Organization</dd>
+                  <dt>Additional Comments</dt>
+                  <dd class="blob" id="blob1">Filippello Grove requested dates and times:
+from 8/31/2026 to 11/22/2026
+
+Day	Start time	End time
+Monday	5.30pm             9.15pm
+Tuesday	5.30pm             9.15pm
+Wednesday	5.30pm             9.15pm
+Thursday	5.30pm             9.15pm
+Friday	5.30pm             9.15pm
+Saturday	8.00am             5.00 pm
+Sunday	12.30pm             9.15pm
+
+
+Filippello Arlington requested dates and times:
+from 8/31/2026 to 11/22/2026
+
+Day	Start time	End time
+Monday	5.30pm             9.15pm
+Tuesday	5.30pm             9.15pm
+Wednesday	5.30pm             9.15pm
+Thursday	5.30pm             9.15pm
+Friday	5.30pm             9.15pm
+Saturday	8.00am             5.00 pm
+Sunday	12.30pm             9.15pm
+
+
+Satonstall permit requested dates and times:
+from 8/31/2026 to 11/22/2026
+
+Day	Start time	End time
+Monday	6 pm             9.15pm
+Tuesday	6 pm             9.15pm
+Wednesday	6 pm             9.15pm
+Thursday	6 pm             9.15pm
+Friday	6 pm             9.15pm</dd>
+                </dl>
+                <button class="more-btn" type="button" data-blob="blob1">Show all 1,400 characters ▾</button>
+                <div class="unans">1 question not answered — Alternate Dates (optional)</div>
+              </div>
+            </div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col" style="margin-top:20px">
+      <p>Note what happens to the four answers that <em>duplicate</em> columns the report already
+        prints — Name, Cell, Email, head count. They stay, marked <code>= Reservee</code>,
+        <code>= Phone</code>: staff need to see the form agrees. And when it <em>disagrees</em> —
+        73 of 485 rentals — the panel says so in the answer itself rather than leaving two numbers
+        to be compared by eye.</p>
+    </div>
+  </section>
+
+  <hr class="div" />
+
+  <section>
+    <div class="col">
+      <div class="eyebrow">Whichever option wins</div>
+      <h2>Five things in this data that will break a naive renderer</h2>
+    </div>
+
+    <div class="traps">
+      <div class="trap"><span class="n">01</span><div>
+        <h3>Answers are keyed by machine name — the schema join is mandatory</h3>
+        <p>Every question on the field application is named <code>question1…question9</code>, and the
+          picnic form's <code>question2</code> is silently “Grill Request”. Without the form's schema
+          the answers are unreadable.</p>
+        <span class="ev">Raw submission: <b>{"question2": false, "question1": [file]}</b> — render
+          <b>title ?? name</b>, and never print a bare <code>questionN</code>.</span>
+      </div></div>
+      <div class="trap"><span class="n">02</span><div>
+        <h3><code>false</code> is an answer, not a blank</h3>
+        <p>Truthiness-filtering “empty” answers deletes every No — including the 295 rentals that
+          explicitly did <em>not</em> want a grill.</p>
+        <span class="ev">Booleans: <b>485 answered, 0 blank, 2 distinct values</b>. Filter on
+          <b>undefined</b>, never on falsy.</span>
+      </div></div>
+      <div class="trap"><span class="n">03</span><div>
+        <h3>Choice answers are opaque values needing the schema's map</h3>
+        <p>The waiver's answer is <code>["Item 1"]</code>, not “I Agree”. The field form's
+          <code>["Item 5"]</code> means “Watertown Youth Organization”. Values are arbitrary and
+          unordered — <code>Item 4</code> is listed first — so position can't infer them.</p>
+        <span class="ev">Map through <b>choices[].value → choices[].text</b>, or you ship “Item 1” to
+          a parks crew.</span>
+      </div></div>
+      <div class="trap"><span class="n">04</span><div>
+        <h3>The same key is a file array in one form and a string in another</h3>
+        <p><code>question1</code> holds two driver's-licence images on the picnic form and the text
+          “Watertown Youth Soccer” on the field form. A renderer keyed on names without types
+          throws — the exact shape of the blank-page bugs already in this repo.</p>
+        <span class="ev">A probe query hit it immediately: <b>ERROR: cannot get array length of a
+          scalar</b>. Branch on the schema's <b>type</b>, not the key.</span>
+      </div></div>
+      <div class="trap"><span class="n">05</span><div>
+        <h3>Uploaded files can't be shown — the bucket refuses us</h3>
+        <p>The submission carries a direct S3 URL, so it looks displayable. It isn't: fetching it
+          returns <strong>403 AccessDenied</strong>. An inline preview would be a broken image on
+          essentially every picnic row, so files render as a name-and-size chip linking into Rec
+          admin.</p>
+        <span class="ev">Verified: <b>curl → status=403, content-type=application/xml</b>. There is
+          no signing path in this app.</span>
+      </div></div>
+    </div>
+  </section>
+
+  <hr class="div" />
+
+  <section>
+    <div class="col">
+      <div class="eyebrow">To build it</div>
+      <h2>What it costs</h2>
+      <ul class="plain">
+        <li><b>One new card column, not a new card.</b> Card 17294 gains a <code>Forms</code> JSON
+          array — the shape the roster card already emits, but an array, since a rental averages
+          2.08 forms. No new query, no second round trip.</li>
+        <li><b>Watch the multi-day expansion.</b> 17294 emits one row per day via
+          <code>generate_series</code>, so a 40-date permit would repeat the same form JSON forty
+          times. Emit it on the arrival day only — the rule <code>dirOutdoor</code> and the permit
+          sheet already use.</li>
+        <li><b>A blank Requests cell is legitimately blank.</b> Only <b>1 of 1,137</b> requested
+          forms at Watertown is outstanding, so “no form” means none was ever asked for — not a
+          to-do. No red state for absence, or the column cries wolf on 62% of rows.</li>
+        <li><b>It generalises.</b> Rental forms are in use at <b>93 orgs</b> — Sacramento County
+          660 rentals, Rocklin 585, Watertown 546, Windham 532, Menifee 414. This isn't a
+          Watertown feature.</li>
+      </ul>
+    </div>
+
+    <div class="note-box col">
+      <div class="eyebrow">Three calls I'd want from you</div>
+      <p><b>1 · Does the ID upload belong in exports?</b> The chip is safe; the filenames are not
+        neutral — one is literally <code>JPM_Driver_s_License_back_2023-2028…jpg</code>. This report
+        is shared by tokened link, exported to Excel and mailed by subscription, so surfacing
+        filenames changes what it distributes. My recommendation: chip on screen, filename only in
+        the expanded panel, nothing in Excel or email.</p>
+      <p><b>2 · Auto-derive chips, or curate per org?</b> Auto-derivation covers all 93 orgs with no
+        config — a boolean answered yes becomes a chip, a file becomes 📎, long text becomes 📝.
+        Curated labels read better (“Grill” beats “Grill Request”) but only where someone has done
+        the work. I'd ship auto-derived with an optional override.</p>
+      <p><b>3 · Is the count mismatch a chip or a footnote?</b> It fires on 15% of rentals — often
+        enough that some staff will read it as noise, and it may just mean the party grew since
+        booking. Chip it and it gets acted on; bury it and the pavilion is set for 30 when 45
+        arrive.</p>
+    </div>
+
+    <div class="col" style="margin-top:24px">
+      <h3>And it ships with a Slack ping</h3>
+      <p>Per the standing rule: <code>form-view</code> when a rental's forms are opened (carrying
+        which form and the chips that were showing) and <code>form-filter</code> when someone
+        filters by grill or catered — debounced by rental and by filter respectively, so comparing
+        three rentals reads as three looks.</p>
+    </div>
+  </section>
+</div>
+
+<script>
+  (function () {
+    var rows = Array.prototype.slice.call(document.querySelectorAll('.row.clickable'));
+    function panelFor(row) {
+      return document.querySelector('.panel[data-panel="' + row.getAttribute('data-row') + '"]');
+    }
+    function setCaret(row, open) {
+      var c = row.querySelector('.caret');
+      if (c) c.textContent = open ? '▾' : '▸';
+    }
+    function toggle(row) {
+      var p = panelFor(row);
+      if (!p) return;
+      var open = p.classList.toggle('open');
+      row.classList.toggle('open', open);
+      row.setAttribute('aria-expanded', open ? 'true' : 'false');
+      setCaret(row, open);
+    }
+    rows.forEach(function (row) {
+      row.addEventListener('click', function (e) {
+        if (e.target.closest('.more-btn')) return;
+        toggle(row);
+      });
+      row.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(row); }
+      });
+    });
+
+    document.addEventListener('click', function (e) {
+      var t = e.target.closest('[data-terms]');
+      if (t) {
+        var box = document.getElementById(t.getAttribute('data-terms'));
+        if (box) t.textContent = box.classList.toggle('open') ? 'Hide terms ▴' : 'Show terms ▾';
+        e.stopPropagation();
+        return;
+      }
+      var b = e.target.closest('[data-blob]');
+      if (b) {
+        var blob = document.getElementById(b.getAttribute('data-blob'));
+        if (blob) {
+          b.textContent = blob.classList.toggle('shown')
+            ? 'Collapse ▴' : 'Show all 1,400 characters ▾';
+        }
+        e.stopPropagation();
+      }
+    });
+
+    var tg = document.getElementById('tgReq');
+    if (tg) {
+      tg.addEventListener('change', function () {
+        document.querySelectorAll('.colreq').forEach(function (el) {
+          el.style.display = tg.checked ? '' : 'none';
+        });
+      });
+    }
+
+    var active = {};
+    var rollup = document.getElementById('rollup');
+    var fbar = document.getElementById('fbar');
+    if (fbar) {
+      fbar.addEventListener('click', function (e) {
+        var btn = e.target.closest('.fchip');
+        if (!btn) return;
+        var f = btn.getAttribute('data-f');
+        active[f] = !active[f];
+        btn.setAttribute('aria-pressed', active[f] ? 'true' : 'false');
+
+        var wanted = Object.keys(active).filter(function (k) { return active[k]; });
+        var shown = 0;
+        rows.forEach(function (row) {
+          var tags = (row.getAttribute('data-tags') || '').split(/\s+/);
+          var keep = wanted.every(function (w) { return tags.indexOf(w) !== -1; });
+          row.classList.toggle('hidden', !keep);
+          var p = panelFor(row);
+          if (p) {
+            p.classList.toggle('hidden', !keep);
+            if (!keep && p.classList.contains('open')) {
+              p.classList.remove('open');
+              row.classList.remove('open');
+              row.setAttribute('aria-expanded', 'false');
+              setCaret(row, false);
+            }
+          }
+          if (keep) shown++;
+        });
+        if (rollup) {
+          rollup.innerHTML = wanted.length
+            ? shown + ' of 5 rentals match · <b>' + wanted.join(' + ') + '</b>'
+            : '5 rentals · <b>2 grills</b> · <b>1 catered</b> · <b>1 count mismatch</b>';
+        }
+      });
+    }
+  })();
+</script>
+</body>
+</html>
