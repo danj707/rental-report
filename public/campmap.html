@@ -525,6 +525,8 @@ function sCap(s){ var l=L_(s); return (l && l.capacity) || siteMeta(s).capacity 
  * so it is only ever sent when the live site feed actually supplied one — the
  * baked seed's "default" placeholder must never be used as a location id.
  */
+// rec.us's own campsite sub_types, the only values its subType filter accepts.
+var REC_SUBTYPES = { 'tent':1, 'rv':1, 'tent-and-rv':1, 'lodging':1 };
 function bookUrl(site){
   var l=L_(site);
   var slug=CFG.slug;
@@ -541,6 +543,19 @@ function bookUrl(site){
   if(loc && loc!=='default') q.push('location='+encodeURIComponent(loc));
   if(SELECTED) q.push('checkInDate='+encodeURIComponent(SELECTED));
   if(DEPART)   q.push('checkOutDate='+encodeURIComponent(DEPART));
+  // `guests` and `subType` are read by the tab's own useQueryStates, and BOTH are
+  // gated on siteType === 'campsite' — which we always send, so they apply. Read
+  // out of rec.us's client bundle; the route's zod schema lists neither, so the
+  // schema is the validated subset rather than the full set the page honours.
+  var cap=(l && l.capacity!=null) ? l.capacity : (siteMeta(site)||{}).capacity;
+  if(cap!=null && cap>0) q.push('guests='+encodeURIComponent(cap));
+  // Only rec.us's own four sub_types. The map's derived electric/primitive are
+  // ours, and would filter the list to nothing. The live /rentalcalendar feed
+  // reports subType null (the MCP tool omits it), so this falls back to the
+  // seed's kind — which for Topaz is the same tent-and-rv the REST site payload
+  // carries.
+  var sub=(l && l.subType) || sKind(site);
+  if(sub && REC_SUBTYPES[sub]) q.push('subType='+encodeURIComponent(sub));
   return 'https://www.rec.us/organizations/'+encodeURIComponent(slug)+'?'+q.join('&');
 }
 /* The single site's own page — no dates, but it is the exact site. Kept as the

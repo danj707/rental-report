@@ -726,10 +726,45 @@ single site's own page for anyone who wants it, labelled so it is clear that
 route makes them pick dates again. The `campmap-book` ping carries
 `kind: dated | site-page`, so the feed shows which route campers actually take.
 
-**CAPACITY CANNOT BE CARRIED** — the schema has no `guests`/`capacity`
-parameter, so the "preselect max capacity" half of the ask is not available
-today. Nothing is sent for it: a parameter rec.us ignores would look like it
-works. Worth raising with Kevin/Ankur alongside the MCP range parameter.
+**CORRECTION (2026-08-25): capacity CAN be carried — `guests` works.** This
+section first said it could not, on the strength of the route's zod schema, which
+lists only `sports`/`location`/`siteType`/`checkInDate`/`checkOutDate`/`amenity`.
+**That schema is the validated subset, not the full set the page honours.** The
+tab's own `useQueryStates` reads a much longer list, and two more of them are
+useful here:
+
+| param | shape | note |
+|---|---|---|
+| `guests` | integer | **gated on `siteType === 'campsite'`** — which we always send |
+| `subType` | array | same gate; only rec.us's four (`tent`, `rv`, `tent-and-rv`, `lodging`) |
+| `amenity` | array | encoding UNCONFIRMED — see below |
+| `instantBook` | boolean | |
+| `availability`, `reservable`, `time`, `daysOfWeek` | | not useful here |
+
+So the Book URL now also carries `guests` (the site's capacity) and `subType`.
+**Read a page's `useQueryStates` before concluding a parameter does not exist** —
+the route schema said no and the page said yes.
+
+**`amenity` is not wired yet, because its encoding is unconfirmed.** rec.us
+stores amenities on a site as `amenities.amenityTagIds` — UUIDs, not the display
+names our `/rentalcalendar/api/sites` feed carries. Cross-referencing all 41
+Topaz sites pins **Tent Site = `25452762-2d27-40aa-9a2e-83e2a0c3b34a`**; Tables
+and Fire Pit are on all 41 and the three electrical tags on the same 15, so those
+co-occur perfectly and cannot be told apart from the data alone. If the filter
+turns out to take display NAMES, the feed already has them and it is a one-liner;
+if it takes tag ids, it needs the ids plumbed through.
+
+**A SITE CANNOT BE PRESELECTED.** There is no `site`/`siteId` URL state on the
+tab: a rental card's click handler is a plain
+`router.push(paths.site({siteId}))`. Filters can narrow the list (Site 09's own
+amenity set still leaves the 26 tent sites) but never isolate one. Worth raising
+with Kevin/Ankur alongside the MCP range parameter.
+
+**`subType` IS exposed by the REST site payload, contrary to the note below.**
+`/v1/sites/{id}` returns `subType: "tent-and-rv"` for all 41 Topaz sites — it is
+the MCP `list_sites` tool that omits it, not the platform. The campmap still
+falls back to the seed's `kind` because its site feed goes through the MCP, but
+"Rec's API does not expose sub_type" is too strong: the REST endpoint does.
 
 **Neither `location` nor `siteType` is validated by rec.us.** Measured: a bogus
 `location`, and `siteType` values of `campsite`, `tent-and-rv` and `electric`,
