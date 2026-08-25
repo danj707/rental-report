@@ -774,6 +774,57 @@ baked seed's `"default"` placeholder must never be used as a location id), and
 `siteType` is always the site TYPE `campsite` rather than a sub_type or one of
 the map's own derived kinds.
 
+### `GET /v1/sites` — one request that answers a whole stay (2026-08-25)
+
+Found while investigating what the filtered rec.us page queries. The
+facility-rentals tab does not call the per-site feed at all; it calls:
+
+```
+GET https://api.rec.us/v1/sites?organizationId=<uuid>&page=1&pageSize=250
+    [&checkInDate=YYYY-MM-DD&checkOutDate=YYYY-MM-DD]
+    [&amenityTagIds=<uuid>&amenityTagIds=<uuid> …]     (repeated, not comma-joined)
+```
+
+**With dates it returns only the sites bookable for the WHOLE range**, in one
+request, in ~0.5-0.8s. Measured at Douglas:
+
+| range | Topaz campsites returned |
+|---|---|
+| no dates | 41 |
+| 26-30 Sep | 29 |
+| 2-6 Sep | 0 (all taken that week) |
+| Jan 2027 | 41 |
+| Apr 2027 — past the 180-day window | 0 |
+
+**It agrees exactly with the map's own per-night reduction.** Cross-checked our
+`siteNightStates()` verdict against it over three windows: **29/29, 0/0, 41/41,
+zero diffs either way**. That makes it a free correctness oracle for the stay
+reducer — the same role the reservation-ledger backtest plays, but cheap enough
+to run on demand.
+
+**It cannot replace `nightly-availability`.** It answers one yes/no per site for
+one range; the map needs per-night detail for the "3 of 4 nights" partial state,
+the drawer's night strip, `latestCheckout`, and the trailing-`outside-window` run
+the horizon is read from. It is a complement, not a substitute.
+
+**What it WOULD replace is the site feed.** `/:org/rentalcalendar/api/sites` goes
+through the MCP `list_sites` tool, and this endpoint is strictly better for the
+campmap's purposes — one request, and it carries the fields the MCP path drops:
+
+- **`subType`** — `tent-and-rv` on all 41 Topaz sites. This retires the whole
+  "the filter reads the SEED because Rec's API does not expose sub_type" problem
+  documented below: the MCP tool omits it, this endpoint does not.
+- **`amenityTagIds`** — the UUIDs rec.us's own amenity filter takes. Our current
+  feed carries display NAMES only, which is why the `amenity` parameter is not
+  wired into the Book URL yet: we cannot send ids we do not have.
+- `capacity`, `lat`/`lng`, `customMapX`/`customMapY`, `isInstantBookable`,
+  `bookingUnit`, `descriptionMd`, `rulesMd`, images.
+
+**Next step, not yet done:** point the campmap's site feed at this endpoint. It
+fixes sub_type, unlocks the amenity filter on the Book URL, and drops a paged MCP
+call for a single fast one. Needs the org's `organizationId` (already in `ORGS`)
+and the same `sec-fetch-mode: cors` header as the nightly feed.
+
 ### The hand-off card is gone (Dan, 2026-08-24)
 
 "Looking for campsite dates more than 30 days out?" existed because the map could
