@@ -670,6 +670,55 @@ assertions, in CI), which checks source registration order AND boots the server 
 require a 200 *plus* a row in events.jsonl. Mutation-tested: moving the route back
 below the generic ones fails both halves independently.
 
+## PINNED: embed codes for the other public pages (Dan, 2026-08-25)
+
+Dan: *"can we do something where we can provide org admins an 'embed code' they
+can use to add into their website? Even if it's just a direct link"* — then, once
+it was clear the campmap already has one: **"lets pin this, orgs might just embed
+the URL in their own iframe."**
+
+Not being built. Written down so the investigation does not have to be redone.
+
+**The campmap already has exactly this, and it works.** The Camping tab's
+`PublicMapLink` renders the URL in full plus **Copy link** and **Copy embed**, and
+the embed is a real snippet, not a bare link:
+
+```html
+<iframe src="https://…/{slug}/campmap" width="100%" height="520"
+        style="border:0" title="Campground map" loading="lazy"></iframe>
+```
+
+**Verified end to end 2026-08-25, not assumed.** Embedded on a *different origin*
+in a real browser: the frame came up with all 41 Topaz pins, the date toolbar, the
+amenity checkboxes with live counts and the rec badge, no console errors, nothing
+blocked.
+
+**Why no extra work is needed for the rest: NOTHING BLOCKS FRAMING.** Production
+sends no `X-Frame-Options`, no CSP `frame-ancestors`, and helmet is not installed —
+checked against the live headers. So an org can iframe any public URL itself
+without us shipping a button, which is Dan's point. Worth knowing the flip side:
+that also means we could not stop a third party framing these pages, and adding a
+framing header later would silently break any embed already in the wild.
+
+**Three paths are public and token-free**, exempted in the global org-token gate
+(search *"Calendar + rental calendar + campsite map are public"*): `campmap`,
+`rentalcalendar`, `calendar`. Only `campmap` has share/embed UI. So the honest gap
+is that `rentalcalendar` (live for Watertown, Norman, Niagara Falls — arguably the
+more useful embed for a parks website, since it is live facility availability) and
+`calendar` have no affordance anywhere.
+
+**If it is ever picked up**, the shape is small: give those two report cards the
+Camping tab's treatment — the URL in full, Copy link, Copy embed, a PUBLIC badge —
+on the org landing, where an admin already is. Two things to carry over rather
+than re-derive:
+
+- **The share ping must be a dedicated route registered ABOVE the generic
+  `/:org/:report/api/*`**, or it 404s. `campmap-share` shipped broken for exactly
+  this reason (see the correction in the campmap activity section), and
+  `rentalcalendar` is not in `REPORT_TYPES` either.
+- **Never put `?token=` in a copied URL.** On campmap the token unlocks
+  drag-to-edit; on any page it opens every other report for that org.
+
 ## Campmap pin positions — a failed LOAD must never become a published layout (IMPORTANT, 2026-08-25)
 
 Dan: *"make sure we're saving the place of these map pins, a few times I'd seen
@@ -1354,21 +1403,27 @@ view of a campground. It never stopped working — it has been quietly serving
 ~24 visitors a month via direct links the whole time it was "retired". Bringing
 it back was surfacing it, not rebuilding it.
 
-- **Seed presence is the whole gate.** The org landing route pushes `campmap`
-  only when `CAMPMAP_SEEDS[slug]` exists, same shape as the facility permit chip:
-  the card appears where there is a map and nowhere else, so the other ~26 orgs
-  never see a link to an empty map. Two orgs qualify today — `douglas-county-nv`
-  (Topaz Lake, 41 sites) and `pleasant-hill`. Nothing to configure for a new org
-  beyond adding its seed.
-- **The card link deliberately omits the token, and that is load-bearing.**
-  `org.html` appends `?token=` to every other card, but on THIS page the token
-  does more than authenticate — it unlocks drag-to-edit. A staff member copying
-  the address bar to send to a camper would otherwise hand over an editable map
-  *and* the org token that opens every other report for that org. `cardHTML()`
-  routes `campmap` to `publicMapCardHTML()`, which renders a token-free href, a
-  PUBLIC badge, and a "Copy link" button so sharing is deliberate. Verified in a
-  real browser: the campmap href is `/{slug}/campmap` while a normal card is
-  `/{slug}/gl?token=…`.
+- **CORRECTION (2026-08-25): there is no campmap card on the org landing, and
+  `publicMapCardHTML()` has never existed.** This section used to describe a
+  token-free card with a PUBLIC badge and a Copy link button, routed through
+  `cardHTML()`. Checked repo-wide: that identifier appears nowhere in the code and
+  never has in git history — the only hit in HEAD was this file describing it. The
+  work in PR #140 landed in `facilities.html` (the Camping tab's `PublicMapLink`),
+  not on the landing. And `campmap` is still IN `RETIRED_REPORTS`, so it is not
+  rendered as a card at all; the code's own comment says why ("campmap stays
+  retired as a REPORT — it is not one. It is a public artifact, and the way in is
+  a direct link from the Facilities hub's Camping tab").
+- **So the token-leak risk that paragraph warned about is not live** — there is no
+  landing card appending `?token=` to a campmap URL, because there is no landing
+  card. The reasoning still holds and is worth keeping for the day one is added:
+  on THIS page the token does more than authenticate, it unlocks drag-to-edit, so
+  a staff member copying the address bar would hand a camper an editable map *and*
+  the org token that opens every other report. Any future campmap card must render
+  a token-free href.
+- **Seed presence is still the gate for the Camping tab's map**, same shape as the
+  facility permit chip: it appears where `CAMPMAP_SEEDS[slug]` exists and nowhere
+  else, so the other ~26 orgs never see an empty map. Two orgs qualify today —
+  `douglas-county-nv` (Topaz Lake, 41 sites) and `pleasant-hill`.
 - Copying the link fires `campmap-share` (Slack), per the standing activity rule.
   Public page views already logged `view`, so camper traffic was pinging Slack
   even while the report was retired.
