@@ -3761,15 +3761,14 @@ function notifySlack(rec) {
                   : "";
     text = `${meta.emoji} ${orgName} (\`${rec.org}\`) opened *${rec.site || "a campsite"}*${stay}${verdict}`;
   } else if (rec.event === "campmap-book") {
-    // Two ways to leave for rec.us: a site's Book button, or the hand-off card
-    // past the end of the 30-night strip. The second one is the more interesting
-    // of the two — it means the dates they wanted are outside what we can show.
-    if (rec.kind === "later-dates") {
-      text = `${meta.emoji} ${orgName} (\`${rec.org}\`) went to rec.us for dates *beyond the 30-night window*`;
-    } else {
-      const stay = rec.nights ? ` for ${rec.nights} night${rec.nights === 1 ? "" : "s"}` : "";
-      text = `${meta.emoji} ${orgName} (\`${rec.org}\`) clicked *Book on rec.us* \u2014 ${rec.site || "a campsite"}${stay}`;
-    }
+    // Two ways to leave for rec.us, and which one is taken is the interesting
+    // part. `dated` carries the camper's nights over on the URL and lands on the
+    // campground's filtered list; `site-page` opens the one site, where rec.us
+    // makes them pick dates again. (The old `later-dates` hand-off card went with
+    // the 30-day cap in 2026-08-24 and no longer fires.)
+    const stay = rec.nights ? ` for ${rec.nights} night${rec.nights === 1 ? "" : "s"}` : "";
+    const where = rec.kind === "site-page" ? " \u2014 site page, dates not carried" : "";
+    text = `${meta.emoji} ${orgName} (\`${rec.org}\`) clicked *Book on rec.us* \u2014 ${rec.site || "a campsite"}${stay}${where}`;
   } else if (rec.event === "campmap-filter") {
     // "Filtered to all types" is someone clearing the filter — worth saying
     // plainly rather than as an empty type.

@@ -684,14 +684,53 @@ Consequences wired through the page:
   **The rest of the asymmetry stands** — the checkout still runs one night past
   the last bookable arrival, and no site is ever reported open for nights it
   cannot take, because the per-night verdict is untouched.
-- **Clearing the arrival is a state a camper can reach** (the native date picker
-  has a Clear button). Depart has no basis without one — its range is derived
-  from the arrival — so it disables and its label becomes *"Choose an arrival
-  date"* rather than sitting there with a bound out of nowhere.
+- **The page lands with no dates chosen** (Dan, 2026-08-25: *"can we have the
+  'depart' calendar just show 'choose arrival date' in red before showing
+  availability"*). Depart has no basis without an arrival — its bound, its
+  minimum and every night it colours all come from one — so until a stay is
+  picked it is disabled and its label reads **"Choose arrival date" in red**.
+  The map claims nothing in that state: `statusOn()` returns `unknown` for every
+  night, so pins are neutral, the list says what to do, and the summary reads
+  "Choose your dates to see what's open." Routed through `statusOn()` on purpose
+  rather than each caller growing its own check — that is the failure that made
+  the facility Summary and the Camping tab disagree.
+  **What this costs, and how it is paid back:** the old landing state answered
+  "what is free tonight" for free, which is the walk-up camper's question. That
+  is now the **Tonight** button — one click, and nothing is assumed on their
+  behalf. **`PICKED` is the whole switch**; flip its initial value to `true` and
+  the page loads on tonight exactly as it did before.
 - **`sources` on the batch reply** says which feed answered per site. Only the
   nightly one runs past a site's window, so only there does a trailing
   `outside-window` run mean a horizon rather than the end of the request. The
   30-day feed must never produce `beyond`.
+
+### Handing a camper to rec.us WITH their dates (2026-08-25)
+
+Dan: *"once you choose a time range then click 'book on rec.us', it seems stupid
+to have to choose the dates again."* Established by reading rec.us's own bundles
+and confirmed against the live site:
+
+| URL | takes dates? |
+|---|---|
+| `/sites/{id}` | **No.** rec.us's own path builder is `site:({siteId})` with no options — unlike its siblings (`organization().index`, `login`, `cartCheckout`), which all take a search-param bag — and the site page's chunk never calls `useSearchParams`. Dates cannot ride on this URL. |
+| `/organizations/{slug}?tab=facilityRentals` | **Yes.** A validated schema: `sports`, `location`, `siteType`, `checkInDate`, `checkOutDate`, `amenity`. Verified live — the values land in the page's own `__PAGE__` props, and a bogus date is dropped rather than echoed. |
+
+So the Book button now carries `siteType`, `location`, `checkInDate` and
+`checkOutDate`, landing on the campground's rental list already filtered to those
+nights — the camper picks their site once instead of re-entering two dates, and
+the list only shows what is genuinely free. A secondary link still opens the
+single site's own page for anyone who wants it, labelled so it is clear that
+route makes them pick dates again. The `campmap-book` ping carries
+`kind: dated | site-page`, so the feed shows which route campers actually take.
+
+**CAPACITY CANNOT BE CARRIED** — the schema has no `guests`/`capacity`
+parameter, so the "preselect max capacity" half of the ask is not available
+today. Nothing is sent for it: a parameter rec.us ignores would look like it
+works. Worth raising with Kevin/Ankur alongside the MCP range parameter.
+
+**`location` is NOT validated by rec.us** — a bogus value passes straight
+through — so it is only sent when the LIVE site feed supplied one. The baked
+seed's `"default"` placeholder must never be used as a location id.
 
 ### The hand-off card is gone (Dan, 2026-08-24)
 

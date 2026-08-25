@@ -559,6 +559,11 @@ const CASES = [
   // gives 120, which is the tail-decay bug that makes the final arrival a
   // one-night stay.
   { name: "campmap · depart reaches the horizon", path: "/{org}/campmap",  needs: "#departPick[data-days-ahead=\"124\"]" },
+  // The landing state (Dan, 2026-08-25): Depart says which field to fill first,
+  // in red, and the map claims nothing until it has been asked. "A Depart field
+  // rendered" passes either way — this pins the prompt itself.
+  { name: "campmap · depart prompts first", path: "/{org}/campmap",       needs: "#departLbl.prompt" },
+  { name: "campmap · tonight shortcut",     path: "/{org}/campmap",       needs: "#tonightBtn" },
 ];
 
 const child = spawn(process.execPath, [path.join(__dirname, "..", "server.js")], {
