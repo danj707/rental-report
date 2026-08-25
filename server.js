@@ -5295,6 +5295,32 @@ app.get("/api/admin/org/:slug", (req, res) => {
   });
 });
 
+// ── GET /api/admin/org-by-id/:orgId — look an org up by the identity BOTH
+// projects share ──
+// The slug is each project's own name for an organisation and they can drift: the
+// dashboard was still calling Shrewsbury `town-of-shrewsbury` five weeks after the
+// duplicate slug was removed here, so every report link it rendered 404'd. A
+// by-slug check cannot detect that — it just says "no such org", which is
+// indistinguishable from an org that was never added.
+//
+// The rec.us organisation UUID is stable across both projects, so it is the thing
+// to reconcile on. Given it, this answers "what slug and token do YOU serve this
+// organisation under", which is exactly what the caller needs to repair its links.
+app.get("/api/admin/org-by-id/:orgId", (req, res) => {
+  const orgId = String(req.params.orgId || "");
+  const hit = Object.entries(ORGS).find(([, o]) => o && o.orgId === orgId);
+  if (!hit) return res.json({ exists: false });
+  const [slug, org] = hit;
+  res.json({
+    exists: true,
+    slug,
+    token: org.token,
+    orgId: org.orgId,
+    logoUrl: org.logoUrl,
+    displayName: org.displayName || org.name || slug,
+  });
+});
+
 // ── POST /api/admin/add-org — add org (used by rec-dashboard to sync) ──
 app.post("/api/admin/add-org", express.json(), (req, res) => {
   const { slug, token, orgId, logoUrl, displayName } = req.body;
