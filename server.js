@@ -4336,7 +4336,10 @@ async function fetchPermits(orgId, { live = false } = {}) {
 // Cached like the permit CHIP feed rather than the export: a form answer is
 // filled in once, when the rental is booked, and never changes afterwards.
 // There is no revoked-permit equivalent here, so nothing needs a live read.
-const FORMS_UUID = process.env.MB_FORMS_UUID || "";
+// Public UUID of card 20626, shared 2026-08-25. Defaulted in code like
+// PERMITS_UUID so the feature works in prod and in every PR preview without an
+// env var; MB_FORMS_UUID overrides it. Set it to "" to switch the column off.
+const FORMS_UUID = process.env.MB_FORMS_UUID || "89ba73b2-09d6-48e1-ac15-bd88b1a4c0f5";
 const FORMS_CACHE_TTL = 5 * 60 * 1000;
 const _formsCache = new Map();       // orgId -> { ts, payload }
 let _formsParamDefs = null;
@@ -4376,15 +4379,96 @@ function slimFileAnswer(v) {
     : f);
 }
 
-// Reservation ID -> [submission]. Same param handling as permits and the Munis
-// export: echo the card's own registered types back, so a tag reset can never
-// break it.
+// A `signaturepad` answer is the drawn signature itself, inlined as a base64
+// PNG data URI. Measured at Windham 2026-08-25: ONE signature is 25,738
+// characters, and its "Waiver - Facility" has 435 submissions — the org's whole
+// forms payload came to 3.3 MB, nearly all of it signatures.
+//
+// Three separate reasons it must not travel:
+//   size    — 3.3 MB on every view of the schedule, for data no column shows.
+//   render  — the panel would clamp it as a "long answer" and print a wall of
+//             base64 where a name should be.
+//   privacy — it is a person's actual signature, and this report is exported to
+//             Excel and mailed by subscription.
+// The useful part survives: these forms ask for the signer's name and date as
+// their own questions ("Amber Bushey", "2026-05-06"), which are untouched.
+//
+// Detected by VALUE rather than by the schema's type, so any data-URI answer is
+// caught even on a form that types it as something else.
+function slimSignatureAnswer(v) {
+  if (typeof v !== "string" || !/^data:[^;,]*[;,]/.test(v)) return v;
+  return { __signed: true, bytes: v.length };
+}
+
+// METABASE RETURNS jsonb COLUMNS AS STRINGS, not as parsed objects.
+//
+// Measured against the live public card on 2026-08-25: `typeof Answers` is
+// "string" over the wire, even though the column is jsonb and the same value
+// arrives parsed through other paths. Treating it as an object yields `{}` for
+// EVERY rental — no chips, no panel, `hasAnyForms` false, and a report that
+// looks exactly like an org that collects no forms. Silent and total.
+//
+// public/roster.html has carried this same guard since it shipped
+// (`typeof raw['Form Responses'] === 'string' ? JSON.parse(...) : ...`), which
+// is what makes this a known trap in this codebase rather than a surprise.
+// Accepts both shapes so it cannot break if Metabase ever changes its mind.
+function parseCardJson(v, fallback) {
+  if (v == null) return fallback;
+  if (typeof v === "object") return v;
+  if (typeof v !== "string") return fallback;
+  try { const p = JSON.parse(v); return p == null ? fallback : p; }
+  catch { return fallback; }
+}
+
+// Pure row-shaping, kept out of the fetch so it can be tested against real
+// wire-shaped rows (see scripts/facility-forms.spec.js) rather than against a
+// fixture that has already been conveniently parsed.
 //
 // The card emits "Schema" only on the FIRST row of each form (a waiver's one
 // question is 3,257 characters; repeating it per submission would be ~1.6 MB).
 // So the schemas are collected across the WHOLE result set into one map, and
 // the per-rental entries carry only a form id. Reading a schema off a single
 // row would find null on all but nine rows.
+function shapeFormRows(rows) {
+  const forms = {};
+  const schemas = {};
+  for (const r of Array.isArray(rows) ? rows : []) {
+    const resId  = String(r["Reservation ID"] || "");
+    const formId = String(r["Form ID"] || "");
+    if (!resId || !formId) continue;
+
+    const schemaVal = parseCardJson(r["Schema"], null);
+    if (Array.isArray(schemaVal) && !schemas[formId]) {
+      schemas[formId] = schemaVal.map(e => ({
+        name:     String(e && e.name || ""),
+        title:    e && e.title ? String(e.title) : undefined,
+        type:     String(e && e.type || "text"),
+        required: e && e.required ? true : undefined,
+        choices:  Array.isArray(e && e.choices) ? e.choices : undefined,
+      }));
+    }
+
+    const raw = parseCardJson(r["Answers"], {});
+    const answers = {};
+    for (const [k, v] of Object.entries(raw && typeof raw === "object" ? raw : {})) {
+      answers[k] = (Array.isArray(v) && v.length && v[0] && typeof v[0] === "object" && "fileId" in v[0])
+        ? slimFileAnswer(v)
+        : slimSignatureAnswer(v);
+    }
+
+    (forms[resId] || (forms[resId] = [])).push({
+      form: formId,
+      name: String(r["Form Name"] || "Form"),
+      at:   r["Submitted"] ? String(r["Submitted"]) : "",
+      answers,
+    });
+  }
+  return { forms, schemas };
+}
+
+// Reservation ID -> [submission]. Same param handling as permits and the Munis
+// export: echo the card's own registered types back, so a tag reset can never
+// break it.
 async function fetchForms(orgId) {
   if (!FORMS_UUID) return { forms: {}, schemas: {} };
   const hit = _formsCache.get(orgId);
@@ -4399,41 +4483,7 @@ async function fetchForms(orgId) {
   const rows = await resp.json();
   if (!Array.isArray(rows)) throw new Error("Metabase returned an error for the forms card");
 
-  const forms = {};
-  const schemas = {};
-  for (const r of rows) {
-    const resId  = String(r["Reservation ID"] || "");
-    const formId = String(r["Form ID"] || "");
-    if (!resId || !formId) continue;
-
-    if (r["Schema"] && !schemas[formId]) {
-      const els = Array.isArray(r["Schema"]) ? r["Schema"] : [];
-      schemas[formId] = els.map(e => ({
-        name:     String(e && e.name || ""),
-        title:    e && e.title ? String(e.title) : undefined,
-        type:     String(e && e.type || "text"),
-        required: e && e.required ? true : undefined,
-        choices:  Array.isArray(e && e.choices) ? e.choices : undefined,
-      }));
-    }
-
-    const answers = {};
-    const raw = r["Answers"] && typeof r["Answers"] === "object" ? r["Answers"] : {};
-    for (const [k, v] of Object.entries(raw)) {
-      answers[k] = (Array.isArray(v) && v.length && v[0] && typeof v[0] === "object" && "fileId" in v[0])
-        ? slimFileAnswer(v)
-        : v;
-    }
-
-    (forms[resId] || (forms[resId] = [])).push({
-      form: formId,
-      name: String(r["Form Name"] || "Form"),
-      at:   r["Submitted"] ? String(r["Submitted"]) : "",
-      answers,
-    });
-  }
-
-  const payload = { forms, schemas };
+  const payload = shapeFormRows(rows);
   _formsCache.set(orgId, { ts: Date.now(), payload });
   return payload;
 }

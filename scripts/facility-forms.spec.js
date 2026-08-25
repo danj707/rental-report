@@ -293,4 +293,130 @@ ok(/"form-view"/.test(SERVER) && /"form-filter"/.test(SERVER),
 ok(/rec\.event === "form-view"[\s\S]{0,120}rec\.rental/.test(SERVER),
   "form-view debounces by RENTAL, so comparing three bookings reads as three looks");
 
+/* ── 12. The wire format: Metabase hands back jsonb as a STRING ─────────────
+   Found by probing the live public card, not by reasoning: `typeof Answers` is
+   "string" over the wire even though the column is jsonb. Treating it as an
+   object yields {} for EVERY rental — no chips, no panel, hasAnyForms false,
+   and a report indistinguishable from an org that collects no forms.
+
+   The render check cannot catch this: its stub answers with already-parsed
+   objects, because it stubs the ROUTE's output rather than Metabase's. So the
+   shaping is a pure function and gets tested here against real wire-shaped
+   rows. public/roster.html has carried the same guard since it shipped. */
+
+const shapeStart = SERVER.indexOf("function parseCardJson(");
+ok(shapeStart > 0, "server.js should expose parseCardJson");
+const shapeEnd = SERVER.indexOf("// Reservation ID -> [submission]", shapeStart);
+ok(shapeEnd > shapeStart, "shapeFormRows should sit before fetchForms");
+const shapeBox = { slimFileAnswer: sandbox.slimFileAnswer };
+vm.createContext(shapeBox);
+vm.runInContext(
+  SERVER.slice(SERVER.indexOf("function slimFileAnswer("), shapeEnd),
+  shapeBox
+);
+const { shapeFormRows } = shapeBox;
+
+// Exactly what the endpoint returns: jsonb columns as JSON strings.
+const wireRows = [
+  { "Reservation ID": "r1", "Form ID": "picnic", "Form Name": "Picnic Table Permit Requests",
+    "Submitted": "Jul 22, 2026",
+    "Answers": JSON.stringify({
+      "question2": true,
+      "Is this a public event?": false,
+      "question1": [{ name: "License_Front.jpg", size: 1811804, type: "image/jpeg",
+                      fileId: "abc", content: "https://prod-rec-tech-img-bucket.s3.amazonaws.com/secret.jpg" }],
+    }),
+    "Schema": JSON.stringify(PICNIC) },
+  // The second submission of the same form carries NO schema — that is the
+  // de-duplication, and it is why the map is built across the whole result set.
+  { "Reservation ID": "r2", "Form ID": "picnic", "Form Name": "Picnic Table Permit Requests",
+    "Submitted": "Aug 14, 2026",
+    "Answers": JSON.stringify({ "question2": false }), "Schema": null },
+];
+
+const shaped = shapeFormRows(wireRows);
+eq(Object.keys(shaped.forms).length, 2, "both rentals survive the wire format");
+// Checked before dereferencing so this fails BY NAME rather than as a TypeError
+// two lines further down.
+ok(Array.isArray(shaped.schemas.picnic),
+  "a string-encoded Schema must be parsed — an object test yields NO schema at all, "
+  + "and the column then renders as though the org collects no forms");
+eq(shaped.schemas.picnic.length, PICNIC.length, "...with every question intact");
+// The schema rides on the FIRST row of each form only; both submissions must
+// resolve against the one shared entry.
+eq(Object.keys(shaped.schemas).length, 1, "one schema per form, not one per submission");
+eq(shaped.forms.r2[0].form, "picnic",
+  "the second submission carries only a form id and resolves against the shared map");
+eq(shaped.forms.r1[0].answers["question2"], true, "a string-encoded Answers must be parsed");
+eq(shaped.forms.r2[0].answers["question2"], false, "...including a false answer");
+ok(shaped.schemas.picnic.some(e => e.title === "Grill Request"),
+  "titles survive shaping — the whole panel depends on them");
+
+// The S3 URL must never reach the browser: it 403s, and this report is shared
+// by tokened link and mailed by subscription.
+const file = shaped.forms.r1[0].answers["question1"][0];
+eq(file.name, "License_Front.jpg", "the filename is kept for the panel");
+eq(file.size, 1811804, "...and the size");
+ok(!("content" in file), "the S3 URL is stripped server-side — it 403s and cannot be shown");
+ok(!("fileId" in file), "no ids leak either");
+ok(!JSON.stringify(shaped).includes("s3.amazonaws.com"),
+  "no S3 URL anywhere in what the browser receives");
+
+// Already-parsed objects must still work, so this cannot break if Metabase
+// changes its mind about the encoding.
+const objShaped = shapeFormRows([{ "Reservation ID": "r3", "Form ID": "picnic",
+  "Form Name": "P", "Submitted": "", "Answers": { "question2": true }, "Schema": PICNIC }]);
+eq(objShaped.forms.r3[0].answers["question2"], true, "parsed objects still shape correctly");
+eq(objShaped.schemas.picnic.length, PICNIC.length, "...and so does a parsed schema");
+
+// Junk must degrade to empty rather than throw and take the schedule with it.
+const junk = shapeFormRows([{ "Reservation ID": "r4", "Form ID": "f", "Form Name": "F",
+  "Answers": "{not json", "Schema": "{also not json" }]);
+eq(Object.keys(junk.forms.r4[0].answers).length, 0, "unparseable answers degrade to empty");
+eq(Object.keys(junk.schemas).length, 0, "unparseable schema degrades to none");
+
+/* ── 13. Signatures: 25 KB of base64 that must never travel ─────────────────
+   A `signaturepad` answer is the drawn signature itself, inlined as a base64
+   PNG. Measured at Windham: ONE is 25,738 characters, and its "Waiver -
+   Facility" has 435 submissions — the org's whole forms payload was 3.3 MB,
+   nearly all signatures. Size, rendering and privacy all point the same way. */
+
+const SIG = "data:image/png;base64," + "iVBORw0KGgoAAAANSUhEUg" + "A".repeat(25000);
+
+const sigShaped = shapeFormRows([{
+  "Reservation ID": "w1", "Form ID": "waiverW", "Form Name": "Waiver - Facility",
+  "Submitted": "May 6, 2026",
+  "Answers": JSON.stringify({ question2: "Amber Bushey", question3: "2026-05-06", question4: SIG }),
+  "Schema": JSON.stringify([
+    { name: "question2", title: "Name", type: "text" },
+    { name: "question3", title: "Date", type: "text" },
+    { name: "question4", title: "Signature", type: "signaturepad" },
+  ]),
+}]);
+
+const sigAnswers = sigShaped.forms.w1[0].answers;
+ok(!JSON.stringify(sigShaped).includes("base64"),
+  "no base64 signature may reach the browser — 435 of these is 3.3 MB per page view");
+ok(sigAnswers.question4 && sigAnswers.question4.__signed === true,
+  "the signature is replaced by a marker, not dropped: 'signed' is the information");
+eq(sigAnswers.question2, "Amber Bushey", "the signer's NAME survives — it is the useful part");
+eq(sigAnswers.question3, "2026-05-06", "...and the date");
+
+const sigEls = sigShaped.schemas.waiverW;
+const sigView = formAnswerView(sigEls[2], sigAnswers.question4);
+eq(sigView.kind, "sig", "the marker renders as a signature, not as a long text blob");
+eq(sigView.text, "Signed", "...and reads as 'Signed'");
+// Backstop: even an unstripped raw data URI must never render as base64 text.
+eq(formAnswerView({ type: "signaturepad" }, SIG).kind, "sig",
+  "a raw data URI is caught client-side too — a wall of base64 must never reach the panel");
+
+// Signing is the norm on these forms, so it must not become a loud chip.
+const sigFlags = formFlags(sigShaped.forms.w1, sigShaped.schemas, { headCount: null });
+eq(sigFlags.flags.length, 0, "signing is the norm — never a chip");
+ok(!sigFlags.note, "a signature is not a 'note'");
+
+// A bare machine name with no title reads as a label, not a leaked identifier.
+eq(formLabel({ name: "question3" }), "Question 3",
+  "an untitled machine name is humanised — some form authors never set a title");
+
 console.log(`✓ facility-forms.spec.js — ${n} assertions passed`);

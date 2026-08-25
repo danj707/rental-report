@@ -2014,7 +2014,8 @@ mess", chose the chips + inline-panel option from the mockup, and added: **a
 filtered PDF must carry the expanded answers**, because nobody can click a
 printed page.
 
-- **Card 20626** (`sql/facility-forms.sql`, env `MB_FORMS_UUID`). Separate card
+- **Card 20626** (`sql/facility-forms.sql`, public UUID
+  `89ba73b2-09d6-48e1-ac15-bd88b1a4c0f5`, env `MB_FORMS_UUID`). Separate card
   keyed on `Reservation ID`, exactly like permits (20230) — so **card 17294 is
   untouched**: no date-tag reset, no risk to the most-used report. Tag type does
   not matter; the route echoes the card's own registered types back.
@@ -2068,6 +2069,20 @@ ways) plus 10 `ci-check-render.js` cases:
    string in the record (`JPM_Driver_s_License_back_…jpg`) and this report is
    shared by tokened link and mailed by subscription.
 
+7. **METABASE RETURNS jsonb AS A STRING.** `typeof Answers` is `"string"` over
+   the wire even though the column is jsonb. Treating it as an object yields
+   `{}` for EVERY rental — no chips, no panel, and a report indistinguishable
+   from an org that collects no forms. `public/roster.html` has carried the same
+   guard since it shipped, which is what makes this a known trap rather than a
+   surprise. **Found by the live check, not by reasoning** — the render check
+   cannot see it, because its stub answers with already-parsed objects.
+8. **A `signaturepad` answer is the signature itself, as base64.** ONE is
+   **25,738 characters**; Windham's "Waiver - Facility" has 435 submissions and
+   its whole payload was **3.3 MB**, nearly all signatures. Stripped
+   server-side to `{__signed, bytes}` — size, rendering (a wall of base64 where
+   a name should be) and privacy all point the same way. Payload **3,369 KB →
+   298 KB**. The signer's NAME and DATE are separate questions and survive.
+
 Also: **jsonb does not preserve key order**, so question order comes from the
 schema's `elements[]`, never from the submission's keys.
 
@@ -2076,6 +2091,20 @@ single-question waivers whose TITLE holds the legal text (3,257 chars at
 Watertown, 18,003 the longest). Watertown: 546 rentals with forms, 2.08 forms
 each, 98% carry 2+. Rental forms are broadly used — Sacramento County 660
 rentals, Rocklin 585, Watertown 546, Windham 532, Menifee 414.
+
+**Live sign-off:** `node scripts/facility-forms-live.js` hits the public card and
+runs the route's own shaping plus the page's own chip derivation over the real
+result — no stub, no cache, no browser. It found both of the traps above.
+Measured 2026-08-25: watertown 1,136 rows → 546 rentals / 9 schemas / 189 grill
+chips (matching the SQL exactly) / 428 KB; windham 967 rows → 532 rentals /
+10 schemas / 294 signatures stripped / 298 KB. The manifest carries
+**facility-forms / watertown** and **/ windham** rows, the second specifically
+as the signature case.
+
+**Windham shows no loud chips at all, and that is correct.** Its forms ask no
+yes/no questions, so the column is the quiet `✓ N forms` plus the panel. Chips
+are derived from answer SHAPE, so an org gets them only if its forms have
+yes/no questions to derive them from.
 
 **Open (Dan's call):** whether ID filenames belong in Excel/subscription email
 (currently: panel only, never Excel or email); whether chip labels stay

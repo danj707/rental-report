@@ -94,6 +94,16 @@
       "card": "926cefe5-78dd-4bdd-a1c9-58aef3f45827",
       "org": "aeba47d0-c97f-49cb-a0e9-93c5af3a68fa",
       "timeout": 30
+    },
+    {
+      "label": "facility-forms / watertown (546 rentals with forms, 1,136 rows in 1.4-2.3s measured 2026-08-25; the heaviest by rentals and the org whose picnic form drives the chips)",
+      "card": "89ba73b2-09d6-48e1-ac15-bd88b1a4c0f5",
+      "org": "d781690b-c5a0-43c5-8443-9ae43899528c"
+    },
+    {
+      "label": "facility-forms / windham (532 rentals, 10 forms, 2.1-2.9s measured 2026-08-25; here as the SIGNATURE case — its waivers carry 25KB base64 signaturepad answers the route strips, so a regression that stops stripping shows up as a 3.3MB payload rather than a wrong number)",
+      "card": "89ba73b2-09d6-48e1-ac15-bd88b1a4c0f5",
+      "org": "1c80a358-74c2-477d-aa0b-87bb2d0514b3"
     }
   ]
 }

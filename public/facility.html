@@ -2001,7 +2001,13 @@ function formLabel(el) {
   if (!el) return '';
   var t = (el.title || '').trim();
   if (t) return t;
-  return (el.name || '').trim();
+  var nm = (el.name || '').trim();
+  /* Some form authors leave the default name and add no title (Windham's
+     "Dundee Park Policies" has one). There is no better label available, but
+     "Question 3" reads as a label where "question3" reads as a leaked
+     identifier. */
+  var m = /^question(\d+)$/i.exec(nm);
+  return m ? 'Question ' + m[1] : nm;
 }
 
 /* A choice answer is an opaque VALUE — the waiver's is ["Item 1"], not
@@ -2041,6 +2047,12 @@ function formIsFileAnswer(v) {
    length of a scalar"). */
 function formAnswerView(el, v) {
   var type = (el && el.type) || 'text';
+  /* A `signaturepad` answer is the drawn signature as a base64 PNG data URI —
+     ONE of them is 25,738 characters (Windham, measured). The server replaces
+     it with a marker; the raw-string branch is a backstop so a wall of base64
+     can never reach the panel even if an unstripped one arrives. */
+  if (v && typeof v === 'object' && v.__signed) return { kind: 'sig', text: 'Signed' };
+  if (typeof v === 'string' && /^data:[^;,]*[;,]/.test(v)) return { kind: 'sig', text: 'Signed' };
   if (formIsFileAnswer(v)) {
     var names = v.map(function (f) { return String(f.name || 'file'); });
     var bytes = v.reduce(function (a, f) { return a + (Number(f.size) || 0); }, 0);
@@ -2185,6 +2197,7 @@ function formFlags(subs, schemas, row) {
         if (label) out.flags.push({ key: label.toLowerCase(), label: label, emoji: formFlagEmoji(formLabel(e.el)) });
         return;
       }
+      if (e.view.kind === 'sig') return;   // signing is the norm, never a chip
       if (e.view.kind === 'blob') { noteLen = Math.max(noteLen, e.view.text.length); return; }
       if (e.view.kind === 'text' && e.view.text.length > 24) noteLen = Math.max(noteLen, e.view.text.length);
     });
@@ -2308,6 +2321,8 @@ function FormPanel({ subs, schemas, row, orgId }) {
                             ? 'Collapse ▴'
                             : `Show all ${v.text.length.toLocaleString()} characters ▾`}</button>
                         </>}
+                        {v.kind === 'sig' &&
+                          <span className="ans-yes" data-form-sig="1">✍️ Signed</span>}
                         {(v.kind === 'text' || v.kind === 'choice') &&
                           <span data-form-choice={v.kind === 'choice' ? v.text : undefined}>{v.text}</span>}
                         {/* Where the form and the booking disagree, say so in
