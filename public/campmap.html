@@ -67,9 +67,26 @@ body{font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica
 .sitelist .sl-title{font-size:13px;font-weight:800}
 .sitelist .sl-sub{font-size:11.5px;color:var(--muted);margin-top:2px}
 .sitelist .sl-body{flex:1;overflow-y:auto;padding:6px}
+/* The group hand-off. The list IS the search result, so the action that belongs
+   to it is "book one of these", not "book the one you happen to have open". */
+.sitelist .sl-cta{flex:0 0 auto;padding:8px;border-top:1px solid var(--line);background:#fff}
+.sl-go{display:block;text-decoration:none;text-align:center;padding:10px 12px;border-radius:10px;
+  background:var(--accent);color:#fff;font-size:13.5px;font-weight:800;line-height:1.3}
+.sl-go:hover{filter:brightness(1.08)}
+.sl-go small{display:block;font-size:11px;font-weight:600;opacity:.85;margin-top:2px}
 .sl-item{display:flex;align-items:center;gap:9px;width:100%;text-align:left;font:inherit;padding:7px 8px;border:1px solid transparent;border-radius:9px;background:none;cursor:pointer}
+/* The verdict is the row, not a dot on it (Dan, 2026-08-25). A list scanned at
+   arm's length should answer "which of these can I have" from colour alone, and
+   a 9px dot does not carry that far. Sites that cannot be booked for the stay are
+   not dimmed or greyed — they are not in the list at all. */
+.sl-item.full{background:var(--avail-bg);border-color:#bbf7d0}
+.sl-item.full:hover{background:#c9f7d8;border-color:var(--avail)}
+.sl-item.part{background:var(--partial-bg);border-color:#fde68a}
+.sl-item.part:hover{background:#fdeab4;border-color:var(--partial)}
 .sl-item:hover{background:#f9fafb;border-color:var(--line)}
-.sl-item.sel{background:var(--avail-bg);border-color:var(--avail)}
+/* Selection has to read on top of both fills, so it is a ring rather than another
+   background — a green "selected" tint over a green "open" row said nothing. */
+.sl-item.sel{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent) inset}
 .sl-item .dot{width:9px;height:9px;border-radius:50%;flex:0 0 9px}
 .sl-item .nm{font-size:13px;font-weight:700;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .sl-item .rt{font-size:11.5px;color:var(--muted);flex:0 0 auto;font-variant-numeric:tabular-nums}
@@ -277,6 +294,7 @@ body{font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica
         <div class="sl-sub" id="slSub">—</div>
       </div>
       <div class="sl-body" id="slBody"></div>
+      <div class="sl-cta" id="slCta" hidden></div>
     </aside>
     <div class="editbar" id="editbar">
       <span class="msg" id="editMsg">Drag campsite pins to place them.</span>
@@ -527,7 +545,12 @@ function sCap(s){ var l=L_(s); return (l && l.capacity) || siteMeta(s).capacity 
  */
 // rec.us's own campsite sub_types, the only values its subType filter accepts.
 var REC_SUBTYPES = { 'tent':1, 'rv':1, 'tent-and-rv':1, 'lodging':1 };
-function bookUrl(site){
+// `group`, when given, is the set of sites the link is meant to cover. A filter
+// taken from one member can exclude the others — a link labelled "Book Site 05 or
+// Site 12" that carries Site 05's sub_type lands on a page without Site 12 on it.
+// So a group narrows only on what every member shares: one sub_type or none, and
+// the SMALLEST capacity rather than any single site's.
+function bookUrl(site, group){
   var l=L_(site);
   var slug=CFG.slug;
   if(!slug) return sSiteUrl(site);
@@ -548,6 +571,14 @@ function bookUrl(site){
   // out of rec.us's client bundle; the route's zod schema lists neither, so the
   // schema is the validated subset rather than the full set the page honours.
   var cap=(l && l.capacity!=null) ? l.capacity : (siteMeta(site)||{}).capacity;
+  if(group && group.length){
+    cap=null;
+    group.forEach(function(x){
+      var gl=L_(x.site);
+      var c=(gl && gl.capacity!=null) ? gl.capacity : (siteMeta(x.site)||{}).capacity;
+      if(c!=null && c>0 && (cap===null || c<cap)) cap=c;
+    });
+  }
   if(cap!=null && cap>0) q.push('guests='+encodeURIComponent(cap));
   // Only rec.us's own four sub_types. The map's derived electric/primitive are
   // ours, and would filter the list to nothing. The live /rentalcalendar feed
@@ -555,6 +586,14 @@ function bookUrl(site){
   // seed's kind — which for Topaz is the same tent-and-rv the REST site payload
   // carries.
   var sub=(l && l.subType) || sKind(site);
+  if(group && group.length){
+    sub=null;
+    for(var gi=0; gi<group.length; gi++){
+      var g=group[gi], glv=L_(g.site);
+      var gs=(glv && glv.subType) || sKind(g.site);
+      if(gi===0) sub=gs; else if(gs!==sub){ sub=null; break; }
+    }
+  }
   if(sub && REC_SUBTYPES[sub]) q.push('subType='+encodeURIComponent(sub));
   return 'https://www.rec.us/organizations/'+encodeURIComponent(slug)+'?'+q.join('&');
 }
@@ -1185,7 +1224,8 @@ function renderList(){
   var html='';
   var row=function(x, colour){
     var m=siteMeta(x.site), rate=m && m.rate!=null ? '$'+m.rate : '';
-    return '<button class="sl-item'+(selectedId===x.site.id?' sel':'')+'" data-id="'+x.site.id+'">'
+    var fill = x.r.state==='avail' ? ' full' : (x.r.state==='partial' ? ' part' : '');
+    return '<button class="sl-item'+fill+(selectedId===x.site.id?' sel':'')+'" data-id="'+x.site.id+'">'
       +'<span class="dot" style="background:'+colour+'"></span>'
       +'<span class="nm">'+shortName(x.site)
       + (x.r.state==='partial' ? '<span class="wh">'+x.r.openCount+' of '+x.r.total+' nights</span>' : '')
@@ -1216,6 +1256,7 @@ function renderList(){
         +(TYPE_FILTER==='all' ? '' : ', or widen the campsite type')+'.</div>';
   }
   body.innerHTML=html;
+  renderListCta(full, part);
   body.querySelectorAll('.sl-item').forEach(function(b){
     b.onclick=function(){
       var site=SEED.filter(function(x){ return x.id===b.dataset.id; })[0];
@@ -1314,6 +1355,39 @@ function setStay(arrive, depart){
   refreshMarkers(); updateSummary(); renderList();
   fetchWeather();
 }
+/* The list's own call to action. rec.us cannot be pointed at ONE site with dates
+ * on it, but it can be pointed at everything matching the stay — so the honest
+ * button is the one that names the sites a camper is choosing between and opens
+ * exactly that filtered page (Dan, 2026-08-25: "something like 'book sites 3, 5
+ * or 7' and the button goes to the filtered page on rec").
+ *
+ * Named from the sites that are open for the WHOLE stay; if none are, it falls
+ * back to the partial ones rather than disappearing, because "3 of 4 nights" is
+ * still a trip most people will take. */
+function ctaNames(list){
+  var names=list.map(function(x){ return shortName(x.site); });
+  if(names.length<=3) return names.length===1 ? names[0]
+    : names.slice(0,-1).join(', ')+' or '+names[names.length-1];
+  return names.slice(0,3).join(', ')+' and '+(names.length-3)+' more';
+}
+function renderListCta(full, part){
+  var el=document.getElementById('slCta'); if(!el) return;
+  var list=full.length ? full : part;
+  if(!PICKED || !list.length){ el.hidden=true; el.innerHTML=''; return; }
+  var bd=new Date(SELECTED+'T00:00:00'), bx=new Date(DEPART+'T00:00:00');
+  var span=MON[bd.getMonth()]+' '+bd.getDate()+' – '+MON[bx.getMonth()]+' '+bx.getDate();
+  var url=bookUrl(list[0].site, list);
+  el.hidden=false;
+  el.innerHTML='<a class="sl-go" id="slGo" href="'+url+'" target="_blank" rel="noopener">'
+    + 'Book ' + ctaNames(list)
+    + '<small>' + span + ' on rec.us'
+    + (full.length ? '' : ' \u00b7 part of the stay') + '</small></a>';
+  var a=document.getElementById('slGo');
+  if(a) a.onclick=function(){
+    ping('campmap-book', { kind:'group', nights:stayNights().length, sites:list.length });
+  };
+}
+
 /* Depart has no meaning until there is an arrival to derive its range from — its
  * bound, its minimum and every night it colours all come from one. So until the
  * camper picks an arrival it says so, in red, instead of presenting a range out
@@ -1491,18 +1565,22 @@ function renderBody(site){
   // With the month grid gone, Amenities is the last section before the Book
   // button — so an empty one would leave a bare heading sitting on top of it.
   if(amens) body+='<div class="sec-h">Amenities</div><div class="amen-list">'+amens+'</div>';
-  // The button names the dates it is carrying, so it is obvious the hand-off
-  // took them — the whole point is that they are not re-entered.
+  // WHAT THIS BUTTON OPENS IS A LIST, NOT THIS SITE (Dan, 2026-08-25). rec.us
+  // takes dates on the campground's rental tab but not on a single site's page,
+  // so the dated hand-off lands on every site matching the stay, the capacity and
+  // the site type — this one among them. Saying "Book Site 09" over a link that
+  // opens twelve sites is the kind of small lie that costs a camper their
+  // place: they arrive expecting a checkout and have to re-find the site.
+  // So the button says what it does, and the site's own page keeps its own link.
   var bd=new Date(SELECTED+'T00:00:00'), bx=new Date(DEPART+'T00:00:00');
   var bn=stayNights().length;
+  var span = MON[bd.getMonth()]+' '+bd.getDate()+' – '+MON[bx.getMonth()]+' '+bx.getDate();
   body+='<a class="book-btn" id="bookBtn" href="'+sBook(site)+'" target="_blank" rel="noopener">'
-      + '<span>🏕️ Book ' + MON[bd.getMonth()]+' '+bd.getDate() + ' – ' + MON[bx.getMonth()]+' '+bx.getDate()
-      + '<small>' + bn + (bn===1?' night':' nights') + ' · dates carried over to rec.us</small></span></a>';
-  // rec.us cannot take dates on a single site's page, so the dated hand-off lands
-  // on the campground's filtered list. Someone who wants THIS site's own page
-  // still has a route to it.
+      + '<span>🏕️ See what\u2019s open ' + span
+      + '<small>' + bn + (bn===1?' night':' nights') + ' at ' + (CFG.locationName||'this campground')
+      + ' \u00b7 your dates carried over</small></span></a>';
   body+='<a class="book-alt" id="bookAlt" href="'+sSiteUrl(site)+'" target="_blank" rel="noopener">'
-      + 'Or open this site on rec.us (you\'ll pick dates there)</a>';
+      + 'Or go straight to ' + shortName(site) + ' (rec.us will ask for dates again)</a>';
   var noteTxt = EDIT ? 'Drag the pin on the map to reposition it; unsaved changes show in the edit bar.'
     : (site.approx && !site.placed) ? 'Approximate position — not yet placed on the map.'
     : '';
