@@ -2007,6 +2007,86 @@ Already shipped (PR #75, live on `main`): name-based site-type recovery so
 filter, Ice sub-tab, court-name wrap. Display/scoping only — did not change the
 revenue math, so the gap above predates and survives it.
 
+## Rental form answers on the schedule — BUILT (2026-08-25)
+
+Dan asked how to surface facility rental forms "without it looking like a hot
+mess", chose the chips + inline-panel option from the mockup, and added: **a
+filtered PDF must carry the expanded answers**, because nobody can click a
+printed page.
+
+- **Card 20626** (`sql/facility-forms.sql`, env `MB_FORMS_UUID`). Separate card
+  keyed on `Reservation ID`, exactly like permits (20230) — so **card 17294 is
+  untouched**: no date-tag reset, no risk to the most-used report. Tag type does
+  not matter; the route echoes the card's own registered types back.
+  Unset env ⇒ the column never appears. Nothing to switch on per org.
+- **Route** `GET /:org/facility/api/forms`, cached 5 min, loaded AFTER the rows
+  so the schedule keeps its speed, soft-failing to no column.
+- **The rule that keeps the column quiet: chip the exception, not the norm.**
+  484 of 485 Watertown picnic rentals uploaded an ID and 484 signed the waiver,
+  so those collapse into a grey `✓ N forms`; only grill (39%), catered (5%),
+  public (4%) and a head-count mismatch (15%) go loud.
+- **A blank Requests cell is legitimately blank.** Only **1 of 1,137** requested
+  forms at Watertown is outstanding, so "no form" means none was ever asked for.
+  No red state for absence, or the column cries wolf on the 62% of a week that
+  has no form at all.
+- **The PDF.** `downloadPdf` sends `form_filter` (so the printed rows are the
+  rows that were on screen) and `forms=1` (so their answers are open). Both are
+  in `generatePdf`'s param whitelist, and `printAllForms` opens every visible
+  rental in print mode. The "Answers in PDF" checkbox is authoritative over
+  whatever happens to be expanded on screen — an export should be complete, not
+  a snapshot of which rows someone clicked.
+- Activity: `form-view` (debounced by RENTAL, carrying the chips that were
+  showing) and `form-filter` (debounced by filter).
+
+### Six things about form data that silently corrupt the panel
+
+Each renders perfectly while being wrong, which is why they are all pinned by
+`scripts/facility-forms.spec.js` (63 assertions, in CI, mutation-tested nine
+ways) plus 10 `ci-check-render.js` cases:
+
+1. **Answers are keyed by MACHINE NAME.** Every question on the field-permit
+   form is `question1..question9`, and the picnic form's `question2` is "Grill
+   Request". Render `title ?? name`; never a bare `questionN`.
+2. **`false` is an answer.** 485 of 485 booleans answered, 0 blank, and 295 are
+   "no grill". A truthiness filter deletes every one.
+3. **Choice answers are opaque values.** The waiver's is `["Item 1"]`, not
+   "I Agree"; the field form's `["Item 5"]` is "Watertown Youth Organization".
+   Values are arbitrary and **not in positional order** (`Item 4` is listed
+   first), so it must be a `choices[].value → text` lookup.
+4. **The same key is a different TYPE in different forms.** `question1` is a
+   file array on the picnic form and a plain string on the field form — branch
+   on the schema's type, not the key. (A probe query died on exactly this:
+   `cannot get array length of a scalar`.)
+5. **PANELS NEST THEIR QUESTIONS while the answers stay FLAT.** 212 panels
+   across 103 forms hold **665 child questions**; on a panelled form a
+   non-flattened read resolves **0 of 11** answers versus 11 of 11. Flattened in
+   the card so every consumer gets one flat, ordered list.
+6. **Uploaded files cannot be displayed.** The submission carries a direct S3
+   URL that looks usable; it returns **403 AccessDenied** and this app has no
+   signing path. Files render as a name+size chip linking to Rec admin. The
+   route strips the URL server-side — filenames are frequently the least neutral
+   string in the record (`JPM_Driver_s_License_back_…jpg`) and this report is
+   shared by tokened link and mailed by subscription.
+
+Also: **jsonb does not preserve key order**, so question order comes from the
+schema's `elements[]`, never from the submission's keys.
+
+**Scale:** 1,210 forms across 93 orgs, avg 5 questions, max 113; 454 are
+single-question waivers whose TITLE holds the legal text (3,257 chars at
+Watertown, 18,003 the longest). Watertown: 546 rentals with forms, 2.08 forms
+each, 98% carry 2+. Rental forms are broadly used — Sacramento County 660
+rentals, Rocklin 585, Watertown 546, Windham 532, Menifee 414.
+
+**Open (Dan's call):** whether ID filenames belong in Excel/subscription email
+(currently: panel only, never Excel or email); whether chip labels stay
+auto-derived (they are) or get per-org overrides; whether the 15% head-count
+mismatch stays a chip.
+
+**Known unrelated breakage found while testing:** `scripts/email-slack-notify.spec.js`
+fails on pristine `main` with `ReferenceError: alertEnabled is not defined` — it
+slices the SLACK block out of server.js and `alertEnabled` is declared outside
+the slice. It is NOT in CI, so nothing caught it. Not fixed here.
+
 ## Facility rental "posting sheet" — BUILT (PRs #118, #120, #121)
 
 The one-pager maintenance prints and hangs **at the facility** so anyone walking

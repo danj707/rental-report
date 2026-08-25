@@ -3607,7 +3607,7 @@ setTimeout(() => { checkCardParamTypes().catch(() => {}); }, 150 * 1000).unref?.
 // Inert if the env var is unset. Fire-and-forget — never blocks or breaks logging.
 // To change what pings Slack, edit SLACK_NOTIFY. High-frequency events (view/fetch)
 // are debounced per org+report so Slack isn't a firehose.
-const SLACK_NOTIFY = new Set(["created", "org-deleted", "watchdog", "schema-break", "param-drift", "report-down", "campmap-share", "campmap-site", "campmap-book", "campmap-filter", "pdf", "excel", "print", "summary", "game", "map", "outdoor", "fields", "view", "insights", "insights-feedback", "chat-feedback", "feedback", "vote", "update-vote", "munis", "permits", "email", "checkin-loc", "checkin-member", "deadlink"]);
+const SLACK_NOTIFY = new Set(["created", "org-deleted", "watchdog", "schema-break", "param-drift", "report-down", "campmap-share", "campmap-site", "campmap-book", "campmap-filter", "pdf", "excel", "print", "summary", "game", "map", "outdoor", "fields", "view", "insights", "insights-feedback", "chat-feedback", "feedback", "vote", "update-vote", "munis", "permits", "email", "checkin-loc", "checkin-member", "form-view", "form-filter", "deadlink"]);
 const SLACK_DEBOUNCE_MS = { view: 30 * 60 * 1000, fetch: 30 * 60 * 1000,
   // A broken report stays broken. The health check only reports NEW failures,
   // but a flapping card would otherwise post every hour.
@@ -3642,6 +3642,8 @@ const SLACK_EVENT_META = {
   print:   { emoji: "🖨️", verb: "printed" },
   munis:   { emoji: "🏛️", verb: "pulled the Tyler/Munis GL Account Detail for" },
   permits: { emoji: "📋", verb: "printed rental permit sheets from" },
+  "form-view":   { emoji: "📝", verb: "opened rental form answers on" },
+  "form-filter": { emoji: "🔎", verb: "filtered rentals by form answer on" },
   view:    { emoji: "👀", verb: "viewed" },
   // Pavilions, shelters, picnic areas and bounce houses — a new tab on the
   // Facilities hub, so its own event rather than a bare `view` of `facilities`.
@@ -3716,6 +3718,15 @@ function notifySlack(rec) {
     // member working down a list of regulars is one session, not twenty pings.
     : rec.event === "checkin-loc"
       ? `${rec.org}|${rec.report}|checkin-loc|${rec.location || ""}`
+    // Form opens key by RENTAL, same reasoning as campsite opens: staff working
+    // down a day comparing three bookings' requests should read as three looks,
+    // not as whichever row they opened first. The filter keys by which filter,
+    // because "show me the grills" and "show me the catered events" are two
+    // different questions being asked of the schedule.
+    : rec.event === "form-view"
+      ? `${rec.org}|${rec.report}|form-view|${rec.rental || ""}`
+    : rec.event === "form-filter"
+      ? `${rec.org}|${rec.report}|form-filter|${rec.filter || ""}`
       : `${rec.org}|${rec.report}|${rec.event}`;
   const now = Date.now();
   const cooldown = SLACK_DEBOUNCE_MS[rec.event] || SLACK_DEFAULT_DEBOUNCE_MS;
@@ -4317,6 +4328,116 @@ async function fetchPermits(orgId, { live = false } = {}) {
   return byReservation;
 }
 
+// ── Facility rental forms → the "Requests" column and inline form panel ─────
+// Card 20626 lists an org's rental form submissions keyed by Reservation ID —
+// the same id the facility feed already emits — so forms attach to schedule
+// rows without touching card 17294 (see sql/facility-forms.sql for why).
+//
+// Cached like the permit CHIP feed rather than the export: a form answer is
+// filled in once, when the rental is booked, and never changes afterwards.
+// There is no revoked-permit equivalent here, so nothing needs a live read.
+const FORMS_UUID = process.env.MB_FORMS_UUID || "";
+const FORMS_CACHE_TTL = 5 * 60 * 1000;
+const _formsCache = new Map();       // orgId -> { ts, payload }
+let _formsParamDefs = null;
+
+async function formsParamDefs() {
+  if (_formsParamDefs && Date.now() - _formsParamDefs.ts < 60 * 60 * 1000) return _formsParamDefs.params;
+  const resp = await fetch(`${METABASE_URL}/api/public/card/${FORMS_UUID}`, { signal: AbortSignal.timeout(15000) });
+  if (!resp.ok) throw new Error(`forms card definition HTTP ${resp.status}`);
+  const def = await resp.json();
+  const params = Array.isArray(def.parameters) ? def.parameters : [];
+  _formsParamDefs = { ts: Date.now(), params };
+  return params;
+}
+
+// A file answer arrives as an array of objects carrying a direct S3 URL, the
+// original filename and the size. NONE of that can be handed to the browser as
+// it stands:
+//
+//   the URL   — is not fetchable. The bucket answers 403 AccessDenied to an
+//               unsigned request (verified 2026-08-25), and this app has no
+//               signing path, so an <img> would be a broken image on ~every
+//               picnic row. Shipping it would also put a credential-shaped URL
+//               into a report that is shared by tokened link and mailed by
+//               subscription.
+//   the name  — is frequently the least neutral string in the whole record:
+//               "JPM_Driver_s_License_back_2023-2028_-_address_updated_2025.jpg".
+//               It is kept, because staff genuinely need to know an ID is on
+//               file, but it stays behind the expand and out of Excel/email.
+//
+// So the route reduces each file to { name, size } and drops everything else.
+// This also takes a big bite out of the payload: Watertown's raw result is
+// 577 KB, most of it S3 URLs repeated twice per rental.
+function slimFileAnswer(v) {
+  if (!Array.isArray(v)) return v;
+  return v.map(f => (f && typeof f === "object")
+    ? { name: String(f.name || "").slice(0, 120), size: Number(f.size) || 0 }
+    : f);
+}
+
+// Reservation ID -> [submission]. Same param handling as permits and the Munis
+// export: echo the card's own registered types back, so a tag reset can never
+// break it.
+//
+// The card emits "Schema" only on the FIRST row of each form (a waiver's one
+// question is 3,257 characters; repeating it per submission would be ~1.6 MB).
+// So the schemas are collected across the WHOLE result set into one map, and
+// the per-rental entries carry only a form id. Reading a schema off a single
+// row would find null on all but nine rows.
+async function fetchForms(orgId) {
+  if (!FORMS_UUID) return { forms: {}, schemas: {} };
+  const hit = _formsCache.get(orgId);
+  if (hit && Date.now() - hit.ts < FORMS_CACHE_TTL) return hit.payload;
+  const params = (await formsParamDefs())
+    .filter(p => p.slug === "org_id")
+    .map(p => ({ id: p.id, type: p.type, target: p.target, slug: p.slug, value: orgId }));
+  if (!params.length) throw new Error("forms card has no org_id parameter");
+  const url = `${METABASE_URL}/api/public/card/${FORMS_UUID}/query/json?parameters=${encodeURIComponent(JSON.stringify(params))}`;
+  const resp = await fetch(url, { signal: AbortSignal.timeout(60000) });
+  if (!resp.ok) throw new Error(`Metabase HTTP ${resp.status}`);
+  const rows = await resp.json();
+  if (!Array.isArray(rows)) throw new Error("Metabase returned an error for the forms card");
+
+  const forms = {};
+  const schemas = {};
+  for (const r of rows) {
+    const resId  = String(r["Reservation ID"] || "");
+    const formId = String(r["Form ID"] || "");
+    if (!resId || !formId) continue;
+
+    if (r["Schema"] && !schemas[formId]) {
+      const els = Array.isArray(r["Schema"]) ? r["Schema"] : [];
+      schemas[formId] = els.map(e => ({
+        name:     String(e && e.name || ""),
+        title:    e && e.title ? String(e.title) : undefined,
+        type:     String(e && e.type || "text"),
+        required: e && e.required ? true : undefined,
+        choices:  Array.isArray(e && e.choices) ? e.choices : undefined,
+      }));
+    }
+
+    const answers = {};
+    const raw = r["Answers"] && typeof r["Answers"] === "object" ? r["Answers"] : {};
+    for (const [k, v] of Object.entries(raw)) {
+      answers[k] = (Array.isArray(v) && v.length && v[0] && typeof v[0] === "object" && "fileId" in v[0])
+        ? slimFileAnswer(v)
+        : v;
+    }
+
+    (forms[resId] || (forms[resId] = [])).push({
+      form: formId,
+      name: String(r["Form Name"] || "Form"),
+      at:   r["Submitted"] ? String(r["Submitted"]) : "",
+      answers,
+    });
+  }
+
+  const payload = { forms, schemas };
+  _formsCache.set(orgId, { ts: Date.now(), payload });
+  return payload;
+}
+
 // The org logo, inlined as a data URI. Fetched once per process rather than
 // left as a remote <img>: Puppeteer would otherwise race the network on every
 // export, and a logo that silently fails to load is a permit that looks fake.
@@ -4357,7 +4478,7 @@ async function generatePdf(orgSlug, reportType, startDate, endDate, filters = {}
   // server-side Metabase filters. The print page initializes its filter state
   // from these params before emitting #report-ready, so Puppeteer captures the
   // filtered render rather than the full dataset.
-  ["locations", "location", "sites", "location_name", "site_type", "desks", "methods", "by_desk", "by_item", "hide_zero", "chart_net", "metric", "programs", "closures", "hrs", "section_name", "section_id", "status", "questions", "cols", "search", "tab", "instructor", "split", "book_type", "addons", "participant", "view", "tyler", "glq", "quarter", "insights"].forEach(k => {
+  ["locations", "location", "sites", "location_name", "site_type", "desks", "methods", "by_desk", "by_item", "hide_zero", "chart_net", "metric", "programs", "closures", "hrs", "section_name", "section_id", "status", "questions", "cols", "search", "tab", "instructor", "split", "book_type", "addons", "participant", "view", "tyler", "glq", "quarter", "insights", "forms", "form_filter"].forEach(k => {
     if (filters[k]) qsObj[k] = filters[k];
   });
   if (orgTok) qsObj.token = orgTok;
@@ -6044,7 +6165,7 @@ app.post("/:org/:report/api/log", resolveOrg, (req, res) => {
   const { event, game, location, view } = req.query;
   // view-apply is events.jsonl-only by design — it is not in SLACK_NOTIFY, so
   // logEvent records it without pinging the feed (see the saved-views block).
-  const ALLOWED = ["excel", "print", "summary", "game", "map", "view-apply", "checkin-loc", "checkin-member"];
+  const ALLOWED = ["excel", "print", "summary", "game", "map", "view-apply", "checkin-loc", "checkin-member", "form-view", "form-filter"];
   if (!ALLOWED.includes(event)) return res.status(400).json({ ok: false, error: "Unknown event" });
   const ciN = Number(req.query.n);
   const extra = event === "game" && game ? { game: String(game).slice(0, 60) }
@@ -6053,6 +6174,17 @@ app.post("/:org/:report/api/log", resolveOrg, (req, res) => {
               : event === "checkin-loc"
                 ? { location: location ? String(location).slice(0, 80) : "",
                     checkins: Number.isFinite(ciN) && ciN >= 0 && ciN <= 9999999 ? Math.round(ciN) : undefined }
+              // `rental` is the debounce key (one ping per booking looked at),
+              // `flags` is what the row was showing when it was opened — the
+              // interesting half, since "opened a rental" is trivia but
+              // "opened the one flagged catered + public" is a signal.
+              : event === "form-view"
+                ? { rental: req.query.rental ? String(req.query.rental).slice(0, 80) : "",
+                    forms:  req.query.forms ? String(req.query.forms).slice(0, 120) : "",
+                    flags:  req.query.flags ? String(req.query.flags).slice(0, 80) : "" }
+              : event === "form-filter"
+                ? { filter: req.query.filter ? String(req.query.filter).slice(0, 40) : "",
+                    matched: Number.isFinite(ciN) && ciN >= 0 && ciN <= 9999999 ? Math.round(ciN) : undefined }
               : undefined;
   logEvent(orgSlug, reportType, event, req, extra);
   res.json({ ok: true });
@@ -8574,6 +8706,34 @@ app.get("/:org/facility/api/permits", async (req, res) => {
     console.warn(`[permits] ${slug} chip feed failed: ${err.message}`);
     // Soft-fail: no chips is a degraded schedule, not a broken one.
     res.json({ permits: {}, error: true });
+  }
+});
+
+// ── GET /:org/facility/api/forms — rental form answers for the Requests col ──
+// Loaded once per view of the schedule, AFTER the rows render, exactly like the
+// permit chip feed: the main feed keeps its current speed and a slow or missing
+// forms card can never delay the schedule itself.
+//
+// Returns { forms: { resId: [ {form, name, at, answers} ] }, schemas: { formId: [...] } }.
+// The schemas are shared across rentals — 546 Watertown rentals resolve against
+// just 9 of them — which is the whole reason the card de-duplicates them.
+app.get("/:org/facility/api/forms", async (req, res) => {
+  const slug = req.params.org;
+  const org = ORGS[slug];
+  if (!org) return res.status(404).json({ error: "Unknown org" });
+  // Unset env ⇒ the column never appears, same contract as MB_GL_DETAIL_UUID.
+  if (!FORMS_UUID) return res.json({ forms: {}, schemas: {}, disabled: true });
+  try {
+    const payload = await fetchForms(org.orgId);
+    res.json({
+      forms: payload.forms,
+      schemas: payload.schemas,
+      count: Object.keys(payload.forms).length,
+    });
+  } catch (err) {
+    console.warn(`[forms] ${slug} feed failed: ${err.message}`);
+    // Soft-fail: a schedule with no Requests column is degraded, not broken.
+    res.json({ forms: {}, schemas: {}, error: true });
   }
 });
 

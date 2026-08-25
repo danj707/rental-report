@@ -410,11 +410,122 @@ function directorsQuarter() {
   };
 }
 
+// ── Facility rental FORMS fixture ───────────────────────────────────────────
+// Shapes copied from production (Watertown), because every one of them is a way
+// the panel can be silently wrong:
+//   - answers keyed by MACHINE NAME (`question2` is "Grill Request")
+//   - a boolean answered `false`, which is an answer and not a blank
+//   - a choice answered with an opaque VALUE ("Item 1" = "I Agree")
+//   - a file answer, whose S3 URL 403s and so must never become an <img>
+//   - a 1.4 KB tab-delimited blob pasted into a comment box
+// Site Type is deliberately "gym": the facilities-hub tabs count campsite,
+// field and the three outdoor types, so these rows stay invisible to them and
+// cannot shift [data-oe-peak] / [data-fld-peak].
+function formFixtureRows() {
+  const d = n => { const t = new Date(Date.now() - n * 86400000); return t.toISOString().slice(0, 10); };
+  const mk = (resId, site, head, purpose) => ({
+    "Org Name": "Test Parks", "Reservation ID": resId, "Date": d(3),
+    "Day": "Sunday", "Begin": "10:00am", "End": "02:00pm",
+    "Location": "Arsenal Park", "Facility": "Arsenal Park - " + site,
+    "Site Type": "gym", "Purpose": purpose, "Head Cnt": head,
+    "Reservee": "Test Renter", "Email": "t@example.com", "Phone": null, "Resident?": "Yes",
+    "Booking Type": "Managed", "Instructions": null, "Notes": null,
+    "Add Ons": "", "Add-On Fees": 0, "Total": 50, "Paid?": "Paid",
+    // null, not 1: the card emits these only for genuine multi-day runs, and a
+    // fixture that says "Multi-Day Rental (1 days)" is a fixture bug.
+    "Multi-Day Days": null, "Multi-Day Day#": null,
+    "Lighting": null, "Lit From": null, "Lit Until": null, "Lighting Sync": null,
+  });
+  return [
+    mk("res-flags", "Pavilion B", 30, "12th Birthday Party"),
+    mk("res-quiet", "Picnic Table 11", 10, "Bday party"),
+    mk("res-blob",  "Filippello Field", null, "WYS/ARL/SEPT26"),
+  ];
+}
+
+const PICNIC_SCHEMA = [
+  { name: "Organization: (If Applicable)", type: "text" },
+  { name: "Type of Event:", type: "text", required: true },
+  { name: "Is this a public event?", type: "boolean", required: true },
+  { name: "Is this a catered event? (If yes, please see Health Dept for a Catering Permit.)",
+    type: "boolean", required: true },
+  // The trap in miniature: the label lives in `title`, never in the key.
+  { name: "question2", title: "Grill Request", type: "boolean", required: true },
+  { name: "Total estimated Number of Attendees", type: "text", required: true },
+  { name: "question1", title: "Please upload a photo of your License or Photo ID.",
+    type: "file", required: true },
+];
+const WAIVER_SCHEMA = [
+  { name: "Picnic / Pavilion Permit Disclaimer, Release", type: "checkbox", required: true,
+    title: "Disclaimer, Release " + "The permit holder assumes all risks and danger incidental to such use. ".repeat(6),
+    choices: [{ text: "I Agree", value: "Item 1" }] },
+];
+const FIELD_SCHEMA = [
+  { name: "question1", title: "Organization Name (If applicable)", type: "text" },
+  { name: "question6", title: "Youth or Adult:", type: "checkbox", required: true,
+    choices: [{ text: "Youth", value: "Item 1" }, { text: "Adult", value: "Item 2" }] },
+  // Choice values are arbitrary and NOT in positional order — Item 4 is listed
+  // first — so a positional lookup gets this wrong.
+  { name: "question7", title: "Group/Customer", type: "checkbox", required: true,
+    choices: [{ text: "Watertown Schools", value: "Item 4" },
+              { text: "Watertown Youth Organization", value: "Item 5" },
+              { text: "Watertown Resident", value: "Item 2" }] },
+  { name: "question8", title: "Additional Comments or Requests", type: "comment" },
+];
+const LONG_BLOB = ["Filippello Grove requested dates and times:", "from 8/31/2026 to 11/22/2026", "",
+  "Day\tStart time\tEnd time"]
+  .concat(Array.from({ length: 28 }, (_, i) => "Monday\t5.30pm\t9.15pm  (" + i + ")")).join("\n");
+
+function formsFeed() {
+  return {
+    schemas: { picnic: PICNIC_SCHEMA, waiver: WAIVER_SCHEMA, field: FIELD_SCHEMA },
+    forms: {
+      "res-flags": [
+        { form: "picnic", name: "Picnic Table Permit Requests", at: "Jul 22, 2026", answers: {
+          "Type of Event:": "Quincea\u00f1era",
+          "Is this a public event?": true,
+          "Is this a catered event? (If yes, please see Health Dept for a Catering Permit.)": true,
+          "question2": true,
+          // 45 on the form against a Head Cnt of 30 — the 15% case.
+          "Total estimated Number of Attendees": "45",
+          "question1": [{ name: "License_Front.jpg", size: 1811804 },
+                        { name: "License_Back.jpg",  size: 1303548 }],
+        } },
+        { form: "waiver", name: "Picnic/ Pavilion Permit Disclaimer, Release", at: "Jul 22, 2026",
+          answers: { "Picnic / Pavilion Permit Disclaimer, Release": ["Item 1"] } },
+      ],
+      "res-quiet": [
+        { form: "picnic", name: "Picnic Table Permit Requests", at: "Aug 14, 2026", answers: {
+          "Type of Event:": "Birthday party",
+          // Every one of these is a real "No" — a truthiness filter deletes them.
+          "Is this a public event?": false,
+          "Is this a catered event? (If yes, please see Health Dept for a Catering Permit.)": false,
+          "question2": false,
+          "Total estimated Number of Attendees": "10",
+          "question1": [{ name: "id.jpg", size: 1094005 }],
+        } },
+        { form: "waiver", name: "Picnic/ Pavilion Permit Disclaimer, Release", at: "Aug 14, 2026",
+          answers: { "Picnic / Pavilion Permit Disclaimer, Release": ["Item 1"] } },
+      ],
+      "res-blob": [
+        { form: "field", name: "Field/ Court/ Track/ Rink Permit Application 2026", at: "Aug 1, 2026",
+          answers: {
+            "question1": "Watertown Youth Soccer",
+            "question6": ["Item 1"],
+            "question7": ["Item 5"],
+            "question8": LONG_BLOB,
+          } },
+      ],
+    },
+  };
+}
+
 const STUBS = [
   { match: /\/facilities\/api\/campsites/, body: () => campsitesGeo },
   // One feed, both tabs: Camping filters it to campsite rows and Outdoor Events
   // to its three types, so each tab has to do its own scoping.
-  { match: /\/facility\/api\/data/,        body: () => ({ rows: campsiteRows().concat(outdoorRows()).concat(fieldRows()), meta: {} }) },
+  { match: /\/facility\/api\/forms/,       body: () => formsFeed() },
+  { match: /\/facility\/api\/data/,        body: () => ({ rows: campsiteRows().concat(outdoorRows()).concat(fieldRows()).concat(formFixtureRows()), meta: { org_id: "org-uuid-1" } }) },
   { match: /\/api\/permits/,               body: () => ({ permits: {} }) },
   { match: /\/api\/availability-batch/,     body: url => availabilityFor(url) },
   { match: /\/rentalcalendar\/api\/sites/, body: (url, org) => ({ sites: campmapSites(org) }) },
@@ -490,6 +601,49 @@ function serveVendored(req) {
 // a blank page fails instead of passing on "no errors thrown".
 const CASES = [
   { name: "facilities · camping",  path: "/{org}/facilities?tab=camping", needs: ".camp-cal .cc-hd" },
+
+  // ── The rental schedule and its form answers ──────────────────────────────
+  // This page had NO render case at all until forms landed on it, which is the
+  // page most orgs actually open.
+  { name: "facility · schedule",   path: "/{org}/facility",               needs: ".data-row" },
+  // The chip must be labelled "Grill" — which is only possible by reading the
+  // schema's `title` for the machine name `question2`. A renderer keyed on the
+  // submission's own keys labels this "question2" and fails here.
+  { name: "facility · form chips", path: "/{org}/facility",               needs: "[data-forms-chip=\"Grill\"]" },
+  // 45 on the form against a Head Cnt of 30. Fires on 15% of real rentals.
+  { name: "facility · count mismatch", path: "/{org}/facility",           needs: "[data-forms-mismatch=\"45/30\"]" },
+
+  // Everything below drives the PRINT path — _print=1&forms=1 is exactly what
+  // the PDF route requests, so these also prove a filtered export carries the
+  // expanded answers rather than a page of collapsed chips nobody can click.
+  { name: "facility · answers print", path: "/{org}/facility?_print=1&forms=1", needs: ".form-panel" },
+  // `false` is an answer. If empty-ish answers are filtered by truthiness, the
+  // 295 real "no grill" answers vanish and this finds no No anywhere.
+  { name: "facility · false is an answer", path: "/{org}/facility?_print=1&forms=1",
+    needs: "[data-form-bool=\"No\"]" },
+  // The waiver answers ["Item 1"]; only choices[].value -> text turns that into
+  // "I Agree". Printing the raw value ships "Item 1" to a parks crew.
+  { name: "facility · choice value mapped", path: "/{org}/facility?_print=1&forms=1",
+    needs: "[data-form-waiver=\"I Agree\"]" },
+  // ...and the same mapping on a multi-choice field question whose values are
+  // NOT in positional order (Item 5 is listed second, Item 4 first).
+  { name: "facility · choice not positional", path: "/{org}/facility?_print=1&forms=1",
+    needs: "[data-form-choice=\"Watertown Youth Organization\"]" },
+  // A file answer is an array of objects. A renderer that branches on the KEY
+  // rather than the schema type hits `question1` as a string on the field form
+  // and as a file array here, and throws on one of them.
+  { name: "facility · file answer",  path: "/{org}/facility?_print=1&forms=1",
+    needs: "[data-form-files=\"2\"]" },
+  // The pasted schedule stays a clamped block instead of stretching the table.
+  { name: "facility · long answer clamped", path: "/{org}/facility?_print=1&forms=1",
+    needs: ".ans-blob[data-form-blob]" },
+  // A form filter in the URL must narrow the printed rows, or a filtered export
+  // silently prints the whole schedule.
+  // Asserting the chip alone would pass on an unfiltered page, so this asserts
+  // the GROUP SIZE: Arsenal Park holds three fixture rentals and only one wants
+  // a grill. Drop the filter and the group renders 3, failing this by name.
+  { name: "facility · filtered print", path: "/{org}/facility?_print=1&forms=1&form_filter=grill",
+    needs: ".loc-section[data-loc-rows=\"1\"]" },
   { name: "facilities · summary",  path: "/{org}/facilities?tab=summary", needs: ".sum-cards, .aqua-sec, .fac-banner" },
   { name: "org landing",           path: "/{org}",                        needs: ".card" },
   { name: "gl report",             path: "/{org}/gl",                     needs: ".toolbar" },
@@ -711,7 +865,10 @@ function waitForServer(started) {
                                            args: ["--no-sandbox", "--disable-dev-shm-usage"] });
   const failures = [];
 
-  for (const c of CASES) {
+  // Optional filter so one page's cases can be iterated (and mutation-tested)
+  // without paying for all 46: `node scripts/ci-check-render.js facility ·`
+  const only = process.argv.slice(2).join(" ").trim();
+  for (const c of (only ? CASES.filter(c => c.name.includes(only)) : CASES)) {
     const page = await browser.newPage();
     await page.setViewport({ width: 1280, height: 1000 });
     const errs = [];
@@ -744,6 +901,14 @@ function waitForServer(started) {
       bodyLen = await page.evaluate(() => document.body.innerText.trim().length);
     } catch (e) {
       errs.push("navigation: " + e.message.split("\n")[0].slice(0, 160));
+    }
+    // Optional visual capture for design review. Off unless SHOT_DIR is set, so
+    // CI is untouched.
+    if (process.env.SHOT_DIR && found) {
+      try {
+        await page.screenshot({ path: require("path").join(process.env.SHOT_DIR,
+          c.name.replace(/[^a-z0-9]+/gi, "-") + ".png"), fullPage: false });
+      } catch (_) {}
     }
     await page.close();
 

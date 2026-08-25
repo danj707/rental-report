@@ -516,6 +516,82 @@
     .col-paid { width: 50px; text-align: center; }
     .cell.col-paid { font-size: 12px; }
     .col-permit { width: 26px; text-align: center; }
+
+    /* ── Rental form answers: chips + inline panel ── */
+    .col-forms { width: 196px; flex: none; }
+    /* The chip strip is the row's expander. A button, not a div, so it is
+       reachable by keyboard and announces its state. */
+    .forms-chips { display: flex; gap: 3px; flex-wrap: wrap; align-items: center;
+                   background: none; border: 0; padding: 0; margin: 0; cursor: pointer;
+                   font-family: inherit; text-align: left; width: 100%; }
+    .fchip { display: inline-flex; align-items: center; gap: 3px;
+             font-family: 'IBM Plex Mono', monospace; font-size: 9.5px; font-weight: 600;
+             padding: 1px 5px; border-radius: 3px; border: 1px solid transparent;
+             white-space: nowrap; }
+    .fchip.amber { background: #fef3c7; color: #92400e; border-color: #f7d98c; }
+    .fchip.warn  { background: #fee2e2; color: #9f1239; border-color: #f6b8b8; }
+    .fchip.note  { background: #eef1f4; color: #475569; border-color: #dbe1e7; }
+    .fchip.quiet { background: transparent; color: #9aa1ab; border-color: #e3e5e9; font-weight: 500; }
+    .fcaret { font-size: 8px; color: #9aa1ab; }
+    .forms-chips:hover .fcaret { color: #2563eb; }
+
+    .form-panel { background: #f7faff; border-bottom: 1px solid #dbe6f5; padding: 0 8px 10px; }
+    .form-panel-inner { border-left: 2px solid #93b4e0; padding: 9px 0 2px 14px; margin-left: 150px; }
+    .form-card + .form-card { margin-top: 10px; padding-top: 10px; border-top: 1px dashed #cdd9e8; }
+    .form-name { font-size: 11px; font-weight: 700; color: #1f3a63; margin-bottom: 6px; }
+    .form-when { font-family: 'IBM Plex Mono', monospace; font-size: 9.5px; font-weight: 500;
+                 color: #7b8493; margin-left: 8px; }
+    .form-qa { display: grid; grid-template-columns: minmax(140px, 250px) 1fr; gap: 3px 14px;
+               font-size: 10.5px; margin: 0; }
+    .form-qa dt { color: #6b7280; text-align: right; margin: 0; }
+    .form-qa dd { color: #1a1a1a; font-weight: 500; margin: 0; }
+    .ans-yes { color: #14653a; font-weight: 700; }
+    .ans-no  { color: #9aa1ab; font-weight: 500; }
+    .ans-file { font-family: 'IBM Plex Mono', monospace; font-size: 9.5px; color: #475569;
+                background: #fff; border: 1px solid #dbe1e7; border-radius: 3px; padding: 1px 5px; }
+    .ans-open { font-size: 9.5px; margin-left: 6px; color: #2563eb; text-decoration: none; }
+    /* Filenames are frequently the least neutral string in the record
+       ("…Driver_s_License_back…"), so they stay behind the expand and never
+       reach Excel or a subscription email. */
+    .ans-filenames { font-family: 'IBM Plex Mono', monospace; font-size: 9px; color: #9aa1ab;
+                     margin-top: 2px; word-break: break-all; }
+    .ans-conflict { font-family: 'IBM Plex Mono', monospace; font-size: 9px; color: #92400e;
+                    background: #fef3c7; border: 1px solid #f7d98c; padding: 0 4px;
+                    border-radius: 3px; margin-left: 6px; white-space: nowrap; }
+    /* A 1,400-character pasted schedule only reads as a monospace block, and it
+       must never stretch the table: clamped until asked for. */
+    .ans-blob { white-space: pre-wrap; font-family: 'IBM Plex Mono', monospace; font-size: 9.5px;
+                line-height: 1.45; max-height: 4em; overflow: hidden; background: #fff;
+                border: 1px solid #e3e8ef; border-radius: 4px; padding: 4px 6px; }
+    .ans-blob.open { max-height: none; }
+    .form-more { font-family: 'IBM Plex Mono', monospace; font-size: 9px; font-weight: 600;
+                 color: #1f4b8f; background: none; border: 0; padding: 2px 0 0; cursor: pointer; }
+    .form-more:hover { text-decoration: underline; }
+    .waiver-line { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; font-size: 10.5px; }
+    .waiver-ok { color: #14653a; font-weight: 600; }
+    .waiver-no { color: #9f1239; font-weight: 600; }
+    .waiver-terms { margin-top: 5px; font-size: 9.5px; line-height: 1.5; color: #5b6472;
+                    background: #fff; border: 1px solid #e3e8ef; border-radius: 4px;
+                    padding: 7px 9px; max-height: 160px; overflow-y: auto; white-space: pre-wrap; }
+    .form-unans { font-family: 'IBM Plex Mono', monospace; font-size: 9px; color: #9aa1ab; margin-top: 6px; }
+    .forms-filter-bar { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; }
+    .forms-filter-bar .ff {
+      font-family: 'IBM Plex Mono', monospace; font-size: 10px; font-weight: 600;
+      padding: 3px 8px; border-radius: 12px; cursor: pointer;
+      border: 1px solid rgba(255,255,255,.25); background: rgba(255,255,255,.07); color: #dfe3e8;
+    }
+    .forms-filter-bar .ff:hover { background: rgba(255,255,255,.16); }
+    .forms-filter-bar .ff.on { background: #f7d98c; border-color: #f7d98c; color: #4a2f04; }
+
+    /* Print: the panel is the reason a filtered PDF is worth anything, so it
+       prints when the export asked for it — and never splits across a page. */
+    @media print {
+      .form-panel { background: #f9fbff !important; -webkit-print-color-adjust: exact;
+                    print-color-adjust: exact; break-inside: avoid; page-break-inside: avoid; }
+      .form-panel-inner { margin-left: 0; }
+      .ans-blob { max-height: none; }
+      .form-more, .fcaret, .ans-open { display: none !important; }
+    }
     .col-rec-link { width: 28px; text-align: center; }
 
     /* ═══════════════════════════════════════════════════════════════
@@ -1267,6 +1343,11 @@ function getParams() {
     sites:         p.get('sites'),      // comma-separated, from share URL
     book_type:     p.get('book_type'),  // instant | managed | all
     addons:        p.get('addons'),     // comma-separated, from share/PDF URL
+    // Form answers. `forms=1` opens every visible rental's answers — the PDF
+    // route sets it so a printed page shows what a click shows on screen.
+    // `form_filter` keeps the printed rows the same rows that were on screen.
+    forms:         p.get('forms'),
+    form_filter:   p.get('form_filter'),
   };
 }
 
@@ -1897,6 +1978,361 @@ function HeatmapStrip({ filteredRows, locationColors }) {
 }
 
 // ── Main App ─────────────────────────────────────────────────────────
+/* ══════════════════════════════════════════════════════════════════════════
+   Rental form answers — the "Requests" column and the inline form panel.
+
+   These are MODULE SCOPE on purpose. They are pure, they are read by the row
+   render, the day rollup, the filters and the Excel export, and defining them
+   inside the component above their inputs is exactly the pattern that blanked
+   this page twice (in-browser Babel rewrites `const` to `var`, so a temporal
+   dead zone reads as `undefined` rather than throwing — see CLAUDE.md).
+
+   Everything here is driven by the form's own schema, which the server hands
+   over per form id. Five things about the data shape drive the whole design;
+   each was measured against production, and each one silently corrupts the
+   panel if it is missed. See scripts/facility-forms.spec.js.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* An answer's LABEL never comes from the submission key. Every question on
+   Watertown's field-permit form is named question1..question9, and the picnic
+   form's `question2` is "Grill Request". Title first, machine name only as a
+   last resort. */
+function formLabel(el) {
+  if (!el) return '';
+  var t = (el.title || '').trim();
+  if (t) return t;
+  return (el.name || '').trim();
+}
+
+/* A choice answer is an opaque VALUE — the waiver's is ["Item 1"], not
+   "I Agree", and the field form's ["Item 5"] is "Watertown Youth Organization".
+   The values are arbitrary and are NOT in positional order (Item 4 is listed
+   first), so this has to be a lookup, never an index. */
+function formChoiceText(el, v) {
+  var raw = String(v);
+  var choices = (el && Array.isArray(el.choices)) ? el.choices : [];
+  for (var i = 0; i < choices.length; i++) {
+    var c = choices[i];
+    if (c && typeof c === 'object' && String(c.value) === raw) return String(c.text != null ? c.text : c.value);
+    if (typeof c === 'string' && c === raw) return c;
+  }
+  return raw;
+}
+
+/* `false` IS AN ANSWER. Watertown's booleans are answered on 485 of 485
+   submissions with 0 blanks, and 295 of them are "no grill" — the answer a
+   parks crew most needs. A truthiness test here deletes every one of them, so
+   this checks for genuinely absent instead. */
+function formIsAnswered(v) {
+  if (v === undefined || v === null) return false;
+  if (typeof v === 'string') return v.trim() !== '';
+  if (Array.isArray(v)) return v.length > 0;
+  return true;
+}
+
+function formIsFileAnswer(v) {
+  return Array.isArray(v) && v.length > 0 && v[0] && typeof v[0] === 'object' && 'name' in v[0];
+}
+
+/* Render one answer for display. Branches on the SCHEMA's type, never on the
+   key: `question1` is a file array on the picnic form and the plain string
+   "Watertown Youth Soccer" on the field form, so a key-driven renderer throws
+   on one of them (a probe query died with exactly that: "cannot get array
+   length of a scalar"). */
+function formAnswerView(el, v) {
+  var type = (el && el.type) || 'text';
+  if (formIsFileAnswer(v)) {
+    var names = v.map(function (f) { return String(f.name || 'file'); });
+    var bytes = v.reduce(function (a, f) { return a + (Number(f.size) || 0); }, 0);
+    return { kind: 'file', files: names, size: bytes };
+  }
+  if (typeof v === 'boolean' || type === 'boolean') {
+    var yes = (v === true || v === 'true');
+    return { kind: 'bool', yes: yes, text: yes ? 'Yes' : 'No' };
+  }
+  if (Array.isArray(v)) {
+    return { kind: 'choice', text: v.map(function (x) { return formChoiceText(el, x); }).join(', ') };
+  }
+  if (type === 'checkbox' || type === 'radiogroup' || type === 'dropdown') {
+    return { kind: 'choice', text: formChoiceText(el, v) };
+  }
+  var s = String(v);
+  /* A pasted schedule is 1,400 characters of tab-delimited text (Watertown
+     Youth Soccer's field permit). It only reads as a monospace block, and it
+     must never be allowed to stretch a table cell. */
+  return { kind: s.length > 180 || /\n|\t/.test(s) ? 'blob' : 'text', text: s };
+}
+
+/* The ordered question/answer list for one submission.
+
+   Order comes from the SCHEMA, because jsonb does not preserve key order — the
+   submission's own key order is meaningless. Any answer whose key is not in the
+   schema is appended rather than dropped, so a question deleted from the form
+   after someone answered it still shows up instead of vanishing silently. */
+function formEntries(elements, answers) {
+  var els = Array.isArray(elements) ? elements : [];
+  var ans = answers || {};
+  var seen = {};
+  var out = [];
+  els.forEach(function (el) {
+    if (!el || !el.name) return;
+    seen[el.name] = true;
+    var v = ans[el.name];
+    out.push({ el: el, value: v, answered: formIsAnswered(v), view: formIsAnswered(v) ? formAnswerView(el, v) : null });
+  });
+  Object.keys(ans).forEach(function (k) {
+    if (seen[k]) return;
+    var el = { name: k, type: 'text' };
+    out.push({ el: el, value: ans[k], answered: formIsAnswered(ans[k]), orphan: true,
+               view: formIsAnswered(ans[k]) ? formAnswerView(el, ans[k]) : null });
+  });
+  return out;
+}
+
+/* A waiver is not a questionnaire. 454 of the platform's 1,210 forms are a
+   single question, and that question's TITLE carries the legal text — 3,257
+   characters on Watertown's picnic disclaimer, 18,003 on the longest anywhere.
+   Its only information is that it was accepted, so it collapses to one line and
+   the terms go behind a disclosure. */
+function formIsWaiver(elements) {
+  var els = Array.isArray(elements) ? elements : [];
+  if (els.length !== 1) return false;
+  var el = els[0];
+  var t = (el.type || '');
+  return (t === 'checkbox' || t === 'boolean' || t === 'dropdown') && formLabel(el).length > 200;
+}
+
+var FORM_FLAG_EMOJI = [
+  [/grill|bbq|barbec/i,            '🔥'], // fire
+  [/cater|food truck/i,            '🍽️'],
+  [/public|open to the public/i,   '📣'],
+  [/alcohol|beer|wine|liquor/i,    '🍺'],
+  [/tent|canopy|inflatable|bounce/i, '⛺'],
+  [/amplif|music|sound|dj|pa\b/i,  '🔊'],
+  [/vendor|sell|sales/i,           '💵'],
+  [/animal|pet|pony|petting/i,     '🐕'],
+];
+function formFlagEmoji(label) {
+  for (var i = 0; i < FORM_FLAG_EMOJI.length; i++) {
+    if (FORM_FLAG_EMOJI[i][0].test(label)) return FORM_FLAG_EMOJI[i][1];
+  }
+  return '●';
+}
+
+/* Chip labels are DERIVED, not curated. Rental forms are in use at 93 orgs and
+   nobody is going to hand-map them, so a question becomes a chip on its own
+   shape: a boolean answered yes. The label is the question with the
+   interrogative scaffolding taken off — "Is this a catered event? (If yes,
+   please see Health Dept…)" has to read as "Catered" in a 190px column. */
+function formShortLabel(title) {
+  var s = String(title || '')
+    .replace(/\([^)]*\)/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/^(?:is|are|will|would|does|do|did)\s+(?:this|there|you|your|it)\s+(?:a|an|be|have|need|require)?\s*/i, '')
+    .replace(/^(?:please\s+(?:indicate|specify|confirm)|request\s+for|do you need)\s*/i, '')
+    .replace(/[?:.,]+\s*$/, '')
+    // Trailing generic nouns carry nothing in a 196px column: "Grill Request"
+    // is "Grill", "Is this a public event?" is "Public". The distinguishing
+    // word is the one that survives.
+    .replace(/\s+(?:request(?:ed)?|event|permit|needed|required)$/i, '')
+    .trim();
+  var words = s.split(' ').filter(Boolean).slice(0, 2).join(' ');
+  if (!words) words = String(title || '').slice(0, 16);
+  if (words.length > 18) words = words.slice(0, 17).trim() + '…';
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+/* Does this answer look like a head count, and does it disagree with the
+   booking? 73 of 485 Watertown picnic rentals (15%) carry a form attendee
+   number that differs from facility_rental.attendee_count. It is not
+   necessarily an error — a party grows after booking — but a pavilion set for
+   30 when 45 arrive is worth one chip. */
+function formHeadCount(entries) {
+  for (var i = 0; i < entries.length; i++) {
+    var e = entries[i];
+    if (!e.answered) continue;
+    if (!/attend|guest|head\s*count|number of (?:people|participants)|estimated number/i.test(formLabel(e.el))) continue;
+    var n = parseInt(String(e.value).replace(/[^0-9]/g, ''), 10);
+    if (isFinite(n) && n > 0) return n;
+  }
+  return null;
+}
+
+/* The chips for one rental.
+
+   THE RULE: chip the exception, not the norm. 484 of 485 picnic rentals
+   uploaded an ID and 484 signed the waiver — a chip on every row is
+   decoration, so those collapse into one quiet "N forms" and only the unusual
+   answers go loud. Grill fires on 39% of rentals, catered 5%, public 4%: often
+   enough to be worth scanning for, rare enough to stand out.
+
+   `flags` are the loud ones; `quiet` is the paperwork-is-in summary. */
+function formFlags(subs, schemas, row) {
+  var out = { flags: [], quiet: '', forms: 0, files: 0, waivers: 0, note: false, headCount: null };
+  if (!subs || !subs.length) return out;
+  out.forms = subs.length;
+  var noteLen = 0;
+  subs.forEach(function (s) {
+    var els = (schemas && schemas[s.form]) || [];
+    var entries = formEntries(els, s.answers);
+    if (formIsWaiver(els)) { out.waivers++; return; }
+    entries.forEach(function (e) {
+      if (!e.answered || !e.view) return;
+      if (e.view.kind === 'file') { out.files += e.view.files.length; return; }
+      if (e.view.kind === 'bool' && e.view.yes) {
+        var label = formShortLabel(formLabel(e.el));
+        if (label) out.flags.push({ key: label.toLowerCase(), label: label, emoji: formFlagEmoji(formLabel(e.el)) });
+        return;
+      }
+      if (e.view.kind === 'blob') { noteLen = Math.max(noteLen, e.view.text.length); return; }
+      if (e.view.kind === 'text' && e.view.text.length > 24) noteLen = Math.max(noteLen, e.view.text.length);
+    });
+    var hc = formHeadCount(entries);
+    if (hc != null && out.headCount == null) out.headCount = hc;
+  });
+  out.note = noteLen > 0;
+  var booked = row && row.headCount != null && row.headCount !== '' ? parseInt(row.headCount, 10) : null;
+  if (out.headCount != null && isFinite(booked) && booked > 0 && out.headCount !== booked) {
+    out.mismatch = { form: out.headCount, booked: booked };
+  }
+  out.quiet = out.forms + (out.forms === 1 ? ' form' : ' forms');
+  return out;
+}
+
+/* The filter keys a row matches, so the toolbar filters and the day rollup read
+   from one place. Every panel on this page must derive from the same filtered
+   view — the facility Summary once scoped some panels and not others and the
+   numbers disagreed across the page for a week. */
+function formFilterKeys(flags) {
+  var keys = [];
+  if (!flags) return keys;
+  flags.flags.forEach(function (f) {
+    if (/grill|bbq/i.test(f.label)) keys.push('grill');
+    if (/cater/i.test(f.label)) keys.push('catered');
+    if (/public/i.test(f.label)) keys.push('public');
+    if (/alcohol|beer|wine/i.test(f.label)) keys.push('alcohol');
+  });
+  if (flags.note) keys.push('note');
+  if (flags.mismatch) keys.push('mismatch');
+  if (flags.forms) keys.push('any');
+  return keys;
+}
+
+/* The inline answers panel. One card per form on the rental, questions in the
+   form's own order.
+
+   Kept at module scope alongside the helpers so the whole feature is readable
+   in one place, and so the row render stays a single expression. */
+function FormPanel({ subs, schemas, row, orgId }) {
+  const [showTerms, setShowTerms] = React.useState(null);
+  const [openBlobs, setOpenBlobs] = React.useState(() => new Set());
+  const adminUrl = orgId && row && row.resId
+    ? `https://www.rec.us/admin/o/${orgId}/facility-rentals/${row.resId}?tab=requiredInformation`
+    : null;
+  const booked = row && row.headCount != null && row.headCount !== ''
+    ? parseInt(row.headCount, 10) : null;
+
+  return (
+    <div className="form-panel">
+      <div className="form-panel-inner">
+        {subs.map((s, si) => {
+          const els = (schemas && schemas[s.form]) || [];
+          const entries = formEntries(els, s.answers);
+          const waiver = formIsWaiver(els);
+
+          if (waiver) {
+            // A waiver's answer is the choice VALUE ("Item 1"); only the
+            // schema turns it back into "I Agree".
+            const e = entries[0] || {};
+            const agreed = e.answered;
+            const text = agreed && e.view ? e.view.text : '';
+            return (
+              <div className="form-card" key={si}>
+                <div className="form-name">{s.name}
+                  {s.at && <span className="form-when">signed {s.at}</span>}</div>
+                <div className="waiver-line">
+                  <span className={agreed ? 'waiver-ok' : 'waiver-no'}
+                    data-form-waiver={agreed ? (text || 'agreed') : 'no'}>
+                    {agreed ? `✍️ Agreed${text ? ' — “' + text + '”' : ''}` : 'Not agreed'}
+                  </span>
+                  {formLabel(e.el).length > 200 &&
+                    <button className="form-more" onClick={() => setShowTerms(showTerms === si ? null : si)}>
+                      {showTerms === si ? 'Hide terms ▴' : 'Show terms ▾'}
+                    </button>}
+                </div>
+                {showTerms === si && <div className="waiver-terms">{formLabel(e.el)}</div>}
+              </div>
+            );
+          }
+
+          const answered = entries.filter(e => e.answered);
+          const missing  = entries.filter(e => !e.answered);
+          return (
+            <div className="form-card" key={si}>
+              <div className="form-name">{s.name}
+                {s.at && <span className="form-when">submitted {s.at}</span>}</div>
+              <dl className="form-qa">
+                {answered.map((e, ei) => {
+                  const label = formLabel(e.el);
+                  const v = e.view;
+                  const blobKey = si + ':' + ei;
+                  const isNum = v.kind === 'text' && /attend|guest|head\s*count|number of/i.test(label);
+                  const n = isNum ? parseInt(String(e.value).replace(/[^0-9]/g, ''), 10) : NaN;
+                  return (
+                    <React.Fragment key={ei}>
+                      <dt title={label.length > 90 ? label : undefined}>
+                        {label.length > 90 ? label.slice(0, 88) + '…' : label}
+                      </dt>
+                      <dd>
+                        {v.kind === 'bool' &&
+                          <span className={v.yes ? 'ans-yes' : 'ans-no'} data-form-bool={v.text}>{v.text}</span>}
+                        {v.kind === 'file' && <>
+                          {/* The S3 URL in the submission is NOT fetchable —
+                              the bucket 403s an unsigned request — so this is
+                              deliberately a name, not a link to the file. The
+                              only working destination is Rec admin. */}
+                          <span className="ans-file" data-form-files={String(v.files.length)}>📎 {v.files.length === 1 ? '1 file' : v.files.length + ' files'}
+                            {v.size ? ` · ${(v.size / 1048576).toFixed(2)} MB` : ''}</span>
+                          {adminUrl && <a className="ans-open" href={adminUrl} target="_blank" rel="noopener noreferrer">open in Rec ↗</a>}
+                          <div className="ans-filenames">{v.files.join(', ')}</div>
+                        </>}
+                        {v.kind === 'blob' && <>
+                          <div className={'ans-blob' + (openBlobs.has(blobKey) ? ' open' : '')}
+                            data-form-blob={String(v.text.length)}>{v.text}</div>
+                          <button className="form-more" onClick={() => {
+                            const nx = new Set(openBlobs);
+                            if (nx.has(blobKey)) nx.delete(blobKey); else nx.add(blobKey);
+                            setOpenBlobs(nx);
+                          }}>{openBlobs.has(blobKey)
+                            ? 'Collapse ▴'
+                            : `Show all ${v.text.length.toLocaleString()} characters ▾`}</button>
+                        </>}
+                        {(v.kind === 'text' || v.kind === 'choice') &&
+                          <span data-form-choice={v.kind === 'choice' ? v.text : undefined}>{v.text}</span>}
+                        {/* Where the form and the booking disagree, say so in
+                            the answer. 15% of Watertown's picnic rentals do,
+                            and two numbers on opposite ends of a wide row are
+                            not going to be compared by eye. */}
+                        {isNum && isFinite(n) && isFinite(booked) && booked > 0 && n !== booked &&
+                          <span className="ans-conflict">booking says {booked}</span>}
+                      </dd>
+                    </React.Fragment>
+                  );
+                })}
+              </dl>
+              {missing.length > 0 &&
+                <div className="form-unans">{missing.length === 1
+                  ? '1 question not answered'
+                  : `${missing.length} questions not answered`} — {missing.map(e => formLabel(e.el)).join(', ').slice(0, 120)}</div>}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function renderNotes(text) {
   if (!text) return "";
   // Escape HTML entities first for safety
@@ -2006,6 +2442,30 @@ function App() {
   const [showPermit, setShowPermit] = useState(() => {
     try { return localStorage.getItem('col_permit') !== 'false'; } catch { return true; }
   });
+  // ── Rental form answers ("Requests") ──────────────────────────────
+  // Loaded after the schedule, exactly like permits. `formSchemas` is keyed by
+  // form id and shared across rentals — Watertown's 546 rentals resolve against
+  // 9 schemas — which is why the card de-duplicates them.
+  const [rentalForms, setRentalForms] = useState(null);
+  const [formSchemas, setFormSchemas] = useState({});
+  const [showForms, setShowForms] = useState(() => {
+    try { return localStorage.getItem('col_forms') !== 'false'; } catch { return true; }
+  });
+  // Which rentals have their answers open. Not persisted: it is a reading
+  // position, not a layout preference.
+  const [openForms, setOpenForms] = useState(() => new Set());
+  const [formFilters, setFormFilters] = useState(() => new Set(
+    (params.form_filter || '').split(',').map(s => s.trim()).filter(Boolean)
+  ));
+  // Whether the PDF carries the expanded answers. Default ON, because the whole
+  // point of the panel is that filtering to "the grills" and printing should
+  // hand a crew the answers — a PDF of collapsed rows would never show them.
+  const [pdfForms, setPdfForms] = useState(() => {
+    try { return localStorage.getItem('pdf_forms') !== 'false'; } catch { return true; }
+  });
+  // In print mode the panels cannot be opened by hand, so `forms=1` opens every
+  // visible row that has answers. Set from the URL, before #report-ready.
+  const printAllForms = params._print === '1' && params.forms === '1';
   const [showLink, setShowLink] = useState(() => {
     try { return localStorage.getItem('col_link') === 'true'; } catch { return false; }
   });
@@ -2044,6 +2504,23 @@ function App() {
       .then(d => setPermits(d && d.permits ? d.permits : {}))
       .catch(() => setPermits({}));
   }, []);
+
+  // Same contract as permits: one request per view, soft-failing to no column.
+  // An org with no forms card configured gets `disabled` and simply never sees
+  // the Requests column — nothing to switch on per org.
+  useEffect(() => {
+    const parts = window.location.pathname.split('/').filter(Boolean);
+    if (!parts.length) return;
+    fetch(withToken(`/${parts[0]}/facility/api/forms`))
+      .then(r => r.json())
+      .then(d => {
+        setRentalForms(d && d.forms ? d.forms : {});
+        setFormSchemas(d && d.schemas ? d.schemas : {});
+      })
+      .catch(() => { setRentalForms({}); setFormSchemas({}); });
+  }, []);
+  useEffect(() => { try { localStorage.setItem('col_forms', showForms); } catch {} }, [showForms]);
+  useEffect(() => { try { localStorage.setItem('pdf_forms', pdfForms); } catch {} }, [pdfForms]);
   useEffect(() => { try { localStorage.setItem('col_notes',     showNotes);     } catch {} }, [showNotes]);
   useEffect(() => { try { localStorage.setItem('col_permit',    showPermit);    } catch {} }, [showPermit]);
   useEffect(() => { try { localStorage.setItem('col_link',      showLink);      } catch {} }, [showLink]);
@@ -2458,7 +2935,64 @@ function App() {
 
   const hasLighting = useMemo(() => rows && rows.some(r => r.lighting === 'Yes'), [rows]);
 
-  const filteredRows = useMemo(() => {
+  // Chips per reservation, derived once. Defined immediately above the consumer
+  // rather than anywhere convenient: everything that counts, filters or paints
+  // form state reads THIS, so the row, the day rollup and the filters can never
+  // disagree the way the facility Summary's chips once did.
+  const rowFlags = useMemo(() => {
+    const m = new Map();
+    if (!rentalForms || !rows) return m;
+    rows.forEach(r => {
+      if (!r.resId || m.has(r.resId)) return;
+      const subs = rentalForms[r.resId];
+      if (!subs || !subs.length) return;
+      m.set(r.resId, formFlags(subs, formSchemas, r));
+    });
+    return m;
+  }, [rentalForms, formSchemas, rows]);
+
+  // The column only exists where forms do. An org that collects none never sees
+  // an empty column, and nothing has to be switched on per org.
+  const hasAnyForms = rowFlags.size > 0;
+
+  function isFormOpen(r) {
+    return printAllForms || (r.resId ? openForms.has(r.resId) : false);
+  }
+  function toggleForms(r) {
+    if (!r.resId) return;
+    const next = new Set(openForms);
+    const opening = !next.has(r.resId);
+    if (opening) next.add(r.resId); else next.delete(r.resId);
+    setOpenForms(next);
+    if (!opening) return;
+    // Standing rule: a new surface pings the activity feed. Keyed by rental, so
+    // staff comparing three bookings reads as three looks; `flags` carries what
+    // the row was showing, which is the half worth knowing.
+    const fl = rowFlags.get(r.resId);
+    const parts = window.location.pathname.split('/').filter(Boolean);
+    const subs = (rentalForms && rentalForms[r.resId]) || [];
+    try {
+      fetch(withToken(`/${parts[0]}/facility/api/log?event=form-view`
+        + `&rental=${encodeURIComponent((r.resName || r.site || '').slice(0, 60))}`
+        + `&forms=${encodeURIComponent(subs.map(s => s.name).join(', ').slice(0, 110))}`
+        + `&flags=${encodeURIComponent(fl ? fl.flags.map(f => f.label).join(',').slice(0, 70) : '')}`),
+        { method: 'POST', keepalive: true });
+    } catch {}
+  }
+  function toggleFormFilter(key, matched) {
+    const next = new Set(formFilters);
+    if (next.has(key)) next.delete(key); else {
+      next.add(key);
+      const parts = window.location.pathname.split('/').filter(Boolean);
+      try {
+        fetch(withToken(`/${parts[0]}/facility/api/log?event=form-filter&filter=${encodeURIComponent(key)}&n=${matched || 0}`),
+          { method: 'POST', keepalive: true });
+      } catch {}
+    }
+    setFormFilters(next);
+  }
+
+  const baseFilteredRows = useMemo(() => {
     if (!rows) return null;
     let result = rows.filter(r => !r.status || !/cancel/i.test(r.status));
     if (selectedLocations && selectedLocations.size < allLocations.length) {
@@ -2481,6 +3015,53 @@ function App() {
     }
     return result;
   }, [rows, selectedLocations, allLocations, selectedSites, allSites, bookTypeFilter, selectedAddOns, allAddOns, filterLighting]);
+
+  // Which form filters are worth offering, and how many rows each matches.
+  //
+  // Counted over baseFilteredRows — every OTHER filter applied, but not the
+  // form filters themselves. Counting over the fully filtered set would make
+  // every unselected chip read 0 as soon as one was picked, so the chips could
+  // never be combined; counting over all loaded rows would contradict an
+  // active location filter.
+  const availableFormFilters = useMemo(() => {
+    if (!baseFilteredRows || !rowFlags.size) return [];
+    const META = {
+      grill:    { label: 'Grill',     emoji: '🔥' },
+      catered:  { label: 'Catered',   emoji: '🍽️' },
+      public:   { label: 'Public',    emoji: '📣' },
+      alcohol:  { label: 'Alcohol',   emoji: '🍺' },
+      mismatch: { label: 'Count off', emoji: '👥' },
+      note:     { label: 'Has note',  emoji: '📝' },
+    };
+    const counts = {};
+    const seen = new Set();
+    baseFilteredRows.forEach(r => {
+      // A multi-day rental occupies one row per day; its answers are one
+      // answer, so count the RENTAL once or a 40-date permit reads as 40 grills.
+      if (!r.resId || seen.has(r.resId)) return;
+      seen.add(r.resId);
+      formFilterKeys(rowFlags.get(r.resId)).forEach(k => {
+        if (k === 'any') return;
+        counts[k] = (counts[k] || 0) + 1;
+      });
+    });
+    return Object.keys(META)
+      .filter(k => counts[k] > 0 || formFilters.has(k))
+      .map(k => ({ key: k, label: META[k].label, emoji: META[k].emoji, count: counts[k] || 0 }));
+  }, [baseFilteredRows, rowFlags, formFilters]);
+
+  const filteredRows = useMemo(() => {
+    if (!baseFilteredRows) return null;
+    if (!formFilters || !formFilters.size) return baseFilteredRows;
+    // Applied with every other filter so the PDF, the Excel export, the metrics
+    // strip and the day rollup all inherit it rather than each re-deriving a
+    // slightly different set.
+    return baseFilteredRows.filter(r => {
+      const keys = formFilterKeys(rowFlags.get(r.resId));
+      for (const want of formFilters) { if (keys.indexOf(want) === -1) return false; }
+      return true;
+    });
+  }, [baseFilteredRows, formFilters, rowFlags]);
 
   const grouped = useMemo(() => {
     if (!filteredRows) return null;
@@ -2683,6 +3264,19 @@ function App() {
     if (selectedSites && selectedSites.size < allSites.length) { qs.set('sites', [...selectedSites].join(',')); }
     if (bookTypeFilter && bookTypeFilter !== 'all') qs.set('book_type', bookTypeFilter);
     if (selectedAddOns)    { const a = [...selectedAddOns];    if (a.length) qs.set('addons',    a.join(',')); }
+    // Form answers in the PDF.
+    //
+    // Both halves have to travel or the export is misleading. `form_filter`
+    // keeps the printed rows the same rows that are on screen — filter to the
+    // grills, print, and you get the grills. `forms=1` then opens the answers
+    // on those rows, because a PDF of collapsed chips would never show the
+    // thing the filter was for: nobody can click a printed page.
+    //
+    // This is the checkbox's whole job, so it is authoritative over whatever
+    // happens to be expanded on screen — an export should be complete, not a
+    // snapshot of which rows someone had already clicked.
+    if (formFilters && formFilters.size) qs.set('form_filter', [...formFilters].join(','));
+    if (pdfForms && hasAnyForms) qs.set('forms', '1');
 
     const pathParts = window.location.pathname.replace(/\/$/, '').split('/');
     const pdfBase = pathParts.length >= 3
@@ -2938,6 +3532,26 @@ function App() {
           </>
         )}
 
+        {/* Form-answer filters. Only the keys that actually occur in the loaded
+            range are offered, so an org that never asks about grills is never
+            shown a grill filter that matches nothing. */}
+        {hasAnyForms && availableFormFilters.length > 0 && (
+          <>
+            <div className="divider" />
+            <div className="forms-filter-bar">
+              {availableFormFilters.map(f => (
+                <button key={f.key} type="button"
+                  className={'ff' + (formFilters.has(f.key) ? ' on' : '')}
+                  aria-pressed={formFilters.has(f.key) ? 'true' : 'false'}
+                  title={`Show only rentals whose form says ${f.label.toLowerCase()} (${f.count} in range)`}
+                  onClick={() => toggleFormFilter(f.key, f.count)}>
+                  {f.emoji} {f.label} <span style={{opacity:.65}}>{f.count}</span>
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+
         {rows && rows.some(r => r.bookingType && r.bookingType.trim()) && (
           <>
             <div className="divider" />
@@ -2995,6 +3609,15 @@ function App() {
                 <input type="checkbox" checked={showPermit} onChange={e => setShowPermit(e.target.checked)} />
                 Permit
               </label>
+              {hasAnyForms && <label style={{display:'flex',alignItems:'center',gap:4,cursor:'pointer',fontSize:11}}>
+                <input type="checkbox" checked={showForms} onChange={e => setShowForms(e.target.checked)} />
+                Requests
+              </label>}
+              {hasAnyForms && <label style={{display:'flex',alignItems:'center',gap:4,cursor:'pointer',fontSize:11}}
+                title="Print each rental's form answers under its row in the PDF. Off gives the compact schedule.">
+                <input type="checkbox" checked={pdfForms} onChange={e => setPdfForms(e.target.checked)} />
+                Answers in PDF
+              </label>}
               <label style={{display:'flex',alignItems:'center',gap:4,cursor:'pointer',fontSize:11}}>
                 <input type="checkbox" checked={showLink} onChange={e => setShowLink(e.target.checked)} />
                 Rec Link
@@ -3032,6 +3655,9 @@ function App() {
           className="btn-pdf"
           onClick={downloadPdf}
           disabled={pdfLoading || !filteredRows || filteredRows.length === 0}
+          title={hasAnyForms && pdfForms
+            ? 'PDF of the rows on screen, with each rental’s form answers printed underneath'
+            : 'PDF of the rows currently on screen'}
         >
           {pdfLoading ? 'Generating…' : '📄 PDF'}
         </button>
@@ -3311,7 +3937,10 @@ function App() {
                   {sortedLocs.map(locName => {
                     const locRows = dateGroup.locations[locName];
                     return (
-                      <div key={locName} className="loc-section">
+                      // data-loc-rows lets a render check assert that a filter
+                      // actually narrowed the printed page — "a chip is present"
+                      // passes just as happily when nothing was filtered at all.
+                      <div key={locName} className="loc-section" data-loc-rows={locRows.length}>
                         <div className="section-header">
                           <span className="date-label">{formatDateHeader(dateKey)}</span>
                           <span className="loc-label">—  {locName}</span>
@@ -3331,6 +3960,7 @@ function App() {
                           {showAddonFees && <span className="col-addon-fees">Add-On $</span>}
                           {showPaid && <span className="col-paid">Paid?</span>}
                           {showPermit && <span className="col-permit" title="Posting sheet">📋</span>}
+                          {showForms && hasAnyForms && <span className="col-forms">Requests</span>}
                           {showLink && <span className="col-rec-link">↗</span>}
                         </div>
                         {locRows.map((r, i) => (
@@ -3372,8 +4002,40 @@ function App() {
                                      style={{background:'none',border:'none',padding:0,cursor:'pointer',fontSize:13,lineHeight:1,color:'#7c3aed'}}
                                   >{permitLoading === r.resId ? '…' : '📋'}</button>
                                 : ''}</span>}
+                              {showForms && hasAnyForms && (() => {
+                                const fl = r.resId && rowFlags.get(r.resId);
+                                // No form was ever requested of this rental —
+                                // 62% of a typical week. Blank, deliberately:
+                                // only 1 of Watertown's 1,137 requested forms
+                                // is actually outstanding, so an alarm here
+                                // would cry wolf on every ordinary booking.
+                                if (!fl) return <span className="cell col-forms" />;
+                                const open = isFormOpen(r);
+                                return (
+                                  <span className="cell col-forms">
+                                    <button className="forms-chips" onClick={() => toggleForms(r)}
+                                      aria-expanded={open ? 'true' : 'false'}
+                                      title={open ? 'Hide form answers' : 'Show form answers'}>
+                                      {fl.flags.length === 0 && !fl.mismatch &&
+                                        <span className="fchip quiet">✓ {fl.quiet}</span>}
+                                      {fl.flags.map((f, fi) => (
+                                        <span key={fi} className="fchip amber" data-forms-chip={f.label}>{f.emoji} {f.label}</span>
+                                      ))}
+                                      {fl.mismatch &&
+                                        <span className="fchip warn"
+                                          data-forms-mismatch={fl.mismatch.form + '/' + fl.mismatch.booked}
+                                          title={`The form says ${fl.mismatch.form} attending; the booking says ${fl.mismatch.booked}`}
+                                        >👥 {fl.mismatch.form}≠{fl.mismatch.booked}</span>}
+                                      {fl.note && <span className="fchip note">📝 note</span>}
+                                      <span className="fcaret">{open ? '▾' : '▸'}</span>
+                                    </button>
+                                  </span>
+                                );
+                              })()}
                               {showLink && <span className="cell col-rec-link">{r.resId ? <a href={`https://www.rec.us/admin/o/${meta.org_id}/facility-rentals/${r.resId}`} target="_blank" rel="noopener noreferrer" title="Open in Rec" style={{color:'#2563eb',textDecoration:'none',fontSize:13}}>↗️</a> : ''}</span>}
                             </div>
+                            {showForms && hasAnyForms && isFormOpen(r) && r.resId && rentalForms && rentalForms[r.resId] &&
+                              <FormPanel subs={rentalForms[r.resId]} schemas={formSchemas} row={r} orgId={meta.org_id} />}
                             {showNotes && (() => {
                               let visAddons = r.addons || '';
                               if (visAddons && selectedAddOns && selectedAddOns.size < allAddOns.length) {
