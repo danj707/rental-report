@@ -128,3 +128,9 @@ jobs:
 
       - name: Page render check (real browser; a blank page fails the build)
         run: node scripts/ci-check-render.js
+
+      # A failed load must never become a published layout of seed defaults. Runs
+      # after the render check because it drives a real browser and reuses the
+      # CDN cache that check populates.
+      - name: Campmap pin persistence spec (a blip must not overwrite the layout)
+        run: node scripts/campmap-pin-persistence.spec.js

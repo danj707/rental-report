@@ -3607,7 +3607,7 @@ setTimeout(() => { checkCardParamTypes().catch(() => {}); }, 150 * 1000).unref?.
 // Inert if the env var is unset. Fire-and-forget — never blocks or breaks logging.
 // To change what pings Slack, edit SLACK_NOTIFY. High-frequency events (view/fetch)
 // are debounced per org+report so Slack isn't a firehose.
-const SLACK_NOTIFY = new Set(["created", "org-deleted", "watchdog", "schema-break", "param-drift", "report-down", "campmap-share", "campmap-site", "campmap-book", "campmap-filter", "pdf", "excel", "print", "summary", "game", "map", "outdoor", "fields", "view", "insights", "insights-feedback", "chat-feedback", "feedback", "vote", "update-vote", "munis", "permits", "email", "checkin-loc", "checkin-member", "deadlink"]);
+const SLACK_NOTIFY = new Set(["created", "org-deleted", "watchdog", "schema-break", "param-drift", "report-down", "campmap-share", "campmap-site", "campmap-book", "campmap-filter", "campmap-amenity", "pdf", "excel", "print", "summary", "game", "map", "outdoor", "fields", "view", "insights", "insights-feedback", "chat-feedback", "feedback", "vote", "update-vote", "munis", "permits", "email", "checkin-loc", "checkin-member", "deadlink"]);
 const SLACK_DEBOUNCE_MS = { view: 30 * 60 * 1000, fetch: 30 * 60 * 1000,
   // A broken report stays broken. The health check only reports NEW failures,
   // but a flapping card would otherwise post every hour.
@@ -3633,6 +3633,7 @@ const SLACK_EVENT_META = {
   // Which campsite type a camper narrows to is the one signal that says what
   // they arrived in — a park reading "RV only" all summer is a planning fact.
   "campmap-filter": { emoji: "\uD83D\uDD0E", verb: "filtered the campsite map by type" },
+  "campmap-amenity": { emoji: "\uD83E\uDDFA", verb: "filtered the campsite map by amenity" },
   "report-down": { emoji: "🔴", verb: "report is failing" },
   pdf:     { emoji: "📄", verb: "exported a PDF of" },
   excel:   { emoji: "📊", verb: "exported to Excel" },
@@ -3711,6 +3712,11 @@ function notifySlack(rec) {
     // RV-only is telling us two things, not one.
     : rec.event === "campmap-filter"
       ? `${rec.org}|campmap|filter|${rec.filterType || ""}`
+    // Keyed by the whole amenity SET rather than by a tag: ticking a second box
+    // refines one search, so "fire pit" then "fire pit + hookups" are two looks,
+    // while re-rendering the same set is not a third.
+    : rec.event === "campmap-amenity"
+      ? `${rec.org}|campmap|amenity|${rec.amenities || ""}`
     // Keyed by desk, so comparing the north branch against the south reads as
     // two looks. `checkin-member` deliberately does NOT key by member: a staff
     // member working down a list of regulars is one session, not twenty pings.
@@ -3790,6 +3796,18 @@ function notifySlack(rec) {
       ? ` \u2014 ${rec.sites} site${rec.sites === 1 ? "" : "s"}${rec.open != null ? `, ${rec.open} open` : ""}`
       : "";
     text = `${meta.emoji} ${orgName} (\`${rec.org}\`) narrowed the campsite map to ${label}${found}`;
+  } else if (rec.event === "campmap-amenity") {
+    // The empty set is someone clearing the filter, which is worth saying plainly.
+    // A zero result is the interesting case: rec.us ANDs amenity tags, and some
+    // pairs genuinely share no site (at Topaz, Tent Site and the hookup tags do
+    // not overlap at all), so a camper can reach an empty map in two ticks.
+    const names = (rec.amenities || "").split(",").filter(Boolean);
+    const label = names.length ? names.map(n => `*${n}*`).join(" + ") : "no amenity filter";
+    const found = rec.sites != null
+      ? (rec.sites === 0 ? " \u2014 nothing has all of those"
+                         : ` \u2014 ${rec.sites} site${rec.sites === 1 ? "" : "s"}${rec.open != null ? `, ${rec.open} open` : ""}`)
+      : "";
+    text = `${meta.emoji} ${orgName} (\`${rec.org}\`) filtered the campsite map to ${label}${found}`;
   } else if (rec.event === "campmap-share") {
     const what = rec.kind === "embed" ? "embed code" : "link";
     text = `${meta.emoji} ${orgName} (\`${rec.org}\`) copied the public campsite map ${what}`;
@@ -6020,7 +6038,7 @@ app.post("/:org/campmap/api/log", (req, res) => {
   const slug = req.params.org;
   if (!ORGS[slug]) return res.status(404).json({ ok: false, error: "Unknown org" });
   const event = req.query.event;
-  const ALLOWED = ["campmap-site", "campmap-book", "campmap-filter"];
+  const ALLOWED = ["campmap-site", "campmap-book", "campmap-filter", "campmap-amenity"];
   if (!ALLOWED.includes(event)) return res.status(400).json({ ok: false, error: "Unknown event" });
   const clamp = (v, n) => (v == null ? undefined : String(v).slice(0, n));
   const nights = Number(req.query.nights);
@@ -6032,6 +6050,10 @@ app.post("/:org/campmap/api/log", (req, res) => {
     nights: Number.isFinite(nights) && nights > 0 && nights < 400 ? Math.round(nights) : undefined,
     // campmap-filter: which campsite type was chosen, and what it found.
     filterType: clamp(req.query.type, 24),
+    // campmap-amenity: the amenity NAMES chosen, comma-joined. Names rather than
+    // tag uuids because the feed is read by people; clamped like everything else
+    // on this un-tokened route.
+    amenities: clamp(req.query.amenities, 200),
     sites:  count(req.query.sites, 5000),
     open:   count(req.query.open, 5000),
   };
@@ -10908,6 +10930,16 @@ app.get("/:org/rentalcalendar/api/sites", async (req, res) => {
       // mapping to names and back would silently drop anything new. The campmap
       // uses these to carry a camper's amenities into the booking hand-off.
       amenityTagIds: ((s.amenities && s.amenities.amenityTagIds) || []).filter(x => typeof x === 'string'),
+      // id + name TOGETHER, and this is not redundant with the two fields above:
+      // `amenities` maps through AMENITY_TAGS and then drops the misses, so a tag
+      // this repo has not seen makes it SHORTER than `amenityTagIds`. Anything
+      // pairing those two by index then mislabels every amenity after the first
+      // unknown one — silently, and on a camper-facing page. So callers that need
+      // both (the campmap's amenity filter) read this instead, where an unknown
+      // tag keeps its place under a neutral label rather than vanishing.
+      amenityTags: ((s.amenities && s.amenities.amenityTagIds) || [])
+        .filter(x => typeof x === 'string')
+        .map(id => ({ id, name: AMENITY_TAGS[id] || 'Other amenity' })),
     }));
     // Proxy photo URLs through our server for caching + Cache-Control headers
     clean.forEach(s => {
