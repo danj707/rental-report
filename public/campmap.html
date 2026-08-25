@@ -595,6 +595,25 @@ function bookUrl(site, group){
     }
   }
   if(sub && REC_SUBTYPES[sub]) q.push('subType='+encodeURIComponent(sub));
+  // Amenities, as rec.us's own tag ids. Dan tested the encodings 2026-08-25:
+  // a single id works, COMMA-SEPARATED ids work, and repeating `amenity=` picks
+  // up only the first — so comma-separated is the multi-value form (nuqs's
+  // default) and repeating it is wrong.
+  //
+  // For a group, only the tags EVERY member has: rec.us treats them as an AND, so
+  // sending one site's Tent Site tag would drop the RV-only sites the button also
+  // names — the same trap as sub_type, one field over.
+  var tags=(l && l.amenityTagIds) || [];
+  if(group && group.length){
+    tags=null;
+    group.forEach(function(x){
+      var gl=L_(x.site), gt=(gl && gl.amenityTagIds) || [];
+      if(tags===null){ tags=gt.slice(); return; }
+      tags=tags.filter(function(t){ return gt.indexOf(t)>=0; });
+    });
+    tags=tags || [];
+  }
+  if(tags.length) q.push('amenity='+tags.map(encodeURIComponent).join(','));
   return 'https://www.rec.us/organizations/'+encodeURIComponent(slug)+'?'+q.join('&');
 }
 /* The single site's own page — no dates, but it is the exact site. Kept as the

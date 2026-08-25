@@ -763,14 +763,26 @@ So the Book URL now also carries `guests` (the site's capacity) and `subType`.
 **Read a page's `useQueryStates` before concluding a parameter does not exist** —
 the route schema said no and the page said yes.
 
-**`amenity` is not wired yet, because its encoding is unconfirmed.** rec.us
-stores amenities on a site as `amenities.amenityTagIds` — UUIDs, not the display
-names our `/rentalcalendar/api/sites` feed carries. Cross-referencing all 41
-Topaz sites pins **Tent Site = `25452762-2d27-40aa-9a2e-83e2a0c3b34a`**; Tables
-and Fire Pit are on all 41 and the three electrical tags on the same 15, so those
-co-occur perfectly and cannot be told apart from the data alone. If the filter
-turns out to take display NAMES, the feed already has them and it is a one-liner;
-if it takes tag ids, it needs the ids plumbed through.
+**`amenity` IS wired, and it takes rec.us's tag ids comma-separated** (Dan tested
+the encodings 2026-08-25): a single id works, `?amenity=<uuid>,<uuid>` works, and
+**repeating `amenity=` picks up only the first value** — so comma-separated is the
+multi-value form (nuqs's default) and repeating the parameter is wrong.
+
+No new data source was needed: `/:org/rentalcalendar/api/sites` was already
+reading `amenities.amenityTagIds` and mapping it through `AMENITY_TAGS` to
+display names — it just threw the ids away. The route now returns
+`amenityTagIds` alongside `amenities`, deliberately unmapped, because
+`AMENITY_TAGS` only covers tags this repo has seen and a name round-trip would
+silently drop anything new.
+
+**For a group, only the tags EVERY member has.** rec.us ANDs them, so sending one
+site's `Tent Site` would drop the RV-only sites the same button names — the
+sub_type trap, one field over.
+
+(The id↔name map was already in server.js all along: `0cf5e4e3…` Tables,
+`e67c5b0f…` Fire Pit, `25452762…` Tent Site. Cross-referencing site sets could
+not separate Tables from Fire Pit — they are on all 41 — but `AMENITY_TAGS` names
+both, and Dan's repeated-param test showed the FIRST value wins.)
 
 **A SITE CANNOT BE PRESELECTED.** There is no `site`/`siteId` URL state on the
 tab: a rental card's click handler is a plain

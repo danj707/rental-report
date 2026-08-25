@@ -10586,6 +10586,12 @@ app.get("/:org/rentalcalendar/api/sites", async (req, res) => {
       bookingUnit: s.bookingUnit || null,
       subType: s.subType || null,
       amenities: ((s.amenities && s.amenities.amenityTagIds) || []).map(id => AMENITY_TAGS[id]).filter(Boolean),
+      // The raw tag ids as well as the display names. rec.us's own amenity filter
+      // takes ids — `?amenity=<uuid>,<uuid>` on the facility-rentals tab, verified
+      // 2026-08-25 — and AMENITY_TAGS only covers the tags this repo has seen, so
+      // mapping to names and back would silently drop anything new. The campmap
+      // uses these to carry a camper's amenities into the booking hand-off.
+      amenityTagIds: ((s.amenities && s.amenities.amenityTagIds) || []).filter(x => typeof x === 'string'),
     }));
     // Proxy photo URLs through our server for caching + Cache-Control headers
     clean.forEach(s => {
