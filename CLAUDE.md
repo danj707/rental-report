@@ -604,9 +604,22 @@ nothing downstream of the parse had to change. The campmap now runs on it.
    `[rentalcalendar] nightly availability` warnings in the logs.
 2. **The span is capped at 210 dates, and 211 is a 400** — a truncation would be
    survivable, an error is not, so the ceiling has to be respected on the way out.
-3. **`from` may not be in the past.** We send today exactly the way every other
-   route in server.js computes it, so this path starts on the same date the MCP
-   feed did and the client sees no shift.
+3. **`from` may not be in the past — and "past" is the SITE's local date, not
+   UTC.** This one bit immediately. `new Date().toISOString()` is how every
+   route in server.js computes today, and it is UTC; a Pacific campground is
+   7-8 hours behind, so **from 17:00 local until midnight the UTC date is
+   already tomorrow there**. Measured 2026-08-25 00:02 UTC (17:02 PDT): the MCP
+   feed's first check-in date was `2026-08-24` while a UTC-dated request started
+   `2026-08-25` — i.e. seven hours out of every day where "is anything free
+   tonight" comes back `unknown` on all 41 sites, on a page that renders
+   perfectly throughout. The fix asks from **yesterday-UTC** and lets rec.us
+   decide: it answers 200 while that is still today somewhere west of UTC and
+   400s once it is genuinely past. `nightlyStartsYesterday()` probes that once
+   per batch and memoises for one cache interval — **deliberately not memoised
+   per UTC date, because the answer flips mid-date** (07:00 UTC, when Pacific
+   catches up). An extra leading day the browser has already passed is harmless:
+   the client only reads dates inside the stay, and `bookingHorizon()` reads the
+   far end.
 4. **Not every campsite is nightly.** An hourly one answers 200 with
    `{siteUnavailable:{reason:"not-nightly"}, checkInDates:{}}` — **all 12 of
    Pleasant Hill's campsites are `bookingUnit: hourly`**. That is an empty
@@ -675,6 +688,15 @@ per-site `campmap-book` ping from the drawer's Book button is untouched.
   when the feed lands, which is what it always did.
 
 ### Guards
+
+`node scripts/campmap-nightly-window.spec.js` — **8 assertions, in CI**, pinning
+the date range the server asks for. **It re-execs itself under
+`TZ=America/Los_Angeles`** and pins fixed instants rather than reading the clock,
+for the same reason `fasttrack-dates.spec.js` does: this sandbox and GitHub
+Actions both run UTC, where the broken version looks right 17 hours a day.
+Mutation-tested against four regressions, including the bug exactly as it was
+first written (always start from UTC today), a local-timezone date derivation,
+an off-by-one span (211 dates is a 400), and ignoring the probe result.
 
 `node scripts/campmap-stay.spec.js` — now **27 assertions**, 12 of them new and
 covering the horizon, the `beyond` state and the arrival bound. Mutation-tested

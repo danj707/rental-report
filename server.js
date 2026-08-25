@@ -10694,9 +10694,23 @@ async function getRecMcpClient() {
 //     is not behind the rule, which is why the API looked reachable all along.
 //  2. THE SPAN IS CAPPED AT 210 DATES, and a 211-day range is a 400 rather than
 //     a truncation — so the ceiling has to be respected on the way out.
-//  3. `from` MAY NOT BE IN THE PAST. We send today the same way every other
-//     route in this file computes it, so this path starts on the same date the
-//     MCP feed does and the client sees no shift.
+//  3. `from` MAY NOT BE IN THE PAST — AND "PAST" IS THE SITE'S LOCAL DATE, NOT
+//     UTC. This one is a trap. `new Date().toISOString()` is how every other
+//     route in this file computes today, and it is UTC; a Pacific campground is
+//     7-8 hours behind, so from 17:00 Pacific until midnight the UTC date is
+//     already TOMORROW there. Sending that as `from` silently drops the
+//     campground's CURRENT NIGHT — measured 2026-08-25 00:02 UTC (17:02 PDT):
+//     the MCP feed started 2026-08-24 while a UTC-dated request started
+//     2026-08-25, so tonight read as `unknown` on every site. Seven hours a day
+//     of a map that cannot answer "is anything free tonight", rendering
+//     perfectly the whole time.
+//     So we ask from YESTERDAY (UTC) and let rec.us decide: it answers 200 while
+//     that is still today somewhere west of UTC, and 400s once it is genuinely
+//     past. `nightlyStartDate()` probes that once and memoises for one cache
+//     interval, so the fallback costs one extra request per batch rather than
+//     one per site. A leading day the browser has already passed is harmless —
+//     the client only reads dates inside the stay, and bookingHorizon() reads
+//     the far end.
 //  4. NOT EVERY CAMPSITE IS NIGHTLY. A campsite booked by the hour answers
 //     `{siteUnavailable:{reason:"not-nightly"}, checkInDates:{}}` — all 12 of
 //     Pleasant Hill's campsites are `bookingUnit: hourly`. That is an empty
@@ -10709,16 +10723,51 @@ async function getRecMcpClient() {
 // yesterday, not a blank one.
 const MAX_NIGHTLY_SPAN_DAYS = 210;   // rec.us's own limit; 211 is a 400
 const NIGHTLY_UA = 'rec-rental-report/1.0 (+https://www.rec.us)';
-const rcNightlyCache = {};           // `${siteId}|${days}` -> { data, ts }
+const rcNightlyCache = {};           // `${siteId}|${days}|${from}` -> { data, ts }
 
-async function fetchSiteNightlyAvailability(siteId, days) {
+// Pure so it can be tested at a fixed instant — see scripts/campmap-nightly-window.spec.js.
+// `backOne` is the answer to "is yesterday-UTC still today at the campground?".
+function nightlyRange(nowMs, backOne, span) {
+  const iso = ms => new Date(ms).toISOString().slice(0, 10);
+  const startMs = nowMs - (backOne ? 86400000 : 0);
+  return { from: iso(startMs), to: iso(startMs + (span - 1) * 86400000) };
+}
+
+// One probe, memoised for a cache interval: ask for a single day at yesterday's
+// UTC date. 200 ⇒ the campground is behind UTC and that day is still bookable,
+// so every request this interval starts there. 400 ⇒ it is genuinely past.
+// Deliberately NOT memoised per UTC date: the answer flips mid-date (07:00 UTC,
+// when Pacific catches up), so it has to expire on time rather than on the calendar.
+let nightlyStartMemo = null;         // { backOne, ts }
+async function nightlyStartsYesterday(probeSiteId) {
+  if (nightlyStartMemo && Date.now() - nightlyStartMemo.ts < RC_AVAIL_TTL) return nightlyStartMemo.backOne;
+  const d = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+  let backOne = false;
+  try {
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), 15000);
+    try {
+      const r = await fetch(`https://api.rec.us/v1/sites/${encodeURIComponent(probeSiteId)}`
+                          + `/nightly-availability?from=${d}&to=${d}`,
+        { signal: ctl.signal, headers: { 'sec-fetch-mode': 'cors', 'accept': 'application/json', 'user-agent': NIGHTLY_UA } });
+      backOne = r.ok;
+    } finally { clearTimeout(timer); }
+  } catch (e) {
+    // Unreachable probe ⇒ start from today. Losing the extra leading day is a
+    // cosmetic miss; guessing that a past date is acceptable would 400 all 41.
+    console.warn('[rentalcalendar] nightly start probe —', e.message);
+  }
+  nightlyStartMemo = { backOne, ts: Date.now() };
+  return backOne;
+}
+
+async function fetchSiteNightlyAvailability(siteId, days, backOne) {
   const span = Math.max(1, Math.min(MAX_NIGHTLY_SPAN_DAYS, Number(days) || 30));
-  const key = `${siteId}|${span}`;
+  const { from, to } = nightlyRange(Date.now(), !!backOne, span);
+  const key = `${siteId}|${span}|${from}`;
   const cached = rcNightlyCache[key];
   if (cached && Date.now() - cached.ts < RC_AVAIL_TTL) return cached.data;
 
-  const from = new Date().toISOString().slice(0, 10);
-  const to = new Date(Date.now() + (span - 1) * 86400000).toISOString().slice(0, 10);
   const url = `https://api.rec.us/v1/sites/${encodeURIComponent(siteId)}`
             + `/nightly-availability?from=${from}&to=${to}`;
   try {
@@ -10799,9 +10848,16 @@ app.get("/:org/rentalcalendar/api/availability-batch", async (req, res) => {
 
   const refresh = req.query.refresh === '1';
   if (refresh) {
-    siteIds.forEach(id => { delete rcAvailCache[id]; delete rcNightlyCache[`${id}|${days}`]; });
+    nightlyStartMemo = null;
+    const stale = new Set(Object.keys(rcNightlyCache).filter(k => siteIds.includes(k.split('|')[0])));
+    siteIds.forEach(id => { delete rcAvailCache[id]; });
+    stale.forEach(k => { delete rcNightlyCache[k]; });
     console.log(`[rentalcalendar] Cache cleared for ${siteIds.length} sites (refresh=1)`);
   }
+
+  // Which date the window starts on is a property of the ORG's timezone, not of
+  // any one site, so it is settled once for the batch rather than 41 times.
+  const backOne = days > 30 ? await nightlyStartsYesterday(siteIds[0]) : false;
 
   // Process in batches of 10 to limit concurrency against rec.us
   const BATCH_SIZE = 10;
@@ -10811,7 +10867,7 @@ app.get("/:org/rentalcalendar/api/availability-batch", async (req, res) => {
   // one hourly site must not drag the whole park back to the 30-day feed.
   const forSite = async (id) => {
     if (days > 30) {
-      const nightly = await fetchSiteNightlyAvailability(id, days);
+      const nightly = await fetchSiteNightlyAvailability(id, days, backOne);
       if (nightly) return { data: nightly, source: 'nightly' };
     }
     return { data: await fetchSiteAvailability(id), source: 'mcp' };
