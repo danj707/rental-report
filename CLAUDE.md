@@ -728,9 +728,13 @@ parameter, so the "preselect max capacity" half of the ask is not available
 today. Nothing is sent for it: a parameter rec.us ignores would look like it
 works. Worth raising with Kevin/Ankur alongside the MCP range parameter.
 
-**`location` is NOT validated by rec.us** — a bogus value passes straight
-through — so it is only sent when the LIVE site feed supplied one. The baked
-seed's `"default"` placeholder must never be used as a location id.
+**Neither `location` nor `siteType` is validated by rec.us.** Measured: a bogus
+`location`, and `siteType` values of `campsite`, `tent-and-rv` and `electric`,
+all pass straight into the page's props — only the DATES are checked (a bogus one
+is dropped). So `location` is only sent when the LIVE site feed supplied one (the
+baked seed's `"default"` placeholder must never be used as a location id), and
+`siteType` is always the site TYPE `campsite` rather than a sub_type or one of
+the map's own derived kinds.
 
 ### The hand-off card is gone (Dan, 2026-08-24)
 

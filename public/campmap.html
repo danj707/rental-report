@@ -534,9 +534,12 @@ function bookUrl(site){
   var slug=CFG.slug;
   if(!slug) return sSiteUrl(site);
   var q=['tab=facilityRentals'];
-  var st=(l && l.subType) || null;
-  // rec.us's own site-type vocabulary. The map's derived electric/primitive are
-  // ours, not Rec's, and would filter the list down to nothing.
+  // The site TYPE, never the sub_type. rec.us does not validate this parameter
+  // (measured: `campsite`, `tent-and-rv` and even `electric` all pass straight
+  // into the page's props), so a wrong value is not rejected — it just filters
+  // against something the list does not group by. `campsite` is what the
+  // facility-rentals tab groups on; tent/rv are sub_types, and the map's derived
+  // electric/primitive are ours rather than Rec's at all.
   q.push('siteType=campsite');
   var loc=(l && l.locationId) || null;
   if(loc && loc!=='default') q.push('location='+encodeURIComponent(loc));
