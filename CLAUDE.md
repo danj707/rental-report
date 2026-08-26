@@ -13,6 +13,113 @@
   into what's being used (and enjoys the vanity of seeing plays/exports roll in).
   See the section below for the exact mechanism.
 
+## Report Wizard (2026-08-26) — three things worth knowing
+
+### The wizard's own runs were invisible in Slack — FOURTH instance of the trap
+
+`generate` has been written to `events.jsonl` since the wizard shipped and was
+**never in `SLACK_NOTIFY`**, so the highest-signal event on the platform — an org
+described a report in English and got one — posted nothing. Same family as the
+campmap, Facilities-hub and Memberships beacon bugs: the code was right, the row
+was recorded, and nothing reached the channel. Now wired:
+
+| event | fires on | key facts carried |
+|---|---|---|
+| `generate` (🪄) | a report is generated | title, widget count, sources, **the prompt** |
+| `wizard-save` (💾) | Save on a generated report | title, widget count |
+| `feedback` (👍/👎) | thumbs on a generated report | title, the typed comment, the prompt |
+
+- **The PROMPT is the event.** "Someone built a report" says nothing; the
+  questions orgs type are the only place we learn what reports they wish they
+  had. So `generate` **debounces by prompt**, not by org: three different
+  questions in two minutes is three reports, and the default
+  `org|report|event` key would keep only the first.
+- **`feedback` debounces by VOTE DIRECTION**, same reasoning as `update-vote` — a
+  reader who thumbs down, re-reads and thumbs up has told us two things.
+- **`feedback` has its own message branch now.** It used to fall into the shared
+  insights/chat branch, which printed `Report Wizard on *report-wizard*` — the
+  report type twice and the report that was rated never.
+- **`wizard-save` needed its OWN log route** (`POST /:org/report-wizard/api/log`),
+  registered **above** the generic `/:org/:report/api/*` ones, because
+  `report-wizard` is not in `REPORT_TYPES` and the generic route 404s it. Fourth
+  time this has come up; see the campmap section for the first.
+- Guarded by `scripts/wizard-activity.spec.js` (20 assertions, in CI), which
+  extracts the real `notifySlack` for the message/debounce half and boots the
+  server for the beacon half. `SKIP_SOURCE=1` disables the source-order half so
+  the behavioural half can be shown to catch a moved route on its own — it fails
+  with the real `404 Unknown report: "report-wizard"`. Mutation-tested five ways
+  (event dropped from `SLACK_NOTIFY`, either debounce key reverted, the thumbs
+  branch reverted, the route moved below the generic one); all five fail by name.
+
+### The report write-up: the AI writes the prose, the PAGE writes the numbers
+
+A generated report was a title and a stack of charts. It now opens with a
+`summary` paragraph and a "Worth knowing" list of `notes`, both from the model —
+and a **"Built from"** line that is computed in the page.
+
+**That split is the whole design, and it is not cosmetic.** The model generates
+the config *before a single row is fetched*: it has field names and a few sample
+values, and no totals, rankings or date ranges. So the system prompt forbids it
+from stating any figure, and `wizard-narrative.spec.js` pins that instruction — a
+fabricated "$2.5M across 26 programs" would sit beside real KPI cards and read
+exactly as authoritative.
+
+- The "Built from" line is the only part that may carry a number: sources used,
+  rows that **actually arrived**, and each source's grain.
+- **A source that answered with nothing now says so.** Previously a failed fetch
+  rendered as widgets full of dashes with nothing on screen explaining why.
+- **`WIZARD_SOURCE_GRAIN` lives in server.js and is injected** into `ORG_CONFIG`
+  as `sourceGrain`. The spec fails if the page grows its own copy: two maps drift
+  the first time a card changes grain, and the line is only worth printing if it
+  is true.
+- **`WIZARD_MAX_TOKENS` went 3000 → 4000.** The config is ONE JSON object, so
+  running short does not truncate the prose — it truncates the JSON and the whole
+  generation fails as "AI returned invalid config".
+- `summary`/`notes` are normalised server-side (a bare string becomes one note,
+  lengths and counts clamped), because the page renders them and a bad shape must
+  not be able to blank the report. Reports saved before this shipped have neither
+  and render no panel at all rather than an empty decorated box.
+
+### The build screen types, then erases
+
+The prompt box writes an example, holds, erases and moves to the next. Dan's ask,
+from the Seb animation.
+
+- **Placeholder only, never the value** — an admin must never find their own
+  words racing them.
+- **Touching the box is a kill switch, not a pause** (focus, a keystroke, or
+  clicking a quick-prompt chip). A placeholder that resumes writing behind a
+  half-typed prompt makes a text box feel haunted.
+- **The caret matters.** Mid-phrase, "Compare this fall's enrollme" reads as a
+  truncation bug without one. It blinks on a fixed-width pair (`▌` / thin space)
+  so the text does not jitter, and the caret is composed at the call site so
+  `data-rw-typed` keys on the TEXT — fold the caret in and the render guard
+  passes on a dead animation.
+- The **quick-prompt chips stay** (Dan: "those are great"), and the typed phrases
+  are a deliberately DIFFERENT set — reusing the chips would make the panel
+  repeat itself twice over.
+- `prefers-reduced-motion` gets the old static placeholder.
+- Guards: three `ci-check-render.js` cases keyed on `data-rw-typed="1"`,
+  `[data-rw-summary]`/`[data-rw-grain="programs"]`/`[data-rw-note]`, all of which
+  were seen to fail on an inert animation and a removed narrative, while the
+  plain "wizard · build screen" case kept passing — which is the point.
+  `ci-check-render.js` CASES now accept an optional `act(page)` hook, because the
+  wizard's report screen only exists after a Generate click.
+
+### Two things NOT done, worth knowing
+
+- **`fetchWizardSchemas` excludes `NON_ADDABLE_REPORTS`, so the AI never sees a
+  schema for `program-demographics`** — yet the system prompt's entire worked
+  example is built on it and the first quick-prompt chip ("Program revenue and
+  fill rate by gender") needs it. It works today only because the example
+  hardcodes real field names. Fixing it means probing 8 more cards (including the
+  heavy `selfservice`/`checkins` ones) on the wizard's warm-up path, which is a
+  cost decision, not a drive-by.
+- **`scripts/email-slack-notify.spec.js` was dead** and not in CI: `notifySlack`
+  references `alertEnabled`, declared above the extracted block, so the spec
+  threw `ReferenceError` before asserting anything. Deps injected, 7/7 passing,
+  and it is in CI now.
+
 ## Slack activity notifications — wire every new surface (IMPORTANT)
 
 Standing rule (see Working preferences): any new button, export, download, or

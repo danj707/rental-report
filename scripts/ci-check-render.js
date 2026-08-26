@@ -454,6 +454,23 @@ const STUBS = [
   { match: /\/api\/pulse/,                  body: () => ({ items: [], generated: null }) },
   { match: /\/api\/goals/,                  body: () => ({}) },
   { match: /\/api\/views/,                  body: () => ({ views: [] }) },
+  // The Report Wizard's generator. Stubbed rather than reaching Anthropic (the
+  // real route needs an API key and would be non-deterministic), and shaped like
+  // a real reply: a summary, notes, and widgets over a source the data stub can
+  // answer. The narrative cases below key off THIS payload, so a page that
+  // renders the wrong field fails rather than passing on "a box appeared".
+  { match: /\/report-wizard\/api\/generate/, body: () => ({
+      title: "Program Revenue Overview",
+      description: "Revenue and enrollment by program",
+      summary: "This report ranks programs by net revenue and pairs each with its enrollment and capacity, so you can see which offerings earn and which merely fill. Each row of the programs source is one section, so a program running four sections contributes four rows.",
+      notes: ["Cancelled registrations are excluded.", "Revenue is net of refunds."],
+      dataSources: ["programs"],
+      widgets: [
+        { type: "kpi-row", items: [{ label: "Total", source: "programs", field: "Total", compute: "sum", format: "currency" }] },
+        { type: "table", title: "Programs", source: "programs",
+          columns: [{ field: "Facility", label: "Program" }, { field: "Total", label: "Revenue", format: "currency" }],
+          sort: { field: "Total", dir: "desc" }, limit: 10 },
+      ] }) },
   { match: /\/api\//,                       body: () => ({ ok: true, rows: [] }) },
 ];
 
@@ -661,6 +678,27 @@ const CASES = [
   // in red, and the map claims nothing until it has been asked. "A Depart field
   // rendered" passes either way — this pins the prompt itself.
   { name: "campmap · depart prompts first", path: "/{org}/campmap",       needs: "#departLbl.prompt" },
+  // ── Report Wizard ──────────────────────────────────────────────────────────
+  // The build screen. The quick-prompt chips are what makes it usable, so the
+  // selector is one of them rather than the panel: a panel with no chips renders
+  // just as happily.
+  { name: "wizard · build screen", path: "/{org}/report-wizard",           needs: ".prompt-panel .example-chip" },
+  // The placeholder has to actually TYPE. `data-rw-typed="1"` flips only once a
+  // character has been written into it, so "a textarea rendered" — which passes
+  // on a dead animation — is not enough.
+  { name: "wizard · typed placeholder", path: "/{org}/report-wizard",      needs: "#rwPrompt[data-rw-typed=\"1\"]" },
+  // Generate a report and prove the write-up rendered. `act` drives the click,
+  // and the generate POST is answered by the stub above.
+  { name: "wizard · report write-up", path: "/{org}/report-wizard",        needs: "[data-rw-summary]",
+    act: async page => { await page.click(".example-chip"); await page.click(".btn-generate"); } },
+  // The GROUNDED half, and the half that can carry a number: the row count comes
+  // from the rows that actually arrived, not from the model. Keyed to the source
+  // the stub declares, so a page that prints the widget's source or a hardcoded
+  // name fails.
+  { name: "wizard · built-from line", path: "/{org}/report-wizard",        needs: "[data-rw-grain=\"programs\"]",
+    act: async page => { await page.click(".example-chip"); await page.click(".btn-generate"); } },
+  { name: "wizard · caveat notes",    path: "/{org}/report-wizard",        needs: "[data-rw-note]",
+    act: async page => { await page.click(".example-chip"); await page.click(".btn-generate"); } },
 ];
 
 const child = spawn(process.execPath, [path.join(__dirname, "..", "server.js")], {
@@ -781,6 +819,14 @@ function waitForServer(started) {
     let found = false, bodyLen = 0;
     try {
       await page.goto(url, { waitUntil: "domcontentloaded", timeout: PAGE_TIMEOUT_MS });
+      // Optional: drive the page before asserting. Some states are only reachable
+      // by interacting (the wizard's report screen exists only after a Generate
+      // click), and a case that cannot reach them can only ever prove the
+      // landing screen renders.
+      if (c.act) {
+        await page.waitForSelector(".prompt-panel, .toolbar, .card", { timeout: PAGE_TIMEOUT_MS });
+        await c.act(page);
+      }
       try { await page.waitForSelector(c.needs, { timeout: PAGE_TIMEOUT_MS }); found = true; } catch (_) {}
       bodyLen = await page.evaluate(() => document.body.innerText.trim().length);
     } catch (e) {

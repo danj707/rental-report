@@ -74,6 +74,17 @@
     }
     @keyframes spin { to { transform: rotate(360deg); } }
 
+    /* ── Typing hint ──
+       The prompt box types an example, holds, erases and moves on, so the screen
+       demonstrates what "describe it in plain English" means instead of asserting
+       it. It writes into the PLACEHOLDER, never the value: an admin who starts
+       typing must never find their own words racing them, so the animation stops
+       for good the moment the box is touched. */
+    .prompt-area textarea.typing::placeholder { color: #8b7fa8; }
+    @media (prefers-reduced-motion: reduce) {
+      .prompt-area textarea.typing::placeholder { color: #aaa; }
+    }
+
     /* ── Examples ── */
     .examples { margin-top: 16px; }
     .examples-label { font-size: 11px; text-transform: uppercase; letter-spacing: .8px; color: #999; font-weight: 600; margin-bottom: 8px; }
@@ -121,6 +132,46 @@
     .report-header-right .btn-save { background: #7c3aed; color: #fff; border-color: #7c3aed; font-weight: 600; }
     .report-header-right .btn-save:hover { background: #6d28d9; }
     .report-header-right .btn-save.saved { background: #16a34a; border-color: #16a34a; }
+
+    /* ── Report write-up ── */
+    /* Sits between the header and the widgets: the AI's prose about what the
+       report is, then a GROUNDED line built from the rows that actually landed.
+       The two are visually separated on purpose — one is a description, the
+       other is a measurement, and a reader should be able to tell which. */
+    .report-narrative {
+      background: linear-gradient(135deg, #faf5ff 0%, #f6f3ff 100%);
+      border: 1px solid #ede9fe; border-left: 3px solid #7c3aed;
+      border-radius: 8px; padding: 16px 20px; margin-bottom: 20px;
+    }
+    .report-narrative .rn-summary { font-size: 13px; line-height: 1.65; color: #3f3550; }
+    .report-narrative .rn-built {
+      margin-top: 12px; padding-top: 10px; border-top: 1px solid #e9e3ff;
+      font-size: 11.5px; color: #6b6478; display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: baseline;
+    }
+    .report-narrative .rn-built .rn-built-label {
+      text-transform: uppercase; letter-spacing: .7px; font-weight: 600; font-size: 10px; color: #9b93ab;
+    }
+    /* Each source is its own chip. Run as plain text they blend: "one row per
+       program section gl · 26 rows" reads as one clause and there is no way to
+       tell where one source ends and the next begins. */
+    .report-narrative .rn-src {
+      font-family: 'IBM Plex Mono', monospace; font-size: 11px;
+      background: rgba(255,255,255,.75); border: 1px solid #ece6fb;
+      border-radius: 12px; padding: 3px 10px; white-space: nowrap;
+    }
+    .report-narrative .rn-src b { font-weight: 600; color: #4c3d63; }
+    .report-narrative .rn-src.empty { color: #b45309; border-color: #fcd9a8; background: #fffaf0; white-space: normal; }
+    .report-narrative .rn-notes { margin-top: 12px; display: flex; flex-direction: column; gap: 5px; }
+    .report-narrative .rn-note {
+      font-size: 11.5px; color: #5b5468; line-height: 1.5; padding-left: 16px; position: relative;
+    }
+    .report-narrative .rn-note::before {
+      content: '\2022'; position: absolute; left: 4px; color: #a78bfa; font-weight: 700;
+    }
+    .report-narrative .rn-notes-label {
+      text-transform: uppercase; letter-spacing: .7px; font-weight: 600; font-size: 10px; color: #9b93ab;
+      margin-bottom: 2px;
+    }
 
     /* ── Widget Grid ── */
     .widget-grid { display: flex; flex-direction: column; gap: 20px; }
@@ -414,6 +465,86 @@
     // ── Color palette ──
     var COLORS = ['#7c3aed', '#3b82f6', '#16a34a', '#f59e0b', '#ef4444', '#06b6d4', '#ec4899', '#8b5cf6', '#10b981', '#f97316'];
 
+    // ── What one row of each source is ──
+    // Injected by the server (WIZARD_SOURCE_GRAIN) rather than written here, so
+    // there is ONE copy: the "Built from" line is only worth printing if it is
+    // true, and two maps drift the moment a card changes grain.
+    var SOURCE_GRAIN = CFG.sourceGrain || {};
+
+    // ── Typed placeholder ──
+    // Deliberately NOT the quick-prompt chips below. The chips are there to be
+    // clicked and the animation is there to be read, so reusing the same six
+    // lines would make the panel repeat itself twice over.
+    var TYPING_PROMPTS = [
+      'Compare this fall\u2019s enrollment against last year',
+      'Which programs are filling up and which are half empty?',
+      'Revenue by GL account, with refunds broken out',
+      'Where are our registrations coming from \u2014 by city',
+      'Facility rentals by location, busiest days first',
+      'Which sections should we add another of?',
+    ];
+
+    // Types a phrase, holds it, erases it, moves to the next. Returns
+    // [text, caret]: the characters written so far (or '' before the first one),
+    // and the caret to sit after them.
+    //
+    // The caret is the difference between "this box is typing" and "this
+    // placeholder is cut off" — mid-phrase, "Compare this fall's enrollme" reads
+    // as a truncation bug without one. It blinks on a fixed-width pair (a block
+    // and a thin space) so the text does not jitter as it flashes, and the text
+    // is returned separately from it so a caret alone never counts as typing.
+    //
+    // `active` is a kill switch, not a pause: once the admin touches the box the
+    // animation is over for the life of the page. A placeholder that resumes
+    // writing behind a half-typed prompt is the kind of thing that makes a text
+    // box feel haunted.
+    function useTypedPlaceholder(phrases, active) {
+      var [shown, setShown] = useState('');
+      var [blink, setBlink] = useState(true);
+      var reduce = useRef(false);
+      useEffect(function() {
+        // A reader who has asked for less motion gets the static placeholder,
+        // which is exactly what this page showed before.
+        try {
+          reduce.current = window.matchMedia &&
+            window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        } catch (e) { reduce.current = false; }
+      }, []);
+      useEffect(function() {
+        if (!active || reduce.current || !phrases.length) { setShown(''); return; }
+        var timer = null, cancelled = false;
+        var pi = 0, ci = 0, erasing = false;
+        function step() {
+          if (cancelled) return;
+          var phrase = phrases[pi % phrases.length];
+          if (!erasing) {
+            ci++;
+            setShown(phrase.slice(0, ci));
+            if (ci >= phrase.length) { erasing = true; timer = setTimeout(step, 1900); return; }
+            timer = setTimeout(step, 45 + Math.random() * 35);
+          } else {
+            ci--;
+            setShown(phrase.slice(0, Math.max(ci, 0)));
+            if (ci <= 0) { erasing = false; pi++; timer = setTimeout(step, 500); return; }
+            timer = setTimeout(step, 22);
+          }
+        }
+        timer = setTimeout(step, 600);
+        return function() { cancelled = true; if (timer) clearTimeout(timer); };
+      }, [active]);
+      useEffect(function() {
+        if (!active || reduce.current) return;
+        var iv = setInterval(function() { setBlink(function(b) { return !b; }); }, 530);
+        return function() { clearInterval(iv); };
+      }, [active]);
+      // \u258C is a half-block; \u2009 a thin space of similar advance width.
+      return [shown, blink ? '\u258C' : '\u2009'];
+    }
+
+    // The placeholder once the animation is done with (or never started, under
+    // prefers-reduced-motion) — exactly what this box showed before.
+    var STATIC_PLACEHOLDER = 'e.g. Show me program revenue by gender with fill rates and a breakdown table...';
+
     // ── Example prompts ──
     var EXAMPLES = [
       "Program revenue and fill rate by gender",
@@ -638,6 +769,62 @@
       );
     }
 
+    // ── Report write-up ──
+    // Two halves, kept visibly apart because they have different standing:
+    //
+    //   1. `summary` / `notes` — written by the model. It is generating the
+    //      config BEFORE a single row has been fetched, so it can say what the
+    //      report asks and what a row means, and it is told in the system prompt
+    //      never to state a figure. Prose only.
+    //   2. "Built from" — computed HERE, from the rows that actually arrived. It
+    //      is the only part of this block that may carry a number.
+    //
+    // A source that answered with nothing is called out rather than shown as a
+    // zero: until now a feed that failed to fetch rendered as widgets full of
+    // dashes with nothing on screen to say why.
+    function ReportNarrative({ report, data }) {
+      var summary = (report.summary || '').trim();
+      var notes = (report.notes || []).filter(function(n) { return n && String(n).trim(); });
+      var sources = report.dataSources || Object.keys(data || {});
+      var built = sources.map(function(src) {
+        var rows = (data || {})[src];
+        return { src: src, n: rows ? rows.length : 0, missing: !rows || !rows.length,
+                 grain: SOURCE_GRAIN[src] || 'one row per record' };
+      });
+      // Nothing generated and nothing fetched — render nothing rather than an
+      // empty decorated box. Saved reports from before this shipped land here.
+      if (!summary && !notes.length && !built.length) return null;
+      return (
+        <div className="report-narrative">
+          {summary && <div className="rn-summary" data-rw-summary>{summary}</div>}
+          {built.length > 0 && (
+            <div className="rn-built" data-rw-built>
+              <span className="rn-built-label">Built from</span>
+              {built.map(function(b, i) {
+                return (
+                  <span className={'rn-src' + (b.missing ? ' empty' : '')} key={i}
+                        data-rw-grain={b.src}>
+                    <b>{b.src}</b>{' \u00B7 '}
+                    {b.missing
+                      ? 'no rows returned \u2014 widgets reading it will be blank'
+                      : b.n.toLocaleString('en-US') + ' rows \u00B7 ' + b.grain}
+                  </span>
+                );
+              })}
+            </div>
+          )}
+          {notes.length > 0 && (
+            <div className="rn-notes">
+              <div className="rn-notes-label">Worth knowing</div>
+              {notes.map(function(n, i) {
+                return <div className="rn-note" data-rw-note key={i}>{n}</div>;
+              })}
+            </div>
+          )}
+        </div>
+      );
+    }
+
     // ── Widget Renderer ──
     function WidgetRenderer({ config, data }) {
       if (config.type === 'kpi-row') return <KpiRow items={config.items} data={data} />;
@@ -704,6 +891,7 @@
               </button>
             </div>
           </div>
+          <ReportNarrative report={report} data={data} />
           <div className="widget-grid">
             {(report.widgets || []).map(function(w, i) {
               return <WidgetRenderer key={i} config={w} data={data} />;
@@ -796,6 +984,13 @@
       var [reportConfig, setReportConfig] = useState(null);
       var [reportData, setReportData] = useState({});
       var [saved, setSaved] = useState(loadSaved);
+      // The typed placeholder. `typing` latches OFF for the life of the page the
+      // first time the box is touched — see useTypedPlaceholder for why it is a
+      // kill switch rather than a pause.
+      var [typing, setTyping] = useState(true);
+      var stopTyping = useCallback(function() { setTyping(false); }, []);
+      var typedPair = useTypedPlaceholder(TYPING_PROMPTS, typing && phase === 'prompt' && !prompt);
+      var typed = typedPair[0], typeCaret = typedPair[1];
 
       // Generate report config via server
       var handleGenerate = useCallback(async function() {
@@ -858,6 +1053,17 @@
         var updated = [entry].concat(saved);
         setSaved(updated);
         saveSaved(updated);
+        // Saving is a client-only localStorage write, so the server cannot see
+        // it — and it is the one wizard signal that says a generated report was
+        // worth keeping. Its own route (NOT the generic /:org/:report one):
+        // report-wizard is not a REPORT_TYPE, so the generic route 404s it.
+        try {
+          fetch('/' + ORG_SLUG + '/report-wizard/api/log?event=wizard-save'
+                + '&title=' + encodeURIComponent(String(report.title || '').slice(0, 120))
+                + '&n=' + ((report.widgets || []).length)
+                + (TOKEN ? '&token=' + encodeURIComponent(TOKEN) : ''),
+                { method: 'POST', keepalive: true }).catch(function() {});
+        } catch (e) { /* a beacon must never break the save */ }
       }
 
       function handleDelete(id) {
@@ -930,10 +1136,14 @@
 
                   <div className="prompt-area">
                     <textarea
+                      id="rwPrompt"
+                      className={typing ? 'typing' : ''}
+                      data-rw-typed={typed ? '1' : '0'}
                       value={prompt}
-                      onChange={function(e) { setPrompt(e.target.value); }}
-                      onKeyDown={function(e) { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleGenerate(); }}
-                      placeholder="e.g. Show me program revenue by gender with fill rates and a breakdown table..."
+                      onChange={function(e) { setPrompt(e.target.value); stopTyping(); }}
+                      onFocus={stopTyping}
+                      onKeyDown={function(e) { stopTyping(); if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleGenerate(); }}
+                      placeholder={typed ? typed + typeCaret : STATIC_PLACEHOLDER}
                     ></textarea>
                   </div>
 
@@ -948,7 +1158,7 @@
                     <div className="examples-label">Try an example</div>
                     <div className="example-chips">
                       {EXAMPLES.map(function(ex, i) {
-                        return <button key={i} className="example-chip" onClick={function() { setPrompt(ex); }}>{ex}</button>;
+                        return <button key={i} className="example-chip" onClick={function() { stopTyping(); setPrompt(ex); }}>{ex}</button>;
                       })}
                     </div>
                   </div>
