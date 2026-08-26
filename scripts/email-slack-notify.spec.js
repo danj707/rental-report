@@ -13,10 +13,18 @@ assert(start !== -1 && end !== -1 && end > start, "could not locate SLACK block 
 const block = src.slice(start, end);
 
 // Build the block in an isolated scope with injected deps; return notifySlack.
+//
+// `alertEnabled` and `BASE_URL` are defined ABOVE this block in server.js, so
+// they have to be injected — without them notifySlack() throws ReferenceError on
+// its first line and this whole spec dies before asserting anything. It did, for
+// however long it has been out of CI. alertEnabled gates the watchdog alerts
+// only and is true for every activity event; BASE_URL is used by reportUrl().
 const make = (deps) => new Function(
   "SLACK_WEBHOOK_URL", "SLACK_MENTION_USER_ID", "ORGS", "fetch", "AbortSignal",
+  "alertEnabled", "BASE_URL",
   block + "\nreturn { notifySlack };"
-)(deps.SLACK_WEBHOOK_URL, deps.SLACK_MENTION_USER_ID, deps.ORGS, deps.fetch, deps.AbortSignal);
+)(deps.SLACK_WEBHOOK_URL, deps.SLACK_MENTION_USER_ID, deps.ORGS, deps.fetch, deps.AbortSignal,
+  () => true, "https://reports.example");
 
 function harness() {
   const posts = [];

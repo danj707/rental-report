@@ -13,6 +13,185 @@
   into what's being used (and enjoys the vanity of seeing plays/exports roll in).
   See the section below for the exact mechanism.
 
+## Report Wizard (2026-08-26) — three things worth knowing
+
+### The wizard's own runs were invisible in Slack — FOURTH instance of the trap
+
+`generate` has been written to `events.jsonl` since the wizard shipped and was
+**never in `SLACK_NOTIFY`**, so the highest-signal event on the platform — an org
+described a report in English and got one — posted nothing. Same family as the
+campmap, Facilities-hub and Memberships beacon bugs: the code was right, the row
+was recorded, and nothing reached the channel. Now wired:
+
+| event | fires on | key facts carried |
+|---|---|---|
+| `generate` (🪄) | a report is generated | title, widget count, sources, **the prompt** |
+| `wizard-save` (💾) | Save on a generated report | title, widget count |
+| `feedback` (👍/👎) | thumbs on a generated report | title, the typed comment, the prompt |
+
+- **The PROMPT is the event.** "Someone built a report" says nothing; the
+  questions orgs type are the only place we learn what reports they wish they
+  had. So `generate` **debounces by prompt**, not by org: three different
+  questions in two minutes is three reports, and the default
+  `org|report|event` key would keep only the first.
+- **`feedback` debounces by VOTE DIRECTION**, same reasoning as `update-vote` — a
+  reader who thumbs down, re-reads and thumbs up has told us two things.
+- **`feedback` has its own message branch now.** It used to fall into the shared
+  insights/chat branch, which printed `Report Wizard on *report-wizard*` — the
+  report type twice and the report that was rated never.
+- **`wizard-save` needed its OWN log route** (`POST /:org/report-wizard/api/log`),
+  registered **above** the generic `/:org/:report/api/*` ones, because
+  `report-wizard` is not in `REPORT_TYPES` and the generic route 404s it. Fourth
+  time this has come up; see the campmap section for the first.
+- Guarded by `scripts/wizard-activity.spec.js` (20 assertions, in CI), which
+  extracts the real `notifySlack` for the message/debounce half and boots the
+  server for the beacon half. `SKIP_SOURCE=1` disables the source-order half so
+  the behavioural half can be shown to catch a moved route on its own — it fails
+  with the real `404 Unknown report: "report-wizard"`. Mutation-tested five ways
+  (event dropped from `SLACK_NOTIFY`, either debounce key reverted, the thumbs
+  branch reverted, the route moved below the generic one); all five fail by name.
+
+### The report write-up: the AI writes the prose, the PAGE writes the numbers
+
+A generated report was a title and a stack of charts. It now opens with a
+`summary` paragraph and a "Worth knowing" list of `notes`, both from the model —
+and a **"Built from"** line that is computed in the page.
+
+**That split is the whole design, and it is not cosmetic.** The model generates
+the config *before a single row is fetched*: it has field names and a few sample
+values, and no totals, rankings or date ranges. So the system prompt forbids it
+from stating any figure, and `wizard-narrative.spec.js` pins that instruction — a
+fabricated "$2.5M across 26 programs" would sit beside real KPI cards and read
+exactly as authoritative.
+
+- The "Built from" line is the only part that may carry a number: sources used,
+  rows that **actually arrived**, and each source's grain.
+- **A source that answered with nothing now says so.** Previously a failed fetch
+  rendered as widgets full of dashes with nothing on screen explaining why.
+- **`WIZARD_SOURCE_GRAIN` lives in server.js and is injected** into `ORG_CONFIG`
+  as `sourceGrain`. The spec fails if the page grows its own copy: two maps drift
+  the first time a card changes grain, and the line is only worth printing if it
+  is true.
+- **`WIZARD_MAX_TOKENS` went 3000 → 4000.** The config is ONE JSON object, so
+  running short does not truncate the prose — it truncates the JSON and the whole
+  generation fails as "AI returned invalid config".
+- `summary`/`notes` are normalised server-side (a bare string becomes one note,
+  lengths and counts clamped), because the page renders them and a bad shape must
+  not be able to blank the report. Reports saved before this shipped have neither
+  and render no panel at all rather than an empty decorated box.
+
+### The build screen types, then erases
+
+The prompt box writes an example, holds, erases and moves to the next. Dan's ask,
+from the Seb animation.
+
+- **Placeholder only, never the value** — an admin must never find their own
+  words racing them.
+- **Touching the box is a kill switch, not a pause** (focus, a keystroke, or
+  clicking a quick-prompt chip). A placeholder that resumes writing behind a
+  half-typed prompt makes a text box feel haunted.
+- **The caret matters.** Mid-phrase, "Compare this fall's enrollme" reads as a
+  truncation bug without one. It blinks on a fixed-width pair (`▌` / thin space)
+  so the text does not jitter, and the caret is composed at the call site so
+  `data-rw-typed` keys on the TEXT — fold the caret in and the render guard
+  passes on a dead animation.
+- The **quick-prompt chips stay** (Dan: "those are great"), and the typed phrases
+  are a deliberately DIFFERENT set — reusing the chips would make the panel
+  repeat itself twice over.
+- `prefers-reduced-motion` gets the old static placeholder.
+- Guards: three `ci-check-render.js` cases keyed on `data-rw-typed="1"`,
+  `[data-rw-summary]`/`[data-rw-grain="programs"]`/`[data-rw-note]`, all of which
+  were seen to fail on an inert animation and a removed narrative, while the
+  plain "wizard · build screen" case kept passing — which is the point.
+  `ci-check-render.js` CASES now accept an optional `act(page)` hook, because the
+  wizard's report screen only exists after a Generate click.
+
+### Backcheck against Clarksville (2026-08-26) — the numbers were right, two labels were not
+
+Dan asked for a backcheck of a generated GL report: **$11,188 payments / $100
+refunds / $11,088 net / 65 payments / 5 accounts**, plus a 5-row account table.
+
+**The figures were exactly right, verified two independent ways.**
+
+1. **Page vs card.** Fetched card 17293 straight from the Metabase public
+   endpoint (cache-independent, the `verify-report-live.js` path) for
+   clarksville over the window the wizard actually used. All 5 rows × 7 columns
+   matched the screen cell for cell, and all five KPIs recomputed exactly.
+2. **Card vs base data.** Rebuilt the rollup with independent SQL over
+   `materialized.item_log_report` — summing in cents rather than per row, and
+   splitting payment/refund on `transaction_type` instead of the card's
+   per-method CASE ladder. Over an identical **closed** window: **zero diffs**
+   across all 5 accounts on payments, refunds and payment counts.
+
+**Why the first comparison showed a $30 / 1-payment gap, and why it was not a
+bug.** The wizard's window ends TODAY, and a `card-online` payment landed
+between the two reads. Proven rather than assumed: the same card read five
+minutes apart went **$11,188/65 → $11,218/66**. Never diff an open window
+against itself across two reads — pick a closed one, as the second leg did.
+
+**Three real defects the backcheck did find:**
+
+- **The report carried NO DATE RANGE, anywhere.** The wizard passes no dates, so
+  `buildMetabaseParams` silently defaults to a 7-day window, and nothing
+  downstream could say which one. A GL rollup with no period on it cannot be
+  checked by the person reading it. The feed's `meta.window` now echoes the
+  dates that were SENT (not recomputed — recomputing can disagree with what
+  Metabase was actually asked) and the "Built from" line prints them. Worth
+  knowing: **the default runs BACKWARD for `gl` and FORWARD for `facility`**
+  (measured: gl 08-19→08-26, facility 08-26→09-02), so one park-wide window
+  label would be wrong.
+- **Two of the three grain labels I shipped were FALSE.** `gl` said "one row per
+  GL account" — card 17293 groups by gl_code AND `desk_location`, so a
+  multi-desk org repeats a GL code (it only looked right at Clarksville, where
+  every row is `(No desk location)`). `facility` said "one row per facility
+  reservation" — card 17294 emits **19 rows over 4 reservation ids**, one per
+  DATE. `programs` was correct (15 rows, 15 distinct `section_id`).
+  **`WIZARD_SOURCE_GRAIN` now holds ONLY measured entries, each with the card
+  and date recorded above it, and an unmeasured source prints its row count with
+  NO grain phrase.** A guessed phrase is a confident sentence about what a row
+  means sitting directly under a row count — the exact fabrication the
+  prose/number split exists to prevent, which I reintroduced one field over.
+  To add a source: `COUNT(DISTINCT id) == row count` against its card, then
+  record the card. Never infer it from the card's name.
+- **`Number of Payments` is not additive, and the wizard summed it.** It is
+  `COUNT(DISTINCT transaction_event_id)` **per GL row**, which is exactly why
+  card 17293 also ships `Desk Distinct Payments` ("the app sums these once per
+  desk instead of summing the per-GL column"). Summing the per-GL column
+  double-counts any payment touching two GL codes. It happened to be right here
+  — 65 == the card's own distinct figure of 65, one desk, no split payments — so
+  this is a **latent** wrong number, not a current one. `WIZARD_SOURCE_HINTS.gl`
+  now spells this out for the model, including that money columns *are* additive
+  (or the warning reads as "never sum anything from this source").
+
+Guards: `wizard-narrative.spec.js` 16 → 21 assertions. The window one runs the
+REAL `buildMetabaseParams` (with `parseToISO`) and the route's own derivation
+lifted verbatim, so a date-defaulting change fails it. Mutation-tested five more
+ways — window dropped from meta, the guessed grain fallback restored, the gl
+grain reverted to the false phrase, the window formatted with `new Date()`, and
+the non-additive warning removed. Plus a `wizard · feed date window` render case
+keyed on the FORMATTED string, because the formatting is where the bug lives:
+`new Date("2026-08-19")` is UTC midnight and renders as Aug 18 across the US.
+
+**Sandbox caveat, hit again.** A local `node server.js` prewarms ~28 orgs against
+PRODUCTION Metabase, and the clarksville gl feed came back `400 "An error
+occurred."` locally while the same request on the PR preview returned 200 in
+4.3s. Do not read a local 400/500 as a code defect — confirm against the preview
+first, as the timing caveat in the health-check section says.
+
+### Two things NOT done, worth knowing
+
+- **`fetchWizardSchemas` excludes `NON_ADDABLE_REPORTS`, so the AI never sees a
+  schema for `program-demographics`** — yet the system prompt's entire worked
+  example is built on it and the first quick-prompt chip ("Program revenue and
+  fill rate by gender") needs it. It works today only because the example
+  hardcodes real field names. Fixing it means probing 8 more cards (including the
+  heavy `selfservice`/`checkins` ones) on the wizard's warm-up path, which is a
+  cost decision, not a drive-by.
+- **`scripts/email-slack-notify.spec.js` was dead** and not in CI: `notifySlack`
+  references `alertEnabled`, declared above the extracted block, so the spec
+  threw `ReferenceError` before asserting anything. Deps injected, 7/7 passing,
+  and it is in CI now.
+
 ## Slack activity notifications — wire every new surface (IMPORTANT)
 
 Standing rule (see Working preferences): any new button, export, download, or

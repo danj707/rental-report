@@ -3607,7 +3607,7 @@ setTimeout(() => { checkCardParamTypes().catch(() => {}); }, 150 * 1000).unref?.
 // Inert if the env var is unset. Fire-and-forget — never blocks or breaks logging.
 // To change what pings Slack, edit SLACK_NOTIFY. High-frequency events (view/fetch)
 // are debounced per org+report so Slack isn't a firehose.
-const SLACK_NOTIFY = new Set(["created", "org-deleted", "watchdog", "schema-break", "param-drift", "report-down", "campmap-share", "campmap-site", "campmap-book", "campmap-filter", "campmap-amenity", "pdf", "excel", "print", "summary", "game", "map", "outdoor", "fields", "view", "insights", "insights-feedback", "chat-feedback", "feedback", "vote", "update-vote", "munis", "permits", "email", "checkin-loc", "checkin-member", "form-open", "deadlink"]);
+const SLACK_NOTIFY = new Set(["created", "org-deleted", "watchdog", "schema-break", "param-drift", "report-down", "campmap-share", "campmap-site", "campmap-book", "campmap-filter", "campmap-amenity", "pdf", "excel", "print", "summary", "game", "map", "outdoor", "fields", "view", "insights", "insights-feedback", "chat-feedback", "feedback", "vote", "update-vote", "munis", "permits", "email", "checkin-loc", "checkin-member", "form-open", "deadlink", "generate", "wizard-save"]);
 const SLACK_DEBOUNCE_MS = { view: 30 * 60 * 1000, fetch: 30 * 60 * 1000,
   // A broken report stays broken. The health check only reports NEW failures,
   // but a flapping card would otherwise post every hour.
@@ -3659,6 +3659,14 @@ const SLACK_EVENT_META = {
   "checkin-member": { emoji: "\uD83D\uDC64", verb: "opened a member in Rec from" },
   insights: { emoji: "✨", verb: "generated AI insights for" },
   email:   { emoji: "📧", verb: "emailed" },
+  // The Report Wizard. `generate` is the whole point of the feature — someone
+  // described a report in English and got one — so it is the highest-signal
+  // event on the platform and was the one thing the feed could not see: it has
+  // been logged to events.jsonl since the wizard shipped and was never in
+  // SLACK_NOTIFY. `wizard-save` is the follow-through: a generated report is a
+  // guess, a SAVED one is a report someone intends to open again.
+  generate:      { emoji: "\uD83E\uDE84", verb: "built a custom report in" },
+  "wizard-save": { emoji: "\uD83D\uDCBE", verb: "saved a wizard report in" },
 };
 // Mutes — an org+report+event pairing that is signal everywhere else but pure
 // noise here. Omit a field to wildcard it. These still land in events.jsonl and
@@ -3727,6 +3735,20 @@ function notifySlack(rec) {
     // checking three bookings' paperwork is three looks, not one.
     : rec.event === "form-open"
       ? `${rec.org}|${rec.report}|form-open|${rec.rental || ""}`
+    // A wizard run keys by the PROMPT, not by the org. Someone exploring asks
+    // three different questions in a couple of minutes, and that is three
+    // reports built — the whole signal is which questions they ask, so the
+    // default org|report|event key would throw away the second and third.
+    // A re-run of the SAME prompt inside the cooldown is a retry, not news.
+    : rec.event === "generate"
+      ? `${rec.org}|wizard|generate|${(rec.prompt || "").slice(0, 120)}`
+    : rec.event === "wizard-save"
+      ? `${rec.org}|wizard|save|${rec.title || ""}`
+    // Wizard thumbs key by DIRECTION, same reasoning as update-vote: a reader
+    // who thumbs down, reads again and thumbs up has told us two things, and
+    // collapsing them would keep whichever landed first.
+    : rec.event === "feedback"
+      ? `${rec.org}|${rec.report}|feedback|${rec.vote || ""}`
       : `${rec.org}|${rec.report}|${rec.event}`;
   const now = Date.now();
   const cooldown = SLACK_DEBOUNCE_MS[rec.event] || SLACK_DEFAULT_DEBOUNCE_MS;
@@ -3882,11 +3904,39 @@ function notifySlack(rec) {
     const n = rec.bookings;
     const on = n == null ? "" : ` — ${n.toLocaleString()} pavilion/shelter booking${n === 1 ? "" : "s"} in range`;
     text = `${meta.emoji} ${orgName} (\`${rec.org}\`) opened *Outdoor Event Spaces* on the facilities report${on}`;
-  } else if (rec.event === "insights-feedback" || rec.event === "chat-feedback" || rec.event === "feedback" || rec.event === "vote") {
+  } else if (rec.event === "generate") {
+    // The prompt IS the event. A bare "built a custom report" says nothing about
+    // whether the wizard is being used for real work, and the questions orgs
+    // type are the only place we learn what reports they wish they had.
+    const q = rec.prompt ? ` \u2014 _\u201C${String(rec.prompt).slice(0, 160)}\u201D_` : "";
+    const n = Number(rec.widgets);
+    const built = Number.isFinite(n) && n > 0 ? ` \u00B7 ${n} widget${n === 1 ? "" : "s"}` : "";
+    const from = rec.sources ? ` from ${String(rec.sources).slice(0, 80)}` : "";
+    text = `${meta.emoji} ${orgName} (\`${rec.org}\`) built *${rec.title || "a custom report"}*${built}${from}${q}`;
+  } else if (rec.event === "wizard-save") {
+    // Saving is the follow-through, and it is the only wizard signal that says
+    // a generated report was worth keeping rather than merely worth trying.
+    const n = Number(rec.widgets);
+    const built = Number.isFinite(n) && n > 0 ? ` \u00B7 ${n} widget${n === 1 ? "" : "s"}` : "";
+    text = `${meta.emoji} ${orgName} (\`${rec.org}\`) saved *${rec.title || "a wizard report"}* to their reports${built}`;
+  } else if (rec.event === "feedback") {
+    // Wizard thumbs get their own line rather than the shared one below: on a
+    // generated report the useful part is WHICH report was rated and off what
+    // prompt, and the shared branch printed "Report Wizard on *report-wizard*"
+    // — the report type twice and the report itself never.
+    const thumbs = rec.vote === "up" ? "\uD83D\uDC4D" : "\uD83D\uDC4E";
+    const what = rec.title ? ` \u2014 *${String(rec.title).slice(0, 90)}*` : "";
+    const said = rec.comment ? ` \u00B7 _${String(rec.comment).slice(0, 200)}_` : "";
+    const q = rec.prompt ? `\n> \u201C${String(rec.prompt).slice(0, 160)}\u201D` : "";
+    const mention = SLACK_MENTION_USER_ID ? ` <@${SLACK_MENTION_USER_ID}>` : "";
+    text = `${thumbs} ${orgName} (\`${rec.org}\`) rated a Report Wizard report${what}${said}${mention}${q}`;
+  } else if (rec.event === "insights-feedback" || rec.event === "chat-feedback" || rec.event === "vote") {
     const thumbs = (rec.score === 1 || rec.vote === "up" || rec.sentiment === "up") ? "\uD83D\uDC4D" : "\uD83D\uDC4E";
+    // `feedback` (the wizard's own thumbs) is handled in its own branch above and
+    // no longer reaches here — deliberately not left as a dead arm, because a
+    // stray label is how the next reader concludes the wizard posts this shape.
     const label = rec.event === "vote"          ? "Report"
                 : rec.event === "chat-feedback" ? "Rec AI Chat"
-                : rec.event === "feedback"      ? "Report Wizard"
                 :                                 "AI Insights";
     const commentText = rec.comment ? ` \u2014 _${rec.comment.slice(0, 200)}_` : "";
     const mention = SLACK_MENTION_USER_ID ? ` <@${SLACK_MENTION_USER_ID}>` : "";
@@ -6130,6 +6180,40 @@ app.post("/:org/campmap/api/log", (req, res) => {
   res.json({ ok: true });
 });
 
+// ── POST /:org/report-wizard/api/log — Report Wizard activity ─────────
+// Its own route for the FOURTH time now, and for exactly the same reason as the
+// campmap and facilities ones: `report-wizard` is NOT in REPORT_TYPES, so the
+// generic /:org/:report/api/log below matches first and resolveOrg answers
+// `404 Unknown report: "report-wizard"`. A fire-and-forget beacon never
+// complains, so the ping would look wired and post nothing — see the campmap and
+// Facilities-hub sections of CLAUDE.md for the two times that shipped.
+//
+// Registered HERE, above the generic route, because Express matches in
+// registration order. Moving it below is the regression, and
+// scripts/wizard-activity.spec.js fails on it by name.
+//
+// Only `wizard-save` comes through here. `generate` and `feedback` are logged
+// server-side by their own routes, which see everything about the run.
+app.post("/:org/report-wizard/api/log", (req, res) => {
+  const slug = req.params.org;
+  const org = ORGS[slug];
+  if (!org) return res.status(404).json({ ok: false, error: "Unknown org" });
+  // The global org-token gate already 404s this path without a token; this is
+  // the same backstop the generate route carries, for the day that gate's
+  // exemption list grows.
+  const qToken = req.query.token || req.headers["x-token"];
+  if (org.token && qToken !== org.token) return res.status(403).json({ ok: false, error: "Invalid token" });
+  const event = req.query.event;
+  const ALLOWED = ["wizard-save"];
+  if (!ALLOWED.includes(event)) return res.status(400).json({ ok: false, error: "Unknown event" });
+  const n = Number(req.query.n);
+  logEvent(slug, "report-wizard", event, req, {
+    title: req.query.title ? String(req.query.title).slice(0, 120) : undefined,
+    widgets: Number.isFinite(n) && n >= 0 && n <= 100 ? Math.round(n) : undefined,
+  });
+  res.json({ ok: true });
+});
+
 app.post("/:org/:report/api/log", resolveOrg, (req, res) => {
   const { orgSlug, reportType } = req;
   const { event, game, location, view } = req.query;
@@ -7287,7 +7371,11 @@ app.post("/:org/chat/api/feedback", (req, res) => {
 // ── GET /:org/:report/api/data — proxy to Metabase ───────────────────
 // ── Report Wizard — AI config generator ─────────────────────────────
 const WIZARD_MODEL = process.env.WIZARD_MODEL || "claude-sonnet-4-6";
-const WIZARD_MAX_TOKENS = 3000;
+// Raised from 3000 when the write-up (summary + notes) was added: the config is
+// returned as one JSON object, so running out of tokens does not truncate the
+// prose — it truncates the JSON and the whole generation fails as "invalid
+// config". A six-widget report with a summary needs the headroom.
+const WIZARD_MAX_TOKENS = 4000;
 const _wizardSchemaCache = new Map();
 const WIZARD_SCHEMA_TTL = 30 * 60 * 1000;
 
@@ -7331,7 +7419,7 @@ async function fetchWizardSchemas(orgSlug, orgConfig) {
 const WIZARD_SOURCE_HINTS = {
   programs: 'Aggregated program/section-level data: revenue, enrollment counts, capacity, cancellations. ONE ROW PER SECTION. Use for revenue totals, fill rates, program comparisons.',
   'program-demographics': 'Individual participant-level rows: one row per enrolled person with their gender, age, city, grade. Use for demographic breakdowns (gender, age, geography). Does NOT contain revenue or financial data — use programs source for revenue.',
-  gl: 'General ledger / accounting data: revenue and refunds grouped by GL account code. Use for financial breakdowns by account category.',
+  gl: 'General ledger / accounting data: revenue and refunds grouped by GL account code AND desk location. Use for financial breakdowns by account category. WARNING — "Number of Payments" and "Number of Refunds" are COUNT(DISTINCT transaction) per row, so they are NOT additive: summing them across GL rows double-counts any payment that touched more than one GL code. For a total transaction count use "Desk Distinct Payments" / "Desk Distinct Refunds", which the card repeats on every row of a desk and which sum correctly once per desk. Money columns ARE additive.',
   facility: 'Facility rental bookings with dates, times, locations, reservees, totals. Use for utilization, booking patterns, facility revenue.',
   users: 'Community/household-level data: demographics, revenue per household, membership status. Use for community analytics.',
   fasttrack: 'Fast Track (self-service) data: FT wishlists, conversions, demand signals. Use for FT adoption analysis.',
@@ -7342,6 +7430,48 @@ const WIZARD_SOURCE_HINTS = {
   roster: 'Class roster: enrolled and cancelled participants by section.',
 };
 
+// ── What ONE ROW of each source is ────────────────────────────────────────────
+// Read by the generated report's "Built from" line, which is the honest half of
+// the write-up: the AI writes its summary BEFORE any data is fetched, so it can
+// describe what the report asks but can never state a figure. The row counts and
+// the grain come from the rows that actually arrived.
+//
+// EVERY ENTRY HERE IS MEASURED, and a source that is not measured is deliberately
+// ABSENT rather than guessed. That rule was bought the hard way: the first
+// version of this map was written from the card NAMES, and a backcheck against
+// Clarksville on 2026-08-26 found two of the three claims it could test were
+// false —
+//
+//   · `gl` said "one row per GL account". Card 17293 groups by
+//     gl_code AND desk_location, so a multi-desk org gets the same GL code on
+//     several rows. It only looked right at Clarksville because every row there
+//     is "(No desk location)".
+//   · `facility` said "one row per facility reservation". Card 17294 emits one
+//     row per DATE of a reservation — measured 19 rows over 4 reservation ids —
+//     which is the same repeat-per-day behaviour the Director's Report arrival
+//     guard exists for.
+//
+// A wrong grain is worse than no grain: it is a confident sentence about what a
+// row means, sitting directly under a row count, on a page a finance office
+// reads. So the page prints the count alone when a source is not in this map
+// (see ReportNarrative), and wizard-narrative.spec.js fails if the page ever
+// grows a fallback phrase.
+//
+// TO ADD A SOURCE: fetch its card for one org and test that the column the grain
+// claims is unique actually is — `COUNT(DISTINCT id) == row count`. Record the
+// card and the date here. Do not infer it from the card's name.
+const WIZARD_SOURCE_GRAIN = {
+  // card 17295, clarksville 2026-08-19→26: 15 rows, 15 distinct section_id
+  // (10 distinct program_id, so the grain is the section and not the program).
+  programs: 'one row per program section',
+  // card 17293, clarksville 2026-08-19→26: GROUP BY gl_code_raw, desk_location.
+  gl:       'one row per GL account per desk location',
+  // card 17294, clarksville 2026-08-19→26: 19 rows over 4 distinct
+  // "Reservation ID" — a multi-day booking repeats once per date.
+  facility: 'one row per booked date of a reservation',
+};
+
+
 const WIZARD_SYS_PROMPT = `You are a report configuration generator for a municipal parks & recreation analytics platform.
 
 You receive a natural language description of a desired report and a schema of available data sources with their field names, types, and sample values.
@@ -7351,9 +7481,27 @@ Return ONLY a valid JSON object (no markdown fences, no explanation) with this s
 {
   "title": "Report Title",
   "description": "One-line description",
+  "summary": "2-4 sentences in plain English: what question this report answers, which data it draws on and what one row of that data represents, and how to read the widgets below.",
+  "notes": ["A caveat, exclusion or limitation worth knowing", "Another one"],
   "dataSources": ["programs", "program-demographics"],
   "widgets": [...]
 }
+
+THE WRITE-UP ("summary" and "notes") IS REQUIRED, AND IT MUST NOT CONTAIN FIGURES:
+
+- You are writing this BEFORE any data has been fetched. You have field names and
+  a handful of sample values; you do NOT have totals, counts, rankings or dates.
+- So NEVER write a number, a total, a date range, a name of a top program, or any
+  claim about what the data shows. "Revenue is concentrated in aquatics" is a
+  fabrication. The figures on the page come from the widgets.
+- DO write: what the report is for, who would read it, what each widget answers,
+  what a row of each source means, and what the report deliberately leaves out.
+- "notes" is 1-3 SHORT strings — real caveats, not filler. Good notes: a source
+  that excludes cancellations; a table that is aggregated so no individual
+  appears; a metric that counts participants rather than unique people; a source
+  that carries no revenue so revenue had to come from elsewhere; a default date
+  window. If there is genuinely only one caveat, return one.
+- Keep "description" as the existing one-liner. "summary" is the longer prose.
 
 WIDGET TYPES:
 
@@ -7402,6 +7550,12 @@ COMPLETE WORKING EXAMPLE — gender enrollment report:
 {
   "title": "Gender Enrollment Report",
   "description": "Enrollment by gender across all programs",
+  "summary": "This report shows how enrollment is distributed by gender across every program in the current window, and pairs it with the section-level revenue and capacity behind those registrations. Each row of the demographics source is one enrolled participant, so the counts here are registrations rather than unique people \u2014 someone in two programs is counted twice. The pie and bar charts split the same total two ways; the tables drill from program down to section so you can see which offerings drive the mix.",
+  "notes": [
+    "Counts are registrations, not distinct people \u2014 one participant enrolled in two programs appears twice.",
+    "Gender is self-reported at registration and is often left blank; those rows group under Unknown.",
+    "Revenue comes from the section-level source, which carries no gender field, so revenue cannot be split by gender here."
+  ],
   "dataSources": ["program-demographics", "programs"],
   "widgets": [
     {"type": "kpi-row", "items": [
@@ -7420,6 +7574,8 @@ COMPLETE WORKING EXAMPLE — gender enrollment report:
 Adapt this pattern for other requests. The key insight: program-demographics rows ARE the enrollments — count them, don't look for a count field.
 
 LAYOUT RULES:
+- ALWAYS include "summary" and "notes" — a page of bare charts makes the reader
+  guess what they are looking at, and the caveats are where reports go wrong
 - dataSources must list every source key used by widgets
 - Start with a kpi-row for the most important metrics (3-5 cards)
 - Use 3-6 widgets total
@@ -7544,6 +7700,14 @@ app.post("/:org/report-wizard/api/generate", async (req, res) => {
     if (!config.title || !config.widgets || !Array.isArray(config.widgets)) {
       return res.status(502).json({ error: "AI returned incomplete config - try rephrasing" });
     }
+    // Normalise the write-up. The page renders these, and a model that returns a
+    // string where an array belongs (or 400 words where three sentences belong)
+    // must not be able to blank the report or push the widgets off screen.
+    config.summary = typeof config.summary === "string" ? config.summary.trim().slice(0, 900) : "";
+    config.notes = (Array.isArray(config.notes) ? config.notes : config.notes ? [config.notes] : [])
+      .filter(n => typeof n === "string" && n.trim())
+      .map(n => n.trim().slice(0, 240))
+      .slice(0, 4);
     if (!config.dataSources || !Array.isArray(config.dataSources)) {
       const srcs = new Set();
       config.widgets.forEach(w => {
@@ -7561,6 +7725,12 @@ app.post("/:org/report-wizard/api/generate", async (req, res) => {
       outTok: usage.output_tokens || 0,
       costUsd,
       prompt: prompt.slice(0, 120),
+      // What the wizard actually built. Without these the Slack line can only
+      // say "someone built a report" — the title and the sources are what make
+      // the feed readable, and they are free here.
+      title: String(config.title || "").slice(0, 120),
+      widgets: config.widgets.length,
+      sources: (config.dataSources || []).join(", ").slice(0, 120),
       traceId: wizTraceId,
     });
 
@@ -7580,7 +7750,9 @@ app.post("/:org/report-wizard/api/feedback", (req, res) => {
   const qToken = req.query.token || req.headers["x-token"];
   if (org.token && qToken !== org.token) return res.status(403).json({ error: "Invalid token" });
   const { vote, prompt, title, widgetCount, traceId, comment } = req.body || {};
-  logEvent(slug, "report-wizard", "feedback", req, { vote, prompt: (prompt || "").slice(0, 200), title, widgetCount, traceId });
+  // The comment is the whole reason a thumbs-down is worth reading, so it travels
+  // with the event — the Slack line prints it, same as the AI-insights votes do.
+  logEvent(slug, "report-wizard", "feedback", req, { vote, prompt: (prompt || "").slice(0, 200), title, widgetCount, traceId, comment: (comment || "").slice(0, 300) || undefined });
 
   // Send score to Langfuse
   if (traceId && process.env.LANGFUSE_PUBLIC_KEY && process.env.LANGFUSE_SECRET_KEY) {
@@ -7882,6 +8054,21 @@ app.get("/:org/:report/api/data", resolveOrg, async (req, res) => {
         logo_url: orgConfig.logoUrl,
         report_type: reportType,
         generated_at: new Date().toISOString(),
+        // The date window this feed actually covers, read back off the
+        // parameters that were SENT rather than recomputed — a caller that
+        // passes no dates gets buildMetabaseParams's default, and until now
+        // nothing downstream could tell which window it received. The Report
+        // Wizard prints it; a GL rollup with no period on it is not a document
+        // a finance office can use. Absent for the date-less reports, and
+        // absent from entries cached before this shipped, so read it defensively.
+        window: (() => {
+          const find = slug => {
+            const p = params.find(x => x.target && x.target[1] && x.target[1][1] === slug);
+            return p ? p.value : null;
+          };
+          const start = find("start_date"), end = find("end_date");
+          return start || end ? { start, end } : null;
+        })(),
         ...(schemaDrift && {
           schema_warnings: [{
             type: schemaDrift.type,
@@ -11648,6 +11835,10 @@ app.get("/:org/report-wizard", (req, res) => {
     logoUrl: org.logoUrl || "",
     reports: available,
     token: org.token || "",
+    // What one row of each source is. The page's "Built from" line pairs this
+    // with the row counts it actually received — see WIZARD_SOURCE_GRAIN for why
+    // it is injected rather than duplicated in the page.
+    sourceGrain: WIZARD_SOURCE_GRAIN,
   };
   const html = require("fs").readFileSync(path.join(__dirname, "public", "report-wizard.html"), "utf8");
   const inject = `<script>window.ORG_CONFIG=${JSON.stringify(orgConfig)};</script>`;
@@ -16328,6 +16519,14 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  { date: '2026-08-26', title: '🪄 Report Wizard: says what it built, and the feed can finally see it', items: [
+    'A generated report now opens with a few lines of prose \u2014 what the report answers, what one row of each source means, and how to read the widgets \u2014 plus a "Worth knowing" list of the caveats (what is excluded, what a count is really counting). Before this it was a title and a stack of charts, which leaves the reader guessing.',
+    'The write-up is deliberately split in two. The prose comes from the AI, which is designing the report BEFORE any data is fetched \u2014 so it is forbidden from stating a figure, because it cannot know one. The "Built from" line beside it is measured here: the sources used, the rows that actually arrived, and the grain of each. A source that answered with nothing now says so, instead of rendering as widgets full of dashes.',
+    'The build screen types an example prompt, erases it and moves on to the next, so the box demonstrates what "describe it in plain English" means. It stops for good the moment you touch it, writes only to the placeholder, and never runs for anyone who has asked for reduced motion. The quick-prompt chips are unchanged.',
+    'Every wizard run now reaches the Slack activity feed with its title, widget count, sources and the prompt that produced it \u2014 it had been written to the events log and posted nowhere since the wizard shipped. Thumbs up/down posts too, naming the report that was rated and carrying the comment, and a reader who changes their mind posts both. Saving a generated report is its own new event.',
+    'A generated report now states the DATE RANGE it covers, per data source. It never did \u2014 the wizard sends no dates, so each feed quietly fell back to its own default window, and nothing on the page said which. A revenue report with no period on it cannot be checked by the person reading it.',
+    'The "one row per \u2026" note beside each source is now only shown where it has actually been measured against the card. Two of the first three were wrong: the GL feed is one row per account per DESK, and the facility feed is one row per booked DATE of a reservation, not per reservation. A sentence about what a row means, printed under a row count, has to be true or absent.',
+  ]},
   { date: '2026-08-24', title: '📐 Admin dashboard: same numbers, a third of the scroll', items: [
     'The content column goes 860px → 1280px. It was capped at 860 on a screen twice that wide, which cramped the nine-column usage table and left ~200px dead on each side at the same time.',
     'Platform Usage is one line per row instead of two: the sparkline gets its own narrow column and the usage bar moved behind the views number. Nine columns became six — Trend is now a ±arrow beside Views, and Subscribers and Emails share one cell. A zero renders as a faint dot, because most orgs are zero in most columns and a grid of 0s reads as data. Top 8 by default (they are 96% of all views) with Show all; a totals row up top carries views, exports, AI insights and emails for the whole platform.',

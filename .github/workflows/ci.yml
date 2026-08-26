@@ -121,6 +121,18 @@ jobs:
       - name: Add-ons in the note line, Forms link (the add-on money survives its column)
         run: node scripts/facility-addons-forms.spec.js
 
+      - name: Report Wizard activity (runs and thumbs reach Slack; the beacon has its own route)
+        run: node scripts/wizard-activity.spec.js
+
+      - name: Report Wizard write-up (no invented figures; one grain map; row counts measured)
+        run: node scripts/wizard-narrative.spec.js
+
+      # Was never in CI and had been dead for months: notifySlack() references
+      # alertEnabled, which is declared above the extracted block, so the spec
+      # threw ReferenceError before asserting anything.
+      - name: Slack notification formatting + debounce keys
+        run: node scripts/email-slack-notify.spec.js
+
       - name: Admin dashboard JS (inline blocks parse; every on*= handler resolves)
         run: node scripts/ci-check-admin-js.js
 
