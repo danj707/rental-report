@@ -450,7 +450,11 @@ const STUBS = [
   { match: /\/directors-report\/api\/quarters/, body: () => ({ ok: true, quarters: [{ year: 2026, q: 2, key: "2026-Q2", label: "Q2 2026", stored: true }] }) },
   { match: /\/directors-report\/api\/quarter/,  body: () => directorsQuarter() },
   { match: /\/memberships\/api\/data/,  body: () => ({ rows: membershipRows(), meta: { org_id: "org-uuid-1" } }) },
-  { match: /\/api\/data/,                   body: () => ({ rows: campsiteRows(), meta: {} }) },
+  // `window` is what the real feed now echoes back: the date range it actually
+  // covers, read off the parameters that were sent. The wizard prints it, so the
+  // case below asserts the formatted string rather than merely that a chip drew.
+  { match: /\/api\/data/,                   body: () => ({ rows: campsiteRows(),
+      meta: { window: { start: "2026-08-19", end: "2026-08-26" } } }) },
   { match: /\/api\/pulse/,                  body: () => ({ items: [], generated: null }) },
   { match: /\/api\/goals/,                  body: () => ({}) },
   { match: /\/api\/views/,                  body: () => ({ views: [] }) },
@@ -698,6 +702,13 @@ const CASES = [
   { name: "wizard · built-from line", path: "/{org}/report-wizard",        needs: "[data-rw-grain=\"programs\"]",
     act: async page => { await page.click(".example-chip"); await page.click(".btn-generate"); } },
   { name: "wizard · caveat notes",    path: "/{org}/report-wizard",        needs: "[data-rw-note]",
+    act: async page => { await page.click(".example-chip"); await page.click(".btn-generate"); } },
+  // The date window the feed covers. Keyed on the FORMATTED string, because the
+  // formatting is where the bug lives: new Date("2026-08-19") is UTC midnight and
+  // renders as Aug 18 in every US timezone. A report with no period on it is not
+  // a document a finance office can check, which is how this was found.
+  { name: "wizard · feed date window", path: "/{org}/report-wizard",
+    needs: "[data-rw-window=\"Aug 19 \u2013 Aug 26\"]",
     act: async page => { await page.click(".example-chip"); await page.click(".btn-generate"); } },
 ];
 

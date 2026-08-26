@@ -7345,7 +7345,7 @@ async function fetchWizardSchemas(orgSlug, orgConfig) {
 const WIZARD_SOURCE_HINTS = {
   programs: 'Aggregated program/section-level data: revenue, enrollment counts, capacity, cancellations. ONE ROW PER SECTION. Use for revenue totals, fill rates, program comparisons.',
   'program-demographics': 'Individual participant-level rows: one row per enrolled person with their gender, age, city, grade. Use for demographic breakdowns (gender, age, geography). Does NOT contain revenue or financial data — use programs source for revenue.',
-  gl: 'General ledger / accounting data: revenue and refunds grouped by GL account code. Use for financial breakdowns by account category.',
+  gl: 'General ledger / accounting data: revenue and refunds grouped by GL account code AND desk location. Use for financial breakdowns by account category. WARNING — "Number of Payments" and "Number of Refunds" are COUNT(DISTINCT transaction) per row, so they are NOT additive: summing them across GL rows double-counts any payment that touched more than one GL code. For a total transaction count use "Desk Distinct Payments" / "Desk Distinct Refunds", which the card repeats on every row of a desk and which sum correctly once per desk. Money columns ARE additive.',
   facility: 'Facility rental bookings with dates, times, locations, reservees, totals. Use for utilization, booking patterns, facility revenue.',
   users: 'Community/household-level data: demographics, revenue per household, membership status. Use for community analytics.',
   fasttrack: 'Fast Track (self-service) data: FT wishlists, conversions, demand signals. Use for FT adoption analysis.',
@@ -7362,32 +7362,41 @@ const WIZARD_SOURCE_HINTS = {
 // describe what the report asks but can never state a figure. The row counts and
 // the grain come from the rows that actually arrived.
 //
-// Lives here rather than in the page so there is one copy. The wizard route
-// injects it into ORG_CONFIG, and scripts/wizard-narrative.spec.js fails if the
-// page grows its own — two maps would drift the moment a card changes grain,
-// and the whole point of the line is that it is true.
+// EVERY ENTRY HERE IS MEASURED, and a source that is not measured is deliberately
+// ABSENT rather than guessed. That rule was bought the hard way: the first
+// version of this map was written from the card NAMES, and a backcheck against
+// Clarksville on 2026-08-26 found two of the three claims it could test were
+// false —
+//
+//   · `gl` said "one row per GL account". Card 17293 groups by
+//     gl_code AND desk_location, so a multi-desk org gets the same GL code on
+//     several rows. It only looked right at Clarksville because every row there
+//     is "(No desk location)".
+//   · `facility` said "one row per facility reservation". Card 17294 emits one
+//     row per DATE of a reservation — measured 19 rows over 4 reservation ids —
+//     which is the same repeat-per-day behaviour the Director's Report arrival
+//     guard exists for.
+//
+// A wrong grain is worse than no grain: it is a confident sentence about what a
+// row means, sitting directly under a row count, on a page a finance office
+// reads. So the page prints the count alone when a source is not in this map
+// (see ReportNarrative), and wizard-narrative.spec.js fails if the page ever
+// grows a fallback phrase.
+//
+// TO ADD A SOURCE: fetch its card for one org and test that the column the grain
+// claims is unique actually is — `COUNT(DISTINCT id) == row count`. Record the
+// card and the date here. Do not infer it from the card's name.
 const WIZARD_SOURCE_GRAIN = {
-  programs:               'one row per program section',
-  'program-demographics': 'one row per enrolled participant',
-  gl:                     'one row per GL account',
-  facility:               'one row per facility reservation',
-  users:                  'one row per household',
-  fasttrack:              'one row per Fast Track section',
-  waitlist:               'one row per waitlisted section',
-  products:               'one row per product per day',
-  memberships:            'one row per membership',
-  'court-utilization':    'one row per court booking',
-  roster:                 'one row per registration',
-  calendar:               'one row per session',
-  historic:               'one row per building reservation',
-  'instructor-payout':    'one row per lesson booking',
-  checkins:               'one row per check-in',
-  retention:              'one row per member',
-  'section-detail':       'one row per section',
-  'ice-calendar':         'one row per ice slot',
-  selfservice:            'one row per section',
-  'program-checkins':     'one row per program check-in',
+  // card 17295, clarksville 2026-08-19→26: 15 rows, 15 distinct section_id
+  // (10 distinct program_id, so the grain is the section and not the program).
+  programs: 'one row per program section',
+  // card 17293, clarksville 2026-08-19→26: GROUP BY gl_code_raw, desk_location.
+  gl:       'one row per GL account per desk location',
+  // card 17294, clarksville 2026-08-19→26: 19 rows over 4 distinct
+  // "Reservation ID" — a multi-day booking repeats once per date.
+  facility: 'one row per booked date of a reservation',
 };
+
 
 const WIZARD_SYS_PROMPT = `You are a report configuration generator for a municipal parks & recreation analytics platform.
 
@@ -7971,6 +7980,21 @@ app.get("/:org/:report/api/data", resolveOrg, async (req, res) => {
         logo_url: orgConfig.logoUrl,
         report_type: reportType,
         generated_at: new Date().toISOString(),
+        // The date window this feed actually covers, read back off the
+        // parameters that were SENT rather than recomputed — a caller that
+        // passes no dates gets buildMetabaseParams's default, and until now
+        // nothing downstream could tell which window it received. The Report
+        // Wizard prints it; a GL rollup with no period on it is not a document
+        // a finance office can use. Absent for the date-less reports, and
+        // absent from entries cached before this shipped, so read it defensively.
+        window: (() => {
+          const find = slug => {
+            const p = params.find(x => x.target && x.target[1] && x.target[1][1] === slug);
+            return p ? p.value : null;
+          };
+          const start = find("start_date"), end = find("end_date");
+          return start || end ? { start, end } : null;
+        })(),
         ...(schemaDrift && {
           schema_warnings: [{
             type: schemaDrift.type,
@@ -16407,6 +16431,8 @@ app.get("/", (req, res) => {
     'The write-up is deliberately split in two. The prose comes from the AI, which is designing the report BEFORE any data is fetched \u2014 so it is forbidden from stating a figure, because it cannot know one. The "Built from" line beside it is measured here: the sources used, the rows that actually arrived, and the grain of each. A source that answered with nothing now says so, instead of rendering as widgets full of dashes.',
     'The build screen types an example prompt, erases it and moves on to the next, so the box demonstrates what "describe it in plain English" means. It stops for good the moment you touch it, writes only to the placeholder, and never runs for anyone who has asked for reduced motion. The quick-prompt chips are unchanged.',
     'Every wizard run now reaches the Slack activity feed with its title, widget count, sources and the prompt that produced it \u2014 it had been written to the events log and posted nowhere since the wizard shipped. Thumbs up/down posts too, naming the report that was rated and carrying the comment, and a reader who changes their mind posts both. Saving a generated report is its own new event.',
+    'A generated report now states the DATE RANGE it covers, per data source. It never did \u2014 the wizard sends no dates, so each feed quietly fell back to its own default window, and nothing on the page said which. A revenue report with no period on it cannot be checked by the person reading it.',
+    'The "one row per \u2026" note beside each source is now only shown where it has actually been measured against the card. Two of the first three were wrong: the GL feed is one row per account per DESK, and the facility feed is one row per booked DATE of a reservation, not per reservation. A sentence about what a row means, printed under a row count, has to be true or absent.',
   ]},
   { date: '2026-08-24', title: '📐 Admin dashboard: same numbers, a third of the scroll', items: [
     'The content column goes 860px → 1280px. It was capped at 860 on a screen twice that wide, which cramped the nine-column usage table and left ~200px dead on each side at the same time.',

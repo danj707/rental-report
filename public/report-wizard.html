@@ -782,14 +782,35 @@
     // A source that answered with nothing is called out rather than shown as a
     // zero: until now a feed that failed to fetch rendered as widgets full of
     // dashes with nothing on screen to say why.
-    function ReportNarrative({ report, data }) {
+    // A window as the reader needs it: "Aug 19 – Aug 26". Built from the parts of
+    // the ISO string, never new Date(), because "2026-08-19" parses as UTC
+    // midnight and formats as Aug 18 in every US timezone — the same bug as the
+    // Fast Track dates.
+    function fmtWindow(w) {
+      if (!w || (!w.start && !w.end)) return '';
+      var MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+      var one = function(iso) {
+        var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || ''));
+        return m ? MON[Number(m[2]) - 1] + ' ' + Number(m[3]) : String(iso || '');
+      };
+      if (w.start && w.end) return one(w.start) + ' \u2013 ' + one(w.end);
+      return w.start ? 'from ' + one(w.start) : 'to ' + one(w.end);
+    }
+
+    function ReportNarrative({ report, data, windows }) {
       var summary = (report.summary || '').trim();
       var notes = (report.notes || []).filter(function(n) { return n && String(n).trim(); });
       var sources = report.dataSources || Object.keys(data || {});
       var built = sources.map(function(src) {
         var rows = (data || {})[src];
         return { src: src, n: rows ? rows.length : 0, missing: !rows || !rows.length,
-                 grain: SOURCE_GRAIN[src] || 'one row per record' };
+                 // No grain unless it has been MEASURED against the card — see
+                 // WIZARD_SOURCE_GRAIN in server.js. A guessed fallback ("one row
+                 // per record") is a confident sentence about what a row means
+                 // sitting under a row count, and two of the three original
+                 // guesses turned out to be wrong.
+                 grain: SOURCE_GRAIN[src] || '',
+                 window: fmtWindow((windows || {})[src]) };
       });
       // Nothing generated and nothing fetched — render nothing rather than an
       // empty decorated box. Saved reports from before this shipped land here.
@@ -803,11 +824,12 @@
               {built.map(function(b, i) {
                 return (
                   <span className={'rn-src' + (b.missing ? ' empty' : '')} key={i}
-                        data-rw-grain={b.src}>
+                        data-rw-grain={b.src} data-rw-window={b.window || undefined}>
                     <b>{b.src}</b>{' \u00B7 '}
                     {b.missing
                       ? 'no rows returned \u2014 widgets reading it will be blank'
-                      : b.n.toLocaleString('en-US') + ' rows \u00B7 ' + b.grain}
+                      : [b.n.toLocaleString('en-US') + ' rows', b.window, b.grain]
+                          .filter(Boolean).join(' \u00B7 ')}
                   </span>
                 );
               })}
@@ -835,7 +857,7 @@
     }
 
     // ── Report View ──
-    function ReportView({ report, data, onSave, onNew, onRefine }) {
+    function ReportView({ report, data, windows, onSave, onNew, onRefine }) {
       var [saveState, setSaveState] = useState('idle');
       var [showDebug, setShowDebug] = useState(false);
       var [copyState, setCopyState] = useState('idle');
@@ -891,7 +913,7 @@
               </button>
             </div>
           </div>
-          <ReportNarrative report={report} data={data} />
+          <ReportNarrative report={report} data={data} windows={windows} />
           <div className="widget-grid">
             {(report.widgets || []).map(function(w, i) {
               return <WidgetRenderer key={i} config={w} data={data} />;
@@ -983,6 +1005,9 @@
       var [error, setError] = useState('');
       var [reportConfig, setReportConfig] = useState(null);
       var [reportData, setReportData] = useState({});
+      // Per-source date window, as reported by each feed. Not merged into
+      // reportData: the widgets read rows, and this is a statement ABOUT them.
+      var [dataWindows, setDataWindows] = useState({});
       var [saved, setSaved] = useState(loadSaved);
       // The typed placeholder. `typing` latches OFF for the life of the page the
       // first time the box is touched — see useTypedPlaceholder for why it is a
@@ -1020,7 +1045,7 @@
           setLoadingMsg('Fetching data...');
 
           var sources = config.dataSources || [];
-          var dataMap = {};
+          var dataMap = {}, metaMap = {};
 
           await Promise.all(sources.map(async function(src) {
             try {
@@ -1029,6 +1054,10 @@
               if (dataResp.ok) {
                 var d = await dataResp.json();
                 dataMap[src] = d.rows || d || [];
+                // The window the feed actually covers. Kept beside the rows
+                // rather than merged into them: a report with no period on it
+                // cannot be checked by the person reading it.
+                if (d && d.meta && d.meta.window) metaMap[src] = d.meta.window;
               }
             } catch (e) {
               console.warn('Failed to fetch ' + src + ':', e);
@@ -1036,6 +1065,7 @@
           }));
 
           setReportData(dataMap);
+          setDataWindows(metaMap);
           setPhase('report');
         } catch (e) {
           console.error('Generate error:', e);
@@ -1079,19 +1109,21 @@
         setLoadingMsg('Fetching data...');
 
         var sources = item.dataSources || [];
-        var dataMap = {};
+        var dataMap = {}, metaMap = {};
         await Promise.all(sources.map(async function(src) {
           try {
             var dataResp = await fetch('/' + ORG_SLUG + '/' + src + '/api/data' + tokenQS);
             if (dataResp.ok) {
               var d = await dataResp.json();
               dataMap[src] = d.rows || d || [];
+              if (d && d.meta && d.meta.window) metaMap[src] = d.meta.window;
             }
           } catch (e) {
             console.warn('Failed to fetch ' + src + ':', e);
           }
         }));
         setReportData(dataMap);
+        setDataWindows(metaMap);
         setPhase('report');
       }
 
@@ -1100,6 +1132,7 @@
         setPrompt('');
         setReportConfig(null);
         setReportData({});
+        setDataWindows({});
         setError('');
       }
 
@@ -1190,6 +1223,7 @@
               <ReportView
                 report={reportConfig}
                 data={reportData}
+                windows={dataWindows}
                 onSave={handleSave}
                 onNew={handleNew}
                 onRefine={handleRefine}

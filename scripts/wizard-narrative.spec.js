@@ -131,15 +131,132 @@ test("the page does NOT carry its own grain map — two copies would drift", () 
     "a grain phrase is hardcoded in the page — it belongs in WIZARD_SOURCE_GRAIN");
 });
 
-test("every source the wizard can offer has a grain, or the line says 'per record'", () => {
-  const rt = JSON.parse(/const REPORT_TYPES = (\[[^\]]+\])/.exec(src)[1]);
+test("an UNMEASURED source gets no grain phrase — a wrong one is worse than none", () => {
+  // The first version of this map was written from the card names, and a
+  // backcheck on 2026-08-26 found two of the three claims it could test were
+  // false: `gl` groups by gl_code AND desk_location, and `facility` emits one
+  // row per DATE of a reservation (19 rows over 4 reservation ids). A grain
+  // phrase is a confident sentence about what a row means, printed directly
+  // under a row count, so an unmeasured source must print nothing.
   const i = src.indexOf("const WIZARD_SOURCE_GRAIN = {");
   const grain = require("vm").runInNewContext(
     "(" + src.slice(src.indexOf("{", i), src.indexOf("\n};", i) + 2) + ")");
-  const missing = rt.filter(r => !grain[r] && r !== "qoq" && r !== "annual-report");
-  assert.deepStrictEqual(missing, [],
-    "these sources would print the generic fallback: " + missing.join(", "));
-  assert.match(page, /'one row per record'/, "and the fallback has to exist for a new source");
+  assert.ok(Object.keys(grain).length >= 3, "expected the measured sources");
+  assert.match(page, /grain: SOURCE_GRAIN\[src\] \|\| '',/,
+    "the page must fall back to NO phrase, never to a guessed one");
+  assert.ok(!/one row per record/.test(page),
+    "the generic fallback is exactly the fabrication this guard exists to stop");
+  // And the phrases that ARE there must be the measured ones, not the originals.
+  assert.strictEqual(grain.gl, "one row per GL account per desk location",
+    "card 17293 groups by gl_code AND desk_location");
+  assert.strictEqual(grain.facility, "one row per booked date of a reservation",
+    "card 17294 repeats a multi-day booking once per date");
+  assert.strictEqual(grain.programs, "one row per program section");
+});
+
+test("each grain entry records the card it was measured against", () => {
+  // Provenance is the only thing that stops the next person adding a plausible
+  // phrase from a card name, which is how the two wrong ones got in.
+  const i = src.indexOf("const WIZARD_SOURCE_GRAIN = {");
+  const block = src.slice(i, src.indexOf("\n};", i));
+  for (const key of ["programs", "gl", "facility"]) {
+    const line = block.split("\n").findIndex(l => new RegExp("^\\s*" + key + ":").test(l));
+    assert.ok(line > 0, key + " not found in the map");
+    const above = block.split("\n").slice(Math.max(0, line - 4), line).join(" ");
+    assert.match(above, /card \d{5}/, key + " has no card number recorded above it");
+  }
+});
+
+// ── The date window ─────────────────────────────────────────────────────────
+test("the feed reports the window it actually covers, read off the params SENT", () => {
+  // Found by the same backcheck: the generated GL report carried no period at
+  // all. The wizard passes no dates, so buildMetabaseParams silently defaults to
+  // a 7-day window, and nothing downstream could say which one it got.
+  const route = src.slice(src.indexOf('app.get("/:org/:report/api/data"'));
+  const meta = route.slice(0, route.indexOf("setCache(cacheKey"));
+  assert.match(meta, /window: \(\(\) => \{/, "no window on the feed meta");
+  assert.match(meta, /params\.find\(x => x\.target/,
+    "the window must be read back off the parameters that were sent, not recomputed — " +
+    "recomputing can disagree with what Metabase was actually asked");
+});
+
+test("the derived window is the one buildMetabaseParams actually sent", () => {
+  // Runs the REAL buildMetabaseParams and the REAL derivation over its output,
+  // so this pins behaviour rather than the shape of the code. No Metabase
+  // involved — the derivation only reads the params array.
+  const vm = require("vm");
+  const grab = (start, end) => {
+    const i = src.indexOf(start);
+    assert.ok(i > 0, "could not find " + start);
+    return src.slice(i, src.indexOf(end, i) + end.length);
+  };
+  // parseToISO comes along because buildMetabaseParams calls it; taking the real
+  // pair rather than a stub is the point — a date-normalisation change has to be
+  // able to fail this.
+  const ctx = { console: Object.assign({}, console, { log() {} }), module: {}, exports: {} };
+  vm.createContext(ctx);
+  vm.runInContext(
+    grab("function parseToISO(", "\n  return params;\n}") +
+    "\nthis.buildMetabaseParams = buildMetabaseParams;", ctx);
+
+  // The derivation, lifted verbatim out of the route so it cannot drift from it.
+  const route = src.slice(src.indexOf('app.get("/:org/:report/api/data"'));
+  const wi = route.indexOf("window: (() => {");
+  // Slice the arrow function itself (ending at its closing brace + paren), then
+  // call it here — so the spec runs the route's own code, not a restatement.
+  const arrow = route.slice(wi + "window: ".length, route.indexOf("})(),", wi) + 2);
+  const derive = new Function("params", "return (" + arrow + ")();");
+
+  const iso = d => new Date(d).toISOString().slice(0, 10);
+  const today = iso(Date.now()), weekAgo = iso(Date.now() - 7 * 86400000);
+
+  // gl takes dates and is a BACKWARD report: no dates in => last 7 days.
+  const glParams = ctx.buildMetabaseParams({}, "gl", "org-uuid");
+  assert.deepStrictEqual(derive(glParams), { start: weekAgo, end: today },
+    "the wizard passes no dates, so this default IS the period the report covers — " +
+    "which is exactly why it has to be printed");
+
+  // Explicit dates must be echoed unchanged.
+  assert.deepStrictEqual(
+    derive(ctx.buildMetabaseParams({ start_date: "2026-01-05", end_date: "2026-02-06" }, "gl", "o")),
+    { start: "2026-01-05", end: "2026-02-06" });
+
+  // facility is a FORWARD report — the window runs the other way, so printing a
+  // single park-wide "last 7 days" for every source would be wrong.
+  const facWin = derive(ctx.buildMetabaseParams({}, "facility", "o"));
+  assert.strictEqual(facWin.start, today, "facility looks forward from today");
+  assert.ok(facWin.end > today, "…to a future end: " + JSON.stringify(facWin));
+
+  // A date-less report has no window to report, and must say null rather than
+  // inventing one.
+  assert.strictEqual(derive(ctx.buildMetabaseParams({}, "memberships", "o")), null,
+    "memberships is in NO_DATE_REPORTS — no date params are sent at all");
+});
+
+test("the page reads the window defensively and formats it without new Date()", () => {
+  assert.match(page, /d\.meta && d\.meta\.window/,
+    "entries cached before this shipped have no window, so it must be optional");
+  const i = page.indexOf("function fmtWindow");
+  const fn = page.slice(i, page.indexOf("function ReportNarrative", i));
+  assert.ok(!/new Date/.test(fn),
+    'new Date("2026-08-19") is UTC midnight and formats as Aug 18 across the US — ' +
+    "the same bug as the Fast Track dates");
+  assert.match(fn, /\/\^\(\\d\{4\}\)-\(\\d\{2\}\)-\(\\d\{2\}\)\//,
+    "the date must be built from the ISO string's parts");
+});
+
+test("the GL source hint warns that payment COUNTS are not additive", () => {
+  // Card 17293's "Number of Payments" is COUNT(DISTINCT transaction) per GL row,
+  // which is why the card also ships "Desk Distinct Payments". Summing the per-GL
+  // column double-counts any payment spanning two GL codes. It happened to be
+  // right for Clarksville (65 == 65, one desk, no payment split across codes),
+  // so this is a latent wrong number, not a current one.
+  const i = src.indexOf("const WIZARD_SOURCE_HINTS = {");
+  const hints = src.slice(i, src.indexOf("\n};", i));
+  assert.match(hints, /NOT additive/, "the AI has no way to know this from the field names");
+  assert.match(hints, /Desk Distinct Payments/, "and needs to be told what to use instead");
+  assert.match(hints, /Money columns ARE additive/,
+    "or the warning reads as 'do not sum anything from this source'");
 });
 
 // ── The page's own half ──────────────────────────────────────────────────────
