@@ -734,6 +734,32 @@ const CASES = [
   // the card named its launching sections, so the old program-level test fails
   // this case rather than passing on "nothing threw".
   { name: "fasttrack · launching soon", path: "/{org}/fasttrack",         needs: "[data-launch-section]" },
+  // The flames are individual spans so each can flicker on its own clock. A
+  // static string renders the same glyphs and would pass "a flame is present",
+  // so the case keys on the SPAN, and the one below proves it is actually
+  // moving — getAnimations() is the only thing that can tell those apart.
+  { name: "fasttrack · flames are spans", path: "/{org}/fasttrack",
+    needs: "[data-heat=\"inferno\"] .ft-flames .ft-flame" },
+  // ...and they are RUNNING, with the positions out of phase. getAnimations()
+  // reads the live animation from the browser, so this fails on a flame that is
+  // present but static and on a row whose flames all share a clock — neither of
+  // which any source assertion can tell apart from real fire.
+  { name: "fasttrack · flames actually burn", path: "/{org}/fasttrack",
+    needs: "body[data-flames-burning=\"1\"]",
+    act: async page => {
+      await page.waitForSelector("[data-heat=\"inferno\"] .ft-flame", { timeout: 45000 });
+      await page.evaluate(() => {
+        const els = [...document.querySelectorAll('[data-heat="inferno"] .ft-flame')];
+        const anims = els.map(e => (e.getAnimations ? e.getAnimations() : [])
+          .find(a => a.animationName === "ftFlicker" || (a.effect && a.effect.getKeyframes().length)));
+        const running = anims.filter(a => a && a.playState === "running");
+        // Distinct current times = the flames are genuinely out of phase.
+        const phases = new Set(running.map(a => Math.round((a.currentTime || 0) % 10)));
+        if (els.length >= 2 && running.length === els.length && phases.size > 1) {
+          document.body.setAttribute("data-flames-burning", "1");
+        }
+      });
+    } },
   // PRE-LAUNCH BEATS CAPACITY, AND THE BIGGEST COHORT LEADS. Birthday Concert
   // trips "demand over 90% with more pending than spots left" on program-wide
   // figures two thirds of which are spent sections, and while `_launch` was

@@ -2233,6 +2233,37 @@ soon` passed happily on the broken build. A second program, `prog-birthday`, now
 carries the real proportions (336 FT / 295 capacity = 113.9%, two thirds of that
 capacity spent), and its spent sections are load-bearing.
 
+### The flames actually burn (Dan, 2026-08-26)
+
+Dan, on an oversubscribed section: *"need more fire on these types of sections.
+like flaming. can you do an animation on this."*
+
+The heat scale already carried flame EMOJI as one string per tier. They are now
+individual `.ft-flame` spans rendered by `FlameRow`, so each can flicker on its
+own clock.
+
+- **Each position has its own duration AND a negative delay.** Same-phase flames
+  read as one object flashing, not as fire; the negative delay also means they
+  are mid-flicker on first paint instead of all starting together.
+- **`transform-origin: 50% 92%`** — the base of the glyph. A flame pinned at its
+  centre wobbles like a balloon.
+- **The heat haze (`.ft-flames.blazing::before`) is top-tier only**, same
+  asymmetry as the rest of the scale: if everything glows, the glow stops
+  meaning oversubscribed.
+- `aria-hidden` on the row — the number and words beside it already say this, and
+  a screen reader reading "fire fire fire fire" is noise.
+- `flames` (the string) is KEPT alongside the new `flameCount`, because it is the
+  no-JS/print fallback and what the older assertions pin.
+
+**The guard that matters is the browser one, and it was seen to discriminate.**
+`fasttrack · flames actually burn` reads `getAnimations()` and requires every
+flame running AND their `currentTime`s out of phase. Disabling the animation was
+verified to leave `fasttrack · flames are spans` PASSING while that case FAILS —
+a static flame renders the same glyphs, so no source assertion can tell the two
+apart. `fasttrack-heat.spec.js` 14 → 20, mutation-tested five ways; note the
+duration-uniqueness assertion must include the BASE `.ft-flame` duration (flame
+#1's), or an `nth-child` colliding with it slips through — it did, first time.
+
 ## Never ship a page without rendering it (IMPORTANT — cost us two blank pages)
 
 **The rule: if a change touches a `public/*.html` React page, render that page in

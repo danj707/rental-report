@@ -123,10 +123,41 @@
     .ft-blaze { animation: ftBlaze 2.2s ease-in-out infinite; }
     @keyframes ftEmber { 0%, 100% { opacity: .55; } 50% { opacity: 1; } }
     .ft-ember { animation: ftEmber 1.8s ease-in-out infinite; }
+    /* A real flame licks upward and is never the same shape twice. So the origin
+       is the BASE of the glyph (a flame pinned at its centre wobbles like a
+       balloon), and each flame in a row runs at its own duration with a negative
+       delay — same-phase flames read as one object flashing, not as fire. The
+       negative delay also means they are already mid-flicker on first paint
+       rather than starting together. */
+    @keyframes ftFlicker {
+      0%, 100% { transform: translateY(0)      scale(1,1)        rotate(-2.5deg); filter: brightness(1)    saturate(1); }
+      22%      { transform: translateY(-1.6px) scale(1.13,1.22)  rotate(2.5deg);  filter: brightness(1.28) saturate(1.35); }
+      45%      { transform: translateY(.6px)   scale(.93,1.04)   rotate(-1deg);   filter: brightness(.94)  saturate(1.05); }
+      68%      { transform: translateY(-1.1px) scale(1.07,1.15)  rotate(3.5deg);  filter: brightness(1.18) saturate(1.28); }
+      84%      { transform: translateY(-.2px)  scale(1.02,.97)   rotate(-3deg);   filter: brightness(1.02) saturate(1.12); }
+    }
+    .ft-flame { display: inline-block; transform-origin: 50% 92%; will-change: transform, filter;
+                animation: ftFlicker .92s ease-in-out infinite; }
+    .ft-flame + .ft-flame { margin-left: -1px; }
+    .ft-flame:nth-child(2) { animation-duration: 1.11s; animation-delay: -.31s; }
+    .ft-flame:nth-child(3) { animation-duration: .79s;  animation-delay: -.64s; }
+    .ft-flame:nth-child(4) { animation-duration: 1.24s; animation-delay: -.17s; }
+    .ft-flame:nth-child(5) { animation-duration: .88s;  animation-delay: -.93s; }
+    /* Only the top tier gets the heat-haze behind the row. */
+    @keyframes ftHaze { 0%, 100% { opacity: .38; transform: scaleX(1)    scaleY(.92); }
+                        50%      { opacity: .78; transform: scaleX(1.14) scaleY(1.1);  } }
+    .ft-flames { position: relative; display: inline-block; }
+    .ft-flames.blazing::before {
+      content: ''; position: absolute; left: -5px; right: -5px; top: -3px; bottom: -4px; border-radius: 50%;
+      background: radial-gradient(ellipse at 50% 72%, rgba(255,168,38,.85) 0%, rgba(255,94,20,.42) 42%, rgba(255,64,0,0) 72%);
+      filter: blur(4px); z-index: 0; animation: ftHaze 1.35s ease-in-out infinite; pointer-events: none;
+    }
+    .ft-flames > .ft-flame { position: relative; z-index: 1; }
     /* Printing a report and reading it on a screen are different jobs, and some
        people turn motion off. The colour scale carries the same information. */
     @media (prefers-reduced-motion: reduce) {
-      .ft-pulse, .ft-blaze, .ft-ember { animation: none; }
+      .ft-pulse, .ft-blaze, .ft-ember, .ft-flame { animation: none; }
+      .ft-flames.blazing::before { animation: none; opacity: .5; }
     }
     .juice-msg { font-size: 12px; color: #999; }
     .juice-msg span { display: none; }
@@ -704,17 +735,34 @@ function launchScore(pct, days, ft) {
 }
 
 var HEAT_TIERS = [
-  { tier: 0, name: 'banked',  min: 0,  accent: '#6366f1', flames: '',       rail: 2, tint: '00',
+  { tier: 0, name: 'banked',  min: 0,  accent: '#6366f1', flames: '',       flameCount: 0, rail: 2, tint: '00',
     pulse: false, blaze: false, numSize: 34, shadow: 'none' },
-  { tier: 1, name: 'warm',    min: 18, accent: '#f59e0b', flames: '\uD83D\uDD25', rail: 3, tint: '0f',
+  { tier: 1, name: 'warm',    min: 18, accent: '#f59e0b', flames: '\uD83D\uDD25', flameCount: 1, rail: 3, tint: '0f',
     pulse: false, blaze: false, numSize: 38, shadow: 'none' },
-  { tier: 2, name: 'hot',     min: 35, accent: '#ea580c', flames: '\uD83D\uDD25', rail: 4, tint: '16',
+  { tier: 2, name: 'hot',     min: 35, accent: '#ea580c', flames: '\uD83D\uDD25', flameCount: 1, rail: 4, tint: '16',
     pulse: false, blaze: false, numSize: 42, shadow: '0 2px 8px' },
-  { tier: 3, name: 'blazing', min: 55, accent: '#dc2626', flames: '\uD83D\uDD25\uD83D\uDD25', rail: 5, tint: '1f',
+  { tier: 3, name: 'blazing', min: 55, accent: '#dc2626', flames: '\uD83D\uDD25\uD83D\uDD25', flameCount: 2, rail: 5, tint: '1f',
     pulse: true,  blaze: false, numSize: 46, shadow: '0 3px 12px' },
-  { tier: 4, name: 'inferno', min: 75, accent: '#b91c1c', flames: '\uD83D\uDD25\uD83D\uDD25\uD83D\uDD25', rail: 6, tint: '2b',
+  { tier: 4, name: 'inferno', min: 75, accent: '#b91c1c', flames: '\uD83D\uDD25\uD83D\uDD25\uD83D\uDD25', flameCount: 4, rail: 6, tint: '2b',
     pulse: true,  blaze: true,  numSize: 52, shadow: '0 4px 18px' }
 ];
+
+/* A row of live flames. Rendered as individual spans rather than one string so
+   each can flicker on its own clock — see .ft-flame. `blazing` adds the heat
+   haze behind the row, and is reserved for the top tier so it still means
+   something. aria-hidden because the number and the words beside it already say
+   what this says; a screen reader reading "fire fire fire fire" is noise. */
+function FlameRow(props) {
+  var n = Math.max(0, props.n || 0);
+  if (!n) return null;
+  var kids = [];
+  for (var i = 0; i < n; i++) kids.push(React.createElement('span', { key: i, className: 'ft-flame' }, '\uD83D\uDD25'));
+  return React.createElement('span', {
+    className: 'ft-flames' + (props.blazing ? ' blazing' : ''),
+    'aria-hidden': 'true',
+    style: props.style
+  }, kids);
+}
 
 function launchHeat(pct, days, ft) {
   var score = launchScore(pct, days, ft);
@@ -835,7 +883,11 @@ function PipelineLaunchCard(props) {
               background: over ? 'linear-gradient(90deg,#dc2626,#b91c1c)' : accent,
               boxShadow: heat.tier >= 3 ? '0 0 12px ' + accent + '80' : 'none' } })),
           React.createElement('div', { style: { fontSize: 10.5, marginTop: 2, fontWeight: over ? 700 : 400, color: over ? '#dc2626' : '#6b7280' } },
-            over ? ('🔥 ' + pct + '% of capacity already fast-tracked — oversubscribed before it opens') : (pct + '% of capacity fast-tracked pre-launch')));
+            over
+              ? React.createElement(React.Fragment, null,
+                  React.createElement(FlameRow, { n: 3, blazing: true, style: { marginRight: 4 } }),
+                  pct + '% of capacity already fast-tracked — oversubscribed before it opens')
+              : (pct + '% of capacity fast-tracked pre-launch')));
       })(),
       p.programId && React.createElement('a', {
         href: adminProgramUrl(p.orgId, p.programId), target: '_blank', rel: 'noopener',
@@ -847,7 +899,10 @@ function PipelineLaunchCard(props) {
         style: { display: 'inline-block', background: accent, color: '#fff', fontWeight: 800,
                  fontSize: heat.tier >= 3 ? 12.5 : 12, letterSpacing: 0.5, padding: '6px 12px', borderRadius: 999,
                  boxShadow: heat.shadow === 'none' ? 'none' : heat.shadow + ' ' + accent + '4d' } },
-        (heat.flames ? heat.flames + ' ' : '') + countdown),
+        React.createElement(React.Fragment, null,
+          heat.flameCount ? React.createElement(FlameRow, { n: heat.flameCount, blazing: heat.tier >= 4,
+                                                            style: { marginRight: 5 } }) : null,
+          countdown)),
       opens && React.createElement('div', { style: { fontSize: 11, color: '#6b7280', marginTop: 5 } },
         (p._launchKind === 'early' ? 'Early access ' : 'Reg opens ') + fmtDateShort(opens))
     )
