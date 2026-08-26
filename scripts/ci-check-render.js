@@ -313,9 +313,39 @@ function fasttrackRows() {
     "Early Access Opens": iso(-0.02), "Reg Opens": iso(6), "Reg Closes": iso(45),
     "FT Total": 2, "FT Converted": 1, "FT Pending": 1, "Conversion %": 50,
   });
+  /* ── The program the capacity tests used to swallow ──────────────────────
+     Smyrna's Birthday Concert, in its real proportions (measured 2026-08-26):
+     two tables about to open carrying 203 and 111 fast-trackers against 45 and
+     50 seats, plus two SPENT summer concerts at 100 seats each. Program-wide
+     that is 336 FT over 295 capacity — 113.9% demand with 314 pending against
+     295 spots left — so it trips "demand over 90% with more pending than spots
+     left" and, while `_launch` was tested third, was filed under Needs Capacity
+     and never reached Launching Soon at all.
+
+     THE EXISTING Concert Series FIXTURE DOES NOT REPRODUCE THIS: its 198 FT over
+     375 capacity is 52.8% demand, comfortably under the threshold, which is why
+     the `launching soon` case above passed happily on the broken build. The
+     spent 100-seat sections are load-bearing here — they are two thirds of the
+     capacity and none of the pre-launch demand, which is exactly how a program's
+     history used to decide whether its pre-launch card rendered.
+
+     Its Select Table opens in ~15 minutes, sooner than any other launching
+     section in the fixture, so it must also be the FIRST card. */
+  const birthday = (name, ft, cap, opensInDays) => Object.assign(table(name, ft, ft, cap, opensInDays), {
+    "Program": "Birthday Concert", "Program ID": "prog-birthday",
+    "Section ID": "sec-birthday-" + name.replace(/\W+/g, "-").toLowerCase(),
+  });
+  const birthdaySpent = (name, ft, conv) => Object.assign(past(name, ft, conv), {
+    "Program": "Birthday Concert", "Program ID": "prog-birthday",
+    "Section ID": "sec-birthday-" + name.replace(/\W+/g, "-").toLowerCase(),
+  });
   return [
     launchedSmall,
     launchedEarly,
+    birthday("Select Table 45", 203, 45, 0.01),
+    birthday("General Table 50", 111, 50, 1),
+    birthdaySpent("Birthday Summer: June", 14, 10),
+    birthdaySpent("Birthday Summer: July", 8, 6),
     table("Premier Table", 54, 54, 25, 1),
     table("Select Table", 18, 18, 45, 2),
     table("Preferred Table", 21, 21, 30, 3),
@@ -597,6 +627,16 @@ const CASES = [
   // the card named its launching sections, so the old program-level test fails
   // this case rather than passing on "nothing threw".
   { name: "fasttrack · launching soon", path: "/{org}/fasttrack",         needs: "[data-launch-section]" },
+  // PRE-LAUNCH BEATS CAPACITY, AND THE BIGGEST COHORT LEADS. Birthday Concert
+  // trips "demand over 90% with more pending than spots left" on program-wide
+  // figures two thirds of which are spent sections, and while `_launch` was
+  // tested third that filed it under Needs Capacity — so 314 fast-trackers, 203
+  // of them on a 45-seat table opening in fifteen minutes, never reached the
+  // panel that exists to show them. It is also the soonest thing in the fixture,
+  // so it must be the FIRST card, not merely present: that is the difference
+  // between "flagged #1 up top" and "findable if you scroll".
+  { name: "fasttrack · pre-launch beats capacity", path: "/{org}/fasttrack",
+    needs: "[data-launch-list] > *:first-child[data-launch-program=\"prog-birthday\"]" },
   // ...and go-live must come from the EARLY-ACCESS window when that is the one
   // that opens first. Reading only "Reg Opens" yields data-golive="general",
   // which is how the report came to say "opens in 8 days" about a section going
