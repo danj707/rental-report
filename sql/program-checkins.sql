@@ -5,6 +5,16 @@
 -- Program Check-Ins (session attendance) — SHARED card
 -- Aggregated to one row per section. No participant-level rows.
 --
+-- NOTE ON THE ::date CASTS. The original card wrote `{{end_date}} + INTERVAL
+-- '1 day'` with no cast, which only parses while the template tag is TYPED Date
+-- (Metabase then substitutes CAST('…' AS date)). An API update regenerates every
+-- tag as Text, and Postgres then reads the bare string as an INTERVAL literal:
+--   ERROR: invalid input syntax for type interval: "2026-08-26"
+-- …so the card stays broken until someone flips the tags back by hand. Casting
+-- explicitly makes it work under EITHER tag type, which is the same reason
+-- sql/facility-permits.sql and sql/gl-account-detail.sql need no re-flip. Keep
+-- the casts.
+--
 -- v2 (2026-08-26): adds "Absent" / "Absentees" from the same attendance_event
 -- log. Three things about that are load-bearing:
 --
@@ -35,8 +45,8 @@ WITH att AS (
   WHERE ae.organization_id = {{org_id}}::uuid
     AND ae.type IN ('check_in','check_out')
     AND ss.deleted_at IS NULL AND ss.canceled_at IS NULL
-    [[AND ae.created_at >= {{start_date}}]]
-    [[AND ae.created_at <  {{end_date}} + INTERVAL '1 day']]
+    [[AND ae.created_at >= {{start_date}}::date]]
+    [[AND ae.created_at <  {{end_date}}::date + INTERVAL '1 day']]
   GROUP BY ss.section_id
 ),
 -- Current absence STATE per (session, participant): the latest mark/undo wins.
@@ -62,8 +72,8 @@ abs AS (
     AND ss.organization_id = {{org_id}}::uuid
   WHERE a.type = 'marked_absent'
     AND ss.deleted_at IS NULL AND ss.canceled_at IS NULL
-    [[AND a.created_at >= {{start_date}}]]
-    [[AND a.created_at <  {{end_date}} + INTERVAL '1 day']]
+    [[AND a.created_at >= {{start_date}}::date]]
+    [[AND a.created_at <  {{end_date}}::date + INTERVAL '1 day']]
   GROUP BY ss.section_id
 ),
 secs AS (

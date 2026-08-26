@@ -284,6 +284,35 @@ funnel every panel reads, so excluding failures there fixed every panel at once:
   message would have said "No check-ins at all" — naming a location the reader
   never chose.
 
+### These two cards need NO date-tag re-flip — the bounds are CAST
+
+Found by dry-running the new SQL with a Text-style substitution before pushing,
+which is the whole reason to do that. The original 18547 wrote:
+
+```sql
+AND ae.created_at < {{end_date}} + INTERVAL '1 day'
+```
+
+That only parses while the tag is **typed Date** — Metabase then substitutes
+`CAST('2026-08-26' AS date)`. An API push regenerates every tag as **Text**, and
+Postgres reads the bare string as an interval literal:
+
+```
+ERROR: invalid input syntax for type interval: "2026-08-26"
+```
+
+…so the card stays broken until someone flips the tags by hand. **Both cards now
+cast explicitly** (`{{end_date}}::date + INTERVAL '1 day'`), which works under
+either tag type — the same reason `sql/facility-permits.sql` and
+`sql/gl-account-detail.sql` have never needed a re-flip. `checkin-status.spec.js`
+fails on an uncast date tag in either file (comments are stripped first, since
+they quote the broken form on purpose).
+
+**So the usual push→flip dance does not apply to these two.** Verified: the cast
+SQL returns the identical figures (Watertown 69 sections / 7734 check-ins / 40
+absent / 32 people) with an uncast string standing in for a Text tag. Worth
+copying to other cards as they are next touched.
+
 ### Both pages are correct BEFORE and after the cards ship
 
 `hasAbsent` / `ciHasStatus` are **presence**, not counts: the Absent column and

@@ -93,6 +93,25 @@ test("absences are scoped by the same section filters as check-ins", () => {
   assert.match(absCte, /ss\.deleted_at IS NULL AND ss\.canceled_at IS NULL/);
 });
 
+test("the date bounds are CAST, so an API push needs no manual tag re-flip", () => {
+  // `{{end_date}} + INTERVAL '1 day'` with no cast only parses while the tag is
+  // TYPED Date (Metabase substitutes CAST('…' AS date)). An API update
+  // regenerates every tag as Text, and Postgres then reads the bare string as an
+  // interval literal:  invalid input syntax for type interval: "2026-08-26".
+  // The card would stay broken until a human flipped the tags back by hand.
+  // Casting explicitly makes it work under EITHER tag type — the same reason
+  // sql/facility-permits.sql and sql/gl-account-detail.sql need no re-flip.
+  for (const [label, sql] of [["program-checkins", progSql], ["memberships-checkins", memSql]]) {
+    // Comments quote the BROKEN form on purpose, so scan the code only.
+    const code = sql.replace(/^\s*--.*$/gm, "");
+    const bare = code.match(/\{\{(start_date|end_date)\}\}(?!::)/g) || [];
+    assert.deepStrictEqual(bare, [],
+      label + " uses an UNCAST date tag " + bare.join(", ") + " — that breaks the card " +
+      "the moment an API push re-types the tag as Text");
+  }
+  assert.match(progSql, /\{\{end_date\}\}::date \+ INTERVAL '1 day'/);
+});
+
 // ── The FAILED rule ─────────────────────────────────────────────────────────
 test("failures ride the MEMBERSHIPS feed, because a denial has no section", () => {
   assert.match(memSql, /ae\.type IN \('check_in', 'check_in_denied'\)/);
