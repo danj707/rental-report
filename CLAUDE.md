@@ -2229,6 +2229,36 @@ separator would split mid-number (`"Tournament Fee ($1"` + `"250.00)"`). Card
 the split is safe, nothing checked it, and the failure would be silent. The spec
 now asserts the mask, and changing it to `FM9G999G990.00` fails by name.
 
+### A feed that has not answered must not look like an empty result
+
+Dan, on the preview: *"where did permits go? we're not showing any permits for
+watertown."* The permits feed was healthy — 1,488 permits, and 13 of the 21
+rentals that day matched — and the chip renders correctly when handed that data
+(verified in a browser against the real feed). The bug was that **`permits` had
+three states rendered as two**: not-loaded-yet and load-failed both rendered as
+an empty cell, byte-identical to "this rental has no permit". Watertown's feed
+takes **~6s cold**, so for six seconds a healthy report looked exactly like one
+where permits had vanished — and a transient failure looked that way forever,
+because `.catch(() => setPermits({}))` maps a failure to "none".
+
+This is the campmap load-vs-empty bug in a read-only surface, and the fix is the
+same shape: `permitsOk` / `formsOk`, true only when the feed actually **answered**
+(a soft-failed route answers 200 with `error: true`, which is a failure, not an
+org without permits). Pending renders a faint `·`, failure an amber `⚠` whose
+title says the column is blank for every row and does not mean there are no
+permits. **A genuinely absent permit still renders blank** — that is Dan's rule:
+blank when there is none, a clickable and exportable icon when there is one.
+
+Two render cases drive the failure path via a per-case `stubMode`, because the
+stubs see the API request URL and a query flag on the page URL cannot reach them.
+
+### The Rec Insights button is gone from the rental schedule (Dan, 2026-08-26)
+
+*"not needed there."* Removed the button, its panel, the feedback widget, the
+`buildInsightsBlob` payload builder and the CSS. The server routes
+`/:org/facility/api/insights` and `/api/insights/score` are left in place but now
+have no caller from this page — remove them separately if that matters.
+
 Guards: `scripts/facility-addons-forms.spec.js` (53 assertions, in CI,
 mutation-tested six ways — the total dropped, the total read off the row instead
 of the visible items, add-ons back on the Notes checkbox, a link on every row,

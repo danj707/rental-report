@@ -450,6 +450,11 @@ function addonFormRows() {
   ];
 }
 
+// Set per case via `stubMode`, so a case can drive a feed's failure path. The
+// stubs see the API request URL, not the page's, so a query flag on the page
+// cannot reach them.
+let STUB_MODE = "";
+
 const STUBS = [
   { match: /\/facilities\/api\/campsites/, body: () => campsitesGeo },
   // Must precede the catch-all /api/ stub. Realistic enough that the case below
@@ -463,10 +468,17 @@ const STUBS = [
   // One feed, both tabs: Camping filters it to campsite rows and Outdoor Events
   // to its three types, so each tab has to do its own scoping.
   { match: /\/facility\/api\/data/,        body: () => ({ rows: campsiteRows().concat(outdoorRows()).concat(fieldRows()).concat(addonFormRows()), meta: { org_id: "org-uuid-1" } }) },
-  { match: /\/api\/permits/,               body: () => ({ permits: {} }) },
+
   // Two of the three fixture rentals have Required Information; the third has
   // none, which is the 62%-of-a-week case that must render as nothing.
-  { match: /\/facility\/api\/forms/,       body: () => ({ forms: { "res-forms": 2, "res-addons": 1 } }) },
+  // `?feedfail=1` on the page URL makes both after-render feeds soft-fail, which
+  // is how the "could not load" state gets driven. A soft failure answers 200
+  // with error:true — the shape the routes actually return.
+  { match: /\/facility\/api\/forms/,       body: () => STUB_MODE === "feedfail"
+      ? ({ forms: {}, error: true }) : ({ forms: { "res-forms": 2, "res-addons": 1 } }) },
+  { match: /\/facility\/api\/permits/,     body: () => STUB_MODE === "feedfail"
+      ? ({ permits: {}, error: true })
+      : ({ permits: { "res-addons": { code: "ABCD1234", url: "https://www.rec.us/permits/x", id: "x", multi: false } } }) },
   { match: /\/api\/availability-batch/,     body: url => availabilityFor(url) },
   { match: /\/rentalcalendar\/api\/sites/, body: (url, org) => ({ sites: campmapSites(org) }) },
   { match: /\/api\/sites/,                  body: () => ({ sites: [] }) },
@@ -545,6 +557,15 @@ const CASES = [
   // ── The rental schedule: add-ons in the note line, Forms in the column ────
   // This page had NO render case at all, and it is the one most orgs open.
   { name: "facility · schedule",   path: "/{org}/facility",               needs: ".data-row" },
+  // A permit chip renders from the feed — this is the column Dan found empty.
+  { name: "facility · permit chip", path: "/{org}/facility",               needs: ".cell.col-permit button" },
+  // AND a feed that could not load must say so rather than rendering blank:
+  // blank is indistinguishable from "these rentals have no permits", which is
+  // exactly how a healthy report came to look broken.
+  { name: "facility · failed feed is not blank", path: "/{org}/facility",
+    stubMode: "feedfail", needs: ".cell.col-permit .feed-failed" },
+  { name: "facility · failed forms feed too",    path: "/{org}/facility",
+    stubMode: "feedfail", needs: ".cell.col-forms .feed-failed" },
   // The add-on money must survive losing its column: card 17294's "Total" is
   // the reservation's own order_item and does NOT include add-on fees, so if
   // this total goes missing the page has quietly dropped revenue.
@@ -826,6 +847,7 @@ function waitForServer(started) {
       req.continue();
     });
 
+    STUB_MODE = c.stubMode || "";
     const url = `http://127.0.0.1:${PORT}` + c.path.replace("{org}", org)
       + (c.path.includes("?") ? "&" : "?") + "token=" + encodeURIComponent(token);
     let found = false, bodyLen = 0;
