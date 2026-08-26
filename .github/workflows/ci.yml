@@ -115,6 +115,9 @@ jobs:
       - name: Memberships beacons (event in the query string; 200 AND a logged row)
         run: node scripts/checkin-beacons.spec.js
 
+      - name: Add-ons in the note line, Forms link (the add-on money survives its column)
+        run: node scripts/facility-addons-forms.spec.js
+
       - name: Admin dashboard JS (inline blocks parse; every on*= handler resolves)
         run: node scripts/ci-check-admin-js.js
 

@@ -512,7 +512,8 @@
     .col-resident{ width: 72px; text-align: center; }
     .col-booktype{ width: 72px; text-align: center; font-size: 10px; }
     .col-total   { width: 62px; text-align: right; }
-    .col-addon-fees { width: 72px; text-align: right; }
+    /* Add-ons moved into the note line; Forms took the column. */
+    .col-forms { width: 62px; text-align: center; }
     .col-paid { width: 50px; text-align: center; }
     .cell.col-paid { font-size: 12px; }
     .col-permit { width: 26px; text-align: center; }
@@ -1634,6 +1635,59 @@ function stripAddonPrice(s) {
   return s.replace(/\s*\(\$[\d,.]+\)$/, '').trim();
 }
 
+/* The price card 17294 appends to each add-on name, as a number.
+   Add-ons moved out of their own column and into the note line under the row,
+   which means this line is now the ONLY place their money appears on screen:
+   card 17294's "Total" is the reservation's own order_item, and add-on fees are
+   a separate sum, so they are not folded into it. Dropping the column without
+   carrying the money would quietly remove revenue from the page. */
+function addonItemPrice(s) {
+  var m = /\(\$([\d,]+(?:\.\d+)?)\)\s*$/.exec(String(s == null ? '' : s).trim());
+  return m ? parseFloat(m[1].replace(/,/g, '')) : null;
+}
+
+/* The add-on items a row should show, honouring the toolbar's add-on filter.
+   Returns the raw item strings so the caller keeps the card's own
+   "Name ($0.00)" structure rather than rebuilding it. */
+function visibleAddonItems(addonsStr, allowed, allCount) {
+  var items = parseAddOnItems(addonsStr);
+  if (!items.length) return [];
+  // A filter that selects everything is not a filter.
+  if (!allowed || (allCount != null && allowed.size >= allCount)) return items;
+  return items.filter(function (s) { return allowed.has(stripAddonPrice(s)); });
+}
+
+/* One note-line fragment for a row's add-ons: a total, then the itemised list
+   with its icons.
+
+   THE TOTAL IS SUMMED FROM THE VISIBLE ITEMS, not read off the row. Filtering
+   to "Alcohol Permit" and then printing the row's whole add-on fee would put a
+   number next to a list that does not add up to it — the same disagreement that
+   made the facility Summary's chips untrustworthy for a week. */
+/* The same total the note line prints, as a bare label. Exposed so a render
+   check can assert the money survived the column's removal, and so the
+   attribute can never disagree with the text beside it. */
+function addonItemsTotalLabel(items) {
+  var total = null;
+  (items || []).forEach(function (s) {
+    var p = addonItemPrice(s);
+    if (p != null) total = (total == null ? 0 : total) + p;
+  });
+  return total == null ? undefined : formatMoney(total);
+}
+
+function addonNoteFragment(items) {
+  if (!items || !items.length) return '';
+  var totalLabel = addonItemsTotalLabel(items);
+  var listed = items.map(function (s) {
+    var trimmed = String(s).trim();
+    return getAddOnEmoji(stripAddonPrice(trimmed)) + ' ' + trimmed;
+  }).join(', ');
+  var head = 'Add-ons';
+  if (totalLabel) head += ' ' + totalLabel;
+  return head + ': ' + listed;
+}
+
 function parseAddOnItems(addonsStr) {
   if (!addonsStr || !addonsStr.trim()) return [];
   return addonsStr.split(',').map(s => s.trim()).filter(Boolean);
@@ -1990,8 +2044,18 @@ function App() {
   const [showTotal, setShowTotal] = useState(() => {
     try { return localStorage.getItem('col_total') !== 'false'; } catch { return true; }
   });
-  const [showAddonFees, setShowAddonFees] = useState(() => {
+  // Add-ons no longer have a column: this now controls whether they appear in
+  // the note line under the row. Same localStorage key on purpose — it meant
+  // "show me add-on information" before and it still does, so nobody's saved
+  // preference flips on deploy.
+  const [showAddons, setShowAddons] = useState(() => {
     try { return localStorage.getItem('col_addon_fees') !== 'false'; } catch { return true; }
+  });
+  // Which rentals have Required Information on file, as { resId: formCount }.
+  // Loaded after the schedule like permits, so the feed can never delay it.
+  const [formCounts, setFormCounts] = useState(null);
+  const [showFormsCol, setShowFormsCol] = useState(() => {
+    try { return localStorage.getItem('col_forms') !== 'false'; } catch { return true; }
   });
   // Issued permits keyed by Reservation ID. Loaded AFTER the schedule renders
   // so the main feed keeps its speed — the chips simply appear a moment later.
@@ -2031,7 +2095,8 @@ function App() {
 
   useEffect(() => { try { localStorage.setItem('col_headcount', showHeadCount); } catch {} }, [showHeadCount]);
   useEffect(() => { try { localStorage.setItem('col_total',     showTotal);     } catch {} }, [showTotal]);
-  useEffect(() => { try { localStorage.setItem('col_addon_fees', showAddonFees); } catch {} }, [showAddonFees]);
+  useEffect(() => { try { localStorage.setItem('col_addon_fees', showAddons); } catch {} }, [showAddons]);
+  useEffect(() => { try { localStorage.setItem('col_forms', showFormsCol); } catch {} }, [showFormsCol]);
   useEffect(() => { try { localStorage.setItem('col_paid',       showPaid);       } catch {} }, [showPaid]);
 
   // One request per view of the schedule. Soft-fails to no chips rather than
@@ -2043,6 +2108,18 @@ function App() {
       .then(r => r.json())
       .then(d => setPermits(d && d.permits ? d.permits : {}))
       .catch(() => setPermits({}));
+  }, []);
+
+  // Same contract as permits: one request per view, soft-failing to no column.
+  // An org with no forms card configured gets `disabled` and never sees the
+  // column — nothing to switch on per org.
+  useEffect(() => {
+    const parts = window.location.pathname.split('/').filter(Boolean);
+    if (!parts.length) return;
+    fetch(withToken(`/${parts[0]}/facility/api/forms`))
+      .then(r => r.json())
+      .then(d => setFormCounts(d && d.forms ? d.forms : {}))
+      .catch(() => setFormCounts({}));
   }, []);
   useEffect(() => { try { localStorage.setItem('col_notes',     showNotes);     } catch {} }, [showNotes]);
   useEffect(() => { try { localStorage.setItem('col_permit',    showPermit);    } catch {} }, [showPermit]);
@@ -2458,6 +2535,21 @@ function App() {
 
   const hasLighting = useMemo(() => rows && rows.some(r => r.lighting === 'Yes'), [rows]);
 
+  // The column only exists where forms do, so an org that collects none never
+  // sees an empty column and nothing has to be switched on per org.
+  const hasAnyForms = !!formCounts && Object.keys(formCounts).length > 0;
+
+  // Standing rule: a new surface pings the activity feed. Keyed by rental, so
+  // staff opening three bookings' forms reads as three looks rather than one.
+  function logFormOpen(r, nForms) {
+    const parts = window.location.pathname.split('/').filter(Boolean);
+    try {
+      fetch(withToken(`/${parts[0]}/facility/api/log?event=form-open`
+        + `&rental=${encodeURIComponent((r.resName || r.site || '').slice(0, 60))}`
+        + `&n=${nForms}`), { method: 'POST', keepalive: true });
+    } catch {}
+  }
+
   const filteredRows = useMemo(() => {
     if (!rows) return null;
     let result = rows.filter(r => !r.status || !/cancel/i.test(r.status));
@@ -2770,7 +2862,7 @@ function App() {
     ];
     if (showHeadCount) headers.push('Head Cnt');
     if (showTotal)     headers.push('Total');
-    if (showAddonFees) headers.push('Add-On Fees');
+    if (showAddons) headers.push('Add-On Fees');
     if (showPaid)      headers.push('Paid?');
     if (showNotes)     headers.push('Instructions', 'Notes', 'Add-ons');
     if (showResident)  headers.push('Resident?');
@@ -2787,7 +2879,7 @@ function App() {
       ];
       if (showHeadCount) row.push(r.headCount !== '' ? Number(r.headCount) || r.headCount : '');
       if (showTotal) { const n = parseFloat(r.total); row.push(!isNaN(n) && n !== 0 ? n : ''); }
-      if (showAddonFees) { const n = parseFloat(r.addonFees); row.push(!isNaN(n) && n !== 0 ? n : ''); }
+      if (showAddons) { const n = parseFloat(r.addonFees); row.push(!isNaN(n) && n !== 0 ? n : ''); }
       if (showPaid) row.push(r.paid || '');
       if (showNotes) { row.push(r.instructions || ''); row.push(r.notes || ''); row.push(r.addons || ''); }
       if (showResident) row.push(r.resident || '');
@@ -2808,7 +2900,7 @@ function App() {
       {wch:20},{wch:20},{wch:14},{wch:28},
       ...(showHeadCount?[{wch:8}]:[]),
       ...(showTotal?[{wch:10}]:[]),
-      ...(showAddonFees?[{wch:12}]:[]),
+      ...(showAddons?[{wch:12}]:[]),
       ...(showPaid?[{wch:8}]:[]),
       ...(showNotes?[{wch:30},{wch:30},{wch:30}]:[]),
       ...(showResident?[{wch:10}]:[]),
@@ -2822,7 +2914,7 @@ function App() {
         if (ws[cellAddr] && typeof ws[cellAddr].v === 'number') ws[cellAddr].z = '"$"#,##0.00';
       }
     }
-    if (showAddonFees) {
+    if (showAddons) {
       const afColIdx = headers.indexOf('Add-On Fees');
       for (let rowIdx = 1; rowIdx <= dataRows.length; rowIdx++) {
         const cellAddr = XLSX.utils.encode_cell({ r: rowIdx, c: afColIdx });
@@ -2979,9 +3071,10 @@ function App() {
                 <input type="checkbox" checked={showTotal} onChange={e => setShowTotal(e.target.checked)} />
                 Total
               </label>
-              <label>
-                <input type="checkbox" checked={showAddonFees} onChange={e => setShowAddonFees(e.target.checked)} />
-                Add-On $
+              <label style={{display:'flex',alignItems:'center',gap:4,cursor:'pointer',fontSize:11}}
+                title="Show each rental's add-ons, with their fees, in the line under the row">
+                <input type="checkbox" checked={showAddons} onChange={e => setShowAddons(e.target.checked)} />
+                Add-Ons
               </label>
               <label>
                 <input type="checkbox" checked={showNotes} onChange={e => setShowNotes(e.target.checked)} />
@@ -2995,6 +3088,11 @@ function App() {
                 <input type="checkbox" checked={showPermit} onChange={e => setShowPermit(e.target.checked)} />
                 Permit
               </label>
+              {hasAnyForms && <label style={{display:'flex',alignItems:'center',gap:4,cursor:'pointer',fontSize:11}}
+                title="Link each rental to its Required Information in Rec">
+                <input type="checkbox" checked={showFormsCol} onChange={e => setShowFormsCol(e.target.checked)} />
+                Forms
+              </label>}
               <label style={{display:'flex',alignItems:'center',gap:4,cursor:'pointer',fontSize:11}}>
                 <input type="checkbox" checked={showLink} onChange={e => setShowLink(e.target.checked)} />
                 Rec Link
@@ -3328,7 +3426,7 @@ function App() {
                           {showBookType  && <span className="col-booktype">Book Type</span>}
                           {showHeadCount && <span className="col-hcnt">Cnt</span>}
                           {showTotal     && <span className="col-total">Total</span>}
-                          {showAddonFees && <span className="col-addon-fees">Add-On $</span>}
+                          {showFormsCol && hasAnyForms && <span className="col-forms" title="Required Information">Forms</span>}
                           {showPaid && <span className="col-paid">Paid?</span>}
                           {showPermit && <span className="col-permit" title="Posting sheet">📋</span>}
                           {showLink && <span className="col-rec-link">↗</span>}
@@ -3363,7 +3461,21 @@ function App() {
                               {showBookType  && <span className="cell col-booktype">{r.bookingType}</span>}
                               {showHeadCount && <span className="cell col-hcnt">{r.headCount}</span>}
                               {showTotal     && <span className="cell col-total">{formatMoney(r.total)}</span>}
-                              {showAddonFees && <span className="cell col-addon-fees">{formatMoney(r.addonFees)}</span>}
+                              {showFormsCol && hasAnyForms && <span className="cell col-forms">{(() => {
+                                const nForms = (r.resId && formCounts && formCounts[r.resId]) || 0;
+                                // No form was ever requested of this rental —
+                                // 62% of a typical week. A link to an empty
+                                // Required Information tab is a dead end, so
+                                // there is deliberately nothing here.
+                                if (!nForms) return <span data-forms-empty="1" />;
+                                return <a
+                                  href={`https://www.rec.us/admin/o/${meta.org_id}/facility-rentals/${r.resId}?tab=requiredInformation`}
+                                  target="_blank" rel="noopener noreferrer"
+                                  onClick={() => logFormOpen(r, nForms)}
+                                  title={`${nForms} form${nForms === 1 ? '' : 's'} on file — open Required Information in Rec`}
+                                  style={{color:'#2563eb',textDecoration:'none',fontSize:11,whiteSpace:'nowrap'}}
+                                >📄 {nForms}</a>;
+                              })()}</span>}
                               {showPaid && <span className="cell col-paid">{paidMark(r.paid)}</span>}
                               {showPermit && <span className="cell col-permit">{r.resId && permits && permits[r.resId]
                                 ? <button onClick={() => exportPermits([r])}
@@ -3374,27 +3486,35 @@ function App() {
                                 : ''}</span>}
                               {showLink && <span className="cell col-rec-link">{r.resId ? <a href={`https://www.rec.us/admin/o/${meta.org_id}/facility-rentals/${r.resId}`} target="_blank" rel="noopener noreferrer" title="Open in Rec" style={{color:'#2563eb',textDecoration:'none',fontSize:13}}>↗️</a> : ''}</span>}
                             </div>
-                            {showNotes && (() => {
-                              let visAddons = r.addons || '';
-                              if (visAddons && selectedAddOns && selectedAddOns.size < allAddOns.length) {
-                                visAddons = visAddons.split(',').map(s => s.trim()).filter(s => {
-                                  const name = s.replace(/\s*\(\$[\d,.]+\)$/, '').trim();
-                                  return selectedAddOns.has(name);
-                                }).join(', ');
-                              }
-                              var litStr = ''; if (r.lighting === 'Yes') { var _fmt = function(s) { if (!s) return ''; try { var d = new Date(s); var h = d.getHours(); var m = d.getMinutes(); var ap = h >= 12 ? 'PM' : 'AM'; h = h % 12 || 12; return h + ':' + String(m).padStart(2,'0') + ' ' + ap; } catch(e) { return s; } }; litStr = '💡 Lit: ' + _fmt(r.litFrom) + ' – ' + _fmt(r.litUntil); }
-                              if (!r.notes && !visAddons && !r.instructions && !litStr) return null;
+                            {/* Notes and add-ons share one line under the row, but they are
+                                gated SEPARATELY: add-ons used to ride on the Notes checkbox,
+                                which meant turning notes off silently took the add-on money
+                                with it. Either checkbox alone can now produce this line. */}
+                            {(showNotes || showAddons) && (() => {
                               var parts = [];
-                              if (litStr) parts.push(litStr);
-                              if (r.instructions) parts.push("📝 " + r.instructions);
-                              if (r.notes) parts.push(r.notes);
-                              if (visAddons) parts.push("Add-ons: " + visAddons.split(',').map(s => {
-                                    const trimmed = s.trim();
-                                    const rawName = trimmed.replace(/\s*\(\$[\d,.]+\)$/, '').trim();
-                                    return getAddOnEmoji(rawName) + ' ' + trimmed;
-                                  }).join(', '));
+                              if (showNotes) {
+                                var litStr = '';
+                                if (r.lighting === 'Yes') {
+                                  var _fmt = function(s) { if (!s) return ''; try { var d = new Date(s); var h = d.getHours(); var m = d.getMinutes(); var ap = h >= 12 ? 'PM' : 'AM'; h = h % 12 || 12; return h + ':' + String(m).padStart(2,'0') + ' ' + ap; } catch(e) { return s; } };
+                                  litStr = '💡 Lit: ' + _fmt(r.litFrom) + ' – ' + _fmt(r.litUntil);
+                                }
+                                if (litStr) parts.push(litStr);
+                                if (r.instructions) parts.push("📝 " + r.instructions);
+                                if (r.notes) parts.push(r.notes);
+                              }
+                              var addonItems = showAddons
+                                ? visibleAddonItems(r.addons, selectedAddOns, allAddOns.length)
+                                : [];
+                              if (addonItems.length) {
+                                var frag = addonNoteFragment(addonItems);
+                                if (frag) parts.push(frag);
+                              }
+                              if (!parts.length) return null;
                               return (
-                                <div className="sub-row" dangerouslySetInnerHTML={{__html: renderNotes(parts.join(' | '))}} />
+                                <div className="sub-row"
+                                  data-addon-icons={addonItems.length ? String(addonItems.length) : undefined}
+                                  data-addon-total={addonItems.length ? addonItemsTotalLabel(addonItems) : undefined}
+                                  dangerouslySetInnerHTML={{__html: renderNotes(parts.join(' | '))}} />
                               );
                             })()}
                           </div>
