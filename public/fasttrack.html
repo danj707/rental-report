@@ -297,6 +297,13 @@
     .launch-stat .ls-l { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: #999; }
     /* Pin toggle + email digest modal */
     .pin-toggle { border: 1px solid transparent; background: transparent; cursor: pointer; font-size: 13px; line-height: 1; padding: 3px 5px; border-radius: 6px; opacity: .35; transition: opacity .12s, background .12s; font-family: inherit; }
+    /* The labelled form reads as a control at rest — the icon-only one is
+       nearly invisible until hover, which is why nobody found it. */
+    .pin-toggle.pin-labelled { opacity: 1; display: inline-flex; align-items: center; gap: 4px; font-size: 10.5px;
+      padding: 2px 8px 2px 6px; border-color: #e5e0ea; background: #faf8fc; color: #6b21a8; font-weight: 700; }
+    .pin-toggle.pin-labelled .pin-word { letter-spacing: .02em; }
+    .pin-toggle.pin-labelled:hover { background: #f3e8ff; border-color: #d8b4fe; }
+    .pin-toggle.pin-labelled.pinned { background: #f3e8ff; border-color: #c084fc; color: #581c87; }
     .pin-toggle:hover { opacity: 1; background: #f3e8ff; }
     .pin-toggle.pinned { opacity: 1; background: #f3e8ff; border-color: #d8b4fe; }
     .pin-toggle:focus-visible { outline: 2px solid #7c3aed; outline-offset: 1px; opacity: 1; }
@@ -785,13 +792,24 @@ function PinBtn(props) {
   var ctl = props.ctl, id = props.id;
   if (!ctl || !id) return null;
   var on = ctl.isPinned(id);
+  /* Labelled, not a bare glyph. This control already existed on Launching Soon
+     and Dan still asked for "an option to pin the upcoming launches" — which is
+     the report saying the affordance was invisible. It sat at opacity .35 with
+     no word on it. `label: false` keeps the icon-only form where the row is
+     already tight (Cold Sections). */
+  var showLabel = props.label !== false;
   return React.createElement('button', {
-    className: 'pin-toggle' + (on ? ' pinned' : ''),
+    className: 'pin-toggle' + (on ? ' pinned' : '') + (showLabel ? ' pin-labelled' : ''),
     style: props.style || { marginLeft: 6 },
+    'data-pinned': on ? '1' : '0',
+    'aria-pressed': on ? 'true' : 'false',
     title: on ? 'Unpin from the top of Overview'
               : 'Pin to the top of Overview — visible to your whole team',
     onClick: function(e) { e.stopPropagation(); e.preventDefault(); ctl.togglePin(id); }
-  }, '📌');
+  }, showLabel ? React.createElement(React.Fragment, null,
+        React.createElement('span', { 'aria-hidden': 'true' }, '📌'),
+        React.createElement('span', { className: 'pin-word' }, on ? 'Pinned' : 'Pin'))
+    : '📌');
 }
 function PipelineLaunchCard(props) {
   var p = props.p;
@@ -933,7 +951,7 @@ function PipelineLaunchSection(props) {
       style: { display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap',
         background: 'linear-gradient(90deg,#fff7ed,#ffffff)', borderRadius: 10, padding: '11px 14px', marginBottom: 12, borderLeft: '5px solid #ea580c' }
     },
-      React.createElement('span', { style: { fontSize: 17, fontWeight: 800, color: '#9a3412' } }, '🚀 Launching Soon'),
+      React.createElement('span', { 'data-launch-heading': '1', style: { fontSize: 17, fontWeight: 800, color: '#9a3412' } }, '🚀 Launching Soon'),
       React.createElement('span', { style: { fontSize: 13, fontWeight: 700, color: '#ea580c' } },
         fmtInt(totalFt) + ' fast-trackers primed across ' + totalSections + ' section' + (totalSections !== 1 ? 's' : '')
         + ' in ' + items.length + ' program' + (items.length !== 1 ? 's' : '')),
@@ -1028,7 +1046,7 @@ function ColdPipelineStrip(props) {
           padding: '4px 10px', borderRadius: 999 } },
           '📅 ' + (x.kind === 'early' ? 'Early access ' : 'Reg opens ')
             + fmtDateShort(sectionGoLive(r).at) + ' · ' + dayShort(x.days)),
-        React.createElement(PinBtn, { ctl: props.pinCtl, id: r.sectionId })
+        React.createElement(PinBtn, { ctl: props.pinCtl, id: r.sectionId, label: false })
       );
     }),
     laterNote && React.createElement('div', { style: { fontSize: 11, color: '#94a3b8', marginTop: 2, paddingLeft: 4 } }, laterNote)
@@ -1091,12 +1109,18 @@ function triageBucket(p, spotsLeft) {
   return { bucket: null, action: null };
 }
 /* ── Actionable Triage Panel ── */
-function TriagePanel(props) {
-  var programs = props.programs || [];
-  if (!programs.length) return null;
-  var now = new Date();
+/* Sort the programs into triage buckets, and stamp each one with the derived
+   launch fields the cards read (_launch, _launchFt, _launchOpens, ...).
+   
+   AT MODULE SCOPE because two callers need it now: the App renders Launching
+   Soon at the top of Overview (Dan, 2026-08-26: "that section should be at the
+   top, above the 'just launched'") while TriagePanel renders the rest below.
+   Two copies of this would drift the first time a bucket rule changed, and a
+   spec could only regex over it — the triageBucket() lesson one level up. */
+function triageBuckets(programs, now) {
   var buckets = { needsCapacity: [], readyToOpen: [], stalled: [], convertingWell: [] };
-  programs.forEach(function(p) {
+  (programs || []).forEach(function(p) {
+
     var spotsLeft = p.capacity > 0 ? Math.max(0, p.capacity - p.totalEnrolled) : null;
     var regOpensDate = null, regClosesDate = null, hasRegOpens = false, allFutureReg = true;
     (p.sections || []).forEach(function(s) {
@@ -1145,7 +1169,17 @@ function TriagePanel(props) {
     if (verdict.action != null) p._triageAction = verdict.action;
     if (verdict.bucket) buckets[verdict.bucket].push(p);
   });
-  var needsAttention = buckets.needsCapacity.length + buckets.readyToOpen.length + buckets.stalled.length;
+  return buckets;
+}
+
+function TriagePanel(props) {
+  var programs = props.programs || [];
+  if (!programs.length) return null;
+  var now = props.now || new Date();
+  var buckets = props.buckets || triageBuckets(programs, now);
+  // readyToOpen is deliberately NOT counted: Launching Soon renders above Just
+  // Launched now, so counting it here would render an otherwise-empty panel.
+  var needsAttention = buckets.needsCapacity.length + buckets.stalled.length;
   if (needsAttention === 0) return null;
   function fmtD(d) { return d ? d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : ''; }
   function TriageRow(rp) {
@@ -1187,10 +1221,8 @@ function TriagePanel(props) {
     );
   }
   return React.createElement('div', { className: 'triage-panel' },
-    /* ── Pipeline (reg not yet open) ── */
-    buckets.readyToOpen.length > 0 &&
-    React.createElement(PipelineLaunchSection, { items: buckets.readyToOpen, pinCtl: props.pinCtl }),
-
+    /* Launching Soon used to render here. It now leads the Overview, above Just
+       Launched — what has not opened yet is the thing you can still act on. */
     /* ── Active Programs (reg open) ── */
     /* Only when there is something to act on: no spots left with people waiting,
        or interest that is not converting. */
@@ -2023,6 +2055,18 @@ function App() {
 
         activeTab === 'overview' && React.createElement(React.Fragment, null,
 
+        /* ── 🚀 Launching Soon ──
+           FIRST on the Overview (Dan, 2026-08-26). What has not opened yet is
+           the only thing on this page you can still change the outcome of — a
+           section that launched three days ago is a report, one launching
+           tomorrow is a decision. It reads the same buckets TriagePanel does,
+           from the one module-scope triageBuckets(). */
+        (function() {
+          var b = triageBuckets(programs, new Date());
+          if (!b.readyToOpen.length) return null;
+          return React.createElement(PipelineLaunchSection, { items: b.readyToOpen, pinCtl: pinCtl });
+        })(),
+
         /* ── 📌 Pinned + 🔥 Just Launched strips ── */
         (function() {
           function sectionCard(r, opts) {
@@ -2128,7 +2172,7 @@ function App() {
             ),
             justLaunched.length > 0 && React.createElement('div', { style: { marginBottom: 24 } },
               React.createElement('div', { style: { display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 10 } },
-                React.createElement('div', { style: { fontSize: 13, fontWeight: 800, color: '#b91c1c', textTransform: 'uppercase', letterSpacing: '.05em' } }, '🔥 Just Launched'),
+                React.createElement('div', { 'data-justlaunched-heading': '1', style: { fontSize: 13, fontWeight: 800, color: '#b91c1c', textTransform: 'uppercase', letterSpacing: '.05em' } }, '🔥 Just Launched'),
                 React.createElement('div', { style: { fontSize: 11, color: '#888' } }, 'registration opened in the last 3 days, early access included · most Fast Track demand first · click a section for the post-launch deep dive'),
                 React.createElement('button', { className: 'flow-action', style: { marginLeft: 'auto', background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe' }, onClick: function() { setSubOpen(true); } }, '📬 Email me this')
               ),

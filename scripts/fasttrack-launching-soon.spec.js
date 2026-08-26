@@ -169,4 +169,54 @@ eq(cmp(CONCERT, noDate) < 0, true, "a program with no known go-live sorts last, 
 ok(!/a\._launchDays == null \? 1e9/.test(sortSrc),
   "the comparator no longer ranks on calendar days");
 
+// ── Launching Soon leads the Overview (Dan, 2026-08-26) ────────────────────
+// "That section should be at the top, above the 'just launched'." What has not
+// opened yet is the only thing on the page whose outcome can still change; a
+// section that launched three days ago is a report, one launching tomorrow is
+// a decision.
+
+{
+  const overviewAt = src.indexOf("activeTab === 'overview'");
+  ok(overviewAt > 0, "the Overview tab render should be findable");
+  const launchAt = src.indexOf("PipelineLaunchSection", overviewAt);
+  const justAt   = src.indexOf("\u{1F525} Just Launched", overviewAt);
+  ok(launchAt > 0, "Launching Soon should render inside the Overview");
+  ok(justAt > 0, "Just Launched should render inside the Overview");
+  ok(launchAt < justAt,
+    "Launching Soon must render ABOVE Just Launched — an upcoming launch is " +
+    "actionable, one that already happened is not");
+}
+
+// The buckets are computed ONCE, at module scope, because two callers now read
+// them (the Overview for Launching Soon, TriagePanel for the rest). Two copies
+// drift the first time a bucket rule changes — the triageBucket() lesson again.
+ok(/^function triageBuckets\(programs, now\) \{/m.test(src),
+  "triageBuckets should be a module-scope function, not inlined in TriagePanel");
+eq((src.match(/var buckets = \{ needsCapacity: \[\], readyToOpen: \[\], stalled: \[\], convertingWell: \[\] \}/g) || []).length, 1,
+  "the bucket set must be built in exactly one place");
+
+// TriagePanel must NOT also render Launching Soon, or it appears twice.
+{
+  const tp = src.slice(src.indexOf("function TriagePanel(props)"));
+  const body = tp.slice(0, tp.indexOf("\nfunction "));
+  eq((body.match(/PipelineLaunchSection/g) || []).length, 0,
+    "TriagePanel must not render Launching Soon as well — that renders it twice");
+  ok(!/needsAttention = buckets\.needsCapacity\.length \+ buckets\.readyToOpen\.length/.test(body),
+    "readyToOpen must not count toward TriagePanel's own emptiness test, or a " +
+    "pipeline-only org renders an empty panel under the section that moved out");
+}
+
+// ── The pin is a control, not a ghost ──────────────────────────────────────
+// It already existed on Launching Soon and Dan still asked for "an option to
+// pin the upcoming launches" — the report telling us a 35%-opacity bare emoji
+// is not a discoverable affordance.
+ok(/className: 'pin-toggle'[^,]*\+ \(showLabel \? ' pin-labelled' : ''\)/.test(src),
+  "PinBtn should have a labelled form");
+ok(/\.pin-toggle\.pin-labelled \{[^}]*opacity: 1/.test(src),
+  "the labelled pin must be fully opaque at rest — that is the whole fix");
+ok(/'aria-pressed': on \? 'true' : 'false'/.test(src),
+  "a toggle should report its state to assistive tech");
+ok(/label: false/.test(src),
+  "the tight Cold Sections row should keep the icon-only form");
+
 console.log(`✓ fasttrack-launching-soon.spec.js — ${n} assertions passed`);

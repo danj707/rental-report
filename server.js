@@ -6431,7 +6431,7 @@ Respond ONLY with a valid JSON array of 4\u20136 objects. Each object: {"type":"
 
 Focus on: household composition patterns (family size, age mix between parents and children), youth vs adult programming balance based on actual member ages, data quality issues worth addressing, growth patterns, residency implications for pricing, grade-level program opportunities (which grades are most represented), geographic reach, and underserved demographic segments. Be specific with numbers from the data. Do not invent numbers not in the input.`;
 
-const DIRECTORS_SYS_PROMPT = `You are an executive analyst for US municipal parks & recreation departments. You receive one quarter's pre-computed operational metrics for one department: GL revenue with prior-quarter comparison, program enrollment with top and low-fill programs, waitlist demand and the offer funnel, facility rentals and court usage, outdoor event spaces (pavilions, picnic areas, bounce houses) and athletic fields by the hour, community demographics, self-service vs staff order mix, and instructor-led program figures. Some metric families may be absent — never mention missing data.
+const DIRECTORS_SYS_PROMPT = `You are an executive analyst for US municipal parks & recreation departments. You receive one quarter's pre-computed operational metrics for one department: GL revenue with prior-quarter comparison, program enrollment with top and low-fill programs, waitlist demand and the offer funnel, facility rentals and court usage, outdoor event spaces (pavilions, picnic areas, bounce houses) and athletic fields by the hour, Fast Track pre-registration (families who register interest before a section opens, which then converts itself at open), community demographics, self-service vs staff order mix, and instructor-led program figures. Some metric families may be absent — never mention missing data.
 
 Return EXACTLY 4 insights as a JSON array and nothing else — no prose, no preamble, no markdown code fences. Each element is an object with exactly these keys:
 {
@@ -9525,13 +9525,123 @@ function dirPayout(rows) {
   };
 }
 
-function dirFastTrack(rows) {
+/* Minutes of staff handling a Fast Track conversion avoids. THIS IS AN
+   ASSUMPTION AND THE PAGE SAYS SO — nothing in Rec measures how long a
+   registration takes to process, so this is an input Dan can set, not a
+   finding. Change it here and every surface that shows hours follows. */
+const DIR_FT_MINUTES_PER_REG = 2;
+
+/* Fast Track for the Director's Report.
+ *
+ * The feed is fetched with NO dates (the card is all-time by design), so the
+ * quarter has to be cut here — from the ft_booking rows, which carry a
+ * "Signup Date". Section-grain columns (revenue, capacity, price) are all-time,
+ * so anything quarterly is derived by joining a booking to its section.
+ *
+ * Costs no extra Metabase time: buildDirectorsQuarter already fetches this feed.
+ */
+function dirFastTrack(rows, cur, prev) {
   if (!Array.isArray(rows) || !rows.length) return null;
   const secs = rows.filter(r => (r["Row Type"] || "section") === "section");
-  let total = 0, converted = 0, revenue = 0;
-  for (const r of secs) { total += dnum(r["FT Total"]); converted += dnum(r["FT Converted"]); revenue += dnum(r["FT Revenue"]); }
+  const books = rows.filter(r => r["Row Type"] === "ft_booking");
+  const byId = Object.create(null);
+  for (const r of secs) if (r["Section ID"]) byId[r["Section ID"]] = r;
+
+  // ── All-time, straight off the card. Revenue in particular: the card's own
+  // "FT Revenue" is authoritative and is NOT re-derived here.
+  let total = 0, converted = 0, revenue = 0, leftOnTable = 0;
+  for (const r of secs) {
+    total       += dnum(r["FT Total"]);
+    converted   += dnum(r["FT Converted"]);
+    revenue     += dnum(r["FT Revenue"]);
+    leftOnTable += dnum(r["Left on Table"]);
+  }
   if (!total) return null;
-  return { total, converted, rate: Math.round(converted / total * 1000) / 10, revenue: Math.round(revenue) };
+
+  // ── Conversion measured against the seats Fast Track could actually WIN.
+  // Holds chasing fewer seats than exist cannot convert above that ceiling, so
+  // converted/holds grades a sellout against a target that does not exist —
+  // the same fix ftConvPct() made on the Fast Track report itself.
+  let denom = 0, won = 0;
+  for (const r of secs) {
+    const holds = dnum(r["FT Total"]); if (!holds) continue;
+    const cap = dnum(r["Capacity"]);
+    if (cap <= 0) { denom += holds; won += dnum(r["FT Converted"]); continue; }
+    const avail = Math.max(0, cap - dnum(r["Direct Enrolled"]));
+    const d = Math.min(holds, avail);
+    if (d <= 0) continue;                       // no seats left for FT to win
+    denom += d; won += Math.min(dnum(r["FT Converted"]), d);
+  }
+  const capRate = denom > 0 ? Math.round(won / denom * 1000) / 10 : null;
+
+  // Oversubscribed before opening — more pre-registered than seats.
+  const oversub = secs.filter(r => dnum(r["Capacity"]) > 0 && dnum(r["FT Total"]) >= dnum(r["Capacity"])).length;
+
+  // ── Quarter slice, by signup date.
+  const slice = (range) => {
+    if (!range) return null;
+    const inQ = books.filter(b => {
+      const d = b["Signup Date"];
+      return d && d >= range.start && d <= range.end;
+    });
+    if (!inQ.length) return { signups: 0, converted: 0, pending: 0, households: 0, sections: 0, revenue: 0, repeatHh: 0 };
+    let conv = 0, rev = 0;
+    const hh = Object.create(null), sec = new Set();
+    for (const b of inQ) {
+      if (b["Section ID"]) sec.add(b["Section ID"]);
+      const h = b["User HH ID"]; if (h) hh[h] = (hh[h] || 0) + 1;
+      if (b["FT Status"] === "Converted") {
+        conv++;
+        const s = byId[b["Section ID"]];
+        if (s) rev += dnum(s["Section Price"]);
+      }
+    }
+    const hhKeys = Object.keys(hh);
+    return {
+      signups: inQ.length, converted: conv, pending: inQ.length - conv,
+      households: hhKeys.length, sections: sec.size,
+      // DERIVED, not read: the card carries no per-quarter revenue. Measured
+      // against the card's own all-time total this lands ~0.3% high (discounts
+      // and price changes), so the page labels it as derived.
+      revenue: Math.round(rev),
+      repeatHh: hhKeys.filter(k => hh[k] > 1).length,
+    };
+  };
+  const q = slice(cur), qPrev = slice(prev);
+
+  // Top sections by pre-registration inside the quarter.
+  let top = [];
+  if (cur) {
+    const agg = Object.create(null);
+    for (const b of books) {
+      const d = b["Signup Date"];
+      if (!d || d < cur.start || d > cur.end || !b["Section ID"]) continue;
+      const a = agg[b["Section ID"]] || (agg[b["Section ID"]] = { n: 0, c: 0 });
+      a.n++; if (b["FT Status"] === "Converted") a.c++;
+    }
+    top = Object.keys(agg).map(id => {
+      const s = byId[id] || {};
+      const cap = dnum(s["Capacity"]);
+      return {
+        program: s["Program"] || "\u2014", section: s["Section"] || "\u2014",
+        signups: agg[id].n, converted: agg[id].c, capacity: cap,
+        share: cap > 0 ? Math.round(agg[id].n / cap * 1000) / 10 : null,
+      };
+    }).sort((a, b) => b.signups - a.signups || b.converted - a.converted).slice(0, 5);
+  }
+
+  return {
+    total, converted, revenue: Math.round(revenue),
+    rate: Math.round(converted / total * 1000) / 10,   // of signups (kept: the old figure)
+    capRate,                                            // of winnable seats
+    leftOnTable: Math.round(leftOnTable), oversub,
+    quarter: q, prevQuarter: qPrev,
+    // Minutes per registration is an INPUT, not a measurement — nothing in the
+    // data times a registration. The page states it on screen beside the figure
+    // it produces, so the reader can see the assumption and discount it.
+    minutesPerReg: DIR_FT_MINUTES_PER_REG,
+    top,
+  };
 }
 
 function dirRetention(rows) {
@@ -9591,7 +9701,7 @@ async function buildDirectorsQuarter(slug, year, q) {
     users: dirUsers(usr, cur),
     selfservice: dirSelfService(ss),
     payout: dirPayout(pay),
-    fasttrack: dirFastTrack(ft),
+    fasttrack: dirFastTrack(ft, cur, prev),
     retention: dirRetention(ret),
   };
 }
@@ -16536,6 +16646,18 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  { date: '2026-08-26', title: '\u26A1 Fast Track gets its own section in the Director\u2019s Report', items: [
+    'Fast Track was four small cards inside the Waitlist panel. It is now a section of its own: pre-registrations and households for the quarter with the change on last quarter, conversion, revenue, and how many families are still holding a place.',
+    'Two panels either side of it. WHAT IT ABSORBED \u2014 the registrations that completed themselves the moment registration opened, with no family at a keyboard and nobody keying anything in. WHAT IT REVEALED \u2014 how many sections carried demand before they opened, how many were oversubscribed, and the revenue left on the table when families wanted a seat that was not there.',
+    'The staff-hours figure is an ESTIMATE and says so on the page. Nothing in Rec measures how long a registration takes to process, so the minutes-per-registration rate is an input we set rather than something measured \u2014 the figure is shown in a marked box with the rate printed beside it.',
+    'Signups are counted by signup date inside the quarter. Conversion is measured against the seats Fast Track could actually win rather than against every signup: holds chasing fewer seats than exist cannot convert above that ceiling, and grading a sellout against a target that does not exist reads as a failure.',
+    'The section only appears for departments that use Fast Track.',
+  ]},
+  { date: '2026-08-26', title: '\uD83D\uDE80 Launching Soon now leads the Fast Track overview', items: [
+    'Sections that have NOT opened yet now appear at the top of the overview, above Just Launched. A section that opened three days ago is a report; one opening tomorrow is still a decision you can act on.',
+    'Pinning an upcoming launch is now a labelled Pin button rather than a faint icon that only appeared when you hovered over it. Pinned sections stay at the top of the overview for everyone on your team.',
+    'Sections that are oversubscribed before they open now visibly burn \u2014 the flames flicker instead of sitting still, and the line reporting demand past capacity carries them too. Turned off automatically for anyone who has asked for reduced motion.',
+  ]},
   { date: '2026-08-26', title: '\uD83D\uDEAB Failed check-ins: open the list, not just the count', items: [
     'The Failed Check-Ins figure on the Memberships Check-Ins tab is now something you can open. Click it, or use the Accepted / Failed switch on the check-in list, and the list shows the scans that were turned away \u2014 who, when, at which desk, and which membership or pass they presented. Every member still links through to their Rec account.',
     'The switch changes the LIST ONLY. Every figure on the tab \u2014 total check-ins, busiest hour, average per day, time of day, top members, the per-desk counts \u2014 continues to count accepted scans and nothing else. Someone who was turned away did not attend, and counting them as attendance would overstate usage everywhere on the page.',

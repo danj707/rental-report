@@ -475,6 +475,21 @@ function directorsQuarter() {
           accounts: [{ name: "Facility Rentals", net: 120000, prevNet: 100000 }],
           prev: { gross: 380000, refunds: 7000, net: 373000, payments: 2900 } },
     transactions: { cur: 3100, prev: 2900 },
+    // Fast Track, in the shape dirFastTrack() returns. Proportions are
+    // Watertown's real ones so the case is meaningful: the capacity-aware rate
+    // (90.5%) and the of-signups rate (76.6%) DIFFER, which is what makes the
+    // "which denominator" assertion discriminating — equal values would pass
+    // either way round. 219 converted x 2 min = 7.3 hours.
+    fasttrack: {
+      total: 1523, converted: 1318, revenue: 187620, rate: 76.6, capRate: 90.5,
+      leftOnTable: 25398, oversub: 2, minutesPerReg: 2,
+      quarter:     { signups: 286, converted: 219, pending: 67, households: 107, sections: 93, revenue: 14073, repeatHh: 50 },
+      prevQuarter: { signups: 125, converted: 106, pending: 19, households: 74,  sections: 72, revenue: 14712, repeatHh: 21 },
+      top: [
+        { program: "Adult Pickleball Open Play", section: "Intermediate", signups: 67, converted: 61, capacity: 144, share: 46.5 },
+        { program: "Adult Pickleball Skills", section: "Advanced Beginner", signups: 14, converted: 8, capacity: 8, share: 175 },
+      ],
+    },
     facility: { n: 1840, rev: 262000, residentPct: 71.2, managed: 1500, instant: 340,
                 topLocs: [{ name: "Community Park", n: 900, rev: 140000 }],
                 prevN: 1700, prevRev: 240000 },
@@ -738,36 +753,61 @@ const CASES = [
   // static string renders the same glyphs and would pass "a flame is present",
   // so the case keys on the SPAN, and the one below proves it is actually
   // moving — getAnimations() is the only thing that can tell those apart.
+  // Launching Soon leads the Overview. Asserted by DOM ORDER, not by presence:
+  // both sections existed before, and "both render" passed on the old order.
+  // Launching Soon leads the Overview. Asserted by DOM ORDER, not presence:
+  // both sections existed before and "both render" passed on the old order.
+  // Keyed on data attributes rather than scraping text — the two headings are
+  // different element types, which is exactly what broke the first version.
+  { name: "fasttrack · launching soon leads", path: "/{org}/fasttrack",
+    needs: "body[data-launch-first=\"1\"]",
+    act: async page => {
+      await page.waitForSelector("[data-launch-heading]", { timeout: 45000 });
+      await page.evaluate(() => {
+        const soon = document.querySelector("[data-launch-heading]");
+        const just = document.querySelector("[data-justlaunched-heading]");
+        if (!soon) return;
+        // No Just Launched in this window still proves nothing regressed.
+        if (!just || (soon.compareDocumentPosition(just) & Node.DOCUMENT_POSITION_FOLLOWING)) {
+          document.body.setAttribute("data-launch-first", "1");
+        }
+      });
+    } },
+  { name: "fasttrack · pin is a real control", path: "/{org}/fasttrack",
+    needs: "[data-launch-list] .pin-toggle.pin-labelled[data-pinned=\"0\"] .pin-word" },
   { name: "fasttrack · flames are spans", path: "/{org}/fasttrack",
     needs: "[data-heat=\"inferno\"] .ft-flames .ft-flame" },
   // ...and they are RUNNING, with the positions out of phase. getAnimations()
   // reads the live animation from the browser, so this fails on a flame that is
   // present but static and on a row whose flames all share a clock — neither of
   // which any source assertion can tell apart from real fire.
+  // ...and they are RUNNING, each on its own clock. Deterministic on purpose:
+  // the first version compared currentTime % 10, which two flames can collide
+  // on by chance — it passed one run and failed the next. Computed duration is
+  // stable, and "all durations distinct" IS the invariant (same-duration flames
+  // drift back into sync and read as one object flashing).
   { name: "fasttrack · flames actually burn", path: "/{org}/fasttrack",
     needs: "body[data-flames-burning=\"1\"]",
     act: async page => {
       await page.waitForSelector("[data-heat=\"inferno\"] .ft-flame", { timeout: 45000 });
       await page.evaluate(() => {
-        const els = [...document.querySelectorAll('[data-heat="inferno"] .ft-flame')];
-        const anims = els.map(e => (e.getAnimations ? e.getAnimations() : [])
-          .find(a => a.animationName === "ftFlicker" || (a.effect && a.effect.getKeyframes().length)));
-        const running = anims.filter(a => a && a.playState === "running");
-        // Distinct current times = the flames are genuinely out of phase.
-        const phases = new Set(running.map(a => Math.round((a.currentTime || 0) % 10)));
-        if (els.length >= 2 && running.length === els.length && phases.size > 1) {
+        // PER ROW. Durations repeat ACROSS rows by design — every row runs the
+        // same 1..n ladder — so a global uniqueness test is wrong and fails on
+        // a perfectly good page (it did: 11 flames, 4 durations).
+        const rows = [...document.querySelectorAll('[data-heat="inferno"] .ft-flames')];
+        const ok = rows.filter(row => {
+          const els = [...row.querySelectorAll(".ft-flame")];
+          if (els.length < 2) return false;
+          const running = els.filter(e => (e.getAnimations ? e.getAnimations() : [])
+            .some(a => a.playState === "running" && a.animationName === "ftFlicker"));
+          const durs = new Set(els.map(e => getComputedStyle(e).animationDuration));
+          return running.length === els.length && durs.size === els.length;
+        });
+        if (rows.length > 0 && ok.length === rows.length) {
           document.body.setAttribute("data-flames-burning", "1");
         }
       });
     } },
-  // PRE-LAUNCH BEATS CAPACITY, AND THE BIGGEST COHORT LEADS. Birthday Concert
-  // trips "demand over 90% with more pending than spots left" on program-wide
-  // figures two thirds of which are spent sections, and while `_launch` was
-  // tested third that filed it under Needs Capacity — so 314 fast-trackers, 203
-  // of them on a 45-seat table opening in fifteen minutes, never reached the
-  // panel that exists to show them. It is also the soonest thing in the fixture,
-  // so it must be the FIRST card, not merely present: that is the difference
-  // between "flagged #1 up top" and "findable if you scroll".
   { name: "fasttrack · pre-launch beats capacity", path: "/{org}/fasttrack",
     needs: "[data-launch-list] > *:first-child[data-launch-program=\"prog-birthday\"]" },
   // ...and go-live must come from the EARLY-ACCESS window when that is the one
@@ -848,6 +888,18 @@ const CASES = [
   // behind its peak hour, because "busiest at 7pm" means two different things
   // depending on whether hours are counted as covered or started.
   { name: "directors · outdoor panel", path: "/{org}/directors-report", needs: "[data-dr-outdoor]" },
+  // ── Fast Track section (Dan, 2026-08-26: "lets add that to the current
+  // directors report"). The section had NO render coverage before this.
+  { name: "directors · fast track section", path: "/{org}/directors-report", needs: "[data-dir-ft]" },
+  // The capacity-aware rate leads, not the of-signups one. Both are in the
+  // fixture and they differ, so this fails if the wrong one is promoted.
+  { name: "directors · ft conversion denominator", path: "/{org}/directors-report",
+    needs: "[data-ft-conv=\"90.5\"]" },
+  // An assumed figure must be visibly assumed. 219 x 2min = 7.3h.
+  { name: "directors · ft hours marked assumed", path: "/{org}/directors-report",
+    needs: ".ft-assumed[data-ft-hours=\"7.3\"]" },
+  { name: "directors · ft quarter delta", path: "/{org}/directors-report",
+    needs: "[data-ft-delta=\"signups\"]" },
   { name: "directors · fields panel",  path: "/{org}/directors-report", needs: "[data-dr-fields]" },
   // The hub's verticals are two clicks deep behind a card that just says
   // "Facilities". The chips are how Fields and Outdoor Events are findable at

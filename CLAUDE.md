@@ -2233,6 +2233,75 @@ soon` passed happily on the broken build. A second program, `prog-birthday`, now
 carries the real proportions (336 FT / 295 capacity = 113.9%, two thirds of that
 capacity spent), and its spent sections are load-bearing.
 
+### Fast Track reaches the Director's Report, and Launching Soon leads (2026-08-26)
+
+Dan, on a mockup: *"love it, lets add that to the current directors report"*, and
+separately *"lets add an option to pin the upcoming launches. That section should
+be at the top, above the 'just launched'."*
+
+**The Fast Track section.** It was four small cards tucked inside the Waitlist
+panel; it is now its own section between Waitlist and Facilities. Mockup:
+https://claude.ai/code/artifact/56759609-e038-4e4a-9693-d3559470561b
+
+- **Zero extra Metabase time** — `buildDirectorsQuarter()` already fetched the
+  fasttrack feed for `dirFastTrack()`. Same argument as `dirOutdoor`/`dirFields`.
+- **`dirFastTrack()` cuts the quarter itself.** The card is all-time by design,
+  so quarterly figures come from `ft_booking` rows (which carry `Signup Date`)
+  joined back to their section by `Section ID`. Section-grain columns — revenue,
+  capacity, price — stay all-time.
+- **Quarterly revenue is DERIVED and labelled as such.** The card has no
+  per-quarter revenue, so it is `converted × Section Price`. Measured against the
+  card's own all-time total that lands **$571 high on $187,620 (~0.3%)** —
+  discounts and price changes. The all-time figure beside it is read from the
+  card, never re-derived.
+- **Conversion leads with the capacity-aware rate** (90.5% at Watertown) with
+  of-signups (76.6%) greyed beneath — the `ftConvPct` reasoning, one report over.
+- **`DIR_FT_MINUTES_PER_REG` is the one dial for "time saved".** Nothing in Rec
+  measures how long a registration takes to process, so the hours are an INPUT.
+  The page states the rate on screen inside a dashed warning box that nothing
+  else on the report uses, because an assumed figure must never look like a
+  measured one. Set the constant to 0 and the box disappears, leaving the count.
+- The section self-hides where there is no Fast Track, and the quarter slice
+  falls back to all-time when the quarter holds no bookings — a quarter of zeros
+  reads as a verdict rather than as an empty window.
+
+**Launching Soon now leads the Overview**, above Just Launched: what has not
+opened yet is the only thing on the page whose outcome can still change.
+
+- **`triageBuckets(programs, now)` moved to MODULE SCOPE.** Two callers read it
+  now (the Overview for Launching Soon, `TriagePanel` for the rest), and two
+  copies would drift the first time a bucket rule changed — the `triageBucket()`
+  lesson one level up.
+- **`readyToOpen` no longer counts toward `TriagePanel`'s own emptiness test**,
+  or a pipeline-only org renders an empty panel under the section that moved out.
+- **The pin already existed and was invisible.** Dan asked for "an option to pin
+  the upcoming launches" for a control shipped in PR #152 — a bare 📌 at
+  `opacity: .35` that only appeared on hover. It is now a labelled
+  **📌 Pin / 📌 Pinned** button, opaque at rest, with `aria-pressed`. Cold
+  Sections keeps the icon-only form (`label: false`) where the row is tight.
+  Worth generalising: *a control nobody can find is a control that does not
+  exist*, and the bug report for it arrives as a feature request.
+
+**Two render cases of mine were wrong in ways only the browser showed**, both in
+the `act` hooks rather than the page:
+
+- The order case scraped `div`s for the heading text, but the Launching Soon
+  heading is a `<span>` — never found, so the case silently proved nothing. Both
+  headings now carry `data-launch-heading` / `data-justlaunched-heading` and the
+  case compares `compareDocumentPosition`.
+- The flame case asserted **globally distinct durations**. Durations repeat
+  ACROSS rows by design (every row runs the same 1..n ladder), so it failed on a
+  perfectly good page — 11 flames, 4 durations. It is per-ROW now. The first
+  version was worse still: it compared `currentTime % 10`, which two flames can
+  collide on by chance, so it passed one run and failed the next. **A flaky
+  assertion is not a guard**; make the invariant something computed and stable.
+
+Guards: `fasttrack-launching-soon.spec.js` 22 → 34, mutation-tested four ways
+(order reverted, `readyToOpen` recounted, the pin back to 35%, the section not
+rendered at top). Six new `ci-check-render` cases — including four for the
+Director's Report Fast Track section, which **had no render coverage at all** —
+and the burn case re-verified to catch both a static flame and a resynced row.
+
 ### The flames actually burn (Dan, 2026-08-26)
 
 Dan, on an oversubscribed section: *"need more fire on these types of sections.
