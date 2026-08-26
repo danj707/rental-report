@@ -2189,6 +2189,84 @@ Already shipped (PR #75, live on `main`): name-based site-type recovery so
 filter, Ice sub-tab, court-name wrap. Display/scoping only — did not change the
 revenue math, so the gap above predates and survives it.
 
+## Add-ons moved into the note line; Forms took the column (2026-08-26)
+
+Dan: *"move 'add ons' out of its own column and into the 'notes' section
+underneath each reservation row… Replace the addons column with 'Forms', and add
+a clickable link to the Form section for a specific reservation, if it has it."*
+
+The deliberately small version of the parked forms feature (see the PARKED
+section below): **a link out to Rec, not a panel.**
+
+- **The add-on money had to come with it.** Card 17294's `Total` is the
+  reservation's own `order_item`; `Add-On Fees` is a SEPARATE sum and is not
+  folded into it. So the note line now leads with the total —
+  `Add-ons $40.50: 🍺 Alcohol Permit ($25.00), 💡 Field Light Fee ($15.50)` —
+  because dropping the column without it would quietly remove revenue from the
+  page. `addonItemsTotalLabel()` is the single implementation, so the number and
+  the `data-addon-total` attribute a render check reads cannot drift.
+- **The total is summed from the VISIBLE items**, not read off the row. The
+  toolbar filters add-ons; printing the row's whole fee beside a filtered list is
+  a number that does not add up to what is shown.
+- **Notes and add-ons are gated SEPARATELY.** Add-ons used to ride on the Notes
+  checkbox, so turning notes off silently took the add-on money with it. Either
+  checkbox alone now produces the line; the add-on toggle keeps the old
+  `col_addon_fees` localStorage key, so nobody's saved preference flips.
+- **Excel keeps `Add-On Fees` as a column** — an export is a data file, not a
+  schedule.
+- **The Forms column is a link, and the route only COUNTS.** `countFormRows()`
+  reduces card 20626 to `{ resId: n }`; no answer, filename, S3 URL or signature
+  ever reaches the browser, which sidesteps every trap in the parked section
+  below. A rental with no forms renders nothing — a link to an empty Required
+  Information tab is a dead end, and 62% of a typical week has no form.
+- Link shape: `https://www.rec.us/admin/o/<orgId>/facility-rentals/<resId>?tab=requiredInformation`
+- Activity: `form-open` (📄), debounced by rental.
+
+**A cross-file invariant this pinned:** the card joins add-ons into one string
+with `", "` and the client splits on commas, so a price containing a thousands
+separator would split mid-number (`"Tournament Fee ($1"` + `"250.00)"`). Card
+17294 formats with `FM999999990.00`, which emits none — that is the *only* reason
+the split is safe, nothing checked it, and the failure would be silent. The spec
+now asserts the mask, and changing it to `FM9G999G990.00` fails by name.
+
+### A feed that has not answered must not look like an empty result
+
+Dan, on the preview: *"where did permits go? we're not showing any permits for
+watertown."* The permits feed was healthy — 1,488 permits, and 13 of the 21
+rentals that day matched — and the chip renders correctly when handed that data
+(verified in a browser against the real feed). The bug was that **`permits` had
+three states rendered as two**: not-loaded-yet and load-failed both rendered as
+an empty cell, byte-identical to "this rental has no permit". Watertown's feed
+takes **~6s cold**, so for six seconds a healthy report looked exactly like one
+where permits had vanished — and a transient failure looked that way forever,
+because `.catch(() => setPermits({}))` maps a failure to "none".
+
+This is the campmap load-vs-empty bug in a read-only surface, and the fix is the
+same shape: `permitsOk` / `formsOk`, true only when the feed actually **answered**
+(a soft-failed route answers 200 with `error: true`, which is a failure, not an
+org without permits). Pending renders a faint `·`, failure an amber `⚠` whose
+title says the column is blank for every row and does not mean there are no
+permits. **A genuinely absent permit still renders blank** — that is Dan's rule:
+blank when there is none, a clickable and exportable icon when there is one.
+
+Two render cases drive the failure path via a per-case `stubMode`, because the
+stubs see the API request URL and a query flag on the page URL cannot reach them.
+
+### The Rec Insights button is gone from the rental schedule (Dan, 2026-08-26)
+
+*"not needed there."* Removed the button, its panel, the feedback widget, the
+`buildInsightsBlob` payload builder and the CSS. The server routes
+`/:org/facility/api/insights` and `/api/insights/score` are left in place but now
+have no caller from this page — remove them separately if that matters.
+
+Guards: `scripts/facility-addons-forms.spec.js` (53 assertions, in CI,
+mutation-tested six ways — the total dropped, the total read off the row instead
+of the visible items, add-ons back on the Notes checkbox, a link on every row,
+the feed forwarding answers instead of counting, and the SQL mask gaining a
+separator). Plus five `ci-check-render.js` cases; **the rental schedule had no
+render case at all before this.** `ci-check-render.js` also gained a
+`SHOT_DIR` env hook and a name filter for iterating one page's cases.
+
 ## Facility rental "posting sheet" — BUILT (PRs #118, #120, #121)
 
 The one-pager maintenance prints and hangs **at the facility** so anyone walking
