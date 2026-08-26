@@ -313,9 +313,39 @@ function fasttrackRows() {
     "Early Access Opens": iso(-0.02), "Reg Opens": iso(6), "Reg Closes": iso(45),
     "FT Total": 2, "FT Converted": 1, "FT Pending": 1, "Conversion %": 50,
   });
+  /* ── The program the capacity tests used to swallow ──────────────────────
+     Smyrna's Birthday Concert, in its real proportions (measured 2026-08-26):
+     two tables about to open carrying 203 and 111 fast-trackers against 45 and
+     50 seats, plus two SPENT summer concerts at 100 seats each. Program-wide
+     that is 336 FT over 295 capacity — 113.9% demand with 314 pending against
+     295 spots left — so it trips "demand over 90% with more pending than spots
+     left" and, while `_launch` was tested third, was filed under Needs Capacity
+     and never reached Launching Soon at all.
+
+     THE EXISTING Concert Series FIXTURE DOES NOT REPRODUCE THIS: its 198 FT over
+     375 capacity is 52.8% demand, comfortably under the threshold, which is why
+     the `launching soon` case above passed happily on the broken build. The
+     spent 100-seat sections are load-bearing here — they are two thirds of the
+     capacity and none of the pre-launch demand, which is exactly how a program's
+     history used to decide whether its pre-launch card rendered.
+
+     Its Select Table opens in ~15 minutes, sooner than any other launching
+     section in the fixture, so it must also be the FIRST card. */
+  const birthday = (name, ft, cap, opensInDays) => Object.assign(table(name, ft, ft, cap, opensInDays), {
+    "Program": "Birthday Concert", "Program ID": "prog-birthday",
+    "Section ID": "sec-birthday-" + name.replace(/\W+/g, "-").toLowerCase(),
+  });
+  const birthdaySpent = (name, ft, conv) => Object.assign(past(name, ft, conv), {
+    "Program": "Birthday Concert", "Program ID": "prog-birthday",
+    "Section ID": "sec-birthday-" + name.replace(/\W+/g, "-").toLowerCase(),
+  });
   return [
     launchedSmall,
     launchedEarly,
+    birthday("Select Table 45", 203, 45, 0.01),
+    birthday("General Table 50", 111, 50, 1),
+    birthdaySpent("Birthday Summer: June", 14, 10),
+    birthdaySpent("Birthday Summer: July", 8, 6),
     table("Premier Table", 54, 54, 25, 1),
     table("Select Table", 18, 18, 45, 2),
     table("Preferred Table", 21, 21, 30, 3),
@@ -425,6 +455,36 @@ function directorsQuarter() {
   };
 }
 
+// ── Add-ons in the note line, and the Forms link ────────────────────────────
+// Site Type is deliberately "gym": the facilities-hub tabs count campsite,
+// field and the three outdoor types, so these rows stay invisible to them and
+// cannot shift [data-oe-peak] / [data-fld-peak].
+function addonFormRows() {
+  const d = n => { const t = new Date(Date.now() - n * 86400000); return t.toISOString().slice(0, 10); };
+  const mk = (resId, site, addOns, addonFees) => ({
+    "Org Name": "Test Parks", "Reservation ID": resId, "Date": d(3),
+    "Day": "Sunday", "Begin": "10:00am", "End": "02:00pm",
+    "Location": "Arsenal Park", "Facility": "Arsenal Park - " + site,
+    "Site Type": "gym", "Purpose": "Birthday party", "Head Cnt": 30,
+    "Reservee": "Test Renter", "Email": "t@example.com", "Phone": null, "Resident?": "Yes",
+    "Booking Type": "Managed", "Instructions": null, "Notes": null,
+    "Add Ons": addOns, "Add-On Fees": addonFees, "Total": 50, "Paid?": "Paid",
+    "Multi-Day Days": null, "Multi-Day Day#": null,
+    "Lighting": null, "Lit From": null, "Lit Until": null, "Lighting Sync": null,
+  });
+  return [
+    // Two add-ons, so the note line has a total to sum: 25 + 15.50 = $40.50.
+    mk("res-addons", "Pavilion B", "Alcohol Permit ($25.00), Field Light Fee ($15.50)", 40.5),
+    mk("res-forms",  "Pavilion C", "", 0),
+    mk("res-plain",  "Picnic Table 11", "", 0),
+  ];
+}
+
+// Set per case via `stubMode`, so a case can drive a feed's failure path. The
+// stubs see the API request URL, not the page's, so a query flag on the page
+// cannot reach them.
+let STUB_MODE = "";
+
 const STUBS = [
   { match: /\/facilities\/api\/campsites/, body: () => campsitesGeo },
   // Must precede the catch-all /api/ stub. Realistic enough that the case below
@@ -437,8 +497,18 @@ const STUBS = [
       topSite: { name: "Site 12", opens: 9 } }) },
   // One feed, both tabs: Camping filters it to campsite rows and Outdoor Events
   // to its three types, so each tab has to do its own scoping.
-  { match: /\/facility\/api\/data/,        body: () => ({ rows: campsiteRows().concat(outdoorRows()).concat(fieldRows()), meta: {} }) },
-  { match: /\/api\/permits/,               body: () => ({ permits: {} }) },
+  { match: /\/facility\/api\/data/,        body: () => ({ rows: campsiteRows().concat(outdoorRows()).concat(fieldRows()).concat(addonFormRows()), meta: { org_id: "org-uuid-1" } }) },
+
+  // Two of the three fixture rentals have Required Information; the third has
+  // none, which is the 62%-of-a-week case that must render as nothing.
+  // `?feedfail=1` on the page URL makes both after-render feeds soft-fail, which
+  // is how the "could not load" state gets driven. A soft failure answers 200
+  // with error:true — the shape the routes actually return.
+  { match: /\/facility\/api\/forms/,       body: () => STUB_MODE === "feedfail"
+      ? ({ forms: {}, error: true }) : ({ forms: { "res-forms": 2, "res-addons": 1 } }) },
+  { match: /\/facility\/api\/permits/,     body: () => STUB_MODE === "feedfail"
+      ? ({ permits: {}, error: true })
+      : ({ permits: { "res-addons": { code: "ABCD1234", url: "https://www.rec.us/permits/x", id: "x", multi: false } } }) },
   { match: /\/api\/availability-batch/,     body: url => availabilityFor(url) },
   { match: /\/rentalcalendar\/api\/sites/, body: (url, org) => ({ sites: campmapSites(org) }) },
   { match: /\/api\/sites/,                  body: () => ({ sites: [] }) },
@@ -534,6 +604,34 @@ function serveVendored(req) {
 // a blank page fails instead of passing on "no errors thrown".
 const CASES = [
   { name: "facilities · camping",  path: "/{org}/facilities?tab=camping", needs: ".camp-cal .cc-hd" },
+
+  // ── The rental schedule: add-ons in the note line, Forms in the column ────
+  // This page had NO render case at all, and it is the one most orgs open.
+  { name: "facility · schedule",   path: "/{org}/facility",               needs: ".data-row" },
+  // A permit chip renders from the feed — this is the column Dan found empty.
+  { name: "facility · permit chip", path: "/{org}/facility",               needs: ".cell.col-permit button" },
+  // AND a feed that could not load must say so rather than rendering blank:
+  // blank is indistinguishable from "these rentals have no permits", which is
+  // exactly how a healthy report came to look broken.
+  { name: "facility · failed feed is not blank", path: "/{org}/facility",
+    stubMode: "feedfail", needs: ".cell.col-permit .feed-failed" },
+  { name: "facility · failed forms feed too",    path: "/{org}/facility",
+    stubMode: "feedfail", needs: ".cell.col-forms .feed-failed" },
+  // The add-on money must survive losing its column: card 17294's "Total" is
+  // the reservation's own order_item and does NOT include add-on fees, so if
+  // this total goes missing the page has quietly dropped revenue.
+  { name: "facility · add-on total in note", path: "/{org}/facility",
+    needs: "[data-addon-total=\"$40.50\"]" },
+  // ...with its icons, which is the structure Dan asked to keep.
+  { name: "facility · add-on icons",  path: "/{org}/facility",            needs: "[data-addon-icons=\"2\"]" },
+  // The Forms column links to the rental's Required Information tab.
+  { name: "facility · forms link",    path: "/{org}/facility",
+    needs: "a[href$=\"tab=requiredInformation\"]" },
+  // A rental with no forms gets NOTHING — a link to an empty tab is a dead end,
+  // and 62% of a typical week has no form at all.
+  { name: "facility · no forms, no link", path: "/{org}/facility",
+    needs: "[data-forms-empty=\"1\"]" },
+
   { name: "facilities · summary",  path: "/{org}/facilities?tab=summary", needs: ".sum-cards, .aqua-sec, .fac-banner" },
   { name: "org landing",           path: "/{org}",                        needs: ".card" },
   { name: "gl report",             path: "/{org}/gl",                     needs: ".toolbar" },
@@ -550,6 +648,16 @@ const CASES = [
   // the card named its launching sections, so the old program-level test fails
   // this case rather than passing on "nothing threw".
   { name: "fasttrack · launching soon", path: "/{org}/fasttrack",         needs: "[data-launch-section]" },
+  // PRE-LAUNCH BEATS CAPACITY, AND THE BIGGEST COHORT LEADS. Birthday Concert
+  // trips "demand over 90% with more pending than spots left" on program-wide
+  // figures two thirds of which are spent sections, and while `_launch` was
+  // tested third that filed it under Needs Capacity — so 314 fast-trackers, 203
+  // of them on a 45-seat table opening in fifteen minutes, never reached the
+  // panel that exists to show them. It is also the soonest thing in the fixture,
+  // so it must be the FIRST card, not merely present: that is the difference
+  // between "flagged #1 up top" and "findable if you scroll".
+  { name: "fasttrack · pre-launch beats capacity", path: "/{org}/fasttrack",
+    needs: "[data-launch-list] > *:first-child[data-launch-program=\"prog-birthday\"]" },
   // ...and go-live must come from the EARLY-ACCESS window when that is the one
   // that opens first. Reading only "Reg Opens" yields data-golive="general",
   // which is how the report came to say "opens in 8 days" about a section going
@@ -801,7 +909,10 @@ function waitForServer(started) {
                                            args: ["--no-sandbox", "--disable-dev-shm-usage"] });
   const failures = [];
 
-  for (const c of CASES) {
+  // Optional filter so one page's cases can be iterated without paying for all
+  // of them: `node scripts/ci-check-render.js "facility ·"`
+  const only = process.argv.slice(2).join(" ").trim();
+  for (const c of (only ? CASES.filter(c => c.name.includes(only)) : CASES)) {
     const page = await browser.newPage();
     await page.setViewport({ width: 1280, height: 1000 });
     const errs = [];
@@ -825,6 +936,7 @@ function waitForServer(started) {
       req.continue();
     });
 
+    STUB_MODE = c.stubMode || "";
     const url = `http://127.0.0.1:${PORT}` + c.path.replace("{org}", org)
       + (c.path.includes("?") ? "&" : "?") + "token=" + encodeURIComponent(token);
     let found = false, bodyLen = 0;
@@ -842,6 +954,19 @@ function waitForServer(started) {
       bodyLen = await page.evaluate(() => document.body.innerText.trim().length);
     } catch (e) {
       errs.push("navigation: " + e.message.split("\n")[0].slice(0, 160));
+    }
+    if (process.env.SHOT_DIR && found) {
+      try {
+        // Scroll the thing that was asserted into view, or the shot is just the
+        // top of the page and shows nothing about what passed.
+        await page.evaluate(sel => {
+          const el = document.querySelector(sel);
+          if (el) el.scrollIntoView({ block: "center" });
+        }, c.needs);
+        await new Promise(r => setTimeout(r, 250));
+        await page.screenshot({ path: require("path").join(process.env.SHOT_DIR,
+          c.name.replace(/[^a-z0-9]+/gi, "-") + ".png"), fullPage: false });
+      } catch (_) {}
     }
     await page.close();
 

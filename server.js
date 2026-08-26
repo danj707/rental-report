@@ -3607,7 +3607,7 @@ setTimeout(() => { checkCardParamTypes().catch(() => {}); }, 150 * 1000).unref?.
 // Inert if the env var is unset. Fire-and-forget — never blocks or breaks logging.
 // To change what pings Slack, edit SLACK_NOTIFY. High-frequency events (view/fetch)
 // are debounced per org+report so Slack isn't a firehose.
-const SLACK_NOTIFY = new Set(["created", "org-deleted", "watchdog", "schema-break", "param-drift", "report-down", "campmap-share", "campmap-site", "campmap-book", "campmap-filter", "campmap-amenity", "pdf", "excel", "print", "summary", "game", "map", "outdoor", "fields", "view", "insights", "insights-feedback", "chat-feedback", "feedback", "vote", "update-vote", "munis", "permits", "email", "checkin-loc", "checkin-member", "deadlink", "generate", "wizard-save"]);
+const SLACK_NOTIFY = new Set(["created", "org-deleted", "watchdog", "schema-break", "param-drift", "report-down", "campmap-share", "campmap-site", "campmap-book", "campmap-filter", "campmap-amenity", "pdf", "excel", "print", "summary", "game", "map", "outdoor", "fields", "view", "insights", "insights-feedback", "chat-feedback", "feedback", "vote", "update-vote", "munis", "permits", "email", "checkin-loc", "checkin-member", "form-open", "deadlink", "generate", "wizard-save"]);
 const SLACK_DEBOUNCE_MS = { view: 30 * 60 * 1000, fetch: 30 * 60 * 1000,
   // A broken report stays broken. The health check only reports NEW failures,
   // but a flapping card would otherwise post every hour.
@@ -3643,6 +3643,7 @@ const SLACK_EVENT_META = {
   print:   { emoji: "🖨️", verb: "printed" },
   munis:   { emoji: "🏛️", verb: "pulled the Tyler/Munis GL Account Detail for" },
   permits: { emoji: "📋", verb: "printed rental permit sheets from" },
+  "form-open": { emoji: "📄", verb: "opened rental Required Information from" },
   view:    { emoji: "👀", verb: "viewed" },
   // Pavilions, shelters, picnic areas and bounce houses — a new tab on the
   // Facilities hub, so its own event rather than a bare `view` of `facilities`.
@@ -3730,6 +3731,10 @@ function notifySlack(rec) {
     // member working down a list of regulars is one session, not twenty pings.
     : rec.event === "checkin-loc"
       ? `${rec.org}|${rec.report}|checkin-loc|${rec.location || ""}`
+    // Keyed by rental, same reasoning as map pins and campsite opens: staff
+    // checking three bookings' paperwork is three looks, not one.
+    : rec.event === "form-open"
+      ? `${rec.org}|${rec.report}|form-open|${rec.rental || ""}`
     // A wizard run keys by the PROMPT, not by the org. Someone exploring asks
     // three different questions in a couple of minutes, and that is three
     // reports built — the whole signal is which questions they ask, so the
@@ -4383,6 +4388,70 @@ async function fetchPermits(orgId, { live = false } = {}) {
   }
   _permitCache.set(orgId, { ts: Date.now(), byReservation });
   return byReservation;
+}
+
+// ── Facility rental forms → the "Forms" column's link ───────────────────────
+// Card 20626 lists an org's rental form submissions keyed by Reservation ID —
+// the same id the facility feed already emits — so a rental's Required
+// Information attaches to its schedule row without touching card 17294 (see
+// sql/facility-forms.sql for the full reasoning).
+//
+// THIS ROUTE COUNTS AND NOTHING ELSE. The column is a link out to Rec, so the
+// only thing the browser needs is whether a rental has forms and how many. No
+// answer, filename, S3 URL or signature ever leaves the server, which sidesteps
+// the whole class of problems that live in this data: a `signaturepad` answer is
+// a 25 KB base64 PNG (one measured at 25,738 characters), an uploaded ID's S3
+// URL 403s and cannot be displayed anyway, and filenames are frequently the
+// least neutral string in the record. This report is shared by tokened link and
+// mailed by subscription, so counting is the whole job.
+//
+// Cached like the permit CHIP feed: a form is filled in once, when the rental is
+// booked, and never changes afterwards.
+const FORMS_UUID = process.env.MB_FORMS_UUID || "89ba73b2-09d6-48e1-ac15-bd88b1a4c0f5";
+const FORMS_CACHE_TTL = 5 * 60 * 1000;
+const _formsCache = new Map();       // orgId -> { ts, counts }
+let _formsParamDefs = null;
+
+async function formsParamDefs() {
+  if (_formsParamDefs && Date.now() - _formsParamDefs.ts < 60 * 60 * 1000) return _formsParamDefs.params;
+  const resp = await fetch(`${METABASE_URL}/api/public/card/${FORMS_UUID}`, { signal: AbortSignal.timeout(15000) });
+  if (!resp.ok) throw new Error(`forms card definition HTTP ${resp.status}`);
+  const def = await resp.json();
+  const params = Array.isArray(def.parameters) ? def.parameters : [];
+  _formsParamDefs = { ts: Date.now(), params };
+  return params;
+}
+
+// Reservation ID -> number of forms on file. Pure so it can be tested against
+// real wire-shaped rows: Metabase hands jsonb columns back as STRINGS, which is
+// exactly the kind of thing that makes a feed look empty rather than broken.
+// Counting rows sidesteps that entirely — but the ids still have to be read.
+function countFormRows(rows) {
+  const counts = {};
+  for (const r of Array.isArray(rows) ? rows : []) {
+    const resId = String((r && r["Reservation ID"]) || "");
+    if (!resId) continue;
+    counts[resId] = (counts[resId] || 0) + 1;
+  }
+  return counts;
+}
+
+async function fetchFormCounts(orgId) {
+  if (!FORMS_UUID) return {};
+  const hit = _formsCache.get(orgId);
+  if (hit && Date.now() - hit.ts < FORMS_CACHE_TTL) return hit.counts;
+  const params = (await formsParamDefs())
+    .filter(p => p.slug === "org_id")
+    .map(p => ({ id: p.id, type: p.type, target: p.target, slug: p.slug, value: orgId }));
+  if (!params.length) throw new Error("forms card has no org_id parameter");
+  const url = `${METABASE_URL}/api/public/card/${FORMS_UUID}/query/json?parameters=${encodeURIComponent(JSON.stringify(params))}`;
+  const resp = await fetch(url, { signal: AbortSignal.timeout(60000) });
+  if (!resp.ok) throw new Error(`Metabase HTTP ${resp.status}`);
+  const rows = await resp.json();
+  if (!Array.isArray(rows)) throw new Error("Metabase returned an error for the forms card");
+  const counts = countFormRows(rows);
+  _formsCache.set(orgId, { ts: Date.now(), counts });
+  return counts;
 }
 
 // The org logo, inlined as a data URI. Fetched once per process rather than
@@ -6150,7 +6219,7 @@ app.post("/:org/:report/api/log", resolveOrg, (req, res) => {
   const { event, game, location, view } = req.query;
   // view-apply is events.jsonl-only by design — it is not in SLACK_NOTIFY, so
   // logEvent records it without pinging the feed (see the saved-views block).
-  const ALLOWED = ["excel", "print", "summary", "game", "map", "view-apply", "checkin-loc", "checkin-member"];
+  const ALLOWED = ["excel", "print", "summary", "game", "map", "view-apply", "checkin-loc", "checkin-member", "form-open"];
   if (!ALLOWED.includes(event)) return res.status(400).json({ ok: false, error: "Unknown event" });
   const ciN = Number(req.query.n);
   const extra = event === "game" && game ? { game: String(game).slice(0, 60) }
@@ -6159,6 +6228,11 @@ app.post("/:org/:report/api/log", resolveOrg, (req, res) => {
               : event === "checkin-loc"
                 ? { location: location ? String(location).slice(0, 80) : "",
                     checkins: Number.isFinite(ciN) && ciN >= 0 && ciN <= 9999999 ? Math.round(ciN) : undefined }
+              // `rental` is the debounce key, so opening three bookings' forms
+              // reads as three looks rather than whichever was clicked first.
+              : event === "form-open"
+                ? { rental: req.query.rental ? String(req.query.rental).slice(0, 80) : "",
+                    forms: Number.isFinite(ciN) && ciN >= 0 && ciN <= 999 ? Math.round(ciN) : undefined }
               : undefined;
   logEvent(orgSlug, reportType, event, req, extra);
   res.json({ ok: true });
@@ -8830,6 +8904,25 @@ app.get("/:org/gl", (req, res) => {
 // Loaded once per view of the schedule, AFTER the rows render, so the main feed
 // keeps its current speed. Returns a thin map, not the whole permit: the chip
 // only needs a link and a code.
+// ── GET /:org/facility/api/forms — which rows have Required Information ─────
+// A thin { resId: formCount } map, loaded after the rows render like permits, so
+// the schedule keeps its speed and a slow forms card can never delay it.
+app.get("/:org/facility/api/forms", async (req, res) => {
+  const slug = req.params.org;
+  const org = ORGS[slug];
+  if (!org) return res.status(404).json({ error: "Unknown org" });
+  // Unset env ⇒ the column never appears, same contract as MB_GL_DETAIL_UUID.
+  if (!FORMS_UUID) return res.json({ forms: {}, disabled: true });
+  try {
+    const counts = await fetchFormCounts(org.orgId);
+    res.json({ forms: counts, count: Object.keys(counts).length });
+  } catch (err) {
+    console.warn(`[forms] ${slug} count feed failed: ${err.message}`);
+    // Soft-fail: a schedule with no Forms column is degraded, not broken.
+    res.json({ forms: {}, error: true });
+  }
+});
+
 app.get("/:org/facility/api/permits", async (req, res) => {
   const slug = req.params.org;
   const org = ORGS[slug];
