@@ -683,6 +683,21 @@
       return 'https://www.rec.us/admin/o/' + orgId + '/users/' + userId;
     }
 
+// A FAILED scan is not a check-in. Card 18151 also emits membership and pass
+// check-in DENIALS, tagged `Status = 'Failed'` — they share the row shape of a
+// successful scan, which is exactly the trap the facility Summary fell into when
+// invoice fee lines arrived shaped like bookings and every row count silently
+// became a booking count.
+//
+// A row with NO Status is a SUCCESS. The feed carried nothing but check-ins
+// before this shipped and a 4-hour-old cache entry still does, so keying the test
+// on 'Failed' — rather than on === 'Checked In' — is what stops the whole tab
+// going blank against an older feed.
+//
+// At module scope, not inside the component, so a spec can RUN it rather than
+// regex over it (the nightStateFrom lesson).
+function ciIsFailed(r) { return !!(r && r['Status'] === 'Failed'); }
+
 function normalizeRow(raw) {
       return {
         userId:        raw['User ID'] || '',
@@ -1097,24 +1112,55 @@ function normalizeRow(raw) {
               { method: 'POST', keepalive: true }).catch(function(){});
       }, [orgSlug]);
 
+      // Successful check-ins, before the desk filter. Everything the tab has
+      // always shown is built from this.
+      const ciOk = useMemo(() => {
+        if (!ciRows) return [];
+        return ciRows.filter(function(r) { return !ciIsFailed(r); });
+      }, [ciRows]);
+
+      // Denied scans, before the desk filter.
+      const ciFail = useMemo(() => {
+        if (!ciRows) return [];
+        return ciRows.filter(ciIsFailed);
+      }, [ciRows]);
+
+      // Does this feed know about Status at all? Until card 18151 ships the
+      // column every row lacks it, and a Failed count of 0 would then read as
+      // "nobody was turned away" rather than "we cannot see it yet". So the
+      // failure figures are hidden, not zeroed, when the column is absent.
+      const ciHasStatus = useMemo(() => {
+        return !!(ciRows && ciRows.length && ciRows.some(function(r) { return r && r['Status'] !== undefined; }));
+      }, [ciRows]);
+
       // The desk locations present in the loaded window, busiest first. Built from
       // the feed rather than a configured list, so a desk that stopped being used
-      // drops out on its own and a new one appears without a deploy.
+      // drops out on its own and a new one appears without a deploy. Counts are
+      // successful check-ins, so the number beside a desk matches what picking it
+      // shows.
       const ciLocations = useMemo(() => {
         const n = {};
-        (ciRows || []).forEach(function(r) { const d = r['Desk Location'] || 'Unknown'; n[d] = (n[d] || 0) + 1; });
+        ciOk.forEach(function(r) { const d = r['Desk Location'] || 'Unknown'; n[d] = (n[d] || 0) + 1; });
         return Object.keys(n).map(function(k){ return { name: k, n: n[k] }; })
                      .sort(function(a, b){ return b.n - a.n || a.name.localeCompare(b.name); });
-      }, [ciRows]);
+      }, [ciOk]);
 
       // EVERY figure on the Check-Ins tab reads ciView, never ciRows — that is
       // what stops the filter from being applied to some panels and missed by
-      // others (the bug the facility Summary chips had).
+      // others (the bug the facility Summary chips had). It is now also what
+      // stops a denied scan being counted as attendance.
       const ciView = useMemo(() => {
         if (!ciRows) return [];
-        if (ciLoc === 'all') return ciRows;
-        return ciRows.filter(function(r) { return (r['Desk Location'] || 'Unknown') === ciLoc; });
-      }, [ciRows, ciLoc]);
+        if (ciLoc === 'all') return ciOk;
+        return ciOk.filter(function(r) { return (r['Desk Location'] || 'Unknown') === ciLoc; });
+      }, [ciRows, ciOk, ciLoc]);
+
+      // Failures scoped the same way, so the tile agrees with the desk filter
+      // above it rather than quietly staying org-wide.
+      const ciFailView = useMemo(() => {
+        if (ciLoc === 'all') return ciFail;
+        return ciFail.filter(function(r) { return (r['Desk Location'] || 'Unknown') === ciLoc; });
+      }, [ciFail, ciLoc]);
 
       // A new window can contain no check-ins at the selected desk. Holding the
       // selection would show an empty tab with nothing saying why.
@@ -1823,7 +1869,7 @@ function normalizeRow(raw) {
                     const hit = ciLocations.filter(function(l){ return l.name === v; })[0];
                     if (v !== 'all') ciBeacon('checkin-loc', { location: v, n: hit ? hit.n : undefined });
                   }}>
-                    <option value="all">{'All locations (' + (ciRows ? ciRows.length.toLocaleString() : '0') + ')'}</option>
+                    <option value="all">{'All locations (' + ciOk.length.toLocaleString() + ')'}</option>
                     {ciLocations.map(function(l) {
                       return <option key={l.name} value={l.name}>{l.name + ' (' + l.n.toLocaleString() + ')'}</option>;
                     })}
@@ -1936,10 +1982,22 @@ function normalizeRow(raw) {
           {activeTab === 'checkins' && (
             <div style={{maxWidth:1100,margin:'0 auto',padding:'0'}}>
               {ciLoading && <div className="loading"><div className="spinner" /><div className="juice-msg"><span>Squeezing the oranges…</span><span>Counting check-ins…</span><span>Sorting the data…</span><span>Almost there…</span><span>Pouring it out…</span></div></div>}
-              {!ciLoading && ciRows && ciRows.length > 0 && ciView.length === 0 && (
+              {/* Two different empty states. Before failures joined this feed,
+                  ciView could only be empty when a desk was picked — with 'all'
+                  selected it WAS the whole feed. Now a window can hold nothing
+                  but denied scans, and telling that reader "no check-ins at all"
+                  would name a location they never chose and hide the thing the
+                  window actually contains. */}
+              {!ciLoading && ciRows && ciRows.length > 0 && ciView.length === 0 && ciLoc !== 'all' && (
                 <div style={{textAlign:'center',padding:40,color:'#999'}}>
-                  No check-ins at <b>{ciLoc}</b> in this window. {ciRows.length.toLocaleString()} across all locations —{' '}
+                  No check-ins at <b>{ciLoc}</b> in this window. {ciOk.length.toLocaleString()} across all locations —{' '}
                   <a href="#" onClick={function(e){ e.preventDefault(); setCiLoc('all'); }} style={{color:'#2563eb'}}>show every location</a>.
+                </div>
+              )}
+              {!ciLoading && ciRows && ciRows.length > 0 && ciView.length === 0 && ciLoc === 'all' && (
+                <div style={{textAlign:'center',padding:40,color:'#999'}} data-ci-only-failed={ciFail.length || undefined}>
+                  No successful check-ins in this window
+                  {ciFail.length > 0 ? ' — but ' + ciFail.length.toLocaleString() + ' scan' + (ciFail.length === 1 ? '' : 's') + ' were turned away.' : '.'}
                 </div>
               )}
               {!ciLoading && ciRows && ciRows.length > 0 && ciView.length > 0 && (() => {
@@ -1979,6 +2037,26 @@ function normalizeRow(raw) {
                       <div className="ci-kpi" style={{borderLeft:'3px solid #f59e0b'}}><div className="kl">Avg per Day</div><div className="kv">{avgPerDay.toLocaleString()}</div><div className="ks">{dayTypeCounts['Weekday']||0} weekday / {dayTypeCounts['Weekend']||0} weekend</div></div>
                       <div className="ci-kpi" style={{borderLeft:'3px solid #8b5cf6'}}><div className="kl">Peak Hour</div><div className="kv">{peakLabel}</div><div className="ks">{peakEntry ? peakEntry[1]+' check-ins' : ''}</div></div>
                       <div className="ci-kpi" style={{borderLeft:'3px solid #06b6d4'}}><div className="kl">Membership vs Pass</div><div className="kv">{Math.round(memCount/Math.max(ciView.length,1)*100)}% / {Math.round(passCount/Math.max(ciView.length,1)*100)}%</div><div className="ks">{memCount.toLocaleString()} / {passCount.toLocaleString()}</div></div>
+                      {/* Denied scans — a membership or pass refused at the desk.
+                          Shown only when the feed actually carries Status: until
+                          card 18151 ships that column a zero here would read as
+                          "nobody was turned away" rather than "we cannot see it".
+                          The rate denominator is attempts (successful + failed),
+                          which is what the person at the desk experienced. */}
+                      {ciHasStatus && (
+                        <div className="ci-kpi" style={{borderLeft:'3px solid ' + (ciFailView.length > 0 ? '#dc2626' : '#cbd5e1')}}>
+                          <div className="kl">Failed Check-Ins</div>
+                          <div className="kv" data-ci-failed={ciFailView.length}
+                               style={{color: ciFailView.length > 0 ? '#dc2626' : undefined}}>
+                            {ciFailView.length.toLocaleString()}
+                          </div>
+                          <div className="ks">
+                            {ciFailView.length === 0
+                              ? 'every scan accepted'
+                              : Math.round(ciFailView.length / Math.max(ciView.length + ciFailView.length, 1) * 1000) / 10 + '% of attempts'}
+                          </div>
+                        </div>
+                      )}
                     </div>
                     {/* ── Check-ins by time of day ── */}
                     {(() => {

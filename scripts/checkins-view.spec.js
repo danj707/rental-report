@@ -118,10 +118,62 @@ const derive = src.slice(d0, d1);
 is((derive.match(/\bciRows\b/g) || []).length, 0,
    "nothing inside the Check-Ins panels may read the unfiltered ciRows");
 ok(/ciView\s*=\s*useMemo/.test(src), "ciView should be a memo over the loaded rows");
-ok(/return ciRows\.filter\(function\s*\(r\)\s*\{\s*return \(r\['Desk Location'\]/.test(src),
+ok(/return ciOk\.filter\(function\s*\(r\)\s*\{\s*return \(r\['Desk Location'\]/.test(src),
    "ciView should filter on the row's own Desk Location");
-ok(/if \(ciLoc === 'all'\) return ciRows;/.test(src),
-   "'all' should pass the rows through rather than filtering to a magic string");
+ok(/if \(ciLoc === 'all'\) return ciOk;/.test(src),
+   "'all' should pass the successful rows through rather than filtering to a magic string");
+
+// ── 4. A FAILED scan is not a check-in ──────────────────────────────────────
+// Card 18151 also emits membership/pass check-in DENIALS, which share the row
+// shape of a success. That is the facility Summary bug exactly: invoice fee lines
+// arrived shaped like bookings and every row count became a booking count. The
+// defence is that ciView — which every panel already reads — carries successes
+// only, so nothing downstream had to be audited panel by panel.
+ok(/function ciIsFailed\(r\)/.test(src),
+   "ciIsFailed should be a named module-scope function, so this spec can RUN it " +
+   "rather than regex over the component (the nightStateFrom lesson)");
+is(ctx.ciIsFailed({ Status: "Failed" }), true, "a Failed row is a failure");
+is(ctx.ciIsFailed({ Status: "Checked In" }), false, "a Checked In row is not");
+// THE BLANK-TAB GUARD. Before the card ships the column — and for the life of
+// every already-warm 4-hour cache entry — no row has a Status at all. Testing
+// `=== 'Checked In'` instead would make ciOk empty and take the whole tab down.
+is(ctx.ciIsFailed({ "Member ID": "5OLLPM" }), false,
+   "a row with NO Status is a SUCCESS — the old feed had nothing but check-ins");
+is(ctx.ciIsFailed({ Status: undefined }), false, "an undefined Status is a success");
+is(ctx.ciIsFailed(null), false, "a missing row is not a failure");
+is(ctx.ciIsFailed({ Status: "failed" }), false,
+   "the match is exact — a lowercase value is not the card's value");
+
+ok(/const ciOk = useMemo/.test(src), "ciOk should be a memo over the loaded rows");
+{
+  // Slice the memo body and require it removes failures — asserted on the code
+  // rather than a whitespace-normalised haystack, so it cannot pass vacuously.
+  const o0 = src.indexOf("const ciOk = useMemo");
+  const body = src.slice(o0, src.indexOf("}, [ciRows]);", o0));
+  ok(/!ciIsFailed\(r\)/.test(body), "ciOk should be the feed MINUS failures: " + body.slice(0, 200));
+  ok(/ciRows\.filter/.test(body), "…filtered from the raw feed");
+}
+
+// The failure figures must be HIDDEN, not zeroed, when the feed has no Status:
+// a 0 would read as "nobody was turned away" rather than "we cannot see it yet".
+ok(/const ciHasStatus = useMemo/.test(src), "the page should detect whether Status is present");
+ok(/ciHasStatus && \(/.test(src), "the Failed tile should be gated on that detection");
+
+// And the failure count must respect the desk filter, or the tile silently stays
+// org-wide while everything above it narrowed.
+ok(/const ciFailView = useMemo/.test(src), "failures need their own location-scoped view");
+{
+  // …and it must actually SCOPE. Asserting the identifier exists is not enough:
+  // dropping the filter leaves the name in place and the tile silently reports
+  // org-wide failures under a desk the reader narrowed to.
+  const f0 = src.indexOf("const ciFailView = useMemo");
+  const body = src.slice(f0, src.indexOf("}, [ciFail, ciLoc]);", f0));
+  ok(body.length > 0 && body.length < 600, "could not slice the ciFailView memo");
+  ok(/ciFail\.filter/.test(body) && /Desk Location/.test(body) && /ciLoc/.test(body),
+     "ciFailView must filter ciFail on the row's Desk Location against ciLoc: " + body.slice(0, 200));
+}
+ok(/data-ci-failed=\{ciFailView\.length\}/.test(src),
+   "the tile should render the SCOPED failure count");
 
 // (b) The link is built from the uuid column, never from the rec_id.
 ok(/ciUserUrl\(recOrgId, r\['User ID'\]\)/.test(derive),

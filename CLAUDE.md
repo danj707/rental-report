@@ -192,6 +192,121 @@ first, as the timing caveat in the health-check section says.
   threw `ReferenceError` before asserting anything. Deps injected, 7/7 passing,
   and it is in CI now.
 
+## Absent and Failed check-ins (2026-08-26) — one log, two grains
+
+Dan: add 'absent' and 'failed' to the check-in reporting, "pulled directly from
+the visitor log". **There is no `visitor_log` table** — that is the product's
+name for `public.attendance_event`, which carries SEVEN types, not two:
+
+| type | rows | target_type |
+|---|---|---|
+| `check_in` | 556,431 | session |
+| `check_out` | 37,754 | session |
+| `check_in_undone` | 1,200 | session |
+| `check_out_undone` | 469 | session |
+| **`marked_absent`** | 432 | **session** |
+| **`check_in_denied`** | 58 | **organization** |
+| `marked_absent_undone` | 22 | session |
+
+**The grains differ, and that decided where each one goes** (Dan's call, after the
+measurement): `marked_absent` is session-scoped so it attributes to a section →
+**Absent column on the Programs Check-Ins band** (card 18547).
+`check_in_denied` is scoped to the ORGANIZATION — all 58 are membership (52) or
+pass (6) scans, none has a `target_id` resolving to a session — so a per-section
+Failed column could only ever be a dash on every row, forever. It goes on the
+**Memberships Check-Ins tab** (card 18151), which is already org-grain.
+
+### THE LOG IS APPEND-ONLY — an undo does not delete anything
+
+`attendance_event` has **no `deleted_at`**. Undoing a mark writes a
+`marked_absent_undone` row and the original stays. So a naive
+`COUNT(*) FILTER (WHERE type='marked_absent')` counts absences an admin took
+back: measured, **Chico 13 instead of 12 and Apex 6 instead of 5**.
+
+Absence is therefore a **STATE**: `DISTINCT ON (target_id, participant_user_id)
+… ORDER BY created_at DESC, id DESC`, keeping the pairs whose latest event is the
+mark. Two details are load-bearing:
+
+- **The state is resolved over ALL history, then the surviving mark's own date is
+  windowed.** Resolving inside the window would count a mark whose undo happens
+  to fall the other side of the range.
+- **`id` is the tie-break**, so two events in the same millisecond cannot resolve
+  differently between runs.
+
+**The same gap still exists for CHECK-INS** — 1,200 `check_in_undone` events are
+not netted out of the 556k (~0.2%). Deliberately left alone: Dan said keep the
+program check-ins and check-outs as they are, and changing them would move
+figures orgs have been reading. Worth revisiting as its own decision.
+
+### Absences on ARCHIVED sections are dropped, and that is correct
+
+The card already excludes `archived_at`/`canceled_at`/`deleted_at` sections, so
+those sections have no row for an absence to sit in. Measured: **Reading loses 16
+of 66, Jurupa 1 of 13, Apex all 5.** Consistency with the table beats completeness
+here — the alternative is a count with nowhere to display it.
+
+### Card 18547 v2 — restructured WITHOUT moving an existing number
+
+The check-in/check-out aggregate is lifted into its own `att` CTE unchanged, the
+absence state into `absent_state`/`abs`, and the section list is the **UNION** of
+both — so a section where everyone was marked absent and nobody scanned still
+gets a row. Verified before pushing, per org, against the deployed card:
+
+| org | sections | check-ins | rows differing on any existing column | Absent |
+|---|---|---|---|---|
+| Apex | 67 = 67 | 1246 = 1246 | **0** | 0 (all on archived sections) |
+| Watertown | 69 = 69 | 7734 = 7734 | **0** | 40 marks / 32 people |
+
+### Card 18151 v3 — a denial is shaped exactly like a check-in, which is the trap
+
+Denials share the card's own `check_in_method_type IN ('membership','pass')`
+filter, and all 58 carry a `participant_user_id` whose `users` row survives the
+deleted/`[DELETED]` filter, plus a `desk_location_id` and a `check_in_method_id`.
+So the card change is only a widened type filter plus a `Status` column
+(`'Checked In'` | `'Failed'`).
+
+**But that widens the row set of an existing feed** — the facility Summary bug
+verbatim (invoice fee lines arrived shaped like bookings and every row count
+became a booking count). The defence is that `ciView` was *already* the single
+funnel every panel reads, so excluding failures there fixed every panel at once:
+
+- `ciIsFailed()` is at **module scope**, not inside the component, so
+  `checkins-view.spec.js` can RUN it rather than regex over it (the
+  `nightStateFrom` lesson).
+- **A row with NO `Status` is a SUCCESS.** Testing `=== 'Checked In'` instead
+  would make `ciOk` empty against any pre-card feed — including every warm 4-hour
+  cache entry — and take the whole tab down. That is the single most dangerous
+  line in this change.
+- The desk-location counts, the "All locations (N)" label and the empty-state
+  message all read successes now.
+- **A window with only failures is a new empty state.** With `ciLoc === 'all'`,
+  `ciView` used to BE the feed and could not be empty; now it can, and the old
+  message would have said "No check-ins at all" — naming a location the reader
+  never chose.
+
+### Both pages are correct BEFORE and after the cards ship
+
+`hasAbsent` / `ciHasStatus` are **presence**, not counts: the Absent column and
+the Failed tile are hidden, not zeroed, on a feed without the column. A 0 there
+says "nobody was marked absent" when the truth is "this feed cannot tell us".
+`r['Absent']` reads to **null**, never 0 — `fmtNum(undefined)` is 0, which is how
+that lie gets told.
+
+Guards: `scripts/checkin-status.spec.js` (10 assertions, in CI) pins the SQL rules
+and the null-not-zero handling, mutation-tested five ways (naive count, section
+list back to attendance-only, undo type dropped, absent read as a number,
+denials dropped from the memberships feed). `checkins-view.spec.js` 41 → 53,
+mutation-tested four ways including the inverted `ciIsFailed` that blanks the tab.
+Plus seven `ci-check-render.js` cases — **the Programs page had no render case at
+all before this** — including `programs · absent column hidden pre-card`, which
+drives the no-column feed via `stubMode` and asserts the tile is ABSENT from the
+DOM (`ci-check-render` gained an `absent:` selector for that: "renders a 0" and
+"renders nothing" are different claims).
+
+**Repo SQL mirrors now exist** for both cards (`sql/program-checkins.sql`,
+`sql/memberships-checkins.sql`) — there were none before, so the live card was
+the only copy. The live card is still the source of truth; read it first.
+
 ## Slack activity notifications — wire every new surface (IMPORTANT)
 
 Standing rule (see Working preferences): any new button, export, download, or

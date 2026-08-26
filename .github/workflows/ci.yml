@@ -121,6 +121,9 @@ jobs:
       - name: Add-ons in the note line, Forms link (the add-on money survives its column)
         run: node scripts/facility-addons-forms.spec.js
 
+      - name: Absent / Failed statuses (latest mark wins; a denial is not a check-in)
+        run: node scripts/checkin-status.spec.js
+
       - name: Report Wizard activity (runs and thumbs reach Slack; the beacon has its own route)
         run: node scripts/wizard-activity.spec.js
 

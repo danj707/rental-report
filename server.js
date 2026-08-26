@@ -16519,6 +16519,12 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  { date: '2026-08-26', title: '\u2705 Check-ins: who was marked absent, and whose scan was turned away', items: [
+    'The Programs Check-Ins band gains an ABSENT column, per section, plus a Marked Absent total \u2014 sessions an admin recorded someone as absent for. A mark that was later undone does NOT count: the attendance log is append-only, so undoing writes a second row rather than removing the first, and counting the marks directly would report absences staff had already taken back.',
+    'The Memberships Check-Ins tab gains FAILED CHECK-INS \u2014 a membership or pass refused at the desk \u2014 with the rate as a share of attempts, and it follows the desk-location filter like everything else on the tab.',
+    'Failed check-ins are deliberately NOT on the program report. They are recorded against the organisation, not a class session, so there is no section to attribute them to; a per-section column could only ever be blank. They live where membership check-ins live.',
+    'Existing check-in and check-out figures are unchanged \u2014 verified per section against the current report before shipping, on two orgs, with zero differences.',
+  ]},
   { date: '2026-08-26', title: '🪄 Report Wizard: says what it built, and the feed can finally see it', items: [
     'A generated report now opens with a few lines of prose \u2014 what the report answers, what one row of each source means, and how to read the widgets \u2014 plus a "Worth knowing" list of the caveats (what is excluded, what a count is really counting). Before this it was a title and a stack of charts, which leaves the reader guessing.',
     'The write-up is deliberately split in two. The prose comes from the AI, which is designing the report BEFORE any data is fetched \u2014 so it is forbidden from stating a figure, because it cannot know one. The "Built from" line beside it is measured here: the sources used, the rows that actually arrived, and the grain of each. A source that answered with nothing now says so, instead of rendering as widgets full of dashes.',
