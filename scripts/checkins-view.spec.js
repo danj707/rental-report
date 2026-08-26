@@ -176,11 +176,13 @@ ok(/data-ci-failed=\{ciFailView\.length\}/.test(src),
    "the tile should render the SCOPED failure count");
 
 // (b) The link is built from the uuid column, never from the rec_id.
-ok(/ciUserUrl\(recOrgId, r\['User ID'\]\)/.test(derive),
+// The check-in table moved into ciListPanel(), which sits above the derivation
+// block, so this reads the whole source.
+ok(/ciUserUrl\(recOrgId, r\['User ID'\]\)/.test(src),
    "the check-in table should link on 'User ID' (users.id)");
 ok(/ciUserUrl\(recOrgId, m\.userId\)/.test(derive),
    "Top Members should link on the member's uuid");
-is((derive.match(/ciUserUrl\([^)]*Member ID/g) || []).length, 0,
+is((src.match(/ciUserUrl\([^)]*Member ID/g) || []).length, 0,
    "no link may be built out of 'Member ID' (users.rec_id) — it 404s");
 
 // (c) The weekday markers come from ciDow, not from a fresh Date parse.
@@ -188,5 +190,126 @@ ok(/data-ci-dow=\{CI_DOW1\[p\.dow\]\}/.test(derive),
    "the daily chart should mark weekdays from ciDow()");
 is((derive.match(/new Date\((?:e\[0\]|p\.date)/g) || []).length, 0,
    "the daily chart should not re-parse its date strings through new Date()");
+
+// ── 6. The refused-scan list: a per-panel toggle that cannot strand you ────
+// Dan, on the preview: "no failed? need a way to filter failed memberships
+// here." The count was on a KPI tile with nowhere to go. The list can now show
+// the refused scans — but ONLY the list.
+
+// (a) The decision is a named module-scope function, so this spec RUNS it
+// rather than regexing over the component (the nightStateFrom lesson).
+ok(/function ciEffectiveRowSet\(set, failCount, loaded, okCount\)/.test(src),
+   "ciEffectiveRowSet should be a named module-scope function this spec can run");
+is(typeof ctx.ciEffectiveRowSet, "function", "ciEffectiveRowSet should be liftable");
+
+is(ctx.ciEffectiveRowSet("failed", 3, true, 9), "failed",
+   "a failed selection stands while there ARE failures to show");
+is(ctx.ciEffectiveRowSet("ok", 3, true, 9), "ok", "the accepted list is unaffected by failures existing");
+is(ctx.ciEffectiveRowSet("ok", 0, true, 9), "ok", "the accepted list is the default");
+// The strand: the toggle is hidden when there are no failures, so holding a
+// 'failed' selection would leave the reader on an empty table with no way back.
+is(ctx.ciEffectiveRowSet("failed", 0, true, 9), "ok",
+   "a failed selection must NOT survive a window/desk with no failures — it would strand the reader");
+is(ctx.ciEffectiveRowSet("failed", undefined, true, 9), "ok",
+   "an unknown failure count resolves to the accepted list, never to an empty failed one");
+is(ctx.ciEffectiveRowSet("failed", null, true, 9), "ok", "a null count resolves to the accepted list");
+
+// A FEED THAT HAS NOT ANSWERED IS NOT AN EMPTY ANSWER. ?ci_rows=failed is a
+// shareable link, so the selection exists before the feed does; resolving on a
+// not-yet-loaded feed flipped the link to the accepted list on mount and then
+// wrote that back, so the link could never work. Caught by the render check,
+// pinned here.
+is(ctx.ciEffectiveRowSet("failed", 0, false, 0), "failed",
+   "a failed selection must survive a feed that has not answered yet — 0 failures is not 'none'");
+is(ctx.ciEffectiveRowSet("failed", 0, undefined, 0), "failed",
+   "an unknown load state holds the selection rather than discarding it");
+ok(/ciEffectiveRowSet\(ciRowSet, ciFailView\.length, !!ciRows, ciView\.length\)/.test(src),
+   "the component should pass the feed's answered-ness, not assume it");
+ok(/if \(ciRows && ciRowSet !== ciRowSetEff\)/.test(src),
+   "the write-back must be gated on the feed having answered, or it destroys the deep link");
+// ...and the parameter has to be READ. getParams() is an explicit whitelist, so
+// reading params.ci_rows without adding it there is silently undefined and the
+// link does nothing — which is exactly what shipped for one render-check run.
+ok(/ci_rows: p\.get\('ci_rows'\)/.test(src),
+   "getParams() must read ci_rows, or ?ci_rows=failed is silently ignored");
+
+// A WINDOW WHERE EVERY SCAN FAILED. There are no successful check-ins, so the
+// aggregate block does not render at all — the reader used to be told "N scans
+// were turned away" with no table under it. The list defaults to the refusals
+// there, because they are the only rows that exist.
+is(ctx.ciEffectiveRowSet("ok", 2, true, 0), "failed",
+   "with nothing accepted and scans refused, the list must show the refusals");
+is(ctx.ciEffectiveRowSet("ok", 0, true, 0), "ok",
+   "an empty window stays on the accepted list — there is nothing to show either way");
+ok(/ciView\.length === 0 && ciFailView\.length > 0 && ciListPanel\(\)/.test(src),
+   "the failures-only branch must render the list, not just a sentence about it");
+
+// One table, two callers. Two copies of that markup drift the first time a
+// column changes.
+ok(/function ciListPanel\(\)/.test(src), "the check-in list should be one function");
+// ...and everything it reads must be declared ABOVE it. recOrgId was a `var`
+// inside the aggregate block, so extracting the list threw "recOrgId is not
+// defined" and blanked the tab — the render check caught it, and the coding rule
+// in CLAUDE.md predicted it. One declaration, at component scope.
+is((src.match(/(?:const|let|var)\s+recOrgId/g) || []).length, 1,
+   "recOrgId must be declared exactly once — two copies drift when the feed changes");
+{
+  const declAt = src.search(/const recOrgId/);
+  const panelAt = src.indexOf("function ciListPanel()");
+  ok(declAt > 0 && declAt < panelAt,
+     "recOrgId must be declared BEFORE the list that reads it, at component scope");
+}
+is((src.match(/ciListPanel\(\)/g) || []).length, 3,
+   "ciListPanel should be declared once and called exactly twice");
+ok(/ciHasStatus && ciFailView\.length > 0 && ciView\.length > 0 && \(/.test(src),
+   "the toggle should be hidden when nothing was accepted — it has nothing to switch to");
+
+// (b) THE INVARIANT. Every aggregate stays successes-only: a refused scan is
+// not attendance, and folding one into the counts would report a member who was
+// turned away as having attended. So the failed rows may reach the Recent
+// Check-Ins panel and nothing above it.
+{
+  ok(src.indexOf('id="ciRecent"') > 0,
+     "the check-in list should carry id=ciRecent as the scroll target");
+  // The list is its own function, declared above the derivation block — so the
+  // invariant is simply that the aggregates never mention the list's rows. The
+  // failed rows reach exactly one panel and no figure.
+  const p0 = src.indexOf("function ciListPanel()");
+  ok(p0 > 0, "the check-in list should be a named function");
+  const panelBody = src.slice(p0, src.indexOf("\n      }\n", p0));
+  ok(/ciListView/.test(panelBody), "the list panel should render from ciListView");
+  is((derive.match(/ciListView/g) || []).length, 0,
+     "no aggregate may read ciListView — every figure on the tab is successes-only");
+}
+
+// (c) The list reads the RESOLVED set, never the raw state, or the table and the
+// toggle can disagree about what is on screen.
+ok(/data-ci-list-set=\{ciRowSetEff\}/.test(src),
+   "the panel title should key on the resolved row set");
+ok(/data-ci-row=\{ciRowSetEff\}/.test(src), "each row should be tagged with the resolved set");
+ok(/const ciListView = ciRowSetEff === 'failed' \? ciFailView : ciView;/.test(src),
+   "ciListView should switch on the RESOLVED set");
+is((src.match(/ciRowSet === 'failed' \? ciFailView/g) || []).length, 0,
+   "the list must not switch on the raw ciRowSet — that is the strand bug");
+
+// (d) The toggle is offered only where there is something to see: a Failed
+// button leading to an empty table is a dead end, and the KPI tile already says
+// "every scan accepted".
+// (superseded below: the guard also requires something to switch back to)
+
+// (e) No reason is shown or guessed. attendance_event.side_effects is [] on all
+// 58 denials, and only 5 of 52 membership refusals are explicable by the
+// membership's own dates (2 expired, 1 not started, 2 canceled) — so a "reason"
+// column would be invention sitting beside real rows.
+ok(/data-ci-failed-note="1"/.test(src),
+   "the failed list should carry the note saying the log records no reason");
+is((src.match(/<th>Reason<\/th>/g) || []).length, 0,
+   "there must be no Reason column — the log does not record one");
+
+// (f) The tile is the way in, since it is what prompted the question.
+ok(/data-ci-failed-tile=\{ciFailView\.length > 0 \? 'clickable' : 'flat'\}/.test(src),
+   "the Failed tile should advertise whether it is clickable");
+ok(/onClick=\{ciFailView\.length > 0 \? function\(\)\{ showFailed\(\); \} : undefined\}/.test(src),
+   "the Failed tile should open the failed list when there are failures");
 
 console.log("✓ checkins-view.spec.js — " + n + " assertions");

@@ -62,7 +62,7 @@ const payout = fs.readFileSync(path.join(ROOT, "public", "instructor-payout.html
     const m = /const ALLOWED = (\["excel"[^\]]+\]);/.exec(src);
     assert.ok(m, "the generic log route's ALLOWED list moved");
     const allowed = JSON.parse(m[1]);
-    ["checkin-loc", "checkin-member", "excel", "print"].forEach(e =>
+    ["checkin-loc", "checkin-member", "checkin-failed", "excel", "print"].forEach(e =>
       assert.ok(allowed.includes(e), e + " is not allowlisted — the beacon 400s"));
   });
 
@@ -70,10 +70,21 @@ const payout = fs.readFileSync(path.join(ROOT, "public", "instructor-payout.html
     const m = /const SLACK_NOTIFY = new Set\((\[[^\]]+\])\)/.exec(src);
     assert.ok(m, "SLACK_NOTIFY not found");
     const notify = JSON.parse(m[1]);
-    ["checkin-loc", "checkin-member"].forEach(e =>
+    ["checkin-loc", "checkin-member", "checkin-failed"].forEach(e =>
       assert.ok(notify.includes(e), e + " is missing from SLACK_NOTIFY"));
     assert.ok(/"checkin-loc":\s+\{ emoji:/.test(src), "checkin-loc needs an emoji/verb entry");
     assert.ok(/"checkin-member":\s+\{ emoji:/.test(src), "checkin-member needs an emoji/verb entry");
+    assert.ok(/"checkin-failed":\s+\{ emoji:/.test(src), "checkin-failed needs an emoji/verb entry");
+  });
+
+  await test("checkin-failed debounces by DESK, same reasoning as checkin-loc", () => {
+    assert.ok(/rec\.event === "checkin-failed"\s*\n\s*\?\s*`\$\{rec\.org\}\|\$\{rec\.report\}\|checkin-failed\|\$\{rec\.location \|\| ""\}`/.test(src),
+      "checking the north desk's refusals then the south's is two questions, not one");
+  });
+
+  await test("the failed-list ping is fired from the page", () => {
+    assert.ok(/ciBeacon\('checkin-failed'/.test(page),
+      "opening the refused-scan list should ping checkin-failed");
   });
 
   await test("checkin-loc debounces by DESK, so two branches read as two looks", () => {
@@ -168,6 +179,21 @@ const payout = fs.readFileSync(path.join(ROOT, "public", "instructor-payout.html
       await post("event=checkin-loc&location=" + encodeURIComponent("x".repeat(400)));
       const rec = events().filter(x => x.event === "checkin-loc").pop();
       assert.ok(rec.location.length <= 80, "desk name should be clamped to 80 chars");
+    });
+
+    await test("opening the refused-scan list records the desk AND how many", async () => {
+      const r = await post("event=checkin-failed&location=South%20Desk&n=13");
+      assert.strictEqual(r.status, 200, r.body);
+      const rec = events().filter(x => x.event === "checkin-failed").pop();
+      assert.ok(rec, "checkin-failed not recorded");
+      assert.strictEqual(rec.location, "South Desk");
+      assert.strictEqual(rec.failed, 13);
+    });
+
+    await test("a nonsense refusal count is dropped rather than recorded", async () => {
+      await post("event=checkin-failed&location=South%20Desk&n=-3");
+      const rec = events().filter(x => x.event === "checkin-failed").pop();
+      assert.strictEqual(rec.failed, undefined, "a negative refusal count is dropped");
     });
 
     await test("clicking through to a member's Rec account records", async () => {

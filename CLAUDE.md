@@ -284,7 +284,110 @@ funnel every panel reads, so excluding failures there fixed every panel at once:
   message would have said "No check-ins at all" — naming a location the reader
   never chose.
 
-### These two cards need NO date-tag re-flip — the bounds are CAST
+### The Failed COUNT was not enough — you have to be able to open it (2026-08-26)
+
+Dan, on the preview: *"i'm seeing the absent people on the program check in
+section, but how about the membership check ins, no failed? need a way to filter
+failed memberships here."*
+
+Two separate things, and it is worth keeping them apart:
+
+1. **The card and column were working.** Clarkstown's 13 denials are all on
+   **2026-08-04**, and the default window is the last 7 days, which holds 15
+   check-ins and no refusals. Verified on the preview: Aug 19–26 → 15/0,
+   Aug 1–26 → 49 accepted / **13 Failed**, Jan 1–26 Aug → 75/13.
+2. **The tile was a dead end.** It reported a count with nowhere to go, so
+   "how many were turned away" was answerable and "*who*" was not.
+
+So the Recent Check-Ins list gained an **Accepted / Failed** toggle, and the
+**tile itself is now the way in** (it is what prompted the question).
+
+- **IT SCOPES THE LIST ONLY, and that is the whole design.** Every aggregate —
+  check-in counts, peak hour, avg per day, time of day, top members, the desk
+  counts and the tab badge — stays successes-only, because a refused scan is not
+  attendance and folding one in would report a member who was turned away as
+  having attended. That is the facility-Summary error (fee lines counted as
+  bookings) one field over. It is therefore a **per-panel view toggle**, exactly
+  like the All/Weekdays/Weekends slice already on the time-of-day chart, and the
+  panel title names the set it is showing. `checkins-view.spec.js` asserts that
+  **no panel above `id="ciRecent"` reads `ciListView`** — the mechanical form of
+  that invariant.
+- **A `failed` selection must not survive a window or desk with no failures.**
+  The toggle is hidden in that state, so holding the selection strands the reader
+  on an empty table with no way back — and `?ci_rows=failed` is a shareable link,
+  so it *will* be opened against a window that has none.
+  **`ciEffectiveRowSet(set, failCount)` is at module scope**, read by both the
+  render and the reset effect, so the two cannot disagree and a spec can RUN it
+  (the `nightStateFrom` lesson again).
+- **No toggle where there are no failures** — a Failed button over an empty list
+  is a dead end, and the tile already says "every scan accepted". The render case
+  asserts the toggle is **ABSENT from the DOM**, via a `nofail` stub mode that
+  keeps the `Status` column but drops the denials. That is a different state from
+  a feed with no `Status` column at all, which hides the tile entirely.
+- **THERE IS NO "WHY", AND NONE IS GUESSED.** `attendance_event.side_effects` is
+  `[]` on **all 58** denials — no reason is stored. And it is not inferable
+  either: of the 52 membership refusals only **2 were expired, 1 not yet started,
+  2 canceled**, so **47 of 52 were refused while the membership looks valid on
+  its own dates**. A "Reason" column would be invention sitting beside real rows
+  — the same fabrication the wizard's prose/number split exists to prevent. The
+  list says who, when, where and which product, and the note on it says the log
+  records no reason. The spec fails if a `Reason` column appears.
+- Activity: `checkin-failed` (🚫), debounced **by desk** like `checkin-loc` —
+  checking the north desk's refusals then the south's is two questions. Carries
+  the count, because an org opening a list of refused scans is the signal.
+
+### Two bugs the RENDER CHECK caught that nothing else would have
+
+Both were in my own patch, both passed every source assertion, and both are the
+same family as things already written down here.
+
+- **`?ci_rows=failed` could never work.** The resolver ran on mount, when
+  `ciRows` is still null and there are therefore no failures *yet* — which is
+  not the same fact as "this window has none" — so it flipped the link to the
+  accepted list and the write-back effect then destroyed the state. **A feed that
+  has not answered is not an empty answer**, exactly as with the permits column
+  and the campmap's `POS_OK`; `ciEffectiveRowSet` takes a `loaded` argument for
+  it. (Two independent gates gate this now — the argument and the effect's own
+  `ciRows &&` — so the render case only fails when BOTH are removed, which is
+  how the bug actually shipped. The unit assertions catch each one alone.)
+- **`getParams()` is an explicit whitelist and I did not add `ci_rows` to it**,
+  so `params.ci_rows` was silently `undefined` and the deep link did nothing.
+  Nothing about that is visible in source review — the code reads correctly.
+
+**A window where EVERY scan failed showed no list at all.** `ciView.length > 0`
+gates the whole aggregate block, so with nothing accepted the reader got
+"11 scans were turned away" and no table under it — the count-with-nowhere-to-go
+bug in its sharpest form, inside the change meant to fix it. So the list is now
+`ciListPanel()`, **one function called from two places** (the aggregate block and
+the failures-only branch) rather than two copies of a table that would drift the
+first time a column changed, and the resolver defaults to the refusals when
+nothing was accepted. No toggle renders there — there is nothing to switch back
+to. A desk misconfigured for a day looks exactly like this.
+
+**And extracting the list broke the tab, exactly as the coding rule predicts.**
+`recOrgId` (the org uuid the member links are built from) was a `var` declared
+*inside* the aggregate IIFE, so lifting the table into a function above that
+block threw **`recOrgId is not defined`** and blanked the Check-Ins tab — the
+blank-page class this repo has shipped twice. It is now one `const` at component
+scope, above the list that reads it. Two things to take from it: **a refactor
+that moves JSX moves what it can see**, and the render check is what turned it
+into a caught error instead of a blank tab in production. `node --check`, the
+HTML parse check and all 28 specs passed on the broken version.
+
+Guards: `checkins-view.spec.js` 53 → 86 assertions, mutation-tested ten ways
+(the list reading raw state instead of the resolved set, the reducer dropping the
+strand resolution, the load gate removed, the write-back ungated, an aggregate
+reading `ciListView`, the toggle offered with zero failures, the tile no longer
+opening the list, an invented `Reason` column, the scroll target removed, and `recOrgId` put back inside the aggregate block) —
+all ten fail by name.
+`checkin-beacons.spec.js` 12 → 16, mutation-tested three ways (dropped from
+`SLACK_NOTIFY`, dropped from `ALLOWED`, debounce key reverted). Plus nine
+`ci-check-render.js` cases over two new stub modes (`nofail` — the `Status`
+column with no refusals in it, distinct from a feed with no column at all; and
+`failonly`), including the strand driven as a real link and the deep-link bug
+reproduced in a browser.
+
+### Both cards CAST their date bounds — which kills one failure mode, NOT the re-flip
 
 Found by dry-running the new SQL with a Text-style substitution before pushing,
 which is the whole reason to do that. The original 18547 wrote:

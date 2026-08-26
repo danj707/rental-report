@@ -3607,7 +3607,7 @@ setTimeout(() => { checkCardParamTypes().catch(() => {}); }, 150 * 1000).unref?.
 // Inert if the env var is unset. Fire-and-forget — never blocks or breaks logging.
 // To change what pings Slack, edit SLACK_NOTIFY. High-frequency events (view/fetch)
 // are debounced per org+report so Slack isn't a firehose.
-const SLACK_NOTIFY = new Set(["created", "org-deleted", "watchdog", "schema-break", "param-drift", "report-down", "campmap-share", "campmap-site", "campmap-book", "campmap-filter", "campmap-amenity", "pdf", "excel", "print", "summary", "game", "map", "outdoor", "fields", "view", "insights", "insights-feedback", "chat-feedback", "feedback", "vote", "update-vote", "munis", "permits", "email", "checkin-loc", "checkin-member", "form-open", "deadlink", "generate", "wizard-save"]);
+const SLACK_NOTIFY = new Set(["created", "org-deleted", "watchdog", "schema-break", "param-drift", "report-down", "campmap-share", "campmap-site", "campmap-book", "campmap-filter", "campmap-amenity", "pdf", "excel", "print", "summary", "game", "map", "outdoor", "fields", "view", "insights", "insights-feedback", "chat-feedback", "feedback", "vote", "update-vote", "munis", "permits", "email", "checkin-loc", "checkin-member", "checkin-failed", "form-open", "deadlink", "generate", "wizard-save"]);
 const SLACK_DEBOUNCE_MS = { view: 30 * 60 * 1000, fetch: 30 * 60 * 1000,
   // A broken report stays broken. The health check only reports NEW failures,
   // but a flapping card would otherwise post every hour.
@@ -3654,6 +3654,7 @@ const SLACK_EVENT_META = {
   // Which desk someone narrows the check-in report to is a planning fact about
   // that building, not just a click — so the location travels with the ping.
   "checkin-loc":    { emoji: "\uD83C\uDFE2", verb: "filtered check-ins by location on" },
+  "checkin-failed": { emoji: "\uD83D\uDEAB", verb: "opened the failed check-ins on" },
   // A staff member jumping from a check-in row into that member's Rec account is
   // the report handing off to the product, which is the whole point of the link.
   "checkin-member": { emoji: "\uD83D\uDC64", verb: "opened a member in Rec from" },
@@ -3731,6 +3732,8 @@ function notifySlack(rec) {
     // member working down a list of regulars is one session, not twenty pings.
     : rec.event === "checkin-loc"
       ? `${rec.org}|${rec.report}|checkin-loc|${rec.location || ""}`
+    : rec.event === "checkin-failed"
+      ? `${rec.org}|${rec.report}|checkin-failed|${rec.location || ""}`
     // Keyed by rental, same reasoning as map pins and campsite opens: staff
     // checking three bookings' paperwork is three looks, not one.
     : rec.event === "form-open"
@@ -3795,6 +3798,14 @@ function notifySlack(rec) {
     const where = rec.location ? `*${rec.location}*` : "*all locations*";
     const n = Number.isFinite(rec.checkins) ? ` \u00B7 ${rec.checkins.toLocaleString()} check-in${rec.checkins === 1 ? "" : "s"}` : "";
     text = `${meta.emoji} ${orgName} (\`${rec.org}\`) filtered check-ins to ${where}${n}`;
+  } else if (rec.event === "checkin-failed") {
+    // The COUNT is the signal: someone looking at a list of refused scans is the
+    // org noticing members being turned away, which is worth seeing in the feed.
+    const where = rec.location ? ` at *${rec.location}*` : "";
+    const n = Number.isFinite(rec.failed)
+      ? `${rec.failed.toLocaleString()} refused scan${rec.failed === 1 ? "" : "s"}`
+      : "the refused scans";
+    text = `${meta.emoji} ${orgName} (\`${rec.org}\`) opened ${n}${where}`;
   } else if (rec.event === "campmap-site") {
     // Say whether the site was actually free for the stay they were looking at —
     // "opened Site 12" is trivia; "opened Site 12, free for their 3 nights" is a
@@ -6219,7 +6230,7 @@ app.post("/:org/:report/api/log", resolveOrg, (req, res) => {
   const { event, game, location, view } = req.query;
   // view-apply is events.jsonl-only by design — it is not in SLACK_NOTIFY, so
   // logEvent records it without pinging the feed (see the saved-views block).
-  const ALLOWED = ["excel", "print", "summary", "game", "map", "view-apply", "checkin-loc", "checkin-member", "form-open"];
+  const ALLOWED = ["excel", "print", "summary", "game", "map", "view-apply", "checkin-loc", "checkin-member", "checkin-failed", "form-open"];
   if (!ALLOWED.includes(event)) return res.status(400).json({ ok: false, error: "Unknown event" });
   const ciN = Number(req.query.n);
   const extra = event === "game" && game ? { game: String(game).slice(0, 60) }
@@ -6228,6 +6239,12 @@ app.post("/:org/:report/api/log", resolveOrg, (req, res) => {
               : event === "checkin-loc"
                 ? { location: location ? String(location).slice(0, 80) : "",
                     checkins: Number.isFinite(ciN) && ciN >= 0 && ciN <= 9999999 ? Math.round(ciN) : undefined }
+              // Opening the refused-scan list. `location` is the debounce key for
+              // the same reason it is on checkin-loc — checking the north desk
+              // then the south is two questions, not one.
+              : event === "checkin-failed"
+                ? { location: location ? String(location).slice(0, 80) : "",
+                    failed: Number.isFinite(ciN) && ciN >= 0 && ciN <= 9999999 ? Math.round(ciN) : undefined }
               // `rental` is the debounce key, so opening three bookings' forms
               // reads as three looks rather than whichever was clicked first.
               : event === "form-open"
@@ -16519,6 +16536,13 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  { date: '2026-08-26', title: '\uD83D\uDEAB Failed check-ins: open the list, not just the count', items: [
+    'The Failed Check-Ins figure on the Memberships Check-Ins tab is now something you can open. Click it, or use the Accepted / Failed switch on the check-in list, and the list shows the scans that were turned away \u2014 who, when, at which desk, and which membership or pass they presented. Every member still links through to their Rec account.',
+    'The switch changes the LIST ONLY. Every figure on the tab \u2014 total check-ins, busiest hour, average per day, time of day, top members, the per-desk counts \u2014 continues to count accepted scans and nothing else. Someone who was turned away did not attend, and counting them as attendance would overstate usage everywhere on the page.',
+    'The switch appears only where there is something to see, and a link to the failed list opens on the accepted list when the window has no refusals \u2014 rather than an empty table.',
+    'THE LOG DOES NOT RECORD WHY A SCAN WAS REFUSED, and the report does not guess. There is no reason stored against a denial, and it is not reliably inferable either: across the platform only 5 of 52 membership refusals are even explained by the membership\u2019s own dates. So the list tells you who to look at and leaves the reason to their account in Rec.',
+    'Worth knowing when a window looks empty: refusals are rare and cluster on particular days. Clarkstown\u2019s 13 all fall on one date, so the default last-7-days view shows none \u2014 widen the dates before concluding there are none.',
+  ]},
   { date: '2026-08-26', title: '\u2705 Check-ins: who was marked absent, and whose scan was turned away', items: [
     'The Programs Check-Ins band gains an ABSENT column, per section, plus a Marked Absent total \u2014 sessions an admin recorded someone as absent for. A mark that was later undone does NOT count: the attendance log is append-only, so undoing writes a second row rather than removing the first, and counting the marks directly would report absences staff had already taken back.',
     'The Memberships Check-Ins tab gains FAILED CHECK-INS \u2014 a membership or pass refused at the desk \u2014 with the rate as a share of attempts, and it follows the desk-location filter like everything else on the tab.',

@@ -562,7 +562,21 @@ const STUBS = [
   { match: /\/court-utilization\/api\/data/, body: () => ({ rows: racketRows(), meta: {} }) },
   // org_id is what the member links are built from — without it the cells fall
   // back to plain text, which is the behaviour before the card ships the uuid.
-  { match: /\/checkins\/api\/data/,     body: () => ({ rows: checkinRows(), meta: { org_id: "org-uuid-1" } }) },
+  // `nofail` keeps the Status column but drops the two denials — a real window
+  // where nobody was turned away. Distinct from a feed with NO Status column
+  // (which hides the tile entirely): here the tile shows 0 and the toggle must
+  // still not render, because a Failed button over an empty list is a dead end.
+  { match: /\/checkins\/api\/data/,     body: () => ({
+      rows: STUB_MODE === "nofail"
+        ? checkinRows().filter(r => r["Status"] !== "Failed")
+        // `failonly` is a window where EVERY scan was refused. There are no
+        // successful check-ins, so the aggregate block does not render at all —
+        // the list has to come from somewhere else, which is why it is its own
+        // function. A desk misconfigured for a day looks exactly like this.
+        : STUB_MODE === "failonly"
+        ? checkinRows().map(r => ({ ...r, "Status": "Failed" }))
+        : checkinRows(),
+      meta: { org_id: "org-uuid-1" } }) },
   // Must precede /api/data. `stubMode` lets one case ask for the feed WITHOUT
   // the Absent column — the shape every warm 4-hour cache entry still has — so
   // the degradation is driven in a browser rather than reasoned about.
@@ -913,6 +927,44 @@ const CASES = [
   // The two denials sit on different desks, so picking one must move the tile.
   { name: "memberships · failed scoped to desk", path: "/{org}/memberships?tab=checkins&ci_loc=South%20Desk",
     needs: "[data-ci-failed=\"1\"]" },
+  // ── The refused-scan list (Dan: "no failed? need a way to filter failed
+  // memberships here"). The tile was a count with nowhere to go.
+  //
+  // Driven through the TILE, because the tile being the way in is the fix. The
+  // toggle is asserted separately below.
+  { name: "memberships · failed list via tile", path: "/{org}/memberships?tab=checkins",
+    needs: "[data-ci-list-set=\"failed\"]",
+    act: async page => {
+      await page.waitForSelector("[data-ci-failed-tile=\"clickable\"]", { timeout: 45000 });
+      await page.click("[data-ci-failed-tile=\"clickable\"]");
+    } },
+  // ...and the list really holds the 2 denials, not the 9 successes. Keyed on the
+  // row count so a title that flips while the rows do not still fails.
+  { name: "memberships · failed rows", path: "/{org}/memberships?tab=checkins&ci_rows=failed",
+    needs: "[data-ci-row=\"failed\"]:nth-of-type(2)",
+    absent: "[data-ci-row=\"failed\"]:nth-of-type(3)" },
+  { name: "memberships · failed note", path: "/{org}/memberships?tab=checkins&ci_rows=failed",
+    needs: "[data-ci-failed-note=\"1\"]" },
+  // The toggle exists where there are failures...
+  { name: "memberships · rowset toggle", path: "/{org}/memberships?tab=checkins",
+    needs: "[data-ci-rowset-toggle] [data-ci-rowset=\"failed\"]" },
+  // ...and is ABSENT on a feed with none, rather than a button leading nowhere.
+  // "renders a disabled button" and "renders nothing" are different claims.
+  { name: "memberships · no toggle without failures", path: "/{org}/memberships?tab=checkins",
+    stubMode: "nofail", needs: "[data-ci-total=\"9\"]", absent: "[data-ci-rowset-toggle]" },
+  // THE STRAND. A ci_rows=failed link into a window with no failures must land
+  // on the accepted list, not an empty table whose toggle is gone.
+  { name: "memberships · failed link cannot strand", path: "/{org}/memberships?tab=checkins&ci_rows=failed",
+    stubMode: "nofail", needs: "[data-ci-list-set=\"ok\"]" },
+  // A window where every scan failed: the reader used to be told "11 scans were
+  // turned away" with no table under it, because the aggregates never render.
+  { name: "memberships · failures only shows the list", path: "/{org}/memberships?tab=checkins",
+    stubMode: "failonly", needs: "[data-ci-list-set=\"failed\"]" },
+  { name: "memberships · failures only has rows", path: "/{org}/memberships?tab=checkins",
+    stubMode: "failonly", needs: "[data-ci-row=\"failed\"]:nth-of-type(11)" },
+  // ...and no toggle there, because there is nothing to switch back to.
+  { name: "memberships · failures only hides the toggle", path: "/{org}/memberships?tab=checkins",
+    stubMode: "failonly", needs: "[data-ci-list-set=\"failed\"]", absent: "[data-ci-rowset-toggle]" },
   { name: "wizard · feed date window", path: "/{org}/report-wizard",
     needs: "[data-rw-window=\"Aug 19 \u2013 Aug 26\"]",
     act: async page => { await page.click(".example-chip"); await page.click(".btn-generate"); } },
