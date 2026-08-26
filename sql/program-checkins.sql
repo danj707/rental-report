@@ -1,19 +1,27 @@
 -- Metabase card 18547 — "✅ Program Check In/Out Sections" (SHARED)
 -- public UUID cb6fd909-72d3-446b-930b-c0382da02d62 · SHARED_UUIDS['program-checkins']
--- MIRROR of the live card. The live card is the source of truth: read it
--- (metabase://question/18547) and apply changes to THAT, then mirror back here.
+-- MIRROR of the live card, byte-identical below this header. The live card is the
+-- source of truth: read it (metabase://question/18547) and apply changes to THAT,
+-- then mirror the result back here.
+--
+-- AFTER ANY PROGRAMMATIC PUSH the Start/End Date tags must be flipped back to
+-- type Date in the Metabase UI. The ::date casts below remove the interval-parse
+-- failure, but the push ALSO leaves the card registering six parameters (three
+-- date/single + three string/= for the same slugs) and the app then sends two
+-- values per variable and gets "An error occurred." Only the UI flip clears that.
+-- A description-only update does NOT re-Text the tags; only a query update does.
+-- ─────────────────────────────────────────────────────────────────────────────
 -- Program Check-Ins (session attendance) — SHARED card
 -- Aggregated to one row per section. No participant-level rows.
 --
--- NOTE ON THE ::date CASTS. The original card wrote `{{end_date}} + INTERVAL
+-- NOTE ON THE ::date CASTS. This card previously wrote `{{end_date}} + INTERVAL
 -- '1 day'` with no cast, which only parses while the template tag is TYPED Date
 -- (Metabase then substitutes CAST('…' AS date)). An API update regenerates every
 -- tag as Text, and Postgres then reads the bare string as an INTERVAL literal:
 --   ERROR: invalid input syntax for type interval: "2026-08-26"
 -- …so the card stays broken until someone flips the tags back by hand. Casting
 -- explicitly makes it work under EITHER tag type, which is the same reason
--- sql/facility-permits.sql and sql/gl-account-detail.sql need no re-flip. Keep
--- the casts.
+-- facility-permits and gl-account-detail need no re-flip. Keep the casts.
 --
 -- v2 (2026-08-26): adds "Absent" / "Absentees" from the same attendance_event
 -- log. Three things about that are load-bearing:
@@ -31,7 +39,11 @@
 --  3. The check-in/check-out aggregate is lifted into its own CTE UNCHANGED, and
 --     the section list is the UNION of sections with attendance and sections with
 --     surviving absences — so a section where everyone was marked absent and
---     nobody scanned in still gets a row, and no existing figure moves.
+--     nobody scanned in still gets a row, and no existing figure moves. Verified
+--     before shipping: Apex 67 sections / 1246 check-ins and Watertown 69 / 7734,
+--     zero rows differing on any pre-existing column.
+--
+-- Mirrored in the repo at sql/program-checkins.sql.
 WITH att AS (
   SELECT
     ss.section_id,

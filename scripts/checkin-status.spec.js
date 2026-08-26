@@ -93,14 +93,17 @@ test("absences are scoped by the same section filters as check-ins", () => {
   assert.match(absCte, /ss\.deleted_at IS NULL AND ss\.canceled_at IS NULL/);
 });
 
-test("the date bounds are CAST, so an API push needs no manual tag re-flip", () => {
+test("the date bounds are CAST — one of the two API-push failure modes", () => {
   // `{{end_date}} + INTERVAL '1 day'` with no cast only parses while the tag is
   // TYPED Date (Metabase substitutes CAST('…' AS date)). An API update
   // regenerates every tag as Text, and Postgres then reads the bare string as an
   // interval literal:  invalid input syntax for type interval: "2026-08-26".
   // The card would stay broken until a human flipped the tags back by hand.
-  // Casting explicitly makes it work under EITHER tag type — the same reason
-  // sql/facility-permits.sql and sql/gl-account-detail.sql need no re-flip.
+  // Casting makes the SQL work under EITHER tag type. It does NOT remove the need
+  // for the UI flip: a push also leaves the card registering SIX parameters
+  // (three date/single + three string/= for the same slugs), the app then sends
+  // two values per variable, and Metabase answers "An error occurred." Confirmed
+  // on both cards 2026-08-26. Cast anyway — it kills one of the two modes.
   for (const [label, sql] of [["program-checkins", progSql], ["memberships-checkins", memSql]]) {
     // Comments quote the BROKEN form on purpose, so scan the code only.
     const code = sql.replace(/^\s*--.*$/gm, "");

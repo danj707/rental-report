@@ -1,7 +1,15 @@
 -- Metabase card 18151 — "✅ Memberships Check-In Report" (SHARED)
--- public UUID from SHARED_UUIDS['checkins'].
--- MIRROR of the live card. The live card is the source of truth: read it
--- (metabase://question/18151) and apply changes to THAT, then mirror back here.
+-- public UUID 574324e0-b5a1-46c5-8770-8c466631fdcf · SHARED_UUIDS['checkins']
+-- MIRROR of the live card, byte-identical below this header. The live card is the
+-- source of truth: read it (metabase://question/18151) and apply changes to THAT,
+-- then mirror the result back here.
+--
+-- AFTER ANY PROGRAMMATIC PUSH the Start/End Date tags must be flipped back to
+-- type Date in the Metabase UI — see sql/program-checkins.sql for why casting the
+-- bounds is not enough on its own. A description-only update does NOT re-Text the
+-- tags; only a query update does.
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Memberships Check-In Report — SHARED card
 --
 -- v3 (2026-08-26): membership/pass check-in DENIALS join the feed, tagged by a
 -- new "Status" column ('Checked In' | 'Failed').
@@ -21,6 +29,8 @@
 -- lines as bookings. public/memberships.html therefore derives `ciOk` (Checked
 -- In only) and every existing panel reads that; only the Failed figures read the
 -- denial rows. scripts/checkins-view.spec.js fails if a panel reads the raw feed.
+--
+-- Mirrored in the repo at sql/memberships-checkins.sql.
 WITH org_tz AS (
   SELECT COALESCE(
            MODE() WITHIN GROUP (ORDER BY timezone),

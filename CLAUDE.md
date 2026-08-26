@@ -308,10 +308,27 @@ either tag type — the same reason `sql/facility-permits.sql` and
 fails on an uncast date tag in either file (comments are stripped first, since
 they quote the broken form on purpose).
 
-**So the usual push→flip dance does not apply to these two.** Verified: the cast
-SQL returns the identical figures (Watertown 69 sections / 7734 check-ins / 40
-absent / 32 people) with an uncast string standing in for a Text tag. Worth
-copying to other cards as they are next touched.
+**But the push→flip dance STILL APPLIES — I got this wrong once, so read on.**
+Casting removes ONE of two independent failure modes. The other is that an API
+push leaves each card registering **SIX** parameters: the three original
+`date/single` plus three new `string/=` for the same slugs. The app binds by
+slug, so it then sends two values per variable and Metabase answers
+`An error occurred.` — nothing in the SQL can fix that, only a human flipping the
+tags in the UI clears the duplicates. Confirmed on both cards immediately after
+this push: 6 params, HTTP 400, and 3 params + 200 after Dan's flip.
+
+So: **cast the bounds anyway** (it kills the interval-parse failure and is worth
+copying to other cards as they are touched), but still expect the flip. Verified
+separately that the cast SQL returns identical figures — Watertown 69 sections /
+7734 check-ins / 40 absent / 32 people — with an uncast string standing in for a
+Text tag.
+
+**And do not hand-roll the verification probe.** A `{type,target,value}` shape
+without the registered parameter's `id` returns `An error occurred.` for EVERY
+card — proven against card 17293, which serves fine in production. That looks
+exactly like a broken card and cost time here. Use
+`scripts/verify-report-live.js`, which merges values onto the card's own
+registered parameters by slug.
 
 ### Both pages are correct BEFORE and after the cards ship
 
