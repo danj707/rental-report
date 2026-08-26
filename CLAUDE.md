@@ -2007,7 +2007,45 @@ Already shipped (PR #75, live on `main`): name-based site-type recovery so
 filter, Ice sub-tab, court-name wrap. Display/scoping only — did not change the
 revenue math, so the gap above predates and survives it.
 
-## Rental form answers on the schedule — BUILT (2026-08-25)
+## Rental form answers on the schedule — PARKED, do not rebuild (2026-08-25)
+
+**Status: built, reviewed, and PARKED by Dan the same day.** PR #159 is a DRAFT
+and must not be merged. Nothing is live — no org sees any of it.
+
+> "not loving the way it looks. feels like we're going too far for 1 org wanting
+> something specific. If they want forms, click the link to Rec and print them."
+
+**The answer to "how do we show rental forms" is now: the Rec Link column.** The
+`↗` column already links to the rental, and Rec's own Required Information tab
+prints the forms properly. Watertown is essentially the only org asking, so a
+whole column + panel + PDF path in this report is more surface than the want
+justifies. Do not restart this without checking in.
+
+**Two known defects, visible in the screenshot that prompted the park** — worth
+knowing if it is ever revived, and worth avoiding in any similar feature:
+
+1. **The head-count mismatch chip mis-reads a range.** `formHeadCount()` does
+   `replace(/[^0-9]/g,'')`, so an answer of `30-40` parses as **3040** and the
+   chip reads `3040≠40`. Ranges are a normal way to answer "estimated number of
+   attendees".
+2. **The expanded panel is far taller than its row.** One rental's answers push
+   the next booking most of a screen down — the chips stay tidy, the expansion
+   does not. That is the "hot mess" the design was meant to avoid, relocated
+   rather than solved.
+
+Also: **an org whose forms ask no yes/no questions gets no chips at all**
+(Windham), so for those orgs the entire value sits in the panel — the half that
+does not look good.
+
+**Card 20626 exists and is public** (https://rec.metabaseapp.com/question/20626).
+It is queried only by the parked branch, so it is inert. Unshare or archive it if
+the clutter matters.
+
+**The data investigation below is still true and still useful** — anything that
+ever touches rental form data (an export, a Rec-side feature, another surface)
+hits the same eight traps. That is why this section stays.
+
+---
 
 Dan asked how to surface facility rental forms "without it looking like a hot
 mess", chose the chips + inline-panel option from the mockup, and added: **a
@@ -2106,10 +2144,9 @@ yes/no questions, so the column is the quiet `✓ N forms` plus the panel. Chips
 are derived from answer SHAPE, so an org gets them only if its forms have
 yes/no questions to derive them from.
 
-**Open (Dan's call):** whether ID filenames belong in Excel/subscription email
-(currently: panel only, never Excel or email); whether chip labels stay
-auto-derived (they are) or get per-org overrides; whether the 15% head-count
-mismatch stays a chip.
+**The three open questions are moot while parked** (ID filenames in
+Excel/email, auto-derived vs per-org chip labels, whether the head-count
+mismatch is a chip) — they only matter if this is revived.
 
 **Known unrelated breakage found while testing:** `scripts/email-slack-notify.spec.js`
 fails on pristine `main` with `ReferenceError: alertEnabled is not defined` — it
