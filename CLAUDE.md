@@ -1726,6 +1726,70 @@ Guarded by two `ci-check-render.js` cases whose fixture is Smyrna's real shape �
 `[data-golive="early"]` (go-live came from the early window). Both were seen to
 fail on the reverted logic.
 
+### ...and the bucket ORDER decided whether it rendered at all (2026-08-26)
+
+Dan, on the Select Table of Smyrna's 154th Birthday Concert: *"This section has
+over 200 people fast tracked… It opens in about 10 minutes but it hidden in the
+larger program/sections list. It should be flagged as #1 up top."*
+
+Right, and the fix above was only half of it. `_launch` was made section-scoped,
+but it was tested **THIRD** in `TriagePanel`'s `else if` chain, behind two
+capacity tests reading program-WIDE figures:
+
+```js
+if (spotsLeft === 0 && p.ftPending > 0)                  → needsCapacity
+else if (p.demandPct > 90 && spotsLeft < p.ftPending)    → needsCapacity
+else if (p._launch.length > 0)                           → readyToOpen   ← never reached
+```
+
+Measured against production: Concert Series carried **314 pre-launch
+fast-trackers across two sections** (Select Table 203 on 45 seats, opening at
+14:00Z; General Table 111 on 50), tripped branch 2 at **184.3% demand / 169
+spots left / 574 pending**, and was filed under Needs Capacity. It was the
+**only one of Smyrna's 19 programs with launching sections** that this happened
+to — every other one sits under 58% demand, so **the test fires precisely on the
+programs Launching Soon exists to surface.** The header read "256 fast-trackers
+primed" with the 314 missing.
+
+Three things worth keeping:
+
+- **It was mislabelled, not just misranked.** Both capacity buckets render
+  beneath *"✓ Registration Open · Programs where families can register now"*,
+  and the Select Table's `Reg Status` was `pipeline`. The report told Dan
+  families could already register, and named capacity as the problem.
+- **The diverting figures were two-thirds spent history** — 200 of the program's
+  ~353 capacity is the June and July summer concerts. Same trap as above: it was
+  removed from the card's numbers but still governed whether the card rendered.
+- **No sort change was needed to reach #1.** Everything in Smyrna's cohort opens
+  at the same instant, so the existing FT tie-break puts 314 first on its own.
+
+The chain now tests `_launch` first. Pre-launch demand over capacity is not a
+separate "needs capacity" story, it *is* the Launching Soon story — the card
+leads with the share of capacity fast-tracked pre-launch. **The decision moved
+out of the component to a module-scope `triageBucket(p, spotsLeft)`**, for the
+`nightStateFrom()` reason: inside `TriagePanel`'s `forEach` a spec could only
+regex over the source, and a regex over our own patch is not evidence the page
+behaves.
+
+Ranking also moved from `_launchDays` to the go-live **instant**. Calendar days
+tie everything opening today, so a cohort opening at 11pm outranked one opening
+in three minutes on headcount alone. Changes nothing at Smyrna; matters the day
+two windows share a date.
+
+Guards: `scripts/fasttrack-launching-soon.spec.js` (22 assertions, in CI),
+mutation-tested four ways — the old order, the calendar-day sort, the launch
+branch deleted, and `triageBucket` buried back inside the component; all four
+fail by name. Plus the `fasttrack · pre-launch beats capacity` render case,
+asserting `[data-launch-list] > *:first-child[data-launch-program]`, i.e. **#1**
+rather than merely present.
+
+**The existing fixture could not catch this and never could have.** Concert
+Series in `ci-check-render.js` is 198 FT over 375 capacity — **52.8% demand**,
+under the threshold, so the capacity test never fired and `fasttrack · launching
+soon` passed happily on the broken build. A second program, `prog-birthday`, now
+carries the real proportions (336 FT / 295 capacity = 113.9%, two thirds of that
+capacity spent), and its spent sections are load-bearing.
+
 ## Never ship a page without rendering it (IMPORTANT — cost us two blank pages)
 
 **The rule: if a change touches a `public/*.html` React page, render that page in

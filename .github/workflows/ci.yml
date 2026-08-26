@@ -94,6 +94,9 @@ jobs:
       - name: Fast Track conversion spec (measured against the spots open to FT, not all holds)
         run: node scripts/fasttrack-conv.spec.js
 
+      - name: Fast Track triage spec (a section that has not opened outranks a capacity warning)
+        run: node scripts/fasttrack-launching-soon.spec.js
+
       - name: Outdoor events hour spec (hours covered, not hours started; multi-day excluded)
         run: node scripts/outdoor-hours.spec.js
 

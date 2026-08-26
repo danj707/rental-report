@@ -765,6 +765,11 @@ function PipelineLaunchCard(props) {
                 : d === 1 ? 'OPENS TOMORROW'
                 : 'OPENS IN ' + d + ' DAYS';
   return React.createElement('div', {
+    /* Which program this card is for. A render case can then assert that the
+       biggest pre-launch cohort is the FIRST card, which is the whole ask —
+       "[data-launch-section] exists" passes just as happily on a panel that
+       ranks it fourth or leaves it out. */
+    'data-launch-program': p.programId || p.program || null,
     'data-heat': heat.name,
     'data-heat-score': Math.round(heat.score),
     className: heat.blaze ? 'ft-blaze' : undefined,
@@ -850,11 +855,18 @@ function PipelineLaunchCard(props) {
 }
 function PipelineLaunchSection(props) {
   /* Soonest first. What is about to go live is the reason to look at this panel;
-     the biggest number is the tie-break, not the ranking. */
+     the biggest number is the tie-break, not the ranking.
+
+     Ordered on the go-live INSTANT, not on `_launchDays`. Days are calendar
+     days, so everything opening today ties at 0 and the FT tie-break decides —
+     which would rank a program opening at 11pm tonight above one opening in
+     three minutes, on nothing but headcount. Smyrna's whole 2pm cohort opens at
+     the same instant, so this changes nothing there and Concert Series still
+     leads on its 314; it matters on the day two windows share a date. */
   var items = (props.items || []).slice().sort(function(a, b) {
-    var ad = a._launchDays == null ? 1e9 : a._launchDays;
-    var bd = b._launchDays == null ? 1e9 : b._launchDays;
-    if (ad !== bd) return ad - bd;
+    var at = a._launchOpens ? a._launchOpens.getTime() : Infinity;
+    var bt = b._launchOpens ? b._launchOpens.getTime() : Infinity;
+    if (at !== bt) return at - bt;
     return (b._launchFt || 0) - (a._launchFt || 0);
   });
   if (!items.length) return null;
@@ -873,7 +885,8 @@ function PipelineLaunchSection(props) {
       soonest != null && React.createElement('span', { style: { fontSize: 12, color: '#9a3412' } },
         '— first opens ' + dayPhrase(soonest))
     ),
-    items.map(function(p) { return React.createElement(PipelineLaunchCard, { key: p.program, p: p, pinCtl: props.pinCtl }); })
+    React.createElement('div', { 'data-launch-list': '' },
+      items.map(function(p) { return React.createElement(PipelineLaunchCard, { key: p.program, p: p, pinCtl: props.pinCtl }); }))
   );
 }
 
@@ -968,6 +981,60 @@ function ColdPipelineStrip(props) {
 }
 
 
+/* ── Which triage bucket a program belongs in, and the one-line instruction
+   that goes with it. Lifted to module scope, and pure, so
+   scripts/fasttrack-launching-soon.spec.js can drive it with the real Smyrna
+   shape. It used to live inside TriagePanel's forEach, where a spec could only
+   regex over the source — and a regex over our own patch is not evidence that
+   the page behaves. Same reason nightStateFrom() was lifted out of campmap.html
+   after the first campmap spec passed on the reverted bug.
+
+   THE ORDER OF THESE TESTS IS THE WHOLE POINT.
+
+   `_launch` used to be tested THIRD, behind the two capacity tests, and
+   those two read program-WIDE figures. So Smyrna's Concert Series — 314
+   fast-trackers across two sections about to go live, the largest
+   pre-launch demand on the platform — tripped "demand over 90% with more
+   pending than spots left" and was filed under Needs Capacity, which
+   renders beneath the heading "Registration Open · Programs where families
+   can register now". Its Select Table had 203 people waiting on 45 seats
+   and opened three minutes later. The report said families could already
+   register, and named capacity as the problem.
+
+   It was the ONLY one of Smyrna's 19 programs with launching sections that
+   this happened to, because it was the only one over 90% demand: the test
+   fires precisely on the programs Launching Soon exists to surface. And the
+   figures that diverted it included the program's SPENT history — 200 of
+   its ~353 capacity is two summer concerts that already happened, the same
+   trap `_launch` was introduced to remove from the card's numbers but which
+   still governed whether the card rendered at all.
+
+   Pre-launch demand over capacity is not a separate "needs capacity"
+   story, it is THE Launching Soon story — the card leads with the share of
+   capacity fast-tracked pre-launch. And a program holding a section that
+   has not opened must not sit under a heading asserting registration is
+   open. So the launch test goes first. */
+function triageBucket(p, spotsLeft) {
+  if ((p._launch || []).length > 0) {
+    return { bucket: 'readyToOpen', action: p._launchDays != null
+      ? 'Registration opens ' + dayPhrase(p._launchDays) + '. ' + fmtInt(p._launchFt) + ' fast-tracked, ' + fmtInt(p._launchPending) + ' still waiting. '
+      : 'Registration not yet open. ' + fmtInt(p._launchFt) + ' wishlists waiting.' };
+  }
+  if (spotsLeft != null && spotsLeft === 0 && p.ftPending > 0) {
+    return { bucket: 'needsCapacity',
+      action: 'No spots left with ' + fmtInt(p.ftPending) + ' pending FT. Add capacity or open a new section.' };
+  }
+  if (p.demandPct != null && p.demandPct > 90 && spotsLeft != null && spotsLeft < p.ftPending) {
+    return { bucket: 'needsCapacity',
+      action: 'Demand at ' + Math.round(p.demandPct) + '% of capacity with ' + fmtInt(p.ftPending) + ' pending FT. May need more spots.' };
+  }
+  if (p.ftSignups >= 3 && (p.convPct === 0 || p.convPct === null)) {
+    return { bucket: 'stalled',
+      action: fmtInt(p.ftSignups) + ' FT interests but 0 registrations. Check pricing, description, or registration barriers.' };
+  }
+  if (p.convPct != null && p.convPct >= 60 && p.ftSignups >= 3) return { bucket: 'convertingWell', action: null };
+  return { bucket: null, action: null };
+}
 /* ── Actionable Triage Panel ── */
 function TriagePanel(props) {
   var programs = props.programs || [];
@@ -1019,23 +1086,9 @@ function TriagePanel(props) {
     });
     if (allPast && (p.sections || []).length > 0) return;
 
-    if (spotsLeft != null && spotsLeft === 0 && p.ftPending > 0) {
-      p._triageAction = 'No spots left with ' + fmtInt(p.ftPending) + ' pending FT. Add capacity or open a new section.';
-      buckets.needsCapacity.push(p);
-    } else if (p.demandPct != null && p.demandPct > 90 && spotsLeft != null && spotsLeft < p.ftPending) {
-      p._triageAction = 'Demand at ' + Math.round(p.demandPct) + '% of capacity with ' + fmtInt(p.ftPending) + ' pending FT. May need more spots.';
-      buckets.needsCapacity.push(p);
-    } else if (p._launch.length > 0) {
-      p._triageAction = p._launchDays != null
-        ? 'Registration opens ' + dayPhrase(p._launchDays) + '. ' + fmtInt(p._launchFt) + ' fast-tracked, ' + fmtInt(p._launchPending) + ' still waiting. '
-        : 'Registration not yet open. ' + fmtInt(p._launchFt) + ' wishlists waiting.';
-      buckets.readyToOpen.push(p);
-    } else if (p.ftSignups >= 3 && (p.convPct === 0 || p.convPct === null)) {
-      p._triageAction = fmtInt(p.ftSignups) + ' FT interests but 0 registrations. Check pricing, description, or registration barriers.';
-      buckets.stalled.push(p);
-    } else if (p.convPct != null && p.convPct >= 60 && p.ftSignups >= 3) {
-      buckets.convertingWell.push(p);
-    }
+    var verdict = triageBucket(p, spotsLeft);
+    if (verdict.action != null) p._triageAction = verdict.action;
+    if (verdict.bucket) buckets[verdict.bucket].push(p);
   });
   var needsAttention = buckets.needsCapacity.length + buckets.readyToOpen.length + buckets.stalled.length;
   if (needsAttention === 0) return null;
