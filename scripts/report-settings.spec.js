@@ -184,6 +184,62 @@ ok(R.reportSettingsEnabled("roster") && !R.reportSettingsEnabled("gl"),
      "the threshold is named once in the page rather than typed into the copy");
 }
 
+// ── 4d. The shared-card budget ───────────────────────────────────────────────
+// A per-org floor bounds ONE org; the card is spent by all of them. Dan: "can't
+// have one org going rogue and borking it for everyone."
+{
+  const from = SERVER.indexOf("function sharedCardLoad(");
+  ok(from > 0, "server.js should declare sharedCardLoad()");
+  ok(/const REPORT_BUDGET_MULTIPLE = \d+;/.test(SERVER),
+     "the budget is a MULTIPLE of the all-defaults baseline, not a fixed number — written that way "
+     + "so it cannot go stale as orgs are onboarded");
+  ok(/if \(settings\.cacheTtlMin != null && resolveReportCard\(org, report\)\.shared\)/.test(SERVER),
+     "the budget check runs on a SHARED card only — an org with its own card spends nobody else's time");
+  ok(/next\.total > next\.budget && next\.total > now\.total/.test(SERVER),
+     "…and only refuses a change that makes it WORSE: an org already over budget must still be able "
+     + "to lengthen its cache back toward the default");
+  ok(/Already running short: /.test(SERVER),
+     "a refusal names who is already heavy — the org dragging the slider is not necessarily the one "
+     + "that filled the budget");
+
+  // The panel's platform figure must be a SUM over what each org chose, not this
+  // org's rate multiplied by the org count. The multiplication was shipped in the
+  // mockup and read as though one org set the rate for everyone.
+  ok(/const platform = card \? card\.othersTotal \+ perDay : null;/.test(PAGE),
+     "the platform figure is this org's drafted rate ADDED to what the others actually chose");
+  ok(!/perDay \* orgs/.test(PAGE),
+     "…and never this org's rate multiplied by the org count — that number is simply false");
+  ok(/data-rs-overbudget/.test(PAGE),
+     "and going over budget has to be visible before Save, not only in the error that refuses it");
+}
+
+// ── 4e. Two gates, and the panel is behind both ──────────────────────────────
+{
+  ok(/reportSettings: false,/.test(SERVER),
+     "the feature flag defaults OFF — Dan: 'this power is too much for an org user to handle'");
+  ok(/function isReportSettingsAdmin\(req\)/.test(SERVER),
+     "…and the flag is only half of it: there is a super-admin check as well");
+  ok(/if \(!getFlags\(\)\.reportSettings\) return false;/.test(SERVER),
+     "the admin check reads the flag, so turning the flag off closes the surface for everyone");
+  ok(/if \(!DASHBOARD_PASSWORD\) return "";/.test(SERVER),
+     "NO PASSWORD MEANS NO KEY — it fails closed. dashboardAuth opens the root page when no password "
+     + "is set; a control that spends a shared resource must do the opposite");
+  ok(/crypto\.timingSafeEqual/.test(SERVER), "the key is compared in constant time");
+  ok(/DASHBOARD_PASSWORD \+ "\|report-settings\|v1"/.test(SERVER),
+     "the key is DERIVED from the password rather than being it, so a URL carrying it cannot open "
+     + "the admin dashboard, and rotating the password rotates the key");
+  ok(/if \(!isReportSettingsAdmin\(req\)\) return res\.status\(404\)/.test(SERVER),
+     "the routes 404 rather than 403 — an org staffer with a valid token should not learn the "
+     + "surface exists");
+  is((SERVER.match(/if \(!isReportSettingsAdmin\(req\)\) return res\.status\(404\)/g) || []).length, 2,
+     "…on BOTH the read and the write");
+
+  ok(/\{rsIsAdmin\(\) && \(/.test(PAGE),
+     "the page renders the gear for a super-admin only");
+  ok(/settingsAdmin,\n\s+adminKey: settingsAdmin \? String\(req\.query\.admin \|\| ""\) : "",/.test(SERVER),
+     "…and the key is echoed back to the page only when the request already proved admin");
+}
+
 // ── 5. The ePACT catalogue excludes SESSION-grain fields ─────────────────────
 {
   const offered = R.EPACT_FIELD_CATALOGUE.map(c => c[0]);
@@ -228,7 +284,10 @@ ok(/ePACT columns no longer the verified set/.test(SERVER),
     cwd: ROOT,
     env: Object.assign({}, process.env, {
       PORT: String(PORT), DATA_DIR: dataDir, METABASE_URL: "http://127.0.0.1:9",
-      RESEND_API_KEY: "", SLACK_WEBHOOK_URL: "", DASHBOARD_PASSWORD: "" }),
+      // A password is REQUIRED now: no DASHBOARD_PASSWORD means no super-admin
+      // key, which means nobody can open the panel. That is the fail-closed
+      // direction, and this spec proves it below.
+      RESEND_API_KEY: "", SLACK_WEBHOOK_URL: "", DASHBOARD_PASSWORD: "spec-password" }),
     stdio: ["ignore", "pipe", "pipe"],
   });
   let log = "";
@@ -254,7 +313,11 @@ ok(/ePACT columns no longer the verified set/.test(SERVER),
     req.on("timeout", () => { req.destroy(); rej(new Error("timeout")); });
     req.end(body ? JSON.stringify(body) : undefined);
   });
-  const S = `/${org}/roster/api/settings?token=${encodeURIComponent(token)}`;
+  const crypto = require("crypto");
+  const ADMIN_KEY = crypto.createHash("sha256")
+    .update("spec-password|report-settings|v1").digest("hex").slice(0, 32);
+  const Sbare = `/${org}/roster/api/settings?token=${encodeURIComponent(token)}`;
+  const S = `${Sbare}&admin=${ADMIN_KEY}`;
 
   try {
     await new Promise((res, rej) => {
@@ -266,8 +329,36 @@ ok(/ePACT columns no longer the verified set/.test(SERVER),
       }; tick();
     });
 
+    // ── The two gates ────────────────────────────────────────────────────
+    // The flag is OFF by default, so even the right key opens nothing.
     let r = await call("GET", S);
-    is(r.status, 200, "the settings route answers: " + r.body.slice(0, 120));
+    is(r.status, 404,
+       "with the reportSettings flag OFF the route 404s even for a super-admin — the flag is the "
+       + "first gate, and 404 rather than 403 so the surface is not advertised");
+
+    r = await call("POST", "/api/admin/flags",
+                   { password: "spec-password", key: "reportSettings", value: true });
+    is(r.status, 200, "the flag flips through the existing admin switch: " + r.body.slice(0, 120));
+
+    r = await call("GET", Sbare);
+    is(r.status, 404,
+       "a valid ORG TOKEN is not enough: every staffer at the org has it, and these settings change "
+       + "what all of them see plus what the shared card costs");
+
+    r = await call("GET", `${Sbare}&admin=wrongkeywrongkeywrongkeywrongke`);
+    is(r.status, 404, "and a wrong key of the right length is refused too");
+
+    r = await call("GET", `/api/admin/report-settings-key?password=spec-password`);
+    is(r.status, 200, "the super-admin can look the key up, behind the password itself");
+    is(r.json.key, ADMIN_KEY, "…and it is derived from DASHBOARD_PASSWORD, not equal to it");
+    ok(r.json.key !== "spec-password",
+       "a URL carrying this key must not hand over the admin dashboard");
+
+    r = await call("GET", `/api/admin/report-settings-key?password=nope`);
+    is(r.status, 403, "and looking it up needs the password");
+
+    r = await call("GET", S);
+    is(r.status, 200, "with the flag on AND the key, the settings route answers: " + r.body.slice(0, 120));
     is(r.json.settings.defaultDays, 14, "an org with no stored record reads the platform defaults");
     is(r.json.epactVerified, true, "…and its ePACT template is the verified one");
 
@@ -302,10 +393,10 @@ ok(/ePACT columns no longer the verified set/.test(SERVER),
        "…by DROPPING the org's record rather than writing the defaults into it, so a later change "
        + "to a platform default still reaches an org that reset");
 
-    r = await call("GET", `/${org}/gl/api/settings?token=${encodeURIComponent(token)}`);
+    r = await call("GET", `/${org}/gl/api/settings?token=${encodeURIComponent(token)}&admin=${ADMIN_KEY}`);
     is(r.status, 404, "an unregistered report 404s rather than accepting settings nothing reads");
 
-    r = await call("PUT", `/${org}/roster/api/settings?token=nope`, { defaultDays: 30 });
+    r = await call("PUT", `/${org}/roster/api/settings?token=nope&admin=${ADMIN_KEY}`, { defaultDays: 30 });
     ok(r.status === 404 || r.status === 403,
        "a bad token is refused. 404 rather than 403 is CORRECT here and worth knowing: the global "
        + "org-token middleware answers first and deliberately does not leak whether the org exists, "

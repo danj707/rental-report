@@ -768,6 +768,13 @@ const clickCheckinsTab = async page => {
   });
 };
 
+// The report-settings panel is behind a feature flag AND a super-admin key
+// derived from DASHBOARD_PASSWORD (see the boot below, which sets both). Declared
+// here because CASES needs it.
+const RENDER_ADMIN_PW = "render-check-password";
+const RENDER_ADMIN_KEY = require("crypto").createHash("sha256")
+  .update(RENDER_ADMIN_PW + "|report-settings|v1").digest("hex").slice(0, 32);
+
 // ── Pages to prove ──────────────────────────────────────────────────────────
 // `needs` is a selector that only exists once the page has really rendered, so
 // a blank page fails instead of passing on "no errors thrown".
@@ -1063,9 +1070,15 @@ const CASES = [
     } },
 
   // ── Class Roster: the settings panel ────────────────────────────────────
+  // THE DOOR FIRST. An org staffer holds a valid token — that is what the report
+  // link is — and must not even see the gear. Asserted as ABSENT from the DOM
+  // rather than disabled: "renders a greyed button" and "renders nothing" are
+  // different claims, and only one of them keeps the power away from an org user.
+  { name: "roster · no gear without the admin key", path: "/{org}/roster",
+    needs: ".toolbar", absent: "[data-rs-open]" },
   // The gear sits at the far right of the toolbar (Dan: "a standard gear wheel
   // settings looking icon in the upper right corner").
-  { name: "roster · settings gear is last in the toolbar", path: "/{org}/roster",
+  { name: "roster · settings gear is last in the toolbar", path: "/{org}/roster?admin=" + RENDER_ADMIN_KEY,
     needs: "body[data-gear-last=\"1\"]",
     act: async page => {
       await page.waitForSelector("[data-rs-open]", { timeout: 45000 });
@@ -1083,7 +1096,7 @@ const CASES = [
       });
     } },
   // The panel opens and carries all three groups, in blast-radius order.
-  { name: "roster · settings panel opens", path: "/{org}/roster",
+  { name: "roster · settings panel opens", path: "/{org}/roster?admin=" + RENDER_ADMIN_KEY,
     needs: "[data-rs-group=\"safe\"] , [data-rs-group=\"warn\"]",
     act: async page => {
       await page.waitForSelector("[data-rs-open]", { timeout: 45000 });
@@ -1093,7 +1106,7 @@ const CASES = [
   // The ePACT drift banner: green on the verified five, and it must flip the
   // moment a column is added. A panel that let you leave the verified template
   // silently is the one thing this group exists to prevent.
-  { name: "roster · epact drift is never silent", path: "/{org}/roster",
+  { name: "roster · epact drift is never silent", path: "/{org}/roster?admin=" + RENDER_ADMIN_KEY,
     needs: "body[data-drift=\"1\"]",
     act: async page => {
       await page.waitForSelector("[data-rs-open]", { timeout: 45000 });
@@ -1111,7 +1124,7 @@ const CASES = [
     } },
   // The cache dial prices itself: the shared-card total has to MOVE, or the
   // guardrail is a caption nobody reads.
-  { name: "roster · cache dial shows what it costs", path: "/{org}/roster",
+  { name: "roster · cache dial shows what it costs", path: "/{org}/roster?admin=" + RENDER_ADMIN_KEY,
     needs: "body[data-priced=\"1\"]",
     act: async page => {
       await page.waitForSelector("[data-rs-open]", { timeout: 45000 });
@@ -1424,10 +1437,20 @@ const CASES = [
     act: async page => { await page.click(".example-chip"); await page.click(".btn-generate"); } },
 ];
 
+// The report-settings panel is behind TWO gates: a feature flag (default off)
+// and a super-admin key derived from DASHBOARD_PASSWORD. So this check boots
+// with a password and pre-enables the flag — otherwise the gear does not render
+// and the panel cases would be testing the closed door rather than the panel.
+// One case deliberately drops the key, to prove the door.
+try {
+  fs.writeFileSync(path.join(dataDir, "feature-flags.json"),
+                   JSON.stringify({ reportSettings: true }));
+} catch (_) {}
+
 const child = spawn(process.execPath, [path.join(__dirname, "..", "server.js")], {
   env: { ...process.env, PORT: String(PORT), DATA_DIR: dataDir,
          METABASE_URL: "http://127.0.0.1:9", RESEND_API_KEY: "", SLACK_WEBHOOK_URL: "",
-         DASHBOARD_PASSWORD: "" },
+         DASHBOARD_PASSWORD: RENDER_ADMIN_PW },
   stdio: ["ignore", "pipe", "pipe"],
 });
 let out = "";

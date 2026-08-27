@@ -2810,6 +2810,14 @@ const DEFAULT_FLAGS = {
   schemaBreakAlerts: true,   // dropped table/column watchdog  → `schema-break`
   paramDriftAlerts: true,    // date tag reset to Text          → `param-drift`
   reportDownAlerts: true,    // a card that cannot answer       → `report-down`
+  // ── Per-org report settings (2026-08-27) ───────────────────────────────
+  // Dan: "let's hide the settings behind a feature flag just for super duper
+  // admins (me) right now. This power is too much for an org user to handle."
+  // Default OFF, and the flag is only half the gate — see
+  // isReportSettingsAdmin(): the org token every staffer has is NOT enough,
+  // because these settings change what everyone in the org sees and one of them
+  // spends Metabase time on a card the whole platform shares.
+  reportSettings: false,
 };
 
 // The ONLY place an alert event is mapped to its switch. Anything not listed is
@@ -8662,6 +8670,49 @@ const EPACT_VERIFIED_COLUMNS = [
 const REPORT_TTL_FLOOR_MIN = 30;
 const REPORT_TTL_CEILING_MIN = 24 * 60;
 
+// ── The shared-card budget ───────────────────────────────────────────────────
+// A per-org floor alone does not answer Dan's objection ("can't have one org
+// going rogue and borking it for everyone"), because the floor is per org and
+// the CARD is shared: every org's roster comes off the same Metabase card, so
+// each org that shortens its cache adds its own queries to one queue. The
+// failure mode is contention, and this repo has already had it — the post-deploy
+// prewarm storm that 502'd the facility Summary.
+//
+// So the budget is platform-wide, expressed as a MULTIPLE of what every org
+// sitting on the shipping default would cost. Written that way rather than as a
+// fixed number so it cannot go stale as orgs are onboarded.
+const REPORT_BUDGET_MULTIPLE = 2;
+
+// What a report's shared card is scheduled to cost per day, org by org.
+// `overrideOrg`/`overrideTtlMin` model a change BEFORE it is saved, which is
+// what lets the panel price a drag and the route refuse one.
+function sharedCardLoad(rt, overrideOrg, overrideTtlMin) {
+  const def = reportSettingsDefaults(rt).cacheTtlMin;
+  const perDay = ttl => Math.round(24 * 60 / Math.max(1, ttl));
+  const rows = [];
+  for (const slug of Object.keys(ORGS)) {
+    // Only orgs that can actually open the report spend anything on its card.
+    let visible = true;
+    try { visible = visibleReportsForOrg(slug).includes(rt); } catch (_) {}
+    if (!visible) continue;
+    const ttl = (slug === overrideOrg && overrideTtlMin) ? overrideTtlMin
+              : reportSettings(slug, rt).cacheTtlMin;
+    rows.push({ org: slug, ttlMin: ttl, perDay: perDay(ttl) });
+  }
+  const total = rows.reduce((a, r) => a + r.perDay, 0);
+  const baseline = rows.length * perDay(def);
+  return {
+    orgs: rows.length,
+    total,
+    baseline,
+    budget: baseline * REPORT_BUDGET_MULTIPLE,
+    // Who is actually spending more than the default, worst first — so a refusal
+    // can name them instead of blaming whoever happened to drag the slider last.
+    heaviest: rows.filter(r => r.ttlMin < def).sort((a, b) => b.perDay - a.perDay)
+                  .slice(0, 5).map(r => ({ org: r.org, ttlMin: r.ttlMin, perDay: r.perDay })),
+  };
+}
+
 const REPORT_SETTINGS_SCHEMA = {
   roster: {
     // ── what it opens on ──
@@ -8689,6 +8740,36 @@ const REPORT_SETTINGS_SCHEMA = {
 };
 
 function reportSettingsEnabled(report) { return !!REPORT_SETTINGS_SCHEMA[report]; }
+
+// ── Who may touch these ──────────────────────────────────────────────────────
+// TWO gates, and both are deliberate.
+//
+//  1. The `reportSettings` feature flag, default OFF.
+//  2. A super-admin key, which is NOT the org token: every staffer at an org has
+//     that, and these settings change what all of them see plus what the shared
+//     card costs. It is derived from DASHBOARD_PASSWORD rather than being the
+//     password, so it can sit in a URL without handing over the admin dashboard,
+//     and rotating the password rotates it.
+//
+// FAILS CLOSED. No DASHBOARD_PASSWORD means no key, which means nobody can open
+// the panel — not "open access", which is what dashboardAuth does for the root
+// page. The failure direction for a control that spends a shared resource has to
+// be locked, not open.
+function reportSettingsAdminKey() {
+  if (!DASHBOARD_PASSWORD) return "";
+  return crypto.createHash("sha256")
+    .update(DASHBOARD_PASSWORD + "|report-settings|v1").digest("hex").slice(0, 32);
+}
+function isReportSettingsAdmin(req) {
+  if (!getFlags().reportSettings) return false;
+  const want = reportSettingsAdminKey();
+  if (!want) return false;
+  const got = String((req.query && req.query.admin) || req.headers["x-admin-key"] || "");
+  if (got.length !== want.length) return false;
+  try {
+    return crypto.timingSafeEqual(Buffer.from(got), Buffer.from(want));
+  } catch (_) { return false; }
+}
 
 function reportSettingsDefaults(report) {
   const schema = REPORT_SETTINGS_SCHEMA[report];
@@ -8796,11 +8877,34 @@ function ttlForKey(key, rt, hist) {
   return reportTtlMs(String(key || "").split(":")[0], rt, hist);
 }
 
+// The key, for the one person allowed to have it. Behind DASHBOARD_PASSWORD, so
+// knowing the password is what gets you the key rather than the key being the
+// password — a URL carrying this cannot open the admin dashboard.
+app.get("/api/admin/report-settings-key", (req, res) => {
+  if (!DASHBOARD_PASSWORD) {
+    return res.status(503).json({ error: "Set DASHBOARD_PASSWORD in Railway to enable report settings" });
+  }
+  const auth = req.headers["authorization"] || "";
+  const basic = auth.startsWith("Basic ")
+    ? (d => d.includes(":") ? d.split(":").slice(1).join(":") : d)(Buffer.from(auth.slice(6), "base64").toString("utf-8"))
+    : "";
+  const pw = req.query.password || (req.body && req.body.password) || basic;
+  if (pw !== DASHBOARD_PASSWORD) return res.status(403).json({ error: "Wrong password" });
+  res.json({
+    enabled: !!getFlags().reportSettings,
+    key: reportSettingsAdminKey(),
+    usage: "append &admin=<key> to a report URL you already have a token for",
+  });
+});
+
 app.get("/:org/:report/api/settings", (req, res) => {
   const { org, report } = req.params;
   if (!ORGS[org]) return res.status(404).json({ error: "Unknown org" });
   const supplied = req.query.token || req.headers["x-token"] || "";
   if (ORGS[org].token && supplied !== ORGS[org].token) return res.status(403).json({ error: "Invalid token" });
+  // 404 rather than 403: an org staffer with a valid token should not learn that
+  // a settings surface exists at all.
+  if (!isReportSettingsAdmin(req)) return res.status(404).json({ error: "Not found" });
   if (!reportSettingsEnabled(report)) {
     return res.status(404).json({ error: `Settings aren't enabled for the "${report}" report` });
   }
@@ -8812,6 +8916,7 @@ app.get("/:org/:report/api/settings", (req, res) => {
     limits: { ttlFloorMin: REPORT_TTL_FLOOR_MIN, ttlCeilingMin: REPORT_TTL_CEILING_MIN },
     epactVerified: epactIsVerified(settings.epactColumns),
     verifiedEpactColumns: EPACT_VERIFIED_COLUMNS,
+    sharedCard: resolveReportCard(org, report).shared ? sharedCardLoad(report) : null,
   });
 });
 
@@ -8820,6 +8925,7 @@ app.put("/:org/:report/api/settings", (req, res) => {
   if (!ORGS[org]) return res.status(404).json({ error: "Unknown org" });
   const supplied = req.query.token || req.headers["x-token"] || (req.body && req.body.token) || "";
   if (ORGS[org].token && supplied !== ORGS[org].token) return res.status(403).json({ error: "Invalid token" });
+  if (!isReportSettingsAdmin(req)) return res.status(404).json({ error: "Not found" });
   if (!reportSettingsEnabled(report)) {
     return res.status(404).json({ error: `Settings aren't enabled for the "${report}" report` });
   }
@@ -8836,6 +8942,25 @@ app.put("/:org/:report/api/settings", (req, res) => {
   delete body.reset;
   const { settings, dropped, error } = normalizeReportSettings(report, body);
   if (error) return res.status(400).json({ error });
+
+  // A per-org floor is not enough on a SHARED card: it bounds one org and the
+  // card is spent by all of them. Refuse a change that would push the platform
+  // total past its budget, and NAME who is already heavy — the org dragging the
+  // slider is not necessarily the one that filled it.
+  if (settings.cacheTtlMin != null && resolveReportCard(org, report).shared) {
+    const now = sharedCardLoad(report);
+    const next = sharedCardLoad(report, org, settings.cacheTtlMin);
+    if (next.total > next.budget && next.total > now.total) {
+      const who = next.heaviest.map(h => `${h.org} at ${h.ttlMin}m`).join(", ");
+      return res.status(400).json({
+        error: `That cache lifetime would put the shared ${report} card at ${next.total} queries/day, `
+             + `over the platform budget of ${next.budget}. `
+             + (who ? `Already running short: ${who}. ` : "")
+             + `Lengthen another org's cache first, or leave this one at ${now.total <= now.budget ? "its current setting" : "the default"}.`,
+        budget: { total: next.total, cap: next.budget, heaviest: next.heaviest },
+      });
+    }
+  }
 
   const all = readReportSettingsStore();
   const before = (all[org] || {})[report] || {};
@@ -9573,8 +9698,13 @@ app.get("/:org/roster", (req, res) => {
   // (window, columns, which controls exist), and a page that had to wait for a
   // round trip would flash the platform defaults first.
   const settings = reportSettings(slug, "roster");
+  // The settings themselves are injected for EVERY reader — they decide the
+  // first render. Only the gear that edits them is gated.
+  const settingsAdmin = isReportSettingsAdmin(req);
   const orgConfig = {
     slug, token: org.token || "",
+    settingsAdmin,
+    adminKey: settingsAdmin ? String(req.query.admin || "") : "",
     savedViewRanges: SAVED_VIEW_RELATIVE_OFFER.roster,
     settings,
     settingsMeta: {
@@ -9584,7 +9714,19 @@ app.get("/:org/roster", (req, res) => {
       hideable: ROSTER_HIDEABLE,
       ttlFloorMin: REPORT_TTL_FLOOR_MIN,
       ttlCeilingMin: REPORT_TTL_CEILING_MIN,
-      orgCount: Object.keys(ORGS).length,
+      // The REAL platform picture, not this org's rate multiplied by the org
+      // count: each org's cache lifetime is its own, so the total is a sum over
+      // what every org has actually chosen. `othersTotal` lets the panel reprice
+      // a drag without another round trip.
+      sharedCard: resolveReportCard(slug, "roster").shared
+        ? (() => {
+            const load = sharedCardLoad("roster");
+            const mine = Math.round(24 * 60 / Math.max(1, settings.cacheTtlMin));
+            return { orgs: load.orgs, total: load.total, budget: load.budget,
+                     baseline: load.baseline, othersTotal: load.total - mine,
+                     heaviest: load.heaviest };
+          })()
+        : null,
     },
   };
   const html = require("fs").readFileSync(path.join(__dirname, "public", "roster.html"), "utf8");

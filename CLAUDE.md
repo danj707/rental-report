@@ -2940,9 +2940,20 @@ data. That is the point, and the TTL still governs how stale it may be.
   views.
 - **Not a saved view.** A view is a named filter set anyone can make, many per
   report. This is one starting point per org.
-- **Not access control.** Single tenant, so the gate is the org token the report
-  link already carries. When multi-tenant lands, `savedViewsGate`'s twin here is
-  the one place that needs a role check.
+- **SUPER-ADMIN ONLY, behind a flag** (Dan, after seeing the panel: *"this power
+  is too much for an org user to handle"*). Two gates, and both are deliberate:
+  the `reportSettings` feature flag, default **OFF**; and a key that is **not**
+  the org token — every staffer at an org has that, and these settings change
+  what all of them see plus what the shared card costs. The key is
+  `sha256(DASHBOARD_PASSWORD + "|report-settings|v1")` truncated, so it can sit
+  in a URL without handing over the admin dashboard, and rotating the password
+  rotates it. Look it up at `/api/admin/report-settings-key?password=…`.
+  **It FAILS CLOSED**: no `DASHBOARD_PASSWORD` means no key means nobody, which
+  is the opposite of `dashboardAuth`'s "no password → open access" for the root
+  page — right for a root page in dev, wrong for a control that spends a shared
+  resource. Both routes answer **404, not 403**, so a staffer with a valid token
+  never learns the surface exists, and the gear is absent from the DOM rather
+  than disabled.
 - Registry-driven like `SAVED_VIEW_PARAMS`: `REPORT_SETTINGS_SCHEMA` registers
   `roster` alone and every other report 404s.
 
@@ -2954,10 +2965,26 @@ data. That is the point, and the TTL still governs how stale it may be.
 | How fresh | costs Metabase time on a **shared card** | cache lifetime, "Data as of" stamp, pre-warm the default window |
 | The ePACT export | changes a file a HIPAA vendor imports | columns and their order, group label, BOM |
 
-- **The cache dial prices itself.** The roster runs on a card every org shares,
-  so the panel shows refreshes/org/day *and* the platform total, and the number
-  moves as you drag. A floor of **30 minutes** clamps rather than refuses — a
-  dial that snaps teaches the limit where an error just loses the edit.
+- **The cache dial prices itself, and the platform figure is a SUM.** The first
+  version multiplied this org's rate by the org count — "348 card queries/day ·
+  29 orgs" — which is simply false: each org's lifetime is its own. Dan spotted
+  what it implied (*"can't have one org going rogue and borking it for
+  everyone"*). The panel now shows this org's rate plus what every OTHER org has
+  actually chosen, against a budget.
+- **A per-org floor does not answer that objection, so there is also a
+  platform-wide budget.** The floor bounds one org; the CARD is shared, and the
+  failure mode is contention on one Metabase queue — this repo has already had
+  it, in the post-deploy prewarm storm that 502'd the facility Summary.
+  `sharedCardLoad(rt)` sums every visible org's configured rate;
+  `REPORT_BUDGET_MULTIPLE` (2) sets the cap as a multiple of what all-defaults
+  would cost, **written as a multiple so it cannot go stale as orgs are
+  onboarded**. A save that would exceed it is refused, and the refusal **names
+  the orgs already running short** — the one dragging the slider is not
+  necessarily the one that filled it. It only refuses a change that makes things
+  *worse*, so an org already over budget can still lengthen back toward the
+  default. Shared cards only: an org on its own card spends nobody else's time.
+- The floor of **30 minutes** clamps rather than refuses — a dial that snaps
+  teaches the limit where an error just loses the edit.
 - **`warmDefaultWindow` is OFF by default.** It adds one Metabase query per org
   per day; a load increase should be switched on and measured, not slipped in.
   When on, pre-warm fetches the window the page will actually ask for, built
@@ -3005,8 +3032,11 @@ label, so it now looks the columns up **by name**.
 registry and its validator, and has a live half that boots the server, saves,
 clamps, resets and reads the settings back **out of the page's injected
 `ORG_CONFIG`** — they decide the first render, so a page that fetched them would
-flash the platform defaults first. Mutation-tested twelve ways, all failing by
-name: pre-warm hand-building its key again, the TTL floor removed,
+flash the platform defaults first. Mutation-tested eighteen ways, all failing by
+name: the feature flag defaulting ON, no-password falling open instead of
+closed, the admin gate removed from either route, the budget check dropped, the
+panel multiplying by the org count again, the gear rendering for everyone,
+pre-warm hand-building its key again, the TTL floor removed,
 `warmDefaultWindow` defaulting on, an unknown key silently accepted, a
 session-grain field offered, the server's column defaults drifting from the
 page's, an org default overriding a reader's columns, `settings-save` dropped
@@ -3019,7 +3049,14 @@ as well as an unconfigured one, and the assertions that matter are that the
 DEFAULT is still the verified five and that an unknown column set falls back
 rather than exporting empty columns.
 
-Four new `ci-check-render.js` cases, two of them seen to fail on a real
+`ci-check-render.js` now boots the server **with** a `DASHBOARD_PASSWORD` and
+pre-writes `feature-flags.json` with `reportSettings: true`, or the panel cases
+would be testing the closed door instead of the panel. One case deliberately
+drops the key and asserts the gear is **ABSENT from the DOM** — "renders a greyed
+button" and "renders nothing" are different claims, and only one of them keeps
+the power away from an org user.
+
+Five `ci-check-render.js` cases, two of them seen to fail on a real
 regression in a browser: the gear is **last** in the toolbar (moving it fails),
 the panel opens with all three groups, the drift banner flips when a column is
 added (pinning it green fails), and the cache dial's platform total **goes up**
