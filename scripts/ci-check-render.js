@@ -1062,6 +1062,80 @@ const CASES = [
       });
     } },
 
+  // ── Class Roster: the settings panel ────────────────────────────────────
+  // The gear sits at the far right of the toolbar (Dan: "a standard gear wheel
+  // settings looking icon in the upper right corner").
+  { name: "roster · settings gear is last in the toolbar", path: "/{org}/roster",
+    needs: "body[data-gear-last=\"1\"]",
+    act: async page => {
+      await page.waitForSelector("[data-rs-open]", { timeout: 45000 });
+      await page.evaluate(() => {
+        const tb = document.querySelector(".toolbar");
+        const gear = document.querySelector("[data-rs-open]");
+        const btns = [...tb.querySelectorAll("button")];
+        // Last button in the toolbar, and further right than the exports.
+        const epact = document.querySelector(".btn-epact");
+        const rightOfExports = !epact
+          || gear.getBoundingClientRect().left > epact.getBoundingClientRect().left;
+        if (btns[btns.length - 1] === gear && rightOfExports) {
+          document.body.setAttribute("data-gear-last", "1");
+        }
+      });
+    } },
+  // The panel opens and carries all three groups, in blast-radius order.
+  { name: "roster · settings panel opens", path: "/{org}/roster",
+    needs: "[data-rs-group=\"safe\"] , [data-rs-group=\"warn\"]",
+    act: async page => {
+      await page.waitForSelector("[data-rs-open]", { timeout: 45000 });
+      await page.click("[data-rs-open]");
+      await page.waitForSelector(".rs-sheet", { timeout: 45000 });
+    } },
+  // The ePACT drift banner: green on the verified five, and it must flip the
+  // moment a column is added. A panel that let you leave the verified template
+  // silently is the one thing this group exists to prevent.
+  { name: "roster · epact drift is never silent", path: "/{org}/roster",
+    needs: "body[data-drift=\"1\"]",
+    act: async page => {
+      await page.waitForSelector("[data-rs-open]", { timeout: 45000 });
+      await page.click("[data-rs-open]");
+      await page.waitForSelector("[data-rs-verified]", { timeout: 45000 });
+      const before = await page.$eval("[data-rs-verified]", el => el.getAttribute("data-rs-verified"));
+      await page.select("[data-rs-epact-add]", "Age");
+      await page.waitForFunction(
+        () => document.querySelector("[data-rs-verified]")?.getAttribute("data-rs-verified") === "0",
+        { timeout: 45000 });
+      const after = await page.$eval("[data-rs-verified]", el => el.textContent);
+      await page.evaluate(([b, a]) => {
+        if (b === "1" && /no longer the Apex-verified/.test(a)) document.body.setAttribute("data-drift", "1");
+      }, [before, after]);
+    } },
+  // The cache dial prices itself: the shared-card total has to MOVE, or the
+  // guardrail is a caption nobody reads.
+  { name: "roster · cache dial shows what it costs", path: "/{org}/roster",
+    needs: "body[data-priced=\"1\"]",
+    act: async page => {
+      await page.waitForSelector("[data-rs-open]", { timeout: 45000 });
+      await page.click("[data-rs-open]");
+      await page.waitForSelector("[data-rs-cost]", { timeout: 45000 });
+      const at2h = await page.$eval("[data-rs-cost]", el => el.getAttribute("data-rs-cost"));
+      // Driven by the KEYBOARD rather than by assigning .value: React tracks a
+      // controlled input's value internally, so a direct assignment plus a
+      // synthetic event is ignored and the case would fail on a working dial.
+      // Three steps left is 2 hours → 30 minutes, the floor.
+      await page.focus(".rs-meter input[type=range]");
+      await page.keyboard.press("ArrowLeft");
+      await page.keyboard.press("ArrowLeft");
+      await page.keyboard.press("ArrowLeft");
+      await page.waitForFunction(
+        (was) => document.querySelector("[data-rs-cost]")?.getAttribute("data-rs-cost") !== was,
+        { timeout: 45000 }, at2h);
+      await page.evaluate((was) => {
+        const now = Number(document.querySelector("[data-rs-cost]").getAttribute("data-rs-cost"));
+        // A shorter cache must cost MORE, not just differently.
+        if (now > Number(was)) document.body.setAttribute("data-priced", "1");
+      }, at2h);
+    } },
+
   { name: "facilities · outdoor events",   path: "/{org}/facilities?tab=outdoor", needs: "[data-oe-heat]" },
   { name: "facilities · outdoor peak hour", path: "/{org}/facilities?tab=outdoor", needs: "[data-oe-peak=\"11a\"]" },
   { name: "facilities · outdoor multi-day", path: "/{org}/facilities?tab=outdoor", needs: "[data-oe-timed=\"4\"]" },

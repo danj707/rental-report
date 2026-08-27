@@ -176,6 +176,19 @@ const CACHE_TTL = 4 * 60 * 60 * 1000;  // 4-hour default TTL — warmed at 5am, 
 // Schema version per report feed — see the cacheKey in /:org/:report/api/data.
 // court-utilization v2: card 17297 gained local_start / local_end (2026-08-18).
 const FEED_VERSION = { "court-utilization": 2 };
+// ONE builder for a feed's cache key, used by the data route AND by pre-warm.
+//
+// They had drifted, and the drift was total: the route builds
+// `org:report:v1:?parameters=…` while pre-warm wrote `org:report:?parameters=…`,
+// so NOTHING pre-warm produced could be read back by the page that needed it.
+// The version segment was added to the route's key to bust the cache when a card
+// gains a column (court-utilization v2) and pre-warm was never updated with it.
+// Proven by construction rather than by measurement — the two template literals
+// cannot produce the same string — and pinned by report-settings.spec.js, which
+// fails if either caller stops going through here.
+function feedCacheKey(orgSlug, reportType, paramStr) {
+  return `${orgSlug}:${reportType}:v${FEED_VERSION[reportType] || 1}:${paramStr || ""}`;
+}
 const REPORT_CACHE_TTL = {
   facility: 4 * 60 * 60 * 1000,            // 4 hrs — warmed at 5am
   gl: 15 * 60 * 1000,                     // 15 min — financials need to be near-live; the GL report also shows a "Data as of · Refresh" stamp for on-demand realtime
@@ -295,8 +308,7 @@ async function getDiskCached(key, orgSlug, reportType) {
     const raw = await fs.promises.readFile(path.join(CACHE_DIR, fname), 'utf8');
     const entry = JSON.parse(raw);
     if (!entry || !entry.data || !entry.ts) return null;
-    const ttl = entry.rt === "users" ? USERS_CACHE_TTL
-      : (entry.hist ? HIST_CACHE_TTL : (REPORT_CACHE_TTL[entry.rt] || CACHE_TTL));
+    const ttl = ttlForKey(entry.key || key, entry.rt, entry.hist);
     if (Date.now() - entry.ts > ttl) return null; // too stale for a normal hit
     cacheStats.hits++;
     if (isWarmTarget(orgSlug, reportType)) {
@@ -403,7 +415,7 @@ function getCachedEntry(key, orgSlug, reportType) {
     entry = dataCache.get(baseKey);
   }
   if (!entry) { cacheStats.misses++; return null; }
-  const ttl = entry.hist ? HIST_CACHE_TTL : (REPORT_CACHE_TTL[entry.rt] || CACHE_TTL);
+  const ttl = reportTtlMs(orgSlug || String(key).split(":")[0], entry.rt, entry.hist);
   if (Date.now() - entry.ts > ttl) { dataCache.delete(key); cacheStats.misses++; return null; }
   cacheStats.hits++;
   entry.lastRead = Date.now(); // for LRU recency
@@ -470,7 +482,7 @@ function hydrateCacheFromDisk() {
         const raw = fs.readFileSync(path.join(CACHE_DIR, file), 'utf8');
         const entry = JSON.parse(raw);
         if (!entry.key || !entry.data || !entry.ts) continue;
-        const ttl = REPORT_CACHE_TTL[entry.rt] || CACHE_TTL;
+        const ttl = ttlForKey(entry.key, entry.rt, entry.hist);
         if (Date.now() - entry.ts > ttl * 12) { // generous grace — stale data beats 502
           fs.unlink(path.join(CACHE_DIR, file), () => {});
           expired++;
@@ -525,7 +537,7 @@ function invalidateFacilitiesCacheOnUuidChange() {
 setInterval(() => {
   const now = Date.now();
   for (const [k, v] of dataCache) {
-    const ttl = REPORT_CACHE_TTL[v.rt] || CACHE_TTL;
+    const ttl = ttlForKey(k, v.rt, v.hist);
     if (now - v.ts > ttl * 2) dataCache.delete(k);
   }
 }, 60 * 60 * 1000);
@@ -881,14 +893,49 @@ async function prewarmCache(reason = 'interval') {
           setCache(cacheKey, result, rt);
           // Also store under the full paramStr key (with org_id + dates) so
           // normal requests get a cache hit, not just prewarm base-key lookups.
-          if (paramStr) setCache(`${slug}:${rt}:${paramStr}`, result, rt);
+          // THROUGH feedCacheKey, because these keys have to match the ones the
+          // data route builds — for a long time they did not, and every entry
+          // written here was unreachable.
+          if (paramStr) setCache(feedCacheKey(slug, rt, paramStr), result, rt);
           // Also store under the explicit "This Month" cache key so users who
           // click This Month (which sends start_date + end_date params) get a
           // cache hit instead of re-querying Metabase.
           const monthKeyWithOrg = useShared && org.orgId
             ? `?parameters=${encodeURIComponent(JSON.stringify([{ type: "string/=", target: ["variable", ["template-tag", "org_id"]], value: org.orgId }, ...monthParams]))}`
             : monthParamStr;
-          setCache(`${slug}:${rt}:${monthKeyWithOrg}`, result, rt);
+          setCache(feedCacheKey(slug, rt, monthKeyWithOrg), result, rt);
+
+          // ── The window the PAGE will actually open on ──
+          // Opt-in per org (roster `warmDefaultWindow`, default OFF) because it
+          // is one more Metabase query per org per day — a load increase should
+          // be switched on and measured, not slipped in. What it buys: the Class
+          // Roster's first open is otherwise a cold query on a window nothing
+          // has warmed. Built with the REAL buildMetabaseParams so the key is
+          // the one the route computes, not an approximation of it.
+          try {
+            if (reportSettingsEnabled(rt) && reportSettings(slug, rt).warmDefaultWindow) {
+              const days = reportSettings(slug, rt).defaultDays;
+              if (Number.isFinite(days) && days > 0) {
+                const t0 = new Date();
+                const start = new Date(t0.getFullYear(), t0.getMonth(), t0.getDate());
+                const end = new Date(start.getFullYear(), start.getMonth(), start.getDate() + days - 1);
+                const iso = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+                const dp = buildMetabaseParams({ start_date: iso(start), end_date: iso(end) }, rt, org.orgId);
+                const dpStr = dp.length ? `?parameters=${encodeURIComponent(JSON.stringify(dp))}` : "";
+                const defKey = feedCacheKey(slug, rt, dpStr);
+                if (!getCached(defKey) && await paceOk()) {
+                  const r2 = await timedWarmFetch(`${METABASE_URL}/api/public/card/${mbUuid}/query/json${dpStr}`, timeoutMs);
+                  if (r2.ok) {
+                    const d2 = await r2.json();
+                    setCache(defKey, { rows: d2, meta: { org_slug: slug, org_id: org.orgId, logo_url: org.logoUrl, report_type: rt, generated_at: new Date().toISOString() } }, rt);
+                    console.log(`[cache] Warmed ${slug}/${rt} default window ${iso(start)}→${iso(end)} (${d2.length} rows)`);
+                  }
+                }
+              }
+            }
+          } catch (e) {
+            console.warn(`[cache] Default-window warm failed for ${slug}/${rt}: ${e.message}`);
+          }
           warmed++;
           console.log(`[cache] Warmed ${slug}/${rt} (${data.length} rows)`);
         }
@@ -2360,7 +2407,7 @@ async function runHealthCheck(forceAll, failuresOnly) {
     // Cache-first: if warm data exists, skip the Metabase probe entirely
     const cacheKey = `${slug}:${rt}:`;
     const cachedEntry = dataCache.get(cacheKey);
-    const ttl = REPORT_CACHE_TTL[rt] || CACHE_TTL;
+    const ttl = reportTtlMs(slug, rt, false);
     if (cachedEntry && (now - cachedEntry.ts < ttl)) {
       entry.rows = cachedEntry.data?.rows?.length || 0;
       entry.source = "cache";
@@ -3607,7 +3654,7 @@ setTimeout(() => { checkCardParamTypes().catch(() => {}); }, 150 * 1000).unref?.
 // Inert if the env var is unset. Fire-and-forget — never blocks or breaks logging.
 // To change what pings Slack, edit SLACK_NOTIFY. High-frequency events (view/fetch)
 // are debounced per org+report so Slack isn't a firehose.
-const SLACK_NOTIFY = new Set(["created", "org-deleted", "watchdog", "schema-break", "param-drift", "report-down", "campmap-share", "campmap-site", "campmap-book", "campmap-filter", "campmap-amenity", "pdf", "excel", "print", "summary", "game", "map", "outdoor", "fields", "view", "insights", "insights-feedback", "chat-feedback", "feedback", "vote", "update-vote", "munis", "permits", "email", "checkin-loc", "checkin-member", "checkin-failed", "form-open", "epact", "deadlink", "generate", "wizard-save"]);
+const SLACK_NOTIFY = new Set(["created", "org-deleted", "watchdog", "schema-break", "param-drift", "report-down", "campmap-share", "campmap-site", "campmap-book", "campmap-filter", "campmap-amenity", "pdf", "excel", "print", "summary", "game", "map", "outdoor", "fields", "view", "insights", "insights-feedback", "chat-feedback", "feedback", "vote", "update-vote", "munis", "permits", "email", "checkin-loc", "checkin-member", "checkin-failed", "form-open", "epact", "settings-save", "settings-reset", "deadlink", "generate", "wizard-save"]);
 const SLACK_DEBOUNCE_MS = { view: 30 * 60 * 1000, fetch: 30 * 60 * 1000,
   // A broken report stays broken. The health check only reports NEW failures,
   // but a flapping card would otherwise post every hour.
@@ -3648,6 +3695,10 @@ const SLACK_EVENT_META = {
   // health forms). Highest-signal export on the roster: it is a camp being set
   // up, not someone reading a page.
   epact:   { emoji: "\uD83D\uDCE4", verb: "exported an ePACT participant list from" },
+  // A settings change alters what EVERY reader of that report sees on their next
+  // open, so it belongs in the feed the way an org-level change does.
+  "settings-save":  { emoji: "\u2699\uFE0F", verb: "changed the report settings for" },
+  "settings-reset": { emoji: "\u267B\uFE0F", verb: "reset the report settings for" },
   view:    { emoji: "👀", verb: "viewed" },
   // Pavilions, shelters, picnic areas and bounce houses — a new tab on the
   // Facilities hub, so its own event rather than a bare `view` of `facilities`.
@@ -3899,6 +3950,15 @@ function notifySlack(rec) {
     const skipped = (rec.rows || 0) - (rec.sheets || 0);
     text = `${meta.emoji} ${orgName} (\`${rec.org}\`) ${meta.verb} *${rec.report}* — ${rec.sheets || 0} sheet${rec.sheets === 1 ? "" : "s"}`
          + (skipped > 0 ? ` (${skipped} row${skipped === 1 ? "" : "s"} had no issued permit)` : "");
+  } else if (rec.event === "settings-save") {
+    // Name the fields, and call out the two that carry real consequence: a cache
+    // floor spent on a shared card, and an ePACT template that no longer matches
+    // the one verified against the org's own query.
+    const what = rec.changed ? ` \u2014 ${String(rec.changed).replace(/,/g, ", ").slice(0, 140)}` : "";
+    const ttl = Number(rec.ttlMin);
+    const fresh = Number.isFinite(ttl) ? ` \u00B7 cache ${ttl >= 60 ? (ttl / 60) + "h" : ttl + "m"}` : "";
+    const drift = rec.epactVerified === false ? " \u00B7 \u26A0\uFE0F ePACT columns no longer the verified set" : "";
+    text = `${meta.emoji} ${orgName} (\`${rec.org}\`) ${meta.verb} *${rec.report}*${what}${fresh}${drift}`;
   } else if (rec.event === "epact") {
     // The count is the point — an org uploading 400 campers is a different
     // signal from one testing the button on a class of six.
@@ -7981,7 +8041,7 @@ app.get("/:org/:report/api/data", resolveOrg, async (req, res) => {
     // gained local_start/local_end: the grid went quiet for six hours on
     // already-warm orgs. Bump the number for a report when its card's column
     // set changes; date-range and org are already in the key.
-    const cacheKey = `${orgSlug}:${reportType}:v${FEED_VERSION[reportType] || 1}:${paramStr}`;
+    const cacheKey = feedCacheKey(orgSlug, reportType, paramStr);
     console.log(`[data] ${orgSlug}/${reportType} | dates: ${req.query.start_date || '(none)'} → ${req.query.end_date || '(none)'} | uuid: ${mbUuid.slice(0,8)}${useShared ? ' (shared)' : ' (per-org)'} | key: ${cacheKey.slice(0, 80)}...`);
 
     // Freshness headers — report-refresh.js reads these to render the
@@ -8522,6 +8582,277 @@ app.delete("/:org/:report/api/views/:id", (req, res) => {
   writeSavedViews(all, org, report, rows);
   logEvent(org, report, "view-delete", req, { view: gone.name });
   res.json({ ok: true, view: gone });
+});
+
+
+// ── Per-org report settings ──────────────────────────────────────────────────
+// A report's DEFAULTS, per org: what it opens on, how fresh its data is, and how
+// its exports are shaped. Registry-driven exactly like SAVED_VIEW_PARAMS — only
+// `roster` is registered, and every other report 404s until someone asks for it.
+//
+// THREE THINGS THIS IS NOT, each of which would be a different feature:
+//
+//  1. NOT an override. A setting seeds the FIRST load; a reader's own column
+//     toggles still win afterwards and still persist in their browser. If a
+//     saved default reached in and reset those, the first support ticket would
+//     be "my settings keep resetting" — which is exactly why columns were kept
+//     out of saved views.
+//  2. NOT a saved view. A view is a named filter set anyone can make, many per
+//     report. This is one starting point per org.
+//  3. NOT access control. Single tenant today (Dan, 2026-08-27: "anyone can edit
+//     the settings, we'll figure out a multi tenant thing later"), so the gate is
+//     the org token the report link already carries — the same reach as the
+//     saved-views API beside it. When multi-tenant lands this is the one place
+//     that needs a role check.
+const REPORT_SETTINGS_FILE = path.join(DATA_DIR, "report-settings.json");
+
+// The Class Roster's twelve column toggles, with the defaults the page ships.
+// Keys match `cols` in public/roster.html — the spec fails if the two drift.
+const ROSTER_COL_DEFAULTS = {
+  recId: false, dob: false, age: true, grade: true, gender: false,
+  contact: true, owner: true, ownerContact: false,
+  emergency: true, pickup: true, registered: false, responses: false,
+};
+// Controls an org can remove from the toolbar. OFF removes, it does not disable:
+// a greyed button that never works is worse than no button (the ePACT one also
+// 404s its beacon, the same shape as MUNIS_EXPORT_ORGS).
+// NOT in this list: email subscriptions. The roster is not in
+// EMAIL_SUBSCRIBABLE_REPORTS (only `facility` and `gl` are), so it has no
+// subscribe control to remove — and a switch over a control that does not exist
+// is the same dead end as a greyed button. It belongs here the day the roster
+// becomes subscribable, or the day this panel reaches gl/facility.
+const ROSTER_HIDEABLE = ["questions", "views", "pdf", "print", "excel", "epact"];
+
+// Which roster fields an ePACT column may be built from, and how each is read.
+// PARTICIPANT- and SECTION-grain only, and that restriction is load-bearing:
+// the export reproduces her SELECT DISTINCT over the chosen columns, so adding a
+// SESSION-grain field (Session Start / Session End) would stop the dedupe
+// collapsing two same-day sessions and upload the same camper twice. Those two
+// fields are therefore absent from this catalogue on purpose.
+const EPACT_FIELD_CATALOGUE = [
+  ["Rec ID",                      "recId"],
+  ["First Name",                  "firstName"],
+  ["Last Name",                   "lastName"],
+  ["Household Owner Email",       "email"],        // COALESCE(participant, owner)
+  ["Session Date - Section Name", "__label"],      // built by epactLabel()
+  ["Date of Birth",               "dob"],
+  ["Age",                         "age"],
+  ["Grade",                       "grade"],
+  ["Gender",                      "gender"],
+  ["Phone",                       "phone"],
+  ["Household Owner",             "owner"],
+  ["Owner Email",                 "ownerEmail"],   // owner.email ALONE — not hers
+  ["Owner Phone",                 "ownerPhone"],
+  ["Section",                     "section"],
+  ["Class",                       "className"],
+  ["Session Date",                "sessionDate"],
+];
+// The five verified against her Metabase query — 68 rows, byte-identical, same
+// order (apex, "After School Care - Hackberry Hill", 2026-08-27). Deviating is
+// allowed and must never be silent; the page says so on screen.
+const EPACT_VERIFIED_COLUMNS = [
+  "Rec ID", "First Name", "Last Name", "Household Owner Email",
+  "Session Date - Section Name",
+];
+
+// A cache floor. Below this a "setting" stops being a preference and becomes a
+// load decision: the roster runs on a card EVERY org shares, so one org at 5
+// minutes spends everyone's Metabase budget. 30 minutes is the same order as
+// GL's 15, which is deliberate and carries an on-screen freshness stamp.
+const REPORT_TTL_FLOOR_MIN = 30;
+const REPORT_TTL_CEILING_MIN = 24 * 60;
+
+const REPORT_SETTINGS_SCHEMA = {
+  roster: {
+    // ── what it opens on ──
+    // Over ~30 days the roster prints a block per session date and the query
+    // widens with it — a month at Apex was ~382 pages and 12,130 rows before the
+    // reader had chosen anything. Allowed, but the panel says so.
+    defaultDays:   { kind: "int",  min: 1, max: 366, def: 14, warnAbove: 30 },
+    defaultStatus: { kind: "enum", values: ["all", "enrolled", "cancelled"], def: "all" },
+    autoRun:       { kind: "bool", def: true },
+    cols:          { kind: "flags", keys: Object.keys(ROSTER_COL_DEFAULTS), def: ROSTER_COL_DEFAULTS },
+    hide:          { kind: "flags", keys: ROSTER_HIDEABLE, def: {} },
+    // ── how fresh ──
+    cacheTtlMin:   { kind: "int",  min: REPORT_TTL_FLOOR_MIN, max: REPORT_TTL_CEILING_MIN, def: 120 },
+    showStamp:     { kind: "bool", def: false },
+    // Warm the window the PAGE will actually ask for. Default OFF: it adds a
+    // Metabase query per org per day, so it is opt-in and measurable rather
+    // than a silent load increase. See the note in prewarmCache().
+    warmDefaultWindow: { kind: "bool", def: false },
+    // ── exports ──
+    epactColumns:  { kind: "columns", catalogue: EPACT_FIELD_CATALOGUE.map(c => c[0]),
+                     min: 1, max: 12, def: EPACT_VERIFIED_COLUMNS },
+    epactLabel:    { kind: "enum", values: ["date-section", "section", "section-date"], def: "date-section" },
+    epactBom:      { kind: "bool", def: true },
+  },
+};
+
+function reportSettingsEnabled(report) { return !!REPORT_SETTINGS_SCHEMA[report]; }
+
+function reportSettingsDefaults(report) {
+  const schema = REPORT_SETTINGS_SCHEMA[report];
+  if (!schema) return {};
+  const out = {};
+  for (const [k, f] of Object.entries(schema)) {
+    out[k] = f.kind === "flags" ? Object.assign({}, f.def)
+           : f.kind === "columns" ? f.def.slice()
+           : f.def;
+  }
+  return out;
+}
+
+// Memoised: reportTtlMs() runs on every cache read and sweep, so a synchronous
+// disk read per call would put file I/O on the hot path. Invalidated on write,
+// so a saved setting takes effect immediately rather than after a timeout.
+let _rsStore = null;
+function readReportSettingsStore() {
+  if (_rsStore === null) _rsStore = readJSON(REPORT_SETTINGS_FILE, {});
+  return _rsStore;
+}
+function writeReportSettingsStore(all) {
+  writeJSON(REPORT_SETTINGS_FILE, all);
+  _rsStore = all;
+}
+
+// The merged view: platform defaults with the org's stored overrides on top.
+// Every reader goes through this, so a missing file, a partial record and a key
+// the schema has since dropped all resolve to the shipping default rather than
+// to undefined.
+function reportSettings(orgSlug, report) {
+  const defaults = reportSettingsDefaults(report);
+  if (!REPORT_SETTINGS_SCHEMA[report]) return defaults;
+  const stored = (readReportSettingsStore()[orgSlug] || {})[report];
+  if (!stored || typeof stored !== "object") return defaults;
+  const clean = normalizeReportSettings(report, stored);
+  return Object.assign(defaults, clean.settings || {});
+}
+
+// Validate a submitted patch against the schema, field by field. Returns
+// { settings } with only recognised, in-range keys, plus `dropped` naming what
+// was refused — a settings PUT that silently discards a field looks like a
+// working control and is not one.
+function normalizeReportSettings(report, body) {
+  const schema = REPORT_SETTINGS_SCHEMA[report];
+  if (!schema) return { error: `Settings aren't enabled for the "${report}" report` };
+  if (!body || typeof body !== "object") return { error: "Expected a settings object." };
+  const out = {}, dropped = [];
+  for (const [key, val] of Object.entries(body)) {
+    const f = schema[key];
+    if (!f) { dropped.push(key + " (unknown)"); continue; }
+    if (f.kind === "bool") {
+      if (typeof val !== "boolean") { dropped.push(key + " (not a boolean)"); continue; }
+      out[key] = val;
+    } else if (f.kind === "int") {
+      const n = Number(val);
+      if (!Number.isFinite(n)) { dropped.push(key + " (not a number)"); continue; }
+      // Clamped, not refused: a slider that snaps to the floor teaches the limit,
+      // where an error just loses the edit.
+      out[key] = Math.min(f.max, Math.max(f.min, Math.round(n)));
+    } else if (f.kind === "enum") {
+      if (!f.values.includes(val)) { dropped.push(key + " (not one of " + f.values.join("/") + ")"); continue; }
+      out[key] = val;
+    } else if (f.kind === "flags") {
+      if (!val || typeof val !== "object") { dropped.push(key + " (not an object)"); continue; }
+      const flags = {};
+      for (const k of f.keys) if (typeof val[k] === "boolean") flags[k] = val[k];
+      out[key] = Object.assign(Object.assign({}, f.def), flags);
+    } else if (f.kind === "columns") {
+      if (!Array.isArray(val)) { dropped.push(key + " (not a list)"); continue; }
+      const seen = new Set();
+      const cols = val.filter(c => typeof c === "string" && f.catalogue.includes(c)
+                                   && !seen.has(c) && seen.add(c));
+      if (cols.length < f.min) { dropped.push(key + " (needs at least " + f.min + " column)"); continue; }
+      out[key] = cols.slice(0, f.max);
+    }
+  }
+  return { settings: out, dropped };
+}
+
+// Is this org's ePACT column set still the one verified against her query?
+// Order matters — ePACT maps on position as well as header.
+function epactIsVerified(cols) {
+  return Array.isArray(cols) && cols.length === EPACT_VERIFIED_COLUMNS.length
+      && cols.every((c, i) => c === EPACT_VERIFIED_COLUMNS[i]);
+}
+
+// The TTL for one org's feed. Replaces every `REPORT_CACHE_TTL[rt] || CACHE_TTL`
+// so a per-org override cannot be honoured in one place and ignored in another —
+// a cache read and a cache sweep disagreeing about a TTL is how an entry becomes
+// unreachable but resident.
+function reportTtlMs(orgSlug, rt, hist) {
+  if (hist) return HIST_CACHE_TTL;
+  if (rt === "users") return USERS_CACHE_TTL;
+  const base = REPORT_CACHE_TTL[rt] || CACHE_TTL;
+  if (!orgSlug || !reportSettingsEnabled(rt)) return base;
+  const min = reportSettings(orgSlug, rt).cacheTtlMin;
+  return Number.isFinite(min) ? min * 60 * 1000 : base;
+}
+// Cache keys are `org:report:...`, so the org is always recoverable from one.
+// A function DECLARATION, not a const arrow: every caller sits hundreds of lines
+// above this and a const would be in its temporal dead zone the moment one of
+// them ran during module init.
+function ttlForKey(key, rt, hist) {
+  return reportTtlMs(String(key || "").split(":")[0], rt, hist);
+}
+
+app.get("/:org/:report/api/settings", (req, res) => {
+  const { org, report } = req.params;
+  if (!ORGS[org]) return res.status(404).json({ error: "Unknown org" });
+  const supplied = req.query.token || req.headers["x-token"] || "";
+  if (ORGS[org].token && supplied !== ORGS[org].token) return res.status(403).json({ error: "Invalid token" });
+  if (!reportSettingsEnabled(report)) {
+    return res.status(404).json({ error: `Settings aren't enabled for the "${report}" report` });
+  }
+  const settings = reportSettings(org, report);
+  res.json({
+    settings,
+    defaults: reportSettingsDefaults(report),
+    catalogue: { epactColumns: EPACT_FIELD_CATALOGUE.map(c => c[0]), hideable: ROSTER_HIDEABLE },
+    limits: { ttlFloorMin: REPORT_TTL_FLOOR_MIN, ttlCeilingMin: REPORT_TTL_CEILING_MIN },
+    epactVerified: epactIsVerified(settings.epactColumns),
+    verifiedEpactColumns: EPACT_VERIFIED_COLUMNS,
+  });
+});
+
+app.put("/:org/:report/api/settings", (req, res) => {
+  const { org, report } = req.params;
+  if (!ORGS[org]) return res.status(404).json({ error: "Unknown org" });
+  const supplied = req.query.token || req.headers["x-token"] || (req.body && req.body.token) || "";
+  if (ORGS[org].token && supplied !== ORGS[org].token) return res.status(403).json({ error: "Invalid token" });
+  if (!reportSettingsEnabled(report)) {
+    return res.status(404).json({ error: `Settings aren't enabled for the "${report}" report` });
+  }
+  const body = Object.assign({}, req.body || {});
+  delete body.token;
+  // Reset: drop the org's record rather than writing the defaults into it, so a
+  // later change to a platform default reaches an org that reset.
+  if (body.reset === true) {
+    const all = readReportSettingsStore();
+    if (all[org]) { delete all[org][report]; writeReportSettingsStore(all); }
+    logEvent(org, report, "settings-reset", req);
+    return res.json({ ok: true, settings: reportSettingsDefaults(report), reset: true });
+  }
+  delete body.reset;
+  const { settings, dropped, error } = normalizeReportSettings(report, body);
+  if (error) return res.status(400).json({ error });
+
+  const all = readReportSettingsStore();
+  const before = (all[org] || {})[report] || {};
+  if (!all[org]) all[org] = {};
+  all[org][report] = Object.assign({}, before, settings);
+  writeReportSettingsStore(all);
+
+  const merged = reportSettings(org, report);
+  // A TTL change alters the key's lifetime, not the key, so entries already
+  // resident keep serving under the NEW ttl on the next read — nothing to purge.
+  logEvent(org, report, "settings-save", req, {
+    changed: Object.keys(settings).join(",").slice(0, 200),
+    ttlMin: merged.cacheTtlMin,
+    epactVerified: epactIsVerified(merged.epactColumns),
+  });
+  res.json({ ok: true, settings: merged, dropped,
+             epactVerified: epactIsVerified(merged.epactColumns) });
 });
 
 // ── Subscription API ─────────────────────────────────────────────────
@@ -9238,7 +9569,24 @@ app.get("/:org/roster", (req, res) => {
   // savedViewRanges is injected rather than hardcoded in the page: the save
   // dialog must not be able to offer a relative range the server then refuses
   // (see SAVED_VIEW_RELATIVE_OFFER — gl.html did exactly that for months).
-  const orgConfig = { slug, token: org.token || "", savedViewRanges: SAVED_VIEW_RELATIVE_OFFER.roster };
+  // Settings are injected rather than fetched: they decide the FIRST render
+  // (window, columns, which controls exist), and a page that had to wait for a
+  // round trip would flash the platform defaults first.
+  const settings = reportSettings(slug, "roster");
+  const orgConfig = {
+    slug, token: org.token || "",
+    savedViewRanges: SAVED_VIEW_RELATIVE_OFFER.roster,
+    settings,
+    settingsMeta: {
+      defaults: reportSettingsDefaults("roster"),
+      epactCatalogue: EPACT_FIELD_CATALOGUE.map(c => c[0]),
+      verifiedEpactColumns: EPACT_VERIFIED_COLUMNS,
+      hideable: ROSTER_HIDEABLE,
+      ttlFloorMin: REPORT_TTL_FLOOR_MIN,
+      ttlCeilingMin: REPORT_TTL_CEILING_MIN,
+      orgCount: Object.keys(ORGS).length,
+    },
+  };
   const html = require("fs").readFileSync(path.join(__dirname, "public", "roster.html"), "utf8");
   res.type("html").send(html.replace("<head>", `<head><script>window.ORG_CONFIG=${JSON.stringify(orgConfig)};</script>`));
 });
@@ -12909,7 +13257,7 @@ app.get("/api/admin/audit-log", (req, res) => {
 app.get("/api/admin/cache-stats", (req, res) => {
   const entries = [];
   for (const [k, v] of dataCache) {
-    const ttl = REPORT_CACHE_TTL[v.rt] || CACHE_TTL;
+    const ttl = ttlForKey(k, v.rt, v.hist);
     const ageMin = Math.round((Date.now() - v.ts) / 60000);
     const ttlMin = Math.round(ttl / 60000);
     entries.push({ key: k, report: v.rt, ageMin, ttlMin, rows: v.data?.rows?.length || 0 });

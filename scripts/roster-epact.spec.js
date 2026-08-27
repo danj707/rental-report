@@ -83,6 +83,12 @@ const is = (a, b, what) => { n++; assert.deepStrictEqual(a, b, what); };
 // The page builds a React tree at module scope, so the whole block cannot be
 // evaluated. Slicing the pure helpers out and executing them is the difference
 // between a guard and a regex over our own patch (the nightStateFrom lesson).
+// The slice now begins at the settings readers, because the ePACT helpers
+// consult them (a per-org column set and label format). Lifting the real RS()
+// rather than stubbing it is what lets the assertions below drive a configured
+// org through the shipping code.
+const rstart = PAGE.indexOf("function RS() {");
+ok(rstart > 0, "roster.html should declare RS()");
 const start = PAGE.indexOf("const EPACT_HEADERS = [");
 ok(start > 0, "roster.html should declare EPACT_HEADERS");
 const end = PAGE.indexOf("\n}", PAGE.indexOf("function epactFileSlug("));
@@ -98,13 +104,25 @@ const toISO = PAGE.slice(PAGE.indexOf("function toISO("));
 // identical-looking arrays for that reason alone.
 const NAMES = ["EPACT_HEADERS", "epactIsoDate", "epactLabel", "epactRows", "epactCsv",
                "epactFileSlug", "getDefaultRange", "ROSTER_DEFAULT_DAYS"];
-const lifted = vm.runInThisContext("(function(){"
+// `window` is injected so a test can set ORG_CONFIG and drive a CONFIGURED org
+// through the same code an unconfigured one uses.
+const WIN = { ORG_CONFIG: {} };
+const lifted = vm.runInThisContext("(function(window){"
+  + PAGE.slice(rstart, PAGE.indexOf("\n}", PAGE.indexOf("function rsShown(")) + 2) + "\n"
   + toISO.slice(0, toISO.indexOf("\n}") + 2) + "\n"
   + PAGE.slice(dstart, dend + 2) + "\n"
   + PAGE.slice(start, end + 2) + "\n"
-  + "return { " + NAMES.join(", ") + " }; })()");
+  + "return { RS, rsDefaultDays, rsShown, epactColumns, epactVerified, EPACT_FIELDS, "
+  + NAMES.join(", ") + " }; })")(WIN);
 const { EPACT_HEADERS, epactIsoDate, epactLabel, epactRows, epactCsv, epactFileSlug,
-        getDefaultRange, ROSTER_DEFAULT_DAYS } = lifted;
+        getDefaultRange, ROSTER_DEFAULT_DAYS, epactColumns, epactVerified, EPACT_FIELDS } = lifted;
+// Every test below runs with NO org settings unless it says otherwise, so the
+// unconfigured path — which is every org until someone opens the panel — is the
+// one the existing assertions cover.
+const withSettings = (settings, fn) => {
+  WIN.ORG_CONFIG = { settings, settingsMeta: { verifiedEpactColumns: EPACT_HEADERS } };
+  try { return fn(); } finally { WIN.ORG_CONFIG = {}; }
+};
 
 // ── 1. The header row is her header row, verbatim ───────────────────────────
 is(EPACT_HEADERS,
@@ -233,8 +251,11 @@ is(getDefaultRange(new Date(2027, 1, 20)), { start: "2027-02-20", end: "2027-03-
    "…and a short month");
 ok(!/getCurrentMonthRange\(\)/.test(PAGE),
    "nothing may still open the roster on a calendar month — that is the 382-page default");
-ok(/\{ROSTER_DEFAULT_DAYS\} Days<\/button>/.test(PAGE.replace(/\s+/g, " ")),
-   "there should be a button back to the default window, labelled from the same constant");
+ok(/\{rsDefaultDays\(\)\} Days<\/button>/.test(PAGE.replace(/\s+/g, " ")),
+   "the reset button must be labelled from the ORG's effective window, not a hardcoded number — "
+   + "an org on 21 days would otherwise get a button reading \"14 Days\" that sets 21");
+ok(!/\{ROSTER_DEFAULT_DAYS\} Days/.test(PAGE.replace(/\s+/g, " ")),
+   "…and not from the platform constant");
 ok(!/\|\| 'Current Month'/.test(PAGE),
    "the header label must not still claim 'Current Month' — the default is no longer one");
 
@@ -271,6 +292,72 @@ is((POPUP.match(/document\.write\(popupDoc\(/g) || []).length, 1,
 ok(/function csvToTsv\(/.test(POPUP),
    "the clipboard fallback needs the rows TAB-separated; a comma-separated paste lands in one cell");
 
+// ── 9b. Per-org settings reach the export, and the DEFAULT stays verified ────
+// Configurable columns are only safe if the unconfigured path is untouched: every
+// org gets Apex's verified five until someone deliberately changes them.
+is(epactColumns(), EPACT_HEADERS,
+   "with no org settings the columns are the verified five — that is what every org gets today");
+ok(epactVerified(), "…and an unconfigured org reads as verified");
+
+withSettings({ epactColumns: ["Rec ID", "Last Name", "Grade"] }, () => {
+  is(epactColumns(), ["Rec ID", "Last Name", "Grade"], "an org's chosen columns are honoured");
+  ok(!epactVerified(), "and leaving the verified five is reported, not silent");
+  const out = epactRows(ROWS, epactColumns());
+  is(out[0].length, 3, "the tuple is as wide as the chosen column set");
+  const csv = epactCsv(out, epactColumns());
+  is(csv.split("\r\n")[0], "Rec ID,Last Name,Grade", "and the header line follows the choice");
+});
+
+withSettings({ epactColumns: ["First Name", "Last Name", "Rec ID", "Household Owner Email", "Session Date - Section Name"] }, () => {
+  ok(!epactVerified(),
+     "the same five in a DIFFERENT order is not the verified template either — ePACT maps on position");
+});
+
+withSettings({ epactColumns: ["Session Start", "Nope"] }, () => {
+  is(epactColumns(), EPACT_HEADERS,
+     "a column set the catalogue does not know falls back to the verified five rather than "
+     + "exporting empty columns. Session Start is absent on purpose: it is SESSION grain, so it "
+     + "would stop the dedupe collapsing two same-day sessions and upload a camper twice");
+});
+
+ok(!("Session Start" in EPACT_FIELDS) && !("Session End" in EPACT_FIELDS),
+   "no SESSION-grain field may be offered — the dedupe is what keeps a camper from being uploaded twice");
+
+// The label format, and the one case where a dateless row can still be filled.
+withSettings({ epactLabel: "section" }, () => {
+  is(epactLabel({ sessionDate: "", section: "Camp Undated" }), "Camp Undated",
+     "'section' alone needs no date, so it is the one format a dateless row can fill");
+});
+withSettings({ epactLabel: "section-date" }, () => {
+  is(epactLabel({ sessionDate: "07/06/2026", section: "Camp Blue" }), "Camp Blue (2026-07-06)",
+     "section-then-date is offered as an alternative shape");
+  is(epactLabel({ sessionDate: "", section: "Camp Blue" }), "",
+     "…and it still refuses to invent a date for a dateless row");
+});
+
+// The window: platform constant stays pinned, the org can still move its own.
+is(getDefaultRange(new Date(2026, 7, 27)), { start: "2026-08-27", end: "2026-09-09" },
+   "with no day count the platform default is 14 days — this is what next14 is pinned to");
+is(getDefaultRange(new Date(2026, 7, 27), 21), { start: "2026-08-27", end: "2026-09-16" },
+   "and an org's own window is honoured without touching the constant");
+withSettings({ defaultDays: 21 }, () => {
+  is(lifted.rsDefaultDays(), 21, "the org's window is what the page opens on");
+});
+withSettings({ defaultDays: 0 }, () => {
+  is(lifted.rsDefaultDays(), ROSTER_DEFAULT_DAYS, "a nonsense window falls back rather than rendering nothing");
+});
+
+// Hiding a control removes it. Absence, not a disabled button.
+withSettings({ hide: { excel: true } }, () => {
+  ok(!lifted.rsShown("excel"), "a hidden control reports as hidden");
+  ok(lifted.rsShown("epact"), "…and the others are untouched");
+});
+
+// Columns: platform seed, then org, then the person. The person wins.
+ok(/\{ \.\.\.COL_DEFAULTS, \.\.\.orgColDefaults\(\), \.\.\.JSON\.parse\(localStorage/.test(PAGE),
+   "column precedence must be platform \u2192 org \u2192 person, in that order: an org default that "
+   + "overrode localStorage would take a reader's own columns away");
+
 // ── 10b. The BOM ───────────────────────────────────────────────────────────
 // Byte-diffed against the file Metabase serves for the same section (apex,
 // "After School Care - Hackberry Hill Elementary School 2026-2027", 68 rows):
@@ -283,8 +370,10 @@ ok(/bytes: new TextEncoder\(\)\.encode\(\(opts\.bom \? "\\uFEFF" : ""\) \+ Strin
 ok(/tsv: opts\.tsv != null \? opts\.tsv : csvToTsv\(String\(text\)\)/.test(POPUP),
    "…and the clipboard copy must be built from the RAW text — a BOM pasted into a "
    + "sheet shows up as a stray character in the first cell");
-ok(/bom: true,/.test(PAGE),
-   "the ePACT export must ask for the BOM, so its file matches the one the card serves");
+ok(/bom: RS\(\)\.epactBom !== false,/.test(PAGE),
+   "the ePACT export must ask for the BOM by DEFAULT, so its file matches the one the card "
+   + "serves \u2014 `!== false` is the load-bearing half: an org with no settings, and an org "
+   + "that never touched this switch, must both still get one");
 ok(!/\uFEFF/.test(epactCsv([["a", "b", "c", "d", "e"]])),
    "epactCsv itself stays pure text — the BOM is a delivery concern, and putting it "
    + "in the builder would carry it into the clipboard copy too");
@@ -292,7 +381,7 @@ ok(!/\uFEFF/.test(epactCsv([["a", "b", "c", "d", "e"]])),
 // ── 11. The Slack beacon ─────────────────────────────────────────────────
 ok(/"form-open", "epact"\]/.test(SERVER),
    "`epact` must be on the generic log route's ALLOWED list, or every beacon 400s silently");
-ok(/"form-open", "epact", "deadlink"/.test(SERVER),
+ok(/"epact",[^\]]*"deadlink"/.test(SERVER),
    "…and in SLACK_NOTIFY, or it is recorded and never posted (the fourth instance of that trap)");
 ok(/epact:\s*\{ emoji:/.test(SERVER), "and it needs its own emoji/verb");
 ok(/rec\.event === "epact"\s*\n\s*\?\s*`\$\{rec\.org\}\|\$\{rec\.report\}\|epact\|\$\{rec\.scope \|\| "view"\}\|\$\{rec\.section \|\| ""\}`/

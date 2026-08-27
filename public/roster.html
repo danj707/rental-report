@@ -65,6 +65,115 @@
     .toolbar .btn-epact:hover { background: #5b21b6; }
     .toolbar .btn-epact:disabled { opacity: .5; cursor: not-allowed; }
 
+    /* ── Report settings ── */
+    .toolbar .btn-settings {
+      margin-left: 4px; font-size: 13px; line-height: 1;
+      padding: 4px 8px; background: rgba(255,255,255,.08);
+    }
+    .toolbar .btn-settings:hover { background: rgba(255,255,255,.18); }
+    .rs-back {
+      position: fixed; inset: 0; z-index: 9998; background: rgba(0,0,0,.55);
+      display: flex; align-items: flex-start; justify-content: center; padding: 4vh 16px;
+      overflow-y: auto;
+    }
+    .rs-sheet {
+      background: #fff; color: #222; border-radius: 12px; width: 760px; max-width: 96vw;
+      box-shadow: 0 24px 70px rgba(0,0,0,.35); overflow: hidden;
+    }
+    .rs-head {
+      display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap;
+      padding: 15px 22px; background: #2c2c2c; color: #eee;
+    }
+    .rs-head h3 { margin: 0; font-size: 15px; font-weight: 650; }
+    .rs-head .rs-who { font-size: 11.5px; color: #a8a8a8; }
+    .rs-head .rs-x {
+      margin-left: auto; background: none; border: none; color: #a8a8a8;
+      font-size: 15px; cursor: pointer; font-family: inherit;
+    }
+    .rs-head .rs-x:hover { color: #fff; }
+    .rs-body { max-height: 66vh; overflow-y: auto; }
+    .rs-grp { border-top: 1px solid #eee; }
+    .rs-grp:first-child { border-top: none; }
+    .rs-grp-head { display: flex; gap: 12px; padding: 16px 22px 10px; }
+    .rs-stripe { width: 3px; border-radius: 2px; flex: 0 0 3px; }
+    .rs-grp[data-sev="safe"]   .rs-stripe { background: #157f4a; }
+    .rs-grp[data-sev="warn"]   .rs-stripe { background: #a35a06; }
+    .rs-grp[data-sev="strict"] .rs-stripe { background: #a8231f; }
+    .rs-blast {
+      font-size: 10px; letter-spacing: .05em; text-transform: uppercase; font-weight: 600;
+    }
+    .rs-grp[data-sev="safe"]   .rs-blast { color: #157f4a; }
+    .rs-grp[data-sev="warn"]   .rs-blast { color: #a35a06; }
+    .rs-grp[data-sev="strict"] .rs-blast { color: #a8231f; }
+    .rs-grp-head h4 { margin: 2px 0 0; font-size: 14px; font-weight: 650; }
+    .rs-grp-head p { margin: 4px 0 0; font-size: 12.5px; color: #666; max-width: 64ch; }
+    .rs-grp-body { padding: 2px 22px 20px 37px; display: flex; flex-direction: column; gap: 16px; }
+    .rs-row { display: flex; flex-wrap: wrap; gap: 12px 24px; }
+    .rs-field { display: flex; flex-direction: column; gap: 5px; }
+    .rs-field > span {
+      font-size: 10.5px; letter-spacing: .05em; text-transform: uppercase; color: #888; font-weight: 500;
+    }
+    .rs-field select, .rs-field input[type="range"] { font: inherit; font-size: 13px; color: #111; }
+    .rs-field select {
+      background: #fff; border: 1px solid #ddd; border-radius: 5px; padding: 5px 8px;
+    }
+    .rs-hint { margin: 0; font-size: 12px; color: #666; max-width: 66ch; }
+    .rs-warn {
+      font-size: 11.5px; color: #a35a06; background: #fdf4e7; border: 1px solid #f0dcbd;
+      border-radius: 5px; padding: 6px 9px; max-width: 46ch; text-transform: none;
+      letter-spacing: 0; font-weight: 400; line-height: 1.45;
+    }
+    .rs-tgrid { display: flex; flex-wrap: wrap; gap: 6px; }
+    .rs-tg {
+      font: inherit; font-size: 11px; cursor: pointer; padding: 4px 10px; border-radius: 4px;
+      border: 1px solid #ddd; background: #f4f4f4; color: #666;
+    }
+    .rs-tg[aria-pressed="true"] { background: #e8f0fe; border-color: #93c5fd; color: #1e3a8a; font-weight: 600; }
+    .rs-meter input[type="range"] { width: 100%; max-width: 460px; accent-color: #3b82f6; }
+    .rs-cost { display: flex; gap: 20px; flex-wrap: wrap; font-size: 12px; color: #555; }
+    .rs-cost b { font-size: 15px; color: #111; font-variant-numeric: tabular-nums; }
+    .rs-cost .hot b { color: #a8231f; }
+    .rs-cols { display: flex; flex-direction: column; gap: 4px; max-width: 520px; }
+    .rs-col-item {
+      display: flex; align-items: center; gap: 10px; padding: 5px 10px;
+      border: 1px solid #eee; border-radius: 5px; background: #f8f8f8; font-size: 12.5px;
+    }
+    .rs-col-item .rs-src { color: #aaa; font-size: 11px; min-width: 14px; }
+    .rs-col-item .rs-col-acts { margin-left: auto; display: flex; gap: 4px; }
+    .rs-col-item .rs-col-acts button {
+      font: inherit; font-size: 11px; cursor: pointer; background: none;
+      border: 1px solid #ddd; border-radius: 4px; padding: 1px 6px; color: #666;
+    }
+    .rs-col-item .rs-col-acts button:disabled { opacity: .35; cursor: default; }
+    .rs-verified {
+      font-size: 12px; padding: 8px 11px; border-radius: 5px; max-width: 560px;
+      background: #eaf6ef; border: 1px solid #b6ddc6; color: #157f4a;
+    }
+    .rs-verified.drifted { background: #fbeceb; border-color: #f0c3c1; color: #a8231f; }
+    .rs-err {
+      margin: 0 22px 12px; padding: 8px 11px; border-radius: 5px; font-size: 12.5px;
+      background: #fbeceb; border: 1px solid #f0c3c1; color: #a8231f;
+    }
+    .rs-foot {
+      display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+      padding: 14px 22px; border-top: 1px solid #eee; background: #f7f7f7;
+    }
+    .rs-save {
+      font: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
+      background: #2563eb; color: #fff; border: none; border-radius: 5px; padding: 7px 15px;
+    }
+    .rs-save:disabled { background: #9db6e8; cursor: default; }
+    .rs-ghost {
+      font: inherit; font-size: 13px; cursor: pointer; color: #555;
+      background: #fff; border: 1px solid #ddd; border-radius: 5px; padding: 7px 12px;
+    }
+    .rs-footnote { margin-left: auto; font-size: 11.5px; color: #999; }
+    .rs-tg:focus-visible, .rs-save:focus-visible, .rs-ghost:focus-visible,
+    .rs-field select:focus-visible, .btn-settings:focus-visible {
+      outline: 2px solid #3b82f6; outline-offset: 1px;
+    }
+    @media print { .rs-back, .btn-settings { display: none !important; } }
+
     /* ── Saved views ── (same markup and classes as the GL report) */
     .view-wrap { position: relative; display: flex; align-items: center; gap: 6px; }
     .btn-view {
@@ -437,7 +546,53 @@
 <script type="text/babel">
 const { useState, useEffect, useMemo, useCallback, useRef } = React;
 
+
+// ── Per-org report settings ──────────────────────────────────────────────────
+// Injected by the server into ORG_CONFIG so they are available on the FIRST
+// render: they decide the window, the columns and which controls exist, and a
+// page that waited for a round trip would flash the platform defaults first.
+//
+// PRECEDENCE, and it is the whole design:
+//     platform default  →  the org's setting  →  this person's own choice
+// A setting SEEDS; it never overrides. Someone's column toggles still live in
+// their own localStorage and still win. If a saved default reached in and reset
+// those, the first support ticket would be "my settings keep resetting".
+function RS() {
+  try { return (window.ORG_CONFIG || {}).settings || {}; } catch (_) { return {}; }
+}
+function RSMeta() {
+  try { return (window.ORG_CONFIG || {}).settingsMeta || {}; } catch (_) { return {}; }
+}
+function rsDefaultDays() {
+  const n = Number(RS().defaultDays);
+  return Number.isFinite(n) && n > 0 ? n : ROSTER_DEFAULT_DAYS;
+}
+// `hide` removes a control rather than disabling it — a greyed button that never
+// works is worse than no button.
+function rsShown(key) { return !(RS().hide || {})[key]; }
+
 const LS_COLS = 'roster_cols_v2';
+
+// One label per column key, so the settings panel and the toolbar cannot end up
+// calling the same column two different things.
+const COL_LABELS = {
+  recId: 'Rec ID', dob: 'DOB', age: 'Age', grade: 'Grade', gender: 'Gender',
+  contact: 'Contact', owner: 'Owner', ownerContact: 'Owner Contact',
+  emergency: '\uD83D\uDED1 Emergency', pickup: '\uD83D\uDEB8 Pickup',
+  registered: 'Registered', responses: 'Form Responses',
+};
+const HIDE_LABELS = {
+  questions: 'Form Responses picker', views: 'Saved views',
+  pdf: 'PDF export', print: 'Print', excel: 'Excel export', epact: 'ePACT export',
+};
+// Above this the roster gets long fast — one block per session date, and the
+// query widens with it. Allowed, but the panel warns rather than refusing: an
+// org running year-round programmes may genuinely want a quarter.
+const ROSTER_WIDE_WINDOW_DAYS = 30;
+// The offered cache lifetimes, in minutes. The floor comes from the server
+// (REPORT_TTL_FLOOR_MIN) and is echoed in the panel — the ladder must not offer
+// a value the server would clamp.
+const TTL_STEPS = [30, 45, 60, 120, 240, 360, 1440];
 
 const COL_DEFAULTS = {
   recId: false, dob: false, age: true, grade: true, gender: false,
@@ -446,9 +601,16 @@ const COL_DEFAULTS = {
   registered: false, responses: false,
 };
 
+// Platform defaults, then the ORG's, then whatever this person last chose. The
+// org setting is a seed: it decides what a first-time reader sees and is
+// overruled the moment they touch a toggle.
+function orgColDefaults() {
+  const c = RS().cols;
+  return c && typeof c === 'object' ? c : {};
+}
 function loadCols() {
-  try { return { ...COL_DEFAULTS, ...JSON.parse(localStorage.getItem(LS_COLS) || '{}') }; }
-  catch { return COL_DEFAULTS; }
+  try { return { ...COL_DEFAULTS, ...orgColDefaults(), ...JSON.parse(localStorage.getItem(LS_COLS) || '{}') }; }
+  catch { return { ...COL_DEFAULTS, ...orgColDefaults() }; }
 }
 function saveCols(v) { try { localStorage.setItem(LS_COLS, JSON.stringify(v)); } catch {} }
 
@@ -459,11 +621,16 @@ function toISO(d) {
 // is hundreds of pages before the reader has chosen anything — apex opened at
 // ~382. The default is deliberately TIGHT: land on something small, see what the
 // sections ARE, then widen the dates or type a partial section name and Run.
+// The PLATFORM default. Deliberately still a constant: the server's `next14`
+// relative range is pinned to it, so a saved view named "Next 14 days" and the
+// report's own default cannot drift apart. An org that wants a different window
+// sets `defaultDays`, which is passed in below rather than changing this.
 const ROSTER_DEFAULT_DAYS = 14;
-function getDefaultRange(today) {
+function getDefaultRange(today, days) {
+  const n = Number.isFinite(days) && days > 0 ? days : ROSTER_DEFAULT_DAYS;
   const now = today || new Date();
   const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const end = new Date(start.getFullYear(), start.getMonth(), start.getDate() + ROSTER_DEFAULT_DAYS - 1);
+  const end = new Date(start.getFullYear(), start.getMonth(), start.getDate() + n - 1);
   return { start: toISO(start), end: toISO(end) };
 }
 function formatDisplayDate(iso) {
@@ -648,6 +815,39 @@ function viewFilterSummary(v) {
 const EPACT_HEADERS = ['Rec ID', 'First Name', 'Last Name', 'Household Owner Email',
                        'Session Date - Section Name'];
 
+// How each offered column is read off a roster row. PARTICIPANT- and
+// SECTION-grain only, and that restriction is load-bearing: the export
+// reproduces her SELECT DISTINCT over whatever columns are chosen, so a
+// SESSION-grain field (Session Start / Session End) would stop the dedupe
+// collapsing two same-day sessions and upload the same camper twice. Those two
+// are absent from this map on purpose — see EPACT_FIELD_CATALOGUE in server.js.
+const EPACT_FIELDS = {
+  'Rec ID':                      r => r.recId,
+  'First Name':                  r => r.firstName,
+  'Last Name':                   r => r.lastName,
+  'Household Owner Email':       r => r.email,        // COALESCE(participant, owner)
+  'Session Date - Section Name': r => epactLabel(r),
+  'Date of Birth':               r => r.dob,
+  'Age':                         r => (r.age === '' || r.age == null ? '' : String(r.age)),
+  'Grade':                       r => r.grade,
+  'Gender':                      r => r.gender,
+  'Phone':                       r => r.phone,
+  'Household Owner':             r => r.owner,
+  'Owner Email':                 r => r.ownerEmail,   // owner.email ALONE — not hers
+  'Owner Phone':                 r => r.ownerPhone,
+  'Section':                     r => r.section,
+  'Class':                       r => r.className,
+  'Session Date':                r => epactIsoDate(r.sessionDate),
+};
+
+// The org's chosen columns, falling back to the verified five. Anything the
+// catalogue does not know is dropped rather than exported as an empty column.
+function epactColumns() {
+  const c = RS().epactColumns;
+  const ok = Array.isArray(c) ? c.filter(h => EPACT_FIELDS[h]) : [];
+  return ok.length ? ok : EPACT_HEADERS;
+}
+
 // 'MM/DD/YYYY' -> 'YYYY-MM-DD'. String surgery, deliberately not new Date():
 // the card emits a bare date and new Date() reads that as UTC midnight, which
 // renders as the previous day across the US — the Fast Track date bug, one
@@ -666,18 +866,26 @@ function epactIsoDate(s) {
 // child's name in a vendor's system is the fabrication this repo keeps refusing.
 function epactLabel(r) {
   const d = epactIsoDate(r && r.sessionDate);
-  return d ? d + ' - ' + ((r && r.section) || '') : '';
+  const sec = (r && r.section) || '';
+  const fmt = RS().epactLabel || 'date-section';
+  // `section` alone needs no date, so it is the one format a dateless row can
+  // still fill. The other two keep her behaviour: TO_CHAR(NULL) nulls the whole
+  // concatenation, and a guessed camp date beside a real child's name in a
+  // vendor's system is the fabrication this export refuses to make.
+  if (fmt === 'section') return sec;
+  if (!d) return '';
+  return fmt === 'section-date' ? sec + ' (' + d + ')' : d + ' - ' + sec;
 }
 
-function epactRows(rows) {
+function epactRows(rows, columns) {
+  const cols = (columns && columns.length ? columns : EPACT_HEADERS).filter(h => EPACT_FIELDS[h]);
   const seen = new Set(), out = [];
   (rows || []).forEach(r => {
     // Her SQL takes confirmed, not-cancelled bookings only, and the on-screen
     // status pill does NOT loosen that: uploading a child who cancelled hands a
     // camp health vendor a roster with the wrong children on it.
     if (r.status === 'Cancelled') return;
-    const tuple = [r.recId || '', r.firstName || '', r.lastName || '',
-                   r.email || '', epactLabel(r)];
+    const tuple = cols.map(h => { const v = EPACT_FIELDS[h](r); return v == null ? '' : String(v); });
     // A separator no field can contain. Joining on a space would collapse two
     // genuinely different people ("Ana Lee Smith" / "Ana Lee" "Smith").
     const key = tuple.join('\u001f');
@@ -685,17 +893,34 @@ function epactRows(rows) {
     seen.add(key);
     out.push(tuple);
   });
-  // ORDER BY the concatenated field, then last name, then first — hers exactly.
-  out.sort((a, b) => a[4].localeCompare(b[4]) || a[2].localeCompare(b[2]) || a[1].localeCompare(b[1]));
+  // ORDER BY the concatenated label, then last name, then first — hers exactly.
+  // Keyed by COLUMN NAME rather than by position: with a configurable column set
+  // index 4 is not necessarily the label any more, and sorting on whatever
+  // happens to sit there would reorder the file for no reason.
+  const at = h => { const i = cols.indexOf(h); return i < 0 ? null : i; };
+  const iL = at('Session Date - Section Name'), iLast = at('Last Name'), iFirst = at('First Name');
+  const key = (t, i) => (i == null ? '' : t[i] || '');
+  out.sort((a, b) => key(a, iL).localeCompare(key(b, iL))
+                  || key(a, iLast).localeCompare(key(b, iLast))
+                  || key(a, iFirst).localeCompare(key(b, iFirst)));
   return out;
 }
 
-function epactCsv(tuples) {
+function epactCsv(tuples, columns) {
+  const cols = (columns && columns.length ? columns : EPACT_HEADERS).filter(h => EPACT_FIELDS[h]);
   const cell = v => {
     const s = v == null ? '' : String(v);
     return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
   };
-  return [EPACT_HEADERS].concat(tuples).map(r => r.map(cell).join(',')).join('\r\n') + '\r\n';
+  return [cols].concat(tuples).map(r => r.map(cell).join(',')).join('\r\n') + '\r\n';
+}
+
+// Is this org still on the column set verified against her Metabase query?
+// Order matters — ePACT maps on position as well as header.
+function epactVerified(cols) {
+  const want = (RSMeta().verifiedEpactColumns || EPACT_HEADERS);
+  const have = cols || epactColumns();
+  return have.length === want.length && have.every((c, i) => c === want[i]);
 }
 
 // A section name goes into a filename, so it has to survive being one.
@@ -708,15 +933,18 @@ function App() {
   const p = useMemo(() => new URLSearchParams(window.location.search), []);
   const isPrint = p.get('_print') === '1';
 
-  const defaults = useMemo(() => getDefaultRange(), []);
+  const defaults = useMemo(() => getDefaultRange(null, rsDefaultDays()), []);
   const [startDate, setStartDate] = useState(p.get('start_date') || defaults.start);
   const [endDate, setEndDate]     = useState(p.get('end_date')   || defaults.end);
   const [sectionFilter, setSectionFilter] = useState(p.get('section_name') || '');
-  const [statusFilter, setStatusFilter]   = useState(p.get('status') || 'all');
+  const [statusFilter, setStatusFilter]   = useState(p.get('status') || RS().defaultStatus || 'all');
 
   const [rows, setRows]       = useState(null);
   const [orgName, setOrgName] = useState('');
   const [staleCacheAt, setStaleCacheAt] = useState(null);
+  // When the rows were produced. Only rendered if the org asked for the stamp:
+  // a reader looking at two-hour-old enrolments should be able to see that.
+  const [dataAt, setDataAt] = useState(null);
   const [logoUrl,  setLogoUrl]  = useState(null);
   const [pdfLoading, setPdfLoading] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -801,13 +1029,13 @@ function App() {
 
   useEffect(() => { if (isPrint) document.body.classList.add('print-mode'); }, [isPrint]);
 
-  const fetchData = useCallback((sd, ed, sec) => {
+  const fetchData = useCallback((sd, ed, sec, force) => {
     setLoading(true); setError(null);
     const qs = new URLSearchParams();
     if (sd) qs.set('start_date', sd);
     if (ed) qs.set('end_date', ed);
     if (sec && sec.trim()) qs.set('section_name', sec.trim());
-    if (p.get('_nocache') === '1' || p.get('_refresh') === '1') qs.set('_nocache', '1');
+    if (force || p.get('_nocache') === '1' || p.get('_refresh') === '1') qs.set('_nocache', '1');
 
     fetch(withToken(`/${orgSlug}/roster/api/data?${qs}`))
       .then(r => { if (!r.ok) throw new Error(`Server returned ${r.status}`); return r.json(); })
@@ -816,13 +1044,23 @@ function App() {
         if (json.rows.length > 0 && json.rows[0]['Org Name']) setOrgName(json.rows[0]['Org Name']);
         setLogoUrl(json.meta?.logo_url || null);
         setStaleCacheAt(json.meta?.stale_cache ? json.meta.cached_at : null);
+        setDataAt(json.meta?.generated_at || json.meta?.cached_at || null);
         setLoadedStart(sd); setLoadedEnd(ed); setLoadedSection(sec || '');
       })
       .catch(err => setError(err.message))
       .finally(() => setLoading(false));
   }, [orgSlug]);
 
-  useEffect(() => { fetchData(startDate, endDate, sectionFilter); }, []);
+  // `autoRun: false` lets a big org land on an empty, filtered-first view instead
+  // of paying for a query nobody asked for — Dan's "start tightly filtered, then
+  // set dates and type a partial section name" workflow taken one step further.
+  useEffect(() => {
+    if (RS().autoRun === false && !isPrint && !p.get('section_name') && !p.get('view')) {
+      setRows([]);
+      return;
+    }
+    fetchData(startDate, endDate, sectionFilter);
+  }, []);
 
   function handleRun() { fetchData(startDate, endDate, sectionFilter); }
 
@@ -1213,6 +1451,255 @@ function App() {
     );
   }
 
+
+  // ── Report settings panel ─────────────────────────────────────────────────
+  // Grouped by BLAST RADIUS rather than by category, because "default columns"
+  // and "cache lifetime" are not the same kind of decision: one seeds a first
+  // render, the other spends Metabase time on a card every org shares.
+  const [setOpen, setSetOpen] = useState(false);
+  const [setDraft, setSetDraft] = useState(null);
+  const [setBusy, setSetBusy] = useState(false);
+  const [setErr, setSetErr] = useState(null);
+
+  function openSettings() {
+    setSetErr(null);
+    setSetDraft(Object.assign({}, RSMeta().defaults || {}, RS()));
+    setSetOpen(true);
+  }
+
+  async function saveSettings(patch) {
+    setSetBusy(true); setSetErr(null);
+    try {
+      const resp = await fetch(withToken('/' + orgSlug + '/roster/api/settings'), {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(patch),
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok) { setSetErr(data.error || 'Could not save the settings.'); return; }
+      // The saved settings decide the FIRST render — the window, the seeded
+      // columns, which controls exist — so the honest thing after a save is a
+      // reload rather than half-applying them to a page already in flight.
+      window.location.reload();
+    } catch (e) {
+      setSetErr('Could not save the settings: ' + e.message);
+    } finally {
+      setSetBusy(false);
+    }
+  }
+
+  function renderSettings() {
+    if (!setOpen || !setDraft) return null;
+    const d = setDraft;
+    const meta = RSMeta();
+    const put = (k, v) => setSetDraft(x => Object.assign({}, x, { [k]: v }));
+    const flag = (k, sub, v) => setSetDraft(x =>
+      Object.assign({}, x, { [k]: Object.assign({}, x[k] || {}, { [sub]: v }) }));
+
+    const catalogue = meta.epactCatalogue || EPACT_HEADERS;
+    const chosen = Array.isArray(d.epactColumns) && d.epactColumns.length ? d.epactColumns : EPACT_HEADERS;
+    const verified = (meta.verifiedEpactColumns || EPACT_HEADERS);
+    const isVerified = chosen.length === verified.length && chosen.every((c, i) => c === verified[i]);
+
+    // The cost of the cache dial, computed rather than described: the roster runs
+    // on a card every org shares, so a short TTL multiplies across all of them.
+    const ttlMin = Number(d.cacheTtlMin) || 120;
+    const floor = meta.ttlFloorMin || 30;
+    const perDay = Math.round(24 * 60 / ttlMin);
+    const orgs = meta.orgCount || 1;
+
+    const grp = (sev, blast, title, why, body) => (
+      <div className="rs-grp" data-sev={sev} data-rs-group={sev}>
+        <div className="rs-grp-head">
+          <span className="rs-stripe" />
+          <div>
+            <span className="rs-blast">{blast}</span>
+            <h4>{title}</h4>
+            <p>{why}</p>
+          </div>
+        </div>
+        <div className="rs-grp-body">{body}</div>
+      </div>
+    );
+
+    return (
+      <div className="rs-back" onClick={e => { if (e.target === e.currentTarget) setSetOpen(false); }}>
+        <div className="rs-sheet" role="dialog" aria-label="Class Roster settings">
+          <div className="rs-head">
+            <h3>⚙ Class Roster settings</h3>
+            <span className="rs-who">Applies to everyone with this report's link</span>
+            <button className="rs-x" onClick={() => setSetOpen(false)} aria-label="Close">✕</button>
+          </div>
+
+          <div className="rs-body">
+            {grp('safe', 'Low risk · display only', 'What the report opens on',
+              'A starting point, not a lock. Each reader’s own column toggles still win afterwards and still persist in their browser.',
+              <>
+                <div className="rs-row">
+                  <label className="rs-field">
+                    <span>Default window</span>
+                    <select value={d.defaultDays} onChange={e => put('defaultDays', Number(e.target.value))}>
+                      {[7, 14, 21, 30, 60, 90].map(n => <option key={n} value={n}>Next {n} days</option>)}
+                    </select>
+                    {d.defaultDays > ROSTER_WIDE_WINDOW_DAYS && (
+                      <span className="rs-warn" data-rs-wide>
+                        ⚠ Over {ROSTER_WIDE_WINDOW_DAYS} days gets heavy — the roster prints a block per
+                        session date, and a calendar month at a big org is ~380 pages and 12,000 rows
+                        before anyone has filtered. Readers can always widen it themselves.
+                      </span>
+                    )}
+                  </label>
+                  <label className="rs-field">
+                    <span>Default status</span>
+                    <select value={d.defaultStatus} onChange={e => put('defaultStatus', e.target.value)}>
+                      <option value="all">All</option>
+                      <option value="enrolled">Enrolled only</option>
+                      <option value="cancelled">Cancelled only</option>
+                    </select>
+                  </label>
+                  <label className="rs-field">
+                    <span>On open</span>
+                    <select value={d.autoRun ? '1' : '0'} onChange={e => put('autoRun', e.target.value === '1')}>
+                      <option value="1">Run immediately</option>
+                      <option value="0">Wait for Run Report</option>
+                    </select>
+                  </label>
+                </div>
+
+                <div className="rs-field">
+                  <span>Default columns · {Object.keys(d.cols || {}).filter(k => (d.cols || {})[k]).length} of {Object.keys(COL_DEFAULTS).length} on</span>
+                  <div className="rs-tgrid" data-rs-cols>
+                    {Object.keys(COL_DEFAULTS).map(k => (
+                      <button key={k} type="button" className="rs-tg" data-col={k}
+                        aria-pressed={!!(d.cols || {})[k]}
+                        onClick={() => flag('cols', k, !(d.cols || {})[k])}>{COL_LABELS[k] || k}</button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="rs-field">
+                  <span>Controls this org uses</span>
+                  <div className="rs-tgrid" data-rs-hide>
+                    {(meta.hideable || []).map(k => (
+                      <button key={k} type="button" className="rs-tg" data-hide={k}
+                        aria-pressed={!(d.hide || {})[k]}
+                        onClick={() => flag('hide', k, !(d.hide || {})[k])}>{HIDE_LABELS[k] || k}</button>
+                    ))}
+                  </div>
+                  <p className="rs-hint">Off removes the control rather than greying it out — a button that never works is worse than no button.</p>
+                </div>
+              </>)}
+
+            {grp('warn', 'Costs Metabase time · shared card', 'How fresh the data is',
+              'The Class Roster runs on a card every org shares, so shortening one org’s cache multiplies queries against that card for everyone.',
+              <>
+                <div className="rs-field rs-meter">
+                  <span>Cache lifetime — <b data-rs-ttl>{ttlMin >= 60 ? (ttlMin / 60) + (ttlMin === 60 ? ' hour' : ' hours') : ttlMin + ' minutes'}</b></span>
+                  <input type="range" min="0" max="6" step="1"
+                    value={String(TTL_STEPS.findIndex(v => v === ttlMin) >= 0 ? TTL_STEPS.findIndex(v => v === ttlMin) : 3)}
+                    onChange={e => put('cacheTtlMin', TTL_STEPS[Number(e.target.value)])} />
+                  <div className="rs-cost" data-rs-cost={String(perDay * orgs)}>
+                    <span><b>{perDay}</b> refreshes / org / day</span>
+                    <span className={ttlMin <= floor ? 'hot' : ''}><b>{(perDay * orgs).toLocaleString('en-US')}</b> card queries / day · {orgs} orgs</span>
+                    <span><b>{ttlMin >= 60 ? Math.floor(ttlMin / 60) + 'h ' + String(ttlMin % 60).padStart(2, '0') + 'm' : ttlMin + 'm'}</b> worst-case staleness</span>
+                  </div>
+                  <p className="rs-hint">Floor is {floor} minutes. Below that this stops being a preference and becomes a load decision.</p>
+                </div>
+
+                <div className="rs-field">
+                  <span>Freshness &amp; warm-up</span>
+                  <div className="rs-tgrid">
+                    <button type="button" className="rs-tg" data-stamp
+                      aria-pressed={!!d.showStamp}
+                      onClick={() => put('showStamp', !d.showStamp)}>Show a “Data as of” stamp</button>
+                    <button type="button" className="rs-tg" data-warm
+                      aria-pressed={!!d.warmDefaultWindow}
+                      onClick={() => put('warmDefaultWindow', !d.warmDefaultWindow)}>Pre-warm the default window</button>
+                  </div>
+                  <p className="rs-hint">
+                    Pre-warming costs one Metabase query per day and makes the first open of the day
+                    instant instead of a cold query. Off by default so the extra load is a choice.
+                  </p>
+                </div>
+              </>)}
+
+            {grp('strict', 'Changes a file a vendor imports', 'The ePACT export',
+              'These columns were verified byte-for-byte against the Metabase query Apex runs by hand — 68 rows, identical, same order. Editing them edits a file that goes to a HIPAA vendor.',
+              <>
+                <div className="rs-field">
+                  <span>Columns, in order</span>
+                  <div className="rs-cols" data-rs-epact>
+                    {chosen.map((h, i) => (
+                      <div className="rs-col-item" key={h}>
+                        <span className="rs-src">{i + 1}</span>
+                        <b>{h}</b>
+                        <span className="rs-col-acts">
+                          <button type="button" onClick={() => {
+                            if (i === 0) return;
+                            const next = chosen.slice();
+                            next[i - 1] = chosen[i]; next[i] = chosen[i - 1];
+                            put('epactColumns', next);
+                          }} aria-label={'Move ' + h + ' up'}>↑</button>
+                          <button type="button" disabled={chosen.length <= 1}
+                            onClick={() => put('epactColumns', chosen.filter(c => c !== h))}
+                            aria-label={'Remove ' + h}>✕</button>
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                  <select value="" style={{marginTop:8}} data-rs-epact-add
+                    onChange={e => { if (e.target.value) put('epactColumns', chosen.concat([e.target.value])); }}>
+                    <option value="">＋ Add a column…</option>
+                    {catalogue.filter(h => chosen.indexOf(h) < 0)
+                      .map(h => <option key={h} value={h}>{h}</option>)}
+                  </select>
+                </div>
+
+                <div className={'rs-verified' + (isVerified ? '' : ' drifted')} data-rs-verified={isVerified ? '1' : '0'}>
+                  {isVerified
+                    ? '✓ Matches the Apex-verified template exactly — ' + chosen.length + ' columns, original order'
+                    : '⚠ ' + chosen.length + ' columns — no longer the Apex-verified template. Confirm this org’s ePACT account accepts this mapping before uploading.'}
+                </div>
+
+                <div className="rs-row">
+                  <label className="rs-field">
+                    <span>Group label</span>
+                    <select value={d.epactLabel} onChange={e => put('epactLabel', e.target.value)}>
+                      <option value="date-section">YYYY-MM-DD - Section Name</option>
+                      <option value="section">Section Name only</option>
+                      <option value="section-date">Section Name (YYYY-MM-DD)</option>
+                    </select>
+                  </label>
+                  <label className="rs-field">
+                    <span>File encoding</span>
+                    <select value={d.epactBom ? '1' : '0'} onChange={e => put('epactBom', e.target.value === '1')}>
+                      <option value="1">UTF-8 with BOM — matches Metabase</option>
+                      <option value="0">UTF-8, no BOM</option>
+                    </select>
+                  </label>
+                </div>
+              </>)}
+          </div>
+
+          {setErr && <div className="rs-err">{setErr}</div>}
+
+          <div className="rs-foot">
+            <button className="rs-save" disabled={setBusy}
+              onClick={() => saveSettings(Object.assign({}, d, { epactColumns: chosen }))}>
+              {setBusy ? 'Saving…' : 'Save settings'}
+            </button>
+            <button className="rs-ghost" onClick={() => setSetOpen(false)}>Cancel</button>
+            <button className="rs-ghost" disabled={setBusy}
+              onClick={() => { if (window.confirm('Reset this report to the platform defaults for every reader?')) saveSettings({ reset: true }); }}>
+              Reset to defaults
+            </button>
+            <span className="rs-footnote">Applies on the next load. Nobody’s own column choices are touched.</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   function renderUndoToast() {
     if (!undoView) return null;
     return (
@@ -1224,8 +1711,8 @@ function App() {
   }
 
   function setDays(n) {
-    const r = getDefaultRange();
-    if (n === ROSTER_DEFAULT_DAYS) { setStartDate(r.start); setEndDate(r.end); return; }
+    const r = getDefaultRange(null, rsDefaultDays());
+    if (n === rsDefaultDays()) { setStartDate(r.start); setEndDate(r.end); return; }
     const now = new Date();
     const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     setStartDate(toISO(start));
@@ -1369,21 +1856,29 @@ function App() {
   // and a button on each section's header row for the single-class case. Two
   // copies of the column list would drift the first time ePACT wanted a field,
   // and a vendor import is the last place to discover that.
-  const epactAll = useMemo(() => epactRows(displayRows), [displayRows]);
+  // The org's column set — one lookup, used by the count, both buttons and the
+  // file, so the number on the toolbar cannot describe a different export than
+  // the one the button produces.
+  const epactCols = useMemo(() => epactColumns(), []);
+  const epactAll = useMemo(() => epactRows(displayRows, epactCols), [displayRows, epactCols]);
 
   function exportEpact(rowSet, sectionName) {
-    const tuples = epactRows(rowSet);
+    const tuples = epactRows(rowSet, epactCols);
     if (!tuples.length) return;
     const scope = sectionName ? 'section' : 'view';
     const name = ['epact', orgSlug || 'org', sectionName ? epactFileSlug(sectionName) : '',
                   loadedStart || startDate].filter(Boolean).join('-') + '.csv';
-    saveTextViaPopup(epactCsv(tuples), name, {
+    saveTextViaPopup(epactCsv(tuples, epactCols), name, {
       gesture: 'ePACT',
       // Metabase writes a UTF-8 BOM on every CSV it serves, so the file Melinda
       // downloads from the card today has one and ePACT already ingests it. It
       // also matters on its own: Excel sniffs bytes rather than trusting UTF-8,
       // so without a BOM an accented participant name opens as mojibake.
-      bom: true,
+      // Metabase writes a BOM on every CSV it serves, so the file Melinda
+      // downloads from the card today has one and ePACT already ingests it.
+      // Excel also sniffs bytes rather than trusting UTF-8, so without it an
+      // accented participant name opens as mojibake. An org can turn it off.
+      bom: RS().epactBom !== false,
       title: 'Your ePACT file is ready',
       hint: tuples.length + ' participant' + (tuples.length === 1 ? '' : 's')
           + ' \u2014 upload this CSV in ePACT. If the download did not start on its own, use the '
@@ -1438,10 +1933,11 @@ function App() {
       <>
       {renderSaveDialog()}
       {renderUndoToast()}
+      {renderSettings()}
       <div className="toolbar" data-roster-days={rangeDays}>
         <span className="toolbar-title">Class Roster</span>
 
-        {renderViewPicker()}
+        {rsShown('views') && renderViewPicker()}
 
         <div className="toolbar-divider" />
 
@@ -1453,8 +1949,8 @@ function App() {
 
         <label>Start<input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} /></label>
         <label>End<input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} /></label>
-        <button onClick={() => setDays(ROSTER_DEFAULT_DAYS)} style={{fontSize:10,padding:'3px 7px'}}
-          title={'Back to the default window \u2014 the next ' + ROSTER_DEFAULT_DAYS + ' days'}>{ROSTER_DEFAULT_DAYS} Days</button>
+        <button onClick={() => setDays(rsDefaultDays())} style={{fontSize:10,padding:'3px 7px'}}
+          title={'Back to the default window \u2014 the next ' + rsDefaultDays() + ' days'}>{rsDefaultDays()} Days</button>
         <button onClick={() => setMonth(-1)} style={{fontSize:10,padding:'3px 7px'}}>Last Mo.</button>
         <button onClick={() => setMonth(0)}  style={{fontSize:10,padding:'3px 7px'}}>This Mo.</button>
         <button onClick={() => setMonth(1)}  style={{fontSize:10,padding:'3px 7px'}}>Next Mo.</button>
@@ -1491,7 +1987,7 @@ function App() {
         <ColToggle k="pickup"       label="🚸 Pickup" />
         <ColToggle k="registered"   label="Registered" />
         <ColToggle k="responses"    label="Form Responses" />
-        {cols.responses && availableQuestions.length > 0 && (() => {
+        {rsShown('questions') && cols.responses && availableQuestions.length > 0 && (() => {
           const total = availableQuestions.length;
           const selCount = selectedQs === null ? total : selectedQs.length;
           const trunc = (str, n = 42) => str.length > n ? str.slice(0, n).trimEnd() + '\u2026' : str;
@@ -1527,7 +2023,8 @@ function App() {
         <div className="toolbar-spacer" />
         {rows && <span className="row-count">{displayRows.length} of {counts.all}</span>}
         <div className="toolbar-divider" />
-        <button onClick={() => window.print()}>🖨️ Print</button>
+        {rsShown('print') && <button onClick={() => window.print()}>🖨️ Print</button>}
+        {rsShown('pdf') && (
         <button
           className="btn-pdf"
           onClick={downloadPdf}
@@ -1535,7 +2032,9 @@ function App() {
         >
           {pdfLoading ? 'Generating…' : '📄 PDF'}
         </button>
-        <button className="btn-excel" onClick={exportExcel} disabled={!rows || !rows.length}>📊 Excel</button>
+        )}
+        {rsShown('excel') && <button className="btn-excel" onClick={exportExcel} disabled={!rows || !rows.length}>📊 Excel</button>}
+        {rsShown('epact') && (
         <button className="btn-epact" data-epact-rows={epactAll.length}
           onClick={() => exportEpact(displayRows, '')}
           disabled={!epactAll.length}
@@ -1544,6 +2043,10 @@ function App() {
             : 'Nothing to export \u2014 no enrolled participants in this view.'}>
           {'\uD83D\uDCE4 ePACT'}{epactAll.length ? ` (${epactAll.length})` : ''}
         </button>
+        )}
+        <button className="btn-settings" onClick={openSettings} data-rs-open
+          title="Report settings — what this report opens on for everyone in this organization"
+          aria-label="Report settings">⚙</button>
 
       </div>
       </>
@@ -1660,6 +2163,14 @@ function App() {
           </div>
           <div className="report-header-right">
             <div className="rh-meta" style={{fontWeight:600,marginBottom:2}}>{dateRangeLabel}</div>
+            {RS().showStamp && dataAt && !isPrint && (
+              <div className="rh-meta" data-rs-stamp style={{fontSize:10,color:'#999'}}>
+                Data as of {new Date(dataAt).toLocaleTimeString('en-US', {hour:'numeric', minute:'2-digit'})}
+                {' \u00B7 '}
+                <a href="#" onClick={e => { e.preventDefault(); fetchData(startDate, endDate, sectionFilter, true); }}
+                   style={{color:'#3b82f6'}}>Refresh</a>
+              </div>
+            )}
           </div>
         </div>
 
@@ -1675,7 +2186,7 @@ function App() {
           const secRows = Object.values(sec.sessions).flatMap(s => s.rows);
           const secEnrolled  = secRows.filter(r => r.status === 'Enrolled').length;
           const secCancelled = secRows.filter(r => r.status === 'Cancelled').length;
-          const secEpact = epactRows(secRows).length;
+          const secEpact = epactRows(secRows, epactCols).length;
 
           return (
             <div className="section-group" key={secName}>

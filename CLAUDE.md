@@ -483,7 +483,9 @@ The mechanism lives in `server.js` under "Slack activity notifications":
 Wired so far: `created`, `org-deleted`, `pdf`, `excel`, `print`, `summary`
 (🧾 lite export), `game` (🕹️ hidden banner mini-game plays),
 `outdoor` (🎪 Outdoor Event Spaces tab opened, with the booking count), `view`, `insights`,
-feedback/votes, `email`, `munis`, `permits`, `map`, `epact` (📤 a participant list
+feedback/votes, `email`, `munis`, `permits`, `map`, `epact`, `settings-save`/
+`settings-reset` (⚙️ a per-org report default changed, naming the fields and
+flagging an ePACT template that left the verified set) (📤 a participant list
 exported for the ePACT camp-forms vendor, with the count and whether it was one
 class or the whole view), and three platform alerts —
 `report-down` (a report's card stopped answering, links straight to the report
@@ -2883,6 +2885,150 @@ Already shipped (PR #75, live on `main`): name-based site-type recovery so
 "court" excludes rinks/pools/gyms, specific-type revenue breakdown, Location
 filter, Ice sub-tab, court-name wrap. Display/scoping only — did not change the
 revenue math, so the gap above predates and survives it.
+
+## Per-org report settings (2026-08-27) — and the cache-key bug found under them
+
+Dan: *"we could also add some type of report settings, where you could customize
+some report defaults that applied per org. Select columns, etc."* Then, settling
+the design questions: *"since it's single tenant, anyone can edit the settings.
+we'll figure out a multi tenant thing later. Per org. One report for now, we'll
+do the class roster."* And the scope: *"allowing saved views, exporting or
+printing pdf's, email subscriptions, default date range for date filters (with a
+warning that anything over 30 days can be bad)."*
+
+A ⚙ at the far right of the Class Roster toolbar opens a sheet grouped by
+**blast radius** rather than by category, because "default columns" and "cache
+lifetime" are not the same kind of decision. Mockup:
+https://claude.ai/code/artifact/386455f8-d3d0-44ea-a377-c9dd170f7082
+
+### THE BUG UNDERNEATH: pre-warm was writing keys nothing could read
+
+Found while checking whether a per-org cache TTL was contained. The data route
+built its key one way and pre-warm built it another:
+
+```
+route  :  `${orgSlug}:${reportType}:v${FEED_VERSION[reportType] || 1}:${paramStr}`
+prewarm:  `${slug}:${rt}:${paramStr}`                       ← no version segment
+```
+
+Those cannot produce the same string, so **every param'd entry pre-warm wrote
+was unreachable from the page that needed it.** The version segment was added to
+the route's key to bust the cache when a card gains a column (court-utilization
+v2) and pre-warm was never updated. The base key is unreachable too, for a
+different and *correct* reason: `getCachedEntry`'s fallback fires only when
+`key === baseKey`, and the route's key always carries `v1:` — that fallback was
+deliberately narrowed by an earlier fix ("silently serving default-range data
+regardless of requested dates"), which is right and should stay.
+
+**Proven by construction, not by measurement.** A live timing test looked
+tempting and is worthless here: pre-warm runs at 4:50am and the roster's TTL is
+2h, so by any reasonable hour a warm entry is expired anyway and slowness
+discriminates nothing. Both key builders now go through one `feedCacheKey()`,
+and `report-settings.spec.js` fails if either caller hand-builds a key again or
+if the versioned format appears twice.
+
+**Consequence to expect:** first opens that used to be cold can now hit warm
+data. That is the point, and the TTL still governs how stale it may be.
+
+### What a setting is, and what it is not
+
+- **A setting SEEDS; it never overrides.** Precedence is
+  `platform default → the org's setting → this person's own choice`. Column
+  toggles still live in each reader's `localStorage` and still win. An org
+  default that reached in and reset those would produce "my settings keep
+  resetting" as the first ticket — the same line that kept columns out of saved
+  views.
+- **Not a saved view.** A view is a named filter set anyone can make, many per
+  report. This is one starting point per org.
+- **Not access control.** Single tenant, so the gate is the org token the report
+  link already carries. When multi-tenant lands, `savedViewsGate`'s twin here is
+  the one place that needs a role check.
+- Registry-driven like `SAVED_VIEW_PARAMS`: `REPORT_SETTINGS_SCHEMA` registers
+  `roster` alone and every other report 404s.
+
+### The three groups
+
+| group | blast radius | settings |
+|---|---|---|
+| What it opens on | display only | window, status, run-on-open, default columns, which controls exist |
+| How fresh | costs Metabase time on a **shared card** | cache lifetime, "Data as of" stamp, pre-warm the default window |
+| The ePACT export | changes a file a HIPAA vendor imports | columns and their order, group label, BOM |
+
+- **The cache dial prices itself.** The roster runs on a card every org shares,
+  so the panel shows refreshes/org/day *and* the platform total, and the number
+  moves as you drag. A floor of **30 minutes** clamps rather than refuses — a
+  dial that snaps teaches the limit where an error just loses the edit.
+- **`warmDefaultWindow` is OFF by default.** It adds one Metabase query per org
+  per day; a load increase should be switched on and measured, not slipped in.
+  When on, pre-warm fetches the window the page will actually ask for, built
+  with the real `buildMetabaseParams` so the key is the route's and not an
+  approximation of it.
+- **Over 30 days the window warns rather than being refused** — a month at Apex
+  was ~382 pages and 12,130 rows before the reader had chosen anything, but an
+  org running year-round programmes may genuinely want a quarter.
+- **`ROSTER_DEFAULT_DAYS` stays a constant.** The server's `next14` relative
+  range is pinned to it, so a saved view named "Next 14 days" and the report's
+  own default cannot drift. An org's window arrives as an argument to
+  `getDefaultRange(today, days)` instead of editing that constant.
+
+### Email subscriptions are deliberately NOT offered here
+
+The roster is not in `EMAIL_SUBSCRIBABLE_REPORTS` (only `facility` and `gl`
+are), so it has no subscribe control to remove — and a switch over a control
+that does not exist is the same dead end as a greyed button. The spec asserts
+its absence *and* asserts why, so the day the roster becomes subscribable the
+toggle is one line. Every other item on Dan's list is there: saved views, PDF,
+print, Excel, ePACT, the form-questions picker.
+
+**Two invariants the spec enforces about that list**: every removable key has a
+label (or the panel renders a raw key), and every removable key is actually read
+by something on the page (or it is a switch that controls nothing, which looks
+like a working control and is not one).
+
+### The ePACT catalogue excludes SESSION-grain fields, on purpose
+
+The export reproduces her `SELECT DISTINCT` over **whatever columns are
+chosen**, so adding a session-grain field (Session Start / Session End) would
+stop the dedupe collapsing two same-day sessions and upload the same camper
+twice. `EPACT_FIELD_CATALOGUE` therefore offers participant- and section-grain
+fields only. Deviating from the verified five is allowed and **never silent**:
+the panel flips from green to a warning naming the risk, and the same-five-in-a-
+different-order case counts as drift because ePACT maps on position.
+
+Also: the sort had to stop being positional. It was `t[4] || t[2] || t[1]`
+(label, last, first); with a configurable column set index 4 need not be the
+label, so it now looks the columns up **by name**.
+
+### Guards
+
+`scripts/report-settings.spec.js` (**85 assertions, in CI**) lifts and RUNS the
+registry and its validator, and has a live half that boots the server, saves,
+clamps, resets and reads the settings back **out of the page's injected
+`ORG_CONFIG`** — they decide the first render, so a page that fetched them would
+flash the platform defaults first. Mutation-tested twelve ways, all failing by
+name: pre-warm hand-building its key again, the TTL floor removed,
+`warmDefaultWindow` defaulting on, an unknown key silently accepted, a
+session-grain field offered, the server's column defaults drifting from the
+page's, an org default overriding a reader's columns, `settings-save` dropped
+from `SLACK_NOTIFY`, a removable control nothing reads, a removable control with
+no label, an email toggle on a report with no subscribe button, and the
+wide-window warning removed.
+
+`roster-epact.spec.js` 73 → **94**: the export now runs through a configured org
+as well as an unconfigured one, and the assertions that matter are that the
+DEFAULT is still the verified five and that an unknown column set falls back
+rather than exporting empty columns.
+
+Four new `ci-check-render.js` cases, two of them seen to fail on a real
+regression in a browser: the gear is **last** in the toolbar (moving it fails),
+the panel opens with all three groups, the drift banner flips when a column is
+added (pinning it green fails), and the cache dial's platform total **goes up**
+when the lifetime goes down.
+
+**A render-check note worth keeping:** the dial case drives the range input with
+the **keyboard**, not by assigning `.value`. React tracks a controlled input's
+value internally, so a direct assignment plus a synthetic `input` event is
+ignored — the case would have failed on a perfectly good dial.
 
 ## Saved views on the Class Roster (2026-08-27)
 
