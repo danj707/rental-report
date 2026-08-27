@@ -2948,6 +2948,9 @@ data. That is the point, and the TTL still governs how stale it may be.
   `sha256(DASHBOARD_PASSWORD + "|report-settings|v1")` truncated, so it can sit
   in a URL without handing over the admin dashboard, and rotating the password
   rotates it. Look it up at `/api/admin/report-settings-key?password=…`.
+  The flag has its own switch in the admin dashboard's Feature Flags block —
+  **that block is written by hand per toggle, so a new flag does NOT appear on
+  its own**, and one that `applyFlags()` never drives renders permanently off.
   **It FAILS CLOSED**: no `DASHBOARD_PASSWORD` means no key means nobody, which
   is the opposite of `dashboardAuth`'s "no password → open access" for the root
   page — right for a root page in dev, wrong for a control that spends a shared
@@ -3032,8 +3035,8 @@ label, so it now looks the columns up **by name**.
 registry and its validator, and has a live half that boots the server, saves,
 clamps, resets and reads the settings back **out of the page's injected
 `ORG_CONFIG`** — they decide the first render, so a page that fetched them would
-flash the platform defaults first. Mutation-tested eighteen ways, all failing by
-name: the feature flag defaulting ON, no-password falling open instead of
+flash the platform defaults first. Mutation-tested nineteen ways, all failing by
+name: the flag's switch never driven by `applyFlags`, the feature flag defaulting ON, no-password falling open instead of
 closed, the admin gate removed from either route, the budget check dropped, the
 panel multiplying by the org count again, the gear rendering for everyone,
 pre-warm hand-building its key again, the TTL floor removed,
