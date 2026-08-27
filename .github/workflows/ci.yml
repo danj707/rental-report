@@ -97,6 +97,13 @@ jobs:
       - name: Fast Track triage spec (a section that has not opened outranks a capacity warning)
         run: node scripts/fasttrack-launching-soon.spec.js
 
+      # Pins that the capacity headline reads Over Demand and never Left on
+      # Table (opposite fixes), and that a section in EARLY ACCESS reaches the
+      # Conversions tab while a DRAFT never does — promoting drafts took Smyrna's
+      # post-registration set from 127 sections to 1,522.
+      - name: Fast Track missed-revenue spec (over-demand, not pending value; early access counts as launched)
+        run: node scripts/fasttrack-missed-revenue.spec.js
+
       - name: Outdoor events hour spec (hours covered, not hours started; multi-day excluded)
         run: node scripts/outdoor-hours.spec.js
 
