@@ -304,6 +304,13 @@ function fasttrackRows() {
     "FT Converted": 25, "FT Pending": 37, "Capacity": 25,
     "Direct Enrolled": 0, "Total Enrolled": 25, "Fill %": 100,
     "Conversion %": 40.3,
+    // 62 holds against 25 seats at $25 => 37 * 25 = $925 with nowhere to sit.
+    // `Left on Table` carries a SENTINEL that could never be the right answer
+    // for a capacity headline, so a card reading the wrong column fails loudly
+    // rather than rendering a plausible number. (On a section exactly at
+    // capacity the two are genuinely equal, which is why the fixture has to
+    // force them apart to discriminate at all.)
+    "Over Demand $": 925, "Left on Table": 999999,
   });
   // Smaller and MORE RECENT than launchedEarly. Pure recency ordering puts this
   // first, which is what buried a section with 62 fast-trackers behind sections
@@ -1043,6 +1050,58 @@ const CASES = [
   // ...and no toggle there, because there is nothing to switch back to.
   { name: "memberships · failures only hides the toggle", path: "/{org}/memberships?tab=checkins",
     stubMode: "failonly", needs: "[data-ci-list-set=\"failed\"]", absent: "[data-ci-rowset-toggle]" },
+  // ── Money left on the table for want of capacity, and the Conversions tab
+  // finally showing early-access sections (Dan, 2026-08-27).
+  //
+  // 925 is the fixture's over-demand (62 holds - 25 seats at $25). Left on Table
+  // carries the sentinel 999999, so a card reading the wrong column fails here
+  // instead of rendering a plausible number.
+  { name: "fasttrack · launch card blocked revenue", path: "/{org}/fasttrack",
+    needs: "[data-blocked-rev=\"925\"]",
+    absent: "[data-blocked-rev=\"999999\"]" },
+  // THE BUG DAN HIT: the section is in early access, the card calls it
+  // 'pipeline', and the tab filtered it out — so clicking through landed on a
+  // tab that did not contain it. #aq-<id> is the scroll target jumpToConversions
+  // looks for, so its presence IS "you can find the section".
+  { name: "fasttrack · conversions finds early-access section", path: "/{org}/fasttrack",
+    needs: "#aq-sec-premier-early",
+    act: async page => {
+      await page.waitForSelector(".tab-btn", { timeout: 45000 });
+      await page.evaluate(() => {
+        const t = [...document.querySelectorAll(".tab-btn")].find(b => /Conversion/i.test(b.textContent));
+        if (t) t.click();
+      });
+      await new Promise(r => setTimeout(r, 2200));  // switchTab shows a ~1.5s loader
+    } },
+  { name: "fasttrack · conversions missed-revenue KPI", path: "/{org}/fasttrack",
+    needs: "[data-conv-blocked=\"925\"]",
+    act: async page => {
+      await page.waitForSelector(".tab-btn", { timeout: 45000 });
+      await page.evaluate(() => {
+        const t = [...document.querySelectorAll(".tab-btn")].find(b => /Conversion/i.test(b.textContent));
+        if (t) t.click();
+      });
+      await new Promise(r => setTimeout(r, 2200));
+    } },
+  // Most recently launched first. sec-tiny opened ~30 min ago, sec-premier-early
+  // a day ago, so tiny leads — and asserting the FIRST card is what makes this
+  // about order rather than mere presence.
+  { name: "fasttrack · conversions most recent first", path: "/{org}/fasttrack",
+    needs: "body[data-flow-order-ok=\"1\"]",
+    act: async page => {
+      await page.waitForSelector(".tab-btn", { timeout: 45000 });
+      await page.evaluate(() => {
+        const t = [...document.querySelectorAll(".tab-btn")].find(b => /Conversion/i.test(b.textContent));
+        if (t) t.click();
+      });
+      await new Promise(r => setTimeout(r, 2200));
+      await page.evaluate(() => {
+        const cards = [...document.querySelectorAll("[data-flow-section]")];
+        if (cards.length >= 2 && cards[0].dataset.flowSection === "sec-tiny") {
+          document.body.setAttribute("data-flow-order-ok", "1");
+        }
+      });
+    } },
   { name: "wizard · feed date window", path: "/{org}/report-wizard",
     needs: "[data-rw-window=\"Aug 19 \u2013 Aug 26\"]",
     act: async page => { await page.click(".example-chip"); await page.click(".btn-generate"); } },
