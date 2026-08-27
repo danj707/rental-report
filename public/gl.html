@@ -624,6 +624,7 @@
   </script>
 <script src="/report-refresh.js" defer></script>
 <script src="/open-pdf.js" defer></script>
+<script src="/saved-views.js" defer></script>
 </head>
 <body>
 <div id="root"></div>
@@ -1255,47 +1256,28 @@ function reconcileFilterSelection({ available, previous, requested, dataChanged 
 // by hand, so the PDF, print and Excel paths need to know nothing about it.
 const LS_LAST_VIEW = 'gl_saved_view_last_v1_';
 
-// Offered relative ranges. Same tokens the server's getDateRange() uses, so a
-// view could later feed an email subscription unchanged. (`last7` is a valid
-// token server-side but resolves identically to prior7, so it isn't offered.)
-const SAVED_VIEW_RANGES = [
-  ['lastMonth', 'Last month'],
-  ['prior30',   'Prior 30 days'],
-  ['prior7',    'Prior 7 days'],
-  ['yesterday', 'Yesterday'],
-  ['today',     'Today'],
-];
-const SAVED_VIEW_RANGE_LABELS = Object.fromEntries(SAVED_VIEW_RANGES);
+// The date half lives in /saved-views.js, shared with every other report that
+// has saved views. One mirror of the server's getDateRange() is a risk worth
+// pinning; one per page drifts the first time a token is added to one of them.
+// These are thin wrappers so the reference resolves at CALL time — a deferred
+// script has loaded by the time Babel runs these blocks, but reading it at
+// module scope would make that an assumption rather than a fact.
+function resolveSavedRange(token) { return RecSavedViews.resolveSavedRange(token); }
+function fmtShortDate(iso)        { return RecSavedViews.fmtShortDate(iso); }
+function viewDateLabel(v)         { return RecSavedViews.viewDateLabel(v); }
 
-// Client mirror of the server's getDateRange(). Kept deliberately small and in
-// lockstep with it — a divergence here would silently shift a saved view's
-// range relative to the same range in a scheduled email.
-function resolveSavedRange(token) {
-  const now = new Date();
-  const shift = d => { const x = new Date(now); x.setDate(x.getDate() + d); return x; };
-  if (token === 'today')     return { start: toISO(now), end: toISO(now) };
-  if (token === 'yesterday') return { start: toISO(shift(-1)), end: toISO(shift(-1)) };
-  if (token === 'prior7')    return { start: toISO(shift(-7)),  end: toISO(shift(-1)) };
-  if (token === 'last7')     return { start: toISO(shift(-7)),  end: toISO(shift(-1)) };
-  if (token === 'prior30')   return { start: toISO(shift(-30)), end: toISO(shift(-1)) };
-  const first = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-  const last  = new Date(now.getFullYear(), now.getMonth(), 0);
-  return { start: toISO(first), end: toISO(last) };   // lastMonth
+// Which ranges THIS report offers is the server's call — a GL rollup only looks
+// backwards — and it arrives as ORG_CONFIG.savedViewRanges. Hardcoding it here
+// is how the dialog came to offer "Today", which the server has always refused.
+function savedViewRanges() {
+  const r = (window.ORG_CONFIG || {}).savedViewRanges;
+  return Array.isArray(r) ? r : [];
 }
-
-function fmtShortDate(iso) {
-  if (!iso) return '';
-  const [y, m, d] = iso.split('-').map(Number);
-  return new Date(y, m - 1, d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-}
-
-// What the picker prints under a view's name. A pinned range shows its dates —
-// a fixed view must never be mistaken for one that follows the calendar.
-function viewDateLabel(v) {
-  if (!v) return '';
-  if (v.dateMode === 'fixed')    return '📌 ' + fmtShortDate(v.fixedStart) + ' – ' + fmtShortDate(v.fixedEnd);
-  if (v.dateMode === 'relative') return SAVED_VIEW_RANGE_LABELS[v.relativeRange] || v.relativeRange;
-  return 'current range';
+// The dialog's pre-selected range. Taken from the offered list rather than named
+// here, so the default can never be a token this report does not offer.
+function defaultSavedRange() {
+  const r = savedViewRanges();
+  return r.length ? r[0][0] : '';
 }
 
 function parseViewParams(params) {
@@ -2307,8 +2289,8 @@ function App() {
     setRowMenu(null);
     setSaveForm(activeView && viewDirty
       ? { name: activeView.name, targetId: activeView.id, dateMode: activeView.dateMode,
-          relativeRange: activeView.relativeRange || 'lastMonth', repin: false }
-      : { name: '', targetId: null, dateMode: 'current', relativeRange: 'lastMonth', repin: true });
+          relativeRange: activeView.relativeRange || defaultSavedRange(), repin: false }
+      : { name: '', targetId: null, dateMode: 'current', relativeRange: defaultSavedRange(), repin: true });
   }
 
   function renderViewPicker() {
@@ -2381,7 +2363,7 @@ function App() {
                   </div>
                   {rowMenu === v.id && (
                     <div className="view-actions">
-                      <button onClick={() => { setRowMenu(null); setSaveForm({ name: v.name, targetId: v.id, renameOnly: true, dateMode: v.dateMode, relativeRange: v.relativeRange || 'lastMonth' }); }}>
+                      <button onClick={() => { setRowMenu(null); setSaveForm({ name: v.name, targetId: v.id, renameOnly: true, dateMode: v.dateMode, relativeRange: v.relativeRange || defaultSavedRange() }); }}>
                         Rename…
                       </button>
                       <button
@@ -2475,7 +2457,7 @@ function App() {
               onChange={e => setSaveForm(x => ({...x, relativeRange: e.target.value}))}
               style={{margin:'0 0 8px 26px',padding:'5px 8px',border:'1px solid #ddd',borderRadius:6,fontSize:13,fontFamily:'inherit',color:'#111'}}
             >
-              {SAVED_VIEW_RANGES.map(([k, label]) => <option key={k} value={k}>{label}</option>)}
+              {savedViewRanges().map(([k, label]) => <option key={k} value={k}>{label}</option>)}
             </select>
           )}
           {radio('fixed', 'Pin these exact dates', 'Stays on ' + fmtShortDate(startDate) + ' – ' + fmtShortDate(endDate) + ' forever. For a closed period you keep coming back to.')}

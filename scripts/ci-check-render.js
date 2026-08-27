@@ -665,7 +665,24 @@ const STUBS = [
       meta: { window: { start: "2026-08-19", end: "2026-08-26" } } }) },
   { match: /\/api\/pulse/,                  body: () => ({ items: [], generated: null }) },
   { match: /\/api\/goals/,                  body: () => ({}) },
-  { match: /\/api\/views/,                  body: () => ({ views: [] }) },
+  // Saved views, shaped per report — a roster view carries section_name/status,
+  // a GL view carries desks/methods, and handing one report the other's filters
+  // would prove nothing. `ranges` is deliberately NOT stubbed: the save dialog
+  // reads the offered list from ORG_CONFIG, which the real server injects, so
+  // the case for it covers the injection rather than a fixture.
+  { match: /\/api\/views/, body: url => {
+      const v = (id, name, extra) => Object.assign({
+        id, name, dateMode: "current", relativeRange: null, params: "",
+        fixedStart: null, fixedEnd: null, owner: null,
+        createdAt: "2026-08-01T00:00:00.000Z", updatedAt: null, deletedAt: null,
+      }, extra);
+      const views = /\/roster\//.test(url)
+        ? [v("v_camp", "Hackberry Hill", { dateMode: "relative", relativeRange: "next7",
+                                           params: "section_name=Camp Blue&status=enrolled" }),
+           v("v_cancels", "Cancellations", { params: "status=cancelled" })]
+        : [];
+      return { max: 25, views };
+    } },
   // The Report Wizard's generator. Stubbed rather than reaching Anthropic (the
   // real route needs an API key and would be non-deterministic), and shaped like
   // a real reply: a summary, notes, and widgets over a source the data stub can
@@ -960,6 +977,88 @@ const CASES = [
           && p.tsv.charCodeAt(0) !== 0xFEFF
           && p.tsv.split("\n")[0] === "Rec ID\tFirst Name\tLast Name\tHousehold Owner Email\tSession Date - Section Name"
           ? "1" : "");
+      });
+    } },
+
+  // ── Class Roster: saved views ───────────────────────────────────────────
+  // The picker lists what the feed returned. Keyed on a view NAME from the stub,
+  // so a picker that renders an empty list still fails.
+  { name: "roster · saved views listed", path: "/{org}/roster",
+    needs: "[data-view-row=\"Hackberry Hill\"]",
+    act: async page => {
+      await page.waitForSelector(".btn-view", { timeout: 45000 });
+      await page.click(".btn-view");
+    } },
+  // Applying one has to put its filters ON SCREEN and name itself in the URL.
+  // "a row was clickable" would pass on an apply that did nothing.
+  { name: "roster · applying a view sets its filters", path: "/{org}/roster",
+    needs: "body[data-applied=\"1\"]",
+    act: async page => {
+      await page.waitForSelector(".btn-view", { timeout: 45000 });
+      await page.click(".btn-view");
+      await page.waitForSelector("[data-view-row=\"Hackberry Hill\"]", { timeout: 45000 });
+      await page.click("[data-view-row=\"Hackberry Hill\"]");
+      // The apply re-runs the query — a roster's section filter goes to the CARD,
+      // unlike the GL report's client-side filters. Wait for that round trip.
+      await page.waitForFunction(
+        () => document.querySelector(".toolbar[data-roster-days=\"7\"]")
+           && !document.querySelector(".btn-run .btn-spinner"),
+        { timeout: 45000 });
+      await page.evaluate(() => {
+        const sec = document.querySelector('.toolbar input[type="text"]');
+        const pill = document.querySelector(".status-pill-enrolled.active");
+        const named = new URLSearchParams(window.location.search).get("view") === "v_camp";
+        // next7, not next14: the view has to MOVE the window off the report's own
+        // 14-day default, or a missing re-fetch would be invisible here.
+        const days = document.querySelector(".toolbar").getAttribute("data-roster-days");
+        // The Run button rings green while the on-screen range differs from the
+        // LOADED one. No ring ⇒ the query actually re-ran for the new window.
+        const run = document.querySelector(".btn-run");
+        const requeried = run && getComputedStyle(run).boxShadow === "none";
+        if (sec && sec.value === "Camp Blue" && pill && named && days === "7" && requeried) {
+          document.body.setAttribute("data-applied", "1");
+        }
+      });
+    } },
+  // THE BUG THIS REGISTRY EXISTS FOR: the dialog's range list is injected by the
+  // server, so it cannot offer something the server refuses. Asserted on the
+  // FIRST option, which is also the dialog's default.
+  { name: "roster · save dialog offers the server's ranges", path: "/{org}/roster",
+    needs: "body[data-ranges=\"1\"]",
+    act: async page => {
+      await page.waitForSelector(".btn-view", { timeout: 45000 });
+      // Save is disabled until something is filtered — set a filter first, the
+      // way a person would. THEN WAIT for the button to actually enable: typing
+      // resolves before React commits the state that enables it, and a click on
+      // a disabled button is a silent no-op. Without this wait the case passed
+      // in isolation and failed inside a full run, which is not a guard.
+      await page.type('.toolbar input[type="text"]', "Camp");
+      await page.waitForFunction(
+        () => { const b = document.querySelector(".btn-save-view"); return b && !b.disabled; },
+        { timeout: 45000 });
+      await page.click(".btn-save-view");
+      await page.waitForFunction(() => !!document.querySelector('input[type="radio"]'), { timeout: 45000 });
+      await page.evaluate(() => {
+        const radios = [...document.querySelectorAll('input[type="radio"]')];
+        if (radios[1]) radios[1].click();     // "Save a relative range"
+      });
+      await page.waitForFunction(() => !!document.querySelector("select"), { timeout: 45000 });
+      await page.evaluate(() => {
+        const sel = document.querySelector("select");
+        const opts = [...sel.options].map(o => o.value);
+        // The dialog must offer EXACTLY the list the server injected — that is
+        // what stops it showing a range the server would refuse to store.
+        // (Whether a listed range is storable is checked in saved-views.spec.js,
+        // which can read REPORT_BLOCKED_RANGES; here the point is provenance.)
+        const injected = ((window.ORG_CONFIG || {}).savedViewRanges || []).map(r => r[0]);
+        const sameList = injected.length > 3 && injected.join(",") === opts.join(",");
+        // A roster reads forward, so the fortnight it opens on comes first. The
+        // pre-SELECTED value is deliberately not asserted: updating an existing
+        // relative view legitimately pre-selects that view's own range, and the
+        // preceding case leaves one applied (localStorage survives between cases
+        // in this check — worth knowing before adding another).
+        const forwardFirst = opts[0] === "next14";
+        if (sameList && forwardFirst) document.body.setAttribute("data-ranges", "1");
       });
     } },
 

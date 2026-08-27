@@ -1,15 +1,27 @@
-// Spec for the GL saved-views helpers in public/gl.html.
+// Spec for saved views — the shared date helpers, plus the GL and Class Roster
+// pages that use them.
 //
-// Two invariants this pins down, both of which fail silently if they break:
+// Four invariants this pins down, all of which fail silently if they break:
 //
-//  1. The client's resolveSavedRange() is a hand-written mirror of the server's
+//  1. resolveSavedRange() is a hand-written mirror of the server's
 //     getDateRange(). If they diverge, a saved view named "Last month" opens on
 //     one window on screen and a different one in the emailed report — and
-//     nothing errors.
-//  2. The filter query string the page builds must survive the server's
-//     allowlist byte-for-byte. The "edited" marker is a string comparison
-//     against the stored params, so a single encoding difference would make
-//     every freshly-saved view read as dirty the instant it is applied.
+//     nothing errors. It now lives in public/saved-views.js so there is ONE
+//     mirror rather than one per report page, and this spec fails if a page
+//     grows its own copy back.
+//  2. The filter query string a page builds must survive the server's allowlist
+//     byte-for-byte. The "edited" marker is a string comparison against the
+//     stored params, so a single encoding difference would make every
+//     freshly-saved view read as dirty the instant it is applied.
+//  3. Every relative range a page OFFERS must be one the server will actually
+//     store. This was broken: gl.html hardcoded "Today" in its dropdown, and
+//     REPORT_BLOCKED_RANGES has always rejected it, so saving that view failed
+//     with a message about 7am email sends. The offered list is now injected
+//     from the server (SAVED_VIEW_RELATIVE_OFFER), and the check below is what
+//     makes a future mismatch a test failure rather than a support ticket.
+//  4. A ROSTER view carries filters only. Its column toggles and question
+//     picker are per-browser display state, and a shared view that overwrote
+//     them would take a colleague's chosen columns away.
 //
 // Run: node scripts/saved-views.spec.js
 // Needs @babel/standalone (CI installs it for the JSX check):
@@ -43,8 +55,11 @@ function loadClientHelpers() {
     fetch: () => Promise.resolve({ ok: false, json: () => ({}) }),
     URL_TOKEN: "", ORG_CONFIG: {},
   };
-  const exposed = ["resolveSavedRange", "parseViewParams", "viewFilterSummary", "viewDateLabel",
-                   "SAVED_VIEW_RANGES", "reconcileFilterSelection"];
+  // resolveSavedRange / viewDateLabel now delegate to /saved-views.js, which the
+  // shared-helper loader covers directly — what is lifted here is GL's OWN
+  // filter vocabulary plus its multi-select reconcile.
+  const exposed = ["parseViewParams", "viewFilterSummary", "reconcileFilterSelection",
+                   "savedViewRanges", "defaultSavedRange"];
   const names = Object.keys(stubs);
   return new Function(...names, code + "\nreturn {" + exposed.join(",") + "};")(...names.map(n => stubs[n]));
 }
@@ -59,23 +74,68 @@ function loadServerGetDateRange() {
   return new Function(src.slice(from, to) + "\nreturn getDateRange;")();
 }
 
+// ── The shared date helpers, loaded as the plain script they are ────────────
+function loadSharedHelpers() {
+  const src = fs.readFileSync(path.join(ROOT, "public", "saved-views.js"), "utf8");
+  const win = {};
+  new Function("window", src)(win);
+  assert.ok(win.RecSavedViews, "saved-views.js should define window.RecSavedViews");
+  return win.RecSavedViews;
+}
+
+// A stand-in for what the server injects, so defaultSavedRange() can be RUN.
+const OFFERED_FOR_TEST = [["next14", "Next 14 days"], ["prior7", "Prior 7 days"]];
+
+// ── The roster's own two helpers, text-sliced rather than Babel-transformed:
+//    they are plain functions and the page around them is a React tree ────────
+function loadRosterHelpers() {
+  const src = fs.readFileSync(path.join(ROOT, "public", "roster.html"), "utf8");
+  const from = src.indexOf("function savedViewRanges() {");
+  assert.ok(from > 0, "roster.html should declare savedViewRanges");
+  const to = src.indexOf("\n}", src.indexOf("function viewFilterSummary("));
+  assert.ok(to > from, "roster.html should declare viewFilterSummary after it");
+  // savedViewRanges() reads window.ORG_CONFIG, so hand it a controllable one.
+  return new Function("window", src.slice(from, to + 2)
+    + "\nreturn { ROSTER_VIEW_PARAMS, parseViewParams, viewFilterSummary, ROSTER_STATUS_LABELS,"
+    + " savedViewRanges, defaultSavedRange };")({ ORG_CONFIG: { savedViewRanges: OFFERED_FOR_TEST } });
+}
+
+// ── The server's saved-view registries, lifted so the comparison is against
+//    the shipping constants and not a copy of them ─────────────────────────────
+function loadServerRegistries() {
+  const src = fs.readFileSync(path.join(ROOT, "server.js"), "utf8");
+  const from = src.indexOf("const SAVED_VIEW_PARAMS = {");
+  const to = src.indexOf("function savedViewsGate(");
+  assert.ok(from > 0 && to > from, "server.js should still declare the saved-view registries");
+  const blocked = /const REPORT_BLOCKED_RANGES = \{[\s\S]*?\n\};/.exec(src);
+  assert.ok(blocked, "server.js should still declare REPORT_BLOCKED_RANGES");
+  const reason = /const GL_RANGE_REASON = [\s\S]*?;\n/.exec(src);
+  return new Function(
+    (reason ? reason[0] : "const GL_RANGE_REASON='';") + blocked[0] + src.slice(from, to)
+    + "\nreturn { SAVED_VIEW_PARAMS, SAVED_VIEW_RELATIVE_ACCEPT, SAVED_VIEW_RELATIVE_OFFER, REPORT_BLOCKED_RANGES };")();
+}
+
 const H = loadClientHelpers();
+const S = loadSharedHelpers();
+const R = loadRosterHelpers();
+const REG = loadServerRegistries();
 const getDateRange = loadServerGetDateRange();
 
 let passed = 0;
 function test(name, fn) { fn(); console.log(`  ✓ ${name}`); passed++; }
 
-// Every token the picker offers, plus last7 — accepted server-side and by the
-// client mirror even though the dropdown doesn't list it.
-const TOKENS = ["today", "yesterday", "prior7", "prior30", "last7", "lastMonth"];
+// EVERY token the shared resolver knows — not a list retyped here, so a token
+// added to one side without the other fails rather than going unchecked.
+const TOKENS = Object.keys(S.RANGE_LABELS);
 
-test("every offered range is a token the server also understands", () => {
-  H.SAVED_VIEW_RANGES.forEach(([token]) => assert.ok(TOKENS.includes(token), `unknown token ${token}`));
+test("the resolver knows the forward ranges a roster needs, and the backward ones GL needs", () => {
+  ["next7", "next14", "next30"].forEach(t => assert.ok(TOKENS.includes(t), `missing ${t}`));
+  ["lastMonth", "prior7", "prior30"].forEach(t => assert.ok(TOKENS.includes(t), `missing ${t}`));
 });
 
 TOKENS.forEach(token => {
   test(`resolveSavedRange("${token}") matches the server's getDateRange`, () => {
-    const client = H.resolveSavedRange(token);
+    const client = S.resolveSavedRange(token);
     const server = getDateRange(token);
     assert.strictEqual(client.start, server.start, `${token} start`);
     assert.strictEqual(client.end, server.end, `${token} end`);
@@ -84,9 +144,67 @@ TOKENS.forEach(token => {
 
 test("an unknown token falls back to lastMonth, like the server", () => {
   assert.deepStrictEqual(
-    { s: H.resolveSavedRange("nonsense").start, e: H.resolveSavedRange("nonsense").end },
+    { s: S.resolveSavedRange("nonsense").start, e: S.resolveSavedRange("nonsense").end },
     { s: getDateRange("nonsense").start, e: getDateRange("nonsense").end }
   );
+});
+
+// ── ONE mirror, not one per page ──────────────────────────────────────────────
+// Both pages must delegate. A page that reimplements the resolver drifts the
+// first time a token is added to one of them, and the drift is silent.
+["gl.html", "roster.html"].forEach(page => {
+  test(`${page} delegates the resolver instead of reimplementing it`, () => {
+    const src = fs.readFileSync(path.join(ROOT, "public", page), "utf8");
+    assert.match(src, /function resolveSavedRange\(token\) \{ return RecSavedViews\.resolveSavedRange\(token\); \}/,
+      "should be a thin wrapper over the shared helper");
+    assert.ok(!/if \(token === 'prior30'\)/.test(src),
+      "the page must not carry its own copy of the range arithmetic");
+    assert.match(src, /<script src="\/saved-views\.js" defer><\/script>/,
+      "…and must actually load the shared file");
+  });
+});
+
+// ── Offered ⊆ storable. This is the bug that prompted the registry ────────────
+Object.keys(REG.SAVED_VIEW_RELATIVE_OFFER).forEach(report => {
+  test(`every range ${report} OFFERS is one the server will store`, () => {
+    const accept = REG.SAVED_VIEW_RELATIVE_ACCEPT[report] || [];
+    const blocked = REG.REPORT_BLOCKED_RANGES[report] || {};
+    REG.SAVED_VIEW_RELATIVE_OFFER[report].forEach(([token, label]) => {
+      assert.ok(accept.includes(token),
+        `${report} offers "${token}" but SAVED_VIEW_RELATIVE_ACCEPT does not list it`);
+      assert.ok(!blocked[token],
+        `${report} offers "${token}" but REPORT_BLOCKED_RANGES rejects it — the save dialog `
+        + "would show an option that always errors (this is exactly what gl.html did with Today)");
+      assert.ok(S.RANGE_LABELS[token], `${report} offers "${token}" with no shared label`);
+      assert.ok(label && label.length, `${report} offers "${token}" with no wording`);
+    });
+  });
+});
+
+test("a roster reads FORWARD and leads with its own default window", () => {
+  const offer = REG.SAVED_VIEW_RELATIVE_OFFER.roster.map(([t]) => t);
+  assert.strictEqual(offer[0], "next14",
+    "the first option is the dialog's default, and it should be the fortnight the report itself opens on");
+  assert.ok(offer.includes("next7") && offer.includes("next30"), "the forward ranges are the point");
+});
+
+test("next14 is the same fortnight the roster itself defaults to", () => {
+  // ROSTER_DEFAULT_DAYS lives in the page; the range lives on the server. Two
+  // numbers for one window would drift, so compare them.
+  const page = fs.readFileSync(path.join(ROOT, "public", "roster.html"), "utf8");
+  const m = /const ROSTER_DEFAULT_DAYS = (\d+);/.exec(page);
+  assert.ok(m, "roster.html should declare ROSTER_DEFAULT_DAYS");
+  const r = getDateRange("next14");
+  const days = Math.round((Date.parse(r.end) - Date.parse(r.start)) / 86400000) + 1;
+  assert.strictEqual(days, Number(m[1]),
+    "next14 must span exactly ROSTER_DEFAULT_DAYS days, or the view opens on a different window than the report does");
+});
+
+test("GL only looks backwards, and no longer offers a range it refuses", () => {
+  const offer = REG.SAVED_VIEW_RELATIVE_OFFER.gl.map(([t]) => t);
+  assert.ok(!offer.includes("today"),
+    "Today was offered and always rejected — the option has to go, not the guard");
+  assert.ok(!offer.some(t => /^next/.test(t)), "a GL rollup has nothing in a future window");
 });
 
 test("parseViewParams round-trips a stored filter string", () => {
@@ -106,9 +224,9 @@ test("parseViewParams treats an empty view as no filters at all", () => {
 });
 
 test("viewDateLabel prints a pinned range and never disguises it as live", () => {
-  assert.strictEqual(H.viewDateLabel({ dateMode: "current" }), "current range");
-  assert.strictEqual(H.viewDateLabel({ dateMode: "relative", relativeRange: "lastMonth" }), "Last month");
-  const fixed = H.viewDateLabel({ dateMode: "fixed", fixedStart: "2025-07-01", fixedEnd: "2025-09-30" });
+  assert.strictEqual(S.viewDateLabel({ dateMode: "current" }), "current range");
+  assert.strictEqual(S.viewDateLabel({ dateMode: "relative", relativeRange: "lastMonth" }), "Last month");
+  const fixed = S.viewDateLabel({ dateMode: "fixed", fixedStart: "2025-07-01", fixedEnd: "2025-09-30" });
   assert.match(fixed, /^📌 /);
   assert.match(fixed, /2025/);
 });
@@ -161,6 +279,96 @@ function clientBuild({ desks, methods, glq, tyler }) {
 test("the allowlist drops report plumbing a client might smuggle in", () => {
   const cleaned = serverClean("desks=A&token=secret&_print=1&_nocache=1&evil=1&start_date=2026-01-01");
   assert.strictEqual(cleaned, "desks=A");
+});
+
+// ── The ROSTER's own filter vocabulary ────────────────────────────────────────
+test("a roster view carries the two FILTERS and nothing else", () => {
+  assert.deepStrictEqual(REG.SAVED_VIEW_PARAMS.roster, ["section_name", "status"],
+    "the server's allowlist is the definition of what a roster view can hold");
+  assert.deepStrictEqual(R.ROSTER_VIEW_PARAMS, ["section_name", "status"],
+    "and the page's list of keys to clear on apply has to match it, or applying a "
+    + "view leaves a stale filter in the URL");
+});
+
+test("column toggles and the question picker are NOT saved", () => {
+  // They persist per browser in localStorage. A shared view that carried them
+  // would take a colleague's chosen columns away when they opened it.
+  ["cols", "questions"].forEach(k => {
+    assert.ok(!REG.SAVED_VIEW_PARAMS.roster.includes(k),
+      `"${k}" is display state and must not travel in a shared view`);
+  });
+});
+
+test("the dialog's default range is the first the server offers, not a name in the page", () => {
+  // A hardcoded default can fall outside the offered list the moment the list
+  // changes — which is how "Today" survived in gl.html.
+  assert.strictEqual(R.defaultSavedRange(), "next14");
+  assert.deepStrictEqual(R.savedViewRanges(), OFFERED_FOR_TEST,
+    "the page must read the injected list rather than carrying its own");
+  ["gl.html", "roster.html"].forEach(page => {
+    const src = fs.readFileSync(path.join(ROOT, "public", page), "utf8");
+    assert.ok(!/relativeRange: '(lastMonth|next14|today)'/.test(src),
+      `${page} must not name a default range inline — it comes from defaultSavedRange()`);
+  });
+});
+
+test("roster parseViewParams round-trips a stored filter string", () => {
+  const f = R.parseViewParams("section_name=After+School+Care&status=enrolled");
+  assert.strictEqual(f.section_name, "After School Care");
+  assert.strictEqual(f.status, "enrolled");
+});
+
+test("roster viewFilterSummary reads as a sentence, and says so when empty", () => {
+  assert.strictEqual(R.viewFilterSummary({ params: "section_name=Camp%20Blue&status=cancelled" }),
+    '"Camp Blue" · Cancelled only');
+  assert.strictEqual(R.viewFilterSummary({ params: "" }), "no filters");
+  // `all` is the ABSENCE of a status filter, so naming it would make every
+  // unfiltered view read as filtered.
+  assert.strictEqual(R.viewFilterSummary({ params: "status=all" }), "no filters");
+});
+
+// The dirty marker is a string comparison against the stored params, so what the
+// page builds has to survive the server's allowlist byte-for-byte — otherwise a
+// view reads as "edited" the instant it is applied.
+function rosterServerClean(raw) {
+  const supplied = new URLSearchParams(String(raw || ""));
+  const out = new URLSearchParams();
+  for (const key of REG.SAVED_VIEW_PARAMS.roster) {
+    const v = supplied.get(key);
+    if (v === null) continue;
+    const val = String(v).trim();
+    if (!val || val === "null" || val === "undefined") continue;
+    out.set(key, val.slice(0, 600));
+  }
+  return out.toString();
+}
+function rosterClientBuild(section, status) {
+  const qs = new URLSearchParams();          // same key order as the allowlist
+  if (section && section.trim()) qs.set("section_name", section.trim());
+  if (status && status !== "all") qs.set("status", status);
+  return qs.toString();
+}
+[
+  ["After School Care - Hackberry Hill Elementary School 2026-2027", "enrolled"],
+  ["Camp, Red", "cancelled"],
+  ["Café & Pro Shop 50%", "all"],
+  ["", "cancelled"],
+  ["Swim 101", "all"],
+].forEach(([section, status], i) => {
+  test(`roster filter string ${i + 1} survives the server allowlist byte-for-byte`, () => {
+    const built = rosterClientBuild(section, status);
+    assert.strictEqual(rosterServerClean(built), built);
+  });
+});
+
+test("the roster allowlist drops report plumbing a client might smuggle in", () => {
+  assert.strictEqual(
+    rosterServerClean("section_name=Camp&token=secret&_print=1&cols=%7B%7D&start_date=2026-01-01&evil=1"),
+    "section_name=Camp");
+});
+
+test("status=all is never stored — an unfiltered view must not look filtered", () => {
+  assert.strictEqual(rosterClientBuild("Camp", "all"), "section_name=Camp");
 });
 
 // ── Filter reconcile ─────────────────────────────────────────────────

@@ -2884,6 +2884,137 @@ Already shipped (PR #75, live on `main`): name-based site-type recovery so
 filter, Ice sub-tab, court-name wrap. Display/scoping only — did not change the
 revenue math, so the gap above predates and survives it.
 
+## Saved views on the Class Roster (2026-08-27)
+
+Dan: *"can we add the ability to save filtered views into this as well. That
+functionality is in the GL code report right now."*
+
+The server side was already generic — one registry entry per report — so most of
+this was the client, plus two things that were wrong in the GL implementation and
+would have been copied straight across.
+
+### A roster view carries the FILTERS and not the columns
+
+`SAVED_VIEW_PARAMS.roster` is `["section_name", "status"]`. The column toggles
+and the form-question picker are deliberately out:
+
+- they are **display state**, and they already persist per browser in
+  `localStorage`, and
+- a view is **shared with everyone who has the report's link**, so one that
+  carried columns would take a colleague's chosen columns away the moment they
+  opened someone else's filter.
+
+The save dialog says so on screen ("Columns and form questions aren't saved —
+those stay per person"). Same line the GL report draws by excluding its display
+toggles from the "edited" marker.
+
+### THE DATE MIRROR IS NOW ONE FILE, NOT ONE PER PAGE
+
+A saved view stores a date **intent** (`lastMonth`, `next14`), and something has
+to turn that back into a range: the server does in `getDateRange()` because an
+email subscription resolves the same vocabulary at 7am, and the page does on
+open. That makes the client resolver a hand-written mirror, and a divergence is
+silent — a view named "Last month" would open on one window on screen and report
+a different one in the emailed PDF.
+
+One mirror is a risk worth pinning. **Two — one per report page — is the same
+risk multiplied, and it drifts the first time a token is added to one of them.**
+So `public/saved-views.js` now holds `resolveSavedRange`, `RANGE_LABELS`,
+`fmtShortDate` and `viewDateLabel`; both pages carry thin wrappers, and
+`saved-views.spec.js` checks the shared resolver against the real
+`getDateRange()` for **every token in `RANGE_LABELS`** and fails if either page
+grows the arithmetic back.
+
+The wrappers are `function` declarations that read `RecSavedViews` at CALL time.
+A deferred script has loaded by the time Babel runs a `text/babel` block, but
+reading it at module scope would make that an assumption instead of a fact.
+
+### The offered ranges come from the SERVER — because gl.html got this wrong
+
+**A bug found on the way, not introduced by this change.** `gl.html` hardcoded
+its own dropdown, and that list included **Today** — which
+`REPORT_BLOCKED_RANGES.gl` has always rejected. So saving a GL view with
+`Today` failed with a message about 7am email sends, for a view opened at 3pm.
+Measured against the real `normalizeViewInput`: `today → REJECTED`, every other
+offered token `ok`.
+
+Two registries now, both server-side, and the offered one is **injected into
+`ORG_CONFIG` as `savedViewRanges`** (the `WIZARD_SOURCE_GRAIN` pattern):
+
+| | what it is for |
+|---|---|
+| `SAVED_VIEW_RELATIVE_ACCEPT[report]` | what a stored view may hold. `last7` stays accepted for `gl` though it is not offered — views saved before it was dropped still hold it, and it resolves identically to `prior7`. |
+| `SAVED_VIEW_RELATIVE_OFFER[report]` | `[token, label]` pairs, in the order the dialog shows them. **The first is the dialog's default**, read via `defaultSavedRange()` rather than named inline — a hardcoded default can fall outside the list the moment the list changes, which is how Today survived. |
+
+`saved-views.spec.js` asserts, per report, that every OFFERED token is in ACCEPT,
+is not in `REPORT_BLOCKED_RANGES`, and has a shared label. That check is what
+turns this class of bug into a test failure instead of a support ticket.
+
+### A roster reads FORWARD, and `next14` is the report's own default
+
+GL only looks backwards; a roster answers "who is coming". So the roster's
+offered list leads with **Next 14 days** — the fortnight the report itself opens
+on — then Next 7, Next 30, Today, and the backward ranges after, because a past
+camp's roster is a real question just not the common one.
+
+**`next14` is new in `getDateRange()` and is pinned to `ROSTER_DEFAULT_DAYS`.**
+The spec computes the span of `getDateRange("next14")` and requires it to equal
+the constant in `public/roster.html`: two numbers for one window would drift, and
+a view named "Next 14 days" that opens on a different fortnight than the report's
+default is the worst kind of wrong — plausible.
+
+### Applying a view on the roster hits the NETWORK. On GL it never does
+
+The roster's `section_name` is passed to **card 17296**, not merely applied on
+screen, so `applyView()` has to re-run the query when the section or the range
+moves. Every GL filter is client-side over rows already loaded, so applying a
+view there never touches the network. Copying GL's `applyView` verbatim would
+have set the section on screen and left the feed showing the old one.
+
+- **`clearView()` deliberately does NOT reset the dates.** Clearing a filter is
+  not a request to jump back to the default fortnight.
+- The save dialog and the Undo toast are rendered from inside `renderToolbar()`,
+  so all three of the page's return paths get them from one place — the picker is
+  on screen while rows are still loading, and Save clicked then must still open a
+  dialog.
+- The PDF, print, Excel and ePACT paths needed **no change at all**: applying a
+  view sets the same state a person could set by hand, and `downloadPdf` already
+  sends `section_name` and `status` explicitly. That is the whole design.
+
+### Two things the render check caught that source review would not
+
+- **`localStorage` survives between cases in `ci-check-render.js`.** The apply
+  case stores its view as "last used", so the next case's page auto-applied it
+  and the save dialog opened in *update* mode with that view's own range
+  pre-selected — which is correct behaviour and broke an assertion that
+  pre-selection was always the default. The case now asserts the option **list**
+  (provenance and order), which is the actual invariant; the default is checked
+  by running `defaultSavedRange()` in the spec. Worth knowing before adding
+  another case: they are not independent.
+- **A click on a disabled button is a silent no-op.** `page.type` resolves before
+  React commits the state that enables Save, so the case passed in isolation and
+  failed inside a full run. It now waits for `!b.disabled`. A guard that behaves
+  differently depending on what ran before it is not a guard.
+
+### Guards
+
+`scripts/saved-views.spec.js` 39 → **51 assertions**, in CI. Mutation-tested ten
+ways, all failing by name: GL offering Today again, `next14` spanning a different
+number of days than the server says, `ROSTER_DEFAULT_DAYS` moving away from
+`next14`, either page reimplementing the resolver, the shared resolver drifting
+from `getDateRange` on `next7`, `cols` smuggled into the roster allowlist, the
+page's clear-on-apply list drifting from the server's, the roster leading with a
+backward range, the dialog hardcoding its own list (browser), and `status=all`
+being stored so an unfiltered view reads as filtered.
+
+Three new `ci-check-render.js` cases — the picker lists what the feed returned,
+applying a view puts its filters on screen **and re-runs the query**, and the
+dialog offers exactly the injected list. The apply case's fixture view uses
+`next7`, not `next14`, on purpose: `next14` is the report's own default, so a
+view carrying it changes no dates and a **missing re-fetch would be invisible**.
+That was caught by mutation — the first fixture used `next14` and the
+dropped-re-fetch mutation survived.
+
 ## Export to ePACT on the Class Roster (2026-08-27)
 
 Dan: orgs export participant lists to upload into **ePACT**, an outside HIPAA
