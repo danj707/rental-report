@@ -15667,6 +15667,23 @@ app.get("/", (req, res) => {
             <div id="flag-reportdown-status" style="font-size:11px;color:#999">Loading...</div>
           </div>
         </div>
+        <div style="display:flex;align-items:center;gap:12px;margin-top:12px;padding-top:12px;border-top:1px solid #eef2f7">
+          <label style="position:relative;display:inline-block;width:44px;height:24px;cursor:pointer">
+            <input type="checkbox" id="flag-reportsettings" onchange="toggleFlag('reportSettings',this.checked)"
+                   style="opacity:0;width:0;height:0" />
+            <span id="flag-reportsettings-track" style="position:absolute;top:0;left:0;right:0;bottom:0;background:#cbd5e1;border-radius:12px;transition:background .2s"></span>
+            <span id="flag-reportsettings-thumb" style="position:absolute;top:2px;left:2px;width:20px;height:20px;background:#fff;border-radius:50%;transition:transform .2s;box-shadow:0 1px 3px rgba(0,0,0,.2)"></span>
+          </label>
+          <div>
+            <div style="font-size:13px;font-weight:600;color:#111827">&#9881;&#65039; Report Settings &mdash; per-org report defaults</div>
+            <div id="flag-reportsettings-status" style="font-size:11px;color:#999">Loading...</div>
+            <div style="font-size:11px;color:#6b7280;margin-top:3px">
+              Super-admin only. Even with this ON you also need the key from
+              <code style="font-size:10.5px">/api/admin/report-settings-key?password=&hellip;</code>,
+              appended to a report URL as <code style="font-size:10.5px">&amp;admin=&lt;key&gt;</code>.
+            </div>
+          </div>
+        </div>
       </div>
       <div style="padding:14px 18px;background:#f5f4f1;border-top:1px solid #e8e5df">
         <div style="font-size:12px;font-weight:700;color:#374151;margin-bottom:10px">&#128279; Metabase Links</div>
@@ -16774,6 +16791,7 @@ app.get("/", (req, res) => {
       updateFlagUI('schemabreak', flags.schemaBreakAlerts);
       updateFlagUI('paramdrift', flags.paramDriftAlerts);
       updateFlagUI('reportdown', flags.reportDownAlerts);
+      updateFlagUI('reportsettings', flags.reportSettings);
     }
     function updateFlagUI(name, on) {
       const cb = document.getElementById('flag-'+name);
@@ -16792,7 +16810,8 @@ app.get("/", (req, res) => {
           maintenance: ['ON — every org page is showing the "Down for Maintenance" splash', 'Off — platform is live for all orgs'],
           schemabreak: ['Watching — alerts if a table or column a live report depends on disappears', 'OFF — a dropped table will NOT be reported'],
           paramdrift: ['Watching — alerts if a Start/End Date tag is no longer type Date', 'OFF — a tag reset to Text will NOT be reported'],
-          reportdown: ['Watching — alerts after 2 consecutive rounds where a card cannot answer', 'OFF — a broken report will NOT be reported']
+          reportdown: ['Watching — alerts after 2 consecutive rounds where a card cannot answer', 'OFF — a broken report will NOT be reported'],
+          reportsettings: ['ON — a super-admin with the key can change per-org report defaults', 'OFF — the settings panel is closed to everyone, including you']
         };
         var pair = labels[name] || ['Enabled', 'Disabled'];
         status.textContent = on ? pair[0] : pair[1];

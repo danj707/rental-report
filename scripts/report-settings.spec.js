@@ -240,6 +240,26 @@ ok(R.reportSettingsEnabled("roster") && !R.reportSettingsEnabled("gl"),
      "…and the key is echoed back to the page only when the request already proved admin");
 }
 
+// ── 4f. The flag has a switch a human can reach ──────────────────────────────
+// A flag with no toggle is a flag nobody flips — Dan would have had to POST to
+// /api/admin/flags by hand to use the feature he asked for.
+{
+  ok(/id="flag-reportsettings" onchange="toggleFlag\('reportSettings',this\.checked\)"/.test(SERVER),
+     "the Feature Flags block needs a switch for reportSettings; the block is hand-written per "
+     + "toggle, so a new flag does NOT appear on its own");
+  ok(/updateFlagUI\('reportsettings', flags\.reportSettings\)/.test(SERVER),
+     "…and applyFlags has to drive it, or the switch renders permanently off");
+  ok(/reportsettings: \['ON —/.test(SERVER), "and it needs status copy like every other flag");
+  // The admin dashboard is one giant template literal: a stray apostrophe in
+  // emitted JS collapses on the way out and discards the whole script block,
+  // which has happened before (PR #137). ci-check-admin-js.js is the real guard;
+  // this just keeps the new copy out of the danger.
+  const block = /reportsettings: \[([^\]]*)\]/.exec(SERVER);
+  ok(block && !/\\'/.test(block[1]),
+     "no escaped apostrophes in the new status copy — inside this literal that needs \\\\' and the "
+     + "next person to edit the line would have to re-derive why");
+}
+
 // ── 5. The ePACT catalogue excludes SESSION-grain fields ─────────────────────
 {
   const offered = R.EPACT_FIELD_CATALOGUE.map(c => c[0]);
