@@ -271,6 +271,24 @@ is((POPUP.match(/document\.write\(popupDoc\(/g) || []).length, 1,
 ok(/function csvToTsv\(/.test(POPUP),
    "the clipboard fallback needs the rows TAB-separated; a comma-separated paste lands in one cell");
 
+// ── 10b. The BOM ───────────────────────────────────────────────────────────
+// Byte-diffed against the file Metabase serves for the same section (apex,
+// "After School Care - Hackberry Hill Elementary School 2026-2027", 68 rows):
+// every row identical and in the same order, and the ONLY difference was that
+// Metabase's file opened with a UTF-8 BOM. It writes one on every CSV it serves,
+// so ePACT already ingests BOM'd files today — and without one Excel sniffs the
+// bytes wrong and an accented participant name opens as mojibake.
+ok(/bytes: new TextEncoder\(\)\.encode\(\(opts\.bom \? "\\uFEFF" : ""\) \+ String\(text\)\)/.test(POPUP),
+   "saveTextViaPopup must be able to prefix the FILE with a UTF-8 BOM");
+ok(/tsv: opts\.tsv != null \? opts\.tsv : csvToTsv\(String\(text\)\)/.test(POPUP),
+   "…and the clipboard copy must be built from the RAW text — a BOM pasted into a "
+   + "sheet shows up as a stray character in the first cell");
+ok(/bom: true,/.test(PAGE),
+   "the ePACT export must ask for the BOM, so its file matches the one the card serves");
+ok(!/\uFEFF/.test(epactCsv([["a", "b", "c", "d", "e"]])),
+   "epactCsv itself stays pure text — the BOM is a delivery concern, and putting it "
+   + "in the builder would carry it into the clipboard copy too");
+
 // ── 11. The Slack beacon ─────────────────────────────────────────────────
 ok(/"form-open", "epact"\]/.test(SERVER),
    "`epact` must be on the generic log route's ALLOWED list, or every beacon 400s silently");

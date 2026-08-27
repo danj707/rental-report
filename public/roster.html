@@ -64,6 +64,89 @@
     .toolbar .btn-epact { background: #6d28d9; border-color: #6d28d9; font-weight: 600; }
     .toolbar .btn-epact:hover { background: #5b21b6; }
     .toolbar .btn-epact:disabled { opacity: .5; cursor: not-allowed; }
+
+    /* ── Saved views ── (same markup and classes as the GL report) */
+    .view-wrap { position: relative; display: flex; align-items: center; gap: 6px; }
+    .btn-view {
+      display: flex; align-items: center; gap: 7px; white-space: nowrap;
+      font-weight: 600; max-width: 260px;
+    }
+    .btn-view .vname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .btn-view .vcaret { font-size: 9px; color: #aaa; }
+    .btn-view .vdirty { font-size: 10px; color: #fbbf24; font-weight: 400; }
+    .btn-save-view { font-size: 11px; padding: 4px 10px; }
+    .btn-save-view:disabled { opacity: .45; cursor: default; }
+    .view-dropdown {
+      position: absolute; top: calc(100% + 6px); left: 0; z-index: 250;
+      background: #1e1e1e; border: 1px solid rgba(255,255,255,.15); border-radius: 6px;
+      min-width: 300px; max-width: 380px; max-height: 400px; overflow-y: auto;
+      box-shadow: 0 8px 24px rgba(0,0,0,.5); padding: 4px 0;
+    }
+    .view-row {
+      display: flex; align-items: flex-start; gap: 8px; padding: 7px 12px;
+      cursor: pointer; font-size: 12.5px; color: #ddd;
+    }
+    .view-row:hover { background: rgba(255,255,255,.07); }
+    .view-row .vtick { width: 12px; flex-shrink: 0; color: #4ade80; font-size: 11px; line-height: 1.5; }
+    .view-row .vmain { flex: 1; min-width: 0; }
+    .view-row .vsub {
+      display: block; font-size: 10.5px; color: #888; margin-top: 1px;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .view-row .vmenu {
+      flex-shrink: 0; color: #888; padding: 0 3px; font-size: 13px;
+      background: none; border: none; cursor: pointer; font-family: inherit;
+    }
+    .view-row .vmenu:hover { color: #fff; }
+    .view-actions {
+      display: flex; flex-direction: column; padding: 2px 0 6px 32px;
+      border-bottom: 1px solid rgba(255,255,255,.07);
+    }
+    .view-actions button {
+      text-align: left; background: none; border: none; color: #93c5fd;
+      font-size: 11.5px; padding: 4px 12px; cursor: pointer; font-family: inherit;
+    }
+    .view-actions button:hover { color: #fff; }
+    .view-actions button.danger { color: #f87171; }
+    .view-add {
+      border-top: 1px solid rgba(255,255,255,.1); margin-top: 4px; padding-top: 8px;
+      color: #4ade80; font-weight: 600;
+    }
+    .view-empty { padding: 10px 12px; font-size: 11.5px; color: #888; }
+    .filter-chip {
+      display: inline-flex; align-items: center; gap: 6px; max-width: 220px;
+      background: rgba(59,130,246,.18); border: 1px solid rgba(59,130,246,.45);
+      border-radius: 4px; padding: 3px 7px; font-size: 11px; color: #dbeafe;
+    }
+    .filter-chip .clabel { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .filter-chip button {
+      background: none; border: none; color: #93c5fd; cursor: pointer;
+      padding: 0 1px; font-size: 11px; font-family: inherit; line-height: 1;
+    }
+    .filter-chip button:hover { color: #fff; }
+    .view-warn {
+      background: #78350f; border: 1px solid #b45309; color: #fde68a;
+      border-radius: 6px; padding: 9px 14px; margin: 0 0 14px;
+      font-size: 12.5px; display: flex; align-items: flex-start; gap: 10px;
+    }
+    .view-warn .vwtext { flex: 1; }
+    .view-warn button {
+      background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.3);
+      color: #fff; border-radius: 4px; padding: 3px 9px; font-size: 11px;
+      cursor: pointer; font-family: inherit; white-space: nowrap;
+    }
+    .view-toast {
+      position: fixed; left: 20px; bottom: 20px; z-index: 9998;
+      background: #1e1e1e; border: 1px solid rgba(255,255,255,.2); border-radius: 8px;
+      box-shadow: 0 8px 30px rgba(0,0,0,.5); padding: 11px 15px;
+      display: flex; align-items: center; gap: 14px; font-size: 12.5px; color: #ddd;
+    }
+    .view-toast button {
+      background: none; border: none; color: #93c5fd; font-size: 12.5px;
+      font-weight: 600; cursor: pointer; font-family: inherit; padding: 0;
+    }
+    .view-toast button:hover { color: #fff; }
+    @media print { .view-wrap, .view-toast, .view-warn { display: none !important; } }
     .toolbar .row-count { font-size: 11px; color: #aaa; }
 
     /* status filter pills */
@@ -343,6 +426,7 @@
   </script>
 <script src="/report-refresh.js" defer></script>
 <script src="/open-pdf.js" defer></script>
+<script src="/saved-views.js" defer></script>
 </head>
 <body>
 <div id="root"></div>
@@ -351,7 +435,7 @@
 <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
 
 <script type="text/babel">
-const { useState, useEffect, useMemo, useCallback } = React;
+const { useState, useEffect, useMemo, useCallback, useRef } = React;
 
 const LS_COLS = 'roster_cols_v2';
 
@@ -472,6 +556,61 @@ function normalizeRow(raw) {
 }
 
 
+// ── Saved views ──────────────────────────────────────────────────────────────
+// Ported from the GL report, which is where this shipped first. A saved view is
+// a name + a filter query string + a date intent. It is never a snapshot of
+// rows: applying one sets the same filter state a person could set by hand, so
+// the PDF, print, Excel and ePACT paths need to know nothing about it.
+//
+// WHAT A ROSTER VIEW CARRIES, and what it deliberately does not:
+//   section_name, status   — filter state. These are the two things Dan's
+//        workflow is built on ("type in partial section names, click Run").
+//   the column toggles and the question picker — NOT carried. They are display
+//        state, they already persist per browser in localStorage, and a shared
+//        view that overwrote them would take a colleague's chosen columns away
+//        the moment they opened someone else's filter. Same reason the GL report
+//        excludes its display toggles from the "edited" marker.
+const LS_LAST_VIEW = 'roster_saved_view_last_v1_';
+
+// The date half comes from /saved-views.js, shared with the GL report — one
+// mirror of the server's getDateRange(), not one per page. Thin wrappers so the
+// reference resolves at CALL time rather than at module scope.
+function resolveSavedRange(token) { return RecSavedViews.resolveSavedRange(token); }
+function fmtShortDate(iso)        { return RecSavedViews.fmtShortDate(iso); }
+function viewDateLabel(v)         { return RecSavedViews.viewDateLabel(v); }
+
+// Which ranges THIS report offers is the server's call — a roster reads FORWARD,
+// a GL rollup only looks backwards — and it arrives as ORG_CONFIG.savedViewRanges.
+// A hardcoded list here is how gl.html came to offer "Today", which the server
+// has always refused to store.
+function savedViewRanges() {
+  const r = (window.ORG_CONFIG || {}).savedViewRanges;
+  return Array.isArray(r) ? r : [];
+}
+function defaultSavedRange() {
+  const r = savedViewRanges();
+  return r.length ? r[0][0] : '';
+}
+
+const ROSTER_VIEW_PARAMS = ['section_name', 'status'];
+
+function parseViewParams(params) {
+  const p = new URLSearchParams(params || '');
+  return { section_name: p.get('section_name') || '', status: p.get('status') || '' };
+}
+
+const ROSTER_STATUS_LABELS = { all: 'All statuses', enrolled: 'Enrolled only', cancelled: 'Cancelled only' };
+
+function viewFilterSummary(v) {
+  const f = parseViewParams(v.params);
+  const bits = [];
+  if (f.section_name) bits.push('"' + f.section_name + '"');
+  // `all` is the absence of a status filter, so naming it would read as a filter
+  // where there is none — and every unfiltered view would say "All statuses".
+  if (f.status && f.status !== 'all') bits.push(ROSTER_STATUS_LABELS[f.status] || f.status);
+  return bits.length ? bits.join(' · ') : 'no filters';
+}
+
 // ── ePACT export ─────────────────────────────────────────────────────────────
 // Orgs upload participant lists into ePACT, an outside HIPAA vendor that holds
 // camp health forms. Melinda at Apex has been producing that list by hand from a
@@ -586,6 +725,16 @@ function App() {
   const [loadedEnd, setLoadedEnd]         = useState(null);
   const [loadedSection, setLoadedSection] = useState(null);
 
+  // Saved views
+  const [views, setViews] = useState([]);
+  const [activeViewId, setActiveViewId] = useState(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [rowMenu, setRowMenu] = useState(null);      // id of the view whose ⋯ menu is open
+  const [saveForm, setSaveForm] = useState(null);    // open save/rename dialog
+  const [viewBusy, setViewBusy] = useState(false);
+  const [undoView, setUndoView] = useState(null);    // { id, name } behind the Undo toast
+  const pickerRef = useRef(null);
+
   // Share Link: expose the live applied filter state so the floating Share
   // widget copies a URL that reproduces the on-screen view (mirrors the PDF).
   useEffect(() => {
@@ -676,6 +825,403 @@ function App() {
   useEffect(() => { fetchData(startDate, endDate, sectionFilter); }, []);
 
   function handleRun() { fetchData(startDate, endDate, sectionFilter); }
+
+  // ── Saved views ───────────────────────────────────────────────────────────
+  // The filter query string a view would store, built from what is on screen.
+  // Empty when nothing is filtered, so an unfiltered report never carries
+  // "section_name=" and read back as filtered.
+  const currentFilterParams = useMemo(() => {
+    const qs = new URLSearchParams();
+    if (sectionFilter.trim()) qs.set('section_name', sectionFilter.trim());
+    if (statusFilter && statusFilter !== 'all') qs.set('status', statusFilter);
+    return qs.toString();
+  }, [sectionFilter, statusFilter]);
+
+  const activeView = useMemo(
+    () => views.find(v => v.id === activeViewId) || null,
+    [views, activeViewId]
+  );
+
+  // "Edited" = the filters, or the range for a view that carries one, have moved
+  // off what the view stores. The column toggles and question picker are
+  // deliberately excluded: collapsing a column must not light up Save.
+  const viewDirty = useMemo(() => {
+    if (!activeView) return false;
+    if (activeView.params !== currentFilterParams) return true;
+    if (activeView.dateMode === 'fixed') {
+      return startDate !== activeView.fixedStart || endDate !== activeView.fixedEnd;
+    }
+    if (activeView.dateMode === 'relative') {
+      const r = resolveSavedRange(activeView.relativeRange);
+      return startDate !== r.start || endDate !== r.end;
+    }
+    return false;
+  }, [activeView, currentFilterParams, startDate, endDate]);
+
+  const viewsUrl = suffix => withToken('/' + orgSlug + '/roster/api/views' + (suffix || ''));
+
+  const loadViews = useCallback(() => {
+    return fetch(viewsUrl())
+      .then(r => (r.ok ? r.json() : null))
+      .then(j => { if (j) setViews(j.views || []); return j; })
+      .catch(() => null);
+  }, [orgSlug]);
+
+  // Put the view's filters on screen. `announce` is false for the automatic
+  // restore on page load — that is not a user action worth logging.
+  function applyView(v, announce) {
+    const f = parseViewParams(v.params);
+    setSectionFilter(f.section_name);
+    setStatusFilter(f.status || 'all');
+    setActiveViewId(v.id);
+    try { localStorage.setItem(LS_LAST_VIEW + orgSlug, v.id); } catch (_) {}
+
+    // Dates: a view either pins them, resolves a relative range, or leaves
+    // whatever range you are already on entirely alone.
+    let range = null;
+    if (v.dateMode === 'fixed')    range = { start: v.fixedStart, end: v.fixedEnd };
+    if (v.dateMode === 'relative') range = resolveSavedRange(v.relativeRange);
+    if (range) { setStartDate(range.start); setEndDate(range.end); }
+
+    // A roster's section filter is passed to the CARD, not just applied on
+    // screen, so applying a view has to re-run the query when the section or the
+    // range moves. That is the difference from the GL report, whose filters are
+    // all client-side over rows already loaded — there, applying a view never
+    // needs the network.
+    const sd = range ? range.start : startDate;
+    const ed = range ? range.end   : endDate;
+    if (sd !== loadedStart || ed !== loadedEnd || (f.section_name || '') !== (loadedSection || '')) {
+      fetchData(sd, ed, f.section_name);
+    }
+
+    // Keep the URL honest: it reproduces the filters AND names the view.
+    try {
+      const qs = new URLSearchParams(window.location.search);
+      ROSTER_VIEW_PARAMS.forEach(k => qs.delete(k));
+      new URLSearchParams(v.params).forEach((val, k) => qs.set(k, val));
+      qs.set('view', v.id);
+      if (range) { qs.set('start_date', range.start); qs.set('end_date', range.end); }
+      window.history.replaceState(null, '', window.location.pathname + '?' + qs);
+    } catch (_) {}
+
+    if (announce) logClientEvent('view-apply', { view: v.name });
+    setPickerOpen(false);
+    setRowMenu(null);
+  }
+
+  // "Default view" is the absence of a saved view: no filters at all. The date
+  // range is deliberately left alone — clearing a filter is not a request to
+  // jump back to the default fortnight.
+  function clearView() {
+    setSectionFilter('');
+    setStatusFilter('all');
+    setActiveViewId(null);
+    try { localStorage.removeItem(LS_LAST_VIEW + orgSlug); } catch (_) {}
+    if (loadedSection) fetchData(startDate, endDate, '');
+    try {
+      const qs = new URLSearchParams(window.location.search);
+      ROSTER_VIEW_PARAMS.concat(['view']).forEach(k => qs.delete(k));
+      const q = qs.toString();
+      window.history.replaceState(null, '', window.location.pathname + (q ? '?' + q : ''));
+    } catch (_) {}
+    setPickerOpen(false);
+    setRowMenu(null);
+  }
+
+  async function submitView(form) {
+    setViewBusy(true);
+    try {
+      const payload = {
+        name: form.name.trim(),
+        dateMode: form.dateMode,
+        relativeRange: form.dateMode === 'relative' ? form.relativeRange : null,
+        fixedStart: form.dateMode === 'fixed' ? startDate : null,
+        fixedEnd:   form.dateMode === 'fixed' ? endDate   : null,
+      };
+      if (!form.renameOnly) payload.params = currentFilterParams;
+      const isPatch = !!form.targetId;
+      if (!isPatch) payload.replace = !!form.replace;
+      const resp = await fetch(viewsUrl(isPatch ? '/' + form.targetId : ''), {
+        method: isPatch ? 'PATCH' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (resp.status === 409 && data.existingId) {
+        // Same name, different view: ask before overwriting a colleague's.
+        if (!window.confirm('A view named "' + payload.name + '" already exists. Replace it?')) return;
+        return submitView(Object.assign({}, form, { replace: true }));
+      }
+      if (!resp.ok) { alert(data.error || 'Could not save the view.'); return; }
+      await loadViews();
+      setActiveViewId(data.view.id);
+      try { localStorage.setItem(LS_LAST_VIEW + orgSlug, data.view.id); } catch (_) {}
+      setSaveForm(null);
+    } catch (e) {
+      alert('Could not save the view: ' + e.message);
+    } finally {
+      setViewBusy(false);
+    }
+  }
+
+  // Soft delete on the server, so the Undo below is a restore rather than a
+  // re-save. The list is shared by the whole org — a mis-click has to be cheap.
+  async function deleteView(v) {
+    setRowMenu(null);
+    try {
+      const resp = await fetch(viewsUrl('/' + v.id), { method: 'DELETE', headers: { 'x-token': URL_TOKEN || '' } });
+      if (!resp.ok) { const d = await resp.json().catch(() => ({})); alert(d.error || 'Could not delete the view.'); return; }
+      if (activeViewId === v.id) setActiveViewId(null);
+      await loadViews();
+      setUndoView({ id: v.id, name: v.name });
+    } catch (e) {
+      alert('Could not delete the view: ' + e.message);
+    }
+  }
+
+  async function restoreView(id) {
+    setUndoView(null);
+    try {
+      const resp = await fetch(viewsUrl('/' + id), {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ restore: true }),
+      });
+      const d = await resp.json().catch(() => ({}));
+      if (!resp.ok) { alert(d.error || 'Could not restore the view.'); return; }
+      await loadViews();
+    } catch (e) {
+      alert('Could not restore the view: ' + e.message);
+    }
+  }
+
+  // Load the list, then decide what we are looking at: an explicit ?view= wins;
+  // failing that, and only when the URL carries no filters of its own, fall back
+  // to the last view used in this browser.
+  useEffect(() => {
+    if (isPrint) return;   // the PDF renderer gets its filters from the URL
+    loadViews().then(j => {
+      if (!j || !Array.isArray(j.views)) return;
+      const urlQs = new URLSearchParams(window.location.search);
+      const named = urlQs.get('view');
+      const hit = named && j.views.find(v => v.id === named);
+      if (hit) { applyView(hit, false); return; }
+      if (ROSTER_VIEW_PARAMS.some(k => urlQs.get(k))) return;
+      let lastId = null;
+      try { lastId = localStorage.getItem(LS_LAST_VIEW + orgSlug); } catch (_) {}
+      const last = lastId && j.views.find(v => v.id === lastId);
+      if (last) applyView(last, false);
+    });
+  }, []);
+
+  // The Undo window is short on purpose — it is an undo, not a trash can.
+  useEffect(() => {
+    if (!undoView) return;
+    const t = setTimeout(() => setUndoView(null), 10000);
+    return () => clearTimeout(t);
+  }, [undoView]);
+
+  useEffect(() => {
+    if (!pickerOpen) return;
+    function onDown(e) {
+      if (pickerRef.current && !pickerRef.current.contains(e.target)) { setPickerOpen(false); setRowMenu(null); }
+    }
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [pickerOpen]);
+
+  // Something is worth saving when a filter is active, or when the applied view
+  // has drifted off what it stores. Otherwise Save stays greyed out.
+  const canSaveView = !!currentFilterParams || (activeView && viewDirty);
+
+  function openSaveDialog() {
+    setPickerOpen(false);
+    setRowMenu(null);
+    setSaveForm(activeView && viewDirty
+      ? { name: activeView.name, targetId: activeView.id, dateMode: activeView.dateMode,
+          relativeRange: activeView.relativeRange || defaultSavedRange() }
+      : { name: '', targetId: null, dateMode: 'current', relativeRange: defaultSavedRange() });
+  }
+
+  function renderViewPicker() {
+    const chips = [];
+    if (sectionFilter.trim()) {
+      chips.push({ key: 'section_name', label: '"' + sectionFilter.trim() + '"',
+                   clear: () => { setSectionFilter(''); if (loadedSection) fetchData(startDate, endDate, ''); } });
+    }
+    if (statusFilter && statusFilter !== 'all') {
+      chips.push({ key: 'status', label: ROSTER_STATUS_LABELS[statusFilter] || statusFilter,
+                   clear: () => setStatusFilter('all') });
+    }
+
+    return (
+      <>
+        <div className="view-wrap" ref={pickerRef}>
+          <button
+            className={'btn-view' + (activeView ? ' active' : '')}
+            onClick={() => { setPickerOpen(o => !o); setRowMenu(null); }}
+            title="Saved views — named filter sets shared across this organization"
+          >
+            <span className="vname">{activeView ? activeView.name : 'Default view'}</span>
+            {activeView && viewDirty && <span className="vdirty">· edited</span>}
+            <span className="vcaret">▾</span>
+          </button>
+
+          <button
+            className="btn-save-view"
+            disabled={!canSaveView}
+            onClick={openSaveDialog}
+            title={canSaveView
+              ? 'Save the current filters as a named view'
+              : 'Set a filter first — there is nothing to save yet'}
+          >Save view</button>
+
+          {pickerOpen && (
+            <div className="view-dropdown">
+              <div className="view-row" onClick={clearView}>
+                <span className="vtick">{activeView ? '' : '✓'}</span>
+                <span className="vmain">Default view<span className="vsub">no filters</span></span>
+              </div>
+
+              {views.length === 0 && (
+                <div className="view-empty">No saved views yet. Filter to a section, then hit “Save view”.</div>
+              )}
+
+              {views.map(v => (
+                <div key={v.id}>
+                  <div className="view-row" data-view-row={v.name} onClick={() => applyView(v, true)}>
+                    <span className="vtick">{v.id === activeViewId ? '✓' : ''}</span>
+                    <span className="vmain">
+                      {v.name}
+                      <span className="vsub">{viewDateLabel(v)} · {viewFilterSummary(v)}</span>
+                    </span>
+                    <button
+                      className="vmenu"
+                      onClick={e => { e.stopPropagation(); setRowMenu(rowMenu === v.id ? null : v.id); }}
+                      title="Rename, update or delete this view"
+                    >⋯</button>
+                  </div>
+                  {rowMenu === v.id && (
+                    <div className="view-actions">
+                      <button onClick={() => { setRowMenu(null); setSaveForm({ name: v.name, targetId: v.id, renameOnly: true, dateMode: v.dateMode, relativeRange: v.relativeRange || defaultSavedRange() }); }}>
+                        Rename…
+                      </button>
+                      <button
+                        onClick={() => submitView({ name: v.name, targetId: v.id, dateMode: v.dateMode, relativeRange: v.relativeRange })}
+                        disabled={!currentFilterParams && !activeView}
+                        title="Replace this view's filters with what is on screen now"
+                      >Update to current filters</button>
+                      <button className="danger" onClick={() => deleteView(v)}>Delete</button>
+                    </div>
+                  )}
+                </div>
+              ))}
+
+              <div className="view-row view-add" onClick={openSaveDialog}>
+                <span className="vtick">＋</span>
+                <span className="vmain">Save current view…</span>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {chips.map(c => (
+          <span key={c.key} className="filter-chip">
+            <span className="clabel">{c.label}</span>
+            <button onClick={c.clear} title="Clear this filter">✕</button>
+          </span>
+        ))}
+      </>
+    );
+  }
+
+  function renderSaveDialog() {
+    const f = saveForm;
+    if (!f) return null;
+    const ranges = savedViewRanges();
+    const radio = (mode, label, hint) => (
+      <label style={{display:'flex',alignItems:'flex-start',gap:8,fontSize:13,color:'#333',cursor:'pointer',marginBottom:6}}>
+        <input type="radio" checked={f.dateMode === mode} onChange={() => setSaveForm(x => ({...x, dateMode: mode}))} style={{marginTop:3}} />
+        <span>{label}<br/><span style={{fontSize:11,color:'#888'}}>{hint}</span></span>
+      </label>
+    );
+    return (
+      <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.5)',zIndex:9999,display:'flex',alignItems:'center',justifyContent:'center'}}
+           onClick={e => { if (e.target === e.currentTarget) setSaveForm(null); }}>
+        <div style={{background:'#fff',borderRadius:12,padding:'26px 30px',width:440,maxWidth:'92vw',boxShadow:'0 20px 60px rgba(0,0,0,0.3)'}}>
+          <h3 style={{margin:'0 0 4px',fontSize:18,color:'#111'}}>
+            {f.renameOnly ? 'Rename view' : f.targetId ? 'Update view' : 'Save view'}
+          </h3>
+          <p style={{margin:'0 0 16px',fontSize:12,color:'#777'}}>
+            Saved views are shared with everyone who has this report's link.
+          </p>
+
+          <label style={{display:'block',fontSize:11,textTransform:'uppercase',letterSpacing:'.5px',color:'#888',marginBottom:4}}>Name</label>
+          <input
+            autoFocus
+            value={f.name}
+            maxLength={60}
+            onChange={e => setSaveForm(x => ({...x, name: e.target.value}))}
+            onKeyDown={e => { if (e.key === 'Enter' && f.name.trim()) submitView(f); }}
+            placeholder="Hackberry Hill after school"
+            style={{width:'100%',padding:'7px 10px',border:'1px solid #ddd',borderRadius:6,fontSize:14,fontFamily:'inherit',marginBottom:16,color:'#111'}}
+          />
+
+          {!f.renameOnly && (
+            <div style={{background:'#f6f7f8',border:'1px solid #eee',borderRadius:8,padding:'10px 12px',marginBottom:16,fontSize:12,color:'#444'}}>
+              <strong>Filters saved:</strong>{' '}
+              {viewFilterSummary({ params: currentFilterParams })}
+              <div style={{marginTop:4,fontSize:11,color:'#888'}}>
+                Columns and form questions aren’t saved — those stay per person.
+              </div>
+            </div>
+          )}
+
+          <label style={{display:'block',fontSize:11,textTransform:'uppercase',letterSpacing:'.5px',color:'#888',marginBottom:6}}>Dates</label>
+          {radio('current', "Don't save dates", 'Opens on whatever range you are already looking at. Best for a section you check every week.')}
+          {radio('relative', 'Save a relative range', 'Recalculated every time the view is opened.')}
+          {f.dateMode === 'relative' && (
+            <select
+              value={f.relativeRange}
+              onChange={e => setSaveForm(x => ({...x, relativeRange: e.target.value}))}
+              style={{margin:'0 0 8px 26px',padding:'5px 8px',border:'1px solid #ddd',borderRadius:6,fontSize:13,fontFamily:'inherit',color:'#111'}}
+            >
+              {ranges.map(([k, label]) => <option key={k} value={k}>{label}</option>)}
+            </select>
+          )}
+          {radio('fixed', 'Pin these exact dates', 'Stays on ' + fmtShortDate(startDate) + ' – ' + fmtShortDate(endDate) + ' forever. For a camp that has finished.')}
+
+          <div style={{display:'flex',gap:10,justifyContent:'flex-end',marginTop:20}}>
+            <button
+              onClick={() => setSaveForm(null)}
+              style={{padding:'7px 14px',border:'1px solid #ddd',borderRadius:6,background:'#fff',fontSize:13,fontFamily:'inherit',cursor:'pointer',color:'#555'}}
+            >Cancel</button>
+            {f.targetId && !f.renameOnly && (
+              <button
+                onClick={() => setSaveForm(x => ({...x, targetId: null}))}
+                style={{padding:'7px 14px',border:'1px solid #ddd',borderRadius:6,background:'#fff',fontSize:13,fontFamily:'inherit',cursor:'pointer',color:'#555'}}
+              >Save as new instead</button>
+            )}
+            <button
+              disabled={!f.name.trim() || viewBusy}
+              onClick={() => submitView(f)}
+              style={{padding:'7px 16px',border:'none',borderRadius:6,background:!f.name.trim()||viewBusy?'#9db6e8':'#2563eb',color:'#fff',fontSize:13,fontWeight:600,fontFamily:'inherit',cursor:!f.name.trim()||viewBusy?'default':'pointer'}}
+            >{viewBusy ? 'Saving…' : f.targetId ? (f.renameOnly ? 'Rename' : 'Update “' + f.name.trim() + '”') : 'Save view'}</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  function renderUndoToast() {
+    if (!undoView) return null;
+    return (
+      <div className="view-toast">
+        <span>Deleted “{undoView.name}”</span>
+        <button onClick={() => restoreView(undoView.id)}>Undo</button>
+      </div>
+    );
+  }
 
   function setDays(n) {
     const r = getDefaultRange();
@@ -833,6 +1379,11 @@ function App() {
                   loadedStart || startDate].filter(Boolean).join('-') + '.csv';
     saveTextViaPopup(epactCsv(tuples), name, {
       gesture: 'ePACT',
+      // Metabase writes a UTF-8 BOM on every CSV it serves, so the file Melinda
+      // downloads from the card today has one and ePACT already ingests it. It
+      // also matters on its own: Excel sniffs bytes rather than trusting UTF-8,
+      // so without a BOM an accented participant name opens as mojibake.
+      bom: true,
       title: 'Your ePACT file is ready',
       hint: tuples.length + ' participant' + (tuples.length === 1 ? '' : 's')
           + ' \u2014 upload this CSV in ePACT. If the download did not start on its own, use the '
@@ -884,8 +1435,14 @@ function App() {
   function renderToolbar() {
     if (isPrint) return null;
     return (
+      <>
+      {renderSaveDialog()}
+      {renderUndoToast()}
       <div className="toolbar" data-roster-days={rangeDays}>
         <span className="toolbar-title">Class Roster</span>
+
+        {renderViewPicker()}
+
         <div className="toolbar-divider" />
 
         <label>
@@ -989,6 +1546,7 @@ function App() {
         </button>
 
       </div>
+      </>
     );
   }
 

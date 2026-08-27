@@ -665,7 +665,24 @@ const STUBS = [
       meta: { window: { start: "2026-08-19", end: "2026-08-26" } } }) },
   { match: /\/api\/pulse/,                  body: () => ({ items: [], generated: null }) },
   { match: /\/api\/goals/,                  body: () => ({}) },
-  { match: /\/api\/views/,                  body: () => ({ views: [] }) },
+  // Saved views, shaped per report — a roster view carries section_name/status,
+  // a GL view carries desks/methods, and handing one report the other's filters
+  // would prove nothing. `ranges` is deliberately NOT stubbed: the save dialog
+  // reads the offered list from ORG_CONFIG, which the real server injects, so
+  // the case for it covers the injection rather than a fixture.
+  { match: /\/api\/views/, body: url => {
+      const v = (id, name, extra) => Object.assign({
+        id, name, dateMode: "current", relativeRange: null, params: "",
+        fixedStart: null, fixedEnd: null, owner: null,
+        createdAt: "2026-08-01T00:00:00.000Z", updatedAt: null, deletedAt: null,
+      }, extra);
+      const views = /\/roster\//.test(url)
+        ? [v("v_camp", "Hackberry Hill", { dateMode: "relative", relativeRange: "next7",
+                                           params: "section_name=Camp Blue&status=enrolled" }),
+           v("v_cancels", "Cancellations", { params: "status=cancelled" })]
+        : [];
+      return { max: 25, views };
+    } },
   // The Report Wizard's generator. Stubbed rather than reaching Anthropic (the
   // real route needs an API key and would be non-deterministic), and shaped like
   // a real reply: a summary, notes, and widgets over a source the data stub can
@@ -918,29 +935,130 @@ const CASES = [
   // source assertion in roster-epact.spec.js passes on a button wired to the
   // wrong row set; this is what proves the bytes.
   { name: "roster · epact csv is her output", path: "/{org}/roster",
-    needs: "body[data-ep-hdr=\"1\"][data-ep-lines=\"3\"][data-ep-email=\"1\"][data-ep-label=\"1\"][data-ep-nocancel=\"1\"]",
+    needs: "body[data-ep-hdr=\"1\"][data-ep-lines=\"3\"][data-ep-email=\"1\"][data-ep-label=\"1\"]"
+         + "[data-ep-nocancel=\"1\"][data-ep-bom=\"1\"][data-ep-tsv=\"1\"]",
     act: async page => {
       await page.waitForSelector("[data-epact-section=\"Camp Blue\"]", { timeout: 45000 });
-      // Intercept the popup writer rather than letting it open a window: a
-      // headless browser has nowhere to put the file, and the bytes are the
-      // thing under test.
+      // Stub window.open, NOT saveTextViaPopup: a headless browser has nowhere
+      // to put a download, but stubbing the writer would skip the whole delivery
+      // path — which is where the BOM lives. This way the case reads the bytes
+      // the popup is actually handed.
       await page.evaluate(() => {
-        window.__csv = null;
-        window.saveTextViaPopup = (text) => { window.__csv = String(text); return true; };
+        window.__payload = null;
+        window.open = () => ({
+          document: { write() {}, close() {} },
+          set __recExport(v) { window.__payload = v; },
+          get __recExport() { return window.__payload; },
+        });
       });
       await page.click("[data-epact-section=\"Camp Blue\"]");
       await page.evaluate(() => {
-        const csv = window.__csv;
-        if (csv == null) return;   // the button did not reach the writer at all
-        const lines = csv.replace(/\r\n$/, "").split("\r\n");
+        const p = window.__payload;
+        if (!p) return;   // the button never reached the writer at all
         const set = (k, v) => { if (v) document.body.setAttribute(k, v); };
+        // Checked on the BYTES, not on a decoded string: TextDecoder strips the
+        // BOM by default, so decoding first would silently pass either way — and
+        // the bytes are what Excel sniffs.
+        const b = p.bytes;
+        set("data-ep-bom", b[0] === 0xEF && b[1] === 0xBB && b[2] === 0xBF ? "1" : "");
+        const body = new TextDecoder().decode(b);   // BOM removed by the decoder
+        const lines = body.replace(/\r\n$/, "").split("\r\n");
         set("data-ep-hdr", lines[0] === "Rec ID,First Name,Last Name,Household Owner Email,Session Date - Section Name" ? "1" : "");
         document.body.setAttribute("data-ep-lines", String(lines.length - 1));
         // Her COALESCE takes the participant's own address; the owner's must not
         // appear for a participant who has one.
-        set("data-ep-email", csv.includes("ana@example.com") && !csv.includes("parent-reyes@example.com") ? "1" : "");
-        set("data-ep-label", csv.includes("2026-07-06 - Camp Blue") ? "1" : "");
-        set("data-ep-nocancel", csv.includes("3XCANCEL") ? "" : "1");
+        set("data-ep-email", body.includes("ana@example.com") && !body.includes("parent-reyes@example.com") ? "1" : "");
+        set("data-ep-label", body.includes("2026-07-06 - Camp Blue") ? "1" : "");
+        set("data-ep-nocancel", body.includes("3XCANCEL") ? "" : "1");
+        // The clipboard copy is TAB-separated and carries NO BOM — pasted into a
+        // sheet a BOM shows up as a stray character in the first cell, and a
+        // comma-separated paste drops the whole row into one column.
+        set("data-ep-tsv", p.tsv
+          && p.tsv.charCodeAt(0) !== 0xFEFF
+          && p.tsv.split("\n")[0] === "Rec ID\tFirst Name\tLast Name\tHousehold Owner Email\tSession Date - Section Name"
+          ? "1" : "");
+      });
+    } },
+
+  // ── Class Roster: saved views ───────────────────────────────────────────
+  // The picker lists what the feed returned. Keyed on a view NAME from the stub,
+  // so a picker that renders an empty list still fails.
+  { name: "roster · saved views listed", path: "/{org}/roster",
+    needs: "[data-view-row=\"Hackberry Hill\"]",
+    act: async page => {
+      await page.waitForSelector(".btn-view", { timeout: 45000 });
+      await page.click(".btn-view");
+    } },
+  // Applying one has to put its filters ON SCREEN and name itself in the URL.
+  // "a row was clickable" would pass on an apply that did nothing.
+  { name: "roster · applying a view sets its filters", path: "/{org}/roster",
+    needs: "body[data-applied=\"1\"]",
+    act: async page => {
+      await page.waitForSelector(".btn-view", { timeout: 45000 });
+      await page.click(".btn-view");
+      await page.waitForSelector("[data-view-row=\"Hackberry Hill\"]", { timeout: 45000 });
+      await page.click("[data-view-row=\"Hackberry Hill\"]");
+      // The apply re-runs the query — a roster's section filter goes to the CARD,
+      // unlike the GL report's client-side filters. Wait for that round trip.
+      await page.waitForFunction(
+        () => document.querySelector(".toolbar[data-roster-days=\"7\"]")
+           && !document.querySelector(".btn-run .btn-spinner"),
+        { timeout: 45000 });
+      await page.evaluate(() => {
+        const sec = document.querySelector('.toolbar input[type="text"]');
+        const pill = document.querySelector(".status-pill-enrolled.active");
+        const named = new URLSearchParams(window.location.search).get("view") === "v_camp";
+        // next7, not next14: the view has to MOVE the window off the report's own
+        // 14-day default, or a missing re-fetch would be invisible here.
+        const days = document.querySelector(".toolbar").getAttribute("data-roster-days");
+        // The Run button rings green while the on-screen range differs from the
+        // LOADED one. No ring ⇒ the query actually re-ran for the new window.
+        const run = document.querySelector(".btn-run");
+        const requeried = run && getComputedStyle(run).boxShadow === "none";
+        if (sec && sec.value === "Camp Blue" && pill && named && days === "7" && requeried) {
+          document.body.setAttribute("data-applied", "1");
+        }
+      });
+    } },
+  // THE BUG THIS REGISTRY EXISTS FOR: the dialog's range list is injected by the
+  // server, so it cannot offer something the server refuses. Asserted on the
+  // FIRST option, which is also the dialog's default.
+  { name: "roster · save dialog offers the server's ranges", path: "/{org}/roster",
+    needs: "body[data-ranges=\"1\"]",
+    act: async page => {
+      await page.waitForSelector(".btn-view", { timeout: 45000 });
+      // Save is disabled until something is filtered — set a filter first, the
+      // way a person would. THEN WAIT for the button to actually enable: typing
+      // resolves before React commits the state that enables it, and a click on
+      // a disabled button is a silent no-op. Without this wait the case passed
+      // in isolation and failed inside a full run, which is not a guard.
+      await page.type('.toolbar input[type="text"]', "Camp");
+      await page.waitForFunction(
+        () => { const b = document.querySelector(".btn-save-view"); return b && !b.disabled; },
+        { timeout: 45000 });
+      await page.click(".btn-save-view");
+      await page.waitForFunction(() => !!document.querySelector('input[type="radio"]'), { timeout: 45000 });
+      await page.evaluate(() => {
+        const radios = [...document.querySelectorAll('input[type="radio"]')];
+        if (radios[1]) radios[1].click();     // "Save a relative range"
+      });
+      await page.waitForFunction(() => !!document.querySelector("select"), { timeout: 45000 });
+      await page.evaluate(() => {
+        const sel = document.querySelector("select");
+        const opts = [...sel.options].map(o => o.value);
+        // The dialog must offer EXACTLY the list the server injected — that is
+        // what stops it showing a range the server would refuse to store.
+        // (Whether a listed range is storable is checked in saved-views.spec.js,
+        // which can read REPORT_BLOCKED_RANGES; here the point is provenance.)
+        const injected = ((window.ORG_CONFIG || {}).savedViewRanges || []).map(r => r[0]);
+        const sameList = injected.length > 3 && injected.join(",") === opts.join(",");
+        // A roster reads forward, so the fortnight it opens on comes first. The
+        // pre-SELECTED value is deliberately not asserted: updating an existing
+        // relative view legitimately pre-selects that view's own range, and the
+        // preceding case leaves one applied (localStorage survives between cases
+        // in this check — worth knowing before adding another).
+        const forwardFirst = opts[0] === "next14";
+        if (sameList && forwardFirst) document.body.setAttribute("data-ranges", "1");
       });
     } },
 

@@ -4309,6 +4309,14 @@ function getDateRange(dateRange) {
     const end = new Date(now); end.setDate(end.getDate() + 6);
     return { start: toISO(now), end: toISO(end), label: `${toISO(now)} to ${toISO(end)}` };
   }
+  // next14 is the Class Roster's own default window (ROSTER_DEFAULT_DAYS in
+  // public/roster.html). Keep the two in step: a saved view named "Next 14 days"
+  // that resolves to a different fortnight than the report's default opens on
+  // one window and reports another.
+  if (dateRange === "next14") {
+    const end = new Date(now); end.setDate(end.getDate() + 13);
+    return { start: toISO(now), end: toISO(end), label: `${toISO(now)} to ${toISO(end)}` };
+  }
   if (dateRange === "next30") {
     const end = new Date(now); end.setDate(end.getDate() + 29);
     return { start: toISO(now), end: toISO(end), label: `${toISO(now)} to ${toISO(end)}` };
@@ -4932,12 +4940,12 @@ const GL_RANGE_REASON = "A GL Code Rollup only looks backwards — Today has no 
 const REPORT_BLOCKED_RANGES = {
   // lastMonth and last7 stay accepted, unlisted: subscriptions predating this
   // rule still hold them and they do return data.
-  gl: { today: GL_RANGE_REASON, next7: GL_RANGE_REASON, next30: GL_RANGE_REASON },
+  gl: { today: GL_RANGE_REASON, next7: GL_RANGE_REASON, next14: GL_RANGE_REASON, next30: GL_RANGE_REASON },
 };
 // A report's saved filters travel as a URL query string ("desks=a,b&methods=cash").
 // Strip the things that are page state rather than filter state, and drop empty
 // values so an unfiltered report never carries "desks=" and looks filtered.
-const VALID_DATE_RANGES = ["today", "yesterday", "prior7", "prior30", "next7", "next30", "last7", "lastMonth"];
+const VALID_DATE_RANGES = ["today", "yesterday", "prior7", "prior30", "next7", "next14", "next30", "last7", "lastMonth"];
 function cleanReportParamString(val) {
   if (typeof val !== "string" || !val) return "";
   const p = new URLSearchParams(val.slice(0, 4000));
@@ -8284,9 +8292,49 @@ const SAVED_VIEWS_FILE = path.join(DATA_DIR, "saved-views.json");
 // `gl` is registered; every other report 404s until someone asks for it. Dates
 // are NOT in here — they travel as a date intent (see normalizeViewInput), so
 // there is exactly one source of truth for a view's range.
-const SAVED_VIEW_PARAMS = { gl: ["desks", "methods", "glq", "tyler"] };
-// Same relative-range vocabulary the email subscriptions use (getDateRange).
-const SAVED_VIEW_RELATIVE = ["today", "yesterday", "prior7", "prior30", "last7", "lastMonth"];
+const SAVED_VIEW_PARAMS = {
+  gl: ["desks", "methods", "glq", "tyler"],
+  // The Class Roster's FILTER state, and only that. Its column toggles and
+  // question picker are display state, they live in localStorage per browser,
+  // and a shared view that overwrote them would take a colleague's chosen
+  // columns away when they opened someone else's saved filter.
+  roster: ["section_name", "status"],
+};
+// Relative ranges a view of this report may STORE. Same vocabulary the email
+// subscriptions use (getDateRange), so a view could later feed one unchanged.
+// `last7` stays accepted for gl though it is not offered: views saved before it
+// was dropped still hold it, and it resolves identically to prior7.
+const SAVED_VIEW_RELATIVE_ACCEPT = {
+  gl:     ["today", "yesterday", "prior7", "prior30", "last7", "lastMonth"],
+  roster: ["today", "next7", "next14", "next30", "prior7", "prior30", "lastMonth"],
+};
+// What a page OFFERS, in the order it offers them — injected into ORG_CONFIG so
+// the save dialog cannot offer a range the server then refuses. It could: gl.html
+// carried a hardcoded list that included "Today", which REPORT_BLOCKED_RANGES has
+// always rejected, so every attempt to save that view failed with a message
+// about 7am email sends. One list, server-side, is the fix.
+//
+// A ROSTER reads FORWARD — it answers "who is coming" — so its ranges lead with
+// the next fortnight, the report's own default window. The backward ones follow
+// because a past camp's roster is a real question, just not the common one. GL is
+// the opposite and only looks back; REPORT_BLOCKED_RANGES already says so.
+const SAVED_VIEW_RELATIVE_OFFER = {
+  gl: [
+    ["lastMonth", "Last month"],
+    ["prior30",   "Prior 30 days"],
+    ["prior7",    "Prior 7 days"],
+    ["yesterday", "Yesterday"],
+  ],
+  roster: [
+    ["next14",   "Next 14 days"],
+    ["next7",    "Next 7 days"],
+    ["next30",   "Next 30 days"],
+    ["today",    "Today"],
+    ["prior7",   "Prior 7 days"],
+    ["prior30",  "Prior 30 days"],
+    ["lastMonth", "Last month"],
+  ],
+};
 const SAVED_VIEW_DATE_MODES = ["current", "relative", "fixed"];
 const SAVED_VIEWS_MAX = 25;          // per org + report
 const SAVED_VIEW_MAX_BYTES = 4096;   // per view, serialized
@@ -8360,7 +8408,9 @@ function normalizeViewInput(report, body, existing) {
   if (dateMode === "relative") {
     relativeRange = String(body.relativeRange !== undefined ? body.relativeRange
                          : (existing ? existing.relativeRange : "") || "");
-    if (!SAVED_VIEW_RELATIVE.includes(relativeRange)) return { error: "Unknown date range." };
+    if (!(SAVED_VIEW_RELATIVE_ACCEPT[report] || []).includes(relativeRange)) {
+      return { error: "Unknown date range." };
+    }
     // A range that is never populated at send time is never populated on open
     // either — the same rule the email subscriptions apply.
     const why = rangeBlocked(report, relativeRange);
@@ -8398,7 +8448,8 @@ function normalizeViewInput(report, body, existing) {
 app.get("/:org/:report/api/views", (req, res) => {
   if (!savedViewsGate(req, res)) return;
   const rows = liveViews(listSavedViews(readSavedViews(), req.params.org, req.params.report));
-  res.json({ views: sortViews(rows), max: SAVED_VIEWS_MAX });
+  res.json({ views: sortViews(rows), max: SAVED_VIEWS_MAX,
+             ranges: SAVED_VIEW_RELATIVE_OFFER[req.params.report] || [] });
 });
 
 app.post("/:org/:report/api/views", (req, res) => {
@@ -8940,7 +8991,8 @@ app.get("/:org/gl", (req, res) => {
   const slug = req.params.org;
   if (!ORGS[slug]) return res.status(404).send("Unknown org");
   logEvent(slug, "gl", "view", req);
-  const orgConfig = { emailEnabled: EMAIL_ENABLED_ORGS.has(slug), tyler: getTylerConfig(slug), munis: munisExportEnabled(slug) };
+  const orgConfig = { emailEnabled: EMAIL_ENABLED_ORGS.has(slug), tyler: getTylerConfig(slug), munis: munisExportEnabled(slug),
+                      savedViewRanges: SAVED_VIEW_RELATIVE_OFFER.gl };
   const html = require("fs").readFileSync(path.join(__dirname, "public", "gl.html"), "utf8");
   res.send(html.replace("<head>", `<head><script>window.ORG_CONFIG=${JSON.stringify(orgConfig)};</script>`));
 });
@@ -9179,9 +9231,16 @@ app.get("/:org/programs", (req, res) => {
 });
 
 app.get("/:org/roster", (req, res) => {
-  if (!ORGS[req.params.org]) return res.status(404).send("Unknown org");
-  logEvent(req.params.org, "roster", "view", req);
-  res.type("html").send(require("fs").readFileSync(path.join(__dirname, "public", "roster.html"), "utf8"));
+  const slug = req.params.org;
+  const org = ORGS[slug];
+  if (!org) return res.status(404).send("Unknown org");
+  logEvent(slug, "roster", "view", req);
+  // savedViewRanges is injected rather than hardcoded in the page: the save
+  // dialog must not be able to offer a relative range the server then refuses
+  // (see SAVED_VIEW_RELATIVE_OFFER — gl.html did exactly that for months).
+  const orgConfig = { slug, token: org.token || "", savedViewRanges: SAVED_VIEW_RELATIVE_OFFER.roster };
+  const html = require("fs").readFileSync(path.join(__dirname, "public", "roster.html"), "utf8");
+  res.type("html").send(html.replace("<head>", `<head><script>window.ORG_CONFIG=${JSON.stringify(orgConfig)};</script>`));
 });
 
 app.get("/:org/directors-report", async (req, res) => {

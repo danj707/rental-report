@@ -239,13 +239,20 @@
      comma-separated text drops the whole row into one cell.
 
      opts.mime — defaults to text/csv
-     opts.tsv  — clipboard text; derived from the CSV when omitted */
+     opts.tsv  — clipboard text; derived from the CSV when omitted
+     opts.bom  — prefix the FILE with a UTF-8 BOM. Excel on Windows sniffs bytes
+                 rather than trusting UTF-8, so without one an accented name
+                 opens as mojibake ("Jose\u0301" -> "JosA©"). Metabase adds one to
+                 every CSV it serves, which is why a file exported from a card
+                 and the same file exported from a page differ by three bytes.
+                 It goes on the bytes ONLY: pasted into a sheet a BOM shows up as
+                 a stray character in the first cell. */
   window.saveTextViaPopup = function (text, filename, opts) {
     opts = opts || {};
     if (text == null) return false;
     return deliver(function () {
       return {
-        bytes: new TextEncoder().encode(String(text)),
+        bytes: new TextEncoder().encode((opts.bom ? "\uFEFF" : "") + String(text)),
         tsv: opts.tsv != null ? opts.tsv : csvToTsv(String(text)),
         filename: filename || "export.csv",
         mime: opts.mime || CSV_MIME,
