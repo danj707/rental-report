@@ -918,29 +918,48 @@ const CASES = [
   // source assertion in roster-epact.spec.js passes on a button wired to the
   // wrong row set; this is what proves the bytes.
   { name: "roster · epact csv is her output", path: "/{org}/roster",
-    needs: "body[data-ep-hdr=\"1\"][data-ep-lines=\"3\"][data-ep-email=\"1\"][data-ep-label=\"1\"][data-ep-nocancel=\"1\"]",
+    needs: "body[data-ep-hdr=\"1\"][data-ep-lines=\"3\"][data-ep-email=\"1\"][data-ep-label=\"1\"]"
+         + "[data-ep-nocancel=\"1\"][data-ep-bom=\"1\"][data-ep-tsv=\"1\"]",
     act: async page => {
       await page.waitForSelector("[data-epact-section=\"Camp Blue\"]", { timeout: 45000 });
-      // Intercept the popup writer rather than letting it open a window: a
-      // headless browser has nowhere to put the file, and the bytes are the
-      // thing under test.
+      // Stub window.open, NOT saveTextViaPopup: a headless browser has nowhere
+      // to put a download, but stubbing the writer would skip the whole delivery
+      // path — which is where the BOM lives. This way the case reads the bytes
+      // the popup is actually handed.
       await page.evaluate(() => {
-        window.__csv = null;
-        window.saveTextViaPopup = (text) => { window.__csv = String(text); return true; };
+        window.__payload = null;
+        window.open = () => ({
+          document: { write() {}, close() {} },
+          set __recExport(v) { window.__payload = v; },
+          get __recExport() { return window.__payload; },
+        });
       });
       await page.click("[data-epact-section=\"Camp Blue\"]");
       await page.evaluate(() => {
-        const csv = window.__csv;
-        if (csv == null) return;   // the button did not reach the writer at all
-        const lines = csv.replace(/\r\n$/, "").split("\r\n");
+        const p = window.__payload;
+        if (!p) return;   // the button never reached the writer at all
         const set = (k, v) => { if (v) document.body.setAttribute(k, v); };
+        // Checked on the BYTES, not on a decoded string: TextDecoder strips the
+        // BOM by default, so decoding first would silently pass either way — and
+        // the bytes are what Excel sniffs.
+        const b = p.bytes;
+        set("data-ep-bom", b[0] === 0xEF && b[1] === 0xBB && b[2] === 0xBF ? "1" : "");
+        const body = new TextDecoder().decode(b);   // BOM removed by the decoder
+        const lines = body.replace(/\r\n$/, "").split("\r\n");
         set("data-ep-hdr", lines[0] === "Rec ID,First Name,Last Name,Household Owner Email,Session Date - Section Name" ? "1" : "");
         document.body.setAttribute("data-ep-lines", String(lines.length - 1));
         // Her COALESCE takes the participant's own address; the owner's must not
         // appear for a participant who has one.
-        set("data-ep-email", csv.includes("ana@example.com") && !csv.includes("parent-reyes@example.com") ? "1" : "");
-        set("data-ep-label", csv.includes("2026-07-06 - Camp Blue") ? "1" : "");
-        set("data-ep-nocancel", csv.includes("3XCANCEL") ? "" : "1");
+        set("data-ep-email", body.includes("ana@example.com") && !body.includes("parent-reyes@example.com") ? "1" : "");
+        set("data-ep-label", body.includes("2026-07-06 - Camp Blue") ? "1" : "");
+        set("data-ep-nocancel", body.includes("3XCANCEL") ? "" : "1");
+        // The clipboard copy is TAB-separated and carries NO BOM — pasted into a
+        // sheet a BOM shows up as a stray character in the first cell, and a
+        // comma-separated paste drops the whole row into one column.
+        set("data-ep-tsv", p.tsv
+          && p.tsv.charCodeAt(0) !== 0xFEFF
+          && p.tsv.split("\n")[0] === "Rec ID\tFirst Name\tLast Name\tHousehold Owner Email\tSession Date - Section Name"
+          ? "1" : "");
       });
     } },
 

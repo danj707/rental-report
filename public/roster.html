@@ -833,6 +833,11 @@ function App() {
                   loadedStart || startDate].filter(Boolean).join('-') + '.csv';
     saveTextViaPopup(epactCsv(tuples), name, {
       gesture: 'ePACT',
+      // Metabase writes a UTF-8 BOM on every CSV it serves, so the file Melinda
+      // downloads from the card today has one and ePACT already ingests it. It
+      // also matters on its own: Excel sniffs bytes rather than trusting UTF-8,
+      // so without a BOM an accented participant name opens as mojibake.
+      bom: true,
       title: 'Your ePACT file is ready',
       hint: tuples.length + ' participant' + (tuples.length === 1 ? '' : 's')
           + ' \u2014 upload this CSV in ePACT. If the download did not start on its own, use the '

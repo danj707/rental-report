@@ -2979,6 +2979,41 @@ prose/number split. The row is still exported; only the label is empty.
   different signal from testing the button on a class of six. Scope is
   **normalised server-side**, not trusted from the query string.
 
+### Backcheck against the card: 68/68 rows, and a three-byte difference
+
+Dan exported one section both ways — apex, **After School Care - Hackberry Hill
+Elementary School 2026-2027**, over the report's new 14-day default (2026-08-27 →
+2026-09-09) — and the two files were diffed byte-for-byte, not eyeballed.
+
+**All 68 data rows identical, in the same order, zero rows on either side alone.**
+15 distinct participants over 7 session dates; 15 distinct name+email tuples, so
+no participant was merged or duplicated. The section is a good discriminator by
+luck: it contains **two different children both called Bridger Wall** (`GLJ096` /
+`07XS1Z`, different household emails, one with a trailing space in the first
+name), all preserved — a dedupe keyed on the name rather than the whole tuple
+would have collapsed them.
+
+The ONE difference was a **UTF-8 BOM**: Metabase writes `EF BB BF` on every CSV
+it serves (`csv-include-bom?: true` in its query responses) and the page did not.
+Now fixed — `saveTextViaPopup` takes `opts.bom` and the ePACT export asks for it.
+Proven: our file + BOM, CRLF→LF, is byte-identical to Metabase's 8,305 bytes.
+
+- **It matters beyond matching.** Excel sniffs bytes rather than trusting UTF-8,
+  so without a BOM an accented participant name opens as mojibake. This file
+  happens to be all-ASCII, which is why it looked like cosmetics.
+- **It cannot break ePACT**, because ePACT already ingests Metabase's BOM'd files
+  today — the strongest available evidence for adding one.
+- **The BOM goes on the FILE BYTES ONLY, never the clipboard copy.** Pasted into
+  a sheet it shows up as a stray character in the first cell. So `epactCsv` stays
+  pure text and the BOM is a delivery concern; the spec fails if it moves into the
+  builder (which would carry it into the clipboard) or onto the TSV.
+- **The remaining delta is line endings** — ours CRLF, Metabase LF — and that is
+  deliberate: CRLF is RFC4180 and what Windows importers want, and Metabase's LF
+  demonstrates either works.
+- **Check a BOM on the BYTES, not on a decoded string.** `TextDecoder` strips it
+  by default (`ignoreBOM: false` means *remove* it), so decoding first makes the
+  assertion pass either way. The render case got this wrong first time.
+
 ### The default window is now 14 days, not the calendar month
 
 Dan, same session: *"this class roster is huge by default. For apex it's like
@@ -2995,7 +3030,7 @@ longer exists.
 
 ### Guards
 
-`scripts/roster-epact.spec.js` (**69 assertions, in CI**), which **lifts and
+`scripts/roster-epact.spec.js` (**73 assertions, in CI**), which **lifts and
 RUNS** the five helpers rather than regexing over them, and has a live half that
 boots the server and requires a 200 **plus** a row in `events.jsonl` — the
 beacon-that-404s trap has now bitten this repo four times and a source assertion
@@ -3009,25 +3044,29 @@ implementation passed the whole spec under Eastern. A zone EAST of UTC is what
 separates them. The zone is chosen for that property, not because an org is in
 it.
 
-Mutation-tested fourteen ways, all failing by name: the email read from
+Mutation-tested seventeen ways, all failing by name: the email read from
 `ownerEmail`, the cancellation filter dropped, `SELECT DISTINCT` dropped, the
 date via `new Date().toISOString()`, a dateless row given the section name
 anyway, the default back to a month, `epact` dropped from `SLACK_NOTIFY`, `epact`
 dropped from the log route's `ALLOWED`, the debounce key reverted, the `rows`
 clamp removed (**only the live half sees that one**), a second popup
 implementation, the toolbar button exporting the unfiltered rows, the per-section
-button bypassing the shared builder, and the section button rendered with nothing
-to export.
+button bypassing the shared builder, the section button rendered with nothing to
+export, the BOM not requested, the BOM moved into the builder, and the BOM
+applied to the clipboard copy as well.
 
 Plus six `ci-check-render.js` cases — **the Class Roster had no render case at
 all before this**, and it is the report an admin runs before every camp. Five of
 them are keyed on COUNTS or on absence rather than presence, because "a button
 rendered" passes on every one of the regressions above. The sixth,
-`roster · epact csv is her output`, **stubs `saveTextViaPopup`, clicks the real
-button and asserts on the bytes** — the header line, three data rows (Ana's two
-same-day sessions collapsed, Cass's cancellation dropped), the participant's own
-email present and the owner's absent. Every source assertion in the spec passes
-on a button wired to the wrong row set; that case is what proves the file.
+`roster · epact csv is her output`, **stubs `window.open` — not
+`saveTextViaPopup` — clicks the real button and asserts on the bytes the popup is
+handed**, so the whole delivery path including the BOM is covered rather than
+skipped. It checks the header line, three data rows (Ana's two same-day sessions
+collapsed, Cass's cancellation dropped), the participant's own email present and
+the owner's absent, the BOM on the file, and no BOM on the tab-separated
+clipboard copy. Every source assertion in the spec passes on a button wired to
+the wrong row set; that case is what proves the file.
 
 ## Add-ons moved into the note line; Forms took the column (2026-08-26)
 
